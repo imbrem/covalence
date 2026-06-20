@@ -23,10 +23,11 @@ index](../../SKELETONS.md).
   printer, the async core + channel/hole rebuild, `#dep`/`#spawn` semantics,
   error spans + traces, the typed pipeline, async const lookup, term-level
   holes, and the WASM/WIT kernel API.
-- **[`src/surface/SKELETONS.md`](./src/surface/SKELETONS.md)** — the
-  surface-syntax authoring sketch (the elaborator, `#by` tactic grammar, and
-  `#import` content addressing are stubbed above the implemented AST / builtin
-  registry / parser).
+- **`src/surface/` was removed** — the surface-syntax design sketch (AST /
+  builtin registry / parser, with a stubbed elaborator) is superseded by the
+  `script` `#sig`/`#thy`/`#model`/`#models` fusion (`docs/surface-compiler.md
+  §3.0`). The Haskell-like surface is to be rebuilt as the elaborator *down to*
+  `.thy` (`§3.0.4`); recover the old sketch from git history if needed.
 - **[`src/models/SKELETONS.md`](./src/models/SKELETONS.md)** — the minimal
   surface-compiler core (the `Logic`/`Model` triad + cross-model `add_comm`
   replay): the `Nat`-specialized `Logic` (no general `Signature`/`admits`/full

@@ -198,24 +198,32 @@ explicit rather than silent. (Seam realization: `Logic` + `Model` traits,
 
 ```scheme
 ;; A MODEL of signature Nat — interprets the vocabulary at a carrier (.mod).
-;; Pure semantics: a carrier + a term for each op (must typecheck with α := carrier).
+;; Pure semantics: a carrier + a term for each op (must typecheck with A := carrier).
 (#model nat/self
   (of Nat)                       ;; interprets signature Nat
-  (carrier nat)                  ;; α := nat
-  (zero (nat.lit 0))             ;; the op interpretations
+  (carrier nat)                  ;; A := nat
+  (zero 0)                       ;; the op interpretations (the `0` literal IS nat.lit 0)
   (succ nat.succ)
-  (add  nat.add))
+  (add  nat.add)
+  (induct induct))               ;; the induction handler, named by tactic ref
 
 ;; SATISFACTION — "nat/self models NatTheory" (M ⊨ T), a .thm. For each axiom of
-;; NatTheory, the goal is the axiom INSTANTIATED at the model (α := carrier, op
-;; symbols := interpretations); each must be PROVED. Certifying it blesses the
-;; model's env (its ops + these verified axioms) for `(#in nat/self …)` dispatch.
+;; NatTheory, the goal is the axiom INSTANTIATED at the model (A := carrier, op
+;; symbols := interpretations) — built by RE-ELABORATING the axiom's stored sexpr
+;; against the model's carrier+ops, not by term substitution. Each must be PROVED,
+;; and its conclusion re-checked against that goal. Certifying it blesses the
+;; model's env (ops + verified axioms + `m.induct`) for `(#in nat/self …)` dispatch.
 (#models nat/self NatTheory
-  (zero.add (#by …))             ;; discharge each axiom at the carrier
-  (add.zero (#by …))
-  (succ.add (#by …))
-  (add.succ (#by …)))
+  (zero.add (#proof (lemma)))    ;; a (#proof …) when the goal is α-identical to a
+  (add.zero (#proof (lemma)))    ;;   kernel lemma; a (#by …) tactic script otherwise.
+  (succ.add (#proof (lemma)))    ;;   (`apply` can't match a still-∀-quantified goal,
+  (add.succ (#proof (lemma))))   ;;    so direct lemma refs are the clean form here.)
 ```
+
+> Sort variable spelled `A` (ASCII) in the implementation; `α` also parses. The
+> `(from WITNESS)` form — `(#models nat/unary NatTheory (from unary))` — sources a
+> host-supplied (Rust) witness env, keeping `nat/unary`'s heavy `unit`-singleton
+> proofs in `models::unary` until ported to `.cov` (transitional; SKELETON'd).
 
 `(#models M T …)` reads "M models T". It is the single load-bearing statement
 type (§3.0.2). The model's env — abstract op names (`m.zero`/`m.add`/…) bound to
@@ -233,8 +241,21 @@ proof (e.g. `models::unary`) in place until it's ported to `.cov`.
 Two directions the forms above must stay compatible with — **architectural
 constraints, not near-term work**:
 
-1. **`.thy` is the elaboration target of a Haskell-like surface.** A function
-   written as a type signature + defining equations
+1. **`.thy` is the elaboration target of a Haskell-like surface.** A `#type`
+   declaration + function type signatures + defining equations
+   ```haskell
+   #type nat
+   add :: nat -> nat -> nat
+   add zero a        = a
+   add a zero        = a
+   add (succ a) b    = succ (add a b)
+   ```
+   elaborates to a `(#sig …)` + `(#thy …)`: the **`#type nat`** → the signature's
+   `(sort nat)`; each `::` type signature → an `(op …)`; each defining equation →
+   a **`#spec`** (an equational clause, with the *positional* LHS/RHS quantification
+   rule — LHS pattern variables universally bound, RHS-only existential;
+   `surface-syntax.md §4.1`). So `nat.sig`/`nat.thy` are *extractable from* such a
+   file. Concretely (a longer example):
    ```haskell
    length :: list 'a -> nat
    length []        = 0

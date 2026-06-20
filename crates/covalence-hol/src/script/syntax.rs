@@ -47,6 +47,8 @@ pub fn parse_type(s: &SExpr, env: &Env) -> R<Type> {
                 "u64" => Ok(defs::u64_ty()),
                 "unit" => Ok(Type::unit()),
                 _ if n.starts_with('\'') => Ok(Type::tfree(&n[1..])),
+                // A signature sort / carrier alias (the `#sig`/`#model` machinery).
+                _ if env.lookup_type_alias(n).is_some() => Ok(env.lookup_type_alias(n).unwrap()),
                 // A user-defined 0-ary type constructor.
                 _ => match env.lookup_type_spec(n) {
                     Some(spec) => Ok(applied_user_spec(spec)),

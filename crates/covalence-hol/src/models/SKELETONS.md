@@ -27,15 +27,44 @@ signature (with `admits` as the statability gate). Deferred:
   models (no sensible lowering); a real model with string/bytes carriers
   supplies them.
 
-## `#model` directive (not built)
+## `#sig`/`#thy`/`#model`/`#models` directives (BUILT — increment 1)
 
-The surface `(#model NAME : THEORY #in LOGIC (#carrier …) (#map …))` form
-(`surface-compiler.md` §3) that *declares* a model inside a `.cov` is not
-implemented — models are built in Rust (`NatSelf`/`NatUnary`) and entered via a
-resolver-backed `#import` + `#in`. A `#model` directive needs the surface
-elaborator to turn a `(#map …)` into a `NatModel` (and to discharge the
-axiom-satisfaction obligation), which depends on the not-yet-built theory
-header (`#theory`/`#spec`).
+The declared surface↔script fusion now exists (`script/theory.rs`,
+`models/declared.cov`, `models/nat.sig`, `models/nat.thy`): `(#sig …)` declares
+a single-sorted signature, `(#thy …)` a theory (axioms validated abstractly),
+`(#model …)` a model (op interpretations typechecked at the carrier), and
+`(#models M T …)` certifies `M ⊨ T` (each axiom INSTANTIATED at the carrier is
+proved by the supplied `(#by …)`/`(#proof …)`, then M's `NatModel::env()`-shape
+dispatch env is registered for `(#in M …)`). `declared.cov` declares `Nat` +
+`NatTheory`, declares + certifies `nat/self` and `nat/unary`, and replays the
+abstract `add.comm` at both — the Track 1 `NatModel::env()` is now *sourced from
+declared data*. Remaining deferrals:
+
+- **Generic, multi-sort / kinded (HOL-ω) signatures.** `Signature` is
+  single-sorted (one `(sort α)`) and first-order (op templates are `α`/`->`
+  types). The `(family m (-> ty ty))` kind-ty→ty families of `surface-compiler.md`
+  §3.0, and multiple sorts, are rejected (`#sig: multi-sort … not supported`).
+- **Typed `.sig`/`.thy`/`.mod` file imports.** `(#import x.sig #sig)` /
+  `(#import x.thy #thy)` (§3.0/§3.0.1) — the *typed* single-object import that
+  checks you got a signature where a signature was expected — is not built; the
+  `.sig`/`.thy` bodies are inlined into `declared.cov` (the standalone
+  `nat.sig`/`nat.thy` files exist as the deliverable shape but are not yet
+  consumed via a typed import).
+- **`(from WITNESS)` is transitional.** `(#models nat/unary NatTheory (from
+  unary))` pulls the four axioms from a host-supplied env
+  (`models::unary::prelude()` — the heavy `unit`-singleton Rust proofs) instead
+  of inline `(#by …)`. This keeps `unary.rs` in Rust until its proofs are ported
+  to `.cov`; the witnessed theorems ARE re-checked against the instantiated
+  goals, so it is sound, just not yet self-contained.
+- **`#models` does not register a `.thm` certificate object.** The verified
+  axioms accumulate as `M.axname` lemmas + bless the dispatch env, but there is
+  no first-class "`M ⊨ T` proof" value (`surface-compiler.md` §3.0.2) carrying
+  the logic it was proved in. The next cut reifies the certificate.
+- **No model *synthesis* (§3.0.4 north star).** Models are hand-declared via
+  `(#model …)`; the tactic that *synthesizes* a model from a theory (subsuming
+  `#inductive` as "synthesize the initial model"), and the `#data`/`#codata`
+  theory-level declaration forms, are not built. `Model` is a plain value, so it
+  stays producible by a future synthesis tactic.
 
 ## `#in` block only runs `#thm`
 

@@ -1,0 +1,104 @@
+;; declared.cov — the surface↔script FUSION, end to end. The `Nat` signature +
+;; theory are DECLARED data (`#sig`/`#thy`); `nat/self` and `nat/unary` are
+;; DECLARED models (`#model`), each CERTIFIED `M ⊨ NatTheory` (`#models`); then
+;; the SAME abstract `add.comm` proof is replayed at both via `(#in M …)` —
+;; sourcing ops from the model and axioms from the satisfaction certificate,
+;; not a hand-built Rust `NatModel::env()`.
+;;
+;; Host envs (via the resolver):
+;;   core        — the kernel prelude (ops `0`/`succ`/`nat.add`, tactic `induct`)
+;;   nat-witness — the four nat-add lemmas (under `nat.*` names) used to DISCHARGE
+;;                 nat/self's satisfaction goals with genuine `(apply …)` proofs
+;;   unary       — `models::unary::prelude()`: the `list unit` interpretations
+;;                 (`unary.zero/succ/add`), the `unary.induct` handler, and the
+;;                 four heavy Rust axiom proofs (the `(from unary)` witness)
+
+(#import core)
+(#open core)
+(#import nat-witness)
+(#open nat-witness)
+(#import unary)
+(#open unary)
+
+;; ---- the signature + theory, as declared data ----------------------------
+(#sig Nat
+  (sort A)
+  (op zero A)
+  (op succ (-> A A))
+  (op add  (-> A A A)))
+
+(#thy NatTheory
+  (over Nat)
+  (axiom zero.add (forall (a) (= (add zero a) a)))
+  (axiom add.zero (forall (a) (= (add a zero) a)))
+  (axiom succ.add (forall (a) (forall (b) (= (add (succ a) b) (succ (add a b))))))
+  (axiom add.succ (forall (a) (forall (b) (= (add a (succ b)) (succ (add a b)))))))
+
+;; ---- nat/self: carrier = kernel `nat`; ops from `core` -------------------
+(#model nat/self
+  (of Nat)
+  (carrier nat)
+  (zero 0)
+  (succ succ)
+  (add  nat.add)
+  (induct induct))
+
+;; Certify nat/self ⊨ NatTheory: each axiom INSTANTIATED at `nat` is discharged
+;; by `apply`ing the corresponding kernel nat lemma (re-checked by the kernel).
+(#models nat/self NatTheory
+  (zero.add (#proof (nat.zero.add)))
+  (add.zero (#proof (nat.add.zero)))
+  (succ.add (#proof (nat.succ.add)))
+  (add.succ (#proof (nat.add.succ))))
+
+;; ---- nat/unary: carrier = `list unit`; ops + axioms from `unary` ---------
+(#model nat/unary
+  (of Nat)
+  (carrier (list unit))
+  (zero unary.zero)
+  (succ unary.succ)
+  (add  unary.add)
+  (induct unary.induct))
+
+;; Certify nat/unary ⊨ NatTheory from the host witness (heavy Rust proofs over
+;; the `unit` singleton — kept in `models::unary`, not ported to `.cov`).
+(#models nat/unary NatTheory (from unary))
+
+;; ---- replay the SAME abstract proof at BOTH certified models -------------
+(#in nat/self
+  (#thm add.comm
+    (#concl (forall (a) (forall (b) (= (m.add a b) (m.add b a)))))
+    (#by
+      (m.induct a
+        (#by
+          (intro b)
+          (rw (all-elim b (zero.add)))
+          (sym)
+          (rw (all-elim b (add.zero)))
+          (refl))
+        (#by
+          (intro b)
+          (rw (all-elim b (all-elim a (succ.add))))
+          (rw (all-elim b (assume (forall (b) (= (m.add a b) (m.add b a))))))
+          (sym)
+          (rw (all-elim a (all-elim b (add.succ))))
+          (refl))))))
+
+(#in nat/unary
+  (#thm add.comm
+    (#concl (forall (a) (forall (b) (= (m.add a b) (m.add b a)))))
+    (#by
+      (m.induct a
+        (#by
+          (intro b)
+          (rw (all-elim b (zero.add)))
+          (sym)
+          (rw (all-elim b (add.zero)))
+          (refl))
+        (#by
+          (intro b)
+          (rw (all-elim b (all-elim a (succ.add))))
+          (rw (all-elim b (assume (forall (b) (= (m.add a b) (m.add b a))))))
+          (sym)
+          (rw (all-elim a (all-elim b (add.succ))))
+          (refl))))))

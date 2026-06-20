@@ -1,0 +1,64 @@
+;; cov — the `int` ordered ring over `core` + `logic` + the imported `nat`
+;; algebra + the `intprim` seam env.
+;;
+;; `int := (nat × nat) / ~` (Grothendieck). The quotient machinery is hidden:
+;; `intprim` exposes the `MK(f, s)` component layer through three operators —
+;; `int.mk f s` (construct from `nat` components), `int.fc a` / `int.sc a`
+;; (the components of `a`) — plus `∀`-closed seam lemmas:
+;;
+;;   recon  : ∀a. a = int.mk (int.fc a) (int.sc a)
+;;   add_mk : ∀fa sa fb sb. int.add (mk fa sa)(mk fb sb) = mk (fa+fb)(sa+sb)
+;;   mul_mk : ∀… int.mul (mk fa sa)(mk fb sb) = mk (fa·fb+sa·sb)(fa·sb+sa·fb)
+;;   neg_mk : ∀fa sa. int.neg (mk fa sa) = mk sa fa
+;;   sub_mk : ∀… int.sub (mk fa sa)(mk fb sb) = mk (fa+sb)(sa+fb)
+;;   lt_mk  : ∀… int.lt (mk fa sa)(mk fb sb) = nat.lt (fa+sb)(fb+sa)
+;;   le_mk  : ∀… int.le (mk fa sa)(mk fb sb) = nat.le (fa+sb)(fb+sa)
+;;   mk_eq  : ∀… (int.mk fa sa = int.mk fb sb) = (fa+sb = fb+sa)
+;;   lit0   : int.0 = int.mk 0 0   ;   lit1 : int.1 = int.mk 1 0
+;;
+;; The recipe for every ring/order axiom: `recon`-rewrite each `int` variable
+;; to `int.mk (fc ·)(sc ·)` form, push the `int` op through with its `*_mk`
+;; rule, then discharge the residual on the `nat` components — either an `int.mk`
+;; equality via `mk_eq` reduced to a `nat` equation, or a `nat` order fact
+;; (the imported `nat` theory: add/mul comm/assoc/distrib, the strict order).
+
+(#import core)
+(#open core)
+(#import logic)
+(#open logic)
+(#import nat)
+(#open nat)
+(#import intprim)
+(#open intprim)
+
+;; ============================================================================
+;; Commutative ring
+;; ============================================================================
+
+;; ⊢ ∀a b. a + b = b + a.  Push `+` through `add_mk` on both sides; the two
+;; `MK` results are equal by `mk_eq`, reduced to a `nat` equation closed with
+;; `add_comm`/`add_cancel`-style rearrangement (here just `add_comm` on each
+;; cross-sum component).
+(#thm add_comm
+  (#concl (forall (a int) (forall (b int) (= (int.add a b) (int.add b a)))))
+  (#by
+    (intro a b)
+    ;; a = mk(fc a)(sc a), b = mk(fc b)(sc b).
+    (rw (all-elim a (recon)))
+    (rw (all-elim b (recon)))
+    ;; int.add (mk fa sa)(mk fb sb) = mk (fa+fb)(sa+sb), both orders.
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (add_mk))))))
+    (rw (all-elim (int.sc a) (all-elim (int.fc a)
+          (all-elim (int.sc b) (all-elim (int.fc b) (add_mk))))))
+    ;; (mk (fa+fb)(sa+sb) = mk (fb+fa)(sb+sa)) = ((fa+fb)+(sb+sa) = (fb+fa)+(sa+sb)).
+    (rw (all-elim (nat.add (int.sc b) (int.sc a))
+          (all-elim (nat.add (int.fc b) (int.fc a))
+            (all-elim (nat.add (int.sc a) (int.sc b))
+              (all-elim (nat.add (int.fc a) (int.fc b)) (mk_eq))))))
+    ;; close on nat: (fa+fb)+(sb+sa) = (fb+fa)+(sa+sb) by add_comm in each pair.
+    (rw (all-elim (int.fc b) (all-elim (int.fc a) (add_comm))))
+    (rw (all-elim (int.sc a) (all-elim (int.sc b) (add_comm))))
+    (refl)))
+
+(#export add_comm)

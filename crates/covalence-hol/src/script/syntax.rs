@@ -26,6 +26,7 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
             match n {
                 "bool" => Ok(Type::bool()),
                 "nat" => Ok(Type::nat()),
+                "int" => Ok(Type::int()),
                 _ if n.starts_with('\'') => Ok(Type::tfree(&n[1..])),
                 _ => Err(ScriptError::Syntax(format!("unknown type: {n}"))),
             }

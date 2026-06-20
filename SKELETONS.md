@@ -445,9 +445,26 @@ directives — is `open`-able by other scripts; the macro binds it as a
   the equation.
 - **Prelude `Env::core()` covers only logic + nat.** The name→catalogue
   resolvers are a starting set (the connectives, `=`, `nat.add/mul/sub/le/lt`,
-  `succ`). int/rat/real/list/option/prod/coprod/set catalogue names are not yet
-  bound; add entries to `script/env.rs::Env::core` (the `defs/` churn
-  boundary) as those theories are ported.
+  `succ`). rat/real/list/option/prod/coprod catalogue names are not yet
+  bound in `core` itself; add entries to `script/env.rs::Env::core` (the
+  `defs/` churn boundary) as those theories are ported. (`set` and `int`
+  operators are supplied per-theory via their seam envs — `set_env()` /
+  `int_env()` — not through `core`; `parse_type` knows `bool`/`nat`/`int`/
+  `set`/`option`/`result`/`rel` but still not `rat`/`real`/`list`/`prod`.)
+- **`init/int.cov` ports the ordered ring *except* `lt_mul_pos`.** `int.cov`
+  (over the `intprim` seam env `int::int_env()` — the `int.mk`/`int.fc`/`int.sc`
+  component operators + the `recon`/`*_mk`/`mk_eq`/`lit0`/`lit1` givens) ports
+  16 of the 17 `init/int.rs` ordered-ring axioms, each checked `== ` its Rust
+  conclusion (`add_comm`, `mul_comm`, `add_assoc`, `add_zero`, `add_neg`,
+  `sub_def`, `mul_one`, `mul_zero`, `distrib`, `lt_irrefl`, `lt_trans`,
+  `lt_trichotomy`, `le_def`, `lt_add_mono`, `lt_succ`). **`lt_mul_pos`
+  (`0 < c ⟹ a < b ⟹ a*c < b*c`) is NOT yet ported**: its Rust proof leans on
+  the `nat` additive normaliser `nat::prove_add_eq` and saturating `nat.sub`
+  facts (`le_add_sub`, `lt_iff_succ_le`, `zero_lt_succ`) to decompose both
+  Grothendieck products over a common `D + (·)·m`; porting it needs those `nat`
+  sub/normaliser lemmas exposed as `.cov` givens (a `mul_mk`-positivity seam
+  lemma would be the clean route). It remains a genuine Rust theorem
+  (`init/int.rs::lt_mul_pos`); only the `.cov` re-derivation is deferred.
 - **Async core: types + tokio in place; the open-obligation (hole) feature was
   removed, pending a channel-based rebuild.** `script/mod.rs::run_async` is
   `async`; `run`/`resolve_blocking` block via a tokio **current-thread** runtime

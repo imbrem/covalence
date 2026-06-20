@@ -1861,9 +1861,325 @@ cached_thm! {
     }
 }
 
+// ============================================================================
+// The `intprim` seam env — operators + component-layer givens for `int.cov`
+// ============================================================================
+//
+// `int := (nat × nat) / ~`. The ring/order axioms are proved in Rust above
+// through the quotient machinery (`recon` / `mk_int` / `add_class` / …). To
+// re-prove them in `int.cov` *without* re-deriving the quotient, we expose the
+// `MK(f, s)` component layer through three honest **operators** —
+//
+//   int.mk : nat → nat → int   (`MK(f, s) = mk_int (pair f s)`)
+//   int.fc : int → nat         (`fst (rep_pair a)`)
+//   int.sc : int → nat         (`snd (rep_pair a)`)
+//
+// — and a handful of `∀`-closed **seam lemmas** over them (reconstruction,
+// per-op `*_mk` computation rules, the order `*_mk` rules, the `int.mk`
+// equality criterion, literal coherence). These cross the abs/rep boundary
+// via the quotient laws, so they stay Rust-proved givens (the `set.cov`
+// `mem_*`/`ext` pattern); `int.cov` proves the ordered ring over them and the
+// imported `nat` algebra, never mentioning `mk_int`/`rep_pair`/`abs`/`rep`.
+
+/// `int.mk ≔ λf s. MK(f, s)` — the component constructor as a closed operator.
+fn int_mk_op() -> Term {
+    let (f, s) = (Term::free("__f", Type::nat()), Term::free("__s", Type::nat()));
+    let body = mkfs(&f, &s);
+    let inner = Term::abs(Type::nat(), subst::close(&body, "__s"));
+    Term::abs(Type::nat(), subst::close(&inner, "__f"))
+}
+/// `int.fc ≔ λa. fst (rep_pair a)` — the first-component destructor.
+fn int_fc_op() -> Term {
+    let a = Term::free("__a", int());
+    Term::abs(int(), subst::close(&fcomp(&a), "__a"))
+}
+/// `int.sc ≔ λa. snd (rep_pair a)` — the second-component destructor.
+fn int_sc_op() -> Term {
+    let a = Term::free("__a", int());
+    Term::abs(int(), subst::close(&scomp(&a), "__a"))
+}
+
+/// `int.mk f s` as an operator application (β-redex over [`int_mk_op`]).
+fn mk_app(f: &Term, s: &Term) -> Term {
+    Term::app(Term::app(int_mk_op(), f.clone()), s.clone())
+}
+/// `int.fc a` / `int.sc a` as operator applications.
+fn fc_app(a: &Term) -> Term {
+    Term::app(int_fc_op(), a.clone())
+}
+fn sc_app(a: &Term) -> Term {
+    Term::app(int_sc_op(), a.clone())
+}
+
+/// `⊢ int.mk f s = MK(f, s)` — the two-step β reconciliation of the operator
+/// application with the internal `mkfs` form. Lets the Rust `*_mk` lemmas
+/// (phrased on `mkfs`) be restated on the operator.
+fn mk_beta(f: &Term, s: &Term) -> Result<Thm> {
+    // Two β-steps only (NOT full `reduce`, which would over-reduce the
+    // un-reduced `int_rel` redex inside `mkfs`): outer app then inner app.
+    let _ = mk_app(f, s); // the redex this proof reconciles
+    let outer = Thm::beta_conv(Term::app(int_mk_op(), f.clone()))?; // (λf s. mkfs) f = λs. mkfs[f]
+    let applied = outer.cong_fn(s.clone())?; // (… ) s = (λs. mkfs[f]) s
+    let inner = Thm::beta_conv(dest_eq(&applied)?.1)?; // (λs. mkfs[f]) s = mkfs[f,s]
+    applied.trans(inner)
+}
+/// `⊢ int.fc a = fst (rep_pair a)`.
+fn fc_beta(a: &Term) -> Result<Thm> {
+    Thm::beta_conv(fc_app(a))
+}
+/// `⊢ int.sc a = snd (rep_pair a)`.
+fn sc_beta(a: &Term) -> Result<Thm> {
+    Thm::beta_conv(sc_app(a))
+}
+
+/// Rewrite every internal `MK(·,·)` / `fst(rep_pair ·)` / `snd(rep_pair ·)`
+/// occurrence in `thm` back to the operator forms `int.mk` / `int.fc` /
+/// `int.sc`, for the listed component pairs `(f, s)` and ints `a`. The bridge
+/// that turns a Rust component-layer theorem into an operator-form given.
+fn to_ops(thm: Thm, mks: &[(&Term, &Term)], comps: &[&Term]) -> Result<Thm> {
+    let mut t = thm;
+    // `mkfs(·,·) ← int.mk · ·` FIRST (the `mk_beta` LHS components are still in
+    // their internal `fst(rep_pair ·)` form here), then collapse those
+    // components to `int.fc`/`int.sc`.
+    for (f, s) in mks {
+        t = t.rewrite(&mk_beta(f, s)?.sym()?)?;
+    }
+    for a in comps {
+        // `fst(rep_pair a) ← int.fc a` and `snd(rep_pair a) ← int.sc a`.
+        t = t.rewrite(&fc_beta(a)?.sym()?)?;
+        t = t.rewrite(&sc_beta(a)?.sym()?)?;
+    }
+    Ok(t)
+}
+
+/// `⊢ (int.mk fa sa = int.mk fb sb) = (fa + sb = fb + sa)` — the `int.mk`
+/// equality criterion (the Grothendieck relation on components). Forward by
+/// [`class_eq_to_nat`], backward by [`rel_of_pairs`] + `class_intro`.
+fn mk_eq_iff(fa: &Term, sa: &Term, fb: &Term, sb: &Term) -> Result<Thm> {
+    let lhs = mkfs(fa, sa).equals(mkfs(fb, sb))?; // MK fa sa = MK fb sb
+    let rhs = nat::add(fa.clone(), sb.clone()).equals(nat::add(fb.clone(), sa.clone()))?; // X = Y
+    // forward: {MK = MK} ⊢ X = Y.
+    let fwd = class_eq_to_nat(Thm::assume(lhs.clone())?, fa, sa, fb, sb)?;
+    // backward: {X = Y} ⊢ MK = MK.
+    let rel = rel_of_pairs(fa, sa, fb, sb, Thm::assume(rhs.clone())?)?;
+    let bwd = quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
+    bwd.deduct_antisym(fwd) // ⊢ (MK = MK) = (X = Y)
+}
+
+/// The `∀`-closure helper: generalise a four-component lemma over
+/// `fa sa fb sb : nat`.
+fn gen4(thm: Thm) -> Result<Thm> {
+    thm.all_intro("sb", Type::nat())?
+        .all_intro("fb", Type::nat())?
+        .all_intro("sa", Type::nat())?
+        .all_intro("fa", Type::nat())
+}
+
+/// The `intprim` environment imported by `int.cov`: the `int` operators
+/// (monomorphic — `int` is a ground type), the component constructor /
+/// destructors, and the **seam** lemmas (reconstruction, the per-op `*_mk`
+/// computation rules, the order `*_mk` rules, the `int.mk` equality criterion,
+/// literal coherence) in `∀`-closed form. These cross the quotient boundary,
+/// so they stay Rust-proved givens; `int.cov` proves the ordered ring over
+/// them (plus the imported `nat` algebra) and never mentions the quotient.
+pub fn int_env() -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    let mut e = Env::empty();
+
+    // -- operators (monomorphic; `int` is ground) -----------------------
+    e.define_const("int.add", ConstDef::Op(int_add()));
+    e.define_const("int.mul", ConstDef::Op(int_mul()));
+    e.define_const("int.neg", ConstDef::Op(int_neg()));
+    e.define_const("int.sub", ConstDef::Op(int_sub()));
+    e.define_const("int.succ", ConstDef::Op(int_succ()));
+    e.define_const("int.le", ConstDef::Op(int_le()));
+    e.define_const("int.lt", ConstDef::Op(int_lt()));
+    e.define_const("int.mk", ConstDef::Op(int_mk_op()));
+    e.define_const("int.fc", ConstDef::Op(int_fc_op()));
+    e.define_const("int.sc", ConstDef::Op(int_sc_op()));
+    // literals (builtin `TermKind::Int`)
+    e.define_const("int.0", ConstDef::Op(lit(0)));
+    e.define_const("int.1", ConstDef::Op(lit(1)));
+
+    // canonical free components / ints for the `∀`-closed givens.
+    let natv = |n: &str| Term::free(n, Type::nat());
+    let (fa, sa) = (natv("fa"), natv("sa"));
+    let (fb, sb) = (natv("fb"), natv("sb"));
+    let a = var("a");
+
+    // recon : ⊢ ∀a. a = int.mk (int.fc a) (int.sc a)
+    e.define_lemma(
+        "recon",
+        to_ops(recon_mk(&a).unwrap(), &[(&fcomp(&a), &scomp(&a))], &[&a])
+            .unwrap()
+            .all_intro("a", int())
+            .unwrap(),
+    );
+
+    // add_mk : ⊢ ∀fa sa fb sb. int.add (mk fa sa)(mk fb sb) = mk (fa+fb)(sa+sb)
+    e.define_lemma(
+        "add_mk",
+        gen4(to_ops(
+            add_mk(&fa, &sa, &fb, &sb).unwrap(),
+            &[
+                (&fa, &sa),
+                (&fb, &sb),
+                (&nat::add(fa.clone(), fb.clone()), &nat::add(sa.clone(), sb.clone())),
+            ],
+            &[],
+        )
+        .unwrap())
+        .unwrap(),
+    );
+
+    // mul_mk : ⊢ ∀…. int.mul (mk fa sa)(mk fb sb)
+    //              = mk (fa·fb+sa·sb)(fa·sb+sa·fb)
+    e.define_lemma(
+        "mul_mk",
+        gen4(to_ops(
+            mul_mk(&fa, &sa, &fb, &sb).unwrap(),
+            &[
+                (&fa, &sa),
+                (&fb, &sb),
+                (
+                    &nat::add(nat::mul(fa.clone(), fb.clone()), nat::mul(sa.clone(), sb.clone())),
+                    &nat::add(nat::mul(fa.clone(), sb.clone()), nat::mul(sa.clone(), fb.clone())),
+                ),
+            ],
+            &[],
+        )
+        .unwrap())
+        .unwrap(),
+    );
+
+    // neg_mk : ⊢ ∀fa sa. int.neg (mk fa sa) = mk sa fa
+    e.define_lemma(
+        "neg_mk",
+        to_ops(neg_mk(&fa, &sa).unwrap(), &[(&fa, &sa), (&sa, &fa)], &[])
+            .unwrap()
+            .all_intro("sa", Type::nat())
+            .unwrap()
+            .all_intro("fa", Type::nat())
+            .unwrap(),
+    );
+
+    // sub_mk : ⊢ ∀…. int.sub (mk fa sa)(mk fb sb) = mk (fa+sb)(sa+fb)
+    e.define_lemma(
+        "sub_mk",
+        gen4(to_ops(
+            sub_mk(&fa, &sa, &fb, &sb).unwrap(),
+            &[
+                (&fa, &sa),
+                (&fb, &sb),
+                (&nat::add(fa.clone(), sb.clone()), &nat::add(sa.clone(), fb.clone())),
+            ],
+            &[],
+        )
+        .unwrap())
+        .unwrap(),
+    );
+
+    // lt_mk : ⊢ ∀…. int.lt (mk fa sa)(mk fb sb) = nat.lt (fa+sb)(fb+sa)
+    e.define_lemma(
+        "lt_mk",
+        gen4(to_ops(lt_mk(&fa, &sa, &fb, &sb).unwrap(), &[(&fa, &sa), (&fb, &sb)], &[]).unwrap())
+            .unwrap(),
+    );
+
+    // le_mk : ⊢ ∀…. int.le (mk fa sa)(mk fb sb) = nat.le (fa+sb)(fb+sa)
+    e.define_lemma(
+        "le_mk",
+        gen4(to_ops(le_mk(&fa, &sa, &fb, &sb).unwrap(), &[(&fa, &sa), (&fb, &sb)], &[]).unwrap())
+            .unwrap(),
+    );
+
+    // mk_eq : ⊢ ∀…. (int.mk fa sa = int.mk fb sb) = (fa+sb = fb+sa)
+    e.define_lemma(
+        "mk_eq",
+        gen4(to_ops(
+            mk_eq_iff(&fa, &sa, &fb, &sb).unwrap(),
+            &[(&fa, &sa), (&fb, &sb)],
+            &[],
+        )
+        .unwrap())
+        .unwrap(),
+    );
+
+    // lit0 : ⊢ int.0 = int.mk 0 0   ;   lit1 : ⊢ int.1 = int.mk 1 0
+    e.define_lemma(
+        "lit0",
+        to_ops(lit0_mk().unwrap(), &[(&nat::zero(), &nat::zero())], &[]).unwrap(),
+    );
+    e.define_lemma(
+        "lit1",
+        to_ops(
+            lit1_mk().unwrap(),
+            &[(&Term::nat_lit(1u64), &nat::zero())],
+            &[],
+        )
+        .unwrap(),
+    );
+
+    e
+}
+
+crate::cov_theory! {
+    /// `int` ordered-ring axioms ported to `int.cov`, over `core` + `logic` +
+    /// the imported `nat` algebra + the `intprim` seam env.
+    pub mod cov from "int.cov" {
+        import "core" = crate::script::Env::core();
+        import "logic" = crate::init::logic::cov::env();
+        import "nat" = crate::init::nat::cov::env();
+        import "natrec" = crate::init::nat::natrec_env();
+        import "intprim" = crate::init::int::int_env();
+        "add_comm"      => pub fn add_comm_cov;
+        "add_assoc"     => pub fn add_assoc_cov;
+        "add_zero"      => pub fn add_zero_cov;
+        "add_neg"       => pub fn add_neg_cov;
+        "sub_def"       => pub fn sub_def_cov;
+        "mul_comm"      => pub fn mul_comm_cov;
+        "mul_one"       => pub fn mul_one_cov;
+        "mul_zero"      => pub fn mul_zero_cov;
+        "distrib"       => pub fn distrib_cov;
+        "lt_irrefl"     => pub fn lt_irrefl_cov;
+        "lt_trans"      => pub fn lt_trans_cov;
+        "lt_trichotomy" => pub fn lt_trichotomy_cov;
+        "le_def"        => pub fn le_def_cov;
+        "lt_add_mono"   => pub fn lt_add_mono_cov;
+        "lt_succ"       => pub fn lt_succ_cov;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn int_cov_matches_rust() {
+        // Each ported `int.cov` ordered-ring axiom states exactly the Rust
+        // conclusion (same checked theorem, two proofs) and is hypothesis-free.
+        let pairs: [(Thm, Thm); 15] = [
+            (cov::add_comm_cov(), add_comm()),
+            (cov::mul_comm_cov(), mul_comm()),
+            (cov::add_assoc_cov(), add_assoc()),
+            (cov::add_zero_cov(), add_zero()),
+            (cov::add_neg_cov(), add_neg()),
+            (cov::sub_def_cov(), sub_def()),
+            (cov::mul_one_cov(), mul_one()),
+            (cov::mul_zero_cov(), mul_zero()),
+            (cov::distrib_cov(), distrib()),
+            (cov::lt_irrefl_cov(), lt_irrefl()),
+            (cov::lt_trans_cov(), lt_trans()),
+            (cov::lt_trichotomy_cov(), lt_trichotomy()),
+            (cov::le_def_cov(), le_def()),
+            (cov::lt_add_mono_cov(), lt_add_mono()),
+            (cov::lt_succ_cov(), lt_succ()),
+        ];
+        for (c, r) in pairs {
+            assert!(c.hyps().is_empty(), "ported int.cov axiom is genuine");
+            assert_eq!(c.concl(), r.concl());
+        }
+    }
 
     #[test]
     fn the_whole_ordered_ring_is_proved() {
@@ -2223,3 +2539,4 @@ mod tests {
         assert!(lifted.hyps().iter().any(|h| h == &rel_app(&p, &q)));
     }
 }
+

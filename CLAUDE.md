@@ -85,9 +85,14 @@ prover docs, `docs/design/proposals/*`, the old `MVP_DESIGN.md` /
   the `defs/` operations, the `covalence-kernel` re-export façade, and
   wiring `covalence-core` proofs back through the shell.
 
-Plus three **design sketches** for the (not-yet-built) authoring layer
+Plus four **design sketches** for the (not-yet-built) authoring layer
 _above_ the kernel — aspirational, clearly marked as such:
 
+- **[`docs/frontend.md`](./docs/frontend.md)** — the frontend & UX vision
+  (counterpart to VISION.md's kernel focus): the unified surface that
+  tracks terms as interpreted across many logics, reasoning as
+  handler-dispatched algebraic effects, and the source-lowers-to-many-targets
+  authoring workflow.
 - **[`docs/surface-syntax.md`](./docs/surface-syntax.md)** — high-level
   syntax for writing theories, definitions, and proofs that elaborate
   down to kernel objects (the long-term replacement for hand-written

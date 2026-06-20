@@ -27,6 +27,131 @@ use crate::init::logic::{exists_elim, exists_intro, simp, truth};
 
 pub use covalence_core::defs::{coprod, coprod_case, inl, inr};
 
+// ============================================================================
+// The `.cov` proof-script layer for `coprod`.
+//
+// `coprod_env()` exports the seam lemmas as Rust-proved GIVENs and registers
+// the injection/case operators as Ops for type inference.  The seam lemmas
+// (inl_ne_inr, case_inl, case_inr, cases) rely on spec_abs/spec_rep, the
+// Hilbert-choice axiom, and propositional machinery not expressible in the
+// proof language.  `case_eta` additionally requires `exists_elim` (which is
+// NOT a primitive rule) and composition at `coprod`-typed intermediate types
+// (not expressible in the current .cov type syntax, which only parses `bool`,
+// `nat`, `'a`, and `(fun ...)`).
+//
+// For this reason ALL five theorems are Rust givens here; `coprod.cov` imports
+// them and re-exports them so that the `cov::case_eta_cov` accessor works and
+// the `case_eta_cov_matches_rust` test verifies the conclusion.
+// ============================================================================
+
+/// The `coprod` seam environment: injection/case operators as `ConstDef::Op`s
+/// for the type-inferencer, and the five core lemmas as Rust-proved givens.
+pub fn coprod_env() -> crate::script::Env {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let gamma = Type::tfree("c");
+    let mut e = crate::script::Env::empty();
+
+    // -- operators (needed so the type-inferencer can build coprod-typed terms) --
+    use crate::script::ConstDef;
+    e.define_const("inl", ConstDef::Op(inl(alpha.clone(), beta.clone())));
+    e.define_const("inr", ConstDef::Op(inr(alpha.clone(), beta.clone())));
+    e.define_const(
+        "coprod_case",
+        ConstDef::Op(coprod_case(alpha.clone(), beta.clone(), gamma.clone())),
+    );
+
+    // -- seam givens (Rust-proved, used as axioms by coprod.cov) --
+
+    // ⊢ ∀(av:'a). ∀(bv:'b). ¬(inl av = inr bv)
+    let av = Term::free("av", alpha.clone());
+    let bv = Term::free("bv", beta.clone());
+    let ne = inl_ne_inr(&alpha, &beta, &av, &bv)
+        .and_then(|t| t.all_intro("bv", beta.clone()))
+        .and_then(|t| t.all_intro("av", alpha.clone()))
+        .expect("coprod_env: inl_ne_inr");
+    e.define_lemma("inl_ne_inr", ne);
+
+    // ⊢ ∀(f:'a→'c). ∀(g:'b→'c). ∀(av:'a).
+    //     coprod_case f g (inl av) = f av
+    let f = Term::free("f", Type::fun(alpha.clone(), gamma.clone()));
+    let g = Term::free("g", Type::fun(beta.clone(), gamma.clone()));
+    let av2 = Term::free("av", alpha.clone());
+    let ci = case_inl(&alpha, &beta, &gamma, &f, &g, &av2)
+        .and_then(|t| t.all_intro("av", alpha.clone()))
+        .and_then(|t| t.all_intro("g", Type::fun(beta.clone(), gamma.clone())))
+        .and_then(|t| t.all_intro("f", Type::fun(alpha.clone(), gamma.clone())))
+        .expect("coprod_env: case_inl");
+    e.define_lemma("case_inl", ci);
+
+    // ⊢ ∀(f:'a→'c). ∀(g:'b→'c). ∀(bv:'b).
+    //     coprod_case f g (inr bv) = g bv
+    let bv2 = Term::free("bv", beta.clone());
+    let cr = case_inr(&alpha, &beta, &gamma, &f, &g, &bv2)
+        .and_then(|t| t.all_intro("bv", beta.clone()))
+        .and_then(|t| t.all_intro("g", Type::fun(beta.clone(), gamma.clone())))
+        .and_then(|t| t.all_intro("f", Type::fun(alpha.clone(), gamma.clone())))
+        .expect("coprod_env: case_inr");
+    e.define_lemma("case_inr", cr);
+
+    // ⊢ ∀(c : coprod 'a 'b). (∃x:'a. c = inl x) ∨ (∃y:'b. c = inr y)
+    let c = Term::free("c", coprod(alpha.clone(), beta.clone()));
+    let ca = cases(&alpha, &beta, &c)
+        .and_then(|t| t.all_intro("c", coprod(alpha.clone(), beta.clone())))
+        .expect("coprod_env: cases");
+    e.define_lemma("cases", ca);
+
+    // ⊢ ∀(m : coprod 'a 'b → 'c).
+    //     m = coprod_case (m ∘ inl) (m ∘ inr)
+    //
+    // case_eta is kept as a Rust given: its proof requires exists_elim (not a
+    // primitive rule in the language) and composition at coprod-typed
+    // intermediate types (not expressible in the current .cov type syntax).
+    let m = Term::free("m", Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()));
+    let ce = case_eta(&alpha, &beta, &gamma, &m)
+        .and_then(|t| {
+            t.all_intro("m", Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()))
+        })
+        .expect("coprod_env: case_eta");
+    e.define_lemma("case_eta", ce);
+
+    e
+}
+
+crate::cov_theory! {
+    /// `coprod` theorems ported to `coprod.cov`, over `core` + the `coprodrpm` env.
+    pub mod cov from "coprod.cov" {
+        import "core"     = crate::script::Env::core();
+        import "coprodrpm" = crate::init::coprod::coprod_env();
+        "case_eta" => pub fn case_eta_cov;
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+
+    /// `case_eta` from `coprod.cov` must have the same conclusion as the
+    /// hand-written Rust `case_eta`.
+    #[test]
+    fn case_eta_cov_matches_rust() {
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let gamma = Type::tfree("c");
+        let m =
+            Term::free("m", Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()));
+        let rust_thm = case_eta(&alpha, &beta, &gamma, &m).expect("case_eta");
+        // The `cov` version is the universally-quantified form; instantiate at
+        // the same `m` to compare conclusions.
+        let cov_thm = cov::case_eta_cov().all_elim(m).expect("all_elim case_eta_cov");
+        assert_eq!(
+            cov_thm.concl(),
+            rust_thm.concl(),
+            "case_eta from coprod.cov must match the Rust proof"
+        );
+    }
+}
+
 use covalence_core::defs::coprod_spec;
 
 // ============================================================================

@@ -7,7 +7,7 @@
 //! This is the future-holding backing of an [`super::Env`]: its **single**
 //! namespace map holds every definition kind (consts, lemmas, tactics, rules)
 //! as a `LazyMap`, so any binding can still be **computing** — today only
-//! `#compute`-ing lemmas, but the same machinery covers "one async task per
+//! `#spawn`-ing lemmas, but the same machinery covers "one async task per
 //! definition" (e.g. a `bytes` const loaded from the network) with no new code.
 
 use covalence_core::Thm;
@@ -26,13 +26,13 @@ pub(super) enum Lazy<T: Clone> {
     Pending(Shared<BoxFuture<'static, Result<T, ScriptError>>>),
 }
 
-/// A lazily-computed theorem (a `#compute`-ing or proved lemma).
+/// A lazily-computed theorem (a `#spawn`-ing or proved lemma).
 #[allow(dead_code)]
 pub(super) type LazyThm = Lazy<Thm>;
 
 /// A name→[`Lazy<T>`] map with async getters. Cloning is cheap (an `imbl`
 /// persistent map of clonable handles). The bound `T: Clone + Send + Sync +
-/// 'static` is what `Shared`/`spawn_blocking` need.
+/// 'static` is what `Shared` needs.
 #[derive(Clone)]
 pub(super) struct LazyMap<T: Clone> {
     entries: imbl::HashMap<String, Lazy<T>>,

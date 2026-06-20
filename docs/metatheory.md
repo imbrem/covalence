@@ -228,8 +228,10 @@ we care about is unstatable without it.
 | Form | Meaning | Status |
 |---|---|---|
 | `X(A)` | `⊢_HOL Derivable_X ⌜A⌝` — *A* is a theorem of *X* | core |
+| `Derivable_Prop ⌜A⌝ ⟹ ⟦A⟧` | propositional logic sound, proved internally | **first milestone (§8)** |
 | `Derivable_X ⌜A⌝ ⟹ ⟦A⟧` | soundness of *X* under a model | core goal |
 | `PA(A) ⟹ HOL(A) ⟹ ZFC(A)` | proved theory transport | MVP-scope |
+| `HOL ⊢ ToHOL(S) ⟹ ZFC ⊢ ToZFC(S)` | source-language lowering to many targets | §8.1 |
 | `WASM(P,D,A) ⟹ ∃D'. ZFC(D',A)` | computational certificate | post-MVP |
 | `Isabelle[THRY](A) ⟹ THRY(A)` | checked external import | post-MVP |
 | `GT3(A)`, `Nat → ZFSet` | locales/contexts, model embeddings | future |
@@ -237,3 +239,200 @@ we care about is unstatable without it.
 Throughout, the metatheory stays **HOL Light over two variable layers**,
 and every object theory is admitted by *definition + checked proof* — the
 kernel TCB never grows to accommodate a new logic.
+
+---
+
+## 7. One surface for logic *and* metalogic — handler-dispatched reasoning
+
+The organizing engineering bet behind all of the above: **the machinery
+for reasoning *in* a logic and the machinery for reasoning *about*
+logics are the same machinery.** A proof in PA, a proof in HOL, and a
+proof of `PA(A) ⟹ HOL(A)` in our metatheory are all built from one
+surface language, one elaborator, one tactic vocabulary — differing only
+in *which handlers are installed in the environment*.
+
+### 7.1 Why they must be shared
+
+Object theories are reified *inside* HOL (§1): a PA formula is HOL data
+of sort `PAForm`, `Derivable_PA` is an ordinary HOL predicate, and
+`PA(A)` is the HOL theorem `⊢ Derivable_PA ⌜A⌝`. So a "proof in PA" is
+literally a HOL proof about `Derivable_PA` — it runs through the same
+kernel rules and the same `(#by …)` tactic engine as any other HOL
+proof. There is no separate PA prover to build; there is the HOL prover
+plus the PA derivation constructors (§4). The same holds one level up:
+the morphism `HOL(A) ⟹ ZFC(A)` is a HOL theorem about two reified
+theories, proved with the same tactics. **Metalogic is not a second
+system; it is the object system pointed at reified syntax.**
+
+This is why "share as much syntax and tactic machinery as possible
+between logic and metalogic" is a design *requirement*, not an
+aspiration: anything not shared is a second prover we would have to build
+and trust.
+
+### 7.2 Reasoning as an algebraic effect, dispatched by the environment
+
+A tactic engine performs a handful of *open-ended operations* —
+rewriting, unification, reduction/normalization, decision procedures. The
+decisive design move is to treat each as an **algebraic effect**: the
+tactic *requests* "unify these two terms" or "reduce this term", and the
+**environment supplies the handler**. Different logics — and different
+problems within one logic — install different handlers:
+
+- a **first-order** environment installs syntactic first-order
+  unification;
+- a **higher-order** environment installs (pattern) higher-order
+  unification;
+- a **dependent-type** environment installs a reducer that knows Π/Σ and
+  definitional equality;
+- a *domain* handler installs an **arithmetic-aware unifier** that solves
+  `Bits[n + m] =?= Bits[m + n]` by normalizing index arithmetic (the
+  SAIL-style bitvector-spec use case), or a reducer JIT-compiled to WASM
+  for a hot theory.
+
+Soundness never depends on the handler: every handler ultimately emits a
+*kernel-checkable* obligation (a `Thm`, a rewrite witnessed by `=`, a
+certificate the kernel re-checks — exactly the "pluggable computation" of
+[`surface-syntax.md`](./surface-syntax.md) §1.1). A wrong or slow handler
+costs time or fails; it cannot forge a theorem. So the *same* surface
+proof can be replayed under different handler sets, and the metalogic can
+quantify over *which handler set corresponds to which object logic*.
+
+### 7.3 Where this already exists in the code (the seed)
+
+The `covalence-hol` script layer is the first, deliberately-small
+instance of this design:
+
+- **The environment is already the dispatcher.** `Env` resolves every
+  proof-step head — tactic, rule, lemma — by name through one lazy
+  namespace; installing a different `Env` swaps the available reasoning.
+  Registering a host tactic (`#register-ffi-tactic`) is exactly "install
+  a handler".
+- **Unification is already a registered seam.** `Env::apply_unify`
+  (lemma application) and `Env::rw_unify` (equation rewriting) are kept
+  as *separate methods on the environment* precisely so a logic- or
+  domain-specific unifier can be registered later without touching the
+  rules that call them. The arithmetic-aware `Bits[n+m]` unifier is a
+  future `rw_unify` handler.
+- **Computation is already pluggable** (`reduce`, `delta`, WASM deciders
+  via observers) and produces kernel-checked equalities, never trusted
+  normal forms.
+
+The gap between today and the vision is *generality* — one hard-wired
+unifier, a handler set fixed per `Env` — not architecture. The
+effect-handler framing is the name for finishing that generalization.
+
+---
+
+## 8. The first internal language: S-expressions → propositional logic
+
+Concretely, the **first** object language we build inside the metatheory
+is the smallest one that exercises the whole pipeline end to end, and it
+is the current near-term priority:
+
+1. **Reify S-expressions in HOL.** Define an `SExpr` datatype inside the
+   kernel (atoms + lists over `bytes`), with constructors and recursor —
+   the same move as `defs/list.rs`, specialized to the syntax we already
+   parse. This is the universal carrier for *all* object-language syntax:
+   every reified logic's formulas are `SExpr`s.
+2. **Define propositional logic over it.** A `PropForm` predicate carving
+   out the well-formed propositional formulas (variables, `∧ ∨ ¬ ⟹`), a
+   `Derivable_Prop` inductive derivability predicate (a Hilbert system or
+   natural deduction), and a denotation `⟦·⟧ : PropForm → bool` into HOL's
+   own `bool`.
+3. **Prove it sound *in the metalogic*.** Establish `⊢_HOL
+   Derivable_Prop ⌜A⌝ ⟹ ⟦A⟧` — the §2 soundness schema at its smallest.
+   Propositional logic is *weaker* than our HOL metatheory, so this proof
+   is fully within reach: an induction over derivations, each case
+   discharged by the kernel's existing propositional rules (`prop_eq`, the
+   connective rules). **This is the first non-trivial metatheorem the
+   system proves about a logic, using only itself.**
+4. **Translate a subset of HOL into it.** A function `ToProp : HOLTm ⇀
+   PropForm` on the propositional fragment of HOL terms, with a theorem
+   relating `⟦ToProp t⟧` back to `t` — the first *language morphism* (§3),
+   and the seed of the source-lowers-to-many-targets picture below.
+
+This milestone is small but total: it touches reified syntax (1), an
+object theory with its own derivations (2), a soundness theorem proved
+internally (3), and a theory morphism (4). Everything larger — FOL, PA,
+second-order arithmetic as multi-sorted FOL, ZFC, MLTT — is the same four
+moves at greater scale.
+
+### 8.1 The picture this generalizes to
+
+The endgame the surface layer aims at: a user writes in a **source
+language** that *lowers to several targets*. For a source term `S`, the
+system tracks `ToHOL(S)` and `ToZFC(S)` as its interpretations, and
+statements like
+
+```
+   HOL ⊢ ToHOL(S)   ⟹   ZFC ⊢ ToZFC(S)
+```
+
+are theorems **of our metalogic** (this HOL), which *also* formalizes
+`ToHOL` and `ToZFC` themselves. "Provable in which logic, on which
+language" becomes an ordinary object of discourse — the unified surface
+(`surface/mod.rs`, [`surface-syntax.md`](./surface-syntax.md)) is where a
+term will be carried *together with its interpretations*, letting the user
+ask the entailment questions of [`surface-syntax.md`](./surface-syntax.md)
+§6 across logics. The S-expr → propositional-logic milestone is the
+one-target, one-direction base case of exactly this.
+
+---
+
+## 9. Design compatibility audit
+
+Which parts of today's design push *toward* this vision, and which resist?
+
+### Most compatible (the design already leans in)
+
+- **Everything-reified-in-HOL.** The kernel is HOL with conservative
+  extension (`define` / `new_type_definition`) and literals as data
+  (`bytes`, `Int`). A new object logic is *a datatype + an inductive
+  predicate + checked proofs*; the TCB never grows
+  ([`kernel-design.md`](./kernel-design.md)). The single biggest enabler —
+  exactly what §1/§8 need.
+- **The environment-as-dispatcher script layer.** Name-resolved
+  tactics/rules/lemmas through one `Env`, host-tactic registration, and
+  unification kept behind `Env` methods (§7.3) — the effect-handler design
+  is a generalization of what is already there, not a rewrite.
+- **Pluggable computation with kernel re-checking.** `reduce`/`delta`,
+  the observer/WASM-certificate substrate, `prop_eq` — all already
+  "untrusted handler emits checkable obligation". Soundness is independent
+  of the handler *today*.
+- **Content-addressed fragments + S-expr serialization.** Object-language
+  syntax wants a universal carrier and by-hash references; the store +
+  canonical S-expr format are built for it.
+- **The polymorphic-constant / `exists` machinery in the script layer.**
+  Reasoning about reified syntax leans on schematic, polymorphic
+  statements and existential derivability (`∃ derivation. …`); broadening
+  the elaborator and rule set that way is directly on-path.
+
+### Least compatible (friction to budget for)
+
+- **One hard-wired unifier, fixed per `Env`.** `apply_unify`/`rw_unify`
+  are *seams* but there is still exactly one matcher, and the handler set
+  is static for a given environment. True effect-style dispatch (multiple
+  handlers, selected by goal/sort, composable) is unbuilt — the §7.2
+  generality is the real work.
+- **The elaborator is sync and monomorphic-by-default.** `infer.rs` is HM
+  over a fixed kernel type grammar; it has no notion of "elaborate this
+  term *in object language L*" or of metavariable layering (§5's schematic
+  FOL). Multi-language surface terms (§8.1) need the elaborator to carry an
+  interpretation target.
+- **Rank-1 HOL Light.** Genuinely Haskell-like source languages and some
+  object type systems want higher-kinded quantification (HOL-ω, §5.2);
+  rank-1 models each instance separately. Deferred on purpose, but a real
+  ceiling for the most ambitious targets (MLTT, functor-generic theories).
+- **No reified `SExpr`/derivation datatypes yet.** §8 steps 1–2 are not
+  started; `init/` has list/prod/etc. but not the syntax-of-a-logic layer.
+  Green-field, though squarely within existing kernel capability.
+- **Async/runtime ergonomics.** The cooperative async core is the right
+  shape for handler dispatch and background deciders, but its rough edges
+  (the nested-runtime hazard that turned `#compute` into `#spawn`) need to
+  settle before heavy handler-driven workloads ride on it.
+
+The throughline: **the foundation (reify-in-HOL, env-dispatched tactics,
+checked-handler computation) is strongly aligned; the generality
+(multi-handler effect dispatch, interpretation-aware elaboration, higher
+kinds) is the deliberately-deferred work.** Nothing in the current design
+has to be undone to get there — the gaps are all *additive*.

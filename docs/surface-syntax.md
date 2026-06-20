@@ -73,6 +73,18 @@ HOL-ω direction in [`metatheory.md`](./metatheory.md) §5.2: a genuinely
 Haskell-like *type* language wants higher-kinded type-constructor
 variables.)
 
+Generalized one step further, this is **handler dispatch**: reduction,
+rewriting, and *unification* are open-ended operations the tactic engine
+*requests* and the **environment supplies a handler** for — so a
+first-order, higher-order, dependent-type, or domain-specialized
+(arithmetic-aware `Bits[n+m]` unifier, …) handler set makes a *different
+logic* feel native through the *same* surface. The proof-theoretic
+treatment is [`metatheory.md`](./metatheory.md) §7; the user-facing /
+product framing is [`frontend.md`](./frontend.md) §4. The seed exists
+today: the script layer's `Env` is already the dispatcher, and
+`Env::apply_unify` / `Env::rw_unify` are registered seams kept separate so
+a custom unifier can be installed later.
+
 ### 1.2 Analogy: SQL with set theory, and an LLM query planner
 
 The same idea in one sentence: **imagine writing queries in SQL, except

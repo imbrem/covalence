@@ -133,3 +133,10 @@ Reconnect the shell / REPL / server so we can run **`covalence-core`
 proofs from the shell again**; reinstate the HOL Python bindings on
 `covalence-hol`; wire in the stores, WASM oracles (via the observer
 rules), and tree-store. Then ship.
+
+The REPL is also the seed of the interactive "play, then distill"
+frontend ([`frontend.md`](./frontend.md) §6): the `.cov` script layer
+already replays untrusted proofs against the kernel by content hash
+(`check-cov` / `check-cov-hash`), so a session transcript is the
+embryonic notebook a later pass distills into a content-addressed
+theory. That distillation layer is post-MVP.

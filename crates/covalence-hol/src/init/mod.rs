@@ -100,3 +100,84 @@ pub use covalence_core::defs::*;
 
 pub use ext::{TermExt, ThmExt};
 pub use logic::truth;
+
+// ============================================================================
+// Standard-library prelude for `.cov` proof scripts
+// ============================================================================
+
+use std::sync::Arc;
+
+use crate::script::{Env, NamedThm, ScriptError, Tactic};
+
+/// Resolve a standard-library theory environment by name — the `resolver`
+/// argument to [`crate::script::run`]. Knows the public catalogue of ported
+/// theories that a `.cov` proof may `(#import …)`:
+///
+/// - `core` — the kernel prelude (the logical primitives + rule registry)
+/// - `logic` — propositional connectives + their proved properties
+/// - `nat` — Peano arithmetic theorems
+/// - `set` — set algebra / order theorems
+///
+/// Each environment is built — and its theorems proved — lazily, only when a
+/// script actually imports it.
+pub fn library_env(name: &str) -> Option<Env> {
+    match name {
+        "core" => Some(Env::core()),
+        "logic" => Some(logic::cov::env()),
+        "nat" => Some(nat::cov::env()),
+        "set" => Some(set::cov::env()),
+        _ => None,
+    }
+}
+
+/// Resolve a standard-library FFI tactic by name — the `tactics` argument to
+/// [`crate::script::run`]. Currently provides `tauto`, the propositional
+/// decision procedure used by the `logic` theory.
+pub fn library_tactic(name: &str) -> Option<Arc<dyn Tactic>> {
+    match name {
+        "tauto" => Some(Arc::new(logic::Tauto)),
+        _ => None,
+    }
+}
+
+/// Parse and check a `.cov` proof script against the standard-library prelude
+/// ([`library_env`] / [`library_tactic`]), returning the theorems it proves.
+///
+/// This is the entry point a host (e.g. the REPL) uses to verify a
+/// user-authored proof: nothing in the text is trusted — every theorem is
+/// re-derived by the kernel.
+pub fn check_script(src: &str) -> Result<Vec<NamedThm>, ScriptError> {
+    // Build each imported standard-library theory up front, on *this* thread.
+    // A `cov_theory!` env's `LazyLock` drives its own proof through
+    // `crate::script::run` → `block_on`, which panics if forced from inside
+    // another runtime — and the proof resolver runs inside exactly such a
+    // runtime. The REPL/host calls `check_script` from outside any runtime, so
+    // priming here means the resolver only ever clones an already-built env.
+    //
+    // This is portable (no OS threads — browser WASM has none) but a
+    // stop-gap: once `script::block_on` becomes a nestable synchronous
+    // executor (`futures::executor::block_on`), forcing nests safely and this
+    // pre-pass can go.
+    prime_library_imports(src);
+    Ok(crate::script::run(src, library_env, library_tactic)?.thms)
+}
+
+/// Eagerly build every standard-library theory the script `(#import …)`s, so it
+/// is cached before the proof runtime starts (see [`check_script`]). Scanning
+/// the top-level `(#import NAME)` forms matches exactly the set of names the
+/// resolver will be asked for. Best-effort: a malformed source is left for
+/// [`crate::script::run`] to report.
+fn prime_library_imports(src: &str) {
+    let Ok(forms) = covalence_sexp::parse(src) else {
+        return;
+    };
+    for form in &forms {
+        if let Some(items) = form.as_list()
+            && items.first().and_then(|s| s.as_symbol()) == Some("#import")
+            && let Some(name) = items.get(1).and_then(|s| s.as_symbol())
+        {
+            // `core` needs no priming; the `cov_theory!` envs do.
+            let _ = library_env(name);
+        }
+    }
+}

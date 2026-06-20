@@ -369,6 +369,177 @@ fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
 }
 
+// ============================================================================
+// The `relrec` environment — seam givens + operators for `rel.cov`.
+// ============================================================================
+
+/// Build `∀x y. holds r x y = holds s x y` (where `r` and `s` are already
+/// free variables), as a fully-closed term for use in the `ext` axiom.
+fn build_all_holds_eq(alpha: &Type, beta: &Type, r: &Term, s: &Term) -> Result<Term> {
+    let x = Term::free("_ext_x", alpha.clone());
+    let y = Term::free("_ext_y", beta.clone());
+    let inner = holds(alpha, beta, r, &x, &y)
+        .equals(holds(alpha, beta, s, &x, &y))?
+        .forall("_ext_y", beta.clone())?
+        .forall("_ext_x", alpha.clone())?;
+    Ok(inner)
+}
+
+/// The `rel` environment imported by `rel.cov`: the seam lemmas as
+/// universally-quantified **given** theorems, plus the operators
+/// (`rel.holds`, `rel.converse`, `rel.id`) as `ConstDef::Op`s.
+pub fn rel_env() -> crate::script::Env {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+
+    let mut e = crate::script::Env::empty();
+
+    // ---- operators -----------------------------------------------------------
+    e.define_const(
+        "rel.holds",
+        crate::script::ConstDef::Op(rel_holds(alpha.clone(), beta.clone())),
+    );
+    // `rel.converse` at ('a, 'b): `rel 'a 'b → rel 'b 'a`.
+    e.define_const(
+        "rel.converse",
+        crate::script::ConstDef::Op(rel_converse(alpha.clone(), beta.clone())),
+    );
+    // `rel.converse.ba` at ('b, 'a): `rel 'b 'a → rel 'a 'b`.
+    // Used in the double-converse conclusion `rel.converse.ba (rel.converse r) = r`
+    // where `r : rel 'a 'b` to avoid type-variable aliasing in the elaborator.
+    e.define_const(
+        "rel.converse.ba",
+        crate::script::ConstDef::Op(rel_converse(beta.clone(), alpha.clone())),
+    );
+    // `rel.converse.aa` at ('a, 'a): `rel 'a 'a → rel 'a 'a`.
+    // Used in `converse_id`: `rel.converse.aa rel.id = rel.id`.
+    e.define_const(
+        "rel.converse.aa",
+        crate::script::ConstDef::Op(rel_converse(alpha.clone(), alpha.clone())),
+    );
+    e.define_const(
+        "rel.id",
+        crate::script::ConstDef::Op(rel_id(alpha.clone())),
+    );
+    e.define_const(
+        "rel.mk",
+        crate::script::ConstDef::Op(rel_mk(alpha.clone(), beta.clone())),
+    );
+
+    // ---- seam givens --------------------------------------------------------
+    // `holds_mk_ax`: ∀p x y. rel.holds (rel.mk p) x y = p x y
+    let holds_mk_ax = (|| -> Result<Thm> {
+        let p_ty = Type::fun(alpha.clone(), Type::fun(beta.clone(), Type::bool()));
+        let p = Term::free("p", p_ty.clone());
+        let x = Term::free("x", alpha.clone());
+        let y = Term::free("y", beta.clone());
+        holds_mk(&alpha, &beta, &x, &y, &p)?
+            .all_intro("y", beta.clone())?
+            .all_intro("x", alpha.clone())?
+            .all_intro("p", p_ty)
+    })()
+    .expect("rel_env: holds_mk_ax");
+    e.define_lemma("holds_mk_ax", holds_mk_ax);
+
+    // `ext_ax`: ∀r s. (∀x y. holds r x y = holds s x y) ⟹ r = s
+    // (r, s : rel 'a 'b — two distinct type parameters)
+    let ext_ax = (|| -> Result<Thm> {
+        let r = Term::free("r", rel(alpha.clone(), beta.clone()));
+        let s = Term::free("s", rel(alpha.clone(), beta.clone()));
+        let all_holds_eq_term = build_all_holds_eq(&alpha, &beta, &r, &s)?;
+        let holds_eq = Thm::assume(all_holds_eq_term.clone())?;
+        let r_eq_s = ext(&alpha, &beta, &r, &s, holds_eq)?;
+        r_eq_s
+            .imp_intro(&all_holds_eq_term)?
+            .all_intro("s", rel(alpha.clone(), beta.clone()))?
+            .all_intro("r", rel(alpha.clone(), beta.clone()))
+    })()
+    .expect("rel_env: ext_ax");
+    e.define_lemma("ext_ax", ext_ax);
+
+    // `ext_ax_aa`: ∀r s. (∀x y. holds r x y = holds s x y) ⟹ r = s
+    // (r, s : rel 'a 'a — both type parameters are 'a; for use in converse_id)
+    let ext_ax_aa = (|| -> Result<Thm> {
+        let r = Term::free("r", rel(alpha.clone(), alpha.clone()));
+        let s = Term::free("s", rel(alpha.clone(), alpha.clone()));
+        let all_holds_eq_term = build_all_holds_eq(&alpha, &alpha, &r, &s)?;
+        let holds_eq = Thm::assume(all_holds_eq_term.clone())?;
+        let r_eq_s = ext(&alpha, &alpha, &r, &s, holds_eq)?;
+        r_eq_s
+            .imp_intro(&all_holds_eq_term)?
+            .all_intro("s", rel(alpha.clone(), alpha.clone()))?
+            .all_intro("r", rel(alpha.clone(), alpha.clone()))
+    })()
+    .expect("rel_env: ext_ax_aa");
+    e.define_lemma("ext_ax_aa", ext_ax_aa);
+
+    // `holds_id_ax`: ∀x y. rel.holds rel.id x y = (x = y)
+    let holds_id_ax = (|| -> Result<Thm> {
+        let x = Term::free("x", alpha.clone());
+        let y = Term::free("y", alpha.clone());
+        holds_id(&alpha, &x, &y)?
+            .all_intro("y", alpha.clone())?
+            .all_intro("x", alpha.clone())
+    })()
+    .expect("rel_env: holds_id_ax");
+    e.define_lemma("holds_id_ax", holds_id_ax);
+
+    // `holds_converse_ax`: ∀r y x. rel.holds (rel.converse r) y x = rel.holds r x y
+    // (r : rel 'a 'b, y : 'b, x : 'a)
+    let holds_converse_ax = (|| -> Result<Thm> {
+        let r = Term::free("r", rel(alpha.clone(), beta.clone()));
+        let y = Term::free("y", beta.clone());
+        let x = Term::free("x", alpha.clone());
+        holds_converse(&alpha, &beta, &r, &y, &x)?
+            .all_intro("x", alpha.clone())?
+            .all_intro("y", beta.clone())?
+            .all_intro("r", rel(alpha.clone(), beta.clone()))
+    })()
+    .expect("rel_env: holds_converse_ax");
+    e.define_lemma("holds_converse_ax", holds_converse_ax);
+
+    // `holds_converse_ax_aa`: ∀r y x. rel.holds (rel.converse.aa r) y x = rel.holds r x y
+    // (r : rel 'a 'a, y : 'a, x : 'a) — for use in converse_id where rel.id : rel 'a 'a
+    let holds_converse_ax_aa = (|| -> Result<Thm> {
+        let r = Term::free("r", rel(alpha.clone(), alpha.clone()));
+        let y = Term::free("y", alpha.clone());
+        let x = Term::free("x", alpha.clone());
+        holds_converse(&alpha, &alpha, &r, &y, &x)?
+            .all_intro("x", alpha.clone())?
+            .all_intro("y", alpha.clone())?
+            .all_intro("r", rel(alpha.clone(), alpha.clone()))
+    })()
+    .expect("rel_env: holds_converse_ax_aa");
+    e.define_lemma("holds_converse_ax_aa", holds_converse_ax_aa);
+
+    // `holds_converse_ax_ba`: ∀r y x. rel.holds (rel.converse r) y x = rel.holds r x y
+    // (r : rel 'b 'a, y : 'a, x : 'b) — for use with r = (converse r') where r' : rel 'a 'b
+    let holds_converse_ax_ba = (|| -> Result<Thm> {
+        let r = Term::free("r", rel(beta.clone(), alpha.clone()));
+        let y = Term::free("y", alpha.clone());
+        let x = Term::free("x", beta.clone());
+        holds_converse(&beta, &alpha, &r, &y, &x)?
+            .all_intro("x", beta.clone())?
+            .all_intro("y", alpha.clone())?
+            .all_intro("r", rel(beta.clone(), alpha.clone()))
+    })()
+    .expect("rel_env: holds_converse_ax_ba");
+    e.define_lemma("holds_converse_ax_ba", holds_converse_ax_ba);
+
+    e
+}
+
+crate::cov_theory! {
+    /// rel lemmas ported to `rel.cov`, over `core` + the `rel` env.
+    pub mod cov from "rel.cov" {
+        import "core" = crate::script::Env::core();
+        import "logic" = crate::init::logic::cov::env();
+        import "relprim" = crate::init::rel::rel_env();
+        "converse_converse" => pub fn converse_converse_cov;
+        "converse_id"       => pub fn converse_id_cov;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,5 +672,22 @@ mod tests {
         let id = rel_id(alpha());
         let conv_id = converse(&alpha(), &alpha(), &id);
         assert_eq!(thm.concl(), &conv_id.equals(id).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::cov;
+
+    #[test]
+    fn rel_cov_matches_rust() {
+        assert_eq!(
+            cov::converse_converse_cov().concl(),
+            super::converse_converse().concl()
+        );
+        assert_eq!(
+            cov::converse_id_cov().concl(),
+            super::converse_id().concl()
+        );
     }
 }

@@ -53,6 +53,10 @@ enum ETerm {
     Bound(u32),
     /// An already-typed leaf (numeral, catalogue operator, `true`/`false`).
     Lit(Term),
+    /// A polymorphic operator *scheme* instantiated at this use site: the
+    /// scheme term plus the (type-variable → fresh metavariable) binding to
+    /// resolve at zonk time and substitute into the scheme.
+    Poly(Term, Vec<(String, ETy)>),
     App(Box<ETerm>, Box<ETerm>),
     /// Low-level de-Bruijn abstraction `(abs TYPE BODY)`.
     AbsRaw(ETy, Box<ETerm>),
@@ -196,6 +200,26 @@ impl<'e> Elab<'e> {
         })
     }
 
+    /// Instantiate a **polymorphic** operator scheme at a fresh use site:
+    /// each of the scheme term's free type variables gets a fresh
+    /// metavariable, and the operator's type is read off the scheme with
+    /// those variables replaced. Returns the `ETerm::Poly` leaf (which
+    /// substitutes the resolved metavariables into the scheme at zonk) and
+    /// its instantiated type.
+    fn inst_poly(&mut self, t: &Term) -> R<(ETerm, ETy)> {
+        let mut tvars = std::collections::BTreeSet::new();
+        subst::collect_term_tvars(t, &mut tvars);
+        let mut binding: Vec<(String, ETy)> = Vec::new();
+        let mut map: HashMap<String, ETy> = HashMap::new();
+        for tv in &tvars {
+            let m = self.fresh();
+            map.insert(tv.to_string(), m.clone());
+            binding.push((tv.to_string(), m));
+        }
+        let ety = ety_inst(&t.type_of()?, &map);
+        Ok((ETerm::Poly(t.clone(), binding), ety))
+    }
+
     fn gen_name(&mut self, i: usize) -> String {
         if let Some(n) = self.gen_names.get(&i) {
             return n.clone();
@@ -264,6 +288,7 @@ impl<'e> Elab<'e> {
                         let ety = self.from_type(&t.type_of()?)?;
                         Ok((ETerm::Lit(t.clone()), ety))
                     }
+                    Some(ConstDef::Poly(t)) => self.inst_poly(&t),
                     Some(ConstDef::Eq) => {
                         Err(ScriptError::Syntax("infer: `=` needs two arguments".into()))
                     }
@@ -371,16 +396,12 @@ impl<'e> Elab<'e> {
             }
             other => match self.env.lookup_const(other) {
                 Some(ConstDef::Op(t)) => {
-                    let mut acc_ty = self.from_type(&t.type_of()?)?;
-                    let mut acc = ETerm::Lit(t);
-                    for a in &ch[1..] {
-                        let (ea, ta) = self.infer(a)?;
-                        let r = self.fresh();
-                        self.unify(&acc_ty, &ETy::Fun(Box::new(ta), Box::new(r.clone())))?;
-                        acc = ETerm::App(Box::new(acc), Box::new(ea));
-                        acc_ty = r;
-                    }
-                    Ok((acc, acc_ty))
+                    let head = (ETerm::Lit(t.clone()), self.from_type(&t.type_of()?)?);
+                    self.apply_args(head, &ch[1..])
+                }
+                Some(ConstDef::Poly(t)) => {
+                    let head = self.inst_poly(&t)?;
+                    self.apply_args(head, &ch[1..])
                 }
                 Some(ConstDef::Eq) => {
                     arity(ch, 3, other)?;
@@ -394,6 +415,20 @@ impl<'e> Elab<'e> {
                 None => Err(ScriptError::Unbound(other.into())),
             },
         }
+    }
+
+    /// Curry a (already-inferred) operator head over a list of argument
+    /// surface terms, unifying each application.
+    fn apply_args(&mut self, head: (ETerm, ETy), args: &[SExpr]) -> R<(ETerm, ETy)> {
+        let (mut acc, mut acc_ty) = head;
+        for a in args {
+            let (ea, ta) = self.infer(a)?;
+            let r = self.fresh();
+            self.unify(&acc_ty, &ETy::Fun(Box::new(ta), Box::new(r.clone())))?;
+            acc = ETerm::App(Box::new(acc), Box::new(ea));
+            acc_ty = r;
+        }
+        Ok((acc, acc_ty))
     }
 
     fn infer_binder(&mut self, ch: &[SExpr], kind: BinderKind) -> R<(ETerm, ETy)> {
@@ -435,6 +470,14 @@ impl<'e> Elab<'e> {
             ETerm::Free(n, ety) => Term::free(n.as_str(), self.to_type(ety)?),
             ETerm::Bound(i) => Term::bound(*i),
             ETerm::Lit(t) => t.clone(),
+            ETerm::Poly(t, binding) => {
+                let mut sub: std::collections::BTreeMap<smol_str::SmolStr, Type> =
+                    std::collections::BTreeMap::new();
+                for (tv, ety) in binding {
+                    sub.insert(smol_str::SmolStr::from(tv.as_str()), self.to_type(ety)?);
+                }
+                subst::subst_tfrees_in_term(t, &sub)
+            }
             ETerm::App(f, x) => Term::app(self.zonk(f)?, self.zonk(x)?),
             ETerm::AbsRaw(d, b) => Term::abs(self.to_type(d)?, self.zonk(b)?),
             ETerm::Lam(n, d, b) => {
@@ -459,6 +502,30 @@ impl<'e> Elab<'e> {
             }
             ETerm::Eq(x, y) => HolLightCtx::new().mk_eq(self.zonk(x)?, self.zonk(y)?)?,
         })
+    }
+}
+
+/// Convert a kernel `Type` to an `ETy`, replacing each free type variable
+/// named in `map` with its assigned (fresh metavariable) `ETy`. Used to read
+/// the instantiated type of a polymorphic operator scheme. Unmapped type
+/// variables are kept literal (they are not schematic parameters).
+fn ety_inst(ty: &Type, map: &HashMap<String, ETy>) -> ETy {
+    match ty.kind() {
+        TypeKind::TFree(n) => map
+            .get(n.as_str())
+            .cloned()
+            .unwrap_or_else(|| ETy::TFree(n.to_string())),
+        TypeKind::Bool => ETy::Bool,
+        TypeKind::Nat => ETy::Nat,
+        TypeKind::Fun(a, b) => ETy::Fun(Box::new(ety_inst(a, map)), Box::new(ety_inst(b, map))),
+        TypeKind::Spec(s, args) => {
+            ETy::Spec(s.clone(), args.iter().map(|a| ety_inst(a, map)).collect())
+        }
+        TypeKind::Tycon(n, args) => {
+            ETy::Tycon(n.to_string(), args.iter().map(|a| ety_inst(a, map)).collect())
+        }
+        // Bound type variables don't appear in a closed operator type.
+        _ => ETy::TFree("?".into()),
     }
 }
 
@@ -520,4 +587,69 @@ pub fn elaborate_concl(
         .map(|(n, ety)| Ok((n.clone(), e.to_type(ety)?)))
         .collect::<R<Vec<_>>>()?;
     Ok((term, vars))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::script::Env;
+    use covalence_core::TermKind;
+
+    fn parse(src: &str) -> SExpr {
+        covalence_sexp::parse(src)
+            .expect("parse")
+            .into_iter()
+            .next()
+            .expect("one expr")
+    }
+
+    /// A polymorphic predicate scheme `f : 'a → bool`, registered as `Poly`.
+    fn poly_env() -> Env {
+        let mut e = Env::empty();
+        let f = Term::const_("f", Type::fun(Type::tfree("a"), Type::bool()));
+        e.define_const("f", ConstDef::Poly(f));
+        e
+    }
+
+    /// `Poly` instantiates the scheme's type variables at each use site, so
+    /// `f` applied to the `nat` literal `0` lands at `nat → bool`.
+    #[test]
+    fn poly_const_instantiates_at_use_site() {
+        let env = poly_env();
+        let scope = Scope::new();
+        let t = elaborate_term(&parse("(f 0)"), &scope, &env).expect("elaborate");
+        assert_eq!(t.type_of().unwrap(), Type::bool());
+        let TermKind::App(head, _) = t.kind() else {
+            panic!("expected `f 0`")
+        };
+        assert_eq!(
+            head.type_of().unwrap(),
+            Type::fun(Type::nat(), Type::bool())
+        );
+    }
+
+    /// The same `Poly` constant used at *two* distinct instances in one term:
+    /// `f` at `nat` (the inner `(f 0)`) and at `bool` (the outer `f` applied
+    /// to that `bool` result). A monomorphic `Op` could not — its rigid `'a`
+    /// cannot be both `nat` and `bool`.
+    #[test]
+    fn poly_const_two_instances_one_term() {
+        let env = poly_env();
+        let scope = Scope::new();
+        // (= (f 0) (f (f 0)))  —  f at nat (inner) and f at bool (outer).
+        let t =
+            elaborate_term(&parse("(= (f 0) (f (f 0)))"), &scope, &env).expect("elaborate");
+        assert_eq!(t.type_of().unwrap(), Type::bool());
+    }
+
+    /// Counterpart: registered as a monomorphic `Op` at `'a`, applying `f` to
+    /// the concrete `nat` `0` is a rigid-type mismatch.
+    #[test]
+    fn mono_const_rejects_off_type_use() {
+        let mut e = Env::empty();
+        let f = Term::const_("f", Type::fun(Type::tfree("a"), Type::bool()));
+        e.define_const("f", ConstDef::Op(f));
+        let scope = Scope::new();
+        assert!(elaborate_term(&parse("(f 0)"), &scope, &e).is_err());
+    }
 }

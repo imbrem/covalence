@@ -6,7 +6,7 @@
 //! resolution lives in [`super::env::Env`]; the variable scope in
 //! [`super::scope::Scope`].
 
-use covalence_core::{Term, Type};
+use covalence_core::{Term, Type, defs};
 use covalence_sexp::{Atom, SExp, SExpr};
 
 use super::{ScriptError, env::Env, scope::Scope};
@@ -46,6 +46,44 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                     acc = Type::fun(t, acc);
                 }
                 Ok(acc)
+            }
+            // TypeSpec type constructors (two type-argument specs from defs/).
+            // Syntax: `(rel A B)`, `(set A)`, `(option A)`, `(result A B)`.
+            "rel" => {
+                if ch.len() != 3 {
+                    return Err(ScriptError::Syntax(
+                        "rel: expected (rel A B)".into(),
+                    ));
+                }
+                Ok(Type::spec(
+                    defs::rel_spec(),
+                    vec![parse_type(&ch[1])?, parse_type(&ch[2])?],
+                ))
+            }
+            "set" => {
+                if ch.len() != 2 {
+                    return Err(ScriptError::Syntax("set: expected (set A)".into()));
+                }
+                Ok(Type::spec(defs::set_spec(), vec![parse_type(&ch[1])?]))
+            }
+            "option" => {
+                if ch.len() != 2 {
+                    return Err(ScriptError::Syntax(
+                        "option: expected (option A)".into(),
+                    ));
+                }
+                Ok(Type::spec(defs::option_spec(), vec![parse_type(&ch[1])?]))
+            }
+            "result" => {
+                if ch.len() != 3 {
+                    return Err(ScriptError::Syntax(
+                        "result: expected (result A B)".into(),
+                    ));
+                }
+                Ok(Type::spec(
+                    defs::result_spec(),
+                    vec![parse_type(&ch[1])?, parse_type(&ch[2])?],
+                ))
             }
             other => Err(ScriptError::Syntax(format!("unknown type head: {other}"))),
         },

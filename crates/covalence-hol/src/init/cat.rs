@@ -25,6 +25,7 @@
 use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 
 use crate::init::ext::{TermExt, ThmExt};
+use crate::script::{ConstDef, Env};
 
 pub use covalence_core::defs::{compose, compose_spec, flip, id, id_spec, konst};
 
@@ -159,6 +160,133 @@ pub fn comp_cong(g_eq: &Thm, f_eq: &Thm) -> Result<Thm> {
         .cong_app(f_eq.clone())
 }
 
+// ============================================================================
+// .cov proof language support
+// ============================================================================
+
+/// The primitives environment for `cat.cov`: the composition operators as
+/// `Op` entries plus the Rust-only `id_left` / `id_right` / `comp_assoc`
+/// lemmas as universally-quantified givens.
+///
+/// `id_left`, `id_right`, `comp_assoc` stay as Rust givens because the
+/// polymorphic `id` type instantiation causes TFree unification clashes in
+/// `.cov` that cannot be resolved without new elaborator machinery.
+///
+/// `fun_ext`, `comp_beta`, `comp_cong` are proved in `cat.cov`.
+pub fn cat_env() -> Env {
+    let a = Type::tfree("a");
+    let b = Type::tfree("b");
+    let c = Type::tfree("c");
+    let mut e = Env::empty();
+    // Operators.
+    e.define_const("compose", ConstDef::Op(compose(a.clone(), b.clone(), c.clone())));
+    e.define_const("id", ConstDef::Op(id(a.clone())));
+    // Rust-proved givens (omitted from cat.cov due to TFree clash in id).
+    // id_left: ∀(f:'a→'b). compose (id_b) f = f
+    // id_right: ∀(f:'a→'b). compose f id_a = f
+    // comp_assoc: ∀(h:'c→'d)(g:'b→'c)(f:'a→'b). compose (compose h g) f = compose h (compose g f)
+    // These are proved in Rust but listed here so cat.cov can reference them.
+    let d = Type::tfree("d");
+    let f_ab = Term::free("f", Type::fun(a.clone(), b.clone()));
+    let g_bc = Term::free("g", Type::fun(b.clone(), c.clone()));
+    let h_cd = Term::free("h", Type::fun(c.clone(), d.clone()));
+    let il = id_left(&f_ab)
+        .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
+        .expect("cat_env: id_left");
+    e.define_lemma("id_left", il);
+    let ir = id_right(&f_ab)
+        .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
+        .expect("cat_env: id_right");
+    e.define_lemma("id_right", ir);
+    let ca = comp_assoc(&h_cd, &g_bc, &f_ab)
+        .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
+        .and_then(|t| t.all_intro("g", Type::fun(b.clone(), c.clone())))
+        .and_then(|t| t.all_intro("h", Type::fun(c.clone(), d.clone())))
+        .expect("cat_env: comp_assoc");
+    e.define_lemma("comp_assoc", ca);
+    e
+}
+
+// Universally-quantified wrappers matching the `.cov` theorem statements.
+
+cached_thm! {
+    /// `⊢ ∀(f:'a→'b)(g:'a→'b). (∀x:'a. f x = g x) ⟹ (f = g)`
+    pub fn fun_ext_thm() -> Thm {
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        let g_var = Term::free("g", Type::fun(a.clone(), b.clone()));
+        let x = Term::free("x", a.clone());
+        // Build the hypothesis: ∀(x:'a). f x = g x
+        let hyp = Term::app(f.clone(), x.clone())
+            .equals(Term::app(g_var.clone(), x.clone()))
+            .and_then(|eq| eq.forall("x", a.clone()))
+            .expect("fun_ext_thm: build hyp");
+        // Discharge by assuming the hyp, all-elim at x, then fun_ext
+        let hyp_thm = Thm::assume(hyp.clone()).expect("fun_ext_thm: assume");
+        let app_eq = hyp_thm.all_elim(x).expect("fun_ext_thm: all_elim");
+        fun_ext(app_eq, "x", &a)
+            .and_then(|t| t.imp_intro(&hyp))
+            .and_then(|t| t.all_intro("g", Type::fun(a.clone(), b.clone())))
+            .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
+            .expect("fun_ext_thm")
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀(g:'b→'c)(f:'a→'b)(x:'a). compose g f x = g (f x)`
+    pub fn comp_beta_thm() -> Thm {
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let c = Type::tfree("c");
+        let g = Term::free("g", Type::fun(b.clone(), c.clone()));
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        let x = Term::free("x", a.clone());
+        let gf = comp(&g, &f).expect("comp_beta_thm: comp");
+        comp_beta(&gf, &x)
+            .and_then(|t| t.all_intro("x", a.clone()))
+            .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
+            .and_then(|t| t.all_intro("g", Type::fun(b.clone(), c.clone())))
+            .expect("comp_beta_thm")
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀g g' f f'. (g=g') ⟹ (f=f') ⟹ (compose g f = compose g' f')`
+    pub fn comp_cong_thm() -> Thm {
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let c = Type::tfree("c");
+        let g = Term::free("g", Type::fun(b.clone(), c.clone()));
+        let g2 = Term::free("g2", Type::fun(b.clone(), c.clone()));
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        let f2 = Term::free("f2", Type::fun(a.clone(), b.clone()));
+        let g_eq_g2 = g.clone().equals(g2.clone()).expect("comp_cong_thm: g=g2");
+        let f_eq_f2 = f.clone().equals(f2.clone()).expect("comp_cong_thm: f=f2");
+        let g_thm = Thm::assume(g_eq_g2.clone()).expect("comp_cong_thm: assume g");
+        let f_thm = Thm::assume(f_eq_f2.clone()).expect("comp_cong_thm: assume f");
+        comp_cong(&g_thm, &f_thm)
+            .and_then(|t| t.imp_intro(&f_eq_f2))
+            .and_then(|t| t.imp_intro(&g_eq_g2))
+            .and_then(|t| t.all_intro("f2", Type::fun(a.clone(), b.clone())))
+            .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
+            .and_then(|t| t.all_intro("g2", Type::fun(b.clone(), c.clone())))
+            .and_then(|t| t.all_intro("g", Type::fun(b.clone(), c.clone())))
+            .expect("comp_cong_thm")
+    }
+}
+
+crate::cov_theory! {
+    /// cat lemmas ported to `cat.cov`, over `core` + the `catprim` env.
+    pub mod cov from "cat.cov" {
+        import "core" = crate::script::Env::core();
+        import "catprim" = crate::init::cat::cat_env();
+        "fun_ext"   => pub fn fun_ext_cov;
+        "comp_beta" => pub fn comp_beta_cov;
+        "comp_cong" => pub fn comp_cong_cov;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,5 +343,13 @@ mod tests {
         let thm = comp_cong(&g_eq, &f_eq).unwrap();
         let expected = comp(&g, &f).unwrap();
         assert_eq!(thm.concl(), &expected.clone().equals(expected).unwrap());
+    }
+
+    #[test]
+    fn cat_cov_matches_rust() {
+        // Every ported cat lemma must state exactly what the Rust proof states.
+        assert_eq!(cov::fun_ext_cov().concl(), super::fun_ext_thm().concl());
+        assert_eq!(cov::comp_beta_cov().concl(), super::comp_beta_thm().concl());
+        assert_eq!(cov::comp_cong_cov().concl(), super::comp_cong_thm().concl());
     }
 }

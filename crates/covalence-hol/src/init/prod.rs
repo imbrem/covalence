@@ -47,6 +47,100 @@ use covalence_core::{Error, Result, Term, Thm, Type};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{exists_elim, exists_intro};
 
+// ============================================================================
+// The `.cov` proof-script layer for `prod`.
+//
+// `prod_env()` exports the seam lemmas as Rust-proved GIVENs (rep_pair,
+// fst_pair, snd_pair, surjective_pairing) — their proofs use spec_abs/spec_rep
+// and select_ax which are NOT expressible in the proof language.
+//
+// On top of those givens, `prod.cov` proves `pair_inj` using only the
+// language-available rules: assume, cong-arg, sym, trans, and-intro, imp-intro.
+// ============================================================================
+
+/// The `prod` seam environment: projection lemmas as Rust-proved givens,
+/// plus the typed constructors registered as `ConstDef::Op`s so the
+/// inference engine can build `prod 'a 'b`-typed terms.
+pub fn prod_env() -> crate::script::Env {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let mut e = crate::script::Env::empty();
+
+    // -- operators (needed so the type-inferencer can type `pair a b` etc.) --
+    use crate::script::ConstDef;
+    e.define_const("pair", ConstDef::Op(pair(alpha.clone(), beta.clone())));
+    e.define_const("fst", ConstDef::Op(fst(alpha.clone(), beta.clone())));
+    e.define_const("snd", ConstDef::Op(snd(alpha.clone(), beta.clone())));
+
+    // -- seam givens (Rust-proved, not expressible in the language) --
+
+    // ⊢ ∀(a:'a). ∀(b:'b). rep (pair a b) = λx y. x=a ∧ y=b
+    let a = Term::free("a", alpha.clone());
+    let b = Term::free("b", beta.clone());
+    let rp = rep_pair(&alpha, &beta, &a, &b)
+        .and_then(|t| t.all_intro("b", beta.clone()))
+        .and_then(|t| t.all_intro("a", alpha.clone()))
+        .expect("prod_env: rep_pair");
+    e.define_lemma("rep_pair", rp);
+
+    // ⊢ ∀(a:'a). ∀(b:'b). fst (pair a b) = a
+    let fp = fst_pair(&alpha, &beta, &a, &b)
+        .and_then(|t| t.all_intro("b", beta.clone()))
+        .and_then(|t| t.all_intro("a", alpha.clone()))
+        .expect("prod_env: fst_pair");
+    e.define_lemma("fst_pair", fp);
+
+    // ⊢ ∀(a:'a). ∀(b:'b). snd (pair a b) = b
+    let sp = snd_pair(&alpha, &beta, &a, &b)
+        .and_then(|t| t.all_intro("b", beta.clone()))
+        .and_then(|t| t.all_intro("a", alpha.clone()))
+        .expect("prod_env: snd_pair");
+    e.define_lemma("snd_pair", sp);
+
+    // ⊢ ∀p : prod 'a 'b. pair (fst p) (snd p) = p
+    let p = Term::free("p", covalence_core::defs::prod(alpha.clone(), beta.clone()));
+    let surj = surjective_pairing(&alpha, &beta, &p)
+        .and_then(|t| t.all_intro("p", covalence_core::defs::prod(alpha.clone(), beta.clone())))
+        .expect("prod_env: surjective_pairing");
+    e.define_lemma("surjective_pairing", surj);
+
+    e
+}
+
+crate::cov_theory! {
+    /// `prod` theorems: `pair_inj`, ported from Rust to `prod.cov`.
+    pub mod cov from "prod.cov" {
+        import "core"    = crate::script::Env::core();
+        import "logic"   = crate::init::logic::cov::env();
+        import "prodprim" = crate::init::prod::prod_env();
+        "pair_inj" => pub fn pair_inj_cov;
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+
+    /// `pair_inj` from `prod.cov` must have the same conclusion as the
+    /// hand-written Rust `pair_inj`.
+    #[test]
+    fn pair_inj_cov_matches_rust() {
+        let alpha = Type::tfree("a");
+        let beta = Type::tfree("b");
+        let a = Term::free("a", alpha.clone());
+        let b = Term::free("b", beta.clone());
+        let c = Term::free("c", alpha.clone());
+        let d = Term::free("d", beta.clone());
+        let rust_thm = pair_inj(&alpha, &beta, &a, &b, &c, &d).expect("pair_inj");
+        let cov_thm = cov::pair_inj_cov();
+        assert_eq!(
+            cov_thm.concl(),
+            rust_thm.concl(),
+            "pair_inj from prod.cov must match the Rust proof"
+        );
+    }
+}
+
 // Re-export the `defs/prod.rs` term catalogue (the `*_spec` handles stay
 // in `covalence_core::defs`, reached via the blanket re-export there).
 pub use covalence_core::defs::{fst, pair, prod, snd};

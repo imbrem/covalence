@@ -461,23 +461,27 @@ directives — is `open`-able by other scripts; the macro binds it as a
   accessor + elaborator aren't).** `Env` is now ONE unified `entries:
   LazyMap<Entry>` (`Entry` = `Const|Lemma|Tactic`), so EVERY kind is already
   future-capable — a const *can* pend, no new machinery needed.
-  **`Env::lookup_lemma` is `async`** (awaits a still-`#compute`-ing
+  **`Env::lookup_lemma` is `async`** (awaits a still-`#spawn`-ing
   `Entry::Lemma`); the old boundary-await `lemma_refs`/`await_computed_deps` was
-  deleted. `#compute` binds NAME via `define_computing` → `insert_pending`; a
-  later reference (or the force) just awaits it. The remaining half of **"all
-  env accesses async"** (user) is now just the *accessor*: `lookup_const`/
+  deleted. `#spawn` binds NAME via `define_spawned` → `insert_pending`; a later
+  reference (or the force) just awaits it. The remaining half of **"all env
+  accesses async"** (user) is now just the *accessor*: `lookup_const`/
   `lookup_tactic`/`lookup_rule` are still SYNC `get_ready` peeks. Making
   `lookup_const` async makes the **elaborator (`infer.rs`) async** (recursive
   `BoxFuture` + const-lookup await) → `parse_term`/`CheckCtx::term`/
   `elaborate_concl` async — that's the unbuilt step for *one async task per
-  definition* (a `const` loaded from the network, like `#compute` for a
-  theorem). The non-async `lemma_ready(name)` peek stays for the sync
-  `Theory::lemma` macro accessor (a forced theory's lemmas are all Ready).
-  - **A `#compute` can't depend on another `#compute`.** Its proof runs in
-    `spawn_blocking` against a *sync snapshot* of `internal`, driven by a nested
-    `block_on`, so it can't await a sibling. (Only ordinary `#thm`s can.)
-  - **`#spawn`** (`tokio::spawn`, non-blocking) is the natural sibling of
-    `#compute` for IO-bound / cooperative work.
+  definition* (a `const` loaded from the network, like `#spawn` for a theorem).
+  The non-async `lemma_ready(name)` peek stays for the sync `Theory::lemma` macro
+  accessor (a forced theory's lemmas are all Ready).
+  - **`#spawn` replaced `#compute`.** A `#spawn`ed proof is a *deferred
+    cooperative async task* (a pending `BoxFuture` stored via `insert_pending`,
+    polled when first awaited) — **no `spawn_blocking`, no nested `block_on`**.
+    Because it shares the cooperative runtime, a `#spawn` CAN `await` a *prior*
+    sibling lemma (the env clone structurally shares its pending `Shared`
+    futures). Still snapshot-scoped, so it cannot see siblings declared *after*
+    it. **Genuinely blocking work is deferred to the FFI tactic's own
+    responsibility** (an FFI call that must block should manage that itself) —
+    the script layer no longer owns a blocking-thread pool.
 - **`Term` futures (term-level holes) not represented.** Terms are eagerly
   built — there is no `Term` future (and proof holes were removed, see above).
   A key target use case: represent a **unification hole** as a term future

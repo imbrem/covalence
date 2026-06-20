@@ -501,7 +501,7 @@ impl Tactic for Apply {
     }
 }
 
-/// Look up a lemma by name (awaiting a still-`#compute`-ing one).
+/// Look up a lemma by name (awaiting a still-`#spawn`-ing one).
 async fn lookup_lemma(env: &Env, name: &str) -> R<Thm> {
     env.lookup_lemma(name)
         .await

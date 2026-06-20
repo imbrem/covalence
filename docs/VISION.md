@@ -1,18 +1,23 @@
 # Covalence — Vision
 
 > **STATUS: WORKING DRAFT.** Top-level doc capturing the system's
-> organizing ideas — read in ~10 minutes. This is now the canonical
-> vision doc (the older, longer `ARCHITECTURE.md` was retired; recover
-> it from the `backup/pre-hol-cleanup` branch if you need the
-> pre-collapse detail). For the kernel see
+> organizing ideas — read in ~10 minutes. This is the canonical **kernel /
+> foundation** vision (the older, longer `ARCHITECTURE.md` was retired;
+> recover it from the `backup/pre-hol-cleanup` branch if you need the
+> pre-collapse detail). Its counterpart, the **frontend & UX vision** —
+> the unified surface, handler-dispatched reasoning, multi-language
+> authoring — lives in [`frontend.md`](./frontend.md) (previously left
+> vague; now its own doc). For the kernel see
 > [`kernel-design.md`](./kernel-design.md), for the type catalogue see
 > [`type-hierarchy.md`](./type-hierarchy.md), for what's next see
 > [`roadmap.md`](./roadmap.md). For the (not-yet-built) authoring layer
-> see the design sketches: [`surface-syntax.md`](./surface-syntax.md)
+> see the design sketches: [`frontend.md`](./frontend.md) (what the system
+> feels like to use), [`surface-syntax.md`](./surface-syntax.md)
 > (high-level syntax for theories and definitions),
 > [`metatheory.md`](./metatheory.md) (theories/derivations/models as
-> first-class objects), [`observers.md`](./observers.md)
-> (untrusted code feeding facts into the kernel).
+> first-class objects — incl. §7 handler dispatch, §8 the first internal
+> language), [`observers.md`](./observers.md) (untrusted code feeding
+> facts into the kernel).
 
 ---
 
@@ -108,10 +113,8 @@ theorem's hypothesis list. If `Con(ZFC)` ever turns out to be wrong,
 the theorems become Thms-with-falsified-hypotheses — still Thms,
 just less useful.
 
-Full treatment: `modified-hol.md`
-§3.5
-and `modified-hol.md`
-§4.
+Full treatment: the retired `modified-hol.md` §3.5/§4 (recover from
+`backup/pre-hol-cleanup`).
 
 ---
 
@@ -177,8 +180,7 @@ plus arbitrarily clever untrusted machinery plus soundness by
 re-checkability. The certificate-checker is to the SMT solver what
 the kernel's inference rules are to a tactic engine.
 
-Full treatment: `modified-hol.md`
-§3.7.
+Full treatment: the retired `modified-hol.md` §3.7 (`backup/pre-hol-cleanup`).
 
 ---
 
@@ -235,42 +237,35 @@ Top layer changes constantly. Bottom layer never changes. The
 inner/outer factoring of the bottom is for **audit clarity**, not
 modularity — they could be implemented as one layer, but separating
 "pure logic" from "operational machinery for hashes / signatures /
-ZKPs / range proofs" makes the audit story tractable. Full treatment:
-`modified-hol.md`
-§3.
+ZKPs / range proofs" makes the audit story tractable. Full treatment: the retired
+`modified-hol.md` §3 (`backup/pre-hol-cleanup`).
 
 ---
 
 ## 6. What's deliberately not in this doc
 
 Each of these is real and on the roadmap, but reading them would
-distract from the load-bearing claims above. They live in the
-sub-docs.
+distract from the load-bearing claims above. All are **post-MVP**; the
+pre-collapse detail lives in the retired `ARCHITECTURE.md` (and the
+`shared-backbone` proposal set) on the `backup/pre-hol-cleanup` branch.
 
 - **Federation.** Cross-instance Thm exchange via signed blobs; one
   kernel consumes another's facts under a PKI assumption. Same as
   trusting any other authority — federation is the special case where
-  the authority is another kernel instance. Post-MVP; see
-  `ARCHITECTURE.md` §10.2 and the planned
-  `09-federation.md`.
+  the authority is another kernel instance.
 - **Mount / namespaces.** The mountable-filesystem-view of theorem
-  storage; mount-as-Horn-clause-assertion. Post-MVP; see
-  `ARCHITECTURE.md` §10.
+  storage; mount-as-Horn-clause-assertion.
 - **Format plane.** `valid(format, data)` as an oracle relation;
-  keyed-BLAKE3 typed identity. Post-MVP; see
-  `ARCHITECTURE.md` §12.
+  keyed-BLAKE3 typed identity.
 - **Base-shift functor.** Porting the entire development to a new
   foundation (HOL → ZFC, HOL → HoTT, …) via a single functor. Internal
-  re-hosting (the default plan) is post-MVP; external re-hosting is a
-  later consilience upgrade. See
-  `ARCHITECTURE.md` §8.
+  re-hosting (the default plan) first; external re-hosting is a later
+  consilience upgrade.
 - **Probability as an internal logic.** `L_prob` for quantifying
-  confidence in mirror-agreement and crypto assumptions. Post-MVP;
-  see `ARCHITECTURE.md` §7.
+  confidence in mirror-agreement and crypto assumptions.
 - **VCS as a particular theory inside the prover.** The endgame
   reunification — VCS operations defined inside the kernel's logic;
-  the trusted Rust VCS proven to match the theory. Long-tail; see
-  shared-backbone Phase 4.
+  the trusted Rust VCS proven to match the theory.
 
 ---
 
@@ -280,7 +275,8 @@ The docs were pared to the current design. The surviving set:
 
 | Question | Read |
 |---|---|
-| This vision | (you are here) |
+| This (kernel / foundation) vision | (you are here) |
+| The frontend & UX vision | [`frontend.md`](./frontend.md) |
 | The kernel TCB (terms, rules, `defs/`) | [`kernel-design.md`](./kernel-design.md) |
 | The type catalogue & equality hierarchy | [`type-hierarchy.md`](./type-hierarchy.md) |
 | What's next (finalize defs, rewire shell) | [`roadmap.md`](./roadmap.md) |

@@ -39,6 +39,8 @@ impl ForeignPrims for ReplPrims {
             "status" => self.cmd_status(ctx),
             "help" => self.cmd_help(ctx),
             "hash" => self.cmd_hash(ctx),
+            "check-cov" => self.cmd_check_cov(ctx),
+            "check-cov-hash" => self.cmd_check_cov_hash(ctx),
             "graph-builder" => graph::cmd_graph_builder(&mut self.graph, ctx),
             "b-port" => graph::cmd_b_port(&mut self.graph, ctx),
             "b-node" => graph::cmd_b_node(&mut self.graph, ctx),
@@ -273,6 +275,8 @@ impl ReplPrims {
             ("<hash> read-wat", "decompile WASM to WAT"),
             ("\"(module ...)\" compile-wat", "compile WAT to WASM, store"),
             ("\"data\" hash", "hash blob (BLAKE3) without storing"),
+            ("\"(#thm ...)\" check-cov", "check a .cov proof script blob"),
+            ("<hash> check-cov-hash", "read a .cov file by hash, then check it"),
             ("\"<hex>\" hex", "decode hex string to raw bytes blob"),
             ("<val> print", "print a value"),
             ("status", "show backend info"),
@@ -370,6 +374,49 @@ impl ReplPrims {
         let data = ctx.try_pop_blob()?;
         let hash = O256::blob(&data);
         ctx.push_hash(hash);
+        Ok(())
+    }
+
+    /// `check-cov`: blob → (check the `.cov` proof script in the blob; emit a
+    /// summary of the theorems it proves)
+    fn cmd_check_cov(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        let src = ctx.try_pop_blob()?;
+        self.check_cov_src(&src)
+    }
+
+    /// `check-cov-hash`: hash → (read a `.cov` file by hash, then check it).
+    /// The blob-by-hash counterpart of `check-cov` — the same checker, fed from
+    /// the store rather than the stack.
+    fn cmd_check_cov_hash(&mut self, ctx: &mut FCtx<'_>) -> Result<(), FError> {
+        let hash = ctx.try_pop_hash()?;
+        let src = self
+            .backend
+            .get_blob(&hash)
+            .map_err(Self::backend_err)?
+            .ok_or_else(|| FError::Parse(format!("blob not found: {hash}")))?;
+        self.check_cov_src(&src)
+    }
+
+    /// Check a `.cov` proof script (source bytes) against the standard-library
+    /// prelude, emitting a summary of the theorems it proves. Nothing in the
+    /// text is trusted — every theorem is re-derived by the kernel. Shared by
+    /// `check-cov` (source on the stack) and `check-cov-hash` (source fetched
+    /// from the store).
+    fn check_cov_src(&mut self, src: &[u8]) -> Result<(), FError> {
+        let text = std::str::from_utf8(src)
+            .map_err(|e| FError::Parse(format!(".cov source is not valid UTF-8: {e}")))?;
+        let thms = covalence_hol::init::check_script(text)
+            .map_err(|e| FError::Parse(format!("check failed: {e}")))?;
+        if thms.is_empty() {
+            self.emit("checked: 0 theorems");
+        } else {
+            let names = thms
+                .iter()
+                .map(|t| t.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.emit(&format!("checked {} theorem(s): {names}", thms.len()));
+        }
         Ok(())
     }
 

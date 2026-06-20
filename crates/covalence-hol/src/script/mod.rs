@@ -44,6 +44,7 @@ use std::sync::Arc;
 
 use covalence_core::{Thm, Type};
 use covalence_sexp::SExpr;
+use futures::FutureExt;
 
 /// A replayed theory in its **in-progress** state, the value `run`/`run_async`
 /// return. Every `#thm` is already checked (`thms`); [`LazyTheory::resolve`]
@@ -58,13 +59,13 @@ use covalence_sexp::SExpr;
 pub struct LazyTheory {
     /// The explicitly-exported public interface (`(#export …)`).
     exports: Env,
-    /// The full running environment (its `lemmas` may still be `#compute`-ing).
+    /// The full running environment (its `lemmas` may still be `#spawn`-ing).
     internal: Env,
     /// The eagerly-checked theorems.
     pub thms: Vec<NamedThm>,
-    /// Names of `(#compute …)` theorems still running on a blocking thread,
-    /// awaited from `internal` and folded into `thms` when the theory is forced.
-    computed_names: Vec<String>,
+    /// Names of `(#spawn …)` theorems still deferred as cooperative async
+    /// tasks, awaited from `internal` and folded into `thms` when forced.
+    spawned_names: Vec<String>,
 }
 
 impl LazyTheory {
@@ -84,20 +85,20 @@ impl LazyTheory {
     }
 
     /// **Force** the theory to its fully-proved [`Theory`]: await every
-    /// still-`#compute`-ing theorem (each running on a blocking thread) and
-    /// fold its result into `thms`. For a synchronous caller use
+    /// still-`#spawn`-ing theorem (each a deferred cooperative task) and fold
+    /// its result into `thms`. For a synchronous caller use
     /// [`LazyTheory::resolve_blocking`].
     pub async fn resolve(self) -> Result<Theory, ScriptError> {
         let LazyTheory {
             exports,
             internal,
             mut thms,
-            mut computed_names,
+            mut spawned_names,
         } = self;
         // Await the background computations (in name order for determinism),
         // each looked up — and awaited — from the running env.
-        computed_names.sort();
-        for name in computed_names {
+        spawned_names.sort();
+        for name in spawned_names {
             let thm = internal
                 .lookup_lemma(&name)
                 .await
@@ -145,7 +146,7 @@ impl From<Env> for LazyTheory {
             exports,
             internal: Env::empty(),
             thms: Vec::new(),
-            computed_names: Vec::new(),
+            spawned_names: Vec::new(),
         }
     }
 }
@@ -159,7 +160,7 @@ impl From<Theory> for LazyTheory {
             exports: t.exports,
             internal: Env::empty(),
             thms: t.thms,
-            computed_names: Vec::new(),
+            spawned_names: Vec::new(),
         }
     }
 }
@@ -248,7 +249,7 @@ pub async fn run_async(
     let mut internal = Env::empty();
     let mut exports = Env::empty();
     let mut thms = Vec::new();
-    let mut computed_names: Vec<String> = Vec::new();
+    let mut spawned_names: Vec<String> = Vec::new();
     for stmt in stmts {
         match stmt {
             // The async step: await the import's future, then register its
@@ -296,32 +297,33 @@ pub async fn run_async(
             }
             Stmt::Thm(sexpr) => {
                 let ch = syntax::list(&sexpr, "#thm")?;
-                // `check` awaits any a lemma reference it references that is still
-                // `#compute`-ing — lemma lookup is now async.
+                // `check` awaits any lemma reference it makes that is still
+                // `#spawn`-ing — lemma lookup is now async.
                 let nt = run_thm(ch, &internal).await?;
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
                 thms.push(nt);
             }
-            // `(#compute NAME …)` — kick off the proof on a blocking thread
-            // and bind NAME to the still-running task in the env. Execution
-            // moves straight on; a later proof's `(NAME)` (by name) (or the force)
-            // simply **awaits** it.
-            Stmt::Compute(sexpr) => {
-                let ch = syntax::list(&sexpr, "#compute")?;
-                let name = syntax::sym(&ch[1], "compute name")?.to_string();
+            // `(#spawn NAME …)` — defer the proof as a cooperative async task
+            // bound to NAME in the env. Execution moves straight on; a later
+            // proof's `(NAME)` (by name) (or the force) simply **awaits** it,
+            // polling it on the shared runtime. No blocking thread, no nested
+            // `block_on` — any genuinely blocking work is the FFI tactic's own
+            // responsibility (see SKELETONS.md / docs/surface-syntax.md).
+            Stmt::Spawn(sexpr) => {
+                let ch = syntax::list(&sexpr, "#spawn")?;
+                let name = syntax::sym(&ch[1], "spawn name")?.to_string();
                 let env = internal.clone();
-                let task = tokio::task::spawn_blocking(move || {
-                    let ch = syntax::list(&sexpr, "#compute")?;
-                    // Drive the (async) proof to completion on this blocking
-                    // thread — its own runtime, not nested in the caller's.
-                    block_on(run_thm(ch, &env)).map(|nt| nt.thm)
-                });
-                internal.define_computing(name.clone(), task);
-                computed_names.push(name);
+                let fut = async move {
+                    let ch = syntax::list(&sexpr, "#spawn")?;
+                    run_thm(ch, &env).await.map(|nt| nt.thm)
+                }
+                .boxed();
+                internal.define_spawned(name.clone(), fut);
+                spawned_names.push(name);
             }
             // `(#export NAME …)` — build the public interface explicitly: each
             // name is a proven lemma or an imported lemma/const/tactic. A lemma
-            // is **awaited** (so an exported `#compute` lands ready).
+            // is **awaited** (so an exported `#spawn` lands ready).
             Stmt::Export(names) => {
                 for name in names {
                     if let Some(c) = internal.lookup_const(&name) {
@@ -343,7 +345,7 @@ pub async fn run_async(
         exports,
         internal,
         thms,
-        computed_names,
+        spawned_names,
     })
 }
 
@@ -358,12 +360,15 @@ fn imported(internal: &Env, name: &str) -> Result<Env, ScriptError> {
 }
 
 /// Drive the async proof core to completion — the blocking half of the API.
-/// Runs on a fresh **tokio** current-thread runtime, which is the scheduler
-/// the prover is built on: cooperative concurrency (block a task → run another
-/// → resume it) today, swappable for a multi-thread runtime when we want true
-/// parallel verification. Native only, and must not be called from inside an
-/// existing tokio runtime (the `cov_theory!` loads + tests run it from plain
-/// sync context).
+/// Runs on a fresh **tokio** current-thread runtime, which is the scheduler the
+/// prover is built on: cooperative concurrency (block a task → run another →
+/// resume it) today, swappable for a multi-thread runtime when we want true
+/// parallel verification.
+///
+/// Native only, and must not be called from inside an existing tokio runtime
+/// (nesting panics). The `cov_theory!` loader force-evaluates its `import …`
+/// envs eagerly — *before* this `block_on` — so forcing one `.cov` theory never
+/// nests on forcing an imported one.
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
         .build()
@@ -399,10 +404,10 @@ enum Stmt {
     Dep(String),
     /// `(#thm …)` — the whole directive; parsed + checked at execution.
     Thm(SExpr),
-    /// `(#compute NAME …)` — like `#thm`, but checked on a **blocking thread**
-    /// (`spawn_blocking`) so it runs while later statements proceed; awaited
-    /// when the theory is forced.
-    Compute(SExpr),
+    /// `(#spawn NAME …)` — like `#thm`, but deferred as a **cooperative async
+    /// task** that runs while later statements proceed; awaited when first
+    /// referenced or when the theory is forced.
+    Spawn(SExpr),
     /// `(#export NAME …)` — the public interface.
     Export(Vec<String>),
 }
@@ -444,7 +449,7 @@ fn parse_stmt(e: &SExpr) -> Result<Stmt, ScriptError> {
             Stmt::Dep(syntax::sym(&ch[1], "dependency name")?.to_string())
         }
         "#thm" => Stmt::Thm(e.clone()),
-        "#compute" => Stmt::Compute(e.clone()),
+        "#spawn" => Stmt::Spawn(e.clone()),
         "#export" => {
             if ch.len() < 2 {
                 return Err(ScriptError::Syntax(
@@ -527,11 +532,18 @@ macro_rules! cov_theory {
 
             static THEORY: ::std::sync::LazyLock<$crate::script::Theory> =
                 ::std::sync::LazyLock::new(|| {
+                    // Force the import envs EAGERLY, before `run`'s `block_on`,
+                    // so forcing this theory never nests its `block_on` on
+                    // forcing an imported `.cov` theory (e.g. `logic`).
+                    let __imports: ::std::vec::Vec<(&'static str, $crate::script::Env)> =
+                        ::std::vec![ $( ($oname, $oenv), )* ];
                     $crate::script::run(
                         include_str!($src),
-                        |__name| match __name {
-                            $( $oname => Some($oenv), )*
-                            _ => None,
+                        move |__name| {
+                            __imports
+                                .iter()
+                                .find(|(__n, _)| *__n == __name)
+                                .map(|(_, __e)| __e.clone())
                         },
                         |__tname| -> ::core::option::Option<
                             ::std::sync::Arc<dyn $crate::script::Tactic>,
@@ -683,6 +695,48 @@ mod tests {
                (#thm red (#concl (= (app (lam (x nat) x) 0) 0))
                  (#proof (reduce (app (lam (x nat) x) 0))))"#);
         assert!(red.hyps().is_empty());
+    }
+
+    #[test]
+    fn exists_rules_replay() {
+        // `exists-intro` reaches into `logic.cov`'s reified `exists_intro_thm`,
+        // whose lazylock `block_on`s; force it once here (no runtime active) so
+        // the cache is warm before `run_str`'s own `block_on` runs the rule. In
+        // real `.cov` modules importing "logic" the macro forces it eagerly.
+        let _ = crate::init::logic::exists_intro_thm();
+        // `exists-intro`: from `⊢ (λx. x = 0) 0` (got from `⊢ 0 = 0` by undoing
+        // the β-step) conclude `⊢ ∃x. x = 0`.
+        let intro = one(
+            r#"(#import core)(#open core)
+               (#thm ex (#concl (exists (x nat) (= x 0)))
+                 (#proof
+                   (exists-intro
+                     (lam (x nat) (= x 0))
+                     0
+                     (eq-mp (sym (beta-conv (app (lam (x nat) (= x 0)) 0))) (refl 0)))))"#,
+        );
+        assert!(intro.hyps().is_empty());
+        // `exists-elim`: from `⊢ ∃x. x = 0` and the step
+        // `⊢ ∀x. (λx. x = 0) x ⟹ ∃y. y = 0` conclude `⊢ ∃y. y = 0` (here the
+        // two existentials coincide). The step re-introduces the existential
+        // straight from the assumed predicate application (which, locally
+        // nameless, is literally `(λ. #0 = 0) x` — the same term either way).
+        let elim = one(
+            r#"(#import core)(#open core)
+               (#thm ex2 (#concl (exists (y nat) (= y 0)))
+                 (#proof
+                   (exists-elim
+                     (exists-intro
+                       (lam (x nat) (= x 0)) 0
+                       (eq-mp (sym (beta-conv (app (lam (x nat) (= x 0)) 0))) (refl 0)))
+                     (exists (y nat) (= y 0))
+                     (all-intro x nat
+                       (imp-intro (app (lam (x nat) (= x 0)) x)
+                         (exists-intro
+                           (lam (y nat) (= y 0)) x
+                           (assume (app (lam (x nat) (= x 0)) x))))))))"#,
+        );
+        assert!(elim.hyps().is_empty());
     }
 
     #[test]
@@ -968,15 +1022,15 @@ mod tests {
     }
 
     #[test]
-    fn compute_runs_in_the_background_and_lands_on_resolve() {
-        // A `#compute`d theorem runs on a blocking thread while later
+    fn spawn_runs_in_the_background_and_lands_on_resolve() {
+        // A `#spawn`ed theorem is deferred as a cooperative task while later
         // statements proceed; it is NOT in `thms` until the theory is forced.
         let theory = run(
             r#"
             (#import core)
             (#open core)
             (#thm eager (#concl (= 1 1)) (#proof (refl 1)))
-            (#compute slow (#concl (= (nat.add 2 3) 5))
+            (#spawn slow (#concl (= (nat.add 2 3) 5))
               (#proof (reduce-prim (nat.add 2 3))))
             "#,
             |name| (name == "core").then(Env::core),
@@ -986,26 +1040,26 @@ mod tests {
         assert!(theory.thms.iter().any(|nt| nt.name == "eager"));
         assert!(
             !theory.thms.iter().any(|nt| nt.name == "slow"),
-            "the #compute is still pending pre-force"
+            "the #spawn is still pending pre-force"
         );
         let resolved = theory
             .resolve_blocking()
-            .expect("forcing awaits the compute");
+            .expect("forcing awaits the spawned proof");
         assert!(resolved.thms.iter().any(|nt| nt.name == "slow"));
         assert!(resolved.thms.iter().any(|nt| nt.name == "eager"));
     }
 
     #[test]
-    fn a_proof_awaits_a_computed_lemma() {
-        // A later `#thm` references a `#compute`d theorem via a lemma reference:
-        // the `lemma` registry rule now AWAITS the still-computing lemma
-        // directly (lemma lookup is async), so `#compute`d lemmas are usable
-        // by later proofs.
+    fn a_proof_awaits_a_spawned_lemma() {
+        // A later `#thm` references a `#spawn`ed theorem via a lemma reference:
+        // the lemma registry rule AWAITS the still-pending lemma directly
+        // (lemma lookup is async), so `#spawn`ed lemmas are usable by later
+        // proofs — cooperatively, with no blocking thread.
         let theory = run(
             r#"
             (#import core)
             (#open core)
-            (#compute base (#concl (= 0 0)) (#proof (refl 0)))
+            (#spawn base (#concl (= 0 0)) (#proof (refl 0)))
             (#thm uses (#concl (= 0 0)) (#proof (base)))
             "#,
             |name| (name == "core").then(Env::core),
@@ -1098,12 +1152,12 @@ mod tests {
     }
 
     #[test]
-    fn compute_failure_surfaces_on_resolve() {
-        // A `#compute` whose proof is wrong errors only when forced.
+    fn spawn_failure_surfaces_on_resolve() {
+        // A `#spawn` whose proof is wrong errors only when forced.
         let theory = run(
             r#"
             (#import core)(#open core)
-            (#compute bad (#concl (= 1 2)) (#proof (refl 1)))
+            (#spawn bad (#concl (= 1 2)) (#proof (refl 1)))
             "#,
             |name| (name == "core").then(Env::core),
             |_| None,

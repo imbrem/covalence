@@ -1,0 +1,108 @@
+;; rel.cov — relation lemmas over `core` + the `relprim` env.
+;;
+;; The `relprim` env imports the seam lemmas as given (proved in Rust in
+;; init/rel.rs — they cross the abs/rep boundary):
+;;   `holds_mk_ax`:       ∀p x y. rel.holds (rel.mk p) x y = p x y
+;;   `ext_ax`:            ∀r s : rel 'a 'b.
+;;                          (∀x y. rel.holds r x y = rel.holds s x y) ⟹ r = s
+;;   `holds_id_ax`:       ∀x y. rel.holds rel.id x y = (x = y)
+;;   `holds_converse_ax`: ∀r y x. rel.holds (rel.converse r) y x = rel.holds r x y
+;;                        (r : rel 'a 'b, y : 'b, x : 'a)
+;;   `holds_converse_ax_ba`: ∀r y x. rel.holds (rel.converse.ba (= conv at ('b,'a)) r) y x
+;;                              = rel.holds r x y
+;;                        (r : rel 'b 'a, y : 'a, x : 'b)
+;;
+;; Operators registered in relprim:
+;;   `rel.converse`    : rel 'a 'b → rel 'b 'a
+;;   `rel.converse.ba` : rel 'b 'a → rel 'a 'b  (same spec, swapped type args)
+;;   `rel.converse.aa` : rel 'a 'a → rel 'a 'a  (same spec, both args 'a)
+;;   `rel.id`          : rel 'a 'a
+;;
+;; On top we prove: converse_converse, converse_id.
+;;
+;; CONVENTION: `rel.converse.ba` is used wherever the double-converse requires
+;; two different type-parameter orderings in one term, to avoid the type-variable
+;; aliasing limitation of the .cov elaborator (which treats TFree("a") and
+;; TFree("b") as concrete, distinct types).
+
+(#import core)
+(#open core)
+(#import logic)
+(#open logic)
+(#import relprim)
+(#open relprim)
+
+;; ⊢ rel.converse.ba (rel.converse r) = r
+;;   where r : rel 'a 'b is an implicit free variable.
+;;
+;; Proof: pointwise, holds(conv.ba(conv.ab r)) x y = holds r x y via two
+;; applications of holds_converse_ax (the second at swapped types via
+;; holds_converse_ax_ba), then extensionality.
+(#thm converse_converse
+  (#concl
+    (= (rel.converse.ba (rel.converse r)) r))
+  (#proof
+    (imp-elim
+      (all-elim r
+        (all-elim (rel.converse.ba (rel.converse r))
+          (ext_ax)))
+      (all-intro x 'a
+        (all-intro y 'b
+          (trans
+            ;; holds(conv.ba(conv.ab r)) x y = holds(conv.ab r) y x
+            ;; (holds_converse_ax_ba at inner=conv.ab r, y_arg=x:'a, x_arg=y:'b)
+            (all-elim y (all-elim x
+              (all-elim (rel.converse r)
+                (holds_converse_ax_ba))))
+            ;; holds(conv.ab r) y x = holds r x y
+            ;; (holds_converse_ax at r, y_arg=y:'b, x_arg=x:'a)
+            (all-elim x (all-elim y
+              (all-elim r
+                (holds_converse_ax))))))))))
+
+;; ⊢ rel.converse.aa rel.id = rel.id
+;;
+;; Proof: pointwise, holds(conv.aa id) x y = holds id x y.
+;; Chain: holds(conv.aa id) x y = holds id y x  (holds_converse_ax at id, y=x, x=y)
+;;      = (y = x)                                (holds_id_ax at y, x)
+;;      = (x = y)                                (symmetry of equality as equation)
+;;      = holds id x y                           (sym of holds_id_ax at x, y)
+;; Then ext_ax_aa (the extensionality seam at rel 'a 'a).
+;;
+;; NOTE: `rel.converse.aa` and `rel.converse` are the same spec; the `.aa`
+;; instantiation is used so both type args are 'a, matching the type of rel.id.
+;; `ext_ax_aa` is the specialisation of ext_ax to (rel 'a 'a → rel 'a 'a → …)
+;; since the standard `ext_ax` is typed for (rel 'a 'b) with distinct 'a,'b.
+;; Similarly, the `holds_converse_ax` seam lemma is used since it is built for
+;; r : rel 'a 'b and at 'a='b='a it applies here directly.
+;;
+;; `holds_id_ax` is also typed (rel 'a 'a), so `holds_id_ax` works at 'a='a.
+(#thm converse_id
+  (#concl
+    (= (rel.converse.aa rel.id) rel.id))
+  (#proof
+    (imp-elim
+      (all-elim rel.id
+        (all-elim (rel.converse.aa rel.id)
+          ;; ext_ax_aa: ∀r s: rel 'a 'a. (∀x y. holds r x y = holds s x y) ⟹ r = s
+          (ext_ax_aa)))
+      (all-intro x 'a
+        (all-intro y 'a
+          (trans
+            ;; holds(conv.aa id) x y = holds id y x
+            ;; (holds_converse_ax_aa at r:=rel.id, both type params are 'a)
+            (all-elim y (all-elim x (all-elim rel.id (holds_converse_ax_aa))))
+            (trans
+              ;; holds id y x = (y = x)
+              (all-elim x (all-elim y (holds_id_ax)))
+              (trans
+                ;; (y = x) = (x = y)
+                ;; deduct-antisym H1 H2 where H1={d}⊢c, H2={c}⊢d gives ⊢c=d
+                ;; We want c=(y=x), d=(x=y): so H1={(x=y)}⊢(y=x), H2={(y=x)}⊢(x=y)
+                (deduct-antisym
+                  (sym (assume (= x y)))
+                  (sym (assume (= y x))))
+                ;; (x = y) = holds id x y
+                (sym (all-elim y (all-elim x (holds_id_ax))))))))))))
+
+(#export converse_converse converse_id)

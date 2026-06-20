@@ -272,6 +272,36 @@ impl Tactic for PropEqRule {
     }
 }
 
+/// `(exists-intro PRED WITNESS PROOF)` → from `PROOF : ⊢ PRED WITNESS`
+/// conclude `⊢ ∃x. PRED x` (i.e. `⊢ exists[α] PRED`). `PRED : α → bool` and
+/// `WITNESS : α` are parsed terms; `PROOF` is a checked sub-derivation.
+struct ExistsIntroRule;
+#[async_trait]
+impl Tactic for ExistsIntroRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 3, "exists-intro")?;
+        let pred = c.term(&a[0])?;
+        let witness = c.term(&a[1])?;
+        let proof = c.check(&a[2]).await?;
+        Ok(crate::init::logic::exists_intro(pred, witness, proof)?)
+    }
+}
+
+/// `(exists-elim EX C STEP)` → from `EX : ⊢ ∃x. P x` and
+/// `STEP : ⊢ ∀x. P x ⟹ C` (with `C` not depending on `x`) conclude `⊢ C`.
+/// `EX` and `STEP` are checked sub-derivations; `C` is a parsed term.
+struct ExistsElimRule;
+#[async_trait]
+impl Tactic for ExistsElimRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 3, "exists-elim")?;
+        let ex = c.check(&a[0]).await?;
+        let goal = c.term(&a[1])?;
+        let step = c.check(&a[2]).await?;
+        Ok(crate::init::logic::exists_elim(ex, goal, step)?)
+    }
+}
+
 /// `(unfold-at-1 OP ARG)` → `⊢ op arg = body[arg]` (one β-step).
 struct UnfoldAt1Rule;
 #[async_trait]
@@ -437,6 +467,8 @@ pub fn core_rules() -> Vec<(&'static str, Arc<dyn Tactic>)> {
         ("delta", Arc::new(DeltaRule)),
         ("select-ax", Arc::new(SelectAxRule)),
         ("prop-eq", Arc::new(PropEqRule)),
+        ("exists-intro", Arc::new(ExistsIntroRule)),
+        ("exists-elim", Arc::new(ExistsElimRule)),
         ("tauto", Arc::new(TautoRule)),
         // unary
         ("and-elim-l", Arc::new(AndElimLRule)),

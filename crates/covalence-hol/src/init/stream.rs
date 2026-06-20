@@ -23,6 +23,7 @@ use covalence_core::{Error, Result, Term, Thm, Type};
 use crate::init::eq::{delta_head, trans_chain};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::truth;
+use crate::script::{ConstDef, Env};
 
 // Re-export the `defs/stream.rs` term catalogue.
 pub use covalence_core::defs::{
@@ -143,6 +144,87 @@ fn zero() -> Term {
     Term::nat_lit(covalence_types::Nat::zero())
 }
 
+// ============================================================================
+// .cov proof language support
+// ============================================================================
+
+/// The primitives environment for `stream.cov`: the stream operators
+/// (monomorphic at `'a`) as `Op` entries, plus the `at_mk` seam lemma —
+/// universally quantified over `f : nat→'a` and `n : nat` — as a given.
+///
+/// `at_mk` uses `spec_rep_abs_fwd` in Rust (TCB-coupled); it stays a given.
+/// `const_at`, `head_const`, `tail_at` are proved in `stream.cov` from this.
+pub fn stream_env() -> Env {
+    let a = Type::tfree("a");
+    let mut e = Env::empty();
+    // Operators (monomorphic at 'a).
+    e.define_const("stream_at", ConstDef::Op(stream_at(a.clone())));
+    e.define_const("stream_mk", ConstDef::Op(stream_mk(a.clone())));
+    e.define_const("stream_const", ConstDef::Op(stream_const(a.clone())));
+    e.define_const("stream_head", ConstDef::Op(stream_head(a.clone())));
+    e.define_const("stream_tail", ConstDef::Op(stream_tail(a.clone())));
+    // Seam: ⊢ ∀(f:nat→'a)(n:nat). streamAt (streamMk f) n = f n.
+    let f = Term::free("f", Type::fun(Type::nat(), a.clone()));
+    let n = Term::free("n", Type::nat());
+    let seam = at_mk(&a, &f, &n)
+        .and_then(|t| t.all_intro("n", Type::nat()))
+        .and_then(|t| t.all_intro("f", Type::fun(Type::nat(), a)))
+        .expect("stream_env: at_mk seam");
+    e.define_lemma("at_mk", seam);
+    e
+}
+
+// Universally-quantified wrappers used by the test to match against the
+// per-element Rust proofs.
+
+cached_thm! {
+    /// `⊢ ∀(x:'a)(n:nat). streamAt (streamConst x) n = x`
+    pub fn const_at_thm() -> Thm {
+        let a = Type::tfree("a");
+        let x = Term::free("x", a.clone());
+        let n = Term::free("n", Type::nat());
+        const_at(&a, &x, &n)
+            .and_then(|t| t.all_intro("n", Type::nat()))
+            .and_then(|t| t.all_intro("x", a))
+            .expect("const_at_thm")
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀(x:'a). streamHead (streamConst x) = x`
+    pub fn head_const_thm() -> Thm {
+        let a = Type::tfree("a");
+        let x = Term::free("x", a.clone());
+        head_const(&a, &x)
+            .and_then(|t| t.all_intro("x", a))
+            .expect("head_const_thm")
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀(s:stream 'a)(n:nat). streamAt (streamTail s) n = streamAt s (succ n)`
+    pub fn tail_at_thm() -> Thm {
+        let a = Type::tfree("a");
+        let s = Term::free("s", stream(a.clone()));
+        let n = Term::free("n", Type::nat());
+        tail_at(&a, &s, &n)
+            .and_then(|t| t.all_intro("n", Type::nat()))
+            .and_then(|t| t.all_intro("s", stream(a)))
+            .expect("tail_at_thm")
+    }
+}
+
+crate::cov_theory! {
+    /// stream lemmas ported to `stream.cov`, over `core` + the `streamprim` env.
+    pub mod cov from "stream.cov" {
+        import "core" = crate::script::Env::core();
+        import "streamprim" = crate::init::stream::stream_env();
+        "const_at"   => pub fn const_at_cov;
+        "head_const" => pub fn head_const_cov;
+        "tail_at"    => pub fn tail_at_cov;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +276,16 @@ mod tests {
         // rhs is `streamAt s (succ n)`.
         let succ_n = Term::app(covalence_core::defs::nat_succ(), n.clone());
         assert_eq!(thm.concl().as_eq().unwrap().1, &at(&alpha(), &s, &succ_n));
+    }
+
+    #[test]
+    fn stream_cov_matches_rust() {
+        // Every ported stream lemma must state exactly what the Rust proof states.
+        assert_eq!(cov::const_at_cov().concl(), super::const_at_thm().concl());
+        assert_eq!(
+            cov::head_const_cov().concl(),
+            super::head_const_thm().concl()
+        );
+        assert_eq!(cov::tail_at_cov().concl(), super::tail_at_thm().concl());
     }
 }

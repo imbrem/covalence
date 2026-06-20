@@ -229,3 +229,57 @@ catalog.)
 - **Stores** — the natural home for a validator's frozen `(M, P)` is a
   content-addressed store ([`VISION.md`](./VISION.md)); a frozen model
   is just a blob, and "which executor backs this" is a manifest edge.
+
+---
+
+## 7. The endgame: the built-in literals *are* trusted observers
+
+> **DIRECTION — not yet built.** Sharpens §4's "efficient bytes / efficient
+> nats" from *added* validators into the kernel's *own* representation of
+> `Int` / `Bytes` / `Nat`. Coupled with the Pure-base-logic / narrow-waist
+> direction in [`kernel-design.md`](./kernel-design.md) §11.
+
+Today `Int`, `Bytes`, and the `Nat`/`succ` machinery are **built-in kernel
+primitives** (`TermKind::Int/Blob`, `TermKind::Succ`, the `nat_induct`
+axiom — [`kernel-design.md`](./kernel-design.md) §4, §5.7). The direction is
+to collapse the distinction between "a built-in literal" and "a trusted
+observer": **`Int`/`Bytes`/`Nat` become trusted observers**, and the *only*
+thing separating a **trusted** observer from an **untrusted** one is that
+"this observer is sound" is an **assumption with a more efficient
+representation** — a built-in fast path the kernel privileges, instead of a
+hypothesis threaded through `Thm::assume`. The *logical content* is
+identical; only the *cost* of carrying it differs. A trusted observer is an
+untrusted observer whose soundness assumption has been compiled in. These
+efficient, "trusted" constructions are built *in Rust as a metaprogram* over
+the base logic, so an impl's soundness reduces to the Rust compiler's — see
+[`kernel-design.md`](./kernel-design.md) §11.4 (the `covalence-hol` "zoo").
+
+Two consequences fall out.
+
+### 7.1 Drop the `TermKind` enum
+
+Matching terms on a fixed, closed `TermKind` enum is exactly what hard-wires
+`Int`/`Bytes`/`Nat` into the kernel. The plan is to replace the enum with an
+**open** way to match on terms (a trait / handle the kernel dispatches
+through, rather than a closed sum). A literal is then just an observer leaf
+with a privileged validator; adding — or *removing* — one is no longer a
+kernel-enum edit, and the efficient numeric/byte primitives stop being a
+fixed part of the term grammar.
+
+### 7.2 Observer provenance → "this proof doesn't use `Nat`"
+
+Once a literal is an observer, the set of observers a `Thm` depends on is
+**visible** (the same way `Thm` already tracks hypotheses, and `has_no_obs`
+exists today). That makes a new — non-first-class but sound — query
+possible: **which observers did this proof actually use?** In particular we
+can single out proofs that do *not* lean on the `Int`/`Bytes`/`Nat`
+observers at all — proofs that hold in the bare logic.
+
+That is what lets us **soundly identify `Nat` with its "real definition."**
+Develop Peano arithmetic *without* the `Nat` observer, show that development
+is categorical (the naturals are unique up to isomorphism), and conclude it
+is safe to *identify* the efficient `Nat` observer with the defined
+naturals — the observer becomes **known-sound by a proof, not assumed**.
+This is the §4 "trust the WASM spec → prove it instead" pattern turned on
+the kernel's own numeric primitives: the most-used observers earn their
+trust the same way every other oracle does.

@@ -1,0 +1,89 @@
+;; cat.cov — category-law helpers for HOL functions, ported to the proof
+;; language from `init/cat.rs`.
+;;
+;; The `catprim` env provides:
+;;   - OPERATORS: `compose` (at 'a 'b 'c), `id` (at 'a).
+;;   - GIVEN lemmas: `id_left`, `id_right`, `comp_assoc` (kept as Rust givens
+;;     because the polymorphic `id` type clash prevents a direct port).
+;;
+;; We prove here:
+;;   - `fun_ext`  : ∀(f g : 'a→'b). (∀x. f x = g x) ⟹ (f = g)
+;;   - `comp_beta`: ∀(g:'b→'c)(f:'a→'b)(x:'a). compose g f x = g (f x)
+;;   - `comp_cong`: ∀g g' f f'. (g=g') ⟹ (f=f') ⟹ (compose g f = compose g' f')
+
+(#import core)
+(#open core)
+(#import catprim)
+(#open catprim)
+
+;; ⊢ ∀(f:'a→'b)(g:'a→'b). (∀(x:'a). f x = g x) ⟹ (f = g)
+;;
+;; Proof:
+;;   Assume h : ∀x. f x = g x.
+;;   (1) eta-conv (λx. f x): ⊢ (λx. f x) = f,  sym: ⊢ f = (λx. f x)
+;;   (2) abs-rule x 'a (all-elim x h): ⊢ (λx. f x) = (λx. g x)
+;;   (3) eta-conv (λx. g x): ⊢ (λx. g x) = g
+;;   trans chain: ⊢ f = (λx.fx) = (λx.gx) = g  →  ⊢ f = g
+(#thm fun_ext
+  (#concl
+    (forall (f (fun 'a 'b))
+      (forall (g (fun 'a 'b))
+        (==> (forall (x 'a) (= (app f x) (app g x)))
+             (= f g)))))
+  (#by
+    (intro f g h)
+    (derive
+      (trans
+        (sym (eta-conv (lam (x 'a) (app f x))))
+        (trans
+          (abs-rule x 'a
+            (all-elim x (assume (forall (x 'a) (= (app f x) (app g x))))))
+          (eta-conv (lam (x 'a) (app g x))))))))
+
+;; ⊢ ∀(g:'b→'c)(f:'a→'b)(x:'a). compose g f x = g (f x)
+;;
+;; Proof:
+;;   (1) delta compose: ⊢ compose = λg. λf. λx. g (f x)
+;;       cong-fn g, f, x: ⊢ compose g f x = (λg. λf. λx. g(f x)) g f x
+;;   (2) reduce: three β-steps give (λg.λf.λx. g(fx)) g f x = g(f(x))
+(#thm comp_beta
+  (#concl
+    (forall (g (fun 'b 'c))
+      (forall (f (fun 'a 'b))
+        (forall (x 'a)
+          (= (app (app (app compose g) f) x) (app g (app f x)))))))
+  (#by
+    (intro g f x)
+    (derive
+      (trans
+        (cong-fn x (cong-fn f (cong-fn g (delta compose))))
+        (reduce
+          (app (app (app
+            (lam (cg (fun 'b 'c))
+              (lam (cf (fun 'a 'b))
+                (lam (cx 'a) (app cg (app cf cx)))))
+            g) f) x))))))
+
+;; ⊢ ∀(g:'b→'c)(g':'b→'c)(f:'a→'b)(f':'a→'b).
+;;     (g = g') ⟹ (f = f') ⟹ (compose g f = compose g' f')
+;;
+;; Proof: mk-comb of the two congruence arguments, one step each.
+;;   cong-arg compose (assume (g=g')): ⊢ compose g = compose g'
+;;   mk-comb that with (assume (f=f')): ⊢ compose g f = compose g' f'
+(#thm comp_cong
+  (#concl
+    (forall (g (fun 'b 'c))
+      (forall (g2 (fun 'b 'c))
+        (forall (f (fun 'a 'b))
+          (forall (f2 (fun 'a 'b))
+            (==> (= g g2)
+              (==> (= f f2)
+                   (= (app (app compose g) f) (app (app compose g2) f2)))))))))
+  (#by
+    (intro g g2 f f2 hg hf)
+    (derive
+      (mk-comb
+        (cong-arg compose (assume (= g g2)))
+        (assume (= f f2))))))
+
+(#export fun_ext comp_beta comp_cong)

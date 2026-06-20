@@ -8,7 +8,7 @@
 //!
 //! The namespace is a single [`LazyMap`], so **every** kind of definition
 //! (const, lemma, tactic, rule) is uniformly **lazy**: a binding may still be
-//! computing (today only `#compute`-ing lemmas; tomorrow a `bytes` const loaded
+//! computing (today only `#spawn`-ing lemmas; tomorrow a `bytes` const loaded
 //! from the network — "one async task per definition"). This is deliberately
 //! the *simple* unified design; finer-grained namespaces (separate const/type/
 //! tactic spaces, qualified names) can come later.
@@ -34,6 +34,12 @@ pub enum ConstDef {
     /// argument terms. Monomorphic (the connectives, `nat.add`, …) or
     /// nullary (`true`/`false`).
     Op(Term),
+    /// A **polymorphic** operator *scheme*: the carried term's free type
+    /// variables are the schematic parameters. Each use site instantiates
+    /// them with fresh metavariables, so the same constant can appear at
+    /// several type instances within one term (e.g. `rel.converse` at
+    /// `(a,b)` and `(b,a)`, or a product constructor at two element types).
+    Poly(Term),
     /// Polymorphic HOL equality: the element type is inferred from the
     /// operands.
     Eq,
@@ -82,7 +88,7 @@ impl Env {
             _ => None,
         }
     }
-    /// Look up a lemma, **awaiting** it if it is still computing (`#compute`).
+    /// Look up a lemma, **awaiting** it if it is still computing (`#spawn`).
     /// `None` if unbound (or bound to a non-lemma); `Some(Err)` if its
     /// computation failed.
     pub async fn lookup_lemma(&self, name: &str) -> Option<Result<Thm, ScriptError>> {
@@ -112,12 +118,12 @@ impl Env {
     pub fn lookup_rule(&self, name: &str) -> Option<Arc<dyn Tactic>> {
         self.lookup_tactic(name)
     }
-    /// Whether `name` is bound to a lemma (ready *or* still `#compute`-ing).
+    /// Whether `name` is bound to a lemma (ready *or* still `#spawn`-ing).
     pub fn has_lemma(&self, name: &str) -> bool {
         match self.entries.get_ready(name) {
             Some(Entry::Lemma(_)) => true,
             Some(_) => false,
-            // No ready entry: a *pending* binding is always a #compute-ing
+            // No ready entry: a *pending* binding is always a #spawn-ing
             // lemma (the only kind that pends today).
             None => self.entries.contains(name),
         }
@@ -130,20 +136,18 @@ impl Env {
     pub fn define_lemma(&mut self, name: impl Into<String>, thm: Thm) {
         self.entries.insert_ready(name, Entry::Lemma(thm));
     }
-    /// Bind a lemma to a still-running `#compute` (`spawn_blocking`) task; a
-    /// later reference (or the force) just awaits it.
-    pub fn define_computing(
+    /// Bind a lemma to a **spawned** (`#spawn`) proof: a deferred async
+    /// computation, polled cooperatively when the lemma is first referenced
+    /// (or the theory is forced). Unlike the old `spawn_blocking`-on-a-thread
+    /// task, it shares the prover's cooperative runtime — no nested `block_on`,
+    /// so it may freely `await` sibling lemmas — and any *blocking* work is the
+    /// FFI tactic's own responsibility, not the script layer's.
+    pub fn define_spawned(
         &mut self,
         name: impl Into<String>,
-        task: tokio::task::JoinHandle<Result<Thm, ScriptError>>,
+        fut: futures::future::BoxFuture<'static, Result<Thm, ScriptError>>,
     ) {
-        let fut = async move {
-            let thm = task
-                .await
-                .map_err(|e| ScriptError::Syntax(format!("#compute task failed: {e}")))??;
-            Ok(Entry::Lemma(thm))
-        }
-        .boxed();
+        let fut = async move { Ok(Entry::Lemma(fut.await?)) }.boxed();
         self.entries.insert_pending(name, fut);
     }
     /// Register an inference (usable in tactic mode, tree mode, or both). A

@@ -153,6 +153,72 @@ fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
 }
 
+/// Build the env for the `cond` proof language module.
+///
+/// `cond` is polymorphic (`bool → 'a → 'a → 'a`) so we register it at
+/// the type variable `'a` so the `.cov` elaborator can use `(cond true x y)`
+/// directly and unify `'a` with the argument types.
+pub fn cond_env() -> crate::script::Env {
+    let mut e = crate::script::Env::empty();
+    e.define_const(
+        "cond",
+        crate::script::ConstDef::Op(cond(Type::tfree("a"))),
+    );
+    e
+}
+
+crate::cov_theory! {
+    /// cond clauses ported to `cond.cov`, over `core` + the `cond` env.
+    pub mod cov from "cond.cov" {
+        import "core" = crate::script::Env::core();
+        import "condprim" = crate::init::cond::cond_env();
+        "cond_true"  => pub fn cond_true_cov;
+        "cond_false" => pub fn cond_false_cov;
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::cov;
+    use covalence_core::{Term, Type};
+
+    fn alpha() -> Type {
+        Type::tfree("a")
+    }
+
+    /// `⊢ ∀x y : 'a. cond T x y = x` — the ∀-closed form matching `cond.cov`.
+    fn cond_true_forall() -> covalence_core::Thm {
+        let a = alpha();
+        let x = Term::free("x", a.clone());
+        let y = Term::free("y", a.clone());
+        super::cond_true(&a, &x, &y)
+            .unwrap()
+            .all_intro("y", a.clone())
+            .unwrap()
+            .all_intro("x", a.clone())
+            .unwrap()
+    }
+
+    /// `⊢ ∀x y : 'a. cond F x y = y` — the ∀-closed form matching `cond.cov`.
+    fn cond_false_forall() -> covalence_core::Thm {
+        let a = alpha();
+        let x = Term::free("x", a.clone());
+        let y = Term::free("y", a.clone());
+        super::cond_false(&a, &x, &y)
+            .unwrap()
+            .all_intro("y", a.clone())
+            .unwrap()
+            .all_intro("x", a.clone())
+            .unwrap()
+    }
+
+    #[test]
+    fn cond_cov_matches_rust() {
+        assert_eq!(cov::cond_true_cov().concl(), cond_true_forall().concl());
+        assert_eq!(cov::cond_false_cov().concl(), cond_false_forall().concl());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

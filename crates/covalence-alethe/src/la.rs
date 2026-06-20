@@ -18,22 +18,21 @@
 //! (2) clausify it with [`logic::clause_intro`] into `⊢ ¬l₁ ∨ … ∨ ¬lₙ`.
 //! Step (2) is shared, generic plumbing; step (1) is the arithmetic core.
 //!
-//! ## What the prototype covers
+//! ## What this checker covers
 //!
-//! The **two-literal, coefficient-`(1,1)`, all-strict** Farkas case — the
-//! canonical `x < 0 ∧ 0 < x ⟹ ⊥` shape (and any rotation of it). The two
-//! literals must chain by transitivity: `P < Q` and `Q < P`, yielding
-//! `P < P`, contradicted by [`int::lt_irrefl`]. `>`/`>=` are normalised to
-//! `</<=` upstream in [`crate::hol`], so we only see `int.lt` / `int.le`
-//! here.
+//! The **unit-coefficient, all-strict transitivity-cycle** case: `n ≥ 2`
+//! literals `t₁ < t₂, t₂ < t₃, …, tₙ < t₁` (in any order / rotation) that
+//! chain — via [`int::lt_trans`] — into `x < x`, contradicted by
+//! [`int::lt_irrefl`]. The two-literal case (`a < b ∧ b < a`) is the
+//! `n = 2` instance. `>`/`>=` are normalised to `<`/`<=` upstream in
+//! [`crate::hol`], so we only see `int.lt` / `int.le` here.
 //!
-//! Everything else — `n > 2` literals, non-unit coefficients, mixed
-//! strict/non-strict, the genuine *scale-and-sum* combination — is
-//! reported `NotImplemented` with a precise message. See the module-level
-//! roadmap in `SKELETONS.md` for the generalisation path (it needs
-//! `int::lt_add_mono` / `le_add_mono` to scale-and-add, and
-//! `int::lt_mul_pos` to scale a strict inequality by a positive constant —
-//! both already **proved** in `init::int`).
+//! Still **`NotImplemented`** (see `SKELETONS.md`): non-unit / rational
+//! coefficients (needs [`int::lt_mul_pos`] to scale a strict literal and
+//! `int::lt_add_mono` to add inequalities), non-strict (`≤`) literals and
+//! le/lt mixing (needs [`int::le_def`] + `lt_trichotomy`), and the general
+//! *scale-each-literal-by-its-coefficient-and-sum* combination that does
+//! not reduce to a transitivity cycle.
 
 use covalence_core::{Term, Thm};
 use covalence_hol::init::{int, logic};
@@ -44,11 +43,11 @@ type R<T> = Result<T, BridgeError>;
 
 /// `la_generic`: check a Farkas tautology clause `(cl (not l₁) … (not lₙ))`.
 ///
-/// `lits` are the *stated clause literals* (the `(not lᵢ)`); `_args` are
-/// the rational coefficients (unused by the 2-literal strict prototype,
-/// which fixes them at `1`). Returns `⊢ ¬l₁ ∨ … ∨ ¬lₙ`, derived by
+/// `lits` are the *stated clause literals* (the `(not lᵢ)`); `args` are
+/// the coefficients (the cycle case fixes them at unit, so non-unit
+/// coefficients are rejected). Returns `⊢ ¬l₁ ∨ … ∨ ¬lₙ`, derived by
 /// refuting `{l₁, …, lₙ}` in the kernel and clausifying.
-pub fn la_generic(lits: &[Term], _args: &[covalence_sexp::SExpr]) -> R<Thm> {
+pub fn la_generic(lits: &[Term], args: &[covalence_sexp::SExpr]) -> R<Thm> {
     // Recover the asserted literals lᵢ by stripping the clause's `(not ·)`.
     let atoms: Vec<Term> = lits
         .iter()
@@ -60,64 +59,122 @@ pub fn la_generic(lits: &[Term], _args: &[covalence_sexp::SExpr]) -> R<Thm> {
         })
         .collect::<R<_>>()?;
 
-    let (l1, l2) = match atoms.as_slice() {
-        [l1, l2] => (l1, l2),
-        _ => {
-            return Err(BridgeError::NotImplemented(format!(
-                "la_generic with {} literals (prototype handles the 2-literal \
-                 strict case)",
-                atoms.len()
-            )));
-        }
-    };
-
-    let refutation = farkas_two_strict(l1, l2)?; // {l₁, l₂} ⊢ F
-    // Turn `{l₁, l₂} ⊢ F` into `{l₁} ⊢ ¬l₂` (the last literal becomes the
-    // clause tail), then clausify the remaining hypothesis: `⊢ ¬l₁ ∨ ¬l₂`.
-    // (Discharging l₂ directly avoids the spurious trailing `∨ F` that
-    // clausifying an `F`-conclusion would leave.)
-    let seq = refutation.imp_intro(l2)?.not_intro()?; // {l₁} ⊢ ¬l₂
-    logic::clause_intro(seq, std::slice::from_ref(l1)).map_err(Into::into)
-}
-
-/// The two-literal, coefficient-`(1,1)`, all-strict Farkas core: from two
-/// strict inequalities that chain (`P < Q` and `Q < P`) derive
-/// `{l₁, l₂} ⊢ F`.
-fn farkas_two_strict(l1: &Term, l2: &Term) -> R<Thm> {
-    let (a, b) = dest_lt(l1).ok_or_else(|| unsupported(l1, l2))?;
-    let (c, d) = dest_lt(l2).ok_or_else(|| unsupported(l1, l2))?;
-
-    // The combination is contradictory iff the two inequalities chain into
-    // `P < P`. With coefficients (1,1) and strict literals that means
-    // `b == c` and `d == a`: `a < b` and `b < a`.
-    if b != c || d != a {
+    if atoms.len() < 2 {
         return Err(BridgeError::NotImplemented(format!(
-            "la_generic: literals `{l1}` and `{l2}` do not form a \
-             (1,1) transitivity contradiction (need `a < b` and `b < a`; \
-             general scale-and-sum Farkas not yet wired)"
+            "la_generic with {} literal(s) (need ≥ 2 for a refutation)",
+            atoms.len()
         )));
     }
 
-    // {a<b} and {b<a} ⊢ a < a, by int.lt_trans.
-    let h1 = Thm::assume(l1.clone())?; // {a<b} ⊢ a < b
-    let h2 = Thm::assume(l2.clone())?; // {b<a} ⊢ b < a
-    let a_lt_a = int::lt_trans() // ∀a b c. a<b ⟹ b<c ⟹ a<c
-        .all_elim(a.clone())?
-        .all_elim(b.clone())?
-        .all_elim(a.clone())?
-        .imp_elim(h1)?
-        .imp_elim(h2)?; // {a<b, b<a} ⊢ a < a
+    // The cycle checker is sound only for unit coefficients. If `:args`
+    // carries coefficients, require they are all `1` (the genuine
+    // scale-and-sum for non-unit coefficients is not yet wired).
+    if !args.is_empty() && !all_unit_coeffs(args) {
+        return Err(BridgeError::NotImplemented(
+            "la_generic with non-unit coefficients (only the unit-coefficient \
+             strict transitivity-cycle case is wired)"
+                .into(),
+        ));
+    }
 
-    // ⊢ ¬(a < a), contradict.
-    let not_a_lt_a = int::lt_irrefl().all_elim(a.clone())?; // ⊢ ¬(a < a)
-    not_a_lt_a.not_elim(a_lt_a).map_err(Into::into) // {a<b, b<a} ⊢ F
+    // Every literal must be a strict `int.lt`. (Non-strict `≤` mixing is
+    // deferred — see SKELETONS.md.)
+    let edges: Vec<(Term, Term)> = atoms
+        .iter()
+        .map(|a| {
+            dest_lt(a).ok_or_else(|| {
+                BridgeError::NotImplemented(format!(
+                    "la_generic: literal `{a}` is not a strict `int.lt` \
+                     (le/lt mixing not yet wired)"
+                ))
+            })
+        })
+        .collect::<R<_>>()?;
+
+    let refutation = farkas_strict_cycle(&atoms, &edges)?; // {l₁, …, lₙ} ⊢ F
+    clausify(refutation, &atoms)
 }
 
-fn unsupported(l1: &Term, l2: &Term) -> BridgeError {
-    BridgeError::NotImplemented(format!(
-        "la_generic: literals `{l1}` / `{l2}` are not both strict `int.lt` \
-         inequalities (prototype handles the strict 2-literal case)"
-    ))
+/// Turn `{l₁, …, lₙ} ⊢ F` into `⊢ ¬l₁ ∨ … ∨ ¬lₙ` by discharging the last
+/// literal as the clause tail then clausifying the rest. (Discharging the
+/// final literal directly avoids the spurious trailing `∨ F` that
+/// clausifying an `F`-conclusion would leave.)
+fn clausify(refutation: Thm, atoms: &[Term]) -> R<Thm> {
+    let (last, init) = atoms
+        .split_last()
+        .expect("≥ 2 literals checked by caller");
+    let seq = refutation.imp_intro(last)?.not_intro()?; // {l₁, …, lₙ₋₁} ⊢ ¬lₙ
+    logic::clause_intro(seq, init).map_err(Into::into)
+}
+
+/// The unit-coefficient, all-strict Farkas core: from `n` strict
+/// inequalities that form a cycle, derive `{l₁, …, lₙ} ⊢ F`.
+///
+/// `edges[i] = (aᵢ, bᵢ)` is `atoms[i] = (aᵢ < bᵢ)`. We walk the cycle
+/// starting at edge 0 (`a₀ < b₀`), repeatedly finding the unique unused
+/// edge whose source equals the current chain head's target, chaining via
+/// [`int::lt_trans`]. A valid unit-coefficient strict refutation makes the
+/// walk return to `a₀` after consuming **every** edge — yielding `a₀ < a₀`,
+/// contradicted by [`int::lt_irrefl`].
+fn farkas_strict_cycle(atoms: &[Term], edges: &[(Term, Term)]) -> R<Thm> {
+    let n = edges.len();
+    let mut used = vec![false; n];
+
+    // Start the chain at edge 0.
+    used[0] = true;
+    let (start, mut tip) = (edges[0].0.clone(), edges[0].1.clone());
+    // The running theorem: `{…} ⊢ start < tip`.
+    let mut chain = Thm::assume(atoms[0].clone())?;
+
+    for _ in 1..n {
+        // Find the unused edge whose source == current tip.
+        let next = (0..n).find(|&j| !used[j] && edges[j].0 == tip);
+        let Some(j) = next else {
+            return Err(BridgeError::NotImplemented(format!(
+                "la_generic: literals do not form a single strict cycle \
+                 (no edge continues from `{tip}`; general scale-and-sum \
+                 Farkas not yet wired)"
+            )));
+        };
+        used[j] = true;
+        let tj = edges[j].1.clone();
+        // `start < tip` and `tip(=edges[j].0) < tj`  ⟹  `start < tj`.
+        let next_thm = Thm::assume(atoms[j].clone())?;
+        chain = int::lt_trans()
+            .all_elim(start.clone())?
+            .all_elim(tip.clone())?
+            .all_elim(tj.clone())?
+            .imp_elim(chain)?
+            .imp_elim(next_thm)?; // {…} ⊢ start < tj
+        tip = tj;
+    }
+
+    // The cycle must close: the final tip is the start.
+    if tip != start {
+        return Err(BridgeError::NotImplemented(format!(
+            "la_generic: strict chain `{start} < … < {tip}` does not close \
+             the cycle (general scale-and-sum Farkas not yet wired)"
+        )));
+    }
+
+    // `{…} ⊢ start < start`, contradicted by `⊢ ¬(start < start)`.
+    let not_refl = int::lt_irrefl().all_elim(start.clone())?; // ⊢ ¬(start < start)
+    not_refl.not_elim(chain).map_err(Into::into) // {l₁, …, lₙ} ⊢ F
+}
+
+/// Are all `:args` coefficients the literal `1`? (cvc5 emits Farkas
+/// coefficients as bare numerals; a unit cycle has every coefficient `1`.)
+fn all_unit_coeffs(args: &[covalence_sexp::SExpr]) -> bool {
+    args.iter()
+        .all(|a| a.as_symbol() == Some("1") || coeff_is_one(a))
+}
+
+/// Recognise `1`, `(/ 1 1)`, or `1.0` style unit coefficients.
+fn coeff_is_one(a: &covalence_sexp::SExpr) -> bool {
+    match a.as_symbol() {
+        Some(s) => s == "1" || s == "1.0",
+        None => false,
+    }
 }
 
 /// `App(¬, p)` → `p`, if `t` is a HOL negation.

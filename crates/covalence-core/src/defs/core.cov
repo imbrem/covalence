@@ -210,6 +210,31 @@
                  (bool.and (#eq x a) (#eq y b))))))))))
 
 ;; ---------------------------------------------------------------------------
+;; signed1 / signed2 (defs/prod.rs) — `prod bit 'a`-shaped subtypes, reusing
+;; the product "singleton relation" predicate over the carrier `bit → 'a → bool`.
+;; They are distinct symbols from `prod` (own `Canonical` labels) but share its
+;; predicate shape; `bit` is still a hand-written `bits` subtype.
+;; ---------------------------------------------------------------------------
+
+(#subtype signed1 (#fn bit 'a bool)
+  (#lam (R (#fn bit 'a bool))
+    ((#at bool.exists bit)
+      (#lam (a bit)
+        ((#at bool.exists 'a)
+          (#lam (b 'a)
+            (#eq R (#lam (x bit) (#lam (y 'a)
+              (bool.and (#eq x a) (#eq y b)))))))))))
+
+(#subtype signed2 (#fn bit 'a bool)
+  (#lam (R (#fn bit 'a bool))
+    ((#at bool.exists bit)
+      (#lam (a bit)
+        ((#at bool.exists 'a)
+          (#lam (b 'a)
+            (#eq R (#lam (x bit) (#lam (y 'a)
+              (bool.and (#eq x a) (#eq y b)))))))))))
+
+;; ---------------------------------------------------------------------------
 ;; option (defs/option.rs) — option 'a := coprod 'a unit (a newtype).
 ;; ---------------------------------------------------------------------------
 

@@ -70,6 +70,14 @@ trait Logic {
     fn interpret(&self, sig: &Signature) -> Result<Interpretation, …>;
     /// The handler set this logic installs (the proof-side dispatch).
     fn handlers(&self) -> HandlerSet;
+
+    /// --- LITERAL LIFTING (model-relative; each may FAIL) ---
+    /// A surface literal is lowered into THIS logic/model's carrier — and a
+    /// logic may legitimately reject a literal kind (returns Err). A Nat
+    /// literal is just a non-negative Int literal, so there is one int entry.
+    fn lift_int(&self, n: &Int)    -> Result<Term, NoLiteral>;
+    fn lift_string(&self, s: &str) -> Result<Term, NoLiteral>;
+    fn lift_bytes(&self, b: &[u8]) -> Result<Term, NoLiteral>;
 }
 ```
 
@@ -77,7 +85,21 @@ The clean split: **`Logic` = signature interpreter (structural, fairly uniform);
 `Tactic`/`HandlerSet` = proof interpreter (varied per logic).** `admits` is the
 statability axis (§3.1) made executable — a logic *refuses* a signature it can't
 express. A **model** is then `(a Logic, the Interpretation it produced, a
-spec-satisfaction proof)`. This is the Rust-level realization of the
+spec-satisfaction proof)`.
+
+**Literal lifting is a `Logic` method, and it is model-relative and fallible.**
+The surface literal `3` does not mean one fixed kernel term; the *model* decides
+how to lower it into its carrier (`surface-compiler.md §5`). For `nat/self`
+(kernel `nat`) `lift_int(3)` is the built-in literal; for **`nat/unary`**
+(`list unit`) it must run a logic-supplied **builtin-nat → unary conversion
+function** (`3 ↦ cons unit.nil (cons unit.nil (cons unit.nil nil))`); for a
+reified-SOA model it is the object numeral `S(S(S 0))`. A logic that has no
+sensible lift for a literal kind returns `Err(NoLiteral)` — using that literal
+there is a diagnostic, not a silent coercion. (A **Nat** literal is exactly a
+non-negative **Int** literal, so there is a single `lift_int`; string/byte
+literals are the same shape.) This is the `covalence-pure` literal-as-lifted-
+observation mechanism (`covalence-pure.md §3`) surfaced as a `Logic`
+responsibility. This is the Rust-level realization of the
 signature/theory/model architecture, and the substrate the HOL-ω migration slots
 into (HOL-ω is another `Logic` impl with a richer `admits`).
 

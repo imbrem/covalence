@@ -26,3 +26,15 @@ coupling guard.
 - **Fixed-width conversions** (`toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/
   `sext`, `int_ops.rs`) are **intentionally** declaration-only — the
   primitive reducible interface the ops above are built on, not a stub.
+
+## defs/core.cov migration (partial)
+
+- **`defs/core.cov` + the `defs::cov` parser** migrate part of the catalogue to
+  data (`#def`/`#newtype`/`#subtype`/`#quot` over `covalence-sexp`), byte-identical
+  to the hand-written `defs::*` (asserted in `cov::tests`). **Migrated:** the logic
+  connectives, `fun` combinators, `unit`/`unit.nil`, `coprod`/`prod`/`option`/
+  `result` + ops. **Stayed Rust** (don't fit the four directives): built-in
+  literals, ε-selector primitive specs, recursors, nat/int/rat arithmetic. The
+  accessors still source from Rust (`.cov` proven equal, not yet authoritative) —
+  flipping the source of truth + porting the numeric tower (hand-rolled copy did it)
+  is the follow-up.

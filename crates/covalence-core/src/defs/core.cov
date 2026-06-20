@@ -1,0 +1,269 @@
+;; ===========================================================================
+;; core.cov — the kernel's closed term sublanguage catalogue, as data.
+;;
+;; This file is parsed by `defs::cov::parse_core` (see `defs/cov.rs`) into
+;; a non-lazy `Env`. It migrates the hand-written `defs/*.rs` definitions
+;; that map cleanly onto the four directives:
+;;
+;;   (#def     name term)        — a term constant
+;;   (#newtype name ty)          — TypeSpec::newtype
+;;   (#subtype name ty pred)     — TypeSpec::subtype  { x : ty | pred x }
+;;   (#quot    name ty rel)      — TypeSpec::quotient  ty / rel
+;;
+;; The term sublanguage (`#lam`, `#eq`, `#sel`, `#abs`, `#rep`, `#at`,
+;; application, literals) is the simply-typed lambda calculus of
+;; `docs/surface-syntax.md §1.4`. References to *other* catalogue
+;; constants resolve to the cached `defs::*` accessors, so each parsed
+;; object is byte-identical (`==`) to its hand-written counterpart — the
+;; `cov_tests` module asserts exactly this.
+;;
+;; Definition order is dependency order (each entry may reference any
+;; entry above it, plus the still-Rust catalogue). What stays Rust and
+;; why is documented in `defs/cov.rs` and the final migration report.
+;; ===========================================================================
+
+;; ---------------------------------------------------------------------------
+;; Logic connectives (defs/logic.rs) — over `=` / `ε` + bool literals.
+;; T / F are the bool literals `T` / `F` (TermKind::Bool).
+;; ---------------------------------------------------------------------------
+
+;; (/\) := λp q. (λf. f p q) = (λf. f T T)
+(#def bool.and
+  (#lam (p bool) (#lam (q bool)
+    (#eq
+      (#lam (f (#fn bool bool bool)) (f p q))
+      (#lam (f (#fn bool bool bool)) (f T T))))))
+
+;; (==>) := λp q. (p /\ q) = p
+(#def bool.imp
+  (#lam (p bool) (#lam (q bool)
+    (#eq (bool.and p q) p))))
+
+;; (~) := λp. p ==> F
+(#def bool.not
+  (#lam (p bool) (bool.imp p F)))
+
+;; (<=>) := λp q. p = q
+(#def bool.iff
+  (#lam (p bool) (#lam (q bool) (#eq p q))))
+
+;; (!) := λP. P = (λx. T)
+(#def bool.forall
+  (#lam (P (#fn 'a bool))
+    (#eq P (#lam (x 'a) T))))
+
+;; (\/) := λp q. !r. (p ==> r) ==> (q ==> r) ==> r
+(#def bool.or
+  (#lam (p bool) (#lam (q bool)
+    ((#at bool.forall bool)
+      (#lam (r bool)
+        (bool.imp (bool.imp p r) (bool.imp (bool.imp q r) r)))))))
+
+;; (?) := λP. !q. (!x. P x ==> q) ==> q
+(#def bool.exists
+  (#lam (P (#fn 'a bool))
+    ((#at bool.forall bool)
+      (#lam (q bool)
+        (bool.imp
+          ((#at bool.forall 'a) (#lam (x 'a) (bool.imp (P x) q)))
+          q)))))
+
+;; ---------------------------------------------------------------------------
+;; fail (defs/fail.rs) — the unspecified inhabitant of any type.
+;; fail := ε(λx. T)
+;; ---------------------------------------------------------------------------
+
+(#def fail
+  (#sel (x 'a) T))
+
+;; ---------------------------------------------------------------------------
+;; Function combinators (defs/fun.rs).
+;; ---------------------------------------------------------------------------
+
+;; id := λx. x
+(#def fun.id
+  (#lam (x 'a) x))
+
+;; const := λx _. x
+(#def fun.const
+  (#lam (x 'a) (#lam (y 'b) x)))
+
+;; compose := λg f x. g (f x)
+(#def fun.compose
+  (#lam (g (#fn 'b 'c)) (#lam (f (#fn 'a 'b)) (#lam (x 'a)
+    (g (f x))))))
+
+;; flip := λf y x. f x y
+(#def fun.flip
+  (#lam (f (#fn 'a 'b 'c)) (#lam (y 'b) (#lam (x 'a)
+    (f x y)))))
+
+;; ---------------------------------------------------------------------------
+;; unit (defs/unit.rs) — the bool-subtype singleton { b : bool | b = T }.
+;; ---------------------------------------------------------------------------
+
+(#subtype unit bool
+  (#lam (b bool) (#eq b T)))
+
+;; unit.nil := abs T
+(#def unit.nil
+  (#abs unit () T))
+
+;; ---------------------------------------------------------------------------
+;; coprod (defs/coprod.rs) — disjoint union over the tagged carrier
+;;   relation `α → β → bool → bool`.
+;;
+;;   left  a := λx y z. z ∧ (x = a)
+;;   right b := λx y z. ¬z ∧ (y = b)
+;;   coprod  := { R | (∃a. R = left a) ∨ (∃b. R = right b) }
+;; ---------------------------------------------------------------------------
+
+(#subtype coprod (#fn 'a 'b bool bool)
+  (#lam (R (#fn 'a 'b bool bool))
+    (bool.or
+      ((#at bool.exists 'a)
+        (#lam (a 'a)
+          (#eq R (#lam (x 'a) (#lam (y 'b) (#lam (z bool)
+            (bool.and z (#eq x a))))))))
+      ((#at bool.exists 'b)
+        (#lam (b 'b)
+          (#eq R (#lam (x 'a) (#lam (y 'b) (#lam (z bool)
+            (bool.and (bool.not z) (#eq y b)))))))))))
+
+;; inl := λa. abs (left a)
+(#def coprod.inl
+  (#lam (a 'a)
+    (#abs coprod ('a 'b)
+      (#lam (x 'a) (#lam (y 'b) (#lam (z bool)
+        (bool.and z (#eq x a))))))))
+
+;; inr := λb. abs (right b)
+(#def coprod.inr
+  (#lam (b 'b)
+    (#abs coprod ('a 'b)
+      (#lam (x 'a) (#lam (y 'b) (#lam (z bool)
+        (bool.and (bool.not z) (#eq y b))))))))
+
+;; coprodCase := λf g c. ε(λr.
+;;     (∀a. rep c = left a  ⟹ r = f a)
+;;   ∧ (∀b. rep c = right b ⟹ r = g b))
+(#def coprod.case
+  (#lam (f (#fn 'a 'c)) (#lam (g (#fn 'b 'c)) (#lam (c (coprod 'a 'b))
+    (#sel (r 'c)
+      (bool.and
+        ((#at bool.forall 'a)
+          (#lam (a 'a)
+            (bool.imp
+              (#eq (#rep coprod ('a 'b) c)
+                   (#lam (x 'a) (#lam (y 'b) (#lam (z bool)
+                     (bool.and z (#eq x a))))))
+              (#eq r (f a)))))
+        ((#at bool.forall 'b)
+          (#lam (b 'b)
+            (bool.imp
+              (#eq (#rep coprod ('a 'b) c)
+                   (#lam (x 'a) (#lam (y 'b) (#lam (z bool)
+                     (bool.and (bool.not z) (#eq y b))))))
+              (#eq r (g b)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; prod (defs/prod.rs) — product over the carrier relation `α → β → bool`.
+;;
+;;   pairRel a b := λx y. x = a ∧ y = b
+;;   prod        := { R | ∃a b. R = pairRel a b }
+;; ---------------------------------------------------------------------------
+
+(#subtype prod (#fn 'a 'b bool)
+  (#lam (R (#fn 'a 'b bool))
+    ((#at bool.exists 'a)
+      (#lam (a 'a)
+        ((#at bool.exists 'b)
+          (#lam (b 'b)
+            (#eq R (#lam (x 'a) (#lam (y 'b)
+              (bool.and (#eq x a) (#eq y b)))))))))))
+
+;; pair := λa b. abs (pairRel a b)
+(#def prod.pair
+  (#lam (a 'a) (#lam (b 'b)
+    (#abs prod ('a 'b)
+      (#lam (x 'a) (#lam (y 'b)
+        (bool.and (#eq x a) (#eq y b))))))))
+
+;; fst := λp. ε(λa. ∃b. rep p = pairRel a b)
+(#def prod.fst
+  (#lam (p (prod 'a 'b))
+    (#sel (a 'a)
+      ((#at bool.exists 'b)
+        (#lam (b 'b)
+          (#eq (#rep prod ('a 'b) p)
+               (#lam (x 'a) (#lam (y 'b)
+                 (bool.and (#eq x a) (#eq y b))))))))))
+
+;; snd := λp. ε(λb. ∃a. rep p = pairRel a b)
+(#def prod.snd
+  (#lam (p (prod 'a 'b))
+    (#sel (b 'b)
+      ((#at bool.exists 'a)
+        (#lam (a 'a)
+          (#eq (#rep prod ('a 'b) p)
+               (#lam (x 'a) (#lam (y 'b)
+                 (bool.and (#eq x a) (#eq y b))))))))))
+
+;; ---------------------------------------------------------------------------
+;; option (defs/option.rs) — option 'a := coprod 'a unit (a newtype).
+;; ---------------------------------------------------------------------------
+
+(#newtype option (coprod 'a unit))
+
+;; none := abs (inr unit.nil)
+(#def option.none
+  (#abs option ('a)
+    ((#at coprod.inr 'a unit) unit.nil)))
+
+;; some := λa. abs (inl a)
+(#def option.some
+  (#lam (a 'a)
+    (#abs option ('a)
+      ((#at coprod.inl 'a unit) a))))
+
+;; optionCase := λd f o. coprodCase f (λ_. d) (rep o)
+(#def option.case
+  (#lam (d 'b) (#lam (f (#fn 'a 'b)) (#lam (o (option 'a))
+    ((#at coprod.case 'a unit 'b)
+      f
+      (#lam (u unit) d)
+      (#rep option ('a) o))))))
+
+;; isSome := λo. optionCase F (λ_. T) o
+(#def option.isSome
+  (#lam (o (option 'a))
+    ((#at option.case 'a bool)
+      F
+      (#lam (x 'a) T)
+      o)))
+
+;; unwrap := λo. optionCase fail (λx. x) o
+(#def option.unwrap
+  (#lam (o (option 'a))
+    ((#at option.case 'a 'a)
+      (#at fail 'a)
+      (#lam (x 'a) x)
+      o)))
+
+;; ---------------------------------------------------------------------------
+;; result (defs/result.rs) — result 'a 'b := coprod 'a 'b (a newtype).
+;; ---------------------------------------------------------------------------
+
+(#newtype result (coprod 'a 'b))
+
+;; ok := λa. abs (inl a)
+(#def result.ok
+  (#lam (a 'a)
+    (#abs result ('a 'b)
+      ((#at coprod.inl 'a 'b) a))))
+
+;; err := λe. abs (inr e)
+(#def result.err
+  (#lam (e 'b)
+    (#abs result ('a 'b)
+      ((#at coprod.inr 'a 'b) e))))

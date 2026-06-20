@@ -250,6 +250,39 @@ it is how unfinished work stays discoverable.
     the `defs/` catalogue; surjective pairing + the projections are enough to
     define and reason about one downstream when needed.
 
+- **`covalence-hol` reified object logic (S-expr → propositional logic)** in
+  `crates/covalence-hol/src/init/sexpr.rs` + `crates/covalence-hol/src/init/prop.rs`
+  (the first internal object logic, `docs/metatheory.md` §8). Both datatypes use
+  a **Church / impredicative encoding** over a fresh result type `'r` (not the
+  `init/inductive/` carve-a-subtype engine), which keeps everything rank-1 and
+  TCB-free. **Complete and genuine** (all theorems hypothesis- and oracle-free):
+  - `sexpr.rs` — `SExpr := atom bytes | snil | scons` with constructors, the
+    recursor `rec`, and its three per-constructor equations (`rec_atom` /
+    `rec_snil` / `rec_scons`, proved by β). End-to-end length-fold test passes.
+  - `prop.rs` — `PropForm` (`var nat | ¬ | ∧ | ∨ | ⟹`), the denotation
+    `⟦·⟧ : PropForm → (nat→bool) → bool`, the impredicative Hilbert-system
+    `Derivable_Prop A := ∀d. Closed d ⟹ d A` (10 axiom schemas + MP), the
+    LCF-style derivation constructors `derive_axiom` / `derive_mp`, and the
+    **soundness theorem** `⊢ ∀v. Derivable_Prop A ⟹ ⟦A⟧ v` (proved by
+    instantiating `d := λA. ⟦A⟧ v` and discharging each closure clause via
+    `prove_taut` = β-normalise + complete Shannon decision `prop_eq`).
+  - Not yet here:
+    - **A genuine `SExpr` structural induction principle.** `sexpr::induct_note`
+      is a doc placeholder: the bare Church encoding admits junk inhabitants, so
+      `(∀b. P(atom b)) ⟹ P snil ⟹ (∀h t. P h ⟹ P t ⟹ P(scons h t)) ⟹ ∀s. P s`
+      needs a `Wf` well-formedness predicate carving the well-founded encodings
+      (the standard "reducibility" side condition). Soundness does **not** need
+      it — `Derivable_Prop` is itself impredicative — so it was deferred. The
+      recursor universal property / `Wf`-restricted induction is the next step
+      if a downstream proof needs to induct over arbitrary `SExpr`s.
+    - **`ToProp : HOLTm ⇀ PropForm`** (metatheory §8 step 4, the first *language
+      morphism* translating a HOL propositional fragment into the object logic
+      with `⟦ToProp t⟧ = t`) is not built.
+    - **Propositional variables are `nat` indices, not `SExpr` atoms.** The
+      `SExpr` carrier and `PropForm` are independent today; wiring `var` to carry
+      an `SExpr` atom (so formulas are literally S-expressions) is a later
+      unification, deliberately skipped for simplicity.
+
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in
   `crates/covalence-alethe/src/hol.rs`) checks the QF_UF core (`assume`,
   `resolution` / `th_resolution`, `refl`, `trans`, `symm`, `cong`,

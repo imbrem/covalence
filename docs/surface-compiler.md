@@ -413,6 +413,24 @@ unifying substrate (CTL/LTL/CTL\* all embed into it) — so a generic
 data picking the fragment, is exactly where exposing the declarable object pays
 for itself.
 
+**The unifying answer (user): a `#logic` *is* a Metamath database.** What the
+declarable `.logic` data *is* — what parameterizes the generic `Logic` impl — was
+the open question. The answer: a logic's axioms + inference rules **as
+substitution schemas over `SExpr`**, i.e. a **Metamath database**
+(`theories-models-and-logics.md §5.6`). The pure metavariable-substitution
+metalogic is universal, so "define a logic" = "write a database", and the generic
+`Logic` impl for the dominant family (anything that is *axioms + rules*) **is the
+Metamath substitution engine**. Crate boundary (user): that engine — the
+expression model, substitution, frame/DV, derivability `Derivable_L`, and the
+`S`-rewrite transport — lives **first-class in `covalence-hol`** (it is core to
+defining logics and doing metatheory); **`covalence-metamath` is demoted to the
+format/IO reader** (compressed-proof decoding, `.mm` file parsing, `$[ $]` file
+inclusion, set.mm ingestion) so that machinery doesn't clutter `covalence-hol`.
+The Rust `Logic` *trait* still tops it (native impls like the metalogic itself,
+model-checker handlers, …), but the **database is the data the common case
+consumes**, and `Metamath-L ≅ native-L` (§5.6) is how native/HOL/WASM accelerators
+plug in.
+
 ---
 
 ## 4. Isomorphic models and the self-model (`hol-in-hol`)

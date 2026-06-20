@@ -495,14 +495,26 @@ all **optimizations over it**.) Four locking pieces:
    transport the result across the correspondence. This is the
    `≡ iso-dispatch ≡ accelerator-discharge` identity (§2), now anchored on the
    Metamath substrate, and the same admission protocol as pillar 2.
-4. **Convergence with `.logic` (§3.0.5 of `surface-compiler.md`).** A `.logic` —
-   the *data* parameterizing a generic `Logic` impl for a family — is essentially
-   **a Metamath database**: axioms + rules as substitution schemas. So "define a
-   logic" and "write a Metamath database" are the same act, and the HOL bridge is
-   `S`-into-`IsThm` (the shallow-embed-future target). **Near-term value:** the
-   crate is the clean place to *define logics* (FOL, a real ZFC fragment, modal
-   logics as databases) and study `Derivable_L` / `S` / the correspondence — *not*
-   racing to set.mm-scale ingestion, which is one consumer's optimization.
+4. **Convergence with `.logic` (§3.0.5 of `surface-compiler.md`) — the unifying
+   answer for `#logic`.** A `.logic` — the *data* parameterizing a generic `Logic`
+   impl for a family — **is a Metamath database**: axioms + rules as substitution
+   schemas. So "define a logic" and "write a Metamath database" are the same act,
+   and the HOL bridge is `S`-into-`IsThm` (the shallow-embed-future target).
+
+**Crate boundary (user, important).** Because Metamath *is* the logic-definition
+substrate, **the engine belongs first-class in `covalence-hol`** — the `SExpr`
+expression model, substitution, frame/DV, the verifier, `Derivable_L`, the
+`S`-rewrite transport, and the `Metamath-L ≅ native-L` correspondence. That is core
+to defining logics and doing metatheory, so it must not live off in a side crate.
+**`covalence-metamath` is demoted to the format/IO reader**: compressed-proof
+decoding, `.mm` file parsing, `$[ $]` file inclusion, and set.mm-scale ingestion —
+the messy format concerns we *don't* want cluttering `covalence-hol`. So the move
+is: relocate the engine (`expr`/`subst`/`database`-model/`verify`) into
+`covalence-hol/src/metamath/`, and slim `covalence-metamath` to a frontend that
+depends on `covalence-hol` and produces its databases. **Near-term value** then
+sits in `covalence-hol`: *define logics* (FOL, a real ZFC fragment, modal logics as
+databases) and study `Derivable_L` / `S` / the correspondence — *not* racing to
+set.mm-scale ingestion (one consumer's optimization, and the reader crate's job).
 
 ---
 

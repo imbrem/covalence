@@ -278,6 +278,33 @@ pub fn endo_monoid(alpha: covalence_core::Type) -> Result<Monoid> {
     Ok(Monoid::new(op, unit, assoc, left_id, right_id))
 }
 
+/// The **free monoid on `elem`**: finite words `(list elem, cat, nil)`.
+///
+/// `op = list.cat[elem]`, `unit = nil[elem]`; the three laws come from the
+/// genuine `list.cov` append theorems
+/// ([`cat_assoc`](crate::init::list::cov::cat_assoc_cov),
+/// [`cat_nil`](crate::init::list::cov::cat_nil_cov) = left unit,
+/// [`cat_nil_r`](crate::init::list::cov::cat_nil_r_cov) = right unit),
+/// instantiated from their polymorphic element type `'a := elem`.
+///
+/// This is the monoid that turns a word over an alphabet `elem` (a
+/// `list elem`) into a point of a [`lang`](crate::init::lang) language — the
+/// alphabet a regular expression matches against. For bytestrings take
+/// `elem := u8`.
+pub fn list_cat_monoid(elem: covalence_core::Type) -> Monoid {
+    use crate::init::list::cov::{cat_assoc_cov, cat_nil_cov, cat_nil_r_cov};
+    // The `list.cov` theorems are stated at the free element type variable
+    // `a`; specialise it to the requested `elem`.
+    let inst = |t: Thm| t.inst_tfree("a", elem.clone()).expect("inst element type");
+    Monoid::new(
+        covalence_core::defs::list_cat(elem.clone()),
+        covalence_core::defs::nil(elem.clone()),
+        inst(cat_assoc_cov()),
+        inst(cat_nil_cov()),
+        inst(cat_nil_r_cov()),
+    )
+}
+
 // ============================================================================
 // Script-layer plumbing — a model as a `.cov` rewrite env.
 // ============================================================================

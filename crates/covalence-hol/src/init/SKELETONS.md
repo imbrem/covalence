@@ -264,9 +264,13 @@ index](../../../../SKELETONS.md).
   `mem_empty_lang`, `mem_star`); the **union** Kleene-algebra fragment
   (re-exported `set` `union_comm`/`union_assoc`/`union_idem`/`union_empty`);
   `∅`-annihilation `concat_empty_l`/`concat_empty_r` (proved via the new
-  existential tactics); and `star_contains_epsilon` (`ε ⊆ L*`). All genuine
-  (hypothesis- and oracle-free), model-generic over any `Monoid`. **Not yet
-  proved:**
+  existential tactics); and the **closure direction** of the star unfolding —
+  `star_contains_epsilon` (`ε ⊆ L*`) **and** `star_concat_closed`
+  (`L·L* ⊆ L*`, the pre-fixpoint property, proved with `exists_intro`/
+  `exists_elim` + `subset` reasoning). All genuine (hypothesis- and oracle-free),
+  model-generic over any `Monoid`. The **free-monoid model** `list_cat_monoid`
+  (`(list elem, cat, nil)`, in `init/monoid.rs`) supplies the word alphabet a
+  regex matches against. **Not yet proved:**
   - **`concat` associativity** and the **`epsilon` concat identities**
     (`ε·L = L`, `L·ε = L`). The **existential one-point rule**
     `⊢ (∃x. x = t ∧ P x) = P t` is now proved (`logic::exists_one_point`,
@@ -281,15 +285,11 @@ index](../../../../SKELETONS.md).
   - **`concat` over `union` distribution** (`L·(M∪N) = L·M ∪ L·N` and the
     right form): the membership identity is a propositional tautology over the
     unfolded concat existentials, blocked on the same ∃-pushing.
-  - **The full star unfolding** `L* = ε ∪ L·L*` and the **least-fixpoint
-    half** (`L* ⊆ S` for any `Closed L S`): `star_contains_epsilon` gives the
-    `ε ⊆ L*` part of the closure direction; the concat-closure `L·L* ⊆ L*`
-    needs the one-point rule, and `L* ⊆ ε ∪ L·L*` is the genuine induction over
-    the impredicative star.
-  - **A regex datatype** (`empty | eps | lit a | alt | seq | star`) with a
-    denotation `⟦·⟧` into `lang` (the `init/prop.rs` reified-object-logic
-    pattern): not built — deferred until the concat/star laws above make the
-    denotation's homomorphism theorems provable.
+  - **The full star unfolding** `L* = ε ∪ L·L*` (the closure direction
+    `ε ∪ L·L* ⊆ L*` now follows from `star_contains_epsilon` +
+    `star_concat_closed` + `union` ⊆-elimination — assembling it into the single
+    `⊆` theorem is a small increment) and the **least-fixpoint half**
+    `L* ⊆ ε ∪ L·L*`, the genuine induction over the impredicative star.
 
 - **`covalence-hol` text theory** in `crates/covalence-hol/src/init/char.rs`
   and `crates/covalence-hol/src/init/string.rs` (`char`/`string`/`bytes`).

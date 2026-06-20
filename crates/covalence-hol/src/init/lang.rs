@@ -71,7 +71,7 @@
 
 use covalence_core::{Error, Result, Term, Thm, Type};
 
-use crate::init::ext::TermExt;
+use crate::init::ext::{TermExt, ThmExt};
 use crate::init::monoid::Monoid;
 use crate::init::set::{
     mem_mk, set, set_empty, set_mem, set_mk, set_singleton, set_subset, set_union,
@@ -427,6 +427,169 @@ pub fn star_contains_epsilon(m: &Monoid, l: &Term) -> Result<Thm> {
     crate::init::set::subset_intro(&mu, &eps, &star, pointwise)
 }
 
+/// `⊢ subset (lang_concat L (lang_star L)) (lang_star L)` —
+/// `L · L* ⊆ L*`: the Kleene star is a **pre-fixpoint** of `λX. ε ∪ L·X`,
+/// i.e. it is closed under one more `L`-step. Genuine (hypothesis- and
+/// oracle-free). This is the second half of the *closure direction* of the
+/// star unfolding (the first being [`star_contains_epsilon`]); the reverse
+/// least-fixpoint half stays deferred (see `SKELETONS.md`).
+///
+/// **Proof.** Pointwise: assume `w ∈ L·L*`. By [`mem_concat`] this is
+/// `∃x y. x∈L ∧ y∈L* ∧ w = op x y`. Fix an arbitrary closed `S`
+/// (`ε ⊆ S ∧ L·S ⊆ S`). Then `y∈L*` gives `y∈S` (the star membership
+/// specialised at `S`), so `x∈L ∧ y∈S` re-packs (by `mem_concat` reversed)
+/// to `op x y ∈ L·S`, and `L·S ⊆ S` yields `op x y = w ∈ S`. As `S` was an
+/// arbitrary closed language, `w ∈ L*`.
+pub fn star_concat_closed(m: &Monoid, l: &Term) -> Result<Thm> {
+    let mu = carrier(m)?;
+    let star = lang_star(m, l)?;
+    let concat = lang_concat(m, l, &star)?;
+    let w = Term::free("_sc_w", mu.clone());
+
+    // mem w (L·L*) = ∃x y. mem x L ∧ mem y L* ∧ w = op x y.
+    let unfold = mem_concat(m, &w, l, &star)?;
+    let assume_mem = Thm::assume(mem(&mu, &w, &concat))?; // {mem w (L·L*)} ⊢ mem w (L·L*)
+    let ex = unfold.eq_mp(assume_mem)?; // {…} ⊢ ∃x y. …
+
+    // Goal of the ∃-elims: `mem w L*`.
+    let goal = mem(&mu, &w, &star);
+
+    // Inner step (over y): from `mem x L ∧ mem y L* ∧ w = op x y` conclude
+    // `mem w L*`. We then ∃-elim y, abstract x, ∃-elim x. We use the SAME
+    // builder `concat_body` that `mem_concat` unfolded to, so the `conj` term
+    // and the predicates extracted from `ex` agree structurally (the bound
+    // factor words are `_lc_x`, `_lc_y`).
+    let x = Term::free("_lc_x", mu.clone());
+    let y = Term::free("_lc_y", mu.clone());
+    let op_xy = m.op().clone().apply(x.clone())?.apply(y.clone())?;
+    let conj = mem(&mu, &x, l)
+        .and(mem(&mu, &y, &star))?
+        .and(w.clone().equals(op_xy.clone())?)?;
+    let h = Thm::assume(conj.clone())?; // {conj} ⊢ conj
+    let mem_x_l = h.clone().and_elim_l()?.and_elim_l()?; // {conj} ⊢ mem x L
+    let mem_y_star = h.clone().and_elim_l()?.and_elim_r()?; // {conj} ⊢ mem y L*
+    let w_eq = h.and_elim_r()?; // {conj} ⊢ w = op x y
+
+    // Under an arbitrary closed `S`: derive `mem w S`.
+    let s = Term::free("_sc_S", lang(mu.clone()));
+    let closed_s = closed_pred(m, l, &s)?;
+    let assume_closed = Thm::assume(closed_s.clone())?; // {Closed L S} ⊢ Closed L S
+    let l_s_sub_s = assume_closed.clone().and_elim_r()?; // {…} ⊢ (L·S) ⊆ S
+
+    // y ∈ L* and Closed L S ⟹ y ∈ S, via the star membership at S.
+    let star_unfold = mem_star(m, &y, l)?; // ⊢ mem y L* = ∀S. Closed L S ⟹ mem y S
+    let y_forall = star_unfold.eq_mp(mem_y_star)?; // {conj} ⊢ ∀S. Closed L S ⟹ mem y S
+    let mem_y_s = y_forall
+        .all_elim(s.clone())?
+        .imp_elim(assume_closed.clone())?; // {conj, Closed L S} ⊢ mem y S
+
+    // op x y ∈ L·S, by mem_concat reversed with witnesses x, y. We assemble
+    // the existential body directly from `concat_body` (the very term
+    // `mem_concat` unfolds to), then re-fold via the equation — so the
+    // witnessed proof matches the canonical form the kernel built.
+    let mem_opxy_ls = {
+        let unfold_ls = mem_concat(m, &op_xy, l, &s)?; // ⊢ mem (op x y)(L·S) = ∃u ∃v. mem u L ∧ mem v S ∧ op x y = op u v
+        // The canonical body `concat_body` produces, with `u,v` the *bound*
+        // factor words (vars `_lc_x`, `_lc_y`) and the target word `op_xy`
+        // FIXED on the equation's left. Witnessing `u := x`, `v := y` makes
+        // the equation `op x y = op x y`, dischargeable by refl.
+        // Bound-var placeholders `__u`,`__v` are deliberately DISTINCT from
+        // the witness words `_sc_x`,`_sc_y` so that closing over them never
+        // captures the fixed target word `op_xy = op _sc_x _sc_y` on the
+        // equation's left.
+        let uu = Term::free("__u", mu.clone());
+        let vv = Term::free("__v", mu.clone());
+        let body = |u: &Term, v: &Term| -> Result<Term> {
+            let op_uv = m.op().clone().apply(u.clone())?.apply(v.clone())?;
+            mem(&mu, u, l)
+                .and(mem(&mu, v, &s))?
+                .and(op_xy.clone().equals(op_uv)?)
+        };
+        // ⊢ body[x, y]  (the equation `op x y = op x y`, by refl).
+        let at_xy = mem_x_l
+            .clone()
+            .and_intro(mem_y_s.clone())?
+            .and_intro(Thm::refl(op_xy.clone())?)?; // {conj,Closed} ⊢ mem x L ∧ mem y S ∧ op x y = op x y
+
+        // Inner ∃v: predicate `λv. body[x, v]` (bind `v = __v`, `x`/`op_xy` fixed).
+        let inner_pred = Term::abs(
+            mu.clone(),
+            covalence_core::subst::close(&body(&x, &vv)?, "__v"),
+        );
+        let at_y = crate::init::eq::beta_expand(&inner_pred, y.clone(), at_xy)?; // ⊢ inner_pred y
+        let inner_ex = crate::init::logic::exists_intro(inner_pred, y.clone(), at_y)?; // ⊢ ∃v. body[x, v]
+
+        // Outer ∃u: predicate `λu. ∃v. body[u, v]` (bind `u = __u`).
+        let outer_body = body(&uu, &vv)?
+            .exists("__v", mu.clone())?; // ∃v. body[u, v]  (open in u = __u)
+        let outer_pred = Term::abs(
+            mu.clone(),
+            covalence_core::subst::close(&outer_body, "__u"),
+        );
+        let at_x = crate::init::eq::beta_expand(&outer_pred, x.clone(), inner_ex)?; // ⊢ outer_pred x
+        let outer_ex = crate::init::logic::exists_intro(outer_pred, x.clone(), at_x)?; // ⊢ ∃u ∃v. …
+        unfold_ls.sym()?.eq_mp(outer_ex)? // {conj,Closed} ⊢ mem (op x y)(L·S)
+    };
+
+    // (L·S) ⊆ S applied: op x y ∈ S.
+    let mem_opxy_s = crate::init::set::subset_elim(&mu, &lang_concat(m, l, &s)?, &s, l_s_sub_s)?
+        .all_elim(op_xy.clone())?
+        .imp_elim(mem_opxy_ls)?; // {conj, Closed L S} ⊢ mem (op x y) S
+
+    // mem w S from mem (op x y) S by rewriting `op x y → w` (w_eq reversed).
+    let mem_w_s = mem_opxy_s.rewrite(&w_eq.clone().sym()?)?; // {conj, Closed L S} ⊢ mem w S
+
+    // Discharge `Closed L S`, ∀-close S, fold to `mem w L*`.
+    let body_star = mem_w_s
+        .imp_intro(&closed_s)? // {conj} ⊢ Closed L S ⟹ mem w S
+        .all_intro("_sc_S", lang(mu.clone()))?; // {conj} ⊢ ∀S. …
+    let mem_w_star = mem_star(m, &w, l)?.sym()?.eq_mp(body_star)?; // {conj} ⊢ mem w L*
+
+    // ∃-elim y then x. `exists_elim` wants its `step` antecedent in the
+    // *applied* predicate form `pred y` (β-redex), not the reduced `conj`.
+    // The inner predicate is `λy. conj` (binder `_lc_y`, mirroring
+    // `concat_body`); the inner step is `∀y. (λy. conj) y ⟹ goal`. We get
+    // there by assuming the applied form, β-reducing to `conj` to reuse the
+    // proof, then re-`imp_intro` the *un-reduced* antecedent.
+    let inner_pred = Term::abs(mu.clone(), covalence_core::subst::close(&conj, "_lc_y"));
+    let inner_applied = Term::app(inner_pred.clone(), y.clone()); // (λy. conj) y
+    let inner_step = {
+        // `mem_w_star` has hyp `conj`; the step needs hyp `(λy. conj) y`.
+        // Discharge `conj`, then re-supply it from the β-reduced applied hyp.
+        mem_w_star
+            .clone()
+            .imp_intro(&conj)? // ⊢ conj ⟹ goal   (conj discharged)
+            .imp_elim(crate::init::eq::beta_reduce(Thm::assume(inner_applied.clone())?)?)? // {(λy.conj) y} ⊢ goal
+            .imp_intro(&inner_applied)? // ⊢ (λy. conj) y ⟹ goal
+            .all_intro("_lc_y", mu.clone())? // ⊢ ∀y. (λy. conj) y ⟹ goal
+    };
+    // `∃y. conj` as a term — the body of the outer existential.
+    let inner_ex_term = conj.clone().exists("_lc_y", mu.clone())?;
+
+    // step_outer : ∀x. (∃y. conj) ⟹ goal — for a fixed x, ∃-elim `∃y. conj`.
+    // The OUTER predicate is `λx. ∃y. conj`; its applied form is the
+    // β-redex `(λx. ∃y. conj) x`.
+    let outer_pred = Term::abs(mu.clone(), covalence_core::subst::close(&inner_ex_term, "_lc_x"));
+    let outer_applied = Term::app(outer_pred.clone(), x.clone()); // (λx. ∃y. conj) x
+    let step_outer = {
+        // For a fixed x: from `∃y. conj` get goal by the inner ∃-elim.
+        let assume_inner = Thm::assume(inner_ex_term.clone())?; // {∃y. conj} ⊢ ∃y. conj
+        let got = crate::init::logic::exists_elim(assume_inner, goal.clone(), inner_step)?; // {∃y. conj} ⊢ goal
+        // Re-introduce in the applied form `(λx. ∃y. conj) x`.
+        got.imp_intro(&inner_ex_term)? // ⊢ (∃y. conj) ⟹ goal
+            .imp_elim(crate::init::eq::beta_reduce(Thm::assume(outer_applied.clone())?)?)? // {(λx.…) x} ⊢ goal
+            .imp_intro(&outer_applied)? // ⊢ (λx. ∃y. conj) x ⟹ goal
+            .all_intro("_lc_x", mu.clone())? // ⊢ ∀x. (λx. ∃y. conj) x ⟹ goal
+    };
+    let mem_w_star_final = crate::init::logic::exists_elim(ex, goal.clone(), step_outer)?; // {mem w (L·L*)} ⊢ mem w L*
+
+    // pointwise ⟹, ∀-close, subset_intro.
+    let pointwise = mem_w_star_final
+        .imp_intro(&mem(&mu, &w, &concat))?
+        .all_intro("_sc_w", mu.clone())?;
+    crate::init::set::subset_intro(&mu, &concat, &star, pointwise)
+}
+
 // ============================================================================
 // Small accessors.
 // ============================================================================
@@ -562,6 +725,19 @@ mod tests {
         // ⊢ subset ε L*.
         let mu = Type::nat();
         let expected = subset(&mu, &epsilon(&m).unwrap(), &lang_star(&m, &l).unwrap());
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn star_concat_closed_is_genuine() {
+        let m = nat_add_monoid();
+        let l = langvar("L");
+        let thm = star_concat_closed(&m, &l).unwrap();
+        assert_genuine(&thm);
+        // ⊢ subset (L · L*) L*.
+        let mu = Type::nat();
+        let star = lang_star(&m, &l).unwrap();
+        let expected = subset(&mu, &lang_concat(&m, &l, &star).unwrap(), &star);
         assert_eq!(thm.concl(), &expected);
     }
 

@@ -40,6 +40,31 @@ these models. That is the whole point of making models first-class: the user
 reasons about `Nat`, and the system tracks *where* (in which logic, on which
 carrier) each fact has been established.
 
+### 1.1 A theory's *order* bounds where it can be interpreted
+
+Not every theory can be interpreted in every logic — and the dividing line is
+the theory's **order**, which the compiler can *detect* from its signature and
+axioms:
+
+- A **first-order** theory quantifies only over individuals (its sorts), with
+  first-order operations and axioms. It can be interpreted in **any** logic —
+  every logic has individuals — so a fact proved in a first-order theory has
+  *maximum reach* (this is the formal backbone of the "weakest sufficient
+  logic = broadest applicability" idea, [`metatheory.md`](./metatheory.md) §2).
+- A **higher-order** theory quantifies over functions or predicates. It can
+  only be interpreted in a **higher-order** logic (one able to host that
+  quantification — HOL, an elementary topos, …).
+
+So order classification is a *gate on the model graph*: when the user asks for a
+model of theory `T` in logic `L`, the compiler can say up front whether that is
+even possible (`first-order(T)` ⟹ always; otherwise `L` must be higher-order).
+Equational theories (`#clause`) are the most portable first-order case — they
+interpret in every Cartesian category — which is why `#clause` stays the
+distinguished equational form even though `#spec P` ([`surface-syntax.md`](./surface-syntax.md)
+§3.1) admits arbitrary first-order propositions. "Detecting and handling
+first-order theories specifically" is therefore not a special case bolted on; it
+is the compiler reading off each theory's reach.
+
 ---
 
 ## 2. Why this *is* the effect system

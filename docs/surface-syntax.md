@@ -257,10 +257,22 @@ sketch, the rest are the natural completion.
 | `#def` | a tight definition (body) | a `TypeSpec`/`TermSpec` with a body |
 | `#thm` | a named theorem + its proof | a checked `Thm` |
 | `#import` | pull in another theory / fragment | a dependency edge (see §7) |
+| `#spec` | a named axiom that is *any* proposition | an axiom / characterizing theorem |
 
 `#tydecl`, `#decl`, and `#clause` together write a **spec**; `#def` and
 `#thm` together write a **definition + its theory**. A real type like
 `option` is given *first* as a spec, then *discharged* by a definition.
+
+### 3.1 `#spec P` — axioms that aren't equations
+
+A `#clause` is *equational* (a disjunction of `#rw` rules). But an axiom
+need not be an equation — `#spec P` asserts an arbitrary `bool`-valued
+proposition `P` directly, so you write `(#spec (mem x (union s t) …))`
+rather than the noise of `(#spec (= P true))`. Since every `bool` term
+`P` already *is* the proposition "`P = T`", the two are interchangeable;
+`#spec P` is just the ergonomic spelling. (`#clause` stays the equational
+special case, because equational specs interpret in *more* logics — see
+[`surface-compiler.md`](./surface-compiler.md) §1.1.)
 
 ---
 

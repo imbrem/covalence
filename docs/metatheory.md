@@ -102,6 +102,26 @@ glue:
   `Nat → ZFSet`, are the longer-horizon items: first-class _contexts_
   and _locales_ over the reified theories.
 
+### 3.1 Temporal and modal logics (LTL / CTL / CTL\*)
+
+The temporal logics are object logics like any other — reified by the same
+**datatype + derivability + denotation** recipe (§1), differing only in that
+the *denotation* runs over **traces** (LTL — linear time) or **Kripke
+structures / computation trees** (CTL, CTL\* — branching time) rather than a
+single model. Their temporal operators (`◯`, `□`, `◇`, `U`, the path
+quantifiers `A`/`E`) are **fixpoints**, so reifying them leans on the
+list/stream and least/greatest-fixpoint machinery the catalogue is building
+out.
+
+The **decidable tiny start** is **regular languages / regular expressions**,
+built over the [monoid theory](./surface-compiler.md) (`init/monoid.rs`):
+a language is a set of words (monoid elements); concatenation lifts the monoid
+op, and with union + Kleene star it is a **Kleene algebra** — the algebraic
+core shared with ω-regular languages and LTL's automata-theoretic semantics.
+It exercises the fixpoint (`star`) and the "structure-as-monoid" patterns the
+full temporal logics need, on a fragment that stays decidable. See
+`init/lang.rs`.
+
 ---
 
 ## 4. The LCF-style derivation API

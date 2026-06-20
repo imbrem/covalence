@@ -146,13 +146,7 @@ pub fn library_env(name: &str) -> Option<Env> {
         "core" => Some(Env::core()),
         "tauto" => Some(tauto::cov::env()),
         "logic" => Some(logic::cov::env()),
-        // The full basic natural-numbers toolkit in one import: the proved
-        // theorems (`nat::cov`) MERGED with the `natrec` givens (`rec.holds`
-        // + the operator recursion equations + the `≤`/`<` selector clauses +
-        // the division algorithm) and the nat operator constants. So a
-        // downstream `(#import nat)(#open nat)` gets `natrec`, the operators,
-        // and every proved fact (incl. `div_mod` / `mod_lt`) at once.
-        "nat" => Some(nat::nat_toolkit_env()),
+        "nat" => Some(nat::cov::env()),
         "set" => Some(set::cov::env()),
         "rat" => Some(rat::cov::env()),
         // `tree`/`sexp` expose BOTH the constructor constants (from the seam

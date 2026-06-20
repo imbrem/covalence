@@ -1011,36 +1011,6 @@
                (cong-arg (nat.mul a)
                  (sym (all-elim m (all-elim 2 (pow.succ))))))))))))
 
-;; ============================================================================
-;; Euclidean division / modulus.  The division algorithm is proved in Rust
-;; (strong induction + a Hilbert-choice floor witness transferred to `nat.div`
-;; with `spec_ax`) and imported via the `natrec` env as the givens `div.spec`
-;; (the two-clause selector body on `nat.div`), `mod.def` (`n mod m = n−(n/m)·m`),
-;; `div.mod` (`n = (n/m)·m + n mod m`), and `mod.lt` (`m≠0 ⟹ n mod m < m`).
-;; Re-stated here so a downstream `(#import nat)` gets them in the nat toolkit.
-;; ============================================================================
-
-;; ⊢ ∀n m. n mod m = n − (n / m) · m.
-(#thm mod.unfold
-  (#concl
-    (forall (n nat) (forall (m nat)
-      (= (nat.mod n m) (nat.sub n (nat.mul (nat.div n m) m))))))
-  (#by (intro n m) (derive (all-elim m (all-elim n (mod.def))))))
-
-;; ⊢ ∀n m. n = (n / m) · m + (n mod m).  The division algorithm.
-(#thm div_mod
-  (#concl
-    (forall (n nat) (forall (m nat)
-      (= n (nat.add (nat.mul (nat.div n m) m) (nat.mod n m))))))
-  (#by (intro n m) (derive (all-elim m (all-elim n (div.mod))))))
-
-;; ⊢ ∀n m. ¬(m = 0) ⟹ n mod m < m.  The remainder bound.
-(#thm mod_lt
-  (#concl
-    (forall (n nat) (forall (m nat)
-      (==> (not (= m 0)) (nat.lt (nat.mod n m) m)))))
-  (#by (intro n m) (derive (all-elim m (all-elim n (mod.lt))))))
-
 (#export succ.ne_zero succ.cong_ne rec.zero rec.succ eq.refl
          add.zero add.succ add.comm add.assoc add.cancel
          add.swap_mid
@@ -1054,5 +1024,4 @@
          lt.imp_le lt.trans le.add_cancel_r lt.add_mono_r
          le.iff_lt_or_eq lt.trichotomy
          add.lt_add lt.cross le.cross
-         pow.add shl.eq_mul_pow
-         mod.unfold div_mod mod_lt)
+         pow.add shl.eq_mul_pow)

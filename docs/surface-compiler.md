@@ -314,7 +314,78 @@ obligations exactly as `.cov` rules do today.
 
 ---
 
-## 9. Incremental plan (what to build first)
+## 9. The registry API: scoped, never global
+
+The dispatch of §2/§4 and the lifting of §5 need registries — of handlers,
+models, logics, isomorphisms, transitivity rules. **None of them is global
+state.** Every registry is a *value threaded through lexical scope*, registered
+in place and brought into view with explicit `#open` / `#use` / `#in` — exactly
+the discipline the working `Env` already uses for names. (A memoized *pure*
+theory — today's `cov_theory!` `LazyLock` — is fine: it caches a deterministic
+value, content-addressable, not mutable shared state. What is ruled out is a
+mutable global *registry* two runs could observe differently.)
+
+### Generalize the `Env`, don't add singletons
+
+Today `script::Env` is an immutable persistent map (`imbl::HashMap`, O(1) clone,
+copy-on-write) of `name → {const | lemma | tactic}`, scoped by
+`#import`/`#open`/`#use`. The new registries are *more of the same* — additional
+scoped bindings in the same resolution context, never a `static`:
+
+```rust
+// One scoped resolution context. Cloning is O(1) (persistent maps);
+// "registering" returns a copy-on-write child, never mutates a global.
+struct Context {
+    names:  LazyMap<Entry>,   // consts / lemmas / tactics / models / logics /
+                              //   isos / trans-rules — all name-addressable,
+                              //   one #open / #use rule for everything
+    active: HandlerSet,       // the handlers currently in force
+}
+
+struct Logic  { handlers: HandlerSet, derivable: Option<Reified>, /* … */ }
+struct Model  { theory: Name, logic: Name, interp: Interp, lifters: Lifters }
+struct HandlerSet { rewrite: Handler, unify: Handler, reduce: Handler,
+                    induct: Handler, decide: Handler /* op → handler */ }
+```
+
+### Registration is in-place; scoping is explicit and reversible
+
+- `(#open logic.HOL)` / `(#use M)` — merge a registry's bindings into the
+  current scope (additive, shadowing): the *same* mechanism that opens a
+  namespace today.
+- `(#in model …)` — run the body in a **child** context with that model's
+  logic's `HandlerSet` installed as `active`, then pop back out. Lexical,
+  explicit, reversible — no ambient handler outlives its block.
+- A handler is not a free-floating global you `register!()` at startup; it
+  arrives **as part of a logic**, installed wholesale when you enter that
+  logic's / model's scope. *"Register handlers in-place with explicit
+  open/use"* is the whole API.
+
+### Dispatch reads the current context, never a global
+
+Stage-3 resolves "rewrite this" / "induct" / "lift `42`" against `ctx.active`;
+`#comp`'s default handler is `ctx.active.rewrite` (or an explicitly
+`#:by`-named one). The `apply_unify` / `rw_unify` seams that are *methods on
+`Env`* today become `ctx.active.unify` / `.rewrite` lookups — the seam **is**
+the registry entry. Because a proof's meaning is a pure function of its
+lexically-visible `Context`, it is reproducible and content-addressable (the
+context is a value you can hash); there is no hidden mutable global to make two
+runs disagree.
+
+### The one design fork
+
+Keep the **named** registries (consts/lemmas/tactics/models/logics/isos/
+trans-rules) in *one unified namespace* (extend today's `Entry` with the new
+variants — one `#open`/`#use` rule for everything), but carry the
+**operation-keyed handlers** in a `HandlerSet` installed *by a logic* rather
+than naming each handler individually. Rationale: names want uniform
+open/use/shadowing; handlers are selected by *operation* (and the active logic),
+not by a user-written name, so bundling them per-logic is simpler and matches
+"open a logic, its reasoning comes with it." (The alternative — separate typed
+maps per registry — buys a little type-safety for a lot of parallel scoping
+plumbing; not worth it, given the unified `Env` already works.)
+
+## 10. Incremental plan (what to build first)
 
 1. **De-panic the front.** Add source **spans** + a `Diagnostic` type through
    parse; convert `ScriptError` paths to accumulating diagnostics. (Pure
@@ -322,9 +393,12 @@ obligations exactly as `.cov` rules do today.
 2. **`#logic` / `#model` surface forms** — parse + resolve only, no dispatch yet
    (extend `surface::Builtin` + the AST + a `Model`/`Logic` registry, with the
    `#lift` clause of §5 and an isomorphism registry of §4).
-3. **`#in model` swaps the active handler set.** A `Model` = (theory, a
-   logic-handler `Env`, an interpretation map, its lifters); entering a model
-   installs its handlers. Reuses the existing `Env`-as-dispatcher directly.
+3. **`#in model` swaps the active handler set — in a *scoped*, non-global
+   `Context` (§9).** A `Model` = (theory, a logic-handler set, an
+   interpretation map, its lifters); entering a model installs its handlers
+   into a child context and pops back out. Reuses the existing
+   `Env`-as-dispatcher (copy-on-write persistent maps) directly — no `static`
+   registry anywhere.
 4. **Two *isomorphic* HOL models, one tactic, lifted literals.** Use
    `nat/self ≅ nat/unary` (both HOL — no new logic needed): wire `(induct n)` to
    dispatch *HOL-nat* vs *`list unit`* induction, wire the §5 lift of the literal

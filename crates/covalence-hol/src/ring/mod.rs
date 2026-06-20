@@ -22,7 +22,10 @@
 //! no additive inverses — so it implements only [`Semiring`]. The future
 //! `rat` / `real` carriers will implement `Ring` (and, eventually, `Field`).
 
+pub mod normalize;
 pub mod shallow;
+
+pub use normalize::{RingNormalizer, RingOps};
 
 use crate::semiring::Semiring;
 

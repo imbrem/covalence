@@ -218,6 +218,85 @@ fn embedded_la1_farkas_two_literal() {
     assert_eq!(check(LA1_PROBLEM, LA1_PROOF), Decision::Unsat);
 }
 
+// ---------------------------------------------------------------------
+// LA3 — the n-literal Farkas cycle (`la_generic`): x < y ∧ y < z ∧ z < x.
+//
+// Three strict literals forming a transitivity cycle. The bridge chains
+// `x<y`, `y<z`, `z<x` through `int::lt_trans` into `x < x`, contradicted
+// by `int::lt_irrefl`, then clausifies — exercising the generalisation
+// past the two-literal prototype.
+// ---------------------------------------------------------------------
+
+const LA3_PROBLEM: &str = "\
+(set-logic QF_LIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(declare-fun z () Int)
+(assert (< x y))
+(assert (< y z))
+(assert (< z x))
+";
+
+const LA3_PROOF: &str = "\
+(assume a0 (< x y))
+(assume a1 (< y z))
+(assume a2 (< z x))
+(step t0 (cl (not (< x y)) (not (< y z)) (not (< z x))) :rule la_generic :args (1 1 1))
+(step t1 (cl (not (< y z)) (not (< z x))) :rule resolution :premises (t0 a0))
+(step t2 (cl (not (< z x))) :rule resolution :premises (t1 a1))
+(step t3 (cl) :rule resolution :premises (t2 a2))
+";
+
+#[test]
+fn embedded_la3_farkas_three_literal_cycle() {
+    assert_eq!(check(LA3_PROBLEM, LA3_PROOF), Decision::Unsat);
+}
+
+#[test]
+fn la_generic_rejects_open_chain() {
+    // `x < y` and `y < z` chain but do NOT close a cycle — not a
+    // refutation. The Farkas check must refuse, never fabricate.
+    let problem = "\
+(set-logic QF_LIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(declare-fun z () Int)
+(assert (< x y))
+(assert (< y z))
+";
+    let proof = "\
+(assume a0 (< x y))
+(assume a1 (< y z))
+(step t0 (cl (not (< x y)) (not (< y z))) :rule la_generic :args (1 1))
+";
+    let problem = parse_smtlib2(problem).unwrap();
+    let proof = parse_alethe(proof).unwrap();
+    let mut bridge = HolAletheBridge::new();
+    let err = ingest_alethe(&mut bridge, &problem, &proof).unwrap_err();
+    assert!(matches!(err, BridgeError::NotImplemented(_)), "got {err:?}");
+}
+
+#[test]
+fn la_generic_rejects_non_unit_coefficients() {
+    // Non-unit coefficients are outside the cycle checker — must refuse.
+    let problem = "\
+(set-logic QF_LIA)
+(declare-fun x () Int)
+(assert (< x 0))
+(assert (< 0 x))
+";
+    let proof = "\
+(assume a0 (< x 0))
+(assume a1 (< 0 x))
+(step t0 (cl (not (< x 0)) (not (< 0 x))) :rule la_generic :args (2 1))
+";
+    let problem = parse_smtlib2(problem).unwrap();
+    let proof = parse_alethe(proof).unwrap();
+    let mut bridge = HolAletheBridge::new();
+    let err = ingest_alethe(&mut bridge, &problem, &proof).unwrap_err();
+    assert!(matches!(err, BridgeError::NotImplemented(_)), "got {err:?}");
+}
+
 #[test]
 fn la_generic_rejects_non_contradictory_pair() {
     // `x < 0` and `0 < y` do NOT chain — the Farkas check must refuse

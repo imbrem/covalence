@@ -37,10 +37,12 @@
 //!
 //! The **linear-arithmetic core** is bootstrapped through
 //! [`crate::la::la_generic`]: the Alethe Farkas rule `la_generic` is
-//! re-derived (never trusted) over the `defs` `int` ordered ring. The
-//! prototype covers the two-literal, coefficient-`(1,1)`, strict case
-//! (`x < 0 ∧ 0 < x ⟹ ⊥`) via `int::lt_trans` + `int::lt_irrefl`;
-//! larger combinations are reported `NotImplemented` (see `SKELETONS.md`).
+//! re-derived (never trusted) over the `defs` `int` ordered ring. It
+//! covers the unit-coefficient, all-strict transitivity-cycle case for
+//! any `n ≥ 2` literals (e.g. `x < y ∧ y < z ∧ z < x ⟹ ⊥`) via
+//! `int::lt_trans` + `int::lt_irrefl`; non-unit coefficients, non-strict
+//! literals, and non-cyclic combinations are reported `NotImplemented`
+//! (see `SKELETONS.md`).
 //!
 //! cvc5's `hole` ("untranslated rewrite") is **re-derived, not trusted**:
 //! every hole is a unit clause `(cl L)` and [`hole`] proves `⊢ L` in the

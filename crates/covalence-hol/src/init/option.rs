@@ -23,6 +23,107 @@ pub use covalence_core::defs::{is_some, none, option, option_case, some, unwrap}
 use covalence_core::defs::{option_spec, unit_nil};
 
 // ============================================================================
+// The `.cov` proof-script layer for `option`.
+//
+// `option_env()` exports the constructor/eliminator operators (`some`, `none`,
+// `option.case`) for the type-inferencer — `none` is a *nullary* polymorphic
+// scheme, the others genuine `Poly` schemes — plus the seam lemmas as
+// universally-quantified, Rust-proved GIVENs:
+//
+//   some_ne_none  : ∀(a:'a).        ¬(some a = none)
+//   case_some     : ∀d f x.         option.case d f (some x) = f x
+//   case_none     : ∀d f.           option.case d f none = d
+//   some_inj      : ∀x y.           some x = some y ⟹ x = y
+//   option_cases  : ∀(o:option 'a). (∃x. o = some x) ∨ (o = none)
+//
+// These cross the `option` newtype's abs/rep boundary (and lean on the `coprod`
+// seam), so they stay Rust givens; `option.cov` proves the case-driven and
+// exhaustiveness corollaries over them, never touching abs/rep.
+// ============================================================================
+
+/// The `option` seam environment: constructor/eliminator operators as
+/// `ConstDef`s for the type-inferencer, and the five core lemmas as
+/// Rust-proved givens.
+pub fn option_env() -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let mut e = Env::empty();
+
+    // -- operators (polymorphic schemes; each use site instantiates fresh) --
+    e.define_const("some", ConstDef::Poly(some(alpha.clone())));
+    e.define_const("none", ConstDef::Poly(none(alpha.clone())));
+    e.define_const(
+        "option.case",
+        ConstDef::Poly(option_case(alpha.clone(), beta.clone())),
+    );
+
+    // -- seam givens (Rust-proved, used as axioms by option.cov) --
+
+    // ⊢ ∀(a:'a). ¬(some a = none)
+    let a = Term::free("a", alpha.clone());
+    let sne = some_ne_none(&alpha, &a)
+        .and_then(|t| t.all_intro("a", alpha.clone()))
+        .expect("option_env: some_ne_none");
+    e.define_lemma("some_ne_none", sne);
+
+    // ⊢ ∀d f x. option.case d f (some x) = f x
+    let d = Term::free("d", beta.clone());
+    let f = Term::free("f", Type::fun(alpha.clone(), beta.clone()));
+    let x = Term::free("x", alpha.clone());
+    let cs = case_some(&alpha, &beta, &d, &f, &x)
+        .and_then(|t| t.all_intro("x", alpha.clone()))
+        .and_then(|t| t.all_intro("f", Type::fun(alpha.clone(), beta.clone())))
+        .and_then(|t| t.all_intro("d", beta.clone()))
+        .expect("option_env: case_some");
+    e.define_lemma("case_some", cs);
+
+    // ⊢ ∀d f. option.case d f none = d
+    let cn = case_none(&alpha, &beta, &d, &f)
+        .and_then(|t| t.all_intro("f", Type::fun(alpha.clone(), beta.clone())))
+        .and_then(|t| t.all_intro("d", beta.clone()))
+        .expect("option_env: case_none");
+    e.define_lemma("case_none", cn);
+
+    // ⊢ ∀x y. some x = some y ⟹ x = y
+    let y = Term::free("y", alpha.clone());
+    let si = some_inj(&alpha, &x, &y)
+        .and_then(|t| t.all_intro("y", alpha.clone()))
+        .and_then(|t| t.all_intro("x", alpha.clone()))
+        .expect("option_env: some_inj");
+    e.define_lemma("some_inj", si);
+
+    // ⊢ ∀(o:option 'a). (∃x. o = some x) ∨ (o = none)
+    let o = Term::free("o", option(alpha.clone()));
+    let oc = option_cases(&alpha, &o)
+        .and_then(|t| t.all_intro("o", option(alpha.clone())))
+        .expect("option_env: option_cases");
+    e.define_lemma("option_cases", oc);
+
+    e
+}
+
+crate::cov_theory! {
+    /// `option` theorems ported to `option.cov`, over `core` + `logic` + the
+    /// `optprim` seam env.
+    pub mod cov from "option.cov" {
+        import "core"    = crate::script::Env::core();
+        import "logic"   = crate::init::logic::cov::env();
+        import "optprim" = crate::init::option::option_env();
+        "some_ne_none_thm" => pub fn some_ne_none_cov;
+        "case_some_thm"    => pub fn case_some_cov;
+        "case_none_thm"    => pub fn case_none_cov;
+        "some_inj_thm"     => pub fn some_inj_cov;
+        "option_cases_thm" => pub fn option_cases_cov;
+        "map_some"         => pub fn map_some_cov;
+        "map_none"         => pub fn map_none_cov;
+        "is_some_some"     => pub fn is_some_some_cov;
+        "is_some_none"     => pub fn is_some_none_cov;
+        "ne_none_imp_some" => pub fn ne_none_imp_some_cov;
+    }
+}
+
+// ============================================================================
 // Raw coercions of the `option` newtype + constructor unfolding.
 // ============================================================================
 
@@ -229,8 +330,7 @@ fn case_args(applied: &Term) -> Result<(Term, Term)> {
 /// constructors. Genuine: hypothesis- and oracle-free.
 pub fn option_cases(alpha: &Type, o: &Term) -> Result<Thm> {
     let unit = Type::unit();
-    let rep_op = rep_o(alpha);
-    let rep_o_t = Term::app(rep_op.clone(), o.clone());
+    let rep_o_t = Term::app(rep_o(alpha), o.clone());
     // o = abs (rep o)  (newtype round-trip, both directions trivially true).
     let abs_rep = Thm::spec_abs_rep(option_spec(), vec![alpha.clone()], o.clone())?;
 
@@ -239,13 +339,11 @@ pub fn option_cases(alpha: &Type, o: &Term) -> Result<Thm> {
 
     let goal_some = some_goal(alpha, o)?; // ∃x. o = some x
     let goal_none = o.clone().equals(none(alpha.clone()))?; // o = none
-    let goal = goal_some.clone().or(goal_none.clone())?;
 
-    // Left arm: ∃x. rep o = inl x  ⟹  goal (via o = some x).
+    // Each arm maps an injection witness to its constructor and lands in the
+    // disjunction `(∃x. o = some x) ∨ (o = none)`.
     let left = cases_some_branch(alpha, o, &abs_rep, &goal_some, &goal_none)?;
-    // Right arm: ∃u. rep o = inr u  ⟹  goal (via o = none).
     let right = cases_none_branch(alpha, o, &abs_rep, &goal_some, &goal_none)?;
-    let _ = &goal; // documents the disjunction the two arms land in
     cov.or_elim(left, right)
 }
 
@@ -344,6 +442,119 @@ fn cases_none_branch(
 
 fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+
+    fn ab() -> (Type, Type) {
+        (Type::tfree("a"), Type::tfree("b"))
+    }
+
+    /// Each ported `option.cov` theorem must have the same conclusion as the
+    /// universally-quantified Rust given it re-exports.
+    #[test]
+    fn cov_ports_match_rust() {
+        let (a, b) = ab();
+        // some_ne_none
+        let av = Term::free("a", a.clone());
+        let rust = some_ne_none(&a, &av)
+            .unwrap()
+            .all_intro("a", a.clone())
+            .unwrap();
+        assert_eq!(cov::some_ne_none_cov().concl(), rust.concl());
+
+        // case_some
+        let d = Term::free("d", b.clone());
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        let x = Term::free("x", a.clone());
+        let rust = case_some(&a, &b, &d, &f, &x)
+            .unwrap()
+            .all_intro("x", a.clone())
+            .unwrap()
+            .all_intro("f", Type::fun(a.clone(), b.clone()))
+            .unwrap()
+            .all_intro("d", b.clone())
+            .unwrap();
+        assert_eq!(cov::case_some_cov().concl(), rust.concl());
+
+        // case_none
+        let rust = case_none(&a, &b, &d, &f)
+            .unwrap()
+            .all_intro("f", Type::fun(a.clone(), b.clone()))
+            .unwrap()
+            .all_intro("d", b.clone())
+            .unwrap();
+        assert_eq!(cov::case_none_cov().concl(), rust.concl());
+
+        // some_inj
+        let y = Term::free("y", a.clone());
+        let rust = some_inj(&a, &x, &y)
+            .unwrap()
+            .all_intro("y", a.clone())
+            .unwrap()
+            .all_intro("x", a.clone())
+            .unwrap();
+        assert_eq!(cov::some_inj_cov().concl(), rust.concl());
+
+        // option_cases
+        let o = Term::free("o", option(a.clone()));
+        let rust = option_cases(&a, &o)
+            .unwrap()
+            .all_intro("o", option(a.clone()))
+            .unwrap();
+        assert_eq!(cov::option_cases_cov().concl(), rust.concl());
+    }
+
+    /// The genuinely new `option.cov` theorems are hypothesis- and oracle-free.
+    #[test]
+    fn cov_new_theorems_are_genuine() {
+        for thm in [
+            cov::map_some_cov(),
+            cov::map_none_cov(),
+            cov::is_some_some_cov(),
+            cov::is_some_none_cov(),
+            cov::ne_none_imp_some_cov(),
+        ] {
+            assert!(thm.hyps().is_empty(), "new theorem must be hyp-free");
+            assert!(thm.has_no_obs(), "new theorem must be oracle-free");
+        }
+    }
+
+    /// `map_some` instantiated reads `option.case none (λy. some (g y)) (some x)
+    /// = some (g x)` — the functorial-map `some` clause.
+    #[test]
+    fn map_some_computes() {
+        let (a, b) = ab();
+        let g = Term::free("g", Type::fun(a.clone(), b.clone()));
+        let x = Term::free("x", a.clone());
+        let thm = cov::map_some_cov()
+            .all_elim(g.clone())
+            .unwrap()
+            .all_elim(x.clone())
+            .unwrap();
+        let rhs = Term::app(some(b.clone()), Term::app(g, x));
+        assert_eq!(thm.concl().as_eq().unwrap().1, &rhs);
+    }
+
+    /// `ne_none_imp_some` discharges to an existential under `¬(o = none)`.
+    #[test]
+    fn ne_none_imp_some_applies() {
+        let a = Type::tfree("a");
+        let o = Term::free("o", option(a.clone()));
+        let imp = cov::ne_none_imp_some_cov().all_elim(o.clone()).unwrap();
+        // antecedent ¬(o = none) ; discharge to ∃x. o = some x.
+        let ne = o.clone().equals(none(a.clone())).unwrap().not().unwrap();
+        let out = imp.imp_elim(Thm::assume(ne).unwrap()).unwrap();
+        let x = Term::free("__osx", a.clone());
+        let expected = o
+            .equals(Term::app(some(a.clone()), x))
+            .unwrap()
+            .exists("__osx", a)
+            .unwrap();
+        assert_eq!(out.concl(), &expected);
+    }
 }
 
 #[cfg(test)]

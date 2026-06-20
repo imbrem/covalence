@@ -1,0 +1,155 @@
+;; option.cov — `option` theorems, ported from `init::option` in Rust and
+;; extended with case-driven corollaries.
+;;
+;; `option 'a := coprod 'a unit` (a newtype). The `optprim` env imports the
+;; constructor/eliminator operators (`some`, `none`, `option.case`) for type
+;; inference and the seam lemmas as Rust-proved GIVENs:
+;;
+;;   some_ne_none : ∀(a:'a).        ¬(some a = none)
+;;   case_some    : ∀d f x.         option.case d f (some x) = f x
+;;   case_none    : ∀d f.           option.case d f none = d
+;;   some_inj     : ∀x y.           some x = some y ⟹ x = y
+;;   option_cases : ∀(o:option 'a). (∃x. o = some x) ∨ (o = none)
+;;
+;; The seam lemmas are Rust givens because they cross the `option` newtype's
+;; abs/rep boundary (and lean on the tagged `coprod` encoding) — machinery the
+;; proof language cannot express. Here we (1) re-export the five givens so the
+;; `cov::*` accessors and the `*_matches_rust` tests can verify their
+;; conclusions, and (2) prove NEW corollaries over them: the `option.case`-based
+;; `map`/`is_some` computation clauses (each closing with a `case_*` given plus
+;; a β-`reduce`), and the exhaustiveness-driven `ne_none_imp_some` (every
+;; non-`none` option is `some _`), which case-splits `option_cases` with
+;; `or-elim`.
+
+(#import core)
+(#open core)
+(#import logic)
+(#open logic)   ;; for `truth`, used to discharge the false `o = none` branch
+(#import optprim)
+(#open optprim)
+
+;; ============================================================================
+;; Re-exported seam givens (== the Rust `init::option` theorems).
+;; Each `(#thm … (#proof NAME))` simply replays the universally-quantified
+;; given, so the `cov_theory!` accessor exposes it and the `*_matches_rust`
+;; test can compare conclusions.
+;; ============================================================================
+
+;; ⊢ ∀(a:'a). ¬(some a = none)
+(#thm some_ne_none_thm
+  (#concl (forall (a 'a) (not (= (some a) none))))
+  (#proof some_ne_none))
+
+;; ⊢ ∀d f x. option.case d f (some x) = f x
+(#thm case_some_thm
+  (#concl
+    (forall (d 'b)
+      (forall (f (fun 'a 'b))
+        (forall (x 'a)
+          (= (option.case d f (some x)) (app f x))))))
+  (#proof case_some))
+
+;; ⊢ ∀d f. option.case d f none = d
+(#thm case_none_thm
+  (#concl
+    (forall (d 'b)
+      (forall (f (fun 'a 'b))
+        (= (option.case d f none) d))))
+  (#proof case_none))
+
+;; ⊢ ∀x y. some x = some y ⟹ x = y
+(#thm some_inj_thm
+  (#concl
+    (forall (x 'a) (forall (y 'a)
+      (==> (= (some x) (some y)) (= x y)))))
+  (#proof some_inj))
+
+;; ⊢ ∀(o:option 'a). (∃x. o = some x) ∨ (o = none)
+(#thm option_cases_thm
+  (#concl
+    (forall (o (option 'a))
+      (or (exists (x 'a) (= o (some x))) (= o none))))
+  (#proof option_cases))
+
+;; ============================================================================
+;; `option.map` clauses — `map g = λo. option.case none (λy. some (g y)) o`.
+;; The two recursion equations of the functorial map, expressed directly over
+;; `option.case` (there is no standalone `option.map` constant yet). Each
+;; closes with the matching `case_*` given, β-reducing the some-branch redex.
+;; ============================================================================
+
+;; ⊢ ∀g x. option.case none (λy. some (g y)) (some x) = some (g x).  `rw
+;; case_some` auto-instantiates the given (`'a`, `'b := option 'b`, the
+;; some-branch and witness) and fires the some-clause; `beta-conv` then reduces
+;; the exposed `(λy. some (g y)) x` redex.
+(#thm map_some
+  (#concl
+    (forall (g (fun 'a 'b)) (forall (x 'a)
+      (= (option.case none (lam (y 'a) (some (app g y))) (some x))
+         (some (app g x))))))
+  (#by
+    (intro g x)
+    (rw case_some)
+    (rw (beta-conv (app (lam (y 'a) (some (app g y))) x)))
+    (refl)))
+
+;; ⊢ ∀g. option.case none (λy. some (g y)) none = none.  The none-clause fires
+;; directly — the default `d = none` is the result.
+(#thm map_none
+  (#concl
+    (forall (g (fun 'a 'b))
+      (= (option.case none (lam (y 'a) (some (app g y))) none) none)))
+  (#by
+    (intro g)
+    (rw case_none)
+    (refl)))
+
+;; ============================================================================
+;; `is_some` clauses — `is_some = λo. option.case F (λ_. T) o`.
+;; ============================================================================
+
+;; ⊢ ∀x. option.case F (λ_. T) (some x) = T.
+(#thm is_some_some
+  (#concl
+    (forall (x 'a)
+      (= (option.case false (lam (w 'a) true) (some x)) true)))
+  (#by
+    (intro x)
+    (rw case_some)
+    (rw (beta-conv (app (lam (w 'a) true) x)))
+    (refl)))
+
+;; ⊢ option.case F (λ_. T) none = F.
+(#thm is_some_none
+  (#concl (= (option.case false (lam (w 'a) true) none) false))
+  (#by
+    (rw case_none)
+    (refl)))
+
+;; ============================================================================
+;; Exhaustiveness-driven: every non-`none` option is `some _`.
+;; ============================================================================
+
+;; ⊢ ∀(o:option 'a). ¬(o = none) ⟹ (∃x. o = some x).  Case-split
+;; `option_cases`: the `∃x. o = some x` disjunct IS the goal; the `o = none`
+;; disjunct contradicts the hypothesis, so ex falso closes it.
+(#thm ne_none_imp_some
+  (#concl
+    (forall (o (option 'a))
+      (==> (not (= o none)) (exists (x 'a) (= o (some x))))))
+  (#by
+    (intro o h)
+    (derive
+      (or-elim
+        (all-elim o (option_cases))
+        ;; left: ∃x. o = some x ⟹ ∃x. o = some x
+        (imp-intro (exists (x 'a) (= o (some x)))
+          (assume (exists (x 'a) (= o (some x)))))
+        ;; right: o = none ⟹ goal — but ¬(o = none) holds, ex falso.
+        (imp-intro (= o none)
+          (false-elim (exists (x 'a) (= o (some x)))
+            (not-elim (assume (not (= o none))) (assume (= o none)))))))))
+
+(#export some_ne_none_thm case_some_thm case_none_thm some_inj_thm
+         option_cases_thm map_some map_none is_some_some is_some_none
+         ne_none_imp_some)

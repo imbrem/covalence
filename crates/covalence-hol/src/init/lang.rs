@@ -52,12 +52,14 @@
 //! # What is deferred (see `SKELETONS.md`)
 //!
 //! - **`concat_assoc`** and the **`epsilon` concat identities** (`ε·L = L`,
-//!   `L·ε = L`) at the term level require a *one-point* existential rule
-//!   (`∃x. x = t ∧ P x ⟺ P t`) and existential reassociation, applied under
-//!   the monoid `assoc` / `left_id` / `right_id` laws. The generic ∃-tactics
-//!   ([`logic::exists_cong`](crate::init::logic::exists_cong),
-//!   [`logic::exists_false`]) are the seed; the one-point rule is the next
-//!   increment.
+//!   `L·ε = L`) at the term level. The *one-point* existential rule
+//!   `⊢ (∃x. x = t ∧ P x) = P t` is now available
+//!   ([`logic::exists_one_point`](crate::init::logic::exists_one_point)); what
+//!   remains is reshaping the concat membership formula
+//!   `∃x ∃y. (x=unit ∧ mem y L) ∧ w=op x y` into the one-point shape and
+//!   applying the monoid `left_id` / `right_id` / `assoc` under the surviving
+//!   `∃`. The body-rewriter
+//!   [`logic::exists_cong`](crate::init::logic::exists_cong) is the seed.
 //! - **`concat` over `union` distribution** at the term level (same ∃-pushing
 //!   gap; the membership identity is a propositional tautology over the atoms
 //!   once concat membership is unfolded).

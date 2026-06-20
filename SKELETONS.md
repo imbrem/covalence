@@ -155,13 +155,16 @@ it is how unfinished work stays discoverable.
   (hypothesis- and oracle-free), model-generic over any `Monoid`. **Not yet
   proved:**
   - **`concat` associativity** and the **`epsilon` concat identities**
-    (`ε·L = L`, `L·ε = L`). These need the **existential one-point rule**
-    `(∃x. x = t ∧ P x) = P t` (the *same* missing rule flagged in `init/rel.rs`
-    / the rel-category rewriter above) plus existential reassociation, applied
-    under the monoid `assoc`/`left_id`/`right_id` laws. The generic ∃-tactics
-    `logic::exists_cong` / `logic::exists_false` / `exists_false_const`
-    (`init/logic.rs`) are the seed; the one-point rule is the next increment and
-    unblocks `rel` too.
+    (`ε·L = L`, `L·ε = L`). The **existential one-point rule**
+    `⊢ (∃x. x = t ∧ P x) = P t` is now proved (`logic::exists_one_point`,
+    `init/logic.rs`) — the rule also flagged as missing in `init/rel.rs`. What
+    remains is **existential/conjunction reshaping**: the concat membership
+    formula is `∃x ∃y. (x=unit ∧ mem y L) ∧ w=op x y`, which must be reassociated
+    into the one-point shape `∃x. x=unit ∧ (∃y. …)` before the rule fires, and
+    then `op unit y = y` (the monoid `left_id`) applied under the surviving `∃y`.
+    A small ∃/∧-normalizer (the `logic::exists_cong` body-rewriter is the seed)
+    is the next increment; once it lands, `ε·L = L`, `L·ε = L`, and `rel`'s
+    identity/assoc laws all fall out.
   - **`concat` over `union` distribution** (`L·(M∪N) = L·M ∪ L·N` and the
     right form): the membership identity is a propositional tautology over the
     unfolded concat existentials, blocked on the same ∃-pushing.

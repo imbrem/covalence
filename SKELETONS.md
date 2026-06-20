@@ -250,6 +250,36 @@ it is how unfinished work stays discoverable.
     the `defs/` catalogue; surjective pairing + the projections are enough to
     define and reason about one downstream when needed.
 
+- **`covalence-hol` language theory** in `crates/covalence-hol/src/init/lang.rs`
+  (+ `lang.cov`). Formal languages over a monoid (a `set μ` of words) with
+  `empty_lang`/`epsilon`/`lang_union`/`lang_concat`/`lang_star`. **Genuine
+  (hypothesis- and oracle-free) and complete:** the membership computations
+  (`mem_concat`/`mem_epsilon`/`mem_empty_lang`/`mem_star`), the union
+  Kleene-algebra fragment (re-exported `set` laws), the `∅` annihilators
+  (`concat_empty_l`/`concat_empty_r`, via the `init::logic` existential
+  tactics), and `star_contains_epsilon` (`ε ⊆ L*`). The `lang.cov` port proves
+  the union laws extensionally over the `langprim` env + the NEW
+  `union_empty_l`/`subset_union_l`/`subset_refl`. Still deferred (term-level,
+  needs more `.cov`/exists plumbing):
+  - **`concat_assoc`** and the **`epsilon` concat identities** (`ε·L = L`,
+    `L·ε = L`): reshape the concat membership `∃x ∃y. (x = unit ∧ mem y L) ∧
+    w = op x y` into the [`logic::exists_one_point`] shape and apply the monoid
+    `left_id` / `right_id` / `assoc` under the surviving `∃`. The body-rewriter
+    [`logic::exists_cong`] is the seed.
+  - **`concat` over `union` distribution** at the term level (same ∃-pushing
+    gap; the membership identity is a propositional tautology once concat
+    membership is unfolded).
+  - **The full star unfolding** `L* = ε ∪ L·L*` and the **least-fixpoint half**
+    (`L* ⊆ S` for any `S` closed under `ε` and `L·`): induction over the
+    impredicative star. `star_contains_epsilon` proves the `ε ⊆ L*` half of the
+    closure direction; the rest awaits the one-point rule + a concat-closure
+    lemma.
+  - **`lang.concat` / `lang.star` as `.cov` operators** — they are `set.mk`
+    predicate-built sets (not curried heads), so `lang.cov` cannot yet
+    construct/reason about them; the membership facts stay Rust givens. A
+    `set.mk`-aware elaborator seam (or a `#comp`-style membership tactic) would
+    open the concat/star theorems to `.cov`.
+
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in
   `crates/covalence-alethe/src/hol.rs`) checks the QF_UF core (`assume`,
   `resolution` / `th_resolution`, `refl`, `trans`, `symm`, `cong`,

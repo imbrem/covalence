@@ -390,6 +390,26 @@ directives — is `open`-able by other scripts; the macro binds it as a
   `succ`). int/rat/real/list/option/prod/coprod/set catalogue names are not yet
   bound; add entries to `script/env.rs::Env::core` (the `defs/` churn
   boundary) as those theories are ported.
+- **`#inductive` directive realises only the `nat` shape (metalogic).**
+  `script/inductive.rs` parses `(#inductive NAME (ctor ARGTY…) …)`, dispatches
+  through the per-internal-logic `LogicInductive` trait (the metalogic =
+  `HolMetalogic`; PA/SOA/MLTT realisations are the planned extra impls), and —
+  for the `nat` constructor shape `(zero)` + `(succ nat)` — binds the
+  constructors and emits the genuine recursion theorem `⊢ ∃rec. P_rec rec`
+  (the engine's `recursion_theorem`) plus a worked induction instance
+  `⊢ ∀n. n = n`. **What's missing for fresh user types** (a binary tree, a
+  custom enum): the directive can only consume the inductive engine's public
+  API, which needs (a) an `Inductive` adapter supplying genuine
+  `induct`/`injective`/`distinct` — for a non-kernel-primitive type these are
+  *derived* theorems over a carrier carved out by `new_type_definition`, plus
+  (b) a recursor **selector predicate** that `nat` reads from the `defs`
+  catalogue (`nat_rec_spec`) but a fresh type has no entry for. So the missing
+  capability is a **carrier-construction + freeness-derivation + recursor-spec
+  synthesis** seam — partly the engine's multi-recursive-argument work (see the
+  inductive-engine entry above), partly a new `defs`/elaborator path to mint a
+  fresh subtype and its recursor spec from a signature. The directive reports
+  the gap (`ScriptError::Syntax`) rather than fabricating anything; `nat` is the
+  prototype's worked end-to-end case.
 - **Async core: types + tokio in place; the open-obligation (hole) feature was
   removed, pending a channel-based rebuild.** `script/mod.rs::run_async` is
   `async`; `run`/`resolve_blocking` block via a tokio **current-thread** runtime

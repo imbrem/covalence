@@ -1,12 +1,38 @@
 # covalence-metamath
 
 A tiny, theory-agnostic [Metamath] proof checker whose expressions are
-[`covalence-sexp`] `SExpr`s. This is **pillar 2** of the project's metatheory
-program (`docs/theories-models-and-logics.md` §5.5): a substitution /
-representation engine we can later prove equivalent to our locally-nameless HOL
-syntax as a metatheorem, and use to replay untrusted Metamath proofs through the
-kernel (the same untrusted-frontend → kernel-recheck pattern as
-`covalence-alethe`).
+[`covalence-sexp`] `SExpr`s.
+
+## Why this exists — Metamath as the shared logic-definition substrate
+
+The primary goal is to **define logics _inside_ Covalence**: Metamath's pure
+metavariable-substitution metalogic is a universal, theory-agnostic substrate in
+which any standard logic (propositional calculus, FOL, ZFC, PA, a group theory,
+…) is written down as a database — constants, typed variables, and its axioms
+and inference rules as substitution schemas. It is a **shared syntax everyone can
+use**: a common medium for *stating* and *deriving* across many logics.
+
+Under this view, **everything else is an optimization**. When Covalence asserts
+`P` relative to a Metamath-defined logic, the claim is precisely *"there exists a
+Metamath derivation of `P`"* — a pure existence statement; the derivation itself
+may be astronomically long and impractical to construct. A short HOL-kernel
+proof, a WASM-oracle discharge, or a replayed `set.mm` proof is then just a *more
+practical certificate of that existence*. Metatheorems take the shape *"if a ZF
+derivation of `A` exists, a GT derivation of `S(A)` exists"* — existence-transport
+between databases witnessed by a rewriting function `S` on Metamath terms
+(relative interpretation, proved by induction on derivations, native to the
+substrate).
+
+The link to our native machinery is **one correspondence theorem used both
+ways**. Proving **Metamath-PA ≅ our manual PA** (a) *validates downward* that the
+Metamath model means what we expect — it certifies the `.mm` definition is
+faithful to the logic — and (b) *accelerates upward*: the very same `≅` lets our
+manual PA, the HOL kernel, and WASM decision procedures discharge hard
+Metamath-PA goals by running fast and transporting the result across the
+correspondence, certifying the giant derivation exists without building it. The
+bridge into the HOL kernel (`docs/theories-models-and-logics.md` §5.5,
+**pillar 2**) is the special case where `S` lands in HOL's `IsThm`; that bridge
+uses the same untrusted-frontend → kernel-recheck pattern as `covalence-alethe`.
 
 ## What Metamath is
 

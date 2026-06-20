@@ -1216,6 +1216,18 @@ fn one_pos_rt_given() -> Thm {
     one_pos_rt()
 }
 
+/// `⊢ ∀a b c:int. (a + b) · c = a·c + b·c` — int right-distributivity
+/// (`idistrib_r`: from the proved left `int.distrib` + `int.mul_comm`), the
+/// `.cov` `int_distrib_r` given. Lets `add_neg`'s numerator factor out
+/// `rep(den a)`.
+fn int_distrib_r_given() -> Result<Thm> {
+    let (a, b, c) = (ivar("a"), ivar("b"), ivar("c"));
+    idistrib_r(&a, &b, &c)?
+        .all_intro("c", Type::int())?
+        .all_intro("b", Type::int())?
+        .all_intro("a", Type::int())
+}
+
 /// `⊢ ∀d:int.pos. 0 · rep d = 0` — left-zero on a positive denominator
 /// (`int_mul_comm` + `int_mul_zero`), the `.cov` `zero_times` given. Lets the
 /// `mul_zero` / `add_neg` cross-multiplications collapse both sides to `0`.
@@ -1350,6 +1362,7 @@ pub fn rat_env() -> crate::script::Env {
     e.define_lemma("pos_prod_rt", pos_prod_rt_given());
     e.define_lemma("one_pos_rt", one_pos_rt_given());
     e.define_lemma("zero_times", zero_times_given().expect("rat zero_times given"));
+    e.define_lemma("int_distrib_r", int_distrib_r_given().expect("rat int_distrib_r given"));
     e.define_lemma("lt_self", lt_self_given().expect("rat lt_self given"));
     e.define_lemma("int_lt_irrefl", int_lt_irrefl_given());
     e.define_lemma("topos_rep", topos_rep_given().expect("rat topos_rep given"));
@@ -2442,6 +2455,7 @@ crate::cov_theory! {
         "mul_one"   => pub fn mul_one_cov;
         "add_zero"  => pub fn add_zero_cov;
         "mul_zero"  => pub fn mul_zero_cov;
+        "add_neg"   => pub fn add_neg_cov;
     }
 }
 
@@ -2460,6 +2474,7 @@ mod cov_tests {
         assert_eq!(cov::mul_one_cov().concl(), super::mul_one().concl());
         assert_eq!(cov::add_zero_cov().concl(), super::add_zero().concl());
         assert_eq!(cov::mul_zero_cov().concl(), super::mul_zero().concl());
+        assert_eq!(cov::add_neg_cov().concl(), super::add_neg().concl());
     }
 
 }

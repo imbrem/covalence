@@ -195,4 +195,44 @@
             ;; MK 0 one_pos = 0
             (sym (zero_mk))))))))
 
-(#export add_comm mul_comm lt_irrefl mul_one add_zero mul_zero)
+;; ⊢ ∀a. a + (-a) = 0.  -a = MK(int.neg(num a))(den a), so the numerator is
+;; `num a·rep(den a) + int.neg(num a)·rep(den a) = (num a + int.neg(num a))·rep(den a)
+;; = 0·rep(den a) = 0`; then `MK 0 D = 0` by the class-equality law on
+;; `0·rep one_pos = 0·rep D` (both 0). (Mirrors `add_neg_impl`.)
+(#thm add_neg
+  (#concl (forall (a rat) (= (rat.add a (rat.neg a)) (rat.zero))))
+  (#by
+    (intro a)
+    (derive
+      (trans
+        (all-elim a (add_neg_compute))
+        (trans
+          ;; numerator → 0 (denominator D untouched)
+          (cong-fn (rat.topos (int.mul (rat.rep (rat.den a)) (rat.rep (rat.den a))))
+            (cong-arg (rat.MK)
+              (trans
+                (sym
+                  (all-elim (rat.rep (rat.den a))
+                    (all-elim (int.neg (rat.num a))
+                      (all-elim (rat.num a) (int_distrib_r)))))
+                (trans
+                  (cong-fn (rat.rep (rat.den a))
+                    (cong-arg (int.mul) (all-elim (rat.num a) (int_add_neg))))
+                  (all-elim (rat.den a) (zero_times))))))
+          (trans
+            ;; MK 0 D = MK 0 one_pos
+            (imp-elim
+              (all-elim (rat.one_pos)
+                (all-elim (int.zero)
+                  (all-elim (rat.topos (int.mul (rat.rep (rat.den a))
+                                                (rat.rep (rat.den a))))
+                    (all-elim (int.zero) (class_eq)))))
+              (trans (all-elim (rat.one_pos) (zero_times))
+                     (sym
+                       (all-elim (rat.topos (int.mul (rat.rep (rat.den a))
+                                                     (rat.rep (rat.den a))))
+                         (zero_times)))))
+            ;; MK 0 one_pos = 0
+            (sym (zero_mk))))))))
+
+(#export add_comm mul_comm lt_irrefl mul_one add_zero mul_zero add_neg)

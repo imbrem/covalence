@@ -14,6 +14,10 @@
 > [`metatheory.md`](./metatheory.md) (reified object logics, morphisms),
 > [`observers.md`](./observers.md) (untrusted handlers feeding the kernel).
 
+> **Refinement:** the signature/theory/model architecture, within-logic
+> model multiplicity, and the consumability matrix are sharpened in
+> [`theories-models-and-logics.md`](./theories-models-and-logics.md).
+
 ---
 
 ## 1. The headline: a theory has many models, in many logics

@@ -1975,31 +1975,43 @@ fn gen4(thm: Thm) -> Result<Thm> {
         .all_intro("fa", Type::nat())
 }
 
-/// The `intprim` environment imported by `int.cov`: the `int` operators
+/// The `intprim` seam environment imported by `int.cov`: the `int` operators
 /// (monomorphic — `int` is a ground type), the component constructor /
 /// destructors, and the **seam** lemmas (reconstruction, the per-op `*_mk`
 /// computation rules, the order `*_mk` rules, the `int.mk` equality criterion,
 /// literal coherence) in `∀`-closed form. These cross the quotient boundary,
 /// so they stay Rust-proved givens; `int.cov` proves the ordered ring over
 /// them (plus the imported `nat` algebra) and never mentions the quotient.
+///
+/// All symbols are **bare** (`add`/`mk`/`fc`/`recon`/`add_mk`/…): `int.cov`
+/// brings them in QUALIFIED via `(#use (#alias intprim int))` — so they read
+/// as `int.add`/`int.mk`/`int.recon`/… in the proofs — and re-exports them the
+/// same way via `(#provide (#alias intprim int))`, so a downstream `.cov` that
+/// imports just `int` references `int.*` directly (no separate `intprim`).
 pub fn int_env() -> crate::script::Env {
     use crate::script::{ConstDef, Env};
     let mut e = Env::empty();
 
     // -- operators (monomorphic; `int` is ground) -----------------------
-    e.define_const("int.add", ConstDef::Op(int_add()));
-    e.define_const("int.mul", ConstDef::Op(int_mul()));
-    e.define_const("int.neg", ConstDef::Op(int_neg()));
-    e.define_const("int.sub", ConstDef::Op(int_sub()));
-    e.define_const("int.succ", ConstDef::Op(int_succ()));
-    e.define_const("int.le", ConstDef::Op(int_le()));
-    e.define_const("int.lt", ConstDef::Op(int_lt()));
-    e.define_const("int.mk", ConstDef::Op(int_mk_op()));
-    e.define_const("int.fc", ConstDef::Op(int_fc_op()));
-    e.define_const("int.sc", ConstDef::Op(int_sc_op()));
+    //
+    // Bare names: `int.cov` brings them in QUALIFIED via
+    // `(#use (#alias intprim int))` (so they read as `int.add`/`int.mk`/…
+    // inside the proofs) AND re-exports them the same way via
+    // `(#provide (#alias intprim int))`, so a downstream `.cov` that imports
+    // just `int` references `int.*` directly — no separate `intprim` import.
+    e.define_const("add", ConstDef::Op(int_add()));
+    e.define_const("mul", ConstDef::Op(int_mul()));
+    e.define_const("neg", ConstDef::Op(int_neg()));
+    e.define_const("sub", ConstDef::Op(int_sub()));
+    e.define_const("succ", ConstDef::Op(int_succ()));
+    e.define_const("le", ConstDef::Op(int_le()));
+    e.define_const("lt", ConstDef::Op(int_lt()));
+    e.define_const("mk", ConstDef::Op(int_mk_op()));
+    e.define_const("fc", ConstDef::Op(int_fc_op()));
+    e.define_const("sc", ConstDef::Op(int_sc_op()));
     // literals (builtin `TermKind::Int`)
-    e.define_const("int.0", ConstDef::Op(lit(0)));
-    e.define_const("int.1", ConstDef::Op(lit(1)));
+    e.define_const("0", ConstDef::Op(lit(0)));
+    e.define_const("1", ConstDef::Op(lit(1)));
 
     // canonical free components / ints for the `∀`-closed givens.
     let natv = |n: &str| Term::free(n, Type::nat());
@@ -2125,7 +2137,9 @@ pub fn int_env() -> crate::script::Env {
 
 crate::cov_theory! {
     /// `int` ordered-ring axioms ported to `int.cov`, over `core` + `logic` +
-    /// the imported `nat` algebra + the `intprim` seam env.
+    /// the imported `nat` algebra + the `intprim` seam env. The seam env is
+    /// re-exported through the `int` namespace (`#provide (#alias intprim int)`),
+    /// so downstream `.cov` imports just `int` to reach `int.*`.
     pub mod cov from "int.cov" {
         import "core" = crate::script::Env::core();
         import "logic" = crate::init::logic::cov::env();

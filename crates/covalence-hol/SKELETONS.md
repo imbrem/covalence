@@ -32,3 +32,10 @@ index](../../SKELETONS.md).
   replay): the `Nat`-specialized `Logic` (no general `Signature`/`admits`/full
   `HandlerSet`), the unbuilt `#model` directive, the `#thm`-only `#in` block,
   and the single-theory/two-model/no-iso shape.
+- **[`src/peano/SKELETONS.md`](./src/peano/SKELETONS.md)** — the deep
+  Peano-arithmetic embedding (Phases A–B done: reified locally-nameless FOL
+  syntax + substitution, the `nat` denotation, the PA axioms/rules/induction
+  schema, and the worked `∀x. x+0=x` by induction-on-derivations, all proven).
+  Deferred: the ∀-closed *impredicative* soundness theorem (`prop.rs`-style
+  `inst d := ⟦·⟧` fold — soundness is currently constructive per-derivation),
+  and the `.cov` surface (Phase C: `(pa-induct …)` + β/η-aware `#concl`).

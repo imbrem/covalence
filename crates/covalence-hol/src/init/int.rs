@@ -1982,6 +1982,88 @@ cached_thm! {
 }
 
 cached_thm! {
+    /// `⊢ ∀x y c. 0 < c ⟹ (x·c < y·c) = (x < y)` — strict order is preserved
+    /// **and reflected** by multiplication by a positive: the `⟸` direction is
+    /// [`lt_mul_pos`]; the `⟹` direction is its contrapositive through
+    /// trichotomy (`x=y ⟹ x·c=y·c`, `y<x ⟹ y·c<x·c`, both excluding `x·c<y·c`).
+    pub fn lt_mul_pos_iff() -> Result<Thm> {
+        let (x, y, c) = (var("x"), var("y"), var("c"));
+        let hpos = lt(lit(0), c.clone());
+        let lhs = lt(mul(x.clone(), c.clone()), mul(y.clone(), c.clone())); // x·c < y·c
+        let rhs = lt(x.clone(), y.clone()); // x < y
+
+        // ⟸ : {0<c, x<y} ⊢ x·c<y·c (lt_mul_pos).
+        let bwd = lt_mul_pos()
+            .all_elim(x.clone())?
+            .all_elim(y.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(Thm::assume(hpos.clone())?)?
+            .imp_elim(Thm::assume(rhs.clone())?)?; // {0<c, x<y} ⊢ x·c<y·c
+
+        // ⟹ : x·c<y·c ⟹ x<y, by trichotomy on x,y.
+        let tri = lt_trichotomy().all_elim(x.clone())?.all_elim(y.clone())?; // (x<y)∨(x=y)∨(y<x)
+        // x=y ⟹ x·c<y·c is false (x·c=y·c, irrefl).
+        let eq_xy = x.clone().equals(y.clone())?;
+        let lt_yx = lt(y.clone(), x.clone());
+        let br_eq = {
+            // x·c = y·c by congruence under (·c); rewrite y·c ↦ x·c.
+            let xc_yc = Thm::assume(eq_xy.clone())?
+                .cong_arg(int_mul())? // (·) x = (·) y
+                .cong_fn(c.clone())?; // x·c = y·c
+            let contra = Thm::assume(lhs.clone())?.rewrite(&xc_yc.sym()?)?; // x·c < x·c
+            lt_irrefl()
+                .all_elim(mul(x.clone(), c.clone()))?
+                .not_elim(contra)? // ⊥
+                .false_elim(rhs.clone())?
+                .imp_intro(&eq_xy)?
+        };
+        // y<x ⟹ y·c<x·c (lt_mul_pos), contradicting x·c<y·c (asymmetry via trans+irrefl).
+        let br_gt = {
+            let yc_lt_xc = lt_mul_pos()
+                .all_elim(y.clone())?
+                .all_elim(x.clone())?
+                .all_elim(c.clone())?
+                .imp_elim(Thm::assume(hpos.clone())?)?
+                .imp_elim(Thm::assume(lt_yx.clone())?)?; // y·c < x·c
+            // x·c<y·c and y·c<x·c ⟹ x·c<x·c (trans) ⟹ ⊥.
+            let xx = lt_trans()
+                .all_elim(mul(x.clone(), c.clone()))?
+                .all_elim(mul(y.clone(), c.clone()))?
+                .all_elim(mul(x.clone(), c.clone()))?
+                .imp_elim(Thm::assume(lhs.clone())?)?
+                .imp_elim(yc_lt_xc)?; // x·c < x·c
+            lt_irrefl()
+                .all_elim(mul(x.clone(), c.clone()))?
+                .not_elim(xx)?
+                .false_elim(rhs.clone())?
+                .imp_intro(&lt_yx)?
+        };
+        let fwd = {
+            // x<y branch: trivial.
+            let lt_branch = Thm::assume(rhs.clone())?.imp_intro(&rhs)?;
+            let tail = tri
+                .concl()
+                .as_app()
+                .ok_or_else(|| Error::ConnectiveRule("lt_mul_pos_iff: ∨ shape".into()))?
+                .1
+                .clone(); // (x=y) ∨ (y<x)
+            let tail_thm = Thm::assume(tail.clone())?
+                .or_elim(br_eq, br_gt)?
+                .imp_intro(&tail)?;
+            tri.or_elim(lt_branch, tail_thm)? // {0<c, x·c<y·c} ⊢ x<y
+        };
+
+        // deduct_antisym: from {…,lhs} ⊢ rhs and {…,rhs} ⊢ lhs get ⊢ lhs=rhs
+        // (the shared `0<c` hyp survives; `lhs`/`rhs` are discharged).
+        let eq = bwd.deduct_antisym(fwd)?; // {0<c} ⊢ (x·c<y·c) = (x<y)
+        eq.imp_intro(&hpos)?
+            .all_intro("c", int())?
+            .all_intro("y", int())?
+            .all_intro("x", int())
+    }
+}
+
+cached_thm! {
     /// `⊢ ∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` — **proved** integral-domain
     /// right-cancellation. `¬(d=0)` + trichotomy gives `0 < d` or `d < 0`; the
     /// positive case is [`mul_rcancel_pos`], the negative case flips `d ↦ -d`
@@ -2786,6 +2868,28 @@ mod tests {
             nz.all_elim(p.clone()).unwrap().concl(),
             &rep_p.equals(lit(0)).unwrap().not().unwrap()
         );
+    }
+
+    #[test]
+    fn lt_mul_pos_iff_is_genuine() {
+        let (x, y, c) = (var("x"), var("y"), var("c"));
+        let t = lt_mul_pos_iff();
+        assert!(t.hyps().is_empty(), "lt_mul_pos_iff is proved");
+        let inst = t
+            .all_elim(x.clone())
+            .unwrap()
+            .all_elim(y.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        let expected = lt(lit(0), c.clone())
+            .imp(
+                lt(mul(x.clone(), c.clone()), mul(y.clone(), c.clone()))
+                    .equals(lt(x.clone(), y.clone()))
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
     }
 
     #[test]

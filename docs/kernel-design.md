@@ -679,23 +679,28 @@ literally a Pure opaque-predicate implication lifted into the metatheory.
 
 ### 11.3 Why it is a *narrow waist*
 
-HOL is the waist because **different implementations may have a different
-`covalence-pure`** underneath. The base logic is abstracted away by the
-*untrusted* `covalence-hol` API, which is what **most consumers should
-use**; lower-level consumers drop to the `covalence-core` (HOL kernel) API;
-the raw `covalence-pure` API is **mostly an implementation detail** — a
-substrate the waist hides. So:
+The waist's defining property: **the middle logic (HOL) is *shared* across
+every implementation — it is what gives everything a common semantics.** It
+does not vary from one implementation to the next; that fixity is the *entire
+point* of a waist. What *diverges* is the two ends:
 
-- **above the waist** — a diversity of related logics, all riding the HOL
-  API ([`frontend.md`](./frontend.md), [`metatheory.md`](./metatheory.md));
-- **at the waist** — the stable HOL surface every consumer targets;
-- **below the waist** — a swappable, trivially-correct first-order substrate
-  doing the efficient / low-level work.
+- **below the waist** — `covalence-pure` and the efficient representations
+  differ per implementation, by *implementation strategy* (an efficient Rust
+  observer zoo, a paranoid simple core, an OCaml/JS re-host — §11.1, §11.5).
+  The raw `covalence-pure` API is mostly an implementation detail the waist
+  hides; most consumers use the `covalence-hol` API instead.
+- **above the waist** — a diversity of object logics. *This* divergence is the
+  whole point of the system (metatheory-as-default; many logics, many models —
+  [`frontend.md`](./frontend.md), [`metatheory.md`](./metatheory.md)).
+- **at the waist** — the one stable HOL surface every consumer targets and
+  every implementation provides; a theorem's *meaning* is independent of which
+  `covalence-pure` produced it and which object logic consumes it.
 
-The *waist logic itself* is also a choice, not a fixity: HOL Light today, but
-**HOL-ω** (higher-kinded — first-class monads / transformers / profunctors) is
-a live candidate for the waist, exactly because the waist is an API that
-different implementations can meet differently
+This is exactly why re-hosting (§11.5) re-implements the *same* waist in a new
+language rather than a different logic. *Which* logic plays the shared-waist
+role is a one-time, **project-level** choice — not a per-implementation one:
+HOL Light today; **HOL-ω** (higher-kinded — first-class monads / transformers /
+profunctors) is a live candidate to *be* the shared waist
 ([`metatheory.md`](./metatheory.md) §5.2).
 
 The flat-TCB and "scoped truths" disciplines are unchanged — the base logic

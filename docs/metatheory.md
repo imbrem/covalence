@@ -212,11 +212,13 @@ at a time; HOL-ω lets us quantify over the type *constructor* itself.
 That is a want, not yet a need — we adopt it only when a concrete theory
 we care about is unstatable without it.
 
-**HOL-ω as an *alternative middle logic*.** Because the middle logic is a
-*narrow waist* that implementations may differ on
-([`kernel-design.md`](./kernel-design.md) §11.3), HOL-ω is not only a
-future *object*-logic enrichment — it is a candidate for the **waist
-itself**. The motivation is concrete and Kmett-flavoured: first-class
+**HOL-ω as an *alternative middle logic*.** The middle logic — the narrow
+waist — is the *one logic shared across every implementation*; it is what
+gives everything a common semantics ([`kernel-design.md`](./kernel-design.md)
+§11.3), so it is emphatically **not** something individual implementations
+vary. But *which* logic plays that shared role is a project-level choice, and
+HOL-ω is a candidate for it — not merely a future *object*-logic enrichment but
+a possible replacement for the **shared waist itself**. The motivation is concrete and Kmett-flavoured: first-class
 reasoning about **monads, monad transformers, and profunctors** wants to
 quantify over the type *constructor* (`m : ⋆→⋆`, `t : (⋆→⋆)→⋆→⋆`,
 `p : ⋆→⋆→⋆`), which rank-1 HOL Light cannot. A theory of "all monads" or

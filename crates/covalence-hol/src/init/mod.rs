@@ -136,6 +136,8 @@ use crate::script::{Env, NamedThm, ScriptError, Tactic};
 /// - `logic` — propositional connectives + their proved properties
 /// - `nat` — Peano arithmetic theorems
 /// - `set` — set algebra / order theorems
+/// - `tree` — binary-tree constructor freeness (`leaf`/`branch`)
+/// - `sexp` — S-expression (`tree (option α)`) constructor distinctness
 ///
 /// Each environment is built — and its theorems proved — lazily, only when a
 /// script actually imports it.
@@ -147,6 +149,19 @@ pub fn library_env(name: &str) -> Option<Env> {
         "nat" => Some(nat::cov::env()),
         "set" => Some(set::cov::env()),
         "rat" => Some(rat::cov::env()),
+        // `tree`/`sexp` expose BOTH the constructor constants (from the seam
+        // env) and the ported freeness/distinctness theorems, so a downstream
+        // script can build constructor terms *and* cite the facts.
+        "tree" => {
+            let mut e = tree::tree_env();
+            e.merge(&tree::cov::env());
+            Some(e)
+        }
+        "sexp" => {
+            let mut e = sexp::sexp_env();
+            e.merge(&sexp::cov::env());
+            Some(e)
+        }
         _ => None,
     }
 }

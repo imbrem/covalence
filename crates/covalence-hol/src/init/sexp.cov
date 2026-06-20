@@ -1,0 +1,79 @@
+;; sexp.cov — S-expressions as `sexp α := tree (option α)` (the Lisp cons-cell
+;; view), ported from `init::sexp` over `core` + the `sexpprim` seam env.
+;;
+;;   atom a   := leaf (some a)     -- an atom carrying `a : α`
+;;   nil      := leaf none         -- the empty list / nil
+;;   cons x y := branch x y        -- a cons cell (car `x`, cdr `y`)
+;;
+;; `sexp` is a *view* over the binary-`tree` Church encoding (see `tree.cov`),
+;; so its constructors are closed-λ / nullary CONSTANTS (`sexp.atom`,
+;; `sexp.nil`, `sexp.cons`) rather than `defs` operators, and the distinctness
+;; facts cross a β / observation-type bridge — they come from `sexpprim` as
+;; Rust-proved GIVENS:
+;;
+;;   atom_ne_nil  : ∀a.     ¬(atom a = nil)        (at 'r := bool)
+;;   atom_ne_cons : ∀a x y. ¬(atom a = cons x y)   (at 'r := bool)
+;;   nil_ne_cons  : ∀x y.   ¬(nil = cons x y)      (at 'r := bool)
+;;
+;; All three share the boolean observation type, so the constructor constants
+;; are pinned at `'r := bool` (`atom_ne_nil` reads `is_some` through the leaf
+;; handler; the cons facts read the leaf/branch tag).
+;;
+;; Here we re-export each as a first-class `sexp.cov` theorem (the proof just
+;; `all-elim`s the seam given). `cons` injectivity + full structural `sexp`
+;; induction need the recursor's subtree-recovery identity (the `Wf` carve);
+;; they are deferred — see `init/SKELETONS.md`.
+;;
+;; The cons facts are taken at the boolean observation type, so the subtrees
+;; `x`/`y` live in `sexp 'a` at `'r := bool`, i.e.
+;;   (fun (fun (option 'a) bool) (fun (fun bool (fun bool bool)) bool)).
+
+(#import core)
+(#open core)
+(#import sexpprim)
+(#open sexpprim)
+
+;; ============================================================================
+;; atom_ne_nil — an atom is never nil (`is_some` distinguishes the leaf
+;; payloads `some a` / `none` at the boolean observation type).
+;;
+;; ⊢ ∀(a : 'a). ¬(atom a = nil)
+;; ============================================================================
+(#thm atom_ne_nil
+  (#concl
+    (forall (a 'a)
+      (not (= (app sexp.atom a) sexp.nil))))
+  (#by
+    (intro a)
+    (derive (all-elim a (atom_ne_nil)))))
+
+;; ============================================================================
+;; atom_ne_cons — an atom is never a cons cell (`leaf ≠ branch`).
+;;
+;; ⊢ ∀(a : 'a) (x y : sexp 'a). ¬(atom a = cons x y)
+;; ============================================================================
+(#thm atom_ne_cons
+  (#concl
+    (forall (a 'a)
+      (forall (x (fun (fun (option 'a) bool) (fun (fun bool (fun bool bool)) bool)))
+        (forall (y (fun (fun (option 'a) bool) (fun (fun bool (fun bool bool)) bool)))
+          (not (= (app sexp.atom a) (app (app sexp.cons x) y)))))))
+  (#by
+    (intro a x y)
+    (derive (all-elim y (all-elim x (all-elim a (atom_ne_cons)))))))
+
+;; ============================================================================
+;; nil_ne_cons — nil is never a cons cell (`leaf ≠ branch`).
+;;
+;; ⊢ ∀(x y : sexp 'a). ¬(nil = cons x y)
+;; ============================================================================
+(#thm nil_ne_cons
+  (#concl
+    (forall (x (fun (fun (option 'a) bool) (fun (fun bool (fun bool bool)) bool)))
+      (forall (y (fun (fun (option 'a) bool) (fun (fun bool (fun bool bool)) bool)))
+        (not (= sexp.nil (app (app sexp.cons x) y))))))
+  (#by
+    (intro x y)
+    (derive (all-elim y (all-elim x (nil_ne_cons))))))
+
+(#export atom_ne_nil atom_ne_cons nil_ne_cons)

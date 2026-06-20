@@ -1,0 +1,59 @@
+;; tree.cov — the binary-`tree` constructor-freeness theory, ported from
+;; `init::tree` over `core` + the `treeprim` seam env.
+;;
+;; `tree α := leaf α | branch (tree α) (tree α)` is a Church/impredicative
+;; encoding (no kernel subtype), so its constructors are closed-λ CONSTANTS
+;; (`tree.leaf`, `tree.branch`) rather than `defs` operators, and the
+;; freeness facts cross a β / observation-type bridge — both are imported as
+;; Rust-proved GIVENS from `treeprim`:
+;;
+;;   leaf_inj       : ∀a b. leaf a = leaf b ⟹ a = b          (at 'r := 'a)
+;;   leaf_ne_branch : ∀a l r. ¬(leaf a = branch l r)         (at 'r := bool)
+;;
+;; Here we re-export each as a first-class `tree.cov` theorem (the proof just
+;; `all-elim`s the seam given). `branch` injectivity + full structural
+;; `tree` induction need the recursor's subtree-recovery identity (the `Wf`
+;; carve); they are deferred — see `init/SKELETONS.md`.
+;;
+;; The encoding's result type is `'r`; the freeness facts are taken at their
+;; natural observation type, so the bound subtrees `l`/`r` of `branch` live in
+;; `T⟨'a,bool⟩ = (fun (fun 'a bool) (fun (fun bool (fun bool bool)) bool))`.
+
+(#import core)
+(#open core)
+(#import treeprim)
+(#open treeprim)
+
+;; ============================================================================
+;; leaf_inj — `leaf` is injective (payload read-back).
+;;
+;; ⊢ ∀(a b : 'a). leaf a = leaf b ⟹ a = b
+;; ============================================================================
+(#thm leaf_inj
+  (#concl
+    (forall (a 'a)
+      (forall (b 'a)
+        (==> (= (app tree.leaf a) (app tree.leaf b)) (= a b)))))
+  (#by
+    (intro a b)
+    (derive (all-elim b (all-elim a (leaf_inj))))))
+
+;; ============================================================================
+;; leaf_ne_branch — `leaf` and `branch` are distinct constructors (tag read).
+;;
+;; ⊢ ∀(a : 'a) (l r : T⟨'a,bool⟩). ¬(leaf a = branch l r)
+;;
+;; The observation type is `bool`, so the cons subtrees range over the
+;; bool-instantiated encoding type.
+;; ============================================================================
+(#thm leaf_ne_branch
+  (#concl
+    (forall (a 'a)
+      (forall (l (fun (fun 'a bool) (fun (fun bool (fun bool bool)) bool)))
+        (forall (r (fun (fun 'a bool) (fun (fun bool (fun bool bool)) bool)))
+          (not (= (app tree.leaf a) (app (app tree.branch l) r)))))))
+  (#by
+    (intro a l r)
+    (derive (all-elim r (all-elim l (all-elim a (leaf_ne_branch)))))))
+
+(#export leaf_inj leaf_ne_branch)

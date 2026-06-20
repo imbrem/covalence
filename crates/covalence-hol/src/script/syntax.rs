@@ -81,6 +81,17 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                 }
                 Ok(Type::spec(defs::list_spec(), vec![parse_type(&ch[1])?]))
             }
+            "coprod" => {
+                if ch.len() != 3 {
+                    return Err(ScriptError::Syntax(
+                        "coprod: expected (coprod A B)".into(),
+                    ));
+                }
+                Ok(Type::spec(
+                    defs::coprod_spec(),
+                    vec![parse_type(&ch[1])?, parse_type(&ch[2])?],
+                ))
+            }
             "result" => {
                 if ch.len() != 3 {
                     return Err(ScriptError::Syntax(

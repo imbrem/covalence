@@ -1,29 +1,151 @@
-;; coprod.cov — coprod theorems, ported from `init::coprod` in Rust.
+;; coprod.cov — the coproduct theory, ported from `init::coprod` and EXPANDED.
 ;;
-;; The `coprodrpm` env imports the seam lemmas as Rust-proved givens:
-;;   `inl.ne_inr` : ⊢ ∀av bv. ¬(inl av = inr bv)
-;;   `case.inl`   : ⊢ ∀f g av. coprod_case f g (inl av) = f av
-;;   `case.inr`   : ⊢ ∀f g bv. coprod_case f g (inr bv) = g bv
-;;   `cases`      : ⊢ ∀c. (∃x. c = inl x) ∨ (∃y. c = inr y)
-;;   `case.eta`   : ⊢ ∀m. m = coprod_case (m ∘ inl) (m ∘ inr)
-;; and registers `inl`/`inr`/`coprod_case` as Ops for type inference.
+;; The `coprodrpm` seam env imports the barrier-crossing lemmas as Rust-proved
+;; GIVENS (they cross abs/rep + the Hilbert-choice axiom, so they are not
+;; expressible in the proof language) and the operators as polymorphic schemes:
 ;;
-;; All five theorems are Rust givens rather than proved here because:
-;;   1. `case.eta` requires `exists_elim`, which is not a primitive rule.
-;;   2. Expressing `m ∘ inl` requires `compose` at a `coprod`-typed
-;;      intermediate, which the current .cov type syntax cannot write.
-;;   3. `parse_type` does not support `coprod 'a 'b` as an explicit
-;;      type annotation, so binders over coprod values are inexpressible.
+;;   inl_ne_inr : ∀av bv. ¬(inl av = inr bv)        (disjointness)
+;;   inl_inj    : ∀av av2. inl av = inl av2 ⟹ av = av2
+;;   inr_inj    : ∀bv bv2. inr bv = inr bv2 ⟹ bv = bv2
+;;   case_inl   : ∀f g av. coprod_case f g (inl av) = f av
+;;   case_inr   : ∀f g bv. coprod_case f g (inr bv) = g bv
+;;   cases      : ∀c. (∃x. c = inl x) ∨ (∃y. c = inr y)
+;;   comp_beta_inl : ∀(m:coprod 'a 'b→'c) x. compose m inl x = m (inl x)
+;;   comp_beta_inr : ∀(m:coprod 'a 'b→'c) y. compose m inr y = m (inr y)
+;;   fun_ext    : ∀f g. (∀x. f x = g x) ⟹ f = g
 ;;
-;; This file simply re-exports `case.eta` (the canonical coprod theorem)
-;; so that the `cov_theory!` macro can expose a `case_eta_cov` accessor and
-;; the `case_eta_cov_matches_rust` test can verify the conclusion.
+;; Over those, the theorems below are proved GENUINELY in the script layer
+;; (no Rust bridge), leaning on the existential machinery — `(exists-elim …)`
+;; over the `cases` disjunction is the workhorse:
+;;
+;;   case_eq  : ∀c P. (∀x. P (inl x)) ⟹ (∀y. P (inr y)) ⟹ P c
+;;              — coproduct case analysis: a predicate proved on both
+;;                injections holds everywhere.
+;;   case_eta : ∀m. m = coprod_case (m ∘ inl) (m ∘ inr)
+;;              — the η / fusion law: a map out of a coproduct is the
+;;                copairing of its two restrictions.
 
 (#import core)
 (#open core)
 (#import coprodrpm)
 (#open coprodrpm)
 
-;; Re-export the quantified `case.eta` given from `coprodrpm`.
-;; ⊢ ∀(m : coprod 'a 'b → 'c). m = coprod_case (m ∘ inl) (m ∘ inr)
-(#export case.eta)
+;; ============================================================================
+;; case_eq — coproduct case analysis.
+;;
+;; ⊢ ∀(c : coprod 'a 'b) (P : coprod 'a 'b → bool).
+;;     (∀x. P (inl x)) ⟹ (∀y. P (inr y)) ⟹ P c
+;;
+;; By `cases c`: c is `inl x` or `inr y`. On each arm the existential witness
+;; `x` (resp. `y`) is eliminated with `exists-elim`; under `c = inj witness`,
+;; `P c` rewrites to `P (inj witness)`, which the matching premise supplies.
+;; ============================================================================
+(#thm case_eq
+  (#fix (c (coprod 'a 'b)) (P (fun (coprod 'a 'b) bool)))
+  (#concl (==> (forall (x 'a) (app P (inl x)))
+               (==> (forall (y 'b) (app P (inr y)))
+                    (app P c))))
+  (#by (derive
+    (imp-intro (forall (x 'a) (app P (inl x)))
+      (imp-intro (forall (y 'b) (app P (inr y)))
+        (or-elim
+          (cases c)
+          ;; inl arm: ∃x. c = inl x  ⟹  P c
+          (imp-intro (exists (x 'a) (= c (inl x)))
+            (exists-elim
+              (assume (exists (x 'a) (= c (inl x))))
+              (app P c)
+              (all-intro x 'a
+                (imp-intro (app (lam (x 'a) (= c (inl x))) x)
+                  (eq-mp
+                    (sym
+                      (cong-arg P
+                        (eq-mp (beta-conv (app (lam (x 'a) (= c (inl x))) x))
+                               (assume (app (lam (x 'a) (= c (inl x))) x)))))
+                    (all-elim x (assume (forall (x 'a) (app P (inl x))))))))))
+          ;; inr arm: ∃y. c = inr y  ⟹  P c
+          (imp-intro (exists (y 'b) (= c (inr y)))
+            (exists-elim
+              (assume (exists (y 'b) (= c (inr y))))
+              (app P c)
+              (all-intro y 'b
+                (imp-intro (app (lam (y 'b) (= c (inr y))) y)
+                  (eq-mp
+                    (sym
+                      (cong-arg P
+                        (eq-mp (beta-conv (app (lam (y 'b) (= c (inr y))) y))
+                               (assume (app (lam (y 'b) (= c (inr y))) y)))))
+                    (all-elim y (assume (forall (y 'b) (app P (inr y))))))))))))))))
+
+;; ============================================================================
+;; case_eta — the η / fusion law.
+;;
+;; ⊢ ∀(m : coprod 'a 'b → 'c). m = coprod_case (compose m inl) (compose m inr)
+;;
+;; Extensionality (`fun_ext`) reduces to a pointwise `m c = k c` for
+;; `k = coprod_case (m ∘ inl) (m ∘ inr)`; case analysis on `c` (the `cases`
+;; disjunction + `exists-elim`) discharges each arm:
+;;
+;;   inl arm, under `c = inl x`:
+;;     m c        = m (inl x)                  (cong m)
+;;     k c        = k (inl x)                  (cong k)
+;;                = (compose m inl) x          (case_inl)
+;;                = m (inl x)                  (comp_beta)
+;;   so m c = k c. The inr arm is symmetric.
+;; ============================================================================
+(#thm case_eta
+  (#fix (m (fun (coprod 'a 'b) 'c)))
+  (#concl (= m (coprod_case (compose m inl) (compose m inr))))
+  (#by (derive
+    (imp-elim
+      (all-elim (coprod_case (compose m inl) (compose m inr)) (all-elim m (fun_ext)))
+      (all-intro c (coprod 'a 'b)
+        (or-elim
+          (cases c)
+          ;; inl arm
+          (imp-intro (exists (x 'a) (= c (inl x)))
+            (exists-elim
+              (assume (exists (x 'a) (= c (inl x))))
+              (= (app m c)
+                 (app (coprod_case (compose m inl) (compose m inr)) c))
+              (all-intro x 'a
+                (imp-intro (app (lam (x 'a) (= c (inl x))) x)
+                  ;; H : c = inl x
+                  (trans
+                    (cong-arg m
+                      (eq-mp (beta-conv (app (lam (x 'a) (= c (inl x))) x))
+                             (assume (app (lam (x 'a) (= c (inl x))) x))))
+                    (sym
+                      (trans
+                        (cong-arg (coprod_case (compose m inl) (compose m inr))
+                          (eq-mp (beta-conv (app (lam (x 'a) (= c (inl x))) x))
+                                 (assume (app (lam (x 'a) (= c (inl x))) x))))
+                        (trans
+                          (all-elim x
+                            (all-elim (compose m inr)
+                              (all-elim (compose m inl) (case_inl))))
+                          (all-elim x (all-elim m (comp_beta_inl)))))))))))
+          ;; inr arm
+          (imp-intro (exists (y 'b) (= c (inr y)))
+            (exists-elim
+              (assume (exists (y 'b) (= c (inr y))))
+              (= (app m c)
+                 (app (coprod_case (compose m inl) (compose m inr)) c))
+              (all-intro y 'b
+                (imp-intro (app (lam (y 'b) (= c (inr y))) y)
+                  (trans
+                    (cong-arg m
+                      (eq-mp (beta-conv (app (lam (y 'b) (= c (inr y))) y))
+                             (assume (app (lam (y 'b) (= c (inr y))) y))))
+                    (sym
+                      (trans
+                        (cong-arg (coprod_case (compose m inl) (compose m inr))
+                          (eq-mp (beta-conv (app (lam (y 'b) (= c (inr y))) y))
+                                 (assume (app (lam (y 'b) (= c (inr y))) y))))
+                        (trans
+                          (all-elim y
+                            (all-elim (compose m inr)
+                              (all-elim (compose m inl) (case_inr))))
+                          (all-elim y (all-elim m (comp_beta_inr)))))))))))))))))
+
+(#export case_eq case_eta)

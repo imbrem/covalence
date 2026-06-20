@@ -206,16 +206,33 @@ it is how unfinished work stays discoverable.
     `Hol` rule methods + the generic β/∃ helpers, with a `NativeHol` shim
     keeping its `nat`-facing signature. Then `recursion.rs`'s entry points can
     flip to any backend.
-  - **The multi-recursive-argument / multi-constructor-argument paths** in
+  - **The multi-recursive-argument paths are now general** in `graph.rs`,
     `existence.rs`, `uniqueness.rs`, `determinacy.rs`, and `recursor.rs`
-    (conjunctive IHs / antecedents, componentwise injectivity, nested
-    `∃`-witnessing) are partial: `existence` / `uniqueness` handle the general
-    shape but are only *exercised* by `nat`'s ≤1-arg / ≤1-rec-arg cases, while
-    `determinacy::det_case` and `recursor::rec_equation` explicitly **error** on
-    a constructor with ≥2 recursive arguments. A binary-tree or `list`
-    signature is the first real test. The strict
-    `wit`-binder naming discipline (`_wx_` / `_wb_` prefixes, disjoint from a
-    constructor's own binders) is load-bearing — see the `uniqueness.rs` docs.
+    (conjunctive IHs / antecedents, nested `∃`-witnessing). `determinacy::
+    det_step` peels *all* the inversion witnesses on each side (the recursive
+    `peel_exists` helper) and chains the per-argument congruences; `recursor::
+    rec_equation`'s `k ≥ 1` arm feeds graph introduction the conjunction of the
+    per-argument `Graph rⱼ (rec rⱼ)` memberships and bridges every inner
+    `rec rⱼ`. Both used to **error** on ≥2 recursive arguments; that block is
+    lifted. The 2-rec-arg graph/existence layer is exercised directly by
+    `existence::tests::graph_intro_two_rec_args_is_conjunctive` (a binary-tree
+    `branch`); the determinacy/recursor `k = 1` instance is exercised by `nat`'s
+    full recursion tests (which route through the generalised `det_step` /
+    `rec_equation`). The strict `wit`-binder naming discipline (`_wx_` / `_wb_`
+    prefixes, disjoint from a constructor's own binders) remains load-bearing —
+    see the `uniqueness.rs` docs. **Still missing for a *full* end-to-end
+    ≥2-rec-arg run** (`graph_total` / `graph_det` / `recursion_theorem`): a
+    genuine `Inductive` adapter for a 2-rec-arg type, i.e. derived
+    structural induction + constructor freeness for that type — the same
+    carrier-construction gap the `#inductive` directive reports (below). The
+    Church-encoded `init/tree.rs` supplies `leaf`/`branch` freeness partially
+    (leaf injectivity + leaf/branch distinctness) but not full induction, so it
+    cannot yet feed the engine; a kernel-subtype `tree` (carved via
+    `new_type_definition`, with derived induction) would.
+  - **Constructor injectivity** (`Inductive::injective`) for a multi-argument
+    constructor — componentwise `(Cᵢ x⃗ = Cᵢ y⃗) ⟹ ⋀ₖ xₖ = yₖ` — is consumed by
+    `uniqueness.rs` and supplied generically there, but no *non-`nat`* adapter
+    provides it yet; `nat`'s `succ` is unary.
 
   **Lifting to internal HOL (future).** The trait seam exists precisely so the
   proofs can be re-targeted: today `nat` is a kernel primitive, but we may later
@@ -304,6 +321,41 @@ it is how unfinished work stays discoverable.
       `SExpr` carrier and `PropForm` are independent today; wiring `var` to carry
       an `SExpr` atom (so formulas are literally S-expressions) is a later
       unification, deliberately skipped for simplicity.
+
+- **`covalence-hol` binary-tree / S-expr theory** in
+  `crates/covalence-hol/src/init/tree.rs` + `crates/covalence-hol/src/init/sexp.rs`
+  (the `tree α := leaf α | branch (tree α) (tree α)` datatype and the
+  `sexp α := tree (option α)` cons-cell view). Both use the **Church /
+  impredicative encoding** (same rationale as `init/sexpr.rs` — a binary tree's
+  `branch` has *two* recursive arguments, the exact shape that previously
+  blocked the carve-a-subtype engine; the engine block is now lifted, but a
+  genuine `tree` adapter for it still needs derived induction + freeness, so the
+  Church route delivers the user-facing theory immediately). **Genuine,
+  hypothesis-/oracle-free so far:**
+  - `tree.rs` — `leaf`/`branch` constructors, the recursor `rec` with both
+    per-constructor equations (`rec_leaf` / `rec_branch`, by β), and the
+    freeness facts `leaf_inj` (`leaf a = leaf b ⟹ a = b`, first-order payload
+    read at the `'r := α` observation type) and `leaf_ne_branch`
+    (`¬(leaf a = branch l r)`, boolean-tag read at `'r := bool`).
+  - `sexp.rs` — the `atom`/`nil`/`cons` view over `tree (option α)`, with
+    `atom_ne_nil` (via `leaf_inj` + `option::some_ne_none`), `atom_ne_cons`,
+    `nil_ne_cons` (via `tree::leaf_ne_branch`).
+  - **Not yet (deferred to the `Wf` carve):**
+    - **`branch_inj`** (`branch l r = branch l' r' ⟹ l = l' ∧ r = r'`) — on the
+      bare Church encoding this needs the recursor's *subtree-recovery*
+      identity (`rec leaf branch = id`), i.e. the same well-formedness side
+      condition as induction; not derivable by β alone.
+    - **Genuine structural induction** `(∀a. P(leaf a)) ⟹ (∀l r. P l ⟹ P r ⟹
+      P(branch l r)) ⟹ ∀t. P t` — `tree::induct_note` is the doc placeholder;
+      the bare encoding admits junk inhabitants, so this needs a `Wf`
+      predicate carving the well-founded encodings (the standard reducibility
+      argument, exactly as `sexpr::induct_note`). A `tree-induct` / `sexp-induct`
+      tactic and a `tree.cov` / `sexp.cov` `.cov` theory wait on this (the
+      freeness facts above are usable from Rust today but not yet wired as
+      `.cov` givens). The kernel-subtype alternative — carve `tree` via
+      `new_type_definition` and *derive* induction + freeness to feed the
+      (now multi-rec-arg-capable) `init/inductive/` engine — is the route that
+      would also unblock the engine's full ≥2-rec-arg run and `branch_inj`.
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in
   `crates/covalence-alethe/src/hol.rs`) checks the QF_UF core (`assume`,
@@ -518,11 +570,15 @@ directives — is `open`-able by other scripts; the macro binds it as a
   (b) a recursor **selector predicate** that `nat` reads from the `defs`
   catalogue (`nat_rec_spec`) but a fresh type has no entry for. So the missing
   capability is a **carrier-construction + freeness-derivation + recursor-spec
-  synthesis** seam — partly the engine's multi-recursive-argument work (see the
-  inductive-engine entry above), partly a new `defs`/elaborator path to mint a
+  synthesis** seam. The engine's multi-recursive-argument work is now **done**
+  (the binary-tree `branch` shape no longer errors — see the inductive-engine
+  entry above), so what remains is *only* the `defs`/elaborator path to mint a
   fresh subtype and its recursor spec from a signature. The directive reports
   the gap (`ScriptError::Syntax`) rather than fabricating anything; `nat` is the
-  prototype's worked end-to-end case.
+  prototype's worked end-to-end case. (A *user-facing* binary tree / S-expr is
+  available now via the Church-encoded `init/tree.rs` + `init/sexp.rs` — genuine
+  constructors / recursor / partial freeness — pending this directive seam to
+  surface it as a `#inductive` declaration.)
 - **Async core: types + tokio in place; the open-obligation (hole) feature was
   removed, pending a channel-based rebuild.** `script/mod.rs::run_async` is
   `async`; `run`/`resolve_blocking` block via a tokio **current-thread** runtime

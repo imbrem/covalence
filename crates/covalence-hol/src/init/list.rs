@@ -607,6 +607,60 @@ pub fn tail_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
 }
 
 // ============================================================================
+// `list` freeness — constructor distinctness + injectivity. These feed
+// the generic inductive engine's `Inductive::distinct` / `injective`.
+// ============================================================================
+
+/// `⊢ ¬(nil = cons x xs)` — `nil` and `cons` are distinct constructors.
+/// Genuine: hypothesis- and oracle-free. From `head nil = none` and
+/// `head (cons x xs) = some x`, an equality would force `none = some x`,
+/// contradicting [`some_ne_none`](crate::init::option::some_ne_none).
+pub fn nil_ne_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
+    let consed = cons(alpha.clone()).apply(x.clone())?.apply(xs.clone())?;
+    let eq = nil(alpha.clone()).equals(consed.clone())?;
+
+    // Under H : nil = cons x xs, transport heads to `none = some x`.
+    let h = Thm::assume(eq.clone())?;
+    let head_op = head(alpha.clone());
+    let heads_eq = h.cong_arg(head_op)?; // {H} ⊢ head nil = head (cons x xs)
+    let hn = head_nil(alpha)?; // head nil = none
+    let hc = head_cons(alpha, x, xs)?; // head (cons x xs) = some x
+    let none_some = hn.sym()?.trans(heads_eq)?.trans(hc)?; // {H} ⊢ none = some x
+
+    // ¬(some x = none) contradicts it (orient via sym).
+    let f = crate::init::option::some_ne_none(alpha, x)?.not_elim(none_some.sym()?)?; // {H} ⊢ F
+    f.imp_intro(&eq)?.not_intro() // ⊢ ¬(nil = cons x xs)
+}
+
+/// `⊢ (cons x xs = cons y ys) ⟹ (x = y ∧ xs = ys)` — `cons` is
+/// injective. Genuine: hypothesis- and oracle-free. The head equality
+/// gives `x = y` through [`some_inj`](crate::init::option::some_inj); the
+/// tail equality gives `xs = ys` through [`tail_cons`].
+pub fn cons_inj(alpha: &Type, x: &Term, xs: &Term, y: &Term, ys: &Term) -> Result<Thm> {
+    let cxs = cons(alpha.clone()).apply(x.clone())?.apply(xs.clone())?;
+    let cys = cons(alpha.clone()).apply(y.clone())?.apply(ys.clone())?;
+    let eq = cxs.clone().equals(cys.clone())?;
+    let h = Thm::assume(eq.clone())?;
+
+    // Heads: head (cons x xs) = head (cons y ys), i.e. some x = some y.
+    let heads_eq = h.clone().cong_arg(head(alpha.clone()))?; // {H} ⊢ head (cons x xs) = head (cons y ys)
+    let some_xy = head_cons(alpha, x, xs)?
+        .sym()?
+        .trans(heads_eq)?
+        .trans(head_cons(alpha, y, ys)?)?; // {H} ⊢ some x = some y
+    let x_eq_y = crate::init::option::some_inj(alpha, x, y)?.imp_elim(some_xy)?; // {H} ⊢ x = y
+
+    // Tails: tail (cons x xs) = tail (cons y ys), i.e. xs = ys.
+    let tails_eq = h.cong_arg(tail(alpha.clone()))?; // {H} ⊢ tail (cons x xs) = tail (cons y ys)
+    let xs_eq_ys = tail_cons(alpha, x, xs)?
+        .sym()?
+        .trans(tails_eq)?
+        .trans(tail_cons(alpha, y, ys)?)?; // {H} ⊢ xs = ys
+
+    x_eq_y.and_intro(xs_eq_ys)?.imp_intro(&eq)
+}
+
+// ============================================================================
 // High-level term builders (pure construction — no proof).
 // ============================================================================
 
@@ -802,6 +856,43 @@ mod tests {
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &Term::app(head(alpha()), nil(alpha())));
         assert_eq!(rhs, &none(alpha()));
+    }
+
+    #[test]
+    fn nil_ne_cons_is_genuine() {
+        let x = Term::free("x", alpha());
+        let xs = Term::free("xs", list(alpha()));
+        let thm = nil_ne_cons(&alpha(), &x, &xs).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let consed = cons(alpha())
+            .apply(x.clone())
+            .unwrap()
+            .apply(xs.clone())
+            .unwrap();
+        let expected = nil(alpha())
+            .equals(consed)
+            .unwrap()
+            .not()
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn cons_inj_is_genuine() {
+        let x = Term::free("x", alpha());
+        let xs = Term::free("xs", list(alpha()));
+        let y = Term::free("y", alpha());
+        let ys = Term::free("ys", list(alpha()));
+        let thm = cons_inj(&alpha(), &x, &xs, &y, &ys).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let cxs = cons(alpha()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
+        let cys = cons(alpha()).apply(y.clone()).unwrap().apply(ys.clone()).unwrap();
+        let concl = cxs
+            .equals(cys)
+            .unwrap()
+            .imp(x.equals(y.clone()).unwrap().and(xs.equals(ys.clone()).unwrap()).unwrap())
+            .unwrap();
+        assert_eq!(thm.concl(), &concl);
     }
 
     #[test]

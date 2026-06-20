@@ -1099,6 +1099,235 @@ pub fn cons_inj(alpha: &Type, x: &Term, xs: &Term, y: &Term, ys: &Term) -> Resul
 }
 
 // ============================================================================
+// List induction.
+// ============================================================================
+
+/// `λl. (∀i. nat_le N i ⟹ index i l = none) ⟹ P l` — the bound-`N`
+/// auxiliary motive for the [`list_induct`] inner induction. `P` is the
+/// user motive (`p : list α → bool`).
+fn aux_motive(alpha: &Type, p: &Term, big_n: &Term) -> Result<Term> {
+    let l = Term::free("__l", list(alpha.clone()));
+    let i = Term::free("i", nat());
+    let le = Term::app(Term::app(nat_le(), big_n.clone()), i.clone());
+    let none_eq = index(alpha, &i, &l).equals(none(alpha.clone()))?;
+    let premise = le.imp(none_eq)?.forall("i", nat())?;
+    let body = premise.imp(Term::app(p.clone(), l.clone()))?;
+    Ok(Term::abs(list(alpha.clone()), covalence_core::subst::close(&body, "__l")))
+}
+
+/// `⊢ P l`, given `pl_nil : ⊢ P nil` and `allnone : ⊢ ∀i. index i l =
+/// none` — rewrite `P nil` along `nil = l` (from [`nil_from_allnone`]).
+fn p_of_nil_list(alpha: &Type, p: &Term, l: &Term, pl_nil: &Thm, allnone: Thm) -> Result<Thm> {
+    let l_eq_nil = nil_from_allnone(alpha, l)?.imp_elim(allnone)?; // l = nil
+    // P nil, rewritten by nil = l (l_eq_nil reversed).
+    let p_cong = l_eq_nil.sym()?.cong_arg(p.clone())?; // P nil = P l
+    p_cong.eq_mp(pl_nil.clone())
+}
+
+/// **List induction.** `⊢ ∀l. P l`, given `pl_nil : ⊢ P nil` and
+/// `cons_case : ⊢ ∀x xs. P xs ⟹ P (cons x xs)`, where `p = P : list α →
+/// bool`. Genuine: hypothesis- and oracle-free (given hypothesis-free
+/// premises).
+///
+/// Proof: an inner `nat`-induction on a finiteness bound `N` establishes
+/// `Aux(N) ≜ ∀l. (∀i. N ≤ i ⟹ index i l = none) ⟹ P l`. The base `N=0`
+/// forces every element `none`, so `l = nil`. The step splits on `head l`
+/// ([`option_cases`]): a `none` head propagates ([`allnone_from_head_none`])
+/// to `l = nil`; a `some a` head reconstructs `l = cons a (tail l)`
+/// ([`cons_head_tail`]), with `P (tail l)` from the `IH` (the tail's bound
+/// drops to `M`) and the `cons` case. Finally `finite_rep` supplies the
+/// bound for an arbitrary `l`.
+pub fn list_induct(alpha: &Type, p: &Term, pl_nil: Thm, cons_case: Thm) -> Result<Thm> {
+    // --- the inner induction: ⊢ ∀N. Aux(N) ---
+    let big_n = Term::free("N", nat());
+
+    // Aux(0): premise (∀i. nat_le 0 i ⟹ index i l = none) gives every i
+    // (le_zero), so l = nil, so P l.
+    let l = Term::free("__l", list(alpha.clone()));
+    let aux0_motive = aux_motive(alpha, p, &zero())?;
+    let aux0 = {
+        let i = Term::free("i", nat());
+        let premise = {
+            let le = Term::app(Term::app(nat_le(), zero()), i.clone());
+            le.imp(index(alpha, &i, &l).equals(none(alpha.clone()))?)?
+                .forall("i", nat())?
+        };
+        let h = Thm::assume(premise.clone())?;
+        // ∀i. index i l = none, discharging the vacuous `nat_le 0 i`.
+        let le_0_i = crate::init::nat::le_zero().all_elim(i.clone())?; // nat_le 0 i
+        let at_i = h.all_elim(i.clone())?.imp_elim(le_0_i)?; // index i l = none
+        let allnone = at_i.all_intro("i", nat())?;
+        let pl = p_of_nil_list(alpha, p, &l, &pl_nil, allnone)?; // {premise} ⊢ P l
+        let body = pl.imp_intro(&premise)?; // ⊢ premise ⟹ P l  (= Aux(0) body at l)
+        let at_l = beta_expand(&aux0_motive, l.clone(), body)?; // ⊢ aux0_motive l
+        at_l.all_intro("__l", list(alpha.clone()))? // ⊢ ∀l. aux0_motive l (applied form)
+    };
+
+    // Build the inner-induction motive `λN. ∀l. Aux(N) l` (a predicate on N).
+    let inner_motive = {
+        let n = Term::free("N", nat());
+        let body = Term::app(aux_motive(alpha, p, &n)?, Term::free("__l", list(alpha.clone())))
+            .forall("__l", list(alpha.clone()))?;
+        Term::abs(nat(), covalence_core::subst::close(&body, "N"))
+    };
+
+    // base for the inner nat_induct: inner_motive 0 = ∀l. Aux(0) l.
+    let inner_base = beta_expand(&inner_motive, zero(), aux0)?;
+
+    // step: ∀M. (∀l. Aux(M) l) ⟹ (∀l. Aux(succ M) l).
+    let inner_step = {
+        let m = Term::free("M", nat());
+        let ih_term = Term::app(inner_motive.clone(), m.clone()); // inner_motive M
+        let ih = crate::init::eq::beta_reduce(Thm::assume(ih_term.clone())?)?; // {IH} ⊢ ∀l. Aux(M) l
+
+        let aux_sm = aux_step(alpha, p, &m, &cons_case, &pl_nil, &ih)?; // {IH} ⊢ ∀l. Aux(succ M) l
+        let conseq = beta_expand(&inner_motive, succ(m.clone()), aux_sm)?; // {IH} ⊢ inner_motive (succ M)
+        conseq.imp_intro(&ih_term)?
+    };
+
+    let inner = Thm::nat_induct(inner_base, inner_step)?; // ⊢ ∀N. inner_motive N
+
+    // --- close over an arbitrary l: get the bound from finite_rep ---
+    // ∀l. (∀i. nat_le N i ⟹ index i l = none) ⟹ P l, at each N.
+    let aux_at = |n: &Term| -> Result<Thm> {
+        crate::init::eq::beta_reduce(inner.clone().all_elim(n.clone())?)
+    };
+
+    // For arbitrary l: finite (rep l) ≡ ∃N. ∀i. nat_le N i ⟹ index i l = none.
+    let pl = {
+        let fin = finite_rep(alpha, &l)?; // finite (rep l)
+        // finite (rep l) = ∃N. ∀n. nat_le N n ⟹ streamAt (rep l) n = none.
+        let unfold = Term::app(finite(alpha.clone()), rep_of(alpha, &l))
+            .delta_all(finite_spec().symbol())?
+            .rhs_conv(|t| t.reduce())?;
+        let ex = unfold.eq_mp(fin)?; // ∃N. ∀n. nat_le N n ⟹ streamAt (rep l) n = none
+
+        // exists_elim: from the bound N, Aux(N) gives P l.
+        let ex_pred = ex.concl().as_app().ok_or(Error::NotAnEquation)?.1.clone();
+        let n = Term::free("N", nat());
+        let applied = Term::app(ex_pred, n.clone());
+        let body_carrier = crate::init::eq::beta_reduce(Thm::assume(applied.clone())?)?; // {pred N} ⊢ ∀i. nat_le N i ⟹ streamAt (rep l) i = none
+        // Convert the carrier form to the `index` form (under the free `j`).
+        let body_n = carrier_body_to_index(alpha, &l, &n, body_carrier)?; // {pred N} ⊢ ∀i. nat_le N i ⟹ index i l = none
+        let aux_n = crate::init::eq::beta_reduce(aux_at(&n)?.all_elim(l.clone())?)?; // Aux(N) at l (β-reduced)
+        let pl = aux_n.imp_elim(body_n)?; // {pred N} ⊢ P l
+        let goal_pl = Term::app(p.clone(), l.clone());
+        let step = pl.imp_intro(&applied)?.all_intro("N", nat())?;
+        exists_elim(ex, goal_pl, step)? // ⊢ P l
+    };
+
+    pl.all_intro("__l", list(alpha.clone()))
+}
+
+/// The inner-induction **step body**: `⊢ ∀l. Aux(succ M) l`, given the
+/// `IH = ⊢ ∀l. Aux(M) l`, the `cons_case`, and `pl_nil`. Split on `head l`.
+fn aux_step(
+    alpha: &Type,
+    p: &Term,
+    m: &Term,
+    cons_case: &Thm,
+    pl_nil: &Thm,
+    ih: &Thm,
+) -> Result<Thm> {
+    let l = Term::free("__l", list(alpha.clone()));
+    let aux_motive_sm = aux_motive(alpha, p, &succ(m.clone()))?;
+
+    // The Aux(succ M) premise at l.
+    let i = Term::free("i", nat());
+    let premise = {
+        let le = Term::app(Term::app(nat_le(), succ(m.clone())), i.clone());
+        le.imp(index(alpha, &i, &l).equals(none(alpha.clone()))?)?
+            .forall("i", nat())?
+    };
+    let h_prem = Thm::assume(premise.clone())?;
+
+    let goal_pl = Term::app(p.clone(), l.clone());
+
+    // Case split on head l: (∃a. head l = some a) ∨ (head l = none).
+    let head_l = Term::app(head(alpha.clone()), l.clone());
+    let cs = crate::init::option::option_cases(alpha, &head_l)?;
+
+    // --- some-branch: head l = some a ⟹ P l ---
+    let some_disj = cs.concl().as_app().and_then(|(orp, _)| orp.as_app().map(|(_, x)| x.clone())).ok_or(Error::NotAnEquation)?;
+    let none_disj = cs.concl().as_app().map(|(_, r)| r.clone()).ok_or(Error::NotAnEquation)?;
+
+    let some_branch = {
+        // ∃a. head l = some a — assume it; a fresh, head l = some a.
+        let some_pred = some_disj.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λa. head l = some a
+        let a = Term::free("__a", alpha.clone());
+        let applied = Term::app(some_pred.clone(), a.clone());
+        let head_some = crate::init::eq::beta_reduce(Thm::assume(applied.clone())?)?; // {applied} ⊢ head l = some a
+
+        // l = cons a (tail l).
+        let recon = cons_head_tail(alpha, &a, &l)?.imp_elim(head_some)?; // {applied} ⊢ cons a (tail l) = l
+
+        // P (tail l) from IH: tail l's bound drops to M.
+        let p_tail = {
+            // ∀i. nat_le M i ⟹ index i (tail l) = none.
+            let tl = Term::app(tail(alpha.clone()), l.clone());
+            let j = Term::free("i", nat());
+            let le_m_j = Term::app(Term::app(nat_le(), m.clone()), j.clone());
+            let hj = Thm::assume(le_m_j.clone())?; // nat_le M j
+            // nat_le M j ⟹ nat_le (succ M) (succ j) (le_succ_succ).
+            let le_ss = crate::init::nat::le_succ_succ()
+                .all_elim(m.clone())?
+                .all_elim(j.clone())?; // (nat_le (succ M)(succ j)) = (nat_le M j)
+            let le_sm_sj = le_ss.sym()?.eq_mp(hj)?; // {nat_le M j} ⊢ nat_le (succ M)(succ j)
+            // premise at (succ j): index (succ j) l = none.
+            let idx_sj_none = h_prem.clone().all_elim(succ(j.clone()))?.imp_elim(le_sm_sj)?; // index (succ j) l = none
+            // index j (tail l) = index (succ j) l, so index j (tail l) = none.
+            let it = index_tail(alpha, &j, &l)?; // index j (tail l) = index (succ j) l
+            let idx_tail_none = it.trans(idx_sj_none)?; // index j (tail l) = none
+            let tail_premise = idx_tail_none.imp_intro(&le_m_j)?.all_intro("i", nat())?; // ∀i. nat_le M i ⟹ index i (tail l) = none
+            // IH at tail l.
+            let aux_m_tail = crate::init::eq::beta_reduce(ih.clone().all_elim(tl.clone())?)?; // Aux(M) at (tail l)
+            aux_m_tail.imp_elim(tail_premise)? // {premise} ⊢ P (tail l)
+        };
+
+        // cons_case: P (tail l) ⟹ P (cons a (tail l)).
+        let tl = Term::app(tail(alpha.clone()), l.clone());
+        let cc = cons_case.clone().all_elim(a.clone())?.all_elim(tl.clone())?; // P (tail l) ⟹ P (cons a (tail l))
+        let p_cons = cc.imp_elim(p_tail)?; // {premise, applied} ⊢ P (cons a (tail l))
+        // Rewrite by cons a (tail l) = l.
+        let pl = recon.cong_arg(p.clone())?.eq_mp(p_cons)?; // {premise, applied} ⊢ P l
+        // discharge applied, ∀-close a, exists_elim.
+        let inner_step = pl.imp_intro(&applied)?.all_intro("__a", alpha.clone())?;
+        exists_elim(Thm::assume(some_disj.clone())?, goal_pl.clone(), inner_step)?
+            .imp_intro(&some_disj)? // ⊢ (∃a. head l = some a) ⟹ P l
+    };
+
+    // --- none-branch: head l = none ⟹ P l (l = nil) ---
+    let none_branch = {
+        let h_none = Thm::assume(none_disj.clone())?; // head l = none
+        let allnone = allnone_from_head_none(alpha, &l)?.imp_elim(h_none)?; // ∀i. index i l = none
+        let pl = p_of_nil_list(alpha, p, &l, pl_nil, allnone)?; // {none_disj} ⊢ P l
+        pl.imp_intro(&none_disj)? // ⊢ (head l = none) ⟹ P l
+    };
+
+    // Combine: P l (under {premise}).
+    let pl = cs.or_elim(some_branch, none_branch)?; // {premise} ⊢ P l
+    let body = pl.imp_intro(&premise)?; // ⊢ premise ⟹ P l  (Aux(succ M) body)
+    let at_l = beta_expand(&aux_motive_sm, l.clone(), body)?;
+    at_l.all_intro("__l", list(alpha.clone()))
+}
+
+/// Convert `⊢ ∀i. nat_le N i ⟹ streamAt (rep l) i = none` to `⊢ ∀i.
+/// nat_le N i ⟹ index i l = none` — open the `∀i` at a free `j`, rewrite
+/// the carrier access `streamAt (rep l) j` to `index j l` (now `j` is
+/// free, so the rewrite is a plain transitivity), and re-close.
+fn carrier_body_to_index(alpha: &Type, l: &Term, big_n: &Term, body: Thm) -> Result<Thm> {
+    let j = Term::free("__j", nat());
+    let opened = body.all_elim(j.clone())?; // nat_le N j ⟹ streamAt (rep l) j = none
+    // Under the assumption `nat_le N j`, get `index j l = none`.
+    let le = Term::app(Term::app(nat_le(), big_n.clone()), j.clone());
+    let h = Thm::assume(le.clone())?;
+    let carrier_none = opened.imp_elim(h)?; // {nat_le N j} ⊢ streamAt (rep l) j = none
+    let idx = index_unfold(alpha, &j, l)?; // index j l = streamAt (rep l) j
+    let idx_none = idx.trans(carrier_none)?; // index j l = none
+    idx_none.imp_intro(&le)?.all_intro("__j", nat())
+}
+
+// ============================================================================
 // High-level term builders (pure construction — no proof).
 // ============================================================================
 
@@ -1322,6 +1551,40 @@ mod tests {
         let consed = cons(alpha()).apply(a.clone()).unwrap().apply(tl).unwrap();
         let concl = prem.imp(consed.equals(l.clone()).unwrap()).unwrap();
         assert_eq!(thm.concl(), &concl);
+    }
+
+    #[test]
+    fn list_induct_trivial_motive() {
+        // P = λl. T. nil_case ⊢ T; cons_case ⊢ ∀x xs. T ⟹ T. Conclude ∀l. T.
+        use crate::init::logic::truth;
+        let a = alpha();
+        let p = Term::abs(list(a.clone()), Term::bool_lit(true)); // λl. T
+        // P nil = T (β), so pl_nil ⊢ P nil from ⊢ T.
+        let pl_nil = {
+            let t = truth(); // ⊢ T
+            beta_expand(&p, nil(a.clone()), t).unwrap() // ⊢ P nil
+        };
+        // cons_case ⊢ ∀x xs. P xs ⟹ P (cons x xs).
+        let cons_case = {
+            let x = Term::free("x", a.clone());
+            let xs = Term::free("xs", list(a.clone()));
+            let p_xs = Term::app(p.clone(), xs.clone());
+            let consed = cons(a.clone()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
+            let p_cons = Term::app(p.clone(), consed);
+            // P (cons x xs) = T, so assume P xs, prove P (cons x xs) from ⊢ T.
+            let body = beta_expand(&p, cons(a.clone()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap(), truth())
+                .unwrap() // ⊢ P (cons x xs)
+                .imp_intro(&p_xs)
+                .unwrap(); // P xs ⟹ P (cons x xs)
+            let _ = p_cons;
+            body.all_intro("xs", list(a.clone())).unwrap().all_intro("x", a.clone()).unwrap()
+        };
+        let thm = list_induct(&a, &p, pl_nil, cons_case).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        // ⊢ ∀l. P l
+        let l = Term::free("l", list(a.clone()));
+        let expected = Term::app(p.clone(), l).forall("l", list(a)).unwrap();
+        assert_eq!(thm.concl(), &expected);
     }
 
     #[test]

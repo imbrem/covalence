@@ -635,8 +635,12 @@ pub fn prop_induction(
     //                    ⊢ ∀d. Closed d ⟹ d A
     //         (inst d := pred) Closed pred ⟹ pred A
     //          (imp_elim Closed pred)       pred A
-    let big_a = Term::free("A", phi_at_bool());
-    let deriv = inst_tfree_term(&derivable(&big_a)?); // Derivable_Prop A at 'r := bool
+    //
+    // `derivable` builds its `∀d:Φ⟨'r⟩→bool` + `Closed d` clauses at the
+    // POLYMORPHIC carrier; instantiate the whole statement to `'r := bool`
+    // (uniformly converting `A`, `d`, and the clauses to `Φ⟨bool⟩`) so it
+    // agrees with `pred : Φ⟨bool⟩ → bool`.
+    let deriv = inst_tfree_term(&derivable(&fvar("A"))?); // Derivable_Prop A at 'r := bool
     let assumed = Thm::assume(deriv.clone())?;
     let pred_a = assumed
         .all_elim(pred.clone())? // Closed pred ⟹ pred A
@@ -857,9 +861,10 @@ fn beta_to_denote(d_a: Thm, a: &Term, _v: &Term, d_pred: &Term) -> Result<Thm> {
 /// `inst d := P` + `Closed P` discharge works for any HOL predicate over
 /// encoded formulas, not just soundness.
 pub fn derivable_closed_under_rules() -> Result<Thm> {
-    // pred := λA:Φ⟨bool⟩. Derivable_Prop A   (at 'r := bool).
-    let big_a = Term::free("A", phi_at_bool());
-    let der_body = inst_tfree_term(&derivable(&big_a)?); // Derivable_Prop A
+    // pred := λA:Φ⟨bool⟩. Derivable_Prop A. Build `Derivable_Prop A` over the
+    // POLYMORPHIC `A : Φ⟨'r⟩` (so the internal `∀d:Φ⟨'r⟩→bool` agrees with `A`),
+    // THEN instantiate `'r := bool` uniformly, then abstract.
+    let der_body = inst_tfree_term(&derivable(&fvar("A"))?); // Derivable_Prop A at bool
     let pred = Term::abs(phi_at_bool(), covalence_core::subst::close(&der_body, "A"));
 
     // β-expand `Derivable_Prop t` to `pred t` for the case proofs (whose
@@ -870,19 +875,34 @@ pub fn derivable_closed_under_rules() -> Result<Thm> {
     };
 
     let axiom_case = |i: usize, a: &Term, b: &Term, c: &Term| -> Result<Thm> {
-        // The constructors run at 'r := bool already (A,B,C : Φ⟨bool⟩).
-        let der = derive_axiom(i, a, b, c)?; // ⊢ Derivable_Prop ⌜axiom_i⌝
+        // `derive_axiom_thm(i)` is `∀A B C. Der ⌜axiom_i⌝` at the polymorphic
+        // carrier; instantiate `'r := bool` then specialise to the (bool) case
+        // variables `a, b, c : Φ⟨bool⟩` the principle hands us.
+        let der = derive_axiom_thm(i)?
+            .inst_tfree("r", bool_ty())?
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?; // ⊢ Derivable_Prop ⌜axiom_i a b c⌝
         let ax = axiom_schema(&bool_ty(), i, a, b, c);
         expand(der, &ax)
     };
     let mp_case = |a: &Term, b: &Term| -> Result<Thm> {
-        // From `derive_mp`: ⊢ Der A ⟹ Der (A⟹B) ⟹ Der B. Reassociate to the
-        // `(pred A ∧ pred ⌜A⟹B⌝) ⟹ pred B` conjunction the principle wants.
+        // `derive_mp_thm` is `∀A B. Der A ⟹ Der ⌜A⟹B⌝ ⟹ Der B` at the
+        // polymorphic carrier; instantiate to `'r := bool` and the case vars.
         let imp_ab = p_imp_at(&bool_ty(), a.clone(), b.clone());
-        let mp = derive_mp(a, b)?; // ⊢ Der A ⟹ (Der (A⟹B) ⟹ Der B)
-        // Assume the conjunction, split it, chain the two implications.
-        let der_a = derivable(a).and_then(|t| Ok(inst_tfree_term(&t)))?;
-        let der_ab = derivable(&imp_ab).and_then(|t| Ok(inst_tfree_term(&t)))?;
+        let mp = derive_mp_thm()?
+            .inst_tfree("r", bool_ty())?
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?; // ⊢ Der A ⟹ (Der (A⟹B) ⟹ Der B)
+        // Read the two (correctly bool-typed) antecedents `Der a`, `Der (a⟹b)`
+        // straight off `mp`'s conclusion `Der a ⟹ (Der (a⟹b) ⟹ Der b)`.
+        let nae = || covalence_core::Error::NotAnEquation;
+        let (imp_da, rest) = mp.concl().as_app().ok_or_else(nae)?; // (imp (Der a), Der(a⟹b)⟹Der b)
+        let (_imp, der_a) = imp_da.as_app().ok_or_else(nae)?;
+        let der_a = der_a.clone();
+        let (imp_dab, _der_b) = rest.as_app().ok_or_else(nae)?;
+        let (_imp2, der_ab) = imp_dab.as_app().ok_or_else(nae)?;
+        let der_ab = der_ab.clone();
         let hyp = der_a.clone().and(der_ab.clone())?;
         let assumed = Thm::assume(hyp.clone())?; // {H} ⊢ Der A ∧ Der (A⟹B)
         let h_a = assumed.clone().and_elim_l()?; // {H} ⊢ Der A
@@ -1231,9 +1251,15 @@ mod tests {
     fn consistency_is_genuine() {
         let thm = consistency().expect("consistency");
         assert!(thm.hyps().is_empty() && thm.has_no_obs());
-        // Conclusion is a `¬…`.
+        // Conclusion is `¬(Derivable_Prop ⌜var 0⌝)`: build `Derivable_Prop A`
+        // at the polymorphic carrier, instantiate `'r := bool`, then substitute
+        // `A := ⌜var 0⌝` (the order `consistency` itself uses — `derivable`'s
+        // internal `∀d:Φ⟨'r⟩→bool` must be built before `'r` is pinned).
+        let der_a = inst_tfree_term(&derivable(&fvar("A")).unwrap());
         let var0 = inst_tfree_term(&p_var_lit(0));
-        let expected = inst_tfree_term(&derivable(&var0).unwrap()).not().unwrap();
+        let expected = covalence_core::subst::subst_free(&der_a, "A", &var0)
+            .not()
+            .unwrap();
         assert_eq!(thm.concl(), &expected);
     }
 

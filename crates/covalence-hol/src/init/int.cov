@@ -246,6 +246,26 @@
 ;; components (`lt_mk`/`le_mk`), so each order axiom is a `nat` order fact.
 ;; ============================================================================
 
+;; ⊢ ∀a b c d. (a+b)+(c+d) = (a+d)+(b+c).  The "outer/inner" additive
+;; interchange the Grothendieck order transitivity needs (`nat.cov` only
+;; exports the *middle* swap `add_swap_mid`, so we re-derive this one); both
+;; sides equal `a+((b+c)+d)` by `nat.add_assoc`/`nat.add_comm`.
+(#thm add_interchange
+  (#concl
+    (forall (a nat) (forall (b nat) (forall (c nat) (forall (d nat)
+      (= (nat.add (nat.add a b) (nat.add c d))
+         (nat.add (nat.add a d) (nat.add b c))))))))
+  (#by
+    (intro a b c d)
+    ;; LHS = (a+b)+(c+d) → a+(b+(c+d)) → a+((b+c)+d).
+    (rw (all-elim (nat.add c d) (all-elim b (all-elim a (nat.add_assoc)))))
+    (rw (sym (all-elim d (all-elim c (all-elim b (nat.add_assoc))))))
+    ;; RHS = (a+d)+(b+c) → a+(d+(b+c)) → a+((b+c)+d) (comm d (b+c)).
+    (sym)
+    (rw (all-elim (nat.add b c) (all-elim d (all-elim a (nat.add_assoc)))))
+    (rw (all-elim (nat.add b c) (all-elim d (nat.add_comm))))
+    (refl)))
+
 ;; ⊢ ∀a. ¬(a < a).  `int.lt a a = nat.lt (fa+sa)(fa+sa)` (`lt_mk`), then
 ;; `nat.lt_irrefl`.
 (#thm lt_irrefl
@@ -257,6 +277,79 @@
           (all-elim (int.sc a) (all-elim (int.fc a) (lt_mk))))))
     (derive (all-elim (nat.add (int.fc a) (int.sc a)) (nat.lt_irrefl)))))
 
+;; ⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c.  Map each `int.lt` to its `nat`
+;; comparison `(fa+sb) < (fb+sa)` (`recon` + `lt_mk`); add the two
+;; (`nat.add_lt_add`), interchange the cross-sums (`add_interchange` +
+;; `nat.add_comm`) so both sides carry the common right summand `K = fb+sb`,
+;; and cancel it (`nat.lt_add_mono_r`).
+(#thm lt_trans
+  (#concl
+    (forall (a int) (forall (b int) (forall (c int)
+      (==> (int.lt a b) (==> (int.lt b c) (int.lt a c)))))))
+  (#by
+    (intro a b c h1 h2)
+    (derive
+      ;; ⊢ int.lt a c, from `(fa+sc) < (fc+sa)` rewritten back by recon+lt_mk.
+      (eq-mp
+        (sym
+          (trans
+            (mk-comb (mk-comb (refl int.lt) (all-elim a (recon)))
+                     (all-elim c (recon)))
+            (all-elim (int.sc c) (all-elim (int.fc c)
+              (all-elim (int.sc a) (all-elim (int.fc a) (lt_mk)))))))
+        ;; (fa+sc) < (fc+sa) : cancel K = fb+sb from the summed inequality.
+        (eq-mp
+          (all-elim (nat.add (int.fc b) (int.sc b))
+            (all-elim (nat.add (int.fc c) (int.sc a))
+              (all-elim (nat.add (int.fc a) (int.sc c)) (nat.lt_add_mono_r))))
+          ;; (fa+sc)+K < (fc+sa)+K, from the summed ineq rewritten by eq_l/eq_r.
+          (eq-mp
+            (mk-comb
+              (mk-comb (refl nat.lt)
+                ;; eq_l : (fa+sb)+(fb+sc) = (fa+sc)+(fb+sb)
+                (trans
+                  (all-elim (int.sc c) (all-elim (int.fc b)
+                    (all-elim (int.sc b) (all-elim (int.fc a) (add_interchange)))))
+                  (cong-arg (nat.add (nat.add (int.fc a) (int.sc c)))
+                    (all-elim (int.fc b) (all-elim (int.sc b) (nat.add_comm))))))
+              ;; eq_r : (fb+sa)+(fc+sb) = (fc+sa)+(fb+sb)
+              ;;   add_interchange → (fb+sb)+(sa+fc)
+              ;;   add_comm top    → (sa+fc)+(fb+sb)
+              ;;   add_comm inner  → (fc+sa)+(fb+sb)
+              (trans
+                (all-elim (int.sc b) (all-elim (int.fc c)
+                  (all-elim (int.sc a) (all-elim (int.fc b) (add_interchange)))))
+                (trans
+                  (all-elim (nat.add (int.sc a) (int.fc c))
+                    (all-elim (nat.add (int.fc b) (int.sc b)) (nat.add_comm)))
+                  (mk-comb
+                    (cong-arg nat.add
+                      (all-elim (int.fc c) (all-elim (int.sc a) (nat.add_comm))))
+                    (refl (nat.add (int.fc b) (int.sc b)))))))
+            ;; summed : (fa+sb)+(fb+sc) < (fb+sa)+(fc+sb)
+            (imp-elim
+              (imp-elim
+                (all-elim (nat.add (int.fc c) (int.sc b))
+                  (all-elim (nat.add (int.fc b) (int.sc c))
+                    (all-elim (nat.add (int.fc b) (int.sc a))
+                      (all-elim (nat.add (int.fc a) (int.sc b)) (nat.add_lt_add)))))
+                ;; e1 : (fa+sb) < (fb+sa)
+                (eq-mp
+                  (trans
+                    (mk-comb (mk-comb (refl int.lt) (all-elim a (recon)))
+                             (all-elim b (recon)))
+                    (all-elim (int.sc b) (all-elim (int.fc b)
+                      (all-elim (int.sc a) (all-elim (int.fc a) (lt_mk))))))
+                  (assume (int.lt a b))))
+              ;; e2 : (fb+sc) < (fc+sb)
+              (eq-mp
+                (trans
+                  (mk-comb (mk-comb (refl int.lt) (all-elim b (recon)))
+                           (all-elim c (recon)))
+                  (all-elim (int.sc c) (all-elim (int.fc c)
+                    (all-elim (int.sc b) (all-elim (int.fc b) (lt_mk))))))
+                (assume (int.lt b c))))))))))
+
 (#export add_comm mul_comm add_assoc add_zero add_neg sub_def
          mul_one mul_zero distrib
-         lt_irrefl)
+         lt_irrefl lt_trans)

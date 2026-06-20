@@ -91,6 +91,7 @@ pub mod logic;
 pub mod monoid;
 pub mod nat;
 pub mod option;
+pub mod preorder;
 pub mod prod;
 pub mod prop;
 pub mod quotient;

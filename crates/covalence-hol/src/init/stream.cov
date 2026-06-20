@@ -1,14 +1,22 @@
 ;; stream.cov — computational lemmas for the `stream` newtype, ported to the
-;; proof language from `init/stream.rs`.
+;; proof language from `init/stream.rs` and EXPANDED with new theorems.
 ;;
 ;; The `streamprim` env provides:
 ;;   - OPERATORS: `stream_at`, `stream_mk`, `stream_const`, `stream_head`,
-;;     `stream_tail` (all monomorphic at `'a`).
-;;   - SEAM GIVEN: `at_mk` (∀f n. streamAt (streamMk f) n = f n)  — whose
-;;     Rust proof uses `spec_rep_abs_fwd`; kept here as a given.
+;;     `stream_tail`, `stream_iterate` (polymorphic in the element type).
+;;   - SEAM GIVENS (their Rust proofs cross the abs/rep boundary via the
+;;     kernel subtype laws, so they stay imported, like set.cov's seam):
+;;       at_mk   : ∀f n.  streamAt (streamMk f) n = f n            (carrier side)
+;;       head_mk : ∀f.    streamHead (streamMk f) = f 0
+;;       tail_at : ∀s n.  streamAt (streamTail s) n = streamAt s (succ n)
+;;       ext     : ∀s t. (∀n. streamAt s n = streamAt t n) ⟹ s = t (wrapper side)
 ;;
-;; On top we prove `const_at`, `head_const`, `tail_at` by δ-unfolding the head
-;; operation and then applying `at_mk` + β.
+;; On top we prove:
+;;   - `const_at`, `head_const`, `tail_at`(*) by δ-unfolding the head operation
+;;     and applying `at_mk` + β;  (*) `tail_at` is re-proved here as a port.
+;;   - `tail_const` and `mk_at` EXTENSIONALLY — build `∀n. streamAt L n =
+;;     streamAt R n` by element-access reasoning, then close with `ext`
+;;     (the same shape as `set.cov`'s membership-extensional set equalities).
 
 (#import core)
 (#open core)
@@ -105,4 +113,83 @@
         ;; = streamAt s (succ n)
         (beta-conv (app (lam (n2 nat) (app (app stream_at s) (succ n2))) n))))))
 
-(#export const_at head_const tail_at)
+;; ⊢ ∀(f:nat→'a). streamHead (streamMk f) = f 0
+;;
+;; The head of a *built* stream is `f`'s value at index 0. Same shape as
+;; `head_const`, but the inner stream is `streamMk f` and the access lands on
+;; the `head_mk` seam given (so no `streamConst` δ-step is needed).
+;;
+;; Proof:
+;;   (1) δ-unfold streamHead: ⊢ streamHead = λs. streamAt s 0
+;;       → (cong-fn (streamMk f) ...) gives
+;;         ⊢ streamHead (streamMk f) = (λs. streamAt s 0) (streamMk f)
+;;   (2) β: = streamAt (streamMk f) 0
+;;   (3) at_mk ∀-elim at f, 0: = f 0
+(#thm head_mk
+  (#concl
+    (forall (f (-> nat 'a))
+      (= (app stream_head (app stream_mk f)) (app f 0))))
+  (#by
+    (intro f)
+    (derive
+      (trans
+        (trans
+          ;; streamHead (streamMk f) = (λs. streamAt s 0) (streamMk f)
+          (cong-fn (app stream_mk f) (delta stream_head))
+          ;; = streamAt (streamMk f) 0
+          (beta-conv (app (lam (sc_s) (app (app stream_at sc_s) 0)) (app stream_mk f))))
+        ;; streamAt (streamMk f) 0 = f 0
+        (all-elim 0 (all-elim f (at_mk)))))))
+
+;; ⊢ ∀(x:'a). streamTail (streamConst x) = streamConst x
+;;
+;; The tail of a constant stream is the same constant stream. Proved
+;; EXTENSIONALLY: at every index `n`,
+;;   streamAt (streamTail (streamConst x)) n = streamAt (streamConst x) (succ n)
+;;                                            = x              (tail_at, const_at)
+;;   streamAt (streamConst x) n               = x              (const_at)
+;; so the two streams agree everywhere; `ext` concludes.
+(#thm tail_const
+  (#concl
+    (forall (x 'a)
+      (= (app stream_tail (app stream_const x)) (app stream_const x))))
+  (#by
+    (intro x)
+    (derive
+      (imp-elim
+        (all-elim (app stream_const x)
+          (all-elim (app stream_tail (app stream_const x)) (ext)))
+        (all-intro n nat
+          (trans
+            ;; streamAt (streamTail (streamConst x)) n = streamAt (streamConst x) (succ n)
+            (all-elim n (all-elim (app stream_const x) (tail_at)))
+            (trans
+              ;; = x
+              (all-elim (succ n) (all-elim x (const_at)))
+              ;; x = streamAt (streamConst x) n   (flip const_at)
+              (sym (all-elim n (all-elim x (const_at)))))))))))
+
+;; ⊢ ∀(s:stream 'a). streamMk (λn. streamAt s n) = s
+;;
+;; The round-trip: every stream is the `streamMk` of its own element-access
+;; function. Proved EXTENSIONALLY via `at_mk` + β, then `ext`:
+;;   streamAt (streamMk (λk. streamAt s k)) n = (λk. streamAt s k) n   (at_mk)
+;;                                            = streamAt s n           (β)
+(#thm mk_at
+  (#concl
+    (forall (s)
+      (= (app stream_mk (lam (k nat) (app (app stream_at s) k))) s)))
+  (#by
+    (intro s)
+    (derive
+      (imp-elim
+        (all-elim s
+          (all-elim (app stream_mk (lam (k nat) (app (app stream_at s) k))) (ext)))
+        (all-intro n nat
+          (trans
+            ;; streamAt (streamMk (λk. streamAt s k)) n = (λk. streamAt s k) n
+            (all-elim n (all-elim (lam (k nat) (app (app stream_at s) k)) (at_mk)))
+            ;; = streamAt s n
+            (beta-conv (app (lam (k nat) (app (app stream_at s) k)) n))))))))
+
+(#export const_at head_const tail_at head_mk tail_const mk_at)

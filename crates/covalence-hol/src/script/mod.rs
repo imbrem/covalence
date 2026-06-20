@@ -1484,6 +1484,155 @@ mod tests {
         assert!(thm.hyps().is_empty());
     }
 
+    // ========================================================================
+    // Equational-reasoning primitives: beta / congr / funext / #comp.
+    // ========================================================================
+
+    #[test]
+    fn beta_rule_normalizes_a_redex() {
+        // Tree mode: `(beta TERM)` → ⊢ TERM = βnf(TERM), a *full* normal form
+        // (beyond the kernel one-shot `beta-conv`): the nested redex
+        // `(λx. (λy. y) x) 0` β-normalizes to `0` in one `beta` step.
+        let thm = one(r#"
+            (#import core)(#open core)
+            (#thm b (#concl (= (app (lam (x nat) (app (lam (y nat) y) x)) 0) 0))
+              (#proof (beta (app (lam (x nat) (app (lam (y nat) y) x)) 0))))
+            "#);
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn beta_tactic_closes_a_convertible_goal() {
+        // Tactic mode: `(beta)` closes an equation whose two sides share a
+        // β-normal form. `(λx. x) 0 = 0` — LHS reduces to RHS.
+        let thm = one(r#"
+            (#import core)(#open core)
+            (#thm bt (#concl (= (app (lam (x nat) x) 0) 0))
+              (#by (beta)))
+            "#);
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn congr_builds_an_n_ary_congruence() {
+        // `(congr HEAD EQ1 EQ2)` → ⊢ HEAD a1 a2 = HEAD b1 b2 from the two
+        // argument equations. Here `nat.add (0+0) (0+0) = nat.add 0 0` from two
+        // copies of `⊢ 0 + 0 = 0` (via reduce-prim).
+        let thm = one(r#"
+            (#import core)(#open core)
+            (#thm cg
+              (#concl (= (nat.add (nat.add 0 0) (nat.add 0 0)) (nat.add 0 0)))
+              (#proof
+                (congr nat.add
+                  (reduce-prim (nat.add 0 0))
+                  (reduce-prim (nat.add 0 0)))))
+            "#);
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn funext_rule_from_pointwise_forall() {
+        // Tree mode: `(funext SUB)` where SUB : ⊢ ∀x. (λy.y) x = (λz.z) x.
+        // Both functions are the identity, so funext yields ⊢ (λy.y) = (λz.z).
+        // The pointwise equality is proved by β on each side.
+        let thm = one(r#"
+            (#import core)(#open core)
+            (#thm fe
+              (#concl (= (lam (y nat) y) (lam (z nat) z)))
+              (#proof
+                (funext
+                  (all-intro x nat
+                    (trans
+                      (beta-conv (app (lam (y nat) y) x))
+                      (sym (beta-conv (app (lam (z nat) z) x))))))))
+            "#);
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn funext_tactic_reduces_goal_to_a_point() {
+        // Tactic mode: `(funext x)` turns goal `(λy.y) = (λz.z)` into the
+        // pointwise goal `(λy.y) x = (λz.z) x`, closed by `beta`.
+        let thm = one(r#"
+            (#import core)(#open core)
+            (#thm fet
+              (#concl (= (lam (y nat) y) (lam (z nat) z)))
+              (#by (funext x) (beta)))
+            "#);
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn comp_chain_folds_trans() {
+        // `#comp` chains explicit equational steps, folding `trans`.
+        //   2+3 = 5 (reduce-prim) ; 5 = 5 (refl) — ⊢ 2+3 = 5.
+        let thm = one(r#"
+            (#import core)(#open core)
+            (#thm cc (#concl (= (nat.add 2 3) 5))
+              (#proof
+                (#comp (nat.add 2 3)
+                  (= 5 (reduce-prim (nat.add 2 3)))
+                  (= 5 (refl 5)))))
+            "#);
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn comp_default_handler_closes_omitted_steps() {
+        // An omitted justification is closed by the equational default
+        // (β-convertibility): `(λx.x) 0 = 0` closes with no `BY`.
+        let thm = one(r#"
+            (#import core)(#open core)
+            (#thm cd (#concl (= (app (lam (x nat) x) 0) 0))
+              (#proof
+                (#comp (app (lam (x nat) x) 0)
+                  (= 0))))
+            "#);
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn comp_by_sets_a_block_default() {
+        // `#:by` sets a block default justification applied to every omitted
+        // step. Here `beta` reduces `(λx.x) 0 → 0`.
+        let thm = one(r#"
+            (#import core)(#open core)
+            (#thm cb (#concl (= (app (lam (x nat) x) 0) 0))
+              (#proof
+                (#comp (app (lam (x nat) x) 0) #:by (beta (app (lam (x nat) x) 0))
+                  (= 0))))
+            "#);
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn comp_unclosable_step_is_a_clear_error() {
+        // A step the default handler cannot close is a diagnostic pointing at
+        // that step — never a silent gap. `0 = 1` is not β-convertible.
+        let bad = run_str(r#"
+            (#import core)(#open core)
+            (#thm bad (#concl (= 0 1))
+              (#proof (#comp 0 (= 1))))
+            "#);
+        assert!(matches!(bad, Err(ScriptError::Syntax(m)) if m.contains("#comp")),
+            "an un-closable #comp step must error mentioning #comp");
+    }
+
+    #[test]
+    fn comp_mismatched_justification_errors() {
+        // An explicit justification that proves the wrong equation is rejected
+        // (the chain term, not the justification, drives the conclusion).
+        let bad = run_str(r#"
+            (#import core)(#open core)
+            (#thm bad (#concl (= (nat.add 2 3) 5))
+              (#proof
+                (#comp (nat.add 2 3)
+                  (= 5 (reduce-prim (nat.add 1 1))))))
+            "#);
+        assert!(matches!(bad, Err(ScriptError::Syntax(_))),
+            "a justification proving a different equation must error");
+    }
+
     #[test]
     fn conclusion_mismatch_is_caught() {
         let res = run_str(

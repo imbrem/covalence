@@ -291,6 +291,131 @@ impl Env {
         })?;
         instantiate(eqn, &order, &sub, "rw")
     }
+
+    // -- equational-reasoning seams -------------------------------------
+    // Like the unification seams above, these route the β / congruence /
+    // funext / calc-default operations through methods on `Env`, so a logic
+    // can later swap them for its own handler set (the `HandlerSet` of
+    // `docs/surface-compiler.md` §9 — `ctx.active.rewrite` / `.reduce`).
+    // Today they are the model-agnostic HOL defaults, but they are *requested*
+    // through this seam rather than hard-wired into the rules that use them.
+
+    /// **β-reduction seam.** `⊢ t = nf`, where `nf` is the full β-normal form
+    /// of `t` (every redex fired, including under binders). This is the
+    /// *normalizing* β step `#comp` / the `beta` tactic request — strictly
+    /// stronger than the kernel's one-shot `Thm::beta_conv` (a single
+    /// outermost redex). The default is [`crate::proofs::rewrite::beta_nf`]
+    /// (built from `refl`/`cong_app`/`abs`/`beta_conv`/`trans`); a logic may
+    /// install a different reducer (δ-aware, primitive-folding, …) here.
+    pub fn beta(&self, t: &Term) -> R<Thm> {
+        Ok(crate::proofs::rewrite::beta_nf(t.clone()))
+    }
+
+    /// **Congruence seam.** From per-argument equations `⊢ aᵢ = bᵢ` build
+    /// `⊢ head a₁ … aₙ = head b₁ … bₙ` by folding `mk_comb` over `head`'s
+    /// reflexivity (the n-ary generalization of `cong-arg` / `cong-fn`).
+    /// `head` is the common function; each `arg_eq` rewrites one argument
+    /// position left-to-right. With no argument equations this is `⊢ head =
+    /// head`. The kernel re-checks every `mk_comb`, so a bad shape errors
+    /// rather than fabricating a theorem.
+    pub fn congr(&self, head: &Term, arg_eqs: &[Thm]) -> R<Thm> {
+        let mut thm = Thm::refl(head.clone())?;
+        for arg_eq in arg_eqs {
+            thm = thm.mk_comb(arg_eq.clone())?;
+        }
+        Ok(thm)
+    }
+
+    /// **Function-extensionality seam.** From a pointwise equality conclude
+    /// the equality of the two functions. The pointwise input is either
+    /// `⊢ ∀x. f x = g x` (the leading `∀` is stripped) or a bare
+    /// `⊢ f x = g x` where `x = Free(name, α)` is the point variable — `name`
+    /// must not occur free in the hypotheses (the side condition `Thm::abs`
+    /// re-checks). The result `⊢ f = g` is obtained the HOL way: re-abstract
+    /// over the point (`abs`) and η-contract both sides (`eta_conv`).
+    pub fn funext(&self, pointwise: &Thm) -> R<Thm> {
+        // If the conclusion is `∀x. f x = g x`, instantiate the `∀` at a fresh
+        // free point first, then extensionalise over it.
+        if let Some((ty, _body)) = dest_forall(pointwise.concl()) {
+            let name = funext_fresh_point(pointwise);
+            let point = Term::free(name.clone(), ty.clone());
+            let app_eq = pointwise.clone().all_elim(point)?;
+            return funext_over(&app_eq, &name, &ty);
+        }
+        // Otherwise the conclusion is already `f x = g x`; recover the point
+        // variable from the LHS argument.
+        let (lhs, _rhs) = pointwise
+            .concl()
+            .as_eq()
+            .ok_or(covalence_core::Error::NotAnEquation)?;
+        let (_f, x) = lhs
+            .as_app()
+            .ok_or_else(|| ScriptError::Syntax("funext: pointwise side is not `f x`".into()))?;
+        let (name, ty) = match x.kind() {
+            TermKind::Free(name, ty) => (name.to_string(), ty.clone()),
+            _ => {
+                return Err(ScriptError::Syntax(
+                    "funext: the point `x` of `f x = g x` must be a free variable".into(),
+                ));
+            }
+        };
+        funext_over(pointwise, &name, &ty)
+    }
+
+    /// **Calc-default seam.** The `#comp` default equational handler: prove
+    /// `⊢ lhs = rhs` for a step whose justification was omitted. The
+    /// model-agnostic HOL default closes a step iff the two sides share a
+    /// β-normal form — i.e. `lhs` and `rhs` are βη… no, β-convertible. It
+    /// builds `⊢ lhs = βnf(lhs)`, `⊢ rhs = βnf(rhs)`, and joins them with
+    /// `trans`/`sym` when the normal forms coincide; otherwise it errors,
+    /// naming the step (so an un-closable step is a diagnostic, never a silent
+    /// gap). A logic installs its own equational decision procedure here (a
+    /// monoid normalizer, a reified-logic decider, …).
+    pub fn comp_default(&self, lhs: &Term, rhs: &Term) -> R<Thm> {
+        if lhs == rhs {
+            return Ok(Thm::refl(lhs.clone())?);
+        }
+        let l_nf = self.beta(lhs)?; // ⊢ lhs = lnf
+        let r_nf = self.beta(rhs)?; // ⊢ rhs = rnf
+        let (_, lnf) = l_nf.concl().as_eq().ok_or(covalence_core::Error::NotAnEquation)?;
+        let (_, rnf) = r_nf.concl().as_eq().ok_or(covalence_core::Error::NotAnEquation)?;
+        if lnf != rnf {
+            return Err(ScriptError::Syntax(format!(
+                "#comp: the default handler cannot close `{lhs} = {rhs}` \
+                 (β-normal forms differ: `{lnf}` vs `{rnf}`) — supply an explicit justification"
+            )));
+        }
+        // ⊢ lhs = lnf = rnf = rhs.
+        l_nf.trans(r_nf.sym()?).map_err(Into::into)
+    }
+}
+
+/// `funext` over an explicit point: from `⊢ f x = g x` (`x = Free(name, α)`),
+/// re-abstract and η-contract to `⊢ f = g`. Shared by the two entry shapes of
+/// [`Env::funext`].
+fn funext_over(app_eq: &Thm, name: &str, alpha: &Type) -> R<Thm> {
+    let abs_eq = app_eq.clone().abs(name, alpha.clone())?; // ⊢ (λx. f x) = (λx. g x)
+    let (l_abs, r_abs) = abs_eq
+        .concl()
+        .as_eq()
+        .ok_or(covalence_core::Error::NotAnEquation)?;
+    let eta_l = Thm::eta_conv(l_abs.clone())?; // ⊢ (λx. f x) = f
+    let eta_r = Thm::eta_conv(r_abs.clone())?; // ⊢ (λx. g x) = g
+    eta_l.sym()?.trans(abs_eq)?.trans(eta_r).map_err(Into::into)
+}
+
+/// A point-variable name not free in `thm`'s conclusion, for `funext` to
+/// instantiate a `∀x. …` at.
+fn funext_fresh_point(thm: &Thm) -> String {
+    let concl = thm.concl();
+    let mut i = 0usize;
+    loop {
+        let name = format!("_fext{i}");
+        if !subst::has_free_var(concl, &name) {
+            return name;
+        }
+        i += 1;
+    }
 }
 
 /// Open a theorem-conclusion's `∀` prefix with fresh schematic free vars

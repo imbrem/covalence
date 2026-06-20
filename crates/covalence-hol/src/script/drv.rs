@@ -302,6 +302,29 @@ impl Tactic for ExistsElimRule {
     }
 }
 
+/// `(congr HEAD EQ…)` → `⊢ head a₁ … = head b₁ …` from the per-argument
+/// equations `EQ… : ⊢ aᵢ = bᵢ`. The n-ary generalization of `cong-arg` /
+/// `cong-fn` — routed through the [`Env::congr`](crate::script::Env::congr)
+/// congruence seam so a logic can later override it. `HEAD` is the common
+/// function term; each `EQ` rewrites one argument position, left to right.
+struct CongrRule;
+#[async_trait]
+impl Tactic for CongrRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        if a.is_empty() {
+            return Err(ScriptError::Syntax(
+                "congr: expected a head term and zero or more argument equations".into(),
+            ));
+        }
+        let head = c.term(&a[0])?;
+        let mut arg_eqs = Vec::with_capacity(a.len() - 1);
+        for e in &a[1..] {
+            arg_eqs.push(c.check(e).await?);
+        }
+        c.env().congr(&head, &arg_eqs)
+    }
+}
+
 /// `(unfold-at-1 OP ARG)` → `⊢ op arg = body[arg]` (one β-step).
 struct UnfoldAt1Rule;
 #[async_trait]
@@ -481,6 +504,7 @@ pub fn core_rules() -> Vec<(&'static str, Arc<dyn Tactic>)> {
         ("false-elim", Arc::new(FalseElimRule)),
         ("cong-arg", Arc::new(CongArgRule)),
         ("cong-fn", Arc::new(CongFnRule)),
+        ("congr", Arc::new(CongrRule)),
         // name + term/type + sub
         ("inst", Arc::new(InstRule)),
         ("inst-tfree", Arc::new(InstTfreeRule)),

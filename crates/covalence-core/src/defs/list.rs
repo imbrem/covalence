@@ -26,20 +26,60 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::nat::{nat_add, nat_lt, nat_rec};
+use super::nat::{nat_add, nat_lt, nat_rec, nat_succ};
 use super::option::{none, option, option_case, some};
 use super::spec::{TermSpec, TypeSpec};
 use super::stream::{finite, stream, stream_at, stream_const, stream_head, stream_mk, stream_tail};
 
-/// `list 'a := stream (option 'a) where finite`. The carrier is
-/// the spec'd `stream (option α)`; the selector predicate is
-/// `finite α`, which restricts to streams that are eventually
-/// `none`.
+/// The **list selector predicate** at element type `α`:
+/// `λs. finite s ∧ (∀i. stream_at s i = none ⟹ stream_at s (succ i) =
+/// none)` — a finite, *contiguous* stream of options (a `some`-prefix
+/// followed by all `none`, no interior holes).
+///
+/// The contiguity conjunct is what makes the `nil` / `cons` constructors
+/// **exhaustive**: without it, a finite stream like `[none, some a, none,
+/// …]` would be a `list α` value reachable by neither constructor (its
+/// head is `none`, so it is not a `cons`, but it is not `nil` either), and
+/// structural induction over `nil` / `cons` would be *false*. With it,
+/// every list is `nil` (the empty prefix) or `cons x xs` (a `some` head
+/// over a shorter contiguous tail). Matches the design in
+/// `docs/type-hierarchy.md` (`∃n. ∀i. (i<n → ∃a. s i = some a) ∧
+/// (n≤i → s i = none)`); contiguity + finiteness is the equivalent,
+/// proof-friendlier phrasing.
+fn list_predicate() -> Term {
+    let alpha = Type::tfree("a");
+    let opt = option(alpha.clone());
+    let stream_opt = stream(opt.clone());
+
+    let s = Term::free("s", stream_opt.clone());
+    // finite s
+    let fin = Term::app(finite(alpha.clone()), s.clone());
+    // ∀i. stream_at s i = none ⟹ stream_at s (succ i) = none
+    let i = Term::free("i", Type::nat());
+    let at_i = Term::app(Term::app(stream_at(opt.clone()), s.clone()), i.clone());
+    let at_si = Term::app(
+        Term::app(stream_at(opt), s.clone()),
+        Term::app(nat_succ(), i.clone()),
+    );
+    let contig_step = hol::hol_imp(
+        hol::hol_eq(at_i, none(alpha.clone())),
+        hol::hol_eq(at_si, none(alpha.clone())),
+    );
+    let contig = hol::hol_forall("i", Type::nat(), contig_step);
+
+    hol::pub_abs("s", stream_opt, hol::hol_and(fin, contig))
+}
+
+/// `list 'a := stream (option 'a) where (finite ∧ contiguous)`. The
+/// carrier is the spec'd `stream (option α)`; the selector predicate is
+/// [`list_predicate`] — finite *and* hole-free, so `nil` / `cons` cover
+/// every value (see [`list_predicate`] for why contiguity is required).
 pub fn list_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         let carrier = stream(option(alpha.clone()));
-        TypeSpec::subtype(Canonical::List, carrier, finite(alpha))
+        let _ = &alpha;
+        TypeSpec::subtype(Canonical::List, carrier, list_predicate())
     });
     LAZY.clone()
 }

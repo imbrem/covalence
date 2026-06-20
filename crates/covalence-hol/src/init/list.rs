@@ -224,11 +224,50 @@ fn index(alpha: &Type, n: &Term, xs: &Term) -> Term {
 // by a `⊢ finite s` theorem with no δ-bridging).
 // ============================================================================
 
-/// `⊢ rep (abs s) = s`, given `fin : ⊢ finite s` — the carrier-side
-/// round-trip for `list`, with the subtype premise discharged. From the
-/// kernel's conditional [`Thm::spec_rep_abs_fwd`].
-fn rep_abs_finite(alpha: &Type, s: &Term, fin: Thm) -> Result<Thm> {
-    Thm::spec_rep_abs_fwd(list_spec(), vec![alpha.clone()], s.clone())?.imp_elim(fin)
+/// The list selector predicate `λs. finite s ∧ contiguous s`,
+/// instantiated at `alpha` (the `list_spec` `tm`, with the generic `a`
+/// replaced by `alpha`).
+fn list_pred_op(alpha: &Type) -> Term {
+    let poly = list_spec()
+        .tm()
+        .expect("list_spec carries a selector predicate")
+        .clone();
+    covalence_core::subst::subst_tfree_in_term(&poly, "a", alpha)
+}
+
+/// `list_predicate s` (applied form) — the subtype premise the kernel's
+/// `spec_rep_abs_fwd` discharges.
+fn list_pred(alpha: &Type, s: &Term) -> Term {
+    Term::app(list_pred_op(alpha), s.clone())
+}
+
+/// The **contiguity** clause `∀i. streamAt s i = none ⟹ streamAt s (succ
+/// i) = none`, for carrier stream `s`.
+fn contiguous_at(alpha: &Type, s: &Term) -> Result<Term> {
+    let opt = option(alpha.clone());
+    let i = Term::free("i", nat());
+    let at_i = Term::app(Term::app(stream_at(opt.clone()), s.clone()), i.clone());
+    let at_si = Term::app(Term::app(stream_at(opt), s.clone()), succ(i.clone()));
+    at_i
+        .equals(none(alpha.clone()))?
+        .imp(at_si.equals(none(alpha.clone()))?)?
+        .forall("i", nat())
+}
+
+/// `⊢ list_predicate s` from `fin : ⊢ finite s` and `contig : ⊢ ∀i.
+/// streamAt s i = none ⟹ streamAt s (succ i) = none` — assemble the two
+/// selector conjuncts and β-fold into the applied predicate.
+fn prove_list_pred(alpha: &Type, s: &Term, fin: Thm, contig: Thm) -> Result<Thm> {
+    let conj = fin.and_intro(contig)?; // ⊢ finite s ∧ contiguous s
+    beta_expand(&list_pred_op(alpha), s.clone(), conj) // ⊢ list_predicate s
+}
+
+/// `⊢ rep (abs s) = s`, given `pred : ⊢ list_predicate s` — the
+/// carrier-side round-trip for `list`, with the (now finite-∧-contiguous)
+/// subtype premise discharged. From the kernel's conditional
+/// [`Thm::spec_rep_abs_fwd`].
+fn rep_abs_pred(alpha: &Type, s: &Term, pred: Thm) -> Result<Thm> {
+    Thm::spec_rep_abs_fwd(list_spec(), vec![alpha.clone()], s.clone())?.imp_elim(pred)
 }
 
 // ============================================================================
@@ -264,41 +303,61 @@ pub fn finite_const_none(alpha: &Type) -> Result<Thm> {
     unfold.sym()?.eq_mp(exists) // ⊢ finite cst
 }
 
-/// `⊢ ∃s. finite s` — the `finite` predicate is inhabited (witness
-/// `streamConst none`). The non-emptiness fact that the subtype's
-/// witness-free back-direction law ([`Thm::spec_rep_abs_back`]) needs to
-/// recover `finite (rep xs)` for an arbitrary `xs : list α` — the bridge
-/// to the `cons`-side computations once they land.
-pub fn finite_nonempty(alpha: &Type) -> Result<Thm> {
-    exists_intro(
-        finite(alpha.clone()),
-        const_none(alpha),
+/// `⊢ ∀i. streamAt (streamConst none) i = none ⟹ streamAt (streamConst
+/// none) (succ i) = none` — the everywhere-`none` stream is contiguous
+/// (the consequent holds outright, by [`const_at`]).
+fn contig_const_none(alpha: &Type) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    let cst = const_none(alpha);
+    let i = Term::free("i", nat());
+    let at_i = const_at(&opt, &none(alpha.clone()), &i)?; // streamAt cst i = none
+    let at_si = const_at(&opt, &none(alpha.clone()), &succ(i.clone()))?; // streamAt cst (succ i) = none
+    // The consequent holds unconditionally, so imp_intro the antecedent.
+    let ante = at_i.concl().clone();
+    at_si.imp_intro(&ante)?.all_intro("i", nat())
+}
+
+/// `⊢ list_predicate (streamConst none)` — `nil`'s carrier stream
+/// satisfies the full list selector (finite ∧ contiguous).
+pub fn pred_const_none(alpha: &Type) -> Result<Thm> {
+    prove_list_pred(
+        alpha,
+        &const_none(alpha),
         finite_const_none(alpha)?,
+        contig_const_none(alpha)?,
     )
 }
 
-/// `⊢ finite (rep xs)` for any `xs : list α` — the carrier stream behind
-/// a list really is finite. Derived without a hypothesis: instantiate the
-/// witness-free back-law [`Thm::spec_rep_abs_back`] at `a := rep xs`,
-/// discharge its premise `rep (abs (rep xs)) = rep xs` via the
-/// unconditional `abs (rep xs) = xs` ([`Thm::spec_abs_rep`]), then kill
-/// the spurious `¬∃s. finite s` disjunct with [`finite_nonempty`].
-pub fn finite_rep(alpha: &Type, xs: &Term) -> Result<Thm> {
+/// `⊢ ∃s. list_predicate s` — the list selector predicate is inhabited
+/// (witness `streamConst none`). The non-emptiness fact the subtype's
+/// witness-free back-direction law ([`Thm::spec_rep_abs_back`]) needs to
+/// recover `list_predicate (rep xs)` for an arbitrary `xs : list α`.
+pub fn pred_nonempty(alpha: &Type) -> Result<Thm> {
+    exists_intro(list_pred_op(alpha), const_none(alpha), pred_const_none(alpha)?)
+}
+
+/// `⊢ list_predicate (rep xs)` for any `xs : list α` — the carrier stream
+/// behind a list satisfies the full list selector (finite ∧ contiguous).
+/// Derived without a hypothesis: instantiate the witness-free back-law
+/// [`Thm::spec_rep_abs_back`] at `a := rep xs`, discharge its premise
+/// `rep (abs (rep xs)) = rep xs` via the unconditional `abs (rep xs) = xs`
+/// ([`Thm::spec_abs_rep`]), then kill the spurious `¬∃s. list_predicate s`
+/// disjunct with [`pred_nonempty`].
+pub fn pred_rep(alpha: &Type, xs: &Term) -> Result<Thm> {
     let rep = Term::spec_rep(list_spec(), vec![alpha.clone()]);
     let rep_xs = Term::app(rep.clone(), xs.clone());
 
-    // back: ⊢ rep (abs (rep xs)) = rep xs ⟹ (finite (rep xs) ∨ ¬∃s. finite s)
+    // back: ⊢ rep (abs (rep xs)) = rep xs ⟹ (P (rep xs) ∨ ¬∃x. P x)
     let back = Thm::spec_rep_abs_back(list_spec(), vec![alpha.clone()], rep_xs.clone())?;
 
     // Premise: rep (abs (rep xs)) = rep xs, from abs (rep xs) = xs by cong.
     let abs_rep = Thm::spec_abs_rep(list_spec(), vec![alpha.clone()], xs.clone())?; // abs (rep xs) = xs
     let prem = abs_rep.cong_arg(rep)?; // rep (abs (rep xs)) = rep xs
-    let disj = back.imp_elim(prem)?; // finite (rep xs) ∨ ¬∃x. (finite α) x
+    let disj = back.imp_elim(prem)?; // P (rep xs) ∨ ¬∃x. P x
 
-    // Eliminate the disjunction `P ∨ ¬∃x. (finite α) x`. Left: the goal
-    // `finite (rep xs)` directly. Right: the negated existential
-    // contradicts a freshly-built witness (`finite (streamConst none)`).
-    let goal = Term::app(finite(alpha.clone()), rep_xs.clone()); // finite (rep xs)
+    // Eliminate the disjunction. Left: the goal `P (rep xs)` directly.
+    // Right: the negated existential contradicts `pred_nonempty`.
+    let goal = list_pred(alpha, &rep_xs); // list_predicate (rep xs)
 
     // Peel the right disjunct `¬(∃x. P x)` from `disj`, exactly as the
     // kernel built it (η-expanded predicate), and re-prove that `∃` with a
@@ -310,17 +369,39 @@ pub fn finite_rep(alpha: &Type, xs: &Term) -> Result<Thm> {
         .1
         .clone(); // ¬∃x. P x
     let some_x = not_some.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // ∃x. P x
-    let pred_eta = some_x.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λx. (finite α) x
+    let pred_eta = some_x.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λx. P x
 
-    // ⊢ ∃x. P x via witness `streamConst none` (β-reduce `P w` to `finite w`).
+    // ⊢ ∃x. P x via witness `streamConst none`.
     let cst = const_none(alpha);
-    let at_w = beta_expand(&pred_eta, cst.clone(), finite_const_none(alpha)?)?; // ⊢ P (streamConst none)
+    let at_w = beta_expand(&pred_eta, cst.clone(), pred_const_none(alpha)?)?; // ⊢ (λx. P x) (streamConst none)
     let some_proof = exists_intro(pred_eta, cst, at_w)?; // ⊢ ∃x. P x
 
-    let left = Thm::assume(goal.clone())?.imp_intro(&goal)?; // ⊢ finite (rep xs) ⟹ goal
+    let left = Thm::assume(goal.clone())?.imp_intro(&goal)?; // ⊢ P (rep xs) ⟹ goal
     let contra = Thm::assume(not_some.clone())?.not_elim(some_proof)?; // {¬∃x} ⊢ F
     let right = contra.false_elim(goal.clone())?.imp_intro(&not_some)?; // ⊢ ¬∃x ⟹ goal
     disj.or_elim(left, right)
+}
+
+/// `⊢ finite (rep xs)` for any `xs : list α` — extracted from
+/// [`pred_rep`] (the first conjunct of the list selector).
+pub fn finite_rep(alpha: &Type, xs: &Term) -> Result<Thm> {
+    let rep_xs = rep_of(alpha, xs);
+    // Unfold `list_predicate (rep xs)` to `finite (rep xs) ∧ contiguous`.
+    let conj = beta_reduce_pred(alpha, pred_rep(alpha, xs)?)?;
+    conj.and_elim_l()
+}
+
+/// `⊢ ∀i. streamAt (rep xs) i = none ⟹ streamAt (rep xs) (succ i) = none`
+/// — the contiguity of a list's carrier stream (second conjunct of the
+/// selector), extracted from [`pred_rep`].
+pub fn contig_rep(alpha: &Type, xs: &Term) -> Result<Thm> {
+    let conj = beta_reduce_pred(alpha, pred_rep(alpha, xs)?)?;
+    conj.and_elim_r()
+}
+
+/// β-reduce `⊢ list_predicate s` to `⊢ finite s ∧ contiguous s`.
+fn beta_reduce_pred(_alpha: &Type, pred: Thm) -> Result<Thm> {
+    crate::init::eq::beta_reduce(pred)
 }
 
 // ============================================================================
@@ -421,6 +502,87 @@ pub fn finite_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
     goal_unfold.sym()?.eq_mp(got_ex) // ⊢ finite (streamMk g)
 }
 
+/// `⊢ ∀i. streamAt (streamMk g) i = none ⟹ streamAt (streamMk g) (succ i)
+/// = none`, where `g = consStream x xs` — the cons stream is **contiguous**
+/// (preserves the tail's contiguity). By case analysis on `i` (via
+/// `nat_induct`, IH unused): at `i = 0` the head is `some x ≠ none` so the
+/// antecedent is absurd; at `i = succ k` it reduces to the tail's
+/// contiguity ([`contig_rep`]) at `k`.
+pub fn contig_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    let g = cons_stream(alpha, x, xs);
+
+    // motive i ≔ streamAt (streamMk g) i = none ⟹ streamAt (streamMk g) (succ i) = none.
+    let iv = Term::free("i", nat());
+    let motive_at = |t: &Term| -> Result<Term> {
+        let at_t = at_mk_g(alpha, &g, t).equals(none(alpha.clone()))?;
+        let at_st = at_mk_g(alpha, &g, &succ(t.clone())).equals(none(alpha.clone()))?;
+        at_t.imp(at_st)
+    };
+    let motive = Term::abs(nat(), covalence_core::subst::close(&motive_at(&iv)?, "i"));
+
+    // base i=0: streamAt (streamMk g) 0 = some x ≠ none, so the antecedent
+    // is refutable; discharge vacuously.
+    let base = {
+        let at0 = crate::init::stream::at_mk(&opt, &g, &zero())?; // streamAt (streamMk g) 0 = g 0
+        let g0 = cons_stream_zero(alpha, x, xs)?; // g 0 = some x
+        let at0_some = at0.trans(g0)?; // streamAt (streamMk g) 0 = some x
+        let prem = at_mk_g(alpha, &g, &zero()).equals(none(alpha.clone()))?; // streamAt (streamMk g) 0 = none
+        // {prem} ⊢ some x = none, contradiction.
+        let some_none = at0_some.sym()?.trans(Thm::assume(prem.clone())?)?; // {prem} ⊢ some x = none
+        let f = crate::init::option::some_ne_none(alpha, x)?.not_elim(some_none)?; // {prem} ⊢ F
+        let conseq = at_mk_g(alpha, &g, &succ(zero())).equals(none(alpha.clone()))?;
+        let body0 = f.false_elim(conseq)?.imp_intro(&prem)?;
+        beta_expand(&motive, zero(), body0)?
+    };
+
+    // step k: assume streamAt (streamMk g) (succ k) = none; show streamAt
+    // (streamMk g) (succ (succ k)) = none. Reduce both to `rep xs` via the
+    // cons-stream `succ` computation, then use `contig_rep` at `k`. IH unused.
+    let step = {
+        let k = Term::free("k", nat());
+        // streamAt (streamMk g) (succ k) = streamAt (rep xs) k.
+        let lhs_eq = trans_chain([
+            crate::init::stream::at_mk(&opt, &g, &succ(k.clone()))?, // = g (succ k)
+            cons_stream_succ(alpha, x, xs, &k)?,                     // = streamAt (rep xs) k
+        ])?;
+        // streamAt (streamMk g) (succ (succ k)) = streamAt (rep xs) (succ k).
+        let rhs_eq = trans_chain([
+            crate::init::stream::at_mk(&opt, &g, &succ(succ(k.clone())))?, // = g (succ (succ k))
+            cons_stream_succ(alpha, x, xs, &succ(k.clone()))?,            // = streamAt (rep xs) (succ k)
+        ])?;
+        let prem = at_mk_g(alpha, &g, &succ(k.clone())).equals(none(alpha.clone()))?;
+        // {prem} ⊢ streamAt (rep xs) k = none.
+        let rep_k_none = lhs_eq.sym()?.trans(Thm::assume(prem.clone())?)?;
+        // contig_rep at k: streamAt (rep xs) k = none ⟹ streamAt (rep xs) (succ k) = none.
+        let contig_k = contig_rep(alpha, xs)?.all_elim(k.clone())?;
+        let rep_sk_none = contig_k.imp_elim(rep_k_none)?; // {prem} ⊢ streamAt (rep xs) (succ k) = none
+        // streamAt (streamMk g) (succ (succ k)) = none.
+        let conseq = rhs_eq.trans(rep_sk_none)?;
+        let body_sk = conseq.imp_intro(&prem)?; // {} ⊢ motive-body[succ k]
+        let conseq_wrap = beta_expand(&motive, succ(k.clone()), body_sk)?; // ⊢ motive (succ k)
+        let ante = Term::app(motive.clone(), k.clone());
+        conseq_wrap.imp_intro(&ante)? // motive k ⟹ motive (succ k)
+    };
+
+    let all = Thm::nat_induct(base, step)?; // ⊢ ∀i. motive i
+    crate::init::eq::beta_reduce(all.all_elim(iv.clone())?)?.all_intro("i", nat())
+}
+
+/// `⊢ list_predicate (streamMk (consStream x xs))` — the cons carrier
+/// stream satisfies the full list selector (finite ∧ contiguous), for any
+/// `xs : list α`. The premise [`rep_cons`] discharges.
+pub fn pred_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
+    let g = cons_stream(alpha, x, xs);
+    let made = mk_stream(alpha, &g);
+    prove_list_pred(
+        alpha,
+        &made,
+        finite_cons(alpha, x, xs)?,
+        contig_cons(alpha, x, xs)?,
+    )
+}
+
 // ============================================================================
 // Element access — the high-level computational surface.
 // ============================================================================
@@ -445,7 +607,7 @@ pub fn index_nil(alpha: &Type, n: &Term) -> Result<Thm> {
     // nil = abs (streamConst none)
     let nil_u = nil(alpha.clone()).delta()?;
     // rep (abs (streamConst none)) = streamConst none
-    let ra = rep_abs_finite(alpha, &cst, finite_const_none(alpha)?)?;
+    let ra = rep_abs_pred(alpha, &cst, pred_const_none(alpha)?)?;
     // streamAt (streamConst none) n = none
     let cst_at = const_at(&opt, &none(alpha.clone()), n)?;
 
@@ -467,7 +629,7 @@ pub fn head_nil(alpha: &Type) -> Result<Thm> {
         .delta_all(head_spec().symbol())?
         .rhs_conv(|t| t.reduce())?;
     let nil_u = nil(alpha.clone()).delta()?; // nil = abs cst
-    let ra = rep_abs_finite(alpha, &cst, finite_const_none(alpha)?)?; // rep (abs cst) = cst
+    let ra = rep_abs_pred(alpha, &cst, pred_const_none(alpha)?)?; // rep (abs cst) = cst
     let head_c = head_const(&opt, &none(alpha.clone()))?; // streamHead cst = none
 
     h.rhs_conv(|t| t.rw_all(&nil_u))?
@@ -480,7 +642,7 @@ pub fn head_nil(alpha: &Type) -> Result<Thm> {
 // ============================================================================
 
 /// `⊢ rep (cons x xs) = streamMk (consStream x xs)` — the carrier stream
-/// behind `cons x xs`, with finiteness discharged by [`finite_cons`].
+/// behind `cons x xs`, with the list selector discharged by [`pred_cons`].
 fn rep_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
     let g = cons_stream(alpha, x, xs);
     let made = mk_stream(alpha, &g);
@@ -491,7 +653,7 @@ fn rep_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
     ))?
     .rhs_conv(|t| t.reduce())?; // ⊢ cons x xs = abs (streamMk g)
     // rep (abs (streamMk g)) = streamMk g
-    let ra = rep_abs_finite(alpha, &made, finite_cons(alpha, x, xs)?)?;
+    let ra = rep_abs_pred(alpha, &made, pred_cons(alpha, x, xs)?)?;
     // rep (cons x xs) = rep (abs (streamMk g)) = streamMk g
     let rep = Term::spec_rep(list_spec(), vec![alpha.clone()]);
     cons_u.cong_arg(rep)?.trans(ra)
@@ -743,15 +905,28 @@ mod tests {
     }
 
     #[test]
-    fn finite_nonempty_is_genuine() {
-        let thm = finite_nonempty(&alpha()).unwrap();
+    fn pred_nonempty_is_genuine() {
+        let thm = pred_nonempty(&alpha()).unwrap();
         assert!(thm.hyps().is_empty() && thm.has_no_obs());
-        // ⊢ ∃s. finite s
+        // ⊢ ∃s. list_predicate s
         let expected = Term::app(
             covalence_core::defs::exists(crate::init::stream::stream(option(alpha()))),
-            finite(alpha()),
+            list_pred_op(&alpha()),
         );
         assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn pred_const_none_and_cons_are_genuine() {
+        let x = Term::free("x", alpha());
+        let xs = Term::free("xs", list(alpha()));
+        let pc = pred_const_none(&alpha()).unwrap();
+        assert!(pc.hyps().is_empty() && pc.has_no_obs());
+        assert_eq!(pc.concl(), &list_pred(&alpha(), &const_none(&alpha())));
+        let pk = pred_cons(&alpha(), &x, &xs).unwrap();
+        assert!(pk.hyps().is_empty() && pk.has_no_obs());
+        let g = cons_stream(&alpha(), &x, &xs);
+        assert_eq!(pk.concl(), &list_pred(&alpha(), &mk_stream(&alpha(), &g)));
     }
 
     #[test]

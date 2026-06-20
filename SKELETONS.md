@@ -121,6 +121,34 @@ it is how unfinished work stays discoverable.
 
 ## Partial subsystems
 
+- **`.cov` catalogue migration** in `crates/covalence-core/src/defs/cov.rs`
+  + `crates/covalence-core/src/defs/core.cov`. The synchronous `.cov`
+  parser (four directives `#def`/`#newtype`/`#subtype`/`#quot` + the
+  simply-typed term sublanguage of `docs/surface-syntax.md §1.4`) is
+  **complete and tested byte-identical** against the hand-written
+  accessors. `core.cov` currently migrates: the logic connectives
+  (`bool.{and,or,not,imp,iff,forall,exists}`), `fail`, the function
+  combinators (`fun.{id,const,compose,flip}`), `unit` + `unit.nil`, and
+  the structural types `coprod`/`prod`/`option`/`result` with their
+  constructors/eliminators (`coprod.{inl,inr,case}`, `prod.{pair,fst,snd}`,
+  `option.{none,some,case,isSome,unwrap}`, `result.{ok,err}`).
+  **Still hand-written Rust (not yet in `core.cov`), and why:**
+  - **`nat`/`int`/`rat` arithmetic ops, recursors, `cond`** — selector-
+    predicate (`spec_term!`) specs and the `natRec`/`iter` recursors need
+    the still-Rust `succ`/`pred`/`zero` building blocks and reduction-rule
+    coupling; not a plain `#def` body.
+  - **Fixed-width ints / `bits` / `bytes` / `set` / `rel` / `stream` /
+    `list`** — defined via `bits.len`-style subtypes, `IntOp` tables,
+    declaration-only (`term_decl!`) bodies, or higher-order ops that the
+    minimal no-inference sublanguage does not yet cover.
+  - **Built-in literals** (`Nat`/`Int`/`SmallInt`/`Blob`) and the four
+    non-computational primitive `Thm` rules — these are kernel
+    primitives, never `defs/` data.
+  The accessors are **not yet rewired** to read from `core_env()`: the
+  `.cov` is verified equal to the Rust but the Rust remains the source of
+  truth. Folding the accessors onto the parsed `Env` (and extending the
+  sublanguage to cover the harder ops) is the follow-up.
+
 - **`covalence-hol` inductive-type engine** in
   `crates/covalence-hol/src/init/inductive/`. The shared infrastructure for
   basic inductive types (single-sorted, parametric, first-order,

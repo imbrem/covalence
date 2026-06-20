@@ -85,6 +85,7 @@ mod bits;
 mod blob;
 mod canonical;
 mod cond;
+pub mod cov;
 mod coprod;
 mod fail;
 mod floats;
@@ -121,6 +122,7 @@ pub use blob::{
 };
 pub use canonical::Canonical;
 pub use cond::{cond, cond_spec};
+pub use cov::{CovError, Entry, Env, core_env, parse_core, term_str, type_str};
 pub use coprod::{
     coprod, coprod_case, coprod_case_spec, coprod_spec, inl, inl_spec, inr, inr_spec,
 };

@@ -285,5 +285,44 @@ impl Logic for NatUnary {
     }
 }
 
+// ============================================================================
+// The DECLARED path — `#sig`/`#thy`/`#model`/`#models` over `declared.cov`.
+// ============================================================================
+
+/// The `nat-witness` env for `declared.cov`: the four kernel nat-add lemmas
+/// (the SAME theorems `NatSelf::nat_model` uses) bound under `nat.*` names, so
+/// the declared `nat/self` satisfaction goals are discharged by `(apply …)` —
+/// genuine kernel-rechecked proofs, not postulates.
+pub fn nat_self_witness() -> Env {
+    use crate::init::nat;
+    let mut e = Env::empty();
+    e.define_lemma("nat.zero.add", nat::add_base()); // ∀m. 0 + m = m
+    e.define_lemma("nat.add.zero", nat::add_zero()); // ∀a. a + 0 = a
+    e.define_lemma("nat.succ.add", nat::add_step()); // ∀n m. S n + m = S(n+m)
+    e.define_lemma("nat.add.succ", nat::add_succ_r()); // ∀a b. a + S b = S(a+b)
+    e
+}
+
+/// Run `declared.cov` — the whole **declared** surface↔script fusion: `Nat` as
+/// `#sig`/`#thy` data, `nat/self` + `nat/unary` as `#model`s certified via
+/// `#models`, and `add.comm` replayed at both through `(#in M …)`. Returns the
+/// resolved theory (its `thms` carry `nat/self.add.comm` and
+/// `nat/unary.add.comm`, plus the per-model satisfaction certificates).
+pub fn run_declared() -> Result<crate::script::Theory, crate::script::ScriptError> {
+    let witness = nat_self_witness();
+    let unary_env = unary::prelude().expect("unary prelude builds");
+    crate::script::run(
+        include_str!("declared.cov"),
+        move |name| match name {
+            "core" => Some(Env::core()),
+            "nat-witness" => Some(witness.clone()),
+            "unary" => Some(unary_env.clone()),
+            _ => None,
+        },
+        |_| None,
+    )?
+    .resolve_blocking()
+}
+
 #[cfg(test)]
 mod tests;

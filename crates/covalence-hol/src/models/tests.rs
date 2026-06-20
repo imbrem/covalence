@@ -138,6 +138,70 @@ fn in_surface_form_dispatches_per_model() {
     assert!(uu.contains("list.cat") || uu.contains("cat"));
 }
 
+/// THE FUSION OBJECTIVE: `declared.cov` declares the `Nat` signature + theory
+/// as data (`#sig`/`#thy`), declares `nat/self` + `nat/unary` as models
+/// (`#model`), certifies each `M ⊨ NatTheory` (`#models`), and replays the SAME
+/// abstract `add.comm` proof at both via `(#in M …)` — sourcing ops from the
+/// declared model and axioms from the satisfaction certificate, NOT a hand-built
+/// Rust `NatModel::env()`. Each replay is a genuine, hyp/oracle-free theorem at
+/// its own carrier.
+#[test]
+fn declared_sig_thy_model_replays_add_comm() {
+    let theory = run_declared().expect("declared.cov runs end to end");
+
+    let names: Vec<&str> = theory.thms.iter().map(|nt| nt.name.as_str()).collect();
+    // The satisfaction certificates landed (M.axname), per model.
+    for ax in ["zero.add", "add.zero", "succ.add", "add.succ"] {
+        assert!(
+            names.contains(&format!("nat/self.{ax}").as_str()),
+            "nat/self certificate `{ax}` missing: {names:?}"
+        );
+        assert!(
+            names.contains(&format!("nat/unary.{ax}").as_str()),
+            "nat/unary certificate `{ax}` missing: {names:?}"
+        );
+    }
+    // The two replayed `add.comm` theorems landed.
+    assert!(names.contains(&"nat/self.add.comm"), "got {names:?}");
+    assert!(names.contains(&"nat/unary.add.comm"), "got {names:?}");
+
+    // EVERY produced theorem is genuine (hyp- and oracle-free) — the kernel
+    // re-derived all of it from the declared data.
+    for nt in &theory.thms {
+        assert_genuine(&nt.thm, &nt.name);
+    }
+
+    // The two replays prove CARRIER-SPECIFIC statements (one source, two facts).
+    let self_s = theory
+        .thms
+        .iter()
+        .find(|nt| nt.name == "nat/self.add.comm")
+        .map(|nt| format!("{}", nt.thm.concl()))
+        .unwrap();
+    let unary_s = theory
+        .thms
+        .iter()
+        .find(|nt| nt.name == "nat/unary.add.comm")
+        .map(|nt| format!("{}", nt.thm.concl()))
+        .unwrap();
+    assert_ne!(self_s, unary_s);
+    assert!(
+        self_s.contains("nat.add") || self_s.contains('+'),
+        "nat/self add.comm is about nat addition: {self_s}"
+    );
+    assert!(
+        unary_s.contains("list.cat") || unary_s.contains("cat"),
+        "nat/unary add.comm is about list append: {unary_s}"
+    );
+
+    // The DECLARED replays must match the hand-built Track 1 results exactly —
+    // the declared path produces the same theorems `prove_add_comm` does.
+    let self_ref = prove_add_comm(&NatSelf.nat_model().unwrap()).unwrap();
+    let unary_ref = prove_add_comm(&NatUnary.nat_model().unwrap()).unwrap();
+    assert_eq!(self_s, format!("{}", self_ref.concl()));
+    assert_eq!(unary_s, format!("{}", unary_ref.concl()));
+}
+
 /// A logic legitimately REJECTS a literal kind it cannot lower (here: a
 /// string at a `Nat` model) — a diagnostic, not a silent coercion.
 #[test]

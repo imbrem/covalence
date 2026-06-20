@@ -379,6 +379,27 @@ pub(super) fn induct_tactic() -> Arc<dyn Tactic> {
     Arc::new(UnaryInduct)
 }
 
+/// A **prelude env** for the declarative `#model nat/unary` / `#models …
+/// (from unary)` path: the interpretation terms (as consts `unary.zero` /
+/// `unary.succ` / `unary.add`), the induction handler (`unary.induct`), and the
+/// four `Nat`-addition axioms proved at `list unit` (under their theory names
+/// `zero.add` / `add.zero` / `succ.add` / `add.succ`). A `.cov` script `#open`s
+/// this to *declare* `nat/unary` from data and certify it `(from unary)`,
+/// keeping `unary.rs`'s heavy Rust proofs in place (not ported to `.cov`).
+pub fn prelude() -> Result<crate::script::Env, covalence_core::Error> {
+    use crate::script::{ConstDef, Env};
+    let mut e = Env::empty();
+    e.define_const("unary.zero", ConstDef::Op(zero()));
+    e.define_const("unary.succ", ConstDef::Op(succ_op()));
+    e.define_const("unary.add", ConstDef::Op(add_op()));
+    e.register_tactic("unary.induct", induct_tactic());
+    e.define_lemma("zero.add", zero_add()?);
+    e.define_lemma("add.zero", add_zero()?);
+    e.define_lemma("succ.add", succ_add()?);
+    e.define_lemma("add.succ", add_succ()?);
+    Ok(e)
+}
+
 // ============================================================================
 // Helpers shared with the script tactic layer.
 // ============================================================================

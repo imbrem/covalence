@@ -80,6 +80,17 @@ pub struct Env {
     /// namespace from terms (e.g. `option` is both a type ctor and carries
     /// term constructors), and a `TypeSpec` is not an [`Entry`].
     type_specs: HashMap<String, TypeSpec>,
+    /// **Type aliases** — a bare name → concrete `Type`. Used to make a
+    /// signature's *sort variable* resolve to `tfree(α)` when parsing an
+    /// abstract axiom, and to the *carrier* when re-elaborating it at a model
+    /// (`super::theory`). Resolved by `parse_type`'s bare-`NAME` fallthrough.
+    type_aliases: HashMap<String, Type>,
+    /// Declared **signatures** / **theories** / **models** (the `#sig` / `#thy`
+    /// / `#model` directives). They are not [`Entry`]s (no kernel term), so they
+    /// live in their own registries, mirroring `type_specs`.
+    signatures: HashMap<String, super::theory::Signature>,
+    theories: HashMap<String, super::theory::Theory>,
+    models: HashMap<String, super::theory::Model>,
 }
 
 impl Env {
@@ -182,6 +193,44 @@ impl Env {
         self.type_specs.get(name).cloned()
     }
 
+    /// Bind a **type alias** `name → ty` (a bare-name → concrete `Type`),
+    /// resolved by `parse_type`. Used by the signature/model machinery to make a
+    /// sort name read as a type variable (abstract) or a carrier (per-model).
+    pub fn define_sort_alias(&mut self, name: impl Into<String>, ty: Type) {
+        self.type_aliases.insert(name.into(), ty);
+    }
+
+    /// The `Type` bound to `name` as a [type alias](Env::define_sort_alias).
+    pub fn lookup_type_alias(&self, name: &str) -> Option<Type> {
+        self.type_aliases.get(name).cloned()
+    }
+
+    // -- declared signatures / theories / models ------------------------
+    /// Register a `#sig`-declared [signature](super::theory::Signature).
+    pub fn define_signature(&mut self, name: impl Into<String>, sig: super::theory::Signature) {
+        self.signatures.insert(name.into(), sig);
+    }
+    /// The signature declared under `name`.
+    pub fn lookup_signature(&self, name: &str) -> Option<super::theory::Signature> {
+        self.signatures.get(name).cloned()
+    }
+    /// Register a `#thy`-declared [theory](super::theory::Theory).
+    pub fn define_theory_decl(&mut self, name: impl Into<String>, thy: super::theory::Theory) {
+        self.theories.insert(name.into(), thy);
+    }
+    /// The theory declared under `name`.
+    pub fn lookup_theory_decl(&self, name: &str) -> Option<super::theory::Theory> {
+        self.theories.get(name).cloned()
+    }
+    /// Register a `#model`-declared [model](super::theory::Model).
+    pub fn define_model_decl(&mut self, name: impl Into<String>, m: super::theory::Model) {
+        self.models.insert(name.into(), m);
+    }
+    /// The model declared under `name`.
+    pub fn lookup_model_decl(&self, name: &str) -> Option<super::theory::Model> {
+        self.models.get(name).cloned()
+    }
+
     /// Merge another environment's bindings in (it shadows existing entries
     /// of the same name). Touches the namespace (and the user type-ctor map)
     /// only — not the imports map.
@@ -189,6 +238,18 @@ impl Env {
         self.entries.merge(&other.entries);
         for (name, spec) in &other.type_specs {
             self.type_specs.insert(name.clone(), spec.clone());
+        }
+        for (name, ty) in &other.type_aliases {
+            self.type_aliases.insert(name.clone(), ty.clone());
+        }
+        for (name, sig) in &other.signatures {
+            self.signatures.insert(name.clone(), sig.clone());
+        }
+        for (name, thy) in &other.theories {
+            self.theories.insert(name.clone(), thy.clone());
+        }
+        for (name, m) in &other.models {
+            self.models.insert(name.clone(), m.clone());
         }
     }
 
@@ -214,6 +275,21 @@ impl Env {
                 format!("{prefix}.{name}")
             };
             self.type_specs.insert(qualified, spec.clone());
+        }
+        // Signature/theory/model declarations (and sort aliases) are referenced
+        // by their own name in directives (`(over Nat)`, `(of Nat)`), so they
+        // carry **unprefixed** even under a qualified `#use`/`#provide`.
+        for (name, ty) in &other.type_aliases {
+            self.type_aliases.insert(name.clone(), ty.clone());
+        }
+        for (name, sig) in &other.signatures {
+            self.signatures.insert(name.clone(), sig.clone());
+        }
+        for (name, thy) in &other.theories {
+            self.theories.insert(name.clone(), thy.clone());
+        }
+        for (name, m) in &other.models {
+            self.models.insert(name.clone(), m.clone());
         }
     }
 

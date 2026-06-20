@@ -1,14 +1,14 @@
 ;; prod.cov — pair injectivity, ported from `init::prod` in Rust.
 ;;
 ;; The `prodprim` env imports the seam lemmas as Rust-proved givens:
-;;   `fst_pair`  : ⊢ ∀(a:'a). ∀(b:'b). fst (pair a b) = a
-;;   `snd_pair`  : ⊢ ∀(a:'a). ∀(b:'b). snd (pair a b) = b
-;;   `rep_pair`  : ⊢ ∀(a:'a). ∀(b:'b). rep (pair a b) = λx y. x=a ∧ y=b
-;;   `surjective_pairing` : ⊢ ∀(p : prod 'a 'b). pair (fst p) (snd p) = p
+;;   `fst.pair`  : ⊢ ∀(a:'a). ∀(b:'b). fst (pair a b) = a
+;;   `snd.pair`  : ⊢ ∀(a:'a). ∀(b:'b). snd (pair a b) = b
+;;   `rep.pair`  : ⊢ ∀(a:'a). ∀(b:'b). rep (pair a b) = λx y. x=a ∧ y=b
+;;   `surjective.pairing` : ⊢ ∀(p : prod 'a 'b). pair (fst p) (snd p) = p
 ;; and registers `pair`/`fst`/`snd` as Ops for type inference.
 ;;
 ;; The one theorem proved HERE (not possible via those primitives directly):
-;;   pair_inj : ⊢ (pair a b = pair c d) ⟹ (a = c ∧ b = d)
+;;   pair.inj : ⊢ (pair a b = pair c d) ⟹ (a = c ∧ b = d)
 ;; The proof is: apply fst to the equality to get a=c, apply snd to get b=d.
 
 (#import core)
@@ -21,13 +21,13 @@
 ;;
 ;; Proof:
 ;;   h : pair a b = pair c d         (assumed)
-;;   fst_pair a b : fst (pair a b) = a   (seam given, elim at a then b)
-;;   fst_pair c d : fst (pair c d) = c   (seam given, elim at c then d)
+;;   fst.pair a b : fst (pair a b) = a   (seam given, elim at a then b)
+;;   fst.pair c d : fst (pair c d) = c   (seam given, elim at c then d)
 ;;   fst_cong   : fst (pair a b) = fst (pair c d)  (cong-arg fst h)
-;;   a = c : sym(fst_pair a b) ·trans· fst_cong ·trans· fst_pair c d
+;;   a = c : sym(fst.pair a b) ·trans· fst_cong ·trans· fst.pair c d
 ;;   similarly for b = d using snd.
 ;;   Conclusion: and-intro (a=c) (b=d), then imp-intro h.
-(#thm pair_inj
+(#thm pair.inj
   (#concl
     (==> (= (pair a b) (pair c d))
          (and (= a c) (= b d))))
@@ -36,15 +36,15 @@
       (and-intro
         ;; a = c
         (trans
-          (sym (all-elim b (all-elim a (fst_pair))))
+          (sym (all-elim b (all-elim a (fst.pair))))
           (trans
             (cong-arg fst (assume (= (pair a b) (pair c d))))
-            (all-elim d (all-elim c (fst_pair)))))
+            (all-elim d (all-elim c (fst.pair)))))
         ;; b = d
         (trans
-          (sym (all-elim b (all-elim a (snd_pair))))
+          (sym (all-elim b (all-elim a (snd.pair))))
           (trans
             (cong-arg snd (assume (= (pair a b) (pair c d))))
-            (all-elim d (all-elim c (snd_pair)))))))))
+            (all-elim d (all-elim c (snd.pair)))))))))
 
-(#export pair_inj)
+(#export pair.inj)

@@ -1,21 +1,21 @@
 ;; coprod.cov — coprod theorems, ported from `init::coprod` in Rust.
 ;;
 ;; The `coprodrpm` env imports the seam lemmas as Rust-proved givens:
-;;   `inl_ne_inr` : ⊢ ∀av bv. ¬(inl av = inr bv)
-;;   `case_inl`   : ⊢ ∀f g av. coprod_case f g (inl av) = f av
-;;   `case_inr`   : ⊢ ∀f g bv. coprod_case f g (inr bv) = g bv
+;;   `inl.ne_inr` : ⊢ ∀av bv. ¬(inl av = inr bv)
+;;   `case.inl`   : ⊢ ∀f g av. coprod_case f g (inl av) = f av
+;;   `case.inr`   : ⊢ ∀f g bv. coprod_case f g (inr bv) = g bv
 ;;   `cases`      : ⊢ ∀c. (∃x. c = inl x) ∨ (∃y. c = inr y)
-;;   `case_eta`   : ⊢ ∀m. m = coprod_case (m ∘ inl) (m ∘ inr)
+;;   `case.eta`   : ⊢ ∀m. m = coprod_case (m ∘ inl) (m ∘ inr)
 ;; and registers `inl`/`inr`/`coprod_case` as Ops for type inference.
 ;;
 ;; All five theorems are Rust givens rather than proved here because:
-;;   1. `case_eta` requires `exists_elim`, which is not a primitive rule.
+;;   1. `case.eta` requires `exists_elim`, which is not a primitive rule.
 ;;   2. Expressing `m ∘ inl` requires `compose` at a `coprod`-typed
 ;;      intermediate, which the current .cov type syntax cannot write.
 ;;   3. `parse_type` does not support `coprod 'a 'b` as an explicit
 ;;      type annotation, so binders over coprod values are inexpressible.
 ;;
-;; This file simply re-exports `case_eta` (the canonical coprod theorem)
+;; This file simply re-exports `case.eta` (the canonical coprod theorem)
 ;; so that the `cov_theory!` macro can expose a `case_eta_cov` accessor and
 ;; the `case_eta_cov_matches_rust` test can verify the conclusion.
 
@@ -24,6 +24,6 @@
 (#import coprodrpm)
 (#open coprodrpm)
 
-;; Re-export the quantified `case_eta` given from `coprodrpm`.
+;; Re-export the quantified `case.eta` given from `coprodrpm`.
 ;; ⊢ ∀(m : coprod 'a 'b → 'c). m = coprod_case (m ∘ inl) (m ∘ inr)
-(#export case_eta)
+(#export case.eta)

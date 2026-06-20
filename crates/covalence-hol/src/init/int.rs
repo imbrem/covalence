@@ -2030,7 +2030,7 @@ pub fn int_env() -> crate::script::Env {
 
     // add_mk : ⊢ ∀fa sa fb sb. int.add (mk fa sa)(mk fb sb) = mk (fa+fb)(sa+sb)
     e.define_lemma(
-        "add_mk",
+        "add.mk",
         gen4(to_ops(
             add_mk(&fa, &sa, &fb, &sb).unwrap(),
             &[
@@ -2047,7 +2047,7 @@ pub fn int_env() -> crate::script::Env {
     // mul_mk : ⊢ ∀…. int.mul (mk fa sa)(mk fb sb)
     //              = mk (fa·fb+sa·sb)(fa·sb+sa·fb)
     e.define_lemma(
-        "mul_mk",
+        "mul.mk",
         gen4(to_ops(
             mul_mk(&fa, &sa, &fb, &sb).unwrap(),
             &[
@@ -2066,7 +2066,7 @@ pub fn int_env() -> crate::script::Env {
 
     // neg_mk : ⊢ ∀fa sa. int.neg (mk fa sa) = mk sa fa
     e.define_lemma(
-        "neg_mk",
+        "neg.mk",
         to_ops(neg_mk(&fa, &sa).unwrap(), &[(&fa, &sa), (&sa, &fa)], &[])
             .unwrap()
             .all_intro("sa", Type::nat())
@@ -2077,7 +2077,7 @@ pub fn int_env() -> crate::script::Env {
 
     // sub_mk : ⊢ ∀…. int.sub (mk fa sa)(mk fb sb) = mk (fa+sb)(sa+fb)
     e.define_lemma(
-        "sub_mk",
+        "sub.mk",
         gen4(to_ops(
             sub_mk(&fa, &sa, &fb, &sb).unwrap(),
             &[
@@ -2093,21 +2093,21 @@ pub fn int_env() -> crate::script::Env {
 
     // lt_mk : ⊢ ∀…. int.lt (mk fa sa)(mk fb sb) = nat.lt (fa+sb)(fb+sa)
     e.define_lemma(
-        "lt_mk",
+        "lt.mk",
         gen4(to_ops(lt_mk(&fa, &sa, &fb, &sb).unwrap(), &[(&fa, &sa), (&fb, &sb)], &[]).unwrap())
             .unwrap(),
     );
 
     // le_mk : ⊢ ∀…. int.le (mk fa sa)(mk fb sb) = nat.le (fa+sb)(fb+sa)
     e.define_lemma(
-        "le_mk",
+        "le.mk",
         gen4(to_ops(le_mk(&fa, &sa, &fb, &sb).unwrap(), &[(&fa, &sa), (&fb, &sb)], &[]).unwrap())
             .unwrap(),
     );
 
     // mk_eq : ⊢ ∀…. (int.mk fa sa = int.mk fb sb) = (fa+sb = fb+sa)
     e.define_lemma(
-        "mk_eq",
+        "mk.eq",
         gen4(to_ops(
             mk_eq_iff(&fa, &sa, &fb, &sb).unwrap(),
             &[(&fa, &sa), (&fb, &sb)],
@@ -2146,21 +2146,21 @@ crate::cov_theory! {
         import "nat" = crate::init::nat::cov::env();
         import "natrec" = crate::init::nat::natrec_env();
         import "intprim" = crate::init::int::int_env();
-        "add_comm"      => pub fn add_comm_cov;
-        "add_assoc"     => pub fn add_assoc_cov;
-        "add_zero"      => pub fn add_zero_cov;
-        "add_neg"       => pub fn add_neg_cov;
-        "sub_def"       => pub fn sub_def_cov;
-        "mul_comm"      => pub fn mul_comm_cov;
-        "mul_one"       => pub fn mul_one_cov;
-        "mul_zero"      => pub fn mul_zero_cov;
+        "add.comm"      => pub fn add_comm_cov;
+        "add.assoc"     => pub fn add_assoc_cov;
+        "add.zero"      => pub fn add_zero_cov;
+        "add.neg"       => pub fn add_neg_cov;
+        "sub.def"       => pub fn sub_def_cov;
+        "mul.comm"      => pub fn mul_comm_cov;
+        "mul.one"       => pub fn mul_one_cov;
+        "mul.zero"      => pub fn mul_zero_cov;
         "distrib"       => pub fn distrib_cov;
-        "lt_irrefl"     => pub fn lt_irrefl_cov;
-        "lt_trans"      => pub fn lt_trans_cov;
-        "lt_trichotomy" => pub fn lt_trichotomy_cov;
-        "le_def"        => pub fn le_def_cov;
-        "lt_add_mono"   => pub fn lt_add_mono_cov;
-        "lt_succ"       => pub fn lt_succ_cov;
+        "lt.irrefl"     => pub fn lt_irrefl_cov;
+        "lt.trans"      => pub fn lt_trans_cov;
+        "lt.trichotomy" => pub fn lt_trichotomy_cov;
+        "le.def"        => pub fn le_def_cov;
+        "lt.add_mono"   => pub fn lt_add_mono_cov;
+        "lt.succ"       => pub fn lt_succ_cov;
     }
 }
 
@@ -2340,7 +2340,7 @@ mod tests {
         let thm = add_comm();
         assert!(
             thm.hyps().is_empty(),
-            "int::add_comm is proved, not postulated"
+            "int::add.comm is proved, not postulated"
         );
         // ∀a b. a + b = b + a, specialised.
         let (a, b) = (var("a"), var("b"));
@@ -2373,7 +2373,7 @@ mod tests {
         let thm = mul_assoc();
         assert!(
             thm.hyps().is_empty(),
-            "int::mul_assoc is proved, not postulated"
+            "int::mul.assoc is proved, not postulated"
         );
         let (a, b, c) = (var("a"), var("b"), var("c"));
         let inst = elim3(thm, &a, &b, &c).unwrap();
@@ -2388,13 +2388,13 @@ mod tests {
         // mul_one: ∀a. a*1 = a ; mul_zero: ∀a. a*0 = 0.
         let a = var("a");
         let one = mul_one();
-        assert!(one.hyps().is_empty(), "int::mul_one is proved");
+        assert!(one.hyps().is_empty(), "int::mul.one is proved");
         assert_eq!(
             one.all_elim(a.clone()).unwrap().concl(),
             &mul(a.clone(), lit(1)).equals(a.clone()).unwrap()
         );
         let z = mul_zero();
-        assert!(z.hyps().is_empty(), "int::mul_zero is proved");
+        assert!(z.hyps().is_empty(), "int::mul.zero is proved");
         assert_eq!(
             z.all_elim(a.clone()).unwrap().concl(),
             &mul(a, lit(0)).equals(lit(0)).unwrap()
@@ -2406,7 +2406,7 @@ mod tests {
         let thm = add_assoc();
         assert!(
             thm.hyps().is_empty(),
-            "int::add_assoc is proved, not postulated"
+            "int::add.assoc is proved, not postulated"
         );
         let (a, b, c) = (var("a"), var("b"), var("c"));
         let inst = elim3(thm, &a, &b, &c).unwrap();
@@ -2421,7 +2421,7 @@ mod tests {
         let thm = sub_def();
         assert!(
             thm.hyps().is_empty(),
-            "int::sub_def is proved, not postulated"
+            "int::sub.def is proved, not postulated"
         );
         let (a, b) = (var("a"), var("b"));
         let inst = thm
@@ -2439,13 +2439,13 @@ mod tests {
         // add_zero: ∀a. a + 0 = a ; add_neg: ∀a. a + (-a) = 0.
         let a = var("a");
         let z = add_zero();
-        assert!(z.hyps().is_empty(), "int::add_zero is proved");
+        assert!(z.hyps().is_empty(), "int::add.zero is proved");
         assert_eq!(
             z.all_elim(a.clone()).unwrap().concl(),
             &add(a.clone(), lit(0)).equals(a.clone()).unwrap()
         );
         let ninv = add_neg();
-        assert!(ninv.hyps().is_empty(), "int::add_neg is proved");
+        assert!(ninv.hyps().is_empty(), "int::add.neg is proved");
         assert_eq!(
             ninv.all_elim(a.clone()).unwrap().concl(),
             &add(a.clone(), neg(a.clone())).equals(lit(0)).unwrap()
@@ -2457,7 +2457,7 @@ mod tests {
         let thm = mul_comm();
         assert!(
             thm.hyps().is_empty(),
-            "int::mul_comm is proved, not postulated"
+            "int::mul.comm is proved, not postulated"
         );
         let (a, b) = (var("a"), var("b"));
         let inst = thm
@@ -2475,7 +2475,7 @@ mod tests {
         let inst = add_comm()
             .all_elim(lit(1))
             .and_then(|t| t.all_elim(lit(2)))
-            .expect("specialize add_comm");
+            .expect("specialize add.comm");
         let expected = add(lit(1), lit(2)).equals(add(lit(2), lit(1))).unwrap();
         assert_eq!(inst.concl(), &expected);
     }
@@ -2488,7 +2488,7 @@ mod tests {
             .all_elim(lit(0))
             .and_then(|t| t.all_elim(lit(1)))
             .unwrap();
-        assert!(inst.concl().as_eq().is_some(), "le_def body is `(≤) = (…)`");
+        assert!(inst.concl().as_eq().is_some(), "le.def body is `(≤) = (…)`");
     }
 
     #[test]

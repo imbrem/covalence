@@ -2,9 +2,9 @@
 ;; algebra + the `intprim` seam env.
 ;;
 ;; `int := (nat × nat) / ~` (Grothendieck). The quotient machinery is hidden:
-;; `intprim` exposes the `MK(f, s)` component layer through three operators —
+;; `intprim` exposes the `MK(f, s)` component layer through operators —
 ;; `int.mk f s` (construct from `nat` components), `int.fc a` / `int.sc a`
-;; (the components of `a`) — plus `∀`-closed seam lemmas:
+;; (the components of `a`) — plus `∀`-closed seam lemmas (dotted names):
 ;;
 ;; The seam env is brought in QUALIFIED under `int` (via
 ;; `(#use (#alias intprim int))`) and re-exported the same way (via
@@ -12,13 +12,13 @@
 ;; AND in any downstream `.cov` that imports just `int` — no separate `intprim`:
 ;;
 ;;   int.recon  : ∀a. a = int.mk (int.fc a) (int.sc a)
-;;   int.add_mk : ∀fa sa fb sb. int.add (mk fa sa)(mk fb sb) = mk (fa+fb)(sa+sb)
-;;   int.mul_mk : ∀… int.mul (mk fa sa)(mk fb sb) = mk (fa·fb+sa·sb)(fa·sb+sa·fb)
-;;   int.neg_mk : ∀fa sa. int.neg (mk fa sa) = mk sa fa
-;;   int.sub_mk : ∀… int.sub (mk fa sa)(mk fb sb) = mk (fa+sb)(sa+fb)
-;;   int.lt_mk  : ∀… int.lt (mk fa sa)(mk fb sb) = nat.lt (fa+sb)(fb+sa)
-;;   int.le_mk  : ∀… int.le (mk fa sa)(mk fb sb) = nat.le (fa+sb)(fb+sa)
-;;   int.mk_eq  : ∀… (int.mk fa sa = int.mk fb sb) = (fa+sb = fb+sa)
+;;   int.add.mk : ∀fa sa fb sb. int.add (mk fa sa)(mk fb sb) = mk (fa+fb)(sa+sb)
+;;   int.mul.mk : ∀… int.mul (mk fa sa)(mk fb sb) = mk (fa·fb+sa·sb)(fa·sb+sa·fb)
+;;   int.neg.mk : ∀fa sa. int.neg (mk fa sa) = mk sa fa
+;;   int.sub.mk : ∀… int.sub (mk fa sa)(mk fb sb) = mk (fa+sb)(sa+fb)
+;;   int.lt.mk  : ∀… int.lt (mk fa sa)(mk fb sb) = nat.lt (fa+sb)(fb+sa)
+;;   int.le.mk  : ∀… int.le (mk fa sa)(mk fb sb) = nat.le (fa+sb)(fb+sa)
+;;   int.mk.eq  : ∀… (int.mk fa sa = int.mk fb sb) = (fa+sb = fb+sa)
 ;;   int.lit0   : int.0 = int.mk 0 0   ;   int.lit1 : int.1 = int.mk 1 0
 ;;
 ;; The recipe for every ring/order axiom: `int.recon`-rewrite each `int`
@@ -26,7 +26,7 @@
 ;; `*_mk` rule, then discharge the residual on the `nat` components — either by
 ;; rewriting the `nat`-component subterms directly (when the two `int.mk`
 ;; forms coincide on the nose), an `int.mk` equality reduced to a `nat`
-;; equation via `int.mk_eq`, or a `nat` order fact from the imported `nat`.
+;; equation via `int.mk.eq`, or a `nat` order fact from the imported `nat`.
 
 (#import core)
 (#open core)
@@ -38,7 +38,7 @@
 (#use natrec)
 ;; The `intprim` seam env — `int` operators + the `MK(f,s)` component layer
 ;; lemmas. Brought in QUALIFIED under `int` (so the proofs read `int.add`,
-;; `int.mk`, `int.recon`, `int.add_mk`, …) and re-exported the same way via
+;; `int.mk`, `int.recon`, `int.add.mk`, …) and re-exported the same way via
 ;; `(#provide (#alias intprim int))`, so a downstream `.cov` importing just
 ;; `int` references `int.*` directly — no separate `intprim` import.
 (#import intprim)
@@ -49,49 +49,49 @@
 ;; Commutative ring
 ;; ============================================================================
 
-;; ⊢ ∀a b. a + b = b + a.  Push `+` through `add_mk` on both sides, then
-;; commute each `nat` component (`nat.add_comm`) so the two `int.mk` forms
+;; ⊢ ∀a b. a + b = b + a.  Push `+` through `add.mk` on both sides, then
+;; commute each `nat` component (`nat.add.comm`) so the two `int.mk` forms
 ;; coincide on the nose.
-(#thm add_comm
+(#thm add.comm
   (#concl (forall (a int) (forall (b int) (= (int.add a b) (int.add b a)))))
   (#by
     (intro a b)
     (rw (all-elim a (int.recon)))
     (rw (all-elim b (int.recon)))
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.add_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.add.mk))))))
     (rw (all-elim (int.sc a) (all-elim (int.fc a)
-          (all-elim (int.sc b) (all-elim (int.fc b) (int.add_mk))))))
-    (rw (all-elim (int.fc b) (all-elim (int.fc a) (nat.add_comm))))
-    (rw (all-elim (int.sc b) (all-elim (int.sc a) (nat.add_comm))))
+          (all-elim (int.sc b) (all-elim (int.fc b) (int.add.mk))))))
+    (rw (all-elim (int.fc b) (all-elim (int.fc a) (nat.add.comm))))
+    (rw (all-elim (int.sc b) (all-elim (int.sc a) (nat.add.comm))))
     (refl)))
 
-;; ⊢ ∀a b. a * b = b * a.  Push `*` through `mul_mk`; commute each of the four
-;; products (`nat.mul_comm`) and swap the two summands of the second component
-;; (`nat.add_comm`).
-(#thm mul_comm
+;; ⊢ ∀a b. a * b = b * a.  Push `*` through `mul.mk`; commute each of the four
+;; products (`nat.mul.comm`) and swap the two summands of the second component
+;; (`nat.add.comm`).
+(#thm mul.comm
   (#concl (forall (a int) (forall (b int) (= (int.mul a b) (int.mul b a)))))
   (#by
     (intro a b)
     (rw (all-elim a (int.recon)))
     (rw (all-elim b (int.recon)))
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul.mk))))))
     (rw (all-elim (int.sc a) (all-elim (int.fc a)
-          (all-elim (int.sc b) (all-elim (int.fc b) (int.mul_mk))))))
+          (all-elim (int.sc b) (all-elim (int.fc b) (int.mul.mk))))))
     ;; first component: fa·fb→fb·fa, sa·sb→sb·sa.
-    (rw (all-elim (int.fc b) (all-elim (int.fc a) (nat.mul_comm))))
-    (rw (all-elim (int.sc b) (all-elim (int.sc a) (nat.mul_comm))))
+    (rw (all-elim (int.fc b) (all-elim (int.fc a) (nat.mul.comm))))
+    (rw (all-elim (int.sc b) (all-elim (int.sc a) (nat.mul.comm))))
     ;; second component: fa·sb→sb·fa, sa·fb→fb·sa, then swap the summands.
-    (rw (all-elim (int.sc b) (all-elim (int.fc a) (nat.mul_comm))))
-    (rw (all-elim (int.fc b) (all-elim (int.sc a) (nat.mul_comm))))
+    (rw (all-elim (int.sc b) (all-elim (int.fc a) (nat.mul.comm))))
+    (rw (all-elim (int.fc b) (all-elim (int.sc a) (nat.mul.comm))))
     (rw (all-elim (nat.mul (int.fc b) (int.sc a))
-          (all-elim (nat.mul (int.sc b) (int.fc a)) (nat.add_comm))))
+          (all-elim (nat.mul (int.sc b) (int.fc a)) (nat.add.comm))))
     (refl)))
 
-;; ⊢ ∀a b c. (a + b) + c = a + (b + c).  Push `+` through `add_mk` (twice each
-;; side) and close by `nat.add_assoc` on each component.
-(#thm add_assoc
+;; ⊢ ∀a b c. (a + b) + c = a + (b + c).  Push `+` through `add.mk` (twice each
+;; side) and close by `nat.add.assoc` on each component.
+(#thm add.assoc
   (#concl
     (forall (a int) (forall (b int) (forall (c int)
       (= (int.add (int.add a b) c) (int.add a (int.add b c)))))))
@@ -102,112 +102,112 @@
     (rw (all-elim c (int.recon)))
     ;; LHS: (a+b)+c = mk((fa+fb)+fc)((sa+sb)+sc).
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.add_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.add.mk))))))
     (rw (all-elim (int.sc c) (all-elim (int.fc c)
           (all-elim (nat.add (int.sc a) (int.sc b))
-            (all-elim (nat.add (int.fc a) (int.fc b)) (int.add_mk))))))
+            (all-elim (nat.add (int.fc a) (int.fc b)) (int.add.mk))))))
     ;; RHS: a+(b+c) = mk(fa+(fb+fc))(sa+(sb+sc)).
     (rw (all-elim (int.sc c) (all-elim (int.fc c)
-          (all-elim (int.sc b) (all-elim (int.fc b) (int.add_mk))))))
+          (all-elim (int.sc b) (all-elim (int.fc b) (int.add.mk))))))
     (rw (all-elim (nat.add (int.sc b) (int.sc c))
           (all-elim (nat.add (int.fc b) (int.fc c))
-            (all-elim (int.sc a) (all-elim (int.fc a) (int.add_mk))))))
+            (all-elim (int.sc a) (all-elim (int.fc a) (int.add.mk))))))
     ;; close: assoc on each component.
-    (rw (all-elim (int.fc c) (all-elim (int.fc b) (all-elim (int.fc a) (nat.add_assoc)))))
-    (rw (all-elim (int.sc c) (all-elim (int.sc b) (all-elim (int.sc a) (nat.add_assoc)))))
+    (rw (all-elim (int.fc c) (all-elim (int.fc b) (all-elim (int.fc a) (nat.add.assoc)))))
+    (rw (all-elim (int.sc c) (all-elim (int.sc b) (all-elim (int.sc a) (nat.add.assoc)))))
     (refl)))
 
 ;; ⊢ ∀a. a + 0 = a.  `0 = mk 0 0` (`lit0`), so `a + 0 = mk(fa+0)(sa+0)`;
-;; `nat.add_zero` on each component returns `mk fa sa = a`.
-(#thm add_zero
+;; `nat.add.zero` on each component returns `mk fa sa = a`.
+(#thm add.zero
   (#concl (forall (a int) (= (int.add a int.0) a)))
   (#by
     (intro a)
     (rw (all-elim a (int.recon)))
     (rw (int.lit0))
     (rw (all-elim 0 (all-elim 0
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.add_mk))))))
-    (rw (all-elim (int.fc a) (nat.add_zero)))
-    (rw (all-elim (int.sc a) (nat.add_zero)))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.add.mk))))))
+    (rw (all-elim (int.fc a) (nat.add.zero)))
+    (rw (all-elim (int.sc a) (nat.add.zero)))
     (refl)))
 
-;; ⊢ ∀a. a + (-a) = 0.  `-a = mk (sc a)(fc a)` (`neg_mk`), so
-;; `a + (-a) = mk(fa+sa)(sa+fa)`, equal to `0 = mk 0 0` by `mk_eq`:
-;; (fa+sa)+0 = 0+(sa+fa), closed with `nat.add_zero`/`nat.zero_add`+`add_comm`.
-(#thm add_neg
+;; ⊢ ∀a. a + (-a) = 0.  `-a = mk (sc a)(fc a)` (`neg.mk`), so
+;; `a + (-a) = mk(fa+sa)(sa+fa)`, equal to `0 = mk 0 0` by `mk.eq`:
+;; (fa+sa)+0 = 0+(sa+fa), closed with `nat.add.zero`/`nat.zero.add`+`add.comm`.
+(#thm add.neg
   (#concl (forall (a int) (= (int.add a (int.neg a)) int.0)))
   (#by
     (intro a)
     (rw (all-elim a (int.recon)))
-    (rw (all-elim (int.sc a) (all-elim (int.fc a) (int.neg_mk))))
+    (rw (all-elim (int.sc a) (all-elim (int.fc a) (int.neg.mk))))
     (rw (all-elim (int.fc a) (all-elim (int.sc a)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.add_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.add.mk))))))
     (rw (int.lit0))
     ;; mk (fa+sa)(sa+fa) = mk 0 0  ↦  (fa+sa)+0 = 0+(sa+fa).
     (rw (all-elim 0 (all-elim 0
           (all-elim (nat.add (int.sc a) (int.fc a))
-            (all-elim (nat.add (int.fc a) (int.sc a)) (int.mk_eq))))))
-    (rw (all-elim (nat.add (int.fc a) (int.sc a)) (nat.add_zero)))
-    (rw (all-elim (nat.add (int.sc a) (int.fc a)) (natrec.zero_add)))
-    (rw (all-elim (int.sc a) (all-elim (int.fc a) (nat.add_comm))))
+            (all-elim (nat.add (int.fc a) (int.sc a)) (int.mk.eq))))))
+    (rw (all-elim (nat.add (int.fc a) (int.sc a)) (nat.add.zero)))
+    (rw (all-elim (nat.add (int.sc a) (int.fc a)) (natrec.zero.add)))
+    (rw (all-elim (int.sc a) (all-elim (int.fc a) (nat.add.comm))))
     (refl)))
 
 ;; ⊢ ∀a b. a - b = a + (-b).  Both sides land on `mk (fa+sb)(sa+fb)`:
-;; `sub_mk` directly, and `add_mk` after `neg_mk` turns `-b` into `mk sb fb`.
-(#thm sub_def
+;; `sub.mk` directly, and `add.mk` after `neg.mk` turns `-b` into `mk sb fb`.
+(#thm sub.def
   (#concl (forall (a int) (forall (b int)
             (= (int.sub a b) (int.add a (int.neg b))))))
   (#by
     (intro a b)
     (rw (all-elim a (int.recon)))
     (rw (all-elim b (int.recon)))
-    ;; LHS via sub_mk.
+    ;; LHS via sub.mk.
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.sub_mk))))))
-    ;; RHS: -b = mk (sc b)(fc b); then add_mk.
-    (rw (all-elim (int.sc b) (all-elim (int.fc b) (int.neg_mk))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.sub.mk))))))
+    ;; RHS: -b = mk (sc b)(fc b); then add.mk.
+    (rw (all-elim (int.sc b) (all-elim (int.fc b) (int.neg.mk))))
     (rw (all-elim (int.fc b) (all-elim (int.sc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.add_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.add.mk))))))
     (refl)))
 
 ;; ⊢ ∀a. a * 1 = a.  `1 = mk 1 0` (`lit1`), so
-;; `a * 1 = mk(fa·1+sa·0)(fa·0+sa·1)`; `nat.mul_one`/`mul_zero` +
-;; `add_zero`/`zero_add` per component returns `mk fa sa = a`.
-(#thm mul_one
+;; `a * 1 = mk(fa·1+sa·0)(fa·0+sa·1)`; `nat.mul.one`/`mul.zero` +
+;; `add.zero`/`zero.add` per component returns `mk fa sa = a`.
+(#thm mul.one
   (#concl (forall (a int) (= (int.mul a int.1) a)))
   (#by
     (intro a)
     (rw (all-elim a (int.recon)))
     (rw (int.lit1))
     (rw (all-elim 0 (all-elim 1
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul.mk))))))
     ;; fst: fa·1+sa·0 = fa+0 = fa.
-    (rw (all-elim (int.fc a) (nat.mul_one)))
-    (rw (all-elim (int.sc a) (nat.mul_zero)))
-    (rw (all-elim (int.fc a) (nat.add_zero)))
+    (rw (all-elim (int.fc a) (nat.mul.one)))
+    (rw (all-elim (int.sc a) (nat.mul.zero)))
+    (rw (all-elim (int.fc a) (nat.add.zero)))
     ;; snd: fa·0+sa·1 = 0+sa = sa.
-    (rw (all-elim (int.fc a) (nat.mul_zero)))
-    (rw (all-elim (int.sc a) (nat.mul_one)))
-    (rw (all-elim (int.sc a) (natrec.zero_add)))
+    (rw (all-elim (int.fc a) (nat.mul.zero)))
+    (rw (all-elim (int.sc a) (nat.mul.one)))
+    (rw (all-elim (int.sc a) (natrec.zero.add)))
     (refl)))
 
 ;; ⊢ ∀a. a * 0 = 0.  `0 = mk 0 0`, so each component is `fa·0+sa·0 = 0+0 = 0`.
-(#thm mul_zero
+(#thm mul.zero
   (#concl (forall (a int) (= (int.mul a int.0) int.0)))
   (#by
     (intro a)
     (rw (all-elim a (int.recon)))
     (rw (int.lit0))
     (rw (all-elim 0 (all-elim 0
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul_mk))))))
-    (rw (all-elim (int.fc a) (nat.mul_zero)))
-    (rw (all-elim (int.sc a) (nat.mul_zero)))
-    (rw (all-elim 0 (natrec.zero_add)))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul.mk))))))
+    (rw (all-elim (int.fc a) (nat.mul.zero)))
+    (rw (all-elim (int.sc a) (nat.mul.zero)))
+    (rw (all-elim 0 (natrec.zero.add)))
     (refl)))
 
 ;; ⊢ ∀a b c. a * (b + c) = a * b + a * c.  Left distributivity. Both sides
 ;; reduce to `mk` of the same four products (re-grouped); `nat.distrib` per
-;; component plus `nat.add_swap_mid` to re-pair.
+;; component plus `nat.add.swap_mid` to re-pair.
 (#thm distrib
   (#concl
     (forall (a int) (forall (b int) (forall (c int)
@@ -220,15 +220,15 @@
     (rw (all-elim c (int.recon)))
     ;; LHS: a*(b+c).
     (rw (all-elim (int.sc c) (all-elim (int.fc c)
-          (all-elim (int.sc b) (all-elim (int.fc b) (int.add_mk))))))
+          (all-elim (int.sc b) (all-elim (int.fc b) (int.add.mk))))))
     (rw (all-elim (nat.add (int.sc b) (int.sc c))
           (all-elim (nat.add (int.fc b) (int.fc c))
-            (all-elim (int.sc a) (all-elim (int.fc a) (int.mul_mk))))))
+            (all-elim (int.sc a) (all-elim (int.fc a) (int.mul.mk))))))
     ;; RHS: a*b + a*c.
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul.mk))))))
     (rw (all-elim (int.sc c) (all-elim (int.fc c)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.mul.mk))))))
     (rw (all-elim
           (nat.add (nat.mul (int.fc a) (int.sc c)) (nat.mul (int.sc a) (int.fc c)))
           (all-elim
@@ -237,31 +237,31 @@
               (nat.add (nat.mul (int.fc a) (int.sc b)) (nat.mul (int.sc a) (int.fc b)))
               (all-elim
                 (nat.add (nat.mul (int.fc a) (int.fc b)) (nat.mul (int.sc a) (int.sc b)))
-                (int.add_mk))))))
+                (int.add.mk))))))
     ;; fst component: fa·(fb+fc)+sa·(sb+sc) = (fa·fb+sa·sb)+(fa·fc+sa·sc).
     (rw (all-elim (int.fc c) (all-elim (int.fc b) (all-elim (int.fc a) (nat.distrib)))))
     (rw (all-elim (int.sc c) (all-elim (int.sc b) (all-elim (int.sc a) (nat.distrib)))))
     (rw (all-elim (nat.mul (int.sc a) (int.sc c)) (all-elim (nat.mul (int.sc a) (int.sc b))
           (all-elim (nat.mul (int.fc a) (int.fc c)) (all-elim (nat.mul (int.fc a) (int.fc b))
-            (nat.add_swap_mid))))))
+            (nat.add.swap_mid))))))
     ;; snd component: fa·(sb+sc)+sa·(fb+fc) = (fa·sb+sa·fb)+(fa·sc+sa·fc).
     (rw (all-elim (int.sc c) (all-elim (int.sc b) (all-elim (int.fc a) (nat.distrib)))))
     (rw (all-elim (int.fc c) (all-elim (int.fc b) (all-elim (int.sc a) (nat.distrib)))))
     (rw (all-elim (nat.mul (int.sc a) (int.fc c)) (all-elim (nat.mul (int.sc a) (int.fc b))
           (all-elim (nat.mul (int.fc a) (int.sc c)) (all-elim (nat.mul (int.fc a) (int.sc b))
-            (nat.add_swap_mid))))))
+            (nat.add.swap_mid))))))
     (refl)))
 
 ;; ============================================================================
 ;; Linear order — `int.lt`/`int.le` read off the `nat` comparison on
-;; components (`lt_mk`/`le_mk`), so each order axiom is a `nat` order fact.
+;; components (`lt.mk`/`le.mk`), so each order axiom is a `nat` order fact.
 ;; ============================================================================
 
 ;; ⊢ ∀a b c d. (a+b)+(c+d) = (a+d)+(b+c).  The "outer/inner" additive
 ;; interchange the Grothendieck order transitivity needs (`nat.cov` only
-;; exports the *middle* swap `add_swap_mid`, so we re-derive this one); both
-;; sides equal `a+((b+c)+d)` by `nat.add_assoc`/`nat.add_comm`.
-(#thm add_interchange
+;; exports the *middle* swap `add.swap_mid`, so we re-derive this one); both
+;; sides equal `a+((b+c)+d)` by `nat.add.assoc`/`nat.add.comm`.
+(#thm add.interchange
   (#concl
     (forall (a nat) (forall (b nat) (forall (c nat) (forall (d nat)
       (= (nat.add (nat.add a b) (nat.add c d))
@@ -269,50 +269,50 @@
   (#by
     (intro a b c d)
     ;; LHS = (a+b)+(c+d) → a+(b+(c+d)) → a+((b+c)+d).
-    (rw (all-elim (nat.add c d) (all-elim b (all-elim a (nat.add_assoc)))))
-    (rw (sym (all-elim d (all-elim c (all-elim b (nat.add_assoc))))))
+    (rw (all-elim (nat.add c d) (all-elim b (all-elim a (nat.add.assoc)))))
+    (rw (sym (all-elim d (all-elim c (all-elim b (nat.add.assoc))))))
     ;; RHS = (a+d)+(b+c) → a+(d+(b+c)) → a+((b+c)+d) (comm d (b+c)).
     (sym)
-    (rw (all-elim (nat.add b c) (all-elim d (all-elim a (nat.add_assoc)))))
-    (rw (all-elim (nat.add b c) (all-elim d (nat.add_comm))))
+    (rw (all-elim (nat.add b c) (all-elim d (all-elim a (nat.add.assoc)))))
+    (rw (all-elim (nat.add b c) (all-elim d (nat.add.comm))))
     (refl)))
 
-;; ⊢ ∀a. ¬(a < a).  `int.lt a a = nat.lt (fa+sa)(fa+sa)` (`lt_mk`), then
-;; `nat.lt_irrefl`.
-(#thm lt_irrefl
+;; ⊢ ∀a. ¬(a < a).  `int.lt a a = nat.lt (fa+sa)(fa+sa)` (`lt.mk`), then
+;; `nat.lt.irrefl`.
+(#thm lt.irrefl
   (#concl (forall (a int) (not (int.lt a a))))
   (#by
     (intro a)
     (rw (all-elim a (int.recon)))
     (rw (all-elim (int.sc a) (all-elim (int.fc a)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.lt_mk))))))
-    (derive (all-elim (nat.add (int.fc a) (int.sc a)) (nat.lt_irrefl)))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.lt.mk))))))
+    (derive (all-elim (nat.add (int.fc a) (int.sc a)) (nat.lt.irrefl)))))
 
 ;; ⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c.  Map each `int.lt` to its `nat`
-;; comparison `(fa+sb) < (fb+sa)` (`recon` + `lt_mk`); add the two
-;; (`nat.add_lt_add`), interchange the cross-sums (`add_interchange` +
-;; `nat.add_comm`) so both sides carry the common right summand `K = fb+sb`,
-;; and cancel it (`nat.lt_add_mono_r`).
-(#thm lt_trans
+;; comparison `(fa+sb) < (fb+sa)` (`recon` + `lt.mk`); add the two
+;; (`nat.add.lt_add`), interchange the cross-sums (`add.interchange` +
+;; `nat.add.comm`) so both sides carry the common right summand `K = fb+sb`,
+;; and cancel it (`nat.lt.add_mono_r`).
+(#thm lt.trans
   (#concl
     (forall (a int) (forall (b int) (forall (c int)
       (==> (int.lt a b) (==> (int.lt b c) (int.lt a c)))))))
   (#by
     (intro a b c h1 h2)
     (derive
-      ;; ⊢ int.lt a c, from `(fa+sc) < (fc+sa)` rewritten back by recon+lt_mk.
+      ;; ⊢ int.lt a c, from `(fa+sc) < (fc+sa)` rewritten back by recon+lt.mk.
       (eq-mp
         (sym
           (trans
             (mk-comb (mk-comb (refl int.lt) (all-elim a (int.recon)))
                      (all-elim c (int.recon)))
             (all-elim (int.sc c) (all-elim (int.fc c)
-              (all-elim (int.sc a) (all-elim (int.fc a) (int.lt_mk)))))))
+              (all-elim (int.sc a) (all-elim (int.fc a) (int.lt.mk)))))))
         ;; (fa+sc) < (fc+sa) : cancel K = fb+sb from the summed inequality.
         (eq-mp
           (all-elim (nat.add (int.fc b) (int.sc b))
             (all-elim (nat.add (int.fc c) (int.sc a))
-              (all-elim (nat.add (int.fc a) (int.sc c)) (nat.lt_add_mono_r))))
+              (all-elim (nat.add (int.fc a) (int.sc c)) (nat.lt.add_mono_r))))
           ;; (fa+sc)+K < (fc+sa)+K, from the summed ineq rewritten by eq_l/eq_r.
           (eq-mp
             (mk-comb
@@ -320,22 +320,22 @@
                 ;; eq_l : (fa+sb)+(fb+sc) = (fa+sc)+(fb+sb)
                 (trans
                   (all-elim (int.sc c) (all-elim (int.fc b)
-                    (all-elim (int.sc b) (all-elim (int.fc a) (add_interchange)))))
+                    (all-elim (int.sc b) (all-elim (int.fc a) (add.interchange)))))
                   (cong-arg (nat.add (nat.add (int.fc a) (int.sc c)))
-                    (all-elim (int.fc b) (all-elim (int.sc b) (nat.add_comm))))))
+                    (all-elim (int.fc b) (all-elim (int.sc b) (nat.add.comm))))))
               ;; eq_r : (fb+sa)+(fc+sb) = (fc+sa)+(fb+sb)
-              ;;   add_interchange → (fb+sb)+(sa+fc)
-              ;;   add_comm top    → (sa+fc)+(fb+sb)
-              ;;   add_comm inner  → (fc+sa)+(fb+sb)
+              ;;   add.interchange → (fb+sb)+(sa+fc)
+              ;;   add.comm top    → (sa+fc)+(fb+sb)
+              ;;   add.comm inner  → (fc+sa)+(fb+sb)
               (trans
                 (all-elim (int.sc b) (all-elim (int.fc c)
-                  (all-elim (int.sc a) (all-elim (int.fc b) (add_interchange)))))
+                  (all-elim (int.sc a) (all-elim (int.fc b) (add.interchange)))))
                 (trans
                   (all-elim (nat.add (int.sc a) (int.fc c))
-                    (all-elim (nat.add (int.fc b) (int.sc b)) (nat.add_comm)))
+                    (all-elim (nat.add (int.fc b) (int.sc b)) (nat.add.comm)))
                   (mk-comb
                     (cong-arg nat.add
-                      (all-elim (int.fc c) (all-elim (int.sc a) (nat.add_comm))))
+                      (all-elim (int.fc c) (all-elim (int.sc a) (nat.add.comm))))
                     (refl (nat.add (int.fc b) (int.sc b)))))))
             ;; summed : (fa+sb)+(fb+sc) < (fb+sa)+(fc+sb)
             (imp-elim
@@ -343,14 +343,14 @@
                 (all-elim (nat.add (int.fc c) (int.sc b))
                   (all-elim (nat.add (int.fc b) (int.sc c))
                     (all-elim (nat.add (int.fc b) (int.sc a))
-                      (all-elim (nat.add (int.fc a) (int.sc b)) (nat.add_lt_add)))))
+                      (all-elim (nat.add (int.fc a) (int.sc b)) (nat.add.lt_add)))))
                 ;; e1 : (fa+sb) < (fb+sa)
                 (eq-mp
                   (trans
                     (mk-comb (mk-comb (refl int.lt) (all-elim a (int.recon)))
                              (all-elim b (int.recon)))
                     (all-elim (int.sc b) (all-elim (int.fc b)
-                      (all-elim (int.sc a) (all-elim (int.fc a) (int.lt_mk))))))
+                      (all-elim (int.sc a) (all-elim (int.fc a) (int.lt.mk))))))
                   (assume (int.lt a b))))
               ;; e2 : (fb+sc) < (fc+sb)
               (eq-mp
@@ -358,13 +358,13 @@
                   (mk-comb (mk-comb (refl int.lt) (all-elim b (int.recon)))
                            (all-elim c (int.recon)))
                   (all-elim (int.sc c) (all-elim (int.fc c)
-                    (all-elim (int.sc b) (all-elim (int.fc b) (int.lt_mk))))))
+                    (all-elim (int.sc b) (all-elim (int.fc b) (int.lt.mk))))))
                 (assume (int.lt b c))))))))))
 
 ;; ⊢ ∀a b. (a < b) ∨ ((a = b) ∨ (b < a)).  Rewrite the goal's `int.lt a b`,
-;; `a = b`, `int.lt b a` to their `nat` readings (`recon`+`lt_mk` / `mk_eq`),
-;; then close with `nat.lt_trichotomy` on `(fa+sb, fb+sa)`.
-(#thm lt_trichotomy
+;; `a = b`, `int.lt b a` to their `nat` readings (`recon`+`lt.mk` / `mk.eq`),
+;; then close with `nat.lt.trichotomy` on `(fa+sb, fb+sa)`.
+(#thm lt.trichotomy
   (#concl
     (forall (a int) (forall (b int)
       (or (int.lt a b) (or (= a b) (int.lt b a))))))
@@ -374,19 +374,19 @@
     (rw (all-elim a (int.recon)))
     (rw (all-elim b (int.recon)))
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.lt_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.lt.mk))))))
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.mk_eq))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.mk.eq))))))
     (rw (all-elim (int.sc a) (all-elim (int.fc a)
-          (all-elim (int.sc b) (all-elim (int.fc b) (int.lt_mk))))))
+          (all-elim (int.sc b) (all-elim (int.fc b) (int.lt.mk))))))
     (derive
       (all-elim (nat.add (int.fc b) (int.sc a))
-        (all-elim (nat.add (int.fc a) (int.sc b)) (nat.lt_trichotomy))))))
+        (all-elim (nat.add (int.fc a) (int.sc b)) (nat.lt.trichotomy))))))
 
 ;; ⊢ ∀a b. (a ≤ b) = ((a < b) ∨ (a = b)).  Read off `≤`/`<`/`=` on components
-;; (`recon` + `le_mk`/`lt_mk`/`mk_eq`); the goal becomes `nat.le_iff_lt_or_eq`
+;; (`recon` + `le.mk`/`lt.mk`/`mk.eq`); the goal becomes `nat.le.iff_lt_or_eq`
 ;; on `(fa+sb, fb+sa)`.
-(#thm le_def
+(#thm le.def
   (#concl
     (forall (a int) (forall (b int)
       (= (int.le a b) (or (int.lt a b) (= a b))))))
@@ -395,24 +395,24 @@
     (rw (all-elim a (int.recon)))
     (rw (all-elim b (int.recon)))
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.le_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.le.mk))))))
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.lt_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.lt.mk))))))
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.mk_eq))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.mk.eq))))))
     (derive
       (all-elim (nat.add (int.fc b) (int.sc a))
-        (all-elim (nat.add (int.fc a) (int.sc b)) (nat.le_iff_lt_or_eq))))))
+        (all-elim (nat.add (int.fc a) (int.sc b)) (nat.le.iff_lt_or_eq))))))
 
 ;; ============================================================================
 ;; Ordered-ring compatibility + discreteness
 ;; ============================================================================
 
 ;; ⊢ ∀a b c. a < b ⟹ a + c < b + c.  `int.lt (a+c)(b+c)` reads off
-;; `(fa+fc)+(sb+sc) < (fb+fc)+(sa+sc)`, which `nat.add_swap_mid` rewrites to
+;; `(fa+fc)+(sb+sc) < (fb+fc)+(sa+sc)`, which `nat.add.swap_mid` rewrites to
 ;; `(fa+sb)+(fc+sc) < (fb+sa)+(fc+sc)` — the hypothesis `(fa+sb)<(fb+sa)`
-;; shifted by `fc+sc` (`nat.lt_add_mono_r`).
-(#thm lt_add_mono
+;; shifted by `fc+sc` (`nat.lt.add_mono_r`).
+(#thm lt.add_mono
   (#concl
     (forall (a int) (forall (b int) (forall (c int)
       (==> (int.lt a b) (int.lt (int.add a c) (int.add b c)))))))
@@ -421,25 +421,25 @@
     (rw (all-elim a (int.recon)))
     (rw (all-elim b (int.recon)))
     (rw (all-elim c (int.recon)))
-    ;; a+c and b+c through add_mk.
+    ;; a+c and b+c through add.mk.
     (rw (all-elim (int.sc c) (all-elim (int.fc c)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.add_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.add.mk))))))
     (rw (all-elim (int.sc c) (all-elim (int.fc c)
-          (all-elim (int.sc b) (all-elim (int.fc b) (int.add_mk))))))
+          (all-elim (int.sc b) (all-elim (int.fc b) (int.add.mk))))))
     ;; int.lt (mk …)(mk …) → nat.lt ((fa+fc)+(sb+sc)) ((fb+fc)+(sa+sc)).
     (rw (all-elim (nat.add (int.sc b) (int.sc c))
           (all-elim (nat.add (int.fc b) (int.fc c))
             (all-elim (nat.add (int.sc a) (int.sc c))
-              (all-elim (nat.add (int.fc a) (int.fc c)) (int.lt_mk))))))
+              (all-elim (nat.add (int.fc a) (int.fc c)) (int.lt.mk))))))
     ;; re-pair: (fa+fc)+(sb+sc) = (fa+sb)+(fc+sc) ; same for the RHS.
     (rw (all-elim (int.sc c) (all-elim (int.sc b)
-          (all-elim (int.fc c) (all-elim (int.fc a) (nat.add_swap_mid))))))
+          (all-elim (int.fc c) (all-elim (int.fc a) (nat.add.swap_mid))))))
     (rw (all-elim (int.sc c) (all-elim (int.sc a)
-          (all-elim (int.fc c) (all-elim (int.fc b) (nat.add_swap_mid))))))
+          (all-elim (int.fc c) (all-elim (int.fc b) (nat.add.swap_mid))))))
     ;; cancel the common K = fc+sc.
     (rw (all-elim (nat.add (int.fc c) (int.sc c))
           (all-elim (nat.add (int.fc b) (int.sc a))
-            (all-elim (nat.add (int.fc a) (int.sc b)) (nat.lt_add_mono_r)))))
+            (all-elim (nat.add (int.fc a) (int.sc b)) (nat.lt.add_mono_r)))))
     ;; close: (fa+sb) < (fb+sa) from the hypothesis a < b.
     (derive
       (eq-mp
@@ -447,14 +447,14 @@
           (mk-comb (mk-comb (refl int.lt) (all-elim a (int.recon)))
                    (all-elim b (int.recon)))
           (all-elim (int.sc b) (all-elim (int.fc b)
-            (all-elim (int.sc a) (all-elim (int.fc a) (int.lt_mk))))))
+            (all-elim (int.sc a) (all-elim (int.fc a) (int.lt.mk))))))
         (assume (int.lt a b))))))
 
 ;; ⊢ ∀a b. (a < b) = (a + 1 ≤ b).  Discreteness. Both sides reduce to a `nat`
 ;; comparison on `X = fa+sb`, `Y = fb+sa`: `a<b ↦ X<Y` and `a+1≤b ↦
 ;; (fa+1)+sb ≤ fb+(sa+0)`, normalised to `S X ≤ Y` and bridged by
-;; `nat.lt_iff_succ_le`.
-(#thm lt_succ
+;; `nat.lt.iff_succ_le`.
+(#thm lt.succ
   (#concl
     (forall (a int) (forall (b int)
       (= (int.lt a b) (int.le (int.add a int.1) b)))))
@@ -464,27 +464,27 @@
     (rw (all-elim b (int.recon)))
     ;; LHS: int.lt a b → nat.lt X Y.
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.lt_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.lt.mk))))))
     ;; RHS: a+1 = mk (fa+1)(sa+0); int.le (mk …) b → nat.le ((fa+1)+sb)(fb+(sa+0)).
     (rw (int.lit1))
     (rw (all-elim 0 (all-elim 1
-          (all-elim (int.sc a) (all-elim (int.fc a) (int.add_mk))))))
+          (all-elim (int.sc a) (all-elim (int.fc a) (int.add.mk))))))
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
           (all-elim (nat.add (int.sc a) 0)
-            (all-elim (nat.add (int.fc a) 1) (int.le_mk))))))
+            (all-elim (nat.add (int.fc a) 1) (int.le.mk))))))
     ;; normalise the RHS comparison: (fa+1)+sb → S(fa+sb) ; fb+(sa+0) → fb+sa.
-    (rw (all-elim (int.sc a) (nat.add_zero)))                   ;; sa+0 → sa
-    ;; fa+1 → S fa  (1 = S 0, then add_succ + add_zero).
+    (rw (all-elim (int.sc a) (nat.add.zero)))                   ;; sa+0 → sa
+    ;; fa+1 → S fa  (1 = S 0, then add.succ + add.zero).
     (rw (trans (cong-arg (nat.add (int.fc a)) (sym (reduce-prim (succ 0))))
-          (trans (all-elim 0 (all-elim (int.fc a) (nat.add_succ)))
-                 (cong-arg succ (all-elim (int.fc a) (nat.add_zero))))))
+          (trans (all-elim 0 (all-elim (int.fc a) (nat.add.succ)))
+                 (cong-arg succ (all-elim (int.fc a) (nat.add.zero))))))
     ;; (S fa)+sb → S(fa+sb).
-    (rw (all-elim (int.sc b) (all-elim (int.fc a) (natrec.succ_add))))
+    (rw (all-elim (int.sc b) (all-elim (int.fc a) (natrec.succ.add))))
     ;; close: (X < Y) = (S X ≤ Y).
     (derive
       (all-elim (nat.add (int.fc b) (int.sc a))
-        (all-elim (nat.add (int.fc a) (int.sc b)) (nat.lt_iff_succ_le))))))
+        (all-elim (nat.add (int.fc a) (int.sc b)) (nat.lt.iff_succ_le))))))
 
-(#export add_comm mul_comm add_assoc add_zero add_neg sub_def
-         mul_one mul_zero distrib
-         lt_irrefl lt_trans lt_trichotomy le_def lt_add_mono lt_succ)
+(#export add.comm mul.comm add.assoc add.zero add.neg sub.def
+         mul.one mul.zero distrib
+         lt.irrefl lt.trans lt.trichotomy le.def lt.add_mono lt.succ)

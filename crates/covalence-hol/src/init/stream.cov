@@ -4,11 +4,11 @@
 ;; The `streamprim` env provides:
 ;;   - OPERATORS: `stream_at`, `stream_mk`, `stream_const`, `stream_head`,
 ;;     `stream_tail` (all monomorphic at `'a`).
-;;   - SEAM GIVEN: `at_mk` (∀f n. streamAt (streamMk f) n = f n)  — whose
+;;   - SEAM GIVEN: `at.mk` (∀f n. streamAt (streamMk f) n = f n)  — whose
 ;;     Rust proof uses `spec_rep_abs_fwd`; kept here as a given.
 ;;
-;; On top we prove `const_at`, `head_const`, `tail_at` by δ-unfolding the head
-;; operation and then applying `at_mk` + β.
+;; On top we prove `const.at`, `head.const`, `tail.at` by δ-unfolding the head
+;; operation and then applying `at.mk` + β.
 
 (#import core)
 (#open core)
@@ -23,10 +23,10 @@
 ;;   (2) β: ⊢ (λx. streamMk (λk. x)) x = streamMk (λk. x)
 ;;   (3) (cong-fn n (cong-arg stream_at ...)) builds
 ;;       ⊢ streamAt (streamConst x) n = streamAt (streamMk (λk. x)) n
-;;   (4) at_mk ∀-elim at (λk. x), n:
+;;   (4) at.mk ∀-elim at (λk. x), n:
 ;;       ⊢ streamAt (streamMk (λk. x)) n = (λk. x) n
 ;;   (5) β: ⊢ (λk. x) n = x
-(#thm const_at
+(#thm const.at
   (#concl
     (forall (x 'a)
       (forall (n nat)
@@ -43,7 +43,7 @@
                 (cong-fn x (delta stream_const))
                 (beta-conv (app (lam (sc_x 'a) (app stream_mk (lam (k nat) sc_x))) x)))))
           ;; streamAt (streamMk (λk.x)) n = (λk.x) n
-          (all-elim n (all-elim (lam (k nat) x) (at_mk))))
+          (all-elim n (all-elim (lam (k nat) x) (at.mk))))
         ;; (λk.x) n = x
         (beta-conv (app (lam (k nat) x) n))))))
 
@@ -54,8 +54,8 @@
 ;;       → (cong-fn (streamConst x) ...) gives
 ;;         ⊢ streamHead (streamConst x) = (λs. streamAt s 0) (streamConst x)
 ;;   (2) β: = streamAt (streamConst x) 0
-;;   (3) const_at at x, 0: = x
-(#thm head_const
+;;   (3) const.at at x, 0: = x
+(#thm head.const
   (#concl
     (forall (x 'a)
       (= (app stream_head (app stream_const x)) x)))
@@ -69,7 +69,7 @@
           ;; (λs. streamAt s 0) (streamConst x) = streamAt (streamConst x) 0
           (beta-conv (app (lam (sc_s) (app (app stream_at sc_s) 0)) (app stream_const x))))
         ;; streamAt (streamConst x) 0 = x
-        (all-elim 0 (all-elim x (const_at)))))))
+        (all-elim 0 (all-elim x (const.at)))))))
 
 ;; ⊢ ∀(s:stream 'a)(n:nat). streamAt (streamTail s) n = streamAt s (succ n)
 ;;
@@ -80,10 +80,10 @@
 ;;   (2) β: = streamMk (λn. streamAt s (succ n))
 ;;   (3) (cong-fn n (cong-arg stream_at ...)) builds
 ;;       ⊢ streamAt (streamTail s) n = streamAt (streamMk (λn. streamAt s (succ n))) n
-;;   (4) at_mk ∀-elim at (λn. streamAt s (succ n)), n:
+;;   (4) at.mk ∀-elim at (λn. streamAt s (succ n)), n:
 ;;       ⊢ streamAt (streamMk (λn. streamAt s (succ n))) n = (λn. streamAt s (succ n)) n
 ;;   (5) β: = streamAt s (succ n)
-(#thm tail_at
+(#thm tail.at
   (#concl
     (forall (s)
       (forall (n nat)
@@ -101,8 +101,8 @@
                 (cong-fn s (delta stream_tail))
                 (beta-conv (app (lam (st_s) (app stream_mk (lam (st_n nat) (app (app stream_at st_s) (succ st_n))))) s)))))
           ;; = (λn'. streamAt s (succ n')) n
-          (all-elim n (all-elim (lam (n2 nat) (app (app stream_at s) (succ n2))) (at_mk))))
+          (all-elim n (all-elim (lam (n2 nat) (app (app stream_at s) (succ n2))) (at.mk))))
         ;; = streamAt s (succ n)
         (beta-conv (app (lam (n2 nat) (app (app stream_at s) (succ n2))) n))))))
 
-(#export const_at head_const tail_at)
+(#export const.at head.const tail.at)

@@ -98,6 +98,7 @@ pub mod quotient;
 pub mod rat;
 pub mod real;
 pub mod recursion;
+pub mod regex;
 pub mod rel;
 pub mod set;
 pub mod sexpr;

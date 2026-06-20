@@ -167,3 +167,41 @@ directives — is `open`-able by other scripts; the macro binds it as a
   replay path across the component boundary) is not started. `check` is
   intentionally the single kernel-coupled entry point such an interface would
   sit behind.
+
+- **`#comp` calc handles only `=` (no heterogeneous relations).** The
+  `#comp` rule (`script/tactic.rs`) folds `trans` over `(= RHS [BY])` steps,
+  per `docs/surface-syntax.md` §5.1; the heterogeneous form (`a = b ≤ c < d ⊢
+  a < d`, looking up a transitivity rule per adjacent relation pair, à la Lean
+  `calc` / Isabelle `also`) is deferred until a relation/transitivity registry
+  exists. Each step head must be `=` for now.
+- **Equational seams not yet registerable per-logic.** `Env::beta` /
+  `Env::congr` / `Env::funext` / `Env::comp_default` (`script/env.rs`) are
+  *methods* — the seam pattern of `apply_unify`/`rw_unify` — so the rules
+  (`beta`/`congr`/`funext`/`#comp`) *request* these operations rather than
+  hard-wiring them, but the methods still hold the single built-in HOL default.
+  Swapping in a logic's own `HandlerSet` (`ctx.active.rewrite`/`.reduce` of
+  `docs/surface-compiler.md` §9 — a monoid normalizer, a reified-logic decider)
+  needs the scoped `Context`/`HandlerSet` plumbing, not yet built. Same gap as
+  the `rw_unify` "registerable custom handler" TODO above; they should be wired
+  together.
+
+- **`#inductive` directive realises only the `nat` shape (metalogic).**
+  `script/inductive.rs` parses `(#inductive NAME (ctor ARGTY…) …)`, dispatches
+  through the per-internal-logic `LogicInductive` trait (the metalogic =
+  `HolMetalogic`; PA/SOA/MLTT realisations are the planned extra impls), and —
+  for the `nat` constructor shape `(zero)` + `(succ nat)` — binds the
+  constructors and emits the genuine recursion theorem `⊢ ∃rec. P_rec rec`
+  (the engine's `recursion_theorem`) plus a worked induction instance
+  `⊢ ∀n. n = n`. **What's missing for fresh user types** (a binary tree, a
+  custom enum): the directive can only consume the inductive engine's public
+  API, which needs (a) an `Inductive` adapter supplying genuine
+  `induct`/`injective`/`distinct` — for a non-kernel-primitive type these are
+  *derived* theorems over a carrier carved out by `new_type_definition`, plus
+  (b) a recursor **selector predicate** that `nat` reads from the `defs`
+  catalogue (`nat_rec_spec`) but a fresh type has no entry for. So the missing
+  capability is a **carrier-construction + freeness-derivation + recursor-spec
+  synthesis** seam — partly the engine's multi-recursive-argument work (see the
+  inductive-engine entry above), partly a new `defs`/elaborator path to mint a
+  fresh subtype and its recursor spec from a signature. The directive reports
+  the gap (`ScriptError::Syntax`) rather than fabricating anything; `nat` is the
+  prototype's worked end-to-end case.

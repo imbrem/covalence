@@ -227,3 +227,142 @@ index](../../../../SKELETONS.md).
   - **A product recursor / `prod.case`** (`(α → β → γ) → prod α β → γ`) is not in
     the `defs/` catalogue; surjective pairing + the projections are enough to
     define and reason about one downstream when needed.
+
+- **Monoid / categorical rewriters** in `crates/covalence-hol/src/init/monoid.rs`
+  + `cat.rs` (`cat_normalize` / `cat_prove_eq`). **In place:** the model-generic
+  monoid normalizer (`Monoid::normalize` / `prove_eq`) over `(op, unit, assoc,
+  left_id, right_id)`; models for `(nat,+,0)`, `(nat,×,1)`, the endomorphism
+  monoid `(α→α, ∘, id)`; the function-category rewriter for heterogeneous
+  objects; and a model-generic `monoid.cov` driven through `monoid_env`.
+  **Not yet built:**
+  - **Relation-category rewriter.** `rel.compose` / `rel.id` exist in
+    `defs/rel.rs` with `holds_compose` / `holds_id` (init/rel.rs), but their
+    **identity and associativity laws are unproved** — they need the existential
+    one-point rule `(∃y. x = y ∧ P y) = P x` (flagged in `init/rel.rs`'s module
+    docs). Once those laws land, `endo_monoid` has a `rel`-category analogue and
+    `cat_normalize` generalizes to relations with no algorithm change.
+  - **`(monoid-normalize)` / `(cat-normalize)` script inferences.** The Rust
+    normalizers are not yet exposed as registered `.cov` rewriter tactics; today
+    a `.cov` proof drives the laws one `(rw …)` at a time (see `monoid.cov`).
+    This is the concrete first consumer of the planned **rewriter facet** on the
+    `Tactic` trait (`script/tactic.rs` doc-note): a `rewrite(a) -> ⊢ a = b`
+    method so `Monoid::normalize` plugs in directly as `(rw (monoid-nf))`.
+  - **List monoid `(list, append, nil)`.** `init/list.rs` only has the `nil`-side
+    computations; `append` and its assoc/identity laws are not proved, so the
+    canonical "list is the free monoid" model is not yet a `Monoid` value.
+- **Formal-languages / Kleene-algebra theory** in
+  `crates/covalence-hol/src/init/lang.rs`. A *language over a monoid `M`* is a
+  `set` of `M`-carrier words; concatenation lifts `M`'s `op`. **In place:** the
+  operations (`empty_lang`, `epsilon`, `lang_union`, `lang_concat`,
+  `lang_star`); the membership computations (`mem_concat`, `mem_epsilon`,
+  `mem_empty_lang`, `mem_star`); the **union** Kleene-algebra fragment
+  (re-exported `set` `union_comm`/`union_assoc`/`union_idem`/`union_empty`);
+  `∅`-annihilation `concat_empty_l`/`concat_empty_r` (proved via the new
+  existential tactics); and `star_contains_epsilon` (`ε ⊆ L*`). All genuine
+  (hypothesis- and oracle-free), model-generic over any `Monoid`. **Not yet
+  proved:**
+  - **`concat` associativity** and the **`epsilon` concat identities**
+    (`ε·L = L`, `L·ε = L`). The **existential one-point rule**
+    `⊢ (∃x. x = t ∧ P x) = P t` is now proved (`logic::exists_one_point`,
+    `init/logic.rs`) — the rule also flagged as missing in `init/rel.rs`. What
+    remains is **existential/conjunction reshaping**: the concat membership
+    formula is `∃x ∃y. (x=unit ∧ mem y L) ∧ w=op x y`, which must be reassociated
+    into the one-point shape `∃x. x=unit ∧ (∃y. …)` before the rule fires, and
+    then `op unit y = y` (the monoid `left_id`) applied under the surviving `∃y`.
+    A small ∃/∧-normalizer (the `logic::exists_cong` body-rewriter is the seed)
+    is the next increment; once it lands, `ε·L = L`, `L·ε = L`, and `rel`'s
+    identity/assoc laws all fall out.
+  - **`concat` over `union` distribution** (`L·(M∪N) = L·M ∪ L·N` and the
+    right form): the membership identity is a propositional tautology over the
+    unfolded concat existentials, blocked on the same ∃-pushing.
+  - **The full star unfolding** `L* = ε ∪ L·L*` and the **least-fixpoint
+    half** (`L* ⊆ S` for any `Closed L S`): `star_contains_epsilon` gives the
+    `ε ⊆ L*` part of the closure direction; the concat-closure `L·L* ⊆ L*`
+    needs the one-point rule, and `L* ⊆ ε ∪ L·L*` is the genuine induction over
+    the impredicative star.
+  - **A regex datatype** (`empty | eps | lit a | alt | seq | star`) with a
+    denotation `⟦·⟧` into `lang` (the `init/prop.rs` reified-object-logic
+    pattern): not built — deferred until the concat/star laws above make the
+    denotation's homomorphism theorems provable.
+
+- **`covalence-hol` text theory** in `crates/covalence-hol/src/init/char.rs`
+  and `crates/covalence-hol/src/init/string.rs` (`char`/`string`/`bytes`).
+  The **element types and `nil`-side facts** are proved and genuine
+  (hypothesis- and oracle-free):
+  - `char := { c : nat | c < 0xD800 ∨ (0xDFFF < c ∧ c < 0x110000) }` — Unicode
+    **scalar values** (surrogates excluded; matches Rust `char`). The codepoint
+    round-trips `code_mk` (conditional on the scalar-value premise — decided per
+    literal by `reduce` for the `nat.lt` atoms + `prop_eq` for the `∧`/`∨`;
+    **rejects surrogates and out-of-range**) and `mk_code` (the unconditional
+    wrapper-side round-trip).
+  - `string := list char` / `bytes := list u8` — the newtype `abs`/`rep`
+    seam, the empty-sequence builders/facts (`bytes_empty`/`string_empty`,
+    `*_rep_empty`, `*_head_empty`).
+
+  Still missing — **all blocked on the in-flight `list` recursion work**
+  (the `cons`-side computations / list recursion theorem in the list-theory
+  entry above); do NOT build until `init::list` exposes the `cons`-side
+  surface:
+  - **Sequence `length`** — `bytes.len`/`string.len` reduce to `list.length`
+    through the seam; blocked on `list.length`'s `cons` clause (which is
+    blocked on the list recursion theorem).
+  - **`cat` / `at` / `index` / `slice` / `consNat`** for `bytes` and the
+    analogues for `string` — each bridges to the corresponding `list` op,
+    blocked on the same `cons`-side list computations. (`defs/blob.rs`'s
+    `bytesCat`/`bytesLen`/`bytesSlice` already carry definitional bodies over
+    `list.cat`/`list.length`/`take`∘`skip`; their open-form *equational
+    lemmas* still wait on the list recursors. `bytesConsNat`/`bytesAt` are
+    additionally declaration-only pending a `nat ↔ u8` conversion — see the
+    "Declaration-only catalogue ops" section.)
+  - **Cons-side string/bytes induction & extensionality** — ride directly on
+    list induction/extensionality once those land.
+  - **Literal coherence for non-empty `Blob`s** — a `Blob` literal of length
+    `n>0` denotes `cons b₀ (cons b₁ … (nil u8))`; proving that equality
+    needs the `cons`-side `list.index`/`length` clauses. The element-level
+    coherence (`Blob : bytes`, `u8_lit : u8`, ASCII `char.mk k`) is done.
+  - **UTF-8 and UTF-16 codecs** — transcoding pairs (`string ↔ bytes` via UTF-8;
+    `string ↔ list u16` via UTF-16, where the surrogate *pairs* encode the
+    astral codepoints `char` now excludes as scalars). Axiomatizing both
+    encodings is interesting future work — wanted once the `bytes`/`string`
+    sequence ops land (needs the in-flight `list` recursion first).
+  - **Bitvector ops on `u8`/`bytes`** (the eventual full bitvector support):
+    `u8`/`uN` are `bits`-subtypes (`defs/bits.rs`) and `defs/nat.rs` already
+    has `natShl/Shr/BitAnd/BitOr/BitXor` that reduce on literals — the future
+    bitvector layer would expose width-respecting `and/or/xor/shl/shr/not`,
+    `add`/`mul` mod `2^N`, and `nat ↔ uN`/`bytes ↔ uN` (LE/BE) conversions on
+    these types. Not started.
+
+
+- **`covalence-hol` reified object logic (S-expr → propositional logic)** in
+  `crates/covalence-hol/src/init/sexpr.rs` + `crates/covalence-hol/src/init/prop.rs`
+  (the first internal object logic, `docs/metatheory.md` §8). Both datatypes use
+  a **Church / impredicative encoding** over a fresh result type `'r` (not the
+  `init/inductive/` carve-a-subtype engine), which keeps everything rank-1 and
+  TCB-free. **Complete and genuine** (all theorems hypothesis- and oracle-free):
+  - `sexpr.rs` — `SExpr := atom bytes | snil | scons` with constructors, the
+    recursor `rec`, and its three per-constructor equations (`rec_atom` /
+    `rec_snil` / `rec_scons`, proved by β). End-to-end length-fold test passes.
+  - `prop.rs` — `PropForm` (`var nat | ¬ | ∧ | ∨ | ⟹`), the denotation
+    `⟦·⟧ : PropForm → (nat→bool) → bool`, the impredicative Hilbert-system
+    `Derivable_Prop A := ∀d. Closed d ⟹ d A` (10 axiom schemas + MP), the
+    LCF-style derivation constructors `derive_axiom` / `derive_mp`, and the
+    **soundness theorem** `⊢ ∀v. Derivable_Prop A ⟹ ⟦A⟧ v` (proved by
+    instantiating `d := λA. ⟦A⟧ v` and discharging each closure clause via
+    `prove_taut` = β-normalise + complete Shannon decision `prop_eq`).
+  - Not yet here:
+    - **A genuine `SExpr` structural induction principle.** `sexpr::induct_note`
+      is a doc placeholder: the bare Church encoding admits junk inhabitants, so
+      `(∀b. P(atom b)) ⟹ P snil ⟹ (∀h t. P h ⟹ P t ⟹ P(scons h t)) ⟹ ∀s. P s`
+      needs a `Wf` well-formedness predicate carving the well-founded encodings
+      (the standard "reducibility" side condition). Soundness does **not** need
+      it — `Derivable_Prop` is itself impredicative — so it was deferred. The
+      recursor universal property / `Wf`-restricted induction is the next step
+      if a downstream proof needs to induct over arbitrary `SExpr`s.
+    - **`ToProp : HOLTm ⇀ PropForm`** (metatheory §8 step 4, the first *language
+      morphism* translating a HOL propositional fragment into the object logic
+      with `⟦ToProp t⟧ = t`) is not built.
+    - **Propositional variables are `nat` indices, not `SExpr` atoms.** The
+      `SExpr` carrier and `PropForm` are independent today; wiring `var` to carry
+      an `SExpr` atom (so formulas are literally S-expressions) is a later
+      unification, deliberately skipped for simplicity.
+

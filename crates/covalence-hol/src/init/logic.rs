@@ -99,7 +99,9 @@ crate::cov_theory! {
         ffi-tactic "tauto" = crate::init::logic::Tauto;
         "truth"        => pub fn truth;
         "and.comm"     => pub fn and_comm;
+        "and.comm.mp"  => pub fn and_comm_mp;
         "or.comm"      => pub fn or_comm;
+        "or.comm.mp"   => pub fn or_comm_mp;
         "exists.intro" => pub fn exists_intro_thm;
         "iff.refl"     => pub fn iff_refl;
         "iff.intro"    => pub fn iff_intro;
@@ -108,7 +110,10 @@ crate::cov_theory! {
     }
 }
 
-pub use cov::{and_comm, exists_intro_thm, iff_intro, iff_mp, iff_mpr, iff_refl, or_comm, truth};
+pub use cov::{
+    and_comm, and_comm_mp, exists_intro_thm, iff_intro, iff_mp, iff_mpr, iff_refl, or_comm,
+    or_comm_mp, truth,
+};
 
 // ============================================================================
 // Conjunction
@@ -1152,35 +1157,58 @@ mod tests {
     }
 
     #[test]
-    fn and_comm_is_an_axiom_free_implication() {
+    fn and_comm_is_an_axiom_free_equation() {
         let thm = and_comm();
         assert!(thm.hyps().is_empty(), "and_comm must be axiom-free");
         assert!(thm.has_no_obs(), "and_comm must be oracle-free");
         let p = Term::free("p", Type::bool());
         let q = Term::free("q", Type::bool());
+        // ⊢ (p ∧ q) = (q ∧ p)
         let expected = p
+            .clone()
+            .and(q.clone())
+            .unwrap()
+            .equals(q.clone().and(p.clone()).unwrap())
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
+
+        // `.mp` is the implication direction, derived from the equation.
+        let mp = and_comm_mp();
+        assert!(mp.hyps().is_empty(), "and_comm_mp must be axiom-free");
+        let mp_expected = p
             .clone()
             .and(q.clone())
             .unwrap()
             .imp(q.and(p).unwrap())
             .unwrap();
-        assert_eq!(thm.concl(), &expected);
+        assert_eq!(mp.concl(), &mp_expected);
     }
 
     #[test]
-    fn or_comm_is_an_axiom_free_implication() {
+    fn or_comm_is_an_axiom_free_equation() {
         let thm = or_comm();
         assert!(thm.hyps().is_empty(), "or_comm must be axiom-free");
         assert!(thm.has_no_obs(), "or_comm must be oracle-free");
         let p = Term::free("p", Type::bool());
         let q = Term::free("q", Type::bool());
+        // ⊢ (p ∨ q) = (q ∨ p)
         let expected = p
+            .clone()
+            .or(q.clone())
+            .unwrap()
+            .equals(q.clone().or(p.clone()).unwrap())
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
+
+        let mp = or_comm_mp();
+        assert!(mp.hyps().is_empty(), "or_comm_mp must be axiom-free");
+        let mp_expected = p
             .clone()
             .or(q.clone())
             .unwrap()
             .imp(q.or(p).unwrap())
             .unwrap();
-        assert_eq!(thm.concl(), &expected);
+        assert_eq!(mp.concl(), &mp_expected);
     }
 
     fn b() -> Type {

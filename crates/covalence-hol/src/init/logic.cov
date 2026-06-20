@@ -16,23 +16,48 @@
   (#concl true)
   (#proof (eq-mp (reduce-prim (= true true)) (refl true))))
 
-;; ⊢ (p ∧ q) ⟹ (q ∧ p). p, q inferred : bool.
+;; ⊢ (p ∧ q) = (q ∧ p). Commutativity of `∧` as an EQUATION — the form the
+;; AC / ring rewriters consume. `=` at bool IS the biconditional, so prove it
+;; by antisymmetry (`deduct-antisym`) of the two `swap` implications: each
+;; direction reorders the conjuncts. p, q inferred : bool.
 (#thm and.comm
-  (#concl (==> (and p q) (and q p)))
+  (#concl (= (and p q) (and q p)))
   (#proof
-    (imp-intro (and p q)
+    (deduct-antisym
+      (and-intro
+        (and-elim-r (assume (and q p)))
+        (and-elim-l (assume (and q p))))
       (and-intro
         (and-elim-r (assume (and p q)))
         (and-elim-l (assume (and p q)))))))
 
-;; ⊢ (p ∨ q) ⟹ (q ∨ p). Case-split; each branch re-injects on the far side.
-(#thm or.comm
-  (#concl (==> (or p q) (or q p)))
+;; ⊢ (p ∧ q) ⟹ (q ∧ p). The implication direction of `and.comm`, derived from
+;; the equation by `eq-mp` after assuming the antecedent.
+(#thm and.comm.mp
+  (#concl (==> (and p q) (and q p)))
   (#proof
-    (imp-intro (or p q)
+    (imp-intro (and p q)
+      (eq-mp (and.comm) (assume (and p q))))))
+
+;; ⊢ (p ∨ q) = (q ∨ p). Commutativity of `∨` as an EQUATION. Again by
+;; antisymmetry: each direction case-splits and re-injects on the far side.
+(#thm or.comm
+  (#concl (= (or p q) (or q p)))
+  (#proof
+    (deduct-antisym
+      (or-elim (assume (or q p))
+        (imp-intro q (or-intro-r p (assume q)))
+        (imp-intro p (or-intro-l q (assume p))))
       (or-elim (assume (or p q))
         (imp-intro p (or-intro-r q (assume p)))
         (imp-intro q (or-intro-l p (assume q)))))))
+
+;; ⊢ (p ∨ q) ⟹ (q ∨ p). The implication direction of `or.comm`.
+(#thm or.comm.mp
+  (#concl (==> (or p q) (or q p)))
+  (#proof
+    (imp-intro (or p q)
+      (eq-mp (or.comm) (assume (or p q))))))
 
 ;; ∃-introduction, reified as a higher-order theorem:
 ;;   ⊢ ∀(P : 'a → bool). ∀(w : 'a). (P w) ⟹ (∃x. P x)
@@ -112,6 +137,6 @@
 
 ;; The public interface: what `cov::env()` exposes and what the Rust
 ;; accessors read. (`tauto` is the host tactic registered above.)
-(#export truth and.comm or.comm exists.intro
+(#export truth and.comm and.comm.mp or.comm or.comm.mp exists.intro
          iff.refl iff.intro iff.mp iff.mpr
          tauto)

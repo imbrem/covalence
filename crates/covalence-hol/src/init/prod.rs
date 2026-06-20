@@ -67,10 +67,14 @@ pub fn prod_env() -> crate::script::Env {
     let mut e = crate::script::Env::empty();
 
     // -- operators (needed so the type-inferencer can type `pair a b` etc.) --
+    //
+    // Registered as `ConstDef::Poly`: each use site instantiates the free
+    // type variables (`'a`/`'b`) with fresh metavariables, so `pair`/`fst`/
+    // `snd` can appear at several type instances within one term.
     use crate::script::ConstDef;
-    e.define_const("pair", ConstDef::Op(pair(alpha.clone(), beta.clone())));
-    e.define_const("fst", ConstDef::Op(fst(alpha.clone(), beta.clone())));
-    e.define_const("snd", ConstDef::Op(snd(alpha.clone(), beta.clone())));
+    e.define_const("pair", ConstDef::Poly(pair(alpha.clone(), beta.clone())));
+    e.define_const("fst", ConstDef::Poly(fst(alpha.clone(), beta.clone())));
+    e.define_const("snd", ConstDef::Poly(snd(alpha.clone(), beta.clone())));
 
     // -- seam givens (Rust-proved, not expressible in the language) --
 

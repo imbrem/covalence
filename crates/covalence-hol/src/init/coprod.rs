@@ -53,12 +53,16 @@ pub fn coprod_env() -> crate::script::Env {
     let mut e = crate::script::Env::empty();
 
     // -- operators (needed so the type-inferencer can build coprod-typed terms) --
+    //
+    // Registered as `ConstDef::Poly`: each use site instantiates the free
+    // type variables with fresh metavariables, so `inl`/`inr`/`coprod_case`
+    // can appear at several type instances within one term.
     use crate::script::ConstDef;
-    e.define_const("inl", ConstDef::Op(inl(alpha.clone(), beta.clone())));
-    e.define_const("inr", ConstDef::Op(inr(alpha.clone(), beta.clone())));
+    e.define_const("inl", ConstDef::Poly(inl(alpha.clone(), beta.clone())));
+    e.define_const("inr", ConstDef::Poly(inr(alpha.clone(), beta.clone())));
     e.define_const(
         "coprod_case",
-        ConstDef::Op(coprod_case(alpha.clone(), beta.clone(), gamma.clone())),
+        ConstDef::Poly(coprod_case(alpha.clone(), beta.clone(), gamma.clone())),
     );
 
     // -- seam givens (Rust-proved, used as axioms by coprod.cov) --

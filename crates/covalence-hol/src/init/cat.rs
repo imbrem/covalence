@@ -178,9 +178,12 @@ pub fn cat_env() -> Env {
     let b = Type::tfree("b");
     let c = Type::tfree("c");
     let mut e = Env::empty();
-    // Operators.
-    e.define_const("compose", ConstDef::Op(compose(a.clone(), b.clone(), c.clone())));
-    e.define_const("id", ConstDef::Op(id(a.clone())));
+    // Operators, registered as `ConstDef::Poly`: each use site instantiates
+    // the free type variables with fresh metavariables, so `compose`/`id`
+    // can appear at several type instances within one term (e.g. `id` at
+    // `'a` vs `'b` in `id_left`/`id_right`).
+    e.define_const("compose", ConstDef::Poly(compose(a.clone(), b.clone(), c.clone())));
+    e.define_const("id", ConstDef::Poly(id(a.clone())));
     // Rust-proved givens (omitted from cat.cov due to TFree clash in id).
     // id_left: ∀(f:'a→'b). compose (id_b) f = f
     // id_right: ∀(f:'a→'b). compose f id_a = f

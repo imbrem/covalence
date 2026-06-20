@@ -18,8 +18,11 @@ type R<T> = Result<T, ScriptError>;
 // ============================================================================
 
 /// Parse a type: `bool`, `nat`, `'a` (type variable), `(fun A B …)` /
-/// `(-> A B …)` (curried, right-associative), `(tfree NAME)`.
-pub fn parse_type(s: &SExpr) -> R<Type> {
+/// `(-> A B …)` (curried, right-associative), `(tfree NAME)`, a built-in
+/// `TypeSpec` constructor (`rel`/`set`/`option`/`list`/`coprod`/`result`),
+/// or a **user-defined** type constructor introduced by a `#newtype` /
+/// `#subtype` / `#quot` directive (resolved against `env`).
+pub fn parse_type(s: &SExpr, env: &Env) -> R<Type> {
     match s {
         SExp::Atom(Atom::Symbol(name)) => {
             let n = name.as_str();
@@ -42,8 +45,13 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                 "u16" => Ok(defs::u16_ty()),
                 "u32" => Ok(defs::u32_ty()),
                 "u64" => Ok(defs::u64_ty()),
+                "unit" => Ok(Type::unit()),
                 _ if n.starts_with('\'') => Ok(Type::tfree(&n[1..])),
-                _ => Err(ScriptError::Syntax(format!("unknown type: {n}"))),
+                // A user-defined 0-ary type constructor.
+                _ => match env.lookup_type_spec(n) {
+                    Some(spec) => Ok(applied_user_spec(spec)),
+                    None => Err(ScriptError::Syntax(format!("unknown type: {n}"))),
+                },
             }
         }
         SExp::Atom(_) => Err(ScriptError::Syntax("type: unexpected string atom".into())),
@@ -56,7 +64,7 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                 if ch.len() < 3 {
                     return Err(ScriptError::Syntax("fun: expected (fun A B …)".into()));
                 }
-                let mut tys = ch[1..].iter().map(parse_type).collect::<R<Vec<_>>>()?;
+                let mut tys = ch[1..].iter().map(|c| parse_type(c, env)).collect::<R<Vec<_>>>()?;
                 let mut acc = tys.pop().unwrap();
                 while let Some(t) = tys.pop() {
                     acc = Type::fun(t, acc);
@@ -73,14 +81,14 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                 }
                 Ok(Type::spec(
                     defs::rel_spec(),
-                    vec![parse_type(&ch[1])?, parse_type(&ch[2])?],
+                    vec![parse_type(&ch[1], env)?, parse_type(&ch[2], env)?],
                 ))
             }
             "set" => {
                 if ch.len() != 2 {
                     return Err(ScriptError::Syntax("set: expected (set A)".into()));
                 }
-                Ok(Type::spec(defs::set_spec(), vec![parse_type(&ch[1])?]))
+                Ok(Type::spec(defs::set_spec(), vec![parse_type(&ch[1], env)?]))
             }
             "option" => {
                 if ch.len() != 2 {
@@ -88,13 +96,13 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                         "option: expected (option A)".into(),
                     ));
                 }
-                Ok(Type::spec(defs::option_spec(), vec![parse_type(&ch[1])?]))
+                Ok(Type::spec(defs::option_spec(), vec![parse_type(&ch[1], env)?]))
             }
             "list" => {
                 if ch.len() != 2 {
                     return Err(ScriptError::Syntax("list: expected (list A)".into()));
                 }
-                Ok(Type::spec(defs::list_spec(), vec![parse_type(&ch[1])?]))
+                Ok(Type::spec(defs::list_spec(), vec![parse_type(&ch[1], env)?]))
             }
             "coprod" => {
                 if ch.len() != 3 {
@@ -104,7 +112,7 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                 }
                 Ok(Type::spec(
                     defs::coprod_spec(),
-                    vec![parse_type(&ch[1])?, parse_type(&ch[2])?],
+                    vec![parse_type(&ch[1], env)?, parse_type(&ch[2], env)?],
                 ))
             }
             "result" => {
@@ -115,12 +123,39 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                 }
                 Ok(Type::spec(
                     defs::result_spec(),
-                    vec![parse_type(&ch[1])?, parse_type(&ch[2])?],
+                    vec![parse_type(&ch[1], env)?, parse_type(&ch[2], env)?],
                 ))
             }
-            other => Err(ScriptError::Syntax(format!("unknown type head: {other}"))),
+            // A user-defined type constructor applied to type arguments
+            // `(NAME ty…)` (`#newtype`/`#subtype`/`#quot`-introduced).
+            other => match env.lookup_type_spec(other) {
+                Some(spec) => {
+                    let args = ch[1..]
+                        .iter()
+                        .map(|c| parse_type(c, env))
+                        .collect::<R<Vec<_>>>()?;
+                    Ok(Type::spec(spec, args))
+                }
+                None => Err(ScriptError::Syntax(format!("unknown type head: {other}"))),
+            },
         },
     }
+}
+
+/// Apply a freshly-resolved user `TypeSpec` at the type variables that occur
+/// in its carrier (alphabetical `free_tvars` order, the kernel convention),
+/// so a bare `NAME` reference yields the same `Type::spec(spec, ['a, 'b…])`
+/// leaf the directive stored — mirroring `defs::cov::apply_spec`.
+pub(crate) fn applied_user_spec(spec: covalence_core::defs::TypeSpec) -> Type {
+    let args: Vec<Type> = match spec.ty() {
+        Some(carrier) => carrier
+            .free_tvars()
+            .iter()
+            .map(|v| Type::tfree(v.clone()))
+            .collect(),
+        None => Vec::new(),
+    };
+    Type::spec(spec, args)
 }
 
 // ============================================================================

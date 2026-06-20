@@ -201,25 +201,13 @@ fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
 }
 
-/// Build the env for the `cond` proof language module.
-///
-/// `cond` is polymorphic (`bool → 'a → 'a → 'a`) so we register it at
-/// the type variable `'a` so the `.cov` elaborator can use `(cond true x y)`
-/// directly and unify `'a` with the argument types.
-pub fn cond_env() -> crate::script::Env {
-    let mut e = crate::script::Env::empty();
-    e.define_const(
-        "cond",
-        crate::script::ConstDef::Op(cond(Type::tfree("a"))),
-    );
-    e
-}
-
 crate::cov_theory! {
-    /// cond clauses ported to `cond.cov`, over `core` + the `cond` env.
+    /// cond clauses ported to `cond.cov`, over `core`. `cond` itself is now
+    /// defined **inline** in `cond.cov` via `#def` — the old Rust `cond_env`
+    /// (`condprim`) `*prim` given is gone, a small proof-of-concept of the
+    /// `#def`-eliminates-`*_env` migration.
     pub mod cov from "cond.cov" {
         import "core" = crate::script::Env::core();
-        import "condprim" = crate::init::cond::cond_env();
         "cond.true"  => pub fn cond_true_cov;
         "cond.false" => pub fn cond_false_cov;
     }
@@ -234,36 +222,51 @@ mod cov_tests {
         Type::tfree("a")
     }
 
-    /// `⊢ ∀x y : 'a. cond T x y = x` — the ∀-closed form matching `cond.cov`.
-    fn cond_true_forall() -> covalence_core::Thm {
-        let a = alpha();
-        let x = Term::free("x", a.clone());
-        let y = Term::free("y", a.clone());
-        super::cond_true(&a, &x, &y)
-            .unwrap()
-            .all_intro("y", a.clone())
-            .unwrap()
-            .all_intro("x", a.clone())
-            .unwrap()
+    /// The **inline** `cond` constant — the very `TermSpec` that `cond.cov`'s
+    /// `#def` introduced and `#export`ed (an opaque `SmolStr("cond")` spec, NOT
+    /// the catalogue's `bool.cond`). Pulled from the module's exported env so
+    /// the comparison below is genuine byte-identity (`==` on spec leaves is
+    /// pointer-based), proving the `.cov` clauses really are *about* the
+    /// inline-defined `cond`.
+    fn inline_cond(a: &Type) -> Term {
+        let c = cov::ENV
+            .lookup_const("cond")
+            .expect("cond.cov exports its inline `cond`");
+        let constant = match c {
+            crate::script::ConstDef::Op(t) | crate::script::ConstDef::Poly(t) => t,
+            crate::script::ConstDef::Eq => unreachable!(),
+        };
+        let (spec, _) = constant.as_spec().unwrap();
+        Term::term_spec(spec.clone(), vec![a.clone()])
     }
 
-    /// `⊢ ∀x y : 'a. cond F x y = y` — the ∀-closed form matching `cond.cov`.
-    fn cond_false_forall() -> covalence_core::Thm {
-        let a = alpha();
+    /// Build the term `∀x y. cond_op b x y = (x|y)`.
+    fn lhs_eq_rhs(cond_op: &Term, a: &Type, then_branch: bool) -> Term {
+        use covalence_core::subst::close;
         let x = Term::free("x", a.clone());
         let y = Term::free("y", a.clone());
-        super::cond_false(&a, &x, &y)
-            .unwrap()
-            .all_intro("y", a.clone())
-            .unwrap()
-            .all_intro("x", a.clone())
-            .unwrap()
+        let b = Term::bool_lit(then_branch);
+        let lhs = Term::app(Term::app(Term::app(cond_op.clone(), b), x.clone()), y.clone());
+        let rhs = if then_branch { x } else { y };
+        let body = Term::app(Term::app(Term::eq_op(a.clone()), lhs), rhs);
+        // close over y then x, wrapping each in ∀.
+        let inner = Term::abs(a.clone(), close(&body, "y"));
+        let inner = Term::app(covalence_core::defs::forall(a.clone()), inner);
+        let outer = Term::abs(a.clone(), close(&inner, "x"));
+        Term::app(covalence_core::defs::forall(a.clone()), outer)
     }
 
+    /// The `.cov`-proved clauses match the **inline-`cond`** statement exactly
+    /// (the proof-of-concept: `cond` is now a `.cov` `#def`, not a `*prim`).
     #[test]
-    fn cond_cov_matches_rust() {
-        assert_eq!(cov::cond_true_cov().concl(), cond_true_forall().concl());
-        assert_eq!(cov::cond_false_cov().concl(), cond_false_forall().concl());
+    fn cond_cov_matches_inline_def() {
+        let a = alpha();
+        let cond_op = inline_cond(&a);
+        assert_eq!(cov::cond_true_cov().concl(), &lhs_eq_rhs(&cond_op, &a, true));
+        assert_eq!(cov::cond_false_cov().concl(), &lhs_eq_rhs(&cond_op, &a, false));
+        // Both are genuine, hypothesis-free theorems.
+        assert!(cov::cond_true_cov().hyps().is_empty());
+        assert!(cov::cond_false_cov().hyps().is_empty());
     }
 }
 

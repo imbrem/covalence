@@ -66,7 +66,7 @@ impl<'a> CheckCtx<'a> {
 
     /// Parse a type argument.
     pub fn ty(&self, s: &SExpr) -> R<Type> {
-        parse_type(s)
+        parse_type(s, self.env)
     }
 
     /// Read a bare symbol argument (a variable / lemma name).

@@ -308,7 +308,7 @@ impl<'e> Elab<'e> {
         match head_sym(ch)? {
             "free" => {
                 arity(ch, 3, "free")?;
-                let ety = self.from_type(&parse_type(&ch[2])?)?;
+                let ety = self.from_type(&parse_type(&ch[2], self.env)?)?;
                 Ok((
                     ETerm::Free(sym(&ch[1], "free name")?.into(), ety.clone()),
                     ety,
@@ -316,7 +316,7 @@ impl<'e> Elab<'e> {
             }
             "const" => {
                 arity(ch, 3, "const")?;
-                let ty = parse_type(&ch[2])?;
+                let ty = parse_type(&ch[2], self.env)?;
                 let ety = self.from_type(&ty)?;
                 Ok((
                     ETerm::Lit(Term::const_(sym(&ch[1], "const name")?, ty)),
@@ -332,7 +332,7 @@ impl<'e> Elab<'e> {
             }
             "abs" => {
                 arity(ch, 3, "abs")?;
-                let dom = self.from_type(&parse_type(&ch[1])?)?;
+                let dom = self.from_type(&parse_type(&ch[1], self.env)?)?;
                 let (body, bty) = self.infer(&ch[2])?;
                 Ok((
                     ETerm::AbsRaw(dom.clone(), Box::new(body)),
@@ -362,26 +362,26 @@ impl<'e> Elab<'e> {
             // to name and unfold the quantifier definitions in proofs.
             "forall-op" => {
                 arity(ch, 2, "forall-op")?;
-                let op = defs::forall(parse_type(&ch[1])?);
+                let op = defs::forall(parse_type(&ch[1], self.env)?);
                 let ety = self.from_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
             "exists-op" => {
                 arity(ch, 2, "exists-op")?;
-                let op = defs::exists(parse_type(&ch[1])?);
+                let op = defs::exists(parse_type(&ch[1], self.env)?);
                 let ety = self.from_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
             "select-op" => {
                 arity(ch, 2, "select-op")?;
-                let op = Term::select_op(parse_type(&ch[1])?);
+                let op = Term::select_op(parse_type(&ch[1], self.env)?);
                 let ety = self.from_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
             // `natRec` at a result type: `'a → (nat → 'a → 'a) → nat → 'a`.
             "natrec-op" => {
                 arity(ch, 2, "natrec-op")?;
-                let op = defs::nat_rec(parse_type(&ch[1])?);
+                let op = defs::nat_rec(parse_type(&ch[1], self.env)?);
                 let ety = self.from_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
@@ -433,7 +433,7 @@ impl<'e> Elab<'e> {
 
     fn infer_binder(&mut self, ch: &[SExpr], kind: BinderKind) -> R<(ETerm, ETy)> {
         arity(ch, 3, "binder")?;
-        let (name, ann) = parse_binder_spec(&ch[1])?;
+        let (name, ann) = parse_binder_spec(&ch[1], self.env)?;
         let dom = match ann {
             Some(t) => self.from_type(&t)?,
             None => self.fresh(),
@@ -531,14 +531,14 @@ fn ety_inst(ty: &Type, map: &HashMap<String, ETy>) -> ETy {
 
 /// Parse a binder/`fix` variable specification: `(name type)`,
 /// `(name)`, or a bare `name` (type inferred).
-pub fn parse_binder_spec(s: &SExpr) -> R<(String, Option<Type>)> {
+pub fn parse_binder_spec(s: &SExpr, env: &Env) -> R<(String, Option<Type>)> {
     match s {
         SExp::Atom(_) => Ok((sym(s, "variable")?.to_string(), None)),
         SExp::List(ch) => match ch.len() {
             1 => Ok((sym(&ch[0], "variable")?.to_string(), None)),
             2 => Ok((
                 sym(&ch[0], "variable")?.to_string(),
-                Some(parse_type(&ch[1])?),
+                Some(parse_type(&ch[1], env)?),
             )),
             _ => Err(ScriptError::Syntax(
                 "variable: expected name, (name), or (name type)".into(),

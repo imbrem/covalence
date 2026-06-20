@@ -323,6 +323,32 @@ pub async fn run_async(
                     thms.push(NamedThm { name, thm });
                 }
             }
+            // The four **definition directives** — inline term/type definitions
+            // (`docs/surface-syntax.md §1.4`), the script-layer counterpart of
+            // `covalence-core`'s `defs::cov` parser. Each elaborates its body
+            // against the running env and binds the result, replacing the old
+            // Rust `*_env()` / `*prim` givens pattern (a constant built in Rust
+            // only to be referenced from `.cov`).
+            Stmt::Def(sexpr) => def_directive(&sexpr, &mut internal)?,
+            // Type definitions are inherently part of the public interface
+            // (a downstream module that references the type by name needs to
+            // see it), so they register into BOTH the running env and the
+            // exports — unlike `#def`/`#thm`, which need an explicit `#export`.
+            Stmt::Newtype(sexpr) => {
+                let (name, spec) = newtype_directive(&sexpr, &internal)?;
+                internal.define_type(name.clone(), spec.clone());
+                exports.define_type(name, spec);
+            }
+            Stmt::Subtype(sexpr) => {
+                let (name, spec) = subtype_directive(&sexpr, &internal)?;
+                internal.define_type(name.clone(), spec.clone());
+                exports.define_type(name, spec);
+            }
+            Stmt::Quot(sexpr) => {
+                let (name, spec) = quot_directive(&sexpr, &internal)?;
+                internal.define_type(name.clone(), spec.clone());
+                exports.define_type(name, spec);
+            }
             // `(#spawn NAME …)` — defer the proof as a cooperative async task
             // bound to NAME in the env. Execution moves straight on; a later
             // proof's `(NAME)` (by name) (or the force) simply **awaits** it,
@@ -432,6 +458,18 @@ enum Stmt {
     /// it (through the active logic) into its constructors + recursor +
     /// induction principle. See [`inductive`].
     Inductive(SExpr),
+    /// `(#def NAME TERM)` — define a **term constant** `NAME ≡ TERM` inline
+    /// (a `defs/` `TermSpec`), bound into the env so later proofs can use it
+    /// and `unfold`/`delta` it. The TERM is the full directive's `SExpr`,
+    /// elaborated against the running env at execution. See [`def_directive`].
+    Def(SExpr),
+    /// `(#newtype NAME TY)` — define a type `NAME := TY` (the carrier copied,
+    /// no predicate), bound as a user type constructor.
+    Newtype(SExpr),
+    /// `(#subtype NAME TY PRED)` — define `NAME := { x : TY | PRED x }`.
+    Subtype(SExpr),
+    /// `(#quot NAME TY REL)` — define the quotient `NAME := TY / REL`.
+    Quot(SExpr),
     /// `(#export NAME …)` — the public interface.
     Export(Vec<String>),
 }
@@ -475,6 +513,10 @@ fn parse_stmt(e: &SExpr) -> Result<Stmt, ScriptError> {
         "#thm" => Stmt::Thm(e.clone()),
         "#spawn" => Stmt::Spawn(e.clone()),
         "#inductive" => Stmt::Inductive(e.clone()),
+        "#def" => Stmt::Def(e.clone()),
+        "#newtype" => Stmt::Newtype(e.clone()),
+        "#subtype" => Stmt::Subtype(e.clone()),
+        "#quot" => Stmt::Quot(e.clone()),
         "#export" => {
             if ch.len() < 2 {
                 return Err(ScriptError::Syntax(
@@ -624,7 +666,7 @@ async fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
         && f.first().and_then(|x| x.as_symbol()) == Some("#fix")
     {
         for v in &f[1..] {
-            fix.push(infer::parse_binder_spec(v)?);
+            fix.push(infer::parse_binder_spec(v, env)?);
         }
         idx += 1;
     }
@@ -649,6 +691,92 @@ async fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
         });
     }
     Ok(NamedThm { name, thm })
+}
+
+// ============================================================================
+// Definition directives — `#def` / `#newtype` / `#subtype` / `#quot`
+//
+// The script-layer counterpart of `covalence_core::defs::cov`'s four-directive
+// parser. They elaborate their body through the **script** elaborator
+// (`syntax`/`infer`), so a `.cov` author writes definitions in the same richer
+// surface syntax used for proofs (implicit types, named binders, catalogue
+// references), and bind the result into the running `Env` for later directives.
+// ============================================================================
+
+use covalence_core::Term;
+use covalence_core::defs::{TermSpec, TypeSpec};
+use smol_str::SmolStr;
+
+/// Elaborate a single closed term from a directive body against `env`.
+fn elaborate_def_term(s: &SExpr, env: &Env) -> Result<Term, ScriptError> {
+    let mut scope = Scope::new();
+    syntax::parse_term(s, &mut scope, env)
+}
+
+/// `(#def NAME TERM)` — define a term constant `NAME ≡ TERM` as a `defs/`
+/// [`TermSpec`] (an opaque-`SmolStr`-symbol defined constant), then bind it
+/// into `env`. Because it is a genuine `TermSpec`, the constant carries a
+/// δ-unfolding equation — so a later proof can `(unfold-at-* NAME …)` /
+/// `(delta NAME)` it exactly like a hand-written `defs::*` constant. A body
+/// with free type variables is registered **polymorphically** (`Poly`), so the
+/// constant can appear at several type instances in one proof; a monomorphic
+/// body is an `Op`.
+fn def_directive(e: &SExpr, env: &mut Env) -> Result<(), ScriptError> {
+    let ch = syntax::list(e, "#def")?;
+    syntax::arity(ch, 3, "#def")?;
+    let name = syntax::sym(&ch[1], "#def name")?.to_string();
+    let body = elaborate_def_term(&ch[2], env)?;
+    let ty = body.type_of()?;
+    // Build the defined constant. Its free type variables (read off the
+    // body's type) are the schematic parameters: instantiate the spec at
+    // them so the stored constant is `Term::term_spec(spec, ['a, 'b…])`.
+    let spec = TermSpec::new(SmolStr::from(name.as_str()), Some(ty.clone()), Some(body));
+    let tvars = ty.free_tvars();
+    let args: Vec<Type> = tvars.iter().map(|v| Type::tfree(v.clone())).collect();
+    let constant = Term::term_spec(spec, args);
+    let cdef = if tvars.is_empty() {
+        ConstDef::Op(constant)
+    } else {
+        ConstDef::Poly(constant)
+    };
+    env.define_const(name, cdef);
+    Ok(())
+}
+
+/// `(#newtype NAME TY)` — define an opaque copy of `TY` (`TypeSpec::newtype`),
+/// returning the `(name, spec)` for the caller to bind.
+fn newtype_directive(e: &SExpr, env: &Env) -> Result<(String, TypeSpec), ScriptError> {
+    let ch = syntax::list(e, "#newtype")?;
+    syntax::arity(ch, 3, "#newtype")?;
+    let name = syntax::sym(&ch[1], "#newtype name")?.to_string();
+    let base = parse_type(&ch[2], env)?;
+    let spec = TypeSpec::newtype(SmolStr::from(name.as_str()), base);
+    Ok((name, spec))
+}
+
+/// `(#subtype NAME TY PRED)` — define `NAME := { x : TY | PRED x }`
+/// (`TypeSpec::subtype`), returning the `(name, spec)`.
+fn subtype_directive(e: &SExpr, env: &Env) -> Result<(String, TypeSpec), ScriptError> {
+    let ch = syntax::list(e, "#subtype")?;
+    syntax::arity(ch, 4, "#subtype")?;
+    let name = syntax::sym(&ch[1], "#subtype name")?.to_string();
+    let carrier = parse_type(&ch[2], env)?;
+    let pred = elaborate_def_term(&ch[3], env)?;
+    let spec = TypeSpec::subtype(SmolStr::from(name.as_str()), carrier, pred);
+    Ok((name, spec))
+}
+
+/// `(#quot NAME TY REL)` — define the quotient `NAME := TY / REL`
+/// (`TypeSpec::quot`; the carrier is the powerset `TY → bool`), returning the
+/// `(name, spec)`.
+fn quot_directive(e: &SExpr, env: &Env) -> Result<(String, TypeSpec), ScriptError> {
+    let ch = syntax::list(e, "#quot")?;
+    syntax::arity(ch, 4, "#quot")?;
+    let name = syntax::sym(&ch[1], "#quot name")?.to_string();
+    let base = parse_type(&ch[2], env)?;
+    let rel = elaborate_def_term(&ch[3], env)?;
+    let spec = TypeSpec::quot(SmolStr::from(name.as_str()), base, rel);
+    Ok((name, spec))
 }
 
 #[cfg(test)]
@@ -1651,5 +1779,176 @@ mod tests {
             "expected ConclMismatch, got {:?}",
             res.err()
         );
+    }
+
+    // ====================================================================
+    // Definition directives — `#def` / `#newtype` / `#subtype` / `#quot`
+    // ====================================================================
+
+    /// Run a script over `core` and return its (exported) environment.
+    fn run_env(src: &str) -> Env {
+        run(src, |name| (name == "core").then(Env::core), |_| None)
+            .expect("script should replay")
+            .resolve_blocking()
+            .expect("force")
+            .env()
+    }
+
+    /// Pull the defining body (`TermSpec::tm`) out of a `#def`-introduced
+    /// constant exported under `name`.
+    fn def_body(env: &Env, name: &str) -> Term {
+        let c = env.lookup_const(name).expect("const exported");
+        let constant = match &c {
+            ConstDef::Op(t) | ConstDef::Poly(t) => t.clone(),
+            ConstDef::Eq => panic!("not a defined const"),
+        };
+        let (spec, _) = constant.as_spec().expect("a TermSpec leaf");
+        spec.tm().expect("defined body").clone()
+    }
+
+    /// `#def` binds a usable term constant: a later `#thm` can apply it and
+    /// `unfold`/`delta` it (it is a genuine `defs/` `TermSpec`).
+    #[test]
+    fn def_directive_defines_a_usable_constant() {
+        // `myand ≡ λp q. p ∧ q`; the `#def`'d constant is a genuine `TermSpec`,
+        // so `unfold-at-2` δ-unfolds + β-reduces it to its body `and T F`.
+        let theory = run(
+            r#"
+            (#import core)(#open core)
+            (#def myand (lam (p bool) (lam (q bool) (and p q))))
+            (#thm unfolds
+              (#concl (= (myand true false) (and true false)))
+              (#proof (unfold-at-2 myand true false)))
+            "#,
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        )
+        .expect("def + use replays");
+        assert_eq!(theory.thms.len(), 1);
+        assert!(theory.thms[0].thm.hyps().is_empty());
+    }
+
+    /// A polymorphic `#def` body is registered `Poly` — usable at two distinct
+    /// type instances in one proof.
+    #[test]
+    fn def_directive_polymorphic_constant() {
+        let env = run_env(
+            r#"
+            (#import core)(#open core)
+            (#def myid (lam (x 'a) x))
+            (#export myid)
+            "#,
+        );
+        let c = env.lookup_const("myid").expect("myid exported");
+        assert!(matches!(c, ConstDef::Poly(_)), "polymorphic def is Poly");
+    }
+
+    /// **Equivalence test (deliverable 3).** A `#def` in the covalence-hol
+    /// script layer and the same directive interpreted by the covalence-core
+    /// synchronous `.cov` system produce the **same** kernel body: both resolve
+    /// the connectives to the cached `defs::*` accessors, so the two bodies are
+    /// byte-identical (`==`, which bottoms out in pointer identity on the
+    /// catalogue spec leaves they reference).
+    #[test]
+    fn script_def_agrees_with_core_cov() {
+        use covalence_core::defs::cov;
+
+        // Script side: `#def myand (lam (p bool) (lam (q bool) (and p q)))`.
+        let env = run_env(
+            r#"
+            (#import core)(#open core)
+            (#def myand (lam (p bool) (lam (q bool) (and p q))))
+            (#export myand)
+            "#,
+        );
+        let script_body = def_body(&env, "myand");
+
+        // Core side: the same directive in the core `.cov` sublanguage
+        // (`#lam`, `bool.and`).
+        let core_env = cov::parse_core(
+            "(#def myand (#lam (p bool) (#lam (q bool) (bool.and p q))))",
+        )
+        .expect("core .cov parses");
+        let core_body = core_env.term("myand").expect("core myand").clone();
+
+        assert_eq!(
+            script_body, core_body,
+            "script `#def` and core `#def` must agree byte-for-byte"
+        );
+    }
+
+    /// `#newtype` binds a user type constructor that later directives /
+    /// proofs can name.
+    #[test]
+    fn newtype_directive_defines_a_type() {
+        let env = run_env(
+            r#"
+            (#import core)(#open core)
+            (#newtype mynat nat)
+            "#,
+        );
+        let spec = env.lookup_type_spec("mynat").expect("mynat defined");
+        assert_eq!(spec.symbol().label(), "mynat");
+        assert_eq!(spec.ty().unwrap(), &Type::nat());
+    }
+
+    /// `#subtype` over `core`-defined connectives, matching the core `.cov`
+    /// `#subtype` shape (the `unit` singleton `{ b : bool | b = T }`).
+    #[test]
+    fn subtype_directive_matches_core_carrier_and_pred() {
+        use covalence_core::defs::cov;
+
+        let env = run_env(
+            r#"
+            (#import core)(#open core)
+            (#subtype myunit bool (lam (b bool) (= b true)))
+            "#,
+        );
+        let script_spec = env.lookup_type_spec("myunit").expect("myunit defined");
+
+        let core_env = cov::parse_core(
+            "(#subtype myunit bool (#lam (b bool) (#eq b T)))",
+        )
+        .expect("core .cov parses");
+        let core_spec = core_env.type_spec("myunit").expect("core myunit").clone();
+
+        // Carrier + predicate agree (the symbol differs only by identity).
+        assert_eq!(script_spec.ty(), core_spec.ty());
+        assert_eq!(script_spec.tm(), core_spec.tm());
+    }
+
+    /// `#quot` builds a quotient type-spec end-to-end (carrier is the powerset
+    /// `nat → bool`).
+    #[test]
+    fn quot_directive_defines_a_quotient() {
+        let env = run_env(
+            r#"
+            (#import core)(#open core)
+            (#quot mynateq nat (lam (x nat) (lam (y nat) (= x y))))
+            "#,
+        );
+        let spec = env.lookup_type_spec("mynateq").expect("mynateq defined");
+        assert_eq!(spec.symbol().label(), "mynateq");
+        assert_eq!(spec.ty().unwrap(), &Type::fun(Type::nat(), Type::bool()));
+    }
+
+    /// A later directive / proof can *reference* a `#newtype`'d type by name:
+    /// `(mypair)` resolves to its `Type::spec` leaf, usable in a binder.
+    #[test]
+    fn defined_type_is_referenceable_downstream() {
+        let theory = run(
+            r#"
+            (#import core)(#open core)
+            (#newtype mybool bool)
+            (#def onmybool (lam (x mybool) x))
+            (#thm refl.mybool
+              (#concl (= onmybool onmybool))
+              (#proof (refl onmybool)))
+            "#,
+            |name| (name == "core").then(Env::core),
+            |_| None,
+        )
+        .expect("a #newtype'd type is usable in a later #def + #thm");
+        assert_eq!(theory.thms.len(), 1);
     }
 }

@@ -312,11 +312,22 @@ available everywhere a morphism reaches.
 
 ### 3.0.5 `#logic` — declaring the logic a model/proof lives in
 
-A **logic** (the bundled `Logic` object of `theories-models-and-logics.md §1.1`:
-a *language* — what can be stated — plus *rules* — what can be proved) becomes a
-first-class declarable artifact: a `(#logic …)` form / `.logic` file. This is
-*not* a re-reified shared syntax (that was the "evil" move, §1 of
-theories-models) — a `#logic` declares the whole bundled object.
+**A logic is *primarily a Rust trait*** (`theories-models-and-logics.md §1.1`:
+the bundled `Logic` object — a *language* plus *rules*). The trait is a **code**
+seam: its handlers embed real algorithms (unification, rewriting, induction,
+model-checking), which is not data. Two consequences:
+
+- **The metalogic is necessarily a native Rust impl** — HOL is the bootstrap
+  floor, there is no lower level to *declare* it in. (Later a *reified* object
+  logic can be a `Logic` whose handlers are HOL proofs; base HOL stays native.)
+- **`(#logic …)` / `.logic` is a *derived data* layer**, not the primary form. It
+  parameterizes a **generic** Rust `Logic` impl for a *family* of logics — the way
+  `.thy` is data for a theory: it carries *parameters* (order class, literal
+  policy, axiom/rule schemas), never handler *code*. It earns its keep exactly
+  when a family with a shared generic impl appears (the first-order logics; the
+  temporal cluster below) — not before, and *never* for registering the metalogic.
+
+With that framing, the declarable object (consumed by a generic impl) looks like:
 
 ```scheme
 (#logic HOL
@@ -351,9 +362,25 @@ interpreted in a logic's language; the satisfaction `.thm` (`M ⊨ T`) is checke
 So the responsibility chain for a literal `3` is: the **logic** admits it and
 assigns sort `Nat`; the **model** realizes it as a carrier term. (Both are the
 `covalence-pure` literal-as-lifted-observation mechanism, `covalence-pure.md §3`,
-surfaced at the right layer.) Building `#logic` is the **next artifact after**
-`#sig`/`#thy`/`#model`/`#models` land — for now there is one ambient logic (HOL);
-`.logic` files matter once a second logic (a reified FOL, SOA) is in play.
+surfaced at the right layer.) For now there is one ambient logic (HOL, a native
+trait impl); the declarable `.logic` layer matters once a *family* with a generic
+impl is in play.
+
+**The logic zoo — CTL / LTL / PCTL / CTL\*.** The temporal/probabilistic logics
+are the motivating case for both halves above. As **trait impls**, each is a
+`Logic` whose handler set *is a model checker* — a **decision procedure** over a
+structure (a Kripke transition system for CTL/LTL/CTL\*, a Markov chain for
+PCTL). That makes them the paradigm of "a decidable logic doubles as an
+accelerator/handler": discharge a CTL fact into HOL by checking the model
+checker's certificate, or attest it through the observer substrate
+(`observers.md`) — a natural fit for a WASM oracle producing the witness. They are
+attractive *early non-HOL* `Logic` targets precisely *because* they are decidable
+(the handler is an algorithm, not a proof calculus). As a **family**, they share
+heavily — temporal operators, Kripke semantics, the **modal μ-calculus** as a
+unifying substrate (CTL/LTL/CTL\* all embed into it) — so a generic
+`TemporalLogic` impl parameterized by fragment + structure type, with `.logic`
+data picking the fragment, is exactly where exposing the declarable object pays
+for itself.
 
 ---
 

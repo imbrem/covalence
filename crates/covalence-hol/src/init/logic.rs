@@ -238,6 +238,118 @@ pub fn exists_elim(exists_thm: Thm, c: Term, step: Thm) -> Result<Thm> {
     unfold.eq_mp(exists_thm)?.all_elim(c)?.imp_elim(step)
 }
 
+/// `exists[α] pred : bool` — the existential `∃x. pred x` for a predicate
+/// `pred : α → bool` already in λ-form.
+fn mk_exists_of(alpha: &Type, pred: Term) -> Term {
+    Term::app(exists(alpha.clone()), pred)
+}
+
+/// **∃-congruence.** From `peq : Γ ⊢ ∀x. P x = Q x` conclude
+/// `Γ ⊢ (∃x. P x) = (∃x. Q x)`. The workhorse for *rewriting under an
+/// existential binder*: prove the bodies equal pointwise and lift the
+/// equality through `∃`.
+///
+/// Derivation: specialise `peq` at a fresh `v` to `⊢ P v = Q v`, `abs` it
+/// to `⊢ (λv. P v) = (λv. Q v)` (η-collapsing the predicates), then
+/// congruence under the `exists[α]` head — `cong_arg`.
+pub fn exists_cong(alpha: &Type, peq: Thm) -> Result<Thm> {
+    const V: &str = "_ex_cong_x";
+    let v = Term::free(V, alpha.clone());
+    // ⊢ P v = Q v.
+    let pointwise = peq.all_elim(v)?;
+    // ⊢ (λv. P v) = (λv. Q v).
+    let abstracted = pointwise.abs(V, alpha.clone())?;
+    // Congruence under `exists[α]`: ⊢ ∃x. P x = ∃x. Q x.
+    abstracted.cong_arg(exists(alpha.clone()))
+}
+
+/// `⊢ (∃x:α. F) = F` — an existential over the constantly-false predicate is
+/// false. Proved by antisymmetry: `(∃x. F) ⟹ F` by [`exists_elim`] (each
+/// witness assumes `F`, which is the goal), and `F ⟹ (∃x. F)` by ex falso.
+pub fn exists_false_const(alpha: &Type) -> Result<Thm> {
+    let false_t = Term::bool_lit(false);
+    // pred = λx. F.
+    let pred = Term::abs(alpha.clone(), false_t.clone());
+    let ex = mk_exists_of(alpha, pred.clone()); // ∃x. F
+    // Forward: {∃x. F} ⊢ F. `exists_elim` to goal `F`; its step is
+    // `⊢ ∀x. (pred x) ⟹ F`, where `pred x` β-reduces to `F`.
+    let pred_x = pred.clone().apply(Term::free("_ex_false_x", alpha.clone()))?; // (λx. F) x
+    let pred_x_eq_f = Thm::beta_conv(pred_x.clone())?; // ⊢ pred x = F
+    let step_to_f = pred_x_eq_f
+        .eq_mp(Thm::assume(pred_x.clone())?)? // {pred x} ⊢ F
+        .imp_intro(&pred_x)? // ⊢ pred x ⟹ F
+        .all_intro("_ex_false_x", alpha.clone())?; // ⊢ ∀x. pred x ⟹ F
+    let fwd = exists_elim(Thm::assume(ex.clone())?, false_t.clone(), step_to_f)?; // {∃x.F} ⊢ F
+    // Backward: {F} ⊢ ∃x. F by ex falso.
+    let bwd = Thm::assume(false_t.clone())?.false_elim(ex.clone())?; // {F} ⊢ ∃x. F
+    // Deductive antisymmetry: `{F}⊢∃x.F` & `{∃x.F}⊢F` ⟹ `⊢ (∃x.F) = F`.
+    bwd.deduct_antisym(fwd)
+}
+
+/// **∃-is-false.** From `pf : Γ ⊢ ∀x. P x = F` (the predicate is everywhere
+/// false) conclude `Γ ⊢ (∃x. P x) = F`. Combines [`exists_cong`] (rewrite the
+/// body to `F`) with [`exists_false_const`] (`(∃x. F) = F`).
+pub fn exists_false(alpha: &Type, pf: Thm) -> Result<Thm> {
+    // ⊢ (∃x. P x) = (∃x. F).
+    let to_ex_false = exists_cong(alpha, pf)?;
+    // ⊢ (∃x. F) = F.
+    let ex_false = exists_false_const(alpha)?;
+    to_ex_false.trans(ex_false)
+}
+
+/// **The existential one-point rule.** `⊢ (∃x. x = t ∧ P x) = P t`, where
+/// `p_pred = P : α → bool` and `t : α`. The single missing lemma that
+/// collapses an existential whose witness is *pinned* by an equation — the
+/// workhorse for unfolding `set.image` / `lang_concat` / `rel.compose`
+/// memberships (each `∃x. x = … ∧ …`).
+///
+/// Derivation, by deductive antisymmetry of the two implications:
+/// - **`⟹`**: [`exists_elim`] to goal `P t` — each witness `x` carries
+///   `x = t`, rewrite it into `P x` to land on `P t`;
+/// - **`⟸`**: [`exists_intro`] at witness `t` — `t = t` (refl) and `P t`
+///   give the body `t = t ∧ P t`.
+///
+/// `t` must not mention the bound variable (it is substituted *for* it); a
+/// genuinely dependent `t` is out of scope for this rule.
+pub fn exists_one_point(alpha: &Type, t: &Term, p_pred: &Term) -> Result<Thm> {
+    // The existential predicate `pred = λx. (x = t ∧ P x)`.
+    let xb = Term::free("_op_x", alpha.clone());
+    let p_x = p_pred.clone().apply(xb.clone())?; // P x  (applied)
+    let body = xb.clone().equals(t.clone())?.and(p_x.clone())?; // x = t ∧ P x
+    let pred = Term::abs(
+        alpha.clone(),
+        covalence_core::subst::close(&body, "_op_x"),
+    );
+    let ex = mk_exists_of(alpha, pred.clone()); // ∃x. x = t ∧ P x
+    let p_t = p_pred.clone().apply(t.clone())?; // P t
+
+    // ── Forward: {∃x. …} ⊢ P t. -------------------------------------------
+    // step : ⊢ ∀x. (pred x) ⟹ P t, with `pred x` kept *applied* (as
+    // `exists_elim` expects). Under `{pred x}`: β to `x = t ∧ P x`, take the
+    // equation, rewrite `x → t` in `P x`.
+    let pred_x = pred.clone().apply(xb.clone())?; // pred x  (a redex)
+    let pred_x_beta = Thm::beta_conv(pred_x.clone())?; // ⊢ pred x = (x=t ∧ P x)
+    let assumed = pred_x_beta.eq_mp(Thm::assume(pred_x.clone())?)?; // {pred x} ⊢ x=t ∧ P x
+    let x_eq_t = assumed.clone().and_elim_l()?; // {pred x} ⊢ x = t
+    let px = assumed.and_elim_r()?; // {pred x} ⊢ P x
+    let pt = px.rewrite(&x_eq_t)?; // {pred x} ⊢ P t   (x ↦ t)
+    let step = pt
+        .imp_intro(&pred_x)? // {} ⊢ pred x ⟹ P t
+        .all_intro("_op_x", alpha.clone())?; // ⊢ ∀x. pred x ⟹ P t
+    let fwd = exists_elim(Thm::assume(ex.clone())?, p_t.clone(), step)?; // {∃x. …} ⊢ P t
+
+    // ── Backward: {P t} ⊢ ∃x. x = t ∧ P x. --------------------------------
+    let refl_t = Thm::refl(t.clone())?; // ⊢ t = t
+    let body_t = refl_t.and_intro(Thm::assume(p_t.clone())?)?; // {P t} ⊢ t = t ∧ P t
+    // `exists_intro` wants `⊢ pred t` (the predicate *applied* at `t`).
+    let pred_t = pred.clone().apply(t.clone())?; // pred t  (a redex)
+    let pred_t_proof = Thm::beta_conv(pred_t)?.sym()?.eq_mp(body_t)?; // {P t} ⊢ pred t
+    let bwd = exists_intro(pred.clone(), t.clone(), pred_t_proof)?; // {P t} ⊢ ∃x. …
+
+    // Deductive antisymmetry: `{P t}⊢∃x.…` & `{∃x.…}⊢P t`  ⟹  `⊢ (∃x.…) = P t`.
+    bwd.deduct_antisym(fwd)
+}
+
 // ============================================================================
 // Clause reasoning — resolution and clausification
 // ============================================================================
@@ -1658,5 +1770,95 @@ mod tests {
         let out = exists_elim(ex, Term::bool_lit(true), step).unwrap();
         assert_eq!(out.concl(), &Term::bool_lit(true));
         assert!(out.hyps().is_empty());
+    }
+
+    #[test]
+    fn exists_false_const_is_genuine() {
+        // ⊢ (∃x:nat. F) = F.
+        let thm = exists_false_const(&Type::nat()).expect("exists_false_const");
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let pred = Term::abs(Type::nat(), Term::bool_lit(false));
+        let ex = mk_exists_of(&Type::nat(), pred);
+        assert_eq!(
+            thm.concl().as_eq().unwrap(),
+            (&ex, &Term::bool_lit(false))
+        );
+    }
+
+    #[test]
+    fn exists_cong_rewrites_under_binder() {
+        // From ⊢ ∀x. (x = 0) = (0 = x) get ⊢ (∃x. x=0) = (∃x. 0=x).
+        let x = Term::free("x", Type::nat());
+        // ⊢ (x = 0) = (0 = x): symmetry of `=` as a boolean equation, via
+        // deduct_antisym on the two `.sym()` directions.
+        let l = x.clone().equals(nat0()).unwrap();
+        let r = nat0().equals(x.clone()).unwrap();
+        let fwd = Thm::assume(l.clone()).unwrap().sym().unwrap(); // {x=0} ⊢ 0=x
+        let bwd = Thm::assume(r.clone()).unwrap().sym().unwrap(); // {0=x} ⊢ x=0
+        let body_eq = bwd.deduct_antisym(fwd).unwrap(); // ⊢ (x=0) = (0=x)
+        let peq = body_eq.all_intro("x", Type::nat()).unwrap(); // ⊢ ∀x. (x=0)=(0=x)
+        let thm = exists_cong(&Type::nat(), peq).expect("exists_cong");
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let lhs = nat_pred("x", l).equals_ex();
+        let rhs = nat_pred("x", r).equals_ex();
+        let (gl, gr) = thm.concl().as_eq().unwrap();
+        assert_eq!(gl, &lhs);
+        assert_eq!(gr, &rhs);
+    }
+
+    #[test]
+    fn exists_false_lifts_pointwise_falsity() {
+        // From ⊢ ∀x. (x = 0 ∧ F) = F  get  ⊢ (∃x. x=0 ∧ F) = F.
+        let x = Term::free("x", Type::nat());
+        let body = x.clone().equals(nat0()).unwrap().and(Term::bool_lit(false)).unwrap();
+        // ⊢ body = F: body ⟹ F (and_elim_r) and F ⟹ body (ex falso).
+        let to_f = Thm::assume(body.clone()).unwrap().and_elim_r().unwrap(); // {body} ⊢ F
+        let from_f = Thm::assume(Term::bool_lit(false))
+            .unwrap()
+            .false_elim(body.clone())
+            .unwrap(); // {F} ⊢ body
+        let body_eq_f = from_f.deduct_antisym(to_f).unwrap(); // ⊢ body = F
+        let pf = body_eq_f.all_intro("x", Type::nat()).unwrap(); // ⊢ ∀x. body = F
+        let thm = exists_false(&Type::nat(), pf).expect("exists_false");
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        // Conclusion: (∃x. body) = F.
+        let ex = nat_pred("x", body).equals_ex();
+        assert_eq!(thm.concl().as_eq().unwrap(), (&ex, &Term::bool_lit(false)));
+    }
+
+    #[test]
+    fn exists_one_point_collapses_pinned_witness() {
+        // ⊢ (∃x. x = 0 ∧ P x) = P 0, for P a free predicate on nat.
+        let p = Term::free("P", Type::fun(Type::nat(), Type::bool())); // P : nat → bool
+        let t = nat0();
+        let thm = exists_one_point(&Type::nat(), &t, &p).expect("one-point rule");
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        // RHS is `P 0`.
+        let (_lhs, rhs) = thm.concl().as_eq().unwrap();
+        assert_eq!(rhs, &p.clone().apply(t.clone()).unwrap());
+        // LHS is the existential `∃x. x = 0 ∧ P x`.
+        let xb = Term::free("_op_x", Type::nat());
+        let body = xb
+            .clone()
+            .equals(t)
+            .unwrap()
+            .and(p.apply(xb).unwrap())
+            .unwrap();
+        let ex = nat_pred("_op_x", body).equals_ex();
+        assert_eq!(thm.concl().as_eq().unwrap().0, &ex);
+    }
+}
+
+#[cfg(test)]
+/// Test-only helper: build `∃x. pred-body` from a closed predicate `λx. …`.
+trait ExistsOf {
+    fn equals_ex(self) -> Term;
+}
+
+#[cfg(test)]
+impl ExistsOf for Term {
+    fn equals_ex(self) -> Term {
+        // `self` is `λx. body : nat → bool`; wrap it as `exists[nat] self`.
+        Term::app(exists(Type::nat()), self)
     }
 }

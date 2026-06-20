@@ -143,6 +143,40 @@ it is how unfinished work stays discoverable.
   - **List monoid `(list, append, nil)`.** `init/list.rs` only has the `nil`-side
     computations; `append` and its assoc/identity laws are not proved, so the
     canonical "list is the free monoid" model is not yet a `Monoid` value.
+- **Formal-languages / Kleene-algebra theory** in
+  `crates/covalence-hol/src/init/lang.rs`. A *language over a monoid `M`* is a
+  `set` of `M`-carrier words; concatenation lifts `M`'s `op`. **In place:** the
+  operations (`empty_lang`, `epsilon`, `lang_union`, `lang_concat`,
+  `lang_star`); the membership computations (`mem_concat`, `mem_epsilon`,
+  `mem_empty_lang`, `mem_star`); the **union** Kleene-algebra fragment
+  (re-exported `set` `union_comm`/`union_assoc`/`union_idem`/`union_empty`);
+  `∅`-annihilation `concat_empty_l`/`concat_empty_r` (proved via the new
+  existential tactics); and `star_contains_epsilon` (`ε ⊆ L*`). All genuine
+  (hypothesis- and oracle-free), model-generic over any `Monoid`. **Not yet
+  proved:**
+  - **`concat` associativity** and the **`epsilon` concat identities**
+    (`ε·L = L`, `L·ε = L`). The **existential one-point rule**
+    `⊢ (∃x. x = t ∧ P x) = P t` is now proved (`logic::exists_one_point`,
+    `init/logic.rs`) — the rule also flagged as missing in `init/rel.rs`. What
+    remains is **existential/conjunction reshaping**: the concat membership
+    formula is `∃x ∃y. (x=unit ∧ mem y L) ∧ w=op x y`, which must be reassociated
+    into the one-point shape `∃x. x=unit ∧ (∃y. …)` before the rule fires, and
+    then `op unit y = y` (the monoid `left_id`) applied under the surviving `∃y`.
+    A small ∃/∧-normalizer (the `logic::exists_cong` body-rewriter is the seed)
+    is the next increment; once it lands, `ε·L = L`, `L·ε = L`, and `rel`'s
+    identity/assoc laws all fall out.
+  - **`concat` over `union` distribution** (`L·(M∪N) = L·M ∪ L·N` and the
+    right form): the membership identity is a propositional tautology over the
+    unfolded concat existentials, blocked on the same ∃-pushing.
+  - **The full star unfolding** `L* = ε ∪ L·L*` and the **least-fixpoint
+    half** (`L* ⊆ S` for any `Closed L S`): `star_contains_epsilon` gives the
+    `ε ⊆ L*` part of the closure direction; the concat-closure `L·L* ⊆ L*`
+    needs the one-point rule, and `L* ⊆ ε ∪ L·L*` is the genuine induction over
+    the impredicative star.
+  - **A regex datatype** (`empty | eps | lit a | alt | seq | star`) with a
+    denotation `⟦·⟧` into `lang` (the `init/prop.rs` reified-object-logic
+    pattern): not built — deferred until the concat/star laws above make the
+    denotation's homomorphism theorems provable.
 - **`covalence-hol` inductive-type engine** in
   `crates/covalence-hol/src/init/inductive/`. The shared infrastructure for
   basic inductive types (single-sorted, parametric, first-order,

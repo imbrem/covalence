@@ -84,6 +84,7 @@ pub mod eq;
 pub mod ext;
 pub mod inductive;
 pub mod int;
+pub mod lang;
 pub mod list;
 pub mod logic;
 pub mod monoid;

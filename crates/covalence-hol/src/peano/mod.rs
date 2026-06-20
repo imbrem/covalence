@@ -35,17 +35,21 @@
 //!    `nat` term and a PA proof *is* a HOL [`Thm`](covalence_core::Thm)
 //!    about `nat`. PA reasoning collapses to HOL reasoning. This is the
 //!    "trivial" implementation — it exists today.
-//! 2. **Deep** — the reified embedding in [`fol`] / [`deep`] / [`pa`]: PA
-//!    syntax is **HOL data** (locally-nameless `Fol` AST + Church carrier),
-//!    PA formulas have a denotation `⟦·⟧` into HOL `nat`/`bool`, and a
-//!    [`pa::Derivation`] pairs a reified formula with a genuine `⊢ ⟦A⟧`. The
-//!    PA axioms, the inference rules, and the **induction schema**
-//!    ([`pa::induct`] → [`Thm::nat_induct`](covalence_core::Thm::nat_induct))
-//!    are all proven; the worked theorem `∀x. x+0=x` is derived by induction
-//!    *on derivations* and transported to HOL `nat`. This is Covalence's
-//!    first piece of *symbolic metatheory* for a first-order theory —
-//!    `PA(A) ⟹ HOL(A)` realised constructively (`docs/VISION.md` §2). See
-//!    `peano/SKELETONS.md` for the deferred ∀-closed impredicative form.
+//! 2. **Deep** — the reified embedding in [`fol`] / [`sem`] / [`deep`] /
+//!    [`pa`]: PA syntax is **HOL data** (locally-nameless `Fol` AST + a
+//!    two-sorted HOAS Church carrier [`sem`]), PA formulas have a single-fold
+//!    denotation `⟦·⟧` into HOL `nat`/`bool`, and **derivability is the
+//!    impredicative predicate** `Derivable_PA A := ∀d. Closed_PA d ⟹ d A`
+//!    ([`pa::derivable`]) — *pure syntactic data, no `Thm` inside*. The
+//!    **soundness/transport theorem** `⊢ Derivable_PA ⌜A⌝ ⟹ ⟦A⟧`
+//!    ([`pa::soundness`]) is proved **once**, by rule induction (each PA axiom's
+//!    denotation is its proven [`crate::init::nat`] theorem; modus ponens
+//!    forwards to the kernel; the induction schema discharges to
+//!    [`Thm::nat_induct`](covalence_core::Thm::nat_induct)). **Projection**
+//!    ([`pa::project`]) is that theorem applied to a finished derivation —
+//!    one step. This is the *proper* deep embedding: you derive in PA without
+//!    ever building the HOL theorem, then project in a single move
+//!    (`docs/VISION.md` §2; `docs/theories-models-and-logics.md §5.5`).
 //!
 //! Because both implement the *same* trait, a generic routine written
 //! against [`Peano`] runs against either. The bridge between them is a
@@ -66,6 +70,7 @@
 pub mod deep;
 pub mod fol;
 pub mod pa;
+pub mod sem;
 pub mod shallow;
 
 pub use shallow::Hol;

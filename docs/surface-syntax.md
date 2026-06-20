@@ -380,6 +380,53 @@ with `Soundness:` docstrings. (The richer "elaboration / unification"
 story — schematic proof terms, higher-order matching — is a *future*
 layer; see [`metatheory.md`](./metatheory.md) §on layers.)
 
+### 5.1 Calculational proofs (`#comp`) and the default handler
+
+The everyday shape of an equational argument is a *chain* — `a = b = c =
+… = g` — with a justification per step. `#comp` is that chain as a
+first-class proof form: it folds `trans` over the steps to prove the
+end-to-end equality.
+
+```scheme
+(#comp a
+  (= b (reduce-prim …))   ;; a = b, justified by a tactic
+  (= c (rw lemma))        ;; b = c
+  (= d)                   ;; c = d — justification OMITTED → the default handler
+  (= e (apply foo)))      ;; d = e
+;; ⊢ a = e
+```
+
+The head term `a` starts the chain; each step gives a relation, the next
+term, and an **optional** justification (any `(by …)` tactic/derivation).
+
+**Default handler + omit-if-it-discharges.** A block may set a default
+handler; any step whose justification is omitted is closed by it:
+
+```scheme
+(#comp a #:by reduce
+  (= b)                   ;; a = b by `reduce`
+  (= c (rw lemma))        ;; explicit override
+  (= d))                  ;; c = d by `reduce`
+```
+
+Omitting a step's proof means "let the default handler prove `prev =
+rhs`"; if it cannot, that step is a diagnostic pointing exactly there, not
+a silent gap. The natural default is **the active model's equational
+handler** — the handler dispatch of
+[`surface-compiler.md`](./surface-compiler.md) §2/§4. So in a `nat` model
+the default is `reduce`; in a *monoid* model it is the monoid normalizer;
+in a reified-logic model it is that logic's decision procedure. `#comp` is
+thus a clean *consumer* of handler dispatch — the calculation's routine
+steps close themselves with whatever rewriter the model installs, and the
+author hand-justifies only the interesting ones. (This is "declarative
+meaning, pluggable computation," §1.1, at proof-step granularity.)
+
+**Heterogeneous relations (later).** The general form mixes relations
+whose transitivity composes — `a = b ≤ c < d ⊢ a < d` — by looking up a
+transitivity rule per adjacent pair (cf. Lean `calc` / Isabelle `also`).
+Start with `=` (and `⟹` / `⟺`); generalize once a relation/transitivity
+registry exists.
+
 ---
 
 ## 6. The questions we can ask

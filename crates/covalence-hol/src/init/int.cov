@@ -393,6 +393,52 @@
       (all-elim (nat.add (int.fc b) (int.sc a))
         (all-elim (nat.add (int.fc a) (int.sc b)) (nat.le_iff_lt_or_eq))))))
 
+;; ============================================================================
+;; Ordered-ring compatibility + discreteness
+;; ============================================================================
+
+;; ⊢ ∀a b c. a < b ⟹ a + c < b + c.  `int.lt (a+c)(b+c)` reads off
+;; `(fa+fc)+(sb+sc) < (fb+fc)+(sa+sc)`, which `nat.add_swap_mid` rewrites to
+;; `(fa+sb)+(fc+sc) < (fb+sa)+(fc+sc)` — the hypothesis `(fa+sb)<(fb+sa)`
+;; shifted by `fc+sc` (`nat.lt_add_mono_r`).
+(#thm lt_add_mono
+  (#concl
+    (forall (a int) (forall (b int) (forall (c int)
+      (==> (int.lt a b) (int.lt (int.add a c) (int.add b c)))))))
+  (#by
+    (intro a b c h)
+    (rw (all-elim a (recon)))
+    (rw (all-elim b (recon)))
+    (rw (all-elim c (recon)))
+    ;; a+c and b+c through add_mk.
+    (rw (all-elim (int.sc c) (all-elim (int.fc c)
+          (all-elim (int.sc a) (all-elim (int.fc a) (add_mk))))))
+    (rw (all-elim (int.sc c) (all-elim (int.fc c)
+          (all-elim (int.sc b) (all-elim (int.fc b) (add_mk))))))
+    ;; int.lt (mk …)(mk …) → nat.lt ((fa+fc)+(sb+sc)) ((fb+fc)+(sa+sc)).
+    (rw (all-elim (nat.add (int.sc b) (int.sc c))
+          (all-elim (nat.add (int.fc b) (int.fc c))
+            (all-elim (nat.add (int.sc a) (int.sc c))
+              (all-elim (nat.add (int.fc a) (int.fc c)) (lt_mk))))))
+    ;; re-pair: (fa+fc)+(sb+sc) = (fa+sb)+(fc+sc) ; same for the RHS.
+    (rw (all-elim (int.sc c) (all-elim (int.sc b)
+          (all-elim (int.fc c) (all-elim (int.fc a) (nat.add_swap_mid))))))
+    (rw (all-elim (int.sc c) (all-elim (int.sc a)
+          (all-elim (int.fc c) (all-elim (int.fc b) (nat.add_swap_mid))))))
+    ;; cancel the common K = fc+sc.
+    (rw (all-elim (nat.add (int.fc c) (int.sc c))
+          (all-elim (nat.add (int.fc b) (int.sc a))
+            (all-elim (nat.add (int.fc a) (int.sc b)) (nat.lt_add_mono_r)))))
+    ;; close: (fa+sb) < (fb+sa) from the hypothesis a < b.
+    (derive
+      (eq-mp
+        (trans
+          (mk-comb (mk-comb (refl int.lt) (all-elim a (recon)))
+                   (all-elim b (recon)))
+          (all-elim (int.sc b) (all-elim (int.fc b)
+            (all-elim (int.sc a) (all-elim (int.fc a) (lt_mk))))))
+        (assume (int.lt a b))))))
+
 (#export add_comm mul_comm add_assoc add_zero add_neg sub_def
          mul_one mul_zero distrib
-         lt_irrefl lt_trans lt_trichotomy le_def)
+         lt_irrefl lt_trans lt_trichotomy le_def lt_add_mono)

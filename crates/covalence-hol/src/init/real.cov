@@ -1,0 +1,113 @@
+;; real.cov — the `realLe` partial-order laws over `core` + `logic` + the
+;; `realprim` cut seam env.
+;;
+;; `real := close rat ratLe` (upper Dedekind cuts). The quotient/subtype is
+;; hidden: `realprim` (see `init::real::real_env`) exposes the cut seam through
+;; operators —
+;;
+;;   real.le    : real → real → bool   (the order)
+;;   real.cutOf : real → rat → bool    (the cut-set of a real: `rep`)
+;;   real.mk    : (rat→bool) → real    (wrap a cut-set into a real: `abs`)
+;;
+;; — plus two `∀`-closed seam lemmas (dotted names brought in qualified under
+;; `real`):
+;;
+;;   real.le.unfold : ∀r s. real.le r s = (∀q. real.cutOf s q ⟹ real.cutOf r q)
+;;   real.abs_rep   : ∀r. real.mk (real.cutOf r) = r
+;;
+;; `real.le` is REVERSE INCLUSION of cut-sets, so the order laws are pure logic
+;; on `le.unfold` (reflexivity / transitivity) and pure subtype structure on
+;; `abs_rep` (antisymmetry: mutually-included cut-sets are pointwise-equal, lift
+;; to equal `real.cutOf`s by function extensionality, then to equal reals by the
+;; `real.mk`/`real.cutOf` round-trip). None touch the `rat`/order postulates —
+;; these three are fully proved, with no hypotheses.
+
+(#import core)
+(#open core)
+(#import logic)
+(#open logic)
+;; The `realprim` cut seam — `real` operators (`real.le`/`real.cutOf`/`real.mk`)
+;; + the abs/rep-crossing seam lemmas (`real.le.unfold`/`real.abs_rep`). Its
+;; symbols are already dotted (`real.*`), so we `#open` it directly and
+;; re-`#provide` it, so a downstream `.cov` importing just this theory reaches
+;; the `real.*` seam.
+(#import realprim)
+(#open realprim)
+(#provide realprim)
+
+;; ============================================================================
+;; `realLe` is a partial order — fully proved, no postulates
+;; ============================================================================
+
+;; ⊢ ∀r. r ≤ r.  `r ≤ r` unfolds to `∀q. cutOf r q ⟹ cutOf r q`, the identity
+;; implication; `eq-mp` it back across the (symmetric) `le.unfold`.
+(#thm le.refl
+  (#concl (forall (r real) (real.le r r)))
+  (#by
+    (intro r)
+    (derive
+      (eq-mp
+        (sym (all-elim r (all-elim r (real.le.unfold))))
+        (all-intro q rat
+          (imp-intro (real.cutOf r q) (assume (real.cutOf r q))))))))
+
+;; ⊢ ∀r s t. r ≤ s ⟹ s ≤ t ⟹ r ≤ t.  Reverse inclusion composes: unfold each
+;; hypothesis to its `∀q. cutOf · q ⟹ cutOf · q` body, thread `cutOf t q`
+;; through `cutOf s q` to `cutOf r q`, and re-fold the goal by `le.unfold`.
+(#thm le.trans
+  (#concl
+    (forall (r real) (forall (s real) (forall (t real)
+      (==> (real.le r s) (==> (real.le s t) (real.le r t)))))))
+  (#by
+    (intro r s t hrs hst)
+    (derive
+      (eq-mp
+        (sym (all-elim t (all-elim r (real.le.unfold))))
+        (all-intro q rat
+          (imp-intro (real.cutOf t q)
+            (imp-elim
+              (all-elim q
+                (eq-mp (all-elim s (all-elim r (real.le.unfold)))
+                       (assume (real.le r s))))
+              (imp-elim
+                (all-elim q
+                  (eq-mp (all-elim t (all-elim s (real.le.unfold)))
+                         (assume (real.le s t))))
+                (assume (real.cutOf t q))))))))))
+
+;; ⊢ ∀r s. r ≤ s ⟹ s ≤ r ⟹ r = s.  Mutual reverse inclusion makes the two
+;; cut-sets pointwise-equal (`deduct-antisym` at each `q`); function
+;; extensionality lifts that to `cutOf r = cutOf s`, and the `real.mk`/`real.cutOf`
+;; round-trip (`abs_rep`) turns equal cut-sets into equal reals.
+(#thm le.antisym
+  (#concl
+    (forall (r real) (forall (s real)
+      (==> (real.le r s) (==> (real.le s r) (= r s))))))
+  (#by
+    (intro r s hrs hsr)
+    (derive
+      ;; r = real.mk (real.cutOf r) = real.mk (real.cutOf s) = s.
+      (trans
+        (sym (all-elim r (real.abs_rep)))
+        (trans
+          ;; real.mk (real.cutOf r) = real.mk (real.cutOf s), from the
+          ;; extensional cut-set equality under `real.mk`.
+          (cong-arg real.mk
+            (funext
+              (all-intro q rat
+                (deduct-antisym
+                  ;; {cutOf s q} ⊢ cutOf r q  (from r ≤ s).
+                  (imp-elim
+                    (all-elim q
+                      (eq-mp (all-elim s (all-elim r (real.le.unfold)))
+                             (assume (real.le r s))))
+                    (assume (real.cutOf s q)))
+                  ;; {cutOf r q} ⊢ cutOf s q  (from s ≤ r).
+                  (imp-elim
+                    (all-elim q
+                      (eq-mp (all-elim r (all-elim s (real.le.unfold)))
+                             (assume (real.le s r))))
+                    (assume (real.cutOf r q)))))))
+          (all-elim s (real.abs_rep)))))))
+
+(#export le.refl le.trans le.antisym)

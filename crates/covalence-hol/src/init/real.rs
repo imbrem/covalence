@@ -608,6 +608,82 @@ fn complete_impl() -> Result<Thm> {
         .all_intro("A", real_set())
 }
 
+// ============================================================================
+// The `realprim` seam env — operators + the abs/rep-crossing seam lemmas
+// ============================================================================
+//
+// `real := close rat ratLe` is a `close`-subtype, so `real.cov` re-proves the
+// `realLe` partial-order laws over the cut-set seam WITHOUT touching abs/rep:
+// the seam is exposed as honest **operators** —
+//
+//   real.le    : real → real → bool   (`real_le`)
+//   real.cutOf : real → rat → bool    (`rep`, the cut-set of a real)
+//   real.mk    : (rat→bool) → real    (`abs`, wrap a cut-set into a real)
+//   real.ofRat : rat → real           (`of_rat`, the principal-cut embedding)
+//
+// — plus a handful of `∀`-closed **seam lemmas** that cross the boundary via
+// the kernel's witness-free subtype laws, Rust-proved as givens (the `set.cov`
+// `mem_*`/`ext` pattern). `real.cov` proves the order laws over them + the
+// imported `rat` order facts, never mentioning the kernel `abs`/`rep`.
+
+/// `⊢ ∀r s. real.le r s = (∀q. real.cutOf s q ⟹ real.cutOf r q)` — the order
+/// definition, unfolded to reverse cut-set inclusion. `real.cov`'s `le_refl` /
+/// `le_trans` / `le_antisym` all pivot on this β-equation.
+fn le_unfold_given() -> Result<Thm> {
+    let (r, s) = (Term::free("r", real()), Term::free("s", real()));
+    rle(r.clone(), s.clone())
+        .reduce()? // ⊢ real.le r s = (∀q. cutOf s q ⟹ cutOf r q)
+        .all_intro("s", real())?
+        .all_intro("r", real())
+}
+
+/// `⊢ ∀r. real.mk (real.cutOf r) = r` — the subtype round-trip (`abs (rep r) =
+/// r`), the only abs/rep fact `le_antisym` needs (equal cut-sets ⟹ equal
+/// reals).
+fn abs_rep_given() -> Result<Thm> {
+    let r = Term::free("r", real());
+    Thm::spec_abs_rep(real_spec(), Vec::new(), r.clone())?.all_intro("r", real())
+}
+
+/// The `realprim` seam environment imported by `real.cov`: the `real` order /
+/// cut operators (monomorphic — `real` is a ground type) and the seam lemmas
+/// (`le.unfold`, `abs_rep`) in `∀`-closed form. These cross the subtype
+/// boundary, so they stay Rust-proved givens; `real.cov` proves the `realLe`
+/// partial order over them.
+pub fn real_env() -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    let mut e = Env::empty();
+
+    // operators (monomorphic; `real` is ground)
+    e.define_const("real.le", ConstDef::Op(real_le()));
+    e.define_const("real.cutOf", ConstDef::Op(real_rep()));
+    e.define_const("real.mk", ConstDef::Op(real_abs()));
+    e.define_const("real.ofRat", ConstDef::Op(of_rat()));
+    e.define_const("real.zero", ConstDef::Op(real_zero()));
+    e.define_const("real.one", ConstDef::Op(real_one()));
+
+    // seam givens (dotted, matching the `real.cov` surface)
+    e.define_lemma("real.le.unfold", le_unfold_given().expect("real le.unfold given"));
+    e.define_lemma("real.abs_rep", abs_rep_given().expect("real abs_rep given"));
+    e
+}
+
+crate::cov_theory! {
+    /// `realLe` partial-order laws ported to `real.cov`, over `core` + `logic`
+    /// + the `realprim` seam env. The seam env is re-exported through the
+    /// `real` namespace (`#provide (#alias realprim real)`), so a downstream
+    /// `.cov` imports just `real` to reach `real.*`. The `sup_is_ub` /
+    /// `sup_is_least` / `complete` postulates are NOT ported (see SKELETONS.md).
+    pub mod cov from "real.cov" {
+        import "core" = crate::script::Env::core();
+        import "logic" = crate::init::logic::cov::env();
+        import "realprim" = crate::init::real::real_env();
+        "le.refl"    => pub fn le_refl_cov;
+        "le.trans"   => pub fn le_trans_cov;
+        "le.antisym" => pub fn le_antisym_cov;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -799,5 +875,32 @@ mod tests {
         // It applies to a principal cut to give a bool statement.
         let p = Term::app(cut_pred(), upper_cut(rat::rat_zero()));
         assert!(p.type_of().unwrap().is_bool());
+    }
+
+    // -- `.cov` ports: each `cov::X` is conclusion-equal to its Rust `super::X`
+    //    and just as genuine (the partial-order laws are hypothesis-free). ----
+
+    #[test]
+    fn cov_le_refl_matches_rust_and_is_genuine() {
+        let c = cov::le_refl_cov();
+        assert_eq!(c.concl(), le_refl().concl());
+        assert!(c.hyps().is_empty(), "le.refl is fully proved (no postulates)");
+        assert!(c.has_no_obs());
+    }
+
+    #[test]
+    fn cov_le_trans_matches_rust_and_is_genuine() {
+        let c = cov::le_trans_cov();
+        assert_eq!(c.concl(), le_trans().concl());
+        assert!(c.hyps().is_empty(), "le.trans is fully proved (no postulates)");
+        assert!(c.has_no_obs());
+    }
+
+    #[test]
+    fn cov_le_antisym_matches_rust_and_is_genuine() {
+        let c = cov::le_antisym_cov();
+        assert_eq!(c.concl(), le_antisym().concl());
+        assert!(c.hyps().is_empty(), "le.antisym is fully proved (no postulates)");
+        assert!(c.has_no_obs());
     }
 }

@@ -409,7 +409,6 @@ mod tests {
     fn foldr_nil_and_cons_equations() {
         // Project the proved fold predicate into the two defining equations
         // at concrete f, z and check their shapes.
-        use crate::init::ext::ThmExt;
         let thm = super::foldr_holds().unwrap();
         let f = Term::free("f", super::fold_f_ty());
         let z = Term::free("z", super::fold_beta());

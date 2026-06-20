@@ -27,50 +27,27 @@ coupling guard.
   `sext`, `int_ops.rs`) are **intentionally** declaration-only — the
   primitive reducible interface the ops above are built on, not a stub.
 
-## defs/core.cov is the source of truth for the migrated catalogue
+## defs/core.cov migration (partial)
 
-- **`defs/core.cov` + the `defs::cov` parser** are now the **source of truth**
-  for the migrated catalogue (`#def`/`#newtype`/`#subtype`/`#quot` over
-  `covalence-sexp`). The parser builds each `TermSpec`/`TypeSpec` directly and
-  stores it in the process-shared `cov::core_env()`; the public `defs::*`
-  accessors (`defs::and()`, `defs::option_spec()`, …) are now **thin lookups**
-  that read those handles back out, so there is a single `Arc` per migrated
-  symbol shared everywhere (kernel `Type::unit()`, other `.cov` defs,
-  `covalence-hol`). The hand-written `λ`-builder bodies were deleted from
-  `defs/{logic,fun,unit,fail,coprod,prod,option,result}.rs`.
-  - **Migrated (sourced from `core.cov`):** the logic connectives + quantifiers
-    (`bool.{and,or,not,imp,iff,forall,exists}`), `fail`, `fun.{id,const,compose,
-    flip}`, `unit`/`unit.nil`, `coprod`/`inl`/`inr`/`coprod.case`, `prod`/`pair`/
-    `fst`/`snd`, `signed1`/`signed2`, `option`/`none`/`some`/`option.case`/
-    `isSome`/`unwrap`, `result`/`ok`/`err`.
-  - **Symbols:** every migrated name still has a `Canonical` variant, so the
-    parser tags its spec with the *same* `Canonical` symbol the deleted
-    accessor used — object identity (`==`, pointer-based via `symbol_eq`) is
-    unchanged. (The parser falls back to an opaque `SmolStr` symbol for names
-    without a `Canonical` variant — fine for user `.cov`.)
-  - **Verified:** `cov::tests` keeps the byte-identical assertions; the full
-    `covalence-hol` suite (509 tests, whose proofs depend on object identity)
-    stays green.
+- **`defs/core.cov` + the `defs::cov` parser** migrate part of the catalogue to
+  data (`#def`/`#newtype`/`#subtype`/`#quot` over `covalence-sexp`), byte-identical
+  to the hand-written `defs::*` (asserted in `cov::tests`). **Migrated:** the logic
+  connectives, `fun` combinators, `unit`/`unit.nil`, `coprod`/`prod`/`option`/
+  `result` + ops. **Stayed Rust** (don't fit the four directives): built-in
+  literals, ε-selector primitive specs, recursors, nat/int/rat arithmetic. The
+  accessors still source from Rust (`.cov` proven equal, not yet authoritative) —
+  flipping the source of truth + porting the numeric tower (hand-rolled copy did it)
+  is the follow-up.
 
-### Stayed Rust (cannot be `.cov` data — by design, not stubs)
+## defs source-of-truth flip — reverted, pending re-entrancy fix
 
-These are **not** skeletons to fill; they are kept in Rust deliberately:
-
-- **Built-in literals** — `TermKind::Int`/`Blob`/`SmallInt` (binary-data
-  substrate efficiency).
-- **ε-selector primitive specs** — the recursors (`nat.rec`, `iter`),
-  `prod.fst`/`snd` and `coprod.case` *are* migrated (their ε bodies fit `#sel`),
-  but the nat/list recursion machinery and the not-yet-migrated selector specs
-  stay Rust.
-- **nat/int/rat arithmetic + reduction-coupled ops** — anything in
-  `builtins.rs::PRIM_TABLE` (nat/int/bytes arithmetic, fixed-width `uN`/`sN`
-  ops) is dispatched by `TermSpec` *pointer identity*; its body must be the
-  exact Rust the reducer agrees with, so it stays a hand-written `let_term!` /
-  `spec_term!` (a `.cov` re-expression would be a *different* `Arc` and break
-  reduction dispatch). `cond` likewise stays a Rust `let_term!`.
-- **The `bits`/width tower** (`bits`, `bit`, `u2…u512`, `s1…s512`, `char`,
-  `string`) — these are subtypes whose predicates reference still-Rust ops
-  (`bits.len`, `nat.<`); migrating them is the next batch, blocked on routing
-  those still-Rust *term* constants through the parser's `catalogue_term`
-  fallback. `bit` is already exposed as a type-ctor fallback so the migrated
-  `signed1`/`signed2` can name it.
+- **Flipping the public `defs::*` accessors to source from `core_env()` is
+  DEFERRED.** An attempt (merge `f349a58`) made `defs::and()` → `spec("bool.and")`
+  → `core_env()` (a `LazyLock`) whose own init (`parse_core` over `core.cov`)
+  re-entered the same accessor on the same thread → **std `LazyLock` deadlock**,
+  freezing the whole `covalence-hol` suite. Reverted (`fed9819`). To redo safely:
+  `parse_core` must resolve catalogue references from the **partial env under
+  construction** (or a build-local Rust resolver), NEVER from the `core_env`-backed
+  `defs::*` accessors — and the change must be **test-gated** (the original was
+  build-only). `core.cov` + the byte-identical `cov::tests` remain in place; the
+  accessors stay Rust-sourced (`.cov` proven-equal but not yet authoritative).

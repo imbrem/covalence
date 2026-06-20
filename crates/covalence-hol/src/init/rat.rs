@@ -1536,13 +1536,13 @@ pub fn rat_env() -> crate::script::Env {
     use crate::script::{ConstDef, Env};
     let mut e = Env::empty();
 
-    // rat operators
+    // rat operators (`rat.sub` / `rat.le` are NOT referenced by `rat.cov` —
+    // the ring-law port never mentions subtraction or `≤` — so they are not
+    // registered here; their Rust ops remain available for downstream proofs).
     e.define_const("rat.add", ConstDef::Op(rat_add()));
     e.define_const("rat.mul", ConstDef::Op(rat_mul()));
     e.define_const("rat.neg", ConstDef::Op(rat_neg()));
-    e.define_const("rat.sub", ConstDef::Op(rat_sub()));
     e.define_const("rat.lt", ConstDef::Op(rat_lt()));
-    e.define_const("rat.le", ConstDef::Op(rat_le()));
     e.define_const("rat.zero", ConstDef::Op(rat_zero()));
     e.define_const("rat.one", ConstDef::Op(rat_one()));
     // component layer
@@ -1551,14 +1551,15 @@ pub fn rat_env() -> crate::script::Env {
     e.define_const("rat.den", ConstDef::Op(den_op()));
     e.define_const("rat.rep", ConstDef::Op(rep_op()));
     e.define_const("rat.topos", ConstDef::Op(topos_op()));
-    // int ops the components live in
+    // int ops the components live in (`int.one` is unreferenced by `rat.cov` —
+    // the multiplicative-unit numerator stays inside the `mul_one`/`add_zero`
+    // compute givens — so it is not registered).
     e.define_const("int.add", ConstDef::Op(int::int_add()));
     e.define_const("int.mul", ConstDef::Op(int::int_mul()));
     e.define_const("int.neg", ConstDef::Op(int::int_neg()));
     e.define_const("int.lt", ConstDef::Op(int::int_lt()));
     // int literal constants the unit/zero proofs spell explicitly.
     e.define_const("int.zero", ConstDef::Op(izero()));
-    e.define_const("int.one", ConstDef::Op(Term::int_lit(1i128)));
     // the canonical positive denominator `1 : int.pos` (the `rat.zero`/`rat.one`
     // denominator) — the `mul_zero`/`add_neg` class-equality steps name it.
     e.define_const("rat.one_pos", ConstDef::Op(one_pos()));

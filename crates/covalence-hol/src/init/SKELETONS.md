@@ -98,6 +98,27 @@ index](../../../../SKELETONS.md).
   after `int::distrib`/`distrib_r` + `int::lt_add_cancel_{left,right}` cancel
   the shared summand, over the positive mediant denominator
   (`int::add_pos` + `int::int_pos_round_trip_at`).
+  **`ratprim` `.cov` seam env (`init::rat::rat_env`).** The `rat.cov` ring-law
+  port runs over this env. Unlike `cond` (whose `condprim` *prim* env was
+  deleted by `#def`-ing `cond` inline in `cond.cov`), the rat **operators
+  cannot be moved to inline `#def`s**: `rat_add`/`rat_mul`/`rat_neg`/`rat_lt`/
+  `rat_zero`/`rat_one` (and the `rat.MK`/`rat.num`/`rat.den` component layer)
+  have *quotient-internal* bodies built from `Term::spec_abs`/`spec_rep` +
+  `mk_class` (the `abs (λq. rat_rel p q)` class construction), and the script
+  `.cov` surface (`script/infer.rs`) exposes **no** `spec-abs`/`spec-rep`
+  constructor (its `abs` is a plain λ; only the *core* `defs/cov.rs` parser has
+  `#abs`/`#rep`). So a `#def`'d operator body could not be made byte-identical
+  to the Rust op, and the seam givens (stated over the Rust ops) would not
+  unify with it — the `cond`-style inline migration does not apply here. The
+  operators therefore remain `ConstDef::Op` givens; the residual `ratprim` is
+  those operators + the int-op consts + the genuine seam **lemmas** (`recon`,
+  `add_mk`/`mul_mk`/`neg_mk`, `zero_mk`/`one_mk`, `class_eq`, the `*_compute`
+  bridges, the int round-trips). *Cleaned up:* the dead consts `rat.sub` /
+  `rat.le` / `int.one` (registered but never referenced by `rat.cov`) were
+  dropped from the env. **Unblocking inline rat ops would require** porting
+  `#abs`/`#rep` into `script/infer.rs` AND reconstructing each operator's exact
+  quotient body in `.cov` — out of scope for the lightweight `*prim`-removal
+  pass; left as the residual.
 
 - **The `real` Dedekind-cut theory** in
   `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`

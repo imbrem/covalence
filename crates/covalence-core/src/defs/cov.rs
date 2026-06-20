@@ -54,7 +54,7 @@ use crate::subst::close;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
-use super::spec::{TermSpec, TypeSpec};
+use super::spec::TypeSpec;
 
 // ============================================================================
 // Errors
@@ -90,14 +90,8 @@ fn syn(msg: impl Into<String>) -> CovError {
 /// A single parsed catalogue entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Entry {
-    /// A term constant introduced by `(#def name term)`. Carries both
-    /// the defining *body* (the unfolded lambda, exposed as `term()`)
-    /// and the [`TermSpec`] the parser built for it — `TermSpec::new(
-    /// symbol, Some(body.type_of()), Some(body))`. The spec is the
-    /// **source of truth** the public `defs::*` accessors now read back:
-    /// a reference to this constant elsewhere resolves to the leaf
-    /// `Term::term_spec(spec, type_args)`, not to the unfolded body.
-    Term(Term, TermSpec),
+    /// A term constant introduced by `(#def name term)`.
+    Term(Term),
     /// A type introduced by `(#newtype …)` / `(#subtype …)` / `(#quot …)`.
     /// The full applied `Type` (a `TypeKind::Spec` leaf) plus the
     /// underlying [`TypeSpec`] handle (so callers can build `abs`/`rep`
@@ -128,33 +122,12 @@ impl CoreEnv {
         self.entries.get(name)
     }
 
-    /// Look up a term constant's defining *body* by name (the unfolded
-    /// lambda). For the *leaf* a reference resolves to, see
-    /// [`Self::term_leaf`]; for the underlying handle, [`Self::term_spec`].
+    /// Look up a term constant by name.
     pub fn term(&self, name: &str) -> Option<&Term> {
         match self.entries.get(name) {
-            Some(Entry::Term(t, _)) => Some(t),
+            Some(Entry::Term(t)) => Some(t),
             _ => None,
         }
-    }
-
-    /// Look up a term constant's [`TermSpec`] handle by name. This is the
-    /// object the public `defs::*_spec()` accessors read back, so it is
-    /// the catalogue's single source of truth for the migrated constants.
-    pub fn term_spec(&self, name: &str) -> Option<&TermSpec> {
-        match self.entries.get(name) {
-            Some(Entry::Term(_, s)) => Some(s),
-            _ => None,
-        }
-    }
-
-    /// Build the *leaf* reference to a term constant — `Term::term_spec(
-    /// spec, type_args)` — instantiated at `args`. This is what a `#def`
-    /// constant resolves to when referenced from another definition (the
-    /// same shape the deleted `defs::and()` / `defs::forall(α)` returned).
-    pub fn term_leaf(&self, name: &str, args: Vec<Type>) -> Option<Term> {
-        let spec = self.term_spec(name)?;
-        Some(Term::term_spec(spec.clone(), args))
     }
 
     /// Look up a defined type (the applied `Type`) by name.
@@ -263,23 +236,22 @@ fn directive(form: &SExpr, env: &mut CoreEnv) -> R<()> {
             arity(ch, 3, "#def")?;
             let name = sym(&ch[1], "#def name")?.to_string();
             let mut scope = Scope::new();
-            let body = term(&ch[2], &mut scope, env)?;
+            let t = term(&ch[2], &mut scope, env)?;
             // Type-check the body so a malformed def is rejected here,
-            // not deep downstream. The computed type is the spec's `ty`
-            // (so `Term::term_spec(spec, args).type_of()` substitutes
-            // positionally into it, exactly as the deleted accessors did).
-            let ty = body
-                .type_of()
+            // not deep downstream.
+            t.type_of()
                 .map_err(|e| CovError::Type(format!("#def {name}: {e:?}")))?;
-            let spec = TermSpec::new(spec_symbol(&name), Some(ty), Some(body.clone()));
-            env.insert(name, Entry::Term(body, spec))
+            env.insert(name, Entry::Term(t))
         }
         "#newtype" => {
             arity(ch, 3, "#newtype")?;
             let name = sym(&ch[1], "#newtype name")?.to_string();
             let base = parse_type(&ch[2], env)?;
-            let spec = TypeSpec::newtype(spec_symbol(&name), base);
-            insert_type(env, name, spec)
+            let fresh = match canonical_by_label(&name) {
+                Some(sym) => TypeSpec::newtype(sym, base),
+                None => TypeSpec::newtype(smol_str::SmolStr::from(&name), base),
+            };
+            insert_type(env, name, fresh)
         }
         "#subtype" => {
             arity(ch, 4, "#subtype")?;
@@ -287,8 +259,11 @@ fn directive(form: &SExpr, env: &mut CoreEnv) -> R<()> {
             let carrier = parse_type(&ch[2], env)?;
             let mut scope = Scope::new();
             let pred = term(&ch[3], &mut scope, env)?;
-            let spec = TypeSpec::subtype(spec_symbol(&name), carrier, pred);
-            insert_type(env, name, spec)
+            let fresh = match canonical_by_label(&name) {
+                Some(sym) => TypeSpec::subtype(sym, carrier, pred),
+                None => TypeSpec::subtype(smol_str::SmolStr::from(&name), carrier, pred),
+            };
+            insert_type(env, name, fresh)
         }
         "#quot" => {
             arity(ch, 4, "#quot")?;
@@ -296,20 +271,40 @@ fn directive(form: &SExpr, env: &mut CoreEnv) -> R<()> {
             let base = parse_type(&ch[2], env)?;
             let mut scope = Scope::new();
             let rel = term(&ch[3], &mut scope, env)?;
-            let spec = TypeSpec::quot(spec_symbol(&name), base, rel);
-            insert_type(env, name, spec)
+            let fresh = match canonical_by_label(&name) {
+                Some(sym) => TypeSpec::quot(sym, base, rel),
+                None => TypeSpec::quot(smol_str::SmolStr::from(&name), base, rel),
+            };
+            insert_type(env, name, fresh)
         }
         other => Err(syn(format!("unknown directive: {other}"))),
     }
 }
 
-/// Insert a parsed type definition. The parser-built `spec` **is** the
-/// source of truth: the public `defs::*_spec()` accessors read it back
-/// out of [`core_env`], so there is a single `Arc` per migrated type and
-/// every reference (kernel `Type::unit()`, another `.cov` definition,
-/// downstream `covalence-hol`) shares it. The applied `Type` leaf is
-/// instantiated at the spec's own tvars via [`apply_spec`].
-fn insert_type(env: &mut CoreEnv, name: String, spec: TypeSpec) -> R<()> {
+/// Insert a parsed type definition. When `name` is an already-cached
+/// kernel-catalogue type, we **reuse the cached spec** (so the type is
+/// `Arc`-identical to what the rest of the kernel and other `.cov`
+/// definitions reference) — but only after checking that the freshly
+/// parsed `carrier`/`predicate` are *structurally identical* (modulo
+/// the spec symbol, whose equality is pointer-based) to the cached
+/// definition. That check is what makes the `.cov` an audited
+/// re-expression of the Rust rather than an unverified parallel one.
+///
+/// For a genuinely new type (no cached accessor) the fresh spec is
+/// stored directly.
+fn insert_type(env: &mut CoreEnv, name: String, fresh: TypeSpec) -> R<()> {
+    let spec = match catalogue_type_spec(&name) {
+        Some(cached) => {
+            if fresh.ty() != cached.ty() || fresh.tm() != cached.tm() {
+                return Err(CovError::Type(format!(
+                    "type {name}: core.cov definition does not match the hand-written \
+                     catalogue (carrier/predicate differ)"
+                )));
+            }
+            cached
+        }
+        None => fresh,
+    };
     let applied = apply_spec(&spec, &name)?;
     env.insert(name, Entry::Type(applied, spec))
 }
@@ -413,14 +408,6 @@ fn parse_type(s: &SExpr, env: &CoreEnv) -> R<Type> {
 }
 
 fn parse_type_atom(name: &str, env: &CoreEnv) -> R<Type> {
-    // A type defined earlier in *this* file wins over the hardcoded
-    // primitives. This matters for the migrated `unit` (a `#subtype` in
-    // `core.cov`): resolving it via the in-progress `env` avoids calling
-    // `Type::unit()` → `defs::unit_spec()` → `core_env()`, which would
-    // re-enter the very `LazyLock` we are building.
-    if let Some(t) = env.ty(name) {
-        return Ok(t.clone());
-    }
     match name {
         "bool" => Ok(Type::bool()),
         "nat" => Ok(Type::nat()),
@@ -428,8 +415,14 @@ fn parse_type_atom(name: &str, env: &CoreEnv) -> R<Type> {
         "unit" => Ok(Type::unit()),
         "bytes" => Ok(Type::bytes()),
         _ if name.starts_with('\'') => Ok(Type::tfree(&name[1..])),
-        // A zero-ary catalogue type spec (e.g. a not-yet-migrated `rat`).
-        _ => apply_type_ctor(name, vec![], env),
+        // A locally-defined zero-ary type.
+        _ => {
+            if let Some(t) = env.ty(name) {
+                return Ok(t.clone());
+            }
+            // A zero-ary catalogue type spec (e.g. a future `rat`).
+            apply_type_ctor(name, vec![], env)
+        }
     }
 }
 
@@ -515,18 +508,21 @@ fn term_atom(name: &str, scope: &mut Scope, env: &CoreEnv) -> R<Term> {
     if let Some(ty) = scope.lookup(name) {
         return Ok(Term::free(name, ty.clone()));
     }
-    // (3) a prior `#def` constant in this file — resolves to the *leaf*
-    // `Term::term_spec(spec, [])`, **not** the unfolded body. This is the
-    // single source of truth: e.g. `bool.and` inside `bool.imp`'s body
-    // becomes the same spec leaf the public `defs::and()` accessor reads
-    // back, so dependent definitions reference one shared `Arc`.
-    if let Some(t) = env.term_leaf(name, vec![]) {
-        return Ok(t);
-    }
-    // (4) a still-hand-written kernel catalogue constant (nat/int/bytes
-    // arithmetic and the other not-yet-migrated ops), monomorphic.
+    // (3) a kernel catalogue constant, monomorphic (0 type args).
+    //
+    // Catalogue resolution comes *before* the `CoreEnv` lookup so that a
+    // reference to a constant (e.g. `bool.and` inside `bool.imp`'s body)
+    // resolves to the cached `Term::term_spec(and_spec, [])` *leaf* — the
+    // same object the hand-written `hol::hol_and` uses — and *not* to the
+    // unfolded lambda body the `#def` stored under that name. This is
+    // what keeps the dependent definitions byte-identical to the Rust.
     if let Some(t) = catalogue_term(name, &[]) {
         return Ok(t);
+    }
+    // (4) a prior `#def` term constant that is *not* a kernel catalogue
+    // name (user-introduced definitions in a non-core `.cov`).
+    if let Some(t) = env.term(name) {
+        return Ok(t.clone());
     }
     Err(CovError::Unknown(name.to_string()))
 }
@@ -589,12 +585,8 @@ fn parse_type_app(ch: &[SExpr], env: &CoreEnv) -> R<Term> {
     }
     let name = sym(&ch[1], "#at name")?;
     let args = ch[2..].iter().map(|c| parse_type(c, env)).collect::<R<Vec<_>>>()?;
-    // A migrated `#def` constant resolves to its leaf at the explicit
-    // type arguments (`(#at bool.forall bool)` → `term_spec(forall_spec,
-    // [bool])`); a still-Rust catalogue constant resolves via the table.
-    if let Some(t) = env.term_leaf(name, args.clone()) {
-        return Ok(t);
-    }
+    // A prior `#def` constant cannot take type args (it is already a
+    // closed term), so `#at` only resolves catalogue constants.
     catalogue_term(name, &args).ok_or_else(|| CovError::Unknown(format!("catalogue term: {name}")))
 }
 
@@ -689,18 +681,12 @@ fn arity(ch: &[SExpr], n: usize, what: &str) -> R<()> {
 // catalogue entries that have not (yet) been ported simply aren't here.
 // ============================================================================
 
-/// Resolve a label to its `Canonical` symbol (for the specs the parser
-/// builds). Every migrated symbol has a `Canonical` variant, so the
-/// parser-built spec carries the *same* canonical symbol the deleted
-/// hand-written accessor used to — keeping object identity exact. Names
-/// without a `Canonical` variant (genuinely new migrations, user `.cov`)
-/// fall back to an opaque `SmolStr` symbol at the call site.
-///
-/// Variants are spelled fully-qualified so `Canonical::Some`/
-/// `Canonical::None` do not shadow `Option`'s.
+/// Resolve a label to its `Canonical` symbol (for directive heads).
 fn canonical_by_label(name: &str) -> Option<Canonical> {
+    // Only the symbols we migrate need to be here. Variants are spelled
+    // fully-qualified so `Canonical::Some`/`Canonical::None` do not
+    // shadow `Option`'s.
     Some(match name {
-        // ---- logic connectives + quantifiers ----
         "bool.and" => Canonical::And,
         "bool.or" => Canonical::Or,
         "bool.not" => Canonical::Not,
@@ -708,99 +694,81 @@ fn canonical_by_label(name: &str) -> Option<Canonical> {
         "bool.iff" => Canonical::Iff,
         "bool.forall" => Canonical::Forall,
         "bool.exists" => Canonical::Exists,
-        // ---- fail ----
         "fail" => Canonical::Fail,
-        // ---- function combinators ----
         "fun.id" => Canonical::Id,
         "fun.const" => Canonical::Const,
         "fun.compose" => Canonical::Compose,
         "fun.flip" => Canonical::Flip,
-        // ---- unit ----
         "unit" => Canonical::Unit,
         "unit.nil" => Canonical::UnitNil,
-        // ---- coprod ----
         "coprod" => Canonical::Coprod,
-        "coprod.inl" => Canonical::Inl,
-        "coprod.inr" => Canonical::Inr,
-        "coprod.case" => Canonical::CoprodCase,
-        // ---- prod ----
         "prod" => Canonical::Prod,
-        "prod.pair" => Canonical::Pair,
-        "prod.fst" => Canonical::Fst,
-        "prod.snd" => Canonical::Snd,
-        "signed1" => Canonical::Signed1,
-        "signed2" => Canonical::Signed2,
-        // ---- option ----
         "option" => Canonical::Option,
-        "option.none" => Canonical::None,
-        "option.some" => Canonical::Some,
-        "option.case" => Canonical::OptionCase,
-        "option.isSome" => Canonical::IsSome,
-        "option.unwrap" => Canonical::Unwrap,
-        // ---- result ----
         "result" => Canonical::Result,
-        "result.ok" => Canonical::Ok,
-        "result.err" => Canonical::Err,
         _ => return Option::None,
     })
 }
 
-/// Build the spec `Symbol` for a migrated `name`: a `Canonical` variant
-/// where one exists (exact identity with the kernel catalogue), else an
-/// opaque `SmolStr`. Returned boxed as a `Symbol` so a single
-/// `TermSpec::new` / `TypeSpec::*` call site handles both.
-fn spec_symbol(name: &str) -> Box<dyn super::symbol::Symbol> {
-    match canonical_by_label(name) {
-        Some(sym) => Box::new(sym),
-        None => Box::new(smol_str::SmolStr::from(name)),
-    }
-}
-
-/// Resolve a catalogue type constructor name `name` to its cached
-/// [`TypeSpec`] — the fallback used when a `.cov` references a type that
-/// is **not** defined in its *own* `env` (e.g. a user `.cov`, or a
-/// `term_str`/`type_str` snippet, naming a migrated type).
-///
-/// Migrated structural types are sourced from the shared
-/// [`core_env`]; the few still-hand-written catalogue types
-/// (`rel`/`set`) fall through to their Rust accessors. This is **never**
-/// reached while building `core_env` itself: there every migrated name
-/// resolves via the in-progress `env` first (see `apply_type_ctor` /
-/// `resolve_type_spec`), so `core_env()` does not re-enter its own
-/// `LazyLock`.
+/// Resolve a catalogue *type* constructor name to its cached
+/// [`TypeSpec`] accessor.
 fn catalogue_type_spec(name: &str) -> Option<TypeSpec> {
     use super::*;
-    // Still-hand-written catalogue types are matched *first*, by their
-    // Rust accessor, with no `core_env()` touch — this is the only arm
-    // reachable while `core_env` itself is being built (a migrated
-    // `.cov` type references one of these as a carrier, e.g.
-    // `signed1`'s `bit`), so it must not re-enter the `core_env`
-    // `LazyLock`.
-    let rust = match name {
-        "rel" => Some(rel_spec()),
-        "set" => Some(set_spec()),
-        "bit" => Some(bit_spec()),
-        _ => None,
-    };
-    if rust.is_some() {
-        return rust;
-    }
-    // Otherwise it is a migrated type referenced from *outside* the core
-    // parse (a user `.cov` / `type_str` snippet); source it from the
-    // shared `core_env`. Never reached during `core_env`'s own build,
-    // where migrated names resolve via the in-progress `env` first.
-    core_env().type_spec(name).cloned()
+    Some(match name {
+        "unit" => unit_spec(),
+        "coprod" => coprod_spec(),
+        "prod" => prod_spec(),
+        "option" => option_spec(),
+        "result" => result_spec(),
+        "rel" => rel_spec(),
+        "set" => set_spec(),
+        _ => return None,
+    })
 }
 
-/// Resolve a catalogue term constant `name` at type arguments `args` to
-/// its cached leaf — the fallback for term names a `.cov` references
-/// that are not defined in its *own* `env`. Migrated constants are
-/// sourced from the shared [`core_env`]; not-yet-migrated still-Rust
-/// constants (nat/int/bytes arithmetic) would be added here as a `match`
-/// arm. As with [`catalogue_type_spec`], this is never reached while
-/// building `core_env` itself (env-first resolution).
+/// Resolve a catalogue *term* constant `name` at type arguments `args`
+/// to its cached accessor. Returns `None` for unknown names or an
+/// argument-count mismatch.
 fn catalogue_term(name: &str, args: &[Type]) -> Option<Term> {
-    core_env().term_leaf(name, args.to_vec())
+    use super::*;
+    let a = |i: usize| args.get(i).cloned();
+    Some(match (name, args.len()) {
+        // ---- logic connectives (monomorphic) ----
+        ("bool.and", 0) => and(),
+        ("bool.or", 0) => or(),
+        ("bool.not", 0) => not(),
+        ("bool.imp", 0) => imp(),
+        ("bool.iff", 0) => iff(),
+        // ---- quantifiers (one type arg) ----
+        ("bool.forall", 1) => forall(a(0)?),
+        ("bool.exists", 1) => exists(a(0)?),
+        // ---- fail (one type arg) ----
+        ("fail", 1) => fail(a(0)?),
+        // ---- function combinators ----
+        ("fun.id", 1) => id(a(0)?),
+        ("fun.const", 2) => konst(a(0)?, a(1)?),
+        ("fun.compose", 3) => compose(a(0)?, a(1)?, a(2)?),
+        ("fun.flip", 3) => flip(a(0)?, a(1)?, a(2)?),
+        // ---- unit ----
+        ("unit.nil", 0) => unit_nil(),
+        // ---- coproduct ----
+        ("coprod.inl", 2) => inl(a(0)?, a(1)?),
+        ("coprod.inr", 2) => inr(a(0)?, a(1)?),
+        ("coprod.case", 3) => coprod_case(a(0)?, a(1)?, a(2)?),
+        // ---- product ----
+        ("prod.pair", 2) => pair(a(0)?, a(1)?),
+        ("prod.fst", 2) => fst(a(0)?, a(1)?),
+        ("prod.snd", 2) => snd(a(0)?, a(1)?),
+        // ---- option ----
+        ("option.none", 1) => none(a(0)?),
+        ("option.some", 1) => some(a(0)?),
+        ("option.case", 2) => option_case(a(0)?, a(1)?),
+        ("option.isSome", 1) => is_some(a(0)?),
+        ("option.unwrap", 1) => unwrap(a(0)?),
+        // ---- result ----
+        ("result.ok", 2) => ok(a(0)?, a(1)?),
+        ("result.err", 2) => err(a(0)?, a(1)?),
+        _ => return None,
+    })
 }
 
 // ============================================================================
@@ -825,8 +793,8 @@ mod tests {
             "bool.and", "bool.or", "bool.not", "bool.imp", "bool.iff", "bool.forall",
             "bool.exists", "fail", "fun.id", "fun.const", "fun.compose", "fun.flip", "unit",
             "unit.nil", "coprod", "coprod.inl", "coprod.inr", "coprod.case", "prod", "prod.pair",
-            "prod.fst", "prod.snd", "signed1", "signed2", "option", "option.none", "option.some",
-            "option.case", "option.isSome", "option.unwrap", "result", "result.ok", "result.err",
+            "prod.fst", "prod.snd", "option", "option.none", "option.some", "option.case",
+            "option.isSome", "option.unwrap", "result", "result.ok", "result.err",
         ] {
             assert!(e.get(name).is_some(), "missing core.cov entry: {name}");
         }
@@ -893,16 +861,8 @@ mod tests {
         assert_eq!(e.type_spec("unit").unwrap(), &defs::unit_spec());
         assert_eq!(e.type_spec("coprod").unwrap(), &defs::coprod_spec());
         assert_eq!(e.type_spec("prod").unwrap(), &defs::prod_spec());
-        assert_eq!(e.type_spec("signed1").unwrap(), &defs::signed1_spec());
-        assert_eq!(e.type_spec("signed2").unwrap(), &defs::signed2_spec());
         assert_eq!(e.type_spec("option").unwrap(), &defs::option_spec());
         assert_eq!(e.type_spec("result").unwrap(), &defs::result_spec());
-
-        // The accessors are now thin lookups: each `*_spec()` returns the
-        // very same `Arc` the parser built (not a re-built copy).
-        assert!(e.type_spec("prod").unwrap().ptr_eq(&defs::prod_spec()));
-        assert!(e.term_spec("bool.and").unwrap().ptr_eq(&defs::and_spec()));
-        assert!(e.term_spec("signed1").is_none(), "signed1 is a type, not a term");
 
         // …and the applied `Type` leaves match the hand-written builders.
         assert_eq!(e.ty("unit").unwrap(), &Type::unit());

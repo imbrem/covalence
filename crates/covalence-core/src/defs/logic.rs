@@ -2,14 +2,6 @@
 //! `defs/` definitions over the two logical primitives `=`
 //! ([`crate::TermKind::Eq`]) and `ε` ([`crate::TermKind::Select`]).
 //!
-//! **Source of truth: [`core.cov`](super::cov).** The defining bodies
-//! used to live here as hand-written `λ`-builders; they now live as
-//! `(#def …)` directives in `defs/core.cov` and are parsed once into
-//! [`super::cov::core_env`]. The accessors below are thin lookups that
-//! read the parser-built [`TermSpec`] back out, so there is a single
-//! shared `Arc` per connective and every reference (this module, the
-//! kernel rules, downstream `covalence-hol`) gets the same object.
-//!
 //! This is the HOL Light bootstrap (`bool.ml`) expressed in the
 //! catalogue: every connective is a let-style [`TermSpec`] whose body
 //! is the standard definition. Two consequences follow for free:
@@ -26,107 +18,193 @@
 //! `reduce_prim`, and the literals' distinctness is the kernel's
 //! denotational commitment.
 //!
+//! ## Definition order
+//!
+//! The bodies reference each other, so the `LazyLock`s force in
+//! dependency order (acyclic):
+//!
+//! ```text
+//! and, forall  ←  (=, T)         (no connective deps)
+//! imp          ←  and
+//! not          ←  imp, F
+//! or, exists   ←  forall, imp
+//! iff          ←  (=)
+//! ```
+//!
 //! The `imp_intro` / `imp_elim` / `all_intro` / `all_elim` kernel
 //! rules operate on the `imp` / `forall` specs defined here; they
 //! remain kernel-provided derived rules (sound by the standard HOL
 //! Light derivations) rather than being re-derived from scratch.
 
+use crate::hol;
 use crate::term::{Term, Type};
 
-use super::cov::core_env;
-use super::spec::TermSpec;
+use super::canonical::Canonical;
 
 // ============================================================================
-// Accessors — thin lookups into the parsed `core.cov` catalogue.
-//
-// Each `*_spec()` reads the `TermSpec` the parser built from the matching
-// `(#def bool.xxx …)` directive; each term accessor instantiates its leaf
-// at the supplied type arguments. The bodies (and the `Soundness:`-worthy
-// HOL Light definitions they encode) live in `defs/core.cov`.
+// Helpers
 // ============================================================================
 
-/// Fetch a migrated connective's `TermSpec` from `core.cov` by label.
-/// Panics only if `core.cov` is missing the entry — a build-time
-/// invariant the test suite exercises.
-fn spec(label: &str) -> TermSpec {
-    core_env()
-        .term_spec(label)
-        .unwrap_or_else(|| panic!("core.cov must define `{label}`"))
-        .clone()
+fn b() -> Type {
+    Type::bool()
 }
 
-/// `(/\) : bool → bool → bool` ≡ `λp q. (λf. f p q) = (λf. f T T)`.
-pub fn and_spec() -> TermSpec {
-    spec("bool.and")
-}
-/// `(/\) : bool → bool → bool`.
-pub fn and() -> Term {
-    Term::term_spec(and_spec(), vec![])
+fn t_lit() -> Term {
+    Term::bool_lit(true)
 }
 
-/// `(==>) : bool → bool → bool` ≡ `λp q. (p /\ q) = p`.
-pub fn imp_spec() -> TermSpec {
-    spec("bool.imp")
-}
-/// `(==>) : bool → bool → bool`.
-pub fn imp() -> Term {
-    Term::term_spec(imp_spec(), vec![])
+fn f_lit() -> Term {
+    Term::bool_lit(false)
 }
 
-/// `(~) : bool → bool` ≡ `λp. p ==> F`.
-pub fn not_spec() -> TermSpec {
-    spec("bool.not")
-}
-/// `(~) : bool → bool`.
-pub fn not() -> Term {
-    Term::term_spec(not_spec(), vec![])
+/// `p ⟹ q` built from the `imp` spec (for use inside the bodies that
+/// need implication before `hol::hol_imp` would be circular-safe).
+fn imp_app(p: Term, q: Term) -> Term {
+    Term::app(Term::app(imp(), p), q)
 }
 
-/// `(<=>) : bool → bool → bool` ≡ `λp q. p = q`.
-pub fn iff_spec() -> TermSpec {
-    spec("bool.iff")
-}
-/// `(<=>) : bool → bool → bool`.
-pub fn iff() -> Term {
-    Term::term_spec(iff_spec(), vec![])
+// ============================================================================
+// and — `λp q. (λf. f p q) = (λf. f T T)`
+// ============================================================================
+
+fn and_body() -> Term {
+    // `f : bool → bool → bool`
+    let bbb = Type::fun(b(), Type::fun(b(), b()));
+    let p = Term::free("p", b());
+    let q = Term::free("q", b());
+    let f = Term::free("f", bbb.clone());
+
+    // λf. f p q
+    let f_p_q = Term::app(Term::app(f.clone(), p.clone()), q.clone());
+    let lhs = hol::pub_abs("f", bbb.clone(), f_p_q);
+    // λf. f T T
+    let f_t_t = Term::app(Term::app(f, t_lit()), t_lit());
+    let rhs = hol::pub_abs("f", bbb, f_t_t);
+
+    let eq = hol::hol_eq(lhs, rhs);
+    hol::pub_abs("p", b(), hol::pub_abs("q", b(), eq))
 }
 
-/// `(\/) : bool → bool → bool` ≡
-/// `λp q. !r. (p ==> r) ==> (q ==> r) ==> r`.
-pub fn or_spec() -> TermSpec {
-    spec("bool.or")
-}
-/// `(\/) : bool → bool → bool`.
-pub fn or() -> Term {
-    Term::term_spec(or_spec(), vec![])
+let_term! {
+    /// `(/\) : bool → bool → bool` ≡ `λp q. (λf. f p q) = (λf. f T T)`.
+    and_spec, and, Canonical::And, and_body()
 }
 
-/// `(!) : ('a → bool) → bool` ≡ `λP. P = (λx. T)`.
-pub fn forall_spec() -> TermSpec {
-    spec("bool.forall")
-}
-/// `(!) α : (α → bool) → bool`.
-pub fn forall(alpha: Type) -> Term {
-    Term::term_spec(forall_spec(), vec![alpha])
+// ============================================================================
+// imp — `λp q. (p /\ q) = p`
+// ============================================================================
+
+fn imp_body() -> Term {
+    let p = Term::free("p", b());
+    let q = Term::free("q", b());
+    let and_pq = Term::app(Term::app(and(), p.clone()), q.clone());
+    let eq = hol::hol_eq(and_pq, p.clone());
+    hol::pub_abs("p", b(), hol::pub_abs("q", b(), eq))
 }
 
-/// `(?) : ('a → bool) → bool` ≡ `λP. !q. (!x. P x ==> q) ==> q`.
-pub fn exists_spec() -> TermSpec {
-    spec("bool.exists")
+let_term! {
+    /// `(==>) : bool → bool → bool` ≡ `λp q. (p /\ q) = p`.
+    imp_spec, imp, Canonical::Imp, imp_body()
 }
-/// `(?) α : (α → bool) → bool`.
-pub fn exists(alpha: Type) -> Term {
-    Term::term_spec(exists_spec(), vec![alpha])
+
+// ============================================================================
+// not — `λp. p ==> F`
+// ============================================================================
+
+fn not_body() -> Term {
+    let p = Term::free("p", b());
+    let body = imp_app(p.clone(), f_lit());
+    hol::pub_abs("p", b(), body)
+}
+
+let_term! {
+    /// `(~) : bool → bool` ≡ `λp. p ==> F`.
+    not_spec, not, Canonical::Not, not_body()
+}
+
+// ============================================================================
+// iff — `λp q. p = q`
+// ============================================================================
+
+fn iff_body() -> Term {
+    let p = Term::free("p", b());
+    let q = Term::free("q", b());
+    let eq = hol::hol_eq(p.clone(), q.clone());
+    hol::pub_abs("p", b(), hol::pub_abs("q", b(), eq))
+}
+
+let_term! {
+    /// `(<=>) : bool → bool → bool` ≡ `λp q. p = q`.
+    iff_spec, iff, Canonical::Iff, iff_body()
+}
+
+// ============================================================================
+// forall — `λP. P = (λx. T)`
+// ============================================================================
+
+fn forall_body() -> Term {
+    let alpha = Type::tfree("a");
+    let pred_ty = Type::fun(alpha.clone(), b());
+    let pred = Term::free("P", pred_ty.clone());
+    // λx:α. T  (x unused; `pub_abs` close is a no-op but keeps shape)
+    let lam_x = hol::pub_abs("x", alpha, t_lit());
+    let eq = hol::hol_eq(pred, lam_x);
+    hol::pub_abs("P", pred_ty, eq)
+}
+
+poly_let_term! {
+    /// `(!) : ('a → bool) → bool` ≡ `λP. P = (λx. T)`.
+    forall_spec, forall(alpha), Canonical::Forall, forall_body()
+}
+
+// ============================================================================
+// or — `λp q. !r. (p ==> r) ==> (q ==> r) ==> r`
+// ============================================================================
+
+fn or_body() -> Term {
+    let p = Term::free("p", b());
+    let q = Term::free("q", b());
+    let r = Term::free("r", b());
+    let p_r = imp_app(p.clone(), r.clone());
+    let q_r = imp_app(q.clone(), r.clone());
+    let inner = imp_app(p_r, imp_app(q_r, r.clone()));
+    let forall_r = hol::hol_forall("r", b(), inner);
+    hol::pub_abs("p", b(), hol::pub_abs("q", b(), forall_r))
+}
+
+let_term! {
+    /// `(\/) : bool → bool → bool` ≡
+    /// `λp q. !r. (p ==> r) ==> (q ==> r) ==> r`.
+    or_spec, or, Canonical::Or, or_body()
+}
+
+// ============================================================================
+// exists — `λP. !q. (!x. P x ==> q) ==> q`
+// ============================================================================
+
+fn exists_body() -> Term {
+    let alpha = Type::tfree("a");
+    let pred_ty = Type::fun(alpha.clone(), b());
+    let pred = Term::free("P", pred_ty.clone());
+    let q = Term::free("q", b());
+    let x = Term::free("x", alpha.clone());
+    let p_x = Term::app(pred.clone(), x);
+    let p_x_q = imp_app(p_x, q.clone());
+    let inner_forall = hol::hol_forall("x", alpha, p_x_q);
+    let imp2 = imp_app(inner_forall, q.clone());
+    let forall_q = hol::hol_forall("q", b(), imp2);
+    hol::pub_abs("P", pred_ty, forall_q)
+}
+
+poly_let_term! {
+    /// `(?) : ('a → bool) → bool` ≡ `λP. !q. (!x. P x ==> q) ==> q`.
+    exists_spec, exists(alpha), Canonical::Exists, exists_body()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{TermKind, Thm};
-
-    fn b() -> Type {
-        Type::bool()
-    }
 
     fn bin() -> Type {
         Type::fun(b(), Type::fun(b(), b()))
@@ -144,14 +222,6 @@ mod tests {
         let quant = Type::fun(Type::fun(a.clone(), b()), b());
         assert_eq!(forall(a.clone()).type_of().unwrap(), quant);
         assert_eq!(exists(a).type_of().unwrap(), quant);
-    }
-
-    /// Each connective `*_spec()` is the *same* `Arc` every call — it is
-    /// the one the parser built from `core.cov`, shared process-wide.
-    #[test]
-    fn connective_specs_are_shared_singletons() {
-        assert!(and_spec().ptr_eq(&and_spec()));
-        assert!(forall_spec().ptr_eq(&forall_spec()));
     }
 
     /// The whole point of making the connectives `defs/` specs: each

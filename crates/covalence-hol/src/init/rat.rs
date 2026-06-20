@@ -2360,9 +2360,7 @@ fn lt_trichotomy_impl() -> Result<Thm> {
     let dab = lt_via_components(&ra, &rb)?; // ratLt a b = int.lt x y
     let dba = lt_via_components(&rb, &ra)?; // ratLt b a = int.lt y x
 
-    // target conclusion shape.
     let eq_ab = a.clone().equals(b.clone())?;
-    let goal = rlt(a.clone(), b.clone()).or(eq_ab.clone().or(rlt(b.clone(), a.clone()))?)?;
 
     // disjunct 1: x<y ⟹ a<b ⟹ goal.
     let xlty = lt_via_int(&x, &y);

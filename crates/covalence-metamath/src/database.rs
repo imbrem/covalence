@@ -1,307 +1,374 @@
-use indexmap::IndexMap;
+//! The Metamath frame / database model.
+//!
+//! A [`Database`] is a flat, source-order list of [`Statement`]s plus a symbol
+//! table classifying every symbol as a constant or a variable. Assertions
+//! (`$a` axioms, `$p` theorems) carry their **mandatory [`Frame`]**: the
+//! `$f`/`$e` hypotheses they depend on (in database order) and the `$d`
+//! distinct-variable conditions that constrain how they may be applied.
+//!
+//! Building a database tracks an active scope stack (`${ ... $}`): floating
+//! hypotheses, essential hypotheses, variable declarations, and `$d`
+//! restrictions are scoped, while `$c`/`$a`/`$p` are global.
 
-/// Typed index into the symbol table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SymbolId(pub u32);
+use std::collections::HashMap;
 
-/// Typed index into the statement list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StatementId(pub u32);
+use crate::error::MmError;
+use crate::expr::Expr;
 
-/// A Metamath statement.
-#[derive(Debug, Clone)]
-pub enum Statement {
-    /// `$c` — constant declaration.
-    Constant { symbols: Vec<SymbolId> },
-    /// `$v` — variable declaration.
-    Variable { symbols: Vec<SymbolId> },
-    /// `$f` — floating (variable-type) hypothesis.
-    Float {
-        label: String,
-        typecode: SymbolId,
-        var: SymbolId,
-    },
-    /// `$e` — essential (logical) hypothesis.
-    Essential {
-        label: String,
-        symbols: Vec<SymbolId>,
-    },
-    /// `$a` — axiomatic assertion.
-    Axiom {
-        label: String,
-        symbols: Vec<SymbolId>,
-        frame: Frame,
-    },
-    /// `$p` — provable assertion.
-    Provable {
-        label: String,
-        symbols: Vec<SymbolId>,
-        frame: Frame,
-        proof: Proof,
-    },
-    /// `$d` — disjoint variable restriction (stored, not enforced).
-    Disjoint { vars: Vec<SymbolId> },
+/// A floating hypothesis (`$f`): a variable's typecode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FloatHyp {
+    pub label: String,
+    /// The typecode constant (e.g. `wff`, `term`, `class`).
+    pub typecode: String,
+    /// The variable being typed (e.g. `ph`, `t`).
+    pub var: String,
 }
 
-/// A Metamath proof — either normal (list of labels) or compressed.
-#[derive(Debug, Clone)]
-pub enum Proof {
-    /// Normal proof: sequence of statement labels.
-    Normal(Vec<String>),
-    /// Compressed proof: label block + encoded letter block.
-    Compressed {
-        labels: Vec<String>,
-        letters: Vec<u8>,
-    },
+/// An essential hypothesis (`$e`): a full logical premise as an [`Expr`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hypothesis {
+    pub label: String,
+    pub expr: Expr,
 }
 
-/// The mandatory frame for an `$a` or `$p` statement.
-#[derive(Debug, Clone)]
+/// The mandatory frame of an assertion: the hypotheses it consumes and the
+/// distinct-variable conditions it imposes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Frame {
-    /// Mandatory `$f` hypotheses (in order).
-    pub floats: Vec<StatementId>,
-    /// Mandatory `$e` hypotheses (in order).
-    pub essentials: Vec<StatementId>,
-    /// Mandatory `$d` restrictions.
-    pub disjoints: Vec<(SymbolId, SymbolId)>,
+    /// Mandatory `$f` hypotheses, in database order. These are the variables
+    /// the assertion is parameterised over (its "type signature").
+    pub floats: Vec<FloatHyp>,
+    /// Mandatory `$e` hypotheses, in database order.
+    pub essentials: Vec<Hypothesis>,
+    /// Mandatory `$d` conditions as unordered variable pairs.
+    pub disjoints: Vec<(String, String)>,
 }
 
-/// Tracks active variables, floats, essentials, and disjoints within a `${ $}` block.
+impl Frame {
+    /// The mandatory hypotheses in RPN-application order: all `$f` first
+    /// (database order), then all `$e` (database order). This is the order in
+    /// which they are popped off the proof stack.
+    pub fn mandatory_count(&self) -> usize {
+        self.floats.len() + self.essentials.len()
+    }
+}
+
+/// An assertion: an axiom (`$a`) or a theorem (`$p`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Assertion {
+    pub label: String,
+    /// The asserted conclusion (typecode + body).
+    pub conclusion: Expr,
+    /// The mandatory frame.
+    pub frame: Frame,
+    /// `Some(proof)` for a `$p` theorem (an RPN sequence of labels), `None` for
+    /// a `$a` axiom.
+    pub proof: Option<Vec<String>>,
+}
+
+/// A top-level statement, in source order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Statement {
+    /// `$c` constant declaration.
+    Constant(Vec<String>),
+    /// `$v` variable declaration.
+    Variable(Vec<String>),
+    /// `$f` floating hypothesis.
+    Float(FloatHyp),
+    /// `$e` essential hypothesis.
+    Essential(Hypothesis),
+    /// `$d` distinct-variable restriction (the full symbol list).
+    Disjoint(Vec<String>),
+    /// `$a` / `$p` assertion.
+    Assert(Assertion),
+}
+
+/// One lexical scope (`${ ... $}`).
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Scope {
-    /// Variables declared in this scope.
-    pub variables: Vec<SymbolId>,
-    /// `$f` statements declared in this scope (label → statement index).
-    pub floats: Vec<(String, StatementId)>,
-    /// `$e` statements declared in this scope (label → statement index).
-    pub essentials: Vec<(String, StatementId)>,
-    /// `$d` restrictions declared in this scope.
-    pub disjoints: Vec<(SymbolId, SymbolId)>,
+struct Scope {
+    floats: Vec<FloatHyp>,
+    essentials: Vec<Hypothesis>,
+    /// Active `$d` pairs (already expanded pairwise).
+    disjoints: Vec<(String, String)>,
 }
 
 /// A parsed Metamath database.
 #[derive(Debug, Clone)]
 pub struct Database {
-    /// Interned symbols: name → is_variable. Index position = SymbolId.
-    pub symbols: IndexMap<String, bool>,
+    /// Symbol classification: name → `true` if a variable, `false` if a
+    /// constant.
+    symbols: HashMap<String, bool>,
     /// All statements in source order.
-    pub statements: Vec<Statement>,
-    /// Label → statement index.
-    pub labels: IndexMap<String, StatementId>,
-    /// Active scope stack (outermost first).
-    pub(crate) scopes: Vec<Scope>,
+    statements: Vec<Statement>,
+    /// label → index into `statements` (only labelled statements).
+    labels: HashMap<String, usize>,
+    /// Active scope stack; index 0 is the global scope.
+    scopes: Vec<Scope>,
+}
+
+impl Default for Database {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Database {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            symbols: IndexMap::new(),
+            symbols: HashMap::new(),
             statements: Vec::new(),
-            labels: IndexMap::new(),
+            labels: HashMap::new(),
             scopes: vec![Scope::default()],
         }
     }
 
-    /// Look up a symbol id by name.
-    pub fn lookup_symbol(&self, name: &str) -> Option<SymbolId> {
-        self.symbols.get_index_of(name).map(|i| SymbolId(i as u32))
+    // --- queries -----------------------------------------------------------
+
+    /// Whether `name` is a declared variable.
+    pub fn is_variable(&self, name: &str) -> bool {
+        self.symbols.get(name).copied().unwrap_or(false)
     }
 
-    /// Get a symbol name by id.
-    pub fn symbol_name(&self, id: SymbolId) -> &str {
-        self.symbols
-            .get_index(id.0 as usize)
-            .map(|(name, _)| name.as_str())
-            .expect("invalid SymbolId")
+    /// Whether `name` is a declared symbol (constant or variable).
+    pub fn is_symbol(&self, name: &str) -> bool {
+        self.symbols.contains_key(name)
     }
 
-    /// Check whether a symbol is a variable.
-    pub fn is_variable(&self, id: SymbolId) -> bool {
-        self.symbols
-            .get_index(id.0 as usize)
-            .map(|(_, &is_var)| is_var)
-            .unwrap_or(false)
+    /// All statements in source order.
+    pub fn statements(&self) -> &[Statement] {
+        &self.statements
     }
 
-    /// Look up a statement index by label.
-    pub fn lookup_label(&self, label: &str) -> Option<StatementId> {
-        self.labels.get(label).copied()
+    /// Look up a labelled statement.
+    pub fn statement_by_label(&self, label: &str) -> Option<&Statement> {
+        self.labels.get(label).map(|&i| &self.statements[i])
     }
 
-    /// Get a statement by index.
-    pub fn statement(&self, id: StatementId) -> &Statement {
-        &self.statements[id.0 as usize]
+    /// Iterate over all assertions (`$a`/`$p`) in source order.
+    pub fn assertions(&self) -> impl Iterator<Item = &Assertion> {
+        self.statements.iter().filter_map(|s| match s {
+            Statement::Assert(a) => Some(a),
+            _ => None,
+        })
     }
 
-    /// Intern or look up a symbol, returning its id.
-    pub(crate) fn intern_symbol(&mut self, name: &str, is_variable: bool) -> SymbolId {
-        if let Some(idx) = self.symbols.get_index_of(name) {
-            // If re-declaring as variable, upgrade.
-            if is_variable {
-                *self.symbols.get_index_mut(idx).unwrap().1 = true;
+    // --- construction (used by the parser) ---------------------------------
+
+    pub(crate) fn declare_constants(&mut self, names: Vec<String>) -> Result<(), MmError> {
+        for n in &names {
+            if self.symbols.insert(n.clone(), false).is_some() {
+                return Err(MmError::Parse(format!("symbol `{n}` re-declared")));
             }
-            SymbolId(idx as u32)
-        } else {
-            let idx = self.symbols.len();
-            self.symbols.insert(name.to_owned(), is_variable);
-            SymbolId(idx as u32)
         }
-    }
-
-    /// Add a statement and return its id.
-    pub(crate) fn add_statement(&mut self, stmt: Statement) -> StatementId {
-        let id = StatementId(self.statements.len() as u32);
-        self.statements.push(stmt);
-        id
-    }
-
-    /// Register a label for a statement. Returns error if duplicate.
-    pub(crate) fn register_label(&mut self, label: String, id: StatementId) -> Result<(), String> {
-        if self.labels.contains_key(&label) {
-            return Err(label);
-        }
-        self.labels.insert(label, id);
+        self.statements.push(Statement::Constant(names));
         Ok(())
     }
 
-    /// Compute the mandatory frame for an assertion with the given symbol string.
-    pub(crate) fn build_frame(&self, symbols: &[SymbolId]) -> Frame {
-        // Collect all variables that appear in the assertion or in active $e hypotheses.
-        let mut vars_used: Vec<SymbolId> = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-
-        // Variables in the assertion itself.
-        for &sym in symbols {
-            if self.is_variable(sym) && seen.insert(sym) {
-                vars_used.push(sym);
-            }
-        }
-
-        // Variables in active $e hypotheses.
-        let essentials = self.active_essentials();
-        for &(_, eid) in &essentials {
-            if let Statement::Essential {
-                symbols: ref esyms, ..
-            } = self.statements[eid.0 as usize]
-            {
-                for &sym in esyms {
-                    if self.is_variable(sym) && seen.insert(sym) {
-                        vars_used.push(sym);
-                    }
+    pub(crate) fn declare_variables(&mut self, names: Vec<String>) -> Result<(), MmError> {
+        for n in &names {
+            // A variable may be re-declared in a disjoint scope; we keep it
+            // simple and allow re-declaration as a variable.
+            match self.symbols.get(n) {
+                Some(false) => {
+                    return Err(MmError::Parse(format!(
+                        "symbol `{n}` declared as both constant and variable"
+                    )));
+                }
+                _ => {
+                    self.symbols.insert(n.clone(), true);
                 }
             }
         }
+        self.statements.push(Statement::Variable(names));
+        Ok(())
+    }
 
-        // Mandatory $f: iterate active $f in database order, include those whose
-        // variable is used. Metamath requires mandatory hypotheses in database order.
-        let active_floats = self.active_floats();
-        let mut floats = Vec::new();
-        for &(_, fid) in &active_floats {
-            if let Statement::Float { var: fvar, .. } = self.statements[fid.0 as usize] {
-                if seen.contains(&fvar) {
-                    floats.push(fid);
+    fn register_label(&mut self, label: &str, idx: usize) -> Result<(), MmError> {
+        if self.labels.contains_key(label) {
+            return Err(MmError::DuplicateLabel(label.to_string()));
+        }
+        self.labels.insert(label.to_string(), idx);
+        Ok(())
+    }
+
+    pub(crate) fn add_float(&mut self, hyp: FloatHyp) -> Result<(), MmError> {
+        if !self.is_symbol(&hyp.typecode) {
+            return Err(MmError::UnknownSymbol {
+                label: hyp.label.clone(),
+                symbol: hyp.typecode.clone(),
+            });
+        }
+        if !self.is_variable(&hyp.var) {
+            return Err(MmError::Parse(format!(
+                "`{}`: `{}` is not a declared variable",
+                hyp.label, hyp.var
+            )));
+        }
+        let idx = self.statements.len();
+        self.register_label(&hyp.label, idx)?;
+        self.scopes.last_mut().unwrap().floats.push(hyp.clone());
+        self.statements.push(Statement::Float(hyp));
+        Ok(())
+    }
+
+    pub(crate) fn add_essential(&mut self, hyp: Hypothesis) -> Result<(), MmError> {
+        let idx = self.statements.len();
+        self.register_label(&hyp.label, idx)?;
+        self.scopes.last_mut().unwrap().essentials.push(hyp.clone());
+        self.statements.push(Statement::Essential(hyp));
+        Ok(())
+    }
+
+    pub(crate) fn add_disjoint(&mut self, vars: Vec<String>) -> Result<(), MmError> {
+        for v in &vars {
+            if !self.is_variable(v) {
+                return Err(MmError::Parse(format!("`{v}` in $d is not a variable")));
+            }
+        }
+        // Expand into pairwise restrictions in the current scope.
+        for i in 0..vars.len() {
+            for j in (i + 1)..vars.len() {
+                if vars[i] == vars[j] {
+                    return Err(MmError::Parse(format!(
+                        "$d lists `{}` twice (a variable is never distinct from itself)",
+                        vars[i]
+                    )));
                 }
+                self.scopes
+                    .last_mut()
+                    .unwrap()
+                    .disjoints
+                    .push((vars[i].clone(), vars[j].clone()));
             }
         }
-
-        // Mandatory $d: active disjoints where both variables are in vars_used.
-        let active_disjoints = self.active_disjoints();
-        let mut disjoints = Vec::new();
-        for &(a, b) in &active_disjoints {
-            if seen.contains(&a) && seen.contains(&b) {
-                disjoints.push((a, b));
-            }
-        }
-
-        Frame {
-            floats,
-            essentials: essentials.iter().map(|&(_, id)| id).collect(),
-            disjoints,
-        }
+        self.statements.push(Statement::Disjoint(vars));
+        Ok(())
     }
 
-    fn active_floats(&self) -> Vec<(String, StatementId)> {
-        self.scopes
-            .iter()
-            .flat_map(|s| s.floats.iter().cloned())
-            .collect()
-    }
-
-    fn active_essentials(&self) -> Vec<(String, StatementId)> {
-        self.scopes
-            .iter()
-            .flat_map(|s| s.essentials.iter().cloned())
-            .collect()
-    }
-
-    fn active_disjoints(&self) -> Vec<(SymbolId, SymbolId)> {
-        self.scopes
-            .iter()
-            .flat_map(|s| s.disjoints.iter().copied())
-            .collect()
+    /// Add an assertion (`$a` or `$p`), computing its mandatory frame from the
+    /// active scope stack.
+    pub(crate) fn add_assertion(
+        &mut self,
+        label: String,
+        conclusion: Expr,
+        proof: Option<Vec<String>>,
+    ) -> Result<(), MmError> {
+        let frame = self.build_frame(&conclusion, &label)?;
+        let idx = self.statements.len();
+        self.register_label(&label, idx)?;
+        self.statements.push(Statement::Assert(Assertion {
+            label,
+            conclusion,
+            frame,
+            proof,
+        }));
+        Ok(())
     }
 
     pub(crate) fn push_scope(&mut self) {
         self.scopes.push(Scope::default());
     }
 
-    pub(crate) fn pop_scope(&mut self) {
+    pub(crate) fn pop_scope(&mut self) -> Result<(), MmError> {
+        if self.scopes.len() <= 1 {
+            return Err(MmError::Parse("unmatched `$}`".into()));
+        }
         self.scopes.pop();
+        Ok(())
     }
 
-    pub(crate) fn current_scope_mut(&mut self) -> &mut Scope {
-        self.scopes.last_mut().expect("scope stack is empty")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn intern_symbol() {
-        let mut db = Database::new();
-        let a = db.intern_symbol("wff", false);
-        let b = db.intern_symbol("wff", false);
-        assert_eq!(a, b);
-        assert_eq!(db.symbol_name(a), "wff");
-        assert!(!db.is_variable(a));
+    pub(crate) fn finish(self) -> Result<Self, MmError> {
+        if self.scopes.len() != 1 {
+            return Err(MmError::Parse("unclosed `${` at end of input".into()));
+        }
+        Ok(self)
     }
 
-    #[test]
-    fn intern_variable() {
-        let mut db = Database::new();
-        let a = db.intern_symbol("ph", true);
-        assert!(db.is_variable(a));
-    }
+    // --- frame computation -------------------------------------------------
 
-    #[test]
-    fn lookup_symbol() {
-        let mut db = Database::new();
-        db.intern_symbol("wff", false);
-        assert!(db.lookup_symbol("wff").is_some());
-        assert!(db.lookup_symbol("nope").is_none());
-    }
+    /// Compute the mandatory frame for an assertion with the given conclusion.
+    ///
+    /// Per the Metamath spec, the mandatory variables are those appearing in
+    /// the conclusion or in any active `$e` hypothesis. The mandatory `$f`
+    /// hypotheses are the active floats for exactly those variables, in
+    /// database order. The mandatory `$e` are all active essentials. The
+    /// mandatory `$d` are the active disjoint pairs whose *both* variables are
+    /// mandatory.
+    fn build_frame(&self, conclusion: &Expr, label: &str) -> Result<Frame, MmError> {
+        // Active hypotheses, outermost scope first (= database order).
+        let active_floats: Vec<&FloatHyp> =
+            self.scopes.iter().flat_map(|s| s.floats.iter()).collect();
+        let active_essentials: Vec<&Hypothesis> =
+            self.scopes.iter().flat_map(|s| s.essentials.iter()).collect();
+        let active_disjoints: Vec<&(String, String)> =
+            self.scopes.iter().flat_map(|s| s.disjoints.iter()).collect();
 
-    #[test]
-    fn add_and_lookup_label() {
-        let mut db = Database::new();
-        let stmt = Statement::Constant {
-            symbols: vec![SymbolId(0)],
+        // Mandatory variable set: from the conclusion and from active $e.
+        let mut mandatory_vars: Vec<String> = Vec::new();
+        let push_var = |name: &str, set: &mut Vec<String>| {
+            if self.is_variable(name) && !set.contains(&name.to_string()) {
+                set.push(name.to_string());
+            }
         };
-        let id = db.add_statement(stmt);
-        db.register_label("test".into(), id).unwrap();
-        assert_eq!(db.lookup_label("test"), Some(id));
+        self.collect_vars(conclusion, label, &mut |n| push_var(n, &mut mandatory_vars))?;
+        for h in &active_essentials {
+            self.collect_vars(&h.expr, &h.label, &mut |n| push_var(n, &mut mandatory_vars))?;
+        }
+
+        // Mandatory $f: active floats whose variable is mandatory, in order.
+        let floats: Vec<FloatHyp> = active_floats
+            .iter()
+            .filter(|f| mandatory_vars.contains(&f.var))
+            .map(|f| (*f).clone())
+            .collect();
+
+        // Every mandatory variable must have a floating hypothesis.
+        for v in &mandatory_vars {
+            if !floats.iter().any(|f| &f.var == v) {
+                return Err(MmError::MalformedExpr {
+                    label: label.to_string(),
+                    message: format!("variable `{v}` has no active floating hypothesis (`$f`)"),
+                });
+            }
+        }
+
+        let essentials: Vec<Hypothesis> = active_essentials.into_iter().cloned().collect();
+
+        let disjoints: Vec<(String, String)> = active_disjoints
+            .iter()
+            .filter(|(a, b)| mandatory_vars.contains(a) && mandatory_vars.contains(b))
+            .map(|(a, b)| ((*a).clone(), (*b).clone()))
+            .collect();
+
+        Ok(Frame {
+            floats,
+            essentials,
+            disjoints,
+        })
     }
 
-    #[test]
-    fn duplicate_label() {
-        let mut db = Database::new();
-        let stmt = Statement::Constant {
-            symbols: vec![SymbolId(0)],
-        };
-        let id = db.add_statement(stmt);
-        db.register_label("dup".into(), id).unwrap();
-        assert!(db.register_label("dup".into(), id).is_err());
+    /// Invoke `f` on every symbol of `expr`, validating that each is a declared
+    /// symbol.
+    fn collect_vars(
+        &self,
+        expr: &Expr,
+        label: &str,
+        f: &mut impl FnMut(&str),
+    ) -> Result<(), MmError> {
+        let syms = crate::expr::expr_symbols(expr).ok_or_else(|| MmError::MalformedExpr {
+            label: label.to_string(),
+            message: "expression contains a non-symbol element".into(),
+        })?;
+        for s in syms {
+            if !self.is_symbol(s) {
+                return Err(MmError::UnknownSymbol {
+                    label: label.to_string(),
+                    symbol: s.to_string(),
+                });
+            }
+            f(s);
+        }
+        Ok(())
     }
 }

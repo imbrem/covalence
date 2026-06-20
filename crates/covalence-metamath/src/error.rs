@@ -1,21 +1,69 @@
-#[derive(Debug, thiserror::Error)]
+/// Errors from parsing or verifying a Metamath database.
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum MmError {
-    #[error("parse error at byte {span}: {message}")]
-    Parse { span: usize, message: String },
-    #[error("unknown label `{label}` in proof of `{theorem}`")]
+    // --- structural / parse ---
+    #[error("parse error: {0}")]
+    Parse(String),
+
+    #[error("duplicate label `{0}`")]
+    DuplicateLabel(String),
+
+    #[error("`{label}`: unknown symbol `{symbol}`")]
+    UnknownSymbol { label: String, symbol: String },
+
+    #[error("malformed expression in `{label}`: {message}")]
+    MalformedExpr { label: String, message: String },
+
+    // --- proof checking ---
+    #[error("proof of `{theorem}` references unknown label `{label}`")]
     UnknownLabel { theorem: String, label: String },
-    #[error("stack underflow in proof of `{theorem}`")]
-    StackUnderflow { theorem: String },
-    #[error("unification failed in proof of `{theorem}`: {message}")]
-    UnificationFailed { theorem: String, message: String },
-    #[error("proof of `{theorem}` left {count} entries on stack (expected 1)")]
+
+    #[error("stack underflow while applying `{step}` in proof of `{theorem}`")]
+    StackUnderflow { theorem: String, step: String },
+
+    #[error(
+        "typecode mismatch in proof of `{theorem}` applying `{step}`: \
+         floating hypothesis for `{var}` expects typecode `{expected}`, got `{found}`"
+    )]
+    TypecodeMismatch {
+        theorem: String,
+        step: String,
+        var: String,
+        expected: String,
+        found: String,
+    },
+
+    #[error(
+        "essential-hypothesis mismatch in proof of `{theorem}` applying `{step}`: \
+         expected `{expected}`, got `{found}`"
+    )]
+    HypothesisMismatch {
+        theorem: String,
+        step: String,
+        expected: String,
+        found: String,
+    },
+
+    #[error(
+        "distinct-variable violation in proof of `{theorem}` applying `{step}`: \
+         `{a}` and `{b}` must be distinct, but their substitutions share variable `{shared}` \
+         (or are not provably distinct)"
+    )]
+    DisjointViolation {
+        theorem: String,
+        step: String,
+        a: String,
+        b: String,
+        shared: String,
+    },
+
+    #[error("proof of `{theorem}` left {count} expressions on the stack (expected exactly 1)")]
     StackResidue { theorem: String, count: usize },
-    #[error("proof result does not match assertion `{theorem}`")]
-    ResultMismatch { theorem: String },
-    #[error("duplicate label `{label}`")]
-    DuplicateLabel { label: String },
-    #[error("invalid compressed proof in `{theorem}`: {message}")]
-    CompressedProofError { theorem: String, message: String },
-    #[error("file error for `{path}`: {message}")]
-    FileError { path: String, message: String },
+
+    #[error("proof of `{theorem}` produced `{found}` but the claimed statement is `{expected}`")]
+    ResultMismatch {
+        theorem: String,
+        expected: String,
+        found: String,
+    },
 }

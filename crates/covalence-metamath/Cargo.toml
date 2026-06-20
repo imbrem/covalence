@@ -4,6 +4,6 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-covalence-types = { path = "../covalence-types" }
-indexmap = "2"
+covalence-sexp = { path = "../covalence-sexp" }
+covalence-parse = { path = "../covalence-parse" }
 thiserror = "2"

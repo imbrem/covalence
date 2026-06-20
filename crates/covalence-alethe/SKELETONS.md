@@ -20,12 +20,29 @@
     ring identities (`add_comm`/`assoc`/`mul_distrib`) from the Peano/int
     theory + a linear normaliser. Likewise disequality-reflexivity holes
     over uninterpreted terms.
-  - **Linear-arithmetic core** — `la_generic`, `la_mult_pos`/`la_mult_neg`,
-    `la_rw_eq`, `la_disequality`, `la_tautology`, `la_totality`. The LIA
-    proper: Farkas certificates over rational coefficients. Blocked on the
-    **ordered-ring theory of `int`** (`le`/`lt` transitivity, add-
-    monotonicity, sign rules) that the `high-hol` Peano build-up is
-    producing. This is the major remaining undertaking.
+  - **Linear-arithmetic core** — `la_generic` (the Farkas rule) is
+    **prototyped** in `crates/covalence-alethe/src/la.rs`: it re-derives
+    (never trusts) the refutation through the **proved** `int` ordered ring
+    (`int::lt_trans`, `int::lt_irrefl`, with `int::lt_add_mono` /
+    `int::lt_mul_pos` available for the generalisation). The prototype
+    handles only the **two-literal, coefficient-`(1,1)`, strict** case —
+    `P < Q ∧ Q < P ⟹ ⊥` (the canonical `x<0 ∧ 0<x` shape) — and reports
+    `NotImplemented` for everything else. Still to wire:
+    - **General `la_generic`**: `n > 2` literals; non-unit / rational
+      coefficients; mixed strict (`<`) and non-strict (`≤`) literals; the
+      genuine *scale-each-literal-by-its-coefficient-and-sum* combination
+      (needs `int::lt_add_mono`/`le_add_mono` to add inequalities and
+      `int::lt_mul_pos` to scale a strict inequality by a positive
+      constant — both proved in `init::int`; plus a rational→int clearing
+      step for fractional coefficients, and `le`/`lt` mixing lemmas like
+      `lt_of_le_of_lt`).
+    - `la_mult_pos`/`la_mult_neg` — multiply a (dis)equality/inequality by
+      a sign-definite constant (`int::lt_mul_pos` covers the positive
+      strict case directly).
+    - `la_rw_eq` (`(a = b) ↔ (a ≤ b ∧ b ≤ a)`; have `int::le_def`),
+      `la_disequality` (`a ≠ b → a < b ∨ b < a`; from `int::lt_trichotomy`),
+      `la_totality` (`a ≤ b ∨ b ≤ a`; from `lt_trichotomy` + `le_def`),
+      `la_tautology` (closed LIA tautology clauses).
   - **Subproofs** — `anchor` and any `step` carrying `:discharge`
     (`subproof`, `bind`, `let`, …). The bridge rejects `:discharge`.
   - **The rest of the propositional rule family** — `equiv_pos1`,

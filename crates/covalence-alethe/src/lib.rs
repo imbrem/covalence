@@ -23,6 +23,7 @@ pub mod bridge;
 pub mod error;
 pub mod hol;
 pub mod ingest;
+pub mod la;
 
 pub use bridge::AletheBridge;
 pub use error::BridgeError;

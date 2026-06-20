@@ -54,24 +54,50 @@ index](../../../../SKELETONS.md).
   the same rational scaled by the common factor `rda`), so its
   cross-multiplication collapses to comm/assoc and lifts by `class_intro`.
 
-  **Still postulated** via the module's `axiom` helper:
-  - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`), realisable via
-    the defined `rat_inv` (sign-normalised so the denominator stays positive).
-  - The order axioms `lt_trans`/`lt_trichotomy`/`le_def`/`zero_lt_one`.
-    `le_def` is definitional (pins the opaque `ratLe`); the rest unfold
-    `ratLt` to the `int` comparison on cross-products. The `int` ordered
-    ring is **now fully proved** (`lt_*`/`lt_mul_pos` all discharged), so the
-    `int` order facts these lean on are all available; the remaining work is
-    the rat-quotient lifting. (The linear-order toolkit
+  **Order lifting machinery — now built.** The rat analogue of int's
+  `lt_via_components`: `lt_pair_cong` (order well-definedness — the
+  cross-multiplication comparison is representative-invariant, scaling both
+  sides by the positive product denominator via `int::lt_mul_pos_iff` and
+  reshuffling with the new reusable `int::prove_imul_eq` multiplicative
+  AC-normaliser), `lt_class` (computation rule), and `lt_via_components`
+  (MK-component form). `zero_lt_one` is **proved** through this stack
+  (`0 = MK 0 1`, `1 = MK 1 1`, lift to `int.lt 0 1`).
+
+  **Order axioms — `zero_lt_one`/`lt_trans`/`lt_trichotomy` now proved**
+  through the lifting machinery above: `lt_trans` scales the two cross-product
+  inequalities by the opposite denominators, chains via `int::lt_trans`, and
+  cancels the common positive factor; `lt_trichotomy` runs `int::lt_trichotomy`
+  on the cross-products and maps the middle `=` case back through the quotient
+  (`rel_of_pairs` + `class_intro`).
+
+  **Still postulated** via the module's `axiom` helper — only **two** leaves
+  remain (down from the original `mul_inv` + four order axioms + two mediants +
+  two int facts + two round-trips):
+  - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`). The witness is the
+    defined `rat_inv` (`(a/b)⁻¹ = (sgn a · b)/(sgn a · a)`); the
+    cross-multiplication `a · rat_inv a = 1` collapses to an `int` comm/assoc
+    identity, but discharging it needs the **`int.sgn` positivity lemma**
+    `¬(z = 0) ⟹ 0 < sgn z · z` (= `0 < |z|`) so the inverse denominator
+    `to_pos(sgn a · a)` round-trips. `init::int` proves no `sgn`/`abs` lemmas
+    yet (case analysis on `int.sgn`'s three branches); once it does, this lifts
+    through the existing `mul` quotient machinery + `class_eq`.
+  - `le_def` is the other remaining postulate: it is *definitional* — it pins
+    the meaning of the **declaration-only** kernel `ratLe` (`defs/rat.rs` ships
+    `ratLe` with `tm: None`, unlike `int.le` which carries a body), so there is
+    nothing to prove it *from*; it is the conservative defining equation. To
+    make it a genuine `delta`/`define` theorem one would have to give `ratLe`
+    a representative-level body in the kernel catalogue (and re-thread `real`,
+    which consumes `ratLe`). (The linear-order toolkit
     `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/`le_antisym`/
     `le_total`/`not_one_le_zero` is **not** postulated — it is *derived* from
     `le_def` + the strict-order facts.)
-  - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
-    only postulated leaves of `dense` (which is itself *derived* from
-    them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
-    to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
-    lifted through the quotient — now unblocked (the `int` order theory it
-    needs is fully proved); the remaining work is the rat-quotient lifting.
+  The two **mediant inequalities** `mediant_gt` / `mediant_lt` are now
+  **proved** (so `dense` is fully hypothesis-free): with representatives
+  `x = fx/dx`, `y = fy/dy`, the mediant is `(fx+fy)/(dx+dy)`; lifting both
+  `ratLt`s reduces each goal to the `int` fact `fx·dy < fy·dx` (= `x < y`)
+  after `int::distrib`/`distrib_r` + `int::lt_add_cancel_{left,right}` cancel
+  the shared summand, over the positive mediant denominator
+  (`int::add_pos` + `int::int_pos_round_trip_at`).
 
 - **The `real` Dedekind-cut theory** in
   `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`

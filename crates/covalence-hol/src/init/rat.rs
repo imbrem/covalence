@@ -808,6 +808,147 @@ fn mul_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
         .trans(mul_mk(&fa, &da, &fb, &db)?)
 }
 
+// ---- order computation / well-definedness ----
+
+/// `⊢ 0 < den x · den y` — the product of two positive denominators is
+/// positive ([`int::int_pos_prod_pos`] at the `int.pos` denominators).
+fn den_prod_pos(x: &Term, y: &Term) -> Result<Thm> {
+    int::int_pos_prod_pos()
+        .all_elim(den_pos(x))?
+        .all_elim(den_pos(y))
+}
+
+/// `⊢ src = dst` for two `int` `·`-trees that become equal **after** the
+/// substitution `g : ⊢ a = b`: normalise `src` to a form containing `a`,
+/// apply `g`, then normalise to `dst`. `lhs_grp`/`rhs_grp` are the two
+/// `·`-trees over the full leaf multiset that bracket `a` (resp. `b`) — i.e.
+/// `src ≡ lhs_grp[…a…]` and `dst ≡ rhs_grp[…b…]` up to `·`-AC.
+fn imul_subst(src: &Term, lhs_grp: &Term, g: Thm, rhs_grp: &Term, dst: &Term) -> Result<Thm> {
+    int::prove_imul_eq(src, lhs_grp)? // src = lhs_grp
+        .trans(g)? // = rhs_grp (the substituted form)
+        .trans(int::prove_imul_eq(rhs_grp, dst)?) // = dst
+}
+
+/// **Order well-definedness.** From `⊢ rat_rel x x'` and `⊢ rat_rel y y'`
+/// conclude `⊢ int.lt (nx·dy)(ny·dx) = int.lt (nx'·dy')(ny'·dx')` — the
+/// cross-multiplication comparison is invariant under the choice of
+/// representative.
+///
+/// Scale both arguments by the positive `dx'·dy'` ([`int::lt_mul_pos_iff`]),
+/// rearrange each scaled product through the two `rat_rel` equations
+/// (`nx·dx' = nx'·dx`, `ny·dy' = ny'·dy`) into the `(…)·(dx·dy)` form (the
+/// `·`-AC reshuffles by [`int::prove_imul_eq`]), then unscale by the positive
+/// `dx·dy`.
+fn lt_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let e1 = reduce_rel(h1)?; // nx·dx' = nx'·dx
+    let e2 = reduce_rel(h2)?; // ny·dy' = ny'·dy
+    let (nx, dx, nxp, dxp) = (num(&x), den(&x), num(&xp), den(&xp));
+    let (ny, dy, nyp, dyp) = (num(&y), den(&y), num(&yp), den(&yp));
+
+    let l1 = imul(nx.clone(), dy.clone()); // nx·dy
+    let l2 = imul(ny.clone(), dx.clone()); // ny·dx
+    let r1 = imul(nxp.clone(), dyp.clone()); // nx'·dy'
+    let r2 = imul(nyp.clone(), dxp.clone()); // ny'·dx'
+
+    let c = imul(dxp.clone(), dyp.clone()); // dx'·dy'  (>0)
+    let cc = imul(dx.clone(), dy.clone()); // dx·dy   (>0)
+    let pos_c = den_prod_pos(&xp, &yp)?; // 0 < dx'·dy'
+    let pos_cc = den_prod_pos(&x, &y)?; // 0 < dx·dy
+
+    // int.lt l1 l2 = int.lt (l1·c)(l2·c)   (scale by c).
+    let scale = int::lt_mul_pos_iff()
+        .all_elim(l1.clone())?
+        .all_elim(l2.clone())?
+        .all_elim(c.clone())?
+        .imp_elim(pos_c)?
+        .sym()?; // int.lt l1 l2 = int.lt (l1·c)(l2·c)
+
+    // l1·c = r1·cc   (substitute e1: nx·dx' ↦ nx'·dx).
+    let l1c_src = imul(l1.clone(), c.clone());
+    let r1cc = imul(r1.clone(), cc.clone());
+    let l1c = imul_subst(
+        &l1c_src,
+        &imul(imul(nx.clone(), dxp.clone()), imul(dy.clone(), dyp.clone())), // (nx·dx')·(dy·dy')
+        imul_cong(e1.clone(), Thm::refl(imul(dy.clone(), dyp.clone()))?)?, // = (nx'·dx)·(dy·dy')
+        &imul(imul(nxp.clone(), dx.clone()), imul(dy.clone(), dyp.clone())), // (nx'·dx)·(dy·dy')
+        &r1cc,
+    )?; // l1·c = r1·cc
+
+    // l2·c = r2·cc   (substitute e2: ny·dy' ↦ ny'·dy).
+    let l2c_src = imul(l2.clone(), c.clone());
+    let r2cc = imul(r2.clone(), cc.clone());
+    let l2c = imul_subst(
+        &l2c_src,
+        &imul(imul(ny.clone(), dyp.clone()), imul(dx.clone(), dxp.clone())), // (ny·dy')·(dx·dx')
+        imul_cong(e2.clone(), Thm::refl(imul(dx.clone(), dxp.clone()))?)?, // = (ny'·dy)·(dx·dx')
+        &imul(imul(nyp.clone(), dy.clone()), imul(dx.clone(), dxp.clone())), // (ny'·dy)·(dx·dx')
+        &r2cc,
+    )?; // l2·c = r2·cc
+
+    // int.lt (l1·c)(l2·c) = int.lt (r1·cc)(r2·cc)  (rewrite both args).
+    let scaled_eq = scale
+        .trans(Thm::refl(int::int_lt())?.cong_app(l1c)?.cong_app(l2c)?)?; // int.lt l1 l2 = int.lt (r1·cc)(r2·cc)
+
+    // int.lt (r1·cc)(r2·cc) = int.lt r1 r2  (unscale by cc).
+    let unscale = int::lt_mul_pos_iff()
+        .all_elim(r1.clone())?
+        .all_elim(r2.clone())?
+        .all_elim(cc.clone())?
+        .imp_elim(pos_cc)?; // int.lt (r1·cc)(r2·cc) = int.lt r1 r2
+
+    scaled_eq.trans(unscale) // int.lt l1 l2 = int.lt r1 r2
+}
+
+/// **Order computation rule.** `⊢ ratLt (mk_rat p) (mk_rat q) =
+/// int.lt (num p · den q) (num q · den p)`. β-reduce `ratLt` at the chosen
+/// representatives, then rewrite them back to `p`/`q` by [`lt_pair_cong`]
+/// (the comparison is representative-invariant).
+fn lt_class(p: &Term, q: &Term) -> Result<Thm> {
+    let (mp, mq) = (mk_rat(p), mk_rat(q));
+    let dl = binary_beta(rat_lt(), mp.clone(), mq.clone())?; // ratLt mp mq = int.lt(n_RPp·d_RPq)(n_RPq·d_RPp)
+    let (rt_p, rt_q) = (round_trip(p)?, round_trip(q)?); // rat_rel p RPp, rat_rel q RPq
+    let (_, rpp) = dest_rel_app(rt_p.concl())?;
+    let (_, rpq) = dest_rel_app(rt_q.concl())?;
+    let rpp_p = rat_rel_symm()
+        .all_elim(p.clone())?
+        .all_elim(rpp.clone())?
+        .imp_elim(rt_p)?; // rat_rel RPp p
+    let rpq_q = rat_rel_symm()
+        .all_elim(q.clone())?
+        .all_elim(rpq.clone())?
+        .imp_elim(rt_q)?; // rat_rel RPq q
+    let cong = lt_pair_cong(rpp_p, rpq_q)?; // int.lt(n_RPp·d_RPq)(n_RPq·d_RPp) = int.lt(np·dq)(nq·dp)
+    dl.trans(cong)
+}
+
+/// **Order in component form.** `⊢ ratLt a b = int.lt (fa · rep db)(fb · rep da)`,
+/// where `ra : a = MK fa da`, `rb : b = MK fb db`. Rewrite `a`/`b` to their `MK`
+/// forms, apply [`lt_class`], then resolve the `pair` projections.
+fn lt_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (_a, ma) = dest_eq(ra)?;
+    let (_b, mb) = dest_eq(rb)?;
+    let (fa, da) = mk_components(&ma)?;
+    let (fb, db) = mk_components(&mb)?;
+    let (pa, pb) = (ip(fa.clone(), da.clone()), ip(fb.clone(), db.clone()));
+    let lc = lt_class(&pa, &pb)?; // ratLt (mk_rat pa)(mk_rat pb) = int.lt(num pa·den pb)(num pb·den pa)
+    let (i, pp) = (Type::int(), int_pos_ty());
+    // num/den of the explicit pairs `pa`,`pb` reduce by the prod projections.
+    let projs = [
+        crate::init::prod::fst_pair(&i, &pp, &fa, &da)?, // fst pa = fa
+        crate::init::prod::fst_pair(&i, &pp, &fb, &db)?, // fst pb = fb
+        crate::init::prod::snd_pair(&i, &pp, &fa, &da)?, // snd pa = da
+        crate::init::prod::snd_pair(&i, &pp, &fb, &db)?, // snd pb = db
+    ];
+    let lc_clean = lc.rhs_conv(|t| rewrite_seq(t, &projs))?;
+    // ratLt a b = ratLt (mk_rat pa)(mk_rat pb), since a = MK fa da = mk_rat pa.
+    Thm::refl(rat_lt())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?
+        .trans(lc_clean)
+}
+
 // ---- additive computation / well-definedness ----
 
 /// `⊢ a + b = a' + b'` from `⊢ a = a'`, `⊢ b = b'` (int sum congruence).
@@ -2021,6 +2162,17 @@ fn distrib_bridge_raw() -> Result<Thm> {
 /// `⊢ ∀a. ¬(a = 0) ⟹ ∃b. a * b = 1` — the field axiom (multiplicative
 /// inverse). This is what makes `rat` a *field* rather than just a ring,
 /// and underwrites division (and so the midpoint form of density).
+///
+/// **Still postulated** — the last remaining `rat` postulate. The witness is
+/// the defined [`rat_inv`] (`(a/b)⁻¹ = (sgn a · b)/(sgn a · a)`); the
+/// cross-multiplication `a · rat_inv a = 1` collapses to an `int` comm/assoc
+/// identity, but discharging it needs the **`int.sgn` positivity fact**
+/// `¬(z = 0) ⟹ 0 < sgn z · z` (= `0 < |z|`) so the inverse denominator
+/// `to_pos(sgn a · a)` round-trips. `init::int` proves no `sgn` lemmas yet
+/// (it would need case analysis on `int.sgn`'s three branches); once
+/// `int::abs_pos`/`sgn` facts land, this lifts through the existing `mul`
+/// quotient machinery + `class_eq`. *To discharge: prove the `int.sgn`
+/// positivity lemma, then lift.*
 pub fn mul_inv() -> Thm {
     let a = rvar("a");
     let b = rvar("b");
@@ -2100,23 +2252,171 @@ fn lt_irrefl_impl() -> Result<Thm> {
         .all_intro("a", rat())
 }
 
-/// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — transitivity.
-pub fn lt_trans() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — **proved** by lifting to the
+    /// `int` cross-multiplication comparisons. With `fa·db < fb·da` and
+    /// `fb·dc < fc·db` (`db`,`da`,`dc` the positive denominators), scale the
+    /// first by `dc`, the second by `da`, reshuffle (`prove_imul_eq`) so both
+    /// read `(…)·db`, chain by `int::lt_trans`, then cancel `db`
+    /// (`int::lt_mul_pos_iff`) to land on `fa·dc < fc·da`.
+    pub fn lt_trans() -> Thm {
+        lt_trans_impl().expect("rat::lt_trans")
+    }
+}
+fn lt_trans_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
-    let inner = rlt(b.clone(), c.clone())
-        .imp(rlt(a.clone(), c))
-        .expect("lt_trans inner");
-    let body = rlt(a, b).imp(inner).expect("lt_trans");
-    axiom(forall_rat(&["a", "b", "c"], body))
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    // int numerator / (positive) denominator components.
+    let (fa, da) = (rfst(&a), den(&rep_pair(a.clone())));
+    let (fb, db) = (rfst(&b), den(&rep_pair(b.clone())));
+    let (fc, dc) = (rfst(&c), den(&rep_pair(c.clone())));
+
+    // ratLt a b = int.lt (fa·db)(fb·da), etc.
+    let dab = lt_via_components(&ra, &rb)?;
+    let dbc = lt_via_components(&rb, &rc)?;
+    let dac = lt_via_components(&ra, &rc)?;
+
+    let (hab, hbc) = (rlt(a.clone(), b.clone()), rlt(b.clone(), c.clone()));
+    let h1 = dab.eq_mp(Thm::assume(hab.clone())?)?; // fa·db < fb·da
+    let h2 = dbc.eq_mp(Thm::assume(hbc.clone())?)?; // fb·dc < fc·db
+
+    // positivity of the three denominators.
+    let pos_da = int::int_pos_pos().all_elim(rden(&a))?; // 0 < da
+    let pos_db = int::int_pos_pos().all_elim(rden(&b))?; // 0 < db
+    let pos_dc = int::int_pos_pos().all_elim(rden(&c))?; // 0 < dc
+
+    // Scale h1 by dc>0: (fa·db)·dc < (fb·da)·dc.
+    let s1 = int::lt_mul_pos()
+        .all_elim(imul(fa.clone(), db.clone()))?
+        .all_elim(imul(fb.clone(), da.clone()))?
+        .all_elim(dc.clone())?
+        .imp_elim(pos_dc.clone())?
+        .imp_elim(h1)?;
+    // Scale h2 by da>0: (fb·dc)·da < (fc·db)·da.
+    let s2 = int::lt_mul_pos()
+        .all_elim(imul(fb.clone(), dc.clone()))?
+        .all_elim(imul(fc.clone(), db.clone()))?
+        .all_elim(da.clone())?
+        .imp_elim(pos_da.clone())?
+        .imp_elim(h2)?;
+
+    // Reshuffle both into `(…)·db` form.
+    //   (fa·db)·dc = (fa·dc)·db ;  (fb·da)·dc = (fb·dc)·da
+    let r1l = int::prove_imul_eq(&imul(imul(fa.clone(), db.clone()), dc.clone()), &imul(imul(fa.clone(), dc.clone()), db.clone()))?;
+    let r1r = int::prove_imul_eq(&imul(imul(fb.clone(), da.clone()), dc.clone()), &imul(imul(fb.clone(), dc.clone()), da.clone()))?;
+    let s1n = s1.rewrite(&r1l)?.rewrite(&r1r)?; // (fa·dc)·db < (fb·dc)·da
+    //   (fc·db)·da = (fc·da)·db
+    let r2r = int::prove_imul_eq(&imul(imul(fc.clone(), db.clone()), da.clone()), &imul(imul(fc.clone(), da.clone()), db.clone()))?;
+    let s2n = s2.rewrite(&r2r)?; // (fb·dc)·da < (fc·da)·db
+
+    // Chain: (fa·dc)·db < (fc·da)·db.
+    let chained = int::lt_trans()
+        .all_elim(imul(imul(fa.clone(), dc.clone()), db.clone()))?
+        .all_elim(imul(imul(fb.clone(), dc.clone()), da.clone()))?
+        .all_elim(imul(imul(fc.clone(), da.clone()), db.clone()))?
+        .imp_elim(s1n)?
+        .imp_elim(s2n)?; // (fa·dc)·db < (fc·da)·db
+
+    // Cancel db>0: fa·dc < fc·da.
+    let cancelled = int::lt_mul_pos_iff()
+        .all_elim(imul(fa.clone(), dc.clone()))?
+        .all_elim(imul(fc.clone(), da.clone()))?
+        .all_elim(db.clone())?
+        .imp_elim(pos_db)?
+        .eq_mp(chained)?; // fa·dc < fc·da
+
+    dac.sym()?
+        .eq_mp(cancelled)? // ratLt a c
+        .imp_intro(&hbc)?
+        .imp_intro(&hab)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
 }
 
-/// `⊢ ∀a b. a < b ∨ a = b ∨ b < a` — trichotomy (totality).
-pub fn lt_trichotomy() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b. a < b ∨ a = b ∨ b < a` — **proved**. `int::lt_trichotomy` on
+    /// the cross-products `(fa·db, fb·da)` gives the three cases; map `<`/`>`
+    /// back through [`lt_via_components`] and the middle `=` case through the
+    /// quotient (`rel_of_pairs` + `class_intro` lifts `fa·db = fb·da` to
+    /// `a = b`).
+    pub fn lt_trichotomy() -> Thm {
+        lt_trichotomy_impl().expect("rat::lt_trichotomy")
+    }
+}
+fn lt_trichotomy_impl() -> Result<Thm> {
     let (a, b) = (rvar("a"), rvar("b"));
-    let eq = a.clone().equals(b.clone()).expect("trichotomy: a = b");
-    let tail = eq.or(rlt(b.clone(), a.clone())).expect("trichotomy tail");
-    let body = rlt(a, b).or(tail).expect("trichotomy");
-    axiom(forall_rat(&["a", "b"], body))
+    let (ra, rb) = (recon_mk(&a)?, recon_mk(&b)?);
+    let (fa, da_pos) = (rfst(&a), rden(&a)); // fa : int, da_pos : int.pos
+    let (fb, db_pos) = (rfst(&b), rden(&b));
+    let (da, db) = (den(&rep_pair(a.clone())), den(&rep_pair(b.clone()))); // rep da_pos, rep db_pos
+
+    let x = imul(fa.clone(), db.clone()); // fa·db
+    let y = imul(fb.clone(), da.clone()); // fb·da
+
+    // int trichotomy on (x, y): (x<y) ∨ (x=y) ∨ (y<x).
+    let tri = int::lt_trichotomy().all_elim(x.clone())?.all_elim(y.clone())?;
+
+    let dab = lt_via_components(&ra, &rb)?; // ratLt a b = int.lt x y
+    let dba = lt_via_components(&rb, &ra)?; // ratLt b a = int.lt y x
+
+    let eq_ab = a.clone().equals(b.clone())?;
+
+    // disjunct 1: x<y ⟹ a<b ⟹ goal.
+    let xlty = lt_via_int(&x, &y);
+    let br1 = dab
+        .sym()?
+        .eq_mp(Thm::assume(xlty.clone())?)? // {x<y} ⊢ ratLt a b
+        .or_intro_l(eq_ab.clone().or(rlt(b.clone(), a.clone()))?)?
+        .imp_intro(&xlty)?;
+    // disjunct 3: y<x ⟹ b<a ⟹ goal.
+    let yltx = lt_via_int(&y, &x);
+    let br3 = {
+        let ba = dba.sym()?.eq_mp(Thm::assume(yltx.clone())?)?; // ratLt b a
+        ba.or_intro_r(eq_ab.clone())? // (a=b) ∨ (b<a)
+            .or_intro_r(rlt(a.clone(), b.clone()))? // a<b ∨ ((a=b) ∨ (b<a))
+            .imp_intro(&yltx)?
+    };
+    // disjunct 2: x=y ⟹ a=b ⟹ goal.
+    let xeqy = x.clone().equals(y.clone())?;
+    let br2 = {
+        // x=y is `fa·db = fb·da`; lift to `rat_rel (ip fa da_pos)(ip fb db_pos)`.
+        let g = Thm::assume(xeqy.clone())?;
+        let rel = rel_of_pairs(&fa, &da_pos, &fb, &db_pos, g)?; // rat_rel (ip fa da_pos)(ip fb db_pos)
+        let cls = crate::init::quotient::class_intro(
+            &rat_spec(),
+            &[],
+            &ip_pair(),
+            &rat_rel_symm(),
+            &rat_rel_trans(),
+            rel,
+        )?; // mk_rat(ip fa da_pos) = mk_rat(ip fb db_pos)
+        // a = mk_rat(ip fa da_pos) = mk_rat(ip fb db_pos) = b.
+        let a_eq_b = ra.clone().trans(cls)?.trans(rb.clone().sym()?)?; // {x=y} ⊢ a=b
+        a_eq_b
+            .or_intro_l(rlt(b.clone(), a.clone()))? // (a=b) ∨ (b<a)
+            .or_intro_r(rlt(a.clone(), b.clone()))? // a<b ∨ …
+            .imp_intro(&xeqy)?
+    };
+
+    // Combine via the int trichotomy ∨-elim.
+    let tail = tri
+        .concl()
+        .as_app()
+        .ok_or_else(|| Error::ConnectiveRule("lt_trichotomy: ∨ shape".into()))?
+        .1
+        .clone(); // (x=y) ∨ (y<x)
+    let tail_thm = Thm::assume(tail.clone())?
+        .or_elim(br2, br3)?
+        .imp_intro(&tail)?;
+    tri.or_elim(br1, tail_thm)? // ⊢ goal
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// `int.lt a b` term-builder (for trichotomy disjunct shapes).
+fn lt_via_int(a: &Term, b: &Term) -> Term {
+    Term::app(Term::app(int::int_lt(), a.clone()), b.clone())
 }
 
 /// `⊢ ∀a b. (a ≤ b) = (a < b ∨ a = b)` — `≤` in terms of `<`.
@@ -2141,10 +2441,27 @@ pub fn le_def() -> Thm {
 // (`init::real`) consume: cut upward-closure is `le_trans`, non-emptiness is
 // `le_refl`, and `0 ≠ 1` for reals turns on `not_one_le_zero`.
 
-/// `⊢ 0 < 1` — the base strictness fact (postulated; `ratLt` is stuck at
-/// the ε-chosen representatives, so this is not reducible).
-pub fn zero_lt_one() -> Thm {
-    axiom(rlt(rat_zero(), rat_one()))
+cached_thm! {
+    /// `⊢ 0 < 1` — **proved** by lifting through the quotient: `0 = MK 0 1`,
+    /// `1 = MK 1 1`, so `ratLt 0 1 = int.lt (0·rep 1)(1·rep 1)`
+    /// ([`lt_via_components`]); resolve `rep one_pos = 1` ([`one_pos_rt`]) and
+    /// the literal products to land on the `int` fact `0 < 1`.
+    pub fn zero_lt_one() -> Thm {
+        zero_lt_one_impl().expect("rat::zero_lt_one")
+    }
+}
+fn zero_lt_one_impl() -> Result<Thm> {
+    // rat_zero = MK 0 one_pos, rat_one = MK 1 one_pos — definitionally `mk_rat`
+    // of the explicit pairs, so the MK reconstructions are reflexivity.
+    let r0 = Thm::refl(rat_zero())?; // 0 = MK 0 one_pos
+    let r1 = Thm::refl(rat_one())?; // 1 = MK 1 one_pos
+    let de = lt_via_components(&r0, &r1)?; // ratLt 0 1 = int.lt (0·rep one_pos)(1·rep one_pos)
+    // Resolve `rep one_pos = 1`, then fully evaluate the literal comparison to
+    // `T`, and read off `ratLt 0 1`.
+    let rep1 = one_pos_rt(); // rep one_pos = 1
+    de.rhs_conv(|t| t.rw_all(&rep1))? // ratLt 0 1 = int.lt (0·1)(1·1)
+        .rhs_conv(|t| t.reduce())? // ratLt 0 1 = T
+        .eqt_elim() // ⊢ ratLt 0 1
 }
 
 cached_thm! {
@@ -2484,36 +2801,108 @@ fn med(a: Term, b: Term) -> Term {
     Term::app(Term::app(mediant(), a), b)
 }
 
-/// `⊢ ∀x y. x < y ⟹ x < mediant x y` — the mediant exceeds the smaller.
-///
-/// **Postulated** (audit hyp). Unfolds to the `int` order fact
-/// `a·d < c·b ⟹ a·(b+d) < (a+c)·b` lifted through the quotient — blocked
-/// on the `int` ordered-ring theory (`SKELETONS.md`).
-pub fn mediant_gt() -> Thm {
-    let (x, y) = (rvar("x"), rvar("y"));
-    let concl = rlt(x.clone(), med(x.clone(), y.clone()));
-    let body = rlt(x, y).imp(concl).expect("mediant_gt");
-    axiom(forall_rat(&["x", "y"], body))
+/// `⊢ mediant x y = MK (fx + fy) (to_pos(dx + dy))` for **variables** `x`,`y`
+/// — the mediant on the chosen representatives `(fx,dx_pos) = rep_pair x`,
+/// `(fy,dy_pos) = rep_pair y`. β-reduce `binary_rat`, then resolve the `num`
+/// projections so the components read off cleanly.
+fn mediant_beta(x: &Term, y: &Term) -> Result<Thm> {
+    binary_beta(mediant(), x.clone(), y.clone()) // mediant x y = MK (num RPx+num RPy)(to_pos(den RPx+den RPy))
 }
 
-/// `⊢ ∀x y. x < y ⟹ mediant x y < y` — the mediant is below the larger.
-///
-/// **Postulated** (audit hyp) — the mirror of [`mediant_gt`].
-pub fn mediant_lt() -> Thm {
+cached_thm! {
+    /// `⊢ ∀x y. x < y ⟹ x < mediant x y` — **proved**. With representatives
+    /// `x = fx/dx`, `y = fy/dy`, the mediant is `(fx+fy)/(dx+dy)`; lifting
+    /// both `ratLt`s ([`lt_via_components`]) turns the goal into the `int`
+    /// fact `fx·dx + fx·dy < fx·dx + fy·dx`, which `lt_add_cancel_iff`
+    /// reduces to the hypothesis `fx·dy < fy·dx` (= `x < y`).
+    pub fn mediant_gt() -> Thm {
+        mediant_ineq(true).expect("rat::mediant_gt")
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀x y. x < y ⟹ mediant x y < y` — **proved**, the mirror of
+    /// [`mediant_gt`]: the goal becomes `fy·dx + fx·dy < fy·dx + fy·dx`...
+    /// reduced by `lt_add_cancel_iff` to `fx·dy < fy·dx`.
+    pub fn mediant_lt() -> Thm {
+        mediant_ineq(false).expect("rat::mediant_lt")
+    }
+}
+
+/// Shared body for the two mediant inequalities. `gt = true` proves
+/// `x < mediant x y`, `gt = false` proves `mediant x y < y`.
+fn mediant_ineq(gt: bool) -> Result<Thm> {
     let (x, y) = (rvar("x"), rvar("y"));
-    let concl = rlt(med(x.clone(), y.clone()), y.clone());
-    let body = rlt(x, y).imp(concl).expect("mediant_lt");
-    axiom(forall_rat(&["x", "y"], body))
+    let rx = recon_mk(&x)?; // x = MK fx dx_pos
+    let ry = recon_mk(&y)?; // y = MK fy dy_pos
+    let rm = mediant_beta(&x, &y)?; // mediant x y = MK (fx+fy)(to_pos(dx+dy))
+
+    let (fx, dx_pos) = (rfst(&x), rden(&x));
+    let (fy, dy_pos) = (rfst(&y), rden(&y));
+    let (dx, dy) = (den(&rep_pair(x.clone())), den(&rep_pair(y.clone()))); // rep dx_pos, rep dy_pos
+
+    // positivity of dx, dy and the mediant denominator dx+dy.
+    let pos_dx = int::int_pos_pos().all_elim(dx_pos.clone())?; // 0 < dx
+    let pos_dy = int::int_pos_pos().all_elim(dy_pos.clone())?; // 0 < dy
+    let pos_dsum = int::add_pos()
+        .all_elim(dx.clone())?
+        .all_elim(dy.clone())?
+        .imp_elim(pos_dx)?
+        .imp_elim(pos_dy)?; // 0 < dx+dy
+    // The mediant denominator `to_pos(dx+dy)` round-trips: rep(to_pos(dx+dy)) = dx+dy.
+    let dsum_rt = int::int_pos_round_trip_at(&iadd(dx.clone(), dy.clone()), pos_dsum)?;
+
+    let hyp = rlt(x.clone(), y.clone());
+    // x < y reduces to the int cross-product `fx·dy < fy·dx`.
+    let dxy = lt_via_components(&rx, &ry)?; // ratLt x y = int.lt (fx·dy)(fy·dx)
+    let h_int = dxy.eq_mp(Thm::assume(hyp.clone())?)?; // {x<y} ⊢ fx·dy < fy·dx
+
+    if gt {
+        // goal: ratLt x (mediant x y) = int.lt (fx·(dx+dy))((fx+fy)·dx).
+        let de = lt_via_components(&rx, &rm)?; // ratLt x m = int.lt (fx·rep(to_pos(dx+dy)))((fx+fy)·dx)
+        // resolve rep(to_pos(dx+dy)) = dx+dy.
+        let de = de.rhs_conv(|t| t.rw_all(&dsum_rt))?; // = int.lt (fx·(dx+dy))((fx+fy)·dx)
+        // fx·(dx+dy) = fx·dx + fx·dy ;  (fx+fy)·dx = fx·dx + fy·dx.
+        let lhs_split = int::distrib_at(&fx, &dx, &dy)?; // fx·(dx+dy) = fx·dx + fx·dy
+        let rhs_split = int::distrib_r_at(&fx, &fy, &dx)?; // (fx+fy)·dx = fx·dx + fy·dx
+        // int.lt (fx·dx+fx·dy)(fx·dx+fy·dx) ⟺ fx·dy < fy·dx  (cancel fx·dx on the left).
+        let cancel = int::lt_add_cancel_left_at(&imul(fx.clone(), dx.clone()), &imul(fx.clone(), dy.clone()), &imul(fy.clone(), dx.clone()))?;
+        let goal_int = cancel.sym()?.eq_mp(h_int)?; // {x<y} ⊢ int.lt (fx·dx+fx·dy)(fx·dx+fy·dx)
+        let goal_int = goal_int
+            .rewrite(&lhs_split.sym()?)?
+            .rewrite(&rhs_split.sym()?)?; // {x<y} ⊢ int.lt (fx·(dx+dy))((fx+fy)·dx)
+        de.sym()?
+            .eq_mp(goal_int)? // {x<y} ⊢ ratLt x (mediant x y)
+            .imp_intro(&hyp)?
+            .all_intro("y", rat())?
+            .all_intro("x", rat())
+    } else {
+        // goal: ratLt (mediant x y) y = int.lt ((fx+fy)·dy)(fy·(dx+dy)).
+        let de = lt_via_components(&rm, &ry)?; // ratLt m y = int.lt ((fx+fy)·rep dy)(fy·rep(to_pos(dx+dy)))
+        let de = de.rhs_conv(|t| t.rw_all(&dsum_rt))?; // fy·(dx+dy)
+        let lhs_split = int::distrib_r_at(&fx, &fy, &dy)?; // (fx+fy)·dy = fx·dy + fy·dy
+        let rhs_split = int::distrib_at(&fy, &dx, &dy)?; // fy·(dx+dy) = fy·dx + fy·dy
+        // int.lt (fx·dy+fy·dy)(fy·dx+fy·dy) ⟺ fx·dy < fy·dx  (cancel fy·dy on the right).
+        let cancel = int::lt_add_cancel_right_at(&imul(fx.clone(), dy.clone()), &imul(fy.clone(), dx.clone()), &imul(fy.clone(), dy.clone()))?;
+        let goal_int = cancel.sym()?.eq_mp(h_int)?; // {x<y} ⊢ int.lt (fx·dy+fy·dy)(fy·dx+fy·dy)
+        let goal_int = goal_int
+            .rewrite(&lhs_split.sym()?)?
+            .rewrite(&rhs_split.sym()?)?; // {x<y} ⊢ int.lt ((fx+fy)·dy)(fy·(dx+dy))
+        de.sym()?
+            .eq_mp(goal_int)?
+            .imp_intro(&hyp)?
+            .all_intro("y", rat())?
+            .all_intro("x", rat())
+    }
 }
 
 cached_thm! {
     /// `⊢ ∀x y. x < y ⟹ ∃z. x < z ∧ z < y` — **the rationals are dense.**
     ///
-    /// A genuine derivation: the mediant `z = mediant x y` is the witness,
-    /// `mediant_gt` / `mediant_lt` give the two strict inequalities, and
-    /// `∃`-introduction + `∧`-introduction package them. The only
-    /// postulated leaves are the two mediant inequalities; once they are
-    /// discharged this theorem is hypothesis-free.
+    /// A genuine, **hypothesis-free** derivation: the mediant `z = mediant x y`
+    /// is the witness, the (now proved) `mediant_gt` / `mediant_lt` give the
+    /// two strict inequalities, and `∃`-introduction + `∧`-introduction package
+    /// them.
     pub fn dense() -> Thm {
         dense_impl().expect("dense derivation")
     }
@@ -2605,9 +2994,10 @@ mod tests {
 
     #[test]
     fn seam_givens_build() {
-        // Every seam given builds with a bool conclusion and rests only on the
-        // self-flagged int stubs (`int_mul_rcancel` / `int_pos_nonzero` /
-        // `pos_prod_rt` / `one_pos_rt`), all of which are bool hypotheses.
+        // Every seam given builds with a bool conclusion. The `int` facts it
+        // rests on (`int_mul_rcancel` / `int_pos_nonzero` / `pos_prod_rt` /
+        // `one_pos_rt`) are now **proved** in `init::int`, so these givens are
+        // genuine (no remaining stub hypotheses on this surface).
         for g in [
             recon_given().unwrap(),
             add_mk_given().unwrap(),
@@ -2827,9 +3217,11 @@ mod tests {
 
     #[test]
     fn order_axioms_are_well_typed_and_self_flagged() {
-        // Still-postulated order axioms (lt_irrefl is now proved — see
-        // lt_irrefl_is_genuine).
-        for ax in [lt_trans(), lt_trichotomy(), le_def()] {
+        // `le_def` is the last still-postulated order axiom (it *defines* the
+        // declaration-only kernel `ratLe`); `lt_irrefl`/`zero_lt_one`/
+        // `lt_trans`/`lt_trichotomy` are all proved now (see their genuine
+        // tests).
+        for ax in [le_def()] {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(ax.hyps().iter().any(|h| h == ax.concl()));
         }
@@ -2950,6 +3342,48 @@ mod tests {
     }
 
     #[test]
+    fn zero_lt_one_is_genuine() {
+        let t = zero_lt_one();
+        assert!(t.hyps().is_empty(), "rat::zero_lt_one is proved");
+        assert_eq!(t.concl(), &rlt(rat_zero(), rat_one()));
+    }
+
+    #[test]
+    fn lt_trichotomy_is_genuine() {
+        let (a, b) = (rvar("a"), rvar("b"));
+        let t = lt_trichotomy();
+        assert!(t.hyps().is_empty(), "rat::lt_trichotomy is proved");
+        let inst = t.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let expected = rlt(a.clone(), b.clone())
+            .or(a
+                .clone()
+                .equals(b.clone())
+                .unwrap()
+                .or(rlt(b.clone(), a.clone()))
+                .unwrap())
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn lt_trans_is_genuine() {
+        let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+        let t = lt_trans();
+        assert!(t.hyps().is_empty(), "rat::lt_trans is proved");
+        let inst = t
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        let expected = rlt(a.clone(), b.clone())
+            .imp(rlt(b, c.clone()).imp(rlt(a, c)).unwrap())
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
     fn order_toolkit_derivations_are_well_typed() {
         // le_refl / lt_imp_le / le_trans / not_one_le_zero are derived: they
         // carry only postulate hypotheses (no stray assumptions), are
@@ -3035,7 +3469,7 @@ mod tests {
     }
 
     #[test]
-    fn dense_is_derived_from_the_mediant_postulates() {
+    fn dense_is_genuine() {
         let thm = dense();
         // The statement: ∀x y. x < y ⟹ ∃z. x < z ∧ z < y.
         let (x, y) = (rvar("x"), rvar("y"));
@@ -3057,12 +3491,27 @@ mod tests {
         let head = conseq.as_app().expect("consequent is an application").0;
         assert_eq!(head, &covalence_core::defs::exists(rat()));
 
-        // dense is genuine *modulo* exactly the two mediant postulates: it
-        // carries them (and nothing else) as hypotheses.
-        let hyps = thm.hyps();
-        assert_eq!(hyps.len(), 2, "only the two mediant postulates remain");
-        for h in hyps {
-            assert!(h.type_of().unwrap().is_bool());
+        // dense is now fully genuine — the two mediant inequalities it rests
+        // on are proved, so it carries no hypotheses.
+        assert!(
+            thm.hyps().is_empty(),
+            "dense is hypothesis-free now that the mediants are proved"
+        );
+    }
+
+    #[test]
+    fn mediants_are_genuine() {
+        let (x, y) = (rvar("x"), rvar("y"));
+        for (t, concl_of) in [
+            (mediant_gt(), rlt(x.clone(), med(x.clone(), y.clone()))),
+            (mediant_lt(), rlt(med(x.clone(), y.clone()), y.clone())),
+        ] {
+            assert!(t.hyps().is_empty(), "mediant inequality is proved");
+            let inst = t.all_elim(x.clone()).unwrap().all_elim(y.clone()).unwrap();
+            assert_eq!(
+                inst.concl(),
+                &rlt(x.clone(), y.clone()).imp(concl_of).unwrap()
+            );
         }
     }
 

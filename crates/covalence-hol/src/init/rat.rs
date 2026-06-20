@@ -659,32 +659,17 @@ fn imul_cong(ea: Thm, eb: Thm) -> Result<Thm> {
     Thm::refl(int::int_mul())?.cong_app(ea)?.cong_app(eb)
 }
 
-/// **Postulated.** `⊢ ∀a b:int.pos. rep(to_pos(rep a · rep b)) = rep a · rep b`
-/// — products of positive denominators round-trip through `int.pos`.
-/// *To be discharged in `init::int`* (positivity of products of positives).
+/// `⊢ ∀a b:int.pos. rep(to_pos(rep a · rep b)) = rep a · rep b` — products of
+/// positive denominators round-trip through `int.pos`, **proved** in
+/// [`int::int_pos_prod_rt`] (`0 < rep a · rep b`, so the wrapper is faithful).
 fn pos_prod_rt() -> Thm {
-    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
-    let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
-    let prod = imul(
-        Term::app(rep.clone(), a.clone()),
-        Term::app(rep.clone(), b.clone()),
-    );
-    let lhs = Term::app(rep, to_pos(prod.clone()));
-    let body = lhs.equals(prod).expect("pos_prod_rt body");
-    let t = body
-        .forall("b", int_pos_ty())
-        .and_then(|t| t.forall("a", int_pos_ty()))
-        .expect("pos_prod_rt: ∀");
-    axiom(t)
+    int::int_pos_prod_rt()
 }
 
-/// **Postulated.** `⊢ rep(one_pos) = 1` — the canonical denominator `1`
-/// round-trips. *To be discharged in `init::int`* (`0 < 1`, so `to_pos 1`
-/// is a genuine `int.pos` wrapping of `1`).
+/// `⊢ rep(one_pos) = 1` — the canonical denominator `1` round-trips,
+/// **proved** in [`int::int_pos_one_rt`] (`0 < 1`).
 fn one_pos_rt() -> Thm {
-    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
-    let lhs = Term::app(rep, one_pos());
-    axiom(lhs.equals(Term::int_lit(1i128)).expect("one_pos_rt"))
+    int::int_pos_one_rt()
 }
 
 /// `⊢ rep(to_pos(den x · den y)) = den x · den y` — [`pos_prod_rt`] at the

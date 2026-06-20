@@ -35,10 +35,12 @@ index](../../../../SKELETONS.md).
   per-op computation rules `add_class`/`mul_class` + `add_mk`/`mul_mk` +
   `*_via_components`, the well-definedness lemmas `add_pair_cong` (distrib +
   interchange) / `mul_pair_cong` (interchange), `rel_of_pairs` (prod-
-  projection bridge), and `imul_interchange`. It rests on two postulated
-  `int.pos` round-trips for the `to_pos` denominators (**to discharge in
-  `init::int`**): `pos_prod_rt` (`rep(to_pos(rep a · rep b)) = rep a · rep b`)
-  and `one_pos_rt` (`rep(one_pos) = 1`).
+  projection bridge), and `imul_interchange`. The two `int.pos` round-trips
+  for the `to_pos` denominators are now **proved in `init::int`** (re-exported
+  by thin `init::rat` helpers): `int::int_pos_prod_rt`
+  (`rep(to_pos(rep a · rep b)) = rep a · rep b`, via `spec_rep_abs_fwd` +
+  `int_pos_prod_pos`) and `int::int_pos_one_rt` (`rep(one_pos) = 1`, via
+  `spec_rep_abs_fwd` at `1` with `0 < 1`).
 
   **Proved** through that machinery (over the operations `rat_zero`/`rat_one`/
   `rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/`rat_div`/`rat_lt`, all

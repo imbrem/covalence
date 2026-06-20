@@ -2156,6 +2156,96 @@ fn lt_succ_zero_one() -> Result<Thm> {
     lt(lit(0), lit(1)).prove_true()
 }
 
+/// `⊢ ∀a. 0 · a = 0` — left zero, from `mul_zero` + `mul_comm`.
+fn zero_mul() -> Result<Thm> {
+    let a = var("a");
+    mul_comm()
+        .all_elim(lit(0))?
+        .all_elim(a.clone())? // 0·a = a·0
+        .trans(mul_zero().all_elim(a.clone())?)? // = 0
+        .all_intro("a", int())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b:int.pos. 0 < rep a · rep b` — a product of strictly-positive
+    /// integers is strictly positive. `lt_mul_pos` at `0 < rep a` scaled by
+    /// the positive `rep b`, with `0 · rep b = 0`.
+    fn int_pos_prod_pos() -> Result<Thm> {
+        use covalence_core::defs::int_pos_ty;
+        let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
+        let rep = Term::spec_rep(covalence_core::defs::int_pos_spec(), Vec::<Type>::new());
+        let (ra, rb) = (Term::app(rep.clone(), a.clone()), Term::app(rep, b.clone()));
+        let pos_a = int_pos_pos().all_elim(a.clone())?; // 0 < rep a
+        let pos_b = int_pos_pos().all_elim(b.clone())?; // 0 < rep b
+        // 0 < rep a ⟹ (with 0 < rep b) ⟹ 0·rep b < rep a · rep b.
+        let scaled = lt_mul_pos()
+            .all_elim(lit(0))?
+            .all_elim(ra.clone())?
+            .all_elim(rb.clone())?
+            .imp_elim(pos_b)?
+            .imp_elim(pos_a)?; // 0·rep b < rep a · rep b
+        scaled
+            .rewrite(&zero_mul()?.all_elim(rb.clone())?)? // 0 < rep a · rep b
+            .all_intro("b", int_pos_ty())?
+            .all_intro("a", int_pos_ty())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b:int.pos. rep(abs(rep a · rep b)) = rep a · rep b` — products of
+    /// positive denominators round-trip through the `int.pos` wrapper, by the
+    /// conditional carrier-side round-trip ([`Thm::spec_rep_abs_fwd`]) whose
+    /// premise `0 < rep a · rep b` is [`int_pos_prod_pos`]. Relocated here from
+    /// `init::rat` (`pos_prod_rt`).
+    pub fn int_pos_prod_rt() -> Result<Thm> {
+        use covalence_core::defs::{int_pos_spec, int_pos_ty};
+        let spec = int_pos_spec();
+        let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
+        let rep = Term::spec_rep(spec.clone(), Vec::<Type>::new());
+        let (ra, rb) = (Term::app(rep.clone(), a.clone()), Term::app(rep, b.clone()));
+        let prod = mul(ra.clone(), rb.clone());
+        // P(prod) = (λx. 0<x) prod — supply from int_pos_prod_pos via β.
+        let fwd = Thm::spec_rep_abs_fwd(spec.clone(), Vec::<Type>::new(), prod.clone())?;
+        let prem = fwd
+            .concl()
+            .as_app()
+            .ok_or_else(|| Error::ConnectiveRule("int_pos_prod_rt: ⟹ shape".into()))?
+            .0
+            .as_app()
+            .ok_or_else(|| Error::ConnectiveRule("int_pos_prod_rt: ⟹ shape".into()))?
+            .1
+            .clone(); // P prod = (λx. 0<x) prod
+        let pos = int_pos_prod_pos().all_elim(a.clone())?.all_elim(b.clone())?; // 0 < prod
+        let prem_thm = prem.reduce()?.sym()?.eq_mp(pos)?; // ⊢ P prod
+        fwd.imp_elim(prem_thm)? // rep(abs prod) = prod
+            .all_intro("b", int_pos_ty())?
+            .all_intro("a", int_pos_ty())
+    }
+}
+
+cached_thm! {
+    /// `⊢ rep(abs 1) = 1` — the canonical denominator `1` round-trips through
+    /// `int.pos`, by [`Thm::spec_rep_abs_fwd`] at `1` with premise `0 < 1`.
+    /// Relocated here from `init::rat` (`one_pos_rt`).
+    pub fn int_pos_one_rt() -> Result<Thm> {
+        use covalence_core::defs::int_pos_spec;
+        let spec = int_pos_spec();
+        let fwd = Thm::spec_rep_abs_fwd(spec.clone(), Vec::<Type>::new(), lit(1))?;
+        let prem = fwd
+            .concl()
+            .as_app()
+            .ok_or_else(|| Error::ConnectiveRule("int_pos_one_rt: ⟹ shape".into()))?
+            .0
+            .as_app()
+            .ok_or_else(|| Error::ConnectiveRule("int_pos_one_rt: ⟹ shape".into()))?
+            .1
+            .clone(); // P 1 = (λx. 0<x) 1
+        // Pure β (the literal reducer would over-evaluate `0<1` to `T`).
+        let prem_thm = Thm::beta_conv(prem)?.sym()?.eq_mp(lt_succ_zero_one()?)?; // ⊢ P 1
+        fwd.imp_elim(prem_thm) // rep(abs 1) = 1
+    }
+}
+
 // ============================================================================
 // Discreteness — the integer-specific axiom
 // ============================================================================
@@ -2695,6 +2785,37 @@ mod tests {
         assert_eq!(
             nz.all_elim(p.clone()).unwrap().concl(),
             &rep_p.equals(lit(0)).unwrap().not().unwrap()
+        );
+    }
+
+    #[test]
+    fn int_pos_round_trips_are_genuine() {
+        use covalence_core::defs::{int_pos_spec, int_pos_ty};
+        // int_pos_one_rt: rep(abs 1) = 1.
+        let one_rt = int_pos_one_rt();
+        assert!(one_rt.hyps().is_empty(), "int_pos_one_rt is proved");
+        let rep = Term::spec_rep(int_pos_spec(), Vec::<Type>::new());
+        let abs = Term::spec_abs(int_pos_spec(), Vec::<Type>::new());
+        assert_eq!(
+            one_rt.concl(),
+            &Term::app(rep.clone(), Term::app(abs.clone(), lit(1)))
+                .equals(lit(1))
+                .unwrap()
+        );
+        // int_pos_prod_rt: ∀a b. rep(abs(rep a · rep b)) = rep a · rep b.
+        let prod_rt = int_pos_prod_rt();
+        assert!(prod_rt.hyps().is_empty(), "int_pos_prod_rt is proved");
+        let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
+        let (ra, rb) = (
+            Term::app(rep.clone(), a.clone()),
+            Term::app(rep.clone(), b.clone()),
+        );
+        let prod = mul(ra, rb);
+        assert_eq!(
+            prod_rt.all_elim(a).unwrap().all_elim(b).unwrap().concl(),
+            &Term::app(rep, Term::app(abs, prod.clone()))
+                .equals(prod)
+                .unwrap()
         );
     }
 

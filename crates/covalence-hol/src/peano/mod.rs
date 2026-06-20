@@ -55,6 +55,7 @@
 //! the last postulate). So a shallow PA proof is an outright HOL
 //! theorem — PA is sound in HOL with nothing assumed.
 
+pub mod fol;
 pub mod shallow;
 
 pub use shallow::Hol;

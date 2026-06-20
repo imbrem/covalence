@@ -476,29 +476,44 @@ index](../../../../SKELETONS.md).
 
 
 - **`covalence-hol` nat division / modulus theory** in
-  `crates/covalence-hol/src/init/nat.rs`. The **recursion equations and the
-  algebraic laws are proved and genuine** (hypothesis- and oracle-free) for the
-  rest of nat arithmetic: `iter_zero`/`iter_succ` (the `iter` recursor),
-  `pow_zero`/`pow_succ` + `pow_add` (`a^(m+n) = a^m·a^n`),
-  `shl_zero`/`shl_succ` + `shl_eq_mul_pow` (`shl a m = a·2^m`),
-  `shr_zero`/`shr_succ` (`shr a (S m) = (shr a m) / 2`), and `mod_def`
-  (`n mod m = n − (n/m)·m`, `nat.mod`'s definitional unfolding). `pow_add` /
-  `shl_eq_mul_pow` are *also* ported to `nat.cov` (`#comp` calc chains).
-  **Not yet proved — the Euclidean division-algorithm facts.** `nat.div` is a
-  def-style *selector* (it picks the unique `d` with `m≠0 ⟹ d·m ≤ n < (d+1)·m`).
-  Transferring those bounds to `nat.div` itself (the way `le_body`/`lt_body` are
-  transferred to `nat.le`/`nat.lt`) needs a *witness* floor function satisfying
-  the predicate. Unlike the `≤`/`<` witnesses (closed `λn m. n−m = 0`), the
-  floor witness is genuinely recursive, so it must be built by **strong/complete
-  induction over the graph** (the `init/recursion.rs` route), which first needs
-  strong induction derived from the primitive `Thm::nat_induct`. Deferred until
-  that machinery exists. Once the witness lands, the targets are:
-  - `div_mod` — the division algorithm `n = (n/m)·m + (n mod m)` (with `mod_def`
-    above, this reduces to the `m≠0` floor bound).
-  - `mod_lt` — `m ≠ 0 ⟹ n mod m < m`.
-  - the `div`/`mod` recurrences and `(a·b)/b = a` (for `b ≠ 0`).
-  The `shr a (S m) = (shr a m)/2` ↔ `shr a m = a / 2^m` bridge also waits on
-  these (`shr` is defined through `nat.div`).
+  `crates/covalence-hol/src/init/nat.rs`. The recursion equations and algebraic
+  laws are genuine (hypothesis- and oracle-free): `iter_zero`/`iter_succ`,
+  `pow_zero`/`pow_succ` + `pow_add`, `shl_zero`/`shl_succ` + `shl_eq_mul_pow`,
+  `shr_zero`/`shr_succ`, and `mod_def` (`n mod m = n − (n/m)·m`). The
+  **Euclidean division algorithm is now PROVED** (`strong_induct`, `sub_lt`,
+  `div_exists`, `div_spec`, `div_mod`, `mod_lt`), all hypothesis-free, and
+  ported to `nat.cov` (`mod.unfold` / `div_mod` / `mod_lt`):
+  - `strong_induct` — course-of-values induction
+    `(∀n. (∀k<n. P k) ⟹ P n) ⟹ ∀n. P n`, derived from the primitive
+    `Thm::nat_induct` + the `<`/`≤` order theory.
+  - `div_exists` — `∀n m. ∃q. dpred n m q` (the Euclidean quotient exists), by
+    `strong_induct` on `n` (the `m≤n` case recurses on `n−m < n` via `sub_lt`).
+  - `div_spec` — the two-clause `nat.div` selector body, transferred from the
+    Hilbert-choice floor witness `λn m. ε q. dpred n m q` via `spec_ax`.
+  - `div_mod` (`n = (n/m)·m + (n mod m)`, *unconditional*) and `mod_lt`
+    (`m ≠ 0 ⟹ n mod m < m`).
+  **Still deferred (precise):**
+  - the `div`/`mod` *recurrences* (`(n+m)/m = S(n/m)` etc.) and `(a·b)/b = a`
+    (for `b ≠ 0`). These follow from `div_spec`'s uniqueness — the def-style
+    selector pins a *unique* quotient when `m≠0`, so two quotients with the same
+    bounds are equal; that uniqueness lemma (`div` is well-defined) is the next
+    step. Not yet built.
+  - the `shr a (S m) = (shr a m)/2` ↔ `shr a m = a / 2^m` bridge (waits on the
+    div recurrences, since `shr` is defined through `nat.div`).
+
+- **`covalence-hol` closed-nat-arithmetic reduction tactic (STRETCH, not built)**
+  in `crates/covalence-hol/src/init/nat.rs` / `script/`. A `.cov` tactic that
+  *decides* closed nat arithmetic (`2 + 3 = 5`, `7 mod 3 = 1`) automatically.
+  The kernel already has the machinery: `Thm::reduce_prim` / the `reduce`
+  tactic fold closed literal applications of `nat.add`/`mul`/`sub`/`div`/`mod`/…
+  (ptr_eq dispatch in `defs::builtins::reduce_spec`). The tactic would: take a
+  goal `⊢ lhs = rhs` (or `⊢ P` with closed-literal subterms), `reduce` both
+  sides to `Nat`-literal normal form, and close by `refl` (or report the
+  literal mismatch). Plug-in point: register it in `library_tactic` (like
+  `tauto`) and expose it as `(nat-compute)` / wire it into `#comp`'s default
+  reducer seam (`Env::beta` analogue). Deferred — `reduce`/`reduce-prim` already
+  cover the *closed* cases directly in proofs, so this is ergonomics, not a
+  capability gap.
 
 - **`covalence-hol` reified object logic (S-expr → propositional logic)** in
   `crates/covalence-hol/src/init/sexpr.rs` + `crates/covalence-hol/src/init/prop.rs`

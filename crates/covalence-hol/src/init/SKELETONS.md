@@ -295,8 +295,9 @@ index](../../../../SKELETONS.md).
     `L* ⊆ ε ∪ L·L*`, the genuine induction over the impredicative star.
 
 - **Regular expressions on lists / `Matches` derivation** in
-  `crates/covalence-hol/src/init/regex.rs` (+ `regex_soundness.rs`, the
-  per-clause soundness helpers `include!`d into it). The regex datatype
+  `crates/covalence-hol/src/init/regex/mod.rs` (+ the private `regex/soundness.rs`
+  submodule, the per-clause soundness helpers — `pub(super)`, `use super::*`).
+  The regex datatype
   `empty | eps | lit 'a | alt | seq | star` is reified as an
   alphabet-polymorphic Church encoding (the `init/prop.rs` recipe — distinct
   regexes are distinct terms, no engine recursor needed despite `alt`/`seq`

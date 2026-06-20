@@ -1,11 +1,15 @@
-// Per-clause discharge helpers for `discharge_closed` (soundness rule
-// induction). `include!`d into `regex.rs` so they share its private items.
-//
-// Each helper proves a `⊢ Closed`-clause with the predicate `D = λr w. mem w
-// ⟦r⟧` in place of `M`, i.e. that the matching rule is *sound* against the
-// denotation. The recurring move: `⟦C sub…⟧` β-reduces to the corresponding
-// `lang` operation over the sub-denotations (the denotation is a fold), so
-// every clause bottoms out in a `lang`/`set` membership computation.
+//! Per-clause discharge helpers for `discharge_closed` (soundness rule
+//! induction). A private submodule of [`super`] (`regex/mod.rs`); `use
+//! super::*` pulls in the parent's private `denote`/`mem`/`r_*_at`/`lang_ty`/
+//! `regex_at`/`nil_w`/`cat_w`/`word_ty` items that these helpers build on.
+//!
+//! Each helper proves a `⊢ Closed`-clause with the predicate `D = λr w. mem w
+//! ⟦r⟧` in place of `M`, i.e. that the matching rule is *sound* against the
+//! denotation. The recurring move: `⟦C sub…⟧` β-reduces to the corresponding
+//! `lang` operation over the sub-denotations (the denotation is a fold), so
+//! every clause bottoms out in a `lang`/`set` membership computation.
+
+use super::*;
 
 /// `⊢ ⟦r⟧ = nf` — β-normal form of a regex denotation (a `lang` term).
 fn denote_nf(alpha: &Type, r: &Term) -> Result<Thm> {
@@ -20,7 +24,7 @@ fn denote_val(alpha: &Type, r: &Term) -> Result<Term> {
 /// `eps` clause: `⊢ mem nil ⟦eps⟧`, given `mem_eps : ⊢ mem nil ε = (nil =
 /// unit)` (the `lang` epsilon membership). `⟦eps⟧` β-reduces to `ε`, and
 /// `unit = nil`, so the RHS is `nil = nil = T`.
-fn rewrite_mem_to_denote(
+pub(super) fn rewrite_mem_to_denote(
     _alpha: &Type,
     _m: &Monoid,
     _eps: &Term,
@@ -37,7 +41,7 @@ fn rewrite_mem_to_denote(
 
 /// `lit` clause (per `c`): `⊢ mem [c] ⟦lit c⟧`, given `mem_sing : ⊢ mem [c]
 /// {[c]} = ([c] = [c])`. `⟦lit c⟧` β-reduces to `{[c]}`; the RHS is reflexive.
-fn rewrite_mem_singleton_to_denote(
+pub(super) fn rewrite_mem_singleton_to_denote(
     _alpha: &Type,
     _m: &Monoid,
     _lit: &Term,
@@ -55,7 +59,7 @@ fn rewrite_mem_singleton_to_denote(
 /// `sub` is `x` (left) or `y` (right). `⟦alt x y⟧` β-reduces to `⟦x⟧ ∪ ⟦y⟧`;
 /// membership unfolds to `mem w ⟦x⟧ ∨ mem w ⟦y⟧` via `mem_union`, and we
 /// `or_intro` the matching side.
-fn discharge_alt(alpha: &Type, _m: &Monoid, d_pred: &Term, left: bool) -> Result<Thm> {
+pub(super) fn discharge_alt(alpha: &Type, _m: &Monoid, d_pred: &Term, left: bool) -> Result<Thm> {
     let rset = lang_ty(alpha);
     let rty_a = regex_at(alpha, &rset);
     let wty = word_ty(alpha);
@@ -105,7 +109,7 @@ fn discharge_alt(alpha: &Type, _m: &Monoid, d_pred: &Term, left: bool) -> Result
 /// `⟦seq x y⟧` β-reduces to `⟦x⟧ · ⟦y⟧`; membership in a concat is the
 /// existential `∃u v. mem u ⟦x⟧ ∧ mem v ⟦y⟧ ∧ (cat w1 w2) = op u v` — witness
 /// `u := w1`, `v := w2` (the equation `cat w1 w2 = cat w1 w2` by refl).
-fn discharge_seq(alpha: &Type, m: &Monoid, d_pred: &Term) -> Result<Thm> {
+pub(super) fn discharge_seq(alpha: &Type, m: &Monoid, d_pred: &Term) -> Result<Thm> {
     let rset = lang_ty(alpha);
     let rty_a = regex_at(alpha, &rset);
     let wty = word_ty(alpha);
@@ -178,7 +182,7 @@ fn discharge_seq(alpha: &Type, m: &Monoid, d_pred: &Term) -> Result<Thm> {
 /// `star-nil` clause: `⊢ ∀x. D (star x) nil`. `⟦star x⟧` β-reduces to `⟦x⟧*`;
 /// `nil ∈ ε ⊆ ⟦x⟧*` via [`lang::star_contains_epsilon`] + the epsilon
 /// membership.
-fn discharge_star_nil(alpha: &Type, m: &Monoid, d_pred: &Term) -> Result<Thm> {
+pub(super) fn discharge_star_nil(alpha: &Type, m: &Monoid, d_pred: &Term) -> Result<Thm> {
     let rset = lang_ty(alpha);
     let rty_a = regex_at(alpha, &rset);
     let wty = word_ty(alpha);
@@ -212,7 +216,7 @@ fn discharge_star_nil(alpha: &Type, m: &Monoid, d_pred: &Term) -> Result<Thm> {
 /// w1 w2)`. `⟦star x⟧` β-reduces to `⟦x⟧*`; `cat w1 w2 ∈ ⟦x⟧ · ⟦x⟧* ⊆ ⟦x⟧*`
 /// via [`lang::star_concat_closed`] (the pre-fixpoint) + the concat
 /// membership witness.
-fn discharge_star_step(alpha: &Type, m: &Monoid, d_pred: &Term) -> Result<Thm> {
+pub(super) fn discharge_star_step(alpha: &Type, m: &Monoid, d_pred: &Term) -> Result<Thm> {
     let rset = lang_ty(alpha);
     let rty_a = regex_at(alpha, &rset);
     let wty = word_ty(alpha);

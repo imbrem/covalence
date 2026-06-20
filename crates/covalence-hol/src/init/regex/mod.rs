@@ -771,9 +771,13 @@ fn discharge_closed(alpha: &Type, d_pred: &Term) -> Result<Thm> {
     Ok(acc)
 }
 
-// -- per-clause discharge helpers (defined below; see soundness §) ------------
+// -- per-clause discharge helpers (private submodule; see soundness §) --------
 
-include!("regex_soundness.rs");
+mod soundness;
+use soundness::{
+    discharge_alt, discharge_seq, discharge_star_nil, discharge_star_step,
+    rewrite_mem_singleton_to_denote, rewrite_mem_to_denote,
+};
 
 // ============================================================================
 // Bytestring specialization.

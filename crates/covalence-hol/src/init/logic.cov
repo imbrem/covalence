@@ -2,37 +2,72 @@
 ;; `cov_theory!` macro, replacing the hand-written Rust proofs. Replayed
 ;; once (lazily) through the kernel; nothing here is trusted from the text.
 ;;
-;; `tauto` is registered here as a host (FFI) tactic and exported, so
-;; downstream theories that `(#open logic)` get it. (`tauto` depends on
-;; `truth`, which logic provides — it belongs to logic, not core.)
+;; `truth` and the `tauto` FFI tactic are NOT defined here: they live in the
+;; foundational `tauto.cov` (which depends only on `core`). We `#import` it and
+;; re-export both, so downstream `(#open logic)` still gets `truth` + `tauto`.
+;; This split is what lets THIS file use `prop-eq` (whose Rust impl bottoms out
+;; in `truth`) without re-entering `logic`'s own lazy static.
 
 (#import core)
 (#open core)
-(#register-ffi-tactic tauto)
+(#import tauto)
+(#open tauto)
 
-;; ⊢ T. `reduce-prim` decides (T = T) = T on the closed literals; `refl T`
-;; discharges the antecedent via `eq-mp`.
-(#thm truth
-  (#concl true)
-  (#proof (eq-mp (reduce-prim (= true true)) (refl true))))
-
-;; ⊢ (p ∧ q) ⟹ (q ∧ p). p, q inferred : bool.
+;; ⊢ (p ∧ q) = (q ∧ p). Commutativity of `∧` as an EQUATION — the form the
+;; AC / ring rewriters consume. `=` at bool IS the biconditional, so prove it
+;; by antisymmetry (`deduct-antisym`) of the two `swap` implications: each
+;; direction reorders the conjuncts. p, q inferred : bool.
 (#thm and.comm
-  (#concl (==> (and p q) (and q p)))
+  (#concl (= (and p q) (and q p)))
   (#proof
-    (imp-intro (and p q)
+    (deduct-antisym
+      (and-intro
+        (and-elim-r (assume (and q p)))
+        (and-elim-l (assume (and q p))))
       (and-intro
         (and-elim-r (assume (and p q)))
         (and-elim-l (assume (and p q)))))))
 
-;; ⊢ (p ∨ q) ⟹ (q ∨ p). Case-split; each branch re-injects on the far side.
-(#thm or.comm
-  (#concl (==> (or p q) (or q p)))
+;; ⊢ (p ∧ q) ⟹ (q ∧ p). The implication direction of `and.comm`, derived from
+;; the equation by `eq-mp` after assuming the antecedent.
+(#thm and.comm.mp
+  (#concl (==> (and p q) (and q p)))
   (#proof
-    (imp-intro (or p q)
+    (imp-intro (and p q)
+      (eq-mp (and.comm) (assume (and p q))))))
+
+;; ⊢ (p ∨ q) = (q ∨ p). Commutativity of `∨` as an EQUATION. Again by
+;; antisymmetry: each direction case-splits and re-injects on the far side.
+(#thm or.comm
+  (#concl (= (or p q) (or q p)))
+  (#proof
+    (deduct-antisym
+      (or-elim (assume (or q p))
+        (imp-intro q (or-intro-r p (assume q)))
+        (imp-intro p (or-intro-l q (assume p))))
       (or-elim (assume (or p q))
         (imp-intro p (or-intro-r q (assume p)))
         (imp-intro q (or-intro-l p (assume q)))))))
+
+;; ⊢ (p ∨ q) ⟹ (q ∨ p). The implication direction of `or.comm`.
+(#thm or.comm.mp
+  (#concl (==> (or p q) (or q p)))
+  (#proof
+    (imp-intro (or p q)
+      (eq-mp (or.comm) (assume (or p q))))))
+
+;; ⊢ ((p ∧ q) ∧ r) = (p ∧ (q ∧ r)). Associativity of `∧` as an EQUATION (the
+;; form the AC rewriter consumes), decided by the propositional `prop-eq`. This
+;; works because `prop-eq`'s `truth` dependency now resolves through the
+;; imported `tauto` layer, not this still-loading theory.
+(#thm and.assoc
+  (#concl (= (and (and p q) r) (and p (and q r))))
+  (#proof (prop-eq (and (and p q) r) (and p (and q r)))))
+
+;; ⊢ ((p ∨ q) ∨ r) = (p ∨ (q ∨ r)). Associativity of `∨` as an EQUATION.
+(#thm or.assoc
+  (#concl (= (or (or p q) r) (or p (or q r))))
+  (#proof (prop-eq (or (or p q) r) (or p (or q r)))))
 
 ;; ∃-introduction, reified as a higher-order theorem:
 ;;   ⊢ ∀(P : 'a → bool). ∀(w : 'a). (P w) ⟹ (∃x. P x)
@@ -112,6 +147,8 @@
 
 ;; The public interface: what `cov::env()` exposes and what the Rust
 ;; accessors read. (`tauto` is the host tactic registered above.)
-(#export truth and.comm or.comm exists.intro
-         iff.refl iff.intro iff.mp iff.mpr
-         tauto)
+;; Re-export `truth` + `tauto` (from the imported `tauto` layer) alongside the
+;; propositional lemmas, so `(#open logic)` is a superset of `(#open tauto)`.
+(#export truth tauto
+         and.comm and.comm.mp and.assoc or.comm or.comm.mp or.assoc
+         exists.intro iff.refl iff.intro iff.mp iff.mpr)

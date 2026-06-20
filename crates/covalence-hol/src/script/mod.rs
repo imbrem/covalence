@@ -837,11 +837,12 @@ mod tests {
 
     #[test]
     fn and_comm_ports_from_rust() {
-        // The S-expression rewrite of `init::logic::and_comm`.
+        // The S-expression rewrite of `init::logic::and_comm_mp` (the
+        // implication direction; `and.comm` itself is now the EQUATION).
         let thm = one(r#"
             (#import core)
             (#open core)
-            (#thm and.comm
+            (#thm and.comm.mp
               (#fix (p bool) (q bool))
               (#concl (==> (and p q) (and q p)))
               (#proof
@@ -850,9 +851,9 @@ mod tests {
                     (and-elim-r (assume (and p q)))
                     (and-elim-l (assume (and p q)))))))
             "#);
-        assert!(thm.hyps().is_empty(), "and.comm must be hypothesis-free");
+        assert!(thm.hyps().is_empty(), "and.comm.mp must be hypothesis-free");
         // It must match the hand-written Rust theorem exactly.
-        let rust = crate::init::logic::and_comm();
+        let rust = crate::init::logic::and_comm_mp();
         assert_eq!(thm.concl(), rust.concl());
     }
 
@@ -971,7 +972,7 @@ mod tests {
               (#concl (and b a))
               (#proof
                 (imp-elim
-                  (inst p a (inst q b (logic.and.comm)))
+                  (inst p a (inst q b (logic.and.comm.mp)))
                   (assume (and a b)))))
             (#provide (#alias logic prelude))
             "#,
@@ -1290,7 +1291,7 @@ mod tests {
                     (and-elim-r (assume (and p q)))
                     (and-elim-l (assume (and p q)))))))
             "#);
-        assert_eq!(thm.concl(), crate::init::logic::and_comm().concl());
+        assert_eq!(thm.concl(), crate::init::logic::and_comm_mp().concl());
     }
 
     #[test]
@@ -1309,7 +1310,7 @@ mod tests {
               (#concl (and b a))
               (#proof
                 (imp-elim
-                  (inst p a (inst q b (and.comm)))
+                  (inst p a (inst q b (and.comm.mp)))
                   (assume (and a b)))))
             "#,
             |name| match name {
@@ -1397,7 +1398,7 @@ mod tests {
                     (and-elim-r (assume (and p q)))
                     (and-elim-l (assume (and p q)))))))
             "#);
-        assert_eq!(thm.concl(), crate::init::logic::and_comm().concl());
+        assert_eq!(thm.concl(), crate::init::logic::and_comm_mp().concl());
     }
 
     #[test]

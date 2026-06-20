@@ -1,0 +1,25 @@
+;; tauto.cov — the foundational propositional layer that the `tauto` /
+;; `prop-eq` deciders bottom out in.
+;;
+;; These deciders (`crate::init::logic::{tauto, prop_eq, simp}`) are powered by
+;; `⊢ T` (`truth`): `eqt-intro` / `eqt-elim` discharge against it, the `∧`/`∨`
+;; simplifiers re-intro it, etc. If `truth` lived in `logic.cov` *and*
+;; `logic.cov` used `prop-eq`, forcing `logic.cov` would re-enter its own lazy
+;; static (prop-eq → truth → logic.cov). Splitting `truth` (and the `tauto` FFI
+;; registration) out here breaks that cycle: `tauto.cov` needs only `core`, and
+;; everything the deciders require is **exported** from here for `logic.cov` to
+;; simply re-export.
+
+(#import core)
+(#open core)
+(#register-ffi-tactic tauto)
+
+;; ⊢ T. `reduce-prim` decides (T = T) = T on the closed literals; `refl T`
+;; discharges the antecedent via `eq-mp`. (Uses only `core` — no prop-eq.)
+(#thm truth
+  (#concl true)
+  (#proof (eq-mp (reduce-prim (= true true)) (refl true))))
+
+;; Export everything the `tauto` / `prop-eq` deciders need so that `logic.cov`
+;; (which actually *uses* prop-eq) can re-export them without re-deriving.
+(#export truth tauto)

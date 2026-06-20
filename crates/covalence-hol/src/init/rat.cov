@@ -279,4 +279,40 @@
           ;; = a*(b*c)
           (sym (all-elim c (all-elim b (all-elim a (mul_assoc_rhs))))))))))
 
-(#export add_comm mul_comm lt_irrefl mul_one add_zero mul_zero add_neg mul_assoc)
+;; ⊢ ∀a b c. (a+b)+c = a+(b+c).  Both sides land in `MK` component form via the
+;; `add_assoc_lhs`/`add_assoc_rhs` computes; the `add_assoc_bridge` seam given
+;; carries the int three-monomial numerator alignment + denominator round-trips
+;; (the heart of `add_assoc_impl`), so the `.cov` proof is the same recon →
+;; compute → bridge → recon assembly as the other ring laws.
+(#thm add_assoc
+  (#concl
+    (forall (a rat) (forall (b rat) (forall (c rat)
+      (= (rat.add (rat.add a b) c) (rat.add a (rat.add b c)))))))
+  (#by
+    (intro a b c)
+    (derive
+      (trans
+        (all-elim c (all-elim b (all-elim a (add_assoc_lhs))))
+        (trans
+          (all-elim c (all-elim b (all-elim a (add_assoc_bridge))))
+          (sym (all-elim c (all-elim b (all-elim a (add_assoc_rhs))))))))))
+
+;; ⊢ ∀a b c. a*(b+c) = a*b + a*c.  Left distributivity — the one non-component
+;; wise law: `a·(b+c)` and `a·b + a·c` are the same rational scaled by the
+;; common factor `rep(den a)`. The `distrib_bridge` seam given carries that
+;; common-factor cross-multiplication (lifted by the class-equality law).
+(#thm distrib
+  (#concl
+    (forall (a rat) (forall (b rat) (forall (c rat)
+      (= (rat.mul a (rat.add b c)) (rat.add (rat.mul a b) (rat.mul a c)))))))
+  (#by
+    (intro a b c)
+    (derive
+      (trans
+        (all-elim c (all-elim b (all-elim a (distrib_lhs))))
+        (trans
+          (all-elim c (all-elim b (all-elim a (distrib_bridge))))
+          (sym (all-elim c (all-elim b (all-elim a (distrib_rhs))))))))))
+
+(#export add_comm mul_comm lt_irrefl mul_one add_zero mul_zero add_neg
+         mul_assoc add_assoc distrib)

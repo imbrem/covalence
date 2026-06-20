@@ -1359,6 +1359,81 @@ fn mul_assoc_rhs_compute() -> Result<Thm> {
     compute_given3(mul_via_components(&ra, &bc)?)
 }
 
+/// `⊢ ∀a b c. (a+b)+c = rat.MK <lhsN> <lhsD>` (additive LHS in MK form).
+fn add_assoc_lhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let ab = add_via_components(&ra, &rb)?;
+    compute_given3(add_via_components(&ab, &rc)?)
+}
+/// `⊢ ∀a b c. a+(b+c) = rat.MK <rhsN> <rhsD>` (additive RHS in MK form).
+fn add_assoc_rhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let bc = add_via_components(&rb, &rc)?;
+    compute_given3(add_via_components(&ra, &bc)?)
+}
+
+/// Name + ∀-close a bridge `⊢ mkfs lN lD = mkfs rN rD` (reduced projections of
+/// `a`/`b`/`c`) to `⊢ ∀a b c. rat.MK lN' lD' = rat.MK rN' rD'`.
+fn bridge_given3(bridge: Thm) -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (lmk, rmk) = dest_eq(&bridge)?;
+    let (ln, ld) = mk_components(&lmk)?;
+    let (rn, rd) = mk_components(&rmk)?;
+    // mkfs … = rat.MK …  on both sides, then name the projections.
+    let lfold = mk_unfold(&ln, &ld)?.sym()?; // mkfs lN lD = rat.MK lN lD
+    let rfold = mk_unfold(&rn, &rd)?.sym()?;
+    let named_l = name_projections_over(
+        &lfold.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone(),
+        &[a.clone(), b.clone(), c.clone()],
+    )?;
+    let named_r = name_projections_over(
+        &rfold.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone(),
+        &[a.clone(), b.clone(), c.clone()],
+    )?;
+    // rat.MK lN' lD' = mkfs lN lD = mkfs rN rD = rat.MK rN' rD'.
+    named_l
+        .sym()?
+        .trans(lfold.sym()?)?
+        .trans(bridge)?
+        .trans(rfold)?
+        .trans(named_r)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// `⊢ ∀a b c. a*(b+c) = rat.MK <lf> <ld>` (distributivity LHS in MK form).
+fn distrib_lhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let bc = add_via_components(&rb, &rc)?;
+    compute_given3(mul_via_components(&ra, &bc)?)
+}
+/// `⊢ ∀a b c. a*b + a*c = rat.MK <rf> <rd>` (distributivity RHS in MK form).
+fn distrib_rhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let ab = mul_via_components(&ra, &rb)?;
+    let ac = mul_via_components(&ra, &rc)?;
+    compute_given3(add_via_components(&ab, &ac)?)
+}
+
+/// `⊢ ∀a b c. rat.MK <add_assoc lhsN> <lhsD> = rat.MK <rhsN> <rhsD>` — the
+/// additive-associativity bridge (the int three-monomial numerator alignment +
+/// the `int.pos` denominator round-trips), extracted from `add_assoc_impl`.
+fn add_assoc_bridge() -> Result<Thm> {
+    bridge_given3(add_assoc_bridge_raw()?)
+}
+
+/// `⊢ ∀a b c. rat.MK <mul lhsN> <lhsD> = rat.MK <rhsN> <rhsD>` — the
+/// distributivity bridge (the common-factor cross-multiplication lifted by
+/// `class_intro`), extracted from `distrib_impl`.
+fn distrib_bridge() -> Result<Thm> {
+    bridge_given3(distrib_bridge_raw()?)
+}
+
 /// The `ratprim` seam environment imported by `rat.cov`.
 pub fn rat_env() -> crate::script::Env {
     use crate::script::{ConstDef, Env};
@@ -1412,6 +1487,12 @@ pub fn rat_env() -> crate::script::Env {
     e.define_lemma("add_neg_compute", add_neg_compute().expect("rat add_neg_compute"));
     e.define_lemma("mul_assoc_lhs", mul_assoc_lhs_compute().expect("rat mul_assoc_lhs"));
     e.define_lemma("mul_assoc_rhs", mul_assoc_rhs_compute().expect("rat mul_assoc_rhs"));
+    e.define_lemma("add_assoc_lhs", add_assoc_lhs_compute().expect("rat add_assoc_lhs"));
+    e.define_lemma("add_assoc_rhs", add_assoc_rhs_compute().expect("rat add_assoc_rhs"));
+    e.define_lemma("add_assoc_bridge", add_assoc_bridge().expect("rat add_assoc_bridge"));
+    e.define_lemma("distrib_lhs", distrib_lhs_compute().expect("rat distrib_lhs"));
+    e.define_lemma("distrib_rhs", distrib_rhs_compute().expect("rat distrib_rhs"));
+    e.define_lemma("distrib_bridge", distrib_bridge().expect("rat distrib_bridge"));
 
     // int ring givens (proved in init::int) — the `.cov` numerator/denominator
     // algebra runs over these.
@@ -1504,6 +1585,23 @@ cached_thm! {
 fn add_assoc_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
     let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let lhs = add_via_components(&add_via_components(&ra, &rb)?, &rc)?;
+    let rhs = add_via_components(&ra, &add_via_components(&rb, &rc)?)?;
+    let bridge = add_assoc_bridge_raw()?;
+    lhs.trans(bridge)?
+        .trans(rhs.sym()?)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// The additive-associativity bridge `⊢ mkfs lhsN lhsD = mkfs rhsN rhsD` over
+/// the free `a, b, c` (the int three-monomial numerator alignment + the
+/// `int.pos` denominator round-trips). Shared by [`add_assoc_impl`] and the
+/// `rat.cov` `add_assoc_bridge` seam given.
+fn add_assoc_bridge_raw() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
     let ab = add_via_components(&ra, &rb)?;
     let lhs = add_via_components(&ab, &rc)?;
     let bc = add_via_components(&rb, &rc)?;
@@ -1579,12 +1677,7 @@ fn add_assoc_impl() -> Result<Thm> {
         .trans(assoc_d)?
         .trans(rewrite_seq(&assoc_rhs, &[ppbc.sym()?])?)?;
 
-    let bridge = mkfs_cong(f_eq, d_eq)?;
-    lhs.trans(bridge)?
-        .trans(rhs.sym()?)?
-        .all_intro("c", rat())?
-        .all_intro("b", rat())?
-        .all_intro("a", rat())
+    mkfs_cong(f_eq, d_eq)
 }
 
 cached_thm! {
@@ -1862,6 +1955,27 @@ cached_thm! {
 fn distrib_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
     let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let lhs_thm = mul_via_components(&ra, &add_via_components(&rb, &rc)?)?;
+    let rhs_thm = add_via_components(
+        &mul_via_components(&ra, &rb)?,
+        &mul_via_components(&ra, &rc)?,
+    )?;
+    let bridge = distrib_bridge_raw()?;
+    lhs_thm
+        .trans(bridge)?
+        .trans(rhs_thm.sym()?)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// The distributivity bridge `⊢ mkfs lf ld = mkfs rf rd` over the free
+/// `a, b, c` (the common-factor cross-multiplication `N_L·D_R = N_R·D_L`
+/// lifted by `class_intro`). Shared by [`distrib_impl`] and the `rat.cov`
+/// `distrib_bridge` seam given.
+fn distrib_bridge_raw() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
     let bc = add_via_components(&rb, &rc)?;
     let lhs_thm = mul_via_components(&ra, &bc)?; // a·(b+c) = MK(lf, ld)
     let ab = mul_via_components(&ra, &rb)?;
@@ -1937,20 +2051,15 @@ fn distrib_impl() -> Result<Thm> {
         .rhs_conv(|t| rewrite_seq(t, &[rf_eq.sym()?, rep_ld.sym()?]))?; // N_R ↦ rf, D_L ↦ rep(ld)
 
     let rel = rel_of_pairs(&lf, &ld, &rf, &rd, g)?;
-    let cls = crate::init::quotient::class_intro(
+    let _ = (lhs_thm, rhs_thm); // their MK forms feed `distrib_impl`'s caller.
+    crate::init::quotient::class_intro(
         &rat_spec(),
         &[],
         &ip_pair(),
         &rat_rel_symm(),
         &rat_rel_trans(),
         rel,
-    )?;
-    lhs_thm
-        .trans(cls)?
-        .trans(rhs_thm.sym()?)?
-        .all_intro("c", rat())?
-        .all_intro("b", rat())?
-        .all_intro("a", rat())
+    )
 }
 
 /// `⊢ ∀a. ¬(a = 0) ⟹ ∃b. a * b = 1` — the field axiom (multiplicative
@@ -2499,6 +2608,8 @@ crate::cov_theory! {
         "mul_zero"  => pub fn mul_zero_cov;
         "add_neg"   => pub fn add_neg_cov;
         "mul_assoc" => pub fn mul_assoc_cov;
+        "add_assoc" => pub fn add_assoc_cov;
+        "distrib"   => pub fn distrib_cov;
     }
 }
 
@@ -2519,6 +2630,8 @@ mod cov_tests {
         assert_eq!(cov::mul_zero_cov().concl(), super::mul_zero().concl());
         assert_eq!(cov::add_neg_cov().concl(), super::add_neg().concl());
         assert_eq!(cov::mul_assoc_cov().concl(), super::mul_assoc().concl());
+        assert_eq!(cov::add_assoc_cov().concl(), super::add_assoc().concl());
+        assert_eq!(cov::distrib_cov().concl(), super::distrib().concl());
     }
 
 }
@@ -2557,6 +2670,12 @@ mod tests {
             int_distrib_r_given().unwrap(),
             mul_assoc_lhs_compute().unwrap(),
             mul_assoc_rhs_compute().unwrap(),
+            add_assoc_lhs_compute().unwrap(),
+            add_assoc_rhs_compute().unwrap(),
+            add_assoc_bridge().unwrap(),
+            distrib_lhs_compute().unwrap(),
+            distrib_rhs_compute().unwrap(),
+            distrib_bridge().unwrap(),
         ] {
             assert!(g.concl().type_of().unwrap().is_bool());
             assert!(g.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
@@ -2567,6 +2686,7 @@ mod tests {
     fn rat_env_builds() {
         let _ = rat_env();
     }
+
 
     #[test]
     fn recon_given_named_form() {
@@ -3005,4 +3125,6 @@ mod tests {
         assert_eq!(r, &rhs);
     }
 }
+
+
 

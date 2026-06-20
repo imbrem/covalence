@@ -285,6 +285,16 @@ constraints, not near-term work**:
    corecursion; e.g. streams). Each is sugar for "synthesize the initial / final
    model" of the relevant functor's theory — the two ends of the same
    model-synthesis machinery.
+3. **Induction is a *type-indexed registry*, not a pile of tactics.** Don't grow a
+   `nat_induct` / `list_induct` / `unary_induct` / … zoo of bespoke tactics.
+   Instead, **each type tells you how to induct over it**: a registry keyed by type
+   former (`nat`, `list 'a`, `tree 'a`, …) holds that type's induction (and
+   recursion / case) principle, and a *single* generic `induct` tactic dispatches on
+   the type of the variable it's given. This composes directly with north star 2:
+   a `#data`/`#codata`-synthesized type **registers its induction/coinduction
+   principle on creation**, so the generic `induct`/`coinduct` immediately works for
+   it. (The current per-model `m.induct` handler in `models/` is the seed of this —
+   generalize "the model supplies induction" to "the *type* supplies induction".)
 
 ```scheme
 ;; A THEORY: abstract signature + axioms (exists today, generalized).

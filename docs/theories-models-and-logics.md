@@ -51,6 +51,17 @@ classical `T`). This is still the Isabelle/Pure shape — a substrate logic (HOL
 Pure's typed λ-calculus with `≡`) carrying object logics (FOL/PA/…) that add `⊢` —
 just without an evil shared-syntax identity between them.
 
+> **A refinement to revisit (user — note for later).** Reifying a syntax object is
+> *not* evil after all, **if** we view it as the concrete object **constructed by a
+> `#thy`** (its reified formulas/syntax), equipped with *several separate, partial*
+> **projections** into target logics — `⟦·⟧_HOL`, `⟦·⟧_ZF`, … — which are
+> themselves things we reason about (the `peano/` deep embedding's `denote` is one
+> such projection). The earlier "evil" worry was about asserting an *identity*
+> between two logics' languages; a `#thy`-constructed syntax object with reasoned-about
+> *partial projection maps* is legitimate (and is exactly the deep-embedding +
+> multiple-target-logics picture). Hold this for when `#thy` reification + the
+> projection maps are built out.
+
 The decisive feature: **the signature is higher-kinded.** A signature *opens*
 with its type part — type constants of kind `ty`, and **type families** of kind
 `ty → ty`, `ty → ty → ty`, … — and only then gives the operations typed over it.
@@ -388,13 +399,24 @@ already established):
    interpretations*, proved **by induction on derivations** (translate each axiom,
    show its translation is provable in the target, check each rule is preserved).
    Two grades: the **constructive / per-derivation** form (a Rust recursion over
-   how derivations are built — what PA's `Derivation` already does for `PA⟹HOL`)
-   is available now; the **internalized** single HOL metatheorem
-   (`⊢ Derivable_X ⌜A⌝ ⟹ …`, via the impredicative rule-induction —
-   `prop_induction` is the proven template) makes interpretation first-class.
+   how derivations are built — what PA's `Derivation` does today for `PA⟹HOL`) and
+   the **internalized** single HOL metatheorem (`⊢ Derivable_X ⌜A⌝ ⟹ …`, via the
+   impredicative rule-induction — `prop_induction` is the proven template).
    **Interpretation is *syntactic*: it does NOT require the target theory to have a
    HOL model.** So the whole chain is provable from reified syntax + the
    rule-induction engine.
+
+   > **The proper-deep-embedding test (user).** The internalized form is not just
+   > "nicer" — it is what a *proper* deep embedding **requires**. `Derivable_PA`
+   > must be **pure syntactic data** (a derivation carries *no* HOL `Thm`), and the
+   > projection to HOL is **one step**: apply the soundness theorem to a finished PA
+   > derivation. The acceptance test: *you derive in PA without ever building the
+   > HOL theorem, then project in a single move.* PA's current `Derivation` (a
+   > formula paired with its `Thm`, built lock-step) is the *shallow hybrid* that
+   > **fails** this test — it proves the HOL theorem *while* deriving. Fixing this
+   > (pure `Derivable_PA` + the one-step soundness projection) is the priority for
+   > the PA thread; it is exactly the deferred `prop.rs`-style internalized
+   > soundness theorem, promoted from afterthought to primary structure.
 
 2. **Representation equivalence → syntactic metatheory.** A metatheorem *in HOL*
    that two syntax/substitution representations agree (de Bruijn ↔
@@ -404,14 +426,26 @@ already established):
    representation, and proving *that representation ≅ kernel-syntax* in HOL lets its
    results transport soundly (the observer substrate at the *syntactic* level).
 
-**The PA/SOA-vs-ZF asymmetry (don't lose this).** PA denotes into HOL `nat` and
-SOA into HOL `nat → bool` — both **have HOL models, so soundness is unconditional**
-(and SOA is cheap: HOL *has* the sets it quantifies over). **ZF has no HOL model
-without added strength** — by Gödel HOL can't prove `Con(ZF)`. So ZF's *proof
-theory* is free (reify + replay + interpret), but a *model/soundness* theorem is
-**gated on a universe axiom** — `⊢ (∃ inaccessible) ⟹ Model(ZFC)`. That is exactly
-what **Tarski-Grothendieck** supplies, which is why TG is the natural *top*: a
-universe gives the model (the Mizar move).
+**We are not in the business of proving ZF/ZFC *sound* (scoped truths, user).**
+The standard theorem here is "**φ holds in ZFC**", *not* "φ holds" — truths are
+**scoped to a theory** (`docs/VISION.md`, metatheory-as-default). The outer HOL is
+not there to certify an absolute model of ZF; it is there to reason about
+**transport between scopes** — "what holds in ZF holds in HOL" (under the relevant
+interpretation), "what holds in PA holds in ZF", and so on. Those transports are
+the `Derivable_X ⟹ …` interpretation theorems of pillar 1, and (per pillar 1) they
+are **syntactic — they need no model of the source or target.** So the working mode
+is: derive within a scope, and transport between scopes; *absolute* soundness is
+not the goal.
+
+**The PA/SOA-vs-ZF asymmetry, in that light.** PA denotes into HOL `nat` and SOA
+into HOL `nat → bool`, so they *happen* to have unconditional HOL models (SOA cheap:
+HOL has the sets) — handy, but still just one scope (`HOL`) among the targets. **ZF
+has no HOL model without added strength** (Gödel: HOL ⊬ `Con(ZF)`), but this rarely
+bites, because we want scoped ZF truths + transport, not a HOL model of ZF. *If* one
+ever wants an absolute model, it is **gated on a universe** —
+`⊢ (∃ inaccessible) ⟹ Model(ZFC)` — which is exactly what **Tarski-Grothendieck**
+supplies (the Mizar move), making TG the natural *top*. But that is the exception,
+not the program.
 
 **Metamath import** is where both pillars meet: `set.mm` is FOL + ZFC, so the
 reified FOL+ZFC framework is its object substrate, and a Metamath proof is replayed

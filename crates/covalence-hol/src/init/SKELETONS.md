@@ -54,15 +54,25 @@ index](../../../../SKELETONS.md).
   the same rational scaled by the common factor `rda`), so its
   cross-multiplication collapses to comm/assoc and lifts by `class_intro`.
 
+  **Order lifting machinery — now built.** The rat analogue of int's
+  `lt_via_components`: `lt_pair_cong` (order well-definedness — the
+  cross-multiplication comparison is representative-invariant, scaling both
+  sides by the positive product denominator via `int::lt_mul_pos_iff` and
+  reshuffling with the new reusable `int::prove_imul_eq` multiplicative
+  AC-normaliser), `lt_class` (computation rule), and `lt_via_components`
+  (MK-component form). `zero_lt_one` is **proved** through this stack
+  (`0 = MK 0 1`, `1 = MK 1 1`, lift to `int.lt 0 1`).
+
   **Still postulated** via the module's `axiom` helper:
   - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`), realisable via
     the defined `rat_inv` (sign-normalised so the denominator stays positive).
-  - The order axioms `lt_trans`/`lt_trichotomy`/`le_def`/`zero_lt_one`.
-    `le_def` is definitional (pins the opaque `ratLe`); the rest unfold
-    `ratLt` to the `int` comparison on cross-products. The `int` ordered
-    ring is **now fully proved** (`lt_*`/`lt_mul_pos` all discharged), so the
-    `int` order facts these lean on are all available; the remaining work is
-    the rat-quotient lifting. (The linear-order toolkit
+  - The order axioms `lt_trans`/`lt_trichotomy`/`le_def`. `le_def` is
+    definitional (pins the opaque, declaration-only kernel `ratLe`); the other
+    two unfold `ratLt` to the `int` comparison on cross-products and lift
+    through the now-built order machinery (the `int` order theory they lean on
+    — `lt_trans`/`lt_trichotomy`/`lt_mul_pos`/`lt_mul_pos_iff` — is fully
+    proved; the remaining work is the per-axiom rat-quotient lift, modelled on
+    `zero_lt_one`). (The linear-order toolkit
     `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/`le_antisym`/
     `le_total`/`not_one_le_zero` is **not** postulated — it is *derived* from
     `le_def` + the strict-order facts.)
@@ -70,8 +80,7 @@ index](../../../../SKELETONS.md).
     only postulated leaves of `dense` (which is itself *derived* from
     them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
     to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
-    lifted through the quotient — now unblocked (the `int` order theory it
-    needs is fully proved); the remaining work is the rat-quotient lifting.
+    lifted through the now-built order machinery.
 
 - **The `real` Dedekind-cut theory** in
   `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`

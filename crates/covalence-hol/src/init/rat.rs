@@ -808,6 +808,147 @@ fn mul_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
         .trans(mul_mk(&fa, &da, &fb, &db)?)
 }
 
+// ---- order computation / well-definedness ----
+
+/// `⊢ 0 < den x · den y` — the product of two positive denominators is
+/// positive ([`int::int_pos_prod_pos`] at the `int.pos` denominators).
+fn den_prod_pos(x: &Term, y: &Term) -> Result<Thm> {
+    int::int_pos_prod_pos()
+        .all_elim(den_pos(x))?
+        .all_elim(den_pos(y))
+}
+
+/// `⊢ src = dst` for two `int` `·`-trees that become equal **after** the
+/// substitution `g : ⊢ a = b`: normalise `src` to a form containing `a`,
+/// apply `g`, then normalise to `dst`. `lhs_grp`/`rhs_grp` are the two
+/// `·`-trees over the full leaf multiset that bracket `a` (resp. `b`) — i.e.
+/// `src ≡ lhs_grp[…a…]` and `dst ≡ rhs_grp[…b…]` up to `·`-AC.
+fn imul_subst(src: &Term, lhs_grp: &Term, g: Thm, rhs_grp: &Term, dst: &Term) -> Result<Thm> {
+    int::prove_imul_eq(src, lhs_grp)? // src = lhs_grp
+        .trans(g)? // = rhs_grp (the substituted form)
+        .trans(int::prove_imul_eq(rhs_grp, dst)?) // = dst
+}
+
+/// **Order well-definedness.** From `⊢ rat_rel x x'` and `⊢ rat_rel y y'`
+/// conclude `⊢ int.lt (nx·dy)(ny·dx) = int.lt (nx'·dy')(ny'·dx')` — the
+/// cross-multiplication comparison is invariant under the choice of
+/// representative.
+///
+/// Scale both arguments by the positive `dx'·dy'` ([`int::lt_mul_pos_iff`]),
+/// rearrange each scaled product through the two `rat_rel` equations
+/// (`nx·dx' = nx'·dx`, `ny·dy' = ny'·dy`) into the `(…)·(dx·dy)` form (the
+/// `·`-AC reshuffles by [`int::prove_imul_eq`]), then unscale by the positive
+/// `dx·dy`.
+fn lt_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
+    let (x, xp) = dest_rel_app(h1.concl())?;
+    let (y, yp) = dest_rel_app(h2.concl())?;
+    let e1 = reduce_rel(h1)?; // nx·dx' = nx'·dx
+    let e2 = reduce_rel(h2)?; // ny·dy' = ny'·dy
+    let (nx, dx, nxp, dxp) = (num(&x), den(&x), num(&xp), den(&xp));
+    let (ny, dy, nyp, dyp) = (num(&y), den(&y), num(&yp), den(&yp));
+
+    let l1 = imul(nx.clone(), dy.clone()); // nx·dy
+    let l2 = imul(ny.clone(), dx.clone()); // ny·dx
+    let r1 = imul(nxp.clone(), dyp.clone()); // nx'·dy'
+    let r2 = imul(nyp.clone(), dxp.clone()); // ny'·dx'
+
+    let c = imul(dxp.clone(), dyp.clone()); // dx'·dy'  (>0)
+    let cc = imul(dx.clone(), dy.clone()); // dx·dy   (>0)
+    let pos_c = den_prod_pos(&xp, &yp)?; // 0 < dx'·dy'
+    let pos_cc = den_prod_pos(&x, &y)?; // 0 < dx·dy
+
+    // int.lt l1 l2 = int.lt (l1·c)(l2·c)   (scale by c).
+    let scale = int::lt_mul_pos_iff()
+        .all_elim(l1.clone())?
+        .all_elim(l2.clone())?
+        .all_elim(c.clone())?
+        .imp_elim(pos_c)?
+        .sym()?; // int.lt l1 l2 = int.lt (l1·c)(l2·c)
+
+    // l1·c = r1·cc   (substitute e1: nx·dx' ↦ nx'·dx).
+    let l1c_src = imul(l1.clone(), c.clone());
+    let r1cc = imul(r1.clone(), cc.clone());
+    let l1c = imul_subst(
+        &l1c_src,
+        &imul(imul(nx.clone(), dxp.clone()), imul(dy.clone(), dyp.clone())), // (nx·dx')·(dy·dy')
+        imul_cong(e1.clone(), Thm::refl(imul(dy.clone(), dyp.clone()))?)?, // = (nx'·dx)·(dy·dy')
+        &imul(imul(nxp.clone(), dx.clone()), imul(dy.clone(), dyp.clone())), // (nx'·dx)·(dy·dy')
+        &r1cc,
+    )?; // l1·c = r1·cc
+
+    // l2·c = r2·cc   (substitute e2: ny·dy' ↦ ny'·dy).
+    let l2c_src = imul(l2.clone(), c.clone());
+    let r2cc = imul(r2.clone(), cc.clone());
+    let l2c = imul_subst(
+        &l2c_src,
+        &imul(imul(ny.clone(), dyp.clone()), imul(dx.clone(), dxp.clone())), // (ny·dy')·(dx·dx')
+        imul_cong(e2.clone(), Thm::refl(imul(dx.clone(), dxp.clone()))?)?, // = (ny'·dy)·(dx·dx')
+        &imul(imul(nyp.clone(), dy.clone()), imul(dx.clone(), dxp.clone())), // (ny'·dy)·(dx·dx')
+        &r2cc,
+    )?; // l2·c = r2·cc
+
+    // int.lt (l1·c)(l2·c) = int.lt (r1·cc)(r2·cc)  (rewrite both args).
+    let scaled_eq = scale
+        .trans(Thm::refl(int::int_lt())?.cong_app(l1c)?.cong_app(l2c)?)?; // int.lt l1 l2 = int.lt (r1·cc)(r2·cc)
+
+    // int.lt (r1·cc)(r2·cc) = int.lt r1 r2  (unscale by cc).
+    let unscale = int::lt_mul_pos_iff()
+        .all_elim(r1.clone())?
+        .all_elim(r2.clone())?
+        .all_elim(cc.clone())?
+        .imp_elim(pos_cc)?; // int.lt (r1·cc)(r2·cc) = int.lt r1 r2
+
+    scaled_eq.trans(unscale) // int.lt l1 l2 = int.lt r1 r2
+}
+
+/// **Order computation rule.** `⊢ ratLt (mk_rat p) (mk_rat q) =
+/// int.lt (num p · den q) (num q · den p)`. β-reduce `ratLt` at the chosen
+/// representatives, then rewrite them back to `p`/`q` by [`lt_pair_cong`]
+/// (the comparison is representative-invariant).
+fn lt_class(p: &Term, q: &Term) -> Result<Thm> {
+    let (mp, mq) = (mk_rat(p), mk_rat(q));
+    let dl = binary_beta(rat_lt(), mp.clone(), mq.clone())?; // ratLt mp mq = int.lt(n_RPp·d_RPq)(n_RPq·d_RPp)
+    let (rt_p, rt_q) = (round_trip(p)?, round_trip(q)?); // rat_rel p RPp, rat_rel q RPq
+    let (_, rpp) = dest_rel_app(rt_p.concl())?;
+    let (_, rpq) = dest_rel_app(rt_q.concl())?;
+    let rpp_p = rat_rel_symm()
+        .all_elim(p.clone())?
+        .all_elim(rpp.clone())?
+        .imp_elim(rt_p)?; // rat_rel RPp p
+    let rpq_q = rat_rel_symm()
+        .all_elim(q.clone())?
+        .all_elim(rpq.clone())?
+        .imp_elim(rt_q)?; // rat_rel RPq q
+    let cong = lt_pair_cong(rpp_p, rpq_q)?; // int.lt(n_RPp·d_RPq)(n_RPq·d_RPp) = int.lt(np·dq)(nq·dp)
+    dl.trans(cong)
+}
+
+/// **Order in component form.** `⊢ ratLt a b = int.lt (fa · rep db)(fb · rep da)`,
+/// where `ra : a = MK fa da`, `rb : b = MK fb db`. Rewrite `a`/`b` to their `MK`
+/// forms, apply [`lt_class`], then resolve the `pair` projections.
+fn lt_via_components(ra: &Thm, rb: &Thm) -> Result<Thm> {
+    let (_a, ma) = dest_eq(ra)?;
+    let (_b, mb) = dest_eq(rb)?;
+    let (fa, da) = mk_components(&ma)?;
+    let (fb, db) = mk_components(&mb)?;
+    let (pa, pb) = (ip(fa.clone(), da.clone()), ip(fb.clone(), db.clone()));
+    let lc = lt_class(&pa, &pb)?; // ratLt (mk_rat pa)(mk_rat pb) = int.lt(num pa·den pb)(num pb·den pa)
+    let (i, pp) = (Type::int(), int_pos_ty());
+    // num/den of the explicit pairs `pa`,`pb` reduce by the prod projections.
+    let projs = [
+        crate::init::prod::fst_pair(&i, &pp, &fa, &da)?, // fst pa = fa
+        crate::init::prod::fst_pair(&i, &pp, &fb, &db)?, // fst pb = fb
+        crate::init::prod::snd_pair(&i, &pp, &fa, &da)?, // snd pa = da
+        crate::init::prod::snd_pair(&i, &pp, &fb, &db)?, // snd pb = db
+    ];
+    let lc_clean = lc.rhs_conv(|t| rewrite_seq(t, &projs))?;
+    // ratLt a b = ratLt (mk_rat pa)(mk_rat pb), since a = MK fa da = mk_rat pa.
+    Thm::refl(rat_lt())?
+        .cong_app(ra.clone())?
+        .cong_app(rb.clone())?
+        .trans(lc_clean)
+}
+
 // ---- additive computation / well-definedness ----
 
 /// `⊢ a + b = a' + b'` from `⊢ a = a'`, `⊢ b = b'` (int sum congruence).
@@ -2141,10 +2282,27 @@ pub fn le_def() -> Thm {
 // (`init::real`) consume: cut upward-closure is `le_trans`, non-emptiness is
 // `le_refl`, and `0 ≠ 1` for reals turns on `not_one_le_zero`.
 
-/// `⊢ 0 < 1` — the base strictness fact (postulated; `ratLt` is stuck at
-/// the ε-chosen representatives, so this is not reducible).
-pub fn zero_lt_one() -> Thm {
-    axiom(rlt(rat_zero(), rat_one()))
+cached_thm! {
+    /// `⊢ 0 < 1` — **proved** by lifting through the quotient: `0 = MK 0 1`,
+    /// `1 = MK 1 1`, so `ratLt 0 1 = int.lt (0·rep 1)(1·rep 1)`
+    /// ([`lt_via_components`]); resolve `rep one_pos = 1` ([`one_pos_rt`]) and
+    /// the literal products to land on the `int` fact `0 < 1`.
+    pub fn zero_lt_one() -> Thm {
+        zero_lt_one_impl().expect("rat::zero_lt_one")
+    }
+}
+fn zero_lt_one_impl() -> Result<Thm> {
+    // rat_zero = MK 0 one_pos, rat_one = MK 1 one_pos — definitionally `mk_rat`
+    // of the explicit pairs, so the MK reconstructions are reflexivity.
+    let r0 = Thm::refl(rat_zero())?; // 0 = MK 0 one_pos
+    let r1 = Thm::refl(rat_one())?; // 1 = MK 1 one_pos
+    let de = lt_via_components(&r0, &r1)?; // ratLt 0 1 = int.lt (0·rep one_pos)(1·rep one_pos)
+    // Resolve `rep one_pos = 1`, then fully evaluate the literal comparison to
+    // `T`, and read off `ratLt 0 1`.
+    let rep1 = one_pos_rt(); // rep one_pos = 1
+    de.rhs_conv(|t| t.rw_all(&rep1))? // ratLt 0 1 = int.lt (0·1)(1·1)
+        .rhs_conv(|t| t.reduce())? // ratLt 0 1 = T
+        .eqt_elim() // ⊢ ratLt 0 1
 }
 
 cached_thm! {
@@ -2947,6 +3105,13 @@ mod tests {
         let a = rvar("a");
         let inst = thm.all_elim(a.clone()).unwrap();
         assert_eq!(inst.concl(), &rlt(a.clone(), a.clone()).not().unwrap());
+    }
+
+    #[test]
+    fn zero_lt_one_is_genuine() {
+        let t = zero_lt_one();
+        assert!(t.hyps().is_empty(), "rat::zero_lt_one is proved");
+        assert_eq!(t.concl(), &rlt(rat_zero(), rat_one()));
     }
 
     #[test]

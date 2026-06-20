@@ -2231,6 +2231,122 @@ cached_thm! {
     }
 }
 
+// ----------------------------------------------------------------------------
+// Multiplicative AC normalisation — `⊢ lhs = rhs` for `·`-trees over the same
+// leaf multiset (the int analogue of `nat::prove_add_eq`). Used by the rat
+// order lift to rearrange cross-multiplication products.
+// ----------------------------------------------------------------------------
+
+/// Destructure `a · b` (an `int.mul` application) into `(a, b)`.
+fn as_imul(t: &Term) -> Option<(Term, Term)> {
+    let (mul_a, b) = t.as_app()?;
+    let (m, a) = mul_a.as_app()?;
+    if m == &int_mul() {
+        Some((a.clone(), b.clone()))
+    } else {
+        None
+    }
+}
+
+/// `⊢ a·b = a'·b'` from `⊢ a = a'`, `⊢ b = b'` (int product congruence).
+fn icong_mul(ea: Thm, eb: Thm) -> Result<Thm> {
+    Thm::refl(int_mul())?.cong_app(ea)?.cong_app(eb)
+}
+/// `⊢ left·x = left·y` from `⊢ x = y`.
+fn icong_mul_r(left: &Term, eq: Thm) -> Result<Thm> {
+    eq.cong_arg(Term::app(int_mul(), left.clone()))
+}
+
+/// `⊢ t = right-nested(t)` — re-associate a `·`-tree to the right.
+fn imul_right_nest(t: &Term) -> Result<Thm> {
+    if let Some((a, b)) = as_imul(t) {
+        let ea = imul_right_nest(&a)?;
+        let eb = imul_right_nest(&b)?;
+        let (rna, rnb) = (
+            ea.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone(),
+            eb.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone(),
+        );
+        icong_mul(ea, eb)?.trans(imul_assoc_append(&rna, &rnb)?)
+    } else {
+        Thm::refl(t.clone())
+    }
+}
+
+/// `⊢ (rn_a · rn_b) = right-nested(leaves rn_a ++ rn_b)` for right-nested `rn_a`.
+fn imul_assoc_append(rn_a: &Term, rn_b: &Term) -> Result<Thm> {
+    if let Some((x0, rest)) = as_imul(rn_a) {
+        let assoc = mul_assoc()
+            .all_elim(x0.clone())?
+            .all_elim(rest.clone())?
+            .all_elim(rn_b.clone())?; // (x0·rest)·rn_b = x0·(rest·rn_b)
+        assoc.trans(icong_mul_r(&x0, imul_assoc_append(&rest, rn_b)?)?)
+    } else {
+        Thm::refl(mul(rn_a.clone(), rn_b.clone()))
+    }
+}
+
+/// `⊢ a0·(x·r) = x·(a0·r)` — swap the first two of a right-nested product.
+fn imul_swap_front2(a0: &Term, x: &Term, r: &Term) -> Result<Thm> {
+    mul_assoc()
+        .all_elim(a0.clone())?
+        .all_elim(x.clone())?
+        .all_elim(r.clone())?
+        .sym()? // a0·(x·r) = (a0·x)·r
+        .trans(
+            mul_comm()
+                .all_elim(a0.clone())?
+                .all_elim(x.clone())? // a0·x = x·a0
+                .cong_arg(int_mul())?
+                .cong_fn(r.clone())?, // (a0·x)·r = (x·a0)·r
+        )?
+        .trans(mul_assoc().all_elim(x.clone())?.all_elim(a0.clone())?.all_elim(r.clone())?) // = x·(a0·r)
+}
+
+/// `⊢ a = x · a'` — bring an occurrence of `x` to the front of right-nested `a`.
+fn imul_bring_front(a: &Term, x: &Term) -> Result<Thm> {
+    let (a0, a_rest) =
+        as_imul(a).ok_or_else(|| Error::ConnectiveRule("imul_bring_front: leaf".into()))?;
+    if a0 == *x {
+        return Thm::refl(a.clone());
+    }
+    if as_imul(&a_rest).is_none() {
+        return mul_comm().all_elim(a0)?.all_elim(a_rest); // a0·x = x·a0
+    }
+    let br = imul_bring_front(&a_rest, x)?; // a_rest = x · a_rest'
+    let a_rest_p = as_imul(br.concl().as_eq().ok_or(Error::NotAnEquation)?.1)
+        .ok_or_else(|| Error::ConnectiveRule("imul_bring_front: shape".into()))?
+        .1;
+    icong_mul_r(&a0, br)?.trans(imul_swap_front2(&a0, x, &a_rest_p)?)
+}
+
+/// `⊢ a = b` for right-nested `a`, `b` over the same leaf multiset.
+fn imul_permute_eq(a: &Term, b: &Term) -> Result<Thm> {
+    if a == b {
+        return Thm::refl(a.clone());
+    }
+    let (b0, b_rest) =
+        as_imul(b).ok_or_else(|| Error::ConnectiveRule("imul_permute_eq: leaf".into()))?;
+    let bring = imul_bring_front(a, &b0)?; // a = b0 · a_rest
+    let a_rest = as_imul(bring.concl().as_eq().ok_or(Error::NotAnEquation)?.1)
+        .ok_or_else(|| Error::ConnectiveRule("imul_permute_eq: shape".into()))?
+        .1;
+    bring.trans(icong_mul_r(&b0, imul_permute_eq(&a_rest, &b_rest)?)?)
+}
+
+/// **Multiplicative normalisation.** `⊢ lhs = rhs` whenever `lhs`/`rhs` are
+/// `·`-trees over the same multiset of `int` leaves (re-associate both right,
+/// then permute). Errors if the leaf multisets differ.
+pub fn prove_imul_eq(lhs: &Term, rhs_t: &Term) -> Result<Thm> {
+    let el = imul_right_nest(lhs)?;
+    let er = imul_right_nest(rhs_t)?;
+    let (rl, rr) = (
+        el.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone(),
+        er.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone(),
+    );
+    let perm = imul_permute_eq(&rl, &rr)?;
+    el.trans(perm)?.trans(er.sym()?)
+}
+
 /// `⊢ 0 < 1` on `int` — the base positivity fact (the `int.pos` witness).
 fn lt_succ_zero_one() -> Result<Thm> {
     // `int.lt 0 1` reduces to a `nat` comparison; let the literal reducer +
@@ -2252,7 +2368,7 @@ cached_thm! {
     /// `⊢ ∀a b:int.pos. 0 < rep a · rep b` — a product of strictly-positive
     /// integers is strictly positive. `lt_mul_pos` at `0 < rep a` scaled by
     /// the positive `rep b`, with `0 · rep b = 0`.
-    fn int_pos_prod_pos() -> Result<Thm> {
+    pub fn int_pos_prod_pos() -> Result<Thm> {
         use covalence_core::defs::int_pos_ty;
         let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
         let rep = Term::spec_rep(covalence_core::defs::int_pos_spec(), Vec::<Type>::new());

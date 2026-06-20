@@ -2792,36 +2792,108 @@ fn med(a: Term, b: Term) -> Term {
     Term::app(Term::app(mediant(), a), b)
 }
 
-/// `⊢ ∀x y. x < y ⟹ x < mediant x y` — the mediant exceeds the smaller.
-///
-/// **Postulated** (audit hyp). Unfolds to the `int` order fact
-/// `a·d < c·b ⟹ a·(b+d) < (a+c)·b` lifted through the quotient — blocked
-/// on the `int` ordered-ring theory (`SKELETONS.md`).
-pub fn mediant_gt() -> Thm {
-    let (x, y) = (rvar("x"), rvar("y"));
-    let concl = rlt(x.clone(), med(x.clone(), y.clone()));
-    let body = rlt(x, y).imp(concl).expect("mediant_gt");
-    axiom(forall_rat(&["x", "y"], body))
+/// `⊢ mediant x y = MK (fx + fy) (to_pos(dx + dy))` for **variables** `x`,`y`
+/// — the mediant on the chosen representatives `(fx,dx_pos) = rep_pair x`,
+/// `(fy,dy_pos) = rep_pair y`. β-reduce `binary_rat`, then resolve the `num`
+/// projections so the components read off cleanly.
+fn mediant_beta(x: &Term, y: &Term) -> Result<Thm> {
+    binary_beta(mediant(), x.clone(), y.clone()) // mediant x y = MK (num RPx+num RPy)(to_pos(den RPx+den RPy))
 }
 
-/// `⊢ ∀x y. x < y ⟹ mediant x y < y` — the mediant is below the larger.
-///
-/// **Postulated** (audit hyp) — the mirror of [`mediant_gt`].
-pub fn mediant_lt() -> Thm {
+cached_thm! {
+    /// `⊢ ∀x y. x < y ⟹ x < mediant x y` — **proved**. With representatives
+    /// `x = fx/dx`, `y = fy/dy`, the mediant is `(fx+fy)/(dx+dy)`; lifting
+    /// both `ratLt`s ([`lt_via_components`]) turns the goal into the `int`
+    /// fact `fx·dx + fx·dy < fx·dx + fy·dx`, which `lt_add_cancel_iff`
+    /// reduces to the hypothesis `fx·dy < fy·dx` (= `x < y`).
+    pub fn mediant_gt() -> Thm {
+        mediant_ineq(true).expect("rat::mediant_gt")
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀x y. x < y ⟹ mediant x y < y` — **proved**, the mirror of
+    /// [`mediant_gt`]: the goal becomes `fy·dx + fx·dy < fy·dx + fy·dx`...
+    /// reduced by `lt_add_cancel_iff` to `fx·dy < fy·dx`.
+    pub fn mediant_lt() -> Thm {
+        mediant_ineq(false).expect("rat::mediant_lt")
+    }
+}
+
+/// Shared body for the two mediant inequalities. `gt = true` proves
+/// `x < mediant x y`, `gt = false` proves `mediant x y < y`.
+fn mediant_ineq(gt: bool) -> Result<Thm> {
     let (x, y) = (rvar("x"), rvar("y"));
-    let concl = rlt(med(x.clone(), y.clone()), y.clone());
-    let body = rlt(x, y).imp(concl).expect("mediant_lt");
-    axiom(forall_rat(&["x", "y"], body))
+    let rx = recon_mk(&x)?; // x = MK fx dx_pos
+    let ry = recon_mk(&y)?; // y = MK fy dy_pos
+    let rm = mediant_beta(&x, &y)?; // mediant x y = MK (fx+fy)(to_pos(dx+dy))
+
+    let (fx, dx_pos) = (rfst(&x), rden(&x));
+    let (fy, dy_pos) = (rfst(&y), rden(&y));
+    let (dx, dy) = (den(&rep_pair(x.clone())), den(&rep_pair(y.clone()))); // rep dx_pos, rep dy_pos
+
+    // positivity of dx, dy and the mediant denominator dx+dy.
+    let pos_dx = int::int_pos_pos().all_elim(dx_pos.clone())?; // 0 < dx
+    let pos_dy = int::int_pos_pos().all_elim(dy_pos.clone())?; // 0 < dy
+    let pos_dsum = int::add_pos()
+        .all_elim(dx.clone())?
+        .all_elim(dy.clone())?
+        .imp_elim(pos_dx)?
+        .imp_elim(pos_dy)?; // 0 < dx+dy
+    // The mediant denominator `to_pos(dx+dy)` round-trips: rep(to_pos(dx+dy)) = dx+dy.
+    let dsum_rt = int::int_pos_round_trip_at(&iadd(dx.clone(), dy.clone()), pos_dsum)?;
+
+    let hyp = rlt(x.clone(), y.clone());
+    // x < y reduces to the int cross-product `fx·dy < fy·dx`.
+    let dxy = lt_via_components(&rx, &ry)?; // ratLt x y = int.lt (fx·dy)(fy·dx)
+    let h_int = dxy.eq_mp(Thm::assume(hyp.clone())?)?; // {x<y} ⊢ fx·dy < fy·dx
+
+    if gt {
+        // goal: ratLt x (mediant x y) = int.lt (fx·(dx+dy))((fx+fy)·dx).
+        let de = lt_via_components(&rx, &rm)?; // ratLt x m = int.lt (fx·rep(to_pos(dx+dy)))((fx+fy)·dx)
+        // resolve rep(to_pos(dx+dy)) = dx+dy.
+        let de = de.rhs_conv(|t| t.rw_all(&dsum_rt))?; // = int.lt (fx·(dx+dy))((fx+fy)·dx)
+        // fx·(dx+dy) = fx·dx + fx·dy ;  (fx+fy)·dx = fx·dx + fy·dx.
+        let lhs_split = int::distrib_at(&fx, &dx, &dy)?; // fx·(dx+dy) = fx·dx + fx·dy
+        let rhs_split = int::distrib_r_at(&fx, &fy, &dx)?; // (fx+fy)·dx = fx·dx + fy·dx
+        // int.lt (fx·dx+fx·dy)(fx·dx+fy·dx) ⟺ fx·dy < fy·dx  (cancel fx·dx on the left).
+        let cancel = int::lt_add_cancel_left_at(&imul(fx.clone(), dx.clone()), &imul(fx.clone(), dy.clone()), &imul(fy.clone(), dx.clone()))?;
+        let goal_int = cancel.sym()?.eq_mp(h_int)?; // {x<y} ⊢ int.lt (fx·dx+fx·dy)(fx·dx+fy·dx)
+        let goal_int = goal_int
+            .rewrite(&lhs_split.sym()?)?
+            .rewrite(&rhs_split.sym()?)?; // {x<y} ⊢ int.lt (fx·(dx+dy))((fx+fy)·dx)
+        de.sym()?
+            .eq_mp(goal_int)? // {x<y} ⊢ ratLt x (mediant x y)
+            .imp_intro(&hyp)?
+            .all_intro("y", rat())?
+            .all_intro("x", rat())
+    } else {
+        // goal: ratLt (mediant x y) y = int.lt ((fx+fy)·dy)(fy·(dx+dy)).
+        let de = lt_via_components(&rm, &ry)?; // ratLt m y = int.lt ((fx+fy)·rep dy)(fy·rep(to_pos(dx+dy)))
+        let de = de.rhs_conv(|t| t.rw_all(&dsum_rt))?; // fy·(dx+dy)
+        let lhs_split = int::distrib_r_at(&fx, &fy, &dy)?; // (fx+fy)·dy = fx·dy + fy·dy
+        let rhs_split = int::distrib_at(&fy, &dx, &dy)?; // fy·(dx+dy) = fy·dx + fy·dy
+        // int.lt (fx·dy+fy·dy)(fy·dx+fy·dy) ⟺ fx·dy < fy·dx  (cancel fy·dy on the right).
+        let cancel = int::lt_add_cancel_right_at(&imul(fx.clone(), dy.clone()), &imul(fy.clone(), dx.clone()), &imul(fy.clone(), dy.clone()))?;
+        let goal_int = cancel.sym()?.eq_mp(h_int)?; // {x<y} ⊢ int.lt (fx·dy+fy·dy)(fy·dx+fy·dy)
+        let goal_int = goal_int
+            .rewrite(&lhs_split.sym()?)?
+            .rewrite(&rhs_split.sym()?)?; // {x<y} ⊢ int.lt ((fx+fy)·dy)(fy·(dx+dy))
+        de.sym()?
+            .eq_mp(goal_int)?
+            .imp_intro(&hyp)?
+            .all_intro("y", rat())?
+            .all_intro("x", rat())
+    }
 }
 
 cached_thm! {
     /// `⊢ ∀x y. x < y ⟹ ∃z. x < z ∧ z < y` — **the rationals are dense.**
     ///
-    /// A genuine derivation: the mediant `z = mediant x y` is the witness,
-    /// `mediant_gt` / `mediant_lt` give the two strict inequalities, and
-    /// `∃`-introduction + `∧`-introduction package them. The only
-    /// postulated leaves are the two mediant inequalities; once they are
-    /// discharged this theorem is hypothesis-free.
+    /// A genuine, **hypothesis-free** derivation: the mediant `z = mediant x y`
+    /// is the witness, the (now proved) `mediant_gt` / `mediant_lt` give the
+    /// two strict inequalities, and `∃`-introduction + `∧`-introduction package
+    /// them.
     pub fn dense() -> Thm {
         dense_impl().expect("dense derivation")
     }
@@ -3387,7 +3459,7 @@ mod tests {
     }
 
     #[test]
-    fn dense_is_derived_from_the_mediant_postulates() {
+    fn dense_is_genuine() {
         let thm = dense();
         // The statement: ∀x y. x < y ⟹ ∃z. x < z ∧ z < y.
         let (x, y) = (rvar("x"), rvar("y"));
@@ -3409,12 +3481,27 @@ mod tests {
         let head = conseq.as_app().expect("consequent is an application").0;
         assert_eq!(head, &covalence_core::defs::exists(rat()));
 
-        // dense is genuine *modulo* exactly the two mediant postulates: it
-        // carries them (and nothing else) as hypotheses.
-        let hyps = thm.hyps();
-        assert_eq!(hyps.len(), 2, "only the two mediant postulates remain");
-        for h in hyps {
-            assert!(h.type_of().unwrap().is_bool());
+        // dense is now fully genuine — the two mediant inequalities it rests
+        // on are proved, so it carries no hypotheses.
+        assert!(
+            thm.hyps().is_empty(),
+            "dense is hypothesis-free now that the mediants are proved"
+        );
+    }
+
+    #[test]
+    fn mediants_are_genuine() {
+        let (x, y) = (rvar("x"), rvar("y"));
+        for (t, concl_of) in [
+            (mediant_gt(), rlt(x.clone(), med(x.clone(), y.clone()))),
+            (mediant_lt(), rlt(med(x.clone(), y.clone()), y.clone())),
+        ] {
+            assert!(t.hyps().is_empty(), "mediant inequality is proved");
+            let inst = t.all_elim(x.clone()).unwrap().all_elim(y.clone()).unwrap();
+            assert_eq!(
+                inst.concl(),
+                &rlt(x.clone(), y.clone()).imp(concl_of).unwrap()
+            );
         }
     }
 

@@ -83,11 +83,13 @@ index](../../../../SKELETONS.md).
     `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/`le_antisym`/
     `le_total`/`not_one_le_zero` is **not** postulated — it is *derived* from
     `le_def` + the strict-order facts.)
-  - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
-    only postulated leaves of `dense` (which is itself *derived* from
-    them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
-    to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
-    lifted through the now-built order machinery.
+  The two **mediant inequalities** `mediant_gt` / `mediant_lt` are now
+  **proved** (so `dense` is fully hypothesis-free): with representatives
+  `x = fx/dx`, `y = fy/dy`, the mediant is `(fx+fy)/(dx+dy)`; lifting both
+  `ratLt`s reduces each goal to the `int` fact `fx·dy < fy·dx` (= `x < y`)
+  after `int::distrib`/`distrib_r` + `int::lt_add_cancel_{left,right}` cancel
+  the shared summand, over the positive mediant denominator
+  (`int::add_pos` + `int::int_pos_round_trip_at`).
 
 - **The `real` Dedekind-cut theory** in
   `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`

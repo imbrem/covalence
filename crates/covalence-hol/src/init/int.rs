@@ -1982,6 +1982,76 @@ cached_thm! {
 }
 
 cached_thm! {
+    /// `⊢ ∀a b. 0 < a ⟹ 0 < b ⟹ 0 < a + b` — a sum of positives is positive.
+    /// `0 < a` and `lt_add_mono` (add `b`) give `0+b < a+b`; `0 < b` and
+    /// `lt_trans` close it (`0 < b = 0+b < a+b`).
+    pub fn add_pos() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let ha = lt(lit(0), a.clone());
+        let hb = lt(lit(0), b.clone());
+        // 0 < a ⟹ 0+b < a+b.
+        let mono = lt_add_mono()
+            .all_elim(lit(0))?
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .imp_elim(Thm::assume(ha.clone())?)?; // 0+b < a+b
+        let zb = mono.rewrite(&add_left_zero()?.all_elim(b.clone())?)?; // b < a+b
+        lt_trans()
+            .all_elim(lit(0))?
+            .all_elim(b.clone())?
+            .all_elim(add(a.clone(), b.clone()))?
+            .imp_elim(Thm::assume(hb.clone())?)?
+            .imp_elim(zb)? // 0 < a+b
+            .imp_intro(&hb)?
+            .imp_intro(&ha)?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀x y k. (x + k < y + k) = (x < y)` — adding a constant to both sides
+    /// preserves and reflects the strict order. `⟸` is `lt_add_mono`; `⟹`
+    /// re-adds `-k` and simplifies `(x+k)+(-k) = x`.
+    pub fn lt_add_cancel_iff() -> Result<Thm> {
+        let (x, y, k) = (var("x"), var("y"), var("k"));
+        let lhs = lt(add(x.clone(), k.clone()), add(y.clone(), k.clone())); // x+k < y+k
+        let rhs = lt(x.clone(), y.clone());
+        // (u+k)+(-k) = u, for u = x and u = y.
+        let simp = |u: &Term| -> Result<Thm> {
+            add_assoc()
+                .all_elim(u.clone())?
+                .all_elim(k.clone())?
+                .all_elim(neg(k.clone()))? // (u+k)+(-k) = u+(k+(-k))
+                .trans(
+                    add_neg()
+                        .all_elim(k.clone())? // k+(-k) = 0
+                        .cong_arg(Term::app(int_add(), u.clone()))?, // u+(k+(-k)) = u+0
+                )?
+                .trans(add_zero().all_elim(u.clone())?) // = u
+        };
+        // ⟸ : {x<y} ⊢ x+k < y+k.
+        let bwd = lt_add_mono()
+            .all_elim(x.clone())?
+            .all_elim(y.clone())?
+            .all_elim(k.clone())?
+            .imp_elim(Thm::assume(rhs.clone())?)?; // {x<y} ⊢ x+k < y+k
+        // ⟹ : {x+k<y+k} ⊢ x<y, by re-adding -k.
+        let fwd = lt_add_mono()
+            .all_elim(add(x.clone(), k.clone()))?
+            .all_elim(add(y.clone(), k.clone()))?
+            .all_elim(neg(k.clone()))?
+            .imp_elim(Thm::assume(lhs.clone())?)? // (x+k)+(-k) < (y+k)+(-k)
+            .rewrite(&simp(&x)?)?
+            .rewrite(&simp(&y)?)?; // x < y
+        bwd.deduct_antisym(fwd)? // {} ... actually both discharge their hyp
+            .all_intro("k", int())?
+            .all_intro("y", int())?
+            .all_intro("x", int())
+    }
+}
+
+cached_thm! {
     /// `⊢ ∀x y c. 0 < c ⟹ (x·c < y·c) = (x < y)` — strict order is preserved
     /// **and reflected** by multiplication by a positive: the `⟸` direction is
     /// [`lt_mul_pos`]; the `⟹` direction is its contrapositive through
@@ -2345,6 +2415,74 @@ pub fn prove_imul_eq(lhs: &Term, rhs_t: &Term) -> Result<Thm> {
     );
     let perm = imul_permute_eq(&rl, &rr)?;
     el.trans(perm)?.trans(er.sym()?)
+}
+
+// ----------------------------------------------------------------------------
+// Instance-level convenience wrappers (used by `init::rat`'s mediant lift).
+// ----------------------------------------------------------------------------
+
+/// `⊢ a·(b+c) = a·b + a·c` — `distrib` specialised.
+pub fn distrib_at(a: &Term, b: &Term, c: &Term) -> Result<Thm> {
+    distrib().all_elim(a.clone())?.all_elim(b.clone())?.all_elim(c.clone())
+}
+
+/// `⊢ (a+b)·c = a·c + b·c` — right distributivity (from `mul_comm` + `distrib`).
+pub fn distrib_r_at(a: &Term, b: &Term, c: &Term) -> Result<Thm> {
+    let comm = mul_comm().all_elim(add(a.clone(), b.clone()))?.all_elim(c.clone())?; // (a+b)·c = c·(a+b)
+    let dist = distrib_at(c, a, b)?; // c·(a+b) = c·a + c·b
+    let ca = mul_comm().all_elim(c.clone())?.all_elim(a.clone())?; // c·a = a·c
+    let cb = mul_comm().all_elim(c.clone())?.all_elim(b.clone())?; // c·b = b·c
+    comm.trans(dist)?.trans(Thm::refl(int_add())?.cong_app(ca)?.cong_app(cb)?)
+}
+
+/// `⊢ (k+x < k+y) = (x < y)` — left-cancellation, from [`lt_add_cancel_iff`]
+/// (`x+k<y+k`) commuted on both sides.
+pub fn lt_add_cancel_left_at(k: &Term, x: &Term, y: &Term) -> Result<Thm> {
+    let base = lt_add_cancel_iff()
+        .all_elim(x.clone())?
+        .all_elim(y.clone())?
+        .all_elim(k.clone())?; // (x+k < y+k) = (x<y)
+    // base LHS is `x+k < y+k`; rewrite `x+k ↦ k+x`, `y+k ↦ k+y`.
+    let cx = add_comm().all_elim(x.clone())?.all_elim(k.clone())?; // x+k = k+x
+    let cy = add_comm().all_elim(y.clone())?.all_elim(k.clone())?; // y+k = k+y
+    base.lhs_conv(|t| rewrite_seq_int(t, &[cx, cy]))
+}
+
+/// `⊢ (x+k < y+k) = (x < y)` — right-cancellation ([`lt_add_cancel_iff`]).
+pub fn lt_add_cancel_right_at(x: &Term, y: &Term, k: &Term) -> Result<Thm> {
+    lt_add_cancel_iff()
+        .all_elim(x.clone())?
+        .all_elim(y.clone())?
+        .all_elim(k.clone())
+}
+
+/// Apply each `eqs[i]` (`rw_all`) to the running RHS of an equation in turn.
+fn rewrite_seq_int(t: &Term, eqs: &[Thm]) -> Result<Thm> {
+    let mut acc = Thm::refl(t.clone())?;
+    for eq in eqs {
+        let cur = acc.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+        acc = acc.trans(cur.rw_all(eq)?)?;
+    }
+    Ok(acc)
+}
+
+/// `⊢ rep(abs z) = z` for an `int` value `z` with `pos : ⊢ 0 < z` — the
+/// `int.pos` wrapper is faithful on positives ([`Thm::spec_rep_abs_fwd`]).
+pub fn int_pos_round_trip_at(z: &Term, pos: Thm) -> Result<Thm> {
+    use covalence_core::defs::int_pos_spec;
+    let spec = int_pos_spec();
+    let fwd = Thm::spec_rep_abs_fwd(spec, Vec::<Type>::new(), z.clone())?; // P z ⟹ rep(abs z) = z
+    let prem = fwd
+        .concl()
+        .as_app()
+        .ok_or_else(|| Error::ConnectiveRule("int_pos_round_trip_at: ⟹ shape".into()))?
+        .0
+        .as_app()
+        .ok_or_else(|| Error::ConnectiveRule("int_pos_round_trip_at: ⟹ shape".into()))?
+        .1
+        .clone(); // (λx. 0<x) z
+    let prem_thm = Thm::beta_conv(prem)?.sym()?.eq_mp(pos)?; // ⊢ P z
+    fwd.imp_elim(prem_thm)
 }
 
 /// `⊢ 0 < 1` on `int` — the base positivity fact (the `int.pos` witness).
@@ -2983,6 +3121,37 @@ mod tests {
         assert_eq!(
             nz.all_elim(p.clone()).unwrap().concl(),
             &rep_p.equals(lit(0)).unwrap().not().unwrap()
+        );
+    }
+
+    #[test]
+    fn add_helpers_are_genuine() {
+        let (a, b, k) = (var("a"), var("b"), var("k"));
+        let ap = add_pos();
+        assert!(ap.hyps().is_empty(), "add_pos is proved");
+        assert_eq!(
+            ap.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap().concl(),
+            &lt(lit(0), a.clone())
+                .imp(
+                    lt(lit(0), b.clone())
+                        .imp(lt(lit(0), add(a.clone(), b.clone())))
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        let ci = lt_add_cancel_iff();
+        assert!(ci.hyps().is_empty(), "lt_add_cancel_iff is proved");
+        assert_eq!(
+            ci.all_elim(a.clone())
+                .unwrap()
+                .all_elim(b.clone())
+                .unwrap()
+                .all_elim(k.clone())
+                .unwrap()
+                .concl(),
+            &lt(add(a.clone(), k.clone()), add(b.clone(), k.clone()))
+                .equals(lt(a, b))
+                .unwrap()
         );
     }
 

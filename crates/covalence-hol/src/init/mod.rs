@@ -90,6 +90,7 @@ pub mod list_recursion;
 pub mod logic;
 pub mod monoid;
 pub mod nat;
+pub mod nat_thy;
 pub mod option;
 pub mod preorder;
 pub mod prod;

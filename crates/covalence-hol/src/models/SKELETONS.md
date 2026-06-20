@@ -30,15 +30,18 @@ signature (with `admits` as the statability gate). Deferred:
 ## `#sig`/`#thy`/`#model`/`#models` directives (BUILT — increment 1)
 
 The declared surface↔script fusion now exists (`script/theory.rs`,
-`models/declared.cov`, `models/nat.sig`, `models/nat.thy`): `(#sig …)` declares
-a single-sorted signature, `(#thy …)` a theory (axioms validated abstractly),
-`(#model …)` a model (op interpretations typechecked at the carrier), and
-`(#models M T …)` certifies `M ⊨ T` (each axiom INSTANTIATED at the carrier is
-proved by the supplied `(#by …)`/`(#proof …)`, then M's `NatModel::env()`-shape
-dispatch env is registered for `(#in M …)`). `declared.cov` declares `Nat` +
-`NatTheory`, declares + certifies `nat/self` and `nat/unary`, and replays the
-abstract `add.comm` at both — the Track 1 `NatModel::env()` is now *sourced from
-declared data*. Remaining deferrals:
+`models/declared.cov`, `models/nat_add.sig`, `models/nat_add.thy`): `(#sig …)`
+declares a single-sorted signature, `(#thy …)` a theory (`(#spec …)` proof
+obligations validated abstractly — *not* postulates), `(#model …)` a model (op
+interpretations typechecked at the carrier), and `(#models M T …)` certifies
+`M ⊨ T` (each spec INSTANTIATED at the carrier is proved by the supplied
+`(#by …)`/`(#proof …)`, then M's `NatModel::env()`-shape dispatch env is
+registered for `(#in M …)`). `declared.cov` declares `NatAdd` + `NatAddTheory`
+(the *add fragment* — distinct from the canonical, full `init/nat.{sig,thy}`,
+because `nat/unary` is a genuine second model of the fragment only), declares +
+certifies `nat/self` and `nat/unary`, and replays the abstract `add.comm` at
+both — the Track 1 `NatModel::env()` is now *sourced from declared data*.
+Remaining deferrals:
 
 - **Generic, multi-sort / kinded (HOL-ω) signatures.** `Signature` is
   single-sorted (one `(sort α)`) and first-order (op templates are `α`/`->`
@@ -48,10 +51,10 @@ declared data*. Remaining deferrals:
   `(#import x.thy #thy)` (§3.0/§3.0.1) — the *typed* single-object import that
   checks you got a signature where a signature was expected — is not built; the
   `.sig`/`.thy` bodies are inlined into `declared.cov` (the standalone
-  `nat.sig`/`nat.thy` files exist as the deliverable shape but are not yet
-  consumed via a typed import).
-- **`(from WITNESS)` is transitional.** `(#models nat/unary NatTheory (from
-  unary))` pulls the four axioms from a host-supplied env
+  `nat_add.sig`/`nat_add.thy` files, and the canonical `init/nat.{sig,thy}`,
+  exist as the deliverable shape but are not yet consumed via a typed import).
+- **`(from WITNESS)` is transitional.** `(#models nat/unary NatAddTheory (from
+  unary))` pulls the four specs from a host-supplied env
   (`models::unary::prelude()` — the heavy `unit`-singleton Rust proofs) instead
   of inline `(#by …)`. This keeps `unary.rs` in Rust until its proofs are ported
   to `.cov`; the witnessed theorems ARE re-checked against the instantiated

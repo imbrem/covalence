@@ -667,3 +667,32 @@ index](../../../../SKELETONS.md).
   not yet wired into `stream.cov` (the stream agent's `.cov` versions were written
   against a diverged `ext` signature; re-port on the current 5-arg `ext`). Easily
   re-derived; `stream.cov` currently ports only `const.at`/`head.const`/`tail.at`.
+
+## `nat.thy` — canonical interface, carrier-generic model deferred
+
+`init/nat.sig` + `init/nat.thy` (checked by `init/nat_thy.rs`) are the canonical
+`nat` **specification**: the signature (sort `nat`, ops `rec`/`zero`/`succ`/
+`add`/`mul`/`sub`/`pow`/`shl`/`le`/`lt`) and the full list of `(#spec NAME C)`
+obligations — one per *exported* `nat.cov` theorem (47 of them). `nat.cov` is the
+**proof** that kernel-nat satisfies the interface; `check_nat_cov_satisfies_nat_thy`
+discharges every spec by an α-equal exported theorem (the witnessing model is the
+**self model**: sort `nat` := kernel `nat`, each op its kernel term). Deferred:
+
+- **The carrier-generic model.** The specs are stated over the self-model
+  vocabulary (kernel `nat.add`/`natrec-op`/literals), so `nat.thy` is *not* yet a
+  signature-abstract theory whose specs re-elaborate at an arbitrary structure
+  carrying a `natrec` (the way `models/nat_add.thy`'s 4 specs do over a `tfree`
+  sort). The reason is concrete: the spec conclusions use nat **literals**
+  (`0`/`1`/`2`) and the `natrec-op` special form, which the abstract `tfree`-sort
+  elaboration (`script::theory::Signature::abstract_env`) cannot type. Lifting the
+  full theory to a carrier-abstract presentation — and giving `nat/self` as just
+  one model among others (a reified-PA model, a bool-stream coding) via the
+  `#sig`/`#thy`/`#model`/`#models` machinery — is the next increment. Today the
+  satisfaction check parses `nat.thy`'s specs directly in the kernel env rather
+  than routing through `parse_thy`'s abstract validation.
+- **The Haskell-like surface extraction.** `nat.sig`/`nat.thy` are hand-written
+  `.sig`/`.thy` data; they are the *eventual elaboration target* of the
+  declarative surface language (`docs/surface-syntax.md`), not yet produced by it.
+- **The `le.add_eq_or` internal helper** of `nat.cov` is deliberately NOT a spec
+  (it is unexported — an implementation lemma, not part of the interface). Only
+  the 47 `#export`ed theorems are specified.

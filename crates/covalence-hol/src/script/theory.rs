@@ -13,9 +13,10 @@
 //!   (`zero : α`, `succ : α → α`, `add : α → α → α`). Single-sorted,
 //!   first-order: a generic multi-sort / HOL-ω signature is deferred (see
 //!   `SKELETONS.md`).
-//! - [`Theory`] — a signature ref plus named **abstract axioms**. Each axiom is
-//!   stored as its raw `SExpr` (so a model can re-elaborate it at *its* carrier)
-//!   alongside the abstract formula validated against the signature.
+//! - [`Theory`] — a signature ref plus named **abstract specs** (`(#spec …)`):
+//!   proof *obligations*, not postulates. Each spec is stored as its raw `SExpr`
+//!   (so a model can re-elaborate it at *its* carrier) alongside the abstract
+//!   formula validated against the signature.
 //! - [`Model`] — a signature ref, a **carrier** type, the op **interpretation**
 //!   terms (typechecked against each op's template with `α := carrier`), and the
 //!   induction-handler tactic name.
@@ -96,26 +97,28 @@ impl Signature {
     }
 }
 
-/// One axiom of a [`Theory`]: its name, the **abstract** formula (validated
-/// against the signature), and the raw `SExpr` body (kept so a model can
-/// re-elaborate it at its carrier).
+/// One **spec** of a [`Theory`]: a named proof obligation — its name, the
+/// **abstract** formula (validated against the signature), and the raw `SExpr`
+/// body (kept so a model can re-elaborate it at its carrier). A spec is *not* a
+/// postulate: it asserts nothing, it is a goal a model must discharge.
 #[derive(Clone)]
-pub struct Axiom {
+pub struct Spec {
     pub name: String,
     /// The abstract formula `⊢-shape` term (over the signature's vocabulary).
     pub formula: Term,
-    /// The raw axiom body, re-elaborated per model in `#models`.
+    /// The raw spec body, re-elaborated per model in `#models`.
     pub body: SExpr,
 }
 
-/// A **theory**: a signature plus named abstract axioms (the
-/// `docs/surface-compiler.md` §3.0 `(#thy …)` form). The signature is stored
-/// inline (resolved from the `(over SIG)` ref at parse time).
+/// A **theory**: a signature plus named abstract specs — the proof obligations
+/// any model of the signature must discharge (the `docs/surface-compiler.md`
+/// §3.0 `(#thy …)` form, `(#spec …)` clauses). The signature is stored inline
+/// (resolved from the `(over SIG)` ref at parse time).
 #[derive(Clone)]
 pub struct Theory {
     pub name: String,
     pub sig: Signature,
-    pub axioms: Vec<Axiom>,
+    pub specs: Vec<Spec>,
 }
 
 /// A **model** of a signature: a carrier type, an interpretation term for each
@@ -278,18 +281,20 @@ fn parse_sig_type(s: &SExpr, sort: &str, env: &Env) -> R<Type> {
     }
 }
 
-/// Parse a `(#thy NAME (over SIG) (axiom NAME FORMULA) …)` directive into a
-/// [`Theory`]. `SIG` is resolved from the signature registry in `env`.
+/// Parse a `(#thy NAME (over SIG) (#spec NAME FORMULA) …)` directive into a
+/// [`Theory`]. `SIG` is resolved from the signature registry in `env`. Each
+/// `(#spec …)` is a proof OBLIGATION (validated against the signature), not an
+/// asserted axiom.
 pub fn parse_thy(ch: &[SExpr], env: &Env) -> R<Theory> {
     if ch.len() < 3 {
         return Err(ScriptError::Syntax(
-            "#thy: expected (#thy NAME (over SIG) (axiom …) …)".into(),
+            "#thy: expected (#thy NAME (over SIG) (#spec …) …)".into(),
         ));
     }
     let name = syntax::sym(&ch[1], "#thy name")?.to_string();
 
     let mut sig: Option<Signature> = None;
-    let mut axioms: Vec<Axiom> = Vec::new();
+    let mut specs: Vec<Spec> = Vec::new();
     for clause in &ch[2..] {
         let c = syntax::list(clause, "#thy clause")?;
         match syntax::head_sym(c)? {
@@ -301,21 +306,25 @@ pub fn parse_thy(ch: &[SExpr], env: &Env) -> R<Theory> {
                     ScriptError::Unbound(format!("#thy: signature `{sig_name}` not declared"))
                 })?);
             }
-            "axiom" => {
-                syntax::arity(c, 3, "axiom")?;
+            // `(#spec NAME FORMULA)` — a **proof obligation** a model must
+            // discharge. *Not* a postulate: nothing is asserted, the formula is
+            // merely validated against the signature; satisfaction is proved
+            // separately (`#models` / the `nat.cov ⊨ nat.thy` test).
+            "#spec" => {
+                syntax::arity(c, 3, "#spec")?;
                 let s = sig.as_ref().ok_or_else(|| {
                     ScriptError::Syntax(
-                        "#thy: the `(over SIG)` clause must precede the axioms".into(),
+                        "#thy: the `(over SIG)` clause must precede the specs".into(),
                     )
                 })?;
-                let ax_name = syntax::sym(&c[1], "axiom name")?.to_string();
+                let ax_name = syntax::sym(&c[1], "#spec name")?.to_string();
                 let body = c[2].clone();
                 // Validate the abstract formula against the signature's
                 // vocabulary (ops as consts, sort as a tfree).
                 let aenv = s.abstract_env(env);
                 let mut scope = Scope::new();
                 let formula = syntax::parse_term(&body, &mut scope, &aenv)?;
-                axioms.push(Axiom {
+                specs.push(Spec {
                     name: ax_name,
                     formula,
                     body,
@@ -323,7 +332,7 @@ pub fn parse_thy(ch: &[SExpr], env: &Env) -> R<Theory> {
             }
             other => {
                 return Err(ScriptError::Syntax(format!(
-                    "#thy: unknown clause `{other}` (expected `over`/`sig` or `axiom`)"
+                    "#thy: unknown clause `{other}` (expected `over`/`sig` or `#spec`)"
                 )));
             }
         }
@@ -333,7 +342,7 @@ pub fn parse_thy(ch: &[SExpr], env: &Env) -> R<Theory> {
     Ok(Theory {
         name,
         sig,
-        axioms,
+        specs,
     })
 }
 
@@ -478,7 +487,7 @@ pub async fn run_models(
 
     let aenv = model.axiom_env(base);
     let mut verified: Vec<super::NamedThm> = Vec::new();
-    for ax in &theory.axioms {
+    for ax in &theory.specs {
         // Find the clause `(axname (#by …))` for this axiom.
         let clause = clauses
             .iter()
@@ -492,7 +501,7 @@ pub async fn run_models(
             })
             .ok_or_else(|| {
                 ScriptError::Syntax(format!(
-                    "#models {}: missing a proof for axiom `{}`",
+                    "#models {}: missing a proof for spec `{}`",
                     model.name, ax.name
                 ))
             })?;
@@ -535,13 +544,13 @@ async fn models_from_witness(
         .ok_or_else(|| ScriptError::Unbound(format!("#models: witness env `{witness}` not imported")))?;
     let aenv = model.axiom_env(base);
     let mut verified: Vec<super::NamedThm> = Vec::new();
-    for ax in &theory.axioms {
+    for ax in &theory.specs {
         let thm = wenv
             .lookup_lemma(&ax.name)
             .await
             .ok_or_else(|| {
                 ScriptError::Unbound(format!(
-                    "#models (from {witness}): the witness env has no axiom `{}`",
+                    "#models (from {witness}): the witness env has no spec `{}`",
                     ax.name
                 ))
             })??;

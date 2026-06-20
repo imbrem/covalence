@@ -5,15 +5,20 @@
 //! [`init::set`]: crate::init::set
 //!
 //! `stream α` is a `newtype` over `nat → α`, with `streamMk = abs` and
-//! `streamAt = rep` the round-trip coercions. The single computational
-//! primitive exposed here is
+//! `streamAt = rep` the round-trip coercions. The two seam primitives — the
+//! complete interface to the newtype, hiding `abs`/`rep` — are
 //!
-//! - [`at_mk`]: `⊢ streamAt (streamMk f) n = f n`
+//! - [`at_mk`]: `⊢ streamAt (streamMk f) n = f n` (the carrier-side
+//!   round-trip — the stream analogue of [`set::mem_mk`](crate::init::set::mem_mk));
+//! - [`ext`]: from `⊢ ∀n. streamAt s n = streamAt t n` conclude `⊢ s = t`
+//!   (stream extensionality — the wrapper-side round-trip, the analogue of
+//!   [`set::ext`](crate::init::set::ext)).
 //!
-//! — the stream analogue of [`set::mem_mk`](crate::init::set::mem_mk).
-//! Every operation lemma ([`const_at`], [`head_const`], …) is this plus
-//! a head-only δ-unfolding of the operation, so downstream proofs reason
-//! through element access and never touch `abs`/`rep`.
+//! Every per-operation element lemma ([`const_at`], [`head_const`],
+//! [`tail_at`], [`head_mk`]) is `at_mk` plus a head-only δ-unfolding of the
+//! operation; every stream *equality* ([`tail_const`], [`mk_at`]) is built
+//! extensionally and closed with [`ext`]. Downstream proofs reason through
+//! element access and never touch `abs`/`rep`.
 //!
 //! This is the first foundation block under `list α := stream (option α)
 //! where finite`, hence under `set.finite` / `set.card`.
@@ -31,8 +36,7 @@ pub use covalence_core::defs::{
     stream_tail,
 };
 
-use covalence_core::defs::{stream_at_spec, stream_mk_spec, stream_spec};
-use covalence_core::defs::nat_succ;
+use covalence_core::defs::{nat_succ, stream_at_spec, stream_mk_spec, stream_spec};
 
 // ============================================================================
 // Term helpers.
@@ -265,12 +269,16 @@ fn zero() -> Term {
 // .cov proof language support
 // ============================================================================
 
-/// The primitives environment for `stream.cov`: the stream operators
-/// (monomorphic at `'a`) as `Op` entries, plus the `at_mk` seam lemma —
-/// universally quantified over `f : nat→'a` and `n : nat` — as a given.
+/// The primitives environment for `stream.cov`: the stream operators as
+/// **polymorphic** ([`ConstDef::Poly`]) entries (a scheme over the element
+/// type, instantiated per use site), plus the universally-quantified seam
+/// lemmas — element computation (`at_mk`, `head_mk`, `tail_at`) and
+/// extensionality (`ext`) — as givens.
 ///
-/// `at_mk` uses `spec_rep_abs_fwd` in Rust (TCB-coupled); it stays a given.
-/// `const_at`, `head_const`, `tail_at` are proved in `stream.cov` from this.
+/// The seam lemmas cross the abs/rep boundary in Rust (`at_mk`/`head_mk`
+/// via `spec_rep_abs_fwd`, `ext` via `spec_abs_rep`), so they stay Rust-proved
+/// givens (the `set.cov` pattern). `const_at`, `head_const`, `tail_const`,
+/// `mk_at` (and a port of `tail_at`) are proved in `stream.cov` over them.
 pub fn stream_env() -> Env {
     let a = Type::tfree("a");
     let nat_to_a = Type::fun(Type::nat(), a.clone());

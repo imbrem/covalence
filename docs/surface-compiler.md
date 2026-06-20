@@ -154,9 +154,10 @@ immediate follow-on once those types are pinned (don't fork the data shape).
 | ext | contains | surface form | one of |
 |---|---|---|---|
 | `.cov` | anything (general) | — | (mixed) |
+| `.logic` | a **logic** (a language + rules, bundled — §3.0.5) | `(#logic …)` | a logic |
 | `.sig` | a **signature** (name + kinded sorts/families + ops) | `(#sig …)` | a signature |
 | `.thy` | a **theory** (a signature + named axioms) | `(#thy …)` | a theory |
-| `.mod` | a **model** (an interpretation of a *signature* into a logic) | `(#model …)` | a model |
+| `.mod` | a **model** (an interpretation of a signature's language) | `(#model …)` | a model |
 | `.thm` | a **proof of one statement** | `(#thm …)` | a theorem |
 
 > **Punted (noted, not built):** the elaborated S-expression *IR* — the
@@ -308,6 +309,51 @@ The crucial property: `add-zero`'s *surface statement* is identical in every
 `#model`; only the dispatched handlers and the resulting kernel obligations
 differ. Proven once in a model — or in the abstract theory, transported — it is
 available everywhere a morphism reaches.
+
+### 3.0.5 `#logic` — declaring the logic a model/proof lives in
+
+A **logic** (the bundled `Logic` object of `theories-models-and-logics.md §1.1`:
+a *language* — what can be stated — plus *rules* — what can be proved) becomes a
+first-class declarable artifact: a `(#logic …)` form / `.logic` file. This is
+*not* a re-reified shared syntax (that was the "evil" move, §1 of
+theories-models) — a `#logic` declares the whole bundled object.
+
+```scheme
+(#logic HOL
+  (order higher)                 ;; first | higher | omega — the LANGUAGE class
+  (literals                      ;; literal POLICY (see below): kind → target sort
+    (int    Int)                 ;;   an int literal elaborates at sort Int…
+    (nat    Nat)                 ;;   a nat literal = a non-negative int, sort Nat
+    (string String)
+    (bytes  Bytes))
+  (rules …))                     ;; the handler set (rewriter/unifier/induction/LEM/…)
+```
+
+`order` is where the eventual specialization lives — **first-order, higher-order,
+HOL-ω** logics differ in their language class (the statability axis,
+theories-models §3.1), so a `.logic` is the natural place to pick it. A model is
+interpreted in a logic's language; the satisfaction `.thm` (`M ⊨ T`) is checked
+*in a logic*; `(#in …)`/`(#models …)` run against the ambient logic.
+
+**Literals split across two layers — get this right.** A `#logic` carries literal
+*policy* (metadata), a `#model` carries literal *realization*:
+
+- The **logic** says *which literal kinds it admits and at what target sort* — the
+  `literals` block above. This is part of statability: a logic may admit no string
+  literals, or place int literals at sort `Int`. (`nat` literal = non-negative
+  `int` literal, one entry, per §1.1.)
+- The **model** says *how a literal becomes a concrete carrier term* — the
+  model-relative, fallible `lift_int`/`lift_string`/`lift_bytes` of §1.1. This
+  *must* stay on the model, because two models of one theory in one logic lower
+  `3` differently (`nat/self` → builtin `nat` literal; `nat/unary` → `cons
+  unit.nil³ nil`). The logic fixes the *sort*; the model fixes the *value*.
+
+So the responsibility chain for a literal `3` is: the **logic** admits it and
+assigns sort `Nat`; the **model** realizes it as a carrier term. (Both are the
+`covalence-pure` literal-as-lifted-observation mechanism, `covalence-pure.md §3`,
+surfaced at the right layer.) Building `#logic` is the **next artifact after**
+`#sig`/`#thy`/`#model`/`#models` land — for now there is one ambient logic (HOL);
+`.logic` files matter once a second logic (a reified FOL, SOA) is in play.
 
 ---
 

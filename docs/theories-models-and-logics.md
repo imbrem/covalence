@@ -100,6 +100,11 @@ by identity. So **two** seams, not three:
 trait Logic {
     fn admits(&self, sig: &Signature) -> Result<(), Unstatable>;   // language aspect (§3.1)
     fn handlers(&self) -> HandlerSet;                              // rules aspect (per logic)
+    /// Literal POLICY (not realization): which literal kinds this logic admits
+    /// and at what target sort. `None` = this logic has no such literal. The
+    /// model (below) realizes an admitted literal into its carrier. (`nat`
+    /// literal = a non-negative `int` literal — one entry.)
+    fn literal_sort(&self, kind: LiteralKind) -> Option<Sort>;     // language aspect
 }
 
 /// MODEL — interprets a signature's symbols as objects (semantics; no axioms);
@@ -127,7 +132,11 @@ interpret + handlers, with no separate syntax object.)
 
 **Literal lifting is a `Model` method — model-relative and fallible.** The
 surface literal `3` is not one fixed kernel term; the *model* decides how to lower
-it into its carrier (`surface-compiler.md §5`). For `nat/self` (kernel `nat`)
+it into its carrier (`surface-compiler.md §5`). The *logic* only fixes the
+**policy** — whether the literal is admitted and at what target *sort*
+(`literal_sort` above) — while the **model** fixes the *value* (the carrier term);
+two models of one theory in one logic lower `3` differently
+(`surface-compiler.md §3.0.5`). For `nat/self` (kernel `nat`)
 `lift_int(3)` is the built-in literal; for **`nat/unary`** (`list unit`) it runs a
 model-supplied **builtin-nat → unary conversion** (`3 ↦ cons unit.nil (cons
 unit.nil (cons unit.nil nil))`); for a reified-SOA model it is the object numeral

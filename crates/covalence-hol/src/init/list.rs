@@ -892,6 +892,106 @@ fn finite_streamtail(alpha: &Type, l: &Term) -> Result<Thm> {
     goal_unfold.sym()?.eq_mp(got_ex)
 }
 
+/// `⊢ list.head l = list.index 0 l` — the head is the 0-th element.
+/// Genuine: hypothesis- and oracle-free.
+pub fn head_index0(alpha: &Type, l: &Term) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    // head l = streamHead (rep l) = streamAt (rep l) 0.
+    let h = Term::app(head(alpha.clone()), l.clone())
+        .delta_all(head_spec().symbol())?
+        .rhs_conv(|t| t.reduce())?; // head l = streamHead (rep l)
+    let head_at = crate::init::eq::delta_head(&Term::app(stream_head(opt.clone()), rep_of(alpha, l)))?
+        .rhs_conv(|t| t.reduce())?; // streamHead (rep l) = streamAt (rep l) 0
+    // index 0 l = streamAt (rep l) 0  (reverse unfold).
+    let idx = index_unfold(alpha, &zero(), l)?.sym()?; // streamAt (rep l) 0 = index 0 l
+    trans_chain([h, head_at, idx])
+}
+
+/// `⊢ head l = some a ⟹ cons a (tail l) = l` — **list reconstruction**:
+/// a list whose head is `some a` is `cons a` of its tail. Genuine:
+/// hypothesis- and oracle-free. Proved by [`list_ext`]: indexing
+/// `cons a (tail l)` matches `l` at every position (head at `0` via the
+/// hypothesis + [`head_index0`], the rest via [`index_cons_succ`] +
+/// [`index_tail`]).
+pub fn cons_head_tail(alpha: &Type, a: &Term, l: &Term) -> Result<Thm> {
+    let some_a = Term::app(some(alpha.clone()), a.clone());
+    let hyp = Term::app(head(alpha.clone()), l.clone()).equals(some_a.clone())?; // head l = some a
+    let h = Thm::assume(hyp.clone())?;
+
+    let tl = Term::app(tail(alpha.clone()), l.clone());
+    let consed = cons(alpha.clone()).apply(a.clone())?.apply(tl.clone())?;
+
+    // Pointwise `index i (cons a (tail l)) = index i l`, by cases on i.
+    let iv = Term::free("i", nat());
+    let motive_at = |t: &Term| -> Result<Term> {
+        index(alpha, t, &consed).equals(index(alpha, t, l))
+    };
+    let motive = Term::abs(nat(), covalence_core::subst::close(&motive_at(&iv)?, "i"));
+
+    // base i=0: index 0 (cons a (tail l)) = some a = head l = index 0 l.
+    let base = {
+        let cz = index_cons_zero(alpha, a, &tl)?; // index 0 (cons a (tail l)) = some a
+        let head0 = head_index0(alpha, l)?; // head l = index 0 l
+        // some a = head l (from hyp, reversed), then = index 0 l.
+        let eq0 = cz.trans(h.clone().sym()?)?.trans(head0)?; // {hyp} ⊢ index 0 (...) = index 0 l
+        beta_expand(&motive, zero(), eq0)?
+    };
+
+    // step k: index (succ k) (cons a (tail l)) = index k (tail l) = index (succ k) l. IH unused.
+    let step = {
+        let k = Term::free("k", nat());
+        let cs = index_cons_succ(alpha, a, &tl, &k)?; // index (succ k) (cons a (tail l)) = index k (tail l)
+        let it = index_tail(alpha, &k, l)?; // index k (tail l) = index (succ k) l
+        let eq_sk = cs.trans(it)?; // index (succ k) (...) = index (succ k) l
+        let conseq = beta_expand(&motive, succ(k.clone()), eq_sk)?; // ⊢ motive (succ k)
+        let ante = Term::app(motive.clone(), k.clone());
+        conseq.imp_intro(&ante)?
+    };
+
+    let all = Thm::nat_induct(base, step)?; // {hyp} ⊢ ∀i. motive i
+    let pointwise = crate::init::eq::beta_reduce(all.all_elim(iv.clone())?)?; // {hyp} ⊢ index i (...) = index i l
+    let eq = list_ext(alpha, &consed, l, "i", pointwise)?; // {hyp} ⊢ cons a (tail l) = l
+    eq.imp_intro(&hyp)
+}
+
+/// `⊢ (∀i. index i l = none) ⟹ l = nil` — a list with no elements is
+/// `nil`. Genuine: hypothesis- and oracle-free. By [`list_ext`] against
+/// [`index_nil`].
+pub fn nil_from_allnone(alpha: &Type, l: &Term) -> Result<Thm> {
+    let i = Term::free("i", nat());
+    let allnone = index(alpha, &i, l).equals(none(alpha.clone()))?.forall("i", nat())?;
+    let h = Thm::assume(allnone.clone())?;
+
+    // Pointwise index i l = none = index i nil.
+    let at_i = h.all_elim(i.clone())?; // index i l = none
+    let in_nil = index_nil(alpha, &i)?; // index i nil = none
+    let pointwise = at_i.trans(in_nil.sym()?)?; // index i l = index i nil
+    let eq = list_ext(alpha, l, &nil(alpha.clone()), "i", pointwise)?; // l = nil
+    eq.imp_intro(&allnone)
+}
+
+/// `⊢ l = m`, given `pointwise : ⊢ index i l = index i m` with `i =
+/// Free(name, nat)` not free in `l` / `m` — **list extensionality**.
+/// `index = λn xs. streamAt (rep xs) n`, so a pointwise index equality is
+/// a pointwise carrier equality; [`stream::ext`] lifts it to `rep l = rep
+/// m`, and `abs (rep ·) = ·` bridges back.
+pub fn list_ext(alpha: &Type, l: &Term, m: &Term, name: &str, pointwise: Thm) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    let i = Term::free(name, nat());
+    // index i l = streamAt (rep l) i, index i m = streamAt (rep m) i.
+    let il = index_unfold(alpha, &i, l)?; // index i l = streamAt (rep l) i
+    let im = index_unfold(alpha, &i, m)?; // index i m = streamAt (rep m) i
+    let carrier_pw = il.sym()?.trans(pointwise)?.trans(im)?; // streamAt (rep l) i = streamAt (rep m) i
+
+    // Stream extensionality on the carriers, then bridge through abs.
+    let reps_eq = crate::init::stream::ext(&opt, &rep_of(alpha, l), &rep_of(alpha, m), name, carrier_pw)?; // rep l = rep m
+    let abs = Term::spec_abs(list_spec(), vec![alpha.clone()]);
+    let abs_eq = reps_eq.cong_arg(abs)?; // abs (rep l) = abs (rep m)
+    let ar_l = Thm::spec_abs_rep(list_spec(), vec![alpha.clone()], l.clone())?; // abs (rep l) = l
+    let ar_m = Thm::spec_abs_rep(list_spec(), vec![alpha.clone()], m.clone())?; // abs (rep m) = m
+    ar_l.sym()?.trans(abs_eq)?.trans(ar_m)
+}
+
 // ============================================================================
 // `list` freeness — constructor distinctness + injectivity. These feed
 // the generic inductive engine's `Inductive::distinct` / `injective`.
@@ -1155,6 +1255,36 @@ mod tests {
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &Term::app(head(alpha()), nil(alpha())));
         assert_eq!(rhs, &none(alpha()));
+    }
+
+    #[test]
+    fn cons_head_tail_reconstructs() {
+        let a = Term::free("a", alpha());
+        let l = Term::free("l", list(alpha()));
+        let thm = cons_head_tail(&alpha(), &a, &l).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        // ⊢ (head l = some a) ⟹ (cons a (tail l) = l)
+        let some_a = Term::app(some(alpha()), a.clone());
+        let prem = Term::app(head(alpha()), l.clone()).equals(some_a).unwrap();
+        let tl = Term::app(tail(alpha()), l.clone());
+        let consed = cons(alpha()).apply(a.clone()).unwrap().apply(tl).unwrap();
+        let concl = prem.imp(consed.equals(l.clone()).unwrap()).unwrap();
+        assert_eq!(thm.concl(), &concl);
+    }
+
+    #[test]
+    fn nil_from_allnone_is_genuine() {
+        let l = Term::free("l", list(alpha()));
+        let thm = nil_from_allnone(&alpha(), &l).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let i = Term::free("i", nat());
+        let allnone = index(&alpha(), &i, &l)
+            .equals(none(alpha()))
+            .unwrap()
+            .forall("i", nat())
+            .unwrap();
+        let concl = allnone.imp(l.equals(nil(alpha())).unwrap()).unwrap();
+        assert_eq!(thm.concl(), &concl);
     }
 
     #[test]

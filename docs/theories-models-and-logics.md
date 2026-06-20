@@ -367,7 +367,7 @@ transport over the FOL framework from rung 2):
 | **Robinson Q** | PA minus induction (finitely axiomatized) | the base of essential undecidability / Gödel; the weakest "arithmetic" |
 | **Presburger** | FO theory of `(ℕ, +)` | **decidable** (a real decision procedure to build — a handler) |
 | **Tarski RCF** | real-closed fields (FO theory of `(ℝ, +, ·, <)`) | **decidable** by quantifier elimination — the decision procedure behind real-algebra automation; pairs with the analysis/SMT layer (§5.3) |
-| **ZF / ZFC** | first-order set theory | the long-horizon big goal — the foundational target the metatheory ladder climbs toward |
+| **ZF / ZFC / Tarski-Grothendieck** | first-order set theory of `∈` (ZFC = ZF + choice; **TG** = ZFC + universes/inaccessibles) | the long-horizon big goal. ZF/ZFC/TG differ *only in axioms* — all ride the same FOL framework, so reifying their **syntax + derivability is essentially free** |
 
 The decidable ones (Presburger, RCF) are doubly valuable: they're object theories
 *and* they yield **decision-procedure handlers** the surface can dispatch to
@@ -377,6 +377,56 @@ yields a linear-arithmetic handler.
 **Near-term commitment:** rung 1 (`prop.cov` + induction-on-derivations, in
 progress), then the FOL framework + PA (rung 2). SOA, the FO-theory catalogue, and
 analysis-in-SOA follow once the FOL tooling is solid.
+
+### 5.5 Two pillars of metatheory, and the PA→SOA→ZF chain
+
+Doing metatheory *here* rests on two pillars, both living in `init/prop.rs`'s
+proven, TCB-free reify-syntax-as-HOL-data lane (the substrate PA's `peano/fol.rs`
+already established):
+
+1. **Induction on derivations → interpretation.** `PA ⟹ SOA ⟹ ZF` are *relative
+   interpretations*, proved **by induction on derivations** (translate each axiom,
+   show its translation is provable in the target, check each rule is preserved).
+   Two grades: the **constructive / per-derivation** form (a Rust recursion over
+   how derivations are built — what PA's `Derivation` already does for `PA⟹HOL`)
+   is available now; the **internalized** single HOL metatheorem
+   (`⊢ Derivable_X ⌜A⌝ ⟹ …`, via the impredicative rule-induction —
+   `prop_induction` is the proven template) makes interpretation first-class.
+   **Interpretation is *syntactic*: it does NOT require the target theory to have a
+   HOL model.** So the whole chain is provable from reified syntax + the
+   rule-induction engine.
+
+2. **Representation equivalence → syntactic metatheory.** A metatheorem *in HOL*
+   that two syntax/substitution representations agree (de Bruijn ↔
+   metavariable/Metamath ↔ named ↔ HOAS). This is how you change representation
+   soundly, transport substitution lemmas, and — load-bearing — **admit WASM
+   decision procedures**: an untrusted fast oracle works on an *efficient*
+   representation, and proving *that representation ≅ kernel-syntax* in HOL lets its
+   results transport soundly (the observer substrate at the *syntactic* level).
+
+**The PA/SOA-vs-ZF asymmetry (don't lose this).** PA denotes into HOL `nat` and
+SOA into HOL `nat → bool` — both **have HOL models, so soundness is unconditional**
+(and SOA is cheap: HOL *has* the sets it quantifies over). **ZF has no HOL model
+without added strength** — by Gödel HOL can't prove `Con(ZF)`. So ZF's *proof
+theory* is free (reify + replay + interpret), but a *model/soundness* theorem is
+**gated on a universe axiom** — `⊢ (∃ inaccessible) ⟹ Model(ZFC)`. That is exactly
+what **Tarski-Grothendieck** supplies, which is why TG is the natural *top*: a
+universe gives the model (the Mizar move).
+
+**Metamath import** is where both pillars meet: `set.mm` is FOL + ZFC, so the
+reified FOL+ZFC framework is its object substrate, and a Metamath proof is replayed
+as an **untrusted frontend → kernel re-derivation** (the Alethe pattern). Metamath's
+metalogic is a trivial *metavariable-substitution + distinct-variable* engine;
+encoding it and proving `mm_subst ≅ locally-nameless` (pillar 2) is the sound
+import bridge — and doubles as the first, cleanest instance of the WASM-decision-
+procedure admission protocol. (Replay/verification is proof-theoretic, so it needs
+no ZF model; only *transporting* a `set.mm` theorem into a HOL fact hits the
+universe wall.)
+
+**Recommended build order:** internalized rule-induction for PA (small: template +
+two-sorted Church fold) → generalize to the FOL `Derivable` engine (interpretations
+become first-class) → SOA (cheap denotation) → reify ZF/ZFC/TG (axioms only) +
+`SOA⟹ZF` → the Metamath substitution engine + its `≅ locally-nameless` metatheorem.
 
 ---
 

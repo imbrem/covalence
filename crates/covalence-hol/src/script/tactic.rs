@@ -205,6 +205,9 @@ pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
     reg("not-intro", Arc::new(NotIntro));
     reg("contrapositive", Arc::new(Contrapositive));
     reg("rw", Arc::new(Rw));
+    reg("beta", Arc::new(Beta));
+    reg("funext", Arc::new(Funext));
+    reg("#comp", Arc::new(Comp));
     reg("apply", Arc::new(Apply));
     reg("induct", Arc::new(Induct));
     reg("#have", Arc::new(Have));
@@ -455,6 +458,192 @@ impl Tactic for Rw {
         }
         Ok(thm)
     }
+}
+
+/// `(beta …)` tactic / `(beta TERM)` rule: the **normalizing** β step, routed
+/// through the [`Env::beta`](super::Env::beta) seam (full β-normal form, beyond
+/// the kernel's one-shot `beta-conv`).
+///
+/// - Tree mode `(beta TERM)` → `⊢ TERM = βnf(TERM)` — the β-equation, the
+///   workhorse leaf of an equational chain.
+/// - Tactic mode `(beta)` closes an equational goal `lhs = rhs` whenever the
+///   two sides share a β-normal form, via the calc-default seam
+///   ([`Env::comp_default`](super::Env::comp_default)). It does not run a
+///   continuation — it is a goal-closing step.
+struct Beta;
+#[async_trait]
+impl Tactic for Beta {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 1, "beta")?;
+        expect_done(rest, "beta")?;
+        let (lhs, rhs) = dest_eq(&it.goal).ok_or_else(|| {
+            ScriptError::Syntax(format!("beta: goal is not an equation: {}", it.goal))
+        })?;
+        it.env.comp_default(&lhs, &rhs)
+    }
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 1, "beta")?;
+        let t = c.term(&a[0])?;
+        c.env().beta(&t)
+    }
+}
+
+/// `(funext …)` tactic / `(funext SUB)` rule: function extensionality, routed
+/// through the [`Env::funext`](super::Env::funext) seam.
+///
+/// - Tree mode `(funext SUB)` — `SUB` proves the pointwise equality
+///   (`⊢ ∀x. f x = g x` or `⊢ f x = g x` with `x` a fresh free point), and the
+///   rule concludes `⊢ f = g`.
+/// - Tactic mode `(funext x)` — turn an equational goal `f = g` between two
+///   `α → β` functions into the pointwise goal `f x = g x` (over a fresh point
+///   `x`), run the rest to prove it, then re-abstract + η-contract.
+struct Funext;
+#[async_trait]
+impl Tactic for Funext {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 2, "funext")?;
+        let name = sym(&s[1], "funext point")?.to_string();
+        let (f, g) = dest_eq(&it.goal).ok_or_else(|| {
+            ScriptError::Syntax(format!("funext: goal is not an equation: {}", it.goal))
+        })?;
+        let f_ty = f.type_of()?;
+        let alpha = match f_ty.kind() {
+            covalence_core::TypeKind::Fun(dom, _cod) => dom.clone(),
+            _ => {
+                return Err(ScriptError::Syntax(format!(
+                    "funext: goal `{}` does not equate two functions",
+                    it.goal
+                )));
+            }
+        };
+        let point = Term::free(name.as_str(), alpha.clone());
+        let ctx = HolLightCtx::new();
+        // The pointwise goal `f x = g x`.
+        it.goal = ctx.mk_eq(Term::app(f, point.clone()), Term::app(g, point))?;
+        it.scope.open();
+        it.scope.define(name.clone(), alpha.clone());
+        let inner = it.run(rest).await;
+        it.scope.close();
+        it.env.funext(&inner?)
+    }
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 1, "funext")?;
+        let sub = c.check(&a[0]).await?;
+        c.env().funext(&sub)
+    }
+}
+
+/// `(#comp HEAD STEP…)` — a **calculational / stepwise equational** proof
+/// (`docs/surface-syntax.md` §5.1). The chain starts at `HEAD`; each `STEP` is
+/// `(= RHS [JUST])`, asserting `prev = RHS`. The steps fold under `trans` into
+/// one end-to-end `⊢ HEAD = <last RHS>`.
+///
+/// - An explicit `JUST` is any tree-mode derivation proving `⊢ prev = RHS`
+///   (e.g. `(beta …)`, `(rw lemma …)`, `(apply foo …)`, a bare lemma name).
+/// - An **omitted** `JUST` is closed by the *default handler*: the
+///   `#:by DERIV`-named one if the block sets it, else the equational seam
+///   [`Env::comp_default`](super::Env::comp_default). A step the default cannot
+///   close is a diagnostic naming that step — never a silent gap.
+///
+/// `#comp` is a proof-level construct (a tree-mode rule), NOT a top-level
+/// directive: it works anywhere a derivation does (`(#proof (#comp …))`, inside
+/// `derive`, as a `#comp` step's own justification, …).
+struct Comp;
+#[async_trait]
+impl Tactic for Comp {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        if a.is_empty() {
+            return Err(ScriptError::Syntax(
+                "#comp: expected a head term and at least one step".into(),
+            ));
+        }
+        // Optional `#:by DEFAULT` after the head: a tree-mode derivation that,
+        // applied to a single step's `(= prev rhs)` equation goal, closes it.
+        // We carry it as the SExpr of the default justification; an omitted
+        // step substitutes it (its `prev`/`rhs` are spliced via the seam below
+        // — for the built-in default we call `comp_default` directly).
+        let head = c.term(&a[0])?;
+        let mut idx = 1;
+        let mut default: Option<&SExpr> = None;
+        if a.get(idx).and_then(|s| s.as_symbol()) == Some("#:by") {
+            default = a.get(idx + 1);
+            if default.is_none() {
+                return Err(ScriptError::Syntax(
+                    "#comp: `#:by` must be followed by a default justification".into(),
+                ));
+            }
+            idx += 2;
+        }
+        let steps = &a[idx..];
+        if steps.is_empty() {
+            return Err(ScriptError::Syntax("#comp: expected at least one step".into()));
+        }
+        let mut prev = head;
+        let mut chain: Option<Thm> = None;
+        for (i, step) in steps.iter().enumerate() {
+            let st = list(step, "#comp step")?;
+            // Each step is `(= RHS [JUST])`. (Only `=` for now; other relations
+            // come with a transitivity registry — see §5.1.)
+            if head_sym(st)? != "=" {
+                return Err(ScriptError::Syntax(format!(
+                    "#comp: step {} must be `(= RHS [JUST])`, got `{}`",
+                    i + 1,
+                    head_sym(st).unwrap_or("?")
+                )));
+            }
+            if st.len() < 2 || st.len() > 3 {
+                return Err(ScriptError::Syntax(format!(
+                    "#comp: step {} must be `(= RHS)` or `(= RHS JUST)`",
+                    i + 1
+                )));
+            }
+            let rhs = c.term(&st[1])?;
+            // The step equation `⊢ prev = rhs`.
+            let step_eq = if let Some(just) = st.get(2) {
+                // Explicit justification.
+                comp_check_step(just, &prev, &rhs, i, c).await?
+            } else if let Some(def) = default {
+                // Omitted: run the block default handler on this step.
+                comp_check_step(def, &prev, &rhs, i, c).await?
+            } else {
+                // Omitted, no block default: the equational seam.
+                c.env().comp_default(&prev, &rhs).map_err(|e| {
+                    ScriptError::Syntax(format!("#comp: step {} (omitted): {e}", i + 1))
+                })?
+            };
+            // Fold into the running chain.
+            chain = Some(match chain {
+                None => step_eq,
+                Some(ch) => ch.trans(step_eq)?,
+            });
+            prev = rhs;
+        }
+        Ok(chain.expect("at least one step"))
+    }
+}
+
+/// Run a `#comp` step's justification and validate it proves `⊢ prev = rhs`.
+async fn comp_check_step(
+    just: &SExpr,
+    prev: &Term,
+    rhs: &Term,
+    i: usize,
+    c: &mut CheckCtx<'_>,
+) -> R<Thm> {
+    let eq = check(just, c).await?;
+    let (l, r) = dest_eq(eq.concl()).ok_or_else(|| {
+        ScriptError::Syntax(format!(
+            "#comp: step {} justification did not prove an equation",
+            i + 1
+        ))
+    })?;
+    if &l != prev || &r != rhs {
+        return Err(ScriptError::Syntax(format!(
+            "#comp: step {} justification proved `{l} = {r}`, expected `{prev} = {rhs}`",
+            i + 1
+        )));
+    }
+    Ok(eq)
 }
 
 /// `(apply LEMMA PREMISE…)` — apply a lemma by first-order matching. The tactic

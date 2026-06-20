@@ -102,6 +102,8 @@ pub mod set;
 pub mod sexpr;
 pub mod stream;
 pub mod string;
+pub mod utf8;
+pub mod utf16;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).

@@ -225,6 +225,57 @@ pub fn some_inj(alpha: &Type, a: &Term, b: &Term) -> Result<Thm> {
     ab.imp_intro(&eq)
 }
 
+// ============================================================================
+// The `optionCase` reduction clauses.
+//
+//   optionCase d f o ≡ coprodCase f (λ_. d) (rep o)
+//
+// so `optionCase d f (some x)` unfolds to `coprodCase f (λ_. d) (rep (abs
+// (inl x)))`; collapsing `rep ∘ abs` and firing `coprod::case_inl` yields
+// `f x`. The `none` clause is symmetric (`coprod::case_inr` + the `λ_. d`
+// branch β-reducing to `d`). Genuine — hypothesis- and oracle-free.
+// ============================================================================
+
+/// `⊢ optionCase d f (some x) = f x` — the `some` elimination clause, at
+/// result type `β` (`d : β`, `f : α → β`). Genuine.
+pub fn case_some(alpha: &Type, beta: &Type, d: &Term, f: &Term, x: &Term) -> Result<Thm> {
+    use crate::init::coprod::case_inl;
+
+    let unit = Type::unit();
+    // optionCase d f (some x) = coprodCase f (λ_. d) (rep (some x))   [δ + β]
+    let some_x = Term::app(some(alpha.clone()), x.clone());
+    let lhs = Term::app(Term::app(Term::app(option_case(alpha.clone(), beta.clone()), d.clone()), f.clone()), some_x);
+    let unfold = lhs
+        .delta_all(covalence_core::defs::option_case_spec().symbol())?
+        .rhs_conv(|t| t.reduce())?;
+    // rep (some x) = inl x : rewrite `some x → abs (inl x)`, then `rep ∘ abs`.
+    let (some_u, inl_x) = some_unfold(alpha, x)?; // ⊢ some x = abs (inl x)
+    let rep_some = some_u.cong_arg(rep_o(alpha))?.trans(rep_abs(alpha, &inl_x)?)?; // ⊢ rep (some x) = inl x
+    let on_inl = unfold.rhs_conv(|t| t.rw_all(&rep_some))?;
+    // coprodCase f (λ_.d) (inl x) = f x.
+    let g = Term::abs(unit.clone(), d.clone());
+    let ci = case_inl(alpha, &unit, beta, f, &g, x)?; // coprodCase f g (inl x) = f x
+    on_inl.trans(ci)
+}
+
+/// `⊢ optionCase d f none = d` — the `none` elimination clause. Genuine.
+pub fn case_none(alpha: &Type, beta: &Type, d: &Term, f: &Term) -> Result<Thm> {
+    use crate::init::coprod::case_inr;
+
+    let unit = Type::unit();
+    let lhs = Term::app(Term::app(Term::app(option_case(alpha.clone(), beta.clone()), d.clone()), f.clone()), none(alpha.clone()));
+    let unfold = lhs
+        .delta_all(covalence_core::defs::option_case_spec().symbol())?
+        .rhs_conv(|t| t.reduce())?;
+    let (none_u, inr_u) = none_unfold(alpha)?; // ⊢ none = abs (inr unit.nil)
+    let rep_none = none_u.cong_arg(rep_o(alpha))?.trans(rep_abs(alpha, &inr_u)?)?; // ⊢ rep none = inr unit.nil
+    let on_inr = unfold.rhs_conv(|t| t.rw_all(&rep_none))?;
+    // coprodCase f (λ_.d) (inr unit.nil) = (λ_.d) unit.nil = d.
+    let g = Term::abs(unit.clone(), d.clone());
+    let ci = case_inr(alpha, &unit, beta, f, &g, &unit_nil())?; // = (λ_.d) unit.nil
+    on_inr.trans(ci)?.rhs_conv(|t| t.reduce())
+}
+
 /// `coprod_case[α,unit,α] f g` — the case head, as a term.
 fn coprod_case_at(a: &Type, b: &Type, gamma: &Type, f: &Term, g: &Term) -> Term {
     Term::app(
@@ -264,6 +315,23 @@ mod tests {
             .not()
             .unwrap();
         assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn case_some_and_none_clauses() {
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let d = Term::free("d", b.clone());
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        let x = Term::free("x", a.clone());
+        // optionCase d f (some x) = f x.
+        let cs = case_some(&a, &b, &d, &f, &x).unwrap();
+        assert!(cs.hyps().is_empty() && cs.has_no_obs());
+        assert_eq!(cs.concl().as_eq().unwrap().1, &Term::app(f.clone(), x.clone()));
+        // optionCase d f none = d.
+        let cn = case_none(&a, &b, &d, &f).unwrap();
+        assert!(cn.hyps().is_empty() && cn.has_no_obs());
+        assert_eq!(cn.concl().as_eq().unwrap().1, &d);
     }
 
     #[test]

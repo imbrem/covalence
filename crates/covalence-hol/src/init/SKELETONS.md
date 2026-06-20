@@ -326,11 +326,57 @@ index](../../../../SKELETONS.md).
     `n>0` denotes `cons b₀ (cons b₁ … (nil u8))`; proving that equality
     needs the `cons`-side `list.index`/`length` clauses. The element-level
     coherence (`Blob : bytes`, `u8_lit : u8`, ASCII `char.mk k`) is done.
-  - **UTF-8 and UTF-16 codecs** — transcoding pairs (`string ↔ bytes` via UTF-8;
-    `string ↔ list u16` via UTF-16, where the surrogate *pairs* encode the
-    astral codepoints `char` now excludes as scalars). Axiomatizing both
-    encodings is interesting future work — wanted once the `bytes`/`string`
-    sequence ops land (needs the in-flight `list` recursion first).
+  - **UTF-8 and UTF-16 codecs** in `crates/covalence-hol/src/init/utf8.rs` +
+    `utf8.cov` and `crates/covalence-hol/src/init/utf16.rs`. The **encoders +
+    per-character round-trip + the encoder homomorphism** are now built and
+    genuine (hypothesis- and oracle-free); the **validating decoders + full
+    inductive string round-trip** are deferred. Done:
+    - `utf8.encodeChar : char → list u8` (1–4 bytes by codepoint range, RFC
+      3629) and `utf16.encodeChar : char → list u16` (BMP → 1 unit; astral →
+      a **surrogate pair**, `0xD800+m/0x400` / `0xDC00+m%0x400` — the surrogate
+      code units `char` excludes as scalars). Each is a shell-defined constant
+      (`TermSpec` with a `SmolStr` symbol, not in the kernel `defs/`). The
+      **per-character reduction lemmas** `encode_char_lit(k)` reduce a *literal*
+      scalar value all the way to its exact `cons … nil` of `u8`/`u16` literals
+      (tested across ASCII / 2-/3-/4-byte / `€` / emoji / all range boundaries
+      / surrogate pairs). The driver is δ-unfold + β + the `char::code_mk`
+      round-trip + `reduce` (folds `nat.div`/`mod`/`add` + `int.fromNat[uN]`) +
+      `cond::collapse_conds` (a new public conversion firing the `init::cond`
+      `cond_true`/`cond_false` clauses innermost-first).
+    - `utf8.encode : string → bytes` / `utf16.encode : string → list u16`
+      (and the carrier-level `utf8.encodeBytes : list char → list u8`), each a
+      `foldr` of the per-char encodings. Their `nil`/`cons` recursion clauses
+      (`encode_nil`/`encode_cons`/`encode_bytes_nil`/`encode_bytes_cons`) are
+      proved through the `init::list_recursion` `foldr`/`cat` machinery.
+    - the **per-character UTF-8 round-trip** `decode_ascii1_round_trip(k)`
+      (`⊢ decodeAscii1 (utf8EncodeChar (char.mk k)) = some (char.mk k)`) for
+      the **ASCII fragment** (`k < 0x80`), via the carrier-level decoder
+      `utf8.decodeAscii1` + the new `init::option::case_some`/`case_none`
+      `optionCase` clauses + `list::head_cons`.
+    - the **encoder monoid homomorphism** `utf8.cov`'s `encode_cat`
+      (`⊢ ∀xs ds. encodeBytes (xs ++ ds) = (encodeBytes xs) ++ (encodeBytes
+      ds)`), proved by `list-induct` — the analogue of `list.cov`'s
+      `length_cat`. (`text` types `char`/`string`/`bytes`/`uN` are now
+      `.cov`-parseable, added to `script::syntax::parse_type`.)
+
+    Deferred (do NOT claim these are done):
+    - **The validating decoders** `utf8Decode : bytes → option string` and
+      `utf16Decode : list u16 → option string` past the single ASCII byte:
+      the multi-byte continuation-byte validation (`0x80 ≤ b < 0xC0` checks),
+      the over-long-encoding / lone-surrogate rejection, and the codepoint
+      reassembly (`((b0 & mask) << 6·k) + …`) are a large `nat`-range case
+      analysis not yet built. `decodeAscii1` only covers the 1-byte case.
+    - **The full string round-trip** `⊢ utf8Decode (utf8Encode s) = some s`
+      (and the UTF-16 analogue) by `list-induct` over the string: the cons
+      case needs a **"decode peels exactly one char's bytes off the front"**
+      lemma (decode reads `encode_char c ++ rest` and returns `c` + `rest`),
+      which rests on the per-byte decode validation above. The induction
+      *skeleton* is the `encode_cat` homomorphism + the per-char round-trip;
+      the prefix-consumption step is the remaining work.
+    - **`bytes`/`string` newtype wrappers** for the codecs (`utf8Encode` is
+      `abs ∘ encodeBytes ∘ rep`; a `utf8Decode` over `bytes`/`option string`
+      wrapping `decodeAscii1`) — the carrier-level lemmas are proved, the
+      newtype-wrapped equational lemmas are not all surfaced.
   - **Bitvector ops on `u8`/`bytes`** (the eventual full bitvector support):
     `u8`/`uN` are `bits`-subtypes (`defs/bits.rs`) and `defs/nat.rs` already
     has `natShl/Shr/BitAnd/BitOr/BitXor` that reduce on literals — the future

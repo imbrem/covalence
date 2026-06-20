@@ -1,48 +1,65 @@
 //! `list` theorems: the `defs/list.rs` catalogue re-exported, plus the
-//! first **computational foundation block** for lists — the `abs`/`rep`
-//! seam, the finiteness facts that gate it, and the empty-list element
-//! computations. Same abstraction-barrier shape as [`init::stream`] and
-//! [`init::set`].
+//! full **structural foundation** for lists — the `abs`/`rep` seam, the
+//! selector facts that gate it, the per-constructor element computations,
+//! constructor freeness, extensionality, and the **list induction
+//! principle**. The recursion theorem and the `list_foldr` discharge ride
+//! on top in [`crate::init::list_recursion`].
 //!
 //! [`init::stream`]: crate::init::stream
 //! [`init::set`]: crate::init::set
 //!
 //! ## What `list α` is
 //!
-//! `list α := stream (option α) where finite` — the **subtype** of
-//! `stream (option α)` carved by the selector predicate
-//! [`finite`](crate::init::stream::finite) (eventually-`none` streams).
-//! The constructors funnel through the kernel coercions
-//! `abs : stream (option α) → list α` and `rep : list α → stream (option
-//! α)`; e.g. `nil ≡ abs (streamConst none)`. **Downstream list proofs
-//! must not see that** — they should reason through the element-access
-//! lemmas exposed here ([`index_nil`], [`head_nil`], …), never `abs` /
-//! `rep` directly.
+//! `list α := stream (option α) where (finite ∧ contiguous)` — the
+//! **subtype** of `stream (option α)` carved by [`list_pred`]: streams
+//! that are finite (eventually `none`) **and** contiguous (`s i = none ⟹
+//! s (succ i) = none`, no interior holes). The constructors funnel through
+//! the kernel coercions `abs : stream (option α) → list α` and `rep : list
+//! α → stream (option α)`; e.g. `nil ≡ abs (streamConst none)`,
+//! `cons x xs ≡ abs (streamMk (consStream x xs))`. **Downstream list
+//! proofs must not see that** — they reason through the element-access
+//! lemmas ([`index_nil`], [`index_cons_zero`], [`head_cons`], …) and the
+//! structural laws, never `abs` / `rep` directly.
 //!
-//! ## The finiteness gate
+//! ## Why contiguity (exhaustiveness)
+//!
+//! The contiguity conjunct is what makes `nil` / `cons` **exhaustive**.
+//! Under a `finite`-only predicate a stream like `[none, some a, none, …]`
+//! would be a `list α` value reachable by *neither* constructor (head
+//! `none`, so not a `cons`; but `index 1 = some a ≠ none`, so not `nil`),
+//! and list induction would be **false**. With contiguity every list is
+//! `nil` (empty prefix) or `cons x xs` (a `some` head over a shorter
+//! contiguous tail). See [`defs::list_spec`](covalence_core::defs::list_spec).
+//!
+//! ## The selector gate
 //!
 //! Unlike `stream`/`set` (newtypes, predicate `λ_. T`), `list` is a
 //! genuine subtype, so the carrier-side round-trip
-//! [`Thm::spec_rep_abs_fwd`] is *conditional*: `⊢ finite s ⟹ rep (abs s)
-//! = s`. Every computation that peeks inside a constructor must first
-//! discharge `finite` of the underlying stream. For `nil` that stream is
-//! `streamConst none`, finite by [`finite_const_none`] — so the empty-list
-//! facts are reachable now with no further machinery, and all are genuine
-//! (hypothesis- and oracle-free).
+//! [`Thm::spec_rep_abs_fwd`] is *conditional* on the selector. Every
+//! computation that peeks inside a constructor first discharges
+//! `list_predicate` of the underlying stream — [`pred_const_none`] for
+//! `nil`, [`pred_cons`] for `cons x xs`, [`pred_rep`] for an arbitrary
+//! `rep l`. All are genuine (hypothesis- and oracle-free).
 //!
-//! ## Not yet here (see `SKELETONS.md`)
+//! ## What is here (all genuine)
 //!
-//! The `cons`-side computations (`index`/`head`/`tail` of `cons x xs`)
-//! need `finite (cons-stream)` — a finiteness-*preservation* proof that
-//! rests on `nat` ordering theory (`nat_le` successor lemmas) not yet
-//! developed in [`init::nat`]. The structural recursors
-//! [`list_foldr`] / [`list_foldl`] are pinned by Hilbert-ε selector
-//! predicates; discharging their defining equations needs a **list
-//! recursion theorem** (the analogue of [`crate::init::recursion`] for
-//! `nat`). Both — together with list extensionality / induction and the
-//! `length`/`cat`/`map`/`filter`/`flatten` facts that ride on them — are
-//! recorded as skeletons.
+//! - **Selector facts**: [`pred_const_none`] / [`pred_cons`] / [`pred_rep`]
+//!   (+ the `finite_*` / `contig_*` conjuncts), [`pred_nonempty`].
+//! - **Element computations**: [`index_nil`] / [`index_cons_zero`] /
+//!   [`index_cons_succ`], [`head_nil`] / [`head_cons`], [`tail_cons`],
+//!   [`index_tail`].
+//! - **Freeness**: [`cons_inj`], [`nil_ne_cons`].
+//! - **Extensionality / reconstruction**: [`list_ext`], [`head_index0`],
+//!   [`cons_head_tail`], [`nil_from_allnone`], [`allnone_from_head_none`].
+//! - **Induction**: [`list_induct`] — `P nil ⟹ (∀x xs. P xs ⟹ P (cons x
+//!   xs)) ⟹ ∀l. P l`, by a finiteness-bound `nat`-induction.
 //!
+//! The **recursion theorem** and the `list_foldr` equations are in
+//! [`crate::init::list_recursion`] (the `list` [`Inductive`] adapter
+//! feeding the generic engine). `list_foldl` / the `length`/`cat`/`map`/
+//! `filter`/`flatten` clauses remain — see `SKELETONS.md`.
+//!
+//! [`Inductive`]: crate::init::inductive::Inductive
 //! [`init::nat`]: crate::init::nat
 
 use covalence_core::{Error, Result, Term, Thm, Type};
@@ -241,19 +258,6 @@ fn list_pred(alpha: &Type, s: &Term) -> Term {
     Term::app(list_pred_op(alpha), s.clone())
 }
 
-/// The **contiguity** clause `∀i. streamAt s i = none ⟹ streamAt s (succ
-/// i) = none`, for carrier stream `s`.
-fn contiguous_at(alpha: &Type, s: &Term) -> Result<Term> {
-    let opt = option(alpha.clone());
-    let i = Term::free("i", nat());
-    let at_i = Term::app(Term::app(stream_at(opt.clone()), s.clone()), i.clone());
-    let at_si = Term::app(Term::app(stream_at(opt), s.clone()), succ(i.clone()));
-    at_i
-        .equals(none(alpha.clone()))?
-        .imp(at_si.equals(none(alpha.clone()))?)?
-        .forall("i", nat())
-}
-
 /// `⊢ list_predicate s` from `fin : ⊢ finite s` and `contig : ⊢ ∀i.
 /// streamAt s i = none ⟹ streamAt s (succ i) = none` — assemble the two
 /// selector conjuncts and β-fold into the applied predicate.
@@ -308,7 +312,6 @@ pub fn finite_const_none(alpha: &Type) -> Result<Thm> {
 /// (the consequent holds outright, by [`const_at`]).
 fn contig_const_none(alpha: &Type) -> Result<Thm> {
     let opt = option(alpha.clone());
-    let cst = const_none(alpha);
     let i = Term::free("i", nat());
     let at_i = const_at(&opt, &none(alpha.clone()), &i)?; // streamAt cst i = none
     let at_si = const_at(&opt, &none(alpha.clone()), &succ(i.clone()))?; // streamAt cst (succ i) = none
@@ -385,7 +388,6 @@ pub fn pred_rep(alpha: &Type, xs: &Term) -> Result<Thm> {
 /// `⊢ finite (rep xs)` for any `xs : list α` — extracted from
 /// [`pred_rep`] (the first conjunct of the list selector).
 pub fn finite_rep(alpha: &Type, xs: &Term) -> Result<Thm> {
-    let rep_xs = rep_of(alpha, xs);
     // Unfold `list_predicate (rep xs)` to `finite (rep xs) ∧ contiguous`.
     let conj = beta_reduce_pred(alpha, pred_rep(alpha, xs)?)?;
     conj.and_elim_l()
@@ -1139,8 +1141,6 @@ fn p_of_nil_list(alpha: &Type, p: &Term, l: &Term, pl_nil: &Thm, allnone: Thm) -
 /// bound for an arbitrary `l`.
 pub fn list_induct(alpha: &Type, p: &Term, pl_nil: Thm, cons_case: Thm) -> Result<Thm> {
     // --- the inner induction: ⊢ ∀N. Aux(N) ---
-    let big_n = Term::free("N", nat());
-
     // Aux(0): premise (∀i. nat_le 0 i ⟹ index i l = none) gives every i
     // (le_zero), so l = nil, so P l.
     let l = Term::free("__l", list(alpha.clone()));

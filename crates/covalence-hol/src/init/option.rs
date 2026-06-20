@@ -181,7 +181,7 @@ pub fn option_cases(alpha: &Type, o: &Term) -> Result<Thm> {
 /// newtype to the `coprod` representative `inl`, then reads the argument
 /// back with `coprod_case id g` ([`case_inl`](crate::init::coprod::case_inl)).
 pub fn some_inj(alpha: &Type, a: &Term, b: &Term) -> Result<Thm> {
-    use crate::init::coprod::{case_inl, inl};
+    use crate::init::coprod::case_inl;
     use covalence_core::defs::id;
 
     let unit = Type::unit();

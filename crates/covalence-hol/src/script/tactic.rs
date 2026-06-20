@@ -210,6 +210,7 @@ pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
     reg("#comp", Arc::new(Comp));
     reg("apply", Arc::new(Apply));
     reg("induct", Arc::new(Induct));
+    reg("list-induct", Arc::new(ListInduct));
     reg("#have", Arc::new(Have));
     drop(reg);
     t
@@ -775,6 +776,88 @@ impl Tactic for Induct {
     }
 }
 
+/// `(list-induct VAR BASE STEP)`: structural list induction on the leading
+/// `∀l. P l` (with `l : list α`). `BASE` proves `P nil`; `STEP` proves
+/// `P (cons VAR xs)` for a fresh head `VAR : α` and tail `xs : list α`, with
+/// the induction hypothesis `P xs` available as a context fact. Routed
+/// through the genuine [`crate::init::list::list_induct`] theorem. `xs` is the
+/// fixed name of the tail; the IH is the proposition `P xs`.
+struct ListInduct;
+#[async_trait]
+impl Tactic for ListInduct {
+    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm> {
+        arity(s, 4, "list-induct")?;
+        expect_done(rest, "list-induct")?;
+        let env = it.env.clone();
+        let var = sym(&s[1], "list-induct head variable")?.to_string();
+
+        // Goal `∀l. body`, with `l : list α`.
+        let (ty, body) = dest_forall(&it.goal).ok_or_else(|| {
+            ScriptError::Syntax(format!("list-induct: goal is not a `∀`: {}", it.goal))
+        })?;
+        let alpha = dest_list(&ty).ok_or_else(|| {
+            ScriptError::Syntax(format!("list-induct: goal quantifies over {ty}, not a list"))
+        })?;
+        let p = Term::abs(ty.clone(), body.clone()); // motive λl. body
+
+        // base: ⊢ P nil, in the applied form `(λl. body) nil`.
+        let nil = defs::nil(alpha.clone());
+        let base_body = prove_with(
+            &subst::open(&body, &nil),
+            &s[2],
+            &mut it.scope,
+            &it.hyps,
+            &env,
+        )
+        .await?;
+        let pl_nil = Thm::beta_conv(Term::app(p.clone(), nil.clone()))?
+            .sym()?
+            .eq_mp(base_body)?; // ⊢ (λl. body) nil
+
+        // step: under fresh `var : α`, `xs : list α`, IH `P xs`, prove
+        // `P (cons var xs)`. Then ∀-close into `∀x xs. P xs ⟹ P (cons x xs)`.
+        let la = ty.clone();
+        let x = Term::free(var.as_str(), alpha.clone());
+        let xs = Term::free("xs", la.clone());
+        let ih = subst::open(&body, &xs); // P xs (β-reduced body)
+        let consed = Term::app(Term::app(defs::cons(alpha.clone()), x.clone()), xs.clone());
+
+        let mut step_hyps = it.hyps.clone();
+        step_hyps.push((ih.clone(), Hyp::Assumed));
+        it.scope.open();
+        it.scope.define(var.clone(), alpha.clone());
+        it.scope.define("xs".to_string(), la.clone());
+        let step_body = prove_with(
+            &subst::open(&body, &consed),
+            &s[3],
+            &mut it.scope,
+            &step_hyps,
+            &env,
+        )
+        .await;
+        it.scope.close();
+        let step_body = step_body?; // {P xs} ⊢ P (cons var xs)  (β-reduced)
+
+        // Bridge both sides to the applied-motive form `(λl.body) xs ⟹
+        // (λl.body)(cons x xs)` that `list_induct` consumes.
+        let ea = Thm::beta_conv(Term::app(p.clone(), xs.clone()))?; // (λl.body) xs = P xs
+        let eb = Thm::beta_conv(Term::app(p.clone(), consed.clone()))?; // (λl.body)(cons x xs) = …
+        let step_imp = step_body.imp_intro(&ih)?; // ⊢ P xs ⟹ P (cons x xs)
+        let cons_case = Thm::refl(defs::imp())?
+            .mk_comb(ea.sym()?)?
+            .mk_comb(eb.sym()?)?
+            .eq_mp(step_imp)? // ⊢ (λl.body) xs ⟹ (λl.body)(cons x xs)
+            .all_intro("xs", la)?
+            .all_intro(&var, alpha.clone())?; // ⊢ ∀x xs. …
+
+        let ind = crate::init::list::list_induct(&alpha, &p, pl_nil, cons_case)
+            .map_err(ScriptError::Kernel)?; // ⊢ ∀l. (λl. body) l
+        // β-normalise the applied-motive body back to `∀l. body`.
+        let nf = crate::proofs::rewrite::beta_nf(ind.concl().clone());
+        Ok(nf.eq_mp(ind)?)
+    }
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -819,6 +902,16 @@ fn dest_eq(t: &Term) -> Option<(Term, Term)> {
         return None;
     };
     matches!(h.kind(), TermKind::Eq(_)).then(|| (lhs.clone(), rhs.clone()))
+}
+
+/// If `ty` is `list α` (a `list_spec` application), return its element type
+/// `α`. Used by the `list-induct` tactic to recover the element type.
+fn dest_list(ty: &Type) -> Option<Type> {
+    let covalence_core::TypeKind::Spec(spec, args) = ty.kind() else {
+        return None;
+    };
+    (spec.symbol().label() == defs::list_spec().symbol().label() && args.len() == 1)
+        .then(|| args[0].clone())
 }
 
 fn dest_not(t: &Term) -> Option<Term> {

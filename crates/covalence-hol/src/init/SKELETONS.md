@@ -183,34 +183,37 @@ index](../../../../SKELETONS.md).
   every engine entry point generic over `I: Inductive` (never a concrete `nat`)
   is the standing constraint that keeps this open.
 
-- **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`.
-  Only the **`nil`-side computational foundation** is proved so far — the
-  `abs`/`rep` seam (`rep_abs_finite`), the finiteness gate (`finite_const_none`,
-  `finite_nonempty`), element-access unfolding (`index_unfold`), and the empty
-  list facts (`index_nil`, `head_nil`). All are genuine (hypothesis- and
-  oracle-free). Still missing:
-  - **`cons`-side computations** — `index`/`head`/`tail` of `cons x xs`. Each
-    needs `finite (cons-stream)`, a finiteness-*preservation* lemma that rests
-    on `nat` **ordering** theory (`nat_le` successor/predecessor lemmas). That
-    order theory is now developed in `init/nat.rs` (the `le`/`lt` foundation:
-    `le_succ_succ`, `le_zero`, `zero_lt_succ`, `le_total`, `le_trans`, …), so
-    `finite_cons` is unblocked; build it, then the `cons` element lemmas follow
-    the `init::stream` `at_of` pattern.
-  - **`tail_cons` / list extensionality / induction** — `tail (cons x xs) = xs`
-    needs extensionality on the carrier stream (pointwise-equal ⟹ equal),
-    re-discharging finiteness; list induction is the structural-recursion
-    companion.
-  - **Structural recursors `list_foldr` / `list_foldl`** — pinned by Hilbert-ε
-    selector predicates (defined in `defs/list.rs`), so their defining equations
-    (`fr f z nil = z`, `fr f z (cons x xs) = f x (fr f z xs)`, and the left-fold
-    mirror) need a **list recursion theorem**. The target is to obtain it from
-    the generic inductive engine (`init/inductive/`) once its proof layer is
-    generalised and `list`'s induction principle + `cons`/`nil` freeness are
-    derived to feed it — rather than re-deriving the `nat` graph route by hand.
-  - **Ops riding on the recursors** — `length`/`cat`/`filter`/`flatten`
-    (factored through `foldr`) and the pointwise `map`/`take`/`skip`/`repeat`
-    (need the `cons`-side stream computations). No `*_nil`/`*_cons` clauses for
-    any of these yet.
+- **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`
+  + `list_recursion.rs` + `list.cov`. The **full structural foundation** is now
+  proved and genuine (hypothesis- and oracle-free): the `abs`/`rep` seam, the
+  finite-∧-contiguous selector facts (`pred_*`/`finite_*`/`contig_*`), the
+  per-constructor element computations (`index_nil`/`index_cons_zero`/
+  `index_cons_succ`/`head_nil`/`head_cons`/`tail_cons`/`index_tail`),
+  constructor freeness (`cons_inj`/`nil_ne_cons`), extensionality (`list_ext`)
+  + reconstruction (`cons_head_tail`/`nil_from_allnone`/…), and **list
+  induction** (`list_induct`). On top, `list_recursion.rs` derives the `list`
+  `Inductive` adapter, the paramorphic recursion theorem, the `list_foldr`
+  discharge (`foldr_holds`), and the `foldr`/`length`/`cat` nil/cons recursion
+  clauses (`foldr_nil`/`foldr_cons`, `length_nil`/`length_cons`,
+  `cat_nil`/`cat_cons`). `list.cov` re-exports those clauses and proves the
+  **append monoid laws** (`cat_nil_r`, `cat_assoc`) + the **length
+  homomorphism** (`length_cat`) + `cat_cons_singleton` over the `listprim`
+  seam env, driven by the new `list-induct` tactic (the genuine `list_induct`
+  theorem, registered in `core`/`script::tactic`). Still missing:
+  - **`list_foldl`** — the left-fold recursor's defining equations (the
+    `foldr` mirror) are not yet discharged from the recursion theorem.
+  - **`filter` / `flatten` clauses** — also `foldr`-factored, so their
+    nil/cons clauses follow the `length`/`cat` pattern but are not built.
+  - **Pointwise ops `map` / `take` / `skip` / `repeat`** — defined directly on
+    the carrier stream (not via `foldr`); their `nil`/`cons` clauses need the
+    `cons`-side *stream* computations applied to the pointwise body (the
+    `index_cons_*` machinery is in place, but the per-op derivations are not
+    written).
+  - **The `#inductive`-for-`list` path** — `script/inductive.rs` realises only
+    the `nat` shape; a polymorphic/multi-recursive-arg `list` declaration still
+    hits the engine's ≥1-type-param + carrier-construction gaps (see the
+    inductive-engine entry). The `list-induct` *tactic* + `list_env` givens are
+    the current `.cov`-facing surface instead.
 
 - **`covalence-hol` product theory** in `crates/covalence-hol/src/init/prod.rs`.
   The core is **complete and genuine** (oracle-free): the `abs`/`rep` seam
@@ -247,9 +250,12 @@ index](../../../../SKELETONS.md).
     This is the concrete first consumer of the planned **rewriter facet** on the
     `Tactic` trait (`script/tactic.rs` doc-note): a `rewrite(a) -> ⊢ a = b`
     method so `Monoid::normalize` plugs in directly as `(rw (monoid-nf))`.
-  - **List monoid `(list, append, nil)`.** `init/list.rs` only has the `nil`-side
-    computations; `append` and its assoc/identity laws are not proved, so the
-    canonical "list is the free monoid" model is not yet a `Monoid` value.
+  - **List monoid `(list, append, nil)`.** The append monoid laws are now
+    proved in `list.cov` (`cat_assoc`, the left unit `cat_nil`, the right unit
+    `cat_nil_r`), so "list is the free monoid" is provable; what remains is
+    packaging them as a `Monoid` *value* (`list_append_monoid()`) — i.e.
+    re-exporting the `.cov` theorems through Rust accessors and feeding them to
+    `Monoid::new`, the way `nat_add_monoid` / `endo_monoid` are built.
 - **Formal-languages / Kleene-algebra theory** in
   `crates/covalence-hol/src/init/lang.rs`. A *language over a monoid `M`* is a
   `set` of `M`-carrier words; concatenation lifts `M`'s `op`. **In place:** the

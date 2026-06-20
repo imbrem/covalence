@@ -54,10 +54,21 @@
 //! - **Induction**: [`list_induct`] — `P nil ⟹ (∀x xs. P xs ⟹ P (cons x
 //!   xs)) ⟹ ∀l. P l`, by a finiteness-bound `nat`-induction.
 //!
-//! The **recursion theorem** and the `list_foldr` equations are in
-//! [`crate::init::list_recursion`] (the `list` [`Inductive`] adapter
-//! feeding the generic engine). `list_foldl` / the `length`/`cat`/`map`/
-//! `filter`/`flatten` clauses remain — see `SKELETONS.md`.
+//! The **recursion theorem**, the `list_foldr` discharge, and the
+//! `foldr`/`length`/`cat` nil/cons recursion clauses are in
+//! [`crate::init::list_recursion`] (the `list` [`Inductive`] adapter feeding
+//! the generic engine). `list_foldl` / the `map`/`filter`/`flatten` clauses
+//! remain — see `SKELETONS.md`.
+//!
+//! ## The `.cov` port
+//!
+//! [`list_env`] exposes the seam lemmas (element computations, freeness, and
+//! the `foldr`/`length`/`cat` clauses) as `∀`-quantified GIVENS, and
+//! `list.cov` (the [`cov`] module) re-exports them as first-class theorems
+//! **and proves new list facts** over them — the append monoid laws
+//! (`cat_nil_r`, `cat_assoc`), the length homomorphism (`length_cat`), and
+//! `cat_cons_singleton` — by structural induction through the **`list-induct`
+//! tactic** (registered in `core`, backed by the genuine [`list_induct`]).
 //!
 //! [`Inductive`]: crate::init::inductive::Inductive
 //! [`init::nat`]: crate::init::nat
@@ -1351,6 +1362,202 @@ fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
 }
 
+// ============================================================================
+// `listprim` env + the `list.cov` port.
+// ============================================================================
+
+/// The `listprim` environment imported by `list.cov`: the `list` operators
+/// (`nil`/`cons`/`head`/`tail`/`index`/`length`/`cat`/`foldr`, plus the
+/// `option` constructors `some`/`none`) and the **seam** lemmas — the
+/// per-constructor element computations, constructor freeness, the
+/// `foldr`/`length`/`cat` recursion clauses — in universally-quantified form.
+///
+/// These cross the `abs`/`rep` subtype boundary (and the `list_foldr`
+/// recursion theorem) in Rust, so they stay Rust-proved givens (the `set.cov`
+/// `setprim` / `nat.cov` `natrec` pattern). `list.cov` proves the structural
+/// theorems over them and never touches `abs`/`rep` — and uses the
+/// `list-induct` tactic (the genuine [`list_induct`] theorem, registered in
+/// `core`) for the inductive proofs.
+///
+/// Everything is schematic in one element type `'a` (and a result type `'b`
+/// for the `foldr` clause), matching `set.cov`'s monomorphic-at-`'a` style.
+pub fn list_env() -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    use crate::init::list_recursion::{cat_cons, cat_nil, foldr_cons, foldr_nil, length_cons, length_nil};
+    use covalence_core::defs::{nat_succ, some};
+
+    let a = Type::tfree("a");
+    let b = Type::tfree("b");
+    let la = list(a.clone());
+    let mut e = Env::empty();
+
+    // operators (monomorphic at `'a` / `'b`)
+    e.define_const("list.nil", ConstDef::Op(nil(a.clone())));
+    e.define_const("list.cons", ConstDef::Op(cons(a.clone())));
+    e.define_const("list.head", ConstDef::Op(head(a.clone())));
+    e.define_const("list.tail", ConstDef::Op(tail(a.clone())));
+    e.define_const("list.index", ConstDef::Op(list_index(a.clone())));
+    e.define_const("list.length", ConstDef::Op(list_length(a.clone())));
+    e.define_const("list.cat", ConstDef::Op(list_cat(a.clone())));
+    e.define_const("list.foldr", ConstDef::Op(list_foldr(a.clone(), b.clone())));
+    e.define_const("option.some", ConstDef::Op(some(a.clone())));
+    e.define_const("option.none", ConstDef::Op(none(a.clone())));
+
+    let x = Term::free("x", a.clone());
+    let y = Term::free("y", a.clone());
+    let xs = Term::free("xs", la.clone());
+    let ys = Term::free("ys", la.clone());
+    let n = Term::free("n", nat());
+    let k = Term::free("k", nat());
+    let z = Term::free("z", b.clone());
+    let f2 = Term::free("f", Type::fun(a.clone(), Type::fun(b.clone(), b.clone())));
+
+    let close1 = |th: Thm, name: &str, ty: &Type| th.all_intro(name, ty.clone()).unwrap();
+
+    // -- element computations --
+    // index_nil : ∀n. index n nil = none
+    e.define_lemma(
+        "index_nil",
+        close1(index_nil(&a, &n).unwrap(), "n", &nat()),
+    );
+    // index_cons_zero : ∀x xs. index 0 (cons x xs) = some x
+    e.define_lemma(
+        "index_cons_zero",
+        close1(
+            close1(index_cons_zero(&a, &x, &xs).unwrap(), "xs", &la),
+            "x",
+            &a,
+        ),
+    );
+    // index_cons_succ : ∀k x xs. index (succ k) (cons x xs) = index k xs
+    e.define_lemma(
+        "index_cons_succ",
+        close1(
+            close1(
+                close1(index_cons_succ(&a, &x, &xs, &k).unwrap(), "xs", &la),
+                "x",
+                &a,
+            ),
+            "k",
+            &nat(),
+        ),
+    );
+    // head_nil : head nil = none
+    e.define_lemma("head_nil", head_nil(&a).unwrap());
+    // head_cons : ∀x xs. head (cons x xs) = some x
+    e.define_lemma(
+        "head_cons",
+        close1(close1(head_cons(&a, &x, &xs).unwrap(), "xs", &la), "x", &a),
+    );
+    // tail_cons : ∀x xs. tail (cons x xs) = xs
+    e.define_lemma(
+        "tail_cons",
+        close1(close1(tail_cons(&a, &x, &xs).unwrap(), "xs", &la), "x", &a),
+    );
+
+    // -- freeness --
+    // nil_ne_cons : ∀x xs. ¬(nil = cons x xs)
+    e.define_lemma(
+        "nil_ne_cons",
+        close1(close1(nil_ne_cons(&a, &x, &xs).unwrap(), "xs", &la), "x", &a),
+    );
+    // cons_inj : ∀x xs y ys. (cons x xs = cons y ys) ⟹ (x = y ∧ xs = ys)
+    e.define_lemma(
+        "cons_inj",
+        close1(
+            close1(
+                close1(
+                    close1(cons_inj(&a, &x, &xs, &y, &ys).unwrap(), "ys", &la),
+                    "y",
+                    &a,
+                ),
+                "xs",
+                &la,
+            ),
+            "x",
+            &a,
+        ),
+    );
+
+    // -- foldr recursion clauses (at `'a`/`'b`) --
+    // foldr_nil : ∀f z. foldr f z nil = z
+    e.define_lemma(
+        "foldr_nil",
+        close1(
+            close1(foldr_nil(&a, &b, &f2, &z).unwrap(), "z", &b),
+            "f",
+            &f2.type_of().unwrap(),
+        ),
+    );
+    // foldr_cons : ∀f z x xs. foldr f z (cons x xs) = f x (foldr f z xs)
+    e.define_lemma(
+        "foldr_cons",
+        close1(
+            close1(
+                close1(
+                    close1(foldr_cons(&a, &b, &f2, &z, &x, &xs).unwrap(), "xs", &la),
+                    "x",
+                    &a,
+                ),
+                "z",
+                &b,
+            ),
+            "f",
+            &f2.type_of().unwrap(),
+        ),
+    );
+
+    // -- length / cat clauses --
+    // length_nil : length nil = 0
+    e.define_lemma("length_nil", length_nil(&a).unwrap());
+    // length_cons : ∀x xs. length (cons x xs) = succ (length xs)
+    e.define_lemma(
+        "length_cons",
+        close1(close1(length_cons(&a, &x, &xs).unwrap(), "xs", &la), "x", &a),
+    );
+    // cat_nil : ∀ys. cat nil ys = ys
+    e.define_lemma("cat_nil", close1(cat_nil(&a, &ys).unwrap(), "ys", &la));
+    // cat_cons : ∀x xs ys. cat (cons x xs) ys = cons x (cat xs ys)
+    e.define_lemma(
+        "cat_cons",
+        close1(
+            close1(
+                close1(cat_cons(&a, &x, &xs, &ys).unwrap(), "ys", &la),
+                "xs",
+                &la,
+            ),
+            "x",
+            &a,
+        ),
+    );
+    let _ = nat_succ; // (succ is provided by `core`)
+    e
+}
+
+crate::cov_theory! {
+    /// `list` structural theorems ported to `list.cov`, over `core` + the
+    /// `listprim` seam env. The `list-induct` tactic (in `core`) drives the
+    /// inductive proofs.
+    pub mod cov from "list.cov" {
+        import "core" = crate::script::Env::core();
+        import "natrec" = crate::init::nat::natrec_env();
+        import "listprim" = crate::init::list::list_env();
+        "index_cons_zero" => pub fn index_cons_zero_cov;
+        "head_cons"       => pub fn head_cons_cov;
+        "tail_cons"       => pub fn tail_cons_cov;
+        "nil_ne_cons"     => pub fn nil_ne_cons_cov;
+        "cons_inj"        => pub fn cons_inj_cov;
+        "length_nil"      => pub fn length_nil_cov;
+        "length_cons"     => pub fn length_cons_cov;
+        "cat_nil"         => pub fn cat_nil_cov;
+        "cat_cons"        => pub fn cat_cons_cov;
+        "cat_nil_r"       => pub fn cat_nil_r_cov;
+        "cat_assoc"       => pub fn cat_assoc_cov;
+        "length_cat"      => pub fn length_cat_cov;
+        "cat_cons_singleton" => pub fn cat_cons_singleton_cov;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1676,5 +1883,202 @@ mod tests {
     #[test]
     fn list_of_empty_is_nil() {
         assert_eq!(list_of(&alpha(), vec![]).unwrap(), nil(alpha()));
+    }
+
+    // ========================================================================
+    // `list.cov` port — the ported theorems match their Rust originals, the
+    // new theorems are genuine.
+    // ========================================================================
+
+    fn ev(name: &str) -> Term {
+        Term::free(name, alpha())
+    }
+    fn lv(name: &str) -> Term {
+        Term::free(name, list(alpha()))
+    }
+
+    /// Every `list.cov` theorem is genuine (hypothesis- and oracle-free).
+    fn assert_genuine(thm: &Thm) {
+        assert!(thm.hyps().is_empty(), "expected a hypothesis-free theorem");
+        assert!(thm.has_no_obs(), "expected an oracle-free theorem");
+    }
+
+    #[test]
+    fn cov_index_cons_zero_matches_rust() {
+        let (x, xs) = (ev("x"), lv("xs"));
+        let want = index_cons_zero(&alpha(), &x, &xs)
+            .unwrap()
+            .all_intro("xs", list(alpha()))
+            .unwrap()
+            .all_intro("x", alpha())
+            .unwrap();
+        let got = cov::index_cons_zero_cov();
+        assert_genuine(&got);
+        assert_eq!(got.concl(), want.concl());
+    }
+
+    #[test]
+    fn cov_head_cons_matches_rust() {
+        let (x, xs) = (ev("x"), lv("xs"));
+        let want = head_cons(&alpha(), &x, &xs)
+            .unwrap()
+            .all_intro("xs", list(alpha()))
+            .unwrap()
+            .all_intro("x", alpha())
+            .unwrap();
+        let got = cov::head_cons_cov();
+        assert_genuine(&got);
+        assert_eq!(got.concl(), want.concl());
+    }
+
+    #[test]
+    fn cov_tail_cons_matches_rust() {
+        let (x, xs) = (ev("x"), lv("xs"));
+        let want = tail_cons(&alpha(), &x, &xs)
+            .unwrap()
+            .all_intro("xs", list(alpha()))
+            .unwrap()
+            .all_intro("x", alpha())
+            .unwrap();
+        let got = cov::tail_cons_cov();
+        assert_genuine(&got);
+        assert_eq!(got.concl(), want.concl());
+    }
+
+    #[test]
+    fn cov_nil_ne_cons_matches_rust() {
+        let (x, xs) = (ev("x"), lv("xs"));
+        let want = nil_ne_cons(&alpha(), &x, &xs)
+            .unwrap()
+            .all_intro("xs", list(alpha()))
+            .unwrap()
+            .all_intro("x", alpha())
+            .unwrap();
+        let got = cov::nil_ne_cons_cov();
+        assert_genuine(&got);
+        assert_eq!(got.concl(), want.concl());
+    }
+
+    #[test]
+    fn cov_cons_inj_matches_rust() {
+        let (x, xs, y, ys) = (ev("x"), lv("xs"), ev("y"), lv("ys"));
+        let want = cons_inj(&alpha(), &x, &xs, &y, &ys)
+            .unwrap()
+            .all_intro("ys", list(alpha()))
+            .unwrap()
+            .all_intro("y", alpha())
+            .unwrap()
+            .all_intro("xs", list(alpha()))
+            .unwrap()
+            .all_intro("x", alpha())
+            .unwrap();
+        let got = cov::cons_inj_cov();
+        assert_genuine(&got);
+        assert_eq!(got.concl(), want.concl());
+    }
+
+    #[test]
+    fn cov_length_nil_matches_rust() {
+        let want = crate::init::list_recursion::length_nil(&alpha()).unwrap();
+        let got = cov::length_nil_cov();
+        assert_genuine(&got);
+        assert_eq!(got.concl(), want.concl());
+    }
+
+    #[test]
+    fn cov_length_cons_matches_rust() {
+        let (x, xs) = (ev("x"), lv("xs"));
+        let want = crate::init::list_recursion::length_cons(&alpha(), &x, &xs)
+            .unwrap()
+            .all_intro("xs", list(alpha()))
+            .unwrap()
+            .all_intro("x", alpha())
+            .unwrap();
+        let got = cov::length_cons_cov();
+        assert_genuine(&got);
+        assert_eq!(got.concl(), want.concl());
+    }
+
+    #[test]
+    fn cov_cat_nil_matches_rust() {
+        let ys = lv("ys");
+        let want = crate::init::list_recursion::cat_nil(&alpha(), &ys)
+            .unwrap()
+            .all_intro("ys", list(alpha()))
+            .unwrap();
+        let got = cov::cat_nil_cov();
+        assert_genuine(&got);
+        assert_eq!(got.concl(), want.concl());
+    }
+
+    #[test]
+    fn cov_cat_cons_matches_rust() {
+        let (x, xs, ys) = (ev("x"), lv("xs"), lv("ys"));
+        let want = crate::init::list_recursion::cat_cons(&alpha(), &x, &xs, &ys)
+            .unwrap()
+            .all_intro("ys", list(alpha()))
+            .unwrap()
+            .all_intro("xs", list(alpha()))
+            .unwrap()
+            .all_intro("x", alpha())
+            .unwrap();
+        let got = cov::cat_cons_cov();
+        assert_genuine(&got);
+        assert_eq!(got.concl(), want.concl());
+    }
+
+    // -- the NEW theorems: genuine, with the expected conclusions ------------
+
+    #[test]
+    fn cov_cat_nil_r_is_genuine() {
+        // ⊢ ∀xs. cat xs nil = xs  (append's right unit — needs induction).
+        let got = cov::cat_nil_r_cov();
+        assert_genuine(&got);
+        let xs = lv("xs");
+        let expected = cat_app(&alpha(), &xs, &nil(alpha()))
+            .equals(xs.clone())
+            .unwrap()
+            .forall("xs", list(alpha()))
+            .unwrap();
+        assert_eq!(got.concl(), &expected);
+    }
+
+    #[test]
+    fn cov_cat_assoc_is_genuine() {
+        // ⊢ ∀xs ys zs. cat (cat xs ys) zs = cat xs (cat ys zs).
+        let got = cov::cat_assoc_cov();
+        assert_genuine(&got);
+        let (xs, ys, zs) = (lv("xs"), lv("ys"), lv("zs"));
+        let lhs = cat_app(&alpha(), &cat_app(&alpha(), &xs, &ys), &zs);
+        let rhs = cat_app(&alpha(), &xs, &cat_app(&alpha(), &ys, &zs));
+        let expected = lhs
+            .equals(rhs)
+            .unwrap()
+            .forall("zs", list(alpha()))
+            .unwrap()
+            .forall("ys", list(alpha()))
+            .unwrap()
+            .forall("xs", list(alpha()))
+            .unwrap();
+        assert_eq!(got.concl(), &expected);
+    }
+
+    #[test]
+    fn cov_length_cat_is_genuine() {
+        // ⊢ ∀xs ys. length (cat xs ys) = length xs + length ys.
+        let got = cov::length_cat_cov();
+        assert_genuine(&got);
+    }
+
+    #[test]
+    fn cov_cat_cons_singleton_is_genuine() {
+        // ⊢ ∀x xs. cons x xs = cat (cons x nil) xs.
+        let got = cov::cat_cons_singleton_cov();
+        assert_genuine(&got);
+    }
+
+    /// `list_cat[α] xs ys` applied (test helper mirroring the Rust builder).
+    fn cat_app(alpha: &Type, xs: &Term, ys: &Term) -> Term {
+        Term::app(Term::app(list_cat(alpha.clone()), xs.clone()), ys.clone())
     }
 }

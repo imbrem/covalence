@@ -1,0 +1,232 @@
+;; cov — `list` structural theorems over `core` + the `listprim` seam env.
+;;
+;; `list 'a := stream (option 'a) where (finite ∧ contiguous)` is a genuine
+;; subtype; the seam lemmas (the per-constructor element computations, the
+;; `foldr`/`length`/`cat` recursion clauses, constructor freeness) all cross
+;; the `abs`/`rep` boundary AND the `list_foldr` recursion theorem, so they are
+;; imported as Rust-proved GIVENS from `listprim` (the `nat.cov` `rec_holds` /
+;; `set.cov` `setprim` pattern). Here we (1) re-export the seam clauses as
+;; first-class theorems and (2) prove NEW list facts over them — the append
+;; monoid laws and the length homomorphism — by structural induction via the
+;; `list-induct` tactic (the genuine `list_induct` theorem, in `core`).
+;;
+;; Everything is schematic in one element type `'a` (result type `'b` for the
+;; `foldr` clause). `list-induct VAR (#by BASE) (#by STEP)` reduces a `∀l. P l`
+;; goal (`l : list 'a`) to `P nil` and, with the IH `P xs` in context, `P (cons
+;; VAR xs)` over a fresh head `VAR` and tail `xs`.
+
+(#import core)
+(#open core)
+(#import natrec)
+(#open natrec)   ;; for the `+` recursion equations `zero_add` / `succ_add`
+(#import listprim)
+(#open listprim)
+
+;; ============================================================================
+;; Re-exported seam clauses — the per-constructor computations + freeness, as
+;; first-class `list.cov` theorems (each is exactly its `listprim` given,
+;; ∀-closed; the proof just applies it).
+;; ============================================================================
+
+;; ⊢ ∀x xs. index 0 (cons x xs) = some x.
+(#thm index_cons_zero
+  (#concl
+    (forall (x 'a)
+      (forall (xs (list 'a))
+        (= (list.index 0 (list.cons x xs)) (option.some x)))))
+  (#by
+    (intro x xs)
+    (derive (all-elim xs (all-elim x (index_cons_zero))))))
+
+;; ⊢ ∀x xs. head (cons x xs) = some x.
+(#thm head_cons
+  (#concl
+    (forall (x 'a)
+      (forall (xs (list 'a))
+        (= (list.head (list.cons x xs)) (option.some x)))))
+  (#by
+    (intro x xs)
+    (derive (all-elim xs (all-elim x (head_cons))))))
+
+;; ⊢ ∀x xs. tail (cons x xs) = xs.
+(#thm tail_cons
+  (#concl
+    (forall (x 'a)
+      (forall (xs (list 'a))
+        (= (list.tail (list.cons x xs)) xs))))
+  (#by
+    (intro x xs)
+    (derive (all-elim xs (all-elim x (tail_cons))))))
+
+;; ⊢ ∀x xs. ¬(nil = cons x xs).  `nil` and `cons` are distinct constructors.
+(#thm nil_ne_cons
+  (#concl
+    (forall (x 'a)
+      (forall (xs (list 'a))
+        (not (= list.nil (list.cons x xs))))))
+  (#by
+    (intro x xs)
+    (derive (all-elim xs (all-elim x (nil_ne_cons))))))
+
+;; ⊢ ∀x xs y ys. (cons x xs = cons y ys) ⟹ (x = y ∧ xs = ys).  `cons` injective.
+(#thm cons_inj
+  (#concl
+    (forall (x 'a)
+      (forall (xs (list 'a))
+        (forall (y 'a)
+          (forall (ys (list 'a))
+            (==> (= (list.cons x xs) (list.cons y ys))
+                 (and (= x y) (= xs ys))))))))
+  (#by
+    (intro x xs y ys)
+    (derive
+      (all-elim ys (all-elim y (all-elim xs (all-elim x (cons_inj))))))))
+
+;; ============================================================================
+;; `length` / `cat` recursion clauses — re-exported, then NEW facts by
+;; induction.
+;; ============================================================================
+
+;; ⊢ length nil = 0.
+(#thm length_nil
+  (#concl (= (list.length list.nil) 0))
+  (#by (derive (length_nil))))
+
+;; ⊢ ∀x xs. length (cons x xs) = succ (length xs).
+(#thm length_cons
+  (#concl
+    (forall (x 'a)
+      (forall (xs (list 'a))
+        (= (list.length (list.cons x xs)) (succ (list.length xs))))))
+  (#by
+    (intro x xs)
+    (derive (all-elim xs (all-elim x (length_cons))))))
+
+;; ⊢ ∀ys. cat nil ys = ys.  Append's left unit.
+(#thm cat_nil
+  (#concl (forall (ys (list 'a)) (= (list.cat list.nil ys) ys)))
+  (#by
+    (intro ys)
+    (derive (all-elim ys (cat_nil)))))
+
+;; ⊢ ∀x xs ys. cat (cons x xs) ys = cons x (cat xs ys).  Append's `cons` clause.
+(#thm cat_cons
+  (#concl
+    (forall (x 'a)
+      (forall (xs (list 'a))
+        (forall (ys (list 'a))
+          (= (list.cat (list.cons x xs) ys)
+             (list.cons x (list.cat xs ys)))))))
+  (#by
+    (intro x xs ys)
+    (derive (all-elim ys (all-elim xs (all-elim x (cat_cons)))))))
+
+;; ⊢ ∀xs. cat xs nil = xs.  Append's RIGHT unit — NOT a seam given: it needs
+;; induction (the left unit `cat_nil` is definitional, the right unit is the
+;; theorem). nil-case: `cat nil nil = nil` by `cat_nil`. cons-case: `cat (cons
+;; x xs) nil = cons x (cat xs nil) = cons x xs` by `cat_cons` + the IH.
+(#thm cat_nil_r
+  (#concl (forall (xs (list 'a)) (= (list.cat xs list.nil) xs)))
+  (#by
+    (list-induct x
+      (#by (derive (all-elim list.nil (cat_nil))))
+      (#by
+        (rw (all-elim list.nil (all-elim xs (all-elim x (cat_cons)))))
+        (rw (assume (= (list.cat xs list.nil) xs)))
+        (refl)))))
+
+;; ⊢ ∀xs ys zs. cat (cat xs ys) zs = cat xs (cat ys zs).  Append ASSOCIATIVITY —
+;; the heart of "list is the free monoid". Induct on `xs`; both sides peel a
+;; `cons` and the IH closes the tail.
+(#thm cat_assoc
+  (#concl
+    (forall (xs (list 'a))
+      (forall (ys (list 'a))
+        (forall (zs (list 'a))
+          (= (list.cat (list.cat xs ys) zs)
+             (list.cat xs (list.cat ys zs)))))))
+  (#by
+    (list-induct x
+      ;; nil: cat (cat nil ys) zs = cat ys zs = cat nil (cat ys zs).
+      (#by
+        (intro ys zs)
+        (rw (all-elim ys (cat_nil)))
+        (sym)
+        (rw (all-elim (list.cat ys zs) (cat_nil)))
+        (refl))
+      ;; cons x xs: peel `cat (cons x …)` on both sides via `cat_cons`, then
+      ;; the IH equates the now-common tail under `cons x`.
+      ;;   LHS: cat (cat (cons x xs) ys) zs
+      ;;      = cat (cons x (cat xs ys)) zs          (cat_cons x xs ys)
+      ;;      = cons x (cat (cat xs ys) zs)          (cat_cons x (cat xs ys) zs)
+      ;;   RHS: cat (cons x xs) (cat ys zs)
+      ;;      = cons x (cat xs (cat ys zs))          (cat_cons x xs (cat ys zs))
+      ;;   IH:  cat (cat xs ys) zs = cat xs (cat ys zs).
+      (#by
+        (intro ys zs)
+        (rw (all-elim ys (all-elim xs (all-elim x (cat_cons)))))
+        (rw (all-elim zs (all-elim (list.cat xs ys) (all-elim x (cat_cons)))))
+        (rw (all-elim (list.cat ys zs) (all-elim xs (all-elim x (cat_cons)))))
+        (rw (all-elim zs (all-elim ys (assume
+              (forall (ys (list 'a))
+                (forall (zs (list 'a))
+                  (= (list.cat (list.cat xs ys) zs)
+                     (list.cat xs (list.cat ys zs)))))))))
+        (refl)))))
+
+;; ⊢ ∀xs ys. length (cat xs ys) = length xs + length ys.  Length is a MONOID
+;; HOMOMORPHISM (append, nil) → (+, 0). Induct on `xs`.
+(#thm length_cat
+  (#concl
+    (forall (xs (list 'a))
+      (forall (ys (list 'a))
+        (= (list.length (list.cat xs ys))
+           (nat.add (list.length xs) (list.length ys))))))
+  (#by
+    (list-induct x
+      ;; nil: length (cat nil ys) = length ys = 0 + length ys
+      ;;                          = length nil + length ys.
+      (#by
+        (intro ys)
+        (rw (all-elim ys (cat_nil)))
+        (sym)
+        (rw (length_nil))
+        (rw (all-elim (list.length ys) (zero_add)))
+        (refl))
+      ;; cons x xs: length (cat (cons x xs) ys)
+      ;;   = length (cons x (cat xs ys)) = succ (length (cat xs ys))
+      ;;   = succ (length xs + length ys)            (IH)
+      ;;   = succ (length xs) + length ys            (succ_add, reversed)
+      ;;   = length (cons x xs) + length ys.
+      (#by
+        (intro ys)
+        (rw (all-elim ys (all-elim xs (all-elim x (cat_cons)))))
+        (rw (all-elim (list.cat xs ys) (all-elim x (length_cons))))
+        (rw (all-elim ys (assume
+              (forall (ys (list 'a))
+                (= (list.length (list.cat xs ys))
+                   (nat.add (list.length xs) (list.length ys)))))))
+        (sym)
+        (rw (all-elim xs (all-elim x (length_cons))))
+        (rw (all-elim (list.length ys) (all-elim (list.length xs) (succ_add))))
+        (refl)))))
+
+;; ⊢ ∀x xs. cons x xs = cat (cons x nil) xs.  The "singleton append" identity:
+;; prepending is appending a one-element list. Pure rewriting (no induction):
+;; `cat (cons x nil) xs = cons x (cat nil xs) = cons x xs`.
+(#thm cat_cons_singleton
+  (#concl
+    (forall (x 'a)
+      (forall (xs (list 'a))
+        (= (list.cons x xs) (list.cat (list.cons x list.nil) xs)))))
+  (#by
+    (intro x xs)
+    (sym)
+    (rw (all-elim xs (all-elim list.nil (all-elim x (cat_cons)))))
+    (rw (all-elim xs (cat_nil)))
+    (refl)))
+
+(#export
+  index_cons_zero head_cons tail_cons nil_ne_cons cons_inj
+  length_nil length_cons cat_nil cat_cons
+  cat_nil_r cat_assoc length_cat cat_cons_singleton)

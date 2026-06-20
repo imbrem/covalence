@@ -75,6 +75,12 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                 }
                 Ok(Type::spec(defs::option_spec(), vec![parse_type(&ch[1])?]))
             }
+            "list" => {
+                if ch.len() != 2 {
+                    return Err(ScriptError::Syntax("list: expected (list A)".into()));
+                }
+                Ok(Type::spec(defs::list_spec(), vec![parse_type(&ch[1])?]))
+            }
             "result" => {
                 if ch.len() != 3 {
                     return Err(ScriptError::Syntax(

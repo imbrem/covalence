@@ -93,13 +93,17 @@ pub mod recursion;
 pub mod rel;
 pub mod set;
 pub mod stream;
+pub mod tauto;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).
 pub use covalence_core::defs::*;
 
 pub use ext::{TermExt, ThmExt};
-pub use logic::truth;
+// `truth` lives in the foundational `tauto` layer (it must be reachable without
+// loading `logic`, to break the prop-eq → truth → logic cycle); `logic`
+// re-exports it for back-compat.
+pub use tauto::truth;
 
 // ============================================================================
 // Standard-library prelude for `.cov` proof scripts
@@ -123,6 +127,7 @@ use crate::script::{Env, NamedThm, ScriptError, Tactic};
 pub fn library_env(name: &str) -> Option<Env> {
     match name {
         "core" => Some(Env::core()),
+        "tauto" => Some(tauto::cov::env()),
         "logic" => Some(logic::cov::env()),
         "nat" => Some(nat::cov::env()),
         "set" => Some(set::cov::env()),

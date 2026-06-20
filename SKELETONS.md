@@ -244,51 +244,59 @@ it is how unfinished work stays discoverable.
     `existence.rs`, `uniqueness.rs`, `determinacy.rs`, and `recursor.rs`
     (conjunctive IHs / antecedents, componentwise injectivity, nested
     `∃`-witnessing) are partial: `existence` / `uniqueness` handle the general
-    shape but are only *exercised* by `nat`'s ≤1-arg / ≤1-rec-arg cases, while
-    `determinacy::det_case` and `recursor::rec_equation` explicitly **error** on
-    a constructor with ≥2 recursive arguments. A binary-tree or `list`
-    signature is the first real test. The strict
-    `wit`-binder naming discipline (`_wx_` / `_wb_` prefixes, disjoint from a
-    constructor's own binders) is load-bearing — see the `uniqueness.rs` docs.
+    shape, while `determinacy::det_case` and `recursor::rec_equation`
+    explicitly **error** on a constructor with ≥2 recursive arguments. The
+    engine is now exercised by **both** `nat` (kernel-primitive feeders) **and**
+    `list` (derived-theorem feeders, mixed `Param`+`Rec` `cons` constructor —
+    see `init/list_recursion.rs`), so the single-rec-arg paramorphic path is
+    well-tested; a binary-tree (≥2 rec args) signature is still the first test
+    of the conjunctive paths. The strict `wit`-binder naming discipline
+    (`_wx_` / `_wb_` prefixes, disjoint from a constructor's own binders) is
+    load-bearing — see the `uniqueness.rs` docs.
 
   **Lifting to internal HOL (future).** The trait seam exists precisely so the
   proofs can be re-targeted: today `nat` is a kernel primitive, but we may later
   define `nat` from `ind` the standard HOL way (`0`/`SUC` carved out of an
   infinite type via `NUM_REP`), where induction and freeness are **derived
-  theorems**. That presentation supplies the same `Inductive` interface and so
-  drives the same engine — lifting these proofs into internal HOL becomes
-  writing one new `Inductive` impl, not re-deriving the graph route. Keeping
-  every engine entry point generic over `I: Inductive` (never a concrete `nat`)
-  is the standing constraint that keeps this open.
+  theorems**. `list` already demonstrates this seam end-to-end (its `Inductive`
+  impl wraps the *derived* `list_induct` / `cons_inj` / `nil_ne_cons` rather
+  than kernel primitives, driving the same engine unchanged). Lifting `nat`
+  into internal HOL becomes writing one new `Inductive` impl, not re-deriving
+  the graph route. Keeping every engine entry point generic over `I: Inductive`
+  (never a concrete `nat`) is the standing constraint that keeps this open.
 
-- **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`.
-  Only the **`nil`-side computational foundation** is proved so far — the
-  `abs`/`rep` seam (`rep_abs_finite`), the finiteness gate (`finite_const_none`,
-  `finite_nonempty`), element-access unfolding (`index_unfold`), and the empty
-  list facts (`index_nil`, `head_nil`). All are genuine (hypothesis- and
-  oracle-free). Still missing:
-  - **`cons`-side computations** — `index`/`head`/`tail` of `cons x xs`. Each
-    needs `finite (cons-stream)`, a finiteness-*preservation* lemma that rests
-    on `nat` **ordering** theory (`nat_le` successor/predecessor lemmas). That
-    order theory is now developed in `init/nat.rs` (the `le`/`lt` foundation:
-    `le_succ_succ`, `le_zero`, `zero_lt_succ`, `le_total`, `le_trans`, …), so
-    `finite_cons` is unblocked; build it, then the `cons` element lemmas follow
-    the `init::stream` `at_of` pattern.
-  - **`tail_cons` / list extensionality / induction** — `tail (cons x xs) = xs`
-    needs extensionality on the carrier stream (pointwise-equal ⟹ equal),
-    re-discharging finiteness; list induction is the structural-recursion
-    companion.
-  - **Structural recursors `list_foldr` / `list_foldl`** — pinned by Hilbert-ε
-    selector predicates (defined in `defs/list.rs`), so their defining equations
-    (`fr f z nil = z`, `fr f z (cons x xs) = f x (fr f z xs)`, and the left-fold
-    mirror) need a **list recursion theorem**. The target is to obtain it from
-    the generic inductive engine (`init/inductive/`) once its proof layer is
-    generalised and `list`'s induction principle + `cons`/`nil` freeness are
-    derived to feed it — rather than re-deriving the `nat` graph route by hand.
-  - **Ops riding on the recursors** — `length`/`cat`/`filter`/`flatten`
-    (factored through `foldr`) and the pointwise `map`/`take`/`skip`/`repeat`
-    (need the `cons`-side stream computations). No `*_nil`/`*_cons` clauses for
-    any of these yet.
+- **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`
+  + `init/list_recursion.rs`. The **structural core is complete and genuine**
+  (hypothesis- and oracle-free): the `abs`/`rep` selector seam
+  (`pred_const_none` / `pred_cons` / `pred_rep`, `rep_abs_pred`), every
+  per-constructor element computation (`index_{nil,cons_zero,cons_succ}`,
+  `head_{nil,cons}`, `tail_cons`, `index_tail`), **constructor freeness**
+  (`cons_inj`, `nil_ne_cons`), **extensionality / reconstruction** (`list_ext`,
+  `head_index0`, `cons_head_tail`, `nil_from_allnone`, `allnone_from_head_none`),
+  the **list induction principle** (`list_induct`), the **list recursion
+  theorem** (the `ListTheory` `Inductive` adapter driving the generic engine,
+  `init/list_recursion.rs`), and the **`list_foldr` defining equations**
+  (`foldr_holds`: `foldr f z nil = z`, `foldr f z (cons x xs) = f x (foldr f z
+  xs)`, via the paramorphic→catamorphic specialisation + `spec_ax`).
+
+  **Representation note (fixed):** `defs/list.rs`'s selector was strengthened
+  from `finite` to `finite ∧ contiguous` (no interior `none` holes). The old
+  `finite`-only predicate made `nil`/`cons` *non-exhaustive* (a stream
+  `[none, some a, none, …]` was a list reachable by neither), so list induction
+  was *false*; the contiguous predicate matches `docs/type-hierarchy.md` and
+  restores exhaustiveness.
+
+  Still missing (the ops riding on the recursors):
+  - **`list_foldl`** — the left-fold mirror of `foldr_holds`; pinned by its own
+    Hilbert-ε predicate in `defs/list.rs`. Discharge it the same way
+    (`spec_ax` + a recursor witness — `foldl` is *not* a plain catamorphism over
+    the engine's recursor; it threads an accumulator, so expect a more involved
+    witness than `foldr`'s).
+  - **Ops factored through the recursors** — `length`/`cat`/`filter`/`flatten`
+    (defined via `foldr`, so their `*_nil`/`*_cons` clauses now follow from
+    `foldr_holds` by δ-unfolding + the fold equations) and the pointwise
+    `map`/`take`/`skip`/`repeat` (their `*_cons` clauses follow from the
+    `cons`-side stream computations). None proved yet.
 
 - **`covalence-hol` text theory** in `crates/covalence-hol/src/init/char.rs`
   and `crates/covalence-hol/src/init/string.rs` (`char`/`string`/`bytes`).

@@ -86,6 +86,7 @@ pub mod inductive;
 pub mod int;
 pub mod lang;
 pub mod list;
+pub mod list_recursion;
 pub mod logic;
 pub mod monoid;
 pub mod nat;

@@ -167,34 +167,30 @@ immediate follow-on once those types are pinned (don't fork the data shape).
 ### 3.0.2 A model interprets a *syntax*; "M ⊨ T" is a *theorem proved in a logic*
 
 The decoupling (refines §1's "model = …"; full treatment in
-`theories-models-and-logics.md §1`). Two layers sit *below* the signature, and
-they differ in kind:
+`theories-models-and-logics.md §1`). A **logic** bundles two aspects: a
+*language* (a typed grammar — what can be **stated**) and *derivability rules*
+(what can be **proved**). Intuitionistic and classical FOL are two logics over
+the *same language*, related by a language-iso — but we keep language + rules
+bundled in the one `Logic` object rather than reifying a separately-shared syntax
+(asking "same syntax?" by identity would be *evil* — it distinguishes isomorphic
+languages; `theories-models-and-logics.md §1`). Then:
 
-- A **syntax** (e.g. FOL) is a typed grammar — it fixes what a signature can
-  declare and what a formula is, hence what can be **stated**.
-- A **logic over that syntax** (e.g. intuitionistic vs classical FOL) is a
-  derivability relation — it fixes what can be **proved**. *Same syntax, many
-  logics.*
-
-Then:
-
-- A **model `M`** is an **interpretation of the *syntax*** — concrete objects for
-  the signature `S`'s sorts/families/ops. Pure semantics; *nothing about axioms*.
-  It just realizes the vocabulary, indifferent to which logic you reason in.
-- A **theory `T`** is *also over `S`* — `S` + axioms (formulas in the syntax).
+- A **model `M`** is an **interpretation of a logic's *language*** — concrete
+  objects for the signature `S`'s sorts/families/ops. Pure semantics; *nothing
+  about axioms*. It just realizes the vocabulary; models relate by iso-transport.
+- A **theory `T`** is *also over `S`* — `S` + axioms (formulas in the language).
 - **"`M` is a model of `T`" (`M ⊨ T`)** is a **`.thm`** — a proof, **carried out
-  in a *logic* over the shared syntax**, that `M`'s interpretation *satisfies
-  `T`'s axioms*. This is *the* load-bearing statement, and the choice of logic is
-  part of it: a Heyting-valued `M` satisfies the intuitionistic `T`, a Boolean one
-  the classical `T`.
+  in a *logic***, that `M`'s interpretation *satisfies `T`'s axioms*. This is
+  *the* load-bearing statement, and which logic it's proved in is part of it: a
+  Heyting-valued `M` satisfies the intuitionistic `T`, a Boolean one the classical
+  `T`.
 
-So the layers are cleanly separated: **state the vocabulary** (a syntax fixes
-what `.sig`/`.thy` can say), **interpret it** (`.mod` realizes the syntax),
-**state the laws** (`.thy`), **prove the interpretation obeys the laws in a
-logic** (`.thm`, `M ⊨ T`). A model of the signature can perfectly well *fail* a
-given theory — that's a `.thm` that doesn't go through — and may satisfy `T` under
-one logic but not another. The type system makes all of this explicit rather than
-silent. (Seam realization: `Syntax`/`Logic`/`Model` traits,
+So the artifacts separate cleanly: **interpret the vocabulary** (`.mod` realizes
+a logic's language), **state the laws** (`.thy`), **prove the interpretation obeys
+the laws in a logic** (`.thm`, `M ⊨ T`). A model of the signature can perfectly
+well *fail* a given theory — that's a `.thm` that doesn't go through — and may
+satisfy `T` under one logic but not another. The type system makes all of this
+explicit rather than silent. (Seam realization: `Logic` + `Model` traits,
 `theories-models-and-logics.md §1.1`.)
 
 ```scheme

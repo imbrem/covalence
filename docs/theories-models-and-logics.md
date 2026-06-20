@@ -17,30 +17,39 @@
 The three first-class objects, made precise:
 
 ```
-   Syntax      a TYPED GRAMMAR (terms/formulas + KINDS) — fixes what can be STATED
-               (e.g. the syntax of FOL, of HOL, of HOL-ω)
-   Logic       a DERIVABILITY relation OVER a syntax — fixes what can be PROVED
-               (e.g. intuitionistic vs classical FOL — SAME syntax, different ⊢)
+   Logic       a LANGUAGE (typed grammar / type theory — what can be STATED) PLUS
+               derivability rules (what can be PROVED), BUNDLED as one object
+               (e.g. classical FOL, intuitionistic FOL — two logics over the SAME
+                language, related by a language-ISO, not a shared-identity syntax)
    Signature   type constants + TYPE FAMILIES (with KINDS: ty, ty→ty, ty→ty→ty, …)
-               + operation symbols, typed over that type part — written IN a syntax
-   Specification   the laws / axioms over the signature (formulas in the syntax)
+               + operation symbols, typed over that type part — in a logic's language
+   Specification   the laws / axioms over the signature (formulas in the language)
    Theory      = Signature + Specification
-   Model       interprets the SIGNATURE's symbols as objects — an interpretation
-               of the SYNTAX (pure semantics; says nothing about axioms)
-   M ⊨ T       "M is a model of theory T": a PROOF, checked in a LOGIC over the
-               syntax shared by M and T, that M's interpretation satisfies T's spec
+   Model       interprets the SIGNATURE's symbols as objects — an interpretation of
+               the language (pure semantics; no axioms); models related by ISO-TRANSPORT
+   M ⊨ T       "M is a model of theory T": a PROOF, in a LOGIC, that M's
+               interpretation satisfies T's spec
 ```
 
-**Two layers below the signature, and they are different in kind.** A *syntax*
-(e.g. FOL) is a typed grammar — it fixes what a signature can declare and what a
-formula is, hence what can be *stated*. A *logic over that syntax* (e.g.
-intuitionistic vs classical FOL) is a derivability relation — it fixes what can
-be *proved*. The same syntax carries many logics. **A model interprets the
-*syntax*** (it realizes the vocabulary as objects — semantics, indifferent to
-proof rules); **the satisfaction proof `M ⊨ T` is carried out in a *logic* over
-that syntax** (and which logic you pick changes what `M ⊨ T` is even provable —
-a Heyting-valued model satisfies the intuitionistic theory, a Boolean one the
-classical theory).
+**A logic bundles its language and its rules — kept as *internal aspects of one
+object*, deliberately *not* two separately-shared ones.** Conceptually a logic
+has two parts: a *language* (the typed grammar — terms/formulas/kinds — what can
+be *stated*; logicians' "language", `admits` below is its well-typedness
+judgment) and a *derivability relation* (the rules — what can be *proved*).
+Intuitionistic and classical FOL share a language and differ only in `⊢`. **But
+we do *not* reify the language as a separate object that logics reference by
+identity** — "do `L₁` and `L₂` have *the same* language?" asked as an *equality*
+distinguishes isomorphic languages and is **evil** (non-invariant), cutting
+against this doc's own "always reach for isomorphic models". So: language + rules
+**bundle into the `Logic` object**, and "these two logics share a language" is a
+*language-isomorphism* (a morphism up to iso — for int/classical FOL, the identity
+translation plus the `LEM` extension), never an identity. **A model interprets a
+logic's language** (semantics, indifferent to the rules) and models relate by
+**iso-transport**; **`M ⊨ T` is proved in a logic** (which logic is part of the
+claim — a Heyting-valued `M` satisfies the intuitionistic `T`, a Boolean one the
+classical `T`). This is still the Isabelle/Pure shape — a substrate logic (HOL-ω,
+Pure's typed λ-calculus with `≡`) carrying object logics (FOL/PA/…) that add `⊢` —
+just without an evil shared-syntax identity between them.
 
 The decisive feature: **the signature is higher-kinded.** A signature *opens*
 with its type part — type constants of kind `ty`, and **type families** of kind
@@ -66,38 +75,36 @@ proved morphisms*: signature ≈ a *signature*/*class*, model ≈ a
 *structure*/*instance*, a definition or proof written against the theory ≈ a
 *functor* (parametric in the model).
 
-### 1.1 Three seams: `Syntax` (statability), `Logic` (derivability), `Model` (interpretation)
+### 1.1 Two seams: `Logic` (language + rules, bundled) and `Model` (interpretation)
 
-This was *one* `Logic` trait until the syntax-vs-logic split (§1) showed it was
-conflating three jobs. They separate cleanly:
+The single `Logic` object bundles its language and its derivability rules (§1 —
+splitting them into a separately-*shared* syntax object would be evil). A `Model`
+is separate, because a model is a genuinely different kind of thing — a structure,
+related to logics by `⊨` and to other models by iso-transport, never quotiented
+by identity. So **two** seams, not three:
 
-- **`Syntax` fixes what can be *stated*.** A typed grammar (FOL, HOL, HOL-ω). Its
-  job is `admits`: does this grammar's kinds reach this signature? This is the
-  statability axis (§3.1) made executable — a syntax *refuses* a signature it
-  cannot express (e.g. FOL refuses a `ty→ty` family).
-- **`Logic` fixes what can be *proved*.** A derivability relation *over* a syntax;
-  the *same* syntax carries many logics (intuitionistic vs classical FOL). Its job
-  is the proof-side dispatch — the handler set / `Tactic`s — which is genuinely
-  *varied per logic* (rewriting, induction, reduction, LEM-or-not differ).
-- **`Model` fixes what the symbols *mean*.** An interpretation of the *syntax*: it
-  realizes each signature symbol as a concrete object, and lowers surface
-  literals into its carrier. Pure semantics — it says nothing about axioms.
+- **`Logic` = language + rules.** `admits` is the *language* aspect (statability,
+  §3.1 — does its grammar's kinds reach this signature? FOL *refuses* a `ty→ty`
+  family). `handlers` is the *rules* aspect (the proof-side dispatch — rewriting,
+  induction, reduction, LEM-or-not — genuinely *varied per logic*). These are two
+  *aspects of one object*; "same language" across logics is a morphism up to iso,
+  not a field they share.
+- **`Model` = meaning.** An interpretation of a logic's *language*: it realizes
+  each signature symbol as a concrete object and lowers surface literals into its
+  carrier. Pure semantics — says nothing about axioms.
 
 ```rust
-/// SYNTAX — a typed grammar. Fixes statability. (FOL, HOL, HOL-ω.)
-trait Syntax {
-    fn admits(&self, sig: &Signature) -> Result<(), Unstatable>;   // §3.1
-}
-
-/// LOGIC over a syntax — a derivability relation. Fixes provability.
-/// Same syntax, many logics (intuitionistic vs classical FOL).
+/// LOGIC — bundles a LANGUAGE (a type theory: what can be STATED) and DERIVABILITY
+/// rules (what can be PROVED) as ONE object. Language + rules are internal aspects,
+/// NOT two shared objects — "same language?" by identity would be evil.
 trait Logic {
-    fn syntax(&self) -> &dyn Syntax;
-    fn handlers(&self) -> HandlerSet;       // the proof-side dispatch (per logic)
+    fn admits(&self, sig: &Signature) -> Result<(), Unstatable>;   // language aspect (§3.1)
+    fn handlers(&self) -> HandlerSet;                              // rules aspect (per logic)
 }
 
-/// MODEL — interprets a signature's symbols as objects (semantics; no axioms).
-/// Interpreting the SYNTAX; literal-lifting is the model realizing literals.
+/// MODEL — interprets a signature's symbols as objects (semantics; no axioms);
+/// models relate to each other by ISO-TRANSPORT. Literal-lifting is the model
+/// realizing surface literals into its carrier.
 trait Model {
     fn interpret(&self, sig: &Signature) -> Result<Interpretation, …>;
     /// --- LITERAL LIFTING (model-relative; each may FAIL) ---
@@ -109,12 +116,14 @@ trait Model {
 }
 ```
 
-A **model** is then `(a Model interpretation over a Syntax)` alone — *not* the
-satisfaction proof. **`M ⊨ T`** is a separate object: a proof, in some **`Logic`
-over that syntax**, that `M`'s interpretation satisfies `T`'s spec
-(`surface-compiler.md §3.0.2`; it is a `.thm`). So the four collaborate as:
-`Syntax` gates *statability*, `Model` supplies *meaning*, `Logic` supplies
-*proof power*, and `M ⊨ T` is the theorem that ties a model to a theory.
+A **model** is `(a Model interpretation over a Logic's language)` alone — *not*
+the satisfaction proof. **`M ⊨ T`** is a separate object: a proof, **in a
+`Logic`**, that `M`'s interpretation satisfies `T`'s spec (`surface-compiler.md
+§3.0.2`; it is a `.thm`, and which logic it's proved in is part of the claim). So
+the seams collaborate as: `Logic` gates *statability* and supplies *proof power*,
+`Model` supplies *meaning*, and `M ⊨ T` is the theorem that ties a model to a
+theory. (This is what Track 1 built: its `Logic` bundles `nat_model()` =
+interpret + handlers, with no separate syntax object.)
 
 **Literal lifting is a `Model` method — model-relative and fallible.** The
 surface literal `3` is not one fixed kernel term; the *model* decides how to lower
@@ -126,10 +135,11 @@ unit.nil (cons unit.nil nil))`); for a reified-SOA model it is the object numera
 diagnostic, not a silent coercion. (A **Nat** literal is exactly a non-negative
 **Int** literal, so there is a single `lift_int`; string/byte are the same shape.)
 This is the `covalence-pure` literal-as-lifted-observation mechanism
-(`covalence-pure.md §3`) surfaced as a `Model` responsibility. This whole
-three-seam split is the Rust-level realization of the syntax/logic/theory/model
-architecture, and the substrate the HOL-ω migration slots into (HOL-ω is a new
-`Syntax` with a richer `admits`, *reusing* the existing `Logic`/`Model` seams).
+(`covalence-pure.md §3`) surfaced as a `Model` responsibility. This
+`Logic`+`Model` two-seam split is the Rust-level realization of the
+logic/theory/model architecture, and the substrate the HOL-ω migration slots into
+(HOL-ω is a new `Logic` whose bundled language has a richer `admits`, *reusing*
+the existing `Model` seam).
 
 ---
 

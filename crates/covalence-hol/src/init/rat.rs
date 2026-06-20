@@ -162,16 +162,15 @@ fn axiom(t: Term) -> Thm {
 }
 
 // ============================================================================
-// Postulated `int` facts (pending `int` proofs)
+// `int` facts the quotient theory consumes — now **proved in `init::int`**
 // ============================================================================
 //
-// The `rat` quotient theory needs two `int` facts that `init::int` does not
-// yet prove. We **postulate them here** (self-flagged via `axiom`, exactly
-// like the `int` ordered-ring postulates) so the `rat` derivations that
-// consume them are real proofs *modulo* these leaves; when `init::int`
-// proves them, these two stubs are replaced by calls to the `int` versions
-// and every `rat` theorem built on them becomes genuine, with no change to
-// the `rat` public surface. **TODO: relocate to / discharge in `init::int`.**
+// `rat_rel_trans` cancels the common strictly-positive denominator with two
+// `int` facts: right-cancellation by a nonzero factor and positivity of the
+// `int.pos` denominators. Both used to be postulated here (self-flagged via
+// `axiom`); they are now **genuine theorems** discharged in [`init::int`]
+// ([`int::int_mul_rcancel`] / [`int::int_pos_nonzero`]) from the proved
+// ordered-ring/order theory, so the thin re-exports below carry no hypothesis.
 
 /// A free `int` variable.
 fn ivar(name: &str) -> Term {
@@ -183,44 +182,16 @@ fn izero() -> Term {
     Term::int_lit(0i128)
 }
 
-/// **Postulated.** `⊢ ∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` — `int`
-/// right-cancellation by a nonzero factor (the integers are an integral
-/// domain). Needed to cancel the common positive denominator in
-/// [`rat_rel_trans`]. *To be discharged in `init::int`.*
+/// `⊢ ∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` — `int` integral-domain
+/// right-cancellation, **proved** in [`int::int_mul_rcancel`].
 fn int_mul_rcancel() -> Thm {
-    let (x, y, d) = (ivar("x"), ivar("y"), ivar("d"));
-    let neq = d
-        .clone()
-        .equals(izero())
-        .expect("int_mul_rcancel: d=0")
-        .not()
-        .expect("¬");
-    let prod_eq = imul(x.clone(), d.clone())
-        .equals(imul(y.clone(), d.clone()))
-        .expect("int_mul_rcancel: x·d=y·d");
-    let concl = x.clone().equals(y.clone()).expect("int_mul_rcancel: x=y");
-    let body = neq
-        .imp(prod_eq.imp(concl).expect("int_mul_rcancel inner"))
-        .expect("int_mul_rcancel");
-    let mut t = body;
-    for name in ["x", "y", "d"].iter().rev() {
-        t = t.forall(name, Type::int()).expect("int_mul_rcancel: ∀");
-    }
-    axiom(t)
+    int::int_mul_rcancel()
 }
 
-/// **Postulated.** `⊢ ∀p. ¬(rep p = 0)` for `p : int.pos` — the strictly-
-/// positive integers (the `rat` denominators) are nonzero. *To be discharged
-/// in `init::int` once `int.pos` positivity is available.*
+/// `⊢ ∀p:int.pos. ¬(rep p = 0)` — positive denominators are nonzero,
+/// **proved** in [`int::int_pos_nonzero`].
 fn int_pos_nonzero() -> Thm {
-    let p = Term::free("p", int_pos_ty());
-    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
-    let body = Term::app(rep, p.clone())
-        .equals(izero())
-        .expect("int_pos_nonzero: rep p = 0")
-        .not()
-        .expect("¬");
-    axiom(body.forall("p", int_pos_ty()).expect("int_pos_nonzero: ∀"))
+    int::int_pos_nonzero()
 }
 
 // ============================================================================
@@ -688,32 +659,17 @@ fn imul_cong(ea: Thm, eb: Thm) -> Result<Thm> {
     Thm::refl(int::int_mul())?.cong_app(ea)?.cong_app(eb)
 }
 
-/// **Postulated.** `⊢ ∀a b:int.pos. rep(to_pos(rep a · rep b)) = rep a · rep b`
-/// — products of positive denominators round-trip through `int.pos`.
-/// *To be discharged in `init::int`* (positivity of products of positives).
+/// `⊢ ∀a b:int.pos. rep(to_pos(rep a · rep b)) = rep a · rep b` — products of
+/// positive denominators round-trip through `int.pos`, **proved** in
+/// [`int::int_pos_prod_rt`] (`0 < rep a · rep b`, so the wrapper is faithful).
 fn pos_prod_rt() -> Thm {
-    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
-    let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
-    let prod = imul(
-        Term::app(rep.clone(), a.clone()),
-        Term::app(rep.clone(), b.clone()),
-    );
-    let lhs = Term::app(rep, to_pos(prod.clone()));
-    let body = lhs.equals(prod).expect("pos_prod_rt body");
-    let t = body
-        .forall("b", int_pos_ty())
-        .and_then(|t| t.forall("a", int_pos_ty()))
-        .expect("pos_prod_rt: ∀");
-    axiom(t)
+    int::int_pos_prod_rt()
 }
 
-/// **Postulated.** `⊢ rep(one_pos) = 1` — the canonical denominator `1`
-/// round-trips. *To be discharged in `init::int`* (`0 < 1`, so `to_pos 1`
-/// is a genuine `int.pos` wrapping of `1`).
+/// `⊢ rep(one_pos) = 1` — the canonical denominator `1` round-trips,
+/// **proved** in [`int::int_pos_one_rt`] (`0 < 1`).
 fn one_pos_rt() -> Thm {
-    let rep = Term::spec_rep(int_pos_spec(), Vec::new());
-    let lhs = Term::app(rep, one_pos());
-    axiom(lhs.equals(Term::int_lit(1i128)).expect("one_pos_rt"))
+    int::int_pos_one_rt()
 }
 
 /// `⊢ rep(to_pos(den x · den y)) = den x · den y` — [`pos_prod_rt`] at the
@@ -2745,14 +2701,15 @@ mod tests {
     }
 
     #[test]
-    fn rat_rel_trans_is_proved_modulo_int_postulates() {
-        // trans is now a real derivation (not self-flagged): its hypotheses
-        // are the postulated `int` leaves, not the conclusion itself.
+    fn rat_rel_trans_is_genuine() {
+        // trans is now a fully genuine (hypothesis-free) theorem: the `int`
+        // facts it cancels with (`int_mul_rcancel` / `int_pos_nonzero`) are
+        // themselves proved in `init::int`, so no postulate leaks through.
         let t = rat_rel_trans();
         assert!(t.concl().type_of().unwrap().is_bool());
         assert!(
-            !t.hyps().iter().any(|h| h == t.concl()),
-            "trans is derived, so does not carry itself as a hypothesis"
+            t.hyps().is_empty(),
+            "rat_rel_trans is hypothesis-free now that the int facts are proved"
         );
         // Shape: ∀p q r. rat_rel p q ⟹ rat_rel q r ⟹ rat_rel p r.
         let (p, q, r) = (
@@ -2770,8 +2727,6 @@ mod tests {
             .imp(rel_app(&q, &r).imp(rel_app(&p, &r)).unwrap())
             .unwrap();
         assert_eq!(inst.concl(), &expected);
-        // All hypotheses are bool (the postulated int facts).
-        assert!(t.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
     }
 
     #[test]

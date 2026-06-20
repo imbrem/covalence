@@ -15,16 +15,17 @@ index](../../../../SKELETONS.md).
   are componentwise on representatives, so the two representative pairs are
   provably equal (numerator + denominator each by the proved `int`
   commutativity facts) and equal representatives lift to equal classes by
-  congruence under `mkRat`. `rat_rel_trans` is now **proved too** — the
-  Grothendieck cross-multiplication cancellation argument — *modulo* two
-  **postulated `int` facts** (stubbed in `init::rat` via `axiom`, **to be
-  relocated to / discharged in `init::int`**, now that the `int` ordered ring
-  is fully proved both are derivable: cancellation from `lt_mul_pos` +
-  `lt_trichotomy`, nonzero-positivity from the `int.pos` carving predicate):
-  - `int_mul_rcancel` — `∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` (`int` is an
-    integral domain; right-cancellation by a nonzero factor).
-  - `int_pos_nonzero` — `∀p:int.pos. ¬(rep p = 0)` (positive denominators
-    are nonzero).
+  congruence under `mkRat`. `rat_rel_trans` is now **fully proved** — the
+  Grothendieck cross-multiplication cancellation argument, with **no remaining
+  postulate**: the two `int` facts it cancels with are now **genuine theorems
+  in `init::int`** (`init::rat` re-exports them via thin delegating helpers):
+  - `int::int_mul_rcancel` — `∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` (`int`
+    is an integral domain). **Proved** from the order theory: trichotomy splits
+    `x=y` off, `lt_mul_pos` rules out the strict cases (the `d<0` case flips the
+    sign via the new `mul_neg_r` / `lt_neg_swap` / `neg_unique` lemmas).
+  - `int::int_pos_nonzero` — `∀p:int.pos. ¬(rep p = 0)`. **Proved** from the
+    new `int::int_pos_pos` (`0 < rep p`, via the kernel subtype back-rule with
+    the witness `1`) + `lt_irrefl`.
 
   So `rat_rel` is now a full equivalence and `quotient::class_intro` /
   `recon` are available for the remaining `rat` axioms.
@@ -34,10 +35,12 @@ index](../../../../SKELETONS.md).
   per-op computation rules `add_class`/`mul_class` + `add_mk`/`mul_mk` +
   `*_via_components`, the well-definedness lemmas `add_pair_cong` (distrib +
   interchange) / `mul_pair_cong` (interchange), `rel_of_pairs` (prod-
-  projection bridge), and `imul_interchange`. It rests on two postulated
-  `int.pos` round-trips for the `to_pos` denominators (**to discharge in
-  `init::int`**): `pos_prod_rt` (`rep(to_pos(rep a · rep b)) = rep a · rep b`)
-  and `one_pos_rt` (`rep(one_pos) = 1`).
+  projection bridge), and `imul_interchange`. The two `int.pos` round-trips
+  for the `to_pos` denominators are now **proved in `init::int`** (re-exported
+  by thin `init::rat` helpers): `int::int_pos_prod_rt`
+  (`rep(to_pos(rep a · rep b)) = rep a · rep b`, via `spec_rep_abs_fwd` +
+  `int_pos_prod_pos`) and `int::int_pos_one_rt` (`rep(one_pos) = 1`, via
+  `spec_rep_abs_fwd` at `1` with `0 < 1`).
 
   **Proved** through that machinery (over the operations `rat_zero`/`rat_one`/
   `rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/`rat_div`/`rat_lt`, all

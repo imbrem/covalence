@@ -2241,23 +2241,173 @@ fn lt_irrefl_impl() -> Result<Thm> {
         .all_intro("a", rat())
 }
 
-/// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — transitivity.
-pub fn lt_trans() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b c. a < b ⟹ b < c ⟹ a < c` — **proved** by lifting to the
+    /// `int` cross-multiplication comparisons. With `fa·db < fb·da` and
+    /// `fb·dc < fc·db` (`db`,`da`,`dc` the positive denominators), scale the
+    /// first by `dc`, the second by `da`, reshuffle (`prove_imul_eq`) so both
+    /// read `(…)·db`, chain by `int::lt_trans`, then cancel `db`
+    /// (`int::lt_mul_pos_iff`) to land on `fa·dc < fc·da`.
+    pub fn lt_trans() -> Thm {
+        lt_trans_impl().expect("rat::lt_trans")
+    }
+}
+fn lt_trans_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
-    let inner = rlt(b.clone(), c.clone())
-        .imp(rlt(a.clone(), c))
-        .expect("lt_trans inner");
-    let body = rlt(a, b).imp(inner).expect("lt_trans");
-    axiom(forall_rat(&["a", "b", "c"], body))
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    // int numerator / (positive) denominator components.
+    let (fa, da) = (rfst(&a), den(&rep_pair(a.clone())));
+    let (fb, db) = (rfst(&b), den(&rep_pair(b.clone())));
+    let (fc, dc) = (rfst(&c), den(&rep_pair(c.clone())));
+
+    // ratLt a b = int.lt (fa·db)(fb·da), etc.
+    let dab = lt_via_components(&ra, &rb)?;
+    let dbc = lt_via_components(&rb, &rc)?;
+    let dac = lt_via_components(&ra, &rc)?;
+
+    let (hab, hbc) = (rlt(a.clone(), b.clone()), rlt(b.clone(), c.clone()));
+    let h1 = dab.eq_mp(Thm::assume(hab.clone())?)?; // fa·db < fb·da
+    let h2 = dbc.eq_mp(Thm::assume(hbc.clone())?)?; // fb·dc < fc·db
+
+    // positivity of the three denominators.
+    let pos_da = int::int_pos_pos().all_elim(rden(&a))?; // 0 < da
+    let pos_db = int::int_pos_pos().all_elim(rden(&b))?; // 0 < db
+    let pos_dc = int::int_pos_pos().all_elim(rden(&c))?; // 0 < dc
+
+    // Scale h1 by dc>0: (fa·db)·dc < (fb·da)·dc.
+    let s1 = int::lt_mul_pos()
+        .all_elim(imul(fa.clone(), db.clone()))?
+        .all_elim(imul(fb.clone(), da.clone()))?
+        .all_elim(dc.clone())?
+        .imp_elim(pos_dc.clone())?
+        .imp_elim(h1)?;
+    // Scale h2 by da>0: (fb·dc)·da < (fc·db)·da.
+    let s2 = int::lt_mul_pos()
+        .all_elim(imul(fb.clone(), dc.clone()))?
+        .all_elim(imul(fc.clone(), db.clone()))?
+        .all_elim(da.clone())?
+        .imp_elim(pos_da.clone())?
+        .imp_elim(h2)?;
+
+    // Reshuffle both into `(…)·db` form.
+    //   (fa·db)·dc = (fa·dc)·db ;  (fb·da)·dc = (fb·dc)·da
+    let r1l = int::prove_imul_eq(&imul(imul(fa.clone(), db.clone()), dc.clone()), &imul(imul(fa.clone(), dc.clone()), db.clone()))?;
+    let r1r = int::prove_imul_eq(&imul(imul(fb.clone(), da.clone()), dc.clone()), &imul(imul(fb.clone(), dc.clone()), da.clone()))?;
+    let s1n = s1.rewrite(&r1l)?.rewrite(&r1r)?; // (fa·dc)·db < (fb·dc)·da
+    //   (fc·db)·da = (fc·da)·db
+    let r2r = int::prove_imul_eq(&imul(imul(fc.clone(), db.clone()), da.clone()), &imul(imul(fc.clone(), da.clone()), db.clone()))?;
+    let s2n = s2.rewrite(&r2r)?; // (fb·dc)·da < (fc·da)·db
+
+    // Chain: (fa·dc)·db < (fc·da)·db.
+    let chained = int::lt_trans()
+        .all_elim(imul(imul(fa.clone(), dc.clone()), db.clone()))?
+        .all_elim(imul(imul(fb.clone(), dc.clone()), da.clone()))?
+        .all_elim(imul(imul(fc.clone(), da.clone()), db.clone()))?
+        .imp_elim(s1n)?
+        .imp_elim(s2n)?; // (fa·dc)·db < (fc·da)·db
+
+    // Cancel db>0: fa·dc < fc·da.
+    let cancelled = int::lt_mul_pos_iff()
+        .all_elim(imul(fa.clone(), dc.clone()))?
+        .all_elim(imul(fc.clone(), da.clone()))?
+        .all_elim(db.clone())?
+        .imp_elim(pos_db)?
+        .eq_mp(chained)?; // fa·dc < fc·da
+
+    dac.sym()?
+        .eq_mp(cancelled)? // ratLt a c
+        .imp_intro(&hbc)?
+        .imp_intro(&hab)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
 }
 
-/// `⊢ ∀a b. a < b ∨ a = b ∨ b < a` — trichotomy (totality).
-pub fn lt_trichotomy() -> Thm {
+cached_thm! {
+    /// `⊢ ∀a b. a < b ∨ a = b ∨ b < a` — **proved**. `int::lt_trichotomy` on
+    /// the cross-products `(fa·db, fb·da)` gives the three cases; map `<`/`>`
+    /// back through [`lt_via_components`] and the middle `=` case through the
+    /// quotient (`rel_of_pairs` + `class_intro` lifts `fa·db = fb·da` to
+    /// `a = b`).
+    pub fn lt_trichotomy() -> Thm {
+        lt_trichotomy_impl().expect("rat::lt_trichotomy")
+    }
+}
+fn lt_trichotomy_impl() -> Result<Thm> {
     let (a, b) = (rvar("a"), rvar("b"));
-    let eq = a.clone().equals(b.clone()).expect("trichotomy: a = b");
-    let tail = eq.or(rlt(b.clone(), a.clone())).expect("trichotomy tail");
-    let body = rlt(a, b).or(tail).expect("trichotomy");
-    axiom(forall_rat(&["a", "b"], body))
+    let (ra, rb) = (recon_mk(&a)?, recon_mk(&b)?);
+    let (fa, da_pos) = (rfst(&a), rden(&a)); // fa : int, da_pos : int.pos
+    let (fb, db_pos) = (rfst(&b), rden(&b));
+    let (da, db) = (den(&rep_pair(a.clone())), den(&rep_pair(b.clone()))); // rep da_pos, rep db_pos
+
+    let x = imul(fa.clone(), db.clone()); // fa·db
+    let y = imul(fb.clone(), da.clone()); // fb·da
+
+    // int trichotomy on (x, y): (x<y) ∨ (x=y) ∨ (y<x).
+    let tri = int::lt_trichotomy().all_elim(x.clone())?.all_elim(y.clone())?;
+
+    let dab = lt_via_components(&ra, &rb)?; // ratLt a b = int.lt x y
+    let dba = lt_via_components(&rb, &ra)?; // ratLt b a = int.lt y x
+
+    // target conclusion shape.
+    let eq_ab = a.clone().equals(b.clone())?;
+    let goal = rlt(a.clone(), b.clone()).or(eq_ab.clone().or(rlt(b.clone(), a.clone()))?)?;
+
+    // disjunct 1: x<y ⟹ a<b ⟹ goal.
+    let xlty = lt_via_int(&x, &y);
+    let br1 = dab
+        .sym()?
+        .eq_mp(Thm::assume(xlty.clone())?)? // {x<y} ⊢ ratLt a b
+        .or_intro_l(eq_ab.clone().or(rlt(b.clone(), a.clone()))?)?
+        .imp_intro(&xlty)?;
+    // disjunct 3: y<x ⟹ b<a ⟹ goal.
+    let yltx = lt_via_int(&y, &x);
+    let br3 = {
+        let ba = dba.sym()?.eq_mp(Thm::assume(yltx.clone())?)?; // ratLt b a
+        ba.or_intro_r(eq_ab.clone())? // (a=b) ∨ (b<a)
+            .or_intro_r(rlt(a.clone(), b.clone()))? // a<b ∨ ((a=b) ∨ (b<a))
+            .imp_intro(&yltx)?
+    };
+    // disjunct 2: x=y ⟹ a=b ⟹ goal.
+    let xeqy = x.clone().equals(y.clone())?;
+    let br2 = {
+        // x=y is `fa·db = fb·da`; lift to `rat_rel (ip fa da_pos)(ip fb db_pos)`.
+        let g = Thm::assume(xeqy.clone())?;
+        let rel = rel_of_pairs(&fa, &da_pos, &fb, &db_pos, g)?; // rat_rel (ip fa da_pos)(ip fb db_pos)
+        let cls = crate::init::quotient::class_intro(
+            &rat_spec(),
+            &[],
+            &ip_pair(),
+            &rat_rel_symm(),
+            &rat_rel_trans(),
+            rel,
+        )?; // mk_rat(ip fa da_pos) = mk_rat(ip fb db_pos)
+        // a = mk_rat(ip fa da_pos) = mk_rat(ip fb db_pos) = b.
+        let a_eq_b = ra.clone().trans(cls)?.trans(rb.clone().sym()?)?; // {x=y} ⊢ a=b
+        a_eq_b
+            .or_intro_l(rlt(b.clone(), a.clone()))? // (a=b) ∨ (b<a)
+            .or_intro_r(rlt(a.clone(), b.clone()))? // a<b ∨ …
+            .imp_intro(&xeqy)?
+    };
+
+    // Combine via the int trichotomy ∨-elim.
+    let tail = tri
+        .concl()
+        .as_app()
+        .ok_or_else(|| Error::ConnectiveRule("lt_trichotomy: ∨ shape".into()))?
+        .1
+        .clone(); // (x=y) ∨ (y<x)
+    let tail_thm = Thm::assume(tail.clone())?
+        .or_elim(br2, br3)?
+        .imp_intro(&tail)?;
+    tri.or_elim(br1, tail_thm)? // ⊢ goal
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// `int.lt a b` term-builder (for trichotomy disjunct shapes).
+fn lt_via_int(a: &Term, b: &Term) -> Term {
+    Term::app(Term::app(int::int_lt(), a.clone()), b.clone())
 }
 
 /// `⊢ ∀a b. (a ≤ b) = (a < b ∨ a = b)` — `≤` in terms of `<`.
@@ -2985,9 +3135,11 @@ mod tests {
 
     #[test]
     fn order_axioms_are_well_typed_and_self_flagged() {
-        // Still-postulated order axioms (lt_irrefl is now proved — see
-        // lt_irrefl_is_genuine).
-        for ax in [lt_trans(), lt_trichotomy(), le_def()] {
+        // `le_def` is the last still-postulated order axiom (it *defines* the
+        // declaration-only kernel `ratLe`); `lt_irrefl`/`zero_lt_one`/
+        // `lt_trans`/`lt_trichotomy` are all proved now (see their genuine
+        // tests).
+        for ax in [le_def()] {
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(ax.hyps().iter().any(|h| h == ax.concl()));
         }
@@ -3112,6 +3264,41 @@ mod tests {
         let t = zero_lt_one();
         assert!(t.hyps().is_empty(), "rat::zero_lt_one is proved");
         assert_eq!(t.concl(), &rlt(rat_zero(), rat_one()));
+    }
+
+    #[test]
+    fn lt_trichotomy_is_genuine() {
+        let (a, b) = (rvar("a"), rvar("b"));
+        let t = lt_trichotomy();
+        assert!(t.hyps().is_empty(), "rat::lt_trichotomy is proved");
+        let inst = t.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap();
+        let expected = rlt(a.clone(), b.clone())
+            .or(a
+                .clone()
+                .equals(b.clone())
+                .unwrap()
+                .or(rlt(b.clone(), a.clone()))
+                .unwrap())
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+    }
+
+    #[test]
+    fn lt_trans_is_genuine() {
+        let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+        let t = lt_trans();
+        assert!(t.hyps().is_empty(), "rat::lt_trans is proved");
+        let inst = t
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap()
+            .all_elim(c.clone())
+            .unwrap();
+        let expected = rlt(a.clone(), b.clone())
+            .imp(rlt(b, c.clone()).imp(rlt(a, c)).unwrap())
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
     }
 
     #[test]

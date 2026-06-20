@@ -63,16 +63,23 @@ index](../../../../SKELETONS.md).
   (MK-component form). `zero_lt_one` is **proved** through this stack
   (`0 = MK 0 1`, `1 = MK 1 1`, lift to `int.lt 0 1`).
 
+  **Order axioms — `zero_lt_one`/`lt_trans`/`lt_trichotomy` now proved**
+  through the lifting machinery above: `lt_trans` scales the two cross-product
+  inequalities by the opposite denominators, chains via `int::lt_trans`, and
+  cancels the common positive factor; `lt_trichotomy` runs `int::lt_trichotomy`
+  on the cross-products and maps the middle `=` case back through the quotient
+  (`rel_of_pairs` + `class_intro`).
+
   **Still postulated** via the module's `axiom` helper:
   - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`), realisable via
     the defined `rat_inv` (sign-normalised so the denominator stays positive).
-  - The order axioms `lt_trans`/`lt_trichotomy`/`le_def`. `le_def` is
-    definitional (pins the opaque, declaration-only kernel `ratLe`); the other
-    two unfold `ratLt` to the `int` comparison on cross-products and lift
-    through the now-built order machinery (the `int` order theory they lean on
-    — `lt_trans`/`lt_trichotomy`/`lt_mul_pos`/`lt_mul_pos_iff` — is fully
-    proved; the remaining work is the per-axiom rat-quotient lift, modelled on
-    `zero_lt_one`). (The linear-order toolkit
+  - `le_def` is the **last order postulate**: it is *definitional* — it pins
+    the meaning of the **declaration-only** kernel `ratLe` (`defs/rat.rs` ships
+    `ratLe` with `tm: None`, unlike `int.le` which carries a body), so there is
+    nothing to prove it *from*; it is the conservative defining equation. To
+    make it a genuine `delta`/`define` theorem one would have to give `ratLe`
+    a representative-level body in the kernel catalogue (and re-thread `real`,
+    which consumes `ratLe`). (The linear-order toolkit
     `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/`le_antisym`/
     `le_total`/`not_one_le_zero` is **not** postulated — it is *derived* from
     `le_def` + the strict-order facts.)

@@ -46,6 +46,41 @@ proved morphisms*: signature ≈ a *signature*/*class*, model ≈ a
 *structure*/*instance*, a definition or proof written against the theory ≈ a
 *functor* (parametric in the model).
 
+### 1.1 The `Logic` trait — an interpreter for *signatures*
+
+The implementation seam (planned), analogous to today's `Tactic`:
+
+- **`Tactic` interprets *proofs*.** Proof steps are *varied per logic* — rewriting,
+  unification, induction, reduction differ — so they're handler-dispatched
+  (`surface-compiler.md §2`, the effect system).
+- **`Logic` interprets *signatures*.** A signature (type constants + type families
+  + operations) is comparatively *uniform and structural*: given a kind-`ty`
+  carrier, a `ty→ty` family, and operation symbols, a `Logic` knows how to realize
+  them as *its own* types/terms — i.e. it is the "translate the signature into `L`"
+  half of a **model** (§1). So `Logic` is a `Tactic`-shaped trait whose job is
+  *signature interpretation*, not proof replay.
+
+```rust
+trait Logic {
+    /// Can this logic express this signature's kinds + the spec's order? (§3.1)
+    fn admits(&self, sig: &Signature) -> Result<(), Unstatable>;
+    /// Realize the signature's types/families/ops as objects in this logic —
+    /// the interpretation half of a Model. (Proof obligations that the
+    /// realization satisfies the spec are discharged separately, via Tactic.)
+    fn interpret(&self, sig: &Signature) -> Result<Interpretation, …>;
+    /// The handler set this logic installs (the proof-side dispatch).
+    fn handlers(&self) -> HandlerSet;
+}
+```
+
+The clean split: **`Logic` = signature interpreter (structural, fairly uniform);
+`Tactic`/`HandlerSet` = proof interpreter (varied per logic).** `admits` is the
+statability axis (§3.1) made executable — a logic *refuses* a signature it can't
+express. A **model** is then `(a Logic, the Interpretation it produced, a
+spec-satisfaction proof)`. This is the Rust-level realization of the
+signature/theory/model architecture, and the substrate the HOL-ω migration slots
+into (HOL-ω is another `Logic` impl with a richer `admits`).
+
 ---
 
 ## 2. Many models of one theory **within one logic** (the primary concept)

@@ -235,4 +235,48 @@
             ;; MK 0 one_pos = 0
             (sym (zero_mk))))))))
 
-(#export add_comm mul_comm lt_irrefl mul_one add_zero mul_zero add_neg)
+;; ============================================================================
+;; Associativity / distributivity — the genuinely componentwise laws. The
+;; `*_lhs`/`*_rhs` compute givens land both sides in `MK` component form (the
+;; nested `topos(rep …)` denominators carry `pos_prod_rt` round-trips); the
+;; `.cov` proof bridges numerator + denominator with `int_mul_assoc` /
+;; `int_add_assoc` and `pos_prod_rt`, never touching abs/rep.
+;; (Mirror `mul_assoc_impl`, `add_assoc_impl`.)
+;; ============================================================================
+
+;; ⊢ ∀a b c. (a*b)*c = a*(b*c).
+(#thm mul_assoc
+  (#concl
+    (forall (a rat) (forall (b rat) (forall (c rat)
+      (= (rat.mul (rat.mul a b) c) (rat.mul a (rat.mul b c)))))))
+  (#by
+    (intro a b c)
+    (derive
+      (trans
+        ;; (a*b)*c = MK ((na·nb)·nc) (topos(rep(topos(rep da·rep db))·rep dc))
+        (all-elim c (all-elim b (all-elim a (mul_assoc_lhs))))
+        (trans
+          (mk-comb
+            ;; numerator: (na·nb)·nc = na·(nb·nc)
+            (cong-arg (rat.MK)
+              (all-elim (rat.num c)
+                (all-elim (rat.num b)
+                  (all-elim (rat.num a) (int_mul_assoc)))))
+            ;; denominator: topos(rep(topos(rep da·rep db))·rep dc)
+            ;;            = topos(rep da·rep(topos(rep db·rep dc)))
+            (cong-arg (rat.topos)
+              (trans
+                (cong-fn (rat.rep (rat.den c))
+                  (cong-arg (int.mul)
+                    (all-elim (rat.den b) (all-elim (rat.den a) (pos_prod_rt)))))
+                (trans
+                  (all-elim (rat.rep (rat.den c))
+                    (all-elim (rat.rep (rat.den b))
+                      (all-elim (rat.rep (rat.den a)) (int_mul_assoc))))
+                  (cong-arg (int.mul (rat.rep (rat.den a)))
+                    (sym (all-elim (rat.den c)
+                           (all-elim (rat.den b) (pos_prod_rt)))))))))
+          ;; = a*(b*c)
+          (sym (all-elim c (all-elim b (all-elim a (mul_assoc_rhs))))))))))
+
+(#export add_comm mul_comm lt_irrefl mul_one add_zero mul_zero add_neg mul_assoc)

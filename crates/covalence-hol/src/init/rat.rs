@@ -1274,10 +1274,18 @@ fn topos_rep_given() -> Result<Thm> {
 /// forms (β-expansion), so every seam given speaks the same surface the `.cov`
 /// proofs write. Returns `⊢ t = t_named`.
 fn name_projections(t: &Term, a: &Term) -> Result<Thm> {
-    // `num_op a = fst(rep_pair a)` and `den_op a = snd(rep_pair a)` by β.
-    let num_eq = Thm::beta_conv(num_app(a))?; // num_op a = rfst a
-    let den_eq = Thm::beta_conv(den_app(a))?; // den_op a = rden a
-    rewrite_seq(t, &[num_eq.sym()?, den_eq.sym()?])
+    name_projections_over(t, std::slice::from_ref(a))
+}
+
+/// [`name_projections`] over several representative variables at once (for the
+/// ternary `*_assoc` / `distrib` compute givens, which mention `a`, `b`, `c`).
+fn name_projections_over(t: &Term, vars: &[Term]) -> Result<Thm> {
+    let mut eqs = Vec::new();
+    for v in vars {
+        eqs.push(Thm::beta_conv(num_app(v))?.sym()?); // rfst v = num_op v
+        eqs.push(Thm::beta_conv(den_app(v))?.sym()?); // rden v = den_op v
+    }
+    rewrite_seq(t, &eqs)
 }
 
 /// Re-fold the raw `mkfs N D` RHS of a `*_via_components`-style theorem
@@ -1317,6 +1325,38 @@ fn add_neg_compute() -> Result<Thm> {
     let a = rvar("a");
     let neg_a = neg_via_components(&a)?; // -a = MK(int.neg(num a))(den a) [raw mkfs]
     compute_given(add_via_components(&recon_mk(&a)?, &neg_a)?, &a)
+}
+
+/// Re-fold + name a ternary `⊢ <expr over a,b,c> = mkfs N D` to the named
+/// `rat.MK N' D'` form (projections of `a`/`b`/`c` named), ∀-closing `a b c`.
+fn compute_given3(lhs: Thm) -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (n, d) = mk_components(&dest_eq(&lhs)?.1)?;
+    let fold = mk_unfold(&n, &d)?.sym()?; // mkfs N D = rat.MK N D
+    let mk_named = fold.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let rename = name_projections_over(&mk_named, &[a, b, c])?;
+    lhs.trans(fold)?
+        .trans(rename)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// `⊢ ∀a b c. (a*b)*c = rat.MK ((num a·num b)·num c)
+///                              (topos(rep(topos(rep(den a)·rep(den b)))·rep(den c)))`.
+fn mul_assoc_lhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let ab = mul_via_components(&ra, &rb)?;
+    compute_given3(mul_via_components(&ab, &rc)?)
+}
+/// `⊢ ∀a b c. a*(b*c) = rat.MK (num a·(num b·num c))
+///                              (topos(rep(den a)·rep(topos(rep(den b)·rep(den c)))))`.
+fn mul_assoc_rhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let bc = mul_via_components(&rb, &rc)?;
+    compute_given3(mul_via_components(&ra, &bc)?)
 }
 
 /// The `ratprim` seam environment imported by `rat.cov`.
@@ -1370,6 +1410,8 @@ pub fn rat_env() -> crate::script::Env {
     e.define_lemma("add_zero_compute", add_zero_compute().expect("rat add_zero_compute"));
     e.define_lemma("mul_zero_compute", mul_zero_compute().expect("rat mul_zero_compute"));
     e.define_lemma("add_neg_compute", add_neg_compute().expect("rat add_neg_compute"));
+    e.define_lemma("mul_assoc_lhs", mul_assoc_lhs_compute().expect("rat mul_assoc_lhs"));
+    e.define_lemma("mul_assoc_rhs", mul_assoc_rhs_compute().expect("rat mul_assoc_rhs"));
 
     // int ring givens (proved in init::int) — the `.cov` numerator/denominator
     // algebra runs over these.
@@ -2456,6 +2498,7 @@ crate::cov_theory! {
         "add_zero"  => pub fn add_zero_cov;
         "mul_zero"  => pub fn mul_zero_cov;
         "add_neg"   => pub fn add_neg_cov;
+        "mul_assoc" => pub fn mul_assoc_cov;
     }
 }
 
@@ -2475,6 +2518,7 @@ mod cov_tests {
         assert_eq!(cov::add_zero_cov().concl(), super::add_zero().concl());
         assert_eq!(cov::mul_zero_cov().concl(), super::mul_zero().concl());
         assert_eq!(cov::add_neg_cov().concl(), super::add_neg().concl());
+        assert_eq!(cov::mul_assoc_cov().concl(), super::mul_assoc().concl());
     }
 
 }
@@ -2509,6 +2553,10 @@ mod tests {
             add_zero_compute().unwrap(),
             mul_zero_compute().unwrap(),
             add_neg_compute().unwrap(),
+            zero_times_given().unwrap(),
+            int_distrib_r_given().unwrap(),
+            mul_assoc_lhs_compute().unwrap(),
+            mul_assoc_rhs_compute().unwrap(),
         ] {
             assert!(g.concl().type_of().unwrap().is_bool());
             assert!(g.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
@@ -2957,3 +3005,4 @@ mod tests {
         assert_eq!(r, &rhs);
     }
 }
+

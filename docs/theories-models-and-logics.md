@@ -462,6 +462,48 @@ two-sorted Church fold) → generalize to the FOL `Derivable` engine (interpreta
 become first-class) → SOA (cheap denotation) → reify ZF/ZFC/TG (axioms only) +
 `SOA⟹ZF` → the Metamath substitution engine + its `≅ locally-nameless` metatheorem.
 
+### 5.6 Metamath as the shared logic-definition substrate (user reframe)
+
+A sharpening that ties the pillars together and elevates `covalence-metamath`
+from "an import target" to **the substrate**: a **logic *is* a Metamath
+database** — symbols, typed variables, and its axioms/inference rules as
+substitution schemas. The pure metavariable-substitution metalogic is universal
+and theory-agnostic, so prop calc, FOL, ZFC, PA, modal logics all become
+databases in *one shared syntax everyone writes their logic in*. (This is why the
+crate's medium is `SExpr` and the encoding is faithful flat sequences — it's the
+shared substrate; the HOL kernel, structured-tree encodings, and set.mm scale are
+all **optimizations over it**.) Four locking pieces:
+
+1. **The standard theorem's *meaning* is an existence claim.** Asserting `P` in a
+   Metamath-defined logic `L` means **`∃ d. Derivable_L(P)`** — there *exists* a
+   (possibly astronomically long) Metamath derivation. We never exhibit `d`, only
+   certify it exists. This is the rigorous form of the scoped-truth "`P` holds in
+   `L`" (§5.5): a HOL-kernel proof, a WASM oracle, a replayed set.mm proof are each
+   just a *more practical certificate of the same existence claim*.
+2. **Metatheorems = existence-transport via a rewriting function `S`.** The shape
+   is `Derivable_ZF(A) ⟹ Derivable_GT(S(A))`, where `S` is a computable rewrite on
+   Metamath `SExpr` terms, proved **by induction on the source derivation** (each
+   rule instance → an image derivation under `S`) — so the giant target derivation
+   is *certified to exist without being built*. This is pillar 1's interpretation,
+   now **native in the substrate**; PA→SOA→ZF→GT and model↔model become `S`-functions
+   over databases.
+3. **The correspondence `Metamath-L ≅ native-L` is one theorem, two directions.**
+   *Down / validation:* `Metamath-PA ≅ our PA` anchors that the `.mm` *definition*
+   of PA means what we expect (without it a database is just symbols + schemas).
+   *Up / acceleration:* the same `≅` lets native PA, the HOL kernel, and WASM
+   decision procedures **optimize** `Derivable_{mmL}` goals — run fast natively,
+   transport the result across the correspondence. This is the
+   `≡ iso-dispatch ≡ accelerator-discharge` identity (§2), now anchored on the
+   Metamath substrate, and the same admission protocol as pillar 2.
+4. **Convergence with `.logic` (§3.0.5 of `surface-compiler.md`).** A `.logic` —
+   the *data* parameterizing a generic `Logic` impl for a family — is essentially
+   **a Metamath database**: axioms + rules as substitution schemas. So "define a
+   logic" and "write a Metamath database" are the same act, and the HOL bridge is
+   `S`-into-`IsThm` (the shallow-embed-future target). **Near-term value:** the
+   crate is the clean place to *define logics* (FOL, a real ZFC fragment, modal
+   logics as databases) and study `Derivable_L` / `S` / the correspondence — *not*
+   racing to set.mm-scale ingestion, which is one consumer's optimization.
+
 ---
 
 ## 6. What's already built that feeds this

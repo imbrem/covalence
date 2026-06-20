@@ -31,13 +31,21 @@
 //!
 //! ## Two implementations, one API (the mirror principle)
 //!
-//! 1. **Shallow** — [`crate::init::nat::Hol`]: a PA term *is* the HOL
+//! 1. **Shallow** — [`shallow::Hol`]: a PA term *is* the HOL
 //!    `nat` term and a PA proof *is* a HOL [`Thm`](covalence_core::Thm)
 //!    about `nat`. PA reasoning collapses to HOL reasoning. This is the
 //!    "trivial" implementation — it exists today.
-//! 2. **Deep** (future) — a syntactic `PaTerm` / `PaDerivation` AST.
-//!    `Proof = PaDerivation`: the methods *build proof objects* you can
-//!    serialise, hash, and transport, rather than HOL theorems.
+//! 2. **Deep** — the reified embedding in [`fol`] / [`deep`] / [`pa`]: PA
+//!    syntax is **HOL data** (locally-nameless `Fol` AST + Church carrier),
+//!    PA formulas have a denotation `⟦·⟧` into HOL `nat`/`bool`, and a
+//!    [`pa::Derivation`] pairs a reified formula with a genuine `⊢ ⟦A⟧`. The
+//!    PA axioms, the inference rules, and the **induction schema**
+//!    ([`pa::induct`] → [`Thm::nat_induct`](covalence_core::Thm::nat_induct))
+//!    are all proven; the worked theorem `∀x. x+0=x` is derived by induction
+//!    *on derivations* and transported to HOL `nat`. This is Covalence's
+//!    first piece of *symbolic metatheory* for a first-order theory —
+//!    `PA(A) ⟹ HOL(A)` realised constructively (`docs/VISION.md` §2). See
+//!    `peano/SKELETONS.md` for the deferred ∀-closed impredicative form.
 //!
 //! Because both implement the *same* trait, a generic routine written
 //! against [`Peano`] runs against either. The bridge between them is a
@@ -55,6 +63,9 @@
 //! the last postulate). So a shallow PA proof is an outright HOL
 //! theorem — PA is sound in HOL with nothing assumed.
 
+pub mod deep;
+pub mod fol;
+pub mod pa;
 pub mod shallow;
 
 pub use shallow::Hol;

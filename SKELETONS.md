@@ -234,6 +234,53 @@ it is how unfinished work stays discoverable.
     (need the `cons`-side stream computations). No `*_nil`/`*_cons` clauses for
     any of these yet.
 
+- **`covalence-hol` text theory** in `crates/covalence-hol/src/init/char.rs`
+  and `crates/covalence-hol/src/init/string.rs` (`char`/`string`/`bytes`).
+  The **element types and `nil`-side facts** are proved and genuine
+  (hypothesis- and oracle-free):
+  - `char := { c : nat | c < 0x110000 }` — the codepoint round-trips
+    `code_mk` (conditional on the in-range premise, discharged by reduction at
+    each literal) and `mk_code` (the unconditional wrapper-side round-trip).
+  - `string := list char` / `bytes := list u8` — the newtype `abs`/`rep`
+    seam, the empty-sequence builders/facts (`bytes_empty`/`string_empty`,
+    `*_rep_empty`, `*_head_empty`).
+
+  Still missing — **all blocked on the in-flight `list` recursion work**
+  (the `cons`-side computations / list recursion theorem in the list-theory
+  entry above); do NOT build until `init::list` exposes the `cons`-side
+  surface:
+  - **Sequence `length`** — `bytes.len`/`string.len` reduce to `list.length`
+    through the seam; blocked on `list.length`'s `cons` clause (which is
+    blocked on the list recursion theorem).
+  - **`cat` / `at` / `index` / `slice` / `consNat`** for `bytes` and the
+    analogues for `string` — each bridges to the corresponding `list` op,
+    blocked on the same `cons`-side list computations. (`defs/blob.rs`'s
+    `bytesCat`/`bytesLen`/`bytesSlice` already carry definitional bodies over
+    `list.cat`/`list.length`/`take`∘`skip`; their open-form *equational
+    lemmas* still wait on the list recursors. `bytesConsNat`/`bytesAt` are
+    additionally declaration-only pending a `nat ↔ u8` conversion — see the
+    "Declaration-only catalogue ops" section.)
+  - **Cons-side string/bytes induction & extensionality** — ride directly on
+    list induction/extensionality once those land.
+  - **Literal coherence for non-empty `Blob`s** — a `Blob` literal of length
+    `n>0` denotes `cons b₀ (cons b₁ … (nil u8))`; proving that equality
+    needs the `cons`-side `list.index`/`length` clauses. The element-level
+    coherence (`Blob : bytes`, `u8_lit : u8`, ASCII `char.mk k`) is done.
+  - **UTF-8 `string ↔ bytes` codec** — a transcoding pair (`string.toUtf8`,
+    `bytes.toString?`) is not defined; future work independent of the list
+    recursion (needs the `bytes`/`string` ops first).
+  - **Strict Unicode scalar values** (exclude the surrogate gap
+    `0xD800..=0xDFFF`) — `char` currently carves the *contiguous* codepoint
+    range `c < 0x110000`, which includes surrogates. A strict scalar-value
+    type would refine the predicate to `c < 0xD800 ∨ (0xDFFF < c ∧ c <
+    0x110000)`; future work.
+  - **Bitvector ops on `u8`/`bytes`** (the eventual full bitvector support):
+    `u8`/`uN` are `bits`-subtypes (`defs/bits.rs`) and `defs/nat.rs` already
+    has `natShl/Shr/BitAnd/BitOr/BitXor` that reduce on literals — the future
+    bitvector layer would expose width-respecting `and/or/xor/shl/shr/not`,
+    `add`/`mul` mod `2^N`, and `nat ↔ uN`/`bytes ↔ uN` (LE/BE) conversions on
+    these types. Not started.
+
 - **`covalence-hol` product theory** in `crates/covalence-hol/src/init/prod.rs`.
   The core is **complete and genuine** (oracle-free): the `abs`/`rep` seam
   (`rep_pair`), both projection clauses (`fst_pair`/`snd_pair`), surjective

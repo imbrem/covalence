@@ -378,12 +378,12 @@ crate::cov_theory! {
     pub mod cov from "cat.cov" {
         import "core" = crate::script::Env::core();
         import "catprim" = crate::init::cat::cat_env();
-        "fun_ext"    => pub fn fun_ext_cov;
-        "comp_beta"  => pub fn comp_beta_cov;
-        "comp_cong"  => pub fn comp_cong_cov;
-        "id_left"    => pub fn id_left_cov;
-        "id_right"   => pub fn id_right_cov;
-        "comp_assoc" => pub fn comp_assoc_cov;
+        "fun.ext"    => pub fn fun_ext_cov;
+        "comp.beta"  => pub fn comp_beta_cov;
+        "comp.cong"  => pub fn comp_cong_cov;
+        "id.left"    => pub fn id_left_cov;
+        "id.right"   => pub fn id_right_cov;
+        "comp.assoc" => pub fn comp_assoc_cov;
     }
 }
 

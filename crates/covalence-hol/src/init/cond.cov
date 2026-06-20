@@ -26,7 +26,7 @@
 (#open condprim)
 
 ;; ⊢ ∀x y : 'a. cond T x y = x
-(#thm cond_true
+(#thm cond.true
   (#concl
     (forall (x 'a)
       (forall (y 'a)
@@ -88,7 +88,7 @@
           (refl true))))))
 
 ;; ⊢ ∀x y : 'a. cond F x y = y
-(#thm cond_false
+(#thm cond.false
   (#concl
     (forall (x 'a)
       (forall (y 'a)
@@ -144,4 +144,4 @@
           ;; Discharge F=F
           (refl false))))))
 
-(#export cond_true cond_false)
+(#export cond.true cond.false)

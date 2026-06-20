@@ -73,8 +73,8 @@ pub fn coprod_env() -> crate::script::Env {
     let ne = inl_ne_inr(&alpha, &beta, &av, &bv)
         .and_then(|t| t.all_intro("bv", beta.clone()))
         .and_then(|t| t.all_intro("av", alpha.clone()))
-        .expect("coprod_env: inl_ne_inr");
-    e.define_lemma("inl_ne_inr", ne);
+        .expect("coprod_env: inl.ne_inr");
+    e.define_lemma("inl.ne_inr", ne);
 
     // ⊢ ∀(f:'a→'c). ∀(g:'b→'c). ∀(av:'a).
     //     coprod_case f g (inl av) = f av
@@ -85,8 +85,8 @@ pub fn coprod_env() -> crate::script::Env {
         .and_then(|t| t.all_intro("av", alpha.clone()))
         .and_then(|t| t.all_intro("g", Type::fun(beta.clone(), gamma.clone())))
         .and_then(|t| t.all_intro("f", Type::fun(alpha.clone(), gamma.clone())))
-        .expect("coprod_env: case_inl");
-    e.define_lemma("case_inl", ci);
+        .expect("coprod_env: case.inl");
+    e.define_lemma("case.inl", ci);
 
     // ⊢ ∀(f:'a→'c). ∀(g:'b→'c). ∀(bv:'b).
     //     coprod_case f g (inr bv) = g bv
@@ -95,8 +95,8 @@ pub fn coprod_env() -> crate::script::Env {
         .and_then(|t| t.all_intro("bv", beta.clone()))
         .and_then(|t| t.all_intro("g", Type::fun(beta.clone(), gamma.clone())))
         .and_then(|t| t.all_intro("f", Type::fun(alpha.clone(), gamma.clone())))
-        .expect("coprod_env: case_inr");
-    e.define_lemma("case_inr", cr);
+        .expect("coprod_env: case.inr");
+    e.define_lemma("case.inr", cr);
 
     // ⊢ ∀(c : coprod 'a 'b). (∃x:'a. c = inl x) ∨ (∃y:'b. c = inr y)
     let c = Term::free("c", coprod(alpha.clone(), beta.clone()));
@@ -116,8 +116,8 @@ pub fn coprod_env() -> crate::script::Env {
         .and_then(|t| {
             t.all_intro("m", Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()))
         })
-        .expect("coprod_env: case_eta");
-    e.define_lemma("case_eta", ce);
+        .expect("coprod_env: case.eta");
+    e.define_lemma("case.eta", ce);
 
     e
 }
@@ -127,7 +127,7 @@ crate::cov_theory! {
     pub mod cov from "coprod.cov" {
         import "core"     = crate::script::Env::core();
         import "coprodrpm" = crate::init::coprod::coprod_env();
-        "case_eta" => pub fn case_eta_cov;
+        "case.eta" => pub fn case_eta_cov;
     }
 }
 
@@ -144,14 +144,14 @@ mod cov_tests {
         let gamma = Type::tfree("c");
         let m =
             Term::free("m", Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()));
-        let rust_thm = case_eta(&alpha, &beta, &gamma, &m).expect("case_eta");
+        let rust_thm = case_eta(&alpha, &beta, &gamma, &m).expect("case.eta");
         // The `cov` version is the universally-quantified form; instantiate at
         // the same `m` to compare conclusions.
         let cov_thm = cov::case_eta_cov().all_elim(m).expect("all_elim case_eta_cov");
         assert_eq!(
             cov_thm.concl(),
             rust_thm.concl(),
-            "case_eta from coprod.cov must match the Rust proof"
+            "case.eta from coprod.cov must match the Rust proof"
         );
     }
 }
@@ -837,8 +837,8 @@ mod tests {
         let g = Term::free("g", Type::fun(b.clone(), c.clone()));
         let av = Term::free("av", a.clone());
         let thm = case_inl(&a, &b, &c, &f, &g, &av).unwrap();
-        assert!(thm.hyps().is_empty(), "case_inl is proved, not postulated");
-        assert!(thm.has_no_obs(), "case_inl is oracle-free");
+        assert!(thm.hyps().is_empty(), "case.inl is proved, not postulated");
+        assert!(thm.has_no_obs(), "case.inl is oracle-free");
         let lhs = coprod_case(a, b, c)
             .apply(f.clone())
             .unwrap()

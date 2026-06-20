@@ -1,0 +1,135 @@
+;; lang.cov — the language **union Kleene-algebra** fragment, proved over the
+;; `langprim` env (see `init::lang::lang_env`).
+;;
+;; A *language* is a `set μ` of words. The union fragment is monoid-agnostic —
+;; `∪`, `∅`, membership, and `⊆` are plain `set` operations, schematic in one
+;; word type `'a` — so `langprim` exposes them at `'a`:
+;;
+;;   OPERATORS:  `lang.empty` (∅), `lang.union` (∪), `set.mem` (membership),
+;;               `set.subset` (⊆)
+;;   GIVEN laws: `mem_empty`     : ∀x. mem x ∅ = F
+;;               `mem_union`     : ∀x s t. mem x (s ∪ t) = (mem x s ∨ mem x t)
+;;               `ext`           : ∀s t. (∀x. mem x s = mem x t) ⟹ s = t
+;;               `subset_unfold` : ∀s t. (s ⊆ t) = (∀x. mem x s ⟹ mem x t)
+;;
+;; (`langprim` also carries the model-specific `lang.epsilon` / `unit` /
+;; `mem_epsilon` at the concrete carrier — not used by this script.)
+;;
+;; Every language equality is proved EXTENSIONALLY, exactly the `set.cov`
+;; recipe: build `∀x. mem x LHS = mem x RHS` by rewriting both sides'
+;; membership with the `mem_*` givens, bridge the two boolean formulas with
+;; `prop-eq` (the complete propositional decider), then close with `ext`.
+;; Subset facts go through `subset_unfold`.
+;;
+;; The union laws restate the Rust `lang::union_*` (which `lang.rs` re-exports
+;; from `set`); `union_empty_l`, `subset_union_l`, and `subset_refl` are NEW
+;; language theorems with no `lang.rs` counterpart.
+
+(#import core)
+(#open core)
+(#import logic)
+(#open logic)
+(#import langprim)
+(#open langprim)
+
+;; ============================================================================
+;; Union — the additive commutative-idempotent monoid `(∪, ∅)`.
+;; ============================================================================
+
+;; ⊢ s ∪ t = t ∪ s — union of languages is commutative.
+(#thm union_comm
+  (#concl (= (lang.union s t) (lang.union t s)))
+  (#by (derive
+    (imp-elim
+      (all-elim (lang.union t s) (all-elim (lang.union s t) (ext)))
+      (all-intro x 'a
+        (trans
+          (all-elim t (all-elim s (all-elim x (mem_union))))
+          (trans
+            (prop-eq (or (set.mem x s) (set.mem x t))
+                     (or (set.mem x t) (set.mem x s)))
+            (sym (all-elim s (all-elim t (all-elim x (mem_union))))))))))))
+
+;; ⊢ (s ∪ t) ∪ u = s ∪ (t ∪ u) — union of languages is associative.
+(#thm union_assoc
+  (#concl (= (lang.union (lang.union s t) u) (lang.union s (lang.union t u))))
+  (#by (derive
+    (imp-elim
+      (all-elim (lang.union s (lang.union t u))
+        (all-elim (lang.union (lang.union s t) u) (ext)))
+      (all-intro x 'a
+        (trans
+          (rw (all-elim t (all-elim s (all-elim x (mem_union))))
+              (all-elim u (all-elim (lang.union s t) (all-elim x (mem_union)))))
+          (trans
+            (prop-eq (or (or (set.mem x s) (set.mem x t)) (set.mem x u))
+                     (or (set.mem x s) (or (set.mem x t) (set.mem x u))))
+            (sym
+              (rw (all-elim u (all-elim t (all-elim x (mem_union))))
+                  (all-elim (lang.union t u)
+                    (all-elim s (all-elim x (mem_union)))))))))))))
+
+;; ⊢ s ∪ s = s — union of languages is idempotent.
+(#thm union_idem
+  (#concl (= (lang.union s s) s))
+  (#by (derive
+    (imp-elim
+      (all-elim s (all-elim (lang.union s s) (ext)))
+      (all-intro x 'a
+        (trans
+          (all-elim s (all-elim s (all-elim x (mem_union))))
+          (prop-eq (or (set.mem x s) (set.mem x s)) (set.mem x s))))))))
+
+;; ⊢ s ∪ ∅ = s — the empty language is a (right) unit for union.
+(#thm union_empty
+  (#concl (= (lang.union s lang.empty) s))
+  (#by (derive
+    (imp-elim
+      (all-elim s (all-elim (lang.union s lang.empty) (ext)))
+      (all-intro x 'a
+        (trans
+          (rw (all-elim x (mem_empty))
+              (all-elim lang.empty (all-elim s (all-elim x (mem_union)))))
+          (prop-eq (or (set.mem x s) false) (set.mem x s))))))))
+
+;; ⊢ ∅ ∪ s = s — the empty language is a LEFT unit for union too. NEW (the
+;; left-handed dual; `lang.rs`/`set` ship only the right `union_empty`).
+(#thm union_empty_l
+  (#concl (= (lang.union lang.empty s) s))
+  (#by (derive
+    (imp-elim
+      (all-elim s (all-elim (lang.union lang.empty s) (ext)))
+      (all-intro x 'a
+        (trans
+          (rw (all-elim x (mem_empty))
+              (all-elim s (all-elim lang.empty (all-elim x (mem_union)))))
+          (prop-eq (or false (set.mem x s)) (set.mem x s))))))))
+
+;; ============================================================================
+;; Subset — NEW language order facts via `subset_unfold`.
+;; ============================================================================
+
+;; ⊢ s ⊆ s — language inclusion is reflexive. NEW.
+(#thm subset_refl
+  (#concl (set.subset s s))
+  (#by (derive
+    (eq-mp
+      (sym (all-elim s (all-elim s (subset_unfold))))
+      (all-intro x 'a
+        (imp-intro (set.mem x s) (assume (set.mem x s))))))))
+
+;; ⊢ s ⊆ s ∪ t — a language is included in any union it heads. NEW. The
+;; membership `mem x s` re-injects on the left of `mem x (s ∪ t)`.
+(#thm subset_union_l
+  (#concl (set.subset s (lang.union s t)))
+  (#by (derive
+    (eq-mp
+      (sym (all-elim (lang.union s t) (all-elim s (subset_unfold))))
+      (all-intro x 'a
+        (imp-intro (set.mem x s)
+          (eq-mp
+            (sym (all-elim t (all-elim s (all-elim x (mem_union)))))
+            (or-intro-l (set.mem x t) (assume (set.mem x s))))))))))
+
+(#export union_comm union_assoc union_idem union_empty union_empty_l
+         subset_union_l subset_refl)

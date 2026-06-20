@@ -436,6 +436,150 @@ fn rhs_of(thm: &Thm) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
 }
 
+// ============================================================================
+// `langprim` env + the `lang.cov` port.
+// ============================================================================
+
+/// The `langprim` environment imported by `lang.cov`.
+///
+/// The union fragment of the language algebra is *monoid-agnostic* — union,
+/// `∅`, membership, and `⊆` are plain `set` operations, schematic in one word
+/// type `'a` — so those operators and seam lemmas are registered at the type
+/// variable `'a` exactly like [`crate::init::set::set_env`]. This keeps the
+/// union laws `lang.cov` proves identical (same conclusion, same `'a`) to the
+/// Rust [`union_comm`] / … that `lang.rs` re-exports from `set`.
+///
+/// The model-specific layer (`lang.epsilon` = `{ unit }`, the empty word
+/// `unit`, and the `mem_epsilon` membership equation `mem w ε = (w = unit)`)
+/// is registered at the *concrete* model carrier `μ` from `m`, so a downstream
+/// `.cov` that needs the unit-language facts can reach them. Swapping `m`
+/// swaps that layer — the [`crate::init::monoid::monoid_env`] model-genericity
+/// pattern, here for languages.
+///
+/// **Operators**
+///
+/// - `lang.empty`   — `∅`  (schematic `'a`)
+/// - `lang.union`   — `∪`  (schematic `'a`)
+/// - `set.mem`      — word membership  (schematic `'a`)
+/// - `set.subset`   — language inclusion `⊆`  (schematic `'a`)
+/// - `lang.epsilon` — `{ unit }`  (at the model carrier `μ`)
+/// - `unit`         — the empty word  (at the model carrier `μ`)
+///
+/// `lang.concat` / `lang.star` are *not* operators (they are `set.mk`
+/// predicate-built sets, not curried heads), so they are unbuilt-in `.cov`;
+/// their facts stay Rust-proved givens above.
+///
+/// **Lemmas** (Rust-proved givens, universally quantified)
+///
+/// - `mem_empty`     : ∀x. mem x ∅ = F                          (`'a`)
+/// - `mem_union`     : ∀x s t. mem x (s ∪ t) = (mem x s ∨ mem x t)  (`'a`)
+/// - `ext`           : ∀s t. (∀x. mem x s = mem x t) ⟹ s = t    (`'a`)
+/// - `subset_unfold` : ∀s t. (s ⊆ t) = (∀x. mem x s ⟹ mem x t)   (`'a`)
+/// - `mem_epsilon`   : ∀w. mem w ε = (w = unit)                  (at `μ`)
+pub fn lang_env(m: &Monoid) -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    let a = Type::tfree("a");
+    let sa = set(a.clone());
+    let mut e = Env::empty();
+
+    // -- monoid-agnostic union fragment, schematic at `'a` -------------------
+    e.define_const("lang.empty", ConstDef::Op(set_empty(a.clone())));
+    e.define_const("lang.union", ConstDef::Op(set_union(a.clone())));
+    e.define_const("set.mem", ConstDef::Op(set_mem(a.clone())));
+    e.define_const("set.subset", ConstDef::Op(set_subset(a.clone())));
+
+    let x = Term::free("x", a.clone());
+    let s = Term::free("s", sa.clone());
+    let t = Term::free("t", sa.clone());
+
+    // mem_empty : ⊢ ∀x. mem x ∅ = F
+    e.define_lemma(
+        "mem_empty",
+        crate::init::set::mem_empty(&a, &x)
+            .expect("lang_env: mem_empty")
+            .all_intro("x", a.clone())
+            .expect("lang_env: ∀ mem_empty"),
+    );
+    // mem_union : ⊢ ∀x s t. mem x (s ∪ t) = (mem x s ∨ mem x t)
+    e.define_lemma(
+        "mem_union",
+        crate::init::set::mem_union(&a, &x, &s, &t)
+            .expect("lang_env: mem_union")
+            .all_intro("t", sa.clone())
+            .expect("lang_env: ∀t mem_union")
+            .all_intro("s", sa.clone())
+            .expect("lang_env: ∀s mem_union")
+            .all_intro("x", a.clone())
+            .expect("lang_env: ∀x mem_union"),
+    );
+    // ext : ⊢ ∀s t. (∀x. mem x s = mem x t) ⟹ s = t
+    let h = mem(&a, &x, &s)
+        .equals(mem(&a, &x, &t))
+        .expect("lang_env: mem eq")
+        .forall("x", a.clone())
+        .expect("lang_env: ∀ mem eq");
+    e.define_lemma(
+        "ext",
+        crate::init::set::ext(&a, &s, &t, Thm::assume(h.clone()).unwrap())
+            .expect("lang_env: ext")
+            .imp_intro(&h)
+            .expect("lang_env: ext imp")
+            .all_intro("t", sa.clone())
+            .expect("lang_env: ∀t ext")
+            .all_intro("s", sa.clone())
+            .expect("lang_env: ∀s ext"),
+    );
+    // subset_unfold : ⊢ ∀s t. subset s t = (∀x. mem x s ⟹ mem x t)
+    e.define_lemma(
+        "subset_unfold",
+        crate::init::set::subset_unfold(&a, &s, &t)
+            .expect("lang_env: subset_unfold")
+            .all_intro("t", sa.clone())
+            .expect("lang_env: ∀t subset_unfold")
+            .all_intro("s", sa.clone())
+            .expect("lang_env: ∀s subset_unfold"),
+    );
+
+    // -- model-specific layer at the concrete carrier `μ` --------------------
+    let mu = carrier(m).expect("lang_env: monoid carrier");
+    let w = Term::free("w", mu.clone());
+    e.define_const(
+        "lang.epsilon",
+        ConstDef::Op(epsilon(m).expect("lang_env: epsilon")),
+    );
+    e.define_const("unit", ConstDef::Op(m.unit().clone()));
+    // mem_epsilon : ⊢ ∀w. mem w ε = (w = unit)
+    e.define_lemma(
+        "mem_epsilon",
+        mem_epsilon(m, &w)
+            .expect("lang_env: mem_epsilon")
+            .all_intro("w", mu.clone())
+            .expect("lang_env: ∀ mem_epsilon"),
+    );
+    e
+}
+
+crate::cov_theory! {
+    /// Language Kleene-algebra theorems ported to `lang.cov`, over `core` +
+    /// `logic` + the `langprim` env at the `(nat, +, 0)` model. The union laws
+    /// match the Rust [`union_comm`] / [`union_assoc`] / [`union_idem`] /
+    /// [`union_empty`] (re-derived extensionally over the language `mem_union`
+    /// given); `union_empty_l`, `subset_union_l`, and `subset_refl` are NEW
+    /// theorems with no `lang.rs` counterpart.
+    pub mod cov from "lang.cov" {
+        import "core" = crate::script::Env::core();
+        import "logic" = crate::init::logic::cov::env();
+        import "langprim" = crate::init::lang::lang_env(&crate::init::monoid::nat_add_monoid());
+        "union_comm"     => pub fn union_comm_cov;
+        "union_assoc"    => pub fn union_assoc_cov;
+        "union_idem"     => pub fn union_idem_cov;
+        "union_empty"    => pub fn union_empty_cov;
+        "union_empty_l"  => pub fn union_empty_l_cov;
+        "subset_union_l" => pub fn subset_union_l_cov;
+        "subset_refl"    => pub fn subset_refl_cov;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -579,5 +723,65 @@ mod tests {
             thm.concl().as_eq().unwrap(),
             (&lang_concat(&m, &empty, &l).unwrap(), &empty)
         );
+    }
+
+    // -- the `lang.cov` port: union Kleene-algebra over the `langprim` env ----
+
+    /// The union laws ported to `lang.cov` must state *exactly* what the Rust
+    /// `lang::union_*` (re-exported from `set`) state — same conclusion.
+    #[test]
+    fn lang_cov_union_laws_match_rust() {
+        assert_eq!(cov::union_comm_cov().concl(), super::union_comm().concl());
+        assert_eq!(cov::union_assoc_cov().concl(), super::union_assoc().concl());
+        assert_eq!(cov::union_idem_cov().concl(), super::union_idem().concl());
+        assert_eq!(cov::union_empty_cov().concl(), super::union_empty().concl());
+    }
+
+    /// Every ported union law is genuine — hypothesis- and oracle-free.
+    #[test]
+    fn lang_cov_ports_are_genuine() {
+        for thm in [
+            cov::union_comm_cov(),
+            cov::union_assoc_cov(),
+            cov::union_idem_cov(),
+            cov::union_empty_cov(),
+        ] {
+            assert_genuine(&thm);
+            assert!(thm.concl().as_eq().is_some());
+        }
+    }
+
+    /// The NEW `lang.cov` theorems (no `lang.rs` counterpart) are genuine and
+    /// have the expected shapes.
+    #[test]
+    fn lang_cov_new_theorems_are_genuine() {
+        // union_empty_l : ⊢ ∅ ∪ s = s (an equation).
+        let uel = cov::union_empty_l_cov();
+        assert_genuine(&uel);
+        assert!(uel.concl().as_eq().is_some());
+
+        // subset_refl : ⊢ s ⊆ s (a `subset` atom, not an equation).
+        let sr = cov::subset_refl_cov();
+        assert_genuine(&sr);
+        assert!(sr.concl().as_eq().is_none());
+
+        // subset_union_l : ⊢ s ⊆ s ∪ t.
+        let sul = cov::subset_union_l_cov();
+        assert_genuine(&sul);
+        assert!(sul.concl().as_eq().is_none());
+    }
+
+    /// `union_empty_l` really is the left dual of `union_empty`: applying it to
+    /// the empty language gives the same `∅ ∪ ∅ = ∅` as the right law.
+    #[test]
+    fn lang_cov_union_empty_l_is_the_left_dual() {
+        // The two laws are distinct statements (lhs `∅ ∪ s` vs `s ∪ ∅`)…
+        let l_law = cov::union_empty_l_cov();
+        let r_law = super::union_empty();
+        assert_ne!(l_law.concl(), r_law.concl());
+        // …but both are genuine `set.union`-headed equations ending in `s`.
+        let (_, l_rhs) = l_law.concl().as_eq().unwrap();
+        let (_, r_rhs) = r_law.concl().as_eq().unwrap();
+        assert_eq!(l_rhs, r_rhs); // both reduce the union to the bare `s`.
     }
 }

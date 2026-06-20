@@ -62,10 +62,22 @@
 //! `bytes` carrier). [`u8_alphabet`] and the [`tests`] worked example show a
 //! concrete bytestring regex and its denotation.
 //!
+//! ## The `.cov` port
+//!
+//! [`regex_env`] exposes the byte regexes/words + the seven matching-rule
+//! givens to the `.cov` proof language; `regex.cov` (the [`cov`] `cov_theory!`
+//! block) replays **six worked `Matches` derivations** over the byte alphabet
+//! — base cases and the recursive `alt`/`seq`/`star` cases (the latter two
+//! exercising the existential matching rules via `imp-elim`). A `.cov`
+//! statement of soundness is deferred (it needs the rule-induction `inst` +
+//! the slow `lang` discharge; stays Rust-proved in [`soundness`]).
+//!
 //! ## What is deferred (see `SKELETONS.md`)
 //!
 //! - **`Matches`-completeness** (`mem w ⟦r⟧ ⟹ Matches r w`, the converse of
 //!   soundness): needs the least-fixpoint half of the star unfolding.
+//! - **`.cov` soundness** (the rule-induction `Matches r w ⟹ mem w ⟦r⟧` as a
+//!   replayed script) and `list_cat` reduction of the star example's word.
 //! - **Ambiguity** (multiple derivations of one match) and **sexpr
 //!   lift/lower**: design-note only — see the module's bottom + the report.
 
@@ -789,6 +801,214 @@ pub fn u8_alphabet() -> Type {
 }
 
 // ============================================================================
+// `.cov` givens environment — `regex.cov`'s `regexprim` namespace.
+// ============================================================================
+
+/// The givens environment for [`crate::init::regex::cov`] (`regex.cov`), at the
+/// **byte alphabet** `u8`. `Matches r w := ∀M. Closed M ⟹ M r w` stays
+/// schematic in the fold result type `'r` (the impredicative encoding quantifies
+/// it), so every rule given and every named `Matches` proposition carries a free
+/// `'r` and they line up without instantiation. The `.cov` script combines the
+/// seven `Matches`-rule givens with `all-elim` / `imp-elim` to build worked
+/// match derivations.
+///
+/// **Constants** (nullary [`ConstDef::Op`] terms — concrete byte regexes /
+/// words used by the worked examples)
+///
+/// - `regex.lit_a` / `regex.lit_b`  : `lit 0x61` / `lit 0x62`   (`regex u8`)
+/// - `regex.alt_ab`                 : `alt (lit 0x61) (lit 0x62)` (`regex u8`)
+/// - `regex.seq_ab`                 : `seq (lit 0x61) (lit 0x62)` (`regex u8`)
+/// - `regex.star_a`                 : `star (lit 0x61)`           (`regex u8`)
+/// - `regex.wa` / `regex.wb`        : `[0x61]` / `[0x62]`        (`list u8`)
+/// - `regex.wab`                    : `[0x61, 0x62]` = `cat [0x61] [0x62]`
+/// - `regex.nil`                    : `nil`                       (`list u8`)
+///
+/// **Lemmas** (the seven matching rules, ∀-closed, at `u8`, schematic in `'r`)
+///
+/// - `match_eps`       : ⊢ Matches eps nil
+/// - `match_lit`       : ⊢ ∀c. Matches (lit c) [c]
+/// - `match_alt_l`     : ⊢ ∀x y w. Matches x w ⟹ Matches (alt x y) w
+/// - `match_alt_r`     : ⊢ ∀x y w. Matches y w ⟹ Matches (alt x y) w
+/// - `match_seq`       : ⊢ ∀x y w1 w2. Matches x w1 ⟹ Matches y w2
+///                                     ⟹ Matches (seq x y) (cat w1 w2)
+/// - `match_star_nil`  : ⊢ ∀x. Matches (star x) nil
+/// - `match_star_step` : ⊢ ∀x w1 w2. Matches x w1 ⟹ Matches (star x) w2
+///                                    ⟹ Matches (star x) (cat w1 w2)
+pub fn regex_env() -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+
+    let a = u8_alphabet();
+    let reg = regex(a.clone()); // regex u8
+    let wty = word_ty(&a); // list u8
+    let mut e = Env::empty();
+
+    // -- concrete byte regexes / words (nullary `Op` constants) --------------
+    let lit = |k: u8| r_lit(&a, Term::u8_lit(k));
+    let byte = |k: u8| Term::u8_lit(k);
+    let lit_a = lit(0x61);
+    let lit_b = lit(0x62);
+    let alt_ab = r_alt(&a, lit_a.clone(), lit_b.clone());
+    let seq_ab = r_seq(&a, lit_a.clone(), lit_b.clone());
+    let star_a = r_star(&a, lit_a.clone());
+    let wa = singleton_w(&a, &byte(0x61)).expect("regex_env: [0x61]");
+    let wb = singleton_w(&a, &byte(0x62)).expect("regex_env: [0x62]");
+    let wab = cat_w(&a, &wa, &wb).expect("regex_env: cat [0x61] [0x62]");
+    let nil = nil_w(&a);
+
+    // The two byte literals, named so the `.cov` script can supply a `u8`-typed
+    // term to `all-elim` (a bare `0x61` atom would parse as `nat`).
+    e.define_const("regex.byte_a", ConstDef::Op(byte(0x61)));
+    e.define_const("regex.byte_b", ConstDef::Op(byte(0x62)));
+    e.define_const("regex.lit_a", ConstDef::Op(lit_a));
+    e.define_const("regex.lit_b", ConstDef::Op(lit_b));
+    e.define_const("regex.alt_ab", ConstDef::Op(alt_ab));
+    e.define_const("regex.seq_ab", ConstDef::Op(seq_ab));
+    e.define_const("regex.star_a", ConstDef::Op(star_a));
+    e.define_const("regex.wa", ConstDef::Op(wa.clone()));
+    e.define_const("regex.wb", ConstDef::Op(wb));
+    e.define_const("regex.wab", ConstDef::Op(wab.clone()));
+    e.define_const("regex.nil", ConstDef::Op(nil.clone()));
+
+    // -- the worked `Matches r w` propositions, named so `#concl` can spell
+    //    them (each is the closed impredicative `∀M. Closed M ⟹ M r w`). --------
+    // `Matches` is not a curried head constant (it is a macro over the
+    // predicate variable), so the *proposition* — not a `Matches` operator — is
+    // what the env exposes.
+    let prop = |r: &Term, w: &Term| matches(&a, r, w).expect("regex_env: Matches prop");
+    e.define_const(
+        "regex.matches_eps_nil", // Matches eps nil
+        ConstDef::Op(prop(&r_eps(&a), &nil)),
+    );
+    e.define_const(
+        "regex.matches_lit_a", // Matches (lit 0x61) [0x61]
+        ConstDef::Op(prop(&lit(0x61), &wa)),
+    );
+    e.define_const(
+        "regex.matches_alt_a", // Matches (alt (lit a)(lit b)) [0x61]
+        ConstDef::Op(prop(&r_alt(&a, lit(0x61), lit(0x62)), &wa)),
+    );
+    e.define_const(
+        "regex.matches_seq_ab", // Matches (seq (lit a)(lit b)) [0x61,0x62]
+        ConstDef::Op(prop(&r_seq(&a, lit(0x61), lit(0x62)), &wab)),
+    );
+    e.define_const(
+        "regex.matches_star_nil", // Matches (star (lit a)) nil
+        ConstDef::Op(prop(&r_star(&a, lit(0x61)), &nil)),
+    );
+    // One star iteration: word `cat [0x61] nil` (NOT reduced to `[0x61]` — the
+    // star-step rule yields a `cat` word; `list_cat` reduction is a separate
+    // step, deferred).
+    let cat_a_nil = cat_w(&a, &wa, &nil).expect("regex_env: cat [0x61] nil");
+    e.define_const("regex.cat_a_nil", ConstDef::Op(cat_a_nil.clone()));
+    e.define_const(
+        "regex.matches_star_a", // Matches (star (lit a)) (cat [0x61] nil)
+        ConstDef::Op(prop(&r_star(&a, lit(0x61)), &cat_a_nil)),
+    );
+
+    // -- the seven matching rules, ∀-closed at `u8` ----------------------------
+    // `Matches` stays SCHEMATIC in the fold result type `'r` (the impredicative
+    // encoding quantifies it): every rule given and every named `Matches`
+    // proposition carries a free `'r`, so they line up without instantiation.
+    // (`pin` is identity; soundness — which *does* need `'r := set (list u8)` —
+    // is the deferred chain and stays Rust-proved.)
+    let pin = Ok::<Thm, covalence_core::Error>;
+
+    // match_eps : ⊢ Matches eps nil           (already closed)
+    e.define_lemma(
+        "match_eps",
+        pin(match_eps(&a).expect("regex_env: match_eps")).expect("regex_env: pin match_eps"),
+    );
+    // match_lit : ⊢ ∀c. Matches (lit c) [c]   (already ∀-closed over c)
+    e.define_lemma(
+        "match_lit",
+        pin(match_lit(&a).expect("regex_env: match_lit")).expect("regex_env: pin match_lit"),
+    );
+
+    // The recursive rules return specialised implications; build ∀-closed forms
+    // over fresh regex/word free variables, then pin `'r`.
+    let x = Term::free("x", reg.clone());
+    let y = Term::free("y", reg.clone());
+    let w = Term::free("w", wty.clone());
+    let w1 = Term::free("w1", wty.clone());
+    let w2 = Term::free("w2", wty.clone());
+
+    // match_alt_l : ⊢ ∀x y w. Matches x w ⟹ Matches (alt x y) w
+    let alt_l = match_alt_l(&a, &x, &y, &w)
+        .expect("regex_env: match_alt_l")
+        .all_intro("w", wty.clone())
+        .and_then(|t| t.all_intro("y", reg.clone()))
+        .and_then(|t| t.all_intro("x", reg.clone()))
+        .expect("regex_env: ∀ match_alt_l");
+    e.define_lemma("match_alt_l", pin(alt_l).expect("regex_env: pin match_alt_l"));
+
+    // match_alt_r : ⊢ ∀x y w. Matches y w ⟹ Matches (alt x y) w
+    let alt_r = match_alt_r(&a, &x, &y, &w)
+        .expect("regex_env: match_alt_r")
+        .all_intro("w", wty.clone())
+        .and_then(|t| t.all_intro("y", reg.clone()))
+        .and_then(|t| t.all_intro("x", reg.clone()))
+        .expect("regex_env: ∀ match_alt_r");
+    e.define_lemma("match_alt_r", pin(alt_r).expect("regex_env: pin match_alt_r"));
+
+    // match_seq : ⊢ ∀x y w1 w2. Matches x w1 ⟹ Matches y w2
+    //                           ⟹ Matches (seq x y) (cat w1 w2)
+    let seq = match_seq(&a, &x, &y, &w1, &w2)
+        .expect("regex_env: match_seq")
+        .all_intro("w2", wty.clone())
+        .and_then(|t| t.all_intro("w1", wty.clone()))
+        .and_then(|t| t.all_intro("y", reg.clone()))
+        .and_then(|t| t.all_intro("x", reg.clone()))
+        .expect("regex_env: ∀ match_seq");
+    e.define_lemma("match_seq", pin(seq).expect("regex_env: pin match_seq"));
+
+    // match_star_nil : ⊢ ∀x. Matches (star x) nil
+    let star_nil = match_star_nil(&a, &x)
+        .expect("regex_env: match_star_nil")
+        .all_intro("x", reg.clone())
+        .expect("regex_env: ∀ match_star_nil");
+    e.define_lemma(
+        "match_star_nil",
+        pin(star_nil).expect("regex_env: pin match_star_nil"),
+    );
+
+    // match_star_step : ⊢ ∀x w1 w2. Matches x w1 ⟹ Matches (star x) w2
+    //                              ⟹ Matches (star x) (cat w1 w2)
+    let star_step = match_star_step(&a, &x, &w1, &w2)
+        .expect("regex_env: match_star_step")
+        .all_intro("w2", wty.clone())
+        .and_then(|t| t.all_intro("w1", wty.clone()))
+        .and_then(|t| t.all_intro("x", reg.clone()))
+        .expect("regex_env: ∀ match_star_step");
+    e.define_lemma(
+        "match_star_step",
+        pin(star_step).expect("regex_env: pin match_star_step"),
+    );
+
+    e
+}
+
+crate::cov_theory! {
+    /// Worked `Matches` derivations ported to `regex.cov`, over `core` + the
+    /// `regexprim` ([`regex_env`]) givens at the byte alphabet. Each is a
+    /// genuine, hypothesis-free `Matches r w` theorem built by specialising the
+    /// seven matching-rule givens (`all-elim`) and chaining sub-derivations into
+    /// their premises (`imp-elim`); the `seq`/`star` theorems exercise the
+    /// existential (`cat`-split) matching rules. A `.cov` statement of
+    /// *soundness* is deferred (see `SKELETONS.md`); it stays Rust-proved in
+    /// [`soundness`].
+    pub mod cov from "regex.cov" {
+        import "core" = crate::script::Env::core();
+        import "regexprim" = crate::init::regex::regex_env();
+        "match_eps_nil"    => pub fn match_eps_nil_cov;
+        "match_lit_a"      => pub fn match_lit_a_cov;
+        "match_star_nil_a" => pub fn match_star_nil_a_cov;
+        "match_alt_a"      => pub fn match_alt_a_cov;
+        "match_seq_ab"     => pub fn match_seq_ab_cov;
+        "match_star_a"     => pub fn match_star_a_cov;
+    }
+}
+
+// ============================================================================
 // DESIGN NOTE — the path to ambiguity + sexpr lift/lower (the next stage)
 // ============================================================================
 //
@@ -996,5 +1216,70 @@ mod tests {
         let snd = soundness_at(&a, &lit_a, &word).unwrap();
         let mem_thm = snd.imp_elim(der).unwrap();
         assert_genuine(&mem_thm);
+    }
+
+    // -- the `regex.cov` port: worked `Matches` derivations over `regexprim` ---
+
+    /// Byte-alphabet pieces the `.cov` worked examples are stated over.
+    fn byte_pieces() -> (Type, Term, Term, Term, Term) {
+        let a = u8_alphabet();
+        let lit_a = r_lit(&a, Term::u8_lit(0x61));
+        let lit_b = r_lit(&a, Term::u8_lit(0x62));
+        let wa = singleton_w(&a, &Term::u8_lit(0x61)).unwrap();
+        let wb = singleton_w(&a, &Term::u8_lit(0x62)).unwrap();
+        (a, lit_a, lit_b, wa, wb)
+    }
+
+    /// Each ported `.cov` theorem is genuine (hypothesis- and oracle-free) and
+    /// states *exactly* the `Matches r w` proposition built in Rust — same
+    /// conclusion. This is the conclusion-equality / genuineness check for the
+    /// regex `.cov` port.
+    #[test]
+    fn regex_cov_matches_derivations_match_rust() {
+        let (a, lit_a, lit_b, wa, wb) = byte_pieces();
+        let nil = nil_w(&a);
+
+        // Reference conclusions, built directly from `matches(…)`.
+        let m = |r: &Term, w: &Term| matches(&a, r, w).unwrap();
+
+        // eps / lit / star-nil base cases.
+        assert_eq!(cov::match_eps_nil_cov().concl(), &m(&r_eps(&a), &nil));
+        assert_eq!(cov::match_lit_a_cov().concl(), &m(&lit_a, &wa));
+        assert_eq!(
+            cov::match_star_nil_a_cov().concl(),
+            &m(&r_star(&a, lit_a.clone()), &nil)
+        );
+
+        // alt-left / seq / star-step recursive cases.
+        assert_eq!(
+            cov::match_alt_a_cov().concl(),
+            &m(&r_alt(&a, lit_a.clone(), lit_b.clone()), &wa)
+        );
+        assert_eq!(
+            cov::match_seq_ab_cov().concl(),
+            &m(
+                &r_seq(&a, lit_a.clone(), lit_b.clone()),
+                &cat_w(&a, &wa, &wb).unwrap()
+            )
+        );
+        assert_eq!(
+            cov::match_star_a_cov().concl(),
+            &m(&r_star(&a, lit_a.clone()), &cat_w(&a, &wa, &nil).unwrap())
+        );
+    }
+
+    /// Every ported `regex.cov` theorem is genuine.
+    #[test]
+    fn regex_cov_ports_are_genuine() {
+        for thm in [
+            cov::match_eps_nil_cov(),
+            cov::match_lit_a_cov(),
+            cov::match_star_nil_a_cov(),
+            cov::match_alt_a_cov(),
+            cov::match_seq_ab_cov(),
+            cov::match_star_a_cov(),
+        ] {
+            assert_genuine(&thm);
+        }
     }
 }

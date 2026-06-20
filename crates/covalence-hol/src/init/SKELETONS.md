@@ -310,9 +310,23 @@ index](../../../../SKELETONS.md).
   and **soundness** `⊢ Matches r w ⟹ mem w ⟦r⟧` by rule induction (`inst` of
   the impredicative predicate), all seven cases discharged against the `lang`
   membership computations + `star_concat_closed`. Bytestring instance at
-  `u8_alphabet()` with a worked derivation. **Not yet built (deferred):**
+  `u8_alphabet()` with a worked derivation. A `.cov` port
+  (`regex/regex.cov` + `regex_env`, the `regexprim` givens, + the
+  `init::regex::cov` `cov_theory!` block) ports **six worked `Matches`
+  derivations** over the byte alphabet — `match_eps_nil`/`match_lit_a`/
+  `match_star_nil_a` (base cases) and `match_alt_a`/`match_seq_ab`/`match_star_a`
+  (recursive cases, exercising the existential `seq`/`star` rules via
+  `imp-elim`). All genuine; conclusion-equality + genuineness tests in
+  `regex/mod.rs`. **Not yet built (deferred):**
   - **`Matches`-completeness** `mem w ⟦r⟧ ⟹ Matches r w` (the converse): the
     star case needs the least-fixpoint half of the star unfolding above.
+  - **`.cov` soundness** `Matches r w ⟹ mem w ⟦r⟧`: needs the full
+    rule-induction `inst` of the impredicative predicate + the slow
+    `lang`-membership discharge — kept Rust-proved in `regex::soundness` /
+    `regex::soundness_at`, not (yet) replayed as a `.cov` script. The
+    `regex.cov` star example also leaves its word as the literal `cat [0x61]
+    nil` (the `list_cat` reduction `cat [0x61] nil = [0x61]` is a separate,
+    unported step).
   - **Ambiguity** (a proof-relevant `Parse r w` / parse-tree datatype + `yield`,
     of which `Matches` is the propositional truncation) and **sexpr lift/lower**
     (`regex_of_sexpr` / `sexpr_of_regex` over `init/sexpr`, defined

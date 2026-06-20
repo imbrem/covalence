@@ -1,0 +1,113 @@
+;; regex.cov — worked **`Matches` derivations** over the byte alphabet, ported
+;; to the `.cov` proof language. Proved over `core` + the `regexprim` givens env
+;; (see `init::regex::regex_env`).
+;;
+;; A regex over `u8` is the impredicative Church value `empty|eps|lit|alt|seq|
+;; star`; `Matches r w := ∀M. Closed M ⟹ M r w` is the smallest predicate
+;; closed under the seven matching rules. Because the constructors are *folds*
+;; (not curried head constants) and `Matches` is a macro over the predicate
+;; variable `M`, neither is an `.cov` operator: `regexprim` instead exposes
+;;
+;;   CONCRETE TERMS:   `regex.lit_a`/`regex.lit_b` (lit 0x61 / lit 0x62),
+;;                     `regex.alt_ab`/`regex.seq_ab`/`regex.star_a`,
+;;                     `regex.wa`/`regex.wb` ([0x61]/[0x62]), `regex.wab`
+;;                     ([0x61,0x62] = cat wa wb), `regex.cat_a_nil`, `regex.nil`,
+;;                   and the *named conclusion propositions* it names so `#concl`
+;;                   can spell the impredicative `Matches r w` term:
+;;                     `regex.matches_lit_a`, `regex.matches_alt_a`,
+;;                     `regex.matches_seq_ab`, `regex.matches_star_nil`,
+;;                     `regex.matches_star_a`.
+;;   GIVEN rules (∀-closed, at `u8`, schematic in the fold result type `'r`):
+;;     `match_eps`       : ⊢ Matches eps nil
+;;     `match_lit`       : ⊢ ∀c. Matches (lit c) [c]
+;;     `match_alt_l`     : ⊢ ∀x y w. Matches x w ⟹ Matches (alt x y) w
+;;     `match_alt_r`     : ⊢ ∀x y w. Matches y w ⟹ Matches (alt x y) w
+;;     `match_seq`       : ⊢ ∀x y w1 w2. Matches x w1 ⟹ Matches y w2
+;;                                       ⟹ Matches (seq x y) (cat w1 w2)
+;;     `match_star_nil`  : ⊢ ∀x. Matches (star x) nil
+;;     `match_star_step` : ⊢ ∀x w1 w2. Matches x w1 ⟹ Matches (star x) w2
+;;                                      ⟹ Matches (star x) (cat w1 w2)
+;;
+;; Each theorem below is a genuine, hypothesis- and oracle-free `Matches`
+;; derivation: `all-elim` specialises a rule to the concrete byte regex/word,
+;; `imp-elim` chains a sub-derivation into a premise. The `seq`/`star` cases
+;; exercise the rules whose word is a `cat` split (the existential cases of the
+;; `Matches` relation).
+;;
+;; DEFERRED (see SKELETONS): a `.cov` statement of *soundness*
+;; (`Matches r w ⟹ mem w ⟦r⟧`) — it needs the full rule-induction `inst` of the
+;; impredicative predicate + the slow `lang`-membership discharge, kept in Rust
+;; (`init::regex::soundness`). And `list_cat` reduction `cat [0x61] nil = [0x61]`
+;; (so the star word stays a literal `cat`).
+
+(#import core)
+(#open core)
+(#import regexprim)
+(#open regexprim)
+
+;; ============================================================================
+;; Base cases — the non-recursive matching rules.
+;; ============================================================================
+
+;; ⊢ Matches eps nil — the empty word matches `eps`. (Rule 1, a given.)
+(#thm match_eps_nil
+  (#concl regex.matches_eps_nil)
+  (#proof (match_eps)))
+
+;; ⊢ Matches (lit 0x61) [0x61] — the byte 'a' matches the literal regex 'a'.
+;; (Rule 2, `match_lit` specialised at the byte 0x61.)
+(#thm match_lit_a
+  (#concl regex.matches_lit_a)
+  (#proof (all-elim regex.byte_a (match_lit))))
+
+;; ⊢ Matches (star (lit 0x61)) nil — the star matches the empty word.
+;; (Rule 6, `match_star_nil` specialised at `lit 0x61`.)
+(#thm match_star_nil_a
+  (#concl regex.matches_star_nil)
+  (#proof (all-elim regex.lit_a (match_star_nil))))
+
+;; ============================================================================
+;; Recursive cases — chaining a sub-derivation into a rule premise.
+;; ============================================================================
+
+;; ⊢ Matches (alt (lit 0x61) (lit 0x62)) [0x61] — 'a' matches `a|b` on the left.
+;; (Rule 3: `match_alt_l` specialised at `x=lit a, y=lit b, w=[0x61]`, fed the
+;; literal match `Matches (lit a) [0x61]` from `match_lit`.)
+(#thm match_alt_a
+  (#concl regex.matches_alt_a)
+  (#proof
+    (imp-elim
+      (all-elim regex.wa (all-elim regex.lit_b (all-elim regex.lit_a (match_alt_l))))
+      (all-elim regex.byte_a (match_lit)))))
+
+;; ⊢ Matches (seq (lit 0x61) (lit 0x62)) [0x61,0x62] — the concatenation `ab`
+;; matches the word `[0x61]·[0x62]`. (Rule 5, the EXISTENTIAL `seq` case: the
+;; word splits `w = w1·w2` with `w1=[0x61]`, `w2=[0x62]`; chain two literal
+;; matches into the two premises of `match_seq`.)
+(#thm match_seq_ab
+  (#concl regex.matches_seq_ab)
+  (#proof
+    (imp-elim
+      (imp-elim
+        (all-elim regex.wb (all-elim regex.wa
+          (all-elim regex.lit_b (all-elim regex.lit_a (match_seq)))))
+        (all-elim regex.byte_a (match_lit)))
+      (all-elim regex.byte_b (match_lit)))))
+
+;; ⊢ Matches (star (lit 0x61)) (cat [0x61] nil) — one star iteration: `a*`
+;; matches `[0x61]·[]`. (Rule 7, the EXISTENTIAL `star` case: the word splits
+;; `cat w1 w2` with `w1=[0x61]`, `w2=nil`; feed the literal match into the first
+;; premise and the empty-star match `Matches (star a) nil` into the second.
+;; NOTE the word stays the literal `cat [0x61] nil` — `list_cat` reduction to
+;; `[0x61]` is a separate, deferred step.)
+(#thm match_star_a
+  (#concl regex.matches_star_a)
+  (#proof
+    (imp-elim
+      (imp-elim
+        (all-elim regex.nil (all-elim regex.wa (all-elim regex.lit_a (match_star_step))))
+        (all-elim regex.byte_a (match_lit)))
+      (all-elim regex.lit_a (match_star_nil)))))
+
+(#export match_eps_nil match_lit_a match_star_nil_a
+         match_alt_a match_seq_ab match_star_a)

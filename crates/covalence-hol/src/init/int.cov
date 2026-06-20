@@ -350,6 +350,49 @@
                     (all-elim (int.sc b) (all-elim (int.fc b) (lt_mk))))))
                 (assume (int.lt b c))))))))))
 
+;; ⊢ ∀a b. (a < b) ∨ ((a = b) ∨ (b < a)).  Rewrite the goal's `int.lt a b`,
+;; `a = b`, `int.lt b a` to their `nat` readings (`recon`+`lt_mk` / `mk_eq`),
+;; then close with `nat.lt_trichotomy` on `(fa+sb, fb+sa)`.
+(#thm lt_trichotomy
+  (#concl
+    (forall (a int) (forall (b int)
+      (or (int.lt a b) (or (= a b) (int.lt b a))))))
+  (#by
+    (intro a b)
+    ;; recon both variables, then read off the three relations on components.
+    (rw (all-elim a (recon)))
+    (rw (all-elim b (recon)))
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (lt_mk))))))
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (mk_eq))))))
+    (rw (all-elim (int.sc a) (all-elim (int.fc a)
+          (all-elim (int.sc b) (all-elim (int.fc b) (lt_mk))))))
+    (derive
+      (all-elim (nat.add (int.fc b) (int.sc a))
+        (all-elim (nat.add (int.fc a) (int.sc b)) (nat.lt_trichotomy))))))
+
+;; ⊢ ∀a b. (a ≤ b) = ((a < b) ∨ (a = b)).  Read off `≤`/`<`/`=` on components
+;; (`recon` + `le_mk`/`lt_mk`/`mk_eq`); the goal becomes `nat.le_iff_lt_or_eq`
+;; on `(fa+sb, fb+sa)`.
+(#thm le_def
+  (#concl
+    (forall (a int) (forall (b int)
+      (= (int.le a b) (or (int.lt a b) (= a b))))))
+  (#by
+    (intro a b)
+    (rw (all-elim a (recon)))
+    (rw (all-elim b (recon)))
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (le_mk))))))
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (lt_mk))))))
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (mk_eq))))))
+    (derive
+      (all-elim (nat.add (int.fc b) (int.sc a))
+        (all-elim (nat.add (int.fc a) (int.sc b)) (nat.le_iff_lt_or_eq))))))
+
 (#export add_comm mul_comm add_assoc add_zero add_neg sub_def
          mul_one mul_zero distrib
-         lt_irrefl lt_trans)
+         lt_irrefl lt_trans lt_trichotomy le_def)

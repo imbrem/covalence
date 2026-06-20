@@ -232,6 +232,11 @@ impl Env {
         op(&["nat.pred"], defs::nat_pred());
         op(&["nat.le", "<="], defs::nat_le());
         op(&["nat.lt", "<"], defs::nat_lt());
+        op(&["nat.pow"], defs::nat_pow());
+        op(&["nat.shl"], defs::nat_shl());
+        op(&["nat.shr"], defs::nat_shr());
+        op(&["nat.div"], defs::nat_div());
+        op(&["nat.mod"], defs::nat_mod());
         op(&["succ", "nat.succ"], Term::succ());
         drop(op);
         e.entries

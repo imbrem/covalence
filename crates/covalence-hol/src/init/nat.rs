@@ -58,8 +58,8 @@ use crate::init::ext::{TermExt, ThmExt};
 // Re-export the `defs/nat.rs` term catalogue (the operations; the
 // `*_spec` handles stay in `covalence_core::defs`).
 pub use covalence_core::defs::{
-    iter, nat_add, nat_div, nat_le, nat_lt, nat_mod, nat_mul, nat_pow, nat_pred, nat_rec, nat_sub,
-    nat_succ, nat_to_int,
+    iter, nat_add, nat_div, nat_le, nat_lt, nat_mod, nat_mul, nat_pow, nat_pred, nat_rec, nat_shl,
+    nat_shr, nat_sub, nat_succ, nat_to_int,
 };
 
 // ============================================================================
@@ -177,6 +177,13 @@ pub fn natrec_env() -> crate::script::Env {
     e.define_lemma("pred.succ", pred_succ());
     e.define_lemma("sub.zero", sub_zero());
     e.define_lemma("sub.succ", sub_succ());
+    // pow / shl / shr recursion equations (proved in Rust above, like + / *).
+    e.define_lemma("pow.zero", pow_zero());
+    e.define_lemma("pow.succ", pow_succ());
+    e.define_lemma("shl.zero", shl_zero());
+    e.define_lemma("shl.succ", shl_succ());
+    e.define_lemma("shr.zero", shr_zero());
+    e.define_lemma("shr.succ", shr_succ());
     // the `≤` / `<` defining clauses (`= T`/`= F` boolean forms), as the
     // 4-way conjunctions; nat.cov projects them with `and-elim`.
     e.define_lemma("le.body", le_body());
@@ -221,6 +228,8 @@ crate::cov_theory! {
         "add.lt_add"   => pub fn add_lt_add_cov;
         "lt.cross"     => pub fn lt_cross_cov;
         "le.cross"     => pub fn le_cross_cov;
+        "pow.add"      => pub fn pow_add_cov;
+        "shl.eq_mul_pow" => pub fn shl_eq_mul_pow_cov;
     }
 }
 
@@ -2413,9 +2422,530 @@ cached_thm! {
     }
 }
 
+// ============================================================================
+// iter / pow / shl / shr — recursion equations and characterizing theorems.
+//
+// `iter`, `nat.pow`, `nat.shl`, `nat.shr` all iterate on their *second*
+// argument and seed with the first (or a literal). Their recursion equations
+// are derived from `rec_holds` the same way `+`/`*`/`-`'s are, then the
+// algebraic facts (`pow_add`, `shl_eq_mul_pow`, …) follow by `nat`-induction.
+// ============================================================================
+
+pub(crate) fn pow(n: Term, m: Term) -> Term {
+    Term::app(Term::app(nat_pow(), n), m)
+}
+
+pub(crate) fn shl(n: Term, m: Term) -> Term {
+    Term::app(Term::app(nat_shl(), n), m)
+}
+
+pub(crate) fn shr(n: Term, m: Term) -> Term {
+    Term::app(Term::app(nat_shr(), n), m)
+}
+
+// `nat.pow` *seeds* its `iter` with the literal `1` (`one`): in that closed
+// position the `reduce` in `pow_to_iter` folds `succ 0` to the `Nat` literal
+// `1n`, so the recursion equation matches `1n`. The `2` inside the
+// `nat.shl`/`nat.shr` *step* functions sits under a binder (`λx. 2*x`), where
+// `reduce` leaves it as `succ (succ 0)` (`two`) — so we match that shape there.
+fn one() -> Term {
+    Term::nat_lit(1u32)
+}
+
+/// `succ (succ 0)` — the shape of `2` *inside* the `shl`/`shr` step lambdas,
+/// where `reduce` leaves it un-folded (it is under a binder).
+fn two() -> Term {
+    succ(succ(zero()))
+}
+
+/// `2n` — the `Nat` literal `reduce` produces once the step lambda is applied
+/// (the multiplier in the `shl`/`shr` recursion equations).
+fn two_lit() -> Term {
+    Term::nat_lit(2u32)
+}
+
+/// `iter[nat] m f a` as a `Term`.
+fn iter_t(m: Term, f: Term, a: Term) -> Term {
+    Term::app(Term::app(Term::app(iter(nat()), m), f), a)
+}
+
+/// `λ_:nat. f` — the `natRec` step function `iter` is built from.
+fn iter_step(f: Term) -> Term {
+    Term::abs(nat(), f)
+}
+
+cached_thm! {
+    /// `⊢ ∀(f:nat→nat)(a:nat). iter 0 f a = a` — `iter`'s base equation.
+    pub fn iter_zero() -> Result<Thm> {
+        let f = Term::free("f", Type::fun(nat(), nat()));
+        let a = var("a");
+        rec_base_eq(iter_t(zero(), f.clone(), a.clone()), a.clone(), iter_step(f.clone()))?
+            .all_intro("a", nat())?
+            .all_intro("f", Type::fun(nat(), nat()))
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀(f:nat→nat)(a:nat)(m:nat). iter (S m) f a = f (iter m f a)` —
+    /// `iter`'s step equation.
+    pub fn iter_succ() -> Result<Thm> {
+        let f = Term::free("f", Type::fun(nat(), nat()));
+        let a = var("a");
+        let m = var("m");
+        rec_step_eq(
+            iter_t(succ(m.clone()), f.clone(), a.clone()),
+            a.clone(),
+            iter_step(f.clone()),
+            m.clone(),
+            iter_t(m.clone(), f.clone(), a.clone()),
+            f.clone(), // push the recursive call under `f`
+        )?
+        .all_intro("m", nat())?
+        .all_intro("a", nat())?
+        .all_intro("f", Type::fun(nat(), nat()))
+    }
+}
+
+// ---- pow ----
+
+/// `⊢ pow n m = iter m (λx. n*x) 1` — δ-unfold `nat.pow` + β.
+fn pow_to_iter(n: Term, m: Term) -> Result<Thm> {
+    let unf = pow(n, m).delta_all(defs::nat_pow_spec().symbol())?;
+    let red = rhs(&unf).reduce()?;
+    unf.trans(red)
+}
+
+/// `λx:nat. n*x` — the `iter` step function in `nat.pow`'s body.
+fn pow_step(n: Term) -> Term {
+    Term::abs(nat(), subst::close(&mul(n, var("x")), "x"))
+}
+
+cached_thm! {
+    /// `⊢ ∀a. a ^ 0 = 1`.
+    pub fn pow_zero() -> Result<Thm> {
+        let a = var("a");
+        let conv = pow_to_iter(a.clone(), zero())?; // a^0 = iter 0 (λx. a*x) 1
+        let iz = iter_zero()
+            .all_elim(pow_step(a.clone()))?
+            .all_elim(one())?; // iter 0 (λx. a*x) 1 = 1
+        conv.trans(iz)?.all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a m. a ^ (S m) = a * a ^ m`.
+    pub fn pow_succ() -> Result<Thm> {
+        let a = var("a");
+        let m = var("m");
+        let step = pow_step(a.clone());
+        let conv = pow_to_iter(a.clone(), succ(m.clone()))?; // a^(Sm) = iter (Sm) step 1
+        let is = iter_succ()
+            .all_elim(step.clone())?
+            .all_elim(one())?
+            .all_elim(m.clone())?; // = step (iter m step 1)
+        let red = rhs(&is).reduce()?; // = a * (iter m step 1)
+        let fold = pow_to_iter(a.clone(), m.clone())?
+            .sym()?
+            .cong_arg(Term::app(nat_mul(), a.clone()))?; // a*(iter m step 1) = a*(a^m)
+        conv.trans(is)?.trans(red)?.trans(fold)?
+            .all_intro("m", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+// ---- shl ----
+
+/// `⊢ shl n m = iter m (λx. 2*x) n` — δ-unfold `nat.shl` + β.
+fn shl_to_iter(n: Term, m: Term) -> Result<Thm> {
+    let unf = shl(n, m).delta_all(defs::nat_shl_spec().symbol())?;
+    let red = rhs(&unf).reduce()?;
+    unf.trans(red)
+}
+
+/// `λx:nat. 2*x` — the `iter` step function in `nat.shl`'s body.
+fn shl_step() -> Term {
+    Term::abs(nat(), subst::close(&mul(two(), var("x")), "x"))
+}
+
+cached_thm! {
+    /// `⊢ ∀a. shl a 0 = a`.
+    pub fn shl_zero() -> Result<Thm> {
+        let a = var("a");
+        let conv = shl_to_iter(a.clone(), zero())?; // shl a 0 = iter 0 (λx. 2*x) a
+        let iz = iter_zero().all_elim(shl_step())?.all_elim(a.clone())?;
+        conv.trans(iz)?.all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a m. shl a (S m) = 2 * shl a m`.
+    pub fn shl_succ() -> Result<Thm> {
+        let a = var("a");
+        let m = var("m");
+        let step = shl_step();
+        let conv = shl_to_iter(a.clone(), succ(m.clone()))?;
+        let is = iter_succ()
+            .all_elim(step.clone())?
+            .all_elim(a.clone())?
+            .all_elim(m.clone())?;
+        let red = rhs(&is).reduce()?; // = 2 * (iter m step a)
+        let fold = shl_to_iter(a.clone(), m.clone())?
+            .sym()?
+            .cong_arg(Term::app(nat_mul(), two_lit()))?; // 2*(iter m step a) = 2*(shl a m)
+        conv.trans(is)?.trans(red)?.trans(fold)?
+            .all_intro("m", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+// ---- shr ----
+
+/// `⊢ shr n m = iter m (λx. div x 2) n` — δ-unfold `nat.shr` + β.
+fn shr_to_iter(n: Term, m: Term) -> Result<Thm> {
+    let unf = shr(n, m).delta_all(defs::nat_shr_spec().symbol())?;
+    let red = rhs(&unf).reduce()?;
+    unf.trans(red)
+}
+
+/// `λx:nat. div x 2` — the `iter` step function in `nat.shr`'s body.
+fn shr_step() -> Term {
+    let div_x_2 = Term::app(Term::app(nat_div(), var("x")), two());
+    Term::abs(nat(), subst::close(&div_x_2, "x"))
+}
+
+cached_thm! {
+    /// `⊢ ∀a. shr a 0 = a`.
+    pub fn shr_zero() -> Result<Thm> {
+        let a = var("a");
+        let conv = shr_to_iter(a.clone(), zero())?;
+        let iz = iter_zero().all_elim(shr_step())?.all_elim(a.clone())?;
+        conv.trans(iz)?.all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a m. shr a (S m) = div (shr a m) 2`.
+    pub fn shr_succ() -> Result<Thm> {
+        let a = var("a");
+        let m = var("m");
+        let step = shr_step();
+        let conv = shr_to_iter(a.clone(), succ(m.clone()))?;
+        let is = iter_succ()
+            .all_elim(step.clone())?
+            .all_elim(a.clone())?
+            .all_elim(m.clone())?;
+        let red = rhs(&is).reduce()?; // = div (iter m step a) 2
+        let fold = shr_to_iter(a.clone(), m.clone())?
+            .sym()?
+            .cong_arg(nat_div())?
+            .cong_fn(two_lit())?; // div (iter m step a) 2 = div (shr a m) 2
+        conv.trans(is)?.trans(red)?.trans(fold)?
+            .all_intro("m", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+// ---- pow: the exponent-additivity law ----
+
+cached_thm! {
+    /// `⊢ ∀a m n. a ^ (m + n) = a ^ m * a ^ n` — exponents add (the
+    /// homomorphism `(nat,+) → (nat,·)`). Proved by induction on `n`.
+    pub fn pow_add() -> Result<Thm> {
+        let a = var("a");
+        let m = var("m");
+        // body[n] ≔ a^(m+n) = a^m * a^n
+        let body_at = |t: &Term| -> Result<Term> {
+            pow(a.clone(), add(m.clone(), t.clone()))
+                .equals(mul(pow(a.clone(), m.clone()), pow(a.clone(), t.clone())))
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("n"))?, "n"));
+
+        // base n=0: a^(m+0) = a^m = a^m * 1 = a^m * a^0.
+        let base = {
+            let lhs = add_zero()
+                .all_elim(m.clone())?
+                .cong_arg(Term::app(nat_pow(), a.clone()))?; // a^(m+0) = a^m
+            let am = pow(a.clone(), m.clone());
+            let rhs = mul_one()
+                .all_elim(am.clone())?
+                .sym()? // a^m = a^m * 1
+                .trans(
+                    pow_zero()
+                        .all_elim(a.clone())?
+                        .sym()?
+                        .cong_arg(Term::app(nat_mul(), am.clone()))?, // a^m*1 = a^m*a^0
+                )?;
+            lhs.trans(rhs)?
+        };
+
+        // step: body[n] ⟹ body[S n].
+        let n = var("n");
+        let ihc = body_at(&n)?;
+        let am = pow(a.clone(), m.clone());
+        let an = pow(a.clone(), n.clone());
+        let inner = {
+            // a^(m+Sn) = a^(S(m+n)) = a*a^(m+n) = a*(a^m*a^n).
+            let l = add_succ_r()
+                .all_elim(m.clone())?
+                .all_elim(n.clone())? // m+Sn = S(m+n)
+                .cong_arg(Term::app(nat_pow(), a.clone()))? // a^(m+Sn) = a^(S(m+n))
+                .trans(pow_succ().all_elim(a.clone())?.all_elim(add(m.clone(), n.clone()))?)? // = a*a^(m+n)
+                .trans(
+                    Thm::assume(ihc.clone())?
+                        .cong_arg(Term::app(nat_mul(), a.clone()))?, // = a*(a^m*a^n)
+                )?;
+            // a^m * a^(Sn) = a^m*(a*a^n).
+            let r = pow_succ()
+                .all_elim(a.clone())?
+                .all_elim(n.clone())? // a^(Sn) = a*a^n
+                .cong_arg(Term::app(nat_mul(), am.clone()))?; // a^m*a^(Sn) = a^m*(a*a^n)
+            // a*(a^m*a^n) = a^m*(a*a^n)  — by comm/assoc.
+            let bridge = mul_assoc()
+                .all_elim(a.clone())?
+                .all_elim(am.clone())?
+                .all_elim(an.clone())?
+                .sym()? // a*(a^m*a^n) = (a*a^m)*a^n
+                .trans(cong_mul_l(
+                    mul_comm().all_elim(a.clone())?.all_elim(am.clone())?,
+                    an.clone(),
+                )?)? // = (a^m*a)*a^n
+                .trans(
+                    mul_assoc()
+                        .all_elim(am.clone())?
+                        .all_elim(a.clone())?
+                        .all_elim(an.clone())?,
+                )?; // = a^m*(a*a^n)
+            l.trans(bridge)?.trans(r.sym()?)?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct_on("n", &motive, base, step)?
+            .all_intro("m", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+// ---- shl: the `shl a m = a * 2^m` characterization ----
+
+cached_thm! {
+    /// `⊢ ∀a m. shl a m = a * 2 ^ m` — a left shift by `m` multiplies by
+    /// `2^m`. Proved by induction on `m` (`shl_succ` + `pow_succ`).
+    pub fn shl_eq_mul_pow() -> Result<Thm> {
+        let a = var("a");
+        // body[m] ≔ shl a m = a * 2^m
+        let body_at = |t: &Term| -> Result<Term> {
+            shl(a.clone(), t.clone())
+                .equals(mul(a.clone(), pow(two_lit(), t.clone())))
+        };
+        let motive = Term::abs(nat(), subst::close(&body_at(&var("m"))?, "m"));
+
+        // base m=0: shl a 0 = a = a*1 = a*2^0.
+        let base = {
+            let l = shl_zero().all_elim(a.clone())?; // shl a 0 = a
+            let r = mul_one()
+                .all_elim(a.clone())?
+                .sym()? // a = a*1
+                .trans(
+                    pow_zero()
+                        .all_elim(two_lit())?
+                        .sym()?
+                        .cong_arg(Term::app(nat_mul(), a.clone()))?, // a*1 = a*2^0
+                )?;
+            l.trans(r)?
+        };
+
+        // step: body[m] ⟹ body[S m].
+        let m = var("m");
+        let ihc = body_at(&m)?;
+        let inner = {
+            // shl a (Sm) = 2*shl a m = 2*(a*2^m).
+            let l = shl_succ()
+                .all_elim(a.clone())?
+                .all_elim(m.clone())? // shl a (Sm) = 2 * shl a m
+                .trans(
+                    Thm::assume(ihc.clone())?
+                        .cong_arg(Term::app(nat_mul(), two_lit()))?, // = 2*(a*2^m)
+                )?;
+            // a*2^(Sm) = a*(2*2^m).
+            let r = pow_succ()
+                .all_elim(two_lit())?
+                .all_elim(m.clone())? // 2^(Sm) = 2*2^m
+                .cong_arg(Term::app(nat_mul(), a.clone()))?; // a*2^(Sm) = a*(2*2^m)
+            // 2*(a*2^m) = a*(2*2^m) — comm/assoc.
+            let pm = pow(two_lit(), m.clone());
+            let bridge = mul_assoc()
+                .all_elim(two_lit())?
+                .all_elim(a.clone())?
+                .all_elim(pm.clone())?
+                .sym()? // 2*(a*2^m) = (2*a)*2^m
+                .trans(cong_mul_l(
+                    mul_comm().all_elim(two_lit())?.all_elim(a.clone())?,
+                    pm.clone(),
+                )?)? // = (a*2)*2^m
+                .trans(
+                    mul_assoc()
+                        .all_elim(a.clone())?
+                        .all_elim(two_lit())?
+                        .all_elim(pm.clone())?,
+                )?; // = a*(2*2^m)
+            l.trans(bridge)?.trans(r.sym()?)?
+        };
+        let step = inner.imp_intro(&ihc)?;
+        induct_on("m", &motive, base, step)?
+            .all_intro("a", nat())
+    }
+}
+
+// ---- div / mod ----
+//
+// `nat.div` is a def-style Euclidean *selector* (it picks the unique `d` with
+// `m≠0 ⟹ d·m ≤ n < (d+1)·m`); transferring those bounds to `nat.div` itself
+// needs a *witness* floor function — built by strong induction over the graph,
+// like the `natRec` construction. That witness is deferred (see
+// `init/SKELETONS.md`). What IS reachable now, hypothesis-free, is `nat.mod`'s
+// *definition* (it is an ordinary `let`): `mod n m = n − (n/m)·m`.
+
+#[allow(dead_code)] // the `div`/`mod` term-builder pair (used in tests + future div facts)
+pub(crate) fn nat_div_t(n: Term, m: Term) -> Term {
+    Term::app(Term::app(nat_div(), n), m)
+}
+
+pub(crate) fn nat_mod_t(n: Term, m: Term) -> Term {
+    Term::app(Term::app(nat_mod(), n), m)
+}
+
+cached_thm! {
+    /// `⊢ ∀n m. n mod m = n − (n / m) · m` — the Euclidean remainder is
+    /// `n` minus the largest multiple of `m` below it. This is `nat.mod`'s
+    /// *definition* (`nat.mod` is a `let`), δ-unfolded and β-reduced — a
+    /// genuine, hypothesis-free equation that needs no `div` facts.
+    pub fn mod_def() -> Result<Thm> {
+        let n = var("n");
+        let m = var("m");
+        let unf = nat_mod_t(n.clone(), m.clone()).delta_all(defs::nat_mod_spec().symbol())?;
+        let red = rhs(&unf).reduce()?;
+        unf.trans(red)?
+            .all_intro("m", nat())?
+            .all_intro("n", nat())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn iter_recursion_equations() {
+        let f = Term::free("f", Type::fun(nat(), nat()));
+        let (a, m) = (var("a"), var("m"));
+        // iter 0 f a = a.
+        let iz = iter_zero().all_elim(f.clone()).unwrap().all_elim(a.clone()).unwrap();
+        assert_eq!(iz.concl(), &iter_t(zero(), f.clone(), a.clone()).equals(a.clone()).unwrap());
+        // iter (S m) f a = f (iter m f a).
+        let is = iter_succ()
+            .all_elim(f.clone())
+            .unwrap()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(m.clone())
+            .unwrap();
+        let want = iter_t(succ(m.clone()), f.clone(), a.clone())
+            .equals(Term::app(f.clone(), iter_t(m.clone(), f, a)))
+            .unwrap();
+        assert_eq!(is.concl(), &want);
+        for t in [iter_zero(), iter_succ()] {
+            assert!(t.hyps().is_empty());
+        }
+    }
+
+    #[test]
+    fn pow_recursion_equations() {
+        let (a, m) = (var("a"), var("m"));
+        // a^0 = 1.
+        let pz = pow_zero().all_elim(a.clone()).unwrap();
+        assert_eq!(pz.concl(), &pow(a.clone(), zero()).equals(one()).unwrap());
+        // a^(S m) = a * a^m.
+        let ps = pow_succ().all_elim(a.clone()).unwrap().all_elim(m.clone()).unwrap();
+        let want = pow(a.clone(), succ(m.clone()))
+            .equals(mul(a.clone(), pow(a, m)))
+            .unwrap();
+        assert_eq!(ps.concl(), &want);
+        for t in [pow_zero(), pow_succ()] {
+            assert!(t.hyps().is_empty());
+        }
+    }
+
+    #[test]
+    fn shl_recursion_equations() {
+        let (a, m) = (var("a"), var("m"));
+        let sz = shl_zero().all_elim(a.clone()).unwrap();
+        assert_eq!(sz.concl(), &shl(a.clone(), zero()).equals(a.clone()).unwrap());
+        let ss = shl_succ().all_elim(a.clone()).unwrap().all_elim(m.clone()).unwrap();
+        let want = shl(a.clone(), succ(m.clone()))
+            .equals(mul(two_lit(), shl(a, m)))
+            .unwrap();
+        assert_eq!(ss.concl(), &want);
+        for t in [shl_zero(), shl_succ()] {
+            assert!(t.hyps().is_empty());
+        }
+    }
+
+    #[test]
+    fn shr_recursion_equations() {
+        let (a, m) = (var("a"), var("m"));
+        let sz = shr_zero().all_elim(a.clone()).unwrap();
+        assert_eq!(sz.concl(), &shr(a.clone(), zero()).equals(a.clone()).unwrap());
+        let ss = shr_succ().all_elim(a.clone()).unwrap().all_elim(m.clone()).unwrap();
+        let div2 = |t: Term| Term::app(Term::app(nat_div(), t), two_lit());
+        let want = shr(a.clone(), succ(m.clone()))
+            .equals(div2(shr(a, m)))
+            .unwrap();
+        assert_eq!(ss.concl(), &want);
+        for t in [shr_zero(), shr_succ()] {
+            assert!(t.hyps().is_empty());
+        }
+    }
+
+    #[test]
+    fn mod_definitional_equation() {
+        // ⊢ ∀n m. n mod m = n − (n/m)·m.
+        let (n, m) = (var("n"), var("m"));
+        let md = mod_def().all_elim(n.clone()).unwrap().all_elim(m.clone()).unwrap();
+        let want = nat_mod_t(n.clone(), m.clone())
+            .equals(sub(n.clone(), mul(nat_div_t(n.clone(), m.clone()), m.clone())))
+            .unwrap();
+        assert_eq!(md.concl(), &want);
+        assert!(mod_def().hyps().is_empty());
+    }
+
+    #[test]
+    fn pow_add_and_shl_characterization() {
+        let (a, m, n) = (var("a"), var("m"), var("n"));
+        // a^(m+n) = a^m * a^n.
+        let pa = pow_add()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(m.clone())
+            .unwrap()
+            .all_elim(n.clone())
+            .unwrap();
+        let want = pow(a.clone(), add(m.clone(), n.clone()))
+            .equals(mul(pow(a.clone(), m.clone()), pow(a.clone(), n.clone())))
+            .unwrap();
+        assert_eq!(pa.concl(), &want);
+        // shl a m = a * 2^m.
+        let sh = shl_eq_mul_pow()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(m.clone())
+            .unwrap();
+        let want2 = shl(a.clone(), m.clone())
+            .equals(mul(a.clone(), pow(two_lit(), m.clone())))
+            .unwrap();
+        assert_eq!(sh.concl(), &want2);
+        for t in [pow_add(), shl_eq_mul_pow()] {
+            assert!(t.hyps().is_empty(), "exponent laws are hypothesis-free");
+        }
+    }
 
     #[test]
     fn le_trans_holds() {
@@ -2981,6 +3511,12 @@ mod cov_tests {
         assert_eq!(cov::add_lt_add_cov().concl(), super::add_lt_add().concl());
         assert_eq!(cov::lt_cross_cov().concl(), super::lt_cross().concl());
         assert_eq!(cov::le_cross_cov().concl(), super::le_cross().concl());
+        // Exponentiation / shift ported to `nat.cov`.
+        assert_eq!(cov::pow_add_cov().concl(), super::pow_add().concl());
+        assert_eq!(
+            cov::shl_eq_mul_pow_cov().concl(),
+            super::shl_eq_mul_pow().concl()
+        );
     }
 
     #[test]

@@ -2114,7 +2114,7 @@ pub fn int_env() -> crate::script::Env {
         "lit1",
         to_ops(
             lit1_mk().unwrap(),
-            &[(&nat::succ(nat::zero()), &nat::zero())],
+            &[(&Term::nat_lit(1u64), &nat::zero())],
             &[],
         )
         .unwrap(),
@@ -2130,6 +2130,7 @@ crate::cov_theory! {
         import "core" = crate::script::Env::core();
         import "logic" = crate::init::logic::cov::env();
         import "nat" = crate::init::nat::cov::env();
+        import "natrec" = crate::init::nat::natrec_env();
         import "intprim" = crate::init::int::int_env();
         "add_comm"      => pub fn add_comm_cov;
         "add_assoc"     => pub fn add_assoc_cov;
@@ -2154,9 +2155,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn int_cov_add_comm_matches_rust() {
-        assert_eq!(cov::add_comm_cov().concl(), add_comm().concl());
-        assert!(cov::add_comm_cov().hyps().is_empty());
+    fn int_cov_ring_matches_rust() {
+        // Each ported `int.cov` ring axiom states exactly the Rust conclusion
+        // (same checked theorem, two proofs) and is hypothesis-free.
+        let pairs: [(Thm, Thm); 9] = [
+            (cov::add_comm_cov(), add_comm()),
+            (cov::mul_comm_cov(), mul_comm()),
+            (cov::add_assoc_cov(), add_assoc()),
+            (cov::add_zero_cov(), add_zero()),
+            (cov::add_neg_cov(), add_neg()),
+            (cov::sub_def_cov(), sub_def()),
+            (cov::mul_one_cov(), mul_one()),
+            (cov::mul_zero_cov(), mul_zero()),
+            (cov::distrib_cov(), distrib()),
+        ];
+        for (c, r) in pairs {
+            assert!(c.hyps().is_empty(), "ported int.cov axiom is genuine");
+            assert_eq!(c.concl(), r.concl());
+        }
     }
 
     #[test]
@@ -2517,3 +2533,4 @@ mod tests {
         assert!(lifted.hyps().iter().any(|h| h == &rel_app(&p, &q)));
     }
 }
+

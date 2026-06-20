@@ -18,16 +18,19 @@
 ;;
 ;; The recipe for every ring/order axiom: `recon`-rewrite each `int` variable
 ;; to `int.mk (fc ·)(sc ·)` form, push the `int` op through with its `*_mk`
-;; rule, then discharge the residual on the `nat` components — either an `int.mk`
-;; equality via `mk_eq` reduced to a `nat` equation, or a `nat` order fact
-;; (the imported `nat` theory: add/mul comm/assoc/distrib, the strict order).
+;; rule, then discharge the residual on the `nat` components — either by
+;; rewriting the `nat`-component subterms directly (when the two `int.mk`
+;; forms coincide on the nose), an `int.mk` equality reduced to a `nat`
+;; equation via `mk_eq`, or a `nat` order fact from the imported `nat` theory.
 
 (#import core)
 (#open core)
 (#import logic)
 (#open logic)
 (#import nat)
-(#open nat)
+(#use nat)
+(#import natrec)
+(#use natrec)
 (#import intprim)
 (#open intprim)
 
@@ -35,30 +38,208 @@
 ;; Commutative ring
 ;; ============================================================================
 
-;; ⊢ ∀a b. a + b = b + a.  Push `+` through `add_mk` on both sides; the two
-;; `MK` results are equal by `mk_eq`, reduced to a `nat` equation closed with
-;; `add_comm`/`add_cancel`-style rearrangement (here just `add_comm` on each
-;; cross-sum component).
+;; ⊢ ∀a b. a + b = b + a.  Push `+` through `add_mk` on both sides, then
+;; commute each `nat` component (`nat.add_comm`) so the two `int.mk` forms
+;; coincide on the nose.
 (#thm add_comm
   (#concl (forall (a int) (forall (b int) (= (int.add a b) (int.add b a)))))
   (#by
     (intro a b)
-    ;; a = mk(fc a)(sc a), b = mk(fc b)(sc b).
     (rw (all-elim a (recon)))
     (rw (all-elim b (recon)))
-    ;; int.add (mk fa sa)(mk fb sb) = mk (fa+fb)(sa+sb), both orders.
     (rw (all-elim (int.sc b) (all-elim (int.fc b)
           (all-elim (int.sc a) (all-elim (int.fc a) (add_mk))))))
     (rw (all-elim (int.sc a) (all-elim (int.fc a)
           (all-elim (int.sc b) (all-elim (int.fc b) (add_mk))))))
-    ;; (mk (fa+fb)(sa+sb) = mk (fb+fa)(sb+sa)) = ((fa+fb)+(sb+sa) = (fb+fa)+(sa+sb)).
-    (rw (all-elim (nat.add (int.sc b) (int.sc a))
-          (all-elim (nat.add (int.fc b) (int.fc a))
-            (all-elim (nat.add (int.sc a) (int.sc b))
-              (all-elim (nat.add (int.fc a) (int.fc b)) (mk_eq))))))
-    ;; close on nat: (fa+fb)+(sb+sa) = (fb+fa)+(sa+sb) by add_comm in each pair.
-    (rw (all-elim (int.fc b) (all-elim (int.fc a) (add_comm))))
-    (rw (all-elim (int.sc a) (all-elim (int.sc b) (add_comm))))
+    (rw (all-elim (int.fc b) (all-elim (int.fc a) (nat.add_comm))))
+    (rw (all-elim (int.sc b) (all-elim (int.sc a) (nat.add_comm))))
     (refl)))
 
-(#export add_comm)
+;; ⊢ ∀a b. a * b = b * a.  Push `*` through `mul_mk`; commute each of the four
+;; products (`nat.mul_comm`) and swap the two summands of the second component
+;; (`nat.add_comm`).
+(#thm mul_comm
+  (#concl (forall (a int) (forall (b int) (= (int.mul a b) (int.mul b a)))))
+  (#by
+    (intro a b)
+    (rw (all-elim a (recon)))
+    (rw (all-elim b (recon)))
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (mul_mk))))))
+    (rw (all-elim (int.sc a) (all-elim (int.fc a)
+          (all-elim (int.sc b) (all-elim (int.fc b) (mul_mk))))))
+    ;; first component: fa·fb→fb·fa, sa·sb→sb·sa.
+    (rw (all-elim (int.fc b) (all-elim (int.fc a) (nat.mul_comm))))
+    (rw (all-elim (int.sc b) (all-elim (int.sc a) (nat.mul_comm))))
+    ;; second component: fa·sb→sb·fa, sa·fb→fb·sa, then swap the summands.
+    (rw (all-elim (int.sc b) (all-elim (int.fc a) (nat.mul_comm))))
+    (rw (all-elim (int.fc b) (all-elim (int.sc a) (nat.mul_comm))))
+    (rw (all-elim (nat.mul (int.fc b) (int.sc a))
+          (all-elim (nat.mul (int.sc b) (int.fc a)) (nat.add_comm))))
+    (refl)))
+
+;; ⊢ ∀a b c. (a + b) + c = a + (b + c).  Push `+` through `add_mk` (twice each
+;; side) and close by `nat.add_assoc` on each component.
+(#thm add_assoc
+  (#concl
+    (forall (a int) (forall (b int) (forall (c int)
+      (= (int.add (int.add a b) c) (int.add a (int.add b c)))))))
+  (#by
+    (intro a b c)
+    (rw (all-elim a (recon)))
+    (rw (all-elim b (recon)))
+    (rw (all-elim c (recon)))
+    ;; LHS: (a+b)+c = mk((fa+fb)+fc)((sa+sb)+sc).
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (add_mk))))))
+    (rw (all-elim (int.sc c) (all-elim (int.fc c)
+          (all-elim (nat.add (int.sc a) (int.sc b))
+            (all-elim (nat.add (int.fc a) (int.fc b)) (add_mk))))))
+    ;; RHS: a+(b+c) = mk(fa+(fb+fc))(sa+(sb+sc)).
+    (rw (all-elim (int.sc c) (all-elim (int.fc c)
+          (all-elim (int.sc b) (all-elim (int.fc b) (add_mk))))))
+    (rw (all-elim (nat.add (int.sc b) (int.sc c))
+          (all-elim (nat.add (int.fc b) (int.fc c))
+            (all-elim (int.sc a) (all-elim (int.fc a) (add_mk))))))
+    ;; close: assoc on each component.
+    (rw (all-elim (int.fc c) (all-elim (int.fc b) (all-elim (int.fc a) (nat.add_assoc)))))
+    (rw (all-elim (int.sc c) (all-elim (int.sc b) (all-elim (int.sc a) (nat.add_assoc)))))
+    (refl)))
+
+;; ⊢ ∀a. a + 0 = a.  `0 = mk 0 0` (`lit0`), so `a + 0 = mk(fa+0)(sa+0)`;
+;; `nat.add_zero` on each component returns `mk fa sa = a`.
+(#thm add_zero
+  (#concl (forall (a int) (= (int.add a int.0) a)))
+  (#by
+    (intro a)
+    (rw (all-elim a (recon)))
+    (rw (lit0))
+    (rw (all-elim 0 (all-elim 0
+          (all-elim (int.sc a) (all-elim (int.fc a) (add_mk))))))
+    (rw (all-elim (int.fc a) (nat.add_zero)))
+    (rw (all-elim (int.sc a) (nat.add_zero)))
+    (refl)))
+
+;; ⊢ ∀a. a + (-a) = 0.  `-a = mk (sc a)(fc a)` (`neg_mk`), so
+;; `a + (-a) = mk(fa+sa)(sa+fa)`, equal to `0 = mk 0 0` by `mk_eq`:
+;; (fa+sa)+0 = 0+(sa+fa), closed with `nat.add_zero`/`nat.zero_add`+`add_comm`.
+(#thm add_neg
+  (#concl (forall (a int) (= (int.add a (int.neg a)) int.0)))
+  (#by
+    (intro a)
+    (rw (all-elim a (recon)))
+    (rw (all-elim (int.sc a) (all-elim (int.fc a) (neg_mk))))
+    (rw (all-elim (int.fc a) (all-elim (int.sc a)
+          (all-elim (int.sc a) (all-elim (int.fc a) (add_mk))))))
+    (rw (lit0))
+    ;; mk (fa+sa)(sa+fa) = mk 0 0  ↦  (fa+sa)+0 = 0+(sa+fa).
+    (rw (all-elim 0 (all-elim 0
+          (all-elim (nat.add (int.sc a) (int.fc a))
+            (all-elim (nat.add (int.fc a) (int.sc a)) (mk_eq))))))
+    (rw (all-elim (nat.add (int.fc a) (int.sc a)) (nat.add_zero)))
+    (rw (all-elim (nat.add (int.sc a) (int.fc a)) (natrec.zero_add)))
+    (rw (all-elim (int.sc a) (all-elim (int.fc a) (nat.add_comm))))
+    (refl)))
+
+;; ⊢ ∀a b. a - b = a + (-b).  Both sides land on `mk (fa+sb)(sa+fb)`:
+;; `sub_mk` directly, and `add_mk` after `neg_mk` turns `-b` into `mk sb fb`.
+(#thm sub_def
+  (#concl (forall (a int) (forall (b int)
+            (= (int.sub a b) (int.add a (int.neg b))))))
+  (#by
+    (intro a b)
+    (rw (all-elim a (recon)))
+    (rw (all-elim b (recon)))
+    ;; LHS via sub_mk.
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (sub_mk))))))
+    ;; RHS: -b = mk (sc b)(fc b); then add_mk.
+    (rw (all-elim (int.sc b) (all-elim (int.fc b) (neg_mk))))
+    (rw (all-elim (int.fc b) (all-elim (int.sc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (add_mk))))))
+    (refl)))
+
+;; ⊢ ∀a. a * 1 = a.  `1 = mk 1 0` (`lit1`), so
+;; `a * 1 = mk(fa·1+sa·0)(fa·0+sa·1)`; `nat.mul_one`/`mul_zero` +
+;; `add_zero`/`zero_add` per component returns `mk fa sa = a`.
+(#thm mul_one
+  (#concl (forall (a int) (= (int.mul a int.1) a)))
+  (#by
+    (intro a)
+    (rw (all-elim a (recon)))
+    (rw (lit1))
+    (rw (all-elim 0 (all-elim 1
+          (all-elim (int.sc a) (all-elim (int.fc a) (mul_mk))))))
+    ;; fst: fa·1+sa·0 = fa+0 = fa.
+    (rw (all-elim (int.fc a) (nat.mul_one)))
+    (rw (all-elim (int.sc a) (nat.mul_zero)))
+    (rw (all-elim (int.fc a) (nat.add_zero)))
+    ;; snd: fa·0+sa·1 = 0+sa = sa.
+    (rw (all-elim (int.fc a) (nat.mul_zero)))
+    (rw (all-elim (int.sc a) (nat.mul_one)))
+    (rw (all-elim (int.sc a) (natrec.zero_add)))
+    (refl)))
+
+;; ⊢ ∀a. a * 0 = 0.  `0 = mk 0 0`, so each component is `fa·0+sa·0 = 0+0 = 0`.
+(#thm mul_zero
+  (#concl (forall (a int) (= (int.mul a int.0) int.0)))
+  (#by
+    (intro a)
+    (rw (all-elim a (recon)))
+    (rw (lit0))
+    (rw (all-elim 0 (all-elim 0
+          (all-elim (int.sc a) (all-elim (int.fc a) (mul_mk))))))
+    (rw (all-elim (int.fc a) (nat.mul_zero)))
+    (rw (all-elim (int.sc a) (nat.mul_zero)))
+    (rw (all-elim 0 (natrec.zero_add)))
+    (refl)))
+
+;; ⊢ ∀a b c. a * (b + c) = a * b + a * c.  Left distributivity. Both sides
+;; reduce to `mk` of the same four products (re-grouped); `nat.distrib` per
+;; component plus `nat.add_swap_mid` to re-pair.
+(#thm distrib
+  (#concl
+    (forall (a int) (forall (b int) (forall (c int)
+      (= (int.mul a (int.add b c))
+         (int.add (int.mul a b) (int.mul a c)))))))
+  (#by
+    (intro a b c)
+    (rw (all-elim a (recon)))
+    (rw (all-elim b (recon)))
+    (rw (all-elim c (recon)))
+    ;; LHS: a*(b+c).
+    (rw (all-elim (int.sc c) (all-elim (int.fc c)
+          (all-elim (int.sc b) (all-elim (int.fc b) (add_mk))))))
+    (rw (all-elim (nat.add (int.sc b) (int.sc c))
+          (all-elim (nat.add (int.fc b) (int.fc c))
+            (all-elim (int.sc a) (all-elim (int.fc a) (mul_mk))))))
+    ;; RHS: a*b + a*c.
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (mul_mk))))))
+    (rw (all-elim (int.sc c) (all-elim (int.fc c)
+          (all-elim (int.sc a) (all-elim (int.fc a) (mul_mk))))))
+    (rw (all-elim
+          (nat.add (nat.mul (int.fc a) (int.sc c)) (nat.mul (int.sc a) (int.fc c)))
+          (all-elim
+            (nat.add (nat.mul (int.fc a) (int.fc c)) (nat.mul (int.sc a) (int.sc c)))
+            (all-elim
+              (nat.add (nat.mul (int.fc a) (int.sc b)) (nat.mul (int.sc a) (int.fc b)))
+              (all-elim
+                (nat.add (nat.mul (int.fc a) (int.fc b)) (nat.mul (int.sc a) (int.sc b)))
+                (add_mk))))))
+    ;; fst component: fa·(fb+fc)+sa·(sb+sc) = (fa·fb+sa·sb)+(fa·fc+sa·sc).
+    (rw (all-elim (int.fc c) (all-elim (int.fc b) (all-elim (int.fc a) (nat.distrib)))))
+    (rw (all-elim (int.sc c) (all-elim (int.sc b) (all-elim (int.sc a) (nat.distrib)))))
+    (rw (all-elim (nat.mul (int.sc a) (int.sc c)) (all-elim (nat.mul (int.sc a) (int.sc b))
+          (all-elim (nat.mul (int.fc a) (int.fc c)) (all-elim (nat.mul (int.fc a) (int.fc b))
+            (nat.add_swap_mid))))))
+    ;; snd component: fa·(sb+sc)+sa·(fb+fc) = (fa·sb+sa·fb)+(fa·sc+sa·fc).
+    (rw (all-elim (int.sc c) (all-elim (int.sc b) (all-elim (int.fc a) (nat.distrib)))))
+    (rw (all-elim (int.fc c) (all-elim (int.fc b) (all-elim (int.sc a) (nat.distrib)))))
+    (rw (all-elim (nat.mul (int.sc a) (int.fc c)) (all-elim (nat.mul (int.sc a) (int.fc b))
+          (all-elim (nat.mul (int.fc a) (int.sc c)) (all-elim (nat.mul (int.fc a) (int.sc b))
+            (nat.add_swap_mid))))))
+    (refl)))
+
+(#export add_comm mul_comm add_assoc add_zero add_neg sub_def
+         mul_one mul_zero distrib)

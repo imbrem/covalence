@@ -36,18 +36,6 @@ impl Symbol for smol_str::SmolStr {
     }
 }
 
-/// A boxed `dyn Symbol` is itself a `Symbol` (forwarding `label`). This
-/// lets a single spec-construction call site pass either a `Canonical`
-/// variant or an opaque `SmolStr` chosen at runtime (see
-/// `defs::cov::spec_symbol`). The `Arc<dyn Symbol>` the spec stores then
-/// wraps the box; structural equality stays pointer-based, exactly as
-/// for any other symbol.
-impl Symbol for Box<dyn Symbol> {
-    fn label(&self) -> &str {
-        (**self).label()
-    }
-}
-
 // ============================================================================
 // Symbol comparison / hash helpers (shared by `TypeSpec` / `TermSpec`)
 // ============================================================================

@@ -1,10 +1,5 @@
 //! `option 'a := coprod 'a unit` + constructors + eliminator.
 //!
-//! **Source of truth: [`core.cov`](super::cov).** `option` and its
-//! `none`/`some`/`option.case`/`isSome`/`unwrap` definitions live as
-//! directives in `defs/core.cov`; the accessors below are thin lookups
-//! into [`super::cov::core_env`].
-//!
 //! `option α` is an opaque newtype wrapper over `coprod α unit`. Its
 //! constructors and eliminator are *defined* (not declaration-only)
 //! in terms of the `coprod` injections/eliminator plus the spec
@@ -15,8 +10,8 @@
 //!     some a       ≔ abs (inl a)
 //!     none         ≔ abs (inr unit)
 //!     optionCase d f o ≔ coprodCase f (λ_. d) (rep o)
-//!     isSome o     ≔ optionCase F (λ_. T) o
-//!     unwrap o     ≔ optionCase fail (λx. x) o
+//!     isSome o     ≔ coprodCase (λ_. T) (λ_. F) (rep o)
+//!     fromSome o   ≔ coprodCase (λx. x) (λ_. ε(λx. T)) (rep o)
 //! ```
 //!
 //! The characterizing equations
@@ -25,89 +20,147 @@
 //!     optionCase d f none      = d
 //!     optionCase d f (some x)  = f x
 //!     isSome none              = F      isSome (some x)   = T
-//!     unwrap (some x)          = x      (unwrap none = fail, unspecified)
+//!     fromSome (some x)        = x      (fromSome none = ε, unspecified)
 //! ```
 //!
 //! are **theorems** about these definitions (provable downstream in
 //! `covalence-hol` from the abs/rep bijection + the `coprodCase`
 //! equations), not postulates.
 
+use std::sync::LazyLock;
+
+use crate::hol;
 use crate::term::{Term, Type};
 
-use super::cov::core_env;
+use super::canonical::Canonical;
+use super::coprod::{coprod, coprod_case, inl, inr};
+use super::fail::fail;
 use super::spec::{TermSpec, TypeSpec};
-
-fn term_spec(label: &str) -> TermSpec {
-    core_env()
-        .term_spec(label)
-        .unwrap_or_else(|| panic!("core.cov must define `{label}`"))
-        .clone()
-}
+use super::unit::unit_nil;
 
 /// `option 'a := coprod 'a unit`. Opaque newtype wrapper: its carrier
 /// is `coprod α unit` and the predicate is trivially true, so
 /// `option α` and `coprod α unit` have the same inhabitants — but they
-/// are distinct types at the kernel-rule level (different labels,
-/// distinct `Arc` identity, distinct `Spec` leaves). Cross the boundary
-/// with `abs`/`rep` ([`Term::spec_abs`] / [`Term::spec_rep`]), as the
-/// constructors do.
+/// are distinct types at the kernel-rule level (different `Canonical`
+/// labels, distinct `Arc` identity, distinct `Spec` leaves). Cross the
+/// boundary with `abs`/`rep` ([`Term::spec_abs`] / [`Term::spec_rep`]),
+/// as the constructors below do.
 pub fn option_spec() -> TypeSpec {
-    core_env()
-        .type_spec("option")
-        .expect("core.cov must define `option`")
-        .clone()
+    static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
+        let alpha = Type::tfree("a");
+        let carrier = coprod(alpha, Type::unit());
+        TypeSpec::newtype(Canonical::Option, carrier)
+    });
+    LAZY.clone()
 }
 pub fn option(alpha: Type) -> Type {
     Type::spec(option_spec(), vec![alpha])
 }
 
-/// `none : option 'a` ≡ `abs (inr unit)`.
-pub fn none_spec() -> TermSpec {
-    term_spec("option.none")
-}
-/// `none α : option α`.
-pub fn none(alpha: Type) -> Term {
-    Term::term_spec(none_spec(), vec![alpha])
+// ============================================================================
+// Constructors
+// ============================================================================
+
+fn none_body() -> Term {
+    let alpha = Type::tfree("a");
+    // inr unit.nil : coprod α unit
+    let inr_u = Term::app(inr(alpha.clone(), Type::unit()), unit_nil());
+    let abs = Term::spec_abs(option_spec(), vec![alpha]);
+    Term::app(abs, inr_u)
 }
 
-/// `some : 'a → option 'a` ≡ `λa. abs (inl a)`.
-pub fn some_spec() -> TermSpec {
-    term_spec("option.some")
+poly_let_term! {
+    /// `none : option 'a` ≡ `abs (inr unit)`.
+    none_spec, none(alpha), Canonical::None, none_body()
 }
-/// `some α : α → option α`.
-pub fn some(alpha: Type) -> Term {
-    Term::term_spec(some_spec(), vec![alpha])
+
+fn some_body() -> Term {
+    let alpha = Type::tfree("a");
+    let a = Term::free("a", alpha.clone());
+    // inl a : coprod α unit
+    let inl_a = Term::app(inl(alpha.clone(), Type::unit()), a);
+    let abs = Term::spec_abs(option_spec(), vec![alpha.clone()]);
+    let applied = Term::app(abs, inl_a);
+    hol::pub_abs("a", alpha, applied)
+}
+
+poly_let_term! {
+    /// `some : 'a → option 'a` ≡ `λa. abs (inl a)`.
+    some_spec, some(alpha), Canonical::Some, some_body()
+}
+
+// ============================================================================
+// Eliminator + accessors
+// ============================================================================
+
+fn option_case_body() -> Term {
+    let alpha = Type::tfree("a");
+    let beta = Type::tfree("b");
+    let f_ty = Type::fun(alpha.clone(), beta.clone());
+
+    let d = Term::free("d", beta.clone());
+    let f = Term::free("f", f_ty.clone());
+    let o = Term::free("o", option(alpha.clone()));
+
+    let rep_o = Term::app(Term::spec_rep(option_spec(), vec![alpha.clone()]), o);
+    // λ_:unit. d  — the none branch ignores its (unit) argument.
+    let g = Term::abs(Type::unit(), d.clone());
+    let case = coprod_case(alpha.clone(), Type::unit(), beta.clone());
+    let applied = Term::app(Term::app(Term::app(case, f.clone()), g), rep_o);
+
+    let lam_o = hol::pub_abs("o", option(alpha.clone()), applied);
+    let lam_f = hol::pub_abs("f", f_ty, lam_o);
+    hol::pub_abs("d", beta, lam_f)
 }
 
 /// `optionCase : 'b → ('a → 'b) → option 'a → 'b` ≡
-/// `λd f o. coprodCase f (λ_. d) (rep o)`. The fundamental eliminator.
-/// The spec is parametric in `α` then `β` (alphabetical `free_tvars()`
-/// order).
+/// `λd f o. coprodCase f (λ_. d) (rep o)`. The fundamental
+/// eliminator. The spec is parametric in `α` then `β` (alphabetical
+/// `free_tvars()` order).
 pub fn option_case_spec() -> TermSpec {
-    term_spec("option.case")
+    static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
+        let body = option_case_body();
+        let ty = body.type_of().expect("optionCase body type-checks");
+        TermSpec::new(Canonical::OptionCase, Some(ty), Some(body))
+    });
+    LAZY.clone()
 }
 /// `optionCase α β : β → (α → β) → option α → β`.
 pub fn option_case(alpha: Type, beta: Type) -> Term {
     Term::term_spec(option_case_spec(), vec![alpha, beta])
 }
 
-/// `isSome : option 'a → bool` ≡ `λo. optionCase F (λ_. T) o`. True iff
-/// `some _`.
-pub fn is_some_spec() -> TermSpec {
-    term_spec("option.isSome")
-}
-/// `isSome α : option α → bool`.
-pub fn is_some(alpha: Type) -> Term {
-    Term::term_spec(is_some_spec(), vec![alpha])
+fn is_some_body() -> Term {
+    // λo. optionCase F (λ_. T) o
+    let alpha = Type::tfree("a");
+    let o = Term::free("o", option(alpha.clone()));
+    let f = Term::abs(alpha.clone(), Term::bool_lit(true)); // some _ ↦ T
+    let case = option_case(alpha.clone(), Type::bool());
+    let applied = Term::app(Term::app(Term::app(case, Term::bool_lit(false)), f), o);
+    hol::pub_abs("o", option(alpha), applied)
 }
 
-/// `unwrap : option 'a → 'a` ≡ `λo. optionCase fail (λx. x) o`. Extract
-/// the wrapped value if `some _`; for `none`, the unspecified `fail`
-/// value.
-pub fn unwrap_spec() -> TermSpec {
-    term_spec("option.unwrap")
+poly_let_term! {
+    /// `isSome : option 'a → bool` ≡ `λo. optionCase F (λ_. T) o`.
+    /// True iff `some _`.
+    is_some_spec, is_some(alpha), Canonical::IsSome, is_some_body()
 }
-/// `unwrap α : option α → α`.
-pub fn unwrap(alpha: Type) -> Term {
-    Term::term_spec(unwrap_spec(), vec![alpha])
+
+fn unwrap_body() -> Term {
+    // λo. optionCase fail (λx. x) o
+    let alpha = Type::tfree("a");
+    let o = Term::free("o", option(alpha.clone()));
+    // some-branch: identity λx. x
+    let id = hol::pub_abs("x", alpha.clone(), Term::free("x", alpha.clone()));
+    // none-branch default: the unspecified value `fail`.
+    let case = option_case(alpha.clone(), alpha.clone());
+    let applied = Term::app(Term::app(Term::app(case, fail(alpha.clone())), id), o);
+    hol::pub_abs("o", option(alpha), applied)
+}
+
+poly_let_term! {
+    /// `unwrap : option 'a → 'a` ≡ `λo. optionCase fail (λx. x) o`.
+    /// Extract the wrapped value if `some _`; for `none`, the
+    /// unspecified `fail` value.
+    unwrap_spec, unwrap(alpha), Canonical::Unwrap, unwrap_body()
 }

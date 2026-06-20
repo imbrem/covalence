@@ -16,6 +16,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use covalence_core::defs::TypeSpec;
 use covalence_core::{Term, TermKind, Thm, Type, defs, subst};
 use futures::FutureExt;
 use imbl::HashMap;
@@ -72,6 +73,13 @@ pub struct Env {
     /// **computing** (so all lookups are lazy; lemma lookup is `async`).
     entries: LazyMap<Entry>,
     imports: HashMap<String, Env>,
+    /// User-defined **type constructors** introduced by the `#newtype` /
+    /// `#subtype` / `#quot` directives, resolved by name when a later
+    /// type/term is parsed (`parse_type`'s `(NAME ty…)` / bare-`NAME` case).
+    /// Kept separate from `entries` because types live in a distinct
+    /// namespace from terms (e.g. `option` is both a type ctor and carries
+    /// term constructors), and a `TypeSpec` is not an [`Entry`].
+    type_specs: HashMap<String, TypeSpec>,
 }
 
 impl Env {
@@ -161,10 +169,27 @@ impl Env {
         self.register_tactic(name, r);
     }
 
+    /// Bind a **type constructor** `name` to a [`TypeSpec`] (the result of a
+    /// `#newtype` / `#subtype` / `#quot` directive). Later types/terms resolve
+    /// `(NAME ty…)` / bare `NAME` against this map.
+    pub fn define_type(&mut self, name: impl Into<String>, spec: TypeSpec) {
+        self.type_specs.insert(name.into(), spec);
+    }
+
+    /// The [`TypeSpec`] bound to `name`, if `name` was `#newtype`/`#subtype`/
+    /// `#quot`-defined (or imported from such a module).
+    pub fn lookup_type_spec(&self, name: &str) -> Option<TypeSpec> {
+        self.type_specs.get(name).cloned()
+    }
+
     /// Merge another environment's bindings in (it shadows existing entries
-    /// of the same name). Touches the namespace only — not the imports map.
+    /// of the same name). Touches the namespace (and the user type-ctor map)
+    /// only — not the imports map.
     pub fn merge(&mut self, other: &Env) {
         self.entries.merge(&other.entries);
+        for (name, spec) in &other.type_specs {
+            self.type_specs.insert(name.clone(), spec.clone());
+        }
     }
 
     /// `(#import NAME)`: register `env` as an importable namespace under
@@ -182,6 +207,14 @@ impl Env {
     /// (`prefix.name`), or unchanged if `prefix` is empty.
     pub fn merge_prefixed(&mut self, other: &Env, prefix: &str) {
         self.entries.merge_prefixed(&other.entries, prefix);
+        for (name, spec) in &other.type_specs {
+            let qualified = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}.{name}")
+            };
+            self.type_specs.insert(qualified, spec.clone());
+        }
     }
 
     /// `(#open NAME)`: bring a previously-`#import`ed namespace's bindings

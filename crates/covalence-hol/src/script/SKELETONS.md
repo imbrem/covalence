@@ -16,7 +16,27 @@ type-inference elaborator, the `check` replayer + derivation registry, the
 `run(src, resolver)` resolves `(open NAME)` against caller-supplied envs and
 returns a `Theory` whose **export** env — built explicitly by `(export NAME …)`
 directives — is `open`-able by other scripts; the macro binds it as a
-`static ENV: LazyLock<Env>`. These are deliberately deferred:
+`static ENV: LazyLock<Env>`.
+
+**Inline definitions are built** (`script/mod.rs`): the four directives
+`(#def NAME TERM)` / `(#newtype NAME TY)` / `(#subtype NAME TY PRED)` /
+`(#quot NAME TY REL)` — the script-layer counterpart of
+`covalence_core::defs::cov`'s sync parser — elaborate their body through the
+`syntax`/`infer` elaborator and bind the result into the running env (`#def`
+mints a genuine `defs/` `TermSpec`, so the constant carries a δ-unfolding
+equation; the type directives register a user `TypeSpec` resolved by
+`Env::lookup_type_spec` from an env-aware `parse_type`). This **replaces the
+`*_env()`/`*prim` givens pattern** (a constant built in Rust only to be named
+from `.cov`) — `init/cond.rs`'s `cond_env`/`condprim` is gone, `cond` is now
+`#def`'d inline in `cond.cov` (the proof-of-concept; other `*_env`s remain to
+migrate as needed). Not yet done: an audited *catalogue-resolution* path (a
+`#def NAME` whose body references catalogue constants reuses the cached
+`defs::*` accessors, as core's `cov.rs` `canonical_by_label` does, so the
+result is byte-identical to the hand-written one — the script `#def` mints a
+*fresh* opaque-`SmolStr` spec instead, semantically equal but not pointer-equal
+to the `Canonical::*` catalogue entry).
+
+These are deliberately deferred:
 
 - **Inference is best-effort (untrusted).** `infer.rs` does Hindley–Milner
   unification for free-variable and binder-domain types; it is not complete

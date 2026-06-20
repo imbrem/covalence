@@ -1,8 +1,11 @@
-;; cond.cov — cond reduction clauses over `core` + `condprim`.
+;; cond.cov — cond reduction clauses over `core`.
 ;;
-;; `condprim` registers `cond : bool → 'a → 'a → 'a` as an Op at type 'a.
-;; No other seam givens are needed: every step uses only `unfold-at-2`,
-;; `cong-fn`, `beta-conv`, `select-ax`, `reduce-prim`, and the standard
+;; `cond : bool → 'a → 'a → 'a` is **defined inline here** via `#def`
+;; (no Rust `condprim` env / `*prim` given) — the script-layer `#def`
+;; builds the same `defs/` `TermSpec` the hand-written `defs::cond` did,
+;; so the same `unfold-at-2 cond …` step fires on it. No other seam
+;; givens are needed: every step uses only `unfold-at-2`, `cong-fn`,
+;; `beta-conv`, `select-ax`, `reduce-prim`, and the standard
 ;; propositional rules — all in the core proof language.
 ;;
 ;;   cond ≡ λt u v. ε z. (t = T ⟹ z = u) ∧ (t = F ⟹ z = v)
@@ -22,8 +25,15 @@
 
 (#import core)
 (#open core)
-(#import condprim)
-(#open condprim)
+
+;; cond ≡ λt x y. ε z. (t = T ⟹ z = x) ∧ (t = F ⟹ z = y)
+(#def cond
+  (lam (t bool)
+    (lam (x 'a)
+      (lam (y 'a)
+        (select (z 'a)
+          (and (==> (= t true)  (= z x))
+               (==> (= t false) (= z y))))))))
 
 ;; ⊢ ∀x y : 'a. cond T x y = x
 (#thm cond.true
@@ -144,4 +154,4 @@
           ;; Discharge F=F
           (refl false))))))
 
-(#export cond.true cond.false)
+(#export cond cond.true cond.false)

@@ -6,17 +6,15 @@
 //! ## `char`
 //!
 //! ```text
-//! char := { c : nat | c < 0x110000 }
+//! char := { c : nat | c < 0xD800 ∨ (0xDFFF < c ∧ c < 0x110000) }
 //! ```
 //!
-//! A Unicode *codepoint*: the natural numbers carved down to the
-//! Unicode codepoint range `0 ..= 0x10FFFF` (`0x110000` values). The
-//! bound is **contiguous**, so it *includes* the UTF-16 surrogate gap
-//! `0xD800 ..= 0xDFFF`. A strict Unicode *scalar value* would exclude
-//! the surrogates, but that needs a disjunctive predicate
-//! (`c < 0xD800 ∨ (0xDFFF < c ∧ c < 0x110000)`) which buys nothing at
-//! this stage; the contiguous range is the simplest correct carve. (The
-//! surrogate carve is recorded as future work — see `SKELETONS.md`.)
+//! A Unicode **scalar value**: the natural numbers carved down to the
+//! Unicode scalar range `0 ..= 0x10FFFF` **excluding** the UTF-16
+//! surrogate block `0xD800 ..= 0xDFFF` (which are not scalar values).
+//! The predicate is disjunctive — below the surrogate block, or above it
+//! and within range — matching Rust's `char` / the Unicode definition of
+//! a scalar value.
 //!
 //! `char.code : char → nat` and `char.mk : nat → char` are the named
 //! `rep` / `abs` coercions across the subtype boundary.
@@ -42,27 +40,39 @@ use super::list::list;
 use super::nat::nat_lt;
 use super::spec::TypeSpec;
 
-/// The exclusive upper bound on Unicode codepoints: `0x110000`
-/// (`1114112`). A codepoint is any `nat` strictly below this.
+/// The exclusive upper bound on Unicode scalar values: `0x110000`
+/// (`1114112`).
 pub const CHAR_MAX_EXCL: u64 = 0x110000;
 
+/// First UTF-16 surrogate codepoint, `0xD800`. The surrogate block
+/// `0xD800 ..= 0xDFFF` is **excluded** from `char` (not scalar values).
+pub const SURROGATE_LO: u64 = 0xD800;
+
+/// Last UTF-16 surrogate codepoint, `0xDFFF`.
+pub const SURROGATE_HI: u64 = 0xDFFF;
+
 // ============================================================================
-// `char := { c : nat | c < 0x110000 }`
+// `char := { c : nat | c < 0xD800 ∨ (0xDFFF < c ∧ c < 0x110000) }`
 // ============================================================================
 
-/// `λc:nat. nat.lt c 0x110000` — the selector predicate carving `char`
-/// out of `nat` (the Unicode codepoint range).
+/// `λc:nat. (c < 0xD800) ∨ (0xDFFF < c ∧ c < 0x110000)` — the selector
+/// predicate carving `char` out of `nat`: the Unicode scalar-value range
+/// (below the surrogate block, or above it and within `0x110000`).
 fn char_predicate() -> Term {
     let c = Term::free("c", Type::nat());
-    let in_range = Term::app(
-        Term::app(nat_lt(), c.clone()),
-        Term::nat_lit(CHAR_MAX_EXCL),
+    let lt = |a: Term, b: Term| Term::app(Term::app(nat_lt(), a), b);
+    // c < 0xD800
+    let below = lt(c.clone(), Term::nat_lit(SURROGATE_LO));
+    // 0xDFFF < c  ∧  c < 0x110000
+    let above = hol::hol_and(
+        lt(Term::nat_lit(SURROGATE_HI), c.clone()),
+        lt(c.clone(), Term::nat_lit(CHAR_MAX_EXCL)),
     );
-    hol::pub_abs("c", Type::nat(), in_range)
+    hol::pub_abs("c", Type::nat(), hol::hol_or(below, above))
 }
 
-/// `char := { c : nat | c < 0x110000 }` — a Unicode codepoint, a subtype
-/// of `nat`.
+/// `char := { c : nat | c < 0xD800 ∨ (0xDFFF < c ∧ c < 0x110000) }` — a
+/// Unicode scalar value, a subtype of `nat`.
 pub fn char_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> =
         LazyLock::new(|| TypeSpec::subtype(Canonical::Char, Type::nat(), char_predicate()));
@@ -100,9 +110,10 @@ fn char_mk_body() -> Term {
 let_term! {
     /// `char.mk : nat → char` ≡ `λn. abs n` — the character with a given
     /// codepoint (the named `abs` coercion `nat → char`). Like any
-    /// subtype `abs`, it junk-saturates on out-of-range codepoints; the
-    /// `char.code (char.mk n) = n` round-trip is conditional on
-    /// `n < 0x110000` (see `init/char.rs`).
+    /// subtype `abs`, it junk-saturates on non-scalar codepoints; the
+    /// `char.code (char.mk n) = n` round-trip is conditional on `n` being
+    /// a Unicode scalar value (`n < 0xD800 ∨ (0xDFFF < n ∧ n < 0x110000)`,
+    /// see `init/char.rs`).
     char_mk_spec, char_mk, Canonical::CharMk, char_mk_body()
 }
 

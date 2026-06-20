@@ -9,14 +9,14 @@
 //! ## What `char` is
 //!
 //! ```text
-//! char := { c : nat | c < 0x110000 }
+//! char := { c : nat | c < 0xD800 ∨ (0xDFFF < c ∧ c < 0x110000) }
 //! ```
 //!
-//! A Unicode *codepoint*: the natural numbers carved down to the
-//! Unicode codepoint range `0 ..= 0x10FFFF`. The bound is contiguous
-//! (it *includes* the UTF-16 surrogate gap `0xD800 ..= 0xDFFF`); a
-//! strict scalar value would exclude the surrogates, recorded as future
-//! work in `SKELETONS.md`.
+//! A Unicode **scalar value**: the natural numbers carved down to the
+//! Unicode scalar range `0 ..= 0x10FFFF` **excluding** the UTF-16
+//! surrogate block `0xD800 ..= 0xDFFF`. The selector predicate is
+//! disjunctive (below the surrogate block, or above it and in range),
+//! matching Rust's `char`.
 //!
 //! The named coercions are
 //!
@@ -25,20 +25,23 @@
 //!
 //! Because `char` is a genuine **subtype** (not a newtype), the
 //! carrier-side round-trip [`Thm::spec_rep_abs_fwd`] is *conditional* on
-//! the selector predicate `c < 0x110000` — exactly like the finiteness
+//! the scalar-value selector predicate — exactly like the finiteness
 //! gate in [`init::list`]. For a *literal* codepoint that premise is a
-//! closed `nat.lt` comparison, discharged by [`reduce`], so
-//! [`code_mk`] is genuine (hypothesis- and oracle-free) at every
-//! in-range literal. The wrapper-side round-trip [`mk_code`] is
-//! unconditional ([`Thm::spec_abs_rep`]).
+//! closed `nat.lt`/`∧`/`∨` proposition, decided by [`reduce`], so
+//! [`code_mk`] is genuine (hypothesis- and oracle-free) at every Unicode
+//! scalar value (and **errors on surrogates** and out-of-range
+//! codepoints — the predicate reduces to `F`). The wrapper-side
+//! round-trip [`mk_code`] is unconditional ([`Thm::spec_abs_rep`]).
 
 use covalence_core::{Error, Result, Term, Thm};
 
 use crate::init::ext::{TermExt, ThmExt};
 
-pub use covalence_core::defs::{CHAR_MAX_EXCL, char_code, char_mk, char_spec, char_ty};
+pub use covalence_core::defs::{
+    CHAR_MAX_EXCL, SURROGATE_HI, SURROGATE_LO, char_code, char_mk, char_spec, char_ty,
+};
 
-use covalence_core::defs::{char_code_spec, char_mk_spec, nat_lt};
+use covalence_core::defs::{and, char_code_spec, char_mk_spec, nat_lt, or};
 
 // ============================================================================
 // Term helpers (private — the public surface is the lemmas + builders).
@@ -54,9 +57,23 @@ fn mk(n: &Term) -> Term {
     Term::app(char_mk(), n.clone())
 }
 
-/// `n < 0x110000 : bool` — the in-range selector predicate body at `n`.
+/// `(n < 0xD800) ∨ (0xDFFF < n ∧ n < 0x110000) : bool` — the
+/// scalar-value selector predicate body at `n`. Must match the
+/// β-reduction of `defs::char` predicate at `n` exactly (so the
+/// `spec_rep_abs_fwd` premise bridges).
 fn in_range(n: &Term) -> Term {
-    Term::app(Term::app(nat_lt(), n.clone()), Term::nat_lit(CHAR_MAX_EXCL))
+    let lt = |a: Term, b: Term| Term::app(Term::app(nat_lt(), a), b);
+    // n < 0xD800
+    let below = lt(n.clone(), Term::nat_lit(SURROGATE_LO));
+    // 0xDFFF < n  ∧  n < 0x110000
+    let above = Term::app(
+        Term::app(
+            and(),
+            lt(Term::nat_lit(SURROGATE_HI), n.clone()),
+        ),
+        lt(n.clone(), Term::nat_lit(CHAR_MAX_EXCL)),
+    );
+    Term::app(Term::app(or(), below), above)
 }
 
 // ============================================================================
@@ -101,20 +118,33 @@ fn rep_abs_in_range(n: &Term, prem: Thm) -> Result<Thm> {
 // Round-trip lemmas — the high-level computational surface.
 // ============================================================================
 
-/// `⊢ char.code (char.mk n) = n` for an **in-range** literal codepoint
-/// `n` (`n < 0x110000`). Genuine: hypothesis- and oracle-free — the
-/// subtype premise is a closed `nat.lt` comparison, discharged by
-/// [`reduce`]. Errors if `n` is not below `0x110000` (the comparison
-/// reduces to `F`, so the round-trip does not hold).
+/// `⊢ char.code (char.mk n) = n` for a literal `n` that is a Unicode
+/// **scalar value** (`n < 0xD800 ∨ (0xDFFF < n ∧ n < 0x110000)`).
+/// Genuine: hypothesis- and oracle-free — the subtype premise is a
+/// closed `nat.lt`/`∧`/`∨` proposition, decided by [`reduce`]. Errors if
+/// `n` is a surrogate (`0xD800 ..= 0xDFFF`) or out of range (the
+/// predicate reduces to `F`, so the round-trip does not hold).
 pub fn code_mk(n: &Term) -> Result<Thm> {
-    // ⊢ (n < 0x110000) = T — by reduction on the closed comparison.
-    let red = in_range(n).reduce()?;
-    if red.concl().as_eq().map(|(_, r)| r) != Some(&Term::bool_lit(true)) {
-        return Err(Error::ConnectiveRule(
-            "char::code_mk: codepoint is not in range (< 0x110000)".into(),
-        ));
-    }
-    let prem = red.eqt_elim()?; // ⊢ n < 0x110000
+    // Reduce the closed predicate: the `nat.lt` atoms fold to bool
+    // literals, but `reduce` does NOT decide the `∧`/`∨` connectives
+    // (defined constants), so the result is a bool-literal combination
+    // like `(T ∨ (F ∧ T))`. Decide that combination = T with `prop_eq`
+    // (the complete propositional decider) — the `init/prop.rs` pattern.
+    let red = in_range(n).reduce()?; // ⊢ predicate(n) = <bool-literal combination>
+    let reduced = red
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .1
+        .clone();
+    let to_t = crate::init::logic::prop_eq(&reduced, &Term::bool_lit(true)).map_err(|_| {
+        Error::ConnectiveRule(
+            "char::code_mk: codepoint is not a Unicode scalar value \
+             (must be < 0xD800 or in 0xE000..0x110000)"
+                .into(),
+        )
+    })?; // ⊢ <combination> = T  (errors if it is F — surrogate / out of range)
+    let prem = red.trans(to_t)?.eqt_elim()?; // ⊢ predicate(n)
     let unfold = code_mk_unfold(n)?; // char.code (char.mk n) = rep (abs n)
     let collapse = rep_abs_in_range(n, prem)?; // rep (abs n) = n
     unfold.trans(collapse)
@@ -190,6 +220,27 @@ mod tests {
         assert!(code_mk(&nat_lit(CHAR_MAX_EXCL)).is_err());
         // And a clearly-too-large codepoint.
         assert!(code_mk(&nat_lit(0xFFFFFF)).is_err());
+    }
+
+    #[test]
+    fn code_mk_rejects_surrogates() {
+        // The UTF-16 surrogate block 0xD800..=0xDFFF is NOT a scalar value:
+        // char.mk on any surrogate must reject (predicate reduces to F).
+        assert!(code_mk(&nat_lit(SURROGATE_LO)).is_err()); // 0xD800
+        assert!(code_mk(&nat_lit(0xDABC)).is_err()); // mid-block
+        assert!(code_mk(&nat_lit(SURROGATE_HI)).is_err()); // 0xDFFF
+    }
+
+    #[test]
+    fn code_mk_round_trips_around_the_surrogate_block() {
+        // The scalar values bracketing the surrogate gap both round-trip:
+        // 0xD7FF (last before) and 0xE000 (first after).
+        for &k in &[SURROGATE_LO - 1, SURROGATE_HI + 1] {
+            let n = nat_lit(k);
+            let thm = code_mk(&n).unwrap();
+            assert!(thm.hyps().is_empty() && thm.has_no_obs());
+            assert_eq!(thm.concl().as_eq().unwrap().1, &n);
+        }
     }
 
     #[test]

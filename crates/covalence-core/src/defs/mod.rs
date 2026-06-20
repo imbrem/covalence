@@ -192,8 +192,8 @@ pub use stream::{
 };
 pub use symbol::Symbol;
 pub use text::{
-    CHAR_MAX_EXCL, char_code, char_code_spec, char_mk, char_mk_spec, char_spec, char_ty,
-    string_spec, string_ty,
+    CHAR_MAX_EXCL, SURROGATE_HI, SURROGATE_LO, char_code, char_code_spec, char_mk, char_mk_spec,
+    char_spec, char_ty, string_spec, string_ty,
 };
 pub use unit::{unit_nil, unit_nil_spec, unit_spec};
 

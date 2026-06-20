@@ -260,9 +260,12 @@ it is how unfinished work stays discoverable.
   and `crates/covalence-hol/src/init/string.rs` (`char`/`string`/`bytes`).
   The **element types and `nil`-side facts** are proved and genuine
   (hypothesis- and oracle-free):
-  - `char := { c : nat | c < 0x110000 }` — the codepoint round-trips
-    `code_mk` (conditional on the in-range premise, discharged by reduction at
-    each literal) and `mk_code` (the unconditional wrapper-side round-trip).
+  - `char := { c : nat | c < 0xD800 ∨ (0xDFFF < c ∧ c < 0x110000) }` — Unicode
+    **scalar values** (surrogates excluded; matches Rust `char`). The codepoint
+    round-trips `code_mk` (conditional on the scalar-value premise — decided per
+    literal by `reduce` for the `nat.lt` atoms + `prop_eq` for the `∧`/`∨`;
+    **rejects surrogates and out-of-range**) and `mk_code` (the unconditional
+    wrapper-side round-trip).
   - `string := list char` / `bytes := list u8` — the newtype `abs`/`rep`
     seam, the empty-sequence builders/facts (`bytes_empty`/`string_empty`,
     `*_rep_empty`, `*_head_empty`).
@@ -288,14 +291,11 @@ it is how unfinished work stays discoverable.
     `n>0` denotes `cons b₀ (cons b₁ … (nil u8))`; proving that equality
     needs the `cons`-side `list.index`/`length` clauses. The element-level
     coherence (`Blob : bytes`, `u8_lit : u8`, ASCII `char.mk k`) is done.
-  - **UTF-8 `string ↔ bytes` codec** — a transcoding pair (`string.toUtf8`,
-    `bytes.toString?`) is not defined; future work independent of the list
-    recursion (needs the `bytes`/`string` ops first).
-  - **Strict Unicode scalar values** (exclude the surrogate gap
-    `0xD800..=0xDFFF`) — `char` currently carves the *contiguous* codepoint
-    range `c < 0x110000`, which includes surrogates. A strict scalar-value
-    type would refine the predicate to `c < 0xD800 ∨ (0xDFFF < c ∧ c <
-    0x110000)`; future work.
+  - **UTF-8 and UTF-16 codecs** — transcoding pairs (`string ↔ bytes` via UTF-8;
+    `string ↔ list u16` via UTF-16, where the surrogate *pairs* encode the
+    astral codepoints `char` now excludes as scalars). Axiomatizing both
+    encodings is interesting future work — wanted once the `bytes`/`string`
+    sequence ops land (needs the in-flight `list` recursion first).
   - **Bitvector ops on `u8`/`bytes`** (the eventual full bitvector support):
     `u8`/`uN` are `bits`-subtypes (`defs/bits.rs`) and `defs/nat.rs` already
     has `natShl/Shr/BitAnd/BitOr/BitXor` that reduce on literals — the future

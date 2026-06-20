@@ -769,6 +769,130 @@ pub fn tail_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
 }
 
 // ============================================================================
+// `index`/`tail` interplay + the `nil` characterization — the pieces the
+// list induction principle is assembled from.
+// ============================================================================
+
+/// `⊢ list.index i (tail l) = list.index (succ i) l` — indexing the tail
+/// shifts up by one. Genuine: hypothesis- and oracle-free.
+pub fn index_tail(alpha: &Type, i: &Term, l: &Term) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    let tailed = Term::app(tail(alpha.clone()), l.clone());
+
+    // index i (tail l) = streamAt (rep (tail l)) i.
+    let idx = index_unfold(alpha, i, &tailed)?;
+    // rep (tail l) = streamTail (rep l): tail l = abs (streamTail (rep l)),
+    // and rep collapses through the (finite ∧ contiguous) round-trip.
+    let rt = rep_tail(alpha, l)?; // rep (tail l) = streamTail (rep l)
+    // streamAt (streamTail (rep l)) i = streamAt (rep l) (succ i).
+    let shift = crate::init::stream::tail_at(&opt, &rep_of(alpha, l), i)?;
+    // streamAt (rep l) (succ i) = index (succ i) l (reverse unfold).
+    let unfold = index_unfold(alpha, &succ(i.clone()), l)?.sym()?;
+
+    trans_chain([
+        idx.rhs_conv(|t| t.rw_all(&rt))?, // streamAt (streamTail (rep l)) i
+        shift,                            // = streamAt (rep l) (succ i)
+        unfold,                           // = index (succ i) l
+    ])
+}
+
+/// `⊢ rep (tail l) = streamTail (rep l)` — the carrier stream of `tail l`,
+/// with the list selector for `streamTail (rep l)` discharged by
+/// [`pred_streamtail`].
+fn rep_tail(alpha: &Type, l: &Term) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    let st = Term::app(stream_tail(opt.clone()), rep_of(alpha, l));
+    // tail l = abs (streamTail (rep l))  (δ-unfold the tail head, β the spine).
+    let tail_u = Term::app(tail(alpha.clone()), l.clone())
+        .delta_all(tail_spec().symbol())?
+        .rhs_conv(|t| t.reduce())?; // tail l = abs (streamTail (rep l))
+    let ra = rep_abs_pred(alpha, &st, pred_streamtail(alpha, l)?)?; // rep (abs (streamTail (rep l))) = streamTail (rep l)
+    let rep = Term::spec_rep(list_spec(), vec![alpha.clone()]);
+    tail_u.cong_arg(rep)?.trans(ra)
+}
+
+/// `⊢ list_predicate (streamTail (rep l))` — the tail of a list's carrier
+/// is itself a list-carrier (finite ∧ contiguous), for any `l : list α`.
+fn pred_streamtail(alpha: &Type, l: &Term) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    let repl = rep_of(alpha, l);
+    let st = Term::app(stream_tail(opt.clone()), repl.clone());
+
+    // Contiguity: ∀i. streamAt (streamTail (rep l)) i = none ⟹ ... (succ i) = none.
+    // `streamAt (streamTail (rep l)) i = streamAt (rep l) (succ i)`, so this is
+    // exactly `contig_rep l` at `succ i`.
+    let contig = {
+        let i = Term::free("i", nat());
+        let at_i = crate::init::stream::tail_at(&opt, &repl, &i)?; // streamAt (streamTail (rep l)) i = streamAt (rep l) (succ i)
+        let at_si = crate::init::stream::tail_at(&opt, &repl, &succ(i.clone()))?; // ... (succ i) = streamAt (rep l) (succ (succ i))
+        let contig_si = contig_rep(alpha, l)?.all_elim(succ(i.clone()))?; // streamAt (rep l)(succ i)=none ⟹ streamAt (rep l)(succ(succ i))=none
+        // Rewrite antecedent/consequent through the tail_at equations.
+        let prem = at_i.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone().equals(none(alpha.clone()))?;
+        let h = Thm::assume(prem.clone())?; // streamAt (streamTail (rep l)) i = none
+        let rep_si_none = at_i.sym()?.trans(h)?; // streamAt (rep l)(succ i) = none
+        let rep_ssi_none = contig_si.imp_elim(rep_si_none)?; // streamAt (rep l)(succ(succ i)) = none
+        let tail_si_none = at_si.trans(rep_ssi_none)?; // streamAt (streamTail (rep l))(succ i) = none
+        tail_si_none.imp_intro(&prem)?.all_intro("i", nat())?
+    };
+
+    // Finite: ∃M. ∀n. nat_le M n ⟹ streamAt (streamTail (rep l)) n = none.
+    // Use the same bound `N` as `rep l`: streamAt (streamTail (rep l)) n =
+    // streamAt (rep l) (succ n), and `nat_le N n ⟹ nat_le N (succ n)`.
+    let finite = finite_streamtail(alpha, l)?;
+
+    prove_list_pred(alpha, &st, finite, contig)
+}
+
+/// `⊢ finite (streamTail (rep l))`.
+fn finite_streamtail(alpha: &Type, l: &Term) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    let repl = rep_of(alpha, l);
+    let st = Term::app(stream_tail(opt.clone()), repl.clone());
+
+    // From `finite (rep l)`, peel its bound N.
+    let fin = finite_rep(alpha, l)?;
+    let unfold = Term::app(finite(alpha.clone()), repl.clone())
+        .delta_all(finite_spec().symbol())?
+        .rhs_conv(|t| t.reduce())?;
+    let ex = unfold.eq_mp(fin)?; // ∃N. ∀n. nat_le N n ⟹ streamAt (rep l) n = none
+
+    let goal_finite = Term::app(finite(alpha.clone()), st.clone());
+    let goal_unfold = goal_finite
+        .delta_all(finite_spec().symbol())?
+        .rhs_conv(|t| t.reduce())?;
+    let goal_ex = rhs_of(&goal_unfold)?; // ∃M. ∀n. nat_le M n ⟹ streamAt (streamTail (rep l)) n = none
+
+    let big_n = Term::free("N", nat());
+    let ex_pred = ex.concl().as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    let applied_hyp = Term::app(ex_pred, big_n.clone());
+    let assumed = crate::init::eq::beta_reduce(Thm::assume(applied_hyp.clone())?)?; // {pred N} ⊢ ∀n. nat_le N n ⟹ streamAt (rep l) n = none
+
+    // Build ∀n. nat_le N n ⟹ streamAt (streamTail (rep l)) n = none (same bound N).
+    let n = Term::free("n", nat());
+    let tail_at = crate::init::stream::tail_at(&opt, &repl, &n)?; // streamAt (streamTail (rep l)) n = streamAt (rep l) (succ n)
+    // nat_le N n ⟹ nat_le N (succ n): from le_succ_self + transitivity.
+    let le_n = Term::app(Term::app(nat_le(), big_n.clone()), n.clone());
+    let h_le = Thm::assume(le_n.clone())?;
+    let n_le_sn = crate::init::nat::le_succ_self().all_elim(n.clone())?; // nat_le n (succ n)
+    let le_n_sn = crate::init::nat::le_trans()
+        .all_elim(big_n.clone())?
+        .all_elim(n.clone())?
+        .all_elim(succ(n.clone()))?
+        .imp_elim(h_le.clone())?
+        .imp_elim(n_le_sn)?; // {nat_le N n} ⊢ nat_le N (succ n)
+    let body_sn = assumed.all_elim(succ(n.clone()))?.imp_elim(le_n_sn)?; // {pred N, nat_le N n} ⊢ streamAt (rep l)(succ n)=none
+    let tail_none = tail_at.trans(body_sn)?; // streamAt (streamTail (rep l)) n = none
+    let body = tail_none.imp_intro(&le_n)?.all_intro("n", nat())?; // {pred N} ⊢ ∀n. nat_le N n ⟹ ...
+
+    let goal_pred = goal_ex.as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    let at_pred = beta_expand(&goal_pred, big_n.clone(), body)?;
+    let ex_m = exists_intro(goal_pred, big_n.clone(), at_pred)?; // {pred N} ⊢ ∃M. …
+    let step = ex_m.imp_intro(&applied_hyp)?.all_intro("N", nat())?;
+    let got_ex = exists_elim(ex, goal_ex, step)?;
+    goal_unfold.sym()?.eq_mp(got_ex)
+}
+
+// ============================================================================
 // `list` freeness — constructor distinctness + injectivity. These feed
 // the generic inductive engine's `Inductive::distinct` / `injective`.
 // ============================================================================
@@ -1031,6 +1155,18 @@ mod tests {
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &Term::app(head(alpha()), nil(alpha())));
         assert_eq!(rhs, &none(alpha()));
+    }
+
+    #[test]
+    fn index_tail_shifts_up() {
+        let i = Term::free("i", nat());
+        let l = Term::free("l", list(alpha()));
+        let thm = index_tail(&alpha(), &i, &l).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let (lhs, rhs) = thm.concl().as_eq().unwrap();
+        let tailed = Term::app(tail(alpha()), l.clone());
+        assert_eq!(lhs, &index(&alpha(), &i, &tailed));
+        assert_eq!(rhs, &index(&alpha(), &succ(i.clone()), &l));
     }
 
     #[test]

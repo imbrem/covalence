@@ -101,4 +101,34 @@
     (derive
       (all-elim (int.mul (rat.num a) (rat.rep (rat.den a))) (int_lt_irrefl)))))
 
-(#export add_comm mul_comm lt_irrefl)
+;; ============================================================================
+;; Unit / zero laws. The `*_compute` givens fuse `recon` + the component
+;; computation (so the literals `0`/`1`/`one_pos` stay inside the Rust given);
+;; the `.cov` proof simplifies the resulting numerator / denominator with the
+;; int givens (matched by name, never spelled) and re-folds to `a` / `0`.
+;; (Mirror `mul_one_impl`, `add_zero_impl`, `mul_zero_impl`, `add_neg_impl`.)
+;; ============================================================================
+
+;; ⊢ ∀a. a * 1 = a.
+(#thm mul_one
+  (#concl (forall (a rat) (= (rat.mul a (rat.one)) a)))
+  (#by
+    (intro a)
+    (derive
+      (trans
+        ;; a*1 = MK (num a · 1) (topos (rep(den a) · rep one_pos))
+        (all-elim a (mul_one_compute))
+        (trans
+          ;; = MK (num a) (den a)
+          (mk-comb
+            (cong-arg (rat.MK) (all-elim (rat.num a) (int_mul_one)))
+            (trans
+              (cong-arg (rat.topos)
+                (trans
+                  (cong-arg (int.mul (rat.rep (rat.den a))) (one_pos_rt))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_one))))
+              (all-elim (rat.den a) (topos_rep))))
+          ;; = a
+          (sym (all-elim a (recon))))))))
+
+(#export add_comm mul_comm lt_irrefl mul_one)

@@ -1235,6 +1235,65 @@ fn int_lt_irrefl_given() -> Thm {
     int::lt_irrefl()
 }
 
+/// `⊢ ∀d:int.pos. rat.topos (rat.rep d) = d` — the `int.pos` carrier
+/// round-trip (`Thm::spec_abs_rep` on the `int_pos` newtype), the unconditional
+/// `abs ∘ rep = id` law. Used to collapse a re-wrapped positive denominator
+/// back to its `int.pos` value (the `.cov` `topos_rep` given).
+fn topos_rep_given() -> Result<Thm> {
+    let d = Term::free("d", int_pos_ty());
+    Thm::spec_abs_rep(int_pos_spec(), Vec::new(), d.clone())?.all_intro("d", int_pos_ty())
+}
+
+/// Rewrite the *reduced* representative projections `fst(rep_pair a)` /
+/// `snd(rep_pair a)` in a term back to their **named** `rat.num a` / `rat.den a`
+/// forms (β-expansion), so every seam given speaks the same surface the `.cov`
+/// proofs write. Returns `⊢ t = t_named`.
+fn name_projections(t: &Term, a: &Term) -> Result<Thm> {
+    // `num_op a = fst(rep_pair a)` and `den_op a = snd(rep_pair a)` by β.
+    let num_eq = Thm::beta_conv(num_app(a))?; // num_op a = rfst a
+    let den_eq = Thm::beta_conv(den_app(a))?; // den_op a = rden a
+    rewrite_seq(t, &[num_eq.sym()?, den_eq.sym()?])
+}
+
+/// Re-fold the raw `mkfs N D` RHS of a `*_via_components`-style theorem
+/// `⊢ a <op> e = mkfs N D` to the named `rat.MK N D` (with `N`/`D`'s
+/// representative projections renamed to `rat.num a`/`rat.den a`), then
+/// ∀-close over `a`. The literal `0`/`1`/`one_pos` sub-terms stay inside the
+/// given; the `.cov` proof simplifies them with the int givens (matched by
+/// `rw`-unification, never spelled).
+fn compute_given(lhs: Thm, a: &Term) -> Result<Thm> {
+    let (n, d) = mk_components(&dest_eq(&lhs)?.1)?;
+    // mkfs N D = rat.MK N D, then rename the reduced projections inside.
+    let fold = mk_unfold(&n, &d)?.sym()?; // mkfs N D = rat.MK N D
+    let mk_named = fold.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let rename = name_projections(&mk_named, a)?; // rat.MK N D = rat.MK N' D'
+    lhs.trans(fold)?.trans(rename)?.all_intro("a", rat())
+}
+
+/// `⊢ ∀a. a * 1 = rat.MK (num a · 1) (topos(rep(den a) · rep one_pos))`.
+fn mul_one_compute() -> Result<Thm> {
+    let a = rvar("a");
+    compute_given(mul_via_components(&recon_mk(&a)?, &Thm::refl(rat_one())?)?, &a)
+}
+/// `⊢ ∀a. a + 0 = rat.MK (num a · rep one_pos + 0 · rep(den a))
+///                       (topos(rep(den a) · rep one_pos))`.
+fn add_zero_compute() -> Result<Thm> {
+    let a = rvar("a");
+    compute_given(add_via_components(&recon_mk(&a)?, &Thm::refl(rat_zero())?)?, &a)
+}
+/// `⊢ ∀a. a * 0 = rat.MK (num a · 0) (topos(rep(den a) · rep one_pos))`.
+fn mul_zero_compute() -> Result<Thm> {
+    let a = rvar("a");
+    compute_given(mul_via_components(&recon_mk(&a)?, &Thm::refl(rat_zero())?)?, &a)
+}
+/// `⊢ ∀a. a + (-a) = rat.MK (num a · rep(den a) + (int.neg(num a)) · rep(den a))
+///                          (topos(rep(den a) · rep(den a)))`.
+fn add_neg_compute() -> Result<Thm> {
+    let a = rvar("a");
+    let neg_a = neg_via_components(&a)?; // -a = MK(int.neg(num a))(den a) [raw mkfs]
+    compute_given(add_via_components(&recon_mk(&a)?, &neg_a)?, &a)
+}
+
 /// The `ratprim` seam environment imported by `rat.cov`.
 pub fn rat_env() -> crate::script::Env {
     use crate::script::{ConstDef, Env};
@@ -1273,6 +1332,11 @@ pub fn rat_env() -> crate::script::Env {
     e.define_lemma("one_pos_rt", one_pos_rt_given());
     e.define_lemma("lt_self", lt_self_given().expect("rat lt_self given"));
     e.define_lemma("int_lt_irrefl", int_lt_irrefl_given());
+    e.define_lemma("topos_rep", topos_rep_given().expect("rat topos_rep given"));
+    e.define_lemma("mul_one_compute", mul_one_compute().expect("rat mul_one_compute"));
+    e.define_lemma("add_zero_compute", add_zero_compute().expect("rat add_zero_compute"));
+    e.define_lemma("mul_zero_compute", mul_zero_compute().expect("rat mul_zero_compute"));
+    e.define_lemma("add_neg_compute", add_neg_compute().expect("rat add_neg_compute"));
 
     // int ring givens (proved in init::int) — the `.cov` numerator/denominator
     // algebra runs over these.
@@ -2355,6 +2419,7 @@ crate::cov_theory! {
         "add_comm"  => pub fn add_comm_cov;
         "mul_comm"  => pub fn mul_comm_cov;
         "lt_irrefl" => pub fn lt_irrefl_cov;
+        "mul_one"   => pub fn mul_one_cov;
     }
 }
 
@@ -2370,6 +2435,7 @@ mod cov_tests {
         assert_eq!(cov::add_comm_cov().concl(), super::add_comm().concl());
         assert_eq!(cov::mul_comm_cov().concl(), super::mul_comm().concl());
         assert_eq!(cov::lt_irrefl_cov().concl(), super::lt_irrefl().concl());
+        assert_eq!(cov::mul_one_cov().concl(), super::mul_one().concl());
     }
 
 }
@@ -2398,6 +2464,12 @@ mod tests {
             zero_given().unwrap(),
             one_given().unwrap(),
             class_eq_given().unwrap(),
+            lt_self_given().unwrap(),
+            topos_rep_given().unwrap(),
+            mul_one_compute().unwrap(),
+            add_zero_compute().unwrap(),
+            mul_zero_compute().unwrap(),
+            add_neg_compute().unwrap(),
         ] {
             assert!(g.concl().type_of().unwrap().is_bool());
             assert!(g.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));

@@ -145,6 +145,45 @@ elaboration, that you imported a *theory* where a theory was expected.
 These elaborate to the Rust `Signature`/`Theory` types; build the *syntax* as the
 immediate follow-on once those types are pinned (don't fork the data shape).
 
+### 3.0.1 The artifact taxonomy (file types)
+
+`.cov` is the **general** format (it may contain any mix of `#def`/`#thm`/`#sig`/
+…). Alongside it are **single-object, typed** files — each is the body of one
+`#`-form — so a typed `(#import x.EXT #form)` knows what it's getting:
+
+| ext | contains | surface form | one of |
+|---|---|---|---|
+| `.cov` | anything (general) | — | (mixed) |
+| `.sig` | a **signature** (name + kinded sorts/families + ops) | `(#sig …)` | a signature |
+| `.thy` | a **theory** (a signature + named axioms) | `(#thy …)` | a theory |
+| `.mod` | a **model** (an interpretation of a *signature* into a logic) | `(#model …)` | a model |
+| `.thm` | a **proof of one statement** | `(#thm …)` | a theorem |
+
+> **Punted (noted, not built):** the elaborated S-expression *IR* — the
+> post-elaboration canonical form — may eventually get its own extension
+> (`.cov.ir`, `.sig.ir`, …) distinct from the pre-elaboration surface text.
+> Decide later; the surface forms above are the human-written layer.
+
+### 3.0.2 A model interprets a *signature*; "M ⊨ T" is a *theorem*
+
+The decoupling (refines §1's "model = …"):
+
+- A **model `M`** is an **interpretation of a *signature* `S`** — concrete
+  objects in a logic for `S`'s sorts/families/ops. *Nothing about axioms.* It
+  just realizes the vocabulary.
+- A **theory `T`** is *also over `S`* — `S` + axioms.
+- **"`M` is a model of `T`" (`M ⊨ T`)** is then a **`.thm`** — a proof that
+  `M`'s interpretation *satisfies `T`'s axioms*. This is *the* load-bearing kind
+  of statement: it is the spec-satisfaction proof, and it is what makes `M` a
+  legitimate model *of the theory* (vs merely an interpretation of the
+  signature).
+
+So the three are cleanly separated: **interpret the vocabulary** (`.mod`), **state
+the laws** (`.thy`), **prove the interpretation obeys the laws** (`.thm`,
+`M ⊨ T`). A model of the signature can perfectly well *fail* a given theory —
+that's a `.thm` that doesn't go through, and the type system makes that explicit
+rather than silent.
+
 ```scheme
 ;; A THEORY: abstract signature + axioms (exists today, generalized).
 (#theory Nat

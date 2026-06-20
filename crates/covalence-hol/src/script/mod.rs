@@ -31,15 +31,15 @@ mod handle;
 mod inductive;
 mod infer;
 mod scope;
-mod syntax;
-mod tactic;
+pub(crate) mod syntax;
+pub(crate) mod tactic;
 mod unify;
 
 pub use drv::{CheckCtx, check, core_rules};
 pub use env::{ConstDef, Env};
 pub use scope::Scope;
 pub use syntax::{parse_term, parse_type};
-pub use tactic::{Interp, Tactic};
+pub use tactic::{Hyp, Interp, Tactic};
 
 use std::sync::Arc;
 
@@ -385,6 +385,35 @@ pub async fn run_async(
                     }
                 }
             }
+            // `(#in MODEL STMT…)` — dispatch: open MODEL's namespace (its
+            // operators + axioms + induction handler) on top of a fresh scope,
+            // run each nested `#thm`, and bind the result under `MODEL.NAME`.
+            // The SAME nested proof text dispatches to whichever model is named
+            // — the surface form of the model-replay (`docs/surface-compiler.md`
+            // §2/§3). Only `#thm` is supported inside a block today (enough to
+            // replay `add_comm`); richer nesting is future work (SKELETONS).
+            Stmt::In { model, body } => {
+                let mut scoped = internal.clone();
+                scoped.open(&model)?;
+                for stmt in &body {
+                    let ch = syntax::list(stmt, "#in body")?;
+                    if syntax::head_sym(ch)? != "#thm" {
+                        return Err(ScriptError::Syntax(format!(
+                            "#in: only `#thm` is supported inside a `(#in {model} …)` block"
+                        )));
+                    }
+                    let nt = run_thm(ch, &scoped).await?;
+                    let qualified = format!("{model}.{}", nt.name);
+                    // Bind under MODEL.NAME in the scoped env (so a later nested
+                    // theorem can reference it) and accumulate for the caller.
+                    scoped.define_lemma(qualified.clone(), nt.thm.clone());
+                    internal.define_lemma(qualified.clone(), nt.thm.clone());
+                    thms.push(NamedThm {
+                        name: qualified,
+                        thm: nt.thm,
+                    });
+                }
+            }
         }
     }
     Ok(LazyTheory {
@@ -472,6 +501,13 @@ enum Stmt {
     Quot(SExpr),
     /// `(#export NAME …)` — the public interface.
     Export(Vec<String>),
+    /// `(#in MODEL STMT…)` — run the nested `#thm` statements with a
+    /// previously-`#import`ed **model** namespace opened on top of scope, so
+    /// `(induct …)`/`+`/`succ`/`0`/the axioms dispatch to that model's
+    /// handlers + interpretation (`docs/surface-compiler.md` §2/§3). Each
+    /// nested theorem is bound under the `MODEL.` prefix so multiple `#in`
+    /// blocks (one per model) can replay the *same* proof without colliding.
+    In { model: String, body: Vec<SExpr> },
 }
 
 /// Parse one directive S-expression into a typed [`Stmt`].
@@ -528,6 +564,18 @@ fn parse_stmt(e: &SExpr) -> Result<Stmt, ScriptError> {
                 .map(|item| Ok(syntax::sym(item, "export name")?.to_string()))
                 .collect::<Result<Vec<_>, ScriptError>>()?;
             Stmt::Export(names)
+        }
+        "#in" => {
+            if ch.len() < 2 {
+                return Err(ScriptError::Syntax(
+                    "#in: expected (#in MODEL STMT…)".into(),
+                ));
+            }
+            let model = syntax::sym(&ch[1], "model name")?.to_string();
+            Stmt::In {
+                model,
+                body: ch[2..].to_vec(),
+            }
         }
         other => return Err(ScriptError::Syntax(format!("unknown directive: {other}"))),
     })

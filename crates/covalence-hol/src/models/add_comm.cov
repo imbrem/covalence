@@ -1,0 +1,53 @@
+;; add_comm.cov — the ABSTRACT `Nat` proof of commutativity, written ONCE
+;; against the `Nat` interface and replayed at EVERY model.
+;;
+;; It names nothing concrete: only the abstract signature + axioms exposed by
+;; the `natmodel` env (see `crate::models::NatModel::env`):
+;;
+;;   OPERATORS:  `m.zero` (nullary), `m.succ` (unary), `m.add` (binary)
+;;   GIVEN axioms (the `Nat` addition spec):
+;;     `zero.add` : ∀a.   m.add m.zero a = a
+;;     `add.zero` : ∀a.   m.add a m.zero = a
+;;     `succ.add` : ∀a b. m.add (m.succ a) b = m.succ (m.add a b)
+;;     `add.succ` : ∀a b. m.add a (m.succ b) = m.succ (m.add a b)
+;;   INDUCTION:  `m.induct` — the model's induction handler (nat_induct for
+;;               `nat/self`, list_induct for `nat/unary`), surfaced identically.
+;;
+;; Because it never names a concrete `0`/`succ`/`+`, the SAME proof checks for
+;; every model: dispatch `natmodel` to `nat/self` and `add.comm` is a fact
+;; about kernel `nat`; dispatch it to `nat/unary` and the identical script
+;; proves append-commutativity for `list unit` — the value proposition.
+
+(#import core)
+(#open core)
+(#import natmodel)
+(#open natmodel)
+
+;; ⊢ ∀a b. m.add a b = m.add b a.  Induction on a, exactly the nat proof but
+;; over the abstract operators.
+(#thm add.comm
+  (#concl (forall (a) (forall (b) (= (m.add a b) (m.add b a)))))
+  (#by
+    (m.induct a
+      ;; base a = 0:  0 + b = b + 0.
+      ;;   LHS = b           (zero.add)
+      ;;   RHS = b + 0 = b   (add.zero, used reversed via sym)
+      (#by
+        (intro b)
+        (rw (all-elim b (zero.add)))
+        (sym)
+        (rw (all-elim b (add.zero)))
+        (refl))
+      ;; step a = S a':  S a + b = b + S a.
+      ;;   LHS = S(a + b)    (succ.add)
+      ;;       = S(b + a)    (IH)
+      ;;   RHS = b + S a = S(b + a)   (add.succ, reversed)
+      (#by
+        (intro b)
+        (rw (all-elim b (all-elim a (succ.add))))
+        (rw (all-elim b (assume (forall (b) (= (m.add a b) (m.add b a))))))
+        (sym)
+        (rw (all-elim a (all-elim b (add.succ))))
+        (refl)))))
+
+(#export add.comm)

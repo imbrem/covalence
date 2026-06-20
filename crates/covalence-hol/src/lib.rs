@@ -29,6 +29,7 @@ pub mod category;
 pub mod hash;
 pub mod hol_light_obs;
 pub mod init;
+pub mod models;
 pub mod monoidal;
 pub mod peano;
 pub mod project;

@@ -174,6 +174,42 @@ fn zero() -> Term {
 }
 
 // ============================================================================
+// Stream round-trips (the wrapper-side companions of `at_mk`/`const_at`).
+// ============================================================================
+
+/// `⊢ streamHead (streamMk f) = f 0`.
+pub fn head_mk(alpha: &Type, f: &Term) -> Result<Thm> {
+    let built = mk(alpha, f);
+    let head_eq = delta_head(&Term::app(stream_head(alpha.clone()), built.clone()))?
+        .rhs_conv(|t| t.reduce())?; // ⊢ streamHead (streamMk f) = streamAt (streamMk f) 0
+    let at_eq = at_mk(alpha, f, &zero())?; // ⊢ streamAt (streamMk f) 0 = f 0
+    head_eq.trans(at_eq)
+}
+
+/// `⊢ streamTail (streamConst x) = streamConst x` (extensional, via `ext`).
+pub fn tail_const(alpha: &Type, x: &Term) -> Result<Thm> {
+    let cst = Term::app(stream_const(alpha.clone()), x.clone());
+    let tail = Term::app(stream_tail(alpha.clone()), cst.clone());
+    let n = Term::free("n", Type::nat());
+    let succ_n = Term::app(covalence_core::defs::nat_succ(), n.clone());
+    // streamAt (streamTail (streamConst x)) n = x  vs  streamAt (streamConst x) n = x.
+    let lhs_at = tail_at(alpha, &cst, &n)?.trans(const_at(alpha, x, &succ_n)?)?;
+    let rhs_at = const_at(alpha, x, &n)?;
+    let pointwise = lhs_at.trans(rhs_at.sym()?)?; // ⊢ at (tail cst) n = at cst n  (open at `n`)
+    ext(alpha, &tail, &cst, "n", pointwise)
+}
+
+/// `⊢ streamMk (λn. streamAt s n) = s` — the round-trip (extensional).
+pub fn mk_at(alpha: &Type, s: &Term) -> Result<Thm> {
+    let f = Term::abs(Type::nat(), at(alpha, s, &Term::bound(0))); // λn. streamAt s n
+    let built = mk(alpha, &f);
+    let n = Term::free("n", Type::nat());
+    // streamAt (streamMk f) n = f n = streamAt s n.
+    let pointwise = at_mk(alpha, &f, &n)?.rhs_conv(|t| t.reduce())?; // open at `n`
+    ext(alpha, &built, s, "n", pointwise)
+}
+
+// ============================================================================
 // .cov proof language support
 // ============================================================================
 

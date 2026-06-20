@@ -414,3 +414,10 @@ index](../../../../SKELETONS.md).
   defers — so the `tree-induct`/`sexp-induct` tactic and `tree.cov`/`sexp.cov`
   `.cov` theory wait on it (the freeness facts are usable from Rust today, not
   yet wired as `.cov` givens).
+
+- **`stream` round-trips proved in Rust, `.cov` ports deferred.** `head_mk`,
+  `tail_const`, `mk_at` (the wrapper-side companions of `at_mk`/`const_at`) are
+  genuine Rust theorems in `init/stream.rs`, but their `.cov` re-derivations are
+  not yet wired into `stream.cov` (the stream agent's `.cov` versions were written
+  against a diverged `ext` signature; re-port on the current 5-arg `ext`). Easily
+  re-derived; `stream.cov` currently ports only `const.at`/`head.const`/`tail.at`.

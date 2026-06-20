@@ -51,7 +51,8 @@
 //!   ⟦A⟧ v  :=  A[bool] v (λp. ¬p) (∧) (∨) (⟹)
 //! ```
 //!
-//! S-expressions ([`sexpr`]) are reified the same way (atom/nil/cons), as
+//! S-expressions ([`sexpr`](crate::init::sexpr)) are reified the same way
+//! (atom/nil/cons), as
 //! the universal syntax carrier the metatheory doc calls for; propositional
 //! variables are `nat` indices (the simplest choice — no atom plumbing just
 //! to name a variable).
@@ -60,10 +61,11 @@
 //!
 //! We pick a **Hilbert system** over `{¬, ∧, ∨, ⟹}` because it makes
 //! soundness trivial: every axiom *schema instance denotes a propositional
-//! tautology* (dischargeable by [`tauto`](crate::init::logic::tauto)) and
-//! the single rule (modus ponens) is just [`Thm::imp_elim`] on the
-//! denotations. `Derivable_Prop` is the impredicative "smallest predicate
-//! closed under the axioms and MP":
+//! tautology* (dischargeable by the complete propositional decision
+//! procedure [`prop_eq`](crate::init::logic::prop_eq) against `T`) and the
+//! single rule (modus ponens) is just [`Thm::imp_elim`] on the denotations.
+//! `Derivable_Prop` is the impredicative "smallest predicate closed under
+//! the axioms and MP":
 //!
 //! ```text
 //!   Derivable_Prop A  :=  ∀d:Φ→bool. Closed d ⟹ d A
@@ -329,7 +331,8 @@ fn d_at(a: &Term) -> Result<Term> {
 /// 7. `B ⟹ A ∨ B`
 /// 8. `(A ⟹ C) ⟹ ((B ⟹ C) ⟹ (A ∨ B ⟹ C))`
 /// 9. `(A ⟹ B) ⟹ ((A ⟹ ¬B) ⟹ ¬A)`
-/// 10. `¬¬A ⟹ A`   (classical — discharged by `tauto`/`Thm::lem`)
+/// 10. `¬¬A ⟹ A`   (classical — its denotation is decided by `prop_eq`,
+///     which is `Thm::lem`-powered)
 ///
 /// Returns the encoded axiom formula for the given schema index `1..=10`
 /// over fresh formula variables `A`,`B`,`C`.
@@ -592,7 +595,7 @@ fn discharge_closed(v: &Term, d_pred: &Term) -> Result<Thm> {
 
     for i in 1..=N_AXIOMS {
         let ax = axiom_schema(&bool_ty(), i, &a, &b, &c);
-        // D ⌜ax⌝ β-reduces to ⟦ax⟧ v, a tautology → tauto, then β-expand
+        // D ⌜ax⌝ β-reduces to ⟦ax⟧ v, a tautology → prove_taut, then β-expand
         // back to D ⌜ax⌝, then ∀-close.
         let den = denote(ax.clone(), v)?; // ⟦ax⟧ v (a bool term)
         let den_taut = prove_taut(&den)?; // ⊢ ⟦ax⟧ v
@@ -613,8 +616,8 @@ fn discharge_closed(v: &Term, d_pred: &Term) -> Result<Thm> {
         let db = denote(b.clone(), v)?;
 
         // The whole implication is a propositional tautology in atoms
-        // ⟦A⟧v, ⟦B⟧v once ⟦A⟹B⟧v is unfolded to (⟦A⟧v ⟹ ⟦B⟧v). `tauto`
-        // normalises denotations (it βι-reduces), so prove it directly.
+        // ⟦A⟧v, ⟦B⟧v once ⟦A⟹B⟧v is unfolded to (⟦A⟧v ⟹ ⟦B⟧v).
+        // `prove_taut` β-normalises then decides it completely.
         let goal = da.and(dab)?.imp(db)?;
         let thm = prove_taut(&goal)?; // ⊢ (⟦A⟧v ∧ ⟦A⟹B⟧v) ⟹ ⟦B⟧v
 

@@ -30,8 +30,10 @@
 //! - constructors [`atom`], [`snil`], [`scons`];
 //! - the recursor [`rec`] — `rec fa fn fc (C …) = f_C …` holds **by β**,
 //!   witnessed per constructor by [`rec_atom`], [`rec_snil`], [`rec_scons`];
-//! - structural induction [`induct`] over the encoding (a derived HOL
-//!   theorem, proved — not postulated).
+//! - a note on structural induction ([`induct_note`]): the *recursor* and
+//!   its equations are what downstream impredicative soundness proofs use;
+//!   genuine `SExpr` induction needs a well-formedness side condition and
+//!   is deferred (see the function's docs + `SKELETONS.md`).
 //!
 //! Distinct constructor applications are distinct HOL terms, so this is
 //! genuine reified syntax (not a shallow embedding).

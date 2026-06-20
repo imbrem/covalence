@@ -1216,6 +1216,19 @@ fn one_pos_rt_given() -> Thm {
     one_pos_rt()
 }
 
+/// `⊢ ∀d:int.pos. 0 · rep d = 0` — left-zero on a positive denominator
+/// (`int_mul_comm` + `int_mul_zero`), the `.cov` `zero_times` given. Lets the
+/// `mul_zero` / `add_neg` cross-multiplications collapse both sides to `0`.
+fn zero_times_given() -> Result<Thm> {
+    let d = Term::free("d", int_pos_ty());
+    let repd = rep_app_pos(&d);
+    let body = int::mul_comm()
+        .all_elim(izero())?
+        .all_elim(repd.clone())? // 0·rep d = rep d·0
+        .trans(int::mul_zero().all_elim(repd)?)?; // = 0
+    body.all_intro("d", int_pos_ty())
+}
+
 /// `⊢ ∀a. rat.lt a a = int.lt (num a · rep(den a)) (num a · rep(den a))` — the
 /// reflexive instance of `ratLt` reduced to the `int` comparison on the
 /// (single) cross-product, in **named-op** form (the `.cov` `lt_self` given).
@@ -1322,6 +1335,9 @@ pub fn rat_env() -> crate::script::Env {
     // int literal constants the unit/zero proofs spell explicitly.
     e.define_const("int.zero", ConstDef::Op(izero()));
     e.define_const("int.one", ConstDef::Op(Term::int_lit(1i128)));
+    // the canonical positive denominator `1 : int.pos` (the `rat.zero`/`rat.one`
+    // denominator) — the `mul_zero`/`add_neg` class-equality steps name it.
+    e.define_const("rat.one_pos", ConstDef::Op(one_pos()));
 
     // quotient seam givens
     e.define_lemma("recon", recon_given().expect("rat recon given"));
@@ -1333,6 +1349,7 @@ pub fn rat_env() -> crate::script::Env {
     e.define_lemma("class_eq", class_eq_given().expect("rat class_eq given"));
     e.define_lemma("pos_prod_rt", pos_prod_rt_given());
     e.define_lemma("one_pos_rt", one_pos_rt_given());
+    e.define_lemma("zero_times", zero_times_given().expect("rat zero_times given"));
     e.define_lemma("lt_self", lt_self_given().expect("rat lt_self given"));
     e.define_lemma("int_lt_irrefl", int_lt_irrefl_given());
     e.define_lemma("topos_rep", topos_rep_given().expect("rat topos_rep given"));
@@ -2424,6 +2441,7 @@ crate::cov_theory! {
         "lt_irrefl" => pub fn lt_irrefl_cov;
         "mul_one"   => pub fn mul_one_cov;
         "add_zero"  => pub fn add_zero_cov;
+        "mul_zero"  => pub fn mul_zero_cov;
     }
 }
 
@@ -2441,6 +2459,7 @@ mod cov_tests {
         assert_eq!(cov::lt_irrefl_cov().concl(), super::lt_irrefl().concl());
         assert_eq!(cov::mul_one_cov().concl(), super::mul_one().concl());
         assert_eq!(cov::add_zero_cov().concl(), super::add_zero().concl());
+        assert_eq!(cov::mul_zero_cov().concl(), super::mul_zero().concl());
     }
 
 }

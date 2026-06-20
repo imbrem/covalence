@@ -163,4 +163,36 @@
               (all-elim (rat.den a) (topos_rep))))
           (sym (all-elim a (recon))))))))
 
-(#export add_comm mul_comm lt_irrefl mul_one add_zero)
+;; ⊢ ∀a. a * 0 = 0.  The numerator collapses to 0; the denominator simplifies
+;; to `den a`; then `MK 0 (den a) = MK 0 one_pos = 0` by the class-equality law
+;; on the cross-multiplication `0·rep one_pos = 0·rep(den a)` (both 0).
+(#thm mul_zero
+  (#concl (forall (a rat) (= (rat.mul a (rat.zero)) (rat.zero))))
+  (#by
+    (intro a)
+    (derive
+      (trans
+        (all-elim a (mul_zero_compute))
+        (trans
+          ;; MK (num a · 0)(topos(rep(den a)·rep one_pos)) = MK 0 (den a)
+          (mk-comb
+            (cong-arg (rat.MK) (all-elim (rat.num a) (int_mul_zero)))
+            (trans
+              (cong-arg (rat.topos)
+                (trans
+                  (cong-arg (int.mul (rat.rep (rat.den a))) (one_pos_rt))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_one))))
+              (all-elim (rat.den a) (topos_rep))))
+          (trans
+            ;; MK 0 (den a) = MK 0 one_pos
+            (imp-elim
+              (all-elim (rat.one_pos)
+                (all-elim (int.zero)
+                  (all-elim (rat.den a)
+                    (all-elim (int.zero) (class_eq)))))
+              (trans (all-elim (rat.one_pos) (zero_times))
+                     (sym (all-elim (rat.den a) (zero_times)))))
+            ;; MK 0 one_pos = 0
+            (sym (zero_mk))))))))
+
+(#export add_comm mul_comm lt_irrefl mul_one add_zero mul_zero)

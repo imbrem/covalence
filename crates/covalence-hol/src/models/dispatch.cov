@@ -1,0 +1,52 @@
+;; dispatch.cov — the `#in MODEL …` surface form: ONE proof body, replayed in
+;; TWO models within a single script, via the script-layer model dispatch.
+;;
+;; Each `(#in MODEL (#thm add.comm …))` opens MODEL's namespace (its operators
+;; `m.zero`/`m.succ`/`m.add`, its `Nat` axioms, and its `m.induct` handler) and
+;; runs the IDENTICAL `add.comm` proof against it. `nat-self` proves it over
+;; kernel `nat`; `nat-unary` proves the same statement over `list unit` append
+;; — the surface-level witness of model-replay. The two results are bound as
+;; `nat-self.add.comm` and `nat-unary.add.comm`.
+
+(#import core)
+(#open core)
+(#import nat-self)
+(#import nat-unary)
+
+(#in nat-self
+  (#thm add.comm
+    (#concl (forall (a) (forall (b) (= (m.add a b) (m.add b a)))))
+    (#by
+      (m.induct a
+        (#by
+          (intro b)
+          (rw (all-elim b (zero.add)))
+          (sym)
+          (rw (all-elim b (add.zero)))
+          (refl))
+        (#by
+          (intro b)
+          (rw (all-elim b (all-elim a (succ.add))))
+          (rw (all-elim b (assume (forall (b) (= (m.add a b) (m.add b a))))))
+          (sym)
+          (rw (all-elim a (all-elim b (add.succ))))
+          (refl))))))
+
+(#in nat-unary
+  (#thm add.comm
+    (#concl (forall (a) (forall (b) (= (m.add a b) (m.add b a)))))
+    (#by
+      (m.induct a
+        (#by
+          (intro b)
+          (rw (all-elim b (zero.add)))
+          (sym)
+          (rw (all-elim b (add.zero)))
+          (refl))
+        (#by
+          (intro b)
+          (rw (all-elim b (all-elim a (succ.add))))
+          (rw (all-elim b (assume (forall (b) (= (m.add a b) (m.add b a))))))
+          (sym)
+          (rw (all-elim a (all-elim b (add.succ))))
+          (refl))))))

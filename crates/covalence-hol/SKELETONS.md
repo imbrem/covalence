@@ -27,3 +27,8 @@ index](../../SKELETONS.md).
   surface-syntax authoring sketch (the elaborator, `#by` tactic grammar, and
   `#import` content addressing are stubbed above the implemented AST / builtin
   registry / parser).
+- **[`src/models/SKELETONS.md`](./src/models/SKELETONS.md)** — the minimal
+  surface-compiler core (the `Logic`/`Model` triad + cross-model `add_comm`
+  replay): the `Nat`-specialized `Logic` (no general `Signature`/`admits`/full
+  `HandlerSet`), the unbuilt `#model` directive, the `#thm`-only `#in` block,
+  and the single-theory/two-model/no-iso shape.

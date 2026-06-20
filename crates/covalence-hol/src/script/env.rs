@@ -314,10 +314,25 @@ fn open_foralls(concl: &Term) -> (BTreeSet<SmolStr>, Vec<SmolStr>, Term) {
 /// labels the error if a hole was left undetermined.
 fn instantiate(thm: &Thm, order: &[SmolStr], sub: &Subst, what: &str) -> R<Thm> {
     let mut t = thm.clone();
-    for (tv, ty) in &sub.types {
-        if Type::tfree(tv.as_str()) != *ty {
-            t = t.inst_tfree(tv, ty.clone())?;
-        }
+    // Apply the type substitution **simultaneously**. The kernel only exposes
+    // one-at-a-time `inst_tfree`, so a chained map like `{b ↦ c, c ↦ d}` —
+    // routine when matching e.g. `compose`'s `'b`/`'c` against another type's
+    // `'c`/`'d` — would clobber if done sequentially (the first `b↦c` step
+    // introduces fresh `'c`s that the later `c↦d` step then rewrites too).
+    // Route every non-identity rename through a unique temporary tfree first,
+    // so no source name survives into the second pass.
+    let renames: Vec<(&SmolStr, &Type)> = sub
+        .types
+        .iter()
+        .filter(|(tv, ty)| Type::tfree(tv.as_str()) != **ty)
+        .collect();
+    for (i, (tv, _ty)) in renames.iter().enumerate() {
+        let tmp = format!("__inst_tmp_{i}");
+        t = t.inst_tfree(tv, Type::tfree(tmp))?;
+    }
+    for (i, (_tv, ty)) in renames.iter().enumerate() {
+        let tmp = format!("__inst_tmp_{i}");
+        t = t.inst_tfree(&tmp, (*ty).clone())?;
     }
     for name in order {
         let w = sub.terms.get(name).ok_or_else(|| {

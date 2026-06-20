@@ -164,49 +164,23 @@ pub fn comp_cong(g_eq: &Thm, f_eq: &Thm) -> Result<Thm> {
 // .cov proof language support
 // ============================================================================
 
-/// The primitives environment for `cat.cov`: the composition operators as
-/// `Op` entries plus the Rust-only `id_left` / `id_right` / `comp_assoc`
-/// lemmas as universally-quantified givens.
+/// The primitives environment for `cat.cov`: just the composition operators.
 ///
-/// `id_left`, `id_right`, `comp_assoc` stay as Rust givens because the
-/// polymorphic `id` type instantiation causes TFree unification clashes in
-/// `.cov` that cannot be resolved without new elaborator machinery.
+/// `compose` / `id` are registered as `ConstDef::Poly`, so each use site
+/// instantiates their free type variables with fresh metavariables — letting
+/// `id` appear at `'a` and `'b` within one term (the polymorphism that
+/// previously blocked porting `id_left` / `id_right` / `comp_assoc`).
 ///
-/// `fun_ext`, `comp_beta`, `comp_cong` are proved in `cat.cov`.
+/// Every category law (`fun_ext`, `comp_beta`, `comp_cong`, `id_beta`,
+/// `id_left`, `id_right`, `comp_assoc`) is now proved in `cat.cov` directly;
+/// none is supplied here as a Rust given.
 pub fn cat_env() -> Env {
     let a = Type::tfree("a");
     let b = Type::tfree("b");
     let c = Type::tfree("c");
     let mut e = Env::empty();
-    // Operators, registered as `ConstDef::Poly`: each use site instantiates
-    // the free type variables with fresh metavariables, so `compose`/`id`
-    // can appear at several type instances within one term (e.g. `id` at
-    // `'a` vs `'b` in `id_left`/`id_right`).
     e.define_const("compose", ConstDef::Poly(compose(a.clone(), b.clone(), c.clone())));
     e.define_const("id", ConstDef::Poly(id(a.clone())));
-    // Rust-proved givens (omitted from cat.cov due to TFree clash in id).
-    // id_left: ∀(f:'a→'b). compose (id_b) f = f
-    // id_right: ∀(f:'a→'b). compose f id_a = f
-    // comp_assoc: ∀(h:'c→'d)(g:'b→'c)(f:'a→'b). compose (compose h g) f = compose h (compose g f)
-    // These are proved in Rust but listed here so cat.cov can reference them.
-    let d = Type::tfree("d");
-    let f_ab = Term::free("f", Type::fun(a.clone(), b.clone()));
-    let g_bc = Term::free("g", Type::fun(b.clone(), c.clone()));
-    let h_cd = Term::free("h", Type::fun(c.clone(), d.clone()));
-    let il = id_left(&f_ab)
-        .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
-        .expect("cat_env: id_left");
-    e.define_lemma("id_left", il);
-    let ir = id_right(&f_ab)
-        .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
-        .expect("cat_env: id_right");
-    e.define_lemma("id_right", ir);
-    let ca = comp_assoc(&h_cd, &g_bc, &f_ab)
-        .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
-        .and_then(|t| t.all_intro("g", Type::fun(b.clone(), c.clone())))
-        .and_then(|t| t.all_intro("h", Type::fun(c.clone(), d.clone())))
-        .expect("cat_env: comp_assoc");
-    e.define_lemma("comp_assoc", ca);
     e
 }
 
@@ -279,14 +253,60 @@ cached_thm! {
     }
 }
 
+cached_thm! {
+    /// `⊢ ∀(f:'a→'b). compose id f = f`
+    pub fn id_left_thm() -> Thm {
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        id_left(&f)
+            .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
+            .expect("id_left_thm")
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀(f:'a→'b). compose f id = f`
+    pub fn id_right_thm() -> Thm {
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        id_right(&f)
+            .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
+            .expect("id_right_thm")
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀(h:'c→'d)(g:'b→'c)(f:'a→'b).
+    ///      compose (compose h g) f = compose h (compose g f)`
+    pub fn comp_assoc_thm() -> Thm {
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let c = Type::tfree("c");
+        let d = Type::tfree("d");
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        let g = Term::free("g", Type::fun(b.clone(), c.clone()));
+        let h = Term::free("h", Type::fun(c.clone(), d.clone()));
+        comp_assoc(&h, &g, &f)
+            .and_then(|t| t.all_intro("f", Type::fun(a.clone(), b.clone())))
+            .and_then(|t| t.all_intro("g", Type::fun(b.clone(), c.clone())))
+            .and_then(|t| t.all_intro("h", Type::fun(c.clone(), d.clone())))
+            .expect("comp_assoc_thm")
+    }
+}
+
 crate::cov_theory! {
     /// cat lemmas ported to `cat.cov`, over `core` + the `catprim` env.
     pub mod cov from "cat.cov" {
         import "core" = crate::script::Env::core();
         import "catprim" = crate::init::cat::cat_env();
-        "fun_ext"   => pub fn fun_ext_cov;
-        "comp_beta" => pub fn comp_beta_cov;
-        "comp_cong" => pub fn comp_cong_cov;
+        "fun_ext"    => pub fn fun_ext_cov;
+        "comp_beta"  => pub fn comp_beta_cov;
+        "comp_cong"  => pub fn comp_cong_cov;
+        "id_left"    => pub fn id_left_cov;
+        "id_right"   => pub fn id_right_cov;
+        "comp_assoc" => pub fn comp_assoc_cov;
     }
 }
 
@@ -354,5 +374,8 @@ mod tests {
         assert_eq!(cov::fun_ext_cov().concl(), super::fun_ext_thm().concl());
         assert_eq!(cov::comp_beta_cov().concl(), super::comp_beta_thm().concl());
         assert_eq!(cov::comp_cong_cov().concl(), super::comp_cong_thm().concl());
+        assert_eq!(cov::id_left_cov().concl(), super::id_left_thm().concl());
+        assert_eq!(cov::id_right_cov().concl(), super::id_right_thm().concl());
+        assert_eq!(cov::comp_assoc_cov().concl(), super::comp_assoc_thm().concl());
     }
 }

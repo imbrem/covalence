@@ -114,6 +114,74 @@ pub fn branch(alpha: &Type, l: Term, r: Term) -> Result<Term> {
 }
 
 // ============================================================================
+// Constant-form constructors (for the `.cov` surface / [`tree_env`]).
+//
+// The `.cov` proof language applies head symbols by *curried application*
+// (`Term::app`), with no β-reduction. The freeness/recursor theorems above
+// are stated over the **β-reduced** encoding (`leaf a = λfl fb. fl a`). To
+// make `(app tree.leaf a)` in `.cov` denote a well-defined kernel term whose
+// applied form the seam givens are stated over, we expose the constructors as
+// **closed λ constants** — `leaf_fn = λa. λfl fb. fl a`, etc. — and bridge a
+// reduced-form theorem to its applied form with [`bridge_app1`] /
+// [`bridge_app2`] (a single β step on the constructor occurrence).
+// ============================================================================
+
+/// `leaf_fn : α → T⟨α,'r⟩` — `leaf` as a closed λ constant, `λa. leaf a`.
+pub fn leaf_fn(alpha: &Type) -> Term {
+    let a = Term::free("__a", alpha.clone());
+    // `leaf __a` then close over `__a`.
+    let body = close_handlers(alpha, Term::app(fl_var(alpha), a));
+    Term::abs(alpha.clone(), subst::close(&body, "__a"))
+}
+
+/// `branch_fn : T⟨α,'r⟩ → T⟨α,'r⟩ → T⟨α,'r⟩` — `branch` as a closed λ
+/// constant, `λl r. branch l r`.
+pub fn branch_fn(alpha: &Type) -> Result<Term> {
+    let tt = tree_ty(alpha);
+    let l = Term::free("__l", tt.clone());
+    let r = Term::free("__r", tt.clone());
+    let body = branch(alpha, l, r)?;
+    let inner = Term::abs(tt.clone(), subst::close(&body, "__r"));
+    Ok(Term::abs(tt, subst::close(&inner, "__l")))
+}
+
+/// `app(leaf_fn, a)` — the **applied** (un-β-reduced) constant form of
+/// `leaf a`. This is the term `(app tree.leaf a)` builds in `.cov`.
+pub fn leaf_app(alpha: &Type, a: &Term) -> Term {
+    Term::app(leaf_fn(alpha), a.clone())
+}
+
+/// `app(app(branch_fn, l), r)` — the applied constant form of `branch l r`.
+pub fn branch_app(alpha: &Type, l: &Term, r: &Term) -> Result<Term> {
+    Ok(Term::app(Term::app(branch_fn(alpha)?, l.clone()), r.clone()))
+}
+
+/// Rewrite every reduced-encoding constructor occurrence in `thm`'s
+/// conclusion to its applied constant form by β-bridging. `reduced` is the
+/// β-normal constructor term (`leaf a`, `branch l r`); `applied` is its
+/// `app(C_fn, …)` form. We prove `⊢ applied = reduced` (`beta_nf` of
+/// `applied` lands on `reduced`) and `eq_mp` / rewrite `thm` across it.
+pub(crate) fn to_applied(thm: Thm, applied: &Term, reduced: &Term) -> Result<Thm> {
+    // `reduced` is the constructor occurrence as it appears in `thm`'s
+    // conclusion; `applied` is its `app(C_fn, …)` form. Both β-normalise to
+    // the same normal form (they are β-equal), so `⊢ applied = reduced` holds:
+    // bridge through that shared normal form.
+    let app_conv = beta_nf(applied.clone()); // ⊢ applied = nf_a
+    let red_conv = beta_nf(reduced.clone()); // ⊢ reduced = nf_r
+    let nf_a = app_conv.concl().as_eq().expect("beta_nf equation").1.clone();
+    let nf_r = red_conv.concl().as_eq().expect("beta_nf equation").1.clone();
+    if nf_a != nf_r {
+        return Err(covalence_core::Error::ConnectiveRule(format!(
+            "tree::to_applied: `{applied}` and `{reduced}` have distinct normal forms"
+        )));
+    }
+    // ⊢ applied = reduced  (applied = nf = reduced), then rewrite `reduced ↦
+    // applied` in `thm`.
+    let bridge = app_conv.trans(red_conv.sym()?)?;
+    thm.rewrite(&bridge.sym()?)
+}
+
+// ============================================================================
 // Recursor + its defining equations (by β)
 // ============================================================================
 
@@ -300,6 +368,104 @@ fn arbitrary_branch_handler(alpha: &Type) -> Term {
 /// standard reducibility argument) is recorded in `SKELETONS.md`.
 pub fn induct_note() {}
 
+// ============================================================================
+// The `.cov` seam environment + ported theory
+// ============================================================================
+
+/// The `tree` seam environment for [`crate::init::tree::cov`] (`tree.cov`):
+/// the constructors as closed-λ constants and the genuinely-proved freeness
+/// facts as universally-quantified Rust GIVENS, each stated over the
+/// constructors' **applied** constant form (`app(leaf_fn, a)` etc.).
+///
+/// Everything is schematic in one element type `'a`; the freeness lemmas are
+/// taken at their natural observation type (`leaf_inj` at `'r := 'a`,
+/// `leaf_ne_branch` at `'r := bool`).
+pub fn tree_env() -> crate::script::Env {
+    use crate::script::ConstDef;
+
+    let alpha = Type::tfree("a");
+    let mut e = crate::script::Env::empty();
+
+    // -- constructors as closed-λ constants (Poly: re-instantiated per use) --
+    e.define_const("tree.leaf", ConstDef::Poly(leaf_fn(&alpha)));
+    e.define_const(
+        "tree.branch",
+        ConstDef::Poly(branch_fn(&alpha).expect("tree_env: branch_fn")),
+    );
+
+    // -- seam givens (Rust-proved, used as axioms by tree.cov) --
+
+    // ⊢ ∀(a b : 'a). (leaf a = leaf b ⟹ a = b)   [at 'r := 'a]
+    let a = Term::free("a", alpha.clone());
+    let b = Term::free("b", alpha.clone());
+    let li = leaf_inj_app(&alpha, &a, &b)
+        .and_then(|t| t.all_intro("b", alpha.clone()))
+        .and_then(|t| t.all_intro("a", alpha.clone()))
+        .expect("tree_env: leaf_inj");
+    e.define_lemma("leaf_inj", li);
+
+    // ⊢ ∀(a : 'a) (l r : T⟨'a,bool⟩). ¬(leaf a = branch l r)   [at 'r := bool]
+    // The builder takes the polymorphic-`'r` subtree vars; `leaf_ne_branch`
+    // instantiates `'r := bool`, so the conclusion's `l`/`r` are `T⟨α,bool⟩`.
+    let bool_ty = Type::bool();
+    let obs_tree = subst::subst_tfree_in_type(&tree_ty(&alpha), "r", &bool_ty);
+    let a2 = Term::free("a", alpha.clone());
+    let l = Term::free("l", tree_ty(&alpha));
+    let r = Term::free("r", tree_ty(&alpha));
+    let lnb = leaf_ne_branch_app(&alpha, &a2, &l, &r)
+        .and_then(|t| t.all_intro("r", obs_tree.clone()))
+        .and_then(|t| t.all_intro("l", obs_tree.clone()))
+        .and_then(|t| t.all_intro("a", alpha.clone()))
+        .expect("tree_env: leaf_ne_branch");
+    e.define_lemma("leaf_ne_branch", lnb);
+
+    e
+}
+
+/// `⊢ leaf_app a = leaf_app b ⟹ a = b` — [`leaf_inj`] over the applied
+/// constructor form (`app(leaf_fn, ·)`), for the `.cov` seam.
+pub fn leaf_inj_app(alpha: &Type, a: &Term, b: &Term) -> Result<Thm> {
+    let thm = leaf_inj(alpha, a, b)?;
+    // bridge each `leaf ·` occurrence (at observation type 'r := α) to applied form.
+    let red_a = at_r(&leaf(alpha, a.clone())?, alpha)?;
+    let red_b = at_r(&leaf(alpha, b.clone())?, alpha)?;
+    let app_a = at_r(&leaf_app(alpha, a), alpha)?;
+    let app_b = at_r(&leaf_app(alpha, b), alpha)?;
+    let thm = to_applied(thm, &app_a, &red_a)?;
+    to_applied(thm, &app_b, &red_b)
+}
+
+/// `⊢ ¬(leaf_app a = branch_app l r)` — [`leaf_ne_branch`] over the applied
+/// constructor forms (at observation type `'r := bool`), for the `.cov` seam.
+/// The subtrees `l`, `r` are taken at the polymorphic carrier `T⟨α,'r⟩`; the
+/// whole statement is then instantiated to the boolean observation type, so
+/// the conclusion's `l`/`r` end up `T⟨α,bool⟩`-typed (which is what the
+/// `tree.cov` `#concl` quantifies over).
+pub fn leaf_ne_branch_app(alpha: &Type, a: &Term, l: &Term, r: &Term) -> Result<Thm> {
+    let thm = leaf_ne_branch(alpha, a, l, r)?;
+    let bool_ty = Type::bool();
+    // Constructor occurrences as they appear in `thm`'s conclusion (already at
+    // the bool observation type), and their applied constant forms.
+    let red_leaf = at_r(&leaf(alpha, a.clone())?, &bool_ty)?;
+    let red_branch = at_r(&branch(alpha, l.clone(), r.clone())?, &bool_ty)?;
+    let app_leaf = at_r(&leaf_app(alpha, a), &bool_ty)?;
+    let app_branch = at_r(&branch_app(alpha, l, r)?, &bool_ty)?;
+    let thm = to_applied(thm, &app_leaf, &red_leaf)?;
+    to_applied(thm, &app_branch, &red_branch)
+}
+
+crate::cov_theory! {
+    /// `tree` constructor-freeness theorems ported to `tree.cov`, over
+    /// `core` + the `treeprim` seam env. `leaf_inj` / `leaf_ne_branch` are
+    /// re-exported genuinely (the proof `all-elim`s the seam given).
+    pub mod cov from "tree.cov" {
+        import "core"     = crate::script::Env::core();
+        import "treeprim" = crate::init::tree::tree_env();
+        "leaf_inj"       => pub fn leaf_inj_cov;
+        "leaf_ne_branch" => pub fn leaf_ne_branch_cov;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,4 +555,94 @@ mod tests {
         assert_eq!(thm.concl(), &expected);
     }
 
+    // -- applied-form bridges (used by the `.cov` seam) -------------------
+
+    #[test]
+    fn leaf_app_beta_reduces_to_leaf() {
+        let alpha = a_ty();
+        let a = Term::free("a", alpha.clone());
+        // `app(leaf_fn, a)` β-normalises to the reduced encoding `leaf a`.
+        let conv = beta_nf(leaf_app(&alpha, &a));
+        let nf = conv.concl().as_eq().unwrap().1.clone();
+        assert_eq!(nf, leaf(&alpha, a).unwrap());
+    }
+
+    #[test]
+    fn branch_app_beta_reduces_to_branch() {
+        let alpha = a_ty();
+        let l = leaf(&alpha, Term::free("x", alpha.clone())).unwrap();
+        let r = leaf(&alpha, Term::free("y", alpha.clone())).unwrap();
+        // `app(app(branch_fn, l), r)` and `branch l r` share a β-normal form.
+        let app_nf = beta_nf(branch_app(&alpha, &l, &r).unwrap())
+            .concl()
+            .as_eq()
+            .unwrap()
+            .1
+            .clone();
+        let red_nf = beta_nf(branch(&alpha, l, r).unwrap())
+            .concl()
+            .as_eq()
+            .unwrap()
+            .1
+            .clone();
+        assert_eq!(app_nf, red_nf);
+    }
+
+    #[test]
+    fn leaf_inj_app_is_genuine() {
+        let alpha = a_ty();
+        let a = Term::free("a", alpha.clone());
+        let b = Term::free("b", alpha.clone());
+        let thm = leaf_inj_app(&alpha, &a, &b).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+
+    /// `leaf_inj` from `tree.cov` must match the seam given's conclusion
+    /// (the `∀`-closed applied-form `leaf_inj`), proved genuinely in the
+    /// script layer.
+    #[test]
+    fn leaf_inj_cov_matches_seam() {
+        let alpha = Type::tfree("a");
+        let a = Term::free("a", alpha.clone());
+        let b = Term::free("b", alpha.clone());
+        let expected = leaf_inj_app(&alpha, &a, &b)
+            .and_then(|t| t.all_intro("b", alpha.clone()))
+            .and_then(|t| t.all_intro("a", alpha.clone()))
+            .unwrap();
+        let thm = cov::leaf_inj_cov();
+        assert_eq!(thm.concl(), expected.concl());
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+    }
+
+    /// `leaf_ne_branch` from `tree.cov` — genuinely re-derived over the seam.
+    #[test]
+    fn leaf_ne_branch_cov_is_genuine() {
+        let thm = cov::leaf_ne_branch_cov();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        // a `¬…` conclusion (an application of `not`).
+        assert!(thm.concl().as_app().is_some());
+    }
+
+    /// A downstream-style `.cov` script can `(#import tree)` and consume the
+    /// ported facts plus the constructor constants.
+    #[test]
+    fn downstream_script_imports_tree() {
+        let src = r#"
+            (#import core)  (#open core)
+            (#import tree)  (#open tree)
+            (#thm leaf_a_inj
+              (#fix (a 'a) (b 'a))
+              (#concl (==> (= (app tree.leaf a) (app tree.leaf b)) (= a b)))
+              (#by
+                (derive (all-elim b (all-elim a (leaf_inj))))))
+        "#;
+        let thms = crate::init::check_script(src).expect("downstream script checks");
+        assert_eq!(thms.len(), 1);
+        assert!(thms[0].thm.hyps().is_empty() && thms[0].thm.has_no_obs());
+    }
 }

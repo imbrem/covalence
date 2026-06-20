@@ -512,12 +512,23 @@ index](../../../../SKELETONS.md).
   (the `init/sexpr.rs` pattern). **Proved** (genuine, hyp-free): `leaf`/`branch`
   constructors + recursor `rec` with both equations (`rec_leaf`/`rec_branch`),
   freeness `leaf_inj` / `leaf_ne_branch`, and the `sexp` distinctness facts
-  `atom_ne_nil` / `atom_ne_cons` / `nil_ne_cons`. **Deferred** (honestly):
-  `branch_inj` and full structural `tree`/`sexp` induction need the recursor's
-  subtree-recovery identity — the same `Wf` well-formedness carve `init/sexpr.rs`
-  defers — so the `tree-induct`/`sexp-induct` tactic and `tree.cov`/`sexp.cov`
-  `.cov` theory wait on it (the freeness facts are usable from Rust today, not
-  yet wired as `.cov` givens).
+  `atom_ne_nil` / `atom_ne_cons` / `nil_ne_cons`.
+  **`.cov` surface wired** (`tree.cov` / `sexp.cov` over the `treeprim` /
+  `sexpprim` seam envs): constructors are closed-λ / nullary CONSTANTS
+  (`tree.leaf`/`tree.branch`, `sexp.atom`/`sexp.nil`/`sexp.cons`) — applied by
+  the proof language with a β bridge (`tree::to_applied`) to the reduced
+  encoding — and the freeness/distinctness facts re-export the Rust GIVENS.
+  The three `sexp` facts are taken at a single boolean observation type
+  (`atom_ne_nil` reads `is_some` through the leaf handler — `atom_ne_nil_bool`
+  — instead of `leaf_inj` at `'r := option α`), so the `sexp.*` constructor
+  constants pin `'r := bool` uniformly (needed so the nil-only `atom_ne_nil`
+  `#concl` elaborates uniquely). **Still deferred** (honestly): `branch_inj`,
+  the recursor `rec_leaf`/`rec_branch` `.cov` ports (blocked on the
+  polymorphic-result-type `'r` instantiation in the proof language — the same
+  TFree-clash `cat`/`coprod` document), and full structural `tree`/`sexp`
+  induction (the `tree-induct`/`sexp-induct` tactic) — all need the recursor's
+  subtree-recovery identity, the `Wf` well-formedness carve `init/sexpr.rs`
+  defers.
 
 - **`stream` round-trips proved in Rust, `.cov` ports deferred.** `head_mk`,
   `tail_const`, `mk_at` (the wrapper-side companions of `at_mk`/`const_at`) are

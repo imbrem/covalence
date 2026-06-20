@@ -1,11 +1,16 @@
 # Skeletons — covalence-metamath
 
-Intentional placeholders and deferred work in this crate. See the repo
-[`CLAUDE.md`](../../CLAUDE.md) § Skeletons for the policy.
+Intentional placeholders and deferred work in this crate. Its scope is now the
+**`.mm` format / IO reader** only — the substitution engine moved to
+`covalence-hol::metamath` (engine-side deferrals — the `#logic` correspondence
+layer, the import-tactic + representation-equivalence metatheorem, and the
+structured-tree encoding — live in
+[`covalence-hol/src/metamath/SKELETONS.md`](../covalence-hol/src/metamath/SKELETONS.md)).
+See the repo [`CLAUDE.md`](../../CLAUDE.md) § Skeletons for the policy.
 
-## Deferred features (north stars)
+## Deferred features (north stars) — reader scope
 
-- **Compressed proof format.** Only *normal / uncompressed* proofs are checked.
+- **Compressed proof format.** Only *normal / uncompressed* proofs are read.
   The parser (`src/parse.rs`, `Parser::read_proof`) **detects** a compressed
   proof (`$= ( labels ) LETTERS $.`) and rejects it with a clear
   `MmError::Parse` ("compressed proof format … not yet supported"). The
@@ -14,40 +19,26 @@ Intentional placeholders and deferred work in this crate. See the repo
   star, required before `set.mm` can be imported. No incomplete decoder is
   shipped — the gate is the rejection in `read_proof`.
 
-- **`set.mm` scale & performance.** The model uses `String` symbols and `HashMap`
-  label/symbol tables with no interning or arenas — fine for the hand-encoded
-  example theories (`tests/theories.rs`), not for the ~40 MB `set.mm`. Symbol
-  interning, a flat statement arena, and incremental/streaming parsing are
-  deferred until the compressed format lands.
-
 - **`$[ ... $]` file inclusion.** The parser handles a single source string.
   Multi-file databases (`$[ include.mm $]`, with dedup by canonical path) are
-  not parsed. (A prior flat-string prototype had a `SourceResolver`; the
-  `SExpr`-based rewrite drops it pending the compressed-format work, since
-  `set.mm` is the only real consumer of includes.)
+  not parsed. This is the only reader feature `set.mm` truly needs beyond the
+  compressed format.
 
-- **`covalence-hol` import tactic + representation-equivalence metatheorem.**
-  The whole point of pillar 2 (`docs/theories-models-and-logics.md` §5.5): a
-  `covalence-metamath` → `covalence-hol` bridge that **replays** an (untrusted)
-  Metamath proof and **kernel-rechecks** it — the same untrusted-frontend →
-  kernel-recheck pattern as `covalence-alethe`. Soundness of the import rests
-  on a HOL metatheorem relating the Metamath representation of a theory to our
-  locally-nameless syntax (e.g. "Metamath-PA ≡ our PA"). This crate's core is
-  deliberately kept independent of `covalence-hol`; the bridge is a future
-  crate-dependency edge, not code here.
+- **`set.mm`-scale streaming/incremental parsing.** The reader tokenises an
+  entire source string up front — fine for the hand-encoded example theories
+  and the `tests/fixtures/demo0.mm` file, not for the ~40 MB `set.mm`.
+  Streaming/incremental parsing is deferred until the compressed format lands.
+  (The engine-side model performance — symbol interning, statement arenas — is
+  tracked on the `covalence-hol::metamath` side.)
 
-- **Structured-tree (grammar-parsed) expression encoding.** Expressions are
-  encoded as *faithful flat sequences* (`[typecode, sym, sym, ...]` `SExpr`
-  lists) — see the crate docs for the rationale. A grammar pass turning those
-  flat lists into structured trees (`(-> ph ps)`) would be nicer for the
-  metatheory work above, but reintroduces grammar ambiguity and is therefore
-  deferred to the bridge layer, where the grammar is part of the (untrusted)
-  representation, not the checker.
+- **Canonical `.mm` serializer.** There is no in-crate emitter; the round-trip
+  test (`tests/mm_file.rs`) ships a minimal test-local one. A canonical
+  serializer is a north star.
 
 ## Notes
 
-- No `unsafe` (project rule for kernel-liftable surface-language crates).
-- The checker performs **genuine** checking: substitutions, typecodes, and `$d`
-  distinct-variable conditions are all re-derived and re-verified
-  (`src/verify.rs`); bad proofs are rejected with precise errors
-  (`tests/theories.rs`).
+- No `unsafe` (project rule).
+- The reader builds a genuine `covalence_hol::metamath::Database`; verification
+  (substitutions, typecodes, and `$d` distinct-variable conditions all
+  re-derived and re-checked) is done by the engine. Bad proofs are rejected
+  with precise errors — see the end-to-end theory tests in `tests/theories.rs`.

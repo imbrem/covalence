@@ -8,7 +8,7 @@
 //!
 //! Whether a given symbol is a *variable* (substitutable) or a *constant* is
 //! not stored in the expression — it is a property of the surrounding
-//! [`crate::Database`]. The expression layer is purely syntactic.
+//! [`crate::metamath::Database`]. The expression layer is purely syntactic.
 
 use covalence_sexp::{SExp, SExpr};
 

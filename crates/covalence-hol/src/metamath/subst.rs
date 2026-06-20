@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 use covalence_sexp::{Atom, SExp, SExpr};
 
-use crate::expr::Expr;
+use crate::metamath::expr::Expr;
 
 /// A variable substitution: variable name → replacement body (a sequence of
 /// math-symbol `SExpr`s, i.e. an expression with its typecode stripped).
@@ -85,7 +85,7 @@ pub fn vars_in_body<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr::{make_expr, render};
+    use crate::metamath::expr::{make_expr, render};
 
     fn subst(pairs: &[(&str, Expr)]) -> Subst {
         pairs

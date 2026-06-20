@@ -40,3 +40,9 @@ index](../../SKELETONS.md).
   Deferred: the ∀-closed *impredicative* soundness theorem (`prop.rs`-style
   `inst d := ⟦·⟧` fold — soundness is currently constructive per-derivation),
   and the `.cov` surface (Phase C: `(pa-induct …)` + β/η-aware `#concl`).
+- **[`src/metamath/SKELETONS.md`](./src/metamath/SKELETONS.md)** — the Metamath
+  substitution engine (expression model + substitution + frames + RPN checker):
+  the not-yet-built `#logic` / `Derivable_L` / `S`-transport correspondence
+  layer, the import-tactic + representation-equivalence metatheorem bridge, the
+  deferred structured-tree encoding, and `set.mm` scale. (The `.mm` *reader*
+  deferrals live in the separate `covalence-metamath` crate.)

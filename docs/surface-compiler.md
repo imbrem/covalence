@@ -193,6 +193,71 @@ satisfy `T` under one logic but not another. The type system makes all of this
 explicit rather than silent. (Seam realization: `Logic` + `Model` traits,
 `theories-models-and-logics.md §1.1`.)
 
+### 3.0.3 `#model` / `#models` — declaring a model and certifying satisfaction
+
+```scheme
+;; A MODEL of signature Nat — interprets the vocabulary at a carrier (.mod).
+;; Pure semantics: a carrier + a term for each op (must typecheck with α := carrier).
+(#model nat/self
+  (of Nat)                       ;; interprets signature Nat
+  (carrier nat)                  ;; α := nat
+  (zero (nat.lit 0))             ;; the op interpretations
+  (succ nat.succ)
+  (add  nat.add))
+
+;; SATISFACTION — "nat/self models NatTheory" (M ⊨ T), a .thm. For each axiom of
+;; NatTheory, the goal is the axiom INSTANTIATED at the model (α := carrier, op
+;; symbols := interpretations); each must be PROVED. Certifying it blesses the
+;; model's env (its ops + these verified axioms) for `(#in nat/self …)` dispatch.
+(#models nat/self NatTheory
+  (zero.add (#by …))             ;; discharge each axiom at the carrier
+  (add.zero (#by …))
+  (succ.add (#by …))
+  (add.succ (#by …)))
+```
+
+`(#models M T …)` reads "M models T". It is the single load-bearing statement
+type (§3.0.2). The model's env — abstract op names (`m.zero`/`m.add`/…) bound to
+the interpretations, plus the verified axioms bound under the theory's axiom
+names — is exactly what the abstract `add_comm.cov` proof dispatches over via
+`(#in M …)` (the Track 1 mechanism, now sourced from the *declared* signature +
+theory instead of a hand-built Rust env). The satisfaction proofs are
+genuinely per-model (e.g. `nat/unary`'s `add.succ` needs the `unit` singleton),
+so they live in the `(#models …)` block — or, transitionally, a host-supplied
+witness `(#models nat/unary NatTheory (from unary-witness))` keeps a heavy Rust
+proof (e.g. `models::unary`) in place until it's ported to `.cov`.
+
+### 3.0.4 North stars (don't preclude these)
+
+Two directions the forms above must stay compatible with — **architectural
+constraints, not near-term work**:
+
+1. **`.thy` is the elaboration target of a Haskell-like surface.** A function
+   written as a type signature + defining equations
+   ```haskell
+   length :: list 'a -> nat
+   length []        = 0
+   length (x :: xs) = 1 + length xs
+   ```
+   elaborates to a `(#thy …)`: the `::` signature → the `(op length (-> (list 'a)
+   nat))` declaration, and each defining equation → a **clause** (the surface
+   AST's `#clause`/`#rw`, with the *positional* LHS/RHS quantification rule —
+   LHS pattern variables universally bound, RHS-only variables existential;
+   `surface-syntax.md §4.1`). So a theory's spec is *axioms and/or equational
+   clauses*, and the clause form is what the pattern equations lower to. The
+   `#sig`/`#thy`/`#model` forms are the **explicit, lower** layer this surface
+   compiles down to — keep them expressive enough to be that target.
+2. **Models are *synthesized*, not only declared.** Beyond hand-writing
+   `(#model …)`, a **tactic takes a theory's sexpr and attempts to synthesize a
+   model** — in HOL, or SOA, or PA — automatically, which is tractable for nice
+   subclasses (equational/algebraic theories, decidable theories). Crucially,
+   **`#inductive` is then subsumed**: declaring a datatype is "synthesize the
+   *initial* model" of the (free/equational) theory of its constructors. So the
+   `Model` object must be **producible by a tactic**, not only by `(#model …)`;
+   `#model` is the manual producer, model-synthesis the automatic one, and both
+   yield the same thing a `(#models …)` certificate certifies and `(#in …)`
+   dispatches over.
+
 ```scheme
 ;; A THEORY: abstract signature + axioms (exists today, generalized).
 (#theory Nat

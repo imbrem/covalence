@@ -28,6 +28,7 @@
 mod drv;
 mod env;
 mod handle;
+mod inductive;
 mod infer;
 mod scope;
 mod syntax;
@@ -303,6 +304,25 @@ pub async fn run_async(
                 internal.define_lemma(nt.name.clone(), nt.thm.clone());
                 thms.push(nt);
             }
+            // `(#inductive NAME …)` — declare a datatype: elaborate it through
+            // the active logic, then bind its constructors (as catalogue
+            // constants) and its recursor/induction theorems (as lemmas) under
+            // the `NAME.` prefix. The emitted theorems also accumulate in
+            // `thms`, so a downstream proof can `(NAME.rec)`/`(NAME.induct)`.
+            Stmt::Inductive(sexpr) => {
+                use inductive::LogicInductive;
+                let ch = syntax::list(&sexpr, "#inductive")?;
+                let decl = inductive::parse_decl(ch)?;
+                let elab = inductive::HolMetalogic.elaborate(&decl)?;
+                for (local, c) in elab.ctors {
+                    internal.define_const(format!("{}.{}", decl.name, local), c);
+                }
+                for (local, thm) in elab.thms {
+                    let name = format!("{}.{}", decl.name, local);
+                    internal.define_lemma(name.clone(), thm.clone());
+                    thms.push(NamedThm { name, thm });
+                }
+            }
             // `(#spawn NAME …)` — defer the proof as a cooperative async task
             // bound to NAME in the env. Execution moves straight on; a later
             // proof's `(NAME)` (by name) (or the force) simply **awaits** it,
@@ -408,6 +428,10 @@ enum Stmt {
     /// task** that runs while later statements proceed; awaited when first
     /// referenced or when the theory is forced.
     Spawn(SExpr),
+    /// `(#inductive NAME (ctor ARGTY…) …)` — declare a datatype and elaborate
+    /// it (through the active logic) into its constructors + recursor +
+    /// induction principle. See [`inductive`].
+    Inductive(SExpr),
     /// `(#export NAME …)` — the public interface.
     Export(Vec<String>),
 }
@@ -450,6 +474,7 @@ fn parse_stmt(e: &SExpr) -> Result<Stmt, ScriptError> {
         }
         "#thm" => Stmt::Thm(e.clone()),
         "#spawn" => Stmt::Spawn(e.clone()),
+        "#inductive" => Stmt::Inductive(e.clone()),
         "#export" => {
             if ch.len() < 2 {
                 return Err(ScriptError::Syntax(

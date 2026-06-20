@@ -1319,6 +1319,9 @@ pub fn rat_env() -> crate::script::Env {
     e.define_const("int.mul", ConstDef::Op(int::int_mul()));
     e.define_const("int.neg", ConstDef::Op(int::int_neg()));
     e.define_const("int.lt", ConstDef::Op(int::int_lt()));
+    // int literal constants the unit/zero proofs spell explicitly.
+    e.define_const("int.zero", ConstDef::Op(izero()));
+    e.define_const("int.one", ConstDef::Op(Term::int_lit(1i128)));
 
     // quotient seam givens
     e.define_lemma("recon", recon_given().expect("rat recon given"));
@@ -2420,6 +2423,7 @@ crate::cov_theory! {
         "mul_comm"  => pub fn mul_comm_cov;
         "lt_irrefl" => pub fn lt_irrefl_cov;
         "mul_one"   => pub fn mul_one_cov;
+        "add_zero"  => pub fn add_zero_cov;
     }
 }
 
@@ -2436,6 +2440,7 @@ mod cov_tests {
         assert_eq!(cov::mul_comm_cov().concl(), super::mul_comm().concl());
         assert_eq!(cov::lt_irrefl_cov().concl(), super::lt_irrefl().concl());
         assert_eq!(cov::mul_one_cov().concl(), super::mul_one().concl());
+        assert_eq!(cov::add_zero_cov().concl(), super::add_zero().concl());
     }
 
 }

@@ -131,4 +131,36 @@
           ;; = a
           (sym (all-elim a (recon))))))))
 
-(#export add_comm mul_comm lt_irrefl mul_one)
+;; ⊢ ∀a. a + 0 = a.
+(#thm add_zero
+  (#concl (forall (a rat) (= (rat.add a (rat.zero)) a)))
+  (#by
+    (intro a)
+    (derive
+      (trans
+        ;; a+0 = MK (num a·rep one_pos + 0·rep(den a)) (topos(rep(den a)·rep one_pos))
+        (all-elim a (add_zero_compute))
+        (trans
+          (mk-comb
+            ;; numerator: (num a·rep one_pos) + (0·rep(den a)) = num a
+            (cong-arg (rat.MK)
+              (trans
+                (mk-comb
+                  (cong-arg (int.add)
+                    (trans (cong-arg (int.mul (rat.num a)) (one_pos_rt))
+                           (all-elim (rat.num a) (int_mul_one))))
+                  (trans
+                    (all-elim (rat.rep (rat.den a))
+                      (all-elim (int.zero) (int_mul_comm)))
+                    (all-elim (rat.rep (rat.den a)) (int_mul_zero))))
+                (all-elim (rat.num a) (int_add_zero))))
+            ;; denominator: topos(rep(den a)·rep one_pos) = den a
+            (trans
+              (cong-arg (rat.topos)
+                (trans
+                  (cong-arg (int.mul (rat.rep (rat.den a))) (one_pos_rt))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_one))))
+              (all-elim (rat.den a) (topos_rep))))
+          (sym (all-elim a (recon))))))))
+
+(#export add_comm mul_comm lt_irrefl mul_one add_zero)

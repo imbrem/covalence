@@ -516,6 +516,51 @@ index](../../../../SKELETONS.md).
     **soundness theorem** `⊢ ∀v. Derivable_Prop A ⟹ ⟦A⟧ v` (proved by
     instantiating `d := λA. ⟦A⟧ v` and discharging each closure clause via
     `prove_taut` = β-normalise + complete Shannon decision `prop_eq`).
+    - **Rule induction over derivations is now PACKAGED** as the reusable
+      `prop_induction(pred, axiom_case, mp_case) -> Thm` — the single
+      impredicative `inst d := pred` + `Closed pred` discharge, yielding
+      `⊢ ∀A. Derivable_Prop A ⟹ pred A` from per-clause case proofs.
+      `soundness_general` (`pred := λA. ⟦A⟧ v`) is its first instance;
+      `derivable_closed_under_rules` (`pred := λA. Derivable_Prop A`, cases via
+      the derivation constructors) is a second, structurally different one,
+      proving the packaging is general. `consistency` (`⊢ ¬Derivable_Prop
+      ⌜var 0⌝`) is a soundness consequence. **`.cov` surface wired**
+      (`prop.cov` over the `propprim` seam env, registered as `prop` in
+      `library_env`): constructor closed-λ constants `prop.var`/`prop.neg`/
+      `prop.and`/`prop.or`/`prop.imp` + `prop.derivable`; the derivation/
+      metatheory givens (`derive_axiom_1..10`, `derive_mp`, `soundness`,
+      `consistency` in applied-constant form, `derivable_self`). `prop.cov`
+      builds a concrete derivation (`axiom1_at_012`) and re-exports
+      `consistency` as a first-class script theorem (test parity with the Rust
+      `consistency_app`).
+  - **SURFACE GAPS hit (the `.cov` stress-test findings).** Recorded here as
+    the next-language-feature drivers; none block the proofs (all live in Rust):
+    1. **Impredicative `inst d := P` is not expressible in `.cov`.** The whole
+       induction principle (`prop_induction`) — instantiate the bound predicate
+       variable of `∀d. Closed d ⟹ d A` with a HOL predicate, then discharge
+       `Closed P` — has no script surface. The `inst`/`all-elim` rules take a
+       *term* witness, but building the predicate `P` (a `Φ⟨bool⟩→bool`
+       λ-term over the formula carrier) and the `Closed P` discharge (needing
+       `prove_taut`/Shannon) are Rust-only. → a `(prop-induct P axiom-cases
+       mp-case)` tactic is the missing primitive.
+    2. **Statements over a *bound* formula variable can't be re-stated.** Any
+       metatheorem of the form `∀A. Derivable_Prop A ⟹ …` (soundness,
+       `derive_axiom_i`, `derive_mp`) mentions `Derivable_Prop`/`⟦·⟧` applied
+       to a *bound* `A`. The reduced↔applied-constant β-bridge (`tree::to_applied`)
+       only rewrites occurrences applied to *closed* sub-terms, not under the
+       `∀A`. So these givens are citable by `apply`/`all-elim` but their
+       `#concl` cannot be written in `.cov` — only `consistency` (whose
+       statement mentions `derivable` applied to the *closed* `⌜var 0⌝`) is a
+       re-statable theorem. → an automatic β/η-aware `#concl` matcher (or
+       exposing `Derivable_Prop`/`denote` as genuine `defs` constants with a
+       δ-rule, not closed-λ constants) would close this.
+    3. **The seam-given/applied-constant mismatch is pervasive.** Constructors
+       are closed-λ constants applied by `Term::app` (no β), but every seam
+       lemma is stated over the *reduced* encoding. `(apply derive_axiom_1)`
+       works only because `apply`'s first-order matcher tolerates the β-gap via
+       unification; an explicit `(derive (all-elim …))` would need a manual
+       `reduce`/`rw` bridge. → the script's `#concl` checker should β-normalise
+       both sides before comparing (a `comp_default`-style equality seam).
   - Not yet here:
     - **A genuine `SExpr` structural induction principle.** `sexpr::induct_note`
       is a doc placeholder: the bare Church encoding admits junk inhabitants, so

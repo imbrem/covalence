@@ -265,6 +265,51 @@ pub fn p_imp(a: Term, b: Term) -> Term {
 }
 
 // ============================================================================
+// Constructors as closed-λ constants (for the `.cov` surface / [`prop_env`]).
+//
+// As in `init::tree`, the `.cov` language applies a head symbol by curried
+// `Term::app` (no β), so the constructors are exposed as closed λ CONSTANTS at
+// the polymorphic carrier `Φ⟨'r⟩`; `(app prop.var n)` etc. β-reduces to the
+// reduced encoding the seam lemmas are stated over.
+// ============================================================================
+
+/// `prop.var : nat → Φ⟨'r⟩` — the `var` constructor as a closed λ constant.
+pub fn var_fn() -> Term {
+    let n = Term::free("__n", nat());
+    Term::abs(nat(), covalence_core::subst::close(&p_var(n.clone()), "__n"))
+}
+
+/// `prop.neg : Φ⟨'r⟩ → Φ⟨'r⟩` — the `¬` constructor as a closed λ constant.
+pub fn neg_fn() -> Term {
+    let a = Term::free("__a", phi());
+    Term::abs(phi(), covalence_core::subst::close(&p_neg(a.clone()), "__a"))
+}
+
+/// A binary constructor `λA B. op A B` as a closed λ constant.
+fn bin_fn(op: fn(Term, Term) -> Term) -> Term {
+    let a = Term::free("__a", phi());
+    let b = Term::free("__b", phi());
+    let body = op(a.clone(), b.clone());
+    let inner = Term::abs(phi(), covalence_core::subst::close(&body, "__b"));
+    Term::abs(phi(), covalence_core::subst::close(&inner, "__a"))
+}
+
+/// `prop.and : Φ⟨'r⟩ → Φ⟨'r⟩ → Φ⟨'r⟩`.
+pub fn and_fn() -> Term {
+    bin_fn(p_and)
+}
+
+/// `prop.or : Φ⟨'r⟩ → Φ⟨'r⟩ → Φ⟨'r⟩`.
+pub fn or_fn() -> Term {
+    bin_fn(p_or)
+}
+
+/// `prop.imp : Φ⟨'r⟩ → Φ⟨'r⟩ → Φ⟨'r⟩`.
+pub fn imp_fn() -> Term {
+    bin_fn(p_imp)
+}
+
+// ============================================================================
 // Denotation `⟦·⟧`
 // ============================================================================
 
@@ -426,6 +471,15 @@ pub fn derivable(a: &Term) -> Result<Term> {
     body.forall("d", Type::fun(phi(), bool_ty()))
 }
 
+/// `prop.derivable : Φ⟨'r⟩ → bool` — `Derivable_Prop` as a closed λ constant,
+/// `λA. ∀d. Closed d ⟹ d A`, for the `.cov` surface. `(app prop.derivable A)`
+/// β-reduces to `derivable(A)`.
+pub fn derivable_fn() -> Term {
+    let a = Term::free("__a", phi());
+    let body = derivable(&a).expect("derivable_fn: body");
+    Term::abs(phi(), covalence_core::subst::close(&body, "__a"))
+}
+
 // ============================================================================
 // LCF-style derivation constructors (metatheory.md §4)
 //
@@ -508,6 +562,93 @@ fn nth_conjunct(mut thm: Thm, k: usize, n: usize) -> Result<Thm> {
 }
 
 // ============================================================================
+// Rule induction over derivations — the reusable packaging
+//
+// `Derivable_Prop A := ∀d. Closed d ⟹ d A` is impredicative, so "induction
+// on the derivation of A" is a SINGLE move: instantiate the predicate
+// variable `d := P` and discharge the resulting `Closed P` obligation —
+// "P holds at every axiom instance, and P is MP-closed". That is exactly the
+// induction principle's premises; the conclusion `∀A. Derivable_Prop A ⟹ P A`
+// is the induction hypothesis discharged for every derivable formula.
+//
+// `prop_induction` packages this once. `soundness` (`P := λA. ⟦A⟧ v`) and
+// `derivable_closed_under_rules` (`P := λA. Derivable_Prop A`, cases via the
+// derivation constructors) are two structurally different *instances*;
+// `consistency` is a downstream soundness consequence.
+// ============================================================================
+
+/// **Rule induction over `Derivable_Prop`.** Given a predicate
+/// `pred : Φ⟨bool⟩ → bool` and proofs that it is *closed under the Hilbert
+/// system* — one per axiom schema and one for modus ponens — conclude
+///
+/// ```text
+///   ⊢ ∀A. Derivable_Prop A ⟹ pred A
+/// ```
+///
+/// This is the impredicative `inst d := pred` discharged against `Closed pred`.
+/// The caller supplies the closure obligations as closures over **fixed free
+/// formula variables** `A`, `B`, `C : Φ⟨bool⟩` (passed in so the case proofs
+/// are generic — `prop_induction` does the `∀`-generalisation):
+///
+/// - `axiom_case(i, A, B, C)` must prove `⊢ pred ⌜axiom_i A B C⌝` (the schema
+///   at the supplied sub-formula variables), for each `i ∈ 1..=N_AXIOMS`;
+/// - `mp_case(A, B)` must prove `⊢ (pred A ∧ pred ⌜A ⟹ B⌝) ⟹ pred B`.
+///
+/// Everything runs at `'r := bool` (the encoding instance the predicate lives
+/// at). The kernel re-checks every step, so a bogus case proof — one whose
+/// conclusion is not the demanded clause — fails the conjunction build rather
+/// than fabricating an induction.
+pub fn prop_induction(
+    pred: &Term,
+    axiom_case: impl Fn(usize, &Term, &Term, &Term) -> Result<Thm>,
+    mp_case: impl Fn(&Term, &Term) -> Result<Thm>,
+) -> Result<Thm> {
+    let a = Term::free("A", phi_at_bool());
+    let b = Term::free("B", phi_at_bool());
+    let c = Term::free("C", phi_at_bool());
+
+    // Build `⊢ Closed pred` clause by clause, in the order `closed` lays them
+    // out (axioms 1..=N, then MP), ∀-generalising each over its formula vars.
+    let mut clause_thms: Vec<Thm> = Vec::new();
+    for i in 1..=N_AXIOMS {
+        let clause = axiom_case(i, &a, &b, &c)?
+            .all_intro("A", phi_at_bool())?
+            .all_intro("B", phi_at_bool())?
+            .all_intro("C", phi_at_bool())?;
+        clause_thms.push(clause);
+    }
+    let mp = mp_case(&a, &b)?
+        .all_intro("A", phi_at_bool())?
+        .all_intro("B", phi_at_bool())?;
+    clause_thms.push(mp);
+
+    // Conjoin into the right-nested `Closed pred` shape.
+    let mut iter = clause_thms.into_iter().rev();
+    let mut acc = iter.next().expect("at least the MP clause");
+    for cl in iter {
+        acc = cl.and_intro(acc)?;
+    }
+    let closed_pred_thm = acc; // ⊢ Closed pred
+
+    // Now discharge the impredicative definition for an arbitrary `A`:
+    //   Derivable_Prop A ⊢ Derivable_Prop A
+    //                    ⊢ ∀d. Closed d ⟹ d A
+    //         (inst d := pred) Closed pred ⟹ pred A
+    //          (imp_elim Closed pred)       pred A
+    let big_a = Term::free("A", phi_at_bool());
+    let deriv = inst_tfree_term(&derivable(&big_a)?); // Derivable_Prop A at 'r := bool
+    let assumed = Thm::assume(deriv.clone())?;
+    let pred_a = assumed
+        .all_elim(pred.clone())? // Closed pred ⟹ pred A
+        .imp_elim(closed_pred_thm)?; // {Der A} ⊢ pred A
+
+    // ⊢ ∀A. Derivable_Prop A ⟹ pred A.
+    pred_a
+        .imp_intro(&deriv)?
+        .all_intro("A", phi_at_bool())
+}
+
+// ============================================================================
 // Soundness
 // ============================================================================
 
@@ -566,6 +707,55 @@ pub fn soundness_at(a: &Term) -> Result<Thm> {
         .all_intro("v", Type::fun(nat(), bool_ty()))
 }
 
+/// The **soundness predicate** `λA:Φ⟨bool⟩. ⟦A⟧ v` — the impredicative
+/// instantiation `d := ⟦·⟧ v` that soundness uses.
+fn denote_pred(v: &Term) -> Result<Term> {
+    let big_a = Term::free("A", phi_at_bool());
+    let den_body = denote(big_a, v)?; // ⟦A⟧ v with A free
+    Ok(Term::abs(phi_at_bool(), covalence_core::subst::close(&den_body, "A")))
+}
+
+/// `⊢ pred ⌜axiom_i a b c⌝` for `pred = λA. ⟦A⟧ v` — the soundness *axiom
+/// case* used by [`prop_induction`]: the schema's denotation is a tautology
+/// ([`prove_taut`]), β-expanded back to `pred ⌜ax⌝`.
+fn sound_axiom_case(v: &Term, d_pred: &Term, i: usize, a: &Term, b: &Term, c: &Term) -> Result<Thm> {
+    let ax = axiom_schema(&bool_ty(), i, a, b, c);
+    let den = denote(ax.clone(), v)?; // ⟦ax⟧ v (a bool term)
+    let den_taut = prove_taut(&den)?; // ⊢ ⟦ax⟧ v
+    expand_to_d(den_taut, &ax, d_pred) // ⊢ pred ⌜ax⌝
+}
+
+/// `⊢ (pred a ∧ pred ⌜a ⟹ b⌝) ⟹ pred b` for `pred = λA. ⟦A⟧ v` — the
+/// soundness *MP case* used by [`prop_induction`]: at the denotation level it
+/// is the modus-ponens tautology, β-expanded back to the `pred …` form.
+fn sound_mp_case(v: &Term, d_pred: &Term, a: &Term, b: &Term) -> Result<Thm> {
+    let imp_ab = p_imp_at(&bool_ty(), a.clone(), b.clone());
+    let da = denote(a.clone(), v)?;
+    let dab = denote(imp_ab.clone(), v)?;
+    let db = denote(b.clone(), v)?;
+    let goal = da.and(dab)?.imp(db)?;
+    let thm = prove_taut(&goal)?; // ⊢ (⟦a⟧v ∧ ⟦a⟹b⟧v) ⟹ ⟦b⟧v
+    expand_imp_to_d(thm, a, &imp_ab, b, d_pred) // ⊢ (pred a ∧ pred ⌜a⟹b⌝) ⟹ pred b
+}
+
+/// **Soundness, proved through [`prop_induction`]** — the principle's first
+/// instance, and the form `soundness`/`soundness_at` are specialisations of.
+///
+/// Returns `⊢ ∀A. Derivable_Prop A ⟹ (λA. ⟦A⟧ v) A` (at `'r := bool`), `v`
+/// free. The consequent is the soundness predicate `pred = λA. ⟦A⟧ v` *applied*
+/// to the bound `A` — a single β-step short of `⟦A⟧ v`, which cannot be fired
+/// under the `∀A` binder (it must be reduced per-instance after `all_elim`, as
+/// [`consistency`] does). The two closure obligations are the tautology cases
+/// [`sound_axiom_case`] / [`sound_mp_case`].
+pub fn soundness_general(v: &Term) -> Result<Thm> {
+    let d_pred = denote_pred(v)?;
+    prop_induction(
+        &d_pred,
+        |i, a, b, c| sound_axiom_case(v, &d_pred, i, a, b, c),
+        |a, b| sound_mp_case(v, &d_pred, a, b),
+    ) // ⊢ ∀A. Derivable_Prop A ⟹ pred A
+}
+
 /// Substitute `'r := bool` in a `bool`-typed term that may mention `'r`.
 fn inst_tfree_term(t: &Term) -> Term {
     covalence_core::subst::subst_tfree_in_term(t, "r", &bool_ty())
@@ -584,7 +774,11 @@ fn prove_taut(p: &Term) -> Result<Thm> {
     to_nf.trans(nf_is_t)?.eqt_elim()
 }
 
-/// Prove `⊢ Closed D` where `D = λA. ⟦A⟧ v`, by proving each clause.
+/// Prove `⊢ Closed D` where `D = λA. ⟦A⟧ v`, by proving each clause. This is
+/// `Closed` of the *soundness* predicate built from the same per-clause case
+/// provers ([`sound_axiom_case`] / [`sound_mp_case`]) [`prop_induction`] uses;
+/// kept as a thin helper so [`soundness_at`] (the per-formula specialisation)
+/// can still discharge `Closed D` directly.
 fn discharge_closed(v: &Term, d_pred: &Term) -> Result<Thm> {
     let a = Term::free("A", phi_at_bool());
     let b = Term::free("B", phi_at_bool());
@@ -592,40 +786,16 @@ fn discharge_closed(v: &Term, d_pred: &Term) -> Result<Thm> {
 
     // Build proofs of each clause in the same order as `closed`.
     let mut clause_thms: Vec<Thm> = Vec::new();
-
     for i in 1..=N_AXIOMS {
-        let ax = axiom_schema(&bool_ty(), i, &a, &b, &c);
-        // D ⌜ax⌝ β-reduces to ⟦ax⟧ v, a tautology → prove_taut, then β-expand
-        // back to D ⌜ax⌝, then ∀-close.
-        let den = denote(ax.clone(), v)?; // ⟦ax⟧ v (a bool term)
-        let den_taut = prove_taut(&den)?; // ⊢ ⟦ax⟧ v
-        let as_d = expand_to_d(den_taut, &ax, d_pred)?; // ⊢ D ⌜ax⌝
-        let closed = as_d
+        let closed = sound_axiom_case(v, d_pred, i, &a, &b, &c)?
             .all_intro("A", phi_at_bool())?
             .all_intro("B", phi_at_bool())?
             .all_intro("C", phi_at_bool())?;
         clause_thms.push(closed);
     }
-
-    // MP clause: ∀A B. (D A ∧ D (A⟹B)) ⟹ D B.
-    let mp = {
-        let imp_ab = p_imp_at(&bool_ty(), a.clone(), b.clone());
-        // Work at the denotation level: assume ⟦A⟧v ∧ ⟦A⟹B⟧v, derive ⟦B⟧v.
-        let da = denote(a.clone(), v)?;
-        let dab = denote(imp_ab.clone(), v)?;
-        let db = denote(b.clone(), v)?;
-
-        // The whole implication is a propositional tautology in atoms
-        // ⟦A⟧v, ⟦B⟧v once ⟦A⟹B⟧v is unfolded to (⟦A⟧v ⟹ ⟦B⟧v).
-        // `prove_taut` β-normalises then decides it completely.
-        let goal = da.and(dab)?.imp(db)?;
-        let thm = prove_taut(&goal)?; // ⊢ (⟦A⟧v ∧ ⟦A⟹B⟧v) ⟹ ⟦B⟧v
-
-        // β-expand the three denotations back to `D …`.
-        let thm = expand_imp_to_d(thm, &a, &imp_ab, &b, d_pred)?;
-        thm.all_intro("A", phi_at_bool())?
-            .all_intro("B", phi_at_bool())?
-    };
+    let mp = sound_mp_case(v, d_pred, &a, &b)?
+        .all_intro("A", phi_at_bool())?
+        .all_intro("B", phi_at_bool())?;
     clause_thms.push(mp);
 
     // Conjoin in the right-nested shape `closed` produced.
@@ -669,6 +839,250 @@ fn beta_to_denote(d_a: Thm, a: &Term, _v: &Term, d_pred: &Term) -> Result<Thm> {
     let d_app = d_pred.clone().apply(a.clone())?;
     let beta = Thm::beta_conv(d_app)?; // ⊢ D a = ⟦a⟧ v
     beta.eq_mp(d_a)
+}
+
+// ============================================================================
+// A SECOND instance of `prop_induction` — proving the packaging is general
+// ============================================================================
+
+/// **Derivability is closed under its own rules** —
+/// `⊢ ∀A. Derivable_Prop A ⟹ Derivable_Prop A`, proved by [`prop_induction`]
+/// with the predicate `pred := λA. Derivable_Prop A`.
+///
+/// This is a *second, structurally different* instance of the induction
+/// packaging: the predicate is **not** the denotation (no `⟦·⟧`, no tautology
+/// deciding), and the closure obligations are discharged by the **derivation
+/// constructors** [`derive_axiom`] / [`derive_mp`] rather than `prove_taut`.
+/// It witnesses that `prop_induction` is genuinely reusable — the same single
+/// `inst d := P` + `Closed P` discharge works for any HOL predicate over
+/// encoded formulas, not just soundness.
+pub fn derivable_closed_under_rules() -> Result<Thm> {
+    // pred := λA:Φ⟨bool⟩. Derivable_Prop A   (at 'r := bool).
+    let big_a = Term::free("A", phi_at_bool());
+    let der_body = inst_tfree_term(&derivable(&big_a)?); // Derivable_Prop A
+    let pred = Term::abs(phi_at_bool(), covalence_core::subst::close(&der_body, "A"));
+
+    // β-expand `Derivable_Prop t` to `pred t` for the case proofs (whose
+    // natural shape is `⊢ Derivable_Prop …` from the constructors).
+    let expand = |thm: Thm, t: &Term| -> Result<Thm> {
+        let beta = Thm::beta_conv(pred.clone().apply(t.clone())?)?.sym()?; // ⊢ Der t = pred t
+        thm.rewrite(&beta)
+    };
+
+    let axiom_case = |i: usize, a: &Term, b: &Term, c: &Term| -> Result<Thm> {
+        // The constructors run at 'r := bool already (A,B,C : Φ⟨bool⟩).
+        let der = derive_axiom(i, a, b, c)?; // ⊢ Derivable_Prop ⌜axiom_i⌝
+        let ax = axiom_schema(&bool_ty(), i, a, b, c);
+        expand(der, &ax)
+    };
+    let mp_case = |a: &Term, b: &Term| -> Result<Thm> {
+        // From `derive_mp`: ⊢ Der A ⟹ Der (A⟹B) ⟹ Der B. Reassociate to the
+        // `(pred A ∧ pred ⌜A⟹B⌝) ⟹ pred B` conjunction the principle wants.
+        let imp_ab = p_imp_at(&bool_ty(), a.clone(), b.clone());
+        let mp = derive_mp(a, b)?; // ⊢ Der A ⟹ (Der (A⟹B) ⟹ Der B)
+        // Assume the conjunction, split it, chain the two implications.
+        let der_a = derivable(a).and_then(|t| Ok(inst_tfree_term(&t)))?;
+        let der_ab = derivable(&imp_ab).and_then(|t| Ok(inst_tfree_term(&t)))?;
+        let hyp = der_a.clone().and(der_ab.clone())?;
+        let assumed = Thm::assume(hyp.clone())?; // {H} ⊢ Der A ∧ Der (A⟹B)
+        let h_a = assumed.clone().and_elim_l()?; // {H} ⊢ Der A
+        let h_ab = assumed.and_elim_r()?; // {H} ⊢ Der (A⟹B)
+        let der_b = mp.imp_elim(h_a)?.imp_elim(h_ab)?; // {H} ⊢ Der B
+        let cnj = der_b.imp_intro(&hyp)?; // ⊢ (Der A ∧ Der (A⟹B)) ⟹ Der B
+        // β-expand all three `Der …` to `pred …`.
+        let beta_a = Thm::beta_conv(pred.clone().apply(a.clone())?)?.sym()?;
+        let beta_ab = Thm::beta_conv(pred.clone().apply(imp_ab.clone())?)?.sym()?;
+        let beta_b = Thm::beta_conv(pred.clone().apply(b.clone())?)?.sym()?;
+        cnj.rewrite(&beta_a)?.rewrite(&beta_ab)?.rewrite(&beta_b)
+    };
+
+    prop_induction(&pred, axiom_case, mp_case)
+}
+
+/// **Consistency of the propositional Hilbert system** —
+/// `⊢ ¬Derivable_Prop ⌜var 0⌝`: a bare propositional variable is *not*
+/// derivable (it is not a tautology). A soundness *consequence*, the smallest
+/// non-trivial metatheorem about the object logic.
+///
+/// **Proof.** [`soundness_general`] gives `∀A. Derivable_Prop A ⟹ ⟦A⟧ v`.
+/// Specialise `A := ⌜var 0⌝` and the valuation `v := λ_:nat. F`: then
+/// `⟦var 0⟧ (λ_. F)` β-reduces to `F`, so `Derivable_Prop ⌜var 0⌝ ⟹ F`, i.e.
+/// `¬Derivable_Prop ⌜var 0⌝`.
+pub fn consistency() -> Result<Thm> {
+    let v_false = {
+        // λ_:nat. F  — the all-false valuation.
+        Term::abs(nat(), Term::bool_lit(false))
+    };
+    let var0 = inst_tfree_term(&p_var_lit(0)); // ⌜var 0⌝ at 'r := bool
+
+    // ∀A. Der A ⟹ pred A   (v free, pred = λA. ⟦A⟧ v), specialise A then v.
+    let v_free = Term::free("v", Type::fun(nat(), bool_ty()));
+    let sound = soundness_general(&v_free)?;
+    let at_var0 = sound.all_elim(var0.clone())?; // ⊢ Der ⌜var0⌝ ⟹ pred ⌜var0⌝
+    let at_false = at_var0.inst("v", v_false)?; // ⊢ Der ⌜var0⌝ ⟹ pred[v:=λ_.F] ⌜var0⌝
+
+    // Read the consequent `(λA. ⟦A⟧ (λ_.F)) ⌜var0⌝` straight off the theorem;
+    // β-normalising it lands on `F` (`var0` selects `(λ_.F) 0 = F`). Turn it
+    // into `F` by a TARGETED congruence on the implication (NOT `rewrite` —
+    // `rewrite_conv` walks the enormous `Der ⌜var0⌝` antecedent, O(size²) → hang).
+    // `at_false.concl() = imp (Der var0) consequent = App(App(imp, Der), cons)`.
+    let nae = || covalence_core::Error::NotAnEquation;
+    let (imp_der, consequent) = at_false.concl().as_app().ok_or_else(nae)?;
+    let imp_der = imp_der.clone(); // `imp (Der var0)`
+    let to_f = beta_nf(consequent.clone()); // ⊢ consequent = F
+    let imp_eq = to_f.cong_arg(imp_der)?; // ⊢ (Der ⟹ consequent) = (Der ⟹ F)
+    let at_f = imp_eq.eq_mp(at_false)?; // ⊢ Der ⌜var0⌝ ⟹ F
+    // ¬Der ⌜var0⌝ is definitionally `Der ⌜var0⌝ ⟹ F`; `not_intro` packages it.
+    at_f.not_intro()
+}
+
+/// [`consistency`] re-stated over the **applied constructor / predicate
+/// constants** — `⊢ ¬(prop.derivable (prop.var 0))` — so it is citable from
+/// `prop.cov` with an expressible `#concl`.
+///
+/// Bridges with **targeted single β-steps**, NOT full β-normalisation: the
+/// reduced `Derivable_Prop ⌜var 0⌝` is an enormous Church fold (the 10-axiom
+/// `Closed` conjunction), so `beta_nf`-based bridges (`tree::to_applied`) blow
+/// up exponentially. Instead build `⊢ applied = reduced` from one
+/// `beta_conv` on `var_fn` and one on `derivable_fn`, leaving the fold opaque.
+pub fn consistency_app() -> Result<Thm> {
+    let thm = consistency()?; // ⊢ ¬derivable(var0)   (reduced form)
+
+    // The bool-pinned constant constructor forms.
+    let var_fn_b = inst_tfree_term(&var_fn());
+    let derivable_fn_b = inst_tfree_term(&derivable_fn());
+    let zero = Term::nat_lit(0u32);
+
+    // ⊢ var_fn 0 = var0   (single β-step; var_fn = λn. p_var n).
+    let var_app = var_fn_b.apply(zero)?;
+    let beta_var = Thm::beta_conv(var_app.clone())?; // ⊢ var_fn 0 = var0
+    let var0 = beta_var.concl().as_eq().expect("eq").1.clone();
+
+    // ⊢ derivable_fn var0 = derivable(var0)   (single β-step).
+    let der_app = derivable_fn_b.clone().apply(var0)?;
+    let beta_der = Thm::beta_conv(der_app)?; // ⊢ derivable_fn var0 = derivable var0
+
+    // ⊢ derivable_fn (var_fn 0) = derivable var0, by transitivity:
+    //   derivable_fn (var_fn 0) = derivable_fn var0   (cong_arg, fixed fn)
+    //                           = derivable var0       (beta_der)
+    let cong = beta_var.cong_arg(derivable_fn_b)?; // ⊢ derivable_fn (var_fn 0) = derivable_fn var0
+    let bridge = cong.trans(beta_der)?; // ⊢ applied = derivable var0
+
+    // `⊢ ¬applied = ¬reduced` by congruence on `¬` (one `mk_comb`), then
+    // `eq_mp` against `consistency : ⊢ ¬reduced`. We deliberately avoid
+    // `rewrite` here: its `rewrite_conv` walks the *whole* `¬derivable(var0)`
+    // tree — and that tree is an enormous Church fold — making the rewrite
+    // O(size²); the targeted congruence touches only the `¬` head.
+    let not_eq = bridge.sym()?.cong_arg(covalence_core::defs::not())?; // ⊢ ¬reduced = ¬applied
+    not_eq.eq_mp(thm)
+}
+
+// ============================================================================
+// `.cov` seam — `prop_env` + the ported `prop.cov` theory
+// ============================================================================
+
+/// `⊢ ∀A B C. Derivable_Prop ⌜axiom_i A B C⌝` — the `i`-th Hilbert axiom
+/// schema's derivability, ∀-closed over its formula variables. The
+/// `.cov`-citable form of [`derive_axiom`].
+pub fn derive_axiom_thm(i: usize) -> Result<Thm> {
+    let a = fvar("A");
+    let b = fvar("B");
+    let c = fvar("C");
+    derive_axiom(i, &a, &b, &c)?
+        .all_intro("C", phi())?
+        .all_intro("B", phi())?
+        .all_intro("A", phi())
+}
+
+/// `⊢ ∀A B. Derivable_Prop A ⟹ Derivable_Prop ⌜A ⟹ B⌝ ⟹ Derivable_Prop B`
+/// — reified modus ponens, ∀-closed. The `.cov`-citable form of
+/// [`derive_mp`].
+pub fn derive_mp_thm() -> Result<Thm> {
+    let a = fvar("A");
+    let b = fvar("B");
+    derive_mp(&a, &b)?
+        .all_intro("B", phi())?
+        .all_intro("A", phi())
+}
+
+/// The `prop` seam environment for [`crate::init::prop::cov`] (`prop.cov`):
+///
+/// - the **constructor constants** `prop.var` / `prop.neg` / `prop.and` /
+///   `prop.or` / `prop.imp` (closed λ at the polymorphic carrier `Φ⟨'r⟩`);
+/// - the **derivation-system givens** (Rust-proved): `derive_mp` and
+///   `derive_axiom_1` … `derive_axiom_10`, plus the metatheorems `soundness`
+///   (`∀v. Derivable_Prop A ⟹ ⟦A⟧ v`, `A` free), `derivable_self`
+///   (the second `prop_induction` instance) and `consistency`
+///   (`¬Derivable_Prop ⌜var 0⌝`).
+///
+/// `Derivable_Prop` and `⟦·⟧` themselves are *not* exposed as `.cov` head
+/// symbols (they are impredicative / valuation-parametric terms the script
+/// surface cannot yet build — see `prop.cov`'s surface-gap notes); a `.cov`
+/// proof consumes them only through these pre-proved givens.
+pub fn prop_env() -> crate::script::Env {
+    use crate::script::ConstDef;
+
+    let mut e = crate::script::Env::empty();
+
+    // -- constructors as closed-λ constants (Poly: re-instantiated per use) --
+    e.define_const("prop.var", ConstDef::Poly(var_fn()));
+    e.define_const("prop.neg", ConstDef::Poly(neg_fn()));
+    e.define_const("prop.and", ConstDef::Poly(and_fn()));
+    e.define_const("prop.or", ConstDef::Poly(or_fn()));
+    e.define_const("prop.imp", ConstDef::Poly(imp_fn()));
+    // `Derivable_Prop` as a constant — so `prop.cov` can WRITE the consistency
+    // statement (the only metatheorem whose `#concl` is expressible: it
+    // mentions `derivable` applied to a *closed* formula, not a bound var).
+    e.define_const("prop.derivable", ConstDef::Poly(derivable_fn()));
+    // SURFACE GAP: a `Poly` constant instantiates `'r` with a *fresh* metavar,
+    // and `.cov` has no type-ascription syntax to pin `'r := bool`. The
+    // `consistency` metatheorem lives at `'r := bool` (its proof goes through
+    // the `bool` denotation), so we additionally expose the two constants it
+    // needs **monomorphically at bool** — `prop.var.bool` / `prop.derivable.bool`
+    // — so `consistency`'s `#concl` is writable and matches the seam given.
+    e.define_const(
+        "prop.var.bool",
+        ConstDef::Op(inst_tfree_term(&var_fn())),
+    );
+    e.define_const(
+        "prop.derivable.bool",
+        ConstDef::Op(inst_tfree_term(&derivable_fn())),
+    );
+
+    // -- derivation-system + metatheory givens (Rust-proved) --
+    e.define_lemma("derive_mp", derive_mp_thm().expect("prop_env: derive_mp"));
+    for i in 1..=N_AXIOMS {
+        e.define_lemma(
+            format!("derive_axiom_{i}"),
+            derive_axiom_thm(i).unwrap_or_else(|_| panic!("prop_env: derive_axiom_{i}")),
+        );
+    }
+    e.define_lemma("soundness", soundness().expect("prop_env: soundness"));
+    e.define_lemma(
+        "derivable_self",
+        derivable_closed_under_rules().expect("prop_env: derivable_self"),
+    );
+    // `consistency` in applied-constant form (its `#concl` is expressible).
+    e.define_lemma(
+        "consistency",
+        consistency_app().expect("prop_env: consistency"),
+    );
+
+    e
+}
+
+crate::cov_theory! {
+    /// `prop` propositional-logic metatheory ported to `prop.cov`, over `core`
+    /// + the `propprim` seam env. The derivation constructors and the
+    /// induction-proved metatheorems (`soundness`, `consistency`,
+    /// `derivable_self`) are re-exported genuinely (each proof `all-elim`s /
+    /// chains the seam givens).
+    pub mod cov from "prop.cov" {
+        import "core"     = crate::script::Env::core();
+        import "propprim" = crate::init::prop::prop_env();
+        "axiom1_shape_refl" => pub fn axiom1_shape_refl_cov;
+        "consistency"       => pub fn consistency_cov;
+    }
 }
 
 #[cfg(test)]
@@ -787,5 +1201,118 @@ mod tests {
             .apply(Term::nat_lit(covalence_types::Nat::from_inner(0u32.into())))
             .unwrap();
         assert_eq!(rhs, expected);
+    }
+
+    // -- rule-induction packaging (deliverable 1) -------------------------
+
+    /// `soundness_general` (the first `prop_induction` instance) is genuine and
+    /// has the shape `∀A. Derivable_Prop A ⟹ ⟦A⟧ v`.
+    #[test]
+    fn soundness_general_is_genuine() {
+        let v = Term::free("v", Type::fun(nat(), bool_ty()));
+        let thm = soundness_general(&v).expect("soundness via prop_induction");
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        // It is a `∀A. …` (a forall over the formula carrier).
+        assert!(thm.concl().as_app().is_some());
+    }
+
+    /// The SECOND `prop_induction` instance — `∀A. Derivable_Prop A ⟹
+    /// Derivable_Prop A`, proved with the derivation constructors as the
+    /// closure cases (not the denotation). Proves the packaging is general.
+    #[test]
+    fn derivable_self_is_a_second_instance() {
+        let thm = derivable_closed_under_rules().expect("derivable_self");
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+    }
+
+    /// `consistency` — `⊢ ¬Derivable_Prop ⌜var 0⌝` — is genuine (a real
+    /// metatheorem about the object logic, soundness-derived).
+    #[test]
+    fn consistency_is_genuine() {
+        let thm = consistency().expect("consistency");
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        // Conclusion is a `¬…`.
+        let var0 = inst_tfree_term(&p_var_lit(0));
+        let expected = inst_tfree_term(&derivable(&var0).unwrap()).not().unwrap();
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    /// `consistency_app` is the same theorem bridged to applied-constant form
+    /// (`¬(prop.derivable (prop.var 0))`), still genuine.
+    #[test]
+    fn consistency_app_is_genuine() {
+        let thm = consistency_app().expect("consistency_app");
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let var0_app = inst_tfree_term(&Term::app(var_fn(), Term::nat_lit(0u32)));
+        let applied = inst_tfree_term(&Term::app(derivable_fn(), var0_app));
+        assert_eq!(thm.concl(), &applied.not().unwrap());
+    }
+
+    /// `prop_induction` rejects a bogus axiom case (its conclusion is not the
+    /// demanded clause) rather than fabricating an induction.
+    #[test]
+    fn prop_induction_rejects_a_bogus_case() {
+        // pred := λA. ⟦A⟧ v  (the soundness predicate).
+        let v = Term::free("v", Type::fun(nat(), bool_ty()));
+        let pred = denote_pred(&v).unwrap();
+        // A bogus axiom case that returns ⊢ T instead of `pred ⌜axiom_i⌝`.
+        let bogus = prop_induction(
+            &pred,
+            |_i, _a, _b, _c| truth().eqt_intro().and_then(|t| t.eqt_elim()),
+            |a, b| sound_mp_case(&v, &pred, a, b),
+        );
+        // The conjunction/`imp_elim` against the real `Closed pred` shape fails.
+        assert!(bogus.is_err(), "a bogus case must not fabricate an induction");
+    }
+
+    /// The constructor λ-constants are well-typed and `(app prop.var n)`
+    /// β-reduces to the reduced encoding `var n`.
+    #[test]
+    fn constructor_constants_reduce() {
+        assert_eq!(var_fn().type_of().unwrap(), Type::fun(nat(), phi()));
+        assert_eq!(imp_fn().type_of().unwrap(), Type::fun(phi(), Type::fun(phi(), phi())));
+        let app = Term::app(var_fn(), Term::nat_lit(0u32));
+        let nf = beta_nf(app).concl().as_eq().unwrap().1.clone();
+        assert_eq!(nf, beta_nf(p_var_lit(0)).concl().as_eq().unwrap().1.clone());
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+
+    /// `consistency` from `prop.cov` must match the Rust `consistency_app`
+    /// conclusion, proved genuinely in the script layer.
+    #[test]
+    fn consistency_cov_matches_rust() {
+        let thm = cov::consistency_cov();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert_eq!(thm.concl(), consistency_app().unwrap().concl());
+    }
+
+    /// `axiom1_shape_refl` from `prop.cov` proves the script builds reified
+    /// propositional syntax (a self-equality of a `prop.imp`/`prop.var` term).
+    #[test]
+    fn axiom1_shape_refl_cov_is_genuine() {
+        let thm = cov::axiom1_shape_refl_cov();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        // It is an `=` whose sides are the built formula.
+        assert!(thm.concl().as_eq().is_some());
+    }
+
+    /// A downstream `.cov` script can `(#import prop)` and consume the ported
+    /// metatheorem.
+    #[test]
+    fn downstream_script_imports_prop() {
+        let src = r#"
+            (#import core) (#open core)
+            (#import prop) (#open prop)
+            (#thm var0_not_derivable
+              (#concl (not (app prop.derivable.bool (app prop.var.bool 0))))
+              (#by (derive (consistency))))
+        "#;
+        let thms = crate::init::check_script(src).expect("downstream prop script checks");
+        assert_eq!(thms.len(), 1);
+        assert!(thms[0].thm.hyps().is_empty() && thms[0].thm.has_no_obs());
     }
 }

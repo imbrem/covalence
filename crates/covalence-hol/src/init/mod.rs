@@ -162,6 +162,13 @@ pub fn library_env(name: &str) -> Option<Env> {
             e.merge(&sexp::cov::env());
             Some(e)
         }
+        // `prop` exposes BOTH the seam env (constructors + derivation/metatheory
+        // givens) and the ported `prop.cov` theorems.
+        "prop" => {
+            let mut e = prop::prop_env();
+            e.merge(&prop::cov::env());
+            Some(e)
+        }
         _ => None,
     }
 }

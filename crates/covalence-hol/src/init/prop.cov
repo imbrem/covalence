@@ -1,0 +1,83 @@
+;; prop.cov — propositional logic reified inside HOL, ported from `init::prop`
+;; over `core` + the `propprim` seam env. This is rung 1 of the metatheory
+;; ladder (propositional logic → Peano arithmetic → second-order arithmetic).
+;;
+;; `PropForm` is a Church/impredicative encoding (no kernel subtype), and
+;; `Derivable_Prop A := ∀d. Closed d ⟹ d A` is the impredicative "smallest
+;; predicate closed under the Hilbert axioms + MP". The *metatheorems*
+;; (`soundness`, `consistency`) are proved in Rust by RULE INDUCTION over
+;; derivations — a single `inst d := P` then discharge `Closed P` — packaged as
+;; the reusable `prop_induction(P, axiom_cases, mp_case)` principle.
+;;
+;; THE SCRIPT LANGUAGE CANNOT EXPRESS THAT IMPREDICATIVE `inst` (see the SURFACE
+;; GAPS below + `init/SKELETONS.md`), so the principle and its instances are
+;; imported here as Rust-proved GIVENS from `propprim`:
+;;
+;;   prop.var / prop.neg / prop.and / prop.or / prop.imp  -- formula ctors
+;;   prop.derivable                                       -- Derivable_Prop
+;;   derive_axiom_1 .. derive_axiom_10                    -- ⊢ ∀A B C. Der ⌜axiom_i⌝
+;;   derive_mp        : ⊢ ∀A B. Der A ⟹ Der ⌜A⟹B⌝ ⟹ Der B
+;;   soundness        : ⊢ ∀v. Der A ⟹ ⟦A⟧ v        (A free)
+;;   consistency      : ⊢ ¬(prop.derivable (prop.var 0))
+;;   derivable_self   : ⊢ ∀A. Der A ⟹ Der A   (2nd `prop_induction` instance)
+;;
+;; What this file DOES in the script language: BUILDS reified propositional
+;; syntax out of the constructor constants (genuine HOL data — distinct
+;; constructor terms are distinct), and re-exports `consistency` (the smallest
+;; metatheorem whose statement the surface can express) as a first-class
+;; `prop.cov` theorem.
+;;
+;; SURFACE GAPS (the stress-test findings — see `init/SKELETONS.md` for detail):
+;;  1. The impredicative `inst d := P` + `Closed P` discharge — i.e.
+;;     `prop_induction` itself — has no script surface. Building the predicate
+;;     `P : Φ⟨bool⟩→bool` and discharging `Closed P` (needs `prove_taut`) are
+;;     Rust-only. A `(prop-induct P …)` tactic is the missing primitive.
+;;  2. Metatheorems quantified over a *bound* formula `∀A. Der A ⟹ …`
+;;     (soundness, `derive_axiom_i`, `derive_mp`) mention `Der`/`⟦·⟧` applied to
+;;     a BOUND `A`; the reduced↔applied-constant β-bridge only rewrites closed
+;;     occurrences, so their `#concl` cannot be written here. Only `consistency`
+;;     (over the CLOSED `⌜var 0⌝`) is re-statable.
+;;  3. `apply`/`#concl` match FIRST-ORDER (no β), so an applied-constant goal
+;;     does not unify with the reduced-form seam given — an automatic β-aware
+;;     match (or `Der`/`⟦·⟧` as `defs` constants with δ-rules) would close this.
+;;  4. NO TYPE-ASCRIPTION SYNTAX. A `Poly` constant instantiates `'r` with a
+;;     fresh metavar; `.cov` cannot pin `'r := bool` on a term. `consistency`
+;;     lives at `'r := bool`, so it must cite the bool-MONOMORPHIC constants
+;;     `prop.var.bool` / `prop.derivable.bool` (exposed by the seam for exactly
+;;     this). A `(the TYPE TERM)` ascription would let the polymorphic ctors be
+;;     reused here.
+
+(#import core)
+(#open core)
+(#import propprim)
+(#open propprim)
+
+;; ============================================================================
+;; Building reified propositional SYNTAX in the script language.
+;;
+;; The constructor constants build genuine, distinct HOL data. We assert a
+;; trivial-but-honest fact — a built formula equals itself — to exercise term
+;; construction over the reified grammar end to end. `⌜var 0 ⟹ (var 1 ⟹ var 0)⌝`
+;; (the shape of Hilbert axiom 1) is built purely from `prop.imp` / `prop.var`.
+;; ============================================================================
+(#thm axiom1_shape_refl
+  (#concl
+    (= (app (app prop.imp (app prop.var 0))
+            (app (app prop.imp (app prop.var 1)) (app prop.var 0)))
+       (app (app prop.imp (app prop.var 0))
+            (app (app prop.imp (app prop.var 1)) (app prop.var 0)))))
+  (#by (refl)))
+
+;; ============================================================================
+;; consistency — the bare variable `var 0` is NOT derivable (it is no
+;; tautology). The smallest non-trivial metatheorem about the object logic,
+;; proved in Rust by soundness (itself the first `prop_induction` instance),
+;; re-exported here as a first-class `prop.cov` theorem.
+;;
+;; ⊢ ¬(prop.derivable.bool (prop.var.bool 0))
+;; ============================================================================
+(#thm consistency
+  (#concl (not (app prop.derivable.bool (app prop.var.bool 0))))
+  (#by (derive (consistency))))
+
+(#export axiom1_shape_refl consistency)

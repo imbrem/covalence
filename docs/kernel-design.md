@@ -613,6 +613,8 @@ discussions that led here.
 > but in a **different shape** — not an Isabelle/Pure LF, a *first-order
 > base logic with observation and computation as primitives*. Coupled with
 > the trusted-observer direction in [`observers.md`](./observers.md) §7.
+> **The concrete starting blueprint — the meta-sorts, the two assumption sets,
+> the observer port plan — is [`covalence-pure.md`](./covalence-pure.md).**
 
 The target is three rungs, with HOL as a **narrow waist**:
 

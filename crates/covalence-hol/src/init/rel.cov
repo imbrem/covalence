@@ -8,22 +8,20 @@
 ;;   `holds_id_ax`:       ∀x y. rel.holds rel.id x y = (x = y)
 ;;   `holds_converse_ax`: ∀r y x. rel.holds (rel.converse r) y x = rel.holds r x y
 ;;                        (r : rel 'a 'b, y : 'b, x : 'a)
-;;   `holds_converse_ax_ba`: ∀r y x. rel.holds (rel.converse.ba (= conv at ('b,'a)) r) y x
-;;                              = rel.holds r x y
-;;                        (r : rel 'b 'a, y : 'a, x : 'b)
 ;;
-;; Operators registered in relprim:
-;;   `rel.converse`    : rel 'a 'b → rel 'b 'a
-;;   `rel.converse.ba` : rel 'b 'a → rel 'a 'b  (same spec, swapped type args)
-;;   `rel.converse.aa` : rel 'a 'a → rel 'a 'a  (same spec, both args 'a)
-;;   `rel.id`          : rel 'a 'a
+;; Operators registered in relprim — all `ConstDef::Poly`, so each occurrence
+;; is instantiated at fresh metavariables and a single operator can appear at
+;; several type instances in one term:
+;;   `rel.converse` : rel 'a 'b → rel 'b 'a
+;;   `rel.id`       : rel 'a 'a
 ;;
 ;; On top we prove: converse_converse, converse_id.
 ;;
-;; CONVENTION: `rel.converse.ba` is used wherever the double-converse requires
-;; two different type-parameter orderings in one term, to avoid the type-variable
-;; aliasing limitation of the .cov elaborator (which treats TFree("a") and
-;; TFree("b") as concrete, distinct types).
+;; Lemma application is UNIFICATION-BASED throughout: `(apply LEMMA TARGET …)`
+;; (tree mode) matches LEMMA's conclusion against the explicit TARGET, picking
+;; the `∀`-witnesses and the type instance automatically — so the single
+;; polymorphic `ext_ax`/`holds_converse_ax` covers every type ordering. This
+;; is what made the old `_aa`/`_ba` type-specialised aliases unnecessary.
 
 (#import core)
 (#open core)
@@ -32,77 +30,65 @@
 (#import relprim)
 (#open relprim)
 
-;; ⊢ rel.converse.ba (rel.converse r) = r
+;; ⊢ rel.converse (rel.converse r) = r
 ;;   where r : rel 'a 'b is an implicit free variable.
 ;;
-;; Proof: pointwise, holds(conv.ba(conv.ab r)) x y = holds r x y via two
-;; applications of holds_converse_ax (the second at swapped types via
-;; holds_converse_ax_ba), then extensionality.
+;; Proof: pointwise, holds(conv(conv r)) x y = holds r x y via two applications
+;; of holds_converse_ax (the elaborator/unifier instantiates each at the right
+;; type ordering), then extensionality (ext_ax).
 (#thm converse_converse
+  ;; Pin `r : rel 'a 'b` explicitly. The operators are polymorphic, so without
+  ;; this the elaborator would generalise `r`'s leftover metavariables to a
+  ;; fresh name *ordering* (it happens to pick `rel 'b 'a`); the annotation
+  ;; fixes the type-variable names to match the Rust `converse_converse`.
+  (#fix (r (rel 'a 'b)))
   (#concl
-    (= (rel.converse.ba (rel.converse r)) r))
+    (= (rel.converse (rel.converse r)) r))
   (#proof
-    (imp-elim
-      (all-elim r
-        (all-elim (rel.converse.ba (rel.converse r))
-          (ext_ax)))
+    (apply ext_ax
+      (= (rel.converse (rel.converse r)) r)
       (all-intro x 'a
         (all-intro y 'b
           (trans
-            ;; holds(conv.ba(conv.ab r)) x y = holds(conv.ab r) y x
-            ;; (holds_converse_ax_ba at inner=conv.ab r, y_arg=x:'a, x_arg=y:'b)
-            (all-elim y (all-elim x
-              (all-elim (rel.converse r)
-                (holds_converse_ax_ba))))
-            ;; holds(conv.ab r) y x = holds r x y
-            ;; (holds_converse_ax at r, y_arg=y:'b, x_arg=x:'a)
-            (all-elim x (all-elim y
-              (all-elim r
-                (holds_converse_ax))))))))))
+            ;; holds(conv(conv r)) x y = holds(conv r) y x
+            (apply holds_converse_ax
+              (= (rel.holds (rel.converse (rel.converse r)) x y)
+                 (rel.holds (rel.converse r) y x)))
+            ;; holds(conv r) y x = holds r x y
+            (apply holds_converse_ax
+              (= (rel.holds (rel.converse r) y x)
+                 (rel.holds r x y)))))))))
 
-;; ⊢ rel.converse.aa rel.id = rel.id
+;; ⊢ rel.converse rel.id = rel.id
 ;;
-;; Proof: pointwise, holds(conv.aa id) x y = holds id x y.
-;; Chain: holds(conv.aa id) x y = holds id y x  (holds_converse_ax at id, y=x, x=y)
-;;      = (y = x)                                (holds_id_ax at y, x)
-;;      = (x = y)                                (symmetry of equality as equation)
-;;      = holds id x y                           (sym of holds_id_ax at x, y)
-;; Then ext_ax_aa (the extensionality seam at rel 'a 'a).
-;;
-;; NOTE: `rel.converse.aa` and `rel.converse` are the same spec; the `.aa`
-;; instantiation is used so both type args are 'a, matching the type of rel.id.
-;; `ext_ax_aa` is the specialisation of ext_ax to (rel 'a 'a → rel 'a 'a → …)
-;; since the standard `ext_ax` is typed for (rel 'a 'b) with distinct 'a,'b.
-;; Similarly, the `holds_converse_ax` seam lemma is used since it is built for
-;; r : rel 'a 'b and at 'a='b='a it applies here directly.
-;;
-;; `holds_id_ax` is also typed (rel 'a 'a), so `holds_id_ax` works at 'a='a.
+;; Proof: pointwise, holds(conv id) x y = holds id x y.
+;; Chain: holds(conv id) x y = holds id y x  (holds_converse_ax at id, y=x, x=y)
+;;      = (y = x)                             (holds_id_ax at y, x)
+;;      = (x = y)                             (symmetry of equality as equation)
+;;      = holds id x y                        (sym of holds_id_ax at x, y)
+;; Then ext_ax — instantiated at rel 'a 'a by unification against the target.
 (#thm converse_id
   (#concl
-    (= (rel.converse.aa rel.id) rel.id))
+    (= (rel.converse rel.id) rel.id))
   (#proof
-    (imp-elim
-      (all-elim rel.id
-        (all-elim (rel.converse.aa rel.id)
-          ;; ext_ax_aa: ∀r s: rel 'a 'a. (∀x y. holds r x y = holds s x y) ⟹ r = s
-          (ext_ax_aa)))
+    (apply ext_ax
+      (= (rel.converse rel.id) rel.id)
       (all-intro x 'a
         (all-intro y 'a
           (trans
-            ;; holds(conv.aa id) x y = holds id y x
-            ;; (holds_converse_ax_aa at r:=rel.id, both type params are 'a)
-            (all-elim y (all-elim x (all-elim rel.id (holds_converse_ax_aa))))
+            ;; holds(conv id) x y = holds id y x
+            (apply holds_converse_ax
+              (= (rel.holds (rel.converse rel.id) x y)
+                 (rel.holds rel.id y x)))
             (trans
               ;; holds id y x = (y = x)
-              (all-elim x (all-elim y (holds_id_ax)))
+              (apply holds_id_ax (= (rel.holds rel.id y x) (= y x)))
               (trans
                 ;; (y = x) = (x = y)
-                ;; deduct-antisym H1 H2 where H1={d}⊢c, H2={c}⊢d gives ⊢c=d
-                ;; We want c=(y=x), d=(x=y): so H1={(x=y)}⊢(y=x), H2={(y=x)}⊢(x=y)
                 (deduct-antisym
                   (sym (assume (= x y)))
                   (sym (assume (= y x))))
                 ;; (x = y) = holds id x y
-                (sym (all-elim y (all-elim x (holds_id_ax))))))))))))
+                (sym (apply holds_id_ax (= (rel.holds rel.id x y) (= x y))))))))))))
 
 (#export converse_converse converse_id)

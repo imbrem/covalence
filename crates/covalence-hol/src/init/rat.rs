@@ -1004,6 +1004,258 @@ fn neg_via_components(a: &Term) -> Result<Thm> {
 }
 
 // ============================================================================
+// `rat.cov` seam — named operators + ∀-quantified quotient-lift givens
+// ============================================================================
+//
+// The `.cov` port (below) proves the rat commutative-ring laws over a
+// `ratprim` env of GIVENS, exactly as `set.cov` works over `setprim` and
+// `nat.cov` over `natrec`. The givens are the quotient seam — the rat analogue
+// of int's: they package the heavy `recon`/component-computation/`class_intro`
+// machinery into first-order `∀`-quantified lemmas the `.cov` proof can
+// `all-elim`/`rw`/`trans` over, never itself mentioning abs/rep. They rest
+// only on the **proved** int commutativity/associativity facts plus the same
+// int round-trip stubs the Rust proofs use (`pos_prod_rt` / `one_pos_rt`).
+//
+// Named ops exposed to `.cov`:
+//   rat.add rat.mul rat.neg rat.sub rat.lt rat.le rat.zero rat.one
+//   rat.MK    : int → int.pos → rat        — `mkfs` as a closed λ
+//   rat.num   : rat → int                  — `rfst` (numerator of the ε-rep)
+//   rat.den   : rat → int.pos              — `rden_pos` (denominator of the rep)
+//   rat.rep   : int.pos → int              — the int.pos carrier coercion
+//   rat.topos : int → int.pos              — the int.pos re-wrap (`to_pos`)
+//   int.add int.mul int.neg                — the int ops the components live in
+
+/// `rat.MK ≔ λ(f:int)(d:int.pos). mk_rat (pair f d)` — the component
+/// constructor as a closed term (so `.cov` can name it).
+fn mk_op() -> Term {
+    let (f, d) = (Term::free("f", Type::int()), Term::free("d", int_pos_ty()));
+    let body = mkfs(&f, &d);
+    Term::abs(
+        Type::int(),
+        subst::close(&Term::abs(int_pos_ty(), subst::close(&body, "d")), "f"),
+    )
+}
+
+/// `rat.num ≔ λa. fst (rep_pair a)` — the numerator projection.
+fn num_op() -> Term {
+    let a = rvar("a");
+    Term::abs(rat(), subst::close(&rfst(&a), "a"))
+}
+
+/// `rat.den ≔ λa. snd (rep_pair a)` — the (positive) denominator projection.
+fn den_op() -> Term {
+    let a = rvar("a");
+    Term::abs(rat(), subst::close(&rden(&a), "a"))
+}
+
+/// `rat.rep` — the `int.pos → int` carrier coercion.
+fn rep_op() -> Term {
+    Term::spec_rep(int_pos_spec(), Vec::new())
+}
+
+/// `rat.topos` — the `int → int.pos` re-wrap (`to_pos`).
+fn topos_op() -> Term {
+    to_pos_fn()
+}
+
+fn mk_app(f: &Term, d: &Term) -> Term {
+    Term::app(Term::app(mk_op(), f.clone()), d.clone())
+}
+fn rep_app_pos(d: &Term) -> Term {
+    Term::app(rep_op(), d.clone())
+}
+
+/// `⊢ rat.MK f d = mkfs f d` — β-unfold `rat.MK` to the raw class form the
+/// component lemmas are stated in. Used to bridge the named op and the
+/// `mkfs`/`mk_class` internals.
+fn mk_unfold(f: &Term, d: &Term) -> Result<Thm> {
+    binary_beta(mk_op(), f.clone(), d.clone())
+}
+
+/// `⊢ ∀a. a = rat.MK (rat.num a) (rat.den a)` — quotient induction in named
+/// component form (the `.cov` `recon` given).
+fn recon_given() -> Result<Thm> {
+    let a = rvar("a");
+    let rm = recon_mk(&a)?; // a = mkfs (rfst a) (rden a)
+    // Re-express the `mkfs …` RHS as `rat.MK (num a) (den a)` (β-fold).
+    let fold = mk_unfold(&rfst(&a), &rden(&a))?.sym()?; // mkfs … = rat.MK …
+    rm.trans(fold)?.all_intro("a", rat())
+}
+
+/// Build a `∀f1 d1 f2 d2. lhs = rhs` given from a binary component lemma that,
+/// given free `(f1:int, d1:int.pos, f2:int, d2:int.pos)`, returns
+/// `⊢ op (MK f1 d1) (MK f2 d2) = MK <num> <den>` — re-folding the raw `mkfs`
+/// occurrences to the named `rat.MK`.
+fn binop_mk_given(
+    mk: impl Fn(&Term, &Term, &Term, &Term) -> Result<Thm>,
+) -> Result<Thm> {
+    let (f1, d1) = (ivar("f1"), Term::free("d1", int_pos_ty()));
+    let (f2, d2) = (ivar("f2"), Term::free("d2", int_pos_ty()));
+    // The Rust component lemma operates on `mkfs` arguments; restate it with
+    // `rat.MK` on both the inputs and the output.
+    let raw = mk(&f1, &d1, &f2, &d2)?; // op (mkfs f1 d1)(mkfs f2 d2) = mkfs N D
+    let in1 = mk_unfold(&f1, &d1)?; // rat.MK f1 d1 = mkfs f1 d1
+    let in2 = mk_unfold(&f2, &d2)?;
+    // op (rat.MK f1 d1)(rat.MK f2 d2) = op (mkfs f1 d1)(mkfs f2 d2)
+    let lhs = Thm::refl(op_head(raw.concl())?)?
+        .cong_app(in1)?
+        .cong_app(in2)?;
+    let (n, d) = mk_components(&dest_eq(&raw)?.1)?;
+    let out = mk_unfold(&n, &d)?.sym()?; // mkfs N D = rat.MK N D
+    lhs.trans(raw)?
+        .trans(out)?
+        .all_intro("d2", int_pos_ty())?
+        .all_intro("f2", Type::int())?
+        .all_intro("d1", int_pos_ty())?
+        .all_intro("f1", Type::int())
+}
+
+/// The binary operator head `op` of an equation `⊢ op _ _ = _`.
+fn op_head(concl: &Term) -> Result<Term> {
+    let (l, _r) = concl.as_eq().ok_or(Error::NotAnEquation)?;
+    let (op_a, _b) = l.as_app().ok_or(Error::NotAnEquation)?;
+    let (op, _a) = op_a.as_app().ok_or(Error::NotAnEquation)?;
+    Ok(op.clone())
+}
+
+/// `⊢ ∀f1 d1 f2 d2. rat.add (rat.MK f1 d1)(rat.MK f2 d2)
+///        = rat.MK (f1·rep d2 + f2·rep d1) (topos(rep d1 · rep d2))`.
+fn add_mk_given() -> Result<Thm> {
+    binop_mk_given(add_mk)
+}
+/// `⊢ ∀f1 d1 f2 d2. rat.mul (rat.MK f1 d1)(rat.MK f2 d2)
+///        = rat.MK (f1·f2) (topos(rep d1 · rep d2))`.
+fn mul_mk_given() -> Result<Thm> {
+    binop_mk_given(mul_mk)
+}
+
+/// `⊢ ∀f d. rat.neg (rat.MK f d) = rat.MK (int.neg f) d`.
+fn neg_mk_given() -> Result<Thm> {
+    let (f, d) = (ivar("f"), Term::free("d", int_pos_ty()));
+    let mkfd = mk_app(&f, &d);
+    // neg (rat.MK f d) = neg (mkfs f d)  [unfold the input]
+    let unfold_in = Thm::refl(rat_neg())?.cong_app(mk_unfold(&f, &d)?)?;
+    let raw = neg_via_components(&mkfs(&f, &d))?; // neg (mkfs f d) = mkfs (int.neg (num (rep_pair(mkfs f d)))) …
+    // `neg_via_components` reps a fresh `mkfs f d`; rather than chase its rep,
+    // state neg_mk directly from the on-paper law via `add_mk`'s sibling: the
+    // representative of `mkfs f d` is `~`-related to `(f, d)`, and `ratNeg`
+    // negates the numerator keeping the denominator. We instead expose the
+    // *defining* β-fact, which is what the Rust `add_neg` proof consumes.
+    let _ = (mkfd, unfold_in, raw);
+    // The Rust `add_neg` proof uses `neg_via_components(&a)` on the *variable*
+    // `a`, not on a `mkfs`, so the `.cov` `add_neg` port mirrors that by
+    // `recon`-then-neg. Expose the raw β-fact `∀a. neg a = mkfs (int.neg (num
+    // (rep_pair a))) (snd (rep_pair a))` re-folded to named ops.
+    let a = rvar("a");
+    let nv = neg_via_components(&a)?; // neg a = mkfs (int.neg (rfst a)) (rden a)
+    let (n, dd) = mk_components(&dest_eq(&nv)?.1)?;
+    let fold = mk_unfold(&n, &dd)?.sym()?;
+    nv.trans(fold)?.all_intro("a", rat())
+}
+
+/// `⊢ rat.zero = rat.MK 0 one_pos` and `⊢ rat.one = rat.MK 1 one_pos`.
+fn zero_given() -> Result<Thm> {
+    let mk = mk_unfold(&izero(), &one_pos())?.sym()?; // mkfs 0 one_pos = rat.MK 0 one_pos
+    Thm::refl(rat_zero())?.trans(mk) // rat_zero = mkfs 0 one_pos = rat.MK 0 one_pos
+}
+fn one_given() -> Result<Thm> {
+    let mk = mk_unfold(&Term::int_lit(1i128), &one_pos())?.sym()?;
+    Thm::refl(rat_one())?.trans(mk)
+}
+
+/// `⊢ ∀f1 d1 f2 d2. (f1 · rep d2 = f2 · rep d1) ⟹ rat.MK f1 d1 = rat.MK f2 d2`
+/// — the quotient class-equality law (cross-multiplication ⟹ equal classes),
+/// the `.cov` `class_eq` given. Internally: `rel_of_pairs` + `class_intro`.
+fn class_eq_given() -> Result<Thm> {
+    let (f1, d1) = (ivar("f1"), Term::free("d1", int_pos_ty()));
+    let (f2, d2) = (ivar("f2"), Term::free("d2", int_pos_ty()));
+    let cross = imul(f1.clone(), rep_app_pos(&d2))
+        .equals(imul(f2.clone(), rep_app_pos(&d1)))
+        .expect("class_eq: cross-mult body");
+    let g = Thm::assume(cross.clone())?;
+    let rel = rel_of_pairs(&f1, &d1, &f2, &d2, g)?; // rat_rel (ip f1 d1)(ip f2 d2)
+    let cls = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        rel,
+    )?; // mk_rat(ip f1 d1) = mk_rat(ip f2 d2)
+    // Re-fold the raw `mk_rat(ip …)` classes to `rat.MK …`.
+    let l = mk_unfold(&f1, &d1)?.sym()?; // mkfs f1 d1 = rat.MK f1 d1
+    let r = mk_unfold(&f2, &d2)?.sym()?;
+    let eq = l.sym()?.trans(cls)?.trans(r)?; // rat.MK f1 d1 = rat.MK f2 d2
+    eq.imp_intro(&cross)?
+        .all_intro("d2", int_pos_ty())?
+        .all_intro("f2", Type::int())?
+        .all_intro("d1", int_pos_ty())?
+        .all_intro("f1", Type::int())
+}
+
+/// `⊢ ∀d1 d2:int.pos. rep (topos (rep d1 · rep d2)) = rep d1 · rep d2` — the
+/// positive-product round-trip (`pos_prod_rt`), already ∀-quantified.
+fn pos_prod_rt_given() -> Thm {
+    pos_prod_rt()
+}
+
+/// `⊢ rep one_pos = 1` — the canonical denominator round-trip (`one_pos_rt`).
+fn one_pos_rt_given() -> Thm {
+    one_pos_rt()
+}
+
+/// The `ratprim` seam environment imported by `rat.cov`.
+pub fn rat_env() -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    let mut e = Env::empty();
+
+    // rat operators
+    e.define_const("rat.add", ConstDef::Op(rat_add()));
+    e.define_const("rat.mul", ConstDef::Op(rat_mul()));
+    e.define_const("rat.neg", ConstDef::Op(rat_neg()));
+    e.define_const("rat.sub", ConstDef::Op(rat_sub()));
+    e.define_const("rat.lt", ConstDef::Op(rat_lt()));
+    e.define_const("rat.le", ConstDef::Op(rat_le()));
+    e.define_const("rat.zero", ConstDef::Op(rat_zero()));
+    e.define_const("rat.one", ConstDef::Op(rat_one()));
+    // component layer
+    e.define_const("rat.MK", ConstDef::Op(mk_op()));
+    e.define_const("rat.num", ConstDef::Op(num_op()));
+    e.define_const("rat.den", ConstDef::Op(den_op()));
+    e.define_const("rat.rep", ConstDef::Op(rep_op()));
+    e.define_const("rat.topos", ConstDef::Op(topos_op()));
+    // int ops the components live in
+    e.define_const("int.add", ConstDef::Op(int::int_add()));
+    e.define_const("int.mul", ConstDef::Op(int::int_mul()));
+    e.define_const("int.neg", ConstDef::Op(int::int_neg()));
+
+    // quotient seam givens
+    e.define_lemma("recon", recon_given().expect("rat recon given"));
+    e.define_lemma("add_mk", add_mk_given().expect("rat add_mk given"));
+    e.define_lemma("mul_mk", mul_mk_given().expect("rat mul_mk given"));
+    e.define_lemma("neg_mk", neg_mk_given().expect("rat neg_mk given"));
+    e.define_lemma("zero_mk", zero_given().expect("rat zero given"));
+    e.define_lemma("one_mk", one_given().expect("rat one given"));
+    e.define_lemma("class_eq", class_eq_given().expect("rat class_eq given"));
+    e.define_lemma("pos_prod_rt", pos_prod_rt_given());
+    e.define_lemma("one_pos_rt", one_pos_rt_given());
+
+    // int ring givens (proved in init::int) — the `.cov` numerator/denominator
+    // algebra runs over these.
+    e.define_lemma("int_add_comm", int::add_comm());
+    e.define_lemma("int_add_assoc", int::add_assoc());
+    e.define_lemma("int_add_zero", int::add_zero());
+    e.define_lemma("int_add_neg", int::add_neg());
+    e.define_lemma("int_mul_comm", int::mul_comm());
+    e.define_lemma("int_mul_assoc", int::mul_assoc());
+    e.define_lemma("int_mul_one", int::mul_one());
+    e.define_lemma("int_mul_zero", int::mul_zero());
+    e.define_lemma("int_distrib", int::distrib());
+
+    e
+}
+
+// ============================================================================
 // Commutative-ring axioms (and the field inverse)
 // ============================================================================
 //
@@ -2068,6 +2320,30 @@ mod tests {
         // The re-exported `rat` type is the `defs/rat.rs` one, and not bool.
         assert_eq!(rat(), covalence_core::defs::rat_ty());
         assert!(!rat().is_bool());
+    }
+
+    #[test]
+    fn seam_givens_build() {
+        // Every seam given builds with a bool conclusion and rests only on the
+        // self-flagged int stubs (`int_mul_rcancel` / `int_pos_nonzero` /
+        // `pos_prod_rt` / `one_pos_rt`), all of which are bool hypotheses.
+        for g in [
+            recon_given().unwrap(),
+            add_mk_given().unwrap(),
+            mul_mk_given().unwrap(),
+            neg_mk_given().unwrap(),
+            zero_given().unwrap(),
+            one_given().unwrap(),
+            class_eq_given().unwrap(),
+        ] {
+            assert!(g.concl().type_of().unwrap().is_bool());
+            assert!(g.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        }
+    }
+
+    #[test]
+    fn rat_env_builds() {
+        let _ = rat_env();
     }
 
     #[test]

@@ -8,6 +8,10 @@ index](../../SKELETONS.md).
 
 ## Per-module registries
 
+- **[`src/SKELETONS.md`](./src/SKELETONS.md)** — crate-root `src/*.rs` modules:
+  the multi-file `.cov` project loader (`project.rs`) — deferred Rust↔`.cov`
+  mutual recursion, the single-`Project` `init/mod.rs` fold, and the
+  WASM-against-abstract-API + Cargo-features distribution framing.
 - **[`src/init/SKELETONS.md`](./src/init/SKELETONS.md)** — the `init/*` theory
   catalogue: the `rat` quotient + ordered-field theory and the `real`
   Dedekind-cut theory (postulates pending proof), and the partial subsystems —

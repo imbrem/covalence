@@ -162,16 +162,19 @@ index](../../../../SKELETONS.md).
     `Hol` rule methods + the generic β/∃ helpers, with a `NativeHol` shim
     keeping its `nat`-facing signature. Then `recursion.rs`'s entry points can
     flip to any backend.
-  - **The multi-recursive-argument / multi-constructor-argument paths** in
-    `existence.rs`, `uniqueness.rs`, `determinacy.rs`, and `recursor.rs`
-    (conjunctive IHs / antecedents, componentwise injectivity, nested
-    `∃`-witnessing) are partial: `existence` / `uniqueness` handle the general
-    shape but are only *exercised* by `nat`'s ≤1-arg / ≤1-rec-arg cases, while
-    `determinacy::det_case` and `recursor::rec_equation` explicitly **error** on
-    a constructor with ≥2 recursive arguments. A binary-tree or `list`
-    signature is the first real test. The strict
-    `wit`-binder naming discipline (`_wx_` / `_wb_` prefixes, disjoint from a
-    constructor's own binders) is load-bearing — see the `uniqueness.rs` docs.
+  - **The multi-recursive-argument paths are now GENERAL** (engine extension,
+    the `tree`/`sexp` work): `determinacy::det_step` (new, replacing the
+    single-arg `det_case`) peels *all* inversion witnesses recursively
+    (`peel_exists`), equates each `(cⱼ,dⱼ)` by its own IH, and chains the
+    congruences for any `k ≥ 1`; `recursor::rec_equation`'s `k ≥ 1` arm feeds
+    graph introduction the conjunction of per-arg `Graph rⱼ (rec rⱼ)`
+    memberships. The 2-rec-arg graph layer is exercised by
+    `existence.rs::graph_intro_two_rec_args_is_conjunctive` (binary-tree
+    `branch`); `nat`'s recursion suite regression-validates the `k=1` path
+    through the generalized code. **Remaining gap:** a full
+    `graph_total`/`graph_det`/`recursion_theorem` run on a fresh ≥2-rec-arg type
+    still needs a genuine `Inductive` adapter (derived induction + freeness),
+    i.e. the carrier/`Wf` seam the `#inductive` directive also reports.
 
   **Lifting to internal HOL (future).** The trait seam exists precisely so the
   proofs can be re-targeted: today `nat` is a kernel primitive, but we may later
@@ -372,3 +375,17 @@ index](../../../../SKELETONS.md).
       an `SExpr` atom (so formulas are literally S-expressions) is a later
       unification, deliberately skipped for simplicity.
 
+
+- **`tree` / `sexp` theory** in `crates/covalence-hol/src/init/tree.rs` and
+  `sexp.rs`. `tree α := leaf α | branch (tree α) (tree α)` (binary tree) and
+  `sexp α := tree (option α)` (the Lisp cons-cell view: `atom = leaf (some a)`,
+  `nil = leaf none`, `cons = branch`), via the Church/impredicative encoding
+  (the `init/sexpr.rs` pattern). **Proved** (genuine, hyp-free): `leaf`/`branch`
+  constructors + recursor `rec` with both equations (`rec_leaf`/`rec_branch`),
+  freeness `leaf_inj` / `leaf_ne_branch`, and the `sexp` distinctness facts
+  `atom_ne_nil` / `atom_ne_cons` / `nil_ne_cons`. **Deferred** (honestly):
+  `branch_inj` and full structural `tree`/`sexp` induction need the recursor's
+  subtree-recovery identity — the same `Wf` well-formedness carve `init/sexpr.rs`
+  defers — so the `tree-induct`/`sexp-induct` tactic and `tree.cov`/`sexp.cov`
+  `.cov` theory wait on it (the freeness facts are usable from Rust today, not
+  yet wired as `.cov` givens).

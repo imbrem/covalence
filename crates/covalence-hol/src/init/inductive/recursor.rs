@@ -31,8 +31,11 @@
 //! **step variables** (one free variable per constructor — `nat`'s `z`, `f`)
 //! that the recursor abstracts and the equations generalise over.
 //!
-//! Only the nullary and single-recursive-argument constructor shapes are
-//! handled (as in [`super::determinacy`]); see `SKELETONS.md`.
+//! Constructors with **any** number of recursive arguments are handled (as
+//! in [`super::determinacy`]): the `k ≥ 1` arm of [`rec_equation`] feeds graph
+//! introduction the conjunction of the per-argument `Graph rⱼ (rec rⱼ)`
+//! memberships and bridges every inner `rec rⱼ` to its applied form. The
+//! nullary and single-argument shapes are the `k = 0` / `k = 1` instances.
 
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
@@ -43,7 +46,7 @@ use super::graph::{self, CtorInstance};
 use super::sig::InductiveSig;
 use super::util::var_name;
 use crate::init::eq::{beta_expand, beta_nf, beta_reduce};
-use crate::init::ext::{TermExt, ThmExt};
+use crate::init::ext::TermExt;
 use crate::init::logic::{exists_elim, exists_intro};
 
 /// `λa. Graph steps t a` — the predicate the recursor chooses from at `t`.
@@ -108,49 +111,63 @@ fn rec_equation<I: Inductive>(
     let rec_head = rec_at(sig, steps, beta, &inst.head)?;
     let g_at_head = graph_at_rec(theory, steps, beta)?.inst("__t", inst.head.clone())?;
 
-    let body = match inst.rec_pairs.as_slice() {
+    let body = if inst.rec_pairs.is_empty() {
         // Nullary: invert `Graph (Cᵢ) (rec Cᵢ)` to `rec Cᵢ = fᵢ`.
-        [] => {
-            let inv = super::uniqueness::graph_inv(theory, steps, beta, i)?
-                .inst("a", rec_head.clone())?
-                .imp_elim(g_at_head)?; // ⊢ rec Cᵢ = fᵢ
-            // Bridge `rec_app (Cᵢ) = rec Cᵢ`, then transitivity.
-            beta_nf(rec_app(recursor, steps, &inst.head)?).trans(inv)?
+        let inv = super::uniqueness::graph_inv(theory, steps, beta, i)?
+            .inst("a", rec_head.clone())?
+            .imp_elim(g_at_head)?; // ⊢ rec Cᵢ = fᵢ
+        // Bridge `rec_app (Cᵢ) = rec Cᵢ`, then transitivity.
+        beta_nf(rec_app(recursor, steps, &inst.head)?).trans(inv)?
+    } else {
+        // `k ≥ 1` recursive arguments: `rec (Cᵢ x⃗) = fᵢ x⃗ (rec r⃗)`. Each
+        // recursive sub-term `rⱼ` contributes its chosen value `rec rⱼ` and
+        // the membership `Graph rⱼ (rec rⱼ)`; graph introduction (fed their
+        // conjunction) places `fᵢ x⃗ (rec r⃗)` in the graph, and determinacy
+        // forces the recursor's chosen value equal to it.
+        let rec_rs: Vec<Term> = inst
+            .rec_pairs
+            .iter()
+            .map(|(r, _)| rec_at(sig, steps, beta, r))
+            .collect::<Result<_>>()?;
+        let g_at_rs: Vec<Thm> = inst
+            .rec_pairs
+            .iter()
+            .map(|(r, _)| graph_at_rec(theory, steps, beta)?.inst("__t", r.clone()))
+            .collect::<Result<_>>()?;
+
+        // `graph_intro(i)` with each image var `bⱼ := rec rⱼ`, antecedent
+        // (the right-associated `⋀ⱼ Graph rⱼ (rec rⱼ)`) discharged.
+        let mut g_intro = graph_intro(sig, steps, beta, i)?;
+        for ((_, img), rec_r) in inst.rec_pairs.iter().zip(&rec_rs) {
+            g_intro = g_intro.inst(var_name(img), rec_r.clone())?;
         }
-        // One recursive argument: `rec (Cᵢ x⃗) = fᵢ x⃗ (rec r)`.
-        [(rec, _)] => {
-            let rec_r = rec_at(sig, steps, beta, rec)?;
-            let g_at_r = graph_at_rec(theory, steps, beta)?.inst("__t", rec.clone())?;
-            // `Graph (Cᵢ x⃗) (fᵢ x⃗ (rec r))` via graph introduction.
-            let img = inst.rec_pairs[0].1.clone();
-            let g_intro = graph_intro(sig, steps, beta, i)?
-                .inst(var_name(&img), rec_r.clone())?
-                .imp_elim(g_at_r)?;
-            // The step value `fᵢ x⃗ (rec r)`: `inst.value` with its image var
-            // replaced by `rec r`. (Not extractable from `g_intro`'s
-            // conclusion, which is the whole `∀G. …` graph predicate.)
-            let value = subst::open(&subst::close(&inst.value, var_name(&img)), &rec_r);
-            // Determinacy: `rec (Cᵢ x⃗) = fᵢ x⃗ (rec r)`.
-            let det_eq = beta_reduce(graph_det(theory, steps, beta)?.all_elim(inst.head.clone())?)?
-                .all_elim(rec_head.clone())?
-                .all_elim(value.clone())?
-                .imp_elim(g_at_head)?
-                .imp_elim(g_intro)?;
-            // Bridge the inner `rec r` (β-reduct) to the applied `rec_app r`.
-            let f_part = value.as_app().ok_or(Error::NotAnEquation)?.0.clone(); // fᵢ x⃗
-            let f_cong = beta_nf(rec_app(recursor, steps, rec)?)
-                .sym()?
-                .cong_arg(f_part)?;
-            beta_nf(rec_app(recursor, steps, &inst.head)?)
-                .trans(det_eq)?
-                .trans(f_cong)?
+        g_intro = g_intro.imp_elim(super::util::and_all(&g_at_rs)?)?;
+
+        // The step value `fᵢ x⃗ (rec r⃗)`: `inst.value` with every image var
+        // replaced by its `rec rⱼ`. (Not extractable from `g_intro`'s
+        // conclusion, the whole `∀G. …` graph predicate.)
+        let mut value = inst.value.clone();
+        for ((_, img), rec_r) in inst.rec_pairs.iter().zip(&rec_rs) {
+            value = subst::open(&subst::close(&value, var_name(img)), rec_r);
         }
-        _ => {
-            return Err(Error::ConnectiveRule(
-                "inductive::recursor: constructors with ≥2 recursive arguments not yet supported"
-                    .into(),
-            ));
+
+        // Determinacy: `rec (Cᵢ x⃗) = fᵢ x⃗ (rec r⃗)`.
+        let det_eq = beta_reduce(graph_det(theory, steps, beta)?.all_elim(inst.head.clone())?)?
+            .all_elim(rec_head.clone())?
+            .all_elim(value.clone())?
+            .imp_elim(g_at_head)?
+            .imp_elim(g_intro)?;
+
+        // Bridge each inner `rec rⱼ` (a β-reduct ε-term) to the applied
+        // `rec_app rⱼ`, by rewriting `rec rⱼ ↦ rec_app rⱼ` in the RHS.
+        let mut bridged = beta_nf(rec_app(recursor, steps, &inst.head)?).trans(det_eq)?;
+        for (r, _) in &inst.rec_pairs {
+            // ⊢ rec rⱼ = rec_app rⱼ  (rec_app β-reduces to rec rⱼ).
+            let bridge = beta_nf(rec_app(recursor, steps, r)?).sym()?;
+            let rhs = bridged.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+            bridged = bridged.trans(rhs.rw_all(&bridge)?)?;
         }
+        bridged
     };
 
     // ∀-close the constructor's arguments.

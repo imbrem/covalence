@@ -84,29 +84,29 @@ pub fn prod_env() -> crate::script::Env {
     let rp = rep_pair(&alpha, &beta, &a, &b)
         .and_then(|t| t.all_intro("b", beta.clone()))
         .and_then(|t| t.all_intro("a", alpha.clone()))
-        .expect("prod_env: rep_pair");
-    e.define_lemma("rep_pair", rp);
+        .expect("prod_env: rep.pair");
+    e.define_lemma("rep.pair", rp);
 
     // ⊢ ∀(a:'a). ∀(b:'b). fst (pair a b) = a
     let fp = fst_pair(&alpha, &beta, &a, &b)
         .and_then(|t| t.all_intro("b", beta.clone()))
         .and_then(|t| t.all_intro("a", alpha.clone()))
-        .expect("prod_env: fst_pair");
-    e.define_lemma("fst_pair", fp);
+        .expect("prod_env: fst.pair");
+    e.define_lemma("fst.pair", fp);
 
     // ⊢ ∀(a:'a). ∀(b:'b). snd (pair a b) = b
     let sp = snd_pair(&alpha, &beta, &a, &b)
         .and_then(|t| t.all_intro("b", beta.clone()))
         .and_then(|t| t.all_intro("a", alpha.clone()))
-        .expect("prod_env: snd_pair");
-    e.define_lemma("snd_pair", sp);
+        .expect("prod_env: snd.pair");
+    e.define_lemma("snd.pair", sp);
 
     // ⊢ ∀p : prod 'a 'b. pair (fst p) (snd p) = p
     let p = Term::free("p", covalence_core::defs::prod(alpha.clone(), beta.clone()));
     let surj = surjective_pairing(&alpha, &beta, &p)
         .and_then(|t| t.all_intro("p", covalence_core::defs::prod(alpha.clone(), beta.clone())))
-        .expect("prod_env: surjective_pairing");
-    e.define_lemma("surjective_pairing", surj);
+        .expect("prod_env: surjective.pairing");
+    e.define_lemma("surjective.pairing", surj);
 
     e
 }
@@ -117,7 +117,7 @@ crate::cov_theory! {
         import "core"    = crate::script::Env::core();
         import "logic"   = crate::init::logic::cov::env();
         import "prodprim" = crate::init::prod::prod_env();
-        "pair_inj" => pub fn pair_inj_cov;
+        "pair.inj" => pub fn pair_inj_cov;
     }
 }
 
@@ -135,12 +135,12 @@ mod cov_tests {
         let b = Term::free("b", beta.clone());
         let c = Term::free("c", alpha.clone());
         let d = Term::free("d", beta.clone());
-        let rust_thm = pair_inj(&alpha, &beta, &a, &b, &c, &d).expect("pair_inj");
+        let rust_thm = pair_inj(&alpha, &beta, &a, &b, &c, &d).expect("pair.inj");
         let cov_thm = cov::pair_inj_cov();
         assert_eq!(
             cov_thm.concl(),
             rust_thm.concl(),
-            "pair_inj from prod.cov must match the Rust proof"
+            "pair.inj from prod.cov must match the Rust proof"
         );
     }
 }
@@ -650,8 +650,8 @@ mod tests {
     fn fst_pair_is_first() {
         let (a, b) = ab();
         let thm = fst_pair(&alpha(), &beta(), &a, &b).unwrap();
-        assert!(thm.hyps().is_empty(), "fst_pair is proved, not postulated");
-        assert!(thm.has_no_obs(), "fst_pair is oracle-free");
+        assert!(thm.hyps().is_empty(), "fst.pair is proved, not postulated");
+        assert!(thm.has_no_obs(), "fst.pair is oracle-free");
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(
             lhs,
@@ -713,9 +713,9 @@ mod tests {
         let thm = surjective_pairing(&alpha(), &beta(), &p).unwrap();
         assert!(
             thm.hyps().is_empty(),
-            "surjective_pairing is proved, not postulated"
+            "surjective.pairing is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "surjective_pairing is oracle-free");
+        assert!(thm.has_no_obs(), "surjective.pairing is oracle-free");
         let expected = pair_at(
             &alpha(),
             &beta(),

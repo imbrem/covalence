@@ -4,8 +4,8 @@
 ;; The `catprim` env provides:
 ;;   - OPERATORS: `compose` / `id`, registered as `ConstDef::Poly` so each use
 ;;     site instantiates its type variables independently (so `id` can appear
-;;     at `'a` and `'b` in one term — what blocked the `id_left`/`id_right`/
-;;     `comp_assoc` ports before).
+;;     at `'a` and `'b` in one term — what blocked the `id.left`/`id.right`/
+;;     `comp.assoc` ports before).
 ;;
 ;; The proofs use the equational-reasoning primitives from `core`:
 ;;   - `funext`  — function extensionality (goal `f = g` → pointwise `f x = g x`),
@@ -16,13 +16,13 @@
 ;;                 steps; an omitted `BY` is closed by the default handler.
 ;;
 ;; We prove here:
-;;   - `fun_ext`  : ∀(f g : 'a→'b). (∀x. f x = g x) ⟹ (f = g)
-;;   - `comp_beta`: ∀(g:'b→'c)(f:'a→'b)(x:'a). compose g f x = g (f x)
-;;   - `comp_cong`: ∀g g' f f'. (g=g') ⟹ (f=f') ⟹ (compose g f = compose g' f')
-;;   - `id_beta`  : ∀(y:'a). id y = y                       (helper)
-;;   - `id_left`  : ∀(f:'a→'b). compose id f = f
-;;   - `id_right` : ∀(f:'a→'b). compose f id = f
-;;   - `comp_assoc`: ∀(h:'c→'d)(g:'b→'c)(f:'a→'b).
+;;   - `fun.ext`  : ∀(f g : 'a→'b). (∀x. f x = g x) ⟹ (f = g)
+;;   - `comp.beta`: ∀(g:'b→'c)(f:'a→'b)(x:'a). compose g f x = g (f x)
+;;   - `comp.cong`: ∀g g' f f'. (g=g') ⟹ (f=f') ⟹ (compose g f = compose g' f')
+;;   - `id.beta`  : ∀(y:'a). id y = y                       (helper)
+;;   - `id.left`  : ∀(f:'a→'b). compose id f = f
+;;   - `id.right` : ∀(f:'a→'b). compose f id = f
+;;   - `comp.assoc`: ∀(h:'c→'d)(g:'b→'c)(f:'a→'b).
 ;;                     compose (compose h g) f = compose h (compose g f)
 
 (#import core)
@@ -36,7 +36,7 @@
 ;; `intro f g h`, the goal `f = g` is reduced by `(funext x)` to the
 ;; pointwise `f x = g x`, discharged by specialising the hypothesis `h`.
 ;; (Replaces the hand-threaded `sym eta-conv / abs-rule / eta-conv` chain.)
-(#thm fun_ext
+(#thm fun.ext
   (#concl
     (forall (f (fun 'a 'b))
       (forall (g (fun 'a 'b))
@@ -54,7 +54,7 @@
 ;;   compose g f x
 ;;     = (λg.λf.λx. g (f x)) g f x   — δ-unfold the `compose` head (congr)
 ;;     = g (f x)                     — β-normalize the redex (beta)
-(#thm comp_beta
+(#thm comp.beta
   (#concl
     (forall (g (fun 'b 'c))
       (forall (f (fun 'a 'b))
@@ -80,7 +80,7 @@
 ;; Proof: the n-ary congruence `congr` whiskers `compose` by both argument
 ;; equations at once — ⊢ compose g f = compose g' f' from ⊢ g = g' and
 ;; ⊢ f = f' (replacing the manual `cong-arg`/`mk-comb` pair).
-(#thm comp_cong
+(#thm comp.cong
   (#concl
     (forall (g (fun 'b 'c))
       (forall (g2 (fun 'b 'c))
@@ -99,7 +99,7 @@
 ;; Proof, as a `#comp` chain: δ-unfold `id` (`id = λx. x`) under the
 ;; application, then β-normalize.
 ;;   id y = (λx. x) y = y
-(#thm id_beta
+(#thm id.beta
   (#concl (forall (y 'a) (= (app id y) y)))
   (#by
     (intro y)
@@ -113,13 +113,13 @@
 ;; Proof: the `funext` tactic reduces the goal `compose id f = f` to the
 ;; pointwise `compose id f x = f x` over a fresh point x; that chain is a
 ;; `#comp`:
-;;   (compose id f) x = id (f x)   (comp_beta)
-;;                    = f x         (id_beta)
-;; `comp_beta`/`id_beta` are applied to an explicit target equation via
+;;   (compose id f) x = id (f x)   (comp.beta)
+;;                    = f x         (id.beta)
+;; `comp.beta`/`id.beta` are applied to an explicit target equation via
 ;; `apply`, which instantiates their `∀`s + type variables by matching — so
 ;; `id` lands at the right instance with no manual `inst-tfree`. (Replaces
 ;; the hand-threaded `sym eta-conv / abs-rule / eta-conv` extensionality.)
-(#thm id_left
+(#thm id.left
   (#concl (forall (f (fun 'a 'b)) (= (app (app compose id) f) f)))
   (#by
     (intro f)
@@ -127,17 +127,17 @@
     (derive
       (#comp (app (app (app compose id) f) x)
         (= (app id (app f x))
-           (apply comp_beta
+           (apply comp.beta
              (= (app (app (app compose id) f) x) (app id (app f x)))))
         (= (app f x)
-           (apply id_beta (= (app id (app f x)) (app f x))))))))
+           (apply id.beta (= (app id (app f x)) (app f x))))))))
 
 ;; ⊢ ∀(f:'a→'b). compose f id = f — right identity.
 ;;
-;; Proof: as `id_left` (`funext` + a `#comp` chain), but the inner reduction
+;; Proof: as `id.left` (`funext` + a `#comp` chain), but the inner reduction
 ;; is
 ;;   (compose f id) x = f (id x) = f x.
-(#thm id_right
+(#thm id.right
   (#concl (forall (f (fun 'a 'b)) (= (app (app compose f) id) f)))
   (#by
     (intro f)
@@ -145,22 +145,22 @@
     (derive
       (#comp (app (app (app compose f) id) x)
         (= (app f (app id x))
-           (apply comp_beta
+           (apply comp.beta
              (= (app (app (app compose f) id) x) (app f (app id x)))))
         (= (app f x)
-           (cong-arg f (apply id_beta (= (app id x) x))))))))
+           (cong-arg f (apply id.beta (= (app id x) x))))))))
 
 ;; ⊢ ∀(h:'c→'d)(g:'b→'c)(f:'a→'b).
 ;;     compose (compose h g) f = compose h (compose g f) — associativity.
 ;;
 ;; Proof: `funext` reduces the goal to a pointwise equality over a fresh
 ;; point x, proved as a single `#comp` chain that walks the LHS down to
-;; `h (g (f x))` and back up to the RHS, each step a `comp_beta` instance:
+;; `h (g (f x))` and back up to the RHS, each step a `comp.beta` instance:
 ;;   ((h∘g)∘f) x = (h∘g)(f x) = h (g (f x))
 ;;              = h ((g∘f) x) = (h∘(g∘f)) x.
 ;; (Replaces the hand-threaded `sym eta-conv / abs-rule / eta-conv` wrapper
 ;; and the nested forward/backward `trans` chains.)
-(#thm comp_assoc
+(#thm comp.assoc
   (#concl
     (forall (h (fun 'c 'd))
       (forall (g (fun 'b 'c))
@@ -174,26 +174,26 @@
       (#comp (app (app (app compose (app (app compose h) g)) f) x)
         ;; ((h∘g)∘f) x = (h∘g)(f x)
         (= (app (app (app compose h) g) (app f x))
-           (apply comp_beta
+           (apply comp.beta
              (= (app (app (app compose (app (app compose h) g)) f) x)
                 (app (app (app compose h) g) (app f x)))))
         ;; (h∘g)(f x) = h (g (f x))
         (= (app h (app g (app f x)))
-           (apply comp_beta
+           (apply comp.beta
              (= (app (app (app compose h) g) (app f x))
                 (app h (app g (app f x))))))
         ;; h (g (f x)) = h ((g∘f) x)
         (= (app h (app (app (app compose g) f) x))
            (cong-arg h
              (sym
-               (apply comp_beta
+               (apply comp.beta
                  (= (app (app (app compose g) f) x)
                     (app g (app f x)))))))
         ;; h ((g∘f) x) = (h∘(g∘f)) x
         (= (app (app (app compose h) (app (app compose g) f)) x)
            (sym
-             (apply comp_beta
+             (apply comp.beta
                (= (app (app (app compose h) (app (app compose g) f)) x)
                   (app h (app (app (app compose g) f) x))))))))))
 
-(#export fun_ext comp_beta comp_cong id_beta id_left id_right comp_assoc)
+(#export fun.ext comp.beta comp.cong id.beta id.left id.right comp.assoc)

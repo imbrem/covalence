@@ -12,11 +12,13 @@
 //! so `a = fᵢ x⃗ c⃗ = fᵢ x⃗ d⃗ = b`.
 //!
 //! This and the ε-assembly are the last pieces of the recursor construction
-//! that were specialised to `nat`; `graph_det` here is now generic. (The
-//! multi-recursive-argument case — two or more recursive arguments in one
-//! constructor — is not yet handled; see `SKELETONS.md`. No present type
-//! needs it: `nat` has one recursive constructor with a single recursive
-//! argument.)
+//! that were specialised to `nat`; `graph_det` here is now generic. The
+//! **multi-recursive-argument** case — two or more recursive arguments in one
+//! constructor (a binary tree's `branch`) — is now handled: [`det_step`]
+//! peels *all* the inversion witnesses on each side, equates each pair by its
+//! own induction hypothesis, and chains the resulting congruences. The
+//! single-recursive-argument shape (`nat`'s `succ`) is the degenerate `k = 1`
+//! instance of the same code.
 
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
@@ -80,17 +82,13 @@ fn det_case<I: Inductive>(
     let inv_b = invert(theory, steps, beta, i, &inst.head, &b)?; // {gsb} ⊢ …b…
 
     // `{gsa, gsb, IHs} ⊢ a = b`.
-    let core = match inst.rec_pairs.as_slice() {
+    let core = if inst.rec_pairs.is_empty() {
         // Nullary: `a = fᵢ x⃗`, `b = fᵢ x⃗`, hence `a = b`.
-        [] => inv_a.trans(inv_b.sym()?)?,
-        // One recursive argument: peel each witness, equate them by the IH.
-        [(rec, _)] => det_step_single(motive, &a, rec, inv_a, inv_b, &goal)?,
-        _ => {
-            return Err(Error::ConnectiveRule(
-                "inductive::determinacy: constructors with ≥2 recursive arguments not yet supported"
-                    .into(),
-            ));
-        }
+        inv_a.trans(inv_b.sym()?)?
+    } else {
+        // One *or more* recursive arguments: peel every witness on each
+        // side, equate them pairwise by the IHs, chain the congruences.
+        det_step(motive, &inst, inv_a, inv_b, &goal)?
     };
 
     // `motive (Cᵢ x⃗)` (applied), then discharge the IH antecedents.
@@ -108,60 +106,114 @@ fn det_case<I: Inductive>(
     discharge_conj(applied, &ih_terms)
 }
 
-/// The single-recursive-argument determinacy core: from the two inversion
-/// existentials, peel each witness, equate them by the IH `motive rec`, and
-/// conclude `a = b`. Mirrors `nat`'s hand proof.
-fn det_step_single(
+/// The recursive-constructor determinacy core, for **any** number `k ≥ 1`
+/// of recursive arguments. From the two inversion existentials
+/// `inv_a : Graph (Cᵢ x⃗) a ⊢ ∃c⃗. (⋀ⱼ Graph rⱼ cⱼ) ∧ a = fᵢ x⃗ c⃗` (and the
+/// `d⃗` mirror for `b`): peel *all* the `c⃗` witnesses, then *all* the `d⃗`
+/// witnesses, equate `cⱼ = dⱼ` by the IH `motive rⱼ`, and chain
+/// `a = fᵢ x⃗ c⃗ = fᵢ x⃗ d⃗ = b` by rewriting every `cⱼ ↦ dⱼ`. The
+/// single-argument case (`nat`'s `succ`) is `k = 1`.
+fn det_step(
     motive: &Term,
-    a: &Term,
-    rec: &Term,
+    inst: &CtorInstance,
     inv_a: Thm,
     inv_b: Thm,
     goal: &Term,
 ) -> Result<Thm> {
-    let beta_ty = a.type_of()?;
-    let ca = Term::free("__ca", beta_ty.clone());
-    let cb = Term::free("__cb", beta_ty.clone());
+    let beta_ty = goal.as_eq().ok_or(Error::NotAnEquation)?.0.type_of()?;
+    let recs: Vec<Term> = inst.rec_pairs.iter().map(|(r, _)| r.clone()).collect();
+    let k = recs.len();
 
-    // Peel `a`'s witness `ca`: `Graph rec ca` and `a = fᵢ x⃗ ca`.
-    let pred_a = inv_a
-        .concl()
-        .as_app()
-        .ok_or(Error::NotAnEquation)?
-        .1
-        .clone();
-    let pred_a_ca = Term::app(pred_a, ca.clone());
-    let (gca, a_eq) = beta_reduce(Thm::assume(pred_a_ca.clone())?)?.conjuncts()?;
+    // Fresh witness variables for each side, named disjointly from anything
+    // the inversion existentials bind (their own `__c…` / image binders).
+    let ca_vars: Vec<Term> = (0..k)
+        .map(|j| Term::free(format!("__dca{j}"), beta_ty.clone()))
+        .collect();
+    let cb_vars: Vec<Term> = (0..k)
+        .map(|j| Term::free(format!("__dcb{j}"), beta_ty.clone()))
+        .collect();
 
-    // Peel `b`'s witness `cb`.
-    let pred_b = inv_b
-        .concl()
-        .as_app()
-        .ok_or(Error::NotAnEquation)?
-        .1
-        .clone();
-    let pred_b_cb = Term::app(pred_b, cb.clone());
-    let (gcb, b_eq) = beta_reduce(Thm::assume(pred_b_cb.clone())?)?.conjuncts()?;
+    // Inner core: under the fully-peeled body hypotheses on both sides,
+    // build `{…} ⊢ a = b`.
+    let core = |a_body: Thm, b_body: Thm| -> Result<Thm> {
+        // Split each side's `(⋀ⱼ Graph rⱼ ·ⱼ) ∧ (· = fᵢ x⃗ ·⃗)`.
+        let (a_graphs, a_eq) = split_inv_body(a_body, k)?;
+        let (b_graphs, b_eq) = split_inv_body(b_body, k)?;
 
-    // `ca = cb` by the IH at `rec`; then `a = fᵢ x⃗ ca = fᵢ x⃗ cb = b`.
-    let ih = beta_reduce(Thm::assume(Term::app(motive.clone(), rec.clone()))?)?;
-    let ca_eq_cb = ih
-        .all_elim(ca.clone())?
-        .all_elim(cb.clone())?
-        .imp_elim(gca)?
-        .imp_elim(gcb)?;
-    let f_ca = a_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
-    let f_cong = f_ca.rw_all(&ca_eq_cb)?; // ⊢ fᵢ x⃗ ca = fᵢ x⃗ cb
-    let a_eq_b = a_eq.trans(f_cong)?.trans(b_eq.sym()?)?; // {…, ca-hyp, cb-hyp} ⊢ a = b
+        // `cⱼ = dⱼ` by the IH `motive rⱼ`, for every recursive argument.
+        let mut comp_eqs = Vec::with_capacity(k);
+        for (j, rec) in recs.iter().enumerate() {
+            let ih = beta_reduce(Thm::assume(Term::app(motive.clone(), rec.clone()))?)?;
+            let eq = ih
+                .all_elim(ca_vars[j].clone())?
+                .all_elim(cb_vars[j].clone())?
+                .imp_elim(a_graphs[j].clone())?
+                .imp_elim(b_graphs[j].clone())?;
+            comp_eqs.push(eq);
+        }
 
-    // Discharge the two witnesses (nested `exists_elim`).
-    let step_b = a_eq_b
-        .imp_intro(&pred_b_cb)?
-        .all_intro("__cb", beta_ty.clone())?;
-    let step_a = exists_elim(inv_b, goal.clone(), step_b)?
-        .imp_intro(&pred_a_ca)?
-        .all_intro("__ca", beta_ty)?;
-    exists_elim(inv_a, goal.clone(), step_a)
+        // `fᵢ x⃗ c⃗ = fᵢ x⃗ d⃗` by rewriting every `cⱼ ↦ dⱼ`, then
+        // `a = fᵢ x⃗ c⃗ = fᵢ x⃗ d⃗ = b`.
+        let f_c = a_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+        let mut f_cong = Thm::refl(f_c)?;
+        for eq in &comp_eqs {
+            let rhs = f_cong.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+            f_cong = f_cong.trans(rhs.rw_all(eq)?)?;
+        }
+        a_eq.trans(f_cong)?.trans(b_eq.sym()?)
+    };
+
+    // Peel `a`'s witnesses `c⃗` (outer), then `b`'s `d⃗` (inner), then `core`.
+    peel_exists(inv_a, &ca_vars, goal, &beta_ty, |a_body| {
+        peel_exists(inv_b.clone(), &cb_vars, goal, &beta_ty, |b_body| {
+            core(a_body, b_body)
+        })
+    })
+}
+
+/// Split a fully-peeled inversion body `(⋀ⱼ Graph rⱼ cⱼ) ∧ (v = fᵢ x⃗ c⃗)`
+/// into the `k` graph proofs and the value equation. For `k = 1` the
+/// conjunction is the binary `Graph r₀ c₀ ∧ v = …`; for `k ≥ 2` the left
+/// conjunct is itself the right-associated `⋀ⱼ Graph rⱼ cⱼ`.
+fn split_inv_body(body: Thm, k: usize) -> Result<(Vec<Thm>, Thm)> {
+    let (graphs_thm, val_eq) = body.conjuncts()?;
+    let graphs = (0..k)
+        .map(|j| super::util::project(graphs_thm.clone(), j, k))
+        .collect::<Result<_>>()?;
+    Ok((graphs, val_eq))
+}
+
+/// Peel a chain of `∃`-witnesses from `ex = ⊢ ∃w⃗. body[w⃗]`, supplying the
+/// fresh `vars` as the bound names, and discharge `goal` through nested
+/// [`exists_elim`]s. `cont` proves `goal` from the *fully β-reduced* body —
+/// over the hypothesis that the innermost applied-predicate holds — and is
+/// run at the bottom of the peel. Generalises the single-witness peeling
+/// `nat` used to do inline.
+fn peel_exists(
+    ex: Thm,
+    vars: &[Term],
+    goal: &Term,
+    beta_ty: &Type,
+    cont: impl FnOnce(Thm) -> Result<Thm>,
+) -> Result<Thm> {
+    let (var, rest) = vars.split_first().expect("peel_exists: empty witness list");
+    // `ex`'s predicate, applied to this layer's fresh witness.
+    let pred = ex.concl().as_app().ok_or(Error::NotAnEquation)?.1.clone();
+    let applied = Term::app(pred, var.clone());
+    let reduced = beta_reduce(Thm::assume(applied.clone())?)?;
+
+    let inner = if rest.is_empty() {
+        // Bottom: the β-reduct is the body; run the continuation.
+        cont(reduced)?
+    } else {
+        // `reduced`'s conclusion is the inner existential `∃w'. …`; recurse.
+        peel_exists(reduced, rest, goal, beta_ty, cont)?
+    };
+
+    let step = inner
+        .imp_intro(&applied)?
+        .all_intro(super::util::var_name(var), beta_ty.clone())?;
+    exists_elim(ex, goal.clone(), step)
 }
 
 /// `⊢ ∀t. (λt. ∀a b. Graph t a ⟹ Graph t b ⟹ a = b) t` — the graph is

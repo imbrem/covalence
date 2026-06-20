@@ -225,14 +225,17 @@
   (#by
     (intro a b)
     (induct c
-      ;; base: (a + 0 = b + 0) ⟹ a = b
+      ;; base: (a + 0 = b + 0) ⟹ a = b  —  a = a+0 = b+0 = b.
       (#by
         (intro h)
         (derive
-          (trans (sym (all-elim a (add_zero)))
-            (trans (assume (= (nat.add a 0) (nat.add b 0)))
-                   (all-elim b (add_zero))))))
-      ;; step: ih (a+c=b+c ⟹ a=b) ⊢ (a+Sc=b+Sc) ⟹ a=b
+          (#comp a
+            (= (nat.add a 0) (sym (all-elim a (add_zero))))
+            (= (nat.add b 0) (assume (= (nat.add a 0) (nat.add b 0))))
+            (= b (all-elim b (add_zero))))))
+      ;; step: ih (a+c=b+c ⟹ a=b) ⊢ (a+Sc=b+Sc) ⟹ a=b.  The premise
+      ;; a+Sc=b+Sc gives S(a+c)=S(b+c) (a calc chain through add_succ), hence
+      ;; a+c=b+c by succ_inj, then the IH yields a=b.
       (#by
         (intro h)
         (derive
@@ -240,9 +243,11 @@
             (assume (==> (= (nat.add a c) (nat.add b c)) (= a b)))
             (imp-elim
               (all-elim (nat.add b c) (all-elim (nat.add a c) (succ_inj)))
-              (trans (sym (all-elim c (all-elim a (add_succ))))
-                (trans (assume (= (nat.add a (succ c)) (nat.add b (succ c))))
-                       (all-elim c (all-elim b (add_succ))))))))))))
+              (#comp (succ (nat.add a c))
+                (= (nat.add a (succ c)) (sym (all-elim c (all-elim a (add_succ)))))
+                (= (nat.add b (succ c))
+                   (assume (= (nat.add a (succ c)) (nat.add b (succ c)))))
+                (= (succ (nat.add b c)) (all-elim c (all-elim b (add_succ))))))))))))
 
 ;; ⊢ ∀w x y z. (w + x) + (y + z) = (w + y) + (x + z).  The "middle-four
 ;; interchange" — pure associativity/commutativity, no induction. Used to
@@ -637,22 +642,27 @@
               (false-elim (= (nat.add (succ a) (nat.sub 0 (succ a))) 0)
                 (not-elim (all-elim a (not_succ_le_zero))
                           (assume (nat.le (succ a) 0))))))
-          ;; inner step b=S b': Sa+(Sb-Sa) = Sa+(b-a) = S(a+(b-a)) = S b.
+          ;; inner step b=S b': a calc chain Sa+(Sb-Sa) → Sa+(b-a) → S(a+(b-a)) → S b.
           (#by
             (intro h1)
             (derive
-              (trans
-                (cong-arg (nat.add (succ a))
-                  (all-elim a (all-elim b (succ_sub))))
-                (trans
-                  (all-elim (nat.sub b a) (all-elim a (succ_add)))
-                  (cong-arg succ
-                    (imp-elim
-                      (all-elim b
-                        (assume (forall (b nat)
-                          (==> (nat.le a b) (= (nat.add a (nat.sub b a)) b)))))
-                      (eq-mp (all-elim b (all-elim a (le_succ_succ)))
-                             (assume (nat.le (succ a) (succ b)))))))))))))))
+              (#comp (nat.add (succ a) (nat.sub (succ b) (succ a)))
+                ;; Sb-Sa = b-a under `Sa +`.
+                (= (nat.add (succ a) (nat.sub b a))
+                   (cong-arg (nat.add (succ a))
+                     (all-elim a (all-elim b (succ_sub)))))
+                ;; Sa+(b-a) = S(a+(b-a)).
+                (= (succ (nat.add a (nat.sub b a)))
+                   (all-elim (nat.sub b a) (all-elim a (succ_add))))
+                ;; S(a+(b-a)) = S b, by the outer IH at b (a+(b-a)=b).
+                (= (succ b)
+                   (cong-arg succ
+                     (imp-elim
+                       (all-elim b
+                         (assume (forall (b nat)
+                           (==> (nat.le a b) (= (nat.add a (nat.sub b a)) b)))))
+                       (eq-mp (all-elim b (all-elim a (le_succ_succ)))
+                              (assume (nat.le (succ a) (succ b)))))))))))))))
 
 ;; ⊢ ∀a b c. (a ≤ b) ⟹ (b ≤ c) ⟹ (a ≤ c).  Transitivity (no induction).
 ;; `le_add_sub` gives a+(b-a)=b and b+(c-b)=c, so a+((b-a)+(c-b))=c by
@@ -664,18 +674,21 @@
     (intro a b c h1 h2)
     (derive
       (eq-mp
-        (mk-comb
-          (mk-comb (refl nat.le) (refl a))
-          (trans
-            (sym (all-elim (nat.sub c b)
-                   (all-elim (nat.sub b a) (all-elim a (add_assoc)))))
-            (trans
-              (cong-fn (nat.sub c b)
-                (cong-arg nat.add
-                  (imp-elim (all-elim b (all-elim a (le_add_sub)))
-                            (assume (nat.le a b)))))
-              (imp-elim (all-elim c (all-elim b (le_add_sub)))
-                        (assume (nat.le b c))))))
+        ;; rewrite the RHS of `a ≤ a+((b-a)+(c-b))` down to `a ≤ c`:
+        ;;   a+((b-a)+(c-b)) = (a+(b-a))+(c-b) = b+(c-b) = c.
+        (congr nat.le (refl a)
+          (#comp (nat.add a (nat.add (nat.sub b a) (nat.sub c b)))
+            (= (nat.add (nat.add a (nat.sub b a)) (nat.sub c b))
+               (sym (all-elim (nat.sub c b)
+                      (all-elim (nat.sub b a) (all-elim a (add_assoc))))))
+            (= (nat.add b (nat.sub c b))
+               (cong-fn (nat.sub c b)
+                 (cong-arg nat.add
+                   (imp-elim (all-elim b (all-elim a (le_add_sub)))
+                             (assume (nat.le a b))))))
+            (= c
+               (imp-elim (all-elim c (all-elim b (le_add_sub)))
+                         (assume (nat.le b c))))))
         (all-elim (nat.add (nat.sub b a) (nat.sub c b))
                   (all-elim a (le_add_r)))))))
 
@@ -747,15 +760,16 @@
   (#by
     (intro a b c)
     (derive
-      (trans
-        (all-elim (nat.add b c) (all-elim (nat.add a c) (lt_iff_succ_le)))
-        (trans
-          (cong-fn (nat.add b c)
-            (mk-comb (refl nat.le)
-              (sym (all-elim c (all-elim a (succ_add))))))
-          (trans
-            (all-elim c (all-elim b (all-elim (succ a) (le_add_cancel_r))))
-            (sym (all-elim b (all-elim a (lt_iff_succ_le))))))))))
+      ;; (a+c < b+c) = (S(a+c) ≤ b+c) = (Sa+c ≤ b+c) = (Sa ≤ b) = (a < b).
+      (#comp (nat.lt (nat.add a c) (nat.add b c))
+        (= (nat.le (succ (nat.add a c)) (nat.add b c))
+           (all-elim (nat.add b c) (all-elim (nat.add a c) (lt_iff_succ_le))))
+        (= (nat.le (nat.add (succ a) c) (nat.add b c))
+           (congr nat.le (sym (all-elim c (all-elim a (succ_add)))) (refl (nat.add b c))))
+        (= (nat.le (succ a) b)
+           (all-elim c (all-elim b (all-elim (succ a) (le_add_cancel_r)))))
+        (= (nat.lt a b)
+           (sym (all-elim b (all-elim a (lt_iff_succ_le)))))))))
 
 ;; Internal helper for le_iff_lt_or_eq (not exported): from a witness `d` with
 ;; `a + d = b`, decide `(a < b) ∨ (a = b)` — case-analysis on `d` (the IH is
@@ -873,20 +887,16 @@
   (#by
     (intro p q r s h)
     (derive
-      (trans
-        ;; (p<q) = (r+q < q+s)
-        (trans
-          (sym (all-elim s (all-elim q (all-elim p (lt_add_mono_r)))))
-          (mk-comb
-            (mk-comb (refl nat.lt) (assume (= (nat.add p s) (nat.add r q))))
-            (refl (nat.add q s))))
-        (sym
-          ;; (r<s) = (r+q < q+s)
-          (trans
-            (sym (all-elim q (all-elim s (all-elim r (lt_add_mono_r)))))
-            (mk-comb
-              (mk-comb (refl nat.lt) (refl (nat.add r q)))
-              (all-elim q (all-elim s (add_comm))))))))))
+      ;; (p<q) = (p+s < q+s) = (r+q < q+s) = (r+q < s+q) = (r<s).
+      (#comp (nat.lt p q)
+        (= (nat.lt (nat.add p s) (nat.add q s))
+           (sym (all-elim s (all-elim q (all-elim p (lt_add_mono_r))))))
+        (= (nat.lt (nat.add r q) (nat.add q s))
+           (congr nat.lt (assume (= (nat.add p s) (nat.add r q))) (refl (nat.add q s))))
+        (= (nat.lt (nat.add r q) (nat.add s q))
+           (congr nat.lt (refl (nat.add r q)) (all-elim s (all-elim q (add_comm)))))
+        (= (nat.lt r s)
+           (all-elim q (all-elim s (all-elim r (lt_add_mono_r)))))))))
 
 ;; ⊢ ∀p q r s. (p + s = r + q) ⟹ (p ≤ q) = (r ≤ s).  The `≤` mirror of
 ;; lt_cross (via le_add_cancel_r); both sides reduce to `r+q ≤ q+s`.
@@ -897,18 +907,109 @@
   (#by
     (intro p q r s h)
     (derive
-      (trans
-        (trans
-          (sym (all-elim s (all-elim q (all-elim p (le_add_cancel_r)))))
-          (mk-comb
-            (mk-comb (refl nat.le) (assume (= (nat.add p s) (nat.add r q))))
-            (refl (nat.add q s))))
-        (sym
-          (trans
-            (sym (all-elim q (all-elim s (all-elim r (le_add_cancel_r)))))
-            (mk-comb
-              (mk-comb (refl nat.le) (refl (nat.add r q)))
-              (all-elim q (all-elim s (add_comm))))))))))
+      ;; (p≤q) = (p+s ≤ q+s) = (r+q ≤ q+s) = (r+q ≤ s+q) = (r≤s).
+      (#comp (nat.le p q)
+        (= (nat.le (nat.add p s) (nat.add q s))
+           (sym (all-elim s (all-elim q (all-elim p (le_add_cancel_r))))))
+        (= (nat.le (nat.add r q) (nat.add q s))
+           (congr nat.le (assume (= (nat.add p s) (nat.add r q))) (refl (nat.add q s))))
+        (= (nat.le (nat.add r q) (nat.add s q))
+           (congr nat.le (refl (nat.add r q)) (all-elim s (all-elim q (add_comm)))))
+        (= (nat.le r s)
+           (all-elim q (all-elim s (all-elim r (le_add_cancel_r)))))))))
+
+;; ============================================================================
+;; Exponentiation / shift — over the `pow`/`shl` recursion equations from the
+;; `natrec` env (`pow_zero`: a^0 = 1;  `pow_succ`: a^(S m) = a·a^m;
+;; `shl_zero`: shl a 0 = a;  `shl_succ`: shl a (S m) = 2·shl a m).
+;; ============================================================================
+
+;; ⊢ ∀a m n. a^(m + n) = a^m · a^n.  Exponents add.  Induction on n; the step
+;; is a `#comp` calc chain rearranging by mul_comm / mul_assoc.
+(#thm pow_add
+  (#concl
+    (forall (a nat) (forall (m nat) (forall (n nat)
+      (= (nat.pow a (nat.add m n))
+         (nat.mul (nat.pow a m) (nat.pow a n)))))))
+  (#by
+    (intro a m)
+    (induct n
+      ;; base n=0: a^(m+0) = a^m = a^m·1 = a^m·a^0.
+      (#by
+        (derive
+          (#comp (nat.pow a (nat.add m 0))
+            (= (nat.pow a m)
+               (cong-arg (nat.pow a) (all-elim m (add_zero))))
+            (= (nat.mul (nat.pow a m) 1)
+               (sym (all-elim (nat.pow a m) (mul_one))))
+            (= (nat.mul (nat.pow a m) (nat.pow a 0))
+               (cong-arg (nat.mul (nat.pow a m))
+                 (sym (all-elim a (pow_zero))))))))
+      ;; step: a^(m+Sn) = a^(S(m+n)) = a·a^(m+n) = a·(a^m·a^n)
+      ;;             = (a^m·a)·a^n = a^m·(a·a^n) = a^m·a^(Sn).
+      (#by
+        (derive
+          (#comp (nat.pow a (nat.add m (succ n)))
+            (= (nat.pow a (succ (nat.add m n)))
+               (cong-arg (nat.pow a) (all-elim n (all-elim m (add_succ)))))
+            (= (nat.mul a (nat.pow a (nat.add m n)))
+               (all-elim (nat.add m n) (all-elim a (pow_succ))))
+            (= (nat.mul a (nat.mul (nat.pow a m) (nat.pow a n)))
+               (cong-arg (nat.mul a)
+                 (assume (= (nat.pow a (nat.add m n))
+                            (nat.mul (nat.pow a m) (nat.pow a n))))))
+            (= (nat.mul (nat.mul a (nat.pow a m)) (nat.pow a n))
+               (sym (all-elim (nat.pow a n)
+                      (all-elim (nat.pow a m) (all-elim a (mul_assoc))))))
+            (= (nat.mul (nat.mul (nat.pow a m) a) (nat.pow a n))
+               (congr nat.mul (all-elim (nat.pow a m) (all-elim a (mul_comm)))
+                              (refl (nat.pow a n))))
+            (= (nat.mul (nat.pow a m) (nat.mul a (nat.pow a n)))
+               (all-elim (nat.pow a n)
+                 (all-elim a (all-elim (nat.pow a m) (mul_assoc)))))
+            (= (nat.mul (nat.pow a m) (nat.pow a (succ n)))
+               (cong-arg (nat.mul (nat.pow a m))
+                 (sym (all-elim n (all-elim a (pow_succ))))))))))))
+
+;; ⊢ ∀a m. shl a m = a · 2^m.  A left shift by m multiplies by 2^m.  Induction
+;; on m; the step is a `#comp` calc chain (shl_succ + pow_succ + comm/assoc).
+(#thm shl_eq_mul_pow
+  (#concl
+    (forall (a nat) (forall (m nat)
+      (= (nat.shl a m) (nat.mul a (nat.pow 2 m))))))
+  (#by
+    (intro a)
+    (induct m
+      ;; base m=0: shl a 0 = a = a·1 = a·2^0.
+      (#by
+        (derive
+          (#comp (nat.shl a 0)
+            (= a (all-elim a (shl_zero)))
+            (= (nat.mul a 1) (sym (all-elim a (mul_one))))
+            (= (nat.mul a (nat.pow 2 0))
+               (cong-arg (nat.mul a) (sym (all-elim 2 (pow_zero))))))))
+      ;; step: shl a (Sm) = 2·shl a m = 2·(a·2^m) = (2·a)·2^m
+      ;;            = (a·2)·2^m = a·(2·2^m) = a·2^(Sm).
+      (#by
+        (derive
+          (#comp (nat.shl a (succ m))
+            (= (nat.mul 2 (nat.shl a m))
+               (all-elim m (all-elim a (shl_succ))))
+            (= (nat.mul 2 (nat.mul a (nat.pow 2 m)))
+               (cong-arg (nat.mul 2)
+                 (assume (= (nat.shl a m) (nat.mul a (nat.pow 2 m))))))
+            (= (nat.mul (nat.mul 2 a) (nat.pow 2 m))
+               (sym (all-elim (nat.pow 2 m)
+                      (all-elim a (all-elim 2 (mul_assoc))))))
+            (= (nat.mul (nat.mul a 2) (nat.pow 2 m))
+               (congr nat.mul (all-elim a (all-elim 2 (mul_comm)))
+                              (refl (nat.pow 2 m))))
+            (= (nat.mul a (nat.mul 2 (nat.pow 2 m)))
+               (all-elim (nat.pow 2 m)
+                 (all-elim 2 (all-elim a (mul_assoc)))))
+            (= (nat.mul a (nat.pow 2 (succ m)))
+               (cong-arg (nat.mul a)
+                 (sym (all-elim m (all-elim 2 (pow_succ))))))))))))
 
 (#export succ_ne_zero succ_cong_ne rec_zero rec_succ eq_refl
          add_zero add_succ add_comm add_assoc add_cancel
@@ -922,4 +1023,5 @@
          le_zero_iff le_antisym le_add_sub le_trans
          lt_imp_le lt_trans le_add_cancel_r lt_add_mono_r
          le_iff_lt_or_eq lt_trichotomy
-         add_lt_add lt_cross le_cross)
+         add_lt_add lt_cross le_cross
+         pow_add shl_eq_mul_pow)

@@ -692,6 +692,12 @@ substrate the waist hides. So:
 - **below the waist** — a swappable, trivially-correct first-order substrate
   doing the efficient / low-level work.
 
+The *waist logic itself* is also a choice, not a fixity: HOL Light today, but
+**HOL-ω** (higher-kinded — first-class monads / transformers / profunctors) is
+a live candidate for the waist, exactly because the waist is an API that
+different implementations can meet differently
+([`metatheory.md`](./metatheory.md) §5.2).
+
 The flat-TCB and "scoped truths" disciplines are unchanged — the base logic
 is *smaller and more concrete*, so if anything the audit story improves.
 

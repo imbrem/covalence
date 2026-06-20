@@ -212,6 +212,30 @@ at a time; HOL-ω lets us quantify over the type *constructor* itself.
 That is a want, not yet a need — we adopt it only when a concrete theory
 we care about is unstatable without it.
 
+**HOL-ω as an *alternative middle logic*.** Because the middle logic is a
+*narrow waist* that implementations may differ on
+([`kernel-design.md`](./kernel-design.md) §11.3), HOL-ω is not only a
+future *object*-logic enrichment — it is a candidate for the **waist
+itself**. The motivation is concrete and Kmett-flavoured: first-class
+reasoning about **monads, monad transformers, and profunctors** wants to
+quantify over the type *constructor* (`m : ⋆→⋆`, `t : (⋆→⋆)→⋆→⋆`,
+`p : ⋆→⋆→⋆`), which rank-1 HOL Light cannot. A theory of "all monads" or
+"all profunctors" is exactly the kind of concrete, useful theory that is
+*unstatable* in rank-1 — the trigger this section names for adopting HOL-ω.
+
+**What to build now, regardless.** The near-term move that pays off under
+*either* middle logic is to make **lists and monads first-class**: unblock
+`list` structural recursion — the *syntax* lynchpin
+([`surface-compiler.md`](./surface-compiler.md), §8) — then build a rich
+tactic/lemma layer for lists specifically and monad-shaped structure
+generally. This is not throwaway work. The same code and surface
+(the [`frontend.md`](./frontend.md) handler dispatch) later powers
+**accelerated term-lists and term-sets** (efficient `covalence-pure`
+observers over collections of terms, [`observers.md`](./observers.md) §7)
+*and* the **contexts / telescopes of type theory** (an MLTT context is a
+list). Build the list & monad theory well once; reuse it for reified
+syntax, collection acceleration, and type-theory contexts.
+
 > **Why these are two independent bets, both deferred.** The schematic
 > FOL framework (§5.1) simplifies *how we describe HOL itself*; HOL-ω
 > enriches *the object logic's type system*. They are orthogonal — adopt

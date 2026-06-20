@@ -4,16 +4,28 @@ Experimental VCS and theorem prover. Monorepo with Rust crates, a VSCode browser
 
 ## Skeletons (STRICT)
 
-[`SKELETONS.md`](./SKELETONS.md) is the authoritative registry of every
-intentional placeholder in the repo: empty/stub modules, removed-pending-rewrite
-subsystems, `NotImplemented` / `todo!()` / `unimplemented!()` stubs, and any
-test that is commented out, `#[ignore]`d, or deleted "for later".
+The **SKELETONS** registry records every intentional placeholder in the repo:
+empty/stub modules, removed-pending-rewrite subsystems, `NotImplemented` /
+`todo!()` / `unimplemented!()` stubs, and any test that is commented out,
+`#[ignore]`d, or deleted "for later".
+
+It is **split per crate** (the root [`SKELETONS.md`](./SKELETONS.md) is just an
+index of the per-crate files):
+
+- Each crate keeps its own **`crates/<crate>/SKELETONS.md`**.
+- A large crate may split *further by module*: its `crates/<crate>/SKELETONS.md`
+  becomes an index, and each module's skeletons live in a co-located
+  **`crates/<crate>/src/<module>/SKELETONS.md`** (e.g.
+  `crates/covalence-hol/src/init/SKELETONS.md`,
+  `crates/covalence-hol/src/script/SKELETONS.md`).
 
 **Whenever you leave a skeleton — stub an operation, gut a module, disable or
 delete a test "for now", or drop in a placeholder — you MUST add a matching
-entry to `SKELETONS.md` in the same change.** When you fill a skeleton in,
-delete its entry. Never silently leave work unfinished; record it there so it
-is discoverable.
+entry to the SKELETONS file *nearest the code* (the module's file if one exists,
+else the crate's) in the same change.** When you fill a skeleton in, delete its
+entry. If you add the first skeleton to a crate/module that has no file yet,
+create it and link it from the parent index. Never silently leave work
+unfinished; record it where it is discoverable next to the code.
 
 ## Build & Run
 

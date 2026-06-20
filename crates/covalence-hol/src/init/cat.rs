@@ -161,6 +161,83 @@ pub fn comp_cong(g_eq: &Thm, f_eq: &Thm) -> Result<Thm> {
 }
 
 // ============================================================================
+// Categorical normalizer — the function-category rewriter.
+// ============================================================================
+
+/// If `t` is `compose g f` (the `fun.compose` head applied to two morphisms),
+/// return `(g, f)`. Detected by the spec symbol so it matches at *any* triple
+/// of objects `(α, β, γ)` — the heterogeneous-object case the single-carrier
+/// [`monoid`](crate::init::monoid) normalizer can't express.
+fn dest_comp(t: &Term) -> Option<(Term, Term)> {
+    let (gf, f) = t.as_app()?;
+    let (head, g) = gf.as_app()?;
+    let (spec, _) = head.as_spec()?;
+    spec.symbol()
+        .label()
+        .eq(compose_spec().symbol().label())
+        .then(|| (g.clone(), f.clone()))
+}
+
+/// Whether `t` is an identity morphism `id` at some object (any `α`).
+fn is_id(t: &Term) -> bool {
+    t.as_spec()
+        .is_some_and(|(spec, _)| spec.symbol().label() == id_spec().symbol().label())
+}
+
+/// **The categorical rewriter** for the function category: `⊢ t = nf`, where
+/// `nf` is `t` with every composite **right-associated** and every `id` factor
+/// eliminated. The general (heterogeneous-object) analogue of
+/// [`monoid::Monoid::normalize`](crate::init::monoid::Monoid::normalize): each
+/// step is a genuine kernel rewrite via the *type-inferring* category laws
+/// [`comp_assoc`] / [`id_left`] / [`id_right`] and the congruence [`comp_cong`],
+/// so it works on `(h ∘ g) ∘ f` even when `f : α→β`, `g : β→γ`, `h : γ→δ` all
+/// differ — where a fixed monoid `op` term would not type-check.
+///
+/// Mirrors the monoid algorithm: normalize children, drop `id`, re-associate a
+/// left-nested composite, recurse on the new right child.
+pub fn cat_normalize(t: &Term) -> Result<Thm> {
+    let Some((g, f)) = dest_comp(t) else {
+        return Thm::refl(t.clone());
+    };
+
+    let g_eq = cat_normalize(&g)?; // ⊢ g = g'
+    let f_eq = cat_normalize(&f)?; // ⊢ f = f'
+    let (_, g_nf) = g_eq.concl().as_eq().ok_or(Error::NotAnEquation)?;
+    let (_, f_nf) = f_eq.concl().as_eq().ok_or(Error::NotAnEquation)?;
+    let (g_nf, f_nf) = (g_nf.clone(), f_nf.clone());
+
+    // ⊢ g ∘ f = g' ∘ f'  (whisker both sides).
+    let cong = comp_cong(&g_eq, &f_eq)?;
+
+    // id ∘ f' → f'   (left identity).
+    if is_id(&g_nf) {
+        return cong.trans(id_left(&f_nf)?);
+    }
+    // g' ∘ id → g'   (right identity).
+    if is_id(&f_nf) {
+        return cong.trans(id_right(&g_nf)?);
+    }
+    // Re-associate: (p ∘ q) ∘ f' → p ∘ (q ∘ f').
+    if let Some((p, q)) = dest_comp(&g_nf) {
+        let assoc = comp_assoc(&p, &q, &f_nf)?; // ⊢ (p∘q)∘f' = p∘(q∘f')
+        let inner = comp(&q, &f_nf)?;
+        let inner_nf = cat_normalize(&inner)?; // ⊢ q∘f' = (q∘f')'
+        let right = comp_cong(&Thm::refl(p)?, &inner_nf)?; // ⊢ p∘(q∘f') = p∘(q∘f')'
+        return cong.trans(assoc)?.trans(right);
+    }
+    Ok(cong)
+}
+
+/// Decide a function-category word equation `⊢ lhs = rhs` by normalizing both
+/// sides to canonical (right-associated, `id`-free) form and bridging. Errors
+/// (in `trans`) if the two composites are not equal as categorical words.
+pub fn cat_prove_eq(lhs: &Term, rhs: &Term) -> Result<Thm> {
+    let l = cat_normalize(lhs)?;
+    let r = cat_normalize(rhs)?;
+    l.trans(r.sym()?)
+}
+
+// ============================================================================
 // .cov proof language support
 // ============================================================================
 
@@ -366,6 +443,57 @@ mod tests {
         let thm = comp_cong(&g_eq, &f_eq).unwrap();
         let expected = comp(&g, &f).unwrap();
         assert_eq!(thm.concl(), &expected.clone().equals(expected).unwrap());
+    }
+
+    // -- the categorical (function-category) rewriter ------------------------
+
+    #[test]
+    fn cat_normalize_reassociates_heterogeneous_objects() {
+        // f : a→b, g : b→c, h : c→d  —  objects all differ, so this is the
+        // genuinely-categorical (non-monoid) case.
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let c = Type::tfree("c");
+        let d = Type::tfree("d");
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        let g = Term::free("g", Type::fun(b.clone(), c.clone()));
+        let h = Term::free("h", Type::fun(c, d));
+        // (h ∘ g) ∘ f  →  h ∘ (g ∘ f).
+        let expr = comp(&comp(&h, &g).unwrap(), &f).unwrap();
+        let thm = cat_normalize(&expr).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let (lhs, rhs) = thm.concl().as_eq().unwrap();
+        assert_eq!(lhs, &expr);
+        assert_eq!(rhs, &comp(&h, &comp(&g, &f).unwrap()).unwrap());
+    }
+
+    #[test]
+    fn cat_normalize_eliminates_id() {
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        // (id_b ∘ f) ∘ id_a  →  f.
+        let expr = comp(&comp(&id(b), &f).unwrap(), &id(a)).unwrap();
+        let thm = cat_normalize(&expr).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let (_, rhs) = thm.concl().as_eq().unwrap();
+        assert_eq!(rhs, &f);
+    }
+
+    #[test]
+    fn cat_prove_eq_assoc_law() {
+        let a = Type::tfree("a");
+        let b = Type::tfree("b");
+        let c = Type::tfree("c");
+        let d = Type::tfree("d");
+        let f = Term::free("f", Type::fun(a.clone(), b.clone()));
+        let g = Term::free("g", Type::fun(b.clone(), c.clone()));
+        let h = Term::free("h", Type::fun(c, d));
+        let lhs = comp(&comp(&h, &g).unwrap(), &f).unwrap();
+        let rhs = comp(&h, &comp(&g, &f).unwrap()).unwrap();
+        let thm = cat_prove_eq(&lhs, &rhs).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert_eq!(thm.concl().as_eq().unwrap(), (&lhs, &rhs));
     }
 
     #[test]

@@ -83,6 +83,7 @@ pub mod inductive;
 pub mod int;
 pub mod list;
 pub mod logic;
+pub mod monoid;
 pub mod nat;
 pub mod option;
 pub mod prod;

@@ -121,6 +121,28 @@ it is how unfinished work stays discoverable.
 
 ## Partial subsystems
 
+- **Monoid / categorical rewriters** in `crates/covalence-hol/src/init/monoid.rs`
+  + `cat.rs` (`cat_normalize` / `cat_prove_eq`). **In place:** the model-generic
+  monoid normalizer (`Monoid::normalize` / `prove_eq`) over `(op, unit, assoc,
+  left_id, right_id)`; models for `(nat,+,0)`, `(nat,×,1)`, the endomorphism
+  monoid `(α→α, ∘, id)`; the function-category rewriter for heterogeneous
+  objects; and a model-generic `monoid.cov` driven through `monoid_env`.
+  **Not yet built:**
+  - **Relation-category rewriter.** `rel.compose` / `rel.id` exist in
+    `defs/rel.rs` with `holds_compose` / `holds_id` (init/rel.rs), but their
+    **identity and associativity laws are unproved** — they need the existential
+    one-point rule `(∃y. x = y ∧ P y) = P x` (flagged in `init/rel.rs`'s module
+    docs). Once those laws land, `endo_monoid` has a `rel`-category analogue and
+    `cat_normalize` generalizes to relations with no algorithm change.
+  - **`(monoid-normalize)` / `(cat-normalize)` script inferences.** The Rust
+    normalizers are not yet exposed as registered `.cov` rewriter tactics; today
+    a `.cov` proof drives the laws one `(rw …)` at a time (see `monoid.cov`).
+    This is the concrete first consumer of the planned **rewriter facet** on the
+    `Tactic` trait (`script/tactic.rs` doc-note): a `rewrite(a) -> ⊢ a = b`
+    method so `Monoid::normalize` plugs in directly as `(rw (monoid-nf))`.
+  - **List monoid `(list, append, nil)`.** `init/list.rs` only has the `nil`-side
+    computations; `append` and its assoc/identity laws are not proved, so the
+    canonical "list is the free monoid" model is not yet a `Monoid` value.
 - **`covalence-hol` inductive-type engine** in
   `crates/covalence-hol/src/init/inductive/`. The shared infrastructure for
   basic inductive types (single-sorted, parametric, first-order,

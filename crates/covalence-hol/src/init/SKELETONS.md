@@ -88,7 +88,23 @@ index](../../../../SKELETONS.md).
   `of_rat_mono` (the principal-cut embedding is monotone, by `rat::le_trans`
   + the round-trip), and `zero_ne_one` (`⊢ ¬(0 = 1)`, via distinct principal
   cuts transported through the subtype `rep`/`abs`).
-  **Postulated** via the module's `axiom` helper (self-flagged):
+  **`.cov` port (`real.cov`).** The three pure partial-order laws
+  `le.refl` / `le.trans` / `le.antisym` are ported to `real.cov` over the
+  `realprim` cut seam env (`init::real::real_env`: the operators
+  `real.le`/`real.cutOf`/`real.mk` + the `∀`-closed seam lemmas
+  `real.le.unfold` and `real.abs_rep`). Each `cov::X` is conclusion-equal to
+  its Rust `super::X` and hypothesis-/oracle-free (the order laws touch no
+  postulate). **Not yet ported** — `of_rat_mono`, `zero_ne_one`, `is_cut`:
+  these are "proved *modulo* the `rat` order postulates" (`rat::le_trans` /
+  `rat::le_refl` / `rat::not_one_le_zero`, themselves resting on the still-
+  postulated `rat` `lt_trans`/`le_def`/`zero_lt_one`/mediant facts — see the
+  `rat` entry above). A faithful `.cov` re-derivation would need the extra
+  cut seam (`of_rat` β-form, the `is_cut`-discharged conditional round-trip
+  `cutOf (mk S) = S`, the principal-cut equation) AND the `rat` order facts
+  as givens, and would still carry the postulate hypotheses; deferred until
+  the `rat` order postulates are discharged (then they become genuine).
+  **Postulated** via the module's `axiom` helper (self-flagged), NOT ported
+  to `real.cov`:
   - `sup_is_ub` / `sup_is_least` — the two least-upper-bound properties of
     the supremum cut `real_sup A` (the intersection of the members'
     cut-sets). Each unfolds to a set/order fact about the cuts, blocked on

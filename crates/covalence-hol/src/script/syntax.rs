@@ -28,6 +28,10 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                 "nat" => Ok(Type::nat()),
                 "int" => Ok(Type::int()),
                 "rat" => Ok(defs::rat_ty()),
+                // `real` is shell-defined (`init::real`, not the kernel
+                // catalogue), so it is resolved through that module rather
+                // than `defs`.
+                "real" => Ok(crate::init::real::real_ty()),
                 "int.pos" => Ok(defs::int_pos_ty()),
                 // text/byte element types (the `defs/text.rs` + `defs/bits.rs`
                 // 0-ary subtypes): `char`, the fixed-width `uN`, `string`.

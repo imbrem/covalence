@@ -109,7 +109,41 @@ many-models idea *executable*.
 Illustrative — exact grammar TBD; all forms stay pure `#`-headed S-expressions
 ([`surface-syntax.md`](./surface-syntax.md) §1.3). They extend the existing
 `surface::Builtin` set (`#theory`/`#decl`/`#clause`/`#def`/`#thm`/`#import`) with
-`#logic`, `#model`, `#in`, `#transport`.
+`#sig`, `#thy`, `#logic`, `#model`, `#in`, `#transport`.
+
+### 3.0 `#sig` / `#thy` — signatures and theories (the surface↔script fusion)
+
+There is **one language**: the `.cov` script language gains the theory-defining
+forms, so surface and script are fused (not two languages). A **signature** is a
+*name + sorts/families (kinded) + operations*; a **theory** is *a signature +
+named axioms* — exactly the `Signature`/`Theory` data the `Logic` trait consumes
+(`theories-models-and-logics.md §1`).
+
+```scheme
+(#sig Nat                          ;; NAME — also the content-address anchor (§ O256)
+  (sort α)                         ;; type part: kind-ty carrier(s)…
+  ;; (family m (-> ty ty))         ;; …and kind-ty→ty families (HOL-ω)
+  (op zero α)                      ;; operations, typed over the sorts
+  (op succ (-> α α))
+  (op add  (-> α α α)))
+
+(#thy NatTheory
+  (sig Nat)                        ;; a signature ref, or an inline (#sig …)
+  (axiom add.zero (forall (a α) (= (add a zero) a)))
+  (axiom add.succ (forall (a α)(b α) (= (add a (succ b)) (succ (add a b)))))
+  (axiom induct  …))
+```
+
+**Files + typed import.** A **`.sig`** file *is* a `(#sig …)` body; a **`.thy`**
+file *is* a `(#thy …)` body — like `.cov` but restricted to defining a single
+signature/theory. You either inline the body — `(#thy (… contents …))` — or
+import it **typed**: `(#import nat.thy #thy)` / `(#import nat.sig #sig)` (the
+`#thy`/`#sig` tag says what kind of object you're importing, vs an untyped `.cov`
+proof bundle). The typed import is what lets the compiler check, before
+elaboration, that you imported a *theory* where a theory was expected.
+
+These elaborate to the Rust `Signature`/`Theory` types; build the *syntax* as the
+immediate follow-on once those types are pinned (don't fork the data shape).
 
 ```scheme
 ;; A THEORY: abstract signature + axioms (exists today, generalized).

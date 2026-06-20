@@ -1,5 +1,47 @@
 # Skeletons — covalence-alethe
 
+## Goal discharge (`discharge.rs` / `goal.rs` / `tactic.rs`)
+
+The **negate-the-goal → refute → conclude `⊢ G`** flow is wired:
+[`goal::goal_to_problem`] renders `¬G` to an `SmtProblem`,
+[`discharge::SmtDischarger`] obtains an Alethe refutation (cached proof, else
+an injected `SmtSolver`), replays it through [`hol::HolAletheBridge`]
+(surfacing the empty-clause refutation via `HolAletheBridge::refutation`), and
+`discharge::reductio` concludes `⊢ G` classically (`lem` + `false_elim`).
+[`tactic::smt_tactic`] exposes it as a `covalence_hol::script::Tactic` over the
+public `(#register-ffi-tactic smt)` / `(#by (smt))` seam. Deferred:
+
+- **Content-addressed proof cache.** [`discharge::ProofCache`] is the *first
+  cut*: an in-memory / on-disk lookup keyed by the goal's printed form
+  (`CachedProof::Text` or `::Path`). The real design is a `covalence-store`
+  content-addressed cache — key = hash of the canonical `SmtProblem`, value =
+  the Alethe blob — persisted and shared across a session, with the solver
+  result written back on a cache miss. Not yet built; `ProofCache` has no store
+  backing and no canonicalisation of the problem.
+- **`goal_to_problem` fragment.** Renders only the shapes
+  `HolAletheBridge` reads back (QF_UF + the linear-`int` term layer:
+  `bool`/`int` literals, free vars as uninterpreted `declare-fun`s, `tfree`
+  sorts, the connectives, `= + - * < <=`, unary `-`). A goal with binders
+  (`∀`/`∃`/`λ`), non-`int` numeric literals (`nat`, floats, `bytes`), or
+  derived-type operations is rejected `NotImplemented` — never mistranslated.
+  Quantified / `nat` / mixed-theory goals need a wider renderer (and matching
+  bridge rules).
+- **`.cov` int-literal goals.** The script `infer` has no `int`-literal syntax
+  and `int.*` lives outside `core`, so the script-seam test discharges a
+  propositional tautology (`¬(a ∧ ¬a)`); the arithmetic goal is exercised
+  through the direct discharge API. An `int`-literal surface + an `int` catalogue
+  import would let `(#by (smt))` close LIA goals stated in `.cov` too.
+
+## North star — Alethe in PA / SOA (not built)
+
+Today the discharge target logic is **HOL** (`reductio` lands `⊢ G` in HOL).
+Long-term an *arithmetic* Alethe certificate (LIA ⊂ PA) should be replayable as
+a `Derivable_PA` / SOA derivation and transported via the metatheory ladder —
+the eventual generalisation of the bridge's target (cf. another agent's
+`crates/covalence-hol/src/peano/`). The bridge would dispatch its `int`/LIA
+core into a PA model rather than the HOL `int` ring; `goal_to_problem` and the
+reductio wrapper stay the same shape, only the backend logic changes.
+
 ## Partial subsystems
 
 - **`covalence-alethe` rule coverage.** `HolAletheBridge` (in

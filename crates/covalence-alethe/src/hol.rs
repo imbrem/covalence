@@ -79,6 +79,10 @@ pub struct HolAletheBridge {
     assumed: Vec<Term>,
     /// Final verdict; flips to `Unsat` once the empty clause is derived.
     decision: Decision,
+    /// The empty-clause theorem (`{assumed…} ⊢ F`) once one is reached —
+    /// the witnessing refutation. Surfaced by [`HolAletheBridge::refutation`]
+    /// so a caller can conclude `⊢ G` by reductio from a goal-negation.
+    refutation: Option<Thm>,
 }
 
 impl HolAletheBridge {
@@ -90,7 +94,22 @@ impl HolAletheBridge {
             named: HashMap::new(),
             assumed: Vec::new(),
             decision: Decision::Unknown,
+            refutation: None,
         }
+    }
+
+    /// The witnessing refutation theorem `{assumed…} ⊢ F`, once the proof
+    /// has reached the empty clause (else `None`). Its hypotheses are a
+    /// subset of the `assume`d assertions — so discharging them yields a
+    /// genuine kernel theorem about the original problem.
+    pub fn refutation(&self) -> Option<&Thm> {
+        self.refutation.as_ref()
+    }
+
+    /// The terms introduced by `assume` (the asserted formulas) — the only
+    /// hypotheses a valid refutation may carry.
+    pub fn assumed(&self) -> &[Term] {
+        &self.assumed
     }
 
     // -----------------------------------------------------------------
@@ -272,6 +291,10 @@ impl HolAletheBridge {
             && thm.hyps().iter().all(|h| self.assumed.contains(h))
         {
             self.decision = Decision::Unsat;
+            // Capture the first witnessing refutation for `refutation()`.
+            if self.refutation.is_none() {
+                self.refutation = Some(thm.clone());
+            }
         }
     }
 }

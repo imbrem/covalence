@@ -101,24 +101,60 @@ index](../../../../SKELETONS.md).
   **`ratprim` `.cov` seam env (`init::rat::rat_env`).** The `rat.cov` ring-law
   port runs over this env. Unlike `cond` (whose `condprim` *prim* env was
   deleted by `#def`-ing `cond` inline in `cond.cov`), the rat **operators
-  cannot be moved to inline `#def`s**: `rat_add`/`rat_mul`/`rat_neg`/`rat_lt`/
-  `rat_zero`/`rat_one` (and the `rat.MK`/`rat.num`/`rat.den` component layer)
-  have *quotient-internal* bodies built from `Term::spec_abs`/`spec_rep` +
-  `mk_class` (the `abs (λq. rat_rel p q)` class construction), and the script
-  `.cov` surface (`script/infer.rs`) exposes **no** `spec-abs`/`spec-rep`
-  constructor (its `abs` is a plain λ; only the *core* `defs/cov.rs` parser has
-  `#abs`/`#rep`). So a `#def`'d operator body could not be made byte-identical
-  to the Rust op, and the seam givens (stated over the Rust ops) would not
-  unify with it — the `cond`-style inline migration does not apply here. The
-  operators therefore remain `ConstDef::Op` givens; the residual `ratprim` is
-  those operators + the int-op consts + the genuine seam **lemmas** (`recon`,
-  `add_mk`/`mul_mk`/`neg_mk`, `zero_mk`/`one_mk`, `class_eq`, the `*_compute`
-  bridges, the int round-trips). *Cleaned up:* the dead consts `rat.sub` /
-  `rat.le` / `int.one` (registered but never referenced by `rat.cov`) were
-  dropped from the env. **Unblocking inline rat ops would require** porting
-  `#abs`/`#rep` into `script/infer.rs` AND reconstructing each operator's exact
-  quotient body in `.cov` — out of scope for the lightweight `*prim`-removal
-  pass; left as the residual.
+  cannot be moved to inline `#def`s** — and, crucially, this is **no longer
+  blocked by the `.cov` surface lacking `spec-abs`/`spec-rep`**. That gap is
+  now CLOSED: `script/infer.rs` elaborates `(spec-abs SPEC-TYPE [arg])` /
+  `(spec-rep SPEC-TYPE [arg])` byte-identically to the kernel
+  `Term::spec_abs`/`spec_rep` (tests `spec_coercion_*`, incl.
+  `spec_coercion_inlines_rat_to_pos`). The operator *bodies* are now writable
+  inline. The blocker is **deeper and structural**, established empirically by
+  two failing experiments (see git history of this branch):
+
+  1. **`#def` wraps in a fresh `TermSpec`.** `(#def rat.X BODY)` builds
+     `Term::term_spec(TermSpec("rat.X", ty, BODY), [])` — a NEW opaque defined
+     constant, *not* the raw `BODY`. The seam givens (`recon`, `add_mk`,
+     `mul_mk`, the `*_compute` bridges, …) are Rust theorems that **embed the
+     raw operator terms** (`rat_add()` as a literal λ, `to_pos` as the raw
+     `spec_abs(int.pos)` coercion). The kernel's `trans`/`mk_comb` require
+     **strict structural equality** of the middle term (no δ-normalization), so
+     a `#def` `term_spec` occurrence never matches the raw occurrence the given
+     carries → `TransMiddleMismatch`. (Verified: `#def rat.topos` alone fails
+     exactly this way.)
+
+  2. **The `to_pos` coercion is shared and indistinguishable.** The natural
+     inline target is `rat.topos = spec-abs int.pos`. But `abs[int.pos]`
+     appears BOTH as op-result denominator wrappers (which the proof names
+     `rat.topos`) AND **inside the `rat_add`/`rat_mul`/`rat_sub` operator
+     bodies** (their denominators are built with `to_pos`). A given like
+     `add_mk` has the raw `rat.add (rat.MK..)(rat.MK..)` on its LHS, whose
+     printed body contains `abs[int.pos]`. A blind `rewrite` folding
+     `abs[int.pos]`→`rat.topos` over the given corrupts the operator body too,
+     so the given's `rat.add` ≠ the env/`.cov` raw `rat.add`. There is no
+     structural way to fold only the result-position coercion: the
+     result denominator IS the operator body's `to_pos`, β-reduced out of the
+     op. (Verified: a `fold_topos` over the givens fails this way.)
+
+  3. **Concl-parity pins the ring/order operators to raw form.** The
+     `cov::X().concl() == super::X().concl()` tests (`cov_tests::cov_matches_rust`)
+     require the ported theorems' conclusions to use the *same* `rat.add`/`mul`/
+     `neg`/`lt`/`zero`/`one` as the Rust `super::X()`, i.e. the raw ops. A
+     `#def` would change those conclusions.
+
+  **Net:** inlining ANY rat operator requires **rebuilding the entire seam-
+  given layer over the `term_spec` forms** (and threading the term_spec through
+  the operator bodies, which would in turn force `rat_add`/`rat_mul`/`rat_sub`
+  themselves to change and break (3)). That is a pervasive rewrite of the whole
+  `recon`/component-computation/`class_intro` machinery — well beyond the
+  lightweight `*prim`-removal pass, and with real re-entrancy risk. The
+  `cond`-style migration worked only because `cond` had **zero** givens (a
+  pure-core proof); rat fundamentally differs. The operators therefore remain
+  `ConstDef::Op` givens; the residual `ratprim` is those operators + the int-op
+  consts + the genuine seam **lemmas** (`recon`, `add_mk`/`mul_mk`/`neg_mk`,
+  `zero_mk`/`one_mk`, `class_eq`, the `*_compute` bridges, the int round-trips).
+  *Cleaned up earlier:* the dead consts `rat.sub` / `rat.le` / `int.one`
+  (registered but never referenced by `rat.cov`) were dropped from the env.
+  **Unblocking** is now purely the given-rebuild above (the surface support is
+  done), tracked here as the residual.
 
 - **The `real` Dedekind-cut theory** in
   `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`

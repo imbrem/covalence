@@ -256,7 +256,13 @@ constraints, not near-term work**:
    `Model` object must be **producible by a tactic**, not only by `(#model …)`;
    `#model` is the manual producer, model-synthesis the automatic one, and both
    yield the same thing a `(#models …)` certificate certifies and `(#in …)`
-   dispatches over.
+   dispatches over. Concretely, in `.thy` files `#inductive` becomes two
+   theory-level declaration forms — **`#data`** (inductive: the *initial* model /
+   least fixpoint — constructors, induction, recursion) and **`#codata`**
+   (coinductive: the *final* model / greatest fixpoint — destructors, coinduction,
+   corecursion; e.g. streams). Each is sugar for "synthesize the initial / final
+   model" of the relevant functor's theory — the two ends of the same
+   model-synthesis machinery.
 
 ```scheme
 ;; A THEORY: abstract signature + axioms (exists today, generalized).

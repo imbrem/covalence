@@ -4,7 +4,7 @@
 ;; subtype; the seam lemmas (the per-constructor element computations, the
 ;; `foldr`/`length`/`cat` recursion clauses, constructor freeness) all cross
 ;; the `abs`/`rep` boundary AND the `list_foldr` recursion theorem, so they are
-;; imported as Rust-proved GIVENS from `listprim` (the `nat.cov` `rec_holds` /
+;; imported as Rust-proved GIVENS from `listprim` (the `nat.cov` `rec.holds` /
 ;; `set.cov` `setprim` pattern). Here we (1) re-export the seam clauses as
 ;; first-class theorems and (2) prove NEW list facts over them — the append
 ;; monoid laws and the length homomorphism — by structural induction via the
@@ -18,7 +18,7 @@
 (#import core)
 (#open core)
 (#import natrec)
-(#open natrec)   ;; for the `+` recursion equations `zero_add` / `succ_add`
+(#open natrec)   ;; for the `+` recursion equations `zero.add` / `succ.add`
 (#import listprim)
 (#open listprim)
 
@@ -191,12 +191,12 @@
         (rw (all-elim ys (cat_nil)))
         (sym)
         (rw (length_nil))
-        (rw (all-elim (list.length ys) (zero_add)))
+        (rw (all-elim (list.length ys) (zero.add)))
         (refl))
       ;; cons x xs: length (cat (cons x xs) ys)
       ;;   = length (cons x (cat xs ys)) = succ (length (cat xs ys))
       ;;   = succ (length xs + length ys)            (IH)
-      ;;   = succ (length xs) + length ys            (succ_add, reversed)
+      ;;   = succ (length xs) + length ys            (succ.add, reversed)
       ;;   = length (cons x xs) + length ys.
       (#by
         (intro ys)
@@ -208,7 +208,7 @@
                    (nat.add (list.length xs) (list.length ys)))))))
         (sym)
         (rw (all-elim xs (all-elim x (length_cons))))
-        (rw (all-elim (list.length ys) (all-elim (list.length xs) (succ_add))))
+        (rw (all-elim (list.length ys) (all-elim (list.length xs) (succ.add))))
         (refl)))))
 
 ;; ⊢ ∀x xs. cons x xs = cat (cons x nil) xs.  The "singleton append" identity:

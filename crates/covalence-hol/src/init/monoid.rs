@@ -237,7 +237,7 @@ pub fn nat_mul_monoid() -> Monoid {
         let mo = nat::mul_one().all_elim(a.clone())?;
         comm.trans(mo)?.all_intro("a", covalence_core::Type::nat())
     })()
-    .expect("nat_mul_monoid: derive 1×a=a from mul_comm + mul_one");
+    .expect("nat_mul_monoid: derive 1×a=a from mul.comm + mul.one");
     Monoid::new(
         covalence_core::defs::nat_mul(),
         one,
@@ -301,8 +301,8 @@ pub fn monoid_env(model: &Monoid) -> crate::script::Env {
     e.define_const("m.unit", ConstDef::Op(model.unit.clone()));
     let (assoc, left_id, right_id) = model.rw_lemmas();
     e.define_lemma("assoc", assoc);
-    e.define_lemma("left_id", left_id);
-    e.define_lemma("right_id", right_id);
+    e.define_lemma("left.id", left_id);
+    e.define_lemma("right.id", right_id);
     e
 }
 
@@ -466,7 +466,7 @@ mod tests {
         .expect("monoid.cov should parse")
         .resolve_blocking()
         .expect("monoid.cov should check");
-        ["normal_form", "strip_units"]
+        ["normal.form", "strip.units"]
             .iter()
             .map(|n| {
                 let t = theory.lemma(n);

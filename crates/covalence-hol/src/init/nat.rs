@@ -109,7 +109,7 @@ cached_thm! {
         Thm::succ_inj(var("m"), var("n"))
             .and_then(|t| t.all_intro("n", nat()))
             .and_then(|t| t.all_intro("m", nat()))
-            .expect("succ_inj: kernel freeness rule")
+            .expect("succ.inj: kernel freeness rule")
     }
 }
 
@@ -118,7 +118,7 @@ cached_thm! {
     pub fn zero_ne_succ() -> Thm {
         Thm::zero_ne_succ(var("n"))
             .and_then(|t| t.all_intro("n", nat()))
-            .expect("zero_ne_succ: kernel freeness rule")
+            .expect("zero.ne_succ: kernel freeness rule")
     }
 }
 
@@ -135,7 +135,7 @@ cached_thm! {
     /// over its graph, and `spec_ax(natRec, ·)` transfers the equations to
     /// `natRec`. Cached — the proof is a sizeable construction, run once.
     pub fn rec_holds() -> Thm {
-        crate::init::recursion::rec_holds_proof().expect("recursion theorem proves rec_holds")
+        crate::init::recursion::rec_holds_proof().expect("recursion theorem proves rec.holds")
     }
 }
 
@@ -164,30 +164,30 @@ fn rec_succ(z: Term, f: Term, n: Term) -> Result<Thm> {
 /// machinery (they can be ported themselves later).
 pub fn natrec_env() -> crate::script::Env {
     let mut e = crate::script::Env::empty();
-    e.define_lemma("succ_inj", succ_inj());
-    e.define_lemma("zero_ne_succ", zero_ne_succ());
-    e.define_lemma("rec_holds", rec_holds());
+    e.define_lemma("succ.inj", succ_inj());
+    e.define_lemma("zero.ne_succ", zero_ne_succ());
+    e.define_lemma("rec.holds", rec_holds());
     // the `+` / `*` recursion equations (also proved in Rust for now)
-    e.define_lemma("zero_add", add_base());
-    e.define_lemma("succ_add", add_step());
-    e.define_lemma("zero_mul", mul_base());
-    e.define_lemma("succ_mul", mul_step());
+    e.define_lemma("zero.add", add_base());
+    e.define_lemma("succ.add", add_step());
+    e.define_lemma("zero.mul", mul_base());
+    e.define_lemma("succ.mul", mul_step());
     // pred / saturating-subtraction recursion equations
-    e.define_lemma("pred_zero", pred_zero());
-    e.define_lemma("pred_succ", pred_succ());
-    e.define_lemma("sub_zero", sub_zero());
-    e.define_lemma("sub_succ", sub_succ());
+    e.define_lemma("pred.zero", pred_zero());
+    e.define_lemma("pred.succ", pred_succ());
+    e.define_lemma("sub.zero", sub_zero());
+    e.define_lemma("sub.succ", sub_succ());
     // pow / shl / shr recursion equations (proved in Rust above, like + / *).
-    e.define_lemma("pow_zero", pow_zero());
-    e.define_lemma("pow_succ", pow_succ());
-    e.define_lemma("shl_zero", shl_zero());
-    e.define_lemma("shl_succ", shl_succ());
-    e.define_lemma("shr_zero", shr_zero());
-    e.define_lemma("shr_succ", shr_succ());
+    e.define_lemma("pow.zero", pow_zero());
+    e.define_lemma("pow.succ", pow_succ());
+    e.define_lemma("shl.zero", shl_zero());
+    e.define_lemma("shl.succ", shl_succ());
+    e.define_lemma("shr.zero", shr_zero());
+    e.define_lemma("shr.succ", shr_succ());
     // the `≤` / `<` defining clauses (`= T`/`= F` boolean forms), as the
     // 4-way conjunctions; nat.cov projects them with `and-elim`.
-    e.define_lemma("le_body", le_body());
-    e.define_lemma("lt_body", lt_body());
+    e.define_lemma("le.body", le_body());
+    e.define_lemma("lt.body", lt_body());
     e
 }
 
@@ -197,39 +197,39 @@ crate::cov_theory! {
         import "core" = crate::script::Env::core();
         import "natrec" = crate::init::nat::natrec_env();
         import "logic" = crate::init::logic::cov::env();
-        "succ_ne_zero" => pub fn succ_ne_zero;
-        "succ_cong_ne" => pub fn succ_cong_ne;
-        "rec_zero"     => pub fn natrec_zero_eq;
-        "rec_succ"     => pub fn natrec_succ_eq;
-        "eq_refl"      => pub fn nat_eq_refl;
-        "add_zero"     => pub fn add_zero_cov;
-        "add_succ"     => pub fn add_succ_r_cov;
-        "add_comm"     => pub fn add_comm_cov;
-        "add_assoc"    => pub fn add_assoc_cov;
-        "add_cancel"   => pub fn add_cancel_cov;
-        "mul_comm"     => pub fn mul_comm_cov;
-        "mul_one"      => pub fn mul_one_cov;
+        "succ.ne_zero" => pub fn succ_ne_zero;
+        "succ.cong_ne" => pub fn succ_cong_ne;
+        "rec.zero"     => pub fn natrec_zero_eq;
+        "rec.succ"     => pub fn natrec_succ_eq;
+        "eq.refl"      => pub fn nat_eq_refl;
+        "add.zero"     => pub fn add_zero_cov;
+        "add.succ"     => pub fn add_succ_r_cov;
+        "add.comm"     => pub fn add_comm_cov;
+        "add.assoc"    => pub fn add_assoc_cov;
+        "add.cancel"   => pub fn add_cancel_cov;
+        "mul.comm"     => pub fn mul_comm_cov;
+        "mul.one"      => pub fn mul_one_cov;
         "distrib"      => pub fn distrib_cov;
-        "mul_assoc"    => pub fn mul_assoc_cov;
-        "le_succ_self" => pub fn le_succ_self_cov;
-        "le_total"     => pub fn le_total_cov;
-        "lt_iff_succ_le" => pub fn lt_iff_succ_le_cov;
-        "le_add_r"     => pub fn le_add_r_cov;
-        "le_zero_iff"  => pub fn le_zero_iff_cov;
-        "le_antisym"   => pub fn le_antisym_cov;
-        "le_add_sub"   => pub fn le_add_sub_cov;
-        "le_trans"     => pub fn le_trans_cov;
-        "lt_imp_le"    => pub fn lt_imp_le_cov;
-        "lt_trans"     => pub fn lt_trans_cov;
-        "le_add_cancel_r" => pub fn le_add_cancel_r_cov;
-        "lt_add_mono_r"   => pub fn lt_add_mono_r_cov;
-        "le_iff_lt_or_eq" => pub fn le_iff_lt_or_eq_cov;
-        "lt_trichotomy"   => pub fn lt_trichotomy_cov;
-        "add_lt_add"   => pub fn add_lt_add_cov;
-        "lt_cross"     => pub fn lt_cross_cov;
-        "le_cross"     => pub fn le_cross_cov;
-        "pow_add"      => pub fn pow_add_cov;
-        "shl_eq_mul_pow" => pub fn shl_eq_mul_pow_cov;
+        "mul.assoc"    => pub fn mul_assoc_cov;
+        "le.succ_self" => pub fn le_succ_self_cov;
+        "le.total"     => pub fn le_total_cov;
+        "lt.iff_succ_le" => pub fn lt_iff_succ_le_cov;
+        "le.add_r"     => pub fn le_add_r_cov;
+        "le.zero_iff"  => pub fn le_zero_iff_cov;
+        "le.antisym"   => pub fn le_antisym_cov;
+        "le.add_sub"   => pub fn le_add_sub_cov;
+        "le.trans"     => pub fn le_trans_cov;
+        "lt.imp_le"    => pub fn lt_imp_le_cov;
+        "lt.trans"     => pub fn lt_trans_cov;
+        "le.add_cancel_r" => pub fn le_add_cancel_r_cov;
+        "lt.add_mono_r"   => pub fn lt_add_mono_r_cov;
+        "le.iff_lt_or_eq" => pub fn le_iff_lt_or_eq_cov;
+        "lt.trichotomy"   => pub fn lt_trichotomy_cov;
+        "add.lt_add"   => pub fn add_lt_add_cov;
+        "lt.cross"     => pub fn lt_cross_cov;
+        "le.cross"     => pub fn le_cross_cov;
+        "pow.add"      => pub fn pow_add_cov;
+        "shl.eq_mul_pow" => pub fn shl_eq_mul_pow_cov;
     }
 }
 
@@ -3141,8 +3141,8 @@ mod tests {
 
     #[test]
     fn freeness_theorems_are_genuine() {
-        assert!(succ_inj().hyps().is_empty(), "succ_inj is proved");
-        assert!(zero_ne_succ().hyps().is_empty(), "zero_ne_succ is proved");
+        assert!(succ_inj().hyps().is_empty(), "succ.inj is proved");
+        assert!(zero_ne_succ().hyps().is_empty(), "zero.ne_succ is proved");
     }
 
     #[test]
@@ -3401,7 +3401,7 @@ mod tests {
     /// too.
     #[test]
     fn arithmetic_facts_are_fully_proved() {
-        assert!(rec_holds().hyps().is_empty(), "rec_holds is proved");
+        assert!(rec_holds().hyps().is_empty(), "rec.holds is proved");
         for fact in [add_base(), add_step(), mul_base(), mul_step()] {
             assert!(fact.concl().type_of().unwrap().is_bool());
             assert!(
@@ -3534,7 +3534,7 @@ mod cov_tests {
             (#thm comm.echo
               (#fix (a nat) (b nat))
               (#concl (= (nat.add a b) (nat.add b a)))
-              (#proof (all-elim b (all-elim a (nat.add_comm)))))
+              (#proof (all-elim b (all-elim a (nat.add.comm)))))
             "#,
             |name| match name {
                 "core" => Some(Env::core()),
@@ -3543,7 +3543,7 @@ mod cov_tests {
             },
             |_| None,
         )
-        .expect("`(#use nat)` should expose `nat.add_comm`");
+        .expect("`(#use nat)` should expose `nat.add.comm`");
         assert!(theory.thms[0].thm.hyps().is_empty());
     }
 }

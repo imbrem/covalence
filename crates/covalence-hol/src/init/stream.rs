@@ -198,8 +198,8 @@ pub fn stream_env() -> Env {
     let seam = at_mk(&a, &f, &n)
         .and_then(|t| t.all_intro("n", Type::nat()))
         .and_then(|t| t.all_intro("f", Type::fun(Type::nat(), a)))
-        .expect("stream_env: at_mk seam");
-    e.define_lemma("at_mk", seam);
+        .expect("stream_env: at.mk seam");
+    e.define_lemma("at.mk", seam);
     e
 }
 
@@ -248,9 +248,9 @@ crate::cov_theory! {
     pub mod cov from "stream.cov" {
         import "core" = crate::script::Env::core();
         import "streamprim" = crate::init::stream::stream_env();
-        "const_at"   => pub fn const_at_cov;
-        "head_const" => pub fn head_const_cov;
-        "tail_at"    => pub fn tail_at_cov;
+        "const.at"   => pub fn const_at_cov;
+        "head.const" => pub fn head_const_cov;
+        "tail.at"    => pub fn tail_at_cov;
     }
 }
 

@@ -328,13 +328,13 @@ pub fn set_eq(alpha: &Type, s: &Term, t: &Term) -> Result<Thm> {
 /// `⊢ set.union s t = set.union t s` — union is commutative.
 pub fn union_comm() -> Thm {
     let (a, s, t, _u) = vars();
-    set_eq(&a, &union(&a, &s, &t), &union(&a, &t, &s)).expect("union_comm")
+    set_eq(&a, &union(&a, &s, &t), &union(&a, &t, &s)).expect("union.comm")
 }
 
 /// `⊢ set.intersect s t = set.intersect t s` — intersection is commutative.
 pub fn inter_comm() -> Thm {
     let (a, s, t, _u) = vars();
-    set_eq(&a, &inter(&a, &s, &t), &inter(&a, &t, &s)).expect("inter_comm")
+    set_eq(&a, &inter(&a, &s, &t), &inter(&a, &t, &s)).expect("inter.comm")
 }
 
 /// `⊢ set.union (set.union s t) u = set.union s (set.union t u)` —
@@ -343,7 +343,7 @@ pub fn union_assoc() -> Thm {
     let (a, s, t, u) = vars();
     let lhs = union(&a, &union(&a, &s, &t), &u);
     let rhs = union(&a, &s, &union(&a, &t, &u));
-    set_eq(&a, &lhs, &rhs).expect("union_assoc")
+    set_eq(&a, &lhs, &rhs).expect("union.assoc")
 }
 
 /// `⊢ set.intersect (set.intersect s t) u = set.intersect s
@@ -352,32 +352,32 @@ pub fn inter_assoc() -> Thm {
     let (a, s, t, u) = vars();
     let lhs = inter(&a, &inter(&a, &s, &t), &u);
     let rhs = inter(&a, &s, &inter(&a, &t, &u));
-    set_eq(&a, &lhs, &rhs).expect("inter_assoc")
+    set_eq(&a, &lhs, &rhs).expect("inter.assoc")
 }
 
 /// `⊢ set.union s s = s` — union is idempotent.
 pub fn union_idem() -> Thm {
     let (a, s, _t, _u) = vars();
-    set_eq(&a, &union(&a, &s, &s), &s).expect("union_idem")
+    set_eq(&a, &union(&a, &s, &s), &s).expect("union.idem")
 }
 
 /// `⊢ set.intersect s s = s` — intersection is idempotent.
 pub fn inter_idem() -> Thm {
     let (a, s, _t, _u) = vars();
-    set_eq(&a, &inter(&a, &s, &s), &s).expect("inter_idem")
+    set_eq(&a, &inter(&a, &s, &s), &s).expect("inter.idem")
 }
 
 /// `⊢ set.union s set.empty = s` — `∅` is a (right) identity for union.
 pub fn union_empty() -> Thm {
     let (a, s, _t, _u) = vars();
-    set_eq(&a, &union(&a, &s, &set_empty(a.clone())), &s).expect("union_empty")
+    set_eq(&a, &union(&a, &s, &set_empty(a.clone())), &s).expect("union.empty")
 }
 
 /// `⊢ set.intersect s set.empty = set.empty` — `∅` absorbs intersection.
 pub fn inter_empty() -> Thm {
     let (a, s, _t, _u) = vars();
     let empty = set_empty(a.clone());
-    set_eq(&a, &inter(&a, &s, &empty), &empty).expect("inter_empty")
+    set_eq(&a, &inter(&a, &s, &empty), &empty).expect("inter.empty")
 }
 
 /// `⊢ set.intersect s (set.union t u) = set.union (set.intersect s t)
@@ -386,7 +386,7 @@ pub fn inter_union_distrib() -> Thm {
     let (a, s, t, u) = vars();
     let lhs = inter(&a, &s, &union(&a, &t, &u));
     let rhs = union(&a, &inter(&a, &s, &t), &inter(&a, &s, &u));
-    set_eq(&a, &lhs, &rhs).expect("inter_union_distrib")
+    set_eq(&a, &lhs, &rhs).expect("inter.union_distrib")
 }
 
 // ============================================================================
@@ -423,7 +423,7 @@ pub fn subset_refl() -> Thm {
         let ms = mem(&a, v, &s);
         Thm::assume(ms.clone())?.imp_intro(&ms) // ⊢ mem v s ⟹ mem v s
     })
-    .expect("subset_refl")
+    .expect("subset.refl")
 }
 
 /// `⊢ set.subset s t ⟹ set.subset t u ⟹ set.subset s u` — transitivity
@@ -446,7 +446,7 @@ pub fn subset_trans() -> Thm {
         let sub_su = subset_intro(&a, &s, &u, all)?; // {s⊆t, t⊆u} ⊢ s ⊆ u
         sub_su.imp_intro(&sub_tu)?.imp_intro(&sub_st)
     };
-    build().expect("subset_trans")
+    build().expect("subset.trans")
 }
 
 /// `⊢ set.subset s t ⟹ set.subset t s ⟹ s = t` — antisymmetry of `⊆`,
@@ -468,7 +468,7 @@ pub fn subset_antisym() -> Thm {
         let s_eq_t = ext(&a, &s, &t, all_eq)?; // {s⊆t, t⊆s} ⊢ s = t
         s_eq_t.imp_intro(&sub_ts)?.imp_intro(&sub_st)
     };
-    build().expect("subset_antisym")
+    build().expect("subset.antisym")
 }
 
 /// `⊢ set.subset set.empty s` — `∅` is the least set.
@@ -481,7 +481,7 @@ pub fn empty_subset() -> Thm {
         let f = mem_empty(&a, v)?.eq_mp(Thm::assume(mem_empty_v.clone())?)?; // {mem v ∅} ⊢ F
         f.false_elim(mem(&a, v, &s))?.imp_intro(&mem_empty_v)
     })
-    .expect("empty_subset")
+    .expect("empty.subset")
 }
 
 /// `⊢ set.subset s (set.union s t)` — a set is contained in its unions.
@@ -496,7 +496,7 @@ pub fn subset_union_l() -> Thm {
             .eq_mp(disj)? // {mem v s} ⊢ mem v (s∪t)
             .imp_intro(&mem(&a, v, &s))
     })
-    .expect("subset_union_l")
+    .expect("subset.union_l")
 }
 
 /// `⊢ set.subset (set.intersect s t) s` — an intersection is contained in
@@ -509,7 +509,7 @@ pub fn inter_subset_l() -> Thm {
         let conj = mem_intersect(&a, v, &s, &t)?.eq_mp(Thm::assume(mem(&a, v, &st))?)?;
         conj.and_elim_l()?.imp_intro(&mem(&a, v, &st))
     })
-    .expect("inter_subset_l")
+    .expect("inter.subset_l")
 }
 
 /// `⊢ set.subset s t` from a per-point `branch` proving
@@ -591,7 +591,7 @@ pub fn set_env() -> crate::script::Env {
 
     // mem_empty : ⊢ ∀x. mem x ∅ = F
     e.define_lemma(
-        "mem_empty",
+        "mem.empty",
         mem_empty(&a, &x)
             .unwrap()
             .all_intro("x", a.clone())
@@ -599,7 +599,7 @@ pub fn set_env() -> crate::script::Env {
     );
     // mem_union : ⊢ ∀x s t. mem x (s ∪ t) = (mem x s ∨ mem x t)
     e.define_lemma(
-        "mem_union",
+        "mem.union",
         mem_union(&a, &x, &s, &t)
             .unwrap()
             .all_intro("t", sa.clone())
@@ -611,7 +611,7 @@ pub fn set_env() -> crate::script::Env {
     );
     // mem_intersect : ⊢ ∀x s t. mem x (s ∩ t) = (mem x s ∧ mem x t)
     e.define_lemma(
-        "mem_intersect",
+        "mem.intersect",
         mem_intersect(&a, &x, &s, &t)
             .unwrap()
             .all_intro("t", sa.clone())
@@ -640,7 +640,7 @@ pub fn set_env() -> crate::script::Env {
     );
     // subset_unfold : ⊢ ∀s t. subset s t = (∀x. mem x s ⟹ mem x t)
     e.define_lemma(
-        "subset_unfold",
+        "subset.unfold",
         subset_unfold(&a, &s, &t)
             .unwrap()
             .all_intro("t", sa.clone())
@@ -658,21 +658,21 @@ crate::cov_theory! {
         import "core" = crate::script::Env::core();
         import "logic" = crate::init::logic::cov::env();
         import "setprim" = crate::init::set::set_env();
-        "union_comm"          => pub fn union_comm_cov;
-        "inter_comm"          => pub fn inter_comm_cov;
-        "union_assoc"         => pub fn union_assoc_cov;
-        "inter_assoc"         => pub fn inter_assoc_cov;
-        "union_idem"          => pub fn union_idem_cov;
-        "inter_idem"          => pub fn inter_idem_cov;
-        "union_empty"         => pub fn union_empty_cov;
-        "inter_empty"         => pub fn inter_empty_cov;
-        "inter_union_distrib" => pub fn inter_union_distrib_cov;
-        "subset_refl"         => pub fn subset_refl_cov;
-        "subset_trans"        => pub fn subset_trans_cov;
-        "subset_antisym"      => pub fn subset_antisym_cov;
-        "empty_subset"        => pub fn empty_subset_cov;
-        "subset_union_l"      => pub fn subset_union_l_cov;
-        "inter_subset_l"      => pub fn inter_subset_l_cov;
+        "union.comm"          => pub fn union_comm_cov;
+        "inter.comm"          => pub fn inter_comm_cov;
+        "union.assoc"         => pub fn union_assoc_cov;
+        "inter.assoc"         => pub fn inter_assoc_cov;
+        "union.idem"          => pub fn union_idem_cov;
+        "inter.idem"          => pub fn inter_idem_cov;
+        "union.empty"         => pub fn union_empty_cov;
+        "inter.empty"         => pub fn inter_empty_cov;
+        "inter.union_distrib" => pub fn inter_union_distrib_cov;
+        "subset.refl"         => pub fn subset_refl_cov;
+        "subset.trans"        => pub fn subset_trans_cov;
+        "subset.antisym"      => pub fn subset_antisym_cov;
+        "empty.subset"        => pub fn empty_subset_cov;
+        "subset.union_l"      => pub fn subset_union_l_cov;
+        "inter.subset_l"      => pub fn inter_subset_l_cov;
     }
 }
 
@@ -769,9 +769,9 @@ mod tests {
         let thm = union_comm();
         assert!(
             thm.hyps().is_empty(),
-            "union_comm is proved, not postulated"
+            "union.comm is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "union_comm is oracle-free");
+        assert!(thm.has_no_obs(), "union.comm is oracle-free");
         let alpha = alpha();
         let s = setvar("s");
         let t = setvar("t");
@@ -789,7 +789,7 @@ mod tests {
     #[test]
     fn union_empty_right_identity() {
         let thm = union_empty();
-        assert!(thm.hyps().is_empty(), "union_empty is proved");
+        assert!(thm.hyps().is_empty(), "union.empty is proved");
         assert!(thm.has_no_obs());
         let alpha = alpha();
         let s = setvar("s");
@@ -896,7 +896,7 @@ mod tests {
     fn subset_antisym_shape() {
         // ⊢ s ⊆ t ⟹ t ⊆ s ⟹ s = t.
         let thm = subset_antisym();
-        assert!(thm.hyps().is_empty(), "subset_antisym is proved");
+        assert!(thm.hyps().is_empty(), "subset.antisym is proved");
         assert!(thm.has_no_obs());
         let (a, s, t, _u) = vars();
         let expected = subset_tm(&a, &s, &t)

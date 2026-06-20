@@ -293,7 +293,7 @@ fn delta_head(t: &Term, op: &dyn Symbol) -> Result<Thm> {
 /// (free `r : rel 'a 'b`). Pointwise both sides hold exactly when `r`
 /// relates the corresponding pair, so the relations agree by [`ext`].
 pub fn converse_converse() -> Thm {
-    converse_involution().expect("converse_converse")
+    converse_involution().expect("converse.converse")
 }
 
 fn converse_involution() -> Result<Thm> {
@@ -322,7 +322,7 @@ fn converse_involution() -> Result<Thm> {
 /// holds id x y` via [`holds_converse`], [`holds_id`], and symmetry of
 /// equality as an equation.
 pub fn converse_id() -> Thm {
-    converse_id_inner().expect("converse_id")
+    converse_id_inner().expect("converse.id")
 }
 
 fn converse_id_inner() -> Result<Thm> {
@@ -432,8 +432,8 @@ pub fn rel_env() -> crate::script::Env {
             .all_intro("x", alpha.clone())?
             .all_intro("p", p_ty)
     })()
-    .expect("rel_env: holds_mk_ax");
-    e.define_lemma("holds_mk_ax", holds_mk_ax);
+    .expect("rel_env: holds.mk_ax");
+    e.define_lemma("holds.mk_ax", holds_mk_ax);
 
     // `ext_ax`: ∀r s. (∀x y. holds r x y = holds s x y) ⟹ r = s
     // (r, s : rel 'a 'b — two distinct type parameters)
@@ -448,8 +448,8 @@ pub fn rel_env() -> crate::script::Env {
             .all_intro("s", rel(alpha.clone(), beta.clone()))?
             .all_intro("r", rel(alpha.clone(), beta.clone()))
     })()
-    .expect("rel_env: ext_ax");
-    e.define_lemma("ext_ax", ext_ax);
+    .expect("rel_env: ext.ax");
+    e.define_lemma("ext.ax", ext_ax);
 
     // `holds_id_ax`: ∀x y. rel.holds rel.id x y = (x = y)
     let holds_id_ax = (|| -> Result<Thm> {
@@ -459,8 +459,8 @@ pub fn rel_env() -> crate::script::Env {
             .all_intro("y", alpha.clone())?
             .all_intro("x", alpha.clone())
     })()
-    .expect("rel_env: holds_id_ax");
-    e.define_lemma("holds_id_ax", holds_id_ax);
+    .expect("rel_env: holds.id_ax");
+    e.define_lemma("holds.id_ax", holds_id_ax);
 
     // `holds_converse_ax`: ∀r y x. rel.holds (rel.converse r) y x = rel.holds r x y
     // (r : rel 'a 'b, y : 'b, x : 'a)
@@ -473,8 +473,8 @@ pub fn rel_env() -> crate::script::Env {
             .all_intro("y", beta.clone())?
             .all_intro("r", rel(alpha.clone(), beta.clone()))
     })()
-    .expect("rel_env: holds_converse_ax");
-    e.define_lemma("holds_converse_ax", holds_converse_ax);
+    .expect("rel_env: holds.converse_ax");
+    e.define_lemma("holds.converse_ax", holds_converse_ax);
 
     e
 }
@@ -485,8 +485,8 @@ crate::cov_theory! {
         import "core" = crate::script::Env::core();
         import "logic" = crate::init::logic::cov::env();
         import "relprim" = crate::init::rel::rel_env();
-        "converse_converse" => pub fn converse_converse_cov;
-        "converse_id"       => pub fn converse_id_cov;
+        "converse.converse" => pub fn converse_converse_cov;
+        "converse.id"       => pub fn converse_id_cov;
     }
 }
 
@@ -605,9 +605,9 @@ mod tests {
         let thm = converse_converse();
         assert!(
             thm.hyps().is_empty(),
-            "converse_converse is proved, not postulated"
+            "converse.converse is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "converse_converse is oracle-free");
+        assert!(thm.has_no_obs(), "converse.converse is oracle-free");
         let r = relvar("r");
         let cr = converse(&alpha(), &beta(), &r);
         let cc = converse(&beta(), &alpha(), &cr);
@@ -617,7 +617,7 @@ mod tests {
     #[test]
     fn converse_id_is_genuine() {
         let thm = converse_id();
-        assert!(thm.hyps().is_empty(), "converse_id is proved");
+        assert!(thm.hyps().is_empty(), "converse.id is proved");
         assert!(thm.has_no_obs());
         let id = rel_id(alpha());
         let conv_id = converse(&alpha(), &alpha(), &id);

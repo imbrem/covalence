@@ -270,7 +270,14 @@ instances `Derivable_SOA` admits) layered on after.
 
 ## 7. Open forks (decisions pending)
 
-1. **Fix the waist — and at HOL Light (rank-1) or HOL-ω?** (Under discussion.)
+1. **Fix the waist — and at HOL Light (rank-1) or HOL-ω?** **RESOLVED:** the
+   *final* waist is **HOL-ω** (to program the middle language like Haskell — the
+   endgame is a self-bootstrapping HOL-ω→WASM compiler with translation-validated
+   soundness); the path is **HOL Light → HOL Light over `covalence-pure` → HOL-ω
+   over `covalence-pure`** (HOL-ω is easier to state over the simple Pure base,
+   and its API is a superset of HOL Light's so the migration is additive *if*
+   `covalence-hol` keeps direct rank-1-polymorphism use concentrated). See
+   [`kernel-design.md §11.6`](./kernel-design.md).
 2. **Model granularity** — is "acceleration" an *attribute of* a model, or a
    *separate iso-related model*? (Lean: separate model + iso, keeping each model
    clean — consistent with §2.2.)

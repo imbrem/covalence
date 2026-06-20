@@ -776,3 +776,62 @@ portable spec**, and everything efficient — in any language — is an optional
 untrusted-checkable optimization layered over it. That is what keeps "a
 different `covalence-pure` per implementation" a *cheap, safe* move rather
 than a fork of the trust story.
+
+### 11.6 The waist roadmap and endgame (HOL Light → Pure → HOL-ω)
+
+**Decision: the *final* shared waist is HOL-ω; HOL Light is the start; the path
+runs through `covalence-pure`.** Three stages:
+
+```
+   1. HOL Light, direct           (today — covalence-core as the floor)
+   2. HOL Light over covalence-pure   (the §11.1–11.2 restructure: HOL as a
+                                       lifted observer over the first-order base)
+   3. HOL-ω over covalence-pure       (the final waist — go higher-kinded)
+```
+
+Why this order:
+
+- **`covalence-pure` first.** Building HOL Light *over* Pure (stage 2) before
+  going higher-kinded is worth it because **HOL-ω is easier to state over Pure.**
+  Pure is a simple, positive, first-order base where theorems and axioms —
+  substitution, well-typedness, the binder machinery — are *clearly stated and
+  easy to audit* (§11.1). Re-grounding the kernel's bespoke substitution-and-typing
+  Rust as Pure observers (`covalence-pure.md §6`) makes the eventual higher-kinded
+  step a definitional extension over an auditable base rather than a rewrite of a
+  monolithic kernel. *Substitution and friends get much simpler and more
+  trustworthy.*
+- **HOL-ω's API is a *superset* of HOL Light's.** So the stage-2→3 migration is
+  **additive** — every HOL Light theorem/rule remains valid; HOL-ω only *adds*
+  higher-kinded quantification (type-constructor variables). Nothing built on the
+  HOL Light waist breaks.
+- **The one constraint that makes the superset migration cheap** (a
+  *defer-as-guardrails* note for `covalence-hol`): **concentrate direct use of
+  rank-1 polymorphism in a small number of places.** If `covalence-hol` reaches
+  the object logic mostly through `.cov` files and higher-level APIs (which it
+  should), the spots that touch rank-1 type-variable machinery *directly* are few
+  — so when rank-1 becomes the kind-`ty` fragment of HOL-ω, only those few spots
+  need adapting. Don't scatter raw polymorphism use across the shell.
+
+#### Why HOL-ω is the final waist — the endgame
+
+The waist is HOL-ω because the **final vision is to program the middle language
+like Haskell** — algebraic data types, monads, transformers, profunctors as
+first-class object-logic theories (which need kind-`ty→ty` quantification, §11.3 /
+`theories-models-and-logics.md §3.3`). And the endgame for *running* that
+language closes the computational-metatheory loop ([`VISION.md`](./VISION.md) §3):
+
+> An **efficient compiler + runtime** for the HOL-ω middle language that
+> **bootstraps by generating WASM and proving the generated WASM sound by
+> *translation validation*** — each compilation produces a checkable proof that
+> *this* WASM correctly implements *this* source, rather than trusting a
+> verified-once compiler.
+
+This is the "checkable certificate" discipline (`VISION.md §3`, the SMT-solver
+pattern) applied to the system's own runtime: the compiler is *untrusted*; a
+small trusted **translation validator** proves each source→WASM compilation
+correct; the result runs on the WASM executor (one of `covalence-pure`'s
+executors, `covalence-pure.md §1`). So the efficient middle-language runtime
+enters the system the same way every oracle does — as a proven artifact, not a
+trust assumption. The narrow waist, the Pure executor substrate, and the
+Haskell-like surface all meet here: **HOL-ω is the language you write, Pure is
+what it's grounded in, and validated-WASM is how it runs fast.**

@@ -1,0 +1,59 @@
+;; preorder.cov — a MODEL-GENERIC order-chaining proof.
+;;
+;; Written entirely against the ABSTRACT partial-order signature exposed by the
+;; `orderprim` env (see `init::preorder::order_env`):
+;;
+;;   RELATIONS:  `le` (binary), `lt = λa b. le a b ∧ ¬(le b a)`,
+;;               `equiv = λa b. le a b ∧ le b a`
+;;   TACTIC:     `order` — closes an `le`/`lt`/`=`/`equiv` goal by transitive-
+;;               closure chaining over the order facts in context (and/or args).
+;;   GIVEN laws: `le_refl` / `le_trans` / `le_antisym` and the derived
+;;               `lt_irrefl` / `lt_trans` / `lt_imp_le` / `le_iff_lt_or_eq` / …
+;;
+;; The proof body never names a concrete relation — it only uses `le`/`lt` and
+;; the `order` tactic from `orderprim` — so the SAME body checks for every model
+;; the host installs (`nat.le`, `int.le`, …). Only the binder *type* annotation
+;; (`nat` below) is model-specific; the test reruns the identical body over the
+;; `int` model by swapping `orderprim` and the carrier (see the Rust tests).
+
+(#import core)
+(#open core)
+(#import orderprim)
+(#open orderprim)
+
+;; ⊢ ∀a b c. a ≤ b ⟹ b ≤ c ⟹ a ≤ c
+;; The `order` tactic chains the two `≤` facts straight from context.
+(#thm chain_le_le
+  (#concl
+    (forall (a nat)
+      (forall (b nat)
+        (forall (c nat)
+          (==> (le a b) (==> (le b c) (le a c)))))))
+  (#by
+    (intro a b c hab hbc)
+    (order)))
+
+;; ⊢ ∀a b c. a ≤ b ⟹ b < c ⟹ a < c
+;; Mixing `≤` and `<`: the result is strict because one factor is.
+(#thm chain_le_lt
+  (#concl
+    (forall (a nat)
+      (forall (b nat)
+        (forall (c nat)
+          (==> (le a b) (==> (lt b c) (lt a c)))))))
+  (#by
+    (intro a b c hab hbc)
+    (order)))
+
+;; ⊢ ∀a b. a ≤ b ⟹ b ≤ a ⟹ a = b
+;; Antisymmetry, discharged by the chaining tactic via the `le_antisym` law.
+(#thm chain_antisym
+  (#concl
+    (forall (a nat)
+      (forall (b nat)
+        (==> (le a b) (==> (le b a) (= a b))))))
+  (#by
+    (intro a b hab hba)
+    (order)))
+
+(#export chain_le_le chain_le_lt chain_antisym)

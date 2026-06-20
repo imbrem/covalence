@@ -117,6 +117,26 @@ impl Interp {
     pub fn goal(&self) -> &Term {
         &self.goal
     }
+    /// Mutable access to the variable scope — for a custom tactic (registered
+    /// in another module) that needs to `check` sub-derivations against the
+    /// interpreter's current binder context.
+    pub fn scope_mut(&mut self) -> &mut Scope {
+        &mut self.scope
+    }
+
+    /// The current context facts as discharged theorems — every `intro`'d
+    /// assumption (as `⊢_{p} p` via `assume`) and every `#have`'d fact (its
+    /// proven theorem). Lets a custom goal-closing tactic (e.g. `order`) pull
+    /// the available facts *from context* in addition to its explicit args.
+    pub fn context_facts(&self) -> Vec<Thm> {
+        self.hyps
+            .iter()
+            .filter_map(|(t, h)| match h {
+                Hyp::Assumed => Thm::assume(t.clone()).ok(),
+                Hyp::Proven(thm) => Some(thm.clone()),
+            })
+            .collect()
+    }
     /// Open a fresh variable group (closed as a unit by
     /// [`Interp::close_scope`]). Variable definition is separate — see
     /// [`Interp::define_var`].

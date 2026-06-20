@@ -39,6 +39,7 @@ pub mod ast_doc;
 pub mod cst;
 pub mod elab;
 pub mod lex;
+pub mod lower;
 pub mod mixfix;
 pub mod parse;
 pub mod regex;

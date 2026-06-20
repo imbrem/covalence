@@ -241,8 +241,21 @@ proof (e.g. `models::unary`) in place until it's ported to `.cov`.
 Two directions the forms above must stay compatible with — **architectural
 constraints, not near-term work**:
 
-1. **`.thy` is the elaboration target of a Haskell-like surface.** A function
-   written as a type signature + defining equations
+1. **`.thy` is the elaboration target of a Haskell-like surface.** A `#type`
+   declaration + function type signatures + defining equations
+   ```haskell
+   #type nat
+   add :: nat -> nat -> nat
+   add zero a        = a
+   add a zero        = a
+   add (succ a) b    = succ (add a b)
+   ```
+   elaborates to a `(#sig …)` + `(#thy …)`: the **`#type nat`** → the signature's
+   `(sort nat)`; each `::` type signature → an `(op …)`; each defining equation →
+   a **`#spec`** (an equational clause, with the *positional* LHS/RHS quantification
+   rule — LHS pattern variables universally bound, RHS-only existential;
+   `surface-syntax.md §4.1`). So `nat.sig`/`nat.thy` are *extractable from* such a
+   file. Concretely (a longer example):
    ```haskell
    length :: list 'a -> nat
    length []        = 0

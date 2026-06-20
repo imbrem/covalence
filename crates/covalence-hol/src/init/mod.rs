@@ -100,8 +100,10 @@ pub mod recursion;
 pub mod rel;
 pub mod set;
 pub mod sexpr;
+pub mod sexp;
 pub mod stream;
 pub mod string;
+pub mod tree;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).

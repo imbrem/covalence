@@ -231,4 +231,92 @@ mod tests {
         let conseq = graph::graph(&nat_sig(), &steps, &nat(), succ(m), fmb).unwrap();
         assert_eq!(thm.concl(), &ante.imp(conseq).unwrap());
     }
+
+    // ------------------------------------------------------------------
+    // Multi-recursive-argument coverage: a binary-tree `branch` constructor
+    // with TWO recursive arguments. `graph_intro` is pure impredicative
+    // manipulation (no `Inductive` adapter, no induction/freeness), so it
+    // validates the engine's multi-rec-arg graph + existence layer directly:
+    // the introduction rule must carry the *conjunctive* antecedent
+    // `Graph l bl ∧ Graph r br ⟹ Graph (branch l r) (f l r bl br)`.
+    // ------------------------------------------------------------------
+
+    /// A `tree nat := leaf nat | branch (tree nat) (tree nat)` signature
+    /// (carrier stood in by `nat` for the term-layer test), result type
+    /// `β := nat`. `branch` has two recursive arguments `l`, `r`.
+    fn tree_sig() -> InductiveSig {
+        let leaf = Term::free("leaf", Type::fun(nat(), nat())); // nat → T
+        let branch = Term::free("branch", Type::fun(nat(), Type::fun(nat(), nat()))); // T → T → T
+        InductiveSig {
+            ty: nat(),
+            relation: "G",
+            ctors: vec![
+                Constructor::new(
+                    leaf,
+                    vec![Arg::Param {
+                        ty: nat(),
+                        name: "x",
+                    }],
+                ),
+                Constructor::new(
+                    branch,
+                    vec![
+                        Arg::Rec {
+                            name: "l",
+                            image: "bl",
+                        },
+                        Arg::Rec {
+                            name: "r",
+                            image: "br",
+                        },
+                    ],
+                ),
+            ],
+        }
+    }
+
+    /// `graph_intro` at a **two-recursive-argument** constructor produces the
+    /// conjunctive-antecedent introduction rule
+    /// `⊢ (Graph l bl ∧ Graph r br) ⟹ Graph (branch l r) (f l r bl br)`,
+    /// hypothesis-free. This exercises the multi-rec-arg graph/existence path
+    /// the engine extension generalised.
+    #[test]
+    fn graph_intro_two_rec_args_is_conjunctive() {
+        let sig = tree_sig();
+        // Step terms: `fl : nat → β` (leaf), `fb : T → T → β → β → β` (branch).
+        let fl = Term::free("fl", Type::fun(nat(), nat()));
+        let fb = Term::free(
+            "fb",
+            Type::fun(
+                nat(),
+                Type::fun(nat(), Type::fun(nat(), Type::fun(nat(), nat()))),
+            ),
+        );
+        let steps = [fl, fb.clone()];
+
+        let thm = graph_intro(&sig, &steps, &nat(), 1).unwrap();
+        assert!(thm.hyps().is_empty(), "graph_intro must be axiom-free");
+
+        // Expected: `(Graph l bl ∧ Graph r br) ⟹ Graph (branch l r) (fb l r bl br)`.
+        let branch = sig.ctors[1].ctor.clone();
+        let l = Term::free("l", nat());
+        let r = Term::free("r", nat());
+        let bl = Term::free("bl", nat());
+        let br = Term::free("br", nat());
+        let g_l = graph::graph(&sig, &steps, &nat(), l.clone(), bl.clone()).unwrap();
+        let g_r = graph::graph(&sig, &steps, &nat(), r.clone(), br.clone()).unwrap();
+        let ante = g_l.and(g_r).unwrap();
+        let branch_lr = branch.apply(l.clone()).unwrap().apply(r.clone()).unwrap();
+        let f_val = fb
+            .apply(l)
+            .unwrap()
+            .apply(r)
+            .unwrap()
+            .apply(bl)
+            .unwrap()
+            .apply(br)
+            .unwrap();
+        let conseq = graph::graph(&sig, &steps, &nat(), branch_lr, f_val).unwrap();
+        assert_eq!(thm.concl(), &ante.imp(conseq).unwrap());
+    }
 }

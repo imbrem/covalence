@@ -164,25 +164,38 @@ immediate follow-on once those types are pinned (don't fork the data shape).
 > (`.cov.ir`, `.sig.ir`, …) distinct from the pre-elaboration surface text.
 > Decide later; the surface forms above are the human-written layer.
 
-### 3.0.2 A model interprets a *signature*; "M ⊨ T" is a *theorem*
+### 3.0.2 A model interprets a *syntax*; "M ⊨ T" is a *theorem proved in a logic*
 
-The decoupling (refines §1's "model = …"):
+The decoupling (refines §1's "model = …"; full treatment in
+`theories-models-and-logics.md §1`). Two layers sit *below* the signature, and
+they differ in kind:
 
-- A **model `M`** is an **interpretation of a *signature* `S`** — concrete
-  objects in a logic for `S`'s sorts/families/ops. *Nothing about axioms.* It
-  just realizes the vocabulary.
-- A **theory `T`** is *also over `S`* — `S` + axioms.
-- **"`M` is a model of `T`" (`M ⊨ T`)** is then a **`.thm`** — a proof that
-  `M`'s interpretation *satisfies `T`'s axioms*. This is *the* load-bearing kind
-  of statement: it is the spec-satisfaction proof, and it is what makes `M` a
-  legitimate model *of the theory* (vs merely an interpretation of the
-  signature).
+- A **syntax** (e.g. FOL) is a typed grammar — it fixes what a signature can
+  declare and what a formula is, hence what can be **stated**.
+- A **logic over that syntax** (e.g. intuitionistic vs classical FOL) is a
+  derivability relation — it fixes what can be **proved**. *Same syntax, many
+  logics.*
 
-So the three are cleanly separated: **interpret the vocabulary** (`.mod`), **state
-the laws** (`.thy`), **prove the interpretation obeys the laws** (`.thm`,
-`M ⊨ T`). A model of the signature can perfectly well *fail* a given theory —
-that's a `.thm` that doesn't go through, and the type system makes that explicit
-rather than silent.
+Then:
+
+- A **model `M`** is an **interpretation of the *syntax*** — concrete objects for
+  the signature `S`'s sorts/families/ops. Pure semantics; *nothing about axioms*.
+  It just realizes the vocabulary, indifferent to which logic you reason in.
+- A **theory `T`** is *also over `S`* — `S` + axioms (formulas in the syntax).
+- **"`M` is a model of `T`" (`M ⊨ T`)** is a **`.thm`** — a proof, **carried out
+  in a *logic* over the shared syntax**, that `M`'s interpretation *satisfies
+  `T`'s axioms*. This is *the* load-bearing statement, and the choice of logic is
+  part of it: a Heyting-valued `M` satisfies the intuitionistic `T`, a Boolean one
+  the classical `T`.
+
+So the layers are cleanly separated: **state the vocabulary** (a syntax fixes
+what `.sig`/`.thy` can say), **interpret it** (`.mod` realizes the syntax),
+**state the laws** (`.thy`), **prove the interpretation obeys the laws in a
+logic** (`.thm`, `M ⊨ T`). A model of the signature can perfectly well *fail* a
+given theory — that's a `.thm` that doesn't go through — and may satisfy `T` under
+one logic but not another. The type system makes all of this explicit rather than
+silent. (Seam realization: `Syntax`/`Logic`/`Model` traits,
+`theories-models-and-logics.md §1.1`.)
 
 ```scheme
 ;; A THEORY: abstract signature + axioms (exists today, generalized).

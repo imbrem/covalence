@@ -954,6 +954,58 @@ pub fn cons_head_tail(alpha: &Type, a: &Term, l: &Term) -> Result<Thm> {
     eq.imp_intro(&hyp)
 }
 
+/// `⊢ index i l = none ⟹ index (succ i) l = none` — the **contiguity**
+/// of a list, phrased at the `index` surface (the `contig_rep` carrier
+/// fact unfolded through `index = streamAt ∘ rep`).
+fn index_contig(alpha: &Type, i: &Term, l: &Term) -> Result<Thm> {
+    // contig_rep l at i: streamAt (rep l) i = none ⟹ streamAt (rep l) (succ i) = none.
+    let contig_i = contig_rep(alpha, l)?.all_elim(i.clone())?;
+    let idx_i = index_unfold(alpha, i, l)?; // index i l = streamAt (rep l) i
+    let idx_si = index_unfold(alpha, &succ(i.clone()), l)?; // index (succ i) l = streamAt (rep l) (succ i)
+    // Rewrite the carrier implication to the `index` surface.
+    let prem = index(alpha, i, l).equals(none(alpha.clone()))?; // index i l = none
+    let h = Thm::assume(prem.clone())?;
+    let carrier_none = idx_i.clone().sym()?.trans(h)?; // streamAt (rep l) i = none
+    let carrier_sn = contig_i.imp_elim(carrier_none)?; // streamAt (rep l) (succ i) = none
+    let idx_sn = idx_si.trans(carrier_sn)?; // index (succ i) l = none
+    idx_sn.imp_intro(&prem)
+}
+
+/// `⊢ head l = none ⟹ (∀i. index i l = none)` — by contiguity, a `none`
+/// head forces every element `none`. Genuine: hypothesis- and oracle-free.
+pub fn allnone_from_head_none(alpha: &Type, l: &Term) -> Result<Thm> {
+    let hyp = Term::app(head(alpha.clone()), l.clone()).equals(none(alpha.clone()))?; // head l = none
+    let h = Thm::assume(hyp.clone())?;
+
+    // motive i ≔ index i l = none.
+    let iv = Term::free("i", nat());
+    let motive = Term::abs(
+        nat(),
+        covalence_core::subst::close(&index(alpha, &iv, l).equals(none(alpha.clone()))?, "i"),
+    );
+
+    // base: index 0 l = none (from head l = none via head_index0).
+    let base = {
+        let head0 = head_index0(alpha, l)?; // head l = index 0 l
+        let idx0_none = head0.sym()?.trans(h.clone())?; // {hyp} ⊢ index 0 l = none
+        beta_expand(&motive, zero(), idx0_none)?
+    };
+    // step k: index k l = none ⟹ index (succ k) l = none (contiguity). IH-driven.
+    let step = {
+        let k = Term::free("k", nat());
+        let contig_k = index_contig(alpha, &k, l)?; // index k l = none ⟹ index (succ k) l = none
+        // re-wrap into applied motive form.
+        let ante = Term::app(motive.clone(), k.clone());
+        let ih = crate::init::eq::beta_reduce(Thm::assume(ante.clone())?)?; // {motive k} ⊢ index k l = none
+        let conseq_body = contig_k.imp_elim(ih)?; // {motive k} ⊢ index (succ k) l = none
+        let conseq = beta_expand(&motive, succ(k.clone()), conseq_body)?; // {motive k} ⊢ motive (succ k)
+        conseq.imp_intro(&ante)?
+    };
+    let all = Thm::nat_induct(base, step)?; // {hyp} ⊢ ∀i. motive i
+    let allnone = crate::init::eq::beta_reduce(all.all_elim(iv.clone())?)?.all_intro("i", nat())?; // {hyp} ⊢ ∀i. index i l = none
+    allnone.imp_intro(&hyp)
+}
+
 /// `⊢ (∀i. index i l = none) ⟹ l = nil` — a list with no elements is
 /// `nil`. Genuine: hypothesis- and oracle-free. By [`list_ext`] against
 /// [`index_nil`].
@@ -1270,6 +1322,13 @@ mod tests {
         let consed = cons(alpha()).apply(a.clone()).unwrap().apply(tl).unwrap();
         let concl = prem.imp(consed.equals(l.clone()).unwrap()).unwrap();
         assert_eq!(thm.concl(), &concl);
+    }
+
+    #[test]
+    fn allnone_from_head_none_is_genuine() {
+        let l = Term::free("l", list(alpha()));
+        let thm = allnone_from_head_none(&alpha(), &l).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
     }
 
     #[test]

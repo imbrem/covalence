@@ -48,6 +48,7 @@ fn nat() -> Type {
 }
 
 /// `nat → nat → nat` — the recursion step function `f`.
+#[cfg(test)]
 fn f_ty() -> Type {
     Type::fun(nat(), Type::fun(nat(), nat()))
 }
@@ -220,29 +221,54 @@ pub(crate) fn graph_det(z: &Term, f: &Term) -> Result<Thm> {
 // Assembly: the recursion theorem — now the generic engine's `recursor`
 // ============================================================================
 
-/// `nat → (nat → nat → nat) → nat → nat` — the recursor's type at `nat`.
-fn rec_ty() -> Type {
-    Type::fun(nat(), Type::fun(f_ty(), Type::fun(nat(), nat())))
+/// `β → (nat → β → β) → nat → β` — the recursor's type at result type `β`.
+fn rec_ty_at(beta: &Type) -> Type {
+    let step = Type::fun(nat(), Type::fun(beta.clone(), beta.clone()));
+    Type::fun(beta.clone(), Type::fun(step, Type::fun(nat(), beta.clone())))
 }
 
-/// `natRec`'s recursion predicate `P_rec`, instantiated at `α := nat` —
-/// the exact predicate `spec_ax(natRec, ·)` works with, and the predicate
-/// the engine's [`recursor::recursion_theorem`] ∃-introduces over.
-fn p_rec_pred() -> Result<Term> {
+/// `natRec`'s recursion predicate `P_rec`, instantiated at result type
+/// `β` — the exact predicate `spec_ax(natRec, ·)` works with, and the
+/// predicate the engine's [`recursor::recursion_theorem`] ∃-introduces
+/// over.
+fn p_rec_pred_at(beta: &Type) -> Result<Term> {
     let poly = defs::nat_rec_spec()
         .tm()
         .expect("natRec carries a selector predicate")
         .clone();
-    Ok(subst::subst_tfree_in_term(&poly, "a", &nat()))
+    Ok(subst::subst_tfree_in_term(&poly, "a", beta))
 }
 
-/// `⊢ ∃r. P_rec r` — **the recursion theorem** for `nat`. The generic
-/// [`recursor::recursion_theorem`] at [`NatTheory`], with step variables
-/// `z`, `f` and `natRec`'s [`p_rec_pred`].
+/// `⊢ ∃r. P_rec r` — **the recursion theorem** for `nat` at result type
+/// `β`. The generic [`recursor::recursion_theorem`] at [`NatTheory`], with
+/// step variables `z : β`, `f : nat → β → β` and `natRec`'s
+/// [`p_rec_pred_at`]. The `NatTheory` adapter's induction / freeness are
+/// about the *domain* `nat`, independent of `β`, so the same engine runs
+/// at every result type.
+fn recursion_theorem_at(beta: &Type) -> Result<Thm> {
+    let z = Term::free("z", beta.clone());
+    let f = Term::free("f", Type::fun(nat(), Type::fun(beta.clone(), beta.clone())));
+    recursor::recursion_theorem(&NatTheory, &[z, f], beta, &p_rec_pred_at(beta)?)
+}
+
+/// `⊢ ∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`
+/// at result type `β` — the recursion equations for `natRec` at any result
+/// type, **fully proved** (no hypotheses). The polymorphic core behind
+/// [`rec_holds_proof`].
+pub(crate) fn rec_holds_proof_at(beta: &Type) -> Result<Thm> {
+    let pred = p_rec_pred_at(beta)?;
+    let natrec = defs::nat_rec(beta.clone());
+    let rec_ty = rec_ty_at(beta);
+    let step =
+        Thm::spec_ax(natrec.clone(), Term::free("r", rec_ty.clone()))?.all_intro("r", rec_ty)?; // ⊢ ∀r. P_rec r ⟹ P_rec natRec
+    let p_nr = exists_elim(recursion_theorem_at(beta)?, Term::app(pred, natrec), step)?;
+    beta_reduce(p_nr)
+}
+
+/// `⊢ ∃r. P_rec r` — **the recursion theorem** for `nat` at `β := nat`.
+#[cfg(test)]
 fn recursion_theorem() -> Result<Thm> {
-    let z = Term::free("z", nat());
-    let f = Term::free("f", f_ty());
-    recursor::recursion_theorem(&NatTheory, &[z, f], &nat(), &p_rec_pred()?)
+    recursion_theorem_at(&nat())
 }
 
 /// `⊢ ∀z f. (natRec z f 0 = z) ∧ (∀n. natRec z f (S n) = f n (natRec z f n))`
@@ -251,11 +277,7 @@ fn recursion_theorem() -> Result<Thm> {
 /// recursion theorem gives a recursor, and `spec_ax(natRec, ·)`
 /// transfers its equations to `natRec` itself.
 pub(crate) fn rec_holds_proof() -> Result<Thm> {
-    let pred = p_rec_pred()?;
-    let natrec = defs::nat_rec(nat());
-    let step = Thm::spec_ax(natrec.clone(), Term::free("r", rec_ty()))?.all_intro("r", rec_ty())?; // ⊢ ∀r. P_rec r ⟹ P_rec natRec
-    let p_nr = exists_elim(recursion_theorem()?, Term::app(pred, natrec), step)?;
-    beta_reduce(p_nr)
+    rec_holds_proof_at(&nat())
 }
 
 #[cfg(test)]

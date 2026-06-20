@@ -291,6 +291,33 @@ index](../../../../SKELETONS.md).
     `⊆` theorem is a small increment) and the **least-fixpoint half**
     `L* ⊆ ε ∪ L·L*`, the genuine induction over the impredicative star.
 
+- **Regular expressions on lists / `Matches` derivation** in
+  `crates/covalence-hol/src/init/regex.rs` (+ `regex_soundness.rs`, the
+  per-clause soundness helpers `include!`d into it). The regex datatype
+  `empty | eps | lit 'a | alt | seq | star` is reified as an
+  alphabet-polymorphic Church encoding (the `init/prop.rs` recipe — distinct
+  regexes are distinct terms, no engine recursor needed despite `alt`/`seq`
+  having two recursive args). **In place (all genuine, hypothesis- and
+  oracle-free):** the constructors `r_*`; the denotation `denote : regex 'a →
+  set (list 'a)` (a fold into `init/lang` over the free monoid
+  `list_cat_monoid`); `Matches` as the impredicative smallest predicate closed
+  under the **seven matching rules** (`eps`/`lit`/`alt-l`/`alt-r`/`seq`/
+  `star-nil`/`star-step`), each proved as a derivation constructor `match_*`;
+  and **soundness** `⊢ Matches r w ⟹ mem w ⟦r⟧` by rule induction (`inst` of
+  the impredicative predicate), all seven cases discharged against the `lang`
+  membership computations + `star_concat_closed`. Bytestring instance at
+  `u8_alphabet()` with a worked derivation. **Not yet built (deferred):**
+  - **`Matches`-completeness** `mem w ⟦r⟧ ⟹ Matches r w` (the converse): the
+    star case needs the least-fixpoint half of the star unfolding above.
+  - **Ambiguity** (a proof-relevant `Parse r w` / parse-tree datatype + `yield`,
+    of which `Matches` is the propositional truncation) and **sexpr lift/lower**
+    (`regex_of_sexpr` / `sexpr_of_regex` over `init/sexpr`, defined
+    concurrently — interface noted, no dependency taken). Both sketched in the
+    `regex.rs` DESIGN NOTE.
+  - **Performance**: the soundness proof is slow (~70 s in debug) — the `star`
+    denotation's impredicative `∀S` makes `denote`/`beta_nf` terms large. A
+    memoised / staged `beta_nf` or caching `denote` across clauses would help.
+
 - **`covalence-hol` text theory** in `crates/covalence-hol/src/init/char.rs`
   and `crates/covalence-hol/src/init/string.rs` (`char`/`string`/`bytes`).
   The **element types and `nil`-side facts** are proved and genuine

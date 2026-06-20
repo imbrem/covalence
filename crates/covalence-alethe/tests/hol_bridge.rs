@@ -190,6 +190,58 @@ fn unrecomputable_hole_is_reported_not_silently_trusted() {
 }
 
 // ---------------------------------------------------------------------
+// LA1 — the Farkas core (`la_generic`): x < 0 ∧ 0 < x ⟹ ⊥.
+//
+// The `la_generic` step emits the tautology clause
+// `(cl (not (< x 0)) (not (< 0 x)))` with coefficients (1,1); the bridge
+// re-derives `{x<0, 0<x} ⊢ F` through `int::lt_trans` + `int::lt_irrefl`
+// and clausifies it. Resolution against the two assumptions closes.
+// ---------------------------------------------------------------------
+
+const LA1_PROBLEM: &str = "\
+(set-logic QF_LIA)
+(declare-fun x () Int)
+(assert (< x 0))
+(assert (< 0 x))
+";
+
+const LA1_PROOF: &str = "\
+(assume a0 (< x 0))
+(assume a1 (< 0 x))
+(step t0 (cl (not (< x 0)) (not (< 0 x))) :rule la_generic :args (1 1))
+(step t1 (cl (not (< 0 x))) :rule resolution :premises (t0 a0))
+(step t2 (cl) :rule resolution :premises (t1 a1))
+";
+
+#[test]
+fn embedded_la1_farkas_two_literal() {
+    assert_eq!(check(LA1_PROBLEM, LA1_PROOF), Decision::Unsat);
+}
+
+#[test]
+fn la_generic_rejects_non_contradictory_pair() {
+    // `x < 0` and `0 < y` do NOT chain — the Farkas check must refuse
+    // (NotImplemented), never fabricate a refutation.
+    let problem = "\
+(set-logic QF_LIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(assert (< x 0))
+(assert (< 0 y))
+";
+    let proof = "\
+(assume a0 (< x 0))
+(assume a1 (< 0 y))
+(step t0 (cl (not (< x 0)) (not (< 0 y))) :rule la_generic :args (1 1))
+";
+    let problem = parse_smtlib2(problem).unwrap();
+    let proof = parse_alethe(proof).unwrap();
+    let mut bridge = HolAletheBridge::new();
+    let err = ingest_alethe(&mut bridge, &problem, &proof).unwrap_err();
+    assert!(matches!(err, BridgeError::NotImplemented(_)), "got {err:?}");
+}
+
+// ---------------------------------------------------------------------
 // Live cvc5 — generate the proof ourselves and check it.
 // ---------------------------------------------------------------------
 

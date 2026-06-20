@@ -35,6 +35,13 @@
 //! layer** (`Int`, literals, `+ - * < <= > >=` over the `defs` `int`
 //! catalogue).
 //!
+//! The **linear-arithmetic core** is bootstrapped through
+//! [`crate::la::la_generic`]: the Alethe Farkas rule `la_generic` is
+//! re-derived (never trusted) over the `defs` `int` ordered ring. The
+//! prototype covers the two-literal, coefficient-`(1,1)`, strict case
+//! (`x < 0 ∧ 0 < x ⟹ ⊥`) via `int::lt_trans` + `int::lt_irrefl`;
+//! larger combinations are reported `NotImplemented` (see `SKELETONS.md`).
+//!
 //! cvc5's `hole` ("untranslated rewrite") is **re-derived, not trusted**:
 //! every hole is a unit clause `(cl L)` and [`hole`] proves `⊢ L` in the
 //! kernel by βι-`reduce` (closed `int` arithmetic, literal `=`) + `simp`
@@ -351,6 +358,8 @@ impl AletheBridge for HolAletheBridge {
             // is replayed in the kernel (closed arithmetic + simplification).
             "hole" | "equiv_simplify" => rewrite(&lits)?,
             "evaluate" => evaluate(&lits)?,
+            // Linear integer arithmetic — the Farkas core.
+            "la_generic" => crate::la::la_generic(&lits, args)?,
             other => return Err(BridgeError::UnknownRule(other.to_string())),
         };
 

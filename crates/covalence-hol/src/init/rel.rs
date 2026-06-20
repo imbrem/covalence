@@ -387,7 +387,9 @@ fn build_all_holds_eq(alpha: &Type, beta: &Type, r: &Term, s: &Term) -> Result<T
 
 /// The `rel` environment imported by `rel.cov`: the seam lemmas as
 /// universally-quantified **given** theorems, plus the operators
-/// (`rel.holds`, `rel.converse`, `rel.id`) as `ConstDef::Op`s.
+/// (`rel.holds`, `rel.converse`, `rel.id`, `rel.mk`) as `ConstDef::Poly`
+/// schemes (instantiated per use site, so `rel.converse` can appear at two
+/// type orderings in one term — no `.ba`/`.aa` aliases needed).
 pub fn rel_env() -> crate::script::Env {
     let alpha = Type::tfree("a");
     let beta = Type::tfree("b");
@@ -395,35 +397,27 @@ pub fn rel_env() -> crate::script::Env {
     let mut e = crate::script::Env::empty();
 
     // ---- operators -----------------------------------------------------------
+    // All registered as `ConstDef::Poly`: each carries a scheme term whose free
+    // type variables (`'a`/`'b`) are instantiated with fresh metavariables PER
+    // USE SITE, so e.g. `rel.converse` can appear at both `('a,'b)` and `('b,'a)`
+    // within one term (the double-converse). This is what replaced the old
+    // type-specialised `rel.converse.ba`/`rel.converse.aa` aliases.
     e.define_const(
         "rel.holds",
-        crate::script::ConstDef::Op(rel_holds(alpha.clone(), beta.clone())),
+        crate::script::ConstDef::Poly(rel_holds(alpha.clone(), beta.clone())),
     );
-    // `rel.converse` at ('a, 'b): `rel 'a 'b → rel 'b 'a`.
+    // `rel.converse` : `rel 'a 'b → rel 'b 'a` (polymorphic in both `'a`/`'b`).
     e.define_const(
         "rel.converse",
-        crate::script::ConstDef::Op(rel_converse(alpha.clone(), beta.clone())),
-    );
-    // `rel.converse.ba` at ('b, 'a): `rel 'b 'a → rel 'a 'b`.
-    // Used in the double-converse conclusion `rel.converse.ba (rel.converse r) = r`
-    // where `r : rel 'a 'b` to avoid type-variable aliasing in the elaborator.
-    e.define_const(
-        "rel.converse.ba",
-        crate::script::ConstDef::Op(rel_converse(beta.clone(), alpha.clone())),
-    );
-    // `rel.converse.aa` at ('a, 'a): `rel 'a 'a → rel 'a 'a`.
-    // Used in `converse_id`: `rel.converse.aa rel.id = rel.id`.
-    e.define_const(
-        "rel.converse.aa",
-        crate::script::ConstDef::Op(rel_converse(alpha.clone(), alpha.clone())),
+        crate::script::ConstDef::Poly(rel_converse(alpha.clone(), beta.clone())),
     );
     e.define_const(
         "rel.id",
-        crate::script::ConstDef::Op(rel_id(alpha.clone())),
+        crate::script::ConstDef::Poly(rel_id(alpha.clone())),
     );
     e.define_const(
         "rel.mk",
-        crate::script::ConstDef::Op(rel_mk(alpha.clone(), beta.clone())),
+        crate::script::ConstDef::Poly(rel_mk(alpha.clone(), beta.clone())),
     );
 
     // ---- seam givens --------------------------------------------------------
@@ -457,22 +451,6 @@ pub fn rel_env() -> crate::script::Env {
     .expect("rel_env: ext_ax");
     e.define_lemma("ext_ax", ext_ax);
 
-    // `ext_ax_aa`: ∀r s. (∀x y. holds r x y = holds s x y) ⟹ r = s
-    // (r, s : rel 'a 'a — both type parameters are 'a; for use in converse_id)
-    let ext_ax_aa = (|| -> Result<Thm> {
-        let r = Term::free("r", rel(alpha.clone(), alpha.clone()));
-        let s = Term::free("s", rel(alpha.clone(), alpha.clone()));
-        let all_holds_eq_term = build_all_holds_eq(&alpha, &alpha, &r, &s)?;
-        let holds_eq = Thm::assume(all_holds_eq_term.clone())?;
-        let r_eq_s = ext(&alpha, &alpha, &r, &s, holds_eq)?;
-        r_eq_s
-            .imp_intro(&all_holds_eq_term)?
-            .all_intro("s", rel(alpha.clone(), alpha.clone()))?
-            .all_intro("r", rel(alpha.clone(), alpha.clone()))
-    })()
-    .expect("rel_env: ext_ax_aa");
-    e.define_lemma("ext_ax_aa", ext_ax_aa);
-
     // `holds_id_ax`: ∀x y. rel.holds rel.id x y = (x = y)
     let holds_id_ax = (|| -> Result<Thm> {
         let x = Term::free("x", alpha.clone());
@@ -497,34 +475,6 @@ pub fn rel_env() -> crate::script::Env {
     })()
     .expect("rel_env: holds_converse_ax");
     e.define_lemma("holds_converse_ax", holds_converse_ax);
-
-    // `holds_converse_ax_aa`: ∀r y x. rel.holds (rel.converse.aa r) y x = rel.holds r x y
-    // (r : rel 'a 'a, y : 'a, x : 'a) — for use in converse_id where rel.id : rel 'a 'a
-    let holds_converse_ax_aa = (|| -> Result<Thm> {
-        let r = Term::free("r", rel(alpha.clone(), alpha.clone()));
-        let y = Term::free("y", alpha.clone());
-        let x = Term::free("x", alpha.clone());
-        holds_converse(&alpha, &alpha, &r, &y, &x)?
-            .all_intro("x", alpha.clone())?
-            .all_intro("y", alpha.clone())?
-            .all_intro("r", rel(alpha.clone(), alpha.clone()))
-    })()
-    .expect("rel_env: holds_converse_ax_aa");
-    e.define_lemma("holds_converse_ax_aa", holds_converse_ax_aa);
-
-    // `holds_converse_ax_ba`: ∀r y x. rel.holds (rel.converse r) y x = rel.holds r x y
-    // (r : rel 'b 'a, y : 'a, x : 'b) — for use with r = (converse r') where r' : rel 'a 'b
-    let holds_converse_ax_ba = (|| -> Result<Thm> {
-        let r = Term::free("r", rel(beta.clone(), alpha.clone()));
-        let y = Term::free("y", alpha.clone());
-        let x = Term::free("x", beta.clone());
-        holds_converse(&beta, &alpha, &r, &y, &x)?
-            .all_intro("x", beta.clone())?
-            .all_intro("y", alpha.clone())?
-            .all_intro("r", rel(beta.clone(), alpha.clone()))
-    })()
-    .expect("rel_env: holds_converse_ax_ba");
-    e.define_lemma("holds_converse_ax_ba", holds_converse_ax_ba);
 
     e
 }

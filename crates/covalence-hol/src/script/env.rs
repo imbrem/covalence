@@ -314,9 +314,28 @@ fn open_foralls(concl: &Term) -> (BTreeSet<SmolStr>, Vec<SmolStr>, Term) {
 /// labels the error if a hole was left undetermined.
 fn instantiate(thm: &Thm, order: &[SmolStr], sub: &Subst, what: &str) -> R<Thm> {
     let mut t = thm.clone();
-    for (tv, ty) in &sub.types {
-        if Type::tfree(tv.as_str()) != *ty {
-            t = t.inst_tfree(tv, ty.clone())?;
+    // Apply the type substitution **simultaneously**. The matched `sub.types`
+    // can be a permutation (e.g. `{'a↦'b, 'b↦'a}` when a lemma is used at a
+    // swapped type ordering — `rel.converse` over the double-converse), and a
+    // naive sequential `inst_tfree('a↦'b)` then `inst_tfree('b↦'a)` would
+    // collapse both to `'a`. Route each source variable through a disjoint
+    // fresh intermediate name first, so no later step recaptures an
+    // already-substituted variable; each pass is still one kernel `inst_tfree`.
+    let renames: Vec<(SmolStr, Type)> = sub
+        .types
+        .iter()
+        .filter(|(tv, ty)| Type::tfree(tv.as_str()) != **ty)
+        .map(|(tv, ty)| (tv.clone(), ty.clone()))
+        .collect();
+    if !renames.is_empty() {
+        let tmp = |tv: &str| format!("?inst.{tv}");
+        // Pass 1: each source `tv` → its private fresh intermediate.
+        for (tv, _) in &renames {
+            t = t.inst_tfree(tv, Type::tfree(tmp(tv)))?;
+        }
+        // Pass 2: each intermediate → the (original-named) target type.
+        for (tv, ty) in &renames {
+            t = t.inst_tfree(&tmp(tv), ty.clone())?;
         }
     }
     for name in order {

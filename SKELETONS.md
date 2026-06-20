@@ -73,6 +73,23 @@ it is how unfinished work stays discoverable.
   the same rational scaled by the common factor `rda`), so its
   cross-multiplication collapses to comm/assoc and lifts by `class_intro`.
 
+  **Ported to `rat.cov`.** All ten proved ring/order laws above
+  (`add_comm`/`mul_comm`/`lt_irrefl`/`mul_one`/`add_zero`/`mul_zero`/`add_neg`/
+  `mul_assoc`/`add_assoc`/`distrib`) are now **also** re-proved in
+  `crates/covalence-hol/src/init/rat.cov` over a `ratprim` givens-env
+  (`init::rat::rat_env`), the rat analogue of `set.cov`'s `setprim` /
+  `nat.cov`'s `natrec` — exposing the rat operators + the quotient seam
+  (`recon`/`add_mk`/`mul_mk`/`neg_mk`/`zero_mk`/`one_mk`/`class_eq`, the
+  per-theorem `*_compute` MK-component computes, the `*_bridge` int-algebra
+  bridges for `add_assoc`/`distrib`, `pos_prod_rt`/`one_pos_rt`/`topos_rep`,
+  and the proved int ring facts) as `∀`-quantified Rust GIVENS. The `.cov`
+  proofs never mention abs/rep; `cov::*_cov().concl() == super::*().concl()`
+  is asserted per theorem (`init::rat::cov_tests`). The `add_assoc`/`distrib`
+  numerator/denominator alignments are still carried by Rust `*_bridge` givens
+  (the deepest int-monomial algebra), shared with the Rust `*_impl`s — a
+  candidate for further in-`.cov` decomposition later. The **postulated**
+  order axioms below are *not* ported (they carry themselves as hyps).
+
   **Still postulated** via the module's `axiom` helper:
   - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`), realisable via
     the defined `rat_inv` (sign-normalised so the denominator stays positive).

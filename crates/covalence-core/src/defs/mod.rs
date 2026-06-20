@@ -106,6 +106,7 @@ mod sigs;
 mod spec;
 mod stream;
 pub(crate) mod symbol;
+mod text;
 mod unit;
 
 pub use bits::{
@@ -190,6 +191,10 @@ pub use stream::{
     stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
 };
 pub use symbol::Symbol;
+pub use text::{
+    CHAR_MAX_EXCL, char_code, char_code_spec, char_mk, char_mk_spec, char_spec, char_ty,
+    string_spec, string_ty,
+};
 pub use unit::{unit_nil, unit_nil_spec, unit_spec};
 
 #[cfg(test)]
@@ -734,6 +739,41 @@ mod tests {
         // the catalogue's list spec, not a raw stream-of-option).
         let spec = bytes_spec();
         assert_eq!(spec.ty().cloned(), Some(list(u8_ty())));
+    }
+
+    #[test]
+    fn char_is_nat_subtype() {
+        // char := { c : nat | c < 0x110000 } — a subtype of nat.
+        assert_eq!(char_spec().ty().unwrap(), &Type::nat());
+        // The selector predicate is `nat → bool`.
+        let spec = char_spec();
+        let tm = spec.tm().expect("char has a selector predicate");
+        assert_eq!(
+            tm.type_of().unwrap(),
+            Type::fun(Type::nat(), Type::bool()),
+        );
+        // The type leaf is 0-ary.
+        assert!(matches!(char_ty().kind(), TypeKind::Spec(_, args) if args.is_empty()));
+    }
+
+    #[test]
+    fn char_code_and_mk_typed() {
+        // char.code : char → nat ; char.mk : nat → char
+        assert_eq!(
+            char_code().type_of().unwrap(),
+            Type::fun(char_ty(), Type::nat()),
+        );
+        assert_eq!(
+            char_mk().type_of().unwrap(),
+            Type::fun(Type::nat(), char_ty()),
+        );
+    }
+
+    #[test]
+    fn string_is_list_char_newtype() {
+        // string := list char — a newtype over `list char`.
+        assert_eq!(string_spec().ty().unwrap(), &list(char_ty()));
+        assert!(matches!(string_ty().kind(), TypeKind::Spec(_, args) if args.is_empty()));
     }
 
     #[test]

@@ -26,7 +26,9 @@
 //! conditional's reduction clauses), [`nat`], [`int`], [`rat`], [`real`],
 //! [`coprod`], [`option`], [`prod`] (the pair projections, surjective
 //! pairing, and injectivity), [`list`] (the `nil`-side element
-//! computations), [`stream`], [`recursion`], [`rel`], and [`set`].
+//! computations), [`char`] (the Unicode-codepoint subtype + round-trips),
+//! [`string`] (the `string`/`bytes` newtype seams + empty-sequence facts),
+//! [`stream`], [`recursion`], [`rel`], and [`set`].
 //!
 //! Efficiency is explicitly *not* a goal: `init` runs once at startup.
 //! The point is for the rest of `covalence-hol` to depend on this
@@ -75,6 +77,7 @@ macro_rules! cached_thm {
 }
 
 pub mod cat;
+pub mod char;
 pub mod cond;
 pub mod coprod;
 pub mod eq;
@@ -96,6 +99,7 @@ pub mod rel;
 pub mod set;
 pub mod sexpr;
 pub mod stream;
+pub mod string;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).

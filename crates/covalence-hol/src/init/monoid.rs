@@ -278,6 +278,34 @@ pub fn endo_monoid(alpha: covalence_core::Type) -> Result<Monoid> {
     Ok(Monoid::new(op, unit, assoc, left_id, right_id))
 }
 
+// ============================================================================
+// Script-layer plumbing — a model as a `.cov` rewrite env.
+// ============================================================================
+
+/// Build the `monoidprim` environment for a `.cov` proof, registering *this*
+/// model under the **abstract** names a model-generic `monoid.cov` references:
+///
+/// - `m.op`  — the operation (a binary `Op` const)
+/// - `m.unit` — the unit (a nullary `Op` const)
+/// - `assoc` / `left_id` / `right_id` — the three laws, as `(rw …)`-ready lemmas
+///
+/// A `monoid.cov` written against these names proves the *same* theorem for
+/// every model: import `nat_add_monoid()`'s env and it is a fact about `+`;
+/// import `nat_mul_monoid()`'s env and it is the identical proof about `×`.
+/// This is the script-level witness of model-genericity — the batched Rust
+/// [`Monoid::normalize`] is the same rewrites fused into one pass.
+pub fn monoid_env(model: &Monoid) -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    let mut e = Env::empty();
+    e.define_const("m.op", ConstDef::Op(model.op.clone()));
+    e.define_const("m.unit", ConstDef::Op(model.unit.clone()));
+    let (assoc, left_id, right_id) = model.rw_lemmas();
+    e.define_lemma("assoc", assoc);
+    e.define_lemma("left_id", left_id);
+    e.define_lemma("right_id", right_id);
+    e
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,6 +446,51 @@ mod tests {
         let (_, rhs) = thm.concl().as_eq().unwrap();
         let expected = comp(&alpha, h, comp(&alpha, g, f));
         assert_eq!(rhs, &expected);
+    }
+
+    // -- model-generic `.cov` proof: ONE script, MANY models ----------------
+
+    /// Run `monoid.cov` against a given model's `monoidprim` env and return its
+    /// two theorems' conclusions, asserting each is genuine.
+    fn run_monoid_cov(model: &Monoid) -> Vec<(Thm, String)> {
+        let env = super::monoid_env(model);
+        let theory = crate::script::run(
+            include_str!("monoid.cov"),
+            |name| match name {
+                "core" => Some(crate::script::Env::core()),
+                "monoidprim" => Some(env.clone()),
+                _ => None,
+            },
+            |_| None,
+        )
+        .expect("monoid.cov should parse")
+        .resolve_blocking()
+        .expect("monoid.cov should check");
+        ["normal_form", "strip_units"]
+            .iter()
+            .map(|n| {
+                let t = theory.lemma(n);
+                assert!(t.hyps().is_empty() && t.has_no_obs(), "{n} must be genuine");
+                (t.clone(), format!("{}", t.concl()))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn monoid_cov_proves_for_nat_add_model() {
+        let out = run_monoid_cov(&nat_add_monoid());
+        // normal_form: (a + b) + (0 + c) = a + (b + c).
+        assert!(out[0].1.contains("nat.add") || out[0].1.contains('+'));
+        // The two theorems exist and are genuine (checked in the helper).
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn monoid_cov_proves_for_nat_mul_model_same_script() {
+        // The IDENTICAL monoid.cov source, now a fact about ×.
+        let out = run_monoid_cov(&nat_mul_monoid());
+        assert!(out[0].1.contains("nat.mul") || out[0].1.contains('*'));
+        assert_eq!(out.len(), 2);
     }
 
     #[test]

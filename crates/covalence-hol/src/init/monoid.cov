@@ -1,0 +1,49 @@
+;; monoid.cov — a MODEL-GENERIC monoid normalization proof.
+;;
+;; This script is written entirely against the ABSTRACT monoid signature
+;; exposed by the `monoidprim` env (see `init::monoid::monoid_env`):
+;;
+;;   OPERATORS:  `m.op` (binary), `m.unit` (nullary)
+;;   GIVEN laws: `assoc`     : ∀a b c. m.op (m.op a b) c = m.op a (m.op b c)
+;;               `left_id`   : ∀a.     m.op m.unit a = a
+;;               `right_id`  : ∀a.     m.op a m.unit = a
+;;
+;; Because it never names a concrete operation, the *same* proof checks for
+;; EVERY model: import `(nat,+,0)`'s env and `normal_form` is a fact about `+`;
+;; import `(nat,×,1)`'s env and the identical script proves it about `×`. The
+;; rewriter `rw` casts each law-lemma to a rewriter (via `Env::rw_unify`) — the
+;; concrete instance of "a lemma implicitly casts to a rewriter".
+
+(#import core)
+(#open core)
+(#import monoidprim)
+(#open monoidprim)
+
+;; ⊢ m.op (m.op a b) (m.op m.unit c) = m.op a (m.op b c)
+;;
+;; The canonical normalization step: re-associate the outer product and drop the
+;; interior `m.unit`. Proved by three rewrites with the monoid laws, then refl.
+;;   1. left_id @ c      : m.op m.unit c → c            (drop the unit)
+;;   2. assoc @ a b c    : m.op (m.op a b) c → m.op a (m.op b c)  (right-assoc)
+(#thm normal_form
+  (#concl
+    (= (m.op (m.op a b) (m.op m.unit c))
+       (m.op a (m.op b c))))
+  (#by
+    (rw left_id)
+    (rw assoc)
+    (refl)))
+
+;; ⊢ m.op (m.op m.unit a) (m.op b m.unit) = m.op a b
+;;
+;; Both identities dropped, then the product is already right-shaped.
+(#thm strip_units
+  (#concl
+    (= (m.op (m.op m.unit a) (m.op b m.unit))
+       (m.op a b)))
+  (#by
+    (rw left_id)
+    (rw right_id)
+    (refl)))
+
+(#export normal_form strip_units)

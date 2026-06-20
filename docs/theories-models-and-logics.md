@@ -172,7 +172,7 @@ Splitting a theory's authoring along this architecture:
 
 ---
 
-## 5. The driving program: how much of Spivak in second-order arithmetic
+## 5. The driving programs: the analysis library + the reified-theory ladder
 
 The concrete first library. Goal: develop (a useful fragment of) Spivak's
 *Calculus* and see **how much replays in second-order arithmetic (Z₂)** — i.e.
@@ -217,36 +217,62 @@ continuity → the three hard theorems); derivatives/integrals are **phase 2**.
 3. **Calculus** → a **proof-producing symbolic differentiator** (a rewriter
    `f ↦ ⊢ deriv f = f'` over the proved rules), later an integrator.
 
-### 5.4 SOA as an internal theory + the transport showpiece
+### 5.4 The reified-object-theory ladder (prop → PA → SOA, and beyond)
 
-The metatheory core, scaling the proved `init/prop.rs` recipe (reify → derive →
-denote → prove-sound-internally):
+> **Revised sequencing (user):** don't jump straight to SOA. Climb the ladder —
+> **propositional logic → Peano arithmetic → second-order arithmetic** — building
+> reusable *first-order-logic and theory* tooling at each rung. Each rung is the
+> same recipe (`init/prop.rs`): reify the syntax as a datatype → an inductive
+> `Derivable_X` predicate → a denotation `⟦·⟧` into HOL → **soundness proved
+> internally** → the transport morphism. **Induction on derivations** (rule
+> induction, the impredicative `inst d := P`) is the through-line skill.
 
-- **Phase 1 — reify Z₂ in HOL, prove sound.** Multi-sorted (number + set vars),
-  atomic `t=s`/`t<s`/`t∈X`, the formula datatype, `Derivable_SOA` (PA⁻ +
-  second-order induction + comprehension), denotation `⟦·⟧` (numbers→`nat`,
-  sets→`nat→bool`), and `⊢ Derivable_SOA ⌜A⌝ ⟹ ⟦A⟧`. **HOL models Z₂ cleanly**
-  (full comprehension = HOL λ-abstraction), so soundness is direct *and* the
-  denotation `⟦·⟧` **is** the transport interpretation — Phase 1 and Phase 4
-  share their core.
-- **Phase 2 — tracer bullet**: one theorem proved in SOA, transported to HOL.
-- **Phase 3 — replay across models**: build `nat` (+ a subset of inductive
-  types) *as a model in SOA* exposing the *same* `.cov` interface as HOL's `nat`,
-  and replay the proof scripts (needs the `#model`/`#in` dispatch). This is "many
-  models of one theory" with one model in HOL and one in SOA, side by side.
-- **Phase 4 — internal HOL + `SOA(A) ⟹ HOL(A)` as objects**: reify HOL in HOL
-  (hol-in-hol), prove the morphism between the two *reified* theories, and
-  **transport** an SOA theorem to internal-HOL rather than re-prove it. First-
-  class metatheory made visible.
-- **Phase 5 — analysis-in-SOA**: code reals as sets-of-naturals, instantiate the
-  analysis functors at the SOA model, measure what replays (the reverse-math
-  payoff). Long-horizon, research-grade.
+**Rung 1 — propositional logic.** Already reified + proved sound (`init/prop.rs`);
+the near-term work is `prop.cov` exposing it in the script language, with
+**induction-on-derivations packaged as a first-class principle** — and a
+deliberate *stress test* of the `.cov` language over reified syntax (the surface
+gaps it surfaces drive the next language features). This is the cheapest place to
+nail the metatheory loop end-to-end.
 
-Recommended near-term commitment: **Phases 1 + 2** (SOA sound + one transported
-theorem); 3–5 as the roadmap. Reify **full Z₂ first** (clean soundness/transport;
-HOL models it); the RCA₀/ACA₀ *subsystem* stratification — where the real
-reverse-math content lives — is a *refinement* (restrict which comprehension
-instances `Derivable_SOA` admits) layered on after.
+**Rung 2 — Peano arithmetic, and FOL tooling in general.** PA = first-order logic
+(terms, formulas, capture-avoiding substitution, ∀/∃) + the arithmetic signature +
+the **induction schema**; soundness via HOL `nat`. This is the big reusable
+investment: a generic **first-order-theory framework** (the syntax of FOL, a
+`Derivable` engine parameterized by a signature + axioms, the denotation
+machinery) that *every* later theory reuses. **Knowing a result is PA-provable is
+itself a useful certificate** — a large fraction of mathematics lives in PA, and
+PA-provability bounds a theorem's logical strength. The FOL framework is what
+rung 1's stress-test gaps tell us to build.
+
+**Rung 3 — second-order arithmetic (Z₂).** Multi-sorted (number + set vars),
+`Derivable_SOA` (PA⁻ + second-order induction + comprehension), denotation
+(numbers→`nat`, sets→`nat→bool`). **HOL models Z₂ cleanly** (full comprehension =
+HOL λ-abstraction), so soundness is direct *and* the denotation **is** the
+SOA→HOL transport interpretation. Then the showpiece: reify HOL in HOL
+(hol-in-hol), prove `SOA(A) ⟹ HOL(A)` between the two *reified* theories, and
+**transport** an SOA theorem to internal-HOL rather than re-prove it — first-class
+metatheory made visible. Reify **full Z₂ first**; the RCA₀/ACA₀ subsystem
+stratification (the real reverse-math content, and the home of analysis-in-SOA,
+§5.2/Phase 5) is a *refinement* layered on after.
+
+**Other first-order theories worth building** (each a `Derivable_X` + soundness +
+transport over the FOL framework from rung 2):
+
+| Theory | What it is | Why |
+|---|---|---|
+| **Robinson Q** | PA minus induction (finitely axiomatized) | the base of essential undecidability / Gödel; the weakest "arithmetic" |
+| **Presburger** | FO theory of `(ℕ, +)` | **decidable** (a real decision procedure to build — a handler) |
+| **Tarski RCF** | real-closed fields (FO theory of `(ℝ, +, ·, <)`) | **decidable** by quantifier elimination — the decision procedure behind real-algebra automation; pairs with the analysis/SMT layer (§5.3) |
+| **ZF / ZFC** | first-order set theory | the long-horizon big goal — the foundational target the metatheory ladder climbs toward |
+
+The decidable ones (Presburger, RCF) are doubly valuable: they're object theories
+*and* they yield **decision-procedure handlers** the surface can dispatch to
+(`surface-compiler.md` effect dispatch) — the same way the Farkas/Alethe work
+yields a linear-arithmetic handler.
+
+**Near-term commitment:** rung 1 (`prop.cov` + induction-on-derivations, in
+progress), then the FOL framework + PA (rung 2). SOA, the FO-theory catalogue, and
+analysis-in-SOA follow once the FOL tooling is solid.
 
 ---
 

@@ -1,0 +1,229 @@
+# Skeletons — `covalence-hol::init` (theory catalogue)
+
+Intentional placeholders for the `init/*` theories. See `CLAUDE.md` § Skeletons
+for the rules, the [crate index](../../SKELETONS.md), and the [root
+index](../../../../SKELETONS.md).
+
+## Postulates pending proof
+
+- **The `rat` quotient + ordered-field theory** in
+  `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
+  (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`
+  (pure `int`-equation `refl`/`sym`); `of_nat_via_int` (the ℕ↪ℚ
+  embedding factors through ℤ↪ℚ, by β); and `add_comm` / `mul_comm` —
+  proved **on the nose**, exactly as `init::int`'s are: `ratAdd`/`ratMul`
+  are componentwise on representatives, so the two representative pairs are
+  provably equal (numerator + denominator each by the proved `int`
+  commutativity facts) and equal representatives lift to equal classes by
+  congruence under `mkRat`. `rat_rel_trans` is now **proved too** — the
+  Grothendieck cross-multiplication cancellation argument — *modulo* two
+  **postulated `int` facts** (stubbed in `init::rat` via `axiom`, **to be
+  relocated to / discharged in `init::int`**, now that the `int` ordered ring
+  is fully proved both are derivable: cancellation from `lt_mul_pos` +
+  `lt_trichotomy`, nonzero-positivity from the `int.pos` carving predicate):
+  - `int_mul_rcancel` — `∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` (`int` is an
+    integral domain; right-cancellation by a nonzero factor).
+  - `int_pos_nonzero` — `∀p:int.pos. ¬(rep p = 0)` (positive denominators
+    are nonzero).
+
+  So `rat_rel` is now a full equivalence and `quotient::class_intro` /
+  `recon` are available for the remaining `rat` axioms.
+  The **quotient-lifting machinery is now built** (the rat analogue of
+  int's): `rat_recon` (quotient induction), `round_trip`, `recon_mk` (MK
+  component form `MK(f,d) = mk_rat(pair f d)`, `f:int`, `d:int.pos`), the
+  per-op computation rules `add_class`/`mul_class` + `add_mk`/`mul_mk` +
+  `*_via_components`, the well-definedness lemmas `add_pair_cong` (distrib +
+  interchange) / `mul_pair_cong` (interchange), `rel_of_pairs` (prod-
+  projection bridge), and `imul_interchange`. It rests on two postulated
+  `int.pos` round-trips for the `to_pos` denominators (**to discharge in
+  `init::int`**): `pos_prod_rt` (`rep(to_pos(rep a · rep b)) = rep a · rep b`)
+  and `one_pos_rt` (`rep(one_pos) = 1`).
+
+  **Proved** through that machinery (over the operations `rat_zero`/`rat_one`/
+  `rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/`rat_div`/`rat_lt`, all
+  defined at the representative level): the full additive group + commutative
+  monoid fragment plus distributivity — the **full commutative ring**:
+  `add_comm`, `mul_comm` (on the nose), `add_assoc`, `add_zero`, `add_neg`,
+  `mul_assoc`, `mul_one`, `mul_zero`, `distrib` — and the order `lt_irrefl`
+  (on the nose from `int::lt_irrefl`). All genuine *modulo* the `int.pos`
+  round-trip + `rat_rel_trans` int stubs. `distrib` is the one *non*-
+  componentwise ring axiom (`a·(b+c) = N/D` while `a·b + a·c = (rda·N)/(rda·D)`,
+  the same rational scaled by the common factor `rda`), so its
+  cross-multiplication collapses to comm/assoc and lifts by `class_intro`.
+
+  **Still postulated** via the module's `axiom` helper:
+  - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`), realisable via
+    the defined `rat_inv` (sign-normalised so the denominator stays positive).
+  - The order axioms `lt_trans`/`lt_trichotomy`/`le_def`/`zero_lt_one`.
+    `le_def` is definitional (pins the opaque `ratLe`); the rest unfold
+    `ratLt` to the `int` comparison on cross-products. The `int` ordered
+    ring is **now fully proved** (`lt_*`/`lt_mul_pos` all discharged), so the
+    `int` order facts these lean on are all available; the remaining work is
+    the rat-quotient lifting. (The linear-order toolkit
+    `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/`le_antisym`/
+    `le_total`/`not_one_le_zero` is **not** postulated — it is *derived* from
+    `le_def` + the strict-order facts.)
+  - The two **mediant inequalities** `mediant_gt` / `mediant_lt` — the
+    only postulated leaves of `dense` (which is itself *derived* from
+    them via the mediant `(a+c)/(b+d)`, no division needed). Each unfolds
+    to an `int` order fact (`a·d < c·b ⟹ a·(b+d) < (a+c)·b`, etc.)
+    lifted through the quotient — now unblocked (the `int` order theory it
+    needs is fully proved); the remaining work is the rat-quotient lifting.
+
+- **The `real` Dedekind-cut theory** in
+  `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`
+  (upper cuts) — **shell-defined**: the `real` `TypeSpec` lives in
+  `init::real` (`real_spec`/`real_ty`), *not* in the kernel catalogue
+  (`covalence-core`), since the reals are not needed for the kernel's
+  float substrate (rationals suffice). It is an ordinary derived `close`
+  spec, so the kernel's witness-free subtype laws apply with no kernel
+  support. **Proved with no postulates**: the `realLe` partial-order
+  laws `le_refl` / `le_trans` / `le_antisym` — `realLe` is reverse inclusion
+  of cut-sets, so reflexivity/transitivity are pure logic and antisymmetry
+  is pure subtype structure (mutual inclusion ⟹ pointwise-equal cut-sets by
+  function extensionality ⟹ equal reals by the round-trip
+  `Thm::spec_abs_rep`); none touch the `rat`/order postulates. **Proved
+  *modulo* the `rat` order postulates** they consume: `is_cut` (every
+  principal up-set `ratLe q` is a genuine cut, from the `rat` `≤` toolkit),
+  `of_rat_mono` (the principal-cut embedding is monotone, by `rat::le_trans`
+  + the round-trip), and `zero_ne_one` (`⊢ ¬(0 = 1)`, via distinct principal
+  cuts transported through the subtype `rep`/`abs`).
+  **Postulated** via the module's `axiom` helper (self-flagged):
+  - `sup_is_ub` / `sup_is_least` — the two least-upper-bound properties of
+    the supremum cut `real_sup A` (the intersection of the members'
+    cut-sets). Each unfolds to a set/order fact about the cuts, blocked on
+    the same `rat`/order theory. `complete` (the least-upper-bound property,
+    "the reals are complete") is itself **derived** from these two, with
+    `real_sup A` as the witness — the direct analogue of how `rat::dense`
+    is derived from its mediant postulates.
+
+## Partial subsystems
+
+- **`covalence-hol` inductive-type engine** in
+  `crates/covalence-hol/src/init/inductive/`. The shared infrastructure for
+  basic inductive types (single-sorted, parametric, first-order,
+  strictly-positive, directly-recursive). **In place:**
+  - `sig.rs` — the signature data model (`InductiveSig` / `Constructor` / `Arg`).
+  - `data.rs` — the `Inductive` **trait**, the lifting seam: the engine
+    consumes structural induction **and constructor freeness** (`injective` /
+    `distinct`) only through it, never calling a kernel rule directly. `nat`'s
+    `NatTheory` adapter sources them from `Thm::nat_induct` / `Thm::succ_inj` /
+    `Thm::zero_ne_succ`.
+  - `graph.rs` — the impredicative recursion graph (`closed` / `graph` /
+    `ctor_instance`), generic over a signature.
+  - `existence.rs` — `graph_intro` (per-constructor introduction) and
+    `graph_total` (`⊢ ∀t. ∃a. Graph t a`, by the supplied induction). Generic
+    over `Inductive`; `nat` consumes them (`init/recursion.rs`).
+  - `uniqueness.rs` — `graph_inv` (per-constructor inversion: `Graph (Cᵢ x⃗) a
+    ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ) ∧ a = fᵢ x⃗ b⃗`), via the generic `Good = λk c.
+    Graph k c ∧ wit` determinizing relation whose closedness is discharged by
+    `distinct` (other constructors) and `injective` (`Cᵢ` itself). Generic over
+    `Inductive`; `nat`'s `graph_base_inv` consumes it.
+  - `determinacy.rs` — `graph_det` (`∀t a b. Graph t a ⟹ Graph t b ⟹ a = b`):
+    folds the supplied induction over `graph_inv` (invert both graphs, then the
+    IH equates the recursive images). Generic over `Inductive`; `nat`'s
+    `graph_det` consumes it.
+  - `recursor.rs` — `recursion_theorem` (`⊢ ∃rec. P_rec rec`): builds the
+    recursor `λ(steps). λt. ε a. Graph t a` by Hilbert choice over the graph,
+    proves its per-constructor equations (`rec (Cᵢ x⃗) = fᵢ x⃗ (rec r⃗)`) from
+    totality + determinacy, and `∃`-introduces over a caller-supplied `defs`
+    recursor predicate. Generic over `Inductive`; `nat`'s `recursion_theorem` /
+    `rec_holds_proof` consume it.
+  - `util.rs` — shared conjunction-proof plumbing.
+
+  The construction is **complete**: `init/recursion.rs` is now just the
+  `NatTheory` adapter + assembly wiring, consuming the engine end to end.
+  Remaining engine work:
+  - **Port the engine onto the abstract `Hol` interface** (`inductive/hol.rs`),
+    so the same machinery drives any HOL backend (native today; internal /
+    object-level HOL later — "prove induction inside HOL"). `Hol` is the
+    value-typed HOL Light surface (assoc `Type`/`Term`/`Thm` + connective
+    builders + the derived rule set), distinct from the arena-style
+    `HolLightKernel`. The pattern is **generic impl + native shim**: each
+    function's logic moves to a generic-over-`Hol` version, with the concrete
+    engine function a thin [`NativeHol`] shim so callers are unchanged.
+    **Done:** the `Hol` trait covers the **full proof-layer surface** — types,
+    term builders, queries, the rule set, and the hard derived rules (`beta_nf`,
+    `exists_intro`/`exists_elim`, `rw_all`) as trait methods; the easy derived
+    rules (`cong_arg`/`conjuncts`/`beta_reduce`/`beta_expand`/`beta_nf_concl`/
+    `beta_nf_expand`/`rewrite`) and the conjunction plumbing as generic helpers.
+    `NativeHol` forwards each to the existing `covalence-core` / `init::eq` /
+    `init::logic` impl; the surface is validated generically (the `hol` tests).
+    Also done: the **data model** (`sig`: `GenArg<Ty>`/`GenConstructor<Tm,Ty>`/
+    `GenSig<Tm,Ty>` with native aliases `Arg`/`Constructor`/`InductiveSig`),
+    the **`graph` term builders** (`gen_app2`/`gen_ctor_instance`/`gen_closed`/
+    `gen_graph` + `GenCtorInstance<Tm>`, bare names are `NativeHol` shims), and
+    the **`Inductive` trait** (now `Inductive<H: Hol = NativeHol>` — the default
+    type param keeps `NatTheory`'s impl and the proof modules' `I: Inductive`
+    bounds unchanged). `util` + `graph::conj` + `graph::{graph,closed,…}` are
+    shims. **Still concrete (next):** the proof modules `existence` /
+    `uniqueness` / `determinacy` / `recursor` — each ports to
+    `<H: Hol, I: Inductive<H>>(hol, …)` using the `gen_*` graph builders + the
+    `Hol` rule methods + the generic β/∃ helpers, with a `NativeHol` shim
+    keeping its `nat`-facing signature. Then `recursion.rs`'s entry points can
+    flip to any backend.
+  - **The multi-recursive-argument / multi-constructor-argument paths** in
+    `existence.rs`, `uniqueness.rs`, `determinacy.rs`, and `recursor.rs`
+    (conjunctive IHs / antecedents, componentwise injectivity, nested
+    `∃`-witnessing) are partial: `existence` / `uniqueness` handle the general
+    shape but are only *exercised* by `nat`'s ≤1-arg / ≤1-rec-arg cases, while
+    `determinacy::det_case` and `recursor::rec_equation` explicitly **error** on
+    a constructor with ≥2 recursive arguments. A binary-tree or `list`
+    signature is the first real test. The strict
+    `wit`-binder naming discipline (`_wx_` / `_wb_` prefixes, disjoint from a
+    constructor's own binders) is load-bearing — see the `uniqueness.rs` docs.
+
+  **Lifting to internal HOL (future).** The trait seam exists precisely so the
+  proofs can be re-targeted: today `nat` is a kernel primitive, but we may later
+  define `nat` from `ind` the standard HOL way (`0`/`SUC` carved out of an
+  infinite type via `NUM_REP`), where induction and freeness are **derived
+  theorems**. That presentation supplies the same `Inductive` interface and so
+  drives the same engine — lifting these proofs into internal HOL becomes
+  writing one new `Inductive` impl, not re-deriving the graph route. Keeping
+  every engine entry point generic over `I: Inductive` (never a concrete `nat`)
+  is the standing constraint that keeps this open.
+
+- **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`.
+  Only the **`nil`-side computational foundation** is proved so far — the
+  `abs`/`rep` seam (`rep_abs_finite`), the finiteness gate (`finite_const_none`,
+  `finite_nonempty`), element-access unfolding (`index_unfold`), and the empty
+  list facts (`index_nil`, `head_nil`). All are genuine (hypothesis- and
+  oracle-free). Still missing:
+  - **`cons`-side computations** — `index`/`head`/`tail` of `cons x xs`. Each
+    needs `finite (cons-stream)`, a finiteness-*preservation* lemma that rests
+    on `nat` **ordering** theory (`nat_le` successor/predecessor lemmas). That
+    order theory is now developed in `init/nat.rs` (the `le`/`lt` foundation:
+    `le_succ_succ`, `le_zero`, `zero_lt_succ`, `le_total`, `le_trans`, …), so
+    `finite_cons` is unblocked; build it, then the `cons` element lemmas follow
+    the `init::stream` `at_of` pattern.
+  - **`tail_cons` / list extensionality / induction** — `tail (cons x xs) = xs`
+    needs extensionality on the carrier stream (pointwise-equal ⟹ equal),
+    re-discharging finiteness; list induction is the structural-recursion
+    companion.
+  - **Structural recursors `list_foldr` / `list_foldl`** — pinned by Hilbert-ε
+    selector predicates (defined in `defs/list.rs`), so their defining equations
+    (`fr f z nil = z`, `fr f z (cons x xs) = f x (fr f z xs)`, and the left-fold
+    mirror) need a **list recursion theorem**. The target is to obtain it from
+    the generic inductive engine (`init/inductive/`) once its proof layer is
+    generalised and `list`'s induction principle + `cons`/`nil` freeness are
+    derived to feed it — rather than re-deriving the `nat` graph route by hand.
+  - **Ops riding on the recursors** — `length`/`cat`/`filter`/`flatten`
+    (factored through `foldr`) and the pointwise `map`/`take`/`skip`/`repeat`
+    (need the `cons`-side stream computations). No `*_nil`/`*_cons` clauses for
+    any of these yet.
+
+- **`covalence-hol` product theory** in `crates/covalence-hol/src/init/prod.rs`.
+  The core is **complete and genuine** (oracle-free): the `abs`/`rep` seam
+  (`rep_pair`), both projection clauses (`fst_pair`/`snd_pair`), surjective
+  pairing (`pair (fst p) (snd p) = p`), and pair injectivity (`pair_inj`).
+  Not yet covered:
+  - **`signed1` / `signed2`** (`defs/prod.rs`) are *separate* `TypeSpec`s reusing
+    the same singleton `prod_predicate` over `prod bit α`. Their constructors /
+    projections aren't built; once added they mirror `prod` exactly (the
+    `singleton_pred` / `determines` engine is type-agnostic — only the spec
+    handle differs).
+  - **The reverse of `pair_inj`** (`a = c ∧ b = d ⟹ pair a b = pair c d`, trivial
+    by congruence) and the packaged `⟺` form are not exposed.
+  - **A product recursor / `prod.case`** (`(α → β → γ) → prod α β → γ`) is not in
+    the `defs/` catalogue; surjective pairing + the projections are enough to
+    define and reason about one downstream when needed.

@@ -67,6 +67,7 @@ use covalence_core::defs::{fst, pair, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
 use crate::init::ext::{TermExt, ThmExt};
+use crate::init::logic;
 use crate::init::nat;
 use crate::init::quotient;
 
@@ -101,9 +102,6 @@ fn mul(a: Term, b: Term) -> Term {
     Term::app(Term::app(int_mul(), a), b)
 }
 
-// Used by the test-suite statement builders (the proofs go through
-// `neg_via_components`, never this surface form).
-#[cfg_attr(not(test), allow(dead_code))]
 fn neg(a: Term) -> Term {
     Term::app(int_neg(), a)
 }
@@ -1817,6 +1815,348 @@ cached_thm! {
 }
 
 // ============================================================================
+// Integral-domain right-cancellation (and the `int.pos` positivity it feeds)
+// ============================================================================
+//
+// `int_mul_rcancel` — `¬(d = 0) ⟹ x·d = y·d ⟹ x = y` — is what `init::rat`'s
+// `rat_rel_trans` cancels the common positive denominator with. We **prove**
+// it here from the proved order theory: trichotomy splits `x = y` off, and
+// `lt_mul_pos` rules out the strict cases (for `d < 0` after flipping the sign
+// with the small negation lemmas below). It used to be postulated in
+// `init::rat`; relocated here as a genuine theorem.
+
+/// `⊢ ∀a. 0 + a = a` — left additive unit, from `add_zero` + `add_comm`.
+fn add_left_zero() -> Result<Thm> {
+    let a = var("a");
+    add_comm()
+        .all_elim(lit(0))?
+        .all_elim(a.clone())? // 0 + a = a + 0
+        .trans(add_zero().all_elim(a.clone())?)? // = a
+        .all_intro("a", int())
+}
+
+cached_thm! {
+    /// `⊢ ∀a b. a + b = 0 ⟹ b = -a` — uniqueness of the additive inverse.
+    /// `b = 0+b = ((-a)+a)+b = (-a)+(a+b) = (-a)+0 = -a`.
+    fn neg_unique() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let h = add(a.clone(), b.clone()).equals(lit(0))?; // a + b = 0
+        let na = neg(a.clone());
+        // (-a)+a = 0: add_neg gives a+(-a)=0, commute.
+        let na_a = add_comm()
+            .all_elim(na.clone())?
+            .all_elim(a.clone())?
+            .trans(add_neg().all_elim(a.clone())?)?; // (-a)+a = 0
+        let step1 = add_assoc()
+            .all_elim(na.clone())?
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .sym()?; // (-a)+(a+b) = ((-a)+a)+b
+        let step2 = na_a.cong_arg(int_add())?.cong_fn(b.clone())?; // ((-a)+a)+b = 0+b
+        let step3 = add_left_zero()?.all_elim(b.clone())?; // 0+b = b
+        let lhs_to_b = step1.trans(step2)?.trans(step3)?; // (-a)+(a+b) = b
+        // Under hypothesis a+b=0: (-a)+(a+b) = (-a)+0 = -a.
+        let cong_h = Thm::assume(h.clone())?.cong_arg(Term::app(int_add(), na.clone()))?; // (-a)+(a+b) = (-a)+0
+        let to_na = cong_h.trans(add_zero().all_elim(na.clone())?)?; // (-a)+(a+b) = -a
+        // b = (-a)+(a+b) = -a.
+        let res = lhs_to_b.sym()?.trans(to_na)?; // {h} ⊢ b = -a
+        res.imp_intro(&h)?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀x d. x·(-d) = -(x·d)` — multiplication distributes over negation
+    /// on the right. `x·d + x·(-d) = x·(d+(-d)) = x·0 = 0`, so `x·(-d)` is the
+    /// additive inverse of `x·d` ([`neg_unique`]).
+    fn mul_neg_r() -> Result<Thm> {
+        let (x, d) = (var("x"), var("d"));
+        let xd = mul(x.clone(), d.clone());
+        let xnd = mul(x.clone(), neg(d.clone()));
+        // x·d + x·(-d) = x·(d + (-d)) = x·0 = 0.
+        let sum0 = distrib()
+            .all_elim(x.clone())?
+            .all_elim(d.clone())?
+            .all_elim(neg(d.clone()))?
+            .sym()? // x·d + x·(-d) = x·(d+(-d))
+            .trans(
+                add_neg()
+                    .all_elim(d.clone())? // d+(-d) = 0
+                    .cong_arg(Term::app(int_mul(), x.clone()))?, // x·(d+(-d)) = x·0
+            )?
+            .trans(mul_zero().all_elim(x.clone())?)?; // = 0
+        neg_unique()
+            .all_elim(xd.clone())?
+            .all_elim(xnd.clone())?
+            .imp_elim(sum0)? // x·(-d) = -(x·d)
+            .all_intro("d", int())?
+            .all_intro("x", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀d. d < 0 ⟹ 0 < -d` — negation reverses the strict order at 0.
+    /// Add `-d` to both sides of `d < 0` ([`lt_add_mono`]) and simplify
+    /// `d+(-d) = 0`, `0+(-d) = -d`.
+    fn lt_neg_swap() -> Result<Thm> {
+        let d = var("d");
+        let h = lt(d.clone(), lit(0)); // d < 0
+        let shifted = lt_add_mono()
+            .all_elim(d.clone())?
+            .all_elim(lit(0))?
+            .all_elim(neg(d.clone()))?
+            .imp_elim(Thm::assume(h.clone())?)?; // d+(-d) < 0+(-d)
+        let res = shifted
+            .rewrite(&add_neg().all_elim(d.clone())?)? // 0 < 0+(-d)
+            .rewrite(&add_left_zero()?.all_elim(neg(d.clone()))?)?; // 0 < -d
+        res.imp_intro(&h)?.all_intro("d", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀x y d. 0 < d ⟹ x·d = y·d ⟹ x = y` — right-cancellation by a
+    /// **positive** factor: by trichotomy on `x`/`y`, each strict case gives
+    /// `x·d < y·d` (or the reverse) via [`lt_mul_pos`], contradicting
+    /// `x·d = y·d` through [`lt_irrefl`].
+    fn mul_rcancel_pos() -> Result<Thm> {
+        let (x, y, d) = (var("x"), var("y"), var("d"));
+        let hpos = lt(lit(0), d.clone()); // 0 < d
+        let heq = mul(x.clone(), d.clone()).equals(mul(y.clone(), d.clone()))?; // x·d = y·d
+        let goal = x.clone().equals(y.clone())?;
+
+        // x < y ⟹ x·d < y·d ⟹ ⊥ (since x·d = y·d).
+        let lt_xy = lt(x.clone(), y.clone());
+        let br_lt = {
+            let prod_lt = lt_mul_pos()
+                .all_elim(x.clone())?
+                .all_elim(y.clone())?
+                .all_elim(d.clone())?
+                .imp_elim(Thm::assume(hpos.clone())?)?
+                .imp_elim(Thm::assume(lt_xy.clone())?)?; // x·d < y·d
+            let xd_lt_xd = prod_lt.rewrite(&Thm::assume(heq.clone())?)?; // y·d < y·d
+            lt_irrefl()
+                .all_elim(mul(y.clone(), d.clone()))?
+                .not_elim(xd_lt_xd)? // {hpos,heq,x<y} ⊢ ⊥
+        };
+        // y < x ⟹ y·d < x·d ⟹ ⊥ (rewrite x·d ↦ y·d).
+        let lt_yx = lt(y.clone(), x.clone());
+        let br_gt = {
+            let prod_lt = lt_mul_pos()
+                .all_elim(y.clone())?
+                .all_elim(x.clone())?
+                .all_elim(d.clone())?
+                .imp_elim(Thm::assume(hpos.clone())?)?
+                .imp_elim(Thm::assume(lt_yx.clone())?)?; // y·d < x·d
+            let yd_lt_yd = prod_lt.rewrite(&Thm::assume(heq.clone())?)?; // y·d < y·d
+            lt_irrefl()
+                .all_elim(mul(y.clone(), d.clone()))?
+                .not_elim(yd_lt_yd)? // {hpos,heq,y<x} ⊢ ⊥
+        };
+        // Trichotomy: (x<y) ∨ (x=y) ∨ (y<x).
+        let tri = lt_trichotomy().all_elim(x.clone())?.all_elim(y.clone())?;
+        // Right disjunct: (x=y) ∨ (y<x).
+        let br_eq = {
+            // x=y branch: trivial.
+            let eq_branch = Thm::assume(goal.clone())?.imp_intro(&goal)?;
+            // y<x branch: ex falso.
+            let gt_branch = br_gt.false_elim(goal.clone())?.imp_intro(&lt_yx)?;
+            let tail = tri
+                .concl()
+                .as_app()
+                .ok_or_else(|| Error::ConnectiveRule("mul_rcancel_pos: ∨ shape".into()))?
+                .1
+                .clone(); // (x=y) ∨ (y<x)
+            Thm::assume(tail.clone())?
+                .or_elim(eq_branch, gt_branch)? // {tail} ⊢ x=y
+                .imp_intro(&tail)?
+        };
+        let lt_branch = br_lt.false_elim(goal.clone())?.imp_intro(&lt_xy)?;
+        let res = tri.or_elim(lt_branch, br_eq)?; // {hpos,heq} ⊢ x=y
+        res.imp_intro(&heq)?
+            .imp_intro(&hpos)?
+            .all_intro("d", int())?
+            .all_intro("y", int())?
+            .all_intro("x", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` — **proved** integral-domain
+    /// right-cancellation. `¬(d=0)` + trichotomy gives `0 < d` or `d < 0`; the
+    /// positive case is [`mul_rcancel_pos`], the negative case flips `d ↦ -d`
+    /// ([`lt_neg_swap`] + [`mul_neg_r`]) and cancels `x·(-d) = y·(-d)`.
+    pub fn int_mul_rcancel() -> Result<Thm> {
+        let (x, y, d) = (var("x"), var("y"), var("d"));
+        let neq = d.clone().equals(lit(0))?.not()?; // ¬(d=0)
+        let heq = mul(x.clone(), d.clone()).equals(mul(y.clone(), d.clone()))?;
+
+        // From ¬(d=0), trichotomy d/0 collapses to (d<0) ∨ (0<d).
+        let tri = lt_trichotomy().all_elim(d.clone())?.all_elim(lit(0))?; // (d<0) ∨ (d=0) ∨ (0<d)
+        let dlt0 = lt(d.clone(), lit(0));
+        let zltd = lt(lit(0), d.clone());
+        let target = dlt0.clone().or(zltd.clone())?; // d<0 ∨ 0<d
+        // Middle ∨ collapse: (d=0) branch contradicts ¬(d=0).
+        let live = {
+            let tail = tri
+                .concl()
+                .as_app()
+                .ok_or_else(|| Error::ConnectiveRule("int_mul_rcancel: ∨ shape".into()))?
+                .1
+                .clone(); // (d=0) ∨ (0<d)
+            let from_dlt0 =
+                Thm::assume(dlt0.clone())?.or_intro_l(zltd.clone())?.imp_intro(&dlt0)?; // d<0 ⟹ target
+            let from_tail = {
+                let eq0 = d.clone().equals(lit(0))?;
+                let from_eq0 = Thm::assume(neq.clone())?
+                    .not_elim(Thm::assume(eq0.clone())?)? // {¬(d=0),d=0} ⊢ ⊥
+                    .false_elim(target.clone())?
+                    .imp_intro(&eq0)?;
+                let from_zltd =
+                    Thm::assume(zltd.clone())?.or_intro_r(dlt0.clone())?.imp_intro(&zltd)?;
+                Thm::assume(tail.clone())?
+                    .or_elim(from_eq0, from_zltd)?
+                    .imp_intro(&tail)?
+            };
+            tri.or_elim(from_dlt0, from_tail)? // ⊢ (d<0 ∨ 0<d)
+        };
+
+        // 0<d branch: direct positive cancellation.
+        let br_pos = mul_rcancel_pos()
+            .all_elim(x.clone())?
+            .all_elim(y.clone())?
+            .all_elim(d.clone())?
+            .imp_elim(Thm::assume(zltd.clone())?)?
+            .imp_elim(Thm::assume(heq.clone())?)? // {0<d,heq} ⊢ x=y
+            .imp_intro(&zltd)?;
+        // d<0 branch: cancel by -d (which is >0).
+        let br_neg = {
+            let pos_nd = lt_neg_swap()
+                .all_elim(d.clone())?
+                .imp_elim(Thm::assume(dlt0.clone())?)?; // 0 < -d
+            // x·(-d) = y·(-d): negate heq through mul_neg_r both sides.
+            let xnd_eq = mul_neg_r().all_elim(x.clone())?.all_elim(d.clone())?; // x·(-d) = -(x·d)
+            let ynd_eq = mul_neg_r().all_elim(y.clone())?.all_elim(d.clone())?; // y·(-d) = -(y·d)
+            let neg_eq = Thm::assume(heq.clone())?.cong_arg(int_neg())?; // -(x·d) = -(y·d)
+            let prod_eq = xnd_eq
+                .trans(neg_eq)?
+                .trans(ynd_eq.sym()?)?; // {heq} ⊢ x·(-d) = y·(-d)
+            mul_rcancel_pos()
+                .all_elim(x.clone())?
+                .all_elim(y.clone())?
+                .all_elim(neg(d.clone()))?
+                .imp_elim(pos_nd)?
+                .imp_elim(prod_eq)? // {dlt0,heq} ⊢ x=y
+                .imp_intro(&dlt0)?
+        };
+        let res = live.or_elim(br_neg, br_pos)?; // {neq,heq} ⊢ x=y
+        res.imp_intro(&heq)?
+            .imp_intro(&neq)?
+            .all_intro("d", int())?
+            .all_intro("y", int())?
+            .all_intro("x", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀p:int.pos. 0 < rep p` — the carving predicate `0 < x` holds on the
+    /// representative of every strictly-positive integer. From the kernel
+    /// subtype laws: `abs(rep p) = p` ([`Thm::spec_abs_rep`]) feeds the
+    /// witness-free back rule ([`Thm::spec_rep_abs_back`]) at `rep p`, whose
+    /// `¬∃x. 0<x` escape disjunct is killed by the witness `1`.
+    pub fn int_pos_pos() -> Result<Thm> {
+        use covalence_core::defs::{int_pos_spec, int_pos_ty};
+        let spec = int_pos_spec();
+        let p = Term::free("p", int_pos_ty());
+        let rep = Term::spec_rep(spec.clone(), Vec::<Type>::new());
+        let rep_p = Term::app(rep.clone(), p.clone());
+
+        // abs(rep p) = p, pushed under rep ⟹ rep(abs(rep p)) = rep p.
+        let abs_rep = Thm::spec_abs_rep(spec.clone(), Vec::<Type>::new(), p.clone())?;
+        let prem = abs_rep.cong_arg(rep.clone())?; // rep(abs(rep p)) = rep p
+        let back = Thm::spec_rep_abs_back(spec.clone(), Vec::<Type>::new(), rep_p.clone())?
+            .imp_elim(prem)?; // (P(rep p)) ∨ ¬(∃x. P x)
+
+        // Peel the two disjuncts.
+        let (p_rep_tm, notex) = {
+            let (or_l, notex) = back
+                .concl()
+                .as_app()
+                .ok_or_else(|| Error::ConnectiveRule("int_pos_pos: ∨ shape".into()))?;
+            let (_or, l) = or_l
+                .as_app()
+                .ok_or_else(|| Error::ConnectiveRule("int_pos_pos: ∨ shape".into()))?;
+            (l.clone(), notex.clone())
+        };
+
+        // ⊢ ∃x. (0 < x) — witness 1, against the exact predicate in `notex`.
+        let exists_p = {
+            let inner = notex
+                .as_app()
+                .ok_or_else(|| Error::ConnectiveRule("int_pos_pos: ¬∃ shape".into()))?
+                .1; // exists_op (λx. 0<x)
+            let pred = inner
+                .as_app()
+                .ok_or_else(|| Error::ConnectiveRule("int_pos_pos: ∃ shape".into()))?
+                .1
+                .clone(); // λx. 0<x
+            let one_pos = lt_succ_zero_one()?; // ⊢ 0 < 1
+            // `pred` is `λx. (λy. 0<y) x` (the image predicate is η-redundant),
+            // so `pred 1` β-reduces in two steps to `0 < 1` (pure β — the
+            // literal reducer would over-evaluate `0<1` to `T`).
+            let beta1 = Thm::beta_conv(Term::app(pred.clone(), lit(1)))?; // pred 1 = (λy.0<y) 1
+            let inner = beta1.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+            let beta2 = Thm::beta_conv(inner)?; // (λy.0<y) 1 = (0<1)
+            let proof = beta1.trans(beta2)?.sym()?.eq_mp(one_pos)?; // ⊢ pred 1
+            logic::exists_intro(pred, lit(1), proof)?
+        };
+
+        // ⊢ P(rep p) = (0 < rep p): left branch identity, right branch ex falso.
+        let p_rep = {
+            let left = Thm::assume(p_rep_tm.clone())?.imp_intro(&p_rep_tm)?;
+            let right = Thm::assume(notex.clone())?
+                .not_elim(exists_p)?
+                .false_elim(p_rep_tm.clone())?
+                .imp_intro(&notex)?;
+            back.or_elim(left, right)? // ⊢ (λx. 0<x)(rep p)
+        };
+        p_rep_tm
+            .reduce()? // P(rep p) = (0 < rep p)
+            .eq_mp(p_rep)? // ⊢ 0 < rep p
+            .all_intro("p", int_pos_ty())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀p:int.pos. ¬(rep p = 0)` — positive denominators are nonzero.
+    /// From [`int_pos_pos`] (`0 < rep p`): if `rep p = 0` then `0 < 0`,
+    /// contradicting [`lt_irrefl`]. Relocated here from `init::rat`.
+    pub fn int_pos_nonzero() -> Result<Thm> {
+        use covalence_core::defs::int_pos_ty;
+        let p = Term::free("p", int_pos_ty());
+        let rep = Term::spec_rep(covalence_core::defs::int_pos_spec(), Vec::<Type>::new());
+        let rep_p = Term::app(rep, p.clone());
+        let pos = int_pos_pos().all_elim(p.clone())?; // 0 < rep p
+        let eq0 = rep_p.clone().equals(lit(0))?; // rep p = 0
+        // rep p = 0 ⟹ 0 < 0 (rewrite the RHS of `0 < rep p`).
+        let zlt0 = pos.rewrite(&Thm::assume(eq0.clone())?)?; // {rep p = 0} ⊢ 0 < 0
+        lt_irrefl()
+            .all_elim(lit(0))?
+            .not_elim(zlt0)? // {rep p = 0} ⊢ ⊥
+            .imp_intro(&eq0)?
+            .not_intro()? // ¬(rep p = 0)
+            .all_intro("p", int_pos_ty())
+    }
+}
+
+/// `⊢ 0 < 1` on `int` — the base positivity fact (the `int.pos` witness).
+fn lt_succ_zero_one() -> Result<Thm> {
+    // `int.lt 0 1` reduces to a `nat` comparison; let the literal reducer +
+    // component machinery decide it.
+    lt(lit(0), lit(1)).prove_true()
+}
+
+// ============================================================================
 // Discreteness — the integer-specific axiom
 // ============================================================================
 
@@ -2308,6 +2648,54 @@ mod tests {
             assert!(t.hyps().is_empty(), "int order facts are genuine");
             assert!(t.concl().type_of().unwrap().is_bool());
         }
+    }
+
+    #[test]
+    fn integral_domain_cancellation_is_genuine() {
+        use covalence_core::defs::int_pos_ty;
+        // int_mul_rcancel: ∀x y d. ¬(d=0) ⟹ x·d = y·d ⟹ x=y.
+        let (x, y, d) = (var("x"), var("y"), var("d"));
+        let rc = int_mul_rcancel();
+        assert!(rc.hyps().is_empty(), "int_mul_rcancel is proved");
+        let inst = rc
+            .all_elim(x.clone())
+            .unwrap()
+            .all_elim(y.clone())
+            .unwrap()
+            .all_elim(d.clone())
+            .unwrap();
+        let expected = d
+            .clone()
+            .equals(lit(0))
+            .unwrap()
+            .not()
+            .unwrap()
+            .imp(
+                mul(x.clone(), d.clone())
+                    .equals(mul(y.clone(), d.clone()))
+                    .unwrap()
+                    .imp(x.clone().equals(y.clone()).unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(inst.concl(), &expected);
+
+        // int_pos_pos / int_pos_nonzero: ∀p:int.pos. 0 < rep p / ¬(rep p = 0).
+        let p = Term::free("p", int_pos_ty());
+        let rep = Term::spec_rep(covalence_core::defs::int_pos_spec(), Vec::<Type>::new());
+        let rep_p = Term::app(rep, p.clone());
+        let pos = int_pos_pos();
+        assert!(pos.hyps().is_empty(), "int_pos_pos is proved");
+        assert_eq!(
+            pos.all_elim(p.clone()).unwrap().concl(),
+            &lt(lit(0), rep_p.clone())
+        );
+        let nz = int_pos_nonzero();
+        assert!(nz.hyps().is_empty(), "int_pos_nonzero is proved");
+        assert_eq!(
+            nz.all_elim(p.clone()).unwrap().concl(),
+            &rep_p.equals(lit(0)).unwrap().not().unwrap()
+        );
     }
 
     #[test]

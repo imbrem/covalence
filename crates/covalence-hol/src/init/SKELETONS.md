@@ -15,16 +15,17 @@ index](../../../../SKELETONS.md).
   are componentwise on representatives, so the two representative pairs are
   provably equal (numerator + denominator each by the proved `int`
   commutativity facts) and equal representatives lift to equal classes by
-  congruence under `mkRat`. `rat_rel_trans` is now **proved too** — the
-  Grothendieck cross-multiplication cancellation argument — *modulo* two
-  **postulated `int` facts** (stubbed in `init::rat` via `axiom`, **to be
-  relocated to / discharged in `init::int`**, now that the `int` ordered ring
-  is fully proved both are derivable: cancellation from `lt_mul_pos` +
-  `lt_trichotomy`, nonzero-positivity from the `int.pos` carving predicate):
-  - `int_mul_rcancel` — `∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` (`int` is an
-    integral domain; right-cancellation by a nonzero factor).
-  - `int_pos_nonzero` — `∀p:int.pos. ¬(rep p = 0)` (positive denominators
-    are nonzero).
+  congruence under `mkRat`. `rat_rel_trans` is now **fully proved** — the
+  Grothendieck cross-multiplication cancellation argument, with **no remaining
+  postulate**: the two `int` facts it cancels with are now **genuine theorems
+  in `init::int`** (`init::rat` re-exports them via thin delegating helpers):
+  - `int::int_mul_rcancel` — `∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` (`int`
+    is an integral domain). **Proved** from the order theory: trichotomy splits
+    `x=y` off, `lt_mul_pos` rules out the strict cases (the `d<0` case flips the
+    sign via the new `mul_neg_r` / `lt_neg_swap` / `neg_unique` lemmas).
+  - `int::int_pos_nonzero` — `∀p:int.pos. ¬(rep p = 0)`. **Proved** from the
+    new `int::int_pos_pos` (`0 < rep p`, via the kernel subtype back-rule with
+    the witness `1`) + `lt_irrefl`.
 
   So `rat_rel` is now a full equivalence and `quotient::class_intro` /
   `recon` are available for the remaining `rat` axioms.

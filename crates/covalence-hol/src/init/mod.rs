@@ -86,12 +86,14 @@ pub mod logic;
 pub mod nat;
 pub mod option;
 pub mod prod;
+pub mod prop;
 pub mod quotient;
 pub mod rat;
 pub mod real;
 pub mod recursion;
 pub mod rel;
 pub mod set;
+pub mod sexpr;
 pub mod stream;
 
 /// The full `covalence-core` definition catalogue (types, term

@@ -2162,6 +2162,17 @@ fn distrib_bridge_raw() -> Result<Thm> {
 /// `⊢ ∀a. ¬(a = 0) ⟹ ∃b. a * b = 1` — the field axiom (multiplicative
 /// inverse). This is what makes `rat` a *field* rather than just a ring,
 /// and underwrites division (and so the midpoint form of density).
+///
+/// **Still postulated** — the last remaining `rat` postulate. The witness is
+/// the defined [`rat_inv`] (`(a/b)⁻¹ = (sgn a · b)/(sgn a · a)`); the
+/// cross-multiplication `a · rat_inv a = 1` collapses to an `int` comm/assoc
+/// identity, but discharging it needs the **`int.sgn` positivity fact**
+/// `¬(z = 0) ⟹ 0 < sgn z · z` (= `0 < |z|`) so the inverse denominator
+/// `to_pos(sgn a · a)` round-trips. `init::int` proves no `sgn` lemmas yet
+/// (it would need case analysis on `int.sgn`'s three branches); once
+/// `int::abs_pos`/`sgn` facts land, this lifts through the existing `mul`
+/// quotient machinery + `class_eq`. *To discharge: prove the `int.sgn`
+/// positivity lemma, then lift.*
 pub fn mul_inv() -> Thm {
     let a = rvar("a");
     let b = rvar("b");
@@ -2985,9 +2996,10 @@ mod tests {
 
     #[test]
     fn seam_givens_build() {
-        // Every seam given builds with a bool conclusion and rests only on the
-        // self-flagged int stubs (`int_mul_rcancel` / `int_pos_nonzero` /
-        // `pos_prod_rt` / `one_pos_rt`), all of which are bool hypotheses.
+        // Every seam given builds with a bool conclusion. The `int` facts it
+        // rests on (`int_mul_rcancel` / `int_pos_nonzero` / `pos_prod_rt` /
+        // `one_pos_rt`) are now **proved** in `init::int`, so these givens are
+        // genuine (no remaining stub hypotheses on this surface).
         for g in [
             recon_given().unwrap(),
             add_mk_given().unwrap(),

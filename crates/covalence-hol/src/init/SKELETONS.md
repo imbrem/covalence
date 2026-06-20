@@ -70,10 +70,18 @@ index](../../../../SKELETONS.md).
   on the cross-products and maps the middle `=` case back through the quotient
   (`rel_of_pairs` + `class_intro`).
 
-  **Still postulated** via the module's `axiom` helper:
-  - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`), realisable via
-    the defined `rat_inv` (sign-normalised so the denominator stays positive).
-  - `le_def` is the **last order postulate**: it is *definitional* — it pins
+  **Still postulated** via the module's `axiom` helper — only **two** leaves
+  remain (down from the original `mul_inv` + four order axioms + two mediants +
+  two int facts + two round-trips):
+  - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`). The witness is the
+    defined `rat_inv` (`(a/b)⁻¹ = (sgn a · b)/(sgn a · a)`); the
+    cross-multiplication `a · rat_inv a = 1` collapses to an `int` comm/assoc
+    identity, but discharging it needs the **`int.sgn` positivity lemma**
+    `¬(z = 0) ⟹ 0 < sgn z · z` (= `0 < |z|`) so the inverse denominator
+    `to_pos(sgn a · a)` round-trips. `init::int` proves no `sgn`/`abs` lemmas
+    yet (case analysis on `int.sgn`'s three branches); once it does, this lifts
+    through the existing `mul` quotient machinery + `class_eq`.
+  - `le_def` is the other remaining postulate: it is *definitional* — it pins
     the meaning of the **declaration-only** kernel `ratLe` (`defs/rat.rs` ships
     `ratLe` with `tm: None`, unlike `int.le` which carries a body), so there is
     nothing to prove it *from*; it is the conservative defining equation. To

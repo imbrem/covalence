@@ -14,10 +14,17 @@
 //! On top of the round-trips this module now proves the full coproduct
 //! **universal property**: the `coprod_case` computation equations
 //! [`case_inl`] / [`case_inr`] (`[f,g] ∘ inl = f` pointwise), injection
+//! **injectivity** [`inl_inj`] / [`inr_inj`] (`inl a = inl a' ⟹ a = a'`),
 //! **surjectivity** [`cases`] (every value is `inl` or `inr`), and the
 //! **η / fusion** law [`case_eta`] (`m = [m ∘ inl, m ∘ inr]`). Together
 //! with [`init::cat`](crate::init::cat) these are the axioms the
 //! point-free [`monoidal`](crate::monoidal) API reasons through.
+//!
+//! The colocated `coprod.cov` script re-proves the η / fusion law
+//! ([`cov::case_eta_cov`]) and a coproduct **case-analysis** principle
+//! ([`cov::case_eq_cov`], `∀c P. (∀x. P (inl x)) ⟹ (∀y. P (inr y)) ⟹ P c`)
+//! *genuinely* over the seam givens — driving the `cases` disjunction
+//! through `(exists-elim …)` rather than re-exporting a Rust bridge.
 
 use covalence_core::{Error, Result, Term, Thm, Type};
 
@@ -30,35 +37,52 @@ pub use covalence_core::defs::{coprod, coprod_case, inl, inr};
 // ============================================================================
 // The `.cov` proof-script layer for `coprod`.
 //
-// `coprod_env()` exports the seam lemmas as Rust-proved GIVENs and registers
-// the injection/case operators as Ops for type inference.  The seam lemmas
-// (inl_ne_inr, case_inl, case_inr, cases) rely on spec_abs/spec_rep, the
-// Hilbert-choice axiom, and propositional machinery not expressible in the
-// proof language.  `case_eta` additionally requires `exists_elim` (which is
-// NOT a primitive rule) and composition at `coprod`-typed intermediate types
-// (not expressible in the current .cov type syntax, which only parses `bool`,
-// `nat`, `'a`, and `(fun ...)`).
+// `coprod_env()` is the **seam** environment imported by `coprod.cov`. It
+// exposes:
+//   * the injection/case operators (`inl`/`inr`/`coprod_case`) and `compose`
+//     as polymorphic (`ConstDef::Poly`) schemes, so the type-inferencer can
+//     build `coprod`-typed and composite terms at any instance; and
+//   * the lemmas that cross the abs/rep / Hilbert-choice barrier — and are
+//     therefore *not* expressible in the proof language — as universally
+//     quantified Rust-proved GIVENS:
+//       inl_ne_inr  : ∀av bv. ¬(inl av = inr bv)        (disjointness)
+//       inl_inj     : ∀av av2. inl av = inl av2 ⟹ av = av2
+//       inr_inj     : ∀bv bv2. inr bv = inr bv2 ⟹ bv = bv2
+//       case_inl    : ∀f g av. coprod_case f g (inl av) = f av
+//       case_inr    : ∀f g bv. coprod_case f g (inr bv) = g bv
+//       cases       : ∀c. (∃x. c = inl x) ∨ (∃y. c = inr y)
+//       comp_beta   : ∀g f x. compose g f x = g (f x)    (from `cat`)
+//       fun_ext     : ∀f g. (∀x. f x = g x) ⟹ f = g     (from `cat`)
 //
-// For this reason ALL five theorems are Rust givens here; `coprod.cov` imports
-// them and re-exports them so that the `cov::case_eta_cov` accessor works and
-// the `case_eta_cov_matches_rust` test verifies the conclusion.
+// `coprod.cov` then proves the η/fusion law `case_eta` and the case-analysis
+// `case_eq` GENUINELY over those givens, using the existential machinery
+// (`exists-elim` over `cases`, the `case_*` computations, `comp_beta`, and
+// `fun_ext`) — no Rust bridge for those two.
 // ============================================================================
 
-/// The `coprod` seam environment: injection/case operators as `ConstDef::Op`s
-/// for the type-inferencer, and the five core lemmas as Rust-proved givens.
+/// The `coprod` seam environment: see the module comment above. The operators
+/// are `Poly` (multi-type-var) schemes and the barrier-crossing lemmas are
+/// universally-quantified Rust givens.
 pub fn coprod_env() -> crate::script::Env {
+    use crate::init::cat::{comp, comp_beta, fun_ext};
+    use crate::script::ConstDef;
+    use covalence_core::defs::compose;
+
     let alpha = Type::tfree("a");
     let beta = Type::tfree("b");
     let gamma = Type::tfree("c");
     let mut e = crate::script::Env::empty();
 
-    // -- operators (needed so the type-inferencer can build coprod-typed terms) --
-    use crate::script::ConstDef;
-    e.define_const("inl", ConstDef::Op(inl(alpha.clone(), beta.clone())));
-    e.define_const("inr", ConstDef::Op(inr(alpha.clone(), beta.clone())));
+    // -- operators (Poly so each use site re-instantiates the type vars) --
+    e.define_const("inl", ConstDef::Poly(inl(alpha.clone(), beta.clone())));
+    e.define_const("inr", ConstDef::Poly(inr(alpha.clone(), beta.clone())));
     e.define_const(
         "coprod_case",
-        ConstDef::Op(coprod_case(alpha.clone(), beta.clone(), gamma.clone())),
+        ConstDef::Poly(coprod_case(alpha.clone(), beta.clone(), gamma.clone())),
+    );
+    e.define_const(
+        "compose",
+        ConstDef::Poly(compose(alpha.clone(), beta.clone(), gamma.clone())),
     );
 
     // -- seam givens (Rust-proved, used as axioms by coprod.cov) --
@@ -72,12 +96,28 @@ pub fn coprod_env() -> crate::script::Env {
         .expect("coprod_env: inl_ne_inr");
     e.define_lemma("inl_ne_inr", ne);
 
+    // ⊢ ∀(av:'a). ∀(av2:'a). inl av = inl av2 ⟹ av = av2
+    let av2 = Term::free("av2", alpha.clone());
+    let ili = inl_inj(&alpha, &beta, &av, &av2)
+        .and_then(|t| t.all_intro("av2", alpha.clone()))
+        .and_then(|t| t.all_intro("av", alpha.clone()))
+        .expect("coprod_env: inl_inj");
+    e.define_lemma("inl_inj", ili);
+
+    // ⊢ ∀(bv:'b). ∀(bv2:'b). inr bv = inr bv2 ⟹ bv = bv2
+    let bv2 = Term::free("bv2", beta.clone());
+    let iri = inr_inj(&alpha, &beta, &bv, &bv2)
+        .and_then(|t| t.all_intro("bv2", beta.clone()))
+        .and_then(|t| t.all_intro("bv", beta.clone()))
+        .expect("coprod_env: inr_inj");
+    e.define_lemma("inr_inj", iri);
+
     // ⊢ ∀(f:'a→'c). ∀(g:'b→'c). ∀(av:'a).
     //     coprod_case f g (inl av) = f av
     let f = Term::free("f", Type::fun(alpha.clone(), gamma.clone()));
     let g = Term::free("g", Type::fun(beta.clone(), gamma.clone()));
-    let av2 = Term::free("av", alpha.clone());
-    let ci = case_inl(&alpha, &beta, &gamma, &f, &g, &av2)
+    let av_f = Term::free("av", alpha.clone());
+    let ci = case_inl(&alpha, &beta, &gamma, &f, &g, &av_f)
         .and_then(|t| t.all_intro("av", alpha.clone()))
         .and_then(|t| t.all_intro("g", Type::fun(beta.clone(), gamma.clone())))
         .and_then(|t| t.all_intro("f", Type::fun(alpha.clone(), gamma.clone())))
@@ -86,8 +126,8 @@ pub fn coprod_env() -> crate::script::Env {
 
     // ⊢ ∀(f:'a→'c). ∀(g:'b→'c). ∀(bv:'b).
     //     coprod_case f g (inr bv) = g bv
-    let bv2 = Term::free("bv", beta.clone());
-    let cr = case_inr(&alpha, &beta, &gamma, &f, &g, &bv2)
+    let bv_f = Term::free("bv", beta.clone());
+    let cr = case_inr(&alpha, &beta, &gamma, &f, &g, &bv_f)
         .and_then(|t| t.all_intro("bv", beta.clone()))
         .and_then(|t| t.all_intro("g", Type::fun(beta.clone(), gamma.clone())))
         .and_then(|t| t.all_intro("f", Type::fun(alpha.clone(), gamma.clone())))
@@ -101,29 +141,67 @@ pub fn coprod_env() -> crate::script::Env {
         .expect("coprod_env: cases");
     e.define_lemma("cases", ca);
 
-    // ⊢ ∀(m : coprod 'a 'b → 'c).
-    //     m = coprod_case (m ∘ inl) (m ∘ inr)
-    //
-    // case_eta is kept as a Rust given: its proof requires exists_elim (not a
-    // primitive rule in the language) and composition at coprod-typed
-    // intermediate types (not expressible in the current .cov type syntax).
-    let m = Term::free("m", Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()));
-    let ce = case_eta(&alpha, &beta, &gamma, &m)
-        .and_then(|t| {
-            t.all_intro("m", Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()))
-        })
-        .expect("coprod_env: case_eta");
-    e.define_lemma("case_eta", ce);
+    // Function extensionality (from `cat`), **pre-instantiated** at maps out of
+    // `coprod 'a 'b` (the same exact-type-match reason as the comp-β givens
+    // below): ∀(f g : coprod 'a 'b → 'c). (∀c. f c = g c) ⟹ f = g.
+    let cab = coprod(alpha.clone(), beta.clone());
+    let map_ty = Type::fun(cab.clone(), gamma.clone());
+    {
+        let f = Term::free("f", map_ty.clone());
+        let g = Term::free("g", map_ty.clone());
+        let c = Term::free("c", cab.clone());
+        let hyp = Term::app(f.clone(), c.clone())
+            .equals(Term::app(g.clone(), c.clone()))
+            .and_then(|eq| eq.forall("c", cab.clone()))
+            .expect("coprod_env: fun_ext hyp");
+        let app_eq = Thm::assume(hyp.clone())
+            .and_then(|h| h.all_elim(c.clone()))
+            .expect("coprod_env: fun_ext app_eq");
+        let fe = fun_ext(app_eq, "c", &cab)
+            .and_then(|t| t.imp_intro(&hyp))
+            .and_then(|t| t.all_intro("g", map_ty.clone()))
+            .and_then(|t| t.all_intro("f", map_ty.clone()))
+            .expect("coprod_env: fun_ext");
+        e.define_lemma("fun_ext", fe);
+    }
+
+    // The composition-β law `case_eta` needs, pre-instantiated at the coprod
+    // injections — the *generic* `cat::comp_beta` (`∀(g:'b→'c) f x`) cannot be
+    // `all-elim`'d at `m : coprod 'a 'b → 'c` because the kernel's `all_elim`
+    // demands an exact type match and the proof language has no per-witness
+    // type instantiation (the same `id`-style TFree clash `cat` documents). So
+    // we ship the two instances `case_eta` actually uses:
+    //   comp_beta_inl : ∀(m:coprod 'a 'b→'c)(x:'a). compose m inl x = m (inl x)
+    //   comp_beta_inr : ∀(m:coprod 'a 'b→'c)(y:'b). compose m inr y = m (inr y)
+    let mty = Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone());
+    let m = Term::free("m", mty.clone());
+    let xv = Term::free("x", alpha.clone());
+    let yv = Term::free("y", beta.clone());
+    let cbl = comp(&m, &inl(alpha.clone(), beta.clone()))
+        .and_then(|gf| comp_beta(&gf, &xv))
+        .and_then(|t| t.all_intro("x", alpha.clone()))
+        .and_then(|t| t.all_intro("m", mty.clone()))
+        .expect("coprod_env: comp_beta_inl");
+    e.define_lemma("comp_beta_inl", cbl);
+    let cbr = comp(&m, &inr(alpha.clone(), beta.clone()))
+        .and_then(|gf| comp_beta(&gf, &yv))
+        .and_then(|t| t.all_intro("y", beta.clone()))
+        .and_then(|t| t.all_intro("m", mty.clone()))
+        .expect("coprod_env: comp_beta_inr");
+    e.define_lemma("comp_beta_inr", cbr);
 
     e
 }
 
 crate::cov_theory! {
-    /// `coprod` theorems ported to `coprod.cov`, over `core` + the `coprodrpm` env.
+    /// `coprod` theorems ported to `coprod.cov`, over `core` + the `coprodrpm`
+    /// seam env. `case_eta` (η/fusion) and `case_eq` (case-analysis) are proved
+    /// genuinely there over the seam givens, using the existential machinery.
     pub mod cov from "coprod.cov" {
         import "core"     = crate::script::Env::core();
         import "coprodrpm" = crate::init::coprod::coprod_env();
         "case_eta" => pub fn case_eta_cov;
+        "case_eq"  => pub fn case_eq_cov;
     }
 }
 
@@ -132,7 +210,8 @@ mod cov_tests {
     use super::*;
 
     /// `case_eta` from `coprod.cov` must have the same conclusion as the
-    /// hand-written Rust `case_eta`.
+    /// hand-written Rust `case_eta` — but proved genuinely in the script
+    /// layer (not a Rust bridge), so this is a real cross-check of two proofs.
     #[test]
     fn case_eta_cov_matches_rust() {
         let alpha = Type::tfree("a");
@@ -141,14 +220,26 @@ mod cov_tests {
         let m =
             Term::free("m", Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()));
         let rust_thm = case_eta(&alpha, &beta, &gamma, &m).expect("case_eta");
-        // The `cov` version is the universally-quantified form; instantiate at
-        // the same `m` to compare conclusions.
-        let cov_thm = cov::case_eta_cov().all_elim(m).expect("all_elim case_eta_cov");
+        // `case_eta_cov` is stated over the same free `m` (the `.cov` `#fix`),
+        // so its conclusion equals the Rust proof's directly.
+        let cov_thm = cov::case_eta_cov();
         assert_eq!(
             cov_thm.concl(),
             rust_thm.concl(),
             "case_eta from coprod.cov must match the Rust proof"
         );
+        assert!(cov_thm.hyps().is_empty(), "case_eta_cov is hypothesis-free");
+        assert!(cov_thm.has_no_obs(), "case_eta_cov is oracle-free");
+    }
+
+    /// `case_eq` from `coprod.cov` — the genuinely-proved case-analysis
+    /// principle: from a proof on each injection arm, conclude the goal at any
+    /// `c : coprod α β`. Stated and checked here as a hypothesis-free theorem.
+    #[test]
+    fn case_eq_cov_is_genuine() {
+        let thm = cov::case_eq_cov();
+        assert!(thm.hyps().is_empty(), "case_eq is proved, not postulated");
+        assert!(thm.has_no_obs(), "case_eq is oracle-free");
     }
 }
 
@@ -353,6 +444,49 @@ fn rel_inj(rel: &Term, rel2: &Term, v: &Term, x: &Term, y: &Term, z: bool) -> Re
         .sym()?
         .eqt_elim()?; // {H} ⊢ v = v2
     v_eq.imp_intro(&eq)
+}
+
+// ============================================================================
+// Injection injectivity — `inl a = inl a' ⟹ a = a'` (and the `inr` dual).
+//
+// `inl` and `inr` are injective: `rep` is, the round-trips identify
+// `rep (inl a)` with `leftRel a`, and the injection relations are injective
+// at their discriminator slot ([`rel_inj`]). These are the constructor laws
+// the case-analysis layer needs *positively* (the disjointness `inl_ne_inr`
+// is the negative companion).
+// ============================================================================
+
+/// `⊢ inl av = inl av2 ⟹ av = av2` — the left injection is injective.
+/// Genuine: hypothesis- and oracle-free.
+pub fn inl_inj(a: &Type, b: &Type, av: &Term, av2: &Term) -> Result<Thm> {
+    let inl_av = Term::app(inl(a.clone(), b.clone()), av.clone());
+    let inl_av2 = Term::app(inl(a.clone(), b.clone()), av2.clone());
+    let eq = inl_av.clone().equals(inl_av2.clone())?;
+    let h = Thm::assume(eq.clone())?;
+    // rep both sides; collapse to the underlying relations.
+    let rels_eq = rep_inl(a, b, av)?
+        .sym()?
+        .trans(h.cong_arg(rep_c(a, b))?)?
+        .trans(rep_inl(a, b, av2)?)?; // {H} ⊢ leftRel av = leftRel av2
+    let probe_y = Term::free("__iiy", b.clone());
+    let inj = rel_inj(&lrel_of(a, b, av)?, &lrel_of(a, b, av2)?, av, av, &probe_y, true)?;
+    inj.imp_elim(rels_eq)?.imp_intro(&eq) // ⊢ (inl av = inl av2) ⟹ av = av2
+}
+
+/// `⊢ inr bv = inr bv2 ⟹ bv = bv2` — the right injection is injective.
+/// Genuine: hypothesis- and oracle-free.
+pub fn inr_inj(a: &Type, b: &Type, bv: &Term, bv2: &Term) -> Result<Thm> {
+    let inr_bv = Term::app(inr(a.clone(), b.clone()), bv.clone());
+    let inr_bv2 = Term::app(inr(a.clone(), b.clone()), bv2.clone());
+    let eq = inr_bv.clone().equals(inr_bv2.clone())?;
+    let h = Thm::assume(eq.clone())?;
+    let rels_eq = rep_inr(a, b, bv)?
+        .sym()?
+        .trans(h.cong_arg(rep_c(a, b))?)?
+        .trans(rep_inr(a, b, bv2)?)?; // {H} ⊢ rightRel bv = rightRel bv2
+    let probe_x = Term::free("__iix", a.clone());
+    let inj = rel_inj(&rrel_of(a, b, bv)?, &rrel_of(a, b, bv2)?, bv, &probe_x, bv, false)?;
+    inj.imp_elim(rels_eq)?.imp_intro(&eq)
 }
 
 // ============================================================================
@@ -880,6 +1014,54 @@ mod tests {
         assert!(thm.has_no_obs());
         // LHS is `m`.
         assert_eq!(thm.concl().as_eq().unwrap().0, &m);
+    }
+
+    #[test]
+    fn inl_inj_is_genuine() {
+        // ⊢ inl av = inl av2 ⟹ av = av2 — the left injection is injective.
+        let (a, b, _c) = abc();
+        let av = Term::free("av", a.clone());
+        let av2 = Term::free("av2", a.clone());
+        let thm = inl_inj(&a, &b, &av, &av2).unwrap();
+        assert!(thm.hyps().is_empty(), "inl_inj is proved, not postulated");
+        assert!(thm.has_no_obs(), "inl_inj is oracle-free");
+        let inl_av = Term::app(inl(a.clone(), b.clone()), av.clone());
+        let inl_av2 = Term::app(inl(a.clone(), b.clone()), av2.clone());
+        let expected = inl_av
+            .equals(inl_av2)
+            .unwrap()
+            .imp(av.equals(av2).unwrap())
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn inr_inj_is_genuine() {
+        // ⊢ inr bv = inr bv2 ⟹ bv = bv2 — the right injection is injective.
+        let (a, b, _c) = abc();
+        let bv = Term::free("bv", b.clone());
+        let bv2 = Term::free("bv2", b.clone());
+        let thm = inr_inj(&a, &b, &bv, &bv2).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let inr_bv = Term::app(inr(a.clone(), b.clone()), bv.clone());
+        let inr_bv2 = Term::app(inr(a.clone(), b.clone()), bv2.clone());
+        let expected = inr_bv
+            .equals(inr_bv2)
+            .unwrap()
+            .imp(bv.equals(bv2).unwrap())
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn inl_inj_at_unit() {
+        // Injectivity even at the singleton carrier the old untagged encoding
+        // collapsed — `inl a = inl a' ⟹ a = a'` holds for `α = unit`.
+        let u = Type::unit();
+        let av = Term::free("av", u.clone());
+        let av2 = Term::free("av2", u.clone());
+        let thm = inl_inj(&u, &u, &av, &av2).unwrap();
+        assert!(thm.hyps().is_empty());
     }
 
     #[test]

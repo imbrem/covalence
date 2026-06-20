@@ -372,6 +372,18 @@ directives — is `open`-able by other scripts; the macro binds it as a
   patterns); (d) `rw` matches the FIRST (leftmost-outermost) subterm — no
   "rewrite at occurrence-N" control yet.
 
+- **Bare `(all-elim WITNESS LEMMA)` needs an exact type match — no
+  per-witness type instantiation in the proof language.** The kernel's
+  `all_elim` requires `witness.type_of() == bound-var type`, and the `.cov`
+  rule just parses the witness independently and calls it, so a *generic*
+  lemma (`cat::comp_beta : ∀(g:'b→'c)…`, `cat::fun_ext_thm : ∀(f:'a→'b)…`)
+  cannot be `all-elim`'d at a witness whose type instantiates the lemma's
+  type variables (e.g. `m : coprod 'a 'b → 'c`). Worked around the same way
+  `cat`'s `id_left`/`id_right` are (Rust givens): `init/coprod.rs::coprod_env`
+  ships `comp_beta_inl`/`comp_beta_inr`/`fun_ext` **pre-instantiated** at the
+  coprod-domain instance so `coprod.cov`'s `case_eta` can `all-elim` them.
+  The general fix is the registerable unifier / `inst_tfree`-on-`all-elim`
+  noted in the lemma-application bullet above.
 - **No proof/`Term` pretty-printer (serialization-out).** `script` only
   *parses* the named syntax and *replays* it; there is no printer from a
   proof / `Term` back to the surface S-expression. This blocks content-addressing

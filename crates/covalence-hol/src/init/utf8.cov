@@ -1,0 +1,74 @@
+;; utf8.cov — UTF-8 encoder structural theorems over `core` + `utf8prim`.
+;;
+;; The carrier-level encoder `utf8.encodeBytes : list char → list u8` is a
+;; fold of the per-character encodings, so it is a MONOID HOMOMORPHISM from
+;; the char-list free monoid `(list char, ++, nil)` to the byte-list free
+;; monoid `(list u8, ++, nil)`:
+;;
+;;   utf8.encodeBytes (xs ++ ds) = (utf8.encodeBytes xs) ++ (utf8.encodeBytes ds)
+;;
+;; This is the genuine inductive payoff of the encoder's recursion clauses —
+;; the analogue of `list.cov`'s `length_cat` (length is a homomorphism into
+;; `(nat, +, 0)`). It is proved here by `list-induct` on `xs`, using the
+;; encoder's `nil`/`cons` clauses (`encode_nil`/`encode_cons`, Rust givens),
+;; the char-list append clauses (`catC_nil`/`catC_cons`), and byte-list append
+;; associativity (`catB_assoc`). The two `cat`s are at different element types
+;; (`char` domain, `u8` codomain), so `utf8prim` registers them under distinct
+;; names (`catC`/`catB`).
+;;
+;; The FULL UTF-8 round-trip `utf8Decode (utf8Encode s) = some s` is deferred
+;; (see `init/SKELETONS.md`): it needs a validating decoder + a "decode peels
+;; exactly one char's bytes off the front" lemma. The per-character round-trip
+;; (`decode_ascii1_round_trip`, ASCII fragment) and this homomorphism are the
+;; tractable genuine core.
+
+(#import core)
+(#open core)
+(#import utf8prim)
+(#open utf8prim)
+
+;; ⊢ ∀xs ds. encodeBytes (catC xs ds) = catB (encodeBytes xs) (encodeBytes ds).
+;; Induct on `xs`.
+;;   nil:  encodeBytes (catC nil ds) = encodeBytes ds                 (catC_nil)
+;;       = catB nil (encodeBytes ds)                                  (catB_nil, rev)
+;;       = catB (encodeBytes nil) (encodeBytes ds)                    (encode_nil, rev)
+;;   cons c xs:
+;;       encodeBytes (catC (cons c xs) ds)
+;;       = encodeBytes (cons c (catC xs ds))                          (catC_cons)
+;;       = catB (encodeChar c) (encodeBytes (catC xs ds))             (encode_cons)
+;;       = catB (encodeChar c) (catB (encodeBytes xs) (encodeBytes ds))  (IH)
+;;       = catB (catB (encodeChar c) (encodeBytes xs)) (encodeBytes ds)  (catB_assoc, rev)
+;;       = catB (encodeBytes (cons c xs)) (encodeBytes ds)            (encode_cons, rev)
+(#thm encode_cat
+  (#concl
+    (forall (xs (list char))
+      (forall (ds (list char))
+        (= (utf8.encodeBytes (catC xs ds))
+           (catB (utf8.encodeBytes xs) (utf8.encodeBytes ds))))))
+  (#by
+    (list-induct c
+      ;; nil case.
+      (#by
+        (intro ds)
+        (rw (all-elim ds (catC_nil)))
+        (sym)
+        (rw (encode_nil))
+        (rw (all-elim (utf8.encodeBytes ds) (catB_nil)))
+        (refl))
+      ;; cons case (head `c`, tail `xs`, IH on `xs`).
+      (#by
+        (intro ds)
+        (rw (all-elim ds (all-elim xs (all-elim c (catC_cons)))))
+        (rw (all-elim (catC xs ds) (all-elim c (encode_cons))))
+        (rw (all-elim ds (assume
+              (forall (ds (list char))
+                (= (utf8.encodeBytes (catC xs ds))
+                   (catB (utf8.encodeBytes xs) (utf8.encodeBytes ds)))))))
+        (sym)
+        (rw (all-elim xs (all-elim c (encode_cons))))
+        (rw (all-elim (utf8.encodeBytes ds)
+              (all-elim (utf8.encodeBytes xs)
+                (all-elim (utf8.encodeChar c) (catB_assoc)))))
+        (refl)))))
+
+(#export encode_cat)

@@ -29,6 +29,15 @@ pub fn parse_type(s: &SExpr) -> R<Type> {
                 "int" => Ok(Type::int()),
                 "rat" => Ok(defs::rat_ty()),
                 "int.pos" => Ok(defs::int_pos_ty()),
+                // text/byte element types (the `defs/text.rs` + `defs/bits.rs`
+                // 0-ary subtypes): `char`, the fixed-width `uN`, `string`.
+                "char" => Ok(defs::char_ty()),
+                "string" => Ok(defs::string_ty()),
+                "bytes" => Ok(Type::bytes()),
+                "u8" => Ok(defs::u8_ty()),
+                "u16" => Ok(defs::u16_ty()),
+                "u32" => Ok(defs::u32_ty()),
+                "u64" => Ok(defs::u64_ty()),
                 _ if n.starts_with('\'') => Ok(Type::tfree(&n[1..])),
                 _ => Err(ScriptError::Syntax(format!("unknown type: {n}"))),
             }

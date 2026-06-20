@@ -30,13 +30,15 @@
 //!
 //! ## Not yet here (see `SKELETONS.md`)
 //!
-//! Everything that touches a *non-empty* sequence — `length`, `cat`,
-//! `at`/`index`, `slice`, the `consNat`/cons-side computations — is
-//! blocked on the **`list` recursion theorem** (the `cons`-side
-//! finiteness-preservation work in flight in [`init::list`]). Those are
-//! recorded as skeletons; once list cons-recursion lands they ride
-//! straight on top of this seam. UTF-8 `string ↔ bytes` transcoding is
-//! likewise future work.
+//! The cons-side sequence ops (`length`, `cat`, `at`/`index`, `slice`,
+//! `consNat`) ride on the now-landed `list` recursion theorem but are not
+//! all surfaced through this newtype seam yet (recorded as skeletons). The
+//! UTF-8 / UTF-16 codecs over this seam are built in
+//! [`init::utf8`](crate::init::utf8) / [`init::utf16`](crate::init::utf16)
+//! — encoders + per-character round-trip + the encoder homomorphism are
+//! proved; the validating decoders + full string round-trip are deferred
+//! (see `init/SKELETONS.md`). The [`string_rep_abs`] / [`bytes_rep_abs`]
+//! newtype round-trips below are the seam those codecs cross.
 
 use covalence_core::{Error, Result, Term, Thm, Type};
 
@@ -91,6 +93,22 @@ fn string_rep(l: Term) -> Term {
 /// `abs : list char → string`.
 fn string_abs(l: Term) -> Term {
     Term::app(Term::spec_abs(string_spec(), Vec::new()), l)
+}
+
+/// `⊢ rep (abs l) = l` for the `string` newtype, given `l : list char`.
+/// The unconditional newtype round-trip across the `string`/`list char`
+/// seam, exposed for the codec layers ([`init::utf8`](crate::init::utf8) /
+/// [`init::utf16`](crate::init::utf16)). Genuine: hypothesis- and
+/// oracle-free.
+pub fn string_rep_abs(l: &Term) -> Result<Thm> {
+    rep_abs_newtype(string_spec(), l)
+}
+
+/// `⊢ rep (abs l) = l` for the `bytes` newtype, given `l : list u8`. The
+/// unconditional newtype round-trip across the `bytes`/`list u8` seam,
+/// exposed for the codec layers. Genuine: hypothesis- and oracle-free.
+pub fn bytes_rep_abs(l: &Term) -> Result<Thm> {
+    rep_abs_newtype(bytes_spec(), l)
 }
 
 /// `⊢ rep (abs l) = l` for a newtype `spec` over `list elem`, discharging

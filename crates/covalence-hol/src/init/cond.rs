@@ -39,6 +39,54 @@ pub use covalence_core::defs::{cond, cond_spec};
 // The reduction clauses.
 // ============================================================================
 
+/// `⊢ t = t'` collapsing a (possibly nested) leading `cond α (T|F) x y`
+/// to its selected branch, recursively and **innermost-first**: the two
+/// branches' own nested `cond`s are collapsed before the outer one, so
+/// [`cond_true`]/[`cond_false`]'s choice machinery only ever sees simple
+/// branches (an un-collapsed nested `cond` would otherwise leak into the
+/// `select_ax` antecedent). Bottoms out at reflexivity on any node that is
+/// not a `cond` on a bool literal.
+///
+/// A `rhs_conv`-shaped conversion (`&Term → Result<Thm>`): the tail of a
+/// `reduce` pass that has already folded the `cond` *conditions* to `T`/`F`
+/// literals but cannot fire the (defined-constant) `cond` clauses. Used by
+/// the [`init::utf8`](crate::init::utf8) / [`init::utf16`](crate::init::utf16)
+/// per-character encoders. Genuine.
+pub fn collapse_conds(t: &Term) -> Result<Thm> {
+    if let Some((c, x, y)) = as_cond(t)
+        && let Some(b) = c.as_bool()
+    {
+        let x_eq = collapse_conds(&x)?; // ⊢ x = x'
+        let y_eq = collapse_conds(&y)?; // ⊢ y = y'
+        let x1 = rhs_of(&x_eq)?;
+        let y1 = rhs_of(&y_eq)?;
+        let alpha = x1.type_of()?;
+        // ⊢ cond b x y = cond b x' y'  (congruence on the two branches).
+        let cond_op = Term::app(cond(alpha.clone()), c.clone());
+        let cong = Thm::refl(cond_op)?.cong_app(x_eq)?.cong_app(y_eq)?;
+        let clause = if b {
+            cond_true(&alpha, &x1, &y1)?
+        } else {
+            cond_false(&alpha, &x1, &y1)?
+        };
+        return cong.trans(clause);
+    }
+    Thm::refl(t.clone())
+}
+
+/// Match `cond α c x y`, returning `(c, x, y)`.
+fn as_cond(t: &Term) -> Option<(Term, Term, Term)> {
+    let (cxy, y) = t.as_app()?;
+    let (cx, x) = cxy.as_app()?;
+    let (head, c) = cx.as_app()?;
+    let (spec, _args) = head.as_spec()?;
+    if spec.symbol().label() == cond_spec().symbol().label() {
+        Some((c.clone(), x.clone(), y.clone()))
+    } else {
+        None
+    }
+}
+
 /// `⊢ cond α T x y = x` — the *then* clause (HOL Light `COND_CLAUSES`,
 /// `T` half). Genuine: hypothesis- and oracle-free.
 pub fn cond_true(alpha: &Type, x: &Term, y: &Term) -> Result<Thm> {

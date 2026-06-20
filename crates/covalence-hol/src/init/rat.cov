@@ -1,0 +1,318 @@
+;; cov — rat commutative-ring laws over `core` + the `ratprim` quotient seam.
+;;
+;; `rat := (int × int.pos) / ~` (cross-multiplication). The `ratprim` env
+;; (init::rat::rat_env) supplies the quotient seam as GIVENS — the rat analogue
+;; of int's, one level up: the component constructor `rat.MK : int → int.pos →
+;; rat` with its projections `rat.num`/`rat.den`/`rat.rep`/`rat.topos`, the
+;; per-operation component-computation lemmas (`recon`, `add_mk`, `mul_mk`,
+;; `neg_mk`, `zero_mk`, `one_mk`), the class-equality law `class_eq`
+;; (cross-multiplication ⟹ equal classes), the int round-trip stubs
+;; (`pos_prod_rt`/`one_pos_rt`), and the proved int ring facts. Over those we
+;; prove the rat ring laws WITHOUT ever mentioning abs/rep — every step is a
+;; `trans`/`mk-comb` chain through `rat.MK`, mirroring the Rust proofs in
+;; init/rat.rs (`add_comm_impl`, …).
+
+(#import core)
+(#open core)
+(#import ratprim)
+(#open ratprim)
+
+;; ============================================================================
+;; On-the-nose commutativity — `ratAdd`/`ratMul` are componentwise on
+;; representatives, so the two MK component pairs are provably equal (numerator
+;; + denominator each by the proved int commutativity), lifted by `rat.MK`
+;; congruence. No quotient cancellation. (Mirrors `add_comm_impl`/`mul_comm_impl`.)
+;; ============================================================================
+
+;; ⊢ ∀a b. a + b = b + a.
+(#thm add_comm
+  (#concl (forall (a rat) (forall (b rat) (= (rat.add a b) (rat.add b a)))))
+  (#by
+    (intro a b)
+    (derive
+      (trans
+        ;; a + b = (MK na da) + (MK nb db)
+        (mk-comb (cong-arg (rat.add) (all-elim a (recon)))
+                 (all-elim b (recon)))
+        (trans
+          ;; = MK (na·rep db + nb·rep da) (topos (rep da · rep db))
+          (all-elim (rat.den b) (all-elim (rat.num b)
+            (all-elim (rat.den a) (all-elim (rat.num a) (add_mk)))))
+          (trans
+            ;; = MK (nb·rep da + na·rep db) (topos (rep db · rep da))   [int comm]
+            (mk-comb
+              (cong-arg (rat.MK)
+                (all-elim (int.mul (rat.num b) (rat.rep (rat.den a)))
+                  (all-elim (int.mul (rat.num a) (rat.rep (rat.den b)))
+                    (int_add_comm))))
+              (cong-arg (rat.topos)
+                (all-elim (rat.rep (rat.den b))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_comm)))))
+            ;; = (MK nb db) + (MK na da) = b + a
+            (sym
+              (trans
+                (mk-comb (cong-arg (rat.add) (all-elim b (recon)))
+                         (all-elim a (recon)))
+                (all-elim (rat.den a) (all-elim (rat.num a)
+                  (all-elim (rat.den b) (all-elim (rat.num b) (add_mk)))))))))))))
+
+;; ⊢ ∀a b. a * b = b * a.
+(#thm mul_comm
+  (#concl (forall (a rat) (forall (b rat) (= (rat.mul a b) (rat.mul b a)))))
+  (#by
+    (intro a b)
+    (derive
+      (trans
+        ;; a * b = (MK na da) * (MK nb db)
+        (mk-comb (cong-arg (rat.mul) (all-elim a (recon)))
+                 (all-elim b (recon)))
+        (trans
+          ;; = MK (na·nb) (topos (rep da · rep db))
+          (all-elim (rat.den b) (all-elim (rat.num b)
+            (all-elim (rat.den a) (all-elim (rat.num a) (mul_mk)))))
+          (trans
+            ;; = MK (nb·na) (topos (rep db · rep da))   [int comm]
+            (mk-comb
+              (cong-arg (rat.MK)
+                (all-elim (rat.num b) (all-elim (rat.num a) (int_mul_comm))))
+              (cong-arg (rat.topos)
+                (all-elim (rat.rep (rat.den b))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_comm)))))
+            ;; = (MK nb db) * (MK na da) = b * a
+            (sym
+              (trans
+                (mk-comb (cong-arg (rat.mul) (all-elim b (recon)))
+                         (all-elim a (recon)))
+                (all-elim (rat.den a) (all-elim (rat.num a)
+                  (all-elim (rat.den b) (all-elim (rat.num b) (mul_mk)))))))))))))
+
+;; ============================================================================
+;; Strict-order irreflexivity — on the nose from `int.lt`'s. `ratLt a a`
+;; reduces to `int.lt X X` (X = num a · rep(den a)), so it inherits the int
+;; irreflexivity at X. (Mirrors `lt_irrefl_impl`.)
+;; ============================================================================
+
+;; ⊢ ∀a. ¬(a < a).
+(#thm lt_irrefl
+  (#concl (forall (a rat) (not (rat.lt a a))))
+  (#by
+    (intro a)
+    (rw (all-elim a (lt_self)))
+    (derive
+      (all-elim (int.mul (rat.num a) (rat.rep (rat.den a))) (int_lt_irrefl)))))
+
+;; ============================================================================
+;; Unit / zero laws. The `*_compute` givens fuse `recon` + the component
+;; computation (so the literals `0`/`1`/`one_pos` stay inside the Rust given);
+;; the `.cov` proof simplifies the resulting numerator / denominator with the
+;; int givens (matched by name, never spelled) and re-folds to `a` / `0`.
+;; (Mirror `mul_one_impl`, `add_zero_impl`, `mul_zero_impl`, `add_neg_impl`.)
+;; ============================================================================
+
+;; ⊢ ∀a. a * 1 = a.
+(#thm mul_one
+  (#concl (forall (a rat) (= (rat.mul a (rat.one)) a)))
+  (#by
+    (intro a)
+    (derive
+      (trans
+        ;; a*1 = MK (num a · 1) (topos (rep(den a) · rep one_pos))
+        (all-elim a (mul_one_compute))
+        (trans
+          ;; = MK (num a) (den a)
+          (mk-comb
+            (cong-arg (rat.MK) (all-elim (rat.num a) (int_mul_one)))
+            (trans
+              (cong-arg (rat.topos)
+                (trans
+                  (cong-arg (int.mul (rat.rep (rat.den a))) (one_pos_rt))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_one))))
+              (all-elim (rat.den a) (topos_rep))))
+          ;; = a
+          (sym (all-elim a (recon))))))))
+
+;; ⊢ ∀a. a + 0 = a.
+(#thm add_zero
+  (#concl (forall (a rat) (= (rat.add a (rat.zero)) a)))
+  (#by
+    (intro a)
+    (derive
+      (trans
+        ;; a+0 = MK (num a·rep one_pos + 0·rep(den a)) (topos(rep(den a)·rep one_pos))
+        (all-elim a (add_zero_compute))
+        (trans
+          (mk-comb
+            ;; numerator: (num a·rep one_pos) + (0·rep(den a)) = num a
+            (cong-arg (rat.MK)
+              (trans
+                (mk-comb
+                  (cong-arg (int.add)
+                    (trans (cong-arg (int.mul (rat.num a)) (one_pos_rt))
+                           (all-elim (rat.num a) (int_mul_one))))
+                  (trans
+                    (all-elim (rat.rep (rat.den a))
+                      (all-elim (int.zero) (int_mul_comm)))
+                    (all-elim (rat.rep (rat.den a)) (int_mul_zero))))
+                (all-elim (rat.num a) (int_add_zero))))
+            ;; denominator: topos(rep(den a)·rep one_pos) = den a
+            (trans
+              (cong-arg (rat.topos)
+                (trans
+                  (cong-arg (int.mul (rat.rep (rat.den a))) (one_pos_rt))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_one))))
+              (all-elim (rat.den a) (topos_rep))))
+          (sym (all-elim a (recon))))))))
+
+;; ⊢ ∀a. a * 0 = 0.  The numerator collapses to 0; the denominator simplifies
+;; to `den a`; then `MK 0 (den a) = MK 0 one_pos = 0` by the class-equality law
+;; on the cross-multiplication `0·rep one_pos = 0·rep(den a)` (both 0).
+(#thm mul_zero
+  (#concl (forall (a rat) (= (rat.mul a (rat.zero)) (rat.zero))))
+  (#by
+    (intro a)
+    (derive
+      (trans
+        (all-elim a (mul_zero_compute))
+        (trans
+          ;; MK (num a · 0)(topos(rep(den a)·rep one_pos)) = MK 0 (den a)
+          (mk-comb
+            (cong-arg (rat.MK) (all-elim (rat.num a) (int_mul_zero)))
+            (trans
+              (cong-arg (rat.topos)
+                (trans
+                  (cong-arg (int.mul (rat.rep (rat.den a))) (one_pos_rt))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_one))))
+              (all-elim (rat.den a) (topos_rep))))
+          (trans
+            ;; MK 0 (den a) = MK 0 one_pos
+            (imp-elim
+              (all-elim (rat.one_pos)
+                (all-elim (int.zero)
+                  (all-elim (rat.den a)
+                    (all-elim (int.zero) (class_eq)))))
+              (trans (all-elim (rat.one_pos) (zero_times))
+                     (sym (all-elim (rat.den a) (zero_times)))))
+            ;; MK 0 one_pos = 0
+            (sym (zero_mk))))))))
+
+;; ⊢ ∀a. a + (-a) = 0.  -a = MK(int.neg(num a))(den a), so the numerator is
+;; `num a·rep(den a) + int.neg(num a)·rep(den a) = (num a + int.neg(num a))·rep(den a)
+;; = 0·rep(den a) = 0`; then `MK 0 D = 0` by the class-equality law on
+;; `0·rep one_pos = 0·rep D` (both 0). (Mirrors `add_neg_impl`.)
+(#thm add_neg
+  (#concl (forall (a rat) (= (rat.add a (rat.neg a)) (rat.zero))))
+  (#by
+    (intro a)
+    (derive
+      (trans
+        (all-elim a (add_neg_compute))
+        (trans
+          ;; numerator → 0 (denominator D untouched)
+          (cong-fn (rat.topos (int.mul (rat.rep (rat.den a)) (rat.rep (rat.den a))))
+            (cong-arg (rat.MK)
+              (trans
+                (sym
+                  (all-elim (rat.rep (rat.den a))
+                    (all-elim (int.neg (rat.num a))
+                      (all-elim (rat.num a) (int_distrib_r)))))
+                (trans
+                  (cong-fn (rat.rep (rat.den a))
+                    (cong-arg (int.mul) (all-elim (rat.num a) (int_add_neg))))
+                  (all-elim (rat.den a) (zero_times))))))
+          (trans
+            ;; MK 0 D = MK 0 one_pos
+            (imp-elim
+              (all-elim (rat.one_pos)
+                (all-elim (int.zero)
+                  (all-elim (rat.topos (int.mul (rat.rep (rat.den a))
+                                                (rat.rep (rat.den a))))
+                    (all-elim (int.zero) (class_eq)))))
+              (trans (all-elim (rat.one_pos) (zero_times))
+                     (sym
+                       (all-elim (rat.topos (int.mul (rat.rep (rat.den a))
+                                                     (rat.rep (rat.den a))))
+                         (zero_times)))))
+            ;; MK 0 one_pos = 0
+            (sym (zero_mk))))))))
+
+;; ============================================================================
+;; Associativity / distributivity — the genuinely componentwise laws. The
+;; `*_lhs`/`*_rhs` compute givens land both sides in `MK` component form (the
+;; nested `topos(rep …)` denominators carry `pos_prod_rt` round-trips); the
+;; `.cov` proof bridges numerator + denominator with `int_mul_assoc` /
+;; `int_add_assoc` and `pos_prod_rt`, never touching abs/rep.
+;; (Mirror `mul_assoc_impl`, `add_assoc_impl`.)
+;; ============================================================================
+
+;; ⊢ ∀a b c. (a*b)*c = a*(b*c).
+(#thm mul_assoc
+  (#concl
+    (forall (a rat) (forall (b rat) (forall (c rat)
+      (= (rat.mul (rat.mul a b) c) (rat.mul a (rat.mul b c)))))))
+  (#by
+    (intro a b c)
+    (derive
+      (trans
+        ;; (a*b)*c = MK ((na·nb)·nc) (topos(rep(topos(rep da·rep db))·rep dc))
+        (all-elim c (all-elim b (all-elim a (mul_assoc_lhs))))
+        (trans
+          (mk-comb
+            ;; numerator: (na·nb)·nc = na·(nb·nc)
+            (cong-arg (rat.MK)
+              (all-elim (rat.num c)
+                (all-elim (rat.num b)
+                  (all-elim (rat.num a) (int_mul_assoc)))))
+            ;; denominator: topos(rep(topos(rep da·rep db))·rep dc)
+            ;;            = topos(rep da·rep(topos(rep db·rep dc)))
+            (cong-arg (rat.topos)
+              (trans
+                (cong-fn (rat.rep (rat.den c))
+                  (cong-arg (int.mul)
+                    (all-elim (rat.den b) (all-elim (rat.den a) (pos_prod_rt)))))
+                (trans
+                  (all-elim (rat.rep (rat.den c))
+                    (all-elim (rat.rep (rat.den b))
+                      (all-elim (rat.rep (rat.den a)) (int_mul_assoc))))
+                  (cong-arg (int.mul (rat.rep (rat.den a)))
+                    (sym (all-elim (rat.den c)
+                           (all-elim (rat.den b) (pos_prod_rt)))))))))
+          ;; = a*(b*c)
+          (sym (all-elim c (all-elim b (all-elim a (mul_assoc_rhs))))))))))
+
+;; ⊢ ∀a b c. (a+b)+c = a+(b+c).  Both sides land in `MK` component form via the
+;; `add_assoc_lhs`/`add_assoc_rhs` computes; the `add_assoc_bridge` seam given
+;; carries the int three-monomial numerator alignment + denominator round-trips
+;; (the heart of `add_assoc_impl`), so the `.cov` proof is the same recon →
+;; compute → bridge → recon assembly as the other ring laws.
+(#thm add_assoc
+  (#concl
+    (forall (a rat) (forall (b rat) (forall (c rat)
+      (= (rat.add (rat.add a b) c) (rat.add a (rat.add b c)))))))
+  (#by
+    (intro a b c)
+    (derive
+      (trans
+        (all-elim c (all-elim b (all-elim a (add_assoc_lhs))))
+        (trans
+          (all-elim c (all-elim b (all-elim a (add_assoc_bridge))))
+          (sym (all-elim c (all-elim b (all-elim a (add_assoc_rhs))))))))))
+
+;; ⊢ ∀a b c. a*(b+c) = a*b + a*c.  Left distributivity — the one non-component
+;; wise law: `a·(b+c)` and `a·b + a·c` are the same rational scaled by the
+;; common factor `rep(den a)`. The `distrib_bridge` seam given carries that
+;; common-factor cross-multiplication (lifted by the class-equality law).
+(#thm distrib
+  (#concl
+    (forall (a rat) (forall (b rat) (forall (c rat)
+      (= (rat.mul a (rat.add b c)) (rat.add (rat.mul a b) (rat.mul a c)))))))
+  (#by
+    (intro a b c)
+    (derive
+      (trans
+        (all-elim c (all-elim b (all-elim a (distrib_lhs))))
+        (trans
+          (all-elim c (all-elim b (all-elim a (distrib_bridge))))
+          (sym (all-elim c (all-elim b (all-elim a (distrib_rhs))))))))))
+
+(#export add_comm mul_comm lt_irrefl mul_one add_zero mul_zero add_neg
+         mul_assoc add_assoc distrib)

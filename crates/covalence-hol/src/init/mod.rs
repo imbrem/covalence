@@ -143,6 +143,7 @@ pub fn library_env(name: &str) -> Option<Env> {
         "logic" => Some(logic::cov::env()),
         "nat" => Some(nat::cov::env()),
         "set" => Some(set::cov::env()),
+        "rat" => Some(rat::cov::env()),
         _ => None,
     }
 }

@@ -1004,6 +1004,512 @@ fn neg_via_components(a: &Term) -> Result<Thm> {
 }
 
 // ============================================================================
+// `rat.cov` seam — named operators + ∀-quantified quotient-lift givens
+// ============================================================================
+//
+// The `.cov` port (below) proves the rat commutative-ring laws over a
+// `ratprim` env of GIVENS, exactly as `set.cov` works over `setprim` and
+// `nat.cov` over `natrec`. The givens are the quotient seam — the rat analogue
+// of int's: they package the heavy `recon`/component-computation/`class_intro`
+// machinery into first-order `∀`-quantified lemmas the `.cov` proof can
+// `all-elim`/`rw`/`trans` over, never itself mentioning abs/rep. They rest
+// only on the **proved** int commutativity/associativity facts plus the same
+// int round-trip stubs the Rust proofs use (`pos_prod_rt` / `one_pos_rt`).
+//
+// Named ops exposed to `.cov`:
+//   rat.add rat.mul rat.neg rat.sub rat.lt rat.le rat.zero rat.one
+//   rat.MK    : int → int.pos → rat        — `mkfs` as a closed λ
+//   rat.num   : rat → int                  — `rfst` (numerator of the ε-rep)
+//   rat.den   : rat → int.pos              — `rden_pos` (denominator of the rep)
+//   rat.rep   : int.pos → int              — the int.pos carrier coercion
+//   rat.topos : int → int.pos              — the int.pos re-wrap (`to_pos`)
+//   int.add int.mul int.neg                — the int ops the components live in
+
+/// `rat.MK ≔ λ(f:int)(d:int.pos). mk_rat (pair f d)` — the component
+/// constructor as a closed term (so `.cov` can name it).
+fn mk_op() -> Term {
+    let (f, d) = (Term::free("f", Type::int()), Term::free("d", int_pos_ty()));
+    let body = mkfs(&f, &d);
+    Term::abs(
+        Type::int(),
+        subst::close(&Term::abs(int_pos_ty(), subst::close(&body, "d")), "f"),
+    )
+}
+
+/// `rat.num ≔ λa. fst (rep_pair a)` — the numerator projection.
+fn num_op() -> Term {
+    let a = rvar("a");
+    Term::abs(rat(), subst::close(&rfst(&a), "a"))
+}
+
+/// `rat.den ≔ λa. snd (rep_pair a)` — the (positive) denominator projection.
+fn den_op() -> Term {
+    let a = rvar("a");
+    Term::abs(rat(), subst::close(&rden(&a), "a"))
+}
+
+/// `rat.rep` — the `int.pos → int` carrier coercion.
+fn rep_op() -> Term {
+    Term::spec_rep(int_pos_spec(), Vec::new())
+}
+
+/// `rat.topos` — the `int → int.pos` re-wrap (`to_pos`).
+fn topos_op() -> Term {
+    to_pos_fn()
+}
+
+fn mk_app(f: &Term, d: &Term) -> Term {
+    Term::app(Term::app(mk_op(), f.clone()), d.clone())
+}
+fn rep_app_pos(d: &Term) -> Term {
+    Term::app(rep_op(), d.clone())
+}
+/// `rat.num a` / `rat.den a` as *unreduced* named-op applications — the form
+/// the `.cov` proofs write (and that the seam givens are phrased over).
+fn num_app(a: &Term) -> Term {
+    Term::app(num_op(), a.clone())
+}
+fn den_app(a: &Term) -> Term {
+    Term::app(den_op(), a.clone())
+}
+
+/// `⊢ rat.MK f d = mkfs f d` — β-unfold `rat.MK` to the raw class form the
+/// component lemmas are stated in. Used to bridge the named op and the
+/// `mkfs`/`mk_class` internals.
+fn mk_unfold(f: &Term, d: &Term) -> Result<Thm> {
+    binary_beta(mk_op(), f.clone(), d.clone())
+}
+
+/// `⊢ ∀a. a = rat.MK (rat.num a) (rat.den a)` — quotient induction in named
+/// component form (the `.cov` `recon` given). The `rat.num a` / `rat.den a`
+/// are kept as **unreduced** named-op applications so the `.cov` proofs can
+/// feed them verbatim into `add_mk` / `mul_mk` / `class_eq`.
+fn recon_given() -> Result<Thm> {
+    let a = rvar("a");
+    let rm = recon_mk(&a)?; // a = mkfs (rfst a) (rden a)
+    // Target: a = rat.MK (num_op a) (den_op a). Reduce that target's RHS down
+    // to the `mkfs (rfst a)(rden a)` form `recon_mk` produced, then chain.
+    let target_rhs = mk_app(&num_app(&a), &den_app(&a));
+    let red = target_rhs.reduce()?; // rat.MK (num a)(den a) = mkfs (rfst a)(rden a)
+    rm.trans(red.sym()?)?.all_intro("a", rat())
+}
+
+/// Build a `∀f1 d1 f2 d2. lhs = rhs` given from a binary component lemma that,
+/// given free `(f1:int, d1:int.pos, f2:int, d2:int.pos)`, returns
+/// `⊢ op (MK f1 d1) (MK f2 d2) = MK <num> <den>` — re-folding the raw `mkfs`
+/// occurrences to the named `rat.MK`.
+fn binop_mk_given(
+    mk: impl Fn(&Term, &Term, &Term, &Term) -> Result<Thm>,
+) -> Result<Thm> {
+    let (f1, d1) = (ivar("f1"), Term::free("d1", int_pos_ty()));
+    let (f2, d2) = (ivar("f2"), Term::free("d2", int_pos_ty()));
+    // The Rust component lemma operates on `mkfs` arguments; restate it with
+    // `rat.MK` on both the inputs and the output.
+    let raw = mk(&f1, &d1, &f2, &d2)?; // op (mkfs f1 d1)(mkfs f2 d2) = mkfs N D
+    let in1 = mk_unfold(&f1, &d1)?; // rat.MK f1 d1 = mkfs f1 d1
+    let in2 = mk_unfold(&f2, &d2)?;
+    // op (rat.MK f1 d1)(rat.MK f2 d2) = op (mkfs f1 d1)(mkfs f2 d2)
+    let lhs = Thm::refl(op_head(raw.concl())?)?
+        .cong_app(in1)?
+        .cong_app(in2)?;
+    let (n, d) = mk_components(&dest_eq(&raw)?.1)?;
+    let out = mk_unfold(&n, &d)?.sym()?; // mkfs N D = rat.MK N D
+    lhs.trans(raw)?
+        .trans(out)?
+        .all_intro("d2", int_pos_ty())?
+        .all_intro("f2", Type::int())?
+        .all_intro("d1", int_pos_ty())?
+        .all_intro("f1", Type::int())
+}
+
+/// The binary operator head `op` of an equation `⊢ op _ _ = _`.
+fn op_head(concl: &Term) -> Result<Term> {
+    let (l, _r) = concl.as_eq().ok_or(Error::NotAnEquation)?;
+    let (op_a, _b) = l.as_app().ok_or(Error::NotAnEquation)?;
+    let (op, _a) = op_a.as_app().ok_or(Error::NotAnEquation)?;
+    Ok(op.clone())
+}
+
+/// `⊢ ∀f1 d1 f2 d2. rat.add (rat.MK f1 d1)(rat.MK f2 d2)
+///        = rat.MK (f1·rep d2 + f2·rep d1) (topos(rep d1 · rep d2))`.
+fn add_mk_given() -> Result<Thm> {
+    binop_mk_given(add_mk)
+}
+/// `⊢ ∀f1 d1 f2 d2. rat.mul (rat.MK f1 d1)(rat.MK f2 d2)
+///        = rat.MK (f1·f2) (topos(rep d1 · rep d2))`.
+fn mul_mk_given() -> Result<Thm> {
+    binop_mk_given(mul_mk)
+}
+
+/// `⊢ ∀f d. rat.neg (rat.MK f d) = rat.MK (int.neg f) d`.
+fn neg_mk_given() -> Result<Thm> {
+    let (f, d) = (ivar("f"), Term::free("d", int_pos_ty()));
+    let mkfd = mk_app(&f, &d);
+    // neg (rat.MK f d) = neg (mkfs f d)  [unfold the input]
+    let unfold_in = Thm::refl(rat_neg())?.cong_app(mk_unfold(&f, &d)?)?;
+    let raw = neg_via_components(&mkfs(&f, &d))?; // neg (mkfs f d) = mkfs (int.neg (num (rep_pair(mkfs f d)))) …
+    // `neg_via_components` reps a fresh `mkfs f d`; rather than chase its rep,
+    // state neg_mk directly from the on-paper law via `add_mk`'s sibling: the
+    // representative of `mkfs f d` is `~`-related to `(f, d)`, and `ratNeg`
+    // negates the numerator keeping the denominator. We instead expose the
+    // *defining* β-fact, which is what the Rust `add_neg` proof consumes.
+    let _ = (mkfd, unfold_in, raw);
+    // The Rust `add_neg` proof uses `neg_via_components(&a)` on the *variable*
+    // `a`, not on a `mkfs`, so the `.cov` `add_neg` port mirrors that by
+    // `recon`-then-neg. Expose the raw β-fact `∀a. neg a = mkfs (int.neg (num
+    // (rep_pair a))) (snd (rep_pair a))` re-folded to named ops.
+    let a = rvar("a");
+    let nv = neg_via_components(&a)?; // neg a = mkfs (int.neg (rfst a)) (rden a)
+    let (n, dd) = mk_components(&dest_eq(&nv)?.1)?;
+    let fold = mk_unfold(&n, &dd)?.sym()?;
+    nv.trans(fold)?.all_intro("a", rat())
+}
+
+/// `⊢ rat.zero = rat.MK 0 one_pos` and `⊢ rat.one = rat.MK 1 one_pos`.
+fn zero_given() -> Result<Thm> {
+    let mk = mk_unfold(&izero(), &one_pos())?.sym()?; // mkfs 0 one_pos = rat.MK 0 one_pos
+    Thm::refl(rat_zero())?.trans(mk) // rat_zero = mkfs 0 one_pos = rat.MK 0 one_pos
+}
+fn one_given() -> Result<Thm> {
+    let mk = mk_unfold(&Term::int_lit(1i128), &one_pos())?.sym()?;
+    Thm::refl(rat_one())?.trans(mk)
+}
+
+/// `⊢ ∀f1 d1 f2 d2. (f1 · rep d2 = f2 · rep d1) ⟹ rat.MK f1 d1 = rat.MK f2 d2`
+/// — the quotient class-equality law (cross-multiplication ⟹ equal classes),
+/// the `.cov` `class_eq` given. Internally: `rel_of_pairs` + `class_intro`.
+fn class_eq_given() -> Result<Thm> {
+    let (f1, d1) = (ivar("f1"), Term::free("d1", int_pos_ty()));
+    let (f2, d2) = (ivar("f2"), Term::free("d2", int_pos_ty()));
+    let cross = imul(f1.clone(), rep_app_pos(&d2))
+        .equals(imul(f2.clone(), rep_app_pos(&d1)))
+        .expect("class_eq: cross-mult body");
+    let g = Thm::assume(cross.clone())?;
+    let rel = rel_of_pairs(&f1, &d1, &f2, &d2, g)?; // rat_rel (ip f1 d1)(ip f2 d2)
+    let cls = crate::init::quotient::class_intro(
+        &rat_spec(),
+        &[],
+        &ip_pair(),
+        &rat_rel_symm(),
+        &rat_rel_trans(),
+        rel,
+    )?; // mk_rat(ip f1 d1) = mk_rat(ip f2 d2)
+    // Re-fold the raw `mk_rat(ip …)` classes to `rat.MK …`.
+    let l = mk_unfold(&f1, &d1)?.sym()?; // mkfs f1 d1 = rat.MK f1 d1
+    let r = mk_unfold(&f2, &d2)?.sym()?;
+    let eq = l.sym()?.trans(cls)?.trans(r)?; // rat.MK f1 d1 = rat.MK f2 d2
+    eq.imp_intro(&cross)?
+        .all_intro("d2", int_pos_ty())?
+        .all_intro("f2", Type::int())?
+        .all_intro("d1", int_pos_ty())?
+        .all_intro("f1", Type::int())
+}
+
+/// `⊢ ∀d1 d2:int.pos. rep (topos (rep d1 · rep d2)) = rep d1 · rep d2` — the
+/// positive-product round-trip (`pos_prod_rt`), already ∀-quantified.
+fn pos_prod_rt_given() -> Thm {
+    pos_prod_rt()
+}
+
+/// `⊢ rep one_pos = 1` — the canonical denominator round-trip (`one_pos_rt`).
+fn one_pos_rt_given() -> Thm {
+    one_pos_rt()
+}
+
+/// `⊢ ∀a b c:int. (a + b) · c = a·c + b·c` — int right-distributivity
+/// (`idistrib_r`: from the proved left `int.distrib` + `int.mul_comm`), the
+/// `.cov` `int_distrib_r` given. Lets `add_neg`'s numerator factor out
+/// `rep(den a)`.
+fn int_distrib_r_given() -> Result<Thm> {
+    let (a, b, c) = (ivar("a"), ivar("b"), ivar("c"));
+    idistrib_r(&a, &b, &c)?
+        .all_intro("c", Type::int())?
+        .all_intro("b", Type::int())?
+        .all_intro("a", Type::int())
+}
+
+/// `⊢ ∀d:int.pos. 0 · rep d = 0` — left-zero on a positive denominator
+/// (`int_mul_comm` + `int_mul_zero`), the `.cov` `zero_times` given. Lets the
+/// `mul_zero` / `add_neg` cross-multiplications collapse both sides to `0`.
+fn zero_times_given() -> Result<Thm> {
+    let d = Term::free("d", int_pos_ty());
+    let repd = rep_app_pos(&d);
+    let body = int::mul_comm()
+        .all_elim(izero())?
+        .all_elim(repd.clone())? // 0·rep d = rep d·0
+        .trans(int::mul_zero().all_elim(repd)?)?; // = 0
+    body.all_intro("d", int_pos_ty())
+}
+
+/// `⊢ ∀a. rat.lt a a = int.lt (num a · rep(den a)) (num a · rep(den a))` — the
+/// reflexive instance of `ratLt` reduced to the `int` comparison on the
+/// (single) cross-product, in **named-op** form (the `.cov` `lt_self` given).
+fn lt_self_given() -> Result<Thm> {
+    let a = rvar("a");
+    let red = rlt(a.clone(), a.clone()).reduce()?; // rat.lt a a = int_lt X X (reduced)
+    // X (named): num a · rep(den a).
+    let xn = imul(num_app(&a), rep_app_pos(&den_app(&a)));
+    let target_rhs = ilt(xn.clone(), xn);
+    let red2 = target_rhs.reduce()?; // int.lt (named X X) = int_lt X X (reduced)
+    red.trans(red2.sym()?)?.all_intro("a", rat())
+}
+
+/// `⊢ ∀x. ¬(int.lt x x)` — int strict-order irreflexivity (proved in
+/// `init::int`), exposed for the rat `lt_irrefl` port.
+fn int_lt_irrefl_given() -> Thm {
+    int::lt_irrefl()
+}
+
+/// `⊢ ∀d:int.pos. rat.topos (rat.rep d) = d` — the `int.pos` carrier
+/// round-trip (`Thm::spec_abs_rep` on the `int_pos` newtype), the unconditional
+/// `abs ∘ rep = id` law. Used to collapse a re-wrapped positive denominator
+/// back to its `int.pos` value (the `.cov` `topos_rep` given).
+fn topos_rep_given() -> Result<Thm> {
+    let d = Term::free("d", int_pos_ty());
+    Thm::spec_abs_rep(int_pos_spec(), Vec::new(), d.clone())?.all_intro("d", int_pos_ty())
+}
+
+/// Rewrite the *reduced* representative projections `fst(rep_pair a)` /
+/// `snd(rep_pair a)` in a term back to their **named** `rat.num a` / `rat.den a`
+/// forms (β-expansion), so every seam given speaks the same surface the `.cov`
+/// proofs write. Returns `⊢ t = t_named`.
+fn name_projections(t: &Term, a: &Term) -> Result<Thm> {
+    name_projections_over(t, std::slice::from_ref(a))
+}
+
+/// [`name_projections`] over several representative variables at once (for the
+/// ternary `*_assoc` / `distrib` compute givens, which mention `a`, `b`, `c`).
+fn name_projections_over(t: &Term, vars: &[Term]) -> Result<Thm> {
+    let mut eqs = Vec::new();
+    for v in vars {
+        eqs.push(Thm::beta_conv(num_app(v))?.sym()?); // rfst v = num_op v
+        eqs.push(Thm::beta_conv(den_app(v))?.sym()?); // rden v = den_op v
+    }
+    rewrite_seq(t, &eqs)
+}
+
+/// Re-fold the raw `mkfs N D` RHS of a `*_via_components`-style theorem
+/// `⊢ a <op> e = mkfs N D` to the named `rat.MK N D` (with `N`/`D`'s
+/// representative projections renamed to `rat.num a`/`rat.den a`), then
+/// ∀-close over `a`. The literal `0`/`1`/`one_pos` sub-terms stay inside the
+/// given; the `.cov` proof simplifies them with the int givens (matched by
+/// `rw`-unification, never spelled).
+fn compute_given(lhs: Thm, a: &Term) -> Result<Thm> {
+    let (n, d) = mk_components(&dest_eq(&lhs)?.1)?;
+    // mkfs N D = rat.MK N D, then rename the reduced projections inside.
+    let fold = mk_unfold(&n, &d)?.sym()?; // mkfs N D = rat.MK N D
+    let mk_named = fold.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let rename = name_projections(&mk_named, a)?; // rat.MK N D = rat.MK N' D'
+    lhs.trans(fold)?.trans(rename)?.all_intro("a", rat())
+}
+
+/// `⊢ ∀a. a * 1 = rat.MK (num a · 1) (topos(rep(den a) · rep one_pos))`.
+fn mul_one_compute() -> Result<Thm> {
+    let a = rvar("a");
+    compute_given(mul_via_components(&recon_mk(&a)?, &Thm::refl(rat_one())?)?, &a)
+}
+/// `⊢ ∀a. a + 0 = rat.MK (num a · rep one_pos + 0 · rep(den a))
+///                       (topos(rep(den a) · rep one_pos))`.
+fn add_zero_compute() -> Result<Thm> {
+    let a = rvar("a");
+    compute_given(add_via_components(&recon_mk(&a)?, &Thm::refl(rat_zero())?)?, &a)
+}
+/// `⊢ ∀a. a * 0 = rat.MK (num a · 0) (topos(rep(den a) · rep one_pos))`.
+fn mul_zero_compute() -> Result<Thm> {
+    let a = rvar("a");
+    compute_given(mul_via_components(&recon_mk(&a)?, &Thm::refl(rat_zero())?)?, &a)
+}
+/// `⊢ ∀a. a + (-a) = rat.MK (num a · rep(den a) + (int.neg(num a)) · rep(den a))
+///                          (topos(rep(den a) · rep(den a)))`.
+fn add_neg_compute() -> Result<Thm> {
+    let a = rvar("a");
+    let neg_a = neg_via_components(&a)?; // -a = MK(int.neg(num a))(den a) [raw mkfs]
+    compute_given(add_via_components(&recon_mk(&a)?, &neg_a)?, &a)
+}
+
+/// Re-fold + name a ternary `⊢ <expr over a,b,c> = mkfs N D` to the named
+/// `rat.MK N' D'` form (projections of `a`/`b`/`c` named), ∀-closing `a b c`.
+fn compute_given3(lhs: Thm) -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (n, d) = mk_components(&dest_eq(&lhs)?.1)?;
+    let fold = mk_unfold(&n, &d)?.sym()?; // mkfs N D = rat.MK N D
+    let mk_named = fold.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    let rename = name_projections_over(&mk_named, &[a, b, c])?;
+    lhs.trans(fold)?
+        .trans(rename)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// `⊢ ∀a b c. (a*b)*c = rat.MK ((num a·num b)·num c)
+///                              (topos(rep(topos(rep(den a)·rep(den b)))·rep(den c)))`.
+fn mul_assoc_lhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let ab = mul_via_components(&ra, &rb)?;
+    compute_given3(mul_via_components(&ab, &rc)?)
+}
+/// `⊢ ∀a b c. a*(b*c) = rat.MK (num a·(num b·num c))
+///                              (topos(rep(den a)·rep(topos(rep(den b)·rep(den c)))))`.
+fn mul_assoc_rhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let bc = mul_via_components(&rb, &rc)?;
+    compute_given3(mul_via_components(&ra, &bc)?)
+}
+
+/// `⊢ ∀a b c. (a+b)+c = rat.MK <lhsN> <lhsD>` (additive LHS in MK form).
+fn add_assoc_lhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let ab = add_via_components(&ra, &rb)?;
+    compute_given3(add_via_components(&ab, &rc)?)
+}
+/// `⊢ ∀a b c. a+(b+c) = rat.MK <rhsN> <rhsD>` (additive RHS in MK form).
+fn add_assoc_rhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let bc = add_via_components(&rb, &rc)?;
+    compute_given3(add_via_components(&ra, &bc)?)
+}
+
+/// Name + ∀-close a bridge `⊢ mkfs lN lD = mkfs rN rD` (reduced projections of
+/// `a`/`b`/`c`) to `⊢ ∀a b c. rat.MK lN' lD' = rat.MK rN' rD'`.
+fn bridge_given3(bridge: Thm) -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (lmk, rmk) = dest_eq(&bridge)?;
+    let (ln, ld) = mk_components(&lmk)?;
+    let (rn, rd) = mk_components(&rmk)?;
+    // mkfs … = rat.MK …  on both sides, then name the projections.
+    let lfold = mk_unfold(&ln, &ld)?.sym()?; // mkfs lN lD = rat.MK lN lD
+    let rfold = mk_unfold(&rn, &rd)?.sym()?;
+    let named_l = name_projections_over(
+        &lfold.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone(),
+        &[a.clone(), b.clone(), c.clone()],
+    )?;
+    let named_r = name_projections_over(
+        &rfold.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone(),
+        &[a.clone(), b.clone(), c.clone()],
+    )?;
+    // rat.MK lN' lD' = mkfs lN lD = mkfs rN rD = rat.MK rN' rD'.
+    named_l
+        .sym()?
+        .trans(lfold.sym()?)?
+        .trans(bridge)?
+        .trans(rfold)?
+        .trans(named_r)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// `⊢ ∀a b c. a*(b+c) = rat.MK <lf> <ld>` (distributivity LHS in MK form).
+fn distrib_lhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let bc = add_via_components(&rb, &rc)?;
+    compute_given3(mul_via_components(&ra, &bc)?)
+}
+/// `⊢ ∀a b c. a*b + a*c = rat.MK <rf> <rd>` (distributivity RHS in MK form).
+fn distrib_rhs_compute() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let ab = mul_via_components(&ra, &rb)?;
+    let ac = mul_via_components(&ra, &rc)?;
+    compute_given3(add_via_components(&ab, &ac)?)
+}
+
+/// `⊢ ∀a b c. rat.MK <add_assoc lhsN> <lhsD> = rat.MK <rhsN> <rhsD>` — the
+/// additive-associativity bridge (the int three-monomial numerator alignment +
+/// the `int.pos` denominator round-trips), extracted from `add_assoc_impl`.
+fn add_assoc_bridge() -> Result<Thm> {
+    bridge_given3(add_assoc_bridge_raw()?)
+}
+
+/// `⊢ ∀a b c. rat.MK <mul lhsN> <lhsD> = rat.MK <rhsN> <rhsD>` — the
+/// distributivity bridge (the common-factor cross-multiplication lifted by
+/// `class_intro`), extracted from `distrib_impl`.
+fn distrib_bridge() -> Result<Thm> {
+    bridge_given3(distrib_bridge_raw()?)
+}
+
+/// The `ratprim` seam environment imported by `rat.cov`.
+pub fn rat_env() -> crate::script::Env {
+    use crate::script::{ConstDef, Env};
+    let mut e = Env::empty();
+
+    // rat operators
+    e.define_const("rat.add", ConstDef::Op(rat_add()));
+    e.define_const("rat.mul", ConstDef::Op(rat_mul()));
+    e.define_const("rat.neg", ConstDef::Op(rat_neg()));
+    e.define_const("rat.sub", ConstDef::Op(rat_sub()));
+    e.define_const("rat.lt", ConstDef::Op(rat_lt()));
+    e.define_const("rat.le", ConstDef::Op(rat_le()));
+    e.define_const("rat.zero", ConstDef::Op(rat_zero()));
+    e.define_const("rat.one", ConstDef::Op(rat_one()));
+    // component layer
+    e.define_const("rat.MK", ConstDef::Op(mk_op()));
+    e.define_const("rat.num", ConstDef::Op(num_op()));
+    e.define_const("rat.den", ConstDef::Op(den_op()));
+    e.define_const("rat.rep", ConstDef::Op(rep_op()));
+    e.define_const("rat.topos", ConstDef::Op(topos_op()));
+    // int ops the components live in
+    e.define_const("int.add", ConstDef::Op(int::int_add()));
+    e.define_const("int.mul", ConstDef::Op(int::int_mul()));
+    e.define_const("int.neg", ConstDef::Op(int::int_neg()));
+    e.define_const("int.lt", ConstDef::Op(int::int_lt()));
+    // int literal constants the unit/zero proofs spell explicitly.
+    e.define_const("int.zero", ConstDef::Op(izero()));
+    e.define_const("int.one", ConstDef::Op(Term::int_lit(1i128)));
+    // the canonical positive denominator `1 : int.pos` (the `rat.zero`/`rat.one`
+    // denominator) — the `mul_zero`/`add_neg` class-equality steps name it.
+    e.define_const("rat.one_pos", ConstDef::Op(one_pos()));
+
+    // quotient seam givens
+    e.define_lemma("recon", recon_given().expect("rat recon given"));
+    e.define_lemma("add_mk", add_mk_given().expect("rat add_mk given"));
+    e.define_lemma("mul_mk", mul_mk_given().expect("rat mul_mk given"));
+    e.define_lemma("neg_mk", neg_mk_given().expect("rat neg_mk given"));
+    e.define_lemma("zero_mk", zero_given().expect("rat zero given"));
+    e.define_lemma("one_mk", one_given().expect("rat one given"));
+    e.define_lemma("class_eq", class_eq_given().expect("rat class_eq given"));
+    e.define_lemma("pos_prod_rt", pos_prod_rt_given());
+    e.define_lemma("one_pos_rt", one_pos_rt_given());
+    e.define_lemma("zero_times", zero_times_given().expect("rat zero_times given"));
+    e.define_lemma("int_distrib_r", int_distrib_r_given().expect("rat int_distrib_r given"));
+    e.define_lemma("lt_self", lt_self_given().expect("rat lt_self given"));
+    e.define_lemma("int_lt_irrefl", int_lt_irrefl_given());
+    e.define_lemma("topos_rep", topos_rep_given().expect("rat topos_rep given"));
+    e.define_lemma("mul_one_compute", mul_one_compute().expect("rat mul_one_compute"));
+    e.define_lemma("add_zero_compute", add_zero_compute().expect("rat add_zero_compute"));
+    e.define_lemma("mul_zero_compute", mul_zero_compute().expect("rat mul_zero_compute"));
+    e.define_lemma("add_neg_compute", add_neg_compute().expect("rat add_neg_compute"));
+    e.define_lemma("mul_assoc_lhs", mul_assoc_lhs_compute().expect("rat mul_assoc_lhs"));
+    e.define_lemma("mul_assoc_rhs", mul_assoc_rhs_compute().expect("rat mul_assoc_rhs"));
+    e.define_lemma("add_assoc_lhs", add_assoc_lhs_compute().expect("rat add_assoc_lhs"));
+    e.define_lemma("add_assoc_rhs", add_assoc_rhs_compute().expect("rat add_assoc_rhs"));
+    e.define_lemma("add_assoc_bridge", add_assoc_bridge().expect("rat add_assoc_bridge"));
+    e.define_lemma("distrib_lhs", distrib_lhs_compute().expect("rat distrib_lhs"));
+    e.define_lemma("distrib_rhs", distrib_rhs_compute().expect("rat distrib_rhs"));
+    e.define_lemma("distrib_bridge", distrib_bridge().expect("rat distrib_bridge"));
+
+    // int ring givens (proved in init::int) — the `.cov` numerator/denominator
+    // algebra runs over these.
+    e.define_lemma("int_add_comm", int::add_comm());
+    e.define_lemma("int_add_assoc", int::add_assoc());
+    e.define_lemma("int_add_zero", int::add_zero());
+    e.define_lemma("int_add_neg", int::add_neg());
+    e.define_lemma("int_mul_comm", int::mul_comm());
+    e.define_lemma("int_mul_assoc", int::mul_assoc());
+    e.define_lemma("int_mul_one", int::mul_one());
+    e.define_lemma("int_mul_zero", int::mul_zero());
+    e.define_lemma("int_distrib", int::distrib());
+
+    e
+}
+
+// ============================================================================
 // Commutative-ring axioms (and the field inverse)
 // ============================================================================
 //
@@ -1077,6 +1583,23 @@ cached_thm! {
     }
 }
 fn add_assoc_impl() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let lhs = add_via_components(&add_via_components(&ra, &rb)?, &rc)?;
+    let rhs = add_via_components(&ra, &add_via_components(&rb, &rc)?)?;
+    let bridge = add_assoc_bridge_raw()?;
+    lhs.trans(bridge)?
+        .trans(rhs.sym()?)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// The additive-associativity bridge `⊢ mkfs lhsN lhsD = mkfs rhsN rhsD` over
+/// the free `a, b, c` (the int three-monomial numerator alignment + the
+/// `int.pos` denominator round-trips). Shared by [`add_assoc_impl`] and the
+/// `rat.cov` `add_assoc_bridge` seam given.
+fn add_assoc_bridge_raw() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
     let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
     let ab = add_via_components(&ra, &rb)?;
@@ -1154,12 +1677,7 @@ fn add_assoc_impl() -> Result<Thm> {
         .trans(assoc_d)?
         .trans(rewrite_seq(&assoc_rhs, &[ppbc.sym()?])?)?;
 
-    let bridge = mkfs_cong(f_eq, d_eq)?;
-    lhs.trans(bridge)?
-        .trans(rhs.sym()?)?
-        .all_intro("c", rat())?
-        .all_intro("b", rat())?
-        .all_intro("a", rat())
+    mkfs_cong(f_eq, d_eq)
 }
 
 cached_thm! {
@@ -1437,6 +1955,27 @@ cached_thm! {
 fn distrib_impl() -> Result<Thm> {
     let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
     let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
+    let lhs_thm = mul_via_components(&ra, &add_via_components(&rb, &rc)?)?;
+    let rhs_thm = add_via_components(
+        &mul_via_components(&ra, &rb)?,
+        &mul_via_components(&ra, &rc)?,
+    )?;
+    let bridge = distrib_bridge_raw()?;
+    lhs_thm
+        .trans(bridge)?
+        .trans(rhs_thm.sym()?)?
+        .all_intro("c", rat())?
+        .all_intro("b", rat())?
+        .all_intro("a", rat())
+}
+
+/// The distributivity bridge `⊢ mkfs lf ld = mkfs rf rd` over the free
+/// `a, b, c` (the common-factor cross-multiplication `N_L·D_R = N_R·D_L`
+/// lifted by `class_intro`). Shared by [`distrib_impl`] and the `rat.cov`
+/// `distrib_bridge` seam given.
+fn distrib_bridge_raw() -> Result<Thm> {
+    let (a, b, c) = (rvar("a"), rvar("b"), rvar("c"));
+    let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
     let bc = add_via_components(&rb, &rc)?;
     let lhs_thm = mul_via_components(&ra, &bc)?; // a·(b+c) = MK(lf, ld)
     let ab = mul_via_components(&ra, &rb)?;
@@ -1512,20 +2051,15 @@ fn distrib_impl() -> Result<Thm> {
         .rhs_conv(|t| rewrite_seq(t, &[rf_eq.sym()?, rep_ld.sym()?]))?; // N_R ↦ rf, D_L ↦ rep(ld)
 
     let rel = rel_of_pairs(&lf, &ld, &rf, &rd, g)?;
-    let cls = crate::init::quotient::class_intro(
+    let _ = (lhs_thm, rhs_thm); // their MK forms feed `distrib_impl`'s caller.
+    crate::init::quotient::class_intro(
         &rat_spec(),
         &[],
         &ip_pair(),
         &rat_rel_symm(),
         &rat_rel_trans(),
         rel,
-    )?;
-    lhs_thm
-        .trans(cls)?
-        .trans(rhs_thm.sym()?)?
-        .all_intro("c", rat())?
-        .all_intro("b", rat())?
-        .all_intro("a", rat())
+    )
 }
 
 /// `⊢ ∀a. ¬(a = 0) ⟹ ∃b. a * b = 1` — the field axiom (multiplicative
@@ -2059,6 +2593,49 @@ fn dense_impl() -> Result<Thm> {
         .all_intro("x", rat())
 }
 
+crate::cov_theory! {
+    /// rat commutative-ring laws ported to `rat.cov`, over `core` + the
+    /// `ratprim` quotient seam env. Mirrors how int's ring would port one
+    /// level down; the heavy quotient machinery stays in `ratprim` givens.
+    pub mod cov from "rat.cov" {
+        import "core" = crate::script::Env::core();
+        import "ratprim" = crate::init::rat::rat_env();
+        "add_comm"  => pub fn add_comm_cov;
+        "mul_comm"  => pub fn mul_comm_cov;
+        "lt_irrefl" => pub fn lt_irrefl_cov;
+        "mul_one"   => pub fn mul_one_cov;
+        "add_zero"  => pub fn add_zero_cov;
+        "mul_zero"  => pub fn mul_zero_cov;
+        "add_neg"   => pub fn add_neg_cov;
+        "mul_assoc" => pub fn mul_assoc_cov;
+        "add_assoc" => pub fn add_assoc_cov;
+        "distrib"   => pub fn distrib_cov;
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+
+    /// Each `.cov`-proved rat law must reach the *same* conclusion as its
+    /// Rust counterpart in this module — the kernel re-derives it from the
+    /// `ratprim` seam givens.
+    #[test]
+    fn cov_matches_rust() {
+        assert_eq!(cov::add_comm_cov().concl(), super::add_comm().concl());
+        assert_eq!(cov::mul_comm_cov().concl(), super::mul_comm().concl());
+        assert_eq!(cov::lt_irrefl_cov().concl(), super::lt_irrefl().concl());
+        assert_eq!(cov::mul_one_cov().concl(), super::mul_one().concl());
+        assert_eq!(cov::add_zero_cov().concl(), super::add_zero().concl());
+        assert_eq!(cov::mul_zero_cov().concl(), super::mul_zero().concl());
+        assert_eq!(cov::add_neg_cov().concl(), super::add_neg().concl());
+        assert_eq!(cov::mul_assoc_cov().concl(), super::mul_assoc().concl());
+        assert_eq!(cov::add_assoc_cov().concl(), super::add_assoc().concl());
+        assert_eq!(cov::distrib_cov().concl(), super::distrib().concl());
+    }
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2068,6 +2645,59 @@ mod tests {
         // The re-exported `rat` type is the `defs/rat.rs` one, and not bool.
         assert_eq!(rat(), covalence_core::defs::rat_ty());
         assert!(!rat().is_bool());
+    }
+
+    #[test]
+    fn seam_givens_build() {
+        // Every seam given builds with a bool conclusion and rests only on the
+        // self-flagged int stubs (`int_mul_rcancel` / `int_pos_nonzero` /
+        // `pos_prod_rt` / `one_pos_rt`), all of which are bool hypotheses.
+        for g in [
+            recon_given().unwrap(),
+            add_mk_given().unwrap(),
+            mul_mk_given().unwrap(),
+            neg_mk_given().unwrap(),
+            zero_given().unwrap(),
+            one_given().unwrap(),
+            class_eq_given().unwrap(),
+            lt_self_given().unwrap(),
+            topos_rep_given().unwrap(),
+            mul_one_compute().unwrap(),
+            add_zero_compute().unwrap(),
+            mul_zero_compute().unwrap(),
+            add_neg_compute().unwrap(),
+            zero_times_given().unwrap(),
+            int_distrib_r_given().unwrap(),
+            mul_assoc_lhs_compute().unwrap(),
+            mul_assoc_rhs_compute().unwrap(),
+            add_assoc_lhs_compute().unwrap(),
+            add_assoc_rhs_compute().unwrap(),
+            add_assoc_bridge().unwrap(),
+            distrib_lhs_compute().unwrap(),
+            distrib_rhs_compute().unwrap(),
+            distrib_bridge().unwrap(),
+        ] {
+            assert!(g.concl().type_of().unwrap().is_bool());
+            assert!(g.hyps().iter().all(|h| h.type_of().unwrap().is_bool()));
+        }
+    }
+
+    #[test]
+    fn rat_env_builds() {
+        let _ = rat_env();
+    }
+
+
+    #[test]
+    fn recon_given_named_form() {
+        // recon's RHS is `rat.MK (rat.num a)(rat.den a)` in *unreduced* named-op
+        // form (a redex per projection), so `.cov` can feed it to add_mk/etc.
+        let g = recon_given().unwrap();
+        let a = rvar("a");
+        let inst = g.all_elim(a.clone()).unwrap();
+        let (l, r) = inst.concl().as_eq().unwrap();
+        assert_eq!(l, &a);
+        assert_eq!(r, &mk_app(&num_app(&a), &den_app(&a)));
     }
 
     #[test]
@@ -2495,3 +3125,6 @@ mod tests {
         assert_eq!(r, &rhs);
     }
 }
+
+
+

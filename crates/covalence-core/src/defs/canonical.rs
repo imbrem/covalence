@@ -140,6 +140,28 @@ pub enum Canonical {
     /// `fin n := coprod (fin (n-1)) unit` (fixed-size finite type).
     Fin,
 
+    // ---- Text: characters and strings ----
+    /// `char := { c : nat | c < 0x110000 }` — a Unicode *codepoint*: a
+    /// `nat` carved down to the Unicode codepoint range `0 ..= 0x10FFFF`.
+    /// The bound `< 0x110000` is contiguous and includes the UTF-16
+    /// surrogate gap `0xD800 ..= 0xDFFF` (a strict *scalar value* would
+    /// exclude it; the contiguous range is the simplest correct carve and
+    /// avoids a disjunction in the selector predicate — see
+    /// `init/char.rs`).
+    Char,
+    /// `char.code : char → nat` — the codepoint of a character (the `rep`
+    /// coercion `char → nat`, named).
+    CharCode,
+    /// `char.mk : nat → char` — the character with a given codepoint (the
+    /// `abs` coercion `nat → char`, named; junk-saturating for
+    /// out-of-range codepoints, as with any subtype `abs`).
+    CharMk,
+    /// `string := list char` — a string as a sequence of Unicode
+    /// codepoints. A newtype over `list char`; UTF-8-as-bytes is a
+    /// separate *encoding* concern (a `string ↔ bytes` codec) layered on
+    /// top, not the logical model.
+    String,
+
     // ---- Container types ----
     /// `option 'a := coprod 'a unit`.
     Option,
@@ -516,6 +538,10 @@ impl Canonical {
             Canonical::S256 => "s256",
             Canonical::S512 => "s512",
             Canonical::Fin => "fin",
+            Canonical::Char => "char",
+            Canonical::CharCode => "char.code",
+            Canonical::CharMk => "char.mk",
+            Canonical::String => "string",
             Canonical::Option => "option",
             Canonical::List => "list",
             Canonical::Result => "result",

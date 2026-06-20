@@ -12,8 +12,8 @@
 
 use std::collections::HashMap;
 
-use crate::error::MmError;
-use crate::expr::Expr;
+use crate::metamath::error::MmError;
+use crate::metamath::expr::Expr;
 
 /// A floating hypothesis (`$f`): a variable's typecode.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,9 +153,9 @@ impl Database {
         })
     }
 
-    // --- construction (used by the parser) ---------------------------------
+    // --- construction (the database-building API; used by a reader/parser) --
 
-    pub(crate) fn declare_constants(&mut self, names: Vec<String>) -> Result<(), MmError> {
+    pub fn declare_constants(&mut self, names: Vec<String>) -> Result<(), MmError> {
         for n in &names {
             if self.symbols.insert(n.clone(), false).is_some() {
                 return Err(MmError::Parse(format!("symbol `{n}` re-declared")));
@@ -165,7 +165,7 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) fn declare_variables(&mut self, names: Vec<String>) -> Result<(), MmError> {
+    pub fn declare_variables(&mut self, names: Vec<String>) -> Result<(), MmError> {
         for n in &names {
             // A variable may be re-declared in a disjoint scope; we keep it
             // simple and allow re-declaration as a variable.
@@ -192,7 +192,7 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) fn add_float(&mut self, hyp: FloatHyp) -> Result<(), MmError> {
+    pub fn add_float(&mut self, hyp: FloatHyp) -> Result<(), MmError> {
         if !self.is_symbol(&hyp.typecode) {
             return Err(MmError::UnknownSymbol {
                 label: hyp.label.clone(),
@@ -212,7 +212,7 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) fn add_essential(&mut self, hyp: Hypothesis) -> Result<(), MmError> {
+    pub fn add_essential(&mut self, hyp: Hypothesis) -> Result<(), MmError> {
         let idx = self.statements.len();
         self.register_label(&hyp.label, idx)?;
         self.scopes.last_mut().unwrap().essentials.push(hyp.clone());
@@ -220,7 +220,7 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) fn add_disjoint(&mut self, vars: Vec<String>) -> Result<(), MmError> {
+    pub fn add_disjoint(&mut self, vars: Vec<String>) -> Result<(), MmError> {
         for v in &vars {
             if !self.is_variable(v) {
                 return Err(MmError::Parse(format!("`{v}` in $d is not a variable")));
@@ -248,7 +248,7 @@ impl Database {
 
     /// Add an assertion (`$a` or `$p`), computing its mandatory frame from the
     /// active scope stack.
-    pub(crate) fn add_assertion(
+    pub fn add_assertion(
         &mut self,
         label: String,
         conclusion: Expr,
@@ -266,11 +266,11 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) fn push_scope(&mut self) {
+    pub fn push_scope(&mut self) {
         self.scopes.push(Scope::default());
     }
 
-    pub(crate) fn pop_scope(&mut self) -> Result<(), MmError> {
+    pub fn pop_scope(&mut self) -> Result<(), MmError> {
         if self.scopes.len() <= 1 {
             return Err(MmError::Parse("unmatched `$}`".into()));
         }
@@ -278,7 +278,7 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) fn finish(self) -> Result<Self, MmError> {
+    pub fn finish(self) -> Result<Self, MmError> {
         if self.scopes.len() != 1 {
             return Err(MmError::Parse("unclosed `${` at end of input".into()));
         }
@@ -356,7 +356,7 @@ impl Database {
         label: &str,
         f: &mut impl FnMut(&str),
     ) -> Result<(), MmError> {
-        let syms = crate::expr::expr_symbols(expr).ok_or_else(|| MmError::MalformedExpr {
+        let syms = crate::metamath::expr::expr_symbols(expr).ok_or_else(|| MmError::MalformedExpr {
             label: label.to_string(),
             message: "expression contains a non-symbol element".into(),
         })?;

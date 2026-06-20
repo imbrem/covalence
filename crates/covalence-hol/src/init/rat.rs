@@ -1216,6 +1216,25 @@ fn one_pos_rt_given() -> Thm {
     one_pos_rt()
 }
 
+/// `⊢ ∀a. rat.lt a a = int.lt (num a · rep(den a)) (num a · rep(den a))` — the
+/// reflexive instance of `ratLt` reduced to the `int` comparison on the
+/// (single) cross-product, in **named-op** form (the `.cov` `lt_self` given).
+fn lt_self_given() -> Result<Thm> {
+    let a = rvar("a");
+    let red = rlt(a.clone(), a.clone()).reduce()?; // rat.lt a a = int_lt X X (reduced)
+    // X (named): num a · rep(den a).
+    let xn = imul(num_app(&a), rep_app_pos(&den_app(&a)));
+    let target_rhs = ilt(xn.clone(), xn);
+    let red2 = target_rhs.reduce()?; // int.lt (named X X) = int_lt X X (reduced)
+    red.trans(red2.sym()?)?.all_intro("a", rat())
+}
+
+/// `⊢ ∀x. ¬(int.lt x x)` — int strict-order irreflexivity (proved in
+/// `init::int`), exposed for the rat `lt_irrefl` port.
+fn int_lt_irrefl_given() -> Thm {
+    int::lt_irrefl()
+}
+
 /// The `ratprim` seam environment imported by `rat.cov`.
 pub fn rat_env() -> crate::script::Env {
     use crate::script::{ConstDef, Env};
@@ -1240,6 +1259,7 @@ pub fn rat_env() -> crate::script::Env {
     e.define_const("int.add", ConstDef::Op(int::int_add()));
     e.define_const("int.mul", ConstDef::Op(int::int_mul()));
     e.define_const("int.neg", ConstDef::Op(int::int_neg()));
+    e.define_const("int.lt", ConstDef::Op(int::int_lt()));
 
     // quotient seam givens
     e.define_lemma("recon", recon_given().expect("rat recon given"));
@@ -1251,6 +1271,8 @@ pub fn rat_env() -> crate::script::Env {
     e.define_lemma("class_eq", class_eq_given().expect("rat class_eq given"));
     e.define_lemma("pos_prod_rt", pos_prod_rt_given());
     e.define_lemma("one_pos_rt", one_pos_rt_given());
+    e.define_lemma("lt_self", lt_self_given().expect("rat lt_self given"));
+    e.define_lemma("int_lt_irrefl", int_lt_irrefl_given());
 
     // int ring givens (proved in init::int) — the `.cov` numerator/denominator
     // algebra runs over these.
@@ -2331,6 +2353,8 @@ crate::cov_theory! {
         import "core" = crate::script::Env::core();
         import "ratprim" = crate::init::rat::rat_env();
         "add_comm"  => pub fn add_comm_cov;
+        "mul_comm"  => pub fn mul_comm_cov;
+        "lt_irrefl" => pub fn lt_irrefl_cov;
     }
 }
 
@@ -2344,6 +2368,8 @@ mod cov_tests {
     #[test]
     fn cov_matches_rust() {
         assert_eq!(cov::add_comm_cov().concl(), super::add_comm().concl());
+        assert_eq!(cov::mul_comm_cov().concl(), super::mul_comm().concl());
+        assert_eq!(cov::lt_irrefl_cov().concl(), super::lt_irrefl().concl());
     }
 
 }

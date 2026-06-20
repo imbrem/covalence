@@ -56,4 +56,49 @@
                 (all-elim (rat.den a) (all-elim (rat.num a)
                   (all-elim (rat.den b) (all-elim (rat.num b) (add_mk)))))))))))))
 
-(#export add_comm)
+;; ⊢ ∀a b. a * b = b * a.
+(#thm mul_comm
+  (#concl (forall (a rat) (forall (b rat) (= (rat.mul a b) (rat.mul b a)))))
+  (#by
+    (intro a b)
+    (derive
+      (trans
+        ;; a * b = (MK na da) * (MK nb db)
+        (mk-comb (cong-arg (rat.mul) (all-elim a (recon)))
+                 (all-elim b (recon)))
+        (trans
+          ;; = MK (na·nb) (topos (rep da · rep db))
+          (all-elim (rat.den b) (all-elim (rat.num b)
+            (all-elim (rat.den a) (all-elim (rat.num a) (mul_mk)))))
+          (trans
+            ;; = MK (nb·na) (topos (rep db · rep da))   [int comm]
+            (mk-comb
+              (cong-arg (rat.MK)
+                (all-elim (rat.num b) (all-elim (rat.num a) (int_mul_comm))))
+              (cong-arg (rat.topos)
+                (all-elim (rat.rep (rat.den b))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_comm)))))
+            ;; = (MK nb db) * (MK na da) = b * a
+            (sym
+              (trans
+                (mk-comb (cong-arg (rat.mul) (all-elim b (recon)))
+                         (all-elim a (recon)))
+                (all-elim (rat.den a) (all-elim (rat.num a)
+                  (all-elim (rat.den b) (all-elim (rat.num b) (mul_mk)))))))))))))
+
+;; ============================================================================
+;; Strict-order irreflexivity — on the nose from `int.lt`'s. `ratLt a a`
+;; reduces to `int.lt X X` (X = num a · rep(den a)), so it inherits the int
+;; irreflexivity at X. (Mirrors `lt_irrefl_impl`.)
+;; ============================================================================
+
+;; ⊢ ∀a. ¬(a < a).
+(#thm lt_irrefl
+  (#concl (forall (a rat) (not (rat.lt a a))))
+  (#by
+    (intro a)
+    (rw (all-elim a (lt_self)))
+    (derive
+      (all-elim (int.mul (rat.num a) (rat.rep (rat.den a))) (int_lt_irrefl)))))
+
+(#export add_comm mul_comm lt_irrefl)

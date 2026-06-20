@@ -275,6 +275,19 @@ impl<'e> Elab<'e> {
 
     fn infer(&mut self, s: &SExpr) -> R<(ETerm, ETy)> {
         match s {
+            // A blob literal written as a bare `b"…"` / `"…"` string atom
+            // (mirrors `defs::cov`'s string-atom handling).
+            SExp::Atom(covalence_sexp::Atom::Str { format, bytes }) => {
+                if format.is_empty() || format.as_str() == "b" {
+                    let t = Term::blob(bytes.clone());
+                    let ety = self.from_type(&t.type_of()?)?;
+                    Ok((ETerm::Lit(t), ety))
+                } else {
+                    Err(ScriptError::Syntax(format!(
+                        "term: unsupported string format {format:?}"
+                    )))
+                }
+            }
             SExp::Atom(_) => {
                 let n = sym(s, "term")?;
                 if let Some(ety) = self.lookup(n) {
@@ -385,6 +398,35 @@ impl<'e> Elab<'e> {
                 let ety = self.from_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
+            // TypeSpec carrier↔wrapper coercions (the script counterpart of
+            // `covalence-core::defs::cov`'s `#abs`/`#rep`):
+            //
+            //   (spec-abs SPEC-TYPE)        the bare `carrier → wrapper` coercion
+            //   (spec-abs SPEC-TYPE ARG)    that coercion applied to ARG
+            //   (spec-rep SPEC-TYPE)        the bare `wrapper → carrier` coercion
+            //   (spec-rep SPEC-TYPE ARG)    that coercion applied to ARG
+            //
+            // `SPEC-TYPE` is any type the script can already parse whose head
+            // is a derived `TypeSpec` leaf — e.g. `(option 'a)`, `(coprod nat
+            // bool)`, `rat`, or a `#newtype`/`#subtype`/`#quot`-defined name.
+            // The spec and its type-argument list are read straight off that
+            // `Type`, so all the existing spec resolution (catalogue + user
+            // definitions) is reused. The resulting coercion is a fully-typed
+            // kernel leaf, so it elaborates exactly like the `*-op` forms.
+            "spec-abs" => self.infer_coercion(ch, true),
+            "spec-rep" => self.infer_coercion(ch, false),
+            // Blob literal: `(blob b"…")` / `(blob "…")` (the script
+            // counterpart of `core.cov`'s `#blob`; bare `b"…"` atoms also
+            // lower to blobs, see `infer`).
+            "blob" => {
+                arity(ch, 2, "blob")?;
+                let (_fmt, bytes) = ch[1]
+                    .as_str()
+                    .ok_or_else(|| ScriptError::Syntax("blob: expected a string literal".into()))?;
+                let t = Term::blob(bytes.to_vec());
+                let ety = self.from_type(&t.type_of()?)?;
+                Ok((ETerm::Lit(t), ety))
+            }
             "=" | "eq" => {
                 arity(ch, 3, "eq")?;
                 let alpha = self.fresh();
@@ -414,6 +456,43 @@ impl<'e> Elab<'e> {
                 }
                 None => Err(ScriptError::Unbound(other.into())),
             },
+        }
+    }
+
+    /// Elaborate a `(spec-abs SPEC-TYPE [ARG])` / `(spec-rep SPEC-TYPE [ARG])`
+    /// TypeSpec coercion. The spec and its type arguments are read off the
+    /// parsed `SPEC-TYPE` (which must be a derived-`TypeSpec` leaf), the
+    /// coercion is built as a fully-typed kernel leaf, and — when an argument
+    /// is supplied — applied to it (unifying the argument against the
+    /// coercion's domain).
+    fn infer_coercion(&mut self, ch: &[SExpr], is_abs: bool) -> R<(ETerm, ETy)> {
+        if ch.len() != 2 && ch.len() != 3 {
+            return Err(ScriptError::Syntax(format!(
+                "{}: expected ({} SPEC-TYPE [arg])",
+                ch[0].as_symbol().unwrap_or("spec-abs/spec-rep"),
+                ch[0].as_symbol().unwrap_or("spec-abs/spec-rep"),
+            )));
+        }
+        let spec_ty = parse_type(&ch[1], self.env)?;
+        let (spec, args) = match spec_ty.kind() {
+            TypeKind::Spec(s, a) => (s.clone(), a.to_vec()),
+            _ => {
+                return Err(ScriptError::Syntax(format!(
+                    "spec-abs/spec-rep: {} is not a derived-type (TypeSpec) leaf",
+                    spec_ty
+                )));
+            }
+        };
+        let coercion = if is_abs {
+            Term::spec_abs(spec, args)
+        } else {
+            Term::spec_rep(spec, args)
+        };
+        let head = (ETerm::Lit(coercion.clone()), self.from_type(&coercion.type_of()?)?);
+        if ch.len() == 3 {
+            self.apply_args(head, &ch[2..])
+        } else {
+            Ok(head)
         }
     }
 
@@ -651,5 +730,144 @@ mod tests {
         e.define_const("f", ConstDef::Op(f));
         let scope = Scope::new();
         assert!(elaborate_term(&parse("(f 0)"), &scope, &e).is_err());
+    }
+
+    /// `(spec-abs SPEC-TYPE)` / `(spec-rep SPEC-TYPE)` build the bare
+    /// TypeSpec coercion functions, byte-identical (`==`) to the kernel
+    /// `Term::spec_abs` / `Term::spec_rep` constructors, with the correct
+    /// `carrier → wrapper` / `wrapper → carrier` types.
+    #[test]
+    fn spec_coercion_bare() {
+        let env = Env::empty();
+        let scope = Scope::new();
+
+        // option 'a
+        let abs = elaborate_term(&parse("(spec-abs (option 'a))"), &scope, &env).unwrap();
+        let rep = elaborate_term(&parse("(spec-rep (option 'a))"), &scope, &env).unwrap();
+        let want_abs = Term::spec_abs(defs::option_spec(), vec![Type::tfree("a")]);
+        let want_rep = Term::spec_rep(defs::option_spec(), vec![Type::tfree("a")]);
+        assert_eq!(abs, want_abs);
+        assert_eq!(rep, want_rep);
+        // abs : carrier → (option 'a); rep : (option 'a) → carrier.
+        assert_eq!(abs.type_of().unwrap(), want_abs.type_of().unwrap());
+        assert_eq!(rep.type_of().unwrap(), want_rep.type_of().unwrap());
+
+        // coprod nat bool (two type args).
+        let abs2 =
+            elaborate_term(&parse("(spec-abs (coprod nat bool))"), &scope, &env).unwrap();
+        assert_eq!(
+            abs2,
+            Term::spec_abs(defs::coprod_spec(), vec![Type::nat(), Type::bool()])
+        );
+    }
+
+    /// `(spec-abs SPEC-TYPE ARG)` / `(spec-rep SPEC-TYPE ARG)` apply the
+    /// coercion to an argument, unifying the argument against the coercion's
+    /// domain.
+    #[test]
+    fn spec_coercion_applied() {
+        let env = Env::empty();
+        let scope = Scope::new();
+
+        // rep of `option.none` (an `option 'a` value) lands at the carrier.
+        // `option.none` is registered in the env-less catalogue path via the
+        // operator forms; build it directly here as a `free` of the right
+        // wrapper type to exercise application + unification.
+        let t = elaborate_term(
+            &parse("(spec-rep (option nat) (free x (option nat)))"),
+            &scope,
+            &env,
+        )
+        .unwrap();
+        let want = Term::app(
+            Term::spec_rep(defs::option_spec(), vec![Type::nat()]),
+            Term::free("x", defs::option(Type::nat())),
+        );
+        assert_eq!(t, want);
+
+        // abs ∘ rep round-trips a wrapper value back into the wrapper type:
+        // `(spec-abs S (spec-rep S v))` is well-typed and lands at `S`,
+        // whatever the carrier is.
+        let round = elaborate_term(
+            &parse("(spec-abs (option nat) (spec-rep (option nat) (free v (option nat))))"),
+            &scope,
+            &env,
+        )
+        .unwrap();
+        assert_eq!(round.type_of().unwrap(), defs::option(Type::nat()));
+    }
+
+    /// CROSS-PARSER PARITY: the script `(spec-abs/spec-rep …)` forms elaborate
+    /// to the *same* kernel `Term` as `covalence-core::defs::cov`'s
+    /// `#abs`/`#rep`. (Both bottom out in `Term::spec_abs`/`spec_rep` with the
+    /// same `Arc`-shared catalogue spec.)
+    #[test]
+    fn spec_coercion_matches_core_cov() {
+        use covalence_core::defs::cov;
+        let core = cov::core_env();
+        let env = Env::empty();
+        let scope = Scope::new();
+
+        // bare abs / rep at `(option 'a)`.
+        let script_abs =
+            elaborate_term(&parse("(spec-abs (option 'a))"), &scope, &env).unwrap();
+        let core_abs = cov::term_str(core, "(#abs option ('a))").unwrap();
+        assert_eq!(script_abs, core_abs);
+
+        let script_rep =
+            elaborate_term(&parse("(spec-rep (option 'a))"), &scope, &env).unwrap();
+        let core_rep = cov::term_str(core, "(#rep option ('a))").unwrap();
+        assert_eq!(script_rep, core_rep);
+
+        // Two type args: `coprod nat bool`.
+        let script_abs2 =
+            elaborate_term(&parse("(spec-abs (coprod nat bool))"), &scope, &env).unwrap();
+        let core_abs2 = cov::term_str(core, "(#abs coprod (nat bool))").unwrap();
+        assert_eq!(script_abs2, core_abs2);
+    }
+
+    /// STRETCH / gap-closed demo: an operator whose body previously *had* to
+    /// be a hand-written Rust given because it uses a TypeSpec coercion can now
+    /// be written inline in the surface. `init::rat::to_pos` is `λz:int. abs z`
+    /// with `abs = spec_abs(int.pos)` — re-wrapping an `int` as `int.pos`. The
+    /// surface `(lam (z int) (spec-abs int.pos z))` elaborates to the
+    /// byte-identical kernel term, so this operator no longer needs the Rust
+    /// `to_pos` helper to construct its body.
+    #[test]
+    fn spec_coercion_inlines_rat_to_pos() {
+        use covalence_core::defs::int_pos_spec;
+        let env = Env::empty();
+        let scope = Scope::new();
+
+        let inlined =
+            elaborate_term(&parse("(lam (z int) (spec-abs int.pos z))"), &scope, &env).unwrap();
+
+        // The hand-written `init::rat::to_pos` body: `λz:int. abs z`.
+        let abs = Term::spec_abs(int_pos_spec(), Vec::<Type>::new());
+        let body = Term::app(abs, Term::free("z", Type::int()));
+        let hand = Term::abs(Type::int(), subst::close(&body, "z"));
+
+        assert_eq!(inlined, hand);
+        assert_eq!(
+            inlined.type_of().unwrap(),
+            Type::fun(Type::int(), defs::int_pos_ty())
+        );
+    }
+
+    /// Blob literals: `(blob b"…")` and a bare `b"…"` atom both lower to the
+    /// kernel `Term::blob` leaf at type `bytes`.
+    #[test]
+    fn blob_literals() {
+        let env = Env::empty();
+        let scope = Scope::new();
+        let want = Term::blob(vec![1u8, 2, 3]);
+
+        let via_form =
+            elaborate_term(&parse("(blob b\"\\x01\\x02\\x03\")"), &scope, &env).unwrap();
+        assert_eq!(via_form, want);
+        assert_eq!(via_form.type_of().unwrap(), Type::bytes());
+
+        let via_atom = elaborate_term(&parse("b\"\\x01\\x02\\x03\""), &scope, &env).unwrap();
+        assert_eq!(via_atom, want);
     }
 }

@@ -85,6 +85,74 @@ pub fn some_ne_none(alpha: &Type, a: &Term) -> Result<Thm> {
 }
 
 // ============================================================================
+// `some` injectivity.
+// ============================================================================
+
+/// `⊢ some a = some b ⟹ a = b` — the `some` constructor is injective.
+/// Genuine: hypothesis- and oracle-free. Transports through the `option`
+/// newtype to the `coprod` representative `inl`, then reads the argument
+/// back with `coprod_case id g` ([`case_inl`](crate::init::coprod::case_inl)).
+pub fn some_inj(alpha: &Type, a: &Term, b: &Term) -> Result<Thm> {
+    use crate::init::coprod::{case_inl, inl};
+    use covalence_core::defs::id;
+
+    let unit = Type::unit();
+    let some_a = Term::app(some(alpha.clone()), a.clone());
+    let some_b = Term::app(some(alpha.clone()), b.clone());
+    let eq = some_a.clone().equals(some_b.clone())?;
+
+    // Under H : some a = some b, reach `inl a = inl b`.
+    let h = Thm::assume(eq.clone())?;
+    let (some_a_u, inl_a) = some_unfold(alpha, a)?; // some a = abs (inl a)
+    let (some_b_u, inl_b) = some_unfold(alpha, b)?; // some b = abs (inl b)
+    let abs_eq = some_a_u.sym()?.trans(h)?.trans(some_b_u)?; // {H} ⊢ abs (inl a) = abs (inl b)
+    let rep_cong = abs_eq.cong_arg(rep_o(alpha))?; // {H} ⊢ rep (abs (inl a)) = rep (abs (inl b))
+    let inl_eq = rep_abs(alpha, &inl_a)?
+        .sym()?
+        .trans(rep_cong)?
+        .trans(rep_abs(alpha, &inl_b)?)?; // {H} ⊢ inl a = inl b
+
+    // Read the argument out: coprod_case id g (inl ·) = id · = ·.
+    let id_a = id(alpha.clone()); // id : α → α
+    // The right branch `g : unit → α` is irrelevant; pick `λ_. a`.
+    let g = Term::abs(unit.clone(), subst_close_const(a, alpha));
+    let case_a = case_inl(alpha, &unit, alpha, &id_a, &g, a)?; // coprod_case id g (inl a) = id a
+    let case_b = case_inl(alpha, &unit, alpha, &id_a, &g, b)?; // coprod_case id g (inl b) = id b
+    // id a = a, id b = b.
+    let id_spec = covalence_core::defs::id_spec();
+    let ida = Term::app(id_a.clone(), a.clone())
+        .delta_all(id_spec.symbol())?
+        .rhs_conv(|t| t.reduce())?; // id a = a
+    let idb = Term::app(id_a.clone(), b.clone())
+        .delta_all(id_spec.symbol())?
+        .rhs_conv(|t| t.reduce())?; // id b = b
+
+    // From inl a = inl b: coprod_case id g (inl a) = coprod_case id g (inl b).
+    let case_head = coprod_case_at(alpha, &unit, alpha, &id_a, &g);
+    let cong = inl_eq.cong_arg(case_head)?; // {H} ⊢ case (inl a) = case (inl b)
+    // a = case (inl a) = case (inl b) = b.
+    let a_eq = ida.sym()?.trans(case_a.sym()?)?; // ⊢ a = case (inl a)
+    let b_eq = case_b.trans(idb)?; // ⊢ case (inl b) = b
+    let ab = a_eq.trans(cong)?.trans(b_eq)?; // {H} ⊢ a = b
+    ab.imp_intro(&eq)
+}
+
+/// `coprod_case[α,unit,α] f g` — the case head, as a term.
+fn coprod_case_at(a: &Type, b: &Type, gamma: &Type, f: &Term, g: &Term) -> Term {
+    Term::app(
+        Term::app(covalence_core::defs::coprod_case(a.clone(), b.clone(), gamma.clone()), f.clone()),
+        g.clone(),
+    )
+}
+
+/// `close(a)` — the body of the irrelevant `λ_:unit.` right branch. The
+/// branch ignores its argument, so `a` stands unchanged (it never
+/// references the bound `#0`).
+fn subst_close_const(a: &Term, _alpha: &Type) -> Term {
+    a.clone()
+}
+
+// ============================================================================
 // Helpers.
 // ============================================================================
 
@@ -107,6 +175,21 @@ mod tests {
             .unwrap()
             .not()
             .unwrap();
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
+    fn some_inj_recovers_argument() {
+        let a = Type::tfree("a");
+        let x = Term::free("x", a.clone());
+        let y = Term::free("y", a.clone());
+        let thm = some_inj(&a, &x, &y).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        // ⊢ (some x = some y) ⟹ (x = y)
+        let prem = Term::app(some(a.clone()), x.clone())
+            .equals(Term::app(some(a.clone()), y.clone()))
+            .unwrap();
+        let expected = prem.imp(x.equals(y).unwrap()).unwrap();
         assert_eq!(thm.concl(), &expected);
     }
 

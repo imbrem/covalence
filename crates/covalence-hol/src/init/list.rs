@@ -50,7 +50,7 @@ use covalence_core::{Error, Result, Term, Thm, Type};
 use crate::init::eq::{beta_expand, trans_chain};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{exists_elim, exists_intro};
-use crate::init::stream::{const_at, head_const, stream_at, stream_head, stream_mk};
+use crate::init::stream::{const_at, head_const, stream_at, stream_head, stream_mk, stream_tail};
 
 // Re-export the `defs/list.rs` term catalogue (the `*_spec` handles stay
 // in `covalence_core::defs`, reached via the blanket re-export there).
@@ -61,7 +61,7 @@ pub use covalence_core::defs::{
 
 use covalence_core::defs::{
     finite, finite_spec, head_spec, list_index_spec, list_spec, nat_le, nat_rec, nat_succ, none,
-    option, some, stream_const,
+    option, some, stream_const, tail_spec,
 };
 
 // ============================================================================
@@ -567,6 +567,45 @@ pub fn head_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
     ])
 }
 
+/// `⊢ tail (cons x xs) = xs` — dropping the head of `cons x xs` recovers
+/// `xs` (the `cons`-side recursor equation for `tail`). Genuine:
+/// hypothesis- and oracle-free. Proved through **stream extensionality**:
+/// the tail of the cons carrier stream is pointwise equal to `rep xs`.
+pub fn tail_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    let g = cons_stream(alpha, x, xs);
+    let made = mk_stream(alpha, &g);
+    let consed = cons(alpha.clone()).apply(x.clone())?.apply(xs.clone())?;
+
+    // tail (cons x xs) = abs (streamTail (rep (cons x xs)))  (δ-unfold tail).
+    let tail_u = Term::app(tail(alpha.clone()), consed)
+        .delta_all(tail_spec().symbol())?
+        .rhs_conv(|t| t.reduce())?; // ⊢ tail (cons x xs) = abs (streamTail (rep (cons x xs)))
+
+    // streamTail (rep (cons x xs)) = streamTail (streamMk g) via rep_cons.
+    let rc = rep_cons(alpha, x, xs)?; // rep (cons x xs) = streamMk g
+    let tail_stream_eq = rc.cong_arg(stream_tail(opt.clone()))?; // streamTail (rep (cons x xs)) = streamTail (streamMk g)
+
+    // Pointwise: streamAt (streamTail (streamMk g)) n = streamAt (rep xs) n.
+    let n = Term::free("n", nat());
+    let tail_at = crate::init::stream::tail_at(&opt, &made, &n)?; // streamAt (streamTail (streamMk g)) n = streamAt (streamMk g) (succ n)
+    let at_g = crate::init::stream::at_mk(&opt, &g, &succ(n.clone()))?; // streamAt (streamMk g) (succ n) = g (succ n)
+    let g_succ = cons_stream_succ(alpha, x, xs, &n)?; // g (succ n) = streamAt (rep xs) n
+    let pointwise = trans_chain([tail_at, at_g, g_succ])?; // ⊢ streamAt (streamTail (streamMk g)) n = streamAt (rep xs) n
+
+    // Stream extensionality: streamTail (streamMk g) = rep xs.
+    let tailed = Term::app(stream_tail(opt.clone()), made);
+    let streams_eq = crate::init::stream::ext(&opt, &tailed, &rep_of(alpha, xs), "n", pointwise)?; // streamTail (streamMk g) = rep xs
+
+    // abs (streamTail (rep (cons x xs))) = abs (streamTail (streamMk g))
+    //                                    = abs (rep xs) = xs.
+    let abs = Term::spec_abs(list_spec(), vec![alpha.clone()]);
+    let abs_eq = tail_stream_eq.trans(streams_eq)?.cong_arg(abs)?; // abs (streamTail (rep (cons x xs))) = abs (rep xs)
+    let abs_rep = Thm::spec_abs_rep(list_spec(), vec![alpha.clone()], xs.clone())?; // abs (rep xs) = xs
+
+    tail_u.trans(abs_eq)?.trans(abs_rep)
+}
+
 // ============================================================================
 // High-level term builders (pure construction — no proof).
 // ============================================================================
@@ -737,6 +776,22 @@ mod tests {
             .unwrap();
         assert_eq!(lhs, &Term::app(head(alpha()), consed));
         assert_eq!(rhs, &Term::app(some(alpha()), x));
+    }
+
+    #[test]
+    fn tail_cons_drops_head() {
+        let x = Term::free("x", alpha());
+        let xs = Term::free("xs", list(alpha()));
+        let thm = tail_cons(&alpha(), &x, &xs).unwrap();
+        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        let (lhs, rhs) = thm.concl().as_eq().unwrap();
+        let consed = cons(alpha())
+            .apply(x.clone())
+            .unwrap()
+            .apply(xs.clone())
+            .unwrap();
+        assert_eq!(lhs, &Term::app(tail(alpha()), consed));
+        assert_eq!(rhs, &xs);
     }
 
     #[test]

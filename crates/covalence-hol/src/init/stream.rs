@@ -86,6 +86,35 @@ pub fn at_mk(alpha: &Type, f: &Term, n: &Term) -> Result<Thm> {
 }
 
 // ============================================================================
+// Extensionality — pointwise-equal streams are equal.
+// ============================================================================
+
+/// `⊢ s = t`, given `holds_eq : ⊢ streamAt s n = streamAt t n` with `n =
+/// Free(name, nat)` not free in `s` / `t` — **stream extensionality**.
+///
+/// `streamAt = rep` (the newtype's carrier projection), so the pointwise
+/// equation is `rep s n = rep t n`; [`fun_ext`](crate::init::cat::fun_ext)
+/// lifts it to `rep s = rep t`, and the unconditional round-trip
+/// `abs (rep ·) = ·` ([`Thm::spec_abs_rep`]) bridges back to `s = t`.
+pub fn ext(alpha: &Type, s: &Term, t: &Term, name: &str, holds_eq: Thm) -> Result<Thm> {
+    // δ-unfold `streamAt` on both sides: streamAt s n = rep s n.
+    let n = Term::free(name, Type::nat());
+    let s_at = at(alpha, s, &n).delta_all(stream_at_spec().symbol())?; // streamAt s n = rep s n
+    let t_at = at(alpha, t, &n).delta_all(stream_at_spec().symbol())?; // streamAt t n = rep t n
+    let rep_eq = s_at.sym()?.trans(holds_eq)?.trans(t_at)?; // ⊢ rep s n = rep t n
+
+    // fun_ext over the index: rep s = rep t.
+    let reps_eq = crate::init::cat::fun_ext(rep_eq, name, &Type::nat())?; // ⊢ rep s = rep t
+    // abs (rep s) = abs (rep t).
+    let abs = Term::spec_abs(stream_spec(), vec![alpha.clone()]);
+    let abs_eq = reps_eq.cong_arg(abs)?; // ⊢ abs (rep s) = abs (rep t)
+    // Bridge each side: abs (rep s) = s, abs (rep t) = t.
+    let ar_s = Thm::spec_abs_rep(stream_spec(), vec![alpha.clone()], s.clone())?; // abs (rep s) = s
+    let ar_t = Thm::spec_abs_rep(stream_spec(), vec![alpha.clone()], t.clone())?; // abs (rep t) = t
+    ar_s.sym()?.trans(abs_eq)?.trans(ar_t)
+}
+
+// ============================================================================
 // Operation lemmas — head-only δ-unfold then `at_mk`.
 // ============================================================================
 
@@ -264,6 +293,21 @@ mod tests {
         let thm = head_const(&alpha(), &x).unwrap();
         assert!(thm.hyps().is_empty());
         assert_eq!(thm.concl().as_eq().unwrap().1, &x);
+    }
+
+    #[test]
+    fn ext_from_pointwise() {
+        // From a *hypothesis-free* pointwise equation `streamAt s n =
+        // streamAt s n` (reflexivity, `n` free but not in hyps) conclude
+        // s = s — exercising the extensionality machinery end-to-end.
+        let s = Term::free("s", stream(alpha()));
+        let n = Term::free("n", Type::nat());
+        let pointwise = covalence_core::Thm::refl(at(&alpha(), &s, &n)).unwrap(); // ⊢ streamAt s n = streamAt s n
+        let thm = ext(&alpha(), &s, &s, "n", pointwise).unwrap();
+        assert!(thm.hyps().is_empty());
+        let (lhs, rhs) = thm.concl().as_eq().unwrap();
+        assert_eq!(lhs, &s);
+        assert_eq!(rhs, &s);
     }
 
     #[test]

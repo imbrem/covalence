@@ -1064,6 +1064,14 @@ fn mk_app(f: &Term, d: &Term) -> Term {
 fn rep_app_pos(d: &Term) -> Term {
     Term::app(rep_op(), d.clone())
 }
+/// `rat.num a` / `rat.den a` as *unreduced* named-op applications — the form
+/// the `.cov` proofs write (and that the seam givens are phrased over).
+fn num_app(a: &Term) -> Term {
+    Term::app(num_op(), a.clone())
+}
+fn den_app(a: &Term) -> Term {
+    Term::app(den_op(), a.clone())
+}
 
 /// `⊢ rat.MK f d = mkfs f d` — β-unfold `rat.MK` to the raw class form the
 /// component lemmas are stated in. Used to bridge the named op and the
@@ -1073,13 +1081,17 @@ fn mk_unfold(f: &Term, d: &Term) -> Result<Thm> {
 }
 
 /// `⊢ ∀a. a = rat.MK (rat.num a) (rat.den a)` — quotient induction in named
-/// component form (the `.cov` `recon` given).
+/// component form (the `.cov` `recon` given). The `rat.num a` / `rat.den a`
+/// are kept as **unreduced** named-op applications so the `.cov` proofs can
+/// feed them verbatim into `add_mk` / `mul_mk` / `class_eq`.
 fn recon_given() -> Result<Thm> {
     let a = rvar("a");
     let rm = recon_mk(&a)?; // a = mkfs (rfst a) (rden a)
-    // Re-express the `mkfs …` RHS as `rat.MK (num a) (den a)` (β-fold).
-    let fold = mk_unfold(&rfst(&a), &rden(&a))?.sym()?; // mkfs … = rat.MK …
-    rm.trans(fold)?.all_intro("a", rat())
+    // Target: a = rat.MK (num_op a) (den_op a). Reduce that target's RHS down
+    // to the `mkfs (rfst a)(rden a)` form `recon_mk` produced, then chain.
+    let target_rhs = mk_app(&num_app(&a), &den_app(&a));
+    let red = target_rhs.reduce()?; // rat.MK (num a)(den a) = mkfs (rfst a)(rden a)
+    rm.trans(red.sym()?)?.all_intro("a", rat())
 }
 
 /// Build a `∀f1 d1 f2 d2. lhs = rhs` given from a binary component lemma that,
@@ -2311,6 +2323,31 @@ fn dense_impl() -> Result<Thm> {
         .all_intro("x", rat())
 }
 
+crate::cov_theory! {
+    /// rat commutative-ring laws ported to `rat.cov`, over `core` + the
+    /// `ratprim` quotient seam env. Mirrors how int's ring would port one
+    /// level down; the heavy quotient machinery stays in `ratprim` givens.
+    pub mod cov from "rat.cov" {
+        import "core" = crate::script::Env::core();
+        import "ratprim" = crate::init::rat::rat_env();
+        "add_comm"  => pub fn add_comm_cov;
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    use super::*;
+
+    /// Each `.cov`-proved rat law must reach the *same* conclusion as its
+    /// Rust counterpart in this module — the kernel re-derives it from the
+    /// `ratprim` seam givens.
+    #[test]
+    fn cov_matches_rust() {
+        assert_eq!(cov::add_comm_cov().concl(), super::add_comm().concl());
+    }
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2344,6 +2381,18 @@ mod tests {
     #[test]
     fn rat_env_builds() {
         let _ = rat_env();
+    }
+
+    #[test]
+    fn recon_given_named_form() {
+        // recon's RHS is `rat.MK (rat.num a)(rat.den a)` in *unreduced* named-op
+        // form (a redex per projection), so `.cov` can feed it to add_mk/etc.
+        let g = recon_given().unwrap();
+        let a = rvar("a");
+        let inst = g.all_elim(a.clone()).unwrap();
+        let (l, r) = inst.concl().as_eq().unwrap();
+        assert_eq!(l, &a);
+        assert_eq!(r, &mk_app(&num_app(&a), &den_app(&a)));
     }
 
     #[test]

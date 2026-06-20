@@ -1,0 +1,59 @@
+;; cov — rat commutative-ring laws over `core` + the `ratprim` quotient seam.
+;;
+;; `rat := (int × int.pos) / ~` (cross-multiplication). The `ratprim` env
+;; (init::rat::rat_env) supplies the quotient seam as GIVENS — the rat analogue
+;; of int's, one level up: the component constructor `rat.MK : int → int.pos →
+;; rat` with its projections `rat.num`/`rat.den`/`rat.rep`/`rat.topos`, the
+;; per-operation component-computation lemmas (`recon`, `add_mk`, `mul_mk`,
+;; `neg_mk`, `zero_mk`, `one_mk`), the class-equality law `class_eq`
+;; (cross-multiplication ⟹ equal classes), the int round-trip stubs
+;; (`pos_prod_rt`/`one_pos_rt`), and the proved int ring facts. Over those we
+;; prove the rat ring laws WITHOUT ever mentioning abs/rep — every step is a
+;; `trans`/`mk-comb` chain through `rat.MK`, mirroring the Rust proofs in
+;; init/rat.rs (`add_comm_impl`, …).
+
+(#import core)
+(#open core)
+(#import ratprim)
+(#open ratprim)
+
+;; ============================================================================
+;; On-the-nose commutativity — `ratAdd`/`ratMul` are componentwise on
+;; representatives, so the two MK component pairs are provably equal (numerator
+;; + denominator each by the proved int commutativity), lifted by `rat.MK`
+;; congruence. No quotient cancellation. (Mirrors `add_comm_impl`/`mul_comm_impl`.)
+;; ============================================================================
+
+;; ⊢ ∀a b. a + b = b + a.
+(#thm add_comm
+  (#concl (forall (a rat) (forall (b rat) (= (rat.add a b) (rat.add b a)))))
+  (#by
+    (intro a b)
+    (derive
+      (trans
+        ;; a + b = (MK na da) + (MK nb db)
+        (mk-comb (cong-arg (rat.add) (all-elim a (recon)))
+                 (all-elim b (recon)))
+        (trans
+          ;; = MK (na·rep db + nb·rep da) (topos (rep da · rep db))
+          (all-elim (rat.den b) (all-elim (rat.num b)
+            (all-elim (rat.den a) (all-elim (rat.num a) (add_mk)))))
+          (trans
+            ;; = MK (nb·rep da + na·rep db) (topos (rep db · rep da))   [int comm]
+            (mk-comb
+              (cong-arg (rat.MK)
+                (all-elim (int.mul (rat.num b) (rat.rep (rat.den a)))
+                  (all-elim (int.mul (rat.num a) (rat.rep (rat.den b)))
+                    (int_add_comm))))
+              (cong-arg (rat.topos)
+                (all-elim (rat.rep (rat.den b))
+                  (all-elim (rat.rep (rat.den a)) (int_mul_comm)))))
+            ;; = (MK nb db) + (MK na da) = b + a
+            (sym
+              (trans
+                (mk-comb (cong-arg (rat.add) (all-elim b (recon)))
+                         (all-elim a (recon)))
+                (all-elim (rat.den a) (all-elim (rat.num a)
+                  (all-elim (rat.den b) (all-elim (rat.num b) (add_mk)))))))))))))
+
+(#export add_comm)

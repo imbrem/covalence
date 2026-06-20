@@ -2,14 +2,20 @@
 ;; language from `init/cat.rs`.
 ;;
 ;; The `catprim` env provides:
-;;   - OPERATORS: `compose` (at 'a 'b 'c), `id` (at 'a).
-;;   - GIVEN lemmas: `id_left`, `id_right`, `comp_assoc` (kept as Rust givens
-;;     because the polymorphic `id` type clash prevents a direct port).
+;;   - OPERATORS: `compose` / `id`, registered as `ConstDef::Poly` so each use
+;;     site instantiates its type variables independently (so `id` can appear
+;;     at `'a` and `'b` in one term — what blocked the `id_left`/`id_right`/
+;;     `comp_assoc` ports before).
 ;;
 ;; We prove here:
 ;;   - `fun_ext`  : ∀(f g : 'a→'b). (∀x. f x = g x) ⟹ (f = g)
 ;;   - `comp_beta`: ∀(g:'b→'c)(f:'a→'b)(x:'a). compose g f x = g (f x)
 ;;   - `comp_cong`: ∀g g' f f'. (g=g') ⟹ (f=f') ⟹ (compose g f = compose g' f')
+;;   - `id_beta`  : ∀(y:'a). id y = y                       (helper)
+;;   - `id_left`  : ∀(f:'a→'b). compose id f = f
+;;   - `id_right` : ∀(f:'a→'b). compose f id = f
+;;   - `comp_assoc`: ∀(h:'c→'d)(g:'b→'c)(f:'a→'b).
+;;                     compose (compose h g) f = compose h (compose g f)
 
 (#import core)
 (#open core)
@@ -86,4 +92,108 @@
         (cong-arg compose (assume (= g g2)))
         (assume (= f f2))))))
 
-(#export fun_ext comp_beta comp_cong)
+;; ⊢ ∀(y:'a). id y = y — the identity β-equation.
+;;
+;; Proof: δ-unfold `id` (`id = λx. x`), apply to `y`, β-reduce.
+(#thm id_beta
+  (#concl (forall (y 'a) (= (app id y) y)))
+  (#by
+    (intro y)
+    (derive
+      (trans
+        (cong-fn y (delta id))
+        (beta-conv (app (lam (x 'a) x) y))))))
+
+;; ⊢ ∀(f:'a→'b). compose id f = f — left identity.
+;;
+;; Proof (function extensionality at a fresh point x):
+;;   (compose id f) x = id (f x)   (comp_beta)
+;;                    = f x         (id_beta)
+;;   then re-abstract over x and η-contract both sides (as in fun_ext).
+;; `comp_beta`/`id_beta` are applied to an explicit target equation via
+;; `apply`, which instantiates their `∀`s + type variables by matching — so
+;; `id` lands at the right instance with no manual `inst-tfree`.
+(#thm id_left
+  (#concl (forall (f (fun 'a 'b)) (= (app (app compose id) f) f)))
+  (#by
+    (intro f)
+    (derive
+      (trans
+        (sym (eta-conv (lam (x 'a) (app (app (app compose id) f) x))))
+        (trans
+          (abs-rule x 'a
+            (trans
+              (apply comp_beta
+                (= (app (app (app compose id) f) x) (app id (app f x))))
+              (apply id_beta
+                (= (app id (app f x)) (app f x)))))
+          (eta-conv (lam (x 'a) (app f x))))))))
+
+;; ⊢ ∀(f:'a→'b). compose f id = f — right identity.
+;;
+;; Proof: as `id_left`, but the inner reduction is
+;;   (compose f id) x = f (id x) = f x.
+(#thm id_right
+  (#concl (forall (f (fun 'a 'b)) (= (app (app compose f) id) f)))
+  (#by
+    (intro f)
+    (derive
+      (trans
+        (sym (eta-conv (lam (x 'a) (app (app (app compose f) id) x))))
+        (trans
+          (abs-rule x 'a
+            (trans
+              (apply comp_beta
+                (= (app (app (app compose f) id) x) (app f (app id x))))
+              (cong-arg f
+                (apply id_beta (= (app id x) x)))))
+          (eta-conv (lam (x 'a) (app f x))))))))
+
+;; ⊢ ∀(h:'c→'d)(g:'b→'c)(f:'a→'b).
+;;     compose (compose h g) f = compose h (compose g f) — associativity.
+;;
+;; Proof (extensionality at a fresh point x): both sides reduce to h (g (f x))
+;; by repeated `comp_beta`.
+;;   ((h ∘ g) ∘ f) x = (h ∘ g)(f x) = h (g (f x))
+;;   (h ∘ (g ∘ f)) x = h ((g ∘ f) x) = h (g (f x))
+(#thm comp_assoc
+  (#concl
+    (forall (h (fun 'c 'd))
+      (forall (g (fun 'b 'c))
+        (forall (f (fun 'a 'b))
+          (= (app (app compose (app (app compose h) g)) f)
+             (app (app compose h) (app (app compose g) f)))))))
+  (#by
+    (intro h g f)
+    (derive
+      (trans
+        (sym
+          (eta-conv
+            (lam (x 'a)
+              (app (app (app compose (app (app compose h) g)) f) x))))
+        (trans
+          (abs-rule x 'a
+            (trans
+              ;; LHS point: ((h∘g)∘f) x → (h∘g)(f x) → h (g (f x))
+              (trans
+                (apply comp_beta
+                  (= (app (app (app compose (app (app compose h) g)) f) x)
+                     (app (app (app compose h) g) (app f x))))
+                (apply comp_beta
+                  (= (app (app (app compose h) g) (app f x))
+                     (app h (app g (app f x))))))
+              ;; RHS point (backwards): h (g (f x)) ← h ((g∘f) x) ← (h∘(g∘f)) x
+              (sym
+                (trans
+                  (apply comp_beta
+                    (= (app (app (app compose h) (app (app compose g) f)) x)
+                       (app h (app (app (app compose g) f) x))))
+                  (cong-arg h
+                    (apply comp_beta
+                      (= (app (app (app compose g) f) x)
+                         (app g (app f x)))))))))
+          (eta-conv
+            (lam (x 'a)
+              (app (app (app compose h) (app (app compose g) f)) x))))))))
+
+(#export fun_ext comp_beta comp_cong id_beta id_left id_right comp_assoc)

@@ -316,7 +316,8 @@ fn instantiate(thm: &Thm, order: &[SmolStr], sub: &Subst, what: &str) -> R<Thm> 
     let mut t = thm.clone();
     // Apply the type substitution **simultaneously**. The matched `sub.types`
     // can be a permutation (e.g. `{'a↦'b, 'b↦'a}` when a lemma is used at a
-    // swapped type ordering — `rel.converse` over the double-converse), and a
+    // swapped type ordering — `rel.converse` over the double-converse) or a
+    // chained rename (`{'b↦'c, 'c↦'d}` matching `compose`'s type vars), and a
     // naive sequential `inst_tfree('a↦'b)` then `inst_tfree('b↦'a)` would
     // collapse both to `'a`. Route each source variable through a disjoint
     // fresh intermediate name first, so no later step recaptures an

@@ -2155,10 +2155,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn int_cov_ring_matches_rust() {
-        // Each ported `int.cov` ring axiom states exactly the Rust conclusion
-        // (same checked theorem, two proofs) and is hypothesis-free.
-        let pairs: [(Thm, Thm); 14] = [
+    fn int_cov_matches_rust() {
+        // Each ported `int.cov` ordered-ring axiom states exactly the Rust
+        // conclusion (same checked theorem, two proofs) and is hypothesis-free.
+        let pairs: [(Thm, Thm); 15] = [
             (cov::add_comm_cov(), add_comm()),
             (cov::mul_comm_cov(), mul_comm()),
             (cov::add_assoc_cov(), add_assoc()),
@@ -2173,6 +2173,7 @@ mod tests {
             (cov::lt_trichotomy_cov(), lt_trichotomy()),
             (cov::le_def_cov(), le_def()),
             (cov::lt_add_mono_cov(), lt_add_mono()),
+            (cov::lt_succ_cov(), lt_succ()),
         ];
         for (c, r) in pairs {
             assert!(c.hyps().is_empty(), "ported int.cov axiom is genuine");

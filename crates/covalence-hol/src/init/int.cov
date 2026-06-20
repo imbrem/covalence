@@ -439,6 +439,41 @@
             (all-elim (int.sc a) (all-elim (int.fc a) (lt_mk))))))
         (assume (int.lt a b))))))
 
+;; ⊢ ∀a b. (a < b) = (a + 1 ≤ b).  Discreteness. Both sides reduce to a `nat`
+;; comparison on `X = fa+sb`, `Y = fb+sa`: `a<b ↦ X<Y` and `a+1≤b ↦
+;; (fa+1)+sb ≤ fb+(sa+0)`, normalised to `S X ≤ Y` and bridged by
+;; `nat.lt_iff_succ_le`.
+(#thm lt_succ
+  (#concl
+    (forall (a int) (forall (b int)
+      (= (int.lt a b) (int.le (int.add a int.1) b)))))
+  (#by
+    (intro a b)
+    (rw (all-elim a (recon)))
+    (rw (all-elim b (recon)))
+    ;; LHS: int.lt a b → nat.lt X Y.
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (int.sc a) (all-elim (int.fc a) (lt_mk))))))
+    ;; RHS: a+1 = mk (fa+1)(sa+0); int.le (mk …) b → nat.le ((fa+1)+sb)(fb+(sa+0)).
+    (rw (lit1))
+    (rw (all-elim 0 (all-elim 1
+          (all-elim (int.sc a) (all-elim (int.fc a) (add_mk))))))
+    (rw (all-elim (int.sc b) (all-elim (int.fc b)
+          (all-elim (nat.add (int.sc a) 0)
+            (all-elim (nat.add (int.fc a) 1) (le_mk))))))
+    ;; normalise the RHS comparison: (fa+1)+sb → S(fa+sb) ; fb+(sa+0) → fb+sa.
+    (rw (all-elim (int.sc a) (nat.add_zero)))                   ;; sa+0 → sa
+    ;; fa+1 → S fa  (1 = S 0, then add_succ + add_zero).
+    (rw (trans (cong-arg (nat.add (int.fc a)) (sym (reduce-prim (succ 0))))
+          (trans (all-elim 0 (all-elim (int.fc a) (nat.add_succ)))
+                 (cong-arg succ (all-elim (int.fc a) (nat.add_zero))))))
+    ;; (S fa)+sb → S(fa+sb).
+    (rw (all-elim (int.sc b) (all-elim (int.fc a) (natrec.succ_add))))
+    ;; close: (X < Y) = (S X ≤ Y).
+    (derive
+      (all-elim (nat.add (int.fc b) (int.sc a))
+        (all-elim (nat.add (int.fc a) (int.sc b)) (nat.lt_iff_succ_le))))))
+
 (#export add_comm mul_comm add_assoc add_zero add_neg sub_def
          mul_one mul_zero distrib
-         lt_irrefl lt_trans lt_trichotomy le_def lt_add_mono)
+         lt_irrefl lt_trans lt_trichotomy le_def lt_add_mono lt_succ)

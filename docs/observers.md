@@ -237,7 +237,12 @@ catalog.)
 > **DIRECTION — not yet built.** Sharpens §4's "efficient bytes / efficient
 > nats" from *added* validators into the kernel's *own* representation of
 > `Int` / `Bytes` / `Nat`. Coupled with the Pure-base-logic / narrow-waist
-> direction in [`kernel-design.md`](./kernel-design.md) §11.
+> direction in [`kernel-design.md`](./kernel-design.md) §11: under it the
+> `Obs` / `ObsEq` / `ObsTrue` / `ObsImp` substrate (§2) **moves out of
+> `covalence-core` into `covalence-pure`** and becomes the base logic's
+> primitive — opaque predicates plus first-order implication — and the
+> kernel's `obs_imp` becomes the **lift** of a Pure implication into HOL
+> *under assumptions about its opaque predicates* (kernel-design §11.2).
 
 Today `Int`, `Bytes`, and the `Nat`/`succ` machinery are **built-in kernel
 primitives** (`TermKind::Int/Blob`, `TermKind::Succ`, the `nat_induct`

@@ -625,33 +625,57 @@ The target is three rungs, with HOL as a **narrow waist**:
      with observation + computation as primitives       efficient
 ```
 
-### 11.1 `covalence-pure` — the base logic
+### 11.1 `covalence-pure` — the base logic (opaque, computational)
 
-A **first-order** logic, deliberately *logically simple*: a simple, concrete
-type system, no higher-order unification, none of HOL's schematic machinery —
-but **efficient**, with **observation and computation as primitives**.
-Because it is positive and concrete, it can be made *trivially correct* in a
-way HOL's full apparatus cannot, which is exactly what makes it the right
-home for **low-level reasoning**: the WASM engine, fetching from the store,
-the byte/nat/int computation that today hides behind kernel primitives. The
-trusted-observer story of [`observers.md`](./observers.md) §7 lives *here* —
-"computation as a primitive" is precisely the efficient representation of a
-sound observer.
+A **first-order** logic kept *as weak as possible on purpose*. It reasons
+only about **opaque predicates** and the simple first-order **implications**
+between them — e.g. `WASM_holds ⟹ HOL_holds` — and it **cannot express** what
+those predicates *mean*: not WASM's reduction relation, not HOL theoremhood,
+nothing about their internal structure. A predicate is an uninterpreted
+symbol; the logic commits to nothing about it. Committing to almost nothing
+is exactly what makes Pure *trivially correct* — there is barely anything for
+it to be wrong about — and *trivially re-hostable* (§11.5).
 
-### 11.2 HOL as a type *inside* Pure
+It is **computational in character**: in practice a *template metaprogram
+over a handful of Rust traits*. A Pure fact is a Rust value built only
+through those trait rules (LCF discipline), and Rust's type system tracks
+which opaque predicates a fact depends on. The **observation substrate moves
+here**: the `Obs` leaf and the `ObsEq` / `ObsTrue` / `ObsImp` policy traits
+(today in `covalence-core/src/term/observer.rs`,
+[`observers.md`](./observers.md) §2) become *the* primitive of the base
+logic — an observer attests an opaque atomic predicate, and a first-order
+rule chains it into an implication. The trusted-observer story of
+[`observers.md`](./observers.md) §7 is precisely this: a trusted observer is
+a Rust trait impl that mints an opaque fact by running code (bignum add, a
+store fetch, a WASM component), and the §11.4 "zoo" is the catalogue of those
+impls.
 
-The middle HOL is then itself **a type inside the base logic**: a HOL
-theorem `Thm(theHOL)` becomes a Pure judgement `IsThm(theHOL)`, where
-`theHOL` is an **observer**. `covalence-core` stays *mostly unchanged* — the
-move is, morally, "`Thm` implements a trait" (the real implementation may
-look somewhat different), so the existing HOL kernel API keeps working while
-becoming one logic *expressed in* Pure rather than the absolute bottom.
+Pure does **not** reason *about* the WASM engine or the store; it only
+*records* (opaquely) that an observation was made, and proves first-order
+implications over such records. All meaning lives one rung up.
 
-This is the same reflective move as the metatheory program
-([`metatheory.md`](./metatheory.md) §1) — "a logic is a datatype + a
-derivability predicate inside a bigger logic" — applied *downward*: HOL
-reified inside the first-order base logic, instead of (only) object logics
-reified inside HOL.
+### 11.2 Lifting into HOL: meaning by assumption
+
+HOL is where the opaque predicates *acquire meaning*. A Pure fact over opaque
+predicates **lifts into HOL under assumptions about what those predicates
+mean** — and those assumptions enter as ordinary **scoped hypotheses** (the
+"scoped truths, no global lies" discipline). Concretely: a Pure theorem
+`WASM_holds ⟹ HOL_holds` lifts to a HOL theorem of the same shape once you
+assume `WASM_holds ⟺ ⟦the real WASM fact⟧` and `HOL_holds ⟺ ⟦the real HOL
+proposition⟧`; the two correspondences ride along as hypotheses until
+discharged — e.g. against the SpecTec-lowered `T_wasm` (§11.5,
+[`observers.md`](./observers.md) §4). This is the kernel's `obs_imp` rule
+generalized and relocated: **Pure proves the *structure* of the implication,
+computationally and opaquely; HOL supplies the *meaning*.**
+
+So `covalence-core` stays *mostly unchanged* — morally "`Thm` implements a
+trait": a `Thm` is one lifted observer (the HOL observer) among peers (the
+WASM observer, the bytes observer), and the existing HOL kernel API keeps
+working while becoming one logic *expressed over* Pure rather than the
+absolute bottom. It is the same reflective move as the metatheory program
+([`metatheory.md`](./metatheory.md) §1) applied *downward*; and the judgement
+`WASM(P,D,A) ⟹ ∃D'. ZFC(D',A)` ([`metatheory.md`](./metatheory.md) §6) is
+literally a Pure opaque-predicate implication lifted into the metatheory.
 
 ### 11.3 Why it is a *narrow waist*
 

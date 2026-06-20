@@ -140,7 +140,7 @@ fn in_surface_form_dispatches_per_model() {
 
 /// THE FUSION OBJECTIVE: `declared.cov` declares the `Nat` signature + theory
 /// as data (`#sig`/`#thy`), declares `nat/self` + `nat/unary` as models
-/// (`#model`), certifies each `M ⊨ NatTheory` (`#models`), and replays the SAME
+/// (`#model`), certifies each `M ⊨ NatAddTheory` (`#models`), and replays the SAME
 /// abstract `add.comm` proof at both via `(#in M …)` — sourcing ops from the
 /// declared model and axioms from the satisfaction certificate, NOT a hand-built
 /// Rust `NatModel::env()`. Each replay is a genuine, hyp/oracle-free theorem at

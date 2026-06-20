@@ -128,10 +128,10 @@ named axioms* — exactly the `Signature`/`Theory` data the `Logic` trait consum
   (op add  (-> α α α)))
 
 (#thy NatTheory
-  (sig Nat)                        ;; a signature ref, or an inline (#sig …)
-  (axiom add.zero (forall (a α) (= (add a zero) a)))
-  (axiom add.succ (forall (a α)(b α) (= (add a (succ b)) (succ (add a b)))))
-  (axiom induct  …))
+  (over Nat)                       ;; a signature ref (`over`/`sig`), or inline (#sig …)
+  (#spec add.zero (forall (a α) (= (add a zero) a)))        ;; a proof OBLIGATION,
+  (#spec add.succ (forall (a α)(b α) (= (add a (succ b)) (succ (add a b)))))  ;; not a postulate
+  (#spec induct  …))
 ```
 
 **Files + typed import.** A **`.sig`** file *is* a `(#sig …)` body; a **`.thy`**

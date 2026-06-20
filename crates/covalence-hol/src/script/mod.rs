@@ -41,7 +41,7 @@ pub use env::{ConstDef, Env};
 pub use scope::Scope;
 pub use syntax::{parse_term, parse_type};
 pub use tactic::{Hyp, Interp, Tactic};
-pub use theory::{Axiom, Model, SigOp, Signature, Theory as TheoryDecl};
+pub use theory::{Model, SigOp, Signature, Spec, Theory as TheoryDecl};
 
 use std::sync::Arc;
 

@@ -64,6 +64,12 @@ reasoning" are *two views of one mechanism*:
 > **a model = (a logic's handler set) + (an interpretation of the theory into
 > that logic).**
 
+And dispatch has a standing preference: **always reach for an isomorphic model
+when you can** (§4). Isomorphic models transport facts losslessly in both
+directions, so the dispatcher routes each operation to the cheapest
+representative of an isomorphism class rather than re-proving — `nat ≅ list unit`
+means a fact proved in either is a fact in both.
+
 The effect system is not an add-on to the many-models idea; it is what makes the
 many-models idea *executable*.
 
@@ -123,7 +129,117 @@ available everywhere a morphism reaches.
 
 ---
 
-## 4. The compiler: stages
+## 4. Isomorphic models and the self-model (`hol-in-hol`)
+
+### Prefer isomorphic models
+
+Models of a theory are related by **morphisms** (§3, `#transport`); the strongest
+morphism is an **isomorphism** — a structure-preserving, *invertible* translation,
+so a fact transports *losslessly both ways*: `M ⊨ φ ⟺ M' ⊨ φ` whenever `M ≅ M'`.
+The dispatch rule follows: **always reach for an isomorphic model when you can.**
+Treat an isomorphism class as a *single logical object* and route each operation
+to whichever representative is cheapest — prove `add-zero` in whichever of
+`nat ≅ list unit` is easier, transport across the iso, and it holds in both. An
+isomorphism is free transport in both directions; the dispatcher prefers it over
+a one-way embedding or a re-proof.
+
+Concretely, alongside the model registry the compiler keeps a registry of
+**proved isomorphisms**; stage-3 dispatch, before doing work in model `M`, first
+asks "is there an isomorphic `M'` where this is already proved, or cheaper?" (A
+general — non-iso — morphism is still usable, but only with the directionality
+and side-conditions it carries; an iso has neither.)
+
+### `hol-in-hol`: the self-model (first-class)
+
+The single most important model to support first-class is **`hol-in-hol`**: our
+HOL metatheory reified *inside itself* — a datatype of HOL terms/formulas, a
+`Derivable_HOL` derivability predicate, and a denotation back into the native HOL
+we actually run ([`metatheory.md`](./metatheory.md) §1). It is the model where the
+system **reflects on its own logic**: "HOL proves `P`" becomes the native HOL
+theorem `HOL(⌜P⌝)`. Why it is load-bearing:
+
+- It is the canonical home of the **native ⇄ reified correspondence** (soundness
+  `HOL(⌜P⌝) ⟹ P` and representability `P ⟹ HOL(⌜P⌝)`) — the adequacy that makes
+  the reified HOL *faithfully* model the real one. That correspondence is exactly
+  the kind of (near-)isomorphism the dispatch rule wants: it lets work hop between
+  *proving `P`* and *proving `HOL(⌜P⌝)`*.
+- It is the **`ToHOL` reading** of the source-language picture
+  ([`frontend.md`](./frontend.md) §3): a source term `S` interpreted "in HOL"
+  lands in `hol-in-hol`.
+- It is where `covalence-pure`'s `IsThm(theHOL)`
+  ([`kernel-design.md`](./kernel-design.md) §11.2) is reified — the HOL observer
+  lifted into a model.
+- It is the base case for **HOL-to-X transport**: `HOL(A) ⟹ ZFC(A)`,
+  `PA(A) ⟹ HOL(A)` ([`metatheory.md`](./metatheory.md) §3) all speak about
+  `hol-in-hol`, so making it first-class is the prerequisite for the morphism
+  layer between *every* logic and HOL.
+
+So `hol-in-hol` is both a concrete model the user can work in and the **hub** the
+model graph is organized around — the logic every other reified logic transports
+through.
+
+## 5. Lifting literals, data, and programs (the `covalence-pure` embedding)
+
+A surface term doesn't only mention a theory's declared operations — it mentions
+**concrete data**: numeric and string literals, raw bytes, content-addressed
+references, and whole **computer programs** (WASM). The surface language gives
+**first-class, model-relative lifting** for all of these, and the lifting
+mechanism *is* `covalence-pure` ([`kernel-design.md`](./kernel-design.md) §11):
+each literal/data form is a **trusted observer** that mints an opaque fact, lifted
+into the active model's logic under a meaning assumption.
+
+What lifts — *where appropriate* (a model declares which forms it supports, and
+how):
+
+| surface form | observer mints | carriers it can lift into |
+|---|---|---|
+| natural literal `42` | "the nat 42" | HOL `nat`; `list unit` (unary); PA numeral `S…S0` |
+| integer literal `-7` | "the int −7" | HOL `int`; a ring carrier |
+| string literal `"foo"` | "these code units" | HOL `list char`; `bytes`-as-UTF-8 |
+| byte literal `b"…"` | "these bytes" | HOL `bytes`; `list u8` |
+| content-addressed ref (an `O256`) | "the blob with this hash" | a store-backed carrier; an opaque handle |
+| WASM program | "this component, run under `T_wasm`" | the executor-semantics carrier; an oracle |
+
+Two things make this first-class rather than ad-hoc:
+
+1. **It is model-relative.** Lifting `42` into the `nat` model is the kernel `nat`
+   literal; into `list unit` it is a unary list; into a reified PA model it is the
+   object numeral `S(S(…0))`. The *same* surface `42` dispatches to the model's
+   declared lifter — the §2 effect dispatch, applied to literals instead of
+   tactics. A model with no sensible lift for a form simply doesn't declare one;
+   using that form there is a diagnostic, not a silent coercion.
+2. **It is the `covalence-pure` lift, so it is trust-honest.** A lifter is a
+   trusted observer ([`observers.md`](./observers.md) §7): efficient (the kernel's
+   built-in `Nat`/`Int`/`Blob` literals are the fast representation) but, under
+   paranoid mode ([`kernel-design.md`](./kernel-design.md) §11.5), demotable to a
+   checked construction. A **content-addressed** lift is the store assumption
+   discharged operationally; a **WASM** lift is the WASM observer (Track D), whose
+   fact `run(B,x)=y` enters as a *scoped hypothesis* until discharged against the
+   SpecTec-lowered `T_wasm`. Lifting a program is *not* "trusting the program" — it
+   is minting an opaque observation and carrying its meaning as an assumption,
+   exactly as §11.2 prescribes.
+
+In surface form, a model's lifters sit alongside its interpretation map:
+
+```scheme
+(#model nat/unary : Nat #in HOL
+  (#carrier (list unit))
+  (#map  (zero nil) (succ (cons unit.nil)) (add append))
+  (#lift (nat unary-of)))               ;; 42 ↦ a length-42 (list unit)
+
+(#model bytes/hol : Bytes #in HOL
+  (#carrier bytes)
+  (#lift (byte id) (string utf8) (blob id) (content store-get)))
+
+(#model wasm/oracle : … #in HOL
+  (#lift (wasm (exec-under T_wasm))))    ;; a program ↦ its observed result
+```
+
+This is where `covalence-pure` becomes *visible in the surface*: literals, hashes,
+and programs are not magic kernel built-ins but **lifted observations**, and the
+model chooses how each lands.
+
+## 6. The compiler: stages
 
 `script/` today is a single replay pass (`run` → `check`). The proper language is
 a **multi-stage compiler**; each stage produces typed IR, and errors are
@@ -159,7 +275,7 @@ a **multi-stage compiler**; each stage produces typed IR, and errors are
 
 ---
 
-## 5. Error handling and propagation
+## 7. Error handling and propagation
 
 Today there is a flat `ScriptError` and a few panic paths (the nested-runtime
 hazard that motivated `#spawn`). A proper compiler wants:
@@ -182,7 +298,7 @@ hazard that motivated `#spawn`). A proper compiler wants:
 
 ---
 
-## 6. Relationship to today's code (the migration)
+## 8. Relationship to today's code (the migration)
 
 | Today | Role in the compiler |
 |---|---|
@@ -198,25 +314,30 @@ obligations exactly as `.cov` rules do today.
 
 ---
 
-## 7. Incremental plan (what to build first)
+## 9. Incremental plan (what to build first)
 
 1. **De-panic the front.** Add source **spans** + a `Diagnostic` type through
    parse; convert `ScriptError` paths to accumulating diagnostics. (Pure
    plumbing; unblocks everything.)
 2. **`#logic` / `#model` surface forms** — parse + resolve only, no dispatch yet
-   (extend `surface::Builtin` + the AST + a `Model`/`Logic` registry).
+   (extend `surface::Builtin` + the AST + a `Model`/`Logic` registry, with the
+   `#lift` clause of §5 and an isomorphism registry of §4).
 3. **`#in model` swaps the active handler set.** A `Model` = (theory, a
-   logic-handler `Env`, an interpretation map); entering a model installs its
-   handlers. Reuses the existing `Env`-as-dispatcher directly.
-4. **One model-relative tactic, two models.** Wire `(induct n)` to dispatch
-   *HOL-nat* induction vs *`list unit`* induction across two HOL models of `Nat`
-   — the smallest proof that effect dispatch works. (Both in HOL, so it needs
-   *no* new logic — buildable now.)
-5. **Cross-logic models** — `nat/pa`, `nat/soa` — land once Track A's reified PA
-   / SOA logics exist; then `(induct n)` dispatches to the PA/SOA induction
-   *schema*, and `#transport` moves results between models. This is where "many
-   models across many *logics*" becomes real.
+   logic-handler `Env`, an interpretation map, its lifters); entering a model
+   installs its handlers. Reuses the existing `Env`-as-dispatcher directly.
+4. **Two *isomorphic* HOL models, one tactic, lifted literals.** Use
+   `nat/self ≅ nat/unary` (both HOL — no new logic needed): wire `(induct n)` to
+   dispatch *HOL-nat* vs *`list unit`* induction, wire the §5 lift of the literal
+   `42` into each carrier, and prove the `nat ≅ list unit` **isomorphism** so a
+   result transports across it (§4). Smallest end-to-end proof that dispatch +
+   lifting + iso-transport all work — buildable today.
+5. **Cross-logic models + `hol-in-hol`.** Stand up `hol-in-hol` as the hub (§4),
+   then `nat/pa`, `nat/soa` once Track A's reified PA / SOA logics exist; now
+   `(induct n)` dispatches to the PA/SOA induction *schema*, `#transport` moves
+   results across the morphism graph, and the WASM/content lifts of §5 (Track C/D)
+   come in. This is where "many models across many *logics*" becomes real.
 
 Step 4 is the milestone to aim for first: the *same* `(induct n)` proving
-`add-zero` in two different models of `Nat`, dispatched by the compiler — the
-many-models-and-effect-system idea, end to end, on machinery that exists today.
+`add-zero` across two *isomorphic* models of `Nat`, with `42` lifted into each
+carrier and the result transported over the iso — the many-models, effect-system,
+lifting, and iso-dispatch ideas end to end, on machinery that exists today.

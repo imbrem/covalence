@@ -24,6 +24,7 @@
 //! Nothing in this crate is consumed by `covalence-core`'s inference
 //! rules.
 
+pub mod ac;
 pub mod category;
 pub mod hash;
 pub mod hol_light_obs;

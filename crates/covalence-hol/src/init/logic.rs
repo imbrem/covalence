@@ -100,8 +100,10 @@ crate::cov_theory! {
         "truth"        => pub fn truth;
         "and.comm"     => pub fn and_comm;
         "and.comm.mp"  => pub fn and_comm_mp;
+        "and.assoc"    => pub fn and_assoc;
         "or.comm"      => pub fn or_comm;
         "or.comm.mp"   => pub fn or_comm_mp;
+        "or.assoc"     => pub fn or_assoc;
         "exists.intro" => pub fn exists_intro_thm;
         "iff.refl"     => pub fn iff_refl;
         "iff.intro"    => pub fn iff_intro;
@@ -111,8 +113,8 @@ crate::cov_theory! {
 }
 
 pub use cov::{
-    and_comm, and_comm_mp, exists_intro_thm, iff_intro, iff_mp, iff_mpr, iff_refl, or_comm,
-    or_comm_mp, truth,
+    and_assoc, and_comm, and_comm_mp, exists_intro_thm, iff_intro, iff_mp, iff_mpr, iff_refl,
+    or_assoc, or_comm, or_comm_mp, truth,
 };
 
 // ============================================================================

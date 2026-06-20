@@ -59,6 +59,49 @@
     (imp-intro (or p q)
       (eq-mp (or.comm) (assume (or p q))))))
 
+;; ⊢ ((p ∧ q) ∧ r) = (p ∧ (q ∧ r)). Associativity of `∧` as an EQUATION (the
+;; form the AC rewriter consumes). Proved by antisymmetry — each direction
+;; re-brackets the conjunction by elimination + reintroduction. (We do NOT use
+;; `prop-eq` here: it bottoms out in `truth`, which `logic.cov` itself defines,
+;; so calling it during this theory's load would re-enter the lazy static.)
+(#thm and.assoc
+  (#concl (= (and (and p q) r) (and p (and q r))))
+  (#proof
+    (deduct-antisym
+      ;; from (p ∧ (q ∧ r)) build ((p ∧ q) ∧ r)
+      (and-intro
+        (and-intro
+          (and-elim-l (assume (and p (and q r))))
+          (and-elim-l (and-elim-r (assume (and p (and q r))))))
+        (and-elim-r (and-elim-r (assume (and p (and q r))))))
+      ;; from ((p ∧ q) ∧ r) build (p ∧ (q ∧ r))
+      (and-intro
+        (and-elim-l (and-elim-l (assume (and (and p q) r))))
+        (and-intro
+          (and-elim-r (and-elim-l (assume (and (and p q) r))))
+          (and-elim-r (assume (and (and p q) r))))))))
+
+;; ⊢ ((p ∨ q) ∨ r) = (p ∨ (q ∨ r)). Associativity of `∨` as an EQUATION. Each
+;; direction case-splits the disjunction and re-injects on the matching side.
+(#thm or.assoc
+  (#concl (= (or (or p q) r) (or p (or q r))))
+  (#proof
+    (deduct-antisym
+      ;; from (p ∨ (q ∨ r)) build ((p ∨ q) ∨ r)
+      (or-elim (assume (or p (or q r)))
+        (imp-intro p (or-intro-l r (or-intro-l q (assume p))))
+        (imp-intro (or q r)
+          (or-elim (assume (or q r))
+            (imp-intro q (or-intro-l r (or-intro-r p (assume q))))
+            (imp-intro r (or-intro-r (or p q) (assume r))))))
+      ;; from ((p ∨ q) ∨ r) build (p ∨ (q ∨ r))
+      (or-elim (assume (or (or p q) r))
+        (imp-intro (or p q)
+          (or-elim (assume (or p q))
+            (imp-intro p (or-intro-l (or q r) (assume p)))
+            (imp-intro q (or-intro-r p (or-intro-l r (assume q))))))
+        (imp-intro r (or-intro-r p (or-intro-r q (assume r))))))))
+
 ;; ∃-introduction, reified as a higher-order theorem:
 ;;   ⊢ ∀(P : 'a → bool). ∀(w : 'a). (P w) ⟹ (∃x. P x)
 ;;
@@ -137,6 +180,6 @@
 
 ;; The public interface: what `cov::env()` exposes and what the Rust
 ;; accessors read. (`tauto` is the host tactic registered above.)
-(#export truth and.comm and.comm.mp or.comm or.comm.mp exists.intro
-         iff.refl iff.intro iff.mp iff.mpr
+(#export truth and.comm and.comm.mp and.assoc or.comm or.comm.mp or.assoc
+         exists.intro iff.refl iff.intro iff.mp iff.mpr
          tauto)

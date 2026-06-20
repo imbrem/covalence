@@ -32,7 +32,7 @@ use covalence_core::{Result, Term, Thm};
 
 use super::deep::denote_closed;
 use super::fol::Fol;
-use crate::init::ext::{TermExt, ThmExt};
+use crate::init::ext::ThmExt;
 use crate::init::nat;
 
 /// A **PA derivation**: a reified PA formula together with a genuine,

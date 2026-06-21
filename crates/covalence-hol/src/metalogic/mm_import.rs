@@ -207,6 +207,27 @@ mod tests {
         }
     }
 
+    /// Targeted check that the previously-reported set.mm import failures (all
+    /// the `free variable "d"` metavar/predicate name clash) now import. Low CPU
+    /// (derives ~14 named theorems), `COV_SET_MM` env, `#[ignore]`d.
+    #[test]
+    #[ignore = "needs COV_SET_MM; targeted regression for the `d` namespacing fix"]
+    fn formerly_failing_import() {
+        use super::super::mm_database::derive_theorem;
+        let path = std::env::var("COV_SET_MM").expect("set COV_SET_MM");
+        let db = crate::metamath::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let labels = [
+            "cbvral4vw", "cbvral6vw", "cbvral8vw", "disjiund", "otsndisj", "otiunsndisj",
+            "reuop", "f1veqaeq", "isopolem", "isosolem", "fvmpopr2d",
+        ];
+        for l in labels {
+            let thm = derive_theorem(&db, l)
+                .unwrap_or_else(|e| panic!("`{l}` still fails: {e}"));
+            assert!(thm.has_no_obs(), "`{l}` must be oracle-free");
+            eprintln!("OK {l}");
+        }
+    }
+
     /// The vendored real `hol.mm` (CC0; all 151 `$p` proofs are *compressed*).
     const HOL_MM: &str =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../covalence-metamath/tests/fixtures/hol.mm"));

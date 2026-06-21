@@ -112,12 +112,24 @@ fn concat(a: Term, b: Term) -> Result<Term> {
     concat_fn().apply(a)?.apply(b)
 }
 
-/// A leaf resolver: a Metamath **variable** `tok` → `Term::free(tok, nat)` (a
-/// metavariable, to be ∀-bound in its clause); any other token is treated as a
-/// **constant** → the uninterpreted constant `mm$c$<tok> : nat`.
+/// The HOL free-variable name for a Metamath **metavariable** `tok`. Namespaced
+/// (`mm$v$<tok>`) so it can never collide with the impredicative engine's own
+/// reserved variable name `d` (the predicate `d : Φ→bool` in
+/// `Derivable_L A := ∀d. Closed_L d ⟹ d A`) — a Metamath setvar literally named
+/// `d` would otherwise appear as both `nat` (metavar) and `nat→bool` (predicate)
+/// in one term, which the kernel rejects ("free variable `d` declared at two
+/// different types"). Used at *every* metavar site (leaf encoding, clause
+/// ∀-binders, the `$f` float slot) so they stay consistent.
+pub fn mv(tok: &str) -> String {
+    format!("mm$v${tok}")
+}
+
+/// A leaf resolver: a Metamath **variable** `tok` → `Term::free(mm$v$<tok>, nat)`
+/// (a metavariable, to be ∀-bound in its clause); any other token is treated as
+/// a **constant** → the uninterpreted constant `mm$c$<tok> : nat`.
 fn leaf(db: &Database, tok: &str) -> Term {
     if db.is_variable(tok) {
-        Term::free(tok, phi())
+        Term::free(mv(tok), phi())
     } else {
         Term::free(format!("mm$c${tok}"), phi())
     }
@@ -392,8 +404,9 @@ impl Clause {
             conj(prems)?.imp(d_apply(&self.concl_enc)?)?
         };
         // Bind float_vars[0] OUTERMOST, so `all_elim(arg0)` strips it first.
+        // Bind the *namespaced* metavar name (matches `leaf`'s encoding).
         for v in self.float_vars.iter().rev() {
-            body = body.forall(v, phi())?;
+            body = body.forall(&mv(v), phi())?;
         }
         Ok(body)
     }
@@ -694,7 +707,7 @@ fn apply_label(
     match stmt {
         Statement::Float(f) => {
             // `$f <typecode> <var>` — push the metavariable as a plain term.
-            Ok(Slot::Wff(Term::free(&f.var, phi())))
+            Ok(Slot::Wff(Term::free(mv(&f.var), phi())))
         }
         Statement::Essential(h) => {
             // `$e |- <hyp>` — its derivability is *assumed*; it becomes a
@@ -917,8 +930,8 @@ mod tests {
         let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
         assert_eq!(thm.concl(), &expected);
 
-        // Exactly one hypothesis: Derivable_L ⌜ph⌝.
-        let ph = Term::free("ph", phi());
+        // Exactly one hypothesis: Derivable_L ⌜ph⌝ (metavar `ph` is namespaced).
+        let ph = Term::free(mv("ph"), phi());
         let hyps: Vec<&Term> = thm.hyps().iter().collect();
         assert_eq!(hyps.len(), 1, "a1i carries exactly one hypothesis");
         assert_eq!(hyps[0], &derivable(&rs, &ph).unwrap());

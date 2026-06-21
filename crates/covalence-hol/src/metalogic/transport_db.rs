@@ -307,7 +307,9 @@ mod tests {
         // Pull target clause j, specialise its metavars, feed premises → d' concl.
         let mut clause = nth_conjunct(assumed_closed.clone(), j, n_tgt).unwrap();
         for v in &info.float_vars {
-            clause = clause.all_elim(Term::free(v, phi.clone())).unwrap();
+            clause = clause
+                .all_elim(Term::free(crate::metalogic::mm_database::mv(v), phi.clone()))
+                .unwrap();
         }
         let d_concl = if d_prime_ess.is_empty() {
             clause // {Closed_T d'} ⊢ d' concl
@@ -343,7 +345,7 @@ mod tests {
 
         let mut out = body;
         for v in info.float_vars.iter().rev() {
-            out = out.all_intro(v, phi.clone()).unwrap();
+            out = out.all_intro(&crate::metalogic::mm_database::mv(v), phi.clone()).unwrap();
         }
         out
     }

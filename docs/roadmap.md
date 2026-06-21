@@ -39,42 +39,79 @@ small/auditable Rust `metamath::verify` (defer the verified-WASM-checker), and "
 GT" is reading off the axiom base. The real set.mm TTP levers are the
 **compressed-proof parser + full `.mm` grammar** and confirming verifier throughput.
 
-## What is already built (this session)
+## The honesty principle (what "construct, don't trust" means)
 
-The pieces exist; they are not yet *unified* into "a logic = a Metamath database
-you lower theories into and prove across":
+The keystone of the Metamath thin-waist is **proof-irrelevance done honestly**:
+
+> `metamath::verify` (the small, untrusted Rust checker) lets us **construct**,
+> in the HOL kernel, the theorem `⊢ Derivable_… ⌜S⌝` ("**∃ a derivation** of `S`")
+> — we never *trust* the checker, never inject an oracle, and never replay the
+> object logic's steps as denotations. The Rust replay is untrusted; every kernel
+> step it drives is re-checked; the only thing you trust is that the function
+> **constructs the theorem it claims to** (its type signature), not its internals.
+
+Two consequences we lean on hard:
+
+- **No trust seam / no observer.** Derivability is *constructed* via the
+  impredicative engine's derivation constructors, not admitted via an oracle. (The
+  kernel's early `Observer` primitive is being reworked into a lower layer — avoid
+  coupling to it.)
+- **Never unfold the object terms.** We land `Derivable_… ⌜S⌝` over the *encoded
+  syntax* `⌜S⌝`, not its denotation `⟦S⟧`. Nat literals encode as `S(S(S(Z)))`,
+  proofs can be double-exponentially long with zero sharing — and that is fine,
+  because we only ever assert *existence* of a derivation; we never build or
+  unfold it. The result theorem is small.
+
+## What is already built
 
 - **Authoring forms** — `#sig`/`#thy`/`#model`/`#models` + `#spec`; `nat.sig`/
   `nat.thy` with `nat.cov ⊨ nat.thy` certified.
-- **The Metamath engine** in `covalence-hol/src/metamath/` (expr/subst/frame/DV/
-  verify) — the `ValidProof` primitive — plus the `.mm` reader in
-  `covalence-metamath`.
+- **The Metamath engine + reader in the lower, HOL-free `covalence-metamath`
+  crate** (expr/subst/frame/DV/verify + the `.mm` reader) — the `ValidProof`
+  primitive. *(Done this session: the engine was inverted down out of
+  `covalence-hol`, which now depends on `covalence-metamath`. Next: a `Database`
+  trait with pluggable backends — the in-memory RPN checker as a HOL-free
+  "sanity-check" impl behind a flag, and a HOL-backed consumer that reads axiom
+  sets from real `.mm` files.)*
 - **PA, deeply** — `Derivable_PA` (pure, soundness proved once, one-step
   projection) *and* `peano::mm_pa` + `mm_replay` (a Metamath PA database + an
-  untrusted-proof→kernel replay that lands `∀x.x+0=x` by induction).
+  untrusted-proof→kernel replay). *(NB: `mm_replay` currently lands `⟦S⟧` — the
+  denotation; the honesty principle above says the general replay should land
+  `Derivable_… ⌜S⌝` instead, leaving `project`-to-`⟦S⟧` an optional last step.)*
 - **The generic engine** `metalogic::{RuleSet, derivable, rule_induction}` and the
   **HOL `Database` type + relation lattice** `metalogic::{database, relations}`:
-  `⊑`/monotonicity and `⟹_σ`/transport as kernel-proved theorems.
+  `⊑`/monotonicity and `⟹_σ`/transport as kernel-proved theorems. *(Done this
+  session — Phase A: `database::Derivable_DB` is now literally
+  `derivable(&db_rule_set(db), ·)`, one derivability notion.)*
 - **Accelerators** — Alethe/SMT goal discharge (`(#by (smt))`) + n-ary Farkas.
 
 ## The critical path (the keystone first)
 
-### Phase A — the keystone: unify `Derivable` + `#logic`-as-database
+### Phase A — the keystone: unify `Derivable` + `#logic`-as-database ✅ DONE
 
-The single highest-leverage move (already SKELETON'd in `metalogic/SKELETONS.md`):
-**drive the generic engine off a HOL `Database` value**, collapsing the two
+**Drive the generic engine off a HOL `Database` value**, collapsing the two
 `Derivable` notions (engine `Derivable_L` over a Rust `RuleSet` closure;
-`Derivable_DB` over a HOL `Database` value) into one. This makes "**a `#logic` *is*
-a Metamath database**" real in code: a `#logic` produces a HOL `Database`, its
+`Derivable_DB` over a HOL `Database` value) into one. `database::db_rule_set(db)`
+packages the database value as a `metalogic::RuleSet`, and `derivable_db` is now
+literally `metalogic::derivable(&db_rule_set(db), ·)`. This makes "**a `#logic`
+*is* a Metamath database**" real: a `#logic` produces a HOL `Database`, its
 derivability comes from the unified engine, and the **relation lattice (`⊑`/`⟹_σ`)
-applies to every logic**. Everything below rides on this — do it first.
+applies to every logic**.
 
-### Phase B — ground it honestly: `∃P. ValidProof ⟺ Derivable`
+### Phase B — construct, don't trust: replay `metamath::verify` → `⊢ Derivable_… ⌜S⌝`
 
-Connect the existence-of-derivation to the *actual* `metamath::verify` primitive
-(reify `ValidProof` in HOL, or bridge a concrete verified proof to `Derivable`).
-For the thin demo this can be partial — but it is what makes "we prove what we
-think we prove" literally true rather than an impredicative-encoding artifact.
+Given a Metamath database + a proof the (untrusted) Rust `metamath::verify`
+accepts, **construct** the kernel theorem `⊢ Derivable_… ⌜S⌝` by replaying the
+proof through the impredicative engine's derivation constructors — *no oracle, no
+observer, no denotation* (see the honesty principle above). This is exactly
+`peano::mm_replay` generalized and re-aimed: land in `Derivable_… ⌜S⌝` rather
+than `⟦S⟧`. The first slice is the **propositional fragment**, where Metamath
+wffs map directly into `init::prop`'s `Φ` carrier and ax-1/ax-2/ax-mp are exactly
+`init::prop::derive_axiom`/`derive_mp` — so a verified prop-calc `.mm` proof
+becomes `⊢ Derivable_Prop ⌜S⌝`. The general, schema-database version (one
+substitution-instance `Closed` clause per assertion — the `RuleSet`-from-`Database`
+work) is the follow-on; with it the replay lands `⊢ Derivable_DB ⌜db⌝ ⌜S⌝` over
+the encoded database value, the literal "`#logic` is a Metamath database."
 
 ### Phase C — the full-experience demo (the MVP)
 
@@ -86,15 +123,34 @@ the honest demo of write→lower→prove-across.
 
 ### Phase D — the headline instances (parallel, on A–C)
 
-- **`set.mm` in GT** — `covalence-metamath` ingests *all of* `set.mm` (needs the
-  compressed-proof parser + full `.mm` grammar) and verifies the whole database via
+- **The `Database` trait + readers** — give `covalence-metamath` a `Database`
+  (builder) trait + symbol-kind enums that the `.mm` readers drive, with two
+  implementers: the in-memory RPN checker (a HOL-free **sanity-check** verifier,
+  behind a feature flag) and the **HOL-backed** consumer in `covalence-hol`
+  (constructs `⊢ Derivable_…` as it reads). The compressed-proof decoder and
+  `$[ ]$` includes then live in `covalence-metamath`, driving the trait.
+- **`set.mm` in GT** — read *all of* `set.mm` ([metamath/set.mm]; needs the
+  compressed-proof parser + full `.mm` grammar) and verify the whole database via
   the Rust `metamath::verify` (mode-1 symbolic ingestion; the HOL side stays
-  proof-irrelevant — `∃ValidProof`, never replayed). Its independent elaborator
+  proof-irrelevant — `∃` derivation, never unfolded). An independent elaborator
   checks the resulting database against a GT database (fetched + diffed, §5.7), and
   the axiom relation (`ax-groth`+ZFC `⊑` GT) is a `⊑`/conservative-extension theorem.
+- **`hol.mm` to define our internal HOL** — [set.mm's `hol.mm`][hol.mm] is HOL
+  *as a Metamath database*. Ingesting it makes the three-layer vision literal: the
+  middle layer's logic is **specified** by a Metamath database, and our kernel is
+  the implementation we relate to it (a representation-equivalence: our HOL ≅
+  Metamath-HOL). A natural confidence-builder and a canonical spec for the waist.
+- **theory→Metamath as a compile target** — lower a standard `#thy` to a Metamath
+  database, as a *first-order* or *higher-order* theory. A particularly
+  interesting target to relate to/from (the mirror principle): the same theory,
+  two independent lowerings, proven equivalent. (And the reason we keep terms
+  *encoded*, never unfolded: a nat literal is `S(S(S(Z)))`, exponential to expand.)
 - **Analysis in SOA** — reify SOA (the ladder's rung 3: a second sort +
   comprehension over the FOL framework), Spivak's reals as a `#thy`, and the
   reals-extension-conservative-over-SOA result. Calculus builtins are a follow-on.
+
+[metamath/set.mm]: https://github.com/metamath/set.mm
+[hol.mm]: https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/hol.mm
 
 ## After the product
 

@@ -124,11 +124,13 @@ vocabulary — they differ only in installed handlers
 
 ---
 
-## 5. The near-term taste: S-expressions → propositional logic
+## 5. The first taste: S-expressions → propositional logic (done)
 
 The frontend vision is large; the **first** concrete step that makes it
-tangible is small and is the current priority (detailed in
-[`metatheory.md`](./metatheory.md) §8):
+tangible is small — and has **landed** (`init/prop.rs`: propositional logic
+reified + proved sound internally, since scaled to the PA deep embedding;
+[`metatheory.md`](./metatheory.md) §8,
+[`theories-models-and-logics.md`](./theories-models-and-logics.md) §5.5):
 
 1. reify **S-expressions** as a HOL datatype — the universal carrier for
    *all* object-language syntax;

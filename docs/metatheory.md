@@ -1,18 +1,25 @@
 # Covalence — Metatheory: Theories, Derivations, and Models
 
-> **STATUS: WORKING DRAFT / DESIGN SKETCH.** Fleshes out the original
-> scratch sketch (`docs/sketches/MAPS.md`). Describes how object
-> theories (PA, ZFC, …) and their _derivations_ become first-class
-> objects **inside our HOL metatheory**, how soundness theorems let us
-> "get rid of the oracles," and the metavariable **layering** decisions
-> — including why we start with **two layers + HOL Light** and treat the
-> third (schematic) layer / HOL-ω as _future_.
+> **STATUS: DESIGN SKETCH — sharpened by the canonical docs.** This is the
+> early sketch of "object theories + their derivations as first-class HOL
+> objects." Its core mechanism — reify a logic as a datatype + a
+> `Derivable_X` predicate + a denotation, prove `Derivable_X ⌜A⌝ ⟹ ⟦A⟧`
+> internally — has since **landed** (`init/prop.rs`, the PA deep embedding)
+> and been **sharpened** into the now-canonical framing: see
+> [`theories-models-and-logics.md`](./theories-models-and-logics.md) §5.5
+> (the two pillars + the PA→SOA→ZF chain) and **§5.6/§5.7 (Metamath as the
+> shared logic-definition substrate / the thin waist)**, plus
+> [`VISION.md`](./VISION.md) §1 (the three-layer stack) and
+> [`surface-compiler.md`](./surface-compiler.md) §3.0 (the `#sig`/`#thy`/
+> `#model`/`#logic` artifact forms). **Read those for the current design;
+> read this for the *rationale* and the still-aspirational pieces** (the
+> metavariable layering §5, the handler-dispatch effect framing §7, the
+> design-compatibility audit §9).
 >
-> See also: [`VISION.md`](./VISION.md) (metatheory-as-default, symbolic
-> vs. computational), [`observers.md`](./observers.md) (the computational
-> half), [`surface-syntax.md`](./surface-syntax.md) (how theories are
-> written), [`kernel-design.md`](./kernel-design.md) (the HOL kernel
-> these object theories are built inside).
+> See also: [`observers.md`](./observers.md) (the computational half),
+> [`surface-syntax.md`](./surface-syntax.md) (how theories are written),
+> [`kernel-design.md`](./kernel-design.md) (the HOL kernel these object
+> theories are built inside).
 
 ---
 
@@ -274,7 +281,7 @@ syntax, collection acceleration, and type-theory contexts.
 | Form                              | Meaning                                           | Status                   |
 | --------------------------------- | ------------------------------------------------- | ------------------------ |
 | `X(A)`                            | `⊢_HOL Derivable_X ⌜A⌝` — _A_ is a theorem of _X_ | core                     |
-| `Derivable_Prop ⌜A⌝ ⟹ ⟦A⟧`        | propositional logic sound, proved internally      | **first milestone (§8)** |
+| `Derivable_Prop ⌜A⌝ ⟹ ⟦A⟧`        | propositional logic sound, proved internally      | **done** (`init/prop.rs`) |
 | `Derivable_X ⌜A⌝ ⟹ ⟦A⟧`           | soundness of _X_ under a model                    | core goal                |
 | `PA(A) ⟹ HOL(A) ⟹ ZFC(A)`         | proved theory transport                           | MVP-scope                |
 | `HOL ⊢ ToHOL(S) ⟹ ZFC ⊢ ToZFC(S)` | source-language lowering to many targets          | §8.1                     |
@@ -371,9 +378,17 @@ effect-handler framing is the name for finishing that generalization.
 
 ## 8. The first internal language: S-expressions → propositional logic
 
+> **STATUS: DONE (and scaled).** This milestone landed as `init/prop.rs`
+> (propositional logic reified + **proved sound internally**) and was then
+> scaled to the **PA deep embedding** (`crates/covalence-hol/src/peano/`,
+> `Derivable_PA ⌜A⌝ ⟹ ⟦A⟧` proved once by rule induction). The current,
+> canonical account of this ladder is
+> [`theories-models-and-logics.md`](./theories-models-and-logics.md)
+> §5.5/§5.6. The description below is the original plan, kept for the
+> end-to-end rationale.
+
 Concretely, the **first** object language we build inside the metatheory
-is the smallest one that exercises the whole pipeline end to end, and it
-is the current near-term priority:
+is the smallest one that exercises the whole pipeline end to end:
 
 1. **Reify S-expressions in HOL.** Define an `SExpr` datatype inside the
    kernel (atoms + lists over `bytes`), with constructors and recursor —

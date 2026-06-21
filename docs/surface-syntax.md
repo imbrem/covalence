@@ -1,16 +1,24 @@
 # Covalence — Surface Syntax
 
-> **STATUS: WORKING DRAFT / DESIGN SKETCH.** Fleshes out the original
-> scratch sketch (`docs/sketches/SAMPLE.md`). Describes the *high-level*
-> syntax we want for (a) **specifying theories** and (b) **writing the
-> definitions and proofs that today live as hand-written Rust** in
-> `covalence-core` (`defs/`, `init/`) and `covalence-hol` (`init/`,
-> `proofs/`). Nothing here is implemented yet; this is the target.
+> **STATUS: DESIGN SKETCH — concrete forms now in surface-compiler §3.0.**
+> This sketch describes the *high-level* Haskell-like syntax for specifying
+> theories and writing the definitions/proofs that today live as
+> hand-written Rust (`defs/`, `init/`, `proofs/`). The **canonical concrete
+> forms have since been pinned down in**
+> [`surface-compiler.md`](./surface-compiler.md) **§3.0** — `#sig` (a
+> signature), `#thy` (a theory; this doc's older `#theory` head), `#spec`
+> (a proof obligation — an equational/quantified clause, the canonical
+> spelling of what this doc splits across `#spec`/`#clause`), and
+> `#model`/`#models` (interpretations + satisfaction). The `.sig`/`.thy`/
+> `.mod` artifact taxonomy and "a `#logic` *is* a Metamath database" live
+> there and in [`theories-models-and-logics.md`](./theories-models-and-logics.md)
+> §5.6. **Where this doc's notation differs from surface-compiler §3.0, the
+> latter wins** — read this for the *rationale and the still-aspirational
+> reach* (the SQL-with-set-theory analogy §1.2, the concrete-syntax /
+> mixfix layer §1.5, the entailment/categoricity questions §6, content
+> addressing §7).
 >
-> See also: [`surface-compiler.md`](./surface-compiler.md) (the *language* this
-> syntax feeds — theories and their many models across many logics, and the
-> multi-stage compiler that unifies `surface/` + `script/`),
-> [`observers.md`](./observers.md) (how untrusted code feeds
+> See also: [`observers.md`](./observers.md) (how untrusted code feeds
 > facts into the kernel), [`metatheory.md`](./metatheory.md) (theories,
 > derivations, and models as first-class objects),
 > [`kernel-design.md`](./kernel-design.md) (the kernel TCB this
@@ -206,9 +214,11 @@ hand-threaded `Term::app` / `Term::abs` Rust. The directive and proof
 layers stay firmly outside the TCB (they only ever *produce checkable
 obligations*); the term sublanguage is the one piece we may choose to
 trust directly, so it is kept as a sharply-delimited grammar from the
-start. A first sketch of the AST — and a parser (`parse` / `parse_str`)
-lowering pure S-expressions into it — lives in
-[`crates/covalence-hol/src/surface/`](../crates/covalence-hol/src/surface/).
+start. The AST and its parser now live in the **fused** script layer
+[`crates/covalence-hol/src/script/`](../crates/covalence-hol/src/script/)
+(the standalone `surface/` module was folded into `script/` per the
+surface↔script fusion — see [`surface-compiler.md`](./surface-compiler.md)
+§3.0).
 
 ### 1.5 Above the pure form: the concrete-syntax layer (planned)
 
@@ -415,7 +425,7 @@ This is the surface form of `and_comm` in
 trusted code — they are names for the kernel rules already documented
 with `Soundness:` docstrings. (The richer "elaboration / unification"
 story — schematic proof terms, higher-order matching — is a *future*
-layer; see [`metatheory.md`](./metatheory.md) §on layers.)
+layer; see [`metatheory.md`](./metatheory.md) §5 on metavariable layering.)
 
 ### 5.1 Calculational proofs (`#comp`) and the default handler
 

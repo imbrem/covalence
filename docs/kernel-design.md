@@ -1,9 +1,9 @@
 # covalence-core: kernel design
 
 > **Canonical reference for the current state of the kernel** as of
-> 2026-06-13 (branch `kernel-design`). Supersedes
-> [`docs/design/proposals/stacked-pure-hol/`](./design/proposals/stacked-pure-hol/),
-> which records the historical Pure→HOL evolution.
+> 2026-06-13 (branch `kernel-design`). Supersedes the historical Pure→HOL
+> evolution notes (`docs/design/proposals/stacked-pure-hol/`, retired to the
+> `backup/pre-hol-cleanup` branch).
 >
 > The (not-yet-built) authoring layer *above* this kernel — surface
 > syntax, untrusted observers, and theories/derivations as first-class
@@ -602,9 +602,9 @@ The kernel has gone through several large refactors on the
    `covalence-hol::{proofs,init}::bool` are postulate-free; the
    `stdlib` module was renamed `init` (Lean-style).
 
-Git history on `kernel-design` is the authoritative record;
-`docs/design/proposals/stacked-pure-hol/` records the design
-discussions that led here.
+Git history on `kernel-design` is the authoritative record; the design
+discussions that led here (`docs/design/proposals/stacked-pure-hol/`) are
+retired to the `backup/pre-hol-cleanup` branch.
 
 ## 11. Direction: the Pure base logic and the narrow waist
 
@@ -707,6 +707,19 @@ profunctors) is a live candidate to *be* the shared waist
 
 The flat-TCB and "scoped truths" disciplines are unchanged — the base logic
 is *smaller and more concrete*, so if anything the audit story improves.
+
+> **Two "waist" usages, reconciled.** This section calls HOL the *narrow
+> waist* in the sense of "the one shared semantic surface between
+> `covalence-pure`-below and object-logics-above." The canonical
+> [`VISION.md`](./VISION.md) §1 three-layer stack uses *thin waist* for a
+> **different** object — **internal Metamath**, reified inside HOL on *top*,
+> the `∃D. ValidProof(D, P, Ax)` primitive every internal logic passes
+> through. They are not in conflict: in the full stack, HOL is the **middle**
+> metalogic ("generalized Haskell"), `covalence-pure` + executors + content
+> addressing are the **bottom** (Phase E, [`covalence-pure.md`](./covalence-pure.md)),
+> and internal Metamath is the **top** thin waist
+> ([`theories-models-and-logics.md`](./theories-models-and-logics.md)
+> §5.6/§5.7). This §11 is the *bottom*-rung direction.
 
 ### 11.4 Pure as a metaprogramming layer; the `covalence-hol` zoo
 

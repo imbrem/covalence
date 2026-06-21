@@ -57,6 +57,21 @@ use crate::init::ext::TermExt;
 
 pub mod toy;
 
+// The **HOL database type + relation lattice** (`docs/theories-models-and-logics.md
+// §5.6`): databases as first-class HOL *values* (an axiom-selecting predicate), with
+// `⊑`/monotonicity and `⟹_σ`/transport proved over `Derivable_DB`. NOTE: `database`'s
+// `Derivable_DB db A := ∀d. Closed_DB db d ⟹ d A` is a *second* impredicative
+// derivability notion alongside this engine's `RuleSet`-parameterized `derivable` —
+// the database is a HOL value (vs a Rust `RuleSet` closure). Unifying the two (drive
+// the engine off a HOL `Database` value) is the reconciliation tracked in SKELETONS.md.
+pub mod database;
+pub mod relations;
+
+// Re-exported WITHOUT `database::derivable` (a 0-ary schema builder) to avoid
+// colliding with this engine's `derivable`; reach it as `metalogic::database::derivable`.
+pub use database::{derivable_db, extends, monotone};
+pub use relations::{derivable_db_mp, interp, sigma_hom, transport};
+
 // ============================================================================
 // The rule-set description
 // ============================================================================

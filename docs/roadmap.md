@@ -129,10 +129,12 @@ the honest demo of write→lower→prove-across.
   `SymbolKind` enum the readers drive, the **compressed-proof decoder**
   (base-20/5 + `Z` saves + heap) and **`$[ ]$` file inclusion** (`SourceResolver`),
   and the in-memory RPN checker as a HOL-free **sanity-check** verifier behind the
-  default-on `checker` feature. *Remaining:* the **HOL-backed `DatabaseSink`** in
-  `covalence-hol` that constructs `⊢ Derivable_…` directly as it reads (today the
-  replay bridges consume an already-built `Database`), and symbol interning for
-  set.mm scale.
+  default-on `checker` feature. The **HOL-backed `DatabaseSink`**
+  (`metalogic::mm_sink::HolPropSink`, `read_prop`) constructs `⊢ Derivable_Prop ⌜S⌝`
+  *as it reads* a prop `.mm` — the reader drives the builder trait, this is the HOL
+  backend. *Remaining:* generalising that sink to an **arbitrary** database (the
+  schema-database replay landing `⊢ Derivable_DB ⌜db⌝ ⌜S⌝`), and symbol interning
+  for set.mm scale.
 - **`set.mm` in GT** — read *all of* `set.mm` ([metamath/set.mm]; needs the
   compressed-proof parser + full `.mm` grammar) and verify the whole database via
   the Rust `metamath::verify` (mode-1 symbolic ingestion; the HOL side stays

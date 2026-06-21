@@ -195,18 +195,39 @@ impl KernelService {
     }
 }
 
-/// Build the `natmodel` env for a named model: its operators + addition axioms +
-/// induction handler, under the abstract names the model-relative proof uses.
+std::thread_local! {
+    /// Per-thread memo of built model envs. Building a model proves its addition
+    /// axioms at the carrier (cheap for `nat/self`, but `nat/unary` proves four
+    /// `list unit` inductions) — pure work whose result is immutable proven
+    /// theorems, so it is sound to cache and reuse across checks. Without this,
+    /// every debounced re-check under `nat/unary` re-proves the axioms.
+    static MODEL_ENV_CACHE: std::cell::RefCell<std::collections::HashMap<String, covalence_hol::script::Env>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Build (or fetch the memoized) `natmodel` env for a named model: its operators
+/// + addition axioms + induction handler, under the abstract names the
+/// model-relative proof uses.
 fn build_nat_model_env(model: &str) -> Result<covalence_hol::script::Env, String> {
     use covalence_hol::models::{Logic, NatSelf, NatUnary};
-    let built = match model {
-        "nat/self" | "" => NatSelf.nat_model(),
+    let key = if model.is_empty() { "nat/self" } else { model };
+    if let Some(env) = MODEL_ENV_CACHE.with(|c| c.borrow().get(key).cloned()) {
+        return Ok(env);
+    }
+    let built = match key {
+        "nat/self" => NatSelf.nat_model(),
         "nat/unary" => NatUnary.nat_model(),
-        other => return Err(format!("unknown model `{other}` (expected `nat/self` or `nat/unary`)")),
+        other => {
+            return Err(format!(
+                "unknown model `{other}` (expected `nat/self` or `nat/unary`)"
+            ));
+        }
     };
-    built
+    let env = built
         .map(|m| m.env())
-        .map_err(|e| format!("building model `{model}`: {e}"))
+        .map_err(|e| format!("building model `{model}`: {e}"))?;
+    MODEL_ENV_CACHE.with(|c| c.borrow_mut().insert(key.to_string(), env.clone()));
+    Ok(env)
 }
 
 /// A failed [`CheckReport`] carrying a single error diagnostic.

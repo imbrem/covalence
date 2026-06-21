@@ -57,10 +57,16 @@
 	let src = $state(SAMPLE);
 	let model = $state<ModelId>('nat/self');
 	let report = $state<CheckReport | null>(null);
-	let kernelCheckModel = $state<((src: string, model: string) => string) | null>(null);
 	let status = $state<'loading' | 'ready' | 'error'>('loading');
 	let loadError = $state('');
 	let checking = $state(false);
+
+	// The kernel now runs in a Web Worker so a heavy check (notably `nat/unary`)
+	// no longer blocks the UI thread. We talk to it by id-tagged messages and
+	// resolve each in-flight check against a pending-requests map.
+	let worker: Worker | null = null;
+	let nextReqId = 0;
+	const pending = new Map<number, (json: string) => void>();
 
 	const activeModel = $derived(MODELS.find((m) => m.id === model) ?? MODELS[0]);
 
@@ -69,46 +75,88 @@
 	const cache = new Map<string, CheckReport>();
 	const cacheKey = (m: ModelId, source: string) => `${m} ${source}`;
 
-	// --- Kernel load ---
+	// --- Kernel load (in a Web Worker) ---
 	// NOTE: this used to live in `onMount`, but `onMount` callbacks were never
 	// firing for this route (only `$effect`/`setTimeout` ran). `$effect` is the
 	// reliable Svelte 5 mount hook here (it's what the REPL route uses too), so
-	// the kernel load now runs from an effect that fires exactly once.
+	// the worker spawn now runs from an effect that fires exactly once.
 	let loadStarted = false;
 	$effect(() => {
 		if (!browser || loadStarted) return;
 		loadStarted = true;
-		loadKernel();
+		spawnWorker();
 	});
 
-	async function loadKernel() {
-		// Guard: never leave the badge stuck on "loading" forever.
+	function spawnWorker() {
+		// Guard: never leave the badge stuck on "loading" forever (e.g. a worker
+		// that never finishes initing the wasm kernel) — surface a visible error.
 		const timeout = setTimeout(() => {
 			if (status === 'loading') {
 				status = 'error';
-				loadError = 'Timed out loading the wasm kernel (no response after 20s).';
+				loadError = 'Timed out loading the wasm kernel in the worker (no response after 20s).';
 			}
 		}, 20000);
 		try {
-			const mod = await import('$lib/kernel/covalence_web_kernel.js');
-			const wasmUrl = (await import('$lib/kernel/covalence_web_kernel_bg.wasm?url')).default;
-			// Modern wasm-bindgen init form (object), avoids the deprecated
-			// string-URL path.
-			await mod.default({ module_or_path: wasmUrl });
-			kernelCheckModel = mod.check_model;
-			status = 'ready';
-			runCheck(model, src);
+			// Vite needs a statically-analyzable `new URL(..., import.meta.url)`
+			// to bundle the worker. Module worker so it can `import` the glue.
+			worker = new Worker(new URL('$lib/kernel.worker.ts', import.meta.url), {
+				type: 'module',
+			});
+			worker.onmessage = (ev: MessageEvent) => {
+				const msg = ev.data;
+				if (msg?.type === 'ready') {
+					clearTimeout(timeout);
+					status = 'ready';
+					runCheck(model, src);
+				} else if (msg?.type === 'error') {
+					clearTimeout(timeout);
+					status = 'error';
+					loadError = msg.message ?? 'worker reported an unknown error';
+				} else if (msg?.type === 'result') {
+					const resolve = pending.get(msg.id);
+					if (resolve) {
+						pending.delete(msg.id);
+						resolve(msg.json);
+					}
+				}
+			};
+			worker.onerror = (ev) => {
+				clearTimeout(timeout);
+				status = 'error';
+				loadError = ev.message || 'worker failed to load';
+			};
 		} catch (e) {
+			clearTimeout(timeout);
 			status = 'error';
 			loadError = e instanceof Error ? e.message : String(e);
-		} finally {
-			clearTimeout(timeout);
 		}
 	}
 
+	// Ask the worker to check; resolves with the raw JSON string.
+	function checkInWorker(source: string, m: ModelId): Promise<string> {
+		return new Promise((resolve) => {
+			if (!worker) {
+				resolve(
+					JSON.stringify({
+						ok: false,
+						theorems: [],
+						diagnostics: [{ severity: 'error', message: 'kernel worker not available', span: null }],
+					}),
+				);
+				return;
+			}
+			const id = nextReqId++;
+			pending.set(id, resolve);
+			worker.postMessage({ type: 'check', id, src: source, model: m });
+		});
+	}
+
 	// --- Checking ---
-	function runCheck(m: ModelId, source: string) {
-		if (!kernelCheckModel) return;
+	// Tracks the latest requested (model, source) so a slow in-flight check that
+	// resolves after the user has moved on doesn't clobber the current view.
+	let checkSeq = 0;
+
+	async function runCheck(m: ModelId, source: string) {
 		const key = cacheKey(m, source);
 		const cached = cache.get(key);
 		if (cached) {
@@ -116,15 +164,21 @@
 			checking = false;
 			return;
 		}
+		const seq = ++checkSeq;
+		checking = true;
+		const json = await checkInWorker(source, m);
 		let result: CheckReport;
 		try {
-			result = JSON.parse(kernelCheckModel(source, m)) as CheckReport;
+			result = JSON.parse(json) as CheckReport;
 		} catch (e) {
 			result = { ok: false, theorems: [], diagnostics: [{ severity: 'error', message: String(e), span: null }] };
 		}
 		cache.set(key, result);
-		report = result;
-		checking = false;
+		// Stale guard: only apply if this is still the most recent check.
+		if (seq === checkSeq) {
+			report = result;
+			checking = false;
+		}
 	}
 
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -297,7 +351,9 @@ apps/covalence-web/src/lib/kernel/.</pre>
 			<div class="pane-head">
 				<span class="pane-title">article.cov</span>
 				<div class="pane-actions">
-					{#if checking}<span class="checking">checking…</span>{/if}
+					{#if checking}<span class="checking">checking…</span>
+						{#if model === 'nat/unary'}<span class="check-hint">proving axioms at this carrier — first run can take ~10-20s</span>{/if}
+					{/if}
 					<button class="btn" onclick={checkNow} disabled={status !== 'ready'}>Check</button>
 				</div>
 			</div>
@@ -524,6 +580,7 @@ apps/covalence-web/src/lib/kernel/.</pre>
 	}
 	.pane-actions { display: flex; align-items: center; gap: 0.6rem; }
 	.checking { font-size: 0.78rem; color: var(--a-muted); font-style: italic; }
+	.check-hint { font-size: 0.72rem; color: var(--a-muted); opacity: 0.85; }
 	.btn {
 		padding: 0.25rem 0.8rem; border-radius: 0.4rem; font-size: 0.8rem;
 		border: 1px solid var(--a-border-strong); background: var(--a-surface); color: var(--a-fg);

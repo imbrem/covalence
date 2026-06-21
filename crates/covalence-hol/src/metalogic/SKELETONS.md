@@ -162,6 +162,30 @@ unparsed token span, decoded lazily only when a theorem is actually derived) and
 `derive_theorem` that decodes that one proof on the fly. The `/metamath` demo would
 then offer "load declarations only" + click-to-prove. **Not built.**
 
+### Future directions — the set.mm/ZFC stdlib program (design, not yet built)
+
+Priorities (user, this session): **clean + auditable API first** (the import is
+run once; don't over-optimize), then performance. The construct-don't-trust core
+(replay re-checks every step; `has_no_obs`) is the auditable bit. North stars:
+
+- **set.mm as the ZFC stdlib, used from the *frontend*.** Import set.mm as the
+  ZFC standard library foundation and *use it from the nice frontend* — with
+  **namespacing, tactics**, etc. — rather than hand-editing raw `.mm`. We may
+  replace parts with our own proofs, but **keep set.mm FFI as the mirror-principle
+  check** ("we are proving what we think we are"), and *don't* roll our own for
+  the basic derivations or the axioms (use set.mm's).
+- **Shorter HOL repr via definitions + two-phase import.** Turn Metamath
+  *definitions* into HOL definitions of the syntax (`M = S` in Metamath →
+  `M_syn := syntax(S)` in HOL) so a theorem's HOL representation stays short
+  instead of fully expanding `mm$concat`/`mm$c$…`. Then a two-phase import:
+  convert the definitions to HOL first (sequential), then prove the theorems
+  (the part to shard/parallelise).
+- **Instrumentation:** basic operation counters (kernel inference steps per
+  theorem) + memory-use counters surfaced in the import UI.
+- **Definition / dependency graph** info, then a **graph explorer**; and, for a
+  large verification job, a **hierarchical task-graph visualization** with the
+  ability to zoom into threads of work as they happen.
+
 ## Reconciliation — the two `Derivable` notions (DONE, Phase A)
 
 There were **two** impredicative derivability constructs: the engine's

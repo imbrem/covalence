@@ -70,10 +70,16 @@
 //!    theorem (no postulates), demonstrated transporting a concrete fact across
 //!    a concrete one-axiom extension ([`tests`]).
 //!
-//! 2. **Interpretation** under a renaming/substitution `A ⟹_σ B` — the
-//!    `S`-rewrite of §5.6 as a relation on the database type — with its
-//!    **transport** theorem `Derivable_A S ⟹ Derivable_B (σ S)`. See
-//!    [`SKELETONS.md`](./SKELETONS.md) for its status.
+//! 2. **Interpretation** under a translation `σ : Φ → Φ` ([`relations::interp`]:
+//!    `A ⟹_σ B := ∀ax. A ax ⟹ Derivable_DB B (σ ax)`) — the `S`-rewrite of §5.6
+//!    as a relation on the database type. Its theorem is **transport**
+//!    [`relations::transport`]:
+//!    `⊢ σ_hom σ ⟹ Interp A B σ ⟹ Derivable_DB A S ⟹ Derivable_DB B (σ S)`,
+//!    for any `⟹`-homomorphic `σ`. Proved by rule induction (via the reusable
+//!    [`relations::derivable_db_mp`] MP-closure of `Derivable_DB`), and
+//!    demonstrated on the **identity translation**, which recovers monotonicity
+//!    as interpretation under the identity renaming. A non-trivial structural
+//!    `σ` is the next step (see [`SKELETONS.md`](./SKELETONS.md)).
 //!
 //! ## Relation to the Metamath substrate
 //!
@@ -86,5 +92,7 @@
 //! range over** — is met. See [`SKELETONS.md`](./SKELETONS.md).
 
 pub mod database;
+pub mod relations;
 
 pub use database::{derivable, derivable_db, extends, monotone};
+pub use relations::{derivable_db_mp, interp, sigma_hom, transport};

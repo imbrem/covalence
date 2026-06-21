@@ -22,6 +22,17 @@ the spec live in [`mod.rs`](./mod.rs) and
   concrete fact (`Derivable_DB {p0} p0`) across a concrete one-axiom extension
   `{p0} ⊑ {p0, p1}` to `Derivable_DB {p0, p1} p0`. **Done, proven.**
 
+- **Interpretation `A ⟹_σ B` + transport** (`relations.rs`). The translation
+  `σ : Φ → Φ`, the relation `Interp A B σ := ∀ax. A ax ⟹ Derivable_DB B (σ ax)`,
+  and the **transport** theorem
+  `⊢ σ_hom σ ⟹ Interp A B σ ⟹ Derivable_DB A S ⟹ Derivable_DB B (σ S)` — a
+  genuine HOL theorem proved by rule induction over the reusable
+  `relations::derivable_db_mp` MP-closure of `Derivable_DB`, with the
+  `⟹`-homomorphism `σ_hom σ := ∀X Y. σ⌜X⟹Y⌝ = ⌜σX⟹σY⌝` carried as an explicit
+  hypothesis. Demonstrated on the **identity translation** (σ_hom proved by β;
+  the identity-renaming instance of transport — monotonicity as interpretation
+  under `id`). **Done, proven.**
+
 ## Deferred work
 
 - **The `∃P. ValidProof(P, S, db) ⟺ Derivable_DB db S` bridge.** `Derivable_DB`
@@ -34,16 +45,13 @@ the spec live in [`mod.rs`](./mod.rs) and
   already a HOL value the relations range over (the essential requirement), so
   this is an upgrade of the *grounding*, not of the relation theorems.
 
-- **Interpretation / `S`-transport `A ⟹_σ B` (the STRETCH).** A translation `σ`
-  — a computable rewrite on reified formulas (a renaming/substitution) — with
-  the relation "`σ`(every `A`-axiom) is `B`-derivable", and its **transport**
-  theorem `⊢ Derivable_DB A S ⟹ Derivable_DB B (σ S)`. This is the §5.6
-  `S`-rewrite as a relation on the database type. The monotonicity proof in
-  [`database.rs`](./database.rs) is the structural template (it transports a
-  derivation across a closure-condition implication); transport additionally
-  needs `σ` to commute with the modus-ponens clause (`σ ⌜A ⟹ B⌝ = ⌜σ A ⟹ σ B⌝`)
-  so the MP frame survives translation, plus `σ` as a HOL term `Φ → Φ`.
-  **Not built.**
+- **A non-trivial structural `σ` for transport.** Transport is proven for any
+  `⟹`-homomorphic `σ` (`σ_hom` as a hypothesis) and demonstrated at the
+  identity. A genuinely *structural* translation — e.g. a variable-renaming
+  homomorphism `σ` induced by `ρ : nat → nat` folded over the encoding, with
+  `σ_hom` discharged from the fold's `⟹`-case rather than by β — is the next
+  step. Needs `σ` built as a `Φ`-fold and a structural `σ_hom` proof. **Not
+  built.**
 
 ## North stars (design only — do NOT build)
 

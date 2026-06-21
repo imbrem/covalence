@@ -50,7 +50,9 @@ index](../../SKELETONS.md).
   as first-class HOL data + the relation lattice (`docs/theories-models-and-logics.md`
   §5.6; the first cut of `metamath`'s deferred `Derivable_L` layer). Done:
   `Database := Φ → bool`, `Derivable_DB` on the impredicative engine, extension
-  `⊑` + the proved monotonicity theorem with a concrete transport. Deferred:
-  the `∃ValidProof ⟺ impredicative` grounding bridge, the `⟹_σ` interpretation
-  transport (stretch), and the north stars (conservative extension, `≅`, the
-  category of databases, lifting `metamath::Database` / `peano::mm_pa`).
+  `⊑` + the proved monotonicity theorem with a concrete transport, and the
+  interpretation relation `⟹_σ` + its proved transport theorem (for any
+  `⟹`-homomorphic `σ`, demonstrated at the identity). Deferred: the
+  `∃ValidProof ⟺ impredicative` grounding bridge, a non-trivial structural `σ`,
+  and the north stars (conservative extension, `≅`, the category of databases,
+  lifting `metamath::Database` / `peano::mm_pa`).

@@ -25,7 +25,7 @@ fn bool_ty() -> Type {
 /// database predicate `Φ⟨bool⟩ → bool` and the formulas it ranges over share
 /// one concrete type. (We reuse [`crate::init::prop`]'s encoding by building
 /// formulas at `bool` via its `*_at` constructors.)
-fn phi() -> Type {
+pub(crate) fn phi() -> Type {
     // `enc(var 0) : Φ⟨bool⟩` has exactly the carrier type we want; read it off.
     p_var_at(&bool_ty(), Term::nat_lit(covalence_types::Nat::from_inner(0u32.into())))
         .type_of()
@@ -40,7 +40,7 @@ pub fn database_ty() -> Type {
 /// `Φ⟨bool⟩ → bool` — the type of the impredicative predicate variable `d`
 /// (same as a database; a database *is* a set of formulas and `d` is the
 /// candidate "derivable" set).
-fn pred_ty() -> Type {
+pub(crate) fn pred_ty() -> Type {
     Type::fun(phi(), bool_ty())
 }
 
@@ -50,22 +50,22 @@ fn db_var() -> Term {
 }
 
 /// The impredicative predicate variable `d : Φ⟨bool⟩ → bool`.
-fn d_var() -> Term {
+pub(crate) fn d_var() -> Term {
     Term::free("d", pred_ty())
 }
 
 /// `p A` — apply a predicate `p : Φ → bool` to an encoded formula `A`.
-fn app(p: &Term, a: &Term) -> Result<Term> {
+pub(crate) fn app(p: &Term, a: &Term) -> Result<Term> {
     p.clone().apply(a.clone())
 }
 
 /// An encoded-formula free variable `name : Φ⟨bool⟩`.
-fn fvar(name: &str) -> Term {
+pub(crate) fn fvar(name: &str) -> Term {
     Term::free(name, phi())
 }
 
 /// `enc(A ⟹ B) : Φ⟨bool⟩`.
-fn enc_imp(a: &Term, b: &Term) -> Term {
+pub(crate) fn enc_imp(a: &Term, b: &Term) -> Term {
     p_imp_at(&bool_ty(), a.clone(), b.clone())
 }
 
@@ -85,7 +85,7 @@ fn enc_imp(a: &Term, b: &Term) -> Term {
 /// `Closed_DB db d` for the given database and predicate terms, as a single
 /// `bool` term (a two-clause conjunction). Built generically so the same code
 /// serves the definition and the proofs.
-fn closed(db: &Term, d: &Term) -> Result<Term> {
+pub(crate) fn closed(db: &Term, d: &Term) -> Result<Term> {
     let a = fvar("A");
     let b = fvar("B");
 
@@ -128,6 +128,31 @@ pub fn derivable_db(db: &Term, a: &Term) -> Result<Term> {
 /// [`Thm::inst`](covalence_core::Thm) or [`subst`](covalence_core::subst)).
 pub fn derivable() -> Result<Term> {
     derivable_db(&db_var(), &fvar("A"))
+}
+
+/// **Axioms are derivable.** Given `⊢ db A` (that `A` is an axiom of `db`),
+/// produce `⊢ Derivable_DB db A`. Opens `∀d. Closed_DB db d ⟹ d A`, assumes
+/// `Closed_DB db d`, pulls its axiom clause `∀ax. db ax ⟹ d ax`, specialises at
+/// `A`, and feeds it the membership proof. `db_a` must be a hypothesis-free
+/// `⊢ db A`. A genuine HOL theorem (no postulates).
+pub fn derive_axiom_from_membership(db_a: Thm) -> Result<Thm> {
+    // Read `db` and `A` off the membership conclusion `db A`.
+    let (db, a) = db_a
+        .concl()
+        .as_app()
+        .map(|(f, x)| (f.clone(), x.clone()))
+        .ok_or_else(|| {
+            covalence_core::Error::ConnectiveRule(
+                "derive_axiom_from_membership: conclusion is not `db A`".into(),
+            )
+        })?;
+    let closed_d = closed(&db, &d_var())?;
+    let assumed = Thm::assume(closed_d.clone())?; // {Closed} ⊢ Closed_DB db d
+    let ax_clause = assumed.and_elim_r()?; // {Closed} ⊢ ∀ax. db ax ⟹ d ax
+    let at_a = ax_clause.all_elim(a.clone())?; // {Closed} ⊢ db A ⟹ d A
+    let d_a = at_a.imp_elim(db_a)?; // {Closed} ⊢ d A
+    d_a.imp_intro(&closed_d)? // ⊢ Closed_DB db d ⟹ d A
+        .all_intro("d", pred_ty())
 }
 
 // ============================================================================
@@ -371,23 +396,12 @@ mod tests {
         Thm::beta_conv(app_term.clone()).unwrap()
     }
 
-    /// `⊢ Derivable_DB db A` when `A` is an axiom of `db` (`⊢ db A`): open the
-    /// `∀d. Closed_DB db d ⟹ d A`, assume `Closed_DB db d`, pull its axiom
-    /// clause, and feed it `db A`.
+    /// `⊢ Derivable_DB db A` when `A` is a (concrete) axiom of `db`: prove the
+    /// membership `⊢ db A`, then lift it through [`derive_axiom_from_membership`].
     fn derive_axiom(db: &Term, a: &Term) -> Result<Thm> {
-        // First establish `⊢ db A` (that `A` really is an axiom). Here `db` is a
-        // concrete predicate, so `db A` β-reduces to a provable proposition; the
-        // caller passes an `a` that is literally one of the disjuncts/equands.
         let db_a = app(db, a)?; // db A
         let db_a_thm = prove_membership(a, &db_a)?; // ⊢ db A
-
-        let closed_d = closed(db, &d_var())?;
-        let assumed = Thm::assume(closed_d.clone())?; // {Closed} ⊢ Closed_DB db d
-        let ax_clause = assumed.and_elim_r()?; // {Closed} ⊢ ∀ax. db ax ⟹ d ax
-        let at_a = ax_clause.all_elim(a.clone())?; // {Closed} ⊢ db A ⟹ d A
-        let d_a = at_a.imp_elim(db_a_thm)?; // {Closed} ⊢ d A
-        d_a.imp_intro(&closed_d)? // ⊢ Closed_DB db d ⟹ d A
-            .all_intro("d", pred_ty())
+        derive_axiom_from_membership(db_a_thm)
     }
 
     /// Prove `⊢ db A` for our concrete singleton/pair databases: β-reduce

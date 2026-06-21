@@ -16,20 +16,35 @@ use crate::metamath::{Database, MmError};
 
 use super::mm_database::derive_theorem;
 
-/// Import **every `$p` theorem** of `db` (those with a proof) into its kernel
-/// derivability theorem `⊢ Derivable_L' ⌜S⌝`, collecting `(label, result)` in
-/// database order. Each theorem goes through the **fast per-theorem path**
-/// ([`derive_theorem`]): the rule set is scoped to that proof's referenced
+/// The labels of the database's **logical theorems** to import: `$p` assertions
+/// (proof present) whose conclusion typecode is `|-`. Non-`|-` `$p` assertions
+/// (e.g. set.mm's `weq`/`wel` — *syntax* theorems that prove a `wff`/`class` is
+/// well-formed) are **grammar, not logical content**: their replay would end on
+/// a syntax (`wff`) slot, not a `⊢ Derivable_L` derivation, so they are excluded
+/// from import (they still serve as formers during other proofs).
+pub fn theorem_labels(db: &Database) -> Vec<String> {
+    db.assertions()
+        .filter(|a| a.proof.is_some() && a.conclusion.typecode() == "|-")
+        .map(|a| a.label.clone())
+        .collect()
+}
+
+/// Import **every logical `$p` theorem** of `db` ([`theorem_labels`]) into its
+/// kernel derivability theorem `⊢ Derivable_L' ⌜S⌝`, collecting `(label,
+/// result)` in database order. Each theorem goes through the **fast per-theorem
+/// path** ([`derive_theorem`]): the rule set is scoped to that proof's referenced
 /// lemmas (small `Closed_L'`), so importing a whole database is linear-ish in
 /// total proof size rather than paying the full-database `Closed` cost per
 /// theorem. `L' ⊆ L` (the database logic); `metalogic::transport_db` lifts each
 /// to the full logic when wanted. A per-theorem error is captured in its
-/// `Result` rather than aborting the whole import. `$a` axioms (no proof) are
-/// skipped — they are the rule set, not theorems to re-derive.
+/// `Result` rather than aborting the whole import.
 pub fn import_theorems(db: &Database) -> Vec<(String, covalence_core::Result<Thm>)> {
-    db.assertions()
-        .filter(|a| a.proof.is_some())
-        .map(|a| (a.label.clone(), derive_theorem(db, &a.label)))
+    theorem_labels(db)
+        .into_iter()
+        .map(|label| {
+            let r = derive_theorem(db, &label);
+            (label, r)
+        })
         .collect()
 }
 
@@ -40,11 +55,7 @@ pub fn import_theorems_with_progress(
     db: &Database,
     mut progress: impl FnMut(usize, usize, &str),
 ) -> Vec<(String, covalence_core::Result<Thm>)> {
-    let labels: Vec<String> = db
-        .assertions()
-        .filter(|a| a.proof.is_some())
-        .map(|a| a.label.clone())
-        .collect();
+    let labels = theorem_labels(db);
     let total = labels.len();
     let mut out = Vec::with_capacity(total);
     for (i, label) in labels.into_iter().enumerate() {
@@ -53,6 +64,62 @@ pub fn import_theorems_with_progress(
         out.push((label, result));
     }
     out
+}
+
+/// **Parallel import** — derive each `$p` theorem on a pool of `n_threads`
+/// worker threads (work-stealing over a shared atomic cursor, so the slow
+/// straggler proofs don't stall the fast majority). The database is parsed once
+/// and shared by `&` across threads (read-only); each `derive_theorem` is
+/// independent (its rule set is scoped to its own proof), so they parallelize
+/// cleanly. `on_start(total)` fires once before work begins; `on_each(done,
+/// total, label, &result, elapsed)` fires once per finished theorem (from a
+/// worker thread — must be `Sync`; `done` is a monotonic completion counter, so
+/// results arrive out of database order). Use `n_threads = 0` to pick
+/// `available_parallelism`.
+pub fn import_theorems_parallel(
+    db: &Database,
+    n_threads: usize,
+    on_start: impl FnOnce(usize),
+    on_each: impl Fn(usize, usize, &str, &covalence_core::Result<Thm>, std::time::Duration) + Sync,
+) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let labels: Vec<String> = theorem_labels(db);
+    let total = labels.len();
+    on_start(total);
+    if total == 0 {
+        return;
+    }
+
+    let n = if n_threads == 0 {
+        std::thread::available_parallelism().map(|p| p.get()).unwrap_or(4)
+    } else {
+        n_threads
+    }
+    .clamp(1, 64);
+
+    let next = AtomicUsize::new(0);
+    let done = AtomicUsize::new(0);
+    let on_each = &on_each;
+    let labels = &labels;
+    let next = &next;
+    let done = &done;
+    std::thread::scope(|s| {
+        for _ in 0..n {
+            s.spawn(move || loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= total {
+                    break;
+                }
+                let label = &labels[i];
+                let t0 = std::time::Instant::now();
+                let result = derive_theorem(db, label);
+                let elapsed = t0.elapsed();
+                let d = done.fetch_add(1, Ordering::Relaxed) + 1;
+                on_each(d, total, label, &result, elapsed);
+            });
+        }
+    });
 }
 
 /// The error of a full [`read_and_import`]: either the `.mm` failed to parse, or
@@ -103,6 +170,42 @@ pub fn read_and_import(source: &str) -> Result<Vec<(String, Thm)>, ImportError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scan a database for **all** import failures and print them (label +
+    /// error), using the parallel path for speed. `COV_SET_MM` env path;
+    /// `#[ignore]`d. Run:
+    /// `COV_SET_MM=/path/set.mm cargo test -p covalence-hol --lib --release \
+    ///   metalogic::mm_import::tests::scan_failures -- --ignored --nocapture`
+    #[test]
+    #[ignore = "needs COV_SET_MM; full parallel scan to enumerate failures"]
+    fn scan_failures() {
+        let path = std::env::var("COV_SET_MM").expect("set COV_SET_MM");
+        let source = std::fs::read_to_string(&path).expect("read .mm");
+        let t_parse = std::time::Instant::now();
+        let db = crate::metamath::parse(&source).expect("parse");
+        eprintln!("parsed in {:?}", t_parse.elapsed());
+
+        let fails = std::sync::Mutex::new(Vec::<(String, String)>::new());
+        let t0 = std::time::Instant::now();
+        import_theorems_parallel(
+            &db,
+            0,
+            |total| eprintln!("scanning {total} |- theorems (parallel)"),
+            |done, total, label, result, _dur| {
+                if let Err(e) = result {
+                    fails.lock().unwrap().push((label.to_string(), e.to_string()));
+                }
+                if done % 5000 == 0 {
+                    eprintln!("  {done}/{total} ({} fails so far)", fails.lock().unwrap().len());
+                }
+            },
+        );
+        let fails = fails.into_inner().unwrap();
+        eprintln!("scan done in {:?}: {} failures", t0.elapsed(), fails.len());
+        for (l, e) in &fails {
+            eprintln!("FAIL  {l}:  {e}");
+        }
+    }
 
     /// The vendored real `hol.mm` (CC0; all 151 `$p` proofs are *compressed*).
     const HOL_MM: &str =

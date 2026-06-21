@@ -25,13 +25,38 @@
 	let nOk = $state(0);
 	let theorems = $state<ImportedTheorem[]>([]);
 	let selected = $state<ImportedTheorem | null>(null);
+	let failuresOnly = $state(false);
+	let copyMsg = $state('');
 	let ws: WebSocket | null = null;
 
-	const nErr = $derived(theorems.filter((t) => !t.ok).length);
-	const visible = $derived(
-		theorems.length > RENDER_CAP ? theorems.slice(theorems.length - RENDER_CAP) : theorems,
+	const failures = $derived(theorems.filter((t) => !t.ok));
+	const nErr = $derived(failures.length);
+	const timed = $derived(theorems.filter((t) => t.importMs != null));
+	const totalMs = $derived(timed.reduce((a, t) => a + (t.importMs ?? 0), 0));
+	const avgMs = $derived(timed.length ? totalMs / timed.length : 0);
+	const slowest = $derived(
+		timed.reduce<ImportedTheorem | null>(
+			(m, t) => ((t.importMs ?? 0) > (m?.importMs ?? -1) ? t : m),
+			null,
+		),
 	);
-	const truncated = $derived(theorems.length - visible.length);
+	const filtered = $derived(failuresOnly ? failures : theorems);
+	const visible = $derived(
+		filtered.length > RENDER_CAP ? filtered.slice(filtered.length - RENDER_CAP) : filtered,
+	);
+	const truncated = $derived(filtered.length - visible.length);
+
+	async function copyFailures() {
+		const data = failures.map((t) => ({ label: t.label, mm: t.mm, ess: t.ess, error: t.error }));
+		try {
+			await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+			copyMsg = `copied ${data.length} failures`;
+		} catch {
+			copyMsg = 'clipboard blocked — see console';
+			console.log(JSON.stringify(data, null, 2));
+		}
+		setTimeout(() => (copyMsg = ''), 2500);
+	}
 	const isRunning = $derived(
 		phase === 'downloading' || phase === 'parsing' || phase === 'importing',
 	);
@@ -122,6 +147,7 @@
 					genuine: msg.genuine,
 					holPreview: msg.holPreview,
 					error: msg.error,
+					importMs: msg.importMs,
 				});
 				break;
 			case 'done':
@@ -198,7 +224,18 @@
 			<div class="summary">
 				<span class="ok">{nOk || theorems.filter((t) => t.ok).length} ok</span>
 				{#if nErr > 0}<span class="err">{nErr} failed</span>{/if}
-				{#if phase === 'done'}<span>{(elapsedMs / 1000).toFixed(1)}s</span>{/if}
+				{#if phase === 'done'}<span>{(elapsedMs / 1000).toFixed(1)}s wall</span>{/if}
+				{#if avgMs > 0}<span class="dim">avg {avgMs.toFixed(1)} ms/thm</span>{/if}
+				{#if slowest}<span class="dim">slowest {slowest.label} {(slowest.importMs ?? 0).toFixed(0)} ms</span>{/if}
+				<span class="spacer"></span>
+				<label class="filter">
+					<input type="checkbox" bind:checked={failuresOnly} />
+					failures only
+				</label>
+				{#if nErr > 0}
+					<button class="copy" onclick={copyFailures}>Copy failures (JSON)</button>
+				{/if}
+				{#if copyMsg}<span class="dim">{copyMsg}</span>{/if}
 			</div>
 		{/if}
 	</section>
@@ -218,6 +255,7 @@
 					<span class="dot" class:bad={!t.ok}></span>
 					<span class="lbl">{t.label}</span>
 					<span class="mini">{t.mm}</span>
+					{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
 				</button>
 			{/each}
 			{#if theorems.length === 0}
@@ -250,6 +288,11 @@
 								{selected.genuine ? 'yes' : 'no'}
 							</span>
 						</div>
+						{#if selected.importMs != null}
+							<div class="kv">
+								<span>import time</span><span>{selected.importMs.toFixed(1)} ms</span>
+							</div>
+						{/if}
 						<div class="flabel sub">conclusion preview</div>
 						<p class="note">
 							Truncated preview of <code>⊢ Derivable_L ⌜S⌝</code> (the real conclusion is huge —
@@ -446,6 +489,8 @@
 	.summary {
 		display: flex;
 		gap: 0.8rem;
+		align-items: center;
+		flex-wrap: wrap;
 		margin-top: 0.4rem;
 		font-size: 0.8rem;
 	}
@@ -454,6 +499,32 @@
 	}
 	.summary .err {
 		color: var(--bad);
+		font-weight: 600;
+	}
+	.summary .dim {
+		color: var(--muted);
+	}
+	.summary .spacer {
+		flex: 1;
+	}
+	.summary .filter {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.summary .copy {
+		padding: 0.25rem 0.55rem;
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		background: var(--surface);
+		color: var(--fg);
+		cursor: pointer;
+		font-size: 0.76rem;
+	}
+	.summary .copy:hover {
+		border-color: var(--accent);
 	}
 
 	.panes {
@@ -512,11 +583,19 @@
 		color: var(--fg);
 	}
 	.item .mini {
+		flex: 1;
 		color: var(--muted);
 		font-family: var(--font-mono);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	.item .time {
+		flex: none;
+		color: var(--muted);
+		font-variant-numeric: tabular-nums;
+		font-size: 0.72rem;
+		opacity: 0.75;
 	}
 	.item.fail .lbl {
 		color: var(--bad);

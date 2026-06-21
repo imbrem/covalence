@@ -92,6 +92,8 @@ export interface ImportTheoremMessage {
   holPreview?: string;
   /** Failure reason (present when !ok). */
   error?: string;
+  /** Wall-clock ms to derive this theorem (the HOL import time). */
+  importMs?: number;
 }
 
 /** One imported theorem, as accumulated by the demo page. */
@@ -104,4 +106,5 @@ export interface ImportedTheorem {
   genuine?: boolean;
   holPreview?: string;
   error?: string;
+  importMs?: number;
 }

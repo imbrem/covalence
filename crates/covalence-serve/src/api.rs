@@ -161,12 +161,16 @@ fn mm_err_frame(message: impl std::fmt::Display) -> String {
     serde_json::json!({ "type": "error", "message": message.to_string() }).to_string()
 }
 
-/// The blocking import loop: parse, then derive each `$p` theorem, sending a
-/// JSON frame per result. Runs on a dedicated thread (the HOL kernel work is
-/// CPU-bound and may use blocking primitives).
+/// The blocking import worker: parse, then derive each logical (`|-`) `$p`
+/// theorem **in parallel** across a thread pool, sending a JSON frame per result
+/// (with per-theorem timing) as each completes. Runs on a dedicated thread (the
+/// `std::thread::scope` pool blocks it until the whole import finishes). Because
+/// the import is parallel, `theorem` frames arrive in *completion* order, not
+/// database order; the `done` field is a monotonic 1..total counter for the bar.
 fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
-    use covalence_hol::metalogic::mm_database::derive_theorem;
+    use covalence_hol::metalogic::mm_import::import_theorems_parallel;
     use covalence_metamath::database::Statement;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     let started = std::time::Instant::now();
 
@@ -178,79 +182,59 @@ fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
         }
     };
 
-    // Collect the `$p` theorem labels (proof present), in database order.
-    let labels: Vec<String> = db
-        .assertions()
-        .filter(|a| a.proof.is_some())
-        .map(|a| a.label.clone())
-        .collect();
-    let total = labels.len();
+    let n_ok = AtomicUsize::new(0);
+    let grand_total = AtomicUsize::new(0);
 
-    if tx
-        .blocking_send(serde_json::json!({ "type": "parsed", "total": total }).to_string())
-        .is_err()
-    {
-        return;
-    }
-
-    let mut n_ok = 0usize;
-    for (i, label) in labels.iter().enumerate() {
-        let done = i + 1;
-
-        // Fetch the assertion for Metamath rendering (conclusion + essentials).
-        let assertion = match db.statement_by_label(label) {
-            Some(Statement::Assert(a)) => a,
-            _ => {
-                let frame = serde_json::json!({
-                    "type": "theorem", "done": done, "total": total,
-                    "label": label, "mm": "", "ok": false,
-                    "error": "assertion vanished after parse",
-                });
-                if tx.blocking_send(frame.to_string()).is_err() {
-                    return;
+    import_theorems_parallel(
+        &db,
+        0, // 0 → use available_parallelism
+        |total| {
+            grand_total.store(total, Ordering::Relaxed);
+            let _ = tx.blocking_send(
+                serde_json::json!({ "type": "parsed", "total": total }).to_string(),
+            );
+        },
+        |done, total, label, result, elapsed| {
+            // Render the Metamath statement (conclusion + essentials).
+            let (mm, ess) = match db.statement_by_label(label) {
+                Some(Statement::Assert(a)) => (
+                    a.conclusion.render(),
+                    a.frame.essentials.iter().map(|h| h.expr.render()).collect::<Vec<_>>(),
+                ),
+                _ => (String::new(), Vec::new()),
+            };
+            let import_ms = elapsed.as_micros() as f64 / 1000.0;
+            let frame = match result {
+                Ok(thm) => {
+                    n_ok.fetch_add(1, Ordering::Relaxed);
+                    let full = format!("{}", thm.concl());
+                    let hol_preview: String = full.chars().take(400).collect();
+                    serde_json::json!({
+                        "type": "theorem", "done": done, "total": total,
+                        "label": label, "mm": mm, "ess": ess,
+                        "ok": true,
+                        "hyps": thm.hyps().len(),
+                        "genuine": thm.has_no_obs(),
+                        "holPreview": hol_preview,
+                        "importMs": import_ms,
+                    })
                 }
-                continue;
-            }
-        };
-        let mm = assertion.conclusion.render();
-        let ess: Vec<String> = assertion
-            .frame
-            .essentials
-            .iter()
-            .map(|h| h.expr.render())
-            .collect();
-
-        let frame = match derive_theorem(&db, label) {
-            Ok(thm) => {
-                n_ok += 1;
-                let full = format!("{}", thm.concl());
-                let hol_preview: String = full.chars().take(400).collect();
-                serde_json::json!({
+                Err(e) => serde_json::json!({
                     "type": "theorem", "done": done, "total": total,
                     "label": label, "mm": mm, "ess": ess,
-                    "ok": true,
-                    "hyps": thm.hyps().len(),
-                    "genuine": thm.has_no_obs(),
-                    "holPreview": hol_preview,
-                })
-            }
-            Err(e) => serde_json::json!({
-                "type": "theorem", "done": done, "total": total,
-                "label": label, "mm": mm, "ess": ess,
-                "ok": false, "error": e.to_string(),
-            }),
-        };
-
-        if tx.blocking_send(frame.to_string()).is_err() {
-            return;
-        }
-    }
+                    "ok": false, "error": e.to_string(),
+                    "importMs": import_ms,
+                }),
+            };
+            let _ = tx.blocking_send(frame.to_string());
+        },
+    );
 
     let _ = tx.blocking_send(
         serde_json::json!({
             "type": "done",
-            "ok": n_ok,
-            "total": total,
+            "ok": n_ok.load(Ordering::Relaxed),
+            "total": grand_total.load(Ordering::Relaxed),
             "elapsedMs": started.elapsed().as_millis() as u64,
         })
         .to_string(),

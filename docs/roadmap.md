@@ -15,16 +15,29 @@ A **thin but honest demo of the full experience**:
 
 Two headline instances we are aiming the thin demo at:
 
-- **Verify a `set.mm` fragment in Grothendieck-Tarski** — ingest a real `set.mm`
-  development, check its proofs, and relate its axiom base to a GT database
-  (`set.mm`'s axioms `⊑` GT, conservative extension).
+- **Verify *all of* `set.mm` in Grothendieck-Tarski** — ingest `set.mm`, check
+  *the whole database*, and read off its axiom base (`ax-groth` + ZFC) as `⊑` a GT
+  database (conservative extension). **All of set.mm is the right target, not a
+  fragment** — Metamath verification is whole-database and auto-scaling (a single
+  interesting theorem already pulls in most of the library), so "one theorem" is
+  the *same engineering* as "all", differing only in wall-clock — which is short
+  (the verifier is tiny, verification ~linear in proof size). It is a good
+  **benchmark**. And it stays cheap on the HOL side by **proof-irrelevance**: we run
+  the Rust `metamath::verify` and record `∃D. ValidProof(D,P,Ax)` — we *never*
+  replay proofs through the kernel ("we never need to look at the proofs").
 - **Analysis in SOA** — reify second-order arithmetic, state the reals via
-  Spivak's axioms, and prove an extension with a real-numbers type *conservative*
+  Spivak's axioms, and prove *one* extension with a real-numbers type *conservative*
   over SOA (later: builtins for limits / exponentials / calculus).
 
-"Thin but honest" = the **leanest version that is genuinely real** (a real `set.mm`
-theorem actually verified; a real conservativity result actually proved) — not a
-mock. That framing is the time-minimizer.
+**The leanness asymmetry (the actual time-minimizer):** *verifying* auto-scales
+(set.mm = whole-database, "all" ≈ "one" effort — do all), but *proving* does not
+(each SOA/analysis result is real kernel work — *there* "one honest result" is the
+lean MVP). So: **verify all of set.mm (a short benchmark); prove one real thing in
+SOA (the lean part).** The minimality that helps the set.mm product is the *trust
+path*, not the theorem count: use **mode-1 symbolic ingestion** via the existing
+small/auditable Rust `metamath::verify` (defer the verified-WASM-checker), and "in
+GT" is reading off the axiom base. The real set.mm TTP levers are the
+**compressed-proof parser + full `.mm` grammar** and confirming verifier throughput.
 
 ## What is already built (this session)
 
@@ -73,10 +86,12 @@ the honest demo of write→lower→prove-across.
 
 ### Phase D — the headline instances (parallel, on A–C)
 
-- **`set.mm` in GT** — `covalence-metamath` ingests a `set.mm` fragment (needs the
-  compressed-proof parser), verifies it, and `covalence-metamath`'s independent
-  elaborator checks the resulting database against a GT database (fetched + diffed,
-  §5.7); the axiom relation is a `⊑`/conservative-extension theorem.
+- **`set.mm` in GT** — `covalence-metamath` ingests *all of* `set.mm` (needs the
+  compressed-proof parser + full `.mm` grammar) and verifies the whole database via
+  the Rust `metamath::verify` (mode-1 symbolic ingestion; the HOL side stays
+  proof-irrelevant — `∃ValidProof`, never replayed). Its independent elaborator
+  checks the resulting database against a GT database (fetched + diffed, §5.7), and
+  the axiom relation (`ax-groth`+ZFC `⊑` GT) is a `⊑`/conservative-extension theorem.
 - **Analysis in SOA** — reify SOA (the ladder's rung 3: a second sort +
   comprehension over the FOL framework), Spivak's reals as a `#thy`, and the
   reals-extension-conservative-over-SOA result. Calculus builtins are a follow-on.

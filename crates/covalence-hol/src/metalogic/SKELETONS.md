@@ -68,14 +68,15 @@ kernel re-checks each step (syntax former → `init::prop::p_imp`; `ax-1`/`ax-2`
   backend (vs the in-memory checker). Generalising it to an arbitrary database
   needs the schema-database replay below.
 
-### mm_database — the general schema-database replay (DONE for normal proofs)
+### mm_database — the general schema-database replay (DONE: normal AND compressed proofs)
 
 [`mm_database.rs`](./mm_database.rs) generalises `mm_replay` from the fixed
 prop-calc rule set to an **arbitrary `metamath::Database`**: a data-driven
 `metalogic::RuleSet` is built from the database's `|-` assertions (one
 substitution-instance `Closed_L` clause each — premises and conclusion encoded,
 metavariables ∀-bound outermost-first), and `replay_db(db, assertion)` walks a
-*verified, untrusted* **normal** proof, re-deriving `⊢ Derivable_L ⌜S⌝` =
+*verified, untrusted* proof — **normal OR compressed** — re-deriving
+`⊢ Derivable_L ⌜S⌝` =
 `metalogic::derivable(&rule_set(db), enc(S))` step by step through the kernel
 (syntactic formers → `Slot::Wff`; `|-` axioms/rules → the `nth_conjunct` +
 `all_elim` + `imp_elim` derivation constructor `mirror`-of-`init::prop::derive_mp`;
@@ -83,6 +84,16 @@ metavariables ∀-bound outermost-first), and `replay_db(db, assertion)` walks a
 (`has_no_obs`) and hyp-correct on three unrelated databases: PROP (`ax2i`, `a1i`),
 demo0 (`th1 |- t = t`), GROUP (`th |- ( ( a o b ) = ( a o b ) )`). "A Metamath
 database IS a logic." **Done.**
+
+- **Compressed proofs — DONE.** `replay_db` drives off the uniform
+  `crate::metamath::proof_steps(db, assertion)` step sequence (decoding *both*
+  encodings) and runs a `heap: Vec<Slot>` alongside the `stack`: a `Save` (`Z`)
+  step clones the top stack `Slot` onto the heap; a `Heap(i)` step re-pushes
+  `heap[i]`. Because `Slot` (and its `Term`/`Thm`) are cheap `Arc`-clones, a
+  re-used sub-proof is a **re-push, not a recomputation** — the compressed
+  proof's *sharing* is preserved (no exponential re-expansion). This is what lets
+  real `hol.mm` (all 151 proofs compressed) and `set.mm` flow into the kernel.
+  Per-label logic is factored into `apply_label`, shared by the step loop.
 
 - **The encoding** is an *uninterpreted free term algebra* over `Φ = nat`: a
   binary `mm$concat`, one `mm$c$<tok>` constant per Metamath constant symbol, and
@@ -99,18 +110,47 @@ database IS a logic." **Done.**
     than the typecode's sub-language, and `$d` disjointness is not enforced. A
     larger rule set only proves *more*; the per-step replay re-checks each
     instance, so the constructed witness is genuine.
-  - **Compressed proofs** are rejected (decompress to a normal proof first).
-    This is the **concrete blocker to replaying real `hol.mm`**: all 151 of its
-    `$p` proofs are compressed (and the bulk of `set.mm` too), so `replay_db`
-    cannot yet construct a kernel `⊢ Derivable_L ⌜S⌝` from real data. Needs a
-    decompress-to-normal pass (re-expanding the verifier's `decompress_proof`
-    `Z`/heap steps into a flat RPN label list) or teaching `replay_db` to consume
-    the decoded `ProofStep`s directly. (`covalence-metamath` verifies `hol.mm` /
-    `set.mm` fully — the checker handles compressed proofs; only the *HOL replay*
-    needs normal proofs.)
+  - **Rule-set-size scaling — the per-theorem fast path is DONE
+    (`derive_theorem`).** `replay_db` builds one `Closed` clause per `|-`
+    assertion in the *whole* database (~47k for `set.mm`), and each
+    lemma-application's `nth_conjunct` is O(position) — so whole-database replay
+    is impractical (minutes/theorem at `set.mm` scale). The fix shipped:
+    [`derive_theorem(db, label)`](./mm_database.rs) builds the rule set from just
+    the **proof's referenced `|-` assertions** (`scoped_clauses`, the label
+    closure — small per theorem), sharing the entire replay loop (`replay_with`)
+    with `replay_db`. Measured: `hol.mm` all 151 in ~44 s (vs minutes), and
+    **`set.mm` ~8.6 ms/theorem** (50 theorems in ~0.43 s) — practical. The
+    resulting logic is a sub-rule-set `L' ⊆ L`; `transport_db` monotonicity
+    lifts `Derivable_L' ⟹ Derivable_L` when the full-database statement is wanted
+    (not yet auto-applied — recorded as the remaining "lift to full L" step).
   - **Tying the Rust `RuleSet` to a first-class HOL `Database` *value*** (à la
     [`database.rs`](./database.rs)'s `Derivable_DB`) is a further unification —
     the `mm_database` rule set is a Rust closure, not yet a HOL `db` value.
+
+### mm_import — real `.mm` databases INTO covalence-hol (DONE, hol.mm + set.mm)
+
+[`mm_import.rs`](./mm_import.rs) is the high-level API over the fast per-theorem
+[`derive_theorem`](./mm_database.rs): the honest culmination of the
+construct-don't-trust pipeline — **real Metamath databases flow into the kernel
+as `⊢ Derivable_L' ⌜S⌝` theorems**, re-derived from their (possibly compressed)
+proofs, each scoped to its own referenced lemmas so import is practical.
+
+- `import_theorems(db)` — import every `$p` theorem (proof present) via
+  `derive_theorem`, into `(label, Result<Thm>)`, database order, capturing
+  per-theorem errors.
+- `import_theorems_with_progress(db, progress)` — same, invoking
+  `progress(done, total, label)` after each theorem (for a UI progress bar).
+- `read_and_import(source)` — `metamath::parse` + import, surfacing the first
+  parse/replay failure as `ImportError`.
+
+**Real `hol.mm` (vendored, CC0, all 151 `$p` proofs compressed) DONE.**
+`import_hol_mm` (default, fast) imports the first 25 theorems + the `idi`
+(`H ⊢ H`, empty-scoped-rule-set) edge case; `import_hol_mm_full` (`#[ignore]`d,
+~44 s) sweeps all 151, each genuine (`has_no_obs`). **Real `set.mm` DONE
+(samples):** `import_set_mm_sample` (`#[ignore]`d, `COV_SET_MM` env path) imports
+50 theorems in ~0.43 s (~8.6 ms/theorem) via the scoped path — set.mm theorems
+flow into covalence-hol at practical speed. (Importing *all* 47k is bounded only
+by total proof size now, not the database-size blowup.)
 
 ## Reconciliation — the two `Derivable` notions (DONE, Phase A)
 

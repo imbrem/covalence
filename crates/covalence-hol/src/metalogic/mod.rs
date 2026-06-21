@@ -90,6 +90,13 @@ pub mod mm_replay;
 // function replays many logics. "A Metamath database IS a logic."
 pub mod mm_database;
 
+// **Import a whole Metamath database INTO covalence-hol** (`docs/metatheory.md`):
+// the high-level API over `mm_database::replay_db` — `import_theorems(db)` /
+// `read_and_import(source)` re-derive `⊢ Derivable_L ⌜S⌝` for *every* `$p`
+// theorem from its (possibly compressed) proof. Tested on the real, vendored
+// `hol.mm` (all-compressed) and (ignored, env-gated) a `set.mm` sample.
+pub mod mm_import;
+
 // **A HOL-backed `DatabaseSink`**: construct `⊢ Derivable_Prop ⌜S⌝` *while
 // reading* a `.mm` source (the reader drives the builder trait; this backend
 // replays each `$p` through the kernel as it is read). The in-memory `Database`
@@ -155,13 +162,17 @@ impl<'a> RuleSet<'a> {
 // `Closed_L` and `Derivable_L`
 // ============================================================================
 
-/// Right-nest a non-empty list of clauses into a single conjunction
-/// `c₀ ∧ (c₁ ∧ (… ∧ c_{n-1}))`.
+/// Right-nest a list of clauses into a single conjunction
+/// `c₀ ∧ (c₁ ∧ (… ∧ c_{n-1}))`. The **empty** conjunction is `T` (the unit of
+/// `∧`), so a *rule set with no clauses* is well-formed: its `Closed_L d` is `T`
+/// and `Derivable_L A := ∀d. T ⟹ d A`. That is exactly what a proof-scoped rule
+/// set needs when a theorem is derivable from its hypotheses alone (it references
+/// no rule), e.g. `H ⊢ H`.
 pub fn conj(clauses: Vec<Term>) -> Result<Term> {
     let mut iter = clauses.into_iter().rev();
-    let mut acc = iter
-        .next()
-        .ok_or_else(|| covalence_core::Error::ConnectiveRule("metalogic: empty rule set".into()))?;
+    let Some(mut acc) = iter.next() else {
+        return Ok(Term::bool_lit(true));
+    };
     for cl in iter {
         acc = cl.and(acc)?;
     }

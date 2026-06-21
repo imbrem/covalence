@@ -36,8 +36,12 @@ index](../../SKELETONS.md).
 - **[`src/metalogic/SKELETONS.md`](./src/metalogic/SKELETONS.md)** — the
   generic `Derivable_L` engine (`Derivable_L` + `Closed_L` over a `RuleSet`,
   `rule_induction`, one-step `project`; the `toy` second instance; PA wired in
-  as an instance). Deferred: the Metamath-`Database` → `Derivable_L` connection
-  (the `#logic`-semantics seed) and the `S`-transport / `Metamath-L ≅ native-L`
+  as an instance). The Metamath-`Database` → `Derivable_L` connection is **done**
+  (`mm_database::replay_db` replays any database's verified proof — **normal OR
+  compressed** — into `⊢ Derivable_L ⌜S⌝`; `mm_import` brings whole real `.mm`
+  databases in: tested on the vendored `hol.mm`, all 151 compressed proofs).
+  Deferred: the rule-set-size scaling for `set.mm` (the sub-ruleset +
+  `transport_db` optimization) and the `S`-transport / `Metamath-L ≅ native-L`
   north stars.
 - **[`src/peano/SKELETONS.md`](./src/peano/SKELETONS.md)** — the deep
   Peano-arithmetic embedding (Phases A–B done: reified locally-nameless FOL

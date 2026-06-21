@@ -67,7 +67,10 @@
 //!   the existence / construct direction** we land in (a larger rule set only
 //!   proves *more* derivable formulas; we only ever *construct* a witness for
 //!   the specific instance the untrusted proof names).
-//! - **Compressed proofs** are rejected (decompress to a normal proof first).
+//! - **Both proof encodings** are replayed: the proof is decoded to the uniform
+//!   [`crate::metamath::ProofStep`] sequence, and a compressed proof's `Z`-saves
+//!   / heap back-references drive a `Slot` heap alongside the stack, so a re-used
+//!   sub-proof is a cheap re-push (its sharing is preserved, no re-expansion).
 //! - **Syntactic formers** (`wff`/`term`/… assertions) are *grammar*, not
 //!   derivability rules: they build [`Slot::Wff`] terms during replay but
 //!   contribute **no** clause to the rule set.
@@ -78,7 +81,7 @@ use covalence_core::{Error, Result, Term, Thm, Type};
 
 use crate::init::ext::TermExt;
 use crate::metamath::expr::body_of;
-use crate::metamath::{Assertion, Database, Expr, Proof, Statement};
+use crate::metamath::{Assertion, Database, Expr, Statement};
 
 use super::{RuleSet, closed_for_var, conj, conj_thms, derivable, nth_conjunct};
 
@@ -396,6 +399,32 @@ impl Clause {
     }
 }
 
+/// Encode one `|-` assertion as a [`Clause`] (the metavariable binders + encoded
+/// premises + encoded conclusion). Returns `None` for a non-`|-` assertion (a
+/// syntactic former — grammar, not a rule) or if the body fails to encode (which
+/// cannot happen on a verified database; a missing clause only weakens the rule
+/// set, sound for the construct direction).
+fn clause_from(parser: &Parser, a: &Assertion) -> Option<Clause> {
+    if a.conclusion.typecode() != "|-" {
+        return None;
+    }
+    let float_vars: Vec<String> = a.frame.floats.iter().map(|f| f.var.clone()).collect();
+    let ess_encs: Result<Vec<Term>> = a
+        .frame
+        .essentials
+        .iter()
+        .map(|h| parser.encode_expr(&h.expr))
+        .collect();
+    let (Ok(ess_encs), Ok(concl_enc)) = (ess_encs, parser.encode_expr(&a.conclusion)) else {
+        return None;
+    };
+    Some(Clause {
+        float_vars,
+        ess_encs,
+        concl_enc,
+    })
+}
+
 /// Collect the database's `|-` clauses (one per `|-` assertion, in database
 /// order) and a `label → clause index` map. Syntactic formers (non-`|-`
 /// assertions) are skipped — they are grammar, not derivability rules.
@@ -404,31 +433,52 @@ fn collect_clauses(db: &Database) -> (Vec<Clause>, HashMap<String, usize>) {
     let mut clauses = Vec::new();
     let mut index = HashMap::new();
     for a in db.assertions() {
-        if a.conclusion.typecode() != "|-" {
-            continue; // a syntactic former — grammar, not a rule.
+        if let Some(c) = clause_from(&parser, a) {
+            index.insert(a.label.clone(), clauses.len());
+            clauses.push(c);
         }
-        let float_vars: Vec<String> = a.frame.floats.iter().map(|f| f.var.clone()).collect();
-        let ess_encs: Result<Vec<Term>> = a
-            .frame
-            .essentials
-            .iter()
-            .map(|h| parser.encode_expr(&h.expr))
-            .collect();
-        // Encoding a malformed body shouldn't happen on a verified database; if
-        // it does, drop the clause rather than poisoning the whole rule set —
-        // a missing clause only makes the rule set *weaker* (sound for the
-        // construct direction), and the per-step replay re-checks the instance.
-        let (Ok(ess_encs), Ok(concl_enc)) = (ess_encs, parser.encode_expr(&a.conclusion)) else {
-            continue;
-        };
-        index.insert(a.label.clone(), clauses.len());
-        clauses.push(Clause {
-            float_vars,
-            ess_encs,
-            concl_enc,
-        });
     }
     (clauses, index)
+}
+
+/// Collect the `|-` clauses **scoped to one theorem's proof** — exactly the `|-`
+/// assertions its proof references (directly), in first-use order — plus the
+/// `label → clause index` map. This is the *performance* path: the resulting
+/// rule set's `Closed_L` has only the lemmas the proof actually uses (tens),
+/// not the whole database (tens of thousands), so `derivable`/`nth_conjunct`
+/// stay cheap. The logic is a sub-rule-set `L' ⊆ L` of the database; by
+/// monotonicity (`metalogic::transport_db`) `Derivable_L' ⟹ Derivable_L`.
+fn scoped_clauses(
+    db: &Database,
+    assertion: &Assertion,
+) -> Result<(Vec<Clause>, HashMap<String, usize>)> {
+    let steps = crate::metamath::proof_steps(db, assertion)
+        .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
+    let parser = Parser::new(db);
+    let mut clauses = Vec::new();
+    let mut index = HashMap::new();
+    for step in &steps {
+        let crate::metamath::ProofStep::Label(label) = step else {
+            continue;
+        };
+        if index.contains_key(label) {
+            continue;
+        }
+        if let Some(Statement::Assert(a)) = db.statement_by_label(label) {
+            if let Some(c) = clause_from(&parser, a) {
+                index.insert(label.clone(), clauses.len());
+                clauses.push(c);
+            }
+        }
+    }
+    Ok((clauses, index))
+}
+
+/// Assemble a [`RuleSet`] (carrier `Φ = nat`) from a list of clauses.
+fn clauses_to_ruleset(clauses: Vec<Clause>) -> RuleSet<'static> {
+    RuleSet::new(phi(), move |d_apply| {
+        clauses.iter().map(|c| c.build(d_apply)).collect()
+    })
 }
 
 /// Public, read-only view of one `|-` clause of a database's rule set — the
@@ -488,17 +538,18 @@ pub fn clause_infos(db: &Database) -> (Vec<ClauseInfo>, HashMap<String, usize>) 
 /// per `|-` assertion (database order). This *is* the logic the database
 /// defines.
 pub fn rule_set(db: &Database) -> RuleSet<'static> {
-    let (clauses, _) = collect_clauses(db);
-    RuleSet::new(phi(), move |d_apply| {
-        clauses.iter().map(|c| c.build(d_apply)).collect()
-    })
+    clauses_to_ruleset(collect_clauses(db).0)
 }
 
 // ============================================================================
 // The replay
 // ============================================================================
 
-/// One slot on the replay stack.
+/// One slot on the replay stack (and the compressed-proof heap). `Clone` is
+/// what lets a `Save`/`Heap` re-use a saved sub-result **without recomputation**
+/// — `Term` and `Thm` are both cheap `Arc`-backed clones, so the compressed
+/// proof's sharing is preserved (no exponential re-expansion).
+#[derive(Clone)]
 enum Slot {
     /// An encoded `Φ` term — a `wff`/`term`/… expression (or a `$f` variable).
     Wff(Term),
@@ -516,44 +567,85 @@ enum Slot {
 /// kernel theorem whose conclusion is `derivable(rule_set(db), enc(S))`; any
 /// **essential hypotheses** of the assertion appear as the theorem's
 /// hypotheses `Derivable_L ⌜hyp⌝ ⊢ Derivable_L ⌜S⌝`.
+///
+/// Both proof encodings are handled: the proof is decoded into the uniform
+/// [`crate::metamath::ProofStep`] sequence ([`crate::metamath::proof_steps`]),
+/// driving a `stack` plus a compressed-proof `heap`. A `Save` step clones the
+/// top stack slot onto the heap; a `Heap(i)` step re-pushes `heap[i]` — so a
+/// re-used sub-proof is a cheap `Arc`-clone re-push, **not** a recomputation,
+/// preserving the compressed proof's sharing (no exponential re-expansion).
 pub fn replay_db(db: &Database, assertion: &Assertion) -> Result<Thm> {
-    let labels = match assertion.proof.as_ref() {
-        Some(Proof::Normal(labels)) => labels,
-        Some(Proof::Compressed { .. }) => {
-            return Err(replay_err(
-                "compressed-proof replay is not supported (decompress to a normal proof first)",
-            ));
-        }
-        None => return Err(replay_err("assertion has no proof to replay")),
-    };
+    let (clauses, clause_index) = collect_clauses(db);
+    let rs = clauses_to_ruleset(clauses);
+    replay_with(db, assertion, &rs, &clause_index)
+}
 
-    let rs = rule_set(db);
-    let (_, clause_index) = collect_clauses(db);
+/// **Derive that a single named theorem is derivable — the fast, on-demand
+/// path.** Parse a database once, then call this per theorem to get
+/// `⊢ Derivable_L' ⌜T⌝` where `L'` is the sub-rule-set of exactly the `|-`
+/// assertions `T`'s proof references (so `Closed_L'` is small and replay is
+/// cheap — unlike [`replay_db`], whose rule set is the *whole* database). `L' ⊆
+/// L`, so `metalogic::transport_db` lifts the result to the full database logic
+/// when wanted. Shares all replay machinery with [`replay_db`]; only the rule
+/// set is scoped.
+pub fn derive_theorem(db: &Database, label: &str) -> Result<Thm> {
+    let assertion = match db.statement_by_label(label) {
+        Some(Statement::Assert(a)) if a.proof.is_some() => a.clone(),
+        Some(Statement::Assert(_)) => {
+            return Err(replay_err(format!("`{label}` is an axiom (no proof to replay)")));
+        }
+        _ => return Err(replay_err(format!("`{label}` is not a theorem of the database"))),
+    };
+    let (clauses, clause_index) = scoped_clauses(db, &assertion)?;
+    let rs = clauses_to_ruleset(clauses);
+    replay_with(db, &assertion, &rs, &clause_index)
+}
+
+/// The shared replay loop: drive `assertion`'s proof steps against the supplied
+/// rule set `rs` (with its `label → clause index` map), re-deriving
+/// `⊢ Derivable_L ⌜S⌝`. Both [`replay_db`] (full database rule set) and
+/// [`derive_theorem`] (proof-scoped rule set) call this — the only difference is
+/// which clauses `rs`/`clause_index` carry.
+fn replay_with(
+    db: &Database,
+    assertion: &Assertion,
+    rs: &RuleSet,
+    clause_index: &HashMap<String, usize>,
+) -> Result<Thm> {
+    if assertion.proof.is_none() {
+        return Err(replay_err("assertion has no proof to replay"));
+    }
+    let steps = crate::metamath::proof_steps(db, assertion)
+        .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
+
     let n = clause_index.len();
     let parser = Parser::new(db);
 
     let mut stack: Vec<Slot> = Vec::new();
+    let mut heap: Vec<Slot> = Vec::new();
 
-    for label in labels {
-        let stmt = db
-            .statement_by_label(label)
-            .ok_or_else(|| replay_err(format!("unknown proof label `{label}`")))?;
-        match stmt {
-            Statement::Float(f) => {
-                // `$f <typecode> <var>` — push the metavariable as a plain term.
-                stack.push(Slot::Wff(Term::free(&f.var, phi())));
-            }
-            Statement::Essential(h) => {
-                // `$e |- <hyp>` — its derivability is *assumed*; it becomes a
-                // hypothesis of the final theorem.
-                let enc = parser.encode_expr(&h.expr)?;
-                stack.push(Slot::Proved(Thm::assume(derivable(&rs, &enc)?)?));
-            }
-            Statement::Assert(target) => {
-                let slot = apply_assert(db, &rs, &clause_index, n, target, label, &mut stack)?;
+    for step in &steps {
+        match step {
+            crate::metamath::ProofStep::Label(label) => {
+                let slot = apply_label(db, rs, clause_index, n, &parser, label, &mut stack)?;
                 stack.push(slot);
             }
-            _ => return Err(replay_err(format!("label `{label}` is not applicable"))),
+            crate::metamath::ProofStep::Save => {
+                // `Z` — clone the top of stack onto the sharing heap.
+                let top = stack
+                    .last()
+                    .ok_or_else(|| replay_err("`Z` save with an empty stack"))?
+                    .clone();
+                heap.push(top);
+            }
+            crate::metamath::ProofStep::Heap(idx) => {
+                // Re-push a saved sub-result: a cheap clone, never a recompute.
+                let slot = heap
+                    .get(*idx)
+                    .ok_or_else(|| replay_err(format!("heap backreference {idx} out of range")))?
+                    .clone();
+                stack.push(slot);
+            }
         }
     }
 
@@ -562,7 +654,7 @@ pub fn replay_db(db: &Database, assertion: &Assertion) -> Result<Thm> {
             Slot::Proved(thm) => {
                 // Sanity: the re-derived theorem is the derivability of the
                 // claimed conclusion's encoding.
-                let want = derivable(&rs, &encode_conclusion(db, assertion)?)?;
+                let want = derivable(rs, &encode_conclusion(db, assertion)?)?;
                 if thm.concl() != &want {
                     return Err(replay_err(format!(
                         "replayed conclusion does not match the claimed `{}`",
@@ -576,6 +668,44 @@ pub fn replay_db(db: &Database, assertion: &Assertion) -> Result<Thm> {
         depth => Err(replay_err(format!(
             "proof did not reduce to a single result (stack depth {depth})"
         ))),
+    }
+}
+
+/// Process one `Label` proof step, returning the `Slot` it pushes (shared by
+/// both proof encodings via [`replay_db`]'s step loop):
+///
+/// - a `$f` float → the metavariable as a `Slot::Wff` term;
+/// - a `$e` essential → `Slot::Proved(assume Derivable_L ⌜hyp⌝)` (the hypothesis
+///   surfaces on the final theorem);
+/// - a `$a`/`$p` assertion → a syntactic former (`Slot::Wff`) or a `|-` rule
+///   instance (`Slot::Proved`), via [`apply_assert`].
+fn apply_label(
+    db: &Database,
+    rs: &RuleSet,
+    clause_index: &HashMap<String, usize>,
+    n: usize,
+    parser: &Parser,
+    label: &str,
+    stack: &mut Vec<Slot>,
+) -> Result<Slot> {
+    let stmt = db
+        .statement_by_label(label)
+        .ok_or_else(|| replay_err(format!("unknown proof label `{label}`")))?;
+    match stmt {
+        Statement::Float(f) => {
+            // `$f <typecode> <var>` — push the metavariable as a plain term.
+            Ok(Slot::Wff(Term::free(&f.var, phi())))
+        }
+        Statement::Essential(h) => {
+            // `$e |- <hyp>` — its derivability is *assumed*; it becomes a
+            // hypothesis of the final theorem.
+            let enc = parser.encode_expr(&h.expr)?;
+            Ok(Slot::Proved(Thm::assume(derivable(rs, &enc)?)?))
+        }
+        Statement::Assert(target) => {
+            apply_assert(db, rs, clause_index, n, target, label, stack)
+        }
+        _ => Err(replay_err(format!("label `{label}` is not applicable"))),
     }
 }
 

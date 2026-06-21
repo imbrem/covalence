@@ -109,7 +109,192 @@ many-models idea *executable*.
 Illustrative — exact grammar TBD; all forms stay pure `#`-headed S-expressions
 ([`surface-syntax.md`](./surface-syntax.md) §1.3). They extend the existing
 `surface::Builtin` set (`#theory`/`#decl`/`#clause`/`#def`/`#thm`/`#import`) with
-`#logic`, `#model`, `#in`, `#transport`.
+`#sig`, `#thy`, `#logic`, `#model`, `#in`, `#transport`.
+
+### 3.0 `#sig` / `#thy` — signatures and theories (the surface↔script fusion)
+
+There is **one language**: the `.cov` script language gains the theory-defining
+forms, so surface and script are fused (not two languages). A **signature** is a
+*name + sorts/families (kinded) + operations*; a **theory** is *a signature +
+named axioms* — exactly the `Signature`/`Theory` data the `Logic` trait consumes
+(`theories-models-and-logics.md §1`).
+
+```scheme
+(#sig Nat                          ;; NAME — also the content-address anchor (§ O256)
+  (sort α)                         ;; type part: kind-ty carrier(s)…
+  ;; (family m (-> ty ty))         ;; …and kind-ty→ty families (HOL-ω)
+  (op zero α)                      ;; operations, typed over the sorts
+  (op succ (-> α α))
+  (op add  (-> α α α)))
+
+(#thy NatTheory
+  (over Nat)                       ;; a signature ref (`over`/`sig`), or inline (#sig …)
+  (#spec add.zero (forall (a α) (= (add a zero) a)))        ;; a proof OBLIGATION,
+  (#spec add.succ (forall (a α)(b α) (= (add a (succ b)) (succ (add a b)))))  ;; not a postulate
+  (#spec induct  …))
+```
+
+**Files + typed import.** A **`.sig`** file *is* a `(#sig …)` body; a **`.thy`**
+file *is* a `(#thy …)` body — like `.cov` but restricted to defining a single
+signature/theory. You either inline the body — `(#thy (… contents …))` — or
+import it **typed**: `(#import nat.thy #thy)` / `(#import nat.sig #sig)` (the
+`#thy`/`#sig` tag says what kind of object you're importing, vs an untyped `.cov`
+proof bundle). The typed import is what lets the compiler check, before
+elaboration, that you imported a *theory* where a theory was expected.
+
+These elaborate to the Rust `Signature`/`Theory` types; build the *syntax* as the
+immediate follow-on once those types are pinned (don't fork the data shape).
+
+### 3.0.1 The artifact taxonomy (file types)
+
+`.cov` is the **general** format (it may contain any mix of `#def`/`#thm`/`#sig`/
+…). Alongside it are **single-object, typed** files — each is the body of one
+`#`-form — so a typed `(#import x.EXT #form)` knows what it's getting:
+
+| ext | contains | surface form | one of |
+|---|---|---|---|
+| `.cov` | anything (general) | — | (mixed) |
+| `.logic` | a **logic** (a language + rules, bundled — §3.0.5) | `(#logic …)` | a logic |
+| `.sig` | a **signature** (name + kinded sorts/families + ops) | `(#sig …)` | a signature |
+| `.thy` | a **theory** (a signature + named axioms) | `(#thy …)` | a theory |
+| `.mod` | a **model** (an interpretation of a signature's language) | `(#model …)` | a model |
+| `.thm` | a **proof of one statement** | `(#thm …)` | a theorem |
+
+> **Punted (noted, not built):** the elaborated S-expression *IR* — the
+> post-elaboration canonical form — may eventually get its own extension
+> (`.cov.ir`, `.sig.ir`, …) distinct from the pre-elaboration surface text.
+> Decide later; the surface forms above are the human-written layer.
+
+### 3.0.2 A model interprets a *syntax*; "M ⊨ T" is a *theorem proved in a logic*
+
+The decoupling (refines §1's "model = …"; full treatment in
+`theories-models-and-logics.md §1`). A **logic** bundles two aspects: a
+*language* (a typed grammar — what can be **stated**) and *derivability rules*
+(what can be **proved**). Intuitionistic and classical FOL are two logics over
+the *same language*, related by a language-iso — but we keep language + rules
+bundled in the one `Logic` object rather than reifying a separately-shared syntax
+(asking "same syntax?" by identity would be *evil* — it distinguishes isomorphic
+languages; `theories-models-and-logics.md §1`). Then:
+
+- A **model `M`** is an **interpretation of a logic's *language*** — concrete
+  objects for the signature `S`'s sorts/families/ops. Pure semantics; *nothing
+  about axioms*. It just realizes the vocabulary; models relate by iso-transport.
+- A **theory `T`** is *also over `S`* — `S` + axioms (formulas in the language).
+- **"`M` is a model of `T`" (`M ⊨ T`)** is a **`.thm`** — a proof, **carried out
+  in a *logic***, that `M`'s interpretation *satisfies `T`'s axioms*. This is
+  *the* load-bearing statement, and which logic it's proved in is part of it: a
+  Heyting-valued `M` satisfies the intuitionistic `T`, a Boolean one the classical
+  `T`.
+
+So the artifacts separate cleanly: **interpret the vocabulary** (`.mod` realizes
+a logic's language), **state the laws** (`.thy`), **prove the interpretation obeys
+the laws in a logic** (`.thm`, `M ⊨ T`). A model of the signature can perfectly
+well *fail* a given theory — that's a `.thm` that doesn't go through — and may
+satisfy `T` under one logic but not another. The type system makes all of this
+explicit rather than silent. (Seam realization: `Logic` + `Model` traits,
+`theories-models-and-logics.md §1.1`.)
+
+### 3.0.3 `#model` / `#models` — declaring a model and certifying satisfaction
+
+```scheme
+;; A MODEL of signature Nat — interprets the vocabulary at a carrier (.mod).
+;; Pure semantics: a carrier + a term for each op (must typecheck with A := carrier).
+(#model nat/self
+  (of Nat)                       ;; interprets signature Nat
+  (carrier nat)                  ;; A := nat
+  (zero 0)                       ;; the op interpretations (the `0` literal IS nat.lit 0)
+  (succ nat.succ)
+  (add  nat.add)
+  (induct induct))               ;; the induction handler, named by tactic ref
+
+;; SATISFACTION — "nat/self models NatTheory" (M ⊨ T), a .thm. For each axiom of
+;; NatTheory, the goal is the axiom INSTANTIATED at the model (A := carrier, op
+;; symbols := interpretations) — built by RE-ELABORATING the axiom's stored sexpr
+;; against the model's carrier+ops, not by term substitution. Each must be PROVED,
+;; and its conclusion re-checked against that goal. Certifying it blesses the
+;; model's env (ops + verified axioms + `m.induct`) for `(#in nat/self …)` dispatch.
+(#models nat/self NatTheory
+  (zero.add (#proof (lemma)))    ;; a (#proof …) when the goal is α-identical to a
+  (add.zero (#proof (lemma)))    ;;   kernel lemma; a (#by …) tactic script otherwise.
+  (succ.add (#proof (lemma)))    ;;   (`apply` can't match a still-∀-quantified goal,
+  (add.succ (#proof (lemma))))   ;;    so direct lemma refs are the clean form here.)
+```
+
+> Sort variable spelled `A` (ASCII) in the implementation; `α` also parses. The
+> `(from WITNESS)` form — `(#models nat/unary NatTheory (from unary))` — sources a
+> host-supplied (Rust) witness env, keeping `nat/unary`'s heavy `unit`-singleton
+> proofs in `models::unary` until ported to `.cov` (transitional; SKELETON'd).
+
+`(#models M T …)` reads "M models T". It is the single load-bearing statement
+type (§3.0.2). The model's env — abstract op names (`m.zero`/`m.add`/…) bound to
+the interpretations, plus the verified axioms bound under the theory's axiom
+names — is exactly what the abstract `add_comm.cov` proof dispatches over via
+`(#in M …)` (the Track 1 mechanism, now sourced from the *declared* signature +
+theory instead of a hand-built Rust env). The satisfaction proofs are
+genuinely per-model (e.g. `nat/unary`'s `add.succ` needs the `unit` singleton),
+so they live in the `(#models …)` block — or, transitionally, a host-supplied
+witness `(#models nat/unary NatTheory (from unary-witness))` keeps a heavy Rust
+proof (e.g. `models::unary`) in place until it's ported to `.cov`.
+
+### 3.0.4 North stars (don't preclude these)
+
+Two directions the forms above must stay compatible with — **architectural
+constraints, not near-term work**:
+
+1. **`.thy` is the elaboration target of a Haskell-like surface.** A `#type`
+   declaration + function type signatures + defining equations
+   ```haskell
+   #type nat
+   add :: nat -> nat -> nat
+   add zero a        = a
+   add a zero        = a
+   add (succ a) b    = succ (add a b)
+   ```
+   elaborates to a `(#sig …)` + `(#thy …)`: the **`#type nat`** → the signature's
+   `(sort nat)`; each `::` type signature → an `(op …)`; each defining equation →
+   a **`#spec`** (an equational clause, with the *positional* LHS/RHS quantification
+   rule — LHS pattern variables universally bound, RHS-only existential;
+   `surface-syntax.md §4.1`). So `nat.sig`/`nat.thy` are *extractable from* such a
+   file. Concretely (a longer example):
+   ```haskell
+   length :: list 'a -> nat
+   length []        = 0
+   length (x :: xs) = 1 + length xs
+   ```
+   elaborates to a `(#thy …)`: the `::` signature → the `(op length (-> (list 'a)
+   nat))` declaration, and each defining equation → a **clause** (the surface
+   AST's `#clause`/`#rw`, with the *positional* LHS/RHS quantification rule —
+   LHS pattern variables universally bound, RHS-only variables existential;
+   `surface-syntax.md §4.1`). So a theory's spec is *axioms and/or equational
+   clauses*, and the clause form is what the pattern equations lower to. The
+   `#sig`/`#thy`/`#model` forms are the **explicit, lower** layer this surface
+   compiles down to — keep them expressive enough to be that target.
+2. **Models are *synthesized*, not only declared.** Beyond hand-writing
+   `(#model …)`, a **tactic takes a theory's sexpr and attempts to synthesize a
+   model** — in HOL, or SOA, or PA — automatically, which is tractable for nice
+   subclasses (equational/algebraic theories, decidable theories). Crucially,
+   **`#inductive` is then subsumed**: declaring a datatype is "synthesize the
+   *initial* model" of the (free/equational) theory of its constructors. So the
+   `Model` object must be **producible by a tactic**, not only by `(#model …)`;
+   `#model` is the manual producer, model-synthesis the automatic one, and both
+   yield the same thing a `(#models …)` certificate certifies and `(#in …)`
+   dispatches over. Concretely, in `.thy` files `#inductive` becomes two
+   theory-level declaration forms — **`#data`** (inductive: the *initial* model /
+   least fixpoint — constructors, induction, recursion) and **`#codata`**
+   (coinductive: the *final* model / greatest fixpoint — destructors, coinduction,
+   corecursion; e.g. streams). Each is sugar for "synthesize the initial / final
+   model" of the relevant functor's theory — the two ends of the same
+   model-synthesis machinery.
+3. **Induction is a *type-indexed registry*, not a pile of tactics.** Don't grow a
+   `nat_induct` / `list_induct` / `unary_induct` / … zoo of bespoke tactics.
+   Instead, **each type tells you how to induct over it**: a registry keyed by type
+   former (`nat`, `list 'a`, `tree 'a`, …) holds that type's induction (and
+   recursion / case) principle, and a *single* generic `induct` tactic dispatches on
+   the type of the variable it's given. This composes directly with north star 2:
+   a `#data`/`#codata`-synthesized type **registers its induction/coinduction
+   principle on creation**, so the generic `induct`/`coinduct` immediately works for
+   it. (The current per-model `m.induct` handler in `models/` is the seed of this —
+   generalize "the model supplies induction" to "the *type* supplies induction".)
 
 ```scheme
 ;; A THEORY: abstract signature + axioms (exists today, generalized).
@@ -155,6 +340,96 @@ The crucial property: `add-zero`'s *surface statement* is identical in every
 `#model`; only the dispatched handlers and the resulting kernel obligations
 differ. Proven once in a model — or in the abstract theory, transported — it is
 available everywhere a morphism reaches.
+
+### 3.0.5 `#logic` — declaring the logic a model/proof lives in
+
+**A logic is *primarily a Rust trait*** (`theories-models-and-logics.md §1.1`:
+the bundled `Logic` object — a *language* plus *rules*). The trait is a **code**
+seam: its handlers embed real algorithms (unification, rewriting, induction,
+model-checking), which is not data. Two consequences:
+
+- **The metalogic is necessarily a native Rust impl** — HOL is the bootstrap
+  floor, there is no lower level to *declare* it in. (Later a *reified* object
+  logic can be a `Logic` whose handlers are HOL proofs; base HOL stays native.)
+- **`(#logic …)` / `.logic` is a *derived data* layer**, not the primary form. It
+  parameterizes a **generic** Rust `Logic` impl for a *family* of logics — the way
+  `.thy` is data for a theory: it carries *parameters* (order class, literal
+  policy, axiom/rule schemas), never handler *code*. It earns its keep exactly
+  when a family with a shared generic impl appears (the first-order logics; the
+  temporal cluster below) — not before, and *never* for registering the metalogic.
+
+With that framing, the declarable object (consumed by a generic impl) looks like:
+
+```scheme
+(#logic HOL
+  (order higher)                 ;; first | higher | omega — the LANGUAGE class
+  (literals                      ;; literal POLICY (see below): kind → target sort
+    (int    Int)                 ;;   an int literal elaborates at sort Int…
+    (nat    Nat)                 ;;   a nat literal = a non-negative int, sort Nat
+    (string String)
+    (bytes  Bytes))
+  (rules …))                     ;; the handler set (rewriter/unifier/induction/LEM/…)
+```
+
+`order` is where the eventual specialization lives — **first-order, higher-order,
+HOL-ω** logics differ in their language class (the statability axis,
+theories-models §3.1), so a `.logic` is the natural place to pick it. A model is
+interpreted in a logic's language; the satisfaction `.thm` (`M ⊨ T`) is checked
+*in a logic*; `(#in …)`/`(#models …)` run against the ambient logic.
+
+**Literals split across two layers — get this right.** A `#logic` carries literal
+*policy* (metadata), a `#model` carries literal *realization*:
+
+- The **logic** says *which literal kinds it admits and at what target sort* — the
+  `literals` block above. This is part of statability: a logic may admit no string
+  literals, or place int literals at sort `Int`. (`nat` literal = non-negative
+  `int` literal, one entry, per §1.1.)
+- The **model** says *how a literal becomes a concrete carrier term* — the
+  model-relative, fallible `lift_int`/`lift_string`/`lift_bytes` of §1.1. This
+  *must* stay on the model, because two models of one theory in one logic lower
+  `3` differently (`nat/self` → builtin `nat` literal; `nat/unary` → `cons
+  unit.nil³ nil`). The logic fixes the *sort*; the model fixes the *value*.
+
+So the responsibility chain for a literal `3` is: the **logic** admits it and
+assigns sort `Nat`; the **model** realizes it as a carrier term. (Both are the
+`covalence-pure` literal-as-lifted-observation mechanism, `covalence-pure.md §3`,
+surfaced at the right layer.) For now there is one ambient logic (HOL, a native
+trait impl); the declarable `.logic` layer matters once a *family* with a generic
+impl is in play.
+
+**The logic zoo — CTL / LTL / PCTL / CTL\*.** The temporal/probabilistic logics
+are the motivating case for both halves above. As **trait impls**, each is a
+`Logic` whose handler set *is a model checker* — a **decision procedure** over a
+structure (a Kripke transition system for CTL/LTL/CTL\*, a Markov chain for
+PCTL). That makes them the paradigm of "a decidable logic doubles as an
+accelerator/handler": discharge a CTL fact into HOL by checking the model
+checker's certificate, or attest it through the observer substrate
+(`observers.md`) — a natural fit for a WASM oracle producing the witness. They are
+attractive *early non-HOL* `Logic` targets precisely *because* they are decidable
+(the handler is an algorithm, not a proof calculus). As a **family**, they share
+heavily — temporal operators, Kripke semantics, the **modal μ-calculus** as a
+unifying substrate (CTL/LTL/CTL\* all embed into it) — so a generic
+`TemporalLogic` impl parameterized by fragment + structure type, with `.logic`
+data picking the fragment, is exactly where exposing the declarable object pays
+for itself.
+
+**The unifying answer (user): a `#logic` *is* a Metamath database.** What the
+declarable `.logic` data *is* — what parameterizes the generic `Logic` impl — was
+the open question. The answer: a logic's axioms + inference rules **as
+substitution schemas over `SExpr`**, i.e. a **Metamath database**
+(`theories-models-and-logics.md §5.6`). The pure metavariable-substitution
+metalogic is universal, so "define a logic" = "write a database", and the generic
+`Logic` impl for the dominant family (anything that is *axioms + rules*) **is the
+Metamath substitution engine**. Crate boundary (user): that engine — the
+expression model, substitution, frame/DV, derivability `Derivable_L`, and the
+`S`-rewrite transport — lives **first-class in `covalence-hol`** (it is core to
+defining logics and doing metatheory); **`covalence-metamath` is demoted to the
+format/IO reader** (compressed-proof decoding, `.mm` file parsing, `$[ $]` file
+inclusion, set.mm ingestion) so that machinery doesn't clutter `covalence-hol`.
+The Rust `Logic` *trait* still tops it (native impls like the metalogic itself,
+model-checker handlers, …), but the **database is the data the common case
+consumes**, and `Metamath-L ≅ native-L` (§5.6) is how native/HOL/WASM accelerators
+plug in.
 
 ---
 

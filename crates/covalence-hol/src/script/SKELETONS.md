@@ -36,6 +36,19 @@ result is byte-identical to the hand-written one — the script `#def` mints a
 *fresh* opaque-`SmolStr` spec instead, semantically equal but not pointer-equal
 to the `Canonical::*` catalogue entry).
 
+**Theory directives are built** (`script/theory.rs`): `(#sig …)` / `(#thy …)` /
+`(#model …)` / `(#models …)` declare signatures, theories, and models as data and
+certify `M ⊨ T`, registering the model's dispatch env for `(#in M …)`. They live
+in their own `Env` registries (`define_signature`/`define_theory_decl`/
+`define_model_decl`, plus a `type_aliases` map so a sort name resolves to
+`tfree(α)` abstractly and to the carrier per-model). `#models` builds each
+instantiated goal by **re-elaborating the abstract axiom's `SExpr`** against a
+model env (op := interpretation, sort := carrier) — no term substitution. Scope:
+single-sorted/first-order signatures only; `(from WITNESS)` is a transitional
+host-axiom path; no typed `.sig`/`.thy` imports; no reified `M ⊨ T` certificate
+object; no model synthesis. Full list in `models/SKELETONS.md`
+(`#sig`/`#thy`/`#model`/`#models` section).
+
 These are deliberately deferred:
 
 - **Inference is best-effort (untrusted).** `infer.rs` does Hindley–Milner

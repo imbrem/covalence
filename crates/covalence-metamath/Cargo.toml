@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-covalence-types = { path = "../covalence-types" }
-indexmap = "2"
-thiserror = "2"
+# The engine (expression model, substitution, frames, RPN checker, MmError)
+# lives in covalence-hol::metamath; this crate is the `.mm` reader on top of it.
+covalence-hol = { path = "../covalence-hol" }
+covalence-sexp = { path = "../covalence-sexp" }

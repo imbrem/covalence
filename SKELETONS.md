@@ -25,6 +25,9 @@ it in.
   SpecTec → HOL lowering driver (covered fragment vs deferred).
 - **[`covalence-alethe`](crates/covalence-alethe/SKELETONS.md)** — Alethe rule
   coverage.
+- **[`covalence-metamath`](crates/covalence-metamath/SKELETONS.md)** —
+  compressed proofs, `set.mm` scale, file inclusion, the `covalence-hol` import
+  tactic + representation-equivalence metatheorem.
 
 A crate with no skeletons has no file. When you add the first skeleton to a
 crate (or module) without one, create its `SKELETONS.md` and link it here (or

@@ -37,10 +37,12 @@
 //!
 //! The **linear-arithmetic core** is bootstrapped through
 //! [`crate::la::la_generic`]: the Alethe Farkas rule `la_generic` is
-//! re-derived (never trusted) over the `defs` `int` ordered ring. The
-//! prototype covers the two-literal, coefficient-`(1,1)`, strict case
-//! (`x < 0 ∧ 0 < x ⟹ ⊥`) via `int::lt_trans` + `int::lt_irrefl`;
-//! larger combinations are reported `NotImplemented` (see `SKELETONS.md`).
+//! re-derived (never trusted) over the `defs` `int` ordered ring. It
+//! covers the unit-coefficient, all-strict transitivity-cycle case for
+//! any `n ≥ 2` literals (e.g. `x < y ∧ y < z ∧ z < x ⟹ ⊥`) via
+//! `int::lt_trans` + `int::lt_irrefl`; non-unit coefficients, non-strict
+//! literals, and non-cyclic combinations are reported `NotImplemented`
+//! (see `SKELETONS.md`).
 //!
 //! cvc5's `hole` ("untranslated rewrite") is **re-derived, not trusted**:
 //! every hole is a unit clause `(cl L)` and [`hole`] proves `⊢ L` in the
@@ -79,6 +81,10 @@ pub struct HolAletheBridge {
     assumed: Vec<Term>,
     /// Final verdict; flips to `Unsat` once the empty clause is derived.
     decision: Decision,
+    /// The empty-clause theorem (`{assumed…} ⊢ F`) once one is reached —
+    /// the witnessing refutation. Surfaced by [`HolAletheBridge::refutation`]
+    /// so a caller can conclude `⊢ G` by reductio from a goal-negation.
+    refutation: Option<Thm>,
 }
 
 impl HolAletheBridge {
@@ -90,7 +96,22 @@ impl HolAletheBridge {
             named: HashMap::new(),
             assumed: Vec::new(),
             decision: Decision::Unknown,
+            refutation: None,
         }
+    }
+
+    /// The witnessing refutation theorem `{assumed…} ⊢ F`, once the proof
+    /// has reached the empty clause (else `None`). Its hypotheses are a
+    /// subset of the `assume`d assertions — so discharging them yields a
+    /// genuine kernel theorem about the original problem.
+    pub fn refutation(&self) -> Option<&Thm> {
+        self.refutation.as_ref()
+    }
+
+    /// The terms introduced by `assume` (the asserted formulas) — the only
+    /// hypotheses a valid refutation may carry.
+    pub fn assumed(&self) -> &[Term] {
+        &self.assumed
     }
 
     // -----------------------------------------------------------------
@@ -272,6 +293,10 @@ impl HolAletheBridge {
             && thm.hyps().iter().all(|h| self.assumed.contains(h))
         {
             self.decision = Decision::Unsat;
+            // Capture the first witnessing refutation for `refutation()`.
+            if self.refutation.is_none() {
+                self.refutation = Some(thm.clone());
+            }
         }
     }
 }

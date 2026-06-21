@@ -20,12 +20,18 @@
 //! rewrite can still be recovered from `backup/pre-hol-cleanup`.
 
 pub mod bridge;
+pub mod discharge;
 pub mod error;
+pub mod goal;
 pub mod hol;
 pub mod ingest;
 pub mod la;
+pub mod tactic;
 
 pub use bridge::AletheBridge;
+pub use discharge::{CachedProof, ProofCache, SmtDischarger, discharge_with_proof};
 pub use error::BridgeError;
+pub use goal::goal_to_problem;
 pub use hol::HolAletheBridge;
 pub use ingest::{ingest_alethe, ingest_problem, ingest_proof};
+pub use tactic::smt_tactic;

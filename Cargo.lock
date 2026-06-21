@@ -1151,9 +1151,8 @@ dependencies = [
 name = "covalence-metamath"
 version = "0.0.0"
 dependencies = [
- "covalence-types",
- "indexmap",
- "thiserror 2.0.18",
+ "covalence-hol",
+ "covalence-sexp",
 ]
 
 [[package]]

@@ -179,7 +179,7 @@ pub async fn prove(goal: &Term, body: &SExpr, scope: &mut Scope, env: &Env) -> R
     prove_with(goal, body, scope, &[], env).await
 }
 
-async fn prove_with(
+pub(crate) async fn prove_with(
     goal: &Term,
     body: &SExpr,
     scope: &mut Scope,

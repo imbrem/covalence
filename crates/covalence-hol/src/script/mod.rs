@@ -31,15 +31,17 @@ mod handle;
 mod inductive;
 mod infer;
 mod scope;
-mod syntax;
-mod tactic;
+pub(crate) mod syntax;
+pub(crate) mod tactic;
+pub(crate) mod theory;
 mod unify;
 
 pub use drv::{CheckCtx, check, core_rules};
 pub use env::{ConstDef, Env};
 pub use scope::Scope;
 pub use syntax::{parse_term, parse_type};
-pub use tactic::{Interp, Tactic};
+pub use tactic::{Hyp, Interp, Tactic};
+pub use theory::{Model, SigOp, Signature, Spec, Theory as TheoryDecl};
 
 use std::sync::Arc;
 
@@ -385,6 +387,84 @@ pub async fn run_async(
                     }
                 }
             }
+            // `(#in MODEL STMT…)` — dispatch: open MODEL's namespace (its
+            // operators + axioms + induction handler) on top of a fresh scope,
+            // run each nested `#thm`, and bind the result under `MODEL.NAME`.
+            // The SAME nested proof text dispatches to whichever model is named
+            // — the surface form of the model-replay (`docs/surface-compiler.md`
+            // §2/§3). Only `#thm` is supported inside a block today (enough to
+            // replay `add_comm`); richer nesting is future work (SKELETONS).
+            Stmt::In { model, body } => {
+                let mut scoped = internal.clone();
+                scoped.open(&model)?;
+                for stmt in &body {
+                    let ch = syntax::list(stmt, "#in body")?;
+                    if syntax::head_sym(ch)? != "#thm" {
+                        return Err(ScriptError::Syntax(format!(
+                            "#in: only `#thm` is supported inside a `(#in {model} …)` block"
+                        )));
+                    }
+                    let nt = run_thm(ch, &scoped).await?;
+                    let qualified = format!("{model}.{}", nt.name);
+                    // Bind under MODEL.NAME in the scoped env (so a later nested
+                    // theorem can reference it) and accumulate for the caller.
+                    scoped.define_lemma(qualified.clone(), nt.thm.clone());
+                    internal.define_lemma(qualified.clone(), nt.thm.clone());
+                    thms.push(NamedThm {
+                        name: qualified,
+                        thm: nt.thm,
+                    });
+                }
+            }
+            // `(#sig …)` — parse + register a signature declaration.
+            Stmt::Sig(sexpr) => {
+                let ch = syntax::list(&sexpr, "#sig")?;
+                let sig = theory::parse_sig(ch, &internal)?;
+                internal.define_signature(sig.name.clone(), sig);
+            }
+            // `(#thy …)` — parse + register a theory declaration (its axioms
+            // validated against the signature's abstract vocabulary).
+            Stmt::Thy(sexpr) => {
+                let ch = syntax::list(&sexpr, "#thy")?;
+                let thy = theory::parse_thy(ch, &internal)?;
+                internal.define_theory_decl(thy.name.clone(), thy);
+            }
+            // `(#model …)` — parse + register a model declaration (interpretation
+            // typechecked at the carrier; no axioms yet — that is `#models`).
+            Stmt::Model(sexpr) => {
+                let ch = syntax::list(&sexpr, "#model")?;
+                let m = theory::parse_model(ch, &internal)?;
+                internal.define_model_decl(m.name.clone(), m);
+            }
+            // `(#models M T …)` — certify `M ⊨ T`: prove each axiom at the
+            // carrier (or pull from a `(from W)` witness), accumulate the
+            // verified theorems under `M.axname`, and `#import` M's dispatch env
+            // so a later `(#in M …)` opens it.
+            Stmt::Models {
+                model,
+                theory: thy_name,
+                clauses,
+            } => {
+                let m = internal.lookup_model_decl(&model).ok_or_else(|| {
+                    ScriptError::Unbound(format!("#models: model `{model}` not declared"))
+                })?;
+                let thy = internal.lookup_theory_decl(&thy_name).ok_or_else(|| {
+                    ScriptError::Unbound(format!("#models: theory `{thy_name}` not declared"))
+                })?;
+                let (dispatch_env, verified) =
+                    theory::run_models(&m, &thy, &clauses, &internal).await?;
+                // Register M's dispatch env as an importable namespace (so
+                // `(#in M …)` can open it) and accumulate the certificates.
+                internal.import(model.clone(), dispatch_env);
+                for nt in verified {
+                    let qualified = format!("{model}.{}", nt.name);
+                    internal.define_lemma(qualified.clone(), nt.thm.clone());
+                    thms.push(NamedThm {
+                        name: qualified,
+                        thm: nt.thm,
+                    });
+                }
+            }
         }
     }
     Ok(LazyTheory {
@@ -482,6 +562,28 @@ enum Stmt {
     Quot(SExpr),
     /// `(#export NAME …)` — the public interface.
     Export(Vec<String>),
+    /// `(#in MODEL STMT…)` — run the nested `#thm` statements with a
+    /// previously-`#import`ed **model** namespace opened on top of scope, so
+    /// `(induct …)`/`+`/`succ`/`0`/the axioms dispatch to that model's
+    /// handlers + interpretation (`docs/surface-compiler.md` §2/§3). Each
+    /// nested theorem is bound under the `MODEL.` prefix so multiple `#in`
+    /// blocks (one per model) can replay the *same* proof without colliding.
+    In { model: String, body: Vec<SExpr> },
+    /// `(#sig NAME (sort α) (op …) …)` — declare a [signature](theory::Signature).
+    Sig(SExpr),
+    /// `(#thy NAME (over SIG) (axiom …) …)` — declare a [theory](theory::Theory).
+    Thy(SExpr),
+    /// `(#model NAME (of SIG) (carrier TY) (OP TERM) … (induct T))` — declare a
+    /// [model](theory::Model) (pure interpretation, no axioms yet).
+    Model(SExpr),
+    /// `(#models M T (axname (#by …)) … | (from WITNESS))` — certify `M ⊨ T`:
+    /// prove each axiom at the carrier, then register `M`'s dispatch env so
+    /// `(#in M …)` opens it.
+    Models {
+        model: String,
+        theory: String,
+        clauses: Vec<SExpr>,
+    },
 }
 
 /// Parse one directive S-expression into a typed [`Stmt`].
@@ -538,6 +640,35 @@ fn parse_stmt(e: &SExpr) -> Result<Stmt, ScriptError> {
                 .map(|item| Ok(syntax::sym(item, "export name")?.to_string()))
                 .collect::<Result<Vec<_>, ScriptError>>()?;
             Stmt::Export(names)
+        }
+        "#in" => {
+            if ch.len() < 2 {
+                return Err(ScriptError::Syntax(
+                    "#in: expected (#in MODEL STMT…)".into(),
+                ));
+            }
+            let model = syntax::sym(&ch[1], "model name")?.to_string();
+            Stmt::In {
+                model,
+                body: ch[2..].to_vec(),
+            }
+        }
+        "#sig" => Stmt::Sig(e.clone()),
+        "#thy" => Stmt::Thy(e.clone()),
+        "#model" => Stmt::Model(e.clone()),
+        "#models" => {
+            if ch.len() < 3 {
+                return Err(ScriptError::Syntax(
+                    "#models: expected (#models MODEL THEORY (axname (#by …)) … | (from W))".into(),
+                ));
+            }
+            let model = syntax::sym(&ch[1], "model name")?.to_string();
+            let theory = syntax::sym(&ch[2], "theory name")?.to_string();
+            Stmt::Models {
+                model,
+                theory,
+                clauses: ch[3..].to_vec(),
+            }
         }
         other => return Err(ScriptError::Syntax(format!("unknown directive: {other}"))),
     })

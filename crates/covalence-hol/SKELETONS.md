@@ -23,7 +23,26 @@ index](../../SKELETONS.md).
   printer, the async core + channel/hole rebuild, `#dep`/`#spawn` semantics,
   error spans + traces, the typed pipeline, async const lookup, term-level
   holes, and the WASM/WIT kernel API.
-- **[`src/surface/SKELETONS.md`](./src/surface/SKELETONS.md)** — the
-  surface-syntax authoring sketch (the elaborator, `#by` tactic grammar, and
-  `#import` content addressing are stubbed above the implemented AST / builtin
-  registry / parser).
+- **`src/surface/` was removed** — the surface-syntax design sketch (AST /
+  builtin registry / parser, with a stubbed elaborator) is superseded by the
+  `script` `#sig`/`#thy`/`#model`/`#models` fusion (`docs/surface-compiler.md
+  §3.0`). The Haskell-like surface is to be rebuilt as the elaborator *down to*
+  `.thy` (`§3.0.4`); recover the old sketch from git history if needed.
+- **[`src/models/SKELETONS.md`](./src/models/SKELETONS.md)** — the minimal
+  surface-compiler core (the `Logic`/`Model` triad + cross-model `add_comm`
+  replay): the `Nat`-specialized `Logic` (no general `Signature`/`admits`/full
+  `HandlerSet`), the unbuilt `#model` directive, the `#thm`-only `#in` block,
+  and the single-theory/two-model/no-iso shape.
+- **[`src/peano/SKELETONS.md`](./src/peano/SKELETONS.md)** — the deep
+  Peano-arithmetic embedding (Phases A–B done: reified locally-nameless FOL
+  syntax + substitution, the `nat` denotation, the PA axioms/rules/induction
+  schema, and the worked `∀x. x+0=x` by induction-on-derivations, all proven).
+  Deferred: the ∀-closed *impredicative* soundness theorem (`prop.rs`-style
+  `inst d := ⟦·⟧` fold — soundness is currently constructive per-derivation),
+  and the `.cov` surface (Phase C: `(pa-induct …)` + β/η-aware `#concl`).
+- **[`src/metamath/SKELETONS.md`](./src/metamath/SKELETONS.md)** — the Metamath
+  substitution engine (expression model + substitution + frames + RPN checker):
+  the not-yet-built `#logic` / `Derivable_L` / `S`-transport correspondence
+  layer, the import-tactic + representation-equivalence metatheorem bridge, the
+  deferred structured-tree encoding, and `set.mm` scale. (The `.mm` *reader*
+  deferrals live in the separate `covalence-metamath` crate.)

@@ -17,13 +17,50 @@
 The three first-class objects, made precise:
 
 ```
+   Logic       a LANGUAGE (typed grammar / type theory — what can be STATED) PLUS
+               derivability rules (what can be PROVED), BUNDLED as one object
+               (e.g. classical FOL, intuitionistic FOL — two logics over the SAME
+                language, related by a language-ISO, not a shared-identity syntax)
    Signature   type constants + TYPE FAMILIES (with KINDS: ty, ty→ty, ty→ty→ty, …)
-               + operation symbols, typed over that type part
-   Specification   the laws / axioms over the signature
+               + operation symbols, typed over that type part — in a logic's language
+   Specification   the laws / axioms over the signature (formulas in the language)
    Theory      = Signature + Specification
-   Model       = a Logic L + objects in L (concrete types / families / ops)
-               + a proof those objects satisfy the spec WHEN TRANSLATED into L
+   Model       interprets the SIGNATURE's symbols as objects — an interpretation of
+               the language (pure semantics; no axioms); models related by ISO-TRANSPORT
+   M ⊨ T       "M is a model of theory T": a PROOF, in a LOGIC, that M's
+               interpretation satisfies T's spec
 ```
+
+**A logic bundles its language and its rules — kept as *internal aspects of one
+object*, deliberately *not* two separately-shared ones.** Conceptually a logic
+has two parts: a *language* (the typed grammar — terms/formulas/kinds — what can
+be *stated*; logicians' "language", `admits` below is its well-typedness
+judgment) and a *derivability relation* (the rules — what can be *proved*).
+Intuitionistic and classical FOL share a language and differ only in `⊢`. **But
+we do *not* reify the language as a separate object that logics reference by
+identity** — "do `L₁` and `L₂` have *the same* language?" asked as an *equality*
+distinguishes isomorphic languages and is **evil** (non-invariant), cutting
+against this doc's own "always reach for isomorphic models". So: language + rules
+**bundle into the `Logic` object**, and "these two logics share a language" is a
+*language-isomorphism* (a morphism up to iso — for int/classical FOL, the identity
+translation plus the `LEM` extension), never an identity. **A model interprets a
+logic's language** (semantics, indifferent to the rules) and models relate by
+**iso-transport**; **`M ⊨ T` is proved in a logic** (which logic is part of the
+claim — a Heyting-valued `M` satisfies the intuitionistic `T`, a Boolean one the
+classical `T`). This is still the Isabelle/Pure shape — a substrate logic (HOL-ω,
+Pure's typed λ-calculus with `≡`) carrying object logics (FOL/PA/…) that add `⊢` —
+just without an evil shared-syntax identity between them.
+
+> **A refinement to revisit (user — note for later).** Reifying a syntax object is
+> *not* evil after all, **if** we view it as the concrete object **constructed by a
+> `#thy`** (its reified formulas/syntax), equipped with *several separate, partial*
+> **projections** into target logics — `⟦·⟧_HOL`, `⟦·⟧_ZF`, … — which are
+> themselves things we reason about (the `peano/` deep embedding's `denote` is one
+> such projection). The earlier "evil" worry was about asserting an *identity*
+> between two logics' languages; a `#thy`-constructed syntax object with reasoned-about
+> *partial projection maps* is legitimate (and is exactly the deep-embedding +
+> multiple-target-logics picture). Hold this for when `#thy` reification + the
+> projection maps are built out.
 
 The decisive feature: **the signature is higher-kinded.** A signature *opens*
 with its type part — type constants of kind `ty`, and **type families** of kind
@@ -36,50 +73,93 @@ with its type part — type constants of kind `ty`, and **type families** of kin
 - **Profunctor**: `p : ty → ty → ty`, then `dimap`.
 
 A **theory** adds the spec (associativity/identities for monoid; the monad laws;
-Spivak's 13 axioms for a complete ordered field). A **model** is a *host logic*
-plus concrete objects in it plus the proof that, *translated into that logic*,
-the objects satisfy the spec. The translation is part of the model — and not
-every signature/spec translates into every logic (§3).
+Spivak's 13 axioms for a complete ordered field). A **model** realizes the
+signature's vocabulary as concrete objects in a host — that realization is an
+interpretation of the *syntax*, and is pure semantics (it does not yet mention
+the spec). The claim that those objects *satisfy the spec* is then a separate
+proof, `M ⊨ T`, carried out in a *logic* over the syntax (§1.1). Not every
+signature is statable in every syntax, and not every spec is provable in every
+logic over it (§3 — the two-axis consumability).
 
 This is the **ML module system / typeclass** concept, made first-class *with
 proved morphisms*: signature ≈ a *signature*/*class*, model ≈ a
 *structure*/*instance*, a definition or proof written against the theory ≈ a
 *functor* (parametric in the model).
 
-### 1.1 The `Logic` trait — an interpreter for *signatures*
+### 1.1 Two seams: `Logic` (language + rules, bundled) and `Model` (interpretation)
 
-The implementation seam (planned), analogous to today's `Tactic`:
+The single `Logic` object bundles its language and its derivability rules (§1 —
+splitting them into a separately-*shared* syntax object would be evil). A `Model`
+is separate, because a model is a genuinely different kind of thing — a structure,
+related to logics by `⊨` and to other models by iso-transport, never quotiented
+by identity. So **two** seams, not three:
 
-- **`Tactic` interprets *proofs*.** Proof steps are *varied per logic* — rewriting,
-  unification, induction, reduction differ — so they're handler-dispatched
-  (`surface-compiler.md §2`, the effect system).
-- **`Logic` interprets *signatures*.** A signature (type constants + type families
-  + operations) is comparatively *uniform and structural*: given a kind-`ty`
-  carrier, a `ty→ty` family, and operation symbols, a `Logic` knows how to realize
-  them as *its own* types/terms — i.e. it is the "translate the signature into `L`"
-  half of a **model** (§1). So `Logic` is a `Tactic`-shaped trait whose job is
-  *signature interpretation*, not proof replay.
+- **`Logic` = language + rules.** `admits` is the *language* aspect (statability,
+  §3.1 — does its grammar's kinds reach this signature? FOL *refuses* a `ty→ty`
+  family). `handlers` is the *rules* aspect (the proof-side dispatch — rewriting,
+  induction, reduction, LEM-or-not — genuinely *varied per logic*). These are two
+  *aspects of one object*; "same language" across logics is a morphism up to iso,
+  not a field they share.
+- **`Model` = meaning.** An interpretation of a logic's *language*: it realizes
+  each signature symbol as a concrete object and lowers surface literals into its
+  carrier. Pure semantics — says nothing about axioms.
 
 ```rust
+/// LOGIC — bundles a LANGUAGE (a type theory: what can be STATED) and DERIVABILITY
+/// rules (what can be PROVED) as ONE object. Language + rules are internal aspects,
+/// NOT two shared objects — "same language?" by identity would be evil.
 trait Logic {
-    /// Can this logic express this signature's kinds + the spec's order? (§3.1)
-    fn admits(&self, sig: &Signature) -> Result<(), Unstatable>;
-    /// Realize the signature's types/families/ops as objects in this logic —
-    /// the interpretation half of a Model. (Proof obligations that the
-    /// realization satisfies the spec are discharged separately, via Tactic.)
+    fn admits(&self, sig: &Signature) -> Result<(), Unstatable>;   // language aspect (§3.1)
+    fn handlers(&self) -> HandlerSet;                              // rules aspect (per logic)
+    /// Literal POLICY (not realization): which literal kinds this logic admits
+    /// and at what target sort. `None` = this logic has no such literal. The
+    /// model (below) realizes an admitted literal into its carrier. (`nat`
+    /// literal = a non-negative `int` literal — one entry.)
+    fn literal_sort(&self, kind: LiteralKind) -> Option<Sort>;     // language aspect
+}
+
+/// MODEL — interprets a signature's symbols as objects (semantics; no axioms);
+/// models relate to each other by ISO-TRANSPORT. Literal-lifting is the model
+/// realizing surface literals into its carrier.
+trait Model {
     fn interpret(&self, sig: &Signature) -> Result<Interpretation, …>;
-    /// The handler set this logic installs (the proof-side dispatch).
-    fn handlers(&self) -> HandlerSet;
+    /// --- LITERAL LIFTING (model-relative; each may FAIL) ---
+    /// A surface literal is lowered into THIS model's carrier — and a model may
+    /// legitimately reject a kind (Err). A Nat literal is a non-negative Int one.
+    fn lift_int(&self, n: &Int)    -> Result<Term, NoLiteral>;
+    fn lift_string(&self, s: &str) -> Result<Term, NoLiteral>;
+    fn lift_bytes(&self, b: &[u8]) -> Result<Term, NoLiteral>;
 }
 ```
 
-The clean split: **`Logic` = signature interpreter (structural, fairly uniform);
-`Tactic`/`HandlerSet` = proof interpreter (varied per logic).** `admits` is the
-statability axis (§3.1) made executable — a logic *refuses* a signature it can't
-express. A **model** is then `(a Logic, the Interpretation it produced, a
-spec-satisfaction proof)`. This is the Rust-level realization of the
-signature/theory/model architecture, and the substrate the HOL-ω migration slots
-into (HOL-ω is another `Logic` impl with a richer `admits`).
+A **model** is `(a Model interpretation over a Logic's language)` alone — *not*
+the satisfaction proof. **`M ⊨ T`** is a separate object: a proof, **in a
+`Logic`**, that `M`'s interpretation satisfies `T`'s spec (`surface-compiler.md
+§3.0.2`; it is a `.thm`, and which logic it's proved in is part of the claim). So
+the seams collaborate as: `Logic` gates *statability* and supplies *proof power*,
+`Model` supplies *meaning*, and `M ⊨ T` is the theorem that ties a model to a
+theory. (This is what Track 1 built: its `Logic` bundles `nat_model()` =
+interpret + handlers, with no separate syntax object.)
+
+**Literal lifting is a `Model` method — model-relative and fallible.** The
+surface literal `3` is not one fixed kernel term; the *model* decides how to lower
+it into its carrier (`surface-compiler.md §5`). The *logic* only fixes the
+**policy** — whether the literal is admitted and at what target *sort*
+(`literal_sort` above) — while the **model** fixes the *value* (the carrier term);
+two models of one theory in one logic lower `3` differently
+(`surface-compiler.md §3.0.5`). For `nat/self` (kernel `nat`)
+`lift_int(3)` is the built-in literal; for **`nat/unary`** (`list unit`) it runs a
+model-supplied **builtin-nat → unary conversion** (`3 ↦ cons unit.nil (cons
+unit.nil (cons unit.nil nil))`); for a reified-SOA model it is the object numeral
+`S(S(S 0))`. A model with no sensible lift returns `Err(NoLiteral)` — a
+diagnostic, not a silent coercion. (A **Nat** literal is exactly a non-negative
+**Int** literal, so there is a single `lift_int`; string/byte are the same shape.)
+This is the `covalence-pure` literal-as-lifted-observation mechanism
+(`covalence-pure.md §3`) surfaced as a `Model` responsibility. This
+`Logic`+`Model` two-seam split is the Rust-level realization of the
+logic/theory/model architecture, and the substrate the HOL-ω migration slots into
+(HOL-ω is a new `Logic` whose bundled language has a richer `admits`, *reusing*
+the existing `Model` seam).
 
 ---
 
@@ -298,7 +378,7 @@ transport over the FOL framework from rung 2):
 | **Robinson Q** | PA minus induction (finitely axiomatized) | the base of essential undecidability / Gödel; the weakest "arithmetic" |
 | **Presburger** | FO theory of `(ℕ, +)` | **decidable** (a real decision procedure to build — a handler) |
 | **Tarski RCF** | real-closed fields (FO theory of `(ℝ, +, ·, <)`) | **decidable** by quantifier elimination — the decision procedure behind real-algebra automation; pairs with the analysis/SMT layer (§5.3) |
-| **ZF / ZFC** | first-order set theory | the long-horizon big goal — the foundational target the metatheory ladder climbs toward |
+| **ZF / ZFC / Tarski-Grothendieck** | first-order set theory of `∈` (ZFC = ZF + choice; **TG** = ZFC + universes/inaccessibles) | the long-horizon big goal. ZF/ZFC/TG differ *only in axioms* — all ride the same FOL framework, so reifying their **syntax + derivability is essentially free** |
 
 The decidable ones (Presburger, RCF) are doubly valuable: they're object theories
 *and* they yield **decision-procedure handlers** the surface can dispatch to
@@ -308,6 +388,133 @@ yields a linear-arithmetic handler.
 **Near-term commitment:** rung 1 (`prop.cov` + induction-on-derivations, in
 progress), then the FOL framework + PA (rung 2). SOA, the FO-theory catalogue, and
 analysis-in-SOA follow once the FOL tooling is solid.
+
+### 5.5 Two pillars of metatheory, and the PA→SOA→ZF chain
+
+Doing metatheory *here* rests on two pillars, both living in `init/prop.rs`'s
+proven, TCB-free reify-syntax-as-HOL-data lane (the substrate PA's `peano/fol.rs`
+already established):
+
+1. **Induction on derivations → interpretation.** `PA ⟹ SOA ⟹ ZF` are *relative
+   interpretations*, proved **by induction on derivations** (translate each axiom,
+   show its translation is provable in the target, check each rule is preserved).
+   Two grades: the **constructive / per-derivation** form (a Rust recursion over
+   how derivations are built — what PA's `Derivation` does today for `PA⟹HOL`) and
+   the **internalized** single HOL metatheorem (`⊢ Derivable_X ⌜A⌝ ⟹ …`, via the
+   impredicative rule-induction — `prop_induction` is the proven template).
+   **Interpretation is *syntactic*: it does NOT require the target theory to have a
+   HOL model.** So the whole chain is provable from reified syntax + the
+   rule-induction engine.
+
+   > **The proper-deep-embedding test (user).** The internalized form is not just
+   > "nicer" — it is what a *proper* deep embedding **requires**. `Derivable_PA`
+   > must be **pure syntactic data** (a derivation carries *no* HOL `Thm`), and the
+   > projection to HOL is **one step**: apply the soundness theorem to a finished PA
+   > derivation. The acceptance test: *you derive in PA without ever building the
+   > HOL theorem, then project in a single move.* PA's current `Derivation` (a
+   > formula paired with its `Thm`, built lock-step) is the *shallow hybrid* that
+   > **fails** this test — it proves the HOL theorem *while* deriving. Fixing this
+   > (pure `Derivable_PA` + the one-step soundness projection) is the priority for
+   > the PA thread; it is exactly the deferred `prop.rs`-style internalized
+   > soundness theorem, promoted from afterthought to primary structure.
+
+2. **Representation equivalence → syntactic metatheory.** A metatheorem *in HOL*
+   that two syntax/substitution representations agree (de Bruijn ↔
+   metavariable/Metamath ↔ named ↔ HOAS). This is how you change representation
+   soundly, transport substitution lemmas, and — load-bearing — **admit WASM
+   decision procedures**: an untrusted fast oracle works on an *efficient*
+   representation, and proving *that representation ≅ kernel-syntax* in HOL lets its
+   results transport soundly (the observer substrate at the *syntactic* level).
+
+**We are not in the business of proving ZF/ZFC *sound* (scoped truths, user).**
+The standard theorem here is "**φ holds in ZFC**", *not* "φ holds" — truths are
+**scoped to a theory** (`docs/VISION.md`, metatheory-as-default). The outer HOL is
+not there to certify an absolute model of ZF; it is there to reason about
+**transport between scopes** — "what holds in ZF holds in HOL" (under the relevant
+interpretation), "what holds in PA holds in ZF", and so on. Those transports are
+the `Derivable_X ⟹ …` interpretation theorems of pillar 1, and (per pillar 1) they
+are **syntactic — they need no model of the source or target.** So the working mode
+is: derive within a scope, and transport between scopes; *absolute* soundness is
+not the goal.
+
+**The PA/SOA-vs-ZF asymmetry, in that light.** PA denotes into HOL `nat` and SOA
+into HOL `nat → bool`, so they *happen* to have unconditional HOL models (SOA cheap:
+HOL has the sets) — handy, but still just one scope (`HOL`) among the targets. **ZF
+has no HOL model without added strength** (Gödel: HOL ⊬ `Con(ZF)`), but this rarely
+bites, because we want scoped ZF truths + transport, not a HOL model of ZF. *If* one
+ever wants an absolute model, it is **gated on a universe** —
+`⊢ (∃ inaccessible) ⟹ Model(ZFC)` — which is exactly what **Tarski-Grothendieck**
+supplies (the Mizar move), making TG the natural *top*. But that is the exception,
+not the program.
+
+**Metamath import** is where both pillars meet: `set.mm` is FOL + ZFC, so the
+reified FOL+ZFC framework is its object substrate, and a Metamath proof is replayed
+as an **untrusted frontend → kernel re-derivation** (the Alethe pattern). Metamath's
+metalogic is a trivial *metavariable-substitution + distinct-variable* engine;
+encoding it and proving `mm_subst ≅ locally-nameless` (pillar 2) is the sound
+import bridge — and doubles as the first, cleanest instance of the WASM-decision-
+procedure admission protocol. (Replay/verification is proof-theoretic, so it needs
+no ZF model; only *transporting* a `set.mm` theorem into a HOL fact hits the
+universe wall.)
+
+**Recommended build order:** internalized rule-induction for PA (small: template +
+two-sorted Church fold) → generalize to the FOL `Derivable` engine (interpretations
+become first-class) → SOA (cheap denotation) → reify ZF/ZFC/TG (axioms only) +
+`SOA⟹ZF` → the Metamath substitution engine + its `≅ locally-nameless` metatheorem.
+
+### 5.6 Metamath as the shared logic-definition substrate (user reframe)
+
+A sharpening that ties the pillars together and elevates `covalence-metamath`
+from "an import target" to **the substrate**: a **logic *is* a Metamath
+database** — symbols, typed variables, and its axioms/inference rules as
+substitution schemas. The pure metavariable-substitution metalogic is universal
+and theory-agnostic, so prop calc, FOL, ZFC, PA, modal logics all become
+databases in *one shared syntax everyone writes their logic in*. (This is why the
+crate's medium is `SExpr` and the encoding is faithful flat sequences — it's the
+shared substrate; the HOL kernel, structured-tree encodings, and set.mm scale are
+all **optimizations over it**.) Four locking pieces:
+
+1. **The standard theorem's *meaning* is an existence claim.** Asserting `P` in a
+   Metamath-defined logic `L` means **`∃ d. Derivable_L(P)`** — there *exists* a
+   (possibly astronomically long) Metamath derivation. We never exhibit `d`, only
+   certify it exists. This is the rigorous form of the scoped-truth "`P` holds in
+   `L`" (§5.5): a HOL-kernel proof, a WASM oracle, a replayed set.mm proof are each
+   just a *more practical certificate of the same existence claim*.
+2. **Metatheorems = existence-transport via a rewriting function `S`.** The shape
+   is `Derivable_ZF(A) ⟹ Derivable_GT(S(A))`, where `S` is a computable rewrite on
+   Metamath `SExpr` terms, proved **by induction on the source derivation** (each
+   rule instance → an image derivation under `S`) — so the giant target derivation
+   is *certified to exist without being built*. This is pillar 1's interpretation,
+   now **native in the substrate**; PA→SOA→ZF→GT and model↔model become `S`-functions
+   over databases.
+3. **The correspondence `Metamath-L ≅ native-L` is one theorem, two directions.**
+   *Down / validation:* `Metamath-PA ≅ our PA` anchors that the `.mm` *definition*
+   of PA means what we expect (without it a database is just symbols + schemas).
+   *Up / acceleration:* the same `≅` lets native PA, the HOL kernel, and WASM
+   decision procedures **optimize** `Derivable_{mmL}` goals — run fast natively,
+   transport the result across the correspondence. This is the
+   `≡ iso-dispatch ≡ accelerator-discharge` identity (§2), now anchored on the
+   Metamath substrate, and the same admission protocol as pillar 2.
+4. **Convergence with `.logic` (§3.0.5 of `surface-compiler.md`) — the unifying
+   answer for `#logic`.** A `.logic` — the *data* parameterizing a generic `Logic`
+   impl for a family — **is a Metamath database**: axioms + rules as substitution
+   schemas. So "define a logic" and "write a Metamath database" are the same act,
+   and the HOL bridge is `S`-into-`IsThm` (the shallow-embed-future target).
+
+**Crate boundary (user, important).** Because Metamath *is* the logic-definition
+substrate, **the engine belongs first-class in `covalence-hol`** — the `SExpr`
+expression model, substitution, frame/DV, the verifier, `Derivable_L`, the
+`S`-rewrite transport, and the `Metamath-L ≅ native-L` correspondence. That is core
+to defining logics and doing metatheory, so it must not live off in a side crate.
+**`covalence-metamath` is demoted to the format/IO reader**: compressed-proof
+decoding, `.mm` file parsing, `$[ $]` file inclusion, and set.mm-scale ingestion —
+the messy format concerns we *don't* want cluttering `covalence-hol`. So the move
+is: relocate the engine (`expr`/`subst`/`database`-model/`verify`) into
+`covalence-hol/src/metamath/`, and slim `covalence-metamath` to a frontend that
+depends on `covalence-hol` and produces its databases. **Near-term value** then
+sits in `covalence-hol`: *define logics* (FOL, a real ZFC fragment, modal logics as
+databases) and study `Derivable_L` / `S` / the correspondence — *not* racing to
+set.mm-scale ingestion (one consumer's optimization, and the reader crate's job).
 
 ---
 

@@ -31,13 +31,25 @@
 //!
 //! ## Two implementations, one API (the mirror principle)
 //!
-//! 1. **Shallow** — [`crate::init::nat::Hol`]: a PA term *is* the HOL
+//! 1. **Shallow** — [`shallow::Hol`]: a PA term *is* the HOL
 //!    `nat` term and a PA proof *is* a HOL [`Thm`](covalence_core::Thm)
 //!    about `nat`. PA reasoning collapses to HOL reasoning. This is the
 //!    "trivial" implementation — it exists today.
-//! 2. **Deep** (future) — a syntactic `PaTerm` / `PaDerivation` AST.
-//!    `Proof = PaDerivation`: the methods *build proof objects* you can
-//!    serialise, hash, and transport, rather than HOL theorems.
+//! 2. **Deep** — the reified embedding in [`fol`] / [`sem`] / [`deep`] /
+//!    [`pa`]: PA syntax is **HOL data** (locally-nameless `Fol` AST + a
+//!    two-sorted HOAS Church carrier [`sem`]), PA formulas have a single-fold
+//!    denotation `⟦·⟧` into HOL `nat`/`bool`, and **derivability is the
+//!    impredicative predicate** `Derivable_PA A := ∀d. Closed_PA d ⟹ d A`
+//!    ([`pa::derivable`]) — *pure syntactic data, no `Thm` inside*. The
+//!    **soundness/transport theorem** `⊢ Derivable_PA ⌜A⌝ ⟹ ⟦A⟧`
+//!    ([`pa::soundness`]) is proved **once**, by rule induction (each PA axiom's
+//!    denotation is its proven [`crate::init::nat`] theorem; modus ponens
+//!    forwards to the kernel; the induction schema discharges to
+//!    [`Thm::nat_induct`](covalence_core::Thm::nat_induct)). **Projection**
+//!    ([`pa::project`]) is that theorem applied to a finished derivation —
+//!    one step. This is the *proper* deep embedding: you derive in PA without
+//!    ever building the HOL theorem, then project in a single move
+//!    (`docs/VISION.md` §2; `docs/theories-models-and-logics.md §5.5`).
 //!
 //! Because both implement the *same* trait, a generic routine written
 //! against [`Peano`] runs against either. The bridge between them is a
@@ -55,6 +67,10 @@
 //! the last postulate). So a shallow PA proof is an outright HOL
 //! theorem — PA is sound in HOL with nothing assumed.
 
+pub mod deep;
+pub mod fol;
+pub mod pa;
+pub mod sem;
 pub mod shallow;
 
 pub use shallow::Hol;

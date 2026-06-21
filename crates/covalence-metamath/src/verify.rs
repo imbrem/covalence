@@ -14,10 +14,10 @@
 
 use std::collections::BTreeSet;
 
-use crate::metamath::database::{Assertion, Database, Statement};
-use crate::metamath::error::MmError;
-use crate::metamath::expr::{Expr, body_of, render, typecode_of};
-use crate::metamath::subst::{Subst, apply_subst, vars_in_body};
+use crate::database::{Assertion, Database, Statement};
+use crate::error::MmError;
+use crate::expr::{Expr, body_of, render, typecode_of};
+use crate::subst::{Subst, apply_subst, vars_in_body};
 
 /// Verify every `$p` theorem in the database. Returns the number verified.
 pub fn verify_all(db: &Database) -> Result<usize, MmError> {
@@ -52,7 +52,7 @@ pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmEr
         match stmt {
             Statement::Float(f) => {
                 // Push the expression `typecode var`.
-                stack.push(crate::metamath::expr::make_expr(
+                stack.push(crate::expr::make_expr(
                     &f.typecode,
                     [f.var.as_str()],
                 ));

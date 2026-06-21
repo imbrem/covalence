@@ -48,12 +48,14 @@ index](../../SKELETONS.md).
   quantifier/induction/Leibniz **derivation constructors** (the motive
   β-capture wall — see the peano registry for the corrected diagnosis) and the
   `.cov` surface (Phase C: `(pa-induct …)` + β/η-aware `#concl`).
-- **[`src/metamath/SKELETONS.md`](./src/metamath/SKELETONS.md)** — the Metamath
-  substitution engine (expression model + substitution + frames + RPN checker):
-  the not-yet-built `#logic` / `Derivable_L` / `S`-transport correspondence
-  layer, the import-tactic + representation-equivalence metatheorem bridge, the
-  deferred structured-tree encoding, and `set.mm` scale. (The `.mm` *reader*
-  deferrals live in the separate `covalence-metamath` crate.)
+- The **Metamath substitution engine** (expression model + substitution +
+  frames + RPN checker) now lives in the lower, HOL-free
+  [`covalence-metamath`](../covalence-metamath/SKELETONS.md) crate (the engine
+  is pure `SExpr` manipulation, so `covalence-hol` depends on *it*). Its engine-
+  and reader-side deferrals are tracked there; the consumer-side bridge work
+  (the `#logic` / `Derivable_L` correspondence, the import tactic +
+  representation-equivalence metatheorem) is tracked in the `metalogic` and
+  `peano` registries below.
 - **[`src/metalogic/SKELETONS.md`](./src/metalogic/SKELETONS.md)** — databases
   as first-class HOL data + the relation lattice (`docs/theories-models-and-logics.md`
   §5.6; the first cut of `metamath`'s deferred `Derivable_L` layer). Done:

@@ -31,7 +31,10 @@ pub mod hash;
 pub mod hol_light_obs;
 pub mod init;
 pub mod metalogic;
-pub mod metamath;
+// The Metamath engine + `.mm` reader live in the lower, HOL-free
+// `covalence-metamath` crate; re-export it so `crate::metamath::…` (the peano
+// bridge, the metalogic replay) keeps resolving.
+pub use covalence_metamath as metamath;
 pub mod models;
 pub mod monoidal;
 pub mod peano;

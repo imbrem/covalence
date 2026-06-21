@@ -9,14 +9,14 @@
 //! lexer is a hand-rolled scanner.
 //!
 //! The engine this reader builds against (the expression model, substitution,
-//! frames, and the RPN checker) lives in [`covalence_hol::metamath`]; this
-//! module only constructs a [`covalence_hol::metamath::Database`] from source.
+//! frames, and the RPN checker) lives in this crate; this
+//! module only constructs a [`crate::Database`] from source.
 
 use covalence_sexp::SExpr;
 
-use covalence_hol::metamath::database::{Database, FloatHyp, Hypothesis};
-use covalence_hol::metamath::error::MmError;
-use covalence_hol::metamath::expr::from_symbols;
+use crate::database::{Database, FloatHyp, Hypothesis};
+use crate::error::MmError;
+use crate::expr::from_symbols;
 
 /// Parse an uncompressed `.mm` source string into a [`Database`].
 pub fn parse(input: &str) -> Result<Database, MmError> {
@@ -250,7 +250,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_hol::metamath::expr::{render, typecode_of};
+    use crate::expr::{render, typecode_of};
 
     #[test]
     fn parse_constants_and_vars() {
@@ -270,7 +270,7 @@ mod tests {
     fn float_parsed() {
         let db = parse("$c wff $. $v ph $. wph $f wff ph $.").unwrap();
         let stmt = db.statement_by_label("wph").unwrap();
-        assert!(matches!(stmt, covalence_hol::metamath::database::Statement::Float(_)));
+        assert!(matches!(stmt, crate::database::Statement::Float(_)));
     }
 
     #[test]

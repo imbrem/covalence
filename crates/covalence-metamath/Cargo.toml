@@ -4,7 +4,9 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-# The engine (expression model, substitution, frames, RPN checker, MmError)
-# lives in covalence-hol::metamath; this crate is the `.mm` reader on top of it.
-covalence-hol = { path = "../covalence-hol" }
+# The Metamath engine (expression model, substitution, frames, RPN checker,
+# MmError) AND the `.mm` reader both live here — this is the lower, HOL-free
+# crate. `covalence-hol` depends on it (a HOL-backed `Database` consumer), not
+# the other way around.
 covalence-sexp = { path = "../covalence-sexp" }
+thiserror = "2"

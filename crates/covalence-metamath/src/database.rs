@@ -12,8 +12,8 @@
 
 use std::collections::HashMap;
 
-use crate::metamath::error::MmError;
-use crate::metamath::expr::Expr;
+use crate::error::MmError;
+use crate::expr::Expr;
 
 /// A floating hypothesis (`$f`): a variable's typecode.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,7 +363,7 @@ impl Database {
         f: &mut impl FnMut(&str),
     ) -> Result<(), MmError> {
         let syms =
-            crate::metamath::expr::expr_symbols(expr).ok_or_else(|| MmError::MalformedExpr {
+            crate::expr::expr_symbols(expr).ok_or_else(|| MmError::MalformedExpr {
                 label: label.to_string(),
                 message: "expression contains a non-symbol element".into(),
             })?;

@@ -157,7 +157,12 @@ fn det_step(
         let f_c = a_eq.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
         let mut f_cong = Thm::refl(f_c)?;
         for eq in &comp_eqs {
-            let rhs = f_cong.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+            let rhs = f_cong
+                .concl()
+                .as_eq()
+                .ok_or(Error::NotAnEquation)?
+                .1
+                .clone();
             f_cong = f_cong.trans(rhs.rw_all(eq)?)?;
         }
         a_eq.trans(f_cong)?.trans(b_eq.sym()?)

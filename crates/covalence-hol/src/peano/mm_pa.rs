@@ -138,11 +138,7 @@ pub fn database() -> Result<Database, MmError> {
 
     // --- term-formation axioms ($a term …) ----------------------------------
     db.add_assertion("t.0".into(), make_expr("term", ["0"]), None)?;
-    db.add_assertion(
-        "t.S".into(),
-        make_expr("term", ["(", "S", "x", ")"]),
-        None,
-    )?;
+    db.add_assertion("t.S".into(), make_expr("term", ["(", "S", "x", ")"]), None)?;
     db.add_assertion(
         "t.add".into(),
         make_expr("term", ["(", "x", "+", "y", ")"]),
@@ -176,16 +172,8 @@ pub fn database() -> Result<Database, MmError> {
         make_expr("wff", ["(", "ph", "\\/", "ps", ")"]),
         None,
     )?;
-    db.add_assertion(
-        "w.all".into(),
-        make_expr("wff", ["A.", "x", "ph"]),
-        None,
-    )?;
-    db.add_assertion(
-        "w.ex".into(),
-        make_expr("wff", ["E.", "x", "ph"]),
-        None,
-    )?;
+    db.add_assertion("w.all".into(), make_expr("wff", ["A.", "x", "ph"]), None)?;
+    db.add_assertion("w.ex".into(), make_expr("wff", ["E.", "x", "ph"]), None)?;
 
     // --- inference rules: modus ponens + generalisation ---------------------
     db.push_scope();
@@ -266,7 +254,7 @@ pub fn database() -> Result<Database, MmError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metamath::{verify_all, verify_assertion, Statement};
+    use crate::metamath::{Statement, verify_all, verify_assertion};
 
     /// The database builds and is scope-balanced.
     #[test]

@@ -102,14 +102,14 @@ pub mod recursion;
 pub mod regex;
 pub mod rel;
 pub mod set;
-pub mod sexpr;
 pub mod sexp;
+pub mod sexpr;
 pub mod stream;
 pub mod string;
 pub mod tauto;
 pub mod tree;
-pub mod utf8;
 pub mod utf16;
+pub mod utf8;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).

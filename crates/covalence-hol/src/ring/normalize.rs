@@ -265,7 +265,10 @@ impl RingNormalizer {
 
     /// Whether monomial `m` (a product spine) has a `0` factor.
     fn mono_has_zero(&self, m: &Term) -> bool {
-        self.mul_engine.leaves(m).iter().any(|f| f == &self.ops.zero)
+        self.mul_engine
+            .leaves(m)
+            .iter()
+            .any(|f| f == &self.ops.zero)
     }
 
     /// `⊢ m = 0` for a monomial containing a `0` factor (by `mul_zero` after

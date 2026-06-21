@@ -488,7 +488,10 @@ impl<'e> Elab<'e> {
         } else {
             Term::spec_rep(spec, args)
         };
-        let head = (ETerm::Lit(coercion.clone()), self.from_type(&coercion.type_of()?)?);
+        let head = (
+            ETerm::Lit(coercion.clone()),
+            self.from_type(&coercion.type_of()?)?,
+        );
         if ch.len() == 3 {
             self.apply_args(head, &ch[2..])
         } else {
@@ -600,9 +603,10 @@ fn ety_inst(ty: &Type, map: &HashMap<String, ETy>) -> ETy {
         TypeKind::Spec(s, args) => {
             ETy::Spec(s.clone(), args.iter().map(|a| ety_inst(a, map)).collect())
         }
-        TypeKind::Tycon(n, args) => {
-            ETy::Tycon(n.to_string(), args.iter().map(|a| ety_inst(a, map)).collect())
-        }
+        TypeKind::Tycon(n, args) => ETy::Tycon(
+            n.to_string(),
+            args.iter().map(|a| ety_inst(a, map)).collect(),
+        ),
         // Bound type variables don't appear in a closed operator type.
         _ => ETy::TFree("?".into()),
     }
@@ -716,8 +720,7 @@ mod tests {
         let env = poly_env();
         let scope = Scope::new();
         // (= (f 0) (f (f 0)))  —  f at nat (inner) and f at bool (outer).
-        let t =
-            elaborate_term(&parse("(= (f 0) (f (f 0)))"), &scope, &env).expect("elaborate");
+        let t = elaborate_term(&parse("(= (f 0) (f (f 0)))"), &scope, &env).expect("elaborate");
         assert_eq!(t.type_of().unwrap(), Type::bool());
     }
 
@@ -753,8 +756,7 @@ mod tests {
         assert_eq!(rep.type_of().unwrap(), want_rep.type_of().unwrap());
 
         // coprod nat bool (two type args).
-        let abs2 =
-            elaborate_term(&parse("(spec-abs (coprod nat bool))"), &scope, &env).unwrap();
+        let abs2 = elaborate_term(&parse("(spec-abs (coprod nat bool))"), &scope, &env).unwrap();
         assert_eq!(
             abs2,
             Term::spec_abs(defs::coprod_spec(), vec![Type::nat(), Type::bool()])
@@ -809,13 +811,11 @@ mod tests {
         let scope = Scope::new();
 
         // bare abs / rep at `(option 'a)`.
-        let script_abs =
-            elaborate_term(&parse("(spec-abs (option 'a))"), &scope, &env).unwrap();
+        let script_abs = elaborate_term(&parse("(spec-abs (option 'a))"), &scope, &env).unwrap();
         let core_abs = cov::term_str(core, "(#abs option ('a))").unwrap();
         assert_eq!(script_abs, core_abs);
 
-        let script_rep =
-            elaborate_term(&parse("(spec-rep (option 'a))"), &scope, &env).unwrap();
+        let script_rep = elaborate_term(&parse("(spec-rep (option 'a))"), &scope, &env).unwrap();
         let core_rep = cov::term_str(core, "(#rep option ('a))").unwrap();
         assert_eq!(script_rep, core_rep);
 
@@ -862,8 +862,7 @@ mod tests {
         let scope = Scope::new();
         let want = Term::blob(vec![1u8, 2, 3]);
 
-        let via_form =
-            elaborate_term(&parse("(blob b\"\\x01\\x02\\x03\")"), &scope, &env).unwrap();
+        let via_form = elaborate_term(&parse("(blob b\"\\x01\\x02\\x03\")"), &scope, &env).unwrap();
         assert_eq!(via_form, want);
         assert_eq!(via_form.type_of().unwrap(), Type::bytes());
 

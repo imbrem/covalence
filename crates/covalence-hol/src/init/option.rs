@@ -248,13 +248,7 @@ pub fn case_none(alpha: &Type, beta: &Type, d: &Term, f: &Term) -> Result<Thm> {
 /// δ-unfold the head `option_case` of `option_case d f o`, returning
 /// `(g, ⊢ option_case d f o = coprod_case f g (rep o))` where the carried
 /// `g = λ_:unit. d` is the (reduced) `none` branch.
-fn case_unfold(
-    alpha: &Type,
-    beta: &Type,
-    d: &Term,
-    f: &Term,
-    o: &Term,
-) -> Result<(Term, Thm)> {
+fn case_unfold(alpha: &Type, beta: &Type, d: &Term, f: &Term, o: &Term) -> Result<(Term, Thm)> {
     let oc = option_case(alpha.clone(), beta.clone())
         .apply(d.clone())?
         .apply(f.clone())?
@@ -388,9 +382,7 @@ fn cases_some_branch(
         .sym()?
         .eq_mp(o_eq_some)?; // ⊢ gpred x
     let intro = exists_intro(gpred, x.clone(), at)?.or_intro_l(goal_none.clone())?; // ⊢ goal
-    let step = intro
-        .imp_intro(&ante)?
-        .all_intro("__cx", alpha.clone())?;
+    let step = intro.imp_intro(&ante)?.all_intro("__cx", alpha.clone())?;
     let full = goal_some.clone().or(goal_none.clone())?;
     exists_elim(Thm::assume(ex_inl.clone())?, full, step)?.imp_intro(&ex_inl)
 }
@@ -429,9 +421,7 @@ fn cases_none_branch(
         .trans(inr_eq.cong_arg(abs)?)? // ⊢ o = abs (inr unit.nil)
         .trans(none_u.sym()?)?; // ⊢ o = none
     let inject = o_eq_none.or_intro_r(goal_some.clone())?; // ⊢ goal
-    let step = inject
-        .imp_intro(&ante)?
-        .all_intro("__cu", unit.clone())?;
+    let step = inject.imp_intro(&ante)?.all_intro("__cu", unit.clone())?;
     let full = goal_some.clone().or(goal_none.clone())?;
     exists_elim(Thm::assume(ex_inr.clone())?, full, step)?.imp_intro(&ex_inr)
 }
@@ -596,7 +586,10 @@ mod tests {
         let f = Term::free("f", Type::fun(a.clone(), b.clone()));
         let x = Term::free("x", a.clone());
         let thm = case_some(&a, &b, &d, &f, &x).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs(), "proved, not postulated");
+        assert!(
+            thm.hyps().is_empty() && thm.has_no_obs(),
+            "proved, not postulated"
+        );
         let lhs = option_case(a.clone(), b.clone())
             .apply(d)
             .unwrap()
@@ -639,7 +632,11 @@ mod tests {
         assert!(thm.hyps().is_empty() && thm.has_no_obs());
         let some_x = Term::app(some(a.clone()), x.clone());
         let some_y = Term::app(some(a.clone()), y.clone());
-        let expected = some_x.equals(some_y).unwrap().imp(x.equals(y).unwrap()).unwrap();
+        let expected = some_x
+            .equals(some_y)
+            .unwrap()
+            .imp(x.equals(y).unwrap())
+            .unwrap();
         assert_eq!(thm.concl(), &expected);
     }
 

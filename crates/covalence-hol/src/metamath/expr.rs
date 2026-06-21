@@ -80,7 +80,11 @@ mod tests {
     fn roundtrip() {
         let e = make_expr("wff", ["(", "ph", "->", "ps", ")"]);
         assert_eq!(typecode_of(&e), Some("wff"));
-        let body: Vec<&str> = body_of(&e).unwrap().iter().map(|s| s.as_symbol().unwrap()).collect();
+        let body: Vec<&str> = body_of(&e)
+            .unwrap()
+            .iter()
+            .map(|s| s.as_symbol().unwrap())
+            .collect();
         assert_eq!(body, ["(", "ph", "->", "ps", ")"]);
         assert_eq!(render(&e), "wff ( ph -> ps )");
     }

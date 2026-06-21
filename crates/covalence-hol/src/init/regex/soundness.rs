@@ -18,7 +18,12 @@ fn denote_nf(alpha: &Type, r: &Term) -> Result<Thm> {
 
 /// The β-normal form term of `⟦r⟧`.
 fn denote_val(alpha: &Type, r: &Term) -> Result<Term> {
-    Ok(denote_nf(alpha, r)?.concl().as_eq().expect("beta_nf eq").1.clone())
+    Ok(denote_nf(alpha, r)?
+        .concl()
+        .as_eq()
+        .expect("beta_nf eq")
+        .1
+        .clone())
 }
 
 /// `eps` clause: `⊢ mem nil ⟦eps⟧`, given `mem_eps : ⊢ mem nil ε = (nil =
@@ -154,13 +159,19 @@ pub(super) fn discharge_seq(alpha: &Type, m: &Monoid, d_pred: &Term) -> Result<T
         .and_intro(Thm::refl(cat.clone())?)?;
 
     // Inner ∃v: λv. body[w1, v].
-    let inner_pred = Term::abs(wty.clone(), covalence_core::subst::close(&body(&w1, &v)?, "_lc_y"));
+    let inner_pred = Term::abs(
+        wty.clone(),
+        covalence_core::subst::close(&body(&w1, &v)?, "_lc_y"),
+    );
     let at_v = crate::init::eq::beta_expand(&inner_pred, w2.clone(), at_w)?;
     let inner_ex = crate::init::logic::exists_intro(inner_pred, w2.clone(), at_v)?; // ⊢ ∃v. body[w1, v]
 
     // Outer ∃u: λu. ∃v. body[u, v].
     let outer_body = body(&u, &v)?.exists("_lc_y", wty.clone())?;
-    let outer_pred = Term::abs(wty.clone(), covalence_core::subst::close(&outer_body, "_lc_x"));
+    let outer_pred = Term::abs(
+        wty.clone(),
+        covalence_core::subst::close(&outer_body, "_lc_x"),
+    );
     let at_u = crate::init::eq::beta_expand(&outer_pred, w1.clone(), inner_ex)?;
     let outer_ex = crate::init::logic::exists_intro(outer_pred, w1.clone(), at_u)?; // ⊢ ∃u v. …
 
@@ -255,18 +266,25 @@ pub(super) fn discharge_star_step(alpha: &Type, m: &Monoid, d_pred: &Term) -> Re
         .clone()
         .and_intro(mem_w2_star.clone())?
         .and_intro(Thm::refl(cat.clone())?)?;
-    let inner_pred = Term::abs(wty.clone(), covalence_core::subst::close(&body(&w1, &v)?, "_lc_y"));
+    let inner_pred = Term::abs(
+        wty.clone(),
+        covalence_core::subst::close(&body(&w1, &v)?, "_lc_y"),
+    );
     let at_v = crate::init::eq::beta_expand(&inner_pred, w2.clone(), at_w)?;
     let inner_ex = crate::init::logic::exists_intro(inner_pred, w2.clone(), at_v)?;
     let outer_body = body(&u, &v)?.exists("_lc_y", wty.clone())?;
-    let outer_pred = Term::abs(wty.clone(), covalence_core::subst::close(&outer_body, "_lc_x"));
+    let outer_pred = Term::abs(
+        wty.clone(),
+        covalence_core::subst::close(&outer_body, "_lc_x"),
+    );
     let at_u = crate::init::eq::beta_expand(&outer_pred, w1.clone(), inner_ex)?;
     let outer_ex = crate::init::logic::exists_intro(outer_pred, w1.clone(), at_u)?;
     let mem_cat_concat = mem_concat.sym()?.eq_mp(outer_ex)?; // {…} ⊢ mem (cat)(⟦x⟧·⟦x⟧*)
 
     // ⟦x⟧·⟦x⟧* ⊆ ⟦x⟧* (pre-fixpoint), so mem (cat) ⟦x⟧*.
     let sub = lang::star_concat_closed(m, &den_x)?; // ⊢ subset (⟦x⟧·⟦x⟧*) ⟦x⟧*
-    let imp = crate::init::set::subset_elim(&wty, &concat_ls, &star_lang, sub)?.all_elim(cat.clone())?;
+    let imp =
+        crate::init::set::subset_elim(&wty, &concat_ls, &star_lang, sub)?.all_elim(cat.clone())?;
     let mem_cat_star = imp.imp_elim(mem_cat_concat)?; // {…} ⊢ mem (cat) ⟦x⟧*
 
     // Re-fold to D (star x)(cat w1 w2) (β-normalizes fully to mem (cat) ⟦x⟧*),

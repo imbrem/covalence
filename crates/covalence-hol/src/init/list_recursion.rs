@@ -80,12 +80,10 @@ impl Inductive for ListTheory {
         // cases = [⊢ P nil, ⊢ P xs ⟹ P (cons x xs)] (applied form, the
         // step over fresh `x : α`, `xs : list α`). `list_induct` wants the
         // step ∀-closed.
-        let [base, step]: [Thm; 2] = cases.try_into().map_err(|_| {
-            Error::ConnectiveRule("list induct: expected 2 cases".into())
-        })?;
-        let cons_case = step
-            .all_intro("xs", list_ty())?
-            .all_intro("x", elem())?; // ⊢ ∀x xs. P xs ⟹ P (cons x xs)
+        let [base, step]: [Thm; 2] = cases
+            .try_into()
+            .map_err(|_| Error::ConnectiveRule("list induct: expected 2 cases".into()))?;
+        let cons_case = step.all_intro("xs", list_ty())?.all_intro("x", elem())?; // ⊢ ∀x xs. P xs ⟹ P (cons x xs)
         list_induct(&elem(), motive, base, cons_case)
     }
 
@@ -151,7 +149,10 @@ fn para_rec_ty() -> Type {
     Type::fun(
         fold_beta(),
         Type::fun(
-            Type::fun(elem(), Type::fun(list_ty(), Type::fun(fold_beta(), fold_beta()))),
+            Type::fun(
+                elem(),
+                Type::fun(list_ty(), Type::fun(fold_beta(), fold_beta())),
+            ),
             Type::fun(list_ty(), fold_beta()),
         ),
     )
@@ -163,14 +164,21 @@ fn para_pred() -> Term {
     let z = Term::free("z", fold_beta());
     let f = Term::free(
         "f",
-        Type::fun(elem(), Type::fun(list_ty(), Type::fun(fold_beta(), fold_beta()))),
+        Type::fun(
+            elem(),
+            Type::fun(list_ty(), Type::fun(fold_beta(), fold_beta())),
+        ),
     );
     let r = Term::free("r", para_rec_ty());
     let rzf = |t: Term| Term::app(Term::app(Term::app(r.clone(), z.clone()), f.clone()), t);
     let base = mk_eq(rzf(nil(elem())), z.clone());
     let x = Term::free("x", elem());
     let xs = Term::free("xs", list_ty());
-    let lhs = rzf(cons(elem()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap());
+    let lhs = rzf(cons(elem())
+        .apply(x.clone())
+        .unwrap()
+        .apply(xs.clone())
+        .unwrap());
     let rhs = Term::app(
         Term::app(Term::app(f.clone(), x.clone()), xs.clone()),
         rzf(xs.clone()),
@@ -179,11 +187,7 @@ fn para_pred() -> Term {
     let body = forall(
         "z",
         fold_beta(),
-        forall(
-            "f",
-            f.type_of().unwrap(),
-            and(base, step),
-        ),
+        forall("f", f.type_of().unwrap(), and(base, step)),
     );
     abs("r", para_rec_ty(), body)
 }
@@ -194,7 +198,10 @@ fn para_recursion_theorem() -> Result<Thm> {
     let z = Term::free("z", fold_beta());
     let f = Term::free(
         "f",
-        Type::fun(elem(), Type::fun(list_ty(), Type::fun(fold_beta(), fold_beta()))),
+        Type::fun(
+            elem(),
+            Type::fun(list_ty(), Type::fun(fold_beta(), fold_beta())),
+        ),
     );
     crate::init::inductive::recursor::recursion_theorem(
         &ListTheory,
@@ -249,7 +256,10 @@ pub fn foldr_holds() -> Result<Thm> {
 
 /// `(α→β→β) → β → list α → β` — the `list_foldr` carrier type.
 fn foldr_fr_ty() -> Type {
-    Type::fun(fold_f_ty(), Type::fun(fold_beta(), Type::fun(list_ty(), fold_beta())))
+    Type::fun(
+        fold_f_ty(),
+        Type::fun(fold_beta(), Type::fun(list_ty(), fold_beta())),
+    )
 }
 
 /// `λf z l. r z (λx xs acc. f x acc) l` — the catamorphic fold built from
@@ -268,7 +278,11 @@ fn foldr_witness(r: &Term) -> Term {
         abs("xs", list_ty(), abs("acc", fold_beta(), f_x_acc)),
     );
     let body = Term::app(Term::app(Term::app(r.clone(), z.clone()), step), l.clone());
-    abs("f", fold_f_ty(), abs("z", fold_beta(), abs("l", list_ty(), body)))
+    abs(
+        "f",
+        fold_f_ty(),
+        abs("z", fold_beta(), abs("l", list_ty(), body)),
+    )
 }
 
 /// `⊢ list_foldr_predicate witness`, under `{P_rec r}` — the catamorphic
@@ -280,19 +294,35 @@ fn prove_foldr_pred(r: &Term, witness: &Term, foldr_pred: &Term, p_rec_r: &Thm) 
     let x = Term::free("x", elem());
     let acc = Term::free("acc", fold_beta());
     let f_x_acc = Term::app(Term::app(f.clone(), x.clone()), acc.clone());
-    let step_f = abs("x", elem(), abs("xs", list_ty(), abs("acc", fold_beta(), f_x_acc)));
+    let step_f = abs(
+        "x",
+        elem(),
+        abs("xs", list_ty(), abs("acc", fold_beta(), f_x_acc)),
+    );
 
     // P_rec r at z, step_f: (r z step_f nil = z) ∧ (∀x xs. r z step_f (cons x xs) = step_f x xs (r z step_f xs)).
-    let pr = p_rec_r.clone().all_elim(z.clone())?.all_elim(step_f.clone())?;
+    let pr = p_rec_r
+        .clone()
+        .all_elim(z.clone())?
+        .all_elim(step_f.clone())?;
     let base_para = pr.clone().and_elim_l()?; // r z step_f nil = z
     let step_para = pr.and_elim_r()?; // ∀x xs. r z step_f (cons x xs) = step_f x xs (r z step_f xs)
 
     // witness f z l β-reduces to `r z step_f l`.
-    let wfz = |t: Term| Term::app(Term::app(Term::app(witness.clone(), f.clone()), z.clone()), t);
+    let wfz = |t: Term| {
+        Term::app(
+            Term::app(Term::app(witness.clone(), f.clone()), z.clone()),
+            t,
+        )
+    };
     let wfz_eq = |t: Term| -> Result<Thm> {
         // ⊢ witness f z t = r z step_f t  (β-normalise the witness application).
         beta_nf(wfz(t.clone())).trans(
-            beta_nf(Term::app(Term::app(Term::app(r.clone(), z.clone()), step_f.clone()), t)).sym()?,
+            beta_nf(Term::app(
+                Term::app(Term::app(r.clone(), z.clone()), step_f.clone()),
+                t,
+            ))
+            .sym()?,
         )
     };
 
@@ -315,7 +345,9 @@ fn prove_foldr_pred(r: &Term, witness: &Term, foldr_pred: &Term, p_rec_r: &Thm) 
 
     // base ∧ step, ∀-closed over f, z; then β-fold into `pred witness`.
     let body = base.and_intro(step)?; // (witness f z nil = z) ∧ (∀x xs. …)
-    let closed = body.all_intro("z", fold_beta())?.all_intro("f", fold_f_ty())?; // ∀f z. …
+    let closed = body
+        .all_intro("z", fold_beta())?
+        .all_intro("f", fold_f_ty())?; // ∀f z. …
     let _ = consed;
     beta_expand(foldr_pred, witness.clone(), closed)
 }
@@ -436,7 +468,10 @@ pub fn length_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
 
 /// `list_cat[α] xs ys` applied.
 fn cat_app(alpha: &Type, xs: &Term, ys: &Term) -> Term {
-    Term::app(Term::app(defs::list_cat(alpha.clone()), xs.clone()), ys.clone())
+    Term::app(
+        Term::app(defs::list_cat(alpha.clone()), xs.clone()),
+        ys.clone(),
+    )
 }
 
 /// `⊢ list_cat t ys = foldr cons ys t` — δ-unfold `cat` to its `foldr`
@@ -476,7 +511,9 @@ pub fn cat_cons(alpha: &Type, x: &Term, xs: &Term, ys: &Term) -> Result<Thm> {
 // --- small term helpers (kept local to keep the proof readable) ---
 
 fn mk_eq(a: Term, b: Term) -> Term {
-    crate::HolLightCtx::new().mk_eq(a, b).expect("mk_eq: well-typed")
+    crate::HolLightCtx::new()
+        .mk_eq(a, b)
+        .expect("mk_eq: well-typed")
 }
 fn and(a: Term, b: Term) -> Term {
     crate::HolLightCtx::new().mk_and(a, b)
@@ -515,10 +552,7 @@ mod tests {
         let z = Term::free("z", beta());
         let f = Term::free(
             "f",
-            Type::fun(
-                elem(),
-                Type::fun(list_ty(), Type::fun(beta(), beta())),
-            ),
+            Type::fun(elem(), Type::fun(list_ty(), Type::fun(beta(), beta()))),
         );
         [z, f]
     }
@@ -541,8 +575,8 @@ mod tests {
 
     #[test]
     fn graph_det_runs_through_list_induct() {
-        let thm = crate::init::inductive::determinacy::graph_det(&ListTheory, &steps(), &beta())
-            .unwrap();
+        let thm =
+            crate::init::inductive::determinacy::graph_det(&ListTheory, &steps(), &beta()).unwrap();
         assert!(thm.hyps().is_empty(), "determinacy must be axiom-free");
     }
 
@@ -565,7 +599,11 @@ mod tests {
         let thm = super::foldr_holds().unwrap();
         let f = Term::free("f", super::fold_f_ty());
         let z = Term::free("z", super::fold_beta());
-        let conj = thm.all_elim(f.clone()).unwrap().all_elim(z.clone()).unwrap();
+        let conj = thm
+            .all_elim(f.clone())
+            .unwrap()
+            .all_elim(z.clone())
+            .unwrap();
         let base = conj.clone().and_elim_l().unwrap(); // foldr f z nil = z
         assert!(base.hyps().is_empty());
         let (lhs, rhs) = base.concl().as_eq().unwrap();
@@ -600,7 +638,10 @@ mod tests {
     /// stay un-reduced, matching the engine's per-constructor equations).
     fn paramorphic_pred(z: &Term, f: &Term) -> Term {
         let f_ty = f.type_of().unwrap();
-        let rec_ty = Type::fun(beta(), Type::fun(f_ty.clone(), Type::fun(list_ty(), beta())));
+        let rec_ty = Type::fun(
+            beta(),
+            Type::fun(f_ty.clone(), Type::fun(list_ty(), beta())),
+        );
         let r = Term::free("r", rec_ty.clone());
         let rzf = |t: Term| -> Term {
             Term::app(Term::app(Term::app(r.clone(), z.clone()), f.clone()), t)
@@ -610,7 +651,11 @@ mod tests {
         // step: ∀x xs. r z f (cons x xs) = f x xs (r z f xs).
         let x = Term::free("x", elem());
         let xs = Term::free("xs", list_ty());
-        let consed = cons(elem()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
+        let consed = cons(elem())
+            .apply(x.clone())
+            .unwrap()
+            .apply(xs.clone())
+            .unwrap();
         let lhs = rzf(consed);
         let rhs = Term::app(
             Term::app(Term::app(f.clone(), x.clone()), xs.clone()),
@@ -649,7 +694,10 @@ mod tests {
         let foldr = covalence_core::defs::list_foldr(elem(), super::fold_beta());
         assert_eq!(
             l,
-            &Term::app(Term::app(Term::app(foldr.clone(), f.clone()), z.clone()), nil(elem()))
+            &Term::app(
+                Term::app(Term::app(foldr.clone(), f.clone()), z.clone()),
+                nil(elem())
+            )
         );
         assert_eq!(r, &z);
         let cons_eq = super::foldr_cons(&elem(), &super::fold_beta(), &f, &z, &x, &xs).unwrap();
@@ -663,14 +711,24 @@ mod tests {
         let ln = super::length_nil(&elem()).unwrap();
         assert!(ln.hyps().is_empty() && ln.has_no_obs());
         let (l, r) = ln.concl().as_eq().unwrap();
-        assert_eq!(l, &Term::app(covalence_core::defs::list_length(elem()), nil(elem())));
+        assert_eq!(
+            l,
+            &Term::app(covalence_core::defs::list_length(elem()), nil(elem()))
+        );
         assert_eq!(r, &Term::nat_lit(0u32));
 
         let lc = super::length_cons(&elem(), &x, &xs).unwrap();
         assert!(lc.hyps().is_empty() && lc.has_no_obs());
         let (l, r) = lc.concl().as_eq().unwrap();
-        let consed = cons(elem()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
-        assert_eq!(l, &Term::app(covalence_core::defs::list_length(elem()), consed));
+        let consed = cons(elem())
+            .apply(x.clone())
+            .unwrap()
+            .apply(xs.clone())
+            .unwrap();
+        assert_eq!(
+            l,
+            &Term::app(covalence_core::defs::list_length(elem()), consed)
+        );
         let expected_r = Term::app(
             covalence_core::defs::nat_succ(),
             Term::app(covalence_core::defs::list_length(elem()), xs.clone()),
@@ -687,13 +745,20 @@ mod tests {
         assert!(cn.hyps().is_empty() && cn.has_no_obs());
         let (l, r) = cn.concl().as_eq().unwrap();
         let cat = covalence_core::defs::list_cat(elem());
-        assert_eq!(l, &Term::app(Term::app(cat.clone(), nil(elem())), ys.clone()));
+        assert_eq!(
+            l,
+            &Term::app(Term::app(cat.clone(), nil(elem())), ys.clone())
+        );
         assert_eq!(r, &ys);
 
         let cc = super::cat_cons(&elem(), &x, &xs, &ys).unwrap();
         assert!(cc.hyps().is_empty() && cc.has_no_obs());
         let (l, r) = cc.concl().as_eq().unwrap();
-        let consed = cons(elem()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
+        let consed = cons(elem())
+            .apply(x.clone())
+            .unwrap()
+            .apply(xs.clone())
+            .unwrap();
         assert_eq!(l, &Term::app(Term::app(cat.clone(), consed), ys.clone()));
         let cat_xs_ys = Term::app(Term::app(cat.clone(), xs.clone()), ys.clone());
         let expected_r = Term::app(Term::app(cons(elem()), x.clone()), cat_xs_ys);

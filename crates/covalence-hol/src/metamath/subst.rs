@@ -66,10 +66,7 @@ fn splice_into(e: &SExpr, subst: &Subst, out: &mut Vec<SExpr>) {
 /// the set of names that are variables. Used for $d checking: a $d on
 /// `(a, b)` requires that the variables occurring in `subst(a)` and `subst(b)`
 /// are disjoint.
-pub fn vars_in_body<'a>(
-    body: &'a [SExpr],
-    is_variable: &impl Fn(&str) -> bool,
-) -> Vec<&'a str> {
+pub fn vars_in_body<'a>(body: &'a [SExpr], is_variable: &impl Fn(&str) -> bool) -> Vec<&'a str> {
     let mut seen = Vec::new();
     for e in body {
         if let SExp::Atom(Atom::Symbol(name)) = e {

@@ -663,7 +663,10 @@ pub fn real_env() -> crate::script::Env {
     e.define_const("real.one", ConstDef::Op(real_one()));
 
     // seam givens (dotted, matching the `real.cov` surface)
-    e.define_lemma("real.le.unfold", le_unfold_given().expect("real le.unfold given"));
+    e.define_lemma(
+        "real.le.unfold",
+        le_unfold_given().expect("real le.unfold given"),
+    );
     e.define_lemma("real.abs_rep", abs_rep_given().expect("real abs_rep given"));
     e
 }
@@ -884,7 +887,10 @@ mod tests {
     fn cov_le_refl_matches_rust_and_is_genuine() {
         let c = cov::le_refl_cov();
         assert_eq!(c.concl(), le_refl().concl());
-        assert!(c.hyps().is_empty(), "le.refl is fully proved (no postulates)");
+        assert!(
+            c.hyps().is_empty(),
+            "le.refl is fully proved (no postulates)"
+        );
         assert!(c.has_no_obs());
     }
 
@@ -892,7 +898,10 @@ mod tests {
     fn cov_le_trans_matches_rust_and_is_genuine() {
         let c = cov::le_trans_cov();
         assert_eq!(c.concl(), le_trans().concl());
-        assert!(c.hyps().is_empty(), "le.trans is fully proved (no postulates)");
+        assert!(
+            c.hyps().is_empty(),
+            "le.trans is fully proved (no postulates)"
+        );
         assert!(c.has_no_obs());
     }
 
@@ -900,7 +909,10 @@ mod tests {
     fn cov_le_antisym_matches_rust_and_is_genuine() {
         let c = cov::le_antisym_cov();
         assert_eq!(c.concl(), le_antisym().concl());
-        assert!(c.hyps().is_empty(), "le.antisym is fully proved (no postulates)");
+        assert!(
+            c.hyps().is_empty(),
+            "le.antisym is fully proved (no postulates)"
+        );
         assert!(c.has_no_obs());
     }
 }

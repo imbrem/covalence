@@ -85,7 +85,7 @@ use covalence_core::{Result, Term, Thm, Type};
 
 use crate::init::ext::TermExt;
 use crate::init::lang;
-use crate::init::monoid::{list_cat_monoid, Monoid};
+use crate::init::monoid::{Monoid, list_cat_monoid};
 
 // ============================================================================
 // Type machinery: the carrier `Regex⟨'a, 'r⟩`.
@@ -225,7 +225,11 @@ pub fn r_seq_at(a: &Type, r: &Type, x: Term, y: Term) -> Term {
 
 /// `enc(star x) : Regex⟨a, r⟩` — Kleene star (`x*`).
 pub fn r_star_at(a: &Type, r: &Type, x: Term) -> Term {
-    close_handlers(a, r, Term::app(handler(a, r, "h_star"), apply_handlers(a, r, x)))
+    close_handlers(
+        a,
+        r,
+        Term::app(handler(a, r, "h_star"), apply_handlers(a, r, x)),
+    )
 }
 
 /// `enc(empty) : regex 'a`.
@@ -307,7 +311,10 @@ fn bin_lang(lty: &Type, f: impl Fn(&Term, &Term) -> Result<Term>) -> Result<Term
     let y = Term::free("Y", lty.clone());
     let body = f(&x, &y)?;
     let inner = Term::abs(lty.clone(), covalence_core::subst::close(&body, "Y"));
-    Ok(Term::abs(lty.clone(), covalence_core::subst::close(&inner, "X")))
+    Ok(Term::abs(
+        lty.clone(),
+        covalence_core::subst::close(&inner, "X"),
+    ))
 }
 
 /// `⟦r⟧ : set (list a)` — the language denotation of an encoded regex `r`.
@@ -336,7 +343,10 @@ pub fn denote(alpha: &Type, r: Term) -> Result<Term> {
 /// The type of the impredicative match predicate variable
 /// `M : regex 'a → list 'a → bool`.
 fn m_ty(alpha: &Type) -> Type {
-    Type::fun(regex(alpha.clone()), Type::fun(word_ty(alpha), Type::bool()))
+    Type::fun(
+        regex(alpha.clone()),
+        Type::fun(word_ty(alpha), Type::bool()),
+    )
 }
 
 /// `M : regex 'a → list 'a → bool` — the predicate variable bound in
@@ -400,8 +410,7 @@ fn closure_clauses(
 
     // 2. lit: ∀c. M (lit c) [c].
     clauses.push(
-        m_apply(&r_lit(alpha, c.clone()), &singleton_w(alpha, &c)?)?
-            .forall("c", alpha.clone())?,
+        m_apply(&r_lit(alpha, c.clone()), &singleton_w(alpha, &c)?)?.forall("c", alpha.clone())?,
     );
 
     // 3. alt-left: ∀x y w. M x w ⟹ M (alt x y) w.
@@ -425,11 +434,10 @@ fn closure_clauses(
     // 5. seq: ∀x y w1 w2. M x w1 ⟹ M y w2 ⟹ M (seq x y) (cat w1 w2).
     clauses.push(
         m_apply(&x, &w1)?
-            .imp(
-                m_apply(&y, &w2)?.imp(
-                    m_apply(&r_seq(alpha, x.clone(), y.clone()), &cat_w(alpha, &w1, &w2)?)?,
-                )?,
-            )?
+            .imp(m_apply(&y, &w2)?.imp(m_apply(
+                &r_seq(alpha, x.clone(), y.clone()),
+                &cat_w(alpha, &w1, &w2)?,
+            )?)?)?
             .forall("w2", wty.clone())?
             .forall("w1", wty.clone())?
             .forall("y", rty_a.clone())?
@@ -437,18 +445,15 @@ fn closure_clauses(
     );
 
     // 6. star-nil: ∀x. M (star x) nil.
-    clauses.push(
-        m_apply(&r_star(alpha, x.clone()), &nil_w(alpha))?.forall("x", rty_a.clone())?,
-    );
+    clauses.push(m_apply(&r_star(alpha, x.clone()), &nil_w(alpha))?.forall("x", rty_a.clone())?);
 
     // 7. star-step: ∀x w1 w2. M x w1 ⟹ M (star x) w2 ⟹ M (star x) (cat w1 w2).
     clauses.push(
         m_apply(&x, &w1)?
-            .imp(
-                m_apply(&r_star(alpha, x.clone()), &w2)?.imp(
-                    m_apply(&r_star(alpha, x.clone()), &cat_w(alpha, &w1, &w2)?)?,
-                )?,
-            )?
+            .imp(m_apply(&r_star(alpha, x.clone()), &w2)?.imp(m_apply(
+                &r_star(alpha, x.clone()),
+                &cat_w(alpha, &w1, &w2)?,
+            )?)?)?
             .forall("w2", wty.clone())?
             .forall("w1", wty.clone())?
             .forall("x", rty_a.clone())?,
@@ -496,11 +501,7 @@ fn nth_conjunct(mut thm: Thm, k: usize, n: usize) -> Result<Thm> {
     for _ in 0..k {
         thm = thm.and_elim_r()?;
     }
-    if k + 1 < n {
-        thm.and_elim_l()
-    } else {
-        Ok(thm)
-    }
+    if k + 1 < n { thm.and_elim_l() } else { Ok(thm) }
 }
 
 /// `⊢ Matches eps nil` — the empty word matches `eps`. (Rule 1.)
@@ -509,9 +510,7 @@ pub fn match_eps(alpha: &Type) -> Result<Thm> {
     let closed_t = closed(alpha, &|rr, ww| m_at(alpha, &mvar, rr, ww))?;
     let assumed = Thm::assume(closed_t.clone())?; // {Closed M} ⊢ Closed M
     let clause = nth_conjunct(assumed, 0, N_CLAUSES)?; // {Closed M} ⊢ M eps nil
-    clause
-        .imp_intro(&closed_t)?
-        .all_intro("M", m_ty(alpha))
+    clause.imp_intro(&closed_t)?.all_intro("M", m_ty(alpha))
 }
 
 /// `⊢ ∀c. Matches (lit c) [c]` — a literal matches its one-character word.
@@ -533,7 +532,9 @@ pub fn match_lit(alpha: &Type) -> Result<Thm> {
 pub fn match_alt_l(alpha: &Type, x: &Term, y: &Term, w: &Term) -> Result<Thm> {
     match_unary_rule(alpha, 2, x, w, |c| {
         // clause is ∀x y w. … (outermost x); peel x, y, w.
-        c.all_elim(x.clone())?.all_elim(y.clone())?.all_elim(w.clone())
+        c.all_elim(x.clone())?
+            .all_elim(y.clone())?
+            .all_elim(w.clone())
     })
 }
 
@@ -541,7 +542,9 @@ pub fn match_alt_l(alpha: &Type, x: &Term, y: &Term, w: &Term) -> Result<Thm> {
 /// (Rule 4.)
 pub fn match_alt_r(alpha: &Type, x: &Term, y: &Term, w: &Term) -> Result<Thm> {
     match_unary_rule(alpha, 3, y, w, |c| {
-        c.all_elim(x.clone())?.all_elim(y.clone())?.all_elim(w.clone())
+        c.all_elim(x.clone())?
+            .all_elim(y.clone())?
+            .all_elim(w.clone())
     })
 }
 
@@ -565,9 +568,7 @@ fn match_unary_rule(
     let der_sub = Thm::assume(matches(alpha, sub, w)?)?; // {Matches sub w} ⊢ …
     let m_sub = der_sub.all_elim(mvar.clone())?.imp_elim(assumed.clone())?; // {Matches sub w, Closed M} ⊢ M sub w
     let m_concl = imp.imp_elim(m_sub)?; // {…} ⊢ M concl w
-    let der_concl = m_concl
-        .imp_intro(&closed_t)?
-        .all_intro("M", m_ty(alpha))?; // {Matches sub w} ⊢ Matches concl w
+    let der_concl = m_concl.imp_intro(&closed_t)?.all_intro("M", m_ty(alpha))?; // {Matches sub w} ⊢ Matches concl w
     der_concl.imp_intro(&matches(alpha, sub, w)?)
 }
 
@@ -590,9 +591,7 @@ pub fn match_seq(alpha: &Type, x: &Term, y: &Term, w1: &Term, w2: &Term) -> Resu
     let m_y = der_y.all_elim(mvar.clone())?.imp_elim(assumed.clone())?; // {…} ⊢ M y w2
 
     let m_seq = imp.imp_elim(m_x)?.imp_elim(m_y)?; // {…} ⊢ M (seq x y)(cat w1 w2)
-    let der_seq = m_seq
-        .imp_intro(&closed_t)?
-        .all_intro("M", m_ty(alpha))?; // {Matches x w1, Matches y w2} ⊢ Matches (seq x y)(cat w1 w2)
+    let der_seq = m_seq.imp_intro(&closed_t)?.all_intro("M", m_ty(alpha))?; // {Matches x w1, Matches y w2} ⊢ Matches (seq x y)(cat w1 w2)
     der_seq
         .imp_intro(&matches(alpha, y, w2)?)?
         .imp_intro(&matches(alpha, x, w1)?)
@@ -627,9 +626,7 @@ pub fn match_star_step(alpha: &Type, x: &Term, w1: &Term, w2: &Term) -> Result<T
     let m_sw = der_sw.all_elim(mvar.clone())?.imp_elim(assumed.clone())?;
 
     let m_step = imp.imp_elim(m_x)?.imp_elim(m_sw)?; // {…} ⊢ M (star x)(cat w1 w2)
-    let der_step = m_step
-        .imp_intro(&closed_t)?
-        .all_intro("M", m_ty(alpha))?;
+    let der_step = m_step.imp_intro(&closed_t)?.all_intro("M", m_ty(alpha))?;
     der_step
         .imp_intro(&matches(alpha, &star_x, w2)?)?
         .imp_intro(&matches(alpha, x, w1)?)
@@ -735,9 +732,8 @@ fn discharge_closed(alpha: &Type, d_pred: &Term) -> Result<Thm> {
         Ok(crate::init::eq::beta_nf(app)) // ⊢ D r w = mem w ⟦r⟧
     };
     // Re-fold a `⊢ mem w ⟦r⟧` proof to `⊢ D r w`.
-    let to_d = |rr: &Term, ww: &Term, pf: Thm| -> Result<Thm> {
-        d_eq_mem(rr, ww)?.sym()?.eq_mp(pf)
-    };
+    let to_d =
+        |rr: &Term, ww: &Term, pf: Thm| -> Result<Thm> { d_eq_mem(rr, ww)?.sym()?.eq_mp(pf) };
 
     let mut clause_thms: Vec<Thm> = Vec::new();
 
@@ -939,7 +935,10 @@ pub fn regex_env() -> crate::script::Env {
         .and_then(|t| t.all_intro("y", reg.clone()))
         .and_then(|t| t.all_intro("x", reg.clone()))
         .expect("regex_env: ∀ match_alt_l");
-    e.define_lemma("match_alt_l", pin(alt_l).expect("regex_env: pin match_alt_l"));
+    e.define_lemma(
+        "match_alt_l",
+        pin(alt_l).expect("regex_env: pin match_alt_l"),
+    );
 
     // match_alt_r : ⊢ ∀x y w. Matches y w ⟹ Matches (alt x y) w
     let alt_r = match_alt_r(&a, &x, &y, &w)
@@ -948,7 +947,10 @@ pub fn regex_env() -> crate::script::Env {
         .and_then(|t| t.all_intro("y", reg.clone()))
         .and_then(|t| t.all_intro("x", reg.clone()))
         .expect("regex_env: ∀ match_alt_r");
-    e.define_lemma("match_alt_r", pin(alt_r).expect("regex_env: pin match_alt_r"));
+    e.define_lemma(
+        "match_alt_r",
+        pin(alt_r).expect("regex_env: pin match_alt_r"),
+    );
 
     // match_seq : ⊢ ∀x y w1 w2. Matches x w1 ⟹ Matches y w2
     //                           ⟹ Matches (seq x y) (cat w1 w2)
@@ -1163,10 +1165,7 @@ mod tests {
         // `⊢ mem nil ⟦eps⟧`. Soundness lives at `'r := set (list a)`, so
         // instantiate the (polymorphic) derivation there first.
         let a = alpha();
-        let der = match_eps(&a)
-            .unwrap()
-            .inst_tfree("r", lang_ty(&a))
-            .unwrap();
+        let der = match_eps(&a).unwrap().inst_tfree("r", lang_ty(&a)).unwrap();
         let snd = soundness_at(&a, &r_eps(&a), &nil_w(&a)).unwrap();
         let mem_thm = snd.imp_elim(der).unwrap(); // ⊢ mem nil ⟦eps⟧
         assert_genuine(&mem_thm);

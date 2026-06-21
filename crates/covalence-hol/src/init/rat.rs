@@ -871,7 +871,7 @@ fn lt_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
     let l1c = imul_subst(
         &l1c_src,
         &imul(imul(nx.clone(), dxp.clone()), imul(dy.clone(), dyp.clone())), // (nx·dx')·(dy·dy')
-        imul_cong(e1.clone(), Thm::refl(imul(dy.clone(), dyp.clone()))?)?, // = (nx'·dx)·(dy·dy')
+        imul_cong(e1.clone(), Thm::refl(imul(dy.clone(), dyp.clone()))?)?,   // = (nx'·dx)·(dy·dy')
         &imul(imul(nxp.clone(), dx.clone()), imul(dy.clone(), dyp.clone())), // (nx'·dx)·(dy·dy')
         &r1cc,
     )?; // l1·c = r1·cc
@@ -882,14 +882,13 @@ fn lt_pair_cong(h1: Thm, h2: Thm) -> Result<Thm> {
     let l2c = imul_subst(
         &l2c_src,
         &imul(imul(ny.clone(), dyp.clone()), imul(dx.clone(), dxp.clone())), // (ny·dy')·(dx·dx')
-        imul_cong(e2.clone(), Thm::refl(imul(dx.clone(), dxp.clone()))?)?, // = (ny'·dy)·(dx·dx')
+        imul_cong(e2.clone(), Thm::refl(imul(dx.clone(), dxp.clone()))?)?,   // = (ny'·dy)·(dx·dx')
         &imul(imul(nyp.clone(), dy.clone()), imul(dx.clone(), dxp.clone())), // (ny'·dy)·(dx·dx')
         &r2cc,
     )?; // l2·c = r2·cc
 
     // int.lt (l1·c)(l2·c) = int.lt (r1·cc)(r2·cc)  (rewrite both args).
-    let scaled_eq = scale
-        .trans(Thm::refl(int::int_lt())?.cong_app(l1c)?.cong_app(l2c)?)?; // int.lt l1 l2 = int.lt (r1·cc)(r2·cc)
+    let scaled_eq = scale.trans(Thm::refl(int::int_lt())?.cong_app(l1c)?.cong_app(l2c)?)?; // int.lt l1 l2 = int.lt (r1·cc)(r2·cc)
 
     // int.lt (r1·cc)(r2·cc) = int.lt r1 r2  (unscale by cc).
     let unscale = int::lt_mul_pos_iff()
@@ -1195,9 +1194,7 @@ fn recon_given() -> Result<Thm> {
 /// given free `(f1:int, d1:int.pos, f2:int, d2:int.pos)`, returns
 /// `⊢ op (MK f1 d1) (MK f2 d2) = MK <num> <den>` — re-folding the raw `mkfs`
 /// occurrences to the named `rat.MK`.
-fn binop_mk_given(
-    mk: impl Fn(&Term, &Term, &Term, &Term) -> Result<Thm>,
-) -> Result<Thm> {
+fn binop_mk_given(mk: impl Fn(&Term, &Term, &Term, &Term) -> Result<Thm>) -> Result<Thm> {
     let (f1, d1) = (ivar("f1"), Term::free("d1", int_pos_ty()));
     let (f2, d2) = (ivar("f2"), Term::free("d2", int_pos_ty()));
     // The Rust component lemma operates on `mkfs` arguments; restate it with
@@ -1403,18 +1400,27 @@ fn compute_given(lhs: Thm, a: &Term) -> Result<Thm> {
 /// `⊢ ∀a. a * 1 = rat.MK (num a · 1) (topos(rep(den a) · rep one_pos))`.
 fn mul_one_compute() -> Result<Thm> {
     let a = rvar("a");
-    compute_given(mul_via_components(&recon_mk(&a)?, &Thm::refl(rat_one())?)?, &a)
+    compute_given(
+        mul_via_components(&recon_mk(&a)?, &Thm::refl(rat_one())?)?,
+        &a,
+    )
 }
 /// `⊢ ∀a. a + 0 = rat.MK (num a · rep one_pos + 0 · rep(den a))
 ///                       (topos(rep(den a) · rep one_pos))`.
 fn add_zero_compute() -> Result<Thm> {
     let a = rvar("a");
-    compute_given(add_via_components(&recon_mk(&a)?, &Thm::refl(rat_zero())?)?, &a)
+    compute_given(
+        add_via_components(&recon_mk(&a)?, &Thm::refl(rat_zero())?)?,
+        &a,
+    )
 }
 /// `⊢ ∀a. a * 0 = rat.MK (num a · 0) (topos(rep(den a) · rep one_pos))`.
 fn mul_zero_compute() -> Result<Thm> {
     let a = rvar("a");
-    compute_given(mul_via_components(&recon_mk(&a)?, &Thm::refl(rat_zero())?)?, &a)
+    compute_given(
+        mul_via_components(&recon_mk(&a)?, &Thm::refl(rat_zero())?)?,
+        &a,
+    )
 }
 /// `⊢ ∀a. a + (-a) = rat.MK (num a · rep(den a) + (int.neg(num a)) · rep(den a))
 ///                          (topos(rep(den a) · rep(den a)))`.
@@ -1574,23 +1580,65 @@ pub fn rat_env() -> crate::script::Env {
     e.define_lemma("class_eq", class_eq_given().expect("rat class_eq given"));
     e.define_lemma("pos_prod_rt", pos_prod_rt_given());
     e.define_lemma("one_pos_rt", one_pos_rt_given());
-    e.define_lemma("zero_times", zero_times_given().expect("rat zero_times given"));
-    e.define_lemma("int_distrib_r", int_distrib_r_given().expect("rat int_distrib_r given"));
+    e.define_lemma(
+        "zero_times",
+        zero_times_given().expect("rat zero_times given"),
+    );
+    e.define_lemma(
+        "int_distrib_r",
+        int_distrib_r_given().expect("rat int_distrib_r given"),
+    );
     e.define_lemma("lt_self", lt_self_given().expect("rat lt_self given"));
     e.define_lemma("int_lt_irrefl", int_lt_irrefl_given());
     e.define_lemma("topos_rep", topos_rep_given().expect("rat topos_rep given"));
-    e.define_lemma("mul_one_compute", mul_one_compute().expect("rat mul_one_compute"));
-    e.define_lemma("add_zero_compute", add_zero_compute().expect("rat add_zero_compute"));
-    e.define_lemma("mul_zero_compute", mul_zero_compute().expect("rat mul_zero_compute"));
-    e.define_lemma("add_neg_compute", add_neg_compute().expect("rat add_neg_compute"));
-    e.define_lemma("mul_assoc_lhs", mul_assoc_lhs_compute().expect("rat mul_assoc_lhs"));
-    e.define_lemma("mul_assoc_rhs", mul_assoc_rhs_compute().expect("rat mul_assoc_rhs"));
-    e.define_lemma("add_assoc_lhs", add_assoc_lhs_compute().expect("rat add_assoc_lhs"));
-    e.define_lemma("add_assoc_rhs", add_assoc_rhs_compute().expect("rat add_assoc_rhs"));
-    e.define_lemma("add_assoc_bridge", add_assoc_bridge().expect("rat add_assoc_bridge"));
-    e.define_lemma("distrib_lhs", distrib_lhs_compute().expect("rat distrib_lhs"));
-    e.define_lemma("distrib_rhs", distrib_rhs_compute().expect("rat distrib_rhs"));
-    e.define_lemma("distrib_bridge", distrib_bridge().expect("rat distrib_bridge"));
+    e.define_lemma(
+        "mul_one_compute",
+        mul_one_compute().expect("rat mul_one_compute"),
+    );
+    e.define_lemma(
+        "add_zero_compute",
+        add_zero_compute().expect("rat add_zero_compute"),
+    );
+    e.define_lemma(
+        "mul_zero_compute",
+        mul_zero_compute().expect("rat mul_zero_compute"),
+    );
+    e.define_lemma(
+        "add_neg_compute",
+        add_neg_compute().expect("rat add_neg_compute"),
+    );
+    e.define_lemma(
+        "mul_assoc_lhs",
+        mul_assoc_lhs_compute().expect("rat mul_assoc_lhs"),
+    );
+    e.define_lemma(
+        "mul_assoc_rhs",
+        mul_assoc_rhs_compute().expect("rat mul_assoc_rhs"),
+    );
+    e.define_lemma(
+        "add_assoc_lhs",
+        add_assoc_lhs_compute().expect("rat add_assoc_lhs"),
+    );
+    e.define_lemma(
+        "add_assoc_rhs",
+        add_assoc_rhs_compute().expect("rat add_assoc_rhs"),
+    );
+    e.define_lemma(
+        "add_assoc_bridge",
+        add_assoc_bridge().expect("rat add_assoc_bridge"),
+    );
+    e.define_lemma(
+        "distrib_lhs",
+        distrib_lhs_compute().expect("rat distrib_lhs"),
+    );
+    e.define_lemma(
+        "distrib_rhs",
+        distrib_rhs_compute().expect("rat distrib_rhs"),
+    );
+    e.define_lemma(
+        "distrib_bridge",
+        distrib_bridge().expect("rat distrib_bridge"),
+    );
 
     // int ring givens (proved in init::int) — the `.cov` numerator/denominator
     // algebra runs over these.
@@ -2303,11 +2351,20 @@ fn lt_trans_impl() -> Result<Thm> {
 
     // Reshuffle both into `(…)·db` form.
     //   (fa·db)·dc = (fa·dc)·db ;  (fb·da)·dc = (fb·dc)·da
-    let r1l = int::prove_imul_eq(&imul(imul(fa.clone(), db.clone()), dc.clone()), &imul(imul(fa.clone(), dc.clone()), db.clone()))?;
-    let r1r = int::prove_imul_eq(&imul(imul(fb.clone(), da.clone()), dc.clone()), &imul(imul(fb.clone(), dc.clone()), da.clone()))?;
+    let r1l = int::prove_imul_eq(
+        &imul(imul(fa.clone(), db.clone()), dc.clone()),
+        &imul(imul(fa.clone(), dc.clone()), db.clone()),
+    )?;
+    let r1r = int::prove_imul_eq(
+        &imul(imul(fb.clone(), da.clone()), dc.clone()),
+        &imul(imul(fb.clone(), dc.clone()), da.clone()),
+    )?;
     let s1n = s1.rewrite(&r1l)?.rewrite(&r1r)?; // (fa·dc)·db < (fb·dc)·da
     //   (fc·db)·da = (fc·da)·db
-    let r2r = int::prove_imul_eq(&imul(imul(fc.clone(), db.clone()), da.clone()), &imul(imul(fc.clone(), da.clone()), db.clone()))?;
+    let r2r = int::prove_imul_eq(
+        &imul(imul(fc.clone(), db.clone()), da.clone()),
+        &imul(imul(fc.clone(), da.clone()), db.clone()),
+    )?;
     let s2n = s2.rewrite(&r2r)?; // (fb·dc)·da < (fc·da)·db
 
     // Chain: (fa·dc)·db < (fc·da)·db.
@@ -2356,7 +2413,9 @@ fn lt_trichotomy_impl() -> Result<Thm> {
     let y = imul(fb.clone(), da.clone()); // fb·da
 
     // int trichotomy on (x, y): (x<y) ∨ (x=y) ∨ (y<x).
-    let tri = int::lt_trichotomy().all_elim(x.clone())?.all_elim(y.clone())?;
+    let tri = int::lt_trichotomy()
+        .all_elim(x.clone())?
+        .all_elim(y.clone())?;
 
     let dab = lt_via_components(&ra, &rb)?; // ratLt a b = int.lt x y
     let dba = lt_via_components(&rb, &ra)?; // ratLt b a = int.lt y x
@@ -2867,7 +2926,11 @@ fn mediant_ineq(gt: bool) -> Result<Thm> {
         let lhs_split = int::distrib_at(&fx, &dx, &dy)?; // fx·(dx+dy) = fx·dx + fx·dy
         let rhs_split = int::distrib_r_at(&fx, &fy, &dx)?; // (fx+fy)·dx = fx·dx + fy·dx
         // int.lt (fx·dx+fx·dy)(fx·dx+fy·dx) ⟺ fx·dy < fy·dx  (cancel fx·dx on the left).
-        let cancel = int::lt_add_cancel_left_at(&imul(fx.clone(), dx.clone()), &imul(fx.clone(), dy.clone()), &imul(fy.clone(), dx.clone()))?;
+        let cancel = int::lt_add_cancel_left_at(
+            &imul(fx.clone(), dx.clone()),
+            &imul(fx.clone(), dy.clone()),
+            &imul(fy.clone(), dx.clone()),
+        )?;
         let goal_int = cancel.sym()?.eq_mp(h_int)?; // {x<y} ⊢ int.lt (fx·dx+fx·dy)(fx·dx+fy·dx)
         let goal_int = goal_int
             .rewrite(&lhs_split.sym()?)?
@@ -2884,7 +2947,11 @@ fn mediant_ineq(gt: bool) -> Result<Thm> {
         let lhs_split = int::distrib_r_at(&fx, &fy, &dy)?; // (fx+fy)·dy = fx·dy + fy·dy
         let rhs_split = int::distrib_at(&fy, &dx, &dy)?; // fy·(dx+dy) = fy·dx + fy·dy
         // int.lt (fx·dy+fy·dy)(fy·dx+fy·dy) ⟺ fx·dy < fy·dx  (cancel fy·dy on the right).
-        let cancel = int::lt_add_cancel_right_at(&imul(fx.clone(), dy.clone()), &imul(fy.clone(), dx.clone()), &imul(fy.clone(), dy.clone()))?;
+        let cancel = int::lt_add_cancel_right_at(
+            &imul(fx.clone(), dy.clone()),
+            &imul(fy.clone(), dx.clone()),
+            &imul(fy.clone(), dy.clone()),
+        )?;
         let goal_int = cancel.sym()?.eq_mp(h_int)?; // {x<y} ⊢ int.lt (fx·dy+fy·dy)(fy·dx+fy·dy)
         let goal_int = goal_int
             .rewrite(&lhs_split.sym()?)?
@@ -2979,7 +3046,6 @@ mod cov_tests {
         assert_eq!(cov::add_assoc_cov().concl(), super::add_assoc().concl());
         assert_eq!(cov::distrib_cov().concl(), super::distrib().concl());
     }
-
 }
 
 #[cfg(test)]
@@ -3033,7 +3099,6 @@ mod tests {
     fn rat_env_builds() {
         let _ = rat_env();
     }
-
 
     #[test]
     fn recon_given_named_form() {
@@ -3530,6 +3595,3 @@ mod tests {
         assert_eq!(r, &rhs);
     }
 }
-
-
-

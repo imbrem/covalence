@@ -511,7 +511,10 @@ fn decode_ascii1_body() -> Term {
     let f = decode_some_branch();
     let head_l = Term::app(head(u8_ty()), l.clone());
     let case = Term::app(
-        Term::app(Term::app(option_case(u8_ty(), option(char_ty())), none(char_ty())), f),
+        Term::app(
+            Term::app(option_case(u8_ty(), option(char_ty())), none(char_ty())),
+            f,
+        ),
         head_l,
     );
     Term::abs(byte_list(), covalence_core::subst::close(&case, "l"))
@@ -525,7 +528,11 @@ pub fn decode_ascii1_spec() -> TermSpec {
         let ty = body
             .type_of()
             .expect("decodeAscii1 body must type-check to list u8 → option char");
-        TermSpec::new(SmolStr::new_static("utf8.decodeAscii1"), Some(ty), Some(body))
+        TermSpec::new(
+            SmolStr::new_static("utf8.decodeAscii1"),
+            Some(ty),
+            Some(body),
+        )
     });
     LAZY.clone()
 }
@@ -638,7 +645,11 @@ pub fn utf8_env() -> crate::script::Env {
     e.define_lemma(
         "encode_cons",
         close1(
-            close1(encode_bytes_cons(&c, &cs).unwrap(), "cs", &list(cty.clone())),
+            close1(
+                encode_bytes_cons(&c, &cs).unwrap(),
+                "cs",
+                &list(cty.clone()),
+            ),
             "c",
             &cty,
         ),
@@ -646,13 +657,20 @@ pub fn utf8_env() -> crate::script::Env {
 
     // -- char-list append clauses (for the induction's `catC` reasoning) --
     // catC_nil : ∀ds. catC nilC ds = ds
-    e.define_lemma("catC_nil", close1(cat_nil(&cty, &ds).unwrap(), "ds", &list(cty.clone())));
+    e.define_lemma(
+        "catC_nil",
+        close1(cat_nil(&cty, &ds).unwrap(), "ds", &list(cty.clone())),
+    );
     // catC_cons : ∀c cs ds. catC (consC c cs) ds = consC c (catC cs ds)
     e.define_lemma(
         "catC_cons",
         close1(
             close1(
-                close1(cat_cons(&cty, &c, &cs, &ds).unwrap(), "ds", &list(cty.clone())),
+                close1(
+                    cat_cons(&cty, &c, &cs, &ds).unwrap(),
+                    "ds",
+                    &list(cty.clone()),
+                ),
                 "cs",
                 &list(cty.clone()),
             ),
@@ -671,7 +689,10 @@ pub fn utf8_env() -> crate::script::Env {
     );
     // catB_nil : ∀ys. catB nilB ys = ys
     let ys = Term::free("ys", list(bty.clone()));
-    e.define_lemma("catB_nil", close1(cat_nil(&bty, &ys).unwrap(), "ys", &list(bty.clone())));
+    e.define_lemma(
+        "catB_nil",
+        close1(cat_nil(&bty, &ys).unwrap(), "ys", &list(bty.clone())),
+    );
     e
 }
 
@@ -766,7 +787,10 @@ mod tests {
     #[test]
     fn encode_nil_is_empty_carrier() {
         let thm = encode_nil().unwrap();
-        assert!(thm.hyps().is_empty(), "encode_nil is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "encode_nil is proved, not postulated"
+        );
         assert!(thm.has_no_obs(), "encode_nil is oracle-free");
         assert_eq!(thm.concl().as_eq().unwrap().1, &unil());
     }

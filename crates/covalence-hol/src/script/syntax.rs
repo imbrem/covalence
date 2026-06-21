@@ -66,7 +66,10 @@ pub fn parse_type(s: &SExpr, env: &Env) -> R<Type> {
                 if ch.len() < 3 {
                     return Err(ScriptError::Syntax("fun: expected (fun A B …)".into()));
                 }
-                let mut tys = ch[1..].iter().map(|c| parse_type(c, env)).collect::<R<Vec<_>>>()?;
+                let mut tys = ch[1..]
+                    .iter()
+                    .map(|c| parse_type(c, env))
+                    .collect::<R<Vec<_>>>()?;
                 let mut acc = tys.pop().unwrap();
                 while let Some(t) = tys.pop() {
                     acc = Type::fun(t, acc);
@@ -77,9 +80,7 @@ pub fn parse_type(s: &SExpr, env: &Env) -> R<Type> {
             // Syntax: `(rel A B)`, `(set A)`, `(option A)`, `(result A B)`.
             "rel" => {
                 if ch.len() != 3 {
-                    return Err(ScriptError::Syntax(
-                        "rel: expected (rel A B)".into(),
-                    ));
+                    return Err(ScriptError::Syntax("rel: expected (rel A B)".into()));
                 }
                 Ok(Type::spec(
                     defs::rel_spec(),
@@ -94,23 +95,25 @@ pub fn parse_type(s: &SExpr, env: &Env) -> R<Type> {
             }
             "option" => {
                 if ch.len() != 2 {
-                    return Err(ScriptError::Syntax(
-                        "option: expected (option A)".into(),
-                    ));
+                    return Err(ScriptError::Syntax("option: expected (option A)".into()));
                 }
-                Ok(Type::spec(defs::option_spec(), vec![parse_type(&ch[1], env)?]))
+                Ok(Type::spec(
+                    defs::option_spec(),
+                    vec![parse_type(&ch[1], env)?],
+                ))
             }
             "list" => {
                 if ch.len() != 2 {
                     return Err(ScriptError::Syntax("list: expected (list A)".into()));
                 }
-                Ok(Type::spec(defs::list_spec(), vec![parse_type(&ch[1], env)?]))
+                Ok(Type::spec(
+                    defs::list_spec(),
+                    vec![parse_type(&ch[1], env)?],
+                ))
             }
             "coprod" => {
                 if ch.len() != 3 {
-                    return Err(ScriptError::Syntax(
-                        "coprod: expected (coprod A B)".into(),
-                    ));
+                    return Err(ScriptError::Syntax("coprod: expected (coprod A B)".into()));
                 }
                 Ok(Type::spec(
                     defs::coprod_spec(),
@@ -119,9 +122,7 @@ pub fn parse_type(s: &SExpr, env: &Env) -> R<Type> {
             }
             "result" => {
                 if ch.len() != 3 {
-                    return Err(ScriptError::Syntax(
-                        "result: expected (result A B)".into(),
-                    ));
+                    return Err(ScriptError::Syntax("result: expected (result A B)".into()));
                 }
                 Ok(Type::spec(
                     defs::result_spec(),

@@ -199,7 +199,9 @@ pub fn atom_ne_nil_bool(alpha: &Type, a: &Term) -> Result<Thm> {
     //   rec fl fb nil = fl none = option_case F (λ_.T) none = F
     let rec_nil = tree::rec_leaf(&elem, fl.clone(), fb.clone(), none_t.clone())?
         .rhs_conv(|t| Thm::beta_conv(t.clone()))? // fl none = option_case … none
-        .trans(crate::init::option::case_none(alpha, &bool_ty, &ff, &f_handler)?)?; // ⊢ rec fl fb nil = F
+        .trans(crate::init::option::case_none(
+            alpha, &bool_ty, &ff, &f_handler,
+        )?)?; // ⊢ rec fl fb nil = F
 
     // {H} ⊢ T = F.
     let t_eq_f = rec_atom.sym()?.trans(cong)?.trans(rec_nil)?;

@@ -221,10 +221,10 @@ impl Logic for NatSelf {
             .expect("core provides the nat `induct` tactic");
         Ok(NatModel {
             sig,
-            zero_add: nat::add_base(),    // ∀m. 0 + m = m
-            add_zero: nat::add_zero(),    // ∀a. a + 0 = a
-            succ_add: nat::add_step(),    // ∀n m. S n + m = S(n + m)
-            add_succ: nat::add_succ_r(),  // ∀a b. a + S b = S(a + b)
+            zero_add: nat::add_base(),   // ∀m. 0 + m = m
+            add_zero: nat::add_zero(),   // ∀a. a + 0 = a
+            succ_add: nat::add_step(),   // ∀n m. S n + m = S(n + m)
+            add_succ: nat::add_succ_r(), // ∀a b. a + S b = S(a + b)
             induct,
         })
     }

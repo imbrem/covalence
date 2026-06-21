@@ -255,7 +255,9 @@ pub fn exists_false_const(alpha: &Type) -> Result<Thm> {
     let ex = mk_exists_of(alpha, pred.clone()); // ∃x. F
     // Forward: {∃x. F} ⊢ F. `exists_elim` to goal `F`; its step is
     // `⊢ ∀x. (pred x) ⟹ F`, where `pred x` β-reduces to `F`.
-    let pred_x = pred.clone().apply(Term::free("_ex_false_x", alpha.clone()))?; // (λx. F) x
+    let pred_x = pred
+        .clone()
+        .apply(Term::free("_ex_false_x", alpha.clone()))?; // (λx. F) x
     let pred_x_eq_f = Thm::beta_conv(pred_x.clone())?; // ⊢ pred x = F
     let step_to_f = pred_x_eq_f
         .eq_mp(Thm::assume(pred_x.clone())?)? // {pred x} ⊢ F
@@ -298,10 +300,7 @@ pub fn exists_one_point(alpha: &Type, t: &Term, p_pred: &Term) -> Result<Thm> {
     let xb = Term::free("_op_x", alpha.clone());
     let p_x = p_pred.clone().apply(xb.clone())?; // P x  (applied)
     let body = xb.clone().equals(t.clone())?.and(p_x.clone())?; // x = t ∧ P x
-    let pred = Term::abs(
-        alpha.clone(),
-        covalence_core::subst::close(&body, "_op_x"),
-    );
+    let pred = Term::abs(alpha.clone(), covalence_core::subst::close(&body, "_op_x"));
     let ex = mk_exists_of(alpha, pred.clone()); // ∃x. x = t ∧ P x
     let p_t = p_pred.clone().apply(t.clone())?; // P t
 
@@ -1784,10 +1783,7 @@ mod tests {
         assert!(thm.hyps().is_empty() && thm.has_no_obs());
         let pred = Term::abs(Type::nat(), Term::bool_lit(false));
         let ex = mk_exists_of(&Type::nat(), pred);
-        assert_eq!(
-            thm.concl().as_eq().unwrap(),
-            (&ex, &Term::bool_lit(false))
-        );
+        assert_eq!(thm.concl().as_eq().unwrap(), (&ex, &Term::bool_lit(false)));
     }
 
     #[test]
@@ -1815,7 +1811,12 @@ mod tests {
     fn exists_false_lifts_pointwise_falsity() {
         // From ⊢ ∀x. (x = 0 ∧ F) = F  get  ⊢ (∃x. x=0 ∧ F) = F.
         let x = Term::free("x", Type::nat());
-        let body = x.clone().equals(nat0()).unwrap().and(Term::bool_lit(false)).unwrap();
+        let body = x
+            .clone()
+            .equals(nat0())
+            .unwrap()
+            .and(Term::bool_lit(false))
+            .unwrap();
         // ⊢ body = F: body ⟹ F (and_elim_r) and F ⟹ body (ex falso).
         let to_f = Thm::assume(body.clone()).unwrap().and_elim_r().unwrap(); // {body} ⊢ F
         let from_f = Thm::assume(Term::bool_lit(false))

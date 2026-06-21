@@ -990,23 +990,20 @@ mod tests {
         let _ = crate::init::logic::exists_intro_thm();
         // `exists-intro`: from `⊢ (λx. x = 0) 0` (got from `⊢ 0 = 0` by undoing
         // the β-step) conclude `⊢ ∃x. x = 0`.
-        let intro = one(
-            r#"(#import core)(#open core)
+        let intro = one(r#"(#import core)(#open core)
                (#thm ex (#concl (exists (x nat) (= x 0)))
                  (#proof
                    (exists-intro
                      (lam (x nat) (= x 0))
                      0
-                     (eq-mp (sym (beta-conv (app (lam (x nat) (= x 0)) 0))) (refl 0)))))"#,
-        );
+                     (eq-mp (sym (beta-conv (app (lam (x nat) (= x 0)) 0))) (refl 0)))))"#);
         assert!(intro.hyps().is_empty());
         // `exists-elim`: from `⊢ ∃x. x = 0` and the step
         // `⊢ ∀x. (λx. x = 0) x ⟹ ∃y. y = 0` conclude `⊢ ∃y. y = 0` (here the
         // two existentials coincide). The step re-introduces the existential
         // straight from the assumed predicate application (which, locally
         // nameless, is literally `(λ. #0 = 0) x` — the same term either way).
-        let elim = one(
-            r#"(#import core)(#open core)
+        let elim = one(r#"(#import core)(#open core)
                (#thm ex2 (#concl (exists (y nat) (= y 0)))
                  (#proof
                    (exists-elim
@@ -1018,8 +1015,7 @@ mod tests {
                        (imp-intro (app (lam (x nat) (= x 0)) x)
                          (exists-intro
                            (lam (y nat) (= y 0)) x
-                           (assume (app (lam (x nat) (= x 0)) x))))))))"#,
-        );
+                           (assume (app (lam (x nat) (= x 0)) x))))))))"#);
         assert!(elim.hyps().is_empty());
     }
 
@@ -1869,28 +1865,36 @@ mod tests {
     fn comp_unclosable_step_is_a_clear_error() {
         // A step the default handler cannot close is a diagnostic pointing at
         // that step — never a silent gap. `0 = 1` is not β-convertible.
-        let bad = run_str(r#"
+        let bad = run_str(
+            r#"
             (#import core)(#open core)
             (#thm bad (#concl (= 0 1))
               (#proof (#comp 0 (= 1))))
-            "#);
-        assert!(matches!(bad, Err(ScriptError::Syntax(m)) if m.contains("#comp")),
-            "an un-closable #comp step must error mentioning #comp");
+            "#,
+        );
+        assert!(
+            matches!(bad, Err(ScriptError::Syntax(m)) if m.contains("#comp")),
+            "an un-closable #comp step must error mentioning #comp"
+        );
     }
 
     #[test]
     fn comp_mismatched_justification_errors() {
         // An explicit justification that proves the wrong equation is rejected
         // (the chain term, not the justification, drives the conclusion).
-        let bad = run_str(r#"
+        let bad = run_str(
+            r#"
             (#import core)(#open core)
             (#thm bad (#concl (= (nat.add 2 3) 5))
               (#proof
                 (#comp (nat.add 2 3)
                   (= 5 (reduce-prim (nat.add 1 1))))))
-            "#);
-        assert!(matches!(bad, Err(ScriptError::Syntax(_))),
-            "a justification proving a different equation must error");
+            "#,
+        );
+        assert!(
+            matches!(bad, Err(ScriptError::Syntax(_))),
+            "a justification proving a different equation must error"
+        );
     }
 
     #[test]
@@ -1996,10 +2000,9 @@ mod tests {
 
         // Core side: the same directive in the core `.cov` sublanguage
         // (`#lam`, `bool.and`).
-        let core_env = cov::parse_core(
-            "(#def myand (#lam (p bool) (#lam (q bool) (bool.and p q))))",
-        )
-        .expect("core .cov parses");
+        let core_env =
+            cov::parse_core("(#def myand (#lam (p bool) (#lam (q bool) (bool.and p q))))")
+                .expect("core .cov parses");
         let core_body = core_env.term("myand").expect("core myand").clone();
 
         assert_eq!(
@@ -2037,10 +2040,8 @@ mod tests {
         );
         let script_spec = env.lookup_type_spec("myunit").expect("myunit defined");
 
-        let core_env = cov::parse_core(
-            "(#subtype myunit bool (#lam (b bool) (#eq b T)))",
-        )
-        .expect("core .cov parses");
+        let core_env = cov::parse_core("(#subtype myunit bool (#lam (b bool) (#eq b T)))")
+            .expect("core .cov parses");
         let core_spec = core_env.type_spec("myunit").expect("core myunit").clone();
 
         // Carrier + predicate agree (the symbol differs only by identity).

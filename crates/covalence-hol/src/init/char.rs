@@ -67,10 +67,7 @@ fn in_range(n: &Term) -> Term {
     let below = lt(n.clone(), Term::nat_lit(SURROGATE_LO));
     // 0xDFFF < n  ∧  n < 0x110000
     let above = Term::app(
-        Term::app(
-            and(),
-            lt(Term::nat_lit(SURROGATE_HI), n.clone()),
-        ),
+        Term::app(and(), lt(Term::nat_lit(SURROGATE_HI), n.clone())),
         lt(n.clone(), Term::nat_lit(CHAR_MAX_EXCL)),
     );
     Term::app(Term::app(or(), below), above)
@@ -131,12 +128,7 @@ pub fn code_mk(n: &Term) -> Result<Thm> {
     // like `(T ∨ (F ∧ T))`. Decide that combination = T with `prop_eq`
     // (the complete propositional decider) — the `init/prop.rs` pattern.
     let red = in_range(n).reduce()?; // ⊢ predicate(n) = <bool-literal combination>
-    let reduced = red
-        .concl()
-        .as_eq()
-        .ok_or(Error::NotAnEquation)?
-        .1
-        .clone();
+    let reduced = red.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
     let to_t = crate::init::logic::prop_eq(&reduced, &Term::bool_lit(true)).map_err(|_| {
         Error::ConnectiveRule(
             "char::code_mk: codepoint is not a Unicode scalar value \

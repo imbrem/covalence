@@ -94,7 +94,10 @@ pub fn parse_decl(ch: &[SExpr]) -> Result<Decl, ScriptError> {
     }
     // The head may be a bare name, or `(NAME 'a …)` binding params inline.
     let (name, mut params) = match &ch[1] {
-        SExpr::Atom(_) => (syntax::sym(&ch[1], "inductive name")?.to_string(), Vec::new()),
+        SExpr::Atom(_) => (
+            syntax::sym(&ch[1], "inductive name")?.to_string(),
+            Vec::new(),
+        ),
         SExpr::List(inner) => {
             let n = syntax::sym(&inner[0], "inductive name")?.to_string();
             let ps = inner[1..]
@@ -310,14 +313,14 @@ fn elaborate_nat(decl: &Decl) -> KResult<Elaborated> {
     // Constructors, bound under the user's chosen names.
     let c0 = decl.ctors[0].name.clone();
     let c1 = decl.ctors[1].name.clone();
-    let ctors = vec![
-        (c0, ConstDef::Op(zero())),
-        (c1, ConstDef::Op(Term::succ())),
-    ];
+    let ctors = vec![(c0, ConstDef::Op(zero())), (c1, ConstDef::Op(Term::succ()))];
 
     // The recursion theorem, straight from the engine.
     let z = Term::free("z", nat.clone());
-    let f = Term::free("f", Type::fun(nat.clone(), Type::fun(nat.clone(), nat.clone())));
+    let f = Term::free(
+        "f",
+        Type::fun(nat.clone(), Type::fun(nat.clone(), nat.clone())),
+    );
     let rec_thm = recursor::recursion_theorem(&NatTheory, &[z, f], &nat, &nat_p_rec_pred()?)?;
 
     // A worked induction instance: `⊢ ∀n. n = n`, proved by the engine's
@@ -417,10 +420,8 @@ mod tests {
     /// theorems as lemmas, and they appear in the resulting theory's `thms`.
     #[test]
     fn directive_binds_recursor_and_induction() {
-        let thms = run_str(
-            "(#import core)(#open core)\n(#inductive nat (zero) (succ nat))",
-        )
-        .expect("the #inductive directive replays");
+        let thms = run_str("(#import core)(#open core)\n(#inductive nat (zero) (succ nat))")
+            .expect("the #inductive directive replays");
         assert!(
             thms.iter().any(|nt| nt.name == "nat.rec"),
             "recursion theorem bound as nat.rec"

@@ -283,10 +283,7 @@ fn closed(d_apply: &dyn Fn(&Term) -> Result<Term>, t: &Type, r: &Type) -> Result
 
         let univ = d_apply(&sem::all_cons(t, r, q.clone()))?;
         let inst = d_apply(&sem::q_at(t, r, &q, w.clone()))?;
-        let spec = univ
-            .imp(inst)?
-            .forall("w", t.clone())?
-            .forall("Q", q_ty)?;
+        let spec = univ.imp(inst)?.forall("w", t.clone())?.forall("Q", q_ty)?;
         clauses.push(spec);
     }
 
@@ -350,11 +347,7 @@ fn nth_conjunct(mut thm: Thm, k: usize, n: usize) -> Result<Thm> {
     for _ in 0..k {
         thm = thm.and_elim_r()?;
     }
-    if k + 1 < n {
-        thm.and_elim_l()
-    } else {
-        Ok(thm)
-    }
+    if k + 1 < n { thm.and_elim_l() } else { Ok(thm) }
 }
 
 // ============================================================================
@@ -376,9 +369,7 @@ pub fn derive_axiom(i: usize) -> Result<Thm> {
     let clause = nth_conjunct(assumed, i - 1, N_CLAUSES)?; // ⊢ d ⌜PAᵢ⌝
     let enc = sem::encode_form(&axioms()[i - 1]);
     debug_assert_eq!(clause.concl(), &d_at(&enc)?);
-    clause
-        .imp_intro(&closed_t)?
-        .all_intro("d", d_ty())
+    clause.imp_intro(&closed_t)?.all_intro("d", d_ty())
 }
 
 /// `⊢ Derivable_PA ⌜A⌝ ⟹ Derivable_PA ⌜A ⟹ B⌝ ⟹ Derivable_PA ⌜B⌝` — reified
@@ -402,9 +393,7 @@ pub fn derive_mp(a: &Fol, b: &Fol) -> Result<Thm> {
     let mp_inst = mp_clause.all_elim(enc_b.clone())?.all_elim(enc_a.clone())?;
     let db = mp_inst.imp_elim(da.and_intro(dab)?)?; // ⊢ d ⌜B⌝
 
-    let der_b = db
-        .imp_intro(&closed_t)?
-        .all_intro("d", d_ty())?; // {Der A, Der (A⟹B)} ⊢ Derivable_PA ⌜B⌝
+    let der_b = db.imp_intro(&closed_t)?.all_intro("d", d_ty())?; // {Der A, Der (A⟹B)} ⊢ Derivable_PA ⌜B⌝
     der_b
         .imp_intro(&derivable(&imp_ab)?)?
         .imp_intro(&derivable(&enc_a)?)
@@ -593,7 +582,10 @@ fn discharge_induct(d_pred: &Term) -> Result<Thm> {
     // rewrite each `⟦·⟧⌜·⌝` to `Q·` to feed `nat_induct`.
     let pred_qx = br_qx.concl().as_eq().expect("eq").0.clone(); // ⟦·⟧⌜Q x⌝
     let pred_qsx = br_qsx.concl().as_eq().expect("eq").0.clone(); // ⟦·⟧⌜Q (Sx)⌝
-    let step_premise = pred_qx.clone().imp(pred_qsx.clone())?.forall("x", n.clone())?;
+    let step_premise = pred_qx
+        .clone()
+        .imp(pred_qsx.clone())?
+        .forall("x", n.clone())?;
     let step_assumed = Thm::assume(step_premise.clone())?; // {step} ⊢ ∀x. ⟦·⟧⌜Qx⌝⟹⟦·⟧⌜Q(Sx)⌝
     let step_x_pred = step_assumed.all_elim(x.clone())?; // {step} ⊢ ⟦·⟧⌜Qx⌝ ⟹ ⟦·⟧⌜Q(Sx)⌝
     let step_x = step_x_pred.rewrite(&br_qx)?.rewrite(&br_qsx)?; // {step} ⊢ Q x ⟹ Q (Sx)
@@ -641,7 +633,9 @@ fn discharge_specialize(d_pred: &Term) -> Result<Thm> {
     let imp = inst.imp_intro(&univ_nf)?; // ⊢ (∀x. Q x) ⟹ Q w
 
     let clause = imp.rewrite(&br_inst.sym()?)?.rewrite(&br_univ.sym()?)?;
-    clause.all_intro("w", n).and_then(|t| t.all_intro("Q", q_ty))
+    clause
+        .all_intro("w", n)
+        .and_then(|t| t.all_intro("Q", q_ty))
 }
 
 /// β-bridge helper for the discharge functions: `⊢ ⟦·⟧⌜enc⌝ = nf` + the `nf`.
@@ -820,15 +814,13 @@ mod tests {
         assert_eq!(projected.concl(), nat::add_base().concl());
     }
 
-
     /// The `Closed_PA ⟦·⟧` the soundness proof discharges must match — clause by
     /// clause — the `Closed[d := ⟦·⟧]` the impredicative definition unfolds to
     /// (the invariant that makes `soundness`'s `imp_elim` typecheck).
     #[test]
     fn discharge_closed_matches_definition_clausewise() {
         let d_pred = sem::denote_pred();
-        let expected =
-            closed(&|f| d_pred.clone().apply(f.clone()), &nat_ty(), &bool_ty()).unwrap();
+        let expected = closed(&|f| d_pred.clone().apply(f.clone()), &nat_ty(), &bool_ty()).unwrap();
         let got = discharge_closed(&d_pred).unwrap().concl().clone();
         let split = |t: &Term| -> Vec<Term> {
             let mut out = Vec::new();

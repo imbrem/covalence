@@ -174,7 +174,10 @@ pub fn bytes_head_empty() -> Result<Thm> {
 /// newtype seam. Genuine: hypothesis- and oracle-free.
 pub fn string_head_empty() -> Result<Thm> {
     let elem = char_elem();
-    let lhs = Term::app(head(elem.clone()), string_rep(string_abs(nil(elem.clone()))));
+    let lhs = Term::app(
+        head(elem.clone()),
+        string_rep(string_abs(nil(elem.clone()))),
+    );
     let refl = Thm::refl(lhs)?;
     let rep_empty = string_rep_empty()?;
     refl.rhs_conv(|t| t.rw_all(&rep_empty))?
@@ -231,11 +234,17 @@ mod tests {
         // `bytes` value, and a `u8` literal denotes a `u8` (the element
         // type of `bytes`). These are exactly the types the surface
         // compiler's byte/byte-string literal lifters target.
-        assert_eq!(Term::blob(vec![1u8, 2, 3]).type_of().unwrap(), Type::bytes());
+        assert_eq!(
+            Term::blob(vec![1u8, 2, 3]).type_of().unwrap(),
+            Type::bytes()
+        );
         assert_eq!(Term::u8_lit(255).type_of().unwrap(), byte_elem());
         // The empty `Blob` and our `bytes.empty` are both `bytes` (their
         // equality is a `cons`-recursion fact, deferred — see SKELETONS).
-        assert_eq!(Term::blob(Vec::<u8>::new()).type_of().unwrap(), Type::bytes());
+        assert_eq!(
+            Term::blob(Vec::<u8>::new()).type_of().unwrap(),
+            Type::bytes()
+        );
         assert_eq!(bytes_empty().type_of().unwrap(), Type::bytes());
     }
 

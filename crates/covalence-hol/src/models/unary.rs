@@ -196,7 +196,9 @@ pub(super) fn add_succ() -> Result<Thm, covalence_core::Error> {
         // discharge the IH from the applied antecedent.
         let p_consx = p_consx.imp_intro(&ih_body)?; // ⊢ P xs ⟹ (λa.P)(cons x xs)
         let p_consx = pl_xs_eq.sym()?.mk_comb_imp(&p_consx)?; // ⊢ (λa.P) xs ⟹ (λa.P)(cons x xs)
-        p_consx.all_intro("xs", la.clone())?.all_intro("x", alpha.clone())?
+        p_consx
+            .all_intro("xs", la.clone())?
+            .all_intro("x", alpha.clone())?
     };
 
     let ind = crate::init::list::list_induct(&alpha, &p, base, cons_case)?; // ⊢ ∀a. (λa.P) a
@@ -222,7 +224,11 @@ fn beta_expand(motive: &Term, arg: Term, body: Thm) -> Result<Thm, covalence_cor
 /// (applied form), return `⊢ motive s` (applied form): rewrite the argument
 /// backwards through `arg_eq`. Here `proof` is supplied as `⊢ body[t]` (the
 /// β-reduced form `P (cons u xs)`), and we want `⊢ motive (cons x xs)`.
-fn beta_expand_eq(motive: &Term, arg_eq: &Thm, proof_body: Thm) -> Result<Thm, covalence_core::Error> {
+fn beta_expand_eq(
+    motive: &Term,
+    arg_eq: &Thm,
+    proof_body: Thm,
+) -> Result<Thm, covalence_core::Error> {
     // arg_eq : ⊢ (cons x xs) = (cons u xs).  proof_body : ⊢ body[cons u xs].
     let (lhs, rhs) = arg_eq
         .concl()
@@ -273,7 +279,12 @@ pub(super) struct UnaryInduct;
 
 #[async_trait]
 impl Tactic for UnaryInduct {
-    async fn apply(&self, s: &[SExpr], rest: &[SExpr], it: &mut Interp) -> Result<Thm, ScriptError> {
+    async fn apply(
+        &self,
+        s: &[SExpr],
+        rest: &[SExpr],
+        it: &mut Interp,
+    ) -> Result<Thm, ScriptError> {
         crate::script::syntax::arity(s, 4, "m.induct")?;
         expect_done(rest)?;
         let env = it.env().clone();

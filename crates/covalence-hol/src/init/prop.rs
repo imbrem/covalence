@@ -276,13 +276,19 @@ pub fn p_imp(a: Term, b: Term) -> Term {
 /// `prop.var : nat → Φ⟨'r⟩` — the `var` constructor as a closed λ constant.
 pub fn var_fn() -> Term {
     let n = Term::free("__n", nat());
-    Term::abs(nat(), covalence_core::subst::close(&p_var(n.clone()), "__n"))
+    Term::abs(
+        nat(),
+        covalence_core::subst::close(&p_var(n.clone()), "__n"),
+    )
 }
 
 /// `prop.neg : Φ⟨'r⟩ → Φ⟨'r⟩` — the `¬` constructor as a closed λ constant.
 pub fn neg_fn() -> Term {
     let a = Term::free("__a", phi());
-    Term::abs(phi(), covalence_core::subst::close(&p_neg(a.clone()), "__a"))
+    Term::abs(
+        phi(),
+        covalence_core::subst::close(&p_neg(a.clone()), "__a"),
+    )
 }
 
 /// A binary constructor `λA B. op A B` as a closed λ constant.
@@ -320,7 +326,10 @@ fn bool_handlers(v: &Term) -> Result<[Term; 5]> {
     let q = Term::free("q", bool_ty());
 
     // λp. ¬p
-    let neg = Term::abs(bool_ty(), covalence_core::subst::close(&p.clone().not()?, "p"));
+    let neg = Term::abs(
+        bool_ty(),
+        covalence_core::subst::close(&p.clone().not()?, "p"),
+    );
     // λp q. p ⊙ q  for ⊙ ∈ {∧, ∨, ⟹}
     let bin = |body: Term| -> Term {
         let inner = Term::abs(bool_ty(), covalence_core::subst::close(&body, "q"));
@@ -399,7 +408,10 @@ fn axiom_schema(r: &Type, i: usize, a: &Term, b: &Term, c: &Term) -> Term {
         7 => imp(b.clone(), or(a.clone(), b.clone())),
         8 => imp(
             imp(a.clone(), c.clone()),
-            imp(imp(b.clone(), c.clone()), imp(or(a.clone(), b.clone()), c.clone())),
+            imp(
+                imp(b.clone(), c.clone()),
+                imp(or(a.clone(), b.clone()), c.clone()),
+            ),
         ),
         9 => imp(
             imp(a.clone(), b.clone()),
@@ -647,9 +659,7 @@ pub fn prop_induction(
         .imp_elim(closed_pred_thm)?; // {Der A} ⊢ pred A
 
     // ⊢ ∀A. Derivable_Prop A ⟹ pred A.
-    pred_a
-        .imp_intro(&deriv)?
-        .all_intro("A", phi_at_bool())
+    pred_a.imp_intro(&deriv)?.all_intro("A", phi_at_bool())
 }
 
 // ============================================================================
@@ -716,13 +726,23 @@ pub fn soundness_at(a: &Term) -> Result<Thm> {
 fn denote_pred(v: &Term) -> Result<Term> {
     let big_a = Term::free("A", phi_at_bool());
     let den_body = denote(big_a, v)?; // ⟦A⟧ v with A free
-    Ok(Term::abs(phi_at_bool(), covalence_core::subst::close(&den_body, "A")))
+    Ok(Term::abs(
+        phi_at_bool(),
+        covalence_core::subst::close(&den_body, "A"),
+    ))
 }
 
 /// `⊢ pred ⌜axiom_i a b c⌝` for `pred = λA. ⟦A⟧ v` — the soundness *axiom
 /// case* used by [`prop_induction`]: the schema's denotation is a tautology
 /// ([`prove_taut`]), β-expanded back to `pred ⌜ax⌝`.
-fn sound_axiom_case(v: &Term, d_pred: &Term, i: usize, a: &Term, b: &Term, c: &Term) -> Result<Thm> {
+fn sound_axiom_case(
+    v: &Term,
+    d_pred: &Term,
+    i: usize,
+    a: &Term,
+    b: &Term,
+    c: &Term,
+) -> Result<Thm> {
     let ax = axiom_schema(&bool_ty(), i, a, b, c);
     let den = denote(ax.clone(), v)?; // ⟦ax⟧ v (a bool term)
     let den_taut = prove_taut(&den)?; // ⊢ ⟦ax⟧ v
@@ -822,20 +842,12 @@ fn expand_to_d(den_thm: Thm, ax: &Term, d_pred: &Term) -> Result<Thm> {
 
 /// β-expand the MP-clause tautology `⊢ (⟦A⟧v ∧ ⟦A⟹B⟧v) ⟹ ⟦B⟧v` back to
 /// `⊢ (D A ∧ D (A⟹B)) ⟹ D B`.
-fn expand_imp_to_d(
-    thm: Thm,
-    a: &Term,
-    imp_ab: &Term,
-    b: &Term,
-    d_pred: &Term,
-) -> Result<Thm> {
+fn expand_imp_to_d(thm: Thm, a: &Term, imp_ab: &Term, b: &Term, d_pred: &Term) -> Result<Thm> {
     // Rewrite each `⟦·⟧ v` occurrence with `⊢ ⟦·⟧ v = D ·` (sym of β).
     let beta_a = Thm::beta_conv(d_pred.clone().apply(a.clone())?)?.sym()?;
     let beta_ab = Thm::beta_conv(d_pred.clone().apply(imp_ab.clone())?)?.sym()?;
     let beta_b = Thm::beta_conv(d_pred.clone().apply(b.clone())?)?.sym()?;
-    thm.rewrite(&beta_a)?
-        .rewrite(&beta_ab)?
-        .rewrite(&beta_b)
+    thm.rewrite(&beta_a)?.rewrite(&beta_ab)?.rewrite(&beta_b)
 }
 
 /// Given `Γ ⊢ D a` (with `D = λA. ⟦A⟧ v`), β-reduce to `Γ ⊢ ⟦a⟧ v`.
@@ -1060,10 +1072,7 @@ pub fn prop_env() -> crate::script::Env {
     // the `bool` denotation), so we additionally expose the two constants it
     // needs **monomorphically at bool** — `prop.var.bool` / `prop.derivable.bool`
     // — so `consistency`'s `#concl` is writable and matches the seam given.
-    e.define_const(
-        "prop.var.bool",
-        ConstDef::Op(inst_tfree_term(&var_fn())),
-    );
+    e.define_const("prop.var.bool", ConstDef::Op(inst_tfree_term(&var_fn())));
     e.define_const(
         "prop.derivable.bool",
         ConstDef::Op(inst_tfree_term(&derivable_fn())),
@@ -1288,7 +1297,10 @@ mod tests {
             |a, b| sound_mp_case(&v, &pred, a, b),
         );
         // The conjunction/`imp_elim` against the real `Closed pred` shape fails.
-        assert!(bogus.is_err(), "a bogus case must not fabricate an induction");
+        assert!(
+            bogus.is_err(),
+            "a bogus case must not fabricate an induction"
+        );
     }
 
     /// The constructor λ-constants are well-typed and `(app prop.var n)`
@@ -1296,7 +1308,10 @@ mod tests {
     #[test]
     fn constructor_constants_reduce() {
         assert_eq!(var_fn().type_of().unwrap(), Type::fun(nat(), phi()));
-        assert_eq!(imp_fn().type_of().unwrap(), Type::fun(phi(), Type::fun(phi(), phi())));
+        assert_eq!(
+            imp_fn().type_of().unwrap(),
+            Type::fun(phi(), Type::fun(phi(), phi()))
+        );
         let app = Term::app(var_fn(), Term::nat_lit(0u32));
         let nf = beta_nf(app).concl().as_eq().unwrap().1.clone();
         assert_eq!(nf, beta_nf(p_var_lit(0)).concl().as_eq().unwrap().1.clone());

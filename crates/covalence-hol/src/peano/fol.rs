@@ -557,10 +557,7 @@ mod tests {
             norm(all(eq(bvar(0), zero()))),
             norm(ex(eq(bvar(0), zero())))
         );
-        assert_ne!(
-            norm(add(fvar(0), fvar(1))),
-            norm(mul(fvar(0), fvar(1)))
-        );
+        assert_ne!(norm(add(fvar(0), fvar(1))), norm(mul(fvar(0), fvar(1))));
     }
 
     /// `apply_handlers ∘ close_handlers = id` up to β at the carrier.

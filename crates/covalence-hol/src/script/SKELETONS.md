@@ -99,7 +99,14 @@ These are deliberately deferred:
 - **Async core: types + tokio in place; the open-obligation (hole) feature was
   removed, pending a channel-based rebuild.** `script/mod.rs::run_async` is
   `async`; `run`/`resolve_blocking` block via a tokio **current-thread** runtime
-  (`block_on`). `run` returns a `TheoryHandle` (in-progress) and
+  (`block_on`). On `wasm32-unknown-unknown` (the browser build) tokio does not
+  compile, so `block_on` is **cfg-split**: native keeps the tokio current-thread
+  runtime byte-for-byte, wasm falls back to `futures::executor::block_on`. The
+  wasm fallback drives the same cooperative core fine, but the deferred
+  "explicit opt-in parallelism via `tokio::spawn` / multi-thread runtime"
+  (below) has **no wasm path** yet — a browser build would need a
+  `wasm-bindgen-futures`-style spawner when that lands. `run` returns a
+  `TheoryHandle` (in-progress) and
   `TheoryHandle::resolve` (async) forces it to a `Theory` (resolved) — but with
   no obligations, every `#thm` is checked inline (eagerly) and `resolve` is
   trivial, so the in-progress/resolved split is currently only nominal. The

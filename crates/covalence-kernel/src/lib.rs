@@ -32,4 +32,10 @@ pub use backend::{AsyncBackend, BackendInfo, KernelError, SyncBackend};
 mod store;
 pub use store::Kernel;
 
+mod service;
+pub use service::{
+    ArticleSource, CheckReport, Diagnostic, KernelService, Severity, Span, TheoremInfo, TrustLevel,
+    TrustPolicy,
+};
+
 pub mod facts;

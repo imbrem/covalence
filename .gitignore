@@ -8,6 +8,7 @@ dist/
 .direnv/
 .svelte-kit/
 /apps/covalence-web/build/
+/apps/covalence-web/src/lib/kernel/
 .venv/
 __pycache__/
 *.egg-info/

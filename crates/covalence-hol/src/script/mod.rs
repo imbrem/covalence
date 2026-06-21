@@ -415,11 +415,21 @@ fn imported(internal: &Env, name: &str) -> Result<Env, ScriptError> {
 /// (nesting panics). The `cov_theory!` loader force-evaluates its `import …`
 /// envs eagerly — *before* this `block_on` — so forcing one `.cov` theory never
 /// nests on forcing an imported one.
+#[cfg(not(target_arch = "wasm32"))]
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
         .build()
         .expect("build a current-thread tokio runtime for the proof core")
         .block_on(future)
+}
+
+/// `wasm32-unknown-unknown` has no tokio; drive the same cooperative async core
+/// on `futures`' single-threaded executor instead. Behaviour matches the native
+/// current-thread runtime for the cooperative (non-blocking) workload the proof
+/// core actually uses.
+#[cfg(target_arch = "wasm32")]
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    futures::executor::block_on(future)
 }
 
 /// Replay a script whose only available environment is the `core` prelude,

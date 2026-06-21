@@ -10,4 +10,12 @@ covalence-hol = { path = "../covalence-hol" }
 covalence-store = { path = "../covalence-store" }
 covalence-object = { path = "../covalence-object" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-sexp = { path = "../covalence-sexp" }
 thiserror = "2"
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+# Derive `serde::Serialize` on the `service` report types — used by the
+# wasm-bindgen browser front-end (`covalence-web-kernel`) to ship a
+# `CheckReport` across the JS boundary as JSON.
+serde = ["dep:serde"]

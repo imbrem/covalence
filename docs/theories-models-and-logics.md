@@ -556,6 +556,42 @@ sits in `covalence-hol`: *define logics* (FOL, a real ZFC fragment, modal logics
 databases) and study `Derivable_L` / `S` / the correspondence — *not* racing to
 set.mm-scale ingestion (one consumer's optimization, and the reader crate's job).
 
+### 5.7 The stack, the elevated `covalence-metamath`, and why nothing is wasted
+
+This whole substrate is the **top layer of the three-layer stack**
+(`VISION.md` §1): bottom = executors + content-addressing (disk + CPU, the root of
+trust); middle = HOL (HOL Light → HOL-ω, the metalogic, "generalized Haskell" with
+proven-WASM compilation and lazy-by-default evaluation); **top = *internal*
+Metamath, the thin waist** — `∃D. ValidProof(D, P, Ax)`. Every internal logic
+(FOL/HOL/ZFC/GT/MLTT/LF/Dedukti) passes through it, which is what gives a *uniform*
+notion of conservative extension, syntax translation, and "proving what we think we
+prove" (soundness w.r.t. the Metamath base). Efficient encodings (de Bruijn, …) are
+HOL data structures proven sound against that base — Metamath both pins the meaning
+and lets us swap encodings freely behind proven equivalences; and since we **never
+look at the proofs** (only assert one exists), the databases stay dead-simple
+(ZFC/CTL/… are *just their axiom sets*).
+
+**`covalence-metamath` is therefore *not* merely a demoted reader — it is the
+independent oracle.** Its load-bearing job is to hold **independent elaborators of
+Metamath databases into HOL**, so we can **sanity-check that the output of `#logic`
+is at least equivalent to — preferably syntactically *equal* to — the canonical
+Metamath database** for that logic. For databases like Grothendieck-Tarski (or
+ZFC) the canonical database can be **fetched from the Internet** and diffed against
+what `#logic` produces. It is also where **set.mm ingestion** lives — a *one-and-done*
+import, **symbolic at first** (trust the imported database as an axiom set we then
+relate to ours); **later**, once we have a *verified Metamath checker compiled to
+WASM*, we can ingest via the verified checker + its verification proof (this adds
+the **WASM executor to the base trust set**, versus pure in-HOL interpretation — a
+deliberate trust-vs-throughput trade).
+
+**Nothing we have already built is wasted.** Our native `peano::pa` / HOL
+developments are not superseded by internal Metamath — they are **proven equivalent
+to `Metamath-PA`** (`§5.6` (3), the `≅`). That equivalence cuts both ways: the
+native development is often **more convenient for direct use**, *and* it is exactly
+what lets us **prove `Metamath-PA` (and eventually `Metamath-SOA`) sound**. The
+HOL-database relation lattice (`§5.6`, `metalogic::{database,relations}`) is the
+machinery these equivalences and conservative extensions are stated in.
+
 ---
 
 ## 6. What's already built that feeds this

@@ -58,6 +58,45 @@
    bottom-inner layer small enough to audit by inspection without
    paying performance for it.
 
+### The three-layer stack (bottom → middle → top)
+
+The organizing structure, each layer the *root of trust* for the one above:
+
+- **Bottom — executors + content addressing (disk and CPU).** The literal root
+  of trust: store bytes (content-addressed) and run bytes (an executor — WASM
+  today, x86 / ARM / RISC-V later). Everything physical bottoms out here.
+- **Middle — HOL (HOL Light now, HOL-ω eventually): the metalogic, "generalized
+  Haskell."** The logic we reason *in* and implement everything else *with*. Two
+  properties make it Haskell-on-steroids: (1) you can **compile a program in
+  arbitrary ways** and trust the output because the compilation is *proven sound*
+  (e.g. to WASM); and (2) you **don't have to execute everything** — *"math is the
+  ultimate laziness"*: a theorem about a computation's result stands without
+  running it.
+- **Top — *internal* Metamath, the thin waist.** Reified inside HOL, the single
+  primitive is the proof-irrelevant existential **"there exists a derivation `D`,
+  with axiom-set `Ax`, of `P`."** *Every* internal logic — internal FOL, internal
+  HOL, internal ZFC / Grothendieck-Tarski, internal MLTT, internal LF / Dedukti, …
+  — goes **through this one waist**. That is what it buys:
+  - a **standard way to relate axiom-sets** — "`Ax` is a conservative extension of
+    `Ax'`", "`Ax ⟹_σ Ax'`";
+  - **syntax translations** as ordinary functions / partial functions / relations
+    `P ↦ Translate(P)`;
+  - **freedom to work in whatever is convenient** — Metamath in a rich conservative
+    extension, *or* an efficient internal data structure — while *knowing we prove
+    what we think we prove*, because we prove **soundness w.r.t. the Metamath base**
+    of our axiom sets.
+
+**Encodings are HOL data structures, proven sound against the Metamath base.**
+Every efficient encoding (de Bruijn indices, structured ASTs, …) is a HOL data
+structure with a soundness theorem relating it to internal Metamath. The waist
+does two jobs at once: it **pins the meaning** (we are proving what we think) and
+it **lets us experiment freely with encodings** (swap representations behind a
+proven equivalence). And because we **never need to look at the Metamath proofs**
+— only that one *exists* — the databases stay **dead-simple**: efficiency is
+irrelevant at the waist, so ZFC, CTL, MLTT, … are *just their Metamath axiom
+sets*. (Full treatment: [`theories-models-and-logics.md`](./theories-models-and-logics.md)
+§5.6.)
+
 ---
 
 ## 2. Symbolic metatheory

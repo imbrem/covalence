@@ -79,4 +79,4 @@ pub use parse::{
 };
 pub use subst::{Subst, apply_subst};
 #[cfg(feature = "checker")]
-pub use verify::{verify_all, verify_assertion};
+pub use verify::{ProofStep, proof_steps, verify_all, verify_assertion};

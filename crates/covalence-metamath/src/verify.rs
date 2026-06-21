@@ -135,8 +135,14 @@ fn step_label(
     Ok(())
 }
 
-/// A decoded step from a compressed proof.
-enum ProofStep {
+/// A decoded proof step — the common currency of *both* proof encodings, so a
+/// consumer (the in-crate verifier, or an out-of-crate replay like
+/// `covalence-hol`'s `mm_database::replay_db`) can process compressed and normal
+/// proofs uniformly with a stack + heap. The heap preserves the compressed
+/// proof's **sharing**: re-using a saved sub-proof is a heap push, not a
+/// recomputation, so there is no exponential re-expansion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProofStep {
     /// Reference a statement by label (mandatory hyp, label-block entry, or
     /// prior theorem).
     Label(String),
@@ -144,6 +150,23 @@ enum ProofStep {
     Save,
     /// Push a previously saved heap entry.
     Heap(usize),
+}
+
+/// The proof of `assertion` as a uniform [`ProofStep`] sequence: a
+/// [`Proof::Normal`] proof maps to its label steps; a [`Proof::Compressed`]
+/// proof is decoded (the `A`–`T`/`U`–`Y` integers, `Z` saves, heap addressing).
+/// An axiom (no proof) yields an empty sequence. The consumer runs the steps
+/// against a stack, pushing the top on `Save` to a heap and re-pushing on
+/// `Heap` — exactly as [`verify_assertion`] does — which is how a compressed
+/// proof is replayed *without* expanding its sharing.
+pub fn proof_steps(db: &Database, assertion: &Assertion) -> Result<Vec<ProofStep>, MmError> {
+    match &assertion.proof {
+        None => Ok(Vec::new()),
+        Some(Proof::Normal(labels)) => Ok(labels.iter().cloned().map(ProofStep::Label).collect()),
+        Some(Proof::Compressed { labels, letters }) => {
+            decompress_proof(labels, letters, &assertion.frame, db, &assertion.label)
+        }
+    }
 }
 
 /// Decompress a compressed proof into a sequence of [`ProofStep`]s.

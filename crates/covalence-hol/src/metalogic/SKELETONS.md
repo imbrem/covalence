@@ -68,16 +68,41 @@ kernel re-checks each step (syntax former → `init::prop::p_imp`; `ax-1`/`ax-2`
   backend (vs the in-memory checker). Generalising it to an arbitrary database
   needs the schema-database replay below.
 
-### Deferred — the general schema-database replay (north star)
+### mm_database — the general schema-database replay (DONE for normal proofs)
 
-Generalise from the fixed prop-calc rule set to an **arbitrary `metamath::Database`**:
-one *substitution-instance* `Closed_L` clause per assertion (each Metamath assertion
-= a schematic rule; metavariable substitution = the kernel's `inst`, `$d` →
-freshness), i.e. a **`RuleSet`-from-`Database`** builder, landing the
-*database-relative* `Derivable_DB ⌜db⌝ ⌜S⌝`. This unifies `mm_replay` with the
-existing [`database.rs`](./database.rs) `Derivable_DB` over HOL database *values*
-and is the same work flagged in this file's "The Metamath-`Database` → `Derivable_L`
-connection" deferral. **Not built.**
+[`mm_database.rs`](./mm_database.rs) generalises `mm_replay` from the fixed
+prop-calc rule set to an **arbitrary `metamath::Database`**: a data-driven
+`metalogic::RuleSet` is built from the database's `|-` assertions (one
+substitution-instance `Closed_L` clause each — premises and conclusion encoded,
+metavariables ∀-bound outermost-first), and `replay_db(db, assertion)` walks a
+*verified, untrusted* **normal** proof, re-deriving `⊢ Derivable_L ⌜S⌝` =
+`metalogic::derivable(&rule_set(db), enc(S))` step by step through the kernel
+(syntactic formers → `Slot::Wff`; `|-` axioms/rules → the `nth_conjunct` +
+`all_elim` + `imp_elim` derivation constructor `mirror`-of-`init::prop::derive_mp`;
+`$e` → `Thm::assume`). **One function replays many logics** — tested genuine
+(`has_no_obs`) and hyp-correct on three unrelated databases: PROP (`ax2i`, `a1i`),
+demo0 (`th1 |- t = t`), GROUP (`th |- ( ( a o b ) = ( a o b ) )`). "A Metamath
+database IS a logic." **Done.**
+
+- **The encoding** is an *uninterpreted free term algebra* over `Φ = nat`: a
+  binary `mm$concat`, one `mm$c$<tok>` constant per Metamath constant symbol, and
+  each metavariable a plain free var. Substitution = `all_elim` because these are
+  all uninterpreted free vars/variables: `enc(schema)[v := enc(arg)]` is
+  *syntactically* `enc(schema[v := arg])` (no β/δ/normalisation). The fold is
+  **former-structured** (a `Parser` built from the database's syntactic formers
+  parses both literal and substituted expressions into the *same* compact tree)
+  so `concat`-associativity never desyncs a literal axiom conclusion from the same
+  expression reached by substituting a former-built argument into a schema.
+
+- **Remaining / over-approximated** (sound for the existence/construct direction):
+  - **Typecodes & `$d`** — clauses quantify each metavar over *all* of `Φ` rather
+    than the typecode's sub-language, and `$d` disjointness is not enforced. A
+    larger rule set only proves *more*; the per-step replay re-checks each
+    instance, so the constructed witness is genuine.
+  - **Compressed proofs** are rejected (decompress to a normal proof first).
+  - **Tying the Rust `RuleSet` to a first-class HOL `Database` *value*** (à la
+    [`database.rs`](./database.rs)'s `Derivable_DB`) is a further unification —
+    the `mm_database` rule set is a Rust closure, not yet a HOL `db` value.
 
 ## Reconciliation — the two `Derivable` notions (DONE, Phase A)
 
@@ -109,11 +134,14 @@ relation theorems.
 ### The Metamath-`Database` → `Derivable_L` connection (the engine stretch)
 
 Deriving a `Derivable_L` from a [`metamath::Database`](../metamath/)'s axioms +
-rule schemas (the `#logic`-semantics seed). Pieces: (1) an encoding of Metamath
-`SExpr` into a HOL carrier `Φ`; (2) a `RuleSet` builder turning each assertion
-into a `Closed_L` clause (metavariable substitution = the kernel's `inst`, `$d` →
-freshness); (3) a per-logic denotation (only to *project*). Demonstrate on the
-prop-calc example database. **Not built.**
+rule schemas (the `#logic`-semantics seed). Pieces (1) an encoding of Metamath
+expressions into a HOL carrier `Φ` and (2) a `RuleSet` builder turning each `|-`
+assertion into a `Closed_L` clause are now **DONE** in
+[`mm_database.rs`](./mm_database.rs) (demonstrated on the prop-calc, demo0, and
+GROUP databases). Remaining: (3) a per-logic **denotation** (only needed to
+*project* a finished `Derivable_L` to a concrete fact) is **not built**, and the
+`$d`/typecode restrictions are over-approximated (see the `mm_database` section
+above).
 
 ### A non-trivial structural `σ` for transport
 

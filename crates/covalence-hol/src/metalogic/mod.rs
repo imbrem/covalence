@@ -73,6 +73,14 @@ pub mod relations;
 // *pure derivability over the encoded syntax* (NO denotation, NO observer).
 pub mod mm_replay;
 
+// **General schema-database Metamath replay** (`docs/metatheory.md`): generalise
+// `mm_replay` from the fixed prop-calc rule set to an *arbitrary*
+// `metamath::Database` — build a data-driven `RuleSet` from the database's
+// assertions (an uninterpreted free term algebra over `nat`; substitution =
+// `all_elim`) and replay a verified normal proof into `⊢ Derivable_L ⌜S⌝`. One
+// function replays many logics. "A Metamath database IS a logic."
+pub mod mm_database;
+
 // **A HOL-backed `DatabaseSink`**: construct `⊢ Derivable_Prop ⌜S⌝` *while
 // reading* a `.mm` source (the reader drives the builder trait; this backend
 // replays each `$p` through the kernel as it is read). The in-memory `Database`

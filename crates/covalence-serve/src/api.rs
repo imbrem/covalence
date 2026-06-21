@@ -169,7 +169,8 @@ fn mm_err_frame(message: impl std::fmt::Display) -> String {
 /// database order; the `done` field is a monotonic 1..total counter for the bar.
 fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
     use covalence_hol::metalogic::mm_import::import_theorems_parallel;
-    use covalence_metamath::database::Statement;
+    use covalence_metamath::database::{Proof, Statement};
+    use covalence_metamath::{ProofStep, proof_steps};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let started = std::time::Instant::now();
@@ -195,13 +196,56 @@ fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
             );
         },
         |done, total, label, result, elapsed| {
-            // Render the Metamath statement (conclusion + essentials).
-            let (mm, ess) = match db.statement_by_label(label) {
-                Some(Statement::Assert(a)) => (
-                    a.conclusion.render(),
-                    a.frame.essentials.iter().map(|h| h.expr.render()).collect::<Vec<_>>(),
-                ),
-                _ => (String::new(), Vec::new()),
+            // Render the Metamath statement (conclusion + essentials), the proof
+            // code, and the deduped logical (`|-`) dependency list.
+            let (mm, ess, proof, deps) = match db.statement_by_label(label) {
+                Some(Statement::Assert(a)) => {
+                    let proof = match &a.proof {
+                        Some(Proof::Normal(labels)) => labels.join(" "),
+                        Some(Proof::Compressed { labels, letters }) => format!(
+                            "( {} ) {}",
+                            labels.join(" "),
+                            String::from_utf8_lossy(letters)
+                        ),
+                        None => String::new(),
+                    };
+                    // Deduped (first-seen order) logical assertions referenced by
+                    // the proof. Skip Save/Heap steps and syntax formers (typecode
+                    // != "|-"). kind: thm if the dep has its own proof, else df* →
+                    // def, else axiom.
+                    let mut deps: Vec<serde_json::Value> = Vec::new();
+                    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    if let Ok(steps) = proof_steps(&db, a) {
+                        for step in &steps {
+                            let ProofStep::Label(l) = step else { continue };
+                            if seen.contains(l) {
+                                continue;
+                            }
+                            let Some(Statement::Assert(dep)) = db.statement_by_label(l) else {
+                                continue;
+                            };
+                            if dep.conclusion.typecode() != "|-" {
+                                continue;
+                            }
+                            seen.insert(l.clone());
+                            let kind = if dep.proof.is_some() {
+                                "thm"
+                            } else if l.starts_with("df") {
+                                "def"
+                            } else {
+                                "axiom"
+                            };
+                            deps.push(serde_json::json!({ "label": l, "kind": kind }));
+                        }
+                    }
+                    (
+                        a.conclusion.render(),
+                        a.frame.essentials.iter().map(|h| h.expr.render()).collect::<Vec<_>>(),
+                        proof,
+                        deps,
+                    )
+                }
+                _ => (String::new(), Vec::new(), String::new(), Vec::new()),
             };
             let import_ms = elapsed.as_micros() as f64 / 1000.0;
             let frame = match result {
@@ -212,6 +256,7 @@ fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
                     serde_json::json!({
                         "type": "theorem", "done": done, "total": total,
                         "label": label, "mm": mm, "ess": ess,
+                        "proof": proof, "deps": deps,
                         "ok": true,
                         "hyps": thm.hyps().len(),
                         "genuine": thm.has_no_obs(),
@@ -222,6 +267,7 @@ fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
                 Err(e) => serde_json::json!({
                     "type": "theorem", "done": done, "total": total,
                     "label": label, "mm": mm, "ess": ess,
+                    "proof": proof, "deps": deps,
                     "ok": false, "error": e.to_string(),
                     "importMs": import_ms,
                 }),

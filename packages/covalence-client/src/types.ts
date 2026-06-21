@@ -73,6 +73,12 @@ export type ImportMessage =
   | { type: 'done'; ok: number; total: number; elapsedMs: number }
   | { type: 'error'; message: string };
 
+/** A logical (`|-`) assertion referenced by a theorem's proof. */
+export interface ImportDep {
+  label: string;
+  kind: 'axiom' | 'def' | 'thm';
+}
+
 /** Per-theorem result frame. */
 export interface ImportTheoremMessage {
   type: 'theorem';
@@ -83,6 +89,10 @@ export interface ImportTheoremMessage {
   mm: string;
   /** Rendered essential ($e) hypotheses, if any. */
   ess?: string[];
+  /** Rendered Metamath proof code (normal or compressed). */
+  proof?: string;
+  /** Deduped logical (`|-`) assertions the proof references, first-seen order. */
+  deps?: ImportDep[];
   ok: boolean;
   /** Number of HOL hypotheses (present when ok). */
   hyps?: number;
@@ -101,6 +111,8 @@ export interface ImportedTheorem {
   label: string;
   mm: string;
   ess: string[];
+  proof?: string;
+  deps?: ImportDep[];
   ok: boolean;
   hyps?: number;
   genuine?: boolean;

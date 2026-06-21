@@ -15,4 +15,5 @@ export type {
   ImportMessage,
   ImportTheoremMessage,
   ImportedTheorem,
+  ImportDep,
 } from './types.js';

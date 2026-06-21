@@ -11,10 +11,6 @@
 		set: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/set.mm',
 	};
 
-	// Only render the last RENDER_CAP rows so set.mm (47k theorems) doesn't
-	// explode the DOM. All rows stay in `theorems` for the count/selection.
-	const RENDER_CAP = 500;
-
 	let url = $state(PRESETS.hol);
 	let phase = $state<'idle' | 'downloading' | 'parsing' | 'importing' | 'done' | 'error'>('idle');
 	let statusMsg = $state('');
@@ -26,6 +22,8 @@
 	let theorems = $state<ImportedTheorem[]>([]);
 	let selected = $state<ImportedTheorem | null>(null);
 	let failuresOnly = $state(false);
+	let search = $state('');
+	let showHisto = $state(false);
 	let copyMsg = $state('');
 	let ws: WebSocket | null = null;
 
@@ -40,11 +38,73 @@
 			null,
 		),
 	);
-	const filtered = $derived(failuresOnly ? failures : theorems);
-	const visible = $derived(
-		filtered.length > RENDER_CAP ? filtered.slice(filtered.length - RENDER_CAP) : filtered,
+	// Filter: failures-only AND a case-insensitive substring match on label OR mm.
+	const filtered = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		let list = failuresOnly ? failures : theorems;
+		if (q) {
+			list = list.filter(
+				(t) => t.label.toLowerCase().includes(q) || t.mm.toLowerCase().includes(q),
+			);
+		}
+		return list;
+	});
+
+	// --- timing statistics -------------------------------------------------
+	// Linear-interpolation quantile (the "type 7" / numpy default): for p in
+	// [0,1] over a sorted ascending array, index = p*(n-1), interpolate between
+	// the two surrounding samples.
+	function quantile(sorted: number[], p: number): number {
+		const n = sorted.length;
+		if (n === 0) return 0;
+		if (n === 1) return sorted[0];
+		const idx = p * (n - 1);
+		const lo = Math.floor(idx);
+		const hi = Math.ceil(idx);
+		if (lo === hi) return sorted[lo];
+		const frac = idx - lo;
+		return sorted[lo] * (1 - frac) + sorted[hi] * frac;
+	}
+	const sortedMs = $derived(
+		timed
+			.map((t) => t.importMs ?? 0)
+			.slice()
+			.sort((a, b) => a - b),
 	);
-	const truncated = $derived(filtered.length - visible.length);
+	const stats = $derived(
+		sortedMs.length
+			? {
+					min: sortedMs[0],
+					q1: quantile(sortedMs, 0.25),
+					median: quantile(sortedMs, 0.5),
+					q3: quantile(sortedMs, 0.75),
+					max: sortedMs[sortedMs.length - 1],
+				}
+			: null,
+	);
+
+	// --- histogram (linear buckets over importMs) --------------------------
+	const HISTO_BUCKETS = 30;
+	const histo = $derived.by(() => {
+		const xs = sortedMs;
+		if (xs.length === 0) return null;
+		const min = xs[0];
+		const max = xs[xs.length - 1];
+		const span = max - min || 1;
+		const counts = new Array<number>(HISTO_BUCKETS).fill(0);
+		for (const x of xs) {
+			let b = Math.floor(((x - min) / span) * HISTO_BUCKETS);
+			if (b >= HISTO_BUCKETS) b = HISTO_BUCKETS - 1;
+			if (b < 0) b = 0;
+			counts[b]++;
+		}
+		const peak = Math.max(...counts, 1);
+		return { min, max, counts, peak };
+	});
+	// SVG geometry for the histogram.
+	const HW = 640;
+	const HH = 160;
+	const HPAD = 24;
 
 	async function copyFailures() {
 		const data = failures.map((t) => ({ label: t.label, mm: t.mm, ess: t.ess, error: t.error }));
@@ -142,6 +202,8 @@
 					label: msg.label,
 					mm: msg.mm,
 					ess: msg.ess ?? [],
+					proof: msg.proof,
+					deps: msg.deps,
 					ok: msg.ok,
 					hyps: msg.hyps,
 					genuine: msg.genuine,
@@ -232,35 +294,87 @@
 					<input type="checkbox" bind:checked={failuresOnly} />
 					failures only
 				</label>
+				{#if timed.length > 0}
+					<button class="copy" class:on={showHisto} onclick={() => (showHisto = !showHisto)}>
+						{showHisto ? 'hide plot' : 'plot'}
+					</button>
+				{/if}
 				{#if nErr > 0}
 					<button class="copy" onclick={copyFailures}>Copy failures (JSON)</button>
 				{/if}
 				{#if copyMsg}<span class="dim">{copyMsg}</span>{/if}
 			</div>
+			{#if stats}
+				<div class="quantiles">
+					<span class="qlabel">import ms</span>
+					<span class="q">min <b>{stats.min.toFixed(1)}</b></span>
+					<span class="q">q1 <b>{stats.q1.toFixed(1)}</b></span>
+					<span class="q">median <b>{stats.median.toFixed(1)}</b></span>
+					<span class="q">q3 <b>{stats.q3.toFixed(1)}</b></span>
+					<span class="q">max <b>{stats.max.toFixed(1)}</b></span>
+				</div>
+			{/if}
+			{#if showHisto && histo}
+				<div class="histo">
+					<svg viewBox="0 0 {HW} {HH}" preserveAspectRatio="none" role="img"
+						aria-label="histogram of import times">
+						{#each histo.counts as c, i (i)}
+							{@const bw = (HW - 2 * HPAD) / HISTO_BUCKETS}
+							{@const h = (c / histo.peak) * (HH - 2 * HPAD)}
+							<rect
+								x={HPAD + i * bw}
+								y={HH - HPAD - h}
+								width={Math.max(bw - 1, 1)}
+								height={h}
+								fill="var(--accent)"
+							/>
+						{/each}
+						<line x1={HPAD} y1={HH - HPAD} x2={HW - HPAD} y2={HH - HPAD} stroke="var(--border)" />
+					</svg>
+					<div class="haxis">
+						<span>{histo.min.toFixed(1)} ms</span>
+						<span class="dim">{HISTO_BUCKETS} buckets · peak {histo.peak}</span>
+						<span>{histo.max.toFixed(1)} ms</span>
+					</div>
+				</div>
+			{/if}
 		{/if}
 	</section>
 
 	<section class="panes">
 		<div class="list">
-			{#if truncated > 0}
-				<div class="trunc">… {truncated} earlier theorems hidden (showing last {RENDER_CAP})</div>
-			{/if}
-			{#each visible as t (t.label)}
-				<button
-					class="item"
-					class:fail={!t.ok}
-					class:sel={selected?.label === t.label}
-					onclick={() => (selected = t)}
-				>
-					<span class="dot" class:bad={!t.ok}></span>
-					<span class="lbl">{t.label}</span>
-					<span class="mini">{t.mm}</span>
-					{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
-				</button>
-			{/each}
-			{#if theorems.length === 0}
-				<div class="empty">No theorems yet. Choose a source and import.</div>
-			{/if}
+			<div class="searchbar">
+				<input
+					type="text"
+					class="search"
+					bind:value={search}
+					placeholder="filter by label or statement…"
+					spellcheck="false"
+				/>
+				{#if search || failuresOnly}
+					<span class="shown">{filtered.length} / {theorems.length}</span>
+				{/if}
+			</div>
+			<div class="rows">
+				{#each filtered as t (t.label)}
+					<button
+						class="item"
+						class:fail={!t.ok}
+						class:sel={selected?.label === t.label}
+						onclick={() => (selected = t)}
+					>
+						<span class="dot" class:bad={!t.ok}></span>
+						<span class="lbl">{t.label}</span>
+						<span class="mini">{t.mm}</span>
+						{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
+					</button>
+				{/each}
+				{#if theorems.length === 0}
+					<div class="empty">No theorems yet. Choose a source and import.</div>
+				{:else if filtered.length === 0}
+					<div class="empty">No theorems match the current filter.</div>
+				{/if}
+			</div>
 		</div>
 
 		<div class="detail">
@@ -304,6 +418,48 @@
 							<span>status</span><span class="no">import failed</span>
 						</div>
 						<pre class="hol err">{selected.error}</pre>
+					{/if}
+				</div>
+				<div class="field">
+					<div class="flabel">Dependencies</div>
+					{#if selected.deps && selected.deps.length > 0}
+						{@const axioms = selected.deps.filter((d) => d.kind === 'axiom')}
+						{@const defs = selected.deps.filter((d) => d.kind === 'def')}
+						{@const thms = selected.deps.filter((d) => d.kind === 'thm')}
+						{#if axioms.length > 0}
+							<div class="depgroup">
+								<span class="dkind axiom">Axioms ({axioms.length})</span>
+								<span class="chips">
+									{#each axioms as d (d.label)}<span class="chip axiom">{d.label}</span>{/each}
+								</span>
+							</div>
+						{/if}
+						{#if defs.length > 0}
+							<div class="depgroup">
+								<span class="dkind def">Definitions ({defs.length})</span>
+								<span class="chips">
+									{#each defs as d (d.label)}<span class="chip def">{d.label}</span>{/each}
+								</span>
+							</div>
+						{/if}
+						{#if thms.length > 0}
+							<div class="depgroup">
+								<span class="dkind thm">Theorems ({thms.length})</span>
+								<span class="chips">
+									{#each thms as d (d.label)}<span class="chip thm">{d.label}</span>{/each}
+								</span>
+							</div>
+						{/if}
+					{:else}
+						<p class="note">none (axiom instance / hypotheses only)</p>
+					{/if}
+				</div>
+				<div class="field">
+					<div class="flabel">Metamath proof (compressed)</div>
+					{#if selected.proof}
+						<pre class="mm proof">{selected.proof}</pre>
+					{:else}
+						<p class="note">no proof code (axiom).</p>
 					{/if}
 				</div>
 			{:else}
@@ -534,17 +690,86 @@
 		margin-top: 0.5rem;
 	}
 	.list {
+		display: flex;
+		flex-direction: column;
 		border: 1px solid var(--border);
 		border-radius: 8px;
 		max-height: 60vh;
-		overflow-y: auto;
 		background: var(--surface);
 	}
-	.trunc {
-		padding: 0.4rem 0.6rem;
+	.searchbar {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.5rem;
+		border-bottom: 1px solid var(--border);
+		flex: none;
+	}
+	input.search {
+		flex: 1;
+		padding: 0.35rem 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		background: var(--code-bg);
+		color: var(--fg);
+		font-family: var(--font-mono);
+		font-size: 0.78rem;
+	}
+	.searchbar .shown {
 		font-size: 0.72rem;
 		color: var(--muted);
-		border-bottom: 1px solid var(--border);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.rows {
+		flex: 1;
+		overflow-y: auto;
+	}
+	.quantiles {
+		display: flex;
+		gap: 0.8rem;
+		align-items: center;
+		flex-wrap: wrap;
+		margin-top: 0.4rem;
+		font-size: 0.78rem;
+		color: var(--muted);
+	}
+	.quantiles .qlabel {
+		text-transform: uppercase;
+		font-size: 0.62rem;
+		letter-spacing: 0.06em;
+	}
+	.quantiles .q b {
+		color: var(--fg);
+		font-variant-numeric: tabular-nums;
+		font-weight: 600;
+	}
+	.histo {
+		margin-top: 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 0.5rem;
+		background: var(--code-bg);
+	}
+	.histo svg {
+		display: block;
+		width: 100%;
+		height: 160px;
+	}
+	.haxis {
+		display: flex;
+		justify-content: space-between;
+		margin-top: 0.3rem;
+		font-size: 0.7rem;
+		color: var(--fg);
+		font-variant-numeric: tabular-nums;
+	}
+	.haxis .dim {
+		color: var(--muted);
+	}
+	.copy.on {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 	.item {
 		display: flex;
@@ -675,5 +900,52 @@
 		color: var(--muted);
 		font-size: 0.85rem;
 		text-align: center;
+	}
+	.depgroup {
+		margin-bottom: 0.5rem;
+	}
+	.dkind {
+		display: block;
+		font-size: 0.68rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		margin-bottom: 0.25rem;
+		color: var(--muted);
+	}
+	.dkind.axiom {
+		color: var(--warnc);
+	}
+	.dkind.def {
+		color: var(--accent);
+	}
+	.dkind.thm {
+		color: var(--ok);
+	}
+	.chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+	}
+	.chip {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		padding: 0.1rem 0.4rem;
+		border-radius: 4px;
+		border: 1px solid var(--border);
+		background: var(--code-bg);
+		color: var(--fg);
+	}
+	.chip.axiom {
+		border-color: rgba(251, 191, 36, 0.4);
+	}
+	.chip.def {
+		border-color: rgba(124, 111, 247, 0.4);
+	}
+	.chip.thm {
+		border-color: rgba(74, 222, 128, 0.4);
+	}
+	pre.proof {
+		max-height: 14rem;
+		overflow-y: auto;
 	}
 </style>

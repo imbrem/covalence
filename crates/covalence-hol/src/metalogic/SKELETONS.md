@@ -100,6 +100,14 @@ database IS a logic." **Done.**
     larger rule set only proves *more*; the per-step replay re-checks each
     instance, so the constructed witness is genuine.
   - **Compressed proofs** are rejected (decompress to a normal proof first).
+    This is the **concrete blocker to replaying real `hol.mm`**: all 151 of its
+    `$p` proofs are compressed (and the bulk of `set.mm` too), so `replay_db`
+    cannot yet construct a kernel `⊢ Derivable_L ⌜S⌝` from real data. Needs a
+    decompress-to-normal pass (re-expanding the verifier's `decompress_proof`
+    `Z`/heap steps into a flat RPN label list) or teaching `replay_db` to consume
+    the decoded `ProofStep`s directly. (`covalence-metamath` verifies `hol.mm` /
+    `set.mm` fully — the checker handles compressed proofs; only the *HOL replay*
+    needs normal proofs.)
   - **Tying the Rust `RuleSet` to a first-class HOL `Database` *value*** (à la
     [`database.rs`](./database.rs)'s `Derivable_DB`) is a further unification —
     the `mm_database` rule set is a Rust closure, not yet a HOL `db` value.
@@ -118,6 +126,50 @@ theorems about the *engine's* `derivable`. (The `Closed_DB` frame is still the
 fixed *MP-only* rule frame; generalising the engine's clauses to one
 *substitution-instance clause per Metamath assertion* — so a general database's
 non-MP rules are modelled — is the `RuleSet`-from-`Database` work below.)
+
+## transport_db — generic transport between Metamath-database logics (DONE: generic + σ=id monotonicity)
+
+[`transport_db.rs`](./transport_db.rs) generalises [`relations.rs`](./relations.rs)'s
+fixed-frame `Derivable_DB` transport to an **arbitrary [`RuleSet`]** — the
+"relate formal systems" / "induction on derivations" engine. Over any source/target
+rule set sharing a carrier `Φ` and a translation `σ : Φ → Φ`:
+
+- `interp_stmt(src, tgt, σ, a)` — the statement `Derivable(src, a) ⟹ Derivable(tgt, σ a)`;
+- `sigma_pred(tgt, σ)` — the rule-induction predicate `λx. Derivable(tgt, σ x)`;
+- `transport(src, tgt, σ, clause_sims)` — `⊢ ∀A. Derivable(src, A) ⟹ Derivable(tgt, σ A)`,
+  proved in ONE move as `metalogic::rule_induction(sigma_pred(tgt,σ), clause_sims,
+  derivable(src, A), "A", Φ)` (the trailing `pred A` redex β-reduced to the clean
+  `Derivable(tgt, σ A)`). The caller's **`clause_sims` ARE the per-rule
+  "σ simulates this rule in the target" obligations** — `clause_sims[k]` proves
+  `src`'s k-th clause at `d := sigma_pred(tgt,σ)`; `rule_induction` re-checks each,
+  so a bogus simulation fails the build. **Done, proven.**
+
+- **Worked instance — conservative extension / monotonicity for arbitrary
+  Metamath databases (σ = id, T ⊇ S).** `mm_database::clause_infos` exposes each
+  `|-` clause (`float_vars`/`ess_encs`/`concl_enc` + `build_body`); the test builds
+  source `S` (prop calc `ax-1`/`ax-2`/`ax-mp`) and target `T = S + ax-3` (same
+  signature), and for each source clause proves the σ=id simulation by routing the
+  `σ`-image premises through the *byte-identical* target clause (`nth_conjunct` +
+  `all_elim` + the impredicative derivation constructor), then β-folding back.
+  `transport` lands the genuine `⊢ ∀A. Derivable_S A ⟹ Derivable_T (id A)`
+  (hyp-free, `has_no_obs`), and the second test specialises it to move a concrete
+  `ax-1` axiom instance from `S` into `T`. **Done, proven.** (Contrast
+  `database::monotone`, which proves the same for the fixed MP+axiom frame; this is
+  it for any database's full rule set, through the generic engine.)
+
+- **Remaining — a richer structural `σ`.** A genuinely structural translation
+  (constant-symbol renaming `mm$c$foo ↦ mm$c$bar`, connective mapping) with the
+  per-rule simulations honestly proved is **not built**. *Blocker:* the
+  `mm_database` carrier `Φ = nat` is a free term algebra of **uninterpreted free
+  vars** (`mm$concat`, `mm$c$<tok>`) — substitution = `all_elim` precisely because
+  there is *no* constructor/recursor. A structural `σ` that descends `concat`-trees
+  cannot be written as a closed HOL `Φ → Φ` function without first reifying the
+  encoding as a genuine inductive datatype (a recursor over `concat`/leaves). That
+  datatype-ification is the prerequisite, shared with the "non-trivial structural
+  `σ`" note below.
+- **Remaining — the HOL→ZFC-scale instance** (`Derivable_HOL ⟹ Derivable_ZFC ∘ σ`):
+  the north-star target; needs the structural-σ infrastructure above plus the
+  concrete HOL/ZFC databases as rule sets. **Not built.**
 
 ## Deferred
 

@@ -431,6 +431,59 @@ fn collect_clauses(db: &Database) -> (Vec<Clause>, HashMap<String, usize>) {
     (clauses, index)
 }
 
+/// Public, read-only view of one `|-` clause of a database's rule set — the
+/// per-rule data [`crate::metalogic::transport_db`] needs to state and discharge
+/// a *rule-simulation* obligation generically (without re-parsing the database).
+///
+/// The fields are the same compact encodings [`rule_set`] uses: the metavariable
+/// names (∀-binders, frame order), the encoded essential premises, and the
+/// encoded conclusion. [`build_body`](ClauseInfo::build_body) rebuilds the
+/// `bool`-typed clause for any `d ⌜·⌝` applier — exactly the term a transport
+/// `clause_sim` must prove at `d := pred`.
+#[derive(Clone, Debug)]
+pub struct ClauseInfo {
+    /// The clause's metavariables, outermost-`∀` first.
+    pub float_vars: Vec<String>,
+    /// The encoded essential premises (`d`-of-these are the clause antecedents).
+    pub ess_encs: Vec<Term>,
+    /// The encoded conclusion (`d`-of-this is the clause consequent).
+    pub concl_enc: Term,
+}
+
+impl ClauseInfo {
+    /// The carrier type `Φ = nat` these encodings live over.
+    pub fn phi() -> Type {
+        phi()
+    }
+
+    /// Rebuild this clause's `bool` body for a `d ⌜·⌝` applier — the same layout
+    /// [`rule_set`] hands the engine: `∀float_vars. (⋀ d ⌜ess⌝ ⟹)? d ⌜concl⌝`.
+    pub fn build_body(&self, d_apply: &dyn Fn(&Term) -> Result<Term>) -> Result<Term> {
+        Clause {
+            float_vars: self.float_vars.clone(),
+            ess_encs: self.ess_encs.clone(),
+            concl_enc: self.concl_enc.clone(),
+        }
+        .build(d_apply)
+    }
+}
+
+/// The database's `|-` clauses (one per `|-` assertion, database order), as the
+/// public [`ClauseInfo`] view, paired with the `label → clause index` map.
+/// Same data [`rule_set`] is built from — the bridge for generic transport.
+pub fn clause_infos(db: &Database) -> (Vec<ClauseInfo>, HashMap<String, usize>) {
+    let (clauses, index) = collect_clauses(db);
+    let infos = clauses
+        .into_iter()
+        .map(|c| ClauseInfo {
+            float_vars: c.float_vars,
+            ess_encs: c.ess_encs,
+            concl_enc: c.concl_enc,
+        })
+        .collect();
+    (infos, index)
+}
+
 /// Build the [`RuleSet`] for a Metamath database: carrier `Φ = nat`, one clause
 /// per `|-` assertion (database order). This *is* the logic the database
 /// defines.

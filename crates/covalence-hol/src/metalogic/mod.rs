@@ -67,6 +67,15 @@ pub mod toy;
 pub mod database;
 pub mod relations;
 
+// **Generic interpretation/transport between Metamath-database logics**
+// (`docs/metatheory.md`, "relate formal systems"): `transport` proves
+// `Derivable_L1 ⟹ Derivable_L2 ∘ σ` ONCE via `rule_induction` (predicate
+// `d := λx. Derivable_L2 (σ x)`); the caller's `clause_sims` are the per-rule
+// "σ simulates this rule in the target" obligations. Worked instance:
+// conservative-extension / monotonicity (`σ = id`, `T ⊇ S`) over `mm_database`
+// rule sets. The long-term target is `Derivable_HOL ⟹ Derivable_ZFC ∘ σ`.
+pub mod transport_db;
+
 // **Metamath-Prop → HOL replay** (`docs/metatheory.md`): replay a *verified*
 // propositional-calculus Metamath proof into a kernel-constructed
 // `⊢ Derivable_Prop ⌜S⌝` theorem — the "construct, don't trust" bridge landing in

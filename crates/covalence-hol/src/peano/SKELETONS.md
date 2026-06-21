@@ -43,6 +43,16 @@ the plan, restructured per `docs/theories-models-and-logics.md §5.5`):
   is **removed**; a `LockstepDerivation` placeholder documents the secondary
   "directly obtain a HOL fact" path (no constructors yet — see below).
 
+## Now an instance of the generic engine
+
+`Derivable_PA` is wired onto [`crate::metalogic`](../../metalogic/) — the
+generic `Derivable_L` substrate. `pa_rule_set` exposes PA's 11 clauses as a
+`metalogic::RuleSet` (the single clause source of truth is `pa::clauses_at`);
+`derivable`/`derive_axiom`/`derive_mp` reimplement on the engine's
+`derivable`/`derive_via_closed`/`nth_conjunct`, pinned byte-identical to the
+bespoke shape by `derivable_via_engine_matches`. Soundness/projection are
+unchanged (still hand-written here, sharing `clauses_at`).
+
 ## Deferred
 
 ### Derivation constructors for the quantifier/equality clauses (motive encoding)
@@ -52,21 +62,39 @@ proved sound** (`soundness` discharges them), but their **derivation
 constructors** — building `⊢ Derivable_PA ⌜A⌝` *through* those clauses for a
 concrete arithmetic theorem (e.g. the full `∀x. x+0=x` by induction-on-
 derivations) — are **not landed**. The blocker is a real encoding issue, not new
-mathematics: those clauses quantify a motive `Q : 't→'r`, and `all_cons(Q)`
-β-closes the Church handlers *around a free `Q`*; instantiating `Q := q` for a
-concrete motive `q` that itself mentions the arithmetic handlers (`eq`/`add`/…)
-leaves `q`'s handlers **un-captured** (capture-avoiding `all_elim` correctly
-keeps them free), so the result does not match the `encode_form`/denotation form
-(handlers bound). The fix is **parametric HOAS at the syntactic carrier**: make
-the clause motive `Q : Θ_sem → Φ_sem` (a function over whole encoded terms,
-injected via a `var_t : 't → Θ_sem` constant), so `Q w` is plain β over the
-carrier with no handler capture, and `all_cons` threads the handlers through
-`Q`. This is the **Phase-A3 generic `Derivable` engine** boundary. Once landed,
-`derive_specialize`/`derive_induct`/`derive_leibniz`/`derive_generalize` (drafted
-and removed in this pass) come back and the headline `∀x. x+0=x` derives purely.
-Note: a full FOL calculus additionally wants the propositional Hilbert schemas
-(as `prop.rs`) for implication chaining; the Leibniz + generalise clauses cover
-the equality/quantifier core.
+mathematics. The clauses quantify a motive `Q : 't→'r`; `all_cons(Q)` β-closes
+the Church handlers *around a free `Q`*, and instantiating `Q := q` for a
+concrete motive `q` that mentions the arithmetic handlers (`eq`/`add`/…) leaves
+`q`'s handlers **un-captured** (capture-avoiding `all_elim` correctly renames the
+binders), so the result does not match `encode_form`'s handler-bound shape.
+
+**Corrected diagnosis (this pass — the naive fix is *unsound*).** The
+SKELETONS-suggested "make the motive `Q : Θ_sem → Φ_sem` over whole encoded
+terms (injected via `var_t : 't → Θ_sem`)" was tried and **breaks the soundness
+proof**, so it is not the fix as stated. Concretely: with a carrier-term motive,
+the specialise clause's denotation needs `⟦Q w⟧ = ⟦Q (var_t ⟦w⟧)⟧` for arbitrary
+`Q : Θ_sem→Φ_sem` and arbitrary encoded term `w` — but `Q` is an arbitrary HOL
+function applied to a *whole carrier value*, so it can distinguish `w` from
+`var_t ⟦w⟧` (they are different HOL terms with equal `'t`-denotations).
+Equivalently for induction: `nat_induct` needs a genuine `nat→bool` predicate
+`P̂`, and `⟦Q (zero_term)⟧ = P̂ 0 = ⟦Q (var_t 0)⟧` fails for the same reason. The
+**fold-level** motive `Q : 't→'r` (current design) is exactly the one for which
+soundness *is* automatic (`⟦q_at(Q,x)⟧` reduces to `Q x` at `'t:=nat`), so the
+fix must **keep the fold-level motive and solve only the constructor capture** —
+not change the clause shape.
+
+**What the real fix needs.** Make the *concrete* motive carry **no free handler
+variables** so `all_elim(Q := q)` is capture-free, while still being a
+`'t→'r` fold. That means parameterizing the motive over the handler
+environment explicitly (a motive relative to a fixed handler tuple, threaded by
+the clause) — a co-evolution of the clause statement, its soundness discharge,
+and the constructor, all kept green together. This is a real multi-step
+redesign (the reason it stayed deferred), not a one-line carrier swap.
+Additionally, a full FOL calculus wants the **propositional Hilbert schemas**
+(as `prop.rs`) so the induction *step* `(x+0=x) ⟹ (Sx+0=Sx)` is itself
+derivable (the current 11 clauses have no deduction theorem / no `⟹`-intro at
+the derivability level), so even with the motive fix the headline `∀x. x+0=x`
+needs those schemas added before it derives purely.
 
 ### The `LockstepDerivation` constructors (secondary convenience)
 

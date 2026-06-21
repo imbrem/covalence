@@ -472,14 +472,30 @@ and theory-agnostic, so prop calc, FOL, ZFC, PA, modal logics all become
 databases in *one shared syntax everyone writes their logic in*. (This is why the
 crate's medium is `SExpr` and the encoding is faithful flat sequences — it's the
 shared substrate; the HOL kernel, structured-tree encodings, and set.mm scale are
-all **optimizations over it**.) Four locking pieces:
+all **optimizations over it**.)
 
-1. **The standard theorem's *meaning* is an existence claim.** Asserting `P` in a
-   Metamath-defined logic `L` means **`∃ d. Derivable_L(P)`** — there *exists* a
-   (possibly astronomically long) Metamath derivation. We never exhibit `d`, only
-   certify it exists. This is the rigorous form of the scoped-truth "`P` holds in
-   `L`" (§5.5): a HOL-kernel proof, a WASM oracle, a replayed set.mm proof are each
-   just a *more practical certificate of the same existence claim*.
+**The grounding — one primitive, one existential, proof-irrelevant (user).** The
+*primitive* is the **decidable valid-proof relation** `ValidProof(P, S, A)` — "`P`
+is a valid Metamath proof of statement `S` under axioms `A`" — exactly what
+`metamath::verify` *checks* (a concrete proof object, mechanically validated). The
+*one* derived notion is the **existential** `Derivable_A(S) := ∃P. ValidProof(P, S,
+A)` — "*there exists* a (possibly astronomically long) valid proof". **Proof-
+irrelevance is the name of the game:** we care only that a proof *exists*, never
+which one — two proofs of `S` are interchangeable and we never manipulate the giant
+`P` (HOL makes this automatic: `Derivable_A(S)` is a mere proposition). This is the
+**thin waist at the *inner-logic* level**: every inner/object logic maps *into*
+Metamath as an axiom-set `A`, and the metatheory is **proving equivalences between
+Metamath variants** — conservative extensions, interpretations, `A₁ ⊑ A₂` — as
+relations between databases. (Distinct from the *outer* waist: HOL-ω over Pure is
+the metalogic we reason *in*; Metamath is the inner waist object logics reduce
+*to* — cf. [[pure-narrow-waist-direction]].) Four locking pieces:
+
+1. **The standard theorem's *meaning* is that existential.** Asserting `S` in a
+   Metamath-defined logic `A` means **`Derivable_A(S) = ∃P. ValidProof(P, S, A)`**.
+   We never exhibit `P`, only certify it exists — the rigorous form of the scoped
+   truth "`S` holds in `A`" (§5.5): a HOL-kernel proof, a WASM oracle, a replayed
+   set.mm proof are each just a *more practical certificate of the same existence
+   claim* (proof-irrelevance is what makes them interchangeable).
 2. **Metatheorems = existence-transport via a rewriting function `S`.** The shape
    is `Derivable_ZF(A) ⟹ Derivable_GT(S(A))`, where `S` is a computable rewrite on
    Metamath `SExpr` terms, proved **by induction on the source derivation** (each

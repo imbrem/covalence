@@ -174,12 +174,31 @@ run once; don't over-optimize), then performance. The construct-don't-trust core
   replace parts with our own proofs, but **keep set.mm FFI as the mirror-principle
   check** ("we are proving what we think we are"), and *don't* roll our own for
   the basic derivations or the axioms (use set.mm's).
-- **Shorter HOL repr via definitions + two-phase import.** Turn Metamath
-  *definitions* into HOL definitions of the syntax (`M = S` in Metamath →
-  `M_syn := syntax(S)` in HOL) so a theorem's HOL representation stays short
-  instead of fully expanding `mm$concat`/`mm$c$…`. Then a two-phase import:
-  convert the definitions to HOL first (sequential), then prove the theorems
-  (the part to shard/parallelise).
+- **Shorter / readable HOL repr — the structured-former encoding (MODERATE).**
+  Today `parse`/`encode` emit a flat `mm$concat`-tree of per-symbol `mm$c$<tok>`
+  constants (readable token names, but verbose nesting). The win: give each
+  **syntactic former** (`$a` with a `wff`/`class`/`term`/… conclusion) a
+  dedicated *uninterpreted* HOL constant of its arity (`mm$f$<label> :
+  nat→…→nat`, one arg per `$f` float) and have `parse` emit
+  `mm$f$<label>(enc arg₁,…,enc argₖ)` instead of `concat`-over-body. Then `⌜S⌝`
+  is a readable **tree of named formers** (`wcel(A,B)`, `wi(ph,ps)`) — short and
+  structured. **Soundness is unchanged**: formers are constants, metavars are
+  free vars, so a substitution-instance is still exactly `all_elim`
+  (`enc(schema)[v:=enc(arg)] = enc(subst)` syntactically). The Parser already
+  does the former-structured *parse* (`Former`/`parse`/`encode_greedy`); the
+  change is what it *emits* (former-constant application vs `concat`), localized
+  to `mm_database`'s encoder + re-test. This is the "structured-tree encoding"
+  deferral, now motivated. NB: this is distinct from Metamath's `df-*`
+  *definitional axioms* (which are `|-` axioms, already imported as rule-set
+  clauses) — turning *those* into unfolding HOL definitions (`M := S` +
+  conservativity) is a separate, deeper feature, not needed for readability.
+- **Two-phase / definitions-first import (EASY–MODERATE).** A mode that loads
+  just the **signature** — the formers (the `mm$f$…` constants above) + the
+  `df-*` definitional axioms — and shows it, *without* proving theorems (cheap;
+  browse/use the ZFC signature). Then prove theorems (the parallel part). With
+  uninterpreted former-constants there's no hard ordering dependency, so
+  "definitions first" is mainly organizational; it becomes load-bearing only if
+  `df-*` become unfolding definitions. Pairs with declarations-only load above.
 - **Instrumentation:** basic operation counters (kernel inference steps per
   theorem) + memory-use counters surfaced in the import UI.
 - **Definition / dependency graph** info, then a **graph explorer**; and, for a

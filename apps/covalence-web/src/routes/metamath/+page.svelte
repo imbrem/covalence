@@ -23,6 +23,7 @@
 	let selected = $state<ImportedTheorem | null>(null);
 	let failuresOnly = $state(false);
 	let search = $state('');
+	let sortBy = $state<'order' | 'slow' | 'fast' | 'deps' | 'label'>('order');
 	let showHisto = $state(false);
 	let copyMsg = $state('');
 	let ws: WebSocket | null = null;
@@ -92,6 +93,25 @@
 			);
 		}
 		return list;
+	});
+
+	// Sort the (filtered) list. `order` = import/completion order; `slow`/`fast`
+	// by import time (to inspect the stragglers — sort by speed); `deps` by direct
+	// dependency count (often correlated with slowness); `label` alphabetical.
+	const sorted = $derived.by(() => {
+		const list = filtered.slice();
+		switch (sortBy) {
+			case 'slow':
+				return list.sort((a, b) => (b.importMs ?? -1) - (a.importMs ?? -1));
+			case 'fast':
+				return list.sort((a, b) => (a.importMs ?? Infinity) - (b.importMs ?? Infinity));
+			case 'deps':
+				return list.sort((a, b) => (b.deps?.length ?? 0) - (a.deps?.length ?? 0));
+			case 'label':
+				return list.sort((a, b) => a.label.localeCompare(b.label));
+			default:
+				return list;
+		}
 	});
 
 	// --- timing statistics -------------------------------------------------
@@ -404,12 +424,19 @@
 					placeholder="filter by label or statement…"
 					spellcheck="false"
 				/>
+				<select class="sort" bind:value={sortBy} title="sort order">
+					<option value="order">order</option>
+					<option value="slow">slowest</option>
+					<option value="fast">fastest</option>
+					<option value="deps">most deps</option>
+					<option value="label">label</option>
+				</select>
 				{#if search || failuresOnly}
 					<span class="shown">{filtered.length} / {theorems.length}</span>
 				{/if}
 			</div>
 			<div class="rows">
-				{#each filtered as t (t.label)}
+				{#each sorted as t (t.label)}
 					<button
 						class="item"
 						class:fail={!t.ok}
@@ -444,15 +471,8 @@
 					{/if}
 				</div>
 				<div class="field">
-					<div class="flabel">HOL representation</div>
+					<div class="flabel">HOL term</div>
 					{#if selected.ok}
-						<!-- Aliased (folded) form: the encoded conclusion ⌜S⌝ *is* the Metamath
-						     statement, so the faithful folded theorem is `Derivable_L ⌜S⌝`
-						     (hypotheses = the essentials' derivability). The raw kernel term
-						     (∀d. Closed ⟹ …, with the concat encoding) is the unfolded reality,
-						     shown below under a toggle. -->
-						<pre class="hol alias">{#each selected.ess as e (e)}Derivable_L ⌜{e}⌝
-{/each}⊢ Derivable_L ⌜{selected.mm}⌝</pre>
 						<div class="kv">
 							<span>hypotheses</span><span>{selected.hyps}</span>
 						</div>
@@ -467,15 +487,16 @@
 								<span>import time</span><span>{selected.importMs.toFixed(1)} ms</span>
 							</div>
 						{/if}
-						<details>
-							<summary>raw kernel term (unfolded)</summary>
-							<p class="note">
-								Truncated preview of the actual conclusion — <code>Derivable_L</code> unfolded
-								to <code>∀d. Closed ⟹ d ⌜S⌝</code> over the syntactic encoding. The real term
-								is huge; that's the point of proof-irrelevance.
-							</p>
-							<pre class="hol">{selected.holPreview}…</pre>
-						</details>
+						{#if selected.deps != null}
+							<div class="kv">
+								<span>direct deps</span><span>{selected.deps.length}</span>
+							</div>
+						{/if}
+						<p class="note">
+							The actual kernel conclusion (<code>∀d. Closed ⟹ d ⌜S⌝</code> — derivability
+							over the encoded syntax), truncated.
+						</p>
+						<pre class="hol">{selected.holPreview}…</pre>
 					{:else}
 						<div class="kv">
 							<span>status</span><span class="no">import failed</span>
@@ -803,6 +824,16 @@
 		color: var(--fg);
 		font-family: var(--font-mono);
 		font-size: 0.78rem;
+	}
+	.searchbar .sort {
+		padding: 0.35rem 0.4rem;
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		background: var(--surface);
+		color: var(--fg);
+		font-family: var(--font-mono);
+		font-size: 0.74rem;
+		cursor: pointer;
 	}
 	.searchbar .shown {
 		font-size: 0.72rem;

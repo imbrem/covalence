@@ -71,15 +71,18 @@ pub fn import_theorems_with_progress(
 /// straggler proofs don't stall the fast majority). The database is parsed once
 /// and shared by `&` across threads (read-only); each `derive_theorem` is
 /// independent (its rule set is scoped to its own proof), so they parallelize
-/// cleanly. `on_start(total)` fires once before work begins; `on_each(done,
-/// total, label, &result, elapsed)` fires once per finished theorem (from a
-/// worker thread — must be `Sync`; `done` is a monotonic completion counter, so
-/// results arrive out of database order). Use `n_threads = 0` to pick
-/// `available_parallelism`.
+/// cleanly. `on_start(total)` fires once before work begins; `on_pick(label)`
+/// fires when a worker pulls a label off the queue, **before** its proof is
+/// derived (so a UI can mark it in-progress); `on_each(done, total, label,
+/// &result, elapsed)` fires once per finished theorem. Both `on_pick` and
+/// `on_each` run on worker threads (must be `Sync`); `done` is a monotonic
+/// completion counter, so results arrive out of database order. Use `n_threads
+/// = 0` to pick `available_parallelism`.
 pub fn import_theorems_parallel(
     db: &Database,
     n_threads: usize,
     on_start: impl FnOnce(usize),
+    on_pick: impl Fn(&str) + Sync,
     on_each: impl Fn(usize, usize, &str, &covalence_core::Result<Thm>, std::time::Duration) + Sync,
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -100,6 +103,7 @@ pub fn import_theorems_parallel(
 
     let next = AtomicUsize::new(0);
     let done = AtomicUsize::new(0);
+    let on_pick = &on_pick;
     let on_each = &on_each;
     let labels = &labels;
     let next = &next;
@@ -112,6 +116,7 @@ pub fn import_theorems_parallel(
                     break;
                 }
                 let label = &labels[i];
+                on_pick(label);
                 let t0 = std::time::Instant::now();
                 let result = derive_theorem(db, label);
                 let elapsed = t0.elapsed();
@@ -191,6 +196,7 @@ mod tests {
             &db,
             0,
             |total| eprintln!("scanning {total} |- theorems (parallel)"),
+            |_label| {},
             |done, total, label, result, _dur| {
                 if let Err(e) = result {
                     fails.lock().unwrap().push((label.to_string(), e.to_string()));

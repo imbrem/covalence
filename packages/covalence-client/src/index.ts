@@ -13,7 +13,9 @@ export type {
   ObjectInfoResponse,
   TreeEntry,
   ImportMessage,
-  ImportTheoremMessage,
+  ImportProvedMessage,
+  ImportDecl,
+  ImportStatus,
   ImportedTheorem,
   ImportDep,
 } from './types.js';

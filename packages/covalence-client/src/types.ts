@@ -66,33 +66,34 @@ export interface TreeEntry {
 // Streamed over the `/api/mm/import` WebSocket; see CovalenceClient.connectMmImport.
 // ---------------------------------------------------------------------------
 
-/** A streamed frame from the Metamath import WebSocket. */
-export type ImportMessage =
-  | { type: 'parsed'; total: number }
-  | ImportTheoremMessage
-  | { type: 'done'; ok: number; total: number; elapsedMs: number }
-  | { type: 'error'; message: string };
-
 /** A logical (`|-`) assertion referenced by a theorem's proof. */
 export interface ImportDep {
   label: string;
   kind: 'axiom' | 'def' | 'thm';
 }
 
-/** Per-theorem result frame. */
-export interface ImportTheoremMessage {
-  type: 'theorem';
-  done: number;
-  total: number;
+/** The **static** declaration of one theorem (graph-phase payload): everything
+ * known before its proof is (re-)derived through the kernel. */
+export interface ImportDecl {
   label: string;
   /** Rendered Metamath conclusion (`typecode sym ...`). */
   mm: string;
   /** Rendered essential ($e) hypotheses, if any. */
   ess?: string[];
-  /** Rendered Metamath proof code (normal or compressed). */
-  proof?: string;
   /** Deduped logical (`|-`) assertions the proof references, first-seen order. */
   deps?: ImportDep[];
+  /** Rendered Metamath proof code (normal or compressed). */
+  proof?: string;
+}
+
+/** The dynamic result of (re-)deriving one theorem through the HOL kernel
+ * (prove-phase completion frame). Static fields (mm/ess/deps/proof) are NOT
+ * repeated here — they arrived earlier in a `decl` frame. */
+export interface ImportProvedMessage {
+  type: 'proved';
+  done: number;
+  total: number;
+  label: string;
   ok: boolean;
   /** Number of HOL hypotheses (present when ok). */
   hyps?: number;
@@ -106,13 +107,34 @@ export interface ImportTheoremMessage {
   importMs?: number;
 }
 
-/** One imported theorem, as accumulated by the demo page. */
+/** A streamed frame from the Metamath import WebSocket. Two phases: the static
+ * declaration graph (`decl` … `graphDone`) streams first, then a parallel prove
+ * phase flips each theorem live (`proving` → `proved`). */
+export type ImportMessage =
+  | { type: 'parsed'; total: number }
+  | { type: 'decl'; items: ImportDecl[] }
+  | { type: 'graphDone' }
+  | { type: 'proving'; label: string }
+  | ImportProvedMessage
+  | { type: 'done'; ok: number; total: number; elapsedMs: number }
+  | { type: 'error'; message: string };
+
+/** The live status of one theorem-as-task. The seed of a general multi-logic
+ * "task view": later states (e.g. `translating`) and per-logic columns slot in
+ * over the same graph. */
+export type ImportStatus = 'pending' | 'proving' | 'proved' | 'error';
+
+/** One imported theorem, as accumulated by the demo page: the static fields
+ * (from `decl`) plus a live `status` and the dynamic prove-phase results. */
 export interface ImportedTheorem {
   label: string;
+  status: ImportStatus;
+  /** Static (graph-phase) fields. */
   mm: string;
   ess: string[];
   proof?: string;
   deps?: ImportDep[];
+  /** Dynamic (prove-phase) fields. */
   ok: boolean;
   hyps?: number;
   genuine?: boolean;

@@ -120,11 +120,26 @@ async fn handle_repl_ws(mut socket: WebSocket, kernel: Kernel) {
 
 /// GET /api/mm/import — temporary streaming Metamath-import WebSocket.
 ///
-/// Protocol (all frames are JSON text):
+/// **Two-phase, live-status protocol** (all frames are JSON text):
 ///   - first client frame: the raw `.mm` source.
-///   - server → `{"type":"parsed","total":N}` once parsed (N = `$p` count),
-///     then one `{"type":"theorem",...}` per theorem in database order,
-///     then `{"type":"done",...}`. Parse failure → `{"type":"error",...}`.
+///   - server, once parsed: `{"type":"parsed","total":N}` (N = logical `$p`
+///     count).
+///   - **graph phase** — the whole static declaration graph streams first, in
+///     batches: `{"type":"decl","items":[{label,mm,ess,deps,proof}, …]}`
+///     (every theorem shown immediately, *pending*), terminated by
+///     `{"type":"graphDone"}`.
+///   - **prove phase** — a parallel worker pool flips each theorem live:
+///     `{"type":"proving","label"}` when a worker picks it up, then
+///     `{"type":"proved","done","total","label","ok",hyps?,genuine?,
+///     holPreview?,importMs?,error?}` on completion (static fields are NOT
+///     repeated — they came in `decl`).
+///   - finally `{"type":"done","ok","total","elapsedMs"}`.
+///   - parse failure → `{"type":"error","message"}`.
+///
+/// This is the seed of a general **task view** of a covalence proof DB: each
+/// theorem is a task with a status (`pending`/`proving`/`proved`/`error`); a
+/// future multi-logic view would add e.g. a `translating` state and per-logic
+/// columns over the same graph.
 pub async fn mm_import_ws(
     axum::extract::State(_state): axum::extract::State<crate::AppState>,
     ws: WebSocketUpgrade,
@@ -161,16 +176,84 @@ fn mm_err_frame(message: impl std::fmt::Display) -> String {
     serde_json::json!({ "type": "error", "message": message.to_string() }).to_string()
 }
 
-/// The blocking import worker: parse, then derive each logical (`|-`) `$p`
-/// theorem **in parallel** across a thread pool, sending a JSON frame per result
-/// (with per-theorem timing) as each completes. Runs on a dedicated thread (the
-/// `std::thread::scope` pool blocks it until the whole import finishes). Because
-/// the import is parallel, `theorem` frames arrive in *completion* order, not
-/// database order; the `done` field is a monotonic 1..total counter for the bar.
-fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
-    use covalence_hol::metalogic::mm_import::import_theorems_parallel;
+/// Compute the **static** declaration data for one theorem label: the rendered
+/// Metamath conclusion (`mm`), essential hypotheses (`ess`), proof code
+/// (`proof`), and the deduped logical (`|-`) dependency list (`deps`). This is
+/// the graph-phase payload — everything about a theorem that doesn't depend on
+/// (re-)deriving its proof through the kernel.
+fn mm_decl_item(db: &covalence_hol::metamath::Database, label: &str) -> serde_json::Value {
     use covalence_metamath::database::{Proof, Statement};
     use covalence_metamath::{ProofStep, proof_steps};
+
+    let (mm, ess, proof, deps) = match db.statement_by_label(label) {
+        Some(Statement::Assert(a)) => {
+            let proof = match &a.proof {
+                Some(Proof::Normal(labels)) => labels.join(" "),
+                Some(Proof::Compressed { labels, letters }) => format!(
+                    "( {} ) {}",
+                    labels.join(" "),
+                    String::from_utf8_lossy(letters)
+                ),
+                None => String::new(),
+            };
+            // Deduped (first-seen order) logical assertions referenced by the
+            // proof. Skip Save/Heap steps and syntax formers (typecode != "|-").
+            // kind: thm if the dep has its own proof, else df* → def, else axiom.
+            let mut deps: Vec<serde_json::Value> = Vec::new();
+            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+            if let Ok(steps) = proof_steps(db, a) {
+                for step in &steps {
+                    let ProofStep::Label(l) = step else { continue };
+                    if seen.contains(l) {
+                        continue;
+                    }
+                    let Some(Statement::Assert(dep)) = db.statement_by_label(l) else {
+                        continue;
+                    };
+                    if dep.conclusion.typecode() != "|-" {
+                        continue;
+                    }
+                    seen.insert(l.clone());
+                    let kind = if dep.proof.is_some() {
+                        "thm"
+                    } else if l.starts_with("df") {
+                        "def"
+                    } else {
+                        "axiom"
+                    };
+                    deps.push(serde_json::json!({ "label": l, "kind": kind }));
+                }
+            }
+            (
+                a.conclusion.render(),
+                a.frame.essentials.iter().map(|h| h.expr.render()).collect::<Vec<_>>(),
+                proof,
+                deps,
+            )
+        }
+        _ => (String::new(), Vec::new(), String::new(), Vec::new()),
+    };
+    serde_json::json!({
+        "label": label, "mm": mm, "ess": ess, "proof": proof, "deps": deps,
+    })
+}
+
+/// The blocking import worker: a **two-phase** stream.
+///
+/// 1. **Graph phase** — parse, then stream the static declaration graph for
+///    every logical (`|-`) `$p` theorem in batches of `decl` frames (each
+///    theorem shown immediately, *pending*), terminated by `graphDone`. The
+///    `parsed` total goes out first.
+/// 2. **Prove phase** — derive each theorem **in parallel** across a thread
+///    pool: `proving` when a worker picks a label up, `proved` (ok/error) on
+///    completion. Static fields are not repeated (they came in `decl`). The
+///    `done` field is a monotonic 1..total counter for the progress bar.
+///
+/// Runs on a dedicated thread (the `std::thread::scope` pool blocks it until the
+/// whole import finishes). `tx` clones are cheap; the `on_pick`/`on_each`
+/// closures send through clones from worker threads.
+fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
+    use covalence_hol::metalogic::mm_import::{import_theorems_parallel, theorem_labels};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let started = std::time::Instant::now();
@@ -183,70 +266,43 @@ fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
         }
     };
 
+    // --- Phase 1: graph -----------------------------------------------------
+    let labels = theorem_labels(&db);
+    let total = labels.len();
+    let _ = tx.blocking_send(serde_json::json!({ "type": "parsed", "total": total }).to_string());
+
+    const DECL_BATCH: usize = 1000;
+    let mut batch: Vec<serde_json::Value> = Vec::with_capacity(DECL_BATCH);
+    for label in &labels {
+        batch.push(mm_decl_item(&db, label));
+        if batch.len() >= DECL_BATCH {
+            let _ = tx.blocking_send(
+                serde_json::json!({ "type": "decl", "items": batch }).to_string(),
+            );
+            batch = Vec::with_capacity(DECL_BATCH);
+        }
+    }
+    if !batch.is_empty() {
+        let _ = tx.blocking_send(serde_json::json!({ "type": "decl", "items": batch }).to_string());
+    }
+    let _ = tx.blocking_send(serde_json::json!({ "type": "graphDone" }).to_string());
+
+    // --- Phase 2: prove -----------------------------------------------------
     let n_ok = AtomicUsize::new(0);
     let grand_total = AtomicUsize::new(0);
+    let pick_tx = tx.clone();
 
     import_theorems_parallel(
         &db,
         0, // 0 → use available_parallelism
         |total| {
             grand_total.store(total, Ordering::Relaxed);
-            let _ = tx.blocking_send(
-                serde_json::json!({ "type": "parsed", "total": total }).to_string(),
-            );
+        },
+        |label| {
+            let _ = pick_tx
+                .blocking_send(serde_json::json!({ "type": "proving", "label": label }).to_string());
         },
         |done, total, label, result, elapsed| {
-            // Render the Metamath statement (conclusion + essentials), the proof
-            // code, and the deduped logical (`|-`) dependency list.
-            let (mm, ess, proof, deps) = match db.statement_by_label(label) {
-                Some(Statement::Assert(a)) => {
-                    let proof = match &a.proof {
-                        Some(Proof::Normal(labels)) => labels.join(" "),
-                        Some(Proof::Compressed { labels, letters }) => format!(
-                            "( {} ) {}",
-                            labels.join(" "),
-                            String::from_utf8_lossy(letters)
-                        ),
-                        None => String::new(),
-                    };
-                    // Deduped (first-seen order) logical assertions referenced by
-                    // the proof. Skip Save/Heap steps and syntax formers (typecode
-                    // != "|-"). kind: thm if the dep has its own proof, else df* →
-                    // def, else axiom.
-                    let mut deps: Vec<serde_json::Value> = Vec::new();
-                    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-                    if let Ok(steps) = proof_steps(&db, a) {
-                        for step in &steps {
-                            let ProofStep::Label(l) = step else { continue };
-                            if seen.contains(l) {
-                                continue;
-                            }
-                            let Some(Statement::Assert(dep)) = db.statement_by_label(l) else {
-                                continue;
-                            };
-                            if dep.conclusion.typecode() != "|-" {
-                                continue;
-                            }
-                            seen.insert(l.clone());
-                            let kind = if dep.proof.is_some() {
-                                "thm"
-                            } else if l.starts_with("df") {
-                                "def"
-                            } else {
-                                "axiom"
-                            };
-                            deps.push(serde_json::json!({ "label": l, "kind": kind }));
-                        }
-                    }
-                    (
-                        a.conclusion.render(),
-                        a.frame.essentials.iter().map(|h| h.expr.render()).collect::<Vec<_>>(),
-                        proof,
-                        deps,
-                    )
-                }
-                _ => (String::new(), Vec::new(), String::new(), Vec::new()),
-            };
             let import_ms = elapsed.as_micros() as f64 / 1000.0;
             let frame = match result {
                 Ok(thm) => {
@@ -254,10 +310,8 @@ fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
                     let full = format!("{}", thm.concl());
                     let hol_preview: String = full.chars().take(400).collect();
                     serde_json::json!({
-                        "type": "theorem", "done": done, "total": total,
-                        "label": label, "mm": mm, "ess": ess,
-                        "proof": proof, "deps": deps,
-                        "ok": true,
+                        "type": "proved", "done": done, "total": total,
+                        "label": label, "ok": true,
                         "hyps": thm.hyps().len(),
                         "genuine": thm.has_no_obs(),
                         "holPreview": hol_preview,
@@ -265,10 +319,8 @@ fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
                     })
                 }
                 Err(e) => serde_json::json!({
-                    "type": "theorem", "done": done, "total": total,
-                    "label": label, "mm": mm, "ess": ess,
-                    "proof": proof, "deps": deps,
-                    "ok": false, "error": e.to_string(),
+                    "type": "proved", "done": done, "total": total,
+                    "label": label, "ok": false, "error": e.to_string(),
                     "importMs": import_ms,
                 }),
             };

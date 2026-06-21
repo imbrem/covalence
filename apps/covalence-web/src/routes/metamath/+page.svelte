@@ -12,7 +12,12 @@
 	};
 
 	let url = $state(PRESETS.hol);
-	let phase = $state<'idle' | 'downloading' | 'parsing' | 'importing' | 'done' | 'error'>('idle');
+	// `graph` = streaming the static declaration graph (every theorem pending);
+	// `importing` = the parallel prove phase flipping each pending → proving →
+	// proved/error.
+	let phase = $state<
+		'idle' | 'downloading' | 'parsing' | 'graph' | 'importing' | 'done' | 'error'
+	>('idle');
 	let statusMsg = $state('');
 	let total = $state(0);
 	let done = $state(0);
@@ -20,6 +25,9 @@
 	let elapsedMs = $state(0);
 	let nOk = $state(0);
 	let theorems = $state<ImportedTheorem[]>([]);
+	// label → index into `theorems`, for O(1) status updates (47k theorems × ~2
+	// updates each — must not be O(n) per message). Not reactive; a plain Map.
+	let labelIndex = new Map<string, number>();
 	let selected = $state<ImportedTheorem | null>(null);
 	let failuresOnly = $state(false);
 	let search = $state('');
@@ -28,7 +36,11 @@
 	let copyMsg = $state('');
 	let ws: WebSocket | null = null;
 
-	const failures = $derived(theorems.filter((t) => !t.ok));
+	// Live status tallies (the foundation of the general "task view").
+	const nPending = $derived(theorems.filter((t) => t.status === 'pending').length);
+	const nProving = $derived(theorems.filter((t) => t.status === 'proving').length);
+	const nProved = $derived(theorems.filter((t) => t.status === 'proved').length);
+	const failures = $derived(theorems.filter((t) => t.status === 'error'));
 	const nErr = $derived(failures.length);
 	const timed = $derived(theorems.filter((t) => t.importMs != null));
 	const totalMs = $derived(timed.reduce((a, t) => a + (t.importMs ?? 0), 0));
@@ -191,7 +203,7 @@
 		setTimeout(() => (copyMsg = ''), 2500);
 	}
 	const isRunning = $derived(
-		phase === 'downloading' || phase === 'parsing' || phase === 'importing',
+		phase === 'downloading' || phase === 'parsing' || phase === 'graph' || phase === 'importing',
 	);
 
 	function reset() {
@@ -201,6 +213,7 @@
 		elapsedMs = 0;
 		nOk = 0;
 		theorems = [];
+		labelIndex = new Map();
 		selected = null;
 	}
 
@@ -261,30 +274,61 @@
 		};
 	}
 
+	// The live status model. Two phases:
+	//   1. graph — `decl` batches push every theorem as `pending` (whole DB shown
+	//      immediately); `graphDone` ends the phase.
+	//   2. prove — `proving`/`proved` flip individual rows in place via the
+	//      `labelIndex` map (O(1) lookup), mutating the element so Svelte 5's deep
+	//      `$state` reactivity re-renders only that row — no array rebuild.
 	function handle(msg: ImportMessage) {
 		switch (msg.type) {
 			case 'parsed':
 				total = msg.total;
+				phase = 'graph';
+				statusMsg = `loading graph — ${total} theorems …`;
+				break;
+			case 'decl': {
+				for (const item of msg.items) {
+					labelIndex.set(item.label, theorems.length);
+					theorems.push({
+						label: item.label,
+						status: 'pending',
+						mm: item.mm,
+						ess: item.ess ?? [],
+						proof: item.proof,
+						deps: item.deps,
+						ok: false,
+					});
+				}
+				break;
+			}
+			case 'graphDone':
 				phase = 'importing';
-				statusMsg = `importing ${total} theorems …`;
+				statusMsg = `proving ${total} theorems …`;
 				break;
-			case 'theorem':
+			case 'proving': {
+				const i = labelIndex.get(msg.label);
+				if (i != null) {
+					theorems[i].status = 'proving';
+					currentLabel = msg.label;
+				}
+				break;
+			}
+			case 'proved': {
 				done = msg.done;
-				currentLabel = msg.label;
-				theorems.push({
-					label: msg.label,
-					mm: msg.mm,
-					ess: msg.ess ?? [],
-					proof: msg.proof,
-					deps: msg.deps,
-					ok: msg.ok,
-					hyps: msg.hyps,
-					genuine: msg.genuine,
-					holPreview: msg.holPreview,
-					error: msg.error,
-					importMs: msg.importMs,
-				});
+				const i = labelIndex.get(msg.label);
+				if (i != null) {
+					const t = theorems[i];
+					t.status = msg.ok ? 'proved' : 'error';
+					t.ok = msg.ok;
+					t.hyps = msg.hyps;
+					t.genuine = msg.genuine;
+					t.holPreview = msg.holPreview;
+					t.error = msg.error;
+					t.importMs = msg.importMs;
+				}
 				break;
+			}
 			case 'done':
 				phase = 'done';
 				nOk = msg.ok;
@@ -307,10 +351,15 @@
 	<header>
 		<h1>Metamath → HOL import <span class="tag">temporary demo</span></h1>
 		<p class="lede">
-			Downloads a Metamath <code>.mm</code> database, then imports each theorem one-by-one into the
-			native HOL kernel (constructing <code>⊢ Derivable_L ⌜S⌝</code> per theorem). Pick a source,
-			hit import, and watch the progress bar — click any theorem to inspect its Metamath statement
-			and HOL representation. This page is a throwaway UX experiment, not a stable feature.
+			Downloads a Metamath <code>.mm</code> database, then imports it into the native HOL kernel in
+			two phases: first the <strong>whole declaration graph</strong> streams in (every theorem
+			shown immediately as <span class="leg pending">pending</span>), then a parallel prove phase
+			flips each to <span class="leg proving">proving</span> →
+			<span class="leg proved">proved</span> / <span class="leg error">error</span> as a worker
+			constructs its <code>⊢ Derivable_L ⌜S⌝</code>. Click any theorem to inspect its Metamath
+			statement and HOL representation. This is a throwaway UX experiment — and the seed of a
+			general <em>task view</em> of a covalence proof DB (a theorem is a task with a status; later:
+			a <code>translating</code> state and per-logic columns over the same graph).
 		</p>
 	</header>
 
@@ -357,8 +406,10 @@
 		</div>
 		{#if theorems.length > 0}
 			<div class="summary">
-				<span class="ok">{nOk || theorems.filter((t) => t.ok).length} ok</span>
-				{#if nErr > 0}<span class="err">{nErr} failed</span>{/if}
+				{#if nPending > 0}<span class="pending">{nPending} pending</span>{/if}
+				{#if nProving > 0}<span class="proving">{nProving} active</span>{/if}
+				<span class="ok">{nProved} ✓</span>
+				{#if nErr > 0}<span class="err">{nErr} ✗</span>{/if}
 				{#if phase === 'done'}<span>{(elapsedMs / 1000).toFixed(1)}s wall</span>{/if}
 				{#if avgMs > 0}<span class="dim">avg {avgMs.toFixed(1)} ms/thm</span>{/if}
 				{#if slowest}<span class="dim">slowest {slowest.label} {(slowest.importMs ?? 0).toFixed(0)} ms</span>{/if}
@@ -439,11 +490,11 @@
 				{#each sorted as t (t.label)}
 					<button
 						class="item"
-						class:fail={!t.ok}
+						class:fail={t.status === 'error'}
 						class:sel={selected?.label === t.label}
 						onclick={() => (selected = t)}
 					>
-						<span class="dot" class:bad={!t.ok}></span>
+						<span class="dot status-{t.status}"></span>
 						<span class="lbl">{t.label}</span>
 						<span class="mini">{t.mm}</span>
 						{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
@@ -472,7 +523,7 @@
 				</div>
 				<div class="field">
 					<div class="flabel">HOL term</div>
-					{#if selected.ok}
+					{#if selected.status === 'proved'}
 						<div class="kv">
 							<span>hypotheses</span><span>{selected.hyps}</span>
 						</div>
@@ -497,11 +548,23 @@
 							over the encoded syntax), truncated.
 						</p>
 						<pre class="hol">{selected.holPreview}…</pre>
-					{:else}
+					{:else if selected.status === 'error'}
 						<div class="kv">
 							<span>status</span><span class="no">import failed</span>
 						</div>
 						<pre class="hol err">{selected.error}</pre>
+					{:else}
+						<div class="kv">
+							<span>status</span>
+							<span class={selected.status === 'proving' ? 'proving' : 'dim'}>
+								{selected.status === 'proving' ? 'proving…' : 'pending'}
+							</span>
+						</div>
+						<p class="note">
+							Not yet proved — the prove phase {selected.status === 'proving'
+								? 'is deriving this theorem'
+								: "hasn't reached this theorem yet"}.
+						</p>
 					{/if}
 				</div>
 				<div class="field">
@@ -613,6 +676,21 @@
 		font-size: 0.9rem;
 		line-height: 1.5;
 		max-width: 70ch;
+	}
+	.leg {
+		font-weight: 600;
+	}
+	.leg.pending {
+		color: var(--muted);
+	}
+	.leg.proving {
+		color: var(--warnc);
+	}
+	.leg.proved {
+		color: var(--ok);
+	}
+	.leg.error {
+		color: var(--bad);
 	}
 	code {
 		font-family: var(--font-mono);
@@ -729,7 +807,8 @@
 	}
 	.phase-importing,
 	.phase-downloading,
-	.phase-parsing {
+	.phase-parsing,
+	.phase-graph {
 		background: rgba(124, 111, 247, 0.16);
 		border-color: transparent;
 		color: var(--accent);
@@ -762,6 +841,13 @@
 	}
 	.summary .ok {
 		color: var(--ok);
+	}
+	.summary .pending {
+		color: var(--muted);
+	}
+	.summary .proving {
+		color: var(--warnc);
+		font-weight: 600;
 	}
 	.summary .err {
 		color: var(--bad);
@@ -915,11 +1001,33 @@
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: var(--ok);
+		background: var(--muted);
 		flex: none;
 	}
-	.item .dot.bad {
+	/* 4-state task status: grey pending · orange proving · green proved · red error. */
+	.item .dot.status-pending {
+		background: var(--muted);
+		opacity: 0.5;
+	}
+	.item .dot.status-proving {
+		background: var(--warnc);
+		box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.25);
+		animation: pulse 1s ease-in-out infinite;
+	}
+	.item .dot.status-proved {
+		background: var(--ok);
+	}
+	.item .dot.status-error {
 		background: var(--bad);
+	}
+	@keyframes pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.4;
+		}
 	}
 	.item .lbl {
 		font-family: var(--font-mono);
@@ -1008,6 +1116,13 @@
 	.kv .no {
 		color: var(--bad);
 		font-weight: 600;
+	}
+	.kv .proving {
+		color: var(--warnc);
+		font-weight: 600;
+	}
+	.kv .dim {
+		color: var(--muted);
 	}
 	.note {
 		font-size: 0.74rem;

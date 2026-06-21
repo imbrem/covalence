@@ -254,7 +254,7 @@ pub fn database() -> Result<Database, MmError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metamath::{Statement, verify_all, verify_assertion};
+    use crate::metamath::{Proof, Statement, verify_all, verify_assertion};
 
     /// The database builds and is scope-balanced.
     #[test]
@@ -300,7 +300,7 @@ mod tests {
         db.add_assertion(
             "th.t1".into(),
             make_expr("term", ["(", "S", "0", ")"]),
-            Some(vec!["t.0".into(), "t.S".into()]),
+            Some(Proof::Normal(vec!["t.0".into(), "t.S".into()])),
         )
         .unwrap();
 
@@ -309,7 +309,11 @@ mod tests {
         db.add_assertion(
             "th.w1".into(),
             make_expr("wff", ["(", "0", "=", "0", ")"]),
-            Some(vec!["t.0".into(), "t.0".into(), "w.eq".into()]),
+            Some(Proof::Normal(vec![
+                "t.0".into(),
+                "t.0".into(),
+                "w.eq".into(),
+            ])),
         )
         .unwrap();
 

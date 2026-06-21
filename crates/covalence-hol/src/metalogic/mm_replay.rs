@@ -53,7 +53,7 @@ use covalence_core::{Error, Result, Term, Thm};
 
 use crate::init::prop;
 use crate::metamath::expr::{body_of, typecode_of};
-use crate::metamath::{Assertion, Database, Expr, Statement};
+use crate::metamath::{Assertion, Database, Expr, Proof, Statement};
 
 // ============================================================================
 // Errors
@@ -119,11 +119,7 @@ pub fn parse_wff(e: &Expr, vars: &mut VarIndex) -> Result<Term> {
 /// complete wff.
 fn parse_body(e: &Expr, vars: &mut VarIndex) -> Result<Term> {
     let body = body_of(e).ok_or_else(|| replay_err("malformed statement"))?;
-    let syms: Vec<&str> = body
-        .iter()
-        .map(|s| s.as_symbol())
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| replay_err("statement body has a non-symbol token"))?;
+    let syms: Vec<&str> = body.iter().map(|s| s.as_str()).collect();
     let (term, rest) = parse_one(&syms, vars)?;
     if !rest.is_empty() {
         return Err(replay_err("trailing symbols after wff"));
@@ -190,15 +186,20 @@ enum Slot {
 /// any **essential hypotheses** of the assertion appear as the theorem's
 /// hypotheses `Derivable_Prop ⌜hyp⌝ ⊢ Derivable_Prop ⌜S⌝`.
 pub fn replay_prop(db: &Database, assertion: &Assertion) -> Result<Thm> {
-    let proof = assertion
-        .proof
-        .as_ref()
-        .ok_or_else(|| replay_err("assertion has no proof to replay"))?;
+    let labels = match assertion.proof.as_ref() {
+        Some(Proof::Normal(labels)) => labels,
+        Some(Proof::Compressed { .. }) => {
+            return Err(replay_err(
+                "compressed-proof replay is not supported (decompress to a normal proof first)",
+            ));
+        }
+        None => return Err(replay_err("assertion has no proof to replay")),
+    };
 
     let mut vars = VarIndex::new();
     let mut stack: Vec<Slot> = Vec::new();
 
-    for label in proof {
+    for label in labels {
         let stmt = db
             .statement_by_label(label)
             .ok_or_else(|| replay_err(format!("unknown proof label `{label}`")))?;
@@ -298,9 +299,9 @@ fn syntax_former(target: &Assertion, label: &str, args: &[Slot]) -> Result<Slot>
 fn former_is_imp(target: &Assertion) -> bool {
     match body_of(&target.conclusion) {
         Some(body) => {
-            let syms: Option<Vec<&str>> = body.iter().map(|s| s.as_symbol()).collect();
-            matches!(syms.as_deref(), Some([first, .., last]) if *first == "(" && *last == ")")
-                && body.iter().any(|s| s.as_symbol() == Some("->"))
+            let syms: Vec<&str> = body.iter().map(|s| s.as_str()).collect();
+            matches!(syms.as_slice(), [first, .., last] if *first == "(" && *last == ")")
+                && body.iter().any(|s| s.as_str() == "->")
         }
         None => false,
     }

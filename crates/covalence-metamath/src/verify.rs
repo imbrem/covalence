@@ -1,7 +1,7 @@
 //! Schematic rule application and the RPN proof checker.
 //!
-//! A normal (uncompressed) Metamath proof is a sequence of labels evaluated
-//! against a stack of expressions:
+//! A Metamath proof is a sequence of steps evaluated against a stack of
+//! expressions:
 //!
 //! * a `$f`/`$e` hypothesis label pushes its expression;
 //! * an assertion label (`$a`/`$p`) pops its mandatory hypotheses, unifies the
@@ -11,10 +11,15 @@
 //! A proof is valid iff it terminates with exactly one expression on the stack,
 //! equal to the claimed conclusion. The checker never trusts the proof: every
 //! substitution, typecode, and `$d` constraint is re-derived and re-checked.
+//!
+//! Both proof encodings are handled: the [`Proof::Normal`] label sequence and
+//! the [`Proof::Compressed`] letter scheme (decoded by [`decompress_proof`],
+//! which recovers the `A`–`T` / `U`–`Y` base-20/5 integers, the `Z` save
+//! markers, and the mandatory-hyp / label-block / heap addressing).
 
 use std::collections::BTreeSet;
 
-use crate::database::{Assertion, Database, Statement};
+use crate::database::{Assertion, Database, Frame, Proof, Statement};
 use crate::error::MmError;
 use crate::expr::{Expr, body_of, render, typecode_of};
 use crate::subst::{Subst, apply_subst, vars_in_body};
@@ -41,33 +46,38 @@ pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmEr
 
     let mut stack: Vec<Expr> = Vec::new();
 
-    for label in proof {
-        let stmt = db
-            .statement_by_label(label)
-            .ok_or_else(|| MmError::UnknownLabel {
-                theorem: theorem.clone(),
-                label: label.clone(),
-            })?;
-
-        match stmt {
-            Statement::Float(f) => {
-                // Push the expression `typecode var`.
-                stack.push(crate::expr::make_expr(
-                    &f.typecode,
-                    [f.var.as_str()],
-                ));
+    match proof {
+        Proof::Normal(labels) => {
+            for label in labels {
+                step_label(db, assertion, label, &mut stack)?;
             }
-            Statement::Essential(h) => {
-                stack.push(h.expr.clone());
-            }
-            Statement::Assert(target) => {
-                apply_assertion(db, assertion, target, label, &mut stack)?;
-            }
-            _ => {
-                return Err(MmError::UnknownLabel {
-                    theorem: theorem.clone(),
-                    label: label.clone(),
-                });
+        }
+        Proof::Compressed { labels, letters } => {
+            let steps = decompress_proof(labels, letters, &assertion.frame, db, theorem)?;
+            let mut heap: Vec<Expr> = Vec::new();
+            for step in &steps {
+                match step {
+                    ProofStep::Label(label) => {
+                        step_label(db, assertion, label, &mut stack)?;
+                    }
+                    ProofStep::Save => {
+                        let top = stack
+                            .last()
+                            .ok_or_else(|| MmError::CompressedProofError {
+                                theorem: theorem.clone(),
+                                message: "`Z` save with an empty stack".into(),
+                            })?
+                            .clone();
+                        heap.push(top);
+                    }
+                    ProofStep::Heap(idx) => {
+                        let e = heap.get(*idx).ok_or_else(|| MmError::CompressedProofError {
+                            theorem: theorem.clone(),
+                            message: format!("heap backreference {idx} out of range"),
+                        })?;
+                        stack.push(e.clone());
+                    }
+                }
             }
         }
     }
@@ -87,6 +97,174 @@ pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmEr
         });
     }
     Ok(())
+}
+
+/// Execute a single label step (shared by both proof encodings): push a
+/// hypothesis expression, or apply an assertion.
+fn step_label(
+    db: &Database,
+    current: &Assertion,
+    label: &str,
+    stack: &mut Vec<Expr>,
+) -> Result<(), MmError> {
+    let theorem = &current.label;
+    let stmt = db
+        .statement_by_label(label)
+        .ok_or_else(|| MmError::UnknownLabel {
+            theorem: theorem.clone(),
+            label: label.to_string(),
+        })?;
+
+    match stmt {
+        Statement::Float(f) => {
+            stack.push(crate::expr::make_expr(&f.typecode, [f.var.as_str()]));
+        }
+        Statement::Essential(h) => {
+            stack.push(h.expr.clone());
+        }
+        Statement::Assert(target) => {
+            apply_assertion(db, current, target, label, stack)?;
+        }
+        _ => {
+            return Err(MmError::UnknownLabel {
+                theorem: theorem.clone(),
+                label: label.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// A decoded step from a compressed proof.
+enum ProofStep {
+    /// Reference a statement by label (mandatory hyp, label-block entry, or
+    /// prior theorem).
+    Label(String),
+    /// Save the top of stack to the heap (`Z` marker).
+    Save,
+    /// Push a previously saved heap entry.
+    Heap(usize),
+}
+
+/// Decompress a compressed proof into a sequence of [`ProofStep`]s.
+///
+/// The proof-integer scheme (per the Metamath spec): the letters `A`–`T`
+/// (values 1–20) are *terminal* digits, `U`–`Y` (values 1–5) are *continuation*
+/// digits, and `Z` is a save marker. An integer `n` (1-based) addresses, in
+/// order: the mandatory hypotheses (floats then essentials), then the
+/// label-block entries, then the heap backreferences.
+fn decompress_proof(
+    labels: &[String],
+    letters: &[u8],
+    frame: &Frame,
+    db: &Database,
+    theorem: &str,
+) -> Result<Vec<ProofStep>, MmError> {
+    let mand_count = frame.floats.len() + frame.essentials.len();
+    let label_count = labels.len();
+
+    // Resolve label-block entries to existing labels (validating they exist).
+    for l in labels {
+        if db.statement_by_label(l).is_none() {
+            return Err(MmError::UnknownLabel {
+                theorem: theorem.to_owned(),
+                label: l.clone(),
+            });
+        }
+    }
+
+    let mut steps = Vec::new();
+    let mut heap_count: usize = 0;
+    let mut i = 0;
+
+    while i < letters.len() {
+        let b = letters[i];
+
+        if b == b'?' {
+            return Err(MmError::CompressedProofError {
+                theorem: theorem.to_owned(),
+                message: "incomplete proof (contains `?`)".into(),
+            });
+        }
+
+        if b == b'Z' {
+            steps.push(ProofStep::Save);
+            heap_count += 1;
+            i += 1;
+            continue;
+        }
+
+        // Decode one proof integer.
+        let mut n: usize = 0;
+        loop {
+            let c = letters[i];
+            i += 1;
+            if (b'A'..=b'T').contains(&c) {
+                // Terminal digit: value 1-20.
+                let t = (c - b'A') as usize + 1;
+                n = n * 20 + t;
+                break;
+            } else if (b'U'..=b'Y').contains(&c) {
+                // Continuation digit: value 1-5.
+                let d = (c - b'U') as usize + 1;
+                n = n * 5 + d;
+            } else if c == b'Z' || c == b'?' {
+                return Err(MmError::CompressedProofError {
+                    theorem: theorem.to_owned(),
+                    message: format!("unexpected `{}` mid-integer", c as char),
+                });
+            } else {
+                return Err(MmError::CompressedProofError {
+                    theorem: theorem.to_owned(),
+                    message: format!("invalid character `{}` in letter block", c as char),
+                });
+            }
+
+            if i >= letters.len() {
+                return Err(MmError::CompressedProofError {
+                    theorem: theorem.to_owned(),
+                    message: "letter block ends mid-integer".into(),
+                });
+            }
+        }
+
+        // Resolve proof integer n (1-based).
+        if n == 0 {
+            return Err(MmError::CompressedProofError {
+                theorem: theorem.to_owned(),
+                message: "proof integer 0 is invalid".into(),
+            });
+        }
+
+        if n <= mand_count {
+            // Mandatory hypothesis: floats first, then essentials.
+            let idx = n - 1;
+            let label = if idx < frame.floats.len() {
+                frame.floats[idx].label.clone()
+            } else {
+                frame.essentials[idx - frame.floats.len()].label.clone()
+            };
+            steps.push(ProofStep::Label(label));
+        } else if n <= mand_count + label_count {
+            // Label-block entry.
+            let lid = n - mand_count - 1;
+            steps.push(ProofStep::Label(labels[lid].clone()));
+        } else {
+            // Heap backreference.
+            let hidx = n - mand_count - label_count - 1;
+            if hidx >= heap_count {
+                return Err(MmError::CompressedProofError {
+                    theorem: theorem.to_owned(),
+                    message: format!(
+                        "heap backreference {hidx} out of range (heap has {heap_count} entries)"
+                    ),
+                });
+            }
+            steps.push(ProofStep::Heap(hidx));
+        }
+    }
+
+    Ok(steps)
 }
 
 /// Apply `target` (the asserted rule) within the proof of `current`, popping
@@ -227,5 +405,156 @@ fn ordered_pair(a: &str, b: &str) -> (String, String) {
         (a.to_string(), b.to_string())
     } else {
         (b.to_string(), a.to_string())
+    }
+}
+
+/// Decode a single compressed proof integer (test helper).
+#[cfg(test)]
+fn decode_compressed_integer(letters: &[u8]) -> Option<usize> {
+    let mut n: usize = 0;
+    let mut i = 0;
+    while i < letters.len() {
+        let c = letters[i];
+        i += 1;
+        if (b'A'..=b'T').contains(&c) {
+            let t = (c - b'A') as usize + 1;
+            n = n * 20 + t;
+            return Some(n);
+        } else if (b'U'..=b'Y').contains(&c) {
+            let d = (c - b'U') as usize + 1;
+            n = n * 5 + d;
+        } else {
+            return None;
+        }
+    }
+    None // incomplete
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse::parse;
+
+    /// The "demo0" database from the Metamath book.
+    const DEMO0: &str = "\
+        $c 0 + = -> ( ) term wff |- $.\n\
+        $v t r s P Q $.\n\
+        tt $f term t $.\n\
+        tr $f term r $.\n\
+        ts $f term s $.\n\
+        wp $f wff P $.\n\
+        wq $f wff Q $.\n\
+        tze $a term 0 $.\n\
+        tpl $a term ( t + r ) $.\n\
+        weq $a wff t = r $.\n\
+        wim $a wff ( P -> Q ) $.\n\
+        a1 $a |- ( t = r -> ( t = s -> r = s ) ) $.\n\
+        a2 $a |- ( t + 0 ) = t $.\n\
+        ${  min $e |- P $.  maj $e |- ( P -> Q ) $.\n\
+            mp $a |- Q $.\n\
+        $}\n\
+        th1 $p |- t = t $= tt tze tpl tt weq tt tt weq tt a2 tt tze tpl \
+            tt weq tt tze tpl tt weq tt tt weq wim tt a2 tt tze tpl \
+            tt tt a1 mp mp $.\n\
+    ";
+
+    #[test]
+    fn verify_demo0_normal() {
+        let db = parse(DEMO0).unwrap();
+        assert_eq!(verify_all(&db).unwrap(), 1);
+    }
+
+    #[test]
+    fn decode_integers() {
+        // A=1, B=2, ..., T=20
+        assert_eq!(decode_compressed_integer(b"A"), Some(1));
+        assert_eq!(decode_compressed_integer(b"B"), Some(2));
+        assert_eq!(decode_compressed_integer(b"T"), Some(20));
+        // UA=21, UB=22, ..., UT=40
+        assert_eq!(decode_compressed_integer(b"UA"), Some(21));
+        assert_eq!(decode_compressed_integer(b"UB"), Some(22));
+        assert_eq!(decode_compressed_integer(b"UT"), Some(40));
+        // VA=41, ..., YT=120
+        assert_eq!(decode_compressed_integer(b"VA"), Some(41));
+        assert_eq!(decode_compressed_integer(b"YT"), Some(120));
+        // UUA=121
+        assert_eq!(decode_compressed_integer(b"UUA"), Some(121));
+    }
+
+    #[test]
+    fn verify_demo0_compressed() {
+        // demo0's th1 with a compressed proof (no Z saves).
+        let input = "\
+            $c 0 + = -> ( ) term wff |- $.\n\
+            $v t r s P Q $.\n\
+            tt $f term t $.\n\
+            tr $f term r $.\n\
+            ts $f term s $.\n\
+            wp $f wff P $.\n\
+            wq $f wff Q $.\n\
+            tze $a term 0 $.\n\
+            tpl $a term ( t + r ) $.\n\
+            weq $a wff t = r $.\n\
+            wim $a wff ( P -> Q ) $.\n\
+            a1 $a |- ( t = r -> ( t = s -> r = s ) ) $.\n\
+            a2 $a |- ( t + 0 ) = t $.\n\
+            ${  min $e |- P $.  maj $e |- ( P -> Q ) $.\n\
+                mp $a |- Q $.\n\
+            $}\n\
+            th1 $p |- t = t $= ( tze tpl weq wim a2 a1 mp ) ABCADAADAFABCADABCADAADEAFABCAAGHH $.\n\
+        ";
+        let db = parse(input).unwrap();
+        assert_eq!(verify_all(&db).unwrap(), 1);
+    }
+
+    #[test]
+    fn verify_compressed_with_save() {
+        // demo0's th1 with Z saves reusing repeated subexpressions.
+        let input = "\
+            $c 0 + = -> ( ) term wff |- $.\n\
+            $v t r s P Q $.\n\
+            tt $f term t $.\n\
+            tr $f term r $.\n\
+            ts $f term s $.\n\
+            wp $f wff P $.\n\
+            wq $f wff Q $.\n\
+            tze $a term 0 $.\n\
+            tpl $a term ( t + r ) $.\n\
+            weq $a wff t = r $.\n\
+            wim $a wff ( P -> Q ) $.\n\
+            a1 $a |- ( t = r -> ( t = s -> r = s ) ) $.\n\
+            a2 $a |- ( t + 0 ) = t $.\n\
+            ${  min $e |- P $.  maj $e |- ( P -> Q ) $.\n\
+                mp $a |- Q $.\n\
+            $}\n\
+            th1 $p |- t = t $= ( tze tpl weq wim a2 a1 mp ) ABCADZAADZAFZIIJEKABCAAGHH $.\n\
+        ";
+        let db = parse(input).unwrap();
+        assert_eq!(verify_all(&db).unwrap(), 1);
+    }
+
+    #[test]
+    fn verify_bad_proof() {
+        let input = DEMO0.replace(
+            "$= tt tze tpl tt weq tt tt weq tt a2 tt tze tpl \
+            tt weq tt tze tpl tt weq tt tt weq wim tt a2 tt tze tpl \
+            tt tt a1 mp mp $.",
+            "$= tt tze tpl tt weq $.",
+        );
+        let db = parse(&input).unwrap();
+        assert!(verify_all(&db).is_err());
+    }
+
+    #[test]
+    fn verify_unknown_label() {
+        let input = "\
+            $c term $.\n\
+            $v t $.\n\
+            tt $f term t $.\n\
+            th $p term t $= tt bogus $.\n\
+        ";
+        let db = parse(input).unwrap();
+        let err = verify_all(&db).unwrap_err();
+        assert!(matches!(err, MmError::UnknownLabel { .. }));
     }
 }

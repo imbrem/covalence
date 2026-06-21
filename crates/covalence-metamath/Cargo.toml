@@ -3,10 +3,20 @@ name = "covalence-metamath"
 version = "0.0.0"
 edition = "2024"
 
+[features]
+default = ["checker"]
+# The in-memory RPN proof checker (`verify`) — a HOL-free "sanity-check"
+# implementer of Metamath proof verification. Default-on so existing consumers
+# and tests keep working. It CAN be disabled when only a different verification
+# backend is wanted (e.g. the future HOL-backed `DatabaseSink` in
+# `covalence-hol`, which constructs `⊢ Derivable_…` theorems as it reads).
+checker = []
+
 [dependencies]
 # The Metamath engine (expression model, substitution, frames, RPN checker,
 # MmError) AND the `.mm` reader both live here — this is the lower, HOL-free
 # crate. `covalence-hol` depends on it (a HOL-backed `Database` consumer), not
 # the other way around.
 covalence-sexp = { path = "../covalence-sexp" }
+smol_str = "0.3"
 thiserror = "2"

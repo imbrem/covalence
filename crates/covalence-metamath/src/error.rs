@@ -14,6 +14,9 @@ pub enum MmError {
     #[error("malformed expression in `{label}`: {message}")]
     MalformedExpr { label: String, message: String },
 
+    #[error("file inclusion error for `{path}`: {message}")]
+    FileError { path: String, message: String },
+
     // --- proof checking ---
     #[error("proof of `{theorem}` references unknown label `{label}`")]
     UnknownLabel { theorem: String, label: String },
@@ -66,4 +69,7 @@ pub enum MmError {
         expected: String,
         found: String,
     },
+
+    #[error("compressed-proof error in `{theorem}`: {message}")]
+    CompressedProofError { theorem: String, message: String },
 }

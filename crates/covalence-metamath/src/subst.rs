@@ -2,78 +2,47 @@
 //!
 //! A Metamath substitution maps each variable to a sequence of math symbols
 //! (the *body* of an expression of the variable's typecode). Applying a
-//! substitution to a schema walks its symbol sequence and, for every symbol
-//! that is a substituted variable, **splices** the replacement body in place.
-//! Constants and unmapped symbols pass through unchanged.
+//! substitution to a schema walks its body symbol sequence and, for every
+//! symbol that is a substituted variable, **splices** the replacement body in
+//! place. Constants and unmapped symbols pass through unchanged.
 //!
-//! On our flat-list [`Expr`] encoding this is a single pass that preserves the
-//! `[typecode, ...body]` shape: the typecode is a constant (never a variable),
-//! so it is always copied, and the body symbols are spliced.
+//! On the primitive flat [`Expr`] the typecode is always a constant (never a
+//! variable), so it is copied verbatim, and the body symbols are spliced.
 
 use std::collections::BTreeMap;
 
-use covalence_sexp::{Atom, SExp, SExpr};
-
-use crate::expr::Expr;
+use crate::expr::{Expr, Symbol};
 
 /// A variable substitution: variable name → replacement body (a sequence of
-/// math-symbol `SExpr`s, i.e. an expression with its typecode stripped).
+/// math symbols, i.e. an expression with its typecode stripped).
 ///
 /// We use a `BTreeMap` for deterministic iteration in diagnostics.
-pub type Subst = BTreeMap<String, Vec<SExpr>>;
+pub type Subst = BTreeMap<String, Vec<Symbol>>;
 
 /// Apply a substitution to a schema expression, splicing each substituted
-/// variable's replacement body in place.
-///
-/// Non-list inputs and non-symbol elements pass through structurally
-/// unchanged (the encoding is flat, so this only matters for robustness).
+/// variable's replacement body in place. The typecode is never substituted.
 pub fn apply_subst(schema: &Expr, subst: &Subst) -> Expr {
-    match schema {
-        SExp::List(elems) => {
-            let mut out = Vec::with_capacity(elems.len());
-            for e in elems {
-                splice_into(e, subst, &mut out);
-            }
-            SExp::List(out)
-        }
-        // A bare atom (no list wrapper): substitute if it is a mapped variable.
-        atom => {
-            let mut out = Vec::new();
-            splice_into(atom, subst, &mut out);
-            if out.len() == 1 {
-                out.into_iter().next().unwrap()
-            } else {
-                SExp::List(out)
-            }
+    let mut body = Vec::with_capacity(schema.body.len());
+    for sym in &schema.body {
+        if let Some(replacement) = subst.get(sym.as_str()) {
+            body.extend(replacement.iter().cloned());
+        } else {
+            body.push(sym.clone());
         }
     }
-}
-
-/// Push the substitution image of a single schema element into `out`. A mapped
-/// variable splices its (possibly multi-symbol) replacement; everything else is
-/// copied verbatim.
-fn splice_into(e: &SExpr, subst: &Subst, out: &mut Vec<SExpr>) {
-    if let SExp::Atom(Atom::Symbol(name)) = e
-        && let Some(replacement) = subst.get(name.as_str())
-    {
-        out.extend(replacement.iter().cloned());
-        return;
-    }
-    out.push(e.clone());
+    Expr::new(schema.typecode.clone(), body)
 }
 
 /// Collect the distinct variable names appearing in a substituted body, given
 /// the set of names that are variables. Used for $d checking: a $d on
 /// `(a, b)` requires that the variables occurring in `subst(a)` and `subst(b)`
 /// are disjoint.
-pub fn vars_in_body<'a>(body: &'a [SExpr], is_variable: &impl Fn(&str) -> bool) -> Vec<&'a str> {
+pub fn vars_in_body<'a>(body: &'a [Symbol], is_variable: &impl Fn(&str) -> bool) -> Vec<&'a str> {
     let mut seen = Vec::new();
-    for e in body {
-        if let SExp::Atom(Atom::Symbol(name)) = e {
-            let n = name.as_str();
-            if is_variable(n) && !seen.contains(&n) {
-                seen.push(n);
-            }
+    for sym in body {
+        let n = sym.as_str();
+        if is_variable(n) && !seen.contains(&n) {
+            seen.push(n);
         }
     }
     seen
@@ -87,10 +56,7 @@ mod tests {
     fn subst(pairs: &[(&str, Expr)]) -> Subst {
         pairs
             .iter()
-            .map(|(v, e)| {
-                let body = e.as_list().unwrap()[1..].to_vec();
-                (v.to_string(), body)
-            })
+            .map(|(v, e)| (v.to_string(), e.body.clone()))
             .collect()
     }
 
@@ -124,7 +90,7 @@ mod tests {
 
     #[test]
     fn vars_collected() {
-        let body = make_expr("_", ["(", "x", "+", "y", ")"]).as_list().unwrap()[1..].to_vec();
+        let body = make_expr("_", ["(", "x", "+", "y", ")"]).body;
         let is_var = |s: &str| matches!(s, "x" | "y");
         assert_eq!(vars_in_body(&body, &is_var), vec!["x", "y"]);
     }

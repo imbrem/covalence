@@ -54,6 +54,29 @@ impl Frame {
     }
 }
 
+/// A `$p` theorem's proof, in either of Metamath's two encodings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Proof {
+    /// A *normal* (uncompressed) proof: a reverse-Polish sequence of labels.
+    Normal(Vec<String>),
+    /// A *compressed* proof: a parenthesised label block plus a letter block
+    /// (the `A`–`T` / `U`–`Y` base-20/5 integer scheme with `Z` save markers).
+    /// The decoder lives in [`crate::verify`].
+    Compressed {
+        /// The labels referenced by the letter block (between `(` and `)`).
+        labels: Vec<String>,
+        /// The raw letter block (concatenated, whitespace already stripped).
+        letters: Vec<u8>,
+    },
+}
+
+/// Classification of a declared symbol: `$c` constant or `$v` variable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SymbolKind {
+    Constant,
+    Variable,
+}
+
 /// An assertion: an axiom (`$a`) or a theorem (`$p`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Assertion {
@@ -62,9 +85,8 @@ pub struct Assertion {
     pub conclusion: Expr,
     /// The mandatory frame.
     pub frame: Frame,
-    /// `Some(proof)` for a `$p` theorem (an RPN sequence of labels), `None` for
-    /// a `$a` axiom.
-    pub proof: Option<Vec<String>>,
+    /// `Some(proof)` for a `$p` theorem, `None` for a `$a` axiom.
+    pub proof: Option<Proof>,
 }
 
 /// A top-level statement, in source order.
@@ -252,7 +274,7 @@ impl Database {
         &mut self,
         label: String,
         conclusion: Expr,
-        proof: Option<Vec<String>>,
+        proof: Option<Proof>,
     ) -> Result<(), MmError> {
         let frame = self.build_frame(&conclusion, &label)?;
         let idx = self.statements.len();
@@ -377,5 +399,87 @@ impl Database {
             f(s);
         }
         Ok(())
+    }
+}
+
+/// The construction API a `.mm` reader drives, abstracted over the backend.
+///
+/// The in-memory [`Database`] implements this trait directly (its mutators are
+/// the canonical implementation). A future **HOL-backed** sink in
+/// `covalence-hol` can implement the same trait, constructing `⊢ Derivable_…`
+/// theorems as the reader streams declarations through it — without the reader
+/// knowing which backend it is feeding. The method set mirrors `Database`'s own
+/// construction methods.
+pub trait DatabaseSink {
+    /// Declare one or more `$c` constants or `$v` variables.
+    fn declare(&mut self, kind: SymbolKind, names: &[&str]) -> Result<(), MmError>;
+    /// Open a `${ ... $}` scope.
+    fn push_scope(&mut self);
+    /// Close a `${ ... $}` scope.
+    fn pop_scope(&mut self) -> Result<(), MmError>;
+    /// Add a `$f` floating hypothesis `label $f typecode var`.
+    fn add_float(&mut self, label: &str, typecode: &str, var: &str) -> Result<(), MmError>;
+    /// Add a `$e` essential hypothesis `label $e <expr>`.
+    fn add_essential(&mut self, label: &str, expr: Expr) -> Result<(), MmError>;
+    /// Add a `$d` distinct-variable restriction over `vars`.
+    fn add_disjoint(&mut self, vars: &[&str]) -> Result<(), MmError>;
+    /// Add a `$a` axiom (`proof = None`) or `$p` theorem (`proof = Some(_)`).
+    fn add_assertion(
+        &mut self,
+        label: &str,
+        conclusion: Expr,
+        proof: Option<Proof>,
+    ) -> Result<(), MmError>;
+}
+
+impl DatabaseSink for Database {
+    fn declare(&mut self, kind: SymbolKind, names: &[&str]) -> Result<(), MmError> {
+        let names: Vec<String> = names.iter().map(|s| s.to_string()).collect();
+        match kind {
+            SymbolKind::Constant => self.declare_constants(names),
+            SymbolKind::Variable => self.declare_variables(names),
+        }
+    }
+
+    fn push_scope(&mut self) {
+        Database::push_scope(self);
+    }
+
+    fn pop_scope(&mut self) -> Result<(), MmError> {
+        Database::pop_scope(self)
+    }
+
+    fn add_float(&mut self, label: &str, typecode: &str, var: &str) -> Result<(), MmError> {
+        Database::add_float(
+            self,
+            FloatHyp {
+                label: label.to_string(),
+                typecode: typecode.to_string(),
+                var: var.to_string(),
+            },
+        )
+    }
+
+    fn add_essential(&mut self, label: &str, expr: Expr) -> Result<(), MmError> {
+        Database::add_essential(
+            self,
+            Hypothesis {
+                label: label.to_string(),
+                expr,
+            },
+        )
+    }
+
+    fn add_disjoint(&mut self, vars: &[&str]) -> Result<(), MmError> {
+        Database::add_disjoint(self, vars.iter().map(|s| s.to_string()).collect())
+    }
+
+    fn add_assertion(
+        &mut self,
+        label: &str,
+        conclusion: Expr,
+        proof: Option<Proof>,
+    ) -> Result<(), MmError> {
+        Database::add_assertion(self, label.to_string(), conclusion, proof)
     }
 }

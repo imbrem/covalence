@@ -1153,6 +1153,7 @@ name = "covalence-metamath"
 version = "0.0.0"
 dependencies = [
  "covalence-sexp",
+ "smol_str",
  "thiserror 2.0.18",
 ]
 

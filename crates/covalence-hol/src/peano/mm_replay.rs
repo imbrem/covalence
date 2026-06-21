@@ -45,7 +45,7 @@ use super::{deep, mm_pa};
 use crate::init::eq::beta_nf;
 use crate::init::nat;
 use crate::metamath::expr::{body_of, expr_symbols, typecode_of};
-use crate::metamath::{Assertion, Database, Expr, Statement};
+use crate::metamath::{Assertion, Database, Expr, Proof, Statement};
 
 // ============================================================================
 // Errors
@@ -103,11 +103,7 @@ pub fn prov_to_form(e: &Expr, free: &mut FreeVars) -> Result<Fol> {
         return Err(replay_err("expected a `|-` statement"));
     }
     let body = body_of(e).ok_or_else(|| replay_err("malformed |- statement"))?;
-    let syms: Vec<&str> = body
-        .iter()
-        .map(|s| s.as_symbol())
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| replay_err("|- body has a non-symbol"))?;
+    let syms: Vec<&str> = body.iter().map(|s| s.as_str()).collect();
     let (f, rest) = parse_form(&syms, &Vec::new(), free)?;
     if !rest.is_empty() {
         return Err(replay_err("trailing symbols after |- formula"));
@@ -326,15 +322,20 @@ impl Slot {
 /// verified it; the replay re-derives the HOL theorem independently). Returns a
 /// genuine, hypothesis-free kernel theorem of the conclusion's denotation.
 pub fn replay_assertion(db: &Database, assertion: &Assertion) -> Result<Thm> {
-    let proof = assertion
-        .proof
-        .as_ref()
-        .ok_or_else(|| replay_err("assertion has no proof to replay"))?;
+    let labels = match assertion.proof.as_ref() {
+        Some(Proof::Normal(labels)) => labels,
+        Some(Proof::Compressed { .. }) => {
+            return Err(replay_err(
+                "compressed-proof replay is not supported (decompress to a normal proof first)",
+            ));
+        }
+        None => return Err(replay_err("assertion has no proof to replay")),
+    };
 
     let mut free = FreeVars::new();
     let mut stack: Vec<Slot> = Vec::new();
 
-    for label in proof {
+    for label in labels {
         let stmt = db
             .statement_by_label(label)
             .ok_or_else(|| replay_err(format!("unknown proof label `{label}`")))?;
@@ -836,7 +837,7 @@ mod tests {
         db.add_assertion(
             "th.pa3".into(),
             concl,
-            Some(vec!["f.x".into(), "pa.3".into()]),
+            Some(Proof::Normal(vec!["f.x".into(), "pa.3".into()])),
         )
         .unwrap();
         let db = db.finish().unwrap();
@@ -873,7 +874,8 @@ mod tests {
             let pname = format!("th.{label}");
             let mut proof: Vec<String> = floats.iter().map(|s| s.to_string()).collect();
             proof.push(label.to_string());
-            db.add_assertion(pname.clone(), concl, Some(proof)).unwrap();
+            db.add_assertion(pname.clone(), concl, Some(Proof::Normal(proof)))
+                .unwrap();
             let db = db.finish().unwrap();
             let Some(Statement::Assert(a)) = db.statement_by_label(&pname) else {
                 panic!()
@@ -1012,7 +1014,7 @@ mod tests {
                 "A.", "y", "A.", "x", "-.", "(", "0", "=", "(", "S", "x", ")", ")",
             ],
         );
-        db.add_assertion("th.gen".into(), concl, Some(proof))
+        db.add_assertion("th.gen".into(), concl, Some(Proof::Normal(proof)))
             .unwrap();
         let db = db.finish().unwrap();
         let Some(Statement::Assert(a)) = db.statement_by_label("th.gen") else {

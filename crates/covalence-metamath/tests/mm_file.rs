@@ -7,7 +7,7 @@
 //! serializer in the crate yet (north star), so the test ships a minimal
 //! emitter local to the test.
 
-use covalence_metamath::{Database, Statement, parse, verify_all};
+use covalence_metamath::{Database, Proof, Statement, parse, verify_all};
 
 const FIXTURE: &str = include_str!("fixtures/demo0.mm");
 
@@ -69,11 +69,18 @@ fn emit(db: &Database) -> String {
                 let body = expr_symbols(&a.conclusion).unwrap().join(" ");
                 match &a.proof {
                     None => out.push_str(&format!("{} $a {} $.\n", a.label, body)),
-                    Some(p) => out.push_str(&format!(
+                    Some(Proof::Normal(p)) => out.push_str(&format!(
                         "{} $p {} $= {} $.\n",
                         a.label,
                         body,
                         p.join(" ")
+                    )),
+                    Some(Proof::Compressed { labels, letters }) => out.push_str(&format!(
+                        "{} $p {} $= ( {} ) {} $.\n",
+                        a.label,
+                        body,
+                        labels.join(" "),
+                        String::from_utf8_lossy(letters),
                     )),
                 }
             }

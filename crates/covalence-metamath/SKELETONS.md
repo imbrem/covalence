@@ -11,26 +11,32 @@ metatheorem — live in `covalence-hol`
 HOL-kernel work. See the repo [`CLAUDE.md`](../../CLAUDE.md) § Skeletons for the
 policy.
 
+## Done (no longer deferred)
+
+- **Compressed proof format.** ✅ The reader parses `$= ( labels ) LETTERS $.`
+  into [`Proof::Compressed`](src/database.rs); the decoder/verifier
+  ([`verify::decompress_proof`](src/verify.rs)) recovers the `A`–`T` / `U`–`Y`
+  base-20/5 integer scheme, the `Z` save markers, and the mandatory-hyp /
+  label-block / heap addressing, then runs the same RPN/`$d` machinery. Both
+  encodings are tested (`tests/theories.rs`, with and without `Z` saves).
+
+- **`$[ ... $]` file inclusion.** ✅ The `SourceResolver` trait +
+  `FileResolver`/`MemoryResolver` + `parse_with_resolver` expand includes at the
+  token level with dedup by canonical key (`src/parse.rs`). `parse(&str)` is the
+  no-include default. Tested via a two-source `MemoryResolver` end-to-end.
+
+- **The `Database` builder trait.** ✅ [`DatabaseSink`](src/database.rs) is the
+  construction API the reader drives; the in-memory `Database` implements it, and
+  the parser builds through `&mut impl DatabaseSink`. `SymbolKind` classifies
+  `$c`/`$v` declarations. The **HOL-backed sink** (constructing `⊢ Derivable_…`
+  theorems as it reads) is the `covalence-hol` follow-on — see below.
+
 ## Deferred features (north stars) — reader scope
-
-- **Compressed proof format.** Only *normal / uncompressed* proofs are read.
-  The parser (`src/parse.rs`, `Parser::read_proof`) **detects** a compressed
-  proof (`$= ( labels ) LETTERS $.`) and rejects it with a clear
-  `MmError::Parse` ("compressed proof format … not yet supported"). The
-  compressed encoding (the `A`–`T` / `U`–`Y` base-20/5 integer scheme, the `Z`
-  save marker, and the mandatory-hyp/label-block/heap addressing) is a north
-  star, required before `set.mm` can be imported. No incomplete decoder is
-  shipped — the gate is the rejection in `read_proof`.
-
-- **`$[ ... $]` file inclusion.** The parser handles a single source string.
-  Multi-file databases (`$[ include.mm $]`, with dedup by canonical path) are
-  not parsed. This is the only reader feature `set.mm` truly needs beyond the
-  compressed format.
 
 - **`set.mm`-scale streaming/incremental parsing.** The reader tokenises an
   entire source string up front — fine for the hand-encoded example theories
   and the `tests/fixtures/demo0.mm` file, not for the ~40 MB `set.mm`.
-  Streaming/incremental parsing is deferred until the compressed format lands.
+  Streaming/incremental parsing is deferred until symbol interning lands.
 
 - **Canonical `.mm` serializer.** There is no in-crate emitter; the round-trip
   test (`tests/mm_file.rs`) ships a minimal test-local one. A canonical
@@ -38,35 +44,35 @@ policy.
 
 ## Deferred features (north stars) — engine scope
 
-- **A `Database` trait + pluggable backends.** Today [`Database`](src/database.rs)
-  is one concrete in-memory value built by the reader and checked by
-  [`verify`](src/verify.rs). The target (the crate-inversion vision) is a
-  `Database`/builder **trait** the reader drives, with multiple implementers: the
-  in-memory checker here (a HOL-free "sanity check", behind a feature flag) and
-  a **HOL-backed** consumer in `covalence-hol` that constructs `⊢ Derivable_…`
-  theorems as it reads. Builtin enums for symbol kinds (typecode roles, etc.)
-  belong with the trait. **Not built** — the reader still builds the concrete
-  `Database` directly.
+- **HOL-backed `DatabaseSink`.** The [`DatabaseSink`](src/database.rs) trait
+  exists and the in-memory [`Database`](src/database.rs) implements it (a
+  HOL-free "sanity check" behind the default-on `checker` feature). The target
+  second implementer — a **HOL-backed** sink in `covalence-hol` that constructs
+  `⊢ Derivable_…` theorems as it reads — is not yet built; the current replay
+  bridges (`peano::mm_replay`, `metalogic::mm_replay`) consume an
+  already-built `Database` rather than implementing the sink directly.
 
-- **Structured-tree (grammar-parsed) expression encoding.** Expressions are
-  encoded as *faithful flat sequences* (`[typecode, sym, sym, ...]` `SExpr`
-  lists) — see [`lib.rs`](src/lib.rs) for the rationale. A grammar pass turning
-  those flat lists into structured trees (`(-> ph ps)`) would be nicer for the
-  metatheory work, but reintroduces grammar ambiguity and is therefore deferred
-  to the (untrusted) bridge layer above, where the grammar is part of the
-  representation, not the checker.
+- **Structured-tree (grammar-parsed) expression encoding.** Expressions are the
+  primitive [`Expr`](src/expr.rs) = a typecode `Symbol` + flat `body: Vec<Symbol>`
+  — *faithful flat sequences*, see [`lib.rs`](src/lib.rs) for the rationale. A
+  grammar pass turning those flat sequences into structured trees (`(-> ph ps)`)
+  would be nicer for the metatheory work, but reintroduces grammar ambiguity and
+  is therefore deferred to the (untrusted) bridge layer above, where the grammar
+  is part of the representation, not the checker.
 
-- **`set.mm` scale & performance.** The model uses `String` symbols and
-  `HashMap` label/symbol tables with no interning or arenas — fine for the
-  hand-encoded example theories, not for the ~40 MB `set.mm`. Symbol interning,
-  a flat statement arena, and incremental construction are deferred.
+- **Symbol interning for `set.mm` scale.** [`Symbol`](src/expr.rs) is an owned
+  `smol_str::SmolStr`; the database uses `HashMap` label/symbol tables with no
+  interning or arenas — fine for the hand-encoded example theories, not for the
+  ~40 MB `set.mm`. Symbol interning (an `Expr` of interned ids), a flat statement
+  arena, and incremental construction are deferred.
 
 ## Notes
 
 - No `unsafe` (project rule).
 - The checker performs **genuine** checking: substitutions, typecodes, and `$d`
   distinct-variable conditions are all re-derived and re-verified
-  ([`verify.rs`](src/verify.rs)); the inline unit tests cover the expression and
-  substitution core. End-to-end theory tests (good + bad proofs across four
-  hand-encoded theories) drive the engine through the reader and live in
+  ([`verify.rs`](src/verify.rs), behind the default-on `checker` feature); the
+  inline unit tests cover the expression and substitution core. End-to-end theory
+  tests (good + bad proofs across four hand-encoded theories, plus compressed
+  proofs and file inclusion) drive the engine through the reader and live in
   `tests/theories.rs`.

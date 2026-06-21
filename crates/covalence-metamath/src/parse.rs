@@ -1,34 +1,186 @@
-//! A parser for the *uncompressed* `.mm` subset.
+//! A parser for the `.mm` format.
 //!
-//! Supports the keyword set `$c $v $f $e $d $a $p $.`, scoping `${ ... $}`, and
-//! comments `$( ... $)`. The **compressed** proof format and `$[ ... $]` file
-//! inclusion are north stars — see this crate's `SKELETONS.md`.
+//! Supports the keyword set `$c $v $f $e $d $a $p $.`, scoping `${ ... $}`,
+//! comments `$( ... $)`, **`$[ include $]` file inclusion** (via the
+//! [`SourceResolver`] trait), and **both** proof encodings — normal
+//! (uncompressed) label sequences and the [`Proof::Compressed`] `( labels )
+//! LETTERS` form.
 //!
-//! Metamath tokenisation is simply whitespace-separated tokens (the language
-//! has no string literals or nested delimiters at the token level), so the
-//! lexer is a hand-rolled scanner.
+//! Metamath tokenisation is whitespace-separated tokens (the language has no
+//! string literals or nested delimiters at the token level), so the lexer is a
+//! hand-rolled scanner.
 //!
-//! The engine this reader builds against (the expression model, substitution,
-//! frames, and the RPN checker) lives in this crate; this
-//! module only constructs a [`crate::Database`] from source.
+//! The reader drives a [`DatabaseSink`]: [`parse`] / [`parse_with_resolver`]
+//! build the in-memory [`crate::Database`] (the canonical sink), but the same
+//! reader can feed any sink (e.g. a future HOL-backed one in `covalence-hol`).
 
-use covalence_sexp::SExpr;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
-use crate::database::{Database, FloatHyp, Hypothesis};
+use crate::database::{Database, DatabaseSink, Proof, SymbolKind};
 use crate::error::MmError;
-use crate::expr::from_symbols;
+use crate::expr::{Expr, from_symbols};
 
-/// Parse an uncompressed `.mm` source string into a [`Database`].
+// ---------------------------------------------------------------------------
+// Source resolver trait and implementations
+// ---------------------------------------------------------------------------
+
+/// Resolve and read Metamath source files for `$[ filename $]` inclusion.
+pub trait SourceResolver {
+    /// Resolve and read a source file.
+    ///
+    /// `filename` — the token between `$[` and `$]`.
+    /// `referrer` — canonical key of the file containing the directive (`None`
+    /// for the root file).
+    ///
+    /// Returns `(canonical_key, contents)`. The key is used for deduplication
+    /// (a file included twice is read once).
+    fn resolve(
+        &self,
+        filename: &str,
+        referrer: Option<&str>,
+    ) -> Result<(String, String), std::io::Error>;
+}
+
+/// Resolves files from the filesystem, relative to the referrer's directory.
+pub struct FileResolver {
+    base_dir: PathBuf,
+}
+
+impl FileResolver {
+    pub fn new(base_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            base_dir: base_dir.into(),
+        }
+    }
+}
+
+impl SourceResolver for FileResolver {
+    fn resolve(
+        &self,
+        filename: &str,
+        referrer: Option<&str>,
+    ) -> Result<(String, String), std::io::Error> {
+        let dir = match referrer {
+            Some(r) => Path::new(r)
+                .parent()
+                .unwrap_or(self.base_dir.as_path())
+                .to_path_buf(),
+            None => self.base_dir.clone(),
+        };
+        let path = dir.join(filename);
+        let canonical = path
+            .canonicalize()
+            .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {e}", path.display())))?;
+        let key = canonical.to_string_lossy().into_owned();
+        let contents = std::fs::read_to_string(&canonical)?;
+        Ok((key, contents))
+    }
+}
+
+/// In-memory resolver for testing. Looks up filenames in a map.
+pub struct MemoryResolver {
+    files: std::collections::HashMap<String, String>,
+}
+
+impl MemoryResolver {
+    pub fn new(files: std::collections::HashMap<String, String>) -> Self {
+        Self { files }
+    }
+}
+
+impl SourceResolver for MemoryResolver {
+    fn resolve(
+        &self,
+        filename: &str,
+        _referrer: Option<&str>,
+    ) -> Result<(String, String), std::io::Error> {
+        let contents = self.files.get(filename).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("file not found: {filename}"),
+            )
+        })?;
+        Ok((filename.to_owned(), contents.clone()))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public parse API
+// ---------------------------------------------------------------------------
+
+/// Parse a `.mm` source string into a [`Database`] (no file inclusion).
 pub fn parse(input: &str) -> Result<Database, MmError> {
     let tokens = tokenize(input)?;
-    let mut p = Parser {
-        toks: &tokens,
-        pos: 0,
-    };
     let mut db = Database::new();
-    p.parse_block(&mut db, true)?;
+    parse_tokens(&tokens, &mut db)?;
     db.finish()
 }
+
+/// Parse a Metamath database starting from `filename`, resolving `$[ ... $]`
+/// includes via `resolver`.
+pub fn parse_with_resolver(
+    filename: &str,
+    resolver: &dyn SourceResolver,
+) -> Result<Database, MmError> {
+    let (key, contents) = resolver
+        .resolve(filename, None)
+        .map_err(|e| MmError::FileError {
+            path: filename.to_owned(),
+            message: e.to_string(),
+        })?;
+    let mut seen = HashSet::new();
+    seen.insert(key.clone());
+    let mut tokens = Vec::new();
+    expand_includes(&contents, resolver, Some(&key), &mut seen, &mut tokens)?;
+    let mut db = Database::new();
+    parse_tokens(&tokens, &mut db)?;
+    db.finish()
+}
+
+/// Tokenise `input`, recursively expanding `$[ file $]` includes into `out`.
+fn expand_includes(
+    input: &str,
+    resolver: &dyn SourceResolver,
+    referrer: Option<&str>,
+    seen: &mut HashSet<String>,
+    out: &mut Vec<String>,
+) -> Result<(), MmError> {
+    let raw = tokenize(input)?;
+    let mut it = raw.into_iter();
+    while let Some(tok) = it.next() {
+        if tok == "$[" {
+            let filename = it
+                .next()
+                .ok_or_else(|| MmError::Parse("expected filename after `$[`".into()))?;
+            let close = it
+                .next()
+                .ok_or_else(|| MmError::Parse("expected `$]` after include filename".into()))?;
+            if close != "$]" {
+                return Err(MmError::Parse(format!(
+                    "expected `$]`, got `{close}` in include"
+                )));
+            }
+            let (key, contents) =
+                resolver
+                    .resolve(&filename, referrer)
+                    .map_err(|e| MmError::FileError {
+                        path: filename.clone(),
+                        message: e.to_string(),
+                    })?;
+            if seen.insert(key.clone()) {
+                expand_includes(&contents, resolver, Some(&key), seen, out)?;
+            }
+        } else {
+            out.push(tok);
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tokeniser
+// ---------------------------------------------------------------------------
 
 /// Whitespace-tokenise, stripping `$( ... $)` comments.
 fn tokenize(input: &str) -> Result<Vec<String>, MmError> {
@@ -57,6 +209,16 @@ fn tokenize(input: &str) -> Result<Vec<String>, MmError> {
     Ok(out)
 }
 
+// ---------------------------------------------------------------------------
+// Parser: token stream → DatabaseSink
+// ---------------------------------------------------------------------------
+
+/// Parse the whole token stream into `sink`.
+fn parse_tokens(tokens: &[String], sink: &mut impl DatabaseSink) -> Result<(), MmError> {
+    let mut p = Parser { toks: tokens, pos: 0 };
+    p.parse_block(sink, true)
+}
+
 struct Parser<'a> {
     toks: &'a [String],
     pos: usize,
@@ -77,7 +239,11 @@ impl<'a> Parser<'a> {
 
     /// Parse statements until end of input or a closing `$}`. `top_level` is
     /// true for the outermost block; a `$}` there is an unmatched-scope error.
-    fn parse_block(&mut self, db: &mut Database, top_level: bool) -> Result<(), MmError> {
+    fn parse_block(
+        &mut self,
+        sink: &mut impl DatabaseSink,
+        top_level: bool,
+    ) -> Result<(), MmError> {
         while let Some(tok) = self.peek() {
             match tok {
                 "$}" if top_level => {
@@ -86,27 +252,27 @@ impl<'a> Parser<'a> {
                 "$}" => return Ok(()),
                 "${" => {
                     self.next();
-                    db.push_scope();
-                    self.parse_block(db, false)?;
+                    sink.push_scope();
+                    self.parse_block(sink, false)?;
                     match self.next() {
-                        Some("$}") => db.pop_scope()?,
+                        Some("$}") => sink.pop_scope()?,
                         _ => return Err(MmError::Parse("unclosed `${`".into())),
                     }
                 }
                 "$c" => {
                     self.next();
                     let syms = self.read_until_dot("$c")?;
-                    db.declare_constants(syms)?;
+                    sink.declare(SymbolKind::Constant, &str_refs(&syms))?;
                 }
                 "$v" => {
                     self.next();
                     let syms = self.read_until_dot("$v")?;
-                    db.declare_variables(syms)?;
+                    sink.declare(SymbolKind::Variable, &str_refs(&syms))?;
                 }
                 "$d" => {
                     self.next();
                     let syms = self.read_until_dot("$d")?;
-                    db.add_disjoint(syms)?;
+                    sink.add_disjoint(&str_refs(&syms))?;
                 }
                 kw if kw.starts_with('$') => {
                     return Err(MmError::Parse(format!(
@@ -120,10 +286,10 @@ impl<'a> Parser<'a> {
                         MmError::Parse(format!("expected keyword after label `{label}`"))
                     })?;
                     match kw {
-                        "$f" => self.parse_float(db, label)?,
-                        "$e" => self.parse_essential(db, label)?,
-                        "$a" => self.parse_assert(db, label, false)?,
-                        "$p" => self.parse_assert(db, label, true)?,
+                        "$f" => self.parse_float(sink, label)?,
+                        "$e" => self.parse_essential(sink, label)?,
+                        "$a" => self.parse_assert(sink, label, false)?,
+                        "$p" => self.parse_assert(sink, label, true)?,
                         other => {
                             return Err(MmError::Parse(format!(
                                 "unexpected keyword `{other}` after label `{label}`"
@@ -153,35 +319,35 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_float(&mut self, db: &mut Database, label: String) -> Result<(), MmError> {
+    fn parse_float(&mut self, sink: &mut impl DatabaseSink, label: String) -> Result<(), MmError> {
         let body = self.read_until_dot("$f")?;
         if body.len() != 2 {
             return Err(MmError::Parse(format!(
                 "`{label}` $f must be `typecode var`, got {body:?}"
             )));
         }
-        db.add_float(FloatHyp {
-            label,
-            typecode: body[0].clone(),
-            var: body[1].clone(),
-        })
+        sink.add_float(&label, &body[0], &body[1])
     }
 
-    fn parse_essential(&mut self, db: &mut Database, label: String) -> Result<(), MmError> {
+    fn parse_essential(
+        &mut self,
+        sink: &mut impl DatabaseSink,
+        label: String,
+    ) -> Result<(), MmError> {
         let syms = self.read_until_dot("$e")?;
         let expr = self.make_expr(&label, &syms)?;
-        db.add_essential(Hypothesis { label, expr })
+        sink.add_essential(&label, expr)
     }
 
     fn parse_assert(
         &mut self,
-        db: &mut Database,
+        sink: &mut impl DatabaseSink,
         label: String,
         provable: bool,
     ) -> Result<(), MmError> {
         // Read the conclusion symbols up to `$.` (axiom) or `$=` (theorem).
         let mut syms = Vec::new();
-        let proof: Option<Vec<String>> = loop {
+        let proof: Option<Proof> = loop {
             match self.next() {
                 Some("$.") => break None,
                 Some("$=") if provable => {
@@ -205,22 +371,19 @@ impl<'a> Parser<'a> {
             )));
         }
         let conclusion = self.make_expr(&label, &syms)?;
-        db.add_assertion(label, conclusion, proof)
+        sink.add_assertion(&label, conclusion, proof)
     }
 
-    /// Read an (uncompressed) proof: labels up to `$.`. Rejects the compressed
-    /// format (`( ... ) letters`) with a clear message.
-    fn read_proof(&mut self, label: &str) -> Result<Vec<String>, MmError> {
+    /// Read a proof body (the part after `$=`): either a normal label sequence
+    /// up to `$.`, or a compressed `( labels ) LETTERS $.` block.
+    fn read_proof(&mut self, label: &str) -> Result<Proof, MmError> {
         if self.peek() == Some("(") {
-            return Err(MmError::Parse(format!(
-                "`{label}` uses the compressed proof format, which is not yet supported \
-                 (see SKELETONS.md)"
-            )));
+            return self.read_compressed_proof(label);
         }
         let mut labels = Vec::new();
         loop {
             match self.next() {
-                Some("$.") => return Ok(labels),
+                Some("$.") => return Ok(Proof::Normal(labels)),
                 Some("?") => {
                     return Err(MmError::Parse(format!(
                         "`{label}` contains an incomplete-proof placeholder `?`"
@@ -237,14 +400,53 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Build an `SExpr` expression from a symbol list (the first being the
-    /// typecode), validating it is non-empty.
-    fn make_expr(&self, label: &str, syms: &[String]) -> Result<SExpr, MmError> {
+    /// Read a compressed proof: `( label1 label2 ... ) LETTERS... $.` (the `(`
+    /// is at the current position).
+    fn read_compressed_proof(&mut self, label: &str) -> Result<Proof, MmError> {
+        // Consume `(`.
+        self.next();
+        // Label block until `)`.
+        let mut labels = Vec::new();
+        loop {
+            match self.next() {
+                Some(")") => break,
+                Some(t) => labels.push(t.to_string()),
+                None => {
+                    return Err(MmError::Parse(format!(
+                        "unterminated compressed-proof label block in `{label}`"
+                    )));
+                }
+            }
+        }
+        // Letter block: concatenate all tokens until `$.`.
+        let mut letters = Vec::new();
+        loop {
+            match self.next() {
+                Some("$.") => break,
+                Some(t) => letters.extend_from_slice(t.as_bytes()),
+                None => {
+                    return Err(MmError::Parse(format!(
+                        "unterminated compressed-proof letter block in `{label}`"
+                    )));
+                }
+            }
+        }
+        Ok(Proof::Compressed { labels, letters })
+    }
+
+    /// Build an [`Expr`] from a symbol list (the first being the typecode),
+    /// validating it is non-empty.
+    fn make_expr(&self, label: &str, syms: &[String]) -> Result<Expr, MmError> {
         from_symbols(syms.iter().map(String::as_str)).ok_or_else(|| MmError::MalformedExpr {
             label: label.to_string(),
             message: "expression is empty (needs at least a typecode)".into(),
         })
     }
+}
+
+/// Borrow a `&[String]` as a `Vec<&str>` for the `DatabaseSink` API.
+fn str_refs(v: &[String]) -> Vec<&str> {
+    v.iter().map(String::as_str).collect()
 }
 
 #[cfg(test)]
@@ -274,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn axiom_conclusion_is_sexpr() {
+    fn axiom_conclusion_is_expr() {
         let db = parse("$c term 0 $. tze $a term 0 $.").unwrap();
         let a = db.assertions().next().unwrap();
         assert_eq!(typecode_of(&a.conclusion), Some("term"));
@@ -287,10 +489,19 @@ mod tests {
     }
 
     #[test]
-    fn compressed_proof_rejected_clearly() {
-        let src = "$c term 0 $. tze $a term 0 $. th $p term 0 $= ( tze ) A $.";
-        let err = parse(src).unwrap_err();
-        assert!(format!("{err}").contains("compressed"));
+    fn compressed_proof_parsed() {
+        let src = "$c term 0 $. tze $a term 0 $. th $p term 0 $= ( tze ) AB $.";
+        let db = parse(src).unwrap();
+        let crate::database::Statement::Assert(a) = db.statement_by_label("th").unwrap() else {
+            panic!("expected assertion");
+        };
+        match &a.proof {
+            Some(Proof::Compressed { labels, letters }) => {
+                assert_eq!(labels, &["tze"]);
+                assert_eq!(letters, b"AB");
+            }
+            other => panic!("expected compressed proof, got {other:?}"),
+        }
     }
 
     #[test]
@@ -302,5 +513,56 @@ mod tests {
     #[test]
     fn unmatched_scope_close_errors() {
         assert!(parse("$c a $. $}").is_err());
+    }
+
+    // --- file inclusion -----------------------------------------------------
+
+    fn mem(files: &[(&str, &str)]) -> MemoryResolver {
+        MemoryResolver::new(
+            files
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn include_two_files() {
+        let resolver = mem(&[
+            ("root.mm", "$[ defs.mm $] wph $f wff ph $."),
+            ("defs.mm", "$c wff $. $v ph $."),
+        ]);
+        let db = parse_with_resolver("root.mm", &resolver).unwrap();
+        assert!(db.is_symbol("wff"));
+        assert!(db.statement_by_label("wph").is_some());
+    }
+
+    #[test]
+    fn include_duplicate_skipped() {
+        let resolver = mem(&[("root.mm", "$[ a.mm $] $[ a.mm $]"), ("a.mm", "$c wff $.")]);
+        let db = parse_with_resolver("root.mm", &resolver).unwrap();
+        assert!(db.is_symbol("wff"));
+    }
+
+    #[test]
+    fn include_nested() {
+        let resolver = mem(&[
+            ("root.mm", "$[ a.mm $] wph $f wff ph $."),
+            ("a.mm", "$[ b.mm $] $v ph $."),
+            ("b.mm", "$c wff $."),
+        ]);
+        let db = parse_with_resolver("root.mm", &resolver).unwrap();
+        assert!(db.is_symbol("wff"));
+        assert!(db.statement_by_label("wph").is_some());
+    }
+
+    #[test]
+    fn include_unknown_file_error() {
+        let resolver = mem(&[("root.mm", "$[ missing.mm $]")]);
+        let err = parse_with_resolver("root.mm", &resolver).unwrap_err();
+        assert!(
+            matches!(err, MmError::FileError { ref path, .. } if path == "missing.mm"),
+            "expected FileError for missing.mm, got: {err}"
+        );
     }
 }

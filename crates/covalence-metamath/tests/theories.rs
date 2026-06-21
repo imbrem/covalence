@@ -2,7 +2,11 @@
 //! agnostic**: the same substitution/DV/RPN machinery checks proofs in several
 //! unrelated hand-encoded theories, and rejects ill-formed proofs.
 
-use covalence_metamath::{MmError, parse, verify_all, verify_assertion};
+use std::collections::HashMap;
+
+use covalence_metamath::{
+    MemoryResolver, MmError, parse, parse_with_resolver, verify_all, verify_assertion,
+};
 
 // ===========================================================================
 // Theory 1 — "demo0": the Metamath book's introductory theory.
@@ -315,4 +319,114 @@ fn single_assertion_verify_api() {
     let db = parse(DEMO0).unwrap();
     let th1 = db.assertions().find(|a| a.label == "th1").unwrap();
     verify_assertion(&db, th1).unwrap();
+}
+
+// ===========================================================================
+// Compressed proofs — the same demo0 theorem, but with th1 written in the
+// compressed `( labels ) LETTERS` format (with and without `Z` saves), checked
+// end-to-end through the reader + decoder + RPN machinery.
+// ===========================================================================
+
+const DEMO0_BASE: &str = "\
+    $c 0 + = -> ( ) term wff |- $.
+    $v t r s P Q $.
+    tt $f term t $.
+    tr $f term r $.
+    ts $f term s $.
+    wp $f wff P $.
+    wq $f wff Q $.
+    tze $a term 0 $.
+    tpl $a term ( t + r ) $.
+    weq $a wff t = r $.
+    wim $a wff ( P -> Q ) $.
+    a1 $a |- ( t = r -> ( t = s -> r = s ) ) $.
+    a2 $a |- ( t + 0 ) = t $.
+    ${
+      min $e |- P $.
+      maj $e |- ( P -> Q ) $.
+      mp $a |- Q $.
+    $}
+";
+
+#[test]
+fn demo0_compressed_proof_verifies() {
+    let src = format!(
+        "{DEMO0_BASE}\n\
+         th1 $p |- t = t $= ( tze tpl weq wim a2 a1 mp ) \
+         ABCADAADAFABCADABCADAADEAFABCAAGHH $.\n"
+    );
+    let db = parse(&src).unwrap();
+    assert_eq!(verify_all(&db).unwrap(), 1);
+}
+
+#[test]
+fn demo0_compressed_proof_with_saves_verifies() {
+    let src = format!(
+        "{DEMO0_BASE}\n\
+         th1 $p |- t = t $= ( tze tpl weq wim a2 a1 mp ) \
+         ABCADZAADZAFZIIJEKABCAAGHH $.\n"
+    );
+    let db = parse(&src).unwrap();
+    assert_eq!(verify_all(&db).unwrap(), 1);
+}
+
+#[test]
+fn compressed_and_normal_agree() {
+    // The compressed and normal encodings of th1 both verify against the same
+    // base database — a "round trip" at the level of proof acceptance.
+    let normal = format!(
+        "{DEMO0_BASE}\n\
+         th1 $p |- t = t $= tt tze tpl tt weq tt tt weq tt a2 tt tze tpl \
+         tt weq tt tze tpl tt weq tt tt weq wim tt a2 tt tze tpl \
+         tt tt a1 mp mp $.\n"
+    );
+    let compressed = format!(
+        "{DEMO0_BASE}\n\
+         th1 $p |- t = t $= ( tze tpl weq wim a2 a1 mp ) \
+         ABCADAADAFABCADABCADAADEAFABCAAGHH $.\n"
+    );
+    let db_n = parse(&normal).unwrap();
+    let db_c = parse(&compressed).unwrap();
+    assert_eq!(verify_all(&db_n).unwrap(), 1);
+    assert_eq!(verify_all(&db_c).unwrap(), 1);
+    // Both produce a th1 whose conclusion agrees.
+    let cn = &db_n.assertions().find(|a| a.label == "th1").unwrap().conclusion;
+    let cc = &db_c.assertions().find(|a| a.label == "th1").unwrap().conclusion;
+    assert_eq!(cn, cc);
+}
+
+#[test]
+fn bad_compressed_proof_rejected() {
+    // Truncate the letter block so the proof no longer reduces to th1.
+    let src = format!(
+        "{DEMO0_BASE}\n\
+         th1 $p |- t = t $= ( tze tpl weq wim a2 a1 mp ) ABCAD $.\n"
+    );
+    let db = parse(&src).unwrap();
+    assert!(verify_all(&db).is_err());
+}
+
+// ===========================================================================
+// File inclusion — a multi-source database assembled via `$[ include $]`,
+// resolved through a MemoryResolver, then verified end-to-end.
+// ===========================================================================
+
+#[test]
+fn inclusion_assembles_and_verifies() {
+    let mut files = HashMap::new();
+    // The signature + rules live in one file; the theorem in the root.
+    files.insert("defs.mm".to_string(), DEMO0_BASE.to_string());
+    files.insert(
+        "root.mm".to_string(),
+        "$[ defs.mm $]\n\
+         th1 $p |- t = t $= tt tze tpl tt weq tt tt weq tt a2 tt tze tpl \
+         tt weq tt tze tpl tt weq tt tt weq wim tt a2 tt tze tpl \
+         tt tt a1 mp mp $.\n"
+            .to_string(),
+    );
+    let resolver = MemoryResolver::new(files);
+    let db = parse_with_resolver("root.mm", &resolver).unwrap();
+    assert!(db.is_symbol("term"));
+    assert!(db.statement_by_label("mp").is_some());
+    assert_eq!(verify_all(&db).unwrap(), 1);
 }

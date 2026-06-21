@@ -161,6 +161,8 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
         .route("/api/info", get(api::info))
         .route("/api/health", get(api::health))
         .route("/api/repl", get(api::repl_ws))
+        // TEMPORARY: Metamath import demo (powers the /metamath web page)
+        .route("/api/mm/import", get(api::mm_import_ws))
         // Blob endpoints (concrete paths before parameterized)
         .route("/api/blobs", post(api::blob_store).get(api::blob_list))
         .route("/api/blobs/url", post(api::blob_store_url))

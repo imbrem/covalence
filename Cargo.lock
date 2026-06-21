@@ -1282,6 +1282,8 @@ dependencies = [
  "axum",
  "covalence-git",
  "covalence-hash",
+ "covalence-hol",
+ "covalence-metamath",
  "covalence-object",
  "covalence-proto",
  "covalence-repl",

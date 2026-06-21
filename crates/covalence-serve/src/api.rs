@@ -111,6 +111,153 @@ async fn handle_repl_ws(mut socket: WebSocket, kernel: Kernel) {
 }
 
 // ---------------------------------------------------------------------------
+// TEMPORARY / DEMO: Metamath import WebSocket
+//
+// Powers the `/metamath` demo page in apps/covalence-web. Streams a
+// per-theorem HOL-kernel import of a Metamath `.mm` database. This is a
+// throwaway UX endpoint, not part of the stable API surface.
+// ---------------------------------------------------------------------------
+
+/// GET /api/mm/import — temporary streaming Metamath-import WebSocket.
+///
+/// Protocol (all frames are JSON text):
+///   - first client frame: the raw `.mm` source.
+///   - server → `{"type":"parsed","total":N}` once parsed (N = `$p` count),
+///     then one `{"type":"theorem",...}` per theorem in database order,
+///     then `{"type":"done",...}`. Parse failure → `{"type":"error",...}`.
+pub async fn mm_import_ws(
+    axum::extract::State(_state): axum::extract::State<crate::AppState>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    ws.on_upgrade(handle_mm_import_ws)
+}
+
+async fn handle_mm_import_ws(mut socket: WebSocket) {
+    // The first message carries the raw `.mm` source.
+    let source = loop {
+        match socket.recv().await {
+            Some(Ok(Message::Text(t))) => break t.to_string(),
+            Some(Ok(Message::Close(_))) | None => return,
+            Some(Ok(_)) => continue, // ignore pings/binary
+            Some(Err(_)) => return,
+        }
+    };
+
+    // Stream results from the blocking import task over an mpsc channel.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
+
+    std::thread::spawn(move || mm_import_worker(source, tx));
+
+    while let Some(msg) = rx.recv().await {
+        if socket.send(Message::Text(msg.into())).await.is_err() {
+            break;
+        }
+    }
+    let _ = socket.send(Message::Close(None)).await;
+}
+
+/// Build a `{"type":"error",...}` frame.
+fn mm_err_frame(message: impl std::fmt::Display) -> String {
+    serde_json::json!({ "type": "error", "message": message.to_string() }).to_string()
+}
+
+/// The blocking import loop: parse, then derive each `$p` theorem, sending a
+/// JSON frame per result. Runs on a dedicated thread (the HOL kernel work is
+/// CPU-bound and may use blocking primitives).
+fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
+    use covalence_hol::metalogic::mm_database::derive_theorem;
+    use covalence_metamath::database::Statement;
+
+    let started = std::time::Instant::now();
+
+    let db = match covalence_hol::metamath::parse(&source) {
+        Ok(db) => db,
+        Err(e) => {
+            let _ = tx.blocking_send(mm_err_frame(format!("parse error: {e}")));
+            return;
+        }
+    };
+
+    // Collect the `$p` theorem labels (proof present), in database order.
+    let labels: Vec<String> = db
+        .assertions()
+        .filter(|a| a.proof.is_some())
+        .map(|a| a.label.clone())
+        .collect();
+    let total = labels.len();
+
+    if tx
+        .blocking_send(serde_json::json!({ "type": "parsed", "total": total }).to_string())
+        .is_err()
+    {
+        return;
+    }
+
+    let mut n_ok = 0usize;
+    for (i, label) in labels.iter().enumerate() {
+        let done = i + 1;
+
+        // Fetch the assertion for Metamath rendering (conclusion + essentials).
+        let assertion = match db.statement_by_label(label) {
+            Some(Statement::Assert(a)) => a,
+            _ => {
+                let frame = serde_json::json!({
+                    "type": "theorem", "done": done, "total": total,
+                    "label": label, "mm": "", "ok": false,
+                    "error": "assertion vanished after parse",
+                });
+                if tx.blocking_send(frame.to_string()).is_err() {
+                    return;
+                }
+                continue;
+            }
+        };
+        let mm = assertion.conclusion.render();
+        let ess: Vec<String> = assertion
+            .frame
+            .essentials
+            .iter()
+            .map(|h| h.expr.render())
+            .collect();
+
+        let frame = match derive_theorem(&db, label) {
+            Ok(thm) => {
+                n_ok += 1;
+                let full = format!("{}", thm.concl());
+                let hol_preview: String = full.chars().take(400).collect();
+                serde_json::json!({
+                    "type": "theorem", "done": done, "total": total,
+                    "label": label, "mm": mm, "ess": ess,
+                    "ok": true,
+                    "hyps": thm.hyps().len(),
+                    "genuine": thm.has_no_obs(),
+                    "holPreview": hol_preview,
+                })
+            }
+            Err(e) => serde_json::json!({
+                "type": "theorem", "done": done, "total": total,
+                "label": label, "mm": mm, "ess": ess,
+                "ok": false, "error": e.to_string(),
+            }),
+        };
+
+        if tx.blocking_send(frame.to_string()).is_err() {
+            return;
+        }
+    }
+
+    let _ = tx.blocking_send(
+        serde_json::json!({
+            "type": "done",
+            "ok": n_ok,
+            "total": total,
+            "elapsedMs": started.elapsed().as_millis() as u64,
+        })
+        .to_string(),
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Blob endpoints
 // ---------------------------------------------------------------------------
 

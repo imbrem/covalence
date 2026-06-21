@@ -60,3 +60,48 @@ export interface TreeEntry {
   mode: string;
   hash: Hash;
 }
+
+// ---------------------------------------------------------------------------
+// TEMPORARY/DEMO: Metamath import (the `/metamath` page).
+// Streamed over the `/api/mm/import` WebSocket; see CovalenceClient.connectMmImport.
+// ---------------------------------------------------------------------------
+
+/** A streamed frame from the Metamath import WebSocket. */
+export type ImportMessage =
+  | { type: 'parsed'; total: number }
+  | ImportTheoremMessage
+  | { type: 'done'; ok: number; total: number; elapsedMs: number }
+  | { type: 'error'; message: string };
+
+/** Per-theorem result frame. */
+export interface ImportTheoremMessage {
+  type: 'theorem';
+  done: number;
+  total: number;
+  label: string;
+  /** Rendered Metamath conclusion (`typecode sym ...`). */
+  mm: string;
+  /** Rendered essential ($e) hypotheses, if any. */
+  ess?: string[];
+  ok: boolean;
+  /** Number of HOL hypotheses (present when ok). */
+  hyps?: number;
+  /** True if the imported theorem is oracle-free (present when ok). */
+  genuine?: boolean;
+  /** First ~400 chars of the `⊢ Derivable_L ⌜S⌝` conclusion (present when ok). */
+  holPreview?: string;
+  /** Failure reason (present when !ok). */
+  error?: string;
+}
+
+/** One imported theorem, as accumulated by the demo page. */
+export interface ImportedTheorem {
+  label: string;
+  mm: string;
+  ess: string[];
+  ok: boolean;
+  hyps?: number;
+  genuine?: boolean;
+  holPreview?: string;
+  error?: string;
+}

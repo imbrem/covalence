@@ -144,6 +144,24 @@ export class CovalenceClient {
     return new WebSocket(wsUrl);
   }
 
+  /**
+   * TEMPORARY/DEMO: open a WebSocket to the Metamath import endpoint.
+   * Mirrors {@link connectRepl} but targets `/api/mm/import`. Powers the
+   * throwaway `/metamath` page.
+   */
+  connectMmImport(): WebSocket {
+    let wsUrl: string;
+    if (this.baseUrl) {
+      const url = new URL('/api/mm/import', this.baseUrl);
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = url.toString();
+    } else {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${proto}//${location.host}/api/mm/import`;
+    }
+    return new WebSocket(wsUrl);
+  }
+
   // --- Internal ---
 
   private async fetchJson<T>(path: string): Promise<T> {

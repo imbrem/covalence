@@ -43,7 +43,65 @@ the plan, restructured per `docs/theories-models-and-logics.md §5.5`):
   is **removed**; a `LockstepDerivation` placeholder documents the secondary
   "directly obtain a HOL fact" path (no constructors yet — see below).
 
+- `mm_pa.rs` — the **Metamath PA database** (the `ValidProof` side of the
+  Metamath ⇄ HOL connection, `docs/theories-models-and-logics.md §5.6`): built
+  with the `metamath` engine's `Database`/`Frame` API. Typecodes `term`/`wff`/
+  `|-`; the PA signature (`0 S + x.`, `= -> -. /\ \/ A. E.`); modus ponens
+  (`ax.mp`) and generalisation (`ax.gen`) as scoped rules; PA1–PA6 as `$a`
+  axioms; the **induction schema** `pa.ind` as a `wff`-metavariable `$a`.
+  `metamath::verify` accepts the bundled `$p` self-checks. **Done.**
+- `mm_replay.rs` — the **Metamath-PA → HOL replay** (the constructive
+  `∃P.ValidProof ⟹ ⊢⟦S⟧` bridge; mirrors `covalence-alethe`'s untrusted-proof →
+  kernel-recheck). An interpretation parses a `term`/`wff`/`|-` expression back
+  to the locally-nameless `Fol` AST and denotes it via `deep::denote_closed`;
+  `replay_assertion` walks a **verified** proof and re-derives `⊢ ⟦S⟧` step by
+  step in the kernel (PA-axiom instance → its `init::nat` denotation; `ax.mp` →
+  `imp_elim`; `ax.gen` → `all_intro`; **`pa.ind` instance → `Thm::nat_induct`
+  on the now-CONCRETE denoted motive** — `induct_via_replay`). The Metamath
+  proof is **untrusted**; the kernel re-checks every step. Validated end-to-end:
+  all six PA axioms replay to their `init::nat` theorems; `ax.gen` replays
+  through a real Metamath proof; and the induction mechanism (`induct_via_replay`)
+  discharges the **headline `⊢ ∀x. x+0=x = init::nat::add_zero`** — the theorem
+  the impredicative engine could not construct (above) — via the replay path.
+  **The motive wall is sidestepped:** by replay time the motive is a concrete
+  `Fol`, so `nat_induct` fires on `λn. ⟦P(n)⟧` with no HOAS `Q` and no β-capture.
+  **Done** (mechanism); see Deferred for the long Metamath proof-script of the
+  headline.
+
 ## Deferred
+
+### The headline `∀x. x+0=x` as a *Metamath* proof script (proper substitution)
+
+The induction **mechanism** is landed and genuine (`mm_replay::induct_via_replay`
+→ `Thm::nat_induct`), and the headline `⊢ ∀x. x+0=x` is produced through it,
+equal to `init::nat::add_zero` (test `induction_headline_add_zero`). What is
+**not** authored is the full **Hilbert-style Metamath proof script** that derives
+the base `|- ( ( 0 + 0 ) = 0 )` and step `|- A. x ( ( x + 0 ) = x ) -> …` *inside
+the `mm_pa` database* and feeds them to `pa.ind`. The blocker is the **proper
+term-substitution apparatus** `[ t / x ]ph`: the induction base is `[0/x]ph` and
+the step's consequent is `[Sx/x]ph`, which a faithful Metamath PA states with the
+`[/]` (proper-substitution) operator and its supporting axioms (`sb*`), plus an
+equality calculus (reflexivity, successor-congruence, transitivity) and the
+propositional Hilbert schemas for the `->`-chaining. None of that is in the
+database yet (`mm_pa.rs` keeps the signature minimal). Adding it — the standard
+`set.mm`-style `wsb`/`sbc`/`ax-*` block — makes the headline authorable as a
+single verified `$p`; the replay already handles whatever the proof feeds it. The
+end-to-end `ax.mp` proof is likewise blocked on this (no closed implication
+theorem is provable from PA1–PA6 without specialisation), so `ax.mp` is currently
+exercised via `mp_via_replay` on genuine kernel theorems rather than a full `.mm`
+proof.
+
+### `RuleSet`-from-`Database` (the stretch / `#logic` correspondence)
+
+Connecting a `metamath::Database` to the impredicative `metalogic` engine — a
+database → its Church `Derivable_L A := ∀d. Closed_L d ⟹ d A`, the
+`#logic`-semantics-for-metatheorems side, and the `∃ValidProof ⟺ Church-Derivable`
+equivalence that bridges the **construction** side (this task: `mm_replay`) to the
+**metatheorem** side (the engine) — is **not built**. It is the natural next
+phase, recorded in `metamath/SKELETONS.md` (the `#logic`/`Derivable_L`/`S`-transport
+bullet) as well. `S`-transport `Derivable_L1(A) ⟹ Derivable_L2(S(A))` and the full
+two-direction `Metamath-PA ≅ our-PA` representation-equivalence metatheorem are
+the north stars beyond it.
 
 ### Derivation constructors for the quantifier/equality clauses (motive encoding)
 

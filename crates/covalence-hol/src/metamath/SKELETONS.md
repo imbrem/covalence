@@ -23,10 +23,16 @@ inclusion, `set.mm` scale) live in the separate `covalence-metamath` crate's
 - **`covalence-hol` import tactic + representation-equivalence metatheorem.** A
   bridge that **replays** an (untrusted) Metamath proof and **kernel-rechecks**
   it — the same untrusted-frontend → kernel-recheck pattern as
-  `covalence-alethe`. Soundness rests on a HOL metatheorem relating the
-  Metamath representation of a theory to our locally-nameless syntax (e.g.
-  "Metamath-PA ≡ our PA"). The engine here is deliberately kept independent of
-  the HOL kernel rules; the bridge is a future module, not code here.
+  `covalence-alethe`. **A first concrete instance now exists for PA**:
+  `peano/mm_pa.rs` (the PA database) + `peano/mm_replay.rs` (the
+  `∃P.ValidProof ⟹ ⊢⟦S⟧` replay) re-derive every PA proof step in the kernel
+  (axioms → `init::nat`, MP → `imp_elim`, gen → `all_intro`, induction →
+  `Thm::nat_induct` on the concrete denoted motive). The **general,
+  theory-agnostic** import tactic and the **representation-equivalence
+  metatheorem** ("Metamath-PA ≡ our PA", relating the Metamath representation to
+  our locally-nameless syntax) remain future work — the PA replay is a worked
+  instance, not yet the generic layer. The engine here stays independent of the
+  HOL kernel rules.
 
 - **Structured-tree (grammar-parsed) expression encoding.** Expressions are
   encoded as *faithful flat sequences* (`[typecode, sym, sym, ...]` `SExpr`

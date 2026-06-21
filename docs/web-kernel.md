@@ -264,10 +264,12 @@ Marked aspirational; no code yet. Builds on [`observers.md`](./observers.md)
 
 1. **Portability** — `covalence-hol` builds for `wasm32-unknown-unknown`. ✅
 2. **Shared service** — `covalence-kernel::service::KernelService` (sync `check`
-   → theorems + diagnostics; `ArticleSource`/`TrustPolicy` seams). ✅
-3. **`covalence-web-kernel`** — wasm-bindgen cdylib over `KernelService`; a
-   minimal `covalence-web` route that loads a `.cov`, checks it, lists theorems.
-   *(End-to-end "prover in the browser", WASM execution stubbed.)*
+   + `check_model`; `ArticleSource`/`TrustPolicy` seams). ✅
+3. **`covalence-web-kernel` + `/article`** — wasm-bindgen cdylib over
+   `KernelService`; a Lean-style two-pane page (editor + infoview, dark default)
+   that checks a `.cov` in-browser. The demo is the **multi-model** `add.comm`:
+   the same abstract proof (`models/add_comm.cov`) checks at `nat/self` (kernel
+   `nat`) and `nat/unary` (`list unit`) via a model selector. ✅
 4. **Async dependency loading** — wire `ArticleSource` through `run_async`
    (mechanism per the WASM3/JSPI research); enforce `TrustPolicy`.
 5. **Notation printer** — `Term` → math (→ MathML).

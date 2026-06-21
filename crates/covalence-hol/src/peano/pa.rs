@@ -323,6 +323,10 @@ fn clauses_at(d_apply: &dyn Fn(&Term) -> Result<Term>, t: &Type, r: &Type) -> Re
 /// `Closed_PA d` — the right-nested conjunction of the closure clauses, as a
 /// single `bool` term over the predicate `d` (supplied as a closure so the
 /// same code builds it for `d` the bound variable *and* for `d := ⟦·⟧`).
+/// Used only by the `derivable_via_engine_matches` / `discharge_closed` tests
+/// (the live path builds `Closed_PA` through `metalogic`); gated to avoid a
+/// non-test dead-code warning.
+#[cfg(test)]
 fn closed(d_apply: &dyn Fn(&Term) -> Result<Term>, t: &Type, r: &Type) -> Result<Term> {
     crate::metalogic::conj(clauses_at(d_apply, t, r)?)
 }

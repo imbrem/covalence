@@ -87,6 +87,17 @@ pub struct Assertion {
     pub frame: Frame,
     /// `Some(proof)` for a `$p` theorem, `None` for a `$a` axiom.
     pub proof: Option<Proof>,
+    /// The **full** set of `$d` pairs active in this assertion's scope, over
+    /// *all* variables (not filtered to the mandatory frame). This is the set a
+    /// `$p` theorem's proof checks generated distinct-variable obligations
+    /// against: it includes `$d` pairs that mention dummy / working variables
+    /// used only inside the proof.
+    ///
+    /// `frame.disjoints` (the mandatory-filtered subset) is what propagates when
+    /// *this* assertion is later applied; `scope_disjoints` is what is *checked*
+    /// while proving it. For `$a` axioms the distinction is irrelevant (no
+    /// proof), but the field is still the full active set.
+    pub scope_disjoints: Vec<(String, String)>,
 }
 
 /// A top-level statement, in source order.
@@ -277,6 +288,14 @@ impl Database {
         proof: Option<Proof>,
     ) -> Result<(), MmError> {
         let frame = self.build_frame(&conclusion, &label)?;
+        // The full in-scope `$d` set (all variables, unfiltered) — what a proof
+        // checks its generated obligations against.
+        let scope_disjoints: Vec<(String, String)> = self
+            .scopes
+            .iter()
+            .flat_map(|s| s.disjoints.iter())
+            .cloned()
+            .collect();
         let idx = self.statements.len();
         self.register_label(&label, idx)?;
         self.statements.push(Statement::Assert(Assertion {
@@ -284,6 +303,7 @@ impl Database {
             conclusion,
             frame,
             proof,
+            scope_disjoints,
         }));
         Ok(())
     }

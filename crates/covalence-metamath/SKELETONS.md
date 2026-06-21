@@ -31,12 +31,36 @@ policy.
   `$c`/`$v` declarations. The **HOL-backed sink** (constructing `⊢ Derivable_…`
   theorems as it reads) is the `covalence-hol` follow-on — see below.
 
+- **Distinct-variable (`$d`) checking against the proof's full scope.** ✅ Fixed
+  the spurious-rejection bug where `check_disjoints` ([`verify.rs`](src/verify.rs))
+  checked generated `$d` obligations against the proving theorem's
+  *mandatory-filtered* `frame.disjoints` — too small, because it dropped `$d`
+  pairs over dummy/working variables used only inside the proof (this rejected
+  `hol.mm`'s `cl`/`clf`). Each [`Assertion`](src/database.rs) now records
+  `scope_disjoints`: the **full** in-scope `$d` set over *all* variables;
+  `check_disjoints` checks against that. The mandatory-filtered set still
+  *propagates* when the assertion is later applied. Genuine `$d` violations are
+  still rejected (`tests/theories.rs`: `dv_violation_when_collapsed`,
+  `dv_violation_when_obligation_not_declared` still FAIL; `dv_satisfied_when_declared`
+  still PASSES).
+
+- **Real-file ingestion (`hol.mm`, `set.mm`).** ✅ The vendored
+  `tests/fixtures/hol.mm` (CC0, 151 `$p` theorems, all compressed proofs) parses
+  and fully verifies in ~0.04 s (`tests/hol_mm.rs`). Full `set.mm` (~48 MB, not
+  vendored) parses in ~0.9 s and verifies **47,394 theorems in ~5 s** in release
+  (`tests/set_mm.rs`, `#[ignore]`d, run via `COV_SET_MM=/path cargo test … --
+  --ignored`). No grammar / `$d` / compressed-proof / scale failures surfaced —
+  the un-interned reader handles full `set.mm` comfortably, so interning (below)
+  is a nice-to-have, not a blocker.
+
 ## Deferred features (north stars) — reader scope
 
 - **`set.mm`-scale streaming/incremental parsing.** The reader tokenises an
-  entire source string up front — fine for the hand-encoded example theories
-  and the `tests/fixtures/demo0.mm` file, not for the ~40 MB `set.mm`.
-  Streaming/incremental parsing is deferred until symbol interning lands.
+  entire source string up front and `parse` takes a `&str`, so the whole ~48 MB
+  `set.mm` must be read into memory first. This is *acceptable today* (full
+  parse+verify is ~6 s in release, see "Real-file ingestion" above), but a
+  streaming/incremental reader that does not require holding the entire source +
+  database in memory is still a north star.
 
 - **Canonical `.mm` serializer.** There is no in-crate emitter; the round-trip
   test (`tests/mm_file.rs`) ships a minimal test-local one. A canonical
@@ -63,9 +87,24 @@ policy.
 
 - **Symbol interning for `set.mm` scale.** [`Symbol`](src/expr.rs) is an owned
   `smol_str::SmolStr`; the database uses `HashMap` label/symbol tables with no
-  interning or arenas — fine for the hand-encoded example theories, not for the
-  ~40 MB `set.mm`. Symbol interning (an `Expr` of interned ids), a flat statement
-  arena, and incremental construction are deferred.
+  interning or arenas. Empirically this is *not* a correctness or even a
+  practical-speed blocker — full `set.mm` (47,394 theorems) verifies in ~5 s in
+  release. Symbol interning (an `Expr` of interned ids), a flat statement arena,
+  and incremental construction remain a performance/memory north star (would cut
+  allocation and the ~50 MB in-memory `Database` footprint), no longer urgent.
+
+- **`replay_db` over compressed proofs.** [`replay_db`](../covalence-hol/src/metalogic/mm_database.rs)
+  (the HOL replay that re-derives `⊢ Derivable_L ⌜S⌝`) accepts only
+  [`Proof::Normal`](src/database.rs); it rejects [`Proof::Compressed`](src/database.rs)
+  with "decompress to a normal proof first". But **every** `$p` proof in `hol.mm`
+  (and the overwhelming majority of `set.mm`) is compressed, so no `hol.mm`
+  theorem can currently be replayed into a kernel HOL theorem. The missing piece
+  is a **decompress-to-normal** pass — exposing the verifier's `decompress_proof`
+  step sequence as an equivalent flat RPN label list (re-expanding `Z`/heap
+  backreferences into their producing label subsequence), then feeding that to
+  `replay_db` (or teaching `replay_db` to consume `ProofStep`s directly). This is
+  the concrete next step for "construct a kernel HOL theorem from real `hol.mm`
+  data"; tracked also in `covalence-hol`'s `metalogic/SKELETONS.md`.
 
 ## Notes
 

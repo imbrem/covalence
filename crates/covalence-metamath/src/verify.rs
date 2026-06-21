@@ -341,10 +341,16 @@ fn apply_assertion(
 /// variable `x` occurring in `subst(a)` and every variable `y` occurring in
 /// `subst(b)`:
 ///   1. `x` and `y` must be syntactically distinct, **and**
-///   2. the *current* theorem's frame must itself contain `$d x y`.
+///   2. the *current* theorem's full in-scope `$d` set must contain `$d x y`.
 ///
 /// (1) alone would be unsound; (2) is what propagates distinctness obligations
 /// outward to the theorem's own signature.
+///
+/// Crucially, (2) consults the proving theorem's `scope_disjoints` — the **full**
+/// in-scope `$d` set over *all* variables, including dummy / working variables
+/// used only inside the proof — not the mandatory-filtered `frame.disjoints`.
+/// The mandatory subset is too small: a perfectly legal `$d` over a proof-local
+/// dummy variable would be invisible there, causing a spurious rejection.
 fn check_disjoints(
     db: &Database,
     current: &Assertion,
@@ -357,10 +363,10 @@ fn check_disjoints(
     }
     let is_var = |s: &str| db.is_variable(s);
 
-    // The current theorem's $d pairs, as an unordered-pair set for fast lookup.
+    // The current theorem's full in-scope $d pairs, as an unordered-pair set
+    // for fast lookup.
     let current_dv: BTreeSet<(String, String)> = current
-        .frame
-        .disjoints
+        .scope_disjoints
         .iter()
         .map(|(a, b)| ordered_pair(a, b))
         .collect();

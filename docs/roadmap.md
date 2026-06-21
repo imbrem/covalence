@@ -135,12 +135,16 @@ the honest demo of write→lower→prove-across.
   backend. *Remaining:* generalising that sink to an **arbitrary** database (the
   schema-database replay landing `⊢ Derivable_DB ⌜db⌝ ⌜S⌝`), and symbol interning
   for set.mm scale.
-- **`set.mm` in GT** — read *all of* `set.mm` ([metamath/set.mm]; needs the
-  compressed-proof parser + full `.mm` grammar) and verify the whole database via
-  the Rust `metamath::verify` (mode-1 symbolic ingestion; the HOL side stays
-  proof-irrelevant — `∃` derivation, never unfolded). An independent elaborator
-  checks the resulting database against a GT database (fetched + diffed, §5.7), and
-  the axiom relation (`ax-groth`+ZFC `⊑` GT) is a `⊑`/conservative-extension theorem.
+- **`set.mm` in GT** — reading + verifying *all of* `set.mm` is ✅ **DONE**:
+  ([metamath/set.mm]) the reader parses the ~48 MB database (~0.9 s) and the Rust
+  `verify_all` checks **47,394 theorems in ~5 s** (release) — compressed proofs +
+  full grammar + scale all handled (mode-1 symbolic ingestion; the HOL side stays
+  proof-irrelevant — `∃` derivation, never unfolded). *Remaining for the GT
+  product:* an independent elaborator checking the resulting database against a GT
+  database (fetched + diffed, §5.7), and the axiom relation (`ax-groth`+ZFC `⊑` GT)
+  as a `⊑`/conservative-extension theorem — now an instance of the **generic
+  transport** (`metalogic::transport_db`, done: `⊢ ∀A. Derivable_L1 A ⟹
+  Derivable_L2 (σ A)` via rule induction; demonstrated as DB-monotonicity).
 - **`hol.mm` to define our internal HOL** — [set.mm's `hol.mm`][hol.mm] is HOL
   *as a Metamath database*. Ingesting it makes the three-layer vision literal: the
   middle layer's logic is **specified** by a Metamath database, and our kernel is

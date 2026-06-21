@@ -517,6 +517,30 @@ the metalogic we reason *in*; Metamath is the inner waist object logics reduce
    schemas. So "define a logic" and "write a Metamath database" are the same act,
    and the HOL bridge is `S`-into-`IsThm` (the shallow-embed-future target).
 
+**A HOL type for databases, and the relation lattice (user).** To do the
+metatheory *inside* HOL we need databases to be **first-class HOL data** — a HOL
+type `Database` reifying (constants, typed variables, axiom/rule schemas, DV
+conditions), so HOL can quantify over databases and state `Derivable_A(S) :=
+∃P. ValidProof(P, S, A)` with `A` a HOL value. On that type, define the **relations
+between databases** (the "equivalences between variants" made precise) — climbing
+in strength:
+- **Extension** `A ⊑ B` — `B` has all of `A`'s constants + axioms. The basic
+  theorem is **monotonicity**: `A ⊑ B ⟹ Derivable_A(S) ⟹ Derivable_B(S)` (more
+  axioms ⟹ more derivable).
+- **Interpretation under a renaming/substitution** `A ⟹_σ B` — a translation `σ`
+  maps `A`'s vocabulary to `B`-expressions with `σ`(every `A`-axiom) `B`-derivable.
+  Its theorem is **transport**: `Derivable_A(S) ⟹ Derivable_B(σ(S))` — this *is*
+  the `S`-rewrite of point 2, now a *relation on the database type* (`σ` = the `S`).
+- **Conservative extension** — `A ⊑ B` and, restricted to `A`'s language,
+  `Derivable_B(S) ⟹ Derivable_A(S)` (`B` proves nothing new about `A`'s language).
+- **Equivalence** `A ≅ B` — mutual interpretation.
+
+These compose into a category of databases (objects = databases, morphisms =
+interpretations), and PA→SOA→ZF→GT, conservative-extension chains, and
+`Metamath-L ≅ native-L` all live in it. Building the `Database` HOL type + `⊑`
+(monotonicity) + `⟹_σ` (transport) is the foundational first cut; conservative
+extension and `≅` layer on.
+
 **Crate boundary (user, important).** Because Metamath *is* the logic-definition
 substrate, **the engine belongs first-class in `covalence-hol`** — the `SExpr`
 expression model, substitution, frame/DV, the verifier, `Derivable_L`, the

@@ -158,6 +158,68 @@ impl KernelService {
             },
         }
     }
+
+    /// Check an article written against the **abstract `Nat` model interface**
+    /// (`m.zero`/`m.succ`/`m.add`, the addition axioms `zero.add`/`add.zero`/
+    /// `succ.add`/`add.succ`, and the induction handler `m.induct`), resolving
+    /// `(#import natmodel)` to the chosen model.
+    ///
+    /// The whole point of the `models` design: the **same source** proves the
+    /// same statement at a *different carrier* per model — `"nat/self"` → kernel
+    /// `nat` (integer commutativity), `"nat/unary"` → `list unit` (append
+    /// commutativity, true only because every element is the `unit` singleton).
+    /// `model` defaults to `"nat/self"` when empty.
+    pub fn check_model(&self, src: &str, model: &str) -> CheckReport {
+        let natmodel = match build_nat_model_env(model) {
+            Ok(e) => e,
+            Err(msg) => return error_report(msg),
+        };
+        let outcome = covalence_hol::script::run(
+            src,
+            move |name| match name {
+                "core" => Some(covalence_hol::script::Env::core()),
+                "natmodel" => Some(natmodel.clone()),
+                _ => None,
+            },
+            |_| None,
+        )
+        .and_then(|lt| lt.resolve_blocking());
+        match outcome {
+            Ok(theory) => CheckReport {
+                ok: true,
+                theorems: theory.thms.iter().map(render_thm).collect(),
+                diagnostics: Vec::new(),
+            },
+            Err(e) => error_report(e.to_string()),
+        }
+    }
+}
+
+/// Build the `natmodel` env for a named model: its operators + addition axioms +
+/// induction handler, under the abstract names the model-relative proof uses.
+fn build_nat_model_env(model: &str) -> Result<covalence_hol::script::Env, String> {
+    use covalence_hol::models::{Logic, NatSelf, NatUnary};
+    let built = match model {
+        "nat/self" | "" => NatSelf.nat_model(),
+        "nat/unary" => NatUnary.nat_model(),
+        other => return Err(format!("unknown model `{other}` (expected `nat/self` or `nat/unary`)")),
+    };
+    built
+        .map(|m| m.env())
+        .map_err(|e| format!("building model `{model}`: {e}"))
+}
+
+/// A failed [`CheckReport`] carrying a single error diagnostic.
+fn error_report(message: String) -> CheckReport {
+    CheckReport {
+        ok: false,
+        theorems: Vec::new(),
+        diagnostics: vec![Diagnostic {
+            severity: Severity::Error,
+            message,
+            span: None,
+        }],
+    }
 }
 
 /// Render a checked theorem's conclusion to a display string (canonical
@@ -219,5 +281,51 @@ mod tests {
         assert!(!report.ok);
         assert!(!report.diagnostics.is_empty());
         assert_eq!(report.diagnostics[0].severity, Severity::Error);
+    }
+
+    /// The abstract `Nat` commutativity proof — written once against the model
+    /// interface — checks at BOTH carriers, each yielding a real theorem over
+    /// its own carrier (kernel `nat` vs `list unit`).
+    const ABSTRACT_ADD_COMM: &str = r#"
+        (#import core) (#open core)
+        (#import natmodel) (#open natmodel)
+        (#thm add.comm
+          (#concl (forall (a) (forall (b) (= (m.add a b) (m.add b a)))))
+          (#by
+            (m.induct a
+              (#by (intro b) (rw (all-elim b (zero.add))) (sym) (rw (all-elim b (add.zero))) (refl))
+              (#by
+                (intro b)
+                (rw (all-elim b (all-elim a (succ.add))))
+                (rw (all-elim b (assume (forall (b) (= (m.add a b) (m.add b a))))))
+                (sym)
+                (rw (all-elim a (all-elim b (add.succ))))
+                (refl)))))
+    "#;
+
+    #[test]
+    fn abstract_add_comm_checks_at_nat_self() {
+        let report = KernelService::new().check_model(ABSTRACT_ADD_COMM, "nat/self");
+        assert!(report.ok, "diagnostics: {:?}", report.diagnostics);
+        assert_eq!(report.theorems.len(), 1);
+        assert_eq!(report.theorems[0].name, "add.comm");
+        // The carrier is kernel `nat`: the statement mentions `nat.add`.
+        assert!(report.theorems[0].statement.contains("nat.add"), "stmt: {}", report.theorems[0].statement);
+    }
+
+    #[test]
+    fn abstract_add_comm_checks_at_nat_unary() {
+        let report = KernelService::new().check_model(ABSTRACT_ADD_COMM, "nat/unary");
+        assert!(report.ok, "diagnostics: {:?}", report.diagnostics);
+        assert_eq!(report.theorems[0].name, "add.comm");
+        // Different carrier (`list unit`): the SAME proof, a different statement.
+        assert!(!report.theorems[0].statement.contains("nat.add"), "stmt: {}", report.theorems[0].statement);
+    }
+
+    #[test]
+    fn unknown_model_is_a_diagnostic_not_a_panic() {
+        let report = KernelService::new().check_model(ABSTRACT_ADD_COMM, "nat/bogus");
+        assert!(!report.ok);
+        assert!(report.diagnostics[0].message.contains("unknown model"));
     }
 }

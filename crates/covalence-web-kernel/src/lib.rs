@@ -32,7 +32,19 @@ pub fn start() {
 /// `serde-wasm-bindgen`); the shape is stable and small.
 #[wasm_bindgen]
 pub fn check(src: &str) -> String {
-    let report = KernelService::new().check(src);
+    report_json(KernelService::new().check(src))
+}
+
+/// Check an article written against the abstract `Nat` **model** interface,
+/// resolving `(#import natmodel)` to `model` (`"nat/self"` → kernel `nat`,
+/// `"nat/unary"` → `list unit`). Same source, different carrier per model.
+/// Returns the same JSON shape as [`check`].
+#[wasm_bindgen]
+pub fn check_model(src: &str, model: &str) -> String {
+    report_json(KernelService::new().check_model(src, model))
+}
+
+fn report_json(report: covalence_kernel::CheckReport) -> String {
     serde_json::to_string(&report)
         .unwrap_or_else(|e| format!(r#"{{"ok":false,"theorems":[],"diagnostics":[{{"severity":"error","message":"internal: failed to serialize report: {e}","span":null}}]}}"#))
 }

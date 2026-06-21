@@ -4,30 +4,70 @@
 	// The kernel runs *in the browser*: this page loads the wasm-bindgen build of
 	// `covalence-web-kernel` (over `covalence-kernel::service`) and checks a `.cov`
 	// article client-side — no server round-trip. See docs/web-kernel.md.
+	//
+	// The showcase: the SAME proof source is replayed against two different
+	// *models* (carriers) via `check_model(src, model)`. `nat/self` proves over
+	// the kernel's `nat` (integer commutativity); `nat/unary` proves the very
+	// same script over `list unit` (append commutativity). Switching the model
+	// re-checks the identical text and yields a *different* theorem statement.
 
 	type Diagnostic = { severity: 'error' | 'warning' | 'info'; message: string; span: null | { start: number; end: number } };
 	type TheoremInfo = { name: string; statement: string };
 	type CheckReport = { ok: boolean; theorems: TheoremInfo[]; diagnostics: Diagnostic[] };
 
-	const SAMPLE = `;; A self-contained .cov article. The kernel re-derives every theorem.
+	type ModelId = 'nat/self' | 'nat/unary';
+	const MODELS: { id: ModelId; label: string; carrier: string; blurb: string }[] = [
+		{ id: 'nat/self', label: 'nat/self', carrier: 'nat', blurb: "the kernel's native nat (nat.add)" },
+		{ id: 'nat/unary', label: 'nat/unary', carrier: 'list unit', blurb: 'unary numerals as list unit (list.cat)' }
+	];
+
+	const SAMPLE = `;; Addition is commutative — proved ONCE against the abstract Nat interface,
+;; then replayed at any *model*. Pick a model on the right:
+;;   - nat/self   the carrier is the kernel's \`nat\`   (integer commutativity)
+;;   - nat/unary  the carrier is \`list unit\`          (append commutativity)
+;; The SAME proof below checks at both. Try switching the model!
+
 (#import core)
 (#open core)
+(#import natmodel)
+(#open natmodel)
 
-(#thm truth
-  (#concl true)
-  (#proof (eq-mp (reduce-prim (= true true)) (refl true))))
+;; |- forall a b. a + b = b + a   (over the model's \`m.add\`), by induction on a.
+(#thm add.comm
+  (#concl (forall (a) (forall (b) (= (m.add a b) (m.add b a)))))
+  (#by
+    (m.induct a
+      ;; base: 0 + b = b + 0
+      (#by
+        (intro b)
+        (rw (all-elim b (zero.add)))
+        (sym)
+        (rw (all-elim b (add.zero)))
+        (refl))
+      ;; step: S a + b = b + S a
+      (#by
+        (intro b)
+        (rw (all-elim b (all-elim a (succ.add))))
+        (rw (all-elim b (assume (forall (b) (= (m.add a b) (m.add b a))))))
+        (sym)
+        (rw (all-elim a (all-elim b (add.succ))))
+        (refl)))))
 `;
 
 	let src = $state(SAMPLE);
+	let model = $state<ModelId>('nat/self');
 	let report = $state<CheckReport | null>(null);
-	let kernelCheck = $state<((src: string) => string) | null>(null);
+	let kernelCheckModel = $state<((src: string, model: string) => string) | null>(null);
 	let status = $state<'loading' | 'ready' | 'error'>('loading');
 	let loadError = $state('');
 	let checking = $state(false);
 
-	// Cache check results by exact source string so re-checking unchanged text
-	// (e.g. after an edit-then-undo) is instant.
+	const activeModel = $derived(MODELS.find((m) => m.id === model) ?? MODELS[0]);
+
+	// Cache check results by `model + " " + src`: the same source at different
+	// models yields different theorems, so the model MUST be part of the key.
 	const cache = new Map<string, CheckReport>();
+	const cacheKey = (m: ModelId, source: string) => `${m} ${source}`;
 
 	// --- Kernel load ---
 	// NOTE: this used to live in `onMount`, but `onMount` callbacks were never
@@ -55,9 +95,9 @@
 			// Modern wasm-bindgen init form (object), avoids the deprecated
 			// string-URL path.
 			await mod.default({ module_or_path: wasmUrl });
-			kernelCheck = mod.check;
+			kernelCheckModel = mod.check_model;
 			status = 'ready';
-			runCheck(src);
+			runCheck(model, src);
 		} catch (e) {
 			status = 'error';
 			loadError = e instanceof Error ? e.message : String(e);
@@ -67,9 +107,10 @@
 	}
 
 	// --- Checking ---
-	function runCheck(source: string) {
-		if (!kernelCheck) return;
-		const cached = cache.get(source);
+	function runCheck(m: ModelId, source: string) {
+		if (!kernelCheckModel) return;
+		const key = cacheKey(m, source);
+		const cached = cache.get(key);
 		if (cached) {
 			report = cached;
 			checking = false;
@@ -77,11 +118,11 @@
 		}
 		let result: CheckReport;
 		try {
-			result = JSON.parse(kernelCheck(source)) as CheckReport;
+			result = JSON.parse(kernelCheckModel(source, m)) as CheckReport;
 		} catch (e) {
 			result = { ok: false, theorems: [], diagnostics: [{ severity: 'error', message: String(e), span: null }] };
 		}
-		cache.set(source, result);
+		cache.set(key, result);
 		report = result;
 		checking = false;
 	}
@@ -89,34 +130,46 @@
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 	const DEBOUNCE_MS = 300;
 
-	function onInput() {
+	function scheduleCheck() {
 		if (status !== 'ready') return;
-		// Cached source → reflect instantly, skip the "checking" flicker.
-		if (cache.has(src)) {
-			runCheck(src);
+		// Cached → reflect instantly, skip the "checking" flicker.
+		if (cache.has(cacheKey(model, src))) {
+			runCheck(model, src);
 			return;
 		}
 		checking = true;
 		clearTimeout(debounceTimer);
-		debounceTimer = setTimeout(() => runCheck(src), DEBOUNCE_MS);
+		debounceTimer = setTimeout(() => runCheck(model, src), DEBOUNCE_MS);
+	}
+
+	function onInput() {
+		scheduleCheck();
 	}
 
 	function checkNow() {
 		clearTimeout(debounceTimer);
-		runCheck(src);
+		runCheck(model, src);
 	}
 
-	// --- Dark mode ---
+	function selectModel(id: ModelId) {
+		if (id === model) return;
+		model = id;
+		// Re-check the *current* source against the newly selected model.
+		scheduleCheck();
+	}
+
+	// --- Dark mode (default DARK, regardless of prefers-color-scheme) ---
 	type Theme = 'light' | 'dark';
 	let theme = $state<Theme>('dark');
 
 	$effect(() => {
 		if (!browser) return;
 		const stored = localStorage.getItem('cov-theme');
+		// Honor an explicit prior choice; otherwise default to dark (Lean vibes).
 		if (stored === 'light' || stored === 'dark') {
 			theme = stored;
 		} else {
-			theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+			theme = 'dark';
 		}
 	});
 
@@ -139,6 +192,7 @@
 		'imp-intro', 'imp-elim', 'all-intro', 'all-elim', 'exists-intro', 'exists-elim',
 		'define', 'new-type', 'spec-abs', 'spec-rep', 'unfold', 'fold',
 		'true', 'false', 'forall', 'exists', 'lambda', 'let', 'fun',
+		'rw', 'intro', 'induct', 'm.induct',
 	]);
 	function escHtml(s: string): string {
 		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -213,20 +267,21 @@
 
 <svelte:head><title>Covalence — article check</title></svelte:head>
 
-<main>
-	<header>
-		<div class="title">
-			<h1>Covalence — in-browser proof check</h1>
+<div class="ide">
+	<header class="topbar">
+		<div class="brand">
+			<span class="logo">∴</span>
+			<h1>Covalence</h1>
+			<span class="tag">in-browser proof check</span>
+		</div>
+		<div class="topbar-right">
+			{#if status === 'loading'}<span class="badge loading">loading kernel…</span>
+			{:else if status === 'ready'}<span class="badge ok">kernel ready</span>
+			{:else}<span class="badge err">kernel failed</span>{/if}
 			<button class="theme-toggle" onclick={toggleTheme} title="Toggle light/dark" aria-label="Toggle theme">
 				{theme === 'dark' ? '☀' : '☾'}
 			</button>
 		</div>
-		<p class="sub">
-			The kernel is compiled to WebAssembly and runs entirely in your browser.
-			{#if status === 'loading'}<span class="badge loading">loading kernel…</span>
-			{:else if status === 'ready'}<span class="badge ok">kernel ready</span>
-			{:else}<span class="badge err">kernel failed to load</span>{/if}
-		</p>
 	</header>
 
 	{#if status === 'error'}
@@ -236,8 +291,16 @@ Did you run `bun run build:web-kernel` first? It emits the glue into
 apps/covalence-web/src/lib/kernel/.</pre>
 	{/if}
 
-	<div class="cols">
-		<section class="editor">
+	<div class="panes">
+		<!-- LEFT: source editor -->
+		<section class="pane editor-pane">
+			<div class="pane-head">
+				<span class="pane-title">article.cov</span>
+				<div class="pane-actions">
+					{#if checking}<span class="checking">checking…</span>{/if}
+					<button class="btn" onclick={checkNow} disabled={status !== 'ready'}>Check</button>
+				</div>
+			</div>
 			<div class="editor-wrap">
 				<pre class="editor-highlight" aria-hidden="true" bind:this={highlightEl}>{@html highlighted}&nbsp;</pre>
 				<textarea
@@ -247,54 +310,93 @@ apps/covalence-web/src/lib/kernel/.</pre>
 					onscroll={syncScroll}
 				></textarea>
 			</div>
-			<div class="editor-bar">
-				<button onclick={checkNow} disabled={status !== 'ready'}>Check</button>
-				{#if checking}<span class="checking">checking…</span>{/if}
+		</section>
+
+		<!-- RIGHT: infoview -->
+		<section class="pane info-pane">
+			<div class="pane-head">
+				<span class="pane-title">Infoview</span>
+			</div>
+			<div class="info-body">
+				<!-- Model selector -->
+				<div class="model-block">
+					<div class="model-row">
+						<span class="model-label">model</span>
+						<div class="segmented" role="group" aria-label="Model selector">
+							{#each MODELS as m}
+								<button
+									class="seg {model === m.id ? 'active' : ''}"
+									onclick={() => selectModel(m.id)}
+									disabled={status !== 'ready'}
+									title={m.blurb}
+								>{m.label}</button>
+							{/each}
+						</div>
+					</div>
+					<div class="carrier-row">
+						<span class="carrier-pill">carrier: <code>{activeModel.carrier}</code></span>
+						<span class="carrier-blurb">{activeModel.blurb}</span>
+					</div>
+				</div>
+
+				<div class="divider"></div>
+
+				{#if report}
+					<div class="verdict-row">
+						<span class="verdict {report.ok ? 'ok' : 'err'}">
+							{report.ok ? '✓ checked' : '✗ failed'}
+						</span>
+						<span class="verdict-count">
+							{report.theorems.length} theorem{report.theorems.length === 1 ? '' : 's'}
+						</span>
+					</div>
+
+					{#if report.theorems.length}
+						<h2 class="section-h">Theorems</h2>
+						<ul class="thms">
+							{#each report.theorems as t}
+								<li>
+									<div class="thm-name">{t.name}</div>
+									<code class="thm-stmt">⊢ {t.statement}</code>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+
+					{#if report.diagnostics.length}
+						<h2 class="section-h">Diagnostics</h2>
+						<ul class="diags">
+							{#each report.diagnostics as d}
+								<li class={d.severity}>
+									<span class="diag-sev">{d.severity}</span>
+									<span class="diag-msg">{d.message}</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				{:else if status === 'ready'}
+					<p class="muted">Edit the article to check it.</p>
+				{:else if status === 'loading'}
+					<p class="muted">Loading the kernel…</p>
+				{:else}
+					<p class="muted">Kernel unavailable.</p>
+				{/if}
 			</div>
 		</section>
-
-		<section class="result">
-			{#if report}
-				<p class="verdict {report.ok ? 'ok' : 'err'}">
-					{report.ok ? '✓ checked' : '✗ failed'} —
-					{report.theorems.length} theorem{report.theorems.length === 1 ? '' : 's'}
-				</p>
-
-				{#if report.theorems.length}
-					<h2>Theorems</h2>
-					<ul class="thms">
-						{#each report.theorems as t}
-							<li><span class="name">{t.name}</span> <code>{t.statement}</code></li>
-						{/each}
-					</ul>
-				{/if}
-
-				{#if report.diagnostics.length}
-					<h2>Diagnostics</h2>
-					<ul class="diags">
-						{#each report.diagnostics as d}
-							<li class={d.severity}>{d.message}</li>
-						{/each}
-					</ul>
-				{/if}
-			{:else if status === 'ready'}
-				<p class="muted">Edit the article to check it.</p>
-			{:else if status === 'loading'}
-				<p class="muted">Loading the kernel…</p>
-			{/if}
-		</section>
 	</div>
-</main>
+</div>
 
 <style>
-	/* Palette: light/dark via [data-theme] on <html>. The global app.css sets a
-	   dark :root; we override per-theme here with page-local custom properties. */
-	main {
+	/* Palette: light/dark via [data-theme] on <html>. Lean-style dark default. */
+	.ide {
 		--a-bg: #ffffff;
+		--a-bg-2: #f7f7f8;
 		--a-fg: #1a1a1a;
 		--a-muted: #6b7280;
-		--a-surface: #f7f7f8;
-		--a-border: #d1d5db;
+		--a-surface: #ffffff;
+		--a-panel: #fbfbfc;
+		--a-border: #e2e3e7;
+		--a-border-strong: #d1d5db;
 		--a-accent: #6d28d9;
 		--a-ok-bg: #dcfce7;
 		--a-ok-fg: #166534;
@@ -311,27 +413,32 @@ apps/covalence-web/src/lib/kernel/.</pre>
 		--hl-paren: #9ca3af;
 		--hl-atom: #1a1a1a;
 
-		max-width: 70rem;
-		margin: 0 auto;
-		padding: 1.5rem;
-		font-family: system-ui, sans-serif;
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		height: 100dvh;
+		width: 100%;
 		background: var(--a-bg);
 		color: var(--a-fg);
-		min-height: 100vh;
+		font-family: system-ui, sans-serif;
+		overflow: hidden;
 	}
 
-	:global(html[data-theme='dark']) main {
-		--a-bg: #0e0e10;
-		--a-fg: #e0e0e0;
+	:global(html[data-theme='dark']) .ide {
+		--a-bg: #0d0d10;
+		--a-bg-2: #131318;
+		--a-fg: #e3e3e6;
 		--a-muted: #8b8b92;
-		--a-surface: #1a1a1e;
-		--a-border: #2a2a2e;
+		--a-surface: #16161c;
+		--a-panel: #131318;
+		--a-border: #26262e;
+		--a-border-strong: #34343e;
 		--a-accent: #a78bfa;
-		--a-ok-bg: #14321f;
+		--a-ok-bg: #133021;
 		--a-ok-fg: #4ade80;
-		--a-err-bg: #3a1a1a;
+		--a-err-bg: #38161a;
 		--a-err-fg: #f87171;
-		--a-warn-bg: #3a2e12;
+		--a-warn-bg: #382c12;
 		--a-warn-fg: #fbbf24;
 		--hl-comment: #6b7280;
 		--hl-string: #a8e6a3;
@@ -340,39 +447,103 @@ apps/covalence-web/src/lib/kernel/.</pre>
 		--hl-number: #f5c07c;
 		--hl-var: #f5a3c7;
 		--hl-paren: #6b7280;
-		--hl-atom: #e0e0e0;
+		--hl-atom: #e3e3e6;
 	}
 
-	.title { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-	h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+	/* --- Top bar --- */
+	.topbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.5rem 1rem;
+		height: 3rem;
+		box-sizing: border-box;
+		border-bottom: 1px solid var(--a-border);
+		background: var(--a-panel);
+		flex: 0 0 auto;
+	}
+	.brand { display: flex; align-items: baseline; gap: 0.6rem; }
+	.logo { font-size: 1.25rem; color: var(--a-accent); transform: translateY(2px); }
+	.topbar h1 { font-size: 1.05rem; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
+	.tag { font-size: 0.78rem; color: var(--a-muted); }
+	.topbar-right { display: flex; align-items: center; gap: 0.6rem; }
 	.theme-toggle {
-		font-size: 1.1rem; line-height: 1; padding: 0.35rem 0.6rem; cursor: pointer;
-		border: 1px solid var(--a-border); border-radius: 0.5rem;
+		font-size: 1rem; line-height: 1; padding: 0.3rem 0.55rem; cursor: pointer;
+		border: 1px solid var(--a-border-strong); border-radius: 0.5rem;
 		background: var(--a-surface); color: var(--a-fg);
 	}
 	.theme-toggle:hover { border-color: var(--a-accent); }
-	.sub { color: var(--a-muted); margin: 0 0 1rem; }
-	.badge { font-size: 0.8rem; padding: 0.1rem 0.5rem; border-radius: 1rem; margin-left: 0.5rem; }
+
+	.badge { font-size: 0.74rem; padding: 0.12rem 0.55rem; border-radius: 1rem; font-weight: 500; }
 	.badge.loading { background: var(--a-warn-bg); color: var(--a-warn-fg); }
 	.badge.ok { background: var(--a-ok-bg); color: var(--a-ok-fg); }
 	.badge.err { background: var(--a-err-bg); color: var(--a-err-fg); }
 
-	.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-	@media (max-width: 50rem) { .cols { grid-template-columns: 1fr; } }
+	.fatal {
+		background: var(--a-err-bg); color: var(--a-err-fg);
+		padding: 0.75rem 1rem; white-space: pre-wrap;
+		font-family: ui-monospace, monospace; font-size: 0.8rem; margin: 0;
+		border-bottom: 1px solid var(--a-border);
+	}
+
+	/* --- Panes --- */
+	.panes {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		flex: 1 1 auto;
+		min-height: 0;
+	}
+	.pane {
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		min-width: 0;
+		overflow: hidden;
+	}
+	.editor-pane { border-right: 1px solid var(--a-border); }
+	.pane-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.4rem 0.75rem;
+		height: 2.25rem;
+		box-sizing: border-box;
+		border-bottom: 1px solid var(--a-border);
+		background: var(--a-bg-2);
+		flex: 0 0 auto;
+	}
+	.pane-title {
+		font-size: 0.78rem;
+		font-weight: 600;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		color: var(--a-muted);
+		font-family: ui-monospace, monospace;
+	}
+	.pane-actions { display: flex; align-items: center; gap: 0.6rem; }
+	.checking { font-size: 0.78rem; color: var(--a-muted); font-style: italic; }
+	.btn {
+		padding: 0.25rem 0.8rem; border-radius: 0.4rem; font-size: 0.8rem;
+		border: 1px solid var(--a-border-strong); background: var(--a-surface); color: var(--a-fg);
+		cursor: pointer;
+	}
+	.btn:hover:not(:disabled) { border-color: var(--a-accent); }
+	.btn:disabled { opacity: 0.5; cursor: default; }
 
 	/* --- Editor: highlighted <pre> behind a transparent <textarea> --- */
-	.editor-wrap { position: relative; height: 24rem; }
+	.editor-wrap { position: relative; flex: 1 1 auto; min-height: 0; }
 	.editor-highlight,
 	.editor-wrap textarea {
 		position: absolute;
-		top: 0; left: 0;
+		inset: 0;
 		width: 100%; height: 100%;
 		font-family: ui-monospace, 'JetBrains Mono', monospace;
 		font-size: 0.85rem;
-		line-height: 1.5;
-		padding: 0.75rem;
-		border: 1px solid var(--a-border);
-		border-radius: 0.5rem;
+		line-height: 1.55;
+		padding: 0.75rem 1rem;
+		border: 0;
 		box-sizing: border-box;
 		white-space: pre;
 		overflow: auto;
@@ -388,40 +559,117 @@ apps/covalence-web/src/lib/kernel/.</pre>
 	.editor-wrap textarea {
 		background: transparent;
 		color: transparent;
-		caret-color: var(--a-fg);
+		caret-color: var(--a-accent);
 		resize: none;
 		z-index: 1;
 	}
-	.editor-wrap textarea:focus { outline: 2px solid var(--a-accent); outline-offset: -1px; }
+	.editor-wrap textarea:focus { outline: 2px solid var(--a-accent); outline-offset: -2px; }
 
-	.editor-bar { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
-	button {
-		padding: 0.4rem 1rem; border-radius: 0.4rem;
-		border: 1px solid var(--a-border); background: var(--a-surface); color: var(--a-fg);
+	/* --- Infoview --- */
+	.info-pane { background: var(--a-panel); }
+	.info-body {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow: auto;
+		padding: 1rem 1.25rem;
+		font-family: ui-monospace, monospace;
+		font-size: 0.85rem;
+	}
+
+	.model-block { display: flex; flex-direction: column; gap: 0.55rem; }
+	.model-row { display: flex; align-items: center; gap: 0.75rem; }
+	.model-label {
+		font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
+		color: var(--a-muted); font-weight: 600;
+	}
+	.segmented {
+		display: inline-flex;
+		border: 1px solid var(--a-border-strong);
+		border-radius: 0.5rem;
+		overflow: hidden;
+		background: var(--a-bg-2);
+	}
+	.seg {
+		font-family: ui-monospace, monospace;
+		font-size: 0.8rem;
+		padding: 0.32rem 0.85rem;
+		border: 0;
+		border-right: 1px solid var(--a-border-strong);
+		background: transparent;
+		color: var(--a-fg);
 		cursor: pointer;
 	}
-	button:hover:not(:disabled) { border-color: var(--a-accent); }
-	button:disabled { opacity: 0.5; cursor: default; }
-	.checking { font-size: 0.8rem; color: var(--a-muted); font-style: italic; }
+	.seg:last-child { border-right: 0; }
+	.seg:hover:not(:disabled):not(.active) { background: var(--a-surface); }
+	.seg.active { background: var(--a-accent); color: #fff; font-weight: 600; }
+	.seg:disabled { opacity: 0.5; cursor: default; }
 
-	.result { border: 1px solid var(--a-border); border-radius: 0.5rem; padding: 0.75rem 1rem; background: var(--a-surface); }
-	.verdict { font-weight: 600; }
+	.carrier-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+	.carrier-pill {
+		font-size: 0.78rem;
+		padding: 0.15rem 0.55rem;
+		border-radius: 1rem;
+		background: var(--a-bg-2);
+		border: 1px solid var(--a-border);
+		color: var(--a-muted);
+	}
+	.carrier-pill code { color: var(--a-accent); font-weight: 600; }
+	.carrier-blurb { font-size: 0.76rem; color: var(--a-muted); font-style: italic; }
+
+	.divider { height: 1px; background: var(--a-border); margin: 1rem 0; }
+
+	.verdict-row { display: flex; align-items: baseline; gap: 0.6rem; }
+	.verdict { font-weight: 700; font-size: 0.95rem; }
 	.verdict.ok { color: var(--a-ok-fg); }
 	.verdict.err { color: var(--a-err-fg); }
-	h2 { font-size: 0.95rem; margin: 0.75rem 0 0.25rem; }
-	.thms { list-style: none; padding: 0; }
-	.thms li { padding: 0.3rem 0; border-bottom: 1px solid var(--a-border); }
-	.thms .name { font-weight: 600; margin-right: 0.5rem; }
-	.thms code { font-size: 0.8rem; color: var(--a-muted); font-family: ui-monospace, monospace; }
-	.diags { padding-left: 1rem; }
-	.diags li.error { color: var(--a-err-fg); }
-	.diags li.warning { color: var(--a-warn-fg); }
-	.muted { color: var(--a-muted); }
-	.fatal {
-		background: var(--a-err-bg); color: var(--a-err-fg);
-		padding: 0.75rem; border-radius: 0.5rem; white-space: pre-wrap;
-		font-family: ui-monospace, monospace; font-size: 0.8rem; margin-bottom: 1rem;
+	.verdict-count { font-size: 0.8rem; color: var(--a-muted); }
+
+	.section-h {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--a-muted);
+		margin: 1rem 0 0.4rem;
+		font-weight: 600;
 	}
+	.thms { list-style: none; padding: 0; margin: 0; }
+	.thms li {
+		padding: 0.55rem 0.7rem;
+		margin-bottom: 0.5rem;
+		border: 1px solid var(--a-border);
+		border-left: 3px solid var(--a-accent);
+		border-radius: 0.4rem;
+		background: var(--a-bg-2);
+	}
+	.thm-name { font-weight: 700; color: var(--a-accent); margin-bottom: 0.25rem; }
+	.thm-stmt { display: block; font-size: 0.82rem; color: var(--a-fg); white-space: pre-wrap; word-break: break-word; }
+
+	.diags { list-style: none; padding: 0; margin: 0; }
+	.diags li {
+		display: flex;
+		gap: 0.5rem;
+		padding: 0.45rem 0.6rem;
+		margin-bottom: 0.4rem;
+		border-radius: 0.4rem;
+		font-size: 0.8rem;
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+	.diags li.error { background: var(--a-err-bg); color: var(--a-err-fg); }
+	.diags li.warning { background: var(--a-warn-bg); color: var(--a-warn-fg); }
+	.diags li.info { background: var(--a-bg-2); color: var(--a-muted); }
+	.diag-sev {
+		flex: 0 0 auto;
+		font-size: 0.68rem;
+		text-transform: uppercase;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		opacity: 0.85;
+		padding-top: 0.05rem;
+	}
+	.diag-msg { flex: 1 1 auto; }
+
+	.muted { color: var(--a-muted); }
 
 	/* --- Syntax highlight token colors --- */
 	.editor-highlight :global(.hl-comment) { color: var(--hl-comment); font-style: italic; }
@@ -432,4 +680,13 @@ apps/covalence-web/src/lib/kernel/.</pre>
 	.editor-highlight :global(.hl-var) { color: var(--hl-var); }
 	.editor-highlight :global(.hl-paren) { color: var(--hl-paren); }
 	.editor-highlight :global(.hl-atom) { color: var(--hl-atom); }
+
+	/* --- Narrow screens: stack the panes --- */
+	@media (max-width: 52rem) {
+		.ide { height: auto; min-height: 100vh; overflow: visible; }
+		.panes { grid-template-columns: 1fr; }
+		.editor-pane { border-right: 0; border-bottom: 1px solid var(--a-border); }
+		.editor-wrap { height: 22rem; flex: 0 0 22rem; }
+		.info-body { max-height: none; }
+	}
 </style>

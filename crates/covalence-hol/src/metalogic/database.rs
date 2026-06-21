@@ -82,18 +82,27 @@ pub(crate) fn enc_imp(a: &Term, b: &Term) -> Term {
 // the HOL database value, and the relations statable.
 // ============================================================================
 
-/// `Closed_DB db d` for the given database and predicate terms, as a single
-/// `bool` term (a two-clause conjunction). Built generically so the same code
-/// serves the definition and the proofs.
-pub(crate) fn closed(db: &Term, d: &Term) -> Result<Term> {
+/// The closure clauses of a database `db`, built against an arbitrary
+/// `d ⌜·⌝` applier `d_apply` (so the *same* layout serves the bound predicate
+/// variable `d`, used to state `Closed_DB`/`Derivable_DB`, and `d := pred`,
+/// used to discharge it in rule induction). Returns the two clauses in fold
+/// order: `[modus-ponens, axioms]`.
+///
+/// This is the [`super::RuleSet`] clause builder for a database value — the
+/// bridge that makes `Derivable_DB` a genuine **instance of the generic engine**
+/// ([`db_rule_set`]) rather than a parallel re-implementation.
+pub(crate) fn db_clauses(
+    db: &Term,
+    d_apply: &dyn Fn(&Term) -> Result<Term>,
+) -> Result<Vec<Term>> {
     let a = fvar("A");
     let b = fvar("B");
 
     // Clause 1 — modus ponens: ∀A B. d A ∧ d ⌜A ⟹ B⌝ ⟹ d B.
     let mp = {
-        let da = app(d, &a)?;
-        let dab = app(d, &enc_imp(&a, &b))?;
-        let db_concl = app(d, &b)?;
+        let da = d_apply(&a)?;
+        let dab = d_apply(&enc_imp(&a, &b))?;
+        let db_concl = d_apply(&b)?;
         da.and(dab)?
             .imp(db_concl)?
             .forall("A", phi())?
@@ -103,10 +112,27 @@ pub(crate) fn closed(db: &Term, d: &Term) -> Result<Term> {
     // Clause 2 — axioms: ∀ax. db ax ⟹ d ax.
     let ax_clause = {
         let ax = fvar("ax");
-        app(db, &ax)?.imp(app(d, &ax)?)?.forall("ax", phi())?
+        app(db, &ax)?.imp(d_apply(&ax)?)?.forall("ax", phi())?
     };
 
-    mp.and(ax_clause)
+    Ok(vec![mp, ax_clause])
+}
+
+/// **The database as a [`super::RuleSet`].** A database value `db` is exactly a
+/// rule set over the carrier `Φ⟨bool⟩`: the fixed structural modus-ponens frame
+/// plus the axiom clause reading `db`. Driving the generic engine off this is
+/// the unification of the two former `Derivable` notions — `Derivable_DB` is now
+/// `metalogic::derivable(&db_rule_set(db), ·)` (see [`derivable_db`]).
+pub fn db_rule_set(db: Term) -> super::RuleSet<'static> {
+    super::RuleSet::new(phi(), move |d_apply| db_clauses(&db, d_apply))
+}
+
+/// `Closed_DB db d` for the given database and predicate terms, as a single
+/// `bool` term (a two-clause conjunction). Built generically so the same code
+/// serves the definition and the proofs. Equals `super::closed_conj` over
+/// [`db_rule_set`]'s clauses by construction.
+pub(crate) fn closed(db: &Term, d: &Term) -> Result<Term> {
+    super::conj(db_clauses(db, &|f| app(d, f))?)
 }
 
 // ============================================================================
@@ -115,12 +141,13 @@ pub(crate) fn closed(db: &Term, d: &Term) -> Result<Term> {
 
 /// `Derivable_DB db A := ∀d. Closed_DB db d ⟹ d A` — derivability of encoded
 /// formula `A` from database `db`, as a HOL `bool` term over the supplied
-/// `db`/`A`. This is the impredicative engine of [`crate::init::prop`] /
-/// [`crate::peano::pa`], now with the axiom set read off the **HOL database
-/// value** `db`.
+/// `db`/`A`. This is now literally an **instance of the generic engine**:
+/// `metalogic::derivable(&db_rule_set(db), A)`, the axiom set read off the **HOL
+/// database value** `db`. (The standalone [`crate::init::prop`] /
+/// [`crate::peano::pa`] derivabilities are the same shape over a Rust `RuleSet`
+/// closure; this one's rule set *is* the database value — the unification.)
 pub fn derivable_db(db: &Term, a: &Term) -> Result<Term> {
-    let closed_d = closed(db, &d_var())?;
-    closed_d.imp(app(&d_var(), a)?)?.forall("d", pred_ty())
+    super::derivable(&db_rule_set(db.clone()), a)
 }
 
 /// `Derivable_DB db A` over the free variables `db : Database`, `A : Φ⟨bool⟩` —
@@ -290,6 +317,31 @@ mod tests {
         assert_eq!(dbt, Type::fun(phi(), Type::bool()));
         // And `Φ⟨bool⟩` is the reified-formula carrier, not bool itself.
         assert_ne!(phi(), Type::bool());
+    }
+
+    /// The unification (Phase A): `Derivable_DB`, now routed through the generic
+    /// [`super::db_rule_set`] engine, is **byte-identical** to the former
+    /// hand-built `∀d. Closed_DB db d ⟹ d A`. Pins the refactor: one derivability
+    /// notion, no term drift.
+    #[test]
+    fn derivable_db_matches_inline_definition() {
+        // The old inline definition, reproduced verbatim here.
+        fn inline(db: &Term, a: &Term) -> Result<Term> {
+            let closed_d = closed(db, &d_var())?;
+            closed_d.imp(app(&d_var(), a)?)?.forall("d", pred_ty())
+        }
+        let db = db_var();
+        let a = fvar("A");
+        assert_eq!(
+            derivable_db(&db, &a).unwrap(),
+            inline(&db, &a).unwrap(),
+            "engine-routed Derivable_DB equals the inline impredicative form"
+        );
+        // And it is literally `metalogic::derivable` of the database rule set.
+        assert_eq!(
+            derivable_db(&db, &a).unwrap(),
+            crate::metalogic::derivable(&db_rule_set(db.clone()), &a).unwrap(),
+        );
     }
 
     #[test]

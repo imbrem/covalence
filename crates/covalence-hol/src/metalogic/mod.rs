@@ -59,11 +59,11 @@ pub mod toy;
 
 // The **HOL database type + relation lattice** (`docs/theories-models-and-logics.md
 // §5.6`): databases as first-class HOL *values* (an axiom-selecting predicate), with
-// `⊑`/monotonicity and `⟹_σ`/transport proved over `Derivable_DB`. NOTE: `database`'s
-// `Derivable_DB db A := ∀d. Closed_DB db d ⟹ d A` is a *second* impredicative
-// derivability notion alongside this engine's `RuleSet`-parameterized `derivable` —
-// the database is a HOL value (vs a Rust `RuleSet` closure). Unifying the two (drive
-// the engine off a HOL `Database` value) is the reconciliation tracked in SKELETONS.md.
+// `⊑`/monotonicity and `⟹_σ`/transport proved over `Derivable_DB`. UNIFIED (Phase A):
+// `database::Derivable_DB db A` is now literally `derivable(&db_rule_set(db), A)` — a
+// single impredicative derivability notion, with the database value's axioms supplied
+// as this engine's `RuleSet` (`db_rule_set`). The relation theorems
+// (`monotone`/`transport`) are thus theorems about *this engine's* `derivable`.
 pub mod database;
 pub mod relations;
 

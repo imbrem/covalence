@@ -43,17 +43,20 @@ them ([`relations.rs`](./relations.rs)). See `CLAUDE.md` § Skeletons and the
   with `σ_hom σ := ∀X Y. σ⌜X⟹Y⌝ = ⌜σX⟹σY⌝`. Demonstrated at the identity
   translation (monotonicity as interpretation under `id`). **Done, proven.**
 
-## Reconciliation — the two `Derivable` notions (do unify)
+## Reconciliation — the two `Derivable` notions (DONE, Phase A)
 
-There are now **two** impredicative derivability constructs here: the engine's
+There were **two** impredicative derivability constructs: the engine's
 `Derivable_L`, parameterized by a Rust `RuleSet` *closure* (prop/PA/toy), and
-`database::Derivable_DB`, parameterized by a HOL `Database` *value* (the relation
-lattice — built directly on the `init::prop` pattern because `database.rs`
-branched before the engine existed). Same idea, different parameterization level.
-**The unification: drive the engine off a HOL `Database` value** (a `RuleSet`
-whose axiom clause reads a HOL predicate), collapsing the two — at which point
-`monotone`/`transport` become theorems about the *engine's* `Derivable_L`.
-Tracked here; not yet done.
+`database::Derivable_DB`, parameterized by a HOL `Database` *value*. **Unified**:
+`database::db_rule_set(db)` packages the database value as a `RuleSet` (the fixed
+modus-ponens frame + the axiom clause reading `db`), and `database::derivable_db`
+is now literally `metalogic::derivable(&db_rule_set(db), ·)` — one derivability
+notion. Pinned byte-identical to the former inline form by
+`derivable_db_matches_inline_definition`; `monotone`/`transport` are therefore
+theorems about the *engine's* `derivable`. (The `Closed_DB` frame is still the
+fixed *MP-only* rule frame; generalising the engine's clauses to one
+*substitution-instance clause per Metamath assertion* — so a general database's
+non-MP rules are modelled — is the `RuleSet`-from-`Database` work below.)
 
 ## Deferred
 

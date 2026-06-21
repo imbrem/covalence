@@ -73,6 +73,12 @@ pub mod relations;
 // *pure derivability over the encoded syntax* (NO denotation, NO observer).
 pub mod mm_replay;
 
+// **A HOL-backed `DatabaseSink`**: construct `⊢ Derivable_Prop ⌜S⌝` *while
+// reading* a `.mm` source (the reader drives the builder trait; this backend
+// replays each `$p` through the kernel as it is read). The in-memory `Database`
+// is the HOL-free sanity-check backend; this is the HOL one.
+pub mod mm_sink;
+
 // Re-exported WITHOUT `database::derivable` (a 0-ary schema builder) to avoid
 // colliding with this engine's `derivable`; reach it as `metalogic::database::derivable`.
 pub use database::{derivable_db, extends, monotone};

@@ -117,6 +117,36 @@ pub fn parse(input: &str) -> Result<Database, MmError> {
     db.finish()
 }
 
+/// Parse a `.mm` source string, driving a caller-supplied [`DatabaseSink`] (no
+/// file inclusion). Unlike [`parse`] — which builds the in-memory [`Database`] —
+/// this lets an *alternative backend* consume the statement stream directly: in
+/// particular a HOL-backed sink (in `covalence-hol`) that **constructs
+/// `⊢ Derivable_…` theorems as it reads**. The reader drives the high-level
+/// `DatabaseSink` API; the backend decides what to build.
+pub fn parse_into(input: &str, sink: &mut impl DatabaseSink) -> Result<(), MmError> {
+    let tokens = tokenize(input)?;
+    parse_tokens(&tokens, sink)
+}
+
+/// Like [`parse_into`] but resolving `$[ ... $]` includes via `resolver`.
+pub fn parse_into_with_resolver(
+    filename: &str,
+    resolver: &dyn SourceResolver,
+    sink: &mut impl DatabaseSink,
+) -> Result<(), MmError> {
+    let (key, contents) = resolver
+        .resolve(filename, None)
+        .map_err(|e| MmError::FileError {
+            path: filename.to_owned(),
+            message: e.to_string(),
+        })?;
+    let mut seen = HashSet::new();
+    seen.insert(key.clone());
+    let mut tokens = Vec::new();
+    expand_includes(&contents, resolver, Some(&key), &mut seen, &mut tokens)?;
+    parse_tokens(&tokens, sink)
+}
+
 /// Parse a Metamath database starting from `filename`, resolving `$[ ... $]`
 /// includes via `resolver`.
 pub fn parse_with_resolver(

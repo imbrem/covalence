@@ -73,7 +73,10 @@ pub use database::{
 };
 pub use error::MmError;
 pub use expr::{Expr, Symbol, TYPECODE_POS, body_of, expr_symbols, typecode_of};
-pub use parse::{FileResolver, MemoryResolver, SourceResolver, parse, parse_with_resolver};
+pub use parse::{
+    FileResolver, MemoryResolver, SourceResolver, parse, parse_into, parse_into_with_resolver,
+    parse_with_resolver,
+};
 pub use subst::{Subst, apply_subst};
 #[cfg(feature = "checker")]
 pub use verify::{verify_all, verify_assertion};

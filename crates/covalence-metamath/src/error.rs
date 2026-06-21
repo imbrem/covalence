@@ -72,4 +72,10 @@ pub enum MmError {
 
     #[error("compressed-proof error in `{theorem}`: {message}")]
     CompressedProofError { theorem: String, message: String },
+
+    /// A [`DatabaseSink`](crate::DatabaseSink) backend failed while building a
+    /// statement (e.g. a HOL-backed sink whose `⊢ Derivable_…` construction
+    /// failed). Generic — the message carries the backend's own error text.
+    #[error("backend error building `{label}`: {message}")]
+    Backend { label: String, message: String },
 }

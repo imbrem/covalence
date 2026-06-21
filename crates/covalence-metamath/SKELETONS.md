@@ -44,13 +44,14 @@ policy.
 
 ## Deferred features (north stars) — engine scope
 
-- **HOL-backed `DatabaseSink`.** The [`DatabaseSink`](src/database.rs) trait
-  exists and the in-memory [`Database`](src/database.rs) implements it (a
-  HOL-free "sanity check" behind the default-on `checker` feature). The target
-  second implementer — a **HOL-backed** sink in `covalence-hol` that constructs
-  `⊢ Derivable_…` theorems as it reads — is not yet built; the current replay
-  bridges (`peano::mm_replay`, `metalogic::mm_replay`) consume an
-  already-built `Database` rather than implementing the sink directly.
+- **HOL-backed `DatabaseSink`** — done for the propositional fragment. The
+  [`DatabaseSink`](src/database.rs) trait has two implementers: the in-memory
+  [`Database`](src/database.rs) (the HOL-free "sanity check" behind the default-on
+  `checker` feature) and `covalence-hol`'s `metalogic::mm_sink::HolPropSink`,
+  which constructs `⊢ Derivable_Prop ⌜S⌝` as it reads a prop `.mm`. **Remaining:**
+  a HOL sink over an *arbitrary* database (the `RuleSet`-from-`Database` /
+  schema-database replay, landing `⊢ Derivable_DB ⌜db⌝ ⌜S⌝`) — tracked in
+  `covalence-hol`'s `metalogic/SKELETONS.md`.
 
 - **Structured-tree (grammar-parsed) expression encoding.** Expressions are the
   primitive [`Expr`](src/expr.rs) = a typecode `Symbol` + flat `body: Vec<Symbol>`

@@ -60,6 +60,14 @@ kernel re-checks each step (syntax former → `init::prop::p_imp`; `ax-1`/`ax-2`
   single `ax-2` instance, hypothesis-free) and `a1i` (a derived rule carrying one
   essential), each genuine and oracle-free.
 
+- **The HOL-backed `DatabaseSink` is DONE (prop fragment).** [`mm_sink.rs`](./mm_sink.rs)'s
+  `HolPropSink` implements `covalence_metamath::DatabaseSink`: it forwards
+  structural building to an inner `Database` and, for each `$p`, replays via
+  `replay_prop` — **constructing `⊢ Derivable_Prop ⌜S⌝` as the `.mm` is read**
+  (`read_prop(source)`). The reader drives the builder trait; this is the HOL
+  backend (vs the in-memory checker). Generalising it to an arbitrary database
+  needs the schema-database replay below.
+
 ### Deferred — the general schema-database replay (north star)
 
 Generalise from the fixed prop-calc rule set to an **arbitrary `metamath::Database`**:

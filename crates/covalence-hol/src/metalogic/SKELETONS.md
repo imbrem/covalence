@@ -176,22 +176,30 @@ run once; don't over-optimize), then performance. The construct-don't-trust core
   the basic derivations or the axioms (use set.mm's).
 - **Shorter / readable HOL repr — the structured-former encoding (MODERATE).**
   Today `parse`/`encode` emit a flat `mm$concat`-tree of per-symbol `mm$c$<tok>`
-  constants (readable token names, but verbose nesting). The win: give each
-  **syntactic former** (`$a` with a `wff`/`class`/`term`/… conclusion) a
-  dedicated *uninterpreted* HOL constant of its arity (`mm$f$<label> :
-  nat→…→nat`, one arg per `$f` float) and have `parse` emit
-  `mm$f$<label>(enc arg₁,…,enc argₖ)` instead of `concat`-over-body. Then `⌜S⌝`
-  is a readable **tree of named formers** (`wcel(A,B)`, `wi(ph,ps)`) — short and
-  structured. **Soundness is unchanged**: formers are constants, metavars are
-  free vars, so a substitution-instance is still exactly `all_elim`
-  (`enc(schema)[v:=enc(arg)] = enc(subst)` syntactically). The Parser already
-  does the former-structured *parse* (`Former`/`parse`/`encode_greedy`); the
-  change is what it *emits* (former-constant application vs `concat`), localized
-  to `mm_database`'s encoder + re-test. This is the "structured-tree encoding"
-  deferral, now motivated. NB: this is distinct from Metamath's `df-*`
-  *definitional axioms* (which are `|-` axioms, already imported as rule-set
-  clauses) — turning *those* into unfolding HOL definitions (`M := S` +
-  conservativity) is a separate, deeper feature, not needed for readability.
+  *free variables* (readable token names, but verbose, and the theorem carries
+  them all as free-var parameters). The win: give each **syntactic former** (`$a`
+  with a `wff`/`class`/`term`/… conclusion) a **transparent HOL definition** —
+  via the kernel's `define`, exactly like `nat.add`/`nat.mul` — of its arity:
+  `mm.former.<label> := λ(args:nat…). <concat-encoding of the former body>`, and
+  have `parse` emit `mm.former.<label>(enc arg₁,…,enc argₖ)`. Then `⌜S⌝` is a
+  readable **tree of named definitions** (`wi(ph,ps)`, `wcel(A,B)`) — short,
+  structured, and (unlike free vars) genuine *constants*, so the theorem's only
+  free vars are the real metavars (`mm$v$…`). Transparent: each former's defining
+  theorem `⊢ mm.former.<label> = λ…. <body>` unfolds it to the raw syntax on
+  demand (a conservative definitional extension — no new axioms).
+  **Soundness/replay is unchanged**: replay keeps the formers *folded* (never
+  unfolds them), and they're constants while metavars are free vars, so a
+  substitution-instance is still exactly `all_elim`
+  (`enc(schema)[v:=enc(arg)] = enc(subst)` syntactically — folded constants don't
+  reduce). The Parser already does the former-structured *parse*
+  (`Former`/`parse`/`encode_greedy`); the change is (a) a per-database pass that
+  `define`s one constant per former, and (b) `parse` emitting the former-constant
+  application instead of `concat`. Symbols + `concat` could likewise become
+  transparent definitions (toward the nat-Gödel-numbering view) as a follow-on.
+  Re-test prop/demo/group + hol.mm + the formerly-failing set.mm theorems.
+  NB: distinct from Metamath's `df-*` *definitional axioms* (`|-` axioms, already
+  imported as rule-set clauses) — turning *those* into unfolding HOL definitions
+  (`M := S` + conservativity) is a separate, deeper feature.
 - **Two-phase / definitions-first import (EASY–MODERATE).** A mode that loads
   just the **signature** — the formers (the `mm$f$…` constants above) + the
   `df-*` definitional axioms — and shows it, *without* proving theorems (cheap;

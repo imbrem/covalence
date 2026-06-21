@@ -508,13 +508,25 @@ fn axiom_nat_thm(label: &str) -> Result<Thm> {
 fn rule_mp(args: &[Slot]) -> Result<Slot> {
     // The two `|-` operands are the *essential* hypotheses, after the floats.
     let (min, maj) = two_proved(args, "ax.mp")?;
-    // `⟦ph -> ps⟧ = ⟦ph⟧ ⟹ ⟦ps⟧`, so imp_elim of the implication against ph.
-    let thm = maj.thm.clone().imp_elim(min.thm.clone())?;
-    let form = match &maj.form {
-        Fol::Imp(_, b) => (**b).clone(),
-        _ => return Err(replay_err("ax.mp: major premise is not an implication")),
-    };
+    let (form, thm) = mp_via_replay(min.form, min.thm, maj.form, maj.thm)?;
     Ok(Slot::Proved { form, thm })
+}
+
+/// **The modus-ponens mechanism (the replay's `ax.mp` core), reusable.** Given
+/// `minor : ⊢ ⟦A⟧` and `major : ⊢ ⟦A ⟹ B⟧` (with `major_form = Fol::Imp(A, B)`),
+/// re-derive `⊢ ⟦B⟧` by [`Thm::imp_elim`]. Since `⟦A ⟹ B⟧ = ⟦A⟧ ⟹ ⟦B⟧`
+/// definitionally, the implication eliminates against the minor directly.
+pub fn mp_via_replay(
+    _minor_form: &Fol,
+    minor: &Thm,
+    major_form: &Fol,
+    major: &Thm,
+) -> Result<(Fol, Thm)> {
+    let Fol::Imp(_, b) = major_form else {
+        return Err(replay_err("ax.mp: major premise is not an implication"));
+    };
+    let thm = major.clone().imp_elim(minor.clone())?;
+    Ok(((**b).clone(), thm))
 }
 
 /// **Generalisation.** Operands: floats `x`,`ph` then essential `h : |- ph`.
@@ -525,18 +537,19 @@ fn rule_gen(args: &[Slot]) -> Result<Slot> {
     // Essential operand: the proved premise `|- ph`.
     let proved = one_proved(args, "ax.gen")?;
     let xvar = setvar_slot(args, "ax.gen")?;
-    // The premise's free HOL variable for setvar `x` is `pa.v{k}`.
-    let k = match xvar {
-        Fol::FVar(k) => k,
-        // If `x` is not free in the premise, generalisation is still valid; pick
-        // a name that doesn't occur (it then vacuously binds). But the schema's
-        // intent is `x` free, so require it.
-        _ => return Err(replay_err("ax.gen: the generalised variable must be free")),
+    // The setvar `x` denotes to the HOL free variable `pa.v{k}`. If `x` is free
+    // in the premise, `all_intro` binds it; if not, the binder is vacuous — both
+    // are sound `∀`-introduction and both match the denotation `⟦A. x ph⟧`
+    // (which always introduces a fresh HOL binder).
+    let Fol::FVar(k) = xvar else {
+        return Err(replay_err(
+            "ax.gen: the generalised operand is not a setvar",
+        ));
     };
     let name = deep::fvar_hol_name(k);
     let thm = proved.thm.clone().all_intro(&name, Type::nat())?;
     // The denoted result `∀. ⟦ph⟧[x↦bvar]` — build via the Fol close so the
-    // shape matches `denote_closed`.
+    // shape matches `denote_closed` (a no-op close if `x` is not free).
     let form = Fol::All(Box::new(proved.form.close(k)));
     // Bridge naming/β residue.
     let bridged = bridge_to_denotation(thm, &form)?;
@@ -567,28 +580,54 @@ fn rule_induct(args: &[Slot]) -> Result<Slot> {
 
     // The motive body `ph = P(x)` is the `wff` syntax slot that is the body of
     // the conclusion `A. x ph` — i.e. the formula closed under `x`. We read it
-    // off the step premise, whose shape is `A. x ( P(x) -> P(S x) )`, OR off the
-    // first wff slot. We take the first wff slot (the `ph` float operand).
+    // off the first wff slot (the `ph` float operand).
     let motive_body = first_wff_slot(args, "pa.ind")?;
 
+    let (form, thm) = induct_via_replay(&motive_body, k, base.thm.clone(), step.thm.clone())?;
+    Ok(Slot::Proved { form, thm })
+}
+
+/// **The induction mechanism (the replay's `pa.ind` core), reusable.**
+///
+/// Given the *concrete* motive `motive` — an open [`Fol`] formula `P(x)` in
+/// which the induction setvar appears as `Fol::FVar(k)` — and two **genuine
+/// kernel theorems**:
+///
+/// - `base : ⊢ ⟦P(0)⟧`, and
+/// - `step : ⊢ ⟦∀x. P(x) ⟹ P(S x)⟧` (a HOL `∀` over `pa.v{k}`),
+///
+/// re-derive `⊢ ⟦∀x. P(x)⟧` by **[`Thm::nat_induct`] on the concrete denoted
+/// motive** `p = λn. ⟦P(n)⟧`, returning the result formula and theorem.
+///
+/// This is exactly the point where the impredicative engine's motive β-capture
+/// wall is sidestepped: `p` is a *specific* HOL predicate (the motive is concrete
+/// by replay time), handed directly to the kernel rule — no quantified `Q`, no
+/// Church-handler capture, no deduction theorem.
+pub fn induct_via_replay(motive: &Fol, k: u64, base: Thm, step: Thm) -> Result<(Fol, Thm)> {
     // Denote the motive as a HOL predicate `p = λn. ⟦P(n)⟧`.
-    let p = motive_predicate(&motive_body, k)?;
+    let p = motive_predicate(motive, k)?;
 
-    // base : the operand `|- ph0` denotes `⟦P(0)⟧`; reshape to `p 0`.
-    let base_thm = reshape_to_applied(&p, &nat::zero(), &base)?;
+    // base : `⊢ ⟦P(0)⟧` → reshape to the applied form `⊢ p 0`.
+    let base_ref = ProvedRef {
+        form: motive,
+        thm: &base,
+    };
+    let base_thm = reshape_to_applied(&p, &nat::zero(), &base_ref)?;
 
-    // step : `|- A. x ( ph -> phS )` denotes `∀n. ⟦P(n)⟧ ⟹ ⟦P(S n)⟧`; we need
-    // `⊢ p n ⟹ p (S n)` for the free `n = pa.v{k}`. Specialise the ∀, then
-    // reshape both sides to `p`-applications.
-    let step_thm = induction_step(&p, k, &step)?;
+    // step : `⊢ ∀n. ⟦P(n)⟧ ⟹ ⟦P(S n)⟧` → `⊢ p n ⟹ p (S n)` for `n = pa.v{k}`.
+    let step_ref = ProvedRef {
+        form: motive,
+        thm: &step,
+    };
+    let step_thm = induction_step(&p, k, &step_ref)?;
 
     let induct = Thm::nat_induct(base_thm, step_thm)?; // ⊢ ∀n. p n
     let induct = crate::init::eq::beta_nf_concl(induct)?; // ⊢ ∀n. ⟦P(n)⟧
 
-    // Result formula: `A. x ph`.
-    let form = Fol::All(Box::new(motive_body.close(k)));
+    // Result formula: `A. x P` (close the setvar into the binder).
+    let form = Fol::All(Box::new(motive.close(k)));
     let bridged = bridge_to_denotation(induct, &form)?;
-    Ok(Slot::Proved { form, thm: bridged })
+    Ok((form, bridged))
 }
 
 // ============================================================================
@@ -844,5 +883,177 @@ mod tests {
             assert_genuine(&thm);
             assert_eq!(thm.concl(), refthm.concl(), "{label}");
         }
+    }
+
+    // ========================================================================
+    // The induction mechanism (the headline) — `pa.ind` replay → `nat_induct`.
+    //
+    // These exercise [`induct_via_replay`], the exact core the `pa.ind` step of
+    // a Metamath proof drives. The motive is a *concrete* `Fol` (so there is no
+    // HOAS `Q`, no Church-handler β-capture — the impredicative engine's wall);
+    // base and step are **genuine kernel theorems** (no postulates); the result
+    // is a hypothesis-free `nat_induct` theorem.
+    //
+    // Authoring the base/step as *Metamath proof scripts* needs the proper
+    // substitution apparatus `[ t / x ]` (base `[0/x]ph`, step `[Sx/x]ph`),
+    // which is SKELETONed in `peano/SKELETONS.md` (the long Hilbert script). The
+    // induction *mechanism* below is complete and genuine.
+    // ========================================================================
+
+    use crate::init::ext::{TermExt, ThmExt};
+    use crate::init::nat::{add, succ, zero};
+    use covalence_core::defs;
+
+    /// `P(x) := (x + 0 = x)` as an open `Fol` whose setvar is `FVar(k)`.
+    fn add_zero_motive(k: u64) -> Fol {
+        Fol::Eq(
+            Box::new(Fol::Add(Box::new(Fol::FVar(k)), Box::new(Fol::Zero))),
+            Box::new(Fol::FVar(k)),
+        )
+    }
+
+    /// **The headline, via the replay path.** Induction-on-`x` of
+    /// `P(x) := x + 0 = x` discharges through `induct_via_replay` to a genuine
+    /// hypothesis-free kernel theorem `⊢ ∀x. x + 0 = x` that **equals**
+    /// `init::nat::add_zero` — landing exactly what the impredicative engine
+    /// could not (`peano/SKELETONS.md`), through the `ValidProof` replay.
+    #[test]
+    fn induction_headline_add_zero() {
+        let k = 0u64;
+        let motive = add_zero_motive(k);
+        let n = deep::fvar_hol(k); // pa.v0 : nat
+
+        // base : ⊢ ⟦P(0)⟧ = `0 + 0 = 0`. Built genuinely from add_base.
+        let base = nat::add_base().all_elim(zero()).unwrap(); // ⊢ 0 + 0 = 0
+
+        // step : ⊢ ∀x. (x+0=x) ⟹ (Sx+0=Sx)  over the free `pa.v0`.
+        //   (this is the induction step `init::nat::add_zero` itself proves —
+        //    here re-built so its free variable is `pa.v0`, the motive's var.)
+        let ih_concl = add(n.clone(), zero()).equals(n.clone()).unwrap(); // n+0=n
+        let ih = Thm::assume(ih_concl.clone()).unwrap(); // {n+0=n} ⊢ n+0=n
+        let s = nat::add_step()
+            .all_elim(n.clone())
+            .unwrap()
+            .all_elim(zero())
+            .unwrap(); // ⊢ S n + 0 = S(n + 0)
+        let cong = ih.cong_arg(defs::nat_succ()).unwrap(); // {n+0=n} ⊢ S(n+0) = S n
+        let step_open = s.trans(cong).unwrap().imp_intro(&ih_concl).unwrap(); // ⊢ (n+0=n) ⟹ (Sn+0=Sn)
+        let step = step_open
+            .all_intro(&deep::fvar_hol_name(k), Type::nat())
+            .unwrap();
+
+        // Run the replay's induction mechanism on the *concrete* motive.
+        let (form, thm) = induct_via_replay(&motive, k, base, step).unwrap();
+
+        // It is a genuine, hypothesis-free kernel theorem...
+        assert_genuine(&thm);
+        // ...whose formula is `∀x. x + 0 = x`...
+        assert_eq!(form, Fol::All(Box::new(motive.close(k))));
+        // ...and which is exactly `init::nat::add_zero` — the headline.
+        assert_eq!(thm.concl(), nat::add_zero().concl());
+        // Cross-check: it also equals the denotation of the result formula.
+        assert_eq!(thm.concl(), &deep::denote_closed(&form));
+    }
+
+    /// **The `ax.mp` mechanism:** from genuine kernel theorems `⊢ ⟦A⟧` and
+    /// `⊢ ⟦A ⟹ B⟧`, [`mp_via_replay`] re-derives `⊢ ⟦B⟧` by `imp_elim`. Here
+    /// `A := (0+0 = 0)` (PA3-at-0) and `A ⟹ B` is `A ⟹ A` (so `B = A`), both
+    /// built genuinely; the result is hypothesis-free.
+    #[test]
+    fn mp_mechanism() {
+        // A := ⟦(0 + 0) = 0⟧, proved from add_base.
+        let a_fol = Fol::Eq(
+            Box::new(Fol::Add(Box::new(Fol::Zero), Box::new(Fol::Zero))),
+            Box::new(Fol::Zero),
+        );
+        let minor = nat::add_base().all_elim(zero()).unwrap(); // ⊢ 0 + 0 = 0
+        // A ⟹ A, via imp_intro of the assumption.
+        let assumed = Thm::assume(minor.concl().clone()).unwrap();
+        let imp = assumed.imp_intro(minor.concl()).unwrap(); // ⊢ (0+0=0) ⟹ (0+0=0)
+        let imp_fol = Fol::Imp(Box::new(a_fol.clone()), Box::new(a_fol.clone()));
+
+        let (b_form, thm) = mp_via_replay(&a_fol, &minor, &imp_fol, &imp).unwrap();
+        assert_genuine(&thm);
+        assert_eq!(b_form, a_fol);
+        assert_eq!(thm.concl(), minor.concl());
+    }
+
+    /// **End-to-end `ax.gen`:** a real Metamath proof generalises PA1 over a
+    /// fresh setvar `y`, proving `|- A. y A. x -.( 0 = ( S x ) )`. The engine
+    /// verifies it; the replay re-derives `⊢ ∀y. ∀x. ¬(0 = S x)` by
+    /// [`Thm::all_intro`] (a vacuous binder over `y`, sound) — a genuine,
+    /// hypothesis-free kernel theorem.
+    #[test]
+    fn replay_gen_over_pa1() {
+        let mut db = mm_pa::database().unwrap();
+        // Build the `wff A. x -. ( 0 = ( S x ) )` on the stack, the premise
+        // `|- A. x -. ( 0 = ( S x ) )` via `pa.1`, then `ax.gen` over `y`.
+        // `w.all` floats are [x (term), ph (wff)], popped deeper→top, so the
+        // `term x` operand must sit *below* the wff on the stack.
+        let mk_pa1_wff = [
+            "f.x", // term x      (the `w.all` setvar operand, pushed first)
+            "t.0", // term 0
+            "f.x", "t.S",   // term ( S x )
+            "w.eq",  // wff ( 0 = ( S x ) )
+            "w.neg", // wff -. ( 0 = ( S x ) )
+            "w.all", // wff A. x -. ( 0 = ( S x ) )
+        ];
+        // `ax.gen` floats are [x' (gen var, term), ph (wff)] then essential
+        // `gen.h : |- ph`. Stack (deeper→top): term y, wff <PA1 body>, |- <PA1>.
+        let mut proof: Vec<&str> = Vec::new();
+        proof.push("f.y"); // term y  (the generalisation variable)
+        proof.extend(mk_pa1_wff); // wff A. x -. ( 0 = ( S x ) )  (the ph operand)
+        proof.extend(["f.x", "pa.1"]); // |- A. x -. ( 0 = ( S x ) )  (the premise)
+        proof.push("ax.gen");
+        let proof: Vec<String> = proof.iter().map(|s| s.to_string()).collect();
+        let concl = crate::metamath::expr::make_expr(
+            "|-",
+            [
+                "A.", "y", "A.", "x", "-.", "(", "0", "=", "(", "S", "x", ")", ")",
+            ],
+        );
+        db.add_assertion("th.gen".into(), concl, Some(proof))
+            .unwrap();
+        let db = db.finish().unwrap();
+        let Some(Statement::Assert(a)) = db.statement_by_label("th.gen") else {
+            panic!()
+        };
+        verify_assertion(&db, a).unwrap();
+        let thm = replay_assertion(&db, a).unwrap();
+        assert_genuine(&thm);
+        // ⟦A. y A. x ¬(0 = S x)⟧ = ∀y. ∀x. ¬(0 = S x).
+        let want = Fol::All(Box::new(pa::ax_zero_ne_succ()));
+        assert_eq!(thm.concl(), &deep::denote_closed(&want));
+    }
+
+    /// The induction mechanism also lands on a *degenerate* motive whose step
+    /// doesn't use the induction hypothesis, confirming `nat_induct` fires on an
+    /// arbitrary concrete motive (here `P(x) := (0 + x) = x`, i.e. PA3 re-proved
+    /// by induction). Genuine, hypothesis-free.
+    #[test]
+    fn induction_reproves_pa3() {
+        let k = 1u64;
+        // P(x) := (0 + x) = x
+        let motive = Fol::Eq(
+            Box::new(Fol::Add(Box::new(Fol::Zero), Box::new(Fol::FVar(k)))),
+            Box::new(Fol::FVar(k)),
+        );
+        let n = deep::fvar_hol(k);
+
+        // base : ⊢ 0 + 0 = 0.
+        let base = nat::add_base().all_elim(zero()).unwrap();
+        // step : ⊢ ∀x. ((0+x)=x) ⟹ ((0+Sx)=Sx).  The consequent is PA3-at-(Sx),
+        //   independent of the hypothesis — weaken it in.
+        let conseq = nat::add_base().all_elim(succ(n.clone())).unwrap(); // ⊢ 0 + Sx = Sx
+        let hyp = add(zero(), n.clone()).equals(n.clone()).unwrap(); // (0+x)=x
+        let step_open = conseq.imp_intro(&hyp).unwrap(); // ⊢ ((0+x)=x) ⟹ ((0+Sx)=Sx)
+        let step = step_open
+            .all_intro(&deep::fvar_hol_name(k), Type::nat())
+            .unwrap();
+
+        let (_form, thm) = induct_via_replay(&motive, k, base, step).unwrap();
+        assert_genuine(&thm);
+        // ∀x. (0+x)=x  is `add_base` (up to the bound-var name = de Bruijn).
+        assert_eq!(thm.concl(), nat::add_base().concl());
     }
 }

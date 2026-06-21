@@ -38,6 +38,50 @@
 			null,
 		),
 	);
+	// Label → theorem, for transitive dependency walks.
+	const byLabel = $derived.by(() => {
+		const m = new Map<string, ImportedTheorem>();
+		for (const t of theorems) m.set(t.label, t);
+		return m;
+	});
+
+	// The **transitive axiom base** of a theorem: the union of axiom/def labels
+	// reached by recursively following theorem (`thm`) dependencies — i.e. the
+	// axioms+definitions this theorem ultimately rests on, not just the ones its
+	// own proof cites directly. Computed from the accumulated per-theorem `deps`.
+	function transitiveAxiomBase(root: string): {
+		axioms: string[];
+		defs: string[];
+		thms: number;
+		missing: number;
+	} {
+		const axioms = new Set<string>();
+		const defs = new Set<string>();
+		const visited = new Set<string>();
+		const missing = new Set<string>();
+		const stack = [root];
+		while (stack.length) {
+			const lbl = stack.pop()!;
+			if (visited.has(lbl)) continue;
+			visited.add(lbl);
+			const t = byLabel.get(lbl);
+			if (!t) continue;
+			for (const d of t.deps ?? []) {
+				if (d.kind === 'axiom') axioms.add(d.label);
+				else if (d.kind === 'def') defs.add(d.label);
+				else if (!byLabel.has(d.label)) missing.add(d.label);
+				else if (!visited.has(d.label)) stack.push(d.label);
+			}
+		}
+		return {
+			axioms: [...axioms].sort(),
+			defs: [...defs].sort(),
+			thms: visited.size - 1, // distinct theorems reached (excluding the root)
+			missing: missing.size,
+		};
+	}
+	const axiomBase = $derived(selected ? transitiveAxiomBase(selected.label) : null);
+
 	// Filter: failures-only AND a case-insensitive substring match on label OR mm.
 	const filtered = $derived.by(() => {
 		const q = search.trim().toLowerCase();
@@ -83,23 +127,32 @@
 			: null,
 	);
 
-	// --- histogram (linear buckets over importMs) --------------------------
+	// --- histogram (LOG-scale buckets over importMs) -----------------------
+	// Import times are heavy-tailed (most theorems fast, a few slow stragglers),
+	// so linear buckets crush everything into bucket 0 with a far-right tail.
+	// Bucket on log10(ms) instead; clamp to a small floor so 0 ms is well-defined.
 	const HISTO_BUCKETS = 30;
 	const histo = $derived.by(() => {
 		const xs = sortedMs;
 		if (xs.length === 0) return null;
 		const min = xs[0];
 		const max = xs[xs.length - 1];
-		const span = max - min || 1;
+		const EPS = 0.01; // ms floor for the log
+		const lo = Math.log10(Math.max(min, EPS));
+		const hi = Math.log10(Math.max(max, EPS));
+		const span = hi - lo || 1;
 		const counts = new Array<number>(HISTO_BUCKETS).fill(0);
 		for (const x of xs) {
-			let b = Math.floor(((x - min) / span) * HISTO_BUCKETS);
+			const lx = Math.log10(Math.max(x, EPS));
+			let b = Math.floor(((lx - lo) / span) * HISTO_BUCKETS);
 			if (b >= HISTO_BUCKETS) b = HISTO_BUCKETS - 1;
 			if (b < 0) b = 0;
 			counts[b]++;
 		}
 		const peak = Math.max(...counts, 1);
-		return { min, max, counts, peak };
+		// Right-edge (ms) of bucket i, for axis ticks.
+		const edge = (i: number) => 10 ** (lo + (span * (i + 1)) / HISTO_BUCKETS);
+		return { min, max, counts, peak, edge };
 	});
 	// SVG geometry for the histogram.
 	const HW = 640;
@@ -332,8 +385,8 @@
 						<line x1={HPAD} y1={HH - HPAD} x2={HW - HPAD} y2={HH - HPAD} stroke="var(--border)" />
 					</svg>
 					<div class="haxis">
-						<span>{histo.min.toFixed(1)} ms</span>
-						<span class="dim">{HISTO_BUCKETS} buckets · peak {histo.peak}</span>
+						<span>{histo.min.toFixed(2)} ms</span>
+						<span class="dim">log scale · {HISTO_BUCKETS} buckets · peak {histo.peak}</span>
 						<span>{histo.max.toFixed(1)} ms</span>
 					</div>
 				</div>
@@ -454,6 +507,32 @@
 						<p class="note">none (axiom instance / hypotheses only)</p>
 					{/if}
 				</div>
+				{#if axiomBase}
+					<div class="field">
+						<div class="flabel">
+							Transitive axiom base
+							<span class="dim">· {axiomBase.thms} theorems reached</span>
+						</div>
+						<div class="depgroup">
+							<span class="dkind axiom">Axioms ({axiomBase.axioms.length})</span>
+							<span class="chips">
+								{#each axiomBase.axioms as a (a)}<span class="chip axiom">{a}</span>{/each}
+							</span>
+						</div>
+						<div class="depgroup">
+							<span class="dkind def">Definitions ({axiomBase.defs.length})</span>
+							<span class="chips">
+								{#each axiomBase.defs as a (a)}<span class="chip def">{a}</span>{/each}
+							</span>
+						</div>
+						{#if axiomBase.missing > 0}
+							<p class="note">
+								{axiomBase.missing} dependency theorem(s) not yet imported — closure is partial
+								(re-check once the import finishes).
+							</p>
+						{/if}
+					</div>
+				{/if}
 				<div class="field">
 					<div class="flabel">Metamath proof (compressed)</div>
 					{#if selected.proof}

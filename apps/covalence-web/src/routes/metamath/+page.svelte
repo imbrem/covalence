@@ -446,6 +446,13 @@
 				<div class="field">
 					<div class="flabel">HOL representation</div>
 					{#if selected.ok}
+						<!-- Aliased (folded) form: the encoded conclusion ⌜S⌝ *is* the Metamath
+						     statement, so the faithful folded theorem is `Derivable_L ⌜S⌝`
+						     (hypotheses = the essentials' derivability). The raw kernel term
+						     (∀d. Closed ⟹ …, with the concat encoding) is the unfolded reality,
+						     shown below under a toggle. -->
+						<pre class="hol alias">{#each selected.ess as e (e)}Derivable_L ⌜{e}⌝
+{/each}⊢ Derivable_L ⌜{selected.mm}⌝</pre>
 						<div class="kv">
 							<span>hypotheses</span><span>{selected.hyps}</span>
 						</div>
@@ -460,12 +467,15 @@
 								<span>import time</span><span>{selected.importMs.toFixed(1)} ms</span>
 							</div>
 						{/if}
-						<div class="flabel sub">conclusion preview</div>
-						<p class="note">
-							Truncated preview of <code>⊢ Derivable_L ⌜S⌝</code> (the real conclusion is huge —
-							that's the point of proof-irrelevance).
-						</p>
-						<pre class="hol">{selected.holPreview}…</pre>
+						<details>
+							<summary>raw kernel term (unfolded)</summary>
+							<p class="note">
+								Truncated preview of the actual conclusion — <code>Derivable_L</code> unfolded
+								to <code>∀d. Closed ⟹ d ⌜S⌝</code> over the syntactic encoding. The real term
+								is huge; that's the point of proof-irrelevance.
+							</p>
+							<pre class="hol">{selected.holPreview}…</pre>
+						</details>
 					{:else}
 						<div class="kv">
 							<span>status</span><span class="no">import failed</span>

@@ -123,12 +123,16 @@ the honest demo of write→lower→prove-across.
 
 ### Phase D — the headline instances (parallel, on A–C)
 
-- **The `Database` trait + readers** — give `covalence-metamath` a `Database`
-  (builder) trait + symbol-kind enums that the `.mm` readers drive, with two
-  implementers: the in-memory RPN checker (a HOL-free **sanity-check** verifier,
-  behind a feature flag) and the **HOL-backed** consumer in `covalence-hol`
-  (constructs `⊢ Derivable_…` as it reads). The compressed-proof decoder and
-  `$[ ]$` includes then live in `covalence-metamath`, driving the trait.
+- **The `Database` trait + readers** ✅ *mostly done.* `covalence-metamath` now
+  has primitive `Expr` (typecode + flat `Vec<Symbol>`, SExpr only at the
+  `to_sexpr`/`from_sexpr` boundary), the **`DatabaseSink`** builder trait +
+  `SymbolKind` enum the readers drive, the **compressed-proof decoder**
+  (base-20/5 + `Z` saves + heap) and **`$[ ]$` file inclusion** (`SourceResolver`),
+  and the in-memory RPN checker as a HOL-free **sanity-check** verifier behind the
+  default-on `checker` feature. *Remaining:* the **HOL-backed `DatabaseSink`** in
+  `covalence-hol` that constructs `⊢ Derivable_…` directly as it reads (today the
+  replay bridges consume an already-built `Database`), and symbol interning for
+  set.mm scale.
 - **`set.mm` in GT** — read *all of* `set.mm` ([metamath/set.mm]; needs the
   compressed-proof parser + full `.mm` grammar) and verify the whole database via
   the Rust `metamath::verify` (mode-1 symbolic ingestion; the HOL side stays

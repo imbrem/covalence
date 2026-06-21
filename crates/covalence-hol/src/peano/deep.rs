@@ -94,7 +94,9 @@ pub fn denote_form(phi: &Fol, ctx: &[Term]) -> Term {
         Fol::And(a, b) => denote_form(a, ctx)
             .and(denote_form(b, ctx))
             .expect("denote ∧"),
-        Fol::Or(a, b) => denote_form(a, ctx).or(denote_form(b, ctx)).expect("denote ∨"),
+        Fol::Or(a, b) => denote_form(a, ctx)
+            .or(denote_form(b, ctx))
+            .expect("denote ∨"),
         Fol::Imp(a, b) => denote_form(a, ctx)
             .imp(denote_form(b, ctx))
             .expect("denote ⟹"),

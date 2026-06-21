@@ -162,10 +162,7 @@ where
         }
         // `t` is `a ∘ b`. Recursively reassociate each side, then merge: the
         // result is `aₗ₁ ∘ (… ∘ (aₗₖ ∘ rebuild(b)))`.
-        let (a, b) = self
-            .op
-            .dest(t)
-            .expect("multi-leaf term is a ∘-application");
+        let (a, b) = self.op.dest(t).expect("multi-leaf term is a ∘-application");
         let a_leaves = self.leaves(&a);
         let b_leaves = self.leaves(&b);
         // ⊢ a = RN(a_leaves), ⊢ b = RN(b_leaves)
@@ -288,7 +285,10 @@ where
 
     /// `⊢ a₁ ∘ b₁ = a₂ ∘ b₂` from `⊢ a₁ = a₂` and `⊢ b₁ = b₂`.
     fn cong(&self, a: Thm, b: Thm) -> Result<Thm> {
-        let (a1, _) = a.concl().as_eq().ok_or(covalence_core::Error::NotAnEquation)?;
+        let (a1, _) = a
+            .concl()
+            .as_eq()
+            .ok_or(covalence_core::Error::NotAnEquation)?;
         let bare = bare_op(&self.op, a1)?;
         // a.cong_arg(∘) : ⊢ (∘ a₁) = (∘ a₂) ; cong_app(b) : ⊢ (∘ a₁) b₁ = (∘ a₂) b₂.
         a.cong_arg(bare)?.cong_app(b)
@@ -303,7 +303,10 @@ where
     /// `⊢ l₁ ∘ r = l₂ ∘ r` from `⊢ l₁ = l₂` — congruence on the *head* only.
     fn cong_head(&self, l: Thm, r: &Term) -> Result<Thm> {
         // ⊢ l₁ = l₂  ⟹  ⊢ (∘ l₁) = (∘ l₂)  ⟹  ⊢ (∘ l₁) r = (∘ l₂) r
-        let (l1, _) = l.concl().as_eq().ok_or(covalence_core::Error::NotAnEquation)?;
+        let (l1, _) = l
+            .concl()
+            .as_eq()
+            .ok_or(covalence_core::Error::NotAnEquation)?;
         let bare = bare_op(&self.op, l1)?;
         l.cong_arg(bare)?.cong_fn(r.clone())
     }
@@ -318,7 +321,6 @@ where
             [head, rest @ ..] => self.op.op(head.clone(), self.right_nest(rest)?),
         }
     }
-
 }
 
 /// The partially-applied operator `∘ a` (`op` with its first argument fixed) —
@@ -467,9 +469,11 @@ impl AcOp for HolAc {
                 .all_elim(a.clone())?
                 .all_elim(b.clone())?
                 .all_elim(c.clone()),
-            Inst::Free(vars) => {
-                inst_simul(self.assoc.clone(), &[&vars[0], &vars[1], &vars[2]], &[a, b, c])
-            }
+            Inst::Free(vars) => inst_simul(
+                self.assoc.clone(),
+                &[&vars[0], &vars[1], &vars[2]],
+                &[a, b, c],
+            ),
         }
     }
 
@@ -491,7 +495,9 @@ fn inst_simul(thm: Thm, names: &[&str], reps: &[&Term]) -> Result<Thm> {
     debug_assert_eq!(names.len(), reps.len());
     // Phase 1: rename each axiom var to a unique placeholder that appears in no
     // operand (so phase 2 cannot re-capture it).
-    let placeholders: Vec<String> = (0..names.len()).map(|i| format!("__ac_simul_{i}")).collect();
+    let placeholders: Vec<String> = (0..names.len())
+        .map(|i| format!("__ac_simul_{i}"))
+        .collect();
     let mut t = thm;
     for (name, ph) in names.iter().zip(&placeholders) {
         // The placeholder must carry the variable's type; read it off `reps`.
@@ -665,13 +671,7 @@ mod tests {
             ["s", "t", "u"],
         )
         .engine();
-        let un = |a: Term, b: Term| {
-            set_union(set_alpha())
-                .apply(a)
-                .unwrap()
-                .apply(b)
-                .unwrap()
-        };
+        let un = |a: Term, b: Term| set_union(set_alpha()).apply(a).unwrap().apply(b).unwrap();
         // (u ∪ s) ∪ t   →   s ∪ (t ∪ u)
         let lhs = un(un(sv("u"), sv("s")), sv("t"));
         let thm = e.normalize(&lhs).unwrap();
@@ -710,5 +710,3 @@ mod tests {
         assert!(thm.hyps().is_empty());
     }
 }
-
-

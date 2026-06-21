@@ -164,7 +164,12 @@ fn rec_equation<I: Inductive>(
         for (r, _) in &inst.rec_pairs {
             // ⊢ rec rⱼ = rec_app rⱼ  (rec_app β-reduces to rec rⱼ).
             let bridge = beta_nf(rec_app(recursor, steps, r)?).sym()?;
-            let rhs = bridged.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+            let rhs = bridged
+                .concl()
+                .as_eq()
+                .ok_or(Error::NotAnEquation)?
+                .1
+                .clone();
             bridged = bridged.trans(rhs.rw_all(&bridge)?)?;
         }
         bridged

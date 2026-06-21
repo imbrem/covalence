@@ -161,7 +161,11 @@ pub fn encode_char_spec() -> TermSpec {
         let ty = body
             .type_of()
             .expect("utf16EncodeChar body must type-check to char → list u16");
-        TermSpec::new(SmolStr::new_static("utf16.encodeChar"), Some(ty), Some(body))
+        TermSpec::new(
+            SmolStr::new_static("utf16.encodeChar"),
+            Some(ty),
+            Some(body),
+        )
     });
     LAZY.clone()
 }
@@ -206,7 +210,10 @@ fn encode_body() -> Term {
     let s = Term::free("s", crate::init::string::string_ty());
     let rep_s = Term::app(Term::spec_rep(string_spec(), Vec::new()), s.clone());
     let folded = Term::app(
-        Term::app(Term::app(list_foldr(char_ty(), unit_list()), encode_step()), unil()),
+        Term::app(
+            Term::app(list_foldr(char_ty(), unit_list()), encode_step()),
+            unil(),
+        ),
         rep_s,
     );
     Term::abs(

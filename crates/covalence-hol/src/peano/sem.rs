@@ -80,15 +80,31 @@ pub const HANDLERS: [(&str, fn(&Type, &Type) -> Type); 12] = [
     ("fvar", |t, _r| Type::fun(nat(), t.clone())),
     ("zero", |t, _r| t.clone()),
     ("succ", |t, _r| Type::fun(t.clone(), t.clone())),
-    ("add", |t, _r| Type::fun(t.clone(), Type::fun(t.clone(), t.clone()))),
-    ("mul", |t, _r| Type::fun(t.clone(), Type::fun(t.clone(), t.clone()))),
-    ("eq", |t, r| Type::fun(t.clone(), Type::fun(t.clone(), r.clone()))),
+    ("add", |t, _r| {
+        Type::fun(t.clone(), Type::fun(t.clone(), t.clone()))
+    }),
+    ("mul", |t, _r| {
+        Type::fun(t.clone(), Type::fun(t.clone(), t.clone()))
+    }),
+    ("eq", |t, r| {
+        Type::fun(t.clone(), Type::fun(t.clone(), r.clone()))
+    }),
     ("neg", |_t, r| Type::fun(r.clone(), r.clone())),
-    ("and", |_t, r| Type::fun(r.clone(), Type::fun(r.clone(), r.clone()))),
-    ("or", |_t, r| Type::fun(r.clone(), Type::fun(r.clone(), r.clone()))),
-    ("imp", |_t, r| Type::fun(r.clone(), Type::fun(r.clone(), r.clone()))),
-    ("all", |t, r| Type::fun(Type::fun(t.clone(), r.clone()), r.clone())),
-    ("ex", |t, r| Type::fun(Type::fun(t.clone(), r.clone()), r.clone())),
+    ("and", |_t, r| {
+        Type::fun(r.clone(), Type::fun(r.clone(), r.clone()))
+    }),
+    ("or", |_t, r| {
+        Type::fun(r.clone(), Type::fun(r.clone(), r.clone()))
+    }),
+    ("imp", |_t, r| {
+        Type::fun(r.clone(), Type::fun(r.clone(), r.clone()))
+    }),
+    ("all", |t, r| {
+        Type::fun(Type::fun(t.clone(), r.clone()), r.clone())
+    }),
+    ("ex", |t, r| {
+        Type::fun(Type::fun(t.clone(), r.clone()), r.clone())
+    }),
 ];
 
 /// The slot type of handler `name` at `('t, 'r)`.
@@ -172,10 +188,7 @@ impl<'a> SemFol<'a> {
                 assert!(idx < n, "sem: dangling BVar {i} (ctx depth {n})");
                 ctx[n - 1 - idx].clone()
             }
-            Fol::FVar(k) => Term::app(
-                self.h("fvar"),
-                Term::nat_lit(Nat::from_inner((*k).into())),
-            ),
+            Fol::FVar(k) => Term::app(self.h("fvar"), Term::nat_lit(Nat::from_inner((*k).into()))),
             Fol::Zero => self.h("zero"),
             Fol::Succ(a) => Term::app(self.h("succ"), self.term_body(a, ctx)),
             Fol::Add(a, b) => self.bin_t("add", a, b, ctx),
@@ -408,7 +421,9 @@ pub fn std_handlers() -> Vec<Term> {
         Term::abs(Type::fun(n.clone(), b.clone()), close(&body, "P"))
     };
 
-    vec![fvar, zero, succ, add, mul, eq, neg, and, or, imp, pp_all, pp_ex]
+    vec![
+        fvar, zero, succ, add, mul, eq, neg, and, or, imp, pp_all, pp_ex,
+    ]
 }
 
 /// `⟦A⟧ : bool` — the standard denotation of an encoded formula `A`. Pins the

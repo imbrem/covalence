@@ -111,8 +111,7 @@ impl Preorder {
 
     /// `equiv a b := le a b ∧ le b a`.
     pub fn mk_equiv(&self, a: Term, b: Term) -> Result<Term> {
-        self.mk_le(a.clone(), b.clone())?
-            .and(self.mk_le(b, a)?)
+        self.mk_le(a.clone(), b.clone())?.and(self.mk_le(b, a)?)
     }
 
     /// `⊢ le a b` specialised from `refl`/`trans` for concrete `a`, `b`.
@@ -528,7 +527,10 @@ impl PartialOrder {
         if let Some((a, b)) = self.dest_equiv(c) {
             let le_ab = fact.clone().and_elim_l()?;
             let le_ba = fact.clone().and_elim_r()?;
-            return Ok(Some(vec![Edge::weak(a.clone(), b.clone(), le_ab), Edge::weak(b, a, le_ba)]));
+            return Ok(Some(vec![
+                Edge::weak(a.clone(), b.clone(), le_ab),
+                Edge::weak(b, a, le_ba),
+            ]));
         }
         // a <= b
         if let Some((a, b)) = self.dest_le(c) {
@@ -681,9 +683,10 @@ impl PartialOrder {
     /// Read the closed edge map to produce a proof of `goal`.
     fn discharge(&self, goal: &Term, closed: &EdgeMap) -> Result<Thm> {
         if let Some((a, b)) = self.dest_lt(goal) {
-            let e = closed.get(&a, &b).filter(|e| e.strict).ok_or_else(|| {
-                err(format!("order: no strict chain proves `{goal}`"))
-            })?;
+            let e = closed
+                .get(&a, &b)
+                .filter(|e| e.strict)
+                .ok_or_else(|| err(format!("order: no strict chain proves `{goal}`")))?;
             return Ok(e.thm.clone());
         }
         if let Some((a, b)) = goal.as_eq() {
@@ -782,11 +785,25 @@ struct Edge {
 impl Edge {
     fn weak(src: Term, dst: Term, thm: Thm) -> Self {
         let (src_key, dst_key) = (format!("{src}"), format!("{dst}"));
-        Edge { src, dst, src_key, dst_key, strict: false, thm }
+        Edge {
+            src,
+            dst,
+            src_key,
+            dst_key,
+            strict: false,
+            thm,
+        }
     }
     fn strict(src: Term, dst: Term, thm: Thm) -> Self {
         let (src_key, dst_key) = (format!("{src}"), format!("{dst}"));
-        Edge { src, dst, src_key, dst_key, strict: true, thm }
+        Edge {
+            src,
+            dst,
+            src_key,
+            dst_key,
+            strict: true,
+            thm,
+        }
     }
     /// `⊢ le src dst` — for a strict edge, the `≤` half (left conjunct).
     fn le_thm(&self, _po: &PartialOrder) -> Result<Thm> {
@@ -849,7 +866,10 @@ fn dest_le_concl(po: &Preorder, thm: &Thm) -> Result<(Term, Term)> {
         .as_app()
         .ok_or_else(|| err(format!("expected `le a b`, got `{c}`")))?;
     if *head != *po.le() {
-        return Err(err(format!("expected `{}` application, got `{c}`", po.le())));
+        return Err(err(format!(
+            "expected `{}` application, got `{c}`",
+            po.le()
+        )));
     }
     Ok((a.clone(), b.clone()))
 }
@@ -1010,7 +1030,8 @@ impl Strict {
     fn le_refl(&self) -> Result<Thm> {
         let a = self.v("a");
         let disj = Thm::refl(a.clone())?.or_intro_r(self.lt_t(a.clone(), a.clone())?)?;
-        self.fold_le(&a, &a, disj)?.all_intro("a", self.carrier.clone())
+        self.fold_le(&a, &a, disj)?
+            .all_intro("a", self.carrier.clone())
     }
 
     /// `⊢ ∀a b c. a ≤ b ⟹ b ≤ c ⟹ a ≤ c` — case analysis on each `le_def`.
@@ -1126,7 +1147,11 @@ impl Strict {
                     .all_elim(a.clone())?
                     .imp_elim(Thm::assume(lt_ab.clone())?)?
                     .imp_elim(Thm::assume(lt_ba.clone())?)?; // a < a
-                let f = self.lt_irrefl.clone().all_elim(a.clone())?.not_elim(lt_aa)?;
+                let f = self
+                    .lt_irrefl
+                    .clone()
+                    .all_elim(a.clone())?
+                    .not_elim(lt_aa)?;
                 f.false_elim(goal.clone())?.imp_intro(&lt_ba)?
             };
             let on_eq_ba = Thm::assume(eq_ba.clone())?.sym()?.imp_intro(&eq_ba)?;
@@ -1260,7 +1285,11 @@ mod tests {
 
     /// Genuine = no hypotheses, no observers.
     fn assert_genuine(thm: &Thm) {
-        assert!(thm.hyps().is_empty(), "expected a hypothesis-free theorem, got `{}`", thm.concl());
+        assert!(
+            thm.hyps().is_empty(),
+            "expected a hypothesis-free theorem, got `{}`",
+            thm.concl()
+        );
         assert!(thm.has_no_obs(), "expected an oracle-free theorem");
     }
     /// A chained theorem proved *only* from the supplied assumed facts: its
@@ -1382,7 +1411,9 @@ mod tests {
         let f2 = Thm::assume(po.mk_lt(b.clone(), c.clone()).unwrap()).unwrap();
         let f3 = Thm::assume(po.mk_le(c.clone(), d.clone()).unwrap()).unwrap();
         let goal = po.mk_lt(a.clone(), d.clone()).unwrap();
-        let thm = po.chain(&[f1.clone(), f2.clone(), f3.clone()], &goal).unwrap();
+        let thm = po
+            .chain(&[f1.clone(), f2.clone(), f3.clone()], &goal)
+            .unwrap();
         assert_eq!(thm.concl(), &goal);
         assert_from(&thm, &[f1, f2, f3]);
     }
@@ -1475,14 +1506,26 @@ mod tests {
         // The env built by `order_env` exposes the tactic + lemmas.
         let env = order_env(&po).unwrap();
         // the tactic is registered.
-        assert!(env.lookup_tactic("order").is_some(), "`order` tactic must register");
+        assert!(
+            env.lookup_tactic("order").is_some(),
+            "`order` tactic must register"
+        );
         // the derived lemmas are present and genuine.
         for name in [
-            "equiv_refl", "equiv_symm", "equiv_trans", "le_respects_equiv",
-            "lt_irrefl", "lt_trans", "lt_imp_le", "lt_not_eq",
-            "le_iff_lt_or_eq", "equiv_iff_eq",
+            "equiv_refl",
+            "equiv_symm",
+            "equiv_trans",
+            "le_respects_equiv",
+            "lt_irrefl",
+            "lt_trans",
+            "lt_imp_le",
+            "lt_not_eq",
+            "le_iff_lt_or_eq",
+            "equiv_iff_eq",
         ] {
-            let l = env.lemma_ready(name).unwrap_or_else(|| panic!("lemma `{name}` missing"));
+            let l = env
+                .lemma_ready(name)
+                .unwrap_or_else(|| panic!("lemma `{name}` missing"));
             assert_genuine(&l);
         }
         // and the underlying chain works for the same facts (the tactic is a

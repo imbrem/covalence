@@ -153,7 +153,10 @@ pub fn leaf_app(alpha: &Type, a: &Term) -> Term {
 
 /// `app(app(branch_fn, l), r)` — the applied constant form of `branch l r`.
 pub fn branch_app(alpha: &Type, l: &Term, r: &Term) -> Result<Term> {
-    Ok(Term::app(Term::app(branch_fn(alpha)?, l.clone()), r.clone()))
+    Ok(Term::app(
+        Term::app(branch_fn(alpha)?, l.clone()),
+        r.clone(),
+    ))
 }
 
 /// Rewrite every reduced-encoding constructor occurrence in `thm`'s
@@ -168,8 +171,18 @@ pub(crate) fn to_applied(thm: Thm, applied: &Term, reduced: &Term) -> Result<Thm
     // bridge through that shared normal form.
     let app_conv = beta_nf(applied.clone()); // ⊢ applied = nf_a
     let red_conv = beta_nf(reduced.clone()); // ⊢ reduced = nf_r
-    let nf_a = app_conv.concl().as_eq().expect("beta_nf equation").1.clone();
-    let nf_r = red_conv.concl().as_eq().expect("beta_nf equation").1.clone();
+    let nf_a = app_conv
+        .concl()
+        .as_eq()
+        .expect("beta_nf equation")
+        .1
+        .clone();
+    let nf_r = red_conv
+        .concl()
+        .as_eq()
+        .expect("beta_nf equation")
+        .1
+        .clone();
     if nf_a != nf_r {
         return Err(covalence_core::Error::ConnectiveRule(format!(
             "tree::to_applied: `{applied}` and `{reduced}` have distinct normal forms"
@@ -247,8 +260,8 @@ fn prove_rec_eq(lhs: Term, rhs: Term) -> Result<Thm> {
 /// `'r := α` (a concrete instance of the polymorphic carrier).
 pub fn leaf_inj(alpha: &Type, a: &Term, b: &Term) -> Result<Thm> {
     // The constructor equation at the observation type `'r := α`.
-    let eq = at_r(&leaf(alpha, a.clone())?, alpha)?
-        .equals(at_r(&leaf(alpha, b.clone())?, alpha)?)?;
+    let eq =
+        at_r(&leaf(alpha, a.clone())?, alpha)?.equals(at_r(&leaf(alpha, b.clone())?, alpha)?)?;
 
     // Identity leaf handler `fl = λx:α. x`; the branch handler is irrelevant.
     let id_fl = {
@@ -338,7 +351,10 @@ fn observe(h: &Thm, fl: &Term, fb: &Term, alpha: &Type) -> Result<Thm> {
     // binders) so each observed fold collapses to its value (`a`/`b`, or the
     // boolean tag), giving the value equality directly.
     let cong = h_at.cong_arg(rec_partial(fl, fb, alpha)?)?;
-    let (lhs, rhs) = cong.concl().as_eq().ok_or(covalence_core::Error::NotAnEquation)?;
+    let (lhs, rhs) = cong
+        .concl()
+        .as_eq()
+        .ok_or(covalence_core::Error::NotAnEquation)?;
     let lhs_nf = beta_nf(lhs.clone()); // ⊢ lhs = nfL
     let rhs_nf = beta_nf(rhs.clone()); // ⊢ rhs = nfR
     lhs_nf.sym()?.trans(cong)?.trans(rhs_nf)

@@ -168,7 +168,10 @@ fn cons_rec_zf(alpha: &Type, x: &Term, xs: &Term) -> (Term, Term) {
 
 /// `streamAt (streamMk g) n` for the cons stream `g`.
 fn at_mk_g(alpha: &Type, g: &Term, n: &Term) -> Term {
-    Term::app(Term::app(stream_at(option(alpha.clone())), mk_stream(alpha, g)), n.clone())
+    Term::app(
+        Term::app(stream_at(option(alpha.clone())), mk_stream(alpha, g)),
+        n.clone(),
+    )
 }
 
 /// From `tail : {body[N]} ⊢ ∀n. nat_le N n ⟹ streamAt (rep xs) n = none`,
@@ -347,7 +350,11 @@ pub fn pred_const_none(alpha: &Type) -> Result<Thm> {
 /// witness-free back-direction law ([`Thm::spec_rep_abs_back`]) needs to
 /// recover `list_predicate (rep xs)` for an arbitrary `xs : list α`.
 pub fn pred_nonempty(alpha: &Type) -> Result<Thm> {
-    exists_intro(list_pred_op(alpha), const_none(alpha), pred_const_none(alpha)?)
+    exists_intro(
+        list_pred_op(alpha),
+        const_none(alpha),
+        pred_const_none(alpha)?,
+    )
 }
 
 /// `⊢ list_predicate (rep xs)` for any `xs : list α` — the carrier stream
@@ -376,12 +383,7 @@ pub fn pred_rep(alpha: &Type, xs: &Term) -> Result<Thm> {
     // Peel the right disjunct `¬(∃x. P x)` from `disj`, exactly as the
     // kernel built it (η-expanded predicate), and re-prove that `∃` with a
     // matching witness so `not_elim` sees identical terms.
-    let not_some = disj
-        .concl()
-        .as_app()
-        .ok_or(Error::NotAnEquation)?
-        .1
-        .clone(); // ¬∃x. P x
+    let not_some = disj.concl().as_app().ok_or(Error::NotAnEquation)?.1.clone(); // ¬∃x. P x
     let some_x = not_some.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // ∃x. P x
     let pred_eta = some_x.as_app().ok_or(Error::NotAnEquation)?.1.clone(); // λx. P x
 
@@ -562,7 +564,7 @@ pub fn contig_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
         // streamAt (streamMk g) (succ (succ k)) = streamAt (rep xs) (succ k).
         let rhs_eq = trans_chain([
             crate::init::stream::at_mk(&opt, &g, &succ(succ(k.clone())))?, // = g (succ (succ k))
-            cons_stream_succ(alpha, x, xs, &succ(k.clone()))?,            // = streamAt (rep xs) (succ k)
+            cons_stream_succ(alpha, x, xs, &succ(k.clone()))?, // = streamAt (rep xs) (succ k)
         ])?;
         let prem = at_mk_g(alpha, &g, &succ(k.clone())).equals(none(alpha.clone()))?;
         // {prem} ⊢ streamAt (rep xs) k = none.
@@ -679,7 +681,11 @@ pub fn index_cons_zero(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
     let g = cons_stream(alpha, x, xs);
 
     // listIndex 0 (cons x xs) = streamAt (rep (cons x xs)) 0
-    let idx = index_unfold(alpha, &zero(), &cons(alpha.clone()).apply(x.clone())?.apply(xs.clone())?)?;
+    let idx = index_unfold(
+        alpha,
+        &zero(),
+        &cons(alpha.clone()).apply(x.clone())?.apply(xs.clone())?,
+    )?;
     let rc = rep_cons(alpha, x, xs)?; // rep (cons x xs) = streamMk g
     let at_g = crate::init::stream::at_mk(&opt, &g, &zero())?; // streamAt (streamMk g) 0 = g 0
     let g0 = cons_stream_zero(alpha, x, xs)?; // g 0 = some x
@@ -729,8 +735,9 @@ pub fn head_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
         .rhs_conv(|t| t.reduce())?;
     let rc = rep_cons(alpha, x, xs)?; // rep (cons x xs) = streamMk g
     // streamHead (streamMk g) = streamAt (streamMk g) 0 = g 0 = some x.
-    let head_eq = crate::init::eq::delta_head(&Term::app(stream_head(opt.clone()), mk_stream(alpha, &g)))?
-    .rhs_conv(|t| t.reduce())?; // streamHead (streamMk g) = streamAt (streamMk g) 0
+    let head_eq =
+        crate::init::eq::delta_head(&Term::app(stream_head(opt.clone()), mk_stream(alpha, &g)))?
+            .rhs_conv(|t| t.reduce())?; // streamHead (streamMk g) = streamAt (streamMk g) 0
     let at_g = crate::init::stream::at_mk(&opt, &g, &zero())?; // streamAt (streamMk g) 0 = g 0
     let g0 = cons_stream_zero(alpha, x, xs)?; // g 0 = some x
 
@@ -840,7 +847,13 @@ fn pred_streamtail(alpha: &Type, l: &Term) -> Result<Thm> {
         let at_si = crate::init::stream::tail_at(&opt, &repl, &succ(i.clone()))?; // ... (succ i) = streamAt (rep l) (succ (succ i))
         let contig_si = contig_rep(alpha, l)?.all_elim(succ(i.clone()))?; // streamAt (rep l)(succ i)=none ⟹ streamAt (rep l)(succ(succ i))=none
         // Rewrite antecedent/consequent through the tail_at equations.
-        let prem = at_i.concl().as_eq().ok_or(Error::NotAnEquation)?.0.clone().equals(none(alpha.clone()))?;
+        let prem = at_i
+            .concl()
+            .as_eq()
+            .ok_or(Error::NotAnEquation)?
+            .0
+            .clone()
+            .equals(none(alpha.clone()))?;
         let h = Thm::assume(prem.clone())?; // streamAt (streamTail (rep l)) i = none
         let rep_si_none = at_i.sym()?.trans(h)?; // streamAt (rep l)(succ i) = none
         let rep_ssi_none = contig_si.imp_elim(rep_si_none)?; // streamAt (rep l)(succ(succ i)) = none
@@ -913,8 +926,9 @@ pub fn head_index0(alpha: &Type, l: &Term) -> Result<Thm> {
     let h = Term::app(head(alpha.clone()), l.clone())
         .delta_all(head_spec().symbol())?
         .rhs_conv(|t| t.reduce())?; // head l = streamHead (rep l)
-    let head_at = crate::init::eq::delta_head(&Term::app(stream_head(opt.clone()), rep_of(alpha, l)))?
-        .rhs_conv(|t| t.reduce())?; // streamHead (rep l) = streamAt (rep l) 0
+    let head_at =
+        crate::init::eq::delta_head(&Term::app(stream_head(opt.clone()), rep_of(alpha, l)))?
+            .rhs_conv(|t| t.reduce())?; // streamHead (rep l) = streamAt (rep l) 0
     // index 0 l = streamAt (rep l) 0  (reverse unfold).
     let idx = index_unfold(alpha, &zero(), l)?.sym()?; // streamAt (rep l) 0 = index 0 l
     trans_chain([h, head_at, idx])
@@ -936,9 +950,8 @@ pub fn cons_head_tail(alpha: &Type, a: &Term, l: &Term) -> Result<Thm> {
 
     // Pointwise `index i (cons a (tail l)) = index i l`, by cases on i.
     let iv = Term::free("i", nat());
-    let motive_at = |t: &Term| -> Result<Term> {
-        index(alpha, t, &consed).equals(index(alpha, t, l))
-    };
+    let motive_at =
+        |t: &Term| -> Result<Term> { index(alpha, t, &consed).equals(index(alpha, t, l)) };
     let motive = Term::abs(nat(), covalence_core::subst::close(&motive_at(&iv)?, "i"));
 
     // base i=0: index 0 (cons a (tail l)) = some a = head l = index 0 l.
@@ -1024,7 +1037,9 @@ pub fn allnone_from_head_none(alpha: &Type, l: &Term) -> Result<Thm> {
 /// [`index_nil`].
 pub fn nil_from_allnone(alpha: &Type, l: &Term) -> Result<Thm> {
     let i = Term::free("i", nat());
-    let allnone = index(alpha, &i, l).equals(none(alpha.clone()))?.forall("i", nat())?;
+    let allnone = index(alpha, &i, l)
+        .equals(none(alpha.clone()))?
+        .forall("i", nat())?;
     let h = Thm::assume(allnone.clone())?;
 
     // Pointwise index i l = none = index i nil.
@@ -1049,7 +1064,8 @@ pub fn list_ext(alpha: &Type, l: &Term, m: &Term, name: &str, pointwise: Thm) ->
     let carrier_pw = il.sym()?.trans(pointwise)?.trans(im)?; // streamAt (rep l) i = streamAt (rep m) i
 
     // Stream extensionality on the carriers, then bridge through abs.
-    let reps_eq = crate::init::stream::ext(&opt, &rep_of(alpha, l), &rep_of(alpha, m), name, carrier_pw)?; // rep l = rep m
+    let reps_eq =
+        crate::init::stream::ext(&opt, &rep_of(alpha, l), &rep_of(alpha, m), name, carrier_pw)?; // rep l = rep m
     let abs = Term::spec_abs(list_spec(), vec![alpha.clone()]);
     let abs_eq = reps_eq.cong_arg(abs)?; // abs (rep l) = abs (rep m)
     let ar_l = Thm::spec_abs_rep(list_spec(), vec![alpha.clone()], l.clone())?; // abs (rep l) = l
@@ -1125,7 +1141,10 @@ fn aux_motive(alpha: &Type, p: &Term, big_n: &Term) -> Result<Term> {
     let none_eq = index(alpha, &i, &l).equals(none(alpha.clone()))?;
     let premise = le.imp(none_eq)?.forall("i", nat())?;
     let body = premise.imp(Term::app(p.clone(), l.clone()))?;
-    Ok(Term::abs(list(alpha.clone()), covalence_core::subst::close(&body, "__l")))
+    Ok(Term::abs(
+        list(alpha.clone()),
+        covalence_core::subst::close(&body, "__l"),
+    ))
 }
 
 /// `⊢ P l`, given `pl_nil : ⊢ P nil` and `allnone : ⊢ ∀i. index i l =
@@ -1177,8 +1196,11 @@ pub fn list_induct(alpha: &Type, p: &Term, pl_nil: Thm, cons_case: Thm) -> Resul
     // Build the inner-induction motive `λN. ∀l. Aux(N) l` (a predicate on N).
     let inner_motive = {
         let n = Term::free("N", nat());
-        let body = Term::app(aux_motive(alpha, p, &n)?, Term::free("__l", list(alpha.clone())))
-            .forall("__l", list(alpha.clone()))?;
+        let body = Term::app(
+            aux_motive(alpha, p, &n)?,
+            Term::free("__l", list(alpha.clone())),
+        )
+        .forall("__l", list(alpha.clone()))?;
         Term::abs(nat(), covalence_core::subst::close(&body, "N"))
     };
 
@@ -1259,8 +1281,16 @@ fn aux_step(
     let cs = crate::init::option::option_cases(alpha, &head_l)?;
 
     // --- some-branch: head l = some a ⟹ P l ---
-    let some_disj = cs.concl().as_app().and_then(|(orp, _)| orp.as_app().map(|(_, x)| x.clone())).ok_or(Error::NotAnEquation)?;
-    let none_disj = cs.concl().as_app().map(|(_, r)| r.clone()).ok_or(Error::NotAnEquation)?;
+    let some_disj = cs
+        .concl()
+        .as_app()
+        .and_then(|(orp, _)| orp.as_app().map(|(_, x)| x.clone()))
+        .ok_or(Error::NotAnEquation)?;
+    let none_disj = cs
+        .concl()
+        .as_app()
+        .map(|(_, r)| r.clone())
+        .ok_or(Error::NotAnEquation)?;
 
     let some_branch = {
         // ∃a. head l = some a — assume it; a fresh, head l = some a.
@@ -1285,7 +1315,10 @@ fn aux_step(
                 .all_elim(j.clone())?; // (nat_le (succ M)(succ j)) = (nat_le M j)
             let le_sm_sj = le_ss.sym()?.eq_mp(hj)?; // {nat_le M j} ⊢ nat_le (succ M)(succ j)
             // premise at (succ j): index (succ j) l = none.
-            let idx_sj_none = h_prem.clone().all_elim(succ(j.clone()))?.imp_elim(le_sm_sj)?; // index (succ j) l = none
+            let idx_sj_none = h_prem
+                .clone()
+                .all_elim(succ(j.clone()))?
+                .imp_elim(le_sm_sj)?; // index (succ j) l = none
             // index j (tail l) = index (succ j) l, so index j (tail l) = none.
             let it = index_tail(alpha, &j, &l)?; // index j (tail l) = index (succ j) l
             let idx_tail_none = it.trans(idx_sj_none)?; // index j (tail l) = none
@@ -1297,7 +1330,10 @@ fn aux_step(
 
         // cons_case: P (tail l) ⟹ P (cons a (tail l)).
         let tl = Term::app(tail(alpha.clone()), l.clone());
-        let cc = cons_case.clone().all_elim(a.clone())?.all_elim(tl.clone())?; // P (tail l) ⟹ P (cons a (tail l))
+        let cc = cons_case
+            .clone()
+            .all_elim(a.clone())?
+            .all_elim(tl.clone())?; // P (tail l) ⟹ P (cons a (tail l))
         let p_cons = cc.imp_elim(p_tail)?; // {premise, applied} ⊢ P (cons a (tail l))
         // Rewrite by cons a (tail l) = l.
         let pl = recon.cong_arg(p.clone())?.eq_mp(p_cons)?; // {premise, applied} ⊢ P l
@@ -1382,8 +1418,10 @@ fn rhs_of(thm: &Thm) -> Result<Term> {
 /// Everything is schematic in one element type `'a` (and a result type `'b`
 /// for the `foldr` clause), matching `set.cov`'s monomorphic-at-`'a` style.
 pub fn list_env() -> crate::script::Env {
+    use crate::init::list_recursion::{
+        cat_cons, cat_nil, foldr_cons, foldr_nil, length_cons, length_nil,
+    };
     use crate::script::{ConstDef, Env};
-    use crate::init::list_recursion::{cat_cons, cat_nil, foldr_cons, foldr_nil, length_cons, length_nil};
     use covalence_core::defs::{nat_succ, some};
 
     let a = Type::tfree("a");
@@ -1416,10 +1454,7 @@ pub fn list_env() -> crate::script::Env {
 
     // -- element computations --
     // index_nil : ∀n. index n nil = none
-    e.define_lemma(
-        "index_nil",
-        close1(index_nil(&a, &n).unwrap(), "n", &nat()),
-    );
+    e.define_lemma("index_nil", close1(index_nil(&a, &n).unwrap(), "n", &nat()));
     // index_cons_zero : ∀x xs. index 0 (cons x xs) = some x
     e.define_lemma(
         "index_cons_zero",
@@ -1459,7 +1494,11 @@ pub fn list_env() -> crate::script::Env {
     // nil_ne_cons : ∀x xs. ¬(nil = cons x xs)
     e.define_lemma(
         "nil_ne_cons",
-        close1(close1(nil_ne_cons(&a, &x, &xs).unwrap(), "xs", &la), "x", &a),
+        close1(
+            close1(nil_ne_cons(&a, &x, &xs).unwrap(), "xs", &la),
+            "x",
+            &a,
+        ),
     );
     // cons_inj : ∀x xs y ys. (cons x xs = cons y ys) ⟹ (x = y ∧ xs = ys)
     e.define_lemma(
@@ -1513,7 +1552,11 @@ pub fn list_env() -> crate::script::Env {
     // length_cons : ∀x xs. length (cons x xs) = succ (length xs)
     e.define_lemma(
         "length_cons",
-        close1(close1(length_cons(&a, &x, &xs).unwrap(), "xs", &la), "x", &a),
+        close1(
+            close1(length_cons(&a, &x, &xs).unwrap(), "xs", &la),
+            "x",
+            &a,
+        ),
     );
     // cat_nil : ∀ys. cat nil ys = ys
     e.define_lemma("cat_nil", close1(cat_nil(&a, &ys).unwrap(), "ys", &la));
@@ -1586,7 +1629,10 @@ mod tests {
     fn finite_rep_is_genuine() {
         let xs = Term::free("xs", list(alpha()));
         let thm = finite_rep(&alpha(), &xs).unwrap();
-        assert!(thm.hyps().is_empty(), "finite_rep is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "finite_rep is proved, not postulated"
+        );
         assert!(thm.has_no_obs(), "finite_rep is oracle-free");
         let expected = Term::app(finite(alpha()), rep_of(&alpha(), &xs));
         assert_eq!(thm.concl(), &expected);
@@ -1608,7 +1654,10 @@ mod tests {
         let x = Term::free("x", alpha());
         let xs = Term::free("xs", list(alpha()));
         let thm = finite_cons(&alpha(), &x, &xs).unwrap();
-        assert!(thm.hyps().is_empty(), "finite_cons is proved, not postulated");
+        assert!(
+            thm.hyps().is_empty(),
+            "finite_cons is proved, not postulated"
+        );
         assert!(thm.has_no_obs(), "finite_cons is oracle-free");
         // ⊢ finite (streamMk (consStream x xs))
         let g = cons_stream(&alpha(), &x, &xs);
@@ -1776,15 +1825,30 @@ mod tests {
             let x = Term::free("x", a.clone());
             let xs = Term::free("xs", list(a.clone()));
             let p_xs = Term::app(p.clone(), xs.clone());
-            let consed = cons(a.clone()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
+            let consed = cons(a.clone())
+                .apply(x.clone())
+                .unwrap()
+                .apply(xs.clone())
+                .unwrap();
             let p_cons = Term::app(p.clone(), consed);
             // P (cons x xs) = T, so assume P xs, prove P (cons x xs) from ⊢ T.
-            let body = beta_expand(&p, cons(a.clone()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap(), truth())
-                .unwrap() // ⊢ P (cons x xs)
-                .imp_intro(&p_xs)
-                .unwrap(); // P xs ⟹ P (cons x xs)
+            let body = beta_expand(
+                &p,
+                cons(a.clone())
+                    .apply(x.clone())
+                    .unwrap()
+                    .apply(xs.clone())
+                    .unwrap(),
+                truth(),
+            )
+            .unwrap() // ⊢ P (cons x xs)
+            .imp_intro(&p_xs)
+            .unwrap(); // P xs ⟹ P (cons x xs)
             let _ = p_cons;
-            body.all_intro("xs", list(a.clone())).unwrap().all_intro("x", a.clone()).unwrap()
+            body.all_intro("xs", list(a.clone()))
+                .unwrap()
+                .all_intro("x", a.clone())
+                .unwrap()
         };
         let thm = list_induct(&a, &p, pl_nil, cons_case).unwrap();
         assert!(thm.hyps().is_empty() && thm.has_no_obs());
@@ -1839,11 +1903,7 @@ mod tests {
             .unwrap()
             .apply(xs.clone())
             .unwrap();
-        let expected = nil(alpha())
-            .equals(consed)
-            .unwrap()
-            .not()
-            .unwrap();
+        let expected = nil(alpha()).equals(consed).unwrap().not().unwrap();
         assert_eq!(thm.concl(), &expected);
     }
 
@@ -1855,12 +1915,25 @@ mod tests {
         let ys = Term::free("ys", list(alpha()));
         let thm = cons_inj(&alpha(), &x, &xs, &y, &ys).unwrap();
         assert!(thm.hyps().is_empty() && thm.has_no_obs());
-        let cxs = cons(alpha()).apply(x.clone()).unwrap().apply(xs.clone()).unwrap();
-        let cys = cons(alpha()).apply(y.clone()).unwrap().apply(ys.clone()).unwrap();
+        let cxs = cons(alpha())
+            .apply(x.clone())
+            .unwrap()
+            .apply(xs.clone())
+            .unwrap();
+        let cys = cons(alpha())
+            .apply(y.clone())
+            .unwrap()
+            .apply(ys.clone())
+            .unwrap();
         let concl = cxs
             .equals(cys)
             .unwrap()
-            .imp(x.equals(y.clone()).unwrap().and(xs.equals(ys.clone()).unwrap()).unwrap())
+            .imp(
+                x.equals(y.clone())
+                    .unwrap()
+                    .and(xs.equals(ys.clone()).unwrap())
+                    .unwrap(),
+            )
             .unwrap();
         assert_eq!(thm.concl(), &concl);
     }

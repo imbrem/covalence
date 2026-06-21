@@ -217,8 +217,10 @@ mod cov_tests {
         let alpha = Type::tfree("a");
         let beta = Type::tfree("b");
         let gamma = Type::tfree("c");
-        let m =
-            Term::free("m", Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()));
+        let m = Term::free(
+            "m",
+            Type::fun(coprod(alpha.clone(), beta.clone()), gamma.clone()),
+        );
         let rust_thm = case_eta(&alpha, &beta, &gamma, &m).expect("case_eta");
         // `case_eta_cov` is stated over the same free `m` (the `.cov` `#fix`),
         // so its conclusion equals the Rust proof's directly.
@@ -469,7 +471,14 @@ pub fn inl_inj(a: &Type, b: &Type, av: &Term, av2: &Term) -> Result<Thm> {
         .trans(h.cong_arg(rep_c(a, b))?)?
         .trans(rep_inl(a, b, av2)?)?; // {H} ⊢ leftRel av = leftRel av2
     let probe_y = Term::free("__iiy", b.clone());
-    let inj = rel_inj(&lrel_of(a, b, av)?, &lrel_of(a, b, av2)?, av, av, &probe_y, true)?;
+    let inj = rel_inj(
+        &lrel_of(a, b, av)?,
+        &lrel_of(a, b, av2)?,
+        av,
+        av,
+        &probe_y,
+        true,
+    )?;
     inj.imp_elim(rels_eq)?.imp_intro(&eq) // ⊢ (inl av = inl av2) ⟹ av = av2
 }
 
@@ -485,7 +494,14 @@ pub fn inr_inj(a: &Type, b: &Type, bv: &Term, bv2: &Term) -> Result<Thm> {
         .trans(h.cong_arg(rep_c(a, b))?)?
         .trans(rep_inr(a, b, bv2)?)?; // {H} ⊢ rightRel bv = rightRel bv2
     let probe_x = Term::free("__iix", a.clone());
-    let inj = rel_inj(&rrel_of(a, b, bv)?, &rrel_of(a, b, bv2)?, bv, &probe_x, bv, false)?;
+    let inj = rel_inj(
+        &rrel_of(a, b, bv)?,
+        &rrel_of(a, b, bv2)?,
+        bv,
+        &probe_x,
+        bv,
+        false,
+    )?;
     inj.imp_elim(rels_eq)?.imp_intro(&eq)
 }
 

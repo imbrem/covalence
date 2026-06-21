@@ -29,7 +29,7 @@
 //! re-elaborated at any structure carrying a `natrec`, with `nat/self` only one
 //! instance) is deferred — see `SKELETONS.md`.
 
-use crate::script::{Env, ScriptError, Scope, syntax};
+use crate::script::{Env, Scope, ScriptError, syntax};
 
 /// The **self-model env** the `nat` specs are interpreted over: `core` (the
 /// kernel ops/rules), the `natrec` env (the freeness + recursion givens), and
@@ -145,7 +145,9 @@ mod tests {
         assert_eq!(sig.name, "nat");
         assert_eq!(sig.sort, "nat");
         // Every op the spec conclusions mention is declared.
-        for op in ["rec", "zero", "succ", "add", "mul", "sub", "pow", "shl", "le", "lt"] {
+        for op in [
+            "rec", "zero", "succ", "add", "mul", "sub", "pow", "shl", "le", "lt",
+        ] {
             assert!(
                 sig.ops.iter().any(|o| o.name == op),
                 "nat.sig must declare op `{op}`"

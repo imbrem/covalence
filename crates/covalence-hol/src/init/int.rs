@@ -2369,7 +2369,12 @@ fn imul_swap_front2(a0: &Term, x: &Term, r: &Term) -> Result<Thm> {
                 .cong_arg(int_mul())?
                 .cong_fn(r.clone())?, // (a0·x)·r = (x·a0)·r
         )?
-        .trans(mul_assoc().all_elim(x.clone())?.all_elim(a0.clone())?.all_elim(r.clone())?) // = x·(a0·r)
+        .trans(
+            mul_assoc()
+                .all_elim(x.clone())?
+                .all_elim(a0.clone())?
+                .all_elim(r.clone())?,
+        ) // = x·(a0·r)
 }
 
 /// `⊢ a = x · a'` — bring an occurrence of `x` to the front of right-nested `a`.
@@ -2423,16 +2428,22 @@ pub fn prove_imul_eq(lhs: &Term, rhs_t: &Term) -> Result<Thm> {
 
 /// `⊢ a·(b+c) = a·b + a·c` — `distrib` specialised.
 pub fn distrib_at(a: &Term, b: &Term, c: &Term) -> Result<Thm> {
-    distrib().all_elim(a.clone())?.all_elim(b.clone())?.all_elim(c.clone())
+    distrib()
+        .all_elim(a.clone())?
+        .all_elim(b.clone())?
+        .all_elim(c.clone())
 }
 
 /// `⊢ (a+b)·c = a·c + b·c` — right distributivity (from `mul_comm` + `distrib`).
 pub fn distrib_r_at(a: &Term, b: &Term, c: &Term) -> Result<Thm> {
-    let comm = mul_comm().all_elim(add(a.clone(), b.clone()))?.all_elim(c.clone())?; // (a+b)·c = c·(a+b)
+    let comm = mul_comm()
+        .all_elim(add(a.clone(), b.clone()))?
+        .all_elim(c.clone())?; // (a+b)·c = c·(a+b)
     let dist = distrib_at(c, a, b)?; // c·(a+b) = c·a + c·b
     let ca = mul_comm().all_elim(c.clone())?.all_elim(a.clone())?; // c·a = a·c
     let cb = mul_comm().all_elim(c.clone())?.all_elim(b.clone())?; // c·b = b·c
-    comm.trans(dist)?.trans(Thm::refl(int_add())?.cong_app(ca)?.cong_app(cb)?)
+    comm.trans(dist)?
+        .trans(Thm::refl(int_add())?.cong_app(ca)?.cong_app(cb)?)
 }
 
 /// `⊢ (k+x < k+y) = (x < y)` — left-cancellation, from [`lt_add_cancel_iff`]
@@ -2649,7 +2660,10 @@ cached_thm! {
 
 /// `int.mk ≔ λf s. MK(f, s)` — the component constructor as a closed operator.
 fn int_mk_op() -> Term {
-    let (f, s) = (Term::free("__f", Type::nat()), Term::free("__s", Type::nat()));
+    let (f, s) = (
+        Term::free("__f", Type::nat()),
+        Term::free("__s", Type::nat()),
+    );
     let body = mkfs(&f, &s);
     let inner = Term::abs(Type::nat(), subst::close(&body, "__s"));
     Term::abs(Type::nat(), subst::close(&inner, "__f"))
@@ -2797,16 +2811,21 @@ pub fn int_env() -> crate::script::Env {
     // add_mk : ⊢ ∀fa sa fb sb. int.add (mk fa sa)(mk fb sb) = mk (fa+fb)(sa+sb)
     e.define_lemma(
         "add.mk",
-        gen4(to_ops(
-            add_mk(&fa, &sa, &fb, &sb).unwrap(),
-            &[
-                (&fa, &sa),
-                (&fb, &sb),
-                (&nat::add(fa.clone(), fb.clone()), &nat::add(sa.clone(), sb.clone())),
-            ],
-            &[],
+        gen4(
+            to_ops(
+                add_mk(&fa, &sa, &fb, &sb).unwrap(),
+                &[
+                    (&fa, &sa),
+                    (&fb, &sb),
+                    (
+                        &nat::add(fa.clone(), fb.clone()),
+                        &nat::add(sa.clone(), sb.clone()),
+                    ),
+                ],
+                &[],
+            )
+            .unwrap(),
         )
-        .unwrap())
         .unwrap(),
     );
 
@@ -2814,19 +2833,27 @@ pub fn int_env() -> crate::script::Env {
     //              = mk (fa·fb+sa·sb)(fa·sb+sa·fb)
     e.define_lemma(
         "mul.mk",
-        gen4(to_ops(
-            mul_mk(&fa, &sa, &fb, &sb).unwrap(),
-            &[
-                (&fa, &sa),
-                (&fb, &sb),
-                (
-                    &nat::add(nat::mul(fa.clone(), fb.clone()), nat::mul(sa.clone(), sb.clone())),
-                    &nat::add(nat::mul(fa.clone(), sb.clone()), nat::mul(sa.clone(), fb.clone())),
-                ),
-            ],
-            &[],
+        gen4(
+            to_ops(
+                mul_mk(&fa, &sa, &fb, &sb).unwrap(),
+                &[
+                    (&fa, &sa),
+                    (&fb, &sb),
+                    (
+                        &nat::add(
+                            nat::mul(fa.clone(), fb.clone()),
+                            nat::mul(sa.clone(), sb.clone()),
+                        ),
+                        &nat::add(
+                            nat::mul(fa.clone(), sb.clone()),
+                            nat::mul(sa.clone(), fb.clone()),
+                        ),
+                    ),
+                ],
+                &[],
+            )
+            .unwrap(),
         )
-        .unwrap())
         .unwrap(),
     );
 
@@ -2844,42 +2871,63 @@ pub fn int_env() -> crate::script::Env {
     // sub_mk : ⊢ ∀…. int.sub (mk fa sa)(mk fb sb) = mk (fa+sb)(sa+fb)
     e.define_lemma(
         "sub.mk",
-        gen4(to_ops(
-            sub_mk(&fa, &sa, &fb, &sb).unwrap(),
-            &[
-                (&fa, &sa),
-                (&fb, &sb),
-                (&nat::add(fa.clone(), sb.clone()), &nat::add(sa.clone(), fb.clone())),
-            ],
-            &[],
+        gen4(
+            to_ops(
+                sub_mk(&fa, &sa, &fb, &sb).unwrap(),
+                &[
+                    (&fa, &sa),
+                    (&fb, &sb),
+                    (
+                        &nat::add(fa.clone(), sb.clone()),
+                        &nat::add(sa.clone(), fb.clone()),
+                    ),
+                ],
+                &[],
+            )
+            .unwrap(),
         )
-        .unwrap())
         .unwrap(),
     );
 
     // lt_mk : ⊢ ∀…. int.lt (mk fa sa)(mk fb sb) = nat.lt (fa+sb)(fb+sa)
     e.define_lemma(
         "lt.mk",
-        gen4(to_ops(lt_mk(&fa, &sa, &fb, &sb).unwrap(), &[(&fa, &sa), (&fb, &sb)], &[]).unwrap())
+        gen4(
+            to_ops(
+                lt_mk(&fa, &sa, &fb, &sb).unwrap(),
+                &[(&fa, &sa), (&fb, &sb)],
+                &[],
+            )
             .unwrap(),
+        )
+        .unwrap(),
     );
 
     // le_mk : ⊢ ∀…. int.le (mk fa sa)(mk fb sb) = nat.le (fa+sb)(fb+sa)
     e.define_lemma(
         "le.mk",
-        gen4(to_ops(le_mk(&fa, &sa, &fb, &sb).unwrap(), &[(&fa, &sa), (&fb, &sb)], &[]).unwrap())
+        gen4(
+            to_ops(
+                le_mk(&fa, &sa, &fb, &sb).unwrap(),
+                &[(&fa, &sa), (&fb, &sb)],
+                &[],
+            )
             .unwrap(),
+        )
+        .unwrap(),
     );
 
     // mk_eq : ⊢ ∀…. (int.mk fa sa = int.mk fb sb) = (fa+sb = fb+sa)
     e.define_lemma(
         "mk.eq",
-        gen4(to_ops(
-            mk_eq_iff(&fa, &sa, &fb, &sb).unwrap(),
-            &[(&fa, &sa), (&fb, &sb)],
-            &[],
+        gen4(
+            to_ops(
+                mk_eq_iff(&fa, &sa, &fb, &sb).unwrap(),
+                &[(&fa, &sa), (&fb, &sb)],
+                &[],
+            )
+            .unwrap(),
         )
-        .unwrap())
         .unwrap(),
     );
 
@@ -3130,7 +3178,11 @@ mod tests {
         let ap = add_pos();
         assert!(ap.hyps().is_empty(), "add_pos is proved");
         assert_eq!(
-            ap.all_elim(a.clone()).unwrap().all_elim(b.clone()).unwrap().concl(),
+            ap.all_elim(a.clone())
+                .unwrap()
+                .all_elim(b.clone())
+                .unwrap()
+                .concl(),
             &lt(lit(0), a.clone())
                 .imp(
                     lt(lit(0), b.clone())
@@ -3451,4 +3503,3 @@ mod tests {
         assert!(lifted.hyps().iter().any(|h| h == &rel_app(&p, &q)));
     }
 }
-

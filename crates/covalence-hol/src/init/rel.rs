@@ -635,9 +635,6 @@ mod cov_tests {
             cov::converse_converse_cov().concl(),
             super::converse_converse().concl()
         );
-        assert_eq!(
-            cov::converse_id_cov().concl(),
-            super::converse_id().concl()
-        );
+        assert_eq!(cov::converse_id_cov().concl(), super::converse_id().concl());
     }
 }

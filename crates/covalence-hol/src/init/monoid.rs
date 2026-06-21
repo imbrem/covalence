@@ -101,7 +101,11 @@ impl Monoid {
     /// The three laws, in `(assoc, left_id, right_id)` order — ready to register
     /// as `.cov` rewrite lemmas.
     pub fn rw_lemmas(&self) -> (Thm, Thm, Thm) {
-        (self.assoc.clone(), self.left_id.clone(), self.right_id.clone())
+        (
+            self.assoc.clone(),
+            self.left_id.clone(),
+            self.right_id.clone(),
+        )
     }
 
     /// `op a b`, both arguments supplied.

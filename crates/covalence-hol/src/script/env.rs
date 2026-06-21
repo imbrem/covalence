@@ -491,8 +491,14 @@ impl Env {
         }
         let l_nf = self.beta(lhs)?; // ⊢ lhs = lnf
         let r_nf = self.beta(rhs)?; // ⊢ rhs = rnf
-        let (_, lnf) = l_nf.concl().as_eq().ok_or(covalence_core::Error::NotAnEquation)?;
-        let (_, rnf) = r_nf.concl().as_eq().ok_or(covalence_core::Error::NotAnEquation)?;
+        let (_, lnf) = l_nf
+            .concl()
+            .as_eq()
+            .ok_or(covalence_core::Error::NotAnEquation)?;
+        let (_, rnf) = r_nf
+            .concl()
+            .as_eq()
+            .ok_or(covalence_core::Error::NotAnEquation)?;
         if lnf != rnf {
             return Err(ScriptError::Syntax(format!(
                 "#comp: the default handler cannot close `{lhs} = {rhs}` \

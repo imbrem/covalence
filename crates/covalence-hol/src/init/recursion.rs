@@ -224,7 +224,10 @@ pub(crate) fn graph_det(z: &Term, f: &Term) -> Result<Thm> {
 /// `β → (nat → β → β) → nat → β` — the recursor's type at result type `β`.
 fn rec_ty_at(beta: &Type) -> Type {
     let step = Type::fun(nat(), Type::fun(beta.clone(), beta.clone()));
-    Type::fun(beta.clone(), Type::fun(step, Type::fun(nat(), beta.clone())))
+    Type::fun(
+        beta.clone(),
+        Type::fun(step, Type::fun(nat(), beta.clone())),
+    )
 }
 
 /// `natRec`'s recursion predicate `P_rec`, instantiated at result type

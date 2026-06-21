@@ -2838,8 +2838,17 @@ mod tests {
         let f = Term::free("f", Type::fun(nat(), nat()));
         let (a, m) = (var("a"), var("m"));
         // iter 0 f a = a.
-        let iz = iter_zero().all_elim(f.clone()).unwrap().all_elim(a.clone()).unwrap();
-        assert_eq!(iz.concl(), &iter_t(zero(), f.clone(), a.clone()).equals(a.clone()).unwrap());
+        let iz = iter_zero()
+            .all_elim(f.clone())
+            .unwrap()
+            .all_elim(a.clone())
+            .unwrap();
+        assert_eq!(
+            iz.concl(),
+            &iter_t(zero(), f.clone(), a.clone())
+                .equals(a.clone())
+                .unwrap()
+        );
         // iter (S m) f a = f (iter m f a).
         let is = iter_succ()
             .all_elim(f.clone())
@@ -2864,7 +2873,11 @@ mod tests {
         let pz = pow_zero().all_elim(a.clone()).unwrap();
         assert_eq!(pz.concl(), &pow(a.clone(), zero()).equals(one()).unwrap());
         // a^(S m) = a * a^m.
-        let ps = pow_succ().all_elim(a.clone()).unwrap().all_elim(m.clone()).unwrap();
+        let ps = pow_succ()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(m.clone())
+            .unwrap();
         let want = pow(a.clone(), succ(m.clone()))
             .equals(mul(a.clone(), pow(a, m)))
             .unwrap();
@@ -2878,8 +2891,15 @@ mod tests {
     fn shl_recursion_equations() {
         let (a, m) = (var("a"), var("m"));
         let sz = shl_zero().all_elim(a.clone()).unwrap();
-        assert_eq!(sz.concl(), &shl(a.clone(), zero()).equals(a.clone()).unwrap());
-        let ss = shl_succ().all_elim(a.clone()).unwrap().all_elim(m.clone()).unwrap();
+        assert_eq!(
+            sz.concl(),
+            &shl(a.clone(), zero()).equals(a.clone()).unwrap()
+        );
+        let ss = shl_succ()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(m.clone())
+            .unwrap();
         let want = shl(a.clone(), succ(m.clone()))
             .equals(mul(two_lit(), shl(a, m)))
             .unwrap();
@@ -2893,8 +2913,15 @@ mod tests {
     fn shr_recursion_equations() {
         let (a, m) = (var("a"), var("m"));
         let sz = shr_zero().all_elim(a.clone()).unwrap();
-        assert_eq!(sz.concl(), &shr(a.clone(), zero()).equals(a.clone()).unwrap());
-        let ss = shr_succ().all_elim(a.clone()).unwrap().all_elim(m.clone()).unwrap();
+        assert_eq!(
+            sz.concl(),
+            &shr(a.clone(), zero()).equals(a.clone()).unwrap()
+        );
+        let ss = shr_succ()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(m.clone())
+            .unwrap();
         let div2 = |t: Term| Term::app(Term::app(nat_div(), t), two_lit());
         let want = shr(a.clone(), succ(m.clone()))
             .equals(div2(shr(a, m)))
@@ -2909,9 +2936,16 @@ mod tests {
     fn mod_definitional_equation() {
         // ⊢ ∀n m. n mod m = n − (n/m)·m.
         let (n, m) = (var("n"), var("m"));
-        let md = mod_def().all_elim(n.clone()).unwrap().all_elim(m.clone()).unwrap();
+        let md = mod_def()
+            .all_elim(n.clone())
+            .unwrap()
+            .all_elim(m.clone())
+            .unwrap();
         let want = nat_mod_t(n.clone(), m.clone())
-            .equals(sub(n.clone(), mul(nat_div_t(n.clone(), m.clone()), m.clone())))
+            .equals(sub(
+                n.clone(),
+                mul(nat_div_t(n.clone(), m.clone()), m.clone()),
+            ))
             .unwrap();
         assert_eq!(md.concl(), &want);
         assert!(mod_def().hyps().is_empty());

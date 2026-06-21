@@ -69,6 +69,8 @@
 
 pub mod deep;
 pub mod fol;
+pub mod mm_pa;
+pub mod mm_replay;
 pub mod pa;
 pub mod sem;
 pub mod shallow;

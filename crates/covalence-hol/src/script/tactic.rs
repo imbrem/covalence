@@ -597,7 +597,9 @@ impl Tactic for Comp {
         }
         let steps = &a[idx..];
         if steps.is_empty() {
-            return Err(ScriptError::Syntax("#comp: expected at least one step".into()));
+            return Err(ScriptError::Syntax(
+                "#comp: expected at least one step".into(),
+            ));
         }
         let mut prev = head;
         let mut chain: Option<Thm> = None;
@@ -816,7 +818,9 @@ impl Tactic for ListInduct {
             ScriptError::Syntax(format!("list-induct: goal is not a `∀`: {}", it.goal))
         })?;
         let alpha = dest_list(&ty).ok_or_else(|| {
-            ScriptError::Syntax(format!("list-induct: goal quantifies over {ty}, not a list"))
+            ScriptError::Syntax(format!(
+                "list-induct: goal quantifies over {ty}, not a list"
+            ))
         })?;
         let p = Term::abs(ty.clone(), body.clone()); // motive λl. body
 

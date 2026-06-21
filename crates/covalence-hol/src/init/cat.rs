@@ -256,7 +256,10 @@ pub fn cat_env() -> Env {
     let b = Type::tfree("b");
     let c = Type::tfree("c");
     let mut e = Env::empty();
-    e.define_const("compose", ConstDef::Poly(compose(a.clone(), b.clone(), c.clone())));
+    e.define_const(
+        "compose",
+        ConstDef::Poly(compose(a.clone(), b.clone(), c.clone())),
+    );
     e.define_const("id", ConstDef::Poly(id(a.clone())));
     e
 }
@@ -504,6 +507,9 @@ mod tests {
         assert_eq!(cov::comp_cong_cov().concl(), super::comp_cong_thm().concl());
         assert_eq!(cov::id_left_cov().concl(), super::id_left_thm().concl());
         assert_eq!(cov::id_right_cov().concl(), super::id_right_thm().concl());
-        assert_eq!(cov::comp_assoc_cov().concl(), super::comp_assoc_thm().concl());
+        assert_eq!(
+            cov::comp_assoc_cov().concl(),
+            super::comp_assoc_thm().concl()
+        );
     }
 }

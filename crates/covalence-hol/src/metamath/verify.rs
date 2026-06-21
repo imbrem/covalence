@@ -52,7 +52,10 @@ pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmEr
         match stmt {
             Statement::Float(f) => {
                 // Push the expression `typecode var`.
-                stack.push(crate::metamath::expr::make_expr(&f.typecode, [f.var.as_str()]));
+                stack.push(crate::metamath::expr::make_expr(
+                    &f.typecode,
+                    [f.var.as_str()],
+                ));
             }
             Statement::Essential(h) => {
                 stack.push(h.expr.clone());
@@ -226,4 +229,3 @@ fn ordered_pair(a: &str, b: &str) -> (String, String) {
         (b.to_string(), a.to_string())
     }
 }
-

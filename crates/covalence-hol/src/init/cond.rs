@@ -246,7 +246,10 @@ mod cov_tests {
         let x = Term::free("x", a.clone());
         let y = Term::free("y", a.clone());
         let b = Term::bool_lit(then_branch);
-        let lhs = Term::app(Term::app(Term::app(cond_op.clone(), b), x.clone()), y.clone());
+        let lhs = Term::app(
+            Term::app(Term::app(cond_op.clone(), b), x.clone()),
+            y.clone(),
+        );
         let rhs = if then_branch { x } else { y };
         let body = Term::app(Term::app(Term::eq_op(a.clone()), lhs), rhs);
         // close over y then x, wrapping each in ∀.
@@ -262,8 +265,14 @@ mod cov_tests {
     fn cond_cov_matches_inline_def() {
         let a = alpha();
         let cond_op = inline_cond(&a);
-        assert_eq!(cov::cond_true_cov().concl(), &lhs_eq_rhs(&cond_op, &a, true));
-        assert_eq!(cov::cond_false_cov().concl(), &lhs_eq_rhs(&cond_op, &a, false));
+        assert_eq!(
+            cov::cond_true_cov().concl(),
+            &lhs_eq_rhs(&cond_op, &a, true)
+        );
+        assert_eq!(
+            cov::cond_false_cov().concl(),
+            &lhs_eq_rhs(&cond_op, &a, false)
+        );
         // Both are genuine, hypothesis-free theorems.
         assert!(cov::cond_true_cov().hyps().is_empty());
         assert!(cov::cond_false_cov().hyps().is_empty());

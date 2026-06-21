@@ -231,8 +231,8 @@ pub fn parse_sig(ch: &[SExpr], env: &Env) -> R<Signature> {
             }
         }
     }
-    let sort = sort
-        .ok_or_else(|| ScriptError::Syntax("#sig: missing the `(sort α)` clause".into()))?;
+    let sort =
+        sort.ok_or_else(|| ScriptError::Syntax("#sig: missing the `(sort α)` clause".into()))?;
     Ok(Signature { name, sort, ops })
 }
 
@@ -339,11 +339,7 @@ pub fn parse_thy(ch: &[SExpr], env: &Env) -> R<Theory> {
     }
     let sig =
         sig.ok_or_else(|| ScriptError::Syntax("#thy: missing the `(over SIG)` clause".into()))?;
-    Ok(Theory {
-        name,
-        sig,
-        specs,
-    })
+    Ok(Theory { name, sig, specs })
 }
 
 /// Parse a `(#model NAME (of SIG) (carrier TY) (OP TERM) … (induct TACTIC))`
@@ -423,8 +419,9 @@ pub fn parse_model(ch: &[SExpr], env: &Env) -> R<Model> {
         sig.ok_or_else(|| ScriptError::Syntax("#model: missing the `(of SIG)` clause".into()))?;
     let carrier = carrier
         .ok_or_else(|| ScriptError::Syntax("#model: missing the `(carrier TY)` clause".into()))?;
-    let induct = induct
-        .ok_or_else(|| ScriptError::Syntax("#model: missing the `(induct TACTIC)` clause".into()))?;
+    let induct = induct.ok_or_else(|| {
+        ScriptError::Syntax("#model: missing the `(induct TACTIC)` clause".into())
+    })?;
     // Every signature op must be interpreted.
     for op in &sig.ops {
         if !interp.iter().any(|(n, _)| *n == op.name) {
@@ -538,22 +535,18 @@ async fn models_from_witness(
     witness: &str,
     base: &Env,
 ) -> R<(Env, Vec<super::NamedThm>)> {
-    let wenv = base
-        .get_import(witness)
-        .cloned()
-        .ok_or_else(|| ScriptError::Unbound(format!("#models: witness env `{witness}` not imported")))?;
+    let wenv = base.get_import(witness).cloned().ok_or_else(|| {
+        ScriptError::Unbound(format!("#models: witness env `{witness}` not imported"))
+    })?;
     let aenv = model.axiom_env(base);
     let mut verified: Vec<super::NamedThm> = Vec::new();
     for ax in &theory.specs {
-        let thm = wenv
-            .lookup_lemma(&ax.name)
-            .await
-            .ok_or_else(|| {
-                ScriptError::Unbound(format!(
-                    "#models (from {witness}): the witness env has no spec `{}`",
-                    ax.name
-                ))
-            })??;
+        let thm = wenv.lookup_lemma(&ax.name).await.ok_or_else(|| {
+            ScriptError::Unbound(format!(
+                "#models (from {witness}): the witness env has no spec `{}`",
+                ax.name
+            ))
+        })??;
         // Re-check the witnessed theorem proves the instantiated axiom goal.
         let mut scope = Scope::new();
         let goal = syntax::parse_term(&ax.body, &mut scope, &aenv)?;

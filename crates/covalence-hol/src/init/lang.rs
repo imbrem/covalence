@@ -141,7 +141,10 @@ fn concat_pred(m: &Monoid, a: &Term, b: &Term) -> Result<Term> {
     let mu = carrier(m)?;
     let w = Term::free("_lc_w", mu.clone());
     let body = concat_body(m, &w, a, b)?;
-    Ok(Term::abs(mu.clone(), covalence_core::subst::close(&body, "_lc_w")))
+    Ok(Term::abs(
+        mu.clone(),
+        covalence_core::subst::close(&body, "_lc_w"),
+    ))
 }
 
 /// `∃x. ∃y. mem x a ∧ mem y b ∧ w = op x y` — the membership *formula* for a
@@ -198,14 +201,14 @@ pub fn mem_empty_lang(m: &Monoid, w: &Term) -> Result<Thm> {
 // the language reading.
 // ============================================================================
 
-/// `⊢ L₁ ∪ L₂ = L₂ ∪ L₁` — union of languages is commutative.
-pub use crate::init::set::union_comm;
 /// `⊢ (L₁ ∪ L₂) ∪ L₃ = L₁ ∪ (L₂ ∪ L₃)` — union of languages is associative.
 pub use crate::init::set::union_assoc;
-/// `⊢ L ∪ L = L` — union of languages is idempotent.
-pub use crate::init::set::union_idem;
+/// `⊢ L₁ ∪ L₂ = L₂ ∪ L₁` — union of languages is commutative.
+pub use crate::init::set::union_comm;
 /// `⊢ L ∪ ∅ = L` — the empty language is a unit for union.
 pub use crate::init::set::union_empty;
+/// `⊢ L ∪ L = L` — union of languages is idempotent.
+pub use crate::init::set::union_idem;
 
 // ============================================================================
 // Concatenation annihilation by ∅ — genuine via membership extensionality.
@@ -270,13 +273,7 @@ fn annihilate(
 /// (`⊢ ∀y. conj = F`), lift through the inner `∃y` with
 /// [`logic::exists_false`], abstract over `y`'s sibling, then lift through
 /// the outer `∃x` the same way.
-fn concat_exists_false(
-    m: &Monoid,
-    w: &Term,
-    a: &Term,
-    b: &Term,
-    slot: ConjSlot,
-) -> Result<Thm> {
+fn concat_exists_false(m: &Monoid, w: &Term, a: &Term, b: &Term, slot: ConjSlot) -> Result<Thm> {
     let mu = carrier(m)?;
     let x = Term::free("_lc_x", mu.clone());
     let y = Term::free("_lc_y", mu.clone());
@@ -368,7 +365,10 @@ fn star_pred(m: &Monoid, l: &Term) -> Result<Term> {
     let body = closed_pred(m, l, &s)?
         .imp(mem(&mu, &w, &s))?
         .forall("_ls_S", lang(mu.clone()))?;
-    Ok(Term::abs(mu.clone(), covalence_core::subst::close(&body, "_ls_w")))
+    Ok(Term::abs(
+        mu.clone(),
+        covalence_core::subst::close(&body, "_ls_w"),
+    ))
 }
 
 /// `lang_star L : set μ` — the Kleene closure
@@ -423,7 +423,9 @@ pub fn star_contains_epsilon(m: &Monoid, l: &Term) -> Result<Thm> {
         .all_intro("_se_S", lang(mu.clone()))?; // {mem v ε} ⊢ ∀S. …
     // Refold to `mem v L*`.
     let mem_v_star = star_unfold.sym()?.eq_mp(body)?; // {mem v ε} ⊢ mem v L*
-    let pointwise = mem_v_star.imp_intro(&mem_v_eps)?.all_intro("_se_w", mu.clone())?;
+    let pointwise = mem_v_star
+        .imp_intro(&mem_v_eps)?
+        .all_intro("_se_w", mu.clone())?;
     crate::init::set::subset_intro(&mu, &eps, &star, pointwise)
 }
 
@@ -520,12 +522,8 @@ pub fn star_concat_closed(m: &Monoid, l: &Term) -> Result<Thm> {
         let inner_ex = crate::init::logic::exists_intro(inner_pred, y.clone(), at_y)?; // ⊢ ∃v. body[x, v]
 
         // Outer ∃u: predicate `λu. ∃v. body[u, v]` (bind `u = __u`).
-        let outer_body = body(&uu, &vv)?
-            .exists("__v", mu.clone())?; // ∃v. body[u, v]  (open in u = __u)
-        let outer_pred = Term::abs(
-            mu.clone(),
-            covalence_core::subst::close(&outer_body, "__u"),
-        );
+        let outer_body = body(&uu, &vv)?.exists("__v", mu.clone())?; // ∃v. body[u, v]  (open in u = __u)
+        let outer_pred = Term::abs(mu.clone(), covalence_core::subst::close(&outer_body, "__u"));
         let at_x = crate::init::eq::beta_expand(&outer_pred, x.clone(), inner_ex)?; // ⊢ outer_pred x
         let outer_ex = crate::init::logic::exists_intro(outer_pred, x.clone(), at_x)?; // ⊢ ∃u ∃v. …
         unfold_ls.sym()?.eq_mp(outer_ex)? // {conj,Closed} ⊢ mem (op x y)(L·S)
@@ -559,7 +557,9 @@ pub fn star_concat_closed(m: &Monoid, l: &Term) -> Result<Thm> {
         mem_w_star
             .clone()
             .imp_intro(&conj)? // ⊢ conj ⟹ goal   (conj discharged)
-            .imp_elim(crate::init::eq::beta_reduce(Thm::assume(inner_applied.clone())?)?)? // {(λy.conj) y} ⊢ goal
+            .imp_elim(crate::init::eq::beta_reduce(Thm::assume(
+                inner_applied.clone(),
+            )?)?)? // {(λy.conj) y} ⊢ goal
             .imp_intro(&inner_applied)? // ⊢ (λy. conj) y ⟹ goal
             .all_intro("_lc_y", mu.clone())? // ⊢ ∀y. (λy. conj) y ⟹ goal
     };
@@ -569,7 +569,10 @@ pub fn star_concat_closed(m: &Monoid, l: &Term) -> Result<Thm> {
     // step_outer : ∀x. (∃y. conj) ⟹ goal — for a fixed x, ∃-elim `∃y. conj`.
     // The OUTER predicate is `λx. ∃y. conj`; its applied form is the
     // β-redex `(λx. ∃y. conj) x`.
-    let outer_pred = Term::abs(mu.clone(), covalence_core::subst::close(&inner_ex_term, "_lc_x"));
+    let outer_pred = Term::abs(
+        mu.clone(),
+        covalence_core::subst::close(&inner_ex_term, "_lc_x"),
+    );
     let outer_applied = Term::app(outer_pred.clone(), x.clone()); // (λx. ∃y. conj) x
     let step_outer = {
         // For a fixed x: from `∃y. conj` get goal by the inner ∃-elim.
@@ -577,7 +580,9 @@ pub fn star_concat_closed(m: &Monoid, l: &Term) -> Result<Thm> {
         let got = crate::init::logic::exists_elim(assume_inner, goal.clone(), inner_step)?; // {∃y. conj} ⊢ goal
         // Re-introduce in the applied form `(λx. ∃y. conj) x`.
         got.imp_intro(&inner_ex_term)? // ⊢ (∃y. conj) ⟹ goal
-            .imp_elim(crate::init::eq::beta_reduce(Thm::assume(outer_applied.clone())?)?)? // {(λx.…) x} ⊢ goal
+            .imp_elim(crate::init::eq::beta_reduce(Thm::assume(
+                outer_applied.clone(),
+            )?)?)? // {(λx.…) x} ⊢ goal
             .imp_intro(&outer_applied)? // ⊢ (λx. ∃y. conj) x ⟹ goal
             .all_intro("_lc_x", mu.clone())? // ⊢ ∀x. (λx. ∃y. conj) x ⟹ goal
     };
@@ -767,7 +772,10 @@ mod tests {
         let m = nat_add_monoid();
         let l1 = langvar("L1");
         let l2 = langvar("L2");
-        assert_eq!(empty_lang(&m).unwrap().type_of().unwrap(), lang(Type::nat()));
+        assert_eq!(
+            empty_lang(&m).unwrap().type_of().unwrap(),
+            lang(Type::nat())
+        );
         assert_eq!(epsilon(&m).unwrap().type_of().unwrap(), lang(Type::nat()));
         assert_eq!(
             lang_union(&m, &l1, &l2).unwrap().type_of().unwrap(),

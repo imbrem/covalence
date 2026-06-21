@@ -299,10 +299,16 @@ impl Database {
         // Active hypotheses, outermost scope first (= database order).
         let active_floats: Vec<&FloatHyp> =
             self.scopes.iter().flat_map(|s| s.floats.iter()).collect();
-        let active_essentials: Vec<&Hypothesis> =
-            self.scopes.iter().flat_map(|s| s.essentials.iter()).collect();
-        let active_disjoints: Vec<&(String, String)> =
-            self.scopes.iter().flat_map(|s| s.disjoints.iter()).collect();
+        let active_essentials: Vec<&Hypothesis> = self
+            .scopes
+            .iter()
+            .flat_map(|s| s.essentials.iter())
+            .collect();
+        let active_disjoints: Vec<&(String, String)> = self
+            .scopes
+            .iter()
+            .flat_map(|s| s.disjoints.iter())
+            .collect();
 
         // Mandatory variable set: from the conclusion and from active $e.
         let mut mandatory_vars: Vec<String> = Vec::new();
@@ -356,10 +362,11 @@ impl Database {
         label: &str,
         f: &mut impl FnMut(&str),
     ) -> Result<(), MmError> {
-        let syms = crate::metamath::expr::expr_symbols(expr).ok_or_else(|| MmError::MalformedExpr {
-            label: label.to_string(),
-            message: "expression contains a non-symbol element".into(),
-        })?;
+        let syms =
+            crate::metamath::expr::expr_symbols(expr).ok_or_else(|| MmError::MalformedExpr {
+                label: label.to_string(),
+                message: "expression contains a non-symbol element".into(),
+            })?;
         for s in syms {
             if !self.is_symbol(s) {
                 return Err(MmError::UnknownSymbol {

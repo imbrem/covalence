@@ -110,7 +110,9 @@ impl CompiledProject {
 pub enum ProjectError {
     /// A unit `(#import NAME)`ed a name that is neither another source unit nor
     /// a registered Rust env (and is not `core`).
-    #[error("unit `{unit}` imports `{missing}`, which is not a project source or a registered Rust env")]
+    #[error(
+        "unit `{unit}` imports `{missing}`, which is not a project source or a registered Rust env"
+    )]
     UnknownImport { unit: String, missing: String },
     /// The import graph has a cycle: the listed units mutually depend with no
     /// dependency-free entry point. (Mutual recursion between units is the
@@ -221,8 +223,10 @@ impl Project {
         // Kahn's algorithm over in-degree, with a name-sorted ready set for
         // determinism. `graph[u]` is the set of units `u` depends ON, so an
         // edge dep → u means u becomes ready once dep is done.
-        let mut indegree: BTreeMap<&str, usize> =
-            graph.iter().map(|(u, deps)| (u.as_str(), deps.len())).collect();
+        let mut indegree: BTreeMap<&str, usize> = graph
+            .iter()
+            .map(|(u, deps)| (u.as_str(), deps.len()))
+            .collect();
         // ready = units with no outstanding dependencies, kept sorted.
         let mut ready: BTreeSet<&str> = indegree
             .iter()
@@ -298,9 +302,8 @@ impl Project {
                 rust_envs_ref.get(name).cloned()
             };
             let tactics_ref = &self.tactics;
-            let tactics = move |name: &str| -> Option<Arc<dyn Tactic>> {
-                tactics_ref.get(name).cloned()
-            };
+            let tactics =
+                move |name: &str| -> Option<Arc<dyn Tactic>> { tactics_ref.get(name).cloned() };
 
             let theory = crate::script::run(&source.src, resolver, tactics)
                 .and_then(|t| t.resolve_blocking())
@@ -423,7 +426,11 @@ mod tests {
                  (#thm r (#concl (= 0 0)) (#proof (t)))(#export r)",
             )
             .source(
-                mk("top", "(#thm t (#concl (= 0 0)) (#proof (refl 0)))(#export t)").name,
+                mk(
+                    "top",
+                    "(#thm t (#concl (= 0 0)) (#proof (refl 0)))(#export t)",
+                )
+                .name,
                 "(#import core)(#open core)(#thm t (#concl (= 0 0)) (#proof (refl 0)))(#export t)",
             )
             .compile()
@@ -432,7 +439,10 @@ mod tests {
         assert_eq!(compiled.order.first().unwrap(), "top");
         assert_eq!(compiled.order.last().unwrap(), "bottom");
         // name-sorted middle.
-        assert_eq!(&compiled.order[1..3], &["left".to_string(), "right".to_string()]);
+        assert_eq!(
+            &compiled.order[1..3],
+            &["left".to_string(), "right".to_string()]
+        );
     }
 
     /// A `.cov` unit importing a Rust-supplied seam env (the `natrec` /
@@ -474,10 +484,7 @@ mod tests {
     #[test]
     fn unknown_import_is_rejected() {
         let err = match Project::new()
-            .source(
-                "u",
-                "(#import core)(#open core)(#import nope)(#open nope)",
-            )
+            .source("u", "(#import core)(#open core)(#import nope)(#open nope)")
             .compile()
         {
             Err(e) => e,

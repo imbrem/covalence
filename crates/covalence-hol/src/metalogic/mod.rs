@@ -67,6 +67,12 @@ pub mod toy;
 pub mod database;
 pub mod relations;
 
+// **Metamath-Prop → HOL replay** (`docs/metatheory.md`): replay a *verified*
+// propositional-calculus Metamath proof into a kernel-constructed
+// `⊢ Derivable_Prop ⌜S⌝` theorem — the "construct, don't trust" bridge landing in
+// *pure derivability over the encoded syntax* (NO denotation, NO observer).
+pub mod mm_replay;
+
 // Re-exported WITHOUT `database::derivable` (a 0-ary schema builder) to avoid
 // colliding with this engine's `derivable`; reach it as `metalogic::database::derivable`.
 pub use database::{derivable_db, extends, monotone};

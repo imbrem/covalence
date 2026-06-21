@@ -43,6 +43,34 @@ them ([`relations.rs`](./relations.rs)). See `CLAUDE.md` § Skeletons and the
   with `σ_hom σ := ∀X Y. σ⌜X⟹Y⌝ = ⌜σX⟹σY⌝`. Demonstrated at the identity
   translation (monotonicity as interpretation under `id`). **Done, proven.**
 
+## mm_replay — Metamath proof → `⊢ Derivable_Prop ⌜S⌝` (construct, don't trust)
+
+[`mm_replay.rs`](./mm_replay.rs) replays a **verified, untrusted** Metamath proof
+into a kernel-constructed `⊢ Derivable_Prop ⌜S⌝` — the "construct, don't trust"
+bridge that lands in *pure derivability over the encoded syntax* (NO denotation
+`⟦S⟧`, NO observer, NO oracle). The Metamath verifier's say-so is not trusted; the
+kernel re-checks each step (syntax former → `init::prop::p_imp`; `ax-1`/`ax-2` →
+`init::prop::derive_axiom`; `ax-mp` → `derive_mp` + `imp_elim`; `$e` →
+`Thm::assume(Derivable_Prop ⌜hyp⌝)`).
+
+- **The propositional-calculus fragment is DONE.** `replay_prop` handles the
+  set.mm `ax-1`/`ax-2`/`ax-mp` database: `wi` former, both axiom schemas (matching
+  set.mm exactly), modus ponens, and essential hypotheses (which surface as the
+  theorem's `Derivable_Prop ⌜hyp⌝` hypotheses). Tested end-to-end on `ax2i` (a
+  single `ax-2` instance, hypothesis-free) and `a1i` (a derived rule carrying one
+  essential), each genuine and oracle-free.
+
+### Deferred — the general schema-database replay (north star)
+
+Generalise from the fixed prop-calc rule set to an **arbitrary `metamath::Database`**:
+one *substitution-instance* `Closed_L` clause per assertion (each Metamath assertion
+= a schematic rule; metavariable substitution = the kernel's `inst`, `$d` →
+freshness), i.e. a **`RuleSet`-from-`Database`** builder, landing the
+*database-relative* `Derivable_DB ⌜db⌝ ⌜S⌝`. This unifies `mm_replay` with the
+existing [`database.rs`](./database.rs) `Derivable_DB` over HOL database *values*
+and is the same work flagged in this file's "The Metamath-`Database` → `Derivable_L`
+connection" deferral. **Not built.**
+
 ## Reconciliation — the two `Derivable` notions (DONE, Phase A)
 
 There were **two** impredicative derivability constructs: the engine's

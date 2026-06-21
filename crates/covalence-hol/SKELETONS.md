@@ -33,13 +33,21 @@ index](../../SKELETONS.md).
   replay): the `Nat`-specialized `Logic` (no general `Signature`/`admits`/full
   `HandlerSet`), the unbuilt `#model` directive, the `#thm`-only `#in` block,
   and the single-theory/two-model/no-iso shape.
+- **[`src/metalogic/SKELETONS.md`](./src/metalogic/SKELETONS.md)** — the
+  generic `Derivable_L` engine (`Derivable_L` + `Closed_L` over a `RuleSet`,
+  `rule_induction`, one-step `project`; the `toy` second instance; PA wired in
+  as an instance). Deferred: the Metamath-`Database` → `Derivable_L` connection
+  (the `#logic`-semantics seed) and the `S`-transport / `Metamath-L ≅ native-L`
+  north stars.
 - **[`src/peano/SKELETONS.md`](./src/peano/SKELETONS.md)** — the deep
   Peano-arithmetic embedding (Phases A–B done: reified locally-nameless FOL
   syntax + substitution, the `nat` denotation, the PA axioms/rules/induction
-  schema, and the worked `∀x. x+0=x` by induction-on-derivations, all proven).
-  Deferred: the ∀-closed *impredicative* soundness theorem (`prop.rs`-style
-  `inst d := ⟦·⟧` fold — soundness is currently constructive per-derivation),
-  and the `.cov` surface (Phase C: `(pa-induct …)` + β/η-aware `#concl`).
+  schema, the **pure `Derivable_PA` + single internalized soundness theorem +
+  one-step projection** — now an *instance* of the generic
+  [`metalogic`](./src/metalogic/SKELETONS.md) engine). Deferred: the
+  quantifier/induction/Leibniz **derivation constructors** (the motive
+  β-capture wall — see the peano registry for the corrected diagnosis) and the
+  `.cov` surface (Phase C: `(pa-induct …)` + β/η-aware `#concl`).
 - **[`src/metamath/SKELETONS.md`](./src/metamath/SKELETONS.md)** — the Metamath
   substitution engine (expression model + substitution + frames + RPN checker):
   the not-yet-built `#logic` / `Derivable_L` / `S`-transport correspondence

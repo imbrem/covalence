@@ -199,10 +199,6 @@ fn d_ty() -> Type {
 fn d_var() -> Term {
     Term::free("d", d_ty())
 }
-/// `d A`.
-fn d_at(a: &Term) -> Result<Term> {
-    d_var().apply(a.clone())
-}
 /// Instantiate both carrier type variables to the standard instance.
 fn inst_std(t: &Term) -> Term {
     let t = covalence_core::subst::subst_tfree_in_term(t, "t", &nat_ty());
@@ -233,10 +229,11 @@ fn inst_std(t: &Term) -> Term {
 /// Leibniz + generalise).
 const N_CLAUSES: usize = 11;
 
-/// `Closed_PA d` — the right-nested conjunction of the closure clauses, as a
-/// single `bool` term over the predicate `d` (supplied as a closure so the
-/// same code builds it for `d` the bound variable *and* for `d := ⟦·⟧`).
-fn closed(d_apply: &dyn Fn(&Term) -> Result<Term>, t: &Type, r: &Type) -> Result<Term> {
+/// The `Closed_PA` closure clauses (in fold order) for a given `d ⌜·⌝` applier
+/// at carrier result types `(t, r)`. The single source of truth for both the
+/// hand-written soundness proof here and the [`metalogic`](crate::metalogic)
+/// generic engine ([`pa_rule_set`]); [`closed`] right-nests them.
+fn clauses_at(d_apply: &dyn Fn(&Term) -> Result<Term>, t: &Type, r: &Type) -> Result<Vec<Term>> {
     let mut clauses: Vec<Term> = Vec::new();
 
     // 1..6 — axiom clauses `d ⌜PAᵢ⌝`.
@@ -320,47 +317,43 @@ fn closed(d_apply: &dyn Fn(&Term) -> Result<Term>, t: &Type, r: &Type) -> Result
         clauses.push(gen_clause);
     }
 
-    // Right-nested conjunction.
-    let mut iter = clauses.into_iter().rev();
-    let mut acc = iter.next().expect("at least one clause");
-    for cl in iter {
-        acc = cl.and(acc)?;
-    }
-    Ok(acc)
+    Ok(clauses)
 }
 
-/// `Closed_PA d` at the polymorphic carrier, for the predicate variable `d`.
-fn closed_poly() -> Result<Term> {
-    closed(&|f| d_at(f), &sem::tty(), &sem::rty())
+/// `Closed_PA d` — the right-nested conjunction of the closure clauses, as a
+/// single `bool` term over the predicate `d` (supplied as a closure so the
+/// same code builds it for `d` the bound variable *and* for `d := ⟦·⟧`).
+fn closed(d_apply: &dyn Fn(&Term) -> Result<Term>, t: &Type, r: &Type) -> Result<Term> {
+    crate::metalogic::conj(clauses_at(d_apply, t, r)?)
+}
+
+/// **PA's rule set as a [`metalogic::RuleSet`](crate::metalogic::RuleSet)** —
+/// the data that makes `Derivable_PA` an *instance* of the generic
+/// [`Derivable_L`](crate::metalogic) engine. The carrier is the two-sorted
+/// `Φ_sem⟨'t,'r⟩` and the clauses are exactly [`clauses_at`] at the polymorphic
+/// carrier. [`derivable`] / [`derive_axiom`] / [`derive_mp`] are reimplemented
+/// on top of the engine (validated clause-for-clause against the bespoke shape
+/// by `derivable_via_engine_matches`).
+pub fn pa_rule_set() -> crate::metalogic::RuleSet<'static> {
+    crate::metalogic::RuleSet::new(phi(), |d_apply| {
+        clauses_at(d_apply, &sem::tty(), &sem::rty())
+    })
 }
 
 /// `Derivable_PA A := ∀d. Closed_PA d ⟹ d A` — the impredicative derivability
-/// predicate over an encoded formula `A : Φ_sem`.
+/// predicate over an encoded formula `A : Φ_sem`. Now an instance of the
+/// generic [`metalogic`](crate::metalogic) engine via [`pa_rule_set`].
 pub fn derivable(a: &Term) -> Result<Term> {
-    let closed_d = closed_poly()?;
-    let body = closed_d.imp(d_at(a)?)?;
-    body.forall("d", d_ty())
-}
-
-// ============================================================================
-// `nth_conjunct` — peel a right-nested conjunction.
-// ============================================================================
-
-fn nth_conjunct(mut thm: Thm, k: usize, n: usize) -> Result<Thm> {
-    for _ in 0..k {
-        thm = thm.and_elim_r()?;
-    }
-    if k + 1 < n {
-        thm.and_elim_l()
-    } else {
-        Ok(thm)
-    }
+    crate::metalogic::derivable(&pa_rule_set(), a)
 }
 
 // ============================================================================
 // Derivation constructors — the ONLY way to obtain `⊢ Derivable_PA ⌜A⌝`.
 // Each opens `∀d. Closed_PA d ⟹ d A`, assumes `Closed_PA d`, extracts the
-// matching closure clause, and applies it. NONE builds `⊢ ⟦A⟧`.
+// matching closure clause, and applies it. NONE builds `⊢ ⟦A⟧`. These run
+// through the generic [`metalogic`](crate::metalogic) engine — PA is an
+// *instance*: `derive_via_closed` is the shared spine, `nth_conjunct` the
+// shared clause extractor.
 // ============================================================================
 
 /// `⊢ Derivable_PA ⌜PAᵢ⌝` — the `i`-th PA axiom (1-based), as a pure
@@ -371,14 +364,13 @@ pub fn derive_axiom(i: usize) -> Result<Thm> {
             "derive_axiom: axiom index {i} out of range 1..=6"
         )));
     }
-    let closed_t = closed_poly()?;
-    let assumed = Thm::assume(closed_t.clone())?; // {Closed d} ⊢ Closed d
-    let clause = nth_conjunct(assumed, i - 1, N_CLAUSES)?; // ⊢ d ⌜PAᵢ⌝
-    let enc = sem::encode_form(&axioms()[i - 1]);
-    debug_assert_eq!(clause.concl(), &d_at(&enc)?);
-    clause
-        .imp_intro(&closed_t)?
-        .all_intro("d", d_ty())
+    let rs = pa_rule_set();
+    crate::metalogic::derive_via_closed(&rs, |assumed, d_apply| {
+        let clause = crate::metalogic::nth_conjunct(assumed.clone(), i - 1, N_CLAUSES)?; // ⊢ d ⌜PAᵢ⌝
+        let enc = sem::encode_form(&axioms()[i - 1]);
+        debug_assert_eq!(clause.concl(), &d_apply(&enc)?);
+        Ok(clause)
+    })
 }
 
 /// `⊢ Derivable_PA ⌜A⌝ ⟹ Derivable_PA ⌜A ⟹ B⌝ ⟹ Derivable_PA ⌜B⌝` — reified
@@ -388,23 +380,19 @@ pub fn derive_mp(a: &Fol, b: &Fol) -> Result<Thm> {
     let enc_b = sem::encode_form(b);
     let imp_ab = sem::imp_cons(&sem::tty(), &sem::rty(), &enc_a, &enc_b);
 
-    let closed_t = closed_poly()?;
-    let assumed = Thm::assume(closed_t.clone())?; // {Closed d} ⊢ Closed d
+    let rs = pa_rule_set();
+    let der_b = crate::metalogic::derive_via_closed(&rs, |assumed, _d_apply| {
+        // d ⌜A⌝ and d ⌜A⟹B⌝ from the two derivability hypotheses.
+        let der_a = Thm::assume(derivable(&enc_a)?)?;
+        let da = der_a.all_elim(d_var())?.imp_elim(assumed.clone())?; // ⊢ d ⌜A⌝
+        let der_ab = Thm::assume(derivable(&imp_ab)?)?;
+        let dab = der_ab.all_elim(d_var())?.imp_elim(assumed.clone())?; // ⊢ d ⌜A⟹B⌝
 
-    // d ⌜A⌝ and d ⌜A⟹B⌝ from the two derivability hypotheses.
-    let der_a = Thm::assume(derivable(&enc_a)?)?;
-    let da = der_a.all_elim(d_var())?.imp_elim(assumed.clone())?; // ⊢ d ⌜A⌝
-    let der_ab = Thm::assume(derivable(&imp_ab)?)?;
-    let dab = der_ab.all_elim(d_var())?.imp_elim(assumed.clone())?; // ⊢ d ⌜A⟹B⌝
-
-    // The MP conjunct is clause 7 (index 6).
-    let mp_clause = nth_conjunct(assumed, 6, N_CLAUSES)?; // ⊢ ∀A B. (d A ∧ d⌜A⟹B⌝)⟹ d B
-    let mp_inst = mp_clause.all_elim(enc_b.clone())?.all_elim(enc_a.clone())?;
-    let db = mp_inst.imp_elim(da.and_intro(dab)?)?; // ⊢ d ⌜B⌝
-
-    let der_b = db
-        .imp_intro(&closed_t)?
-        .all_intro("d", d_ty())?; // {Der A, Der (A⟹B)} ⊢ Derivable_PA ⌜B⌝
+        // The MP conjunct is clause 7 (index 6).
+        let mp_clause = crate::metalogic::nth_conjunct(assumed.clone(), 6, N_CLAUSES)?;
+        let mp_inst = mp_clause.all_elim(enc_b.clone())?.all_elim(enc_a.clone())?;
+        mp_inst.imp_elim(da.and_intro(dab)?) // ⊢ d ⌜B⌝
+    })?;
     der_b
         .imp_intro(&derivable(&imp_ab)?)?
         .imp_intro(&derivable(&enc_a)?)
@@ -820,6 +808,29 @@ mod tests {
         assert_eq!(projected.concl(), nat::add_base().concl());
     }
 
+
+    /// **PA-as-instance validation.** The generic-engine
+    /// [`metalogic::derivable`](crate::metalogic::derivable)`(pa_rule_set(), a)`
+    /// produces the *byte-identical* `Derivable_PA ⌜a⌝` term the bespoke
+    /// `∀d. Closed_PA d ⟹ d a` does — so routing PA through the engine changed
+    /// no logic, only the implementation. (The derivation constructors and
+    /// soundness/projection already exercise the engine; this pins the shape.)
+    #[test]
+    fn derivable_via_engine_matches() {
+        let enc = sem::encode_form(&ax_add_base());
+        let via_engine = crate::metalogic::derivable(&pa_rule_set(), &enc).unwrap();
+        // Hand-built reference: ∀d. closed(d) ⟹ d enc, at the polymorphic carrier.
+        let d = d_var();
+        let closed_d = closed(&|f| d.clone().apply(f.clone()), &sem::tty(), &sem::rty()).unwrap();
+        let reference = closed_d
+            .imp(d.apply(enc.clone()).unwrap())
+            .unwrap()
+            .forall("d", d_ty())
+            .unwrap();
+        assert_eq!(via_engine, reference);
+        // And the rule set reports the expected clause count.
+        assert_eq!(pa_rule_set().n_clauses().unwrap(), N_CLAUSES);
+    }
 
     /// The `Closed_PA ⟦·⟧` the soundness proof discharges must match — clause by
     /// clause — the `Closed[d := ⟦·⟧]` the impredicative definition unfolds to

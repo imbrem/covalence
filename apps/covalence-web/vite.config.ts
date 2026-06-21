@@ -135,6 +135,12 @@ const apiTarget = resolveApiTarget();
 export default defineConfig({
 	customLogger: logger,
 	plugins: [sveltekit(), covDiscovery()],
+	// Web Workers (e.g. the kernel worker behind the `article` page) must be
+	// bundled as ES modules — the production build is code-split, and Rollup
+	// rejects the default `iife`/`umd` worker format for code-splitting builds.
+	worker: {
+		format: 'es',
+	},
 	server: {
 		proxy: {
 			'/api': {

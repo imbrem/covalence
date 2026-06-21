@@ -152,6 +152,16 @@ proofs, each scoped to its own referenced lemmas so import is practical.
 flow into covalence-hol at practical speed. (Importing *all* 47k is bounded only
 by total proof size now, not the database-size blowup.)
 
+**Deferred — declarations-only load + prove-on-demand.** A future workflow: parse
+a database keeping only the **declarations** (the `$a`/`$p` statements + frames +
+`$d`), *without* storing/parsing the proof bodies — so one can cheaply load and
+browse all of set.mm's statements (and use them as the rule set), then call
+`derive_theorem` to **prove a specific declaration** on demand. Needs a
+proof-skipping parse mode in `covalence-metamath` (e.g. `Proof` stored as the raw
+unparsed token span, decoded lazily only when a theorem is actually derived) and a
+`derive_theorem` that decodes that one proof on the fly. The `/metamath` demo would
+then offer "load declarations only" + click-to-prove. **Not built.**
+
 ## Reconciliation — the two `Derivable` notions (DONE, Phase A)
 
 There were **two** impredicative derivability constructs: the engine's

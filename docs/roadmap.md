@@ -1,142 +1,113 @@
-# Covalence — Roadmap
+# Covalence — Roadmap (time-to-product for the Metamath vision)
 
-This is the "what's next" doc. For the vision see
-[`VISION.md`](./VISION.md); for the kernel TCB see
-[`kernel-design.md`](./kernel-design.md); for the type catalogue and
-equality hierarchy see [`type-hierarchy.md`](./type-hierarchy.md). For
-the (not-yet-built) authoring layer see the design sketches:
-[`surface-syntax.md`](./surface-syntax.md),
-[`metatheory.md`](./metatheory.md), [`observers.md`](./observers.md).
+The "what's next" doc, oriented at **minimizing time to a thin-but-honest
+product**. For the vision (the three-layer stack, internal Metamath as the thin
+waist) see [`VISION.md`](./VISION.md) §1; for the substrate detail see
+[`theories-models-and-logics.md`](./theories-models-and-logics.md) §5.6/§5.7; for
+the kernel TCB [`kernel-design.md`](./kernel-design.md).
 
-## Backup branch
+## What "product" means
 
-The `kernel-design` branch was aggressively pared down to the *current
-design only*. Everything removed lives on the **`backup/pre-hol-cleanup`**
-branch (created at commit `6ba9a7d`). What you can recover there:
+A **thin but honest demo of the full experience**:
 
-- **`covalence-hol` postulate catalogues** — `nat_axioms.rs`,
-  `int_axioms.rs`, and the `init/` (formerly `stdlib/`) modules
-  (`nat`, `int`, `rat`, `real`, `bytes`, `byte`, `list`, `option`,
-  `either`, `fun`, `bool`). Half-implemented, postulate-filled stubs.
-- **Gated Pure-era modules** — `bridge.rs`, `peano.rs`, `pure_hol.rs`
-  (the old `Trueprop`/`eq_reflection` HOL-on-Pure design).
-- **The HOL Python bindings** — `covalence-python/src/pure.rs`
-  (`Type`/`Term`/`Thm`) and `tests/test_pure.py`. (Only the HOL
-  bindings were removed; the store/WASM/SAT/graph Python API stays.)
-- **Retired docs** — `ARCHITECTURE.md`, `AGENTS.md`, `DESIGN.md`,
-  `MVP_DESIGN.md`, `plan.md`, the whole `docs/design/proposals/*` set,
-  the arena/egraph prover docs (`prover-*.md`, `prop-egraph-design.md`,
-  `c4.md`, `institution-map.md`, `refactor-plan.md`, `where-we-are.md`),
-  and the `architecture` skill.
+> *write theories and specs → lower them to various logics → prove things in
+> different logics and models, and transport between them.*
 
-Restore any of it with `git checkout backup/pre-hol-cleanup -- <path>`.
+Two headline instances we are aiming the thin demo at:
 
-## Learnings from the deleted stubs
+- **Verify a `set.mm` fragment in Grothendieck-Tarski** — ingest a real `set.mm`
+  development, check its proofs, and relate its axiom base to a GT database
+  (`set.mm`'s axioms `⊑` GT, conservative extension).
+- **Analysis in SOA** — reify second-order arithmetic, state the reals via
+  Spivak's axioms, and prove an extension with a real-numbers type *conservative*
+  over SOA (later: builtins for limits / exponentials / calculus).
 
-Brief, so we can refill correctly:
+"Thin but honest" = the **leanest version that is genuinely real** (a real `set.mm`
+theorem actually verified; a real conservativity result actually proved) — not a
+mock. That framing is the time-minimizer.
 
-- **Propositional logic derives cleanly.** Every connective is a
-  let-style definition in `defs/logic.rs`; `unfold_term_spec` hands
-  back its defining equation, and a β-normalizer (`beta_nf`, in
-  `covalence-hol::proofs::rewrite`) + congruence reconstruct all
-  intro/elim rules (the HOL Light `bool.ml` bootstrap). These are now
-  fast kernel methods with executable soundness witnesses in
-  `covalence-hol::proofs::bool`. No postulates needed.
-- **Arithmetic is gated on the recursion theorem.** The `nat`/`int`
-  laws all bottom out in proving that `natRec` *exists* (from its
-  ε-uniqueness predicate in `defs/nat.rs`), which needs the **Hilbert
-  choice axiom** over `TermKind::Select`. That is the single gate for
-  the entire arithmetic tier; the deleted `nat_axioms`/`int_axioms`
-  were postulating around it.
-- **The `defs/` bodies are the source of truth.** The real
-  definitions are let-style (`natAdd ≡ λn m. iter n succ m`, etc.) and
-  `unfold_term_spec` gives their equations for free. The deleted
-  `nat_axioms.rs` had drifted — it referenced a fictional
-  `Term::const_("natrec")` disconnected from `defs::nat_rec`. Refill
-  from the `defs/` bodies, not from re-postulating.
+## What is already built (this session)
 
-## Plan
+The pieces exist; they are not yet *unified* into "a logic = a Metamath database
+you lower theories into and prove across":
 
-### Phase 1 — finalize `covalence-core` `defs/` (pure definitions + ops)
+- **Authoring forms** — `#sig`/`#thy`/`#model`/`#models` + `#spec`; `nat.sig`/
+  `nat.thy` with `nat.cov ⊨ nat.thy` certified.
+- **The Metamath engine** in `covalence-hol/src/metamath/` (expr/subst/frame/DV/
+  verify) — the `ValidProof` primitive — plus the `.mm` reader in
+  `covalence-metamath`.
+- **PA, deeply** — `Derivable_PA` (pure, soundness proved once, one-step
+  projection) *and* `peano::mm_pa` + `mm_replay` (a Metamath PA database + an
+  untrusted-proof→kernel replay that lands `∀x.x+0=x` by induction).
+- **The generic engine** `metalogic::{RuleSet, derivable, rule_induction}` and the
+  **HOL `Database` type + relation lattice** `metalogic::{database, relations}`:
+  `⊑`/monotonicity and `⟹_σ`/transport as kernel-proved theorems.
+- **Accelerators** — Alethe/SMT goal discharge (`(#by (smt))`) + n-ary Farkas.
 
-Expose complete, tested pure definitions for
-`defs/{nat, int, rat, real, bytes, list, stream, option, result}` with
-all basic operations. These are exactly the WebAssembly component-model
-primitive types plus a few mathematics-native types. Longer-term:
-`f32`/`f64` re-axiomatized through `real`.
+## The critical path (the keystone first)
 
-**Sound vs complete — define every op.** Today many ops are
-*declaration-only* (`term_decl!`, `tm = None`): opaque atoms that
-`reduce_spec` evaluates on literals but that have no definition, so
-they're *sound but incomplete* — nothing about them is provable in
-open form. Each must become **defined**: a `let_term!` body or a
-`spec_term!` first-order ε-selector spec (e.g. `intAdd` is the unique
-function satisfying the addition equations). **This does not affect
-efficiency** — closed-literal reduction always goes through
-`reduce_spec` by pointer-match, independent of the definition body.
+### Phase A — the keystone: unify `Derivable` + `#logic`-as-database
 
-Declaration-only ops still to define (the tracker):
-`nat{Div,BitAnd,BitOr,BitXor,ToBytesLe,ToBytesBe,FromBytesLe,FromBytesBe}`
-and the `bytes{ConsNat,At}` ops (their *implementations* now live in
-`covalence_types::blob`; they still need definitional bodies).
-`succ`/`pred` are the primitive constructors. The **`int` catalogue is
-fully defined**: `int{Succ,Pred,Add,Sub,Mul,Le,Lt,Neg,Abs,Sgn}` via the
-Grothendieck construction, and `int{Div,Mod}` via sign/magnitude
-composition (`(sgn x·sgn y)·natToInt(|x| div |y|)` and `x − (x/y)·y`,
-truncating toward zero). The `bytes{Cat,Len,Slice}` ops are also defined.
+The single highest-leverage move (already SKELETON'd in `metalogic/SKELETONS.md`):
+**drive the generic engine off a HOL `Database` value**, collapsing the two
+`Derivable` notions (engine `Derivable_L` over a Rust `RuleSet` closure;
+`Derivable_DB` over a HOL `Database` value) into one. This makes "**a `#logic` *is*
+a Metamath database**" real in code: a `#logic` produces a HOL `Database`, its
+derivability comes from the unified engine, and the **relation lattice (`⊑`/`⟹_σ`)
+applies to every logic**. Everything below rides on this — do it first.
 
-Note: when `nat.div` gains a body it becomes *reducible*, so — like
-`nat.mod` and `int.div`/`int.mod` — its body must agree with `reduce_spec`
-on every input (the coupling in `kernel-design.md` §9); add it to
-`audit_reduce_matches_body`.
+### Phase B — ground it honestly: `∃P. ValidProof ⟺ Derivable`
 
-**Decision: define `int := quot (nat × nat)`** (the Grothendieck
-construction; `quot_spec` already exists in `defs/helpers.rs`), not
-`signed2 nat`. Then every integer op is a clean equational definition
-on representatives — `[(a,b)] + [(c,d)] = [(a+c, b+d)]`,
-`-[(a,b)] = [(b,a)]`, `[(a,b)] * [(c,d)] = [(a*c+b*d, a*d+b*c)]`,
-`[(a,b)] ≤ [(c,d)] ⟺ a+d ≤ c+b`, … — instead of painful two's-complement
-specs.
+Connect the existence-of-derivation to the *actual* `metamath::verify` primitive
+(reify `ValidProof` in HOL, or bridge a concrete verified proof to `Derivable`).
+For the thin demo this can be partial — but it is what makes "we prove what we
+think we prove" literally true rather than an impredicative-encoding artifact.
 
-- Add **definition macros** to `covalence-core` so defining an op (its
-  body, type, `Canonical` label, and `reduce_spec` literal-dispatch
-  arm) is a few lines instead of boilerplate.
-- **Test `covalence-core` extensively.** For every macro-defined op,
-  add a test that the macro definition is *equal to a naive/reference
-  definition* (and that closed-form `reduce_prim` agrees with the
-  host-language computation on sampled literals). The kernel is the
-  TCB — it should be the most-tested crate in the repo.
+### Phase C — the full-experience demo (the MVP)
 
-### Phase 2 — choice + the recursion theorem (refill the arithmetic tier)
+Assemble the thin demo on A+B: write a theory + spec, **lower it to ≥2
+logics-as-databases via `#logic`**, prove a theorem in one, and **transport** it
+across (`⊑`/`⟹_σ`). The `add_comm` cross-model demo is the seed; the Metamath
+version is "the same theory as two databases with a proven transport." This *is*
+the honest demo of write→lower→prove-across.
 
-- Add `Thm::select_ax` — the Hilbert choice axiom over `Select`
-  (`⊢ ∀P x. P x ⟹ P (ε P)`), the third (and final intended)
-  non-computational primitive.
-- Prove the `natRec` recursion theorem from the ε-uniqueness predicate
-  + `nat_induct`; then derive the Peano facts (`zero_ne_succ`,
-  `succ_inj`) and the nat/int algebraic laws by induction — all
-  postulate-free. This refills what the deleted catalogues stubbed.
+### Phase D — the headline instances (parallel, on A–C)
 
-### Phase 3 — `covalence-kernel` becomes a re-export façade
+- **`set.mm` in GT** — `covalence-metamath` ingests a `set.mm` fragment (needs the
+  compressed-proof parser), verifies it, and `covalence-metamath`'s independent
+  elaborator checks the resulting database against a GT database (fetched + diffed,
+  §5.7); the axiom relation is a `⊑`/conservative-extension theorem.
+- **Analysis in SOA** — reify SOA (the ladder's rung 3: a second sort +
+  comprehension over the FOL framework), Spivak's reals as a `#thy`, and the
+  reals-extension-conservative-over-SOA result. Calculus builtins are a follow-on.
 
-`covalence-hol` *is* the kernel rewrite. Replace the legacy
-`covalence-kernel` (arena + egraph + UF) contents with a thin crate
-that re-exports `covalence-hol` + `covalence-store` (+ the WASM
-evaluator + tree-store) — i.e. the whole TCB + content-addressing
-foundation — with `covalence-shell` sitting on top. Migrate the app
-stack (`shell`, `repl`, `serve`, `client`, `alethe`, `egglog`, the
-`cov` CLI) onto it.
+## After the product
 
-### Phase 4 — wire end-to-end, then ship
+### Phase E — factor out `covalence-pure`, sophisticate the backend
 
-Reconnect the shell / REPL / server so we can run **`covalence-core`
-proofs from the shell again**; reinstate the HOL Python bindings on
-`covalence-hol`; wire in the stores, WASM oracles (via the observer
-rules), and tree-store. Then ship.
+Reintroduce `covalence-pure` (the first-order base; HOL as a type inside it,
+[`covalence-pure.md`](./covalence-pure.md)), then the **WASM executor models** —
+the computational-metatheory / bottom layer: programs join by proving their
+bytecode meets a spec under the executor's semantics; proven-WASM compilation makes
+the middle layer "generalized Haskell." (Also folds in the legacy
+`covalence-kernel` → re-export-façade migration of the app stack.)
 
-The REPL is also the seed of the interactive "play, then distill"
-frontend ([`frontend.md`](./frontend.md) §6): the `.cov` script layer
-already replays untrusted proofs against the kernel by content hash
-(`check-cov` / `check-cov-hash`), so a session transcript is the
-embryonic notebook a later pass distills into a content-addressed
-theory. That distillation layer is post-MVP.
+### Phase F — more frontends, with commutative-diagram confidence
+
+Add frontends beyond `.cov`/`#sig` — **SpecTec** (the WebAssembly spec DSL) as a
+first-class frontend, **egg/egglog** theories, etc. Gain confidence in a complex
+frontend the **mirror-principle** way: prove a *commutative diagram* —
+`SpecTec ⟶ our-prover` vs `SpecTec ⟶ HOL ⟶ HOL-in-our-prover` — equivalent, so two
+independent lowerings agreeing is the evidence. Same shape for egg/egglog.
+
+---
+
+## Reference: the backup branch
+
+The repo was pared to the *current design only*; everything removed lives on
+**`backup/pre-hol-cleanup`** (`git checkout backup/pre-hol-cleanup -- <path>`):
+the old `covalence-hol` postulate catalogues (`nat_axioms.rs`/`int_axioms.rs`/old
+`init/`), the gated Pure-era modules (`bridge.rs`/`peano.rs`/`pure_hol.rs`), the
+HOL Python bindings (`covalence-python/src/pure.rs`), and the retired docs
+(`ARCHITECTURE.md`/`AGENTS.md`/`MVP_DESIGN.md`/`plan.md`/`docs/design/proposals/*`/
+the arena-egraph prover docs).

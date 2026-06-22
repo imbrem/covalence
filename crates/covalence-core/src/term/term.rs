@@ -508,8 +508,31 @@ impl Term {
         }
     }
 
-    fn alloc(kind: TermKind) -> Self {
+    /// Allocate a fresh `Arc` for `kind` (no interning). This is the
+    /// canonical no-op [`crate::term::TrustedCons`] (`<()>::cons`); the
+    /// smart constructors below all bottom out here. Crate-internal so the
+    /// `cons` module can use it as the trusted baseline.
+    pub(crate) fn alloc(kind: TermKind) -> Self {
         Term(Arc::new(kind))
+    }
+
+    /// Rebuild this term bottom-up through `cons`, returning a
+    /// structurally-equal term. With `&mut ()` this is a deep structural
+    /// copy (sharing untouched leaves); with a [`crate::term::HashCons`]
+    /// it **interns** the whole tree, so equal subterms — within this
+    /// term and across every other term routed through the same interner —
+    /// come back `Arc`-shared.
+    ///
+    /// Only `App`/`Abs` interior nodes are rebuilt from interned children;
+    /// every leaf is consed from a clone of its kind. `Def` is treated as
+    /// an opaque leaf — its body is not interned.
+    pub fn cons_with<C: crate::term::TrustedCons + ?Sized>(&self, cons: &mut C) -> Term {
+        let kind = match self.kind() {
+            TermKind::App(f, x) => TermKind::App(f.cons_with(cons), x.cons_with(cons)),
+            TermKind::Abs(ty, body) => TermKind::Abs(ty.clone(), body.cons_with(cons)),
+            other => other.clone(),
+        };
+        cons.cons(kind)
     }
 
     // ---- smart constructors ----

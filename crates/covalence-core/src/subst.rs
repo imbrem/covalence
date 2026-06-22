@@ -13,22 +13,34 @@ use std::collections::BTreeMap;
 
 use smol_str::SmolStr;
 
-use crate::term::{Term, TermKind, Type, TypeKind};
+use crate::term::{Term, TermKind, TrustedCons, Type, TypeKind};
 
 // ============================================================================
 // Substitution
 // ============================================================================
+//
+// The term-rebuilding operations come in `_with` / plain pairs (see
+// `crate::term::cons`): `foo_with(…, cons)` routes every constructed node
+// through a caller-supplied `TrustedCons`, and `foo(…)` delegates to
+// `foo_with(…, &mut ())` (allocate fresh, no interning). Pass a
+// `HashCons` to `_with` to intern the rebuilt structure. Subterms that
+// are reused unchanged are shared by `clone`, independent of `cons`.
 
 /// Abstract `Free(name, _)` into `Bound(0)`. Recurses into binders,
 /// incrementing the target depth on the way in. Used to build the body
 /// of an `Abs`/`All` from a term that mentions a fresh free variable.
 pub fn close(t: &Term, name: &str) -> Term {
-    close_at(t, name, 0)
+    close_with(t, name, &mut ())
 }
 
-fn close_at(t: &Term, name: &str, depth: u32) -> Term {
+/// [`close`] routing constructed nodes through `cons`.
+pub fn close_with<C: TrustedCons + ?Sized>(t: &Term, name: &str, cons: &mut C) -> Term {
+    close_at(t, name, 0, cons)
+}
+
+fn close_at<C: TrustedCons + ?Sized>(t: &Term, name: &str, depth: u32, cons: &mut C) -> Term {
     match t.kind() {
-        TermKind::Free(n, _) if n == name => Term::bound(depth),
+        TermKind::Free(n, _) if n == name => cons.cons(TermKind::Bound(depth)),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -45,8 +57,15 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::Obs(..)
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
-        TermKind::App(f, x) => Term::app(close_at(f, name, depth), close_at(x, name, depth)),
-        TermKind::Abs(ty, body) => Term::abs(ty.clone(), close_at(body, name, depth + 1)),
+        TermKind::App(f, x) => {
+            let f = close_at(f, name, depth, cons);
+            let x = close_at(x, name, depth, cons);
+            cons.cons(TermKind::App(f, x))
+        }
+        TermKind::Abs(ty, body) => {
+            let body = close_at(body, name, depth + 1, cons);
+            cons.cons(TermKind::Abs(ty.clone(), body))
+        }
     }
 }
 
@@ -56,74 +75,23 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
 /// at which the substitution happens. Used in β-reduction and
 /// ⋀-elimination.
 pub fn open(body: &Term, u: &Term) -> Term {
-    inst(body, u, 0)
+    open_with(body, u, &mut ())
 }
 
-fn inst(t: &Term, u: &Term, depth: u32) -> Term {
+/// [`open`] routing constructed nodes through `cons`.
+pub fn open_with<C: TrustedCons + ?Sized>(body: &Term, u: &Term, cons: &mut C) -> Term {
+    inst(body, u, 0, cons)
+}
+
+fn inst<C: TrustedCons + ?Sized>(t: &Term, u: &Term, depth: u32, cons: &mut C) -> Term {
     match t.kind() {
         TermKind::Bound(i) => {
             let i = *i;
             match i.cmp(&depth) {
-                Ordering::Less => Term::bound(i),
-                Ordering::Equal => shift_by(u, depth as i64, 0),
-                Ordering::Greater => Term::bound(i - 1),
+                Ordering::Less => cons.cons(TermKind::Bound(i)),
+                Ordering::Equal => shift_with(u, depth as i64, 0, cons),
+                Ordering::Greater => cons.cons(TermKind::Bound(i - 1)),
             }
-        }
-        TermKind::Free(..)
-        | TermKind::Const(..)
-        | TermKind::Blob(_)
-        | TermKind::Nat(_)
-        | TermKind::Int(_)
-        | TermKind::SmallInt(_)
-        | TermKind::Bool(_)
-        | TermKind::Eq(_)
-        | TermKind::Select(_)
-        | TermKind::Spec(_, _)
-        | TermKind::SpecAbs(..)
-        | TermKind::SpecRep(..)
-        | TermKind::Obs(..)
-        | TermKind::Succ
-        | TermKind::Def(_) => t.clone(),
-        TermKind::App(f, x) => Term::app(inst(f, u, depth), inst(x, u, depth)),
-        TermKind::Abs(ty, body) => Term::abs(ty.clone(), inst(body, u, depth + 1)),
-    }
-}
-
-/// Shift every `Bound(i)` with `i ≥ cutoff` by `delta`.
-///
-/// Negative `delta` is permitted but only if the caller has
-/// established (typically via [`uses_bound_outer`]) that no `Bound(i)`
-/// with `i ≥ cutoff` ever needs to drop below zero. The only TCB
-/// caller that uses negative `delta` is `Thm::eta_conv`, which checks
-/// exactly that precondition before calling.
-///
-/// On underflow this function **panics** rather than wrapping —
-/// soundness depends on the caller's check, and silently producing a
-/// `Bound(u32::MAX)` would let the bug propagate.
-pub fn shift_by(t: &Term, delta: i64, cutoff: u32) -> Term {
-    if delta == 0 {
-        return t.clone();
-    }
-    shift_inner(t, delta, cutoff)
-}
-
-fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
-    match t.kind() {
-        TermKind::Bound(i) => {
-            let i = *i;
-            if i < cutoff {
-                return Term::bound(i);
-            }
-            let new = (i as i64)
-                .checked_add(delta)
-                .expect("shift_by: i64 overflow in Bound index");
-            if new < 0 {
-                panic!("shift_by: Bound underflow (i={i}, delta={delta}, cutoff={cutoff})");
-            }
-            if new > u32::MAX as i64 {
-                panic!("shift_by: Bound index exceeds u32::MAX (i={i}, delta={delta})");
-            }
-            Term::bound(new as u32)
         }
         TermKind::Free(..)
         | TermKind::Const(..)
@@ -141,9 +109,87 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => {
-            Term::app(shift_inner(f, delta, cutoff), shift_inner(x, delta, cutoff))
+            let f = inst(f, u, depth, cons);
+            let x = inst(x, u, depth, cons);
+            cons.cons(TermKind::App(f, x))
         }
-        TermKind::Abs(ty, body) => Term::abs(ty.clone(), shift_inner(body, delta, cutoff + 1)),
+        TermKind::Abs(ty, body) => {
+            let body = inst(body, u, depth + 1, cons);
+            cons.cons(TermKind::Abs(ty.clone(), body))
+        }
+    }
+}
+
+/// Shift every `Bound(i)` with `i ≥ cutoff` by `delta`.
+///
+/// Negative `delta` is permitted but only if the caller has
+/// established (typically via [`uses_bound_outer`]) that no `Bound(i)`
+/// with `i ≥ cutoff` ever needs to drop below zero. The only TCB
+/// caller that uses negative `delta` is `Thm::eta_conv`, which checks
+/// exactly that precondition before calling.
+///
+/// On underflow this function **panics** rather than wrapping —
+/// soundness depends on the caller's check, and silently producing a
+/// `Bound(u32::MAX)` would let the bug propagate.
+pub fn shift_by(t: &Term, delta: i64, cutoff: u32) -> Term {
+    shift_with(t, delta, cutoff, &mut ())
+}
+
+/// [`shift_by`] routing constructed nodes through `cons`.
+pub fn shift_with<C: TrustedCons + ?Sized>(
+    t: &Term,
+    delta: i64,
+    cutoff: u32,
+    cons: &mut C,
+) -> Term {
+    if delta == 0 {
+        return t.clone();
+    }
+    shift_inner(t, delta, cutoff, cons)
+}
+
+fn shift_inner<C: TrustedCons + ?Sized>(t: &Term, delta: i64, cutoff: u32, cons: &mut C) -> Term {
+    match t.kind() {
+        TermKind::Bound(i) => {
+            let i = *i;
+            if i < cutoff {
+                return cons.cons(TermKind::Bound(i));
+            }
+            let new = (i as i64)
+                .checked_add(delta)
+                .expect("shift_by: i64 overflow in Bound index");
+            if new < 0 {
+                panic!("shift_by: Bound underflow (i={i}, delta={delta}, cutoff={cutoff})");
+            }
+            if new > u32::MAX as i64 {
+                panic!("shift_by: Bound index exceeds u32::MAX (i={i}, delta={delta})");
+            }
+            cons.cons(TermKind::Bound(new as u32))
+        }
+        TermKind::Free(..)
+        | TermKind::Const(..)
+        | TermKind::Blob(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::SmallInt(_)
+        | TermKind::Bool(_)
+        | TermKind::Eq(_)
+        | TermKind::Select(_)
+        | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..)
+        | TermKind::Obs(..)
+        | TermKind::Succ
+        | TermKind::Def(_) => t.clone(),
+        TermKind::App(f, x) => {
+            let f = shift_inner(f, delta, cutoff, cons);
+            let x = shift_inner(x, delta, cutoff, cons);
+            cons.cons(TermKind::App(f, x))
+        }
+        TermKind::Abs(ty, body) => {
+            let body = shift_inner(body, delta, cutoff + 1, cons);
+            cons.cons(TermKind::Abs(ty.clone(), body))
+        }
     }
 }
 
@@ -152,12 +198,28 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
 /// that any `Bound` references inside `r` continue to refer to the
 /// outer environment.
 pub fn subst_free(t: &Term, name: &str, r: &Term) -> Term {
-    subst_free_at(t, name, r, 0)
+    subst_free_with(t, name, r, &mut ())
 }
 
-fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
+/// [`subst_free`] routing constructed nodes through `cons`.
+pub fn subst_free_with<C: TrustedCons + ?Sized>(
+    t: &Term,
+    name: &str,
+    r: &Term,
+    cons: &mut C,
+) -> Term {
+    subst_free_at(t, name, r, 0, cons)
+}
+
+fn subst_free_at<C: TrustedCons + ?Sized>(
+    t: &Term,
+    name: &str,
+    r: &Term,
+    depth: u32,
+    cons: &mut C,
+) -> Term {
     match t.kind() {
-        TermKind::Free(n, _) if n == name => shift_by(r, depth as i64, 0),
+        TermKind::Free(n, _) if n == name => shift_with(r, depth as i64, 0, cons),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -174,11 +236,15 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
         | TermKind::Obs(..)
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
-        TermKind::App(f, x) => Term::app(
-            subst_free_at(f, name, r, depth),
-            subst_free_at(x, name, r, depth),
-        ),
-        TermKind::Abs(ty, body) => Term::abs(ty.clone(), subst_free_at(body, name, r, depth + 1)),
+        TermKind::App(f, x) => {
+            let f = subst_free_at(f, name, r, depth, cons);
+            let x = subst_free_at(x, name, r, depth, cons);
+            cons.cons(TermKind::App(f, x))
+        }
+        TermKind::Abs(ty, body) => {
+            let body = subst_free_at(body, name, r, depth + 1, cons);
+            cons.cons(TermKind::Abs(ty.clone(), body))
+        }
     }
 }
 
@@ -256,76 +322,116 @@ pub fn subst_tfrees_in_type(ty: &Type, sub: &BTreeMap<SmolStr, Type>) -> Type {
 /// annotation in `t` (see [`subst_tfrees_in_type`] for why a single
 /// pass matters — it avoids cascading `{a:=b, b:=c}` into `a → c`).
 pub fn subst_tfrees_in_term(t: &Term, sub: &BTreeMap<SmolStr, Type>) -> Term {
+    subst_tfrees_in_term_with(t, sub, &mut ())
+}
+
+/// [`subst_tfrees_in_term`] routing constructed nodes through `cons`.
+pub fn subst_tfrees_in_term_with<C: TrustedCons + ?Sized>(
+    t: &Term,
+    sub: &BTreeMap<SmolStr, Type>,
+    cons: &mut C,
+) -> Term {
     if sub.is_empty() {
         return t.clone();
     }
     let st = |ty: &Type| subst_tfrees_in_type(ty, sub);
-    let go = |x: &Term| subst_tfrees_in_term(x, sub);
-    match t.kind() {
-        TermKind::Bound(i) => Term::bound(*i),
-        TermKind::Free(n, ty) => Term::free(n.clone(), st(ty)),
-        TermKind::Const(n, ty) => Term::const_(n.clone(), st(ty)),
-        TermKind::App(f, x) => Term::app(go(f), go(x)),
-        TermKind::Abs(ty, body) => Term::abs(st(ty), go(body)),
-        TermKind::Blob(b) => Term::blob(b.clone()),
-        TermKind::Nat(n) => Term::nat_lit(n.clone()),
-        TermKind::Int(n) => Term::int_lit(n.clone()),
-        TermKind::SmallInt(lit) => Term::small_int(*lit),
-        TermKind::Bool(b) => Term::bool_lit(*b),
-        TermKind::Eq(alpha) => Term::eq_op(st(alpha)),
-        TermKind::Select(alpha) => Term::select_op(st(alpha)),
-        TermKind::Succ => Term::succ(),
-        TermKind::Spec(spec, args) => {
-            Term::term_spec(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
+    let kind = match t.kind() {
+        TermKind::Bound(i) => TermKind::Bound(*i),
+        TermKind::Free(n, ty) => TermKind::Free(n.clone(), st(ty)),
+        TermKind::Const(n, ty) => TermKind::Const(n.clone(), st(ty)),
+        TermKind::App(f, x) => {
+            let f = subst_tfrees_in_term_with(f, sub, cons);
+            let x = subst_tfrees_in_term_with(x, sub, cons);
+            TermKind::App(f, x)
         }
-        TermKind::SpecAbs(spec, args) => {
-            Term::spec_abs(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
+        TermKind::Abs(ty, body) => {
+            let ty = st(ty);
+            let body = subst_tfrees_in_term_with(body, sub, cons);
+            TermKind::Abs(ty, body)
         }
-        TermKind::SpecRep(spec, args) => {
-            Term::spec_rep(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
-        }
-        TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
+        TermKind::Blob(b) => TermKind::Blob(b.clone()),
+        TermKind::Nat(n) => TermKind::Nat(n.clone()),
+        TermKind::Int(n) => TermKind::Int(n.clone()),
+        TermKind::SmallInt(lit) => TermKind::SmallInt(*lit),
+        TermKind::Bool(b) => TermKind::Bool(*b),
+        TermKind::Eq(alpha) => TermKind::Eq(st(alpha)),
+        TermKind::Select(alpha) => TermKind::Select(st(alpha)),
+        TermKind::Succ => TermKind::Succ,
+        TermKind::Spec(spec, args) => TermKind::Spec(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::SpecAbs(spec, args) => TermKind::SpecAbs(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::SpecRep(spec, args) => TermKind::SpecRep(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::Obs(observer, ty) => TermKind::Obs(observer.clone(), st(ty)),
         TermKind::Def(d) => {
-            Term::def(d.with_instance_type(subst_tfrees_in_type(d.instance_type(), sub)))
+            TermKind::Def(d.with_instance_type(subst_tfrees_in_type(d.instance_type(), sub)))
         }
-    }
+    };
+    cons.cons(kind)
 }
 
 /// Replace every `TFree(name)` with `r` in every type annotation inside
 /// `t`, including the `ty` field of any `Obs` leaf. The observer value
 /// itself is opaque and untouched.
 pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
+    subst_tfree_in_term_with(t, name, r, &mut ())
+}
+
+/// [`subst_tfree_in_term`] routing constructed nodes through `cons`.
+pub fn subst_tfree_in_term_with<C: TrustedCons + ?Sized>(
+    t: &Term,
+    name: &str,
+    r: &Type,
+    cons: &mut C,
+) -> Term {
     let st = |ty: &Type| subst_tfree_in_type(ty, name, r);
-    let sub = |x: &Term| subst_tfree_in_term(x, name, r);
-    match t.kind() {
-        TermKind::Bound(i) => Term::bound(*i),
-        TermKind::Free(n, ty) => Term::free(n.clone(), st(ty)),
-        TermKind::Const(n, ty) => Term::const_(n.clone(), st(ty)),
-        TermKind::App(f, x) => Term::app(sub(f), sub(x)),
-        TermKind::Abs(ty, body) => Term::abs(st(ty), sub(body)),
-        TermKind::Blob(b) => Term::blob(b.clone()),
-        TermKind::Nat(n) => Term::nat_lit(n.clone()),
-        TermKind::Int(n) => Term::int_lit(n.clone()),
-        TermKind::SmallInt(lit) => Term::small_int(*lit),
-        TermKind::Bool(b) => Term::bool_lit(*b),
-        TermKind::Eq(alpha) => Term::eq_op(st(alpha)),
-        TermKind::Select(alpha) => Term::select_op(st(alpha)),
-        TermKind::Succ => Term::succ(),
+    let kind = match t.kind() {
+        TermKind::Bound(i) => TermKind::Bound(*i),
+        TermKind::Free(n, ty) => TermKind::Free(n.clone(), st(ty)),
+        TermKind::Const(n, ty) => TermKind::Const(n.clone(), st(ty)),
+        TermKind::App(f, x) => {
+            let f = subst_tfree_in_term_with(f, name, r, cons);
+            let x = subst_tfree_in_term_with(x, name, r, cons);
+            TermKind::App(f, x)
+        }
+        TermKind::Abs(ty, body) => {
+            let ty = st(ty);
+            let body = subst_tfree_in_term_with(body, name, r, cons);
+            TermKind::Abs(ty, body)
+        }
+        TermKind::Blob(b) => TermKind::Blob(b.clone()),
+        TermKind::Nat(n) => TermKind::Nat(n.clone()),
+        TermKind::Int(n) => TermKind::Int(n.clone()),
+        TermKind::SmallInt(lit) => TermKind::SmallInt(*lit),
+        TermKind::Bool(b) => TermKind::Bool(*b),
+        TermKind::Eq(alpha) => TermKind::Eq(st(alpha)),
+        TermKind::Select(alpha) => TermKind::Select(st(alpha)),
+        TermKind::Succ => TermKind::Succ,
         // For a `Spec` leaf the type args participate in type-var
         // substitution; the spec handle (`Arc`-shared) is untouched.
-        TermKind::Spec(spec, args) => {
-            Term::term_spec(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
-        }
+        TermKind::Spec(spec, args) => TermKind::Spec(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
         // `abs`/`rep` coercions carry type args that participate in
         // type-var substitution; the spec handle (`Arc`-shared) is
         // untouched, exactly like `TermKind::Spec`.
-        TermKind::SpecAbs(spec, args) => {
-            Term::spec_abs(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
-        }
-        TermKind::SpecRep(spec, args) => {
-            Term::spec_rep(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
-        }
-        TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
+        TermKind::SpecAbs(spec, args) => TermKind::SpecAbs(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::SpecRep(spec, args) => TermKind::SpecRep(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::Obs(observer, ty) => TermKind::Obs(observer.clone(), st(ty)),
         // `Def` carries an `original` Arc identity (the unique
         // `Thm::define` call) plus an `instance_type`. Substitution
         // updates `instance_type` without rebuilding `original`, so
@@ -333,9 +439,10 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         // same instance — the property HOL Light's `INST_TYPE` and
         // polymorphic-constant equality depend on.
         TermKind::Def(d) => {
-            Term::def(d.with_instance_type(subst_tfree_in_type(d.instance_type(), name, r)))
+            TermKind::Def(d.with_instance_type(subst_tfree_in_type(d.instance_type(), name, r)))
         }
-    }
+    };
+    cons.cons(kind)
 }
 
 // ============================================================================

@@ -16,14 +16,39 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
+use covalence_hol::metalogic::mm_database::{Parser, derive_theorem_with};
 use covalence_hol::metalogic::mm_import::{import_labels_parallel, theorem_labels};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let path = args.get(1).cloned().unwrap_or_else(|| {
         eprintln!("usage: mm_import_bench <path.mm> [limit] [workers]");
+        eprintln!("       mm_import_bench <path.mm> --only <label> [reps]");
         std::process::exit(2);
     });
+
+    // Single-theorem mode: derive ONE theorem `reps` times on one thread (for
+    // `perf record` / flamegraphs of a specific slow proof).
+    if args.get(2).map(String::as_str) == Some("--only") {
+        let label = args.get(3).cloned().unwrap_or_else(|| {
+            eprintln!("--only needs a label");
+            std::process::exit(2);
+        });
+        let reps: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(50);
+        let source = std::fs::read_to_string(&path).expect("read .mm");
+        let db = covalence_hol::metamath::parse(&source).expect("parse");
+        let parser = Parser::new(&db);
+        // Warm once (don't time the first, page-fault-heavy run).
+        let _ = derive_theorem_with(&db, &parser, &label).expect("derive");
+        let t0 = Instant::now();
+        for _ in 0..reps {
+            let _ = derive_theorem_with(&db, &parser, &label).expect("derive");
+        }
+        let per = t0.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+        eprintln!("[import-bench] {label}: {per:.3} ms/derive over {reps} reps");
+        println!("{{\"label\":{label:?},\"reps\":{reps},\"ms_per_derive\":{per:.3}}}");
+        return;
+    }
     let limit: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
     let workers: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
 

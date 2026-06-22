@@ -250,7 +250,9 @@ pub async fn create_db(
     };
 
     let total = covalence_hol::metalogic::mm_import::theorem_labels(&db).len();
-    let (status_tx, _rx) = tokio::sync::broadcast::channel::<String>(1024);
+    // Generous capacity so the per-theorem frame stream rarely overruns a
+    // briefly-busy client (a Lagged overrun self-heals via a re-sent snapshot).
+    let (status_tx, _rx) = tokio::sync::broadcast::channel::<String>(16384);
     let origin = q.from.clone();
     let session = Arc::new(MmSession {
         db: Arc::new(db),
@@ -546,8 +548,10 @@ async fn handle_status_ws(mut socket: WebSocket, sess: Arc<MmSession>) {
     // and the first forwarded message is lost.
     let mut rx = sess.status_tx.subscribe();
 
-    // Minimal snapshot: just label+ok for already-proved theorems.
-    let snapshot = {
+    // A `snapshot` frame: label+ok for every already-proved theorem. Built from
+    // the authoritative `results` cache, so it fully re-syncs the client's
+    // statuses — used both on connect and to *recover from a broadcast lag*.
+    let snapshot = || {
         let results = sess.results.read().unwrap();
         let entries: Vec<Value> = results
             .iter()
@@ -555,7 +559,7 @@ async fn handle_status_ws(mut socket: WebSocket, sess: Arc<MmSession>) {
             .collect();
         json!({ "type": "snapshot", "total": sess.total, "results": entries }).to_string()
     };
-    if socket.send(Message::Text(snapshot.into())).await.is_err() {
+    if socket.send(Message::Text(snapshot().into())).await.is_err() {
         return;
     }
 
@@ -566,9 +570,14 @@ async fn handle_status_ws(mut socket: WebSocket, sess: Arc<MmSession>) {
                     break;
                 }
             }
-            // Lagged: a slow client missed frames; keep going (the next GET
-            // /theorem or a reconnect-snapshot recovers state).
-            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            // Lagged: the client briefly fell behind and the bounded broadcast
+            // ring dropped frames. Re-send a full snapshot so no theorem is left
+            // stuck (the `results` cache is authoritative), then keep streaming.
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                if socket.send(Message::Text(snapshot().into())).await.is_err() {
+                    break;
+                }
+            }
             Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
         }
     }

@@ -444,6 +444,57 @@
 		}
 	}
 
+	// Per-theorem status frames can arrive far faster than a 60k-row reactive UI
+	// can absorb them (each row mutation invalidates the O(n) deriveds —
+	// byLabel/sorted/filtered/tallies). So `onmessage` only *buffers* frames
+	// (cheap, non-reactive) and we drain the buffer once per animation frame:
+	// the expensive reactive recompute happens at most ~60×/s no matter the
+	// server throughput, and the socket drains fast (no backpressure / dropped
+	// broadcast frames). The server stays simple — it pushes per-theorem.
+	let statusBuf: MmStatusMessage[] = [];
+	let flushQueued = false;
+
+	function scheduleFlush() {
+		if (flushQueued) return;
+		flushQueued = true;
+		requestAnimationFrame(flushStatus);
+	}
+
+	function flushStatus() {
+		flushQueued = false;
+		const batch = statusBuf;
+		statusBuf = [];
+		let maxDone = done;
+		let refreshSelected = false;
+		for (const msg of batch) {
+			const i = labelIndex.get(msg.label);
+			if (i == null) continue;
+			const t = theorems[i];
+			if (msg.type === 'proving') {
+				if (t.status === 'pending') t.status = 'proving';
+				currentLabel = msg.label;
+			} else if (msg.type === 'proved') {
+				t.status = msg.ok ? 'proved' : 'error';
+				t.ok = msg.ok;
+				t.hyps = msg.hyps;
+				t.genuine = msg.genuine;
+				t.holPreview = msg.holPreview;
+				t.error = msg.error;
+				t.importMs = msg.importMs;
+				if (msg.done > maxDone) maxDone = msg.done;
+				if (selected && selected.label === msg.label) refreshSelected = true;
+			}
+		}
+		done = maxDone;
+		if (refreshSelected && selected) {
+			const i = labelIndex.get(selected.label);
+			if (i != null) {
+				detailCache.delete(selected.label);
+				void selectTheorem(theorems[i]);
+			}
+		}
+	}
+
 	function connectStatus(hash: string) {
 		ws = client.connectMmStatus(hash, user);
 		ws.onmessage = (ev) => {
@@ -453,7 +504,14 @@
 			} catch {
 				return;
 			}
-			handle(msg);
+			if (msg.type === 'proving' || msg.type === 'proved') {
+				statusBuf.push(msg); // coalesce — applied on the next animation frame
+				scheduleFlush();
+			} else {
+				// snapshot / done / error: rare; apply now (drain buffered rows first).
+				if (statusBuf.length) flushStatus();
+				handle(msg);
+			}
 		};
 		ws.onerror = () => {
 			// Non-fatal: the import keeps running server-side; the page just

@@ -11,7 +11,8 @@
 use covalence_types::Nat;
 
 use crate::defs;
-use crate::subst::close;
+use crate::subst::close_var;
+use crate::term::Var;
 use crate::term::{Term, Type};
 
 // ============================================================================
@@ -44,7 +45,7 @@ pub(crate) fn hol_not(p: Term) -> Term {
 
 /// HOL `∃x:α. body[x]` — `exists[α] (λx:α. body[Bound 0])`.
 pub(crate) fn hol_exists(hint: &str, alpha: Type, body: Term) -> Term {
-    let closed = close(&body, hint);
+    let closed = close_var(&body, &Var::new(hint, alpha.clone()));
     let lambda = Term::abs(alpha.clone(), closed);
     Term::app(defs::exists(alpha), lambda)
 }
@@ -57,7 +58,7 @@ pub(crate) fn forall_at(alpha: Type) -> Term {
 /// HOL `∀x:α. body[x]` — `forall[α] (λx:α. body[Bound 0])`. The free
 /// variable `Free(hint, α)` in `body` is closed into `Bound(0)`.
 pub(crate) fn hol_forall(hint: &str, alpha: Type, body: Term) -> Term {
-    let closed = close(&body, hint);
+    let closed = close_var(&body, &Var::new(hint, alpha.clone()));
     let lambda = Term::abs(alpha.clone(), closed);
     Term::app(forall_at(alpha), lambda)
 }
@@ -95,7 +96,8 @@ pub(crate) fn hol_eq_at(alpha: Type, lhs: Term, rhs: Term) -> Term {
 /// var into `Bound(0)` first. Exposed to `defs/` for building
 /// predicate lambdas inside `TypeSpec.tm`.
 pub(crate) fn pub_abs(hint: &str, alpha: Type, body: Term) -> Term {
-    Term::abs(alpha, close(&body, hint))
+    let v = Var::new(hint, alpha.clone());
+    Term::abs(alpha, close_var(&body, &v))
 }
 
 // ============================================================================

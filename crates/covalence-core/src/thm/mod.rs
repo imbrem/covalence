@@ -43,12 +43,12 @@ use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hol;
 use crate::subst::{
-    close, find_free_type, has_free_var, open, subst_free, subst_tfree_in_term,
-    subst_tfrees_in_term,
+    close_var, has_free_var_typed, open, subst_free, subst_tfree_in_term, subst_tfrees_in_term,
 };
 
 use crate::term::{
-    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, TypeKind, type_of_in,
+    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, TypeKind, Var,
+    type_of_in,
 };
 use crate::ty::{TypeList, TypeSpec};
 
@@ -226,25 +226,20 @@ impl Thm {
     pub fn abs(self, name: &str, ty: Type) -> Result<Thm> {
         let (s, t, alpha) = parse_hol_eq_at(&self.concl)?;
         let alpha = alpha.clone();
+        let var = Var::new(name, ty.clone());
+        // The bound variable `var` must not be free in the hypotheses
+        // (HOL Light's ABS side-condition).
         for h in self.hyps.iter() {
-            if has_free_var(h, name) {
+            if has_free_var_typed(h, &var) {
                 return Err(Error::FreeVarInHyps { name: name.into() });
             }
         }
-        let declared = find_free_type(s, name).or_else(|| find_free_type(t, name));
-        if let Some(declared) = declared
-            && declared != ty
-        {
-            return Err(Error::BinderTypeMismatch {
-                name: name.into(),
-                declared,
-                expected: ty,
-            });
-        }
         let s = s.clone();
         let t = t.clone();
-        let s_abs = Term::abs(ty.clone(), close(&s, name));
-        let t_abs = Term::abs(ty.clone(), close(&t, name));
+        // Bind exactly the variable `var`; a same-named variable at a
+        // different type is untouched.
+        let s_abs = Term::abs(ty.clone(), close_var(&s, &var));
+        let t_abs = Term::abs(ty.clone(), close_var(&t, &var));
         // The abstractions have type `ty → alpha` (alpha = the bodies'
         // shared element type from the input `Eq` head), so that is the
         // result equation's element type — no walk.
@@ -339,31 +334,15 @@ impl Thm {
         Self::build(hyps, concl)
     }
 
-    /// HOL Light's `INST`: substitute a free term variable. `name`
-    /// is the free var to replace; `replacement` is the term to
-    /// substitute. The replacement's type must match the free var's
-    /// declared type, if the variable appears anywhere in the
-    /// theorem (concl or hyps).
-    ///
-    /// `Thm::build`'s re-typing pass also catches type mismatches
-    /// (it re-validates the substituted term end-to-end), but the
-    /// explicit check here gives a more specific error message and
-    /// rejects ill-typed substitutions even when the post-substitution
-    /// term happens to type-check at a wrong type by accident.
+    /// HOL Light's `INST`: substitute the free variable `(name,
+    /// replacement_ty)` — identified by name **and** type — with
+    /// `replacement`. A same-named variable at a different type is a
+    /// distinct variable and is left untouched (so a type-mismatched
+    /// substitution is a no-op, as in HOL Light's `vsubst`).
     pub fn inst(self, name: &str, replacement: Term) -> Result<Thm> {
-        let replacement_ty = replacement.type_of()?;
-        let declared = find_free_type(&self.concl, name)
-            .or_else(|| self.hyps.iter().find_map(|h| find_free_type(h, name)));
-        if let Some(declared) = declared
-            && declared != replacement_ty
-        {
-            return Err(Error::TypeMismatch {
-                expected: declared,
-                got: replacement_ty,
-            });
-        }
-        let concl = subst_free(&self.concl, name, &replacement);
-        let hyps = self.hyps.map(|h| subst_free(h, name, &replacement));
+        let var = Var::new(name, replacement.type_of()?);
+        let concl = subst_free(&self.concl, &var, &replacement);
+        let hyps = self.hyps.map(|h| subst_free(h, &var, &replacement));
         Self::build(hyps, concl)
     }
 
@@ -459,19 +438,13 @@ impl Thm {
     /// close the free variable into a `Bound(0)` and wrap with
     /// `Forall_at(τ)`.
     pub fn all_intro(self, name: &str, ty: Type) -> Result<Thm> {
+        // The generalised variable `(name, ty)` must not be free in the
+        // hypotheses.
+        let var = Var::new(name, ty.clone());
         for h in self.hyps.iter() {
-            if has_free_var(h, name) {
+            if has_free_var_typed(h, &var) {
                 return Err(Error::FreeVarInHyps { name: name.into() });
             }
-        }
-        if let Some(declared) = find_free_type(&self.concl, name)
-            && declared != ty
-        {
-            return Err(Error::BinderTypeMismatch {
-                name: name.into(),
-                declared,
-                expected: ty,
-            });
         }
         let concl = hol::hol_forall(name, ty, self.concl);
         Self::build(self.hyps, concl)
@@ -1186,12 +1159,12 @@ impl Thm {
                 "nat_induct: step uses a different motive than the base".into(),
             ));
         }
-        let TermKind::Free(n_name, n_ty) = n_free.kind() else {
+        let TermKind::Free(nv) = n_free.kind() else {
             return Err(Error::ConnectiveRule(format!(
                 "nat_induct: induction variable {n_free} is not a free variable"
             )));
         };
-        if *n_ty != nat {
+        if *nv.ty() != nat {
             return Err(Error::ConnectiveRule(format!(
                 "nat_induct: induction variable {n_free} is not of type nat"
             )));
@@ -1203,23 +1176,24 @@ impl Thm {
             )));
         }
 
-        // GEN side conditions: n free neither in the motive nor in
-        // the step's hypotheses.
-        if has_free_var(&p, n_name) {
+        // GEN side conditions: the variable `nv` free neither in the
+        // motive nor in the step's hypotheses.
+        if has_free_var_typed(&p, nv) {
             return Err(Error::ConnectiveRule(
                 "nat_induct: induction variable occurs free in the motive".into(),
             ));
         }
         for h in step.hyps.iter() {
-            if has_free_var(h, n_name) {
+            if has_free_var_typed(h, nv) {
                 return Err(Error::FreeVarInHyps {
-                    name: n_name.as_str().into(),
+                    name: nv.name().into(),
                 });
             }
         }
 
+        let n_name = nv.name().to_string();
         let body = Term::app(p, n_free.clone());
-        let concl = hol::hol_forall(n_name, nat, body);
+        let concl = hol::hol_forall(&n_name, nat, body);
         let hyps = base.hyps.union(&step.hyps);
         Self::build(hyps, concl)
     }

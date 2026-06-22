@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 
 use smol_str::SmolStr;
 
-use crate::term::{Term, TermKind, TrustedCons, Type, TypeKind};
+use crate::term::{Term, TermKind, TrustedCons, Type, TypeKind, Var};
 
 // ============================================================================
 // Substitution
@@ -40,7 +40,7 @@ pub fn close_with<C: TrustedCons + ?Sized>(t: &Term, name: &str, cons: &mut C) -
 
 fn close_at<C: TrustedCons + ?Sized>(t: &Term, name: &str, depth: u32, cons: &mut C) -> Term {
     match t.kind() {
-        TermKind::Free(n, _) if n == name => cons.make(TermKind::Bound(depth)),
+        TermKind::Free(v) if v.name() == name => cons.make(TermKind::Bound(depth)),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -66,6 +66,41 @@ fn close_at<C: TrustedCons + ?Sized>(t: &Term, name: &str, depth: u32, cons: &mu
             let body = close_at(body, name, depth + 1, cons);
             cons.make(TermKind::Abs(ty.clone(), body))
         }
+    }
+}
+
+/// Abstract the free variable `var` (identified by name **and** type) into
+/// `Bound(0)` — the type-aware [`close`]. A same-named variable at a
+/// different type is left alone. Used by the kernel `abs`/`∀`-introduction
+/// paths, which receive arbitrary theorem terms that may legitimately
+/// carry distinct same-named variables at different types. (The plain
+/// name-only [`close`] is kept for construction sites where the name has a
+/// single known type.)
+pub fn close_var(t: &Term, var: &Var) -> Term {
+    close_var_at(t, var, 0)
+}
+
+fn close_var_at(t: &Term, var: &Var, depth: u32) -> Term {
+    match t.kind() {
+        TermKind::Free(v) if v == var => Term::bound(depth),
+        TermKind::Bound(_)
+        | TermKind::Free(..)
+        | TermKind::Const(..)
+        | TermKind::Blob(_)
+        | TermKind::Nat(_)
+        | TermKind::Int(_)
+        | TermKind::SmallInt(_)
+        | TermKind::Bool(_)
+        | TermKind::Eq(_)
+        | TermKind::Select(_)
+        | TermKind::Spec(_, _)
+        | TermKind::SpecAbs(..)
+        | TermKind::SpecRep(..)
+        | TermKind::Obs(..)
+        | TermKind::Succ
+        | TermKind::Def(_) => t.clone(),
+        TermKind::App(f, x) => Term::app(close_var_at(f, var, depth), close_var_at(x, var, depth)),
+        TermKind::Abs(bty, body) => Term::abs(bty.clone(), close_var_at(body, var, depth + 1)),
     }
 }
 
@@ -193,33 +228,36 @@ fn shift_inner<C: TrustedCons + ?Sized>(t: &Term, delta: i64, cutoff: u32, cons:
     }
 }
 
-/// Substitute every `Free(name, _)` with `r` in `t`. The replacement is
-/// shifted up by the current binder depth when crossing binders so
-/// that any `Bound` references inside `r` continue to refer to the
-/// outer environment.
-pub fn subst_free(t: &Term, name: &str, r: &Term) -> Term {
-    subst_free_with(t, name, r, &mut ())
+/// Substitute the free variable `var` with `r` in `t` — HOL Light
+/// `vsubst` for a single variable. A free variable is identified by **both
+/// its name and its type** ([`Var`]), so a same-named variable at a
+/// different type is distinct and left untouched. `var.ty()` must be `r`'s
+/// type. The replacement is shifted up by the current binder depth when
+/// crossing binders so any `Bound` references inside `r` continue to refer
+/// to the outer environment.
+pub fn subst_free(t: &Term, var: &Var, r: &Term) -> Term {
+    subst_free_with(t, var, r, &mut ())
 }
 
 /// [`subst_free`] routing constructed nodes through `cons`.
 pub fn subst_free_with<C: TrustedCons + ?Sized>(
     t: &Term,
-    name: &str,
+    var: &Var,
     r: &Term,
     cons: &mut C,
 ) -> Term {
-    subst_free_at(t, name, r, 0, cons)
+    subst_free_at(t, var, r, 0, cons)
 }
 
 fn subst_free_at<C: TrustedCons + ?Sized>(
     t: &Term,
-    name: &str,
+    var: &Var,
     r: &Term,
     depth: u32,
     cons: &mut C,
 ) -> Term {
     match t.kind() {
-        TermKind::Free(n, _) if n == name => shift_with(r, depth as i64, 0, cons),
+        TermKind::Free(v) if v == var => shift_with(r, depth as i64, 0, cons),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -237,13 +275,13 @@ fn subst_free_at<C: TrustedCons + ?Sized>(
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => {
-            let f = subst_free_at(f, name, r, depth, cons);
-            let x = subst_free_at(x, name, r, depth, cons);
+            let f = subst_free_at(f, var, r, depth, cons);
+            let x = subst_free_at(x, var, r, depth, cons);
             cons.make(TermKind::App(f, x))
         }
-        TermKind::Abs(ty, body) => {
-            let body = subst_free_at(body, name, r, depth + 1, cons);
-            cons.make(TermKind::Abs(ty.clone(), body))
+        TermKind::Abs(bty, body) => {
+            let body = subst_free_at(body, var, r, depth + 1, cons);
+            cons.make(TermKind::Abs(bty.clone(), body))
         }
     }
 }
@@ -337,7 +375,7 @@ pub fn subst_tfrees_in_term_with<C: TrustedCons + ?Sized>(
     let st = |ty: &Type| subst_tfrees_in_type(ty, sub);
     let kind = match t.kind() {
         TermKind::Bound(i) => TermKind::Bound(*i),
-        TermKind::Free(n, ty) => TermKind::Free(n.clone(), st(ty)),
+        TermKind::Free(v) => TermKind::Free(Var::new(v.name(), st(v.ty()))),
         TermKind::Const(n, ty) => TermKind::Const(n.clone(), st(ty)),
         TermKind::App(f, x) => {
             let f = subst_tfrees_in_term_with(f, sub, cons);
@@ -394,7 +432,7 @@ pub fn subst_tfree_in_term_with<C: TrustedCons + ?Sized>(
     let st = |ty: &Type| subst_tfree_in_type(ty, name, r);
     let kind = match t.kind() {
         TermKind::Bound(i) => TermKind::Bound(*i),
-        TermKind::Free(n, ty) => TermKind::Free(n.clone(), st(ty)),
+        TermKind::Free(v) => TermKind::Free(Var::new(v.name(), st(v.ty()))),
         TermKind::Const(n, ty) => TermKind::Const(n.clone(), st(ty)),
         TermKind::App(f, x) => {
             let f = subst_tfree_in_term_with(f, name, r, cons);
@@ -478,18 +516,32 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
     }
 }
 
-/// True if `name` appears as a `Free` variable anywhere in `t`.
+/// True if `name` appears as a `Free` variable (at any type) anywhere in
+/// `t`.
 pub fn has_free_var(t: &Term, name: &str) -> bool {
     find_free_type(t, name).is_some()
 }
 
-/// First-encountered declared type of `Free(name)` in `t`, or `None`
-/// if no `Free` with that name appears. Because every theorem
-/// enforces cross-term `Free` consistency at construction, this is
-/// the *only* type the variable can have within that theorem.
+/// True if the free variable `var` — identified by name **and** type —
+/// appears anywhere in `t`. Used by the kernel `abs`/`∀`-intro rules to
+/// check the variable being bound is not free in the hypotheses.
+pub fn has_free_var_typed(t: &Term, var: &Var) -> bool {
+    match t.kind() {
+        TermKind::Free(v) => v == var,
+        TermKind::App(a, b) => has_free_var_typed(a, var) || has_free_var_typed(b, var),
+        TermKind::Abs(_, body) => has_free_var_typed(body, var),
+        _ => false,
+    }
+}
+
+/// First-encountered declared type of a `Free` named `name` in `t`, or
+/// `None` if none appears. With free variables identified by `(name,
+/// type)`, a single name may in principle occur at several types; this
+/// returns the first in traversal order (used only for display / best-
+/// effort diagnostics, never for soundness decisions).
 pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
     match t.kind() {
-        TermKind::Free(n, ty) if n == name => Some(ty.clone()),
+        TermKind::Free(v) if v.name() == name => Some(v.ty().clone()),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -552,7 +604,12 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
 /// substitution-tracking via `instance_type`).
 pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr>) {
     match t.kind() {
-        TermKind::Free(_, ty) | TermKind::Const(_, ty) | TermKind::Obs(_, ty) => {
+        TermKind::Free(v) => {
+            for n in v.ty().free_tvars() {
+                out.insert(n);
+            }
+        }
+        TermKind::Const(_, ty) | TermKind::Obs(_, ty) => {
             for n in ty.free_tvars() {
                 out.insert(n);
             }

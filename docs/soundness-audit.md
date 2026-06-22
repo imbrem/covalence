@@ -89,7 +89,7 @@ tests").
 
 | Assumption | Why sound | Confidence |
 |---|---|---|
-| `Thm::build` is the *only* constructor and is module-private to `thm/`; every rule bottoms out there; `build` re-types concl + all hyps at `bool` sharing one `TypeEnv` (so Free names are globally consistent). | Standard LCF discipline. The boundary is small and the privacy is enforced by Rust's module system. | **HIGH** |
+| `Thm::build` is the *only* constructor and is module-private to `thm/`; every rule bottoms out there; `build` re-types concl + all hyps at `bool`. Free variables are identified by `(name, type)` (`Var`), so there is no cross-term name/type consistency to enforce — a same-named variable at two types is two distinct variables (HOL Light's model). | Standard LCF discipline. The boundary is small and the privacy is enforced by Rust's module system. | **HIGH** |
 | `Obs` leaves compared by `Arc` pointer identity, never user `Eq`/`Ord`/`Hash` (`observer.rs`). | A misbehaving observer cannot corrupt the hyp `BTreeSet`. Verified by inspection; the `PartialEq`/`Ord`/`Hash` impls all go through `Arc::as_ptr`. | **HIGH** |
 
 The supporting machinery `build` *relies on* — `subst.rs` (de Bruijn

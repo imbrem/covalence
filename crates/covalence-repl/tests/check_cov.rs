@@ -39,10 +39,11 @@ fn check_cov_direct_reports_a_bad_proof() {
 fn check_cov_resolves_the_logic_library() {
     let mut s = fresh_session();
     // `(#import logic)` must resolve through the standard-library prelude;
-    // `and.comm` is one of its proved lemmas, referenced here by bare name.
+    // `and.comm.mp` (the implication form of and-commutativity) is one of
+    // its proved lemmas, referenced here by bare name.
     let src = "(#import core)(#open core)(#import logic)(#open logic)\
         (#thm reuse (#concl (==> (and p q) (and q p)))\
-          (#proof (and.comm)))";
+          (#proof (and.comm.mp)))";
     let out = s.eval(&format!("{src:?} check-cov"));
     assert!(
         out.contains("checked 1 theorem(s): reuse"),

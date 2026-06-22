@@ -250,9 +250,9 @@ impl Hasher {
                 buf[1..5].copy_from_slice(&i.to_le_bytes());
                 ctx.tag(buf)
             }
-            TermKind::Free(name, ty) => {
-                let th = self.hash_type(ty, oh);
-                named_with_ty(ctx, T_FREE, name.as_bytes(), th)
+            TermKind::Free(v) => {
+                let th = self.hash_type(v.ty(), oh);
+                named_with_ty(ctx, T_FREE, v.name().as_bytes(), th)
             }
             TermKind::Const(name, ty) => {
                 let th = self.hash_type(ty, oh);

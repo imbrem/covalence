@@ -134,10 +134,10 @@ type; every formula is `bool`.
 TermKind                       Constructor              Notes
 ────────                       ───────────              ─────
 Bound(u32)                     Term::bound(i)           de Bruijn index
-Free(SmolStr, Type)            Term::free(name, ty)
+Free(Var)                      Term::free(name, ty)     Var = (name, type)
 Const(SmolStr, Type)           Term::const_(name, ty)
 App(Term, Term)                Term::app(f, x)
-Abs(BinderHint, Type, Term)    Term::abs(hint, ty, body)
+Abs(Type, Term)                Term::abs(ty, body)      anonymous binder (de Bruijn)
 Nat(Nat)                       Term::nat_lit(n)         arbitrary-precision literal
 Int(Int)                       Term::int_lit(n)
 Bool(bool)                     Term::bool_lit(b)        T or F
@@ -148,6 +148,19 @@ Spec(TermSpec, Vec<Type>)      Term::term_spec(spec, ty_args)   derived TermSpec
 Obs(Object, Type)              Term::obs(o, ty)         observer leaf
 Def(Def)                       Term::def(d)             defined constant
 ```
+
+**Free variables carry their type in their identity.** `Free(Var)` where
+`Var = (name, type)`, so `Var("x", nat)` and `Var("x", bool)` are
+**distinct** variables that may coexist in one theorem (HOL Light's
+`Var(name, ty)` model). Equality / hashing / ordering consider both
+fields, and `subst_free`/`close_var` match a variable by name **and**
+type. Consequently there is **no** cross-term name/type consistency check
+in `type_of`/`Thm::build` (an earlier design enforced one); a
+type-mismatched `inst` is simply a no-op. The name-only `subst::close` is
+a construction convenience (the name has a single known type at the binder
+site); the kernel rules that take arbitrary theorem terms (`abs`,
+`all_intro`, `inst`, `nat_induct`) use the type-aware `close_var` /
+`has_free_var_typed` / `subst_free`.
 
 **`=` and `ε` are the only logical primitives.** `Eq(α)` has type
 `α → α → bool` and `Select(α)` has type `(α → bool) → α`; each is an

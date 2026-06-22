@@ -125,9 +125,10 @@ async fn handle_repl_ws(mut socket: WebSocket, kernel: Kernel) {
 ///   - server, once parsed: `{"type":"parsed","total":N}` (N = logical `$p`
 ///     count).
 ///   - **graph phase** — the whole static declaration graph streams first, in
-///     batches: `{"type":"decl","items":[{label,mm,ess,deps,proof}, …]}`
-///     (every theorem shown immediately, *pending*), terminated by
-///     `{"type":"graphDone"}`.
+///     batches: `{"type":"decl","items":[{label,mm,ess,deps}, …]}` (every
+///     theorem shown immediately, *pending*), terminated by
+///     `{"type":"graphDone"}`. The bulk proof code is NOT streamed — the client
+///     extracts it lazily from the uploaded `.mm` source on selection.
 ///   - **prove phase** — a parallel worker pool flips each theorem live:
 ///     `{"type":"proving","label"}` when a worker picks it up, then
 ///     `{"type":"proved","done","total","label","ok",hyps?,genuine?,
@@ -142,12 +143,19 @@ async fn handle_repl_ws(mut socket: WebSocket, kernel: Kernel) {
 /// columns over the same graph.
 pub async fn mm_import_ws(
     axum::extract::State(_state): axum::extract::State<crate::AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(handle_mm_import_ws)
+    // Optional `?workers=N` — number of prove-phase worker threads (0/absent =
+    // auto via available_parallelism). Out-of-range / unparseable → auto.
+    let workers = params
+        .get("workers")
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(0);
+    ws.on_upgrade(move |socket| handle_mm_import_ws(socket, workers))
 }
 
-async fn handle_mm_import_ws(mut socket: WebSocket) {
+async fn handle_mm_import_ws(mut socket: WebSocket, workers: usize) {
     // The first message carries the raw `.mm` source.
     let source = loop {
         match socket.recv().await {
@@ -158,10 +166,13 @@ async fn handle_mm_import_ws(mut socket: WebSocket) {
         }
     };
 
-    // Stream results from the blocking import task over an mpsc channel.
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
+    // Stream results from the blocking import task over an mpsc channel. The
+    // capacity must be generous: the prove phase floods small `proved` frames
+    // far faster than a browser can drain a 60k-row WebSocket, and a tight
+    // bound makes the worker threads block on `blocking_send` (backpressure).
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(2048);
 
-    std::thread::spawn(move || mm_import_worker(source, tx));
+    std::thread::spawn(move || mm_import_worker(source, workers, tx));
 
     while let Some(msg) = rx.recv().await {
         if socket.send(Message::Text(msg.into())).await.is_err() {
@@ -177,25 +188,20 @@ fn mm_err_frame(message: impl std::fmt::Display) -> String {
 }
 
 /// Compute the **static** declaration data for one theorem label: the rendered
-/// Metamath conclusion (`mm`), essential hypotheses (`ess`), proof code
-/// (`proof`), and the deduped logical (`|-`) dependency list (`deps`). This is
-/// the graph-phase payload — everything about a theorem that doesn't depend on
-/// (re-)deriving its proof through the kernel.
+/// Metamath conclusion (`mm`), essential hypotheses (`ess`), and the deduped
+/// logical (`|-`) dependency list (`deps`). This is the graph-phase payload —
+/// everything about a theorem that doesn't depend on (re-)deriving its proof
+/// through the kernel.
+///
+/// The bulk **proof code** is deliberately *not* streamed: it dominates the
+/// upfront payload and floods the channel. The client lazily extracts a
+/// theorem's proof from the `.mm` source it already uploaded, on selection.
 fn mm_decl_item(db: &covalence_hol::metamath::Database, label: &str) -> serde_json::Value {
-    use covalence_metamath::database::{Proof, Statement};
+    use covalence_metamath::database::Statement;
     use covalence_metamath::{ProofStep, proof_steps};
 
-    let (mm, ess, proof, deps) = match db.statement_by_label(label) {
+    let (mm, ess, deps) = match db.statement_by_label(label) {
         Some(Statement::Assert(a)) => {
-            let proof = match &a.proof {
-                Some(Proof::Normal(labels)) => labels.join(" "),
-                Some(Proof::Compressed { labels, letters }) => format!(
-                    "( {} ) {}",
-                    labels.join(" "),
-                    String::from_utf8_lossy(letters)
-                ),
-                None => String::new(),
-            };
             // Deduped (first-seen order) logical assertions referenced by the
             // proof. Skip Save/Heap steps and syntax formers (typecode != "|-").
             // kind: thm if the dep has its own proof, else df* → def, else axiom.
@@ -227,14 +233,13 @@ fn mm_decl_item(db: &covalence_hol::metamath::Database, label: &str) -> serde_js
             (
                 a.conclusion.render(),
                 a.frame.essentials.iter().map(|h| h.expr.render()).collect::<Vec<_>>(),
-                proof,
                 deps,
             )
         }
-        _ => (String::new(), Vec::new(), String::new(), Vec::new()),
+        _ => (String::new(), Vec::new(), Vec::new()),
     };
     serde_json::json!({
-        "label": label, "mm": mm, "ess": ess, "proof": proof, "deps": deps,
+        "label": label, "mm": mm, "ess": ess, "deps": deps,
     })
 }
 
@@ -252,7 +257,7 @@ fn mm_decl_item(db: &covalence_hol::metamath::Database, label: &str) -> serde_js
 /// Runs on a dedicated thread (the `std::thread::scope` pool blocks it until the
 /// whole import finishes). `tx` clones are cheap; the `on_pick`/`on_each`
 /// closures send through clones from worker threads.
-fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
+fn mm_import_worker(source: String, workers: usize, tx: tokio::sync::mpsc::Sender<String>) {
     use covalence_hol::metalogic::mm_import::{import_theorems_parallel, theorem_labels};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -294,7 +299,7 @@ fn mm_import_worker(source: String, tx: tokio::sync::mpsc::Sender<String>) {
 
     import_theorems_parallel(
         &db,
-        0, // 0 → use available_parallelism
+        workers, // 0 → use available_parallelism
         |total| {
             grand_total.store(total, Ordering::Relaxed);
         },

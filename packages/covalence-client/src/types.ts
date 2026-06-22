@@ -82,8 +82,6 @@ export interface ImportDecl {
   ess?: string[];
   /** Deduped logical (`|-`) assertions the proof references, first-seen order. */
   deps?: ImportDep[];
-  /** Rendered Metamath proof code (normal or compressed). */
-  proof?: string;
 }
 
 /** The dynamic result of (re-)deriving one theorem through the HOL kernel
@@ -132,7 +130,6 @@ export interface ImportedTheorem {
   /** Static (graph-phase) fields. */
   mm: string;
   ess: string[];
-  proof?: string;
   deps?: ImportDep[];
   /** Dynamic (prove-phase) fields. */
   ok: boolean;

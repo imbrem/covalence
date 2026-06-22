@@ -34,6 +34,11 @@
 	let sortBy = $state<'order' | 'slow' | 'fast' | 'deps' | 'label'>('order');
 	let showHisto = $state(false);
 	let copyMsg = $state('');
+	// Optional prove-phase worker count (empty = server auto).
+	let workers = $state<number | null>(null);
+	// The uploaded `.mm` source, kept so proof code can be extracted lazily on
+	// selection (it is NOT streamed per-theorem — that was the payload bloat).
+	let source = $state('');
 	let ws: WebSocket | null = null;
 
 	// Live status tallies (the foundation of the general "task view").
@@ -126,6 +131,38 @@
 		}
 	});
 
+	// --- list virtualization ----------------------------------------------
+	// The list can hold ~60k rows; rendering them all (and re-rendering during
+	// the streaming status updates) is what made the page lag. Render only the
+	// rows in (a slightly overscanned) viewport. Rows are fixed-height (ROW_H,
+	// matched exactly in CSS); we size an outer spacer to the full height and
+	// offset the rendered slice with padding-top.
+	const ROW_H = 26; // px — must match `.rows .item` height in CSS
+	const OVERSCAN = 8;
+	let scrollTop = $state(0);
+	let viewportH = $state(0);
+	let rowsEl = $state<HTMLDivElement | null>(null);
+
+	$effect(() => {
+		if (!rowsEl) return;
+		viewportH = rowsEl.clientHeight;
+		const ro = new ResizeObserver(() => {
+			if (rowsEl) viewportH = rowsEl.clientHeight;
+		});
+		ro.observe(rowsEl);
+		return () => ro.disconnect();
+	});
+
+	const vStart = $derived(Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN));
+	const vCount = $derived(Math.ceil((viewportH || 0) / ROW_H) + 2 * OVERSCAN);
+	const vRows = $derived(sorted.slice(vStart, vStart + vCount));
+	const totalH = $derived(sorted.length * ROW_H);
+	const offsetY = $derived(vStart * ROW_H);
+
+	function onRowsScroll(e: Event) {
+		scrollTop = (e.currentTarget as HTMLDivElement).scrollTop;
+	}
+
 	// --- timing statistics -------------------------------------------------
 	// Linear-interpolation quantile (the "type 7" / numpy default): for p in
 	// [0,1] over a sorted ascending array, index = p*(n-1), interpolate between
@@ -215,7 +252,25 @@
 		theorems = [];
 		labelIndex = new Map();
 		selected = null;
+		source = '';
+		scrollTop = 0;
 	}
+
+	// --- lazy proof extraction --------------------------------------------
+	// The proof code is no longer streamed (it dominated the upfront payload).
+	// Instead, extract the selected theorem's proof from the `.mm` `source` we
+	// already uploaded: find `<label> $p … $= <PROOF> $.` and return <PROOF>.
+	function extractProof(src: string, label: string): string | null {
+		if (!src) return null;
+		// Match the label as a whole token, then `$p`, then up to `$=`, capture
+		// the proof body up to the closing `$.`.
+		const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		const re = new RegExp(`(?:^|\\s)${esc}\\s+\\$p\\b[\\s\\S]*?\\$=([\\s\\S]*?)\\$\\.`);
+		const m = re.exec(src);
+		if (!m) return null;
+		return m[1].trim().replace(/\s+/g, ' ');
+	}
+	const selectedProof = $derived(selected ? extractProof(source, selected.label) : null);
 
 	function stop() {
 		if (ws) {
@@ -234,24 +289,26 @@
 		phase = 'downloading';
 		statusMsg = `downloading ${url} …`;
 
-		let source: string;
+		let src: string;
 		try {
 			const res = await fetch(url);
 			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-			source = await res.text();
+			src = await res.text();
 		} catch (e) {
 			phase = 'error';
 			statusMsg = `download failed: ${e instanceof Error ? e.message : String(e)}`;
 			return;
 		}
 
-		statusMsg = `downloaded ${(source.length / 1_000_000).toFixed(1)} MB — connecting …`;
+		// Keep the source for lazy per-theorem proof extraction on selection.
+		source = src;
+		statusMsg = `downloaded ${(src.length / 1_000_000).toFixed(1)} MB — connecting …`;
 		phase = 'parsing';
 
-		ws = client.connectMmImport();
+		ws = client.connectMmImport(workers ?? undefined);
 		ws.onopen = () => {
 			statusMsg = 'parsing & importing …';
-			ws?.send(source);
+			ws?.send(src);
 		};
 		ws.onerror = () => {
 			phase = 'error';
@@ -295,7 +352,6 @@
 						status: 'pending',
 						mm: item.mm,
 						ess: item.ess ?? [],
-						proof: item.proof,
 						deps: item.deps,
 						ok: false,
 					});
@@ -380,6 +436,17 @@
 				spellcheck="false"
 				disabled={isRunning}
 			/>
+			<label class="workers" title="prove-phase worker threads (empty = auto)">
+				workers
+				<input
+					type="number"
+					min="1"
+					max="64"
+					bind:value={workers}
+					placeholder="auto"
+					disabled={isRunning}
+				/>
+			</label>
 			{#if isRunning}
 				<button class="primary stop" onclick={stop}>Stop</button>
 			{:else}
@@ -486,24 +553,30 @@
 					<span class="shown">{filtered.length} / {theorems.length}</span>
 				{/if}
 			</div>
-			<div class="rows">
-				{#each sorted as t (t.label)}
-					<button
-						class="item"
-						class:fail={t.status === 'error'}
-						class:sel={selected?.label === t.label}
-						onclick={() => (selected = t)}
-					>
-						<span class="dot status-{t.status}"></span>
-						<span class="lbl">{t.label}</span>
-						<span class="mini">{t.mm}</span>
-						{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
-					</button>
-				{/each}
+			<div class="rows" bind:this={rowsEl} onscroll={onRowsScroll}>
 				{#if theorems.length === 0}
 					<div class="empty">No theorems yet. Choose a source and import.</div>
 				{:else if filtered.length === 0}
 					<div class="empty">No theorems match the current filter.</div>
+				{:else}
+					<!-- Virtualized: full-height spacer + offset slice of visible rows. -->
+					<div class="vspacer" style="height: {totalH}px;">
+						<div class="vwin" style="transform: translateY({offsetY}px);">
+							{#each vRows as t (t.label)}
+								<button
+									class="item"
+									class:fail={t.status === 'error'}
+									class:sel={selected?.label === t.label}
+									onclick={() => (selected = t)}
+								>
+									<span class="dot status-{t.status}"></span>
+									<span class="lbl">{t.label}</span>
+									<span class="mini">{t.mm}</span>
+									{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
+								</button>
+							{/each}
+						</div>
+					</div>
 				{/if}
 			</div>
 		</div>
@@ -629,10 +702,10 @@
 				{/if}
 				<div class="field">
 					<div class="flabel">Metamath proof (compressed)</div>
-					{#if selected.proof}
-						<pre class="mm proof">{selected.proof}</pre>
+					{#if selectedProof}
+						<pre class="mm proof">{selectedProof}</pre>
 					{:else}
-						<p class="note">no proof code (axiom).</p>
+						<p class="note">no proof code (axiom or not found in source).</p>
 					{/if}
 				</div>
 			{:else}
@@ -738,6 +811,25 @@
 	input[type='text'] {
 		flex: 1;
 		padding: 0.5rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--code-bg);
+		color: var(--fg);
+		font-family: var(--font-mono);
+		font-size: 0.85rem;
+	}
+	.workers {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.72rem;
+		color: var(--muted);
+		white-space: nowrap;
+	}
+	.workers input[type='number'] {
+		width: 4.5em;
+		flex: none;
+		padding: 0.5rem 0.4rem;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: var(--code-bg);
@@ -930,6 +1022,38 @@
 	.rows {
 		flex: 1;
 		overflow-y: auto;
+		position: relative;
+		scrollbar-width: thin;
+		scrollbar-color: var(--border) transparent;
+	}
+	/* Virtualization: full-height spacer establishes the scrollable range; the
+	   inner window is transform-offset to the first visible row. */
+	.vspacer {
+		position: relative;
+		width: 100%;
+	}
+	.vwin {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		will-change: transform;
+	}
+	.rows::-webkit-scrollbar,
+	.detail::-webkit-scrollbar,
+	pre.proof::-webkit-scrollbar {
+		width: 8px;
+	}
+	.rows::-webkit-scrollbar-track,
+	.detail::-webkit-scrollbar-track,
+	pre.proof::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	.rows::-webkit-scrollbar-thumb,
+	.detail::-webkit-scrollbar-thumb,
+	pre.proof::-webkit-scrollbar-thumb {
+		background: var(--border);
+		border-radius: 4px;
 	}
 	.quantiles {
 		display: flex;
@@ -982,14 +1106,17 @@
 		align-items: center;
 		gap: 0.5rem;
 		width: 100%;
+		height: 26px; /* ROW_H — must match the virtualizer's constant */
+		box-sizing: border-box;
 		text-align: left;
-		padding: 0.4rem 0.6rem;
+		padding: 0 0.6rem;
 		border: none;
 		border-bottom: 1px solid var(--border);
 		background: transparent;
 		color: var(--fg);
 		cursor: pointer;
 		font-size: 0.8rem;
+		overflow: hidden;
 	}
 	.item:hover {
 		background: rgba(124, 111, 247, 0.1);
@@ -1061,6 +1188,8 @@
 		max-height: 60vh;
 		overflow-y: auto;
 		background: var(--surface);
+		scrollbar-width: thin;
+		scrollbar-color: var(--border) transparent;
 	}
 	.detail h2 {
 		margin: 0 0 0.8rem;

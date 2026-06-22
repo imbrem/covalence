@@ -148,16 +148,21 @@ export class CovalenceClient {
    * TEMPORARY/DEMO: open a WebSocket to the Metamath import endpoint.
    * Mirrors {@link connectRepl} but targets `/api/mm/import`. Powers the
    * throwaway `/metamath` page.
+   *
+   * @param workers optional prove-phase worker-thread count (`?workers=N`);
+   *   omit / 0 for the server's auto (`available_parallelism`) default.
    */
-  connectMmImport(): WebSocket {
+  connectMmImport(workers?: number): WebSocket {
+    const query =
+      workers != null && Number.isFinite(workers) && workers > 0 ? `?workers=${workers}` : '';
     let wsUrl: string;
     if (this.baseUrl) {
-      const url = new URL('/api/mm/import', this.baseUrl);
+      const url = new URL(`/api/mm/import${query}`, this.baseUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       wsUrl = url.toString();
     } else {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      wsUrl = `${proto}//${location.host}/api/mm/import`;
+      wsUrl = `${proto}//${location.host}/api/mm/import${query}`;
     }
     return new WebSocket(wsUrl);
   }

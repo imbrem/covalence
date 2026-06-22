@@ -783,14 +783,23 @@ pub async fn theorem(
         "proof": render_proof(a),
         "status": "pending",
     });
-    // The pass-1 HOL term, if the surface has been computed (the page fetches
-    // `/hol/terms` after load, which triggers it).
-    if let Some(s) = sess.hol.get() {
-        if let Some(t) = s.terms.get(&name) {
-            if let Value::Object(o) = &mut out {
-                o.insert("holTerm".into(), Value::String(t.clone()));
-            }
+    // The HOL term. Prefer the cached pass-1 surface (folded to definition
+    // names); but if it is not built yet (a big database still interning), encode
+    // *just this one* conclusion on demand — `Parser::new` + one `encode_expr` is
+    // a few ms — so the term shows immediately instead of "interning…".
+    let hol_term = match sess.hol.get() {
+        Some(s) => s.terms.get(&name).cloned(),
+        None => {
+            use covalence_hol::metalogic::mm_database::Parser;
+            let parser = Parser::new(&sess.db);
+            parser
+                .encode_expr(&a.conclusion)
+                .ok()
+                .map(|enc| render_hol(&enc, &HashMap::new()))
         }
+    };
+    if let (Value::Object(o), Some(t)) = (&mut out, hol_term) {
+        o.insert("holTerm".into(), Value::String(t));
     }
 
     if let Some(res) = sess.results.read().unwrap().get(&name) {

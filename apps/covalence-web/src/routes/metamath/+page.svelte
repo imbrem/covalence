@@ -1137,15 +1137,16 @@
 				</div>
 				<div class="field">
 					<div class="flabel">HOL term (interned, pass 1)</div>
-					{#if holTerms[selected.label]}
-						<pre class="hol holterm">{renderMm(holTerms[selected.label], unicode, symbolMap)}</pre>
+					{#if detail?.holTerm ?? holTerms[selected.label]}
+						{@const ht = detail?.holTerm ?? holTerms[selected.label]}
+						<pre class="hol holterm">{renderMm(ht, unicode, symbolMap)}</pre>
 						<p class="note">
 							The encoded conclusion <code>⌜S⌝</code>, hash-consed into the shared DAG and
 							rendered with compound sub-formulas folded back to their Metamath definition
 							names. Available before the proof runs.
 						</p>
 					{:else}
-						<pre class="hol dim">interning…</pre>
+						<pre class="hol dim">encoding…</pre>
 					{/if}
 				</div>
 				<div class="field">

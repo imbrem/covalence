@@ -207,6 +207,10 @@ export interface ImportTheoremDetail {
   error?: string;
   /** Wall-clock ms to derive this theorem (the HOL import time). */
   importMs?: number;
+  /** The interned/encoded HOL conclusion term. Served from the cached pass-1
+   * surface (folded to definition names) when ready, else encoded on demand
+   * (unfolded) so it's available even mid-import. */
+  holTerm?: string;
 }
 
 /** A frame forwarded over the thin status WebSocket

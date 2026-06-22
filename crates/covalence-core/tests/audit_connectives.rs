@@ -302,12 +302,12 @@ fn all_intro_rejects_var_free_in_hyps() {
 }
 
 #[test]
-fn all_intro_rejects_binder_type_mismatch() {
-    // `x : nat` in the conclusion, but generalise at `bool`.
+fn all_intro_over_differently_typed_var_generalises_vacuously() {
+    // `x : nat` in the conclusion; generalising `("x", bool)` — a distinct
+    // variable (name+type identity) — binds nothing and succeeds.
     let x = Term::free("x", nat());
     let refl = Thm::refl(x).unwrap();
-    let err = refl.all_intro("x", b()).unwrap_err();
-    assert!(matches!(err, Error::BinderTypeMismatch { .. }));
+    assert!(refl.all_intro("x", b()).is_ok());
 }
 
 #[test]

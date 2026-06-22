@@ -1266,7 +1266,8 @@ mod tests {
         // internal `∀d:Φ⟨'r⟩→bool` must be built before `'r` is pinned).
         let der_a = inst_tfree_term(&derivable(&fvar("A")).unwrap());
         let var0 = inst_tfree_term(&p_var_lit(0));
-        let expected = covalence_core::subst::subst_free(&der_a, "A", &var0)
+        let a_var = covalence_core::Var::new("A", var0.type_of().unwrap());
+        let expected = covalence_core::subst::subst_free(&der_a, &a_var, &var0)
             .not()
             .unwrap();
         assert_eq!(thm.concl(), &expected);

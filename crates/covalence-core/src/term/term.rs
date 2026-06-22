@@ -26,7 +26,6 @@
 //! sites.
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
@@ -349,13 +348,57 @@ impl fmt::Display for SmallIntLiteral {
     }
 }
 
+/// A **free variable**: a name paired with its type. The type is part of
+/// the variable's *identity* (HOL Light's `Var(name, ty)` model), so
+/// `Var("x", nat)` and `Var("x", bool)` are **distinct** variables.
+/// Equality / ordering / hashing therefore consider both fields, and
+/// substitution (`subst_free`) only matches a variable with the same name
+/// *and* type.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Var {
+    name: SmolStr,
+    ty: Type,
+}
+
+impl Var {
+    /// A free variable named `name` of type `ty`.
+    pub fn new(name: impl Into<SmolStr>, ty: Type) -> Self {
+        Var {
+            name: name.into(),
+            ty,
+        }
+    }
+
+    /// The variable's name.
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    /// The variable's type — part of its identity.
+    pub fn ty(&self) -> &Type {
+        &self.ty
+    }
+}
+
+impl fmt::Display for Var {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl From<Var> for Term {
+    fn from(v: Var) -> Self {
+        Term::free_var(v)
+    }
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TermKind {
     /// de Bruijn–indexed bound variable. Index 0 refers to the
     /// innermost surrounding binder (`Abs` or `All`).
     Bound(u32),
-    /// Free variable: name + declared type.
-    Free(SmolStr, Type),
+    /// Free variable: a [`Var`] (name + type, type-carrying identity).
+    Free(Var),
     /// Declared/defined constant: name + instance type.
     Const(SmolStr, Type),
     /// Application `f x`.
@@ -540,7 +583,18 @@ impl Term {
         Self::alloc(TermKind::Bound(idx))
     }
     pub fn free(name: impl Into<SmolStr>, ty: Type) -> Self {
-        Self::alloc(TermKind::Free(name.into(), ty))
+        Self::alloc(TermKind::Free(Var::new(name, ty)))
+    }
+    /// A free-variable leaf from an existing [`Var`].
+    pub fn free_var(v: Var) -> Self {
+        Self::alloc(TermKind::Free(v))
+    }
+    /// If this is a free variable, return its [`Var`].
+    pub fn as_free(&self) -> Option<&Var> {
+        match self.kind() {
+            TermKind::Free(v) => Some(v),
+            _ => None,
+        }
     }
     pub fn const_(name: impl Into<SmolStr>, ty: Type) -> Self {
         Self::alloc(TermKind::Const(name.into(), ty))
@@ -826,7 +880,8 @@ impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind() {
             TermKind::Bound(i) => write!(f, "#{}", i),
-            TermKind::Free(name, _) | TermKind::Const(name, _) => write!(f, "{}", name),
+            TermKind::Free(v) => write!(f, "{}", v.name()),
+            TermKind::Const(name, _) => write!(f, "{}", name),
             TermKind::App(g, x) => write!(f, "({} {})", g, x),
             TermKind::Abs(ty, body) => write!(f, "(λ:{}. {})", ty, body),
             TermKind::Blob(b) => write!(f, "blob[{}]", b.len()),
@@ -860,17 +915,16 @@ impl fmt::Display for Term {
 // Type-of
 // ============================================================================
 
-/// Carries the binder context plus the first-seen type of every free
-/// variable referenced so far. Pass the same env across every term in
-/// a theorem to enforce HOL Light–style cross-term consistency for
-/// free variables.
+/// Carries the binder context for a single `type_of` walk.
+///
+/// Free variables are identified by `(name, type)` (HOL Light's
+/// `Var(name, ty)` model), so there is **no** cross-term name/type
+/// consistency to track — `Free(name, ty)` simply has type `ty`. A
+/// distinct same-named variable at another type is a different variable.
 #[derive(Default)]
 pub(crate) struct TypeEnv {
     /// Stack of binder types; the innermost binder is at the top.
     ctx: Vec<Type>,
-    /// First-seen type for each Free name; subsequent occurrences must
-    /// match. Scope is whatever set of terms share this env.
-    frees: BTreeMap<SmolStr, Type>,
 }
 
 /// The carrier type of a derived [`TypeSpec`] at the
@@ -911,20 +965,9 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             }
             Ok(env.ctx[env.ctx.len() - 1 - i].clone())
         }
-        TermKind::Free(name, ty) => {
-            if let Some(prev) = env.frees.get(name) {
-                if prev != ty {
-                    return Err(Error::FreeVarReuse {
-                        name: name.clone(),
-                        first: prev.clone(),
-                        second: ty.clone(),
-                    });
-                }
-            } else {
-                env.frees.insert(name.clone(), ty.clone());
-            }
-            Ok(ty.clone())
-        }
+        // A free variable's type is part of its identity, so it simply
+        // *is* its type — no cross-occurrence consistency to enforce.
+        TermKind::Free(v) => Ok(v.ty().clone()),
         // Const instance types are NOT required to be consistent
         // across occurrences within a theorem — polymorphic constants
         // (`=` at `'a → 'a → bool`, etc.) are used at many instance

@@ -33,12 +33,12 @@ pub(super) fn match_term(
     use TermKind::*;
     match (pattern.kind(), target.kind()) {
         // A hole — bind it (and its type), or check consistency with a prior binding.
-        (Free(n, ty), _) if schematics.contains(n) => {
-            subst::match_types(ty, &target.type_of().map_err(|_| ())?, &mut out.types)?;
-            match out.terms.get(n) {
+        (Free(v), _) if schematics.contains(v.name()) => {
+            subst::match_types(v.ty(), &target.type_of().map_err(|_| ())?, &mut out.types)?;
+            match out.terms.get(v.name()) {
                 Some(prev) => (prev == target).then_some(()).ok_or(()),
                 None => {
-                    out.terms.insert(n.clone(), target.clone());
+                    out.terms.insert(v.name().into(), target.clone());
                     Ok(())
                 }
             }
@@ -52,7 +52,10 @@ pub(super) fn match_term(
             match_term(pb, tb, schematics, out)
         }
         // Typed leaves — names/handles must agree; their types may carry tvars.
-        (Free(pn, pty), Free(tn, tty)) | (Const(pn, pty), Const(tn, tty)) if pn == tn => {
+        (Free(pv), Free(tv)) if pv.name() == tv.name() => {
+            subst::match_types(pv.ty(), tv.ty(), &mut out.types)
+        }
+        (Const(pn, pty), Const(tn, tty)) if pn == tn => {
             subst::match_types(pty, tty, &mut out.types)
         }
         (Eq(p), Eq(t)) | (Select(p), Select(t)) => subst::match_types(p, t, &mut out.types),

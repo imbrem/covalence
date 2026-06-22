@@ -53,6 +53,21 @@ coupling guard.
   "available" into "on by default for large proofs". Soundness is unaffected
   either way (the rules already accept any structurally-equal term).
 
+## Name-only `subst::close` should move out of the TCB
+
+- **`subst::close(t, name)` (name-only) is a construction convenience that does
+  not belong in the trusted kernel.** Free variables are identified by `(name,
+  type)` ([`Var`]); the kernel rules that take arbitrary theorem terms (`abs`,
+  `all_intro`, `inst`, `nat_induct`) already use the type-aware `close_var` /
+  `subst_free(&Var)` / `has_free_var_typed(&Var)`. The name-only `close` remains
+  only because ~169 *construction* sites in `covalence-hol`'s `init/` (almost all
+  `Term::abs(ty, subst::close(&body, name))`, where the name has a single known
+  type by construction) still call it. It is sound there, but it is trusted code
+  earning its keep only as a convenience. **Eventually remove it from
+  `covalence-core` and reimplement it in userspace** (e.g. `covalence-hol`'s
+  `TermExt`, untrusted) — or migrate the 169 sites to `close_var(&Var::new(name,
+  ty))`. Slims the TCB surface; deferred only for the call-site churn.
+
 ## defs source-of-truth flip — reverted, pending re-entrancy fix
 
 - **Flipping the public `defs::*` accessors to source from `core_env()` is

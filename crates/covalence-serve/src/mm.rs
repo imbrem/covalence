@@ -313,27 +313,22 @@ use covalence_core::term::TermKind;
 /// `Some((a, b))` if `t` is `mm$concat a b` (the encoding's uninterpreted binary
 /// former — a `Free`, see `mm_database::concat_fn`).
 fn concat_parts(t: &Term) -> Option<(&Term, &Term)> {
-    let TermKind::App(inner, b) = t.kind() else {
-        return None;
-    };
-    let TermKind::App(cf, a) = inner.kind() else {
-        return None;
-    };
-    match cf.kind() {
-        TermKind::Free(name, _) if name == "mm$concat" => Some((a, b)),
-        _ => None,
-    }
+    let (inner, b) = t.as_app()?;
+    let (cf, a) = inner.as_app()?;
+    (cf.as_free()?.name() == "mm$concat").then_some((a, b))
 }
 
 /// One encoding leaf → its display token (`mm$c$<tok>`/`mm$v$<tok>` stripped).
 fn hol_atom(t: &Term) -> String {
-    match t.kind() {
-        TermKind::Free(name, _) => name
-            .strip_prefix("mm$c$")
-            .or_else(|| name.strip_prefix("mm$v$"))
-            .unwrap_or(name)
-            .to_string(),
-        _ => format!("{t}"),
+    match t.as_free() {
+        Some(v) => {
+            let name = v.name();
+            name.strip_prefix("mm$c$")
+                .or_else(|| name.strip_prefix("mm$v$"))
+                .unwrap_or(name)
+                .to_string()
+        }
+        None => format!("{t}"),
     }
 }
 

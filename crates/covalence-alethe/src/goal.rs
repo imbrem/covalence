@@ -86,9 +86,9 @@ impl Collect {
         match t.kind() {
             TermKind::Bool(b) => Ok(SExp::symbol(if *b { "true" } else { "false" })),
             TermKind::Int(n) => Ok(int_lit_sexpr(n)),
-            TermKind::Free(name, ty) => {
-                self.declare_fun_from_type(name, ty)?;
-                Ok(SExp::symbol(name.as_str()))
+            TermKind::Free(v) => {
+                self.declare_fun_from_type(v.name(), v.ty())?;
+                Ok(SExp::symbol(v.name()))
             }
             // A spec-headed application: a connective or an int operator.
             TermKind::App(..) => self.render_app(t),
@@ -154,9 +154,9 @@ impl Collect {
         }
 
         // Uninterpreted application: the head must be a free symbol.
-        if let TermKind::Free(name, ty) = head.kind() {
-            self.declare_fun_from_type(name, ty)?;
-            let mut out = vec![SExp::symbol(name.as_str())];
+        if let TermKind::Free(v) = head.kind() {
+            self.declare_fun_from_type(v.name(), v.ty())?;
+            let mut out = vec![SExp::symbol(v.name())];
             for a in &args {
                 out.push(self.render(a)?);
             }

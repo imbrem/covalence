@@ -286,7 +286,7 @@ impl<D> TrustedCons for HashCons<D> {
 mod tests {
     use super::*;
     use crate::subst;
-    use crate::term::Type;
+    use crate::term::{Type, Var};
 
     fn bvar(name: &str) -> Term {
         Term::free(name, Type::bool())
@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn unit_cons_defers_and_make_allocates_distinct_arcs() {
-        let k = || TermKind::Free("a".into(), Type::bool());
+        let k = || TermKind::Free(Var::new("a", Type::bool()));
         assert!(().cons(&k()).is_none()); // () always defers
         let a = ().make(k());
         let b = ().make(k());
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn hashcons_dedups_equal_kinds() {
         let mut hc = HashCons::new();
-        let k = || TermKind::Free("a".into(), Type::bool());
+        let k = || TermKind::Free(Var::new("a", Type::bool()));
         let a = hc.make(k());
         let b = hc.make(k());
         assert_eq!(a, b);
@@ -332,7 +332,7 @@ mod tests {
         // A direct `cons` hit returns the same representative.
         assert_eq!(hc.cons(&k()).unwrap().ptr_id(), a.ptr_id());
 
-        let c = hc.make(TermKind::Free("b".into(), Type::bool()));
+        let c = hc.make(TermKind::Free(Var::new("b", Type::bool())));
         assert_ne!(a.ptr_id(), c.ptr_id());
         assert_eq!(hc.len(), 2);
     }
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn hashcons_deref_to_indexset() {
         let mut hc = HashCons::new();
-        let a = hc.make(TermKind::Free("a".into(), Type::bool()));
+        let a = hc.make(TermKind::Free(Var::new("a", Type::bool())));
         assert!(hc.contains(&a));
         assert!(!hc.is_empty());
         assert_eq!(hc.iter().count(), 1);
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn checked_rejects_malicious_cons() {
         let mut checked = Checked::new(Evil);
-        let want = TermKind::Free("a".into(), Type::bool());
+        let want = TermKind::Free(Var::new("a", Type::bool()));
         // Evil's wrong offer is filtered to None...
         assert!(checked.cons(&want).is_none());
         // ...so `make` allocates the requested term itself.
@@ -425,7 +425,7 @@ mod tests {
         // Same via `Box<dyn TermCons>`.
         let boxed: Box<dyn TermCons> = Box::new(Evil);
         let mut checked = Checked::new(boxed);
-        let want = TermKind::Free("z".into(), Type::bool());
+        let want = TermKind::Free(Var::new("z", Type::bool()));
         assert_eq!(*checked.make(want.clone()).kind(), want); // allocated
     }
 
@@ -451,8 +451,9 @@ mod tests {
         let t = Term::app(bvar("p"), bvar("q"));
         let r = bvar("r");
         let mut hc = HashCons::new();
-        let one = subst::subst_free_with(&t, "p", &r, &mut hc);
-        let two = subst::subst_free_with(&t, "p", &r, &mut hc);
+        let p = Var::new("p", Type::bool());
+        let one = subst::subst_free_with(&t, &p, &r, &mut hc);
+        let two = subst::subst_free_with(&t, &p, &r, &mut hc);
         assert_eq!(one, two);
         assert_eq!(one.ptr_id(), two.ptr_id());
     }

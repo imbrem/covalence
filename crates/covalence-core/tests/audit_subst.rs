@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use covalence_core::subst::{self, close, has_free_var, is_closed, open, shift_by, subst_free};
-use covalence_core::{Ctx, Term, Type, TypeKind};
+use covalence_core::{Ctx, Term, Type, TypeKind, Var};
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -218,14 +218,14 @@ fn shift_by_leaves_free_and_const_alone() {
 fn subst_free_basic() {
     let t = Term::free("x", Type::nat());
     let r = Term::nat_lit(42u32);
-    assert_eq!(subst_free(&t, "x", &r), r);
+    assert_eq!(subst_free(&t, &Var::new("x", Type::nat()), &r), r);
 }
 
 #[test]
 fn subst_free_other_name_untouched() {
     let t = Term::free("y", Type::nat());
     let r = Term::nat_lit(42u32);
-    assert_eq!(subst_free(&t, "x", &r), t);
+    assert_eq!(subst_free(&t, &Var::new("x", Type::nat()), &r), t);
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn subst_free_shifts_replacement_under_binder() {
     // Bound(1).
     let t = Term::abs(Type::nat(), Term::free("x", Type::nat()));
     let r = Term::bound(0);
-    let out = subst_free(&t, "x", &r);
+    let out = subst_free(&t, &Var::new("x", Type::nat()), &r);
     let expected = Term::abs(Type::nat(), Term::bound(1));
     assert_eq!(out, expected);
 }
@@ -249,7 +249,7 @@ fn subst_free_nested_binders_shift_by_depth() {
         Type::nat(),
         Term::abs(Type::bool(), Term::free("x", Type::nat())),
     );
-    let out = subst_free(&t, "x", &Term::bound(0));
+    let out = subst_free(&t, &Var::new("x", Type::nat()), &Term::bound(0));
     let expected = Term::abs(Type::nat(), Term::abs(Type::bool(), Term::bound(2)));
     assert_eq!(out, expected);
 }
@@ -259,7 +259,7 @@ fn subst_free_closed_replacement_unchanged_under_binder() {
     // A closed replacement (no Bound) is unaffected by the depth shift.
     let t = Term::abs(Type::nat(), Term::free("x", Type::nat()));
     let r = Term::nat_lit(3u32);
-    let out = subst_free(&t, "x", &r);
+    let out = subst_free(&t, &Var::new("x", Type::nat()), &r);
     let expected = Term::abs(Type::nat(), Term::nat_lit(3u32));
     assert_eq!(out, expected);
 }

@@ -17,6 +17,7 @@
 		ImportTheoremDetail,
 		MmDbInfo,
 		MmDbListEntry,
+		MmServerStats,
 	} from 'covalence-client';
 
 	// Named presets for the source dropdown — the databases hosted on the
@@ -116,6 +117,11 @@
 	// Typeset Metamath symbols to Unicode (the "structured view" toggle), on by
 	// default like the Metamath Proof Explorer.
 	let unicode = $state(true);
+	// Live server-metrics panel (RAM etc. over time). Polled while open.
+	let showServer = $state(false);
+	let serverStat = $state<MmServerStats | null>(null);
+	let serverSamples = $state<{ t: number; rss: number }[]>([]);
+	const SERVER_CAP = 240; // ring-buffer length (~4 min at 1 Hz)
 	let copyMsg = $state('');
 	let ws: WebSocket | null = null;
 	// The hash the current DB view was loaded for (guards re-loads on URL churn).
@@ -342,6 +348,49 @@
 	function yTicks(peak: number): number[] {
 		return [...new Set([0, Math.round(peak / 2), peak])];
 	}
+
+	// --- server metrics over time (RAM etc.) -------------------------------
+	const fmtMB = (bytes: number) => (bytes / 1048576).toFixed(1);
+	async function pollServer() {
+		try {
+			const s = await client.mmServerStats();
+			serverStat = s;
+			if (s.rssBytes != null) {
+				const next = [...serverSamples, { t: s.uptimeSecs, rss: s.rssBytes }];
+				serverSamples = next.length > SERVER_CAP ? next.slice(-SERVER_CAP) : next;
+			}
+		} catch {
+			/* transient — keep the last good sample */
+		}
+	}
+	// Poll once a second while the panel is open; clean up on close/unmount.
+	$effect(() => {
+		if (!showServer) return;
+		pollServer();
+		const id = setInterval(pollServer, 1000);
+		return () => clearInterval(id);
+	});
+	// Line-chart geometry + path for the RSS series.
+	const SW = 680;
+	const SH = 150;
+	const SM = { l: 52, r: 10, t: 10, b: 22 };
+	const sPlotW = SW - SM.l - SM.r;
+	const sPlotH = SH - SM.t - SM.b;
+	const rssChart = $derived.by(() => {
+		const pts = serverSamples;
+		if (pts.length < 2) return null;
+		const t0 = pts[0].t;
+		const t1 = pts[pts.length - 1].t;
+		const tSpan = t1 - t0 || 1;
+		const peakB = serverStat?.peakRssBytes ?? Math.max(...pts.map((p) => p.rss));
+		const maxB = Math.max(peakB, ...pts.map((p) => p.rss), 1);
+		const x = (t: number) => SM.l + ((t - t0) / tSpan) * sPlotW;
+		const y = (b: number) => SM.t + sPlotH - (b / maxB) * sPlotH;
+		const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.rss).toFixed(1)}`).join(' ');
+		// Close the area down to the baseline for a subtle fill.
+		const area = `${path} L${x(t1).toFixed(1)} ${(SM.t + sPlotH).toFixed(1)} L${x(t0).toFixed(1)} ${(SM.t + sPlotH).toFixed(1)} Z`;
+		return { path, area, maxB, peakB, x, y, t0span: tSpan };
+	});
 
 	async function copyFailures() {
 		const data = failures.map((t) => ({ label: t.label, mm: t.mm, error: t.error }));
@@ -837,6 +886,14 @@
 						{showHisto ? 'hide plot' : 'plot'}
 					</button>
 				{/if}
+				<button
+					class="copy"
+					class:on={showServer}
+					title="server RAM & metrics over time"
+					onclick={() => (showServer = !showServer)}
+				>
+					{showServer ? 'hide server' : 'server'}
+				</button>
 				{#if counts.error > 0}
 					<button class="copy" onclick={copyFailures}>Copy failures (JSON)</button>
 				{/if}
@@ -900,6 +957,47 @@
 							>
 						{/if}
 					</div>
+				</div>
+			{/if}
+			{#if showServer}
+				<div class="histo server">
+					{#if serverStat}
+						<div class="haxis srvstat">
+							<span class="dim">server</span>
+							{#if serverStat.rssBytes != null}
+								<span>RAM <b>{fmtMB(serverStat.rssBytes)} MB</b></span>
+							{/if}
+							{#if serverStat.peakRssBytes != null}
+								<span class="dim">peak {fmtMB(serverStat.peakRssBytes)} MB</span>
+							{/if}
+							<span class="dim">{serverStat.sessions} sessions</span>
+							<span class="dim">{serverStat.theoremsCached.toLocaleString()} cached</span>
+							<span class="dim">up {serverStat.uptimeSecs}s</span>
+						</div>
+					{/if}
+					{#if rssChart}
+						<svg viewBox="0 0 {SW} {SH}" role="img" aria-label="server RSS over time">
+							{#each [0, rssChart.maxB] as v (v)}
+								{@const y = SM.t + sPlotH - (v / rssChart.maxB) * sPlotH}
+								<line class="grid" x1={SM.l} y1={y} x2={SW - SM.r} y2={y} />
+								<text class="ytick" x={SM.l - 6} y={y + 3.5}>{fmtMB(v)}</text>
+							{/each}
+							<path class="rss-area" d={rssChart.area} />
+							<path class="rss-line" d={rssChart.path} />
+							<line class="axis" x1={SM.l} y1={SM.t + sPlotH} x2={SW - SM.r} y2={SM.t + sPlotH} />
+							<text class="xtick start" x={SM.l} y={SM.t + sPlotH + 16}
+								>{serverSamples[0]?.t ?? 0}s</text
+							>
+							<text class="xtick end" x={SW - SM.r} y={SM.t + sPlotH + 16}
+								>{serverSamples[serverSamples.length - 1]?.t ?? 0}s</text
+							>
+						</svg>
+						<div class="haxis">
+							<span class="dim">resident memory (MB) vs. server uptime (s)</span>
+						</div>
+					{:else}
+						<div class="haxis"><span class="dim">sampling… (1 Hz)</span></div>
+					{/if}
 				</div>
 			{/if}
 		{/if}
@@ -1628,6 +1726,25 @@
 	.haxis .hot {
 		color: var(--accent);
 		font-weight: 600;
+	}
+	.histo.server {
+		margin-top: 0.5rem;
+	}
+	.srvstat {
+		gap: 0.9rem;
+		justify-content: flex-start;
+		margin-bottom: 0.2rem;
+	}
+	.histo .rss-line {
+		fill: none;
+		stroke: var(--accent);
+		stroke-width: 1.5;
+		vector-effect: non-scaling-stroke;
+	}
+	.histo .rss-area {
+		fill: var(--accent);
+		opacity: 0.12;
+		stroke: none;
 	}
 	.copy.on {
 		border-color: var(--accent);

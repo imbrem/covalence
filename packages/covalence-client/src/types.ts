@@ -103,6 +103,22 @@ export interface MmDbInfo {
   errors: number;
 }
 
+/** GET /api/metamath/stats → a point sample of server/process metrics. Poll on
+ * an interval and accumulate the time series client-side (the server is
+ * stateless). `rssBytes`/`peakRssBytes` are `null` off Linux. */
+export interface MmServerStats {
+  /** Resident set size (bytes), or null if unavailable. */
+  rssBytes: number | null;
+  /** Peak resident set size (bytes), or null if unavailable. */
+  peakRssBytes: number | null;
+  /** Number of cached Metamath sessions. */
+  sessions: number;
+  /** Total per-theorem results cached across all sessions. */
+  theoremsCached: number;
+  /** Server uptime in seconds. */
+  uptimeSecs: number;
+}
+
 /** One entry of GET /api/metamath/dbs → all cached sessions on the server. */
 export interface MmDbListEntry {
   file: Hash;

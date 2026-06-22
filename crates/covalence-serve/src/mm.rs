@@ -48,6 +48,7 @@ pub fn router() -> axum::Router<AppState> {
             post(create_db).layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
         )
         .route("/sessions", get(list_dbs))
+        .route("/stats", get(server_stats))
         .route("/session/{hash}", get(db_info))
         .route("/session/{hash}/graph", get(graph))
         .route("/session/{hash}/theorem/{name}", get(theorem))
@@ -310,6 +311,58 @@ fn count_results(sess: &MmSession) -> (usize, usize) {
         }
     }
     (proved, errors)
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/metamath/stats — instantaneous server metrics (RAM etc.)
+// ---------------------------------------------------------------------------
+
+/// GET `/api/metamath/stats` — a point sample of process/server metrics:
+/// `{rssBytes, peakRssBytes, sessions, theoremsCached, uptimeSecs}`. The page
+/// polls this on an interval and plots the time series client-side (so the
+/// server stays stateless). `rssBytes`/`peakRssBytes` are `null` off Linux.
+pub async fn server_stats(State(state): State<AppState>) -> Response {
+    let (rss, peak) = read_proc_rss();
+    let sessions = state.mm.lock().unwrap();
+    let n = sessions.len();
+    let cached: usize = sessions
+        .values()
+        .map(|s| s.results.read().unwrap().len())
+        .sum();
+    drop(sessions);
+    Json(json!({
+        "rssBytes": rss,
+        "peakRssBytes": peak,
+        "sessions": n,
+        "theoremsCached": cached,
+        "uptimeSecs": state.started.elapsed().as_secs(),
+    }))
+    .into_response()
+}
+
+/// Resident-set / peak-RSS in bytes, read from `/proc/self/status` (Linux).
+/// Returns `(None, None)` elsewhere or on read failure.
+#[cfg(target_os = "linux")]
+fn read_proc_rss() -> (Option<u64>, Option<u64>) {
+    let Ok(s) = std::fs::read_to_string("/proc/self/status") else {
+        return (None, None);
+    };
+    let parse_kb = |v: &str| v.split_whitespace().next()?.parse::<u64>().ok().map(|kb| kb * 1024);
+    let mut rss = None;
+    let mut peak = None;
+    for line in s.lines() {
+        if let Some(v) = line.strip_prefix("VmRSS:") {
+            rss = parse_kb(v);
+        } else if let Some(v) = line.strip_prefix("VmHWM:") {
+            peak = parse_kb(v);
+        }
+    }
+    (rss, peak)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_proc_rss() -> (Option<u64>, Option<u64>) {
+    (None, None)
 }
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import type {
   MmDbResponse,
   MmDbInfo,
   MmDbListEntry,
+  MmServerStats,
   MmGraphResponse,
   ImportTheoremDetail,
 } from './types.js';
@@ -190,6 +191,12 @@ export class CovalenceClient {
    * "loaded on server" picker). */
   async mmDbList(): Promise<MmDbListEntry[]> {
     return this.fetchJson<MmDbListEntry[]>('/api/metamath/sessions');
+  }
+
+  /** GET /api/metamath/stats — a point sample of server/process metrics (RAM,
+   * cached theorems, uptime). Poll on an interval to build a time series. */
+  async mmServerStats(): Promise<MmServerStats> {
+    return this.fetchJson<MmServerStats>('/api/metamath/stats');
   }
 
   /** GET /api/metamath/session/{hash}/graph — the cached static declaration graph. */

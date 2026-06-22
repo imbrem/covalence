@@ -168,22 +168,10 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
         .route("/api/info", get(api::info))
         .route("/api/health", get(api::health))
         .route("/api/repl", get(api::repl_ws))
-        // TEMPORARY / THROWAWAY DEMO: Metamath sessions (powers the /metamath
-        // web page). Clean REST for data + a thin WS for live status only.
-        // set.mm is ~48 MB — lift axum's default 2 MB request-body cap on the
-        // upload route (that limit was the "import failed: 413"/500 the user hit).
-        .route(
-            "/api/metamath/db",
-            post(mm::create_db).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)),
-        )
-        // List all cached sessions (literal path — before `/db/{hash}`).
-        .route("/api/metamath/dbs", get(mm::list_dbs))
-        // Session info / attach-by-hash probe (distinct from `/db/{hash}/graph`).
-        .route("/api/metamath/db/{hash}", get(mm::db_info))
-        .route("/api/metamath/db/{hash}/graph", get(mm::graph))
-        .route("/api/metamath/db/{hash}/theorem/{name}", get(mm::theorem))
-        .route("/api/metamath/db/{hash}/prove", post(mm::prove))
-        .route("/api/metamath/db/{hash}/status", get(mm::status_ws))
+        // TEMPORARY / THROWAWAY DEMO: the whole Metamath `/metamath` page backend
+        // lives in one nested router (`mm::router()`) so it is trivially removable
+        // / refactorable as a unit. REST for data + a thin WS for live status.
+        .nest("/api/metamath", mm::router())
         // Blob endpoints (concrete paths before parameterized)
         .route("/api/blobs", post(api::blob_store).get(api::blob_list))
         .route("/api/blobs/url", post(api::blob_store_url))

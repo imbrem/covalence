@@ -29,6 +29,32 @@ use serde_json::{Value, json};
 
 use crate::AppState;
 
+/// All TEMPORARY `/metamath` demo routes, grouped in one router so the whole
+/// demo is a single removable/refactorable unit. Nest at `/api/metamath`:
+///   - `POST /upload`                        — cache a `.mm` source → `{file,total,origin}`
+///   - `GET  /sessions`                      — list cached sessions
+///   - `GET  /session/{hash}`                — session info / attach-by-hash probe
+///   - `GET  /session/{hash}/graph`          — the static declaration graph
+///   - `GET  /session/{hash}/theorem/{name}` — one theorem's full detail
+///   - `POST /session/{hash}/prove`          — start the parallel prove
+///   - `GET  /session/{hash}/status`         — live status WebSocket
+pub fn router() -> axum::Router<AppState> {
+    use axum::extract::DefaultBodyLimit;
+    use axum::routing::{get, post};
+    axum::Router::new()
+        // set.mm is ~48 MB — lift axum's default 2 MB request-body cap here.
+        .route(
+            "/upload",
+            post(create_db).layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
+        )
+        .route("/sessions", get(list_dbs))
+        .route("/session/{hash}", get(db_info))
+        .route("/session/{hash}/graph", get(graph))
+        .route("/session/{hash}/theorem/{name}", get(theorem))
+        .route("/session/{hash}/prove", post(prove))
+        .route("/session/{hash}/status", get(status_ws))
+}
+
 // ---------------------------------------------------------------------------
 // Session registry
 // ---------------------------------------------------------------------------

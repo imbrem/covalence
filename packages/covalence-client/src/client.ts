@@ -148,7 +148,7 @@ export class CovalenceClient {
   // --- TEMPORARY / THROWAWAY DEMO: Metamath sessions (the `/metamath` page) ---
 
   /**
-   * POST /api/metamath/db — parse (or reuse) a `.mm` source into a cached
+   * POST /api/metamath/upload — parse (or reuse) a `.mm` source into a cached
    * session. `opts.from` records provenance (a URL or label); `opts.user` keys
    * the session per user. Returns the content hash (`file`) + theorem count +
    * recorded origin.
@@ -162,7 +162,7 @@ export class CovalenceClient {
     if (opts.from) params.set('from', opts.from);
     const qs = params.toString();
     const res = await this.fetch(
-      `${this.baseUrl}/api/metamath/db${qs ? `?${qs}` : ''}`,
+      `${this.baseUrl}/api/metamath/upload${qs ? `?${qs}` : ''}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
@@ -174,44 +174,44 @@ export class CovalenceClient {
   }
 
   /**
-   * GET /api/metamath/db/{hash} — lightweight session metadata. The
+   * GET /api/metamath/session/{hash} — lightweight session metadata. The
    * "attach by hash" probe: returns `null` (404) if the hash isn't loaded on
    * the server, else `{file, total, origin, proving, proved, errors}` without
    * downloading the graph.
    */
   async mmDbInfo(hash: Hash, user?: string): Promise<MmDbInfo | null> {
-    const res = await this.fetch(`${this.baseUrl}/api/metamath/db/${hash}${userQuery(user)}`);
+    const res = await this.fetch(`${this.baseUrl}/api/metamath/session/${hash}${userQuery(user)}`);
     if (res.status === 404) return null;
     if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
     return res.json();
   }
 
-  /** GET /api/metamath/dbs — every cached session on the server (the
+  /** GET /api/metamath/sessions — every cached session on the server (the
    * "loaded on server" picker). */
   async mmDbList(): Promise<MmDbListEntry[]> {
-    return this.fetchJson<MmDbListEntry[]>('/api/metamath/dbs');
+    return this.fetchJson<MmDbListEntry[]>('/api/metamath/sessions');
   }
 
-  /** GET /api/metamath/db/{hash}/graph — the cached static declaration graph. */
+  /** GET /api/metamath/session/{hash}/graph — the cached static declaration graph. */
   async mmGraph(hash: Hash, user?: string): Promise<MmGraphResponse> {
     const res = await this.fetch(
-      `${this.baseUrl}/api/metamath/db/${hash}/graph${userQuery(user)}`,
+      `${this.baseUrl}/api/metamath/session/${hash}/graph${userQuery(user)}`,
     );
     if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
     return res.json();
   }
 
-  /** GET /api/metamath/db/{hash}/theorem/{name} — one theorem's full detail. */
+  /** GET /api/metamath/session/{hash}/theorem/{name} — one theorem's full detail. */
   async mmTheorem(hash: Hash, name: string, user?: string): Promise<ImportTheoremDetail> {
     const res = await this.fetch(
-      `${this.baseUrl}/api/metamath/db/${hash}/theorem/${encodeURIComponent(name)}${userQuery(user)}`,
+      `${this.baseUrl}/api/metamath/session/${hash}/theorem/${encodeURIComponent(name)}${userQuery(user)}`,
     );
     if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
     return res.json();
   }
 
   /**
-   * POST /api/metamath/db/{hash}/prove — kick off the parallel kernel import.
+   * POST /api/metamath/session/{hash}/prove — kick off the parallel kernel import.
    * Idempotent: returns `{started:false}` if a prove run is already underway.
    */
   async startMmProve(hash: Hash, user?: string, workers?: number): Promise<{ started: boolean }> {
@@ -220,7 +220,7 @@ export class CovalenceClient {
     if (workers != null) params.set('workers', String(workers));
     const qs = params.toString();
     const res = await this.fetch(
-      `${this.baseUrl}/api/metamath/db/${hash}/prove${qs ? `?${qs}` : ''}`,
+      `${this.baseUrl}/api/metamath/session/${hash}/prove${qs ? `?${qs}` : ''}`,
       { method: 'POST' },
     );
     if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
@@ -228,11 +228,11 @@ export class CovalenceClient {
   }
 
   /**
-   * WS /api/metamath/db/{hash}/status — the thin live-status channel. Sends a
+   * WS /api/metamath/session/{hash}/status — the thin live-status channel. Sends a
    * `snapshot` on connect, then `proving`/`proved`/`done` frames.
    */
   connectMmStatus(hash: Hash, user?: string): WebSocket {
-    return new WebSocket(this.wsUrl(`/api/metamath/db/${hash}/status${userQuery(user)}`));
+    return new WebSocket(this.wsUrl(`/api/metamath/session/${hash}/status${userQuery(user)}`));
   }
 
   // --- Internal ---

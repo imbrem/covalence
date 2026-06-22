@@ -78,7 +78,7 @@ pub use error::{Error, Result};
 pub use term::TermSpec;
 pub use term::{
     Checked, Def, HashCons, Hint, IntTag, Object, ObsEq, ObsImp, ObsTrue, Observer,
-    SmallIntLiteral, Term, TermCons, TermKind, TrustedCons, Type, TypeKind, Var,
+    SmallIntLiteral, Term, TermCons, TermKind, TrustedCons, TyError, Type, TypeKind, Var,
 };
 pub use thm::{Thm, TypeDef};
-pub use ty::{TypeList, TypeSpec};
+pub use ty::{TrustedTypeCons, TypeCons, TypeHashCons, TypeList, TypeSpec};

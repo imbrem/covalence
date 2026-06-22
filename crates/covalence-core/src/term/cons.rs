@@ -206,17 +206,26 @@ impl<C: TermCons + ?Sized> TrustedCons for Checked<C> {
 /// drop a representative that live terms still alias. Bundle auxiliary
 /// state with [`HashCons::with_data`] and reach it via [`HashCons::data`]
 /// / [`HashCons::data_mut`].
+/// The interner carries a **type-cons template** `T` (default
+/// [`TypeHashCons`]) alongside its term set, and is itself a
+/// [`crate::ty::TrustedTypeCons`] (delegating to `T`) — so one `HashCons`
+/// threaded through a proof shares both terms and types. The type params
+/// are ordered `<D, T>` (data first) so `HashCons<MyData>` keeps the
+/// default type interner.
 #[derive(Clone)]
-pub struct HashCons<D = ()> {
+pub struct HashCons<D = (), T = crate::ty::TypeHashCons> {
     set: IndexSet<Term>,
+    types: T,
     data: D,
 }
 
 impl HashCons {
-    /// An empty interner with no bundled data.
+    /// An empty interner with no bundled data and the default type
+    /// interner.
     pub fn new() -> Self {
         Self {
             set: IndexSet::new(),
+            types: crate::ty::TypeHashCons::new(),
             data: (),
         }
     }
@@ -229,10 +238,24 @@ impl Default for HashCons {
 }
 
 impl<D> HashCons<D> {
-    /// An empty interner carrying the given bundled `data`.
+    /// An empty interner carrying the given bundled `data` and the default
+    /// type interner.
     pub fn with_data(data: D) -> Self {
         Self {
             set: IndexSet::new(),
+            types: crate::ty::TypeHashCons::new(),
+            data,
+        }
+    }
+}
+
+impl<D, T> HashCons<D, T> {
+    /// An empty interner with bundled `data` and a caller-supplied type
+    /// interner template.
+    pub fn with_data_and_types(data: D, types: T) -> Self {
+        Self {
+            set: IndexSet::new(),
+            types,
             data,
         }
     }
@@ -248,6 +271,17 @@ impl<D> HashCons<D> {
         &mut self.data
     }
 
+    /// Shared access to the type-cons template.
+    pub fn types(&self) -> &T {
+        &self.types
+    }
+
+    /// Mutable access to the type-cons template (used by the
+    /// [`crate::ty::TrustedTypeCons`] impl).
+    pub fn types_mut(&mut self) -> &mut T {
+        &mut self.types
+    }
+
     /// Consume the interner, returning the bundled data.
     pub fn into_data(self) -> D {
         self.data
@@ -259,7 +293,7 @@ impl<D> HashCons<D> {
     }
 }
 
-impl<D> Deref for HashCons<D> {
+impl<D, T> Deref for HashCons<D, T> {
     type Target = IndexSet<Term>;
 
     fn deref(&self) -> &IndexSet<Term> {
@@ -267,9 +301,9 @@ impl<D> Deref for HashCons<D> {
     }
 }
 
-impl<D> sealed::Sealed for HashCons<D> {}
+impl<D, T> sealed::Sealed for HashCons<D, T> {}
 
-impl<D> TrustedCons for HashCons<D> {
+impl<D, T> TrustedCons for HashCons<D, T> {
     fn cons(&mut self, kind: &TermKind) -> Option<Term> {
         // The set is keyed by `Term`, so we materialise a candidate to
         // look up; on a hit we drop it and share the representative.

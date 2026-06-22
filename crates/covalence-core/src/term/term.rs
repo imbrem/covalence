@@ -198,8 +198,52 @@ impl fmt::Display for Def {
 // Term
 // ============================================================================
 
+/// Cached typing/closedness summary of a term node, computed once at
+/// construction (`Term::alloc`) from the children's summaries. Private and
+/// encapsulated so the encoding can be optimised later (bit-packing, a
+/// free-variable Bloom filter, …) without touching call sites.
+///
+/// - `Open(k)`: the node has free de Bruijn indices, the largest being `k`
+///   (so it needs `k + 1` enclosing binders). Its type is context-
+///   dependent, so none is cached.
+/// - `Wf(ty)`: the node is closed and well-typed; `ty` is its (context-
+///   free) type.
+/// - `IllTyped`: the node is closed but does not type-check.
+///
+/// Invariant: `Wf`/`IllTyped` ⟹ closed (no free de Bruijn index);
+/// `Open(_)` ⟹ not closed. A node's type is cached only when closed,
+/// which (given free variables carry their type — see [`Var`]) makes it
+/// context-free and therefore safe to reuse anywhere.
+#[derive(Debug)]
+enum TermInfo {
+    Open(u32),
+    Wf(Type),
+    IllTyped,
+}
+
+struct TermInner {
+    info: TermInfo,
+    kind: TermKind,
+}
+
+/// A HOL term: an `Arc`-shared node carrying its [`TermKind`] plus a cached
+/// [`TermInfo`] (type + closedness) computed once at construction. As a
+/// result [`Term::ty`] / [`Term::type_of`] and `Thm` well-formedness
+/// checks are O(1) for closed terms (the common case), instead of an
+/// O(size) re-walk per query.
 #[derive(Clone)]
-pub struct Term(Arc<TermKind>);
+pub struct Term(Arc<TermInner>);
+
+/// Why a closed-or-open term has no usable cached type — the error of
+/// [`Term::ty`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TyError {
+    /// The term is not closed: it has a free de Bruijn index, so its type
+    /// is context-dependent. See [`Term::bvi`].
+    Open,
+    /// The term is closed but does not type-check.
+    IllTyped,
+}
 
 /// Width-and-signedness tag of a [`SmallIntLiteral`] — the fixed-width
 /// integer types of the WebAssembly component model (`u8`…`u64`,
@@ -490,7 +534,38 @@ pub enum TermKind {
 
 impl Term {
     pub fn kind(&self) -> &TermKind {
-        &self.0
+        &self.0.kind
+    }
+
+    fn info(&self) -> &TermInfo {
+        &self.0.info
+    }
+
+    /// The term's type, in O(1) from the cached summary. Returns
+    /// [`TyError::Open`] if the term is not closed (its type is
+    /// context-dependent) or [`TyError::IllTyped`] if it is closed but
+    /// does not type-check. Borrows the cached type — no clone, no walk.
+    pub fn ty(&self) -> std::result::Result<&Type, TyError> {
+        match self.info() {
+            TermInfo::Wf(ty) => Ok(ty),
+            TermInfo::Open(_) => Err(TyError::Open),
+            TermInfo::IllTyped => Err(TyError::IllTyped),
+        }
+    }
+
+    /// The largest free de Bruijn index in the term ("bound-variable
+    /// index"), or `-1` if the term is closed. `bvi() < 0` iff the term is
+    /// closed; `bvi() == k ≥ 0` means it needs `k + 1` enclosing binders.
+    pub fn bvi(&self) -> i64 {
+        match self.info() {
+            TermInfo::Open(k) => *k as i64,
+            TermInfo::Wf(_) | TermInfo::IllTyped => -1,
+        }
+    }
+
+    /// `true` iff the term is closed (no free de Bruijn index).
+    pub fn is_closed(&self) -> bool {
+        !matches!(self.info(), TermInfo::Open(_))
     }
 
     /// Pointer identity of the underlying `Arc`. Useful as a cache key
@@ -556,7 +631,8 @@ impl Term {
     /// smart constructors below all bottom out here. Crate-internal so the
     /// `cons` module can use it as the trusted baseline.
     pub(crate) fn alloc(kind: TermKind) -> Self {
-        Term(Arc::new(kind))
+        let info = term_info(&kind);
+        Term(Arc::new(TermInner { info, kind }))
     }
 
     /// Rebuild this term bottom-up through `cons`, returning a
@@ -739,6 +815,12 @@ impl Term {
     /// individual term being well-typed: it also enforces that Free
     /// names are consistent *across* hyps and concl.
     pub fn type_of(&self) -> Result<Type> {
+        // Fast path: a closed, well-typed term has its type cached.
+        if let TermInfo::Wf(ty) = self.info() {
+            return Ok(ty.clone());
+        }
+        // Open / ill-typed: re-derive via the structural typer to produce
+        // a *specific* error (NotClosed / NotFunction / TypeMismatch).
         let mut env = TypeEnv::default();
         type_of_in(self, &mut env)
     }
@@ -831,15 +913,18 @@ impl Term {
     }
 }
 
+// Equality / hashing / ordering are on the `kind` only: `info` is a pure
+// function of `kind`, so equal kinds have equal info and comparing it
+// would be redundant. The `Arc::ptr_eq` fast path stays.
 impl PartialEq for Term {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || *self.0 == *other.0
+        Arc::ptr_eq(&self.0, &other.0) || self.0.kind == other.0.kind
     }
 }
 impl Eq for Term {}
 impl Hash for Term {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        self.0.kind.hash(state);
     }
 }
 impl PartialOrd for Term {
@@ -852,7 +937,7 @@ impl Ord for Term {
         if Arc::ptr_eq(&self.0, &other.0) {
             return Ordering::Equal;
         }
-        self.0.cmp(&other.0)
+        self.0.kind.cmp(&other.0.kind)
     }
 }
 
@@ -952,11 +1037,119 @@ fn positional_tvar_sub(ty: &Type, args: &[Type]) -> std::collections::BTreeMap<S
         .collect()
 }
 
-/// Type-check `t` in `env`. The env carries the binder context plus
-/// every Free name we have already seen, with its declared type.
-/// Subsequent occurrences (in `t` or in later calls sharing the env)
-/// must use the same type.
+/// Compute a node's cached [`TermInfo`] from its `kind`, reading the
+/// children's already-cached summaries. O(1) for every shape except an
+/// `Abs` that closes an `Open(0)` body — there the body is typed once
+/// under the new binder via [`type_of_in`], which walks only the open
+/// spine (closed subterms short-circuit on their cached `Wf`).
+///
+/// `Soundness:` this is the kernel's type checker, relocated to
+/// construction time and made incremental. It must agree with
+/// [`type_of_in`] (and indeed reuses it for the close case). A node is
+/// `Wf(ty)` only when genuinely closed and well-typed; anything else is
+/// `Open`/`IllTyped`, so no false type can be cached.
+fn term_info(kind: &TermKind) -> TermInfo {
+    use TermInfo::{IllTyped, Open, Wf};
+    // Wrap a possibly-failing closed-type computation into closed info.
+    fn closed(r: Result<Type>) -> TermInfo {
+        match r {
+            Ok(t) => Wf(t),
+            Err(_) => IllTyped,
+        }
+    }
+    match kind {
+        TermKind::Bound(i) => Open(*i),
+        TermKind::Free(v) => Wf(v.ty().clone()),
+        TermKind::Const(_, ty) => Wf(ty.clone()),
+        TermKind::Blob(_) => Wf(Type::bytes()),
+        TermKind::Nat(_) => Wf(Type::nat()),
+        TermKind::Int(_) => Wf(Type::int()),
+        TermKind::SmallInt(lit) => Wf(lit.ty()),
+        TermKind::Bool(_) => Wf(Type::bool()),
+        TermKind::Eq(alpha) => Wf(Type::fun(
+            alpha.clone(),
+            Type::fun(alpha.clone(), Type::bool()),
+        )),
+        TermKind::Select(alpha) => Wf(Type::fun(
+            Type::fun(alpha.clone(), Type::bool()),
+            alpha.clone(),
+        )),
+        TermKind::Succ => Wf(Type::fun(Type::nat(), Type::nat())),
+        TermKind::Obs(_, ty) => Wf(ty.clone()),
+        TermKind::Def(d) => Wf(d.instance_type().clone()),
+        TermKind::Spec(spec, args) => closed(
+            spec.ty()
+                .cloned()
+                .ok_or(Error::SpecHasNoCarrier)
+                .map(|result| {
+                    crate::subst::subst_tfrees_in_type(&result, &positional_tvar_sub(&result, args))
+                }),
+        ),
+        TermKind::SpecAbs(spec, args) => closed((|| -> Result<Type> {
+            Ok(Type::fun(
+                spec_carrier(spec, args)?,
+                Type::spec(spec.clone(), args.clone()),
+            ))
+        })()),
+        TermKind::SpecRep(spec, args) => closed((|| -> Result<Type> {
+            Ok(Type::fun(
+                Type::spec(spec.clone(), args.clone()),
+                spec_carrier(spec, args)?,
+            ))
+        })()),
+        TermKind::App(f, x) => {
+            let fo = match f.info() {
+                Open(k) => Some(*k),
+                _ => None,
+            };
+            let xo = match x.info() {
+                Open(k) => Some(*k),
+                _ => None,
+            };
+            match (fo, xo) {
+                // Either side open ⇒ the application is open; defer typing.
+                (Some(a), Some(b)) => Open(a.max(b)),
+                (Some(a), None) => Open(a),
+                (None, Some(b)) => Open(b),
+                // Both closed ⇒ type the application now.
+                (None, None) => match (f.info(), x.info()) {
+                    (Wf(ft), Wf(xt)) => match ft.kind() {
+                        TypeKind::Fun(dom, cod) if dom == xt => Wf(cod.clone()),
+                        _ => IllTyped,
+                    },
+                    // A closed child is `IllTyped`.
+                    _ => IllTyped,
+                },
+            }
+        }
+        TermKind::Abs(ty, body) => match body.info() {
+            Wf(bt) => Wf(Type::fun(ty.clone(), bt.clone())),
+            IllTyped => IllTyped,
+            // Binding index 0 closes the term: type the body under the new
+            // binder (walking only the open spine).
+            Open(0) => {
+                let mut env = TypeEnv {
+                    ctx: vec![ty.clone()],
+                };
+                closed(type_of_in(body, &mut env).map(|bt| Type::fun(ty.clone(), bt)))
+            }
+            // Still open after binding one level.
+            Open(m) => Open(m - 1),
+        },
+    }
+}
+
+/// Type-check `t` in `env`, where `env` carries the binder-type stack.
+/// Used as the close-time typer by [`term_info`] and as the
+/// specific-error fallback by [`Term::type_of`]. Closed subterms
+/// short-circuit on their cached type, so this walks only the open spine.
 pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
+    // A closed subterm's type is cached and context-independent — return it
+    // without recursing. This is what makes a close-time typing (and any
+    // `type_of`) walk only the *open* spine: closed subterms short-circuit.
+    if let TermInfo::Wf(ty) = t.info() {
+        return Ok(ty.clone());
+    }
     match t.kind() {
         TermKind::Bound(i) => {
             let i = *i as usize;

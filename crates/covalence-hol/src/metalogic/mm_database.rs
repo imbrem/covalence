@@ -680,6 +680,65 @@ pub fn derive_theorem_with_cons(
     replay_with(db, parser, assertion, &steps, &rs, &clause_index, cons)
 }
 
+/// One theorem's interned **surface**: its encoded conclusion and essential
+/// hypotheses (the `⌜S⌝` / `⌜eᵢ⌝` statement encodings), hash-consed into a
+/// shared interner. This is the *displayed / retained* HOL form — what you
+/// pretty-print — as opposed to the (transient, heavy) proof.
+#[derive(Debug, Clone)]
+pub struct InternedDecl {
+    pub label: String,
+    /// The interned encoded conclusion `⌜S⌝`.
+    pub concl: Term,
+    /// The interned encoded essential hypotheses `⌜eᵢ⌝`, in frame order.
+    pub hyps: Vec<Term>,
+}
+
+/// **Pass 1 of a two-pass import.** On a *single thread*, encode and hash-cons
+/// every listed assertion's conclusion + essential hypotheses into `cons`.
+///
+/// This is the cheap pass: it only parses/encodes each *statement* once — it
+/// does **not** replay proofs. Metamath statements share enormous structure
+/// across theorems (the same constants, the same sub-expressions), so the
+/// resulting interner is a compact shared DAG (~15–20× fewer nodes than the sum
+/// of the statement trees; see [`tests::measure_dedup`]). That DAG is the basis
+/// for pretty-printing the HOL form and for cheap retention of the whole
+/// imported surface.
+///
+/// Pass 2 then *proves* each theorem in parallel via
+/// [`crate::metalogic::mm_import::import_theorems_parallel`] — deliberately
+/// **without** interning, so the heavy intermediate proof terms stay transient
+/// and proving keeps full speed. Pass a single-threaded `cons` here (no `Sync`
+/// needed); the proofs in pass 2 are verified against these same statements.
+///
+/// `labels` may include syntactic-former / `df-*` definition assertions as well
+/// as `|-` theorems — anything whose surface you want in the shared DAG.
+pub fn intern_surface(
+    db: &Database,
+    parser: &Parser,
+    labels: &[String],
+    cons: &mut dyn TrustedCons,
+) -> Result<Vec<InternedDecl>> {
+    let mut out = Vec::with_capacity(labels.len());
+    for label in labels {
+        let Some(Statement::Assert(a)) = db.statement_by_label(label) else {
+            continue;
+        };
+        let concl = parser.encode_expr(&a.conclusion)?.cons_with(cons);
+        let hyps = a
+            .frame
+            .essentials
+            .iter()
+            .map(|h| Ok(parser.encode_expr(&h.expr)?.cons_with(cons)))
+            .collect::<Result<Vec<_>>>()?;
+        out.push(InternedDecl {
+            label: label.clone(),
+            concl,
+            hyps,
+        });
+    }
+    Ok(out)
+}
+
 /// The shared replay loop: drive `assertion`'s proof steps against the supplied
 /// rule set `rs` (with its `label → clause index` map), re-deriving
 /// `⊢ Derivable_L ⌜S⌝`. Both [`replay_db`] (full database rule set) and
@@ -1144,31 +1203,31 @@ mod tests {
                 .take(limit)
                 .collect();
 
-            // Plain path (no interning) — baseline timing + tree sizes.
+            // Pass 1 (single-thread): intern every conclusion + hypothesis.
+            let mut cons = HashCons::new();
+            let t_pass1 = std::time::Instant::now();
+            let decls = intern_surface(&db, &parser, &labels, &mut cons)
+                .unwrap_or_else(|e| panic!("{name} intern_surface failed: {e}"));
+            let pass1_ms = t_pass1.elapsed();
+            // Tree-size of the same surface (conclusions + hyps), un-interned.
             let mut tree_total: u64 = 0;
             let mut max_tree: u64 = 0;
-            let t_plain = std::time::Instant::now();
-            for label in &labels {
-                let thm = derive_theorem_with(&db, &parser, label)
-                    .unwrap_or_else(|e| panic!("{name} `{label}` failed: {e}"));
-                let sz = tree_size(thm.concl());
+            for d in &decls {
+                let sz = tree_size(&d.concl) + d.hyps.iter().map(tree_size).sum::<u64>();
                 tree_total += sz;
                 max_tree = max_tree.max(sz);
             }
-            let plain_ms = t_plain.elapsed();
-
-            // Cons path: one persistent interner across all theorems (the import's
-            // per-worker setup). `cons.len()` is the shared DAG node count.
-            let mut cons = HashCons::new();
-            let t_cons = std::time::Instant::now();
-            for label in &labels {
-                let _ = derive_theorem_with_cons(&db, &parser, label, &mut cons)
-                    .unwrap_or_else(|e| panic!("{name} `{label}` (cons) failed: {e}"));
-            }
-            let cons_ms = t_cons.elapsed();
             let dag = cons.len() as u64;
+
+            // Pass 2 (the import's actual path): prove each, plain / no interning.
+            let t_pass2 = std::time::Instant::now();
+            for label in &labels {
+                let _ = derive_theorem_with(&db, &parser, label)
+                    .unwrap_or_else(|e| panic!("{name} `{label}` failed: {e}"));
+            }
+            let pass2_ms = t_pass2.elapsed();
             eprintln!(
-                "\n=== {name}: {} thms ===\n  tree nodes (sum)   : {tree_total}\n  max single tree    : {max_tree}\n  shared DAG nodes   : {dag}\n  dedup factor       : {:.1}x\n  time plain         : {plain_ms:?}\n  time cons          : {cons_ms:?}",
+                "\n=== {name}: {} thms ===\n  surface tree nodes : {tree_total}\n  max single tree    : {max_tree}\n  shared DAG nodes   : {dag}\n  dedup factor       : {:.1}x\n  pass1 intern (1thr): {pass1_ms:?}\n  pass2 prove (plain): {pass2_ms:?}",
                 labels.len(),
                 tree_total as f64 / dag.max(1) as f64,
             );

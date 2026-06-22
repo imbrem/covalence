@@ -12,6 +12,7 @@ import type {
   MmDbInfo,
   MmDbListEntry,
   MmServerStats,
+  MmHolInfo,
   MmGraphResponse,
   ImportTheoremDetail,
 } from './types.js';
@@ -204,6 +205,25 @@ export class CovalenceClient {
   async mmSymbols(hash: Hash, user?: string): Promise<Record<string, string>> {
     const res = await this.fetch(
       `${this.baseUrl}/api/metamath/session/${hash}/symbols${userQuery(user)}`,
+    );
+    if (!res.ok) return {};
+    return (await res.json()) as Record<string, string>;
+  }
+
+  /** GET /api/metamath/session/{hash}/hol — pass-1 HOL surface stats + the
+   * database's named definitions (formers + df-*). Triggers pass 1 server-side. */
+  async mmHol(hash: Hash, user?: string): Promise<MmHolInfo> {
+    const res = await this.fetch(
+      `${this.baseUrl}/api/metamath/session/${hash}/hol${userQuery(user)}`,
+    );
+    return (await res.json()) as MmHolInfo;
+  }
+
+  /** GET /api/metamath/session/{hash}/hol/terms — the whole `label → HOL term`
+   * map (pass 1; available before proving). One fetch, cached by the page. */
+  async mmHolTerms(hash: Hash, user?: string): Promise<Record<string, string>> {
+    const res = await this.fetch(
+      `${this.baseUrl}/api/metamath/session/${hash}/hol/terms${userQuery(user)}`,
     );
     if (!res.ok) return {};
     return (await res.json()) as Record<string, string>;

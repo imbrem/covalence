@@ -18,6 +18,7 @@
 		MmDbInfo,
 		MmDbListEntry,
 		MmServerStats,
+		MmHolInfo,
 	} from 'covalence-client';
 
 	// Named presets for the source dropdown — the databases hosted on the
@@ -121,6 +122,23 @@
 	// small built-in fallback. Server entries win — each .mm typesets itself.
 	let serverSymbols = $state<Record<string, string>>({});
 	const symbolMap = $derived({ ...MM_UNICODE, ...serverSymbols });
+	// Pass-1 interned HOL surface: per-theorem HOL terms (available before
+	// proving) + the database's named definitions + the dedup stat.
+	let holInfo = $state<MmHolInfo | null>(null);
+	let holTerms = $state<Record<string, string>>({});
+	let showDefs = $state(false); // list shows the definitions panel instead
+	// Named definitions, filtered by the search box when the defs panel is shown.
+	const filteredDefs = $derived.by(() => {
+		const all = holInfo?.defs ?? [];
+		const q = search.trim().toLowerCase();
+		if (!q) return all;
+		return all.filter(
+			(d) =>
+				d.label.toLowerCase().includes(q) ||
+				d.mm.toLowerCase().includes(q) ||
+				d.hol.toLowerCase().includes(q),
+		);
+	});
 	// Live server-metrics panel (RAM etc. over time). Polled while open.
 	let showServer = $state(false);
 	let serverStat = $state<MmServerStats | null>(null);
@@ -551,6 +569,18 @@
 			.then((s) => (serverSymbols = s))
 			.catch(() => {});
 
+		// Pass 1: fetch the interned HOL surface (terms + named definitions). This
+		// triggers the server-side single-thread interning; the HOL terms then
+		// show *before* (and during) the prove phase.
+		client
+			.mmHol(hash, user)
+			.then((h) => (holInfo = h))
+			.catch(() => {});
+		client
+			.mmHolTerms(hash, user)
+			.then((t) => (holTerms = t))
+			.catch(() => {});
+
 		// Connect the status WS first so we don't miss early frames, then start.
 		connectStatus(hash);
 		try {
@@ -878,6 +908,7 @@
 				{#if phase === 'done'}<span>{(elapsedMs / 1000).toFixed(1)}s wall</span>{/if}
 				{#if avgMs > 0}<span class="dim">avg {avgMs.toFixed(1)} ms/thm</span>{/if}
 				{#if slowest}<span class="dim">slowest {slowest.label} {(slowest.importMs ?? 0).toFixed(0)} ms</span>{/if}
+				{#if holInfo}<span class="dim" title="pass-1 interning: summed statement-tree nodes → distinct shared-DAG nodes">HOL surface {holInfo.surfaceNodes.toLocaleString()} → {holInfo.dagNodes.toLocaleString()} ({holInfo.dedup.toFixed(1)}× shared)</span>{/if}
 				<span class="spacer"></span>
 				<label class="filter">
 					<input type="checkbox" bind:checked={failuresOnly} />
@@ -1023,17 +1054,47 @@
 					placeholder="filter by label or statement…"
 					spellcheck="false"
 				/>
-				<select class="sort" bind:value={sortBy} title="sort order">
-					<option value="order">order</option>
-					<option value="slow">slowest</option>
-					<option value="fast">fastest</option>
-					<option value="deps">most deps</option>
-					<option value="label">label</option>
-				</select>
-				{#if search || failuresOnly}
+				{#if !showDefs}
+					<select class="sort" bind:value={sortBy} title="sort order">
+						<option value="order">order</option>
+						<option value="slow">slowest</option>
+						<option value="fast">fastest</option>
+						<option value="deps">most deps</option>
+						<option value="label">label</option>
+					</select>
+				{/if}
+				{#if holInfo && holInfo.defs.length > 0}
+					<button
+						class="copy"
+						class:on={showDefs}
+						title="the database's own named definitions (syntactic formers + df-*)"
+						onclick={() => (showDefs = !showDefs)}
+					>
+						{showDefs ? 'theorems' : `defs (${holInfo.defs.length})`}
+					</button>
+				{/if}
+				{#if showDefs}
+					<span class="shown">{filteredDefs.length} / {holInfo?.defs.length ?? 0}</span>
+				{:else if search || failuresOnly}
 					<span class="shown">{filtered.length} / {theorems.length}</span>
 				{/if}
 			</div>
+			{#if showDefs}
+				<div class="rows defs-rows">
+					{#each filteredDefs.slice(0, 500) as d (d.label)}
+						<div class="def-item">
+							<span class="lbl">{d.label}</span>
+							<span class="kind kind-{d.kind}">{d.kind}</span>
+							<pre class="mm def-hol">{renderMm(d.hol, unicode, symbolMap)}</pre>
+						</div>
+					{/each}
+					{#if filteredDefs.length > 500}
+						<div class="empty">showing 500 of {filteredDefs.length} — search to narrow</div>
+					{:else if filteredDefs.length === 0}
+						<div class="empty">No definitions match.</div>
+					{/if}
+				</div>
+			{:else}
 			<div class="rows" bind:this={rowsEl} onscroll={onRowsScroll}>
 				<div class="vspacer" style="height:{totalH}px">
 					<div class="vwin" style="transform:translateY({offsetY}px)">
@@ -1058,6 +1119,7 @@
 					<div class="empty">No theorems match the current filter.</div>
 				{/if}
 			</div>
+			{/if}
 		</div>
 
 		<div class="detail">
@@ -1074,7 +1136,20 @@
 					{/if}
 				</div>
 				<div class="field">
-					<div class="flabel">HOL term</div>
+					<div class="flabel">HOL term (interned, pass 1)</div>
+					{#if holTerms[selected.label]}
+						<pre class="hol holterm">{renderMm(holTerms[selected.label], unicode, symbolMap)}</pre>
+						<p class="note">
+							The encoded conclusion <code>⌜S⌝</code>, hash-consed into the shared DAG and
+							rendered with compound sub-formulas folded back to their Metamath definition
+							names. Available before the proof runs.
+						</p>
+					{:else}
+						<pre class="hol dim">interning…</pre>
+					{/if}
+				</div>
+				<div class="field">
+					<div class="flabel">Derivation</div>
 					{#if selected.status === 'proved'}
 						<div class="kv">
 							<span>hypotheses</span><span>{selected.hyps}</span>
@@ -1886,6 +1961,49 @@
 		color: var(--bad);
 		background: rgba(248, 113, 113, 0.08);
 		border-color: rgba(248, 113, 113, 0.3);
+	}
+	pre.hol.holterm {
+		color: var(--accent);
+	}
+	pre.hol.dim {
+		color: var(--muted);
+	}
+	/* Definitions panel */
+	.defs-rows {
+		padding: 0.2rem 0;
+	}
+	.def-item {
+		display: grid;
+		grid-template-columns: auto auto 1fr;
+		align-items: baseline;
+		gap: 0.5rem;
+		padding: 0.35rem 0.6rem;
+		border-bottom: 1px solid var(--border);
+	}
+	.def-item .lbl {
+		font-weight: 600;
+		color: var(--fg);
+	}
+	.def-item .kind {
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 0.05rem 0.3rem;
+		border-radius: 3px;
+		color: var(--muted);
+		border: 1px solid var(--border);
+	}
+	.def-item .kind-def {
+		color: var(--accent);
+		border-color: var(--accent);
+	}
+	.def-item .def-hol {
+		margin: 0;
+		background: none;
+		border: none;
+		padding: 0;
+		font-size: 0.76rem;
+		color: var(--fg);
 	}
 	.kv {
 		display: flex;

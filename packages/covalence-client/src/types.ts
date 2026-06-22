@@ -119,6 +119,34 @@ export interface MmServerStats {
   uptimeSecs: number;
 }
 
+/** One named Metamath definition (a syntactic former or a `df-*`) and its HOL
+ * encoding (GET /api/metamath/session/{hash}/hol → `defs`). */
+export interface MmDef {
+  /** The Metamath label (the definition's name). */
+  label: string;
+  /** `'former'` (a wff/class/… syntax constructor) or `'def'` (a `df-*`). */
+  kind: 'former' | 'def';
+  /** Rendered Metamath statement. */
+  mm: string;
+  /** Rendered HOL term (the encoded conclusion). */
+  hol: string;
+}
+
+/** GET /api/metamath/session/{hash}/hol → pass-1 surface stats + definitions.
+ * The interned (hash-consed) HOL surface of the whole database: every theorem's
+ * conclusion built once on a single thread into a shared DAG, plus the named
+ * definitions used to read it. */
+export interface MmHolInfo {
+  /** Summed statement-tree nodes over all conclusions (un-interned). */
+  surfaceNodes: number;
+  /** Distinct nodes after interning (the shared DAG). */
+  dagNodes: number;
+  /** `surfaceNodes / dagNodes` — the dedup factor. */
+  dedup: number;
+  /** The database's named definitions (formers + df-*). */
+  defs: MmDef[];
+}
+
 /** One entry of GET /api/metamath/dbs → all cached sessions on the server. */
 export interface MmDbListEntry {
   file: Hash;

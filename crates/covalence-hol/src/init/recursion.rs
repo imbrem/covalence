@@ -249,6 +249,18 @@ fn p_rec_pred_at(beta: &Type) -> Result<Term> {
 /// about the *domain* `nat`, independent of `β`, so the same engine runs
 /// at every result type.
 fn recursion_theorem_at(beta: &Type) -> Result<Thm> {
+    // The engine run is `β`-independent (the `NatTheory` induction/freeness are
+    // about the domain `nat`), so build it ONCE at a polymorphic result type and
+    // instantiate — the same caching trick as list's `foldr_holds`. Avoids
+    // re-running the engine for every `β` `natRec` is used at (each `list`
+    // index/head/tail lemma uses a different one).
+    static CACHE: std::sync::LazyLock<Thm> = std::sync::LazyLock::new(|| {
+        recursion_theorem_build(&Type::tfree("__natrec_b")).expect("nat recursion theorem")
+    });
+    CACHE.clone().inst_tfree("__natrec_b", beta.clone())
+}
+
+fn recursion_theorem_build(beta: &Type) -> Result<Thm> {
     let z = Term::free("z", beta.clone());
     let f = Term::free("f", Type::fun(nat(), Type::fun(beta.clone(), beta.clone())));
     recursor::recursion_theorem(&NatTheory, &[z, f], beta, &p_rec_pred_at(beta)?)

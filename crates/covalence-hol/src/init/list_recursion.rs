@@ -217,7 +217,19 @@ fn para_recursion_theorem() -> Result<Thm> {
 /// yields a recursor `r`; the catamorphic fold `λf z. r z (λx xs acc. f x
 /// acc)` satisfies `list_foldr_predicate`, and `spec_ax(list_foldr, ·)`
 /// transfers the equations to `list_foldr` itself.
+/// `⊢ list_foldr_predicate (foldr witness)`, polymorphic in `a, b`. **Cached**:
+/// it calls the inductive engine's recursion theorem, so it is expensive and
+/// input-independent — built once and shared. `foldr_holds_at` just
+/// `inst_tfree`s it, so every list recursion lemma (`foldr_*`, `length_*`,
+/// `cat_*`) reuses one build instead of rebuilding the recursor ~6× (the bulk
+/// of `list_env` / `list.cov` evaluation time).
 pub fn foldr_holds() -> Result<Thm> {
+    static CACHE: std::sync::LazyLock<Thm> =
+        std::sync::LazyLock::new(|| foldr_holds_uncached().expect("foldr_holds derivation"));
+    Ok(CACHE.clone())
+}
+
+fn foldr_holds_uncached() -> Result<Thm> {
     // Under `P_rec r`, build the catamorphic witness and prove `pred witness`.
     let r = Term::free("r", para_rec_ty());
     let p_rec_r = beta_reduce(Thm::assume(Term::app(para_pred(), r.clone()))?)?; // {P_rec r} ⊢ ∀z f'. …

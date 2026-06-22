@@ -217,7 +217,7 @@ impl Hol for NativeHol {
     }
     fn dest_var(&self, t: &Term) -> Option<(String, Type)> {
         match t.kind() {
-            TermKind::Free(n, ty) => Some((n.to_string(), ty.clone())),
+            TermKind::Free(v) => Some((v.name().to_string(), v.ty().clone())),
             _ => None,
         }
     }

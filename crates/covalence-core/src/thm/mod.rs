@@ -43,12 +43,12 @@ use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hol;
 use crate::subst::{
-    close, find_free_type, has_free_var, open, subst_free, subst_tfree_in_term,
-    subst_tfrees_in_term,
+    close_var, has_free_var_typed, open, subst_free, subst_tfree_in_term, subst_tfrees_in_term,
 };
 
 use crate::term::{
-    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, TypeKind, type_of_in,
+    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, TypeKind, Var,
+    type_of_in,
 };
 use crate::ty::{TypeList, TypeSpec};
 
@@ -182,7 +182,7 @@ impl Thm {
 
     /// `Γ ∪ Δ ⊢ s = u`, given `Γ ⊢ s = t` and `Δ ⊢ t = u` (HOL `=`).
     pub fn trans(self, other: Thm) -> Result<Thm> {
-        let (s, t1) = parse_hol_eq(&self.concl)?;
+        let (s, t1, alpha) = parse_hol_eq_at(&self.concl)?;
         let (t2, u) = parse_hol_eq(&other.concl)?;
         if t1 != t2 {
             return Err(Error::TransMiddleMismatch {
@@ -190,7 +190,8 @@ impl Thm {
                 right: format!("{}", t2),
             });
         }
-        let concl = hol::hol_eq(s.clone(), u.clone());
+        // `alpha` is `s`'s element type, read off the `Eq` head — no walk.
+        let concl = hol::hol_eq_at(alpha.clone(), s.clone(), u.clone());
         let hyps = self.hyps.union(&other.hyps);
         Self::build(hyps, concl)
     }
@@ -199,17 +200,23 @@ impl Thm {
     /// applications must type-check: `f` (and so `g`) must have
     /// function type whose domain matches `x`'s (and so `y`'s) type.
     pub fn mk_comb(self, arg: Thm) -> Result<Thm> {
-        let (f, g) = parse_hol_eq(&self.concl)?;
+        let (f, g, funty) = parse_hol_eq_at(&self.concl)?;
         let (x, y) = parse_hol_eq(&arg.concl)?;
+        // The result `f x = g y` has element type = codomain of `f`'s
+        // (function) type, which is the `Eq` head's type argument on the
+        // input theorem — no `type_of` walk. If `f` is not a function the
+        // application is ill-typed; report it directly (as the old
+        // `lhs.type_of()` path did).
+        let TypeKind::Fun(_dom, cod) = funty.kind() else {
+            return Err(Error::NotFunction(funty.clone()));
+        };
+        let cod = cod.clone();
         let lhs = Term::app(f.clone(), x.clone());
         let rhs = Term::app(g.clone(), y.clone());
-        // Pre-validate the application's type rather than letting
-        // hol::hol_eq's internal `type_of().expect(...)` panic on a
-        // bad arg shape. type_of() here also serves as a Free-var
-        // consistency check across f and x.
-        let _ = lhs.type_of()?;
-        let _ = rhs.type_of()?;
-        let concl = hol::hol_eq(lhs, rhs);
+        // `Self::build` re-validates the whole conclusion end-to-end —
+        // argument-domain match, and Free-var consistency across f/g/x/y
+        // — so the previous per-side `type_of` pre-checks were redundant.
+        let concl = hol::hol_eq_at(cod, lhs, rhs);
         let hyps = self.hyps.union(&arg.hyps);
         Self::build(hyps, concl)
     }
@@ -217,27 +224,26 @@ impl Thm {
     /// `Γ ⊢ (λx:τ. s[x]) = (λx:τ. t[x])`, given `Γ ⊢ s = t` with
     /// `Free(name:τ)` not free in `Γ`.
     pub fn abs(self, name: &str, ty: Type) -> Result<Thm> {
-        let (s, t) = parse_hol_eq(&self.concl)?;
+        let (s, t, alpha) = parse_hol_eq_at(&self.concl)?;
+        let alpha = alpha.clone();
+        let var = Var::new(name, ty.clone());
+        // The bound variable `var` must not be free in the hypotheses
+        // (HOL Light's ABS side-condition).
         for h in self.hyps.iter() {
-            if has_free_var(h, name) {
+            if has_free_var_typed(h, &var) {
                 return Err(Error::FreeVarInHyps { name: name.into() });
             }
         }
-        let declared = find_free_type(s, name).or_else(|| find_free_type(t, name));
-        if let Some(declared) = declared
-            && declared != ty
-        {
-            return Err(Error::BinderTypeMismatch {
-                name: name.into(),
-                declared,
-                expected: ty,
-            });
-        }
         let s = s.clone();
         let t = t.clone();
-        let s_abs = Term::abs(ty.clone(), close(&s, name));
-        let t_abs = Term::abs(ty, close(&t, name));
-        let concl = hol::hol_eq(s_abs, t_abs);
+        // Bind exactly the variable `var`; a same-named variable at a
+        // different type is untouched.
+        let s_abs = Term::abs(ty.clone(), close_var(&s, &var));
+        let t_abs = Term::abs(ty.clone(), close_var(&t, &var));
+        // The abstractions have type `ty → alpha` (alpha = the bodies'
+        // shared element type from the input `Eq` head), so that is the
+        // result equation's element type — no walk.
+        let concl = hol::hol_eq_at(Type::fun(ty, alpha), s_abs, t_abs);
         Self::build(self.hyps, concl)
     }
 
@@ -288,12 +294,12 @@ impl Thm {
     /// `EQ_MP` — equality at `bool` IS biconditional, so this also
     /// implements the `⇔`-elim direction.
     pub fn eq_mp(self, p_thm: Thm) -> Result<Thm> {
-        let (p, q) = parse_hol_eq(&self.concl)?;
+        let (p, q, alpha) = parse_hol_eq_at(&self.concl)?;
         // p = q must be at type bool (otherwise it's not an
-        // implication-shaped equation).
-        let p_ty = p.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
+        // implication-shaped equation). `alpha` is p's type, read off the
+        // `Eq` head — no walk.
+        if !alpha.is_bool() {
+            return Err(Error::NotBool(alpha.clone()));
         }
         if *p != p_thm.concl {
             return Err(Error::ImpAntecedentMismatch {
@@ -328,31 +334,15 @@ impl Thm {
         Self::build(hyps, concl)
     }
 
-    /// HOL Light's `INST`: substitute a free term variable. `name`
-    /// is the free var to replace; `replacement` is the term to
-    /// substitute. The replacement's type must match the free var's
-    /// declared type, if the variable appears anywhere in the
-    /// theorem (concl or hyps).
-    ///
-    /// `Thm::build`'s re-typing pass also catches type mismatches
-    /// (it re-validates the substituted term end-to-end), but the
-    /// explicit check here gives a more specific error message and
-    /// rejects ill-typed substitutions even when the post-substitution
-    /// term happens to type-check at a wrong type by accident.
+    /// HOL Light's `INST`: substitute the free variable `(name,
+    /// replacement_ty)` — identified by name **and** type — with
+    /// `replacement`. A same-named variable at a different type is a
+    /// distinct variable and is left untouched (so a type-mismatched
+    /// substitution is a no-op, as in HOL Light's `vsubst`).
     pub fn inst(self, name: &str, replacement: Term) -> Result<Thm> {
-        let replacement_ty = replacement.type_of()?;
-        let declared = find_free_type(&self.concl, name)
-            .or_else(|| self.hyps.iter().find_map(|h| find_free_type(h, name)));
-        if let Some(declared) = declared
-            && declared != replacement_ty
-        {
-            return Err(Error::TypeMismatch {
-                expected: declared,
-                got: replacement_ty,
-            });
-        }
-        let concl = subst_free(&self.concl, name, &replacement);
-        let hyps = self.hyps.map(|h| subst_free(h, name, &replacement));
+        let var = Var::new(name, replacement.type_of()?);
+        let concl = subst_free(&self.concl, &var, &replacement);
+        let hyps = self.hyps.map(|h| subst_free(h, &var, &replacement));
         Self::build(hyps, concl)
     }
 
@@ -384,8 +374,8 @@ impl Thm {
     /// `eq_mp` to get `b = a`. Implemented directly here as
     /// "parse the equation, return reversed".
     pub fn sym(self) -> Result<Thm> {
-        let (a, b) = parse_hol_eq(&self.concl)?;
-        let concl = hol::hol_eq(b.clone(), a.clone());
+        let (a, b, alpha) = parse_hol_eq_at(&self.concl)?;
+        let concl = hol::hol_eq_at(alpha.clone(), b.clone(), a.clone());
         Self::build(self.hyps, concl)
     }
 
@@ -448,19 +438,13 @@ impl Thm {
     /// close the free variable into a `Bound(0)` and wrap with
     /// `Forall_at(τ)`.
     pub fn all_intro(self, name: &str, ty: Type) -> Result<Thm> {
+        // The generalised variable `(name, ty)` must not be free in the
+        // hypotheses.
+        let var = Var::new(name, ty.clone());
         for h in self.hyps.iter() {
-            if has_free_var(h, name) {
+            if has_free_var_typed(h, &var) {
                 return Err(Error::FreeVarInHyps { name: name.into() });
             }
-        }
-        if let Some(declared) = find_free_type(&self.concl, name)
-            && declared != ty
-        {
-            return Err(Error::BinderTypeMismatch {
-                name: name.into(),
-                declared,
-                expected: ty,
-            });
         }
         let concl = hol::hol_forall(name, ty, self.concl);
         Self::build(self.hyps, concl)
@@ -1175,12 +1159,12 @@ impl Thm {
                 "nat_induct: step uses a different motive than the base".into(),
             ));
         }
-        let TermKind::Free(n_name, n_ty) = n_free.kind() else {
+        let TermKind::Free(nv) = n_free.kind() else {
             return Err(Error::ConnectiveRule(format!(
                 "nat_induct: induction variable {n_free} is not a free variable"
             )));
         };
-        if *n_ty != nat {
+        if *nv.ty() != nat {
             return Err(Error::ConnectiveRule(format!(
                 "nat_induct: induction variable {n_free} is not of type nat"
             )));
@@ -1192,23 +1176,24 @@ impl Thm {
             )));
         }
 
-        // GEN side conditions: n free neither in the motive nor in
-        // the step's hypotheses.
-        if has_free_var(&p, n_name) {
+        // GEN side conditions: the variable `nv` free neither in the
+        // motive nor in the step's hypotheses.
+        if has_free_var_typed(&p, nv) {
             return Err(Error::ConnectiveRule(
                 "nat_induct: induction variable occurs free in the motive".into(),
             ));
         }
         for h in step.hyps.iter() {
-            if has_free_var(h, n_name) {
+            if has_free_var_typed(h, nv) {
                 return Err(Error::FreeVarInHyps {
-                    name: n_name.as_str().into(),
+                    name: nv.name().into(),
                 });
             }
         }
 
+        let n_name = nv.name().to_string();
         let body = Term::app(p, n_free.clone());
-        let concl = hol::hol_forall(n_name, nat, body);
+        let concl = hol::hol_forall(&n_name, nat, body);
         let hyps = base.hyps.union(&step.hyps);
         Self::build(hyps, concl)
     }
@@ -1375,16 +1360,26 @@ fn subtype_pred(spec: &TypeSpec, args: &TypeList, carrier: &Type) -> Result<Term
 }
 
 fn parse_hol_eq(t: &Term) -> Result<(&Term, &Term)> {
+    let (lhs, rhs, _) = parse_hol_eq_at(t)?;
+    Ok((lhs, rhs))
+}
+
+/// Like [`parse_hol_eq`] but also returns the element type `alpha` read
+/// directly off the `Eq(alpha)` head — no `type_of` walk. For a validly
+/// built theorem `⊢ lhs = rhs`, `alpha` is exactly the (shared) type of
+/// `lhs` and `rhs`, so rules can reuse it to construct their result
+/// equation instead of recomputing it.
+fn parse_hol_eq_at(t: &Term) -> Result<(&Term, &Term, &Type)> {
     let TermKind::App(f, rhs) = t.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));
     };
     let TermKind::App(head, lhs) = f.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));
     };
-    let TermKind::Eq(_) = head.kind() else {
+    let TermKind::Eq(alpha) = head.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));
     };
-    Ok((lhs, rhs))
+    Ok((lhs, rhs, alpha))
 }
 
 /// Parse an `imp`-headed application — `App(App(⟹, p), q)` — and

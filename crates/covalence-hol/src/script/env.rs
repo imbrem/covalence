@@ -466,7 +466,7 @@ impl Env {
             .as_app()
             .ok_or_else(|| ScriptError::Syntax("funext: pointwise side is not `f x`".into()))?;
         let (name, ty) = match x.kind() {
-            TermKind::Free(name, ty) => (name.to_string(), ty.clone()),
+            TermKind::Free(v) => (v.name().to_string(), v.ty().clone()),
             _ => {
                 return Err(ScriptError::Syntax(
                     "funext: the point `x` of `f x = g x` must be a free variable".into(),

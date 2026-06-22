@@ -279,7 +279,7 @@ fn spec_coercion_to_sexp(
 pub fn term_to_sexp(t: &Term, ser: &dyn ObsSerializer) -> Result<SExpr> {
     Ok(match t.kind() {
         TermKind::Bound(i) => list2("bound", sym(i.to_string().as_str())),
-        TermKind::Free(name, ty) => list3("free", sym(name), type_to_sexp(ty, ser)?),
+        TermKind::Free(v) => list3("free", sym(v.name()), type_to_sexp(v.ty(), ser)?),
         TermKind::Const(name, ty) => list3("const", sym(name), type_to_sexp(ty, ser)?),
         TermKind::App(f, x) => list3("app", term_to_sexp(f, ser)?, term_to_sexp(x, ser)?),
         TermKind::Abs(ty, body) => list3("abs", type_to_sexp(ty, ser)?, term_to_sexp(body, ser)?),

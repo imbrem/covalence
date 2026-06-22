@@ -16,12 +16,27 @@
 //!   payload that parses as `Vec(func)`" — and for sharing one derivation
 //!   across Metamath / WASM / S-expression grammars.
 //!
-//! The search is plain backtracking over how `seq`/`star`/`alt` split the
-//! input. It is untrusted: every step is re-checked by the kernel as the `Thm`
-//! is built, so a wrong split simply fails to typecheck and the search moves
-//! on. Worst-case it is exponential in the input length — fine for the small
-//! tokens this bootstraps on; a derivative/memoised matcher is a later
-//! optimisation (`SKELETONS.md`).
+//! # Two phases: recognise, then prove
+//!
+//! Matching is split into a fast **recognizer** and a separate **builder**, so
+//! the kernel only ever sees the *winning* derivation:
+//!
+//! 1. **Recognizer** ([`Recognizer`]) — a pure-Rust search (no kernel calls)
+//!    that decides whether the input matches and, if so, returns a [`Plan`]: the
+//!    shape of the derivation (which `alt` branch, where each `seq`/`star`
+//!    splits). It memoises on `(node, span)`, so it is polynomial rather than
+//!    exponential, and it only checks *simple* properties — does this byte match
+//!    this literal, does this prefix match — so it is the natural place to drop
+//!    in a WASM/builtin accelerator later.
+//! 2. **Builder** ([`build`]) — walks the `Plan` once and assembles the `Thm`
+//!    from [`crate::init::regex`]'s rules, with **no search and no failed kernel
+//!    calls**. Kernel work is exactly the size of the final derivation.
+//!
+//! This is the key performance property: a single-phase matcher that built the
+//! `Thm` as it searched would build (and discard) kernel objects for branches
+//! that ultimately fail; separating the phases removes that waste entirely. It
+//! is still untrusted — the kernel re-checks every rule the builder applies, so
+//! a buggy recognizer can only fail to find a proof, never forge one.
 
 use covalence_core::{Result, Term, Thm, Type};
 use covalence_grammar::regex::Regex;
@@ -81,120 +96,195 @@ enum Atom {
 }
 
 // ============================================================================
-// The deriver — `Matches ⌜c⌝ w` over a slice of atoms.
+// Phase 1: the recognizer (pure Rust, no kernel calls).
+//
+// Decides "do `atoms[lo..hi]` match `c`, and how" and returns a `Plan` — the
+// derivation skeleton — which phase 2 turns into a `Thm`. Memoised on
+// `(node, lo, hi)`, so the search is polynomial, not exponential. This is the
+// part to accelerate with WASM/builtins later: it only checks simple
+// properties (does a byte match a literal, does a prefix match).
 // ============================================================================
 
-/// Try to build `⊢ Matches ⌜c⌝ w` (possibly under variable assumptions) where
-/// `w` consumes exactly `atoms`. Returns the theorem and its word term, or
-/// `None` if `atoms ∉ L(c)`. `Ok(None)` is "no derivation"; `Err` is a genuine
-/// kernel failure.
-fn derive(c: &Core, atoms: &[Atom], vars: &[VarInfo]) -> Result<Option<(Thm, Term)>> {
-    let a = u8ty();
+/// The shape of a `Matches` derivation found by the recognizer. Carries exactly
+/// what [`build`] needs and nothing about the kernel.
+#[derive(Clone)]
+enum Plan {
+    /// `eps` matched the empty word.
+    Eps,
+    /// `lit` matched a single byte (the byte is read from the `Core`).
+    Lit,
+    /// `alt`: the left branch matched.
+    AltL(Box<Plan>),
+    /// `alt`: the right branch matched.
+    AltR(Box<Plan>),
+    /// `seq`: left then right.
+    Seq(Box<Plan>, Box<Plan>),
+    /// `star` matched the empty word.
+    StarNil,
+    /// `star`: one `x`-iteration then the rest.
+    StarStep(Box<Plan>, Box<Plan>),
+    /// variable token `i`, consumed by its `parses-as` assumption.
+    Var(usize),
+}
 
-    // Variable rule: a lone variable token is consumed only by the regex goal
-    // that *is* its category — discharged against `Matches ⌜category⌝ X`.
-    if let [Atom::Var(i)] = atoms {
-        let vi = &vars[*i];
-        if *c == vi.category {
-            let prop = ir::matches(&a, &core_to_term(c), &vi.term)?;
-            return Ok(Some((Thm::assume(prop)?, vi.term.clone())));
+/// Recognizer state: the fixed atom array, the var table, and a memo over
+/// `(core node, lo, hi)` so each sub-problem is solved once.
+struct Recognizer<'a> {
+    atoms: &'a [Atom],
+    vars: &'a [VarInfo],
+    memo: std::collections::HashMap<(usize, usize, usize), Option<Plan>>,
+}
+
+impl Recognizer<'_> {
+    fn rec(&mut self, c: &Core, lo: usize, hi: usize) -> Option<Plan> {
+        // Core nodes are owned in a stable, immutable tree for the run, so the
+        // node pointer is a sound memo key.
+        let key = (c as *const Core as usize, lo, hi);
+        if let Some(cached) = self.memo.get(&key) {
+            return cached.clone();
         }
-        // Otherwise fall through: a structural goal (alt/seq/star) may still
-        // recurse and bottom out at this rule with a matching sub-core.
+        let result = self.rec_uncached(c, lo, hi);
+        self.memo.insert(key, result.clone());
+        result
     }
 
-    match c {
-        Core::Empty => Ok(None),
-
-        Core::Eps => {
-            if atoms.is_empty() {
-                Ok(Some((ir::match_eps(&a)?, nil_w())))
-            } else {
-                Ok(None)
+    fn rec_uncached(&mut self, c: &Core, lo: usize, hi: usize) -> Option<Plan> {
+        // Variable rule: a lone variable token is consumed only by the regex
+        // goal that *is* its category.
+        if hi - lo == 1 {
+            if let Atom::Var(i) = self.atoms[lo] {
+                if *c == self.vars[i].category {
+                    return Some(Plan::Var(i));
+                }
+                // else fall through to the structural cases.
             }
         }
 
-        Core::Lit(b) => match atoms {
-            [Atom::Byte(x)] if x == b => {
-                let th = ir::match_lit(&a)?.all_elim(Term::u8_lit(*b))?;
-                Ok(Some((th, singleton_w(*b)?)))
+        match c {
+            Core::Empty => None,
+            Core::Eps => (lo == hi).then_some(Plan::Eps),
+            Core::Lit(b) => match (hi - lo == 1).then(|| self.atoms[lo]) {
+                Some(Atom::Byte(x)) if x == *b => Some(Plan::Lit),
+                _ => None,
+            },
+            Core::Alt(x, y) => {
+                if let Some(p) = self.rec(x, lo, hi) {
+                    return Some(Plan::AltL(Box::new(p)));
+                }
+                self.rec(y, lo, hi).map(|p| Plan::AltR(Box::new(p)))
             }
-            _ => Ok(None),
-        },
-
-        Core::Alt(x, y) => {
-            let xt = core_to_term(x);
-            let yt = core_to_term(y);
-            if let Some((thx, w)) = derive(x, atoms, vars)? {
-                let th = ir::match_alt_l(&a, &xt, &yt, &w)?.imp_elim(thx)?;
-                return Ok(Some((th, w)));
-            }
-            if let Some((thy, w)) = derive(y, atoms, vars)? {
-                let th = ir::match_alt_r(&a, &xt, &yt, &w)?.imp_elim(thy)?;
-                return Ok(Some((th, w)));
-            }
-            Ok(None)
-        }
-
-        Core::Seq(x, y) => {
-            let xt = core_to_term(x);
-            let yt = core_to_term(y);
-            for k in 0..=atoms.len() {
-                let (left, right) = atoms.split_at(k);
-                if let Some((thx, w1)) = derive(x, left, vars)? {
-                    if let Some((thy, w2)) = derive(y, right, vars)? {
-                        let th = ir::match_seq(&a, &xt, &yt, &w1, &w2)?
-                            .imp_elim(thx)?
-                            .imp_elim(thy)?;
-                        return Ok(Some((th, cat_w(w1, w2)?)));
+            Core::Seq(x, y) => {
+                for k in lo..=hi {
+                    if let Some(px) = self.rec(x, lo, k) {
+                        if let Some(py) = self.rec(y, k, hi) {
+                            return Some(Plan::Seq(Box::new(px), Box::new(py)));
+                        }
                     }
                 }
+                None
             }
-            Ok(None)
+            Core::Star(x) => {
+                if lo == hi {
+                    return Some(Plan::StarNil);
+                }
+                // Non-empty prefix (k > lo) keeps the recursion strictly
+                // decreasing and avoids looping on a nullable `x`.
+                for k in (lo + 1)..=hi {
+                    if let Some(px) = self.rec(x, lo, k) {
+                        if let Some(ps) = self.rec(c, k, hi) {
+                            return Some(Plan::StarStep(Box::new(px), Box::new(ps)));
+                        }
+                    }
+                }
+                None
+            }
         }
-
-        Core::Star(x) => derive_star(x, atoms, vars),
     }
 }
 
-/// `Matches ⌜star x⌝ w` — empty word via `star-nil`, otherwise peel a
-/// non-empty `x`-prefix and recurse with `star-step`.
-fn derive_star(x: &Core, atoms: &[Atom], vars: &[VarInfo]) -> Result<Option<(Thm, Term)>> {
+// ============================================================================
+// Compiled matcher — phase 2: the builder (one forward pass, no search).
+//
+// Every rule here is one the recognizer already certified fits, so the kernel
+// work is exactly the size of the final derivation — no failed calls.
+// ============================================================================
+
+/// Build `⊢ Matches ⌜c⌝ w` from the recognizer's `plan`.
+fn build(c: &Core, plan: &Plan, vars: &[VarInfo]) -> Result<(Thm, Term)> {
     let a = u8ty();
-    let xt = core_to_term(x);
-
-    if atoms.is_empty() {
-        return Ok(Some((ir::match_star_nil(&a, &xt)?, nil_w())));
-    }
-
-    let starx = Core::Star(Box::new(x.clone()));
-    // Non-empty prefix (k >= 1) keeps the recursion strictly decreasing and
-    // avoids looping on a nullable `x`.
-    for k in 1..=atoms.len() {
-        let (left, right) = atoms.split_at(k);
-        if let Some((thx, w1)) = derive(x, left, vars)? {
-            if let Some((thstar, w2)) = derive(&starx, right, vars)? {
-                let th = ir::match_star_step(&a, &xt, &w1, &w2)?
-                    .imp_elim(thx)?
-                    .imp_elim(thstar)?;
-                return Ok(Some((th, cat_w(w1, w2)?)));
-            }
+    match (c, plan) {
+        (_, Plan::Var(i)) => {
+            let vi = &vars[*i];
+            let prop = ir::matches(&a, &core_to_term(c), &vi.term)?;
+            Ok((Thm::assume(prop)?, vi.term.clone()))
         }
+        (Core::Eps, Plan::Eps) => Ok((ir::match_eps(&a)?, nil_w())),
+        (Core::Lit(b), Plan::Lit) => {
+            let th = ir::match_lit(&a)?.all_elim(Term::u8_lit(*b))?;
+            Ok((th, singleton_w(*b)?))
+        }
+        (Core::Alt(x, y), Plan::AltL(p)) => {
+            let (thx, w) = build(x, p, vars)?;
+            let th = ir::match_alt_l(&a, &core_to_term(x), &core_to_term(y), &w)?.imp_elim(thx)?;
+            Ok((th, w))
+        }
+        (Core::Alt(x, y), Plan::AltR(p)) => {
+            let (thy, w) = build(y, p, vars)?;
+            let th = ir::match_alt_r(&a, &core_to_term(x), &core_to_term(y), &w)?.imp_elim(thy)?;
+            Ok((th, w))
+        }
+        (Core::Seq(x, y), Plan::Seq(px, py)) => {
+            let (thx, w1) = build(x, px, vars)?;
+            let (thy, w2) = build(y, py, vars)?;
+            let th = ir::match_seq(&a, &core_to_term(x), &core_to_term(y), &w1, &w2)?
+                .imp_elim(thx)?
+                .imp_elim(thy)?;
+            Ok((th, cat_w(w1, w2)?))
+        }
+        (Core::Star(x), Plan::StarNil) => Ok((ir::match_star_nil(&a, &core_to_term(x))?, nil_w())),
+        (Core::Star(x), Plan::StarStep(px, ps)) => {
+            let (thx, w1) = build(x, px, vars)?;
+            let (thstar, w2) = build(c, ps, vars)?;
+            let th = ir::match_star_step(&a, &core_to_term(x), &w1, &w2)?
+                .imp_elim(thx)?
+                .imp_elim(thstar)?;
+            Ok((th, cat_w(w1, w2)?))
+        }
+        // The recognizer only emits a plan fitting the core it ran on, so a
+        // mismatch is an internal invariant violation, not a user error.
+        _ => Err(covalence_core::Error::ConnectiveRule(
+            "regex tactic: plan does not fit core (internal)".into(),
+        )),
     }
-    Ok(None)
+}
+
+/// Recognise then build: the compiled-matcher analogue of [`derive`].
+fn run(core: &Core, atoms: &[Atom], vars: &[VarInfo]) -> Result<Option<(Thm, Term)>> {
+    let mut rec = Recognizer {
+        atoms,
+        vars,
+        memo: std::collections::HashMap::new(),
+    };
+    match rec.rec(core, 0, atoms.len()) {
+        None => Ok(None),
+        Some(plan) => Ok(Some(build(core, &plan, vars)?)),
+    }
 }
 
 // ============================================================================
 // Public tactic surface.
 // ============================================================================
 
+fn byte_atoms(bytes: &[u8]) -> Vec<Atom> {
+    bytes.iter().map(|&b| Atom::Byte(b)).collect()
+}
+
 /// Prove `⊢ Matches ⌜r⌝ w` for the concrete bytestring `bytes`, or `None` if
 /// the bytes are not in `L(r)`. `w` is rule-shaped (byte literals + `cat` +
 /// single-byte `cons` + `nil`); read it off `thm.concl()` if you need it.
 pub fn prove_matches(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
     let core = desugar(r);
-    let atoms: Vec<Atom> = bytes.iter().map(|&b| Atom::Byte(b)).collect();
-    Ok(derive(&core, &atoms, &[])?.map(|(thm, _)| thm))
+    Ok(run(&core, &byte_atoms(bytes), &[])?.map(|(thm, _)| thm))
 }
 
 /// Prove that `bytes` is **in the language** the grammar denotes:
@@ -204,8 +294,7 @@ pub fn prove_member(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
     let a = u8ty();
     let core = desugar(r);
     let rterm = core_to_term(&core);
-    let atoms: Vec<Atom> = bytes.iter().map(|&b| Atom::Byte(b)).collect();
-    let Some((der, w)) = derive(&core, &atoms, &[])? else {
+    let Some((der, w)) = run(&core, &byte_atoms(bytes), &[])? else {
         return Ok(None);
     };
     // Soundness lives at the denotation instance `'r := set (list u8)`; the
@@ -276,7 +365,7 @@ pub fn prove_word(r: &Regex<u8>, w: &Word) -> Result<Option<Thm>> {
     let mut atoms = Vec::new();
     let mut vars = Vec::new();
     flatten(w, &mut atoms, &mut vars);
-    Ok(derive(&core, &atoms, &vars)?.map(|(thm, _)| thm))
+    Ok(run(&core, &atoms, &vars)?.map(|(thm, _)| thm))
 }
 
 #[cfg(test)]
@@ -393,6 +482,23 @@ mod tests {
         let thm = prove_word(&r, &w).unwrap().unwrap();
         // Two distinct variables -> two assumptions.
         assert_eq!(thm.hyps().len(), 2);
+        assert_genuine(&thm);
+    }
+
+    #[test]
+    fn matches_ambiguous_splits() {
+        // `a*a*` against "aaaa" — many ways to split; the matcher finds one.
+        assert!(prove_matches(&re("a*a*"), b"aaaa").unwrap().is_some());
+        // `(ab)*` against "ababab".
+        assert!(prove_matches(&re("(?:ab)*"), b"ababab").unwrap().is_some());
+    }
+
+    #[test]
+    fn compiled_matches_full_byte_class() {
+        // `.` is a 256-way alternation; the balanced-alt encoding keeps the
+        // proof shallow. Just confirm it proves a concrete byte matches.
+        let thm = prove_matches(&re("."), b"\xC0").unwrap().unwrap();
+        assert!(thm.hyps().is_empty());
         assert_genuine(&thm);
     }
 }

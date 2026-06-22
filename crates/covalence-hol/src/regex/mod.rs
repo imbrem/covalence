@@ -1,18 +1,27 @@
 //! **Regular expressions → byte predicates**, and the matching tactic over
-//! them. The regular *base case* of grammar lowering (see the parent
-//! [`crate::spectec`] module), and a first-class home in its own right: regexes
-//! are used pervasively across the byte-parsing stack, so they get top-quality
-//! support here.
+//! them. A first-class, standalone module: regexes are the regular base case of
+//! *every* grammar (SpecTec, BNF, S-expressions, …) and are used pervasively
+//! across the byte-parsing stack, so they get top-quality support here,
+//! independent of any one grammar front end.
+//!
+//! Relationship to [`crate::init::regex`]: that module is the **reified HOL
+//! object logic** (the `regex u8` datatype, the `Matches` judgement,
+//! soundness). *This* module is the **driver** — it compiles a surface
+//! [`covalence_grammar::regex::Regex<u8>`] into those reified terms and runs a
+//! tactic to build `Matches` derivations. The kernel re-checks everything; the
+//! driver is untrusted.
 //!
 //! Three layers:
 //!
 //! - [`Core`] — the six-constructor byte regex the reified HOL `regex u8`
-//!   datatype ([`crate::init::regex`]) has, with [`desugar`] folding a full
-//!   [`covalence_grammar::regex::Regex<u8>`] down to it.
+//!   datatype has, with [`desugar`] folding a full `Regex<u8>` down to it.
 //! - [`compile`] / [`predicate`] — the reified regex term `⌜r⌝ : regex u8` and
 //!   the language `⟦⌜r⌝⟧ : set (list u8)` it denotes (the byte predicate).
-//! - [`tactic`] — the backtracking matcher that builds `⊢ Matches ⌜r⌝ w` and,
-//!   via soundness, `⊢ mem w ⟦⌜r⌝⟧`.
+//! - [`tactic`] — the matcher that builds `⊢ Matches ⌜r⌝ w` and, via soundness,
+//!   `⊢ mem w ⟦⌜r⌝⟧`. It separates a fast pure-Rust *recognizer* (the part to
+//!   accelerate with WASM later) from kernel *proof construction*.
+
+use std::sync::Arc;
 
 use covalence_core::{Result, Term, Type};
 use covalence_grammar::regex::{Class, Regex};
@@ -33,6 +42,12 @@ pub mod tactic;
 /// the term compiler ([`core_to_term`]) and the matcher ([`tactic`]) share
 /// *one* desugaring, so the regex term a derivation is about is always exactly
 /// the one the matcher recursed over.
+///
+/// Sub-regexes are held behind [`Arc`], not `Box`, so identical subtrees can be
+/// **shared** (a single allocation referenced many times) and, later,
+/// hash-consed/interned. [`desugar`] already shares the obvious case — `r+`
+/// reuses the same `Arc` for the `r` and the `r*` — and the matcher's memo keys
+/// on the node pointer, so shared subtrees are recognised once.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Core {
     /// `∅` — matches nothing.
@@ -42,25 +57,25 @@ pub enum Core {
     /// A single byte literal.
     Lit(u8),
     /// Alternation `x | y`.
-    Alt(Box<Core>, Box<Core>),
+    Alt(Arc<Core>, Arc<Core>),
     /// Concatenation `x y`.
-    Seq(Box<Core>, Box<Core>),
+    Seq(Arc<Core>, Arc<Core>),
     /// Kleene star `x*`.
-    Star(Box<Core>),
+    Star(Arc<Core>),
 }
 
 impl Core {
     /// `x | y`.
     pub fn alt(x: Core, y: Core) -> Core {
-        Core::Alt(Box::new(x), Box::new(y))
+        Core::Alt(Arc::new(x), Arc::new(y))
     }
     /// `x y`.
     pub fn seq(x: Core, y: Core) -> Core {
-        Core::Seq(Box::new(x), Box::new(y))
+        Core::Seq(Arc::new(x), Arc::new(y))
     }
     /// `x*`.
     pub fn star(x: Core) -> Core {
-        Core::Star(Box::new(x))
+        Core::Star(Arc::new(x))
     }
 
     /// Right-fold a list of cores into a binary [`Core::Seq`] chain, collapsing
@@ -77,19 +92,38 @@ impl Core {
         }
     }
 
-    /// Right-fold a list of cores into a binary [`Core::Alt`] chain, collapsing
-    /// the empty list to `empty` and a singleton to itself.
+    /// Fold a list of cores into a **balanced** binary [`Core::Alt`] tree,
+    /// collapsing the empty list to `empty` and a singleton to itself.
+    ///
+    /// Balanced (not right-nested) so that matching one alternative of a
+    /// `K`-way alternation — in particular a desugared character class of `K`
+    /// bytes — descends `O(log K)` `alt`-injections rather than `O(K)`. That is
+    /// the difference between a 7-step and a 256-step proof for matching a byte
+    /// against `.`; the matched word and language are unchanged.
     fn alt_all(items: impl Iterator<Item = Core>) -> Core {
-        let mut items: Vec<Core> = items.collect();
+        let items: Vec<Core> = items.collect();
         match items.len() {
             0 => Core::Empty,
-            1 => items.pop().expect("len 1"),
-            _ => {
-                let last = items.pop().expect("len >= 2");
-                items.into_iter().rev().fold(last, |acc, x| Core::alt(x, acc))
-            }
+            1 => items.into_iter().next().expect("len 1"),
+            _ => balanced(items, Core::alt),
         }
     }
+}
+
+/// Combine a non-empty list into a balanced binary tree under `comb`.
+fn balanced(mut items: Vec<Core>, comb: fn(Core, Core) -> Core) -> Core {
+    while items.len() > 1 {
+        let mut next = Vec::with_capacity(items.len().div_ceil(2));
+        let mut it = items.into_iter();
+        while let Some(a) = it.next() {
+            match it.next() {
+                Some(b) => next.push(comb(a, b)),
+                None => next.push(a),
+            }
+        }
+        items = next;
+    }
+    items.pop().expect("non-empty")
 }
 
 // ============================================================================
@@ -98,7 +132,7 @@ impl Core {
 
 /// Desugar a full byte regex into the six-constructor [`Core`] form.
 ///
-/// - character classes become a right-nested alternation of their member byte
+/// - character classes become a balanced alternation of their member byte
 ///   literals (a negated class is complemented against `0x00..=0xFF` first; an
 ///   empty class becomes [`Core::Empty`]);
 /// - `r+` becomes `r r*`, `r?` becomes `ε | r`;
@@ -114,8 +148,9 @@ pub fn desugar(r: &Regex<u8>) -> Core {
         Regex::Alt(items) => Core::alt_all(items.iter().map(desugar)),
         Regex::Star(inner) => Core::star(desugar(inner)),
         Regex::Plus(inner) => {
-            let c = desugar(inner);
-            Core::seq(c.clone(), Core::star(c))
+            // Share one `Arc` between the `r` and the `r*` of `r+ = r r*`.
+            let c = Arc::new(desugar(inner));
+            Core::Seq(Arc::clone(&c), Arc::new(Core::Star(c)))
         }
         Regex::Opt(inner) => Core::alt(Core::Eps, desugar(inner)),
         Regex::Rep { inner, min, max } => desugar_rep(&desugar(inner), *min, *max),

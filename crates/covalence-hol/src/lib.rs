@@ -40,6 +40,7 @@ pub mod monoidal;
 pub mod peano;
 pub mod project;
 pub mod proofs;
+pub mod regex;
 pub mod ring;
 pub mod script;
 pub mod semiring;

@@ -1,20 +1,19 @@
-//! **SpecTec grammars → byte predicates.** The grammar-aware layer on top of
-//! the regular-expression core ([`crate::spectec::regex`]): it takes a SpecTec
-//! grammar symbol ([`SpecTecSym`]) and routes it, through `covalence-spectec`'s
-//! byte bridge, into the reified regex object logic.
+//! Compile a SpecTec grammar symbol to a byte predicate, by routing its
+//! **regular fragment** through `covalence-spectec`'s byte bridge into the
+//! general-purpose regex engine ([`crate::regex`]).
 //!
 //! A SpecTec grammar is **more than a regex** — regular languages are only its
 //! base case. The non-regular constructs (non-terminal references
 //! [`SpecTecSym::Var`], captures, parametric-length iteration) return a typed
-//! [`BridgeError`] here. Lifting those is the **CFG stratum**: our own
-//! primitive notion of context-free grammar (reified non-terminals + a
-//! `Derives` judgement, the way [`crate::init::regex`] is our primitive notion
-//! of regular expression), at which point `Var` becomes a non-terminal symbol
-//! rather than an error. See this module's `SKELETONS.md`.
+//! [`BridgeError`]. Lifting those is the **CFG stratum**: our own primitive
+//! notion of context-free grammar (reified non-terminals + a `Derives`
+//! judgement, the way [`crate::init::regex`] is our primitive notion of regular
+//! expression), at which point `Var` becomes a non-terminal symbol rather than
+//! an error. See this module's `SKELETONS.md`.
 
 use covalence_core::Term;
 
-use super::regex::{Core, core_to_term, desugar};
+use crate::regex::{Core, core_to_term, desugar};
 
 pub use covalence_spectec::ast::SpecTecSym;
 /// Why a [`SpecTecSym`] sits outside the regular fragment (a grammar
@@ -52,5 +51,17 @@ mod tests {
             compile_sym(&sym),
             Err(BridgeError::GrammarRef { .. }),
         ));
+    }
+
+    #[test]
+    fn compiled_sym_matches_bytes_end_to_end() {
+        // A SpecTec grammar -> regex -> proof that bytes match it.
+        let sym = covalence_spectec::parse::parse_sym("(seq (num 0x61) (num 0x62))").unwrap();
+        let r = covalence_spectec::regex::sym_to_regex_u8(&sym).unwrap();
+        let thm = crate::regex::tactic::prove_matches(&r, b"ab")
+            .unwrap()
+            .unwrap();
+        assert!(thm.hyps().is_empty());
+        assert!(thm.has_no_obs());
     }
 }

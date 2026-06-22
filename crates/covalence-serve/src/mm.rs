@@ -52,6 +52,8 @@ pub fn router() -> axum::Router<AppState> {
         .route("/session/{hash}", get(db_info))
         .route("/session/{hash}/graph", get(graph))
         .route("/session/{hash}/symbols", get(symbols))
+        .route("/session/{hash}/hol", get(hol))
+        .route("/session/{hash}/hol/terms", get(hol_terms))
         .route("/session/{hash}/theorem/{name}", get(theorem))
         .route("/session/{hash}/prove", post(prove))
         .route("/session/{hash}/status", get(status_ws))
@@ -90,6 +92,38 @@ pub struct MmSession {
     /// `althtmldef` section (empty if the `.mm` has no typesetting). Served by
     /// `/symbols` so the page can typeset formulas like the Proof Explorer.
     pub symbols: HashMap<String, String>,
+    /// **Pass 1** of the two-pass import: every theorem's HOL conclusion term,
+    /// hash-consed into one shared DAG and pretty-printed (folding the most-reused
+    /// sub-formulas to named definitions). Computed once, lazily, off-runtime.
+    pub hol: OnceLock<HolSurface>,
+}
+
+/// The pass-1 result: the interned HOL surface of the whole database.
+pub struct HolSurface {
+    /// label → pretty-printed HOL conclusion (folding any sub-formula that is an
+    /// exact instance of a named Metamath definition).
+    pub terms: HashMap<String, String>,
+    /// The Metamath **definitions** (syntactic formers + `df-*`) — each already
+    /// has a name; this is the `name ↔ HOL term` reference, the bidirectional map
+    /// used to fold/explain the symbols appearing in theorem terms.
+    pub defs: Vec<DefEntry>,
+    /// Total statement-tree nodes summed over all conclusions (un-interned).
+    pub surface_nodes: usize,
+    /// Distinct nodes after interning (the shared DAG) — `surface_nodes / dag_nodes`
+    /// is the dedup factor.
+    pub dag_nodes: usize,
+}
+
+/// One named Metamath definition and its HOL encoding.
+pub struct DefEntry {
+    /// The Metamath label (the definition's name).
+    pub label: String,
+    /// `"former"` (a `wff`/`class`/… syntax constructor) or `"def"` (a `df-*`).
+    pub kind: &'static str,
+    /// The rendered Metamath statement.
+    pub mm: String,
+    /// The rendered HOL term (the encoded conclusion).
+    pub hol: String,
 }
 
 /// `?user=<opt>` query for every endpoint.
@@ -270,6 +304,219 @@ pub async fn symbols(
 }
 
 // ---------------------------------------------------------------------------
+// Pass 1: the interned HOL surface (terms + a definitions fold)
+// ---------------------------------------------------------------------------
+
+use covalence_core::Term;
+use covalence_core::term::TermKind;
+
+/// `Some((a, b))` if `t` is `mm$concat a b` (the encoding's uninterpreted binary
+/// former — a `Free`, see `mm_database::concat_fn`).
+fn concat_parts(t: &Term) -> Option<(&Term, &Term)> {
+    let TermKind::App(inner, b) = t.kind() else {
+        return None;
+    };
+    let TermKind::App(cf, a) = inner.kind() else {
+        return None;
+    };
+    match cf.kind() {
+        TermKind::Free(name, _) if name == "mm$concat" => Some((a, b)),
+        _ => None,
+    }
+}
+
+/// One encoding leaf → its display token (`mm$c$<tok>`/`mm$v$<tok>` stripped).
+fn hol_atom(t: &Term) -> String {
+    match t.kind() {
+        TermKind::Free(name, _) => name
+            .strip_prefix("mm$c$")
+            .or_else(|| name.strip_prefix("mm$v$"))
+            .unwrap_or(name)
+            .to_string(),
+        _ => format!("{t}"),
+    }
+}
+
+/// Pretty-print a HOL conclusion: flatten the `mm$concat` token sequence and
+/// strip the encoding prefixes. Sub-formulas present in `names` are folded to
+/// their definition name; the root term itself is never folded.
+fn render_hol(t: &Term, names: &HashMap<Term, String>) -> String {
+    let mut out = Vec::new();
+    hol_children(t, names, &mut out);
+    out.join(" ")
+}
+
+fn hol_flatten(t: &Term, names: &HashMap<Term, String>, out: &mut Vec<String>) {
+    if let Some(n) = names.get(t) {
+        out.push(n.clone());
+        return;
+    }
+    hol_children(t, names, out);
+}
+
+fn hol_children(t: &Term, names: &HashMap<Term, String>, out: &mut Vec<String>) {
+    match concat_parts(t) {
+        Some((a, b)) => {
+            hol_flatten(a, names, out);
+            hol_flatten(b, names, out);
+        }
+        None => out.push(hol_atom(t)),
+    }
+}
+
+fn tree_size(t: &Term) -> usize {
+    1 + match t.kind() {
+        TermKind::App(f, x) => tree_size(f) + tree_size(x),
+        TermKind::Abs(_, b) => tree_size(b),
+        _ => 0,
+    }
+}
+
+/// Flattened token length of a concat chain (1 for a leaf).
+fn token_len(t: &Term) -> usize {
+    match concat_parts(t) {
+        Some((a, b)) => token_len(a) + token_len(b),
+        None => 1,
+    }
+}
+
+/// **Pass 1.** Build the whole database's interned HOL surface on a single
+/// thread: encode every theorem conclusion + every Metamath definition into one
+/// shared interner, then pretty-print each — folding any sub-formula that is an
+/// exact instance of a named definition back to that definition's label.
+/// Blocking (run off the async runtime).
+///
+/// The definitions are the database's *own* named assertions — the syntactic
+/// formers (`wff`/`class`/… constructors) and the `df-*` definitions — so the
+/// `name ↔ HOL term` map uses real Metamath names, not synthetic ones.
+fn build_hol_surface(db: &covalence_hol::metamath::Database) -> HolSurface {
+    use covalence_hol::metalogic::mm_database::{Parser, intern_surface};
+    use covalence_hol::metalogic::mm_import::theorem_labels;
+    use covalence_metamath::database::Statement;
+
+    let parser = Parser::new(db);
+    let thm_labels = theorem_labels(db);
+    let mut cons = covalence_core::HashCons::new();
+
+    // Interned theorem conclusions (pass-1 proper). `intern_surface` also seeds
+    // the cons with their shared structure.
+    let decls = intern_surface(db, &parser, &thm_labels, &mut cons).unwrap_or_default();
+
+    // The Metamath definitions, interned into the SAME cons (so they share the
+    // theorems' constants). `name ↔ interned encoded conclusion`.
+    let mut names: HashMap<Term, String> = HashMap::new();
+    let mut def_terms: Vec<(String, &'static str, Term)> = Vec::new();
+    for a in db.assertions() {
+        let kind = if a.conclusion.typecode() != "|-" {
+            "former" // a wff/class/setvar syntax constructor
+        } else if a.label.starts_with("df") {
+            "def" // a df-* definition
+        } else {
+            continue;
+        };
+        let Ok(enc) = parser.encode_expr(&a.conclusion) else {
+            continue;
+        };
+        let enc = enc.cons_with(&mut cons);
+        // Only fold *compound* definitions (≥3 tokens): folding an atomic symbol
+        // (`T.`, `bool`) to its constructor label would make terms *less*
+        // readable. Atomic definitions still appear in the reference panel.
+        if token_len(&enc) >= 3 {
+            names.entry(enc.clone()).or_insert_with(|| a.label.clone());
+        }
+        def_terms.push((a.label.clone(), kind, enc));
+    }
+
+    // Render the definitions (folding nested definitions, never the root itself).
+    let defs: Vec<DefEntry> = def_terms
+        .iter()
+        .filter_map(|(label, kind, enc)| {
+            let Some(Statement::Assert(a)) = db.statement_by_label(label) else {
+                return None;
+            };
+            Some(DefEntry {
+                label: label.clone(),
+                kind,
+                mm: a.conclusion.render(),
+                hol: render_hol(enc, &names),
+            })
+        })
+        .collect();
+
+    // Render each theorem conclusion, folding definition instances.
+    let mut terms = HashMap::with_capacity(decls.len());
+    let mut surface_nodes = 0usize;
+    for d in &decls {
+        surface_nodes += tree_size(&d.concl) + d.hyps.iter().map(tree_size).sum::<usize>();
+        terms.insert(d.label.clone(), render_hol(&d.concl, &names));
+    }
+
+    HolSurface {
+        terms,
+        defs,
+        surface_nodes,
+        dag_nodes: cons.len(),
+    }
+}
+
+/// Compute the pass-1 surface once (off the runtime) and cache it on the session.
+async fn ensure_hol(sess: &Arc<MmSession>) {
+    if sess.hol.get().is_some() {
+        return;
+    }
+    let s2 = sess.clone();
+    if let Ok(surface) = tokio::task::spawn_blocking(move || build_hol_surface(&s2.db)).await {
+        let _ = sess.hol.set(surface);
+    }
+}
+
+/// GET `/api/metamath/session/{hash}/hol` — pass-1 stats + the definitions fold:
+/// `{surfaceNodes, dagNodes, dedup, defs:[{name, term}]}`. Triggers pass 1.
+pub async fn hol(
+    State(state): State<AppState>,
+    Path(hash): Path<String>,
+    Query(q): Query<UserQ>,
+) -> Response {
+    let Some(sess) = lookup(&state, &hash, &q.user) else {
+        return (StatusCode::NOT_FOUND, "no such session").into_response();
+    };
+    ensure_hol(&sess).await;
+    let Some(s) = sess.hol.get() else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "hol surface unavailable").into_response();
+    };
+    Json(json!({
+        "surfaceNodes": s.surface_nodes,
+        "dagNodes": s.dag_nodes,
+        "dedup": s.surface_nodes as f64 / s.dag_nodes.max(1) as f64,
+        "defs": s.defs.iter().map(|d| json!({
+            "label": d.label,
+            "kind": d.kind,
+            "mm": d.mm,
+            "hol": d.hol,
+        })).collect::<Vec<_>>(),
+    }))
+    .into_response()
+}
+
+/// GET `/api/metamath/session/{hash}/hol/terms` — the whole `label → HOL term`
+/// map (pass 1). One fetch; the page caches it for the list/detail. Triggers
+/// pass 1.
+pub async fn hol_terms(
+    State(state): State<AppState>,
+    Path(hash): Path<String>,
+    Query(q): Query<UserQ>,
+) -> Response {
+    let Some(sess) = lookup(&state, &hash, &q.user) else {
+        return (StatusCode::NOT_FOUND, "no such session").into_response();
+    };
+    ensure_hol(&sess).await;
+    let Some(s) = sess.hol.get() else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "hol surface unavailable").into_response();
+    };
+    Json(&s.terms).into_response()
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/metamath/db — parse (or reuse) a session
 // ---------------------------------------------------------------------------
 
@@ -331,6 +578,7 @@ pub async fn create_db(
         status_tx,
         proving: AtomicBool::new(false),
         symbols,
+        hol: OnceLock::new(),
     });
 
     state.mm.lock().unwrap().insert(key, session);
@@ -540,6 +788,15 @@ pub async fn theorem(
         "proof": render_proof(a),
         "status": "pending",
     });
+    // The pass-1 HOL term, if the surface has been computed (the page fetches
+    // `/hol/terms` after load, which triggers it).
+    if let Some(s) = sess.hol.get() {
+        if let Some(t) = s.terms.get(&name) {
+            if let Value::Object(o) = &mut out {
+                o.insert("holTerm".into(), Value::String(t.clone()));
+            }
+        }
+    }
 
     if let Some(res) = sess.results.read().unwrap().get(&name) {
         if let (Value::Object(base), Value::Object(extra)) = (&mut out, res) {

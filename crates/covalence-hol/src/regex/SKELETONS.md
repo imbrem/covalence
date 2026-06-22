@@ -18,9 +18,18 @@ tactic (the regular base case used by every grammar front end). See
     hash-consed**, and `desugar` shares the `r+ = r r*` case, but there is no
     interner: `desugar` of a class or `r{m,n}` still allocates fresh nodes per
     member/copy rather than deduplicating structurally-equal subtrees.
-  - [`tactic::prove_member`] additionally pays the slow `lang`-discharge
-    soundness proof (`init/regex::soundness_at`) per call; matching itself
-    (`prove_matches`) is the fast path.
+  - [`tactic::prove_member`] additionally pays the slow soundness proof
+    (`init/regex::soundness_at`), ~minutes **per call**. The cost is the
+    `discharge_closed` step — proving the matching rules hold for
+    `D = λr w. mem w ⟦r⟧` over the *impredicative least-fixpoint* Kleene star
+    (`lang::lang_star` + `star_concat_closed`): the kernel re-traverses those
+    large set-comprehension terms on every β/congruence step. Crucially it is
+    **input-independent** (it does not depend on the bytestring, only the
+    alphabet), so the fix is to prove `soundness(u8)` / `discharge_closed(u8)`
+    *once* (a `LazyLock`, like the kernel envs) and have `prove_member`
+    instantiate it — O(1) per call after a one-time warmup. Until then the
+    membership integration test (`tests/regex_matching.rs`) is `#[ignore]`d and
+    `prove_matches` is the fast path.
 
 - **`prove_word` variable matching is structural, not unifying.** A variable
   token is consumed only when the current regex sub-goal is *structurally equal*

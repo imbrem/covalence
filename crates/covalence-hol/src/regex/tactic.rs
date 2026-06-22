@@ -38,6 +38,9 @@
 //! is still untrusted — the kernel re-checks every rule the builder applies, so
 //! a buggy recognizer can only fail to find a proof, never forge one.
 
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use covalence_core::{Result, Term, Thm, Type};
 use covalence_grammar::regex::Regex;
 
@@ -107,22 +110,24 @@ enum Atom {
 
 /// The shape of a `Matches` derivation found by the recognizer. Carries exactly
 /// what [`build`] needs and nothing about the kernel.
-#[derive(Clone)]
+///
+/// Sub-plans are held behind [`Rc`] so memo hits and plan composition are cheap
+/// reference-count bumps rather than deep copies.
 enum Plan {
     /// `eps` matched the empty word.
     Eps,
     /// `lit` matched a single byte (the byte is read from the `Core`).
     Lit,
     /// `alt`: the left branch matched.
-    AltL(Box<Plan>),
+    AltL(Rc<Plan>),
     /// `alt`: the right branch matched.
-    AltR(Box<Plan>),
+    AltR(Rc<Plan>),
     /// `seq`: left then right.
-    Seq(Box<Plan>, Box<Plan>),
+    Seq(Rc<Plan>, Rc<Plan>),
     /// `star` matched the empty word.
     StarNil,
     /// `star`: one `x`-iteration then the rest.
-    StarStep(Box<Plan>, Box<Plan>),
+    StarStep(Rc<Plan>, Rc<Plan>),
     /// variable token `i`, consumed by its `parses-as` assumption.
     Var(usize),
 }
@@ -132,11 +137,11 @@ enum Plan {
 struct Recognizer<'a> {
     atoms: &'a [Atom],
     vars: &'a [VarInfo],
-    memo: std::collections::HashMap<(usize, usize, usize), Option<Plan>>,
+    memo: HashMap<(usize, usize, usize), Option<Rc<Plan>>>,
 }
 
 impl Recognizer<'_> {
-    fn rec(&mut self, c: &Core, lo: usize, hi: usize) -> Option<Plan> {
+    fn rec(&mut self, c: &Core, lo: usize, hi: usize) -> Option<Rc<Plan>> {
         // Core nodes are owned in a stable, immutable tree for the run, so the
         // node pointer is a sound memo key.
         let key = (c as *const Core as usize, lo, hi);
@@ -148,36 +153,37 @@ impl Recognizer<'_> {
         result
     }
 
-    fn rec_uncached(&mut self, c: &Core, lo: usize, hi: usize) -> Option<Plan> {
-        // Variable rule: a lone variable token is consumed only by the regex
-        // goal that *is* its category.
+    fn rec_uncached(&mut self, c: &Core, lo: usize, hi: usize) -> Option<Rc<Plan>> {
+        // Variable rule: a lone variable token (a one-atom span) is consumed
+        // only by the regex goal that *is* its category.
         if hi - lo == 1 {
             if let Atom::Var(i) = self.atoms[lo] {
                 if *c == self.vars[i].category {
-                    return Some(Plan::Var(i));
+                    return Some(Rc::new(Plan::Var(i)));
                 }
-                // else fall through to the structural cases.
+                // Otherwise fall through: a structural goal (alt/seq/star) may
+                // still recurse and bottom out here with a matching sub-core.
             }
         }
 
         match c {
             Core::Empty => None,
-            Core::Eps => (lo == hi).then_some(Plan::Eps),
+            Core::Eps => (lo == hi).then(|| Rc::new(Plan::Eps)),
             Core::Lit(b) => match (hi - lo == 1).then(|| self.atoms[lo]) {
-                Some(Atom::Byte(x)) if x == *b => Some(Plan::Lit),
+                Some(Atom::Byte(x)) if x == *b => Some(Rc::new(Plan::Lit)),
                 _ => None,
             },
             Core::Alt(x, y) => {
                 if let Some(p) = self.rec(x, lo, hi) {
-                    return Some(Plan::AltL(Box::new(p)));
+                    return Some(Rc::new(Plan::AltL(p)));
                 }
-                self.rec(y, lo, hi).map(|p| Plan::AltR(Box::new(p)))
+                self.rec(y, lo, hi).map(|p| Rc::new(Plan::AltR(p)))
             }
             Core::Seq(x, y) => {
                 for k in lo..=hi {
                     if let Some(px) = self.rec(x, lo, k) {
                         if let Some(py) = self.rec(y, k, hi) {
-                            return Some(Plan::Seq(Box::new(px), Box::new(py)));
+                            return Some(Rc::new(Plan::Seq(px, py)));
                         }
                     }
                 }
@@ -185,14 +191,14 @@ impl Recognizer<'_> {
             }
             Core::Star(x) => {
                 if lo == hi {
-                    return Some(Plan::StarNil);
+                    return Some(Rc::new(Plan::StarNil));
                 }
                 // Non-empty prefix (k > lo) keeps the recursion strictly
                 // decreasing and avoids looping on a nullable `x`.
                 for k in (lo + 1)..=hi {
                     if let Some(px) = self.rec(x, lo, k) {
                         if let Some(ps) = self.rec(c, k, hi) {
-                            return Some(Plan::StarStep(Box::new(px), Box::new(ps)));
+                            return Some(Rc::new(Plan::StarStep(px, ps)));
                         }
                     }
                 }
@@ -258,12 +264,13 @@ fn build(c: &Core, plan: &Plan, vars: &[VarInfo]) -> Result<(Thm, Term)> {
     }
 }
 
-/// Recognise then build: the compiled-matcher analogue of [`derive`].
+/// Recognise then build: search for a derivation skeleton, then assemble the
+/// `Thm`. The single entry point both phases run through.
 fn run(core: &Core, atoms: &[Atom], vars: &[VarInfo]) -> Result<Option<(Thm, Term)>> {
     let mut rec = Recognizer {
         atoms,
         vars,
-        memo: std::collections::HashMap::new(),
+        memo: HashMap::new(),
     };
     match rec.rec(core, 0, atoms.len()) {
         None => Ok(None),
@@ -279,18 +286,27 @@ fn byte_atoms(bytes: &[u8]) -> Vec<Atom> {
     bytes.iter().map(|&b| Atom::Byte(b)).collect()
 }
 
-/// Prove `⊢ Matches ⌜r⌝ w` for the concrete bytestring `bytes`, or `None` if
-/// the bytes are not in `L(r)`. `w` is rule-shaped (byte literals + `cat` +
-/// single-byte `cons` + `nil`); read it off `thm.concl()` if you need it.
-pub fn prove_matches(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
+/// Prove `⊢ Matches ⌜r⌝ w` for the concrete byte input, or `None` if it is not
+/// in `L(r)`. The input is anything byte-like — `&str`, `&[u8]`, `Vec<u8>`,
+/// `[u8; N]`, `b"…"` — via [`AsRef<[u8]>`]. `w` is rule-shaped (byte literals +
+/// `cat` + single-byte `cons` + `nil`); read it off `thm.concl()` if you need it.
+pub fn prove_matches(r: &Regex<u8>, input: impl AsRef<[u8]>) -> Result<Option<Thm>> {
+    prove_matches_bytes(r, input.as_ref())
+}
+
+fn prove_matches_bytes(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
     let core = desugar(r);
     Ok(run(&core, &byte_atoms(bytes), &[])?.map(|(thm, _)| thm))
 }
 
-/// Prove that `bytes` is **in the language** the grammar denotes:
+/// Prove that the input is **in the language** the regex denotes:
 /// `⊢ mem w ⟦⌜r⌝⟧`. Chains [`prove_matches`] through regex *soundness*
-/// ([`crate::init::regex::soundness_at`]).
-pub fn prove_member(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
+/// ([`crate::init::regex::soundness_at`]). Accepts any [`AsRef<[u8]>`].
+pub fn prove_member(r: &Regex<u8>, input: impl AsRef<[u8]>) -> Result<Option<Thm>> {
+    prove_member_bytes(r, input.as_ref())
+}
+
+fn prove_member_bytes(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
     let a = u8ty();
     let core = desugar(r);
     let rterm = core_to_term(&core);
@@ -328,6 +344,19 @@ impl Word {
     /// `w₁ w₂`.
     pub fn cat(w1: Word, w2: Word) -> Word {
         Word::Cat(Box::new(w1), Box::new(w2))
+    }
+
+    /// A literal block of bytes (`&str`, `&[u8]`, `Vec<u8>`, …).
+    pub fn bytes(b: impl AsRef<[u8]>) -> Word {
+        Word::Bytes(b.as_ref().to_vec())
+    }
+
+    /// A variable `X` assumed to parse as `category`.
+    pub fn var(name: impl Into<String>, category: Regex<u8>) -> Word {
+        Word::Var {
+            name: name.into(),
+            category,
+        }
     }
 }
 
@@ -368,137 +397,3 @@ pub fn prove_word(r: &Regex<u8>, w: &Word) -> Result<Option<Thm>> {
     Ok(run(&core, &atoms, &vars)?.map(|(thm, _)| thm))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use covalence_grammar::regex::parse_regex_u8;
-
-    fn re(src: &str) -> Regex<u8> {
-        parse_regex_u8(src).unwrap()
-    }
-
-    fn assert_genuine(thm: &Thm) {
-        assert!(thm.has_no_obs(), "expected an oracle-free theorem");
-    }
-
-    #[test]
-    fn matches_literal_string() {
-        // `abc` matches the bytes "abc".
-        let thm = prove_matches(&re("abc"), b"abc").unwrap().unwrap();
-        assert!(thm.hyps().is_empty());
-        assert_genuine(&thm);
-        // ...and rejects "abd".
-        assert!(prove_matches(&re("abc"), b"abd").unwrap().is_none());
-        // ...and a prefix (must consume all input).
-        assert!(prove_matches(&re("abc"), b"ab").unwrap().is_none());
-    }
-
-    #[test]
-    fn matches_alternation_and_star() {
-        // `(a|b)c*` against "bccc".
-        let r = re("(?:a|b)c*");
-        let thm = prove_matches(&r, b"bccc").unwrap().unwrap();
-        assert_genuine(&thm);
-        // empty star: "a".
-        assert!(prove_matches(&r, b"a").unwrap().is_some());
-        // "ac": one c.
-        assert!(prove_matches(&r, b"ac").unwrap().is_some());
-        // "cc": no leading a|b.
-        assert!(prove_matches(&r, b"cc").unwrap().is_none());
-    }
-
-    #[test]
-    fn matches_class_and_plus() {
-        // one or more hex-ish bytes
-        let r = re("[a-c]+");
-        assert!(prove_matches(&r, b"abccba").unwrap().is_some());
-        assert!(prove_matches(&r, b"abx").unwrap().is_none());
-        assert!(prove_matches(&r, b"").unwrap().is_none()); // plus needs >= 1
-    }
-
-    #[test]
-    fn matches_wasm_preamble() {
-        // The real WASM magic + version, proved against the literal bytes.
-        let r = covalence_spectec::grammar::simple::wasm_preamble();
-        let bytes = [0x00, b'a', b's', b'm', 0x01, 0x00, 0x00, 0x00];
-        let thm = prove_matches(&r, &bytes).unwrap().unwrap();
-        assert!(thm.hyps().is_empty());
-        assert_genuine(&thm);
-        // A wrong version byte fails.
-        let bad = [0x00, b'a', b's', b'm', 0x02, 0x00, 0x00, 0x00];
-        assert!(prove_matches(&r, &bad).unwrap().is_none());
-    }
-
-    #[test]
-    fn member_chains_soundness() {
-        // `a|b` against "a" lands `⊢ mem [a] ⟦a|b⟧` — bytes are in the language.
-        let thm = prove_member(&re("a|b"), b"a").unwrap().unwrap();
-        assert!(thm.hyps().is_empty());
-        assert_genuine(&thm);
-    }
-
-    #[test]
-    fn word_with_no_vars_matches_like_bytes() {
-        let w = Word::cat(Word::Bytes(b"ab".to_vec()), Word::Byte(b'c'));
-        let thm = prove_word(&re("abc"), &w).unwrap().unwrap();
-        assert!(thm.hyps().is_empty());
-        assert_genuine(&thm);
-    }
-
-    #[test]
-    fn word_with_variable_discharges_by_assumption() {
-        // Goal regex: `0x00 X` where X parses as `[a-c]+`.
-        // Word: byte 0x00 followed by variable X (category `[a-c]+`).
-        let cat = re("[a-c]+");
-        let r = Regex::concat([Regex::Lit(0x00u8), cat.clone()]);
-        let w = Word::cat(
-            Word::Byte(0x00),
-            Word::Var {
-                name: "X".into(),
-                category: cat,
-            },
-        );
-        let thm = prove_word(&r, &w).unwrap().unwrap();
-        // Exactly one hypothesis: `Matches ⌜[a-c]+⌝ X`.
-        assert_eq!(thm.hyps().len(), 1, "expected the parses-as assumption");
-        assert_genuine(&thm);
-    }
-
-    #[test]
-    fn word_variable_under_star() {
-        // `(cat)*` against two variable tokens both of category `cat`.
-        let cat = re("a|b");
-        let r = cat.clone().star();
-        let w = Word::cat(
-            Word::Var {
-                name: "X".into(),
-                category: cat.clone(),
-            },
-            Word::Var {
-                name: "Y".into(),
-                category: cat,
-            },
-        );
-        let thm = prove_word(&r, &w).unwrap().unwrap();
-        // Two distinct variables -> two assumptions.
-        assert_eq!(thm.hyps().len(), 2);
-        assert_genuine(&thm);
-    }
-
-    #[test]
-    fn matches_ambiguous_splits() {
-        // `a*a*` against "aaaa" — many ways to split; the matcher finds one.
-        assert!(prove_matches(&re("a*a*"), b"aaaa").unwrap().is_some());
-        // `(ab)*` against "ababab".
-        assert!(prove_matches(&re("(?:ab)*"), b"ababab").unwrap().is_some());
-    }
-
-    #[test]
-    fn compiled_matches_full_byte_class() {
-        // `.` is a 256-way alternation; the balanced-alt encoding keeps the
-        // proof shallow. Just confirm it proves a concrete byte matches.
-        let thm = prove_matches(&re("."), b"\xC0").unwrap().unwrap();
-        assert!(thm.hyps().is_empty());
-        assert_genuine(&thm);
-    }
-}

@@ -10,7 +10,7 @@
 //! hypotheses, essential hypotheses, variable declarations, and `$d`
 //! restrictions are scoped, while `$c`/`$a`/`$p` are global.
 
-use std::collections::HashMap;
+use fnv::FnvHashMap;
 
 use crate::error::MmError;
 use crate::expr::Expr;
@@ -131,11 +131,11 @@ struct Scope {
 pub struct Database {
     /// Symbol classification: name → `true` if a variable, `false` if a
     /// constant.
-    symbols: HashMap<String, bool>,
+    symbols: FnvHashMap<String, bool>,
     /// All statements in source order.
     statements: Vec<Statement>,
     /// label → index into `statements` (only labelled statements).
-    labels: HashMap<String, usize>,
+    labels: FnvHashMap<String, usize>,
     /// Active scope stack; index 0 is the global scope.
     scopes: Vec<Scope>,
 }
@@ -149,9 +149,9 @@ impl Default for Database {
 impl Database {
     pub fn new() -> Self {
         Self {
-            symbols: HashMap::new(),
+            symbols: FnvHashMap::default(),
             statements: Vec::new(),
-            labels: HashMap::new(),
+            labels: FnvHashMap::default(),
             scopes: vec![Scope::default()],
         }
     }

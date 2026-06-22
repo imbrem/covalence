@@ -21,3 +21,6 @@ covalence-sexp = { path = "../covalence-sexp" }
 covalence-parse = { path = "../covalence-parse" }
 smol_str = "0.3"
 thiserror = "2"
+# Fast (non-DoS-resistant) hasher for the internal symbol/label maps — keys are
+# short interned tokens looked up per proof step; SipHash dominated the profile.
+fnv = "1"

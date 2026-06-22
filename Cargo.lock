@@ -1070,6 +1070,7 @@ dependencies = [
  "covalence-sexp",
  "covalence-spectec",
  "covalence-types",
+ "fnv",
  "futures",
  "getrandom 0.4.2",
  "imbl",
@@ -1158,6 +1159,7 @@ version = "0.0.0"
 dependencies = [
  "covalence-parse",
  "covalence-sexp",
+ "fnv",
  "smol_str",
  "thiserror 2.0.18",
 ]

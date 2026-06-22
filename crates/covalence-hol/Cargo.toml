@@ -16,6 +16,7 @@ covalence-grammar = { path = "../covalence-grammar" }
 covalence-spectec = { path = "../covalence-spectec" }
 async-trait = "0.1"
 bytes = "1"
+fnv = "1"
 futures = "0.3"
 imbl = "5"
 indexmap = "2"

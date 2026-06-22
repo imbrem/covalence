@@ -75,7 +75,7 @@
 //!   derivability rules: they build [`Slot::Wff`] terms during replay but
 //!   contribute **no** clause to the rule set.
 
-use std::collections::HashMap;
+use fnv::FnvHashMap as HashMap;
 
 use covalence_core::term::TrustedCons;
 use covalence_core::{Error, Result, Term, Thm, Type};
@@ -103,9 +103,14 @@ fn phi() -> Type {
 // The free-term-algebra encoding `enc(·)`
 // ============================================================================
 
-/// The uninterpreted binary former `concat : nat → nat → nat`.
+/// The uninterpreted binary former `concat : nat → nat → nat`. Cached once: it
+/// is the single most-allocated node in the encoding (every `concat` clones it),
+/// so rebuilding the `Term` + its function type per call was pure waste.
 fn concat_fn() -> Term {
-    Term::free("mm$concat", Type::fun(phi(), Type::fun(phi(), phi())))
+    static CONCAT_FN: std::sync::LazyLock<Term> = std::sync::LazyLock::new(|| {
+        Term::free("mm$concat", Type::fun(phi(), Type::fun(phi(), phi())))
+    });
+    CONCAT_FN.clone()
 }
 
 /// `concat(a, b)` — two applications of the uninterpreted [`concat_fn`].
@@ -186,6 +191,12 @@ pub struct Parser<'a> {
     /// the *whole* database (not just former frames — a variable's `$f` may be
     /// introduced for a `|-` assertion, e.g. demo0's `s`).
     var_tc: HashMap<String, String>,
+    /// Precomputed leaf encodings `token → enc(token)` (a `Free`). The hot
+    /// `parse`/`try_former` loops then clone an `Arc` instead of re-`format!`ing
+    /// the `mm$c$`/`mm$v$` name + reallocating per leaf occurrence. Read-only
+    /// after construction (so it stays `Sync` for the parallel import); tokens
+    /// not present (rare) fall back to building on the fly via [`Self::leaf`].
+    leaves: HashMap<String, Term>,
 }
 
 impl<'a> Parser<'a> {
@@ -210,7 +221,7 @@ impl<'a> Parser<'a> {
             .collect();
         // Index formers by their result typecode (database order preserved) and
         // collect the distinct typecodes in first-seen order.
-        let mut by_typecode: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut by_typecode: HashMap<String, Vec<usize>> = HashMap::default();
         let mut typecodes: Vec<String> = Vec::new();
         for (i, f) in formers.iter().enumerate() {
             let entry = by_typecode.entry(f.typecode.clone());
@@ -219,11 +230,25 @@ impl<'a> Parser<'a> {
             }
             entry.or_default().push(i);
         }
-        let mut var_tc = HashMap::new();
+        let mut var_tc = HashMap::default();
         for stmt in db.statements() {
             if let Statement::Float(f) = stmt {
                 var_tc.insert(f.var.clone(), f.typecode.clone());
             }
+        }
+        // Precompute the leaf encoding of every token the encoder can encounter:
+        // each former-body symbol (the syntax constants) and each declared float
+        // variable. Built once; the hot loops just clone the cached `Arc`.
+        let mut leaves: HashMap<String, Term> = HashMap::default();
+        for f in &formers {
+            for tok in &f.body {
+                leaves.entry(tok.clone()).or_insert_with(|| leaf(db, tok));
+            }
+        }
+        for var in var_tc.keys() {
+            leaves
+                .entry(var.clone())
+                .or_insert_with(|| leaf(db, var));
         }
         Parser {
             db,
@@ -231,6 +256,7 @@ impl<'a> Parser<'a> {
             by_typecode,
             typecodes,
             var_tc,
+            leaves,
         }
     }
 
@@ -284,7 +310,7 @@ impl<'a> Parser<'a> {
                 nodes.push(node);
                 rest = after;
             } else {
-                nodes.push(leaf(self.db, head));
+                nodes.push(self.leaf(head));
                 rest = tail;
             }
         }
@@ -322,7 +348,7 @@ impl<'a> Parser<'a> {
             && self.db.is_variable(head)
             && self.var_typecode(head) == Some(tc)
         {
-            return Ok((leaf(self.db, head), rest));
+            return Ok((self.leaf(head), rest));
         }
         // Try each former whose result typecode is `tc` (via the typecode index,
         // database order preserved); first full match wins.
@@ -347,7 +373,7 @@ impl<'a> Parser<'a> {
         f: &Former,
         mut toks: &'t [&'t str],
     ) -> Result<Option<(Term, &'t [&'t str])>> {
-        let mut args: HashMap<&str, Term> = HashMap::new();
+        let mut args: HashMap<&str, Term> = HashMap::default();
         for pat in &f.body {
             if let Some((_, sub_tc)) = f.floats.iter().find(|(v, _)| v == pat) {
                 // A metavar position: recursively parse a sub-expression.
@@ -368,7 +394,7 @@ impl<'a> Parser<'a> {
         let resolve = |tok: &str| -> Result<Term> {
             Ok(match args.get(tok) {
                 Some(t) => t.clone(),
-                None => leaf(self.db, tok),
+                None => self.leaf(tok),
             })
         };
         let term = encode(&f.body, &resolve)?;
@@ -378,6 +404,14 @@ impl<'a> Parser<'a> {
     /// The `$f` typecode declared for variable `var`, if any.
     fn var_typecode(&self, var: &str) -> Option<&str> {
         self.var_tc.get(var).map(String::as_str)
+    }
+
+    /// Cached [`leaf`]: clone the precomputed `Arc` on a hit, build on a miss.
+    fn leaf(&self, tok: &str) -> Term {
+        self.leaves
+            .get(tok)
+            .cloned()
+            .unwrap_or_else(|| leaf(self.db, tok))
     }
 }
 
@@ -467,7 +501,7 @@ fn collect_clauses_with<'a>(
     assertions: impl Iterator<Item = &'a Assertion>,
 ) -> (Vec<Clause>, HashMap<String, usize>) {
     let mut clauses = Vec::new();
-    let mut index = HashMap::new();
+    let mut index = HashMap::default();
     for a in assertions {
         if let Some(c) = clause_from(parser, a) {
             index.insert(a.label.clone(), clauses.len());
@@ -490,7 +524,7 @@ fn scoped_clauses(
     steps: &[crate::metamath::ProofStep],
 ) -> Result<(Vec<Clause>, HashMap<String, usize>)> {
     let mut clauses = Vec::new();
-    let mut index = HashMap::new();
+    let mut index = HashMap::default();
     for step in steps {
         let crate::metamath::ProofStep::Label(label) = step else {
             continue;
@@ -857,7 +891,7 @@ fn apply_label(
             Ok(Slot::Proved(Thm::assume(derivable(rs, &enc)?)?))
         }
         Statement::Assert(target) => {
-            apply_assert(db, clause_index, clause_ctx, target, label, stack, cons)
+            apply_assert(parser, clause_index, clause_ctx, target, label, stack, cons)
         }
         _ => Err(replay_err(format!("label `{label}` is not applicable"))),
     }
@@ -867,7 +901,7 @@ fn apply_label(
 /// first, then essentials, in frame order) and dispatch on whether it is a
 /// syntactic former or a `|-` rule.
 fn apply_assert(
-    db: &Database,
+    parser: &Parser,
     clause_index: &HashMap<String, usize>,
     clause_ctx: &ClauseCtx,
     target: &Assertion,
@@ -903,7 +937,7 @@ fn apply_assert(
         // conclusion body with each metavar filled by its arg. This is the
         // *same* compact encoding `Parser` produces for a literal of this
         // shape, so substitution into a `|-` schema (via `all_elim`) matches.
-        let enc = encode_former(db, target, label, &float_args)?.cons_with(cons);
+        let enc = encode_former(parser, target, label, &float_args)?.cons_with(cons);
         Ok(Slot::Wff(enc))
     } else {
         // --- a `|-` axiom or rule: re-derive its instance through the kernel ---
@@ -928,21 +962,21 @@ fn apply_assert(
 /// compact `enc(former-body[vᵢ := argᵢ])`, identical to the `Parser`'s encoding
 /// of a literal of the same shape.
 fn encode_former(
-    db: &Database,
+    parser: &Parser,
     target: &Assertion,
     label: &str,
     float_args: &[Term],
 ) -> Result<Term> {
     let body = body_of(&target.conclusion)
         .ok_or_else(|| replay_err(format!("`{label}`: malformed former conclusion")))?;
-    let mut args: HashMap<&str, Term> = HashMap::new();
+    let mut args: HashMap<&str, Term> = HashMap::default();
     for (i, f) in target.frame.floats.iter().enumerate() {
         args.insert(f.var.as_str(), float_args[i].clone());
     }
     let resolve = |tok: &str| -> Result<Term> {
         Ok(match args.get(tok) {
             Some(t) => t.clone(),
-            None => leaf(db, tok),
+            None => parser.leaf(tok),
         })
     };
     encode(body, &resolve)

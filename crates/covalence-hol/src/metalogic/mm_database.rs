@@ -77,6 +77,7 @@
 
 use std::collections::HashMap;
 
+use covalence_core::term::TrustedCons;
 use covalence_core::{Error, Result, Term, Thm, Type};
 
 use crate::init::ext::TermExt;
@@ -613,7 +614,7 @@ pub fn replay_db(db: &Database, assertion: &Assertion) -> Result<Thm> {
         .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
     let (clauses, clause_index) = collect_clauses_with(&parser, db.assertions());
     let rs = clauses_to_ruleset(clauses);
-    replay_with(db, &parser, assertion, &steps, &rs, &clause_index)
+    replay_with(db, &parser, assertion, &steps, &rs, &clause_index, &mut ())
 }
 
 /// **Derive that a single named theorem is derivable — the fast, on-demand
@@ -641,6 +642,30 @@ pub fn derive_theorem(db: &Database, label: &str) -> Result<Thm> {
 /// shares one `&Parser` across worker threads. Otherwise identical to
 /// [`derive_theorem`].
 pub fn derive_theorem_with(db: &Database, parser: &Parser, label: &str) -> Result<Thm> {
+    // No interning (`&mut ()`): preserves the historical per-call behaviour and
+    // overhead. To share terms across many theorems (a ~15× smaller imported
+    // DAG — see `tests::measure_dedup`), use [`derive_theorem_with_cons`].
+    derive_theorem_with_cons(db, parser, label, &mut ())
+}
+
+/// [`derive_theorem_with`] threading a caller-supplied [`TrustedCons`] through
+/// the whole replay — encoded statements, schema instances ([`Thm::all_elim_with`]),
+/// and the final conclusion are all routed through `cons`.
+///
+/// Pass a persistent [`covalence_core::HashCons`] across many `derive_*` calls
+/// from one database to **hash-cons the imported HOL terms into one shared DAG**:
+/// metamath statements share enormous structure (the same constants, the same
+/// sub-expressions) across theorems, so interning collapses the retained terms
+/// ~15× (measured on hol.mm/set.mm) and makes the `Arc::ptr_eq` fast path fire
+/// during the replay's term comparisons. It also makes the result printable with
+/// sharing (the cons *is* the DAG), the basis for pretty-printing the HOL
+/// meaning of metamath definitions without materialising the massive tree.
+pub fn derive_theorem_with_cons(
+    db: &Database,
+    parser: &Parser,
+    label: &str,
+    cons: &mut dyn TrustedCons,
+) -> Result<Thm> {
     let assertion = match db.statement_by_label(label) {
         Some(Statement::Assert(a)) if a.proof.is_some() => a,
         Some(Statement::Assert(_)) => {
@@ -652,7 +677,7 @@ pub fn derive_theorem_with(db: &Database, parser: &Parser, label: &str) -> Resul
         .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
     let (clauses, clause_index) = scoped_clauses(db, parser, &steps)?;
     let rs = clauses_to_ruleset(clauses);
-    replay_with(db, parser, assertion, &steps, &rs, &clause_index)
+    replay_with(db, parser, assertion, &steps, &rs, &clause_index, cons)
 }
 
 /// The shared replay loop: drive `assertion`'s proof steps against the supplied
@@ -667,6 +692,7 @@ fn replay_with(
     steps: &[crate::metamath::ProofStep],
     rs: &RuleSet,
     clause_index: &HashMap<String, usize>,
+    cons: &mut dyn TrustedCons,
 ) -> Result<Thm> {
     if assertion.proof.is_none() {
         return Err(replay_err("assertion has no proof to replay"));
@@ -677,7 +703,7 @@ fn replay_with(
     // `derive_clause` — `closed_for_var` + `assume` + O(k) `nth_conjunct`,
     // i.e. O(S·D) big-term work). Now each `|-` step just clones the cached
     // conjunct (an `Arc` bump) and `all_elim`s its args.
-    let clause_ctx = ClauseCtx::new(rs)?;
+    let clause_ctx = ClauseCtx::new(rs, cons)?;
 
     let mut stack: Vec<Slot> = Vec::new();
     let mut heap: Vec<Slot> = Vec::new();
@@ -685,7 +711,8 @@ fn replay_with(
     for step in steps {
         match step {
             crate::metamath::ProofStep::Label(label) => {
-                let slot = apply_label(db, rs, clause_index, &clause_ctx, parser, label, &mut stack)?;
+                let slot =
+                    apply_label(db, rs, clause_index, &clause_ctx, parser, label, &mut stack, cons)?;
                 stack.push(slot);
             }
             crate::metamath::ProofStep::Save => {
@@ -716,7 +743,7 @@ fn replay_with(
                 // database again) and the cached `Closed d` (not `derivable`,
                 // which would re-lay-out the clauses) — `Derivable_L A` is just
                 // `∀d. closed_t ⟹ d A`.
-                let concl_enc = parser.encode_expr(&assertion.conclusion)?;
+                let concl_enc = parser.encode_expr(&assertion.conclusion)?.cons_with(cons);
                 let want = clause_ctx
                     .closed_t
                     .clone()
@@ -754,6 +781,7 @@ fn apply_label(
     parser: &Parser,
     label: &str,
     stack: &mut Vec<Slot>,
+    cons: &mut dyn TrustedCons,
 ) -> Result<Slot> {
     let stmt = db
         .statement_by_label(label)
@@ -761,16 +789,16 @@ fn apply_label(
     match stmt {
         Statement::Float(f) => {
             // `$f <typecode> <var>` — push the metavariable as a plain term.
-            Ok(Slot::Wff(Term::free(mv(&f.var), phi())))
+            Ok(Slot::Wff(Term::free(mv(&f.var), phi()).cons_with(cons)))
         }
         Statement::Essential(h) => {
             // `$e |- <hyp>` — its derivability is *assumed*; it becomes a
             // hypothesis of the final theorem.
-            let enc = parser.encode_expr(&h.expr)?;
+            let enc = parser.encode_expr(&h.expr)?.cons_with(cons);
             Ok(Slot::Proved(Thm::assume(derivable(rs, &enc)?)?))
         }
         Statement::Assert(target) => {
-            apply_assert(db, clause_index, clause_ctx, target, label, stack)
+            apply_assert(db, clause_index, clause_ctx, target, label, stack, cons)
         }
         _ => Err(replay_err(format!("label `{label}` is not applicable"))),
     }
@@ -786,6 +814,7 @@ fn apply_assert(
     target: &Assertion,
     label: &str,
     stack: &mut Vec<Slot>,
+    cons: &mut dyn TrustedCons,
 ) -> Result<Slot> {
     let n_floats = target.frame.floats.len();
     let n_mand = target.frame.mandatory_count();
@@ -815,7 +844,7 @@ fn apply_assert(
         // conclusion body with each metavar filled by its arg. This is the
         // *same* compact encoding `Parser` produces for a literal of this
         // shape, so substitution into a `|-` schema (via `all_elim`) matches.
-        let enc = encode_former(db, target, label, &float_args)?;
+        let enc = encode_former(db, target, label, &float_args)?.cons_with(cons);
         Ok(Slot::Wff(enc))
     } else {
         // --- a `|-` axiom or rule: re-derive its instance through the kernel ---
@@ -829,7 +858,7 @@ fn apply_assert(
         let k = *clause_index
             .get(label)
             .ok_or_else(|| replay_err(format!("`{label}` is not a `|-` clause of the database")))?;
-        derive_clause(clause_ctx, k, &float_args, prems).map(Slot::Proved)
+        derive_clause(clause_ctx, k, &float_args, prems, cons).map(Slot::Proved)
     }
 }
 
@@ -879,13 +908,18 @@ struct ClauseCtx {
 }
 
 impl ClauseCtx {
-    fn new(rs: &RuleSet) -> Result<Self> {
+    fn new(rs: &RuleSet, cons: &mut dyn TrustedCons) -> Result<Self> {
         let d = rs.d_var();
         // Lay the clauses out ONCE (was: `n_clauses` laid them out to count, then
         // `closed_for_var` laid them out again to conjoin — two full builds of D
         // `bool` terms per theorem). One build gives us both the count and the
-        // `Closed d` conjunction.
-        let clause_terms = (rs.clauses)(&|f| d.clone().apply(f.clone()))?;
+        // `Closed d` conjunction. Intern each laid-out clause so the schema
+        // interiors dedup across theorems (and with the encoded statements that
+        // `all_elim_with` substitutes into them).
+        let clause_terms: Vec<Term> = (rs.clauses)(&|f| d.clone().apply(f.clone()))?
+            .into_iter()
+            .map(|t| t.cons_with(cons))
+            .collect();
         let n = clause_terms.len();
         let closed_t = conj(clause_terms)?;
         let assumed = Thm::assume(closed_t.clone())?; // {Closed d} ⊢ Closed d
@@ -924,7 +958,13 @@ impl ClauseCtx {
 /// `⊢ Derivable_L ⌜eᵢ⌝` into `d ⌜eᵢ⌝` under the cached `Closed_L d` and discharge
 /// the clause's antecedent with their conjunction; finally `imp_intro`
 /// `Closed_L d` and `all_intro` `d`.
-fn derive_clause(ctx: &ClauseCtx, k: usize, args: &[Term], prems: Vec<Thm>) -> Result<Thm> {
+fn derive_clause(
+    ctx: &ClauseCtx,
+    k: usize,
+    args: &[Term],
+    prems: Vec<Thm>,
+    cons: &mut dyn TrustedCons,
+) -> Result<Thm> {
     // {Closed d} ⊢ ∀floats. (prem_conj ⟹)? d ⌜concl⌝ — clone the cached conjunct.
     let mut clause = ctx
         .conjuncts
@@ -932,7 +972,10 @@ fn derive_clause(ctx: &ClauseCtx, k: usize, args: &[Term], prems: Vec<Thm>) -> R
         .ok_or_else(|| replay_err(format!("clause index {k} out of range")))?
         .clone();
     for a in args {
-        clause = clause.all_elim(a.clone())?; // strip float_vars[0..] in order
+        // `all_elim_with`: the (already-interned) arg is inserted by reference at
+        // the binder, and the schema interior is interned against `cons` — so the
+        // substitution instance is built as a shared DAG, not a fresh tree.
+        clause = clause.all_elim_with(a.clone(), cons)?; // strip float_vars[0..] in order
     }
 
     let d_concl = if prems.is_empty() {
@@ -941,7 +984,10 @@ fn derive_clause(ctx: &ClauseCtx, k: usize, args: &[Term], prems: Vec<Thm>) -> R
         // Each premise ⊢ Derivable_L ⌜eᵢ⌝ → {…} ⊢ d ⌜eᵢ⌝ under `assumed`.
         let prem_d: Vec<Thm> = prems
             .into_iter()
-            .map(|p| p.all_elim(ctx.d.clone())?.imp_elim(ctx.assumed.clone()))
+            .map(|p| {
+                p.all_elim_with(ctx.d.clone(), cons)?
+                    .imp_elim(ctx.assumed.clone())
+            })
             .collect::<Result<_>>()?;
         clause.imp_elim(conj_thms(prem_d)?)? // {…} ⊢ d ⌜concl⌝
     };
@@ -1063,6 +1109,75 @@ mod tests {
             for (l, d) in timings.iter().take(10) {
                 eprintln!("  {d:>10.3?}  {l}");
             }
+        }
+    }
+
+    /// Count a term as a **tree** (following shared `Arc`s repeatedly — what a
+    /// naive structural printer would emit).
+    fn tree_size(t: &Term) -> u64 {
+        use covalence_core::term::TermKind;
+        1 + match t.kind() {
+            TermKind::App(f, x) => tree_size(f) + tree_size(x),
+            TermKind::Abs(_, b) => tree_size(b),
+            _ => 0,
+        }
+    }
+
+    /// **Dedup measurement**: how much does hash-consing shrink the imported
+    /// theorem terms? Reports the summed tree-node count vs the distinct
+    /// structural nodes once every conclusion is interned into one shared
+    /// [`HashCons`] (the fully-shared cross-theorem DAG). Run:
+    /// `cargo test -p covalence-hol --lib --release \
+    ///   metalogic::mm_database::tests::measure_dedup -- --ignored --nocapture`
+    #[test]
+    #[ignore = "measurement; run with --ignored --nocapture"]
+    fn measure_dedup() {
+        use covalence_core::HashCons;
+
+        let report = |name: &str, source: &str, limit: usize| {
+            let db = crate::metamath::parse(source).expect("parses");
+            let parser = Parser::new(&db);
+            let labels: Vec<String> = db
+                .assertions()
+                .filter(|a| a.proof.is_some() && a.conclusion.typecode() == "|-")
+                .map(|a| a.label.clone())
+                .take(limit)
+                .collect();
+
+            // Plain path (no interning) — baseline timing + tree sizes.
+            let mut tree_total: u64 = 0;
+            let mut max_tree: u64 = 0;
+            let t_plain = std::time::Instant::now();
+            for label in &labels {
+                let thm = derive_theorem_with(&db, &parser, label)
+                    .unwrap_or_else(|e| panic!("{name} `{label}` failed: {e}"));
+                let sz = tree_size(thm.concl());
+                tree_total += sz;
+                max_tree = max_tree.max(sz);
+            }
+            let plain_ms = t_plain.elapsed();
+
+            // Cons path: one persistent interner across all theorems (the import's
+            // per-worker setup). `cons.len()` is the shared DAG node count.
+            let mut cons = HashCons::new();
+            let t_cons = std::time::Instant::now();
+            for label in &labels {
+                let _ = derive_theorem_with_cons(&db, &parser, label, &mut cons)
+                    .unwrap_or_else(|e| panic!("{name} `{label}` (cons) failed: {e}"));
+            }
+            let cons_ms = t_cons.elapsed();
+            let dag = cons.len() as u64;
+            eprintln!(
+                "\n=== {name}: {} thms ===\n  tree nodes (sum)   : {tree_total}\n  max single tree    : {max_tree}\n  shared DAG nodes   : {dag}\n  dedup factor       : {:.1}x\n  time plain         : {plain_ms:?}\n  time cons          : {cons_ms:?}",
+                labels.len(),
+                tree_total as f64 / dag.max(1) as f64,
+            );
+        };
+
+        report("hol.mm", HOL_MM, usize::MAX);
+        if let Ok(path) = std::env::var("COV_SET_MM") {
+            let source = std::fs::read_to_string(&path).expect("read set.mm");
+            report("set.mm (first 2000)", &source, 2000);
         }
     }
 

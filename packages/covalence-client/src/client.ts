@@ -199,6 +199,16 @@ export class CovalenceClient {
     return this.fetchJson<MmServerStats>('/api/metamath/stats');
   }
 
+  /** GET /api/metamath/session/{hash}/symbols — the database's `token → Unicode`
+   * typeset map (parsed from its `$t` `althtmldef` section; empty if it has none). */
+  async mmSymbols(hash: Hash, user?: string): Promise<Record<string, string>> {
+    const res = await this.fetch(
+      `${this.baseUrl}/api/metamath/session/${hash}/symbols${userQuery(user)}`,
+    );
+    if (!res.ok) return {};
+    return (await res.json()) as Record<string, string>;
+  }
+
   /** GET /api/metamath/session/{hash}/graph — the cached static declaration graph. */
   async mmGraph(hash: Hash, user?: string): Promise<MmGraphResponse> {
     const res = await this.fetch(

@@ -51,6 +51,7 @@ pub fn router() -> axum::Router<AppState> {
         .route("/stats", get(server_stats))
         .route("/session/{hash}", get(db_info))
         .route("/session/{hash}/graph", get(graph))
+        .route("/session/{hash}/symbols", get(symbols))
         .route("/session/{hash}/theorem/{name}", get(theorem))
         .route("/session/{hash}/prove", post(prove))
         .route("/session/{hash}/status", get(status_ws))
@@ -85,6 +86,10 @@ pub struct MmSession {
     pub status_tx: tokio::sync::broadcast::Sender<String>,
     /// CAS guard so the prove task is launched at most once per session.
     pub proving: AtomicBool,
+    /// Token → Unicode typeset symbol, decoded from the database's `$t`
+    /// `althtmldef` section (empty if the `.mm` has no typesetting). Served by
+    /// `/symbols` so the page can typeset formulas like the Proof Explorer.
+    pub symbols: HashMap<String, String>,
 }
 
 /// `?user=<opt>` query for every endpoint.
@@ -207,6 +212,64 @@ fn proved_result(
 }
 
 // ---------------------------------------------------------------------------
+// Typesetting: $t althtmldef → token → Unicode map
+// ---------------------------------------------------------------------------
+
+/// Build the `token → Unicode` map from a `.mm` source's `$t` `althtmldef`
+/// section (the Unicode/HTML typesetting; `htmldef` is GIFs, `latexdef` is TeX).
+/// Identity and empty mappings are dropped (the page passes unmapped tokens
+/// through unchanged).
+fn symbol_map(source: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for d in covalence_metamath::parse_typesetting(source) {
+        if d.kind != "althtmldef" {
+            continue;
+        }
+        let uni = decode_html_text(&d.value);
+        if uni.is_empty() || uni == d.token {
+            continue;
+        }
+        map.insert(d.token, uni);
+    }
+    map
+}
+
+/// Decode an `althtmldef` HTML fragment to display text: drop tags, then decode
+/// entities (numeric `&#x1D711;` + the full HTML5 named table via `html-escape`),
+/// and collapse whitespace.
+fn decode_html_text(raw: &str) -> String {
+    // html-escape decodes entities but not markup, so strip `<...>` tags first.
+    let mut stripped = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    while let Some(c) = chars.next() {
+        if c == '<' {
+            for d in chars.by_ref() {
+                if d == '>' {
+                    break;
+                }
+            }
+        } else {
+            stripped.push(c);
+        }
+    }
+    let decoded = html_escape::decode_html_entities(&stripped);
+    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// GET `/api/metamath/session/{hash}/symbols` — the database's token → Unicode
+/// typeset map (from its `$t` `althtmldef` section). Empty if it has none.
+pub async fn symbols(
+    State(state): State<AppState>,
+    Path(hash): Path<String>,
+    Query(q): Query<UserQ>,
+) -> Response {
+    let Some(sess) = lookup(&state, &hash, &q.user) else {
+        return (StatusCode::NOT_FOUND, "no such session").into_response();
+    };
+    Json(sess.symbols.clone()).into_response()
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/metamath/db — parse (or reuse) a session
 // ---------------------------------------------------------------------------
 
@@ -241,9 +304,13 @@ pub async fn create_db(
         Ok(s) => s,
         Err(_) => return (StatusCode::BAD_REQUEST, "source is not valid UTF-8").into_response(),
     };
-    let parsed = tokio::task::spawn_blocking(move || covalence_hol::metamath::parse(&source))
-        .await
-        .unwrap_or_else(|e| panic!("parse task panicked: {e}"));
+    let (parsed, symbols) = tokio::task::spawn_blocking(move || {
+        let db = covalence_hol::metamath::parse(&source);
+        let symbols = symbol_map(&source);
+        (db, symbols)
+    })
+    .await
+    .unwrap_or_else(|e| panic!("parse task panicked: {e}"));
 
     let db = match parsed {
         Ok(db) => db,
@@ -263,6 +330,7 @@ pub async fn create_db(
         results: RwLock::new(HashMap::new()),
         status_tx,
         proving: AtomicBool::new(false),
+        symbols,
     });
 
     state.mm.lock().unwrap().insert(key, session);

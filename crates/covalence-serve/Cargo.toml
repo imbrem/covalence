@@ -18,6 +18,8 @@ serde_json = "1"
 open = "5"
 thiserror = "2"
 tracing = "0.1"
+# Demo: decode `$t` althtmldef HTML (full HTML5 entity table) to Unicode.
+html-escape = "0.2"
 covalence-git = { path = "../covalence-git" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-object = { path = "../covalence-object" }

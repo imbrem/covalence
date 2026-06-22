@@ -65,6 +65,7 @@ pub mod error;
 pub mod expr;
 pub mod parse;
 pub mod subst;
+pub mod typesetting;
 #[cfg(feature = "checker")]
 pub mod verify;
 
@@ -78,5 +79,6 @@ pub use parse::{
     parse_with_resolver,
 };
 pub use subst::{Subst, apply_subst};
+pub use typesetting::{Typedef, parse_typesetting};
 #[cfg(feature = "checker")]
 pub use verify::{ProofStep, proof_steps, verify_all, verify_assertion};

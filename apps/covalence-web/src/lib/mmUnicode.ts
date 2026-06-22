@@ -78,12 +78,19 @@ export const MM_UNICODE: Record<string, string> = {
 };
 
 /** Render a space-separated Metamath statement, optionally typeset to Unicode.
- * Tokens not in {@link MM_UNICODE} (labels, variables, digits, parens) pass
+ *
+ * `map` is the token→Unicode table to use — typically the database's own `$t`
+ * typesetting (served by `/symbols`) merged over {@link MM_UNICODE} as a
+ * fallback. Tokens absent from the map (labels, variables, digits, parens) pass
  * through unchanged. */
-export function renderMm(s: string, unicode: boolean): string {
+export function renderMm(
+	s: string,
+	unicode: boolean,
+	map: Record<string, string> = MM_UNICODE,
+): string {
 	if (!unicode) return s;
 	return s
 		.split(' ')
-		.map((tok) => MM_UNICODE[tok] ?? tok)
+		.map((tok) => map[tok] ?? tok)
 		.join(' ');
 }

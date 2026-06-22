@@ -10,7 +10,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { client } from '$lib/api';
-	import { renderMm } from '$lib/mmUnicode';
+	import { renderMm, MM_UNICODE } from '$lib/mmUnicode';
 	import type {
 		MmStatusMessage,
 		ImportedTheorem,
@@ -117,6 +117,10 @@
 	// Typeset Metamath symbols to Unicode (the "structured view" toggle), on by
 	// default like the Metamath Proof Explorer.
 	let unicode = $state(true);
+	// The database's own `$t` typeset table (from /symbols), merged over the
+	// small built-in fallback. Server entries win — each .mm typesets itself.
+	let serverSymbols = $state<Record<string, string>>({});
+	const symbolMap = $derived({ ...MM_UNICODE, ...serverSymbols });
 	// Live server-metrics panel (RAM etc. over time). Polled while open.
 	let showServer = $state(false);
 	let serverStat = $state<MmServerStats | null>(null);
@@ -540,6 +544,12 @@
 		theorems = rows;
 		phase = 'graph';
 		statusMsg = `loaded ${total} theorems — starting import …`;
+
+		// Fetch the database's own typesetting (token → Unicode), non-blocking.
+		client
+			.mmSymbols(hash, user)
+			.then((s) => (serverSymbols = s))
+			.catch(() => {});
 
 		// Connect the status WS first so we don't miss early frames, then start.
 		connectStatus(hash);
@@ -1036,7 +1046,7 @@
 							>
 								<span class="dot status-{t.status}"></span>
 								<span class="lbl">{t.label}</span>
-								<span class="mini">{renderMm(t.mm, unicode)}</span>
+								<span class="mini">{renderMm(t.mm, unicode, symbolMap)}</span>
 								{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
 							</button>
 						{/each}
@@ -1055,11 +1065,11 @@
 				<h2>{selected.label}</h2>
 				<div class="field">
 					<div class="flabel">Metamath statement</div>
-					<pre class="mm">{renderMm(selected.mm, unicode)}</pre>
+					<pre class="mm">{renderMm(selected.mm, unicode, symbolMap)}</pre>
 					{#if detail && detail.ess.length > 0}
 						<div class="flabel sub">essential hypotheses</div>
 						{#each detail.ess as e (e)}
-							<pre class="mm hyp">{renderMm(e, unicode)}</pre>
+							<pre class="mm hyp">{renderMm(e, unicode, symbolMap)}</pre>
 						{/each}
 					{/if}
 				</div>

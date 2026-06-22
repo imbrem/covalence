@@ -256,8 +256,28 @@ fn subst_free_at<C: TrustedCons + ?Sized>(
     depth: u32,
     cons: &mut C,
 ) -> Term {
+    subst_free_opt(t, var, r, depth, cons).unwrap_or_else(|| t.clone())
+}
+
+/// The sharing-preserving core of [`subst_free_at`]: returns `Some(t')` when
+/// substituting `var := r` *changes* `t`, and `None` when it leaves `t`
+/// untouched (so the caller reuses the original `Arc` — no allocation). A
+/// no-op substitution allocates nothing; a real one rebuilds only the spine
+/// from the root down to the substituted leaves.
+///
+/// The `None` short-circuit is also the hook for a future fast skip: a
+/// free-variable summary on `TermInfo` (e.g. a Bloom filter over variable
+/// names) could let a subtree that provably lacks `var` return `None`
+/// immediately, without recursing.
+fn subst_free_opt<C: TrustedCons + ?Sized>(
+    t: &Term,
+    var: &Var,
+    r: &Term,
+    depth: u32,
+    cons: &mut C,
+) -> Option<Term> {
     match t.kind() {
-        TermKind::Free(v) if v == var => shift_with(r, depth as i64, 0, cons),
+        TermKind::Free(v) if v == var => Some(shift_with(r, depth as i64, 0, cons)),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -273,16 +293,20 @@ fn subst_free_at<C: TrustedCons + ?Sized>(
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Succ
-        | TermKind::Def(_) => t.clone(),
+        | TermKind::Def(_) => None,
         TermKind::App(f, x) => {
-            let f = subst_free_at(f, var, r, depth, cons);
-            let x = subst_free_at(x, var, r, depth, cons);
-            cons.make(TermKind::App(f, x))
+            let f2 = subst_free_opt(f, var, r, depth, cons);
+            let x2 = subst_free_opt(x, var, r, depth, cons);
+            if f2.is_none() && x2.is_none() {
+                None
+            } else {
+                let f = f2.unwrap_or_else(|| f.clone());
+                let x = x2.unwrap_or_else(|| x.clone());
+                Some(cons.make(TermKind::App(f, x)))
+            }
         }
-        TermKind::Abs(bty, body) => {
-            let body = subst_free_at(body, var, r, depth + 1, cons);
-            cons.make(TermKind::Abs(bty.clone(), body))
-        }
+        TermKind::Abs(bty, body) => subst_free_opt(body, var, r, depth + 1, cons)
+            .map(|body| cons.make(TermKind::Abs(bty.clone(), body))),
     }
 }
 

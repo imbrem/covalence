@@ -4,7 +4,7 @@
 //! term-spec the kernel ships out of the box. New variants land as
 //! the derived-types catalogue grows (see `docs/type-hierarchy.md`).
 
-use super::symbol::Symbol;
+use super::symbol::{Symbol, TrustedCmp, sealed};
 use std::fmt;
 
 /// Names for the kernel's derived-type / derived-term catalogue.
@@ -671,3 +671,8 @@ impl Symbol for Canonical {
         Canonical::label(self)
     }
 }
+
+// The kernel's own catalogue names are trusted: each variant has a
+// unique, stable `label()`, so label comparison is a faithful identity.
+impl sealed::Sealed for Canonical {}
+impl TrustedCmp for Canonical {}

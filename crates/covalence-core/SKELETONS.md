@@ -39,6 +39,20 @@ coupling guard.
   flipping the source of truth + porting the numeric tower (hand-rolled copy did it)
   is the follow-up.
 
+## Hash-consing not yet threaded through the inference rules
+
+- **`crate::term::cons` (`TrustedCons`/`TermCons`/`HashCons`/`Checked`) is wired
+  through the `Term` smart-constructor baseline (`Term::alloc`), `Term::cons_with`
+  (deep intern), and every term-rebuilding fn in `subst.rs` (the `*_with`
+  variants).** What is *not* yet threaded: the inference rules in `thm/`, `Ctx`,
+  and `hol.rs` builders all construct terms via the plain (`&mut ()`)
+  constructors / plain `subst::*`, so a proof does not yet share one interner
+  end-to-end — interning only happens when a caller explicitly routes through a
+  `*_with` API. Threading a caller-supplied `&mut dyn TrustedCons` through the
+  rule surface (and a `Ctx`-owned interner) is the follow-up that turns this from
+  "available" into "on by default for large proofs". Soundness is unaffected
+  either way (the rules already accept any structurally-equal term).
+
 ## defs source-of-truth flip — reverted, pending re-entrancy fix
 
 - **Flipping the public `defs::*` accessors to source from `core_env()` is

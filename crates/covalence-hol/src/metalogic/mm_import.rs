@@ -89,9 +89,24 @@ pub fn import_theorems_parallel(
     on_pick: impl Fn(&str) + Sync,
     on_each: impl Fn(usize, usize, &str, &covalence_core::Result<Thm>, std::time::Duration) + Sync,
 ) {
+    let labels = theorem_labels(db);
+    import_labels_parallel(db, &labels, n_threads, on_start, on_pick, on_each);
+}
+
+/// [`import_theorems_parallel`] over an **explicit label slice** (rather than
+/// every `$p` theorem). Same work-stealing pool and callbacks; useful for
+/// benchmarking a prefix of a large database (e.g. the first N theorems of
+/// set.mm) or re-importing a chosen subset.
+pub fn import_labels_parallel(
+    db: &Database,
+    labels: &[String],
+    n_threads: usize,
+    on_start: impl FnOnce(usize),
+    on_pick: impl Fn(&str) + Sync,
+    on_each: impl Fn(usize, usize, &str, &covalence_core::Result<Thm>, std::time::Duration) + Sync,
+) {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    let labels: Vec<String> = theorem_labels(db);
     let total = labels.len();
     on_start(total);
     if total == 0 {
@@ -114,7 +129,6 @@ pub fn import_theorems_parallel(
     let done = AtomicUsize::new(0);
     let on_pick = &on_pick;
     let on_each = &on_each;
-    let labels = &labels;
     let next = &next;
     let done = &done;
     let parser = &parser;

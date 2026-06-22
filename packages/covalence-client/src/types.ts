@@ -62,8 +62,13 @@ export interface TreeEntry {
 }
 
 // ---------------------------------------------------------------------------
-// TEMPORARY/DEMO: Metamath import (the `/metamath` page).
-// Streamed over the `/api/mm/import` WebSocket; see CovalenceClient.connectMmImport.
+// TEMPORARY / THROWAWAY DEMO: Metamath sessions (the `/metamath` page).
+//
+// Clean REST for data + a thin WebSocket for live status only. A `.mm` source
+// is POSTed once into a cached session (keyed by content hash); graph + theorem
+// data are then served by REST, the kernel import is kicked off by REST, and
+// live per-theorem status is forwarded over a thin status WS. See
+// CovalenceClient.{createMmDb,mmGraph,mmTheorem,startMmProve,connectMmStatus}.
 // ---------------------------------------------------------------------------
 
 /** A logical (`|-`) assertion referenced by a theorem's proof. */
@@ -72,29 +77,52 @@ export interface ImportDep {
   kind: 'axiom' | 'def' | 'thm';
 }
 
-/** The **static** declaration of one theorem (graph-phase payload): everything
- * known before its proof is (re-)derived through the kernel. */
+/** POST /api/metamath/db → the session handle. */
+export interface MmDbResponse {
+  /** Content hash of the `.mm` source (the session id). */
+  file: Hash;
+  /** Logical (`|-`) `$p` theorem count. */
+  total: number;
+}
+
+/** One node of the cached static declaration graph
+ * (GET /api/metamath/db/{hash}/graph). */
 export interface ImportDecl {
   label: string;
   /** Rendered Metamath conclusion (`typecode sym ...`). */
   mm: string;
-  /** Rendered essential ($e) hypotheses, if any. */
-  ess?: string[];
   /** Deduped logical (`|-`) assertions the proof references, first-seen order. */
   deps?: ImportDep[];
-  /** Rendered Metamath proof code (normal or compressed). */
-  proof?: string;
 }
 
-/** The dynamic result of (re-)deriving one theorem through the HOL kernel
- * (prove-phase completion frame). Static fields (mm/ess/deps/proof) are NOT
- * repeated here — they arrived earlier in a `decl` frame. */
-export interface ImportProvedMessage {
-  type: 'proved';
-  done: number;
+/** GET /api/metamath/db/{hash}/graph */
+export interface MmGraphResponse {
   total: number;
+  theorems: ImportDecl[];
+}
+
+/** The live status of one theorem-as-task. The seed of a general multi-logic
+ * "task view": later states (e.g. `translating`) and per-logic columns slot in
+ * over the same graph. */
+export type ImportStatus = 'pending' | 'proving' | 'proved' | 'error';
+
+/** GET /api/metamath/db/{hash}/theorem/{name} — one theorem's full detail:
+ * static fields (always present) plus dynamic fields once it has been proved
+ * (`status` is `pending` until then). */
+export interface ImportTheoremDetail {
   label: string;
-  ok: boolean;
+  /** Rendered Metamath conclusion. */
+  mm: string;
+  /** Rendered essential ($e) hypotheses. */
+  ess: string[];
+  /** Direct logical dependencies. */
+  deps: ImportDep[];
+  /** Rendered Metamath proof code (normal or compressed). */
+  proof: string;
+  /** Current import status. */
+  status: ImportStatus;
+  /** Whether the kernel import succeeded (present once proved/error). */
+  ok?: boolean;
   /** Number of HOL hypotheses (present when ok). */
   hyps?: number;
   /** True if the imported theorem is oracle-free (present when ok). */
@@ -107,32 +135,35 @@ export interface ImportProvedMessage {
   importMs?: number;
 }
 
-/** A streamed frame from the Metamath import WebSocket. Two phases: the static
- * declaration graph (`decl` … `graphDone`) streams first, then a parallel prove
- * phase flips each theorem live (`proving` → `proved`). */
-export type ImportMessage =
-  | { type: 'parsed'; total: number }
-  | { type: 'decl'; items: ImportDecl[] }
-  | { type: 'graphDone' }
+/** A frame forwarded over the thin status WebSocket
+ * (WS /api/metamath/db/{hash}/status). On connect the server sends a
+ * `snapshot`; then `proving` → `proved` flip each theorem live, terminated by
+ * `done`. */
+export type MmStatusMessage =
+  | { type: 'snapshot'; total: number; results: { label: string; ok: boolean }[] }
   | { type: 'proving'; label: string }
-  | ImportProvedMessage
+  | {
+      type: 'proved';
+      done: number;
+      total: number;
+      label: string;
+      ok: boolean;
+      hyps?: number;
+      genuine?: boolean;
+      holPreview?: string;
+      error?: string;
+      importMs?: number;
+    }
   | { type: 'done'; ok: number; total: number; elapsedMs: number }
   | { type: 'error'; message: string };
 
-/** The live status of one theorem-as-task. The seed of a general multi-logic
- * "task view": later states (e.g. `translating`) and per-logic columns slot in
- * over the same graph. */
-export type ImportStatus = 'pending' | 'proving' | 'proved' | 'error';
-
-/** One imported theorem, as accumulated by the demo page: the static fields
- * (from `decl`) plus a live `status` and the dynamic prove-phase results. */
+/** One imported theorem, as accumulated by the demo page: the static graph
+ * fields plus a live `status` and the dynamic prove-phase results. */
 export interface ImportedTheorem {
   label: string;
   status: ImportStatus;
-  /** Static (graph-phase) fields. */
+  /** Static (graph) fields. */
   mm: string;
-  ess: string[];
-  proof?: string;
   deps?: ImportDep[];
   /** Dynamic (prove-phase) fields. */
   ok: boolean;

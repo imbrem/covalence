@@ -99,6 +99,7 @@ pub fn serve(port: u16, store: Option<&str>) -> PyResult<Server> {
                 kernel,
                 tagged_store,
                 object_store,
+                mm: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             };
 
             let app = covalence_serve::build_router(state, true);

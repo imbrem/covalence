@@ -59,7 +59,10 @@ macro_rules! cached_thm {
         $(#[$attr])*
         $vis fn $name() -> ::covalence_core::Thm {
             static CACHE: ::std::sync::LazyLock<::covalence_core::Thm> =
-                ::std::sync::LazyLock::new(|| $body);
+                ::std::sync::LazyLock::new(|| {
+                    // `COV_PROFILE=1` prints how long this cached build took.
+                    $crate::debug::timed(stringify!($name), || $body)
+                });
             CACHE.clone()
         }
     };
@@ -68,8 +71,10 @@ macro_rules! cached_thm {
         $vis fn $name() -> ::covalence_core::Thm {
             static CACHE: ::std::sync::LazyLock<::covalence_core::Thm> =
                 ::std::sync::LazyLock::new(|| {
-                    (|| -> ::covalence_core::Result<::covalence_core::Thm> { $body })()
-                        .expect(concat!("init: ", stringify!($name), " derivation"))
+                    $crate::debug::timed(stringify!($name), || {
+                        (|| -> ::covalence_core::Result<::covalence_core::Thm> { $body })()
+                            .expect(concat!("init: ", stringify!($name), " derivation"))
+                    })
                 });
             CACHE.clone()
         }

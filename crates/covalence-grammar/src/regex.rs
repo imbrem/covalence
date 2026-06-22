@@ -38,6 +38,7 @@
 //! Adding them later does not change the type [`Regex<A>`].
 
 use std::fmt;
+use std::sync::Arc;
 
 /// A proper regular expression over an alphabet `A`.
 ///
@@ -73,14 +74,14 @@ pub enum Regex<A> {
     /// equals [`Empty`](Regex::Empty); [`Regex::alt`] always collapses that case.
     Alt(Vec<Regex<A>>),
     /// Kleene star: `r*`.
-    Star(Box<Regex<A>>),
+    Star(Arc<Regex<A>>),
     /// One-or-more: `r+`.
-    Plus(Box<Regex<A>>),
+    Plus(Arc<Regex<A>>),
     /// Optional: `r?`.
-    Opt(Box<Regex<A>>),
+    Opt(Arc<Regex<A>>),
     /// Bounded repetition `r{min, max}`. `max = None` means unbounded.
     Rep {
-        inner: Box<Regex<A>>,
+        inner: Arc<Regex<A>>,
         min: u32,
         max: Option<u32>,
     },
@@ -241,7 +242,7 @@ impl<A> Regex<A> {
         match self {
             Regex::Empty | Regex::Eps => Regex::Eps,
             Regex::Star(_) | Regex::Plus(_) => self,
-            other => Regex::Star(Box::new(other)),
+            other => Regex::Star(Arc::new(other)),
         }
     }
 
@@ -250,7 +251,7 @@ impl<A> Regex<A> {
             Regex::Empty => Regex::Empty,
             Regex::Eps => Regex::Eps,
             Regex::Star(_) => self,
-            other => Regex::Plus(Box::new(other)),
+            other => Regex::Plus(Arc::new(other)),
         }
     }
 
@@ -258,7 +259,7 @@ impl<A> Regex<A> {
         match self {
             Regex::Empty | Regex::Eps => Regex::Eps,
             Regex::Star(_) | Regex::Opt(_) => self,
-            other => Regex::Opt(Box::new(other)),
+            other => Regex::Opt(Arc::new(other)),
         }
     }
 
@@ -281,7 +282,7 @@ impl<A> Regex<A> {
             (Regex::Empty, 0, _) => Regex::Eps,
             (Regex::Empty, _, _) => Regex::Empty,
             _ => Regex::Rep {
-                inner: Box::new(self),
+                inner: Arc::new(self),
                 min,
                 max,
             },
@@ -1085,7 +1086,7 @@ mod tests {
     #[test]
     fn star_idempotent_on_star() {
         let r = lit('a').star().star();
-        assert_eq!(r, Regex::Star(Box::new(lit('a'))));
+        assert_eq!(r, Regex::Star(Arc::new(lit('a'))));
     }
 
     #[test]
@@ -1118,13 +1119,13 @@ mod tests {
 
     #[test]
     fn parse_quantifiers() {
-        assert_eq!(parse_regex("a*").unwrap(), Regex::Star(Box::new(lit('a'))));
-        assert_eq!(parse_regex("a+").unwrap(), Regex::Plus(Box::new(lit('a'))));
-        assert_eq!(parse_regex("a?").unwrap(), Regex::Opt(Box::new(lit('a'))));
+        assert_eq!(parse_regex("a*").unwrap(), Regex::Star(Arc::new(lit('a'))));
+        assert_eq!(parse_regex("a+").unwrap(), Regex::Plus(Arc::new(lit('a'))));
+        assert_eq!(parse_regex("a?").unwrap(), Regex::Opt(Arc::new(lit('a'))));
         assert_eq!(
             parse_regex("a{3}").unwrap(),
             Regex::Rep {
-                inner: Box::new(lit('a')),
+                inner: Arc::new(lit('a')),
                 min: 3,
                 max: Some(3)
             },
@@ -1132,7 +1133,7 @@ mod tests {
         assert_eq!(
             parse_regex("a{2,}").unwrap(),
             Regex::Rep {
-                inner: Box::new(lit('a')),
+                inner: Arc::new(lit('a')),
                 min: 2,
                 max: None
             },
@@ -1140,7 +1141,7 @@ mod tests {
         assert_eq!(
             parse_regex("a{2,5}").unwrap(),
             Regex::Rep {
-                inner: Box::new(lit('a')),
+                inner: Arc::new(lit('a')),
                 min: 2,
                 max: Some(5)
             },
@@ -1152,12 +1153,12 @@ mod tests {
         let r = parse_regex("(ab)*").unwrap();
         assert_eq!(
             r,
-            Regex::Star(Box::new(Regex::Concat(vec![lit('a'), lit('b')]))),
+            Regex::Star(Arc::new(Regex::Concat(vec![lit('a'), lit('b')]))),
         );
         let r = parse_regex("(?:ab)*").unwrap();
         assert_eq!(
             r,
-            Regex::Star(Box::new(Regex::Concat(vec![lit('a'), lit('b')]))),
+            Regex::Star(Arc::new(Regex::Concat(vec![lit('a'), lit('b')]))),
         );
     }
 

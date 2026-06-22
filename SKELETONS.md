@@ -21,8 +21,9 @@ it in.
     surface-syntax sketch.
 - **[`covalence-kernel`](crates/covalence-kernel/SKELETONS.md)** — the empty
   `facts` observer module; the removed legacy prover.
-- **[`covalence-spectec`](crates/covalence-spectec/SKELETONS.md)** — the
-  SpecTec → HOL lowering driver (covered fragment vs deferred).
+- **[`covalence-spectec`](crates/covalence-spectec/SKELETONS.md)** — removed
+  native `.watsup` frontend; WASM grammar versions (only 3.0 bundled) and the
+  regular-fragment-only byte-grammar bridge.
 - **[`covalence-alethe`](crates/covalence-alethe/SKELETONS.md)** — Alethe rule
   coverage.
 - **[`covalence-metamath`](crates/covalence-metamath/SKELETONS.md)** — the

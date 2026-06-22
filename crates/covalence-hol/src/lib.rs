@@ -27,6 +27,7 @@
 
 pub mod ac;
 pub mod category;
+pub mod debug;
 pub mod hash;
 pub mod hol_light_obs;
 pub mod init;
@@ -40,10 +41,12 @@ pub mod monoidal;
 pub mod peano;
 pub mod project;
 pub mod proofs;
+pub mod regex;
 pub mod ring;
 pub mod script;
 pub mod semiring;
 pub mod sexp;
+pub mod spectec;
 pub mod traits;
 pub mod types;
 

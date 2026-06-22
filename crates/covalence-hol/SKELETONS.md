@@ -33,6 +33,15 @@ index](../../SKELETONS.md).
   replay): the `Nat`-specialized `Logic` (no general `Signature`/`admits`/full
   `HandlerSet`), the unbuilt `#model` directive, the `#thm`-only `#in` block,
   and the single-theory/two-model/no-iso shape.
+- **[`src/regex/SKELETONS.md`](./src/regex/SKELETONS.md)** — the regex →
+  byte-predicate compiler + matching tactic (the regular base case of every
+  grammar): recognizer acceleration (WASM/builtin offload, `Core` hash-consing),
+  the slow `prove_member` soundness discharge, the structural-not-unifying
+  `prove_word` variable matching, and deferred word normalisation.
+- **[`src/spectec/SKELETONS.md`](./src/spectec/SKELETONS.md)** — the SpecTec
+  grammar front end over [`src/regex`]: our own primitive **CFG** stratum as the
+  headline next step (`Var`/non-terminal references, a `Derives` judgement), and
+  whole-`gram`/full-WASM-binary-format coverage.
 - **[`src/metalogic/SKELETONS.md`](./src/metalogic/SKELETONS.md)** — the
   generic `Derivable_L` engine (`Derivable_L` + `Closed_L` over a `RuleSet`,
   `rule_induction`, one-step `project`; the `toy` second instance; PA wired in

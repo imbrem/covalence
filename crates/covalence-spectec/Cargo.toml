@@ -4,12 +4,10 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-covalence-core = { path = "../covalence-core" }
 covalence-grammar = { path = "../covalence-grammar" }
-covalence-types = { path = "../covalence-types" }
-smol_str = "0.3"
 thiserror = "2"
 wasm_spec_ast = "1"
 spectec_ast = "2"
 spectec_ast_decode = "1"
 spectec_ast_decode_derive = "1"
+sexpr_parse = "1"

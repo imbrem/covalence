@@ -12,6 +12,8 @@ covalence-types = { path = "../covalence-types" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-sexp = { path = "../covalence-sexp" }
 covalence-metamath = { path = "../covalence-metamath" }
+covalence-grammar = { path = "../covalence-grammar" }
+covalence-spectec = { path = "../covalence-spectec" }
 async-trait = "0.1"
 bytes = "1"
 futures = "0.3"

@@ -100,11 +100,25 @@
 	let loadedHash: string | null = null;
 
 	// Live status tallies (the foundation of the general "task view").
-	const nPending = $derived(theorems.filter((t) => t.status === 'pending').length);
-	const nProving = $derived(theorems.filter((t) => t.status === 'proving').length);
-	const nProved = $derived(theorems.filter((t) => t.status === 'proved').length);
+	// One pass over the (up to 47k-row) array yields all four status tallies —
+	// cheaper than four separate `.filter().length` scans, and this is the hot
+	// derived that reruns on every animation-frame flush.
+	const counts = $derived.by(() => {
+		let pending = 0,
+			proving = 0,
+			proved = 0,
+			error = 0;
+		for (const t of theorems) {
+			if (t.status === 'pending') pending++;
+			else if (t.status === 'proving') proving++;
+			else if (t.status === 'proved') proved++;
+			else error++;
+		}
+		return { pending, proving, proved, error };
+	});
+	// The error *rows* (for the failures-only filter + "copy failures"). Lazy:
+	// only recomputes when something actually reads it.
 	const failures = $derived(theorems.filter((t) => t.status === 'error'));
-	const nErr = $derived(failures.length);
 	const timed = $derived(theorems.filter((t) => t.importMs != null));
 	const totalMs = $derived(timed.reduce((a, t) => a + (t.importMs ?? 0), 0));
 	const avgMs = $derived(timed.length ? totalMs / timed.length : 0);
@@ -114,12 +128,10 @@
 			null,
 		),
 	);
-	// Label → theorem, for transitive dependency walks.
-	const byLabel = $derived.by(() => {
-		const m = new Map<string, ImportedTheorem>();
-		for (const t of theorems) m.set(t.label, t);
-		return m;
-	});
+	// Label → theorem, for transitive dependency walks. Labels are immutable
+	// after graph load, so this is built once there (alongside `labelIndex`)
+	// rather than rederived every frame. Not reactive; a plain Map.
+	let byLabel = new Map<string, ImportedTheorem>();
 
 	// The **transitive axiom base** of a theorem: the union of axiom/def labels
 	// reached by recursively following theorem (`thm`) dependencies — i.e. the
@@ -277,14 +289,37 @@
 			counts[b]++;
 		}
 		const peak = Math.max(...counts, 1);
-		// Right-edge (ms) of bucket i, for axis ticks.
-		const edge = (i: number) => 10 ** (lo + (span * (i + 1)) / HISTO_BUCKETS);
-		return { min, max, counts, peak, edge };
+		// Left edge (ms) of bucket i; bucket i spans [edge(i), edge(i+1)].
+		const edge = (i: number) => 10 ** (lo + (span * i) / HISTO_BUCKETS);
+		return { min, max, counts, peak, total: xs.length, edge };
 	});
-	// SVG geometry for the histogram.
-	const HW = 640;
-	const HH = 160;
-	const HPAD = 24;
+	// SVG geometry for the histogram (viewBox units; scales uniformly so the
+	// axis labels stay crisp). `M` = margins for the y/x tick gutters.
+	const HW = 680;
+	const HH = 220;
+	const M = { l: 46, r: 10, t: 12, b: 30 };
+	const plotW = HW - M.l - M.r;
+	const plotH = HH - M.t - M.b;
+	let hoverBucket = $state<number | null>(null);
+
+	// Compact ms formatter for the axis labels (range ~0.01 ms … ~10³ ms).
+	function fmtMs(x: number): string {
+		if (x >= 100) return x.toFixed(0);
+		if (x >= 10) return x.toFixed(1);
+		if (x >= 1) return x.toFixed(2);
+		return x.toFixed(2);
+	}
+	// ~6 evenly-spaced bucket boundaries (for the log x-axis ticks).
+	const X_TICKS = 6;
+	function xTicks(): number[] {
+		return Array.from({ length: X_TICKS + 1 }, (_, k) =>
+			Math.round((k / X_TICKS) * HISTO_BUCKETS),
+		);
+	}
+	// y-axis count ticks: 0, mid, peak (deduped).
+	function yTicks(peak: number): number[] {
+		return [...new Set([0, Math.round(peak / 2), peak])];
+	}
 
 	async function copyFailures() {
 		const data = failures.map((t) => ({ label: t.label, mm: t.mm, error: t.error }));
@@ -374,6 +409,7 @@
 		nOk = 0;
 		theorems = [];
 		labelIndex = new Map();
+		byLabel = new Map();
 		selected = null;
 		detail = null;
 		detailCache.clear();
@@ -417,15 +453,18 @@
 		total = graph.total;
 		const rows: ImportedTheorem[] = [];
 		labelIndex = new Map();
+		byLabel = new Map();
 		for (const item of graph.theorems) {
 			labelIndex.set(item.label, rows.length);
-			rows.push({
+			const row: ImportedTheorem = {
 				label: item.label,
 				status: 'pending',
 				mm: item.mm,
 				deps: item.deps,
 				ok: false,
-			});
+			};
+			rows.push(row);
+			byLabel.set(item.label, row);
 		}
 		theorems = rows;
 		phase = 'graph';
@@ -750,10 +789,10 @@
 		</div>
 		{#if theorems.length > 0}
 			<div class="summary">
-				{#if nPending > 0}<span class="pending">{nPending} pending</span>{/if}
-				{#if nProving > 0}<span class="proving">{nProving} active</span>{/if}
-				<span class="ok">{nProved} ✓</span>
-				{#if nErr > 0}<span class="err">{nErr} ✗</span>{/if}
+				{#if counts.pending > 0}<span class="pending">{counts.pending} pending</span>{/if}
+				{#if counts.proving > 0}<span class="proving">{counts.proving} active</span>{/if}
+				<span class="ok">{counts.proved} ✓</span>
+				{#if counts.error > 0}<span class="err">{counts.error} ✗</span>{/if}
 				{#if phase === 'done'}<span>{(elapsedMs / 1000).toFixed(1)}s wall</span>{/if}
 				{#if avgMs > 0}<span class="dim">avg {avgMs.toFixed(1)} ms/thm</span>{/if}
 				{#if slowest}<span class="dim">slowest {slowest.label} {(slowest.importMs ?? 0).toFixed(0)} ms</span>{/if}
@@ -767,7 +806,7 @@
 						{showHisto ? 'hide plot' : 'plot'}
 					</button>
 				{/if}
-				{#if nErr > 0}
+				{#if counts.error > 0}
 					<button class="copy" onclick={copyFailures}>Copy failures (JSON)</button>
 				{/if}
 				{#if copyMsg}<span class="dim">{copyMsg}</span>{/if}
@@ -783,26 +822,52 @@
 				</div>
 			{/if}
 			{#if showHisto && histo}
+				{@const bw = plotW / HISTO_BUCKETS}
 				<div class="histo">
-					<svg viewBox="0 0 {HW} {HH}" preserveAspectRatio="none" role="img"
-						aria-label="histogram of import times">
-						{#each histo.counts as c, i (i)}
-							{@const bw = (HW - 2 * HPAD) / HISTO_BUCKETS}
-							{@const h = (c / histo.peak) * (HH - 2 * HPAD)}
-							<rect
-								x={HPAD + i * bw}
-								y={HH - HPAD - h}
-								width={Math.max(bw - 1, 1)}
-								height={h}
-								fill="var(--accent)"
-							/>
+					<svg viewBox="0 0 {HW} {HH}" role="img"
+						aria-label="histogram of import times (log-scale buckets)"
+						onmouseleave={() => (hoverBucket = null)}>
+						<!-- y-axis (count) gridlines + labels -->
+						{#each yTicks(histo.peak) as v (v)}
+							{@const y = M.t + plotH - (v / histo.peak) * plotH}
+							<line class="grid" x1={M.l} y1={y} x2={HW - M.r} y2={y} />
+							<text class="ytick" x={M.l - 6} y={y + 3.5}>{v}</text>
 						{/each}
-						<line x1={HPAD} y1={HH - HPAD} x2={HW - HPAD} y2={HH - HPAD} stroke="var(--border)" />
+						<!-- bars -->
+						{#each histo.counts as c, i (i)}
+							{@const h = (c / histo.peak) * plotH}
+							<rect
+								class="bar"
+								class:hot={hoverBucket === i}
+								x={M.l + i * bw}
+								y={M.t + plotH - h}
+								width={Math.max(bw - 1, 0.5)}
+								height={h}
+								onmouseenter={() => (hoverBucket = i)}
+							>
+								<title>{fmtMs(histo.edge(i))}–{fmtMs(histo.edge(i + 1))} ms · {c} thm</title>
+							</rect>
+						{/each}
+						<!-- x-axis (ms) baseline + log-spaced ticks -->
+						<line class="axis" x1={M.l} y1={M.t + plotH} x2={HW - M.r} y2={M.t + plotH} />
+						{#each xTicks() as b (b)}
+							{@const x = M.l + (b / HISTO_BUCKETS) * plotW}
+							<line class="tick" x1={x} y1={M.t + plotH} x2={x} y2={M.t + plotH + 4} />
+							<text class="xtick" {x} y={M.t + plotH + 16}>{fmtMs(histo.edge(b))}</text>
+						{/each}
 					</svg>
 					<div class="haxis">
-						<span>{histo.min.toFixed(2)} ms</span>
-						<span class="dim">log scale · {HISTO_BUCKETS} buckets · peak {histo.peak}</span>
-						<span>{histo.max.toFixed(1)} ms</span>
+						<span class="dim">import time (ms, log scale)</span>
+						{#if hoverBucket !== null}
+							<span class="hot"
+								>{fmtMs(histo.edge(hoverBucket))}–{fmtMs(histo.edge(hoverBucket + 1))} ms ·
+								{histo.counts[hoverBucket]} thm</span
+							>
+						{:else}
+							<span class="dim"
+								>{HISTO_BUCKETS} buckets · {histo.total} timed · peak {histo.peak}</span
+							>
+						{/if}
 					</div>
 				</div>
 			{/if}
@@ -1486,7 +1551,37 @@
 	.histo svg {
 		display: block;
 		width: 100%;
-		height: 160px;
+		height: auto;
+	}
+	.histo .bar {
+		fill: var(--accent);
+	}
+	.histo .bar:hover,
+	.histo .bar.hot {
+		fill: var(--fg);
+	}
+	.histo .axis {
+		stroke: var(--border);
+	}
+	.histo .grid {
+		stroke: var(--border);
+		stroke-dasharray: 2 3;
+		opacity: 0.5;
+	}
+	.histo .tick {
+		stroke: var(--border);
+	}
+	.histo .xtick {
+		fill: var(--muted);
+		font-size: 11px;
+		text-anchor: middle;
+		font-variant-numeric: tabular-nums;
+	}
+	.histo .ytick {
+		fill: var(--muted);
+		font-size: 11px;
+		text-anchor: end;
+		font-variant-numeric: tabular-nums;
 	}
 	.haxis {
 		display: flex;
@@ -1498,6 +1593,10 @@
 	}
 	.haxis .dim {
 		color: var(--muted);
+	}
+	.haxis .hot {
+		color: var(--accent);
+		font-weight: 600;
 	}
 	.copy.on {
 		border-color: var(--accent);

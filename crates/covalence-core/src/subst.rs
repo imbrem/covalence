@@ -40,7 +40,7 @@ pub fn close_with<C: TrustedCons + ?Sized>(t: &Term, name: &str, cons: &mut C) -
 
 fn close_at<C: TrustedCons + ?Sized>(t: &Term, name: &str, depth: u32, cons: &mut C) -> Term {
     match t.kind() {
-        TermKind::Free(n, _) if n == name => cons.cons(TermKind::Bound(depth)),
+        TermKind::Free(n, _) if n == name => cons.make(TermKind::Bound(depth)),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -60,11 +60,11 @@ fn close_at<C: TrustedCons + ?Sized>(t: &Term, name: &str, depth: u32, cons: &mu
         TermKind::App(f, x) => {
             let f = close_at(f, name, depth, cons);
             let x = close_at(x, name, depth, cons);
-            cons.cons(TermKind::App(f, x))
+            cons.make(TermKind::App(f, x))
         }
         TermKind::Abs(ty, body) => {
             let body = close_at(body, name, depth + 1, cons);
-            cons.cons(TermKind::Abs(ty.clone(), body))
+            cons.make(TermKind::Abs(ty.clone(), body))
         }
     }
 }
@@ -88,9 +88,9 @@ fn inst<C: TrustedCons + ?Sized>(t: &Term, u: &Term, depth: u32, cons: &mut C) -
         TermKind::Bound(i) => {
             let i = *i;
             match i.cmp(&depth) {
-                Ordering::Less => cons.cons(TermKind::Bound(i)),
+                Ordering::Less => cons.make(TermKind::Bound(i)),
                 Ordering::Equal => shift_with(u, depth as i64, 0, cons),
-                Ordering::Greater => cons.cons(TermKind::Bound(i - 1)),
+                Ordering::Greater => cons.make(TermKind::Bound(i - 1)),
             }
         }
         TermKind::Free(..)
@@ -111,11 +111,11 @@ fn inst<C: TrustedCons + ?Sized>(t: &Term, u: &Term, depth: u32, cons: &mut C) -
         TermKind::App(f, x) => {
             let f = inst(f, u, depth, cons);
             let x = inst(x, u, depth, cons);
-            cons.cons(TermKind::App(f, x))
+            cons.make(TermKind::App(f, x))
         }
         TermKind::Abs(ty, body) => {
             let body = inst(body, u, depth + 1, cons);
-            cons.cons(TermKind::Abs(ty.clone(), body))
+            cons.make(TermKind::Abs(ty.clone(), body))
         }
     }
 }
@@ -153,7 +153,7 @@ fn shift_inner<C: TrustedCons + ?Sized>(t: &Term, delta: i64, cutoff: u32, cons:
         TermKind::Bound(i) => {
             let i = *i;
             if i < cutoff {
-                return cons.cons(TermKind::Bound(i));
+                return cons.make(TermKind::Bound(i));
             }
             let new = (i as i64)
                 .checked_add(delta)
@@ -164,7 +164,7 @@ fn shift_inner<C: TrustedCons + ?Sized>(t: &Term, delta: i64, cutoff: u32, cons:
             if new > u32::MAX as i64 {
                 panic!("shift_by: Bound index exceeds u32::MAX (i={i}, delta={delta})");
             }
-            cons.cons(TermKind::Bound(new as u32))
+            cons.make(TermKind::Bound(new as u32))
         }
         TermKind::Free(..)
         | TermKind::Const(..)
@@ -184,11 +184,11 @@ fn shift_inner<C: TrustedCons + ?Sized>(t: &Term, delta: i64, cutoff: u32, cons:
         TermKind::App(f, x) => {
             let f = shift_inner(f, delta, cutoff, cons);
             let x = shift_inner(x, delta, cutoff, cons);
-            cons.cons(TermKind::App(f, x))
+            cons.make(TermKind::App(f, x))
         }
         TermKind::Abs(ty, body) => {
             let body = shift_inner(body, delta, cutoff + 1, cons);
-            cons.cons(TermKind::Abs(ty.clone(), body))
+            cons.make(TermKind::Abs(ty.clone(), body))
         }
     }
 }
@@ -239,11 +239,11 @@ fn subst_free_at<C: TrustedCons + ?Sized>(
         TermKind::App(f, x) => {
             let f = subst_free_at(f, name, r, depth, cons);
             let x = subst_free_at(x, name, r, depth, cons);
-            cons.cons(TermKind::App(f, x))
+            cons.make(TermKind::App(f, x))
         }
         TermKind::Abs(ty, body) => {
             let body = subst_free_at(body, name, r, depth + 1, cons);
-            cons.cons(TermKind::Abs(ty.clone(), body))
+            cons.make(TermKind::Abs(ty.clone(), body))
         }
     }
 }
@@ -374,7 +374,7 @@ pub fn subst_tfrees_in_term_with<C: TrustedCons + ?Sized>(
             TermKind::Def(d.with_instance_type(subst_tfrees_in_type(d.instance_type(), sub)))
         }
     };
-    cons.cons(kind)
+    cons.make(kind)
 }
 
 /// Replace every `TFree(name)` with `r` in every type annotation inside
@@ -442,7 +442,7 @@ pub fn subst_tfree_in_term_with<C: TrustedCons + ?Sized>(
             TermKind::Def(d.with_instance_type(subst_tfree_in_type(d.instance_type(), name, r)))
         }
     };
-    cons.cons(kind)
+    cons.make(kind)
 }
 
 // ============================================================================

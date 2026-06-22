@@ -532,7 +532,7 @@ impl Term {
             TermKind::Abs(ty, body) => TermKind::Abs(ty.clone(), body.cons_with(cons)),
             other => other.clone(),
         };
-        cons.cons(kind)
+        cons.make(kind)
     }
 
     // ---- smart constructors ----

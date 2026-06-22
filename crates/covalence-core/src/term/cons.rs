@@ -71,22 +71,27 @@ mod sealed {
 /// `Arc` each call is fine), and it need not preserve `Arc` identity
 /// across calls.
 pub trait TermCons {
-    /// Produce a `Term` for `kind`. Should be structurally equal to a
-    /// freshly-allocated `Term` built from `kind`; [`Checked`] enforces
-    /// this when the result is used in a trusted position.
-    fn cons(&mut self, kind: TermKind) -> Term;
+    /// Offer a `Term` for `kind`, or `None` to let the caller allocate a
+    /// fresh `Arc` itself. A returned `Some(t)` *should* be structurally
+    /// equal to `kind` ([`Checked`] enforces this when used trusted).
+    ///
+    /// Taking `kind` by reference and returning `Option` is what makes
+    /// constructors **composable**: a layered policy tries one source
+    /// then the next with `a.cons(kind).or_else(|| b.cons(kind))`, and
+    /// the no-op (`None`) costs nothing.
+    fn cons(&mut self, kind: &TermKind) -> Option<Term>;
 }
 
 // Forwarding impls so `&mut dyn TermCons` / `Box<dyn TermCons>` can be
 // dropped straight into [`Checked`] (and other `TermCons` positions).
 impl<C: TermCons + ?Sized> TermCons for &mut C {
-    fn cons(&mut self, kind: TermKind) -> Term {
+    fn cons(&mut self, kind: &TermKind) -> Option<Term> {
         (**self).cons(kind)
     }
 }
 
 impl<C: TermCons + ?Sized> TermCons for Box<C> {
-    fn cons(&mut self, kind: TermKind) -> Term {
+    fn cons(&mut self, kind: &TermKind) -> Option<Term> {
         (**self).cons(kind)
     }
 }
@@ -102,8 +107,26 @@ impl<C: TermCons + ?Sized> TermCons for Box<C> {
 /// `()`, [`HashCons`], and [`Checked`] (which restores the guarantee by
 /// re-checking) — can exist.
 pub trait TrustedCons: sealed::Sealed {
-    /// Produce a `Term` structurally equal to `kind`.
-    fn cons(&mut self, kind: TermKind) -> Term;
+    /// Offer a `Term` for `kind`, or `None` to defer allocation to the
+    /// caller.
+    ///
+    /// `Soundness:` any `Some(t)` returned must satisfy `*t.kind() ==
+    /// *kind` (structural equality). `None` is always sound — the caller
+    /// allocates a fresh `Arc` from `kind`, which is `kind` by
+    /// construction. So a constructor that does no interning simply
+    /// returns `None` (see `()`).
+    fn cons(&mut self, kind: &TermKind) -> Option<Term>;
+
+    /// Build a `Term` for `kind`, allocating a fresh `Arc` ourselves
+    /// when [`cons`](Self::cons) defers (`None`). This is the entry point
+    /// the term-building APIs call; it always returns a term structurally
+    /// equal to `kind`.
+    fn make(&mut self, kind: TermKind) -> Term {
+        match self.cons(&kind) {
+            Some(t) => t,
+            None => Term::alloc(kind),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -113,12 +136,12 @@ pub trait TrustedCons: sealed::Sealed {
 impl sealed::Sealed for () {}
 
 impl TrustedCons for () {
-    /// `Soundness:` allocates a fresh `Arc` directly from `kind`, so the
-    /// result is `kind` by construction. This is the canonical witness
-    /// that a `TrustedCons` need not actually intern.
+    /// `Soundness:` always defers (`None`), so [`make`](TrustedCons::make)
+    /// allocates a fresh `Arc` from `kind` — `kind` by construction. The
+    /// canonical witness that a `TrustedCons` need not intern at all.
     #[inline]
-    fn cons(&mut self, kind: TermKind) -> Term {
-        Term::alloc(kind)
+    fn cons(&mut self, _kind: &TermKind) -> Option<Term> {
+        None
     }
 }
 
@@ -152,16 +175,13 @@ impl<C> Checked<C> {
 impl<C: TermCons + ?Sized> sealed::Sealed for Checked<C> {}
 
 impl<C: TermCons + ?Sized> TrustedCons for Checked<C> {
-    fn cons(&mut self, kind: TermKind) -> Term {
-        let expected = kind.clone();
-        let produced = self.0.cons(kind);
-        if *produced.kind() == expected {
-            produced
-        } else {
-            // The untrusted constructor returned a non-equal term;
-            // discard it and build the requested term ourselves.
-            Term::alloc(expected)
-        }
+    /// `Soundness:` keeps the wrapped constructor's offer only when it is
+    /// structurally equal to `kind`; any other result (or `None`) becomes
+    /// `None`, so [`make`](TrustedCons::make) allocates the requested term
+    /// itself. Either way the contract holds regardless of what the
+    /// untrusted code does.
+    fn cons(&mut self, kind: &TermKind) -> Option<Term> {
+        self.0.cons(kind).filter(|t| t.kind() == kind)
     }
 }
 
@@ -250,13 +270,15 @@ impl<D> Deref for HashCons<D> {
 impl<D> sealed::Sealed for HashCons<D> {}
 
 impl<D> TrustedCons for HashCons<D> {
-    fn cons(&mut self, kind: TermKind) -> Term {
-        let t = Term::alloc(kind);
+    fn cons(&mut self, kind: &TermKind) -> Option<Term> {
+        // The set is keyed by `Term`, so we materialise a candidate to
+        // look up; on a hit we drop it and share the representative.
+        let t = Term::alloc(kind.clone());
         if let Some(existing) = self.set.get(&t) {
-            return existing.clone();
+            return Some(existing.clone());
         }
         self.set.insert(t.clone());
-        t
+        Some(t)
     }
 }
 
@@ -270,29 +292,30 @@ mod tests {
         Term::free(name, Type::bool())
     }
 
-    /// A `TermCons` that forwards faithfully (through `()`), so `Checked`
-    /// should always accept its output.
+    /// A `TermCons` that faithfully offers a fresh equal term, so
+    /// `Checked` should always accept its output.
     struct Forward;
     impl TermCons for Forward {
-        fn cons(&mut self, kind: TermKind) -> Term {
-            ().cons(kind)
+        fn cons(&mut self, kind: &TermKind) -> Option<Term> {
+            Some(Term::alloc(kind.clone()))
         }
     }
 
-    /// A malicious `TermCons` that ignores the request and always returns
-    /// the same wrong term. `Checked` must repair every result.
+    /// A malicious `TermCons` that ignores the request and always offers
+    /// the same wrong term. `Checked` must reject every result.
     struct Evil;
     impl TermCons for Evil {
-        fn cons(&mut self, _kind: TermKind) -> Term {
-            Term::bound(999)
+        fn cons(&mut self, _kind: &TermKind) -> Option<Term> {
+            Some(Term::bound(999))
         }
     }
 
     #[test]
-    fn unit_cons_returns_equal_but_distinct_arcs() {
+    fn unit_cons_defers_and_make_allocates_distinct_arcs() {
         let k = || TermKind::Free("a".into(), Type::bool());
-        let a = ().cons(k());
-        let b = ().cons(k());
+        assert!(().cons(&k()).is_none()); // () always defers
+        let a = ().make(k());
+        let b = ().make(k());
         assert_eq!(a, b); // structurally equal
         assert_ne!(a.ptr_id(), b.ptr_id()); // but not interned
     }
@@ -301,13 +324,15 @@ mod tests {
     fn hashcons_dedups_equal_kinds() {
         let mut hc = HashCons::new();
         let k = || TermKind::Free("a".into(), Type::bool());
-        let a = hc.cons(k());
-        let b = hc.cons(k());
+        let a = hc.make(k());
+        let b = hc.make(k());
         assert_eq!(a, b);
         assert_eq!(a.ptr_id(), b.ptr_id()); // shared Arc
         assert_eq!(hc.len(), 1); // Deref to IndexSet
+        // A direct `cons` hit returns the same representative.
+        assert_eq!(hc.cons(&k()).unwrap().ptr_id(), a.ptr_id());
 
-        let c = hc.cons(TermKind::Free("b".into(), Type::bool()));
+        let c = hc.make(TermKind::Free("b".into(), Type::bool()));
         assert_ne!(a.ptr_id(), c.ptr_id());
         assert_eq!(hc.len(), 2);
     }
@@ -315,7 +340,7 @@ mod tests {
     #[test]
     fn hashcons_deref_to_indexset() {
         let mut hc = HashCons::new();
-        let a = hc.cons(TermKind::Free("a".into(), Type::bool()));
+        let a = hc.make(TermKind::Free("a".into(), Type::bool()));
         assert!(hc.contains(&a));
         assert!(!hc.is_empty());
         assert_eq!(hc.iter().count(), 1);
@@ -325,7 +350,7 @@ mod tests {
     fn hashcons_custom_data() {
         let mut hc: HashCons<u32> = HashCons::with_data(0);
         *hc.data_mut() += 7;
-        hc.cons(TermKind::Bool(true));
+        hc.make(TermKind::Bool(true));
         assert_eq!(*hc.data(), 7);
         assert_eq!(hc.len(), 1);
         let (set, data) = hc.into_parts();
@@ -361,17 +386,19 @@ mod tests {
     fn checked_passes_through_correct_cons() {
         let mut checked = Checked::new(Forward);
         let want = TermKind::App(bvar("f"), bvar("x"));
-        let got = checked.cons(want.clone());
-        assert_eq!(*got.kind(), want);
+        // Forward's offer is structurally equal, so Checked keeps it.
+        assert_eq!(*checked.cons(&want).unwrap().kind(), want);
+        assert_eq!(*checked.make(want.clone()).kind(), want);
     }
 
     #[test]
-    fn checked_repairs_malicious_cons() {
+    fn checked_rejects_malicious_cons() {
         let mut checked = Checked::new(Evil);
         let want = TermKind::Free("a".into(), Type::bool());
-        let got = checked.cons(want.clone());
-        // Despite Evil returning Bound(999), the result is the requested
-        // term.
+        // Evil's wrong offer is filtered to None...
+        assert!(checked.cons(&want).is_none());
+        // ...so `make` allocates the requested term itself.
+        let got = checked.make(want.clone());
         assert_eq!(*got.kind(), want);
         assert_ne!(*got.kind(), TermKind::Bound(999));
     }
@@ -393,13 +420,13 @@ mod tests {
         let tc: &mut dyn TermCons = &mut fwd;
         let mut checked = Checked::new(tc);
         let want = TermKind::Bool(false);
-        assert_eq!(*checked.cons(want.clone()).kind(), want);
+        assert_eq!(*checked.make(want.clone()).kind(), want);
 
         // Same via `Box<dyn TermCons>`.
         let boxed: Box<dyn TermCons> = Box::new(Evil);
         let mut checked = Checked::new(boxed);
         let want = TermKind::Free("z".into(), Type::bool());
-        assert_eq!(*checked.cons(want.clone()).kind(), want); // repaired
+        assert_eq!(*checked.make(want.clone()).kind(), want); // allocated
     }
 
     #[test]

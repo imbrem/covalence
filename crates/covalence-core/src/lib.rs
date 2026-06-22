@@ -81,4 +81,4 @@ pub use term::{
     SmallIntLiteral, Term, TermCons, TermKind, TrustedCons, TyError, Type, TypeKind, Var,
 };
 pub use thm::{Thm, TypeDef};
-pub use ty::{TypeList, TypeSpec};
+pub use ty::{TrustedTypeCons, TypeCons, TypeHashCons, TypeList, TypeSpec};

@@ -27,6 +27,7 @@
 
 pub mod ac;
 pub mod category;
+pub mod debug;
 pub mod hash;
 pub mod hol_light_obs;
 pub mod init;

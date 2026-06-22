@@ -192,7 +192,7 @@ pub use stream::{
     stream_head, stream_head_spec, stream_iterate, stream_iterate_spec, stream_mk, stream_mk_spec,
     stream_nth, stream_nth_spec, stream_spec, stream_tail, stream_tail_spec,
 };
-pub use symbol::Symbol;
+pub use symbol::{Symbol, SymbolRef, TrustedCmp, TrustedSymbol};
 pub use text::{
     CHAR_MAX_EXCL, SURROGATE_HI, SURROGATE_LO, char_code, char_code_spec, char_mk, char_mk_spec,
     char_spec, char_ty, string_spec, string_ty,

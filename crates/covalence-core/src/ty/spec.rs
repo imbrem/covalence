@@ -15,11 +15,11 @@
 use std::sync::Arc;
 
 use crate::defs::helpers;
-use crate::defs::symbol::{Symbol, symbol_cmp, symbol_eq, symbol_hash};
+use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};
 use crate::term::{Term, Type};
 
 struct TypeSpecInner {
-    symbol: Arc<dyn Symbol>,
+    symbol: SymbolRef,
     ty: Option<Type>,
     tm: Option<Term>,
 }
@@ -48,7 +48,7 @@ impl TypeSpec {
     /// A **subtype**: the carrier type `carrier` carved down by a
     /// selector predicate `pred : carrier → bool` (Hilbert-ε style —
     /// the type denotes `{ x : carrier | pred x }`).
-    pub fn subtype<S: Symbol>(symbol: S, carrier: Type, pred: Term) -> Self {
+    pub fn subtype<S: TrustedSymbol>(symbol: S, carrier: Type, pred: Term) -> Self {
         Self::raw(symbol, Some(carrier), Some(pred))
     }
 
@@ -56,7 +56,7 @@ impl TypeSpec {
     /// (always-true) predicate — `newtype S base` is isomorphic to
     /// `base` but a distinct type (e.g. `result a b := coprod a b`,
     /// `u8 := prod u4 u4`).
-    pub fn newtype<S: Symbol>(symbol: S, base: Type) -> Self {
+    pub fn newtype<S: TrustedSymbol>(symbol: S, base: Type) -> Self {
         let pred = helpers::any(&base);
         Self::raw(symbol, Some(base), Some(pred))
     }
@@ -64,18 +64,33 @@ impl TypeSpec {
     /// Raw constructor (escape hatch — prefer [`Self::subtype`] /
     /// [`Self::newtype`]). Used for the few specs that need an absent
     /// carrier or body.
-    pub(crate) fn raw<S: Symbol>(symbol: S, ty: Option<Type>, tm: Option<Term>) -> Self {
-        Self(Arc::new(TypeSpecInner {
-            symbol: Arc::new(symbol),
-            ty,
-            tm,
-        }))
+    pub(crate) fn raw<S: TrustedSymbol>(symbol: S, ty: Option<Type>, tm: Option<Term>) -> Self {
+        Self::from_ref(SymbolRef::trusted(symbol), ty, tm)
+    }
+
+    /// Like [`Self::subtype`] but with an **untrusted** name (compared by
+    /// `Arc` pointer rather than by `label()`). For user-supplied symbol
+    /// types whose comparison the kernel will not vouch for.
+    pub fn subtype_untrusted<S: Symbol>(symbol: S, carrier: Type, pred: Term) -> Self {
+        Self::from_ref(SymbolRef::untrusted(symbol), Some(carrier), Some(pred))
+    }
+
+    /// Like [`Self::newtype`] but with an **untrusted** name (see
+    /// [`Self::subtype_untrusted`]).
+    pub fn newtype_untrusted<S: Symbol>(symbol: S, base: Type) -> Self {
+        let pred = helpers::any(&base);
+        Self::from_ref(SymbolRef::untrusted(symbol), Some(base), Some(pred))
+    }
+
+    /// Construct directly from a [`SymbolRef`] (trusted or untrusted).
+    pub(crate) fn from_ref(symbol: SymbolRef, ty: Option<Type>, tm: Option<Term>) -> Self {
+        Self(Arc::new(TypeSpecInner { symbol, ty, tm }))
     }
 
     /// The spec's symbol, as a `&dyn Symbol`. Call `.label()` for
     /// display / serialisation.
     pub fn symbol(&self) -> &dyn Symbol {
-        &*self.0.symbol
+        self.0.symbol.symbol()
     }
 
     /// The carrier type, if present.
@@ -112,7 +127,7 @@ impl PartialEq for TypeSpec {
         if a.ty != b.ty || a.tm != b.tm {
             return false;
         }
-        symbol_eq(&*a.symbol, &*b.symbol)
+        a.symbol == b.symbol
     }
 }
 
@@ -131,7 +146,8 @@ impl Ord for TypeSpec {
         }
         let a = &*self.0;
         let b = &*other.0;
-        symbol_cmp(&*a.symbol, &*b.symbol)
+        a.symbol
+            .cmp(&b.symbol)
             .then_with(|| a.ty.cmp(&b.ty))
             .then_with(|| a.tm.cmp(&b.tm))
     }
@@ -139,7 +155,7 @@ impl Ord for TypeSpec {
 
 impl std::hash::Hash for TypeSpec {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        symbol_hash(&*self.0.symbol, state);
+        self.0.symbol.hash(state);
         self.0.ty.hash(state);
         self.0.tm.hash(state);
     }

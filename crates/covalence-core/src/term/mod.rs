@@ -21,11 +21,13 @@
 //! `Type` / `TypeKind` names are re-exported here so
 //! existing `crate::term::{Term, Type, …}` imports keep working.
 
+pub mod cons;
 mod observer;
 pub mod set;
 mod spec;
 mod term;
 
+pub use cons::{Checked, HashCons, TermCons, TrustedCons};
 pub use observer::{Hint, Object, ObsEq, ObsImp, ObsTrue, Observer};
 pub use set::TermSet;
 pub use spec::TermSpec;

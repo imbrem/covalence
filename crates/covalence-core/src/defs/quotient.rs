@@ -28,7 +28,7 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::spec::TypeSpec;
-use super::symbol::Symbol;
+use super::symbol::TrustedSymbol;
 
 /// `λS:base→bool. (∀x y. rel x y ⟹ S x ⟹ S y) ∧ (∃x. S x)` — selects
 /// the non-empty subsets of `base` upward-closed under `rel`.
@@ -81,7 +81,7 @@ impl TypeSpec {
     /// `close base rel` — the type of non-empty subsets of `base`
     /// upward-closed under `rel : base → base → bool`; a subtype of
     /// the powerset `base → bool`.
-    pub fn close<S: Symbol>(symbol: S, base: Type, rel: Term) -> Self {
+    pub fn close<S: TrustedSymbol>(symbol: S, base: Type, rel: Term) -> Self {
         let powerset = Type::fun(base.clone(), Type::bool());
         TypeSpec::subtype(symbol, powerset, close_predicate(base, rel))
     }
@@ -93,7 +93,7 @@ impl TypeSpec {
     /// representative `z`. `rel` is expected to be an equivalence
     /// relation (reflexive / symmetric / transitive); only then do the
     /// inhabitants partition `base`.
-    pub fn quot<S: Symbol>(symbol: S, base: Type, rel: Term) -> Self {
+    pub fn quot<S: TrustedSymbol>(symbol: S, base: Type, rel: Term) -> Self {
         let powerset = Type::fun(base.clone(), Type::bool());
         TypeSpec::subtype(symbol, powerset, quot_predicate(base, rel))
     }

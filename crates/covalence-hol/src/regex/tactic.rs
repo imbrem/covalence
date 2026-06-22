@@ -315,8 +315,11 @@ fn prove_member_bytes(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
     };
     // Soundness lives at the denotation instance `'r := set (list u8)`; the
     // `Matches`/rule machinery is schematic in `'r`, so pin the derivation
-    // there before discharging it into soundness.
-    let lang_ty = ir::denote(&a, rterm.clone())?.type_of()?;
+    // there before discharging it into soundness. The instance type is just
+    // `set (list u8)` — build it directly rather than `denote(rterm).type_of()`,
+    // which would construct (and re-type-traverse) the whole impredicative-star
+    // denotation just to read its type.
+    let lang_ty = crate::init::lang::lang(word_ty());
     let der = der.inst_tfree("r", lang_ty)?;
     let snd = ir::soundness_at(&a, &rterm, &w)?; // ⊢ Matches r w ⟹ mem w ⟦r⟧
     Ok(Some(snd.imp_elim(der)?))

@@ -693,27 +693,33 @@ fn denotation_pred(alpha: &Type) -> Result<Term> {
     Ok(Term::abs(rty_set.clone(), covalence_core::subst::close(&inner, "r")))
 }
 
+/// The polymorphic alphabet type variable `'a` the cached `Closed D` proof is
+/// run at. Distinct from the regex fold-result variable `'r`.
+fn poly_alphabet() -> Type {
+    Type::tfree("a")
+}
+
 cached_thm! {
-    /// `⊢ Closed D` for `D = λr w. mem w ⟦r⟧` at the **byte** alphabet `u8` —
-    /// the input-independent, most expensive part of [`soundness_at`] (the
-    /// impredicative Kleene-star closure proof), cached so `prove_member` over
-    /// bytes pays it once instead of on every call.
-    fn closed_d_u8() -> Result<Thm> {
-        let a = u8_alphabet();
+    /// `⊢ Closed D` for `D = λr w. mem w ⟦r⟧` at a **polymorphic** alphabet `'a`
+    /// — the input-independent, most expensive part of [`soundness_at`] (the
+    /// impredicative Kleene-star closure proof). Proving it at a *type variable*
+    /// rather than a concrete alphabet is the key optimisation: the discharge is
+    /// alphabet-parametric, so we pay it once at `'a` (~1s) and instantiate
+    /// `'a := alpha` per use ([`closed_d_for`]), instead of re-running the proof
+    /// at a heavy concrete type like `u8` (~3 minutes, dominated by structural
+    /// `Term`/`Type` comparisons over the `u8` subtype at every node).
+    fn closed_d_poly() -> Result<Thm> {
+        let a = poly_alphabet();
         discharge_closed(&a, &denotation_pred(&a)?)
     }
 }
 
-/// `⊢ Closed D` for `D = λr w. mem w ⟦r⟧` at `alpha`. The byte alphabet hits the
-/// [`closed_d_u8`] cache; every other alphabet proves it afresh. The cached
-/// theorem is built from the same [`denotation_pred`] `soundness_at` uses, so
-/// its `Closed D` conclusion matches `d_pred` for `imp_elim`.
-fn closed_d_for(alpha: &Type, d_pred: &Term) -> Result<Thm> {
-    if *alpha == u8_alphabet() {
-        Ok(closed_d_u8())
-    } else {
-        discharge_closed(alpha, d_pred)
-    }
+/// `⊢ Closed D` for `D = λr w. mem w ⟦r⟧` at `alpha` — the cached polymorphic
+/// proof ([`closed_d_poly`]) instantiated at `'a := alpha`. The instantiation
+/// commutes with `denotation_pred`, so the result's `Closed D` conclusion equals
+/// `soundness_at`'s `d_pred`-substituted antecedent for `imp_elim`.
+fn closed_d_for(alpha: &Type, _d_pred: &Term) -> Result<Thm> {
+    closed_d_poly().inst_tfree("a", alpha.clone())
 }
 
 /// Soundness for *specific* `r`, `w`. The whole proof runs at the denotation
@@ -731,24 +737,36 @@ pub fn soundness_at(alpha: &Type, r: &Term, w: &Term) -> Result<Thm> {
     // The regex / word at the denotation instance.
     let r_set = inst_r(alpha, r);
     let matches_set = inst_r(alpha, &matches(alpha, r, w)?);
-
     // ⊢ Matches r w ⟹ (Closed D ⟹ D r w)   (all_elim D on the ∀M).
     let assumed = Thm::assume(matches_set.clone())?; // {Matches r w} ⊢ Matches r w
     let specialized = assumed.all_elim(d_pred.clone())?; // {…} ⊢ Closed D ⟹ D r w
 
-    // Discharge `Closed D`. This step is **independent of `r`/`w`** — it depends
-    // only on `alpha` — and is by far the most expensive part of soundness (it
-    // reasons about the impredicative Kleene-star fixpoint). For the byte
-    // alphabet — the `prove_member` hot path — it is cached, so a matching
-    // membership proof pays it once rather than on every call.
+    // Discharge `Closed D`. This step is independent of `r`/`w` — it depends
+    // only on `alpha` — and is proved once at a polymorphic alphabet then
+    // instantiated ([`closed_d_for`]), so it is cheap here.
     let closed_d = closed_d_for(alpha, &d_pred)?; // ⊢ Closed D
     let d_rw = specialized.imp_elim(closed_d)?; // {Matches r w} ⊢ D r w
 
-    // D r w → β → mem w ⟦r⟧.
-    let d_app = d_pred.clone().apply(r_set.clone())?.apply(w.clone())?;
-    let to_mem = crate::init::eq::beta_nf(d_app); // ⊢ D r w = mem w ⟦r⟧
+    // `D r w → β → mem w ⟦r⟧`, doing **only the two outer β-steps** (apply
+    // `d_pred` to `r_set` then `w`). We must NOT β-*normalise* inside `⟦r⟧`: for a
+    // concrete regex, `denote(r)` is a fold whose reduction substitutes the
+    // impredicative lang-star handler into every node — exponential blow-up.
+    // `beta_conv` fires the top redex only, so the denotation is carried
+    // un-reduced, which is exactly the form the conclusion expects.
+    let g = d_pred.clone().apply(r_set.clone())?; // (λr.λw. mem w ⟦r⟧) r_set — a redex
+    let step1 = Thm::beta_conv(g)?; // ⊢ g = λw. mem w ⟦r_set⟧
+    let g_body = step1
+        .concl()
+        .as_eq()
+        .expect("beta_conv yields an equation")
+        .1
+        .clone();
+    let step1w = step1.cong_app(Thm::refl(w.clone())?)?; // ⊢ g w = (λw. …) w
+    let step2 = Thm::beta_conv(g_body.apply(w.clone())?)?; // ⊢ (λw. …) w = mem w ⟦r_set⟧
+    let to_mem = step1w.trans(step2)?; // ⊢ D r w = mem w ⟦r⟧
     let d_rw_beta = to_mem.eq_mp(d_rw)?; // {Matches r w} ⊢ mem w ⟦r⟧
-    d_rw_beta.imp_intro(&matches_set)
+    let out = d_rw_beta.imp_intro(&matches_set);
+    out
 }
 
 /// Prove `⊢ Closed D` where `D = λr w. mem w ⟦r⟧`, clause by clause, in the

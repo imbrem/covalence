@@ -18,18 +18,31 @@ tactic (the regular base case used by every grammar front end). See
     hash-consed**, and `desugar` shares the `r+ = r r*` case, but there is no
     interner: `desugar` of a class or `r{m,n}` still allocates fresh nodes per
     member/copy rather than deduplicating structurally-equal subtrees.
-  - [`tactic::prove_member`] additionally pays the slow soundness proof
-    (`init/regex::soundness_at`), ~minutes **per call**. The cost is the
-    `discharge_closed` step — proving the matching rules hold for
-    `D = λr w. mem w ⟦r⟧` over the *impredicative least-fixpoint* Kleene star
-    (`lang::lang_star` + `star_concat_closed`): the kernel re-traverses those
-    large set-comprehension terms on every β/congruence step. Crucially it is
-    **input-independent** (it does not depend on the bytestring, only the
-    alphabet), so the fix is to prove `soundness(u8)` / `discharge_closed(u8)`
-    *once* (a `LazyLock`, like the kernel envs) and have `prove_member`
-    instantiate it — O(1) per call after a one-time warmup. Until then the
-    membership integration test (`tests/regex_matching.rs`) is `#[ignore]`d and
-    `prove_matches` is the fast path.
+  - [`tactic::prove_member`] used to take **~136s per call**. Three fixes
+    (profiled with `COV_PROFILE`, see `crate::debug`) cut that to a one-time
+    warm-up + ~4ms per call thereafter:
+    1. it built `lang_ty` as `denote(rterm).type_of()` — constructing and
+       re-type-traversing the whole impredicative-star denotation just to read
+       the type `set (list u8)`; now built directly (`lang::lang(word_ty)`),
+       removing ~135s/call;
+    2. `soundness_at`'s `discharge_closed` (proving the rules for
+       `D = λr w. mem w ⟦r⟧` over the impredicative Kleene star) was re-run at
+       the *concrete* `u8` alphabet (~169s, dominated by structural `Type`
+       comparisons over the `u8` subtype). It is alphabet-parametric, so it is
+       now proved **once at a polymorphic type variable** (`closed_d_poly`,
+       cached) and `inst_tfree`-instantiated to `u8`;
+    3. it `beta_nf`-**normalised** `(λr w. mem w ⟦r⟧) rterm w`, which reduces
+       the concrete regex's denotation and duplicates the lang-star handler at
+       every fold node (exponential); replaced with **two head β-steps**
+       (`beta_conv`) that leave the denotation un-reduced — the form the
+       conclusion wants anyway.
+    **Remaining:** the *first* `prove_member` in a process still pays a one-time
+    **~55s warm-up** building the `denote`/`lang` machinery for the impredicative
+    star (cached after — the second call's `denotation_pred` is ~260µs). This is
+    the impredicative-term construction itself; collapsing it needs sharing /
+    hash-consing in the term builders (or a less-impredicative star encoding) —
+    a kernel / `covalence-pure`-split item. The membership integration test stays
+    `#[ignore]`d for that warm-up; `prove_matches` is unaffected and fast.
 
 - **`prove_word` variable matching is structural, not unifying.** A variable
   token is consumed only when the current regex sub-goal is *structurally equal*

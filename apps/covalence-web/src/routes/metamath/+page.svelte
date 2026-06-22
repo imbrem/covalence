@@ -10,6 +10,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { client } from '$lib/api';
+	import { renderMm } from '$lib/mmUnicode';
 	import type {
 		MmStatusMessage,
 		ImportedTheorem,
@@ -18,17 +19,35 @@
 		MmDbListEntry,
 	} from 'covalence-client';
 
-	// Named presets for the source dropdown. `custom` leaves the URL editable.
+	// Named presets for the source dropdown — the databases hosted on the
+	// Metamath Proof Explorer, all from the canonical metamath/set.mm repo.
+	// `custom` leaves the URL editable.
+	const MM_RAW = 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop';
 	const PRESETS: Record<string, { label: string; url: string; note: string }> = {
 		hol: {
 			label: 'hol.mm',
-			url: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/hol.mm',
-			note: '~151 thms · seconds',
+			url: `${MM_RAW}/hol.mm`,
+			note: 'HOL · ~151 thms · seconds',
 		},
 		set: {
 			label: 'set.mm',
-			url: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/set.mm',
-			note: '~48 MB · ~47k thms · minutes',
+			url: `${MM_RAW}/set.mm`,
+			note: 'ZFC (Metamath Proof Explorer) · ~48 MB · ~47k thms · minutes',
+		},
+		iset: {
+			label: 'iset.mm',
+			url: `${MM_RAW}/iset.mm`,
+			note: 'Intuitionistic Logic Explorer · large',
+		},
+		nf: {
+			label: 'nf.mm',
+			url: `${MM_RAW}/nf.mm`,
+			note: 'New Foundations Explorer · large',
+		},
+		ql: {
+			label: 'ql.mm',
+			url: `${MM_RAW}/ql.mm`,
+			note: 'Quantum Logic Explorer · small',
 		},
 	};
 
@@ -37,7 +56,7 @@
 	const user = $derived($page.url.searchParams.get('user') ?? undefined);
 
 	// --- landing state -----------------------------------------------------
-	let preset = $state<'hol' | 'set' | 'custom'>('hol');
+	let preset = $state<string>('hol');
 	let url = $state(PRESETS.hol.url);
 	let hashInput = $state(''); // attach-by-hash input (no download)
 	let workers = $state(0); // 0 = auto
@@ -94,6 +113,9 @@
 	let search = $state('');
 	let sortBy = $state<'order' | 'slow' | 'fast' | 'deps' | 'label'>('order');
 	let showHisto = $state(false);
+	// Typeset Metamath symbols to Unicode (the "structured view" toggle), on by
+	// default like the Metamath Proof Explorer.
+	let unicode = $state(true);
 	let copyMsg = $state('');
 	let ws: WebSocket | null = null;
 	// The hash the current DB view was loaded for (guards re-loads on URL churn).
@@ -694,8 +716,9 @@
 				<label class="field-lbl" title="fill the URL from a known preset">
 					source
 					<select class="preset-select" bind:value={preset} onchange={onPreset} disabled={importing}>
-						<option value="hol">hol.mm</option>
-						<option value="set">set.mm</option>
+						{#each Object.entries(PRESETS) as [k, p] (k)}
+							<option value={k} title={p.note}>{p.label}</option>
+						{/each}
 						<option value="custom">custom…</option>
 					</select>
 				</label>
@@ -801,6 +824,14 @@
 					<input type="checkbox" bind:checked={failuresOnly} />
 					failures only
 				</label>
+				<button
+					class="copy"
+					class:on={unicode}
+					title="typeset Metamath symbols to Unicode (structured view)"
+					onclick={() => (unicode = !unicode)}
+				>
+					{unicode ? 'unicode' : 'ascii'}
+				</button>
 				{#if timed.length > 0}
 					<button class="copy" class:on={showHisto} onclick={() => (showHisto = !showHisto)}>
 						{showHisto ? 'hide plot' : 'plot'}
@@ -907,7 +938,7 @@
 							>
 								<span class="dot status-{t.status}"></span>
 								<span class="lbl">{t.label}</span>
-								<span class="mini">{t.mm}</span>
+								<span class="mini">{renderMm(t.mm, unicode)}</span>
 								{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
 							</button>
 						{/each}
@@ -926,11 +957,11 @@
 				<h2>{selected.label}</h2>
 				<div class="field">
 					<div class="flabel">Metamath statement</div>
-					<pre class="mm">{selected.mm}</pre>
+					<pre class="mm">{renderMm(selected.mm, unicode)}</pre>
 					{#if detail && detail.ess.length > 0}
 						<div class="flabel sub">essential hypotheses</div>
 						{#each detail.ess as e (e)}
-							<pre class="mm hyp">{e}</pre>
+							<pre class="mm hyp">{renderMm(e, unicode)}</pre>
 						{/each}
 					{/if}
 				</div>

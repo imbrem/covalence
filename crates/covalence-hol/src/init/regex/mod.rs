@@ -681,6 +681,41 @@ fn inst_r(alpha: &Type, t: &Term) -> Term {
     covalence_core::subst::subst_tfree_in_term(t, "r", &lang_ty(alpha))
 }
 
+/// The soundness instantiation predicate `D := λr w. mem w ⟦r⟧`, with the
+/// regex argument at result type `set (list a)`. Depends only on `alpha`.
+fn denotation_pred(alpha: &Type) -> Result<Term> {
+    let wty = word_ty(alpha);
+    let rty_set = regex_at(alpha, &lang_ty(alpha)); // regex 'a at 'r := set(list a)
+    let big_r = Term::free("r", rty_set.clone());
+    let big_w = Term::free("w", wty.clone());
+    let den_body = mem(alpha, &big_w, &denote(alpha, big_r.clone())?); // mem w ⟦r⟧
+    let inner = Term::abs(wty.clone(), covalence_core::subst::close(&den_body, "w"));
+    Ok(Term::abs(rty_set.clone(), covalence_core::subst::close(&inner, "r")))
+}
+
+cached_thm! {
+    /// `⊢ Closed D` for `D = λr w. mem w ⟦r⟧` at the **byte** alphabet `u8` —
+    /// the input-independent, most expensive part of [`soundness_at`] (the
+    /// impredicative Kleene-star closure proof), cached so `prove_member` over
+    /// bytes pays it once instead of on every call.
+    fn closed_d_u8() -> Result<Thm> {
+        let a = u8_alphabet();
+        discharge_closed(&a, &denotation_pred(&a)?)
+    }
+}
+
+/// `⊢ Closed D` for `D = λr w. mem w ⟦r⟧` at `alpha`. The byte alphabet hits the
+/// [`closed_d_u8`] cache; every other alphabet proves it afresh. The cached
+/// theorem is built from the same [`denotation_pred`] `soundness_at` uses, so
+/// its `Closed D` conclusion matches `d_pred` for `imp_elim`.
+fn closed_d_for(alpha: &Type, d_pred: &Term) -> Result<Thm> {
+    if *alpha == u8_alphabet() {
+        Ok(closed_d_u8())
+    } else {
+        discharge_closed(alpha, d_pred)
+    }
+}
+
 /// Soundness for *specific* `r`, `w`. The whole proof runs at the denotation
 /// instance `'r := set (list a)`: the `Matches`/`Closed` machinery is
 /// polymorphic in the fold result `'r`, but the predicate `D = λr w. mem w
@@ -689,16 +724,9 @@ fn inst_r(alpha: &Type, t: &Term) -> Term {
 ///
 /// Returns `⊢ Matches r w ⟹ mem w ⟦r⟧` at `'r := set (list a)`.
 pub fn soundness_at(alpha: &Type, r: &Term, w: &Term) -> Result<Thm> {
-    let wty = word_ty(alpha);
-    let rty_set = regex_at(alpha, &lang_ty(alpha)); // regex 'a at 'r := set(list a)
-
     // The instantiation predicate D := λr w. mem w ⟦r⟧, the regex argument at
     // result type `set (list a)`.
-    let big_r = Term::free("r", rty_set.clone());
-    let big_w = Term::free("w", wty.clone());
-    let den_body = mem(alpha, &big_w, &denote(alpha, big_r.clone())?); // mem w ⟦r⟧
-    let inner = Term::abs(wty.clone(), covalence_core::subst::close(&den_body, "w"));
-    let d_pred = Term::abs(rty_set.clone(), covalence_core::subst::close(&inner, "r"));
+    let d_pred = denotation_pred(alpha)?;
 
     // The regex / word at the denotation instance.
     let r_set = inst_r(alpha, r);
@@ -708,8 +736,12 @@ pub fn soundness_at(alpha: &Type, r: &Term, w: &Term) -> Result<Thm> {
     let assumed = Thm::assume(matches_set.clone())?; // {Matches r w} ⊢ Matches r w
     let specialized = assumed.all_elim(d_pred.clone())?; // {…} ⊢ Closed D ⟹ D r w
 
-    // Discharge `Closed D`.
-    let closed_d = discharge_closed(alpha, &d_pred)?; // ⊢ Closed D
+    // Discharge `Closed D`. This step is **independent of `r`/`w`** — it depends
+    // only on `alpha` — and is by far the most expensive part of soundness (it
+    // reasons about the impredicative Kleene-star fixpoint). For the byte
+    // alphabet — the `prove_member` hot path — it is cached, so a matching
+    // membership proof pays it once rather than on every call.
+    let closed_d = closed_d_for(alpha, &d_pred)?; // ⊢ Closed D
     let d_rw = specialized.imp_elim(closed_d)?; // {Matches r w} ⊢ D r w
 
     // D r w → β → mem w ⟦r⟧.

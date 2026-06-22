@@ -304,10 +304,17 @@ fn member_no_match_is_none() {
 }
 
 #[test]
-#[ignore = "prove_member chains the slow soundness `lang`-discharge (~minutes); see regex SKELETONS"]
+#[ignore = "first prove_member call runs the slow soundness `lang`-discharge (~minutes); see regex SKELETONS"]
 fn member_chains_to_language_membership() {
-    // `a|b` against "a" lands `⊢ mem [a] ⟦a|b⟧`.
+    // `a|b` against "a" lands `⊢ mem [a] ⟦a|b⟧`. The first call warms the
+    // cached byte-alphabet `Closed D` proof.
     let thm = prove_member(&re("a|b"), "a").unwrap().unwrap();
+    assert_clean(&thm);
+
+    // A *different* regex and word: this reuses the same cached `Closed D`
+    // (it is input-independent), so it returns quickly rather than re-running
+    // the discharge — the amortisation the cache buys.
+    let thm = prove_member(&re("xy*"), "xyy").unwrap().unwrap();
     assert_clean(&thm);
 }
 

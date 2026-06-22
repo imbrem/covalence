@@ -15,7 +15,7 @@ use super::hol::{self, NativeHol};
 /// query, ported when the engine's term-query layer lands.)
 pub(super) fn var_name(v: &Term) -> &str {
     match v.kind() {
-        TermKind::Free(n, _) => n.as_str(),
+        TermKind::Free(v) => v.name(),
         _ => "__a",
     }
 }

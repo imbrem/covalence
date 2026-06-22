@@ -11,10 +11,12 @@
 //! - [`list`] — `TypeList`, the wrapper around an ordered list of
 //!   type arguments used throughout `TypeKind` / `TermKind`.
 
+pub mod cons;
 mod list;
 mod spec;
 mod ty;
 
+pub use cons::{TrustedTypeCons, TypeCons, TypeHashCons};
 pub use list::TypeList;
 pub use spec::TypeSpec;
 pub use ty::{Type, TypeKind};

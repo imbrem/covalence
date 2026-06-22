@@ -349,21 +349,18 @@ fn mk_comb_rejects_non_function_head() {
 }
 
 #[test]
-fn mk_comb_free_var_consistency_across_f_and_x() {
+fn mk_comb_allows_same_name_distinct_typed_vars() {
     // f = g where g mentions Free("z", nat→nat); x = y where x is
-    // Free("z", nat) — same name "z" with two types → FreeVarReuse
-    // when build re-types the whole theorem.
+    // Free("z", nat). Free variables are identified by name AND type, so
+    // `z:nat→nat` and `z:nat` are *distinct* variables that may coexist —
+    // `mk_comb` succeeds (no consistency rejection).
     let fnt = Type::fun(Type::nat(), Type::nat());
     let z_fun = Term::free("z", fnt.clone());
     let z_nat = Term::free("z", Type::nat());
     let f_eq = Thm::assume(eq_at(fnt.clone(), Term::free("f", fnt.clone()), z_fun)).unwrap();
-    // arg side: z_nat = w  (z : nat here)
     let x_eq = Thm::assume(nat_eq(z_nat, nat("w"))).unwrap();
-    // f z and g w: but g = z_fun (nat→nat), applied to z_nat (nat).
-    // The application g w is fine type-wise, but the union of hyps now
-    // contains z at two types → FreeVarReuse.
-    let err = f_eq.mk_comb(x_eq).unwrap_err();
-    assert!(matches!(err, Error::FreeVarReuse { .. }));
+    // ⊢ f z = z w, at type nat.
+    assert!(f_eq.mk_comb(x_eq).is_ok());
 }
 
 // ============================================================================
@@ -399,13 +396,11 @@ fn abs_rejects_var_free_in_hyps() {
 }
 
 #[test]
-fn abs_rejects_binder_type_mismatch() {
-    // x : nat in concl, abstract at bool.
+fn abs_over_differently_typed_var_binds_vacuously() {
+    // x : nat in concl, abstract `("x", bool)` — a distinct variable, so
+    // it binds nothing and succeeds vacuously.
     let thm = Thm::refl(nat("x")).unwrap();
-    assert!(matches!(
-        thm.abs("x", Type::bool()).unwrap_err(),
-        Error::BinderTypeMismatch { .. }
-    ));
+    assert!(thm.abs("x", Type::bool()).is_ok());
 }
 
 #[test]
@@ -756,12 +751,13 @@ fn inst_substitutes_in_hyps() {
 }
 
 #[test]
-fn inst_rejects_replacement_type_mismatch() {
+fn inst_type_mismatched_replacement_is_a_noop() {
+    // Instantiating `("n", bool)` (the replacement's type) leaves the
+    // `("n", nat)` occurrence untouched — a no-op, not an error.
     let refl = Thm::refl(nat("n")).unwrap();
-    assert!(matches!(
-        refl.inst("n", Term::bool_lit(true)).unwrap_err(),
-        Error::TypeMismatch { .. }
-    ));
+    let before = refl.concl().clone();
+    let out = refl.inst("n", Term::bool_lit(true)).unwrap();
+    assert_eq!(out.concl(), &before);
 }
 
 #[test]
@@ -856,26 +852,20 @@ fn weaken_rejects_non_bool_in_target() {
 }
 
 // ============================================================================
-// Cross-term Free consistency (Thm::build invariant)
+// Same-name / distinct-type free variables coexist (Var identity)
 // ============================================================================
 
 #[test]
-fn build_rejects_free_var_reuse_across_hyp_and_concl() {
-    // Construct {x:bool} ⊢ x:nat = x:nat — impossible: same name x at
-    // two types. Build a theorem where the hyp uses x:bool and the
-    // concl uses x:nat, via inst that introduces the inconsistency.
-    // Start: ⊢ (x:nat) = (x:nat); assume separately {x:bool} ⊢ x:bool;
-    // weaken won't combine. Instead: weaken refl(nat x) into a ctx
-    // containing x:bool.
+fn build_allows_same_name_distinct_typed_vars_across_hyp_and_concl() {
+    // `{x:bool} ⊢ x:nat = x:nat` is a *valid* theorem: free variables are
+    // identified by name AND type, so `x:bool` and `x:nat` are distinct
+    // variables and may both appear. (Before the `Var` model this was
+    // rejected as `FreeVarReuse`.)
     let x_nat = nat("x");
     let x_bool = boolv("x");
     let refl = Thm::refl(x_nat).unwrap(); // ⊢ x:nat = x:nat
     let target: covalence_core::Ctx = [x_bool].into_iter().collect();
-    // weaken checks subset first: refl has empty hyps ⊆ target, so it
-    // proceeds to build, which re-types concl (x:nat) and hyp (x:bool)
-    // in one env → FreeVarReuse.
-    let err = refl.weaken(target).unwrap_err();
-    assert!(matches!(err, Error::FreeVarReuse { .. }));
+    assert!(refl.weaken(target).is_ok());
 }
 
 #[test]

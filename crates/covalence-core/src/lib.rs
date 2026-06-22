@@ -77,8 +77,8 @@ pub use ctx::Ctx;
 pub use error::{Error, Result};
 pub use term::TermSpec;
 pub use term::{
-    Def, Hint, IntTag, Object, ObsEq, ObsImp, ObsTrue, Observer, SmallIntLiteral, Term, TermKind,
-    Type, TypeKind,
+    Checked, Def, HashCons, Hint, IntTag, Object, ObsEq, ObsImp, ObsTrue, Observer,
+    SmallIntLiteral, Term, TermCons, TermKind, TrustedCons, TyError, Type, TypeKind, Var,
 };
 pub use thm::{Thm, TypeDef};
-pub use ty::{TypeList, TypeSpec};
+pub use ty::{TrustedTypeCons, TypeCons, TypeHashCons, TypeList, TypeSpec};

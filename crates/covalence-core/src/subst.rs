@@ -13,22 +13,39 @@ use std::collections::BTreeMap;
 
 use smol_str::SmolStr;
 
-use crate::term::{Term, TermKind, Type, TypeKind};
+use crate::term::{Term, TermKind, TrustedCons, Type, TypeKind, Var};
 
 // ============================================================================
 // Substitution
 // ============================================================================
+//
+// The term-rebuilding operations come in `_with` / plain pairs (see
+// `crate::term::cons`): `foo_with(…, cons)` routes every constructed node
+// through a caller-supplied `TrustedCons`, and `foo(…)` delegates to
+// `foo_with(…, &mut ())` (allocate fresh, no interning). Pass a
+// `HashCons` to `_with` to intern the rebuilt structure. Subterms that
+// are reused unchanged are shared by `clone`, independent of `cons`.
 
 /// Abstract `Free(name, _)` into `Bound(0)`. Recurses into binders,
 /// incrementing the target depth on the way in. Used to build the body
 /// of an `Abs`/`All` from a term that mentions a fresh free variable.
 pub fn close(t: &Term, name: &str) -> Term {
-    close_at(t, name, 0)
+    close_with(t, name, &mut ())
 }
 
-fn close_at(t: &Term, name: &str, depth: u32) -> Term {
+/// [`close`] routing constructed nodes through `cons`.
+pub fn close_with<C: TrustedCons + ?Sized>(t: &Term, name: &str, cons: &mut C) -> Term {
+    close_at(t, name, 0, cons)
+}
+
+fn close_at<C: TrustedCons + ?Sized>(t: &Term, name: &str, depth: u32, cons: &mut C) -> Term {
+    // Bloom skip: if `name` provably doesn't occur free here, this subtree
+    // is unchanged — reuse it without recursing.
+    if !t.free_bloom().contains(name) {
+        return t.clone();
+    }
     match t.kind() {
-        TermKind::Free(n, _) if n == name => Term::bound(depth),
+        TermKind::Free(v) if v.name() == name => cons.make(TermKind::Bound(depth)),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -45,31 +62,38 @@ fn close_at(t: &Term, name: &str, depth: u32) -> Term {
         | TermKind::Obs(..)
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
-        TermKind::App(f, x) => Term::app(close_at(f, name, depth), close_at(x, name, depth)),
-        TermKind::Abs(ty, body) => Term::abs(ty.clone(), close_at(body, name, depth + 1)),
+        TermKind::App(f, x) => {
+            let f = close_at(f, name, depth, cons);
+            let x = close_at(x, name, depth, cons);
+            cons.make(TermKind::App(f, x))
+        }
+        TermKind::Abs(ty, body) => {
+            let body = close_at(body, name, depth + 1, cons);
+            cons.make(TermKind::Abs(ty.clone(), body))
+        }
     }
 }
 
-/// Instantiate `Bound(0)` with `u` inside `body` (which is the body of
-/// an `Abs`/`All`). The outer binder is consumed: `Bound(i)` for `i ≥ 1`
-/// shift down by 1; the replacement `u` shifts up by the binder depth
-/// at which the substitution happens. Used in β-reduction and
-/// ⋀-elimination.
-pub fn open(body: &Term, u: &Term) -> Term {
-    inst(body, u, 0)
+/// Abstract the free variable `var` (identified by name **and** type) into
+/// `Bound(0)` — the type-aware [`close`]. A same-named variable at a
+/// different type is left alone. Used by the kernel `abs`/`∀`-introduction
+/// paths, which receive arbitrary theorem terms that may legitimately
+/// carry distinct same-named variables at different types. (The plain
+/// name-only [`close`] is kept for construction sites where the name has a
+/// single known type.)
+pub fn close_var(t: &Term, var: &Var) -> Term {
+    close_var_at(t, var, 0)
 }
 
-fn inst(t: &Term, u: &Term, depth: u32) -> Term {
+fn close_var_at(t: &Term, var: &Var, depth: u32) -> Term {
+    // Bloom skip: no free var named `var.name()` here ⇒ subtree unchanged.
+    if !t.free_bloom().contains(var.name()) {
+        return t.clone();
+    }
     match t.kind() {
-        TermKind::Bound(i) => {
-            let i = *i;
-            match i.cmp(&depth) {
-                Ordering::Less => Term::bound(i),
-                Ordering::Equal => shift_by(u, depth as i64, 0),
-                Ordering::Greater => Term::bound(i - 1),
-            }
-        }
-        TermKind::Free(..)
+        TermKind::Free(v) if v == var => Term::bound(depth),
+        TermKind::Bound(_)
+        | TermKind::Free(..)
         | TermKind::Const(..)
         | TermKind::Blob(_)
         | TermKind::Nat(_)
@@ -84,8 +108,73 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
         | TermKind::Obs(..)
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
-        TermKind::App(f, x) => Term::app(inst(f, u, depth), inst(x, u, depth)),
-        TermKind::Abs(ty, body) => Term::abs(ty.clone(), inst(body, u, depth + 1)),
+        TermKind::App(f, x) => Term::app(close_var_at(f, var, depth), close_var_at(x, var, depth)),
+        TermKind::Abs(bty, body) => Term::abs(bty.clone(), close_var_at(body, var, depth + 1)),
+    }
+}
+
+/// Instantiate `Bound(0)` with `u` inside `body` (which is the body of
+/// an `Abs`/`All`). The outer binder is consumed: `Bound(i)` for `i ≥ 1`
+/// shift down by 1; the replacement `u` shifts up by the binder depth
+/// at which the substitution happens. Used in β-reduction and
+/// ⋀-elimination.
+pub fn open(body: &Term, u: &Term) -> Term {
+    open_with(body, u, &mut ())
+}
+
+/// [`open`] routing constructed nodes through `cons`.
+pub fn open_with<C: TrustedCons + ?Sized>(body: &Term, u: &Term, cons: &mut C) -> Term {
+    inst_opt(body, u, 0, cons).unwrap_or_else(|| body.clone())
+}
+
+/// The sharing-preserving core of [`open`] / instantiation: returns
+/// `Some(t')` when substituting `Bound(depth) := u` (and shifting deeper
+/// indices) *changes* `t`, and `None` when it leaves `t` untouched (the
+/// caller reuses the original `Arc`).
+///
+/// **`bvi`-skip:** a subterm whose maximum free de Bruijn index is `<
+/// depth` contains no `Bound(i ≥ depth)` — so instantiation is a no-op on
+/// it and we return `None` immediately, without recursing. This is the
+/// bound-variable twin of the free-variable Bloom skip in
+/// [`subst_free_opt`]; both use a summary cached on [`crate::Term`]
+/// ([`Term::bvi`] here) to prune whole subtrees.
+fn inst_opt<C: TrustedCons + ?Sized>(
+    t: &Term,
+    u: &Term,
+    depth: u32,
+    cons: &mut C,
+) -> Option<Term> {
+    // No `Bound(i ≥ depth)` below ⇒ unchanged. (Closed subterms — `bvi ==
+    // -1` — are always skipped; so are leaves, including bare `Bound(i)`
+    // with `i < depth`.)
+    if t.bvi() < depth as i64 {
+        return None;
+    }
+    match t.kind() {
+        TermKind::Bound(i) => {
+            let i = *i;
+            // `i < depth` was handled by the skip above (its `bvi` is `i`).
+            match i.cmp(&depth) {
+                Ordering::Less => None,
+                Ordering::Equal => Some(shift_with(u, depth as i64, 0, cons)),
+                Ordering::Greater => Some(cons.make(TermKind::Bound(i - 1))),
+            }
+        }
+        TermKind::App(f, x) => {
+            let f2 = inst_opt(f, u, depth, cons);
+            let x2 = inst_opt(x, u, depth, cons);
+            if f2.is_none() && x2.is_none() {
+                None
+            } else {
+                let f = f2.unwrap_or_else(|| f.clone());
+                let x = x2.unwrap_or_else(|| x.clone());
+                Some(cons.make(TermKind::App(f, x)))
+            }
+        }
+        TermKind::Abs(ty, body) => inst_opt(body, u, depth + 1, cons)
+            .map(|body| cons.make(TermKind::Abs(ty.clone(), body))),
+        // Other leaves are closed (`bvi == -1`) and were skipped above.
+        _ => None,
     }
 }
 
@@ -101,18 +190,28 @@ fn inst(t: &Term, u: &Term, depth: u32) -> Term {
 /// soundness depends on the caller's check, and silently producing a
 /// `Bound(u32::MAX)` would let the bug propagate.
 pub fn shift_by(t: &Term, delta: i64, cutoff: u32) -> Term {
+    shift_with(t, delta, cutoff, &mut ())
+}
+
+/// [`shift_by`] routing constructed nodes through `cons`.
+pub fn shift_with<C: TrustedCons + ?Sized>(
+    t: &Term,
+    delta: i64,
+    cutoff: u32,
+    cons: &mut C,
+) -> Term {
     if delta == 0 {
         return t.clone();
     }
-    shift_inner(t, delta, cutoff)
+    shift_inner(t, delta, cutoff, cons)
 }
 
-fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
+fn shift_inner<C: TrustedCons + ?Sized>(t: &Term, delta: i64, cutoff: u32, cons: &mut C) -> Term {
     match t.kind() {
         TermKind::Bound(i) => {
             let i = *i;
             if i < cutoff {
-                return Term::bound(i);
+                return cons.make(TermKind::Bound(i));
             }
             let new = (i as i64)
                 .checked_add(delta)
@@ -123,7 +222,7 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
             if new > u32::MAX as i64 {
                 panic!("shift_by: Bound index exceeds u32::MAX (i={i}, delta={delta})");
             }
-            Term::bound(new as u32)
+            cons.make(TermKind::Bound(new as u32))
         }
         TermKind::Free(..)
         | TermKind::Const(..)
@@ -141,23 +240,73 @@ fn shift_inner(t: &Term, delta: i64, cutoff: u32) -> Term {
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => {
-            Term::app(shift_inner(f, delta, cutoff), shift_inner(x, delta, cutoff))
+            let f = shift_inner(f, delta, cutoff, cons);
+            let x = shift_inner(x, delta, cutoff, cons);
+            cons.make(TermKind::App(f, x))
         }
-        TermKind::Abs(ty, body) => Term::abs(ty.clone(), shift_inner(body, delta, cutoff + 1)),
+        TermKind::Abs(ty, body) => {
+            let body = shift_inner(body, delta, cutoff + 1, cons);
+            cons.make(TermKind::Abs(ty.clone(), body))
+        }
     }
 }
 
-/// Substitute every `Free(name, _)` with `r` in `t`. The replacement is
-/// shifted up by the current binder depth when crossing binders so
-/// that any `Bound` references inside `r` continue to refer to the
-/// outer environment.
-pub fn subst_free(t: &Term, name: &str, r: &Term) -> Term {
-    subst_free_at(t, name, r, 0)
+/// Substitute the free variable `var` with `r` in `t` — HOL Light
+/// `vsubst` for a single variable. A free variable is identified by **both
+/// its name and its type** ([`Var`]), so a same-named variable at a
+/// different type is distinct and left untouched. `var.ty()` must be `r`'s
+/// type. The replacement is shifted up by the current binder depth when
+/// crossing binders so any `Bound` references inside `r` continue to refer
+/// to the outer environment.
+pub fn subst_free(t: &Term, var: &Var, r: &Term) -> Term {
+    subst_free_with(t, var, r, &mut ())
 }
 
-fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
+/// [`subst_free`] routing constructed nodes through `cons`.
+pub fn subst_free_with<C: TrustedCons + ?Sized>(
+    t: &Term,
+    var: &Var,
+    r: &Term,
+    cons: &mut C,
+) -> Term {
+    subst_free_at(t, var, r, 0, cons)
+}
+
+fn subst_free_at<C: TrustedCons + ?Sized>(
+    t: &Term,
+    var: &Var,
+    r: &Term,
+    depth: u32,
+    cons: &mut C,
+) -> Term {
+    subst_free_opt(t, var, r, depth, cons).unwrap_or_else(|| t.clone())
+}
+
+/// The sharing-preserving core of [`subst_free_at`]: returns `Some(t')` when
+/// substituting `var := r` *changes* `t`, and `None` when it leaves `t`
+/// untouched (so the caller reuses the original `Arc` — no allocation). A
+/// no-op substitution allocates nothing; a real one rebuilds only the spine
+/// from the root down to the substituted leaves.
+///
+/// The `None` short-circuit is also the hook for a future fast skip: a
+/// free-variable summary on `TermInfo` (e.g. a Bloom filter over variable
+/// names) could let a subtree that provably lacks `var` return `None`
+/// immediately, without recursing.
+fn subst_free_opt<C: TrustedCons + ?Sized>(
+    t: &Term,
+    var: &Var,
+    r: &Term,
+    depth: u32,
+    cons: &mut C,
+) -> Option<Term> {
+    // Bloom skip: if `var.name()` provably doesn't occur free here, the
+    // substitution is a no-op on this subtree — return `None` (the caller
+    // reuses the original `Arc`) without recursing.
+    if !t.free_bloom().contains(var.name()) {
+        return None;
+    }
     match t.kind() {
-        TermKind::Free(n, _) if n == name => shift_by(r, depth as i64, 0),
+        TermKind::Free(v) if v == var => Some(shift_with(r, depth as i64, 0, cons)),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -173,12 +322,20 @@ fn subst_free_at(t: &Term, name: &str, r: &Term, depth: u32) -> Term {
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Succ
-        | TermKind::Def(_) => t.clone(),
-        TermKind::App(f, x) => Term::app(
-            subst_free_at(f, name, r, depth),
-            subst_free_at(x, name, r, depth),
-        ),
-        TermKind::Abs(ty, body) => Term::abs(ty.clone(), subst_free_at(body, name, r, depth + 1)),
+        | TermKind::Def(_) => None,
+        TermKind::App(f, x) => {
+            let f2 = subst_free_opt(f, var, r, depth, cons);
+            let x2 = subst_free_opt(x, var, r, depth, cons);
+            if f2.is_none() && x2.is_none() {
+                None
+            } else {
+                let f = f2.unwrap_or_else(|| f.clone());
+                let x = x2.unwrap_or_else(|| x.clone());
+                Some(cons.make(TermKind::App(f, x)))
+            }
+        }
+        TermKind::Abs(bty, body) => subst_free_opt(body, var, r, depth + 1, cons)
+            .map(|body| cons.make(TermKind::Abs(bty.clone(), body))),
     }
 }
 
@@ -256,76 +413,116 @@ pub fn subst_tfrees_in_type(ty: &Type, sub: &BTreeMap<SmolStr, Type>) -> Type {
 /// annotation in `t` (see [`subst_tfrees_in_type`] for why a single
 /// pass matters — it avoids cascading `{a:=b, b:=c}` into `a → c`).
 pub fn subst_tfrees_in_term(t: &Term, sub: &BTreeMap<SmolStr, Type>) -> Term {
+    subst_tfrees_in_term_with(t, sub, &mut ())
+}
+
+/// [`subst_tfrees_in_term`] routing constructed nodes through `cons`.
+pub fn subst_tfrees_in_term_with<C: TrustedCons + ?Sized>(
+    t: &Term,
+    sub: &BTreeMap<SmolStr, Type>,
+    cons: &mut C,
+) -> Term {
     if sub.is_empty() {
         return t.clone();
     }
     let st = |ty: &Type| subst_tfrees_in_type(ty, sub);
-    let go = |x: &Term| subst_tfrees_in_term(x, sub);
-    match t.kind() {
-        TermKind::Bound(i) => Term::bound(*i),
-        TermKind::Free(n, ty) => Term::free(n.clone(), st(ty)),
-        TermKind::Const(n, ty) => Term::const_(n.clone(), st(ty)),
-        TermKind::App(f, x) => Term::app(go(f), go(x)),
-        TermKind::Abs(ty, body) => Term::abs(st(ty), go(body)),
-        TermKind::Blob(b) => Term::blob(b.clone()),
-        TermKind::Nat(n) => Term::nat_lit(n.clone()),
-        TermKind::Int(n) => Term::int_lit(n.clone()),
-        TermKind::SmallInt(lit) => Term::small_int(*lit),
-        TermKind::Bool(b) => Term::bool_lit(*b),
-        TermKind::Eq(alpha) => Term::eq_op(st(alpha)),
-        TermKind::Select(alpha) => Term::select_op(st(alpha)),
-        TermKind::Succ => Term::succ(),
-        TermKind::Spec(spec, args) => {
-            Term::term_spec(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
+    let kind = match t.kind() {
+        TermKind::Bound(i) => TermKind::Bound(*i),
+        TermKind::Free(v) => TermKind::Free(Var::new(v.name(), st(v.ty()))),
+        TermKind::Const(n, ty) => TermKind::Const(n.clone(), st(ty)),
+        TermKind::App(f, x) => {
+            let f = subst_tfrees_in_term_with(f, sub, cons);
+            let x = subst_tfrees_in_term_with(x, sub, cons);
+            TermKind::App(f, x)
         }
-        TermKind::SpecAbs(spec, args) => {
-            Term::spec_abs(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
+        TermKind::Abs(ty, body) => {
+            let ty = st(ty);
+            let body = subst_tfrees_in_term_with(body, sub, cons);
+            TermKind::Abs(ty, body)
         }
-        TermKind::SpecRep(spec, args) => {
-            Term::spec_rep(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
-        }
-        TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
+        TermKind::Blob(b) => TermKind::Blob(b.clone()),
+        TermKind::Nat(n) => TermKind::Nat(n.clone()),
+        TermKind::Int(n) => TermKind::Int(n.clone()),
+        TermKind::SmallInt(lit) => TermKind::SmallInt(*lit),
+        TermKind::Bool(b) => TermKind::Bool(*b),
+        TermKind::Eq(alpha) => TermKind::Eq(st(alpha)),
+        TermKind::Select(alpha) => TermKind::Select(st(alpha)),
+        TermKind::Succ => TermKind::Succ,
+        TermKind::Spec(spec, args) => TermKind::Spec(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::SpecAbs(spec, args) => TermKind::SpecAbs(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::SpecRep(spec, args) => TermKind::SpecRep(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::Obs(observer, ty) => TermKind::Obs(observer.clone(), st(ty)),
         TermKind::Def(d) => {
-            Term::def(d.with_instance_type(subst_tfrees_in_type(d.instance_type(), sub)))
+            TermKind::Def(d.with_instance_type(subst_tfrees_in_type(d.instance_type(), sub)))
         }
-    }
+    };
+    cons.make(kind)
 }
 
 /// Replace every `TFree(name)` with `r` in every type annotation inside
 /// `t`, including the `ty` field of any `Obs` leaf. The observer value
 /// itself is opaque and untouched.
 pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
+    subst_tfree_in_term_with(t, name, r, &mut ())
+}
+
+/// [`subst_tfree_in_term`] routing constructed nodes through `cons`.
+pub fn subst_tfree_in_term_with<C: TrustedCons + ?Sized>(
+    t: &Term,
+    name: &str,
+    r: &Type,
+    cons: &mut C,
+) -> Term {
     let st = |ty: &Type| subst_tfree_in_type(ty, name, r);
-    let sub = |x: &Term| subst_tfree_in_term(x, name, r);
-    match t.kind() {
-        TermKind::Bound(i) => Term::bound(*i),
-        TermKind::Free(n, ty) => Term::free(n.clone(), st(ty)),
-        TermKind::Const(n, ty) => Term::const_(n.clone(), st(ty)),
-        TermKind::App(f, x) => Term::app(sub(f), sub(x)),
-        TermKind::Abs(ty, body) => Term::abs(st(ty), sub(body)),
-        TermKind::Blob(b) => Term::blob(b.clone()),
-        TermKind::Nat(n) => Term::nat_lit(n.clone()),
-        TermKind::Int(n) => Term::int_lit(n.clone()),
-        TermKind::SmallInt(lit) => Term::small_int(*lit),
-        TermKind::Bool(b) => Term::bool_lit(*b),
-        TermKind::Eq(alpha) => Term::eq_op(st(alpha)),
-        TermKind::Select(alpha) => Term::select_op(st(alpha)),
-        TermKind::Succ => Term::succ(),
+    let kind = match t.kind() {
+        TermKind::Bound(i) => TermKind::Bound(*i),
+        TermKind::Free(v) => TermKind::Free(Var::new(v.name(), st(v.ty()))),
+        TermKind::Const(n, ty) => TermKind::Const(n.clone(), st(ty)),
+        TermKind::App(f, x) => {
+            let f = subst_tfree_in_term_with(f, name, r, cons);
+            let x = subst_tfree_in_term_with(x, name, r, cons);
+            TermKind::App(f, x)
+        }
+        TermKind::Abs(ty, body) => {
+            let ty = st(ty);
+            let body = subst_tfree_in_term_with(body, name, r, cons);
+            TermKind::Abs(ty, body)
+        }
+        TermKind::Blob(b) => TermKind::Blob(b.clone()),
+        TermKind::Nat(n) => TermKind::Nat(n.clone()),
+        TermKind::Int(n) => TermKind::Int(n.clone()),
+        TermKind::SmallInt(lit) => TermKind::SmallInt(*lit),
+        TermKind::Bool(b) => TermKind::Bool(*b),
+        TermKind::Eq(alpha) => TermKind::Eq(st(alpha)),
+        TermKind::Select(alpha) => TermKind::Select(st(alpha)),
+        TermKind::Succ => TermKind::Succ,
         // For a `Spec` leaf the type args participate in type-var
         // substitution; the spec handle (`Arc`-shared) is untouched.
-        TermKind::Spec(spec, args) => {
-            Term::term_spec(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
-        }
+        TermKind::Spec(spec, args) => TermKind::Spec(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
         // `abs`/`rep` coercions carry type args that participate in
         // type-var substitution; the spec handle (`Arc`-shared) is
         // untouched, exactly like `TermKind::Spec`.
-        TermKind::SpecAbs(spec, args) => {
-            Term::spec_abs(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
-        }
-        TermKind::SpecRep(spec, args) => {
-            Term::spec_rep(spec.clone(), args.iter().map(&st).collect::<Vec<_>>())
-        }
-        TermKind::Obs(observer, ty) => Term::obs_from_dyn(observer.clone(), st(ty)),
+        TermKind::SpecAbs(spec, args) => TermKind::SpecAbs(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::SpecRep(spec, args) => TermKind::SpecRep(
+            spec.clone(),
+            args.iter().map(&st).collect::<Vec<_>>().into(),
+        ),
+        TermKind::Obs(observer, ty) => TermKind::Obs(observer.clone(), st(ty)),
         // `Def` carries an `original` Arc identity (the unique
         // `Thm::define` call) plus an `instance_type`. Substitution
         // updates `instance_type` without rebuilding `original`, so
@@ -333,9 +530,10 @@ pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
         // same instance — the property HOL Light's `INST_TYPE` and
         // polymorphic-constant equality depend on.
         TermKind::Def(d) => {
-            Term::def(d.with_instance_type(subst_tfree_in_type(d.instance_type(), name, r)))
+            TermKind::Def(d.with_instance_type(subst_tfree_in_type(d.instance_type(), name, r)))
         }
-    }
+    };
+    cons.make(kind)
 }
 
 // ============================================================================
@@ -371,18 +569,41 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
     }
 }
 
-/// True if `name` appears as a `Free` variable anywhere in `t`.
+/// True if `name` appears as a `Free` variable (at any type) anywhere in
+/// `t`.
 pub fn has_free_var(t: &Term, name: &str) -> bool {
     find_free_type(t, name).is_some()
 }
 
-/// First-encountered declared type of `Free(name)` in `t`, or `None`
-/// if no `Free` with that name appears. Because every theorem
-/// enforces cross-term `Free` consistency at construction, this is
-/// the *only* type the variable can have within that theorem.
-pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
+/// True if the free variable `var` — identified by name **and** type —
+/// appears anywhere in `t`. Used by the kernel `abs`/`∀`-intro rules to
+/// check the variable being bound is not free in the hypotheses.
+pub fn has_free_var_typed(t: &Term, var: &Var) -> bool {
+    // Bloom skip: no free var named `var.name()` here ⇒ definitely absent.
+    if !t.free_bloom().contains(var.name()) {
+        return false;
+    }
     match t.kind() {
-        TermKind::Free(n, ty) if n == name => Some(ty.clone()),
+        TermKind::Free(v) => v == var,
+        TermKind::App(a, b) => has_free_var_typed(a, var) || has_free_var_typed(b, var),
+        TermKind::Abs(_, body) => has_free_var_typed(body, var),
+        _ => false,
+    }
+}
+
+/// First-encountered declared type of a `Free` named `name` in `t`, or
+/// `None` if none appears. With free variables identified by `(name,
+/// type)`, a single name may in principle occur at several types; this
+/// returns the first in traversal order (used only for display / best-
+/// effort diagnostics, never for soundness decisions).
+pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
+    // Bloom skip: `name` provably absent ⇒ `None` without recursing.
+    // (`has_free_var` is `find_free_type(..).is_some()`, so it benefits too.)
+    if !t.free_bloom().contains(name) {
+        return None;
+    }
+    match t.kind() {
+        TermKind::Free(v) if v.name() == name => Some(v.ty().clone()),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -445,7 +666,12 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
 /// substitution-tracking via `instance_type`).
 pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr>) {
     match t.kind() {
-        TermKind::Free(_, ty) | TermKind::Const(_, ty) | TermKind::Obs(_, ty) => {
+        TermKind::Free(v) => {
+            for n in v.ty().free_tvars() {
+                out.insert(n);
+            }
+        }
+        TermKind::Const(_, ty) | TermKind::Obs(_, ty) => {
             for n in ty.free_tvars() {
                 out.insert(n);
             }

@@ -39,6 +39,44 @@ coupling guard.
   flipping the source of truth + porting the numeric tower (hand-rolled copy did it)
   is the follow-up.
 
+## Hash-consing not yet threaded through the inference rules
+
+- **`crate::term::cons` (`TrustedCons`/`TermCons`/`HashCons`/`Checked`) and
+  `crate::ty::cons` (`TrustedTypeCons`/`TypeCons`/`TypeHashCons`) are wired
+  through the smart-constructor baselines (`Term::alloc`/`Type::alloc`),
+  `Term::cons_with` / `Type::cons_with` (deep intern), and every term-rebuilding
+  fn in `subst.rs` (the `*_with` variants). `HashCons` is also a
+  `TrustedTypeCons` (carries a type-cons template, default `TypeHashCons`), so
+  one interner shares both terms and types.** What is *not* yet threaded: the
+  inference rules in `thm/`, `Ctx`, and `hol.rs` builders all construct via the
+  plain (`&mut ()`) constructors / plain `subst::*`, so a proof does not share
+  one interner end-to-end — interning only happens when a caller explicitly
+  routes through a `*_with` API. Threading a caller-supplied
+  `&mut dyn TrustedCons` (now also a type cons) through the rule surface (and a
+  `Ctx`-owned interner) is the follow-up that turns this from "available" into
+  "on by default for large proofs". After the per-node `TermInfo` type cache
+  landed, the list-bootstrap profile is dominated by **allocation** (~29%) —
+  exactly what end-to-end interning would cut. Soundness is unaffected either way
+  (the rules already accept any structurally-equal term).
+- **Future:** the `TermInfo::Wf(Type)` cache could intern its cached types via
+  the type cons (today they are freshly allocated in `term_info`); fold this in
+  when the interner is threaded through construction.
+
+## Name-only `subst::close` should move out of the TCB
+
+- **`subst::close(t, name)` (name-only) is a construction convenience that does
+  not belong in the trusted kernel.** Free variables are identified by `(name,
+  type)` ([`Var`]); the kernel rules that take arbitrary theorem terms (`abs`,
+  `all_intro`, `inst`, `nat_induct`) already use the type-aware `close_var` /
+  `subst_free(&Var)` / `has_free_var_typed(&Var)`. The name-only `close` remains
+  only because ~169 *construction* sites in `covalence-hol`'s `init/` (almost all
+  `Term::abs(ty, subst::close(&body, name))`, where the name has a single known
+  type by construction) still call it. It is sound there, but it is trusted code
+  earning its keep only as a convenience. **Eventually remove it from
+  `covalence-core` and reimplement it in userspace** (e.g. `covalence-hol`'s
+  `TermExt`, untrusted) — or migrate the 169 sites to `close_var(&Var::new(name,
+  ty))`. Slims the TCB surface; deferred only for the call-site churn.
+
 ## defs source-of-truth flip — reverted, pending re-entrancy fix
 
 - **Flipping the public `defs::*` accessors to source from `core_env()` is

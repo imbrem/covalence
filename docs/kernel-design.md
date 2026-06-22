@@ -134,10 +134,10 @@ type; every formula is `bool`.
 TermKind                       Constructor              Notes
 ────────                       ───────────              ─────
 Bound(u32)                     Term::bound(i)           de Bruijn index
-Free(SmolStr, Type)            Term::free(name, ty)
+Free(Var)                      Term::free(name, ty)     Var = (name, type)
 Const(SmolStr, Type)           Term::const_(name, ty)
 App(Term, Term)                Term::app(f, x)
-Abs(BinderHint, Type, Term)    Term::abs(hint, ty, body)
+Abs(Type, Term)                Term::abs(ty, body)      anonymous binder (de Bruijn)
 Nat(Nat)                       Term::nat_lit(n)         arbitrary-precision literal
 Int(Int)                       Term::int_lit(n)
 Bool(bool)                     Term::bool_lit(b)        T or F
@@ -148,6 +148,19 @@ Spec(TermSpec, Vec<Type>)      Term::term_spec(spec, ty_args)   derived TermSpec
 Obs(Object, Type)              Term::obs(o, ty)         observer leaf
 Def(Def)                       Term::def(d)             defined constant
 ```
+
+**Free variables carry their type in their identity.** `Free(Var)` where
+`Var = (name, type)`, so `Var("x", nat)` and `Var("x", bool)` are
+**distinct** variables that may coexist in one theorem (HOL Light's
+`Var(name, ty)` model). Equality / hashing / ordering consider both
+fields, and `subst_free`/`close_var` match a variable by name **and**
+type. Consequently there is **no** cross-term name/type consistency check
+in `type_of`/`Thm::build` (an earlier design enforced one); a
+type-mismatched `inst` is simply a no-op. The name-only `subst::close` is
+a construction convenience (the name has a single known type at the binder
+site); the kernel rules that take arbitrary theorem terms (`abs`,
+`all_intro`, `inst`, `nat_induct`) use the type-aware `close_var` /
+`has_free_var_typed` / `subst_free`.
 
 **`=` and `ε` are the only logical primitives.** `Eq(α)` has type
 `α → α → bool` and `Select(α)` has type `(α → bool) → α`; each is an
@@ -848,3 +861,51 @@ enters the system the same way every oracle does — as a proven artifact, not a
 trust assumption. The narrow waist, the Pure executor substrate, and the
 Haskell-like surface all meet here: **HOL-ω is the language you write, Pure is
 what it's grounded in, and validated-WASM is how it runs fast.**
+
+## Typedness caching — representation options (design note)
+
+To avoid re-deriving a term's type on every kernel step (the `type_of`
+O(N) re-walk in `Thm::build` / `hol::hol_eq`), three representations were
+weighed. The enabling fact is that **typing is context-free**: free
+variables carry their type (`Var(name, ty)`), so `term : ty` holds in any
+context — there is no typing Γ to thread.
+
+1. **`Typed(term, ty)` — a context-free typing witness. [chosen]** A value
+   pairing a term with its type; constructible only via LCF-style checked
+   constructors (`app`/`abs`/`eq`/…, each O(1) by combining children's
+   cached types) or `Typed::infer` (which runs the existing `type_of`).
+   It captures *exactly* the context-free fact. TCB cost is small: a value
+   type plus constructors that mirror the existing typing rules — no new
+   logical commitments, `Term`/`Thm` representation unchanged. `Thm`
+   accepts a `Typed` conclusion (`from_typed`) and skips re-walking it;
+   the legacy `build(.., concl: Term)` delegates via `Typed::infer`.
+
+2. **`Eq(Ctx, Lhs, Rhs, Ty)` — equality as a structured kernel judgement.
+   [rejected]** Would cache the element type and sides for the equational
+   fragment (the bootstrap's hot path), making refl/trans/cong O(1). But
+   it bifurcates `Thm` into two judgement forms and re-privileges `=`
+   (against the design invariant that `=`/`ε` are the only primitives and
+   every formula is App-shaped), and its `Ctx` merely duplicates
+   `Thm.hyps` — equality is context-*dependent* (it holds under
+   hypotheses), which is already `Thm`'s job. The context-free part
+   (typing) is better captured by `Typed`, and α-reuse (reading α off the
+   `Eq(α)` node) already grabs most of the equational win without new TCB.
+
+3. **Type cached on the term node (intrinsic). [end-state]** Every
+   (interned) node caches its own type, so all `type_of` becomes O(1)
+   transparently — this is `Typed` "inlined into the node". Strongest, but
+   most invasive: the node representation grows and construction (or a lazy
+   `OnceCell`) must maintain and *trust* the cache. Sound only when gated
+   to **closed** subterms (a node's type is context-free only when no
+   `Bound` escapes), which a bottom-up **free-variable counter / closed
+   bit** provides cheaply (and which also accelerates `subst`/occurs
+   checks). "Typecheck the moment a term is closed" = populate the cache
+   when that bit flips true. Best done *after* hash-consing is threaded
+   (interned nodes amortize the cache) and can reuse `Typed`'s checked
+   constructors. A Bloom filter over free variables is a *separate,
+   optional* occurs-check accelerator (approximate → a pre-filter only),
+   not the type-cache enabler.
+
+Direction: ship `Typed` (1) now; evolve toward per-node caching (3) once
+hash-consing is threaded through the rules and a closed-bit/free-var
+counter exists. (2) is recorded but not pursued.

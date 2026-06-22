@@ -4,6 +4,22 @@ Intentional placeholders for the S-expression proof authoring + replay layer.
 See `CLAUDE.md` § Skeletons for the rules, the [crate index](../../SKELETONS.md),
 and the [root index](../../../../SKELETONS.md).
 
+## Slow `.cov` files (perf)
+
+`cov_theory!` evaluation is timed by `COV_PROFILE=1` (via `crate::debug`). Most
+init `.cov` files evaluate in milliseconds, but a handful are pathologically slow
+and should be brought back to ms:
+
+- **`list.cov` ~99s**, **`utf8.cov` ~60s**, **`rat.cov` ~24s**, `int.cov` ~5s,
+  `prop.cov` ~2s (vs `nat.cov` 240ms and everything else <85ms).
+
+These are one-time `LazyLock` builds, but the cost is real proof-replay work —
+likely the same impredicative-term / structural-equality blow-ups seen in
+`init/regex` soundness (large terms re-traversed without sharing). Reproduce and
+attribute with `COV_PROFILE=1 cargo test -p covalence-hol --lib init -- --nocapture`
+then grep `cov-profile`. Fixing these is open work (candidate for term
+hash-consing / the `covalence-pure` split).
+
 ## Proof-script layer (`covalence-hol/src/script`)
 
 The S-expression authoring + replay layer (`Env`/prelude, the `infer`

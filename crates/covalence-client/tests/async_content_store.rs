@@ -28,6 +28,7 @@ async fn spawn_server() -> (AsyncHttpBackend, tempfile::TempDir) {
         kernel: Kernel::new(),
         tagged_store,
         object_store,
+        mm: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
     let app = build_router(state, true);

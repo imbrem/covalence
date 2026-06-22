@@ -22,6 +22,7 @@
     "code:browser": "bun run build:wasm && bun run --filter covalence-vscode code:browser",
     "code:desktop": "bun run build && bun run --filter covalence-vscode code:desktop",
     "check": "cargo check",
+    "profile:init": "bun scripts/profile-init.mjs",
     "build:python": "cd crates/covalence-python && source activate.sh && maturin develop",
     "test:python": "cd crates/covalence-python && source activate.sh && pytest tests/ -v",
     "test:ui": "bun run --filter covalence-ui test",

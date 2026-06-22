@@ -740,33 +740,38 @@ macro_rules! cov_theory {
 
             static THEORY: ::std::sync::LazyLock<$crate::script::Theory> =
                 ::std::sync::LazyLock::new(|| {
-                    // Force the import envs EAGERLY, before `run`'s `block_on`,
-                    // so forcing this theory never nests its `block_on` on
-                    // forcing an imported `.cov` theory (e.g. `logic`).
-                    let __imports: ::std::vec::Vec<(&'static str, $crate::script::Env)> =
-                        ::std::vec![ $( ($oname, $oenv), )* ];
-                    $crate::script::run(
-                        include_str!($src),
-                        move |__name| {
-                            __imports
-                                .iter()
-                                .find(|(__n, _)| *__n == __name)
-                                .map(|(_, __e)| __e.clone())
-                        },
-                        |__tname| -> ::core::option::Option<
-                            ::std::sync::Arc<dyn $crate::script::Tactic>,
-                        > {
-                            match __tname {
-                                $( $tname => Some(::std::sync::Arc::new($texpr)), )*
-                                _ => None,
-                            }
-                        },
-                    )
-                    // A `cov_theory!` is a finished resource — force it to its
-                    // resolved (fully-proved) state, discharging any `#fill`s.
-                    .and_then(|__t| __t.resolve_blocking())
-                    .unwrap_or_else(|__e| {
-                        panic!("cov_theory `{}`: {}", stringify!($modname), __e)
+                    // `COV_PROFILE=1` prints how long this `.cov` file took to
+                    // evaluate (parse + replay + resolve), labelled by source
+                    // file (the module name is almost always `cov`).
+                    $crate::debug::timed(concat!("cov:", $src), || {
+                        // Force the import envs EAGERLY, before `run`'s `block_on`,
+                        // so forcing this theory never nests its `block_on` on
+                        // forcing an imported `.cov` theory (e.g. `logic`).
+                        let __imports: ::std::vec::Vec<(&'static str, $crate::script::Env)> =
+                            ::std::vec![ $( ($oname, $oenv), )* ];
+                        $crate::script::run(
+                            include_str!($src),
+                            move |__name| {
+                                __imports
+                                    .iter()
+                                    .find(|(__n, _)| *__n == __name)
+                                    .map(|(_, __e)| __e.clone())
+                            },
+                            |__tname| -> ::core::option::Option<
+                                ::std::sync::Arc<dyn $crate::script::Tactic>,
+                            > {
+                                match __tname {
+                                    $( $tname => Some(::std::sync::Arc::new($texpr)), )*
+                                    _ => None,
+                                }
+                            },
+                        )
+                        // A `cov_theory!` is a finished resource — force it to its
+                        // resolved (fully-proved) state, discharging any `#fill`s.
+                        .and_then(|__t| __t.resolve_blocking())
+                        .unwrap_or_else(|__e| {
+                            panic!("cov_theory `{}`: {}", stringify!($modname), __e)
+                        })
                     })
                 });
 

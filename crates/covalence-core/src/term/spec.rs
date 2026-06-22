@@ -10,13 +10,13 @@
 
 use std::sync::Arc;
 
-use crate::defs::symbol::{Symbol, symbol_cmp, symbol_eq, symbol_hash};
+use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};
 use crate::ty::Type;
 
 use super::Term;
 
 struct TermSpecInner {
-    symbol: Arc<dyn Symbol>,
+    symbol: SymbolRef,
     ty: Option<Type>,
     tm: Option<Term>,
 }
@@ -36,18 +36,25 @@ impl std::fmt::Debug for TermSpecInner {
 pub struct TermSpec(Arc<TermSpecInner>);
 
 impl TermSpec {
-    /// Build a new term-spec with the given symbol, type, and
+    /// Build a new term-spec with the given (trusted) symbol, type, and
     /// body / selector predicate.
-    pub fn new<S: Symbol>(symbol: S, ty: Option<Type>, tm: Option<Term>) -> Self {
-        Self(Arc::new(TermSpecInner {
-            symbol: Arc::new(symbol),
-            ty,
-            tm,
-        }))
+    pub fn new<S: TrustedSymbol>(symbol: S, ty: Option<Type>, tm: Option<Term>) -> Self {
+        Self::from_ref(SymbolRef::trusted(symbol), ty, tm)
+    }
+
+    /// Like [`Self::new`] but with an **untrusted** name (compared by
+    /// `Arc` pointer rather than by `label()`).
+    pub fn new_untrusted<S: Symbol>(symbol: S, ty: Option<Type>, tm: Option<Term>) -> Self {
+        Self::from_ref(SymbolRef::untrusted(symbol), ty, tm)
+    }
+
+    /// Construct directly from a [`SymbolRef`] (trusted or untrusted).
+    pub(crate) fn from_ref(symbol: SymbolRef, ty: Option<Type>, tm: Option<Term>) -> Self {
+        Self(Arc::new(TermSpecInner { symbol, ty, tm }))
     }
 
     pub fn symbol(&self) -> &dyn Symbol {
-        &*self.0.symbol
+        self.0.symbol.symbol()
     }
 
     pub fn ty(&self) -> Option<&Type> {
@@ -77,7 +84,7 @@ impl PartialEq for TermSpec {
         if a.ty != b.ty || a.tm != b.tm {
             return false;
         }
-        symbol_eq(&*a.symbol, &*b.symbol)
+        a.symbol == b.symbol
     }
 }
 
@@ -96,7 +103,8 @@ impl Ord for TermSpec {
         }
         let a = &*self.0;
         let b = &*other.0;
-        symbol_cmp(&*a.symbol, &*b.symbol)
+        a.symbol
+            .cmp(&b.symbol)
             .then_with(|| a.ty.cmp(&b.ty))
             .then_with(|| a.tm.cmp(&b.tm))
     }
@@ -104,7 +112,7 @@ impl Ord for TermSpec {
 
 impl std::hash::Hash for TermSpec {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        symbol_hash(&*self.0.symbol, state);
+        self.0.symbol.hash(state);
         self.0.ty.hash(state);
         self.0.tm.hash(state);
     }

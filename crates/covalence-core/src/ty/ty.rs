@@ -93,7 +93,7 @@ impl Type {
         Arc::as_ptr(&self.0) as usize
     }
 
-    fn alloc(kind: TypeKind) -> Self {
+    pub(crate) fn alloc(kind: TypeKind) -> Self {
         Type(Arc::new(kind))
     }
 

@@ -230,12 +230,17 @@ fn hol_abs_rejects_var_free_in_hyps() {
 }
 
 #[test]
-fn hol_abs_rejects_binder_type_mismatch() {
-    // Free("x", nat) in concl, but user supplies ty = bool.
+fn hol_abs_over_differently_typed_var_binds_vacuously() {
+    // `Free("x", nat)` in the conclusion; abstracting `("x", bool)` — a
+    // *distinct* variable (free vars are identified by name AND type) —
+    // binds nothing, so it generalises vacuously and succeeds:
+    // `⊢ (λ_:bool. x:nat) = (λ_:bool. x:nat)`.
     let x = Term::free("x", Type::nat());
     let refl = Thm::refl(x).unwrap();
-    let err = refl.abs("x", Type::bool()).unwrap_err();
-    assert!(matches!(err, Error::BinderTypeMismatch { .. }));
+    let out = refl.abs("x", Type::bool()).unwrap();
+    let (lhs, _) = out.concl().as_eq().unwrap();
+    let (binder, _) = lhs.as_abs().unwrap();
+    assert_eq!(binder, &Type::bool());
 }
 
 #[test]
@@ -336,13 +341,16 @@ fn hol_deduct_antisym_rejects_non_bool_lhs() {
 }
 
 #[test]
-fn hol_inst_rejects_replacement_type_mismatch() {
-    // ⊢ n = n  with n : nat. Try to inst n := (bool literal).
+fn hol_inst_type_mismatched_replacement_is_a_noop() {
+    // ⊢ n = n  with n : nat. `inst("n", true)` targets the variable
+    // `("n", bool)` — which does not occur (the term has `("n", nat)`),
+    // so it is a no-op (HOL Light `vsubst` semantics), leaving the
+    // theorem unchanged rather than erroring.
     let n_free = Term::free("n", Type::nat());
     let refl = Thm::refl(n_free).unwrap();
-    let bad = Term::bool_lit(true);
-    let err = refl.inst("n", bad).unwrap_err();
-    assert!(matches!(err, Error::TypeMismatch { .. }));
+    let before = refl.concl().clone();
+    let out = refl.inst("n", Term::bool_lit(true)).unwrap();
+    assert_eq!(out.concl(), &before);
 }
 
 #[test]
@@ -618,13 +626,12 @@ fn all_intro_rejects_var_free_in_hyps() {
 }
 
 #[test]
-fn all_intro_rejects_binder_type_mismatch() {
-    // x : nat in concl, but generalise at bool — caught at the
-    // declared-type check.
+fn all_intro_over_differently_typed_var_generalises_vacuously() {
+    // `x : nat` in concl; generalising `("x", bool)` — a distinct variable
+    // — binds nothing, so it succeeds vacuously: `⊢ ∀_:bool. (x:nat = x:nat)`.
     let x = Term::free("x", Type::nat());
     let refl = Thm::refl(x).unwrap();
-    let err = refl.all_intro("x", Type::bool()).unwrap_err();
-    assert!(matches!(err, Error::BinderTypeMismatch { .. }));
+    assert!(refl.all_intro("x", Type::bool()).is_ok());
 }
 
 #[test]
@@ -649,6 +656,24 @@ fn all_elim_instantiates_witness() {
     let (l, r) = parse_hol_eq(inst.concl()).unwrap();
     assert_eq!(l, &five);
     assert_eq!(r, &five);
+}
+
+#[test]
+fn all_elim_with_matches_and_interns() {
+    use crate::term::HashCons;
+    // ⊢ ∀x:nat. x = x  ⇒[x := 5]⇒  ⊢ 5 = 5, via a HashCons.
+    let x = Term::free("x", Type::nat());
+    let univ = Thm::refl(x).unwrap().all_intro("x", Type::nat()).unwrap();
+    let five = Term::nat_lit(5u32);
+
+    let plain = univ.clone().all_elim(five.clone()).unwrap();
+    let mut cons = HashCons::new();
+    let interned = univ.all_elim_with(five, &mut cons).unwrap();
+
+    // Interning never changes the conclusion (the TrustedCons contract).
+    assert_eq!(interned.concl(), plain.concl());
+    // …but it did intern the reconstructed `5 = 5` nodes.
+    assert!(!cons.is_empty());
 }
 
 #[test]

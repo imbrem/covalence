@@ -26,7 +26,6 @@
 //! sites.
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
@@ -199,8 +198,116 @@ impl fmt::Display for Def {
 // Term
 // ============================================================================
 
+/// Cached typing/closedness summary of a term node, computed once at
+/// construction (`Term::alloc`) from the children's summaries. Private and
+/// encapsulated so the encoding can be optimised later (bit-packing, a
+/// free-variable Bloom filter, …) without touching call sites.
+///
+/// - `Open(k)`: the node has free de Bruijn indices, the largest being `k`
+///   (so it needs `k + 1` enclosing binders). Its type is context-
+///   dependent, so none is cached.
+/// - `Wf(ty)`: the node is closed and well-typed; `ty` is its (context-
+///   free) type.
+/// - `IllTyped`: the node is closed but does not type-check.
+///
+/// Invariant: `Wf`/`IllTyped` ⟹ closed (no free de Bruijn index);
+/// `Open(_)` ⟹ not closed. A node's type is cached only when closed,
+/// which (given free variables carry their type — see [`Var`]) makes it
+/// context-free and therefore safe to reuse anywhere.
+/// Every variant additionally carries a [`Bloom`] over the **names** of the
+/// free variables occurring in the node (the union of the children's). It
+/// costs nothing in space: the variant tag is a `u8` and the largest
+/// payload (`Wf`'s `Type` pointer) is 8-byte-aligned, so the `u32` lives in
+/// padding that would otherwise be wasted. No false negatives, so
+/// substitution / closing / occurrence checks skip whole subtrees that
+/// provably lack a name without recursing.
+#[derive(Debug)]
+enum TermInfo {
+    Open { bvi: u32, free: Bloom },
+    Wf { free: Bloom, ty: Type },
+    IllTyped { free: Bloom },
+}
+
+impl TermInfo {
+    /// The free-variable Bloom filter, common to every variant.
+    fn free(&self) -> Bloom {
+        match self {
+            TermInfo::Open { free, .. }
+            | TermInfo::Wf { free, .. }
+            | TermInfo::IllTyped { free } => *free,
+        }
+    }
+}
+
+struct TermInner {
+    info: TermInfo,
+    kind: TermKind,
+}
+
+/// A 32-bucket Bloom filter over free-variable **names** (single FNV hash,
+/// `k = 1`). Hashing by name only — same-name-different-type collisions are
+/// harmless (an extra exact check, never a correctness issue). The only
+/// guarantee, and all that callers rely on: **no false negatives** — if
+/// `!contains(n)`, the name `n` is definitely absent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Bloom(u32);
+
+impl Bloom {
+    /// The empty filter.
+    pub(crate) const fn empty() -> Bloom {
+        Bloom(0)
+    }
+
+    /// The filter containing exactly the variable name `name`.
+    pub(crate) fn singleton(name: &str) -> Bloom {
+        use std::hash::Hasher;
+        let mut h = fnv::FnvHasher::default();
+        h.write(name.as_bytes());
+        Bloom(1u32 << (h.finish() & 31))
+    }
+
+    /// May the name `name` be present? `false` is exact (no false
+    /// negatives); `true` means "maybe — do the exact check".
+    pub(crate) fn contains(&self, name: &str) -> bool {
+        self.0 & Bloom::singleton(name).0 != 0
+    }
+
+    /// The union of two filters (the names of either).
+    pub(crate) fn union(&self, rhs: &Bloom) -> Bloom {
+        Bloom(self.0 | rhs.0)
+    }
+}
+
+/// The free-variable Bloom filter for a node, from its children's filters.
+fn compute_free(kind: &TermKind) -> Bloom {
+    match kind {
+        TermKind::Free(v) => Bloom::singleton(v.name()),
+        TermKind::App(f, x) => f.0.info.free().union(&x.0.info.free()),
+        TermKind::Abs(_, body) => body.0.info.free(),
+        // No (substitutable) free term variables: `Def` is opaque to
+        // `subst_free` (treated as a leaf), and the rest carry none.
+        _ => Bloom::empty(),
+    }
+}
+
+/// A HOL term: an `Arc`-shared node carrying its [`TermKind`] plus a cached
+/// [`TermInfo`] (type + closedness) computed once at construction. As a
+/// result [`Term::ty`] / [`Term::type_of`] and `Thm` well-formedness
+/// checks are O(1) for closed terms (the common case), instead of an
+/// O(size) re-walk per query.
 #[derive(Clone)]
-pub struct Term(Arc<TermKind>);
+pub struct Term(Arc<TermInner>);
+
+/// Why a closed-or-open term has no usable cached type — the error of
+/// [`Term::ty`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TyError {
+    /// The term is not closed: it has a free de Bruijn index, so its type
+    /// is context-dependent. See [`Term::bvi`].
+    Open,
+    /// The term is closed but does not type-check.
+    IllTyped,
+}
 
 /// Width-and-signedness tag of a [`SmallIntLiteral`] — the fixed-width
 /// integer types of the WebAssembly component model (`u8`…`u64`,
@@ -349,13 +456,57 @@ impl fmt::Display for SmallIntLiteral {
     }
 }
 
+/// A **free variable**: a name paired with its type. The type is part of
+/// the variable's *identity* (HOL Light's `Var(name, ty)` model), so
+/// `Var("x", nat)` and `Var("x", bool)` are **distinct** variables.
+/// Equality / ordering / hashing therefore consider both fields, and
+/// substitution (`subst_free`) only matches a variable with the same name
+/// *and* type.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Var {
+    name: SmolStr,
+    ty: Type,
+}
+
+impl Var {
+    /// A free variable named `name` of type `ty`.
+    pub fn new(name: impl Into<SmolStr>, ty: Type) -> Self {
+        Var {
+            name: name.into(),
+            ty,
+        }
+    }
+
+    /// The variable's name.
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    /// The variable's type — part of its identity.
+    pub fn ty(&self) -> &Type {
+        &self.ty
+    }
+}
+
+impl fmt::Display for Var {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl From<Var> for Term {
+    fn from(v: Var) -> Self {
+        Term::free_var(v)
+    }
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TermKind {
     /// de Bruijn–indexed bound variable. Index 0 refers to the
     /// innermost surrounding binder (`Abs` or `All`).
     Bound(u32),
-    /// Free variable: name + declared type.
-    Free(SmolStr, Type),
+    /// Free variable: a [`Var`] (name + type, type-carrying identity).
+    Free(Var),
     /// Declared/defined constant: name + instance type.
     Const(SmolStr, Type),
     /// Application `f x`.
@@ -447,7 +598,46 @@ pub enum TermKind {
 
 impl Term {
     pub fn kind(&self) -> &TermKind {
-        &self.0
+        &self.0.kind
+    }
+
+    fn info(&self) -> &TermInfo {
+        &self.0.info
+    }
+
+    /// The term's type, in O(1) from the cached summary. Returns
+    /// [`TyError::Open`] if the term is not closed (its type is
+    /// context-dependent) or [`TyError::IllTyped`] if it is closed but
+    /// does not type-check. Borrows the cached type — no clone, no walk.
+    pub fn ty(&self) -> std::result::Result<&Type, TyError> {
+        match self.info() {
+            TermInfo::Wf { ty, .. } => Ok(ty),
+            TermInfo::Open { .. } => Err(TyError::Open),
+            TermInfo::IllTyped { .. } => Err(TyError::IllTyped),
+        }
+    }
+
+    /// The largest free de Bruijn index in the term ("bound-variable
+    /// index"), or `-1` if the term is closed. `bvi() < 0` iff the term is
+    /// closed; `bvi() == k ≥ 0` means it needs `k + 1` enclosing binders.
+    pub fn bvi(&self) -> i64 {
+        match self.info() {
+            TermInfo::Open { bvi, .. } => *bvi as i64,
+            TermInfo::Wf { .. } | TermInfo::IllTyped { .. } => -1,
+        }
+    }
+
+    /// `true` iff the term is closed (no free de Bruijn index).
+    pub fn is_closed(&self) -> bool {
+        !matches!(self.info(), TermInfo::Open { .. })
+    }
+
+    /// The free-variable [`Bloom`] filter over this term's free-variable
+    /// names. Used by `subst`/`close`/occurrence checks to skip subtrees
+    /// that provably lack a given name: `!t.free_bloom().contains(n)` ⇒ no
+    /// free variable named `n` occurs in `t`.
+    pub(crate) fn free_bloom(&self) -> Bloom {
+        self.info().free()
     }
 
     /// Pointer identity of the underlying `Arc`. Useful as a cache key
@@ -508,8 +698,32 @@ impl Term {
         }
     }
 
-    fn alloc(kind: TermKind) -> Self {
-        Term(Arc::new(kind))
+    /// Allocate a fresh `Arc` for `kind` (no interning). This is the
+    /// canonical no-op [`crate::term::TrustedCons`] (`<()>::cons`); the
+    /// smart constructors below all bottom out here. Crate-internal so the
+    /// `cons` module can use it as the trusted baseline.
+    pub(crate) fn alloc(kind: TermKind) -> Self {
+        let info = term_info(&kind);
+        Term(Arc::new(TermInner { info, kind }))
+    }
+
+    /// Rebuild this term bottom-up through `cons`, returning a
+    /// structurally-equal term. With `&mut ()` this is a deep structural
+    /// copy (sharing untouched leaves); with a [`crate::term::HashCons`]
+    /// it **interns** the whole tree, so equal subterms — within this
+    /// term and across every other term routed through the same interner —
+    /// come back `Arc`-shared.
+    ///
+    /// Only `App`/`Abs` interior nodes are rebuilt from interned children;
+    /// every leaf is consed from a clone of its kind. `Def` is treated as
+    /// an opaque leaf — its body is not interned.
+    pub fn cons_with<C: crate::term::TrustedCons + ?Sized>(&self, cons: &mut C) -> Term {
+        let kind = match self.kind() {
+            TermKind::App(f, x) => TermKind::App(f.cons_with(cons), x.cons_with(cons)),
+            TermKind::Abs(ty, body) => TermKind::Abs(ty.clone(), body.cons_with(cons)),
+            other => other.clone(),
+        };
+        cons.make(kind)
     }
 
     // ---- smart constructors ----
@@ -517,7 +731,18 @@ impl Term {
         Self::alloc(TermKind::Bound(idx))
     }
     pub fn free(name: impl Into<SmolStr>, ty: Type) -> Self {
-        Self::alloc(TermKind::Free(name.into(), ty))
+        Self::alloc(TermKind::Free(Var::new(name, ty)))
+    }
+    /// A free-variable leaf from an existing [`Var`].
+    pub fn free_var(v: Var) -> Self {
+        Self::alloc(TermKind::Free(v))
+    }
+    /// If this is a free variable, return its [`Var`].
+    pub fn as_free(&self) -> Option<&Var> {
+        match self.kind() {
+            TermKind::Free(v) => Some(v),
+            _ => None,
+        }
     }
     pub fn const_(name: impl Into<SmolStr>, ty: Type) -> Self {
         Self::alloc(TermKind::Const(name.into(), ty))
@@ -662,6 +887,12 @@ impl Term {
     /// individual term being well-typed: it also enforces that Free
     /// names are consistent *across* hyps and concl.
     pub fn type_of(&self) -> Result<Type> {
+        // Fast path: a closed, well-typed term has its type cached.
+        if let TermInfo::Wf { ty, .. } = self.info() {
+            return Ok(ty.clone());
+        }
+        // Open / ill-typed: re-derive via the structural typer to produce
+        // a *specific* error (NotClosed / NotFunction / TypeMismatch).
         let mut env = TypeEnv::default();
         type_of_in(self, &mut env)
     }
@@ -754,15 +985,18 @@ impl Term {
     }
 }
 
+// Equality / hashing / ordering are on the `kind` only: `info` is a pure
+// function of `kind`, so equal kinds have equal info and comparing it
+// would be redundant. The `Arc::ptr_eq` fast path stays.
 impl PartialEq for Term {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || *self.0 == *other.0
+        Arc::ptr_eq(&self.0, &other.0) || self.0.kind == other.0.kind
     }
 }
 impl Eq for Term {}
 impl Hash for Term {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        self.0.kind.hash(state);
     }
 }
 impl PartialOrd for Term {
@@ -775,7 +1009,7 @@ impl Ord for Term {
         if Arc::ptr_eq(&self.0, &other.0) {
             return Ordering::Equal;
         }
-        self.0.cmp(&other.0)
+        self.0.kind.cmp(&other.0.kind)
     }
 }
 
@@ -803,7 +1037,8 @@ impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind() {
             TermKind::Bound(i) => write!(f, "#{}", i),
-            TermKind::Free(name, _) | TermKind::Const(name, _) => write!(f, "{}", name),
+            TermKind::Free(v) => write!(f, "{}", v.name()),
+            TermKind::Const(name, _) => write!(f, "{}", name),
             TermKind::App(g, x) => write!(f, "({} {})", g, x),
             TermKind::Abs(ty, body) => write!(f, "(λ:{}. {})", ty, body),
             TermKind::Blob(b) => write!(f, "blob[{}]", b.len()),
@@ -837,17 +1072,16 @@ impl fmt::Display for Term {
 // Type-of
 // ============================================================================
 
-/// Carries the binder context plus the first-seen type of every free
-/// variable referenced so far. Pass the same env across every term in
-/// a theorem to enforce HOL Light–style cross-term consistency for
-/// free variables.
+/// Carries the binder context for a single `type_of` walk.
+///
+/// Free variables are identified by `(name, type)` (HOL Light's
+/// `Var(name, ty)` model), so there is **no** cross-term name/type
+/// consistency to track — `Free(name, ty)` simply has type `ty`. A
+/// distinct same-named variable at another type is a different variable.
 #[derive(Default)]
 pub(crate) struct TypeEnv {
     /// Stack of binder types; the innermost binder is at the top.
     ctx: Vec<Type>,
-    /// First-seen type for each Free name; subsequent occurrences must
-    /// match. Scope is whatever set of terms share this env.
-    frees: BTreeMap<SmolStr, Type>,
 }
 
 /// The carrier type of a derived [`TypeSpec`] at the
@@ -875,11 +1109,124 @@ fn positional_tvar_sub(ty: &Type, args: &[Type]) -> std::collections::BTreeMap<S
         .collect()
 }
 
-/// Type-check `t` in `env`. The env carries the binder context plus
-/// every Free name we have already seen, with its declared type.
-/// Subsequent occurrences (in `t` or in later calls sharing the env)
-/// must use the same type.
+/// Compute a node's cached [`TermInfo`] from its `kind`, reading the
+/// children's already-cached summaries. O(1) for every shape except an
+/// `Abs` that closes an `Open(0)` body — there the body is typed once
+/// under the new binder via [`type_of_in`], which walks only the open
+/// spine (closed subterms short-circuit on their cached `Wf`).
+///
+/// `Soundness:` this is the kernel's type checker, relocated to
+/// construction time and made incremental. It must agree with
+/// [`type_of_in`] (and indeed reuses it for the close case). A node is
+/// `Wf(ty)` only when genuinely closed and well-typed; anything else is
+/// `Open`/`IllTyped`, so no false type can be cached.
+fn term_info(kind: &TermKind) -> TermInfo {
+    use TermInfo::{IllTyped, Open, Wf};
+    // The free-variable Bloom is the same for every node, regardless of its
+    // type/openness; compute it once and stamp it into whichever variant we
+    // return.
+    let free = compute_free(kind);
+    let wf = |ty: Type| Wf { free, ty };
+    let open = |bvi: u32| Open { bvi, free };
+    let ill = || IllTyped { free };
+    // Wrap a possibly-failing closed-type computation into closed info.
+    let closed = |r: Result<Type>| match r {
+        Ok(ty) => Wf { free, ty },
+        Err(_) => IllTyped { free },
+    };
+    match kind {
+        TermKind::Bound(i) => open(*i),
+        TermKind::Free(v) => wf(v.ty().clone()),
+        TermKind::Const(_, ty) => wf(ty.clone()),
+        TermKind::Blob(_) => wf(Type::bytes()),
+        TermKind::Nat(_) => wf(Type::nat()),
+        TermKind::Int(_) => wf(Type::int()),
+        TermKind::SmallInt(lit) => wf(lit.ty()),
+        TermKind::Bool(_) => wf(Type::bool()),
+        TermKind::Eq(alpha) => wf(Type::fun(
+            alpha.clone(),
+            Type::fun(alpha.clone(), Type::bool()),
+        )),
+        TermKind::Select(alpha) => wf(Type::fun(
+            Type::fun(alpha.clone(), Type::bool()),
+            alpha.clone(),
+        )),
+        TermKind::Succ => wf(Type::fun(Type::nat(), Type::nat())),
+        TermKind::Obs(_, ty) => wf(ty.clone()),
+        TermKind::Def(d) => wf(d.instance_type().clone()),
+        TermKind::Spec(spec, args) => closed(
+            spec.ty()
+                .cloned()
+                .ok_or(Error::SpecHasNoCarrier)
+                .map(|result| {
+                    crate::subst::subst_tfrees_in_type(&result, &positional_tvar_sub(&result, args))
+                }),
+        ),
+        TermKind::SpecAbs(spec, args) => closed((|| -> Result<Type> {
+            Ok(Type::fun(
+                spec_carrier(spec, args)?,
+                Type::spec(spec.clone(), args.clone()),
+            ))
+        })()),
+        TermKind::SpecRep(spec, args) => closed((|| -> Result<Type> {
+            Ok(Type::fun(
+                Type::spec(spec.clone(), args.clone()),
+                spec_carrier(spec, args)?,
+            ))
+        })()),
+        TermKind::App(f, x) => {
+            let fo = match f.info() {
+                Open { bvi, .. } => Some(*bvi),
+                _ => None,
+            };
+            let xo = match x.info() {
+                Open { bvi, .. } => Some(*bvi),
+                _ => None,
+            };
+            match (fo, xo) {
+                // Either side open ⇒ the application is open; defer typing.
+                (Some(a), Some(b)) => open(a.max(b)),
+                (Some(a), None) => open(a),
+                (None, Some(b)) => open(b),
+                // Both closed ⇒ type the application now.
+                (None, None) => match (f.info(), x.info()) {
+                    (Wf { ty: ft, .. }, Wf { ty: xt, .. }) => match ft.kind() {
+                        TypeKind::Fun(dom, cod) if dom == xt => wf(cod.clone()),
+                        _ => ill(),
+                    },
+                    // A closed child is `IllTyped`.
+                    _ => ill(),
+                },
+            }
+        }
+        TermKind::Abs(ty, body) => match body.info() {
+            Wf { ty: bt, .. } => wf(Type::fun(ty.clone(), bt.clone())),
+            IllTyped { .. } => ill(),
+            // Binding index 0 closes the term: type the body under the new
+            // binder (walking only the open spine).
+            Open { bvi: 0, .. } => {
+                let mut env = TypeEnv {
+                    ctx: vec![ty.clone()],
+                };
+                closed(type_of_in(body, &mut env).map(|bt| Type::fun(ty.clone(), bt)))
+            }
+            // Still open after binding one level.
+            Open { bvi: m, .. } => open(m - 1),
+        },
+    }
+}
+
+/// Type-check `t` in `env`, where `env` carries the binder-type stack.
+/// Used as the close-time typer by [`term_info`] and as the
+/// specific-error fallback by [`Term::type_of`]. Closed subterms
+/// short-circuit on their cached type, so this walks only the open spine.
 pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
+    // A closed subterm's type is cached and context-independent — return it
+    // without recursing. This is what makes a close-time typing (and any
+    // `type_of`) walk only the *open* spine: closed subterms short-circuit.
+    if let TermInfo::Wf { ty, .. } = t.info() {
+        return Ok(ty.clone());
+    }
     match t.kind() {
         TermKind::Bound(i) => {
             let i = *i as usize;
@@ -888,20 +1235,9 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             }
             Ok(env.ctx[env.ctx.len() - 1 - i].clone())
         }
-        TermKind::Free(name, ty) => {
-            if let Some(prev) = env.frees.get(name) {
-                if prev != ty {
-                    return Err(Error::FreeVarReuse {
-                        name: name.clone(),
-                        first: prev.clone(),
-                        second: ty.clone(),
-                    });
-                }
-            } else {
-                env.frees.insert(name.clone(), ty.clone());
-            }
-            Ok(ty.clone())
-        }
+        // A free variable's type is part of its identity, so it simply
+        // *is* its type — no cross-occurrence consistency to enforce.
+        TermKind::Free(v) => Ok(v.ty().clone()),
         // Const instance types are NOT required to be consistent
         // across occurrences within a theorem — polymorphic constants
         // (`=` at `'a → 'a → bool`, etc.) are used at many instance
@@ -991,5 +1327,33 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         // Def reference, there are no Free leaves to track at this
         // node.
         TermKind::Def(d) => Ok(d.instance_type().clone()),
+    }
+}
+
+#[cfg(test)]
+mod bloom_tests {
+    use super::*;
+    use crate::ty::Type;
+
+    #[test]
+    fn bloom_api() {
+        assert!(!Bloom::empty().contains("x"));
+        assert!(Bloom::singleton("x").contains("x"));
+        let u = Bloom::singleton("x").union(&Bloom::singleton("y"));
+        assert!(u.contains("x") && u.contains("y"));
+    }
+
+    #[test]
+    fn free_bloom_no_false_negatives() {
+        // Every free-var name present must be reported (no false negatives).
+        let t = Term::app(Term::free("a", Type::nat()), Term::free("b", Type::bool()));
+        assert!(t.free_bloom().contains("a"));
+        assert!(t.free_bloom().contains("b"));
+        // A closed term with no free vars: empty bloom, contains nothing.
+        assert!(!Term::nat_lit(5u32).free_bloom().contains("a"));
+        // An abstraction keeps its body's free vars (the binder is Bound 0,
+        // not a free var).
+        let lam = Term::abs(Type::nat(), Term::app(Term::free("a", Type::nat()), Term::bound(0)));
+        assert!(lam.free_bloom().contains("a"));
     }
 }

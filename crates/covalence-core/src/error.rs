@@ -47,16 +47,6 @@ pub enum Error {
     #[error("free variable {name:?} occurs in hypotheses; cannot generalise")]
     FreeVarInHyps { name: SmolStr },
 
-    #[error(
-        "binder type {expected} for variable {name:?} does not match its \
-         declared type {declared} in the theorem"
-    )]
-    BinderTypeMismatch {
-        name: SmolStr,
-        declared: Type,
-        expected: Type,
-    },
-
     #[error("η-conversion: body must be (app f (bound 0)) with bound 0 not free in f")]
     EtaShape,
 
@@ -74,16 +64,6 @@ pub enum Error {
 
     #[error("term has a dangling de Bruijn index (term is not closed at the kernel boundary)")]
     NotClosed,
-
-    #[error(
-        "free variable {name:?} declared at two different types in the same term \
-         (first {first}, then {second})"
-    )]
-    FreeVarReuse {
-        name: SmolStr,
-        first: Type,
-        second: Type,
-    },
 
     #[error(
         "new_type_definition: witness conclusion must have shape `P x` with \

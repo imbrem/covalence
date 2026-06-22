@@ -1,23 +1,101 @@
 <script lang="ts">
-	// TEMPORARY / DEMO PAGE.
-	// Downloads a Metamath `.mm` database, streams a per-theorem import into the
-	// native HOL kernel over the `/api/mm/import` WebSocket, and lets you browse
-	// each theorem's Metamath statement + HOL representation info. Throwaway UX.
+	// TEMPORARY / THROWAWAY DEMO PAGE.
+	// Driven by `?file=<hash>&user=<opt>`. With no `file` it's a landing input:
+	// pick/download a `.mm`, POST it into a cached server session (clean REST),
+	// then navigate to `?file=<hash>`. With a `file` it's the DB view: fetch the
+	// cached graph by REST, kick off the kernel import by REST, and follow live
+	// per-theorem status over a thin status WebSocket. Per-theorem detail
+	// (proof + HOL info) is fetched lazily by REST on row select.
+	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { client } from '$lib/api';
-	import type { ImportMessage, ImportedTheorem } from 'covalence-client';
+	import { renderMm, MM_UNICODE } from '$lib/mmUnicode';
+	import type {
+		MmStatusMessage,
+		ImportedTheorem,
+		ImportTheoremDetail,
+		MmDbInfo,
+		MmDbListEntry,
+		MmServerStats,
+		MmHolInfo,
+	} from 'covalence-client';
 
-	const PRESETS = {
-		hol: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/hol.mm',
-		set: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/set.mm',
+	// Named presets for the source dropdown — the databases hosted on the
+	// Metamath Proof Explorer, all from the canonical metamath/set.mm repo.
+	// `custom` leaves the URL editable.
+	const MM_RAW = 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop';
+	const PRESETS: Record<string, { label: string; url: string; note: string }> = {
+		hol: {
+			label: 'hol.mm',
+			url: `${MM_RAW}/hol.mm`,
+			note: 'HOL · ~151 thms · seconds',
+		},
+		set: {
+			label: 'set.mm',
+			url: `${MM_RAW}/set.mm`,
+			note: 'ZFC (Metamath Proof Explorer) · ~48 MB · ~47k thms · minutes',
+		},
+		iset: {
+			label: 'iset.mm',
+			url: `${MM_RAW}/iset.mm`,
+			note: 'Intuitionistic Logic Explorer · large',
+		},
+		nf: {
+			label: 'nf.mm',
+			url: `${MM_RAW}/nf.mm`,
+			note: 'New Foundations Explorer · large',
+		},
+		ql: {
+			label: 'ql.mm',
+			url: `${MM_RAW}/ql.mm`,
+			note: 'Quantum Logic Explorer · small',
+		},
 	};
 
-	let url = $state(PRESETS.hol);
-	// `graph` = streaming the static declaration graph (every theorem pending);
-	// `importing` = the parallel prove phase flipping each pending → proving →
+	// --- routing: the page is driven by the URL ---------------------------
+	const fileHash = $derived($page.url.searchParams.get('file'));
+	const user = $derived($page.url.searchParams.get('user') ?? undefined);
+
+	// --- landing state -----------------------------------------------------
+	let preset = $state<string>('hol');
+	let url = $state(PRESETS.hol.url);
+	let hashInput = $state(''); // attach-by-hash input (no download)
+	let workers = $state(0); // 0 = auto
+	let landingMsg = $state('');
+	let importing = $state(false); // landing: downloading/posting
+	let serverDbs = $state<MmDbListEntry[]>([]); // "loaded on server" list
+
+	// --- DB-view header info (origin/total) --------------------------------
+	let dbInfo = $state<MmDbInfo | null>(null);
+	let headerCopyMsg = $state('');
+
+	// Choosing a preset fills the URL (still fully editable). `custom` clears it.
+	function onPreset() {
+		if (preset === 'custom') return;
+		url = PRESETS[preset].url;
+	}
+
+	async function refreshServerDbs() {
+		try {
+			serverDbs = await client.mmDbList();
+		} catch {
+			serverDbs = [];
+		}
+	}
+
+	function shortHash(h: string): string {
+		return h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h;
+	}
+
+	// --- DB-view phases ----------------------------------------------------
+	// `loading` = fetching the cached graph; `notLoaded` = the session is gone
+	// (e.g. after a server restart) — fall back to the landing input;
+	// `importing` = the parallel prove phase flips each pending → proving →
 	// proved/error.
-	let phase = $state<
-		'idle' | 'downloading' | 'parsing' | 'graph' | 'importing' | 'done' | 'error'
-	>('idle');
+	let phase = $state<'loading' | 'notLoaded' | 'graph' | 'importing' | 'done' | 'error'>(
+		'loading',
+	);
 	let statusMsg = $state('');
 	let total = $state(0);
 	let done = $state(0);
@@ -29,19 +107,69 @@
 	// updates each — must not be O(n) per message). Not reactive; a plain Map.
 	let labelIndex = new Map<string, number>();
 	let selected = $state<ImportedTheorem | null>(null);
+	// Lazily-fetched full per-theorem detail (proof + essentials + HOL), cached
+	// client-side so re-selecting a row doesn't re-fetch.
+	let detail = $state<ImportTheoremDetail | null>(null);
+	const detailCache = new Map<string, ImportTheoremDetail>();
 	let failuresOnly = $state(false);
 	let search = $state('');
 	let sortBy = $state<'order' | 'slow' | 'fast' | 'deps' | 'label'>('order');
 	let showHisto = $state(false);
+	// Typeset Metamath symbols to Unicode (the "structured view" toggle), on by
+	// default like the Metamath Proof Explorer.
+	let unicode = $state(true);
+	// The database's own `$t` typeset table (from /symbols), merged over the
+	// small built-in fallback. Server entries win — each .mm typesets itself.
+	let serverSymbols = $state<Record<string, string>>({});
+	const symbolMap = $derived({ ...MM_UNICODE, ...serverSymbols });
+	// Pass-1 interned HOL surface: per-theorem HOL terms (available before
+	// proving) + the database's named definitions + the dedup stat.
+	let holInfo = $state<MmHolInfo | null>(null); // set only once pass 1 is ready
+	let internProg = $state<{ done: number; total: number; nodes: number } | null>(null);
+	let holTerms = $state<Record<string, string>>({});
+	let showDefs = $state(false); // list shows the definitions panel instead
+	// Named definitions, filtered by the search box when the defs panel is shown.
+	const filteredDefs = $derived.by(() => {
+		const all = holInfo?.defs ?? [];
+		const q = search.trim().toLowerCase();
+		if (!q) return all;
+		return all.filter(
+			(d) =>
+				d.label.toLowerCase().includes(q) ||
+				d.mm.toLowerCase().includes(q) ||
+				d.hol.toLowerCase().includes(q),
+		);
+	});
+	// Live server-metrics panel (RAM etc. over time). Polled while open.
+	let showServer = $state(false);
+	let serverStat = $state<MmServerStats | null>(null);
+	let serverSamples = $state<{ t: number; rss: number }[]>([]);
+	const SERVER_CAP = 240; // ring-buffer length (~4 min at 1 Hz)
 	let copyMsg = $state('');
 	let ws: WebSocket | null = null;
+	// The hash the current DB view was loaded for (guards re-loads on URL churn).
+	let loadedHash: string | null = null;
 
 	// Live status tallies (the foundation of the general "task view").
-	const nPending = $derived(theorems.filter((t) => t.status === 'pending').length);
-	const nProving = $derived(theorems.filter((t) => t.status === 'proving').length);
-	const nProved = $derived(theorems.filter((t) => t.status === 'proved').length);
+	// One pass over the (up to 47k-row) array yields all four status tallies —
+	// cheaper than four separate `.filter().length` scans, and this is the hot
+	// derived that reruns on every animation-frame flush.
+	const counts = $derived.by(() => {
+		let pending = 0,
+			proving = 0,
+			proved = 0,
+			error = 0;
+		for (const t of theorems) {
+			if (t.status === 'pending') pending++;
+			else if (t.status === 'proving') proving++;
+			else if (t.status === 'proved') proved++;
+			else error++;
+		}
+		return { pending, proving, proved, error };
+	});
+	// The error *rows* (for the failures-only filter + "copy failures"). Lazy:
+	// only recomputes when something actually reads it.
 	const failures = $derived(theorems.filter((t) => t.status === 'error'));
-	const nErr = $derived(failures.length);
 	const timed = $derived(theorems.filter((t) => t.importMs != null));
 	const totalMs = $derived(timed.reduce((a, t) => a + (t.importMs ?? 0), 0));
 	const avgMs = $derived(timed.length ? totalMs / timed.length : 0);
@@ -51,12 +179,10 @@
 			null,
 		),
 	);
-	// Label → theorem, for transitive dependency walks.
-	const byLabel = $derived.by(() => {
-		const m = new Map<string, ImportedTheorem>();
-		for (const t of theorems) m.set(t.label, t);
-		return m;
-	});
+	// Label → theorem, for transitive dependency walks. Labels are immutable
+	// after graph load, so this is built once there (alongside `labelIndex`)
+	// rather than rederived every frame. Not reactive; a plain Map.
+	let byLabel = new Map<string, ImportedTheorem>();
 
 	// The **transitive axiom base** of a theorem: the union of axiom/def labels
 	// reached by recursively following theorem (`thm`) dependencies — i.e. the
@@ -126,6 +252,38 @@
 		}
 	});
 
+	// --- list virtualization ----------------------------------------------
+	// The list can hold ~60k rows; rendering them all (and re-rendering during
+	// the live status updates) is what made the page lag. Render only the rows
+	// in a slightly-overscanned viewport. Rows are fixed-height (ROW_H, matched
+	// exactly in CSS); an outer spacer is sized to the full height and the
+	// rendered slice is offset with translateY.
+	const ROW_H = 26; // px — must match `.rows .item` height in CSS
+	const OVERSCAN = 8;
+	let scrollTop = $state(0);
+	let viewportH = $state(0);
+	let rowsEl = $state<HTMLDivElement | null>(null);
+
+	$effect(() => {
+		if (!rowsEl) return;
+		viewportH = rowsEl.clientHeight;
+		const ro = new ResizeObserver(() => {
+			if (rowsEl) viewportH = rowsEl.clientHeight;
+		});
+		ro.observe(rowsEl);
+		return () => ro.disconnect();
+	});
+
+	const vStart = $derived(Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN));
+	const vCount = $derived(Math.ceil((viewportH || 0) / ROW_H) + 2 * OVERSCAN);
+	const vRows = $derived(sorted.slice(vStart, vStart + vCount));
+	const totalH = $derived(sorted.length * ROW_H);
+	const offsetY = $derived(vStart * ROW_H);
+
+	function onRowsScroll(e: Event) {
+		scrollTop = (e.currentTarget as HTMLDivElement).scrollTop;
+	}
+
 	// --- timing statistics -------------------------------------------------
 	// Linear-interpolation quantile (the "type 7" / numpy default): for p in
 	// [0,1] over a sorted ascending array, index = p*(n-1), interpolate between
@@ -182,17 +340,83 @@
 			counts[b]++;
 		}
 		const peak = Math.max(...counts, 1);
-		// Right-edge (ms) of bucket i, for axis ticks.
-		const edge = (i: number) => 10 ** (lo + (span * (i + 1)) / HISTO_BUCKETS);
-		return { min, max, counts, peak, edge };
+		// Left edge (ms) of bucket i; bucket i spans [edge(i), edge(i+1)].
+		const edge = (i: number) => 10 ** (lo + (span * i) / HISTO_BUCKETS);
+		return { min, max, counts, peak, total: xs.length, edge };
 	});
-	// SVG geometry for the histogram.
-	const HW = 640;
-	const HH = 160;
-	const HPAD = 24;
+	// SVG geometry for the histogram (viewBox units; scales uniformly so the
+	// axis labels stay crisp). `M` = margins for the y/x tick gutters.
+	const HW = 680;
+	const HH = 220;
+	const M = { l: 46, r: 10, t: 12, b: 30 };
+	const plotW = HW - M.l - M.r;
+	const plotH = HH - M.t - M.b;
+	let hoverBucket = $state<number | null>(null);
+
+	// Compact ms formatter for the axis labels (range ~0.01 ms … ~10³ ms).
+	function fmtMs(x: number): string {
+		if (x >= 100) return x.toFixed(0);
+		if (x >= 10) return x.toFixed(1);
+		if (x >= 1) return x.toFixed(2);
+		return x.toFixed(2);
+	}
+	// ~6 evenly-spaced bucket boundaries (for the log x-axis ticks).
+	const X_TICKS = 6;
+	function xTicks(): number[] {
+		return Array.from({ length: X_TICKS + 1 }, (_, k) =>
+			Math.round((k / X_TICKS) * HISTO_BUCKETS),
+		);
+	}
+	// y-axis count ticks: 0, mid, peak (deduped).
+	function yTicks(peak: number): number[] {
+		return [...new Set([0, Math.round(peak / 2), peak])];
+	}
+
+	// --- server metrics over time (RAM etc.) -------------------------------
+	const fmtMB = (bytes: number) => (bytes / 1048576).toFixed(1);
+	async function pollServer() {
+		try {
+			const s = await client.mmServerStats();
+			serverStat = s;
+			if (s.rssBytes != null) {
+				const next = [...serverSamples, { t: s.uptimeSecs, rss: s.rssBytes }];
+				serverSamples = next.length > SERVER_CAP ? next.slice(-SERVER_CAP) : next;
+			}
+		} catch {
+			/* transient — keep the last good sample */
+		}
+	}
+	// Poll once a second while the panel is open; clean up on close/unmount.
+	$effect(() => {
+		if (!showServer) return;
+		pollServer();
+		const id = setInterval(pollServer, 1000);
+		return () => clearInterval(id);
+	});
+	// Line-chart geometry + path for the RSS series.
+	const SW = 680;
+	const SH = 150;
+	const SM = { l: 52, r: 10, t: 10, b: 22 };
+	const sPlotW = SW - SM.l - SM.r;
+	const sPlotH = SH - SM.t - SM.b;
+	const rssChart = $derived.by(() => {
+		const pts = serverSamples;
+		if (pts.length < 2) return null;
+		const t0 = pts[0].t;
+		const t1 = pts[pts.length - 1].t;
+		const tSpan = t1 - t0 || 1;
+		const peakB = serverStat?.peakRssBytes ?? Math.max(...pts.map((p) => p.rss));
+		const maxB = Math.max(peakB, ...pts.map((p) => p.rss), 1);
+		const x = (t: number) => SM.l + ((t - t0) / tSpan) * sPlotW;
+		const y = (b: number) => SM.t + sPlotH - (b / maxB) * sPlotH;
+		const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.rss).toFixed(1)}`).join(' ');
+		// Close the area down to the baseline for a subtle fill.
+		const area = `${path} L${x(t1).toFixed(1)} ${(SM.t + sPlotH).toFixed(1)} L${x(t0).toFixed(1)} ${(SM.t + sPlotH).toFixed(1)} Z`;
+		return { path, area, maxB, peakB, x, y, t0span: tSpan };
+	});
 
 	async function copyFailures() {
-		const data = failures.map((t) => ({ label: t.label, mm: t.mm, ess: t.ess, error: t.error }));
+		const data = failures.map((t) => ({ label: t.label, mm: t.mm, error: t.error }));
 		try {
 			await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
 			copyMsg = `copied ${data.length} failures`;
@@ -202,11 +426,76 @@
 		}
 		setTimeout(() => (copyMsg = ''), 2500);
 	}
-	const isRunning = $derived(
-		phase === 'downloading' || phase === 'parsing' || phase === 'graph' || phase === 'importing',
-	);
+	const isRunning = $derived(phase === 'loading' || phase === 'graph' || phase === 'importing');
 
-	function reset() {
+	/** Navigate to a session view, carrying the chosen worker count. */
+	async function attach(file: string) {
+		const params = new URLSearchParams({ file });
+		if (workers > 0) params.set('workers', String(workers));
+		await goto(`?${params.toString()}`);
+	}
+
+	// --- landing: either attach by hash (no download) or import by URL -------
+	async function importDb() {
+		importing = true;
+		landingMsg = '';
+		const hash = hashInput.trim();
+
+		// Hash given → probe the server; attach if it exists (no download).
+		if (hash) {
+			landingMsg = `probing ${shortHash(hash)} on the server …`;
+			try {
+				const info = await client.mmDbInfo(hash, user);
+				if (info) {
+					await attach(info.file);
+					return;
+				}
+				landingMsg =
+					'not loaded on the server — provide a URL (clear the hash) to import it.';
+			} catch (e) {
+				landingMsg = `probe failed: ${e instanceof Error ? e.message : String(e)}`;
+			}
+			importing = false;
+			return;
+		}
+
+		// No hash → download the `.mm` client-side, then POST it into a session.
+		if (!url.trim()) {
+			landingMsg = 'provide a .mm URL or a server hash.';
+			importing = false;
+			return;
+		}
+		landingMsg = `downloading ${url} …`;
+		let source: string;
+		try {
+			const res = await fetch(url);
+			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+			source = await res.text();
+		} catch (e) {
+			landingMsg = `download failed: ${e instanceof Error ? e.message : String(e)}`;
+			importing = false;
+			return;
+		}
+		landingMsg = `downloaded ${(source.length / 1_000_000).toFixed(1)} MB — parsing on server …`;
+		try {
+			const { file } = await client.createMmDb(source, { user, from: url });
+			await attach(file);
+		} catch (e) {
+			landingMsg = `import failed: ${e instanceof Error ? e.message : String(e)}`;
+			importing = false;
+		}
+	}
+
+	// --- DB view: load the cached graph, start proving, follow live status --
+	function teardown() {
+		if (ws) {
+			ws.close();
+			ws = null;
+		}
+	}
+
+	function resetView() {
+		teardown();
 		total = 0;
 		done = 0;
 		currentLabel = '';
@@ -214,98 +503,198 @@
 		nOk = 0;
 		theorems = [];
 		labelIndex = new Map();
+		byLabel = new Map();
 		selected = null;
+		detail = null;
+		detailCache.clear();
+		dbInfo = null;
 	}
 
-	function stop() {
-		if (ws) {
-			ws.close();
-			ws = null;
-		}
-		if (isRunning) {
-			phase = 'idle';
-			statusMsg = 'stopped';
-		}
-	}
-
-	async function run() {
-		stop();
-		reset();
-		phase = 'downloading';
-		statusMsg = `downloading ${url} …`;
-
-		let source: string;
+	/** Copy the full session hash to the clipboard (header copy button). */
+	async function copyHash() {
+		if (!fileHash) return;
 		try {
-			const res = await fetch(url);
-			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-			source = await res.text();
-		} catch (e) {
-			phase = 'error';
-			statusMsg = `download failed: ${e instanceof Error ? e.message : String(e)}`;
+			await navigator.clipboard.writeText(fileHash);
+			headerCopyMsg = 'copied';
+		} catch {
+			headerCopyMsg = 'clipboard blocked';
+		}
+		setTimeout(() => (headerCopyMsg = ''), 2000);
+	}
+
+	async function loadDb(hash: string) {
+		resetView();
+		loadedHash = hash;
+		phase = 'loading';
+		statusMsg = 'loading graph …';
+
+		// Fetch lightweight info first so origin/total show before the graph.
+		try {
+			dbInfo = await client.mmDbInfo(hash, user);
+		} catch {
+			dbInfo = null;
+		}
+
+		let graph;
+		try {
+			graph = await client.mmGraph(hash, user);
+		} catch {
+			phase = 'notLoaded';
+			statusMsg = 'database not loaded on the server — import it';
 			return;
 		}
 
-		statusMsg = `downloaded ${(source.length / 1_000_000).toFixed(1)} MB — connecting …`;
-		phase = 'parsing';
+		total = graph.total;
+		const rows: ImportedTheorem[] = [];
+		labelIndex = new Map();
+		byLabel = new Map();
+		for (const item of graph.theorems) {
+			labelIndex.set(item.label, rows.length);
+			const row: ImportedTheorem = {
+				label: item.label,
+				status: 'pending',
+				mm: item.mm,
+				deps: item.deps,
+				ok: false,
+			};
+			rows.push(row);
+			byLabel.set(item.label, row);
+		}
+		theorems = rows;
+		phase = 'graph';
+		statusMsg = `loaded ${total} theorems — starting import …`;
 
-		ws = client.connectMmImport();
-		ws.onopen = () => {
-			statusMsg = 'parsing & importing …';
-			ws?.send(source);
-		};
-		ws.onerror = () => {
+		// Fetch the database's own typesetting (token → Unicode), non-blocking.
+		client
+			.mmSymbols(hash, user)
+			.then((s) => (serverSymbols = s))
+			.catch(() => {});
+
+		// Pass 1: fetch the interned HOL surface (terms + named definitions). This
+		// triggers the server-side single-thread interning; the HOL terms then
+		// show *before* (and during) the prove phase.
+		client
+			.mmHol(hash, user)
+			.then((h) => {
+				if (h.ready) holInfo = h;
+				else internProg = { done: h.done ?? 0, total: h.total ?? 0, nodes: h.nodes ?? 0 };
+			})
+			.catch(() => {});
+		client
+			.mmHolTerms(hash, user)
+			.then((t) => (holTerms = t))
+			.catch(() => {});
+
+		// Connect the status WS first so we don't miss early frames, then start.
+		connectStatus(hash);
+		try {
+			const wq = new URLSearchParams(window.location.search).get('workers');
+			await client.startMmProve(hash, user, wq != null ? Number(wq) : undefined);
+			phase = 'importing';
+			statusMsg = `proving ${total} theorems …`;
+		} catch (e) {
 			phase = 'error';
-			statusMsg = 'websocket error';
-		};
-		ws.onclose = () => {
-			if (isRunning) {
-				phase = 'error';
-				statusMsg = 'connection closed unexpectedly';
+			statusMsg = `prove failed: ${e instanceof Error ? e.message : String(e)}`;
+		}
+	}
+
+	// Per-theorem status frames can arrive far faster than a 60k-row reactive UI
+	// can absorb them (each row mutation invalidates the O(n) deriveds —
+	// byLabel/sorted/filtered/tallies). So `onmessage` only *buffers* frames
+	// (cheap, non-reactive) and we drain the buffer once per animation frame:
+	// the expensive reactive recompute happens at most ~60×/s no matter the
+	// server throughput, and the socket drains fast (no backpressure / dropped
+	// broadcast frames). The server stays simple — it pushes per-theorem.
+	let statusBuf: MmStatusMessage[] = [];
+	let flushQueued = false;
+
+	function scheduleFlush() {
+		if (flushQueued) return;
+		flushQueued = true;
+		requestAnimationFrame(flushStatus);
+	}
+
+	function flushStatus() {
+		flushQueued = false;
+		const batch = statusBuf;
+		statusBuf = [];
+		let maxDone = done;
+		let refreshSelected = false;
+		for (const msg of batch) {
+			const i = labelIndex.get(msg.label);
+			if (i == null) continue;
+			const t = theorems[i];
+			if (msg.type === 'proving') {
+				if (t.status === 'pending') t.status = 'proving';
+				currentLabel = msg.label;
+			} else if (msg.type === 'proved') {
+				t.status = msg.ok ? 'proved' : 'error';
+				t.ok = msg.ok;
+				t.hyps = msg.hyps;
+				t.genuine = msg.genuine;
+				t.holPreview = msg.holPreview;
+				t.error = msg.error;
+				t.importMs = msg.importMs;
+				if (msg.done > maxDone) maxDone = msg.done;
+				if (selected && selected.label === msg.label) refreshSelected = true;
 			}
-		};
+		}
+		done = maxDone;
+		if (refreshSelected && selected) {
+			const i = labelIndex.get(selected.label);
+			if (i != null) {
+				detailCache.delete(selected.label);
+				void selectTheorem(theorems[i]);
+			}
+		}
+	}
+
+	function connectStatus(hash: string) {
+		ws = client.connectMmStatus(hash, user);
 		ws.onmessage = (ev) => {
-			let msg: ImportMessage;
+			let msg: MmStatusMessage;
 			try {
-				msg = JSON.parse(ev.data as string) as ImportMessage;
+				msg = JSON.parse(ev.data as string) as MmStatusMessage;
 			} catch {
 				return;
 			}
-			handle(msg);
+			if (msg.type === 'proving' || msg.type === 'proved') {
+				statusBuf.push(msg); // coalesce — applied on the next animation frame
+				scheduleFlush();
+			} else {
+				// snapshot / done / error: rare; apply now (drain buffered rows first).
+				if (statusBuf.length) flushStatus();
+				handle(msg);
+			}
+		};
+		ws.onerror = () => {
+			// Non-fatal: the import keeps running server-side; the page just
+			// won't get live updates. Leave phase as-is.
 		};
 	}
 
-	// The live status model. Two phases:
-	//   1. graph — `decl` batches push every theorem as `pending` (whole DB shown
-	//      immediately); `graphDone` ends the phase.
-	//   2. prove — `proving`/`proved` flip individual rows in place via the
-	//      `labelIndex` map (O(1) lookup), mutating the element so Svelte 5's deep
-	//      `$state` reactivity re-renders only that row — no array rebuild.
-	function handle(msg: ImportMessage) {
+	// The live status model:
+	//   - `snapshot` (on connect) seeds statuses for already-proved theorems so a
+	//     late joiner / reconnect is current;
+	//   - `proving`/`proved` flip individual rows in place via the `labelIndex`
+	//     map (O(1) lookup), mutating the element so Svelte 5's deep `$state`
+	//     reactivity re-renders only that row — no array rebuild;
+	//   - `done` finalizes the run.
+	function handle(msg: MmStatusMessage) {
 		switch (msg.type) {
-			case 'parsed':
-				total = msg.total;
-				phase = 'graph';
-				statusMsg = `loading graph — ${total} theorems …`;
-				break;
-			case 'decl': {
-				for (const item of msg.items) {
-					labelIndex.set(item.label, theorems.length);
-					theorems.push({
-						label: item.label,
-						status: 'pending',
-						mm: item.mm,
-						ess: item.ess ?? [],
-						proof: item.proof,
-						deps: item.deps,
-						ok: false,
-					});
+			case 'snapshot': {
+				let n = 0;
+				for (const r of msg.results) {
+					const i = labelIndex.get(r.label);
+					if (i != null) {
+						theorems[i].status = r.ok ? 'proved' : 'error';
+						theorems[i].ok = r.ok;
+						n++;
+					}
 				}
+				done = Math.max(done, n);
 				break;
 			}
-			case 'graphDone':
-				phase = 'importing';
-				statusMsg = `proving ${total} theorems …`;
-				break;
 			case 'proving': {
 				const i = labelIndex.get(msg.label);
 				if (i != null) {
@@ -327,6 +716,11 @@
 					t.error = msg.error;
 					t.importMs = msg.importMs;
 				}
+				// If this row is the selected one, refresh its detail in place.
+				if (selected && selected.label === msg.label) {
+					detailCache.delete(msg.label);
+					void selectTheorem(theorems[i]);
+				}
 				break;
 			}
 			case 'done':
@@ -334,17 +728,77 @@
 				nOk = msg.ok;
 				elapsedMs = msg.elapsedMs;
 				statusMsg = `done — ${msg.ok}/${msg.total} imported in ${(msg.elapsedMs / 1000).toFixed(1)}s`;
-				ws?.close();
-				ws = null;
+				teardown();
 				break;
 			case 'error':
 				phase = 'error';
 				statusMsg = `error: ${msg.message}`;
-				ws?.close();
-				ws = null;
+				teardown();
+				break;
+			case 'interning':
+				internProg = { done: msg.done, total: msg.total, nodes: msg.nodes };
+				break;
+			case 'interned':
+				internProg = null;
+				// Pass 1 done — pull the full surface (defs + final stats) and the
+				// folded bulk terms.
+				if (fileHash) {
+					client
+						.mmHol(fileHash, user)
+						.then((h) => {
+							if (h.ready) holInfo = h;
+						})
+						.catch(() => {});
+					client
+						.mmHolTerms(fileHash, user)
+						.then((t) => (holTerms = t))
+						.catch(() => {});
+				}
 				break;
 		}
 	}
+
+	// --- detail: lazily fetch full per-theorem data (proof + ess + HOL) -----
+	async function selectTheorem(t: ImportedTheorem) {
+		selected = t;
+		const cached = detailCache.get(t.label);
+		if (cached) {
+			detail = cached;
+			return;
+		}
+		detail = null;
+		if (!fileHash) return;
+		try {
+			const d = await client.mmTheorem(fileHash, t.label, user);
+			detailCache.set(t.label, d);
+			// Only apply if the selection hasn't changed while we awaited.
+			if (selected && selected.label === t.label) detail = d;
+		} catch {
+			// leave detail null; the row's accumulated fields still render
+		}
+	}
+
+	// Refresh the "loaded on server" list whenever we're on the landing view.
+	$effect(() => {
+		if (!browser) return;
+		if (!fileHash) void refreshServerDbs();
+	});
+
+	// React to the `?file` param: (re)load when it changes; tear down on leave.
+	$effect(() => {
+		if (!browser) return;
+		const h = fileHash;
+		if (!h) {
+			resetView();
+			loadedHash = null;
+			importing = false;
+			return;
+		}
+		if (h !== loadedHash) {
+			void loadDb(h);
+		}
+		return () => teardown();
+	});
 </script>
 
 <main>
@@ -363,35 +817,100 @@
 		</p>
 	</header>
 
-	<section class="controls">
-		<div class="presets">
-			<button class:active={url === PRESETS.hol} onclick={() => (url = PRESETS.hol)}>
-				hol.mm <small>~151 thms · seconds</small>
-			</button>
-			<button class:active={url === PRESETS.set} onclick={() => (url = PRESETS.set)}>
-				set.mm <small>~48 MB · ~47k thms · minutes</small>
-			</button>
-		</div>
-		<div class="row">
-			<input
-				type="text"
-				bind:value={url}
-				placeholder=".mm URL"
-				spellcheck="false"
-				disabled={isRunning}
-			/>
-			{#if isRunning}
-				<button class="primary stop" onclick={stop}>Stop</button>
-			{:else}
-				<button class="primary" onclick={run}>Download &amp; Import</button>
+	{#if !fileHash || phase === 'notLoaded'}
+		<section class="controls">
+			{#if phase === 'notLoaded'}
+				<p class="warn">
+					This database isn’t loaded on the server (it may have restarted). Re-import it below.
+				</p>
 			{/if}
+
+			<div class="row">
+				<label class="field-lbl" title="fill the URL from a known preset">
+					source
+					<select class="preset-select" bind:value={preset} onchange={onPreset} disabled={importing}>
+						{#each Object.entries(PRESETS) as [k, p] (k)}
+							<option value={k} title={p.note}>{p.label}</option>
+						{/each}
+						<option value="custom">custom…</option>
+					</select>
+				</label>
+				<input
+					type="text"
+					bind:value={url}
+					oninput={() => (preset = 'custom')}
+					placeholder=".mm URL (downloaded client-side, then parsed on the server)"
+					spellcheck="false"
+					disabled={importing}
+				/>
+			</div>
+
+			<div class="row">
+				<label class="field-lbl grow" title="attach to an already-loaded session by content hash (no download)">
+					hash
+					<input
+						type="text"
+						class="hash-input"
+						bind:value={hashInput}
+						placeholder="attach by content hash (no download) — leave empty to use the URL"
+						spellcheck="false"
+						disabled={importing}
+					/>
+				</label>
+				<label class="workers" title="prove worker threads (0 = auto)">
+					workers
+					<input type="number" min="0" max="64" bind:value={workers} disabled={importing} />
+				</label>
+				<button class="primary" onclick={importDb} disabled={importing}>
+					{importing ? 'Working…' : hashInput.trim() ? 'Attach' : 'Download & Import'}
+				</button>
+			</div>
+
+			{#if landingMsg}<p class="msg landing-msg">{landingMsg}</p>{/if}
+			{#if !hashInput.trim() && url === PRESETS.set.url}
+				<p class="warn">
+					set.mm is ~48 MB and ~47k theorems — the upload + parse is heavy and the import runs for
+					minutes. hol.mm is the snappy default. (If it’s already loaded, reattach below — no
+					re-download.)
+				</p>
+			{/if}
+
+			<div class="server-dbs">
+				<div class="sd-head">
+					<span class="flabel">Loaded on server</span>
+					<button class="copy" onclick={refreshServerDbs} disabled={importing}>refresh</button>
+				</div>
+				{#if serverDbs.length === 0}
+					<p class="note">No databases loaded on the server yet.</p>
+				{:else}
+					<div class="sd-list">
+						{#each serverDbs as db (db.file + (db.user ?? ''))}
+							<button class="sd-item" onclick={() => attach(db.file)} disabled={importing}>
+								<span class="sd-origin">{db.origin ?? '(no origin)'}</span>
+								<span class="sd-meta">{db.total} thms · {db.proved} proved</span>
+								<span class="sd-hash" title={db.file}>{shortHash(db.file)}</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</section>
+	{/if}
+
+	{#if fileHash && phase !== 'notLoaded'}
+	<section class="dbhead">
+		<button class="back" onclick={() => goto('?')} title="back to source selection">← sources</button>
+		<div class="dbmeta">
+			<span class="origin" title="provenance (where this .mm came from)">
+				{dbInfo?.origin ?? '(no origin)'}
+			</span>
+			<span class="dim">· {dbInfo?.total ?? total} theorems</span>
 		</div>
-		{#if url === PRESETS.set}
-			<p class="warn">
-				set.mm is ~48 MB and ~47k theorems — the download + WebSocket upload is heavy and the
-				import runs for minutes. hol.mm is the snappy default.
-			</p>
-		{/if}
+		<div class="hashbox">
+			<code class="fullhash" title={fileHash}>{fileHash}</code>
+			<button class="copy" onclick={copyHash}>copy</button>
+			{#if headerCopyMsg}<span class="dim">{headerCopyMsg}</span>{/if}
+		</div>
 	</section>
 
 	<section class="status">
@@ -406,24 +925,41 @@
 		</div>
 		{#if theorems.length > 0}
 			<div class="summary">
-				{#if nPending > 0}<span class="pending">{nPending} pending</span>{/if}
-				{#if nProving > 0}<span class="proving">{nProving} active</span>{/if}
-				<span class="ok">{nProved} ✓</span>
-				{#if nErr > 0}<span class="err">{nErr} ✗</span>{/if}
+				{#if counts.pending > 0}<span class="pending">{counts.pending} pending</span>{/if}
+				{#if counts.proving > 0}<span class="proving">{counts.proving} active</span>{/if}
+				<span class="ok">{counts.proved} ✓</span>
+				{#if counts.error > 0}<span class="err">{counts.error} ✗</span>{/if}
 				{#if phase === 'done'}<span>{(elapsedMs / 1000).toFixed(1)}s wall</span>{/if}
 				{#if avgMs > 0}<span class="dim">avg {avgMs.toFixed(1)} ms/thm</span>{/if}
 				{#if slowest}<span class="dim">slowest {slowest.label} {(slowest.importMs ?? 0).toFixed(0)} ms</span>{/if}
+				{#if holInfo}<span class="dim" title="pass-1 interning: summed statement-tree nodes → distinct shared-DAG nodes">HOL surface {(holInfo.surfaceNodes ?? 0).toLocaleString()} → {(holInfo.dagNodes ?? 0).toLocaleString()} ({(holInfo.dedup ?? 0).toFixed(1)}× shared)</span>{:else if internProg}<span class="dim" title="pass-1 interner progress (single-threaded, runs alongside proving)">interning {internProg.done.toLocaleString()}/{internProg.total.toLocaleString()} · {internProg.nodes.toLocaleString()} nodes</span>{/if}
 				<span class="spacer"></span>
 				<label class="filter">
 					<input type="checkbox" bind:checked={failuresOnly} />
 					failures only
 				</label>
+				<button
+					class="copy"
+					class:on={unicode}
+					title="typeset Metamath symbols to Unicode (structured view)"
+					onclick={() => (unicode = !unicode)}
+				>
+					{unicode ? 'unicode' : 'ascii'}
+				</button>
 				{#if timed.length > 0}
 					<button class="copy" class:on={showHisto} onclick={() => (showHisto = !showHisto)}>
 						{showHisto ? 'hide plot' : 'plot'}
 					</button>
 				{/if}
-				{#if nErr > 0}
+				<button
+					class="copy"
+					class:on={showServer}
+					title="server RAM & metrics over time"
+					onclick={() => (showServer = !showServer)}
+				>
+					{showServer ? 'hide server' : 'server'}
+				</button>
+				{#if counts.error > 0}
 					<button class="copy" onclick={copyFailures}>Copy failures (JSON)</button>
 				{/if}
 				{#if copyMsg}<span class="dim">{copyMsg}</span>{/if}
@@ -439,27 +975,94 @@
 				</div>
 			{/if}
 			{#if showHisto && histo}
+				{@const bw = plotW / HISTO_BUCKETS}
 				<div class="histo">
-					<svg viewBox="0 0 {HW} {HH}" preserveAspectRatio="none" role="img"
-						aria-label="histogram of import times">
-						{#each histo.counts as c, i (i)}
-							{@const bw = (HW - 2 * HPAD) / HISTO_BUCKETS}
-							{@const h = (c / histo.peak) * (HH - 2 * HPAD)}
-							<rect
-								x={HPAD + i * bw}
-								y={HH - HPAD - h}
-								width={Math.max(bw - 1, 1)}
-								height={h}
-								fill="var(--accent)"
-							/>
+					<svg viewBox="0 0 {HW} {HH}" role="img"
+						aria-label="histogram of import times (log-scale buckets)"
+						onmouseleave={() => (hoverBucket = null)}>
+						<!-- y-axis (count) gridlines + labels -->
+						{#each yTicks(histo.peak) as v (v)}
+							{@const y = M.t + plotH - (v / histo.peak) * plotH}
+							<line class="grid" x1={M.l} y1={y} x2={HW - M.r} y2={y} />
+							<text class="ytick" x={M.l - 6} y={y + 3.5}>{v}</text>
 						{/each}
-						<line x1={HPAD} y1={HH - HPAD} x2={HW - HPAD} y2={HH - HPAD} stroke="var(--border)" />
+						<!-- bars -->
+						{#each histo.counts as c, i (i)}
+							{@const h = (c / histo.peak) * plotH}
+							<rect
+								class="bar"
+								class:hot={hoverBucket === i}
+								x={M.l + i * bw}
+								y={M.t + plotH - h}
+								width={Math.max(bw - 1, 0.5)}
+								height={h}
+								onmouseenter={() => (hoverBucket = i)}
+							>
+								<title>{fmtMs(histo.edge(i))}–{fmtMs(histo.edge(i + 1))} ms · {c} thm</title>
+							</rect>
+						{/each}
+						<!-- x-axis (ms) baseline + log-spaced ticks -->
+						<line class="axis" x1={M.l} y1={M.t + plotH} x2={HW - M.r} y2={M.t + plotH} />
+						{#each xTicks() as b (b)}
+							{@const x = M.l + (b / HISTO_BUCKETS) * plotW}
+							<line class="tick" x1={x} y1={M.t + plotH} x2={x} y2={M.t + plotH + 4} />
+							<text class="xtick" {x} y={M.t + plotH + 16}>{fmtMs(histo.edge(b))}</text>
+						{/each}
 					</svg>
 					<div class="haxis">
-						<span>{histo.min.toFixed(2)} ms</span>
-						<span class="dim">log scale · {HISTO_BUCKETS} buckets · peak {histo.peak}</span>
-						<span>{histo.max.toFixed(1)} ms</span>
+						<span class="dim">import time (ms, log scale)</span>
+						{#if hoverBucket !== null}
+							<span class="hot"
+								>{fmtMs(histo.edge(hoverBucket))}–{fmtMs(histo.edge(hoverBucket + 1))} ms ·
+								{histo.counts[hoverBucket]} thm</span
+							>
+						{:else}
+							<span class="dim"
+								>{HISTO_BUCKETS} buckets · {histo.total} timed · peak {histo.peak}</span
+							>
+						{/if}
 					</div>
+				</div>
+			{/if}
+			{#if showServer}
+				<div class="histo server">
+					{#if serverStat}
+						<div class="haxis srvstat">
+							<span class="dim">server</span>
+							{#if serverStat.rssBytes != null}
+								<span>RAM <b>{fmtMB(serverStat.rssBytes)} MB</b></span>
+							{/if}
+							{#if serverStat.peakRssBytes != null}
+								<span class="dim">peak {fmtMB(serverStat.peakRssBytes)} MB</span>
+							{/if}
+							<span class="dim">{serverStat.sessions} sessions</span>
+							<span class="dim">{serverStat.theoremsCached.toLocaleString()} cached</span>
+							<span class="dim">up {serverStat.uptimeSecs}s</span>
+						</div>
+					{/if}
+					{#if rssChart}
+						<svg viewBox="0 0 {SW} {SH}" role="img" aria-label="server RSS over time">
+							{#each [0, rssChart.maxB] as v (v)}
+								{@const y = SM.t + sPlotH - (v / rssChart.maxB) * sPlotH}
+								<line class="grid" x1={SM.l} y1={y} x2={SW - SM.r} y2={y} />
+								<text class="ytick" x={SM.l - 6} y={y + 3.5}>{fmtMB(v)}</text>
+							{/each}
+							<path class="rss-area" d={rssChart.area} />
+							<path class="rss-line" d={rssChart.path} />
+							<line class="axis" x1={SM.l} y1={SM.t + sPlotH} x2={SW - SM.r} y2={SM.t + sPlotH} />
+							<text class="xtick start" x={SM.l} y={SM.t + sPlotH + 16}
+								>{serverSamples[0]?.t ?? 0}s</text
+							>
+							<text class="xtick end" x={SW - SM.r} y={SM.t + sPlotH + 16}
+								>{serverSamples[serverSamples.length - 1]?.t ?? 0}s</text
+							>
+						</svg>
+						<div class="haxis">
+							<span class="dim">resident memory (MB) vs. server uptime (s)</span>
+						</div>
+					{:else}
+						<div class="haxis"><span class="dim">sampling… (1 Hz)</span></div>
+					{/if}
 				</div>
 			{/if}
 		{/if}
@@ -475,37 +1078,72 @@
 					placeholder="filter by label or statement…"
 					spellcheck="false"
 				/>
-				<select class="sort" bind:value={sortBy} title="sort order">
-					<option value="order">order</option>
-					<option value="slow">slowest</option>
-					<option value="fast">fastest</option>
-					<option value="deps">most deps</option>
-					<option value="label">label</option>
-				</select>
-				{#if search || failuresOnly}
+				{#if !showDefs}
+					<select class="sort" bind:value={sortBy} title="sort order">
+						<option value="order">order</option>
+						<option value="slow">slowest</option>
+						<option value="fast">fastest</option>
+						<option value="deps">most deps</option>
+						<option value="label">label</option>
+					</select>
+				{/if}
+				{#if holInfo?.defs && holInfo.defs.length > 0}
+					<button
+						class="copy"
+						class:on={showDefs}
+						title="the database's own named definitions (syntactic formers + df-*)"
+						onclick={() => (showDefs = !showDefs)}
+					>
+						{showDefs ? 'theorems' : `defs (${holInfo.defs.length})`}
+					</button>
+				{/if}
+				{#if showDefs}
+					<span class="shown">{filteredDefs.length} / {holInfo?.defs?.length ?? 0}</span>
+				{:else if search || failuresOnly}
 					<span class="shown">{filtered.length} / {theorems.length}</span>
 				{/if}
 			</div>
-			<div class="rows">
-				{#each sorted as t (t.label)}
-					<button
-						class="item"
-						class:fail={t.status === 'error'}
-						class:sel={selected?.label === t.label}
-						onclick={() => (selected = t)}
-					>
-						<span class="dot status-{t.status}"></span>
-						<span class="lbl">{t.label}</span>
-						<span class="mini">{t.mm}</span>
-						{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
-					</button>
-				{/each}
+			{#if showDefs}
+				<div class="rows defs-rows">
+					{#each filteredDefs.slice(0, 500) as d (d.label)}
+						<div class="def-item">
+							<span class="lbl">{d.label}</span>
+							<span class="kind kind-{d.kind}">{d.kind}</span>
+							<pre class="mm def-hol">{renderMm(d.hol, unicode, symbolMap)}</pre>
+						</div>
+					{/each}
+					{#if filteredDefs.length > 500}
+						<div class="empty">showing 500 of {filteredDefs.length} — search to narrow</div>
+					{:else if filteredDefs.length === 0}
+						<div class="empty">No definitions match.</div>
+					{/if}
+				</div>
+			{:else}
+			<div class="rows" bind:this={rowsEl} onscroll={onRowsScroll}>
+				<div class="vspacer" style="height:{totalH}px">
+					<div class="vwin" style="transform:translateY({offsetY}px)">
+						{#each vRows as t (t.label)}
+							<button
+								class="item"
+								class:fail={t.status === 'error'}
+								class:sel={selected?.label === t.label}
+								onclick={() => selectTheorem(t)}
+							>
+								<span class="dot status-{t.status}"></span>
+								<span class="lbl">{t.label}</span>
+								<span class="mini">{renderMm(t.mm, unicode, symbolMap)}</span>
+								{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
+							</button>
+						{/each}
+					</div>
+				</div>
 				{#if theorems.length === 0}
-					<div class="empty">No theorems yet. Choose a source and import.</div>
+					<div class="empty">{phase === 'loading' ? 'Loading graph…' : 'No theorems.'}</div>
 				{:else if filtered.length === 0}
 					<div class="empty">No theorems match the current filter.</div>
 				{/if}
 			</div>
+			{/if}
 		</div>
 
 		<div class="detail">
@@ -513,16 +1151,30 @@
 				<h2>{selected.label}</h2>
 				<div class="field">
 					<div class="flabel">Metamath statement</div>
-					<pre class="mm">{selected.mm}</pre>
-					{#if selected.ess.length > 0}
+					<pre class="mm">{renderMm(selected.mm, unicode, symbolMap)}</pre>
+					{#if detail && detail.ess.length > 0}
 						<div class="flabel sub">essential hypotheses</div>
-						{#each selected.ess as e (e)}
-							<pre class="mm hyp">{e}</pre>
+						{#each detail.ess as e (e)}
+							<pre class="mm hyp">{renderMm(e, unicode, symbolMap)}</pre>
 						{/each}
 					{/if}
 				</div>
 				<div class="field">
-					<div class="flabel">HOL term</div>
+					<div class="flabel">HOL term (interned, pass 1)</div>
+					{#if detail?.holTerm ?? holTerms[selected.label]}
+						{@const ht = detail?.holTerm ?? holTerms[selected.label]}
+						<pre class="hol holterm">{renderMm(ht, unicode, symbolMap)}</pre>
+						<p class="note">
+							The encoded conclusion <code>⌜S⌝</code>, hash-consed into the shared DAG and
+							rendered with compound sub-formulas folded back to their Metamath definition
+							names. Available before the proof runs.
+						</p>
+					{:else}
+						<pre class="hol dim">encoding…</pre>
+					{/if}
+				</div>
+				<div class="field">
+					<div class="flabel">Derivation</div>
 					{#if selected.status === 'proved'}
 						<div class="kv">
 							<span>hypotheses</span><span>{selected.hyps}</span>
@@ -628,9 +1280,11 @@
 					</div>
 				{/if}
 				<div class="field">
-					<div class="flabel">Metamath proof (compressed)</div>
-					{#if selected.proof}
-						<pre class="mm proof">{selected.proof}</pre>
+					<div class="flabel">Metamath proof</div>
+					{#if detail == null}
+						<p class="note">loading proof…</p>
+					{:else if detail.proof}
+						<pre class="mm proof">{detail.proof}</pre>
 					{:else}
 						<p class="note">no proof code (axiom).</p>
 					{/if}
@@ -640,6 +1294,7 @@
 			{/if}
 		</div>
 	</section>
+	{/if}
 </main>
 
 <style>
@@ -705,35 +1360,192 @@
 	.controls {
 		margin: 1.25rem 0;
 	}
-	.presets {
+	.row {
 		display: flex;
 		gap: 0.5rem;
+		align-items: center;
 		margin-bottom: 0.6rem;
 	}
-	.presets button {
+	.field-lbl {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.72rem;
+		color: var(--muted);
+		white-space: nowrap;
+	}
+	.field-lbl.grow {
 		flex: 1;
+	}
+	.field-lbl.grow .hash-input {
+		flex: 1;
+	}
+	.preset-select {
+		padding: 0.45rem 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--surface);
+		color: var(--fg);
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+	.hash-input {
+		font-size: 0.78rem !important;
+	}
+
+	/* "Loaded on server" reattach list. */
+	.server-dbs {
+		margin-top: 1rem;
+		border-top: 1px solid var(--border);
+		padding-top: 0.8rem;
+	}
+	.sd-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.4rem;
+	}
+	.sd-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.sd-item {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
 		text-align: left;
-		padding: 0.5rem 0.7rem;
+		padding: 0.45rem 0.6rem;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: var(--surface);
 		color: var(--fg);
 		cursor: pointer;
-		line-height: 1.2;
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
 	}
-	.presets button small {
-		display: block;
-		color: var(--muted);
-		font-size: 0.7rem;
-		margin-top: 0.15rem;
-	}
-	.presets button.active {
+	.sd-item:hover {
 		border-color: var(--accent);
-		background: rgba(124, 111, 247, 0.16);
+		background: rgba(124, 111, 247, 0.1);
 	}
-	.row {
+	.sd-origin {
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.sd-meta {
+		color: var(--muted);
+		font-size: 0.74rem;
+		white-space: nowrap;
+	}
+	.sd-hash {
+		color: var(--muted);
+		font-size: 0.72rem;
+		white-space: nowrap;
+	}
+
+	/* DB-view header: back button · origin/total · prominent copyable hash. */
+	.dbhead {
 		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+		flex-wrap: wrap;
+		margin: 1rem 0 0.25rem;
+	}
+	.dbhead .back {
+		padding: 0.3rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--surface);
+		color: var(--fg);
+		cursor: pointer;
+		font-size: 0.78rem;
+		white-space: nowrap;
+	}
+	.dbhead .back:hover {
+		border-color: var(--accent);
+	}
+	.dbmeta {
+		display: flex;
+		align-items: baseline;
+		gap: 0.4rem;
+		font-size: 0.85rem;
+		min-width: 0;
+	}
+	.dbmeta .origin {
+		color: var(--fg);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 40ch;
+	}
+	.dbmeta .dim {
+		color: var(--muted);
+		white-space: nowrap;
+	}
+	.hashbox {
+		display: flex;
+		align-items: center;
 		gap: 0.5rem;
+		margin-left: auto;
+		min-width: 0;
+	}
+	.fullhash {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		background: var(--code-bg);
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		padding: 0.25rem 0.5rem;
+		color: var(--accent);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 52ch;
+	}
+	.hashbox .copy {
+		padding: 0.25rem 0.55rem;
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		background: var(--surface);
+		color: var(--fg);
+		cursor: pointer;
+		font-size: 0.74rem;
+	}
+	.hashbox .copy:hover {
+		border-color: var(--accent);
+	}
+	.hashbox .dim {
+		color: var(--muted);
+		font-size: 0.74rem;
+	}
+	.workers {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.78rem;
+		color: var(--muted);
+		white-space: nowrap;
+	}
+	.workers input[type='number'] {
+		width: 3.5rem;
+		padding: 0.4rem 0.4rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--code-bg);
+		color: var(--fg);
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+	}
+	.landing-msg {
+		margin: 0.5rem 0 0;
+		font-size: 0.82rem;
+	}
+	button.primary:disabled {
+		opacity: 0.6;
+		cursor: default;
 	}
 	input[type='text'] {
 		flex: 1;
@@ -754,9 +1566,6 @@
 		font-weight: 600;
 		cursor: pointer;
 		white-space: nowrap;
-	}
-	button.primary.stop {
-		background: var(--bad);
 	}
 	.warn {
 		margin: 0.5rem 0 0;
@@ -806,8 +1615,7 @@
 		color: var(--muted);
 	}
 	.phase-importing,
-	.phase-downloading,
-	.phase-parsing,
+	.phase-loading,
 	.phase-graph {
 		background: rgba(124, 111, 247, 0.16);
 		border-color: transparent;
@@ -930,6 +1738,28 @@
 	.rows {
 		flex: 1;
 		overflow-y: auto;
+		scrollbar-width: thin;
+		scrollbar-color: var(--border) transparent;
+	}
+	.rows::-webkit-scrollbar {
+		width: 8px;
+	}
+	.rows::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	.rows::-webkit-scrollbar-thumb {
+		background: var(--border);
+		border-radius: 4px;
+	}
+	.vspacer {
+		position: relative;
+		width: 100%;
+	}
+	.vwin {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
 	}
 	.quantiles {
 		display: flex;
@@ -960,7 +1790,37 @@
 	.histo svg {
 		display: block;
 		width: 100%;
-		height: 160px;
+		height: auto;
+	}
+	.histo .bar {
+		fill: var(--accent);
+	}
+	.histo .bar:hover,
+	.histo .bar.hot {
+		fill: var(--fg);
+	}
+	.histo .axis {
+		stroke: var(--border);
+	}
+	.histo .grid {
+		stroke: var(--border);
+		stroke-dasharray: 2 3;
+		opacity: 0.5;
+	}
+	.histo .tick {
+		stroke: var(--border);
+	}
+	.histo .xtick {
+		fill: var(--muted);
+		font-size: 11px;
+		text-anchor: middle;
+		font-variant-numeric: tabular-nums;
+	}
+	.histo .ytick {
+		fill: var(--muted);
+		font-size: 11px;
+		text-anchor: end;
+		font-variant-numeric: tabular-nums;
 	}
 	.haxis {
 		display: flex;
@@ -973,6 +1833,29 @@
 	.haxis .dim {
 		color: var(--muted);
 	}
+	.haxis .hot {
+		color: var(--accent);
+		font-weight: 600;
+	}
+	.histo.server {
+		margin-top: 0.5rem;
+	}
+	.srvstat {
+		gap: 0.9rem;
+		justify-content: flex-start;
+		margin-bottom: 0.2rem;
+	}
+	.histo .rss-line {
+		fill: none;
+		stroke: var(--accent);
+		stroke-width: 1.5;
+		vector-effect: non-scaling-stroke;
+	}
+	.histo .rss-area {
+		fill: var(--accent);
+		opacity: 0.12;
+		stroke: none;
+	}
 	.copy.on {
 		border-color: var(--accent);
 		color: var(--accent);
@@ -982,8 +1865,10 @@
 		align-items: center;
 		gap: 0.5rem;
 		width: 100%;
+		height: 26px; /* must match ROW_H */
+		box-sizing: border-box;
 		text-align: left;
-		padding: 0.4rem 0.6rem;
+		padding: 0 0.6rem;
 		border: none;
 		border-bottom: 1px solid var(--border);
 		background: transparent;
@@ -1101,6 +1986,49 @@
 		color: var(--bad);
 		background: rgba(248, 113, 113, 0.08);
 		border-color: rgba(248, 113, 113, 0.3);
+	}
+	pre.hol.holterm {
+		color: var(--accent);
+	}
+	pre.hol.dim {
+		color: var(--muted);
+	}
+	/* Definitions panel */
+	.defs-rows {
+		padding: 0.2rem 0;
+	}
+	.def-item {
+		display: grid;
+		grid-template-columns: auto auto 1fr;
+		align-items: baseline;
+		gap: 0.5rem;
+		padding: 0.35rem 0.6rem;
+		border-bottom: 1px solid var(--border);
+	}
+	.def-item .lbl {
+		font-weight: 600;
+		color: var(--fg);
+	}
+	.def-item .kind {
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 0.05rem 0.3rem;
+		border-radius: 3px;
+		color: var(--muted);
+		border: 1px solid var(--border);
+	}
+	.def-item .kind-def {
+		color: var(--accent);
+		border-color: var(--accent);
+	}
+	.def-item .def-hol {
+		margin: 0;
+		background: none;
+		border: none;
+		padding: 0;
+		font-size: 0.76rem;
+		color: var(--fg);
 	}
 	.kv {
 		display: flex;

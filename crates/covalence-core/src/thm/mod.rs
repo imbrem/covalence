@@ -182,7 +182,7 @@ impl Thm {
 
     /// `Γ ∪ Δ ⊢ s = u`, given `Γ ⊢ s = t` and `Δ ⊢ t = u` (HOL `=`).
     pub fn trans(self, other: Thm) -> Result<Thm> {
-        let (s, t1) = parse_hol_eq(&self.concl)?;
+        let (s, t1, alpha) = parse_hol_eq_at(&self.concl)?;
         let (t2, u) = parse_hol_eq(&other.concl)?;
         if t1 != t2 {
             return Err(Error::TransMiddleMismatch {
@@ -190,7 +190,8 @@ impl Thm {
                 right: format!("{}", t2),
             });
         }
-        let concl = hol::hol_eq(s.clone(), u.clone());
+        // `alpha` is `s`'s element type, read off the `Eq` head — no walk.
+        let concl = hol::hol_eq_at(alpha.clone(), s.clone(), u.clone());
         let hyps = self.hyps.union(&other.hyps);
         Self::build(hyps, concl)
     }
@@ -199,17 +200,23 @@ impl Thm {
     /// applications must type-check: `f` (and so `g`) must have
     /// function type whose domain matches `x`'s (and so `y`'s) type.
     pub fn mk_comb(self, arg: Thm) -> Result<Thm> {
-        let (f, g) = parse_hol_eq(&self.concl)?;
+        let (f, g, funty) = parse_hol_eq_at(&self.concl)?;
         let (x, y) = parse_hol_eq(&arg.concl)?;
+        // The result `f x = g y` has element type = codomain of `f`'s
+        // (function) type, which is the `Eq` head's type argument on the
+        // input theorem — no `type_of` walk. If `f` is not a function the
+        // application is ill-typed; report it directly (as the old
+        // `lhs.type_of()` path did).
+        let TypeKind::Fun(_dom, cod) = funty.kind() else {
+            return Err(Error::NotFunction(funty.clone()));
+        };
+        let cod = cod.clone();
         let lhs = Term::app(f.clone(), x.clone());
         let rhs = Term::app(g.clone(), y.clone());
-        // Pre-validate the application's type rather than letting
-        // hol::hol_eq's internal `type_of().expect(...)` panic on a
-        // bad arg shape. type_of() here also serves as a Free-var
-        // consistency check across f and x.
-        let _ = lhs.type_of()?;
-        let _ = rhs.type_of()?;
-        let concl = hol::hol_eq(lhs, rhs);
+        // `Self::build` re-validates the whole conclusion end-to-end —
+        // argument-domain match, and Free-var consistency across f/g/x/y
+        // — so the previous per-side `type_of` pre-checks were redundant.
+        let concl = hol::hol_eq_at(cod, lhs, rhs);
         let hyps = self.hyps.union(&arg.hyps);
         Self::build(hyps, concl)
     }
@@ -217,7 +224,8 @@ impl Thm {
     /// `Γ ⊢ (λx:τ. s[x]) = (λx:τ. t[x])`, given `Γ ⊢ s = t` with
     /// `Free(name:τ)` not free in `Γ`.
     pub fn abs(self, name: &str, ty: Type) -> Result<Thm> {
-        let (s, t) = parse_hol_eq(&self.concl)?;
+        let (s, t, alpha) = parse_hol_eq_at(&self.concl)?;
+        let alpha = alpha.clone();
         for h in self.hyps.iter() {
             if has_free_var(h, name) {
                 return Err(Error::FreeVarInHyps { name: name.into() });
@@ -236,8 +244,11 @@ impl Thm {
         let s = s.clone();
         let t = t.clone();
         let s_abs = Term::abs(ty.clone(), close(&s, name));
-        let t_abs = Term::abs(ty, close(&t, name));
-        let concl = hol::hol_eq(s_abs, t_abs);
+        let t_abs = Term::abs(ty.clone(), close(&t, name));
+        // The abstractions have type `ty → alpha` (alpha = the bodies'
+        // shared element type from the input `Eq` head), so that is the
+        // result equation's element type — no walk.
+        let concl = hol::hol_eq_at(Type::fun(ty, alpha), s_abs, t_abs);
         Self::build(self.hyps, concl)
     }
 
@@ -288,12 +299,12 @@ impl Thm {
     /// `EQ_MP` — equality at `bool` IS biconditional, so this also
     /// implements the `⇔`-elim direction.
     pub fn eq_mp(self, p_thm: Thm) -> Result<Thm> {
-        let (p, q) = parse_hol_eq(&self.concl)?;
+        let (p, q, alpha) = parse_hol_eq_at(&self.concl)?;
         // p = q must be at type bool (otherwise it's not an
-        // implication-shaped equation).
-        let p_ty = p.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
+        // implication-shaped equation). `alpha` is p's type, read off the
+        // `Eq` head — no walk.
+        if !alpha.is_bool() {
+            return Err(Error::NotBool(alpha.clone()));
         }
         if *p != p_thm.concl {
             return Err(Error::ImpAntecedentMismatch {
@@ -384,8 +395,8 @@ impl Thm {
     /// `eq_mp` to get `b = a`. Implemented directly here as
     /// "parse the equation, return reversed".
     pub fn sym(self) -> Result<Thm> {
-        let (a, b) = parse_hol_eq(&self.concl)?;
-        let concl = hol::hol_eq(b.clone(), a.clone());
+        let (a, b, alpha) = parse_hol_eq_at(&self.concl)?;
+        let concl = hol::hol_eq_at(alpha.clone(), b.clone(), a.clone());
         Self::build(self.hyps, concl)
     }
 
@@ -1375,16 +1386,26 @@ fn subtype_pred(spec: &TypeSpec, args: &TypeList, carrier: &Type) -> Result<Term
 }
 
 fn parse_hol_eq(t: &Term) -> Result<(&Term, &Term)> {
+    let (lhs, rhs, _) = parse_hol_eq_at(t)?;
+    Ok((lhs, rhs))
+}
+
+/// Like [`parse_hol_eq`] but also returns the element type `alpha` read
+/// directly off the `Eq(alpha)` head — no `type_of` walk. For a validly
+/// built theorem `⊢ lhs = rhs`, `alpha` is exactly the (shared) type of
+/// `lhs` and `rhs`, so rules can reuse it to construct their result
+/// equation instead of recomputing it.
+fn parse_hol_eq_at(t: &Term) -> Result<(&Term, &Term, &Type)> {
     let TermKind::App(f, rhs) = t.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));
     };
     let TermKind::App(head, lhs) = f.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));
     };
-    let TermKind::Eq(_) = head.kind() else {
+    let TermKind::Eq(alpha) = head.kind() else {
         return Err(Error::NotHolEq(format!("{}", t)));
     };
-    Ok((lhs, rhs))
+    Ok((lhs, rhs, alpha))
 }
 
 /// Parse an `imp`-headed application — `App(App(⟹, p), q)` — and

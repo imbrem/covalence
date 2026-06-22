@@ -77,6 +77,17 @@ fn eq_at(alpha: Type) -> Term {
 /// fully-typed atoms, so the panic is unreachable there.
 pub(crate) fn hol_eq(lhs: Term, rhs: Term) -> Term {
     let alpha = lhs.type_of().expect("hol::hol_eq: lhs must be well-typed");
+    hol_eq_at(alpha, lhs, rhs)
+}
+
+/// HOL `lhs = rhs : bool` with the element type `alpha` supplied by the
+/// caller — no `type_of` walk. Use this in inference-rule paths that
+/// already know `alpha` (e.g. it can be read straight off an input
+/// theorem's `Eq(alpha)` node). The result is still fully re-validated by
+/// [`crate::Thm`]'s `build`, so a wrong `alpha` is rejected, never
+/// trusted — this is purely a way to avoid recomputing what we already
+/// know.
+pub(crate) fn hol_eq_at(alpha: Type, lhs: Term, rhs: Term) -> Term {
     Term::app(Term::app(eq_at(alpha), lhs), rhs)
 }
 

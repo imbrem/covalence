@@ -170,7 +170,12 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
         .route("/api/repl", get(api::repl_ws))
         // TEMPORARY / THROWAWAY DEMO: Metamath sessions (powers the /metamath
         // web page). Clean REST for data + a thin WS for live status only.
-        .route("/api/metamath/db", post(mm::create_db))
+        // set.mm is ~48 MB — lift axum's default 2 MB request-body cap on the
+        // upload route (that limit was the "import failed: 413"/500 the user hit).
+        .route(
+            "/api/metamath/db",
+            post(mm::create_db).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)),
+        )
         .route("/api/metamath/db/{hash}/graph", get(mm::graph))
         .route("/api/metamath/db/{hash}/theorem/{name}", get(mm::theorem))
         .route("/api/metamath/db/{hash}/prove", post(mm::prove))

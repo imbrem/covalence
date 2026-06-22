@@ -124,43 +124,57 @@ pub fn open(body: &Term, u: &Term) -> Term {
 
 /// [`open`] routing constructed nodes through `cons`.
 pub fn open_with<C: TrustedCons + ?Sized>(body: &Term, u: &Term, cons: &mut C) -> Term {
-    inst(body, u, 0, cons)
+    inst_opt(body, u, 0, cons).unwrap_or_else(|| body.clone())
 }
 
-fn inst<C: TrustedCons + ?Sized>(t: &Term, u: &Term, depth: u32, cons: &mut C) -> Term {
+/// The sharing-preserving core of [`open`] / instantiation: returns
+/// `Some(t')` when substituting `Bound(depth) := u` (and shifting deeper
+/// indices) *changes* `t`, and `None` when it leaves `t` untouched (the
+/// caller reuses the original `Arc`).
+///
+/// **`bvi`-skip:** a subterm whose maximum free de Bruijn index is `<
+/// depth` contains no `Bound(i ≥ depth)` — so instantiation is a no-op on
+/// it and we return `None` immediately, without recursing. This is the
+/// bound-variable twin of the free-variable Bloom skip in
+/// [`subst_free_opt`]; both use a summary cached on [`crate::Term`]
+/// ([`Term::bvi`] here) to prune whole subtrees.
+fn inst_opt<C: TrustedCons + ?Sized>(
+    t: &Term,
+    u: &Term,
+    depth: u32,
+    cons: &mut C,
+) -> Option<Term> {
+    // No `Bound(i ≥ depth)` below ⇒ unchanged. (Closed subterms — `bvi ==
+    // -1` — are always skipped; so are leaves, including bare `Bound(i)`
+    // with `i < depth`.)
+    if t.bvi() < depth as i64 {
+        return None;
+    }
     match t.kind() {
         TermKind::Bound(i) => {
             let i = *i;
+            // `i < depth` was handled by the skip above (its `bvi` is `i`).
             match i.cmp(&depth) {
-                Ordering::Less => cons.make(TermKind::Bound(i)),
-                Ordering::Equal => shift_with(u, depth as i64, 0, cons),
-                Ordering::Greater => cons.make(TermKind::Bound(i - 1)),
+                Ordering::Less => None,
+                Ordering::Equal => Some(shift_with(u, depth as i64, 0, cons)),
+                Ordering::Greater => Some(cons.make(TermKind::Bound(i - 1))),
             }
         }
-        TermKind::Free(..)
-        | TermKind::Const(..)
-        | TermKind::Blob(_)
-        | TermKind::Nat(_)
-        | TermKind::Int(_)
-        | TermKind::SmallInt(_)
-        | TermKind::Bool(_)
-        | TermKind::Eq(_)
-        | TermKind::Select(_)
-        | TermKind::Spec(_, _)
-        | TermKind::SpecAbs(..)
-        | TermKind::SpecRep(..)
-        | TermKind::Obs(..)
-        | TermKind::Succ
-        | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => {
-            let f = inst(f, u, depth, cons);
-            let x = inst(x, u, depth, cons);
-            cons.make(TermKind::App(f, x))
+            let f2 = inst_opt(f, u, depth, cons);
+            let x2 = inst_opt(x, u, depth, cons);
+            if f2.is_none() && x2.is_none() {
+                None
+            } else {
+                let f = f2.unwrap_or_else(|| f.clone());
+                let x = x2.unwrap_or_else(|| x.clone());
+                Some(cons.make(TermKind::App(f, x)))
+            }
         }
-        TermKind::Abs(ty, body) => {
-            let body = inst(body, u, depth + 1, cons);
-            cons.make(TermKind::Abs(ty.clone(), body))
-        }
+        TermKind::Abs(ty, body) => inst_opt(body, u, depth + 1, cons)
+            .map(|body| cons.make(TermKind::Abs(ty.clone(), body))),
+        // Other leaves are closed (`bvi == -1`) and were skipped above.
+        _ => None,
     }
 }
 

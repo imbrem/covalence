@@ -14,6 +14,7 @@
     "build:serve": "bun run build:web && cargo build -p covalence",
     "dev:web": "bun run --filter covalence-web dev",
     "serve": "bun run build:native && bun run build:web-kernel && bun scripts/dev-serve.mjs",
+    "serve:release": "bun run release:native && bun run build:web-kernel && bun scripts/dev-serve.mjs --release",
     "dev:serve": "echo 'Run cov serve --api in another terminal, then:' && bun run dev:web",
     "release": "bun run build:web && bun run release:native && bun run release:wasm",
     "release:native": "cargo build -p covalence --release",

@@ -12,9 +12,15 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 
-const COV = 'target/debug/cov';
+// Use the release binary when asked (`--release` or COV_RELEASE=1) — the
+// `/metamath` import is term-heavy and runs *much* faster in release.
+const release = process.argv.includes('--release') || process.env.COV_RELEASE === '1';
+const COV = release ? 'target/release/cov' : 'target/debug/cov';
 if (!existsSync(COV)) {
-	console.error(`error: ${COV} not found — run \`bun run build:native\` first (or use \`bun run serve\`).`);
+	const how = release ? 'bun run release:native' : 'bun run build:native';
+	console.error(
+		`error: ${COV} not found — run \`${how}\` first (or use \`bun run serve${release ? ':release' : ''}\`).`,
+	);
 	process.exit(1);
 }
 

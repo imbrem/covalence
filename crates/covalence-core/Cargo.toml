@@ -11,6 +11,7 @@ edition = "2024"
 [dependencies]
 covalence-types = { path = "../covalence-types" }
 covalence-sexp = { path = "../covalence-sexp" }
+fnv = "1"
 indexmap = "2"
 smol_str = "0.3"
 thiserror = "2"

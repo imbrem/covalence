@@ -961,6 +961,7 @@ version = "0.0.0"
 dependencies = [
  "covalence-sexp",
  "covalence-types",
+ "fnv",
  "indexmap",
  "smol_str",
  "thiserror 2.0.18",

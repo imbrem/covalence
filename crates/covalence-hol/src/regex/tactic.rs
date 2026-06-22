@@ -468,7 +468,7 @@ mod tests {
     fn word_variable_under_star() {
         // `(cat)*` against two variable tokens both of category `cat`.
         let cat = re("a|b");
-        let r = Regex::Star(Box::new(cat.clone()));
+        let r = cat.clone().star();
         let w = Word::cat(
             Word::Var {
                 name: "X".into(),

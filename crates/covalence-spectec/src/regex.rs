@@ -477,27 +477,21 @@ mod tests {
             it: SpecTecIter::List,
             xes: Vec::new(),
         };
-        assert_eq!(
-            sym_to_regex(&star).unwrap(),
-            Regex::Star(Box::new(lit('a')))
-        );
+        assert_eq!(sym_to_regex(&star).unwrap(), lit('a').star());
 
         let plus = SpecTecSym::Iter {
             g1: Box::new(base()),
             it: SpecTecIter::List1,
             xes: Vec::new(),
         };
-        assert_eq!(
-            sym_to_regex(&plus).unwrap(),
-            Regex::Plus(Box::new(lit('a')))
-        );
+        assert_eq!(sym_to_regex(&plus).unwrap(), lit('a').plus());
 
         let opt = SpecTecSym::Iter {
             g1: Box::new(base()),
             it: SpecTecIter::Opt,
             xes: Vec::new(),
         };
-        assert_eq!(sym_to_regex(&opt).unwrap(), Regex::Opt(Box::new(lit('a'))));
+        assert_eq!(sym_to_regex(&opt).unwrap(), lit('a').opt());
     }
 
     #[test]

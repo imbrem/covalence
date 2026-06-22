@@ -9,6 +9,8 @@ import type {
   ObjectInfoResponse,
   TreeEntry,
   MmDbResponse,
+  MmDbInfo,
+  MmDbListEntry,
   MmGraphResponse,
   ImportTheoremDetail,
 } from './types.js';
@@ -147,16 +149,47 @@ export class CovalenceClient {
 
   /**
    * POST /api/metamath/db — parse (or reuse) a `.mm` source into a cached
-   * session. Returns the content hash (`file`) + logical theorem count.
+   * session. `opts.from` records provenance (a URL or label); `opts.user` keys
+   * the session per user. Returns the content hash (`file`) + theorem count +
+   * recorded origin.
    */
-  async createMmDb(source: string, user?: string): Promise<MmDbResponse> {
-    const res = await this.fetch(`${this.baseUrl}/api/metamath/db${userQuery(user)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: source,
-    });
+  async createMmDb(
+    source: string,
+    opts: { user?: string; from?: string } = {},
+  ): Promise<MmDbResponse> {
+    const params = new URLSearchParams();
+    if (opts.user) params.set('user', opts.user);
+    if (opts.from) params.set('from', opts.from);
+    const qs = params.toString();
+    const res = await this.fetch(
+      `${this.baseUrl}/api/metamath/db${qs ? `?${qs}` : ''}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: source,
+      },
+    );
     if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
     return res.json();
+  }
+
+  /**
+   * GET /api/metamath/db/{hash} — lightweight session metadata. The
+   * "attach by hash" probe: returns `null` (404) if the hash isn't loaded on
+   * the server, else `{file, total, origin, proving, proved, errors}` without
+   * downloading the graph.
+   */
+  async mmDbInfo(hash: Hash, user?: string): Promise<MmDbInfo | null> {
+    const res = await this.fetch(`${this.baseUrl}/api/metamath/db/${hash}${userQuery(user)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
+    return res.json();
+  }
+
+  /** GET /api/metamath/dbs — every cached session on the server (the
+   * "loaded on server" picker). */
+  async mmDbList(): Promise<MmDbListEntry[]> {
+    return this.fetchJson<MmDbListEntry[]>('/api/metamath/dbs');
   }
 
   /** GET /api/metamath/db/{hash}/graph — the cached static declaration graph. */

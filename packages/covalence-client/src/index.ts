@@ -13,6 +13,8 @@ export type {
   ObjectInfoResponse,
   TreeEntry,
   MmDbResponse,
+  MmDbInfo,
+  MmDbListEntry,
   MmGraphResponse,
   ImportDecl,
   ImportTheoremDetail,

@@ -10,11 +10,26 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { client } from '$lib/api';
-	import type { MmStatusMessage, ImportedTheorem, ImportTheoremDetail } from 'covalence-client';
+	import type {
+		MmStatusMessage,
+		ImportedTheorem,
+		ImportTheoremDetail,
+		MmDbInfo,
+		MmDbListEntry,
+	} from 'covalence-client';
 
-	const PRESETS = {
-		hol: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/hol.mm',
-		set: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/set.mm',
+	// Named presets for the source dropdown. `custom` leaves the URL editable.
+	const PRESETS: Record<string, { label: string; url: string; note: string }> = {
+		hol: {
+			label: 'hol.mm',
+			url: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/hol.mm',
+			note: '~151 thms · seconds',
+		},
+		set: {
+			label: 'set.mm',
+			url: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/set.mm',
+			note: '~48 MB · ~47k thms · minutes',
+		},
 	};
 
 	// --- routing: the page is driven by the URL ---------------------------
@@ -22,10 +37,35 @@
 	const user = $derived($page.url.searchParams.get('user') ?? undefined);
 
 	// --- landing state -----------------------------------------------------
-	let url = $state(PRESETS.hol);
+	let preset = $state<'hol' | 'set' | 'custom'>('hol');
+	let url = $state(PRESETS.hol.url);
+	let hashInput = $state(''); // attach-by-hash input (no download)
 	let workers = $state(0); // 0 = auto
 	let landingMsg = $state('');
 	let importing = $state(false); // landing: downloading/posting
+	let serverDbs = $state<MmDbListEntry[]>([]); // "loaded on server" list
+
+	// --- DB-view header info (origin/total) --------------------------------
+	let dbInfo = $state<MmDbInfo | null>(null);
+	let headerCopyMsg = $state('');
+
+	// Choosing a preset fills the URL (still fully editable). `custom` clears it.
+	function onPreset() {
+		if (preset === 'custom') return;
+		url = PRESETS[preset].url;
+	}
+
+	async function refreshServerDbs() {
+		try {
+			serverDbs = await client.mmDbList();
+		} catch {
+			serverDbs = [];
+		}
+	}
+
+	function shortHash(h: string): string {
+		return h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h;
+	}
 
 	// --- DB-view phases ----------------------------------------------------
 	// `loading` = fetching the cached graph; `notLoaded` = the session is gone
@@ -259,9 +299,43 @@
 	}
 	const isRunning = $derived(phase === 'loading' || phase === 'graph' || phase === 'importing');
 
-	// --- landing: download + POST a `.mm` into a session, then navigate -----
+	/** Navigate to a session view, carrying the chosen worker count. */
+	async function attach(file: string) {
+		const params = new URLSearchParams({ file });
+		if (workers > 0) params.set('workers', String(workers));
+		await goto(`?${params.toString()}`);
+	}
+
+	// --- landing: either attach by hash (no download) or import by URL -------
 	async function importDb() {
 		importing = true;
+		landingMsg = '';
+		const hash = hashInput.trim();
+
+		// Hash given → probe the server; attach if it exists (no download).
+		if (hash) {
+			landingMsg = `probing ${shortHash(hash)} on the server …`;
+			try {
+				const info = await client.mmDbInfo(hash, user);
+				if (info) {
+					await attach(info.file);
+					return;
+				}
+				landingMsg =
+					'not loaded on the server — provide a URL (clear the hash) to import it.';
+			} catch (e) {
+				landingMsg = `probe failed: ${e instanceof Error ? e.message : String(e)}`;
+			}
+			importing = false;
+			return;
+		}
+
+		// No hash → download the `.mm` client-side, then POST it into a session.
+		if (!url.trim()) {
+			landingMsg = 'provide a .mm URL or a server hash.';
+			importing = false;
+			return;
+		}
 		landingMsg = `downloading ${url} …`;
 		let source: string;
 		try {
@@ -275,11 +349,8 @@
 		}
 		landingMsg = `downloaded ${(source.length / 1_000_000).toFixed(1)} MB — parsing on server …`;
 		try {
-			const { file } = await client.createMmDb(source);
-			// Carry the worker count along so the DB view can start proving with it.
-			const params = new URLSearchParams({ file });
-			if (workers > 0) params.set('workers', String(workers));
-			await goto(`?${params.toString()}`);
+			const { file } = await client.createMmDb(source, { user, from: url });
+			await attach(file);
 		} catch (e) {
 			landingMsg = `import failed: ${e instanceof Error ? e.message : String(e)}`;
 			importing = false;
@@ -306,6 +377,19 @@
 		selected = null;
 		detail = null;
 		detailCache.clear();
+		dbInfo = null;
+	}
+
+	/** Copy the full session hash to the clipboard (header copy button). */
+	async function copyHash() {
+		if (!fileHash) return;
+		try {
+			await navigator.clipboard.writeText(fileHash);
+			headerCopyMsg = 'copied';
+		} catch {
+			headerCopyMsg = 'clipboard blocked';
+		}
+		setTimeout(() => (headerCopyMsg = ''), 2000);
 	}
 
 	async function loadDb(hash: string) {
@@ -313,6 +397,13 @@
 		loadedHash = hash;
 		phase = 'loading';
 		statusMsg = 'loading graph …';
+
+		// Fetch lightweight info first so origin/total show before the graph.
+		try {
+			dbInfo = await client.mmDbInfo(hash, user);
+		} catch {
+			dbInfo = null;
+		}
 
 		let graph;
 		try {
@@ -455,6 +546,12 @@
 		}
 	}
 
+	// Refresh the "loaded on server" list whenever we're on the landing view.
+	$effect(() => {
+		if (!browser) return;
+		if (!fileHash) void refreshServerDbs();
+	});
+
 	// React to the `?file` param: (re)load when it changes; tear down on leave.
 	$effect(() => {
 		if (!browser) return;
@@ -495,41 +592,94 @@
 					This database isn’t loaded on the server (it may have restarted). Re-import it below.
 				</p>
 			{/if}
-			<div class="presets">
-				<button class:active={url === PRESETS.hol} onclick={() => (url = PRESETS.hol)}>
-					hol.mm <small>~151 thms · seconds</small>
-				</button>
-				<button class:active={url === PRESETS.set} onclick={() => (url = PRESETS.set)}>
-					set.mm <small>~48 MB · ~47k thms · minutes</small>
-				</button>
-			</div>
+
 			<div class="row">
+				<label class="field-lbl" title="fill the URL from a known preset">
+					source
+					<select class="preset-select" bind:value={preset} onchange={onPreset} disabled={importing}>
+						<option value="hol">hol.mm</option>
+						<option value="set">set.mm</option>
+						<option value="custom">custom…</option>
+					</select>
+				</label>
 				<input
 					type="text"
 					bind:value={url}
-					placeholder=".mm URL"
+					oninput={() => (preset = 'custom')}
+					placeholder=".mm URL (downloaded client-side, then parsed on the server)"
 					spellcheck="false"
 					disabled={importing}
 				/>
+			</div>
+
+			<div class="row">
+				<label class="field-lbl grow" title="attach to an already-loaded session by content hash (no download)">
+					hash
+					<input
+						type="text"
+						class="hash-input"
+						bind:value={hashInput}
+						placeholder="attach by content hash (no download) — leave empty to use the URL"
+						spellcheck="false"
+						disabled={importing}
+					/>
+				</label>
 				<label class="workers" title="prove worker threads (0 = auto)">
 					workers
 					<input type="number" min="0" max="64" bind:value={workers} disabled={importing} />
 				</label>
 				<button class="primary" onclick={importDb} disabled={importing}>
-					{importing ? 'Importing…' : 'Download & Import'}
+					{importing ? 'Working…' : hashInput.trim() ? 'Attach' : 'Download & Import'}
 				</button>
 			</div>
+
 			{#if landingMsg}<p class="msg landing-msg">{landingMsg}</p>{/if}
-			{#if url === PRESETS.set}
+			{#if !hashInput.trim() && url === PRESETS.set.url}
 				<p class="warn">
 					set.mm is ~48 MB and ~47k theorems — the upload + parse is heavy and the import runs for
-					minutes. hol.mm is the snappy default.
+					minutes. hol.mm is the snappy default. (If it’s already loaded, reattach below — no
+					re-download.)
 				</p>
 			{/if}
+
+			<div class="server-dbs">
+				<div class="sd-head">
+					<span class="flabel">Loaded on server</span>
+					<button class="copy" onclick={refreshServerDbs} disabled={importing}>refresh</button>
+				</div>
+				{#if serverDbs.length === 0}
+					<p class="note">No databases loaded on the server yet.</p>
+				{:else}
+					<div class="sd-list">
+						{#each serverDbs as db (db.file + (db.user ?? ''))}
+							<button class="sd-item" onclick={() => attach(db.file)} disabled={importing}>
+								<span class="sd-origin">{db.origin ?? '(no origin)'}</span>
+								<span class="sd-meta">{db.total} thms · {db.proved} proved</span>
+								<span class="sd-hash" title={db.file}>{shortHash(db.file)}</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		</section>
 	{/if}
 
 	{#if fileHash && phase !== 'notLoaded'}
+	<section class="dbhead">
+		<button class="back" onclick={() => goto('?')} title="back to source selection">← sources</button>
+		<div class="dbmeta">
+			<span class="origin" title="provenance (where this .mm came from)">
+				{dbInfo?.origin ?? '(no origin)'}
+			</span>
+			<span class="dim">· {dbInfo?.total ?? total} theorems</span>
+		</div>
+		<div class="hashbox">
+			<code class="fullhash" title={fileHash}>{fileHash}</code>
+			<button class="copy" onclick={copyHash}>copy</button>
+			{#if headerCopyMsg}<span class="dim">{headerCopyMsg}</span>{/if}
+		</div>
+	</section>
+
 	<section class="status">
 		<div class="bar">
 			<progress value={done} max={Math.max(total, 1)}></progress>
@@ -848,36 +998,166 @@
 	.controls {
 		margin: 1.25rem 0;
 	}
-	.presets {
+	.row {
 		display: flex;
 		gap: 0.5rem;
+		align-items: center;
 		margin-bottom: 0.6rem;
 	}
-	.presets button {
+	.field-lbl {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.72rem;
+		color: var(--muted);
+		white-space: nowrap;
+	}
+	.field-lbl.grow {
 		flex: 1;
+	}
+	.field-lbl.grow .hash-input {
+		flex: 1;
+	}
+	.preset-select {
+		padding: 0.45rem 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--surface);
+		color: var(--fg);
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+	.hash-input {
+		font-size: 0.78rem !important;
+	}
+
+	/* "Loaded on server" reattach list. */
+	.server-dbs {
+		margin-top: 1rem;
+		border-top: 1px solid var(--border);
+		padding-top: 0.8rem;
+	}
+	.sd-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.4rem;
+	}
+	.sd-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.sd-item {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
 		text-align: left;
-		padding: 0.5rem 0.7rem;
+		padding: 0.45rem 0.6rem;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: var(--surface);
 		color: var(--fg);
 		cursor: pointer;
-		line-height: 1.2;
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
 	}
-	.presets button small {
-		display: block;
-		color: var(--muted);
-		font-size: 0.7rem;
-		margin-top: 0.15rem;
-	}
-	.presets button.active {
+	.sd-item:hover {
 		border-color: var(--accent);
-		background: rgba(124, 111, 247, 0.16);
+		background: rgba(124, 111, 247, 0.1);
 	}
-	.row {
+	.sd-origin {
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.sd-meta {
+		color: var(--muted);
+		font-size: 0.74rem;
+		white-space: nowrap;
+	}
+	.sd-hash {
+		color: var(--muted);
+		font-size: 0.72rem;
+		white-space: nowrap;
+	}
+
+	/* DB-view header: back button · origin/total · prominent copyable hash. */
+	.dbhead {
 		display: flex;
-		gap: 0.5rem;
 		align-items: center;
+		gap: 0.8rem;
+		flex-wrap: wrap;
+		margin: 1rem 0 0.25rem;
+	}
+	.dbhead .back {
+		padding: 0.3rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--surface);
+		color: var(--fg);
+		cursor: pointer;
+		font-size: 0.78rem;
+		white-space: nowrap;
+	}
+	.dbhead .back:hover {
+		border-color: var(--accent);
+	}
+	.dbmeta {
+		display: flex;
+		align-items: baseline;
+		gap: 0.4rem;
+		font-size: 0.85rem;
+		min-width: 0;
+	}
+	.dbmeta .origin {
+		color: var(--fg);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 40ch;
+	}
+	.dbmeta .dim {
+		color: var(--muted);
+		white-space: nowrap;
+	}
+	.hashbox {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-left: auto;
+		min-width: 0;
+	}
+	.fullhash {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		background: var(--code-bg);
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		padding: 0.25rem 0.5rem;
+		color: var(--accent);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 52ch;
+	}
+	.hashbox .copy {
+		padding: 0.25rem 0.55rem;
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		background: var(--surface);
+		color: var(--fg);
+		cursor: pointer;
+		font-size: 0.74rem;
+	}
+	.hashbox .copy:hover {
+		border-color: var(--accent);
+	}
+	.hashbox .dim {
+		color: var(--muted);
+		font-size: 0.74rem;
 	}
 	.workers {
 		display: flex;
@@ -924,9 +1204,6 @@
 		font-weight: 600;
 		cursor: pointer;
 		white-space: nowrap;
-	}
-	button.primary.stop {
-		background: var(--bad);
 	}
 	.warn {
 		margin: 0.5rem 0 0;

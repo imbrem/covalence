@@ -176,6 +176,10 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
             "/api/metamath/db",
             post(mm::create_db).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)),
         )
+        // List all cached sessions (literal path — before `/db/{hash}`).
+        .route("/api/metamath/dbs", get(mm::list_dbs))
+        // Session info / attach-by-hash probe (distinct from `/db/{hash}/graph`).
+        .route("/api/metamath/db/{hash}", get(mm::db_info))
         .route("/api/metamath/db/{hash}/graph", get(mm::graph))
         .route("/api/metamath/db/{hash}/theorem/{name}", get(mm::theorem))
         .route("/api/metamath/db/{hash}/prove", post(mm::prove))

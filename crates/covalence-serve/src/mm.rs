@@ -46,6 +46,10 @@ pub struct MmSession {
     pub db: Arc<covalence_hol::metamath::Database>,
     /// Logical (`|-`) `$p` theorem count.
     pub total: usize,
+    /// Provenance: where this `.mm` came from (a URL or label). `None` if it was
+    /// uploaded without a `?from=` hint. Filled in on a later cache-hit if a
+    /// `from` is supplied and it was previously `None`.
+    pub origin: RwLock<Option<String>>,
     /// Cached graph JSON (computed once on first GET `/graph`).
     pub graph: OnceLock<String>,
     /// label → proved-result JSON (filled as the prove task completes).
@@ -60,6 +64,14 @@ pub struct MmSession {
 #[derive(Deserialize, Default)]
 pub struct UserQ {
     pub user: Option<String>,
+}
+
+/// `?user=<opt>&from=<string>` query for the create endpoint. `from` records
+/// provenance (a URL or label) of the uploaded `.mm`.
+#[derive(Deserialize, Default)]
+pub struct CreateQ {
+    pub user: Option<String>,
+    pub from: Option<String>,
 }
 
 /// `?user=<opt>&workers=N` query for the prove endpoint.
@@ -171,20 +183,30 @@ fn proved_result(
 // POST /api/metamath/db — parse (or reuse) a session
 // ---------------------------------------------------------------------------
 
-/// POST `/api/metamath/db?user=<opt>` — body = raw `.mm` source. Computes the
-/// content hash; if `(hash, user)` is not already cached, parses the database
-/// (off the async runtime) and inserts a new [`MmSession`]. Returns
-/// `{"file": <hash>, "total": N}`.
+/// POST `/api/metamath/db?user=<opt>&from=<string>` — body = raw `.mm` source.
+/// Computes the content hash; if `(hash, user)` is not already cached, parses the
+/// database (off the async runtime) and inserts a new [`MmSession`], recording
+/// `from` as the session's `origin` (provenance). On a cache-hit the existing
+/// origin is kept, but back-filled if it was `None` and `from` is now supplied.
+/// Returns `{"file": <hash>, "total": N, "origin": <string|null>}`.
 pub async fn create_db(
     State(state): State<AppState>,
-    Query(q): Query<UserQ>,
+    Query(q): Query<CreateQ>,
     body: axum::body::Bytes,
 ) -> Response {
     let hash = O256::blob(&body).to_string();
     let key: SessionKey = (hash.clone(), q.user.clone());
 
     if let Some(sess) = state.mm.lock().unwrap().get(&key).cloned() {
-        return Json(json!({ "file": hash, "total": sess.total })).into_response();
+        // Cache-hit: keep the existing origin, but fill it if it was unknown.
+        let mut origin = sess.origin.write().unwrap();
+        if origin.is_none() {
+            if let Some(from) = &q.from {
+                *origin = Some(from.clone());
+            }
+        }
+        return Json(json!({ "file": hash, "total": sess.total, "origin": *origin }))
+            .into_response();
     }
 
     // Parse off the async runtime (set.mm parse is ~1s).
@@ -203,9 +225,11 @@ pub async fn create_db(
 
     let total = covalence_hol::metalogic::mm_import::theorem_labels(&db).len();
     let (status_tx, _rx) = tokio::sync::broadcast::channel::<String>(1024);
+    let origin = q.from.clone();
     let session = Arc::new(MmSession {
         db: Arc::new(db),
         total,
+        origin: RwLock::new(origin.clone()),
         graph: OnceLock::new(),
         results: RwLock::new(HashMap::new()),
         status_tx,
@@ -213,7 +237,84 @@ pub async fn create_db(
     });
 
     state.mm.lock().unwrap().insert(key, session);
-    Json(json!({ "file": hash, "total": total })).into_response()
+    Json(json!({ "file": hash, "total": total, "origin": origin })).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/metamath/db/{hash} — session info / attach-by-hash probe
+// ---------------------------------------------------------------------------
+
+/// GET `/api/metamath/db/{hash}?user=<opt>` — lightweight session metadata
+/// (distinct from `/graph`, which is the bulk data). Used by the page to probe
+/// whether a hash is already loaded on the server *without downloading*:
+/// `{"file", "total", "origin", "proving": bool, "proved": N, "errors": N}`.
+/// 404 if no such session.
+pub async fn db_info(
+    State(state): State<AppState>,
+    Path(hash): Path<String>,
+    Query(q): Query<UserQ>,
+) -> Response {
+    let Some(sess) = lookup(&state, &hash, &q.user) else {
+        return (StatusCode::NOT_FOUND, "no such session").into_response();
+    };
+    let (proved, errors) = count_results(&sess);
+    Json(json!({
+        "file": hash,
+        "total": sess.total,
+        "origin": *sess.origin.read().unwrap(),
+        "proving": sess.proving.load(Ordering::SeqCst),
+        "proved": proved,
+        "errors": errors,
+    }))
+    .into_response()
+}
+
+/// Count `(proved, errors)` from a session's `results` cache (`ok == true` is a
+/// proved theorem, `ok == false` an import error).
+fn count_results(sess: &MmSession) -> (usize, usize) {
+    let results = sess.results.read().unwrap();
+    let mut proved = 0;
+    let mut errors = 0;
+    for v in results.values() {
+        match v.get("ok").and_then(Value::as_bool) {
+            Some(true) => proved += 1,
+            _ => errors += 1,
+        }
+    }
+    (proved, errors)
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/metamath/dbs — all cached sessions (for the "loaded on server" list)
+// ---------------------------------------------------------------------------
+
+/// GET `/api/metamath/dbs` — a JSON array of every cached session:
+/// `[{file, user, origin, total, proved}]`. Powers the page's "loaded on
+/// server" picker so a previously-imported set.mm can be reattached without
+/// re-downloading 48 MB.
+pub async fn list_dbs(State(state): State<AppState>) -> Response {
+    let sessions = state.mm.lock().unwrap();
+    let mut out: Vec<Value> = sessions
+        .iter()
+        .map(|((hash, user), sess)| {
+            let (proved, _errors) = count_results(sess);
+            json!({
+                "file": hash,
+                "user": user,
+                "origin": *sess.origin.read().unwrap(),
+                "total": sess.total,
+                "proved": proved,
+            })
+        })
+        .collect();
+    // Stable-ish ordering for the UI (by origin then hash).
+    out.sort_by(|a, b| {
+        let ka = a.get("origin").and_then(Value::as_str).unwrap_or("");
+        let kb = b.get("origin").and_then(Value::as_str).unwrap_or("");
+        ka.cmp(kb)
+            .then_with(|| a.get("file").and_then(Value::as_str).cmp(&b.get("file").and_then(Value::as_str)))
+    });
+    Json(out).into_response()
 }
 
 // ---------------------------------------------------------------------------

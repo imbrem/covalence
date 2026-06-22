@@ -68,7 +68,8 @@ export interface TreeEntry {
 // is POSTed once into a cached session (keyed by content hash); graph + theorem
 // data are then served by REST, the kernel import is kicked off by REST, and
 // live per-theorem status is forwarded over a thin status WS. See
-// CovalenceClient.{createMmDb,mmGraph,mmTheorem,startMmProve,connectMmStatus}.
+// CovalenceClient.{createMmDb,mmDbInfo,mmDbList,mmGraph,mmTheorem,startMmProve,
+// connectMmStatus}.
 // ---------------------------------------------------------------------------
 
 /** A logical (`|-`) assertion referenced by a theorem's proof. */
@@ -83,6 +84,35 @@ export interface MmDbResponse {
   file: Hash;
   /** Logical (`|-`) `$p` theorem count. */
   total: number;
+  /** Provenance (a URL or label) recorded via `?from=`, if any. */
+  origin?: string | null;
+}
+
+/** GET /api/metamath/db/{hash} → lightweight session metadata (the
+ * "attach by hash" probe — existence + counts, no bulk download). */
+export interface MmDbInfo {
+  file: Hash;
+  total: number;
+  /** Provenance (a URL or label), if known. */
+  origin?: string | null;
+  /** Whether a prove run is currently underway. */
+  proving: boolean;
+  /** Theorems proved so far (from the results cache). */
+  proved: number;
+  /** Theorems that errored so far. */
+  errors: number;
+}
+
+/** One entry of GET /api/metamath/dbs → all cached sessions on the server. */
+export interface MmDbListEntry {
+  file: Hash;
+  /** The per-session user key, if any. */
+  user?: string | null;
+  /** Provenance (a URL or label), if known. */
+  origin?: string | null;
+  total: number;
+  /** Theorems proved so far. */
+  proved: number;
 }
 
 /** One node of the cached static declaration graph

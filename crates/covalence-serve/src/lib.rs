@@ -1,5 +1,8 @@
 mod api;
 pub mod eval;
+/// TEMPORARY / THROWAWAY DEMO: the `/metamath` page backend (stateful sessions,
+/// REST for data + a thin status WebSocket). Not part of the stable API.
+pub mod mm;
 mod range_http;
 #[cfg(feature = "static")]
 mod static_files;
@@ -40,6 +43,9 @@ pub struct AppState {
     pub kernel: Kernel,
     pub tagged_store: TaggedStore,
     pub object_store: ObjectStoreGit,
+    /// TEMPORARY / THROWAWAY DEMO: cached Metamath sessions for the `/metamath`
+    /// page (see [`mm`]). Not part of the stable API surface.
+    pub mm: std::sync::Arc<mm::MmSessions>,
 }
 
 pub struct ServeConfig {
@@ -69,6 +75,7 @@ pub async fn run_serve(config: ServeConfig) -> Result<(), ServeError> {
         kernel,
         tagged_store,
         object_store,
+        mm: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
     let app = build_router(state, config.api_only);
@@ -161,8 +168,13 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
         .route("/api/info", get(api::info))
         .route("/api/health", get(api::health))
         .route("/api/repl", get(api::repl_ws))
-        // TEMPORARY: Metamath import demo (powers the /metamath web page)
-        .route("/api/mm/import", get(api::mm_import_ws))
+        // TEMPORARY / THROWAWAY DEMO: Metamath sessions (powers the /metamath
+        // web page). Clean REST for data + a thin WS for live status only.
+        .route("/api/metamath/db", post(mm::create_db))
+        .route("/api/metamath/db/{hash}/graph", get(mm::graph))
+        .route("/api/metamath/db/{hash}/theorem/{name}", get(mm::theorem))
+        .route("/api/metamath/db/{hash}/prove", post(mm::prove))
+        .route("/api/metamath/db/{hash}/status", get(mm::status_ws))
         // Blob endpoints (concrete paths before parameterized)
         .route("/api/blobs", post(api::blob_store).get(api::blob_list))
         .route("/api/blobs/url", post(api::blob_store_url))

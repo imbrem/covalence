@@ -1,23 +1,40 @@
 <script lang="ts">
-	// TEMPORARY / DEMO PAGE.
-	// Downloads a Metamath `.mm` database, streams a per-theorem import into the
-	// native HOL kernel over the `/api/mm/import` WebSocket, and lets you browse
-	// each theorem's Metamath statement + HOL representation info. Throwaway UX.
+	// TEMPORARY / THROWAWAY DEMO PAGE.
+	// Driven by `?file=<hash>&user=<opt>`. With no `file` it's a landing input:
+	// pick/download a `.mm`, POST it into a cached server session (clean REST),
+	// then navigate to `?file=<hash>`. With a `file` it's the DB view: fetch the
+	// cached graph by REST, kick off the kernel import by REST, and follow live
+	// per-theorem status over a thin status WebSocket. Per-theorem detail
+	// (proof + HOL info) is fetched lazily by REST on row select.
+	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { client } from '$lib/api';
-	import type { ImportMessage, ImportedTheorem } from 'covalence-client';
+	import type { MmStatusMessage, ImportedTheorem, ImportTheoremDetail } from 'covalence-client';
 
 	const PRESETS = {
 		hol: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/hol.mm',
 		set: 'https://raw.githubusercontent.com/metamath/set.mm/refs/heads/develop/set.mm',
 	};
 
+	// --- routing: the page is driven by the URL ---------------------------
+	const fileHash = $derived($page.url.searchParams.get('file'));
+	const user = $derived($page.url.searchParams.get('user') ?? undefined);
+
+	// --- landing state -----------------------------------------------------
 	let url = $state(PRESETS.hol);
-	// `graph` = streaming the static declaration graph (every theorem pending);
-	// `importing` = the parallel prove phase flipping each pending → proving →
+	let workers = $state(0); // 0 = auto
+	let landingMsg = $state('');
+	let importing = $state(false); // landing: downloading/posting
+
+	// --- DB-view phases ----------------------------------------------------
+	// `loading` = fetching the cached graph; `notLoaded` = the session is gone
+	// (e.g. after a server restart) — fall back to the landing input;
+	// `importing` = the parallel prove phase flips each pending → proving →
 	// proved/error.
-	let phase = $state<
-		'idle' | 'downloading' | 'parsing' | 'graph' | 'importing' | 'done' | 'error'
-	>('idle');
+	let phase = $state<'loading' | 'notLoaded' | 'graph' | 'importing' | 'done' | 'error'>(
+		'loading',
+	);
 	let statusMsg = $state('');
 	let total = $state(0);
 	let done = $state(0);
@@ -29,17 +46,18 @@
 	// updates each — must not be O(n) per message). Not reactive; a plain Map.
 	let labelIndex = new Map<string, number>();
 	let selected = $state<ImportedTheorem | null>(null);
+	// Lazily-fetched full per-theorem detail (proof + essentials + HOL), cached
+	// client-side so re-selecting a row doesn't re-fetch.
+	let detail = $state<ImportTheoremDetail | null>(null);
+	const detailCache = new Map<string, ImportTheoremDetail>();
 	let failuresOnly = $state(false);
 	let search = $state('');
 	let sortBy = $state<'order' | 'slow' | 'fast' | 'deps' | 'label'>('order');
 	let showHisto = $state(false);
 	let copyMsg = $state('');
-	// Optional prove-phase worker count (empty = server auto).
-	let workers = $state<number | null>(null);
-	// The uploaded `.mm` source, kept so proof code can be extracted lazily on
-	// selection (it is NOT streamed per-theorem — that was the payload bloat).
-	let source = $state('');
 	let ws: WebSocket | null = null;
+	// The hash the current DB view was loaded for (guards re-loads on URL churn).
+	let loadedHash: string | null = null;
 
 	// Live status tallies (the foundation of the general "task view").
 	const nPending = $derived(theorems.filter((t) => t.status === 'pending').length);
@@ -133,10 +151,10 @@
 
 	// --- list virtualization ----------------------------------------------
 	// The list can hold ~60k rows; rendering them all (and re-rendering during
-	// the streaming status updates) is what made the page lag. Render only the
-	// rows in (a slightly overscanned) viewport. Rows are fixed-height (ROW_H,
-	// matched exactly in CSS); we size an outer spacer to the full height and
-	// offset the rendered slice with padding-top.
+	// the live status updates) is what made the page lag. Render only the rows
+	// in a slightly-overscanned viewport. Rows are fixed-height (ROW_H, matched
+	// exactly in CSS); an outer spacer is sized to the full height and the
+	// rendered slice is offset with translateY.
 	const ROW_H = 26; // px — must match `.rows .item` height in CSS
 	const OVERSCAN = 8;
 	let scrollTop = $state(0);
@@ -229,7 +247,7 @@
 	const HPAD = 24;
 
 	async function copyFailures() {
-		const data = failures.map((t) => ({ label: t.label, mm: t.mm, ess: t.ess, error: t.error }));
+		const data = failures.map((t) => ({ label: t.label, mm: t.mm, error: t.error }));
 		try {
 			await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
 			copyMsg = `copied ${data.length} failures`;
@@ -239,11 +257,45 @@
 		}
 		setTimeout(() => (copyMsg = ''), 2500);
 	}
-	const isRunning = $derived(
-		phase === 'downloading' || phase === 'parsing' || phase === 'graph' || phase === 'importing',
-	);
+	const isRunning = $derived(phase === 'loading' || phase === 'graph' || phase === 'importing');
 
-	function reset() {
+	// --- landing: download + POST a `.mm` into a session, then navigate -----
+	async function importDb() {
+		importing = true;
+		landingMsg = `downloading ${url} …`;
+		let source: string;
+		try {
+			const res = await fetch(url);
+			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+			source = await res.text();
+		} catch (e) {
+			landingMsg = `download failed: ${e instanceof Error ? e.message : String(e)}`;
+			importing = false;
+			return;
+		}
+		landingMsg = `downloaded ${(source.length / 1_000_000).toFixed(1)} MB — parsing on server …`;
+		try {
+			const { file } = await client.createMmDb(source);
+			// Carry the worker count along so the DB view can start proving with it.
+			const params = new URLSearchParams({ file });
+			if (workers > 0) params.set('workers', String(workers));
+			await goto(`?${params.toString()}`);
+		} catch (e) {
+			landingMsg = `import failed: ${e instanceof Error ? e.message : String(e)}`;
+			importing = false;
+		}
+	}
+
+	// --- DB view: load the cached graph, start proving, follow live status --
+	function teardown() {
+		if (ws) {
+			ws.close();
+			ws = null;
+		}
+	}
+
+	function resetView() {
+		teardown();
 		total = 0;
 		done = 0;
 		currentLabel = '';
@@ -252,116 +304,94 @@
 		theorems = [];
 		labelIndex = new Map();
 		selected = null;
-		source = '';
-		scrollTop = 0;
+		detail = null;
+		detailCache.clear();
 	}
 
-	// --- lazy proof extraction --------------------------------------------
-	// The proof code is no longer streamed (it dominated the upfront payload).
-	// Instead, extract the selected theorem's proof from the `.mm` `source` we
-	// already uploaded: find `<label> $p … $= <PROOF> $.` and return <PROOF>.
-	function extractProof(src: string, label: string): string | null {
-		if (!src) return null;
-		// Match the label as a whole token, then `$p`, then up to `$=`, capture
-		// the proof body up to the closing `$.`.
-		const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-		const re = new RegExp(`(?:^|\\s)${esc}\\s+\\$p\\b[\\s\\S]*?\\$=([\\s\\S]*?)\\$\\.`);
-		const m = re.exec(src);
-		if (!m) return null;
-		return m[1].trim().replace(/\s+/g, ' ');
-	}
-	const selectedProof = $derived(selected ? extractProof(source, selected.label) : null);
+	async function loadDb(hash: string) {
+		resetView();
+		loadedHash = hash;
+		phase = 'loading';
+		statusMsg = 'loading graph …';
 
-	function stop() {
-		if (ws) {
-			ws.close();
-			ws = null;
-		}
-		if (isRunning) {
-			phase = 'idle';
-			statusMsg = 'stopped';
-		}
-	}
-
-	async function run() {
-		stop();
-		reset();
-		phase = 'downloading';
-		statusMsg = `downloading ${url} …`;
-
-		let src: string;
+		let graph;
 		try {
-			const res = await fetch(url);
-			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-			src = await res.text();
-		} catch (e) {
-			phase = 'error';
-			statusMsg = `download failed: ${e instanceof Error ? e.message : String(e)}`;
+			graph = await client.mmGraph(hash, user);
+		} catch {
+			phase = 'notLoaded';
+			statusMsg = 'database not loaded on the server — import it';
 			return;
 		}
 
-		// Keep the source for lazy per-theorem proof extraction on selection.
-		source = src;
-		statusMsg = `downloaded ${(src.length / 1_000_000).toFixed(1)} MB — connecting …`;
-		phase = 'parsing';
+		total = graph.total;
+		const rows: ImportedTheorem[] = [];
+		labelIndex = new Map();
+		for (const item of graph.theorems) {
+			labelIndex.set(item.label, rows.length);
+			rows.push({
+				label: item.label,
+				status: 'pending',
+				mm: item.mm,
+				deps: item.deps,
+				ok: false,
+			});
+		}
+		theorems = rows;
+		phase = 'graph';
+		statusMsg = `loaded ${total} theorems — starting import …`;
 
-		ws = client.connectMmImport(workers ?? undefined);
-		ws.onopen = () => {
-			statusMsg = 'parsing & importing …';
-			ws?.send(src);
-		};
-		ws.onerror = () => {
+		// Connect the status WS first so we don't miss early frames, then start.
+		connectStatus(hash);
+		try {
+			const wq = new URLSearchParams(window.location.search).get('workers');
+			await client.startMmProve(hash, user, wq != null ? Number(wq) : undefined);
+			phase = 'importing';
+			statusMsg = `proving ${total} theorems …`;
+		} catch (e) {
 			phase = 'error';
-			statusMsg = 'websocket error';
-		};
-		ws.onclose = () => {
-			if (isRunning) {
-				phase = 'error';
-				statusMsg = 'connection closed unexpectedly';
-			}
-		};
+			statusMsg = `prove failed: ${e instanceof Error ? e.message : String(e)}`;
+		}
+	}
+
+	function connectStatus(hash: string) {
+		ws = client.connectMmStatus(hash, user);
 		ws.onmessage = (ev) => {
-			let msg: ImportMessage;
+			let msg: MmStatusMessage;
 			try {
-				msg = JSON.parse(ev.data as string) as ImportMessage;
+				msg = JSON.parse(ev.data as string) as MmStatusMessage;
 			} catch {
 				return;
 			}
 			handle(msg);
 		};
+		ws.onerror = () => {
+			// Non-fatal: the import keeps running server-side; the page just
+			// won't get live updates. Leave phase as-is.
+		};
 	}
 
-	// The live status model. Two phases:
-	//   1. graph — `decl` batches push every theorem as `pending` (whole DB shown
-	//      immediately); `graphDone` ends the phase.
-	//   2. prove — `proving`/`proved` flip individual rows in place via the
-	//      `labelIndex` map (O(1) lookup), mutating the element so Svelte 5's deep
-	//      `$state` reactivity re-renders only that row — no array rebuild.
-	function handle(msg: ImportMessage) {
+	// The live status model:
+	//   - `snapshot` (on connect) seeds statuses for already-proved theorems so a
+	//     late joiner / reconnect is current;
+	//   - `proving`/`proved` flip individual rows in place via the `labelIndex`
+	//     map (O(1) lookup), mutating the element so Svelte 5's deep `$state`
+	//     reactivity re-renders only that row — no array rebuild;
+	//   - `done` finalizes the run.
+	function handle(msg: MmStatusMessage) {
 		switch (msg.type) {
-			case 'parsed':
-				total = msg.total;
-				phase = 'graph';
-				statusMsg = `loading graph — ${total} theorems …`;
-				break;
-			case 'decl': {
-				for (const item of msg.items) {
-					labelIndex.set(item.label, theorems.length);
-					theorems.push({
-						label: item.label,
-						status: 'pending',
-						mm: item.mm,
-						ess: item.ess ?? [],
-						deps: item.deps,
-						ok: false,
-					});
+			case 'snapshot': {
+				let n = 0;
+				for (const r of msg.results) {
+					const i = labelIndex.get(r.label);
+					if (i != null) {
+						theorems[i].status = r.ok ? 'proved' : 'error';
+						theorems[i].ok = r.ok;
+						n++;
+					}
 				}
+				done = Math.max(done, n);
 				break;
 			}
-			case 'graphDone':
-				phase = 'importing';
-				statusMsg = `proving ${total} theorems …`;
-				break;
 			case 'proving': {
 				const i = labelIndex.get(msg.label);
 				if (i != null) {
@@ -383,6 +413,11 @@
 					t.error = msg.error;
 					t.importMs = msg.importMs;
 				}
+				// If this row is the selected one, refresh its detail in place.
+				if (selected && selected.label === msg.label) {
+					detailCache.delete(msg.label);
+					void selectTheorem(theorems[i]);
+				}
 				break;
 			}
 			case 'done':
@@ -390,17 +425,51 @@
 				nOk = msg.ok;
 				elapsedMs = msg.elapsedMs;
 				statusMsg = `done — ${msg.ok}/${msg.total} imported in ${(msg.elapsedMs / 1000).toFixed(1)}s`;
-				ws?.close();
-				ws = null;
+				teardown();
 				break;
 			case 'error':
 				phase = 'error';
 				statusMsg = `error: ${msg.message}`;
-				ws?.close();
-				ws = null;
+				teardown();
 				break;
 		}
 	}
+
+	// --- detail: lazily fetch full per-theorem data (proof + ess + HOL) -----
+	async function selectTheorem(t: ImportedTheorem) {
+		selected = t;
+		const cached = detailCache.get(t.label);
+		if (cached) {
+			detail = cached;
+			return;
+		}
+		detail = null;
+		if (!fileHash) return;
+		try {
+			const d = await client.mmTheorem(fileHash, t.label, user);
+			detailCache.set(t.label, d);
+			// Only apply if the selection hasn't changed while we awaited.
+			if (selected && selected.label === t.label) detail = d;
+		} catch {
+			// leave detail null; the row's accumulated fields still render
+		}
+	}
+
+	// React to the `?file` param: (re)load when it changes; tear down on leave.
+	$effect(() => {
+		if (!browser) return;
+		const h = fileHash;
+		if (!h) {
+			resetView();
+			loadedHash = null;
+			importing = false;
+			return;
+		}
+		if (h !== loadedHash) {
+			void loadDb(h);
+		}
+		return () => teardown();
+	});
 </script>
 
 <main>
@@ -419,48 +488,48 @@
 		</p>
 	</header>
 
-	<section class="controls">
-		<div class="presets">
-			<button class:active={url === PRESETS.hol} onclick={() => (url = PRESETS.hol)}>
-				hol.mm <small>~151 thms · seconds</small>
-			</button>
-			<button class:active={url === PRESETS.set} onclick={() => (url = PRESETS.set)}>
-				set.mm <small>~48 MB · ~47k thms · minutes</small>
-			</button>
-		</div>
-		<div class="row">
-			<input
-				type="text"
-				bind:value={url}
-				placeholder=".mm URL"
-				spellcheck="false"
-				disabled={isRunning}
-			/>
-			<label class="workers" title="prove-phase worker threads (empty = auto)">
-				workers
-				<input
-					type="number"
-					min="1"
-					max="64"
-					bind:value={workers}
-					placeholder="auto"
-					disabled={isRunning}
-				/>
-			</label>
-			{#if isRunning}
-				<button class="primary stop" onclick={stop}>Stop</button>
-			{:else}
-				<button class="primary" onclick={run}>Download &amp; Import</button>
+	{#if !fileHash || phase === 'notLoaded'}
+		<section class="controls">
+			{#if phase === 'notLoaded'}
+				<p class="warn">
+					This database isn’t loaded on the server (it may have restarted). Re-import it below.
+				</p>
 			{/if}
-		</div>
-		{#if url === PRESETS.set}
-			<p class="warn">
-				set.mm is ~48 MB and ~47k theorems — the download + WebSocket upload is heavy and the
-				import runs for minutes. hol.mm is the snappy default.
-			</p>
-		{/if}
-	</section>
+			<div class="presets">
+				<button class:active={url === PRESETS.hol} onclick={() => (url = PRESETS.hol)}>
+					hol.mm <small>~151 thms · seconds</small>
+				</button>
+				<button class:active={url === PRESETS.set} onclick={() => (url = PRESETS.set)}>
+					set.mm <small>~48 MB · ~47k thms · minutes</small>
+				</button>
+			</div>
+			<div class="row">
+				<input
+					type="text"
+					bind:value={url}
+					placeholder=".mm URL"
+					spellcheck="false"
+					disabled={importing}
+				/>
+				<label class="workers" title="prove worker threads (0 = auto)">
+					workers
+					<input type="number" min="0" max="64" bind:value={workers} disabled={importing} />
+				</label>
+				<button class="primary" onclick={importDb} disabled={importing}>
+					{importing ? 'Importing…' : 'Download & Import'}
+				</button>
+			</div>
+			{#if landingMsg}<p class="msg landing-msg">{landingMsg}</p>{/if}
+			{#if url === PRESETS.set}
+				<p class="warn">
+					set.mm is ~48 MB and ~47k theorems — the upload + parse is heavy and the import runs for
+					minutes. hol.mm is the snappy default.
+				</p>
+			{/if}
+		</section>
+	{/if}
 
+	{#if fileHash && phase !== 'notLoaded'}
 	<section class="status">
 		<div class="bar">
 			<progress value={done} max={Math.max(total, 1)}></progress>
@@ -554,29 +623,27 @@
 				{/if}
 			</div>
 			<div class="rows" bind:this={rowsEl} onscroll={onRowsScroll}>
+				<div class="vspacer" style="height:{totalH}px">
+					<div class="vwin" style="transform:translateY({offsetY}px)">
+						{#each vRows as t (t.label)}
+							<button
+								class="item"
+								class:fail={t.status === 'error'}
+								class:sel={selected?.label === t.label}
+								onclick={() => selectTheorem(t)}
+							>
+								<span class="dot status-{t.status}"></span>
+								<span class="lbl">{t.label}</span>
+								<span class="mini">{t.mm}</span>
+								{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
+							</button>
+						{/each}
+					</div>
+				</div>
 				{#if theorems.length === 0}
-					<div class="empty">No theorems yet. Choose a source and import.</div>
+					<div class="empty">{phase === 'loading' ? 'Loading graph…' : 'No theorems.'}</div>
 				{:else if filtered.length === 0}
 					<div class="empty">No theorems match the current filter.</div>
-				{:else}
-					<!-- Virtualized: full-height spacer + offset slice of visible rows. -->
-					<div class="vspacer" style="height: {totalH}px;">
-						<div class="vwin" style="transform: translateY({offsetY}px);">
-							{#each vRows as t (t.label)}
-								<button
-									class="item"
-									class:fail={t.status === 'error'}
-									class:sel={selected?.label === t.label}
-									onclick={() => (selected = t)}
-								>
-									<span class="dot status-{t.status}"></span>
-									<span class="lbl">{t.label}</span>
-									<span class="mini">{t.mm}</span>
-									{#if t.importMs != null}<span class="time">{t.importMs.toFixed(0)} ms</span>{/if}
-								</button>
-							{/each}
-						</div>
-					</div>
 				{/if}
 			</div>
 		</div>
@@ -587,9 +654,9 @@
 				<div class="field">
 					<div class="flabel">Metamath statement</div>
 					<pre class="mm">{selected.mm}</pre>
-					{#if selected.ess.length > 0}
+					{#if detail && detail.ess.length > 0}
 						<div class="flabel sub">essential hypotheses</div>
-						{#each selected.ess as e (e)}
+						{#each detail.ess as e (e)}
 							<pre class="mm hyp">{e}</pre>
 						{/each}
 					{/if}
@@ -701,11 +768,13 @@
 					</div>
 				{/if}
 				<div class="field">
-					<div class="flabel">Metamath proof (compressed)</div>
-					{#if selectedProof}
-						<pre class="mm proof">{selectedProof}</pre>
+					<div class="flabel">Metamath proof</div>
+					{#if detail == null}
+						<p class="note">loading proof…</p>
+					{:else if detail.proof}
+						<pre class="mm proof">{detail.proof}</pre>
 					{:else}
-						<p class="note">no proof code (axiom or not found in source).</p>
+						<p class="note">no proof code (axiom).</p>
 					{/if}
 				</div>
 			{:else}
@@ -713,6 +782,7 @@
 			{/if}
 		</div>
 	</section>
+	{/if}
 </main>
 
 <style>
@@ -807,29 +877,37 @@
 	.row {
 		display: flex;
 		gap: 0.5rem;
-	}
-	input[type='text'] {
-		flex: 1;
-		padding: 0.5rem 0.6rem;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--code-bg);
-		color: var(--fg);
-		font-family: var(--font-mono);
-		font-size: 0.85rem;
+		align-items: center;
 	}
 	.workers {
 		display: flex;
 		align-items: center;
 		gap: 0.35rem;
-		font-size: 0.72rem;
+		font-size: 0.78rem;
 		color: var(--muted);
 		white-space: nowrap;
 	}
 	.workers input[type='number'] {
-		width: 4.5em;
-		flex: none;
-		padding: 0.5rem 0.4rem;
+		width: 3.5rem;
+		padding: 0.4rem 0.4rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--code-bg);
+		color: var(--fg);
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+	}
+	.landing-msg {
+		margin: 0.5rem 0 0;
+		font-size: 0.82rem;
+	}
+	button.primary:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	input[type='text'] {
+		flex: 1;
+		padding: 0.5rem 0.6rem;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: var(--code-bg);
@@ -898,8 +976,7 @@
 		color: var(--muted);
 	}
 	.phase-importing,
-	.phase-downloading,
-	.phase-parsing,
+	.phase-loading,
 	.phase-graph {
 		background: rgba(124, 111, 247, 0.16);
 		border-color: transparent;
@@ -1022,12 +1099,19 @@
 	.rows {
 		flex: 1;
 		overflow-y: auto;
-		position: relative;
 		scrollbar-width: thin;
 		scrollbar-color: var(--border) transparent;
 	}
-	/* Virtualization: full-height spacer establishes the scrollable range; the
-	   inner window is transform-offset to the first visible row. */
+	.rows::-webkit-scrollbar {
+		width: 8px;
+	}
+	.rows::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	.rows::-webkit-scrollbar-thumb {
+		background: var(--border);
+		border-radius: 4px;
+	}
 	.vspacer {
 		position: relative;
 		width: 100%;
@@ -1036,24 +1120,7 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		width: 100%;
-		will-change: transform;
-	}
-	.rows::-webkit-scrollbar,
-	.detail::-webkit-scrollbar,
-	pre.proof::-webkit-scrollbar {
-		width: 8px;
-	}
-	.rows::-webkit-scrollbar-track,
-	.detail::-webkit-scrollbar-track,
-	pre.proof::-webkit-scrollbar-track {
-		background: transparent;
-	}
-	.rows::-webkit-scrollbar-thumb,
-	.detail::-webkit-scrollbar-thumb,
-	pre.proof::-webkit-scrollbar-thumb {
-		background: var(--border);
-		border-radius: 4px;
+		right: 0;
 	}
 	.quantiles {
 		display: flex;
@@ -1106,7 +1173,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		width: 100%;
-		height: 26px; /* ROW_H — must match the virtualizer's constant */
+		height: 26px; /* must match ROW_H */
 		box-sizing: border-box;
 		text-align: left;
 		padding: 0 0.6rem;
@@ -1116,7 +1183,6 @@
 		color: var(--fg);
 		cursor: pointer;
 		font-size: 0.8rem;
-		overflow: hidden;
 	}
 	.item:hover {
 		background: rgba(124, 111, 247, 0.1);
@@ -1188,8 +1254,6 @@
 		max-height: 60vh;
 		overflow-y: auto;
 		background: var(--surface);
-		scrollbar-width: thin;
-		scrollbar-color: var(--border) transparent;
 	}
 	.detail h2 {
 		margin: 0 0 0.8rem;

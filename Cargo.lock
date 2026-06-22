@@ -1280,6 +1280,7 @@ name = "covalence-serve"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "covalence-core",
  "covalence-git",
  "covalence-hash",
  "covalence-hol",

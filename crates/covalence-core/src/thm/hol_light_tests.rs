@@ -652,6 +652,24 @@ fn all_elim_instantiates_witness() {
 }
 
 #[test]
+fn all_elim_with_matches_and_interns() {
+    use crate::term::HashCons;
+    // ⊢ ∀x:nat. x = x  ⇒[x := 5]⇒  ⊢ 5 = 5, via a HashCons.
+    let x = Term::free("x", Type::nat());
+    let univ = Thm::refl(x).unwrap().all_intro("x", Type::nat()).unwrap();
+    let five = Term::nat_lit(5u32);
+
+    let plain = univ.clone().all_elim(five.clone()).unwrap();
+    let mut cons = HashCons::new();
+    let interned = univ.all_elim_with(five, &mut cons).unwrap();
+
+    // Interning never changes the conclusion (the TrustedCons contract).
+    assert_eq!(interned.concl(), plain.concl());
+    // …but it did intern the reconstructed `5 = 5` nodes.
+    assert!(!cons.is_empty());
+}
+
+#[test]
 fn all_elim_rejects_non_forall() {
     let p = Term::free("p", Type::bool());
     let p_thm = Thm::assume(p).unwrap();

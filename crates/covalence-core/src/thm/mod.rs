@@ -43,12 +43,13 @@ use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hol;
 use crate::subst::{
-    close, find_free_type, has_free_var, open, subst_free, subst_tfree_in_term,
+    close, find_free_type, has_free_var, open, open_with, subst_free, subst_tfree_in_term,
     subst_tfrees_in_term,
 };
 
 use crate::term::{
-    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, Type, TypeEnv, TypeKind, type_of_in,
+    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, TrustedCons, Type, TypeEnv, TypeKind,
+    type_of_in,
 };
 use crate::ty::{TypeList, TypeSpec};
 
@@ -472,6 +473,25 @@ impl Thm {
     /// Soundness: standard universal elimination, derived in HOL
     /// Light from `INST` and `∀`'s definitional unfolding.
     pub fn all_elim(self, witness: Term) -> Result<Thm> {
+        self.all_elim_with(witness, &mut ())
+    }
+
+    /// [`all_elim`](Self::all_elim) routing the substituted term through a
+    /// caller-supplied [`TrustedCons`] (e.g. a [`crate::term::HashCons`]).
+    ///
+    /// Soundness: identical to [`all_elim`](Self::all_elim) — the only change
+    /// is that `open`'s reconstructed nodes are offered to `cons`, which the
+    /// `TrustedCons` contract guarantees returns structurally-equal terms. So
+    /// the conclusion is the same `φ[t/x]` regardless of the interning policy;
+    /// interning only shares `Arc`s. This is the cons-aware entry point the
+    /// Metamath replay threads to keep substitution instances a shared DAG (at
+    /// `open`'s depth-0 the witness is inserted by reference, so an
+    /// already-interned witness is reused, not copied).
+    pub fn all_elim_with<C: TrustedCons + ?Sized>(
+        self,
+        witness: Term,
+        cons: &mut C,
+    ) -> Result<Thm> {
         let (ty, body) = parse_hol_forall(&self.concl)?;
         let wit_ty = witness.type_of()?;
         if wit_ty != *ty {
@@ -480,7 +500,7 @@ impl Thm {
                 got: wit_ty,
             });
         }
-        let concl = open(body, &witness);
+        let concl = open_with(body, &witness, cons);
         Self::build(self.hyps, concl)
     }
 

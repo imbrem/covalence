@@ -146,11 +146,24 @@ proofs, each scoped to its own referenced lemmas so import is practical.
 **Real `hol.mm` (vendored, CC0, all 151 `$p` proofs compressed) DONE.**
 `import_hol_mm` (default, fast) imports the first 25 theorems + the `idi`
 (`H ⊢ H`, empty-scoped-rule-set) edge case; `import_hol_mm_full` (`#[ignore]`d,
-~44 s) sweeps all 151, each genuine (`has_no_obs`). **Real `set.mm` DONE
+~5 s) sweeps all 151, each genuine (`has_no_obs`). **Real `set.mm` DONE
 (samples):** `import_set_mm_sample` (`#[ignore]`d, `COV_SET_MM` env path) imports
-50 theorems in ~0.43 s (~8.6 ms/theorem) via the scoped path — set.mm theorems
-flow into covalence-hol at practical speed. (Importing *all* 47k is bounded only
-by total proof size now, not the database-size blowup.)
+50 theorems via the scoped path — set.mm theorems flow into covalence-hol at
+practical speed. (Importing *all* 47k is bounded only by total proof size now,
+not the database-size blowup.)
+
+**Performance (whole-import path).** `import_theorems*` build the
+[`Parser`](./mm_database.rs) (former grammar + `var → typecode` map, O(database
+size)) **once** and thread `&Parser` across all theorems (and across worker
+threads in `import_theorems_parallel` — it is `Sync`) via
+`derive_theorem_with`. `replay_with` precomputes the rule set's `Closed d`
+assumption + **all conjuncts** once per theorem (`ClauseCtx`) instead of
+rebuilding them on every `|-` step, the final sanity check reuses the cached
+`Closed d` and the shared parser, and `Parser` indexes formers by typecode.
+Net: hol.mm full 151-import ~44 s → ~5 s; a set.mm sample ~17× (the 48 MB
+database was being re-scanned several times *per theorem*). The `#[ignore]`d
+`mm_database::tests::bench_derive_theorem` times this (hol.mm always; set.mm with
+`COV_SET_MM`).
 
 **Deferred — declarations-only load + prove-on-demand.** A future workflow: parse
 a database keeping only the **declarations** (the `$a`/`$p` statements + frames +

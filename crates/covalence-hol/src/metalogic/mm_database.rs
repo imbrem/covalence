@@ -83,7 +83,7 @@ use crate::init::ext::TermExt;
 use crate::metamath::expr::body_of;
 use crate::metamath::{Assertion, Database, Expr, Statement};
 
-use super::{RuleSet, closed_for_var, conj, conj_thms, derivable, nth_conjunct};
+use super::{RuleSet, conj, conj_thms, derivable};
 
 // ============================================================================
 // Errors
@@ -172,6 +172,15 @@ struct Former {
 pub struct Parser<'a> {
     db: &'a Database,
     formers: Vec<Former>,
+    /// `typecode → indices into `formers`` (in database order). Lets [`parse`]
+    /// consider only the productions of the requested typecode instead of
+    /// scanning *all* formers (set.mm has ~1400 of them; without the index every
+    /// `parse(tc, …)` was O(all formers)). Database order is preserved within a
+    /// typecode, so first-match semantics are unchanged.
+    by_typecode: HashMap<String, Vec<usize>>,
+    /// The distinct former result-typecodes in database-first-seen order
+    /// (precomputed candidate start symbols for a whole-`|-`-body parse).
+    typecodes: Vec<String>,
     /// Every declared `$f` floating hypothesis's `var → typecode`, gathered from
     /// the *whole* database (not just former frames — a variable's `$f` may be
     /// introduced for a `|-` assertion, e.g. demo0's `s`).
@@ -181,7 +190,7 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     /// Build the parser from a database: every non-`|-` assertion is a former.
     pub fn new(db: &'a Database) -> Self {
-        let formers = db
+        let formers: Vec<Former> = db
             .assertions()
             .filter(|a| a.conclusion.typecode() != "|-")
             .filter_map(|a| {
@@ -198,6 +207,17 @@ impl<'a> Parser<'a> {
                 })
             })
             .collect();
+        // Index formers by their result typecode (database order preserved) and
+        // collect the distinct typecodes in first-seen order.
+        let mut by_typecode: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut typecodes: Vec<String> = Vec::new();
+        for (i, f) in formers.iter().enumerate() {
+            let entry = by_typecode.entry(f.typecode.clone());
+            if matches!(entry, std::collections::hash_map::Entry::Vacant(_)) {
+                typecodes.push(f.typecode.clone());
+            }
+            entry.or_default().push(i);
+        }
         let mut var_tc = HashMap::new();
         for stmt in db.statements() {
             if let Statement::Float(f) = stmt {
@@ -207,6 +227,8 @@ impl<'a> Parser<'a> {
         Parser {
             db,
             formers,
+            by_typecode,
+            typecodes,
             var_tc,
         }
     }
@@ -223,7 +245,7 @@ impl<'a> Parser<'a> {
     pub fn encode_expr(&self, e: &Expr) -> Result<Term> {
         let body = body_of(e).ok_or_else(|| replay_err("malformed statement (no body)"))?;
         let toks: Vec<&str> = body.iter().map(|s| s.as_str()).collect();
-        if self.formers.iter().any(|f| f.typecode == e.typecode()) {
+        if self.by_typecode.contains_key(e.typecode()) {
             let (term, rest) = self.parse(e.typecode(), &toks)?;
             if !rest.is_empty() {
                 return Err(replay_err(format!(
@@ -239,7 +261,7 @@ impl<'a> Parser<'a> {
         // grammars are unambiguous, so a full consume is canonical. Otherwise
         // fall back to greedy token-by-token encoding (raw `|-` bodies with no
         // top-level production, e.g. the GROUP theory's `( a = a )`).
-        for tc in self.start_typecodes() {
+        for tc in &self.typecodes {
             if let Ok((term, rest)) = self.parse(tc, &toks)
                 && rest.is_empty()
             {
@@ -247,18 +269,6 @@ impl<'a> Parser<'a> {
             }
         }
         self.encode_greedy(&toks)
-    }
-
-    /// The distinct former result-typecodes (candidate start symbols for a
-    /// whole-`|-`-body parse), in database-first-seen order.
-    fn start_typecodes(&self) -> Vec<&str> {
-        let mut seen = Vec::new();
-        for f in &self.formers {
-            if !seen.contains(&f.typecode.as_str()) {
-                seen.push(f.typecode.as_str());
-            }
-        }
-        seen
     }
 
     /// Greedily encode a token sequence with no top-level production: walk left
@@ -313,10 +323,13 @@ impl<'a> Parser<'a> {
         {
             return Ok((leaf(self.db, head), rest));
         }
-        // Try each former whose result typecode is `tc`; first full match wins.
-        for f in self.formers.iter().filter(|f| f.typecode == tc) {
-            if let Some((term, rest)) = self.try_former(f, toks)? {
-                return Ok((term, rest));
+        // Try each former whose result typecode is `tc` (via the typecode index,
+        // database order preserved); first full match wins.
+        if let Some(idxs) = self.by_typecode.get(tc) {
+            for &i in idxs {
+                if let Some((term, rest)) = self.try_former(&self.formers[i], toks)? {
+                    return Ok((term, rest));
+                }
             }
         }
         Err(replay_err(format!(
@@ -443,10 +456,19 @@ fn clause_from(parser: &Parser, a: &Assertion) -> Option<Clause> {
 /// assertions) are skipped — they are grammar, not derivability rules.
 fn collect_clauses(db: &Database) -> (Vec<Clause>, HashMap<String, usize>) {
     let parser = Parser::new(db);
+    collect_clauses_with(&parser, db.assertions())
+}
+
+/// Like [`collect_clauses`] but over a pre-built [`Parser`] and an explicit
+/// assertion iterator (so the caller controls the one-per-database parser build).
+fn collect_clauses_with<'a>(
+    parser: &Parser,
+    assertions: impl Iterator<Item = &'a Assertion>,
+) -> (Vec<Clause>, HashMap<String, usize>) {
     let mut clauses = Vec::new();
     let mut index = HashMap::new();
-    for a in db.assertions() {
-        if let Some(c) = clause_from(&parser, a) {
+    for a in assertions {
+        if let Some(c) = clause_from(parser, a) {
             index.insert(a.label.clone(), clauses.len());
             clauses.push(c);
         }
@@ -463,14 +485,12 @@ fn collect_clauses(db: &Database) -> (Vec<Clause>, HashMap<String, usize>) {
 /// monotonicity (`metalogic::transport_db`) `Derivable_L' ⟹ Derivable_L`.
 fn scoped_clauses(
     db: &Database,
-    assertion: &Assertion,
+    parser: &Parser,
+    steps: &[crate::metamath::ProofStep],
 ) -> Result<(Vec<Clause>, HashMap<String, usize>)> {
-    let steps = crate::metamath::proof_steps(db, assertion)
-        .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
-    let parser = Parser::new(db);
     let mut clauses = Vec::new();
     let mut index = HashMap::new();
-    for step in &steps {
+    for step in steps {
         let crate::metamath::ProofStep::Label(label) = step else {
             continue;
         };
@@ -478,7 +498,7 @@ fn scoped_clauses(
             continue;
         }
         if let Some(Statement::Assert(a)) = db.statement_by_label(label) {
-            if let Some(c) = clause_from(&parser, a) {
+            if let Some(c) = clause_from(parser, a) {
                 index.insert(label.clone(), clauses.len());
                 clauses.push(c);
             }
@@ -588,30 +608,51 @@ enum Slot {
 /// re-used sub-proof is a cheap `Arc`-clone re-push, **not** a recomputation,
 /// preserving the compressed proof's sharing (no exponential re-expansion).
 pub fn replay_db(db: &Database, assertion: &Assertion) -> Result<Thm> {
-    let (clauses, clause_index) = collect_clauses(db);
+    let parser = Parser::new(db);
+    let steps = crate::metamath::proof_steps(db, assertion)
+        .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
+    let (clauses, clause_index) = collect_clauses_with(&parser, db.assertions());
     let rs = clauses_to_ruleset(clauses);
-    replay_with(db, assertion, &rs, &clause_index)
+    replay_with(db, &parser, assertion, &steps, &rs, &clause_index)
 }
 
 /// **Derive that a single named theorem is derivable — the fast, on-demand
-/// path.** Parse a database once, then call this per theorem to get
-/// `⊢ Derivable_L' ⌜T⌝` where `L'` is the sub-rule-set of exactly the `|-`
-/// assertions `T`'s proof references (so `Closed_L'` is small and replay is
+/// path.** Get `⊢ Derivable_L' ⌜T⌝` where `L'` is the sub-rule-set of exactly the
+/// `|-` assertions `T`'s proof references (so `Closed_L'` is small and replay is
 /// cheap — unlike [`replay_db`], whose rule set is the *whole* database). `L' ⊆
 /// L`, so `metalogic::transport_db` lifts the result to the full database logic
 /// when wanted. Shares all replay machinery with [`replay_db`]; only the rule
 /// set is scoped.
+///
+/// This builds a fresh [`Parser`] for the one call. To derive **many** theorems
+/// from one database, build the parser once and use [`derive_theorem_with`] —
+/// [`Parser::new`] is O(database size) and would otherwise dominate the import.
 pub fn derive_theorem(db: &Database, label: &str) -> Result<Thm> {
+    let parser = Parser::new(db);
+    derive_theorem_with(db, &parser, label)
+}
+
+/// [`derive_theorem`] over a **pre-built [`Parser`]** — the path for importing
+/// *many* theorems from one database. [`Parser::new`] is O(database size) (it
+/// scans every assertion/float to build the former grammar + `var → typecode`
+/// map); building it once and threading it across all theorems removes that
+/// per-theorem scan (on set.mm, ~4.6 ms × 47k theorems ≈ minutes of pure
+/// rebuilding). The parser is read-only and `Sync`, so the parallel import
+/// shares one `&Parser` across worker threads. Otherwise identical to
+/// [`derive_theorem`].
+pub fn derive_theorem_with(db: &Database, parser: &Parser, label: &str) -> Result<Thm> {
     let assertion = match db.statement_by_label(label) {
-        Some(Statement::Assert(a)) if a.proof.is_some() => a.clone(),
+        Some(Statement::Assert(a)) if a.proof.is_some() => a,
         Some(Statement::Assert(_)) => {
             return Err(replay_err(format!("`{label}` is an axiom (no proof to replay)")));
         }
         _ => return Err(replay_err(format!("`{label}` is not a theorem of the database"))),
     };
-    let (clauses, clause_index) = scoped_clauses(db, &assertion)?;
+    let steps = crate::metamath::proof_steps(db, assertion)
+        .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
+    let (clauses, clause_index) = scoped_clauses(db, parser, &steps)?;
     let rs = clauses_to_ruleset(clauses);
-    replay_with(db, &assertion, &rs, &clause_index)
+    replay_with(db, parser, assertion, &steps, &rs, &clause_index)
 }
 
 /// The shared replay loop: drive `assertion`'s proof steps against the supplied
@@ -621,26 +662,30 @@ pub fn derive_theorem(db: &Database, label: &str) -> Result<Thm> {
 /// which clauses `rs`/`clause_index` carry.
 fn replay_with(
     db: &Database,
+    parser: &Parser,
     assertion: &Assertion,
+    steps: &[crate::metamath::ProofStep],
     rs: &RuleSet,
     clause_index: &HashMap<String, usize>,
 ) -> Result<Thm> {
     if assertion.proof.is_none() {
         return Err(replay_err("assertion has no proof to replay"));
     }
-    let steps = crate::metamath::proof_steps(db, assertion)
-        .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
 
-    let n = clause_index.len();
-    let parser = Parser::new(db);
+    // Build the rule-set's `{Closed d} ⊢ Closed d` assumption and *all* its
+    // conjuncts ONCE per theorem (was: rebuilt on every `|-` step in
+    // `derive_clause` — `closed_for_var` + `assume` + O(k) `nth_conjunct`,
+    // i.e. O(S·D) big-term work). Now each `|-` step just clones the cached
+    // conjunct (an `Arc` bump) and `all_elim`s its args.
+    let clause_ctx = ClauseCtx::new(rs)?;
 
     let mut stack: Vec<Slot> = Vec::new();
     let mut heap: Vec<Slot> = Vec::new();
 
-    for step in &steps {
+    for step in steps {
         match step {
             crate::metamath::ProofStep::Label(label) => {
-                let slot = apply_label(db, rs, clause_index, n, &parser, label, &mut stack)?;
+                let slot = apply_label(db, rs, clause_index, &clause_ctx, parser, label, &mut stack)?;
                 stack.push(slot);
             }
             crate::metamath::ProofStep::Save => {
@@ -666,8 +711,17 @@ fn replay_with(
         1 => match stack.pop().expect("len checked") {
             Slot::Proved(thm) => {
                 // Sanity: the re-derived theorem is the derivability of the
-                // claimed conclusion's encoding.
-                let want = derivable(rs, &encode_conclusion(db, assertion)?)?;
+                // claimed conclusion's encoding. Reuse the already-built `parser`
+                // (not `encode_conclusion`, which would `Parser::new` the whole
+                // database again) and the cached `Closed d` (not `derivable`,
+                // which would re-lay-out the clauses) — `Derivable_L A` is just
+                // `∀d. closed_t ⟹ d A`.
+                let concl_enc = parser.encode_expr(&assertion.conclusion)?;
+                let want = clause_ctx
+                    .closed_t
+                    .clone()
+                    .imp(clause_ctx.d.clone().apply(concl_enc)?)?
+                    .forall("d", clause_ctx.pred_ty.clone())?;
                 if thm.concl() != &want {
                     return Err(replay_err(format!(
                         "replayed conclusion does not match the claimed `{}`",
@@ -696,7 +750,7 @@ fn apply_label(
     db: &Database,
     rs: &RuleSet,
     clause_index: &HashMap<String, usize>,
-    n: usize,
+    clause_ctx: &ClauseCtx,
     parser: &Parser,
     label: &str,
     stack: &mut Vec<Slot>,
@@ -716,7 +770,7 @@ fn apply_label(
             Ok(Slot::Proved(Thm::assume(derivable(rs, &enc)?)?))
         }
         Statement::Assert(target) => {
-            apply_assert(db, rs, clause_index, n, target, label, stack)
+            apply_assert(db, clause_index, clause_ctx, target, label, stack)
         }
         _ => Err(replay_err(format!("label `{label}` is not applicable"))),
     }
@@ -727,9 +781,8 @@ fn apply_label(
 /// syntactic former or a `|-` rule.
 fn apply_assert(
     db: &Database,
-    rs: &RuleSet,
     clause_index: &HashMap<String, usize>,
-    n: usize,
+    clause_ctx: &ClauseCtx,
     target: &Assertion,
     label: &str,
     stack: &mut Vec<Slot>,
@@ -776,7 +829,7 @@ fn apply_assert(
         let k = *clause_index
             .get(label)
             .ok_or_else(|| replay_err(format!("`{label}` is not a `|-` clause of the database")))?;
-        derive_clause(rs, k, n, &float_args, prems).map(Slot::Proved)
+        derive_clause(clause_ctx, k, &float_args, prems).map(Slot::Proved)
     }
 }
 
@@ -807,30 +860,77 @@ fn encode_former(
     encode(body, &resolve)
 }
 
+/// **Per-theorem precomputed clause assumptions.** Built ONCE per theorem (was:
+/// rebuilt on every `|-` proof step inside `derive_clause`), this caches the
+/// rule set's `{Closed d} ⊢ Closed d` assumption, the predicate variable `d`,
+/// the `Closed d` term (for the final `imp_intro`), and — the big win — **all
+/// `n` conjuncts already extracted** into an `O(1)`-indexable `Vec<Thm>`.
+///
+/// Extracting all conjuncts up front is O(n) total (one left walk peeling
+/// `and_elim_r`/`and_elim_l`), versus the old per-step `nth_conjunct(k)` which
+/// is O(k) each → O(S·D) across a proof. Each `Thm` is `Arc`-backed, so cloning
+/// a cached conjunct is a cheap refcount bump.
+struct ClauseCtx {
+    d: Term,
+    closed_t: Term,
+    assumed: Thm,
+    pred_ty: Type,
+    conjuncts: Vec<Thm>,
+}
+
+impl ClauseCtx {
+    fn new(rs: &RuleSet) -> Result<Self> {
+        let d = rs.d_var();
+        // Lay the clauses out ONCE (was: `n_clauses` laid them out to count, then
+        // `closed_for_var` laid them out again to conjoin — two full builds of D
+        // `bool` terms per theorem). One build gives us both the count and the
+        // `Closed d` conjunction.
+        let clause_terms = (rs.clauses)(&|f| d.clone().apply(f.clone()))?;
+        let n = clause_terms.len();
+        let closed_t = conj(clause_terms)?;
+        let assumed = Thm::assume(closed_t.clone())?; // {Closed d} ⊢ Closed d
+        // Pre-extract conjunct 0..n in one left-to-right walk: `running` is the
+        // tail `cₖ ∧ (cₖ₊₁ ∧ …)`; conjunct k is its left projection (or the whole
+        // tail for the last k), then advance with `and_elim_r`.
+        let mut conjuncts = Vec::with_capacity(n);
+        let mut running = assumed.clone();
+        for k in 0..n {
+            if k + 1 < n {
+                conjuncts.push(running.clone().and_elim_l()?);
+                running = running.and_elim_r()?;
+            } else {
+                conjuncts.push(running);
+                break;
+            }
+        }
+        Ok(ClauseCtx {
+            d,
+            closed_t,
+            assumed,
+            pred_ty: rs.pred_ty(),
+            conjuncts,
+        })
+    }
+}
+
 /// The `|-` derivation constructor (mirrors [`crate::init::prop::derive_mp`]).
 ///
-/// For the clause at index `k` (of `n`), with float-argument terms `args` and
+/// For the clause at index `k`, with float-argument terms `args` and
 /// essential-premise theorems `prems`, construct `⊢ Derivable_L ⌜concl-instance⌝`
 /// (carrying the premises' essential hypotheses):
 ///
-/// open `∀d. Closed_L d ⟹ d ⌜·⌝` by assuming `Closed_L d`; extract conjunct
-/// `k`; `all_elim` the float args in order (so they hit `float_vars[0]` first);
-/// if there are premises, turn each `⊢ Derivable_L ⌜eᵢ⌝` into `d ⌜eᵢ⌝` under the
-/// same `Closed_L d` and discharge the clause's antecedent with their
-/// conjunction; finally `imp_intro` `Closed_L d` and `all_intro` `d`.
-fn derive_clause(
-    rs: &RuleSet,
-    k: usize,
-    n: usize,
-    args: &[Term],
-    prems: Vec<Thm>,
-) -> Result<Thm> {
-    let d = rs.d_var();
-    let closed_t = closed_for_var(rs)?;
-    let assumed = Thm::assume(closed_t.clone())?; // {Closed d} ⊢ Closed d
-
-    // {Closed d} ⊢ ∀floats. (prem_conj ⟹)? d ⌜concl⌝
-    let mut clause = nth_conjunct(assumed.clone(), k, n)?;
+/// take the pre-extracted conjunct `k` from `ctx`; `all_elim` the float args in
+/// order (so they hit `float_vars[0]` first); if there are premises, turn each
+/// `⊢ Derivable_L ⌜eᵢ⌝` into `d ⌜eᵢ⌝` under the cached `Closed_L d` and discharge
+/// the clause's antecedent with their conjunction; finally `imp_intro`
+/// `Closed_L d` and `all_intro` `d`.
+fn derive_clause(ctx: &ClauseCtx, k: usize, args: &[Term], prems: Vec<Thm>) -> Result<Thm> {
+    // {Closed d} ⊢ ∀floats. (prem_conj ⟹)? d ⌜concl⌝ — clone the cached conjunct.
+    let mut clause = ctx
+        .conjuncts
+        .get(k)
+        .ok_or_else(|| replay_err(format!("clause index {k} out of range")))?
+        .clone();
     for a in args {
         clause = clause.all_elim(a.clone())?; // strip float_vars[0..] in order
     }
@@ -841,15 +941,15 @@ fn derive_clause(
         // Each premise ⊢ Derivable_L ⌜eᵢ⌝ → {…} ⊢ d ⌜eᵢ⌝ under `assumed`.
         let prem_d: Vec<Thm> = prems
             .into_iter()
-            .map(|p| p.all_elim(d.clone())?.imp_elim(assumed.clone()))
+            .map(|p| p.all_elim(ctx.d.clone())?.imp_elim(ctx.assumed.clone()))
             .collect::<Result<_>>()?;
         clause.imp_elim(conj_thms(prem_d)?)? // {…} ⊢ d ⌜concl⌝
     };
 
     // Discharge `Closed d`, generalise `d`; essential hyps remain.
     d_concl
-        .imp_intro(&closed_t)?
-        .all_intro("d", rs.pred_ty())
+        .imp_intro(&ctx.closed_t)?
+        .all_intro("d", ctx.pred_ty.clone())
 }
 
 // ============================================================================
@@ -862,6 +962,108 @@ mod tests {
 
     fn assert_genuine(thm: &Thm) {
         assert!(thm.has_no_obs(), "replayed theorem must be oracle-free");
+    }
+
+    /// The vendored real `hol.mm` (CC0; all 151 `$p` proofs are *compressed*).
+    const HOL_MM: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../covalence-metamath/tests/fixtures/hol.mm"
+    ));
+
+    /// **Performance benchmark** for `derive_theorem`. Times every `$p` theorem
+    /// of `hol.mm` (all 151) individually and reports the total plus the slowest
+    /// few. With `COV_SET_MM` set, also samples set.mm. `#[ignore]`d (timing).
+    /// Run: `cargo test -p covalence-hol --lib --release \
+    ///   metalogic::mm_database::tests::bench_derive_theorem -- --ignored --nocapture`
+    #[test]
+    #[ignore = "performance benchmark; run with --ignored --nocapture"]
+    fn bench_derive_theorem() {
+        let db = crate::metamath::parse(HOL_MM).expect("hol.mm parses");
+        let labels: Vec<String> = db
+            .assertions()
+            .filter(|a| a.proof.is_some() && a.conclusion.typecode() == "|-")
+            .map(|a| a.label.clone())
+            .collect();
+
+        // Import-path timing: build the parser ONCE (Win 4) and derive each
+        // theorem through `derive_theorem_with` (the shared-parser path used by
+        // `mm_import`). This is the realistic whole-database import cost.
+        let parser = Parser::new(&db);
+        let t0 = std::time::Instant::now();
+        let mut timings: Vec<(String, std::time::Duration)> = Vec::new();
+        for label in &labels {
+            let t = std::time::Instant::now();
+            let thm = derive_theorem_with(&db, &parser, label)
+                .unwrap_or_else(|e| panic!("hol.mm `{label}` failed: {e}"));
+            assert!(thm.has_no_obs());
+            timings.push((label.clone(), t.elapsed()));
+        }
+        let total = t0.elapsed();
+        timings.sort_by(|a, b| b.1.cmp(&a.1));
+        eprintln!(
+            "\n=== hol.mm import (shared parser): {} theorems in {:?} ===",
+            labels.len(),
+            total
+        );
+        eprintln!("slowest 10:");
+        for (l, d) in timings.iter().take(10) {
+            eprintln!("  {d:>10.3?}  {l}");
+        }
+
+        if let Ok(path) = std::env::var("COV_SET_MM") {
+            let source = std::fs::read_to_string(&path).expect("read set.mm");
+            let tp = std::time::Instant::now();
+            let db = crate::metamath::parse(&source).expect("set.mm parses");
+            eprintln!("\nset.mm parsed in {:?}", tp.elapsed());
+            let _warm = Parser::new(&db); // warm caches/pages
+            let tpp = std::time::Instant::now();
+            let _p = Parser::new(&db);
+            eprintln!("set.mm Parser::new (warm) in {:?}", tpp.elapsed());
+            // A fixed sample including some known-deep theorems if present.
+            let mut sample: Vec<String> = Vec::new();
+            for cand in [
+                "a1i", "mp2", "syl", "3syl", "sylib", "mpbir", "imim1i", "con2d",
+                "pm2.61i", "ax12v", "19.21t", "exlimdv", "dvelimhw",
+            ] {
+                if let Some(Statement::Assert(a)) = db.statement_by_label(cand)
+                    && a.proof.is_some()
+                {
+                    sample.push(cand.to_string());
+                }
+            }
+            // Plus the first 50 |- $p theorems in db order.
+            for a in db.assertions() {
+                if sample.len() >= 63 {
+                    break;
+                }
+                if a.proof.is_some()
+                    && a.conclusion.typecode() == "|-"
+                    && !sample.contains(&a.label)
+                {
+                    sample.push(a.label.clone());
+                }
+            }
+            let parser = Parser::new(&db);
+            let t0 = std::time::Instant::now();
+            let mut timings: Vec<(String, std::time::Duration)> = Vec::new();
+            for label in &sample {
+                let t = std::time::Instant::now();
+                let _ = derive_theorem_with(&db, &parser, label)
+                    .unwrap_or_else(|e| panic!("set.mm `{label}` failed: {e}"));
+                timings.push((label.clone(), t.elapsed()));
+            }
+            let total = t0.elapsed();
+            timings.sort_by(|a, b| b.1.cmp(&a.1));
+            eprintln!(
+                "\n=== set.mm import (shared parser): {} theorems in {:?} ===",
+                sample.len(),
+                total
+            );
+            eprintln!("slowest 10:");
+            for (l, d) in timings.iter().take(10) {
+                eprintln!("  {d:>10.3?}  {l}");
+            }
+        }
     }
 
     // --- Theory 1: propositional calculus (set.mm ax-1/ax-2/ax-mp) ----------

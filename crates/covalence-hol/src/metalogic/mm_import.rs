@@ -14,6 +14,8 @@ use covalence_core::Thm;
 
 use crate::metamath::{Database, MmError};
 
+use super::mm_database::{Parser, derive_theorem_with};
+#[cfg(test)]
 use super::mm_database::derive_theorem;
 
 /// The labels of the database's **logical theorems** to import: `$p` assertions
@@ -39,10 +41,11 @@ pub fn theorem_labels(db: &Database) -> Vec<String> {
 /// to the full logic when wanted. A per-theorem error is captured in its
 /// `Result` rather than aborting the whole import.
 pub fn import_theorems(db: &Database) -> Vec<(String, covalence_core::Result<Thm>)> {
+    let parser = Parser::new(db);
     theorem_labels(db)
         .into_iter()
         .map(|label| {
-            let r = derive_theorem(db, &label);
+            let r = derive_theorem_with(db, &parser, &label);
             (label, r)
         })
         .collect()
@@ -55,11 +58,12 @@ pub fn import_theorems_with_progress(
     db: &Database,
     mut progress: impl FnMut(usize, usize, &str),
 ) -> Vec<(String, covalence_core::Result<Thm>)> {
+    let parser = Parser::new(db);
     let labels = theorem_labels(db);
     let total = labels.len();
     let mut out = Vec::with_capacity(total);
     for (i, label) in labels.into_iter().enumerate() {
-        let result = derive_theorem(db, &label);
+        let result = derive_theorem_with(db, &parser, &label);
         progress(i + 1, total, &label);
         out.push((label, result));
     }
@@ -101,6 +105,11 @@ pub fn import_theorems_parallel(
     }
     .clamp(1, 64);
 
+    // Build the former grammar / `var → typecode` map ONCE and share it
+    // read-only across all workers (it is `Sync`), instead of every thread
+    // re-scanning the whole database per theorem.
+    let parser = Parser::new(db);
+
     let next = AtomicUsize::new(0);
     let done = AtomicUsize::new(0);
     let on_pick = &on_pick;
@@ -108,6 +117,7 @@ pub fn import_theorems_parallel(
     let labels = &labels;
     let next = &next;
     let done = &done;
+    let parser = &parser;
     std::thread::scope(|s| {
         for _ in 0..n {
             s.spawn(move || loop {
@@ -118,7 +128,7 @@ pub fn import_theorems_parallel(
                 let label = &labels[i];
                 on_pick(label);
                 let t0 = std::time::Instant::now();
-                let result = derive_theorem(db, label);
+                let result = derive_theorem_with(db, parser, label);
                 let elapsed = t0.elapsed();
                 let d = done.fetch_add(1, Ordering::Relaxed) + 1;
                 on_each(d, total, label, &result, elapsed);
@@ -254,7 +264,7 @@ mod tests {
 
         // Import the first N theorems (db order = foundational first) via the fast
         // per-theorem path. The full 151 import is the `#[ignore]`d sweep below
-        // (~44 s); N keeps the default test snappy while still landing real HOL-
+        // (~5 s); N keeps the default test snappy while still landing real HOL-
         // in-Metamath theorems in the kernel.
         const N: usize = 25;
         let labels: Vec<String> = db
@@ -282,10 +292,10 @@ mod tests {
 
     /// **All 151 of real `hol.mm` import** into covalence-hol — every `$p`
     /// theorem's `⊢ Derivable_L' ⌜S⌝` re-derived through the kernel from its
-    /// compressed proof (fast per-theorem path). `#[ignore]`d only for runtime
-    /// (~44 s); run with `-- --ignored --nocapture`.
+    /// compressed proof (fast per-theorem path, shared parser). `#[ignore]`d only
+    /// for runtime (~5 s); run with `-- --ignored --nocapture`.
     #[test]
-    #[ignore = "full 151-theorem sweep (~44s); the default import_hol_mm does a subset"]
+    #[ignore = "full 151-theorem sweep (~5s); the default import_hol_mm does a subset"]
     fn import_hol_mm_full() {
         let db = crate::metamath::parse(HOL_MM).expect("hol.mm parses");
         let verified = crate::metamath::verify_all(&db).expect("hol.mm verifies");

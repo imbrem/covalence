@@ -1,30 +1,41 @@
-//! Wrapper crate for [SpecTec], the DSL the WebAssembly specification is written in.
+//! Wrapper crate for [SpecTec], the DSL the WebAssembly specification is
+//! written in.
 //!
-//! Layers:
+//! This crate is now **AST-first**: it consumes the elaborated SpecTec AST
+//! produced by the upstream OCaml SpecTec compiler (the
+//! `cyruscook/spectec_parse` workspace) and exposes it — plus the *grammars*
+//! it carries — in a form Covalence's untrusted kernel frontend can lower
+//! into byte predicates. The earlier hand-written native `.watsup`
+//! lexer/parser/elaborator was removed (recover from git history if needed);
+//! it was a half-built frontend, and the elaborated AST is the surface we
+//! actually want to compile *from*.
+//!
+//! # Layers
 //!
 //! - [`ast`] / [`decode`] / [`decode_derive`] / [`wasm`] — upstream
-//!   `cyruscook/spectec_parse` re-exports. These give us the WebAssembly 3.0
-//!   spec already elaborated, plus the S-expression AST format the OCaml
-//!   reference dumps.
-//! - [`source`], [`token`], [`lex`], [`cst`], [`parse`] — native Rust
-//!   lexer + parser, in progress. Phase 1 covers `syntax` and `def` forms.
+//!   `cyruscook/spectec_parse` re-exports. [`wasm::get_wasm_spectec_ast`]
+//!   gives the WebAssembly 3.0 spec already elaborated to
+//!   [`ast::SpecTecDef`]s.
+//! - [`grammar`] — typed access to the **grammar** definitions
+//!   ([`ast::SpecTecDef::Gram`]): the WASM grammars plus a handful of small,
+//!   self-contained grammars (the WASM preamble, LEB128 bytes, …) that are
+//!   useful for bootstrapping the byte-parsing infrastructure.
+//! - [`regex`] — the bridge between the elaborated SpecTec grammar AST
+//!   ([`ast::SpecTecSym`]) and the [`covalence_grammar`] proper-regex AST,
+//!   over both the `char` and `u8` (byte) alphabets. The byte path is what
+//!   feeds `covalence-hol`'s grammar → bytes-predicate compiler.
 //!
-//! # Status
+//! # Trust
 //!
-//! v0 consumes the upstream OCaml SpecTec compiler's S-expression backend
-//! via the `cyruscook/spectec_parse` workspace. A native Rust `.watsup`
-//! frontend is being built incrementally; see
-//! `docs/sketches/spectec-verification-plan.md`.
+//! This crate (and its inputs) is an **untrusted driver** to the kernel:
+//! "derive, don't trust." Anything lowered from a SpecTec grammar into HOL
+//! is re-checked by `covalence-core` through the normal ingestion paths;
+//! nothing here grows the TCB.
 //!
-//! This crate (and its inputs) is an **untrusted driver** to the kernel —
-//! see `ARCHITECTURE.md` §2.6 "derive, don't trust." The lowered HOL
-//! artifacts produced from SpecTec output enter the trusted core through
-//! the same ingestion paths as any other oracle-produced data.
-//!
-//! Native passes here are designed for eventual lifting into kernel-verified
-//! computations, so the code style is functional and total:
-//! every pass is a `fn input -> Result<Output, Diagnostic>` with no global
-//! mutable state, no interior mutability, no `unsafe`.
+//! Like other surface-language crates that may be lifted into kernel-verified
+//! computations, the code style is functional and total — every pass is a
+//! `fn input -> Result<Output, _>` with no global mutable state, no interior
+//! mutability, no `unsafe`.
 //!
 //! [SpecTec]: https://github.com/Wasm-DSL/spectec
 
@@ -35,14 +46,6 @@ pub use spectec_ast_decode as decode;
 pub use spectec_ast_decode_derive as decode_derive;
 pub use wasm_spec_ast as wasm;
 
-pub mod ast_doc;
-pub mod cst;
-pub mod elab;
-pub mod lex;
-pub mod lower;
-pub mod mixfix;
+pub mod grammar;
 pub mod parse;
 pub mod regex;
-pub mod source;
-pub mod token;
-pub mod typecheck;

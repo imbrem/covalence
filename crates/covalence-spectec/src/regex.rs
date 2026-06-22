@@ -80,6 +80,11 @@ pub enum BridgeError {
     /// form, so we refuse to invent one.
     #[error("negated character classes have no SpecTec representation")]
     NegatedClass,
+
+    /// A numeric literal outside the byte range `0..=255`, encountered while
+    /// reading a grammar over the **byte** alphabet.
+    #[error("numeric literal {value} is not a byte (0..=255)")]
+    BadByteLiteral { value: i64 },
 }
 
 // ============================================================================
@@ -157,6 +162,93 @@ fn endpoint_char(sym: &SpecTecSym) -> Result<char, BridgeError> {
                 }),
             }
         }
+        SpecTecSym::Var { x, .. } => Err(BridgeError::BadRangeEndpoint {
+            detail: format!("grammar reference `{}`", x),
+        }),
+        other => Err(BridgeError::BadRangeEndpoint {
+            detail: format!("{:?}", std::mem::discriminant(other)),
+        }),
+    }
+}
+
+// ============================================================================
+// SpecTecSym → Regex<u8>  (the byte / binary-grammar reading)
+// ============================================================================
+
+/// Convert a `SpecTecSym` into a [`Regex<u8>`] when it falls inside the
+/// proper-regex subset, reading it as a grammar over **bytes** — the natural
+/// interpretation of WASM's *binary* (`B*`) grammars and the form that feeds
+/// `covalence-hol`'s grammar → bytes-predicate compiler.
+///
+/// The differences from [`sym_to_regex`] (the `char` path) are exactly where
+/// the alphabet bites:
+///
+/// - `Num { n }` must lie in `0..=255` (a single byte), else
+///   [`BridgeError::BadByteLiteral`].
+/// - `Text { t }` is expanded to its **UTF-8 byte sequence**, one `Lit` per
+///   byte — so a multi-byte scalar becomes several byte literals (the right
+///   thing for a binary format).
+/// - `Range` endpoints are bytes (`0..=255`).
+///
+/// Everything else (`Eps`/`Seq`/`Alt`/`Iter`) maps structurally, and the same
+/// non-regular constructs (`Var`/`Attr`/`ListN`/dom-binding iteration) are
+/// rejected.
+pub fn sym_to_regex_u8(sym: &SpecTecSym) -> Result<Regex<u8>, BridgeError> {
+    match sym {
+        SpecTecSym::Var { x, .. } => Err(BridgeError::GrammarRef { name: x.clone() }),
+        SpecTecSym::Num { n } => Ok(Regex::Lit(i64_to_byte(*n)?)),
+        SpecTecSym::Text { t } => Ok(Regex::concat(t.bytes().map(Regex::Lit))),
+        SpecTecSym::Eps => Ok(Regex::Eps),
+        SpecTecSym::Seq { gs } => {
+            let mut items = Vec::with_capacity(gs.len());
+            for g in gs {
+                items.push(sym_to_regex_u8(g)?);
+            }
+            Ok(Regex::concat(items))
+        }
+        SpecTecSym::Alt { gs } => {
+            let mut items = Vec::with_capacity(gs.len());
+            for g in gs {
+                items.push(sym_to_regex_u8(g)?);
+            }
+            Ok(Regex::alt(items))
+        }
+        SpecTecSym::Range { g1, g2 } => {
+            let lo = endpoint_byte(g1)?;
+            let hi = endpoint_byte(g2)?;
+            let (lo, hi) = if lo <= hi { (lo, hi) } else { (hi, lo) };
+            Ok(Regex::Class(Class::new(vec![ClassRange { lo, hi }])))
+        }
+        SpecTecSym::Iter { g1, it, xes } => {
+            if !xes.is_empty() {
+                return Err(BridgeError::IterWithDom);
+            }
+            let inner = sym_to_regex_u8(g1)?;
+            match it {
+                SpecTecIter::Opt => Ok(inner.opt()),
+                SpecTecIter::List => Ok(inner.star()),
+                SpecTecIter::List1 => Ok(inner.plus()),
+                SpecTecIter::ListN { .. } => Err(BridgeError::ListN),
+            }
+        }
+        SpecTecSym::Attr { .. } => Err(BridgeError::Attr),
+    }
+}
+
+fn i64_to_byte(n: i64) -> Result<u8, BridgeError> {
+    u8::try_from(n).map_err(|_| BridgeError::BadByteLiteral { value: n })
+}
+
+/// Extract a single byte from a `SpecTecSym` used as a `Range` endpoint.
+/// Accepts `Num` in `0..=255` and `Text` of exactly one ASCII byte.
+fn endpoint_byte(sym: &SpecTecSym) -> Result<u8, BridgeError> {
+    match sym {
+        SpecTecSym::Num { n } => i64_to_byte(*n),
+        SpecTecSym::Text { t } if t.len() == 1 => Ok(t.as_bytes()[0]),
+        SpecTecSym::Text { t } => Err(BridgeError::NonScalarText {
+            value: t.clone(),
+            len: t.len(),
+        }),
         SpecTecSym::Var { x, .. } => Err(BridgeError::BadRangeEndpoint {
             detail: format!("grammar reference `{}`", x),
         }),
@@ -564,5 +656,58 @@ mod tests {
             let r2 = sym_to_regex(&sym).unwrap();
             assert_eq!(r1, r2, "round-trip failed for {:?}", src);
         }
+    }
+
+    // ---- sym_to_regex_u8 (the byte path) ----
+    //
+    // These drive off the S-expression parser (`crate::parse::parse_sym`), so
+    // the SpecTec grammar symbols read the way the OCaml backend dumps them.
+
+    fn u8_of(sexpr: &str) -> Result<Regex<u8>, BridgeError> {
+        let sym = crate::parse::parse_sym(sexpr).expect("parse sym");
+        sym_to_regex_u8(&sym)
+    }
+
+    #[test]
+    fn sym_u8_num_byte_and_range() {
+        assert_eq!(u8_of("(num 0x0B)").unwrap(), Regex::Lit(0x0Bu8));
+        assert_eq!(
+            u8_of("(range (num 0x00) (num 0x7F))").unwrap(),
+            Regex::Class(Class::new(vec![ClassRange { lo: 0x00, hi: 0x7F }])),
+        );
+    }
+
+    #[test]
+    fn sym_u8_text_is_utf8_bytes() {
+        // A multi-letter terminal expands to one byte literal per byte —
+        // "abc" => byte 'a', byte 'b', byte 'c'. This is the common case:
+        // WASM grammars use multi-char `(text ...)` terminals throughout
+        // (e.g. "align=", "array.copy").
+        assert_eq!(
+            u8_of(r#"(text "abc")"#).unwrap(),
+            Regex::concat([Regex::Lit(b'a'), Regex::Lit(b'b'), Regex::Lit(b'c')]),
+        );
+        // A two-byte UTF-8 scalar likewise expands to its two byte literals.
+        assert_eq!(
+            u8_of(r#"(text "é")"#).unwrap(),
+            Regex::concat([Regex::Lit(0xC3u8), Regex::Lit(0xA9u8)]),
+        );
+    }
+
+    #[test]
+    fn sym_u8_rejects_out_of_byte_range() {
+        assert!(matches!(
+            u8_of("(num 256)"),
+            Err(BridgeError::BadByteLiteral { value: 256 }),
+        ));
+    }
+
+    #[test]
+    fn sym_u8_iter_and_seq() {
+        // `0x80* 0x0B` — a star of one byte followed by a literal byte.
+        assert_eq!(
+            u8_of("(seq (iter (num 0x80) list) (num 0x0B))").unwrap(),
+            Regex::concat([Regex::Lit(0x80u8).star(), Regex::Lit(0x0Bu8)]),
+        );
     }
 }

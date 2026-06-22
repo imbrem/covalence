@@ -1343,10 +1343,8 @@ dependencies = [
 name = "covalence-spectec"
 version = "0.0.0"
 dependencies = [
- "covalence-core",
  "covalence-grammar",
- "covalence-types",
- "smol_str",
+ "sexpr_parse",
  "spectec_ast",
  "spectec_ast_decode",
  "spectec_ast_decode_derive",

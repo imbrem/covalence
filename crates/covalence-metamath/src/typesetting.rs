@@ -29,213 +29,124 @@ pub struct Typedef {
     pub value: String,
 }
 
+use covalence_parse::winnow::{
+    ModalResult, Parser,
+    ascii::{multispace0, multispace1},
+    combinator::{alt, opt},
+    token::{rest, take_until, take_while},
+};
+
 /// Parse every `htmldef` / `althtmldef` / `latexdef` in the source's `$t`
 /// typesetting comment(s). Returns them in source order (a later definition for
 /// the same `(kind, token)` overrides an earlier one — callers building a map
 /// should let the last win).
 pub fn parse_typesetting(src: &str) -> Vec<Typedef> {
+    let mut input = src;
     let mut defs = Vec::new();
-    for (start, end) in typesetting_spans(src) {
-        let body = strip_c_comments(&src[start..end]);
-        parse_body(&body, &mut defs);
+    // Walk `$( ... $)` comments one at a time; parse the body of `$t` ones.
+    while let Ok(body) = next_t_body.parse_next(&mut input) {
+        if let Some(body) = body {
+            collect_defs(body, &mut defs);
+        }
     }
     defs
 }
 
-/// Byte spans (inside `src`) of each `$t` comment's body — the text strictly
-/// between the `$t` marker and the closing `$)`.
-fn typesetting_spans(src: &str) -> Vec<(usize, usize)> {
-    let toks = tokens_with_pos(src);
-    let mut spans = Vec::new();
-    let mut i = 0;
-    while i < toks.len() {
-        if toks[i].0 == "$(" {
-            // Find the matching `$)` (comments can't nest / contain `$)`).
-            let is_t = i + 1 < toks.len() && toks[i + 1].0 == "$t";
-            let mut j = i + 1;
-            while j < toks.len() && toks[j].0 != "$)" {
-                j += 1;
-            }
-            if is_t && j < toks.len() {
-                spans.push((toks[i + 1].2, toks[j].1));
-            }
-            i = j + 1;
-        } else {
-            i += 1;
-        }
-    }
-    spans
+/// Advance to the next `$( ... $)` comment, consuming it. Returns its body iff
+/// it is a `$t` typesetting comment. Errors once no more `$(` remain (which ends
+/// the walk). Robust by construction: each call consumes a whole comment, so a
+/// `$(`/`$)` *inside* a comment is part of its body, never a fresh opener — and
+/// `$(` never appears in non-comment `.mm` content (no `$` in math tokens).
+fn next_t_body<'s>(input: &mut &'s str) -> ModalResult<Option<&'s str>> {
+    (take_until(0.., "$("), "$(").parse_next(input)?;
+    multispace0(input)?;
+    let is_t = opt(("$t", multispace1)).parse_next(input)?.is_some();
+    let body = alt((take_until(0.., "$)"), rest)).parse_next(input)?;
+    opt("$)").parse_next(input)?;
+    Ok(is_t.then_some(body))
 }
 
-/// Whitespace-delimited tokens with their `(text, start, end)` byte positions.
-fn tokens_with_pos(src: &str) -> Vec<(&str, usize, usize)> {
-    let b = src.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        while i < b.len() && b[i].is_ascii_whitespace() {
-            i += 1;
+/// Parse the statements of one `$t` body, collecting the def statements.
+fn collect_defs(body: &str, defs: &mut Vec<Typedef>) {
+    let mut input = body;
+    while skip_ws(&mut input).is_ok() && !input.is_empty() {
+        match statement.parse_next(&mut input) {
+            Ok(Some(def)) => defs.push(def),
+            Ok(None) => {}      // a non-def command (htmltitle, htmlcss, …)
+            Err(_) => break,    // malformed — stop this body
         }
-        if i >= b.len() {
+    }
+}
+
+/// One `<command> <item>* ;` statement. Yields a [`Typedef`] iff the command is
+/// `htmldef`/`althtmldef`/`latexdef`. Items are quoted strings (the first, before
+/// `as`, is the token; those after `as` concatenate into the value), the `as`
+/// keyword, and `+` concatenation operators.
+fn statement(input: &mut &str) -> ModalResult<Option<Typedef>> {
+    let cmd = bare_word(input)?.to_string();
+    let mut token: Option<String> = None;
+    let mut value = String::new();
+    let mut as_seen = false;
+    loop {
+        skip_ws(input)?;
+        if input.is_empty() || opt(';').parse_next(input)?.is_some() {
             break;
         }
-        let start = i;
-        while i < b.len() && !b[i].is_ascii_whitespace() {
-            i += 1;
+        if let Some(s) = opt(alt((quoted('"'), quoted('\'')))).parse_next(input)? {
+            if as_seen {
+                value.push_str(&s);
+            } else if token.is_none() {
+                token = Some(s);
+            }
+        } else if opt('+').parse_next(input)?.is_some() {
+            // string-concatenation operator
+        } else if bare_word(input)? == "as" {
+            as_seen = true;
         }
-        out.push((&src[start..i], start, i));
     }
-    out
+    Ok(matches!(cmd.as_str(), "htmldef" | "althtmldef" | "latexdef")
+        .then(|| token.map(|t| Typedef { kind: cmd, token: t, value }))
+        .flatten())
 }
 
-/// Replace `/* ... */` comments with a single space (non-nesting, per the `$t`
-/// grammar). **String-aware**: a `/*` inside a quoted string literal is *not* a
-/// comment — set.mm has `htmlexturl '…/mpests/*.html'` where `/*` is a URL glob,
-/// and treating it as a comment would eat across the closing quote and desync
-/// every following definition.
-fn strip_c_comments(s: &str) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    let n = chars.len();
-    let mut out = String::with_capacity(s.len());
-    let mut i = 0;
-    let mut quote: Option<char> = None;
-    while i < n {
-        let c = chars[i];
-        if let Some(q) = quote {
-            out.push(c);
-            if c == q {
-                // A doubled delimiter is an escaped literal — stay in the string.
-                if i + 1 < n && chars[i + 1] == q {
-                    out.push(q);
-                    i += 2;
-                    continue;
-                }
-                quote = None;
-            }
-            i += 1;
-        } else if c == '/' && i + 1 < n && chars[i + 1] == '*' {
-            i += 2;
-            while i + 1 < n && !(chars[i] == '*' && chars[i + 1] == '/') {
-                i += 1;
-            }
-            i = (i + 2).min(n); // skip the closing `*/` (or run to end if unterminated)
-            out.push(' ');
-        } else {
-            if c == '"' || c == '\'' {
-                quote = Some(c);
-            }
-            out.push(c);
-            i += 1;
+/// Skip whitespace and `/* ... */` block comments. Because string literals are
+/// parsed *explicitly* elsewhere, a `/*` inside a string is never seen here — so
+/// set.mm's `htmlexturl '…/mpests/*.html'` (a URL glob) is not mistaken for a
+/// comment (the bug that desynced the old hand-written stripper).
+fn skip_ws(input: &mut &str) -> ModalResult<()> {
+    loop {
+        multispace0(input)?;
+        if opt(("/*", alt((take_until(0.., "*/"), rest)), opt("*/")))
+            .parse_next(input)?
+            .is_none()
+        {
+            return Ok(());
         }
     }
-    out
 }
 
-/// A cursor over a typesetting body (already comment-stripped).
-struct Scanner {
-    c: Vec<char>,
-    i: usize,
+/// A bare word: a run of non-whitespace, non-quote, non-`;`, non-`+` characters.
+fn bare_word<'s>(input: &mut &'s str) -> ModalResult<&'s str> {
+    take_while(1.., |c: char| {
+        !c.is_whitespace() && !matches!(c, '"' | '\'' | ';' | '+')
+    })
+    .parse_next(input)
 }
 
-impl Scanner {
-    fn skip_ws(&mut self) {
-        while self.i < self.c.len() && self.c[self.i].is_whitespace() {
-            self.i += 1;
-        }
-    }
-
-    /// Read a bare word — up to the next whitespace, quote, `;`, or `+`.
-    fn bare_word(&mut self) -> String {
-        let start = self.i;
-        while self.i < self.c.len() {
-            let ch = self.c[self.i];
-            if ch.is_whitespace() || ch == '"' || ch == '\'' || ch == ';' || ch == '+' {
-                break;
-            }
-            self.i += 1;
-        }
-        self.c[start..self.i].iter().collect()
-    }
-
-    /// Read a quoted string at the cursor (delimiter `"` or `'`; a literal
-    /// delimiter is escaped by doubling it). Assumes the cursor is on the quote.
-    fn read_string(&mut self) -> String {
-        let q = self.c[self.i];
-        self.i += 1;
+/// A string literal delimited by `q` (`"` or `'`), where a literal delimiter is
+/// escaped by doubling it (`""` → `"`).
+fn quoted(q: char) -> impl FnMut(&mut &str) -> ModalResult<String> {
+    move |input: &mut &str| {
+        let mut delim = q; // `char: Parser` needs `&mut self`
+        delim.parse_next(input)?; // opening delimiter
         let mut out = String::new();
-        while self.i < self.c.len() {
-            let ch = self.c[self.i];
-            if ch == q {
-                if self.i + 1 < self.c.len() && self.c[self.i + 1] == q {
-                    out.push(q);
-                    self.i += 2;
-                    continue;
-                }
-                self.i += 1;
-                return out;
-            }
-            out.push(ch);
-            self.i += 1;
-        }
-        out // unterminated — return what we have
-    }
-}
-
-/// Parse statements from one comment body, pushing recognised defs.
-fn parse_body(body: &str, defs: &mut Vec<Typedef>) {
-    let mut sc = Scanner {
-        c: body.chars().collect(),
-        i: 0,
-    };
-    let n = sc.c.len();
-    while sc.i < n {
-        sc.skip_ws();
-        if sc.i >= n {
-            break;
-        }
-        // Statements are `<command> ... ;`; the command is the leading bare word.
-        let cmd = sc.bare_word();
-        if cmd.is_empty() {
-            sc.i += 1; // stray punctuation outside a string; advance to make progress
-            continue;
-        }
-        let mut token: Option<String> = None;
-        let mut value = String::new();
-        let mut as_seen = false;
         loop {
-            sc.skip_ws();
-            if sc.i >= n {
-                break;
-            }
-            let ch = sc.c[sc.i];
-            if ch == ';' {
-                sc.i += 1;
-                break;
-            } else if ch == '"' || ch == '\'' {
-                let s = sc.read_string();
-                if as_seen {
-                    value.push_str(&s);
-                } else if token.is_none() {
-                    token = Some(s);
-                }
-            } else if ch == '+' {
-                sc.i += 1; // string-concatenation operator
+            out.push_str(take_while(0.., |c: char| c != q).parse_next(input)?);
+            delim.parse_next(input)?; // delimiter (closing, or first of an escaped pair)
+            if opt(delim).parse_next(input)?.is_some() {
+                out.push(q);
             } else {
-                let w = sc.bare_word();
-                if w.is_empty() {
-                    sc.i += 1;
-                } else if w == "as" {
-                    as_seen = true;
-                }
-            }
-        }
-        if matches!(cmd.as_str(), "htmldef" | "althtmldef" | "latexdef") {
-            if let Some(tok) = token {
-                defs.push(Typedef {
-                    kind: cmd,
-                    token: tok,
-                    value,
-                });
+                return Ok(out);
             }
         }
     }

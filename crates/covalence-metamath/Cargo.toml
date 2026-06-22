@@ -18,5 +18,6 @@ checker = []
 # crate. `covalence-hol` depends on it (a HOL-backed `Database` consumer), not
 # the other way around.
 covalence-sexp = { path = "../covalence-sexp" }
+covalence-parse = { path = "../covalence-parse" }
 smol_str = "0.3"
 thiserror = "2"

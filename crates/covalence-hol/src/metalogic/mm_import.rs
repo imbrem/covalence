@@ -128,6 +128,12 @@ pub fn import_theorems_parallel(
                 let label = &labels[i];
                 on_pick(label);
                 let t0 = std::time::Instant::now();
+                // Plain (no interning) by default. Interning every constructed
+                // node trades ~2–3× CPU for a smaller *retained* term DAG, but
+                // this import drops each theorem after `on_each`, so the trade is
+                // pure overhead here. Hash-consing pays off only for callers that
+                // *keep* the terms (pretty-printing / unfolded definitions, which
+                // genuinely blow up) — those use [`derive_theorem_with_cons`].
                 let result = derive_theorem_with(db, parser, label);
                 let elapsed = t0.elapsed();
                 let d = done.fetch_add(1, Ordering::Relaxed) + 1;

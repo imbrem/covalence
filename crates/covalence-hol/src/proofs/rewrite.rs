@@ -101,12 +101,40 @@ pub fn eq_sides(t: &Term) -> Option<(Term, Term)> {
 /// has been applied to concrete arguments (see [`unfold_at_1`] /
 /// [`unfold_at_2`]).
 pub fn beta_nf(t: Term) -> Thm {
+    // `beta_nf_opt` returns `None` when `t` is *already* β-normal — no
+    // proof spine was built and no terms were allocated for it. In that
+    // (very common) case the equation `⊢ t = t` is a single `refl`.
+    beta_nf_opt(&t).unwrap_or_else(|| Thm::refl(t).expect("beta_nf: refl on a leaf"))
+}
+
+/// The sharing-preserving core of [`beta_nf`]: returns `Some(⊢ t = nf)`
+/// when `t` contains a redex (so it *reduces*), and `None` when `t` is
+/// already in β-normal form.
+///
+/// Returning `None` for an unchanged term is the key optimisation: the
+/// old `beta_nf` descended into *every* subterm and built a `cong_app`
+/// proof at *every* `App` node — even subtrees with no redex — paying an
+/// `Arc` allocation plus a `Thm::build` type-check per node, which made
+/// normalising an N-node term cost O(N²). Here a redex-free subtree
+/// short-circuits to `None` without building any proof; only the spine
+/// from the root down to each redex is rebuilt. The whole-term `refl` is
+/// built once at the top by [`beta_nf`].
+fn beta_nf_opt(t: &Term) -> Option<Thm> {
     use covalence_core::{TermKind, subst};
     match t.kind() {
         TermKind::App(f, x) => {
-            let f_nf = beta_nf(f.clone());
-            let x_nf = beta_nf(x.clone());
-            // ⊢ f x = f' x'
+            let of = beta_nf_opt(f);
+            let ox = beta_nf_opt(x);
+            // If neither side reduced *and* the function is not a λ, the
+            // application `f x` is already normal — nothing to do.
+            let f_is_abs = matches!(f.kind(), TermKind::Abs(..));
+            if of.is_none() && ox.is_none() && !f_is_abs {
+                return None;
+            }
+            // Build `⊢ f x = f' x'` from the (possibly reflexive) side
+            // proofs. Reuse `refl` only for the side that did not reduce.
+            let f_nf = of.unwrap_or_else(|| Thm::refl(f.clone()).expect("beta_nf: refl f"));
+            let x_nf = ox.unwrap_or_else(|| Thm::refl(x.clone()).expect("beta_nf: refl x"));
             let comb = f_nf.cong_app(x_nf).expect("beta_nf: cong_app");
             let (_, fx_rhs) = eq_sides(comb.concl()).expect("beta_nf: comb is an equation");
             // If the normalised function side is a λ, `f' x'` is a
@@ -116,27 +144,30 @@ pub fn beta_nf(t: Term) -> Thm {
             {
                 let beta = Thm::beta_conv(fx_rhs.clone()).expect("beta_nf: beta_conv");
                 let (_, body) = eq_sides(beta.concl()).expect("beta_nf: beta is an equation");
-                let body_nf = beta_nf(body);
-                return comb
-                    .trans(beta)
-                    .expect("beta_nf: trans redex")
-                    .trans(body_nf)
-                    .expect("beta_nf: trans body");
+                let redex_step = comb.trans(beta).expect("beta_nf: trans redex");
+                // Normalise the β-reduct; if it is already normal, skip
+                // the trailing `trans` against a reflexive proof.
+                return Some(match beta_nf_opt(&body) {
+                    Some(body_nf) => redex_step.trans(body_nf).expect("beta_nf: trans body"),
+                    None => redex_step,
+                });
             }
-            comb
+            Some(comb)
         }
         TermKind::Abs(ty, body) => {
             // Normalise under the binder: open with a fresh free var,
-            // normalise, re-abstract.
+            // normalise, re-abstract. Skip entirely if the body is normal.
             let fresh = fresh_name(body);
             let wit = Term::free(fresh.as_str(), ty.clone());
             let opened = subst::open(body, &wit);
-            let opened_nf = beta_nf(opened);
-            opened_nf
-                .abs(fresh.as_str(), ty.clone())
-                .expect("beta_nf: abs")
+            let opened_nf = beta_nf_opt(&opened)?;
+            Some(
+                opened_nf
+                    .abs(fresh.as_str(), ty.clone())
+                    .expect("beta_nf: abs"),
+            )
         }
-        _ => Thm::refl(t).expect("beta_nf: refl on a leaf"),
+        _ => None,
     }
 }
 

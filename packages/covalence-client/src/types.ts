@@ -137,14 +137,22 @@ export interface MmDef {
  * conclusion built once on a single thread into a shared DAG, plus the named
  * definitions used to read it. */
 export interface MmHolInfo {
-  /** Summed statement-tree nodes over all conclusions (un-interned). */
-  surfaceNodes: number;
-  /** Distinct nodes after interning (the shared DAG). */
-  dagNodes: number;
-  /** `surfaceNodes / dagNodes` — the dedup factor. */
-  dedup: number;
-  /** The database's named definitions (formers + df-*). */
-  defs: MmDef[];
+  /** Whether pass 1 has finished. When false, only the progress fields are set. */
+  ready: boolean;
+  /** Summed statement-tree nodes over all conclusions (un-interned). Ready only. */
+  surfaceNodes?: number;
+  /** Distinct nodes after interning (the shared DAG). Ready only. */
+  dagNodes?: number;
+  /** `surfaceNodes / dagNodes` — the dedup factor. Ready only. */
+  dedup?: number;
+  /** The database's named definitions (formers + df-*). Ready only. */
+  defs?: MmDef[];
+  /** Theorems interned so far (while not ready). */
+  done?: number;
+  /** Total theorems to intern (while not ready). */
+  total?: number;
+  /** Distinct DAG nodes so far (while not ready). */
+  nodes?: number;
 }
 
 /** One entry of GET /api/metamath/dbs → all cached sessions on the server. */
@@ -233,7 +241,13 @@ export type MmStatusMessage =
       importMs?: number;
     }
   | { type: 'done'; ok: number; total: number; elapsedMs: number }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  /** Pass-1 interner progress: theorems interned so far / total, and distinct
+   * shared-DAG nodes so far. */
+  | { type: 'interning'; done: number; total: number; nodes: number }
+  /** Pass 1 finished: the final surface stats (defs is the count; fetch /hol for
+   * the full list). */
+  | { type: 'interned'; surfaceNodes: number; dagNodes: number; dedup: number; defs: number };
 
 /** One imported theorem, as accumulated by the demo page: the static graph
  * fields plus a live `status` and the dynamic prove-phase results. */

@@ -124,7 +124,8 @@
 	const symbolMap = $derived({ ...MM_UNICODE, ...serverSymbols });
 	// Pass-1 interned HOL surface: per-theorem HOL terms (available before
 	// proving) + the database's named definitions + the dedup stat.
-	let holInfo = $state<MmHolInfo | null>(null);
+	let holInfo = $state<MmHolInfo | null>(null); // set only once pass 1 is ready
+	let internProg = $state<{ done: number; total: number; nodes: number } | null>(null);
 	let holTerms = $state<Record<string, string>>({});
 	let showDefs = $state(false); // list shows the definitions panel instead
 	// Named definitions, filtered by the search box when the defs panel is shown.
@@ -574,7 +575,10 @@
 		// show *before* (and during) the prove phase.
 		client
 			.mmHol(hash, user)
-			.then((h) => (holInfo = h))
+			.then((h) => {
+				if (h.ready) holInfo = h;
+				else internProg = { done: h.done ?? 0, total: h.total ?? 0, nodes: h.nodes ?? 0 };
+			})
 			.catch(() => {});
 		client
 			.mmHolTerms(hash, user)
@@ -730,6 +734,26 @@
 				phase = 'error';
 				statusMsg = `error: ${msg.message}`;
 				teardown();
+				break;
+			case 'interning':
+				internProg = { done: msg.done, total: msg.total, nodes: msg.nodes };
+				break;
+			case 'interned':
+				internProg = null;
+				// Pass 1 done — pull the full surface (defs + final stats) and the
+				// folded bulk terms.
+				if (fileHash) {
+					client
+						.mmHol(fileHash, user)
+						.then((h) => {
+							if (h.ready) holInfo = h;
+						})
+						.catch(() => {});
+					client
+						.mmHolTerms(fileHash, user)
+						.then((t) => (holTerms = t))
+						.catch(() => {});
+				}
 				break;
 		}
 	}
@@ -908,7 +932,7 @@
 				{#if phase === 'done'}<span>{(elapsedMs / 1000).toFixed(1)}s wall</span>{/if}
 				{#if avgMs > 0}<span class="dim">avg {avgMs.toFixed(1)} ms/thm</span>{/if}
 				{#if slowest}<span class="dim">slowest {slowest.label} {(slowest.importMs ?? 0).toFixed(0)} ms</span>{/if}
-				{#if holInfo}<span class="dim" title="pass-1 interning: summed statement-tree nodes → distinct shared-DAG nodes">HOL surface {holInfo.surfaceNodes.toLocaleString()} → {holInfo.dagNodes.toLocaleString()} ({holInfo.dedup.toFixed(1)}× shared)</span>{/if}
+				{#if holInfo}<span class="dim" title="pass-1 interning: summed statement-tree nodes → distinct shared-DAG nodes">HOL surface {(holInfo.surfaceNodes ?? 0).toLocaleString()} → {(holInfo.dagNodes ?? 0).toLocaleString()} ({(holInfo.dedup ?? 0).toFixed(1)}× shared)</span>{:else if internProg}<span class="dim" title="pass-1 interner progress (single-threaded, runs alongside proving)">interning {internProg.done.toLocaleString()}/{internProg.total.toLocaleString()} · {internProg.nodes.toLocaleString()} nodes</span>{/if}
 				<span class="spacer"></span>
 				<label class="filter">
 					<input type="checkbox" bind:checked={failuresOnly} />
@@ -1063,7 +1087,7 @@
 						<option value="label">label</option>
 					</select>
 				{/if}
-				{#if holInfo && holInfo.defs.length > 0}
+				{#if holInfo?.defs && holInfo.defs.length > 0}
 					<button
 						class="copy"
 						class:on={showDefs}
@@ -1074,7 +1098,7 @@
 					</button>
 				{/if}
 				{#if showDefs}
-					<span class="shown">{filteredDefs.length} / {holInfo?.defs.length ?? 0}</span>
+					<span class="shown">{filteredDefs.length} / {holInfo?.defs?.length ?? 0}</span>
 				{:else if search || failuresOnly}
 					<span class="shown">{filtered.length} / {theorems.length}</span>
 				{/if}

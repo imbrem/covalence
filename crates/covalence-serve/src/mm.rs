@@ -96,6 +96,13 @@ pub struct MmSession {
     /// hash-consed into one shared DAG and pretty-printed (folding the most-reused
     /// sub-formulas to named definitions). Computed once, lazily, off-runtime.
     pub hol: OnceLock<HolSurface>,
+    /// CAS guard so the pass-1 interner is launched at most once.
+    pub interning: AtomicBool,
+    /// Live pass-1 progress (theorems interned, total, distinct DAG nodes so
+    /// far) — read by `/hol` and broadcast as `interning` status frames.
+    pub intern_done: AtomicUsize,
+    pub intern_total: AtomicUsize,
+    pub intern_nodes: AtomicUsize,
 }
 
 /// The pass-1 result: the interned HOL surface of the whole database.
@@ -384,18 +391,49 @@ fn token_len(t: &Term) -> usize {
 /// The definitions are the database's *own* named assertions — the syntactic
 /// formers (`wff`/`class`/… constructors) and the `df-*` definitions — so the
 /// `name ↔ HOL term` map uses real Metamath names, not synthetic ones.
-fn build_hol_surface(db: &covalence_hol::metamath::Database) -> HolSurface {
-    use covalence_hol::metalogic::mm_database::{Parser, intern_surface};
+fn build_hol_surface(
+    db: &covalence_hol::metamath::Database,
+    progress: &dyn Fn(usize, usize, usize),
+) -> HolSurface {
+    use covalence_hol::metalogic::mm_database::Parser;
     use covalence_hol::metalogic::mm_import::theorem_labels;
     use covalence_metamath::database::Statement;
 
     let parser = Parser::new(db);
     let thm_labels = theorem_labels(db);
+    let total = thm_labels.len();
     let mut cons = covalence_core::HashCons::new();
 
-    // Interned theorem conclusions (pass-1 proper). `intern_surface` also seeds
-    // the cons with their shared structure.
-    let decls = intern_surface(db, &parser, &thm_labels, &mut cons).unwrap_or_default();
+    // Interned theorem conclusions (pass-1 proper), reporting progress as the
+    // shared DAG grows (every ~512 theorems, plus once at the end).
+    struct Decl {
+        label: String,
+        concl: Term,
+        hyps: Vec<Term>,
+    }
+    let mut decls: Vec<Decl> = Vec::with_capacity(total);
+    for (i, label) in thm_labels.iter().enumerate() {
+        if let Some(Statement::Assert(a)) = db.statement_by_label(label) {
+            if let Ok(c) = parser.encode_expr(&a.conclusion) {
+                let concl = c.cons_with(&mut cons);
+                let hyps: Vec<Term> = a
+                    .frame
+                    .essentials
+                    .iter()
+                    .filter_map(|h| parser.encode_expr(&h.expr).ok().map(|e| e.cons_with(&mut cons)))
+                    .collect();
+                decls.push(Decl {
+                    label: label.clone(),
+                    concl,
+                    hyps,
+                });
+            }
+        }
+        if i % 512 == 0 {
+            progress(i, total, cons.len());
+        }
+    }
+    progress(total, total, cons.len());
 
     // The Metamath definitions, interned into the SAME cons (so they share the
     // theorems' constants). `name ↔ interned encoded conclusion`.
@@ -454,19 +492,49 @@ fn build_hol_surface(db: &covalence_hol::metamath::Database) -> HolSurface {
     }
 }
 
-/// Compute the pass-1 surface once (off the runtime) and cache it on the session.
-async fn ensure_hol(sess: &Arc<MmSession>) {
+/// Launch pass 1 in the background (at most once per session). It interns the
+/// whole surface on one thread, broadcasting `interning` progress frames and a
+/// final `interned` frame over the session's status WS, and caches the result in
+/// `sess.hol`. Returns immediately. Idempotent: a no-op once started/done.
+fn start_hol(sess: Arc<MmSession>) {
     if sess.hol.get().is_some() {
         return;
     }
-    let s2 = sess.clone();
-    if let Ok(surface) = tokio::task::spawn_blocking(move || build_hol_surface(&s2.db)).await {
-        let _ = sess.hol.set(surface);
+    if sess
+        .interning
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return; // already running
     }
+    std::thread::spawn(move || {
+        let tx = sess.status_tx.clone();
+        let surface = build_hol_surface(&sess.db, &|done, total, nodes| {
+            sess.intern_done.store(done, Ordering::Relaxed);
+            sess.intern_total.store(total, Ordering::Relaxed);
+            sess.intern_nodes.store(nodes, Ordering::Relaxed);
+            let _ = tx.send(
+                json!({ "type": "interning", "done": done, "total": total, "nodes": nodes })
+                    .to_string(),
+            );
+        });
+        let frame = json!({
+            "type": "interned",
+            "surfaceNodes": surface.surface_nodes,
+            "dagNodes": surface.dag_nodes,
+            "dedup": surface.surface_nodes as f64 / surface.dag_nodes.max(1) as f64,
+            "defs": surface.defs.len(),
+        });
+        let _ = sess.hol.set(surface);
+        let _ = tx.send(frame.to_string());
+    });
 }
 
-/// GET `/api/metamath/session/{hash}/hol` — pass-1 stats + the definitions fold:
-/// `{surfaceNodes, dagNodes, dedup, defs:[{name, term}]}`. Triggers pass 1.
+/// GET `/api/metamath/session/{hash}/hol` — **non-blocking**: triggers pass 1 in
+/// the background and returns either the finished surface
+/// (`{ready:true, surfaceNodes, dagNodes, dedup, defs:[…]}`) or the current
+/// interning progress (`{ready:false, done, total, nodes}`). Live updates also
+/// stream as `interning`/`interned` frames on the status WS.
 pub async fn hol(
     State(state): State<AppState>,
     Path(hash): Path<String>,
@@ -475,27 +543,34 @@ pub async fn hol(
     let Some(sess) = lookup(&state, &hash, &q.user) else {
         return (StatusCode::NOT_FOUND, "no such session").into_response();
     };
-    ensure_hol(&sess).await;
-    let Some(s) = sess.hol.get() else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "hol surface unavailable").into_response();
-    };
-    Json(json!({
-        "surfaceNodes": s.surface_nodes,
-        "dagNodes": s.dag_nodes,
-        "dedup": s.surface_nodes as f64 / s.dag_nodes.max(1) as f64,
-        "defs": s.defs.iter().map(|d| json!({
-            "label": d.label,
-            "kind": d.kind,
-            "mm": d.mm,
-            "hol": d.hol,
-        })).collect::<Vec<_>>(),
-    }))
-    .into_response()
+    start_hol(sess.clone());
+    match sess.hol.get() {
+        Some(s) => Json(json!({
+            "ready": true,
+            "surfaceNodes": s.surface_nodes,
+            "dagNodes": s.dag_nodes,
+            "dedup": s.surface_nodes as f64 / s.dag_nodes.max(1) as f64,
+            "defs": s.defs.iter().map(|d| json!({
+                "label": d.label,
+                "kind": d.kind,
+                "mm": d.mm,
+                "hol": d.hol,
+            })).collect::<Vec<_>>(),
+        }))
+        .into_response(),
+        None => Json(json!({
+            "ready": false,
+            "done": sess.intern_done.load(Ordering::Relaxed),
+            "total": sess.intern_total.load(Ordering::Relaxed),
+            "nodes": sess.intern_nodes.load(Ordering::Relaxed),
+        }))
+        .into_response(),
+    }
 }
 
 /// GET `/api/metamath/session/{hash}/hol/terms` — the whole `label → HOL term`
-/// map (pass 1). One fetch; the page caches it for the list/detail. Triggers
-/// pass 1.
+/// map once pass 1 is done (else `{}`; the page falls back to the per-theorem
+/// on-demand encoding in the meantime). Triggers pass 1.
 pub async fn hol_terms(
     State(state): State<AppState>,
     Path(hash): Path<String>,
@@ -504,11 +579,11 @@ pub async fn hol_terms(
     let Some(sess) = lookup(&state, &hash, &q.user) else {
         return (StatusCode::NOT_FOUND, "no such session").into_response();
     };
-    ensure_hol(&sess).await;
-    let Some(s) = sess.hol.get() else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "hol surface unavailable").into_response();
-    };
-    Json(&s.terms).into_response()
+    start_hol(sess.clone());
+    match sess.hol.get() {
+        Some(s) => Json(&s.terms).into_response(),
+        None => Json(json!({})).into_response(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -574,6 +649,10 @@ pub async fn create_db(
         proving: AtomicBool::new(false),
         symbols,
         hol: OnceLock::new(),
+        interning: AtomicBool::new(false),
+        intern_done: AtomicUsize::new(0),
+        intern_total: AtomicUsize::new(0),
+        intern_nodes: AtomicUsize::new(0),
     });
 
     state.mm.lock().unwrap().insert(key, session);
@@ -838,6 +917,11 @@ pub async fn prove(
     {
         return (StatusCode::ACCEPTED, Json(json!({ "started": false }))).into_response();
     }
+
+    // Kick off pass 1 (interning) alongside proving — independent work, and the
+    // single-threaded interner overlaps the parallel prove rather than idling
+    // cores ahead of it.
+    start_hol(sess.clone());
 
     let workers = q.workers.unwrap_or(0);
     let sess2 = sess.clone();

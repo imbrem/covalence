@@ -39,6 +39,11 @@ pub fn close_with<C: TrustedCons + ?Sized>(t: &Term, name: &str, cons: &mut C) -
 }
 
 fn close_at<C: TrustedCons + ?Sized>(t: &Term, name: &str, depth: u32, cons: &mut C) -> Term {
+    // Bloom skip: if `name` provably doesn't occur free here, this subtree
+    // is unchanged — reuse it without recursing.
+    if !t.free_bloom().contains(name) {
+        return t.clone();
+    }
     match t.kind() {
         TermKind::Free(v) if v.name() == name => cons.make(TermKind::Bound(depth)),
         TermKind::Bound(_)
@@ -81,6 +86,10 @@ pub fn close_var(t: &Term, var: &Var) -> Term {
 }
 
 fn close_var_at(t: &Term, var: &Var, depth: u32) -> Term {
+    // Bloom skip: no free var named `var.name()` here ⇒ subtree unchanged.
+    if !t.free_bloom().contains(var.name()) {
+        return t.clone();
+    }
     match t.kind() {
         TermKind::Free(v) if v == var => Term::bound(depth),
         TermKind::Bound(_)
@@ -276,6 +285,12 @@ fn subst_free_opt<C: TrustedCons + ?Sized>(
     depth: u32,
     cons: &mut C,
 ) -> Option<Term> {
+    // Bloom skip: if `var.name()` provably doesn't occur free here, the
+    // substitution is a no-op on this subtree — return `None` (the caller
+    // reuses the original `Arc`) without recursing.
+    if !t.free_bloom().contains(var.name()) {
+        return None;
+    }
     match t.kind() {
         TermKind::Free(v) if v == var => Some(shift_with(r, depth as i64, 0, cons)),
         TermKind::Bound(_)
@@ -550,6 +565,10 @@ pub fn has_free_var(t: &Term, name: &str) -> bool {
 /// appears anywhere in `t`. Used by the kernel `abs`/`∀`-intro rules to
 /// check the variable being bound is not free in the hypotheses.
 pub fn has_free_var_typed(t: &Term, var: &Var) -> bool {
+    // Bloom skip: no free var named `var.name()` here ⇒ definitely absent.
+    if !t.free_bloom().contains(var.name()) {
+        return false;
+    }
     match t.kind() {
         TermKind::Free(v) => v == var,
         TermKind::App(a, b) => has_free_var_typed(a, var) || has_free_var_typed(b, var),
@@ -564,6 +583,11 @@ pub fn has_free_var_typed(t: &Term, var: &Var) -> bool {
 /// returns the first in traversal order (used only for display / best-
 /// effort diagnostics, never for soundness decisions).
 pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
+    // Bloom skip: `name` provably absent ⇒ `None` without recursing.
+    // (`has_free_var` is `find_free_type(..).is_some()`, so it benefits too.)
+    if !t.free_bloom().contains(name) {
+        return None;
+    }
     match t.kind() {
         TermKind::Free(v) if v.name() == name => Some(v.ty().clone()),
         TermKind::Bound(_)

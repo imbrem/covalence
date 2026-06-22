@@ -5,12 +5,15 @@ tactic. See [CLAUDE.md](../../../../CLAUDE.md) § Skeletons.
 
 ## Partial subsystems
 
+The compiler + matcher for the **regular** base case live under `regex/`
+(`regex/mod.rs` + `regex/tactic.rs`); the SpecTec-grammar entry is `grammar.rs`.
+
 - **The CFG stratum (the headline next step).** This module covers only the
-  **regular** base case: [`desugar`]/[`compile`] target the reified *regular*
-  expression object logic (`crate::init::regex`), and `Var` (non-terminal
-  reference) is rejected by the byte bridge. We want our **own primitive notion
-  of CFG**, one stratum up — exactly as `init/regex` is our own primitive
-  notion of regular expression. That means:
+  **regular** base case: `regex::desugar`/`regex::compile` target the reified
+  *regular* expression object logic (`crate::init::regex`), and `Var`
+  (non-terminal reference) is rejected by the byte bridge in `grammar.rs`. We
+  want our **own primitive notion of CFG**, one stratum up — exactly as
+  `init/regex` is our own primitive notion of regular expression. That means:
   - a reified context-free grammar datatype (non-terminals + productions,
     impredicative-encoded like `init/regex`'s `regex` / `init/prop`'s `Prop`);
   - a `Derives` judgement closed under the productions, with rule induction
@@ -18,7 +21,7 @@ tactic. See [CLAUDE.md](../../../../CLAUDE.md) § Skeletons.
   - a SpecTec `gram` definition lowering to those productions, with `Var`
     becoming a non-terminal symbol rather than a `BridgeError::GrammarRef`.
 
-  `tactic::prove_word`'s "variable parses as category" assumptions are the
+  `regex::tactic::prove_word`'s "variable parses as category" assumptions are the
   forward-compatible seed (a variable token = a non-terminal expansion), but
   the reified CFG datatype, the `Derives` judgement, and its soundness theorem
   are all unbuilt.

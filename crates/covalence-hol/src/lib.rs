@@ -44,6 +44,7 @@ pub mod ring;
 pub mod script;
 pub mod semiring;
 pub mod sexp;
+pub mod spectec;
 pub mod traits;
 pub mod types;
 

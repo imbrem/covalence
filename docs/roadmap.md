@@ -6,6 +6,12 @@ waist) see [`VISION.md`](./VISION.md) §1; for the substrate detail see
 [`theories-models-and-logics.md`](./theories-models-and-logics.md) §5.6/§5.7; for
 the kernel TCB [`kernel-design.md`](./kernel-design.md).
 
+**Active refactor:** the three-layer kernel reorg (introduce `covalence-pure`,
+split `covalence-hol`, regroup crates) is scoped in
+[`refactor-plan.md`](./refactor-plan.md), with the current crate dependency
+graph in [`crate-graph.md`](./crate-graph.md) and the base-logic design in
+[`covalence-pure.md`](./covalence-pure.md).
+
 ## What "product" means
 
 A **thin but honest demo of the full experience**:

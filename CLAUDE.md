@@ -27,6 +27,19 @@ entry. If you add the first skeleton to a crate/module that has no file yet,
 create it and link it from the parent index. Never silently leave work
 unfinished; record it where it is discoverable next to the code.
 
+**Format (keep it short — these files are loaded into context, so they cost
+tokens):**
+
+- **Only open work.** Never describe *completed* work in a SKELETONS file — when
+  a skeleton is filled, delete its entry (don't rewrite it to "done"). A
+  SKELETONS file is a TODO list, not a changelog.
+- **Severe at the top, minor at the bottom.** Order entries by impact: blocking
+  gaps / missing core functionality first; nice-to-haves and polish last. A
+  `## Severe` / `## Minor` split is fine when a file has many entries.
+- **One terse line or two per entry.** Name the stub and what's missing. Push
+  long rationale, design context, or status history into a separate Markdown doc
+  (under `docs/`) and link it; don't inline it here.
+
 ## Build & Run
 
 ```sh

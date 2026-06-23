@@ -128,12 +128,15 @@ pub trait TrustedCons: sealed::Sealed {
         }
     }
 
-    /// True iff this constructor never interns — the no-op `()`. Lets
-    /// [`Term::cons_with`] short-circuit to an identity (`self.clone()`, one
-    /// `Arc` bump) instead of a deep structural rebuild when there is nothing to
-    /// intern: callers thread `&mut ()` through a shared "intern if asked" path
-    /// (e.g. the plain Metamath import) and must not pay a per-term deep copy.
-    fn is_noop(&self) -> bool {
+    /// True iff [`Term::cons_with`] may short-circuit a rebuild to an identity
+    /// `self.clone()` (one `Arc` bump) instead of a deep structural copy —
+    /// because routing the existing tree through this constructor would produce
+    /// something `Arc`-equal anyway. This holds exactly for constructors that
+    /// never intern (the no-op `()`), where a rebuild would deep-copy an
+    /// already-equal term; callers thread `&mut ()` through a shared "intern if
+    /// asked" path (e.g. the plain Metamath import) and must not pay a per-term
+    /// deep copy. Conservatively defaults to `false` (force the rebuild).
+    fn allow_clone(&self) -> bool {
         false
     }
 }
@@ -154,7 +157,7 @@ impl TrustedCons for () {
     }
 
     #[inline]
-    fn is_noop(&self) -> bool {
+    fn allow_clone(&self) -> bool {
         true
     }
 }

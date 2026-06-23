@@ -720,7 +720,7 @@ impl Term {
     pub fn cons_with<C: crate::term::TrustedCons + ?Sized>(&self, cons: &mut C) -> Term {
         // The no-op `()` interns nothing, so a rebuild would just deep-copy an
         // already-equal term — short-circuit to an identity (one `Arc` bump).
-        if cons.is_noop() {
+        if cons.allow_clone() {
             return self.clone();
         }
         let kind = match self.kind() {

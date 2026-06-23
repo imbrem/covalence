@@ -755,10 +755,36 @@ impl Term {
     pub fn app(fun: Term, arg: Term) -> Self {
         Self::alloc(TermKind::App(fun, arg))
     }
+    /// [`app`](Self::app) routing the new `App` node through a
+    /// caller-supplied [`crate::term::TrustedCons`]. With `&mut ()` this is
+    /// allocation-identical to `app`; with a [`crate::term::HashCons`] the
+    /// node is interned, so a structurally-equal application built elsewhere
+    /// through the same interner comes back `Arc`-shared. Sharing only —
+    /// the resulting term is structurally equal to `app(fun, arg)` either
+    /// way (the `TrustedCons` contract), so this has no soundness role.
+    pub fn app_with<C: crate::term::TrustedCons + ?Sized>(
+        fun: Term,
+        arg: Term,
+        cons: &mut C,
+    ) -> Self {
+        cons.make(TermKind::App(fun, arg))
+    }
     /// `λ:ty. body` — anonymous abstraction. `body` must already use
     /// `Bound(0)` for the binder (see [`crate::subst::close`]).
     pub fn abs(ty: Type, body: Term) -> Self {
         Self::alloc(TermKind::Abs(ty, body))
+    }
+    /// [`abs`](Self::abs) routing the new `Abs` node through a
+    /// caller-supplied [`crate::term::TrustedCons`]. Allocation-identical
+    /// to `abs` under `&mut ()`; with a [`crate::term::HashCons`] the node
+    /// is interned. Sharing only — structurally equal to `abs(ty, body)`
+    /// either way, so no soundness role.
+    pub fn abs_with<C: crate::term::TrustedCons + ?Sized>(
+        ty: Type,
+        body: Term,
+        cons: &mut C,
+    ) -> Self {
+        cons.make(TermKind::Abs(ty, body))
     }
     pub fn blob(bytes: impl Into<Bytes>) -> Self {
         Self::alloc(TermKind::Blob(bytes.into()))

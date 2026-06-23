@@ -12,6 +12,7 @@ use covalence_types::Nat;
 
 use crate::defs;
 use crate::subst::close_var;
+use crate::term::TrustedCons;
 use crate::term::Var;
 use crate::term::{Term, Type};
 
@@ -81,6 +82,16 @@ pub(crate) fn hol_eq(lhs: Term, rhs: Term) -> Term {
     hol_eq_at(alpha, lhs, rhs)
 }
 
+/// [`hol_eq`] routing the equation's spine through a caller-supplied
+/// [`TrustedCons`] (delegating to [`hol_eq_at_with`]). Allocation-identical
+/// to `hol_eq` under `&mut ()`; sharing only, no soundness role.
+pub(crate) fn hol_eq_with<C: TrustedCons + ?Sized>(lhs: Term, rhs: Term, cons: &mut C) -> Term {
+    let alpha = lhs
+        .type_of()
+        .expect("hol::hol_eq_with: lhs must be well-typed");
+    hol_eq_at_with(alpha, lhs, rhs, cons)
+}
+
 /// HOL `lhs = rhs : bool` with the element type `alpha` supplied by the
 /// caller — no `type_of` walk. Use this in inference-rule paths that
 /// already know `alpha` (e.g. it can be read straight off an input
@@ -90,6 +101,22 @@ pub(crate) fn hol_eq(lhs: Term, rhs: Term) -> Term {
 /// know.
 pub(crate) fn hol_eq_at(alpha: Type, lhs: Term, rhs: Term) -> Term {
     Term::app(Term::app(eq_at(alpha), lhs), rhs)
+}
+
+/// [`hol_eq_at`] routing the two `App` nodes (and the `=` head) through a
+/// caller-supplied [`TrustedCons`]. Allocation-identical to `hol_eq_at`
+/// under `&mut ()`; with a [`crate::term::HashCons`] the equation's spine
+/// is interned. Sharing only — the result is structurally equal to
+/// `hol_eq_at(alpha, lhs, rhs)` regardless of the cons, so no soundness
+/// role. Used by the cons-aware congruence rules.
+pub(crate) fn hol_eq_at_with<C: TrustedCons + ?Sized>(
+    alpha: Type,
+    lhs: Term,
+    rhs: Term,
+    cons: &mut C,
+) -> Term {
+    let head = eq_at(alpha).cons_with(cons);
+    Term::app_with(Term::app_with(head, lhs, cons), rhs, cons)
 }
 
 /// `λx:α. body[x]` — kernel abstraction that closes the named free

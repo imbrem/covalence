@@ -110,12 +110,12 @@ pub trait TermExt: Sized {
     /// `Term` — it is a proof step, not term construction.
     fn rw_all(&self, eq: &Thm) -> Result<Thm>;
 
-    /// [`rw_all`](Self::rw_all) routing the terms it builds under binders (the
-    /// `open` of each `Abs` body) through a caller-supplied interner. Pass one
-    /// `HashCons` across a whole rewrite *sequence* so those opened bodies are
-    /// shared across rewrites. (The kernel congruence rules build their own
-    /// result terms and do not yet accept a `cons`, so the rewritten spine
-    /// itself is not interned here.)
+    /// [`rw_all`](Self::rw_all) routing every term it builds through a
+    /// caller-supplied interner: the `open` of each `Abs` body **and** the
+    /// rewritten spine the kernel congruence rules construct (via their
+    /// `_with` variants — `refl_with` / `cong_app_with` / `abs_with`). Pass
+    /// one `HashCons` across a whole rewrite *sequence* so opened bodies and
+    /// the congruence spine are shared across rewrites.
     fn rw_all_with<C: TrustedCons + ?Sized>(&self, eq: &Thm, cons: &mut C) -> Result<Thm>;
 
     /// δ-reduction of a single definition: if `self` is a let-style
@@ -249,15 +249,15 @@ impl TermExt for Term {
     }
 
     fn delta_all(&self, symbol: &dyn Symbol) -> Result<Thm> {
-        delta_all_conv(self, symbol)
+        delta_all_conv(self, symbol, &mut ())
     }
 
     fn reduce_consts(&self) -> Result<Thm> {
-        reduce_conv(self, false)
+        reduce_conv(self, false, &mut ())
     }
 
     fn reduce(&self) -> Result<Thm> {
-        reduce_conv(self, true)
+        reduce_conv(self, true, &mut ())
     }
 
     fn prove_true(&self) -> Result<Thm> {
@@ -310,13 +310,13 @@ fn rw_all_opt<C: TrustedCons + ?Sized>(
         }
         let f_eq = match f_eq {
             Some(e) => e,
-            None => Thm::refl(f.clone())?,
+            None => Thm::refl_with(f.clone(), cons)?,
         };
         let x_eq = match x_eq {
             Some(e) => e,
-            None => Thm::refl(x.clone())?,
+            None => Thm::refl_with(x.clone(), cons)?,
         };
-        return f_eq.cong_app(x_eq).map(Some);
+        return f_eq.cong_app_with(x_eq, cons).map(Some);
     }
     if let Some((ty, body)) = t.as_abs() {
         // The witness must avoid the body's frees and `eq`'s frees so
@@ -331,7 +331,7 @@ fn rw_all_opt<C: TrustedCons + ?Sized>(
         let opened = subst::open_with(body, &wit, cons);
         return match rw_all_opt(&opened, lhs, eq, cons)? {
             None => Ok(None), // body unchanged — reuse `t`
-            Some(body_eq) => body_eq.abs(fresh.as_str(), ty.clone()).map(Some),
+            Some(body_eq) => body_eq.abs_with(fresh.as_str(), ty.clone(), cons).map(Some),
         };
     }
     Ok(None)
@@ -340,16 +340,25 @@ fn rw_all_opt<C: TrustedCons + ?Sized>(
 /// `⊢ t = t'` δ-unfolding every spine occurrence of a `symbol`-named
 /// defined constant in `t`. **Weak — stops at `Abs`.** See
 /// [`TermExt::delta_all`] for the spec.
-fn delta_all_conv(t: &Term, symbol: &dyn Symbol) -> Result<Thm> {
-    match delta_all_opt(t, symbol)? {
+fn delta_all_conv<C: TrustedCons + ?Sized>(
+    t: &Term,
+    symbol: &dyn Symbol,
+    cons: &mut C,
+) -> Result<Thm> {
+    match delta_all_opt(t, symbol, cons)? {
         Some(thm) => Ok(thm),
-        None => Thm::refl(t.clone()),
+        None => Thm::refl_with(t.clone(), cons),
     }
 }
 
 /// Sharing-preserving core of [`delta_all_conv`]: `None` when `symbol` does not
 /// occur on `t`'s spine (so `t` is unchanged — no no-op congruence built).
-fn delta_all_opt(t: &Term, symbol: &dyn Symbol) -> Result<Option<Thm>> {
+/// `cons` is threaded into the congruence spine the kernel rules build.
+fn delta_all_opt<C: TrustedCons + ?Sized>(
+    t: &Term,
+    symbol: &dyn Symbol,
+    cons: &mut C,
+) -> Result<Option<Thm>> {
     // A matching `Spec` leaf — unfold it to its defining body. We do
     // not recurse into the result, so the symbol is removed exactly
     // once per original occurrence.
@@ -360,20 +369,20 @@ fn delta_all_opt(t: &Term, symbol: &dyn Symbol) -> Result<Option<Thm>> {
     }
     // Descend the application spine, but never under a binder.
     if let Some((f, x)) = t.as_app() {
-        let f_eq = delta_all_opt(f, symbol)?;
-        let x_eq = delta_all_opt(x, symbol)?;
+        let f_eq = delta_all_opt(f, symbol, cons)?;
+        let x_eq = delta_all_opt(x, symbol, cons)?;
         if f_eq.is_none() && x_eq.is_none() {
             return Ok(None); // spine unchanged — reuse `t`
         }
         let f_eq = match f_eq {
             Some(e) => e,
-            None => Thm::refl(f.clone())?,
+            None => Thm::refl_with(f.clone(), cons)?,
         };
         let x_eq = match x_eq {
             Some(e) => e,
-            None => Thm::refl(x.clone())?,
+            None => Thm::refl_with(x.clone(), cons)?,
         };
-        return f_eq.cong_app(x_eq).map(Some);
+        return f_eq.cong_app_with(x_eq, cons).map(Some);
     }
     Ok(None)
 }
@@ -383,42 +392,72 @@ fn delta_all_opt(t: &Term, symbol: &dyn Symbol) -> Result<Option<Thm>> {
 /// ([`Thm::beta_conv`]) when `with_beta` and the head is a λ, else ι
 /// ([`Thm::reduce_prim`]) on a closed primitive application — and keep
 /// reducing the result. **Never descends under `Abs`.**
-fn reduce_conv(t: &Term, with_beta: bool) -> Result<Thm> {
+fn reduce_conv<C: TrustedCons + ?Sized>(t: &Term, with_beta: bool, cons: &mut C) -> Result<Thm> {
+    match reduce_opt(t, with_beta, cons)? {
+        Some(thm) => Ok(thm),
+        None => Thm::refl_with(t.clone(), cons),
+    }
+}
+
+/// Sharing-preserving core of [`reduce_conv`]: returns `None` when `t` is
+/// already in normal form *here* — i.e. neither child reduced **and** the node
+/// is not itself a β- or ι-redex — so no no-op congruence (`refl.cong_app(refl)`)
+/// is built for irreducible subterms. The redex check is what keeps this sound:
+/// a node whose children are unchanged but which is itself reducible is still
+/// reduced (returns `Some`), so the normal form is identical to the old
+/// always-build-congruence version — only the wasted allocations are gone.
+fn reduce_opt<C: TrustedCons + ?Sized>(
+    t: &Term,
+    with_beta: bool,
+    cons: &mut C,
+) -> Result<Option<Thm>> {
     let Some((f, x)) = t.as_app() else {
-        // Leaf or abstraction: irreducible at this layer.
-        return Thm::refl(t.clone());
+        return Ok(None); // leaf / Abs: irreducible at this layer
     };
-    let f_eq = reduce_conv(f, with_beta)?;
-    let x_eq = reduce_conv(x, with_beta)?;
-    let cong = f_eq.cong_app(x_eq)?; // ⊢ t = f' x'
-    let fx = cong
-        .concl()
-        .as_eq()
-        .expect("cong yields an equation")
-        .1
-        .clone();
+    let f_eq = reduce_opt(f, with_beta, cons)?;
+    let x_eq = reduce_opt(x, with_beta, cons)?;
+
+    let rhs = |e: &Thm| e.concl().as_eq().expect("conv yields an equation").1.clone();
+    let f2 = match &f_eq {
+        Some(e) => rhs(e),
+        None => f.clone(),
+    };
+    let x2 = match &x_eq {
+        Some(e) => rhs(e),
+        None => x.clone(),
+    };
+    let fx = Term::app_with(f2.clone(), x2.clone(), cons);
+
+    // `⊢ t = fx` — built only once we know the node is reducible.
+    let cong = |f_eq: Option<Thm>, x_eq: Option<Thm>, cons: &mut C| -> Result<Thm> {
+        let fe = match f_eq {
+            Some(e) => e,
+            None => Thm::refl_with(f.clone(), cons)?,
+        };
+        let xe = match x_eq {
+            Some(e) => e,
+            None => Thm::refl_with(x.clone(), cons)?,
+        };
+        fe.cong_app_with(xe, cons)
+    };
 
     // β: if the reduced head is a λ, contract and keep reducing.
-    if with_beta
-        && let Some((head, _)) = fx.as_app()
-        && head.as_abs().is_some()
-    {
-        let beta = Thm::beta_conv(fx.clone())?; // ⊢ f' x' = body[x'/0]
-        let body = beta
-            .concl()
-            .as_eq()
-            .expect("beta yields an equation")
-            .1
-            .clone();
-        let body_eq = reduce_conv(&body, with_beta)?;
-        return cong.trans(beta)?.trans(body_eq);
+    if with_beta && f2.as_abs().is_some() {
+        let cong = cong(f_eq, x_eq, cons)?; // ⊢ t = fx
+        let beta = Thm::beta_conv_with(fx, cons)?; // ⊢ fx = body[x2/0]
+        let body = rhs(&beta);
+        let out = cong.trans_with(beta, cons)?;
+        return match reduce_opt(&body, with_beta, cons)? {
+            Some(after) => out.trans_with(after, cons).map(Some),
+            None => Ok(Some(out)),
+        };
     }
 
-    // ι: evaluate a closed primitive application. `reduce_prim` returns
-    // a canonical literal (terminal), so no further pass is needed.
-    match Thm::reduce_prim(fx) {
-        Ok(step) => cong.trans(step),
-        Err(_) => Ok(cong),
+    // ι: evaluate a closed primitive application.
+    match Thm::reduce_prim_with(fx, cons) {
+        Ok(step) => cong(f_eq, x_eq, cons)?.trans_with(step, cons).map(Some), // ⊢ t = fx = literal
+        Err(_) if f_eq.is_some() || x_eq.is_some() => cong(f_eq, x_eq, cons).map(Some),
+        Err(_) => Ok(None), // fully irreducible — `t` unchanged
     }
 }
 

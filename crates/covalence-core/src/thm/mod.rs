@@ -43,7 +43,7 @@ use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hol;
 use crate::subst::{
-    close_var, has_free_var_typed, open, open_with, subst_free, subst_tfree_in_term,
+    close_var, has_free_var_typed, open_with, subst_free, subst_tfree_in_term,
     subst_tfrees_in_term,
 };
 
@@ -154,8 +154,18 @@ impl Thm {
 
     /// `⊢ t = t : bool` — HOL reflexivity of equality.
     pub fn refl(t: Term) -> Result<Thm> {
+        Self::refl_with(t, &mut ())
+    }
+
+    /// [`refl`](Self::refl) building its `t = t` equation through a
+    /// caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`refl`](Self::refl); the cons only shares
+    /// the `Arc`s of the conclusion's spine (the `TrustedCons` contract
+    /// guarantees a structurally-equal result), so it has no soundness role.
+    pub fn refl_with<C: TrustedCons + ?Sized>(t: Term, cons: &mut C) -> Result<Thm> {
         let _ = t.type_of()?;
-        let concl = hol::hol_eq(t.clone(), t);
+        let concl = hol::hol_eq_with(t.clone(), t, cons);
         Self::build(Ctx::new(), concl)
     }
 
@@ -189,6 +199,15 @@ impl Thm {
 
     /// `Γ ∪ Δ ⊢ s = u`, given `Γ ⊢ s = t` and `Δ ⊢ t = u` (HOL `=`).
     pub fn trans(self, other: Thm) -> Result<Thm> {
+        self.trans_with(other, &mut ())
+    }
+
+    /// [`trans`](Self::trans) building its `s = u` equation through a
+    /// caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`trans`](Self::trans); the cons only shares
+    /// the `Arc`s of the conclusion's spine, with no soundness role.
+    pub fn trans_with<C: TrustedCons + ?Sized>(self, other: Thm, cons: &mut C) -> Result<Thm> {
         let (s, t1, alpha) = parse_hol_eq_at(&self.concl)?;
         let (t2, u) = parse_hol_eq(&other.concl)?;
         if t1 != t2 {
@@ -198,7 +217,7 @@ impl Thm {
             });
         }
         // `alpha` is `s`'s element type, read off the `Eq` head — no walk.
-        let concl = hol::hol_eq_at(alpha.clone(), s.clone(), u.clone());
+        let concl = hol::hol_eq_at_with(alpha.clone(), s.clone(), u.clone(), cons);
         let hyps = self.hyps.union(&other.hyps);
         Self::build(hyps, concl)
     }
@@ -207,6 +226,20 @@ impl Thm {
     /// applications must type-check: `f` (and so `g`) must have
     /// function type whose domain matches `x`'s (and so `y`'s) type.
     pub fn mk_comb(self, arg: Thm) -> Result<Thm> {
+        self.mk_comb_with(arg, &mut ())
+    }
+
+    /// [`mk_comb`](Self::mk_comb) building its two applications and the
+    /// result equation through a caller-supplied [`TrustedCons`]. This is
+    /// the congruence rule the rewrite engine drives, so threading a
+    /// [`crate::term::HashCons`] here shares the rewritten spine (`f x` /
+    /// `g y` and the equation around them) across a whole rewrite sequence.
+    ///
+    /// Soundness: identical to [`mk_comb`](Self::mk_comb); the cons only
+    /// shares the `Arc`s of the freshly built `App` nodes — the
+    /// `TrustedCons` contract guarantees they are structurally equal to the
+    /// un-interned builds — so it has no soundness role.
+    pub fn mk_comb_with<C: TrustedCons + ?Sized>(self, arg: Thm, cons: &mut C) -> Result<Thm> {
         let (f, g, funty) = parse_hol_eq_at(&self.concl)?;
         let (x, y) = parse_hol_eq(&arg.concl)?;
         // The result `f x = g y` has element type = codomain of `f`'s
@@ -218,12 +251,12 @@ impl Thm {
             return Err(Error::NotFunction(funty.clone()));
         };
         let cod = cod.clone();
-        let lhs = Term::app(f.clone(), x.clone());
-        let rhs = Term::app(g.clone(), y.clone());
+        let lhs = Term::app_with(f.clone(), x.clone(), cons);
+        let rhs = Term::app_with(g.clone(), y.clone(), cons);
         // `Self::build` re-validates the whole conclusion end-to-end —
         // argument-domain match, and Free-var consistency across f/g/x/y
         // — so the previous per-side `type_of` pre-checks were redundant.
-        let concl = hol::hol_eq_at(cod, lhs, rhs);
+        let concl = hol::hol_eq_at_with(cod, lhs, rhs, cons);
         let hyps = self.hyps.union(&arg.hyps);
         Self::build(hyps, concl)
     }
@@ -231,6 +264,23 @@ impl Thm {
     /// `Γ ⊢ (λx:τ. s[x]) = (λx:τ. t[x])`, given `Γ ⊢ s = t` with
     /// `Free(name:τ)` not free in `Γ`.
     pub fn abs(self, name: &str, ty: Type) -> Result<Thm> {
+        self.abs_with(name, ty, &mut ())
+    }
+
+    /// [`abs`](Self::abs) building its two abstractions and the result
+    /// equation through a caller-supplied [`TrustedCons`] — the cons-aware
+    /// congruence-under-binder rule the rewrite engine drives when it
+    /// re-abstracts a rewritten body.
+    ///
+    /// Soundness: identical to [`abs`](Self::abs); the cons only shares the
+    /// `Arc`s of the freshly built `Abs` nodes and the equation around them,
+    /// with no soundness role.
+    pub fn abs_with<C: TrustedCons + ?Sized>(
+        self,
+        name: &str,
+        ty: Type,
+        cons: &mut C,
+    ) -> Result<Thm> {
         let (s, t, alpha) = parse_hol_eq_at(&self.concl)?;
         let alpha = alpha.clone();
         let var = Var::new(name, ty.clone());
@@ -245,12 +295,12 @@ impl Thm {
         let t = t.clone();
         // Bind exactly the variable `var`; a same-named variable at a
         // different type is untouched.
-        let s_abs = Term::abs(ty.clone(), close_var(&s, &var));
-        let t_abs = Term::abs(ty.clone(), close_var(&t, &var));
+        let s_abs = Term::abs_with(ty.clone(), close_var(&s, &var), cons);
+        let t_abs = Term::abs_with(ty.clone(), close_var(&t, &var), cons);
         // The abstractions have type `ty → alpha` (alpha = the bodies'
         // shared element type from the input `Eq` head), so that is the
         // result equation's element type — no walk.
-        let concl = hol::hol_eq_at(Type::fun(ty, alpha), s_abs, t_abs);
+        let concl = hol::hol_eq_at_with(Type::fun(ty, alpha), s_abs, t_abs, cons);
         Self::build(self.hyps, concl)
     }
 
@@ -269,6 +319,19 @@ impl Thm {
     ///   `2 + 3`, *not* `5`), and no η-contraction (see
     ///   [`Thm::eta_conv`]).
     pub fn beta_conv(app: Term) -> Result<Thm> {
+        Self::beta_conv_with(app, &mut ())
+    }
+
+    /// [`beta_conv`](Self::beta_conv) building the contracted right-hand
+    /// side (the `open` substitution) and the result equation through a
+    /// caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`beta_conv`](Self::beta_conv); `open_with`
+    /// offers its reconstructed nodes to `cons`, which the `TrustedCons`
+    /// contract guarantees returns structurally-equal terms, so the
+    /// conclusion is the same `(λx. body) arg = body[arg/0]` regardless of
+    /// the interning policy — sharing only, no soundness role.
+    pub fn beta_conv_with<C: TrustedCons + ?Sized>(app: Term, cons: &mut C) -> Result<Thm> {
         let TermKind::App(fun, arg) = app.kind() else {
             return Err(Error::NotApp(format!("{}", app)));
         };
@@ -282,8 +345,8 @@ impl Thm {
                 got: arg_ty,
             });
         }
-        let rhs = open(body, arg);
-        let concl = hol::hol_eq(app.clone(), rhs);
+        let rhs = open_with(body, arg, cons);
+        let concl = hol::hol_eq_with(app.clone(), rhs, cons);
         Self::build(Ctx::new(), concl)
     }
 
@@ -301,6 +364,17 @@ impl Thm {
     /// `EQ_MP` — equality at `bool` IS biconditional, so this also
     /// implements the `⇔`-elim direction.
     pub fn eq_mp(self, p_thm: Thm) -> Result<Thm> {
+        self.eq_mp_with(p_thm, &mut ())
+    }
+
+    /// [`eq_mp`](Self::eq_mp) with a caller-supplied [`TrustedCons`] for
+    /// API uniformity with the other cons-aware congruence rules.
+    ///
+    /// `eq_mp` builds **no new `Term` nodes** — its conclusion `q` is taken
+    /// directly from the input equation — so the cons is unused. It is
+    /// accepted only so a rewrite driver can thread one cons uniformly
+    /// through `trans` / `mk_comb` / `eq_mp`. No soundness role.
+    pub fn eq_mp_with<C: TrustedCons + ?Sized>(self, p_thm: Thm, _cons: &mut C) -> Result<Thm> {
         let (p, q, alpha) = parse_hol_eq_at(&self.concl)?;
         // p = q must be at type bool (otherwise it's not an
         // implication-shaped equation). `alpha` is p's type, read off the
@@ -391,6 +465,12 @@ impl Thm {
     /// calls it `MK_COMB`. Same rule.
     pub fn cong_app(self, arg: Thm) -> Result<Thm> {
         self.mk_comb(arg)
+    }
+
+    /// Alias for [`Thm::mk_comb_with`] — the cons-aware
+    /// [`cong_app`](Self::cong_app).
+    pub fn cong_app_with<C: TrustedCons + ?Sized>(self, arg: Thm, cons: &mut C) -> Result<Thm> {
+        self.mk_comb_with(arg, cons)
     }
 
     /// Alias for [`Thm::abs`]. HOL Light's `ABS`; the equational-
@@ -971,6 +1051,18 @@ impl Thm {
     /// denotational commitment that distinct literals denote distinct
     /// values.)
     pub fn reduce_prim(t: Term) -> Result<Thm> {
+        Self::reduce_prim_with(t, &mut ())
+    }
+
+    /// [`reduce_prim`](Self::reduce_prim) building its `t = result`
+    /// equation through a caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`reduce_prim`](Self::reduce_prim); the cons
+    /// only shares the `Arc`s of the result equation's spine (the computed
+    /// literal `result` and the `=` around it), with no soundness role. It
+    /// lets a reduction driver thread one cons uniformly through
+    /// `beta_conv` / `reduce_prim` / `trans`.
+    pub fn reduce_prim_with<C: TrustedCons + ?Sized>(t: Term, cons: &mut C) -> Result<Thm> {
         // Type-check `t` up front. `reduce_prim_term` matches purely on
         // shape and would happily "reduce" an ill-typed application such
         // as `Eq(nat)` applied to two `bool` literals; building the
@@ -978,7 +1070,7 @@ impl Thm {
         // type. Validating here turns that into a clean `Err`.
         let _ = t.type_of()?;
         let reduced = builtins::reduce_prim_term(&t).ok_or(Error::NotReducible)?;
-        Self::build(Ctx::new(), hol::hol_eq(t, reduced))
+        Self::build(Ctx::new(), hol::hol_eq_with(t, reduced, cons))
     }
 
     /// `Γ[α:=σ] ⊢ φ[α:=σ]`.

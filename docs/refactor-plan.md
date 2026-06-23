@@ -30,8 +30,9 @@ The refactor *factors* it, it does not gut it. The goals, in order:
 ```
   ┌─ covalence-lang ───────────── high-level surface language (future)
   │     depends on
-  ├─ covalence-kernel ─────────── full user-facing PROGRAMMATIC API
-  │     = re-export of covalence-init + content-addressing + WASM
+  ├─ covalence-kernel ─────────── full user-facing PROGRAMMATIC API +
+  │     TCB integration point: init + cons + eval, the standard TCB
+  │     presets (base sets B), and PKI/federation trust options
   │
   │   ┌─ covalence-cons ──── content-addressing extension module
   │   ├─ covalence-eval ──── WASM-acceleration extension module
@@ -159,9 +160,28 @@ Content-addressing and WASM acceleration are **special extension modules**:
 
 Then:
 
-- **`covalence-kernel`** re-exports `covalence-init` + `covalence-cons` +
-  `covalence-eval` — the full low-level **programmatic** API. (Replaces the
-  current legacy arena/egraph `covalence-kernel`, which is removed.)
+- **`covalence-kernel`** is the **TCB integration point** (not merely a
+  re-export). It composes `covalence-init` + `covalence-cons` + `covalence-eval`
+  into the full low-level **programmatic** API *and* packages the **standard TCB
+  presets** — concrete base meta-assumption sets `B` (`covalence-pure.md` §4.1)
+  the user can pick off the shelf:
+
+  | Preset | Trusts (`B`) |
+  |---|---|
+  | `nothing` | bare Pure logic — every computation is an explicit assumption |
+  | `cons` | + hash-consing / content-addressing |
+  | `std` | + nat / int / bytes accelerators (+ cons) |
+  | `std+wasm` | + the WASM executor |
+  | (later) | + x86, other executors |
+
+  Plus **PKI / federation options** — the *trust logic* for federating with
+  other kernels: signed-theorem attestations (`covalence-sig`,
+  `kernel-federation-pki`) enter as meta-assumptions ("admit if signed by a
+  trusted key"), so a remote kernel's theorem rides as one more discharge-able
+  tag in `M`. Choosing a preset = choosing which executor/accelerator/peer tags
+  sit in your base `B`; everything outside it rides explicitly.
+
+  (Replaces the legacy arena/egraph `covalence-kernel`, which is removed.)
 - **`covalence-lang`** is a full language built on top of `covalence-kernel`.
 - Everything else depends on `covalence-kernel` (programmatic) or
   `covalence-lang` (high-level).

@@ -69,7 +69,7 @@ the [root index](../../../../SKELETONS.md).
   subterm only).
 - **No proof/`Term` pretty-printer (serialization-out).** `script` only parses + replays;
   no printer from a proof/`Term` back to the surface S-expression. Blocks content-addressing
-  (hashing a proof) and lemma-by-hash references (`docs/surface-syntax.md` §7). When added,
+  (hashing a proof) and lemma-by-hash references (`notes/surface-syntax.md` §7). When added,
   reuse/extend the printers in `src/sexp.rs` and the hasher in `hash.rs` (which cover
   terms/types but not proofs).
 - **`rw` does not descend under binders.** `rewrite_conv` (`script/drv.rs`) rewrites
@@ -87,11 +87,11 @@ the [root index](../../../../SKELETONS.md).
   `check` is the intended single kernel-coupled entry point behind such an interface.
 - **`#comp` calc handles only `=`.** The heterogeneous form (`a = b ≤ c < d ⊢ a < d`,
   per-relation transitivity lookup, à la Lean `calc`) is deferred until a
-  relation/transitivity registry exists (`docs/surface-syntax.md` §5.1).
+  relation/transitivity registry exists (`notes/surface-syntax.md` §5.1).
 - **Equational seams not yet registerable per-logic.** `Env::beta`/`congr`/`funext`/
   `comp_default` are methods (the `apply_unify`/`rw_unify` seam pattern) but still hold the
   single built-in HOL default. Swapping in a logic's own `HandlerSet`
-  (`docs/surface-compiler.md` §9) needs scoped `Context`/`HandlerSet` plumbing. Same gap as
+  (`notes/surface-compiler.md` §9) needs scoped `Context`/`HandlerSet` plumbing. Same gap as
   the `rw_unify` registerable-handler TODO; wire together.
 - **`#inductive` realises only the `nat` shape.** `script/inductive.rs` dispatches through
   `LogicInductive` (PA/SOA/MLTT impls planned) but for fresh user types it can only consume

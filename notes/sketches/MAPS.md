@@ -1,6 +1,6 @@
 # Theory maps / interpretation transport (raw sketch)
 
-> Notes behind `docs/metatheory.md`'s "two pillars": derivation-soundness +
+> Notes behind `notes/metatheory.md`'s "two pillars": derivation-soundness +
 > theory transport across PA/HOL/ZFC, with WASM/Isabelle as oracle frontends.
 
 (

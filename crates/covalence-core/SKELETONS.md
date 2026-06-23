@@ -7,7 +7,7 @@ See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELE
 These `defs/` term-specs carry `tm = None`: sound/complete on literals (via
 `builtins.rs`) but no open-form body, so nothing is provable by
 `unfold_term_spec`. Each should become a `let_term!` / `spec_term!` def (see
-`docs/roadmap.md`); on adding a body, delete here and — if reducible — add to
+`notes/roadmap.md`); on adding a body, delete here and — if reducible — add to
 `audit_reduce.rs::audit_reduce_matches_body`.
 
 - **`sN.shr` (arithmetic right shift), `defs/int_ops.rs`** — needs floor-division

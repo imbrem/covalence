@@ -38,7 +38,7 @@ tokens):**
   `## Severe` / `## Minor` split is fine when a file has many entries.
 - **One terse line or two per entry.** Name the stub and what's missing. Push
   long rationale, design context, or status history into a separate Markdown doc
-  (under `docs/`) and link it; don't inline it here.
+  (under `notes/`) and link it; don't inline it here.
 
 ## Build & Run
 
@@ -93,57 +93,57 @@ COV_API=https://cov.example.com bun run dev:web # remote backend
 
 The docs were pared down to the **current design only** (old multi-design docs
 were retired to the `backup/pre-hol-cleanup` branch). The full categorized
-index is **[`docs/README.md`](./docs/README.md)**.
+index is **[`notes/README.md`](./notes/README.md)**.
 
 **Canonical design** (read these first):
 
-- **[`docs/VISION.md`](./docs/VISION.md)** — the system vision
+- **[`notes/VISION.md`](./notes/VISION.md)** — the system vision
   (metatheory-as-default, the three-layer stack, scoped truths, the mirror
   principle).
-- **[`docs/kernel-design.md`](./docs/kernel-design.md)** — `covalence-core`,
+- **[`notes/kernel-design.md`](./notes/kernel-design.md)** — `covalence-core`,
   the kernel TCB: term/type representation, the inference-rule surface, the
   non-computational primitive rules, the `defs/` catalogue. **Read first if
   touching the kernel.**
-- **[`docs/type-hierarchy.md`](./docs/type-hierarchy.md)** — the equality
+- **[`notes/type-hierarchy.md`](./notes/type-hierarchy.md)** — the equality
   hierarchy and the `defs/` type catalogue (nat/int/rat/real/bytes/list/
   stream/option/result, → f32/f64).
-- **[`docs/roadmap.md`](./docs/roadmap.md)** — what's next: time-to-product
+- **[`notes/roadmap.md`](./notes/roadmap.md)** — what's next: time-to-product
   for the Metamath vision. Its "Active refactor" links the three docs below.
-- **[`docs/refactor-plan.md`](./docs/refactor-plan.md)**,
-  **[`docs/crate-graph.md`](./docs/crate-graph.md)**,
-  **[`docs/covalence-pure.md`](./docs/covalence-pure.md)** — the in-flight
+- **[`notes/refactor-plan.md`](./notes/refactor-plan.md)**,
+  **[`notes/crate-graph.md`](./notes/crate-graph.md)**,
+  **[`notes/covalence-pure.md`](./notes/covalence-pure.md)** — the in-flight
   three-layer kernel reorg, the crate dependency graph, and the base-logic
   blueprint.
-- **[`docs/soundness-audit.md`](./docs/soundness-audit.md)** — dated audit of
+- **[`notes/soundness-audit.md`](./notes/soundness-audit.md)** — dated audit of
   the kernel TCB plus the assumption-tracking design.
 
 **Design sketches** for the (not-yet-built) authoring layer — aspirational:
 
-- **[`docs/frontend.md`](./docs/frontend.md)** — the frontend & UX vision
+- **[`notes/frontend.md`](./notes/frontend.md)** — the frontend & UX vision
   (counterpart to VISION.md): the unified surface tracking terms across many
   logics, reasoning as handler-dispatched algebraic effects.
-- **[`docs/surface-compiler.md`](./docs/surface-compiler.md)** — the canonical
+- **[`notes/surface-compiler.md`](./notes/surface-compiler.md)** — the canonical
   surface-language design: theories with many models across many logics, the
   `#sig`/`#thy`/`#model`/`#logic` forms, the multi-stage compiler.
-- **[`docs/surface-syntax.md`](./docs/surface-syntax.md)** — the high-level
+- **[`notes/surface-syntax.md`](./notes/surface-syntax.md)** — the high-level
   S-expression authoring syntax (rationale; concrete forms canonical in
   surface-compiler §3.0).
-- **[`docs/theories-models-and-logics.md`](./docs/theories-models-and-logics.md)**
+- **[`notes/theories-models-and-logics.md`](./notes/theories-models-and-logics.md)**
   — the signature → theory → model architecture, within-logic model
   multiplicity, Metamath as the shared logic-definition substrate.
-- **[`docs/metatheory.md`](./docs/metatheory.md)** — theories, derivations,
+- **[`notes/metatheory.md`](./notes/metatheory.md)** — theories, derivations,
   and models as first-class objects inside HOL; transport; the
   metavariable-layering decisions.
-- **[`docs/observers.md`](./docs/observers.md)** — how untrusted code feeds
+- **[`notes/observers.md`](./notes/observers.md)** — how untrusted code feeds
   facts into the kernel's HOL model without growing the TCB (`Observer` +
   `ObsEq`/`ObsTrue`/`ObsImp` substrate today; validator layer proposed).
-- **[`docs/web-kernel.md`](./docs/web-kernel.md)** — running the kernel in the
+- **[`notes/web-kernel.md`](./notes/web-kernel.md)** — running the kernel in the
   browser: the `category.wiki` north star, `.cov` articles, federation.
 
-**Reference/notes:** [`docs/cov-project.md`](./docs/cov-project.md) (multi-file
-`.cov` compilation), [`docs/peano-arithmetic-plan.md`](./docs/peano-arithmetic-plan.md)
-(DONE pointer), [`docs/wasm3-rust.md`](./docs/wasm3-rust.md) (Wasm 3.0 research
-note), and [`docs/sketches/`](./docs/sketches/) (scratch sketches).
+**Reference/notes:** [`notes/cov-project.md`](./notes/cov-project.md) (multi-file
+`.cov` compilation), [`notes/peano-arithmetic-plan.md`](./notes/peano-arithmetic-plan.md)
+(DONE pointer), [`notes/wasm3-rust.md`](./notes/wasm3-rust.md) (Wasm 3.0 research
+note), and [`notes/sketches/`](./notes/sketches/) (scratch sketches).
 
 Subsystem skills (auto-loaded when relevant): **wasm-guide**,
 **vscode-extension**, **web-server**.
@@ -178,9 +178,9 @@ The following crates provide the main application functionality:
 
 - **covalence-store** — content-addressed blob store. Provides `ContentStore` trait, `BlobStore`, `TaggedStore`/`TaggedBlobStore`, `ObjectStore`/`KeyedObjectStore`, `GitPrefixStore`, `SharedMemoryStore`, `KvStore`, and `SqliteStore` (behind the `sqlite` feature, depends on `covalence-sqlite`).
 - **covalence-object** — object serialization. Provides `Dir`/`DirBuilder` (directory structures with mode, name, child), `Table`/`TableBuilder` (row-based tables with LEB128 encoding), and git tree format conversion.
-- **covalence-core** — **the TCB** (safe Rust). HOL-Light-style kernel with locally-nameless `Term`/`Type`. The only logical primitives are `=` (`TermKind::Eq`) and `ε` (`TermKind::Select`); `T`/`F` are `Bool` literals; every connective (`∧ ∨ ¬ ⟹ ⟺ ∀ ∃`) is an ordinary _defined constant_ in `defs/logic.rs`. Rules: HOL Light's 10 primitives + well-known derived rules provided as fast constructors with `Soundness:` docstrings (sym, cong_app/abs, imp_intro/elim, all_intro/elim, eta_conv, **and the connective rules** and_intro/and_elim/or_intro/or_elim/not_intro/not_elim); `define` + `new_type_definition` (conservative extension); `reduce_prim` + `unfold_term_spec` (accelerated reduction — sound by literal denotation); `Term::spec_abs`/`spec_rep` (carrier↔wrapper coercions for any derived `TypeSpec`, theorem-free). **Four non-computational primitive rules**: `Thm::nat_induct` (induction: base+step ⟹ `∀n. P n`), `Thm::false_elim` (ex falso), `Thm::unit_eq` (the `unit` singleton: `⊢ a = b` for `a, b : unit`), and `Thm::lem` (excluded middle `⊢ p ∨ ¬p` — the classicality axiom, derivable from ε the usual HOL way, exposed directly for now). The observer rules `obs_eq`/`obs_true`/`obs_imp` are sound under a parametric ε-model. The `defs/` catalogue holds the type/term definitions (`int := (nat × nat)/~` Grothendieck, `unit := { b : bool | b = T }`, `bytes := list u8`, the logic connectives, nat/int arithmetic, the `prod`/`coprod`/`option`/`result`/`list` constructors via abs/rep, …); literals (`TermKind::Int`, `Blob`) stay built-in for binary-data efficiency. Catalogue symbols use dotted names (`nat.add`, `coprod.case`, `option.some`, `unit.nil`). **Canonical reference: [`docs/kernel-design.md`](./docs/kernel-design.md).**
+- **covalence-core** — **the TCB** (safe Rust). HOL-Light-style kernel with locally-nameless `Term`/`Type`. The only logical primitives are `=` (`TermKind::Eq`) and `ε` (`TermKind::Select`); `T`/`F` are `Bool` literals; every connective (`∧ ∨ ¬ ⟹ ⟺ ∀ ∃`) is an ordinary _defined constant_ in `defs/logic.rs`. Rules: HOL Light's 10 primitives + well-known derived rules provided as fast constructors with `Soundness:` docstrings (sym, cong_app/abs, imp_intro/elim, all_intro/elim, eta_conv, **and the connective rules** and_intro/and_elim/or_intro/or_elim/not_intro/not_elim); `define` + `new_type_definition` (conservative extension); `reduce_prim` + `unfold_term_spec` (accelerated reduction — sound by literal denotation); `Term::spec_abs`/`spec_rep` (carrier↔wrapper coercions for any derived `TypeSpec`, theorem-free). **Four non-computational primitive rules**: `Thm::nat_induct` (induction: base+step ⟹ `∀n. P n`), `Thm::false_elim` (ex falso), `Thm::unit_eq` (the `unit` singleton: `⊢ a = b` for `a, b : unit`), and `Thm::lem` (excluded middle `⊢ p ∨ ¬p` — the classicality axiom, derivable from ε the usual HOL way, exposed directly for now). The observer rules `obs_eq`/`obs_true`/`obs_imp` are sound under a parametric ε-model. The `defs/` catalogue holds the type/term definitions (`int := (nat × nat)/~` Grothendieck, `unit := { b : bool | b = T }`, `bytes := list u8`, the logic connectives, nat/int arithmetic, the `prod`/`coprod`/`option`/`result`/`list` constructors via abs/rep, …); literals (`TermKind::Int`, `Blob`) stay built-in for binary-data efficiency. Catalogue symbols use dotted names (`nat.add`, `coprod.case`, `option.some`, `unit.nil`). **Canonical reference: [`notes/kernel-design.md`](./notes/kernel-design.md).**
 - **covalence-hol** — **the HOL "rewrite": a non-TCB shell over `covalence-core`.** (1) HOL term/type builder API (`HolLightCtx`, the `HolLightKernel`/`HolLightTerms`/`HolLightTypes` traits). (2) `proofs/` — pure proof tactics (`beta_nf`, `unfold_at_*`, rewriting) and the executable derivations that witness the soundness of the kernel's fast connective methods. (3) Content hashing (BLAKE3-keyed) and canonical S-expression syntax. _No postulates_ — the old `nat_axioms`/`int_axioms`/`init` (formerly `stdlib`) postulate catalogues and the gated Pure-era `bridge`/`peano`/`pure_hol` modules were deleted (recover from `backup/pre-hol-cleanup`).
-- **covalence-kernel** — _legacy, pending rewire._ The current contents (arena + egraph + UF kernel) are superseded; the target is a thin **re-export façade** = `covalence-hol` + `covalence-store` + … (the whole TCB + content-addressing foundation) that `covalence-shell` sits on top of. See [`docs/roadmap.md`](./docs/roadmap.md). The whole app stack (`covalence-shell`, `repl`, `serve`, `client`, `alethe`, `egglog`, the `cov` CLI) currently rides on this legacy crate and migrates with it.
+- **covalence-kernel** — _legacy, pending rewire._ The current contents (arena + egraph + UF kernel) are superseded; the target is a thin **re-export façade** = `covalence-hol` + `covalence-store` + … (the whole TCB + content-addressing foundation) that `covalence-shell` sits on top of. See [`notes/roadmap.md`](./notes/roadmap.md). The whole app stack (`covalence-shell`, `repl`, `serve`, `client`, `alethe`, `egglog`, the `cov` CLI) currently rides on this legacy crate and migrates with it.
 - **covalence-repl** — S-expression REPL with kernel integration.
 - **covalence-serve** — HTTP/WebSocket server (axum 0.8) with REST API, REPL WebSocket, and optional static file embedding.
 - **covalence-client** — remote kernel client (sync via ureq, async via hyper).

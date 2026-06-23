@@ -196,5 +196,5 @@ The repo was pared to the *current design only*; everything removed lives on
 the old `covalence-hol` postulate catalogues (`nat_axioms.rs`/`int_axioms.rs`/old
 `init/`), the gated Pure-era modules (`bridge.rs`/`peano.rs`/`pure_hol.rs`), the
 HOL Python bindings (`covalence-python/src/pure.rs`), and the retired docs
-(`ARCHITECTURE.md`/`AGENTS.md`/`MVP_DESIGN.md`/`plan.md`/`docs/design/proposals/*`/
+(`ARCHITECTURE.md`/`AGENTS.md`/`MVP_DESIGN.md`/`plan.md`/`notes/design/proposals/*`/
 the arena-egraph prover docs).

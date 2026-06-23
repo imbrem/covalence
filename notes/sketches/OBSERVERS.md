@@ -1,6 +1,6 @@
 # Observers & validators (raw sketch)
 
-> Brainstorm behind `docs/observers.md`. The observer substrate
+> Brainstorm behind `notes/observers.md`. The observer substrate
 > (`Observer` + `ObsEq`/`ObsTrue`/`ObsImp`) exists in the kernel today; the
 > validator / precondition layer below is still proposed.
 

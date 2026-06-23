@@ -135,7 +135,7 @@ index](../../../../SKELETONS.md).
     `shr a (S m) = a/2^m` bridge (`shr` defined through `nat.div`).
 
 - **Reified object logic (S-expr → prop logic)** (`init/sexpr.rs` + `init/prop.rs`,
-  `docs/metatheory.md` §8). Datatypes, recursors, soundness, rule induction, and the
+  `notes/metatheory.md` §8). Datatypes, recursors, soundness, rule induction, and the
   `prop.cov` surface are done. Open:
   - **SURFACE GAPS (the `.cov` stress-test findings)** — next-language-feature drivers,
     none block the proofs (all live in Rust):
@@ -174,5 +174,5 @@ index](../../../../SKELETONS.md).
   full theory to a carrier-abstract presentation, giving `nat/self` as one model among others
   (reified-PA, bool-stream coding) via `#sig`/`#thy`/`#model`/`#models`.
 - **Haskell-like surface extraction** — `nat.sig`/`nat.thy` are hand-written; they are the
-  eventual elaboration target of the declarative surface language (`docs/surface-syntax.md`),
+  eventual elaboration target of the declarative surface language (`notes/surface-syntax.md`),
   not yet produced by it.

@@ -56,7 +56,7 @@ The key theorem schema:
 
 "If there exists a PA derivation of _A_, then _A_ holds." This is the
 mechanism behind the OBSERVERS program of _getting rid of the oracles_
-(`docs/observers.md`): instead of a validator _trusting_ a backend, we
+(`notes/observers.md`): instead of a validator _trusting_ a backend, we
 prove its outputs sound under a formal semantics, and the trusted
 validator collapses into an untrusted checker.
 

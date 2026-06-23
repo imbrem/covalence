@@ -318,7 +318,7 @@ analysis/
 ```
 
 This is a DAG of mutually-aware `.cov` files — exactly what the landed
-`compile_project` (`docs/cov-project.md`) builds, replacing the hand-written
+`compile_project` (`notes/cov-project.md`) builds, replacing the hand-written
 `library_env` wiring. **First milestone: chapters 1–8** (axioms → completeness →
 continuity → the three hard theorems); derivatives/integrals are **phase 2**.
 
@@ -427,7 +427,7 @@ already established):
 
 **We are not in the business of proving ZF/ZFC *sound* (scoped truths, user).**
 The standard theorem here is "**φ holds in ZFC**", *not* "φ holds" — truths are
-**scoped to a theory** (`docs/VISION.md`, metatheory-as-default). The outer HOL is
+**scoped to a theory** (`notes/VISION.md`, metatheory-as-default). The outer HOL is
 not there to certify an absolute model of ZF; it is there to reason about
 **transport between scopes** — "what holds in ZF holds in HOL" (under the relevant
 interpretation), "what holds in PA holds in ZF", and so on. Those transports are
@@ -595,7 +595,7 @@ machinery these equivalences and conservative extensions are stated in.
 
 ## 6. What's already built that feeds this
 
-- `compile_project` (`docs/cov-project.md`) — the multi-file `.cov` DAG builder
+- `compile_project` (`notes/cov-project.md`) — the multi-file `.cov` DAG builder
   (`analysis/`'s build path).
 - Inline `.cov` definitions (`#def`/`#newtype`/`#subtype`/`#quot`) + the
   equivalence test vs core's parser — the precursor to `.thy` headers.

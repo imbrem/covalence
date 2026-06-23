@@ -2,14 +2,14 @@
 
 > **Canonical reference for the current state of the kernel** as of
 > 2026-06-13 (branch `kernel-design`). Supersedes the historical Pure→HOL
-> evolution notes (`docs/design/proposals/stacked-pure-hol/`, retired to the
+> evolution notes (`notes/design/proposals/stacked-pure-hol/`, retired to the
 > `backup/pre-hol-cleanup` branch).
 >
 > The (not-yet-built) authoring layer *above* this kernel is described in
 > the design sketches ([`surface-compiler.md`](./surface-compiler.md),
 > [`observers.md`](./observers.md), [`metatheory.md`](./metatheory.md)); the
 > kernel's own audit is [`soundness-audit.md`](./soundness-audit.md). See
-> [`docs/README.md`](./README.md) for the full index. This doc is the authority
+> [`notes/README.md`](./README.md) for the full index. This doc is the authority
 > on the kernel TCB.
 
 ## 1. What it is
@@ -616,7 +616,7 @@ The kernel has gone through several large refactors on the
    `stdlib` module was renamed `init` (Lean-style).
 
 Git history on `kernel-design` is the authoritative record; the design
-discussions that led here (`docs/design/proposals/stacked-pure-hol/`) are
+discussions that led here (`notes/design/proposals/stacked-pure-hol/`) are
 retired to the `backup/pre-hol-cleanup` branch.
 
 ## 11. Direction: the Pure base logic and the narrow waist

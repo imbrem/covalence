@@ -10,7 +10,7 @@
 //!     diagnostics — proof checking lands by wrapping this),
 //!   - the **`serve`** HTTP/WebSocket API.
 //!
-//! See `docs/web-kernel.md` for the architecture (one shared service, one wasm
+//! See `notes/web-kernel.md` for the architecture (one shared service, one wasm
 //! target, native-only LSP) and the async/trust roadmap.
 //!
 //! # Status
@@ -69,7 +69,7 @@ pub struct TheoremInfo {
     pub name: String,
     /// The conclusion rendered as a **canonical S-expression**. A
     /// notation/pretty-printer (`(eq (app f x) y)` → `f x = y`, and onward to
-    /// MathML for articles) is future work — see `docs/web-kernel.md`.
+    /// MathML for articles) is future work — see `notes/web-kernel.md`.
     pub statement: String,
 }
 

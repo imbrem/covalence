@@ -1,5 +1,5 @@
 //! A small, **synchronous, total** `.cov` parser for the kernel's
-//! closed *term sublanguage* (`docs/surface-syntax.md §1.4`).
+//! closed *term sublanguage* (`notes/surface-syntax.md §1.4`).
 //!
 //! This is the first step of lifting the `defs/` catalogue out of
 //! hand-threaded `Term::app` / `Term::abs` Rust and into data: a `.cov`

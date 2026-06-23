@@ -1,6 +1,6 @@
 //! **Regular expressions on lists**, reified inside HOL, with a `Matches`
 //! derivation you can do **induction on** — the foundation for defining
-//! actual languages (`docs/metatheory.md` §8; the regex analogue of
+//! actual languages (`notes/metatheory.md` §8; the regex analogue of
 //! [`crate::init::prop`]'s propositional object logic).
 //!
 //! A regex over an alphabet `'a` is the datatype

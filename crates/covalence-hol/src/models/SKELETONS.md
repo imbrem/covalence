@@ -3,8 +3,8 @@
 Open placeholders in the minimal surface-compiler core (the `Logic`/`Model`
 triad + cross-model `add_comm` replay). See `CLAUDE.md` § Skeletons, the
 [crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md). Design:
-[`docs/theories-models-and-logics.md`](../../../../docs/theories-models-and-logics.md)
-§1/§1.1, [`docs/surface-compiler.md`](../../../../docs/surface-compiler.md) §2/§3.
+[`notes/theories-models-and-logics.md`](../../../../notes/theories-models-and-logics.md)
+§1/§1.1, [`notes/surface-compiler.md`](../../../../notes/surface-compiler.md) §2/§3.
 
 ## Severe / blocking
 

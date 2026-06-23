@@ -322,7 +322,7 @@ Plus the executor/tooling north stars:
 
 ## 8. Docs & skills cleanup
 
-Audit of `docs/` (reconcile against the layers above):
+Audit of `notes/` (reconcile against the layers above):
 
 | Doc | Disposition |
 |---|---|
@@ -333,7 +333,7 @@ Audit of `docs/` (reconcile against the layers above):
 | `soundness-audit.md` | Keep; re-anchor to the Pure/Core/init trust boundary. |
 | `peano-arithmetic-plan.md` | **Likely retire** — superseded (recursion theorem done; PA postulate-free). Confirm then delete. |
 | `cov-project.md`, `web-kernel.md`, `wasm3-rust.md` | Keep, but re-home once `script`/`project` move into `covalence-init`/`covalence-lang`. |
-| `docs/sketches/*` (MAPS, OBSERVERS, SAMPLE, ml-naive-compiler, spectec-phase1-status, spectec-verification-plan, `spectec-tasks/*`) | **Mostly retire** — spectec task cards (23–37) are completed branch work; archive. Keep only what's still a live design input. |
+| `notes/sketches/*` (MAPS, OBSERVERS, SAMPLE, ml-naive-compiler, spectec-phase1-status, spectec-verification-plan, `spectec-tasks/*`) | **Mostly retire** — spectec task cards (23–37) are completed branch work; archive. Keep only what's still a live design input. |
 
 Audit of `.claude/skills/` (all `disable-model-invocation: true`, i.e. reference
 docs): `metamath-performance`, `performance`, `vscode-extension`, `wasm-guide`,

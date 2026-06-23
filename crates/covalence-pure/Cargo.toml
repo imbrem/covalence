@@ -8,7 +8,7 @@ edition = "2024"
 # substrate, Core is one object logic (HOL) over it. Keep dependencies as close
 # to zero as possible: everything here is trusted unconditionally.
 #
-# DESIGN SKETCH ONLY — see `docs/covalence-pure.md` and `docs/refactor-plan.md`.
+# DESIGN SKETCH ONLY — see `notes/covalence-pure.md` and `notes/refactor-plan.md`.
 # The concrete API (the `Prop`/`Local`/`Sigma`/`Ker` trait encoding and the
 # two-assumption-set `Fact`) is authored separately; this is the placeholder
 # crate so the dependency edge `covalence-core → covalence-pure` exists.

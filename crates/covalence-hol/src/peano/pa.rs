@@ -1,7 +1,7 @@
 //! **Peano arithmetic as a *proper* deep object theory** — pure-syntactic
 //! derivability + a single internalized soundness theorem + one-step projection
-//! (Phase B of `docs/peano-arithmetic-plan.md`, the
-//! "proper-deep-embedding test" of `docs/theories-models-and-logics.md §5.5`).
+//! (Phase B of `notes/peano-arithmetic-plan.md`, the
+//! "proper-deep-embedding test" of `notes/theories-models-and-logics.md §5.5`).
 //!
 //! [`fol`](super::fol) reified PA's locally-nameless syntax + substitution;
 //! [`sem`](super::sem) gave the **two-sorted HOAS semantic carrier**

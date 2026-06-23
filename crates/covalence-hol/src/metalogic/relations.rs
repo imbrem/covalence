@@ -1,6 +1,6 @@
 //! **Interpretation** between databases under a formula translation `σ`, and
 //! the **transport** theorem — the `S`-rewrite of
-//! `docs/theories-models-and-logics.md` §5.6 realised as a relation on the
+//! `notes/theories-models-and-logics.md` §5.6 realised as a relation on the
 //! [`Database`](super::database::database_ty) type.
 //!
 //! A translation is a HOL function `σ : Φ → Φ` on encoded formulas. Two

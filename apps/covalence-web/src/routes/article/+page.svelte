@@ -3,7 +3,7 @@
 
 	// The kernel runs *in the browser*: this page loads the wasm-bindgen build of
 	// `covalence-web-kernel` (over `covalence-kernel::service`) and checks a `.cov`
-	// article client-side — no server round-trip. See docs/web-kernel.md.
+	// article client-side — no server round-trip. See notes/web-kernel.md.
 	//
 	// The showcase: the SAME proof source is replayed against two different
 	// *models* (carriers) via `check_model(src, model)`. `nat/self` proves over

@@ -168,7 +168,7 @@ its imports' exported environments, emits an exported environment. A `.cov`
 unit emits one by replaying a proof script; a Rust unit emits one by running
 compiled WASM that calls the abstract kernel API. The loader is identical
 either way — it only sees "node with imports → node with exports". This is the
-narrow-waist picture of `docs/kernel-design.md` §11: the Rust "zoo" of
+narrow-waist picture of `notes/kernel-design.md` §11: the Rust "zoo" of
 efficient constructions and the `.cov` proof units both present the **same HOL
 waist API**, so the project graph does not care which produced a given env.
 
@@ -229,7 +229,7 @@ and cached.
 
 ## 7. Longer-term: WASM-against-abstract-API + Cargo features for distribution
 
-Tie-in to the system vision (`docs/VISION.md`, `docs/kernel-design.md` §11):
+Tie-in to the system vision (`notes/VISION.md`, `notes/kernel-design.md` §11):
 
 - **A crate compiled to WASM against an abstract Covalence API.** A Covalence
   project unit is, at bottom, "given my imports' exported environments, produce

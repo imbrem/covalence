@@ -12,7 +12,7 @@ use covalence_hol::Term;
 use covalence_hol::init::ext::TermExt;
 use covalence_hol::init::regex as ir;
 use covalence_hol::regex::tactic::{Word, prove_matches, prove_member, prove_word};
-use covalence_hol::regex::{compile, core_to_term, desugar};
+use covalence_hol::regex::{compile, desugar};
 
 // ============================================================================
 // Helpers.
@@ -191,8 +191,8 @@ fn conclusion_is_matches_of_compiled_regex() {
     let expected = ir::matches(&a, &compile(&re("a")), &one_a).unwrap();
     assert_eq!(thm.concl(), &expected);
 
-    // The compiled term is exactly `core_to_term ∘ desugar`.
-    assert_eq!(compile(&re("a")), core_to_term(&desugar(&re("a"))));
+    // The compiled term is exactly the desugared `Core`'s cached `⌜c⌝`.
+    assert_eq!(compile(&re("a")), *desugar(&re("a")).term());
 }
 
 // ============================================================================
@@ -371,4 +371,75 @@ fn word_variable_category_mismatch_fails() {
     let r = re("c");
     let w = Word::var("X", re("a|b"));
     assert!(prove_word(&r, &w).unwrap().is_none());
+}
+
+// ============================================================================
+// Timing harness for more involved regexes. Ignored by default; run with:
+//   cargo test -p covalence-hol --test regex_matching -- --ignored --nocapture timing
+// ============================================================================
+
+#[test]
+#[ignore = "timing harness; run explicitly with --nocapture"]
+fn timing_involved_regexes() {
+    use covalence_hol::regex::Core;
+    use std::time::Instant;
+
+    // (label, regex source, a matching input). Each `prove_matches` builds a
+    // kernel proof whose size tracks the input, so these surface how proof time
+    // scales with input length and regex shape.
+    let cases: &[(&str, &str, &str)] = &[
+        ("identifier", r"[a-zA-Z_][a-zA-Z0-9_]*", "myVariable_Name123"),
+        ("ipv4-ish", r"[0-9]{1,3}(?:[.][0-9]{1,3}){3}", "192.168.100.1"),
+        ("hex-bytes", r"(?:[0-9a-f][0-9a-f])+", "deadbeefcafe"),
+        ("lower-run-40", r"[a-z]+", "abcdefghijklmnopqrstuvwxyzabcdefghijklmn"),
+        ("alt-star", r"(?:foo|bar|baz)+", "foobarbazfoobarbaz"),
+        ("csv-ish", r"[a-z]+(?:,[a-z]+)*", "alpha,beta,gamma,delta,epsilon"),
+        ("rep-10", r"a{10}", "aaaaaaaaaa"),
+        ("nested-semis", r"(?:[a-c]+;)+", "ab;cba;a;bbbb;"),
+    ];
+
+    eprintln!("\n{:<14} {:>4} {:>11} {:>11}", "regex", "len", "compile", "prove");
+    for (label, src, input) in cases {
+        let t0 = Instant::now();
+        let r = Core::parse(src).unwrap_or_else(|e| panic!("parse {src:?}: {e:?}"));
+        let compile_us = t0.elapsed().as_secs_f64() * 1e6;
+
+        let t1 = Instant::now();
+        let thm = r.prove_matches(input).unwrap();
+        let prove_ms = t1.elapsed().as_secs_f64() * 1e3;
+
+        // Cross-check the proof's existence against the independent oracle.
+        assert_eq!(
+            thm.is_some(),
+            oracle_matches(&re(src), input.as_bytes()),
+            "oracle disagreement: {label} ({src:?} on {input:?})",
+        );
+        assert_clean(&thm.unwrap_or_else(|| panic!("{label}: expected a match")));
+
+        eprintln!("{label:<14} {:>4} {compile_us:>9.1}µs {prove_ms:>9.2}ms", input.len());
+    }
+
+    // The point of a compiled `Regex`: amortise the desugar+reify across many
+    // inputs. Compile once, prove a batch — versus the free function, which
+    // recompiles on every call.
+    let ids = [
+        "alpha", "beta_2", "Gamma3", "_hidden", "camelCaseName", "SCREAMING_CASE",
+    ];
+    let r = Core::parse(r"[a-zA-Z_][a-zA-Z0-9_]*").unwrap();
+    let t = Instant::now();
+    for id in &ids {
+        assert!(r.prove_matches(id).unwrap().is_some());
+    }
+    let cached_ms = t.elapsed().as_secs_f64() * 1e3;
+
+    let t = Instant::now();
+    for id in &ids {
+        assert!(prove_matches(&re(r"[a-zA-Z_][a-zA-Z0-9_]*"), id).unwrap().is_some());
+    }
+    let recompiled_ms = t.elapsed().as_secs_f64() * 1e3;
+
+    eprintln!(
+        "\nbatch of {} identifiers: cached {cached_ms:.2}ms vs recompiled-each {recompiled_ms:.2}ms\n",
+        ids.len(),
+    );
 }

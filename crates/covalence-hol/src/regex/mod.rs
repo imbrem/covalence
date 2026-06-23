@@ -21,12 +21,13 @@
 //!   `⊢ mem w ⟦⌜r⌝⟧`. It separates a fast pure-Rust *recognizer* (the part to
 //!   accelerate with WASM later) from kernel *proof construction*.
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use covalence_core::{Result, Term, Type};
-use covalence_grammar::regex::{Class, Regex};
+use covalence_core::{Result, Term, Thm, Type};
+use covalence_grammar::regex::{Class, Regex as Surface};
 
 use crate::init::regex as ir;
+use crate::init::regex::{r_alt, r_empty, r_eps, r_lit, r_seq, r_star};
 
 pub mod tactic;
 
@@ -34,22 +35,34 @@ pub mod tactic;
 // Core — the six-constructor byte regex the reified HOL datatype mirrors.
 // ============================================================================
 
-/// A byte regex restricted to the six constructors the reified HOL `regex u8`
-/// datatype ([`crate::init::regex`]) has. The full surface
-/// [`Regex<u8>`] desugars into this via [`desugar`].
+/// A **compiled** byte regex node: its [`CoreKind`] (the six-constructor shape
+/// the reified HOL `regex u8` datatype mirrors) paired with the reified term
+/// `⌜c⌝ : regex u8`, built **once** at construction. The full surface
+/// [`Surface<u8>`](Surface) compiles into this via [`desugar`].
 ///
-/// Keeping a distinct `Core` (rather than compiling `Regex<u8>` directly) means
-/// the term compiler ([`core_to_term`]) and the matcher ([`tactic`]) share
-/// *one* desugaring, so the regex term a derivation is about is always exactly
-/// the one the matcher recursed over.
+/// Caching `⌜c⌝` on the node replaces the old separate `core_to_term` pass: the
+/// matcher and soundness read `c.term()` directly instead of rebuilding the
+/// reified term at every `alt`/`seq`/`star` node. The term is interned through
+/// the [`HashCons`] threaded down [`desugar`], so structurally-equal sub-terms
+/// (a repeated sub-regex, the alphabet type) share one allocation.
 ///
-/// Sub-regexes are held behind [`Arc`], not `Box`, so identical subtrees can be
-/// **shared** (a single allocation referenced many times) and, later,
-/// hash-consed/interned. [`desugar`] already shares the obvious case — `r+`
-/// reuses the same `Arc` for the `r` and the `r*` — and the matcher's memo keys
-/// on the node pointer, so shared subtrees are recognised once.
+/// Sub-regexes are held behind [`Arc`] so identical subtrees share (a single
+/// allocation referenced many times); [`desugar`] shares the obvious case —
+/// `r+` reuses one `Arc` for the `r` and the `r*` — and the matcher's memo keys
+/// on the node pointer, so shared subtrees are recognised once. Equality and
+/// hashing are over the [`CoreKind`] only; the cached term is a pure function
+/// of it.
+#[derive(Clone, Debug)]
+pub struct Core {
+    kind: CoreKind,
+    /// The reified `regex u8` term `⌜c⌝`, interned at construction.
+    term: Term,
+}
+
+/// The shape of a [`Core`] node: the six constructors the reified HOL `regex
+/// u8` datatype has.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Core {
+pub enum CoreKind {
     /// `∅` — matches nothing.
     Empty,
     /// `ε` — matches only the empty word.
@@ -64,26 +77,99 @@ pub enum Core {
     Star(Arc<Core>),
 }
 
+impl PartialEq for Core {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+impl Eq for Core {}
+impl std::hash::Hash for Core {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.kind.hash(state);
+    }
+}
+
+/// The reified terms of the leaf constructors, built **once**: `⌜empty⌝`,
+/// `⌜eps⌝`, and `⌜lit b⌝` for every byte `b`. Each leaf's encoding is a fixed
+/// six-handler Church term, so caching them globally means leaf construction is
+/// a cheap `Arc` clone and every `lit b` across every regex shares one
+/// allocation — without paying a per-`desugar` interner (whose per-node re-walk
+/// is `O(subterm)` and goes quadratic over a 256-way class like `.`).
+static R_LEAVES: LazyLock<Leaves> = LazyLock::new(|| {
+    let a = u8ty();
+    Leaves {
+        empty: r_empty(&a),
+        eps: r_eps(&a),
+        lit: Box::new(std::array::from_fn(|b| r_lit(&a, Term::u8_lit(b as u8)))),
+    }
+});
+
+struct Leaves {
+    empty: Term,
+    eps: Term,
+    lit: Box<[Term; 256]>,
+}
+
 impl Core {
-    /// `x | y`.
-    pub fn alt(x: Core, y: Core) -> Core {
-        Core::Alt(Arc::new(x), Arc::new(y))
-    }
-    /// `x y`.
-    pub fn seq(x: Core, y: Core) -> Core {
-        Core::Seq(Arc::new(x), Arc::new(y))
-    }
-    /// `x*`.
-    pub fn star(x: Core) -> Core {
-        Core::Star(Arc::new(x))
+    /// The node's constructor shape.
+    pub fn kind(&self) -> &CoreKind {
+        &self.kind
     }
 
-    /// Right-fold a list of cores into a binary [`Core::Seq`] chain, collapsing
-    /// the empty list to `eps` and a singleton to itself.
-    fn seq_all(items: impl Iterator<Item = Core>) -> Core {
-        let mut items: Vec<Core> = items.collect();
+    /// The cached reified term `⌜c⌝ : regex u8`.
+    pub fn term(&self) -> &Term {
+        &self.term
+    }
+
+    fn empty() -> Arc<Core> {
+        Arc::new(Core {
+            kind: CoreKind::Empty,
+            term: R_LEAVES.empty.clone(),
+        })
+    }
+    fn eps() -> Arc<Core> {
+        Arc::new(Core {
+            kind: CoreKind::Eps,
+            term: R_LEAVES.eps.clone(),
+        })
+    }
+    fn lit(b: u8) -> Arc<Core> {
+        Arc::new(Core {
+            kind: CoreKind::Lit(b),
+            term: R_LEAVES.lit[b as usize].clone(),
+        })
+    }
+    /// `x | y`. The term reuses the children's cached `⌜x⌝`/`⌜y⌝` `Arc`s, so
+    /// sub-tree sharing is inherited without any re-walk.
+    fn alt(x: Arc<Core>, y: Arc<Core>) -> Arc<Core> {
+        let term = r_alt(&u8ty(), x.term.clone(), y.term.clone());
+        Arc::new(Core {
+            kind: CoreKind::Alt(x, y),
+            term,
+        })
+    }
+    /// `x y`.
+    fn seq(x: Arc<Core>, y: Arc<Core>) -> Arc<Core> {
+        let term = r_seq(&u8ty(), x.term.clone(), y.term.clone());
+        Arc::new(Core {
+            kind: CoreKind::Seq(x, y),
+            term,
+        })
+    }
+    /// `x*`.
+    fn star(x: Arc<Core>) -> Arc<Core> {
+        let term = r_star(&u8ty(), x.term.clone());
+        Arc::new(Core {
+            kind: CoreKind::Star(x),
+            term,
+        })
+    }
+
+    /// Right-fold cores into a binary `Seq` chain, collapsing the empty list to
+    /// `eps` and a singleton to itself.
+    fn seq_all(mut items: Vec<Arc<Core>>) -> Arc<Core> {
         match items.len() {
-            0 => Core::Eps,
+            0 => Core::eps(),
             1 => items.pop().expect("len 1"),
             _ => {
                 let last = items.pop().expect("len >= 2");
@@ -92,32 +178,31 @@ impl Core {
         }
     }
 
-    /// Fold a list of cores into a **balanced** binary [`Core::Alt`] tree,
-    /// collapsing the empty list to `empty` and a singleton to itself.
+    /// Fold cores into a **balanced** binary `Alt` tree, collapsing the empty
+    /// list to `empty` and a singleton to itself.
     ///
     /// Balanced (not right-nested) so that matching one alternative of a
     /// `K`-way alternation — in particular a desugared character class of `K`
     /// bytes — descends `O(log K)` `alt`-injections rather than `O(K)`. That is
     /// the difference between a 7-step and a 256-step proof for matching a byte
     /// against `.`; the matched word and language are unchanged.
-    fn alt_all(items: impl Iterator<Item = Core>) -> Core {
-        let items: Vec<Core> = items.collect();
+    fn alt_all(items: Vec<Arc<Core>>) -> Arc<Core> {
         match items.len() {
-            0 => Core::Empty,
+            0 => Core::empty(),
             1 => items.into_iter().next().expect("len 1"),
-            _ => balanced(items, Core::alt),
+            _ => balanced(items),
         }
     }
 }
 
-/// Combine a non-empty list into a balanced binary tree under `comb`.
-fn balanced(mut items: Vec<Core>, comb: fn(Core, Core) -> Core) -> Core {
+/// Combine a non-empty list into a balanced binary `Alt` tree.
+fn balanced(mut items: Vec<Arc<Core>>) -> Arc<Core> {
     while items.len() > 1 {
         let mut next = Vec::with_capacity(items.len().div_ceil(2));
         let mut it = items.into_iter();
         while let Some(a) = it.next() {
             match it.next() {
-                Some(b) => next.push(comb(a, b)),
+                Some(b) => next.push(Core::alt(a, b)),
                 None => next.push(a),
             }
         }
@@ -130,30 +215,34 @@ fn balanced(mut items: Vec<Core>, comb: fn(Core, Core) -> Core) -> Core {
 // Desugaring  Regex<u8> -> Core.
 // ============================================================================
 
-/// Desugar a full byte regex into the six-constructor [`Core`] form.
+/// Desugar a full byte regex into a compiled [`Core`] (each node carrying its
+/// cached `⌜·⌝`; leaf terms come from the global [`R_LEAVES`] cache).
 ///
 /// - character classes become a balanced alternation of their member byte
 ///   literals (a negated class is complemented against `0x00..=0xFF` first; an
-///   empty class becomes [`Core::Empty`]);
+///   empty class becomes [`CoreKind::Empty`]);
 /// - `r+` becomes `r r*`, `r?` becomes `ε | r`;
 /// - `r{m,m}` becomes `m` copies, `r{m,n}` becomes `m` copies then `n−m`
 ///   optionals, `r{m,}` becomes `m` copies then `r*`.
-pub fn desugar(r: &Regex<u8>) -> Core {
+pub fn desugar(r: &Surface<u8>) -> Arc<Core> {
     match r {
-        Regex::Empty => Core::Empty,
-        Regex::Eps => Core::Eps,
-        Regex::Lit(b) => Core::Lit(*b),
-        Regex::Class(c) => Core::alt_all(class_bytes(c).into_iter().map(Core::Lit)),
-        Regex::Concat(items) => Core::seq_all(items.iter().map(desugar)),
-        Regex::Alt(items) => Core::alt_all(items.iter().map(desugar)),
-        Regex::Star(inner) => Core::star(desugar(inner)),
-        Regex::Plus(inner) => {
-            // Share one `Arc` between the `r` and the `r*` of `r+ = r r*`.
-            let c = Arc::new(desugar(inner));
-            Core::Seq(Arc::clone(&c), Arc::new(Core::Star(c)))
+        Surface::Empty => Core::empty(),
+        Surface::Eps => Core::eps(),
+        Surface::Lit(b) => Core::lit(*b),
+        Surface::Class(c) => {
+            Core::alt_all(class_bytes(c).into_iter().map(Core::lit).collect())
         }
-        Regex::Opt(inner) => Core::alt(Core::Eps, desugar(inner)),
-        Regex::Rep { inner, min, max } => desugar_rep(&desugar(inner), *min, *max),
+        Surface::Concat(items) => Core::seq_all(items.iter().map(desugar).collect()),
+        Surface::Alt(items) => Core::alt_all(items.iter().map(desugar).collect()),
+        Surface::Star(inner) => Core::star(desugar(inner)),
+        Surface::Plus(inner) => {
+            // Share one `Arc` between the `r` and the `r*` of `r+ = r r*`.
+            let x = desugar(inner);
+            let star = Core::star(Arc::clone(&x));
+            Core::seq(x, star)
+        }
+        Surface::Opt(inner) => Core::alt(Core::eps(), desugar(inner)),
+        Surface::Rep { inner, min, max } => desugar_rep(desugar(inner), *min, *max),
     }
 }
 
@@ -171,42 +260,24 @@ fn class_bytes(c: &Class<u8>) -> Vec<u8> {
         .collect()
 }
 
-fn desugar_rep(inner: &Core, min: u32, max: Option<u32>) -> Core {
-    let copies = |n: u32| (0..n).map(|_| inner.clone());
+fn desugar_rep(inner: Arc<Core>, min: u32, max: Option<u32>) -> Arc<Core> {
+    let mut items: Vec<Arc<Core>> = Vec::new();
+    for _ in 0..min {
+        items.push(Arc::clone(&inner));
+    }
     match max {
-        Some(m) if m == min => Core::seq_all(copies(min)),
+        Some(m) if m == min => Core::seq_all(items),
         Some(m) => {
             let extra = m.saturating_sub(min);
-            let opts = (0..extra).map(|_| Core::alt(Core::Eps, inner.clone()));
-            Core::seq_all(copies(min).chain(opts))
+            for _ in 0..extra {
+                items.push(Core::alt(Core::eps(), Arc::clone(&inner)));
+            }
+            Core::seq_all(items)
         }
-        None => Core::seq_all(copies(min).chain(std::iter::once(Core::star(inner.clone())))),
-    }
-}
-
-// ============================================================================
-// Core -> reified HOL `regex u8` term.
-// ============================================================================
-
-/// The byte alphabet `u8`.
-pub(crate) fn u8ty() -> Type {
-    ir::u8_alphabet()
-}
-
-/// Build the reified `regex u8` term `⌜c⌝` for a [`Core`].
-pub fn core_to_term(c: &Core) -> Term {
-    let a = u8ty();
-    core_to_term_at(&a, c)
-}
-
-fn core_to_term_at(a: &Type, c: &Core) -> Term {
-    match c {
-        Core::Empty => ir::r_empty(a),
-        Core::Eps => ir::r_eps(a),
-        Core::Lit(b) => ir::r_lit(a, Term::u8_lit(*b)),
-        Core::Alt(x, y) => ir::r_alt(a, core_to_term_at(a, x), core_to_term_at(a, y)),
-        Core::Seq(x, y) => ir::r_seq(a, core_to_term_at(a, x), core_to_term_at(a, y)),
-        Core::Star(x) => ir::r_star(a, core_to_term_at(a, x)),
+        None => {
+            items.push(Core::star(Arc::clone(&inner)));
+            Core::seq_all(items)
+        }
     }
 }
 
@@ -214,16 +285,60 @@ fn core_to_term_at(a: &Type, c: &Core) -> Term {
 // Public compile / predicate surface.
 // ============================================================================
 
+/// The byte alphabet `u8`.
+pub(crate) fn u8ty() -> Type {
+    ir::u8_alphabet()
+}
+
 /// Compile a byte regex to the reified HOL term `⌜r⌝ : regex u8`.
-pub fn compile(r: &Regex<u8>) -> Term {
-    core_to_term(&desugar(r))
+pub fn compile(r: &Surface<u8>) -> Term {
+    desugar(r).term().clone()
 }
 
 /// The **byte predicate** the regex denotes: the language
 /// `⟦⌜r⌝⟧ : set (list u8)`. A bytestring `w` *satisfies* it iff
 /// `mem w ⟦⌜r⌝⟧` — which [`tactic::prove_member`] proves for concrete `w`.
-pub fn predicate(r: &Regex<u8>) -> Result<Term> {
+pub fn predicate(r: &Surface<u8>) -> Result<Term> {
     ir::denote(&u8ty(), compile(r))
+}
+
+// ============================================================================
+// Reusable compiled object — a `Core` carries its cached `⌜c⌝`, so it *is* the
+// compile-once / match-many handle (no separate wrapper needed).
+// ============================================================================
+
+impl Core {
+    /// Parse and compile a regex source string (see
+    /// [`covalence_grammar::regex::parse_regex_u8`]); a fresh interner is used.
+    pub fn parse(
+        src: &str,
+    ) -> std::result::Result<Arc<Core>, covalence_grammar::regex::ParseError> {
+        Ok(desugar(&covalence_grammar::regex::parse_regex_u8(src)?))
+    }
+
+    /// The byte predicate (language) `⟦⌜c⌝⟧ : set (list u8)` this regex denotes,
+    /// from the cached `⌜c⌝` (cf. the free [`predicate`]).
+    pub fn predicate(&self) -> Result<Term> {
+        ir::denote(&u8ty(), self.term.clone())
+    }
+
+    /// Prove `⊢ Matches ⌜c⌝ w` for a concrete byte input, or `None` if it is not
+    /// in `L(c)` (cf. the free [`tactic::prove_matches`]).
+    pub fn prove_matches(&self, input: impl AsRef<[u8]>) -> Result<Option<Thm>> {
+        tactic::matches_core(self, input.as_ref())
+    }
+
+    /// Prove `⊢ mem w ⟦⌜c⌝⟧` (membership in the denoted language) for a concrete
+    /// byte input (cf. the free [`tactic::prove_member`]).
+    pub fn prove_member(&self, input: impl AsRef<[u8]>) -> Result<Option<Thm>> {
+        tactic::member_core(self, &self.term, input.as_ref())
+    }
+
+    /// Prove `{Matches ⌜cᵢ⌝ Xᵢ}ᵢ ⊢ Matches ⌜c⌝ w` for a word **expression** that
+    /// may contain variables (cf. the free [`tactic::prove_word`]).
+    pub fn prove_word(&self, w: &tactic::Word) -> Result<Option<Thm>> {
+        tactic::word_core(self, w)
+    }
 }
 
 #[cfg(test)]
@@ -231,55 +346,39 @@ mod tests {
     use super::*;
     use covalence_grammar::regex::parse_regex_u8;
 
-    fn lit(b: u8) -> Core {
-        Core::Lit(b)
+    // `Core` equality is over [`CoreKind`] only.
+    fn de(src: &str) -> Arc<Core> {
+        desugar(&parse_regex_u8(src).unwrap())
     }
 
     #[test]
     fn desugar_basics() {
-        assert_eq!(desugar(&Regex::<u8>::Eps), Core::Eps);
-        assert_eq!(desugar(&Regex::Lit(0x61u8)), lit(0x61));
+        assert_eq!(desugar(&Surface::<u8>::Eps), Core::eps());
+        assert_eq!(desugar(&Surface::Lit(0x61u8)), Core::lit(0x61));
         // `ab` -> seq a b
-        assert_eq!(
-            desugar(&parse_regex_u8("ab").unwrap()),
-            Core::seq(lit(b'a'), lit(b'b')),
-        );
+        assert_eq!(de("ab"), Core::seq(Core::lit(b'a'), Core::lit(b'b')));
         // `a+` -> a a*
-        assert_eq!(
-            desugar(&parse_regex_u8("a+").unwrap()),
-            Core::seq(lit(b'a'), Core::star(lit(b'a'))),
-        );
+        let astar = Core::star(Core::lit(b'a'));
+        assert_eq!(de("a+"), Core::seq(Core::lit(b'a'), astar));
         // `a?` -> eps | a
-        assert_eq!(
-            desugar(&parse_regex_u8("a?").unwrap()),
-            Core::alt(Core::Eps, lit(b'a')),
-        );
+        assert_eq!(de("a?"), Core::alt(Core::eps(), Core::lit(b'a')));
     }
 
     #[test]
     fn desugar_class_to_alt_of_bytes() {
         // `[ac]` -> a | c
-        let c = desugar(&parse_regex_u8("[ac]").unwrap());
-        assert_eq!(c, Core::alt(lit(b'a'), lit(b'c')));
+        assert_eq!(de("[ac]"), Core::alt(Core::lit(b'a'), Core::lit(b'c')));
         // empty negated-everything class is unsatisfiable -> Empty
-        assert_eq!(
-            desugar(&parse_regex_u8("[^\\x00-\\xFF]").unwrap()),
-            Core::Empty
-        );
+        assert_eq!(de("[^\\x00-\\xFF]"), Core::empty());
     }
 
     #[test]
     fn desugar_rep_cases() {
         // `a{2}` -> a a
-        assert_eq!(
-            desugar(&parse_regex_u8("a{2}").unwrap()),
-            Core::seq(lit(b'a'), lit(b'a')),
-        );
+        assert_eq!(de("a{2}"), Core::seq(Core::lit(b'a'), Core::lit(b'a')));
         // `a{1,2}` -> a (eps|a)
-        assert_eq!(
-            desugar(&parse_regex_u8("a{1,2}").unwrap()),
-            Core::seq(lit(b'a'), Core::alt(Core::Eps, lit(b'a'))),
-        );
+        let opt = Core::alt(Core::eps(), Core::lit(b'a'));
+        assert_eq!(de("a{1,2}"), Core::seq(Core::lit(b'a'), opt));
     }
 
     #[test]

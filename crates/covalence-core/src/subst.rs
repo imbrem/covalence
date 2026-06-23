@@ -334,6 +334,15 @@ pub fn shift_with<C: TrustedCons + ?Sized>(
 }
 
 fn shift_inner<C: TrustedCons + ?Sized>(t: &Term, delta: i64, cutoff: u32, cons: &mut C) -> Term {
+    // `bvi`-skip: a subterm whose maximum free de Bruijn index is `< cutoff`
+    // has no `Bound(i ≥ cutoff)` to shift, so shifting is the identity — reuse
+    // it without walking. Crucially this makes shifting a *closed* term (`bvi
+    // == -1`, e.g. the closed argument substituted by `open`/`all_elim` at
+    // depth > 0) O(1) instead of an O(size) rebuild of an identical tree — the
+    // bound-variable twin of the same skip in [`inst_opt`].
+    if t.bvi() < cutoff as i64 {
+        return t.clone();
+    }
     match t.kind() {
         TermKind::Bound(i) => {
             let i = *i;

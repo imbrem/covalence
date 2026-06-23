@@ -1,7 +1,10 @@
 #!/usr/bin/env bun
 /**
- * Profile the derivation of a SINGLE Metamath theorem under callgrind, to find
- * the hot spots of a specific slow proof (e.g. set.mm's `mulsass`).
+ * Profile the derivation of a SINGLE Metamath theorem **in depth** under
+ * callgrind, to find the hot spots of a specific slow proof (e.g. set.mm's
+ * `mulsass`). With `CACHE=1` it adds full cache simulation — the same D1/LL
+ * cache-miss data cachegrind produces, *plus* call-graph attribution (callgrind
+ * is cachegrind + a call graph), so it is the in-depth per-theorem profiler.
  *
  * It builds the `mm_import_bench` example (release) and runs its `--only
  * <label> <reps>` mode under valgrind/callgrind, then annotates the result:
@@ -9,13 +12,15 @@
  * functions (filtered to covalence + allocator). Final JSON goes to stdout;
  * everything else to stderr.
  *
+ * set.mm is auto-downloaded to a temp cache if not found (see `_setmm.mjs`).
+ *
  * Usage:
  *   bun scripts/profile-theorem.mjs [label] [reps] [set_mm_path]
  *   bun run profile:theorem                          # via package.json
  *     label        theorem to derive          [default mulsass]
  *     reps         extra timed derivations     [default 0 ⇒ just the 1 warmup
  *                  derive is profiled — fewest instructions for callgrind]
- *     set_mm_path  path to set.mm              [default $COV_SET_MM]
+ *     set_mm_path  explicit set.mm (else $COV_SET_MM, else download)
  *
  *   CACHE=1  → add cache simulation (cachegrind-style D1/LL miss counts).
  *             Slower; off by default.
@@ -26,17 +31,13 @@
 
 import { spawnSync, which } from "bun";
 import { existsSync } from "node:fs";
+import { ensureSetMm, buildBench } from "./_setmm.mjs";
 
 const LABEL = process.argv[2] ?? "mulsass";
 const REPS = process.argv[3] ?? "0";
-const SET_MM = process.argv[4] ?? process.env.COV_SET_MM ?? "";
 const CACHE = process.env.CACHE === "1";
 const log = (...a) => console.error("[profile-theorem]", ...a);
 
-if (!SET_MM || !existsSync(SET_MM)) {
-  log(`set.mm not found (pass a path or set $COV_SET_MM); got: ${SET_MM || "<unset>"}`);
-  process.exit(1);
-}
 for (const tool of ["valgrind", "callgrind_annotate"]) {
   if (!which(tool)) {
     log(`required tool not found: ${tool}`);
@@ -44,22 +45,8 @@ for (const tool of ["valgrind", "callgrind_annotate"]) {
   }
 }
 
-// 1. Build the bench example (release).
-log("building mm_import_bench (release)…");
-const build = spawnSync(
-  ["cargo", "build", "-p", "covalence-hol", "--example", "mm_import_bench", "--release"],
-  { stdout: "inherit", stderr: "inherit" },
-);
-if (build.exitCode !== 0) process.exit(build.exitCode ?? 1);
-const targetDir =
-  spawnSync(["cargo", "metadata", "--format-version=1", "--no-deps"]).stdout.toString().match(
-    /"target_directory":"([^"]+)"/,
-  )?.[1] ?? "target";
-const bin = `${targetDir}/release/examples/mm_import_bench`;
-if (!existsSync(bin)) {
-  log(`bench binary not found: ${bin}`);
-  process.exit(1);
-}
+const SET_MM = await ensureSetMm(process.argv[4]);
+const bin = buildBench();
 
 // 2. Run the single-theorem derivation under callgrind.
 const out = `/tmp/cov-theorem.${LABEL}.callgrind`;

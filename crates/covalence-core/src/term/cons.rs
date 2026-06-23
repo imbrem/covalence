@@ -48,11 +48,70 @@
 //! `C: TrustedCons + ?Sized`, so `&mut dyn TrustedCons` works directly —
 //! useful for the WASM boundary and for swapping policies at runtime.
 
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use indexmap::IndexSet;
+use indexmap::{Equivalent, IndexSet};
 
 use super::term::{Term, TermKind};
+
+/// Borrow a [`TermKind`] as a probe key into the interner's `IndexSet<Term>`,
+/// so [`HashCons::cons`] can look up an existing representative **without
+/// materialising a candidate `Term`** (which would allocate, compute its
+/// `TermInfo` — including a `type_of_in` walk for a closing `Abs` — and then be
+/// dropped on a hit). Hashes and compares exactly as [`Term`] does (on `kind`),
+/// so it locates the same representative. Private: this is an internal
+/// fast-path, not public API.
+///
+/// FUTURE (see `crates/covalence-hol/PERF.md`): to probe an *ordered*
+/// interner (`BTreeSet<Term>`) alloc-free — which reuses the O(1) fingerprint
+/// `cmp` and needs no cached wide hash — make this `#[repr(transparent)]` over
+/// `TermKind` and obtain `&KindRef` from `&TermKind` via a safe reference-cast
+/// crate (e.g. `ref-cast`), then `impl Borrow<KindRef> for Term`. The `Ord`
+/// below is already shaped for it (fingerprint-then-structural, matching
+/// `Term::cmp`). That avoids the O(size) `Hash for Term` that currently makes
+/// replay interning ~20–30× slower.
+struct KindRef<'a>(&'a TermKind);
+
+impl Hash for KindRef<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Must match `impl Hash for Term`, which hashes `self.0.kind`.
+        self.0.hash(state);
+    }
+}
+
+impl Equivalent<Term> for KindRef<'_> {
+    fn equivalent(&self, term: &Term) -> bool {
+        // Must match `impl PartialEq for Term`, which compares `kind`.
+        *self.0 == *term.kind()
+    }
+}
+
+// Full self-consistent comparison surface, matching `Term`'s semantics
+// (`Eq`/`Ord` on the kind, ordered by the cached structural fingerprint then
+// the exact kind). This lets a `KindRef` serve as a probe key for an *ordered*
+// interner (`BTreeMap`/`BTreeSet`) as well as the hashed one — comparisons use
+// the O(1) fingerprint fast-path, the same accelerator `Term::cmp` relies on.
+impl PartialEq for KindRef<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        *self.0 == *other.0
+    }
+}
+impl Eq for KindRef<'_> {}
+impl Ord for KindRef<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Mirror `Term::cmp`: fingerprint first (O(1) reject), then structure.
+        self.0
+            .compute_fp()
+            .cmp(&other.0.compute_fp())
+            .then_with(|| self.0.cmp(other.0))
+    }
+}
+impl PartialOrd for KindRef<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 mod sealed {
     /// Seals [`super::TrustedCons`] so only this crate can vouch for the
@@ -322,12 +381,12 @@ impl<D, T> sealed::Sealed for HashCons<D, T> {}
 
 impl<D, T> TrustedCons for HashCons<D, T> {
     fn cons(&mut self, kind: &TermKind) -> Option<Term> {
-        // The set is keyed by `Term`, so we materialise a candidate to
-        // look up; on a hit we drop it and share the representative.
-        let t = Term::alloc(kind.clone());
-        if let Some(existing) = self.set.get(&t) {
+        // Probe by borrowed kind — no candidate allocation on a hit (the common
+        // case when a proof rebuilds shared structure). Only a miss allocates.
+        if let Some(existing) = self.set.get(&KindRef(kind)) {
             return Some(existing.clone());
         }
+        let t = Term::alloc(kind.clone());
         self.set.insert(t.clone());
         Some(t)
     }

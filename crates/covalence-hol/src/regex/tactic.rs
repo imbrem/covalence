@@ -40,11 +40,12 @@
 
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use covalence_core::{Result, Term, Thm, Type};
-use covalence_grammar::regex::Regex;
+use covalence_grammar::regex::Regex as Surface;
 
-use super::{Core, core_to_term, desugar};
+use super::{Core, CoreKind, desugar};
 use crate::init::ext::TermExt;
 use crate::init::regex as ir;
 
@@ -87,7 +88,7 @@ fn cat_w(w1: Term, w2: Term) -> Result<Term> {
 struct VarInfo {
     name: String,
     term: Term,
-    category: Core,
+    category: Arc<Core>,
 }
 
 /// One position of the flattened input: a concrete byte, or a variable token
@@ -158,7 +159,7 @@ impl Recognizer<'_> {
         // only by the regex goal that *is* its category.
         if hi - lo == 1 {
             if let Atom::Var(i) = self.atoms[lo] {
-                if *c == self.vars[i].category {
+                if *c == *self.vars[i].category {
                     return Some(Rc::new(Plan::Var(i)));
                 }
                 // Otherwise fall through: a structural goal (alt/seq/star) may
@@ -166,20 +167,20 @@ impl Recognizer<'_> {
             }
         }
 
-        match c {
-            Core::Empty => None,
-            Core::Eps => (lo == hi).then(|| Rc::new(Plan::Eps)),
-            Core::Lit(b) => match (hi - lo == 1).then(|| self.atoms[lo]) {
+        match c.kind() {
+            CoreKind::Empty => None,
+            CoreKind::Eps => (lo == hi).then(|| Rc::new(Plan::Eps)),
+            CoreKind::Lit(b) => match (hi - lo == 1).then(|| self.atoms[lo]) {
                 Some(Atom::Byte(x)) if x == *b => Some(Rc::new(Plan::Lit)),
                 _ => None,
             },
-            Core::Alt(x, y) => {
+            CoreKind::Alt(x, y) => {
                 if let Some(p) = self.rec(x, lo, hi) {
                     return Some(Rc::new(Plan::AltL(p)));
                 }
                 self.rec(y, lo, hi).map(|p| Rc::new(Plan::AltR(p)))
             }
-            Core::Seq(x, y) => {
+            CoreKind::Seq(x, y) => {
                 for k in lo..=hi {
                     if let Some(px) = self.rec(x, lo, k) {
                         if let Some(py) = self.rec(y, k, hi) {
@@ -189,7 +190,7 @@ impl Recognizer<'_> {
                 }
                 None
             }
-            Core::Star(x) => {
+            CoreKind::Star(x) => {
                 if lo == hi {
                     return Some(Rc::new(Plan::StarNil));
                 }
@@ -215,43 +216,44 @@ impl Recognizer<'_> {
 // work is exactly the size of the final derivation — no failed calls.
 // ============================================================================
 
-/// Build `⊢ Matches ⌜c⌝ w` from the recognizer's `plan`.
+/// Build `⊢ Matches ⌜c⌝ w` from the recognizer's `plan`. Reads the reified
+/// terms straight off the [`Core`] nodes' cached `⌜·⌝` (no reconstruction).
 fn build(c: &Core, plan: &Plan, vars: &[VarInfo]) -> Result<(Thm, Term)> {
     let a = u8ty();
-    match (c, plan) {
+    match (c.kind(), plan) {
         (_, Plan::Var(i)) => {
             let vi = &vars[*i];
-            let prop = ir::matches(&a, &core_to_term(c), &vi.term)?;
+            let prop = ir::matches(&a, c.term(), &vi.term)?;
             Ok((Thm::assume(prop)?, vi.term.clone()))
         }
-        (Core::Eps, Plan::Eps) => Ok((ir::match_eps(&a)?, nil_w())),
-        (Core::Lit(b), Plan::Lit) => {
+        (CoreKind::Eps, Plan::Eps) => Ok((ir::match_eps(&a)?, nil_w())),
+        (CoreKind::Lit(b), Plan::Lit) => {
             let th = ir::match_lit(&a)?.all_elim(Term::u8_lit(*b))?;
             Ok((th, singleton_w(*b)?))
         }
-        (Core::Alt(x, y), Plan::AltL(p)) => {
+        (CoreKind::Alt(x, y), Plan::AltL(p)) => {
             let (thx, w) = build(x, p, vars)?;
-            let th = ir::match_alt_l(&a, &core_to_term(x), &core_to_term(y), &w)?.imp_elim(thx)?;
+            let th = ir::match_alt_l(&a, x.term(), y.term(), &w)?.imp_elim(thx)?;
             Ok((th, w))
         }
-        (Core::Alt(x, y), Plan::AltR(p)) => {
+        (CoreKind::Alt(x, y), Plan::AltR(p)) => {
             let (thy, w) = build(y, p, vars)?;
-            let th = ir::match_alt_r(&a, &core_to_term(x), &core_to_term(y), &w)?.imp_elim(thy)?;
+            let th = ir::match_alt_r(&a, x.term(), y.term(), &w)?.imp_elim(thy)?;
             Ok((th, w))
         }
-        (Core::Seq(x, y), Plan::Seq(px, py)) => {
+        (CoreKind::Seq(x, y), Plan::Seq(px, py)) => {
             let (thx, w1) = build(x, px, vars)?;
             let (thy, w2) = build(y, py, vars)?;
-            let th = ir::match_seq(&a, &core_to_term(x), &core_to_term(y), &w1, &w2)?
+            let th = ir::match_seq(&a, x.term(), y.term(), &w1, &w2)?
                 .imp_elim(thx)?
                 .imp_elim(thy)?;
             Ok((th, cat_w(w1, w2)?))
         }
-        (Core::Star(x), Plan::StarNil) => Ok((ir::match_star_nil(&a, &core_to_term(x))?, nil_w())),
-        (Core::Star(x), Plan::StarStep(px, ps)) => {
+        (CoreKind::Star(x), Plan::StarNil) => Ok((ir::match_star_nil(&a, x.term())?, nil_w())),
+        (CoreKind::Star(x), Plan::StarStep(px, ps)) => {
             let (thx, w1) = build(x, px, vars)?;
             let (thstar, w2) = build(c, ps, vars)?;
-            let th = ir::match_star_step(&a, &core_to_term(x), &w1, &w2)?
+            let th = ir::match_star_step(&a, x.term(), &w1, &w2)?
                 .imp_elim(thx)?
                 .imp_elim(thstar)?;
             Ok((th, cat_w(w1, w2)?))
@@ -290,27 +292,30 @@ fn byte_atoms(bytes: &[u8]) -> Vec<Atom> {
 /// in `L(r)`. The input is anything byte-like — `&str`, `&[u8]`, `Vec<u8>`,
 /// `[u8; N]`, `b"…"` — via [`AsRef<[u8]>`]. `w` is rule-shaped (byte literals +
 /// `cat` + single-byte `cons` + `nil`); read it off `thm.concl()` if you need it.
-pub fn prove_matches(r: &Regex<u8>, input: impl AsRef<[u8]>) -> Result<Option<Thm>> {
-    prove_matches_bytes(r, input.as_ref())
+pub fn prove_matches(r: &Surface<u8>, input: impl AsRef<[u8]>) -> Result<Option<Thm>> {
+    matches_core(&desugar(r), input.as_ref())
 }
 
-fn prove_matches_bytes(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
-    let core = desugar(r);
-    Ok(run(&core, &byte_atoms(bytes), &[])?.map(|(thm, _)| thm))
+/// Prove `⊢ Matches ⌜r⌝ w` from an **already-desugared** [`Core`] — the cached
+/// path behind [`Core::prove_matches`](super::Core::prove_matches). The free
+/// [`prove_matches`] desugars on each call; a held [`Core`] desugars once.
+pub(crate) fn matches_core(core: &Core, bytes: &[u8]) -> Result<Option<Thm>> {
+    Ok(run(core, &byte_atoms(bytes), &[])?.map(|(thm, _)| thm))
 }
 
 /// Prove that the input is **in the language** the regex denotes:
 /// `⊢ mem w ⟦⌜r⌝⟧`. Chains [`prove_matches`] through regex *soundness*
 /// ([`crate::init::regex::soundness_at`]). Accepts any [`AsRef<[u8]>`].
-pub fn prove_member(r: &Regex<u8>, input: impl AsRef<[u8]>) -> Result<Option<Thm>> {
-    prove_member_bytes(r, input.as_ref())
+pub fn prove_member(r: &Surface<u8>, input: impl AsRef<[u8]>) -> Result<Option<Thm>> {
+    let core = desugar(r);
+    member_core(&core, core.term(), input.as_ref())
 }
 
-fn prove_member_bytes(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
+/// As [`prove_member`], from an already-desugared [`Core`] and its cached reified
+/// term `⌜r⌝` (`rterm`) — the path behind [`Core::prove_member`](super::Core::prove_member).
+pub(crate) fn member_core(core: &Core, rterm: &Term, bytes: &[u8]) -> Result<Option<Thm>> {
     let a = u8ty();
-    let core = desugar(r);
-    let rterm = core_to_term(&core);
-    let Some((der, w)) = run(&core, &byte_atoms(bytes), &[])? else {
+    let Some((der, w)) = run(core, &byte_atoms(bytes), &[])? else {
         return Ok(None);
     };
     // Soundness lives at the denotation instance `'r := set (list u8)`; the
@@ -321,7 +326,7 @@ fn prove_member_bytes(r: &Regex<u8>, bytes: &[u8]) -> Result<Option<Thm>> {
     // denotation just to read its type.
     let lang_ty = crate::init::lang::lang(word_ty());
     let der = der.inst_tfree("r", lang_ty)?;
-    let snd = ir::soundness_at(&a, &rterm, &w)?; // ⊢ Matches r w ⟹ mem w ⟦r⟧
+    let snd = ir::soundness_at(&a, rterm, &w)?; // ⊢ Matches r w ⟹ mem w ⟦r⟧
     Ok(Some(snd.imp_elim(der)?))
 }
 
@@ -340,7 +345,7 @@ pub enum Word {
     Cat(Box<Word>, Box<Word>),
     /// A variable `X` assumed to parse as `category` (its occurrences share one
     /// free `list u8` variable, keyed by `name`).
-    Var { name: String, category: Regex<u8> },
+    Var { name: String, category: Surface<u8> },
 }
 
 impl Word {
@@ -355,7 +360,7 @@ impl Word {
     }
 
     /// A variable `X` assumed to parse as `category`.
-    pub fn var(name: impl Into<String>, category: Regex<u8>) -> Word {
+    pub fn var(name: impl Into<String>, category: Surface<u8>) -> Word {
         Word::Var {
             name: name.into(),
             category,
@@ -392,11 +397,16 @@ fn flatten(w: &Word, atoms: &mut Vec<Atom>, vars: &mut Vec<VarInfo>) {
 /// Prove `{Matches ⌜cᵢ⌝ Xᵢ}ᵢ ⊢ Matches ⌜r⌝ w` for a word **expression** that may
 /// contain variables, or `None` if no derivation exists. Each distinct
 /// [`Word::Var`] contributes one `Matches ⌜category⌝ X` hypothesis.
-pub fn prove_word(r: &Regex<u8>, w: &Word) -> Result<Option<Thm>> {
-    let core = desugar(r);
+pub fn prove_word(r: &Surface<u8>, w: &Word) -> Result<Option<Thm>> {
+    word_core(&desugar(r), w)
+}
+
+/// As [`prove_word`], from an already-desugared [`Core`] — the path behind
+/// [`Core::prove_word`](super::Core::prove_word).
+pub(crate) fn word_core(core: &Core, w: &Word) -> Result<Option<Thm>> {
     let mut atoms = Vec::new();
     let mut vars = Vec::new();
     flatten(w, &mut atoms, &mut vars);
-    Ok(run(&core, &atoms, &vars)?.map(|(thm, _)| thm))
+    Ok(run(core, &atoms, &vars)?.map(|(thm, _)| thm))
 }
 

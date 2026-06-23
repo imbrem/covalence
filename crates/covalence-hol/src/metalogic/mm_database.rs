@@ -476,6 +476,76 @@ impl<'a> Parser<'a> {
         Some((term, pos))
     }
 
+    /// Parse a token body **as typecode `tc`**, but with the floats in `subst`
+    /// pre-resolved to supplied argument sub-trees rather than encoded as bare
+    /// leaves. This is the structured counterpart of a flat right-fold: nested
+    /// formers written out literally in the body (e.g. the `( ph -> ps )` inside
+    /// a syntactic theorem's `( ( ph -> ps ) -> ch )`) are recursively grouped,
+    /// so the result matches [`encode_expr`] of the same instance byte-for-byte.
+    fn parse_subst<'t>(
+        &self,
+        tc: &str,
+        toks: &'t [&'t str],
+        subst: &[(&str, Term)],
+    ) -> Result<(Term, &'t [&'t str])> {
+        // A bare metavariable of this typecode: use the substituted arg if one
+        // is supplied, else its leaf encoding.
+        if let Some((head, rest)) = toks.split_first()
+            && self.db.is_variable(head)
+            && self.var_typecode(head) == Some(tc)
+        {
+            let term = match subst.iter().find(|(k, _)| k == head) {
+                Some((_, t)) => t.clone(),
+                None => self.leaf(head),
+            };
+            return Ok((term, rest));
+        }
+        if let Some(idxs) = self.by_typecode.get(tc) {
+            for &i in idxs {
+                if let Some((term, rest)) = self.try_former_subst(&self.formers[i], toks, subst)? {
+                    return Ok((term, rest));
+                }
+            }
+        }
+        Err(replay_err(format!(
+            "cannot parse a `{tc}` from `{}`",
+            toks.join(" ")
+        )))
+    }
+
+    /// [`try_former`] threading a float→arg substitution into its recursive
+    /// sub-parses (so nested metavars resolve to the supplied args).
+    fn try_former_subst<'t>(
+        &self,
+        f: &Former,
+        mut toks: &'t [&'t str],
+        subst: &[(&str, Term)],
+    ) -> Result<Option<(Term, &'t [&'t str])>> {
+        let mut args: Vec<(&str, Term)> = Vec::new();
+        for pat in &f.body {
+            if let Some((_, sub_tc)) = f.floats.iter().find(|(v, _)| v == pat) {
+                let Ok((sub, rest)) = self.parse_subst(sub_tc, toks, subst) else {
+                    return Ok(None);
+                };
+                args.push((pat.as_str(), sub));
+                toks = rest;
+            } else {
+                match toks.split_first() {
+                    Some((head, rest)) if head == pat => toks = rest,
+                    _ => return Ok(None),
+                }
+            }
+        }
+        let resolve = |tok: &str| -> Result<Term> {
+            Ok(match args.iter().find(|(k, _)| *k == tok) {
+                Some((_, t)) => t.clone(),
+                None => self.leaf(tok),
+            })
+        };
+        let term = encode(&f.body, &resolve)?;
+        Ok(Some((term, toks)))
+    }
+
     /// The `$f` typecode declared for variable `var`, if any.
     fn var_typecode(&self, var: &str) -> Option<&str> {
         self.var_tc.get(var).map(String::as_str)
@@ -488,6 +558,7 @@ impl<'a> Parser<'a> {
             .cloned()
             .unwrap_or_else(|| leaf(self.db, tok))
     }
+
 }
 
 /// Encode an assertion's *conclusion body* compactly (the public helper the
@@ -926,12 +997,28 @@ fn replay_with(
 
     let mut stack: Vec<Slot> = Vec::new();
     let mut heap: Vec<Slot> = Vec::new();
+    // `$e` essential hypotheses are referenced once per *use* in the proof, but
+    // each reference builds the identical open form `{Closed d, Derivable ⌜h⌝}
+    // ⊢ d ⌜h⌝` — and that build rebuilds the whole `Closed_L` conjunction
+    // (`derivable` → `closed_conj`, O(#clauses)). Cache the built slot per `$e`
+    // label so it is constructed once and cloned (an `Arc` bump) thereafter —
+    // turning O(refs · clauses) into O(#distinct-hyps · clauses).
+    let mut ess_cache: HashMap<String, Slot> = HashMap::default();
 
     for step in steps {
         match step {
             crate::metamath::ProofStep::Label(label) => {
-                let slot =
-                    apply_label(db, rs, clause_index, &clause_ctx, parser, label, &mut stack, cons)?;
+                let slot = apply_label(
+                    db,
+                    rs,
+                    clause_index,
+                    &clause_ctx,
+                    parser,
+                    label,
+                    &mut stack,
+                    &mut ess_cache,
+                    cons,
+                )?;
                 stack.push(slot);
             }
             crate::metamath::ProofStep::Save => {
@@ -972,6 +1059,8 @@ fn replay_with(
                     .imp(clause_ctx.d.clone().apply(concl_enc)?)?
                     .forall("d", clause_ctx.pred_ty.clone())?;
                 if derivable_thm.concl() != &want {
+                    eprintln!("=== PROOF-BUILT concl ===\n{:#?}", derivable_thm.concl());
+                    eprintln!("=== ENCODE want ===\n{:#?}", want);
                     return Err(replay_err(format!(
                         "replayed conclusion does not match the claimed `{}`",
                         crate::metamath::expr::render(&assertion.conclusion),
@@ -1003,6 +1092,7 @@ fn apply_label(
     parser: &Parser,
     label: &str,
     stack: &mut Vec<Slot>,
+    ess_cache: &mut HashMap<String, Slot>,
     cons: &mut dyn TrustedCons,
 ) -> Result<Slot> {
     let stmt = db
@@ -1018,11 +1108,18 @@ fn apply_label(
             // the final theorem). Kept in the **open** form `{Closed d, Derivable
             // ⌜hyp⌝} ⊢ d ⌜hyp⌝` (instantiate `∀d`, discharge `Closed d` against
             // the cached assumption) so the proof never re-opens/re-closes it.
+            // Built once per `$e` label and cached: every later reference clones
+            // the slot instead of rebuilding the full `Closed_L` conjunction.
+            if let Some(slot) = ess_cache.get(label) {
+                return Ok(slot.clone());
+            }
             let enc = parser.encode_expr(&h.expr)?.cons_with(cons);
             let open = Thm::assume(derivable(rs, &enc)?)?
                 .all_elim_with(clause_ctx.d.clone(), cons)?
                 .imp_elim(clause_ctx.assumed.clone())?;
-            Ok(Slot::Proved(open))
+            let slot = Slot::Proved(open);
+            ess_cache.insert(label.to_string(), slot.clone());
+            Ok(slot)
         }
         Statement::Assert(target) => {
             apply_assert(parser, clause_index, clause_ctx, target, label, stack, cons)
@@ -1089,12 +1186,16 @@ fn apply_assert(
     }
 }
 
-/// Encode a **syntactic-former application** during replay: right-fold the
-/// former's conclusion body, mapping each float metavariable
-/// `target.frame.floats[i].var` to the i-th popped argument sub-tree
-/// `float_args[i]` and every other token to its [`leaf`]. The result is the
-/// compact `enc(former-body[vᵢ := argᵢ])`, identical to the `Parser`'s encoding
-/// of a literal of the same shape.
+/// Encode a **syntactic-former application** during replay: structurally parse
+/// the former's conclusion body **as its own typecode**, mapping each float
+/// metavariable `target.frame.floats[i].var` to the i-th popped argument
+/// sub-tree `float_args[i]`. The structured parse (rather than a flat
+/// right-fold of the raw body) is required for *syntactic theorems* like
+/// set.mm's `bj-0 $p wff ( ( ph -> ps ) -> ch )`, whose body contains a nested
+/// former (`( ph -> ps )`) written out in literal tokens: parsing groups that
+/// sub-expression so the result is identical to [`Parser::encode_expr`] of the
+/// same instance. For an ordinary atomic-bodied former (`wi`'s `( ph -> ps )`,
+/// metavars in leaf positions) the two encodings already agree.
 fn encode_former(
     parser: &Parser,
     target: &Assertion,
@@ -1103,17 +1204,19 @@ fn encode_former(
 ) -> Result<Term> {
     let body = body_of(&target.conclusion)
         .ok_or_else(|| replay_err(format!("`{label}`: malformed former conclusion")))?;
-    let mut args: Vec<(&str, Term)> = Vec::with_capacity(target.frame.floats.len());
+    let mut subst: Vec<(&str, Term)> = Vec::with_capacity(target.frame.floats.len());
     for (i, f) in target.frame.floats.iter().enumerate() {
-        args.push((f.var.as_str(), float_args[i].clone()));
+        subst.push((f.var.as_str(), float_args[i].clone()));
     }
-    let resolve = |tok: &str| -> Result<Term> {
-        Ok(match args.iter().find(|(k, _)| *k == tok) {
-            Some((_, t)) => t.clone(),
-            None => parser.leaf(tok),
-        })
-    };
-    encode(body, &resolve)
+    let toks: Vec<&str> = body.iter().map(|s| s.as_str()).collect();
+    let tc = target.conclusion.typecode();
+    let (term, rest) = parser.parse_subst(tc, &toks, &subst)?;
+    if !rest.is_empty() {
+        return Err(replay_err(format!(
+            "`{label}`: trailing symbols after parsing former body"
+        )));
+    }
+    Ok(term)
 }
 
 /// **Per-theorem precomputed clause assumptions.** Built ONCE per theorem (was:
@@ -1226,6 +1329,25 @@ mod tests {
 
     fn assert_genuine(thm: &Thm) {
         assert!(thm.has_no_obs(), "replayed theorem must be oracle-free");
+    }
+
+    #[test]
+    #[ignore = "repro bj-1"]
+    fn repro_bj1() {
+        let path = std::env::var("COV_SET_MM").expect("COV_SET_MM");
+        let source = std::fs::read_to_string(&path).expect("read set.mm");
+        let db = crate::metamath::parse(&source).expect("set.mm parses");
+        let parser = Parser::new(&db);
+        let a = db.assertions().find(|a| a.label == "bj-1").expect("bj-1");
+        let thm = derive_theorem_with(&db, &parser, "bj-1").expect("replay bj-1");
+        assert_genuine(&thm);
+        let rs = rule_set(&db);
+        let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
+        if thm.concl() != &expected {
+            eprintln!("PROOF-BUILT:\n{:#?}", thm.concl());
+            eprintln!("ENCODE_EXPR:\n{:#?}", expected);
+        }
+        assert_eq!(thm.concl(), &expected, "bj-1 concl mismatch");
     }
 
     /// The vendored real `hol.mm` (CC0; all 151 `$p` proofs are *compressed*).

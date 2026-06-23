@@ -302,59 +302,56 @@ fn compute_free(kind: &TermKind) -> Bloom {
     }
 }
 
-/// A 16-bit **structural fingerprint** of a node, combined Merkle-style from
-/// its children's fingerprints and a per-constructor tag. Cached in each
-/// [`TermInfo`] (in otherwise-wasted padding) so [`Term::cmp`] / equality can
-/// reject distinct terms in O(1) without walking a shared prefix.
-///
-/// The only contract is **fp is a pure function of the term structure** — so
-/// structurally-equal terms have equal fingerprints. A mismatch therefore
-/// *proves* inequality (used as a fast-reject); a match is inconclusive and
-/// falls through to the exact structural compare. (It deliberately ignores
-/// type annotations on `Free`/`Const`/`Abs`/primitives: a fingerprint clash
-/// from a type-only difference is rare and resolved by the structural
-/// fallback, and skipping types keeps the per-node cost a couple of integer
-/// ops.)
-fn compute_fp(kind: &TermKind) -> u16 {
-    // Fold an arbitrary `Hash` value to 16 bits (names, literals).
-    fn h16<H: std::hash::Hash>(x: &H) -> u16 {
-        use std::hash::Hasher;
+impl TermKind {
+    /// A 16-bit **structural fingerprint** of this node, combined Merkle-style
+    /// from its children's fingerprints and a per-constructor tag. Cached in
+    /// each [`TermInfo`] (in otherwise-wasted padding) so [`Term::cmp`] /
+    /// equality can reject distinct terms in O(1) without walking a shared
+    /// prefix, and so a borrowed-kind probe ([`crate::term::cons`]) can order
+    /// against an interned `Term` without one.
+    ///
+    /// The only contract is **fp is a pure function of the term structure** —
+    /// so structurally-equal terms have equal fingerprints. A mismatch
+    /// therefore *proves* inequality (used as a fast-reject); a match is
+    /// inconclusive and falls through to the exact structural compare. (It
+    /// deliberately ignores type annotations on `Free`/`Const`/`Abs`/primitives:
+    /// a fingerprint clash from a type-only difference is rare and resolved by
+    /// the structural fallback, and skipping types keeps the per-node cost a
+    /// couple of integer ops.)
+    pub(crate) fn compute_fp(&self) -> u16 {
+        use std::hash::{Hash, Hasher};
         let mut h = fnv::FnvHasher::default();
-        x.hash(&mut h);
+        // Per-constructor tag: the variant discriminant (a pure function of the
+        // variant, distinct for every `TermKind`).
+        std::mem::discriminant(self).hash(&mut h);
+        // Payload / children. Interior nodes contribute their children's
+        // *cached* fingerprints (O(1)), making this Merkle-style and O(1) per
+        // node. Type annotations are deliberately ignored — a type-only clash
+        // is rare and resolved by the exact structural fallback.
+        match self {
+            TermKind::Bound(i) => h.write_u32(*i),
+            TermKind::Free(v) => v.name().hash(&mut h),
+            TermKind::Const(n, _) => n.hash(&mut h),
+            TermKind::App(f, x) => {
+                h.write_u16(f.0.info.fp());
+                h.write_u16(x.0.info.fp());
+            }
+            TermKind::Abs(_, body) => h.write_u16(body.0.info.fp()),
+            TermKind::Blob(b) => h.write_usize(b.len()),
+            TermKind::Nat(n) => n.hash(&mut h),
+            TermKind::Int(n) => n.hash(&mut h),
+            TermKind::SmallInt(lit) => lit.hash(&mut h),
+            TermKind::Bool(b) => h.write_u8(*b as u8),
+            TermKind::Spec(s, _) => s.symbol().label().hash(&mut h),
+            TermKind::SpecAbs(s, _) | TermKind::SpecRep(s, _) => s.symbol().label().hash(&mut h),
+            TermKind::Def(d) => d.name().hash(&mut h),
+            // No further payload (the discriminant already distinguishes these).
+            TermKind::Eq(_) | TermKind::Select(_) | TermKind::Succ | TermKind::Obs(_, _) => {}
+        }
+        // Fold the 64-bit FNV digest down to the 16-bit fingerprint.
         let v = h.finish();
         (v ^ (v >> 16) ^ (v >> 32) ^ (v >> 48)) as u16
     }
-    // Mix an accumulator with the next 16-bit part (order-sensitive).
-    #[inline]
-    fn mix(acc: u16, x: u16) -> u16 {
-        let mut h = acc ^ x;
-        h = h.wrapping_mul(0x2545); // odd multiplier
-        h ^= h >> 7;
-        h
-    }
-    // A distinct base tag per constructor (the enum discriminant is not
-    // stable to read here, so enumerate explicitly).
-    let (tag, part): (u16, u16) = match kind {
-        TermKind::Bound(i) => (1, *i as u16),
-        TermKind::Free(v) => (2, h16(&v.name())),
-        TermKind::Const(n, _) => (3, h16(n)),
-        TermKind::App(f, x) => (4, mix(f.0.info.fp(), x.0.info.fp())),
-        TermKind::Abs(_, body) => (5, body.0.info.fp()),
-        TermKind::Blob(b) => (6, b.len() as u16),
-        TermKind::Nat(n) => (7, h16(n)),
-        TermKind::Int(n) => (8, h16(n)),
-        TermKind::SmallInt(lit) => (9, h16(lit)),
-        TermKind::Bool(b) => (10, *b as u16),
-        TermKind::Eq(_) => (11, 0),
-        TermKind::Select(_) => (12, 0),
-        TermKind::Succ => (13, 0),
-        TermKind::Spec(s, _) => (14, h16(&s.symbol().label())),
-        TermKind::SpecAbs(s, _) => (15, h16(&s.symbol().label())),
-        TermKind::SpecRep(s, _) => (16, h16(&s.symbol().label())),
-        TermKind::Obs(_, _) => (17, 0),
-        TermKind::Def(d) => (18, h16(&d.name())),
-    };
-    mix(tag.wrapping_mul(0x9E37), part)
 }
 
 /// A HOL term: an `Arc`-shared node carrying its [`TermKind`] plus a cached
@@ -869,7 +866,7 @@ impl Term {
         if body.bvi() == 0 {
             let kind = TermKind::Abs(ty.clone(), body);
             let free = compute_free(&kind);
-            let fp = compute_fp(&kind);
+            let fp = kind.compute_fp();
             let info = TermInfo::Wf {
                 free,
                 fp,
@@ -1301,7 +1298,7 @@ fn term_info(kind: &TermKind) -> TermInfo {
     // type/openness; compute it once and stamp it into whichever variant we
     // return.
     let free = compute_free(kind);
-    let fp = compute_fp(kind);
+    let fp = kind.compute_fp();
     let wf = |ty: Type| Wf { free, fp, ty };
     let open = |bvi: u32| Open { bvi, free, fp };
     let ill = || IllTyped { free, fp };

@@ -62,6 +62,7 @@
 //! binders, capture-avoiding with a fresh witness.
 
 use covalence_core::defs::Symbol;
+use covalence_core::term::TrustedCons;
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
 
 use crate::HolLightCtx;
@@ -108,6 +109,14 @@ pub trait TermExt: Sized {
     /// spec. Unlike the builders above this returns a [`Thm`], not a
     /// `Term` — it is a proof step, not term construction.
     fn rw_all(&self, eq: &Thm) -> Result<Thm>;
+
+    /// [`rw_all`](Self::rw_all) routing the terms it builds under binders (the
+    /// `open` of each `Abs` body) through a caller-supplied interner. Pass one
+    /// `HashCons` across a whole rewrite *sequence* so those opened bodies are
+    /// shared across rewrites. (The kernel congruence rules build their own
+    /// result terms and do not yet accept a `cons`, so the rewritten spine
+    /// itself is not interned here.)
+    fn rw_all_with<C: TrustedCons + ?Sized>(&self, eq: &Thm, cons: &mut C) -> Result<Thm>;
 
     /// δ-reduction of a single definition: if `self` is a let-style
     /// defined-constant `Spec` leaf (e.g. `nat.add`, `∧`), return its
@@ -224,8 +233,12 @@ impl TermExt for Term {
     }
 
     fn rw_all(&self, eq: &Thm) -> Result<Thm> {
+        self.rw_all_with(eq, &mut ())
+    }
+
+    fn rw_all_with<C: TrustedCons + ?Sized>(&self, eq: &Thm, cons: &mut C) -> Result<Thm> {
         let (lhs, _rhs) = eq.concl().as_eq().ok_or(Error::NotAnEquation)?;
-        match rw_all_opt(self, lhs, eq)? {
+        match rw_all_opt(self, lhs, eq, cons)? {
             Some(thm) => Ok(thm),
             None => Thm::refl(self.clone()),
         }
@@ -280,13 +293,18 @@ impl TermExt for Term {
 /// pattern: the fresh variable under each binder avoids the free
 /// variables of the body and of `eq`, so a closed rewrite never captures.
 /// Rewriting with an `lhs` that mentions a bound variable is out of scope.
-fn rw_all_opt(t: &Term, lhs: &Term, eq: &Thm) -> Result<Option<Thm>> {
+fn rw_all_opt<C: TrustedCons + ?Sized>(
+    t: &Term,
+    lhs: &Term,
+    eq: &Thm,
+    cons: &mut C,
+) -> Result<Option<Thm>> {
     if t == lhs {
         return Ok(Some(eq.clone()));
     }
     if let Some((f, x)) = t.as_app() {
-        let f_eq = rw_all_opt(f, lhs, eq)?;
-        let x_eq = rw_all_opt(x, lhs, eq)?;
+        let f_eq = rw_all_opt(f, lhs, eq, cons)?;
+        let x_eq = rw_all_opt(x, lhs, eq, cons)?;
         if f_eq.is_none() && x_eq.is_none() {
             return Ok(None); // neither side changed — reuse `t`
         }
@@ -310,8 +328,8 @@ fn rw_all_opt(t: &Term, lhs: &Term, eq: &Thm) -> Result<Option<Thm>> {
                 || eq.hyps().iter().any(|h| subst::has_free_var(h, n))
         });
         let wit = Term::free(fresh.as_str(), ty.clone());
-        let opened = subst::open(body, &wit);
-        return match rw_all_opt(&opened, lhs, eq)? {
+        let opened = subst::open_with(body, &wit, cons);
+        return match rw_all_opt(&opened, lhs, eq, cons)? {
             None => Ok(None), // body unchanged — reuse `t`
             Some(body_eq) => body_eq.abs(fresh.as_str(), ty.clone()).map(Some),
         };

@@ -273,10 +273,20 @@ fn mul_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
 /// `⊢ t = t'`, applying each `eqs[i]` (`rw_all`, all occurrences) to the
 /// running RHS in turn.
 fn rewrite_seq(t: &Term, eqs: &[Thm]) -> Result<Thm> {
+    rewrite_seq_with(t, eqs, &mut ())
+}
+
+/// [`rewrite_seq`] routing every rewrite through a caller-supplied interner — share
+/// one `cons` across a whole proof's rewrites.
+fn rewrite_seq_with<C: covalence_core::term::TrustedCons + ?Sized>(
+    t: &Term,
+    eqs: &[Thm],
+    cons: &mut C,
+) -> Result<Thm> {
     let mut acc = Thm::refl(t.clone())?;
     for eq in eqs {
         let cur = acc.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
-        acc = acc.trans(cur.rw_all(eq)?)?;
+        acc = acc.trans(cur.rw_all_with(eq, cons)?)?;
     }
     Ok(acc)
 }
@@ -2469,10 +2479,20 @@ pub fn lt_add_cancel_right_at(x: &Term, y: &Term, k: &Term) -> Result<Thm> {
 
 /// Apply each `eqs[i]` (`rw_all`) to the running RHS of an equation in turn.
 fn rewrite_seq_int(t: &Term, eqs: &[Thm]) -> Result<Thm> {
+    rewrite_seq_int_with(t, eqs, &mut ())
+}
+
+/// [`rewrite_seq_int`] routing every rewrite through a caller-supplied interner — share
+/// one `cons` across a whole proof's rewrites.
+fn rewrite_seq_int_with<C: covalence_core::term::TrustedCons + ?Sized>(
+    t: &Term,
+    eqs: &[Thm],
+    cons: &mut C,
+) -> Result<Thm> {
     let mut acc = Thm::refl(t.clone())?;
     for eq in eqs {
         let cur = acc.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
-        acc = acc.trans(cur.rw_all(eq)?)?;
+        acc = acc.trans(cur.rw_all_with(eq, cons)?)?;
     }
     Ok(acc)
 }

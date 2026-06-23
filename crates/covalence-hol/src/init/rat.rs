@@ -681,10 +681,21 @@ fn den_prod_rt(x: &Term, y: &Term) -> Result<Thm> {
 
 /// `⊢ t = t'` applying each `eqs[i]` (`rw_all`) to the running RHS in turn.
 fn rewrite_seq(t: &Term, eqs: &[Thm]) -> Result<Thm> {
+    rewrite_seq_with(t, eqs, &mut ())
+}
+
+/// [`rewrite_seq`] routing every rewrite through a caller-supplied interner.
+/// Pass one `cons` across several `rewrite_seq_with` calls in a single proof so
+/// the bodies opened under binders are shared across the whole proof.
+fn rewrite_seq_with<C: covalence_core::term::TrustedCons + ?Sized>(
+    t: &Term,
+    eqs: &[Thm],
+    cons: &mut C,
+) -> Result<Thm> {
     let mut acc = Thm::refl(t.clone())?;
     for eq in eqs {
         let cur = acc.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
-        acc = acc.trans(cur.rw_all(eq)?)?;
+        acc = acc.trans(cur.rw_all_with(eq, cons)?)?;
     }
     Ok(acc)
 }

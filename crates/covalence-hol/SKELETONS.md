@@ -61,21 +61,15 @@ index](../../SKELETONS.md).
   quantifier/induction/Leibniz **derivation constructors** (the motive
   β-capture wall — see the peano registry for the corrected diagnosis) and the
   `.cov` surface (Phase C: `(pa-induct …)` + β/η-aware `#concl`).
+- **[`src/ring/SKELETONS.md`](./src/ring/SKELETONS.md)** — the `(+, ·, 0, 1)`
+  sum-of-monomials normalizer (`RingNormalizer` / `RingOps`): coefficient
+  collection, `neg`/`sub` expansion, in-monomial literal folding, and the
+  `Semiring`/`Ring`-trait-generic rewrite (currently a shallow HOL instance).
 - The **Metamath substitution engine** (expression model + substitution +
   frames + RPN checker) now lives in the lower, HOL-free
   [`covalence-metamath`](../covalence-metamath/SKELETONS.md) crate (the engine
   is pure `SExpr` manipulation, so `covalence-hol` depends on *it*). Its engine-
   and reader-side deferrals are tracked there; the consumer-side bridge work
   (the `#logic` / `Derivable_L` correspondence, the import tactic +
-  representation-equivalence metatheorem) is tracked in the `metalogic` and
-  `peano` registries below.
-- **[`src/metalogic/SKELETONS.md`](./src/metalogic/SKELETONS.md)** — databases
-  as first-class HOL data + the relation lattice (`docs/theories-models-and-logics.md`
-  §5.6; the first cut of `metamath`'s deferred `Derivable_L` layer). Done:
-  `Database := Φ → bool`, `Derivable_DB` on the impredicative engine, extension
-  `⊑` + the proved monotonicity theorem with a concrete transport, and the
-  interpretation relation `⟹_σ` + its proved transport theorem (for any
-  `⟹`-homomorphic `σ`, demonstrated at the identity). Deferred: the
-  `∃ValidProof ⟺ impredicative` grounding bridge, a non-trivial structural `σ`,
-  and the north stars (conservative extension, `≅`, the category of databases,
-  lifting `metamath::Database` / `peano::mm_pa`).
+  representation-equivalence metatheorem) is tracked in the `metalogic`
+  registry above.

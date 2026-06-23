@@ -99,17 +99,24 @@ pub fn graph_at_rec<I: Inductive>(theory: &I, steps: &[Term], beta: &Type) -> Re
 
 /// The defining equation for constructor `i`, as a hypothesis-free theorem:
 /// `⊢ ∀x⃗. rec (Cᵢ x⃗) = fᵢ x⃗ (rec r⃗)`.
+///
+/// `g_at_rec` is the shared `⊢ Graph __t (rec __t)` (free `__t`) — independent
+/// of the constructor, so it is built once by [`recursion_theorem`] and only
+/// `inst`-specialised here. `det` memoises the equally-shared determinacy
+/// theorem ([`graph_det`]) across the non-nullary constructors that need it.
 fn rec_equation<I: Inductive>(
     theory: &I,
     recursor: &Term,
     steps: &[Term],
     beta: &Type,
     i: usize,
+    g_at_rec: &Thm,
+    det: &mut Option<Thm>,
 ) -> Result<Thm> {
     let sig = theory.sig();
     let inst: CtorInstance = graph::ctor_instance(&sig.ty, beta, &sig.ctors[i], &steps[i])?;
     let rec_head = rec_at(sig, steps, beta, &inst.head)?;
-    let g_at_head = graph_at_rec(theory, steps, beta)?.inst("__t", inst.head.clone())?;
+    let g_at_head = g_at_rec.clone().inst("__t", inst.head.clone())?;
 
     let body = if inst.rec_pairs.is_empty() {
         // Nullary: invert `Graph (Cᵢ) (rec Cᵢ)` to `rec Cᵢ = fᵢ`.
@@ -132,7 +139,7 @@ fn rec_equation<I: Inductive>(
         let g_at_rs: Vec<Thm> = inst
             .rec_pairs
             .iter()
-            .map(|(r, _)| graph_at_rec(theory, steps, beta)?.inst("__t", r.clone()))
+            .map(|(r, _)| g_at_rec.clone().inst("__t", r.clone()))
             .collect::<Result<_>>()?;
 
         // `graph_intro(i)` with each image var `bⱼ := rec rⱼ`, antecedent
@@ -151,8 +158,17 @@ fn rec_equation<I: Inductive>(
             value = subst::open(&subst::close(&value, var_name(img)), rec_r);
         }
 
-        // Determinacy: `rec (Cᵢ x⃗) = fᵢ x⃗ (rec r⃗)`.
-        let det_eq = beta_reduce(graph_det(theory, steps, beta)?.all_elim(inst.head.clone())?)?
+        // Determinacy: `rec (Cᵢ x⃗) = fᵢ x⃗ (rec r⃗)`. The determinacy theorem is
+        // constructor-independent — build it once and reuse across constructors.
+        let det_thm = match det {
+            Some(d) => d.clone(),
+            None => {
+                let d = graph_det(theory, steps, beta)?;
+                *det = Some(d.clone());
+                d
+            }
+        };
+        let det_eq = beta_reduce(det_thm.all_elim(inst.head.clone())?)?
             .all_elim(rec_head.clone())?
             .all_elim(value.clone())?
             .imp_elim(g_at_head)?
@@ -195,10 +211,19 @@ pub fn recursion_theorem<I: Inductive>(
     let sig = theory.sig();
     let recursor = recursor_term(sig, step_vars, beta)?;
 
+    // `⊢ Graph __t (rec __t)` (free `__t`) and the determinacy theorem are
+    // constructor-independent. Build the graph membership once here (each
+    // `rec_equation` only `inst`-specialises it, instead of re-running the
+    // expensive `graph_total` existence proof per constructor *and* per
+    // recursive argument); determinacy is memoised lazily across the
+    // constructors that need it.
+    let g_at_rec = graph_at_rec(theory, step_vars, beta)?;
+    let mut det: Option<Thm> = None;
+
     // The conjunction of per-constructor equations, generalised over the
     // step variables.
     let eqs: Vec<Thm> = (0..sig.arity())
-        .map(|i| rec_equation(theory, &recursor, step_vars, beta, i))
+        .map(|i| rec_equation(theory, &recursor, step_vars, beta, i, &g_at_rec, &mut det))
         .collect::<Result<_>>()?;
     let mut body = eqs
         .last()

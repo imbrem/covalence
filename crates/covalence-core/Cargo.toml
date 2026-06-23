@@ -9,6 +9,7 @@ edition = "2024"
 # (untrusted) HOL builder shell live downstream in `covalence-hol`.
 
 [dependencies]
+covalence-pure = { path = "../covalence-pure" }
 covalence-types = { path = "../covalence-types" }
 covalence-sexp = { path = "../covalence-sexp" }
 fnv = "1"

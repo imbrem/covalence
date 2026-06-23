@@ -1,0 +1,16 @@
+[package]
+name = "covalence-pure"
+version = "0.0.0"
+edition = "2024"
+
+# The TCB floor: a small, auditable, constructive first-order base logic.
+# `covalence-core` (the HOL TCB) is built *on top of* this crate — Pure is the
+# substrate, Core is one object logic (HOL) over it. Keep dependencies as close
+# to zero as possible: everything here is trusted unconditionally.
+#
+# DESIGN SKETCH ONLY — see `docs/covalence-pure.md` and `docs/refactor-plan.md`.
+# The concrete API (the `Prop`/`Local`/`Sigma`/`Ker` trait encoding and the
+# two-assumption-set `Fact`) is authored separately; this is the placeholder
+# crate so the dependency edge `covalence-core → covalence-pure` exists.
+
+[dependencies]

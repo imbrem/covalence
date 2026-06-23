@@ -10,6 +10,8 @@ it in.
 
 ## Per-crate registries
 
+- **[`covalence-pure`](crates/covalence-pure/SKELETONS.md)** — empty scaffold
+  crate (the base-logic TCB floor; defines no logic yet).
 - **[`covalence-core`](crates/covalence-core/SKELETONS.md)** — declaration-only
   catalogue ops (no definitional body yet).
 - **[`covalence-hol`](crates/covalence-hol/SKELETONS.md)** — split per module:

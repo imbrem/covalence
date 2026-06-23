@@ -959,6 +959,7 @@ dependencies = [
 name = "covalence-core"
 version = "0.0.0"
 dependencies = [
+ "covalence-pure",
  "covalence-sexp",
  "covalence-types",
  "fnv",
@@ -1215,6 +1216,10 @@ dependencies = [
  "tracing",
  "uuid",
 ]
+
+[[package]]
+name = "covalence-pure"
+version = "0.0.0"
 
 [[package]]
 name = "covalence-python"

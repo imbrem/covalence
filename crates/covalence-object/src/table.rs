@@ -98,6 +98,8 @@ pub enum TableError {
     RowOutOfRange { index: usize, num_entries: usize },
     #[error("entry {index} data is too short for fixed fields")]
     EntryTooShort { index: usize },
+    #[error("entry {index} offset-table entry is out of bounds (corrupt blob)")]
+    BadEntryOffsets { index: usize },
     #[error("offset table entry width {0} is not 1, 2, 4, or 8")]
     BadOffsetWidth(u8),
     #[error("invalid git tree: {0}")]
@@ -600,6 +602,11 @@ impl<'a, S: RowCodec> TableParser<'a, S> {
             data_size
         };
 
+        // entry_start/entry_end come straight from the (untrusted) offset table;
+        // validate before slicing so a corrupt blob errors instead of panicking.
+        if entry_start > entry_end || data_start + entry_end > self.data.len() {
+            return Err(TableError::BadEntryOffsets { index });
+        }
         let entry = &self.data[data_start + entry_start..data_start + entry_end];
         parse_entry(index, entry, &h.schema, h.ot_w)
     }
@@ -731,6 +738,11 @@ impl<R: RowCodec> Table<R> {
             data_size
         };
 
+        // entry_start/entry_end come straight from the (untrusted) offset table;
+        // validate before slicing so a corrupt blob errors instead of panicking.
+        if entry_start > entry_end || data_start + entry_end > self.blob.len() {
+            return Err(TableError::BadEntryOffsets { index });
+        }
         let entry = &self.blob[data_start + entry_start..data_start + entry_end];
         parse_entry(index, entry, &h.schema, h.ot_w)
     }
@@ -960,7 +972,12 @@ fn parse_entry<'a>(
             cursor += w;
         } else if Some(i) == last_dynamic {
             let trailing: usize = schema[i + 1..].iter().map(|s| s.fixed_width()).sum();
-            let end = entry.len() - trailing;
+            // `trailing` (from the schema) can exceed the actual entry length on a
+            // corrupt blob — saturating subtraction would mis-slice, so fail closed.
+            let end = entry
+                .len()
+                .checked_sub(trailing)
+                .ok_or(TableError::EntryTooShort { index })?;
             if cursor > end {
                 return Err(TableError::EntryTooShort { index });
             }

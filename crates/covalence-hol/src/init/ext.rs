@@ -225,7 +225,10 @@ impl TermExt for Term {
 
     fn rw_all(&self, eq: &Thm) -> Result<Thm> {
         let (lhs, _rhs) = eq.concl().as_eq().ok_or(Error::NotAnEquation)?;
-        rw_all_conv(self, lhs, eq)
+        match rw_all_opt(self, lhs, eq)? {
+            Some(thm) => Ok(thm),
+            None => Thm::refl(self.clone()),
+        }
     }
 
     fn delta(&self) -> Result<Thm> {
@@ -259,23 +262,43 @@ impl TermExt for Term {
 }
 
 /// `⊢ t = t'` replacing every occurrence of `lhs` (the LHS of `eq`)
-/// with `eq`'s RHS — a congruence-closure conversion.
+/// with `eq`'s RHS — a congruence-closure conversion. Returns `None`
+/// when `lhs` does not occur in `t` (so `t` is unchanged), and `Some(eq')`
+/// otherwise — the **sharing-preserving** form.
+///
+/// This `None` short-circuit is the whole performance story: descending
+/// every node and building `refl(f).cong_app(refl(x))` (a no-op `⊢ f x =
+/// f x`) for untouched subtrees costs one `Thm` allocation *per node*,
+/// per rewrite. By returning `None` for an unchanged subtree we allocate
+/// congruence proofs only along the spine from the root to the actual
+/// rewrite sites, and never enter the (expensive) `Abs` open/re-abstract
+/// path for a binder whose body `lhs` doesn't touch.
 ///
 /// Descends through `App` (congruence on both sides) and under `Abs`
-/// (open with a fresh variable, rewrite, re-abstract), bottoming out at
-/// a node equal to `lhs` (return `eq` itself) or any other leaf (return
-/// reflexivity). `lhs` is treated as a closed pattern: the fresh
-/// variable under each binder avoids the free variables of the body and
-/// of `eq`, so a closed rewrite never captures. Rewriting with an `lhs`
-/// that mentions a bound variable is out of scope.
-fn rw_all_conv(t: &Term, lhs: &Term, eq: &Thm) -> Result<Thm> {
+/// (open with a fresh variable, rewrite, re-abstract), bottoming out at a
+/// node equal to `lhs` (return `eq` itself). `lhs` is treated as a closed
+/// pattern: the fresh variable under each binder avoids the free
+/// variables of the body and of `eq`, so a closed rewrite never captures.
+/// Rewriting with an `lhs` that mentions a bound variable is out of scope.
+fn rw_all_opt(t: &Term, lhs: &Term, eq: &Thm) -> Result<Option<Thm>> {
     if t == lhs {
-        return Ok(eq.clone());
+        return Ok(Some(eq.clone()));
     }
     if let Some((f, x)) = t.as_app() {
-        let f_eq = rw_all_conv(f, lhs, eq)?;
-        let x_eq = rw_all_conv(x, lhs, eq)?;
-        return f_eq.cong_app(x_eq);
+        let f_eq = rw_all_opt(f, lhs, eq)?;
+        let x_eq = rw_all_opt(x, lhs, eq)?;
+        if f_eq.is_none() && x_eq.is_none() {
+            return Ok(None); // neither side changed — reuse `t`
+        }
+        let f_eq = match f_eq {
+            Some(e) => e,
+            None => Thm::refl(f.clone())?,
+        };
+        let x_eq = match x_eq {
+            Some(e) => e,
+            None => Thm::refl(x.clone())?,
+        };
+        return f_eq.cong_app(x_eq).map(Some);
     }
     if let Some((ty, body)) = t.as_abs() {
         // The witness must avoid the body's frees and `eq`'s frees so
@@ -288,10 +311,12 @@ fn rw_all_conv(t: &Term, lhs: &Term, eq: &Thm) -> Result<Thm> {
         });
         let wit = Term::free(fresh.as_str(), ty.clone());
         let opened = subst::open(body, &wit);
-        let body_eq = rw_all_conv(&opened, lhs, eq)?;
-        return body_eq.abs(fresh.as_str(), ty.clone());
+        return match rw_all_opt(&opened, lhs, eq)? {
+            None => Ok(None), // body unchanged — reuse `t`
+            Some(body_eq) => body_eq.abs(fresh.as_str(), ty.clone()).map(Some),
+        };
     }
-    Thm::refl(t.clone())
+    Ok(None)
 }
 
 /// `⊢ t = t'` δ-unfolding every spine occurrence of a `symbol`-named

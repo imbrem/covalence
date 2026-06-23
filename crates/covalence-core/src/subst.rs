@@ -86,12 +86,25 @@ pub fn close_var(t: &Term, var: &Var) -> Term {
 }
 
 fn close_var_at(t: &Term, var: &Var, depth: u32) -> Term {
+    close_var_opt(t, var, depth).unwrap_or_else(|| t.clone())
+}
+
+/// Sharing-preserving core of [`close_var_at`] (mirrors [`subst_free_opt`]):
+/// `Some(t')` when binding `var` at `depth` *changes* `t`, `None` when it leaves
+/// `t` untouched — so the caller reuses the original `Arc` with **no
+/// allocation**. The bloom is coarse, so an unchanged subtree can still recurse
+/// on a false positive; without this `None` short-circuit every such `App`/`Abs`
+/// was needlessly re-allocated. `all_intro` runs `close` over the whole
+/// `Closed_L ⟹ d ⌜S⌝` (large `Closed_L`, with `d` only inside its applications)
+/// on **every `|-` proof step**, so reusing the unchanged conjuncts instead of
+/// rebuilding them is a big win on the lemma-heavy theorems.
+fn close_var_opt(t: &Term, var: &Var, depth: u32) -> Option<Term> {
     // Bloom skip: no free var named `var.name()` here ⇒ subtree unchanged.
     if !t.free_bloom().contains(var.name()) {
-        return t.clone();
+        return None;
     }
     match t.kind() {
-        TermKind::Free(v) if v == var => Term::bound(depth),
+        TermKind::Free(v) if v == var => Some(Term::bound(depth)),
         TermKind::Bound(_)
         | TermKind::Free(..)
         | TermKind::Const(..)
@@ -107,9 +120,22 @@ fn close_var_at(t: &Term, var: &Var, depth: u32) -> Term {
         | TermKind::SpecRep(..)
         | TermKind::Obs(..)
         | TermKind::Succ
-        | TermKind::Def(_) => t.clone(),
-        TermKind::App(f, x) => Term::app(close_var_at(f, var, depth), close_var_at(x, var, depth)),
-        TermKind::Abs(bty, body) => Term::abs(bty.clone(), close_var_at(body, var, depth + 1)),
+        | TermKind::Def(_) => None,
+        TermKind::App(f, x) => {
+            let f2 = close_var_opt(f, var, depth);
+            let x2 = close_var_opt(x, var, depth);
+            if f2.is_none() && x2.is_none() {
+                None
+            } else {
+                Some(Term::app(
+                    f2.unwrap_or_else(|| f.clone()),
+                    x2.unwrap_or_else(|| x.clone()),
+                ))
+            }
+        }
+        TermKind::Abs(bty, body) => {
+            close_var_opt(body, var, depth + 1).map(|body| Term::abs(bty.clone(), body))
+        }
     }
 }
 

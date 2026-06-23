@@ -2,90 +2,50 @@
 
 ## Declaration-only catalogue ops (no definitional body yet)
 
-These `covalence-core` `defs/` term-specs carry `tm = None`: they are **sound
-and complete on literals** (reduced by `builtins.rs`) but have no open-form
-definitional body, so nothing about them is provable by `unfold_term_spec`.
-Each should become a `let_term!` / `spec_term!` definition (see
-`docs/roadmap.md`). When you add a body, delete it here AND — if the body is
-reducible — add it to the `audit_reduce.rs::audit_reduce_matches_body`
-coupling guard.
+These `defs/` term-specs carry `tm = None`: sound/complete on literals (via
+`builtins.rs`) but no open-form body, so nothing is provable by
+`unfold_term_spec`. Each should become a `let_term!` / `spec_term!` def (see
+`docs/roadmap.md`); on adding a body, delete here and — if reducible — add to
+`audit_reduce.rs::audit_reduce_matches_body`.
 
-- **`sN.shr` (arithmetic right shift), `crates/covalence-core/src/defs/int_ops.rs`**
-  — `op_body` returns `None` for the *signed* `Shr`. Needs a floor-division
-  (round toward −∞), which `int` does not yet expose (`int.div` truncates
-  toward zero). The *unsigned* `uN.shr` and every other `uN`/`sN` op
-  (add/sub/mul/neg/and/or/xor/not/lt/le/gt/ge/shl/div/rem) are now defined.
-- **`nat` ops, `crates/covalence-core/src/defs/nat.rs`** — `natBitAnd/Or/Xor`,
-  `natToBytesLe/Be`, `natFromBytesLe/Be` are `term_decl!`
-  (declaration-only). (`natDiv` now carries a def-style Euclidean selector
-  predicate; it is not let-style, so its `builtins` reduction is checked
-  against the predicate by `nat_div_mod_satisfy_euclidean_law` rather than
-  the unfold-based `audit_reduce_matches_body` coupling guard.)
-- **`bytes` ops, `crates/covalence-core/src/defs/blob.rs`** — `bytesConsNat`,
-  `bytesAt` are declaration-only (need a `nat ↔ u8` conversion).
-- **Fixed-width conversions** (`toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/
-  `sext`, `int_ops.rs`) are **intentionally** declaration-only — the
-  primitive reducible interface the ops above are built on, not a stub.
+- **`sN.shr` (arithmetic right shift), `defs/int_ops.rs`** — needs floor-division
+  (round toward −∞), not yet exposed (`int.div` truncates toward zero).
+- **`nat` ops, `defs/nat.rs`** — `natBitAnd/Or/Xor`, `natToBytesLe/Be`,
+  `natFromBytesLe/Be` are declaration-only (`term_decl!`).
+- **`bytes` ops, `defs/blob.rs`** — `bytesConsNat`, `bytesAt` declaration-only
+  (need a `nat ↔ u8` conversion).
 
-## defs/core.cov migration (partial)
+(Fixed-width conversions `toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/`sext` in
+`int_ops.rs` are *intentionally* declaration-only — the primitive reducible
+interface, not a stub.)
 
-- **`defs/core.cov` + the `defs::cov` parser** migrate part of the catalogue to
-  data (`#def`/`#newtype`/`#subtype`/`#quot` over `covalence-sexp`), byte-identical
-  to the hand-written `defs::*` (asserted in `cov::tests`). **Migrated:** the logic
-  connectives, `fun` combinators, `unit`/`unit.nil`, `coprod`/`prod`/`option`/
-  `result` + ops. **Stayed Rust** (don't fit the four directives): built-in
-  literals, ε-selector primitive specs, recursors, nat/int/rat arithmetic. The
-  accessors still source from Rust (`.cov` proven equal, not yet authoritative) —
-  flipping the source of truth + porting the numeric tower (hand-rolled copy did it)
-  is the follow-up.
+## defs/core.cov source-of-truth flip (deferred, blocked on re-entrancy)
 
-## Hash-consing not yet threaded through the inference rules
+`core.cov` + the `defs::cov` parser mirror part of the catalogue as data, proven
+byte-identical to the hand-written `defs::*` (`cov::tests`), but the accessors
+still source from Rust. Flipping `defs::*` to source from `core_env()` is
+DEFERRED: a prior attempt deadlocked (a `LazyLock` re-entered the same accessor
+during its own init; reverted in `fed9819`). To redo: `parse_core` must resolve
+references from the partial env under construction (or a build-local Rust
+resolver), never the `core_env`-backed accessors — and must be **test-gated**.
+Porting the numeric tower to data is the remaining follow-up.
 
-- **`crate::term::cons` (`TrustedCons`/`TermCons`/`HashCons`/`Checked`) and
-  `crate::ty::cons` (`TrustedTypeCons`/`TypeCons`/`TypeHashCons`) are wired
-  through the smart-constructor baselines (`Term::alloc`/`Type::alloc`),
-  `Term::cons_with` / `Type::cons_with` (deep intern), and every term-rebuilding
-  fn in `subst.rs` (the `*_with` variants). `HashCons` is also a
-  `TrustedTypeCons` (carries a type-cons template, default `TypeHashCons`), so
-  one interner shares both terms and types.** What is *not* yet threaded: the
-  inference rules in `thm/`, `Ctx`, and `hol.rs` builders all construct via the
-  plain (`&mut ()`) constructors / plain `subst::*`, so a proof does not share
-  one interner end-to-end — interning only happens when a caller explicitly
-  routes through a `*_with` API. Threading a caller-supplied
-  `&mut dyn TrustedCons` (now also a type cons) through the rule surface (and a
-  `Ctx`-owned interner) is the follow-up that turns this from "available" into
-  "on by default for large proofs". After the per-node `TermInfo` type cache
-  landed, the list-bootstrap profile is dominated by **allocation** (~29%) —
-  exactly what end-to-end interning would cut. Soundness is unaffected either way
-  (the rules already accept any structurally-equal term).
-- **Future:** the `TermInfo::Wf(Type)` cache could intern its cached types via
-  the type cons (today they are freshly allocated in `term_info`); fold this in
-  when the interner is threaded through construction.
+## Hash-consing not threaded through the inference rules
+
+Term/type interners (`term::cons`, `ty::cons`) are wired through the
+smart-constructor baselines and the `*_with` subst variants, but the rules in
+`thm/`, `Ctx`, and `hol.rs` builders construct via plain constructors, so a proof
+does not share one interner end-to-end. Thread a caller-supplied
+`&mut dyn TrustedCons` through the rule surface (+ a `Ctx`-owned interner) to make
+it on-by-default; this would cut the ~29% allocation dominating the list-bootstrap
+profile. Soundness unaffected either way. (Then also intern `TermInfo::Wf(Type)`
+cached types, currently freshly allocated.)
 
 ## Name-only `subst::close` should move out of the TCB
 
-- **`subst::close(t, name)` (name-only) is a construction convenience that does
-  not belong in the trusted kernel.** Free variables are identified by `(name,
-  type)` ([`Var`]); the kernel rules that take arbitrary theorem terms (`abs`,
-  `all_intro`, `inst`, `nat_induct`) already use the type-aware `close_var` /
-  `subst_free(&Var)` / `has_free_var_typed(&Var)`. The name-only `close` remains
-  only because ~169 *construction* sites in `covalence-hol`'s `init/` (almost all
-  `Term::abs(ty, subst::close(&body, name))`, where the name has a single known
-  type by construction) still call it. It is sound there, but it is trusted code
-  earning its keep only as a convenience. **Eventually remove it from
-  `covalence-core` and reimplement it in userspace** (e.g. `covalence-hol`'s
-  `TermExt`, untrusted) — or migrate the 169 sites to `close_var(&Var::new(name,
-  ty))`. Slims the TCB surface; deferred only for the call-site churn.
-
-## defs source-of-truth flip — reverted, pending re-entrancy fix
-
-- **Flipping the public `defs::*` accessors to source from `core_env()` is
-  DEFERRED.** An attempt (merge `f349a58`) made `defs::and()` → `spec("bool.and")`
-  → `core_env()` (a `LazyLock`) whose own init (`parse_core` over `core.cov`)
-  re-entered the same accessor on the same thread → **std `LazyLock` deadlock**,
-  freezing the whole `covalence-hol` suite. Reverted (`fed9819`). To redo safely:
-  `parse_core` must resolve catalogue references from the **partial env under
-  construction** (or a build-local Rust resolver), NEVER from the `core_env`-backed
-  `defs::*` accessors — and the change must be **test-gated** (the original was
-  build-only). `core.cov` + the byte-identical `cov::tests` remain in place; the
-  accessors stay Rust-sourced (`.cov` proven-equal but not yet authoritative).
+`subst::close(t, name)` is a trusted construction convenience that doesn't belong
+in the kernel (rules taking arbitrary theorem terms already use the type-aware
+`close_var` / `subst_free` / `has_free_var_typed`). It remains only because ~169
+`init/` construction sites in `covalence-hol` call it. Eventually reimplement in
+userspace (`TermExt`) or migrate the call sites to `close_var(&Var::new(...))`.
+Deferred for call-site churn.

@@ -2,8 +2,8 @@
 /**
  * Profile the `covalence-hol` init test suite and emit a single machine-readable
  * JSON object to stdout: hardware performance counters (`perf stat`), peak
- * memory (GNU `time -v`), per-`.cov`-file evaluation timings (`COV_PROFILE`),
- * and the libtest pass/fail summary.
+ * memory (GNU `time -v`), per-`.cov`-file evaluation timings and a ranked
+ * per-`cached_thm!` breakdown (`COV_PROFILE`), and the libtest pass/fail summary.
  *
  * Usage:
  *   bun scripts/profile-init.mjs [test-filter]    # default filter: "init"
@@ -127,14 +127,34 @@ if (gtime) {
   } catch { log("GNU time -v: no output"); }
 }
 
-// 3c. COV_PROFILE per-.cov timings, normalised to ms.
-const covMs = (s, u) => (u === "µs" ? Number(s) / 1000 : u === "ms" ? Number(s) : Number(s) * 1000);
+// 3c. COV_PROFILE timings (`[cov-profile] <label>: <Duration>`), normalised to
+// ms. Two label kinds share this stream: `cov:<file>` (a `.cov` replay) and a
+// bare `<name>` (one `cached_thm!` build). We split them into `cov_files` and a
+// ranked `theorems` list — the latter is the per-theorem breakdown that points
+// at the next hotspot. Note: timings are *inclusive* (a parent build's time
+// covers any nested `cached_thm!` it triggers on first use), so the numbers do
+// not partition the total — read them as "wall time to build this, warts and
+// all", and subtract a child from its parent when attributing.
+const covMs = (s, u) =>
+  u === "ns" ? Number(s) / 1e6
+  : u === "µs" ? Number(s) / 1000
+  : u === "ms" ? Number(s)
+  : Number(s) * 1000; // "s"
 const cov_files = [];
+const theorems = [];
 for (const line of runStderr.split("\n")) {
-  const m = line.match(/\[cov-profile\] cov:([^:]+): ([\d.]+)(µs|ms|s)/);
-  if (m) cov_files.push({ file: m[1], ms: Number(covMs(m[2], m[3]).toFixed(3)) });
+  const m = line.match(/\[cov-profile\] (\S.*?): ([\d.]+)(ns|µs|ms|s)\b/);
+  if (!m) continue;
+  const ms = Number(covMs(m[2], m[3]).toFixed(3));
+  if (m[1].startsWith("cov:")) cov_files.push({ file: m[1].slice(4), ms });
+  else theorems.push({ name: m[1], ms });
 }
 cov_files.sort((a, b) => b.ms - a.ms);
+theorems.sort((a, b) => b.ms - a.ms);
+// Bound the output: the long tail of sub-millisecond builds is noise.
+const TOP_THEOREMS = 40;
+const theorems_top = theorems.slice(0, TOP_THEOREMS);
+const theorems_total_ms = Number(theorems.reduce((s, t) => s + t.ms, 0).toFixed(3));
 
 // 3d. libtest summary.
 let tests = {};
@@ -174,6 +194,11 @@ const out = {
   },
   tests,
   cov_files,
+  // Per-`cached_thm!` build times (inclusive of nested builds), ranked. The
+  // `count`/`total_ms` reflect every timed theorem; `theorems` is the top slice.
+  theorems_count: theorems.length,
+  theorems_total_ms,
+  theorems: theorems_top,
 };
 console.log(JSON.stringify(out, null, 2));
 process.exit(run.exitCode ?? 0);

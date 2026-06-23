@@ -2,7 +2,8 @@
 
 Open placeholders in the regex → byte-predicate compiler + matching tactic (the
 regular base case used by every grammar front end). See
-[CLAUDE.md](../../../../CLAUDE.md) § Skeletons.
+[CLAUDE.md](../../../../CLAUDE.md) § Skeletons, the
+[crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
 
 ## Severe / blocking
 

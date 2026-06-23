@@ -1,6 +1,6 @@
 # covalence-spectec — skeletons
 
-Intentional placeholders in `crates/covalence-spectec`. See [CLAUDE.md](../../CLAUDE.md) § Skeletons.
+Intentional placeholders in `crates/covalence-spectec`. See [CLAUDE.md](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
 
 ## Removed (recover from git history)
 

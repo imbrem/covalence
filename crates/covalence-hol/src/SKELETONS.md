@@ -1,8 +1,8 @@
 # Skeletons — `covalence-hol/src` (crate-root modules)
 
 Placeholders in crate-root `src/*.rs` (modules without their own
-`SKELETONS.md`). See [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the
-[crate index](../SKELETONS.md).
+`SKELETONS.md`). See [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons, the
+[crate index](../SKELETONS.md), and the [root index](../../../SKELETONS.md).
 
 ## `project.rs` — multi-file `.cov` project loader
 

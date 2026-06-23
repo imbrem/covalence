@@ -1,5 +1,7 @@
 # Skeletons — covalence-core
 
+See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
+
 ## Declaration-only catalogue ops (no definitional body yet)
 
 These `defs/` term-specs carry `tm = None`: sound/complete on literals (via

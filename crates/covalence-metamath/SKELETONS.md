@@ -5,17 +5,7 @@ reader, the lower HOL-free crate). Consumer-side bridge deferrals (`#logic` /
 `Derivable_L`, the import tactic + representation-equivalence metatheorem) live in
 `covalence-hol` ([`metalogic/SKELETONS.md`](../covalence-hol/src/metalogic/SKELETONS.md),
 [`peano/SKELETONS.md`](../covalence-hol/src/peano/SKELETONS.md)). See repo
-[`CLAUDE.md`](../../CLAUDE.md) § Skeletons.
-
-## Blocking — real-data HOL replay
-
-- **`replay_db` over compressed proofs.** [`replay_db`](../covalence-hol/src/metalogic/mm_database.rs)
-  accepts only `Proof::Normal`, rejecting `Proof::Compressed`. But every `$p`
-  proof in `hol.mm` (and most of `set.mm`) is compressed, so no `hol.mm` theorem
-  can yet be replayed into a kernel HOL theorem. Missing: a **decompress-to-normal**
-  pass exposing `decompress_proof`'s step sequence as a flat RPN label list (re-
-  expanding `Z`/heap backreferences), fed to `replay_db` (or teach `replay_db` to
-  consume `ProofStep`s). Also tracked in `covalence-hol`'s `metalogic/SKELETONS.md`.
+[`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
 
 ## Deferred features (north stars)
 

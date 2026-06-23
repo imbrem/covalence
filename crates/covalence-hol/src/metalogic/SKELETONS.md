@@ -1,9 +1,9 @@
 # Skeletons — `covalence-hol/src/metalogic`
 
 Open work in the **metalogic** layer: the generic `Derivable_L` engine, databases
-as HOL values, and Metamath import/replay. See `CLAUDE.md` § Skeletons and the
-[crate index](../../SKELETONS.md). Design: `docs/theories-models-and-logics.md`
-§5.5/§5.6.
+as HOL values, and Metamath import/replay. See `CLAUDE.md` § Skeletons, the
+[crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
+Design: `docs/theories-models-and-logics.md` §5.5/§5.6.
 
 ## Severe
 
@@ -24,6 +24,10 @@ as HOL values, and Metamath import/replay. See `CLAUDE.md` § Skeletons and the
 
 ## Minor
 
+- **`replay_prop` rejects compressed proofs.** The general `replay_db` path
+  decompresses via `metamath::proof_steps`, but the Prop-specific
+  `mm_replay::replay_prop` still accepts only `Proof::Normal`. Route it through
+  `proof_steps` (or retire it in favour of `replay_db`).
 - **Tie the Rust `RuleSet` to a first-class HOL `Database` value.** `mm_database`'s
   rule set is a Rust closure, not yet a HOL `db` value à la `database.rs`'s
   `Derivable_DB`.

@@ -1,5 +1,8 @@
 # Skeletons — `covalence-hol/src/ring`
 
+See [`CLAUDE.md`](../../../../CLAUDE.md) § Skeletons, the
+[crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
+
 **Ring rewriter** (`normalize.rs` — `RingNormalizer` / `RingOps`).
 
 **In place:** a general `(+, ·, 0, 1)` normalizer to a canonical

@@ -1,5 +1,7 @@
 # Skeletons — covalence-kernel
 
+See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
+
 ## Empty / stub modules
 
 - **`src/facts.rs`** — empty module. The observer layer recording and

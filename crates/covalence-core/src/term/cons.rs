@@ -127,6 +127,15 @@ pub trait TrustedCons: sealed::Sealed {
             None => Term::alloc(kind),
         }
     }
+
+    /// True iff this constructor never interns — the no-op `()`. Lets
+    /// [`Term::cons_with`] short-circuit to an identity (`self.clone()`, one
+    /// `Arc` bump) instead of a deep structural rebuild when there is nothing to
+    /// intern: callers thread `&mut ()` through a shared "intern if asked" path
+    /// (e.g. the plain Metamath import) and must not pay a per-term deep copy.
+    fn is_noop(&self) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +151,11 @@ impl TrustedCons for () {
     #[inline]
     fn cons(&mut self, _kind: &TermKind) -> Option<Term> {
         None
+    }
+
+    #[inline]
+    fn is_noop(&self) -> bool {
+        true
     }
 }
 

@@ -718,6 +718,11 @@ impl Term {
     /// every leaf is consed from a clone of its kind. `Def` is treated as
     /// an opaque leaf — its body is not interned.
     pub fn cons_with<C: crate::term::TrustedCons + ?Sized>(&self, cons: &mut C) -> Term {
+        // The no-op `()` interns nothing, so a rebuild would just deep-copy an
+        // already-equal term — short-circuit to an identity (one `Arc` bump).
+        if cons.is_noop() {
+            return self.clone();
+        }
         let kind = match self.kind() {
             TermKind::App(f, x) => TermKind::App(f.cons_with(cons), x.cons_with(cons)),
             TermKind::Abs(ty, body) => TermKind::Abs(ty.clone(), body.cons_with(cons)),

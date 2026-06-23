@@ -161,6 +161,18 @@ pub fn encode(body: &[impl AsRef<str>], resolve: &dyn Fn(&str) -> Result<Term>) 
 // The former grammar + parser (compact, former-structured encoding)
 // ============================================================================
 
+/// Packrat memo for one expression parse: `(typecode id, position) →`
+/// `parse result`. A `None` value records a *cached failure* (no parse at
+/// that typecode/position), so neither successes nor failures are recomputed
+/// during backtracking. Scoped to a single [`Parser::encode_expr`] call, so
+/// the [`Parser`] itself stays immutable and `Sync` for the parallel import.
+type Memo = HashMap<(u32, usize), Option<(Term, usize)>>;
+
+/// Sentinel typecode id for [`Parser::parse_any_at`] (which tries every
+/// former regardless of result typecode). Distinct from any real typecode id
+/// (those are a dense range from 0).
+const ANY_TC: u32 = u32::MAX;
+
 /// A syntactic former (a non-`|-` assertion = a grammar production): its result
 /// typecode, the body pattern, and the metavar→typecode map of its floats.
 #[derive(Clone)]
@@ -187,6 +199,13 @@ pub struct Parser<'a> {
     /// The distinct former result-typecodes in database-first-seen order
     /// (precomputed candidate start symbols for a whole-`|-`-body parse).
     typecodes: Vec<String>,
+    /// `typecode → small dense id`, covering every typecode that can be a
+    /// parse target (former result typecodes + `$f` float typecodes). Used as
+    /// the packrat memo key `(id, pos)` so backtracking re-parses of the same
+    /// `(typecode, position)` are cached instead of recomputed — turning the
+    /// recursive-descent parse of a deeply-nested expression from
+    /// exponential to linear.
+    tc_id: HashMap<String, u32>,
     /// Every declared `$f` floating hypothesis's `var → typecode`, gathered from
     /// the *whole* database (not just former frames — a variable's `$f` may be
     /// introduced for a `|-` assertion, e.g. demo0's `s`).
@@ -250,11 +269,26 @@ impl<'a> Parser<'a> {
                 .entry(var.clone())
                 .or_insert_with(|| leaf(db, var));
         }
+        // Dense ids for every typecode that can be a parse target: former
+        // result typecodes and every float typecode (the recursive
+        // sub-expression targets). Keys the packrat memo.
+        let mut tc_id: HashMap<String, u32> = HashMap::default();
+        let intern_tc = |tc: &str, map: &mut HashMap<String, u32>| {
+            let next = map.len() as u32;
+            map.entry(tc.to_string()).or_insert(next);
+        };
+        for f in &formers {
+            intern_tc(&f.typecode, &mut tc_id);
+            for (_, sub_tc) in &f.floats {
+                intern_tc(sub_tc, &mut tc_id);
+            }
+        }
         Parser {
             db,
             formers,
             by_typecode,
             typecodes,
+            tc_id,
             var_tc,
             leaves,
         }
@@ -269,18 +303,29 @@ impl<'a> Parser<'a> {
     /// syntactic sub-expressions are parsed compactly and every other token is a
     /// literal constant — which still makes a `|-` schema's metavar positions
     /// (single typed-variable leaves) line up with substituted instances.
+    ///
+    /// Parsing is **packrat-memoized** (see [`Memo`]): a recursive-descent
+    /// parse of this grammar backtracks (every infix former re-parses its left
+    /// operand under each candidate operator), which is exponential in nesting
+    /// depth on large set.mm expressions. The memo caches each
+    /// `(typecode, position)` result, making the whole encode linear.
     pub fn encode_expr(&self, e: &Expr) -> Result<Term> {
         let body = body_of(e).ok_or_else(|| replay_err("malformed statement (no body)"))?;
         let toks: Vec<&str> = body.iter().map(|s| s.as_str()).collect();
+        let mut memo: Memo = Memo::default();
         if self.by_typecode.contains_key(e.typecode()) {
-            let (term, rest) = self.parse(e.typecode(), &toks)?;
-            if !rest.is_empty() {
-                return Err(replay_err(format!(
+            return match self.parse_at(e.typecode(), &toks, 0, &mut memo) {
+                Some((term, end)) if end == toks.len() => Ok(term),
+                Some(_) => Err(replay_err(format!(
                     "trailing symbols after parsing `{}`",
                     e.render()
-                )));
-            }
-            return Ok(term);
+                ))),
+                None => Err(replay_err(format!(
+                    "cannot parse a `{}` from `{}`",
+                    e.typecode(),
+                    toks.join(" ")
+                ))),
+            };
         }
         // No production for this typecode (the `|-` provability layer). First
         // try to parse the *whole* body as a single expression of some former
@@ -289,29 +334,29 @@ impl<'a> Parser<'a> {
         // fall back to greedy token-by-token encoding (raw `|-` bodies with no
         // top-level production, e.g. the GROUP theory's `( a = a )`).
         for tc in &self.typecodes {
-            if let Ok((term, rest)) = self.parse(tc, &toks)
-                && rest.is_empty()
+            if let Some((term, end)) = self.parse_at(tc, &toks, 0, &mut memo)
+                && end == toks.len()
             {
                 return Ok(term);
             }
         }
-        self.encode_greedy(&toks)
+        self.encode_greedy(&toks, &mut memo)
     }
 
     /// Greedily encode a token sequence with no top-level production: walk left
     /// to right, parsing a maximal syntactic sub-expression where one starts and
     /// otherwise taking the token as a literal constant leaf; right-fold the
     /// resulting node sequence with [`concat`].
-    fn encode_greedy(&self, toks: &[&str]) -> Result<Term> {
+    fn encode_greedy(&self, toks: &[&str], memo: &mut Memo) -> Result<Term> {
         let mut nodes: Vec<Term> = Vec::new();
-        let mut rest = toks;
-        while let Some((head, tail)) = rest.split_first() {
-            if let Some((node, after)) = self.parse_any(rest)? {
+        let mut pos = 0;
+        while pos < toks.len() {
+            if let Some((node, end)) = self.parse_any_at(toks, pos, memo) {
                 nodes.push(node);
-                rest = after;
+                pos = end;
             } else {
-                nodes.push(self.leaf(head));
-                rest = tail;
+                nodes.push(self.leaf(toks[pos]));
+                pos += 1;
             }
         }
         // Right-fold the nodes into nested `concat`s.
@@ -326,69 +371,96 @@ impl<'a> Parser<'a> {
     }
 
     /// Try to parse a *non-leaf* syntactic sub-expression (any former typecode)
-    /// off the front of `toks`. Returns `None` if none applies (the caller then
-    /// treats the head as a literal `|-`-structural token). A bare typed
-    /// variable is intentionally *not* matched here — it is taken as a leaf by
-    /// the caller, which is the right granularity for a `|-` schema's metavars.
-    fn parse_any<'t>(&self, toks: &'t [&'t str]) -> Result<Option<(Term, &'t [&'t str])>> {
+    /// at `pos`. Returns `None` if none applies (the caller then treats the
+    /// token as a literal `|-`-structural token). A bare typed variable is
+    /// intentionally *not* matched here — it is taken as a leaf by the caller,
+    /// which is the right granularity for a `|-` schema's metavars. Memoized
+    /// under the sentinel typecode id [`ANY_TC`].
+    fn parse_any_at(&self, toks: &[&str], pos: usize, memo: &mut Memo) -> Option<(Term, usize)> {
+        if let Some(cached) = memo.get(&(ANY_TC, pos)) {
+            return cached.clone();
+        }
+        let mut res = None;
         for f in &self.formers {
-            if let Some((term, rest)) = self.try_former(f, toks)? {
-                return Ok(Some((term, rest)));
+            if let Some(hit) = self.try_former_at(f, toks, pos, memo) {
+                res = Some(hit);
+                break;
             }
         }
-        Ok(None)
+        memo.insert((ANY_TC, pos), res.clone());
+        res
     }
 
-    /// Parse one expression of typecode `tc` off the front of `toks`, returning
-    /// the compact encoding and the remaining tokens. A lone metavariable of
-    /// typecode `tc` is a leaf; otherwise the longest-matching former applies.
-    fn parse<'t>(&self, tc: &str, toks: &'t [&'t str]) -> Result<(Term, &'t [&'t str])> {
+    /// Parse one expression of typecode `tc` at `pos`, returning the compact
+    /// encoding and the next position. A lone metavariable of typecode `tc` is
+    /// a leaf; otherwise the first-matching former applies. Packrat-memoized on
+    /// `(tc id, pos)` — the cache that turns the backtracking parse linear.
+    fn parse_at(&self, tc: &str, toks: &[&str], pos: usize, memo: &mut Memo) -> Option<(Term, usize)> {
+        // Typecodes that can be parse targets all have ids; if one somehow
+        // doesn't, fall through uncached (correctness over speed).
+        if let Some(&id) = self.tc_id.get(tc) {
+            if let Some(cached) = memo.get(&(id, pos)) {
+                return cached.clone();
+            }
+            let res = self.parse_uncached(tc, toks, pos, memo);
+            memo.insert((id, pos), res.clone());
+            res
+        } else {
+            self.parse_uncached(tc, toks, pos, memo)
+        }
+    }
+
+    /// The body of [`parse_at`] (without the memo lookup/store).
+    fn parse_uncached(
+        &self,
+        tc: &str,
+        toks: &[&str],
+        pos: usize,
+        memo: &mut Memo,
+    ) -> Option<(Term, usize)> {
         // A bare metavariable of this typecode (its `$f` typecode must match).
-        if let Some((head, rest)) = toks.split_first()
+        if let Some(head) = toks.get(pos)
             && self.db.is_variable(head)
             && self.var_typecode(head) == Some(tc)
         {
-            return Ok((self.leaf(head), rest));
+            return Some((self.leaf(head), pos + 1));
         }
         // Try each former whose result typecode is `tc` (via the typecode index,
         // database order preserved); first full match wins.
         if let Some(idxs) = self.by_typecode.get(tc) {
             for &i in idxs {
-                if let Some((term, rest)) = self.try_former(&self.formers[i], toks)? {
-                    return Ok((term, rest));
+                if let Some(hit) = self.try_former_at(&self.formers[i], toks, pos, memo) {
+                    return Some(hit);
                 }
             }
         }
-        Err(replay_err(format!(
-            "cannot parse a `{tc}` from `{}`",
-            toks.join(" ")
-        )))
+        None
     }
 
-    /// Attempt to match former `f` against the front of `toks`. On success
-    /// returns the compact encoding (the former body re-folded with its
-    /// metavars filled by the parsed sub-trees) and the rest.
-    fn try_former<'t>(
+    /// Attempt to match former `f` at `pos`. On success returns the compact
+    /// encoding (the former body re-folded with its metavars filled by the
+    /// parsed sub-trees) and the next position.
+    fn try_former_at(
         &self,
         f: &Former,
-        mut toks: &'t [&'t str],
-    ) -> Result<Option<(Term, &'t [&'t str])>> {
+        toks: &[&str],
+        mut pos: usize,
+        memo: &mut Memo,
+    ) -> Option<(Term, usize)> {
         // Formers have only a handful of floats, so a small Vec with a linear
         // scan beats a HashMap (no hashing, no map allocation) on this hot path.
         let mut args: Vec<(&str, Term)> = Vec::new();
         for pat in &f.body {
             if let Some((_, sub_tc)) = f.floats.iter().find(|(v, _)| v == pat) {
                 // A metavar position: recursively parse a sub-expression.
-                let Ok((sub, rest)) = self.parse(sub_tc, toks) else {
-                    return Ok(None);
-                };
+                let (sub, end) = self.parse_at(sub_tc, toks, pos, memo)?;
                 args.push((pat.as_str(), sub));
-                toks = rest;
+                pos = end;
             } else {
                 // A literal constant: it must match the next input token.
-                match toks.split_first() {
-                    Some((head, rest)) if head == pat => toks = rest,
-                    _ => return Ok(None),
+                match toks.get(pos) {
+                    Some(head) if *head == pat => pos += 1,
+                    _ => return None,
                 }
             }
         }
@@ -399,8 +471,9 @@ impl<'a> Parser<'a> {
                 None => self.leaf(tok),
             })
         };
-        let term = encode(&f.body, &resolve)?;
-        Ok(Some((term, toks)))
+        // `encode` only fails on an empty body, which a former never has.
+        let term = encode(&f.body, &resolve).ok()?;
+        Some((term, pos))
     }
 
     /// The `$f` typecode declared for variable `var`, if any.

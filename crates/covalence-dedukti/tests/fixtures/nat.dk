@@ -1,0 +1,35 @@
+(; A small Dedukti signature: Peano naturals with addition, exercising
+   declarations, definitions, rewrite rules, dependent products, lambdas,
+   qualified identifiers, AC declarations, and a few commands. ;)
+
+#NAME nat.
+
+Nat : Type.
+zero : Nat.
+succ : Nat -> Nat.
+
+(; a dependent product and a lambda ;)
+def id : a : Type -> a -> a
+       := a : Type => x : a => x.
+
+(; addition, defined by rewrite rules over a context ;)
+def plus : Nat -> Nat -> Nat.
+[ m ]    plus zero m         --> m.
+[ n, m ] plus (succ n) m     --> succ (plus n m).
+
+(; multiple rules sharing one terminating dot, with a named rule ;)
+def mult : Nat -> Nat -> Nat.
+[ m ]    mult zero m     --> zero
+{mult_succ} [ n, m ] mult (succ n) m --> plus m (mult n m).
+
+injective f : Nat -> Nat.
+
+defac gcd [Nat].
+defacu lcm [Nat, succ zero].
+
+thm one_plus : Nat := plus (succ zero) zero.
+
+#CHECK plus zero zero : Nat.
+#ASSERT plus (succ zero) zero == succ zero.
+#EVAL[SNF] plus (succ zero) (succ zero).
+#PRINT "done".

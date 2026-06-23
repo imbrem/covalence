@@ -1,0 +1,12 @@
+[package]
+name = "covalence-dedukti"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+# The lower, HOL-free crate: the λΠ-calculus-modulo term model and the `.dk`
+# reader live here, depending on nothing in the kernel. `covalence-hol` will
+# depend on *this* crate (a HOL-backed consumer that internalises Dedukti
+# derivations), not the other way around — mirroring `covalence-metamath`.
+smol_str = "0.3"
+thiserror = "2"

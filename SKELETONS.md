@@ -32,6 +32,13 @@ it in.
   pluggable backends, the structured-tree encoding. (The HOL-consuming bridge —
   import tactic + representation-equivalence metatheorem — is tracked in
   `covalence-hol`'s `metalogic`/`peano` registries.)
+- **[`covalence-dedukti`](crates/covalence-dedukti/SKELETONS.md)** — the `.dk`
+  reader for the λΠ-calculus modulo rewriting (the lower, HOL-free crate,
+  mirroring `covalence-metamath`): lexer + parser + faithful AST are done;
+  deferred are `#REQUIRE`/module resolution, scope resolution, dot-pattern
+  semantics, and — the end goal — a λΠ-modulo checker plus the `covalence-hol`
+  internalisation of Dedukti derivations and cross-theory (MLTT ↔ set-theory)
+  metatheorems.
 
 A crate with no skeletons has no file. When you add the first skeleton to a
 crate (or module) without one, create its `SKELETONS.md` and link it here (or

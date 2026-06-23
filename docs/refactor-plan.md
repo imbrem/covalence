@@ -7,9 +7,11 @@
 > execute the moves. Companion to [`covalence-pure.md`](./covalence-pure.md)
 > (the base-logic design) and [`roadmap.md`](./roadmap.md).
 
-The repo has grown to ~40 crates and `covalence-hol` alone is ~60k lines —
-much of it superseded now that the focus is the Metamath substrate and the
-three-layer kernel. The goals of the refactor are, in order:
+The repo has grown to ~45 crates and `covalence-hol` alone is ~60k lines. The
+problem is **legibility, not obsolescence**: most of `covalence-hol`'s *content*
+is kept — the catalogue, the theories, the proof machinery, the Metamath bridge
+are all live — but it has accreted into one megacrate that is hard to navigate.
+The refactor *factors* it, it does not gut it. The goals, in order:
 
 1. **Introduce `covalence-pure`** — a small, high-trust first-order base logic.
 2. **Split `covalence-hol`** into a HOL-utilities crate (no `covalence-core`
@@ -201,9 +203,30 @@ features is an explicit later decision.)
 ## 5. Crate subgroups (legibility)
 
 There are many `covalence-*` crates; flat `crates/*` no longer reads clearly.
-Proposed grouping (Cargo supports `members = ["crates/*/*"]` globs), as a
-**proposal for a dedicated move-branch** — it is a large, mechanical, churny diff
-best done alone:
+The actual internal dependency graph is rendered in
+[`crate-graph.md`](./crate-graph.md) (regenerate with the script below).
+
+**Recommendation: do the grouping, but *last*** — after the `hol` split (§3–4)
+and the cruft sweep (§6). Reasons:
+
+- Directory nesting is **cosmetic to Cargo** (path deps don't care) yet churns
+  every `path = "../x"` → `path = "../../wrap/x"` and conflicts with every
+  in-flight branch/worktree (there are many). So it must be one mechanical commit
+  landed when branch activity is low — *not* interleaved with the real work.
+- Grouping **does not reduce "too much"** by itself; it relocates it. The real
+  cognitive load is the `hol` megacrate, dead experiments, and a sprawling
+  SKELETONS registry. Fix those first, *then* the surviving crates group cleanly.
+- It helps **people more than agents** (agents navigate by grep/path already);
+  the human win is a clear "where does this live" map and a visually obvious TCB
+  boundary (`kernel/`).
+
+The graph also surfaced a **layering inversion to resolve first**:
+`covalence-wasm → covalence-core` (a wrapper depending on the TCB), which drags
+`core` into `sat`/`lsp`/`wasm-store` transitively. Decide its tier (or cut the
+edge) before drawing group boundaries.
+
+Proposed grouping (Cargo supports `members = ["crates/*/*"]` globs), for the
+dedicated move-branch:
 
 | Group | Crates (illustrative) |
 |---|---|
@@ -228,11 +251,11 @@ on a cleanup branch (do **not** blanket-delete; confirm each is unreferenced):
   the new `covalence-kernel` re-export façade.
 - **Legacy `covalence-kernel`** internals (arena + egraph + UF, ~670 LoC) —
   superseded; the name is reused for the new re-export façade.
-- **`covalence-forsp`** (1.7k), **`covalence-fuse`** (619), **`covalence-lean`**
-  (1.4k), **`covalence-grammar`** (1.5k) — assess whether still on the critical
-  path or experiments to archive to a branch.
-- **`covalence-egglog`** / **`covalence-alethe`** — keep if SMT/Alethe is still a
-  near-term target (it is a north star, §7), else archive.
+- **`covalence-forsp`** (1.7k), **`covalence-fuse`** (619), **`covalence-grammar`**
+  (1.5k) — assess whether still on the critical path or experiments to archive.
+- **Keep — these are north-star seeds, not cruft:** `covalence-lean` (the
+  type-theory / MLTT seed, §7), `covalence-egglog` / `covalence-alethe` / SMT
+  (the sledgehammer), `covalence-opentheory` (folds into the new `covalence-hol`).
 - Stale **docs sketches** (§8).
 
 Each removal is its own small commit so it can be cherry-picked / reverted.
@@ -241,9 +264,24 @@ Each removal is its own small commit so it can be cherry-picked / reverted.
 
 ## 7. North stars (long-term, to align — not to build now)
 
-These shape the design without being scheduled work:
+These shape the design without being scheduled work. The unifying picture:
+**many first-class proof systems, related through a universal substrate.** We
+want, as first-class citizens — not afterthoughts —:
 
-- **Full Lisp support, and in particular ACL2** — internalizing ACL2 proofs.
+- **Generalized Haskell** — first-class (much of `covalence-hol` exists for this;
+  it is *not* superseded).
+- **ACL2 / full Lisp** — internalizing ACL2 proofs.
+- **Type theories** — MLTT-style (Lean; `covalence-lean` is the seed),
+  LF-style, and **HoTT** in the long run.
+- **Metamath as the universal substrate** — the role of `covalence-metamath` is
+  to be the common ground these systems **relate to each other** through: a place
+  to *state the initial inter-system correctness theorems*. It is **not** a
+  communication/interchange format used in practice — systems don't talk *in*
+  Metamath; Metamath is where "system A's theorem corresponds to system B's" is
+  *stated* and certified.
+
+Plus the executor/tooling north stars:
+
 - **WASM acceleration + content-addressing** — givens (`covalence-eval` /
   `covalence-cons`).
 - **A "sketching" API for verified WASM programs** — e.g. parsing regexen

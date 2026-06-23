@@ -61,9 +61,13 @@ Above the kernel: `covalence-kernel` exposes the low-level **programmatic** API
 (init + content-addressing + WASM), and `covalence-lang` will be the high-level
 language. Everything else depends on one of those two.
 
-Separately, **`covalence-hol` is re-introduced** as a HOL-flavored analogue of
-`covalence-metamath`: a crate of HOL utilities / proof-format consumers that does
-**not** depend on `covalence-core` (§4).
+**The name `covalence-hol` is repurposed.** Today's heavy `covalence-hol`
+*content* moves wholesale into **`covalence-init` and its subcrates** (§3); the
+freed name `covalence-hol` is then **re-introduced as a thin crate, exactly like
+`covalence-metamath`** — HOL utilities / proof-format consumers, depending **not**
+on `covalence-core` (§4). So after the move: `covalence-hol` = thin HOL substrate
+(peer of `covalence-metamath`); `covalence-init` = the semi-trusted API family
+that used to *be* `covalence-hol`.
 
 ---
 

@@ -223,9 +223,9 @@ impl fmt::Display for Def {
 /// provably lack a name without recursing.
 #[derive(Debug)]
 enum TermInfo {
-    Open { bvi: u32, free: Bloom },
-    Wf { free: Bloom, ty: Type },
-    IllTyped { free: Bloom },
+    Open { bvi: u32, free: Bloom, fp: u16 },
+    Wf { free: Bloom, fp: u16, ty: Type },
+    IllTyped { free: Bloom, fp: u16 },
 }
 
 impl TermInfo {
@@ -234,7 +234,19 @@ impl TermInfo {
         match self {
             TermInfo::Open { free, .. }
             | TermInfo::Wf { free, .. }
-            | TermInfo::IllTyped { free } => *free,
+            | TermInfo::IllTyped { free, .. } => *free,
+        }
+    }
+
+    /// The structural fingerprint (see [`compute_fp`]), common to every
+    /// variant. Lives in the 16 bits of padding the variant tag + `Bloom`
+    /// leave before the 8-byte-aligned `Type` pointer, so it costs no extra
+    /// space.
+    fn fp(&self) -> u16 {
+        match self {
+            TermInfo::Open { fp, .. }
+            | TermInfo::Wf { fp, .. }
+            | TermInfo::IllTyped { fp, .. } => *fp,
         }
     }
 }
@@ -288,6 +300,61 @@ fn compute_free(kind: &TermKind) -> Bloom {
         // `subst_free` (treated as a leaf), and the rest carry none.
         _ => Bloom::empty(),
     }
+}
+
+/// A 16-bit **structural fingerprint** of a node, combined Merkle-style from
+/// its children's fingerprints and a per-constructor tag. Cached in each
+/// [`TermInfo`] (in otherwise-wasted padding) so [`Term::cmp`] / equality can
+/// reject distinct terms in O(1) without walking a shared prefix.
+///
+/// The only contract is **fp is a pure function of the term structure** — so
+/// structurally-equal terms have equal fingerprints. A mismatch therefore
+/// *proves* inequality (used as a fast-reject); a match is inconclusive and
+/// falls through to the exact structural compare. (It deliberately ignores
+/// type annotations on `Free`/`Const`/`Abs`/primitives: a fingerprint clash
+/// from a type-only difference is rare and resolved by the structural
+/// fallback, and skipping types keeps the per-node cost a couple of integer
+/// ops.)
+fn compute_fp(kind: &TermKind) -> u16 {
+    // Fold an arbitrary `Hash` value to 16 bits (names, literals).
+    fn h16<H: std::hash::Hash>(x: &H) -> u16 {
+        use std::hash::Hasher;
+        let mut h = fnv::FnvHasher::default();
+        x.hash(&mut h);
+        let v = h.finish();
+        (v ^ (v >> 16) ^ (v >> 32) ^ (v >> 48)) as u16
+    }
+    // Mix an accumulator with the next 16-bit part (order-sensitive).
+    #[inline]
+    fn mix(acc: u16, x: u16) -> u16 {
+        let mut h = acc ^ x;
+        h = h.wrapping_mul(0x2545); // odd multiplier
+        h ^= h >> 7;
+        h
+    }
+    // A distinct base tag per constructor (the enum discriminant is not
+    // stable to read here, so enumerate explicitly).
+    let (tag, part): (u16, u16) = match kind {
+        TermKind::Bound(i) => (1, *i as u16),
+        TermKind::Free(v) => (2, h16(&v.name())),
+        TermKind::Const(n, _) => (3, h16(n)),
+        TermKind::App(f, x) => (4, mix(f.0.info.fp(), x.0.info.fp())),
+        TermKind::Abs(_, body) => (5, body.0.info.fp()),
+        TermKind::Blob(b) => (6, b.len() as u16),
+        TermKind::Nat(n) => (7, h16(n)),
+        TermKind::Int(n) => (8, h16(n)),
+        TermKind::SmallInt(lit) => (9, h16(lit)),
+        TermKind::Bool(b) => (10, *b as u16),
+        TermKind::Eq(_) => (11, 0),
+        TermKind::Select(_) => (12, 0),
+        TermKind::Succ => (13, 0),
+        TermKind::Spec(s, _) => (14, h16(&s.symbol().label())),
+        TermKind::SpecAbs(s, _) => (15, h16(&s.symbol().label())),
+        TermKind::SpecRep(s, _) => (16, h16(&s.symbol().label())),
+        TermKind::Obs(_, _) => (17, 0),
+        TermKind::Def(d) => (18, h16(&d.name())),
+    };
+    mix(tag.wrapping_mul(0x9E37), part)
 }
 
 /// A HOL term: an `Arc`-shared node carrying its [`TermKind`] plus a cached
@@ -640,6 +707,13 @@ impl Term {
         self.info().free()
     }
 
+    /// The node's cached 16-bit structural fingerprint (see [`compute_fp`]):
+    /// a pure function of structure, so equal terms agree and a mismatch
+    /// proves inequality. The fast-reject key for [`Term::cmp`] / equality.
+    pub(crate) fn fp(&self) -> u16 {
+        self.info().fp()
+    }
+
     /// Pointer identity of the underlying `Arc`. Useful as a cache key
     /// for outside-the-TCB walkers (hashers, pretty-printers).
     pub fn ptr_id(&self) -> usize {
@@ -990,12 +1064,17 @@ impl Term {
     }
 }
 
-// Equality / hashing / ordering are on the `kind` only: `info` is a pure
-// function of `kind`, so equal kinds have equal info and comparing it
-// would be redundant. The `Arc::ptr_eq` fast path stays.
+// Equality / hashing / ordering are semantically on the `kind` only: `info`
+// is a pure function of `kind`. The `Arc::ptr_eq` fast path and the cached
+// fingerprint (`fp`, also a pure function of `kind`) are pure accelerators —
+// they decide shared/obviously-distinct terms without walking structure, and
+// otherwise fall through to the exact `kind` comparison.
 impl PartialEq for Term {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || self.0.kind == other.0.kind
+        // `Arc::ptr_eq` short-circuits shared terms; a fingerprint mismatch
+        // proves inequality without walking structure (fp is a pure function
+        // of structure, so equal terms always agree); otherwise compare kinds.
+        Arc::ptr_eq(&self.0, &other.0) || (self.fp() == other.fp() && self.0.kind == other.0.kind)
     }
 }
 impl Eq for Term {}
@@ -1014,7 +1093,17 @@ impl Ord for Term {
         if Arc::ptr_eq(&self.0, &other.0) {
             return Ordering::Equal;
         }
-        self.0.kind.cmp(&other.0.kind)
+        // Fast-reject by the cached structural fingerprint: distinct
+        // fingerprints ⇒ distinct terms, ordered by fingerprint without
+        // touching structure. (Order by fp, then structural tie-break — a
+        // valid total order, since fp is a pure function of structure, so
+        // structurally-equal terms always share a fingerprint and reach the
+        // tie-break.) This collapses comparisons of large terms that share a
+        // long prefix from O(prefix) to O(1).
+        match self.fp().cmp(&other.fp()) {
+            Ordering::Equal => self.0.kind.cmp(&other.0.kind),
+            ne => ne,
+        }
     }
 }
 
@@ -1131,13 +1220,14 @@ fn term_info(kind: &TermKind) -> TermInfo {
     // type/openness; compute it once and stamp it into whichever variant we
     // return.
     let free = compute_free(kind);
-    let wf = |ty: Type| Wf { free, ty };
-    let open = |bvi: u32| Open { bvi, free };
-    let ill = || IllTyped { free };
+    let fp = compute_fp(kind);
+    let wf = |ty: Type| Wf { free, fp, ty };
+    let open = |bvi: u32| Open { bvi, free, fp };
+    let ill = || IllTyped { free, fp };
     // Wrap a possibly-failing closed-type computation into closed info.
     let closed = |r: Result<Type>| match r {
-        Ok(ty) => Wf { free, ty },
-        Err(_) => IllTyped { free },
+        Ok(ty) => Wf { free, fp, ty },
+        Err(_) => IllTyped { free, fp },
     };
     match kind {
         TermKind::Bound(i) => open(*i),

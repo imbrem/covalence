@@ -48,8 +48,7 @@ use crate::subst::{
 };
 
 use crate::term::{
-    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, TrustedCons, Type, TypeEnv, TypeKind,
-    Var, type_of_in,
+    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, TrustedCons, Type, TypeKind, Var,
 };
 use crate::ty::{TypeList, TypeSpec};
 
@@ -63,20 +62,27 @@ pub struct Thm {
 }
 
 impl Thm {
-    /// The single private constructor. Validates that every term is
-    /// well-typed at kind `prop` AND — by reusing one [`TypeEnv`]
-    /// across all of them — that every `Free` name has a single
-    /// declared type across the whole theorem.
+    /// The single private constructor. Validates that the conclusion and every
+    /// hypothesis is well-typed at kind `prop` (`bool`).
     ///
-    /// Every rule API in this module bottoms out here.
+    /// Each check is a single [`Term::type_of`], which reads the type **cached**
+    /// on the node (`TermInfo::Wf`) in O(1) for the common well-typed case and
+    /// re-derives only to produce a specific error for an open / ill-typed term.
+    /// So `build` is O(#hyps), not O(Σ term sizes) — and every rule bottoms out
+    /// here.
+    ///
+    /// There is **no** cross-term `Free`-name consistency check: variables are
+    /// type-carrying (`Free(Var{name, ty})`), so `x:nat` and `x:bool` are simply
+    /// distinct variables (HOL Light's model). A term well-typed in isolation
+    /// cannot create a cross-term inconsistency — every variable operation keys
+    /// on the whole `(name, type)` — so there is nothing left to enforce.
     fn build(hyps: Ctx, concl: Term) -> Result<Thm> {
-        let mut env = TypeEnv::default();
-        let ty = type_of_in(&concl, &mut env)?;
+        let ty = concl.type_of()?;
         if !ty.is_bool() {
             return Err(Error::NotBool(ty));
         }
         for h in &hyps {
-            let hty = type_of_in(h, &mut env)?;
+            let hty = h.type_of()?;
             if !hty.is_bool() {
                 return Err(Error::NotBool(hty));
             }

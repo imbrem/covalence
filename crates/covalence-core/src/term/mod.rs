@@ -36,5 +36,3 @@ pub use term::{Def, IntTag, SmallIntLiteral, Term, TermKind, TyError, Var};
 // Re-export the type language so `crate::term::{Type, TypeKind}`
 // continues to resolve (the canonical home is `crate::ty`).
 pub use crate::ty::{Type, TypeKind};
-
-pub(crate) use term::{TypeEnv, type_of_in};

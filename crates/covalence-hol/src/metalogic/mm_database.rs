@@ -1069,20 +1069,17 @@ impl ClauseCtx {
         let n = clause_terms.len();
         let closed_t = conj(clause_terms)?;
         let assumed = Thm::assume(closed_t.clone())?; // {Closed d} ⊢ Closed d
-        // Pre-extract conjunct 0..n in one left-to-right walk: `running` is the
-        // tail `cₖ ∧ (cₖ₊₁ ∧ …)`; conjunct k is its left projection (or the whole
-        // tail for the last k), then advance with `and_elim_r`.
-        let mut conjuncts = Vec::with_capacity(n);
-        let mut running = assumed.clone();
-        for k in 0..n {
-            if k + 1 < n {
-                conjuncts.push(running.clone().and_elim_l()?);
-                running = running.and_elim_r()?;
-            } else {
-                conjuncts.push(running);
-                break;
-            }
-        }
+        // Extract all n conjuncts in ONE pass (`Thm::into_conjuncts`): O(n)
+        // rather than the old O(n²) walk of `and_elim_l`/`and_elim_r`, each of
+        // which re-type-checked the (shrinking but still O(n)) tail *and* the
+        // whole `Closed d` hypothesis. This is what made proofs citing hundreds
+        // of lemmas (cantnf*, yonedainv, psdmul) blow up. For an empty rule set
+        // `Closed d = T` is a *non*-conjunction, so there are no clauses.
+        let conjuncts = if n == 0 {
+            Vec::new()
+        } else {
+            assumed.clone().into_conjuncts()
+        };
         Ok(ClauseCtx {
             d,
             closed_t,

@@ -567,6 +567,36 @@ impl Thm {
         Self::build(self.hyps, concl)
     }
 
+    /// Split `Γ ⊢ c₁ ∧ c₂ ∧ … ∧ c_N` (a right-nested `∧`) into
+    /// `[Γ ⊢ c₁, …, Γ ⊢ c_N]` in **one pass**. A non-conjunction yields the
+    /// singleton `[self]`.
+    ///
+    /// Soundness: each `Γ ⊢ cₖ` is exactly what iterated `and_elim_l` /
+    /// `and_elim_r` would derive from `self`, so all are derivable. Every `cₖ`
+    /// is a subterm of `self.concl` — which `build` already type-checked at
+    /// `bool` when `self` was minted, and a `∧`'s operands are themselves `bool`
+    /// — and the hypotheses are unchanged, so the conjuncts are constructed
+    /// directly without re-running `build`. This is O(N) rather than the O(N²) of
+    /// N separate `and_elim`s, each of which re-`build`s (re-type-checks) the
+    /// shrinking tail **and** every hypothesis (here the whole `c₁∧…∧c_N`).
+    pub fn into_conjuncts(self) -> Vec<Thm> {
+        let mut out = Vec::new();
+        let mut cur = self.concl;
+        while let Ok((p, q)) = parse_hol_and(&cur) {
+            let (head, tail) = (p.clone(), q.clone());
+            out.push(Thm {
+                hyps: self.hyps.clone(),
+                concl: head,
+            });
+            cur = tail;
+        }
+        out.push(Thm {
+            hyps: self.hyps,
+            concl: cur,
+        });
+        out
+    }
+
     /// `Γ ⊢ p ∨ q`, given `Γ ⊢ p` and the other disjunct `q : bool`
     /// (HOL Light `DISJ1`).
     ///

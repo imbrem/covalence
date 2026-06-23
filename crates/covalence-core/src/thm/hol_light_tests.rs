@@ -677,6 +677,36 @@ fn all_elim_with_matches_and_interns() {
 }
 
 #[test]
+fn into_conjuncts_splits_chain() {
+    // {p,q,r} ⊢ p ∧ (q ∧ r)  →  [⊢ p, ⊢ q, ⊢ r], each with the full hyps.
+    let p = Term::free("p", Type::bool());
+    let q = Term::free("q", Type::bool());
+    let r = Term::free("r", Type::bool());
+    let qr = Thm::assume(q.clone())
+        .unwrap()
+        .and_intro(Thm::assume(r.clone()).unwrap())
+        .unwrap();
+    let pqr = Thm::assume(p.clone()).unwrap().and_intro(qr).unwrap();
+    let parts = pqr.into_conjuncts();
+    assert_eq!(parts.len(), 3);
+    assert_eq!(parts[0].concl(), &p);
+    assert_eq!(parts[1].concl(), &q);
+    assert_eq!(parts[2].concl(), &r);
+    // Same as the iterated and_elim chain (CONJUNCT1/2), and oracle-free.
+    for t in &parts {
+        assert!(t.has_no_obs());
+    }
+}
+
+#[test]
+fn into_conjuncts_non_conjunction_is_singleton() {
+    let p = Term::free("p", Type::bool());
+    let parts = Thm::assume(p.clone()).unwrap().into_conjuncts();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].concl(), &p);
+}
+
+#[test]
 fn all_elim_rejects_non_forall() {
     let p = Term::free("p", Type::bool());
     let p_thm = Thm::assume(p).unwrap();

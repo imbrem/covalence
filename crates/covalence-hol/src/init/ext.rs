@@ -341,21 +341,41 @@ fn rw_all_opt<C: TrustedCons + ?Sized>(
 /// defined constant in `t`. **Weak — stops at `Abs`.** See
 /// [`TermExt::delta_all`] for the spec.
 fn delta_all_conv(t: &Term, symbol: &dyn Symbol) -> Result<Thm> {
+    match delta_all_opt(t, symbol)? {
+        Some(thm) => Ok(thm),
+        None => Thm::refl(t.clone()),
+    }
+}
+
+/// Sharing-preserving core of [`delta_all_conv`]: `None` when `symbol` does not
+/// occur on `t`'s spine (so `t` is unchanged — no no-op congruence built).
+fn delta_all_opt(t: &Term, symbol: &dyn Symbol) -> Result<Option<Thm>> {
     // A matching `Spec` leaf — unfold it to its defining body. We do
     // not recurse into the result, so the symbol is removed exactly
     // once per original occurrence.
     if let Some((spec, _args)) = t.as_spec()
         && spec.symbol().label() == symbol.label()
     {
-        return Thm::unfold_term_spec(t.clone());
+        return Ok(Some(Thm::unfold_term_spec(t.clone())?));
     }
     // Descend the application spine, but never under a binder.
     if let Some((f, x)) = t.as_app() {
-        let f_eq = delta_all_conv(f, symbol)?;
-        let x_eq = delta_all_conv(x, symbol)?;
-        return f_eq.cong_app(x_eq);
+        let f_eq = delta_all_opt(f, symbol)?;
+        let x_eq = delta_all_opt(x, symbol)?;
+        if f_eq.is_none() && x_eq.is_none() {
+            return Ok(None); // spine unchanged — reuse `t`
+        }
+        let f_eq = match f_eq {
+            Some(e) => e,
+            None => Thm::refl(f.clone())?,
+        };
+        let x_eq = match x_eq {
+            Some(e) => e,
+            None => Thm::refl(x.clone())?,
+        };
+        return f_eq.cong_app(x_eq).map(Some);
     }
-    Thm::refl(t.clone())
+    Ok(None)
 }
 
 /// `⊢ t = t'` weak-reducing `t`: descend the application spine (args

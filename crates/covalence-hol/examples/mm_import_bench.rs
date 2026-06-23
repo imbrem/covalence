@@ -112,10 +112,14 @@ fn main() {
         |_total| {},
         |_label| {},
         |_done, _total, label, result, elapsed| {
-            if result.is_ok() {
-                ok.fetch_add(1, Ordering::Relaxed);
-            } else {
-                failed.fetch_add(1, Ordering::Relaxed);
+            match &result {
+                Ok(_) => {
+                    ok.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(e) => {
+                    failed.fetch_add(1, Ordering::Relaxed);
+                    eprintln!("[FAILED] {label}: {e}");
+                }
             }
             timings
                 .lock()

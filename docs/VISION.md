@@ -1,23 +1,9 @@
 # Covalence — Vision
 
-> **STATUS: WORKING DRAFT.** Top-level doc capturing the system's
-> organizing ideas — read in ~10 minutes. This is the canonical **kernel /
-> foundation** vision (the older, longer `ARCHITECTURE.md` was retired;
-> recover it from the `backup/pre-hol-cleanup` branch if you need the
-> pre-collapse detail). Its counterpart, the **frontend & UX vision** —
-> the unified surface, handler-dispatched reasoning, multi-language
-> authoring — lives in [`frontend.md`](./frontend.md) (previously left
-> vague; now its own doc). For the kernel see
-> [`kernel-design.md`](./kernel-design.md), for the type catalogue see
-> [`type-hierarchy.md`](./type-hierarchy.md), for what's next see
-> [`roadmap.md`](./roadmap.md). For the (not-yet-built) authoring layer
-> see the design sketches: [`frontend.md`](./frontend.md) (what the system
-> feels like to use), [`surface-syntax.md`](./surface-syntax.md)
-> (high-level syntax for theories and definitions),
-> [`metatheory.md`](./metatheory.md) (theories/derivations/models as
-> first-class objects — incl. §7 handler dispatch, §8 the first internal
-> language), [`observers.md`](./observers.md) (untrusted code feeding
-> facts into the kernel).
+> **The canonical kernel / foundation vision** — read in ~10 minutes. Its
+> frontend/UX counterpart is [`frontend.md`](./frontend.md). See
+> [`docs/README.md`](./README.md) for the full doc index. (The older,
+> longer `ARCHITECTURE.md` was retired to `backup/pre-hol-cleanup`.)
 
 ---
 
@@ -152,9 +138,6 @@ theorem's hypothesis list. If `Con(ZFC)` ever turns out to be wrong,
 the theorems become Thms-with-falsified-hypotheses — still Thms,
 just less useful.
 
-Full treatment: the retired `modified-hol.md` §3.5/§4 (recover from
-`backup/pre-hol-cleanup`).
-
 ---
 
 ## 3. Computational metatheory
@@ -219,8 +202,6 @@ plus arbitrarily clever untrusted machinery plus soundness by
 re-checkability. The certificate-checker is to the SMT solver what
 the kernel's inference rules are to a tactic engine.
 
-Full treatment: the retired `modified-hol.md` §3.7 (`backup/pre-hol-cleanup`).
-
 ---
 
 ## 4. Why the two flavors unify
@@ -276,8 +257,7 @@ Top layer changes constantly. Bottom layer never changes. The
 inner/outer factoring of the bottom is for **audit clarity**, not
 modularity — they could be implemented as one layer, but separating
 "pure logic" from "operational machinery for hashes / signatures /
-ZKPs / range proofs" makes the audit story tractable. Full treatment: the retired
-`modified-hol.md` §3 (`backup/pre-hol-cleanup`).
+ZKPs / range proofs" makes the audit story tractable.
 
 ---
 
@@ -310,18 +290,7 @@ pre-collapse detail lives in the retired `ARCHITECTURE.md` (and the
 
 ## 7. Where to read next
 
-The docs were pared to the current design. The surviving set:
-
-| Question | Read |
-|---|---|
-| This (kernel / foundation) vision | (you are here) |
-| The frontend & UX vision | [`frontend.md`](./frontend.md) |
-| The kernel TCB (terms, rules, `defs/`) | [`kernel-design.md`](./kernel-design.md) |
-| The type catalogue & equality hierarchy | [`type-hierarchy.md`](./type-hierarchy.md) |
-| What's next (finalize defs, rewire shell) | [`roadmap.md`](./roadmap.md) |
-| Build commands & crate map | [`../CLAUDE.md`](../CLAUDE.md) |
-
-Older deep-dives (the full `ARCHITECTURE.md`, the `layered-framework`
-and `shared-backbone` proposal sets, the session notes) were retired
-to the `backup/pre-hol-cleanup` branch; recover them from there if you
-need the historical detail.
+See [`docs/README.md`](./README.md) for the full doc index. Older
+deep-dives (the full `ARCHITECTURE.md`, the `layered-framework` and
+`shared-backbone` proposal sets, the session notes) were retired to the
+`backup/pre-hol-cleanup` branch.

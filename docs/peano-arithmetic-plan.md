@@ -1,11 +1,10 @@
 # Peano Arithmetic — build plan (STATUS: DONE)
 
-> **STATUS: DONE — kept as a pointer.** This was the handoff plan for building
-> Peano Arithmetic as a reified object theory inside HOL (rung 2 of the
-> prop → PA → SOA ladder). The plan has **landed**: the PA deep embedding +
-> the Metamath PA database + the untrusted-proof → kernel replay all exist.
-> The original long build plan is recoverable from git history; this file is
-> now just a status note + pointers.
+> **DONE — kept as a pointer.** The plan to build PA as a reified object theory
+> inside HOL (rung 2 of the prop → PA → SOA ladder) has **landed**: the PA deep
+> embedding + the Metamath PA database + the untrusted-proof → kernel replay all
+> exist. The long build plan is recoverable from git history; this is now a
+> status note + pointers.
 
 ## What's built (and where it's tracked)
 

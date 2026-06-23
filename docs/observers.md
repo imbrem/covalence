@@ -1,30 +1,20 @@
 # Covalence — Observers and Validators
 
-> **STATUS: WORKING DRAFT / DESIGN SKETCH.** Fleshes out the original
-> scratch sketch (`docs/sketches/OBSERVERS.md`). Describes how
-> *untrusted* code (a WASM executor, a "trust the bytes" backend, an
-> external solver) can feed facts into the kernel's HOL model **without
-> growing the TCB** — by routing every claim through a *validator* that
-> is trusted only for a specific *observer type*.
+> **DESIGN SKETCH.** How *untrusted* code (a WASM executor, a "trust the
+> bytes" backend, an external solver) feeds facts into the kernel's HOL model
+> **without growing the TCB** — by routing every claim through a *validator*
+> trusted only for a specific *observer type*. The computational metatheory
+> this realizes is [`metatheory.md`](./metatheory.md); the broader
+> base-logic / meta-assumption substrate is [`covalence-pure.md`](./covalence-pure.md).
 >
-> See also: [`metatheory.md`](./metatheory.md) (the computational
-> metatheory this realizes — "get rid of the oracles" by proving instead
-> of trusting), [`surface-syntax.md`](./surface-syntax.md) (how the
-> facts an observer asserts are written), [`kernel-design.md`](./kernel-design.md)
-> §5.6 (the `obs_eq`/`obs_true`/`obs_imp` rules and ε-model this is sound
-> under).
-
-> **What exists today vs. what is proposed.** The kernel already
-> implements the **observer substrate** (`crates/covalence-core/src/term/observer.rs`,
-> `kernel-design.md` §5.6): the marker `trait Observer`, the per-type
-> *policy* traits `ObsEq`/`ObsTrue`/`ObsImp`, the type-erased `Object`
-> leaf compared by `Arc` identity, and the kernel rules
-> `Thm::obs_eq`/`obs_true`/`obs_imp` — all sound under the parametric
-> ε-model, none in the TCB. **Everything labelled *validator* below — the
-> `Validator` trait, the precondition set, the frozen `(M, P)` state, and
-> validator composition — is proposed design, not yet code.** Where a
-> proposed concept already has a concrete realization in the kernel, the
-> text says so.
+> **Today vs. proposed.** The kernel already implements the **observer
+> substrate** ([`kernel-design.md`](./kernel-design.md) §5.6,
+> `crates/covalence-core/src/term/observer.rs`): the marker `trait Observer`,
+> the per-type policy traits `ObsEq`/`ObsTrue`/`ObsImp`, the type-erased
+> `Object` leaf (compared by `Arc` identity), and the rules
+> `Thm::obs_eq`/`obs_true`/`obs_imp` — all sound under the parametric ε-model,
+> none in the TCB. **Everything labelled *validator* below is proposed design,
+> not yet code.**
 
 ---
 
@@ -234,32 +224,22 @@ catalog.)
 
 ## 7. The endgame: the built-in literals *are* trusted observers
 
-> **DIRECTION — not yet built.** Sharpens §4's "efficient bytes / efficient
-> nats" from *added* validators into the kernel's *own* representation of
-> `Int` / `Bytes` / `Nat`. Coupled with the Pure-base-logic / narrow-waist
-> direction in [`kernel-design.md`](./kernel-design.md) §11: under it the
-> `Obs` / `ObsEq` / `ObsTrue` / `ObsImp` substrate (§2) **moves out of
-> `covalence-core` into `covalence-pure`** and becomes the base logic's
-> primitive — opaque predicates plus first-order implication — and the
-> kernel's `obs_imp` becomes the **lift** of a Pure implication into HOL
-> *under assumptions about its opaque predicates* (kernel-design §11.2).
+> **DIRECTION — not yet built.** This is the kernel-side face of the
+> base-logic vision; the full treatment (one logic + N executors + K
+> accelerators, the two assumption sets, discharge-by-proof) is
+> [`covalence-pure.md`](./covalence-pure.md). Under it the `Obs`/`ObsEq`/
+> `ObsTrue`/`ObsImp` substrate (§2) **moves out of `covalence-core` into
+> `covalence-pure`** as the base logic's primitive, and `obs_imp` becomes the
+> **lift** of a Pure implication into HOL ([`kernel-design.md`](./kernel-design.md)
+> §11.2).
 
 Today `Int`, `Bytes`, and the `Nat`/`succ` machinery are **built-in kernel
-primitives** (`TermKind::Int/Blob`, `TermKind::Succ`, the `nat_induct`
-axiom — [`kernel-design.md`](./kernel-design.md) §4, §5.7). The direction is
-to collapse the distinction between "a built-in literal" and "a trusted
-observer": **`Int`/`Bytes`/`Nat` become trusted observers**, and the *only*
-thing separating a **trusted** observer from an **untrusted** one is that
-"this observer is sound" is an **assumption with a more efficient
-representation** — a built-in fast path the kernel privileges, instead of a
-hypothesis threaded through `Thm::assume`. The *logical content* is
-identical; only the *cost* of carrying it differs. A trusted observer is an
-untrusted observer whose soundness assumption has been compiled in. These
-efficient, "trusted" constructions are built *in Rust as a metaprogram* over
-the base logic, so an impl's soundness reduces to the Rust compiler's — see
-[`kernel-design.md`](./kernel-design.md) §11.4 (the `covalence-hol` "zoo").
-
-Two consequences fall out.
+primitives** ([`kernel-design.md`](./kernel-design.md) §4, §5.7). The direction
+collapses the distinction between "a built-in literal" and "a trusted
+observer": **`Int`/`Bytes`/`Nat` become trusted observers**, the only
+difference being that "this observer is sound" is an assumption carried as a
+privileged built-in fast path rather than a hypothesis threaded through
+`Thm::assume`. Same logical content, lower cost. Two consequences fall out.
 
 ### 7.1 Drop the `TermKind` enum
 

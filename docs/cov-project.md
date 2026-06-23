@@ -1,11 +1,10 @@
 # Compiling a multi-file `.cov` project
 
 > **DIRECTION + working prototype.** The dependency-resolving `.cov`→`.cov`
-> loader described in §3 is **implemented** (`covalence-hol/src/project.rs`,
-> the `Project` / `compile_project` API + tests). The bidirectional
-> Rust↔`.cov` resolution (§4), the mutual-recursion fixpoint (§5), and the
-> WASM-component / Cargo-features distribution story (§7) are **design only**
-> — recorded in `crates/covalence-hol/src/SKELETONS.md`.
+> loader (§3) is **implemented** (`covalence-hol/src/project.rs`). The
+> bidirectional Rust↔`.cov` resolution (§4), the mutual-recursion fixpoint
+> (§5), and the WASM-component / Cargo-features distribution story (§7) are
+> **design only** (tracked in `crates/covalence-hol/src/SKELETONS.md`).
 
 ## 1. The problem
 

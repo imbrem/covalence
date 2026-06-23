@@ -1,17 +1,13 @@
 # Covalence — Frontend & UX Vision
 
-> **STATUS: WORKING DRAFT / DESIGN SKETCH.** [`VISION.md`](./VISION.md) is
-> the **kernel** vision — the foundation, the TCB, metatheory-as-default,
-> scoped truths. This doc is its counterpart for the **frontend**: what the
-> system feels like to *use*, the authoring experience, and the mechanism
-> that makes many logics share one surface. That half was deliberately left
-> vague until now; this is the first pass at pinning it down.
->
-> See also: [`surface-syntax.md`](./surface-syntax.md) (the concrete
-> authoring *syntax* this UX is written in), [`metatheory.md`](./metatheory.md)
-> (the proof-theoretic *mechanism* — §7 handler dispatch, §8 the first
-> internal language, §9 the compatibility audit), [`observers.md`](./observers.md)
-> (untrusted computation feeding the kernel).
+> **DESIGN SKETCH — the frontend counterpart to [`VISION.md`](./VISION.md)
+> (the kernel vision).** What the system feels like to *use*: the authoring
+> experience and the mechanism that makes many logics share one surface. The
+> concrete authoring syntax is [`surface-syntax.md`](./surface-syntax.md) /
+> [`surface-compiler.md`](./surface-compiler.md); the proof-theoretic mechanism
+> (handler dispatch, internal languages) is [`metatheory.md`](./metatheory.md)
+> §7–9; untrusted computation feeding the kernel is
+> [`observers.md`](./observers.md).
 
 ---
 
@@ -217,14 +213,6 @@ The progression (status honest):
 ---
 
 ## 8. Where this sits relative to the kernel vision
-
-| Question | Read |
-|---|---|
-| The kernel / foundation vision | [`VISION.md`](./VISION.md) |
-| **The frontend & UX vision** | (you are here) |
-| The authoring *syntax* | [`surface-syntax.md`](./surface-syntax.md) |
-| The metalogic *mechanism* (handlers, internal languages) | [`metatheory.md`](./metatheory.md) §7–9 |
-| Untrusted computation feeding the kernel | [`observers.md`](./observers.md) |
 
 The two vision docs share one discipline: **external things — a logic, a
 program, a clever reasoning strategy — enter the system as objects we

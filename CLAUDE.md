@@ -91,53 +91,59 @@ COV_API=https://cov.example.com bun run dev:web # remote backend
 
 ## Reference Docs
 
-The docs were pared down to the **current design only** (the old
-multi-design docs — `ARCHITECTURE.md`, `AGENTS.md`, the arena/egraph
-prover docs, `docs/design/proposals/*`, the old `MVP_DESIGN.md` /
-`plan.md` — were deleted; recover any of them from the
-`backup/pre-hol-cleanup` branch if needed). The four canonical docs:
+The docs were pared down to the **current design only** (old multi-design docs
+were retired to the `backup/pre-hol-cleanup` branch). The full categorized
+index is **[`docs/README.md`](./docs/README.md)**.
+
+**Canonical design** (read these first):
 
 - **[`docs/VISION.md`](./docs/VISION.md)** — the system vision
-  (metatheory-as-default, scoped truths, the mirror principle, stores
-  - WASM oracles).
-- **[`docs/type-hierarchy.md`](./docs/type-hierarchy.md)** — the
-  design we are building: the equality hierarchy and the `defs/` type
-  catalogue (nat/int/rat/real/bytes/list/stream/option/result, → f32/f64).
-- **[`docs/kernel-design.md`](./docs/kernel-design.md)** — canonical
-  reference for `covalence-core` (the kernel TCB): term/type
-  representation, the inference-rule surface, the four non-computational
-  primitive rules, the `defs/` catalogue. **Read first if touching the
-  kernel.**
-- **[`docs/roadmap.md`](./docs/roadmap.md)** — what's next: finalize
-  the `defs/` operations, the `covalence-kernel` re-export façade, and
-  wiring `covalence-core` proofs back through the shell.
+  (metatheory-as-default, the three-layer stack, scoped truths, the mirror
+  principle).
+- **[`docs/kernel-design.md`](./docs/kernel-design.md)** — `covalence-core`,
+  the kernel TCB: term/type representation, the inference-rule surface, the
+  non-computational primitive rules, the `defs/` catalogue. **Read first if
+  touching the kernel.**
+- **[`docs/type-hierarchy.md`](./docs/type-hierarchy.md)** — the equality
+  hierarchy and the `defs/` type catalogue (nat/int/rat/real/bytes/list/
+  stream/option/result, → f32/f64).
+- **[`docs/roadmap.md`](./docs/roadmap.md)** — what's next: time-to-product
+  for the Metamath vision. Its "Active refactor" links the three docs below.
+- **[`docs/refactor-plan.md`](./docs/refactor-plan.md)**,
+  **[`docs/crate-graph.md`](./docs/crate-graph.md)**,
+  **[`docs/covalence-pure.md`](./docs/covalence-pure.md)** — the in-flight
+  three-layer kernel reorg, the crate dependency graph, and the base-logic
+  blueprint.
+- **[`docs/soundness-audit.md`](./docs/soundness-audit.md)** — dated audit of
+  the kernel TCB plus the assumption-tracking design.
 
-Plus four **design sketches** for the (not-yet-built) authoring layer
-_above_ the kernel — aspirational, clearly marked as such:
+**Design sketches** for the (not-yet-built) authoring layer — aspirational:
 
 - **[`docs/frontend.md`](./docs/frontend.md)** — the frontend & UX vision
-  (counterpart to VISION.md's kernel focus): the unified surface that
-  tracks terms as interpreted across many logics, reasoning as
-  handler-dispatched algebraic effects, and the source-lowers-to-many-targets
-  authoring workflow.
-- **[`docs/surface-syntax.md`](./docs/surface-syntax.md)** — high-level
-  syntax for writing theories, definitions, and proofs that elaborate
-  down to kernel objects (the long-term replacement for hand-written
-  `defs/`/`init/` Rust); declarative meaning with pluggable computation.
-- **[`docs/surface-compiler.md`](./docs/surface-compiler.md)** — unifies
-  `surface/` + `script/` into one language: theories and their **many
-  models across many logics** as first-class objects (a model = a logic's
-  handler set + an interpretation), and the multi-stage compiler
-  (parse → resolve → elaborate+dispatch → lower → check) with span-carrying
-  diagnostics.
-- **[`docs/observers.md`](./docs/observers.md)** — how untrusted code
-  feeds facts into the kernel's HOL model without growing the TCB
-  (observer substrate exists today: `Observer` + `ObsEq`/`ObsTrue`/`ObsImp`;
-  the validator/precondition layer is proposed).
-- **[`docs/metatheory.md`](./docs/metatheory.md)** — theories,
-  derivations, and models as first-class objects inside HOL; soundness
-  theorems, theory transport, and the metavariable-layering decisions
-  (two layers + HOL Light now; schematic-FOL framework and HOL-ω later).
+  (counterpart to VISION.md): the unified surface tracking terms across many
+  logics, reasoning as handler-dispatched algebraic effects.
+- **[`docs/surface-compiler.md`](./docs/surface-compiler.md)** — the canonical
+  surface-language design: theories with many models across many logics, the
+  `#sig`/`#thy`/`#model`/`#logic` forms, the multi-stage compiler.
+- **[`docs/surface-syntax.md`](./docs/surface-syntax.md)** — the high-level
+  S-expression authoring syntax (rationale; concrete forms canonical in
+  surface-compiler §3.0).
+- **[`docs/theories-models-and-logics.md`](./docs/theories-models-and-logics.md)**
+  — the signature → theory → model architecture, within-logic model
+  multiplicity, Metamath as the shared logic-definition substrate.
+- **[`docs/metatheory.md`](./docs/metatheory.md)** — theories, derivations,
+  and models as first-class objects inside HOL; transport; the
+  metavariable-layering decisions.
+- **[`docs/observers.md`](./docs/observers.md)** — how untrusted code feeds
+  facts into the kernel's HOL model without growing the TCB (`Observer` +
+  `ObsEq`/`ObsTrue`/`ObsImp` substrate today; validator layer proposed).
+- **[`docs/web-kernel.md`](./docs/web-kernel.md)** — running the kernel in the
+  browser: the `category.wiki` north star, `.cov` articles, federation.
+
+**Reference/notes:** [`docs/cov-project.md`](./docs/cov-project.md) (multi-file
+`.cov` compilation), [`docs/peano-arithmetic-plan.md`](./docs/peano-arithmetic-plan.md)
+(DONE pointer), [`docs/wasm3-rust.md`](./docs/wasm3-rust.md) (Wasm 3.0 research
+note), and [`docs/sketches/`](./docs/sketches/) (scratch sketches).
 
 Subsystem skills (auto-loaded when relevant): **wasm-guide**,
 **vscode-extension**, **web-server**.

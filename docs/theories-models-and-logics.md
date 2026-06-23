@@ -1,14 +1,13 @@
 # Theories, models, and logics — the signature/theory/model architecture
 
-> **STATUS: DESIGN DISCUSSION (record).** Captures the design conversation that
-> refined `surface-compiler.md`'s "many models" idea into a precise
-> **signature → theory → model** architecture, centred on **multiple models of
-> one theory *within a single logic***, with a **two-axis consumability** story
-> and the **analysis-in-second-order-arithmetic** program as the driving
-> example. Builds on: `surface-compiler.md` (the dispatch/effect machinery,
-> hol-in-hol, lifting), `metatheory.md` (reified object logics, soundness,
-> transport, the HOL-ω deferral §5.2), `covalence-pure.md` (the assumption /
-> meta-assumption sets, the accelerator discharge).
+> **DESIGN RECORD.** Refines [`surface-compiler.md`](./surface-compiler.md)'s
+> "many models" idea into a precise **signature → theory → model** architecture,
+> centred on **multiple models of one theory within a single logic**, with a
+> **two-axis consumability** story, the **analysis-in-SOA** driving example, and
+> **Metamath as the shared logic-definition substrate** (§5.6). Builds on
+> [`metatheory.md`](./metatheory.md) (reified object logics, transport) and
+> [`covalence-pure.md`](./covalence-pure.md) (the assumption / meta-assumption
+> sets).
 
 ---
 

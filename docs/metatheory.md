@@ -1,25 +1,15 @@
 # Covalence — Metatheory: Theories, Derivations, and Models
 
-> **STATUS: DESIGN SKETCH — sharpened by the canonical docs.** This is the
-> early sketch of "object theories + their derivations as first-class HOL
-> objects." Its core mechanism — reify a logic as a datatype + a
-> `Derivable_X` predicate + a denotation, prove `Derivable_X ⌜A⌝ ⟹ ⟦A⟧`
-> internally — has since **landed** (`init/prop.rs`, the PA deep embedding)
-> and been **sharpened** into the now-canonical framing: see
-> [`theories-models-and-logics.md`](./theories-models-and-logics.md) §5.5
-> (the two pillars + the PA→SOA→ZF chain) and **§5.6/§5.7 (Metamath as the
-> shared logic-definition substrate / the thin waist)**, plus
-> [`VISION.md`](./VISION.md) §1 (the three-layer stack) and
-> [`surface-compiler.md`](./surface-compiler.md) §3.0 (the `#sig`/`#thy`/
-> `#model`/`#logic` artifact forms). **Read those for the current design;
-> read this for the *rationale* and the still-aspirational pieces** (the
-> metavariable layering §5, the handler-dispatch effect framing §7, the
-> design-compatibility audit §9).
->
-> See also: [`observers.md`](./observers.md) (the computational half),
-> [`surface-syntax.md`](./surface-syntax.md) (how theories are written),
-> [`kernel-design.md`](./kernel-design.md) (the HOL kernel these object
-> theories are built inside).
+> **DESIGN SKETCH — sharpened by the canonical docs.** Object theories +
+> their derivations as first-class HOL objects. The core mechanism (reify a
+> logic as a datatype + a `Derivable_X` predicate + a denotation, prove
+> `Derivable_X ⌜A⌝ ⟹ ⟦A⟧` internally) has **landed** (`init/prop.rs`, the PA
+> deep embedding) and is sharpened in
+> [`theories-models-and-logics.md`](./theories-models-and-logics.md) §5.5–§5.7
+> (the two pillars, the PA→SOA→ZF chain, Metamath as the shared substrate) and
+> [`VISION.md`](./VISION.md) §1. **Read this for the *rationale* and the
+> still-aspirational pieces**: the metavariable layering §5, the
+> handler-dispatch effect framing §7, the compatibility audit §9.
 
 ---
 

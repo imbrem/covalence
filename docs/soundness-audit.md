@@ -428,10 +428,12 @@ anything.
 
 ## 4. Assumption tracking — the design
 
-> **Forward-looking design.** Not a demand to implement now. Realizes
-> [`observers.md`](./observers.md) §7.2 ("this proof doesn't use `Nat`")
-> and the [`kernel-design.md`](./kernel-design.md) §11 narrow-waist /
-> trusted-observer direction. The code in §4.4 is illustrative.
+> **Forward-looking design.** Not a demand to implement now. The concrete
+> `Thm`-assumption-set mechanism for the conceptual two-assumption-set design
+> of [`covalence-pure.md`](./covalence-pure.md) §4; realizes
+> [`observers.md`](./observers.md) §7.2 ("this proof doesn't use `Nat`") and
+> the [`kernel-design.md`](./kernel-design.md) §11 narrow-waist direction. The
+> code in §4.4 is illustrative.
 
 ### 4.1 The principle: a trusted observer = a sound assumption + an efficient representation
 

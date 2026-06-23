@@ -1,28 +1,14 @@
 # Covalence — Surface Syntax
 
-> **STATUS: DESIGN SKETCH — concrete forms now in surface-compiler §3.0.**
-> This sketch describes the *high-level* Haskell-like syntax for specifying
-> theories and writing the definitions/proofs that today live as
-> hand-written Rust (`defs/`, `init/`, `proofs/`). The **canonical concrete
-> forms have since been pinned down in**
-> [`surface-compiler.md`](./surface-compiler.md) **§3.0** — `#sig` (a
-> signature), `#thy` (a theory; this doc's older `#theory` head), `#spec`
-> (a proof obligation — an equational/quantified clause, the canonical
-> spelling of what this doc splits across `#spec`/`#clause`), and
-> `#model`/`#models` (interpretations + satisfaction). The `.sig`/`.thy`/
-> `.mod` artifact taxonomy and "a `#logic` *is* a Metamath database" live
-> there and in [`theories-models-and-logics.md`](./theories-models-and-logics.md)
-> §5.6. **Where this doc's notation differs from surface-compiler §3.0, the
-> latter wins** — read this for the *rationale and the still-aspirational
-> reach* (the SQL-with-set-theory analogy §1.2, the concrete-syntax /
-> mixfix layer §1.5, the entailment/categoricity questions §6, content
-> addressing §7).
->
-> See also: [`observers.md`](./observers.md) (how untrusted code feeds
-> facts into the kernel), [`metatheory.md`](./metatheory.md) (theories,
-> derivations, and models as first-class objects),
-> [`kernel-design.md`](./kernel-design.md) (the kernel TCB this
-> elaborates down to).
+> **DESIGN SKETCH.** The high-level Haskell-like syntax for theories,
+> definitions, and proofs that today live as hand-written Rust (`defs/`,
+> `init/`, `proofs/`). **Canonical concrete forms are in
+> [`surface-compiler.md`](./surface-compiler.md) §3.0** (`#sig`/`#thy`/
+> `#spec`/`#model`/`#models`); where notation here differs, that doc wins.
+> Read this for the *rationale and aspirational reach* (the SQL analogy
+> §1.2, the mixfix layer §1.5, the entailment/categoricity questions §6,
+> content addressing §7). Elaborates down to the kernel TCB
+> ([`kernel-design.md`](./kernel-design.md)).
 
 ---
 

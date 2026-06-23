@@ -5,12 +5,12 @@
 > evolution notes (`docs/design/proposals/stacked-pure-hol/`, retired to the
 > `backup/pre-hol-cleanup` branch).
 >
-> The (not-yet-built) authoring layer *above* this kernel — surface
-> syntax, untrusted observers, and theories/derivations as first-class
-> objects — is described in [`surface-syntax.md`](./surface-syntax.md),
-> [`observers.md`](./observers.md), and [`metatheory.md`](./metatheory.md).
-> Those are design sketches; this doc is the authority on the kernel TCB
-> they elaborate down to.
+> The (not-yet-built) authoring layer *above* this kernel is described in
+> the design sketches ([`surface-compiler.md`](./surface-compiler.md),
+> [`observers.md`](./observers.md), [`metatheory.md`](./metatheory.md)); the
+> kernel's own audit is [`soundness-audit.md`](./soundness-audit.md). See
+> [`docs/README.md`](./README.md) for the full index. This doc is the authority
+> on the kernel TCB.
 
 ## 1. What it is
 
@@ -640,227 +640,66 @@ The target is three rungs, with HOL as a **narrow waist**:
      with observation + computation as primitives       efficient
 ```
 
+This section is a brief; the **full treatment is
+[`covalence-pure.md`](./covalence-pure.md)** (crate reorg in
+[`refactor-plan.md`](./refactor-plan.md)).
+
 ### 11.1 `covalence-pure` — the base logic (opaque, computational)
 
-A **first-order** logic kept *as weak as possible on purpose*. It reasons
-only about **opaque predicates** and the simple first-order **implications**
-between them — e.g. `WASM_holds ⟹ HOL_holds` — and it **cannot express** what
-those predicates *mean*: not WASM's reduction relation, not HOL theoremhood,
-nothing about their internal structure. A predicate is an uninterpreted
-symbol; the logic commits to nothing about it. Committing to almost nothing
-is exactly what makes Pure *trivially correct* — there is barely anything for
-it to be wrong about — and *trivially re-hostable* (§11.5).
-
-It is **computational in character**: in practice a *template metaprogram
-over a handful of Rust traits*. A Pure fact is a Rust value built only
-through those trait rules (LCF discipline), and Rust's type system tracks
-which opaque predicates a fact depends on. The **observation substrate moves
-here**: the `Obs` leaf and the `ObsEq` / `ObsTrue` / `ObsImp` policy traits
-(today in `covalence-core/src/term/observer.rs`,
-[`observers.md`](./observers.md) §2) become *the* primitive of the base
-logic — an observer attests an opaque atomic predicate, and a first-order
-rule chains it into an implication. The trusted-observer story of
-[`observers.md`](./observers.md) §7 is precisely this: a trusted observer is
-a Rust trait impl that mints an opaque fact by running code (bignum add, a
-store fetch, a WASM component), and the §11.4 "zoo" is the catalogue of those
-impls.
-
-Pure does **not** reason *about* the WASM engine or the store; it only
-*records* (opaquely) that an observation was made, and proves first-order
-implications over such records. All meaning lives one rung up.
+A first-order logic kept *as weak as possible on purpose*: opaque predicates +
+first-order implications, with no way to express what the predicates *mean*.
+Committing to almost nothing makes it trivially correct and trivially
+re-hostable. The observation substrate (`Obs` + `ObsEq`/`ObsTrue`/`ObsImp`,
+today in `covalence-core/src/term/observer.rs`) moves here as the base
+primitive; a trusted observer ([`observers.md`](./observers.md) §7) is a Rust
+trait impl that mints an opaque fact by running code.
 
 ### 11.2 Lifting into HOL: meaning by assumption
 
-HOL is where the opaque predicates *acquire meaning*. A Pure fact over opaque
-predicates **lifts into HOL under assumptions about what those predicates
-mean** — and those assumptions enter as ordinary **scoped hypotheses** (the
-"scoped truths, no global lies" discipline). Concretely: a Pure theorem
-`WASM_holds ⟹ HOL_holds` lifts to a HOL theorem of the same shape once you
-assume `WASM_holds ⟺ ⟦the real WASM fact⟧` and `HOL_holds ⟺ ⟦the real HOL
-proposition⟧`; the two correspondences ride along as hypotheses until
-discharged — e.g. against the SpecTec-lowered `T_wasm` (§11.5,
-[`observers.md`](./observers.md) §4). This is the kernel's `obs_imp` rule
-generalized and relocated: **Pure proves the *structure* of the implication,
-computationally and opaquely; HOL supplies the *meaning*.**
-
-So `covalence-core` stays *mostly unchanged* — morally "`Thm` implements a
-trait": a `Thm` is one lifted observer (the HOL observer) among peers (the
-WASM observer, the bytes observer), and the existing HOL kernel API keeps
-working while becoming one logic *expressed over* Pure rather than the
-absolute bottom. It is the same reflective move as the metatheory program
-([`metatheory.md`](./metatheory.md) §1) applied *downward*; and the judgement
-`WASM(P,D,A) ⟹ ∃D'. ZFC(D',A)` ([`metatheory.md`](./metatheory.md) §6) is
-literally a Pure opaque-predicate implication lifted into the metatheory.
+A Pure implication `WASM_holds ⟹ HOL_holds` lifts into HOL once you assume each
+opaque predicate ⟺ its real meaning; those correspondences ride as scoped
+hypotheses until discharged. This is `obs_imp` generalized: **Pure proves the
+*structure*; HOL supplies the *meaning*.** `covalence-core` stays mostly
+unchanged — a `Thm` becomes one lifted observer among peers.
 
 ### 11.3 Why it is a *narrow waist*
 
-The waist's defining property: **the middle logic (HOL) is *shared* across
-every implementation — it is what gives everything a common semantics.** It
-does not vary from one implementation to the next; that fixity is the *entire
-point* of a waist. What *diverges* is the two ends:
+HOL is the *shared* semantic surface; what diverges is the two ends — below,
+`covalence-pure` + efficient representations (a Rust observer "zoo", a paranoid
+simple core, an OCaml/JS re-host); above, a diversity of object logics. A
+`covalence-hol` zoo holds many Rust realizations of the same logical content,
+each separately auditable, none enlarging the others' trust surface (flat TCB).
 
-- **below the waist** — `covalence-pure` and the efficient representations
-  differ per implementation, by *implementation strategy* (an efficient Rust
-  observer zoo, a paranoid simple core, an OCaml/JS re-host — §11.1, §11.5).
-  The raw `covalence-pure` API is mostly an implementation detail the waist
-  hides; most consumers use the `covalence-hol` API instead.
-- **above the waist** — a diversity of object logics. *This* divergence is the
-  whole point of the system (metatheory-as-default; many logics, many models —
-  [`frontend.md`](./frontend.md), [`metatheory.md`](./metatheory.md)).
-- **at the waist** — the one stable HOL surface every consumer targets and
-  every implementation provides; a theorem's *meaning* is independent of which
-  `covalence-pure` produced it and which object logic consumes it.
+### 11.4 Metaprogramming layer; 11.5 paranoid mode + re-hosting
 
-This is exactly why re-hosting (§11.5) re-implements the *same* waist in a new
-language rather than a different logic. *Which* logic plays the shared-waist
-role is a one-time, **project-level** choice — not a per-implementation one:
-HOL Light today; **HOL-ω** (higher-kinded — first-class monads / transformers /
-profunctors) is a live candidate to *be* the shared waist
-([`metatheory.md`](./metatheory.md) §5.2).
+`covalence-pure` is also a layer where **Rust is the metalanguage** for
+constructing logical objects freely, so an efficient construction's soundness
+reduces to the Rust compiler's plus the audit of that one small construction.
+Those efficient constructions must be **demotable to untrusted wrappers around a
+*simple dynamic core*** (an obvious Pure interpreter that re-checks proposed
+results — shrinking the TCB to just that core), and `covalence-pure` +
+`covalence-core` must be **re-implementable in another language**. The simple
+core is the portable spec; everything efficient is an optional,
+untrusted-checkable optimization over it.
 
-The flat-TCB and "scoped truths" disciplines are unchanged — the base logic
-is *smaller and more concrete*, so if anything the audit story improves.
+### 11.6 Roadmap: HOL Light → HOL Light over Pure → HOL-ω over Pure
 
-> **Two "waist" usages, reconciled.** This section calls HOL the *narrow
-> waist* in the sense of "the one shared semantic surface between
-> `covalence-pure`-below and object-logics-above." The canonical
-> [`VISION.md`](./VISION.md) §1 three-layer stack uses *thin waist* for a
-> **different** object — **internal Metamath**, reified inside HOL on *top*,
-> the `∃D. ValidProof(D, P, Ax)` primitive every internal logic passes
-> through. They are not in conflict: in the full stack, HOL is the **middle**
-> metalogic ("generalized Haskell"), `covalence-pure` + executors + content
-> addressing are the **bottom** (Phase E, [`covalence-pure.md`](./covalence-pure.md)),
+The final shared waist is **HOL-ω** (higher-kinded — first-class
+monads/transformers/profunctors), reached additively (HOL-ω's API is a superset
+of HOL Light's). Building over Pure first makes substitution/typing auditable;
+the endgame closes the computational-metatheory loop — an HOL-ω compiler/runtime
+that bootstraps to WASM and proves each compilation sound by *translation
+validation*.
+
+> **Two "waist" usages, reconciled.** This §11 calls HOL the *narrow waist*
+> (the shared semantic surface between `covalence-pure`-below and
+> object-logics-above). The canonical [`VISION.md`](./VISION.md) §1 three-layer
+> stack uses *thin waist* for a **different** object — **internal Metamath**,
+> reified inside HOL on *top*. No conflict: HOL is the **middle** metalogic,
+> `covalence-pure` + executors + content addressing are the **bottom** (Phase E),
 > and internal Metamath is the **top** thin waist
-> ([`theories-models-and-logics.md`](./theories-models-and-logics.md)
-> §5.6/§5.7). This §11 is the *bottom*-rung direction.
-
-### 11.4 Pure as a metaprogramming layer; the `covalence-hol` zoo
-
-`covalence-pure` is not only a logic you *write proofs in* — it is a layer
-where **Rust itself is the metalanguage**, used to *construct* logical
-objects (terms, observers, and the "trusted" assumptions of
-[`observers.md`](./observers.md) §7) **freely**. Think **template
-metaprogramming**: the host language computes and builds the object-language
-artifacts. It is "computation and observation as primitives" (§11.1) taken to
-its conclusion — a trusted assumption is just a Rust value you constructed,
-and the freedom to construct it in ordinary Rust *is* the metaprogramming
-facility.
-
-The payoff is a precise, small trust story: because an efficient construction
-is Rust code, **its soundness reduces to the soundness of the Rust compiler**
-(plus the audit of that one small, concrete construction). No new *logical*
-axiom is granted — the assumption's content is fixed and auditable (§11.1,
-[`observers.md`](./observers.md) §7); Rust only supplies an efficient way to
-*mint instances* of it. "Trusted" keeps its §7 meaning — a sound assumption
-with a compiled-in representation — and the compiler is the thing doing the
-compiling.
-
-On top of this, `covalence-hol` can hold a **zoo of efficient
-implementations**: many Rust realizations of the same logical content — an
-efficient `nat`, an efficient `bytes`, a WASM-spec observer, a store-backed
-observer, several coexisting — each an independent, separately-auditable Rust
-construction, each **trusted only insofar as Rust is sound and that impl is
-correct**. This is the flat-TCB property again
-([`observers.md`](./observers.md) §5): adding the 20th efficient impl does
-not enlarge the trust surface of the first 19. And it is *why* the narrow
-waist holds — the zoo's diverse, swappable implementations all present the
-**same HOL waist API** while differing underneath, including over different
-`covalence-pure` substrates.
-
-### 11.5 Portability constraint: paranoid mode and re-hosting
-
-A hard requirement on the "different `covalence-pure`" freedom (§11.3): the
-design must keep two things *easy*.
-
-**Paranoid mode.** The efficient, compiled constructions of §11.4 — the zoo,
-the trusted observers of [`observers.md`](./observers.md) §7 — must be
-**demotable to untrusted wrappers around a simple dynamic core**. The *simple
-dynamic core* is a minimal, obviously-correct interpreter of `covalence-pure`:
-no compiled fast paths, every assumption and computation represented
-explicitly and checked at runtime. In paranoid mode the efficient impls only
-*propose* results; the simple core *re-checks* them — so the TCB shrinks from
-"the Rust compiler + every efficient construction" (§11.4) down to just the
-simple core. This is the LCF / mirror discipline ([`VISION.md`](./VISION.md))
-turned on the kernel's *own* representations: the fast path is untrusted, the
-slow obvious path is the checker. It is possible *only because* §7 / §11.1
-keep an assumption's **content** (what the simple core implements) separable
-from its **efficient representation** (what the zoo compiles) — paranoid mode
-just makes the content authoritative.
-
-**Re-hosting.** `covalence-pure` + `covalence-core` must be **re-implementable
-in another language** — OCaml, Haskell, JS, whatever. So the logical design is
-specified by the **narrow-waist HOL API and the simple core's semantics**, not
-by Rust internals: Rust-specific tricks live only in the *efficient
-representations*, never in the *content*. A re-host implements the small
-simple core (and gets the same logical content for free); it may then grow its
-*own* efficient zoo, or just run pure paranoid mode. A re-implementation in
-another language is, in effect, "paranoid mode in that language" plus whatever
-fast paths that host chooses to add.
-
-The two requirements reinforce each other: the **simple dynamic core is the
-portable spec**, and everything efficient — in any language — is an optional,
-untrusted-checkable optimization layered over it. That is what keeps "a
-different `covalence-pure` per implementation" a *cheap, safe* move rather
-than a fork of the trust story.
-
-### 11.6 The waist roadmap and endgame (HOL Light → Pure → HOL-ω)
-
-**Decision: the *final* shared waist is HOL-ω; HOL Light is the start; the path
-runs through `covalence-pure`.** Three stages:
-
-```
-   1. HOL Light, direct           (today — covalence-core as the floor)
-   2. HOL Light over covalence-pure   (the §11.1–11.2 restructure: HOL as a
-                                       lifted observer over the first-order base)
-   3. HOL-ω over covalence-pure       (the final waist — go higher-kinded)
-```
-
-Why this order:
-
-- **`covalence-pure` first.** Building HOL Light *over* Pure (stage 2) before
-  going higher-kinded is worth it because **HOL-ω is easier to state over Pure.**
-  Pure is a simple, positive, first-order base where theorems and axioms —
-  substitution, well-typedness, the binder machinery — are *clearly stated and
-  easy to audit* (§11.1). Re-grounding the kernel's bespoke substitution-and-typing
-  Rust as Pure observers (`covalence-pure.md §6`) makes the eventual higher-kinded
-  step a definitional extension over an auditable base rather than a rewrite of a
-  monolithic kernel. *Substitution and friends get much simpler and more
-  trustworthy.*
-- **HOL-ω's API is a *superset* of HOL Light's.** So the stage-2→3 migration is
-  **additive** — every HOL Light theorem/rule remains valid; HOL-ω only *adds*
-  higher-kinded quantification (type-constructor variables). Nothing built on the
-  HOL Light waist breaks.
-- **The one constraint that makes the superset migration cheap** (a
-  *defer-as-guardrails* note for `covalence-hol`): **concentrate direct use of
-  rank-1 polymorphism in a small number of places.** If `covalence-hol` reaches
-  the object logic mostly through `.cov` files and higher-level APIs (which it
-  should), the spots that touch rank-1 type-variable machinery *directly* are few
-  — so when rank-1 becomes the kind-`ty` fragment of HOL-ω, only those few spots
-  need adapting. Don't scatter raw polymorphism use across the shell.
-
-#### Why HOL-ω is the final waist — the endgame
-
-The waist is HOL-ω because the **final vision is to program the middle language
-like Haskell** — algebraic data types, monads, transformers, profunctors as
-first-class object-logic theories (which need kind-`ty→ty` quantification, §11.3 /
-`theories-models-and-logics.md §3.3`). And the endgame for *running* that
-language closes the computational-metatheory loop ([`VISION.md`](./VISION.md) §3):
-
-> An **efficient compiler + runtime** for the HOL-ω middle language that
-> **bootstraps by generating WASM and proving the generated WASM sound by
-> *translation validation*** — each compilation produces a checkable proof that
-> *this* WASM correctly implements *this* source, rather than trusting a
-> verified-once compiler.
-
-This is the "checkable certificate" discipline (`VISION.md §3`, the SMT-solver
-pattern) applied to the system's own runtime: the compiler is *untrusted*; a
-small trusted **translation validator** proves each source→WASM compilation
-correct; the result runs on the WASM executor (one of `covalence-pure`'s
-executors, `covalence-pure.md §1`). So the efficient middle-language runtime
-enters the system the same way every oracle does — as a proven artifact, not a
-trust assumption. The narrow waist, the Pure executor substrate, and the
-Haskell-like surface all meet here: **HOL-ω is the language you write, Pure is
-what it's grounded in, and validated-WASM is how it runs fast.**
+> ([`theories-models-and-logics.md`](./theories-models-and-logics.md) §5.6/§5.7).
+> This §11 is the *bottom*-rung direction.
 
 ## Typedness caching — representation options (design note)
 

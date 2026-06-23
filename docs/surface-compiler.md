@@ -1,22 +1,14 @@
 # Covalence — Surface Language: theories, models, and the multi-stage compiler
 
-> **STATUS: DESIGN SKETCH.** Unifies the `surface/` AST sketch and the working
-> `script/` `.cov` tactic language into **one language**: a multi-stage compiler
-> whose central first-class objects are **theories** and their **many models
-> across many logics**. This is the concrete realization of
-> [`frontend.md`](./frontend.md) §3 (terms-as-interpreted) and
-> [`metatheory.md`](./metatheory.md) §7 (handler dispatch) — the "what's
-> provable in which logic, on which language" workspace, made into a compiler.
->
-> See also: [`surface-syntax.md`](./surface-syntax.md) (the surface *syntax*
-> forms this builds on), the working `crates/covalence-hol/src/script/` (today's
-> `.cov` tactic language — the eventual *low-level target* of this compiler),
-> [`metatheory.md`](./metatheory.md) (reified object logics, morphisms),
-> [`observers.md`](./observers.md) (untrusted handlers feeding the kernel).
-
-> **Refinement:** the signature/theory/model architecture, within-logic
-> model multiplicity, and the consumability matrix are sharpened in
-> [`theories-models-and-logics.md`](./theories-models-and-logics.md).
+> **DESIGN SKETCH — the canonical surface-language doc.** Unifies the
+> `surface/` AST sketch and the working `script/` `.cov` tactic language into
+> **one language**: a multi-stage compiler whose central first-class objects
+> are **theories** and their **many models across many logics** — the
+> realization of [`frontend.md`](./frontend.md) §3 (terms-as-interpreted) and
+> [`metatheory.md`](./metatheory.md) §7 (handler dispatch). The
+> signature/theory/model architecture and the consumability matrix are
+> sharpened in [`theories-models-and-logics.md`](./theories-models-and-logics.md);
+> the surface *syntax* forms are in [`surface-syntax.md`](./surface-syntax.md).
 
 ---
 

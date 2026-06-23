@@ -1,0 +1,28 @@
+#!/bin/sh
+# Covalence pre-commit hook: keep Rust formatting clean so the CI `fmt` job
+# stays green. Wired up by `bun install` (the package.json `prepare` script sets
+# `git config core.hooksPath .githooks`).
+#
+# Behaviour: format the whole workspace, then re-stage anything that was already
+# staged and got reformatted. Only touches tracked, staged Rust files' crates —
+# `cargo fmt --all` is fast enough to run wholesale.
+
+# Skip if there are no staged Rust files.
+if ! git diff --cached --name-only --diff-filter=ACM | grep -q '\.rs$'; then
+    exit 0
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "pre-commit: cargo not found, skipping rustfmt" >&2
+    exit 0
+fi
+
+echo "pre-commit: cargo fmt --all"
+cargo fmt --all
+
+# Re-stage any staged Rust files that fmt modified.
+git diff --cached --name-only --diff-filter=ACM | grep '\.rs$' | while read -r f; do
+    [ -f "$f" ] && git add -- "$f"
+done
+
+exit 0

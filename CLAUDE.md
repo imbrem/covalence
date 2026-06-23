@@ -44,6 +44,8 @@ bun run code:browser       # build WASM + launch web VSCode (always WASM)
 bun run code:desktop       # full build + launch desktop VSCode (native if available, else WASM)
 cargo check                # check Rust crates
 cargo test                 # run Rust tests
+bun run fmt                # cargo fmt --all (also runs on commit via .githooks/pre-commit)
+bun run fmt:check          # cargo fmt --all --check (the CI fmt gate)
 bun test                   # run all tests (Rust + Python)
 bun run test:python        # run Python tests only
 bun run build:python       # build Python extension (maturin develop)

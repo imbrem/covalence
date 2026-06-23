@@ -43,7 +43,8 @@ mod tests {
         let sym = covalence_spectec::parse::parse_sym("(seq (num 0x61) (num 0x62))").unwrap();
         let term = compile_sym(&sym).unwrap();
         // Same reified term as desugaring the equivalent surface regex `ab`.
-        let expected = crate::regex::compile(&covalence_grammar::regex::parse_regex_u8("ab").unwrap());
+        let expected =
+            crate::regex::compile(&covalence_grammar::regex::parse_regex_u8("ab").unwrap());
         assert_eq!(term, expected);
     }
 

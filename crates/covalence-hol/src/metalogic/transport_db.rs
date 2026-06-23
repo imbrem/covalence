@@ -111,7 +111,10 @@ pub fn interp_stmt(src: &RuleSet, tgt: &RuleSet, sigma: &Term, a: &Term) -> Resu
 pub fn sigma_pred(tgt: &RuleSet, sigma: &Term) -> Result<Term> {
     let x = Term::free("x", tgt.phi.clone());
     let body = derivable(tgt, &sigma_at(sigma, &x)?)?; // Derivable(tgt, σ x)
-    Ok(Term::abs(tgt.phi.clone(), covalence_core::subst::close(&body, "x")))
+    Ok(Term::abs(
+        tgt.phi.clone(),
+        covalence_core::subst::close(&body, "x"),
+    ))
 }
 
 /// **Generic transport between Metamath-database logics.**
@@ -131,12 +134,7 @@ pub fn sigma_pred(tgt: &RuleSet, sigma: &Term) -> Result<Term> {
 /// `src`/`tgt` must share a carrier; `sigma : Φ → Φ`. The result is over a free
 /// `A : Φ` (universally closed), so it specialises to any concrete formula by
 /// [`Thm::all_elim`].
-pub fn transport(
-    src: &RuleSet,
-    tgt: &RuleSet,
-    sigma: &Term,
-    clause_sims: Vec<Thm>,
-) -> Result<Thm> {
+pub fn transport(src: &RuleSet, tgt: &RuleSet, sigma: &Term, clause_sims: Vec<Thm>) -> Result<Thm> {
     check_same_carrier(src, tgt)?;
     let pred = sigma_pred(tgt, sigma)?;
     let a = Term::free("A", src.phi.clone());
@@ -151,12 +149,7 @@ pub fn transport(
 
 /// Given `⊢ ∀A. P A ⟹ (pred) A` (the consequent a `pred`-redex at the bound
 /// `A`), β-reduce `pred A` and re-generalise: `⊢ ∀A. P A ⟹ pred-body[A]`.
-fn beta_reduce_consequent_under_forall(
-    thm: Thm,
-    a: &Term,
-    pred: &Term,
-    a_ty: Type,
-) -> Result<Thm> {
+fn beta_reduce_consequent_under_forall(thm: Thm, a: &Term, pred: &Term, a_ty: Type) -> Result<Thm> {
     use crate::init::ext::ThmExt;
     let inst = thm.all_elim(a.clone())?; // ⊢ P A ⟹ pred A
     let pred_a = pred.clone().apply(a.clone())?; // (λx. …) A
@@ -308,15 +301,16 @@ mod tests {
         let mut clause = nth_conjunct(assumed_closed.clone(), j, n_tgt).unwrap();
         for v in &info.float_vars {
             clause = clause
-                .all_elim(Term::free(crate::metalogic::mm_database::mv(v), phi.clone()))
+                .all_elim(Term::free(
+                    crate::metalogic::mm_database::mv(v),
+                    phi.clone(),
+                ))
                 .unwrap();
         }
         let d_concl = if d_prime_ess.is_empty() {
             clause // {Closed_T d'} ⊢ d' concl
         } else {
-            clause
-                .imp_elim(conj_thms(d_prime_ess).unwrap())
-                .unwrap() // {Closed_T d', pred(essᵢ)…} ⊢ d' concl
+            clause.imp_elim(conj_thms(d_prime_ess).unwrap()).unwrap() // {Closed_T d', pred(essᵢ)…} ⊢ d' concl
         };
 
         // Discharge Closed_T d', generalise d' ⟹ Derivable(tgt, concl).
@@ -345,7 +339,9 @@ mod tests {
 
         let mut out = body;
         for v in info.float_vars.iter().rev() {
-            out = out.all_intro(&crate::metalogic::mm_database::mv(v), phi.clone()).unwrap();
+            out = out
+                .all_intro(&crate::metalogic::mm_database::mv(v), phi.clone())
+                .unwrap();
         }
         out
     }
@@ -495,7 +491,11 @@ mod tests {
             .unwrap()
             .forall("A", ClauseInfo::phi())
             .unwrap();
-        assert_eq!(thm.concl(), &expected, "transport has the monotonicity shape");
+        assert_eq!(
+            thm.concl(),
+            &expected,
+            "transport has the monotonicity shape"
+        );
     }
 
     /// The transported theorem genuinely *moves a fact across databases*:

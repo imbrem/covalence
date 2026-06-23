@@ -35,7 +35,9 @@
 
 use covalence_core::Thm;
 
-use crate::metamath::{Assertion, Database, DatabaseSink, Expr, MmError, Proof, Statement, SymbolKind};
+use crate::metamath::{
+    Assertion, Database, DatabaseSink, Expr, MmError, Proof, Statement, SymbolKind,
+};
 
 use super::mm_replay::replay_prop;
 
@@ -63,7 +65,10 @@ impl HolPropSink {
 
     /// Look up the constructed theorem for a `$p` label.
     pub fn theorem(&self, label: &str) -> Option<&Thm> {
-        self.theorems.iter().find(|(l, _)| l == label).map(|(_, t)| t)
+        self.theorems
+            .iter()
+            .find(|(l, _)| l == label)
+            .map(|(_, t)| t)
     }
 
     /// Consume the sink, yielding the constructed theorems in read order.
@@ -201,7 +206,11 @@ mod tests {
         let (l1, a1i) = &thms[1];
         assert_eq!(l1, "a1i");
         assert!(a1i.has_no_obs(), "a1i is oracle-free");
-        assert_eq!(a1i.hyps().len(), 1, "a1i carries its one essential as a hypothesis");
+        assert_eq!(
+            a1i.hyps().len(),
+            1,
+            "a1i carries its one essential as a hypothesis"
+        );
     }
 
     /// The constructed `ax2i` theorem is **exactly** what the direct replay
@@ -218,7 +227,11 @@ mod tests {
         let via_sink = read_prop(PROP_WITH_THEOREMS).unwrap();
         let sink_ax2i = &via_sink.iter().find(|(l, _)| l == "ax2i").unwrap().1;
 
-        assert_eq!(direct.concl(), sink_ax2i.concl(), "sink and direct replay agree");
+        assert_eq!(
+            direct.concl(),
+            sink_ax2i.concl(),
+            "sink and direct replay agree"
+        );
     }
 
     /// Sanity: the conclusions really are over `prop`'s reified syntax (no
@@ -230,8 +243,13 @@ mod tests {
         // a1i concludes `Derivable_Prop ⌜(ps -> ph)⌝`. With proof-order indices
         // ph := 0, ps := 1 (the proof opens `wph wps`), `(ps -> ph)` encodes as
         // `p_imp(p_var 1, p_var 0)`.
-        let expected = prop::derivable(&prop::p_imp(prop::p_var_lit(1), prop::p_var_lit(0))).unwrap();
-        assert_eq!(a1i.concl(), &expected, "a1i conclusion is pure Derivable_Prop");
+        let expected =
+            prop::derivable(&prop::p_imp(prop::p_var_lit(1), prop::p_var_lit(0))).unwrap();
+        assert_eq!(
+            a1i.concl(),
+            &expected,
+            "a1i conclusion is pure Derivable_Prop"
+        );
         // And it is not a `|-` denotation artifact — the conclusion is the
         // `Derivable_Prop` predicate applied to encoded syntax.
         let _ = typecode_of; // keep the import meaningful across refactors

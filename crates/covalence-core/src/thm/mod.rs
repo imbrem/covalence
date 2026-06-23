@@ -43,8 +43,7 @@ use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hol;
 use crate::subst::{
-    close_var, has_free_var_typed, open_with, subst_free, subst_tfree_in_term,
-    subst_tfrees_in_term,
+    close_var, has_free_var_typed, open_with, subst_free, subst_tfree_in_term, subst_tfrees_in_term,
 };
 
 use crate::term::{

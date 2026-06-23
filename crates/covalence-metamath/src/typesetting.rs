@@ -72,8 +72,8 @@ fn collect_defs(body: &str, defs: &mut Vec<Typedef>) {
     while skip_ws(&mut input).is_ok() && !input.is_empty() {
         match statement.parse_next(&mut input) {
             Ok(Some(def)) => defs.push(def),
-            Ok(None) => {}      // a non-def command (htmltitle, htmlcss, …)
-            Err(_) => break,    // malformed — stop this body
+            Ok(None) => {}   // a non-def command (htmltitle, htmlcss, …)
+            Err(_) => break, // malformed — stop this body
         }
     }
 }
@@ -104,9 +104,17 @@ fn statement(input: &mut &str) -> ModalResult<Option<Typedef>> {
             as_seen = true;
         }
     }
-    Ok(matches!(cmd.as_str(), "htmldef" | "althtmldef" | "latexdef")
-        .then(|| token.map(|t| Typedef { kind: cmd, token: t, value }))
-        .flatten())
+    Ok(
+        matches!(cmd.as_str(), "htmldef" | "althtmldef" | "latexdef")
+            .then(|| {
+                token.map(|t| Typedef {
+                    kind: cmd,
+                    token: t,
+                    value,
+                })
+            })
+            .flatten(),
+    )
 }
 
 /// Skip whitespace and `/* ... */` block comments. Because string literals are
@@ -202,7 +210,8 @@ $)
 "#;
         let defs = parse_typesetting(src);
         assert!(
-            defs.iter().any(|d| d.kind == "althtmldef" && d.token == "->"),
+            defs.iter()
+                .any(|d| d.kind == "althtmldef" && d.token == "->"),
             "the `->` def was swallowed by a fake comment: {:?}",
             defs.iter().map(|d| &d.token).collect::<Vec<_>>()
         );

@@ -14,9 +14,9 @@ use covalence_core::Thm;
 
 use crate::metamath::{Database, MmError};
 
-use super::mm_database::{ClauseCache, Parser, derive_theorem_cached, derive_theorem_with};
 #[cfg(test)]
 use super::mm_database::derive_theorem;
+use super::mm_database::{ClauseCache, Parser, derive_theorem_cached, derive_theorem_with};
 
 /// The labels of the database's **logical theorems** to import: `$p` assertions
 /// (proof present) whose conclusion typecode is `|-`. Non-`|-` `$p` assertions
@@ -114,7 +114,9 @@ pub fn import_labels_parallel(
     }
 
     let n = if n_threads == 0 {
-        std::thread::available_parallelism().map(|p| p.get()).unwrap_or(4)
+        std::thread::available_parallelism()
+            .map(|p| p.get())
+            .unwrap_or(4)
     } else {
         n_threads
     }
@@ -231,10 +233,16 @@ mod tests {
             |_label| {},
             |done, total, label, result, _dur| {
                 if let Err(e) = result {
-                    fails.lock().unwrap().push((label.to_string(), e.to_string()));
+                    fails
+                        .lock()
+                        .unwrap()
+                        .push((label.to_string(), e.to_string()));
                 }
                 if done % 5000 == 0 {
-                    eprintln!("  {done}/{total} ({} fails so far)", fails.lock().unwrap().len());
+                    eprintln!(
+                        "  {done}/{total} ({} fails so far)",
+                        fails.lock().unwrap().len()
+                    );
                 }
             },
         );
@@ -255,20 +263,30 @@ mod tests {
         let path = std::env::var("COV_SET_MM").expect("set COV_SET_MM");
         let db = crate::metamath::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let labels = [
-            "cbvral4vw", "cbvral6vw", "cbvral8vw", "disjiund", "otsndisj", "otiunsndisj",
-            "reuop", "f1veqaeq", "isopolem", "isosolem", "fvmpopr2d",
+            "cbvral4vw",
+            "cbvral6vw",
+            "cbvral8vw",
+            "disjiund",
+            "otsndisj",
+            "otiunsndisj",
+            "reuop",
+            "f1veqaeq",
+            "isopolem",
+            "isosolem",
+            "fvmpopr2d",
         ];
         for l in labels {
-            let thm = derive_theorem(&db, l)
-                .unwrap_or_else(|e| panic!("`{l}` still fails: {e}"));
+            let thm = derive_theorem(&db, l).unwrap_or_else(|e| panic!("`{l}` still fails: {e}"));
             assert!(thm.has_no_obs(), "`{l}` must be oracle-free");
             eprintln!("OK {l}");
         }
     }
 
     /// The vendored real `hol.mm` (CC0; all 151 `$p` proofs are *compressed*).
-    const HOL_MM: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../covalence-metamath/tests/fixtures/hol.mm"));
+    const HOL_MM: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../covalence-metamath/tests/fixtures/hol.mm"
+    ));
 
     /// **All of real `hol.mm` flows into covalence-hol.** Parse the vendored
     /// database, sanity-check it with the Metamath verifier, then *independently*
@@ -282,7 +300,10 @@ mod tests {
     fn import_hol_mm() {
         let db = crate::metamath::parse(HOL_MM).expect("hol.mm parses");
         let verified = crate::metamath::verify_all(&db).expect("hol.mm verifies");
-        assert!(verified > 100, "hol.mm should have >100 $p theorems, got {verified}");
+        assert!(
+            verified > 100,
+            "hol.mm should have >100 $p theorems, got {verified}"
+        );
 
         // Import the first N theorems (db order = foundational first) via the fast
         // per-theorem path. The full 151 import is the `#[ignore]`d sweep below
@@ -299,7 +320,10 @@ mod tests {
         for label in &labels {
             let thm = derive_theorem(&db, label)
                 .unwrap_or_else(|e| panic!("hol.mm `{label}` import failed: {e}"));
-            assert!(thm.has_no_obs(), "imported hol.mm `{label}` must be oracle-free");
+            assert!(
+                thm.has_no_obs(),
+                "imported hol.mm `{label}` must be oracle-free"
+            );
         }
         eprintln!("hol.mm import (first {N}) in {:?}", t0.elapsed());
 
@@ -309,7 +333,11 @@ mod tests {
         // the essential surfaces as the theorem's one hypothesis.
         let idi = derive_theorem(&db, "idi").expect("hol.mm `idi` imports");
         assert!(idi.has_no_obs(), "idi must be oracle-free");
-        assert_eq!(idi.hyps().len(), 1, "idi carries its one essential as a hypothesis");
+        assert_eq!(
+            idi.hyps().len(),
+            1,
+            "idi carries its one essential as a hypothesis"
+        );
     }
 
     /// **All 151 of real `hol.mm` import** into covalence-hol — every `$p`
@@ -331,13 +359,18 @@ mod tests {
         for (label, r) in &results {
             match r {
                 Ok(thm) => {
-                    assert!(thm.has_no_obs(), "imported hol.mm `{label}` must be oracle-free");
+                    assert!(
+                        thm.has_no_obs(),
+                        "imported hol.mm `{label}` must be oracle-free"
+                    );
                     n_ok += 1;
                 }
                 Err(e) => panic!("hol.mm `{label}` import failed: {e}"),
             }
         }
-        eprintln!("hol.mm FULL import: {n_ok}/{total} theorems in {elapsed:?} (verified {verified})");
+        eprintln!(
+            "hol.mm FULL import: {n_ok}/{total} theorems in {elapsed:?} (verified {verified})"
+        );
         assert_eq!(n_ok, total, "all hol.mm $p theorems should import");
         assert_eq!(total, verified, "every verified theorem is imported");
     }
@@ -352,8 +385,7 @@ mod tests {
     #[test]
     #[ignore = "needs COV_SET_MM=/path/to/set.mm (~48 MB, not vendored)"]
     fn import_set_mm_sample() {
-        let path = std::env::var("COV_SET_MM")
-            .expect("set COV_SET_MM to a downloaded set.mm path");
+        let path = std::env::var("COV_SET_MM").expect("set COV_SET_MM to a downloaded set.mm path");
         let source = std::fs::read_to_string(&path).expect("read set.mm");
 
         let t_parse = std::time::Instant::now();
@@ -384,6 +416,9 @@ mod tests {
             }
         }
         eprintln!("set.mm import: {sampled} theorems in {:?}", t0.elapsed());
-        assert!(sampled >= 1, "expected to sample at least one set.mm theorem");
+        assert!(
+            sampled >= 1,
+            "expected to sample at least one set.mm theorem"
+        );
     }
 }

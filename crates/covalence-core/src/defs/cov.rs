@@ -377,7 +377,10 @@ fn parse_type(s: &SExpr, env: &CoreEnv) -> R<Type> {
                     if ch.len() < 3 {
                         return Err(syn("#fn: expected (#fn A B …)"));
                     }
-                    let mut tys = ch[1..].iter().map(|c| parse_type(c, env)).collect::<R<Vec<_>>>()?;
+                    let mut tys = ch[1..]
+                        .iter()
+                        .map(|c| parse_type(c, env))
+                        .collect::<R<Vec<_>>>()?;
                     let mut acc = tys.pop().unwrap();
                     while let Some(t) = tys.pop() {
                         acc = Type::fun(t, acc);
@@ -393,13 +396,19 @@ fn parse_type(s: &SExpr, env: &CoreEnv) -> R<Type> {
                         return Err(syn("#tycon: expected (#tycon NAME ty*)"));
                     }
                     let name = sym(&ch[1], "#tycon name")?;
-                    let args = ch[2..].iter().map(|c| parse_type(c, env)).collect::<R<Vec<_>>>()?;
+                    let args = ch[2..]
+                        .iter()
+                        .map(|c| parse_type(c, env))
+                        .collect::<R<Vec<_>>>()?;
                     Ok(Type::tycon(name, args))
                 }
                 // `(NAME ty*)` — a defined type or catalogue type
                 // constructor applied to type arguments.
                 _ => {
-                    let args = ch[1..].iter().map(|c| parse_type(c, env)).collect::<R<Vec<_>>>()?;
+                    let args = ch[1..]
+                        .iter()
+                        .map(|c| parse_type(c, env))
+                        .collect::<R<Vec<_>>>()?;
                     apply_type_ctor(head, args, env)
                 }
             }
@@ -584,7 +593,10 @@ fn parse_type_app(ch: &[SExpr], env: &CoreEnv) -> R<Term> {
         return Err(syn("#at: expected (#at NAME ty*)"));
     }
     let name = sym(&ch[1], "#at name")?;
-    let args = ch[2..].iter().map(|c| parse_type(c, env)).collect::<R<Vec<_>>>()?;
+    let args = ch[2..]
+        .iter()
+        .map(|c| parse_type(c, env))
+        .collect::<R<Vec<_>>>()?;
     // A prior `#def` constant cannot take type args (it is already a
     // closed term), so `#at` only resolves catalogue constants.
     catalogue_term(name, &args).ok_or_else(|| CovError::Unknown(format!("catalogue term: {name}")))
@@ -790,11 +802,37 @@ mod tests {
     fn core_cov_parses() {
         let e = env();
         for name in [
-            "bool.and", "bool.or", "bool.not", "bool.imp", "bool.iff", "bool.forall",
-            "bool.exists", "fail", "fun.id", "fun.const", "fun.compose", "fun.flip", "unit",
-            "unit.nil", "coprod", "coprod.inl", "coprod.inr", "coprod.case", "prod", "prod.pair",
-            "prod.fst", "prod.snd", "option", "option.none", "option.some", "option.case",
-            "option.isSome", "option.unwrap", "result", "result.ok", "result.err",
+            "bool.and",
+            "bool.or",
+            "bool.not",
+            "bool.imp",
+            "bool.iff",
+            "bool.forall",
+            "bool.exists",
+            "fail",
+            "fun.id",
+            "fun.const",
+            "fun.compose",
+            "fun.flip",
+            "unit",
+            "unit.nil",
+            "coprod",
+            "coprod.inl",
+            "coprod.inr",
+            "coprod.case",
+            "prod",
+            "prod.pair",
+            "prod.fst",
+            "prod.snd",
+            "option",
+            "option.none",
+            "option.some",
+            "option.case",
+            "option.isSome",
+            "option.unwrap",
+            "result",
+            "result.ok",
+            "result.err",
         ] {
             assert!(e.get(name).is_some(), "missing core.cov entry: {name}");
         }
@@ -832,13 +870,19 @@ mod tests {
             ("unit.nil", defs::unit_nil_spec().tm().unwrap().clone()),
             ("coprod.inl", defs::inl_spec().tm().unwrap().clone()),
             ("coprod.inr", defs::inr_spec().tm().unwrap().clone()),
-            ("coprod.case", defs::coprod_case_spec().tm().unwrap().clone()),
+            (
+                "coprod.case",
+                defs::coprod_case_spec().tm().unwrap().clone(),
+            ),
             ("prod.pair", defs::pair_spec().tm().unwrap().clone()),
             ("prod.fst", defs::fst_spec().tm().unwrap().clone()),
             ("prod.snd", defs::snd_spec().tm().unwrap().clone()),
             ("option.none", defs::none_spec().tm().unwrap().clone()),
             ("option.some", defs::some_spec().tm().unwrap().clone()),
-            ("option.case", defs::option_case_spec().tm().unwrap().clone()),
+            (
+                "option.case",
+                defs::option_case_spec().tm().unwrap().clone(),
+            ),
             ("option.isSome", defs::is_some_spec().tm().unwrap().clone()),
             ("option.unwrap", defs::unwrap_spec().tm().unwrap().clone()),
             ("result.ok", defs::ok_spec().tm().unwrap().clone()),
@@ -866,10 +910,7 @@ mod tests {
 
         // …and the applied `Type` leaves match the hand-written builders.
         assert_eq!(e.ty("unit").unwrap(), &Type::unit());
-        assert_eq!(
-            e.ty("option").unwrap(),
-            &defs::option(Type::tfree("a")),
-        );
+        assert_eq!(e.ty("option").unwrap(), &defs::option(Type::tfree("a")),);
         assert_eq!(
             e.ty("result").unwrap(),
             &defs::result(Type::tfree("a"), Type::tfree("b")),
@@ -896,8 +937,14 @@ mod tests {
         let hand = Term::abs(Type::bool(), Term::bound(0));
         assert_eq!(parsed, hand);
         // Type snippets.
-        assert_eq!(type_str(e, "(#fn nat bool)").unwrap(), Type::fun(Type::nat(), Type::bool()));
-        assert_eq!(type_str(e, "(option nat)").unwrap(), defs::option(Type::nat()));
+        assert_eq!(
+            type_str(e, "(#fn nat bool)").unwrap(),
+            Type::fun(Type::nat(), Type::bool())
+        );
+        assert_eq!(
+            type_str(e, "(option nat)").unwrap(),
+            defs::option(Type::nat())
+        );
     }
 
     /// Numerals: bare → nat, leading `-` → int.
@@ -913,8 +960,14 @@ mod tests {
     #[test]
     fn errors_are_total() {
         let e = env();
-        assert!(matches!(term_str(e, "nope_unknown"), Err(CovError::Unknown(_))));
-        assert!(matches!(term_str(e, "(#lam x x)"), Err(CovError::Syntax(_))));
+        assert!(matches!(
+            term_str(e, "nope_unknown"),
+            Err(CovError::Unknown(_))
+        ));
+        assert!(matches!(
+            term_str(e, "(#lam x x)"),
+            Err(CovError::Syntax(_))
+        ));
         assert!(matches!(parse_core("(#bogus x)"), Err(CovError::Syntax(_))));
         assert!(matches!(parse_core("(#def x"), Err(CovError::Sexp(_))));
     }

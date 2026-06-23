@@ -170,7 +170,11 @@ fn render_proof(a: &covalence_metamath::database::Assertion) -> String {
     match &a.proof {
         Some(Proof::Normal(labels)) => labels.join(" "),
         Some(Proof::Compressed { labels, letters }) => {
-            format!("( {} ) {}", labels.join(" "), String::from_utf8_lossy(letters))
+            format!(
+                "( {} ) {}",
+                labels.join(" "),
+                String::from_utf8_lossy(letters)
+            )
         }
         None => String::new(),
     }
@@ -179,7 +183,10 @@ fn render_proof(a: &covalence_metamath::database::Assertion) -> String {
 /// The deduped (first-seen order) logical (`|-`) dependency list of a proof:
 /// `[{label, kind}]` with kind axiom/def/thm (thm if the dep has its own proof,
 /// else `df*` → def, else axiom).
-fn render_deps(db: &covalence_hol::metamath::Database, a: &covalence_metamath::database::Assertion) -> Vec<Value> {
+fn render_deps(
+    db: &covalence_hol::metamath::Database,
+    a: &covalence_metamath::database::Assertion,
+) -> Vec<Value> {
     use covalence_metamath::database::Statement;
     use covalence_metamath::{ProofStep, proof_steps};
 
@@ -226,10 +233,7 @@ fn graph_item(db: &covalence_hol::metamath::Database, label: &str) -> Value {
 
 /// Build the proved-result JSON for one finished theorem (stored in `results`
 /// and broadcast over the status WS).
-fn proved_result(
-    result: &covalence_core::Result<covalence_core::Thm>,
-    import_ms: f64,
-) -> Value {
+fn proved_result(result: &covalence_core::Result<covalence_core::Thm>, import_ms: f64) -> Value {
     match result {
         Ok(thm) => {
             let full = format!("{}", thm.concl());
@@ -420,7 +424,12 @@ fn build_hol_surface(
                     .frame
                     .essentials
                     .iter()
-                    .filter_map(|h| parser.encode_expr(&h.expr).ok().map(|e| e.cons_with(&mut cons)))
+                    .filter_map(|h| {
+                        parser
+                            .encode_expr(&h.expr)
+                            .ok()
+                            .map(|e| e.cons_with(&mut cons))
+                    })
                     .collect();
                 decls.push(Decl {
                     label: label.clone(),
@@ -737,7 +746,13 @@ fn read_proc_rss() -> (Option<u64>, Option<u64>) {
     let Ok(s) = std::fs::read_to_string("/proc/self/status") else {
         return (None, None);
     };
-    let parse_kb = |v: &str| v.split_whitespace().next()?.parse::<u64>().ok().map(|kb| kb * 1024);
+    let parse_kb = |v: &str| {
+        v.split_whitespace()
+            .next()?
+            .parse::<u64>()
+            .ok()
+            .map(|kb| kb * 1024)
+    };
     let mut rss = None;
     let mut peak = None;
     for line in s.lines() {
@@ -782,8 +797,11 @@ pub async fn list_dbs(State(state): State<AppState>) -> Response {
     out.sort_by(|a, b| {
         let ka = a.get("origin").and_then(Value::as_str).unwrap_or("");
         let kb = b.get("origin").and_then(Value::as_str).unwrap_or("");
-        ka.cmp(kb)
-            .then_with(|| a.get("file").and_then(Value::as_str).cmp(&b.get("file").and_then(Value::as_str)))
+        ka.cmp(kb).then_with(|| {
+            a.get("file")
+                .and_then(Value::as_str)
+                .cmp(&b.get("file").and_then(Value::as_str))
+        })
     });
     Json(out).into_response()
 }
@@ -819,7 +837,10 @@ pub async fn graph(
     (
         [
             (header::CONTENT_TYPE, "application/json".to_string()),
-            (header::CACHE_CONTROL, "public, max-age=31536000, immutable".to_string()),
+            (
+                header::CACHE_CONTROL,
+                "public, max-age=31536000, immutable".to_string(),
+            ),
             (header::ETAG, etag),
         ],
         body,

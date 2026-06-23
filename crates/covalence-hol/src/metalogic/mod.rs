@@ -212,11 +212,7 @@ pub fn nth_conjunct(mut thm: Thm, k: usize, n: usize) -> Result<Thm> {
     for _ in 0..k {
         thm = thm.and_elim_r()?;
     }
-    if k + 1 < n {
-        thm.and_elim_l()
-    } else {
-        Ok(thm)
-    }
+    if k + 1 < n { thm.and_elim_l() } else { Ok(thm) }
 }
 
 // ============================================================================
@@ -283,9 +279,7 @@ pub fn rule_induction(
     //    (inst d := pred) Closed pred ⟹ pred A
     //     (imp_elim Closed pred)       pred A
     let assumed = Thm::assume(deriv_a.clone())?;
-    let pred_a = assumed
-        .all_elim(pred.clone())?
-        .imp_elim(closed_pred_thm)?; // {Der A} ⊢ pred A
+    let pred_a = assumed.all_elim(pred.clone())?.imp_elim(closed_pred_thm)?; // {Der A} ⊢ pred A
 
     pred_a.imp_intro(deriv_a)?.all_intro(a_name, a_ty)
 }
@@ -294,9 +288,9 @@ pub fn rule_induction(
 /// build `⊢ c₀ ∧ (c₁ ∧ (… ∧ c_{n-1}))`.
 pub fn conj_thms(thms: Vec<Thm>) -> Result<Thm> {
     let mut iter = thms.into_iter().rev();
-    let mut acc = iter
-        .next()
-        .ok_or_else(|| covalence_core::Error::ConnectiveRule("metalogic: no clause proofs".into()))?;
+    let mut acc = iter.next().ok_or_else(|| {
+        covalence_core::Error::ConnectiveRule("metalogic: no clause proofs".into())
+    })?;
     for cl in iter {
         acc = cl.and_intro(acc)?;
     }

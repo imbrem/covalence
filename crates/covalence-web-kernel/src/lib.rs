@@ -55,7 +55,8 @@ mod tests {
 
     #[test]
     fn check_returns_json() {
-        let json = check("(#import core) (#open core) (#thm bad (#concl true) (#proof (refl true)))");
+        let json =
+            check("(#import core) (#open core) (#thm bad (#concl true) (#proof (refl true)))");
         // A broken proof → ok:false with at least one diagnostic.
         assert!(json.contains("\"ok\":false"), "json: {json}");
         assert!(json.contains("\"diagnostics\""), "json: {json}");

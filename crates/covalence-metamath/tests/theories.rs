@@ -64,7 +64,10 @@ fn demo0_bad_proof_rejected_truncated() {
     let db = parse(&bad).unwrap();
     let err = verify_all(&db).unwrap_err();
     assert!(
-        matches!(err, MmError::StackResidue { .. } | MmError::ResultMismatch { .. }),
+        matches!(
+            err,
+            MmError::StackResidue { .. } | MmError::ResultMismatch { .. }
+        ),
         "expected residue/mismatch, got {err}"
     );
 }
@@ -390,8 +393,16 @@ fn compressed_and_normal_agree() {
     assert_eq!(verify_all(&db_n).unwrap(), 1);
     assert_eq!(verify_all(&db_c).unwrap(), 1);
     // Both produce a th1 whose conclusion agrees.
-    let cn = &db_n.assertions().find(|a| a.label == "th1").unwrap().conclusion;
-    let cc = &db_c.assertions().find(|a| a.label == "th1").unwrap().conclusion;
+    let cn = &db_n
+        .assertions()
+        .find(|a| a.label == "th1")
+        .unwrap()
+        .conclusion;
+    let cc = &db_c
+        .assertions()
+        .find(|a| a.label == "th1")
+        .unwrap()
+        .conclusion;
     assert_eq!(cn, cc);
 }
 

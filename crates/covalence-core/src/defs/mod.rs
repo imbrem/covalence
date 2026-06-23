@@ -85,8 +85,8 @@ mod bits;
 mod blob;
 mod canonical;
 mod cond;
-pub mod cov;
 mod coprod;
+pub mod cov;
 mod fail;
 mod floats;
 mod fun;
@@ -123,10 +123,10 @@ pub use blob::{
 };
 pub use canonical::Canonical;
 pub use cond::{cond, cond_spec};
-pub use cov::{CoreEnv, CovError, Entry, core_env, parse_core, term_str, type_str};
 pub use coprod::{
     coprod, coprod_case, coprod_case_spec, coprod_spec, inl, inl_spec, inr, inr_spec,
 };
+pub use cov::{CoreEnv, CovError, Entry, core_env, parse_core, term_str, type_str};
 pub use fail::{fail, fail_spec};
 pub use floats::{f32_spec, f32_ty, f64_spec, f64_ty};
 pub use fun::{compose, compose_spec, flip, flip_spec, id, id_spec, konst, konst_spec};
@@ -750,10 +750,7 @@ mod tests {
         // The selector predicate is `nat → bool`.
         let spec = char_spec();
         let tm = spec.tm().expect("char has a selector predicate");
-        assert_eq!(
-            tm.type_of().unwrap(),
-            Type::fun(Type::nat(), Type::bool()),
-        );
+        assert_eq!(tm.type_of().unwrap(), Type::fun(Type::nat(), Type::bool()),);
         // The type leaf is 0-ary.
         assert!(matches!(char_ty().kind(), TypeKind::Spec(_, args) if args.is_empty()));
     }

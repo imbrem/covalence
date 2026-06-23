@@ -27,9 +27,12 @@ fn bool_ty() -> Type {
 /// formulas at `bool` via its `*_at` constructors.)
 pub(crate) fn phi() -> Type {
     // `enc(var 0) : Φ⟨bool⟩` has exactly the carrier type we want; read it off.
-    p_var_at(&bool_ty(), Term::nat_lit(covalence_types::Nat::from_inner(0u32.into())))
-        .type_of()
-        .expect("enc(var 0) is well-typed")
+    p_var_at(
+        &bool_ty(),
+        Term::nat_lit(covalence_types::Nat::from_inner(0u32.into())),
+    )
+    .type_of()
+    .expect("enc(var 0) is well-typed")
 }
 
 /// The type `Database = Φ⟨bool⟩ → bool` — the type of a reified database value.
@@ -91,10 +94,7 @@ pub(crate) fn enc_imp(a: &Term, b: &Term) -> Term {
 /// This is the [`super::RuleSet`] clause builder for a database value — the
 /// bridge that makes `Derivable_DB` a genuine **instance of the generic engine**
 /// ([`db_rule_set`]) rather than a parallel re-implementation.
-pub(crate) fn db_clauses(
-    db: &Term,
-    d_apply: &dyn Fn(&Term) -> Result<Term>,
-) -> Result<Vec<Term>> {
+pub(crate) fn db_clauses(db: &Term, d_apply: &dyn Fn(&Term) -> Result<Term>) -> Result<Vec<Term>> {
     let a = fvar("A");
     let b = fvar("B");
 
@@ -288,7 +288,10 @@ mod tests {
 
     /// A literal propositional variable `var k`, encoded at `Φ⟨bool⟩`.
     fn var(k: u32) -> Term {
-        p_var_at(&bool_ty(), Term::nat_lit(covalence_types::Nat::from_inner(k.into())))
+        p_var_at(
+            &bool_ty(),
+            Term::nat_lit(covalence_types::Nat::from_inner(k.into())),
+        )
     }
 
     /// A concrete singleton database `{ax}`: the predicate `λf. f = ax`.
@@ -349,7 +352,10 @@ mod tests {
         // Derivable_DB db A typechecks as a `bool` and genuinely mentions `db`.
         let t = derivable().unwrap();
         assert_eq!(t.type_of().unwrap(), Type::bool());
-        assert!(format!("{t}").contains("db"), "derivability mentions the database value");
+        assert!(
+            format!("{t}").contains("db"),
+            "derivability mentions the database value"
+        );
     }
 
     #[test]
@@ -379,7 +385,11 @@ mod tests {
                     .unwrap(),
             )
             .unwrap();
-        assert_eq!(thm.concl(), &expected, "monotonicity has the expected shape");
+        assert_eq!(
+            thm.concl(),
+            &expected,
+            "monotonicity has the expected shape"
+        );
     }
 
     /// **Concrete instance.** Base database `A = {p0}` (one axiom: the variable

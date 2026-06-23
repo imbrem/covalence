@@ -690,7 +690,10 @@ fn denotation_pred(alpha: &Type) -> Result<Term> {
     let big_w = Term::free("w", wty.clone());
     let den_body = mem(alpha, &big_w, &denote(alpha, big_r.clone())?); // mem w ⟦r⟧
     let inner = Term::abs(wty.clone(), covalence_core::subst::close(&den_body, "w"));
-    Ok(Term::abs(rty_set.clone(), covalence_core::subst::close(&inner, "r")))
+    Ok(Term::abs(
+        rty_set.clone(),
+        covalence_core::subst::close(&inner, "r"),
+    ))
 }
 
 /// The polymorphic alphabet type variable `'a` the cached `Closed D` proof is

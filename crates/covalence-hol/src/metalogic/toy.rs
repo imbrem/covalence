@@ -308,7 +308,10 @@ mod tests {
     fn box_rule_is_genuine() {
         let mp = derive_box(&tt()).unwrap();
         assert_genuine(&mp);
-        let expected = derivable(&tt()).unwrap().imp(derivable(&boxed(tt())).unwrap()).unwrap();
+        let expected = derivable(&tt())
+            .unwrap()
+            .imp(derivable(&boxed(tt())).unwrap())
+            .unwrap();
         assert_eq!(mp.concl(), &expected);
     }
 
@@ -326,7 +329,10 @@ mod tests {
         let d_box_box_tt = box_rule2.imp_elim(d_box_tt).unwrap();
         assert_genuine(&d_box_box_tt);
         // The derivation is pure data: Derivable_L ⌜…⌝, not ⟦…⟧.
-        assert_eq!(d_box_box_tt.concl(), &derivable(&boxed(boxed(tt()))).unwrap());
+        assert_eq!(
+            d_box_box_tt.concl(),
+            &derivable(&boxed(boxed(tt()))).unwrap()
+        );
 
         // Project in one step: ⟦box (box tt)⟧ = T.
         let projected = project(&boxed(boxed(tt())), d_box_box_tt).unwrap();

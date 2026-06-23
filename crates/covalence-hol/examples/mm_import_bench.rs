@@ -68,7 +68,9 @@ fn main() {
         let per = t0.elapsed().as_secs_f64() * 1000.0 / reps as f64;
         let tag = if cons_mode { "cons" } else { "plain" };
         eprintln!("[import-bench] {label} ({tag}): {per:.3} ms/derive over {reps} reps");
-        println!("{{\"label\":{label:?},\"mode\":{tag:?},\"reps\":{reps},\"ms_per_derive\":{per:.3}}}");
+        println!(
+            "{{\"label\":{label:?},\"mode\":{tag:?},\"reps\":{reps},\"ms_per_derive\":{per:.3}}}"
+        );
         return;
     }
     let limit: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);

@@ -72,7 +72,10 @@ mod tests {
 
     #[test]
     fn parse_num_and_text() {
-        assert_eq!(parse_sym("(num 0x0B)").unwrap(), SpecTecSym::Num { n: 0x0B });
+        assert_eq!(
+            parse_sym("(num 0x0B)").unwrap(),
+            SpecTecSym::Num { n: 0x0B }
+        );
         assert_eq!(
             parse_sym(r#"(text "abc")"#).unwrap(),
             SpecTecSym::Text { t: "abc".into() },

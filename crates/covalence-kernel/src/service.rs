@@ -331,7 +331,11 @@ mod tests {
         assert_eq!(report.theorems.len(), 1);
         assert_eq!(report.theorems[0].name, "add.comm");
         // The carrier is kernel `nat`: the statement mentions `nat.add`.
-        assert!(report.theorems[0].statement.contains("nat.add"), "stmt: {}", report.theorems[0].statement);
+        assert!(
+            report.theorems[0].statement.contains("nat.add"),
+            "stmt: {}",
+            report.theorems[0].statement
+        );
     }
 
     #[test]
@@ -340,7 +344,11 @@ mod tests {
         assert!(report.ok, "diagnostics: {:?}", report.diagnostics);
         assert_eq!(report.theorems[0].name, "add.comm");
         // Different carrier (`list unit`): the SAME proof, a different statement.
-        assert!(!report.theorems[0].statement.contains("nat.add"), "stmt: {}", report.theorems[0].statement);
+        assert!(
+            !report.theorems[0].statement.contains("nat.add"),
+            "stmt: {}",
+            report.theorems[0].statement
+        );
     }
 
     #[test]

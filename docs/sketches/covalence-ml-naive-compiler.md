@@ -13,12 +13,12 @@ mirrors**; agreement between naive and mature on test inputs discharges to consi
 
 ## Why this fits the architecture
 
-Three invariants from `AGENTS.md` / `ARCHITECTURE.md` converge on this answer:
+Three invariants converge on this answer:
 
-1. **§5.2 HAZARD (spec-level independence).** `wasm_of_ocaml` and MLton-wasm share
-   academic OCaml/SML lineage. A from-scratch Rust compiler is the **independent executor
-   mirror** §5.2 demands. With it, "OCaml/SML semantics" becomes a consilience claim
-   between two genuinely different compilers, not a leap of faith on one.
+1. **Spec-level independence (executor-mirror consilience).** `wasm_of_ocaml` and
+   MLton-wasm share academic OCaml/SML lineage. A from-scratch Rust compiler is the
+   **independent executor mirror**. With it, "OCaml/SML semantics" becomes a consilience
+   claim between two genuinely different compilers, not a leap of faith on one.
 
 2. **TCB / "simple trusted core + clever untrusted machinery."** A small naive compiler
    is auditable; the meaning-axiom "this compiler respects ML semantics" is eventually
@@ -26,9 +26,9 @@ Three invariants from `AGENTS.md` / `ARCHITECTURE.md` converge on this answer:
    compilers. The naive compiler is the **silvered node** in the ML→WASM segment of the
    executor graph.
 
-3. **§2.6 "Derive, don't trust."** Language-layer analogue: keep the trusted compilation
+3. **"Derive, don't trust."** Language-layer analogue: keep the trusted compilation
    core minimal; promote to a fast/mature compiler only where measurement shows the win.
-   Same posture as `pair`/`unit`/`DOWHILE` vs derived `sum`/`option`/`num`.
+   Same posture as `prod`/`unit` vs derived `coprod`/`option`.
 
 The architecturally-correct framing isn't "naive instead of mature" — it's **naive as
 silvered node, mature as untrusted optimised mirror.**
@@ -142,10 +142,9 @@ them is straightforward §5.2 consilience.
 
 - **OCaml as a source language.** No canonical formal semantics; the meaning-axiom
   would be informal forever. OCaml programs ride `wasm_of_ocaml`, untrusted.
-- **Poly/ML / Isabelle execution.** Architecturally subsumed by our arena-freeze
-  mechanism (same "snapshot elaborated state" trick, done content-addressed). Isabelle
-  *results* (theory exports / OpenTheory articles) ingest into arenas; Isabelle *the
-  process* does not run in our sandbox. See `opentheory-define-type-op` memory.
+- **Poly/ML / Isabelle execution.** Architecturally subsumed by content-addressed
+  snapshotting of elaborated state. Isabelle *results* (theory exports / OpenTheory
+  articles) ingest as data; Isabelle *the process* does not run in our sandbox.
 - **Performance work.** Naive is the point. If `wasm_of_ocaml`-equivalent perf becomes
   necessary for an ML program, that program is the wrong fit for the trusted pipeline —
   put it on the mirror instead.

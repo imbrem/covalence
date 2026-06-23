@@ -1,3 +1,8 @@
+# Theory maps / interpretation transport (raw sketch)
+
+> Notes behind `docs/metatheory.md`'s "two pillars": derivation-soundness +
+> theory transport across PA/HOL/ZFC, with WASM/Isabelle as oracle frontends.
+
 (
 theory of peano arithmetic
 )

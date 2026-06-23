@@ -1,134 +1,50 @@
--- metatyvars
+# Observers & validators (raw sketch)
 
-\alpha -- distinct from HOL types
+> Brainstorm behind `docs/observers.md`. The observer substrate
+> (`Observer` + `ObsEq`/`ObsTrue`/`ObsImp`) exists in the kernel today; the
+> validator / precondition layer below is still proposed.
 
--- first order derivation trees on this
+Three metavariable layers (cf. Isabelle): Schemavars/types, Metavars/types,
+Vars/types (the current logic). Goal: replace oracles with a "{given these
+facts} ⊢ I see this fact" judgement.
 
-{a1,...,an} |- conc
+## Observer
 
--- three layers:
-
-- Schemavars/Schematypes (Isabelle)
-
-- Metavars/Metatypes (HOL)
-
-- Vars/Types (current logic)
-
--- how do we get rid of the oracles:
-
-|> "i saw that"
-
-{given these inputs} |> "i see this"
-
-your metalogic: {given these facts} |> "i see this fact"
-
-"fv a = \empty"
-
---
-
-- observer: something which can assert facts
-
-  observerIsConsistent |> whatTheObserverAsserts
-
-Literally
+An observer asserts facts — it can say a thing is *true*, never *false*:
 
 ```rust
-trait Observer {
-    // an observer can't say something is false, only that it's true!
-    fn assert(&self, fact: Fact) {
-
-    }
-}
+trait Observer { fn assert(&self, fact: Fact); }
 ```
 
-```
-struct FactsIsAsserted {
-  Vec<Fact>
-}
-```
+`Γ ∪ observer ⊢ thing  ≡  Γ ∪ {facts…} ⊢ thing` (the observer stands for the
+set of facts it asserts).
+
+## Validator (trusted, per observer type)
+
+Each extension to the core kernel is a **validator** — trusted *for one
+observer type*. The observer (untrusted) takes arbitrary, possibly interactive
+witnesses and asks its validator to:
+
+- **Add a fact** — validator may reject. Policies range over: accept none;
+  accept all of a fixed shape (e.g. `{a₁…aₙ} ⊢ myConst e = myConst' e'`); or
+  **accept anyway and record it as a precondition** for anything not fully
+  accepted.
+- **Add a constant to the model** (`myNewConst : someType`) — e.g. efficient
+  byte storage.
+
+The validator can be queried for: the current model `M`, the current
+preconditions `P`, and whether either is *frozen*. Invariant:
+`precon(o) ⊢ P  ⟹  observer ⊢ P`. Trusted state is the tuple
+`(M, P, mFrozen, pFrozen)`.
 
 ```
-\Gamma \cup observer |> thing
-===
-\Gamma \cup {facts...} |> thing
+WITNESS ⟹ OBSERVER ⟹ VALIDATOR ⟹ FACTS (HOL model)
 ```
 
-```
-trait Validator<O : Observer> {
-  fn register(fact: Fact) {
-    ...
-  }
+## Examples
 
-  fn validate(facts: &Facts) -> bool {
-    ...
-  }
-}
-```
+- **Efficient bytes** — a validator presenting a constant per byte-vector plus
+  constants for builtin catenation, len, …
+- **Efficient nats** — analogous.
 
-```
-impl ITrustTheWasmSpec<MyTrustedWASMExecutor> {
-  fn validate(facts: &Facts) {
-    // you can assert that things following from the spec freely
-  }
-
-  fn substituteModel() {
-    // ...
-  }
-}
-```
-
-```
-impl ITrustTheBytesObserver<BytesSystem> {
-
-}
-```
-
-```
-impl BytesSystem {
-  fn observe(&self) -> Facts {
-    ...
-  }
-}
-```
-
-- (Observer [untrusted], Validator [trusted _for an observer type_])
-
-- The user gives arbitrary, potentially interactive witnesses to the observer
-
-- The observer can ask the validator to:
-
-  - Add a fact (validator may reject)
-
-    - Accept no facts
-
-    - Accept all facts as long as they're of the form {a1,...,an} |- myOwnedConst e = myOwnedConst' e'
-
-    - For any fact that we don't _fully_ accept -- accept it anyways and add it to our _precondition_
-
-  - Add a constant to the model (myNewConst : someArbitraryType)
-
-    - Efficient byte storage is
-
-  - The validator (trusted) can be asked for:
-
-    - The current model
-
-    - The current preconditions
-
-    - Whether the model or the preconditions are _frozen_
-
-      - You can always go: precon(o) |- P => observer |- P
-
-    - (M, P, mFrozen, pFrozen) trusted V
-
-WITNESS ==> OBSERVER ==> VALIDATOR ==> FACTS (hol model)
-
-Each extension to the core kernel is a _validator_
-
-- Efficient bytes is a validator presenting a constant for each bytevector
-  - constants for builtin byte catenation, len, etc.
-
-- Efficient nats is ...
-  - constants for ...
-
-- V1: O1, V2: O2, (V1, V2) : (O1, O2)
+Validators compose: `V1 : O1`, `V2 : O2`, `(V1, V2) : (O1, O2)`.

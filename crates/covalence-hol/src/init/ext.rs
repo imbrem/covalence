@@ -396,6 +396,13 @@ pub trait ThmExt: Sized {
     /// not a conjunction.
     fn conjuncts(self) -> Result<(Thm, Thm)>;
 
+    /// Split `Γ ⊢ c₁ ∧ c₂ ∧ … ∧ c_N` (a right-nested `∧`) into
+    /// `[Γ ⊢ c₁, …, Γ ⊢ c_N]`; a non-conjunction yields the singleton `[self]`.
+    /// Iterated `and_elim_l`/`and_elim_r` — O(N) now that each `and_elim` is
+    /// O(1) (`Thm::build` reads cached types), so this no longer needs to be a
+    /// kernel primitive.
+    fn into_conjuncts(self) -> Vec<Thm>;
+
     /// Rewrite every occurrence of `eq`'s LHS in `self`'s conclusion
     /// with `eq`'s RHS, given `eq : ⊢ a = b`. Given `Γ ⊢ φ` and
     /// `Δ ⊢ a = b`, returns `Γ ∪ Δ ⊢ φ'`. Built from
@@ -448,6 +455,29 @@ impl ThmExt for Thm {
         let l = self.clone().and_elim_l()?;
         let r = self.and_elim_r()?;
         Ok((l, r))
+    }
+
+    fn into_conjuncts(self) -> Vec<Thm> {
+        // Peel c₁ ∧ (c₂ ∧ …) with CONJUNCT1/CONJUNCT2 until the head is not a
+        // conjunction. Each `and_elim` is O(1) (cached-type `build`), so this is
+        // O(N) — no kernel primitive needed.
+        let mut out = Vec::new();
+        let mut cur = self;
+        loop {
+            match cur.clone().and_elim_l() {
+                Ok(head) => {
+                    out.push(head);
+                    cur = cur
+                        .and_elim_r()
+                        .expect("and_elim_r must succeed when and_elim_l did");
+                }
+                Err(_) => {
+                    out.push(cur);
+                    break;
+                }
+            }
+        }
+        out
     }
 
     fn rewrite(self, eq: &Thm) -> Result<Thm> {
@@ -540,6 +570,28 @@ mod tests {
         let (l, r) = conj.conjuncts().unwrap();
         assert_eq!(l.concl(), p.concl());
         assert_eq!(r.concl(), q.concl());
+    }
+
+    #[test]
+    fn into_conjuncts_splits_a_chain() {
+        // p ∧ (q ∧ r) → [⊢ p, ⊢ q, ⊢ r]; a non-conjunction → singleton.
+        let p = Term::free("p", Type::bool());
+        let q = Term::free("q", Type::bool());
+        let r = Term::free("r", Type::bool());
+        let qr = Thm::assume(q.clone())
+            .unwrap()
+            .and_intro(Thm::assume(r.clone()).unwrap())
+            .unwrap();
+        let pqr = Thm::assume(p.clone()).unwrap().and_intro(qr).unwrap();
+        let parts = pqr.into_conjuncts();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0].concl(), &p);
+        assert_eq!(parts[1].concl(), &q);
+        assert_eq!(parts[2].concl(), &r);
+
+        let single = Thm::assume(p.clone()).unwrap().into_conjuncts();
+        assert_eq!(single.len(), 1);
+        assert_eq!(single[0].concl(), &p);
     }
 
     #[test]

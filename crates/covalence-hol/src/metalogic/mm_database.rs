@@ -80,7 +80,7 @@ use fnv::FnvHashMap as HashMap;
 use covalence_core::term::TrustedCons;
 use covalence_core::{Error, Result, Term, Thm, Type};
 
-use crate::init::ext::TermExt;
+use crate::init::ext::{TermExt, ThmExt};
 use crate::metamath::expr::body_of;
 use crate::metamath::{Assertion, Database, Expr, Statement};
 

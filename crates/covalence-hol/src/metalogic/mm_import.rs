@@ -14,7 +14,7 @@ use covalence_core::Thm;
 
 use crate::metamath::{Database, MmError};
 
-use super::mm_database::{Parser, derive_theorem_with};
+use super::mm_database::{ClauseCache, Parser, derive_theorem_cached, derive_theorem_with};
 #[cfg(test)]
 use super::mm_database::derive_theorem;
 
@@ -134,24 +134,26 @@ pub fn import_labels_parallel(
     let parser = &parser;
     std::thread::scope(|s| {
         for _ in 0..n {
-            s.spawn(move || loop {
-                let i = next.fetch_add(1, Ordering::Relaxed);
-                if i >= total {
-                    break;
+            s.spawn(move || {
+                // One clause cache per worker, reused across all theorems it
+                // derives: a cited lemma's clause is compiled once instead of
+                // re-parsed in every proof. No interning of proof terms (they're
+                // dropped after `on_each`, so it would be pure overhead — callers
+                // that *keep* terms use [`derive_theorem_with_cons`]).
+                let mut cache = ClauseCache::new();
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= total {
+                        break;
+                    }
+                    let label = &labels[i];
+                    on_pick(label);
+                    let t0 = std::time::Instant::now();
+                    let result = derive_theorem_cached(db, parser, label, &mut cache);
+                    let elapsed = t0.elapsed();
+                    let d = done.fetch_add(1, Ordering::Relaxed) + 1;
+                    on_each(d, total, label, &result, elapsed);
                 }
-                let label = &labels[i];
-                on_pick(label);
-                let t0 = std::time::Instant::now();
-                // Plain (no interning) by default. Interning every constructed
-                // node trades ~2–3× CPU for a smaller *retained* term DAG, but
-                // this import drops each theorem after `on_each`, so the trade is
-                // pure overhead here. Hash-consing pays off only for callers that
-                // *keep* the terms (pretty-printing / unfolded definitions, which
-                // genuinely blow up) — those use [`derive_theorem_with_cons`].
-                let result = derive_theorem_with(db, parser, label);
-                let elapsed = t0.elapsed();
-                let d = done.fetch_add(1, Ordering::Relaxed) + 1;
-                on_each(d, total, label, &result, elapsed);
             });
         }
     });

@@ -373,14 +373,16 @@ impl<'a> Parser<'a> {
         f: &Former,
         mut toks: &'t [&'t str],
     ) -> Result<Option<(Term, &'t [&'t str])>> {
-        let mut args: HashMap<&str, Term> = HashMap::default();
+        // Formers have only a handful of floats, so a small Vec with a linear
+        // scan beats a HashMap (no hashing, no map allocation) on this hot path.
+        let mut args: Vec<(&str, Term)> = Vec::new();
         for pat in &f.body {
             if let Some((_, sub_tc)) = f.floats.iter().find(|(v, _)| v == pat) {
                 // A metavar position: recursively parse a sub-expression.
                 let Ok((sub, rest)) = self.parse(sub_tc, toks) else {
                     return Ok(None);
                 };
-                args.insert(pat.as_str(), sub);
+                args.push((pat.as_str(), sub));
                 toks = rest;
             } else {
                 // A literal constant: it must match the next input token.
@@ -392,8 +394,8 @@ impl<'a> Parser<'a> {
         }
         // Re-fold the former body with metavars → their parsed encodings.
         let resolve = |tok: &str| -> Result<Term> {
-            Ok(match args.get(tok) {
-                Some(t) => t.clone(),
+            Ok(match args.iter().find(|(k, _)| *k == tok) {
+                Some((_, t)) => t.clone(),
                 None => self.leaf(tok),
             })
         };
@@ -460,6 +462,23 @@ impl Clause {
     }
 }
 
+/// A reusable cache of compiled `|-` [`Clause`]s, keyed by assertion label. A
+/// clause depends only on the assertion (not the proof using it), so it is
+/// identical every time — build one per import worker and thread it across
+/// [`derive_theorem_cached`] calls so each lemma's conclusion is encoded **once**
+/// instead of being re-parsed in every proof that cites it (lemmas like `ax-mp`
+/// / `simp*` are cited by thousands of proofs). Opaque: the inner [`Clause`]
+/// stays crate-private.
+#[derive(Default)]
+pub struct ClauseCache(HashMap<String, Clause>);
+
+impl ClauseCache {
+    /// An empty cache.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 /// Encode one `|-` assertion as a [`Clause`] (the metavariable binders + encoded
 /// premises + encoded conclusion). Returns `None` for a non-`|-` assertion (a
 /// syntactic former — grammar, not a rule) or if the body fails to encode (which
@@ -522,6 +541,7 @@ fn scoped_clauses(
     db: &Database,
     parser: &Parser,
     steps: &[crate::metamath::ProofStep],
+    cache: &mut ClauseCache,
 ) -> Result<(Vec<Clause>, HashMap<String, usize>)> {
     let mut clauses = Vec::new();
     let mut index = HashMap::default();
@@ -532,12 +552,21 @@ fn scoped_clauses(
         if index.contains_key(label) {
             continue;
         }
-        if let Some(Statement::Assert(a)) = db.statement_by_label(label) {
-            if let Some(c) = clause_from(parser, a) {
-                index.insert(label.clone(), clauses.len());
-                clauses.push(c);
-            }
-        }
+        let Some(Statement::Assert(a)) = db.statement_by_label(label) else {
+            continue;
+        };
+        // Reuse the compiled clause if we've seen this lemma before (this worker),
+        // else compile it once and cache it.
+        let clause = if let Some(c) = cache.0.get(label) {
+            c.clone()
+        } else if let Some(c) = clause_from(parser, a) {
+            cache.0.insert(label.clone(), c.clone());
+            c
+        } else {
+            continue; // a syntactic former (not a `|-` clause), or encode failure
+        };
+        index.insert(label.clone(), clauses.len());
+        clauses.push(clause);
     }
     Ok((clauses, index))
 }
@@ -676,10 +705,22 @@ pub fn derive_theorem(db: &Database, label: &str) -> Result<Thm> {
 /// shares one `&Parser` across worker threads. Otherwise identical to
 /// [`derive_theorem`].
 pub fn derive_theorem_with(db: &Database, parser: &Parser, label: &str) -> Result<Thm> {
-    // No interning (`&mut ()`): preserves the historical per-call behaviour and
-    // overhead. To share terms across many theorems (a ~15× smaller imported
-    // DAG — see `tests::measure_dedup`), use [`derive_theorem_with_cons`].
-    derive_theorem_with_cons(db, parser, label, &mut ())
+    // No interning (`&mut ()`), no clause reuse: preserves the historical
+    // per-call behaviour. To reuse compiled clauses across many theorems of one
+    // database (the import path), use [`derive_theorem_cached`].
+    derive_inner(db, parser, label, &mut (), &mut ClauseCache::new())
+}
+
+/// [`derive_theorem_with`] threading a reusable [`ClauseCache`] — the import
+/// path. Pass one cache across all of a worker's theorems so each cited lemma's
+/// clause is compiled once, not re-parsed per proof.
+pub fn derive_theorem_cached(
+    db: &Database,
+    parser: &Parser,
+    label: &str,
+    cache: &mut ClauseCache,
+) -> Result<Thm> {
+    derive_inner(db, parser, label, &mut (), cache)
 }
 
 /// [`derive_theorem_with`] threading a caller-supplied [`TrustedCons`] through
@@ -700,6 +741,18 @@ pub fn derive_theorem_with_cons(
     label: &str,
     cons: &mut dyn TrustedCons,
 ) -> Result<Thm> {
+    derive_inner(db, parser, label, cons, &mut ClauseCache::new())
+}
+
+/// The shared derive path: scope the proof's clauses (reusing `cache`), build the
+/// rule set, and replay (routing constructed terms through `cons`).
+fn derive_inner(
+    db: &Database,
+    parser: &Parser,
+    label: &str,
+    cons: &mut dyn TrustedCons,
+    cache: &mut ClauseCache,
+) -> Result<Thm> {
     let assertion = match db.statement_by_label(label) {
         Some(Statement::Assert(a)) if a.proof.is_some() => a,
         Some(Statement::Assert(_)) => {
@@ -709,7 +762,7 @@ pub fn derive_theorem_with_cons(
     };
     let steps = crate::metamath::proof_steps(db, assertion)
         .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
-    let (clauses, clause_index) = scoped_clauses(db, parser, &steps)?;
+    let (clauses, clause_index) = scoped_clauses(db, parser, &steps, cache)?;
     let rs = clauses_to_ruleset(clauses);
     replay_with(db, parser, assertion, &steps, &rs, &clause_index, cons)
 }
@@ -969,13 +1022,13 @@ fn encode_former(
 ) -> Result<Term> {
     let body = body_of(&target.conclusion)
         .ok_or_else(|| replay_err(format!("`{label}`: malformed former conclusion")))?;
-    let mut args: HashMap<&str, Term> = HashMap::default();
+    let mut args: Vec<(&str, Term)> = Vec::with_capacity(target.frame.floats.len());
     for (i, f) in target.frame.floats.iter().enumerate() {
-        args.insert(f.var.as_str(), float_args[i].clone());
+        args.push((f.var.as_str(), float_args[i].clone()));
     }
     let resolve = |tok: &str| -> Result<Term> {
-        Ok(match args.get(tok) {
-            Some(t) => t.clone(),
+        Ok(match args.iter().find(|(k, _)| *k == tok) {
+            Some((_, t)) => t.clone(),
             None => parser.leaf(tok),
         })
     };

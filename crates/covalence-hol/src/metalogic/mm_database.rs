@@ -883,25 +883,28 @@ fn replay_with(
     match stack.len() {
         1 => match stack.pop().expect("len checked") {
             Slot::Proved(thm) => {
+                // `thm` is the **open** form `{Closed d} ∪ E ⊢ d ⌜S⌝`. Discharge
+                // `Closed d` and generalise `d` ONCE here (vs once per `|-` step)
+                // → `E ⊢ ∀d. Closed d ⟹ d ⌜S⌝` = `E ⊢ Derivable_L ⌜S⌝`.
+                let derivable_thm = thm
+                    .imp_intro(&clause_ctx.closed_t)?
+                    .all_intro("d", clause_ctx.pred_ty.clone())?;
                 // Sanity: the re-derived theorem is the derivability of the
                 // claimed conclusion's encoding. Reuse the already-built `parser`
-                // (not `encode_conclusion`, which would `Parser::new` the whole
-                // database again) and the cached `Closed d` (not `derivable`,
-                // which would re-lay-out the clauses) — `Derivable_L A` is just
-                // `∀d. closed_t ⟹ d A`.
+                // and cached `Closed d` — `Derivable_L A` is `∀d. closed_t ⟹ d A`.
                 let concl_enc = parser.encode_expr(&assertion.conclusion)?.cons_with(cons);
                 let want = clause_ctx
                     .closed_t
                     .clone()
                     .imp(clause_ctx.d.clone().apply(concl_enc)?)?
                     .forall("d", clause_ctx.pred_ty.clone())?;
-                if thm.concl() != &want {
+                if derivable_thm.concl() != &want {
                     return Err(replay_err(format!(
                         "replayed conclusion does not match the claimed `{}`",
                         crate::metamath::expr::render(&assertion.conclusion),
                     )));
                 }
-                Ok(thm)
+                Ok(derivable_thm)
             }
             Slot::Wff(_) => Err(replay_err("proof ended on a non-`|-` slot")),
         },
@@ -938,10 +941,15 @@ fn apply_label(
             Ok(Slot::Wff(Term::free(mv(&f.var), phi()).cons_with(cons)))
         }
         Statement::Essential(h) => {
-            // `$e |- <hyp>` — its derivability is *assumed*; it becomes a
-            // hypothesis of the final theorem.
+            // `$e |- <hyp>` — its derivability is *assumed* (surfaces as a hyp of
+            // the final theorem). Kept in the **open** form `{Closed d, Derivable
+            // ⌜hyp⌝} ⊢ d ⌜hyp⌝` (instantiate `∀d`, discharge `Closed d` against
+            // the cached assumption) so the proof never re-opens/re-closes it.
             let enc = parser.encode_expr(&h.expr)?.cons_with(cons);
-            Ok(Slot::Proved(Thm::assume(derivable(rs, &enc)?)?))
+            let open = Thm::assume(derivable(rs, &enc)?)?
+                .all_elim_with(clause_ctx.d.clone(), cons)?
+                .imp_elim(clause_ctx.assumed.clone())?;
+            Ok(Slot::Proved(open))
         }
         Statement::Assert(target) => {
             apply_assert(parser, clause_index, clause_ctx, target, label, stack, cons)
@@ -1121,24 +1129,18 @@ fn derive_clause(
         clause = clause.all_elim_with(a.clone(), cons)?; // strip float_vars[0..] in order
     }
 
-    let d_concl = if prems.is_empty() {
-        clause // {Closed d} ⊢ d ⌜concl⌝
+    // Stay in the **open** form `{Closed d} ∪ … ⊢ d ⌜concl⌝`. Premises are
+    // already open (essentials and earlier `|-` steps both produce open slots),
+    // so they conjoin directly — no per-premise `∀d`-instantiate/`Closed`-
+    // discharge, and crucially **no per-step `imp_intro`/`all_intro`**: the
+    // single `Closed d ⟹ … ∀d` discharge happens once, in `replay_with`. (The
+    // old design closed every step and the next step re-opened it — O(steps)
+    // closes over the large `Closed d`.)
+    if prems.is_empty() {
+        Ok(clause) // {Closed d} ⊢ d ⌜concl⌝
     } else {
-        // Each premise ⊢ Derivable_L ⌜eᵢ⌝ → {…} ⊢ d ⌜eᵢ⌝ under `assumed`.
-        let prem_d: Vec<Thm> = prems
-            .into_iter()
-            .map(|p| {
-                p.all_elim_with(ctx.d.clone(), cons)?
-                    .imp_elim(ctx.assumed.clone())
-            })
-            .collect::<Result<_>>()?;
-        clause.imp_elim(conj_thms(prem_d)?)? // {…} ⊢ d ⌜concl⌝
-    };
-
-    // Discharge `Closed d`, generalise `d`; essential hyps remain.
-    d_concl
-        .imp_intro(&ctx.closed_t)?
-        .all_intro("d", ctx.pred_ty.clone())
+        clause.imp_elim(conj_thms(prems)?) // {…} ⊢ d ⌜concl⌝
+    }
 }
 
 // ============================================================================

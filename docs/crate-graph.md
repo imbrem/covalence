@@ -1,9 +1,10 @@
 # Internal crate dependency graph
 
-> Generated from `crates/*/Cargo.toml` path-dependencies (internal
-> `covalence-*` edges only). Regenerate with the script in
-> [`refactor-plan.md` §5](./refactor-plan.md). A snapshot to make the layering
-> legible and to spot inversions. **45 crates.**
+> **Snapshot: 2026-06-23.** Generated from `crates/*/Cargo.toml`
+> path-dependencies (internal `covalence-*` edges only). Regenerate with the
+> script in [`refactor-plan.md` §5](./refactor-plan.md) — this is a point-in-time
+> picture to make the layering legible and spot inversions, not a maintained
+> invariant.
 
 Subgraphs are the *proposed* grouping (§5 of the refactor plan), not the current
 on-disk layout (everything is flat under `crates/`).

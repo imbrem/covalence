@@ -7,7 +7,7 @@
 > execute the moves. Companion to [`covalence-pure.md`](./covalence-pure.md)
 > (the base-logic design) and [`roadmap.md`](./roadmap.md).
 
-The repo has grown to ~45 crates and `covalence-hol` alone is ~60k lines. The
+The repo has grown to many crates, and `covalence-hol` is by far the largest. The
 problem is **legibility, not obsolescence**: most of `covalence-hol`'s *content*
 is kept — the catalogue, the theories, the proof machinery, the Metamath bridge
 are all live — but it has accreted into one megacrate that is hard to navigate.
@@ -247,12 +247,12 @@ directories that mirror the dependency stack**.
 Aggressive removal is fine — git history restores anything. Candidates to review
 on a cleanup branch (do **not** blanket-delete; confirm each is unreferenced):
 
-- **`covalence-shell`** (25 LoC) — thin re-export over kernel + hol; folds into
-  the new `covalence-kernel` re-export façade.
-- **Legacy `covalence-kernel`** internals (arena + egraph + UF, ~670 LoC) —
-  superseded; the name is reused for the new re-export façade.
-- **`covalence-forsp`** (1.7k), **`covalence-fuse`** (619), **`covalence-grammar`**
-  (1.5k) — assess whether still on the critical path or experiments to archive.
+- **`covalence-shell`** — thin re-export over kernel + hol; folds into the new
+  `covalence-kernel` re-export façade.
+- **Legacy `covalence-kernel`** internals (arena + egraph + UF) — superseded; the
+  name is reused for the new re-export façade.
+- **`covalence-forsp`**, **`covalence-fuse`**, **`covalence-grammar`** — assess
+  whether still on the critical path or experiments to archive.
 - **Keep — these are north-star seeds, not cruft:** `covalence-lean` (the
   type-theory / MLTT seed, §7), `covalence-egglog` / `covalence-alethe` / SMT
   (the sledgehammer), `covalence-opentheory` (folds into the new `covalence-hol`).

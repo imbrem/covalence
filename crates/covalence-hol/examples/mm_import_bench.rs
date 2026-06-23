@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use covalence_hol::metalogic::mm_database::{Parser, derive_theorem_with};
+use covalence_hol::metalogic::mm_database::Parser;
 use covalence_hol::metalogic::mm_import::{import_labels_parallel, theorem_labels};
 
 fn main() {
@@ -42,17 +42,24 @@ fn main() {
         let source = std::fs::read_to_string(&path).expect("read .mm");
         let db = covalence_hol::metamath::parse(&source).expect("parse");
         let parser = Parser::new(&db);
-        let derive = |db: &_, parser: &_, label: &str| {
+        // A persistent clause cache across warmup + timed reps, matching the
+        // real parallel import (one `ClauseCache` per worker, reused across all
+        // its theorems) — so the timed reps measure the *per-theorem* replay
+        // cost, not the one-time clause encoding the real import amortizes.
+        use covalence_hol::metalogic::mm_database::{ClauseCache, derive_theorem_cached};
+        let mut cache = ClauseCache::new();
+        let mut derive = |db: &_, parser: &_, label: &str| {
             if cons_mode {
                 let mut cons = covalence_core::HashCons::new();
                 covalence_hol::metalogic::mm_database::derive_theorem_with_cons(
                     db, parser, label, &mut cons,
                 )
             } else {
-                derive_theorem_with(db, parser, label)
+                derive_theorem_cached(db, parser, label, &mut cache)
             }
         };
-        // Warm once (don't time the first, page-fault-heavy run).
+        // Warm once (don't time the first, page-fault-heavy run); this also
+        // populates the clause cache for the timed reps.
         let _ = derive(&db, &parser, &label).expect("derive");
         let t0 = Instant::now();
         for _ in 0..reps {

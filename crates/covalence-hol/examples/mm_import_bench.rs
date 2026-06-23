@@ -28,8 +28,12 @@ fn main() {
     });
 
     // Single-theorem mode: derive ONE theorem `reps` times on one thread (for
-    // `perf record` / flamegraphs of a specific slow proof).
-    if args.get(2).map(String::as_str) == Some("--only") {
+    // `perf record` / flamegraphs of a specific slow proof). `--only-cons`
+    // routes the replay through a fresh per-derive `HashCons` (interning) to
+    // measure interning's effect on a single proof.
+    let only = args.get(2).map(String::as_str);
+    if only == Some("--only") || only == Some("--only-cons") {
+        let cons_mode = only == Some("--only-cons");
         let label = args.get(3).cloned().unwrap_or_else(|| {
             eprintln!("--only needs a label");
             std::process::exit(2);
@@ -38,15 +42,26 @@ fn main() {
         let source = std::fs::read_to_string(&path).expect("read .mm");
         let db = covalence_hol::metamath::parse(&source).expect("parse");
         let parser = Parser::new(&db);
+        let derive = |db: &_, parser: &_, label: &str| {
+            if cons_mode {
+                let mut cons = covalence_core::HashCons::new();
+                covalence_hol::metalogic::mm_database::derive_theorem_with_cons(
+                    db, parser, label, &mut cons,
+                )
+            } else {
+                derive_theorem_with(db, parser, label)
+            }
+        };
         // Warm once (don't time the first, page-fault-heavy run).
-        let _ = derive_theorem_with(&db, &parser, &label).expect("derive");
+        let _ = derive(&db, &parser, &label).expect("derive");
         let t0 = Instant::now();
         for _ in 0..reps {
-            let _ = derive_theorem_with(&db, &parser, &label).expect("derive");
+            let _ = derive(&db, &parser, &label).expect("derive");
         }
         let per = t0.elapsed().as_secs_f64() * 1000.0 / reps as f64;
-        eprintln!("[import-bench] {label}: {per:.3} ms/derive over {reps} reps");
-        println!("{{\"label\":{label:?},\"reps\":{reps},\"ms_per_derive\":{per:.3}}}");
+        let tag = if cons_mode { "cons" } else { "plain" };
+        eprintln!("[import-bench] {label} ({tag}): {per:.3} ms/derive over {reps} reps");
+        println!("{{\"label\":{label:?},\"mode\":{tag:?},\"reps\":{reps},\"ms_per_derive\":{per:.3}}}");
         return;
     }
     let limit: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);

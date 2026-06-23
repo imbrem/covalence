@@ -32,6 +32,7 @@ pub use observer::{Hint, Object, ObsEq, ObsImp, ObsTrue, Observer};
 pub use set::TermSet;
 pub use spec::TermSpec;
 pub use term::{Def, IntTag, SmallIntLiteral, Term, TermKind, TyError, Var};
+pub(crate) use term::{TypeEnv, type_of_in};
 
 // Re-export the type language so `crate::term::{Type, TypeKind}`
 // continues to resolve (the canonical home is `crate::ty`).

@@ -848,6 +848,38 @@ impl Term {
     pub fn abs(ty: Type, body: Term) -> Self {
         Self::alloc(TermKind::Abs(ty, body))
     }
+
+    /// `λ:ty. body` where the body's type under the binder is **already known**
+    /// to be `body_ty` — stamping that type instead of recomputing it with a
+    /// fresh `type_of_in` walk.
+    ///
+    /// `Soundness:` the caller guarantees `body_ty` is the type of `body` in a
+    /// context whose innermost binder has type `ty` (i.e. exactly the type
+    /// [`type_of_in`] would return for `body` under `[…, ty]`). The kernel uses
+    /// this only from type-preserving substitution ([`crate::subst::open`]),
+    /// where the substituted term's type matches the binder it replaces, so the
+    /// rebuilt term's type equals the original's by the substitution lemma. The
+    /// only effect is to skip the redundant re-derivation; an incorrect
+    /// `body_ty` would be unsound, hence the restricted, audited caller.
+    ///
+    /// Only the *closing* case (`body.bvi() == 0`) takes the fast path; a still-
+    /// open or already-`Wf` body goes through [`abs`](Self::abs), which is
+    /// already O(1) there (it reuses the body's cached type or stays `Open`).
+    pub(crate) fn abs_with_ty(ty: Type, body: Term, body_ty: Type) -> Self {
+        if body.bvi() == 0 {
+            let kind = TermKind::Abs(ty.clone(), body);
+            let free = compute_free(&kind);
+            let fp = compute_fp(&kind);
+            let info = TermInfo::Wf {
+                free,
+                fp,
+                ty: Type::fun(ty, body_ty),
+            };
+            Term(Arc::new(TermInner { info, kind }))
+        } else {
+            Self::abs(ty, body)
+        }
+    }
     /// [`abs`](Self::abs) routing the new `Abs` node through a
     /// caller-supplied [`crate::term::TrustedCons`]. Allocation-identical
     /// to `abs` under `&mut ()`; with a [`crate::term::HashCons`] the node
@@ -1202,6 +1234,29 @@ impl fmt::Display for Term {
 pub(crate) struct TypeEnv {
     /// Stack of binder types; the innermost binder is at the top.
     ctx: Vec<Type>,
+}
+
+impl TypeEnv {
+    /// A binder context with the given stack (innermost binder last).
+    pub(crate) fn new(ctx: Vec<Type>) -> Self {
+        TypeEnv { ctx }
+    }
+    /// Push an (innermost) binder type.
+    pub(crate) fn push(&mut self, ty: Type) {
+        self.ctx.push(ty);
+    }
+    /// Pop the innermost binder type.
+    pub(crate) fn pop(&mut self) {
+        self.ctx.pop();
+    }
+    /// Number of binders in scope. `Bound(len()-1)` is the outermost.
+    pub(crate) fn len(&self) -> usize {
+        self.ctx.len()
+    }
+    /// Type of `Bound(i)` (`i = 0` is the innermost binder).
+    pub(crate) fn bound_ty(&self, i: usize) -> Type {
+        self.ctx[self.ctx.len() - 1 - i].clone()
+    }
 }
 
 /// The carrier type of a derived [`TypeSpec`] at the

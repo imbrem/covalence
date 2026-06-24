@@ -52,11 +52,19 @@
 //! * [`lex`] — the `.dk` tokeniser.
 //! * [`parse`] — the recursive-descent parser ([`parse`](parse::parse)).
 //! * [`error`] — the [`DkError`] type.
+//! * `hol` (feature `hol`) — the kernel-internalisation bridge: deep-embeds
+//!   Dedukti syntax into `covalence-hol` terms and realises a signature's
+//!   rewrite relation as a `metalogic::RuleSet`, producing genuine
+//!   `⊢ Derivable_Σ ⌜red a b⌝` theorems. This is a first, deliberately co-located
+//!   step toward the metatheory goal; it will move into `covalence-hol` (next to
+//!   the `metalogic::mm_*` modules) once it matures.
 //!
 //! [Dedukti]: https://deducteam.github.io/
 
 pub mod entry;
 pub mod error;
+#[cfg(feature = "hol")]
+pub mod hol;
 pub mod lex;
 pub mod parse;
 pub mod term;

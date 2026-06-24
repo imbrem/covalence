@@ -38,6 +38,22 @@ alongside the `mm_*` modules it parallels). See the repo
   surface (`declarations`/`definitions`/`theorems`/`rules`/`commands`/
   `symbol_names`/`module_name`) are in place.
 
+- **HOL internalisation — the working spine.** ✅ (feature `hol`, in
+  [`src/hol.rs`](src/hol.rs)) A deep embedding of Dedukti terms into
+  `covalence-hol` kernel terms over the carrier `Φ = nat` ([`Encoder`]), using
+  uninterpreted formers (`dk$app`/`dk$lam`/`dk$pi`/`dk$c$…`) and pattern
+  variables as HOL free variables (`dk$v$…`) — so `Thm::all_elim` *is* Dedukti
+  first-order substitution, exactly the `metalogic::mm_database` trick. A
+  signature's rewrite rules become a `metalogic::RuleSet` (`SigRuleSet`) whose
+  judgement is the reduction relation `red a b` (reflexivity + transitivity +
+  application congruence + one clause per rule), and the derivation constructors
+  (`derive_rule`/`derive_refl`/`derive_trans`/`derive_cong_app_*`) build genuine
+  kernel theorems `⊢ Derivable_Σ ⌜red a b⌝` via `metalogic::derive_via_closed`.
+  Tested end-to-end: a multi-step Peano reduction
+  `plus (succ zero) zero ▷* succ zero` is replayed through the kernel
+  (`hol::tests::derives_a_peano_reduction`, no hyps, `has_no_obs`). This is
+  co-located here temporarily and will be factored into `covalence-hol`.
+
 - **Real-file validation.** ✅ The parser was checked against real Dedukti
   sources (e.g. the upstream `tests/OK/sharing.dk` and `dotpat.dk`: dependent
   products in declarations, `_` wildcard patterns, empty rule contexts, numeric
@@ -78,10 +94,22 @@ alongside the `mm_*` modules it parallels). See the repo
 
 ## Deferred features (north stars) — semantics / the end goal
 
-These are **not** in this crate (they need the kernel); they are the reason the
-crate exists, recorded here so the trajectory is discoverable. They will be
-implemented in `covalence-hol` (paralleling `metalogic/mm_*`) and tracked in its
-registry once started.
+The rewrite-relation spine now lives here behind the `hol` feature (see "Done"
+above); the items below extend it toward the end goal. As it matures it will be
+factored into `covalence-hol` (paralleling `metalogic/mm_*`).
+
+- **Encoded-substitution = HOL substitution is first-order only.** The
+  [`Encoder`] models binders with *named* bound variables (`dk$b$…`): there is no
+  α-equivalence, no β-rule, and no higher-order/Miller pattern matching, so rules
+  whose left-hand sides bind variables (and AC/ACU matching for `defac`/`defacu`)
+  are not faithfully captured. Congruence is provided for application only — λ/Π
+  congruence and a nameless (de Bruijn) encoding are the next steps.
+
+- **A proof-search/matcher to drive the constructors automatically.** Today the
+  derivation constructors take the substitution / sub-derivations explicitly (the
+  test supplies them by hand). A matcher that, given a term and the rule set,
+  *finds* the redex/substitution and chains the constructors to a normal form
+  (the analogue of `mm_database`'s proof replay) is the next concrete step.
 
 - **λΠ-calculus-modulo type checker.** A checker for the parsed signature:
   scope resolution → conversion modulo the user rewrite rules (WHNF/SNF
@@ -91,11 +119,11 @@ registry once started.
   `covalence-metamath`'s RPN verifier; it can live here (behind a feature) or in
   the bridge.
 
-- **HOL internalisation of Dedukti signatures + derivations.** The analogue of
-  `metalogic::mm_database`/`mm_import`: realise a `.dk` signature as a
-  first-class object in HOL and each well-typed derivation as a genuine
-  `⊢ Derivable_…` theorem — the `Derivable_L` correspondence for the
-  λΠ-modulo framework rather than for Metamath substitution.
+- **Internalising *typing* derivations (not just rewriting).** The current
+  judgement is the reduction relation; the analogue of `metalogic::mm_database`'s
+  full import is to realise each well-typed `def`/`thm` derivation as a genuine
+  `⊢ Derivable_…` theorem under the λΠ-modulo typing rules — the `Derivable_L`
+  correspondence for the framework rather than just for its rewrite closure.
 
 - **Cross-theory metatheorems (the end goal).** With signatures + derivations
   internalised, exhibit translations *between encodings* — e.g. a sufficiently
@@ -107,6 +135,10 @@ registry once started.
 ## Notes
 
 - No `unsafe` (project rule).
-- The crate is **parse-only today**: it does not type-check or rewrite. A `.dk`
+- The default build is **parse-only**: it does not type-check or rewrite. A `.dk`
   source is assumed already checked by Dedukti; this crate gives a faithful,
-  queryable syntactic image to build the semantics layers on.
+  queryable syntactic image to build the semantics layers on. The optional `hol`
+  feature adds the kernel-internalisation spine (the encoder + rewrite-relation
+  `RuleSet` + genuine `⊢ Derivable_Σ ⌜red a b⌝` derivations); it does not yet
+  type-check or do conversion search. Build/test it with
+  `cargo test -p covalence-dedukti --features hol`.

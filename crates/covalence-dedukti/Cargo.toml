@@ -3,6 +3,15 @@ name = "covalence-dedukti"
 version = "0.0.0"
 edition = "2024"
 
+[features]
+default = []
+# The HOL-kernel internalisation (`hol` module): deep-embeds Dedukti syntax into
+# covalence-hol kernel terms and realises a signature's rewrite relation as a
+# `metalogic::RuleSet` (`⊢ Derivable_Σ ⌜red a b⌝`). Off by default so the parser
+# stays HOL-free and light; this lives here only temporarily (to be factored into
+# `covalence-hol` alongside the `metalogic::mm_*` modules — see SKELETONS.md).
+hol = ["dep:covalence-hol", "dep:covalence-core"]
+
 [dependencies]
 # The lower, HOL-free crate: the λΠ-calculus-modulo term model and the `.dk`
 # reader live here, depending on nothing in the kernel. `covalence-hol` will
@@ -10,3 +19,8 @@ edition = "2024"
 # derivations), not the other way around — mirroring `covalence-metamath`.
 smol_str = "0.3"
 thiserror = "2"
+
+# Optional, behind the `hol` feature: the kernel-internalisation layer.
+covalence-hol = { path = "../covalence-hol", optional = true }
+covalence-core = { path = "../covalence-core", optional = true }
+

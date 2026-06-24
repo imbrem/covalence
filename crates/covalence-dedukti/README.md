@@ -35,9 +35,30 @@ assert_eq!(sig.declarations().count(), 3);
 assert_eq!(sig.rules().count(), 1);
 ```
 
-It performs **no** scope resolution, type checking, or rewriting — the `.dk` is
-assumed already checked by Dedukti. See [`SKELETONS.md`](./SKELETONS.md) for the
-roadmap: a λΠ-modulo checker, the `covalence-hol` internalisation of Dedukti
-derivations, and the end goal of cross-theory (MLTT ↔ set-theory) metatheorems.
+The default build performs **no** scope resolution, type checking, or rewriting
+— the `.dk` is assumed already checked by Dedukti.
+
+## The `hol` feature — kernel internalisation (early)
+
+Behind the optional `hol` feature, the `hol` module internalises Dedukti syntax
+into the `covalence-hol` kernel (the analogue, for Dedukti, of `covalence-hol`'s
+`metalogic::mm_*` Metamath bridge — co-located here for now, to be factored out):
+
+- an `Encoder` that deep-embeds Dedukti terms into HOL terms over `Φ = nat`, with
+  uninterpreted formers and rule pattern variables as HOL free variables (so the
+  kernel's `all_elim` *is* Dedukti's first-order substitution);
+- a `SigRuleSet` that turns a signature's rewrite rules into a
+  `metalogic::RuleSet` for the reduction relation `red a b`, and derivation
+  constructors that build genuine `⊢ Derivable_Σ ⌜red a b⌝` theorems.
+
+```sh
+cargo test -p covalence-dedukti --features hol   # incl. a kernel-checked Peano reduction
+```
+
+It is an early spine: the encoded substitution is first-order (named binders, no
+β / higher-order matching yet) and there is no conversion search or type
+checking. See [`SKELETONS.md`](./SKELETONS.md) for the roadmap toward a λΠ-modulo
+checker, internalised *typing* derivations, and the end goal of cross-theory
+(MLTT ↔ set-theory) metatheorems.
 
 [Dedukti]: https://deducteam.github.io/

@@ -20,6 +20,9 @@ pub use bits::Bits;
 
 pub mod blob;
 
+pub use either;
+pub use either::Either;
+
 #[cfg(feature = "int")]
 mod int;
 #[cfg(feature = "int")]

@@ -6,13 +6,16 @@ edition = "2024"
 [dependencies]
 covalence-sexp = { path = "../covalence-sexp" }
 covalence-types = { path = "../covalence-types" }
-egglog = { version = "2", optional = true }
 thiserror = "2"
+# egglog support DISABLED for now — released egglog still lacks the `proof`
+# module the bridge needs, and the git-rev workaround breaks Claude Web. See
+# SKELETONS.md. Re-enable by uncommenting this dep, the feature below, the
+# `[patch.crates-io]` block in the root Cargo.toml, and `pub mod external` in
+# src/lib.rs.
+# egglog = { version = "2", optional = true }
 
 [features]
 default = []
-# Take upstream `egglog` (2.x) as a dependency and expose driver helpers
-# that run real `(prove …)` queries and convert the resulting proof
-# DAG into our local types. Without this feature the crate compiles
-# without any external solver dep.
-external-egglog = ["dep:egglog"]
+# Run real egglog `(prove …)` queries and convert the proof DAG into our local
+# types. DISABLED for now (see the dep comment above).
+# external-egglog = ["dep:egglog"]

@@ -1,6 +1,6 @@
 //! **Metamath-Prop → HOL replay** — the *construct, don't trust* bridge into
-//! **pure derivability over the encoded syntax** (`docs/metatheory.md`,
-//! `docs/theories-models-and-logics.md §5.6`).
+//! **pure derivability over the encoded syntax** (`notes/metatheory.md`,
+//! `notes/theories-models-and-logics.md §5.6`).
 //!
 //! Given a **verified** Metamath proof in a propositional-calculus database
 //! (set.mm's `ax-1` / `ax-2` / `ax-mp` fragment), [`replay_prop`] walks the
@@ -366,17 +366,19 @@ fn wff_floats(args: &[Slot], n_floats: usize, label: &str) -> Result<Vec<Term>> 
         .enumerate()
         .map(|(i, s)| match s {
             Slot::Wff(t) => Ok(t.clone()),
-            Slot::Proved { .. } => {
-                Err(replay_err(format!("`{label}`: operand {i} is not a wff")))
-            }
+            Slot::Proved { .. } => Err(replay_err(format!("`{label}`: operand {i} is not a wff"))),
         })
         .collect()
 }
 
 /// Exactly `N` float operands, by value.
 fn expect_floats<const N: usize>(floats: &[Term], label: &str) -> Result<[Term; N]> {
-    <[Term; N]>::try_from(floats.to_vec())
-        .map_err(|_| replay_err(format!("`{label}` expects {N} float operands, got {}", floats.len())))
+    <[Term; N]>::try_from(floats.to_vec()).map_err(|_| {
+        replay_err(format!(
+            "`{label}` expects {N} float operands, got {}",
+            floats.len()
+        ))
+    })
 }
 
 /// Exactly two wff operands (a syntax former's args).
@@ -399,8 +401,12 @@ fn two_proved(args: &[Slot], label: &str) -> Result<[Proved; 2]> {
             Slot::Wff(_) => Err(replay_err(format!("`{label}`: expected a `|-` premise"))),
         })
         .collect::<Result<_>>()?;
-    <[Proved; 2]>::try_from(proved)
-        .map_err(|v| replay_err(format!("`{label}` expects 2 `|-` premises, got {}", v.len())))
+    <[Proved; 2]>::try_from(proved).map_err(|v| {
+        replay_err(format!(
+            "`{label}` expects 2 `|-` premises, got {}",
+            v.len()
+        ))
+    })
 }
 
 #[cfg(test)]

@@ -265,9 +265,7 @@ impl<'a> Parser<'a> {
             }
         }
         for var in var_tc.keys() {
-            leaves
-                .entry(var.clone())
-                .or_insert_with(|| leaf(db, var));
+            leaves.entry(var.clone()).or_insert_with(|| leaf(db, var));
         }
         // Dense ids for every typecode that can be a parse target: former
         // result typecodes and every float typecode (the recursive
@@ -395,7 +393,13 @@ impl<'a> Parser<'a> {
     /// encoding and the next position. A lone metavariable of typecode `tc` is
     /// a leaf; otherwise the first-matching former applies. Packrat-memoized on
     /// `(tc id, pos)` — the cache that turns the backtracking parse linear.
-    fn parse_at(&self, tc: &str, toks: &[&str], pos: usize, memo: &mut Memo) -> Option<(Term, usize)> {
+    fn parse_at(
+        &self,
+        tc: &str,
+        toks: &[&str],
+        pos: usize,
+        memo: &mut Memo,
+    ) -> Option<(Term, usize)> {
         // Typecodes that can be parse targets all have ids; if one somehow
         // doesn't, fall through uncached (correctness over speed).
         if let Some(&id) = self.tc_id.get(tc) {
@@ -558,7 +562,6 @@ impl<'a> Parser<'a> {
             .cloned()
             .unwrap_or_else(|| leaf(self.db, tok))
     }
-
 }
 
 /// Encode an assertion's *conclusion body* compactly (the public helper the
@@ -900,9 +903,15 @@ fn derive_inner(
     let assertion = match db.statement_by_label(label) {
         Some(Statement::Assert(a)) if a.proof.is_some() => a,
         Some(Statement::Assert(_)) => {
-            return Err(replay_err(format!("`{label}` is an axiom (no proof to replay)")));
+            return Err(replay_err(format!(
+                "`{label}` is an axiom (no proof to replay)"
+            )));
         }
-        _ => return Err(replay_err(format!("`{label}` is not a theorem of the database"))),
+        _ => {
+            return Err(replay_err(format!(
+                "`{label}` is not a theorem of the database"
+            )));
+        }
     };
     let steps = crate::metamath::proof_steps(db, assertion)
         .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
@@ -1158,7 +1167,9 @@ fn apply_assert(
         .enumerate()
         .map(|(i, s)| match s {
             Slot::Wff(t) => Ok(t.clone()),
-            Slot::Proved(_) => Err(replay_err(format!("`{label}`: float operand {i} is not a wff"))),
+            Slot::Proved(_) => Err(replay_err(format!(
+                "`{label}`: float operand {i} is not a wff"
+            ))),
         })
         .collect::<Result<_>>()?;
 
@@ -1408,8 +1419,8 @@ mod tests {
             // A fixed sample including some known-deep theorems if present.
             let mut sample: Vec<String> = Vec::new();
             for cand in [
-                "a1i", "mp2", "syl", "3syl", "sylib", "mpbir", "imim1i", "con2d",
-                "pm2.61i", "ax12v", "19.21t", "exlimdv", "dvelimhw",
+                "a1i", "mp2", "syl", "3syl", "sylib", "mpbir", "imim1i", "con2d", "pm2.61i",
+                "ax12v", "19.21t", "exlimdv", "dvelimhw",
             ] {
                 if let Some(Statement::Assert(a)) = db.statement_by_label(cand)
                     && a.proof.is_some()

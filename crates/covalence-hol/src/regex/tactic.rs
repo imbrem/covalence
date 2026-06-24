@@ -409,4 +409,3 @@ pub(crate) fn word_core(core: &Core, w: &Word) -> Result<Option<Thm>> {
     flatten(w, &mut atoms, &mut vars);
     Ok(run(core, &atoms, &vars)?.map(|(thm, _)| thm))
 }
-

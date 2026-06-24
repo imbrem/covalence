@@ -17,5 +17,8 @@ fn hol_mm_parses_and_fully_verifies() {
     let src = include_str!("fixtures/hol.mm");
     let db = parse(src).expect("hol.mm should parse");
     let verified = verify_all(&db).expect("hol.mm should fully verify");
-    assert_eq!(verified, 151, "expected all 151 $p theorems in hol.mm to verify");
+    assert_eq!(
+        verified, 151,
+        "expected all 151 $p theorems in hol.mm to verify"
+    );
 }

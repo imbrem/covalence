@@ -1,6 +1,6 @@
 //! **Interpretation** between databases under a formula translation `σ`, and
 //! the **transport** theorem — the `S`-rewrite of
-//! `docs/theories-models-and-logics.md` §5.6 realised as a relation on the
+//! `notes/theories-models-and-logics.md` §5.6 realised as a relation on the
 //! [`Database`](super::database::database_ty) type.
 //!
 //! A translation is a HOL function `σ : Φ → Φ` on encoded formulas. Two
@@ -97,9 +97,7 @@ pub fn derivable_db_mp() -> Result<Thm> {
     let mp_inst = mp_clause.all_elim(b.clone())?.all_elim(a.clone())?;
     let db_thm = mp_inst.imp_elim(da.and_intro(dab)?)?; // ⊢ d ⌜B⌝
 
-    let der_b = db_thm
-        .imp_intro(&closed_d)?
-        .all_intro("d", pred_ty())?; // {Der A, Der (A⟹B)} ⊢ Derivable_DB db B
+    let der_b = db_thm.imp_intro(&closed_d)?.all_intro("d", pred_ty())?; // {Der A, Der (A⟹B)} ⊢ Derivable_DB db B
     der_b
         .imp_intro(&derivable_db(&db, &imp_ab)?)?
         .imp_intro(&derivable_db(&db, &a)?)
@@ -312,7 +310,10 @@ mod tests {
         let a = Term::free("A", database_ty());
         let b = Term::free("B", database_ty());
         let sigma = Term::free("sigma", sigma_ty());
-        assert_eq!(interp(&a, &b, &sigma).unwrap().type_of().unwrap(), Type::bool());
+        assert_eq!(
+            interp(&a, &b, &sigma).unwrap().type_of().unwrap(),
+            Type::bool()
+        );
         assert_eq!(sigma_hom(&sigma).unwrap().type_of().unwrap(), Type::bool());
     }
 
@@ -402,7 +403,11 @@ mod tests {
         let lhs_nf = crate::init::eq::beta_nf(lhs.clone());
         let rhs_nf = crate::init::eq::beta_nf(rhs.clone());
         let eq = lhs_nf.trans(rhs_nf.sym().unwrap()).unwrap(); // ⊢ lhs = rhs
-        let gen_thm = eq.all_intro("Y", phi()).unwrap().all_intro("X", phi()).unwrap();
+        let gen_thm = eq
+            .all_intro("Y", phi())
+            .unwrap()
+            .all_intro("X", phi())
+            .unwrap();
         debug_assert_eq!(gen_thm.concl(), goal);
         gen_thm
     }

@@ -173,7 +173,10 @@ impl Core {
             1 => items.pop().expect("len 1"),
             _ => {
                 let last = items.pop().expect("len >= 2");
-                items.into_iter().rev().fold(last, |acc, x| Core::seq(x, acc))
+                items
+                    .into_iter()
+                    .rev()
+                    .fold(last, |acc, x| Core::seq(x, acc))
             }
         }
     }
@@ -229,9 +232,7 @@ pub fn desugar(r: &Surface<u8>) -> Arc<Core> {
         Surface::Empty => Core::empty(),
         Surface::Eps => Core::eps(),
         Surface::Lit(b) => Core::lit(*b),
-        Surface::Class(c) => {
-            Core::alt_all(class_bytes(c).into_iter().map(Core::lit).collect())
-        }
+        Surface::Class(c) => Core::alt_all(class_bytes(c).into_iter().map(Core::lit).collect()),
         Surface::Concat(items) => Core::seq_all(items.iter().map(desugar).collect()),
         Surface::Alt(items) => Core::alt_all(items.iter().map(desugar).collect()),
         Surface::Star(inner) => Core::star(desugar(inner)),

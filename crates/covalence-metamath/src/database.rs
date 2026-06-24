@@ -404,11 +404,10 @@ impl Database {
         label: &str,
         f: &mut impl FnMut(&str),
     ) -> Result<(), MmError> {
-        let syms =
-            crate::expr::expr_symbols(expr).ok_or_else(|| MmError::MalformedExpr {
-                label: label.to_string(),
-                message: "expression contains a non-symbol element".into(),
-            })?;
+        let syms = crate::expr::expr_symbols(expr).ok_or_else(|| MmError::MalformedExpr {
+            label: label.to_string(),
+            message: "expression contains a non-symbol element".into(),
+        })?;
         for s in syms {
             if !self.is_symbol(s) {
                 return Err(MmError::UnknownSymbol {

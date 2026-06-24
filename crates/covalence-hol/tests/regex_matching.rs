@@ -351,7 +351,11 @@ fn word_two_variables_under_star() {
     let r = cat.clone().star();
     let w = Word::cat(Word::var("X", cat.clone()), Word::var("Y", cat));
     let thm = prove_word(&r, &w).unwrap().unwrap();
-    assert_eq!(thm.hyps().len(), 2, "two distinct variables -> two assumptions");
+    assert_eq!(
+        thm.hyps().len(),
+        2,
+        "two distinct variables -> two assumptions"
+    );
     assert!(thm.has_no_obs());
 }
 
@@ -388,17 +392,36 @@ fn timing_involved_regexes() {
     // kernel proof whose size tracks the input, so these surface how proof time
     // scales with input length and regex shape.
     let cases: &[(&str, &str, &str)] = &[
-        ("identifier", r"[a-zA-Z_][a-zA-Z0-9_]*", "myVariable_Name123"),
-        ("ipv4-ish", r"[0-9]{1,3}(?:[.][0-9]{1,3}){3}", "192.168.100.1"),
+        (
+            "identifier",
+            r"[a-zA-Z_][a-zA-Z0-9_]*",
+            "myVariable_Name123",
+        ),
+        (
+            "ipv4-ish",
+            r"[0-9]{1,3}(?:[.][0-9]{1,3}){3}",
+            "192.168.100.1",
+        ),
         ("hex-bytes", r"(?:[0-9a-f][0-9a-f])+", "deadbeefcafe"),
-        ("lower-run-40", r"[a-z]+", "abcdefghijklmnopqrstuvwxyzabcdefghijklmn"),
+        (
+            "lower-run-40",
+            r"[a-z]+",
+            "abcdefghijklmnopqrstuvwxyzabcdefghijklmn",
+        ),
         ("alt-star", r"(?:foo|bar|baz)+", "foobarbazfoobarbaz"),
-        ("csv-ish", r"[a-z]+(?:,[a-z]+)*", "alpha,beta,gamma,delta,epsilon"),
+        (
+            "csv-ish",
+            r"[a-z]+(?:,[a-z]+)*",
+            "alpha,beta,gamma,delta,epsilon",
+        ),
         ("rep-10", r"a{10}", "aaaaaaaaaa"),
         ("nested-semis", r"(?:[a-c]+;)+", "ab;cba;a;bbbb;"),
     ];
 
-    eprintln!("\n{:<14} {:>4} {:>11} {:>11}", "regex", "len", "compile", "prove");
+    eprintln!(
+        "\n{:<14} {:>4} {:>11} {:>11}",
+        "regex", "len", "compile", "prove"
+    );
     for (label, src, input) in cases {
         let t0 = Instant::now();
         let r = Core::parse(src).unwrap_or_else(|e| panic!("parse {src:?}: {e:?}"));
@@ -416,14 +439,22 @@ fn timing_involved_regexes() {
         );
         assert_clean(&thm.unwrap_or_else(|| panic!("{label}: expected a match")));
 
-        eprintln!("{label:<14} {:>4} {compile_us:>9.1}µs {prove_ms:>9.2}ms", input.len());
+        eprintln!(
+            "{label:<14} {:>4} {compile_us:>9.1}µs {prove_ms:>9.2}ms",
+            input.len()
+        );
     }
 
     // The point of a compiled `Regex`: amortise the desugar+reify across many
     // inputs. Compile once, prove a batch — versus the free function, which
     // recompiles on every call.
     let ids = [
-        "alpha", "beta_2", "Gamma3", "_hidden", "camelCaseName", "SCREAMING_CASE",
+        "alpha",
+        "beta_2",
+        "Gamma3",
+        "_hidden",
+        "camelCaseName",
+        "SCREAMING_CASE",
     ];
     let r = Core::parse(r"[a-zA-Z_][a-zA-Z0-9_]*").unwrap();
     let t = Instant::now();
@@ -434,7 +465,11 @@ fn timing_involved_regexes() {
 
     let t = Instant::now();
     for id in &ids {
-        assert!(prove_matches(&re(r"[a-zA-Z_][a-zA-Z0-9_]*"), id).unwrap().is_some());
+        assert!(
+            prove_matches(&re(r"[a-zA-Z_][a-zA-Z0-9_]*"), id)
+                .unwrap()
+                .is_some()
+        );
     }
     let recompiled_ms = t.elapsed().as_secs_f64() * 1e3;
 

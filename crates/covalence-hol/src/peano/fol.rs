@@ -1,6 +1,6 @@
 //! **Reified first-order logic, locally-nameless, inside HOL** — the
 //! reusable Phase-A framework the Peano-arithmetic development
-//! (`docs/peano-arithmetic-plan.md`) is built on.
+//! (`notes/peano-arithmetic-plan.md`) is built on.
 //!
 //! This scales the proved propositional recipe in [`crate::init::prop`]
 //! from *propositional* to *first-order* logic: the new ingredients are a

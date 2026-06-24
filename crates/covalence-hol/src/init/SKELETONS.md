@@ -1,698 +1,178 @@
 # Skeletons — `covalence-hol::init` (theory catalogue)
 
-Intentional placeholders for the `init/*` theories. See `CLAUDE.md` § Skeletons
-for the rules, the [crate index](../../SKELETONS.md), and the [root
+Open placeholders for the `init/*` theories. See `CLAUDE.md` § Skeletons for the
+rules, the [crate index](../../SKELETONS.md), and the [root
 index](../../../../SKELETONS.md).
 
 ## Postulates pending proof
 
-- **The `rat` quotient + ordered-field theory** in
-  `crates/covalence-hol/src/init/rat.rs`. `rat := (int × int.pos) / ~`
-  (cross-multiplication). Proved outright: `rat_rel_refl`, `rat_rel_symm`
-  (pure `int`-equation `refl`/`sym`); `of_nat_via_int` (the ℕ↪ℚ
-  embedding factors through ℤ↪ℚ, by β); and `add_comm` / `mul_comm` —
-  proved **on the nose**, exactly as `init::int`'s are: `ratAdd`/`ratMul`
-  are componentwise on representatives, so the two representative pairs are
-  provably equal (numerator + denominator each by the proved `int`
-  commutativity facts) and equal representatives lift to equal classes by
-  congruence under `mkRat`. `rat_rel_trans` is now **fully proved** — the
-  Grothendieck cross-multiplication cancellation argument, with **no remaining
-  postulate**: the two `int` facts it cancels with are now **genuine theorems
-  in `init::int`** (`init::rat` re-exports them via thin delegating helpers):
-  - `int::int_mul_rcancel` — `∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` (`int`
-    is an integral domain). **Proved** from the order theory: trichotomy splits
-    `x=y` off, `lt_mul_pos` rules out the strict cases (the `d<0` case flips the
-    sign via the new `mul_neg_r` / `lt_neg_swap` / `neg_unique` lemmas).
-  - `int::int_pos_nonzero` — `∀p:int.pos. ¬(rep p = 0)`. **Proved** from the
-    new `int::int_pos_pos` (`0 < rep p`, via the kernel subtype back-rule with
-    the witness `1`) + `lt_irrefl`.
+- **`rat` field/order leaves** (`init/rat.rs`, postulated via the `axiom` helper).
+  Two remain:
+  - `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`) — witness is `rat_inv`; blocked on the
+    `int.sgn` positivity lemma `¬(z=0) ⟹ 0 < sgn z · z` (no `sgn`/`abs` lemmas in
+    `init::int` yet). Lifts through the existing `mul` quotient machinery once it lands.
+  - `le_def` — *definitional*: pins the meaning of the declaration-only kernel
+    `ratLe` (`defs/rat.rs` ships `ratLe` with `tm: None`). To make it a real
+    `delta`/`define` theorem, give `ratLe` a representative-level body in the
+    catalogue (re-threads `real`, which consumes `ratLe`).
+- **`real` Dedekind-cut suprema** (`init/real.rs`, postulated via `axiom`, NOT
+  ported to `real.cov`): `sup_is_ub` / `sup_is_least` (the two LUB properties of
+  `real_sup A`). Each unfolds to a set/order fact about cuts, blocked on the same
+  `rat`/order theory. `complete` is *derived* from these two.
 
-  So `rat_rel` is now a full equivalence and `quotient::class_intro` /
-  `recon` are available for the remaining `rat` axioms.
-  The **quotient-lifting machinery is now built** (the rat analogue of
-  int's): `rat_recon` (quotient induction), `round_trip`, `recon_mk` (MK
-  component form `MK(f,d) = mk_rat(pair f d)`, `f:int`, `d:int.pos`), the
-  per-op computation rules `add_class`/`mul_class` + `add_mk`/`mul_mk` +
-  `*_via_components`, the well-definedness lemmas `add_pair_cong` (distrib +
-  interchange) / `mul_pair_cong` (interchange), `rel_of_pairs` (prod-
-  projection bridge), and `imul_interchange`. The two `int.pos` round-trips
-  for the `to_pos` denominators are now **proved in `init::int`** (re-exported
-  by thin `init::rat` helpers): `int::int_pos_prod_rt`
-  (`rep(to_pos(rep a · rep b)) = rep a · rep b`, via `spec_rep_abs_fwd` +
-  `int_pos_prod_pos`) and `int::int_pos_one_rt` (`rep(one_pos) = 1`, via
-  `spec_rep_abs_fwd` at `1` with `0 < 1`).
+## `.cov` ports deferred
 
-  **Proved** through that machinery (over the operations `rat_zero`/`rat_one`/
-  `rat_add`/`rat_sub`/`rat_neg`/`rat_mul`/`rat_inv`/`rat_div`/`rat_lt`, all
-  defined at the representative level): the full additive group + commutative
-  monoid fragment plus distributivity — the **full commutative ring**:
-  `add_comm`, `mul_comm` (on the nose), `add_assoc`, `add_zero`, `add_neg`,
-  `mul_assoc`, `mul_one`, `mul_zero`, `distrib` — and the order `lt_irrefl`
-  (on the nose from `int::lt_irrefl`). All genuine *modulo* the `int.pos`
-  round-trip + `rat_rel_trans` int stubs. `distrib` is the one *non*-
-  componentwise ring axiom (`a·(b+c) = N/D` while `a·b + a·c = (rda·N)/(rda·D)`,
-  the same rational scaled by the common factor `rda`), so its
-  cross-multiplication collapses to comm/assoc and lifts by `class_intro`.
-
-  **Order lifting machinery — now built.** The rat analogue of int's
-  `lt_via_components`: `lt_pair_cong` (order well-definedness — the
-  cross-multiplication comparison is representative-invariant, scaling both
-  sides by the positive product denominator via `int::lt_mul_pos_iff` and
-  reshuffling with the new reusable `int::prove_imul_eq` multiplicative
-  AC-normaliser), `lt_class` (computation rule), and `lt_via_components`
-  (MK-component form). `zero_lt_one` is **proved** through this stack
-  (`0 = MK 0 1`, `1 = MK 1 1`, lift to `int.lt 0 1`).
-
-  **Order axioms — `zero_lt_one`/`lt_trans`/`lt_trichotomy` now proved**
-  through the lifting machinery above: `lt_trans` scales the two cross-product
-  inequalities by the opposite denominators, chains via `int::lt_trans`, and
-  cancels the common positive factor; `lt_trichotomy` runs `int::lt_trichotomy`
-  on the cross-products and maps the middle `=` case back through the quotient
-  (`rel_of_pairs` + `class_intro`).
-
-  **Still postulated** via the module's `axiom` helper — only **two** leaves
-  remain (down from the original `mul_inv` + four order axioms + two mediants +
-  two int facts + two round-trips):
-  - The field inverse `mul_inv` (`¬(a=0) ⟹ ∃b. a·b = 1`). The witness is the
-    defined `rat_inv` (`(a/b)⁻¹ = (sgn a · b)/(sgn a · a)`); the
-    cross-multiplication `a · rat_inv a = 1` collapses to an `int` comm/assoc
-    identity, but discharging it needs the **`int.sgn` positivity lemma**
-    `¬(z = 0) ⟹ 0 < sgn z · z` (= `0 < |z|`) so the inverse denominator
-    `to_pos(sgn a · a)` round-trips. `init::int` proves no `sgn`/`abs` lemmas
-    yet (case analysis on `int.sgn`'s three branches); once it does, this lifts
-    through the existing `mul` quotient machinery + `class_eq`.
-  - `le_def` is the other remaining postulate: it is *definitional* — it pins
-    the meaning of the **declaration-only** kernel `ratLe` (`defs/rat.rs` ships
-    `ratLe` with `tm: None`, unlike `int.le` which carries a body), so there is
-    nothing to prove it *from*; it is the conservative defining equation. To
-    make it a genuine `delta`/`define` theorem one would have to give `ratLe`
-    a representative-level body in the kernel catalogue (and re-thread `real`,
-    which consumes `ratLe`). (The linear-order toolkit
-    `le_refl`/`lt_imp_le`/`le_trans`/`lt_asymm`/`lt_imp_ne`/`le_antisym`/
-    `le_total`/`not_one_le_zero` is **not** postulated — it is *derived* from
-    `le_def` + the strict-order facts.)
-  The two **mediant inequalities** `mediant_gt` / `mediant_lt` are now
-  **proved** (so `dense` is fully hypothesis-free): with representatives
-  `x = fx/dx`, `y = fy/dy`, the mediant is `(fx+fy)/(dx+dy)`; lifting both
-  `ratLt`s reduces each goal to the `int` fact `fx·dy < fy·dx` (= `x < y`)
-  after `int::distrib`/`distrib_r` + `int::lt_add_cancel_{left,right}` cancel
-  the shared summand, over the positive mediant denominator
-  (`int::add_pos` + `int::int_pos_round_trip_at`).
-  **`ratprim` `.cov` seam env (`init::rat::rat_env`).** The `rat.cov` ring-law
-  port runs over this env. Unlike `cond` (whose `condprim` *prim* env was
-  deleted by `#def`-ing `cond` inline in `cond.cov`), the rat **operators
-  cannot be moved to inline `#def`s** — and, crucially, this is **no longer
-  blocked by the `.cov` surface lacking `spec-abs`/`spec-rep`**. That gap is
-  now CLOSED: `script/infer.rs` elaborates `(spec-abs SPEC-TYPE [arg])` /
-  `(spec-rep SPEC-TYPE [arg])` byte-identically to the kernel
-  `Term::spec_abs`/`spec_rep` (tests `spec_coercion_*`, incl.
-  `spec_coercion_inlines_rat_to_pos`). The operator *bodies* are now writable
-  inline. The blocker is **deeper and structural**, established empirically by
-  two failing experiments (see git history of this branch):
-
-  1. **`#def` wraps in a fresh `TermSpec`.** `(#def rat.X BODY)` builds
-     `Term::term_spec(TermSpec("rat.X", ty, BODY), [])` — a NEW opaque defined
-     constant, *not* the raw `BODY`. The seam givens (`recon`, `add_mk`,
-     `mul_mk`, the `*_compute` bridges, …) are Rust theorems that **embed the
-     raw operator terms** (`rat_add()` as a literal λ, `to_pos` as the raw
-     `spec_abs(int.pos)` coercion). The kernel's `trans`/`mk_comb` require
-     **strict structural equality** of the middle term (no δ-normalization), so
-     a `#def` `term_spec` occurrence never matches the raw occurrence the given
-     carries → `TransMiddleMismatch`. (Verified: `#def rat.topos` alone fails
-     exactly this way.)
-
-  2. **The `to_pos` coercion is shared and indistinguishable.** The natural
-     inline target is `rat.topos = spec-abs int.pos`. But `abs[int.pos]`
-     appears BOTH as op-result denominator wrappers (which the proof names
-     `rat.topos`) AND **inside the `rat_add`/`rat_mul`/`rat_sub` operator
-     bodies** (their denominators are built with `to_pos`). A given like
-     `add_mk` has the raw `rat.add (rat.MK..)(rat.MK..)` on its LHS, whose
-     printed body contains `abs[int.pos]`. A blind `rewrite` folding
-     `abs[int.pos]`→`rat.topos` over the given corrupts the operator body too,
-     so the given's `rat.add` ≠ the env/`.cov` raw `rat.add`. There is no
-     structural way to fold only the result-position coercion: the
-     result denominator IS the operator body's `to_pos`, β-reduced out of the
-     op. (Verified: a `fold_topos` over the givens fails this way.)
-
-  3. **Concl-parity pins the ring/order operators to raw form.** The
-     `cov::X().concl() == super::X().concl()` tests (`cov_tests::cov_matches_rust`)
-     require the ported theorems' conclusions to use the *same* `rat.add`/`mul`/
-     `neg`/`lt`/`zero`/`one` as the Rust `super::X()`, i.e. the raw ops. A
-     `#def` would change those conclusions.
-
-  **Net:** inlining ANY rat operator requires **rebuilding the entire seam-
-  given layer over the `term_spec` forms** (and threading the term_spec through
-  the operator bodies, which would in turn force `rat_add`/`rat_mul`/`rat_sub`
-  themselves to change and break (3)). That is a pervasive rewrite of the whole
-  `recon`/component-computation/`class_intro` machinery — well beyond the
-  lightweight `*prim`-removal pass, and with real re-entrancy risk. The
-  `cond`-style migration worked only because `cond` had **zero** givens (a
-  pure-core proof); rat fundamentally differs. The operators therefore remain
-  `ConstDef::Op` givens; the residual `ratprim` is those operators + the int-op
-  consts + the genuine seam **lemmas** (`recon`, `add_mk`/`mul_mk`/`neg_mk`,
-  `zero_mk`/`one_mk`, `class_eq`, the `*_compute` bridges, the int round-trips).
-  *Cleaned up earlier:* the dead consts `rat.sub` / `rat.le` / `int.one`
-  (registered but never referenced by `rat.cov`) were dropped from the env.
-  **Unblocking** is now purely the given-rebuild above (the surface support is
-  done), tracked here as the residual.
-
-- **The `real` Dedekind-cut theory** in
-  `crates/covalence-hol/src/init/real.rs`. `real := close rat ratLe`
-  (upper cuts) — **shell-defined**: the `real` `TypeSpec` lives in
-  `init::real` (`real_spec`/`real_ty`), *not* in the kernel catalogue
-  (`covalence-core`), since the reals are not needed for the kernel's
-  float substrate (rationals suffice). It is an ordinary derived `close`
-  spec, so the kernel's witness-free subtype laws apply with no kernel
-  support. **Proved with no postulates**: the `realLe` partial-order
-  laws `le_refl` / `le_trans` / `le_antisym` — `realLe` is reverse inclusion
-  of cut-sets, so reflexivity/transitivity are pure logic and antisymmetry
-  is pure subtype structure (mutual inclusion ⟹ pointwise-equal cut-sets by
-  function extensionality ⟹ equal reals by the round-trip
-  `Thm::spec_abs_rep`); none touch the `rat`/order postulates. **Proved
-  *modulo* the `rat` order postulates** they consume: `is_cut` (every
-  principal up-set `ratLe q` is a genuine cut, from the `rat` `≤` toolkit),
-  `of_rat_mono` (the principal-cut embedding is monotone, by `rat::le_trans`
-  + the round-trip), and `zero_ne_one` (`⊢ ¬(0 = 1)`, via distinct principal
-  cuts transported through the subtype `rep`/`abs`).
-  **`.cov` port (`real.cov`).** The three pure partial-order laws
-  `le.refl` / `le.trans` / `le.antisym` are ported to `real.cov` over the
-  `realprim` cut seam env (`init::real::real_env`: the operators
-  `real.le`/`real.cutOf`/`real.mk` + the `∀`-closed seam lemmas
-  `real.le.unfold` and `real.abs_rep`). Each `cov::X` is conclusion-equal to
-  its Rust `super::X` and hypothesis-/oracle-free (the order laws touch no
-  postulate). **Not yet ported** — `of_rat_mono`, `zero_ne_one`, `is_cut`:
-  these are "proved *modulo* the `rat` order postulates" (`rat::le_trans` /
-  `rat::le_refl` / `rat::not_one_le_zero`, themselves resting on the still-
-  postulated `rat` `lt_trans`/`le_def`/`zero_lt_one`/mediant facts — see the
-  `rat` entry above). A faithful `.cov` re-derivation would need the extra
-  cut seam (`of_rat` β-form, the `is_cut`-discharged conditional round-trip
-  `cutOf (mk S) = S`, the principal-cut equation) AND the `rat` order facts
-  as givens, and would still carry the postulate hypotheses; deferred until
-  the `rat` order postulates are discharged (then they become genuine).
-  **Postulated** via the module's `axiom` helper (self-flagged), NOT ported
-  to `real.cov`:
-  - `sup_is_ub` / `sup_is_least` — the two least-upper-bound properties of
-    the supremum cut `real_sup A` (the intersection of the members'
-    cut-sets). Each unfolds to a set/order fact about the cuts, blocked on
-    the same `rat`/order theory. `complete` (the least-upper-bound property,
-    "the reals are complete") is itself **derived** from these two, with
-    `real_sup A` as the witness — the direct analogue of how `rat::dense`
-    is derived from its mediant postulates.
+- **`rat.cov` operators stay `ConstDef::Op` givens (no inline `#def`).** Inlining
+  any rat operator requires rebuilding the entire seam-given layer over the
+  `term_spec` forms (strict structural equality + shared `to_pos` coercion +
+  concl-parity tests block it). Pervasive `recon`/component-computation/`class_intro`
+  rewrite; deferred. Surface support (`spec-abs`/`spec-rep` in `infer.rs`) is done.
+- **`real.cov` non-order theorems** — `of_rat_mono`, `zero_ne_one`, `is_cut` are
+  not ported (proved *modulo* the still-postulated `rat` order facts). Needs the
+  extra cut seam + `rat` order givens; deferred until the `rat` order postulates
+  are discharged.
+- **`stream.cov` wrapper-side round-trips** — `head_mk`, `tail_const`, `mk_at`
+  are genuine Rust theorems (`init/stream.rs`) but not re-derived in `stream.cov`
+  (written against a diverged `ext` signature; re-port on the current 5-arg `ext`).
+  `stream.cov` ports only `const.at`/`head.const`/`tail.at`.
 
 ## Partial subsystems
 
-- **`covalence-hol` inductive-type engine** in
-  `crates/covalence-hol/src/init/inductive/`. The shared infrastructure for
-  basic inductive types (single-sorted, parametric, first-order,
-  strictly-positive, directly-recursive). **In place:**
-  - `sig.rs` — the signature data model (`InductiveSig` / `Constructor` / `Arg`).
-  - `data.rs` — the `Inductive` **trait**, the lifting seam: the engine
-    consumes structural induction **and constructor freeness** (`injective` /
-    `distinct`) only through it, never calling a kernel rule directly. `nat`'s
-    `NatTheory` adapter sources them from `Thm::nat_induct` / `Thm::succ_inj` /
-    `Thm::zero_ne_succ`.
-  - `graph.rs` — the impredicative recursion graph (`closed` / `graph` /
-    `ctor_instance`), generic over a signature.
-  - `existence.rs` — `graph_intro` (per-constructor introduction) and
-    `graph_total` (`⊢ ∀t. ∃a. Graph t a`, by the supplied induction). Generic
-    over `Inductive`; `nat` consumes them (`init/recursion.rs`).
-  - `uniqueness.rs` — `graph_inv` (per-constructor inversion: `Graph (Cᵢ x⃗) a
-    ⟹ ∃b⃗. (⋀ Graph rⱼ bⱼ) ∧ a = fᵢ x⃗ b⃗`), via the generic `Good = λk c.
-    Graph k c ∧ wit` determinizing relation whose closedness is discharged by
-    `distinct` (other constructors) and `injective` (`Cᵢ` itself). Generic over
-    `Inductive`; `nat`'s `graph_base_inv` consumes it.
-  - `determinacy.rs` — `graph_det` (`∀t a b. Graph t a ⟹ Graph t b ⟹ a = b`):
-    folds the supplied induction over `graph_inv` (invert both graphs, then the
-    IH equates the recursive images). Generic over `Inductive`; `nat`'s
-    `graph_det` consumes it.
-  - `recursor.rs` — `recursion_theorem` (`⊢ ∃rec. P_rec rec`): builds the
-    recursor `λ(steps). λt. ε a. Graph t a` by Hilbert choice over the graph,
-    proves its per-constructor equations (`rec (Cᵢ x⃗) = fᵢ x⃗ (rec r⃗)`) from
-    totality + determinacy, and `∃`-introduces over a caller-supplied `defs`
-    recursor predicate. Generic over `Inductive`; `nat`'s `recursion_theorem` /
-    `rec_holds_proof` consume it.
-  - `util.rs` — shared conjunction-proof plumbing.
+- **Inductive-type engine** (`init/inductive/`). Construction is complete; remaining:
+  - **Port onto the abstract `Hol` interface** (`inductive/hol.rs`) so the same
+    machinery drives any HOL backend (internal/object-level HOL later). Pattern:
+    generic impl + `NativeHol` shim. Trait surface + data model + `graph` builders +
+    `Inductive<H>` are ported; **still concrete:** the proof modules `existence` /
+    `uniqueness` / `determinacy` / `recursor` — each ports to `<H: Hol, I: Inductive<H>>`
+    using the `gen_*` builders + `Hol` methods + generic β/∃ helpers, with a `NativeHol`
+    shim. Then `recursion.rs` entry points flip to any backend. Standing constraint:
+    keep every engine entry point generic over `I: Inductive`, never a concrete `nat`
+    (so internal-HOL `nat`-from-`ind` lifts to one new `Inductive` impl).
+  - **Full ≥2-rec-arg run** — `det_step`/`rec_equation` are general for `k ≥ 1`, but a
+    full `graph_total`/`graph_det`/`recursion_theorem` run on a fresh ≥2-rec-arg type
+    still needs a genuine `Inductive` adapter (the carrier/`Wf` seam `#inductive` reports).
 
-  The construction is **complete**: `init/recursion.rs` is now just the
-  `NatTheory` adapter + assembly wiring, consuming the engine end to end.
-  Remaining engine work:
-  - **Port the engine onto the abstract `Hol` interface** (`inductive/hol.rs`),
-    so the same machinery drives any HOL backend (native today; internal /
-    object-level HOL later — "prove induction inside HOL"). `Hol` is the
-    value-typed HOL Light surface (assoc `Type`/`Term`/`Thm` + connective
-    builders + the derived rule set), distinct from the arena-style
-    `HolLightKernel`. The pattern is **generic impl + native shim**: each
-    function's logic moves to a generic-over-`Hol` version, with the concrete
-    engine function a thin [`NativeHol`] shim so callers are unchanged.
-    **Done:** the `Hol` trait covers the **full proof-layer surface** — types,
-    term builders, queries, the rule set, and the hard derived rules (`beta_nf`,
-    `exists_intro`/`exists_elim`, `rw_all`) as trait methods; the easy derived
-    rules (`cong_arg`/`conjuncts`/`beta_reduce`/`beta_expand`/`beta_nf_concl`/
-    `beta_nf_expand`/`rewrite`) and the conjunction plumbing as generic helpers.
-    `NativeHol` forwards each to the existing `covalence-core` / `init::eq` /
-    `init::logic` impl; the surface is validated generically (the `hol` tests).
-    Also done: the **data model** (`sig`: `GenArg<Ty>`/`GenConstructor<Tm,Ty>`/
-    `GenSig<Tm,Ty>` with native aliases `Arg`/`Constructor`/`InductiveSig`),
-    the **`graph` term builders** (`gen_app2`/`gen_ctor_instance`/`gen_closed`/
-    `gen_graph` + `GenCtorInstance<Tm>`, bare names are `NativeHol` shims), and
-    the **`Inductive` trait** (now `Inductive<H: Hol = NativeHol>` — the default
-    type param keeps `NatTheory`'s impl and the proof modules' `I: Inductive`
-    bounds unchanged). `util` + `graph::conj` + `graph::{graph,closed,…}` are
-    shims. **Still concrete (next):** the proof modules `existence` /
-    `uniqueness` / `determinacy` / `recursor` — each ports to
-    `<H: Hol, I: Inductive<H>>(hol, …)` using the `gen_*` graph builders + the
-    `Hol` rule methods + the generic β/∃ helpers, with a `NativeHol` shim
-    keeping its `nat`-facing signature. Then `recursion.rs`'s entry points can
-    flip to any backend.
-  - **The multi-recursive-argument paths are now GENERAL** (engine extension,
-    the `tree`/`sexp` work): `determinacy::det_step` (new, replacing the
-    single-arg `det_case`) peels *all* inversion witnesses recursively
-    (`peel_exists`), equates each `(cⱼ,dⱼ)` by its own IH, and chains the
-    congruences for any `k ≥ 1`; `recursor::rec_equation`'s `k ≥ 1` arm feeds
-    graph introduction the conjunction of per-arg `Graph rⱼ (rec rⱼ)`
-    memberships. The 2-rec-arg graph layer is exercised by
-    `existence.rs::graph_intro_two_rec_args_is_conjunctive` (binary-tree
-    `branch`); `nat`'s recursion suite regression-validates the `k=1` path
-    through the generalized code. **Remaining gap:** a full
-    `graph_total`/`graph_det`/`recursion_theorem` run on a fresh ≥2-rec-arg type
-    still needs a genuine `Inductive` adapter (derived induction + freeness),
-    i.e. the carrier/`Wf` seam the `#inductive` directive also reports.
+- **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Foundation,
+  recursion theorem, and append-monoid/length-homomorphism `.cov` laws are done. Missing:
+  - **`list_foldl`** — the left-fold recursor's defining equations not yet discharged.
+  - **`filter` / `flatten` clauses** — `foldr`-factored; follow the `length`/`cat`
+    pattern but not built.
+  - **Pointwise ops `map` / `take` / `skip` / `repeat`** — defined on the carrier
+    stream (not via `foldr`); per-op `nil`/`cons` derivations not written.
+  - **The `#inductive`-for-`list` path** — `script/inductive.rs` realises only the
+    `nat` shape; polymorphic/multi-rec-arg `list` hits the engine gaps above.
 
-  **Lifting to internal HOL (future).** The trait seam exists precisely so the
-  proofs can be re-targeted: today `nat` is a kernel primitive, but we may later
-  define `nat` from `ind` the standard HOL way (`0`/`SUC` carved out of an
-  infinite type via `NUM_REP`), where induction and freeness are **derived
-  theorems**. That presentation supplies the same `Inductive` interface and so
-  drives the same engine — lifting these proofs into internal HOL becomes
-  writing one new `Inductive` impl, not re-deriving the graph route. Keeping
-  every engine entry point generic over `I: Inductive` (never a concrete `nat`)
-  is the standing constraint that keeps this open.
+- **Product theory** (`init/prod.rs`). Core complete. Not covered:
+  - **`signed1` / `signed2`** (`defs/prod.rs`) — separate `TypeSpec`s; constructors/
+    projections not built (mirror `prod`; only the spec handle differs).
+  - **Reverse of `pair_inj`** + the packaged `⟺` form — not exposed.
+  - **Product recursor / `prod.case`** (`(α→β→γ) → prod α β → γ`) — not in `defs/`.
 
-- **`covalence-hol` list theory** in `crates/covalence-hol/src/init/list.rs`
-  + `list_recursion.rs` + `list.cov`. The **full structural foundation** is now
-  proved and genuine (hypothesis- and oracle-free): the `abs`/`rep` seam, the
-  finite-∧-contiguous selector facts (`pred_*`/`finite_*`/`contig_*`), the
-  per-constructor element computations (`index_nil`/`index_cons_zero`/
-  `index_cons_succ`/`head_nil`/`head_cons`/`tail_cons`/`index_tail`),
-  constructor freeness (`cons_inj`/`nil_ne_cons`), extensionality (`list_ext`)
-  + reconstruction (`cons_head_tail`/`nil_from_allnone`/…), and **list
-  induction** (`list_induct`). On top, `list_recursion.rs` derives the `list`
-  `Inductive` adapter, the paramorphic recursion theorem, the `list_foldr`
-  discharge (`foldr_holds`), and the `foldr`/`length`/`cat` nil/cons recursion
-  clauses (`foldr_nil`/`foldr_cons`, `length_nil`/`length_cons`,
-  `cat_nil`/`cat_cons`). `list.cov` re-exports those clauses and proves the
-  **append monoid laws** (`cat_nil_r`, `cat_assoc`) + the **length
-  homomorphism** (`length_cat`) + `cat_cons_singleton` over the `listprim`
-  seam env, driven by the new `list-induct` tactic (the genuine `list_induct`
-  theorem, registered in `core`/`script::tactic`). Still missing:
-  - **`list_foldl`** — the left-fold recursor's defining equations (the
-    `foldr` mirror) are not yet discharged from the recursion theorem.
-  - **`filter` / `flatten` clauses** — also `foldr`-factored, so their
-    nil/cons clauses follow the `length`/`cat` pattern but are not built.
-  - **Pointwise ops `map` / `take` / `skip` / `repeat`** — defined directly on
-    the carrier stream (not via `foldr`); their `nil`/`cons` clauses need the
-    `cons`-side *stream* computations applied to the pointwise body (the
-    `index_cons_*` machinery is in place, but the per-op derivations are not
-    written).
-  - **The `#inductive`-for-`list` path** — `script/inductive.rs` realises only
-    the `nat` shape; a polymorphic/multi-recursive-arg `list` declaration still
-    hits the engine's ≥1-type-param + carrier-construction gaps (see the
-    inductive-engine entry). The `list-induct` *tactic* + `list_env` givens are
-    the current `.cov`-facing surface instead.
-
-- **`covalence-hol` product theory** in `crates/covalence-hol/src/init/prod.rs`.
-  The core is **complete and genuine** (oracle-free): the `abs`/`rep` seam
-  (`rep_pair`), both projection clauses (`fst_pair`/`snd_pair`), surjective
-  pairing (`pair (fst p) (snd p) = p`), and pair injectivity (`pair_inj`).
-  Not yet covered:
-  - **`signed1` / `signed2`** (`defs/prod.rs`) are *separate* `TypeSpec`s reusing
-    the same singleton `prod_predicate` over `prod bit α`. Their constructors /
-    projections aren't built; once added they mirror `prod` exactly (the
-    `singleton_pred` / `determines` engine is type-agnostic — only the spec
-    handle differs).
-  - **The reverse of `pair_inj`** (`a = c ∧ b = d ⟹ pair a b = pair c d`, trivial
-    by congruence) and the packaged `⟺` form are not exposed.
-  - **A product recursor / `prod.case`** (`(α → β → γ) → prod α β → γ`) is not in
-    the `defs/` catalogue; surjective pairing + the projections are enough to
-    define and reason about one downstream when needed.
-
-- **Monoid / categorical rewriters** in `crates/covalence-hol/src/init/monoid.rs`
-  + `cat.rs` (`cat_normalize` / `cat_prove_eq`). **In place:** the model-generic
-  monoid normalizer (`Monoid::normalize` / `prove_eq`) over `(op, unit, assoc,
-  left_id, right_id)`; models for `(nat,+,0)`, `(nat,×,1)`, the endomorphism
-  monoid `(α→α, ∘, id)`; the function-category rewriter for heterogeneous
-  objects; and a model-generic `monoid.cov` driven through `monoid_env`.
-  **Not yet built:**
-  - **Relation-category rewriter.** `rel.compose` / `rel.id` exist in
-    `defs/rel.rs` with `holds_compose` / `holds_id` (init/rel.rs), but their
-    **identity and associativity laws are unproved** — they need the existential
-    one-point rule `(∃y. x = y ∧ P y) = P x` (flagged in `init/rel.rs`'s module
-    docs). Once those laws land, `endo_monoid` has a `rel`-category analogue and
+- **Monoid / categorical rewriters** (`init/monoid.rs` + `cat.rs`). Not built:
+  - **Relation-category rewriter** — `rel.compose`/`rel.id` exist but their identity
+    & associativity laws are unproved; need the existential one-point rule (now proved
+    in `logic::exists_one_point`) plus ∃/∧ reshaping (see lang entry). Once landed,
     `cat_normalize` generalizes to relations with no algorithm change.
-  - **`(monoid-normalize)` / `(cat-normalize)` script inferences.** The Rust
-    normalizers are not yet exposed as registered `.cov` rewriter tactics; today
-    a `.cov` proof drives the laws one `(rw …)` at a time (see `monoid.cov`).
-    This is the concrete first consumer of the planned **rewriter facet** on the
-    `Tactic` trait (`script/tactic.rs` doc-note): a `rewrite(a) -> ⊢ a = b`
-    method so `Monoid::normalize` plugs in directly as `(rw (monoid-nf))`.
-  - **List monoid `(list, append, nil)`.** The append monoid laws are now
-    proved in `list.cov` (`cat_assoc`, the left unit `cat_nil`, the right unit
-    `cat_nil_r`), so "list is the free monoid" is provable; what remains is
-    packaging them as a `Monoid` *value* (`list_append_monoid()`) — i.e.
-    re-exporting the `.cov` theorems through Rust accessors and feeding them to
-    `Monoid::new`, the way `nat_add_monoid` / `endo_monoid` are built.
-- **Formal-languages / Kleene-algebra theory** in
-  `crates/covalence-hol/src/init/lang.rs`. A *language over a monoid `M`* is a
-  `set` of `M`-carrier words; concatenation lifts `M`'s `op`. **In place:** the
-  operations (`empty_lang`, `epsilon`, `lang_union`, `lang_concat`,
-  `lang_star`); the membership computations (`mem_concat`, `mem_epsilon`,
-  `mem_empty_lang`, `mem_star`); the **union** Kleene-algebra fragment
-  (re-exported `set` `union_comm`/`union_assoc`/`union_idem`/`union_empty`);
-  `∅`-annihilation `concat_empty_l`/`concat_empty_r` (proved via the new
-  existential tactics); and the **closure direction** of the star unfolding —
-  `star_contains_epsilon` (`ε ⊆ L*`) **and** `star_concat_closed`
-  (`L·L* ⊆ L*`, the pre-fixpoint property, proved with `exists_intro`/
-  `exists_elim` + `subset` reasoning). All genuine (hypothesis- and oracle-free),
-  model-generic over any `Monoid`. The **free-monoid model** `list_cat_monoid`
-  (`(list elem, cat, nil)`, in `init/monoid.rs`) supplies the word alphabet a
-  regex matches against. **Not yet proved:**
-  - **`concat` associativity** and the **`epsilon` concat identities**
-    (`ε·L = L`, `L·ε = L`). The **existential one-point rule**
-    `⊢ (∃x. x = t ∧ P x) = P t` is now proved (`logic::exists_one_point`,
-    `init/logic.rs`) — the rule also flagged as missing in `init/rel.rs`. What
-    remains is **existential/conjunction reshaping**: the concat membership
-    formula is `∃x ∃y. (x=unit ∧ mem y L) ∧ w=op x y`, which must be reassociated
-    into the one-point shape `∃x. x=unit ∧ (∃y. …)` before the rule fires, and
-    then `op unit y = y` (the monoid `left_id`) applied under the surviving `∃y`.
-    A small ∃/∧-normalizer (the `logic::exists_cong` body-rewriter is the seed)
-    is the next increment; once it lands, `ε·L = L`, `L·ε = L`, and `rel`'s
-    identity/assoc laws all fall out.
-  - **`concat` over `union` distribution** (`L·(M∪N) = L·M ∪ L·N` and the
-    right form): the membership identity is a propositional tautology over the
-    unfolded concat existentials, blocked on the same ∃-pushing.
-  - **The full star unfolding** `L* = ε ∪ L·L*` (the closure direction
-    `ε ∪ L·L* ⊆ L*` now follows from `star_contains_epsilon` +
-    `star_concat_closed` + `union` ⊆-elimination — assembling it into the single
-    `⊆` theorem is a small increment) and the **least-fixpoint half**
-    `L* ⊆ ε ∪ L·L*`, the genuine induction over the impredicative star.
+  - **`(monoid-normalize)` / `(cat-normalize)` script inferences** — Rust normalizers
+    not exposed as registered `.cov` rewriter tactics (first consumer of the planned
+    `Tactic` rewriter facet, `script/tactic.rs`).
+  - **List monoid `(list, append, nil)`** — laws proved in `list.cov`; remaining is
+    packaging them as a `Monoid` *value* (`list_append_monoid()`).
 
-- **Regular expressions on lists / `Matches` derivation** in
-  `crates/covalence-hol/src/init/regex/mod.rs` (+ the private `regex/soundness.rs`
-  submodule, the per-clause soundness helpers — `pub(super)`, `use super::*`).
-  The regex datatype
-  `empty | eps | lit 'a | alt | seq | star` is reified as an
-  alphabet-polymorphic Church encoding (the `init/prop.rs` recipe — distinct
-  regexes are distinct terms, no engine recursor needed despite `alt`/`seq`
-  having two recursive args). **In place (all genuine, hypothesis- and
-  oracle-free):** the constructors `r_*`; the denotation `denote : regex 'a →
-  set (list 'a)` (a fold into `init/lang` over the free monoid
-  `list_cat_monoid`); `Matches` as the impredicative smallest predicate closed
-  under the **seven matching rules** (`eps`/`lit`/`alt-l`/`alt-r`/`seq`/
-  `star-nil`/`star-step`), each proved as a derivation constructor `match_*`;
-  and **soundness** `⊢ Matches r w ⟹ mem w ⟦r⟧` by rule induction (`inst` of
-  the impredicative predicate), all seven cases discharged against the `lang`
-  membership computations + `star_concat_closed`. Bytestring instance at
-  `u8_alphabet()` with a worked derivation. A `.cov` port
-  (`regex/regex.cov` + `regex_env`, the `regexprim` givens, + the
-  `init::regex::cov` `cov_theory!` block) ports **six worked `Matches`
-  derivations** over the byte alphabet — `match_eps_nil`/`match_lit_a`/
-  `match_star_nil_a` (base cases) and `match_alt_a`/`match_seq_ab`/`match_star_a`
-  (recursive cases, exercising the existential `seq`/`star` rules via
-  `imp-elim`). All genuine; conclusion-equality + genuineness tests in
-  `regex/mod.rs`. **Not yet built (deferred):**
-  - **`Matches`-completeness** `mem w ⟦r⟧ ⟹ Matches r w` (the converse): the
-    star case needs the least-fixpoint half of the star unfolding above.
-  - **`.cov` soundness** `Matches r w ⟹ mem w ⟦r⟧`: needs the full
-    rule-induction `inst` of the impredicative predicate + the slow
-    `lang`-membership discharge — kept Rust-proved in `regex::soundness` /
-    `regex::soundness_at`, not (yet) replayed as a `.cov` script. The
-    `regex.cov` star example also leaves its word as the literal `cat [0x61]
-    nil` (the `list_cat` reduction `cat [0x61] nil = [0x61]` is a separate,
-    unported step).
-  - **Ambiguity** (a proof-relevant `Parse r w` / parse-tree datatype + `yield`,
-    of which `Matches` is the propositional truncation) and **sexpr lift/lower**
-    (`regex_of_sexpr` / `sexpr_of_regex` over `init/sexpr`, defined
-    concurrently — interface noted, no dependency taken). Both sketched in the
-    `regex.rs` DESIGN NOTE.
-  - **Performance**: the soundness proof is slow (~70 s in debug) — the `star`
-    denotation's impredicative `∀S` makes `denote`/`beta_nf` terms large. A
-    memoised / staged `beta_nf` or caching `denote` across clauses would help.
+- **Formal-languages / Kleene-algebra theory** (`init/lang.rs`). Not yet proved:
+  - **`concat` associativity** + **`epsilon` identities** (`ε·L = L`, `L·ε = L`).
+    The one-point rule is proved; what remains is an ∃/∧-normalizer (seed:
+    `logic::exists_cong`) to reshape the concat membership into one-point form and
+    apply monoid `left_id`. Once landed, these + `rel`'s identity/assoc fall out.
+  - **`concat` over `union` distribution** — blocked on the same ∃-pushing.
+  - **Full star unfolding** `L* = ε ∪ L·L*` (assemble the closure half into a single
+    `⊆`) and the **least-fixpoint half** `L* ⊆ ε ∪ L·L*` (induction over the
+    impredicative star).
 
-- **`covalence-hol` text theory** in `crates/covalence-hol/src/init/char.rs`
-  and `crates/covalence-hol/src/init/string.rs` (`char`/`string`/`bytes`).
-  The **element types and `nil`-side facts** are proved and genuine
-  (hypothesis- and oracle-free):
-  - `char := { c : nat | c < 0xD800 ∨ (0xDFFF < c ∧ c < 0x110000) }` — Unicode
-    **scalar values** (surrogates excluded; matches Rust `char`). The codepoint
-    round-trips `code_mk` (conditional on the scalar-value premise — decided per
-    literal by `reduce` for the `nat.lt` atoms + `prop_eq` for the `∧`/`∨`;
-    **rejects surrogates and out-of-range**) and `mk_code` (the unconditional
-    wrapper-side round-trip).
-  - `string := list char` / `bytes := list u8` — the newtype `abs`/`rep`
-    seam, the empty-sequence builders/facts (`bytes_empty`/`string_empty`,
-    `*_rep_empty`, `*_head_empty`).
+- **Regex on lists / `Matches`** (`init/regex/`). Constructors, denotation, `Matches`,
+  Rust soundness, and six `.cov` derivations are done. Deferred:
+  - **`Matches`-completeness** `mem w ⟦r⟧ ⟹ Matches r w` — star case needs the
+    least-fixpoint half of the star unfolding above.
+  - **`.cov` soundness** — needs the rule-induction `inst` of the impredicative
+    predicate + slow `lang`-membership discharge; kept Rust-proved. The `regex.cov`
+    star example also leaves `cat [0x61] nil` unreduced (separate unported step).
+  - **Ambiguity** (`Parse r w` parse-tree datatype + `yield`) and **sexpr lift/lower**
+    (`regex_of_sexpr` / `sexpr_of_regex`). Sketched in `regex.rs` DESIGN NOTE.
+  - **Performance** — soundness proof is slow (~70s debug); the `star` impredicative
+    `∀S` makes terms large. Memoised/staged `beta_nf` or caching `denote` would help.
 
-  Still missing — **all blocked on the in-flight `list` recursion work**
-  (the `cons`-side computations / list recursion theorem in the list-theory
-  entry above); do NOT build until `init::list` exposes the `cons`-side
-  surface:
-  - **Sequence `length`** — `bytes.len`/`string.len` reduce to `list.length`
-    through the seam; blocked on `list.length`'s `cons` clause (which is
-    blocked on the list recursion theorem).
-  - **`cat` / `at` / `index` / `slice` / `consNat`** for `bytes` and the
-    analogues for `string` — each bridges to the corresponding `list` op,
-    blocked on the same `cons`-side list computations. (`defs/blob.rs`'s
-    `bytesCat`/`bytesLen`/`bytesSlice` already carry definitional bodies over
-    `list.cat`/`list.length`/`take`∘`skip`; their open-form *equational
-    lemmas* still wait on the list recursors. `bytesConsNat`/`bytesAt` are
-    additionally declaration-only pending a `nat ↔ u8` conversion — see the
-    "Declaration-only catalogue ops" section.)
-  - **Cons-side string/bytes induction & extensionality** — ride directly on
-    list induction/extensionality once those land.
-  - **Literal coherence for non-empty `Blob`s** — a `Blob` literal of length
-    `n>0` denotes `cons b₀ (cons b₁ … (nil u8))`; proving that equality
-    needs the `cons`-side `list.index`/`length` clauses. The element-level
-    coherence (`Blob : bytes`, `u8_lit : u8`, ASCII `char.mk k`) is done.
-  - **UTF-8 and UTF-16 codecs** in `crates/covalence-hol/src/init/utf8.rs` +
-    `utf8.cov` and `crates/covalence-hol/src/init/utf16.rs`. The **encoders +
-    per-character round-trip + the encoder homomorphism** are now built and
-    genuine (hypothesis- and oracle-free); the **validating decoders + full
-    inductive string round-trip** are deferred. Done:
-    - `utf8.encodeChar : char → list u8` (1–4 bytes by codepoint range, RFC
-      3629) and `utf16.encodeChar : char → list u16` (BMP → 1 unit; astral →
-      a **surrogate pair**, `0xD800+m/0x400` / `0xDC00+m%0x400` — the surrogate
-      code units `char` excludes as scalars). Each is a shell-defined constant
-      (`TermSpec` with a `SmolStr` symbol, not in the kernel `defs/`). The
-      **per-character reduction lemmas** `encode_char_lit(k)` reduce a *literal*
-      scalar value all the way to its exact `cons … nil` of `u8`/`u16` literals
-      (tested across ASCII / 2-/3-/4-byte / `€` / emoji / all range boundaries
-      / surrogate pairs). The driver is δ-unfold + β + the `char::code_mk`
-      round-trip + `reduce` (folds `nat.div`/`mod`/`add` + `int.fromNat[uN]`) +
-      `cond::collapse_conds` (a new public conversion firing the `init::cond`
-      `cond_true`/`cond_false` clauses innermost-first).
-    - `utf8.encode : string → bytes` / `utf16.encode : string → list u16`
-      (and the carrier-level `utf8.encodeBytes : list char → list u8`), each a
-      `foldr` of the per-char encodings. Their `nil`/`cons` recursion clauses
-      (`encode_nil`/`encode_cons`/`encode_bytes_nil`/`encode_bytes_cons`) are
-      proved through the `init::list_recursion` `foldr`/`cat` machinery.
-    - the **per-character UTF-8 round-trip** `decode_ascii1_round_trip(k)`
-      (`⊢ decodeAscii1 (utf8EncodeChar (char.mk k)) = some (char.mk k)`) for
-      the **ASCII fragment** (`k < 0x80`), via the carrier-level decoder
-      `utf8.decodeAscii1` + the new `init::option::case_some`/`case_none`
-      `optionCase` clauses + `list::head_cons`.
-    - the **encoder monoid homomorphism** `utf8.cov`'s `encode_cat`
-      (`⊢ ∀xs ds. encodeBytes (xs ++ ds) = (encodeBytes xs) ++ (encodeBytes
-      ds)`), proved by `list-induct` — the analogue of `list.cov`'s
-      `length_cat`. (`text` types `char`/`string`/`bytes`/`uN` are now
-      `.cov`-parseable, added to `script::syntax::parse_type`.)
+- **Text theory** (`init/char.rs`, `string.rs`). Element types + `nil`-side facts done.
+  Missing — **all blocked on the in-flight `list` recursion (cons-side)**; do NOT build
+  until `init::list` exposes the cons-side surface:
+  - **Sequence `length`** (`bytes.len`/`string.len`) — blocked on `list.length`'s cons clause.
+  - **`cat`/`at`/`index`/`slice`/`consNat`** for `bytes`/`string` — bridge to `list` ops.
+    (`bytesConsNat`/`bytesAt` additionally need a `nat ↔ u8` conversion — see
+    declaration-only ops.)
+  - **Cons-side string/bytes induction & extensionality** — ride on list induction once landed.
+  - **Literal coherence for non-empty `Blob`s** — needs cons-side `list.index`/`length`.
+  - **Bitvector ops on `u8`/`bytes`** — width-respecting `and/or/xor/shl/shr/not`,
+    `add`/`mul` mod `2^N`, `nat ↔ uN`/`bytes ↔ uN` conversions. Not started.
 
-    Deferred (do NOT claim these are done):
-    - **The validating decoders** `utf8Decode : bytes → option string` and
-      `utf16Decode : list u16 → option string` past the single ASCII byte:
-      the multi-byte continuation-byte validation (`0x80 ≤ b < 0xC0` checks),
-      the over-long-encoding / lone-surrogate rejection, and the codepoint
-      reassembly (`((b0 & mask) << 6·k) + …`) are a large `nat`-range case
-      analysis not yet built. `decodeAscii1` only covers the 1-byte case.
-    - **The full string round-trip** `⊢ utf8Decode (utf8Encode s) = some s`
-      (and the UTF-16 analogue) by `list-induct` over the string: the cons
-      case needs a **"decode peels exactly one char's bytes off the front"**
-      lemma (decode reads `encode_char c ++ rest` and returns `c` + `rest`),
-      which rests on the per-byte decode validation above. The induction
-      *skeleton* is the `encode_cat` homomorphism + the per-char round-trip;
-      the prefix-consumption step is the remaining work.
-    - **`bytes`/`string` newtype wrappers** for the codecs (`utf8Encode` is
-      `abs ∘ encodeBytes ∘ rep`; a `utf8Decode` over `bytes`/`option string`
-      wrapping `decodeAscii1`) — the carrier-level lemmas are proved, the
-      newtype-wrapped equational lemmas are not all surfaced.
-  - **Bitvector ops on `u8`/`bytes`** (the eventual full bitvector support):
-    `u8`/`uN` are `bits`-subtypes (`defs/bits.rs`) and `defs/nat.rs` already
-    has `natShl/Shr/BitAnd/BitOr/BitXor` that reduce on literals — the future
-    bitvector layer would expose width-respecting `and/or/xor/shl/shr/not`,
-    `add`/`mul` mod `2^N`, and `nat ↔ uN`/`bytes ↔ uN` (LE/BE) conversions on
-    these types. Not started.
+- **UTF-8 / UTF-16 codecs** (`init/utf8.rs` + `utf8.cov`, `init/utf16.rs`). Encoders +
+  per-char round-trip + encoder homomorphism done. Deferred (do NOT claim done):
+  - **Validating decoders** `utf8Decode`/`utf16Decode` past the single ASCII byte —
+    multi-byte continuation validation, over-long/lone-surrogate rejection, codepoint
+    reassembly (large `nat`-range case analysis). `decodeAscii1` covers only the 1-byte case.
+  - **Full string round-trip** `⊢ utf8Decode (utf8Encode s) = some s` (+ UTF-16) by
+    `list-induct`: cons case needs a "decode peels one char's bytes off the front" lemma,
+    resting on the per-byte validation above.
+  - **`bytes`/`string` newtype-wrapped codec lemmas** — carrier-level lemmas proved,
+    newtype-wrapped equational lemmas not all surfaced.
 
-
-- **`covalence-hol` nat division / modulus theory** in
-  `crates/covalence-hol/src/init/nat.rs`. The **recursion equations and the
-  algebraic laws are proved and genuine** (hypothesis- and oracle-free) for the
-  rest of nat arithmetic: `iter_zero`/`iter_succ` (the `iter` recursor),
-  `pow_zero`/`pow_succ` + `pow_add` (`a^(m+n) = a^m·a^n`),
-  `shl_zero`/`shl_succ` + `shl_eq_mul_pow` (`shl a m = a·2^m`),
-  `shr_zero`/`shr_succ` (`shr a (S m) = (shr a m) / 2`), and `mod_def`
-  (`n mod m = n − (n/m)·m`, `nat.mod`'s definitional unfolding). `pow_add` /
-  `shl_eq_mul_pow` are *also* ported to `nat.cov` (`#comp` calc chains).
-  **Not yet proved — the Euclidean division-algorithm facts.** `nat.div` is a
-  def-style *selector* (it picks the unique `d` with `m≠0 ⟹ d·m ≤ n < (d+1)·m`).
-  Transferring those bounds to `nat.div` itself (the way `le_body`/`lt_body` are
-  transferred to `nat.le`/`nat.lt`) needs a *witness* floor function satisfying
-  the predicate. Unlike the `≤`/`<` witnesses (closed `λn m. n−m = 0`), the
-  floor witness is genuinely recursive, so it must be built by **strong/complete
-  induction over the graph** (the `init/recursion.rs` route), which first needs
-  strong induction derived from the primitive `Thm::nat_induct`. Deferred until
-  that machinery exists. Once the witness lands, the targets are:
-  - `div_mod` — the division algorithm `n = (n/m)·m + (n mod m)` (with `mod_def`
-    above, this reduces to the `m≠0` floor bound).
+- **Nat division / modulus theory** (`init/nat.rs`). Recursion equations + algebraic
+  laws done. Not yet proved — the **Euclidean division-algorithm facts**: `nat.div` is a
+  selector; transferring its bounds needs a recursive floor *witness* built by
+  strong/complete induction over the graph, which first needs strong induction derived
+  from `Thm::nat_induct`. Deferred until that machinery exists. Targets:
+  - `div_mod` — `n = (n/m)·m + (n mod m)`.
   - `mod_lt` — `m ≠ 0 ⟹ n mod m < m`.
-  - the `div`/`mod` recurrences and `(a·b)/b = a` (for `b ≠ 0`).
-  The `shr a (S m) = (shr a m)/2` ↔ `shr a m = a / 2^m` bridge also waits on
-  these (`shr` is defined through `nat.div`).
+  - the `div`/`mod` recurrences and `(a·b)/b = a` (`b ≠ 0`); the
+    `shr a (S m) = a/2^m` bridge (`shr` defined through `nat.div`).
 
-- **`covalence-hol` reified object logic (S-expr → propositional logic)** in
-  `crates/covalence-hol/src/init/sexpr.rs` + `crates/covalence-hol/src/init/prop.rs`
-  (the first internal object logic, `docs/metatheory.md` §8). Both datatypes use
-  a **Church / impredicative encoding** over a fresh result type `'r` (not the
-  `init/inductive/` carve-a-subtype engine), which keeps everything rank-1 and
-  TCB-free. **Complete and genuine** (all theorems hypothesis- and oracle-free):
-  - `sexpr.rs` — `SExpr := atom bytes | snil | scons` with constructors, the
-    recursor `rec`, and its three per-constructor equations (`rec_atom` /
-    `rec_snil` / `rec_scons`, proved by β). End-to-end length-fold test passes.
-  - `prop.rs` — `PropForm` (`var nat | ¬ | ∧ | ∨ | ⟹`), the denotation
-    `⟦·⟧ : PropForm → (nat→bool) → bool`, the impredicative Hilbert-system
-    `Derivable_Prop A := ∀d. Closed d ⟹ d A` (10 axiom schemas + MP), the
-    LCF-style derivation constructors `derive_axiom` / `derive_mp`, and the
-    **soundness theorem** `⊢ ∀v. Derivable_Prop A ⟹ ⟦A⟧ v` (proved by
-    instantiating `d := λA. ⟦A⟧ v` and discharging each closure clause via
-    `prove_taut` = β-normalise + complete Shannon decision `prop_eq`).
-    - **Rule induction over derivations is now PACKAGED** as the reusable
-      `prop_induction(pred, axiom_case, mp_case) -> Thm` — the single
-      impredicative `inst d := pred` + `Closed pred` discharge, yielding
-      `⊢ ∀A. Derivable_Prop A ⟹ pred A` from per-clause case proofs.
-      `soundness_general` (`pred := λA. ⟦A⟧ v`) is its first instance;
-      `derivable_closed_under_rules` (`pred := λA. Derivable_Prop A`, cases via
-      the derivation constructors) is a second, structurally different one,
-      proving the packaging is general. `consistency` (`⊢ ¬Derivable_Prop
-      ⌜var 0⌝`) is a soundness consequence. **`.cov` surface wired**
-      (`prop.cov` over the `propprim` seam env, registered as `prop` in
-      `library_env`): constructor closed-λ constants `prop.var`/`prop.neg`/
-      `prop.and`/`prop.or`/`prop.imp` + `prop.derivable`; the derivation/
-      metatheory givens (`derive_axiom_1..10`, `derive_mp`, `soundness`,
-      `consistency` in applied-constant form, `derivable_self`). `prop.cov`
-      builds a concrete derivation (`axiom1_at_012`) and re-exports
-      `consistency` as a first-class script theorem (test parity with the Rust
-      `consistency_app`).
-  - **SURFACE GAPS hit (the `.cov` stress-test findings).** Recorded here as
-    the next-language-feature drivers; none block the proofs (all live in Rust):
-    1. **Impredicative `inst d := P` is not expressible in `.cov`.** The whole
-       induction principle (`prop_induction`) — instantiate the bound predicate
-       variable of `∀d. Closed d ⟹ d A` with a HOL predicate, then discharge
-       `Closed P` — has no script surface. The `inst`/`all-elim` rules take a
-       *term* witness, but building the predicate `P` (a `Φ⟨bool⟩→bool`
-       λ-term over the formula carrier) and the `Closed P` discharge (needing
-       `prove_taut`/Shannon) are Rust-only. → a `(prop-induct P axiom-cases
-       mp-case)` tactic is the missing primitive.
-    2. **Statements over a *bound* formula variable can't be re-stated.** Any
-       metatheorem of the form `∀A. Derivable_Prop A ⟹ …` (soundness,
-       `derive_axiom_i`, `derive_mp`) mentions `Derivable_Prop`/`⟦·⟧` applied
-       to a *bound* `A`. The reduced↔applied-constant β-bridge (`tree::to_applied`)
-       only rewrites occurrences applied to *closed* sub-terms, not under the
-       `∀A`. So these givens are citable by `apply`/`all-elim` but their
-       `#concl` cannot be written in `.cov` — only `consistency` (whose
-       statement mentions `derivable` applied to the *closed* `⌜var 0⌝`) is a
-       re-statable theorem. → an automatic β/η-aware `#concl` matcher (or
-       exposing `Derivable_Prop`/`denote` as genuine `defs` constants with a
-       δ-rule, not closed-λ constants) would close this.
-    3. **The seam-given/applied-constant mismatch is pervasive.** Constructors
-       are closed-λ constants applied by `Term::app` (no β), but every seam
-       lemma is stated over the *reduced* encoding. `(apply derive_axiom_1)`
-       works only because `apply`'s first-order matcher tolerates the β-gap via
-       unification; an explicit `(derive (all-elim …))` would need a manual
-       `reduce`/`rw` bridge. → the script's `#concl` checker should β-normalise
-       both sides before comparing (a `comp_default`-style equality seam).
-  - Not yet here:
-    - **A genuine `SExpr` structural induction principle.** `sexpr::induct_note`
-      is a doc placeholder: the bare Church encoding admits junk inhabitants, so
-      `(∀b. P(atom b)) ⟹ P snil ⟹ (∀h t. P h ⟹ P t ⟹ P(scons h t)) ⟹ ∀s. P s`
-      needs a `Wf` well-formedness predicate carving the well-founded encodings
-      (the standard "reducibility" side condition). Soundness does **not** need
-      it — `Derivable_Prop` is itself impredicative — so it was deferred. The
-      recursor universal property / `Wf`-restricted induction is the next step
-      if a downstream proof needs to induct over arbitrary `SExpr`s.
-    - **`ToProp : HOLTm ⇀ PropForm`** (metatheory §8 step 4, the first *language
-      morphism* translating a HOL propositional fragment into the object logic
-      with `⟦ToProp t⟧ = t`) is not built.
-    - **Propositional variables are `nat` indices, not `SExpr` atoms.** The
-      `SExpr` carrier and `PropForm` are independent today; wiring `var` to carry
-      an `SExpr` atom (so formulas are literally S-expressions) is a later
-      unification, deliberately skipped for simplicity.
+- **Reified object logic (S-expr → prop logic)** (`init/sexpr.rs` + `init/prop.rs`,
+  `notes/metatheory.md` §8). Datatypes, recursors, soundness, rule induction, and the
+  `prop.cov` surface are done. Open:
+  - **SURFACE GAPS (the `.cov` stress-test findings)** — next-language-feature drivers,
+    none block the proofs (all live in Rust):
+    1. **Impredicative `inst d := P` not expressible in `.cov`** — `prop_induction` has
+       no script surface (building the predicate `P` + `Closed P` discharge are Rust-only).
+       → a `(prop-induct P axiom-cases mp-case)` tactic is the missing primitive.
+    2. **Statements over a *bound* formula variable can't be re-stated** — the
+       reduced↔applied-constant β-bridge (`tree::to_applied`) only rewrites under closed
+       sub-terms, so soundness/`derive_axiom_i`/`derive_mp` `#concl`s can't be written
+       (only `consistency` can). → an automatic β/η-aware `#concl` matcher, or exposing
+       `Derivable_Prop`/`denote` as genuine `defs` constants with a δ-rule.
+    3. **Seam-given/applied-constant mismatch is pervasive** — `#concl` checker should
+       β-normalise both sides before comparing (`comp_default`-style equality seam).
+  - **Genuine `SExpr` structural induction** — `sexpr::induct_note` is a placeholder;
+    the bare Church encoding admits junk inhabitants, so induction needs a `Wf`
+    well-formedness predicate. Soundness doesn't need it; deferred.
+  - **`ToProp : HOLTm ⇀ PropForm`** (metatheory §8 step 4, first language morphism) — not built.
+  - **Prop variables are `nat` indices, not `SExpr` atoms** — wiring `var` to carry an
+    `SExpr` atom (formulas literally S-expressions) is a later unification.
 
+- **`tree` / `sexp` theory** (`init/tree.rs`, `sexp.rs`). Constructors, recursors,
+  freeness/distinctness, and `.cov` surface done. Still deferred: `branch_inj`; the
+  recursor `rec_leaf`/`rec_branch` `.cov` ports (blocked on polymorphic-result-type `'r`
+  instantiation in the proof language — the TFree-clash `cat`/`coprod` document); and full
+  structural `tree`/`sexp` induction (the `tree-induct`/`sexp-induct` tactic) — all need
+  the recursor's subtree-recovery identity + the `Wf` carve `init/sexpr.rs` defers.
 
-- **`tree` / `sexp` theory** in `crates/covalence-hol/src/init/tree.rs` and
-  `sexp.rs`. `tree α := leaf α | branch (tree α) (tree α)` (binary tree) and
-  `sexp α := tree (option α)` (the Lisp cons-cell view: `atom = leaf (some a)`,
-  `nil = leaf none`, `cons = branch`), via the Church/impredicative encoding
-  (the `init/sexpr.rs` pattern). **Proved** (genuine, hyp-free): `leaf`/`branch`
-  constructors + recursor `rec` with both equations (`rec_leaf`/`rec_branch`),
-  freeness `leaf_inj` / `leaf_ne_branch`, and the `sexp` distinctness facts
-  `atom_ne_nil` / `atom_ne_cons` / `nil_ne_cons`.
-  **`.cov` surface wired** (`tree.cov` / `sexp.cov` over the `treeprim` /
-  `sexpprim` seam envs): constructors are closed-λ / nullary CONSTANTS
-  (`tree.leaf`/`tree.branch`, `sexp.atom`/`sexp.nil`/`sexp.cons`) — applied by
-  the proof language with a β bridge (`tree::to_applied`) to the reduced
-  encoding — and the freeness/distinctness facts re-export the Rust GIVENS.
-  The three `sexp` facts are taken at a single boolean observation type
-  (`atom_ne_nil` reads `is_some` through the leaf handler — `atom_ne_nil_bool`
-  — instead of `leaf_inj` at `'r := option α`), so the `sexp.*` constructor
-  constants pin `'r := bool` uniformly (needed so the nil-only `atom_ne_nil`
-  `#concl` elaborates uniquely). **Still deferred** (honestly): `branch_inj`,
-  the recursor `rec_leaf`/`rec_branch` `.cov` ports (blocked on the
-  polymorphic-result-type `'r` instantiation in the proof language — the same
-  TFree-clash `cat`/`coprod` document), and full structural `tree`/`sexp`
-  induction (the `tree-induct`/`sexp-induct` tactic) — all need the recursor's
-  subtree-recovery identity, the `Wf` well-formedness carve `init/sexpr.rs`
-  defers.
+## `nat.thy` — carrier-generic model deferred
 
-- **`stream` round-trips proved in Rust, `.cov` ports deferred.** `head_mk`,
-  `tail_const`, `mk_at` (the wrapper-side companions of `at_mk`/`const_at`) are
-  genuine Rust theorems in `init/stream.rs`, but their `.cov` re-derivations are
-  not yet wired into `stream.cov` (the stream agent's `.cov` versions were written
-  against a diverged `ext` signature; re-port on the current 5-arg `ext`). Easily
-  re-derived; `stream.cov` currently ports only `const.at`/`head.const`/`tail.at`.
+`init/nat.sig`+`nat.thy` (checked by `nat_thy.rs`) are the canonical `nat` spec;
+`nat.cov` proves kernel-nat satisfies it via the self model. Deferred:
 
-## `nat.thy` — canonical interface, carrier-generic model deferred
-
-`init/nat.sig` + `init/nat.thy` (checked by `init/nat_thy.rs`) are the canonical
-`nat` **specification**: the signature (sort `nat`, ops `rec`/`zero`/`succ`/
-`add`/`mul`/`sub`/`pow`/`shl`/`le`/`lt`) and the full list of `(#spec NAME C)`
-obligations — one per *exported* `nat.cov` theorem (47 of them). `nat.cov` is the
-**proof** that kernel-nat satisfies the interface; `check_nat_cov_satisfies_nat_thy`
-discharges every spec by an α-equal exported theorem (the witnessing model is the
-**self model**: sort `nat` := kernel `nat`, each op its kernel term). Deferred:
-
-- **The carrier-generic model.** The specs are stated over the self-model
-  vocabulary (kernel `nat.add`/`natrec-op`/literals), so `nat.thy` is *not* yet a
-  signature-abstract theory whose specs re-elaborate at an arbitrary structure
-  carrying a `natrec` (the way `models/nat_add.thy`'s 4 specs do over a `tfree`
-  sort). The reason is concrete: the spec conclusions use nat **literals**
-  (`0`/`1`/`2`) and the `natrec-op` special form, which the abstract `tfree`-sort
-  elaboration (`script::theory::Signature::abstract_env`) cannot type. Lifting the
-  full theory to a carrier-abstract presentation — and giving `nat/self` as just
-  one model among others (a reified-PA model, a bool-stream coding) via the
-  `#sig`/`#thy`/`#model`/`#models` machinery — is the next increment. Today the
-  satisfaction check parses `nat.thy`'s specs directly in the kernel env rather
-  than routing through `parse_thy`'s abstract validation.
-- **The Haskell-like surface extraction.** `nat.sig`/`nat.thy` are hand-written
-  `.sig`/`.thy` data; they are the *eventual elaboration target* of the
-  declarative surface language (`docs/surface-syntax.md`), not yet produced by it.
-- **The `le.add_eq_or` internal helper** of `nat.cov` is deliberately NOT a spec
-  (it is unexported — an implementation lemma, not part of the interface). Only
-  the 47 `#export`ed theorems are specified.
+- **Carrier-generic model** — specs are stated over the self-model vocabulary (kernel
+  `nat.add`/`natrec-op`/literals), so `nat.thy` is not yet signature-abstract (the abstract
+  `tfree`-sort elaboration can't type nat literals + the `natrec-op` special form). Lift the
+  full theory to a carrier-abstract presentation, giving `nat/self` as one model among others
+  (reified-PA, bool-stream coding) via `#sig`/`#thy`/`#model`/`#models`.
+- **Haskell-like surface extraction** — `nat.sig`/`nat.thy` are hand-written; they are the
+  eventual elaboration target of the declarative surface language (`notes/surface-syntax.md`),
+  not yet produced by it.

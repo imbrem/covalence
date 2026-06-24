@@ -69,12 +69,9 @@ fn emit(db: &Database) -> String {
                 let body = expr_symbols(&a.conclusion).unwrap().join(" ");
                 match &a.proof {
                     None => out.push_str(&format!("{} $a {} $.\n", a.label, body)),
-                    Some(Proof::Normal(p)) => out.push_str(&format!(
-                        "{} $p {} $= {} $.\n",
-                        a.label,
-                        body,
-                        p.join(" ")
-                    )),
+                    Some(Proof::Normal(p)) => {
+                        out.push_str(&format!("{} $p {} $= {} $.\n", a.label, body, p.join(" ")))
+                    }
                     Some(Proof::Compressed { labels, letters }) => out.push_str(&format!(
                         "{} $p {} $= ( {} ) {} $.\n",
                         a.label,

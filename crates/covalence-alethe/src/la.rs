@@ -100,9 +100,7 @@ pub fn la_generic(lits: &[Term], args: &[covalence_sexp::SExpr]) -> R<Thm> {
 /// final literal directly avoids the spurious trailing `∨ F` that
 /// clausifying an `F`-conclusion would leave.)
 fn clausify(refutation: Thm, atoms: &[Term]) -> R<Thm> {
-    let (last, init) = atoms
-        .split_last()
-        .expect("≥ 2 literals checked by caller");
+    let (last, init) = atoms.split_last().expect("≥ 2 literals checked by caller");
     let seq = refutation.imp_intro(last)?.not_intro()?; // {l₁, …, lₙ₋₁} ⊢ ¬lₙ
     logic::clause_intro(seq, init).map_err(Into::into)
 }

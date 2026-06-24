@@ -2,7 +2,7 @@
 //!
 //! [`Canonical`] is a non-exhaustive enum naming every type-spec or
 //! term-spec the kernel ships out of the box. New variants land as
-//! the derived-types catalogue grows (see `docs/type-hierarchy.md`).
+//! the derived-types catalogue grows (see `notes/type-hierarchy.md`).
 
 use super::symbol::{Symbol, TrustedCmp, sealed};
 use std::fmt;

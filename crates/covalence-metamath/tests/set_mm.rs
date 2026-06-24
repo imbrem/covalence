@@ -21,8 +21,8 @@ use covalence_metamath::{parse, verify_all};
 #[test]
 #[ignore = "requires COV_SET_MM=/path/to/set.mm; ~48MB, slow"]
 fn set_mm_parses_and_verifies() {
-    let path = std::env::var("COV_SET_MM")
-        .expect("set COV_SET_MM to the path of a downloaded set.mm");
+    let path =
+        std::env::var("COV_SET_MM").expect("set COV_SET_MM to the path of a downloaded set.mm");
     let src = std::fs::read_to_string(&path).expect("read set.mm");
     eprintln!("set.mm: {} bytes", src.len());
 

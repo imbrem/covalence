@@ -410,7 +410,7 @@ impl Env {
     // Like the unification seams above, these route the β / congruence /
     // funext / calc-default operations through methods on `Env`, so a logic
     // can later swap them for its own handler set (the `HandlerSet` of
-    // `docs/surface-compiler.md` §9 — `ctx.active.rewrite` / `.reduce`).
+    // `notes/surface-compiler.md` §9 — `ctx.active.rewrite` / `.reduce`).
     // Today they are the model-agnostic HOL defaults, but they are *requested*
     // through this seam rather than hard-wired into the rules that use them.
 

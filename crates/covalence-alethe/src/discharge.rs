@@ -190,11 +190,7 @@ impl Default for SmtDischarger {
 ///
 /// This is the core "negate-the-goal, refute, conclude `⊢ G`" wrapper on
 /// top of the refutation checker.
-pub fn discharge_with_proof(
-    goal: &Term,
-    problem: &SmtProblem,
-    proof: &AletheProof,
-) -> R<Thm> {
+pub fn discharge_with_proof(goal: &Term, problem: &SmtProblem, proof: &AletheProof) -> R<Thm> {
     let mut bridge = HolAletheBridge::new();
     let decision = ingest_alethe(&mut bridge, problem, proof)?;
     if decision != Decision::Unsat {

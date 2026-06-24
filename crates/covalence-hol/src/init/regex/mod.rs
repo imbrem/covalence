@@ -1,6 +1,6 @@
 //! **Regular expressions on lists**, reified inside HOL, with a `Matches`
 //! derivation you can do **induction on** — the foundation for defining
-//! actual languages (`docs/metatheory.md` §8; the regex analogue of
+//! actual languages (`notes/metatheory.md` §8; the regex analogue of
 //! [`crate::init::prop`]'s propositional object logic).
 //!
 //! A regex over an alphabet `'a` is the datatype
@@ -690,7 +690,10 @@ fn denotation_pred(alpha: &Type) -> Result<Term> {
     let big_w = Term::free("w", wty.clone());
     let den_body = mem(alpha, &big_w, &denote(alpha, big_r.clone())?); // mem w ⟦r⟧
     let inner = Term::abs(wty.clone(), covalence_core::subst::close(&den_body, "w"));
-    Ok(Term::abs(rty_set.clone(), covalence_core::subst::close(&inner, "r")))
+    Ok(Term::abs(
+        rty_set.clone(),
+        covalence_core::subst::close(&inner, "r"),
+    ))
 }
 
 /// The polymorphic alphabet type variable `'a` the cached `Closed D` proof is

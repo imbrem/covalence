@@ -11,7 +11,7 @@
 //! Today [`check`] is **synchronous** and resolves only the built-in
 //! standard-library prelude (self-contained articles). Network dependency
 //! loading is the async `ArticleSource` path driven via `wasm-bindgen-futures`
-//! — see `docs/web-kernel.md` and `crates/covalence-kernel/src/service.rs`.
+//! — see `notes/web-kernel.md` and `crates/covalence-kernel/src/service.rs`.
 
 use covalence_kernel::KernelService;
 use wasm_bindgen::prelude::*;
@@ -55,7 +55,8 @@ mod tests {
 
     #[test]
     fn check_returns_json() {
-        let json = check("(#import core) (#open core) (#thm bad (#concl true) (#proof (refl true)))");
+        let json =
+            check("(#import core) (#open core) (#thm bad (#concl true) (#proof (refl true)))");
         // A broken proof → ok:false with at least one diagnostic.
         assert!(json.contains("\"ok\":false"), "json: {json}");
         assert!(json.contains("\"diagnostics\""), "json: {json}");

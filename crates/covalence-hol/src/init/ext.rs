@@ -417,7 +417,13 @@ fn reduce_opt<C: TrustedCons + ?Sized>(
     let f_eq = reduce_opt(f, with_beta, cons)?;
     let x_eq = reduce_opt(x, with_beta, cons)?;
 
-    let rhs = |e: &Thm| e.concl().as_eq().expect("conv yields an equation").1.clone();
+    let rhs = |e: &Thm| {
+        e.concl()
+            .as_eq()
+            .expect("conv yields an equation")
+            .1
+            .clone()
+    };
     let f2 = match &f_eq {
         Some(e) => rhs(e),
         None => f.clone(),

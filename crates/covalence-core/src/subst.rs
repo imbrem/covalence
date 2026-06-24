@@ -265,12 +265,7 @@ fn inst_typed<C: TrustedCons + ?Sized>(
 /// bound-variable twin of the free-variable Bloom skip in
 /// [`subst_free_opt`]; both use a summary cached on [`crate::Term`]
 /// ([`Term::bvi`] here) to prune whole subtrees.
-fn inst_opt<C: TrustedCons + ?Sized>(
-    t: &Term,
-    u: &Term,
-    depth: u32,
-    cons: &mut C,
-) -> Option<Term> {
+fn inst_opt<C: TrustedCons + ?Sized>(t: &Term, u: &Term, depth: u32, cons: &mut C) -> Option<Term> {
     // No `Bound(i ≥ depth)` below ⇒ unchanged. (Closed subterms — `bvi ==
     // -1` — are always skipped; so are leaves, including bare `Bound(i)`
     // with `i < depth`.)

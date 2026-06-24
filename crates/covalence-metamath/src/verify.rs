@@ -71,10 +71,12 @@ pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmEr
                         heap.push(top);
                     }
                     ProofStep::Heap(idx) => {
-                        let e = heap.get(*idx).ok_or_else(|| MmError::CompressedProofError {
-                            theorem: theorem.clone(),
-                            message: format!("heap backreference {idx} out of range"),
-                        })?;
+                        let e = heap
+                            .get(*idx)
+                            .ok_or_else(|| MmError::CompressedProofError {
+                                theorem: theorem.clone(),
+                                message: format!("heap backreference {idx} out of range"),
+                            })?;
                         stack.push(e.clone());
                     }
                 }

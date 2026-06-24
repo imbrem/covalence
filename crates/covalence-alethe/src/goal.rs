@@ -286,10 +286,7 @@ mod tests {
         let x = Term::free("x", int.clone());
         let lt = |a: Term, b: Term| Term::app(Term::app(defs::int_lt(), a), b);
         let ctx = HolLightCtx::new();
-        let goal = ctx.mk_imp(
-            lt(x.clone(), Term::int_lit(0)),
-            lt(x, Term::int_lit(1)),
-        );
+        let goal = ctx.mk_imp(lt(x.clone(), Term::int_lit(0)), lt(x, Term::int_lit(1)));
         let problem = goal_to_problem(&goal).expect("translate");
         assert_eq!(problem.logic(), Some("QF_UFLIA"));
         assert!(problem.funs().iter().any(|f| f.name == "x"));

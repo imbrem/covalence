@@ -244,9 +244,9 @@ impl TermInfo {
     /// space.
     fn fp(&self) -> u16 {
         match self {
-            TermInfo::Open { fp, .. }
-            | TermInfo::Wf { fp, .. }
-            | TermInfo::IllTyped { fp, .. } => *fp,
+            TermInfo::Open { fp, .. } | TermInfo::Wf { fp, .. } | TermInfo::IllTyped { fp, .. } => {
+                *fp
+            }
         }
     }
 }
@@ -1526,7 +1526,10 @@ mod bloom_tests {
         assert!(!Term::nat_lit(5u32).free_bloom().contains("a"));
         // An abstraction keeps its body's free vars (the binder is Bound 0,
         // not a free var).
-        let lam = Term::abs(Type::nat(), Term::app(Term::free("a", Type::nat()), Term::bound(0)));
+        let lam = Term::abs(
+            Type::nat(),
+            Term::app(Term::free("a", Type::nat()), Term::bound(0)),
+        );
         assert!(lam.free_bloom().contains("a"));
     }
 }

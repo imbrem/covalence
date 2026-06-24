@@ -154,12 +154,8 @@ impl Type {
     pub fn cons_with<C: TrustedTypeCons + ?Sized>(&self, cons: &mut C) -> Type {
         let kind = match self.kind() {
             TypeKind::Fun(a, b) => TypeKind::Fun(a.cons_with(cons), b.cons_with(cons)),
-            TypeKind::Tycon(n, args) => {
-                TypeKind::Tycon(n.clone(), cons_args(args, cons))
-            }
-            TypeKind::TyConObs(o, args) => {
-                TypeKind::TyConObs(o.clone(), cons_args(args, cons))
-            }
+            TypeKind::Tycon(n, args) => TypeKind::Tycon(n.clone(), cons_args(args, cons)),
+            TypeKind::TyConObs(o, args) => TypeKind::TyConObs(o.clone(), cons_args(args, cons)),
             TypeKind::Spec(s, args) => TypeKind::Spec(s.clone(), cons_args(args, cons)),
             // TFree / Nat / Bool are leaves.
             other => other.clone(),
@@ -225,10 +221,7 @@ mod tests {
     #[test]
     fn checked_keeps_correct_rejects_wrong() {
         let mut good = Checked::new(Forward);
-        assert_eq!(
-            *TrustedTypeCons::make(&mut good, k("a")).kind(),
-            k("a")
-        );
+        assert_eq!(*TrustedTypeCons::make(&mut good, k("a")).kind(), k("a"));
         let mut evil = Checked::new(Evil);
         // Evil offers `nat` for everything; Checked rejects → make allocates.
         let got = TrustedTypeCons::make(&mut evil, k("a"));

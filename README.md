@@ -5,10 +5,10 @@ Metatheory is the default mode; the kernel extends itself by proof
 rather than by trust.
 
 Recommended reading path:
-[`docs/VISION.md`](./docs/VISION.md) (10-minute overview) →
-[`docs/kernel-design.md`](./docs/kernel-design.md) (the kernel TCB) →
-[`docs/type-hierarchy.md`](./docs/type-hierarchy.md) (type catalogue) →
-[`docs/roadmap.md`](./docs/roadmap.md) (what's next) →
+[`notes/VISION.md`](./notes/VISION.md) (10-minute overview) →
+[`notes/kernel-design.md`](./notes/kernel-design.md) (the kernel TCB) →
+[`notes/type-hierarchy.md`](./notes/type-hierarchy.md) (type catalogue) →
+[`notes/roadmap.md`](./notes/roadmap.md) (what's next) →
 [`CLAUDE.md`](./CLAUDE.md) (build commands & crate map).
 
 ## Repository Layout
@@ -18,7 +18,7 @@ Recommended reading path:
 - `apps/covalence-web/` — SvelteKit browser UI
 - `packages/` — shared TypeScript packages
 - `extensions/covalence-vscode/` — VS Code extension
-- `docs/` — current-state docs, proposal docs, and planning/history
+- `notes/` — current-state docs, proposal docs, and planning/history
 - `assets/`, `tests/`, `test-workbench/` — fixtures, samples, and test scaffolding
 
 ## Prerequisites

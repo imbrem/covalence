@@ -276,7 +276,10 @@ impl ReplPrims {
             ("\"(module ...)\" compile-wat", "compile WAT to WASM, store"),
             ("\"data\" hash", "hash blob (BLAKE3) without storing"),
             ("\"(#thm ...)\" check-cov", "check a .cov proof script blob"),
-            ("<hash> check-cov-hash", "read a .cov file by hash, then check it"),
+            (
+                "<hash> check-cov-hash",
+                "read a .cov file by hash, then check it",
+            ),
             ("\"<hex>\" hex", "decode hex string to raw bytes blob"),
             ("<val> print", "print a value"),
             ("status", "show backend info"),

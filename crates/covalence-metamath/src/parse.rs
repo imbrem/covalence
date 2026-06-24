@@ -245,7 +245,10 @@ fn tokenize(input: &str) -> Result<Vec<String>, MmError> {
 
 /// Parse the whole token stream into `sink`.
 fn parse_tokens(tokens: &[String], sink: &mut impl DatabaseSink) -> Result<(), MmError> {
-    let mut p = Parser { toks: tokens, pos: 0 };
+    let mut p = Parser {
+        toks: tokens,
+        pos: 0,
+    };
     p.parse_block(sink, true)
 }
 

@@ -18,7 +18,7 @@
 //!
 //! The high-level "generalized Haskell" authoring layer now lives in
 //! `script` (the `#sig`/`#thy`/`#model`/`#models` forms — the surface↔script
-//! fusion of `docs/surface-compiler.md §3.0`); the old `surface/` design
+//! fusion of `notes/surface-compiler.md §3.0`); the old `surface/` design
 //! sketch was removed (recover from git history). It will be rebuilt as the
 //! elaborator from a Haskell-like surface *down to* `.thy` (`§3.0.4`).
 //!

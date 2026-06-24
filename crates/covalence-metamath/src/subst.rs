@@ -38,10 +38,13 @@ pub fn apply_subst(schema: &Expr, subst: &Subst) -> Expr {
 /// `(a, b)` requires that the variables occurring in `subst(a)` and `subst(b)`
 /// are disjoint.
 pub fn vars_in_body<'a>(body: &'a [Symbol], is_variable: &impl Fn(&str) -> bool) -> Vec<&'a str> {
+    // O(n) dedup (a `Vec::contains` scan here was quadratic per body, and this
+    // runs for every $d pair of every assertion application on the set.mm path).
     let mut seen = Vec::new();
+    let mut seen_set: fnv::FnvHashSet<&str> = fnv::FnvHashSet::default();
     for sym in body {
         let n = sym.as_str();
-        if is_variable(n) && !seen.contains(&n) {
+        if is_variable(n) && seen_set.insert(n) {
             seen.push(n);
         }
     }

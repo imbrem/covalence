@@ -10,7 +10,7 @@
 //!   - **trees** — directory / table objects via `covalence-object`.
 //!
 //! These will become *observers* in the longer-term design (see
-//! `docs/roadmap.md`).
+//! `notes/roadmap.md`).
 //!
 //! # ⚠️ Status: skeleton
 //!

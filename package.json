@@ -6,6 +6,9 @@
     "covalence-client": "workspace:*"
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "fmt": "cargo fmt --all",
+    "fmt:check": "cargo fmt --all --check",
     "build": "bun run build:web && bun run build:native && bun run build:wasm",
     "build:native": "cargo build -p covalence",
     "build:wasm": "bun run --filter covalence-vscode build",

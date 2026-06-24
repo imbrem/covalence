@@ -1,7 +1,7 @@
 //! **The generic `Derivable_L` engine** — the reusable impredicative
 //! rule-induction substrate that [`crate::init::prop`]'s `Derivable_Prop` and
 //! [`crate::peano::pa`]'s `Derivable_PA` are two instances of
-//! (`docs/theories-models-and-logics.md §5.5/§5.6`, the Phase-A3 boundary).
+//! (`notes/theories-models-and-logics.md §5.5/§5.6`, the Phase-A3 boundary).
 //!
 //! ## What a "logic" is here
 //!
@@ -57,7 +57,7 @@ use crate::init::ext::TermExt;
 
 pub mod toy;
 
-// The **HOL database type + relation lattice** (`docs/theories-models-and-logics.md
+// The **HOL database type + relation lattice** (`notes/theories-models-and-logics.md
 // §5.6`): databases as first-class HOL *values* (an axiom-selecting predicate), with
 // `⊑`/monotonicity and `⟹_σ`/transport proved over `Derivable_DB`. UNIFIED (Phase A):
 // `database::Derivable_DB db A` is now literally `derivable(&db_rule_set(db), A)` — a
@@ -68,7 +68,7 @@ pub mod database;
 pub mod relations;
 
 // **Generic interpretation/transport between Metamath-database logics**
-// (`docs/metatheory.md`, "relate formal systems"): `transport` proves
+// (`notes/metatheory.md`, "relate formal systems"): `transport` proves
 // `Derivable_L1 ⟹ Derivable_L2 ∘ σ` ONCE via `rule_induction` (predicate
 // `d := λx. Derivable_L2 (σ x)`); the caller's `clause_sims` are the per-rule
 // "σ simulates this rule in the target" obligations. Worked instance:
@@ -76,13 +76,13 @@ pub mod relations;
 // rule sets. The long-term target is `Derivable_HOL ⟹ Derivable_ZFC ∘ σ`.
 pub mod transport_db;
 
-// **Metamath-Prop → HOL replay** (`docs/metatheory.md`): replay a *verified*
+// **Metamath-Prop → HOL replay** (`notes/metatheory.md`): replay a *verified*
 // propositional-calculus Metamath proof into a kernel-constructed
 // `⊢ Derivable_Prop ⌜S⌝` theorem — the "construct, don't trust" bridge landing in
 // *pure derivability over the encoded syntax* (NO denotation, NO observer).
 pub mod mm_replay;
 
-// **General schema-database Metamath replay** (`docs/metatheory.md`): generalise
+// **General schema-database Metamath replay** (`notes/metatheory.md`): generalise
 // `mm_replay` from the fixed prop-calc rule set to an *arbitrary*
 // `metamath::Database` — build a data-driven `RuleSet` from the database's
 // assertions (an uninterpreted free term algebra over `nat`; substitution =
@@ -90,7 +90,7 @@ pub mod mm_replay;
 // function replays many logics. "A Metamath database IS a logic."
 pub mod mm_database;
 
-// **Import a whole Metamath database INTO covalence-hol** (`docs/metatheory.md`):
+// **Import a whole Metamath database INTO covalence-hol** (`notes/metatheory.md`):
 // the high-level API over `mm_database::replay_db` — `import_theorems(db)` /
 // `read_and_import(source)` re-derive `⊢ Derivable_L ⌜S⌝` for *every* `$p`
 // theorem from its (possibly compressed) proof. Tested on the real, vendored
@@ -212,11 +212,7 @@ pub fn nth_conjunct(mut thm: Thm, k: usize, n: usize) -> Result<Thm> {
     for _ in 0..k {
         thm = thm.and_elim_r()?;
     }
-    if k + 1 < n {
-        thm.and_elim_l()
-    } else {
-        Ok(thm)
-    }
+    if k + 1 < n { thm.and_elim_l() } else { Ok(thm) }
 }
 
 // ============================================================================
@@ -283,9 +279,7 @@ pub fn rule_induction(
     //    (inst d := pred) Closed pred ⟹ pred A
     //     (imp_elim Closed pred)       pred A
     let assumed = Thm::assume(deriv_a.clone())?;
-    let pred_a = assumed
-        .all_elim(pred.clone())?
-        .imp_elim(closed_pred_thm)?; // {Der A} ⊢ pred A
+    let pred_a = assumed.all_elim(pred.clone())?.imp_elim(closed_pred_thm)?; // {Der A} ⊢ pred A
 
     pred_a.imp_intro(deriv_a)?.all_intro(a_name, a_ty)
 }
@@ -294,9 +288,9 @@ pub fn rule_induction(
 /// build `⊢ c₀ ∧ (c₁ ∧ (… ∧ c_{n-1}))`.
 pub fn conj_thms(thms: Vec<Thm>) -> Result<Thm> {
     let mut iter = thms.into_iter().rev();
-    let mut acc = iter
-        .next()
-        .ok_or_else(|| covalence_core::Error::ConnectiveRule("metalogic: no clause proofs".into()))?;
+    let mut acc = iter.next().ok_or_else(|| {
+        covalence_core::Error::ConnectiveRule("metalogic: no clause proofs".into())
+    })?;
     for cl in iter {
         acc = cl.and_intro(acc)?;
     }

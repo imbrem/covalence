@@ -1,81 +1,28 @@
 # Skeletons — `covalence-hol`
 
 Crate-level index of intentional placeholders in `covalence-hol` (the non-TCB
-HOL shell over `covalence-core`). Per the new per-crate / per-module policy,
-the actual entries live in `SKELETONS.md` files co-located with the code they
-describe. See `CLAUDE.md` § Skeletons for the rules and the [root
-index](../../SKELETONS.md).
+HOL shell over `covalence-core`). Entries live in the per-module `SKELETONS.md`
+files co-located with the code. See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons
+and the [root index](../../SKELETONS.md).
 
 ## Per-module registries
 
-- **[`src/SKELETONS.md`](./src/SKELETONS.md)** — crate-root `src/*.rs` modules:
-  the multi-file `.cov` project loader (`project.rs`) — deferred Rust↔`.cov`
-  mutual recursion, the single-`Project` `init/mod.rs` fold, and the
-  WASM-against-abstract-API + Cargo-features distribution framing.
-- **[`src/init/SKELETONS.md`](./src/init/SKELETONS.md)** — the `init/*` theory
-  catalogue: the `rat` quotient + ordered-field theory and the `real`
-  Dedekind-cut theory (postulates pending proof), and the partial subsystems —
-  the inductive-type engine (`init/inductive/`), the `list` theory, and the
-  `prod` theory.
-- **[`src/script/SKELETONS.md`](./src/script/SKELETONS.md)** — the
-  S-expression proof authoring + replay layer: best-effort inference, the
-  first-order unifier / pluggable-unifier gap, the missing proof/`Term`
-  printer, the async core + channel/hole rebuild, `#dep`/`#spawn` semantics,
-  error spans + traces, the typed pipeline, async const lookup, term-level
-  holes, and the WASM/WIT kernel API.
-- **`src/surface/` was removed** — the surface-syntax design sketch (AST /
-  builtin registry / parser, with a stubbed elaborator) is superseded by the
-  `script` `#sig`/`#thy`/`#model`/`#models` fusion (`docs/surface-compiler.md
-  §3.0`). The Haskell-like surface is to be rebuilt as the elaborator *down to*
-  `.thy` (`§3.0.4`); recover the old sketch from git history if needed.
-- **[`src/models/SKELETONS.md`](./src/models/SKELETONS.md)** — the minimal
-  surface-compiler core (the `Logic`/`Model` triad + cross-model `add_comm`
-  replay): the `Nat`-specialized `Logic` (no general `Signature`/`admits`/full
-  `HandlerSet`), the unbuilt `#model` directive, the `#thm`-only `#in` block,
-  and the single-theory/two-model/no-iso shape.
-- **[`src/regex/SKELETONS.md`](./src/regex/SKELETONS.md)** — the regex →
-  byte-predicate compiler + matching tactic (the regular base case of every
-  grammar): recognizer acceleration (WASM/builtin offload, `Core` hash-consing),
-  the slow `prove_member` soundness discharge, the structural-not-unifying
-  `prove_word` variable matching, and deferred word normalisation.
-- **[`src/spectec/SKELETONS.md`](./src/spectec/SKELETONS.md)** — the SpecTec
-  grammar front end over [`src/regex`]: our own primitive **CFG** stratum as the
-  headline next step (`Var`/non-terminal references, a `Derives` judgement), and
-  whole-`gram`/full-WASM-binary-format coverage.
-- **[`src/metalogic/SKELETONS.md`](./src/metalogic/SKELETONS.md)** — the
-  generic `Derivable_L` engine (`Derivable_L` + `Closed_L` over a `RuleSet`,
-  `rule_induction`, one-step `project`; the `toy` second instance; PA wired in
-  as an instance). The Metamath-`Database` → `Derivable_L` connection is **done**
-  (`mm_database::replay_db` replays any database's verified proof — **normal OR
-  compressed** — into `⊢ Derivable_L ⌜S⌝`; `mm_import` brings whole real `.mm`
-  databases in: tested on the vendored `hol.mm`, all 151 compressed proofs).
-  Deferred: the rule-set-size scaling for `set.mm` (the sub-ruleset +
-  `transport_db` optimization) and the `S`-transport / `Metamath-L ≅ native-L`
-  north stars.
-- **[`src/peano/SKELETONS.md`](./src/peano/SKELETONS.md)** — the deep
-  Peano-arithmetic embedding (Phases A–B done: reified locally-nameless FOL
-  syntax + substitution, the `nat` denotation, the PA axioms/rules/induction
-  schema, the **pure `Derivable_PA` + single internalized soundness theorem +
-  one-step projection** — now an *instance* of the generic
-  [`metalogic`](./src/metalogic/SKELETONS.md) engine). Deferred: the
-  quantifier/induction/Leibniz **derivation constructors** (the motive
-  β-capture wall — see the peano registry for the corrected diagnosis) and the
-  `.cov` surface (Phase C: `(pa-induct …)` + β/η-aware `#concl`).
-- The **Metamath substitution engine** (expression model + substitution +
-  frames + RPN checker) now lives in the lower, HOL-free
-  [`covalence-metamath`](../covalence-metamath/SKELETONS.md) crate (the engine
-  is pure `SExpr` manipulation, so `covalence-hol` depends on *it*). Its engine-
-  and reader-side deferrals are tracked there; the consumer-side bridge work
-  (the `#logic` / `Derivable_L` correspondence, the import tactic +
-  representation-equivalence metatheorem) is tracked in the `metalogic` and
-  `peano` registries below.
-- **[`src/metalogic/SKELETONS.md`](./src/metalogic/SKELETONS.md)** — databases
-  as first-class HOL data + the relation lattice (`docs/theories-models-and-logics.md`
-  §5.6; the first cut of `metamath`'s deferred `Derivable_L` layer). Done:
-  `Database := Φ → bool`, `Derivable_DB` on the impredicative engine, extension
-  `⊑` + the proved monotonicity theorem with a concrete transport, and the
-  interpretation relation `⟹_σ` + its proved transport theorem (for any
-  `⟹`-homomorphic `σ`, demonstrated at the identity). Deferred: the
-  `∃ValidProof ⟺ impredicative` grounding bridge, a non-trivial structural `σ`,
-  and the north stars (conservative extension, `≅`, the category of databases,
-  lifting `metamath::Database` / `peano::mm_pa`).
+- **[`src`](./src/SKELETONS.md)** — crate-root `*.rs`: the multi-file `.cov` project loader (`project.rs`) — Rust↔`.cov` mutual recursion, single-`Project` `init/mod.rs` fold, WASM project units, concurrent compilation.
+- **[`src/init`](./src/init/SKELETONS.md)** — theory catalogue: `rat`/`real` postulates pending proof; partial inductive engine, `list`, `prod`.
+- **[`src/script`](./src/script/SKELETONS.md)** — `.cov` proof authoring + replay: pluggable unifier, proof/`Term` printer, async core + holes, `#dep`/`#spawn`, error spans, typed pipeline, WASM/WIT kernel API.
+- **[`src/models`](./src/models/SKELETONS.md)** — surface-compiler core: general `Signature`/`HandlerSet`, `#model` directive, multi-theory/iso shape.
+- **[`src/regex`](./src/regex/SKELETONS.md)** — regex → byte-predicate compiler: recognizer acceleration, `prove_member` discharge, `prove_word` variable matching, word normalisation.
+- **[`src/spectec`](./src/spectec/SKELETONS.md)** — SpecTec grammar front end: primitive CFG stratum (`Var`/`Derives`), whole-`gram`/full-WASM-binary coverage.
+- **[`src/metalogic`](./src/metalogic/SKELETONS.md)** — generic `Derivable_L` engine: `set.mm` rule-set scaling (`transport_db`), `S`-transport / `Metamath-L ≅ native-L` north stars.
+- **[`src/peano`](./src/peano/SKELETONS.md)** — deep PA embedding: quantifier/induction/Leibniz derivation constructors (β-capture wall), the `.cov` surface (Phase C).
+- **[`src/ring`](./src/ring/SKELETONS.md)** — sum-of-monomials normalizer: coefficient collection, `neg`/`sub` expansion, literal folding, `Semiring`/`Ring`-generic rewrite.
+
+`src/surface/` was **removed** — superseded by the `script`
+`#sig`/`#thy`/`#model`/`#models` fusion (`notes/surface-compiler.md §3.0`); to be
+rebuilt as the elaborator down to `.thy` (`§3.0.4`). Recover the old sketch from
+git history.
+
+The Metamath substitution engine moved to the HOL-free
+[`covalence-metamath`](../covalence-metamath/SKELETONS.md) crate; its
+engine/reader deferrals are tracked there, the consumer-side bridge in
+`src/metalogic` above.

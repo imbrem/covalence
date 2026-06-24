@@ -29,8 +29,10 @@
 pub mod ast;
 pub mod bridge;
 pub mod error;
-#[cfg(feature = "external-egglog")]
-pub mod external;
+// egglog support DISABLED for now (see SKELETONS.md / Cargo.toml). The bridge in
+// `external.rs` needs egglog's `proof` module, absent from released egglog.
+// #[cfg(feature = "external-egglog")]
+// pub mod external;
 pub mod ingest;
 pub mod lower;
 pub mod parse;

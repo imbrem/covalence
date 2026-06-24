@@ -15,6 +15,6 @@ crate-type = ["cdylib", "rlib"]
 covalence-kernel = { path = "../covalence-kernel", features = ["serde"] }
 serde_json = "1"
 # Pinned to the installed `wasm-bindgen-cli` (the crate and CLI versions must
-# match exactly).
-wasm-bindgen = "=0.2.117"
+# match exactly — the bindgen schema is version-locked).
+wasm-bindgen = "=0.2.121"
 console_error_panic_hook = "0.1"

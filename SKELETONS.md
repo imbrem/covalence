@@ -44,6 +44,7 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-kernel`](crates/covalence-kernel/SKELETONS.md)** — empty `facts` observer module; removed legacy prover.
 - **[`covalence-spectec`](crates/covalence-spectec/SKELETONS.md)** — removed native `.watsup` frontend; single-version WASM grammar; regular-only byte-grammar bridge.
 - **[`covalence-alethe`](crates/covalence-alethe/SKELETONS.md)** — Alethe rule coverage.
+- **[`covalence-egglog`](crates/covalence-egglog/SKELETONS.md)** — egglog `external` bridge disabled (released egglog lacks the proof module).
 - **[`covalence-metamath`](crates/covalence-metamath/SKELETONS.md)** — substitution engine + `.mm` reader: `set.mm`-scale streaming, canonical serializer, structured-tree encoding, symbol interning.
 
 A crate with no skeletons has no file. When you add the first skeleton to a

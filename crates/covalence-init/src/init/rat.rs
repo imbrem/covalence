@@ -162,15 +162,15 @@ fn axiom(t: Term) -> Thm {
 }
 
 // ============================================================================
-// `int` facts the quotient theory consumes — now **proved in `init::int`**
+// `int` facts the quotient theory consumes — **proved in `init::int`**
 // ============================================================================
 //
 // `rat_rel_trans` cancels the common strictly-positive denominator with two
 // `int` facts: right-cancellation by a nonzero factor and positivity of the
-// `int.pos` denominators. Both used to be postulated here (self-flagged via
-// `axiom`); they are now **genuine theorems** discharged in [`init::int`]
-// ([`int::int_mul_rcancel`] / [`int::int_pos_nonzero`]) from the proved
-// ordered-ring/order theory, so the thin re-exports below carry no hypothesis.
+// `int.pos` denominators. Both are **genuine theorems** discharged in
+// [`init::int`] ([`int::int_mul_rcancel`] / [`int::int_pos_nonzero`]) from the
+// proved ordered-ring/order theory, so the thin re-exports below carry no
+// hypothesis.
 
 /// A free `int` variable.
 fn ivar(name: &str) -> Term {

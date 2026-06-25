@@ -20,11 +20,9 @@
 //!
 //! # ⚠️ Status: skeleton
 //!
-//! The concrete `KernelEgglogBridge` impl (against the legacy `Prover`
-//! trait) was removed in the kernel rewrite. Recover it from
-//! `backup/pre-hol-cleanup` if needed; a new impl over the HOL-on-store
-//! stack lands here later. What remains is the backend-agnostic trait +
-//! driver + proof-DAG parsing / lowering.
+//! The concrete `KernelEgglogBridge` impl over the HOL-on-store stack lands
+//! here later. What remains is the backend-agnostic trait + driver + proof-DAG
+//! parsing / lowering.
 
 pub mod ast;
 pub mod bridge;

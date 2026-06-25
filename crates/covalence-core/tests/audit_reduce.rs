@@ -392,8 +392,8 @@ fn int_mod_and_zero_divisor() {
     assert_reduces(app2(defs::int_mod(), int(-17), int(5)), int(-2));
     assert_reduces(app2(defs::int_mod(), int(17), int(-5)), int(2));
     // x mod 0 = x (Euclidean identity, matching `int.mod`'s body; see
-    // `audit_reduce_matches_body`). Was previously 0 — that would now
-    // contradict the body `x − (x/y)·y`.
+    // `audit_reduce_matches_body`). A result of 0 would contradict the body
+    // `x − (x/y)·y`.
     assert_reduces(app2(defs::int_mod(), int(17), int(0)), int(17));
     assert_reduces(app2(defs::int_mod(), int(-17), int(0)), int(-17));
 }
@@ -1047,9 +1047,9 @@ fn unfold_def_style_errs() {
 #[test]
 fn unfold_declaration_only_errs() {
     // `nat.bitAnd` is declaration-only (`tm = None`): unfold => SpecHasNoBody.
-    // (`nat.div` and `cond` used to be declaration-only too, but now carry
-    // bodies — div a def-style Euclidean selector, cond the HOL Light
-    // `COND` let-body — see `defs::nat_div` / `init::cond`.)
+    // (`nat.div` and `cond`, by contrast, carry bodies — div a def-style
+    // Euclidean selector, cond the HOL Light `COND` let-body — see
+    // `defs::nat_div` / `init::cond`.)
     let t = defs::nat_bit_and();
     let err = Thm::unfold_term_spec(t).expect_err("declaration-only spec must not unfold");
     assert!(

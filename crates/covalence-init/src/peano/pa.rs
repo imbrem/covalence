@@ -43,7 +43,7 @@
 //! [`project`] is *just* `soundness` applied to a finished derivation:
 //! `Derivable_PA ⌜A⌝ ↦ ⊢ ⟦A⟧`, a single `imp_elim`. No re-derivation.
 //!
-//! ## The old lock-step path (secondary)
+//! ## The lock-step path (secondary)
 //!
 //! [`LockstepDerivation`] (a `Fol` paired with its `Thm`, built together) is a
 //! documented placeholder for the secondary "directly obtain a HOL fact" path;
@@ -709,7 +709,7 @@ fn discharge_generalize(d_pred: &Term) -> Result<Thm> {
 }
 
 // ============================================================================
-// The old lock-step path (secondary convenience) — a `Fol` + its `Thm`,
+// The lock-step path (secondary convenience) — a `Fol` + its `Thm`,
 // built together. NOT the primary structure; NOT the acceptance-test path.
 // ============================================================================
 

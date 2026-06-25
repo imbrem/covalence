@@ -506,9 +506,9 @@ pub trait ThmExt: Sized {
 
     /// Split `Γ ⊢ c₁ ∧ c₂ ∧ … ∧ c_N` (a right-nested `∧`) into
     /// `[Γ ⊢ c₁, …, Γ ⊢ c_N]`; a non-conjunction yields the singleton `[self]`.
-    /// Iterated `and_elim_l`/`and_elim_r` — O(N) now that each `and_elim` is
-    /// O(1) (`Thm::build` reads cached types), so this no longer needs to be a
-    /// kernel primitive.
+    /// Iterated `and_elim_l`/`and_elim_r` — O(N) because each `and_elim` is
+    /// O(1) (`Thm::build` reads cached types), so this need not be a kernel
+    /// primitive.
     fn into_conjuncts(self) -> Vec<Thm>;
 
     /// Rewrite every occurrence of `eq`'s LHS in `self`'s conclusion

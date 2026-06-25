@@ -55,10 +55,10 @@ use futures::FutureExt;
 ///
 /// The two types are nominally distinct (in-progress vs "done") to keep the
 /// async-prover API shape — `run` → `LazyTheory`, force → `Theory`. The
-/// machinery that made a theorem genuinely *open* (proof holes / obligations)
-/// was removed pending a clean channel-based rebuild (`#hole` receives from an
-/// env channel that `#fill` pushes to); see SKELETONS.md. So today resolving is
-/// trivial — nothing is ever pending.
+/// machinery that makes a theorem genuinely *open* (proof holes / obligations)
+/// awaits a clean channel-based design (`#hole` receives from an
+/// env channel that `#fill` pushes to); see SKELETONS.md. Resolving is
+/// trivial today — nothing is ever pending.
 pub struct LazyTheory {
     /// The explicitly-exported public interface (`(#export …)`).
     exports: Env,
@@ -717,7 +717,7 @@ fn parse_module_target(s: &SExpr) -> Result<(String, String), ScriptError> {
 ///         "and.comm" => pub fn and_comm;
 ///     }
 /// }
-/// pub use cov::{and_comm, truth};   // drop-in replacements for the old fns
+/// pub use cov::{and_comm, truth};   // drop-in replacements for hand-written fns
 /// ```
 ///
 /// The `include_str!` path is relative to the invoking file, so place the
@@ -1078,9 +1078,9 @@ mod tests {
     #[test]
     fn closure_tactic_captures_state() {
         // A host tactic built from a CLOSURE that captures a precomputed
-        // theorem — impossible with the old bare-`fn`-pointer registry, and
-        // the concrete reason `Tactic` is now a trait. It ignores the goal
-        // and returns the captured `Thm`.
+        // theorem — the concrete reason `Tactic` is a trait rather than a
+        // bare `fn` pointer. It ignores the goal and returns the captured
+        // `Thm`.
         let canned: Arc<dyn Tactic> = {
             let thm = one(r#"
                 (#import core)

@@ -192,8 +192,8 @@ fn split_inv_body(body: Thm, k: usize) -> Result<(Vec<Thm>, Thm)> {
 /// fresh `vars` as the bound names, and discharge `goal` through nested
 /// [`exists_elim`]s. `cont` proves `goal` from the *fully β-reduced* body —
 /// over the hypothesis that the innermost applied-predicate holds — and is
-/// run at the bottom of the peel. Generalises the single-witness peeling
-/// `nat` used to do inline.
+/// run at the bottom of the peel. Generalises single-witness peeling to a
+/// chain.
 fn peel_exists(
     ex: Thm,
     vars: &[Term],

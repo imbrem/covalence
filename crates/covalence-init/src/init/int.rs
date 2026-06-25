@@ -1832,8 +1832,7 @@ cached_thm! {
 // `rat_rel_trans` cancels the common positive denominator with. We **prove**
 // it here from the proved order theory: trichotomy splits `x = y` off, and
 // `lt_mul_pos` rules out the strict cases (for `d < 0` after flipping the sign
-// with the small negation lemmas below). It used to be postulated in
-// `init::rat`; relocated here as a genuine theorem.
+// with the small negation lemmas below). It lives here as a genuine theorem.
 
 /// `⊢ ∀a. 0 + a = a` — left additive unit, from `add_zero` + `add_comm`.
 fn add_left_zero() -> Result<Thm> {

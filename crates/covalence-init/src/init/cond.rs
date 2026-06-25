@@ -202,10 +202,9 @@ fn rhs_of(thm: &Thm) -> Result<Term> {
 }
 
 crate::cov_theory! {
-    /// cond clauses ported to `cond.cov`, over `core`. `cond` itself is now
-    /// defined **inline** in `cond.cov` via `#def` — the old Rust `cond_env`
-    /// (`condprim`) `*prim` given is gone, a small proof-of-concept of the
-    /// `#def`-eliminates-`*_env` migration.
+    /// cond clauses ported to `cond.cov`, over `core`. `cond` itself is
+    /// defined **inline** in `cond.cov` via `#def` — a small proof-of-concept
+    /// of the `#def`-eliminates-`*_env` migration.
     pub mod cov from "cond.cov" {
         import "core" = crate::script::Env::core();
         "cond.true"  => pub fn cond_true_cov;

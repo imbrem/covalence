@@ -157,10 +157,10 @@ impl Env {
     }
     /// Bind a lemma to a **spawned** (`#spawn`) proof: a deferred async
     /// computation, polled cooperatively when the lemma is first referenced
-    /// (or the theory is forced). Unlike the old `spawn_blocking`-on-a-thread
-    /// task, it shares the prover's cooperative runtime — no nested `block_on`,
-    /// so it may freely `await` sibling lemmas — and any *blocking* work is the
-    /// FFI tactic's own responsibility, not the script layer's.
+    /// (or the theory is forced). It shares the prover's cooperative runtime —
+    /// no nested `block_on`, so it may freely `await` sibling lemmas — and any
+    /// *blocking* work is the FFI tactic's own responsibility, not the script
+    /// layer's.
     pub fn define_spawned(
         &mut self,
         name: impl Into<String>,
@@ -389,7 +389,7 @@ impl Env {
     /// independently. An already-instantiated `⊢ L = R` is used as given (the
     /// original `rw`); a **quantified** `⊢ ∀x⃗. L = R` is instantiated here by
     /// finding the first subterm of `target` that the LHS `L` matches — so
-    /// `(rw EQN)` no longer needs a hand-written `all-elim` prefix on `EQN`.
+    /// `(rw EQN)` needs no hand-written `all-elim` prefix on `EQN`.
     pub fn rw_unify(&self, eqn: &Thm, target: &Term) -> R<Thm> {
         if eqn.concl().as_eq().is_some() {
             return Ok(eqn.clone());

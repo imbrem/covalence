@@ -40,7 +40,7 @@ pub mod tactic;
 /// `⌜c⌝ : regex u8`, built **once** at construction. The full surface
 /// [`Surface<u8>`](Surface) compiles into this via [`desugar`].
 ///
-/// Caching `⌜c⌝` on the node replaces the old separate `core_to_term` pass: the
+/// Caching `⌜c⌝` on the node avoids a separate `core_to_term` pass: the
 /// matcher and soundness read `c.term()` directly instead of rebuilding the
 /// reified term at every `alt`/`seq`/`star` node. The term is interned through
 /// the [`HashCons`] threaded down [`desugar`], so structurally-equal sub-terms

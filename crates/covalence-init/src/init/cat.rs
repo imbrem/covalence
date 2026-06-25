@@ -246,10 +246,10 @@ pub fn cat_prove_eq(lhs: &Term, rhs: &Term) -> Result<Thm> {
 /// `compose` / `id` are registered as `ConstDef::Poly`, so each use site
 /// instantiates their free type variables with fresh metavariables — letting
 /// `id` appear at `'a` and `'b` within one term (the polymorphism that
-/// previously blocked porting `id_left` / `id_right` / `comp_assoc`).
+/// `id_left` / `id_right` / `comp_assoc` rely on).
 ///
 /// Every category law (`fun_ext`, `comp_beta`, `comp_cong`, `id_beta`,
-/// `id_left`, `id_right`, `comp_assoc`) is now proved in `cat.cov` directly;
+/// `id_left`, `id_right`, `comp_assoc`) is proved in `cat.cov` directly;
 /// none is supplied here as a Rust given.
 pub fn cat_env() -> Env {
     let a = Type::tfree("a");

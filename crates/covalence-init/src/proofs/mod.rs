@@ -6,10 +6,8 @@
 //! multi-step kernel sequences into one-line call sites. They can't
 //! produce a false `Thm` independently; they're plumbing.
 //!
-//! The old `bool` (HOL connective intro/elim *postulates*) and `nat`
-//! helper modules were removed: the connectives are now kernel
-//! primitives (`and_intro`, `or_elim`, … on [`covalence_core::Thm`])
-//! and the `nat` facts live in [`crate::init::nat`]. Recover them from
-//! the `backup/pre-hol-cleanup` branch if ever needed.
+//! The connectives are kernel primitives (`and_intro`, `or_elim`, …
+//! on [`covalence_core::Thm`]) and the `nat` facts live in
+//! [`crate::init::nat`].
 
 pub mod rewrite;

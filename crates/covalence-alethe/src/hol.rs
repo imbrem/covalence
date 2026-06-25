@@ -1,8 +1,7 @@
 //! [`HolAletheBridge`] — an [`AletheBridge`] backed by the
 //! `covalence-core` HOL kernel.
 //!
-//! This is the concrete reincarnation of the bridge whose legacy
-//! `Prover`-based impl was removed in the kernel rewrite. It checks an
+//! It checks an
 //! Alethe refutation by *replaying it as a HOL derivation*: every clause
 //! becomes a kernel [`Thm`] whose conclusion is the clause read as a
 //! right-associated disjunction of literals (the empty clause is `F`),

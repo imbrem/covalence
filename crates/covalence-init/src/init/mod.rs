@@ -49,8 +49,8 @@
 /// }
 /// cached_thm! {
 ///     /// `⊢ ∀m. 0 + m = m` — a fallible derivation. The `Result<Thm>`
-///     /// body may use `?`; the macro `.expect`s it, so a separate
-///     /// `*_impl` wrapper is no longer needed.
+///     /// body may use `?`; the macro `.expect`s it, so no separate
+///     /// `*_impl` wrapper is needed.
 ///     pub fn add_base() -> Result<Thm> { /* build it, may use `?` */ }
 /// }
 /// ```

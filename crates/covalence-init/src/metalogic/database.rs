@@ -322,13 +322,12 @@ mod tests {
         assert_ne!(phi(), Type::bool());
     }
 
-    /// The unification (Phase A): `Derivable_DB`, now routed through the generic
-    /// [`super::db_rule_set`] engine, is **byte-identical** to the former
-    /// hand-built `∀d. Closed_DB db d ⟹ d A`. Pins the refactor: one derivability
-    /// notion, no term drift.
+    /// `Derivable_DB`, routed through the generic [`super::db_rule_set`] engine,
+    /// is **byte-identical** to the hand-built `∀d. Closed_DB db d ⟹ d A`. Pins
+    /// one derivability notion, no term drift.
     #[test]
     fn derivable_db_matches_inline_definition() {
-        // The old inline definition, reproduced verbatim here.
+        // The inline definition, reproduced verbatim here.
         fn inline(db: &Term, a: &Term) -> Result<Term> {
             let closed_d = closed(db, &d_var())?;
             closed_d.imp(app(&d_var(), a)?)?.forall("d", pred_ty())

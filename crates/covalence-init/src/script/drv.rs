@@ -133,8 +133,8 @@ pub fn check<'a>(s: &'a SExpr, ctx: &'a mut CheckCtx<'_>) -> BoxFuture<'a, R<Thm
 
 /// Resolve a `#proof` head: a registered RULE (invoked with its args), else a
 /// LEMMA name instantiated at the explicit term witnesses — `NAME` / `(NAME)` is
-/// the lemma's full statement, `(NAME w…)` `all-elim`s it at `w…`. (This
-/// replaced the old `lemma` keyword; `apply` is the smarter, unifying form.)
+/// the lemma's full statement, `(NAME w…)` `all-elim`s it at `w…`. (`apply` is
+/// the smarter, unifying form.)
 async fn resolve_head(head: &str, args: &[SExpr], ctx: &mut CheckCtx<'_>) -> R<Thm> {
     if let Some(op) = ctx.env().lookup_rule(head) {
         return op.rule(args, ctx).await;

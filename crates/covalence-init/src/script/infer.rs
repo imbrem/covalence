@@ -826,13 +826,12 @@ mod tests {
         assert_eq!(script_abs2, core_abs2);
     }
 
-    /// STRETCH / gap-closed demo: an operator whose body previously *had* to
-    /// be a hand-written Rust given because it uses a TypeSpec coercion can now
-    /// be written inline in the surface. `init::rat::to_pos` is `λz:int. abs z`
-    /// with `abs = spec_abs(int.pos)` — re-wrapping an `int` as `int.pos`. The
+    /// An operator whose body uses a TypeSpec coercion can be written inline in
+    /// the surface. `init::rat::to_pos` is `λz:int. abs z` with
+    /// `abs = spec_abs(int.pos)` — re-wrapping an `int` as `int.pos`. The
     /// surface `(lam (z int) (spec-abs int.pos z))` elaborates to the
-    /// byte-identical kernel term, so this operator no longer needs the Rust
-    /// `to_pos` helper to construct its body.
+    /// byte-identical kernel term, so this operator needs no Rust `to_pos`
+    /// helper to construct its body.
     #[test]
     fn spec_coercion_inlines_rat_to_pos() {
         use covalence_core::defs::int_pos_spec;

@@ -699,7 +699,7 @@ mod tests {
     #[test]
     fn real_ty_is_a_zero_ary_spec() {
         use covalence_core::ty::TypeKind;
-        // `real` is the shell-defined `close` spec (no longer in the kernel
+        // `real` is the shell-defined `close` spec (not in the kernel
         // catalogue), a 0-ary spec type and not bool.
         assert_eq!(real(), real_ty());
         assert!(matches!(real().kind(), TypeKind::Spec(_, args) if args.is_empty()));

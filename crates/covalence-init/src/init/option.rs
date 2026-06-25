@@ -567,8 +567,8 @@ mod tests {
 
     #[test]
     fn some_ne_none_at_unit() {
-        // The case the OLD encoding got wrong: `some unit.nil = none` in
-        // `option unit`. Now its negation is a genuine theorem.
+        // The delicate case: `some unit.nil = none` in `option unit`. Its
+        // negation is a genuine theorem.
         let u = Type::unit();
         let thm = some_ne_none(&u, &unit_nil()).unwrap();
         assert!(thm.hyps().is_empty(), "some ≠ none holds even at unit");
@@ -613,7 +613,7 @@ mod tests {
 
     #[test]
     fn case_some_at_unit() {
-        // The singleton-carrier case the old untagged encoding mishandled.
+        // The delicate singleton-carrier case.
         let u = Type::unit();
         let d = Term::free("d", u.clone());
         let f = Term::free("f", Type::fun(u.clone(), u.clone()));
@@ -654,8 +654,8 @@ mod tests {
 
     #[test]
     fn option_cases_at_unit() {
-        // Exhaustiveness even at `option unit`, where some/none would have
-        // collided under the old untagged encoding.
+        // Exhaustiveness even at `option unit`, the delicate singleton-carrier
+        // case where some/none could collide.
         let u = Type::unit();
         let o = Term::free("o", option(u.clone()));
         let thm = option_cases(&u, &o).unwrap();

@@ -949,8 +949,8 @@ mod tests {
 
     #[test]
     fn inl_ne_inr_is_genuine() {
-        // ¬(inl av = inr bv) at α = β = unit — the case the OLD untagged
-        // encoding wrongly identified. Now provable, hypothesis-free.
+        // ¬(inl av = inr bv) at α = β = unit — the delicate case where the two
+        // injections could be identified. Provable, hypothesis-free.
         let u = Type::unit();
         let av = Term::free("av", u.clone());
         let bv = Term::free("bv", u.clone());
@@ -1071,8 +1071,8 @@ mod tests {
 
     #[test]
     fn inl_inj_at_unit() {
-        // Injectivity even at the singleton carrier the old untagged encoding
-        // collapsed — `inl a = inl a' ⟹ a = a'` holds for `α = unit`.
+        // Injectivity even at the singleton carrier — `inl a = inl a' ⟹ a = a'`
+        // holds for `α = unit`.
         let u = Type::unit();
         let av = Term::free("av", u.clone());
         let av2 = Term::free("av2", u.clone());
@@ -1082,7 +1082,7 @@ mod tests {
 
     #[test]
     fn case_inl_at_unit() {
-        // The singleton-carrier case the old untagged encoding mishandled.
+        // The delicate singleton-carrier case.
         let u = Type::unit();
         let f = Term::free("f", Type::fun(u.clone(), u.clone()));
         let g = Term::free("g", Type::fun(u.clone(), u.clone()));

@@ -14,11 +14,8 @@
 //!
 //! # ⚠️ Status: skeleton
 //!
-//! The legacy arena + egraph + union-find prover kernel that used to live
-//! here was removed in the kernel rewrite. Recover it from the
-//! `backup/pre-hol-cleanup` branch if needed. What remains is the
-//! content-addressed store wiring (lifted from `covalence-shell`) plus an
-//! empty [`facts`] module to be filled in as the HOL-on-store stack comes
+//! What remains is the content-addressed store wiring plus an empty
+//! [`facts`] module to be filled in as the HOL-on-store stack comes
 //! online.
 
 // Re-export the high-level HOL API so the layers above (covalence-shell and

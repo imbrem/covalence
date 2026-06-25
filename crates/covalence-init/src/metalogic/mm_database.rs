@@ -1237,8 +1237,8 @@ fn encode_former(
 /// `n` conjuncts already extracted** into an `O(1)`-indexable `Vec<Thm>`.
 ///
 /// Extracting all conjuncts up front is O(n) total (one left walk peeling
-/// `and_elim_r`/`and_elim_l`), versus the old per-step `nth_conjunct(k)` which
-/// is O(k) each → O(S·D) across a proof. Each `Thm` is `Arc`-backed, so cloning
+/// `and_elim_r`/`and_elim_l`), versus a per-step `nth_conjunct(k)` which would
+/// be O(k) each → O(S·D) across a proof. Each `Thm` is `Arc`-backed, so cloning
 /// a cached conjunct is a cheap refcount bump.
 struct ClauseCtx {
     d: Term,
@@ -1265,11 +1265,12 @@ impl ClauseCtx {
         let closed_t = conj(clause_terms)?;
         let assumed = Thm::assume(closed_t.clone())?; // {Closed d} ⊢ Closed d
         // Extract all n conjuncts in ONE pass (`Thm::into_conjuncts`): O(n)
-        // rather than the old O(n²) walk of `and_elim_l`/`and_elim_r`, each of
-        // which re-type-checked the (shrinking but still O(n)) tail *and* the
-        // whole `Closed d` hypothesis. This is what made proofs citing hundreds
-        // of lemmas (cantnf*, yonedainv, psdmul) blow up. For an empty rule set
-        // `Closed d = T` is a *non*-conjunction, so there are no clauses.
+        // rather than an O(n²) walk of `and_elim_l`/`and_elim_r`, each of
+        // which would re-type-check the (shrinking but still O(n)) tail *and*
+        // the whole `Closed d` hypothesis — which would make proofs citing
+        // hundreds of lemmas (cantnf*, yonedainv, psdmul) blow up. For an empty
+        // rule set `Closed d = T` is a *non*-conjunction, so there are no
+        // clauses.
         let conjuncts = if n == 0 {
             Vec::new()
         } else {

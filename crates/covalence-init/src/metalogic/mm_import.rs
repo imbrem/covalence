@@ -253,8 +253,8 @@ mod tests {
         }
     }
 
-    /// Targeted check that the previously-reported set.mm import failures (all
-    /// the `free variable "d"` metavar/predicate name clash) now import. Low CPU
+    /// Targeted regression: the set.mm theorems sensitive to the
+    /// `free variable "d"` metavar/predicate name clash import cleanly. Low CPU
     /// (derives ~14 named theorems), `COV_SET_MM` env, `#[ignore]`d.
     #[test]
     #[ignore = "needs COV_SET_MM; targeted regression for the `d` namespacing fix"]
@@ -393,7 +393,7 @@ mod tests {
         eprintln!("set.mm parsed in {:?}", t_parse.elapsed());
 
         // The scoped path is proof-dependent, so we can sample many more theorems
-        // than the old whole-database path allowed. Take the first K $p theorems.
+        // than a whole-database path would allow. Take the first K $p theorems.
         const K: usize = 50;
         let mut sampled = 0usize;
         let t0 = std::time::Instant::now();

@@ -281,8 +281,8 @@ async fn intro_names(names: &[SExpr], rest: &[SExpr], it: &mut Interp) -> R<Thm>
 }
 
 /// `(derive DERIV)` (alias `drv`): close the goal with a tree-mode derivation —
-/// the bridge from tactic mode back into the proof-rule grammar. (Formerly
-/// `exact`.) Async because `check` is async (a registry rule may await).
+/// the bridge from tactic mode back into the proof-rule grammar. Async because
+/// `check` is async (a registry rule may await).
 struct Derive;
 #[async_trait]
 impl Tactic for Derive {

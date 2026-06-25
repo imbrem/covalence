@@ -1,4 +1,4 @@
-//! Proven-fact tracking over [`covalence_hol`].
+//! Proven-fact tracking over [`covalence_init`].
 //!
 //! # ⚠️ Status: skeleton
 //!
@@ -7,4 +7,4 @@
 //! will land as the HOL-on-store stack comes online — see the
 //! crate-root docs and `notes/roadmap.md`. Registered in `SKELETONS.md`.
 //!
-//! [`Thm`]: covalence_hol::Thm
+//! [`Thm`]: covalence_init::Thm

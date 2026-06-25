@@ -408,7 +408,7 @@ impl ReplPrims {
     fn check_cov_src(&mut self, src: &[u8]) -> Result<(), FError> {
         let text = std::str::from_utf8(src)
             .map_err(|e| FError::Parse(format!(".cov source is not valid UTF-8: {e}")))?;
-        let thms = covalence_hol::init::check_script(text)
+        let thms = covalence_init::init::check_script(text)
             .map_err(|e| FError::Parse(format!("check failed: {e}")))?;
         if thms.is_empty() {
             self.emit("checked: 0 theorems");

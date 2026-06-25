@@ -16,8 +16,8 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use covalence_hol::metalogic::mm_database::Parser;
-use covalence_hol::metalogic::mm_import::{import_labels_parallel, theorem_labels};
+use covalence_init::metalogic::mm_database::Parser;
+use covalence_init::metalogic::mm_import::{import_labels_parallel, theorem_labels};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -40,18 +40,18 @@ fn main() {
         });
         let reps: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(50);
         let source = std::fs::read_to_string(&path).expect("read .mm");
-        let db = covalence_hol::metamath::parse(&source).expect("parse");
+        let db = covalence_init::metamath::parse(&source).expect("parse");
         let parser = Parser::new(&db);
         // A persistent clause cache across warmup + timed reps, matching the
         // real parallel import (one `ClauseCache` per worker, reused across all
         // its theorems) — so the timed reps measure the *per-theorem* replay
         // cost, not the one-time clause encoding the real import amortizes.
-        use covalence_hol::metalogic::mm_database::{ClauseCache, derive_theorem_cached};
+        use covalence_init::metalogic::mm_database::{ClauseCache, derive_theorem_cached};
         let mut cache = ClauseCache::new();
         let mut derive = |db: &_, parser: &_, label: &str| {
             if cons_mode {
                 let mut cons = covalence_core::HashCons::new();
-                covalence_hol::metalogic::mm_database::derive_theorem_with_cons(
+                covalence_init::metalogic::mm_database::derive_theorem_with_cons(
                     db, parser, label, &mut cons,
                 )
             } else {
@@ -83,7 +83,7 @@ fn main() {
     });
 
     let t_parse = Instant::now();
-    let db = covalence_hol::metamath::parse(&source).unwrap_or_else(|e| {
+    let db = covalence_init::metamath::parse(&source).unwrap_or_else(|e| {
         eprintln!("[import-bench] parse failed: {e}");
         std::process::exit(1);
     });

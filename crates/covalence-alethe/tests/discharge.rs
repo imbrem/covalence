@@ -12,8 +12,8 @@ use std::sync::Arc;
 use covalence_alethe::discharge::CachedProof;
 use covalence_alethe::{ProofCache, SmtDischarger, goal_to_problem, smt_tactic};
 use covalence_core::{Term, Type, defs};
-use covalence_hol::HolLightCtx;
-use covalence_hol::script::{Env, Tactic, run};
+use covalence_init::HolLightCtx;
+use covalence_init::script::{Env, Tactic, run};
 
 // =====================================================================
 // Goal 1 — closed integer arithmetic: `⊢ 1 + 2 = 3`.

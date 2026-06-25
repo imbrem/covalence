@@ -21,14 +21,14 @@
 //! articles (whose only dependencies are the standard-library prelude).
 //!
 //! The genuinely-async path — loading article dependencies over the network via
-//! [`ArticleSource`], driven through `covalence_hol::script::run_async` so a
+//! [`ArticleSource`], driven through `covalence_init::script::run_async` so a
 //! `fetch` can be `await`ed instead of dead-locking a blocking executor — is the
 //! next step and is recorded in `SKELETONS.md`. The [`ArticleSource`] trait and
 //! [`TrustPolicy`] are defined now as the seams those front-ends target.
 
-use covalence_hol::init::check_script;
-use covalence_hol::script::{NamedThm, ScriptError};
-use covalence_hol::sexp::{UnitObs, term_to_sexp};
+use covalence_init::init::check_script;
+use covalence_init::script::{NamedThm, ScriptError};
+use covalence_init::sexp::{UnitObs, term_to_sexp};
 
 /// Severity of a [`Diagnostic`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,7 +113,7 @@ pub struct TrustPolicy {
 ///
 /// This is the seam each front-end fills: the browser with a `fetch`-backed
 /// loader, the native side with the store / filesystem. Wiring it through
-/// [`covalence_hol::script::run_async`] (so an `#import` of an unresolved
+/// [`covalence_init::script::run_async`] (so an `#import` of an unresolved
 /// dependency `await`s a real fetch) is the next step — see `SKELETONS.md`.
 #[allow(async_fn_in_trait)]
 pub trait ArticleSource {
@@ -174,10 +174,10 @@ impl KernelService {
             Ok(e) => e,
             Err(msg) => return error_report(msg),
         };
-        let outcome = covalence_hol::script::run(
+        let outcome = covalence_init::script::run(
             src,
             move |name| match name {
-                "core" => Some(covalence_hol::script::Env::core()),
+                "core" => Some(covalence_init::script::Env::core()),
                 "natmodel" => Some(natmodel.clone()),
                 _ => None,
             },
@@ -201,15 +201,15 @@ std::thread_local! {
     /// `list unit` inductions) — pure work whose result is immutable proven
     /// theorems, so it is sound to cache and reuse across checks. Without this,
     /// every debounced re-check under `nat/unary` re-proves the axioms.
-    static MODEL_ENV_CACHE: std::cell::RefCell<std::collections::HashMap<String, covalence_hol::script::Env>> =
+    static MODEL_ENV_CACHE: std::cell::RefCell<std::collections::HashMap<String, covalence_init::script::Env>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// Build (or fetch the memoized) `natmodel` env for a named model: its operators
 /// + addition axioms + induction handler, under the abstract names the
 /// model-relative proof uses.
-fn build_nat_model_env(model: &str) -> Result<covalence_hol::script::Env, String> {
-    use covalence_hol::models::{Logic, NatSelf, NatUnary};
+fn build_nat_model_env(model: &str) -> Result<covalence_init::script::Env, String> {
+    use covalence_init::models::{Logic, NatSelf, NatUnary};
     let key = if model.is_empty() { "nat/self" } else { model };
     if let Some(env) = MODEL_ENV_CACHE.with(|c| c.borrow().get(key).cloned()) {
         return Ok(env);

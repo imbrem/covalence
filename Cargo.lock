@@ -910,7 +910,7 @@ name = "covalence-alethe"
 version = "0.0.0"
 dependencies = [
  "covalence-core",
- "covalence-hol",
+ "covalence-init",
  "covalence-sexp",
  "covalence-smt",
  "covalence-types",
@@ -1052,11 +1052,20 @@ dependencies = [
 name = "covalence-hol"
 version = "0.0.0"
 dependencies = [
+ "covalence-core",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-init"
+version = "0.0.0"
+dependencies = [
  "async-trait",
  "bytes",
  "covalence-core",
  "covalence-grammar",
  "covalence-hash",
+ "covalence-hol",
  "covalence-metamath",
  "covalence-sexp",
  "covalence-spectec",
@@ -1083,7 +1092,7 @@ name = "covalence-kernel"
 version = "0.0.0"
 dependencies = [
  "covalence-hash",
- "covalence-hol",
+ "covalence-init",
  "covalence-object",
  "covalence-sexp",
  "covalence-store",
@@ -1260,7 +1269,7 @@ dependencies = [
  "covalence-git",
  "covalence-graph",
  "covalence-hash",
- "covalence-hol",
+ "covalence-init",
  "covalence-object",
  "covalence-parquet",
  "covalence-shell",
@@ -1288,7 +1297,7 @@ dependencies = [
  "covalence-core",
  "covalence-git",
  "covalence-hash",
- "covalence-hol",
+ "covalence-init",
  "covalence-metamath",
  "covalence-object",
  "covalence-proto",

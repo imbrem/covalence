@@ -1,5 +1,5 @@
 //! Integration tests for the regex → byte-predicate matching tactic
-//! ([`covalence_hol::regex`]), driven entirely through the public API.
+//! ([`covalence_init::regex`]), driven entirely through the public API.
 //!
 //! The centrepiece is a differential test against an **independent** reference
 //! recogniser ([`oracle`]) written over the *surface* `Regex<u8>` — a different
@@ -8,11 +8,11 @@
 //! recognizer, and proof construction.
 
 use covalence_grammar::regex::{Class, Regex, parse_regex_u8};
-use covalence_hol::Term;
-use covalence_hol::init::ext::TermExt;
-use covalence_hol::init::regex as ir;
-use covalence_hol::regex::tactic::{Word, prove_matches, prove_member, prove_word};
-use covalence_hol::regex::{compile, desugar};
+use covalence_init::Term;
+use covalence_init::init::ext::TermExt;
+use covalence_init::init::regex as ir;
+use covalence_init::regex::tactic::{Word, prove_matches, prove_member, prove_word};
+use covalence_init::regex::{compile, desugar};
 
 // ============================================================================
 // Helpers.
@@ -24,7 +24,7 @@ fn re(src: &str) -> Regex<u8> {
 
 /// A proved theorem with no hypotheses and no observer/oracle dependence.
 #[track_caller]
-fn assert_clean(thm: &covalence_hol::Thm) {
+fn assert_clean(thm: &covalence_init::Thm) {
     assert!(thm.hyps().is_empty(), "expected no hypotheses");
     assert!(thm.has_no_obs(), "expected an oracle-free theorem");
 }
@@ -173,7 +173,7 @@ fn accepts_str_and_other_byte_like_inputs() {
 #[test]
 fn conclusion_is_matches_of_compiled_regex() {
     let a = ir::u8_alphabet();
-    let nil = covalence_hol::init::list::nil(a.clone());
+    let nil = covalence_init::init::list::nil(a.clone());
 
     // `eps` against the empty input proves `Matches ⌜eps⌝ nil`.
     let thm = prove_matches(&re(""), "").unwrap().unwrap();
@@ -182,7 +182,7 @@ fn conclusion_is_matches_of_compiled_regex() {
     assert_clean(&thm);
 
     // `a` against "a" proves `Matches ⌜lit a⌝ [a]`.
-    let one_a = covalence_hol::init::list::cons(a.clone())
+    let one_a = covalence_init::init::list::cons(a.clone())
         .apply(Term::u8_lit(b'a'))
         .unwrap()
         .apply(nil)
@@ -385,7 +385,7 @@ fn word_variable_category_mismatch_fails() {
 #[test]
 #[ignore = "timing harness; run explicitly with --nocapture"]
 fn timing_involved_regexes() {
-    use covalence_hol::regex::Core;
+    use covalence_init::regex::Core;
     use std::time::Instant;
 
     // (label, regex source, a matching input). Each `prove_matches` builds a

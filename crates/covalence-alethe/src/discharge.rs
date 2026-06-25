@@ -34,7 +34,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use covalence_core::{Term, Thm};
-use covalence_hol::HolLightCtx;
+use covalence_init::HolLightCtx;
 use covalence_smt::{AletheProof, SmtProblem, SmtSolver, parse_alethe};
 use covalence_types::Decision;
 
@@ -247,7 +247,7 @@ fn reductio(goal: &Term, refutation: &Thm) -> R<Thm> {
 mod tests {
     use super::*;
     use covalence_core::{Term, Type};
-    use covalence_hol::HolLightCtx;
+    use covalence_init::HolLightCtx;
 
     #[test]
     fn empty_discharger_has_no_path() {

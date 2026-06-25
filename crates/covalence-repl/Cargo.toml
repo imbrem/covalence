@@ -17,7 +17,7 @@ bytes = "1"
 covalence-forsp = { path = "../covalence-forsp" }
 covalence-graph = { path = "../covalence-graph" }
 covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-hol = { path = "../covalence-hol" }
+covalence-init = { path = "../covalence-init" }
 covalence-wasm = { path = "../covalence-wasm", default-features = false }
 covalence-shell = { path = "../covalence-shell" }
 covalence-arrow = { path = "../covalence-arrow", optional = true }

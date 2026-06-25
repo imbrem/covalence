@@ -23,7 +23,7 @@
 //!   annotation records `@x ↦ t` so later references resolve.
 //! * **Clauses & rules.** See [`HolAletheBridge::step`]; the propositional
 //!   plumbing (resolution, clausification) lives in
-//!   [`covalence_hol::init::logic`], powered by the kernel's `lem`.
+//!   [`covalence_init::init::logic`], powered by the kernel's `lem`.
 //!
 //! ## Scope
 //!
@@ -31,7 +31,7 @@
 //! `th_resolution`, `refl`, `trans`, `symm`, `cong`, `equiv_pos2`,
 //! `false`); the propositional family (`equiv1`, `equiv2`, `implies`,
 //! `and`, `and_intro`, `not_not`, `evaluate`, `equiv_simplify`) — thin
-//! wrappers over [`covalence_hol::init::logic`]; and the **integer term
+//! wrappers over [`covalence_init::init::logic`]; and the **integer term
 //! layer** (`Int`, literals, `+ - * < <= > >=` over the `defs` `int`
 //! catalogue).
 //!
@@ -57,8 +57,8 @@
 use std::collections::HashMap;
 
 use covalence_core::{Term, Thm, Type, defs};
-use covalence_hol::HolLightCtx;
-use covalence_hol::init::logic;
+use covalence_init::HolLightCtx;
+use covalence_init::init::logic;
 use covalence_sexp::SExpr;
 use covalence_types::Decision;
 

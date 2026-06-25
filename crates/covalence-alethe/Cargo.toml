@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 covalence-core = { path = "../covalence-core" }
-covalence-hol = { path = "../covalence-hol" }
+covalence-init = { path = "../covalence-init" }
 covalence-sexp = { path = "../covalence-sexp" }
 covalence-smt = { path = "../covalence-smt" }
 covalence-types = { path = "../covalence-types" }

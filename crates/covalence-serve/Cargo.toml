@@ -26,7 +26,7 @@ covalence-object = { path = "../covalence-object" }
 covalence-store = { path = "../covalence-store", features = ["memory"] }
 covalence-shell = { path = "../covalence-shell" }
 covalence-repl = { path = "../covalence-repl" }
-covalence-hol = { path = "../covalence-hol" }
+covalence-init = { path = "../covalence-init" }
 covalence-core = { path = "../covalence-core" }
 covalence-metamath = { path = "../covalence-metamath" }
 covalence-proto = { path = "../covalence-proto", features = ["discovery"] }

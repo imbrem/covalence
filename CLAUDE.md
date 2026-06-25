@@ -120,8 +120,9 @@ to work more effectively — capture repeatable procedures as skills.
 
 The workspace is many `covalence-*` crates, layered roughly: **wrappers** (one
 per external dep) → **storage/content-addressing** → **kernel/TCB**
-(`covalence-pure` → `covalence-core` → `covalence-hol`/`covalence-metamath` →
-`covalence-kernel`) → **proof-format frontends** → **app/systems**.
+(`covalence-pure` → `covalence-core` → thin `covalence-hol` + `covalence-metamath`
+→ `covalence-init` → `covalence-kernel`) → **proof-format frontends** →
+**app/systems**.
 
 **Dependency discipline:** all use of an external library goes through its wrapper
 crate — never import the underlying dep directly.

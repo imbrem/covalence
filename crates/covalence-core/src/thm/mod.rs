@@ -871,8 +871,7 @@ impl Thm {
     ///
     /// `ε p` denotes *some* element satisfying `p` whenever one exists,
     /// so if `p` holds at the witness `x` it holds at `ε p`. This is
-    /// the standard Hilbert-choice interpretation of `Select` (the
-    /// axiom that was previously declared-but-unexposed). Combined with
+    /// the standard Hilbert-choice interpretation of `Select`. Combined with
     /// the connective definitions it yields the existence form
     /// `(∃x. p x) ⟹ p (ε p)` downstream.
     pub fn select_ax(p: Term, x: Term) -> Result<Thm> {

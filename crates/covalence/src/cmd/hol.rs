@@ -37,16 +37,10 @@ pub fn run(args: HolArgs) {
         None => println!("cov hol (HOL Light kernel)"),
         Some(HolCommand::Check(_args)) => {
             eprintln!(
-                "cov hol check is temporarily disabled while the PureHol kernel \
-                 is being migrated to the HOL-Light primitive rule set. Track \
-                 the kernel-design branch for the WASM-proof rewrite."
+                "cov hol check is not available yet — the OpenTheory article \
+                 checker needs wiring to a HOL kernel over covalence-hol."
             );
             std::process::exit(2);
         }
     }
 }
-
-// The PureHol-backed `run_check` is gated while the PureHol
-// adapter is being migrated to the HOL-Light primitive rule
-// set (Pure→HOL collapse). Preserved in git history; reinstate
-// once `covalence-hol::pure_hol` lands on the new kernel API.

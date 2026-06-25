@@ -203,19 +203,28 @@ Then:
 | `metalogic/` (Derivable, Metamath bridge) | split: HOL-side utilities → new `covalence-hol`; kernel-coupled metatheorems stay near `covalence-init` |
 | `hol_light_obs.rs` | boundary glue — likely `covalence-core`/`covalence-init` |
 
-(Exact partition decided when the split branch runs; this is the intended shape.)
+(Exact partition decided when the split branch runs; this is the intended shape.
+The **concrete, execution-ready** module assignment + cruft list is in
+[`init-hol-split.md`](./init-hol-split.md).)
 
 ---
 
-## 4. Re-introduce `covalence-hol` (HOL utilities, no core dependency)
+## 4. Re-introduce `covalence-hol` (thin HOL surface)
 
-A **new** `covalence-hol`, peer of `covalence-metamath`: defines traits and APIs
-for **consuming HOL proofs** and **does not depend on `covalence-core`**. It folds
-in:
+A **new, thin** `covalence-hol` — the HOL builder/trait surface proof *consumers*
+need (`types`/`traits`/`HolLightCtx`, the surface the OpenTheory importer uses).
+See [`init-hol-split.md`](./init-hol-split.md) for the exact contents. It folds
+in, over time:
 
-- the abstract HOL term/type/sequent representation and builder traits,
-- **OpenTheory import** (merge in today's `covalence-opentheory`),
+- **OpenTheory import** — merge today's `covalence-opentheory` in **behind an
+  `opentheory` feature** (its `ureq` network dep gated too), then delete the
+  standalone crate.
 - later, HOL Light proof-trace consumption.
+
+**Note on the no-core-dep goal:** the *initial* split's `covalence-hol` still
+depends on `covalence-core` (the builder traits construct `covalence_core::Term`).
+Becoming a genuinely core-free peer of `covalence-metamath` is a *later*
+decoupling, not the first move.
 
 The soundness story gets *simpler*: observers now have only **simple first-order
 types**. The first pass needs **no metavariables / type variables** at the Pure

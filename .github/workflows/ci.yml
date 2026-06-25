@@ -73,7 +73,7 @@ jobs:
         with:
           # wasm-bindgen-cli is pinned to the wasm-bindgen version in Cargo.lock;
           # binaryen provides wasm-opt.
-          tool: wasm-bindgen-cli@0.2.117,binaryen
+          tool: wasm-bindgen-cli@0.2.121,binaryen
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run build:web

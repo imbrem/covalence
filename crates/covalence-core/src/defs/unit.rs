@@ -2,9 +2,8 @@
 //!
 //! `unit` is a **bool-subtype**: the carrier is `bool` and the
 //! selector predicate `λb. b = T` keeps only the `T` inhabitant, so
-//! the type is a genuine singleton. It used to be a kernel-primitive
-//! `TypeKind::Unit`; it is now an ordinary derived `TypeSpec`, like
-//! `int`/`bytes`. [`crate::Type::unit`] wraps the 0-ary
+//! the type is a genuine singleton. It is an ordinary derived
+//! `TypeSpec`, like `int`/`bytes`. [`crate::Type::unit`] wraps the 0-ary
 //! `TypeKind::Spec(unit_spec, [])` leaf.
 //!
 //! The singleton fact — *any* two inhabitants of `unit` are equal —

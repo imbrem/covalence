@@ -16,10 +16,9 @@
 //! ```
 //!
 //! so `uN` is exactly the bit strings of length `N` (`2^N` values).
-//! This replaces the old product chain (`u{2n} := prod u{n} u{n}`),
-//! which duplicated the bit-string structure at every width; here the
-//! structure lives once in `list`, and each width is just a length
-//! restriction.
+//! Rather than a product chain (`u{2n} := prod u{n} u{n}`), which would
+//! duplicate the bit-string structure at every width, the structure
+//! lives once in `list` and each width is just a length restriction.
 
 use std::sync::LazyLock;
 

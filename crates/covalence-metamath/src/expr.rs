@@ -121,7 +121,7 @@ pub fn from_symbols<'a>(symbols: impl IntoIterator<Item = &'a str>) -> Option<Ex
 }
 
 /// The typecode (head symbol) of an expression. Always `Some` for the primitive
-/// type; kept as `Option` for source-compatibility with the old `SExpr` model.
+/// type; returns `Option` for source-compatibility with the `SExpr` model.
 pub fn typecode_of(e: &Expr) -> Option<&str> {
     Some(e.typecode())
 }

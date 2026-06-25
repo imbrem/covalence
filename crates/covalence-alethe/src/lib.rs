@@ -16,8 +16,6 @@
 //! kernel derivation and reports `Unsat` when it reaches the empty
 //! clause. It covers the QF_UF fragment today; the remaining rule
 //! families (rewrite `hole`s, subproofs) are tracked in `SKELETONS.md`.
-//! The legacy `Prover`-based `KernelAletheBridge` removed in the kernel
-//! rewrite can still be recovered from `backup/pre-hol-cleanup`.
 
 pub mod bridge;
 pub mod discharge;

@@ -174,7 +174,7 @@ enum Prim {
 /// `spec.ptr_id() → Prim` — the dispatch table, built once from the
 /// canonical `defs` handles. A user-built spec that merely *shares a
 /// label* is a different `Arc` allocation, so it is absent here and never
-/// reduces — exactly the safety the per-arm `ptr_eq` chain used to give.
+/// reduces — the safety a per-arm `ptr_eq` chain gives.
 ///
 /// This list is the single audit point for *what reduces*; the semantics
 /// of each entry live in [`eval_prim`].

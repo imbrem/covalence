@@ -20,17 +20,17 @@
 //!
 //! # ⚠️ Status: skeleton
 //!
-//! The concrete `KernelEgglogBridge` impl (against the legacy `Prover`
-//! trait) was removed in the kernel rewrite. Recover it from
-//! `backup/pre-hol-cleanup` if needed; a new impl over the HOL-on-store
-//! stack lands here later. What remains is the backend-agnostic trait +
-//! driver + proof-DAG parsing / lowering.
+//! The concrete `KernelEgglogBridge` impl over the HOL-on-store stack lands
+//! here later. What remains is the backend-agnostic trait + driver + proof-DAG
+//! parsing / lowering.
 
 pub mod ast;
 pub mod bridge;
 pub mod error;
-#[cfg(feature = "external-egglog")]
-pub mod external;
+// egglog support DISABLED for now (see SKELETONS.md / Cargo.toml). The bridge in
+// `external.rs` needs egglog's `proof` module, absent from released egglog.
+// #[cfg(feature = "external-egglog")]
+// pub mod external;
 pub mod ingest;
 pub mod lower;
 pub mod parse;

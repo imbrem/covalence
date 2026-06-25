@@ -3,36 +3,19 @@ name = "covalence-hol"
 version = "0.0.0"
 edition = "2024"
 
+# The thin HOL surface: the builder context (`HolLightCtx`), the
+# `HolLightKernel`/`HolLightTerms`/`HolLightTypes` traits, and the shared
+# `NameId`/`HolError` types — the surface HOL proof *consumers* (the OpenTheory
+# importer, `covalence-init`) build against. The bulk semi-trusted API lives in
+# `covalence-init`. See `notes/init-hol-split.md`.
+#
+# Still depends on `covalence-core` for now (the builder constructs
+# `covalence_core::Term`); the core-free "peer of covalence-metamath" form is a
+# later decoupling.
+
 [features]
 default = []
 
 [dependencies]
 covalence-core = { path = "../covalence-core" }
-covalence-types = { path = "../covalence-types" }
-covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-sexp = { path = "../covalence-sexp" }
-covalence-metamath = { path = "../covalence-metamath" }
-covalence-grammar = { path = "../covalence-grammar" }
-covalence-spectec = { path = "../covalence-spectec" }
-async-trait = "0.1"
-bytes = "1"
-fnv = "1"
-futures = "0.3"
-imbl = "5"
-indexmap = "2"
-smol_str = "0.3"
 thiserror = "2"
-
-# The async proof core runs on tokio; `run` blocks on it via a current-thread
-# runtime. Native only (the kernel/TCB stays sync) — see `script::block_on`.
-# On `wasm32-unknown-unknown` tokio does not build, so `block_on` falls back to
-# `futures::executor::block_on` (futures is already a dependency above).
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { version = "1", features = ["rt"] }
-
-# `covalence-hash` → `covalence-rand` → `rand` → `getrandom`. On
-# `wasm32-unknown-unknown` getrandom needs its `wasm_js` backend enabled
-# explicitly (the feature alone suffices on getrandom 0.4 — no rustflag); native
-# targets pick their backend automatically and are unaffected.
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.4", features = ["wasm_js"] }

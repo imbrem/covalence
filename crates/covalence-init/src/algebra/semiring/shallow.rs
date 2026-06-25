@@ -7,7 +7,7 @@
 //!   theorem proved by induction in [`crate::init::nat`].
 //! - [`Int`] over HOL `int` — the axioms forward to [`crate::init::int`]
 //!   (postulated for now; see `SKELETONS.md`). [`Int`] additionally
-//!   implements [`Ring`](crate::ring::Ring).
+//!   implements [`Ring`](crate::algebra::ring::Ring).
 //!
 //! Both reuse the same generic HOL equational core (the private `eqn`
 //! helpers): a semiring proof is just a HOL equational `Thm`, and the
@@ -21,7 +21,7 @@ use covalence_core::{Error, Result, Term, Thm, Type};
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::{int, nat};
-use crate::semiring::Semiring;
+use crate::algebra::semiring::Semiring;
 
 // ============================================================================
 // Generic HOL equational core — shared by every carrier
@@ -150,12 +150,12 @@ impl Semiring for Nat {
 }
 
 // ============================================================================
-// `int` — a commutative semiring (and, via `crate::ring`, a ring)
+// `int` — a commutative semiring (and, via `crate::algebra::ring`, a ring)
 // ============================================================================
 
 /// Shallow semiring-over-`int`: `Term = int` HOL term, `Proof = Thm`.
 /// Zero-sized. The axioms forward to [`crate::init::int`] (postulated for
-/// now). Also implements [`Ring`](crate::ring::Ring).
+/// now). Also implements [`Ring`](crate::algebra::ring::Ring).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Int;
 

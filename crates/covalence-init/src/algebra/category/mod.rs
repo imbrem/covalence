@@ -4,7 +4,7 @@
 //!
 //! This module is deliberately kept *below* (and independent of) the
 //! coproduct's symmetric-monoidal structure in
-//! [`monoidal`](crate::monoidal). A plain category is all you need to
+//! [`monoidal`](crate::algebra::monoidal). A plain category is all you need to
 //! **state and prove that a diagram commutes** — compose morphisms, and
 //! reason equationally about the composites — and it is the substrate the
 //! diagrammatic calculi are built on:
@@ -14,7 +14,7 @@
 //! - *string diagrams* (future) — the Poincaré-dual graphical calculus
 //!   (morphisms are boxes, objects are wires). They live here, on the
 //!   bare [`Category`] interface, rather than under
-//!   [`monoidal`](crate::monoidal), so the representation is shared by
+//!   [`monoidal`](crate::algebra::monoidal), so the representation is shared by
 //!   every category model.
 //!
 //! ## Three layers
@@ -54,7 +54,7 @@ pub use shallow::Hol;
 /// A category whose morphism equations can be *proved*, generic over the
 /// proof representation. The substrate the [`diagram`] API (and future
 /// string-diagram calculi) is built on, and the super-trait of
-/// [`Monoidal`](crate::monoidal::Monoidal). See the [module docs](self).
+/// [`Monoidal`](crate::algebra::monoidal::Monoidal). See the [module docs](self).
 pub trait Category {
     /// Objects — the "types".
     type Obj: Clone;

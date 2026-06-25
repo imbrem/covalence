@@ -38,8 +38,8 @@
 //!
 //! [`union_comm`] / [`union_assoc`] (and [`inter_comm`] / [`inter_assoc`])
 //! state union and intersection as commutative-associative **equations** — the
-//! exact shape the model-generic AC rewriter [`crate::ac`] consumes. Build a
-//! [`HolAc::from_free`](crate::ac::HolAc::from_free) over `set.union` /
+//! exact shape the model-generic AC rewriter [`crate::algebra::ac`] consumes. Build a
+//! [`HolAc::from_free`](crate::algebra::ac::HolAc::from_free) over `set.union` /
 //! `set.intersect` (free vars `s, t, u`) and the normalizer decides `∪`/`∩`
 //! rearrangements the same way it does `+`/`∧` (see `ac::tests`).
 //!

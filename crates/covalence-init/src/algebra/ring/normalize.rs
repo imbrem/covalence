@@ -2,7 +2,7 @@
 //! expression to a canonical **sum-of-monomials** form, producing a
 //! kernel-checked `⊢ e = nf`.
 //!
-//! Built on the AC tactic ([`crate::ac`]): `+` and `·` are each
+//! Built on the AC tactic ([`crate::algebra::ac`]): `+` and `·` are each
 //! associative-commutative, so once the expression is *expanded* (every product
 //! distributed over every sum) it is a flat sum of monomials, and each layer is
 //! AC-normalized. Two ring-equal expressions (in the deferred-coefficient
@@ -22,7 +22,7 @@
 //! `0`/`1` identities — i.e. any two expressions equal as *formal* sums of
 //! monomials over the atoms.
 //!
-//! **Deferred** (see `crate::ring`'s `SKELETONS.md` entry):
+//! **Deferred** (see `crate::algebra::ring`'s `SKELETONS.md` entry):
 //! - *coefficient collection* — `x + x` is left as `x + x`, not folded to
 //!   `2 · x`; like monomials are **not** combined. So `x + x = x + x` is
 //!   decided, but `x + x = 2·x` is not.
@@ -35,7 +35,7 @@
 
 use covalence_core::{Error, Result, Term, Thm};
 
-use crate::ac::{Ac, AcOp, HolAc};
+use crate::algebra::ac::{Ac, AcOp, HolAc};
 use crate::init::ext::{TermExt, ThmExt};
 
 /// The ring operators + axioms a [`RingNormalizer`] needs, as HOL terms / `Thm`s.

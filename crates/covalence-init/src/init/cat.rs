@@ -20,7 +20,7 @@
 //! as [`comp`] (typed composition of two morphism *terms*) and
 //! [`comp_cong`] (the congruence that lets composition act on equational
 //! proofs), which the higher-level
-//! [`monoidal`](crate::monoidal) API builds on.
+//! [`monoidal`](crate::algebra::monoidal) API builds on.
 
 use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 

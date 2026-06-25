@@ -1473,7 +1473,7 @@ cached_thm! {
 // ============================================================================
 // Multiplicative theory, continued — the rest of the `nat` commutative-semiring
 // laws (`mul_succ_r` / `mul_comm` above). Read by the `nat` semiring embedding
-// in `crate::semiring`. Genuine once `rec_holds` is discharged (which it is).
+// in `crate::algebra::semiring`. Genuine once `rec_holds` is discharged (which it is).
 // ============================================================================
 
 /// `⊢ x * c = y * c` from `⊢ x = y` — congruence on `*`'s left argument.

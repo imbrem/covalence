@@ -17,9 +17,9 @@
 //! `NameId`/`HolError`) lives in `covalence-hol` and is re-exported here so
 //! `crate::…` paths resolve. See `notes/init-hol-split.md`.
 
-pub mod ac;
-pub mod category;
+pub mod algebra;
 pub mod debug;
+pub mod grammar;
 pub mod hash;
 pub mod init;
 pub mod metalogic;
@@ -28,16 +28,11 @@ pub mod metalogic;
 // bridge, the metalogic replay) keeps resolving.
 pub use covalence_metamath as metamath;
 pub mod models;
-pub mod monoidal;
 pub mod peano;
 pub mod project;
 pub mod proofs;
-pub mod regex;
-pub mod ring;
 pub mod script;
-pub mod semiring;
 pub mod sexp;
-pub mod spectec;
 
 // The thin HOL surface lives in `covalence-hol`. Re-export its modules and items
 // so `crate::types` / `crate::traits` / `crate::hol_light_obs` / `crate::HolLightCtx`

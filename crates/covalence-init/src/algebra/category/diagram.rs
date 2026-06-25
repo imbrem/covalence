@@ -33,9 +33,9 @@
 //! The payoff is [`paste_horizontal`]: pasting two commuting squares
 //! along a shared edge into a commuting rectangle, proved *entirely*
 //! through this API — the diagram-chase analogue of
-//! [`swap_involution`](crate::monoidal::derived::swap_involution).
+//! [`swap_involution`](crate::algebra::monoidal::derived::swap_involution).
 
-use crate::category::Category;
+use crate::algebra::category::Category;
 
 // ============================================================================
 // Paths.
@@ -350,7 +350,7 @@ pub fn paste_horizontal<C: Category>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::category::Hol;
+    use crate::algebra::category::Hol;
     use crate::init::ext::TermExt;
     use covalence_core::{Term, Thm, Type};
 

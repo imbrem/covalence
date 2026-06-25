@@ -7,17 +7,17 @@
 //! functions. Every law forwards to a genuine, hypothesis-free theorem in
 //! [`init::cat`](crate::init::cat), so a shallow categorical proof is an
 //! outright HOL theorem — nothing is postulated. The same `Hol` handle
-//! also carries the coproduct's [`Monoidal`](crate::monoidal::Monoidal)
+//! also carries the coproduct's [`Monoidal`](crate::algebra::monoidal::Monoidal)
 //! structure, implemented one layer up.
 
 use covalence_core::{Result, Term, Thm, Type};
 
-use crate::category::Category;
+use crate::algebra::category::Category;
 use crate::init::cat;
 
 /// Shallow point-free-in-HOL: `Obj = Type`, `Hom = Term`, `Proof = Thm`.
 /// Zero-sized. Implements [`Category`] here and
-/// [`Monoidal`](crate::monoidal::Monoidal) in [`crate::monoidal`].
+/// [`Monoidal`](crate::algebra::monoidal::Monoidal) in [`crate::algebra::monoidal`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Hol;
 

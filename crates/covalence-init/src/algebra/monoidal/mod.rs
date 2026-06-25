@@ -13,9 +13,9 @@
 //!
 //! The plain **category** vocabulary — objects, morphisms,
 //! `id`/`comp`, the category laws, and equational logic — lives in the
-//! [`Category`] super-trait (its own [`category`](crate::category)
+//! [`Category`] super-trait (its own [`category`](crate::algebra::category)
 //! module), because the
-//! [`diagram`](crate::category::diagram) API (commutative diagrams *of
+//! [`diagram`](crate::algebra::category::diagram) API (commutative diagrams *of
 //! functions*) needs exactly that and nothing about the coproduct.
 //! [`Monoidal`] then adds the coproduct's symmetric-monoidal structure on
 //! top.
@@ -77,7 +77,7 @@
 pub mod derived;
 pub mod shallow;
 
-pub use crate::category::{Category, Hol};
+pub use crate::algebra::category::{Category, Hol};
 
 /// Point-free reasoning over the coproduct's symmetric-monoidal
 /// structure, generic over the proof representation. Extends

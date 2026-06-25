@@ -1,9 +1,9 @@
-# Skeletons — `covalence-hol`
+# Skeletons — `covalence-init`
 
-Crate-level index of intentional placeholders in `covalence-hol` (the non-TCB
-HOL shell over `covalence-core`). Entries live in the per-module `SKELETONS.md`
-files co-located with the code. See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons
-and the [root index](../../SKELETONS.md).
+Crate-level index of intentional placeholders in `covalence-init` (the
+semi-trusted API over `covalence-core`). Entries live in the per-module
+`SKELETONS.md` files co-located with the code. See [`CLAUDE.md`](../../CLAUDE.md)
+§ Skeletons and the [root index](../../SKELETONS.md).
 
 ## Per-module registries
 

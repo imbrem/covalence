@@ -69,11 +69,16 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      # wasm-bindgen-cli must match the wasm-bindgen crate exactly; read the
+      # version straight from Cargo.lock so there is nothing to keep in sync.
+      - id: wbver
+        run: |
+          ver=$(sed -n '/^name = "wasm-bindgen"$/{n;s/version = "\(.*\)"/\1/p}' Cargo.lock)
+          echo "v=$ver" >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@v2
         with:
-          # wasm-bindgen-cli is pinned to the wasm-bindgen version in Cargo.lock;
           # binaryen provides wasm-opt.
-          tool: wasm-bindgen-cli@0.2.121,binaryen
+          tool: wasm-bindgen-cli@${{ steps.wbver.outputs.v }},binaryen
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run build:web

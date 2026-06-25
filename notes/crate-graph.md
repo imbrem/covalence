@@ -1,10 +1,15 @@
 # Internal crate dependency graph
 
-> **Snapshot: 2026-06-25.** Generated from `crates/*/Cargo.toml`
-> path-dependencies (internal `covalence-*` edges only). Regenerate with the
-> script in [`refactor-plan.md` §5](./refactor-plan.md) — this is a point-in-time
-> picture to make the layering legible and spot inversions, not a maintained
-> invariant.
+> This page is **curated narrative** (the proposed grouping + findings). The
+> **machine-tracked, always-current** graph lives in [`deps/`](./deps/), emitted
+> by `bun run deps` (`scripts/dep-graph.mjs`) and verified in CI (`deps:check`):
+> [`deps/graph.mmd`](./deps/graph.mmd) (rendered), [`deps/graph.json`](./deps/graph.json),
+> [`deps/graph.dot`](./deps/graph.dot), and — the one to watch —
+> [`deps/tcb.json`](./deps/tcb.json), the trusted-base closure of
+> `covalence-core` + `covalence-pure`. A change there means the TCB grew/shrank.
+>
+> The narrative snapshot below (**2026-06-25**) is a point-in-time picture for
+> legibility, not a maintained invariant.
 
 Subgraphs are the *proposed* grouping (§5 of the refactor plan), not the current
 on-disk layout (everything is flat under `crates/`).

@@ -59,6 +59,8 @@ cargo check                # check Rust crates
 cargo test                 # run Rust tests
 bun run fmt                # cargo fmt --all (also runs on commit via .githooks/pre-commit)
 bun run fmt:check          # cargo fmt --all --check (the CI fmt gate)
+bun run deps               # regenerate notes/deps/ dep graph + TCB closure (runs on commit)
+bun run deps:check         # fail if notes/deps/ is stale (the CI deps gate)
 bun test                   # run all tests (Rust + Python)
 bun run test:python        # run Python tests only
 bun run build:python       # build Python extension (maturin develop)

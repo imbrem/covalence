@@ -43,6 +43,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p covalence
 
+  deps:
+    name: Dependency graph + TCB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
+      # Fails if notes/deps/ (the tracked graph + TCB closure) is stale.
+      # Regenerate locally with `bun run deps`.
+      - run: bun run deps:check
+
   build-wasm:
     name: Build WASM + VSCode extension
     runs-on: ubuntu-latest

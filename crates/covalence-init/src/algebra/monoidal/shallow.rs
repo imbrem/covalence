@@ -2,7 +2,7 @@
 //! HOL: the [`Monoidal`] impl on [`Hol`].
 //!
 //! [`Hol`] itself — the zero-sized handle and its [`Category`] impl —
-//! lives in [`crate::category::shallow`]; this module adds the coproduct
+//! lives in [`crate::algebra::category::shallow`]; this module adds the coproduct
 //! layer. Every axiom forwards to a genuine, hypothesis-free theorem: the
 //! coproduct universal property (β-laws + η/fusion) to
 //! [`init::coprod`](mod@crate::init::coprod). So a shallow point-free
@@ -11,10 +11,10 @@
 use covalence_core::defs::coprod_spec;
 use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 
-use crate::category::{Category, Hol};
+use crate::algebra::category::{Category, Hol};
 use crate::init::ext::TermExt;
 use crate::init::{cat, coprod};
-use crate::monoidal::Monoidal;
+use crate::algebra::monoidal::Monoidal;
 
 /// Split `α → β` into `(α, β)`.
 fn fun_parts(ty: &Type) -> Result<(Type, Type)> {
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn derived_swap_involution_is_genuine() {
         // ⊢ σ_{b,a} ∘ σ_{a,b} = id, proved through the trait API only.
-        use crate::monoidal::derived::swap_involution;
+        use crate::algebra::monoidal::derived::swap_involution;
         let h = hol();
         let (a, b) = (obj("a"), obj("b"));
         let p = swap_involution(&h, a.clone(), b.clone()).unwrap();
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn derived_swap_injection_laws() {
-        use crate::monoidal::derived::{swap_inl, swap_inr};
+        use crate::algebra::monoidal::derived::{swap_inl, swap_inr};
         let h = hol();
         let (a, b) = (obj("a"), obj("b"));
         // σ∘inl = inr, σ∘inr = inl.

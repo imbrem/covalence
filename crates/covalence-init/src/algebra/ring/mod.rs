@@ -1,7 +1,7 @@
 //! A trait for reasoning in a **commutative ring** — a
-//! [`Semiring`](crate::semiring::Semiring) with additive inverses.
+//! [`Semiring`](crate::algebra::semiring::Semiring) with additive inverses.
 //!
-//! [`Ring`] extends [`Semiring`](crate::semiring::Semiring): a ring is a
+//! [`Ring`] extends [`Semiring`](crate::algebra::semiring::Semiring): a ring is a
 //! semiring whose additive monoid is a *group*, so it adds negation `-a`
 //! ([`neg`](Ring::neg)), subtraction `a - b` ([`sub`](Ring::sub)), and the
 //! two extra axioms that pin them down:
@@ -16,7 +16,7 @@
 //!
 //! ## Embedding
 //!
-//! [`crate::semiring::Int`] implements [`Ring`] over HOL `int` (the
+//! [`crate::algebra::semiring::Int`] implements [`Ring`] over HOL `int` (the
 //! additive-inverse axioms forward to [`crate::init::int`], postulated for
 //! now; see `SKELETONS.md`). `nat` is deliberately *not* a `Ring` — it has
 //! no additive inverses — so it implements only [`Semiring`]. The future
@@ -27,7 +27,7 @@ pub mod shallow;
 
 pub use normalize::{RingNormalizer, RingOps};
 
-use crate::semiring::Semiring;
+use crate::algebra::semiring::Semiring;
 
 /// Reasoning in a commutative ring — a [`Semiring`] with additive inverses.
 /// See the [module docs](self).

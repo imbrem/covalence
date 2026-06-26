@@ -12,7 +12,7 @@
 //! inverse) — show that the symmetric-monoidal coherence facts follow
 //! from the β/η laws plus the category laws alone.
 
-use crate::monoidal::{Category, Monoidal};
+use crate::algebra::monoidal::{Category, Monoidal};
 
 type P<M> = Result<<M as Category>::Proof, <M as Category>::Error>;
 

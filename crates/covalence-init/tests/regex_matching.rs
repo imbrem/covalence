@@ -1,5 +1,5 @@
 //! Integration tests for the regex → byte-predicate matching tactic
-//! ([`covalence_init::regex`]), driven entirely through the public API.
+//! ([`covalence_init::grammar::regex`]), driven entirely through the public API.
 //!
 //! The centrepiece is a differential test against an **independent** reference
 //! recogniser ([`oracle`]) written over the *surface* `Regex<u8>` — a different
@@ -9,10 +9,10 @@
 
 use covalence_grammar::regex::{Class, Regex, parse_regex_u8};
 use covalence_init::Term;
+use covalence_init::grammar::regex::tactic::{Word, prove_matches, prove_member, prove_word};
+use covalence_init::grammar::regex::{compile, desugar};
 use covalence_init::init::ext::TermExt;
 use covalence_init::init::regex as ir;
-use covalence_init::regex::tactic::{Word, prove_matches, prove_member, prove_word};
-use covalence_init::regex::{compile, desugar};
 
 // ============================================================================
 // Helpers.
@@ -385,7 +385,7 @@ fn word_variable_category_mismatch_fails() {
 #[test]
 #[ignore = "timing harness; run explicitly with --nocapture"]
 fn timing_involved_regexes() {
-    use covalence_init::regex::Core;
+    use covalence_init::grammar::regex::Core;
     use std::time::Instant;
 
     // (label, regex source, a matching input). Each `prove_matches` builds a

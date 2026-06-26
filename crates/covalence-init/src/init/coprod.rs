@@ -18,7 +18,7 @@
 //! **surjectivity** [`cases`] (every value is `inl` or `inr`), and the
 //! **η / fusion** law [`case_eta`] (`m = [m ∘ inl, m ∘ inr]`). Together
 //! with [`init::cat`](crate::init::cat) these are the axioms the
-//! point-free [`monoidal`](crate::monoidal) API reasons through.
+//! point-free [`monoidal`](crate::algebra::monoidal) API reasons through.
 //!
 //! The colocated `coprod.cov` script re-proves the η / fusion law
 //! ([`cov::case_eta_cov`]) and a coproduct **case-analysis** principle

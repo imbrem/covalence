@@ -58,7 +58,7 @@ Design: `notes/theories-models-and-logics.md` §5.5/§5.6.
   transport generalized across logics.
 - **Conservative extension / equivalence `A ≅ B`** — mutual interpretation; the
   **category of databases** (objects = databases, morphisms = `⟹_σ`, `⊑` the
-  sub-order; monotonicity/transport as functoriality) as a `crate::category`
+  sub-order; monotonicity/transport as functoriality) as a `crate::algebra::category`
   instance.
 - **`Metamath-L ≅ native-L`** (§5.6) — lift a concrete `metamath::Database` into a
   HOL `Database` value; needs the `∃ValidProof ⟺ impredicative` bridge + a

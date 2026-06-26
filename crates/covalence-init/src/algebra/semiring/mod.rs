@@ -31,7 +31,7 @@
 //! layer: every axiom is a universally-quantified equation and reasoning is
 //! by congruence + instantiation. Carriers that *are* first-order theories
 //! (e.g. the ordered ring of `int`) layer that structure elsewhere; the
-//! [`Ring`](crate::ring::Ring) extension adds the additive-inverse axioms.
+//! [`Ring`](crate::algebra::ring::Ring) extension adds the additive-inverse axioms.
 //!
 //! ## The axioms (commutative semiring)
 //!
@@ -51,7 +51,7 @@
 //!    HOL theorem proved by induction in [`crate::init::nat`].
 //! 2. **`int`** — [`shallow::Int`]: the axioms forward to
 //!    [`crate::init::int`]; `int` additionally extends to a
-//!    [`Ring`](crate::ring::Ring). They are *postulated* for now (the
+//!    [`Ring`](crate::algebra::ring::Ring). They are *postulated* for now (the
 //!    Grothendieck quotient derivation is pending — see `SKELETONS.md`), but
 //!    the public surface does not change when the proofs land.
 //!

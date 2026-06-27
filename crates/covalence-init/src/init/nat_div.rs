@@ -459,10 +459,11 @@ crate::cov_theory! {
         "div.mul_cancel" => pub fn div_mul_cancel;
         "div.lt" => pub fn div_lt;
         "div.ge" => pub fn div_ge;
+        "div.div" => pub fn div_div;
     }
 }
 
-pub use facts::{div_ge, div_lt, div_mod, div_mul_cancel, div_mul_le, div_unique, mod_lt};
+pub use facts::{div_div, div_ge, div_lt, div_mod, div_mul_cancel, div_mul_le, div_unique, mod_lt};
 
 #[cfg(test)]
 mod tests {
@@ -518,5 +519,14 @@ mod tests {
     fn div_recurrence_equations_prove() {
         assert!(super::div_lt().hyps().is_empty(), "div.lt should be closed");
         assert!(super::div_ge().hyps().is_empty(), "div.ge should be closed");
+    }
+
+    /// The iterated-division law `(a/b)/c = a/(b·c)`.
+    #[test]
+    fn div_div_proves() {
+        assert!(
+            super::div_div().hyps().is_empty(),
+            "div.div should be closed"
+        );
     }
 }

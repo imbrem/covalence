@@ -375,5 +375,119 @@
             (imp-elim (all-elim m (all-elim (nat.sub n m) (nat.div.lt)))
                       (assume (not (= m 0))))))))))
 
+;; ===========================================================================
+;; Iterated division `(a/b)/c = a/(b·c)` — the bridge for `shr`.
+;; ===========================================================================
+
+;; ⊢ ∀b c. ¬(b=0) ⟹ ¬(c=0) ⟹ ¬(b·c = 0).  If `b·c=0` then `b = (b·c)/c = 0/c = 0`
+;; (`div.mul_cancel` and `div.lt`), contradicting `b≠0`.
+(#thm mul.ne_zero
+  (#concl
+    (forall (b nat) (forall (c nat)
+      (==> (not (= b 0)) (==> (not (= c 0)) (not (= (nat.mul b c) 0)))))))
+  (#by
+    (intro b c hb hc)
+    (derive
+      (not-intro (imp-intro (= (nat.mul b c) 0)
+        (not-elim (assume (not (= b 0)))
+          (trans
+            ;; b = (b·c)/c
+            (sym (imp-elim (all-elim c (all-elim b (div.mul_cancel))) (assume (not (= c 0)))))
+            (trans
+              ;; (b·c)/c = 0/c
+              (cong-fn c (cong-arg nat.div (assume (= (nat.mul b c) 0))))
+              ;; 0/c = 0
+              (imp-elim (all-elim c (all-elim 0 (div.lt)))
+                        (imp-elim (all-elim c (nat.pos_of_ne_zero))
+                                  (assume (not (= c 0)))))))))))))
+
+;; ⊢ ∀a b c. a < b ⟹ b ≤ c ⟹ a < c.  (`S a ≤ b ≤ c`, then back to `<`.)
+(#thm lt.of_lt_le
+  (#concl
+    (forall (a nat) (forall (b nat) (forall (c nat)
+      (==> (nat.lt a b) (==> (nat.le b c) (nat.lt a c)))))))
+  (#by
+    (intro a b c hab hbc)
+    (derive
+      (eq-mp (sym (all-elim c (all-elim a (lt.iff_succ_le))))
+        (imp-elim
+          (imp-elim (all-elim c (all-elim b (all-elim (succ a) (le.trans))))
+            (eq-mp (all-elim b (all-elim a (lt.iff_succ_le))) (assume (nat.lt a b))))
+          (assume (nat.le b c)))))))
+
+;; ⊢ ∀a b c. ¬(b=0) ⟹ ¬(c=0) ⟹ (a/b)/c = a/(b·c).  Iterated division.
+;; The quotient `q = (a/b)/c` satisfies the bounds at `(a, b·c)`: with `p = a/b`,
+;; `q·(b·c) = (q·c)·b ≤ p·b ≤ a` and `a < S(p)·b ≤ (S(q)·c)·b = S(q)·(b·c)` (using
+;; `nat.div.le/lt` at `(p,c)` and `(a,b)`, `mul.le_mono_r`, and `·` assoc/comm).
+;; `div.unique` then identifies it with `a/(b·c)`.
+(#thm div.div
+  (#concl
+    (forall (a nat) (forall (b nat) (forall (c nat)
+      (==> (not (= b 0))
+        (==> (not (= c 0))
+          (= (nat.div (nat.div a b) c) (nat.div a (nat.mul b c)))))))))
+  (#by
+    (intro a b c hb hc)
+    (derive
+      (imp-elim
+        (imp-elim
+          (imp-elim
+            (imp-elim
+              (all-elim (nat.div a (nat.mul b c))
+                (all-elim (nat.div (nat.div a b) c)
+                  (all-elim (nat.mul b c) (all-elim a (div.unique)))))
+              ;; (1)  q·(b·c) ≤ a
+              (eq-mp
+                (cong-fn a (cong-arg nat.le
+                  ;; (q·c)·b = q·(b·c)
+                  (sym (trans
+                    (cong-arg (nat.mul (nat.div (nat.div a b) c))
+                      (all-elim c (all-elim b (mul.comm))))
+                    (sym (all-elim b (all-elim c (all-elim (nat.div (nat.div a b) c) (mul.assoc)))))))))
+                (imp-elim
+                  (imp-elim (all-elim a (all-elim (nat.mul (nat.div a b) b)
+                    (all-elim (nat.mul (nat.mul (nat.div (nat.div a b) c) c) b) (le.trans))))
+                    ;; (q·c)·b ≤ p·b
+                    (imp-elim (all-elim b (all-elim (nat.div a b)
+                      (all-elim (nat.mul (nat.div (nat.div a b) c) c) (mul.le_mono_r))))
+                      ;; q·c ≤ p
+                      (imp-elim (all-elim c (all-elim (nat.div a b) (nat.div.le)))
+                                (assume (not (= c 0))))))
+                  ;; p·b ≤ a
+                  (imp-elim (all-elim b (all-elim a (nat.div.le))) (assume (not (= b 0)))))))
+            ;; (2)  a < S(q)·(b·c)
+            (eq-mp
+              (cong-arg (nat.lt a)
+                ;; (S(q)·c)·b = S(q)·(b·c)
+                (trans
+                  (all-elim b (all-elim c (all-elim (succ (nat.div (nat.div a b) c)) (mul.assoc))))
+                  (cong-arg (nat.mul (succ (nat.div (nat.div a b) c)))
+                    (all-elim b (all-elim c (mul.comm))))))
+              (imp-elim
+                (imp-elim (all-elim (nat.mul (nat.mul (succ (nat.div (nat.div a b) c)) c) b)
+                  (all-elim (nat.mul (succ (nat.div a b)) b) (all-elim a (lt.of_lt_le))))
+                  ;; a < S(p)·b
+                  (imp-elim (all-elim b (all-elim a (nat.div.lt))) (assume (not (= b 0)))))
+                ;; S(p)·b ≤ (S(q)·c)·b
+                (imp-elim (all-elim b (all-elim (nat.mul (succ (nat.div (nat.div a b) c)) c)
+                  (all-elim (succ (nat.div a b)) (mul.le_mono_r))))
+                  ;; S(p) ≤ S(q)·c
+                  (eq-mp (all-elim (nat.mul (succ (nat.div (nat.div a b) c)) c)
+                    (all-elim (nat.div a b) (lt.iff_succ_le)))
+                    ;; p < S(q)·c
+                    (imp-elim (all-elim c (all-elim (nat.div a b) (nat.div.lt)))
+                              (assume (not (= c 0)))))))))
+          ;; (3)  (a/(b·c))·(b·c) ≤ a
+          (imp-elim (all-elim (nat.mul b c) (all-elim a (nat.div.le)))
+                    (imp-elim (imp-elim (all-elim c (all-elim b (mul.ne_zero)))
+                                        (assume (not (= b 0))))
+                              (assume (not (= c 0))))))
+        ;; (4)  a < S(a/(b·c))·(b·c)
+        (imp-elim (all-elim (nat.mul b c) (all-elim a (nat.div.lt)))
+                  (imp-elim (imp-elim (all-elim c (all-elim b (mul.ne_zero)))
+                                      (assume (not (= b 0))))
+                            (assume (not (= c 0)))))))))
+
 (#export div.mul_le div.mod mod.lt mul.le_mono_r div.not_lt div.unique div.mul_cancel
-         nat.ne_zero_of_lt div.lt add.le_mono_l add.lt_mono_l div.ge)
+         nat.ne_zero_of_lt div.lt add.le_mono_l add.lt_mono_l div.ge
+         mul.ne_zero lt.of_lt_le div.div)

@@ -128,13 +128,16 @@ index](../../../../SKELETONS.md).
   The Euclidean facts are **proved** via the foundation-invariant `cv_exists`
   route and transferred to the `nat.div`/`nat.mod` selectors: `div.mul_le`
   (`(n/m)·m ≤ n`, all `m`), `div.mod` (`(n/m)·m + n mod m = n`, unconditional), and
-  `mod.lt` (`m≠0 ⟹ n mod m < m`). Quotient uniqueness (`div.unique`, via
-  `mul.le_mono_r` + trichotomy) and `(a·b)/b = a` (`div.mul_cancel`) are done.
-  Remaining:
-  - the `div`/`mod` recurrences (`n/m = if m=0∨n<m then 0 else S((n−m)/m)`) — by
-    `div.unique`, exhibiting the witness (`0` when `n<m`; `S((n−m)/m)` when `m≤n`,
-    its bounds from `nat.div.le/lt` at `(n−m,m)` via `le.add_sub`/`succ.mul`).
-  - the `shr a (S m) = a/2^m` bridge (`shr` defined through `nat.div`).
+  `mod.lt` (`m≠0 ⟹ n mod m < m`). Quotient uniqueness (`div.unique`),
+  `(a·b)/b = a` (`div.mul_cancel`), and the **division recurrence** as conditional
+  equations (`div.lt`: `n<m ⟹ n/m=0`; `div.ge`: `m≠0 ∧ m≤n ⟹ n/m=S((n−m)/m)`;
+  plus `nat.div.zero`) are done. Remaining:
+  - **mod recurrence** — `n<m ⟹ n mod m = n` and `m≤n ⟹ n mod m = (n−m) mod m`
+    (from `div.lt`/`div.ge` + `nat.mod.def`; the step needs `n−(m+x) = (n−m)−x`).
+  - the `shr a (S m) = a/2^m` bridge — `shr a m = a/2^m` needs the iterated-division
+    law `(a/b)/c = a/(b·c)` (another `div.unique` application) + `pow` recurrence.
+  - the `spec_ax` **seam itself** (`nat_div_spec`) — see the kernel `nat.div`
+    redefinition skeleton in `covalence-core/SKELETONS.md`.
   - the `spec_ax` **seam itself** (`nat_div_spec`) disappears once `nat.div` is
     *defined* by the recursion — see the kernel `nat.div` redefinition skeleton in
     `covalence-core/SKELETONS.md`.

@@ -457,10 +457,12 @@ crate::cov_theory! {
         "mod.lt"  => pub fn mod_lt;
         "div.unique" => pub fn div_unique;
         "div.mul_cancel" => pub fn div_mul_cancel;
+        "div.lt" => pub fn div_lt;
+        "div.ge" => pub fn div_ge;
     }
 }
 
-pub use facts::{div_mod, div_mul_cancel, div_mul_le, div_unique, mod_lt};
+pub use facts::{div_ge, div_lt, div_mod, div_mul_cancel, div_mul_le, div_unique, mod_lt};
 
 #[cfg(test)]
 mod tests {
@@ -509,5 +511,12 @@ mod tests {
             super::div_mul_cancel().hyps().is_empty(),
             "div.mul_cancel should be closed"
         );
+    }
+
+    /// The division recurrence as conditional equations.
+    #[test]
+    fn div_recurrence_equations_prove() {
+        assert!(super::div_lt().hyps().is_empty(), "div.lt should be closed");
+        assert!(super::div_ge().hyps().is_empty(), "div.ge should be closed");
     }
 }

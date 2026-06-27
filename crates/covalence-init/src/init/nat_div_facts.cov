@@ -240,4 +240,140 @@
               (sym (all-elim (nat.mul a b) (all-elim b (all-elim 0 (lt.add_mono_r)))))
               (imp-elim (all-elim b (nat.pos_of_ne_zero)) (assume (not (= b 0)))))))))))
 
-(#export div.mul_le div.mod mod.lt mul.le_mono_r div.not_lt div.unique div.mul_cancel)
+;; ===========================================================================
+;; The division recurrence (conditional equations).
+;; ===========================================================================
+
+;; ⊢ ∀n m. n < m ⟹ ¬(m=0).  A positive upper bound is nonzero.
+(#thm nat.ne_zero_of_lt
+  (#concl
+    (forall (n nat) (forall (m nat) (==> (nat.lt n m) (not (= m 0))))))
+  (#by
+    (intro n m hlt)
+    (derive
+      (not-intro (imp-intro (= m 0)
+        (not-elim (all-elim n (not.lt_zero))
+          (eq-mp (cong-arg (nat.lt n) (assume (= m 0))) (assume (nat.lt n m)))))))))
+
+;; ⊢ ∀n m. n < m ⟹ nat.div n m = 0.  The recurrence's base arm: `0` satisfies the
+;; bounds at `(n,m)` — `0·m = 0 ≤ n` and `n < m = S(0)·m` — so `div.unique` gives 0.
+(#thm div.lt
+  (#concl
+    (forall (n nat) (forall (m nat)
+      (==> (nat.lt n m) (= (nat.div n m) 0)))))
+  (#by
+    (intro n m hlt)
+    (derive
+      (imp-elim
+        (imp-elim
+          (imp-elim
+            (imp-elim
+              (all-elim 0 (all-elim (nat.div n m) (all-elim m (all-elim n (div.unique)))))
+              ;; q·m ≤ n
+              (imp-elim (all-elim m (all-elim n (nat.div.le)))
+                        (imp-elim (all-elim m (all-elim n (nat.ne_zero_of_lt)))
+                                  (assume (nat.lt n m)))))
+            ;; n < S(q)·m
+            (imp-elim (all-elim m (all-elim n (nat.div.lt)))
+                      (imp-elim (all-elim m (all-elim n (nat.ne_zero_of_lt)))
+                                (assume (nat.lt n m)))))
+          ;; 0·m ≤ n     (0·m = 0 ≤ n)
+          (eq-mp
+            (sym (cong-fn n (cong-arg nat.le (all-elim m (zero.mul)))))
+            (all-elim n (le.zero))))
+        ;; n < S(0)·m    (S(0)·m = m, and n < m)
+        (eq-mp
+          (cong-arg (nat.lt n)
+            (sym (trans (all-elim m (all-elim 0 (succ.mul)))
+                        (trans (cong-arg (nat.add m) (all-elim m (zero.mul)))
+                               (all-elim m (add.zero))))))
+          (assume (nat.lt n m)))))))
+
+;; ⊢ ∀a b c. a ≤ b ⟹ c+a ≤ c+b.  Left-monotonicity of `+` (missing from `nat.cov`):
+;; `(c+a)+(b−a) = c+(a+(b−a)) = c+b` (`add.assoc`/`le.add_sub`), then `le.add_r`.
+(#thm add.le_mono_l
+  (#concl
+    (forall (a nat) (forall (b nat) (forall (c nat)
+      (==> (nat.le a b) (nat.le (nat.add c a) (nat.add c b)))))))
+  (#by
+    (intro a b c h)
+    (derive
+      (eq-mp
+        (cong-arg (nat.le (nat.add c a))
+          (trans
+            (all-elim (nat.sub b a) (all-elim a (all-elim c (add.assoc))))
+            (cong-arg (nat.add c)
+              (imp-elim (all-elim b (all-elim a (le.add_sub))) (assume (nat.le a b))))))
+        (all-elim (nat.sub b a) (all-elim (nat.add c a) (le.add_r)))))))
+
+;; ⊢ ∀a b c. a < b ⟹ c+a < c+b.  Left-monotonicity of `+` for `<` (via `add.comm`
+;; and the right version `lt.add_mono_r`).
+(#thm add.lt_mono_l
+  (#concl
+    (forall (a nat) (forall (b nat) (forall (c nat)
+      (==> (nat.lt a b) (nat.lt (nat.add c a) (nat.add c b)))))))
+  (#by
+    (intro a b c h)
+    (derive
+      (eq-mp
+        (congr nat.lt
+          (all-elim c (all-elim a (add.comm)))
+          (all-elim c (all-elim b (add.comm))))
+        (eq-mp (sym (all-elim c (all-elim b (all-elim a (lt.add_mono_r)))))
+               (assume (nat.lt a b)))))))
+
+;; ⊢ ∀n m. ¬(m=0) ⟹ m ≤ n ⟹ nat.div n m = S(nat.div (n−m) m).
+;; The recurrence's step arm.  With `q' = (n−m)/m`, the witness `S q'` satisfies the
+;; bounds at `(n,m)`: `(S q')·m = m + q'·m ≤ m + (n−m) = n` and
+;; `n = m + (n−m) < m + (S q')·m = S(S q')·m`, using `nat.div.le/lt` at `(n−m, m)`,
+;; `succ.mul`, `le.add_sub`, and the `+`-monotonicities.  `div.unique` then identifies it.
+(#thm div.ge
+  (#concl
+    (forall (n nat) (forall (m nat)
+      (==> (not (= m 0))
+        (==> (nat.le m n)
+          (= (nat.div n m) (succ (nat.div (nat.sub n m) m))))))))
+  (#by
+    (intro n m hm hmn)
+    (derive
+      (imp-elim
+        (imp-elim
+          (imp-elim
+            (imp-elim
+              (all-elim (succ (nat.div (nat.sub n m) m))
+                (all-elim (nat.div n m) (all-elim m (all-elim n (div.unique)))))
+              ;; q·m ≤ n
+              (imp-elim (all-elim m (all-elim n (nat.div.le))) (assume (not (= m 0)))))
+            ;; n < S(q)·m
+            (imp-elim (all-elim m (all-elim n (nat.div.lt))) (assume (not (= m 0)))))
+          ;; (S q')·m ≤ n
+          (eq-mp
+            (congr nat.le
+              ;; m + q'·m = (S q')·m
+              (sym (all-elim m (all-elim (nat.div (nat.sub n m) m) (succ.mul))))
+              ;; m + (n−m) = n
+              (imp-elim (all-elim n (all-elim m (le.add_sub))) (assume (nat.le m n))))
+            ;; m + q'·m ≤ m + (n−m)
+            (imp-elim
+              (all-elim m (all-elim (nat.sub n m)
+                (all-elim (nat.mul (nat.div (nat.sub n m) m) m) (add.le_mono_l))))
+              ;; q'·m ≤ n−m
+              (imp-elim (all-elim m (all-elim (nat.sub n m) (nat.div.le)))
+                        (assume (not (= m 0)))))))
+        ;; n < S(S q')·m
+        (eq-mp
+          (congr nat.lt
+            ;; m + (n−m) = n
+            (imp-elim (all-elim n (all-elim m (le.add_sub))) (assume (nat.le m n)))
+            ;; m + (S q')·m = S(S q')·m
+            (sym (all-elim m (all-elim (succ (nat.div (nat.sub n m) m)) (succ.mul)))))
+          ;; m + (n−m) < m + (S q')·m
+          (imp-elim
+            (all-elim m (all-elim (nat.mul (succ (nat.div (nat.sub n m) m)) m)
+              (all-elim (nat.sub n m) (add.lt_mono_l))))
+            ;; (n−m) < (S q')·m
+            (imp-elim (all-elim m (all-elim (nat.sub n m) (nat.div.lt)))
+                      (assume (not (= m 0))))))))))
+
+(#export div.mul_le div.mod mod.lt mul.le_mono_r div.not_lt div.unique div.mul_cancel
+         nat.ne_zero_of_lt div.lt add.le_mono_l add.lt_mono_l div.ge)

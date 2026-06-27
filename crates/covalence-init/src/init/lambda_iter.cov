@@ -1,0 +1,308 @@
+;; lambda_iter — the deep embedding's induction substrate.
+;;
+;; The kernel's ONLY structural-induction primitive is `Thm::nat_induct`
+;; (induction over 0 / succ).  A deep embedding of λ_iter encodes every
+;; syntactic object — types, expressions, contexts, derivations — as a natural
+;; number *code* (see `lambda_iter.rs` for the Tarski-style code/decode scheme).
+;; "Induction over the structure of a type / a derivation" therefore has to be
+;; expressed as induction over the *value* of its code: a sub-object always has
+;; a strictly smaller code than the object containing it, so structural
+;; induction is exactly **course-of-values (strong) induction on `nat`** along
+;; `<`.
+;;
+;; This file derives that principle from the `0`/`succ` primitive plus the `<`
+;; order theory of `nat.cov`.  It is the single reusable lemma that every
+;; code-level metatheorem (subtyping reflexivity/transitivity, weakening,
+;; substitution — see `SKELETONS.md`) bottoms out in.
+
+(#import core)
+(#open core)
+(#import logic)
+(#open logic)        ;; truth, or-elim/intro, imp/not plumbing
+(#import nat)
+(#open nat)          ;; the `<`/`≤` order theory: not.lt_zero, lt.iff_succ_le,
+                     ;; le.succ_succ, le.iff_lt_or_eq, …
+(#import natrecfn)
+(#open natrecfn)     ;; `rec.holds.fn` — natRec equations at result type nat→'a
+
+;; ============================================================================
+;; Course-of-values (strong) induction on `nat`.
+;; ============================================================================
+;;
+;; The motive `P : nat → bool` ranges over an ARBITRARY predicate (it will be
+;; instantiated with `λc. WellFormedTypeCode c ⟹ …` and friends), so we
+;; quantify over it honestly with a higher-order `∀P`.
+
+;; Accumulator lemma: from the strong hypothesis, EVERY initial segment is
+;; covered.
+;;
+;;   ⊢ ∀P. (∀n. (∀m. m < n ⟹ P m) ⟹ P n)
+;;          ⟹ ∀n. ∀m. m < n ⟹ P m
+;;
+;; Proved by ORDINARY `nat`-induction on `n` (the kernel primitive), with the
+;; auxiliary motive `Q n := ∀m. m < n ⟹ P m`:
+;;   • base   Q 0   — vacuous: nothing is `< 0` (`not.lt_zero`).
+;;   • step   Q n ⟹ Q (S n)   — given `m < S n`, peel a successor
+;;     (`lt.iff_succ_le` then `le.succ_succ`) to `m ≤ n`, split it as
+;;     `m < n ∨ m = n` (`le.iff_lt_or_eq`); the left disjunct hits the IH
+;;     `Q n`, the right rewrites `P n` (got by feeding `Q n` to the strong
+;;     hypothesis at `n`) along `m = n`.
+(#thm strong.below
+  (#concl
+    (forall (P (fun nat bool))
+      (==> (forall (n nat)
+             (==> (forall (m nat) (==> (nat.lt m n) (app P m))) (app P n)))
+           (forall (n nat)
+             (forall (m nat) (==> (nat.lt m n) (app P m)))))))
+  (#by
+    (intro P Hs)
+    (induct n
+      ;; base: ∀m. m < 0 ⟹ P m — the antecedent `m < 0` is false.
+      (#by
+        (intro m hlt)
+        (derive
+          (false-elim (app P m)
+            (not-elim (all-elim m (not.lt_zero)) (assume (nat.lt m 0))))))
+      ;; step: IH `∀m. m < n ⟹ P m` ⊢ ∀m. m < S n ⟹ P m.
+      (#by
+        (intro m hlt)
+        (derive
+          (or-elim
+            ;; m < n  ∨  m = n   (from m < S n)
+            (eq-mp (all-elim n (all-elim m (le.iff_lt_or_eq)))
+              (eq-mp (all-elim n (all-elim m (le.succ_succ)))
+                (eq-mp (all-elim (succ n) (all-elim m (lt.iff_succ_le)))
+                       (assume (nat.lt m (succ n))))))
+            ;; case m < n : straight from the induction hypothesis Q n.
+            (imp-intro (nat.lt m n)
+              (imp-elim
+                (all-elim m
+                  (assume (forall (m nat) (==> (nat.lt m n) (app P m)))))
+                (assume (nat.lt m n))))
+            ;; case m = n : P n (= Hs n applied to Q n), transported along m = n.
+            (imp-intro (= m n)
+              (eq-mp (cong-arg P (sym (assume (= m n))))
+                (imp-elim
+                  (all-elim n
+                    (assume (forall (n nat)
+                      (==> (forall (m nat) (==> (nat.lt m n) (app P m)))
+                           (app P n)))))
+                  (assume
+                    (forall (m nat) (==> (nat.lt m n) (app P m)))))))))))))
+
+;; The principle itself:
+;;
+;;   ⊢ ∀P. (∀n. (∀m. m < n ⟹ P m) ⟹ P n) ⟹ ∀n. P n
+;;
+;; Pure plumbing on top of `strong.below`: for each `n`, feed the
+;; `strong.below`-supplied initial segment `∀m. m < n ⟹ P m` to the strong
+;; hypothesis at `n`.
+(#thm strong.induct
+  (#concl
+    (forall (P (fun nat bool))
+      (==> (forall (n nat)
+             (==> (forall (m nat) (==> (nat.lt m n) (app P m))) (app P n)))
+           (forall (n nat) (app P n)))))
+  (#by
+    (intro P Hs n)
+    (derive
+      (imp-elim
+        ;; Hs @ n :  (∀m. m < n ⟹ P m) ⟹ P n
+        (all-elim n
+          (assume (forall (n nat)
+            (==> (forall (m nat) (==> (nat.lt m n) (app P m))) (app P n)))))
+        ;; the initial segment ∀m. m < n ⟹ P m, from strong.below.
+        (all-elim n
+          (imp-elim
+            (all-elim P (strong.below))
+            (assume (forall (n nat)
+              (==> (forall (m nat) (==> (nat.lt m n) (app P m)))
+                   (app P n))))))))))
+
+;; ============================================================================
+;; Course-of-values recursion — the UNIQUENESS (determinacy) half.
+;; ============================================================================
+;;
+;; A *step functional* `F : nat → (nat → 'a) → 'a` computes a value from `n` and
+;; the recursive results below `n`. `F` is **below-`x` extensional** (`Hext`)
+;; when `F x p` depends only on `p`'s values strictly below `x`. A function `f`
+;; is an `F`-fixpoint when `∀n. f n = F n f` — a course-of-values recursive
+;; definition. This says any two such fixpoints coincide, so a CV-recursive
+;; definition is unambiguous (the determinacy a `WfTyCode`/`Typed`/`El`
+;; definition needs). Existence — the construction of a fixpoint — is the
+;; recursion dual proper; see `SKELETONS.md`.
+;;
+;;   ⊢ ∀F. (∀x p q. (∀m. m<x ⟹ p m = q m) ⟹ F x p = F x q)   -- Hext
+;;          ⟹ ∀f g. (∀n. f n = F n f) ⟹ (∀n. g n = F n g)
+;;                  ⟹ ∀n. f n = g n
+;;
+;; Directly by `strong.induct` at `P := λn. f n = g n`: at `n`, rewrite both
+;; sides to `F n f` / `F n g` (the fixpoint hyps), then `Hext` collapses them
+;; using the strong IH `∀m<n. f m = g m`.
+(#thm cv.unique
+  (#concl
+    (forall (F (fun nat (fun (fun nat 'a) 'a)))
+      (==> (forall (x nat) (forall (p (fun nat 'a)) (forall (q (fun nat 'a))
+             (==> (forall (m nat) (==> (nat.lt m x) (= (app p m) (app q m))))
+                  (= (app (app F x) p) (app (app F x) q))))))
+        (forall (f (fun nat 'a)) (forall (g (fun nat 'a))
+          (==> (forall (n nat) (= (app f n) (app (app F n) f)))
+            (==> (forall (n nat) (= (app g n) (app (app F n) g)))
+              (forall (n nat) (= (app f n) (app g n))))))))))
+  (#by
+    (intro F Hext f g Hf Hg)
+    (derive
+      (eq-mp
+        ;; ∀n. (P n) ⟶ ∀n. (f n = g n), stripping the motive β-redex.
+        (cong-arg (forall-op nat)
+          (abs-rule n nat
+            (beta-conv (app (lam (n nat) (= (app f n) (app g n))) n))))
+        (imp-elim
+          (all-elim (lam (n nat) (= (app f n) (app g n))) (strong.induct))
+          ;; strong step: ∀n. (∀m. m<n ⟹ P m) ⟹ P n
+          (all-intro n nat
+            (imp-intro
+              (forall (m nat) (==> (nat.lt m n)
+                                (app (lam (n nat) (= (app f n) (app g n))) m)))
+              ;; goal `P n`; prove `f n = g n` then re-wrap to the redex.
+              (eq-mp
+                (sym (beta-conv (app (lam (n nat) (= (app f n) (app g n))) n)))
+                (#comp (app f n)
+                  ;; f n = F n f
+                  (= (app (app F n) f)
+                     (all-elim n
+                       (assume (forall (n nat) (= (app f n) (app (app F n) f))))))
+                  ;; F n f = F n g, by Hext on the strong IH.
+                  (= (app (app F n) g)
+                     (imp-elim
+                       (all-elim g (all-elim f (all-elim n
+                         (assume (forall (x nat) (forall (p (fun nat 'a))
+                           (forall (q (fun nat 'a))
+                             (==> (forall (m nat)
+                                    (==> (nat.lt m x) (= (app p m) (app q m))))
+                                  (= (app (app F x) p) (app (app F x) q))))))))))
+                       (all-intro m nat
+                         (imp-intro (nat.lt m n)
+                           (eq-mp
+                             (beta-conv
+                               (app (lam (n nat) (= (app f n) (app g n))) m))
+                             (imp-elim
+                               (all-elim m
+                                 (assume (forall (m nat) (==> (nat.lt m n)
+                                   (app (lam (n nat) (= (app f n) (app g n))) m)))))
+                               (assume (nat.lt m n))))))))
+                  ;; F n g = g n
+                  (= (app g n)
+                     (sym (all-elim n
+                       (assume (forall (n nat)
+                         (= (app g n) (app (app F n) g))))))))))))))))
+
+;; ============================================================================
+;; Course-of-values recursion — EXISTENCE: infrastructure.
+;; ============================================================================
+;;
+;; The fixpoint is built by BOUNDED ITERATION. The approximation
+;;   B := natRec (λx. d) (λk g x. F x g) : nat → (nat → 'a)
+;; gives  B 0 = (λx. d)  and  B (S k) = (λx. F x (B k)) — `F` iterated `k`
+;; times from the seed `d`. Since `F` reads its argument only *below* `x`
+;; (`Hext`), `B j x` stabilises once `j > x`, and `f := λx. B (S x) x` is an
+;; `F`-fixpoint. The two pieces below are the infrastructure the construction
+;; rests on; the construction itself (`cv.key` stabilisation by `strong.induct`,
+;; then the fixpoint + `∃`-intro) is deferred — the function-valued term algebra
+;; is far less painful to drive from Rust than from raw `.cov`. See
+;; `SKELETONS.md`.
+
+;; The function-valued natRec equations (`B 0`, `B (S k)`), specialised from the
+;; `rec.holds.fn` given — the recursion the bounded iterator `B` runs on.
+(#thm cvrec.rec_zero
+  (#concl
+    (forall (z (fun nat 'a))
+      (forall (s (fun nat (fun (fun nat 'a) (fun nat 'a))))
+        (= (app (app (app (natrec-op (fun nat 'a)) z) s) 0) z))))
+  (#by
+    (intro z s)
+    (derive (and-elim-l (all-elim s (all-elim z (rec.holds.fn)))))))
+
+(#thm cvrec.rec_succ
+  (#concl
+    (forall (z (fun nat 'a))
+      (forall (s (fun nat (fun (fun nat 'a) (fun nat 'a))))
+        (forall (n nat)
+          (= (app (app (app (natrec-op (fun nat 'a)) z) s) (succ n))
+             (app (app s n)
+                  (app (app (app (natrec-op (fun nat 'a)) z) s) n)))))))
+  (#by
+    (intro z s n)
+    (derive
+      (all-elim n (and-elim-r (all-elim s (all-elim z (rec.holds.fn))))))))
+
+;; ⊢ ∀j. (j = 0) ∨ ∃k. j = S k.  Every nat is zero or a successor — used to
+;; expose the predecessor of a positive fuel in the deferred `cv.key` proof.
+;; Ordinary induction; IH unused.
+(#thm nat.zero_or_succ
+  (#concl (forall (j nat) (or (= j 0) (exists (k nat) (= j (succ k))))))
+  (#by
+    (induct j
+      (#by (derive (or-intro-l (exists (k nat) (= 0 (succ k))) (refl 0))))
+      (#by (derive (or-intro-r (= (succ j) 0)
+                     (exists-intro (lam (k nat) (= (succ j) (succ k))) j
+                       (eq-mp
+                         (sym (beta-conv
+                           (app (lam (k nat) (= (succ j) (succ k))) j)))
+                         (refl (succ j))))))))))
+
+;; ⊢ ∀m n. m < n ⟹ ∃k. n = S k.  A positive bound is a successor — exposes the
+;; predecessor `k` in `cv.key`'s strong-induction step.  Induction on n.
+(#thm nat.lt_pred
+  (#concl
+    (forall (m nat) (forall (n nat)
+      (==> (nat.lt m n) (exists (k nat) (= n (succ k)))))))
+  (#by
+    (intro m)
+    (induct n
+      (#by (intro h)
+        (derive
+          (false-elim (exists (k nat) (= 0 (succ k)))
+            (not-elim (all-elim m (not.lt_zero)) (assume (nat.lt m 0))))))
+      (#by (intro h)
+        (derive
+          (exists-intro (lam (k nat) (= (succ n) (succ k))) n
+            (eq-mp (sym (beta-conv (app (lam (k nat) (= (succ n) (succ k))) n)))
+                   (refl (succ n)))))))))
+
+;; ⊢ ∀m n. m < S n ⟹ m ≤ n.  (`m < Sn` = `Sm ≤ Sn` = `m ≤ n`.)
+(#thm nat.lt_succ_imp_le
+  (#concl (forall (m nat) (forall (n nat) (==> (nat.lt m (succ n)) (nat.le m n)))))
+  (#by
+    (intro m n h)
+    (derive
+      (eq-mp (all-elim n (all-elim m (le.succ_succ)))
+        (eq-mp (all-elim (succ n) (all-elim m (lt.iff_succ_le)))
+               (assume (nat.lt m (succ n))))))))
+
+;; ⊢ ∀a b c. a < b ⟹ b ≤ c ⟹ a < c.  Mixed transitivity (`Sa ≤ b ≤ c`).
+(#thm nat.lt_le_trans
+  (#concl (forall (a nat) (forall (b nat) (forall (c nat)
+            (==> (nat.lt a b) (==> (nat.le b c) (nat.lt a c)))))))
+  (#by
+    (intro a b c h1 h2)
+    (derive
+      (eq-mp (sym (all-elim c (all-elim a (lt.iff_succ_le))))
+        (imp-elim
+          (imp-elim (all-elim c (all-elim b (all-elim (succ a) (le.trans))))
+                    (eq-mp (all-elim b (all-elim a (lt.iff_succ_le)))
+                           (assume (nat.lt a b))))
+          (assume (nat.le b c)))))))
+
+;; ⊢ ∀k. k < S k.  (`k < Sk` = `Sk ≤ Sk`, by `le.refl`.)
+(#thm nat.lt_succ_self
+  (#concl (forall (k nat) (nat.lt k (succ k))))
+  (#by
+    (intro k)
+    (derive
+      (eq-mp (sym (all-elim (succ k) (all-elim k (lt.iff_succ_le))))
+             (all-elim (succ k) (le.refl))))))
+
+(#export strong.below strong.induct cv.unique
+         cvrec.rec_zero cvrec.rec_succ nat.zero_or_succ
+         nat.lt_pred nat.lt_succ_imp_le nat.lt_le_trans nat.lt_succ_self)

@@ -124,13 +124,23 @@ index](../../../../SKELETONS.md).
   - **`bytes`/`string` newtype-wrapped codec lemmas** — carrier-level lemmas proved,
     newtype-wrapped equational lemmas not all surfaced.
 
-- **Nat division / modulus theory** (`init/nat.rs`). Recursion equations + algebraic
-  laws done. Not yet proved — the **Euclidean division-algorithm facts**: `nat.div` is a
-  selector; transferring its bounds needs a recursive floor *witness* built by
-  strong/complete induction over the graph, which first needs strong induction derived
-  from `Thm::nat_induct`. Deferred until that machinery exists. Targets:
-  - `div_mod` — `n = (n/m)·m + (n mod m)`.
-  - `mod_lt` — `m ≠ 0 ⟹ n mod m < m`.
+- **Nat division / modulus theory** (`init/nat.rs`, `init/nat_div.{rs,cov}`).
+  Recursion equations + algebraic laws done. The **Euclidean division facts** are
+  in progress in `init/nat_div`, via the **foundation-invariant `cv_exists`
+  route** (build the recursive quotient function, not ε-skolemise a pointwise
+  existential — see the kernel `nat.div` redefinition skeleton). Done: the
+  arithmetic foundation (`nat.lt_or_ge`, `nat.pos_of_ne_zero`, `nat.lt_add_pos`,
+  `nat.sub_lt_self` — the well-foundedness measure), the `Hext` helpers
+  (`bool.cases`, `cond.cong_arm`), and the **recurrence**
+  (`cv_div_recurrence`: `⊢ ∃div. ∀n m. div n m = cond (m=0 ∨ n<m) 0 (S (div (n−m) m))`,
+  via `cv_exists` at the division step functional — the constructive, choice-free
+  division function) **and the `div.bounds`** themselves
+  (`m≠0 ⟹ div n m·m ≤ n < S(div n m)·m`, proved in `nat_div.cov` by `strong.induct`
+  on `n` through the recurrence). Remaining, in order:
+  - **transfer (transitional seam)** — `spec_ax(nat.div, div_fn)` lifts the bounds
+    to the ε-selector `nat.div`; removed once `nat.div` is recursive.
+  - **`div_mod`** — `n = (n/m)·m + (n mod m)` (via `le.add_sub` on the lower bound).
+  - **`mod_lt`** — `m ≠ 0 ⟹ n mod m < m` (from the upper bound).
   - the `div`/`mod` recurrences and `(a·b)/b = a` (`b ≠ 0`); the
     `shr a (S m) = a/2^m` bridge (`shr` defined through `nat.div`).
 
@@ -162,6 +172,22 @@ index](../../../../SKELETONS.md).
   instantiation in the proof language — the TFree-clash `cat`/`coprod` document); and full
   structural `tree`/`sexp` induction (the `tree-induct`/`sexp-induct` tactic) — all need
   the recursor's subtree-recovery identity + the `Wf` carve `init/sexpr.rs` defers.
+
+- **λ_iter deep embedding** (`init/lambda_iter.rs` + `.cov`, `init/cv_recursion.rs`).
+  Tarski-style nat-encoding documented; **proved**: course-of-values induction
+  (`strong.below`/`strong.induct`) and the full course-of-values *recursion*
+  theorem — uniqueness (`cv.unique`) + existence (`cv_recursion::cv_exists`,
+  `⊢ Hext F ⟹ ∃f. ∀n. f n = F n f`, by bounded iteration) — plus the supporting
+  function-valued `natRec` equations and `nat` order helpers. Deferred:
+  - **Encoding functions** — injective pairing `⟨·,·⟩`/`π₁`/`π₂` + strict-decrease
+    laws, constructor `tag` constants, and `WfTyCode`/`WfExCode`/`WfCtxCode` +
+    `El_*`, now definable via `cv_exists` (course-of-values recursion on codes).
+  - **Reified judgements** — `Typed : nat→nat→nat→bool` (least relation closed
+    under coded Fig 2 rules) and `Checks` (derivation-code well-formedness).
+  - **Metatheorems** — subtyping reflexivity/transitivity (type fragment, no
+    binders — the natural first target), then weakening (2.1.1.2.1) and
+    substitution (2.1.1.2.2), each by `strong.induct` on the derivation code.
+  - SSA⇔λ_iter equivalence is out of scope here (deferred separately).
 
 ## `nat.thy` — carrier-generic model deferred
 

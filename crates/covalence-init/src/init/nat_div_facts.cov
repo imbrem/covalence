@@ -20,17 +20,39 @@
 (#import divfacts)
 (#open divfacts)       ;; nat.div.zero / nat.div.le / nat.div.lt / nat.mod.def
 
-;; ⊢ ∀n m. ¬(m=0) ⟹ nat.div n m · m + nat.mod n m = n.
-;; The division identity: `q·m + r = n` with `q = n/m`, `r = n mod m`.  From the
-;; lower bound `q·m ≤ n` and `le.add_sub` (`a≤b ⟹ a+(b−a)=b`); `nat.mod.def`
-;; rewrites `r` to `n − q·m`.
+;; ⊢ ∀n m. nat.div n m · m ≤ n.  The lower bound for *all* `m`: when `m≠0` it is
+;; `nat.div.le`; when `m=0`, `q·0 = 0 ≤ n` (`mul.zero` / `le.zero`).
+(#thm div.mul_le
+  (#concl
+    (forall (n nat) (forall (m nat)
+      (nat.le (nat.mul (nat.div n m) m) n))))
+  (#by
+    (intro n m)
+    (derive
+      (or-elim (tauto (or (= m 0) (not (= m 0))))
+        ;; m = 0:  q·m = q·0 = 0 ≤ n.
+        (imp-intro (= m 0)
+          (eq-mp
+            (sym (cong-fn n (cong-arg nat.le
+              (trans (cong-arg (nat.mul (nat.div n m)) (assume (= m 0)))
+                     (all-elim (nat.div n m) (mul.zero))))))
+            (all-elim n (le.zero))))
+        ;; m ≠ 0:  the transferred lower bound `nat.div.le`.
+        (imp-intro (not (= m 0))
+          (imp-elim (all-elim m (all-elim n (nat.div.le)))
+                    (assume (not (= m 0)))))))))
+
+;; ⊢ ∀n m. nat.div n m · m + nat.mod n m = n.
+;; The division identity: `q·m + r = n` with `q = n/m`, `r = n mod m` — holds
+;; unconditionally (for `m=0`: `0·0 + (n−0) = n`).  From the lower bound `q·m ≤ n`
+;; (`div.mul_le`) and `le.add_sub` (`a≤b ⟹ a+(b−a)=b`); `nat.mod.def` rewrites `r`
+;; to `n − q·m`.
 (#thm div.mod
   (#concl
     (forall (n nat) (forall (m nat)
-      (==> (not (= m 0))
-        (= (nat.add (nat.mul (nat.div n m) m) (nat.mod n m)) n)))))
+      (= (nat.add (nat.mul (nat.div n m) m) (nat.mod n m)) n))))
   (#by
-    (intro n m h)
+    (intro n m)
     (derive
       (trans
         ;; q·m + (n mod m) = q·m + (n − q·m)   (rewrite `n mod m` by its def)
@@ -39,7 +61,7 @@
         ;; q·m + (n − q·m) = n                 (le.add_sub on the lower bound)
         (imp-elim
           (all-elim n (all-elim (nat.mul (nat.div n m) m) (le.add_sub)))
-          (imp-elim (all-elim m (all-elim n (nat.div.le))) (assume (not (= m 0)))))))))
+          (all-elim m (all-elim n (div.mul_le))))))))
 
 ;; ⊢ ∀n m. ¬(m=0) ⟹ nat.mod n m < m.
 ;; The remainder bound.  From the upper bound `n < S(q)·m = m + q·m` and the
@@ -73,8 +95,7 @@
             (cong-fn (nat.add m (nat.mul (nat.div n m) m))
               (cong-arg nat.lt
                 ;; n = q·m + r       (sym of div.mod)
-                (sym (imp-elim (all-elim m (all-elim n (div.mod)))
-                               (assume (not (= m 0)))))))
+                (sym (all-elim m (all-elim n (div.mod))))))
             ;; n < m + q·m           (upper bound, with S(q)·m rewritten)
             (eq-mp
               (cong-arg (nat.lt n)
@@ -83,4 +104,4 @@
               (imp-elim (all-elim m (all-elim n (nat.div.lt)))
                         (assume (not (= m 0)))))))))))
 
-(#export div.mod mod.lt)
+(#export div.mul_le div.mod mod.lt)

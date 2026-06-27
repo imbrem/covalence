@@ -451,12 +451,13 @@ crate::cov_theory! {
         import "natrec" = crate::init::nat::natrec_env();
         import "nat" = crate::init::nat::cov::env();
         import "divfacts" = super::nat_div_facts_env();
+        "div.mul_le" => pub fn div_mul_le;
         "div.mod" => pub fn div_mod;
         "mod.lt"  => pub fn mod_lt;
     }
 }
 
-pub use facts::{div_mod, mod_lt};
+pub use facts::{div_mod, div_mul_le, mod_lt};
 
 #[cfg(test)]
 mod tests {

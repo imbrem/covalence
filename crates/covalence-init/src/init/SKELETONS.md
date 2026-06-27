@@ -126,12 +126,14 @@ index](../../../../SKELETONS.md).
 
 - **Nat division / modulus theory** (`init/nat.rs`, `init/nat_div.{rs,cov,_facts.cov}`).
   The Euclidean facts are **proved** via the foundation-invariant `cv_exists`
-  route and transferred to the `nat.div`/`nat.mod` selectors: `div.mod`
-  (`m≠0 ⟹ (n/m)·m + n mod m = n`) and `mod.lt` (`m≠0 ⟹ n mod m < m`). Remaining:
-  - **unconditional `div.mod`** — extend to `m=0` (`n/0=0`, `n mod 0 = n`); needs
-    `(n/m)·m ≤ n` for *all* `m` (a `nat.zero_or_succ` case split feeding `mul.zero`).
-  - the `div`/`mod` recurrences and `(a·b)/b = a` (`b ≠ 0`); the
-    `shr a (S m) = a/2^m` bridge (`shr` defined through `nat.div`).
+  route and transferred to the `nat.div`/`nat.mod` selectors: `div.mul_le`
+  (`(n/m)·m ≤ n`, all `m`), `div.mod` (`(n/m)·m + n mod m = n`, unconditional), and
+  `mod.lt` (`m≠0 ⟹ n mod m < m`). Remaining:
+  - the `div`/`mod` recurrences (`n/m = if m=0∨n<m then 0 else S((n−m)/m)`) and
+    `(a·b)/b = a` (`b ≠ 0`) — both want a **uniqueness** lemma (the bounds pin a
+    unique quotient), which needs mul-monotonicity (`a≤b ⟹ a·m ≤ b·m`, derivable
+    from `le.add_sub`/`distrib.r`/`le.add_r`); not yet in `nat.cov`.
+  - the `shr a (S m) = a/2^m` bridge (`shr` defined through `nat.div`).
   - the `spec_ax` **seam itself** (`nat_div_spec`) disappears once `nat.div` is
     *defined* by the recursion — see the kernel `nat.div` redefinition skeleton in
     `covalence-core/SKELETONS.md`.

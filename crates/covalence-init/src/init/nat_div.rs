@@ -265,6 +265,151 @@ fn beta_nf_to(pred: &Term, witness: &Term, body: Thm) -> Result<Thm> {
     crate::init::eq::beta_expand(pred, witness.clone(), body)
 }
 
+// ============================================================================
+// Transfer to the ε-selector `nat.div` (the transitional seam)
+// ============================================================================
+//
+// `nat.div := ε d. P d`, where `P` is the selector predicate
+//   P d := ∀n m. (m=0 ⟹ d n m = 0) ∧ (¬(m=0) ⟹ d n m·m ≤ n ∧ n < S(d n m)·m).
+// The constructive `cv` route proved `∃div. REC(div)` (`cv_div_recurrence`) and,
+// about that recurrence, `div.zero`/`div.bounds`. Composing them gives `∃d. P d`,
+// and the Hilbert ε-axiom (`Thm::spec_ax`) carries `P` onto `nat.div` itself —
+// the seam that disappears once `nat.div` is *defined* by the recursion (see the
+// `nat.div` redefinition skeleton in `covalence-core/SKELETONS.md`).
+
+/// `⊢ ∃d. P d` — the `nat.div` selector predicate is satisfiable, witnessed by
+/// the constructive division function. `pred` is `nat.div`'s predicate `P`
+/// (extracted from `spec_ax`, so the existential matches it syntactically).
+fn exists_div_spec(pred: &Term) -> Result<Thm> {
+    let g = g_ty();
+    let div = Term::free("div", g.clone());
+
+    // The recurrence existential and its predicate `REC` (a λ).
+    let rec_ex = cv_div_recurrence()?; // ⊢ ∃div. REC div
+    let rec_pred = rec_ex
+        .concl()
+        .as_app()
+        .expect("∃ is an application")
+        .1
+        .clone();
+    let rec_redex = Term::app(rec_pred, div.clone()); // (REC) div  — β-redex
+    let rec_reduced = crate::init::eq::beta_reduce(Thm::assume(rec_redex.clone())?)?;
+
+    // Discharge the recurrence into the two fact families (still under `rec_redex`).
+    let dz = div_zero().imp_elim(rec_reduced.clone())?; // {rec} ⊢ ∀n m. m=0 ⟹ div n m=0
+    let db = div_bounds().imp_elim(rec_reduced)?; // {rec} ⊢ ∀n m. ¬(m=0) ⟹ (le ∧ lt)
+
+    // Recombine into the predicate body `∀n m. (case_zero ∧ case_pos)` = P[div].
+    let (n, m) = (nvar("n"), nvar("m"));
+    let case_zero = dz.all_elim(n.clone())?.all_elim(m.clone())?;
+    let case_pos = db.all_elim(n.clone())?.all_elim(m.clone())?;
+    let body = case_zero
+        .and_intro(case_pos)?
+        .all_intro("m", nat())?
+        .all_intro("n", nat())?; // {rec} ⊢ P[div]
+
+    // β-expand to `P div`, introduce the existential, discharge `rec`, generalise.
+    let p_div = beta_nf_to(pred, &div, body)?; // {rec} ⊢ P div
+    let step = exists_intro(pred.clone(), div.clone(), p_div)? // {rec} ⊢ ∃d. P d
+        .imp_intro(&rec_redex)? // ⊢ (REC) div ⟹ ∃d. P d
+        .all_intro("div", g)?; // ⊢ ∀div. (REC) div ⟹ ∃d. P d
+    let exists_d_p = Term::app(defs::exists(g_ty()), pred.clone());
+    exists_elim(rec_ex, exists_d_p, step)
+}
+
+/// `⊢ (m=0 ⟹ nat.div n m = 0) ∧ (¬(m=0) ⟹ nat.div n m·m ≤ n ∧ n < S(nat.div n m)·m)`
+/// universally over `n, m` — `nat.div`'s defining clauses, proved (not postulated)
+/// by transferring the constructive witness through the Hilbert ε-axiom.
+pub fn nat_div_spec() -> Result<Thm> {
+    let g = g_ty();
+    let d0 = Term::free("d", g.clone());
+
+    // spec_ax: ⊢ P d0 ⟹ P nat.div. Extract the predicate `P` from the antecedent.
+    let imp = Thm::spec_ax(defs::nat_div(), d0.clone())?;
+    let (lhs, _p_natdiv) = imp.concl().as_app().expect("⟹ is an application");
+    let p_d0 = lhs.as_app().expect("(⟹ _) is an application").1.clone();
+    let pred = p_d0.as_app().expect("P d0 is an application").0.clone();
+
+    // ∃d. P d, then the ε-axiom carries P onto nat.div.
+    let exists_d_p = exists_div_spec(&pred)?;
+    let p_natdiv_redex = Term::app(pred.clone(), defs::nat_div());
+    let step = imp.all_intro("d", g)?; // ⊢ ∀d. P d ⟹ P nat.div
+    let p_natdiv = exists_elim(exists_d_p, p_natdiv_redex, step)?; // ⊢ P nat.div (β-redex)
+
+    // β-reduce `P nat.div` to its readable body.
+    Thm::beta_conv(p_natdiv.concl().clone())?.eq_mp(p_natdiv)
+}
+
+/// `⊢ ∀n m. m=0 ⟹ nat.div n m = 0` — the `m = 0` clause projected out of
+/// [`nat_div_spec`].
+pub fn nat_div_zero() -> Result<Thm> {
+    let (n, m) = (nvar("n"), nvar("m"));
+    nat_div_spec()?
+        .all_elim(n)?
+        .all_elim(m)?
+        .and_elim_l()?
+        .all_intro("m", nat())?
+        .all_intro("n", nat())
+}
+
+/// The `m ≠ 0` clause of [`nat_div_spec`], projecting the lower (`left`) or upper
+/// bound of the conjunction.
+fn nat_div_pos_part(left: bool) -> Result<Thm> {
+    let (n, m) = (nvar("n"), nvar("m"));
+    let case_pos = nat_div_spec()?.all_elim(n)?.all_elim(m)?.and_elim_r()?; // ¬(m=0) ⟹ (le ∧ lt)
+    let not_m0 = case_pos
+        .concl()
+        .as_app()
+        .and_then(|(f, _)| f.as_app())
+        .map(|(_, a)| a.clone())
+        .expect("case_pos is an implication");
+    let conj = case_pos.imp_elim(Thm::assume(not_m0.clone())?)?; // {¬(m=0)} ⊢ le ∧ lt
+    let part = if left {
+        conj.and_elim_l()?
+    } else {
+        conj.and_elim_r()?
+    };
+    part.imp_intro(&not_m0)?
+        .all_intro("m", nat())?
+        .all_intro("n", nat())
+}
+
+/// `⊢ ∀n m. ¬(m=0) ⟹ nat.div n m · m ≤ n` — the Euclidean lower bound.
+pub fn nat_div_le() -> Result<Thm> {
+    nat_div_pos_part(true)
+}
+
+/// `⊢ ∀n m. ¬(m=0) ⟹ n < S(nat.div n m) · m` — the Euclidean upper bound.
+pub fn nat_div_lt() -> Result<Thm> {
+    nat_div_pos_part(false)
+}
+
+/// `⊢ ∀n m. nat.mod n m = nat.sub n (nat.mul (nat.div n m) m)` — the `nat.mod`
+/// defining equation, surfaced as a lemma so `nat_div_facts.cov` can rewrite
+/// `nat.mod` without re-deriving the δ-unfold.
+pub fn nat_mod_def() -> Result<Thm> {
+    let (n, m) = (nvar("n"), nvar("m"));
+    let mod_nm = Term::app(Term::app(defs::nat_mod(), n), m);
+    let eq = crate::init::eq::delta_head(&mod_nm)?; // nat.mod n m = (λn m. …) n m
+    let rhs = eq.concl().as_app().expect("= is an application").1.clone();
+    eq.trans(beta_nf(rhs))? // nat.mod n m = nat.sub n (nat.mul (nat.div n m) m)
+        .all_intro("m", nat())?
+        .all_intro("n", nat())
+}
+
+/// The transferred `nat.div` selector facts as a script env: `nat.div.zero`,
+/// `nat.div.le`, `nat.div.lt` (over the *spec* `nat.div`, not a free `div`)
+/// plus `nat.mod.def`, imported by `nat_div_facts.cov` to prove `div_mod` /
+/// `mod_lt`.
+pub fn nat_div_facts_env() -> crate::script::Env {
+    let mut e = crate::script::Env::empty();
+    e.define_lemma("nat.div.zero", nat_div_zero().expect("nat.div.zero"));
+    e.define_lemma("nat.div.le", nat_div_le().expect("nat.div.le"));
+    e.define_lemma("nat.div.lt", nat_div_lt().expect("nat.div.lt"));
+    e.define_lemma("nat.mod.def", nat_mod_def().expect("nat.mod.def"));
+    e
+}
+
 crate::cov_theory! {
     /// Arithmetic helper lemmas for the division development.
     pub mod cov from "nat_div.cov" {
@@ -284,13 +429,34 @@ crate::cov_theory! {
         "bool.eqf"            => pub fn bool_eqf;
         "or.true_r"           => pub fn or_true_r;
         "or.false_l"          => pub fn or_false_l;
+        // The recurrence-parameterised division facts (free `div`), consumed by
+        // the `spec_ax` transfer below.
+        "div.zero"            => pub fn div_zero;
+        "div.bounds"          => pub fn div_bounds;
     }
 }
 
 pub use cov::{
-    bool_cases, bool_eqf, bool_eqt, cond_cong_arm, nat_lt_add_pos, nat_lt_or_ge,
-    nat_pos_of_ne_zero, nat_sub_lt_self, or_false_l, or_true_r,
+    bool_cases, bool_eqf, bool_eqt, cond_cong_arm, div_bounds, div_zero, nat_lt_add_pos,
+    nat_lt_or_ge, nat_pos_of_ne_zero, nat_sub_lt_self, or_false_l, or_true_r,
 };
+
+crate::cov_theory! {
+    /// The headline Euclidean facts over `nat.div` / `nat.mod` — the division
+    /// identity (`div.mod`) and the remainder bound (`mod.lt`) — built on the
+    /// `spec_ax`-transferred selector facts ([`nat_div_facts_env`]).
+    pub mod facts from "nat_div_facts.cov" {
+        import "core" = crate::script::Env::core();
+        import "logic" = crate::init::logic::cov::env();
+        import "natrec" = crate::init::nat::natrec_env();
+        import "nat" = crate::init::nat::cov::env();
+        import "divfacts" = super::nat_div_facts_env();
+        "div.mod" => pub fn div_mod;
+        "mod.lt"  => pub fn mod_lt;
+    }
+}
+
+pub use facts::{div_mod, mod_lt};
 
 #[cfg(test)]
 mod tests {
@@ -309,5 +475,22 @@ mod tests {
     fn cv_div_recurrence_proves() {
         let thm = super::cv_div_recurrence().expect("cv_div_recurrence");
         assert!(thm.hyps().is_empty(), "cv_div_recurrence should be closed");
+    }
+
+    /// The selector spec transferred to `nat.div` itself (the `spec_ax` seam).
+    #[test]
+    fn nat_div_spec_proves() {
+        let thm = super::nat_div_spec().expect("nat_div_spec");
+        assert!(thm.hyps().is_empty(), "nat_div_spec should be closed");
+    }
+
+    /// The division identity `div.mod` and remainder bound `mod.lt`.
+    #[test]
+    fn div_mod_and_mod_lt_prove() {
+        assert!(
+            super::div_mod().hyps().is_empty(),
+            "div.mod should be closed"
+        );
+        assert!(super::mod_lt().hyps().is_empty(), "mod.lt should be closed");
     }
 }

@@ -124,25 +124,17 @@ index](../../../../SKELETONS.md).
   - **`bytes`/`string` newtype-wrapped codec lemmas** — carrier-level lemmas proved,
     newtype-wrapped equational lemmas not all surfaced.
 
-- **Nat division / modulus theory** (`init/nat.rs`, `init/nat_div.{rs,cov}`).
-  Recursion equations + algebraic laws done. The **Euclidean division facts** are
-  in progress in `init/nat_div`, via the **foundation-invariant `cv_exists`
-  route** (build the recursive quotient function, not ε-skolemise a pointwise
-  existential — see the kernel `nat.div` redefinition skeleton). Done: the
-  arithmetic foundation (`nat.lt_or_ge`, `nat.pos_of_ne_zero`, `nat.lt_add_pos`,
-  `nat.sub_lt_self` — the well-foundedness measure), the `Hext` helpers
-  (`bool.cases`, `cond.cong_arm`), and the **recurrence**
-  (`cv_div_recurrence`: `⊢ ∃div. ∀n m. div n m = cond (m=0 ∨ n<m) 0 (S (div (n−m) m))`,
-  via `cv_exists` at the division step functional — the constructive, choice-free
-  division function) **and the `div.bounds`** themselves
-  (`m≠0 ⟹ div n m·m ≤ n < S(div n m)·m`, proved in `nat_div.cov` by `strong.induct`
-  on `n` through the recurrence). Remaining, in order:
-  - **transfer (transitional seam)** — `spec_ax(nat.div, div_fn)` lifts the bounds
-    to the ε-selector `nat.div`; removed once `nat.div` is recursive.
-  - **`div_mod`** — `n = (n/m)·m + (n mod m)` (via `le.add_sub` on the lower bound).
-  - **`mod_lt`** — `m ≠ 0 ⟹ n mod m < m` (from the upper bound).
+- **Nat division / modulus theory** (`init/nat.rs`, `init/nat_div.{rs,cov,_facts.cov}`).
+  The Euclidean facts are **proved** via the foundation-invariant `cv_exists`
+  route and transferred to the `nat.div`/`nat.mod` selectors: `div.mod`
+  (`m≠0 ⟹ (n/m)·m + n mod m = n`) and `mod.lt` (`m≠0 ⟹ n mod m < m`). Remaining:
+  - **unconditional `div.mod`** — extend to `m=0` (`n/0=0`, `n mod 0 = n`); needs
+    `(n/m)·m ≤ n` for *all* `m` (a `nat.zero_or_succ` case split feeding `mul.zero`).
   - the `div`/`mod` recurrences and `(a·b)/b = a` (`b ≠ 0`); the
     `shr a (S m) = a/2^m` bridge (`shr` defined through `nat.div`).
+  - the `spec_ax` **seam itself** (`nat_div_spec`) disappears once `nat.div` is
+    *defined* by the recursion — see the kernel `nat.div` redefinition skeleton in
+    `covalence-core/SKELETONS.md`.
 
 - **Reified object logic (S-expr → prop logic)** (`init/sexpr.rs` + `init/prop.rs`,
   `notes/metatheory.md` §8). Datatypes, recursors, soundness, rule induction, and the

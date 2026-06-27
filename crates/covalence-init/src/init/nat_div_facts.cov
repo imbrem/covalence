@@ -1,0 +1,86 @@
+;; ===========================================================================
+;; div_mod / mod_lt over the ε-selector `nat.div` (and `nat.mod`).
+;;
+;; The Euclidean bounds were proved *constructively* (no choice) about a
+;; `cv_exists`-built division function and transferred to the `nat.div` selector
+;; via the Hilbert ε-axiom (`nat_div.rs`); they arrive here as the given lemmas
+;; `nat.div.le` / `nat.div.lt` (the `m≠0` bounds), `nat.div.zero`, and the
+;; `nat.mod` defining equation `nat.mod.def`.  On top we get the two headline
+;; facts: the division/remainder identity and the remainder bound.
+;; ===========================================================================
+
+(#import core)
+(#open core)
+(#import logic)
+(#open logic)
+(#import natrec)
+(#open natrec)         ;; succ.mul
+(#import nat)
+(#open nat)
+(#import divfacts)
+(#open divfacts)       ;; nat.div.zero / nat.div.le / nat.div.lt / nat.mod.def
+
+;; ⊢ ∀n m. ¬(m=0) ⟹ nat.div n m · m + nat.mod n m = n.
+;; The division identity: `q·m + r = n` with `q = n/m`, `r = n mod m`.  From the
+;; lower bound `q·m ≤ n` and `le.add_sub` (`a≤b ⟹ a+(b−a)=b`); `nat.mod.def`
+;; rewrites `r` to `n − q·m`.
+(#thm div.mod
+  (#concl
+    (forall (n nat) (forall (m nat)
+      (==> (not (= m 0))
+        (= (nat.add (nat.mul (nat.div n m) m) (nat.mod n m)) n)))))
+  (#by
+    (intro n m h)
+    (derive
+      (trans
+        ;; q·m + (n mod m) = q·m + (n − q·m)   (rewrite `n mod m` by its def)
+        (cong-arg (nat.add (nat.mul (nat.div n m) m))
+          (all-elim m (all-elim n (nat.mod.def))))
+        ;; q·m + (n − q·m) = n                 (le.add_sub on the lower bound)
+        (imp-elim
+          (all-elim n (all-elim (nat.mul (nat.div n m) m) (le.add_sub)))
+          (imp-elim (all-elim m (all-elim n (nat.div.le))) (assume (not (= m 0)))))))))
+
+;; ⊢ ∀n m. ¬(m=0) ⟹ nat.mod n m < m.
+;; The remainder bound.  From the upper bound `n < S(q)·m = m + q·m` and the
+;; identity `q·m + r = n`: `q·m + r < m + q·m`, then cancel `q·m` (`lt.add_mono_r`).
+(#thm mod.lt
+  (#concl
+    (forall (n nat) (forall (m nat)
+      (==> (not (= m 0)) (nat.lt (nat.mod n m) m)))))
+  (#by
+    (intro n m h)
+    (derive
+      (eq-mp
+        ;; (q·m + r < q·m + m) = ((n mod m) < m)
+        ;; left side rearranged to `r + q·m < m + q·m`, then `lt.add_mono_r`.
+        (trans
+          (congr nat.lt
+            ;; q·m + r = r + q·m
+            (all-elim (nat.mod n m) (all-elim (nat.mul (nat.div n m) m) (add.comm)))
+            ;; q·m + m = m + q·m
+            (all-elim m (all-elim (nat.mul (nat.div n m) m) (add.comm))))
+          ;; (r + q·m < m + q·m) = (r < m)
+          (all-elim (nat.mul (nat.div n m) m)
+            (all-elim m (all-elim (nat.mod n m) (lt.add_mono_r)))))
+        ;; q·m + r < q·m + m
+        (eq-mp
+          ;; rewrite `m + q·m` → `q·m + m` on the right of `q·m + r < m + q·m`
+          (cong-arg (nat.lt (nat.add (nat.mul (nat.div n m) m) (nat.mod n m)))
+            (all-elim (nat.mul (nat.div n m) m) (all-elim m (add.comm))))
+          ;; q·m + r < m + q·m       (substitute n = q·m + r into n < m + q·m)
+          (eq-mp
+            (cong-fn (nat.add m (nat.mul (nat.div n m) m))
+              (cong-arg nat.lt
+                ;; n = q·m + r       (sym of div.mod)
+                (sym (imp-elim (all-elim m (all-elim n (div.mod)))
+                               (assume (not (= m 0)))))))
+            ;; n < m + q·m           (upper bound, with S(q)·m rewritten)
+            (eq-mp
+              (cong-arg (nat.lt n)
+                ;; S(q)·m = m + q·m
+                (all-elim m (all-elim (nat.div n m) (succ.mul))))
+              (imp-elim (all-elim m (all-elim n (nat.div.lt)))
+                        (assume (not (= m 0)))))))))))
+
+(#export div.mod mod.lt)

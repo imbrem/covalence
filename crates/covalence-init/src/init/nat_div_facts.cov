@@ -104,4 +104,140 @@
               (imp-elim (all-elim m (all-elim n (nat.div.lt)))
                         (assume (not (= m 0)))))))))))
 
-(#export div.mul_le div.mod mod.lt)
+;; ===========================================================================
+;; Uniqueness of the quotient, and its consequences.
+;; ===========================================================================
+
+;; ⊢ ∀a b m. a ≤ b ⟹ a·m ≤ b·m.  Right-monotonicity of `·` (missing from
+;; `nat.cov`): `b·m = (a+(b−a))·m = a·m + (b−a)·m` (`le.add_sub`/`distrib.r`), and
+;; `a·m ≤ a·m + (b−a)·m` (`le.add_r`).
+(#thm mul.le_mono_r
+  (#concl
+    (forall (a nat) (forall (b nat) (forall (m nat)
+      (==> (nat.le a b) (nat.le (nat.mul a m) (nat.mul b m)))))))
+  (#by
+    (intro a b m h)
+    (derive
+      (eq-mp
+        (cong-arg (nat.le (nat.mul a m))
+          (sym
+            (trans
+              ;; b·m = (a+(b−a))·m
+              (cong-fn m (cong-arg nat.mul
+                (sym (imp-elim (all-elim b (all-elim a (le.add_sub)))
+                               (assume (nat.le a b))))))
+              ;; (a+(b−a))·m = a·m + (b−a)·m
+              (all-elim m (all-elim (nat.sub b a) (all-elim a (distrib.r)))))))
+        ;; a·m ≤ a·m + (b−a)·m
+        (all-elim (nat.mul (nat.sub b a) m) (all-elim (nat.mul a m) (le.add_r)))))))
+
+;; ⊢ ∀n m q qq. n < S(q)·m ⟹ qq·m ≤ n ⟹ ¬(q < qq).  The bounds are asymmetric:
+;; if `q < qq` then `S q ≤ qq`, so `S(q)·m ≤ qq·m ≤ n`, contradicting `n < S(q)·m`.
+(#thm div.not_lt
+  (#concl
+    (forall (n nat) (forall (m nat) (forall (q nat) (forall (qq nat)
+      (==> (nat.lt n (nat.mul (succ q) m))
+        (==> (nat.le (nat.mul qq m) n)
+          (not (nat.lt q qq)))))))))
+  (#by
+    (intro n m q qq hlt hle)
+    (derive
+      (not-intro (imp-intro (nat.lt q qq)
+        (not-elim (all-elim n (lt.irrefl))
+          ;; n < n
+          (eq-mp (sym (all-elim n (all-elim n (lt.iff_succ_le))))
+            ;; S n ≤ n   (from  S n ≤ S(q)·m ≤ n)
+            (imp-elim
+              (imp-elim
+                (all-elim n (all-elim (nat.mul (succ q) m) (all-elim (succ n) (le.trans))))
+                ;; S n ≤ S(q)·m
+                (eq-mp (all-elim (nat.mul (succ q) m) (all-elim n (lt.iff_succ_le)))
+                       (assume (nat.lt n (nat.mul (succ q) m)))))
+              ;; S(q)·m ≤ n   (from  S(q)·m ≤ qq·m ≤ n)
+              (imp-elim
+                (imp-elim
+                  (all-elim n (all-elim (nat.mul qq m) (all-elim (nat.mul (succ q) m) (le.trans))))
+                  ;; S(q)·m ≤ qq·m
+                  (imp-elim (all-elim m (all-elim qq (all-elim (succ q) (mul.le_mono_r))))
+                    ;; S q ≤ qq
+                    (eq-mp (all-elim qq (all-elim q (lt.iff_succ_le))) (assume (nat.lt q qq)))))
+                (assume (nat.le (nat.mul qq m) n)))))))))))
+
+;; ⊢ ∀n m q qq. q·m ≤ n ⟹ n < S(q)·m ⟹ qq·m ≤ n ⟹ n < S(qq)·m ⟹ q = qq.
+;; Uniqueness of the Euclidean quotient: trichotomy on `q`/`qq`, both strict cases
+;; ruled out by `div.not_lt`.
+(#thm div.unique
+  (#concl
+    (forall (n nat) (forall (m nat) (forall (q nat) (forall (qq nat)
+      (==> (nat.le (nat.mul q m) n)
+        (==> (nat.lt n (nat.mul (succ q) m))
+          (==> (nat.le (nat.mul qq m) n)
+            (==> (nat.lt n (nat.mul (succ qq) m))
+              (= q qq))))))))))
+  (#by
+    (intro n m q qq h1 h2 h3 h4)
+    (derive
+      (or-elim (all-elim qq (all-elim q (lt.trichotomy)))
+        ;; q < qq — impossible
+        (imp-intro (nat.lt q qq)
+          (false-elim (= q qq)
+            (not-elim
+              (imp-elim
+                (imp-elim (all-elim qq (all-elim q (all-elim m (all-elim n (div.not_lt)))))
+                          (assume (nat.lt n (nat.mul (succ q) m))))
+                (assume (nat.le (nat.mul qq m) n)))
+              (assume (nat.lt q qq)))))
+        (imp-intro (or (= q qq) (nat.lt qq q))
+          (or-elim (assume (or (= q qq) (nat.lt qq q)))
+            ;; q = qq
+            (imp-intro (= q qq) (assume (= q qq)))
+            ;; qq < q — impossible
+            (imp-intro (nat.lt qq q)
+              (false-elim (= q qq)
+                (not-elim
+                  (imp-elim
+                    (imp-elim (all-elim q (all-elim qq (all-elim m (all-elim n (div.not_lt)))))
+                              (assume (nat.lt n (nat.mul (succ qq) m))))
+                    (assume (nat.le (nat.mul q m) n)))
+                  (assume (nat.lt qq q)))))))))))
+
+;; ⊢ ∀a b. ¬(b=0) ⟹ nat.div (a·b) b = a.  `(a·b)/b = a`: both `a` and the
+;; quotient satisfy the bounds at `(a·b, b)` (`a·b ≤ a·b < S(a)·b = b + a·b`,
+;; using `0 < b`), so `div.unique` identifies them.
+(#thm div.mul_cancel
+  (#concl
+    (forall (a nat) (forall (b nat)
+      (==> (not (= b 0))
+        (= (nat.div (nat.mul a b) b) a)))))
+  (#by
+    (intro a b h)
+    (derive
+      (imp-elim
+        (imp-elim
+          (imp-elim
+            (imp-elim
+              (all-elim a (all-elim (nat.div (nat.mul a b) b)
+                (all-elim b (all-elim (nat.mul a b) (div.unique)))))
+              ;; q·b ≤ a·b
+              (imp-elim (all-elim b (all-elim (nat.mul a b) (nat.div.le)))
+                        (assume (not (= b 0)))))
+            ;; a·b < S(q)·b
+            (imp-elim (all-elim b (all-elim (nat.mul a b) (nat.div.lt)))
+                      (assume (not (= b 0)))))
+          ;; a·b ≤ a·b
+          (all-elim (nat.mul a b) (le.refl)))
+        ;; a·b < S(a)·b
+        (eq-mp
+          ;; (a·b < b + a·b) = (a·b < S(a)·b)
+          (cong-arg (nat.lt (nat.mul a b))
+            (sym (all-elim b (all-elim a (succ.mul)))))
+          (eq-mp
+            ;; (0 + a·b < b + a·b) = (a·b < b + a·b)
+            (cong-fn (nat.add b (nat.mul a b))
+              (cong-arg nat.lt (all-elim (nat.mul a b) (zero.add))))
+            (eq-mp
+              ;; (0 < b) = (0 + a·b < b + a·b)
+              (sym (all-elim (nat.mul a b) (all-elim b (all-elim 0 (lt.add_mono_r)))))
+              (imp-elim (all-elim b (nat.pos_of_ne_zero)) (assume (not (= b 0)))))))))))
+
+(#export div.mul_le div.mod mod.lt mul.le_mono_r div.not_lt div.unique div.mul_cancel)

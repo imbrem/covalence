@@ -407,6 +407,7 @@ pub fn nat_div_facts_env() -> crate::script::Env {
     e.define_lemma("nat.div.le", nat_div_le().expect("nat.div.le"));
     e.define_lemma("nat.div.lt", nat_div_lt().expect("nat.div.lt"));
     e.define_lemma("nat.mod.def", nat_mod_def().expect("nat.mod.def"));
+    e.define_lemma("nat.pos_of_ne_zero", nat_pos_of_ne_zero());
     e
 }
 
@@ -454,10 +455,12 @@ crate::cov_theory! {
         "div.mul_le" => pub fn div_mul_le;
         "div.mod" => pub fn div_mod;
         "mod.lt"  => pub fn mod_lt;
+        "div.unique" => pub fn div_unique;
+        "div.mul_cancel" => pub fn div_mul_cancel;
     }
 }
 
-pub use facts::{div_mod, div_mul_le, mod_lt};
+pub use facts::{div_mod, div_mul_cancel, div_mul_le, div_unique, mod_lt};
 
 #[cfg(test)]
 mod tests {
@@ -493,5 +496,18 @@ mod tests {
             "div.mod should be closed"
         );
         assert!(super::mod_lt().hyps().is_empty(), "mod.lt should be closed");
+    }
+
+    /// Quotient uniqueness and `(a·b)/b = a`.
+    #[test]
+    fn div_unique_and_mul_cancel_prove() {
+        assert!(
+            super::div_unique().hyps().is_empty(),
+            "div.unique should be closed"
+        );
+        assert!(
+            super::div_mul_cancel().hyps().is_empty(),
+            "div.mul_cancel should be closed"
+        );
     }
 }

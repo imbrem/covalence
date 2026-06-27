@@ -128,11 +128,12 @@ index](../../../../SKELETONS.md).
   The Euclidean facts are **proved** via the foundation-invariant `cv_exists`
   route and transferred to the `nat.div`/`nat.mod` selectors: `div.mul_le`
   (`(n/m)·m ≤ n`, all `m`), `div.mod` (`(n/m)·m + n mod m = n`, unconditional), and
-  `mod.lt` (`m≠0 ⟹ n mod m < m`). Remaining:
-  - the `div`/`mod` recurrences (`n/m = if m=0∨n<m then 0 else S((n−m)/m)`) and
-    `(a·b)/b = a` (`b ≠ 0`) — both want a **uniqueness** lemma (the bounds pin a
-    unique quotient), which needs mul-monotonicity (`a≤b ⟹ a·m ≤ b·m`, derivable
-    from `le.add_sub`/`distrib.r`/`le.add_r`); not yet in `nat.cov`.
+  `mod.lt` (`m≠0 ⟹ n mod m < m`). Quotient uniqueness (`div.unique`, via
+  `mul.le_mono_r` + trichotomy) and `(a·b)/b = a` (`div.mul_cancel`) are done.
+  Remaining:
+  - the `div`/`mod` recurrences (`n/m = if m=0∨n<m then 0 else S((n−m)/m)`) — by
+    `div.unique`, exhibiting the witness (`0` when `n<m`; `S((n−m)/m)` when `m≤n`,
+    its bounds from `nat.div.le/lt` at `(n−m,m)` via `le.add_sub`/`succ.mul`).
   - the `shr a (S m) = a/2^m` bridge (`shr` defined through `nat.div`).
   - the `spec_ax` **seam itself** (`nat_div_spec`) disappears once `nat.div` is
     *defined* by the recursion — see the kernel `nat.div` redefinition skeleton in

@@ -461,12 +461,14 @@ crate::cov_theory! {
         "div.ge" => pub fn div_ge;
         "div.div" => pub fn div_div;
         "shr.eq_div_pow" => pub fn shr_eq_div_pow;
+        "mod.lt_eq" => pub fn mod_lt_eq;
+        "mod.ge" => pub fn mod_ge;
     }
 }
 
 pub use facts::{
-    div_div, div_ge, div_lt, div_mod, div_mul_cancel, div_mul_le, div_unique, mod_lt,
-    shr_eq_div_pow,
+    div_div, div_ge, div_lt, div_mod, div_mul_cancel, div_mul_le, div_unique, mod_ge, mod_lt,
+    mod_lt_eq, shr_eq_div_pow,
 };
 
 #[cfg(test)]
@@ -541,5 +543,15 @@ mod tests {
             super::shr_eq_div_pow().hyps().is_empty(),
             "shr.eq_div_pow should be closed"
         );
+    }
+
+    /// The modulus recurrence (conditional equations).
+    #[test]
+    fn mod_recurrence_proves() {
+        assert!(
+            super::mod_lt_eq().hyps().is_empty(),
+            "mod.lt_eq should be closed"
+        );
+        assert!(super::mod_ge().hyps().is_empty(), "mod.ge should be closed");
     }
 }

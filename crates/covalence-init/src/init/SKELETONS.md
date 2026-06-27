@@ -131,10 +131,10 @@ index](../../../../SKELETONS.md).
   `mod.lt` (`m≠0 ⟹ n mod m < m`). Quotient uniqueness (`div.unique`),
   `(a·b)/b = a` (`div.mul_cancel`), the **division recurrence** as conditional
   equations (`div.lt`/`div.ge` + `nat.div.zero`), the iterated-division law
-  `(a/b)/c = a/(b·c)` (`div.div`), and the **`shr` bridge** `shr a m = a/2^m`
-  (`shr.eq_div_pow`) are done. Remaining:
-  - **mod recurrence** — `n<m ⟹ n mod m = n` and `m≤n ⟹ n mod m = (n−m) mod m`
-    (from `div.lt`/`div.ge` + `nat.mod.def`; the step needs `n−(m+x) = (n−m)−x`).
+  `(a/b)/c = a/(b·c)` (`div.div`), the **`shr` bridge** `shr a m = a/2^m`
+  (`shr.eq_div_pow`), and the **mod recurrence** (`mod.lt_eq`: `n<m ⟹ n mod m = n`;
+  `mod.ge`: `m≠0 ∧ m≤n ⟹ n mod m = (n−m) mod m`, via the `sub.add_r` sub-law) are
+  done. Remaining:
   - the `spec_ax` **seam itself** (`nat_div_spec`) — see the kernel `nat.div`
     redefinition skeleton in `covalence-core/SKELETONS.md`.
   - the `spec_ax` **seam itself** (`nat_div_spec`) disappears once `nat.div` is

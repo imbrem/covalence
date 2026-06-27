@@ -568,7 +568,81 @@
                   (all-elim 2 (all-elim (nat.pow 2 m) (mul.comm)))
                   (sym (all-elim m (all-elim 2 (pow.succ))))))))))))))
 
+;; ===========================================================================
+;; The modulus recurrence.
+;; ===========================================================================
+
+;; ⊢ ∀n a b. n − (a+b) = (n−a) − b.  Subtracting a sum is subtracting in turn
+;; (missing from `nat.cov`), by induction on `b` (`sub.succ`/`add.succ`).
+(#thm sub.add_r
+  (#concl
+    (forall (n nat) (forall (a nat) (forall (b nat)
+      (= (nat.sub n (nat.add a b)) (nat.sub (nat.sub n a) b))))))
+  (#by
+    (intro n a)
+    (induct b
+      ;; base b=0:  n−(a+0) = n−a = (n−a)−0.
+      (#by (derive
+        (trans
+          (cong-arg (nat.sub n) (all-elim a (add.zero)))
+          (sym (all-elim (nat.sub n a) (sub.zero))))))
+      ;; step:  n−(a+S b) = n−S(a+b) = pred(n−(a+b)) = pred((n−a)−b) = (n−a)−S b.
+      (#by (derive
+        (trans
+          (cong-arg (nat.sub n) (all-elim b (all-elim a (add.succ))))
+          (trans
+            (all-elim (nat.add a b) (all-elim n (sub.succ)))
+            (trans
+              (cong-arg nat.pred
+                (assume (= (nat.sub n (nat.add a b)) (nat.sub (nat.sub n a) b))))
+              (sym (all-elim b (all-elim (nat.sub n a) (sub.succ))))))))))))
+
+;; ⊢ ∀n m. n < m ⟹ n mod m = n.  When `n<m` the remainder is `n` itself:
+;; `n mod m = n − (n/m)·m = n − 0·m = n − 0 = n` (`div.lt`).
+(#thm mod.lt_eq
+  (#concl
+    (forall (n nat) (forall (m nat) (==> (nat.lt n m) (= (nat.mod n m) n)))))
+  (#by
+    (intro n m hlt)
+    (derive
+      (trans
+        (all-elim m (all-elim n (nat.mod.def)))
+        (trans
+          (cong-arg (nat.sub n)
+            (trans
+              (cong-fn m (cong-arg nat.mul
+                (imp-elim (all-elim m (all-elim n (div.lt))) (assume (nat.lt n m)))))
+              (all-elim m (zero.mul))))
+          (all-elim n (sub.zero)))))))
+
+;; ⊢ ∀n m. ¬(m=0) ⟹ m ≤ n ⟹ n mod m = (n−m) mod m.  The modulus recurrence step:
+;; `n mod m = n − (n/m)·m = n − (m + q'·m) = (n−m) − q'·m = (n−m) mod m`, with
+;; `q' = (n−m)/m` (`div.ge`, `succ.mul`, `sub.add_r`, `nat.mod.def`).
+(#thm mod.ge
+  (#concl
+    (forall (n nat) (forall (m nat)
+      (==> (not (= m 0))
+        (==> (nat.le m n)
+          (= (nat.mod n m) (nat.mod (nat.sub n m) m)))))))
+  (#by
+    (intro n m hm hmn)
+    (derive
+      (trans
+        (all-elim m (all-elim n (nat.mod.def)))
+        (trans
+          (cong-arg (nat.sub n)
+            (trans
+              (cong-fn m (cong-arg nat.mul
+                (imp-elim
+                  (imp-elim (all-elim m (all-elim n (div.ge))) (assume (not (= m 0))))
+                  (assume (nat.le m n)))))
+              (all-elim m (all-elim (nat.div (nat.sub n m) m) (succ.mul)))))
+          (trans
+            (all-elim (nat.mul (nat.div (nat.sub n m) m) m) (all-elim m (all-elim n (sub.add_r))))
+            (sym (all-elim m (all-elim (nat.sub n m) (nat.mod.def))))))))))
+
 (#export div.mul_le div.mod mod.lt mul.le_mono_r div.not_lt div.unique div.mul_cancel
          nat.ne_zero_of_lt div.lt add.le_mono_l add.lt_mono_l div.ge
          mul.ne_zero lt.of_lt_le div.div
-         two.ne_zero one.ne_zero pow.ne_zero div.one shr.eq_div_pow)
+         two.ne_zero one.ne_zero pow.ne_zero div.one shr.eq_div_pow
+         sub.add_r mod.lt_eq mod.ge)

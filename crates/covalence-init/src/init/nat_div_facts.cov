@@ -488,6 +488,87 @@
                                       (assume (not (= b 0))))
                             (assume (not (= c 0)))))))))
 
+;; ===========================================================================
+;; The `shr` bridge:  shr a m = a / 2^m.
+;; ===========================================================================
+
+;; ⊢ ¬(2 = 0)  /  ¬(1 = 0).  Literal nonzero, by reduction.
+(#thm two.ne_zero
+  (#concl (not (= 2 0)))
+  (#by (derive (not-intro (imp-intro (= 2 0) (eq-mp (reduce (= 2 0)) (assume (= 2 0))))))))
+
+(#thm one.ne_zero
+  (#concl (not (= 1 0)))
+  (#by (derive (not-intro (imp-intro (= 1 0) (eq-mp (reduce (= 1 0)) (assume (= 1 0))))))))
+
+;; ⊢ ∀m. ¬(2^m = 0).  By induction: `2^0 = 1 ≠ 0`; `2^(S m) = 2·2^m ≠ 0`
+;; (`mul.ne_zero` with `2≠0` and the IH).
+(#thm pow.ne_zero
+  (#concl (forall (m nat) (not (= (nat.pow 2 m) 0))))
+  (#by
+    (induct m
+      ;; base: 2^0 = 0 would give 1 = 0.
+      (#by (derive
+        (not-intro (imp-intro (= (nat.pow 2 0) 0)
+          (not-elim (one.ne_zero)
+            (trans (sym (all-elim 2 (pow.zero)))
+                   (assume (= (nat.pow 2 0) 0))))))))
+      ;; step: 2^(S m) = 0 would give 2·2^m = 0, but ¬(2=0) and the IH.
+      (#by (derive
+        (not-intro (imp-intro (= (nat.pow 2 (succ m)) 0)
+          (not-elim
+            (imp-elim
+              (imp-elim (all-elim (nat.pow 2 m) (all-elim 2 (mul.ne_zero))) (two.ne_zero))
+              (assume (not (= (nat.pow 2 m) 0))))
+            (trans (sym (all-elim m (all-elim 2 (pow.succ))))
+                   (assume (= (nat.pow 2 (succ m)) 0)))))))))))
+
+;; ⊢ ∀a. a/1 = a.  (`a/1 = (a·1)/1 = a` via `mul.one` and `div.mul_cancel`.)
+(#thm div.one
+  (#concl (forall (a nat) (= (nat.div a 1) a)))
+  (#by
+    (intro a)
+    (derive
+      (trans
+        (cong-fn 1 (cong-arg nat.div (sym (all-elim a (mul.one)))))
+        (imp-elim (all-elim 1 (all-elim a (div.mul_cancel))) (one.ne_zero))))))
+
+;; ⊢ ∀a m. nat.shr a m = a / 2^m.  Shifting right by `m` is flooring division by
+;; `2^m`.  Induction on `m`: base `shr a 0 = a = a/1 = a/2^0`; step
+;; `shr a (S m) = (shr a m)/2 = (a/2^m)/2 = a/(2^m·2) = a/2^(S m)` (`shr.succ`, IH,
+;; `div.div`, `mul.comm`/`pow.succ`).
+(#thm shr.eq_div_pow
+  (#concl
+    (forall (a nat) (forall (m nat)
+      (= (nat.shr a m) (nat.div a (nat.pow 2 m))))))
+  (#by
+    (intro a)
+    (induct m
+      ;; base: shr a 0 = a/2^0.
+      (#by (derive
+        (trans
+          (all-elim a (shr.zero))
+          (sym (trans
+            (cong-arg (nat.div a) (all-elim 2 (pow.zero)))
+            (all-elim a (div.one)))))))
+      ;; step: IH shr a m = a/2^m ⊢ shr a (S m) = a/2^(S m).
+      (#by (derive
+        (trans
+          (all-elim m (all-elim a (shr.succ)))
+          (trans
+            (cong-fn 2 (cong-arg nat.div
+              (assume (= (nat.shr a m) (nat.div a (nat.pow 2 m))))))
+            (trans
+              (imp-elim
+                (imp-elim (all-elim 2 (all-elim (nat.pow 2 m) (all-elim a (div.div))))
+                          (all-elim m (pow.ne_zero)))
+                (two.ne_zero))
+              (cong-arg (nat.div a)
+                (trans
+                  (all-elim 2 (all-elim (nat.pow 2 m) (mul.comm)))
+                  (sym (all-elim m (all-elim 2 (pow.succ))))))))))))))
+
 (#export div.mul_le div.mod mod.lt mul.le_mono_r div.not_lt div.unique div.mul_cancel
          nat.ne_zero_of_lt div.lt add.le_mono_l add.lt_mono_l div.ge
-         mul.ne_zero lt.of_lt_le div.div)
+         mul.ne_zero lt.of_lt_le div.div
+         two.ne_zero one.ne_zero pow.ne_zero div.one shr.eq_div_pow)

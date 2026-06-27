@@ -460,10 +460,14 @@ crate::cov_theory! {
         "div.lt" => pub fn div_lt;
         "div.ge" => pub fn div_ge;
         "div.div" => pub fn div_div;
+        "shr.eq_div_pow" => pub fn shr_eq_div_pow;
     }
 }
 
-pub use facts::{div_div, div_ge, div_lt, div_mod, div_mul_cancel, div_mul_le, div_unique, mod_lt};
+pub use facts::{
+    div_div, div_ge, div_lt, div_mod, div_mul_cancel, div_mul_le, div_unique, mod_lt,
+    shr_eq_div_pow,
+};
 
 #[cfg(test)]
 mod tests {
@@ -527,6 +531,15 @@ mod tests {
         assert!(
             super::div_div().hyps().is_empty(),
             "div.div should be closed"
+        );
+    }
+
+    /// The `shr` bridge `shr a m = a / 2^m`.
+    #[test]
+    fn shr_eq_div_pow_proves() {
+        assert!(
+            super::shr_eq_div_pow().hyps().is_empty(),
+            "shr.eq_div_pow should be closed"
         );
     }
 }

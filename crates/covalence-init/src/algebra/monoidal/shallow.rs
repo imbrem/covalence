@@ -12,9 +12,9 @@ use covalence_core::defs::coprod_spec;
 use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
 
 use crate::algebra::category::{Category, Hol};
+use crate::algebra::monoidal::Monoidal;
 use crate::init::ext::TermExt;
 use crate::init::{cat, coprod};
-use crate::algebra::monoidal::Monoidal;
 
 /// Split `α → β` into `(α, β)`.
 fn fun_parts(ty: &Type) -> Result<(Type, Type)> {

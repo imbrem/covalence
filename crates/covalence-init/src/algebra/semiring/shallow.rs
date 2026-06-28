@@ -19,9 +19,9 @@
 
 use covalence_core::{Error, Result, Term, Thm, Type};
 
+use crate::algebra::semiring::Semiring;
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::{int, nat};
-use crate::algebra::semiring::Semiring;
 
 // ============================================================================
 // Generic HOL equational core — shared by every carrier

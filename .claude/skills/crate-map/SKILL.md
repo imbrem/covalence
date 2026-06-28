@@ -38,6 +38,7 @@ consumer). The layers below mirror the dependency stack (see
 - **covalence-git** — git-compatible object storage + hashing. `hash_blob`, loose/odb backends, Git LFS.
 - **covalence-kv** — key-value store surface (`cov:kv@0.1.0`).
 - **covalence-wasm-store** — host-side wasmtime store adapters (kept out of portable covalence-store).
+- **covalence-multiformat** — self-describing, content-addressed *interchange format* (multihash/multicodec/multibase) for derivation facts exchanged with peer provers (e.g. Coln). `Cid` (blake3 multihash, base16 multibase), `codec` content-type registry, `DerivationFact` envelope (reifies the waist existential), `FactStore::check` (proof-checking *as* a constraint query). Wire layer only — logical payloads stay opaque. See `crates/covalence-multiformat/SKELETONS.md`.
 
 ## Kernel / TCB (the three-layer stack)
 

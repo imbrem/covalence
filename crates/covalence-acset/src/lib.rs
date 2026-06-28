@@ -14,13 +14,15 @@
 //! - [`Instance::validate`] — is this a valid functor? (totality + range +
 //!   equations). Plus [`acyclic`](Instance::acyclic) and
 //!   [`attr_injective`](Instance::attr_injective) law checks.
-//! - [`Instance::pullback`] — Δ functorial data migration along a [`Functor`].
+//! - [`Instance::pullback`] — Δ functorial data migration along a [`Functor`]
+//!   (objects, morphisms, and mapped attributes).
 //!
-//! Object/morphism/attribute names are `&'static str` (compile-time schemas).
-//! Attribute values are `String`. See `SKELETONS.md` for what is deferred
-//! (Σ/Π migration, typed attribute values, dynamic names).
+//! Object/morphism/attribute names are `&'static str` (compile-time schemas);
+//! attribute values are the typed [`AttrVal`]. See `SKELETONS.md` for what is
+//! deferred (Σ/Π migration, dynamic names, a query layer).
 
 use std::collections::HashMap;
+use std::fmt;
 
 // ===========================================================================
 // Errors
@@ -125,6 +127,51 @@ pub struct Attr {
     pub name: &'static str,
     pub dom: &'static str,
     pub cod: &'static str,
+}
+
+/// A typed attribute value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AttrVal {
+    Str(String),
+    Int(i64),
+    Bytes(Vec<u8>),
+}
+
+impl From<String> for AttrVal {
+    fn from(s: String) -> Self {
+        AttrVal::Str(s)
+    }
+}
+impl From<&str> for AttrVal {
+    fn from(s: &str) -> Self {
+        AttrVal::Str(s.to_owned())
+    }
+}
+impl From<i64> for AttrVal {
+    fn from(n: i64) -> Self {
+        AttrVal::Int(n)
+    }
+}
+impl From<Vec<u8>> for AttrVal {
+    fn from(b: Vec<u8>) -> Self {
+        AttrVal::Bytes(b)
+    }
+}
+
+impl fmt::Display for AttrVal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AttrVal::Str(s) => write!(f, "{s}"),
+            AttrVal::Int(n) => write!(f, "{n}"),
+            AttrVal::Bytes(b) => {
+                write!(f, "0x")?;
+                for byte in b {
+                    write!(f, "{byte:02x}")?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 /// A path equation: two morphism paths (composed left-to-right) that must
@@ -338,7 +385,7 @@ pub struct Instance {
     schema: Schema,
     nparts: HashMap<&'static str, usize>,
     homs: HashMap<&'static str, Vec<Option<usize>>>,
-    attrs: HashMap<&'static str, Vec<Option<String>>>,
+    attrs: HashMap<&'static str, Vec<Option<AttrVal>>>,
     labels: HashMap<Part, String>,
 }
 
@@ -417,7 +464,7 @@ impl Instance {
 
     /// Set `attr(part) = value`. Panics if the attribute is unknown or its
     /// domain does not match `part`.
-    pub fn set_attr(&mut self, part: Part, attr: &'static str, value: impl Into<String>) {
+    pub fn set_attr(&mut self, part: Part, attr: &'static str, value: impl Into<AttrVal>) {
         let a = self
             .schema
             .attr(attr)
@@ -450,8 +497,13 @@ impl Instance {
     }
 
     /// The value of `attr` at `part`, if set.
-    pub fn attr_value(&self, part: Part, attr: &str) -> Option<&str> {
-        self.attrs.get(attr)?.get(part.index)?.as_deref()
+    pub fn attr_value(&self, part: Part, attr: &str) -> Option<&AttrVal> {
+        self.attrs.get(attr)?.get(part.index)?.as_ref()
+    }
+
+    /// Iterate every part of `obj`.
+    pub fn parts(&self, obj: &'static str) -> impl Iterator<Item = Part> + '_ {
+        (0..self.nparts(obj)).map(move |index| Part { obj, index })
     }
 
     /// Follow a path of morphisms from `start`, returning the endpoint or `None`
@@ -591,15 +643,15 @@ impl Instance {
     /// values. Unset values are ignored.
     pub fn attr_injective(&self, attr: &'static str) -> Result<(), AcsetError> {
         let col = self.attrs.get(attr).map(Vec::as_slice).unwrap_or(&[]);
-        let mut seen: HashMap<&str, usize> = HashMap::new();
+        let mut seen: HashMap<&AttrVal, usize> = HashMap::new();
         for (i, slot) in col.iter().enumerate() {
             if let Some(v) = slot {
-                if let Some(&j) = seen.get(v.as_str()) {
+                if let Some(&j) = seen.get(v) {
                     return Err(AcsetError::NonInjectiveAttr {
                         attr,
                         a: j,
                         b: i,
-                        value: v.clone(),
+                        value: v.to_string(),
                     });
                 }
                 seen.insert(v, i);
@@ -611,7 +663,8 @@ impl Instance {
     /// Δ functorial data migration: pull `self` (a `cod`-instance) back along
     /// `functor: dom → cod` to an instance over `dom_schema`. Each `dom` object's
     /// parts are those of its image; each `dom` morphism is the composite of its
-    /// image path. (Attributes are not migrated yet — see SKELETONS.)
+    /// image path; each mapped `dom` attribute copies its image attribute's
+    /// values.
     pub fn pullback(
         &self,
         functor: &Functor,
@@ -660,6 +713,33 @@ impl Instance {
                 }
             }
         }
+        // Attributes: out(a) := self(F a), copied by index over the mapped object.
+        for a in dom_schema.attrs() {
+            let Some(c_attr) = functor.attr(a.name) else {
+                continue;
+            };
+            let src_c = functor
+                .object(a.dom)
+                .ok_or(MigrationError::MissingObject { obj: a.dom })?;
+            for i in 0..self.nparts(src_c) {
+                if let Some(v) = self.attr_value(
+                    Part {
+                        obj: src_c,
+                        index: i,
+                    },
+                    c_attr,
+                ) {
+                    out.set_attr(
+                        Part {
+                            obj: a.dom,
+                            index: i,
+                        },
+                        a.name,
+                        v.clone(),
+                    );
+                }
+            }
+        }
         Ok(out)
     }
 }
@@ -674,6 +754,7 @@ impl Instance {
 pub struct Functor {
     objects: Vec<(&'static str, &'static str)>,
     homs: Vec<(&'static str, Vec<&'static str>)>,
+    attrs: Vec<(&'static str, &'static str)>,
 }
 
 /// Fluent builder for a [`Functor`].
@@ -697,6 +778,10 @@ impl Functor {
             .find(|(s, _)| *s == d)
             .map(|(_, p)| p.as_slice())
     }
+    /// Image (a target attribute) of a source attribute.
+    pub fn attr(&self, d: &str) -> Option<&'static str> {
+        self.attrs.iter().find(|(s, _)| *s == d).map(|(_, t)| *t)
+    }
 }
 
 impl FunctorBuilder {
@@ -708,6 +793,11 @@ impl FunctorBuilder {
     /// Map source morphism `d` to the target path `path` (composed left-to-right).
     pub fn hom(mut self, d: &'static str, path: &[&'static str]) -> Self {
         self.functor.homs.push((d, path.to_vec()));
+        self
+    }
+    /// Map source attribute `d` to the target attribute `c`.
+    pub fn attr(mut self, d: &'static str, c: &'static str) -> Self {
+        self.functor.attrs.push((d, c));
         self
     }
     pub fn build(self) -> Functor {
@@ -829,5 +919,57 @@ mod tests {
         // the edge now runs 1 → 0
         assert_eq!(r.follow(Part { obj: "E", index: 0 }, &["src"]), Some(v1));
         assert_eq!(r.follow(Part { obj: "E", index: 0 }, &["dst"]), Some(v0));
+    }
+
+    fn tagged_schema() -> Schema {
+        Schema::builder()
+            .object("P")
+            .attr_type("V")
+            .attr("tag", "P", "V")
+            .build()
+    }
+
+    #[test]
+    fn typed_attrs_and_injectivity() {
+        let mut i = Instance::new(tagged_schema());
+        let a = i.add_part("P");
+        i.set_attr(a, "tag", 7i64);
+        let b = i.add_part("P");
+        i.set_attr(b, "tag", "hello");
+        assert_eq!(i.attr_value(a, "tag"), Some(&AttrVal::Int(7)));
+        assert_eq!(i.validate(), Ok(()));
+        assert!(i.attr_injective("tag").is_ok());
+        // a duplicate value breaks injectivity
+        let c = i.add_part("P");
+        i.set_attr(c, "tag", 7i64);
+        assert!(matches!(
+            i.attr_injective("tag"),
+            Err(AcsetError::NonInjectiveAttr { .. })
+        ));
+    }
+
+    #[test]
+    fn pullback_migrates_attributes() {
+        let mut c = Instance::new(tagged_schema());
+        let p0 = c.add_part("P");
+        c.set_attr(p0, "tag", 7i64);
+        let p1 = c.add_part("P");
+        c.set_attr(p1, "tag", "hello");
+
+        let f = Functor::builder()
+            .object("P", "P")
+            .attr("tag", "tag")
+            .build();
+        let d = c.pullback(&f, tagged_schema()).unwrap();
+        assert_eq!(d.validate(), Ok(()));
+        assert_eq!(
+            d.attr_value(Part { obj: "P", index: 0 }, "tag"),
+            Some(&AttrVal::Int(7))
+        );
+        assert_eq!(
+            d.attr_value(Part { obj: "P", index: 1 }, "tag"),
+            Some(&AttrVal::Str("hello".into()))
+        );
+        assert_eq!(d.parts("P").count(), 2);
     }
 }

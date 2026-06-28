@@ -1,12 +1,12 @@
 # Skeletons — `covalence-hol/src/ring`
 
-See [`CLAUDE.md`](../../../../CLAUDE.md) § Skeletons, the
-[crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
+See [`CLAUDE.md`](../../../../../CLAUDE.md) § Skeletons, the
+[crate index](../../../SKELETONS.md), and the [root index](../../../../../SKELETONS.md).
 
 **Ring rewriter** (`normalize.rs` — `RingNormalizer` / `RingOps`).
 
 **In place:** a general `(+, ·, 0, 1)` normalizer to a canonical
-**sum-of-monomials** form, built on the AC tactic (`crate::ac`). Decides
+**sum-of-monomials** form, built on the AC tactic (`crate::algebra::ac`). Decides
 distributivity (left + the *derived* right), `+`/`·` associativity +
 commutativity, and the `0`/`1` identities — so two expressions equal as *formal*
 polynomials over their atoms get `⊢ e₁ = e₂` (tested over `nat` and `int`). Every

@@ -711,10 +711,6 @@ crate::cov_theory! {
 mod tests {
     use super::*;
 
-    fn nat_lit(k: u64) -> Term {
-        Term::nat_lit(k)
-    }
-
     fn u8_lit(v: u8) -> Term {
         Term::u8_lit(v)
     }

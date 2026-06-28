@@ -1,8 +1,8 @@
-//! The **shallow** ring embedding: [`crate::semiring::Int`] over HOL `int`
+//! The **shallow** ring embedding: [`crate::algebra::semiring::Int`] over HOL `int`
 //! extended to a [`Ring`].
 //!
-//! [`Int`] already implements [`Semiring`](crate::semiring::Semiring) in
-//! [`crate::semiring::shallow`]; here we add the additive-inverse layer that
+//! [`Int`] already implements [`Semiring`](crate::algebra::semiring::Semiring) in
+//! [`crate::algebra::semiring::shallow`]; here we add the additive-inverse layer that
 //! makes it a ring. Like the semiring axioms, [`add_neg`](Ring::add_neg) /
 //! [`sub_def`](Ring::sub_def) forward to [`crate::init::int`] (postulated for
 //! now; see `SKELETONS.md`), and `neg` / `sub` build the corresponding
@@ -11,8 +11,8 @@
 use covalence_core::{Term, Thm};
 
 use crate::init::int;
-use crate::ring::Ring;
-use crate::semiring::Int;
+use crate::algebra::ring::Ring;
+use crate::algebra::semiring::Int;
 
 impl Ring for Int {
     fn neg(&self, a: Term) -> Term {
@@ -33,7 +33,7 @@ impl Ring for Int {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::semiring::Semiring;
+    use crate::algebra::semiring::Semiring;
 
     #[test]
     fn int_ring_axioms_rebuild_through_the_prop_layer() {

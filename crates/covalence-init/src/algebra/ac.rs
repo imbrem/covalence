@@ -21,8 +21,8 @@
 //!
 //! [`Ac`] is parameterised by an [`AcOp`] — the operator's *term theory*
 //! (build / destructure an application of `∘`) plus its two axiom *equations*.
-//! This is exactly the shape of the algebraic traits in [`crate::semiring`] /
-//! [`crate::ring`]: a single generic normalizer runs against `nat.add`,
+//! This is exactly the shape of the algebraic traits in [`crate::algebra::semiring`] /
+//! [`crate::algebra::ring`]: a single generic normalizer runs against `nat.add`,
 //! `nat.mul`, `int.add`, `∧`, `∨`, … — anything that provides an [`AcOp`].
 //! [`HolAc`] is the canonical HOL instance: an op is a [`Term`] (the
 //! partially-applicable `∘`), and the axioms are HOL [`Thm`]s.

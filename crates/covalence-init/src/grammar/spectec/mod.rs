@@ -9,11 +9,11 @@
 //! well-formed module" is a `Matches` derivation.
 //!
 //! This module is the **grammar front end**; the regex engine it sits on top of
-//! is the separate, general-purpose [`crate::regex`] module (regexes are the
+//! is the separate, general-purpose [`crate::grammar::regex`] module (regexes are the
 //! regular base case of *every* grammar, not just SpecTec, so they live on their
 //! own). Here we take a [`grammar::SpecTecSym`], route its regular fragment
-//! through `covalence-spectec`'s byte bridge into a [`crate::regex::Regex<u8>`],
-//! and hand it to [`crate::regex`].
+//! through `covalence-spectec`'s byte bridge into a [`crate::grammar::regex::Regex<u8>`],
+//! and hand it to [`crate::grammar::regex`].
 //!
 //! # The pipeline
 //!
@@ -23,7 +23,7 @@
 //!                                                                         └─ tactic ──▶ ⊢ Matches ⌜r⌝ w
 //! ```
 //!
-//! [`compile_sym`] emits the reified term; [`crate::regex::tactic`] proves a
+//! [`compile_sym`] emits the reified term; [`crate::grammar::regex::tactic`] proves a
 //! bytestring matches.
 //!
 //! # Regex is the base case — the CFG stratum comes next
@@ -43,7 +43,7 @@
 //! productions over reified non-terminals, and `Var` becomes a non-terminal
 //! symbol rather than a bridge error.
 //!
-//! [`crate::regex::tactic::prove_word`] is the **first rung of that ladder**: a
+//! [`crate::grammar::regex::tactic::prove_word`] is the **first rung of that ladder**: a
 //! variable token carrying a "parses as this category" assumption *is* a
 //! non-terminal expansion, and discharging `Matches ⌜cᵢ⌝ Xᵢ` against an
 //! assumption is exactly how a CFG derivation will compose sub-derivations.

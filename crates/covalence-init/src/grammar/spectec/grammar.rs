@@ -1,6 +1,6 @@
 //! Compile a SpecTec grammar symbol to a byte predicate, by routing its
 //! **regular fragment** through `covalence-spectec`'s byte bridge into the
-//! general-purpose regex engine ([`crate::regex`]).
+//! general-purpose regex engine ([`crate::grammar::regex`]).
 //!
 //! A SpecTec grammar is **more than a regex** — regular languages are only its
 //! base case. The non-regular constructs (non-terminal references
@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use covalence_core::Term;
 
-use crate::regex::{Core, desugar};
+use crate::grammar::regex::{Core, desugar};
 
 pub use covalence_spectec::ast::SpecTecSym;
 /// Why a [`SpecTecSym`] sits outside the regular fragment (a grammar
@@ -44,7 +44,7 @@ mod tests {
         let term = compile_sym(&sym).unwrap();
         // Same reified term as desugaring the equivalent surface regex `ab`.
         let expected =
-            crate::regex::compile(&covalence_grammar::regex::parse_regex_u8("ab").unwrap());
+            crate::grammar::regex::compile(&covalence_grammar::regex::parse_regex_u8("ab").unwrap());
         assert_eq!(term, expected);
     }
 
@@ -62,7 +62,7 @@ mod tests {
         // A SpecTec grammar -> regex -> proof that bytes match it.
         let sym = covalence_spectec::parse::parse_sym("(seq (num 0x61) (num 0x62))").unwrap();
         let r = covalence_spectec::regex::sym_to_regex_u8(&sym).unwrap();
-        let thm = crate::regex::tactic::prove_matches(&r, b"ab")
+        let thm = crate::grammar::regex::tactic::prove_matches(&r, b"ab")
             .unwrap()
             .unwrap();
         assert!(thm.hyps().is_empty());

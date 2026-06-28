@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use covalence_core::{Result, Term, Thm, Type, defs, subst};
 use smol_str::SmolStr;
 
-use crate::init::cv_recursion::cv_exists;
+use crate::init::cv_recursion::{cv_exists, cv_fixpoint, cv_witness};
 use crate::init::eq::beta_nf;
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{exists_elim, exists_intro};
@@ -209,6 +209,47 @@ fn prove_hext_div() -> Result<Thm> {
         .all_intro("q", g_ty())?
         .all_intro("p", g_ty())?
         .all_intro("x", nat())
+}
+
+/// The seed `λm. 0 : nat → nat` — the (value-irrelevant) base history.
+fn div_seed() -> Term {
+    Term::abs(nat(), zero())
+}
+
+/// The **explicit, choice-free** course-of-values division function: the closed
+/// term that `nat.div` is defined as (`cv_witness` at the division step
+/// functional — only `natRec`/`cond`/`nat.sub`/`succ`, no ε beyond the shared
+/// `natRec`). `nat.div n m = (div_explicit n) m`.
+pub fn div_explicit() -> Result<Term> {
+    use covalence_core::Var;
+    let w =
+        subst::subst_tfrees_in_term(&cv_witness(), &BTreeMap::from([(SmolStr::from("a"), nn())]));
+    let w = subst::subst_free(&w, &Var::new("F", f_div()?.type_of()?), &f_div()?);
+    Ok(subst::subst_free(&w, &Var::new("d", nn()), &div_seed()))
+}
+
+/// `⊢ ∀n m. div n m = cond (m=0 ∨ n<m) 0 (S (div (n−m) m))` for the **explicit**
+/// `div := div_explicit()` — its recurrence, read off [`cv_fixpoint`] (no `∃`,
+/// no ε-skolemisation). This is what lets `nat.div`'s recurrence be a plain
+/// `delta`-unfold once `nat.div := div_explicit`, removing the `spec_ax` seam.
+pub fn div_explicit_recurrence() -> Result<Thm> {
+    let (n, m) = (nvar("n"), nvar("m"));
+    let div = div_explicit()?;
+    // ⊢ ∀n. div n = F n div  (F = f_div, div = the explicit witness).
+    let fixed = cv_fixpoint()?
+        .inst_tfree("a", nn())?
+        .inst("F", f_div()?)?
+        .inst("d", div_seed())?
+        .imp_elim(prove_hext_div()?)?;
+    fixed
+        .all_elim(n.clone())? // div n = F n div
+        .cong_fn(m.clone())? // div n m = (F n div) m
+        .trans(beta_nf(Term::app(
+            Term::app(Term::app(f_div()?, n.clone()), div.clone()),
+            m.clone(),
+        )))? // = cond (m=0 ∨ n<m) 0 (S (div (n−m) m))
+        .all_intro("m", nat())?
+        .all_intro("n", nat())
 }
 
 /// `⊢ ∃div. ∀n m. div n m = cond (m=0 ∨ n<m) 0 (S (div (n−m) m))` — the
@@ -488,6 +529,17 @@ mod tests {
     fn cv_div_recurrence_proves() {
         let thm = super::cv_div_recurrence().expect("cv_div_recurrence");
         assert!(thm.hyps().is_empty(), "cv_div_recurrence should be closed");
+    }
+
+    /// The recurrence about the *explicit* (choice-free) division term, and that
+    /// the term uses core's `defs::cond` (so it is expressible in the kernel).
+    #[test]
+    fn div_explicit_recurrence_proves() {
+        let thm = super::div_explicit_recurrence().expect("div_explicit_recurrence");
+        assert!(
+            thm.hyps().is_empty(),
+            "div_explicit_recurrence should be closed"
+        );
     }
 
     /// The selector spec transferred to `nat.div` itself (the `spec_ax` seam).

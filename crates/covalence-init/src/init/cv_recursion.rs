@@ -299,6 +299,25 @@ fn f_term() -> Term {
     Term::abs(nat(), subst::close(&b2(succ(nvar("x")), nvar("x")), "x"))
 }
 
+/// The **explicit fixpoint witness** `f := λx. B (S x) x` — schematic in the step
+/// functional `F` and seed `d` (both free). Instantiating `F`/`d`/`'a` at a
+/// concrete recursion gives a closed, **choice-free** term that *is* the
+/// course-of-values-recursive function (used to define `nat.div` directly,
+/// rather than ε-selecting it). Pair with [`cv_fixpoint`] for its recurrence.
+pub fn cv_witness() -> Term {
+    f_term()
+}
+
+/// `⊢ Hext F ⟹ ∀n. f n = F n f` — the recurrence satisfied by the **explicit**
+/// witness [`cv_witness`] (schematic in `F`, `d`). Unlike [`cv_exists`] this does
+/// not `∃`-introduce, so the equation is about the concrete term: instantiate at
+/// a recursion and discharge `Hext` to read off the computation rule.
+pub fn cv_fixpoint() -> Result<Thm> {
+    let hext = Thm::assume(hext_term()?)?;
+    let fix = fixpoint(&hext, &key(&hext)?)?; // {Hext} ⊢ ∀n. f n = F n f
+    fix.imp_intro(&hext_term()?) // ⊢ Hext ⟹ ∀n. f n = F n f
+}
+
 /// `Hext F ⊢ ∀n. f n = F n f`.
 fn fixpoint(hext: &Thm, key: &Thm) -> Result<Thm> {
     let n = nvar("n");

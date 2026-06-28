@@ -1171,6 +1171,7 @@ dependencies = [
  "covalence-hash",
  "covalence-init",
  "covalence-parse",
+ "covalence-sexp",
  "thiserror 2.0.18",
 ]
 

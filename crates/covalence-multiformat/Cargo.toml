@@ -17,3 +17,5 @@ thiserror = "2"
 # Only the `kernel_ingest` example binds the wire format to the real HOL kernel;
 # the library itself stays kernel-free (wire layer only).
 covalence-init = { path = "../covalence-init" }
+# Canonical S-expression encoding of the HOL term payload (author + parse back).
+covalence-sexp = { path = "../covalence-sexp" }

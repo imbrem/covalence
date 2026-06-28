@@ -10,12 +10,16 @@
   signatures over the body (via `covalence-sig`). Not yet modelled.
 - **Multihash is blake3-only.** `Cid::parse` rejects every other multihash code.
   Add SHA-256/etc. when a peer requires it.
-- **Kernel ingest rebuilds, doesn't parse.** `examples/kernel_ingest` verifies an
-  envelope against a real `covalence-core` `Thm` by reconstructing it from a known
-  recipe. Full ingest must *deserialize* the `prop` term and re-check it through
-  the kernel (needs a term deserializer). The CID ↦ `COV_ROOT` `Name256` map
-  (`identity::covalence_name`) is real; the Coln Sedimentree-address analogue is
-  unmodelled.
+- **Ingest does not re-derive the proof.** `examples/kernel_ingest` parses the
+  S-expression `prop` payload, kernel-type-checks it, and pins it to the witness
+  hash — but does not re-derive the theorem (the waist is proof-irrelevant; doing
+  so needs the envelope to carry derivation steps). The Coln Sedimentree-address
+  analogue of `identity::covalence_name` is also unmodelled.
+- **HOL payload limited to the round-trippable term fragment.** covalence-init's
+  `term_from_sexp` parses only a subset of constructors (no `bool-lit` /
+  `term-spec` / `nat-lit` / …), so `COV_HOL_THM` payloads are restricted to what
+  round-trips (`app`/`eq`/`free`/`abs`/`const`/…). Widening needs those arms in
+  covalence-init, or a different term codec.
 - **Payloads are opaque bytes.** `prop` / witness payloads are not typed or
   validated; the `examples/coln_bridge` Coln reader is simulated in Rust, not a
   real Coln decoder. ACSet-schema soundness-certificate facts are future work.

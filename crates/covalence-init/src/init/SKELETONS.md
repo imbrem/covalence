@@ -160,7 +160,10 @@ index](../../../../SKELETONS.md).
   (`cv_recursion::cv_exists`, `⊢ Hext F ⟹ ∃f. ∀n. f n = F n f`, by bounded
   iteration) — plus the function-valued `natRec` equations and `nat` order helpers;
   (`code.rs`) the pairing `code.pair a b ≜ 2^a·(2b+1)` with `pair_pos`/`pair_ne_zero`
-  and the strict-decrease laws `pair_left_lt`/`pair_right_lt` (`a,b < pair a b`); and
+  the strict-decrease laws `pair_left_lt`/`pair_right_lt` (`a,b < pair a b`), and
+  **injectivity** `pair_inj` (`pair a b = pair c d ⟹ a=c ∧ b=d`, the 2-adic
+  argument: `two_double`/`double_inj`/`parity` + induction on the exponent) with
+  `pair_inj_l`/`pair_inj_r`; and
   (`lambda_ty.rs`) the **type fragment** `A ::= 0|1|Xᵢ|A⊗B|A+B` — constructor codes
   (`ty_empty`/…/`ty_sum` with tags 0..4) and `WfTyCode c := ∀S. Closed S ⟹ S c` as
   an impredicative inductive predicate, with all five intro rules + rule induction
@@ -168,17 +171,20 @@ index](../../../../SKELETONS.md).
   (structural congruence) with its intro rules, rule induction, and the metatheorems
   `sub_eq` (`Subtype a b ⟹ a = b`), `sub_refl` (`WfTyCode c ⟹ Subtype c c`), `sub_trans`.
   Deferred:
-  - **Encoding functions** — projections `π₁`/`π₂` + round-trip (`π₁⟨a,b⟩=a`) +
-    `code.pair` injectivity (needed for `El` value-extraction and constructor
-    *distinctness*); the expression/context decoders `WfExCode`/`WfCtxCode` (de
-    Bruijn binders) and `El_*`, via `cv_exists` + the `pair_*_lt` decrease guards.
+  - **Encoding functions** — projections `π₁`/`π₂` + round-trip (`π₁⟨a,b⟩=a`),
+    definable via `cv_exists` (`pair_inj` now supplies the uniqueness); the
+    expression/context decoders `WfExCode`/`WfCtxCode` (de Bruijn binders) and
+    `El_*`, via `cv_exists` + the `pair_*_lt` decrease guards.
+  - **Constructor distinctness/inversion** — `pair_inj` is proved; the type-code
+    distinctness (`ty_tensor l r ≠ ty_empty`, …) and the `WfTyCode`/`Subtype`
+    generation lemmas it unlocks are not yet packaged.
   - **Reified judgements** — `Typed : nat→nat→nat→bool` (least relation closed
     under coded Fig 2 rules) and `Checks` (derivation-code well-formedness),
     same impredicative-`∀S` shape as `WfTyCode`.
-  - **Metatheorems** — type-fragment subtyping refl/trans done (`lambda_sub.rs`).
-    Next: **richer subtyping** (initial `0 <: A` / terminal `A <: 1`) — needs genuine
-    inversion (a generation lemma) + `code.pair` injectivity; then the expression-level
-    relation, weakening (2.1.1.2.1) and substitution (2.1.1.2.2) over derivation codes.
+  - **Metatheorems** — type-fragment subtyping refl/trans done (`lambda_sub.rs`);
+    `pair_inj` now unblocks the inversion/generation lemmas. Next: **richer subtyping**
+    (initial `0 <: A` / terminal `A <: 1`) via generation lemmas; then the
+    expression-level relation, weakening (2.1.1.2.1) and substitution (2.1.1.2.2).
   - SSA⇔λ_iter equivalence is out of scope here (deferred separately).
 
 ## `nat.thy` — carrier-generic model deferred

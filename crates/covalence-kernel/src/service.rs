@@ -276,6 +276,26 @@ fn diagnostic_from_error(e: &ScriptError) -> Diagnostic {
 mod tests {
     use super::*;
 
+    /// An article that `#import`s a stdlib theory beyond `core` (here
+    /// `lambda_iter`) resolves through `library_env` — the same browser path —
+    /// and can cite its exports (course-of-values induction `strong.induct`).
+    #[test]
+    fn checks_a_lambda_iter_article() {
+        let src = r#"
+            (#import core) (#open core)
+            (#import lambda_iter) (#open lambda_iter)
+            (#thm cov.strong_induct
+              (#concl (forall (P (fun nat bool))
+                (==> (forall (n nat)
+                       (==> (forall (m nat) (==> (nat.lt m n) (app P m))) (app P n)))
+                     (forall (n nat) (app P n)))))
+              (#by (derive (strong.induct))))
+        "#;
+        let report = KernelService::new().check(src);
+        assert!(report.ok, "diagnostics: {:?}", report.diagnostics);
+        assert_eq!(report.theorems[0].name, "cov.strong_induct");
+    }
+
     /// A minimal self-contained article checks and reports its theorem.
     #[test]
     fn checks_a_trivial_theorem() {

@@ -21,23 +21,6 @@ These `defs/` term-specs carry `tm = None`: sound/complete on literals (via
 `int_ops.rs` are *intentionally* declaration-only — the primitive reducible
 interface, not a stub.)
 
-## ε-selector catalogue defs that should be recursive (foundation transport)
-
-Some `defs/` constants are defined as Hilbert-ε **selectors** (`ε x. P x`) where a
-**recursive** definition is available. ε-selectors bake the HOL choice operator
-into anything proved about them, so proofs don't transport to a choice-free
-foundation (ZFC, type theory) — and where the value is unique/computable, choice
-is gratuitous. Prefer a `natRec`/recursion-style def so the catalogue constant
-*is* the constructive function and downstream proofs stay foundation-neutral.
-
-- **`nat.div` (`defs/nat.rs`, `nat_div_predicate`)** — defined as
-  `ε d. ∀n m. (m=0 ⟹ d n m=0) ∧ (m≠0 ⟹ d n m·m ≤ n < S(d n m)·m)`. Should instead
-  be the course-of-values recursion `div n m = if m=0 ∨ n<m then 0 else S(div (n−m) m)`
-  (now constructible via `covalence_init::init::cv_recursion::cv_exists`). Until
-  then, `init/nat_div` proves the bounds about a `cv_exists`-built witness and
-  transfers them to the ε-selector via `spec_ax` — that `spec_ax` step is the seam
-  this redefinition removes. (`nat.mod := n − (n/m)·m` is already a plain def.)
-
 ## defs/core.cov source-of-truth flip (deferred, blocked on re-entrancy)
 
 `core.cov` + the `defs::cov` parser mirror part of the catalogue as data, proven

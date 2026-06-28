@@ -1,22 +1,22 @@
-//! Euclidean division facts for `nat` — `div_mod` and `mod_lt`.
+//! Euclidean division facts for `nat`.
 //!
-//! `nat.div n m` is a Hilbert-ε selector (`defs/nat.rs`) pinned by the Euclidean
-//! bounds `m ≠ 0 ⟹ (n/m)·m ≤ n < S(n/m)·m`, and `nat.mod n m := n - (n/m)·m`.
-//! Those bounds become *provable* once we exhibit a function satisfying them.
+//! `nat.div` is **defined by recursion** in the kernel (`defs/nat.rs`,
+//! [`nat_div_body`](covalence_core::defs)) — the explicit course-of-values
+//! fixpoint of the division step functional `F n g := λm. cond (m=0 ∨ n<m) 0
+//! (S (g (n−m) m))` (`g` is read only at `n−m < n`, so `Hext F` holds). This
+//! module proves the rest **about that constant, choice-free** — no Hilbert ε
+//! beyond the shared `natRec`, no `spec_ax`:
 //!
-//! We build that function **constructively**, not by ε-skolemising a pointwise
-//! existential — so the development transports across foundations (recursion is
-//! foundation-neutral; choice is not; division needs no choice). [`cv_div_recurrence`]
-//! instantiates the foundation-neutral course-of-values recursion theorem
-//! [`cv_exists`](crate::init::cv_recursion::cv_exists) at the division step
-//! functional `F n g := λm. cond (m=0 ∨ n<m) 0 (S (g (n−m) m))` (its recursive
-//! read is at `n−m < n`, so `Hext F` holds), yielding `div` with the Euclidean
-//! recurrence. The bounds then follow by [`strong_induct`](crate::init::lambda_iter::strong_induct)
-//! through that recurrence; transferring them to the ε-selector `nat.div` via
-//! `spec_ax` (a transitional seam — see the `nat.div` redefinition skeleton in
-//! `covalence-core/SKELETONS.md`) gives `div_mod` / `mod_lt`.
+//! - [`div_explicit`] reconstructs the kernel's definitional body and
+//!   [`div_explicit_recurrence`] reads its recurrence off [`cv_fixpoint`];
+//!   [`nat_div_recurrence`] folds that onto `nat.div` via the definitional
+//!   `delta`-unfold (`nat_div_def_matches_explicit` checks the body matches).
+//! - [`nat_div_spec`] discharges the proved `div.zero`/`div.bounds` (about a
+//!   *free* recurrence witness, in `nat_div.cov`) at `nat.div` to get its
+//!   Euclidean bounds; the `div_mod`/`mod_lt`/recurrence/`shr` facts build on
+//!   those in `nat_div_facts.cov`. `nat.mod n m := n − (n/m)·m`.
 //!
-//! Arithmetic + `cond`/`bool` helper lemmas live in `nat_div.cov`; the
+//! Arithmetic + `cond`/`bool` helper lemmas live in `nat_div.cov`; the term
 //! construction (step functional, `Hext`, recurrence) lives here.
 
 use std::collections::BTreeMap;
@@ -67,10 +67,10 @@ fn lt(a: Term, b: Term) -> Term {
 fn sub(a: Term, b: Term) -> Term {
     Term::app(Term::app(defs::nat_sub(), a), b)
 }
-/// `cond` at result type `nat` — the SAME constant `cond.cov` defines (and that
-/// `cond.true`/`cond.false`/`cond.cong_arm` are stated over), not the kernel
-/// `defs::cond` (`bool.cond`); the two are definitionally equal but distinct
-/// symbols, so everything must use one consistently.
+/// `cond` at result type `nat` — the kernel `defs::cond` (`bool.cond`), which
+/// `cond.cov` registers under the name `cond` and states its clauses
+/// (`cond.true`/`cond.false`/`cond.cong_arm`) about. (Equals `defs::cond(nat)`;
+/// looked up through the env so the `.cov` lemmas and this term share it.)
 fn cond_op() -> Term {
     let cd = crate::init::cond::cov::env()
         .lookup_const("cond")
@@ -307,80 +307,66 @@ fn beta_nf_to(pred: &Term, witness: &Term, body: Thm) -> Result<Thm> {
 }
 
 // ============================================================================
-// Transfer to the ε-selector `nat.div` (the transitional seam)
+// `nat.div`'s recurrence and bounds — from the recursive definition (no ε)
 // ============================================================================
 //
-// `nat.div := ε d. P d`, where `P` is the selector predicate
-//   P d := ∀n m. (m=0 ⟹ d n m = 0) ∧ (¬(m=0) ⟹ d n m·m ≤ n ∧ n < S(d n m)·m).
-// The constructive `cv` route proved `∃div. REC(div)` (`cv_div_recurrence`) and,
-// about that recurrence, `div.zero`/`div.bounds`. Composing them gives `∃d. P d`,
-// and the Hilbert ε-axiom (`Thm::spec_ax`) carries `P` onto `nat.div` itself —
-// the seam that disappears once `nat.div` is *defined* by the recursion (see the
-// `nat.div` redefinition skeleton in `covalence-core/SKELETONS.md`).
+// `nat.div` is *defined* as the explicit cv fixpoint (`defs::nat_div_body`),
+// which equals `div_explicit()` (verified by `nat_div_def_matches_explicit`). So
+// its recurrence is `div_explicit_recurrence` rewritten through the definitional
+// unfold `⊢ nat.div = div_explicit` — no Hilbert ε, no `spec_ax`. The Euclidean
+// bounds are then the proved `div.zero`/`div.bounds` (about a *free* recurrence
+// witness) instantiated at `nat.div` and discharged with its recurrence.
 
-/// `⊢ ∃d. P d` — the `nat.div` selector predicate is satisfiable, witnessed by
-/// the constructive division function. `pred` is `nat.div`'s predicate `P`
-/// (extracted from `spec_ax`, so the existential matches it syntactically).
-fn exists_div_spec(pred: &Term) -> Result<Thm> {
-    let g = g_ty();
-    let div = Term::free("div", g.clone());
-
-    // The recurrence existential and its predicate `REC` (a λ).
-    let rec_ex = cv_div_recurrence()?; // ⊢ ∃div. REC div
-    let rec_pred = rec_ex
-        .concl()
-        .as_app()
-        .expect("∃ is an application")
-        .1
-        .clone();
-    let rec_redex = Term::app(rec_pred, div.clone()); // (REC) div  — β-redex
-    let rec_reduced = crate::init::eq::beta_reduce(Thm::assume(rec_redex.clone())?)?;
-
-    // Discharge the recurrence into the two fact families (still under `rec_redex`).
-    let dz = div_zero().imp_elim(rec_reduced.clone())?; // {rec} ⊢ ∀n m. m=0 ⟹ div n m=0
-    let db = div_bounds().imp_elim(rec_reduced)?; // {rec} ⊢ ∀n m. ¬(m=0) ⟹ (le ∧ lt)
-
-    // Recombine into the predicate body `∀n m. (case_zero ∧ case_pos)` = P[div].
+/// `⊢ ∀n m. nat.div n m = cond (m=0 ∨ n<m) 0 (S (nat.div (n−m) m))` — the
+/// Euclidean recurrence for the **kernel** `nat.div`, by `delta`-unfolding the
+/// definition into [`div_explicit_recurrence`] and folding the recursive call
+/// back to `nat.div`.
+pub fn nat_div_recurrence() -> Result<Thm> {
     let (n, m) = (nvar("n"), nvar("m"));
-    let case_zero = dz.all_elim(n.clone())?.all_elim(m.clone())?;
-    let case_pos = db.all_elim(n.clone())?.all_elim(m.clone())?;
-    let body = case_zero
-        .and_intro(case_pos)?
+    // ⊢ nat.div = div_explicit  (definitional; the body *is* `div_explicit`).
+    let unfold = defs::nat_div().delta()?;
+    // nat.div n m = div_explicit n m
+    let lhs = unfold.clone().cong_fn(n.clone())?.cong_fn(m.clone())?;
+    // div_explicit n m = cond(…) 0 (S R), where R is the β-normal `div_explicit (n−m) m`.
+    let mid = div_explicit_recurrence()?
+        .all_elim(n.clone())?
+        .all_elim(m.clone())?;
+    // Fold the recursive call back to `nat.div (n−m) m`. The recurrence's RHS has it
+    // β-reduced (R), so connect `R = div_explicit (n−m) m = nat.div (n−m) m`.
+    let de = div_explicit()?;
+    let de_app = Term::app(Term::app(de, sub(n.clone(), m.clone())), m.clone());
+    let nd_eq_de = unfold
+        .cong_fn(sub(n.clone(), m.clone()))? // nat.div (n−m) = div_explicit (n−m)
+        .cong_fn(m.clone())?; // nat.div (n−m) m = div_explicit (n−m) m
+    let r_eq_nd = beta_nf(de_app).sym()?.trans(nd_eq_de.sym()?)?; // R = nat.div (n−m) m
+    let rhs = r_eq_nd
+        .cong_arg(defs::nat_succ())? // S R = S (nat.div (n−m) m)
+        .cong_arg(Term::app(Term::app(cond_op(), guard(&n, &m)?), zero()))?; // cond g 0 (S R) = …
+    lhs.trans(mid)?
+        .trans(rhs)?
         .all_intro("m", nat())?
-        .all_intro("n", nat())?; // {rec} ⊢ P[div]
-
-    // β-expand to `P div`, introduce the existential, discharge `rec`, generalise.
-    let p_div = beta_nf_to(pred, &div, body)?; // {rec} ⊢ P div
-    let step = exists_intro(pred.clone(), div.clone(), p_div)? // {rec} ⊢ ∃d. P d
-        .imp_intro(&rec_redex)? // ⊢ (REC) div ⟹ ∃d. P d
-        .all_intro("div", g)?; // ⊢ ∀div. (REC) div ⟹ ∃d. P d
-    let exists_d_p = Term::app(defs::exists(g_ty()), pred.clone());
-    exists_elim(rec_ex, exists_d_p, step)
+        .all_intro("n", nat())
 }
 
 /// `⊢ (m=0 ⟹ nat.div n m = 0) ∧ (¬(m=0) ⟹ nat.div n m·m ≤ n ∧ n < S(nat.div n m)·m)`
-/// universally over `n, m` — `nat.div`'s defining clauses, proved (not postulated)
-/// by transferring the constructive witness through the Hilbert ε-axiom.
+/// universally over `n, m` — `nat.div`'s defining clauses, **proved** from its
+/// recursive definition: `nat_div_recurrence` discharges the proved
+/// `div.zero`/`div.bounds` (stated about a free recurrence witness) at `nat.div`.
 pub fn nat_div_spec() -> Result<Thm> {
-    let g = g_ty();
-    let d0 = Term::free("d", g.clone());
-
-    // spec_ax: ⊢ P d0 ⟹ P nat.div. Extract the predicate `P` from the antecedent.
-    let imp = Thm::spec_ax(defs::nat_div(), d0.clone())?;
-    let (lhs, _p_natdiv) = imp.concl().as_app().expect("⟹ is an application");
-    let p_d0 = lhs.as_app().expect("(⟹ _) is an application").1.clone();
-    let pred = p_d0.as_app().expect("P d0 is an application").0.clone();
-
-    // ∃d. P d, then the ε-axiom carries P onto nat.div.
-    let exists_d_p = exists_div_spec(&pred)?;
-    let p_natdiv_redex = Term::app(pred.clone(), defs::nat_div());
-    let step = imp.all_intro("d", g)?; // ⊢ ∀d. P d ⟹ P nat.div
-    let p_natdiv = exists_elim(exists_d_p, p_natdiv_redex, step)?; // ⊢ P nat.div (β-redex)
-
-    // β-reduce `P nat.div` to its readable body.
-    Thm::beta_conv(p_natdiv.concl().clone())?.eq_mp(p_natdiv)
+    let (n, m) = (nvar("n"), nvar("m"));
+    let rec = nat_div_recurrence()?;
+    // `div.zero`/`div.bounds` : `REC(div) ⟹ …` (free `div`); instantiate at
+    // `nat.div` and discharge with its recurrence.
+    let zero = div_zero()
+        .inst("div", defs::nat_div())?
+        .imp_elim(rec.clone())?;
+    let bounds = div_bounds().inst("div", defs::nat_div())?.imp_elim(rec)?;
+    zero.all_elim(n.clone())?
+        .all_elim(m.clone())?
+        .and_intro(bounds.all_elim(n.clone())?.all_elim(m.clone())?)?
+        .all_intro("m", nat())?
+        .all_intro("n", nat())
 }
-
 /// `⊢ ∀n m. m=0 ⟹ nat.div n m = 0` — the `m = 0` clause projected out of
 /// [`nat_div_spec`].
 pub fn nat_div_zero() -> Result<Thm> {
@@ -540,6 +526,18 @@ mod tests {
             thm.hyps().is_empty(),
             "div_explicit_recurrence should be closed"
         );
+    }
+
+    /// The kernel `nat.div` definition (core) unfolds to exactly `div_explicit`
+    /// (init) — so the proven recurrence is about `nat.div` itself.
+    #[test]
+    fn nat_div_def_matches_explicit() {
+        use crate::init::ext::TermExt;
+        let unfold = covalence_core::defs::nat_div()
+            .delta()
+            .expect("delta nat.div");
+        let body = unfold.concl().as_eq().expect("eq").1.clone();
+        assert_eq!(body, super::div_explicit().expect("div_explicit"));
     }
 
     /// The selector spec transferred to `nat.div` itself (the `spec_ax` seam).

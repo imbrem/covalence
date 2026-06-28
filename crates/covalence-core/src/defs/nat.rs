@@ -13,9 +13,11 @@
 //! definitions themselves — they're provable by `eq_reflection` on
 //! the body plus the natRec equations.
 //!
-//! `natDiv` carries a def-style Euclidean selector predicate and
-//! `natMod` is `λn m. n - (n/m)*m`; the byte/bit ops still default to
-//! `tm = None`, awaiting their definitions in follow-up commits.
+//! `natDiv` is a `let` definition too — the explicit course-of-values
+//! recursion fixpoint (see [`nat_div_body`]), so it is choice-free (no
+//! Hilbert ε beyond the shared `natRec`); `natMod` is `λn m. n - (n/m)*m`.
+//! The byte/bit ops still default to `tm = None`, awaiting their
+//! definitions in follow-up commits.
 
 use crate::hol;
 use crate::term::{Term, Type};
@@ -367,52 +369,75 @@ let_term! {
 //   natToBytesLe/Be, natFromBytesLe/Be, natToInt
 // ============================================================================
 
-/// `λd. ∀n m. (m = 0 ⟹ d n m = 0) ∧
-///            (¬(m = 0) ⟹ (d n m * m ≤ n ∧ n < S (d n m) * m))`.
+/// The explicit **course-of-values** division function — choice-free.
 ///
-/// The Euclidean (flooring) division selector. For `m = 0` it pins the
-/// quotient to `0`; for `m ≠ 0` the bounds `d·m ≤ n < (d+1)·m`
-/// determine `d = ⌊n/m⌋` **uniquely**, so the def-style choice is the
-/// genuine floor — denotationally identical to the closed-literal
-/// `builtins` reduction (`n / 0 = 0`, else truncating division, which
-/// for naturals is flooring).
-fn nat_div_predicate() -> Term {
-    let d_ty = sigs::nat_nat_to_nat();
-    let d = Term::free("d", d_ty.clone());
-    let n = Term::free("n", Type::nat());
-    let m = Term::free("m", Type::nat());
-    let zero = hol::zero();
-
+/// `natDiv := λn. (B (S n)) n`, where the bounded approximation
+/// `B := natRec (λx. λm. 0) (λk g x. F x g)` iterates the division step
+/// functional `F n g := λm. cond (m=0 ∨ n<m) 0 (S (g (n−m) m))`. Since `F` reads
+/// its history `g` only *below* `n` (when the guard is false, at `n−m < n`), the
+/// approximation stabilises and `λx. B (S x) x` is its fixpoint — exactly the cv
+/// recursion construction in `covalence_init::init::cv_recursion`. Defining
+/// `natDiv` as this term, rather than ε-selecting a function satisfying the
+/// Euclidean bounds, keeps the kernel definition foundation-neutral (no Hilbert
+/// `ε` beyond the shared `natRec`). The bounds `d·m ≤ n < (d+1)·m` and the
+/// recurrence are then **theorems** (`covalence_init::init::nat_div`), and the
+/// closed-literal `builtins` reduction (`n/0 = 0`, else truncating = flooring
+/// division) computes the same floor.
+fn nat_div_body() -> Term {
+    let nat = Type::nat();
+    let nn = Type::fun(nat.clone(), nat.clone()); // 'a = nat → nat
+    let g_ty = Type::fun(nat.clone(), nn.clone()); // history: nat → (nat → nat)
     let app2 = |f: Term, a: Term, b: Term| Term::app(Term::app(f, a), b);
-    let dnm = app2(d.clone(), n.clone(), m.clone()); // d n m
 
-    // m = 0 ⟹ d n m = 0
-    let m_eq_0 = hol::hol_eq(m.clone(), zero.clone());
-    let case_zero = hol::hol_imp(m_eq_0.clone(), hol::hol_eq(dnm.clone(), zero));
+    // F := λn g m. cond (or (m=0) (n<m)) 0 (succ (g (n−m) m))
+    let f_div = {
+        let n = Term::free("n", nat.clone());
+        let g = Term::free("g", g_ty.clone());
+        let m = Term::free("m", nat.clone());
+        let guard = app2(
+            super::logic::or(),
+            hol::hol_eq(m.clone(), hol::zero()),
+            app2(nat_lt(), n.clone(), m.clone()),
+        );
+        let g_rec = app2(g, app2(nat_sub(), n.clone(), m.clone()), m.clone()); // g (n−m) m
+        let s = Term::app(nat_succ(), g_rec); // S (g (n−m) m)
+        let body = Term::app(app2(super::cond::cond(nat.clone()), guard, hol::zero()), s);
+        let lm = hol::pub_abs("m", nat.clone(), body);
+        let lg = hol::pub_abs("g", g_ty.clone(), lm);
+        hol::pub_abs("n", nat.clone(), lg)
+    };
 
-    // ¬(m = 0) ⟹ (d n m * m ≤ n  ∧  n < S (d n m) * m)
-    let q_m = app2(nat_mul(), dnm.clone(), m.clone()); // (d n m) * m
-    let le = app2(nat_le(), q_m, n.clone()); // (d n m)*m ≤ n
-    let succ_q = Term::app(hol::succ_fn(), dnm); // S (d n m)
-    let succq_m = app2(nat_mul(), succ_q, m); // S(d n m) * m
-    let lt = app2(nat_lt(), n, succq_m); // n < S(d n m)*m
-    let case_pos = hol::hol_imp(hol::hol_not(m_eq_0), hol::hol_and(le, lt));
+    // base := λx. (λm. 0)   (a constant history; the seed is irrelevant)
+    let base = hol::pub_abs(
+        "x",
+        nat.clone(),
+        hol::pub_abs("m", nat.clone(), hol::zero()),
+    );
+    // step := λk g x. F x g   (drops the fuel `k`)
+    let step = {
+        let f_x_g = app2(
+            f_div,
+            Term::free("x", nat.clone()),
+            Term::free("g", g_ty.clone()),
+        );
+        let lx = hol::pub_abs("x", nat.clone(), f_x_g);
+        let lg = hol::pub_abs("g", g_ty.clone(), lx);
+        hol::pub_abs("k", nat.clone(), lg)
+    };
+    // B := natRec base step
+    let b = app2(nat_rec(g_ty.clone()), base, step);
 
-    let body = hol::hol_and(case_zero, case_pos);
-    let body = hol::hol_forall("m", Type::nat(), body);
-    let body = hol::hol_forall("n", Type::nat(), body);
-    hol::pub_abs("d", d_ty, body)
+    // λx. (B (S x)) x
+    let x = Term::free("x", nat.clone());
+    let bsx = app2(b, Term::app(nat_succ(), x.clone()), x.clone());
+    hol::pub_abs("x", nat, bsx)
 }
 
-spec_term! {
-    /// `natDiv : nat → nat → nat` — Euclidean (flooring) division.
-    /// Def-style selector predicate (see [`nat_div_predicate`]): the
-    /// unique `d` with `m = 0 ⟹ d n m = 0` and
-    /// `m ≠ 0 ⟹ d n m * m ≤ n < S(d n m) * m`. Closed-literal reduction
-    /// in `builtins` computes the same floor; `n mod m` is then
-    /// `n - (n / m) * m` (see [`nat_mod`]).
-    nat_div_spec, nat_div, Canonical::NatDiv,
-    sigs::nat_nat_to_nat(), nat_div_predicate()
+let_term! {
+    /// `natDiv : nat → nat → nat` — Euclidean (flooring) division, defined by
+    /// course-of-values recursion (the explicit, choice-free fixpoint
+    /// [`nat_div_body`]). `n mod m` is `n - (n / m) * m` (see [`nat_mod`]).
+    nat_div_spec, nat_div, Canonical::NatDiv, nat_div_body()
 }
 
 fn nat_mod_body() -> Term {

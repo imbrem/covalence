@@ -124,23 +124,6 @@ index](../../../../SKELETONS.md).
   - **`bytes`/`string` newtype-wrapped codec lemmas** — carrier-level lemmas proved,
     newtype-wrapped equational lemmas not all surfaced.
 
-- **Nat division / modulus theory** (`init/nat.rs`, `init/nat_div.{rs,cov,_facts.cov}`).
-  The Euclidean facts are **proved** via the foundation-invariant `cv_exists`
-  route and transferred to the `nat.div`/`nat.mod` selectors: `div.mul_le`
-  (`(n/m)·m ≤ n`, all `m`), `div.mod` (`(n/m)·m + n mod m = n`, unconditional), and
-  `mod.lt` (`m≠0 ⟹ n mod m < m`). Quotient uniqueness (`div.unique`),
-  `(a·b)/b = a` (`div.mul_cancel`), the **division recurrence** as conditional
-  equations (`div.lt`/`div.ge` + `nat.div.zero`), the iterated-division law
-  `(a/b)/c = a/(b·c)` (`div.div`), the **`shr` bridge** `shr a m = a/2^m`
-  (`shr.eq_div_pow`), and the **mod recurrence** (`mod.lt_eq`: `n<m ⟹ n mod m = n`;
-  `mod.ge`: `m≠0 ∧ m≤n ⟹ n mod m = (n−m) mod m`, via the `sub.add_r` sub-law) are
-  done. Remaining:
-  - the `spec_ax` **seam itself** (`nat_div_spec`) — see the kernel `nat.div`
-    redefinition skeleton in `covalence-core/SKELETONS.md`.
-  - the `spec_ax` **seam itself** (`nat_div_spec`) disappears once `nat.div` is
-    *defined* by the recursion — see the kernel `nat.div` redefinition skeleton in
-    `covalence-core/SKELETONS.md`.
-
 - **Reified object logic (S-expr → prop logic)** (`init/sexpr.rs` + `init/prop.rs`,
   `notes/metatheory.md` §8). Datatypes, recursors, soundness, rule induction, and the
   `prop.cov` surface are done. Open:

@@ -154,7 +154,7 @@ index](../../../../SKELETONS.md).
   the recursor's subtree-recovery identity + the `Wf` carve `init/sexpr.rs` defers.
 
 - **λ_iter deep embedding** (`init/lambda_iter.rs` + `.cov`, `init/cv_recursion.rs`,
-  `init/code.rs`, `init/lambda_ty.rs`). Tarski-style nat-encoding documented;
+  `init/code.rs`, `init/lambda_ty.rs`, `init/lambda_sub.rs`). Tarski-style nat-encoding documented;
   **proved**: course-of-values induction (`strong.below`/`strong.induct`) and the
   full course-of-values *recursion* theorem — uniqueness (`cv.unique`) + existence
   (`cv_recursion::cv_exists`, `⊢ Hext F ⟹ ∃f. ∀n. f n = F n f`, by bounded
@@ -164,7 +164,10 @@ index](../../../../SKELETONS.md).
   (`lambda_ty.rs`) the **type fragment** `A ::= 0|1|Xᵢ|A⊗B|A+B` — constructor codes
   (`ty_empty`/…/`ty_sum` with tags 0..4) and `WfTyCode c := ∀S. Closed S ⟹ S c` as
   an impredicative inductive predicate, with all five intro rules + rule induction
-  (`wf_ty_induction`). Deferred:
+  (`wf_ty_induction`); and (`lambda_sub.rs`) **subtyping** `Subtype a b := ∀R. ClosedSub R ⟹ R a b`
+  (structural congruence) with its intro rules, rule induction, and the metatheorems
+  `sub_eq` (`Subtype a b ⟹ a = b`), `sub_refl` (`WfTyCode c ⟹ Subtype c c`), `sub_trans`.
+  Deferred:
   - **Encoding functions** — projections `π₁`/`π₂` + round-trip (`π₁⟨a,b⟩=a`) +
     `code.pair` injectivity (needed for `El` value-extraction and constructor
     *distinctness*); the expression/context decoders `WfExCode`/`WfCtxCode` (de
@@ -172,9 +175,10 @@ index](../../../../SKELETONS.md).
   - **Reified judgements** — `Typed : nat→nat→nat→bool` (least relation closed
     under coded Fig 2 rules) and `Checks` (derivation-code well-formedness),
     same impredicative-`∀S` shape as `WfTyCode`.
-  - **Metatheorems** — the rule-induction engine exists (`wf_ty_induction`); next is
-    subtyping reflexivity/transitivity (type fragment, no binders), then weakening
-    (2.1.1.2.1) and substitution (2.1.1.2.2) over the derivation codes.
+  - **Metatheorems** — type-fragment subtyping refl/trans done (`lambda_sub.rs`).
+    Next: **richer subtyping** (initial `0 <: A` / terminal `A <: 1`) — needs genuine
+    inversion (a generation lemma) + `code.pair` injectivity; then the expression-level
+    relation, weakening (2.1.1.2.1) and substitution (2.1.1.2.2) over derivation codes.
   - SSA⇔λ_iter equivalence is out of scope here (deferred separately).
 
 ## `nat.thy` — carrier-generic model deferred

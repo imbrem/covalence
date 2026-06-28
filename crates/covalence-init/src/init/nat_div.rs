@@ -457,8 +457,8 @@ crate::cov_theory! {
         "bool.eqf"            => pub fn bool_eqf;
         "or.true_r"           => pub fn or_true_r;
         "or.false_l"          => pub fn or_false_l;
-        // The recurrence-parameterised division facts (free `div`), consumed by
-        // the `spec_ax` transfer below.
+        // The recurrence-parameterised division facts (free `div`), discharged
+        // at `nat.div` by `nat_div_spec` below.
         "div.zero"            => pub fn div_zero;
         "div.bounds"          => pub fn div_bounds;
     }
@@ -472,7 +472,7 @@ pub use cov::{
 crate::cov_theory! {
     /// The headline Euclidean facts over `nat.div` / `nat.mod` — the division
     /// identity (`div.mod`) and the remainder bound (`mod.lt`) — built on the
-    /// `spec_ax`-transferred selector facts ([`nat_div_facts_env`]).
+    /// `nat.div` selector facts ([`nat_div_facts_env`]).
     pub mod facts from "nat_div_facts.cov" {
         import "core" = crate::script::Env::core();
         import "logic" = crate::init::logic::cov::env();
@@ -540,7 +540,7 @@ mod tests {
         assert_eq!(body, super::div_explicit().expect("div_explicit"));
     }
 
-    /// The selector spec transferred to `nat.div` itself (the `spec_ax` seam).
+    /// `nat.div`'s Euclidean clauses, derived from its recursive definition.
     #[test]
     fn nat_div_spec_proves() {
         let thm = super::nat_div_spec().expect("nat_div_spec");

@@ -133,6 +133,15 @@ The full per-crate catalogue (what each wraps/provides) lives in the
 **crate-map** skill; the dependency graph is `notes/crate-graph.md`. Read
 `notes/kernel-design.md` before touching the TCB (`covalence-core`).
 
+## Proof conventions
+
+- **Prefer recursion/construction over ε/choice in *definitions*.** Define
+  functions by `cv_exists`/recursion (foundation-neutral: transports across
+  ZFC/HOL and computes on literals), not as ε-selectors. Named/catalogue
+  constants defined via ε are *parochial* — `nat.div`'s old ε-seam was removed
+  for exactly this reason. ε is acceptable only when hidden inside a
+  foundation-neutral theorem (one whose statement never mentions the choice).
+
 ## Conventions
 
 - Rust edition 2024 (stable ≥1.94.1 or nightly), workspace resolver 2

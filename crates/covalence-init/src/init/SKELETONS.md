@@ -167,7 +167,8 @@ index](../../../../SKELETONS.md).
   (`lambda_ty.rs`) the **type fragment** `A ::= 0|1|Xᵢ|A⊗B|A+B` — constructor codes
   (`ty_empty`/…/`ty_sum` with tags 0..4) and `WfTyCode c := ∀S. Closed S ⟹ S c` as
   an impredicative inductive predicate, with all five intro rules + rule induction
-  (`wf_ty_induction`); and (`lambda_sub.rs`) **subtyping** `Subtype a b := ∀R. ClosedSub R ⟹ R a b`
+  (`wf_ty_induction`) + constructor distinctness (`ty_code_distinct`) + generation
+  lemmas (`wf_tensor_inv`/`wf_sum_inv`); and (`lambda_sub.rs`) **subtyping** `Subtype a b := ∀R. ClosedSub R ⟹ R a b`
   (structural congruence) with its intro rules, rule induction, and the metatheorems
   `sub_eq` (`Subtype a b ⟹ a = b`), `sub_refl` (`WfTyCode c ⟹ Subtype c c`), `sub_trans`.
   Deferred:
@@ -177,16 +178,20 @@ index](../../../../SKELETONS.md).
     (`π₂(pair a b)=b`). **Remaining:** the expression/context decoders
     `WfExCode`/`WfCtxCode` (de Bruijn binders) and `El_*`, via `cv_exists` + the
     `pair_*_lt` decrease guards.
-  - **Constructor distinctness/inversion** — `pair_inj` is proved; the type-code
-    distinctness (`ty_tensor l r ≠ ty_empty`, …) and the `WfTyCode`/`Subtype`
-    generation lemmas it unlocks are not yet packaged.
+  - **Constructor distinctness/inversion** — done (`lambda_ty.rs`):
+    `ty_code_distinct` (any two different constructors ⇒ unequal codes, via
+    `pair_inj_l` + `reduce`) and the `WfTyCode` generation lemmas `wf_tensor_inv`
+    /`wf_sum_inv` (`WfTyCode ⌜l⊗r⌝ ⟹ WfTyCode l ∧ WfTyCode r`, by rule induction
+    on the strengthened predicate `WfTyCode c ∧ inversion-clause`). **Remaining:**
+    the `Subtype` generation lemmas (invert a `Subtype` derivation), same shape.
   - **Reified judgements** — `Typed : nat→nat→nat→bool` (least relation closed
     under coded Fig 2 rules) and `Checks` (derivation-code well-formedness),
     same impredicative-`∀S` shape as `WfTyCode`.
-  - **Metatheorems** — type-fragment subtyping refl/trans done (`lambda_sub.rs`);
-    `pair_inj` now unblocks the inversion/generation lemmas. Next: **richer subtyping**
-    (initial `0 <: A` / terminal `A <: 1`) via generation lemmas; then the
-    expression-level relation, weakening (2.1.1.2.1) and substitution (2.1.1.2.2).
+  - **Metatheorems** — type-fragment subtyping refl/trans done (`lambda_sub.rs`),
+    plus `WfTyCode` distinctness/generation (`lambda_ty.rs`). Next: **richer
+    subtyping** (initial `0 <: A` / terminal `A <: 1`) — needs new `Subtype` intro
+    rules + their generation lemmas; then the expression-level relation, weakening
+    (2.1.1.2.1) and substitution (2.1.1.2.2).
   - SSA⇔λ_iter equivalence is out of scope here (deferred separately).
 
 ## `nat.thy` — carrier-generic model deferred

@@ -20,13 +20,17 @@ use std::collections::BTreeMap;
 use covalence_core::{Result, Term, Thm, Type, Var, defs, subst};
 use smol_str::SmolStr;
 
+use crate::init::code::{pair, pair_ne_zero, pair_succ_eq, pair_zero_eq, parity};
+use crate::init::cond::{cond_false, cond_true};
 use crate::init::cv_recursion::{cv_fixpoint, cv_witness};
-use crate::init::eq::{beta_nf, beta_reduce};
+use crate::init::eq::{beta_expand, beta_nf, beta_nf_concl, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::lambda_iter::{nat_lt_le_trans, nat_zero_or_succ};
 use crate::init::logic::exists_elim;
 use crate::init::nat;
-use crate::init::nat_div::{cond_cong_arm, div_mul_le, nat_pos_of_ne_zero};
+use crate::init::nat_div::{
+    bool_eqf, cond_cong_arm, div_mul_cancel, div_mul_le, nat_pos_of_ne_zero, or_false_l, or_true_r,
+};
 use crate::script::ConstDef;
 
 // ============================================================================
@@ -51,6 +55,9 @@ fn succ(n: Term) -> Term {
 }
 fn mul(a: Term, b: Term) -> Term {
     Term::app(Term::app(defs::nat_mul(), a), b)
+}
+fn add(a: Term, b: Term) -> Term {
+    Term::app(Term::app(defs::nat_add(), a), b)
 }
 fn div(a: Term, b: Term) -> Term {
     Term::app(Term::app(defs::nat_div(), a), b)
@@ -239,6 +246,154 @@ pub fn v2_recurrence() -> Result<Thm> {
         .all_intro("n", nat_ty())
 }
 
+// ============================================================================
+// `π₁` round-trip:  `⊢ ∀a b. v2 (code.pair a b) = a`
+// ============================================================================
+
+/// Prove `⊢ ∀<ivar>. body` by `nat`-induction (local copy of `code::induct_on`,
+/// which is private): `motive = λ<ivar>. body`, `base : ⊢ body[0]`,
+/// `step : ⊢ body[n] ⟹ body[S n]` (`n` free).
+fn induct_on(ivar: &str, motive: &Term, base: Thm, step: Thm) -> Result<Thm> {
+    let n = nvar(ivar);
+    let base = beta_expand(motive, lit(0), base)?; // ⊢ motive 0
+    let pn = Term::app(motive.clone(), n.clone());
+    let body_n = beta_reduce(Thm::assume(pn.clone())?)?; // {motive n} ⊢ body[n]
+    let body_sn = step.imp_elim(body_n)?; //                 {motive n} ⊢ body[S n]
+    let p_sn = beta_expand(motive, succ(n.clone()), body_sn)?; // {motive n} ⊢ motive (S n)
+    let step = p_sn.imp_intro(&pn)?; //                        ⊢ motive n ⟹ motive (S n)
+    beta_nf_concl(Thm::nat_induct(base, step)?)
+}
+
+/// The else-arm of a `Γ ⊢ lhs = cond g t e` conclusion (its RHS's last
+/// argument), read off verbatim so [`cond_true`]/[`cond_false`] get a branch
+/// term matching the recurrence's β-normal form exactly.
+fn cond_else(thm: &Thm) -> Result<Term> {
+    let rhs = thm
+        .concl()
+        .as_eq()
+        .ok_or(covalence_core::Error::NotAnEquation)?
+        .1;
+    Ok(rhs
+        .as_app()
+        .expect("cond g t e is an application")
+        .1
+        .clone())
+}
+
+/// `⊢ ¬(x = y)` for distinct literals `x ≠ y` — `reduce` folds `nat.eq` to `F`.
+fn ne_lit(x: u64, y: u64) -> Result<Thm> {
+    let eq_term = lit(x).equals(lit(y))?;
+    eq_term
+        .clone()
+        .reduce()? // (x=y) = F
+        .eq_mp(Thm::assume(eq_term.clone())?)? // {x=y} ⊢ F
+        .imp_intro(&eq_term)? // (x=y) ⟹ F
+        .not_intro() // ¬(x=y)
+}
+
+/// `⊢ ∀a b. v2 (code.pair a b) = a` — the first projection recovers the
+/// exponent. By induction on `a` against the recurrence [`v2_recurrence`]:
+///
+/// * **base** `a = 0`: `pair 0 b = S(b+b)` is *odd*, so the guard's odd disjunct
+///   (`parity`) fires → `cond T 0 _ = 0`.
+/// * **step** `a = S a'`: `pair (S a) b = 2·(pair a b)` is *even and nonzero*, so
+///   both guard disjuncts are `F` → `cond F 0 (S(v2 (·/2)))`; `(2X)/2 = X`
+///   (`div.mul_cancel`) feeds the IH, giving `S a'`.
+pub fn v2_pair() -> Result<Thm> {
+    let (a, b) = (nvar("a"), nvar("b"));
+    let v2 = v2_explicit()?;
+    let v2_at = |t: Term| Term::app(v2.clone(), t);
+
+    // motive M(a) = (v2 (pair a b) = a), with `b` free.
+    let body = v2_at(pair(a.clone(), b.clone())).equals(a.clone())?;
+    let motive = Term::abs(nat_ty(), subst::close(&body, "a"));
+
+    // ---- base: v2 (pair 0 b) = 0 ----
+    let base = {
+        let n0 = succ(add(b.clone(), b.clone())); // S(b+b) = pair 0 b
+        let rec = v2_recurrence()?.all_elim(n0.clone())?; // v2 n0 = cond (guard n0) 0 (S(v2(n0/2)))
+        // The guard's odd disjunct ¬(n0 = 2·(n0/2)) holds: n0 is odd (`parity`).
+        let par = parity()?.all_elim(half(&n0))?.all_elim(b.clone())?; // ¬(n0 = (n0/2)+(n0/2))
+        let td = two_double()?.all_elim(half(&n0))?; // 2·(n0/2) = (n0/2)+(n0/2)
+        let r_thm = par.rewrite(&td.sym()?)?; // ¬(n0 = 2·(n0/2))
+        let r_eq_t = r_thm.eqt_intro()?; // ¬(n0 = 2·(n0/2)) = T
+        let red = rec
+            .rewrite(&r_eq_t)? // cond ((n0=0) ∨ T) 0 (…)
+            .rewrite(&or_true_r().all_elim(n0.clone().equals(lit(0))?)?)?; // cond T 0 (…)
+        // The else-arm is read off `red`'s RHS (so it matches the recurrence's
+        // β-normal form exactly), then discarded by `cond.true`.
+        let else_arm = cond_else(&red)?;
+        let cf = cond_true(&nat_ty(), &lit(0), &else_arm)?; // cond T 0 (…) = 0
+        let v2n0 = red.trans(cf)?; // v2 n0 = 0
+        let pzb = pair_zero_eq()?.all_elim(b.clone())?; // pair 0 b = S(b+b) = n0
+        pzb.cong_arg(v2.clone())?.trans(v2n0)? // v2 (pair 0 b) = 0
+    };
+
+    // ---- step: (v2 (pair a b) = a) ⟹ (v2 (pair (S a) b) = S a) ----
+    let step = {
+        let a = nvar("a");
+        let p = pair(a.clone(), b.clone()); // P = pair a b
+        let body_a = v2_at(p.clone()).equals(a.clone())?; // v2 P = a   (the IH)
+        let ih = Thm::assume(body_a.clone())?;
+        let pse = pair_succ_eq()?.all_elim(a.clone())?.all_elim(b.clone())?; // pair (S a) b = 2·P
+        let n1 = mul(lit(2), p.clone()); // 2·P
+        let rec = v2_recurrence()?.all_elim(n1.clone())?; // v2 n1 = cond (guard n1) 0 (S(v2(n1/2)))
+
+        // (2·P)/2 = P  via div.mul_cancel + mul_comm.
+        let comm = nat::mul_comm().all_elim(lit(2))?.all_elim(p.clone())?; // 2·P = P·2
+        let mc = div_mul_cancel()
+            .all_elim(p.clone())?
+            .all_elim(lit(2))?
+            .imp_elim(ne_lit(2, 0)?)?; // (P·2)/2 = P
+        let half_eq = comm
+            .cong_arg(defs::nat_div())?
+            .cong_fn(lit(2))? // (2·P)/2 = (P·2)/2
+            .trans(mc)?; // (2·P)/2 = P
+
+        // guard n1 = F:  left (n1 = 0) is F (`pair_ne_zero`), right is F (n1 is even).
+        let ne0 = pair_ne_zero()?
+            .all_elim(succ(a.clone()))?
+            .all_elim(b.clone())?
+            .rewrite(&pse)?; // ¬(n1 = 0)
+        let l_eq_f = bool_eqf()
+            .all_elim(n1.clone().equals(lit(0))?)?
+            .imp_elim(ne0)?; // (n1 = 0) = F
+        let even_eq = half_eq
+            .clone()
+            .cong_arg(Term::app(defs::nat_mul(), lit(2)))? // 2·(n1/2) = 2·P
+            .sym()?; // n1 = 2·(n1/2)
+        let r_term = n1.clone().equals(mul(lit(2), half(&n1)))?.not()?; // ¬(n1 = 2·(n1/2))
+        let nn = Thm::assume(r_term.clone())?
+            .not_elim(even_eq)? // {¬(n1=2·(n1/2))} ⊢ F
+            .imp_intro(&r_term)?
+            .not_intro()?; // ¬¬(n1 = 2·(n1/2))
+        let r_eq_f = bool_eqf().all_elim(r_term.clone())?.imp_elim(nn)?; // ¬(n1 = 2·(n1/2)) = F
+
+        let red = rec
+            .rewrite(&l_eq_f)? // cond (F ∨ R) 0 (…)
+            .rewrite(&r_eq_f)? // cond (F ∨ F) 0 (…)
+            .rewrite(&or_false_l().all_elim(Term::bool_lit(false))?)?; // cond F 0 (…)
+        let else_arm = cond_else(&red)?; // S(v2(n1/2)), β-normal
+        let cf = cond_false(&nat_ty(), &lit(0), &else_arm)?; // cond F 0 (…) = S(v2(n1/2))
+        // `half_eq` rewrites `n1/2 → P` inside the (β-reduced) `v2(n1/2)`; the IH
+        // is stated on the *un-reduced* `v2 P`, so bridge through `beta_nf`.
+        let bridge = beta_nf(v2_at(p.clone())).sym()?; // β-nf(v2 P) = v2 P
+        let v2n1 = red
+            .trans(cf)? // v2 n1 = S(v2(n1/2))
+            .rewrite(&half_eq)? // v2 n1 = S(β-nf(v2 P))
+            .rewrite(&bridge)? // v2 n1 = S(v2 P)
+            .rewrite(&ih)?; // v2 n1 = S a
+        pse.cong_arg(v2.clone())? // v2 (pair (S a) b) = v2 n1
+            .trans(v2n1)? // v2 (pair (S a) b) = S a
+            .imp_intro(&body_a)? // (v2 P = a) ⟹ (v2 (pair (S a) b) = S a)
+    };
+
+    induct_on("a", &motive, base, step)?
+        .all_elim(a.clone())? // v2 (pair a b) = a  (a, b free)
+        .all_intro("b", nat_ty())?
+        .all_intro("a", nat_ty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,6 +405,7 @@ mod tests {
             ("half_lt", half_lt()),
             ("prove_hext_v2", prove_hext_v2()),
             ("v2_recurrence", v2_recurrence()),
+            ("v2_pair", v2_pair()),
         ] {
             let thm = thm.unwrap_or_else(|e| panic!("{name}: {e}"));
             assert!(thm.hyps().is_empty(), "{name} should be closed");

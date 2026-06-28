@@ -174,7 +174,9 @@ index](../../../../SKELETONS.md).
   `sub_eq` (`Subtype a b ⟹ a = b`), `sub_refl` (`WfTyCode c ⟹ Subtype c c`), `sub_trans`;
   and (`lambda_order.rs`) the **richer subtyping order** `Order a b := ∀R. ClosedOrder R ⟹ R a b`
   (initial `0 <: A` / terminal `A <: 1` / covariant ⊗,+ / base refl) with intro rules,
-  `ord_induction`, `subtype_to_order`, `ord_refl`, `ord_wf`.
+  `ord_induction`, `subtype_to_order`, `ord_refl`, `ord_wf`, the generation lemmas
+  `inv_unit`/`inv_tensor`/`inv_sum` (stated with `ty_arg1`/`ty_arg2` component
+  extractors, the first use of the `π₁`/`π₂` round-trips), and **transitivity** `ord_trans`.
   Deferred:
   - **Encoding functions** — projections done (`code_proj.rs`): `π₁` (2-adic
     valuation, choice-free via `cv_exists`) with `v2_recurrence` + round-trip
@@ -193,15 +195,13 @@ index](../../../../SKELETONS.md).
     same impredicative-`∀S` shape as `WfTyCode`.
   - **Metatheorems** — type-fragment subtyping refl/trans (`lambda_sub.rs`),
     `WfTyCode` distinctness/generation (`lambda_ty.rs`), and the **richer
-    subtyping order** `Order` (`lambda_order.rs`): initial `0 <: A` / terminal
-    `A <: 1` + covariant ⊗/+ + base refl, with intro rules, `ord_induction`,
-    `subtype_to_order` (congruence embeds), `ord_refl`, `ord_wf`
-    (well-formedness preservation). **Remaining:** `Order` **transitivity**
-    (`Order a b ⟹ Order b c ⟹ Order a c`) — needs `Order` generation/inversion
-    lemmas (case-analyse a derivation; harder than `WfTyCode`'s since `Order` is
-    a relation with bottom/top, so inversion must split on which rule fired).
-    Then the expression-level relation, weakening (2.1.1.2.1), substitution
-    (2.1.1.2.2).
+    subtyping order** `Order` (`lambda_order.rs`) — initial/terminal/covariant/base
+    refl, `ord_induction`, `subtype_to_order`, `ord_refl`, `ord_wf`, generation
+    lemmas (`inv_unit`/`inv_tensor`/`inv_sum`), and **transitivity** `ord_trans`
+    (so `Order` is a preorder). **Remaining:** the **expression-level relation**
+    (`Typed`/`Checks` above), weakening (2.1.1.2.1), substitution (2.1.1.2.2) —
+    these are where the value-extracting decoders `El_*`/`WfExCode` finally need
+    `pair_*_lt` + `cv_exists`.
   - SSA⇔λ_iter equivalence is out of scope here (deferred separately).
 
 ## `nat.thy` — carrier-generic model deferred

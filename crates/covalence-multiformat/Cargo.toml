@@ -12,3 +12,8 @@ license = "0BSD OR CC0-1.0"
 covalence-hash = { path = "../covalence-hash", default-features = false }
 covalence-parse = { path = "../covalence-parse" }
 thiserror = "2"
+
+[dev-dependencies]
+# Only the `kernel_ingest` example binds the wire format to the real HOL kernel;
+# the library itself stays kernel-free (wire layer only).
+covalence-init = { path = "../covalence-init" }

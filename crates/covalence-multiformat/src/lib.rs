@@ -70,12 +70,14 @@ pub mod cid;
 pub mod codec;
 pub mod error;
 pub mod fact;
+pub mod identity;
 pub mod store;
 
 pub use cid::Cid;
 pub use codec::Codec;
 pub use error::{CheckError, ParseError};
 pub use fact::DerivationFact;
+pub use identity::covalence_name;
 pub use store::{CheckStep, FactStore};
 
 #[cfg(test)]
@@ -182,6 +184,19 @@ mod tests {
         // Re-derive the CID for the tampered bytes: it differs, so a store keyed
         // by the *original* CID would report a hash mismatch on lookup.
         assert_ne!(Cid::of(codec::DERIVATION_FACT, &body), cid);
+    }
+
+    #[test]
+    fn covalence_name_is_deterministic_and_distinct_from_wire() {
+        let f = hol_thm();
+        let wire = f.cid();
+        // deterministic
+        assert_eq!(covalence_name(&wire), wire.covalence_name());
+        // domain-separated: the internal name is not the wire digest
+        assert_ne!(wire.covalence_name().as_bytes(), &wire.digest);
+        // injective across distinct wire ids
+        let other = coln_seq(wire).cid();
+        assert_ne!(wire.covalence_name(), other.covalence_name());
     }
 
     #[test]

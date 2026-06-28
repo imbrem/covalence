@@ -10,8 +10,12 @@
   signatures over the body (via `covalence-sig`). Not yet modelled.
 - **Multihash is blake3-only.** `Cid::parse` rejects every other multihash code.
   Add SHA-256/etc. when a peer requires it.
-- **No wire-CID ↦ internal-identity mapping.** Verified neutral CIDs are not yet
-  re-keyed to covalence's `COV_ROOT` `Name256` (nor a Coln Sedimentree address).
+- **Kernel ingest rebuilds, doesn't parse.** `examples/kernel_ingest` verifies an
+  envelope against a real `covalence-core` `Thm` by reconstructing it from a known
+  recipe. Full ingest must *deserialize* the `prop` term and re-check it through
+  the kernel (needs a term deserializer). The CID ↦ `COV_ROOT` `Name256` map
+  (`identity::covalence_name`) is real; the Coln Sedimentree-address analogue is
+  unmodelled.
 - **Payloads are opaque bytes.** `prop` / witness payloads are not typed or
   validated; the `examples/coln_bridge` Coln reader is simulated in Rust, not a
   real Coln decoder. ACSet-schema soundness-certificate facts are future work.

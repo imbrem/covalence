@@ -1169,6 +1169,7 @@ name = "covalence-multiformat"
 version = "0.0.0"
 dependencies = [
  "covalence-hash",
+ "covalence-init",
  "covalence-parse",
  "thiserror 2.0.18",
 ]

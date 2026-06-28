@@ -88,8 +88,11 @@ jobs:
           echo "v=$ver" >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@v2
         with:
-          # binaryen provides wasm-opt.
-          tool: wasm-bindgen-cli@${{ steps.wbver.outputs.v }},binaryen
+          tool: wasm-bindgen-cli@${{ steps.wbver.outputs.v }}
+      # binaryen provides wasm-opt. install-action dropped binaryen support and
+      # falls back to cargo-binstall, which can't install it ("no binaries
+      # specified nor inferred"), so install it from apt instead.
+      - run: sudo apt-get update && sudo apt-get install -y binaryen
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run build:web

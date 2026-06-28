@@ -171,8 +171,11 @@ index](../../../../SKELETONS.md).
   (structural congruence) with its intro rules, rule induction, and the metatheorems
   `sub_eq` (`Subtype a b ⟹ a = b`), `sub_refl` (`WfTyCode c ⟹ Subtype c c`), `sub_trans`.
   Deferred:
-  - **Encoding functions** — projections `π₁`/`π₂` + round-trip (`π₁⟨a,b⟩=a`),
-    definable via `cv_exists` (`pair_inj` now supplies the uniqueness); the
+  - **Encoding functions** — `π₁` (`code_proj.rs`) is the 2-adic valuation,
+    defined choice-free by `cv_exists` with its recurrence `v2_recurrence`
+    (`v2 n = cond ((n=0)∨¬(n=2·(n/2))) 0 (S(v2(n/2)))`) proved. **Remaining:** the
+    round-trip laws `π₁(pair a b)=a` (induction on `a` + the pair parity/halving
+    facts) and `π₂ n := ((n/2^(π₁ n))−1)/2` with `π₂(pair a b)=b`. Then the
     expression/context decoders `WfExCode`/`WfCtxCode` (de Bruijn binders) and
     `El_*`, via `cv_exists` + the `pair_*_lt` decrease guards.
   - **Constructor distinctness/inversion** — `pair_inj` is proved; the type-code

@@ -35,10 +35,11 @@
 //! needed *here* (the impredicative encoding handles recursion); they re-enter
 //! for the value-extracting `El` decoders and `Typed`.
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Thm, Type, subst};
 
-use crate::init::code::pair;
-use crate::init::ext::TermExt;
+use crate::init::code::{pair, pair_inj_l, pair_inj_r};
+use crate::init::eq::{beta_expand, beta_reduce};
+use crate::init::ext::{TermExt, ThmExt};
 
 // ============================================================================
 // Term helpers
@@ -267,11 +268,215 @@ pub fn wf_ty_induction(
     pred_c.imp_intro(&wf)?.all_intro("c", nat_ty())
 }
 
+// ============================================================================
+// Constructor distinctness — different tags ⇒ different codes
+//
+// Every type code is `pair tag payload` with a distinct literal `tag` (0..4).
+// So two codes built from different constructors differ already in the *first*
+// pairing component: `pair_inj_l` forces the tags equal, which `reduce` refutes.
+// ============================================================================
+
+/// Decompose a constructor code `pair tag payload` into `(tag, payload)`.
+fn unpair(c: &Term) -> (Term, Term) {
+    let (head, payload) = c.as_app().expect("code is `pair tag payload`");
+    let (_pair, tag) = head.as_app().expect("`pair tag` is an application");
+    (tag.clone(), payload.clone())
+}
+
+/// `⊢ ¬(c₁ = c₂)` for two constructor codes whose top-level tags are distinct
+/// literals (i.e. any two *different* constructors). `pair_inj_l` forces the
+/// tags equal; `reduce` folds that literal equation to `F`.
+pub fn ty_code_distinct(c1: &Term, c2: &Term) -> Result<Thm> {
+    let (t1, p1) = unpair(c1);
+    let (t2, p2) = unpair(c2);
+    let heq = c1.clone().equals(c2.clone())?;
+    let tags_eq = pair_inj_l()?
+        .all_elim(t1.clone())?
+        .all_elim(p1)?
+        .all_elim(t2.clone())?
+        .all_elim(p2)?
+        .imp_elim(Thm::assume(heq.clone())?)?; // {c₁=c₂} ⊢ t₁ = t₂
+    t1.equals(t2)?
+        .reduce()? // (t₁=t₂) = F
+        .eq_mp(tags_eq)? // {c₁=c₂} ⊢ F
+        .imp_intro(&heq)?
+        .not_intro() // ¬(c₁=c₂)
+}
+
+// ============================================================================
+// Generation (inversion) lemmas for `WfTyCode`
+//
+//   WfTyCode ⌜l ⊗ r⌝ ⟹ WfTyCode l ∧ WfTyCode r        (and likewise for +)
+//
+// Proved by **rule induction** with the strengthened predicate
+//
+//   pred c := WfTyCode c ∧ (∀u v. c = ctor u v ⟹ WfTyCode u ∧ WfTyCode v)
+//
+// The `WfTyCode c` conjunct is what makes induction go through: in the matching
+// constructor case the induction hypotheses hand back `WfTyCode` of the sub-codes
+// (which the bare inversion clause could not), and `pair_inj` recovers `u`/`v`;
+// every other constructor case is vacuous by `ty_code_distinct`.
+// ============================================================================
+
+/// `λc. WfTyCode c ∧ (∀u v. c = ctor u v ⟹ WfTyCode u ∧ WfTyCode v)`.
+fn inv_pred(ctor: fn(Term, Term) -> Term) -> Result<Term> {
+    let c = nvar("c");
+    let (u, v) = (nvar("u"), nvar("v"));
+    let inv = c
+        .clone()
+        .equals(ctor(u.clone(), v.clone()))?
+        .imp(wf_ty_code(&u)?.and(wf_ty_code(&v)?)?)?
+        .forall("v", nat_ty())?
+        .forall("u", nat_ty())?;
+    let body = wf_ty_code(&c)?.and(inv)?;
+    Ok(Term::abs(nat_ty(), subst::close(&body, "c")))
+}
+
+/// From `⊢ pair tag (pair l (pair r 0)) = pair tag (pair u (pair v 0))` recover
+/// `⊢ l = u` and `⊢ r = v` (the two `code.pair` injectivity peels).
+fn binary_payload_inj(
+    tag: u64,
+    l: &Term,
+    r: &Term,
+    u: &Term,
+    v: &Term,
+    h: Thm,
+) -> Result<(Thm, Thm)> {
+    let pl = pair(l.clone(), pair(r.clone(), lit(0)));
+    let pu = pair(u.clone(), pair(v.clone(), lit(0)));
+    // Peel the tag: pair l (pair r 0) = pair u (pair v 0).
+    let payloads = pair_inj_r()?
+        .all_elim(lit(tag))?
+        .all_elim(pl)?
+        .all_elim(lit(tag))?
+        .all_elim(pu)?
+        .imp_elim(h)?;
+    let r0 = pair(r.clone(), lit(0));
+    let v0 = pair(v.clone(), lit(0));
+    let l_eq = pair_inj_l()?
+        .all_elim(l.clone())?
+        .all_elim(r0.clone())?
+        .all_elim(u.clone())?
+        .all_elim(v0.clone())?
+        .imp_elim(payloads.clone())?; // l = u
+    let tails = pair_inj_r()?
+        .all_elim(l.clone())?
+        .all_elim(r0)?
+        .all_elim(u.clone())?
+        .all_elim(v0)?
+        .imp_elim(payloads)?; // pair r 0 = pair v 0
+    let r_eq = pair_inj_l()?
+        .all_elim(r.clone())?
+        .all_elim(lit(0))?
+        .all_elim(v.clone())?
+        .all_elim(lit(0))?
+        .imp_elim(tails)?; // r = v
+    Ok((l_eq, r_eq))
+}
+
+/// Shared engine for the binary generation lemmas: `⊢ WfTyCode (ctor L R) ⟹
+/// WfTyCode L ∧ WfTyCode R`, where `ctor` is the tag-`target_tag` constructor.
+fn binary_inv(
+    target_tag: u64,
+    ctor: fn(Term, Term) -> Term,
+    big_l: Term,
+    big_r: Term,
+) -> Result<Thm> {
+    let pred = inv_pred(ctor)?;
+
+    // The inversion clause `∀u v. code = ctor u v ⟹ WfTyCode u ∧ WfTyCode v`,
+    // built vacuously when `code`'s tag differs from the target.
+    let vacuous_inv = |code: &Term| -> Result<Thm> {
+        let (u, v) = (nvar("u"), nvar("v"));
+        let eq = code.clone().equals(ctor(u.clone(), v.clone()))?;
+        ty_code_distinct(code, &ctor(u.clone(), v.clone()))?
+            .not_elim(Thm::assume(eq.clone())?)? // {code = ctor u v} ⊢ F
+            .false_elim(wf_ty_code(&u)?.and(wf_ty_code(&v)?)?)?
+            .imp_intro(&eq)?
+            .all_intro("v", nat_ty())?
+            .all_intro("u", nat_ty())
+    };
+
+    // A constructor case whose code is *not* the target: `⊢ pred code`, given
+    // `⊢ WfTyCode code`. The inversion conjunct is vacuous.
+    let nullary_case = |code: Term, wf_code: Thm| -> Result<Thm> {
+        let body = wf_code.and_intro(vacuous_inv(&code)?)?;
+        beta_expand(&pred, code, body)
+    };
+
+    // A binary constructor case (`this_tag`, `this_ctor`, `this_wf`):
+    // `⊢ pred l ⟹ pred r ⟹ pred (this_ctor l r)`.
+    let binary_case = |this_tag: u64,
+                       this_ctor: fn(Term, Term) -> Term,
+                       this_wf: fn(Term, Term) -> Result<Thm>,
+                       l: &Term,
+                       r: &Term|
+     -> Result<Thm> {
+        let pred_l = pred.clone().apply(l.clone())?; // (λc.…) l  — the IH, applied
+        let pred_r = pred.clone().apply(r.clone())?;
+        let wf_l = beta_reduce(Thm::assume(pred_l.clone())?)?.and_elim_l()?; // {pred l} ⊢ WfTyCode l
+        let wf_r = beta_reduce(Thm::assume(pred_r.clone())?)?.and_elim_l()?; // {pred r} ⊢ WfTyCode r
+        let code = this_ctor(l.clone(), r.clone());
+        let wf_code = this_wf(l.clone(), r.clone())?
+            .imp_elim(wf_l.clone())?
+            .imp_elim(wf_r.clone())?; // WfTyCode (this_ctor l r)
+        let inv = if this_tag == target_tag {
+            let (u, v) = (nvar("u"), nvar("v"));
+            let eq = code.clone().equals(ctor(u.clone(), v.clone()))?;
+            let (l_eq, r_eq) =
+                binary_payload_inj(this_tag, l, r, &u, &v, Thm::assume(eq.clone())?)?;
+            wf_l.clone()
+                .rewrite(&l_eq)? // WfTyCode u
+                .and_intro(wf_r.clone().rewrite(&r_eq)?)? // ∧ WfTyCode v
+                .imp_intro(&eq)?
+                .all_intro("v", nat_ty())?
+                .all_intro("u", nat_ty())?
+        } else {
+            vacuous_inv(&code)?
+        };
+        let body = wf_code.and_intro(inv)?;
+        beta_expand(&pred, code, body)?
+            .imp_intro(&pred_r)?
+            .imp_intro(&pred_l)
+    };
+
+    let induction = wf_ty_induction(
+        &pred,
+        || nullary_case(ty_empty(), wf_empty()?),
+        || nullary_case(ty_unit(), wf_unit()?),
+        |i| nullary_case(ty_base(i.clone()), wf_base(i.clone())?),
+        |l, r| binary_case(3, ty_tensor, wf_tensor, l, r),
+        |l, r| binary_case(4, ty_sum, wf_sum, l, r),
+    )?; // ⊢ ∀c. WfTyCode c ⟹ pred c
+
+    // Instantiate at the target code, peel the inversion conjunct, discharge the
+    // `code = code` antecedent by reflexivity.
+    let code = ctor(big_l.clone(), big_r.clone());
+    let wf_code = wf_ty_code(&code)?;
+    let pred_code = induction
+        .all_elim(code.clone())?
+        .imp_elim(Thm::assume(wf_code.clone())?)?; // {WfTyCode code} ⊢ pred code
+    beta_reduce(pred_code)?
+        .and_elim_r()? // ∀u v. code = ctor u v ⟹ WfTyCode u ∧ WfTyCode v
+        .all_elim(big_l.clone())?
+        .all_elim(big_r.clone())?
+        .imp_elim(Thm::refl(code)?)? // {WfTyCode code} ⊢ WfTyCode L ∧ WfTyCode R
+        .imp_intro(&wf_code)
+}
+
+/// `⊢ WfTyCode ⌜l ⊗ r⌝ ⟹ WfTyCode l ∧ WfTyCode r` — tensor generation.
+pub fn wf_tensor_inv(l: Term, r: Term) -> Result<Thm> {
+    binary_inv(3, ty_tensor, l, r)
+}
+/// `⊢ WfTyCode ⌜l + r⌝ ⟹ WfTyCode l ∧ WfTyCode r` — sum generation.
+pub fn wf_sum_inv(l: Term, r: Term) -> Result<Thm> {
+    binary_inv(4, ty_sum, l, r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::init::code::pair_pos;
-    use crate::init::eq::beta_expand;
 
     /// All five intro rules replay to closed (hypothesis-free) theorems.
     #[test]
@@ -345,5 +550,55 @@ mod tests {
         )
         .expect("wf induction: codes positive");
         assert!(thm.hyps().is_empty(), "induction result should be closed");
+    }
+
+    /// Every pair of *distinct* constructors yields unequal codes, closed.
+    #[test]
+    fn distinct_constructors() {
+        let (l, r, i) = (nvar("l"), nvar("r"), nvar("i"));
+        let codes = [
+            ("0", ty_empty()),
+            ("1", ty_unit()),
+            ("X", ty_base(i)),
+            ("⊗", ty_tensor(l.clone(), r.clone())),
+            ("+", ty_sum(l, r)),
+        ];
+        for (n1, c1) in &codes {
+            for (n2, c2) in &codes {
+                if n1 == n2 {
+                    continue;
+                }
+                let thm = ty_code_distinct(c1, c2).unwrap_or_else(|e| panic!("{n1} ≠ {n2}: {e}"));
+                assert!(thm.hyps().is_empty(), "{n1} ≠ {n2} should be closed");
+            }
+        }
+    }
+
+    /// The generation lemmas replay closed, and actually invert a concrete
+    /// derivation: `WfTyCode ⌜X₀ ⊗ 1⌝ ⟹ WfTyCode ⌜X₀⌝ ∧ WfTyCode ⌜1⌝`.
+    #[test]
+    fn generation_lemmas() {
+        let (l, r) = (nvar("l"), nvar("r"));
+        for (name, thm) in [
+            ("wf_tensor_inv", wf_tensor_inv(l.clone(), r.clone())),
+            ("wf_sum_inv", wf_sum_inv(l, r)),
+        ] {
+            let thm = thm.unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert!(thm.hyps().is_empty(), "{name} should be closed");
+        }
+
+        // Invert a concrete tensor: feed in `WfTyCode (X₀ ⊗ 1)`, get the parts.
+        let x0 = ty_base(lit(0));
+        let wf_pair = wf_tensor(x0.clone(), ty_unit())
+            .and_then(|t| t.imp_elim(wf_base(lit(0))?))
+            .and_then(|t| t.imp_elim(wf_unit()?))
+            .expect("WfTyCode (X0 ⊗ 1)");
+        let parts = wf_tensor_inv(x0, ty_unit())
+            .and_then(|t| t.imp_elim(wf_pair))
+            .expect("invert WfTyCode (X0 ⊗ 1)");
+        assert!(parts.hyps().is_empty(), "inverted parts should be closed");
+        // ⊢ WfTyCode ⌜X₀⌝ ∧ WfTyCode ⌜1⌝ — both halves recoverable.
+        parts.clone().and_elim_l().expect("WfTyCode X0");
+        parts.and_elim_r().expect("WfTyCode 1");
     }
 }

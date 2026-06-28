@@ -24,6 +24,7 @@
     "covalence-llm",
     "covalence-lsp",
     "covalence-metamath",
+    "covalence-multiformat",
     "covalence-object",
     "covalence-opentheory",
     "covalence-parquet",
@@ -281,6 +282,14 @@
     {
       "from": "covalence-metamath",
       "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-multiformat",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-multiformat",
+      "to": "covalence-parse"
     },
     {
       "from": "covalence-object",

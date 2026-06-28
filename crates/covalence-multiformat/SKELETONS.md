@@ -20,14 +20,13 @@
   `term-spec` / `nat-lit` / …), so `COV_HOL_THM` payloads are restricted to what
   round-trips (`app`/`eq`/`free`/`abs`/`const`/…). Widening needs those arms in
   covalence-init, or a different term codec.
-- **ACSet validation is structural (by design) and has no schema migration.**
-  `acset::validate_store` checks functoriality, path equations, acyclic
-  citations (no circular proofs), and the content-address laws (`fact_cid`
-  injective and = hash of body). It validates *structure*, not theorem truth
-  (that is `kernel_ingest`). Still missing: **functorial data migration** between
-  schemas (Δ/Σ/Π), and the core is hand-rolled rather than a real ACSet library.
-  The interchange schema carries no path equations (it is a free quiver), so the
-  equation machinery is exercised only by unit tests.
+- **ACSet validation is structural by design.** `acset::validate_store` checks
+  functoriality, path equations, acyclic citations (no circular proofs), and the
+  content-address laws (`fact_cid` injective and = hash of body) — *structure*,
+  not theorem truth (that is `kernel_ingest`). The generic ACSet machinery now
+  lives in the `covalence-acset` library (incl. Δ migration); the interchange
+  schema is a free quiver (no path equations) and no migration is wired up here
+  yet. See `covalence-acset/SKELETONS.md` for library-level gaps.
 - **Payloads are opaque bytes.** `prop` / witness payloads are not typed or
   validated; the `examples/coln_bridge` Coln reader is simulated in Rust, not a
   real Coln decoder. ACSet-schema soundness-certificate facts (carrying a schema

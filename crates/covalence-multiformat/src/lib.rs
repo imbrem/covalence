@@ -74,9 +74,10 @@ pub mod fact;
 pub mod identity;
 pub mod store;
 
-pub use acset::{AcsetError, Instance, Schema, SchemaError, interchange_schema, validate_store};
+pub use acset::{StoreError, interchange_schema, validate_store};
 pub use cid::Cid;
 pub use codec::Codec;
+pub use covalence_acset::{AcsetError, Instance, Schema, SchemaError};
 pub use error::{CheckError, ParseError};
 pub use fact::DerivationFact;
 pub use identity::covalence_name;

@@ -71,17 +71,17 @@ fn main() {
     // -- the schema (an olog) ----------------------------------------------
     section("interchange schema (olog): objects, foreign keys, attributes");
     let s = interchange_schema();
-    println!("  objects   : {}", s.objects.join(", "));
-    println!("  attr types: {}", s.attr_types.join(", "));
-    for h in &s.homs {
+    println!("  objects   : {}", s.objects().join(", "));
+    println!("  attr types: {}", s.attr_types().join(", "));
+    for h in s.homs() {
         println!("  hom       : {:<12} {} → {}", h.name, h.dom, h.cod);
     }
-    for a in &s.attrs {
+    for a in s.attrs() {
         println!("  attr      : {:<12} {} → {}", a.name, a.dom, a.cod);
     }
     println!(
         "  equations : {} (the interchange schema is a free quiver)",
-        s.equations.len()
+        s.equations().len()
     );
     println!(
         "  schema self-check: {}",

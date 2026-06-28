@@ -12,15 +12,18 @@
 //! (`Hext`), so `cv_exists` hands back a fixpoint with this recurrence. The
 //! second projection is the closed form `π₂ n = ((n / 2^(π₁ n)) − 1)/2`.
 //!
-//! Round-trip laws (the foundation-neutral export — see `init/SKELETONS.md`):
-//! `π₁ (pair a b) = a`, `π₂ (pair a b) = b`, by induction on `a`.
+//! Round-trip laws (the foundation-neutral export): [`v2_pair`]
+//! (`⊢ ∀a b. π₁ (pair a b) = a`, by induction on `a`) and [`pi2_pair`]
+//! (`⊢ ∀a b. π₂ (pair a b) = b`, a closed-form consequence of it).
 
 use std::collections::BTreeMap;
 
 use covalence_core::{Result, Term, Thm, Type, Var, defs, subst};
 use smol_str::SmolStr;
 
-use crate::init::code::{pair, pair_ne_zero, pair_succ_eq, pair_zero_eq, parity};
+use crate::init::code::{
+    pair, pair_const, pair_ne_zero, pair_spec, pair_succ_eq, pair_zero_eq, parity, pos_pow2,
+};
 use crate::init::cond::{cond_false, cond_true};
 use crate::init::cv_recursion::{cv_fixpoint, cv_witness};
 use crate::init::eq::{beta_expand, beta_nf, beta_nf_concl, beta_reduce};
@@ -61,6 +64,12 @@ fn add(a: Term, b: Term) -> Term {
 }
 fn div(a: Term, b: Term) -> Term {
     Term::app(Term::app(defs::nat_div(), a), b)
+}
+fn pow(a: Term, b: Term) -> Term {
+    Term::app(Term::app(defs::nat_pow(), a), b)
+}
+fn sub(a: Term, b: Term) -> Term {
+    Term::app(Term::app(defs::nat_sub(), a), b)
 }
 fn lt(a: Term, b: Term) -> Term {
     Term::app(Term::app(defs::nat_lt(), a), b)
@@ -394,18 +403,120 @@ pub fn v2_pair() -> Result<Thm> {
         .all_intro("a", nat_ty())
 }
 
+// ============================================================================
+// `π₂` round-trip:  `⊢ ∀a b. π₂ (code.pair a b) = b`
+//
+// `π₂ n := ((n / 2^(π₁ n)) − 1)/2` is a *closed form* (no induction): on a code
+// `n = pair a b = 2^a·(2b+1)`, `π₁ n = a` (`v2_pair`) divides off the `2^a`,
+// leaving `2b+1`; subtract 1 and halve to recover `b`.
+// ============================================================================
+
+/// `⊢ code.pair a b = 2^a · S(b + b)` — δ-unfold + β (local copy of
+/// `code::pair_unfold`, which is private).
+fn pair_unfold(a: &Term, b: &Term) -> Result<Thm> {
+    Term::app(Term::app(pair_const(), a.clone()), b.clone())
+        .delta_all(pair_spec().symbol())?
+        .rhs_conv(|t| Ok(beta_nf(t.clone())))
+}
+
+/// `⊢ 0 < x` → `⊢ ¬(x = 0)`.
+fn ne_zero_of_pos(pos: Thm, x: &Term) -> Result<Thm> {
+    let heq = x.clone().equals(lit(0))?;
+    nat::lt_irrefl()
+        .all_elim(lit(0))?
+        .not_elim(pos.rewrite(&Thm::assume(heq.clone())?)?)? // {x=0} ⊢ 0 < 0 ⟹ F
+        .imp_intro(&heq)?
+        .not_intro()
+}
+
+/// `⊢ S n − 1 = n`.
+fn succ_sub_one(n: &Term) -> Result<Thm> {
+    let ss = nat::sub_succ_succ().all_elim(n.clone())?.all_elim(lit(0))?; // S n − S 0 = n − 0
+    let sz = nat::sub_zero().all_elim(n.clone())?; // n − 0 = n
+    succ(lit(0))
+        .reduce()? // S 0 = 1
+        .sym()? // 1 = S 0
+        .cong_arg(Term::app(defs::nat_sub(), succ(n.clone())))? // S n − 1 = S n − S 0
+        .trans(ss)? // = n − 0
+        .trans(sz) // = n
+}
+
+/// `⊢ (b + b)/2 = b` — halving an even number (`div.mul_cancel` after `b+b = b·2`).
+fn double_div_two(b: &Term) -> Result<Thm> {
+    let to_b2 = nat::mul_comm()
+        .all_elim(b.clone())?
+        .all_elim(lit(2))? // b·2 = 2·b
+        .trans(two_double()?.all_elim(b.clone())?)? // = b + b
+        .sym()?; // b + b = b·2
+    let cancel = div_mul_cancel()
+        .all_elim(b.clone())?
+        .all_elim(lit(2))?
+        .imp_elim(ne_lit(2, 0)?)?; // (b·2)/2 = b
+    to_b2
+        .cong_arg(defs::nat_div())?
+        .cong_fn(lit(2))? // (b+b)/2 = (b·2)/2
+        .trans(cancel) // = b
+}
+
+/// The **explicit, choice-free** second projection `π₂ n = ((n / 2^(π₁ n)) − 1)/2`.
+pub fn pi2_explicit() -> Result<Term> {
+    let n = nvar("n");
+    let v2n = Term::app(v2_explicit()?, n.clone()); // π₁ n
+    let body = div(sub(div(n.clone(), pow(lit(2), v2n)), lit(1)), lit(2));
+    Ok(Term::abs(nat_ty(), subst::close(&body, "n")))
+}
+
+/// `⊢ ∀a b. π₂ (code.pair a b) = b` — the second projection recovers `b`.
+pub fn pi2_pair() -> Result<Thm> {
+    let (a, b) = (nvar("a"), nvar("b"));
+    let p = pair(a.clone(), b.clone());
+    let two_a = pow(lit(2), a.clone());
+    let odd_b = succ(add(b.clone(), b.clone())); // S(b+b) = 2b+1
+
+    // π₂ P  β=  ((P / 2^(π₁ P)) − 1)/2   (single top β; the inner π₁ stays applied).
+    let red = Thm::beta_conv(Term::app(pi2_explicit()?, p.clone()))?;
+    let v2p = v2_pair()?.all_elim(a.clone())?.all_elim(b.clone())?; // π₁ P = a
+    let red = red.rewrite(&v2p)?; // π₂ P = ((P / 2^a) − 1)/2
+
+    // P / 2^a = S(b+b):  P = 2^a·S(b+b) = S(b+b)·2^a, which `2^a` divides off.
+    let p_comm = pair_unfold(&a, &b)? // P = 2^a · S(b+b)
+        .trans(
+            nat::mul_comm()
+                .all_elim(two_a.clone())?
+                .all_elim(odd_b.clone())?, // 2^a·S(b+b) = S(b+b)·2^a
+        )?; // P = S(b+b)·2^a
+    let pa_ne0 = ne_zero_of_pos(pos_pow2()?.all_elim(a.clone())?, &two_a)?; // ¬(2^a = 0)
+    let cancel = div_mul_cancel()
+        .all_elim(odd_b.clone())?
+        .all_elim(two_a.clone())?
+        .imp_elim(pa_ne0)?; // (S(b+b)·2^a)/2^a = S(b+b)
+    let q_eq = p_comm
+        .cong_arg(defs::nat_div())?
+        .cong_fn(two_a.clone())? // P/2^a = (S(b+b)·2^a)/2^a
+        .trans(cancel)?; // P/2^a = S(b+b)
+    let red = red.rewrite(&q_eq)?; // π₂ P = (S(b+b) − 1)/2
+
+    red.rewrite(&succ_sub_one(&add(b.clone(), b.clone()))?)? // π₂ P = (b+b)/2
+        .rewrite(&double_div_two(&b)?)? // π₂ P = b
+        .all_intro("b", nat_ty())?
+        .all_intro("a", nat_ty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Every projection lemma — the recurrence and both round-trips — replays
+    /// to a closed (hypothesis-free) theorem.
     #[test]
-    fn stage_a_builds() {
+    fn projections_are_closed() {
         for (name, thm) in [
             ("two_double", two_double()),
             ("half_lt", half_lt()),
             ("prove_hext_v2", prove_hext_v2()),
             ("v2_recurrence", v2_recurrence()),
             ("v2_pair", v2_pair()),
+            ("pi2_pair", pi2_pair()),
         ] {
             let thm = thm.unwrap_or_else(|e| panic!("{name}: {e}"));
             assert!(thm.hyps().is_empty(), "{name} should be closed");

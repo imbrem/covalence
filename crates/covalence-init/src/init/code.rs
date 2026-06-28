@@ -485,7 +485,7 @@ fn double_inj() -> Result<Thm> {
 
 /// `⊢ ∀x b. ¬(S(b + b) = x + x)` — no number is both odd and even. By induction
 /// on `x` with a nested case on `b`.
-fn parity() -> Result<Thm> {
+pub(crate) fn parity() -> Result<Thm> {
     let (x, b) = (nvar("x"), nvar("b"));
     // motive Q(x) = ∀b. ¬(S(b+b) = x+x)
     let q_body = succ(add(b.clone(), b.clone()))
@@ -806,6 +806,41 @@ fn pair_inj_proj(left: bool) -> Result<Thm> {
         .all_intro("a", nat_ty())
 }
 
+// ============================================================================
+// Pairing recurrences for the projection round-trips (`code_proj.rs`)
+// ============================================================================
+
+/// `⊢ ∀b. code.pair 0 b = S(b + b)` — the projection recurrence's base
+/// (`2^0 = 1`, so the pair is just the odd factor, which is odd).
+pub(crate) fn pair_zero_eq() -> Result<Thm> {
+    let b = nvar("b");
+    pair_unfold(&lit(0), &b)? // pair 0 b = 2^0·S(b+b)
+        .trans(pow_zero_mul(&odd(&b))?)? // = S(b+b)
+        .all_intro("b", nat_ty())
+}
+
+/// `⊢ ∀a b. code.pair (S a) b = 2·(code.pair a b)` — the projection recurrence's
+/// step (`2^(S a) = 2·2^a`, so the pair is even).
+pub(crate) fn pair_succ_eq() -> Result<Thm> {
+    let (a, b) = (nvar("a"), nvar("b"));
+    let unf_sa = pair_unfold(&succ(a.clone()), &b)?; // pair (S a) b = 2^(S a)·odd(b)
+    let ps = nat::pow_succ().all_elim(lit(2))?.all_elim(a.clone())?; // 2^(S a) = 2·2^a
+    let to = ps.cong_arg(defs::nat_mul())?.cong_fn(odd(&b))?; // 2^(S a)·odd(b) = (2·2^a)·odd(b)
+    let assoc = nat::mul_assoc()
+        .all_elim(lit(2))?
+        .all_elim(pow2(a.clone()))?
+        .all_elim(odd(&b))?; // (2·2^a)·odd(b) = 2·(2^a·odd(b))
+    let cong = pair_unfold(&a, &b)?
+        .sym()? // 2^a·odd(b) = pair a b
+        .cong_arg(Term::app(defs::nat_mul(), lit(2)))?; // 2·(2^a·odd(b)) = 2·(pair a b)
+    unf_sa
+        .trans(to)?
+        .trans(assoc)?
+        .trans(cong)? // pair (S a) b = 2·(pair a b)
+        .all_intro("b", nat_ty())?
+        .all_intro("a", nat_ty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -820,6 +855,8 @@ mod tests {
             ("pair_ne_zero", pair_ne_zero()),
             ("pair_left_lt", pair_left_lt()),
             ("pair_right_lt", pair_right_lt()),
+            ("pair_zero_eq", pair_zero_eq()),
+            ("pair_succ_eq", pair_succ_eq()),
         ] {
             let thm = thm.unwrap_or_else(|e| panic!("{name} failed to build: {e}"));
             assert!(

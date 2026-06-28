@@ -403,6 +403,15 @@ pub fn v2_pair() -> Result<Thm> {
         .all_intro("a", nat_ty())
 }
 
+/// `⊢ v2_explicit (code.pair a b) = a` — the [`v2_pair`] round-trip with the
+/// **applied** (un-reduced) LHS. `v2_pair` itself is β-normal (its LHS is the
+/// `natRec` reduct), so consumers that compose `v2_explicit` with other applied
+/// terms (`π₂`, the `lambda_order` extractors) need this form to rewrite with.
+pub fn v2_pair_applied(a: &Term, b: &Term) -> Result<Thm> {
+    let lhs = Term::app(v2_explicit()?, pair(a.clone(), b.clone()));
+    beta_nf(lhs).trans(v2_pair()?.all_elim(a.clone())?.all_elim(b.clone())?)
+}
+
 // ============================================================================
 // `π₂` round-trip:  `⊢ ∀a b. π₂ (code.pair a b) = b`
 //
@@ -475,7 +484,10 @@ pub fn pi2_pair() -> Result<Thm> {
 
     // π₂ P  β=  ((P / 2^(π₁ P)) − 1)/2   (single top β; the inner π₁ stays applied).
     let red = Thm::beta_conv(Term::app(pi2_explicit()?, p.clone()))?;
-    let v2p = v2_pair()?.all_elim(a.clone())?.all_elim(b.clone())?; // π₁ P = a
+    // The inner `π₁ P` is the *applied* `v2_explicit P`; `v2_pair` is stated
+    // β-normal, so rewrite with the applied-form round-trip (else the rewrite
+    // silently matches nothing and π₂ never collapses to `b`).
+    let v2p = v2_pair_applied(&a, &b)?; // app v2_explicit P = a
     let red = red.rewrite(&v2p)?; // π₂ P = ((P / 2^a) − 1)/2
 
     // P / 2^a = S(b+b):  P = 2^a·S(b+b) = S(b+b)·2^a, which `2^a` divides off.
@@ -521,5 +533,35 @@ mod tests {
             let thm = thm.unwrap_or_else(|e| panic!("{name}: {e}"));
             assert!(thm.hyps().is_empty(), "{name} should be closed");
         }
+    }
+
+    /// The round-trips genuinely recover the components: `π₁(pair a b) = a` and
+    /// `π₂(pair a b) = b` have the *variable* on the RHS (not just any closed
+    /// term — a no-op β-reduction would also be closed).
+    #[test]
+    fn round_trips_recover_components() {
+        let (a, b) = (nvar("a"), nvar("b"));
+        let v2 = v2_pair()
+            .unwrap()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            format!("{}", v2.concl().as_eq().unwrap().1),
+            format!("{a}"),
+            "π₁(pair a b) must equal a"
+        );
+        let pi2 = pi2_pair()
+            .unwrap()
+            .all_elim(a.clone())
+            .unwrap()
+            .all_elim(b.clone())
+            .unwrap();
+        assert_eq!(
+            format!("{}", pi2.concl().as_eq().unwrap().1),
+            format!("{b}"),
+            "π₂(pair a b) must equal b"
+        );
     }
 }

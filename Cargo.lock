@@ -1165,6 +1165,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-multiformat"
+version = "0.0.0"
+dependencies = [
+ "covalence-hash",
+ "covalence-init",
+ "covalence-parse",
+ "covalence-sexp",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-object"
 version = "0.0.0"
 dependencies = [

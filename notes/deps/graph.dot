@@ -24,6 +24,7 @@ digraph deps {
   "llm";
   "lsp";
   "metamath";
+  "multiformat";
   "object";
   "opentheory";
   "parquet";
@@ -106,6 +107,8 @@ digraph deps {
   "lsp" -> "wasm";
   "metamath" -> "parse";
   "metamath" -> "sexp";
+  "multiformat" -> "hash";
+  "multiformat" -> "parse";
   "object" -> "hash";
   "object" -> "parse";
   "opentheory" -> "hol";

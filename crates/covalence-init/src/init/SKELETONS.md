@@ -175,8 +175,9 @@ index](../../../../SKELETONS.md).
   and (`lambda_order.rs`) the **richer subtyping order** `Order a b := ∀R. ClosedOrder R ⟹ R a b`
   (initial `0 <: A` / terminal `A <: 1` / covariant ⊗,+ / base refl) with intro rules,
   `ord_induction`, `subtype_to_order`, `ord_refl`, `ord_wf`, the generation lemmas
-  `inv_unit`/`inv_tensor`/`inv_sum` (stated with `ty_arg1`/`ty_arg2` component
-  extractors, the first use of the `π₁`/`π₂` round-trips), and **transitivity** `ord_trans`.
+  `inv_unit`/`inv_empty`/`inv_tensor`/`inv_sum` (stated with `ty_arg1`/`ty_arg2`
+  component extractors, the first use of the `π₁`/`π₂` round-trips), and the
+  preorder/partial-order laws `ord_trans` + `ord_antisym`.
   Deferred:
   - **Encoding functions** — projections done (`code_proj.rs`): `π₁` (2-adic
     valuation, choice-free via `cv_exists`) with `v2_recurrence` + round-trip
@@ -197,8 +198,9 @@ index](../../../../SKELETONS.md).
     `WfTyCode` distinctness/generation (`lambda_ty.rs`), and the **richer
     subtyping order** `Order` (`lambda_order.rs`) — initial/terminal/covariant/base
     refl, `ord_induction`, `subtype_to_order`, `ord_refl`, `ord_wf`, generation
-    lemmas (`inv_unit`/`inv_tensor`/`inv_sum`), and **transitivity** `ord_trans`
-    (so `Order` is a preorder). **Remaining:** the **expression-level relation**
+    lemmas (`inv_unit`/`inv_empty`/`inv_tensor`/`inv_sum`), **transitivity**
+    `ord_trans` + **antisymmetry** `ord_antisym` (so `Order` is a **partial
+    order**). **Remaining:** the **expression-level relation**
     (`Typed`/`Checks` above), weakening (2.1.1.2.1), substitution (2.1.1.2.2) —
     these are where the value-extracting decoders `El_*`/`WfExCode` finally need
     `pair_*_lt` + `cv_exists`.

@@ -83,6 +83,7 @@ macro_rules! cached_thm {
 
 pub mod cat;
 pub mod char;
+pub mod code;
 pub mod cond;
 pub mod coprod;
 pub mod cv_recursion;

@@ -92,6 +92,7 @@ pub mod ext;
 pub mod inductive;
 pub mod int;
 pub mod lambda_iter;
+pub mod lambda_ty;
 pub mod lang;
 pub mod list;
 pub mod list_recursion;

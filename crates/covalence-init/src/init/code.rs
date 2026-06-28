@@ -252,8 +252,13 @@ pub fn pair_const() -> Term {
 }
 
 /// `code.pair a b`.
-fn pair_app(a: Term, b: Term) -> Term {
+pub fn pair(a: Term, b: Term) -> Term {
     Term::app(Term::app(pair_const(), a), b)
+}
+
+/// `code.pair a b` (internal alias for the proofs below).
+fn pair_app(a: Term, b: Term) -> Term {
+    pair(a, b)
 }
 
 /// `⊢ code.pair a b = 2^a · S(b + b)` — δ-unfold + β.

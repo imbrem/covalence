@@ -154,23 +154,27 @@ index](../../../../SKELETONS.md).
   the recursor's subtree-recovery identity + the `Wf` carve `init/sexpr.rs` defers.
 
 - **λ_iter deep embedding** (`init/lambda_iter.rs` + `.cov`, `init/cv_recursion.rs`,
-  `init/code.rs`). Tarski-style nat-encoding documented; **proved**: course-of-values
-  induction (`strong.below`/`strong.induct`) and the full course-of-values *recursion*
-  theorem — uniqueness (`cv.unique`) + existence (`cv_recursion::cv_exists`,
-  `⊢ Hext F ⟹ ∃f. ∀n. f n = F n f`, by bounded iteration) — plus the supporting
-  function-valued `natRec` equations and `nat` order helpers; and (`code.rs`) the
-  pairing `code.pair a b ≜ 2^a·(2b+1)` with `pair_pos`/`pair_ne_zero` and the
-  strict-decrease laws `pair_left_lt` (`a < pair a b`) / `pair_right_lt`
-  (`b < pair a b`). Deferred:
+  `init/code.rs`, `init/lambda_ty.rs`). Tarski-style nat-encoding documented;
+  **proved**: course-of-values induction (`strong.below`/`strong.induct`) and the
+  full course-of-values *recursion* theorem — uniqueness (`cv.unique`) + existence
+  (`cv_recursion::cv_exists`, `⊢ Hext F ⟹ ∃f. ∀n. f n = F n f`, by bounded
+  iteration) — plus the function-valued `natRec` equations and `nat` order helpers;
+  (`code.rs`) the pairing `code.pair a b ≜ 2^a·(2b+1)` with `pair_pos`/`pair_ne_zero`
+  and the strict-decrease laws `pair_left_lt`/`pair_right_lt` (`a,b < pair a b`); and
+  (`lambda_ty.rs`) the **type fragment** `A ::= 0|1|Xᵢ|A⊗B|A+B` — constructor codes
+  (`ty_empty`/…/`ty_sum` with tags 0..4) and `WfTyCode c := ∀S. Closed S ⟹ S c` as
+  an impredicative inductive predicate, with all five intro rules + rule induction
+  (`wf_ty_induction`). Deferred:
   - **Encoding functions** — projections `π₁`/`π₂` + round-trip (`π₁⟨a,b⟩=a`) +
-    injectivity over `code.pair`; constructor `tag` constants; and
-    `WfTyCode`/`WfExCode`/`WfCtxCode` + `El_*`, now definable via `cv_exists`
-    (course-of-values recursion on codes, with the `pair_*_lt` decrease guards).
+    `code.pair` injectivity (needed for `El` value-extraction and constructor
+    *distinctness*); the expression/context decoders `WfExCode`/`WfCtxCode` (de
+    Bruijn binders) and `El_*`, via `cv_exists` + the `pair_*_lt` decrease guards.
   - **Reified judgements** — `Typed : nat→nat→nat→bool` (least relation closed
-    under coded Fig 2 rules) and `Checks` (derivation-code well-formedness).
-  - **Metatheorems** — subtyping reflexivity/transitivity (type fragment, no
-    binders — the natural first target), then weakening (2.1.1.2.1) and
-    substitution (2.1.1.2.2), each by `strong.induct` on the derivation code.
+    under coded Fig 2 rules) and `Checks` (derivation-code well-formedness),
+    same impredicative-`∀S` shape as `WfTyCode`.
+  - **Metatheorems** — the rule-induction engine exists (`wf_ty_induction`); next is
+    subtyping reflexivity/transitivity (type fragment, no binders), then weakening
+    (2.1.1.2.1) and substitution (2.1.1.2.2) over the derivation codes.
   - SSA⇔λ_iter equivalence is out of scope here (deferred separately).
 
 ## `nat.thy` — carrier-generic model deferred

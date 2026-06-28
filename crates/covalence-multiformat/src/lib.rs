@@ -74,7 +74,7 @@ pub mod fact;
 pub mod identity;
 pub mod store;
 
-pub use acset::{AcsetError, Instance, Schema, interchange_schema, validate_store};
+pub use acset::{AcsetError, Instance, Schema, SchemaError, interchange_schema, validate_store};
 pub use cid::Cid;
 pub use codec::Codec;
 pub use error::{CheckError, ParseError};

@@ -9,7 +9,7 @@
 //!
 //! Run:  `cargo run -p covalence-multiformat --example acset_validate`
 
-use covalence_multiformat::acset::{instance_of, interchange_schema, ob};
+use covalence_multiformat::acset::{instance_of, interchange_schema, ob, validate_store};
 use covalence_multiformat::{Cid, DerivationFact, FactStore, codec};
 
 fn section(title: &str) {
@@ -43,29 +43,23 @@ fn coln_seq(imports: Cid) -> DerivationFact {
 }
 
 fn show_validation(store: &FactStore) {
-    let inst = instance_of(store).expect("bodies decode");
-    println!(
-        "  instance parts: Fact={}  Leaf={}  FactCite={}  RootCite={}",
-        inst.nparts(ob::FACT),
-        inst.nparts(ob::LEAF),
-        inst.nparts(ob::FACT_CITE),
-        inst.nparts(ob::ROOT_CITE),
-    );
-    match inst.validate() {
-        Ok(()) => println!("  validate: VALID INSTANCE ✓ (the functor schema → Set exists)"),
+    if let Some(inst) = instance_of(store) {
+        println!(
+            "  instance parts: Fact={}  Leaf={}  FactCite={}  RootCite={}",
+            inst.nparts(ob::FACT),
+            inst.nparts(ob::LEAF),
+            inst.nparts(ob::FACT_CITE),
+            inst.nparts(ob::ROOT_CITE),
+        );
+    }
+    match validate_store(store) {
+        Ok(()) => println!(
+            "  validate_store: VALID INSTANCE ✓ (functor + equations + acyclic + cid laws)"
+        ),
         Err(errs) => {
-            println!("  validate: NOT AN INSTANCE ✗");
+            println!("  validate_store: NOT AN INSTANCE ✗");
             for e in &errs {
-                // annotate the dangling source fact with its label
-                if let covalence_multiformat::AcsetError::DanglingHom {
-                    src, hom: "fc_dst", ..
-                } = e
-                {
-                    let who = inst.label(ob::FACT, *src).unwrap_or("?");
-                    println!("    · {e}\n      (citing fact: {who})");
-                } else {
-                    println!("    · {e}");
-                }
+                println!("    · {e}");
             }
         }
     }
@@ -85,6 +79,21 @@ fn main() {
     for a in &s.attrs {
         println!("  attr      : {:<12} {} → {}", a.name, a.dom, a.cod);
     }
+    println!(
+        "  equations : {} (the interchange schema is a free quiver)",
+        s.equations.len()
+    );
+    println!(
+        "  schema self-check: {}",
+        if s.check().is_ok() {
+            "well-formed ✓"
+        } else {
+            "ill-formed ✗"
+        }
+    );
+    println!(
+        "  laws enforced: functoriality · path equations · acyclic citations · cid = hash(body) · cid injective",
+    );
 
     // -- a valid store is a valid instance ---------------------------------
     section("1. a well-formed store IS a valid instance");
@@ -103,8 +112,17 @@ fn main() {
     println!("  store: only the geometric sequent; its HOL citation is missing.");
     show_validation(&broken);
 
+    // -- content-address law: a corrupted key is caught --------------------
+    section("3. content-address law — a body stored under the wrong key is caught");
+    let mut corrupt = FactStore::new();
+    let body = hol_thm().encode();
+    let wrong = Cid::of(codec::DERIVATION_FACT, b"a different body");
+    corrupt.insert_raw(wrong, body); // key disagrees with the body it stores
+    println!("  store: one fact inserted under a key that is not the hash of its body.");
+    show_validation(&corrupt);
+
     section("what this validates");
-    println!("  structure (referential integrity of the fact DAG), as instance-conformance.");
-    println!("  NOT theorem truth (kernel_ingest) nor content hashes (the cid layer).");
-    println!("  The schema is a geometric theory — this check is native to Coln's kernel.");
+    println!("  structure: functoriality + path equations + acyclic citations + cid laws.");
+    println!("  NOT theorem truth (kernel_ingest). The schema is a geometric theory —");
+    println!("  so this whole check is native to a geometric (Coln) kernel.");
 }

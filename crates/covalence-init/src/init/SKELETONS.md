@@ -154,7 +154,8 @@ index](../../../../SKELETONS.md).
   the recursor's subtree-recovery identity + the `Wf` carve `init/sexpr.rs` defers.
 
 - **λ_iter deep embedding** (`init/lambda_iter.rs` + `.cov`, `init/cv_recursion.rs`,
-  `init/code.rs`, `init/lambda_ty.rs`, `init/lambda_sub.rs`). Tarski-style nat-encoding documented;
+  `init/code.rs`, `init/code_proj.rs`, `init/lambda_ty.rs`, `init/lambda_sub.rs`,
+  `init/lambda_order.rs`). Tarski-style nat-encoding documented;
   **proved**: course-of-values induction (`strong.below`/`strong.induct`) and the
   full course-of-values *recursion* theorem — uniqueness (`cv.unique`) + existence
   (`cv_recursion::cv_exists`, `⊢ Hext F ⟹ ∃f. ∀n. f n = F n f`, by bounded
@@ -170,7 +171,10 @@ index](../../../../SKELETONS.md).
   (`wf_ty_induction`) + constructor distinctness (`ty_code_distinct`) + generation
   lemmas (`wf_tensor_inv`/`wf_sum_inv`); and (`lambda_sub.rs`) **subtyping** `Subtype a b := ∀R. ClosedSub R ⟹ R a b`
   (structural congruence) with its intro rules, rule induction, and the metatheorems
-  `sub_eq` (`Subtype a b ⟹ a = b`), `sub_refl` (`WfTyCode c ⟹ Subtype c c`), `sub_trans`.
+  `sub_eq` (`Subtype a b ⟹ a = b`), `sub_refl` (`WfTyCode c ⟹ Subtype c c`), `sub_trans`;
+  and (`lambda_order.rs`) the **richer subtyping order** `Order a b := ∀R. ClosedOrder R ⟹ R a b`
+  (initial `0 <: A` / terminal `A <: 1` / covariant ⊗,+ / base refl) with intro rules,
+  `ord_induction`, `subtype_to_order`, `ord_refl`, `ord_wf`.
   Deferred:
   - **Encoding functions** — projections done (`code_proj.rs`): `π₁` (2-adic
     valuation, choice-free via `cv_exists`) with `v2_recurrence` + round-trip
@@ -187,11 +191,17 @@ index](../../../../SKELETONS.md).
   - **Reified judgements** — `Typed : nat→nat→nat→bool` (least relation closed
     under coded Fig 2 rules) and `Checks` (derivation-code well-formedness),
     same impredicative-`∀S` shape as `WfTyCode`.
-  - **Metatheorems** — type-fragment subtyping refl/trans done (`lambda_sub.rs`),
-    plus `WfTyCode` distinctness/generation (`lambda_ty.rs`). Next: **richer
-    subtyping** (initial `0 <: A` / terminal `A <: 1`) — needs new `Subtype` intro
-    rules + their generation lemmas; then the expression-level relation, weakening
-    (2.1.1.2.1) and substitution (2.1.1.2.2).
+  - **Metatheorems** — type-fragment subtyping refl/trans (`lambda_sub.rs`),
+    `WfTyCode` distinctness/generation (`lambda_ty.rs`), and the **richer
+    subtyping order** `Order` (`lambda_order.rs`): initial `0 <: A` / terminal
+    `A <: 1` + covariant ⊗/+ + base refl, with intro rules, `ord_induction`,
+    `subtype_to_order` (congruence embeds), `ord_refl`, `ord_wf`
+    (well-formedness preservation). **Remaining:** `Order` **transitivity**
+    (`Order a b ⟹ Order b c ⟹ Order a c`) — needs `Order` generation/inversion
+    lemmas (case-analyse a derivation; harder than `WfTyCode`'s since `Order` is
+    a relation with bottom/top, so inversion must split on which rule fired).
+    Then the expression-level relation, weakening (2.1.1.2.1), substitution
+    (2.1.1.2.2).
   - SSA⇔λ_iter equivalence is out of scope here (deferred separately).
 
 ## `nat.thy` — carrier-generic model deferred

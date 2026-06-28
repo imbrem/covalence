@@ -31,14 +31,17 @@
 //! * [`ord_wf`] `⊢ ∀a b. Order a b ⟹ WfTyCode a ∧ WfTyCode b` — well-formedness
 //!   preservation, by [rule induction](ord_induction);
 //! * [`ord_trans`] `⊢ ∀a b c. Order a b ⟹ Order b c ⟹ Order a c` —
-//!   **transitivity**, the order is genuinely a preorder (with `ord_refl`).
+//!   **transitivity**; and
+//! * [`ord_antisym`] `⊢ ∀a b. Order a b ⟹ Order b a ⟹ a = b` —
+//!   **antisymmetry**. With [`ord_refl`], `Order` is a genuine **partial order**.
 //!
-//! Transitivity rests on the **generation/inversion lemmas** [`inv_unit`]
-//! (`Order ⌜1⌝ c ⟹ c = ⌜1⌝`), [`inv_tensor`], and [`inv_sum`] (a binary code is
+//! These rest on the **generation/inversion lemmas** [`inv_unit`]
+//! (`Order ⌜1⌝ c ⟹ c = ⌜1⌝`, `1` maximal), [`inv_empty`] (`Order c ⌜0⌝ ⟹
+//! c = ⌜0⌝`, `0` minimal), [`inv_tensor`], and [`inv_sum`] (a binary code is
 //! below `c` only when `c = ⌜1⌝` or `c` is the matching binary with covariantly
-//! related components). These are stated with the **component extractors**
-//! `ty_arg1`/`ty_arg2` (built on the `code_proj` projections) instead of
-//! existentials, so transitivity's use-sites are plain rewrites.
+//! related components). The binary inversions are stated with the **component
+//! extractors** `ty_arg1`/`ty_arg2` (built on the `code_proj` projections)
+//! instead of existentials, so the use-sites are plain rewrites.
 
 use covalence_core::{Result, Term, Thm, Type, subst};
 
@@ -941,6 +944,179 @@ pub fn ord_trans() -> Result<Thm> {
         .all_intro("a", nat_ty())
 }
 
+// ----------------------------------------------------------------------------
+// Antisymmetry — `Order` is a partial order
+// ----------------------------------------------------------------------------
+
+/// `⊢ ∀c. Order c ⌜0⌝ ⟹ c = ⌜0⌝` — `0` is **minimal**: nothing is strictly below
+/// it. The mirror of [`inv_unit`] (motive `pred a b := (b = ⌜0⌝) ⟹ (a = ⌜0⌝)`);
+/// the only non-vacuous case is `init`, where the conclusion `0 = 0` is reflexivity.
+pub fn inv_empty() -> Result<Thm> {
+    let (a, b) = (nvar("a"), nvar("b"));
+    let body = b
+        .clone()
+        .equals(ty_empty())?
+        .imp(a.clone().equals(ty_empty())?)?;
+    let inner = Term::abs(nat_ty(), subst::close(&body, "b"));
+    let pred = Term::abs(nat_ty(), subst::close(&inner, "a"));
+
+    // `(y = 0) ⟹ (x = 0)` discharged ex falso when `y ≠ 0`.
+    let vacuous = |x: &Term, y: &Term| -> Result<Thm> {
+        let h = y.clone().equals(ty_empty())?;
+        let imp = ty_code_distinct(y, &ty_empty())?
+            .not_elim(Thm::assume(h.clone())?)? // {y=0} ⊢ F
+            .false_elim(x.clone().equals(ty_empty())?)?
+            .imp_intro(&h)?; // (y=0) ⟹ (x=0)
+        beta_nf_expand(pred_app(&pred, x, y), imp)
+    };
+
+    let ind = ord_induction(
+        &pred,
+        |a| {
+            // pred 0 a : (a=0) ⟹ (0=0); the consequent is reflexivity.
+            let imp = Thm::refl(ty_empty())?.imp_intro(&a.clone().equals(ty_empty())?)?;
+            beta_nf_expand(pred_app(&pred, &ty_empty(), a), imp)?.imp_intro(&wf_ty_code(a)?)
+        },
+        |a| vacuous(a, &ty_unit())?.imp_intro(&wf_ty_code(a)?), // b = 1 ≠ 0
+        |i| {
+            let xi = ty_base(i.clone());
+            let h = xi.clone().equals(ty_empty())?;
+            beta_nf_expand(
+                pred_app(&pred, &xi, &xi),
+                Thm::assume(h.clone())?.imp_intro(&h)?,
+            )
+        },
+        |a, ap, b, bp| {
+            vacuous(
+                &ty_tensor(a.clone(), b.clone()),
+                &ty_tensor(ap.clone(), bp.clone()),
+            )?
+            .imp_intro(&pred_app(&pred, b, bp))?
+            .imp_intro(&pred_app(&pred, a, ap))
+        },
+        |a, ap, b, bp| {
+            vacuous(
+                &ty_sum(a.clone(), b.clone()),
+                &ty_sum(ap.clone(), bp.clone()),
+            )?
+            .imp_intro(&pred_app(&pred, b, bp))?
+            .imp_intro(&pred_app(&pred, a, ap))
+        },
+    )?;
+
+    let c = nvar("c");
+    let ord_c0 = order(&c, &ty_empty())?;
+    let pred_c0 = ind
+        .all_elim(c.clone())?
+        .all_elim(ty_empty())?
+        .imp_elim(Thm::assume(ord_c0.clone())?)?; // {Order c 0} ⊢ (0=0) ⟹ (c=0)
+    beta_nf_concl(pred_c0)?
+        .imp_elim(Thm::refl(ty_empty())?)? // {Order c 0} ⊢ c = 0
+        .imp_intro(&ord_c0)?
+        .all_intro("c", nat_ty())
+}
+
+/// `⊢ ∀a b. Order a b ⟹ Order b a ⟹ a = b` — **antisymmetry**, so `Order` is a
+/// partial order. By rule induction on `Order a b` (motive `pred a b :=
+/// Order b a ⟹ a = b`): `init`/`term` use [`inv_empty`]/[`inv_unit`], the
+/// covariant cases invert the reverse relation and recurse.
+pub fn ord_antisym() -> Result<Thm> {
+    let (a, b) = (nvar("a"), nvar("b"));
+    let body = order(&b, &a)?.imp(a.clone().equals(b.clone())?)?; // Order b a ⟹ a = b
+    let inner = Term::abs(nat_ty(), subst::close(&body, "b"));
+    let pred = Term::abs(nat_ty(), subst::close(&inner, "a"));
+
+    let binary_case = |tag: u64,
+                       ctor: fn(Term, Term) -> Term,
+                       inv: fn() -> Result<Thm>,
+                       a: &Term,
+                       ap: &Term,
+                       b: &Term,
+                       bp: &Term|
+     -> Result<Thm> {
+        let (pa, pb) = (pred_app(&pred, a, ap), pred_app(&pred, b, bp));
+        let ih_a = beta_nf_concl(Thm::assume(pa.clone())?)?; // Order ap a ⟹ a = ap
+        let ih_b = beta_nf_concl(Thm::assume(pb.clone())?)?; // Order bp b ⟹ b = bp
+        let lhs = ctor(a.clone(), b.clone());
+        let rhs = ctor(ap.clone(), bp.clone());
+        let o_rl = order(&rhs, &lhs)?;
+        let disj = inv()?
+            .all_elim(ap.clone())?
+            .all_elim(bp.clone())?
+            .all_elim(lhs.clone())?
+            .imp_elim(Thm::assume(o_rl.clone())?)?; // lhs=1 ∨ disj_right(rhs, lhs)
+        let left = {
+            let h = lhs.clone().equals(ty_unit())?;
+            ty_code_distinct(&lhs, &ty_unit())?
+                .not_elim(Thm::assume(h.clone())?)?
+                .false_elim(lhs.clone().equals(rhs.clone())?)?
+                .imp_intro(&h)?
+        };
+        let right = {
+            let dr = disj_right(ctor, &rhs, &lhs)?;
+            let orders = Thm::assume(dr.clone())?.and_elim_r()?;
+            let o1 = orders
+                .clone()
+                .and_elim_l()? // Order (ty_arg1 rhs)(ty_arg1 lhs)
+                .rewrite(&ty_arg1_ctor(tag, ap, bp)?)?
+                .rewrite(&ty_arg1_ctor(tag, a, b)?)?; // Order ap a
+            let o2 = orders
+                .and_elim_r()?
+                .rewrite(&ty_arg2_ctor(tag, ap, bp)?)?
+                .rewrite(&ty_arg2_ctor(tag, a, b)?)?; // Order bp b
+            let ea = ih_a.clone().imp_elim(o1)?; // a = ap
+            let eb = ih_b.clone().imp_elim(o2)?; // b = bp
+            ctor_cong(tag, ea, eb)?.imp_intro(&dr)? // lhs = rhs
+        };
+        let eq = disj.or_elim(left, right)?.imp_intro(&o_rl)?; // Order rhs lhs ⟹ lhs = rhs
+        beta_nf_expand(pred_app(&pred, &lhs, &rhs), eq)?
+            .imp_intro(&pb)?
+            .imp_intro(&pa)
+    };
+
+    let ind = ord_induction(
+        &pred,
+        |a| {
+            let wfa = wf_ty_code(a)?;
+            let oa0 = order(a, &ty_empty())?;
+            let eq = inv_empty()?
+                .all_elim(a.clone())?
+                .imp_elim(Thm::assume(oa0.clone())?)? // a = 0
+                .sym()? // 0 = a
+                .imp_intro(&oa0)?; // Order a 0 ⟹ 0 = a
+            beta_nf_expand(pred_app(&pred, &ty_empty(), a), eq)?.imp_intro(&wfa)
+        },
+        |a| {
+            let wfa = wf_ty_code(a)?;
+            let o1a = order(&ty_unit(), a)?;
+            let eq = inv_unit()?
+                .all_elim(a.clone())?
+                .imp_elim(Thm::assume(o1a.clone())?)? // a = 1
+                .imp_intro(&o1a)?; // Order 1 a ⟹ a = 1
+            beta_nf_expand(pred_app(&pred, a, &ty_unit()), eq)?.imp_intro(&wfa)
+        },
+        |i| {
+            let xi = ty_base(i.clone());
+            let o = order(&xi, &xi)?;
+            let eq = Thm::refl(xi.clone())?.imp_intro(&o)?; // Order Xi Xi ⟹ Xi = Xi
+            beta_nf_expand(pred_app(&pred, &xi, &xi), eq)
+        },
+        |a, ap, b, bp| binary_case(3, ty_tensor, inv_tensor, a, ap, b, bp),
+        |a, ap, b, bp| binary_case(4, ty_sum, inv_sum, a, ap, b, bp),
+    )?;
+
+    let (x, y) = (nvar("a"), nvar("b"));
+    let oab = Thm::assume(order(&x, &y)?)?;
+    beta_nf_concl(
+        ind.all_elim(x.clone())?
+            .all_elim(y.clone())?
+            .imp_elim(oab)?,
+    )? // Order b a ⟹ a = b
+    .imp_intro(&order(&x, &y)?)?
+    .all_intro("b", nat_ty())?
+    .all_intro("a", nat_ty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -987,17 +1163,37 @@ mod tests {
         assert!(eq.hyps().is_empty());
     }
 
-    /// The binary inversion lemmas + transitivity replay closed.
+    /// The binary inversions, both `1`/`0` inversions, transitivity, and
+    /// antisymmetry replay closed.
     #[test]
     fn inversion_binary_closed() {
         for (name, thm) in [
             ("inv_tensor", inv_tensor()),
             ("inv_sum", inv_sum()),
+            ("inv_empty", inv_empty()),
             ("ord_trans", ord_trans()),
+            ("ord_antisym", ord_antisym()),
         ] {
             let thm = thm.unwrap_or_else(|e| panic!("{name}: {e}"));
             assert!(thm.hyps().is_empty(), "{name} should be closed");
         }
+    }
+
+    /// Antisymmetry applied: two `Order` derivations the same way collapse to an
+    /// equality (`Order ⌜0⌝ ⌜0⌝` both ways gives `0 = 0` — a sanity instance).
+    #[test]
+    fn antisymmetry_instance() {
+        let z = ty_empty();
+        let o00 = ord_init(z.clone())
+            .and_then(|x| x.imp_elim(wf_empty()?))
+            .expect("Order 0 0");
+        let eq = ord_antisym()
+            .and_then(|x| x.all_elim(z.clone()))
+            .and_then(|x| x.all_elim(z.clone()))
+            .and_then(|x| x.imp_elim(o00.clone()))
+            .and_then(|x| x.imp_elim(o00))
+            .expect("0 = 0");
+        assert!(eq.hyps().is_empty());
     }
 
     /// Transitivity composes the genuinely-richer cells: from `0 <: X₀⊗1` and

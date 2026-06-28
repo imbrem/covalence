@@ -46,6 +46,7 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-alethe`](crates/covalence-alethe/SKELETONS.md)** — Alethe rule coverage.
 - **[`covalence-egglog`](crates/covalence-egglog/SKELETONS.md)** — egglog `external` bridge disabled (released egglog lacks the proof module).
 - **[`covalence-metamath`](crates/covalence-metamath/SKELETONS.md)** — substitution engine + `.mm` reader: `set.mm`-scale streaming, canonical serializer, structured-tree encoding, symbol interning.
+- **[`covalence-hash`](crates/covalence-hash/SKELETONS.md)** — `coln_bridge` example: alpha multiformat interchange-format sketch (unregistered codecs, no signing, simulated Coln reader).
 
 A crate with no skeletons has no file. When you add the first skeleton to a
 crate (or module) without one, create its `SKELETONS.md` and link it from its

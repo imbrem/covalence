@@ -20,6 +20,14 @@
   `term-spec` / `nat-lit` / …), so `COV_HOL_THM` payloads are restricted to what
   round-trips (`app`/`eq`/`free`/`abs`/`const`/…). Widening needs those arms in
   covalence-init, or a different term codec.
+- **ACSet validation is structure-only and equation-free.** `acset` checks the
+  interchange is a valid *instance* (every morphism a total function into
+  existing parts = referential integrity). It does NOT yet model schema
+  path/commutativity equations, acyclicity of the citation DAG, or attribute
+  laws (e.g. `Fact.cid = blake3(body)` — that lives in the `cid` layer). No
+  functorial data migration between schemas. Hand-rolled core, not a real ACSet
+  library.
 - **Payloads are opaque bytes.** `prop` / witness payloads are not typed or
   validated; the `examples/coln_bridge` Coln reader is simulated in Rust, not a
-  real Coln decoder. ACSet-schema soundness-certificate facts are future work.
+  real Coln decoder. ACSet-schema soundness-certificate facts (carrying a schema
+  *as payload*) are future work.

@@ -47,6 +47,11 @@ impl FactStore {
         self.facts.get(&cid).map(Vec::as_slice)
     }
 
+    /// Iterate `(cid, body)` over every stored fact, in unspecified order.
+    pub fn facts(&self) -> impl Iterator<Item = (Cid, &[u8])> {
+        self.facts.iter().map(|(c, b)| (*c, b.as_slice()))
+    }
+
     /// Proof-checking *as* a constraint query: `cid` is admissible iff it is
     /// present, its stored body hashes back to it, and — recursively — every
     /// derivation-fact it cites is itself admissible. Assumptions whose codec

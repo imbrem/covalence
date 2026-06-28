@@ -66,6 +66,7 @@
 //! assert!(broken.check(coln_cid).is_err());
 //! ```
 
+pub mod acset;
 pub mod cid;
 pub mod codec;
 pub mod error;
@@ -73,6 +74,7 @@ pub mod fact;
 pub mod identity;
 pub mod store;
 
+pub use acset::{AcsetError, Instance, Schema, interchange_schema, validate_store};
 pub use cid::Cid;
 pub use codec::Codec;
 pub use error::{CheckError, ParseError};

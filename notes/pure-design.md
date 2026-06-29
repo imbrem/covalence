@@ -32,7 +32,26 @@ dispatch on values; ex-falso takes the caller's specific target value.
 
 ## 2. The floor API (the whole TCB floor)
 
-Source of truth: `crates/covalence-pure/src/lib.rs`. Surface:
+> **Naming:** the context/kernel type parameter is **`K`** ("K for kernel"), not
+> `C` — to avoid confusion with an object language's *internal* context (e.g.
+> HOL's `Γ`). Older prose below written with `C` means `K`; secondary kernels are
+> `K1`/`K2`. The theorem type is **`MThm`** ("metatheorem"), not `Thm` — so a
+> downstream crate is free to alias `type Thm<P, K = ()> = MThm<MyCrateCtx<K>, P>`.
+> Older prose written `Thm` means `MThm`.
+
+> **Crate split:** the kernel TCB lives in **`covalence-pure-trusted`** (the
+> `thm` + `derive` modules — `MThm`/`Stmt`/`Rule`/`Derive`/`IsStmt`, structural
+> rules, pointer/erasure support; `MThm::new` private to its `thm` module = the
+> minting boundary, now a crate boundary). **`covalence-pure`** is a *facade*: it
+> re-exports the kernel and adds non-minting sugar — `testing` and the `ext`
+> extension traits (`MThmExt`/`MThmVecExt`, the same-context `try_zip_same` /
+> `push_same`). Future siblings slot in the same way: `covalence-pure-derive`
+> (proc macros) and **feature crates** (equality theory, FOL, content-addressing)
+> — each a unit of trust contributing `Rule`s a context opts into, the
+> "ultra-modular" `MyFeature<K>(data, k) ⟹ …` pattern.
+
+Source of truth: `crates/covalence-pure-trusted/src/` (kernel) + `covalence-pure`
+(facade). Surface:
 
 - `Stmt<C, P>` — public `{ ctx, prop }`, freely constructible, **no** truth
   claim. The untrusted analogue of a theorem.
@@ -46,6 +65,60 @@ Source of truth: `crates/covalence-pure/src/lib.rs`. Surface:
   `false_elim` (bool base, value-directed), `zip` (∧-intro across contexts),
   `fst`/`snd`/`and_elim` (∧-elim), `or_inl`/`or_inr`/`or_elim` (∨),
   `ctx_inl`/`ctx_inr`/`ctx_or_elim` (context-∨), `Union` (context merge).
+- **Sequence props as N-ary conjunction** (`[T; N]`, `Vec<T>`, `&[T]` = "every
+  element holds in `C`"): `unpack` (∧-elim → a collection of element theorems),
+  `empty_vec` + cross-context `push` (the general primitive, `U: Union<C, C2>`,
+  analog of `zip`). These are **neutral** — meaning needs nothing trusted about
+  `T`. `BTreeSet`/`HashSet` are omitted: their structure (dedup/membership/
+  set-equality) trusts `T: Ord` / `T: Hash+Eq`, so they belong with the
+  equality/ordering trust layer (though even there, *unpacking* a set stays
+  sound).
+- **`convenience`** — a separate module of ergonomic specializations that only
+  *compose* floor primitives (no new trust), e.g. same-context `push_same`
+  (`C: Union<C,C>`, stays in `C` so it chains without annotating an output
+  context). The general primitives live on the floor; convenience sugar lives
+  here.
+- **`Thm` is a template over a statement representation:**
+  `Thm<K, P, S = Stmt<K, P>>` — `S` is the statement carrier, `K`/`P` are phantom
+  tags. Construction is gated by the marker **`K: IsStmt<S, P>`** ("context `K`
+  admits representation `S`") via the private `Thm::new`; only `K` decides what
+  it forms. The canonical `Stmt<K,P>` is admitted by every `K` (blanket), and so
+  is any faithful-pointer wrapping of an admitted `S` (`Box`/`Rc`/`Arc`/`&`
+  blankets); later a context can admit richer `S` (content-addressed,
+  arena-indexed, Nat-literal, *erasing*, an `Arc<dyn TypedTerm>`) and mint/cast
+  it. `Thm: Deref<Target = S>`, and `box_stmt`/`arc_stmt`/`rc_stmt` /
+  `unbox_stmt`/`unarc_stmt`/`unrc_stmt`/`deref_stmt` move the statement between
+  representations (prove/share without copying).
+- **Statement *views are optional* capabilities** (`thm/stmt.rs`): `GetCtx<C>`,
+  `GetProp<P>`, `IntoParts<C,P>` — a representation provides whichever it has (the
+  canonical `Stmt` provides all; an *erasing* statement omits `GetCtx`).
+  `GetProp` is *parameterized* (not associated) so one carrier exposes several
+  prop views — host-level `P ⟺ Q`. `&`/`Arc`/`Rc`/`Box` forward the read views
+  (prove without copying). These mint nothing.
+- **Staged next:** union of `C1`,`C2` as the structural pair `(C1,C2)` with
+  `Union`/`TryUnion` as collapse rules (pointer-eq picks left/right via
+  `TrustedDeref`); and letting `C` mint non-canonical `S`.
+- **Type erasure** uses the **bare** `dyn Any` pointers (`Arc<dyn Any>`, or
+  `Rc`/`&` — no wrapper type): `erase_ctx`/`erase_prop` and
+  `downcast_ctx`/`downcast_prop` let a `Thm` range over a **dynamic** TCB /
+  proposition. Erasure is *faithful* — the concrete type id is in the value, so
+  you can only downcast back to the **same** type (erasing `Thm<A,_>` then
+  downcasting to `B` fails), preserving nuclei isolation: erasure is an
+  existential over domains, not a launder. Merging two erased contexts is
+  **fallible** (`TryUnion`, the fallible `Union`): the default impl — provided
+  for `Arc`/`Rc`/`&` (not `Box`, which is unique-owned) — is
+  **pointer-equality-or-error** (`CtxMismatch`). `Thm::try_zip` is the fallible
+  `zip`; `try_zip_same` (in `convenience`) is the same-context form.
+- `trait TrustedDeref: Deref {}` — pointers whose deref is *faithful* (target =
+  the pointer's entire meaning): `Box`/`Arc`/`Rc`/`&`, all first-class. Enables
+  `wrap_prop` / `wrap_ctx` (owning pointers, via `From`), `ptr_subst` (positive
+  pointer-equality transport — same allocation ⇒ same value ⇒ re-stamp; mismatch
+  proves nothing), and — via the `TrustedTake: TrustedDeref` sub-trait —
+  `unwrap_prop` / `unwrap_ctx` that move where possible (`Box<P>` needs **no**
+  `Clone`; a unique `Arc`/`Rc` moves, else clones; `&` clones). So `Arc<C>` is
+  the *same* domain as `C`. Plain `Deref` is *not* enough (a `Tagged<T>{tag,
+  inner}` wrapper would let pointer-equal inners wrongly transport), so it's a
+  distinct opt-in marker = a TCB assertion.
 
 ## 3. Soundness
 

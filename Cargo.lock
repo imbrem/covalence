@@ -1211,7 +1211,16 @@ dependencies = [
 name = "covalence-pure"
 version = "0.0.0"
 dependencies = [
+ "covalence-pure-trusted",
+ "serde_json",
+]
+
+[[package]]
+name = "covalence-pure-trusted"
+version = "0.0.0"
+dependencies = [
  "covalence-types",
+ "serde",
 ]
 
 [[package]]

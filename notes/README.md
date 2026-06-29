@@ -15,7 +15,8 @@ The load-bearing docs. Read these first.
 | [`type-hierarchy.md`](./type-hierarchy.md) | The equality hierarchy and the `defs/` type catalogue (nat/int/rat/real/bytes/list/stream/option/result, → f32/f64). |
 | [`roadmap.md`](./roadmap.md) | What's next: time-to-product for the Metamath vision (verify all of set.mm in GT; analysis in SOA). Its "Active refactor" links the three docs below. |
 | [`refactor-plan.md`](./refactor-plan.md) | The in-flight three-layer kernel reorg: introduce `covalence-pure`, split `covalence-hol`, regroup crates. |
-| [`pure-design.md`](./pure-design.md) | **Current** `covalence-pure` design: the value-directed `Thm<C,P>` kernel (`Stmt`/`Thm`/`Rule`/`deduce`), nuclei & bridges, TCB modules, content-addressing (store-as-world) + federation. Supersedes the *presentation* in `covalence-pure.md`. |
+| [`pure-design.md`](./pure-design.md) | **Current** `covalence-pure` design: the value-directed `MThm<K,P,S>` kernel (`Stmt`/`MThm`/`Rule`/`Derive`), nuclei & bridges, TCB modules, content-addressing (store-as-world) + federation. Supersedes the *presentation* in `covalence-pure.md`. |
+| [`covalence-fol.md`](./covalence-fol.md) | **Sketch** for the HOL fan-out: a `covalence-fol` crate above `covalence-pure` — typed representations + FOL-with-equality (`HasTy`/`EqAt`/`IsOp`/`IsImpl`); replaces HOL observers + constants via `ToHOL`. |
 | [`covalence-pure.md`](./covalence-pure.md) | Earlier base-logic blueprint: one trusted logic + N executors + K accelerators, everything-as-observers, the two assumption sets (logical + meta-assumption). Ideas still valid; map onto `pure-design.md`. |
 | [`crate-graph.md`](./crate-graph.md) | Dated snapshot of the internal crate dependency graph (layering, inversions). |
 | [`soundness-audit.md`](./soundness-audit.md) | Dated audit of the kernel TCB: the trusted base inventory, gaps/risks, and the assumption-tracking design. |

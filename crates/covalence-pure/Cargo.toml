@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-covalence-pure-trusted = { path = "../covalence-pure-trusted" }
+covalence-pure-trusted = { path = "trusted" }
 
 [dev-dependencies]
 serde_json = "1"

@@ -10,10 +10,12 @@
 - **Compile-time names only.** Objects/morphisms/attributes are `&'static str`,
   so schemas are static. Dynamic / runtime-loaded schemas would need owned
   names.
-- **Conjunctive queries only; no Datalog completeness.** `query` supports
-  conjunctions of morphism/attribute atoms (answers = homomorphisms), evaluated
-  by naive backtracking with forced-join candidate pruning. No negation,
-  aggregation, disjunction, recursion (fixpoints), or projection/distinct; no
-  query planner or indexing.
+- **Query/Datalog evaluation is naive; positive only.** `query` (conjunctive)
+  and `datalog` (recursive, least-fixpoint over derived relations) both evaluate
+  by naive backtracking — no **semi-naive** delta evaluation, no indexing/planner.
+  `datalog` is **positive** (no negation/stratification), set-valued only (no
+  semilattice/aggregation values), and assumes rule monotonicity rather than
+  checking it. The Datafun surface that would enforce monotonicity and add these
+  is sketched in `notes/sketches/acset-datalog-datafun.md`.
 - **No (co)limits or schema composition.** Acyclicity is an instance-level check
   the caller invokes, not a schema law; no schema colimits / pushouts.

@@ -24,7 +24,9 @@
 use std::collections::HashMap;
 use std::fmt;
 
+pub mod datalog;
 pub mod query;
+pub use datalog::{DatalogError, Program, Rule, Solution};
 pub use query::{Match, Query, QueryBuilder, QueryError};
 
 // ===========================================================================

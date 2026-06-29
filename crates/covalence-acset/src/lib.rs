@@ -25,8 +25,10 @@ use std::collections::HashMap;
 use std::fmt;
 
 pub mod datalog;
+pub mod lattice;
 pub mod query;
 pub use datalog::{DatalogError, Program, Rule, Solution};
+pub use lattice::{JoinSemilattice, MinDist, lfp};
 pub use query::{Match, Query, QueryBuilder, QueryError};
 
 // ===========================================================================

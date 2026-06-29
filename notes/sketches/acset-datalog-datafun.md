@@ -49,12 +49,24 @@ Our engine is the **denotation**; Datafun would be the **surface**:
   lineage is already DBSP/Automerge; a Datafun front-end over an incremental
   backend is the convergence point.
 
+## Delivered so far
+
+- `datalog`: positive recursive rules → least fixpoint (naive eval).
+- `lattice`: **`JoinSemilattice` + `lfp`** — Datafun's `fix` as a generic
+  combinator, with `bool` / `BTreeSet` / `BTreeMap` / `MinDist` instances. Both
+  set-valued (transitive closure) and **lattice-valued** (min-plus shortest
+  paths) recursion go through the same `lfp`; `datalog::solve` is the special
+  case over the powerset lattice (cross-checked by a test). Monotonicity of the
+  step is still the caller's obligation — the typed surface below is what would
+  discharge it.
+
 ## Concrete next steps (rough order)
 
 1. **Semi-naive evaluation** — delta rules, only fire on newly-derived tuples.
-2. **Semilattice-valued relations** — values, not just membership; `AttrVal`
-   lattices (bool / min-plus / set).
+2. **Lattice-valued relations in the rule language** — let `datalog` rules
+   aggregate into a `JoinSemilattice` (not just set membership), reusing the
+   `lattice` instances; back `solve` by `lfp`.
 3. **Stratified negation** — needed for anything beyond positive Datalog.
 4. **Tiny Datafun-ish AST → `Program` compiler** — monotone lambda + `fix` +
-   comprehensions, with a monotonicity checker.
+   comprehensions, with a monotonicity checker (the obligation `lfp` assumes).
 5. **Differential/incremental backend** — DBSP-style, matching Coln's substrate.

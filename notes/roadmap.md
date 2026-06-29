@@ -90,6 +90,12 @@ Two consequences we lean on hard:
   session — Phase A: `database::Derivable_DB` is now literally
   `derivable(&db_rule_set(db), ·)`, one derivability notion.)*
 - **Accelerators** — Alethe/SMT goal discharge (`(#by (smt))`) + n-ary Farkas.
+- **Interchange + data-oriented substrate (adjacent track — see below).**
+  `covalence-multiformat` (self-describing content-addressed *derivation-fact*
+  interchange + kernel-bound ingest) and `covalence-acset` (a generic ACSet
+  library: schema/instance validation, Δ migration, conjunctive + Datalog
+  queries, a lattice `fix` combinator). The federation / Coln-bridge substrate;
+  detail under *Adjacent track* below.
 
 ## The critical path (the keystone first)
 
@@ -186,6 +192,39 @@ first-class frontend, **egg/egglog** theories, etc. Gain confidence in a complex
 frontend the **mirror-principle** way: prove a *commutative diagram* —
 `SpecTec ⟶ our-prover` vs `SpecTec ⟶ HOL ⟶ HOL-in-our-prover` — equivalent, so two
 independent lowerings agreeing is the evidence. Same shape for egg/egglog.
+
+## Adjacent track — interchange & the Coln bridge
+
+**Off the critical path** (it does not gate the Metamath product) but feeding the
+vision's **federation** corner: a self-describing interchange format plus a
+data-oriented (ACSet) validation/query layer, prototyping the covalence ⇄ Coln
+bridge ([coln-project/Coln], the "data-oriented proof assistant"). The hinge: the
+waist existential `∃D. Derivable(Ax, S)` *is* a content-addressed record, and
+Coln's "proof checking is database constraint checking" *is* the ACSet
+instance-conformance check over it.
+
+**Built** (`covalence-multiformat`, `covalence-acset` — see "What is already
+built"): the multiformat `Cid` + `DerivationFact` envelope, `FactStore::check`
+(proof-checking-as-constraint-query), `kernel_ingest` (envelope ⇄ a real
+`covalence-core` `Thm`; wire-CID ↦ `COV_ROOT` `Name256`), the ACSet schema /
+instance / validation core, Δ functorial data migration, conjunctive + recursive
+(Datalog) queries, and the `lattice::lfp` (`fix`) combinator.
+
+**Open next steps** (none blocking the Metamath product):
+
+- **Option B — schema-as-payload soundness certs.** Carry an ACSet schema as a
+  payload codec with a soundness certificate vs. a base theory — the *symbolic*
+  bridge artifact, complementing today's *structural* validator.
+- **Signed envelopes** (`covalence-sig`) — authored Thm exchange = the federation
+  layer (trust-root leaves authenticated; mirrors Coln's Keyhive P2P/BFT model).
+- **Toward Datafun** — semi-naive evaluation, lattice-valued rules, stratified
+  negation, and a typed monotone `fix` surface compiling to `covalence-acset`;
+  also the seam to incremental/DBSP-style eval. See
+  [`sketches/acset-datalog-datafun.md`](./sketches/acset-datalog-datafun.md).
+- **Codec registration + identity mapping** — real multicodec codes (out of the
+  private-use range); a Coln Sedimentree-address analogue of `covalence_name`.
+
+[coln-project/Coln]: https://github.com/coln-project/Coln
 
 ---
 

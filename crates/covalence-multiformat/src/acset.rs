@@ -13,14 +13,17 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use covalence_acset::{AcsetError, Instance, Part, Schema};
+use covalence_acset::{AcsetError, Instance, Schema};
 
 use crate::cid::Cid;
 use crate::codec;
 use crate::fact::DerivationFact;
 
 // Re-export the generic ACSet surface so consumers reach it through this crate.
-pub use covalence_acset::{Attr, AttrVal, Functor, Hom, PathEq, SchemaBuilder, SchemaError};
+pub use covalence_acset::{
+    Attr, AttrVal, DatalogError, Functor, Hom, Match, Part, PathEq, Program, Query, QueryBuilder,
+    QueryError, Rule, SchemaBuilder, SchemaError, Solution,
+};
 
 /// Object names for the interchange schema.
 pub mod ob {

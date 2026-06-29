@@ -24,6 +24,9 @@
 use std::collections::HashMap;
 use std::fmt;
 
+pub mod query;
+pub use query::{Match, Query, QueryBuilder, QueryError};
+
 // ===========================================================================
 // Errors
 // ===========================================================================

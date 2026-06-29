@@ -10,6 +10,10 @@
 - **Compile-time names only.** Objects/morphisms/attributes are `&'static str`,
   so schemas are static. Dynamic / runtime-loaded schemas would need owned
   names.
-- **No query layer or (co)limits.** Pure instance machinery — no
-  conjunctive-query / Datalog layer, no schema colimits, no schema composition.
-  Acyclicity is an instance-level check the caller invokes, not a schema law.
+- **Conjunctive queries only; no Datalog completeness.** `query` supports
+  conjunctions of morphism/attribute atoms (answers = homomorphisms), evaluated
+  by naive backtracking with forced-join candidate pruning. No negation,
+  aggregation, disjunction, recursion (fixpoints), or projection/distinct; no
+  query planner or indexing.
+- **No (co)limits or schema composition.** Acyclicity is an instance-level check
+  the caller invokes, not a schema law; no schema colimits / pushouts.

@@ -59,6 +59,8 @@ cargo check                # check Rust crates
 cargo test                 # run Rust tests
 bun run fmt                # cargo fmt --all (also runs on commit via .githooks/pre-commit)
 bun run fmt:check          # cargo fmt --all --check (the CI fmt gate)
+bun run deps               # regenerate notes/deps/ dep graph + TCB closure (runs on commit)
+bun run deps:check         # fail if notes/deps/ is stale (the CI deps gate)
 bun test                   # run all tests (Rust + Python)
 bun run test:python        # run Python tests only
 bun run build:python       # build Python extension (maturin develop)
@@ -120,8 +122,9 @@ to work more effectively — capture repeatable procedures as skills.
 
 The workspace is many `covalence-*` crates, layered roughly: **wrappers** (one
 per external dep) → **storage/content-addressing** → **kernel/TCB**
-(`covalence-pure` → `covalence-core` → `covalence-hol`/`covalence-metamath` →
-`covalence-kernel`) → **proof-format frontends** → **app/systems**.
+(`covalence-pure` → `covalence-core` → thin `covalence-hol` + `covalence-metamath`
+→ `covalence-init` → `covalence-kernel`) → **proof-format frontends** →
+**app/systems**.
 
 **Dependency discipline:** all use of an external library goes through its wrapper
 crate — never import the underlying dep directly.

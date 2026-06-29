@@ -1,0 +1,591 @@
+{
+  "generatedBy": "scripts/dep-graph.mjs",
+  "note": "Regenerate with `bun run deps`. Internal covalence-* normal-dependency edges only.",
+  "nodes": [
+    "covalence",
+    "covalence-acset",
+    "covalence-alethe",
+    "covalence-arrow",
+    "covalence-client",
+    "covalence-core",
+    "covalence-core-test-guest",
+    "covalence-egglog",
+    "covalence-forsp",
+    "covalence-fuse",
+    "covalence-git",
+    "covalence-grammar",
+    "covalence-graph",
+    "covalence-hash",
+    "covalence-hol",
+    "covalence-init",
+    "covalence-json",
+    "covalence-kernel",
+    "covalence-kv",
+    "covalence-lean",
+    "covalence-llm",
+    "covalence-lsp",
+    "covalence-metamath",
+    "covalence-multiformat",
+    "covalence-object",
+    "covalence-opentheory",
+    "covalence-parquet",
+    "covalence-parse",
+    "covalence-proto",
+    "covalence-pure",
+    "covalence-python",
+    "covalence-rand",
+    "covalence-repl",
+    "covalence-sat",
+    "covalence-serve",
+    "covalence-sexp",
+    "covalence-shell",
+    "covalence-sig",
+    "covalence-smt",
+    "covalence-spectec",
+    "covalence-sqlite",
+    "covalence-store",
+    "covalence-types",
+    "covalence-wasm",
+    "covalence-wasm-build-guest",
+    "covalence-wasm-spec",
+    "covalence-wasm-store",
+    "covalence-web-kernel"
+  ],
+  "edges": [
+    {
+      "from": "covalence",
+      "to": "covalence-client"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-fuse"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-git"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-hol"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-lsp"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-object"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-opentheory"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-proto"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-repl"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-serve"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-shell"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-store"
+    },
+    {
+      "from": "covalence",
+      "to": "covalence-wasm"
+    },
+    {
+      "from": "covalence-alethe",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-alethe",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence-alethe",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-alethe",
+      "to": "covalence-smt"
+    },
+    {
+      "from": "covalence-alethe",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-client",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-client",
+      "to": "covalence-shell"
+    },
+    {
+      "from": "covalence-client",
+      "to": "covalence-store"
+    },
+    {
+      "from": "covalence-core",
+      "to": "covalence-pure"
+    },
+    {
+      "from": "covalence-core",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-core",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-egglog",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-egglog",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-forsp",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-forsp",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-fuse",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-fuse",
+      "to": "covalence-object"
+    },
+    {
+      "from": "covalence-fuse",
+      "to": "covalence-store"
+    },
+    {
+      "from": "covalence-git",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-git",
+      "to": "covalence-object"
+    },
+    {
+      "from": "covalence-git",
+      "to": "covalence-sqlite"
+    },
+    {
+      "from": "covalence-git",
+      "to": "covalence-store"
+    },
+    {
+      "from": "covalence-graph",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-graph",
+      "to": "covalence-parse"
+    },
+    {
+      "from": "covalence-hash",
+      "to": "covalence-rand"
+    },
+    {
+      "from": "covalence-hol",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-hol"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-metamath"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-spectec"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-kernel",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-kernel",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence-kernel",
+      "to": "covalence-object"
+    },
+    {
+      "from": "covalence-kernel",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-kernel",
+      "to": "covalence-store"
+    },
+    {
+      "from": "covalence-llm",
+      "to": "covalence-proto"
+    },
+    {
+      "from": "covalence-lsp",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-lsp",
+      "to": "covalence-wasm"
+    },
+    {
+      "from": "covalence-metamath",
+      "to": "covalence-parse"
+    },
+    {
+      "from": "covalence-metamath",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-multiformat",
+      "to": "covalence-acset"
+    },
+    {
+      "from": "covalence-multiformat",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-multiformat",
+      "to": "covalence-parse"
+    },
+    {
+      "from": "covalence-object",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-object",
+      "to": "covalence-parse"
+    },
+    {
+      "from": "covalence-opentheory",
+      "to": "covalence-hol"
+    },
+    {
+      "from": "covalence-parquet",
+      "to": "covalence-arrow"
+    },
+    {
+      "from": "covalence-pure",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-git"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-graph"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-kv"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-llm"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-object"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-repl"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-sat"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-serve"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-shell"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-sig"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-store"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-wasm"
+    },
+    {
+      "from": "covalence-python",
+      "to": "covalence-wasm-store"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-arrow"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-forsp"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-git"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-graph"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-object"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-parquet"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-shell"
+    },
+    {
+      "from": "covalence-repl",
+      "to": "covalence-wasm"
+    },
+    {
+      "from": "covalence-sat",
+      "to": "covalence-parse"
+    },
+    {
+      "from": "covalence-sat",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-sat",
+      "to": "covalence-wasm"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-git"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-metamath"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-object"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-proto"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-repl"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-shell"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-store"
+    },
+    {
+      "from": "covalence-sexp",
+      "to": "covalence-parse"
+    },
+    {
+      "from": "covalence-shell",
+      "to": "covalence-hol"
+    },
+    {
+      "from": "covalence-shell",
+      "to": "covalence-kernel"
+    },
+    {
+      "from": "covalence-smt",
+      "to": "covalence-sat"
+    },
+    {
+      "from": "covalence-smt",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-smt",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-spectec",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-store",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-store",
+      "to": "covalence-json"
+    },
+    {
+      "from": "covalence-store",
+      "to": "covalence-sqlite"
+    },
+    {
+      "from": "covalence-wasm",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-wasm-build-guest",
+      "to": "covalence-wasm"
+    },
+    {
+      "from": "covalence-wasm-spec",
+      "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-wasm-spec",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-wasm-spec",
+      "to": "covalence-wasm"
+    },
+    {
+      "from": "covalence-wasm-store",
+      "to": "covalence-json"
+    },
+    {
+      "from": "covalence-wasm-store",
+      "to": "covalence-store"
+    },
+    {
+      "from": "covalence-wasm-store",
+      "to": "covalence-wasm"
+    },
+    {
+      "from": "covalence-web-kernel",
+      "to": "covalence-kernel"
+    }
+  ],
+  "tcb": {
+    "roots": [
+      "covalence-core",
+      "covalence-pure"
+    ],
+    "workspace": [
+      "covalence-core",
+      "covalence-parse",
+      "covalence-pure",
+      "covalence-sexp",
+      "covalence-types"
+    ],
+    "external": [
+      "arrayvec",
+      "borsh",
+      "bytes",
+      "either",
+      "equivalent",
+      "fnv",
+      "foldhash",
+      "hashbrown",
+      "indexmap",
+      "libm",
+      "memchr",
+      "num-bigint",
+      "num-integer",
+      "num-traits",
+      "pretty",
+      "proc-macro2",
+      "quote",
+      "serde",
+      "serde_core",
+      "serde_derive",
+      "smol_str",
+      "syn",
+      "thiserror",
+      "thiserror-impl",
+      "typed-arena",
+      "unicode-ident",
+      "unicode-width",
+      "winnow"
+    ]
+  }
+}

@@ -1,0 +1,145 @@
+;; cond.cov — cond reduction clauses over `core`.
+;;
+;; `cond : bool → 'a → 'a → 'a` is the **kernel** `defs::cond` (`bool.cond`),
+;; registered in the `core` prelude — these clauses are proved *about that one
+;; constant* (no inline `#def`, which would mint a same-bodied duplicate). Its
+;; body, exposed by `unfold-at-2 cond …`, is
+;;
+;;   cond ≡ λt u v. ε z. (t = T ⟹ z = u) ∧ (t = F ⟹ z = v)
+;;
+;; For `cond T x y = x`:
+;;   1. `unfold-at-2 cond T x`
+;;      + `cong-fn y` + `beta-conv`
+;;      → ⊢ cond T x y = ε z. (T=T ⟹ z=x) ∧ (T=F ⟹ z=y)  [eps]
+;;   2. Build ⊢ pred x — the conjunction at x — via and-intro.
+;;   3. `select-ax pred x` + `imp-elim pred_x` → ⊢ pred (ε pred)
+;;   4. β-expose at ε pred → ⊢ conj_at_eps.
+;;   5. `and-elim-l conj_at_eps` → ⊢ T=T ⟹ ε pred = x.
+;;   6. `imp-elim ... (refl T)` → ⊢ ε pred = x  [eps_eq]
+;;   7. `trans eps eps_eq` → ⊢ cond T x y = x  ✓
+;;
+;; For `cond F x y = y`: symmetric (step 5 uses `and-elim-r`, step 6 uses `refl F`).
+
+(#import core)
+(#open core)
+
+;; ⊢ ∀x y : 'a. cond T x y = x
+(#thm cond.true
+  (#concl
+    (forall (x 'a)
+      (forall (y 'a)
+        (= (cond true x y) x))))
+  (#by
+    (intro x y)
+    (derive
+      (trans
+        ;; PART 1: cond T x y = ε z. (T=T ⟹ z=x) ∧ (T=F ⟹ z=y)
+        ;; via unfold-at-2 + cong-fn y + beta-conv
+        (trans
+          (cong-fn y
+            (unfold-at-2 cond true x))
+          (beta-conv (app (lam (v 'a)
+                           (select (z 'a)
+                             (and (==> (= true true) (= z x))
+                                  (==> (= true false) (= z v)))))
+                         y)))
+        ;; PART 2: ε pred = x
+        ;; where pred = λz. (T=T ⟹ z=x) ∧ (T=F ⟹ z=y)
+        (imp-elim
+          ;; ⊢ T=T ⟹ ε pred = x  (left conjunct of pred(ε pred))
+          (and-elim-l
+            ;; ⊢ pred (ε pred)  β-exposed to  (T=T ⟹ ε pred=x) ∧ (T=F ⟹ ε pred=y)
+            (eq-mp
+              (beta-conv
+                (app (lam (z 'a)
+                       (and (==> (= true true) (= z x))
+                            (==> (= true false) (= z y))))
+                     (select (z 'a)
+                       (and (==> (= true true) (= z x))
+                            (==> (= true false) (= z y))))))
+              ;; ⊢ pred (ε pred)  from select-ax + ⊢ pred x
+              (imp-elim
+                (select-ax
+                  (lam (z 'a)
+                    (and (==> (= true true) (= z x))
+                         (==> (= true false) (= z y))))
+                  x)
+                ;; ⊢ pred x  =  ⊢ (T=T ⟹ x=x) ∧ (T=F ⟹ x=y)
+                ;; via eq-mp of sym(beta at x) applied to the and-intro
+                (eq-mp
+                  (sym
+                    (beta-conv
+                      (app (lam (z 'a)
+                             (and (==> (= true true) (= z x))
+                                  (==> (= true false) (= z y))))
+                           x)))
+                  (and-intro
+                    ;; T=T ⟹ x=x
+                    (imp-intro (= true true) (refl x))
+                    ;; T=F ⟹ x=y : vacuous (T=F = F)
+                    (imp-intro (= true false)
+                      (false-elim (= x y)
+                        (eq-mp
+                          (reduce-prim (= true false))
+                          (assume (= true false))))))))))
+          ;; Discharge T=T
+          (refl true))))))
+
+;; ⊢ ∀x y : 'a. cond F x y = y
+(#thm cond.false
+  (#concl
+    (forall (x 'a)
+      (forall (y 'a)
+        (= (cond false x y) y))))
+  (#by
+    (intro x y)
+    (derive
+      (trans
+        ;; PART 1: cond F x y = ε z. (F=T ⟹ z=x) ∧ (F=F ⟹ z=y)
+        (trans
+          (cong-fn y
+            (unfold-at-2 cond false x))
+          (beta-conv (app (lam (v 'a)
+                           (select (z 'a)
+                             (and (==> (= false true) (= z x))
+                                  (==> (= false false) (= z v)))))
+                         y)))
+        ;; PART 2: ε pred = y
+        (imp-elim
+          ;; ⊢ F=F ⟹ ε pred = y  (right conjunct of pred(ε pred))
+          (and-elim-r
+            (eq-mp
+              (beta-conv
+                (app (lam (z 'a)
+                       (and (==> (= false true) (= z x))
+                            (==> (= false false) (= z y))))
+                     (select (z 'a)
+                       (and (==> (= false true) (= z x))
+                            (==> (= false false) (= z y))))))
+              (imp-elim
+                (select-ax
+                  (lam (z 'a)
+                    (and (==> (= false true) (= z x))
+                         (==> (= false false) (= z y))))
+                  y)
+                ;; ⊢ pred y  =  ⊢ (F=T ⟹ y=x) ∧ (F=F ⟹ y=y)
+                (eq-mp
+                  (sym
+                    (beta-conv
+                      (app (lam (z 'a)
+                             (and (==> (= false true) (= z x))
+                                  (==> (= false false) (= z y))))
+                           y)))
+                  (and-intro
+                    ;; F=T ⟹ y=x : vacuous (F=T = F)
+                    (imp-intro (= false true)
+                      (false-elim (= y x)
+                        (eq-mp
+                          (reduce-prim (= false true))
+                          (assume (= false true)))))
+                    ;; F=F ⟹ y=y
+                    (imp-intro (= false false) (refl y)))))))
+          ;; Discharge F=F
+          (refl false))))))
+
+(#export cond cond.true cond.false)

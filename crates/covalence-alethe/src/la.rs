@@ -35,7 +35,7 @@
 //! not reduce to a transitivity cycle.
 
 use covalence_core::{Term, Thm};
-use covalence_hol::init::{int, logic};
+use covalence_init::init::{int, logic};
 
 use crate::error::BridgeError;
 

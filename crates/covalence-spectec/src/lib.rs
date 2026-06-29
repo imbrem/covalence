@@ -1,13 +1,11 @@
 //! Wrapper crate for [SpecTec], the DSL the WebAssembly specification is
 //! written in.
 //!
-//! This crate is now **AST-first**: it consumes the elaborated SpecTec AST
+//! This crate is **AST-first**: it consumes the elaborated SpecTec AST
 //! produced by the upstream OCaml SpecTec compiler (the
 //! `cyruscook/spectec_parse` workspace) and exposes it — plus the *grammars*
 //! it carries — in a form Covalence's untrusted kernel frontend can lower
-//! into byte predicates. The earlier hand-written native `.watsup`
-//! lexer/parser/elaborator was removed (recover from git history if needed);
-//! it was a half-built frontend, and the elaborated AST is the surface we
+//! into byte predicates. The elaborated AST is the surface we
 //! actually want to compile *from*.
 //!
 //! # Layers

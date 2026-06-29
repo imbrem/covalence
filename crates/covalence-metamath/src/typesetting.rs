@@ -120,7 +120,7 @@ fn statement(input: &mut &str) -> ModalResult<Option<Typedef>> {
 /// Skip whitespace and `/* ... */` block comments. Because string literals are
 /// parsed *explicitly* elsewhere, a `/*` inside a string is never seen here — so
 /// set.mm's `htmlexturl '…/mpests/*.html'` (a URL glob) is not mistaken for a
-/// comment (the bug that desynced the old hand-written stripper).
+/// comment.
 fn skip_ws(input: &mut &str) -> ModalResult<()> {
     loop {
         multispace0(input)?;

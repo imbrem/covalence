@@ -43,6 +43,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p covalence
 
+  deps:
+    name: Dependency graph + TCB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
+      # Fails if notes/deps/ (the tracked graph + TCB closure) is stale.
+      # Regenerate locally with `bun run deps`.
+      - run: bun run deps:check
+
   build-wasm:
     name: Build WASM + VSCode extension
     runs-on: ubuntu-latest
@@ -69,11 +80,19 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      # wasm-bindgen-cli must match the wasm-bindgen crate exactly; read the
+      # version straight from Cargo.lock so there is nothing to keep in sync.
+      - id: wbver
+        run: |
+          ver=$(sed -n '/^name = "wasm-bindgen"$/{n;s/version = "\(.*\)"/\1/p}' Cargo.lock)
+          echo "v=$ver" >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@v2
         with:
-          # wasm-bindgen-cli is pinned to the wasm-bindgen version in Cargo.lock;
-          # binaryen provides wasm-opt.
-          tool: wasm-bindgen-cli@0.2.121,binaryen
+          tool: wasm-bindgen-cli@${{ steps.wbver.outputs.v }}
+      # binaryen provides wasm-opt. install-action dropped binaryen support and
+      # falls back to cargo-binstall, which can't install it ("no binaries
+      # specified nor inferred"), so install it from apt instead.
+      - run: sudo apt-get update && sudo apt-get install -y binaryen
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run build:web

@@ -258,7 +258,7 @@ fn kind_name(k: &TermKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_hol::HolLightCtx;
+    use covalence_init::HolLightCtx;
 
     #[test]
     fn renders_uf_goal() {

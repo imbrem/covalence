@@ -8,13 +8,9 @@
 //!
 //! # ⚠️ Status: skeleton
 //!
-//! The legacy [`Prover`] trait and its arena-kernel adapter were removed in
-//! the kernel rewrite (recover from `backup/pre-hol-cleanup` if needed).
 //! What remains are re-exports of the kernel's backend surface plus the HOL
 //! builder API; new userspace helpers land here as the HOL-on-store stack
 //! comes online.
-//!
-//! [`Prover`]: https://example.invalid/removed
 
 // Backend / blob-store surface, re-exported from the kernel so existing
 // consumers keep depending only on `covalence-shell`.

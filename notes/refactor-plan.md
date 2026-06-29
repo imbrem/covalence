@@ -233,45 +233,110 @@ features is an explicit later decision.)
 
 ---
 
-## 5. Crate subgroups (legibility)
+## 5. Crate organization: domain groups + layer groups + umbrellas
 
-There are many `covalence-*` crates; flat `crates/*` no longer reads clearly.
-The actual internal dependency graph is rendered in
-[`crate-graph.md`](./crate-graph.md) (regenerate with the script below).
+Flat `crates/covalence-*` no longer reads clearly. The reorg has two goals:
+*conceptual clarity* (the tree should be a map of **what we reason about** and
+**what the TCB is**) and *ergonomics* (depend on a domain in one line). The
+machine-tracked graph + TCB closure live in [`deps/`](./deps/) (`bun run deps`).
 
-**Recommendation: do the grouping, but *last*** — after the `hol` split (§3–4)
-and the cruft sweep (§6). Reasons:
+### 5.1 The organizing axis: domain vs layer
 
-- Directory nesting is **cosmetic to Cargo** (path deps don't care) yet churns
-  every `path = "../x"` → `path = "../../wrap/x"` and conflicts with every
-  in-flight branch/worktree (there are many). So it must be one mechanical commit
-  landed when branch activity is low — *not* interleaved with the real work.
-- Grouping **does not reduce "too much"** by itself; it relocates it. The real
-  cognitive load is the `hol` megacrate, dead experiments, and a sprawling
-  SKELETONS registry. Fix those first, *then* the surviving crates group cleanly.
-- It helps **people more than agents** (agents navigate by grep/path already);
-  the human win is a clear "where does this live" map and a visually obvious TCB
-  boundary (`kernel/`).
+Two kinds of top-level group:
 
-The graph also surfaced a **layering inversion to resolve first**:
-`covalence-wasm → covalence-core` (a wrapper depending on the TCB), which drags
-`core` into `sat`/`lsp`/`wasm-store` transitively. Decide its tier (or cut the
-edge) before drawing group boundaries.
+- **Domain groups** — an external system or formalism we *interface with **and
+  reason about*** (git, SQL, wasm, the logics, external provers). The decisive
+  fact is that almost every such crate is **dual-role**: it has a *format/concept*
+  aspect (git trees; SQL schema; DIMACS) *and* a *program* aspect (the git VCS; a
+  DB engine; a solver). You can't split the directory by aspect — one crate is
+  both — so group by **subject**: everything about git under `git/`, everything
+  about SQL under `sql/`, regardless of which aspect a given crate covers.
+- **Layer groups** — covalence's own generic vertical stack, plus primitives we
+  *just call*: `util/`, `store/`, `kernel/`, `init/`, `lang/`, `app/`.
 
-Proposed grouping (Cargo supports `members = ["crates/*/*"]` globs), for the
-dedicated move-branch:
+**The promotion rule:** a crate lives in `util/` while we merely *use* it
+(hash, sig, parse); it graduates to its own domain group the moment we start
+*reasoning about* it. So the tree literally tracks the reasoning frontier.
 
-| Group | Crates (illustrative) |
-|---|---|
-| `crates/wrap/` — external-dep wrappers | types, parse, sexp, rand, sig, hash, sqlite, json, wasm, arrow, parquet, smt, sat, grammar, spectec |
-| `crates/store/` — content-addressing & storage | store, object, git, kv, graph, wasm-store |
-| `crates/kernel/` — the three-layer kernel | pure, core, init/*, cons, eval, kernel |
-| `crates/hol/` & frontends — proof-format importers | hol, metamath, opentheory, lean, alethe, egglog |
-| `crates/lang/` — the surface language (future) | lang |
-| `crates/app/` — user-facing | covalence (cli), repl, serve, client, lsp, proto, python, shell, llm, web-kernel |
+### 5.2 The TCB rule
 
-Naming/exact membership to be settled on the move-branch. The point is **layered
-directories that mirror the dependency stack**.
+Classify by **role in our system**, except: *reasoning about a system is itself
+a primary role* (that's why `git`/`sqlite` are domains, not buried in `store/` —
+`store/` keeps the *abstract* content-addressing core and depends on them as
+backends). And: **the TCB stays out of the umbrella game** — `covalence-core` /
+`covalence-pure` are plain standalone crates with an unconditional, minimal
+dependency list, never "core with features that might pull X." The trusted base
+must be auditable without reasoning about feature flags. `deps/tcb.json` tracks
+its closure; CI flags any change.
+
+### 5.3 The umbrella pattern (domain = facade crate + feature-gated subcrates)
+
+A domain group is a **root umbrella crate** plus feature-gated subcrates:
+
+```
+crates/hol/
+  Cargo.toml        covalence-hol  (umbrella; default-features minimal)
+                      [features] interface (default), builder, opentheory
+  interface/        covalence-hol-interface   types + traits — CORE-FREE
+  builder/          covalence-hol-builder     HolLightCtx over covalence-core
+  opentheory/       covalence-hol-opentheory  importer; gates `ureq`
+```
+
+The umbrella re-exports `#[cfg(feature = "builder")] pub use covalence_hol_builder as builder;`
+etc., so a consumer writes `covalence-hol = { features = ["opentheory"] }`.
+
+- **Group-level dependency cycles are fine** — Cargo only forbids *crate*-level
+  cycles, and directories aren't a build concept. Wire domains and layers in both
+  directions freely as long as the crate DAG stays acyclic.
+- **Feature unification caveat:** in a `--workspace` build Cargo compiles the
+  umbrella once with the *union* of requested features, so "minimal by default"
+  benefits *external/sliced* builds (`-p covalence-hol --no-default-features
+  --features interface`), not the monorepo build. The **auditable unit is the
+  subcrate** (`hol/interface` is provably core-free on its own); the umbrella is
+  convenience.
+- Package names keep the `covalence-` prefix (`covalence-hol-interface`);
+  **directories drop it** (`crates/hol/interface`). Never rename packages.
+
+### 5.4 The layout
+
+```
+crates/
+  util/     types parse sexp hash sig rand grammar json arrow parquet   (we just call these)
+  store/    store object kv graph                                       (abstract content-addressing)
+  git/      git                        ┐ domains: subject groups, dual-role crates
+  sql/      sqlite                     │ together (format + engine + reasoning +
+  wasm/     wasm spec spectec build-guest   kernel-bridge), umbrella where useful
+  logic/    metamath sat smt           │ (cluster of small single-crate domains)
+  provers/  lean egglog opentheory     ┘ (external provers we import from)
+  kernel/   pure core hol kernel alethe   (TCB + builder + kernel-coupled bridges)
+  init/     init (+ family)               (semi-trusted native-covalence-library layer)
+  lang/     forsp (+ future surface/lang)
+  app/      covalence repl serve client lsp proto python shell llm fuse web-kernel
+theories/   (future: pure-`.cov` stdlib — no Rust; built on init's tactics)
+```
+
+- `logic/` = systems we **model natively** (metamath's full engine; SAT/SMT
+  formula+proof models). `provers/` = systems we only **import from** (parsers
+  for another tool's artifacts). Promote a clustered crate to its own domain
+  group once it grows (e.g. metamath's kernel bridge in `init/metalogic` →
+  `metamath/bridge`).
+- `hol` is in `kernel/` while it still depends on `core`; its `interface`
+  subcrate is core-free, so it can migrate to a `hol/` domain group once
+  decoupled.
+- arrow/parquet/json sit in `util/` until we reason about tabular data, then
+  graduate to a `data/` domain (the promotion rule in action).
+
+### 5.5 Sequencing & caveats
+
+- **Do the move as one mechanical commit, when branch activity is low** — every
+  `path = "../covalence-x"` changes and it conflicts with in-flight worktrees.
+- **Resolve the layering inversion** the graph shows — `covalence-wasm →
+  covalence-core` (a util-ish crate depending on the TCB) drags `core` into
+  `sat`/`lsp`/`wasm-store`; cut or re-tier that edge before finalizing.
+- **First domain to land: `hol/`** — carve `interface`/`builder`, stand up the
+  umbrella, and fold OpenTheory in as the `opentheory` feature. It finishes the
+  hol work, delivers the core-free `interface`, and establishes the template.
+- `members = ["crates/*", "crates/*/*"]` to pick up nested subcrates.
 
 ---
 

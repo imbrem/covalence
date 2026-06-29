@@ -1,0 +1,489 @@
+;; nat_div — Euclidean division facts (`div_mod`, `mod_lt`).
+;;
+;; `nat.div n m` is a Hilbert-ε selector pinned by the Euclidean bounds
+;; `m ≠ 0 ⟹ (n/m)·m ≤ n < S(n/m)·m`; `nat.mod n m := n - (n/m)·m`. To make those
+;; bounds *provable* we discharge the selector's existence obligation — a
+;; quotient exists at every `n` — by course-of-values induction on `n` (the
+;; recursive `n ↦ n - m` step decreases). This file proves the small arithmetic
+;; lemmas that pointwise-existence proof and the `div_mod`/`mod_lt` derivations
+;; rest on; the strong-induction existence + ε-skolemisation + `spec_ax`
+;; transfer live in `nat_div.rs`.
+
+(#import core)
+(#open core)
+(#import logic)
+(#open logic)
+(#import natrec)
+(#open natrec)         ;; zero.mul / succ.mul (the `*` recursion equations)
+(#import nat)
+(#open nat)
+(#import lambda_iter)
+(#open lambda_iter)   ;; nat.zero_or_succ
+(#import cond)
+(#open cond)          ;; cond, cond.true, cond.false
+
+;; ⊢ ∀a b. (a < b) ∨ (b ≤ a).  Decides the `n < m` vs `m ≤ n` division split.
+(#thm nat.lt_or_ge
+  (#concl (forall (a nat) (forall (b nat) (or (nat.lt a b) (nat.le b a)))))
+  (#by
+    (intro a b)
+    (derive
+      (or-elim (all-elim b (all-elim a (le.total)))
+        (imp-intro (nat.le a b)
+          (or-elim
+            (eq-mp (all-elim b (all-elim a (le.iff_lt_or_eq))) (assume (nat.le a b)))
+            (imp-intro (nat.lt a b)
+              (or-intro-l (nat.le b a) (assume (nat.lt a b))))
+            (imp-intro (= a b)
+              (or-intro-r (nat.lt a b)
+                (eq-mp (congr nat.le (assume (= a b)) (refl a)) (all-elim a (le.refl)))))))
+        (imp-intro (nat.le b a)
+          (or-intro-r (nat.lt a b) (assume (nat.le b a))))))))
+
+;; ⊢ ∀m. ¬(m = 0) ⟹ 0 < m.  A non-zero nat is positive.
+(#thm nat.pos_of_ne_zero
+  (#concl (forall (m nat) (==> (not (= m 0)) (nat.lt 0 m))))
+  (#by
+    (intro m h)
+    (derive
+      (or-elim (all-elim m (all-elim 0 (nat.lt_or_ge)))
+        (imp-intro (nat.lt 0 m) (assume (nat.lt 0 m)))
+        (imp-intro (nat.le m 0)
+          (false-elim (nat.lt 0 m)
+            (not-elim (assume (not (= m 0)))
+                      (imp-elim (all-elim m (le.zero_iff)) (assume (nat.le m 0))))))))))
+
+;; ⊢ ∀a k. 0 < k ⟹ a < a + k.  Adding a positive amount strictly increases.
+(#thm nat.lt_add_pos
+  (#concl (forall (a nat) (forall (k nat) (==> (nat.lt 0 k) (nat.lt a (nat.add a k))))))
+  (#by
+    (intro a k h)
+    (derive
+      (eq-mp
+        (congr nat.lt
+          (trans (all-elim a (all-elim 0 (add.comm))) (all-elim a (add.zero)))
+          (all-elim a (all-elim k (add.comm))))
+        (eq-mp (sym (all-elim a (all-elim k (all-elim 0 (lt.add_mono_r)))))
+               (assume (nat.lt 0 k)))))))
+
+;; ⊢ ∀n m. ¬(m = 0) ⟹ m ≤ n ⟹ n - m < n.  Subtracting a positive `m ≤ n`
+;; strictly decreases — the measure that makes the division recursion well-founded.
+(#thm nat.sub_lt_self
+  (#concl (forall (n nat) (forall (m nat)
+            (==> (not (= m 0)) (==> (nat.le m n) (nat.lt (nat.sub n m) n))))))
+  (#by
+    (intro n m h1 h2)
+    (derive
+      (eq-mp
+        (congr nat.lt (refl (nat.sub n m))
+          (trans (all-elim m (all-elim (nat.sub n m) (add.comm)))
+                 (imp-elim (all-elim n (all-elim m (le.add_sub))) (assume (nat.le m n)))))
+        (imp-elim (all-elim m (all-elim (nat.sub n m) (nat.lt_add_pos)))
+                  (imp-elim (all-elim m (nat.pos_of_ne_zero)) (assume (not (= m 0)))))))))
+
+;; ⊢ ∀b. (b = T) ∨ (b = F).  Bool is two-valued — the case split the division
+;; recurrence's `cond` guard needs.  `lem b` gives `b ∨ ¬b`; `EQT_INTRO` /
+;; `EQF_INTRO` (via `deduct-antisym`) turn each into the corresponding equation.
+(#thm bool.cases
+  (#concl (forall (b bool) (or (= b true) (= b false))))
+  (#by
+    (intro b)
+    (derive
+      (or-elim (lem b)
+        (imp-intro b
+          (or-intro-l (= b false) (deduct-antisym (assume b) (truth))))
+        (imp-intro (not b)
+          (or-intro-r (= b true)
+            (deduct-antisym (false-elim b (assume false))
+                            (not-elim (assume (not b)) (assume b)))))))))
+
+;; ⊢ ∀g a x y. (g = F ⟹ x = y) ⟹ cond g a x = cond g a y.  Congruence in the
+;; FALSE arm only: the two conds agree because either `g` is true (both pick `a`)
+;; or `g` is false (and then `x = y`).  This is what lets `Hext` ignore the
+;; recursive arm of the division `cond` exactly when its guard fires.
+(#thm cond.cong_arm
+  (#concl
+    (forall (g bool) (forall (a 'a) (forall (x 'a) (forall (y 'a)
+      (==> (==> (= g false) (= x y))
+           (= (cond g a x) (cond g a y))))))))
+  (#by
+    (intro g a x y h)
+    (derive
+      (or-elim (all-elim g (bool.cases))
+        ;; g = T : both conds reduce to `a`.
+        (imp-intro (= g true)
+          (#comp (cond g a x)
+            (= (cond true a x)
+               (cong-fn x (cong-fn a (cong-arg cond (assume (= g true))))))
+            (= a (all-elim x (all-elim a (cond.true))))
+            (= (cond true a y) (sym (all-elim y (all-elim a (cond.true)))))
+            (= (cond g a y)
+               (cong-fn y (cong-fn a (cong-arg cond (sym (assume (= g true)))))))))
+        ;; g = F : x = y by the hypothesis.
+        (imp-intro (= g false)
+          (#comp (cond g a x)
+            (= (cond false a x)
+               (cong-fn x (cong-fn a (cong-arg cond (assume (= g false))))))
+            (= x (all-elim x (all-elim a (cond.false))))
+            (= y (imp-elim (assume (==> (= g false) (= x y))) (assume (= g false))))
+            (= (cond false a y) (sym (all-elim y (all-elim a (cond.false)))))
+            (= (cond g a y)
+               (cong-fn y (cong-fn a (cong-arg cond (sym (assume (= g false)))))))))))))
+
+;; ⊢ ∀p. p ⟹ (p = T).  EQT_INTRO.
+(#thm bool.eqt
+  (#concl (forall (p bool) (==> p (= p true))))
+  (#by (intro p h) (derive (deduct-antisym (assume p) (truth)))))
+
+;; ⊢ ∀p. ¬p ⟹ (p = F).  EQF_INTRO.
+(#thm bool.eqf
+  (#concl (forall (p bool) (==> (not p) (= p false))))
+  (#by
+    (intro p h)
+    (derive (deduct-antisym (false-elim p (assume false))
+                            (not-elim (assume (not p)) (assume p))))))
+
+;; ⊢ ∀a. (a ∨ T) = T.  A true disjunct wins.
+(#thm or.true_r
+  (#concl (forall (a bool) (= (or a true) true)))
+  (#by (intro a) (derive (deduct-antisym (or-intro-r a (truth)) (truth)))))
+
+;; ⊢ ∀b. (T ∨ b) = T.  A true disjunct wins (left).
+(#thm or.true_l
+  (#concl (forall (b bool) (= (or true b) true)))
+  (#by (intro b) (derive (deduct-antisym (or-intro-l b (truth)) (truth)))))
+
+;; ⊢ ∀b. (F ∨ b) = b.  A false disjunct drops.
+(#thm or.false_l
+  (#concl (forall (b bool) (= (or false b) b)))
+  (#by
+    (intro b)
+    (derive
+      (deduct-antisym
+        (or-intro-r false (assume b))
+        (or-elim (assume (or false b))
+          (imp-intro false (false-elim b (assume false)))
+          (imp-intro b (assume b)))))))
+
+;; ⊢ ∀g h a b. (g = h) ⟹ cond g a b = cond h a b.  Congruence in the guard
+;; (with `cond` applied, so its result type stays pinned — bare `cond` in
+;; `cong-arg` would float the type variable).
+(#thm cond.cong_guard
+  (#concl
+    (forall (g bool) (forall (h bool) (forall (a nat) (forall (b nat)
+      (==> (= g h) (= (cond g a b) (cond h a b))))))))
+  (#by
+    (intro g h a b e)
+    (derive
+      (#comp (cond g a b)
+        (= (app (lam (x bool) (cond x a b)) g)
+           (sym (beta-conv (app (lam (x bool) (cond x a b)) g))))
+        (= (app (lam (x bool) (cond x a b)) h)
+           (cong-arg (lam (x bool) (cond x a b)) (assume (= g h))))
+        (= (cond h a b)
+           (beta-conv (app (lam (x bool) (cond x a b)) h)))))))
+
+;; ⊢ ∀g a b. (g = T) ⟹ cond g a b = a   /   (g = F) ⟹ cond g a b = b.
+;; Guard-value → branch (`nat`).  `cond.true`/`cond.false` are polymorphic, so
+;; instantiate their `'a` at `nat` (via `inst-tfree`) before eliminating.
+(#thm cond.eq_then
+  (#concl (forall (g bool) (forall (a nat) (forall (b nat)
+            (==> (= g true) (= (cond g a b) a))))))
+  (#by
+    (intro g a b h)
+    (derive
+      (trans
+        (imp-elim
+          (all-elim b (all-elim a (all-elim true (all-elim g (cond.cong_guard)))))
+          (assume (= g true)))
+        (all-elim b (all-elim a (inst-tfree a nat (cond.true))))))))
+(#thm cond.eq_else
+  (#concl (forall (g bool) (forall (a nat) (forall (b nat)
+            (==> (= g false) (= (cond g a b) b))))))
+  (#by
+    (intro g a b h)
+    (derive
+      (trans
+        (imp-elim
+          (all-elim b (all-elim a (all-elim false (all-elim g (cond.cong_guard)))))
+          (assume (= g false)))
+        (all-elim b (all-elim a (inst-tfree a nat (cond.false))))))))
+
+;; ⊢ ∀c a b. a ≤ b ⟹ (c + a ≤ c + b)   /   a < b ⟹ (c + a < c + b).
+;; Left add-monotonicity (commute to the right-cancellation lemmas).
+(#thm nat.le_add_l
+  (#concl (forall (c nat) (forall (a nat) (forall (b nat)
+            (==> (nat.le a b) (nat.le (nat.add c a) (nat.add c b)))))))
+  (#by
+    (intro c a b h)
+    (derive
+      (eq-mp
+        (congr nat.le (all-elim c (all-elim a (add.comm))) (all-elim c (all-elim b (add.comm))))
+        (eq-mp (sym (all-elim c (all-elim b (all-elim a (le.add_cancel_r)))))
+               (assume (nat.le a b)))))))
+(#thm nat.lt_add_l
+  (#concl (forall (c nat) (forall (a nat) (forall (b nat)
+            (==> (nat.lt a b) (nat.lt (nat.add c a) (nat.add c b)))))))
+  (#by
+    (intro c a b h)
+    (derive
+      (eq-mp
+        (congr nat.lt (all-elim c (all-elim a (add.comm))) (all-elim c (all-elim b (add.comm))))
+        (eq-mp (sym (all-elim c (all-elim b (all-elim a (lt.add_mono_r)))))
+               (assume (nat.lt a b)))))))
+
+;; ⊢ ∀m n. m ≤ n ⟹ ¬(n < m).
+(#thm nat.not_lt_of_ge
+  (#concl (forall (m nat) (forall (n nat) (==> (nat.le m n) (not (nat.lt n m))))))
+  (#by
+    (intro m n h)
+    (derive
+      (not-intro
+        (imp-intro (nat.lt n m)
+          (not-elim (all-elim n (lt.irrefl))
+            (imp-elim
+              (imp-elim (all-elim n (all-elim m (all-elim n (nat.lt_le_trans))))
+                        (assume (nat.lt n m)))
+              (assume (nat.le m n)))))))))
+
+;; The Euclidean recurrence, as a reusable antecedent over a free `div`.
+;; (Matches `cv_div_recurrence`'s body — same `cond`.)
+;;   ∀n m. div n m = cond (m=0 ∨ n<m) 0 (S (div (n−m) m))
+
+;; ⊢ REC ⟹ ∀n m. n<m ⟹ div n m = 0.  (Guard true via the `n<m` disjunct.)
+(#thm div.step_lt
+  (#concl
+    (==> (forall (n nat) (forall (m nat)
+            (= (app (app div n) m)
+               (cond (or (= m 0) (nat.lt n m)) 0
+                     (succ (app (app div (nat.sub n m)) m))))))
+         (forall (n nat) (forall (m nat) (==> (nat.lt n m) (= (app (app div n) m) 0))))))
+  (#by
+    (intro Hrec n m hlt)
+    (derive
+      (trans
+        (all-elim m (all-elim n
+          (assume (forall (n nat) (forall (m nat)
+            (= (app (app div n) m)
+               (cond (or (= m 0) (nat.lt n m)) 0
+                     (succ (app (app div (nat.sub n m)) m)))))))))
+        (imp-elim
+          (all-elim (succ (app (app div (nat.sub n m)) m))
+            (all-elim 0 (all-elim (or (= m 0) (nat.lt n m)) (cond.eq_then))))
+          ;; (m=0 ∨ n<m) = (m=0 ∨ T) = T
+          (trans
+            (cong-arg (or (= m 0))
+              (imp-elim (all-elim (nat.lt n m) (bool.eqt)) (assume (nat.lt n m))))
+            (all-elim (= m 0) (or.true_r))))))))
+
+;; ⊢ REC ⟹ ∀n m. m≠0 ⟹ m≤n ⟹ div n m = S(div (n−m) m).  (Guard false.)
+(#thm div.step_ge
+  (#concl
+    (==> (forall (n nat) (forall (m nat)
+            (= (app (app div n) m)
+               (cond (or (= m 0) (nat.lt n m)) 0
+                     (succ (app (app div (nat.sub n m)) m))))))
+         (forall (n nat) (forall (m nat)
+            (==> (not (= m 0)) (==> (nat.le m n)
+              (= (app (app div n) m) (succ (app (app div (nat.sub n m)) m)))))))))
+  (#by
+    (intro Hrec n m hmne hge)
+    (derive
+      (trans
+        (all-elim m (all-elim n
+          (assume (forall (n nat) (forall (m nat)
+            (= (app (app div n) m)
+               (cond (or (= m 0) (nat.lt n m)) 0
+                     (succ (app (app div (nat.sub n m)) m)))))))))
+        (imp-elim
+          (all-elim (succ (app (app div (nat.sub n m)) m))
+            (all-elim 0 (all-elim (or (= m 0) (nat.lt n m)) (cond.eq_else))))
+          ;; (m=0 ∨ n<m) = (F ∨ n<m) = (F ∨ F) = F
+          (trans
+            (cong-fn (nat.lt n m)
+              (cong-arg or (imp-elim (all-elim (= m 0) (bool.eqf)) (assume (not (= m 0))))))
+            (trans
+              (all-elim (nat.lt n m) (or.false_l))
+              (imp-elim (all-elim (nat.lt n m) (bool.eqf))
+                (imp-elim (all-elim n (all-elim m (nat.not_lt_of_ge)))
+                          (assume (nat.le m n)))))))))))
+
+;; ⊢ REC ⟹ ∀n m. m=0 ⟹ div n m = 0.  When `m=0` the guard is true (left
+;; disjunct), so the recurrence's `cond` picks the `0` branch.
+(#thm div.zero
+  (#concl
+    (==> (forall (n nat) (forall (m nat)
+            (= (app (app div n) m)
+               (cond (or (= m 0) (nat.lt n m)) 0
+                     (succ (app (app div (nat.sub n m)) m))))))
+         (forall (n nat) (forall (m nat) (==> (= m 0) (= (app (app div n) m) 0))))))
+  (#by
+    (intro Hrec n m hm0)
+    (derive
+      (trans
+        (all-elim m (all-elim n
+          (assume (forall (n nat) (forall (m nat)
+            (= (app (app div n) m)
+               (cond (or (= m 0) (nat.lt n m)) 0
+                     (succ (app (app div (nat.sub n m)) m)))))))))
+        (imp-elim
+          (all-elim (succ (app (app div (nat.sub n m)) m))
+            (all-elim 0
+              (all-elim (or (= m 0) (nat.lt n m)) (cond.eq_then))))
+          ;; guard = (m=0 ∨ n<m) = (T ∨ n<m) = T
+          (trans
+            (cong-fn (nat.lt n m)
+              (cong-arg or (imp-elim (all-elim (= m 0) (bool.eqt)) (assume (= m 0)))))
+            (all-elim (nat.lt n m) (or.true_l))))))))
+
+;; ⊢ REC ⟹ ∀n m. m≠0 ⟹ (div n m · m ≤ n  ∧  n < S(div n m) · m).
+;; The Euclidean bounds, by course-of-values induction on `n`.  Base (`n<m`):
+;; quotient 0, bounds from `le.zero` / `n<m`.  Step (`m≤n`): quotient `S q'` with
+;; `q' = div (n−m) m`; the IH at `n−m` (< `n`) bounds `q'`, and the `S q'·m =
+;; m + q'·m`, `m + (n−m) = n` identities lift those bounds to `n`.
+(#thm div.bounds
+  (#concl
+    (==> (forall (n nat) (forall (m nat)
+            (= (app (app div n) m)
+               (cond (or (= m 0) (nat.lt n m)) 0
+                     (succ (app (app div (nat.sub n m)) m))))))
+         (forall (n nat) (forall (m nat)
+           (==> (not (= m 0))
+             (and (nat.le (nat.mul (app (app div n) m) m) n)
+                  (nat.lt n (nat.mul (succ (app (app div n) m)) m))))))))
+  (#by
+    (intro Hrec)
+    (derive
+      (eq-mp
+        (cong-arg (forall-op nat)
+          (abs-rule n nat
+            (beta-conv (app (lam (n nat) (forall (m nat) (==> (not (= m 0))
+                          (and (nat.le (nat.mul (app (app div n) m) m) n)
+                               (nat.lt n (nat.mul (succ (app (app div n) m)) m)))))) n))))
+        (imp-elim
+          (all-elim (lam (n nat) (forall (m nat) (==> (not (= m 0))
+                       (and (nat.le (nat.mul (app (app div n) m) m) n)
+                            (nat.lt n (nat.mul (succ (app (app div n) m)) m))))))
+            (strong.induct))
+          (all-intro n nat
+            (imp-intro
+              (forall (k nat) (==> (nat.lt k n)
+                (app (lam (n nat) (forall (m nat) (==> (not (= m 0))
+                       (and (nat.le (nat.mul (app (app div n) m) m) n)
+                            (nat.lt n (nat.mul (succ (app (app div n) m)) m)))))) k)))
+              (eq-mp
+                (sym (beta-conv (app (lam (n nat) (forall (m nat) (==> (not (= m 0))
+                        (and (nat.le (nat.mul (app (app div n) m) m) n)
+                             (nat.lt n (nat.mul (succ (app (app div n) m)) m)))))) n)))
+                (all-intro m nat
+                  (imp-intro (not (= m 0))
+                    (or-elim (all-elim m (all-elim n (nat.lt_or_ge)))
+                      ;; ---- base: n < m, quotient 0 ----
+                      (imp-intro (nat.lt n m)
+                        (and-intro
+                          ;; div n m · m ≤ n  (= 0·m = 0 ≤ n)
+                          (eq-mp
+                            (cong-fn n (cong-arg nat.le
+                              (sym (trans
+                                (cong-fn m (cong-arg nat.mul
+                                  (imp-elim (all-elim m (all-elim n
+                                    (imp-elim (div.step_lt) (assume
+                                      (forall (n nat) (forall (m nat)
+                                        (= (app (app div n) m)
+                                           (cond (or (= m 0) (nat.lt n m)) 0
+                                                 (succ (app (app div (nat.sub n m)) m))))))))))
+                                    (assume (nat.lt n m)))))
+                                (all-elim m (zero.mul))))))
+                            (all-elim n (le.zero)))
+                          ;; n < S(div n m) · m  (= S 0 · m = m, and n < m)
+                          (eq-mp
+                            (cong-arg (nat.lt n)
+                              (sym (trans
+                                (cong-fn m (cong-arg nat.mul (cong-arg succ
+                                  (imp-elim (all-elim m (all-elim n
+                                    (imp-elim (div.step_lt) (assume
+                                      (forall (n nat) (forall (m nat)
+                                        (= (app (app div n) m)
+                                           (cond (or (= m 0) (nat.lt n m)) 0
+                                                 (succ (app (app div (nat.sub n m)) m))))))))))
+                                    (assume (nat.lt n m))))))
+                                (trans (all-elim m (all-elim 0 (succ.mul)))
+                                  (trans (cong-arg (nat.add m) (all-elim m (zero.mul)))
+                                         (all-elim m (add.zero)))))))
+                            (assume (nat.lt n m)))))
+                      ;; ---- step: m ≤ n, quotient S q' ----
+                      (imp-intro (nat.le m n)
+                        (and-intro
+                          ;; div n m · m ≤ n
+                          (eq-mp
+                            (cong-fn n (cong-arg nat.le (sym (cong-fn m (cong-arg nat.mul
+                              (imp-elim (imp-elim
+                                (all-elim m (all-elim n (imp-elim (div.step_ge) (assume
+                                  (forall (n nat) (forall (m nat)
+                                    (= (app (app div n) m)
+                                       (cond (or (= m 0) (nat.lt n m)) 0
+                                             (succ (app (app div (nat.sub n m)) m))))))))))
+                                (assume (not (= m 0))))
+                                (assume (nat.le m n))))))))
+                            (eq-mp
+                              (cong-fn n (cong-arg nat.le
+                                (sym (all-elim m (all-elim (app (app div (nat.sub n m)) m) (succ.mul))))))
+                              (eq-mp
+                                (cong-arg (nat.le (nat.add m (nat.mul (app (app div (nat.sub n m)) m) m)))
+                                  (imp-elim (all-elim n (all-elim m (le.add_sub))) (assume (nat.le m n))))
+                                (imp-elim (all-elim (nat.sub n m)
+                                  (all-elim (nat.mul (app (app div (nat.sub n m)) m) m)
+                                    (all-elim m (nat.le_add_l))))
+                                  (and-elim-l
+                                    (imp-elim (all-elim m
+                                      (eq-mp (beta-conv (app (lam (n nat) (forall (m nat) (==> (not (= m 0))
+                                               (and (nat.le (nat.mul (app (app div n) m) m) n)
+                                                    (nat.lt n (nat.mul (succ (app (app div n) m)) m)))))) (nat.sub n m)))
+                                        (imp-elim (all-elim (nat.sub n m) (assume
+                                          (forall (k nat) (==> (nat.lt k n)
+                                            (app (lam (n nat) (forall (m nat) (==> (not (= m 0))
+                                                   (and (nat.le (nat.mul (app (app div n) m) m) n)
+                                                        (nat.lt n (nat.mul (succ (app (app div n) m)) m)))))) k)))))
+                                          (imp-elim (imp-elim (all-elim m (all-elim n (nat.sub_lt_self)))
+                                            (assume (not (= m 0)))) (assume (nat.le m n))))))
+                                      (assume (not (= m 0)))))))))
+                          ;; n < S(div n m) · m
+                          (eq-mp
+                            (cong-arg (nat.lt n) (sym (cong-fn m (cong-arg nat.mul (cong-arg succ
+                              (imp-elim (imp-elim
+                                (all-elim m (all-elim n (imp-elim (div.step_ge) (assume
+                                  (forall (n nat) (forall (m nat)
+                                    (= (app (app div n) m)
+                                       (cond (or (= m 0) (nat.lt n m)) 0
+                                             (succ (app (app div (nat.sub n m)) m))))))))))
+                                (assume (not (= m 0))))
+                                (assume (nat.le m n))))))))
+                            (eq-mp
+                              (cong-arg (nat.lt n)
+                                (sym (all-elim m (all-elim (succ (app (app div (nat.sub n m)) m)) (succ.mul)))))
+                              (eq-mp
+                                (congr nat.lt
+                                  (imp-elim (all-elim n (all-elim m (le.add_sub))) (assume (nat.le m n)))
+                                  (refl (nat.add m (nat.mul (succ (app (app div (nat.sub n m)) m)) m))))
+                                (imp-elim (all-elim (nat.mul (succ (app (app div (nat.sub n m)) m)) m)
+                                  (all-elim (nat.sub n m) (all-elim m (nat.lt_add_l))))
+                                  (and-elim-r
+                                    (imp-elim (all-elim m
+                                      (eq-mp (beta-conv (app (lam (n nat) (forall (m nat) (==> (not (= m 0))
+                                               (and (nat.le (nat.mul (app (app div n) m) m) n)
+                                                    (nat.lt n (nat.mul (succ (app (app div n) m)) m)))))) (nat.sub n m)))
+                                        (imp-elim (all-elim (nat.sub n m) (assume
+                                          (forall (k nat) (==> (nat.lt k n)
+                                            (app (lam (n nat) (forall (m nat) (==> (not (= m 0))
+                                                   (and (nat.le (nat.mul (app (app div n) m) m) n)
+                                                        (nat.lt n (nat.mul (succ (app (app div n) m)) m)))))) k)))))
+                                          (imp-elim (imp-elim (all-elim m (all-elim n (nat.sub_lt_self)))
+                                            (assume (not (= m 0)))) (assume (nat.le m n))))))
+                                      (assume (not (= m 0))))))))))))))))))))))
+
+(#export nat.lt_or_ge nat.pos_of_ne_zero nat.lt_add_pos nat.sub_lt_self
+         bool.cases cond.cong_arm
+         bool.eqt bool.eqf or.true_l or.true_r or.false_l
+         cond.cong_guard cond.eq_then cond.eq_else
+         nat.le_add_l nat.lt_add_l nat.not_lt_of_ge
+         div.zero div.step_lt div.step_ge div.bounds)

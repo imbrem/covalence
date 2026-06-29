@@ -73,7 +73,7 @@ pub type MmSessions = Mutex<HashMap<SessionKey, Arc<MmSession>>>;
 /// One parsed-and-cached Metamath database, ready to serve.
 pub struct MmSession {
     /// The parsed database, shared read-only across the prove threads.
-    pub db: Arc<covalence_hol::metamath::Database>,
+    pub db: Arc<covalence_init::metamath::Database>,
     /// Logical (`|-`) `$p` theorem count.
     pub total: usize,
     /// Provenance: where this `.mm` came from (a URL or label). `None` if it was
@@ -184,7 +184,7 @@ fn render_proof(a: &covalence_metamath::database::Assertion) -> String {
 /// `[{label, kind}]` with kind axiom/def/thm (thm if the dep has its own proof,
 /// else `df*` → def, else axiom).
 fn render_deps(
-    db: &covalence_hol::metamath::Database,
+    db: &covalence_init::metamath::Database,
     a: &covalence_metamath::database::Assertion,
 ) -> Vec<Value> {
     use covalence_metamath::database::Statement;
@@ -219,7 +219,7 @@ fn render_deps(
 }
 
 /// The graph-phase item for one theorem: `{label, mm, deps}`.
-fn graph_item(db: &covalence_hol::metamath::Database, label: &str) -> Value {
+fn graph_item(db: &covalence_init::metamath::Database, label: &str) -> Value {
     use covalence_metamath::database::Statement;
     match db.statement_by_label(label) {
         Some(Statement::Assert(a)) => json!({
@@ -396,11 +396,11 @@ fn token_len(t: &Term) -> usize {
 /// formers (`wff`/`class`/… constructors) and the `df-*` definitions — so the
 /// `name ↔ HOL term` map uses real Metamath names, not synthetic ones.
 fn build_hol_surface(
-    db: &covalence_hol::metamath::Database,
+    db: &covalence_init::metamath::Database,
     progress: &dyn Fn(usize, usize, usize),
 ) -> HolSurface {
-    use covalence_hol::metalogic::mm_database::Parser;
-    use covalence_hol::metalogic::mm_import::theorem_labels;
+    use covalence_init::metalogic::mm_database::Parser;
+    use covalence_init::metalogic::mm_import::theorem_labels;
     use covalence_metamath::database::Statement;
 
     let parser = Parser::new(db);
@@ -631,7 +631,7 @@ pub async fn create_db(
         Err(_) => return (StatusCode::BAD_REQUEST, "source is not valid UTF-8").into_response(),
     };
     let (parsed, symbols) = tokio::task::spawn_blocking(move || {
-        let db = covalence_hol::metamath::parse(&source);
+        let db = covalence_init::metamath::parse(&source);
         let symbols = symbol_map(&source);
         (db, symbols)
     })
@@ -643,7 +643,7 @@ pub async fn create_db(
         Err(e) => return (StatusCode::BAD_REQUEST, format!("parse error: {e}")).into_response(),
     };
 
-    let total = covalence_hol::metalogic::mm_import::theorem_labels(&db).len();
+    let total = covalence_init::metalogic::mm_import::theorem_labels(&db).len();
     // Generous capacity so the per-theorem frame stream rarely overruns a
     // briefly-busy client (a Lagged overrun self-heals via a re-sent snapshot).
     let (status_tx, _rx) = tokio::sync::broadcast::channel::<String>(16384);
@@ -827,7 +827,7 @@ pub async fn graph(
     let body = sess
         .graph
         .get_or_init(|| {
-            let labels = covalence_hol::metalogic::mm_import::theorem_labels(&sess.db);
+            let labels = covalence_init::metalogic::mm_import::theorem_labels(&sess.db);
             let theorems: Vec<Value> = labels.iter().map(|l| graph_item(&sess.db, l)).collect();
             json!({ "total": sess.total, "theorems": theorems }).to_string()
         })
@@ -890,7 +890,7 @@ pub async fn theorem(
     let hol_term = match sess.hol.get() {
         Some(s) => s.terms.get(&name).cloned(),
         None => {
-            use covalence_hol::metalogic::mm_database::Parser;
+            use covalence_init::metalogic::mm_database::Parser;
             let parser = Parser::new(&sess.db);
             parser
                 .encode_expr(&a.conclusion)
@@ -954,7 +954,7 @@ pub async fn prove(
 /// The blocking prove worker: derive every logical theorem in parallel, storing
 /// each result in `results` and broadcasting `proving`/`proved`/`done` frames.
 fn prove_worker(sess: Arc<MmSession>, workers: usize) {
-    use covalence_hol::metalogic::mm_import::import_theorems_parallel;
+    use covalence_init::metalogic::mm_import::import_theorems_parallel;
 
     let started = std::time::Instant::now();
     let n_ok = AtomicUsize::new(0);

@@ -1,7 +1,7 @@
 //! The `smt` proof tactic — discharge the current `.cov` goal via an
 //! Alethe refutation, checked through the kernel.
 //!
-//! [`smt_tactic`] builds an [`Arc<dyn Tactic>`](covalence_hol::script::Tactic)
+//! [`smt_tactic`] builds an [`Arc<dyn Tactic>`](covalence_init::script::Tactic)
 //! from an [`SmtDischarger`]. A `.cov` script wires it in with the public FFI
 //! seam:
 //!
@@ -18,7 +18,7 @@
 
 use std::sync::Arc;
 
-use covalence_hol::script::{Interp, ScriptError, Tactic};
+use covalence_init::script::{Interp, ScriptError, Tactic};
 use covalence_sexp::SExpr;
 
 use crate::discharge::SmtDischarger;

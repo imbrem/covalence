@@ -564,7 +564,11 @@ proven-WASM compilation and lazy-by-default evaluation); **top = *internal*
 Metamath, the thin waist** — `∃D. ValidProof(D, P, Ax)`. Every internal logic
 (FOL/HOL/ZFC/GT/MLTT/LF/Dedukti) passes through it, which is what gives a *uniform*
 notion of conservative extension, syntax translation, and "proving what we think we
-prove" (soundness w.r.t. the Metamath base). Efficient encodings (de Bruijn, …) are
+prove" (soundness w.r.t. the Metamath base). **Per-system plans for bringing these
+external systems in as object logics** — MLTT / book HoTT / NuPRL / IZF→MLTT,
+ACL2 / Lisp, LF / Dedukti — are sketched in
+[`logic-frontends.md`](./logic-frontends.md) (umbrella + difficulty matrix) and
+the [`sketches/`](./sketches/) per-family docs. Efficient encodings (de Bruijn, …) are
 HOL data structures proven sound against that base — Metamath both pins the meaning
 and lets us swap encodings freely behind proven equivalences; and since we **never
 look at the proofs** (only assert one exists), the databases stay dead-simple

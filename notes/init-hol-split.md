@@ -1,9 +1,13 @@
 # Splitting `covalence-hol` → thin `covalence-hol` + `covalence-init`
 
-> **STATUS: PLAN (not yet executed).** The concrete next step of the three-layer
-> reorg ([`refactor-plan.md`](./refactor-plan.md) §3–4). This branch only *plans*
-> it; execution is its own branch. Git history is the backup — prune aggressively
-> and add back later.
+> **STATUS: DONE (initial split landed).** The bulk moved to `covalence-init`;
+> the thin `covalence-hol` is the 3-module HOL surface (`types`/`traits`/
+> `hol_light_obs`) depending only on `covalence-core`. Remaining follow-ups:
+> merge `covalence-opentheory` behind an `opentheory` feature; decouple
+> `covalence-hol` from `covalence-core` (the core-free peer-of-metamath goal).
+> Note: the algebra cluster (`category`/`monoidal`/`semiring`/`ring`) turned out
+> **live** (used by `init/cat`, `init/coprod`, `init/nat`, `ac`) — kept, not
+> pruned. `PureHol` was already dead and is removed.
 
 ## Goal
 

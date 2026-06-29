@@ -27,6 +27,15 @@ impl FactStore {
         cid
     }
 
+    /// Insert a pre-addressed `body` under `cid` **without recomputing** the
+    /// hash. For store adapters that load already-verified bodies (e.g. from
+    /// disk) — and for tests that need to construct an inconsistent store. The
+    /// `cid`/`body` agreement is the caller's responsibility; the content-address
+    /// law in [`crate::acset::validate_store`] is what catches a mismatch.
+    pub fn insert_raw(&mut self, cid: Cid, body: Vec<u8>) {
+        self.facts.insert(cid, body);
+    }
+
     /// Number of facts held.
     pub fn len(&self) -> usize {
         self.facts.len()
@@ -45,6 +54,11 @@ impl FactStore {
     /// The stored body for `cid`, if present.
     pub fn get(&self, cid: Cid) -> Option<&[u8]> {
         self.facts.get(&cid).map(Vec::as_slice)
+    }
+
+    /// Iterate `(cid, body)` over every stored fact, in unspecified order.
+    pub fn facts(&self) -> impl Iterator<Item = (Cid, &[u8])> {
+        self.facts.iter().map(|(c, b)| (*c, b.as_slice()))
     }
 
     /// Proof-checking *as* a constraint query: `cid` is admissible iff it is

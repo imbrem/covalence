@@ -66,6 +66,7 @@
 //! assert!(broken.check(coln_cid).is_err());
 //! ```
 
+pub mod acset;
 pub mod cid;
 pub mod codec;
 pub mod error;
@@ -73,8 +74,10 @@ pub mod fact;
 pub mod identity;
 pub mod store;
 
+pub use acset::{StoreError, interchange_schema, validate_store};
 pub use cid::Cid;
 pub use codec::Codec;
+pub use covalence_acset::{AcsetError, Instance, Schema, SchemaError};
 pub use error::{CheckError, ParseError};
 pub use fact::DerivationFact;
 pub use identity::covalence_name;

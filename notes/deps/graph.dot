@@ -3,6 +3,7 @@ digraph deps {
   rankdir=LR;
   node [shape=box, fontname="sans-serif"];
   "covalence";
+  "acset";
   "alethe";
   "arrow";
   "client";
@@ -107,6 +108,7 @@ digraph deps {
   "lsp" -> "wasm";
   "metamath" -> "parse";
   "metamath" -> "sexp";
+  "multiformat" -> "acset";
   "multiformat" -> "hash";
   "multiformat" -> "parse";
   "object" -> "hash";

@@ -906,6 +906,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-acset"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-alethe"
 version = "0.0.0"
 dependencies = [
@@ -1168,6 +1175,7 @@ dependencies = [
 name = "covalence-multiformat"
 version = "0.0.0"
 dependencies = [
+ "covalence-acset",
  "covalence-hash",
  "covalence-init",
  "covalence-parse",

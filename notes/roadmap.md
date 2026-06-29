@@ -210,6 +210,15 @@ built"): the multiformat `Cid` + `DerivationFact` envelope, `FactStore::check`
 instance / validation core, Δ functorial data migration, conjunctive + recursive
 (Datalog) queries, and the `lattice::lfp` (`fix`) combinator.
 
+*What Coln is, for context:* a "data-oriented proof assistant" (internal codename
+*Geolog*) whose kernel is **geometric / arithmetic-universe** strength with a
+content-addressed, version-controlled, P2P store (Sedimentree / Keyhive / BFT).
+The complementarity: covalence brings classical-HOL strength + the proof-irrelevant
+waist; Coln brings the data-oriented store + native constraint-checking. The bridge
+is the interchange below, used at the *assumption/import* boundary (covalence's
+"borrow power as a scoped hypothesis" pattern), not by embedding one logic in the
+other.
+
 **Open next steps** (none blocking the Metamath product):
 
 - **Option B — schema-as-payload soundness certs.** Carry an ACSet schema as a
@@ -217,12 +226,40 @@ instance / validation core, Δ functorial data migration, conjunctive + recursiv
   bridge artifact, complementing today's *structural* validator.
 - **Signed envelopes** (`covalence-sig`) — authored Thm exchange = the federation
   layer (trust-root leaves authenticated; mirrors Coln's Keyhive P2P/BFT model).
-- **Toward Datafun** — semi-naive evaluation, lattice-valued rules, stratified
-  negation, and a typed monotone `fix` surface compiling to `covalence-acset`;
-  also the seam to incremental/DBSP-style eval. See
+  Note: signing adds *provenance/authorization*, not logical trust — re-checking
+  against the kernel is what carries soundness (Coln is, to covalence, an
+  untrusted fast store/oracle whose output covalence re-verifies).
+- **Toward Datafun** — semi-naive evaluation, lattice-valued *rules* (aggregate
+  into a `JoinSemilattice`, backing `solve` by `lfp`), stratified negation, and a
+  typed monotone `fix` surface compiling to `covalence-acset`; the seam to
+  incremental/DBSP-style eval. See
   [`sketches/acset-datalog-datafun.md`](./sketches/acset-datalog-datafun.md).
+- **Σ/Π functorial data migration** — only Δ (pullback) is built; the left/right
+  Kan-extension adjoints are deferred (research-grade; not shipped half-right).
 - **Codec registration + identity mapping** — real multicodec codes (out of the
   private-use range); a Coln Sedimentree-address analogue of `covalence_name`.
+- **Deepen the kernel binding** — `kernel_ingest` parses the S-expression payload
+  and kernel-type-checks + hash-pins it; full ingest would *re-derive* (the waist
+  is proof-irrelevant, so this needs the envelope to carry derivation steps), and
+  the HOL payload is limited to covalence-init's round-trippable term fragment.
+
+**Decisions & caveats (so the context isn't lost):**
+
+- Validation is **structural** (referential integrity as ACSet
+  instance-conformance), not theorem truth — that's `kernel_ingest`'s job; and not
+  the content hashes — that's the `cid` layer.
+- `lattice::lfp` **assumes** step monotonicity + a terminating lattice (the typed
+  Datafun surface would discharge this); Datalog eval is **naive** (not
+  semi-naive) and **positive/set-valued** only.
+- Wire format is alpha: **private-use multicodec codes**, **blake3-only**
+  multihash, the Coln-side reader is **simulated in Rust**, no signed envelopes.
+- **Build:** `rusqlite` is pinned to `0.39` so `libsqlite3-sys` (its build script
+  uses unstable `cfg_select`) compiles on the rustc 1.94.1 floor; full `bun test`
+  won't go green in a bare sandbox (cargo-test 300 s cap + server/browser/Python
+  infra). Detail + the toolchain-bump alternative in
+  [`build/known-issues.md`](./build/known-issues.md).
+- Per-crate open work: [`covalence-multiformat`](../crates/covalence-multiformat/SKELETONS.md),
+  [`covalence-acset`](../crates/covalence-acset/SKELETONS.md).
 
 [coln-project/Coln]: https://github.com/coln-project/Coln
 

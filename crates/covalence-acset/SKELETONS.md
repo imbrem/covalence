@@ -13,9 +13,13 @@
 - **Query/Datalog evaluation is naive; positive only.** `query` (conjunctive)
   and `datalog` (recursive, least-fixpoint over derived relations) both evaluate
   by naive backtracking — no **semi-naive** delta evaluation, no indexing/planner.
-  `datalog` is **positive** (no negation/stratification), set-valued only (no
-  semilattice/aggregation values), and assumes rule monotonicity rather than
-  checking it. The Datafun surface that would enforce monotonicity and add these
-  is sketched in `notes/sketches/acset-datalog-datafun.md`.
+  `datalog` is **positive** (no negation/stratification) and set-valued; its
+  rule language does not yet aggregate into a `JoinSemilattice` (only the
+  standalone `lattice::lfp` does). The Datafun surface that would enforce
+  monotonicity is sketched in `notes/sketches/acset-datalog-datafun.md`.
+- **`lattice::lfp` assumes monotonicity + termination.** The step's monotonicity
+  and the lattice's ascending-chain condition are the caller's obligation, not
+  checked. `datalog::solve` is not yet *implemented* on top of `lfp` (only proven
+  equal to it by a test).
 - **No (co)limits or schema composition.** Acyclicity is an instance-level check
   the caller invokes, not a schema law; no schema colimits / pushouts.

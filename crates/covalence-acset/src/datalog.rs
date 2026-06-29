@@ -513,6 +513,32 @@ mod tests {
     }
 
     #[test]
+    fn solve_matches_generic_lfp() {
+        use crate::lattice::lfp;
+        use std::collections::BTreeSet;
+        let g = chain();
+        let sol = g.solve(&reachability());
+        let from_solve: BTreeSet<(usize, usize)> = sol
+            .tuples("reach")
+            .map(|t| (t[0].index, t[1].index))
+            .collect();
+        // the same transitive closure, computed by the generic lattice fixpoint
+        let edges: BTreeSet<(usize, usize)> = [(0, 1), (1, 2), (2, 3)].into_iter().collect();
+        let from_lfp = lfp(|r: &BTreeSet<(usize, usize)>| {
+            let mut out = edges.clone();
+            for &(a, b) in r {
+                for &(c, d) in &edges {
+                    if b == c {
+                        out.insert((a, d));
+                    }
+                }
+            }
+            out
+        });
+        assert_eq!(from_solve, from_lfp);
+    }
+
+    #[test]
     fn ill_typed_program_is_caught() {
         let bad = Program::builder()
             .relation("reach", &["V", "V"])

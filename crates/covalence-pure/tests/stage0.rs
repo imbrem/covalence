@@ -16,12 +16,14 @@ fn cong_trans_chain_and_manifest() {
     let chained = c1.trans(c2).expect("middle terms match");
     assert_eq!(chained.lhs(), &App(Not, Val(false)));
 
-    // a boolean law by `canon`
-    let law = canon(And, (true, true), ()).expect("() admits And");
+    // a boolean law by `canon`, in the `Bool` layer (`()` is empty)
+    let law = canon(And, (true, true), Bool).expect("Bool admits And");
     assert_eq!(law.rhs(), &Val(true));
 
-    // the base manifest is what `()` declares
-    let m = <() as Language>::MANIFEST.expect("base manifest");
-    assert_eq!(m.ty, TypeId::of::<()>());
-    assert_eq!(m.admits.len(), 9);
+    // `()` is the trivial base — empty manifest; `Bool` carries the connectives.
+    let unit = <() as Language>::MANIFEST.expect("base manifest");
+    assert_eq!(unit.ty, TypeId::of::<()>());
+    assert!(unit.admits.is_empty());
+    let b = <Bool as Language>::MANIFEST.expect("Bool manifest");
+    assert_eq!(b.admits.len(), 5);
 }

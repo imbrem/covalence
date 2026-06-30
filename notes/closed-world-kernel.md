@@ -322,19 +322,26 @@ each `lift` is a sound one-layer weakening.
 ### The base language `()`
 
 `impl Language for ()` is the **root every language inherits** (the macro adds it
-implicitly), and it bundles what you get "for free":
+implicitly), and it is **empty** — its `MANIFEST` admits *nothing*. The "trivial
+rules" — the **equality calculus** `refl`/`sym`/`trans`/`cong` — are *always-
+available methods on `Eqn`* (ungated framework TCB), not manifest entries; so `()`
+is the base everyone implicitly trusts, with no per-language rules to audit.
 
-- the **equality calculus** — `refl` (needs `Clone` to duplicate the expr), `sym`,
-  `trans` (needs the trusted structural eq to match middle terms), `cong`;
-- **propositional logic** — `And`/`Or`/`Imp`/`Not` ops with their evaluation
-  (`CanonRule` over `True`/`False`) and the basic laws (`And(p,⊤)=p`, …); classical
-  `LEM` (`p ∨ ¬p = ⊤`) is a *separate* admittable rule so an intuitionistic
-  language can decline it.
+*Computation* is gated, so it lives in real layers, not `()`:
 
-These are `()`'s `MANIFEST` rules, so they show up in every tree and are auditable
-like any other — there is no hidden framework magic, and a sub-structural logic
-could in principle inherit a thinner base. (Quantifiers bind variables, so they are
-*not* here — they arrive with HOL.)
+- **`Bool`** — the theory of the boolean sort: `And`/`Or`/`Imp`/`Not` as
+  ops-that-are-`CanonRule`s, plus native `bool` equality. Inherits `()`; first
+  non-empty manifest. (Classical `LEM` would be a separately-admittable rule so an
+  intuitionistic language can decline it.)
+- Quantifiers bind variables, so they are *not* here — they arrive with HOL.
+
+(A note on leaf equality: `of_teq`'s `admits` gate is largely **illusory** —
+`refl(Val a)` + `refl(Val b)` + `trans` already bridges `Val a = Val b` whenever
+`teq(a,b)`, with no gate. So leaf equality is effectively **intrinsic/ambient**:
+using a sort trusts its `TrustedEq` (the leaf-equality TCB is `grep impl
+TrustedEq`, not the manifest). This is sound — a sort *is* its equality (possibly a
+quotient); unsoundness needs an admitted *distinguishing op* inconsistent with it.
+Whether to drop `of_teq`'s gate to make this explicit is open.)
 
 ### TCB manifest (enumerate the trust)
 

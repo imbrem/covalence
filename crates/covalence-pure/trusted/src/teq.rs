@@ -51,12 +51,16 @@ mod sealed {
 /// payloads behind `dyn`. **Framework TCB.**
 ///
 /// **Sealed** (`: sealed::Sealed`): the *only* implementor is the blanket over
-/// `TrustedEq + 'static`, so every leaf comparison provably bottoms out in an
-/// audited [`TrustedEq::teq`]. This is load-bearing — without the seal a downstream
-/// type could supply a lying `dyn_teq` and forge a false `Eqn` through the ungated
-/// calculus (`trans`'s middle-term check delegates here).
+/// `TrustedEq + 'static`, so a sort's equality is declared in exactly one place —
+/// [`TrustedEq`] — which is the single, greppable leaf-equality audit surface.
+/// (This is *audit-surface unification*, not anti-forgery: a leaf equality is the
+/// sort's *definition* of equality — it may legitimately be a quotient identifying
+/// distinct representations, and is sound on its own. Unsoundness arises only from
+/// *also* admitting a distinguishing op inconsistent with it — and that op's
+/// reduction must itself be in the TCB, so it is an enumerated, self-inflicted
+/// inconsistency, not a forgery.)
 ///
-/// A hand-written `LeafEq` (the audit's forgery vector) is rejected:
+/// A hand-written `LeafEq` is rejected — leaf equality goes through `TrustedEq`:
 ///
 /// ```compile_fail
 /// use covalence_pure_trusted::LeafEq;

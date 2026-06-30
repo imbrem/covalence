@@ -95,25 +95,31 @@ fn cong_pair_combines() {
 #[test]
 fn boolean_law_and_true_true() {
     // canon evaluates `And` on the ground value `(true, true)` to `true`.
-    let law = canon(And, (true, true), ()).expect("() admits And");
+    // Boolean computation lives in `Bool` now — `()` is empty.
+    let law = canon(And, (true, true), Bool).expect("Bool admits And");
     assert_eq!(law.rhs(), &Val(true));
     assert_eq!(law.lhs(), &App(And, Val((true, true))));
 
-    let f = canon(And, (true, false), ()).expect("() admits And");
+    let f = canon(And, (true, false), Bool).expect("Bool admits And");
     assert_eq!(f.rhs(), &Val(false));
 
     // Or / Not / Imp likewise:
-    assert_eq!(canon(Or, (false, true), ()).unwrap().rhs(), &Val(true));
-    assert_eq!(canon(Not, true, ()).unwrap().rhs(), &Val(false));
-    assert_eq!(canon(Imp, (true, false), ()).unwrap().rhs(), &Val(false));
+    assert_eq!(canon(Or, (false, true), Bool).unwrap().rhs(), &Val(true));
+    assert_eq!(canon(Not, true, Bool).unwrap().rhs(), &Val(false));
+    assert_eq!(canon(Imp, (true, false), Bool).unwrap().rhs(), &Val(false));
 }
 
 #[test]
 fn of_teq_native_equality() {
-    let e = of_teq(true, true, ()).expect("() admits TeqRule<bool>");
+    let e = of_teq(true, true, Bool).expect("Bool admits TeqRule<bool>");
     assert_eq!(e.lhs(), &Val(true));
     // teq cannot certify `true == false`:
-    assert_eq!(of_teq(true, false, ()).unwrap_err(), Error::TeqUndecided);
+    assert_eq!(of_teq(true, false, Bool).unwrap_err(), Error::TeqUndecided);
+    // `()` is empty, so it admits no leaf-equality rule at all:
+    assert_eq!(
+        of_teq(true, true, ()).unwrap_err(),
+        Error::NotAdmitted(TypeId::of::<TeqRule<bool>>())
+    );
 }
 
 // ---- Gating: the gates actually reject ----
@@ -197,16 +203,22 @@ fn lift_rejects_non_extender() {
 // ---- Milestone 3: golden-ish check of `<() as Language>::MANIFEST` ----
 
 #[test]
-fn base_manifest_is_as_declared() {
+fn unit_manifest_is_empty() {
+    // `()` is the trivial base: empty manifest, admits NOTHING. The equality
+    // calculus (refl/sym/trans/cong) is ungated `Eqn` methods, not manifest rules.
     let m = <() as Language>::MANIFEST.expect("base has a static manifest");
     assert_eq!(m.ty, TypeId::of::<()>());
     assert!(m.extends.is_empty(), "base has no parents");
+    assert!(m.admits.is_empty(), "() admits no gated rules");
+    assert!(!().admits(TypeId::of::<And>()), "() admits nothing");
+}
+
+#[test]
+fn bool_manifest_is_as_declared() {
+    let m = <Bool as Language>::MANIFEST.expect("Bool has a static manifest");
+    assert_eq!(m.ty, TypeId::of::<Bool>());
 
     let expected = [
-        TypeId::of::<Refl>(),
-        TypeId::of::<Sym>(),
-        TypeId::of::<Trans>(),
-        TypeId::of::<Cong>(),
         TypeId::of::<And>(),
         TypeId::of::<Or>(),
         TypeId::of::<Imp>(),
@@ -216,17 +228,19 @@ fn base_manifest_is_as_declared() {
     let got: Vec<TypeId> = m.admits.iter().map(|r| r.ty).collect();
     assert_eq!(
         got, expected,
-        "() rule set must match the declared manifest"
+        "Bool rule set must match the declared manifest"
     );
 
-    // And the gate agrees with the manifest it is derived from:
+    // The gate agrees with the manifest it is derived from:
     for ty in expected {
-        assert!(().admits(ty), "admits must accept every manifest rule");
+        assert!(Bool.admits(ty), "admits must accept every manifest rule");
     }
     assert!(
-        !().admits(TypeId::of::<MyAx>()),
+        !Bool.admits(TypeId::of::<MyAx>()),
         "admits must reject out-of-tree rules"
     );
+    // Bool inherits the trivial base `()`:
+    assert!(Bool.extends(TypeId::of::<()>()), "Bool extends ()");
 }
 
 // ---- dyn expression: structural equality works behind a trait object ----

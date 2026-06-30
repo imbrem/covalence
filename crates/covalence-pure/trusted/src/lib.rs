@@ -18,7 +18,9 @@
 //!    [`Eqn::lift`] — each runtime-checks `admits`/`extends` *before* minting.
 //! 5. [`TrustedEq`] — the per-type TCB claim "`teq == true` ⟹ really equal", the
 //!    seam by which native Rust computation enters proofs.
-//! 6. `impl Language for ()` (in [`base`]) — the hand-written base language.
+//! 6. `impl Language for ()` (in [`base`]) — the **empty** trivial base every
+//!    language inherits (the equality calculus is ungated `Eqn` methods, not
+//!    manifest rules), and `Bool`, the first real layer (the connectives).
 //!
 //! Everything else (the [`Language`] gates, [`Op`], [`Rule`]/[`CanonRule`]) is
 //! mechanism that funnels through those six items.

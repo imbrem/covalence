@@ -45,10 +45,18 @@ pub type Thm<P, L> = Eqn<P, True, L>;
 use crate::expr::True;
 
 impl<A, B, L> Eqn<A, B, L> {
-    /// The sole, **private** constructor — the minting gate. Reachable only from
-    /// this module, so the calculus below is the entire minting TCB.
-    fn new(lhs: A, rhs: B, lang: L) -> Self {
+    /// The sole constructor — the minting gate, `pub(crate)` so the calculus here
+    /// and the propositional rules in [`crate::prop`] (the only two minting sites,
+    /// both audited) can use it; never exposed outside the crate.
+    pub(crate) fn new(lhs: A, rhs: B, lang: L) -> Self {
         Eqn { lhs, rhs, lang }
+    }
+
+    /// Owned destructure into `(lhs, rhs, lang)` — `pub(crate)`, for the
+    /// propositional rules to move parts into a freshly-minted equation. Forgets
+    /// the proof (the parts cannot be recombined without `new`).
+    pub(crate) fn into_parts(self) -> (A, B, L) {
+        (self.lhs, self.rhs, self.lang)
     }
 
     /// The left-hand side (read-only; reading never mints).
@@ -81,23 +89,20 @@ impl<A, B, L> Eqn<A, B, L> {
     }
 }
 
-impl<A, B, L: Eq> Eqn<A, B, L> {
+impl<A, B, L: Language> Eqn<A, B, L> {
     /// Transitivity: from `a = b` and `b' = c`, where the middle terms `b`/`b'`
-    /// match (`B: Eq`) AND the two languages are equal (`L: Eq`), get `a = c`.
-    ///
-    /// Both checks are stdlib `==`: an expression's `derive(Eq)` *is* its
-    /// structural equality, and a language value's `Eq` decides "same context".
+    /// match (`B: Eq`, stdlib `==` on the `derive(Eq)` structural equality), get
+    /// `a = c` under the **union** of the two contexts. `Err` if the middles differ
+    /// or the contexts cannot be combined.
     pub fn trans<C>(self, rhs: Eqn<B, C, L>) -> Result<Eqn<A, C, L>, Error>
     where
         B: Eq,
     {
-        if self.lang != rhs.lang {
-            return Err(Error::LangMismatch);
-        }
         if self.rhs != rhs.lhs {
             return Err(Error::TransMismatch);
         }
-        Ok(Eqn::new(self.lhs, rhs.rhs, self.lang))
+        let lang = self.lang.union(rhs.lang).ok_or(Error::LangMismatch)?;
+        Ok(Eqn::new(self.lhs, rhs.rhs, lang))
     }
 }
 
@@ -112,18 +117,12 @@ impl<A, A2, L> Eqn<A, A2, L> {
     }
 }
 
-impl<A, A2, L: Eq> Eqn<A, A2, L> {
-    /// Pair congruence: from `a = a2` and `b = b2` (same language) get
-    /// `(a, b) = (a2, b2)`. The "same language" check is stdlib `==` (`L: Eq`).
+impl<A, A2, L: Language> Eqn<A, A2, L> {
+    /// Pair congruence: from `a = a2` and `b = b2` get `(a, b) = (a2, b2)` under the
+    /// **union** of the two contexts. `Err` if they cannot be combined.
     pub fn cong_pair<B, B2>(self, other: Eqn<B, B2, L>) -> Result<Eqn<(A, B), (A2, B2), L>, Error> {
-        if self.lang != other.lang {
-            return Err(Error::LangMismatch);
-        }
-        Ok(Eqn::new(
-            (self.lhs, other.lhs),
-            (self.rhs, other.rhs),
-            self.lang,
-        ))
+        let lang = self.lang.union(other.lang).ok_or(Error::LangMismatch)?;
+        Ok(Eqn::new((self.lhs, other.lhs), (self.rhs, other.rhs), lang))
     }
 }
 

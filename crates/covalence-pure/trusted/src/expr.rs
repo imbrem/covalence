@@ -12,11 +12,26 @@
 //! terms (and [`of_eq`](crate::of_eq) to introduce a leaf equation). "No `Eq`, no
 //! comparison": a shape whose leaves aren't `Eq` simply can't be a `trans` middle.
 
+use std::ops::Deref;
+use std::rc::Rc;
+use std::sync::Arc;
+
 use crate::op::Op;
 
 mod sealed {
     pub trait Sealed {}
 }
+
+/// A **faithful** pointer whose [`Deref::Target`] *is* the value it stands for —
+/// `&T`, `Box<T>`, `Rc<T>`, `Arc<T>`. Marks "deref gives the actual value" (an
+/// arbitrary `Deref` might project to something unrelated). Open: a custom faithful
+/// smart pointer may add an impl — its `Target` is then the sort and its `Eq` the
+/// comparison, both that pointer's own trust (like any leaf's `Eq`).
+pub trait TrustedDeref: Deref {}
+impl<T: ?Sized> TrustedDeref for &T {}
+impl<T: ?Sized> TrustedDeref for Box<T> {}
+impl<T: ?Sized> TrustedDeref for Rc<T> {}
+impl<T: ?Sized> TrustedDeref for Arc<T> {}
 
 /// A well-typed expression; [`Expr::Ty`] is its (unique) sort. **SEALED** — every
 /// implementor is in this crate, so the shapes below are the whole grammar.
@@ -35,13 +50,19 @@ impl<C> Expr for Val<C> {
     type Ty = C;
 }
 
-/// A borrowed *raw value* leaf — no clone. Compared by value (deref) under `Eq`.
+/// A leaf expression behind a [`TrustedDeref`] pointer `P` — `Ref(&v)`,
+/// `Ref(Rc::new(v))`, `Ref(Arc::new(v))`, `Ref(Box::new(v))`. The sort is the
+/// pointee `P::Target`; compared by `P`'s `Eq` (which, for the std pointers,
+/// compares pointees). The seam for sharing a sub-value without cloning it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Ref<'a, C>(pub &'a C);
+pub struct Ref<P>(pub P);
 
-impl<C> sealed::Sealed for Ref<'_, C> {}
-impl<C> Expr for Ref<'_, C> {
-    type Ty = C;
+impl<P: TrustedDeref> sealed::Sealed for Ref<P> where P::Target: Sized {}
+impl<P: TrustedDeref> Expr for Ref<P>
+where
+    P::Target: Sized,
+{
+    type Ty = P::Target;
 }
 
 /// Apply op `F: In → Out` to an argument expression of sort `In`.

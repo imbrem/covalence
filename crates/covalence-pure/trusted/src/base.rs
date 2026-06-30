@@ -1,27 +1,18 @@
-//! The base language `()` and the first real layer `Bool`.
+//! The base language `()` — the trivial, empty theory every language inherits.
 //!
-//! **`()` is the trivial, empty theory** every language inherits: its manifest is
-//! **empty** (it admits no gated rules). The "trivial rules" — the equality
-//! calculus `refl`/`sym`/`trans`/`cong` — are always-available **methods on
-//! [`Eqn`](crate::Eqn)** (ungated framework TCB), *not* manifest entries; so `()`
+//! Its manifest is **empty**: it admits no gated rules. What you get "for free" is
+//! the always-available builtin `Eqn` methods — the equality calculus
+//! (`refl`/`sym`/`trans`/`cong`) and the [bool theory](crate::prop)
+//! (`and_*`/`or_*`/`mp`/`internalize`) — none of which are manifest rules. So `()`
 //! is what every user implicitly trusts, with nothing per-language to audit.
-//!
-//! **`Bool`** is the first non-trivial layer: the theory of the boolean sort —
-//! the connectives `And`/`Or`/`Imp`/`Not` as ops-that-are-[`CanonRule`]s, plus the
-//! trusted equality on `bool`. It inherits `()` and has a non-empty manifest.
-//! (Quantifiers bind variables, so they are not here — they arrive with HOL.)
 
 use std::any::TypeId;
 
-use crate::lang::{CanonRule, LangMeta, Language, Manifest, RuleMeta, RuleRecord};
-use crate::op::Op;
-
-// ---- The base language `()`: empty, trivial, implicitly trusted ----
+use crate::lang::{LangMeta, Language, Manifest};
 
 static UNIT_MANIFEST: Manifest = Manifest {
     ty: TypeId::of::<()>(),
     extends: &[],
-    // EMPTY: the equality calculus is ungated `Eqn` methods, not admitted rules.
     admits: &[],
     metadata: LangMeta,
 };
@@ -33,98 +24,8 @@ impl Language for () {
     fn extends(&self, _parent: TypeId) -> bool {
         false
     }
+    fn union(self, _other: Self) -> Option<Self> {
+        Some(())
+    }
     const MANIFEST: Option<&'static Manifest> = Some(&UNIT_MANIFEST);
-}
-
-// ---- Propositional connectives: ops that are also their own canonical rule ----
-
-macro_rules! zst_op {
-    ($(#[$m:meta])* $name:ident, $in:ty, $out:ty) => {
-        $(#[$m])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub struct $name;
-        impl Op for $name { type In = $in; type Out = $out; }
-    };
-}
-
-zst_op!(
-    /// Conjunction `(bool, bool) → bool`.
-    And, (bool, bool), bool
-);
-zst_op!(
-    /// Disjunction `(bool, bool) → bool`.
-    Or, (bool, bool), bool
-);
-zst_op!(
-    /// Implication `(bool, bool) → bool`.
-    Imp, (bool, bool), bool
-);
-zst_op!(
-    /// Negation `bool → bool`.
-    Not, bool, bool
-);
-
-impl CanonRule for And {
-    fn eval(&self, arg: &(bool, bool)) -> bool {
-        arg.0 && arg.1
-    }
-}
-impl CanonRule for Or {
-    fn eval(&self, arg: &(bool, bool)) -> bool {
-        arg.0 || arg.1
-    }
-}
-impl CanonRule for Imp {
-    fn eval(&self, arg: &(bool, bool)) -> bool {
-        !arg.0 || arg.1
-    }
-}
-impl CanonRule for Not {
-    fn eval(&self, arg: &bool) -> bool {
-        !arg
-    }
-}
-
-// ---- `Bool`: the theory of the boolean sort (inherits `()`) ----
-
-/// The theory of the `bool` sort: the propositional connectives as canonical-eval
-/// rules, plus native `bool` equality. The first language with a non-empty
-/// manifest; everything that reasons about booleans inherits it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Bool;
-
-static BOOL_MANIFEST: Manifest = Manifest {
-    ty: TypeId::of::<Bool>(),
-    // Parent `()`'s manifest is empty; embedding it by value is the macro's job.
-    // `extends()` (the function) is the authoritative `lift` gate and names `()`.
-    extends: &[],
-    admits: &[
-        RuleRecord {
-            ty: TypeId::of::<And>(),
-            metadata: RuleMeta,
-        },
-        RuleRecord {
-            ty: TypeId::of::<Or>(),
-            metadata: RuleMeta,
-        },
-        RuleRecord {
-            ty: TypeId::of::<Imp>(),
-            metadata: RuleMeta,
-        },
-        RuleRecord {
-            ty: TypeId::of::<Not>(),
-            metadata: RuleMeta,
-        },
-    ],
-    metadata: LangMeta,
-};
-
-impl Language for Bool {
-    fn admits(&self, rule: TypeId) -> bool {
-        BOOL_MANIFEST.admits.iter().any(|r| r.ty == rule)
-    }
-    fn extends(&self, parent: TypeId) -> bool {
-        parent == TypeId::of::<()>()
-    }
-    const MANIFEST: Option<&'static Manifest> = Some(&BOOL_MANIFEST);
 }

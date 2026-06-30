@@ -43,12 +43,13 @@ mod eqn;
 mod expr;
 mod lang;
 mod op;
+mod prop;
 
-pub use base::*;
 pub use eqn::*;
 pub use expr::*;
 pub use lang::*;
 pub use op::*;
+pub use prop::*;
 
 #[cfg(test)]
 mod tests;

@@ -27,6 +27,17 @@ pub trait Language: 'static {
     /// indirect ancestors.
     fn extends(&self, parent: TypeId) -> bool;
 
+    /// Combine two language *values* into one whose context admits **both** —
+    /// e.g. the union of two hypothesis sets. `None` if they cannot be combined
+    /// (incompatible contexts). Used to merge the contexts of two equations
+    /// (`trans`/`cong_pair`/`and_intro`/`mp`): the result holds under the union.
+    /// **Contract**: `union(a, b) == Some(c)` ⟹ everything provable under `a` *or*
+    /// under `b` is provable under `c`. For a stateless (ZST) language this is
+    /// trivially `Some(self)`.
+    fn union(self, other: Self) -> Option<Self>
+    where
+        Self: Sized;
+
     /// **Static** TCB manifest, when the whole subtree is statically known. `None`
     /// for a future dynamic/wrapper language. **Canonical when present**: `tree(L)`
     /// is *defined* by it, and it is the source of truth `admits`/`extends` must

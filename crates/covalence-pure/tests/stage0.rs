@@ -25,5 +25,5 @@ fn cong_trans_chain_and_manifest() {
     assert_eq!(unit.ty, TypeId::of::<()>());
     assert!(unit.admits.is_empty());
     let b = <Bool as Language>::MANIFEST.expect("Bool manifest");
-    assert_eq!(b.admits.len(), 5);
+    assert_eq!(b.admits.len(), 4); // And / Or / Imp / Not
 }

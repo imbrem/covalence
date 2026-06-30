@@ -32,12 +32,11 @@ few deferred seams remain.
   borrow an admitted identity to mint a false equation — closed by gating `apply`
   on `TypeId::of::<Rho>()` and requiring `Rule: 'static`). Re-introducing
   borrowing rules needs a *sealed, behaviour-tied* identity mechanism, not a free
-  tag. Leaf/op payloads are likewise required `'static + TrustedEq`.
-- **Leaf-equality trust is ambient, not per-language gated** — `of_teq` gates leaf
-  equality on `TeqRule<C>` (in the manifest), but `trans`/`struct_eq` use a leaf
-  type's `TrustedEq` ungated. So the leaf-equality TCB is "every `impl TrustedEq`"
-  (greppable) rather than per-language enumerated. Sound under the
-  trust-`T`'s-equality-for-`T` model; unifying it with the manifest is future work.
+  tag. Only `Rule`/`CanonRule`/`Op` (keyed by `TypeId`) need `'static`;
+  *expressions* (`Val`/`Ref`/`&A`/…) borrow freely and need only `Eq` to compare.
+- **`dyn Expr` is opaque** — `Box<dyn Expr>` is a genuine (sealed) expression but
+  is not `Eq`, so it cannot be a `trans` middle term. A structural-equality method
+  on the trait object (for comparing dynamic expressions) is not built.
 - **`canon` only on ground args** — `canon` takes `arg: F::In` and forms
   `App<F, Val(arg)>`; evaluating a structural (non-`Val`) argument expression is
   not yet supported.

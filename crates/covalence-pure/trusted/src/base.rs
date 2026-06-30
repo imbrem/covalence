@@ -13,10 +13,8 @@
 
 use std::any::TypeId;
 
-use crate::eqn::TeqRule;
 use crate::lang::{CanonRule, LangMeta, Language, Manifest, RuleMeta, RuleRecord};
 use crate::op::Op;
-use crate::teq::TrustedEq;
 
 // ---- The base language `()`: empty, trivial, implicitly trusted ----
 
@@ -43,11 +41,9 @@ impl Language for () {
 macro_rules! zst_op {
     ($(#[$m:meta])* $name:ident, $in:ty, $out:ty) => {
         $(#[$m])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub struct $name;
         impl Op for $name { type In = $in; type Out = $out; }
-        // ZST carries no data ⇒ same type ⟹ same operator (sound, complete).
-        impl TrustedEq for $name { fn teq(&self, _other: &Self) -> bool { true } }
     };
 }
 
@@ -94,16 +90,8 @@ impl CanonRule for Not {
 /// The theory of the `bool` sort: the propositional connectives as canonical-eval
 /// rules, plus native `bool` equality. The first language with a non-empty
 /// manifest; everything that reasons about booleans inherits it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Bool;
-
-/// `Bool` is a stateless (ZST) language value ⇒ all values equal (for the `trans`
-/// "same context" check).
-impl TrustedEq for Bool {
-    fn teq(&self, _other: &Self) -> bool {
-        true
-    }
-}
 
 static BOOL_MANIFEST: Manifest = Manifest {
     ty: TypeId::of::<Bool>(),
@@ -125,10 +113,6 @@ static BOOL_MANIFEST: Manifest = Manifest {
         },
         RuleRecord {
             ty: TypeId::of::<Not>(),
-            metadata: RuleMeta,
-        },
-        RuleRecord {
-            ty: TypeId::of::<TeqRule<bool>>(),
             metadata: RuleMeta,
         },
     ],

@@ -10,10 +10,8 @@
 
 use std::any::TypeId;
 
-use crate::expr::{App, Expr, Val, struct_eq};
+use crate::expr::{App, Val};
 use crate::lang::{CanonRule, Language, Rule};
-use crate::op::Op;
-use crate::teq::TrustedEq;
 
 /// Errors from the gated minting paths and `trans`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,12 +20,10 @@ pub enum Error {
     NotAdmitted(TypeId),
     /// `into.extends(parent)` returned `false` (lift target is not a child).
     NotExtended(TypeId),
-    /// `trans` middle terms did not match under trusted structural equality.
+    /// `trans` middle terms were not `Eq`-equal.
     TransMismatch,
     /// `trans` was given two different language values.
     LangMismatch,
-    /// `of_teq`'s trusted equality could not decide the two values equal.
-    TeqUndecided,
     /// A [`Rule::conclude`] failed.
     RuleFailed(String),
 }
@@ -85,21 +81,20 @@ impl<A, B, L> Eqn<A, B, L> {
     }
 }
 
-impl<A, B, L: TrustedEq> Eqn<A, B, L> {
-    /// Transitivity: from `a = b` and `b' = c`, where `b`/`b'` match under the
-    /// trusted structural equality AND the two languages are equal, get `a = c`.
+impl<A, B, L: Eq> Eqn<A, B, L> {
+    /// Transitivity: from `a = b` and `b' = c`, where the middle terms `b`/`b'`
+    /// match (`B: Eq`) AND the two languages are equal (`L: Eq`), get `a = c`.
     ///
-    /// The "same context" check uses the **trusted** [`TrustedEq`] (`true ⟹ same`),
-    /// not stdlib `PartialEq` — combining equations across distinct hypothesis/axiom
-    /// contexts would be unsound, so the context comparison must itself be trusted.
+    /// Both checks are stdlib `==`: an expression's `derive(Eq)` *is* its
+    /// structural equality, and a language value's `Eq` decides "same context".
     pub fn trans<C>(self, rhs: Eqn<B, C, L>) -> Result<Eqn<A, C, L>, Error>
     where
-        B: Expr,
+        B: Eq,
     {
-        if !self.lang.teq(&rhs.lang) {
+        if self.lang != rhs.lang {
             return Err(Error::LangMismatch);
         }
-        if !struct_eq(&self.rhs, &rhs.lhs) {
+        if self.rhs != rhs.lhs {
             return Err(Error::TransMismatch);
         }
         Ok(Eqn::new(self.lhs, rhs.rhs, self.lang))
@@ -111,19 +106,17 @@ impl<A, A2, L> Eqn<A, A2, L> {
     /// is deliberately no congruence in the *operator* — you cannot equate ops.
     pub fn cong_app<F>(self, f: F) -> Eqn<App<F, A>, App<F, A2>, L>
     where
-        F: Op + Clone + crate::teq::LeafEq,
-        A: Expr<Ty = F::In>,
-        A2: Expr<Ty = F::In>,
+        F: crate::op::Op + Clone,
     {
         Eqn::new(App(f.clone(), self.lhs), App(f, self.rhs), self.lang)
     }
 }
 
-impl<A, A2, L: TrustedEq> Eqn<A, A2, L> {
+impl<A, A2, L: Eq> Eqn<A, A2, L> {
     /// Pair congruence: from `a = a2` and `b = b2` (same language) get
-    /// `(a, b) = (a2, b2)`. The "same language" check uses trusted [`TrustedEq`].
+    /// `(a, b) = (a2, b2)`. The "same language" check is stdlib `==` (`L: Eq`).
     pub fn cong_pair<B, B2>(self, other: Eqn<B, B2, L>) -> Result<Eqn<(A, B), (A2, B2), L>, Error> {
-        if !self.lang.teq(&other.lang) {
+        if self.lang != other.lang {
             return Err(Error::LangMismatch);
         }
         Ok(Eqn::new(
@@ -149,28 +142,15 @@ impl<A, B, L2: Language> Eqn<A, B, L2> {
     }
 }
 
-// ---- Gated: anything that injects external trust (runtime `admits`) ----
-
-/// `Val(a) = Val(b)` via the type's **trusted** equality — the native-computation
-/// seam. Gated on the per-type marker [`TeqRule<C>`] being admitted. `Err` if not
-/// admitted, or if `teq` cannot decide the two values equal.
-pub fn of_teq<C, L>(a: C, b: C, lang: L) -> Result<Eqn<Val<C>, Val<C>, L>, Error>
-where
-    C: TrustedEq + 'static,
-    L: Language,
-{
-    let rule = TypeId::of::<TeqRule<C>>();
-    if !lang.admits(rule) {
-        return Err(Error::NotAdmitted(rule));
-    }
-    if !a.teq(&b) {
-        return Err(Error::TeqUndecided);
-    }
-    Ok(Eqn::new(Val(a), Val(b), lang))
+/// `Val(a) = Val(b)` whenever `a == b` (`C: Eq`). **Ungated** — leaf equality is
+/// intrinsic to a sort (a sort *is* its `Eq`), so this is sound in every language;
+/// it is just a typed convenience over `refl` (it never bridges values `Eq` calls
+/// unequal). `None` if `a != b`.
+pub fn of_eq<C: Eq, L>(a: C, b: C, lang: L) -> Option<Eqn<Val<C>, Val<C>, L>> {
+    (a == b).then(|| Eqn::new(Val(a), Val(b), lang))
 }
 
-/// The per-type rule marker gating [`of_teq`] (the `TrustedEqAt<C>` of the design).
-pub struct TeqRule<C>(std::marker::PhantomData<C>);
+// ---- Gated: anything that injects external trust (runtime `admits`) ----
 
 /// Apply a general [`Rule`] (premises ride inside `rho`). Gated on **`Rho`'s own
 /// `TypeId`** being admitted — the gate identity is the very type whose `conclude`
@@ -198,9 +178,7 @@ pub fn canon<L, F>(
 ) -> Result<Eqn<App<F, Val<F::In>>, Val<F::Out>, L>, Error>
 where
     L: Language,
-    F: CanonRule + crate::teq::LeafEq,
-    F::In: crate::teq::LeafEq,
-    F::Out: crate::teq::LeafEq,
+    F: CanonRule,
 {
     let rule = TypeId::of::<F>();
     if !lang.admits(rule) {

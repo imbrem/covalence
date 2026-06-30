@@ -87,30 +87,25 @@ Notes:
   never keyed by `TypeId` (only *rules* are), so borrowing/dynamism in expressions
   costs nothing. We could fold `Ref` into a `Deref` op, but it's a worthwhile base
   case (and carries pointer-equality).
-- For `dyn` and `Eqn::trans` to work, `Expr` carries one object-safe, framework-TCB
-  operation: a **trusted structural equality** (`Val` via `TrustedEq`, `App` via
-  op-identity + recursive arg-eq, products componentwise, `Ref` via pointer-or-deref).
-  Audited once in the framework; it is what lets `trans` check two middle terms
-  really match. No variables at this layer — HOL adds them below.
+- Expressions are compared by **stdlib `Eq`**: `derive(Eq)` on each shape *is* the
+  structural equality `Eqn::trans` uses to match middle terms. No bespoke
+  comparator — a nested `App`/`Val`/tuple compares componentwise via derive. *No
+  `Eq`, no comparison*: a shape whose leaves aren't `Eq` (e.g. `dyn`, `f64`) simply
+  can't be a `trans` middle. No variables at this layer — HOL adds them below.
 
 **Props = `Expr<Ty=bool>`** (relations are just `Op<Out = bool>`); connectives
 `and/or/not/imp` are ops `Op<In=(bool,bool), Out=bool>`. Matches HOL (a prop *is* a
 `bool` term). "`P` holds" is then an *equality* — see `Eqn`/`Thm` below.
 
-### Trusted equality — the leaf, and how native values enter
+### Equality is stdlib `Eq` — the leaf, and how native values enter
 
-```rust
-/// Trusted, SOUND-but-partial equality at sort `C`: `teq(a,b) == true` ⟹ `a` and
-/// `b` are genuinely equal (so `Eqn<Val(a), Val(b), L>` holds in *any* `L`); it
-/// MAY return false for equal values (incompleteness is fine). DISTINCT from
-/// `PartialEq` — that one is untrusted (could be semantically wrong); implementing
-/// `TrustedEq` is a deliberate TCB claim. This is the seam by which native Rust
-/// (or, later, WASM) computation enters: compute in Rust, certify the result equal.
-pub trait TrustedEq { fn teq(&self, other: &Self) -> bool; }
-```
-
-Same shape as the `admits` contract (`true ⟹ really-equal`, false free) — a sound,
-possibly-incomplete decision procedure, audited per type.
+The kernel trusts **`Eq`** for leaf/expression comparison: a sort *is* its `Eq`,
+and `a == b` (true) ⟹ genuinely equal. We use `Eq` (the equivalence marker), *not*
+`PartialEq` — so a type whose `==` isn't a true equivalence (`f64`: `NaN`) correctly
+can't be a leaf (it doesn't impl `Eq`), which would otherwise break `refl`. Using a
+sort trusts its `Eq` impl; the leaf-equality TCB is `grep impl/derive Eq`, and most
+are `derive`d-structural (correct by construction). This is also how native Rust (or
+later WASM) computation enters — `of_eq` mints `Val(a) = Val(b)` from `a == b`.
 
 ### Rules: structure is free, computation is gated
 
@@ -141,7 +136,7 @@ write and a computation you may (if admitted) run:
 /// `App<Fv, tm>` (uninterpreted ⇒ sound by vacuity); you may only *reduce* it to
 /// the actual free-variable set where `Fv` is in the TCB.
 pub trait CanonRule: Op + 'static {
-    fn eval(&self, arg: &impl Expr<Ty = Self::In>) -> Val<Self::Out>;
+    fn eval(&self, arg: &Self::In) -> Self::Out;   // on a ground value `v`
 }
 ```
 
@@ -284,22 +279,25 @@ impl<A, A2, L> Eqn<A, A2, L> {
 }
 ```
 
-**Gated — anything that injects external trust** (runtime `admits`, in `MANIFEST`):
+`of_eq` introduces a leaf equation from `Eq` and is **ungated** (leaf equality is
+intrinsic to a sort — a sort *is* its `Eq`; `refl`+`refl`+`trans` already bridges
+`Val a = Val b` whenever `a == b`, so a gate would be illusory):
 
 ```rust
-impl<L: Language> Eqn</* assoc-fn home */> {
-    /// `Val(a) = Val(b)` via the type's TRUSTED equality — the native-computation
-    /// seam, so it is GATED on `TrustedEqAt::<C>` being admitted (you choose which
-    /// types' native equality you trust). `None` if `teq` can't decide.
-    pub fn of_teq<C: TrustedEq>(a: C, b: C, lang: L) -> Option<Eqn<Val<C>, Val<C>, L>>;
-    /// Apply a general rule (premises ride inside `rho`). Gated on `Rho`'s `TypeId`.
-    pub fn apply<Rho: Rule<L> + 'static>(lang: L, rho: Rho)
-        -> Result<Eqn<Rho::Lhs, Rho::Rhs, L>, Error>;
-    /// Evaluate an op to its canonical value `App<F, arg> = F.eval(arg)`. Gated on
-    /// `F`'s `TypeId` (the op-as-rule).
-    pub fn canon<F: CanonRule, A: Expr<Ty = F::In>>(f: F, arg: A, lang: L)
-        -> Result<Eqn<App<F, A>, Val<F::Out>, L>, Error>;
-}
+/// `Val(a) = Val(b)` whenever `a == b` (`C: Eq`). Ungated. `None` if `a != b`.
+pub fn of_eq<C: Eq, L>(a: C, b: C, lang: L) -> Option<Eqn<Val<C>, Val<C>, L>>;
+```
+
+**Gated — admitted computation** (runtime `admits`, in `MANIFEST`):
+
+```rust
+/// Apply a general rule (premises ride inside `rho`). Gated on `Rho`'s OWN `TypeId`.
+pub fn apply<L: Language, Rho: Rule<L>>(lang: L, rho: Rho)
+    -> Result<Eqn<Rho::Lhs, Rho::Rhs, L>, Error>;
+/// Evaluate an op to its canonical value `App<F, Val(v)> = Val(F.eval(v))`. Gated
+/// on `F`'s `TypeId` (the op-as-rule).
+pub fn canon<L: Language, F: CanonRule>(f: F, arg: F::In, lang: L)
+    -> Result<Eqn<App<F, Val<F::In>>, Val<F::Out>, L>, Error>;
 ```
 
 **Lift — weaken the language, one layer** (sound: `tree(L2) ⊆ tree(L)`):
@@ -330,18 +328,16 @@ is the base everyone implicitly trusts, with no per-language rules to audit.
 *Computation* is gated, so it lives in real layers, not `()`:
 
 - **`Bool`** — the theory of the boolean sort: `And`/`Or`/`Imp`/`Not` as
-  ops-that-are-`CanonRule`s, plus native `bool` equality. Inherits `()`; first
-  non-empty manifest. (Classical `LEM` would be a separately-admittable rule so an
-  intuitionistic language can decline it.)
+  ops-that-are-`CanonRule`s (`bool` equality comes free from `Eq`). Inherits `()`;
+  first non-empty manifest. (Classical `LEM` would be a separately-admittable rule
+  so an intuitionistic language can decline it.)
 - Quantifiers bind variables, so they are *not* here — they arrive with HOL.
 
-(A note on leaf equality: `of_teq`'s `admits` gate is largely **illusory** —
-`refl(Val a)` + `refl(Val b)` + `trans` already bridges `Val a = Val b` whenever
-`teq(a,b)`, with no gate. So leaf equality is effectively **intrinsic/ambient**:
-using a sort trusts its `TrustedEq` (the leaf-equality TCB is `grep impl
-TrustedEq`, not the manifest). This is sound — a sort *is* its equality (possibly a
-quotient); unsoundness needs an admitted *distinguishing op* inconsistent with it.
-Whether to drop `of_teq`'s gate to make this explicit is open.)
+(Leaf equality is **intrinsic/ambient**, not gated: a sort *is* its `Eq`, and
+`refl`+`trans` already bridges `Val a = Val b` whenever `a == b`, so `of_eq` is
+ungated. The leaf-equality TCB is `grep impl/derive Eq`, not the manifest. Sound —
+unsoundness needs an admitted *distinguishing op* inconsistent with the chosen
+equality, which is itself enumerated.)
 
 ### TCB manifest (enumerate the trust)
 
@@ -439,7 +435,7 @@ losing per-instance auditability.
   `TypeId` admitted). So you can *state* `Fv(tm) = ∅` anywhere; you can *prove* it
   by computation only where `Fv` is in your TCB.
 - **Rules.** `Hol` declares beta, eta, the connective definitions, type-def
-  abs/rep bijections, and admits the locally-nameless ops + the `TrustedEq` leaves
+  abs/rep bijections, and admits the locally-nameless ops + the `Eq` leaves
   it needs; inherits `()`.
 
 ## Abstract data types: theory + interpretation
@@ -473,22 +469,22 @@ The builtins below are the same pattern at the leaf-sort level.
 ## The builtin theories (the real thing, not toys)
 
 Each is a `Language` inheriting `Hol` (or `()`), adding ops-as-`CanonRule`s that
-evaluate the *native* Rust/`covalence-types` operation, plus `TrustedEq` on the leaf
+evaluate the *native* Rust/`covalence-types` operation, plus `Eq` on the leaf
 type. The native impls already exist — these languages *lift* them.
 
 - **`Nat`** (over `covalence_types::Nat`, saturating sub): `add`, `sub`, `mul`,
   `div`, `rem`, `pow`, `succ`, `pred`, `min`/`max`, `gcd`; relations `eq`, `lt`,
-  `le`; literal ⇄ `S(S(…0))` reduction; `TrustedEq` on `Nat`.
+  `le`; literal ⇄ `S(S(…0))` reduction; `Eq` on `Nat`.
 - **`Int`** (over `covalence_types::Int`): `add`, `sub`, `neg`, `mul`, `div`/`rem`
   (Euclidean), `abs`, `sign`, `pow`; `eq`, `lt`, `le`; `Int ↔ (Nat,Nat)` /
-  `nat→int` injections; `TrustedEq` on `Int`.
+  `nat→int` injections; `Eq` on `Int`.
 - **`Bytes`** (over `covalence_types::Bits` / `Vec<u8>`): `len`, `index`, `concat`,
-  `slice`, `eq`; `byte ↔ u8`; `TrustedEq`.
+  `slice`, `eq`; `byte ↔ u8`; `Eq`.
 - **`Text`** (String + char): `len`, `concat`, `chars`, `index`, `eq`; the two
-  `TrustedEq` leaves `String`/`char` (the per-instance `Text@String`/`Text@char` of
+  `Eq` leaves `String`/`char` (the per-instance `Text@String`/`Text@char` of
   the knob).
 - **`FixedWidth`**: `u8…u128` (and later `f32`/`f64`) — `add`/`sub`/`mul`/`div`/
-  `rem` with the type's wrapping/overflow semantics made explicit; `TrustedEq`.
+  `rem` with the type's wrapping/overflow semantics made explicit; `Eq`.
 
 `Builtins` inherits `(Nat, Int, Bytes, Text, FixedWidth)`; **`Cov`** inherits
 `(Hol, Builtins)`. A theorem proved in `Hol` lifts into `Cov` for free and provably
@@ -513,8 +509,8 @@ used none of the builtin TCB; later `Wasm`/`X86` join `Builtins` the same way.
 ## Implementation stages
 
 0. **Framework core**: `Op`; `Expr` (`Val`/`Ref`/`App`/`True`/`False`/`&A`/`dyn`/
-   products, sealed, associated `Ty`) + trusted structural equality; `TrustedEq`;
-   `Eqn<A,B,L>` + the equality calculus + gated `of_teq`/`apply`/`canon`/`lift`;
+   products, sealed, associated `Ty`) compared by stdlib `Eq`;
+   `Eqn<A,B,L>` + the equality calculus + ungated `of_eq` + gated `apply`/`canon`/`lift`;
    `Language` (`admits`/`extends`/`const MANIFEST`) + `Rule`/`CanonRule` (`Id`-tag
    seam); the **base language `()`** (equality/congruence + propositional logic);
    `language!` macro; name-projected golden-`MANIFEST` test. *Milestone: prove a
@@ -527,7 +523,7 @@ used none of the builtin TCB; later `Wasm`/`X86` join `Builtins` the same way.
    `Hol` over `()` (+ `Set<Var>` for `Fv`). *Milestone: a handful of real HOL
    theorems; HOL manifest pinned.*
 3. **`Nat` (the real theory)**: all of `add/sub/mul/div/rem/pow/cmp/…` as
-   `CanonRule`s over `covalence_types::Nat` + `TrustedEq`, discharged against the
+   `CanonRule`s over `covalence_types::Nat` + `Eq`, discharged against the
    HOL Peano definition; exercise the `Hol → Nat → Cov` lift chain.
 4. **Remaining builtins** (`Int`/`Bytes`/`Text`/`FixedWidth`) on the same template,
    then `Cov = (Hol, Builtins)` + the catalogue port.

@@ -110,16 +110,13 @@ fn boolean_law_and_true_true() {
 }
 
 #[test]
-fn of_teq_native_equality() {
-    let e = of_teq(true, true, Bool).expect("Bool admits TeqRule<bool>");
+fn of_eq_leaf_equality() {
+    // `of_eq` is UNGATED — leaf equality is intrinsic to a sort. It works in the
+    // empty base `()`, with no admits involved.
+    let e = of_eq(true, true, ()).expect("true == true");
     assert_eq!(e.lhs(), &Val(true));
-    // teq cannot certify `true == false`:
-    assert_eq!(of_teq(true, false, Bool).unwrap_err(), Error::TeqUndecided);
-    // `()` is empty, so it admits no leaf-equality rule at all:
-    assert_eq!(
-        of_teq(true, true, ()).unwrap_err(),
-        Error::NotAdmitted(TypeId::of::<TeqRule<bool>>())
-    );
+    // `==`-unequal values give `None` (no equation):
+    assert!(of_eq(true, false, ()).is_none());
 }
 
 // ---- Gating: the gates actually reject ----
@@ -128,12 +125,11 @@ fn of_teq_native_equality() {
 fn canon_gated_by_admits() {
     let err = canon(And, (true, true), Empty).unwrap_err();
     assert_eq!(err, Error::NotAdmitted(TypeId::of::<And>()));
-}
-
-#[test]
-fn of_teq_gated_by_admits() {
-    let err = of_teq(true, true, Empty).unwrap_err();
-    assert_eq!(err, Error::NotAdmitted(TypeId::of::<TeqRule<bool>>()));
+    // `()` is empty too, so it does not admit the connectives:
+    assert_eq!(
+        canon(And, (true, true), ()).unwrap_err(),
+        Error::NotAdmitted(TypeId::of::<And>())
+    );
 }
 
 // ---- apply + lift ----
@@ -223,7 +219,6 @@ fn bool_manifest_is_as_declared() {
         TypeId::of::<Or>(),
         TypeId::of::<Imp>(),
         TypeId::of::<Not>(),
-        TypeId::of::<TeqRule<bool>>(),
     ];
     let got: Vec<TypeId> = m.admits.iter().map(|r| r.ty).collect();
     assert_eq!(
@@ -246,10 +241,19 @@ fn bool_manifest_is_as_declared() {
 // ---- dyn expression: structural equality works behind a trait object ----
 
 #[test]
-fn dyn_expr_struct_eq() {
-    let a: Box<dyn Expr<Ty = bool>> = Box::new(Val(true));
-    let b: Box<dyn Expr<Ty = bool>> = Box::new(Val(true));
-    let c: Box<dyn Expr<Ty = bool>> = Box::new(Val(false));
-    assert!(struct_eq(&a, &b));
-    assert!(!struct_eq(&a, &c));
+fn derive_eq_is_structural_equality() {
+    // `derive(Eq)` on the expression shapes IS the structural equality `trans`
+    // uses — nested `App`/`Val` compare componentwise.
+    let a = App(And, (Val(true), App(Not, Val(false))));
+    let b = App(And, (Val(true), App(Not, Val(false))));
+    let c = App(And, (Val(true), App(Not, Val(true))));
+    assert_eq!(a, b);
+    assert_ne!(a, c);
+}
+
+#[test]
+fn dyn_expr_is_constructible() {
+    // A dynamic expression is still a genuine `Expr` (sealed) — you can build and
+    // hold it; it is just not `Eq`, so it cannot be a `trans` middle term.
+    let _d: Box<dyn Expr<Ty = bool>> = Box::new(App(Not, Val(true)));
 }

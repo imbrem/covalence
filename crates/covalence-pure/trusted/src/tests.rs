@@ -1,0 +1,241 @@
+//! Stage-0 milestone tests, exercised through the public kernel API (the calculus
+//! + gated injectors; field reads via the `lhs`/`rhs`/`lang` accessors).
+
+use std::any::TypeId;
+
+use crate::*;
+
+// ---- Auxiliary test languages ----
+
+/// A language admitting nothing — used to check the gates actually reject.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Empty;
+impl Language for Empty {
+    fn admits(&self, _rule: TypeId) -> bool {
+        false
+    }
+    fn extends(&self, _parent: TypeId) -> bool {
+        false
+    }
+    const MANIFEST: Option<&'static Manifest> = None;
+}
+
+/// A child language that directly extends `()` and adds one axiom rule, `MyAx`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Cov2;
+
+/// A toy axiom rule: `⊢ true` (i.e. `Val(true) = ⊤`).
+struct MyAx;
+impl Rule<Cov2> for MyAx {
+    type Lhs = Val<bool>;
+    type Rhs = True;
+    fn conclude(self) -> Result<(Val<bool>, True), Error> {
+        Ok((Val(true), True))
+    }
+}
+
+// NOTE: `extends` is left empty in this hand-written child manifest — embedding a
+// parent's `Manifest` by value in a `const` is the deferred const-eval wrinkle
+// (the `language!` macro's job). The authoritative gate for `lift` is the
+// `extends()` *function* below, which correctly names `()` as a direct parent.
+static COV2_MANIFEST: Manifest = Manifest {
+    ty: TypeId::of::<Cov2>(),
+    extends: &[],
+    admits: &[RuleRecord {
+        ty: TypeId::of::<MyAx>(),
+        metadata: RuleMeta,
+    }],
+    metadata: LangMeta,
+};
+
+impl Language for Cov2 {
+    fn admits(&self, rule: TypeId) -> bool {
+        rule == TypeId::of::<MyAx>() || ().admits(rule)
+    }
+    fn extends(&self, parent: TypeId) -> bool {
+        parent == TypeId::of::<()>()
+    }
+    const MANIFEST: Option<&'static Manifest> = Some(&COV2_MANIFEST);
+}
+
+// ---- Milestone 1: a cong / trans chain establishing an equation in `()` ----
+
+#[test]
+fn cong_trans_chain() {
+    // refl: false = false
+    let base: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(false), ());
+    // congruence under `Not`: ¬false = ¬false  (App<Not, Val<bool>>)
+    let c1 = base.cong_app(Not);
+    // a second proof of the same equation, to transit through
+    let c2: Eqn<App<Not, Val<bool>>, App<Not, Val<bool>>, ()> = Eqn::refl(App(Not, Val(false)), ());
+    // trans must match the middle term via trusted structural equality
+    let chained = c1.trans(c2).expect("middle terms match");
+    assert_eq!(chained.lhs(), &App(Not, Val(false)));
+    assert_eq!(chained.rhs(), &App(Not, Val(false)));
+}
+
+#[test]
+fn trans_rejects_mismatched_middle() {
+    let a: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(true), ());
+    // middle term is `Val(false)`, which does not match `a`'s rhs `Val(true)`
+    let b: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(false), ());
+    assert_eq!(a.trans(b).unwrap_err(), Error::TransMismatch);
+}
+
+#[test]
+fn cong_pair_combines() {
+    let l: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(true), ());
+    let r: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(false), ());
+    let p = l.cong_pair(r).expect("same language");
+    assert_eq!(p.lhs(), &(Val(true), Val(false)));
+}
+
+// ---- Milestone 2: a propositional / boolean law ----
+
+#[test]
+fn boolean_law_and_true_true() {
+    // canon evaluates `And` on the ground value `(true, true)` to `true`.
+    let law = canon(And, (true, true), ()).expect("() admits And");
+    assert_eq!(law.rhs(), &Val(true));
+    assert_eq!(law.lhs(), &App(And, Val((true, true))));
+
+    let f = canon(And, (true, false), ()).expect("() admits And");
+    assert_eq!(f.rhs(), &Val(false));
+
+    // Or / Not / Imp likewise:
+    assert_eq!(canon(Or, (false, true), ()).unwrap().rhs(), &Val(true));
+    assert_eq!(canon(Not, true, ()).unwrap().rhs(), &Val(false));
+    assert_eq!(canon(Imp, (true, false), ()).unwrap().rhs(), &Val(false));
+}
+
+#[test]
+fn of_teq_native_equality() {
+    let e = of_teq(true, true, ()).expect("() admits TeqRule<bool>");
+    assert_eq!(e.lhs(), &Val(true));
+    // teq cannot certify `true == false`:
+    assert_eq!(of_teq(true, false, ()).unwrap_err(), Error::TeqUndecided);
+}
+
+// ---- Gating: the gates actually reject ----
+
+#[test]
+fn canon_gated_by_admits() {
+    let err = canon(And, (true, true), Empty).unwrap_err();
+    assert_eq!(err, Error::NotAdmitted(TypeId::of::<And>()));
+}
+
+#[test]
+fn of_teq_gated_by_admits() {
+    let err = of_teq(true, true, Empty).unwrap_err();
+    assert_eq!(err, Error::NotAdmitted(TypeId::of::<TeqRule<bool>>()));
+}
+
+// ---- apply + lift ----
+
+#[test]
+fn apply_axiom_then_inspect() {
+    let thm: Thm<Val<bool>, Cov2> = apply(Cov2, MyAx).expect("Cov2 admits MyAx");
+    assert_eq!(thm.lhs(), &Val(true));
+    assert_eq!(thm.rhs(), &True);
+}
+
+#[test]
+fn apply_gated() {
+    // `()` does not admit `MyAx`.
+    struct AxForUnit;
+    impl Rule<()> for AxForUnit {
+        type Lhs = Val<bool>;
+        type Rhs = True;
+        fn conclude(self) -> Result<(Val<bool>, True), Error> {
+            Ok((Val(true), True))
+        }
+    }
+    let err = apply((), AxForUnit).unwrap_err();
+    assert_eq!(err, Error::NotAdmitted(TypeId::of::<AxForUnit>()));
+}
+
+/// Regression for the audit's `apply`-forgery hole: a downstream rule whose
+/// `conclude` returns a FALSE equation (`⊢ False`) cannot mint, because `apply`
+/// now gates on the rule's OWN `TypeId` — which `()` does not admit — and the
+/// orphan rule blocks `impl Rule<()> for <an admitted framework marker>`. There is
+/// no `Id` tag to borrow an admitted identity through.
+#[test]
+fn apply_cannot_forge_false() {
+    struct Forge;
+    impl Rule<()> for Forge {
+        type Lhs = False; // ⊢ False = ⊤ would be catastrophic
+        type Rhs = True;
+        fn conclude(self) -> Result<(False, True), Error> {
+            Ok((False, True))
+        }
+    }
+    // The gate keys on TypeId::of::<Forge>(), which () never admits.
+    assert_eq!(
+        apply((), Forge).unwrap_err(),
+        Error::NotAdmitted(TypeId::of::<Forge>())
+    );
+}
+
+#[test]
+fn lift_one_layer() {
+    let e: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(true), ());
+    let up = e.lift(Cov2).expect("Cov2 extends ()");
+    assert_eq!(up.lang(), &Cov2);
+    assert_eq!(up.lhs(), &Val(true));
+}
+
+#[test]
+fn lift_rejects_non_extender() {
+    let e: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(true), ());
+    // Empty does not extend ()
+    assert_eq!(
+        e.lift(Empty).unwrap_err(),
+        Error::NotExtended(TypeId::of::<()>())
+    );
+}
+
+// ---- Milestone 3: golden-ish check of `<() as Language>::MANIFEST` ----
+
+#[test]
+fn base_manifest_is_as_declared() {
+    let m = <() as Language>::MANIFEST.expect("base has a static manifest");
+    assert_eq!(m.ty, TypeId::of::<()>());
+    assert!(m.extends.is_empty(), "base has no parents");
+
+    let expected = [
+        TypeId::of::<Refl>(),
+        TypeId::of::<Sym>(),
+        TypeId::of::<Trans>(),
+        TypeId::of::<Cong>(),
+        TypeId::of::<And>(),
+        TypeId::of::<Or>(),
+        TypeId::of::<Imp>(),
+        TypeId::of::<Not>(),
+        TypeId::of::<TeqRule<bool>>(),
+    ];
+    let got: Vec<TypeId> = m.admits.iter().map(|r| r.ty).collect();
+    assert_eq!(
+        got, expected,
+        "() rule set must match the declared manifest"
+    );
+
+    // And the gate agrees with the manifest it is derived from:
+    for ty in expected {
+        assert!(().admits(ty), "admits must accept every manifest rule");
+    }
+    assert!(
+        !().admits(TypeId::of::<MyAx>()),
+        "admits must reject out-of-tree rules"
+    );
+}
+
+// ---- dyn expression: structural equality works behind a trait object ----
+
+#[test]
+fn dyn_expr_struct_eq() {
+    let a: Box<dyn Expr<Ty = bool>> = Box::new(Val(true));
+    let b: Box<dyn Expr<Ty = bool>> = Box::new(Val(true));
+    let c: Box<dyn Expr<Ty = bool>> = Box::new(Val(false));
+    assert!(struct_eq(&a, &b));
+    assert!(!struct_eq(&a, &c));
+}

@@ -190,6 +190,16 @@ fn resolve_variant<'a>(
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
 ) -> Result<Type> {
+    CoprodBackend.ty(&build_variant(tcs, ctx, visited)?)
+}
+
+/// The generic [`Variant`] description a non-recursive variant's cases denote
+/// (constructor name = case mixop key, payload = resolved case type).
+fn build_variant<'a>(
+    tcs: &'a [SpecTecTypCase],
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+) -> Result<Variant> {
     if tcs.is_empty() {
         return Err(syntax_err("empty variant has no type"));
     }
@@ -199,7 +209,36 @@ fn resolve_variant<'a>(
         let payload = resolve_typ_d(t, ctx, visited)?;
         ctors.push(VCtor::new(super::encode::mixop_key(op), payload));
     }
-    CoprodBackend.ty(&Variant::new(ctors))
+    Ok(Variant::new(ctors))
+}
+
+/// Resolve a top-level `SpecTecDef::Typ` **variant** definition to its generic
+/// [`Variant`] description (the constructors + payload types). Errors if `def`
+/// isn't a non-recursive variant. Used by [`super::denote`] to build constructor
+/// terms for `case` expressions.
+pub fn variant_of(def: &SpecTecDef, ctx: &TypeCtx) -> Result<Variant> {
+    let SpecTecDef::Typ { x, ps, insts } = def else {
+        return Err(syntax_err("definition is not a `typ`"));
+    };
+    if !ps.is_empty() {
+        return Err(syntax_err(format!(
+            "parametric type `{x}` not modelled yet"
+        )));
+    }
+    let [SpecTecInst::Inst { ps: ips, dt, .. }] = insts.as_slice() else {
+        return Err(syntax_err(format!("`{x}` has multiple/zero instances")));
+    };
+    if !ips.is_empty() {
+        return Err(syntax_err(format!(
+            "parametric type `{x}` not modelled yet"
+        )));
+    }
+    let SpecTecDefTyp::Variant { tcs } = dt else {
+        return Err(syntax_err(format!("`{x}` is not a variant")));
+    };
+    // Guard self-reference (recursive variants deferred), matching `resolve_named`.
+    let mut visited = vec![x.as_str()];
+    build_variant(tcs, ctx, &mut visited)
 }
 
 fn reject_parametric_field(qs: &[covalence_spectec::ast::SpecTecParam]) -> Result<()> {

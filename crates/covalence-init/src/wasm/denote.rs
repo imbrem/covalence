@@ -31,15 +31,84 @@ use std::collections::BTreeMap;
 
 use covalence_core::{Error, Result, Term, Type};
 use covalence_spectec::ast::{
-    SpecTecBinOp, SpecTecCmpOp, SpecTecExp, SpecTecNum, SpecTecNumTyp, SpecTecOpTyp, SpecTecUnOp,
+    SpecTecBinOp, SpecTecCmpOp, SpecTecDef, SpecTecExp, SpecTecNum, SpecTecNumTyp, SpecTecOpTyp,
+    SpecTecUnOp,
 };
 
+use super::syntax;
 use crate::init::ext::TermExt;
+use crate::init::inductive::{CoprodBackend, Variant, VariantBackend};
 use crate::init::{int, list, nat};
 
 /// A metavariable → HOL type environment (SpecTec variables carry no HOL type at
 /// their use sites, so the caller supplies them).
 pub type TypeEnv = BTreeMap<String, Type>;
+
+/// The context a denotation runs in: metavariable types plus a **constructor
+/// registry** (case name → the variant it belongs to and its index), built from
+/// the spec's non-recursive variant types so `case` expressions can render to
+/// real constructor applications.
+#[derive(Default, Clone)]
+pub struct DenoteCtx {
+    pub types: TypeEnv,
+    /// Case key → `Some(variant, index)`, or `None` when the key is ambiguous
+    /// (defined in more than one rendered variant).
+    ctors: BTreeMap<String, Option<(Variant, usize)>>,
+}
+
+impl DenoteCtx {
+    /// A value-fragment context: metavariable types only, no constructors.
+    pub fn values(types: TypeEnv) -> Self {
+        DenoteCtx {
+            types,
+            ctors: BTreeMap::new(),
+        }
+    }
+
+    /// Build the constructor registry from every non-recursive variant type in
+    /// `defs` (recursive/parametric variants are skipped — they don't render).
+    /// A case name defined in two rendered variants is marked ambiguous.
+    pub fn from_spec(defs: &[SpecTecDef], types: TypeEnv) -> Self {
+        let tctx = syntax::TypeCtx::new(defs);
+        let mut ctors: BTreeMap<String, Option<(Variant, usize)>> = BTreeMap::new();
+        for def in typ_defs(defs) {
+            let Ok(v) = syntax::variant_of(def, &tctx) else {
+                continue;
+            };
+            for (i, c) in v.ctors.iter().enumerate() {
+                ctors
+                    .entry(c.name.clone())
+                    .and_modify(|e| *e = None) // seen before → ambiguous
+                    .or_insert_with(|| Some((v.clone(), i)));
+            }
+        }
+        DenoteCtx { types, ctors }
+    }
+
+    fn constructor(&self, key: &str) -> Result<(&Variant, usize)> {
+        match self.ctors.get(key) {
+            Some(Some((v, i))) => Ok((v, *i)),
+            Some(None) => Err(denote_err(format!("ambiguous constructor `{key}`"))),
+            None => Err(denote_err(format!(
+                "unknown constructor `{key}` (its variant is not rendered)"
+            ))),
+        }
+    }
+}
+
+/// Every top-level `Typ` definition (flattening `rec` groups).
+fn typ_defs(defs: &[SpecTecDef]) -> Vec<&SpecTecDef> {
+    fn go<'a>(d: &'a SpecTecDef, out: &mut Vec<&'a SpecTecDef>) {
+        match d {
+            SpecTecDef::Typ { .. } => out.push(d),
+            SpecTecDef::Rec { ds } => ds.iter().for_each(|x| go(x, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    defs.iter().for_each(|d| go(d, &mut out));
+    out
+}
 
 fn denote_err(msg: impl Into<String>) -> Error {
     Error::ConnectiveRule(format!("spectec denote: {}", msg.into()))
@@ -50,27 +119,27 @@ fn apply2(f: Term, a: Term, b: Term) -> Result<Term> {
     f.apply(a)?.apply(b)
 }
 
-/// Render a closed value expression to a real typed HOL term over the catalogue.
-/// `env` gives the HOL type of each free SpecTec metavariable.
-pub fn denote(e: &SpecTecExp, env: &TypeEnv) -> Result<Term> {
+/// Render a SpecTec expression to a real typed HOL term over the catalogue.
+/// `ctx` gives metavariable types and the variant constructor registry.
+pub fn denote(e: &SpecTecExp, ctx: &DenoteCtx) -> Result<Term> {
     use SpecTecExp as E;
     match e {
         E::Bool { b } => Ok(Term::bool_lit(*b)),
         E::Num { n } => denote_num(n),
-        E::Var { id } => match env.get(id) {
+        E::Var { id } => match ctx.types.get(id) {
             Some(ty) => Ok(Term::free(id.clone(), ty.clone())),
             None => Err(denote_err(format!(
                 "free metavariable `{id}` has no type in env"
             ))),
         },
-        E::Bin { op, t, e1, e2 } => denote_bin(op, t, denote(e1, env)?, denote(e2, env)?),
-        E::Cmp { op, t, e1, e2 } => denote_cmp(op, t, denote(e1, env)?, denote(e2, env)?),
-        E::Un { op, e2, .. } => denote_un(op, denote(e2, env)?),
-        E::Tup { es } => denote_tuple(es, env),
-        E::List { es } => denote_list(es, env),
+        E::Bin { op, t, e1, e2 } => denote_bin(op, t, denote(e1, ctx)?, denote(e2, ctx)?),
+        E::Cmp { op, t, e1, e2 } => denote_cmp(op, t, denote(e1, ctx)?, denote(e2, ctx)?),
+        E::Un { op, e2, .. } => denote_un(op, denote(e2, ctx)?),
+        E::Tup { es } => denote_tuple(es, ctx),
+        E::List { es } => denote_list(es, ctx),
         E::Opt { eo } => match eo {
             Some(inner) => {
-                let x = denote(inner, env)?;
+                let x = denote(inner, ctx)?;
                 let ty = x.type_of()?;
                 crate::init::option::some(ty).apply(x)
             }
@@ -78,6 +147,13 @@ pub fn denote(e: &SpecTecExp, env: &TypeEnv) -> Result<Term> {
                 "empty option has no element type (needs a type annotation)",
             )),
         },
+        // A variant constructor application: look the case up in the registry and
+        // apply the backend's constructor term to the (denoted) payload.
+        E::Case { op, e1 } => {
+            let key = super::encode::mixop_key(op);
+            let (v, i) = ctx.constructor(&key)?;
+            CoprodBackend.ctor(v, i)?.apply(denote(e1, ctx)?)
+        }
         _ => Err(denote_err(
             "constructor not in the value fragment yet (needs the datatype/function leg)",
         )),
@@ -172,14 +248,15 @@ fn denote_un(op: &SpecTecUnOp, a: Term) -> Result<Term> {
     }
 }
 
-/// A tuple `(e₀, …, eₙ)` → right-nested `prod` pairs `pair e₀ (pair e₁ …)`.
-fn denote_tuple(es: &[SpecTecExp], env: &TypeEnv) -> Result<Term> {
+/// A tuple `(e₀, …, eₙ)` → right-nested `prod` pairs `pair e₀ (pair e₁ …)`. The
+/// empty tuple is the `unit` value (the payload of a nullary variant case).
+fn denote_tuple(es: &[SpecTecExp], ctx: &DenoteCtx) -> Result<Term> {
     match es {
-        [] => Err(denote_err("empty tuple has no type")),
-        [single] => denote(single, env),
+        [] => Ok(covalence_core::defs::unit_nil()),
+        [single] => denote(single, ctx),
         [head, rest @ ..] => {
-            let a = denote(head, env)?;
-            let b = denote_tuple(rest, env)?;
+            let a = denote(head, ctx)?;
+            let b = denote_tuple(rest, ctx)?;
             let (ta, tb) = (a.type_of()?, b.type_of()?);
             apply2(crate::init::prod::pair(ta, tb), a, b)
         }
@@ -188,7 +265,7 @@ fn denote_tuple(es: &[SpecTecExp], env: &TypeEnv) -> Result<Term> {
 
 /// A list `[e₀, …, eₙ]` → a real `list` value (element type from the first
 /// element; the empty list needs an annotation we don't have here).
-fn denote_list(es: &[SpecTecExp], env: &TypeEnv) -> Result<Term> {
+fn denote_list(es: &[SpecTecExp], ctx: &DenoteCtx) -> Result<Term> {
     if es.is_empty() {
         return Err(denote_err(
             "empty list has no element type (needs an annotation)",
@@ -196,7 +273,7 @@ fn denote_list(es: &[SpecTecExp], env: &TypeEnv) -> Result<Term> {
     }
     let elems = es
         .iter()
-        .map(|e| denote(e, env))
+        .map(|e| denote(e, ctx))
         .collect::<Result<Vec<_>>>()?;
     let elem_ty = elems[0].type_of()?;
     list::list_of(&elem_ty, elems)
@@ -214,8 +291,8 @@ mod tests {
             n: SpecTecNum::Nat(u),
         }
     }
-    fn empty() -> TypeEnv {
-        TypeEnv::new()
+    fn empty() -> DenoteCtx {
+        DenoteCtx::values(TypeEnv::new())
     }
 
     #[test]
@@ -298,15 +375,16 @@ mod tests {
 
     #[test]
     fn metavariable_resolves_through_env() {
-        let mut env = empty();
-        env.insert("x".into(), Type::nat());
+        let mut types = TypeEnv::new();
+        types.insert("x".into(), Type::nat());
+        let ctx = DenoteCtx::values(types);
         let e = SpecTecExp::Bin {
             op: SpecTecBinOp::Add,
             t: nat_op_ty(),
             e1: Box::new(SpecTecExp::Var { id: "x".into() }),
             e2: Box::new(num(1)),
         };
-        let t = denote(&e, &env).unwrap();
+        let t = denote(&e, &ctx).unwrap();
         assert_eq!(t.type_of().unwrap(), Type::nat());
     }
 
@@ -314,5 +392,43 @@ mod tests {
     fn free_metavariable_without_env_errors() {
         let e = SpecTecExp::Var { id: "y".into() };
         assert!(denote(&e, &empty()).is_err());
+    }
+
+    /// A variant constructor `case` renders to a real HOL constructor application
+    /// over the coproduct type — the registry is built from the spec's variants.
+    #[test]
+    fn variant_constructor_renders() {
+        use covalence_spectec::ast::{
+            MixOp, SpecTecDef, SpecTecDefTyp, SpecTecInst, SpecTecTyp, SpecTecTypCase,
+        };
+        // numtype = I32 | I64  (two nullary cases)
+        let case = |name: &str| SpecTecTypCase::Field {
+            op: MixOp::new(vec![name.into()]),
+            t: SpecTecTyp::Tup { ets: vec![] }, // unit payload
+            qs: vec![],
+            prs: vec![],
+        };
+        let numtype = SpecTecDef::Typ {
+            x: "numtype".into(),
+            ps: vec![],
+            insts: vec![SpecTecInst::Inst {
+                ps: vec![],
+                as_: vec![],
+                dt: SpecTecDefTyp::Variant {
+                    tcs: vec![case("I32"), case("I64")],
+                },
+            }],
+        };
+        let defs = vec![numtype];
+        let ctx = DenoteCtx::from_spec(&defs, TypeEnv::new());
+
+        // `I32 ()` → a real constructor application, typed at the numtype coproduct.
+        let e = SpecTecExp::Case {
+            op: MixOp::new(vec!["I32".into()]),
+            e1: Box::new(SpecTecExp::Tup { es: vec![] }),
+        };
+        let t = denote(&e, &ctx).unwrap();
+        let want_ty = syntax::resolve_def(&defs[0], &syntax::TypeCtx::new(&defs)).unwrap();
+        assert_eq!(t.type_of().unwrap(), want_ty);
     }
 }

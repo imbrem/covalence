@@ -18,10 +18,11 @@ relations; leg B: 72-of-207 types rendered). See
   guard) — these need the recursion engine (`init/inductive` recursor) to synthesize
   a real fixpoint type + induction, and a backend for it behind `VariantBackend`.
   Plus parametric types (`vec(X)`) and `text`/`rat`/`real`.
-- **Constructor terms / freeness not yet threaded.** `CoprodBackend::ctor` builds
-  the injection terms but `wasm::syntax` only uses `ty`; wire the constructors (and
-  coprod injectivity/disjointness lemmas) through so `denote` can render `case`
-  expressions of variant type.
+- **Constructor freeness lemmas not threaded.** `denote` renders variant `case`
+  constructor *terms* (via `DenoteCtx::from_spec` + `CoprodBackend::ctor`), but the
+  coproduct injectivity/disjointness *lemmas* aren't surfaced yet — needed once
+  relations reason about constructors (case analysis / no-confusion). Also
+  `uncase`/`case`-elimination and record field projection aren't rendered.
 - **`Dec` functions → real `define`s.** The 462 metafunctions have no recursive
   `define` + computation rules yet (`wasm/function.rs`). `denote` covers the value
   *expressions* they're built from, not the definitions.

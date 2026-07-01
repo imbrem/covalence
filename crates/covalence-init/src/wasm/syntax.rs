@@ -9,18 +9,23 @@
 //! [`super::denote`] needs to type metavariables from the spec, and the first step
 //! toward typing SpecTec functions and relations.
 //!
+//! Recursive variants render via the impredicative [`ChurchBackend`] `Φ⟨'r⟩`
+//! (self-references → a result type variable), and **parametric** types `T(A…)`
+//! instantiate by resolving `T`'s body with its type parameters bound (value/`exp`
+//! parameters don't affect the HOL type). A [`Scope`] threads the self-reference
+//! name and the type-parameter bindings.
+//!
 //! Building a `Type` cannot be unsound (it grows no `Thm`), so this is a plain
-//! total-where-possible renderer. Still deferred (typed error): **recursive**
-//! variants (e.g. `instr`, caught by the cyclic-alias guard — the recursion
-//! engine's job), parametric types (`vec(X)`), and `text`/`rat`/`real`. See
-//! `SKELETONS.md`.
+//! total-where-possible renderer. Still deferred (typed error): mutually-recursive
+//! variants (a sibling reference cycles), `text`/`rat`/`real`, and non-numeric
+//! value-indexed subtleties. See `SKELETONS.md`.
 
 use std::collections::BTreeMap;
 
 use covalence_core::{Error, Result, Type};
 use covalence_spectec::ast::{
-    SpecTecDef, SpecTecDefTyp, SpecTecInst, SpecTecIter, SpecTecNumTyp, SpecTecTyp, SpecTecTypBind,
-    SpecTecTypCase, SpecTecTypField,
+    SpecTecArg, SpecTecDef, SpecTecDefTyp, SpecTecInst, SpecTecIter, SpecTecNumTyp, SpecTecParam,
+    SpecTecTyp, SpecTecTypBind, SpecTecTypCase, SpecTecTypField,
 };
 
 use crate::init::inductive::{
@@ -60,13 +65,42 @@ impl<'a> TypeCtx<'a> {
     }
 }
 
-/// Render a SpecTec type to a HOL [`Type`], chasing named aliases through `ctx`.
-pub fn resolve_typ(t: &SpecTecTyp, ctx: &TypeCtx) -> Result<Type> {
-    resolve_typ_d(t, ctx, &mut Vec::new(), None)
+/// A resolution scope: the datatype currently being defined (so a recursive
+/// self-reference maps to [`self_ty_var`]) and the **type-parameter bindings** in
+/// effect (so parametric instantiation `T(A)` resolves `T`'s body with its params
+/// bound). Threaded by shared reference; new scopes are cheap clones.
+#[derive(Clone, Default)]
+struct Scope {
+    /// The variant whose payload we're resolving; a `Var` to it → `self_ty_var`.
+    self_name: Option<String>,
+    /// Type-parameter name → resolved HOL type.
+    tenv: BTreeMap<String, Type>,
 }
 
-/// Render the type a `SpecTecDef::Typ` denotes (a top-level alias). Errors on
-/// variant/struct/parametric definitions.
+impl Scope {
+    /// Same parameter bindings, resolving variant `name`'s payloads (self-mapping).
+    fn under_variant(&self, name: &str) -> Scope {
+        Scope {
+            self_name: Some(name.to_owned()),
+            tenv: self.tenv.clone(),
+        }
+    }
+    /// Same parameter bindings, no self-mapping (alias/struct bodies).
+    fn no_self(&self) -> Scope {
+        Scope {
+            self_name: None,
+            tenv: self.tenv.clone(),
+        }
+    }
+}
+
+/// Render a SpecTec type to a HOL [`Type`], chasing named aliases through `ctx`.
+pub fn resolve_typ(t: &SpecTecTyp, ctx: &TypeCtx) -> Result<Type> {
+    resolve_typ_d(t, ctx, &mut Vec::new(), &Scope::default())
+}
+
+/// Render the type a `SpecTecDef::Typ` denotes. Errors on parametric definitions
+/// (they need arguments — instantiate via a `Var` application instead).
 pub fn resolve_def(def: &SpecTecDef, ctx: &TypeCtx) -> Result<Type> {
     let SpecTecDef::Typ { x, .. } = def else {
         return Err(syntax_err("definition is not a `typ`"));
@@ -74,16 +108,11 @@ pub fn resolve_def(def: &SpecTecDef, ctx: &TypeCtx) -> Result<Type> {
     resolve_named(x, ctx, &mut Vec::new())
 }
 
-/// `self_name` is `Some(T)` while resolving the *direct payload structure* of
-/// variant `T`: a `Var { T }` there maps to [`self_ty_var`] (a recursive
-/// occurrence) instead of recursing — which is what lets [`ChurchBackend`] render
-/// recursive variants. It does not cross a named-type boundary (a payload that
-/// references another type resolves that type fresh, `self_name = None`).
 fn resolve_typ_d<'a>(
     t: &'a SpecTecTyp,
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
-    self_name: Option<&str>,
+    scope: &Scope,
 ) -> Result<Type> {
     match t {
         SpecTecTyp::Bool => Ok(Type::bool()),
@@ -91,9 +120,9 @@ fn resolve_typ_d<'a>(
         SpecTecTyp::Num(SpecTecNumTyp::Int) => Ok(Type::int()),
         SpecTecTyp::Num(nt) => Err(syntax_err(format!("numeric type {nt:?} not modelled yet"))),
         SpecTecTyp::Text => Err(syntax_err("text type not modelled yet")),
-        SpecTecTyp::Tup { ets } => resolve_tuple(ets, ctx, visited, self_name),
+        SpecTecTyp::Tup { ets } => resolve_tuple(ets, ctx, visited, scope),
         SpecTecTyp::Iter { t1, it } => {
-            let mut ty = resolve_typ_d(t1, ctx, visited, self_name)?;
+            let mut ty = resolve_typ_d(t1, ctx, visited, scope)?;
             for step in it {
                 ty = match step {
                     SpecTecIter::Opt => option::option(ty),
@@ -104,18 +133,7 @@ fn resolve_typ_d<'a>(
             }
             Ok(ty)
         }
-        SpecTecTyp::Var { x, as1 } => {
-            if !as1.is_empty() {
-                return Err(syntax_err(format!(
-                    "parametric type `{x}` not modelled yet"
-                )));
-            }
-            // A recursive self-reference inside the current variant's payload.
-            if self_name == Some(x.as_str()) {
-                return Ok(self_ty_var());
-            }
-            resolve_named(x, ctx, visited)
-        }
+        SpecTecTyp::Var { x, as1 } => resolve_var(x, as1, ctx, visited, scope),
     }
 }
 
@@ -125,23 +143,103 @@ fn resolve_tuple<'a>(
     ets: &'a [SpecTecTypBind],
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
-    self_name: Option<&str>,
+    scope: &Scope,
 ) -> Result<Type> {
     match ets {
         [] => Ok(Type::unit()),
-        [SpecTecTypBind::Bind { typ, .. }] => resolve_typ_d(typ, ctx, visited, self_name),
+        [SpecTecTypBind::Bind { typ, .. }] => resolve_typ_d(typ, ctx, visited, scope),
         [SpecTecTypBind::Bind { typ, .. }, rest @ ..] => {
-            let head = resolve_typ_d(typ, ctx, visited, self_name)?;
-            let tail = resolve_tuple(rest, ctx, visited, self_name)?;
+            let head = resolve_typ_d(typ, ctx, visited, scope)?;
+            let tail = resolve_tuple(rest, ctx, visited, scope)?;
             Ok(prod::prod(head, tail))
         }
     }
 }
 
-fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str>) -> Result<Type> {
-    if visited.contains(&name) {
-        return Err(syntax_err(format!("cyclic type alias `{name}`")));
+/// A type reference `x` or application `x(a…)`.
+fn resolve_var<'a>(
+    x: &'a str,
+    as1: &'a [SpecTecArg],
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+    scope: &Scope,
+) -> Result<Type> {
+    if as1.is_empty() {
+        // A recursive self-reference inside the current variant's payload.
+        if scope.self_name.as_deref() == Some(x) {
+            return Ok(self_ty_var());
+        }
+        // A bound type parameter.
+        if let Some(ty) = scope.tenv.get(x) {
+            return Ok(ty.clone());
+        }
+        return resolve_named(x, ctx, visited);
     }
+    resolve_parametric(x, as1, ctx, visited, scope)
+}
+
+/// Instantiate a parametric type `name(a…)`: bind its type parameters to the
+/// resolved type arguments (value/`exp` parameters are irrelevant to the HOL type
+/// and ignored) and resolve its body under those bindings.
+fn resolve_parametric<'a>(
+    name: &'a str,
+    as1: &'a [SpecTecArg],
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+    scope: &Scope,
+) -> Result<Type> {
+    let def = ctx
+        .lookup(name)
+        .ok_or_else(|| syntax_err(format!("unknown type `{name}`")))?;
+    let SpecTecDef::Typ { ps, insts, .. } = def else {
+        return Err(syntax_err(format!("`{name}` is not a type")));
+    };
+    if ps.len() != as1.len() {
+        return Err(syntax_err(format!(
+            "`{name}`: wrong number of type arguments"
+        )));
+    }
+    let [SpecTecInst::Inst { dt, .. }] = insts.as_slice() else {
+        return Err(syntax_err(format!("`{name}` has multiple/zero instances")));
+    };
+    // Bind type parameters to their resolved arguments (in the *caller's* scope).
+    let mut tenv = BTreeMap::new();
+    for (p, a) in ps.iter().zip(as1) {
+        match p {
+            SpecTecParam::Typ { x: pname } => match a {
+                SpecTecArg::Typ { t } => {
+                    tenv.insert(pname.clone(), resolve_typ_d(t, ctx, visited, scope)?);
+                }
+                _ => {
+                    return Err(syntax_err(format!(
+                        "`{name}`: type parameter needs a type arg"
+                    )));
+                }
+            },
+            // A value parameter (e.g. the width `N` of `uN(N)`): the HOL type does
+            // not depend on it, so nothing to bind.
+            SpecTecParam::Exp { .. } => {}
+            _ => {
+                return Err(syntax_err(format!(
+                    "`{name}`: def/grammar parameter not modelled"
+                )));
+            }
+        }
+    }
+    enter(
+        name,
+        dt,
+        ctx,
+        visited,
+        &Scope {
+            self_name: None,
+            tenv,
+        },
+    )
+}
+
+/// Resolve a nullary named type reference (chasing its definition).
+fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str>) -> Result<Type> {
     let def = ctx
         .lookup(name)
         .ok_or_else(|| syntax_err(format!("unknown type `{name}`")))?;
@@ -150,47 +248,55 @@ fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str
     };
     if !ps.is_empty() {
         return Err(syntax_err(format!(
-            "parametric type `{name}` not modelled yet"
+            "parametric type `{name}` used without arguments"
         )));
     }
-    let [SpecTecInst::Inst { ps: ips, dt, .. }] = insts.as_slice() else {
+    let [SpecTecInst::Inst { dt, .. }] = insts.as_slice() else {
         return Err(syntax_err(format!("`{name}` has multiple/zero instances")));
     };
-    if !ips.is_empty() {
-        return Err(syntax_err(format!(
-            "parametric type `{name}` not modelled yet"
-        )));
+    enter(name, dt, ctx, visited, &Scope::default())
+}
+
+/// Resolve a definition body under `base` (its parameter bindings), guarding the
+/// name against cycles. Aliases/structs resolve without self-mapping (a recursive
+/// alias/record is deferred); variants get the self-mapping via [`resolve_variant`].
+fn enter<'a>(
+    name: &'a str,
+    dt: &'a SpecTecDefTyp,
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+    base: &Scope,
+) -> Result<Type> {
+    if visited.contains(&name) {
+        return Err(syntax_err(format!("cyclic type `{name}`")));
     }
-    // Descend under `name`: aliases/structs surface a self-reference as a cyclic
-    // error (deferred), while variants map self-references to `self_ty_var` and
-    // render recursively via `ChurchBackend`.
     visited.push(name);
     let r = match dt {
-        SpecTecDefTyp::Alias { typ } => resolve_typ_d(typ, ctx, visited, None),
-        SpecTecDefTyp::Struct { tfs } => resolve_struct(tfs, ctx, visited),
-        SpecTecDefTyp::Variant { tcs } => resolve_variant(name, tcs, ctx, visited),
+        SpecTecDefTyp::Alias { typ } => resolve_typ_d(typ, ctx, visited, &base.no_self()),
+        SpecTecDefTyp::Struct { tfs } => resolve_struct(tfs, ctx, visited, &base.no_self()),
+        SpecTecDefTyp::Variant { tcs } => resolve_variant(name, tcs, ctx, visited, base),
     };
     visited.pop();
     r
 }
 
 /// A record type → the right-nested `prod` of its field types (`{}` = `unit`).
-/// (Structs are not self-recursive here — a recursive record is deferred.)
 fn resolve_struct<'a>(
     tfs: &'a [SpecTecTypField],
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
+    scope: &Scope,
 ) -> Result<Type> {
     match tfs {
         [] => Ok(Type::unit()),
         [SpecTecTypField::Field { t, qs, .. }] => {
             reject_parametric_field(qs)?;
-            resolve_typ_d(t, ctx, visited, None)
+            resolve_typ_d(t, ctx, visited, scope)
         }
         [SpecTecTypField::Field { t, qs, .. }, rest @ ..] => {
             reject_parametric_field(qs)?;
-            let head = resolve_typ_d(t, ctx, visited, None)?;
-            let tail = resolve_struct(rest, ctx, visited)?;
+            let head = resolve_typ_d(t, ctx, visited, scope)?;
+            let tail = resolve_struct(rest, ctx, visited, scope)?;
             Ok(prod::prod(head, tail))
         }
     }
@@ -204,8 +310,9 @@ fn resolve_variant<'a>(
     tcs: &'a [SpecTecTypCase],
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
+    base: &Scope,
 ) -> Result<Type> {
-    let v = build_variant(name, tcs, ctx, visited)?;
+    let v = build_variant(name, tcs, ctx, visited, base)?;
     if is_recursive(&v) {
         ChurchBackend.ty(&v)
     } else {
@@ -228,14 +335,16 @@ fn build_variant<'a>(
     tcs: &'a [SpecTecTypCase],
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
+    base: &Scope,
 ) -> Result<Variant> {
     if tcs.is_empty() {
         return Err(syntax_err("empty variant has no type"));
     }
+    let payload_scope = base.under_variant(name);
     let mut ctors = Vec::with_capacity(tcs.len());
     for SpecTecTypCase::Field { op, t, qs, .. } in tcs {
         reject_parametric_field(qs)?;
-        let payload = resolve_typ_d(t, ctx, visited, Some(name))?;
+        let payload = resolve_typ_d(t, ctx, visited, &payload_scope)?;
         ctors.push(VCtor::new(super::encode::mixop_key(op), payload));
     }
     Ok(Variant::new(ctors))
@@ -266,10 +375,10 @@ pub fn variant_of(def: &SpecTecDef, ctx: &TypeCtx) -> Result<Variant> {
         return Err(syntax_err(format!("`{x}` is not a variant")));
     };
     let mut visited = vec![x.as_str()];
-    build_variant(x, tcs, ctx, &mut visited)
+    build_variant(x, tcs, ctx, &mut visited, &Scope::default())
 }
 
-fn reject_parametric_field(qs: &[covalence_spectec::ast::SpecTecParam]) -> Result<()> {
+fn reject_parametric_field(qs: &[SpecTecParam]) -> Result<()> {
     if qs.is_empty() {
         Ok(())
     } else {
@@ -463,8 +572,46 @@ mod tests {
         assert_eq!(resolve_def(&def, &ctx).unwrap(), expected);
     }
 
+    /// A parametric type applied to a type argument instantiates its body:
+    /// `myvec(bool) = bool*` → `list bool`.
     #[test]
-    fn parametric_type_is_deferred() {
+    fn parametric_type_application_instantiates() {
+        // myvec(X) = X*
+        let myvec = SpecTecDef::Typ {
+            x: "myvec".into(),
+            ps: vec![SpecTecParam::Typ { x: "X".into() }],
+            insts: vec![SpecTecInst::Inst {
+                ps: vec![],
+                as_: vec![],
+                dt: SpecTecDefTyp::Alias {
+                    typ: SpecTecTyp::Iter {
+                        t1: Box::new(var("X")),
+                        it: vec![SpecTecIter::List],
+                    },
+                },
+            }],
+        };
+        // pairs = myvec(bool)
+        let pairs = alias(
+            "pairs",
+            SpecTecTyp::Var {
+                x: "myvec".into(),
+                as1: vec![SpecTecArg::Typ {
+                    t: SpecTecTyp::Bool,
+                }],
+            },
+        );
+        let defs = vec![myvec, pairs];
+        let ctx = TypeCtx::new(&defs);
+        assert_eq!(
+            resolve_def(&defs[1], &ctx).unwrap(),
+            list::list(Type::bool())
+        );
+    }
+
+    /// A parametric type used *without* arguments is an error (needs instantiation).
+    #[test]
+    fn bare_parametric_type_errors() {
         let parametric = SpecTecDef::Typ {
             x: "vec".into(),
             ps: vec![SpecTecParam::Typ { x: "X".into() }],

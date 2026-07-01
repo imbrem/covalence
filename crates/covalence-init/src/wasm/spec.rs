@@ -140,6 +140,6 @@ mod tests {
         assert!(report.lowered >= 250, "rules lowered = {}", report.lowered);
         assert_eq!(clauses, report.lowered);
         assert!(full_ok >= 60, "whole relations lowered = {full_ok}");
-        assert!(typ_ok >= 60, "types rendered = {typ_ok}");
+        assert!(typ_ok >= 100, "types rendered = {typ_ok}");
     }
 }

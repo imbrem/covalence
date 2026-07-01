@@ -4,20 +4,24 @@ The SpecTec → kernel front end (WASM-spec acceleration). Input is SpecTec AST
 S-expressions (`covalence_spectec::parse`); no `.watsup` frontend. Design +
 phasing: [`notes/wasm-spec.md`](../../../../notes/wasm-spec.md). Live coverage:
 `spec::coverage_report` (bundled WASM 3.0 spec — leg A: 274 rules / 64-of-125
-relations; leg B: 72-of-207 types rendered). See
+relations; leg B: 113-of-207 types rendered). See
 [CLAUDE.md](../../../../CLAUDE.md) § Skeletons, the
 [crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
 
 ## Severe / blocking
 
-- **Recursive variant types → HOL datatypes.** `wasm::syntax` now renders
-  aliases / primitives / tuples / iteration / **non-recursive variants + structs**
-  (72-of-207 spec types) via the generic `crate::init::inductive::VariantBackend`
-  (`CoprodBackend` = coproduct-of-payloads). Still deferred: **recursive** /
-  mutually-recursive variants (`instr`, `valtype`↔…, caught by the cyclic-alias
-  guard) — these need the recursion engine (`init/inductive` recursor) to synthesize
-  a real fixpoint type + induction, and a backend for it behind `VariantBackend`.
-  Plus parametric types (`vec(X)`) and `text`/`rat`/`real`.
+- **Mutually-recursive variant types.** `wasm::syntax` renders aliases /
+  primitives / tuples / iteration / structs / **non-recursive variants**
+  (`CoprodBackend`) / **self-recursive variants** (`ChurchBackend` `Φ⟨'r⟩`) /
+  **parametric** type application (113-of-207 spec types). Still deferred:
+  **mutually-recursive** variants (a sibling reference in a `rec` group cycles — the
+  self-mapping only covers a type's own name; needs multi-variable Church encoding
+  or the sealed recursion engine), and `text`/`rat`/`real`.
+- **Church types are polymorphic + term-free.** `ChurchBackend` gives `Φ⟨'r⟩` with a
+  free result tvar (not a sealed monomorphic type) and defers the recursive
+  constructor/fold terms (need handler-threading, `metalogic::toy`-style). A sealed
+  `new_type_definition` backend + induction/recursion is the follow-on behind the
+  same `VariantBackend` seam.
 - **Constructor freeness lemmas not threaded.** `denote` renders variant `case`
   constructor *terms* (via `DenoteCtx::from_spec` + `CoprodBackend::ctor`), but the
   coproduct injectivity/disjointness *lemmas* aren't surfaced yet — needed once

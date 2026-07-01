@@ -29,6 +29,40 @@ typing derivation or reduction sequence is then a *value of that predicate*,
 identical in shape to a Metamath `Derivable_L` witness. `metalogic::toy` is the
 hand-written template; `wasm::relation` is the data-driven version.
 
+## Two legs (the mirror)
+
+There are **two lowerings**, and their agreement is the confidence (Phase F's
+commutative diagram, pulled forward):
+
+- **Leg A — syntactic** (`encode` + `relation`, built): SpecTec → an uninterpreted
+  free term algebra over `Φ = nat` → `Derivable_R`. Judgements are pure syntax;
+  the "our-prover native" semantics. Great for the inductive *structure* of the
+  typing/reduction relations; blind to what functions/side-conditions *mean*.
+- **Leg B — denotational** (`syntax`/`function`/`denote`, planned): SpecTec →
+  **genuine typed HOL**. `Typ` → real HOL types (via `crate::init`), `Dec`
+  functions → real recursive `define`s + computation rules, relations → HOL
+  inductive predicates *over those types*. This is the direct `SpecTec ⟶ HOL` and
+  the only way to give meaning to side conditions (`if`/`let` premises = decidable
+  function predicates) and metafunctions.
+
+`SpecTec ⟶ our-prover` (leg A, via `Derivable_R`) and `SpecTec ⟶ HOL ⟶
+HOL-in-our-prover` (leg B) should agree — two independent renderings landing on
+the same judgements is the mirror-principle evidence.
+
+## Grounding: the real spec + live coverage
+
+`covalence_spectec::wasm::get_wasm_spectec_ast()` ships the WebAssembly **3.0**
+spec pre-elaborated: ~972 defs — 207 types, 125 relations, 462 functions, 231
+grammars (the typing system `*_ok`/`*_sub`, and reduction `Step`/`Step_pure`/
+`Step_read`; `Instr_ok` alone has 110 rules). `wasm::spec` inventories it and
+`spec::coverage_report` is the live progress metric. Leg A currently lowers **274
+rules / 64-of-125 whole relations**; the remaining skips are *entirely*
+side-condition (221) and iterated (63) premises — i.e. exactly what **leg B** and
+list recursion unlock.
+
+No WASM 1.0/2.0 AST is separately bundled; "start with WASM 1" = work the feature
+*subset* (e.g. the numeric `*_ok` relations) out of the 3.0 dump first.
+
 ## The mapping: `SpecTecDef` → kernel
 
 | `SpecTecDef` | WASM-spec role | lowers to | via |
@@ -67,34 +101,43 @@ Each `SpecTecRule { e, prs }` of relation `R` becomes one closure clause
   ∀ x…. d ⌜prem₀⌝ ⟹ … ⟹ d ⌜premₖ⌝ ⟹ d ⌜concl⌝
 ```
 
-over `Φ = nat`: `concl = ⌜e⌝`, each same-relation `SpecTecPrem::Rule` premise is
-`d ⌜·⌝`, and `x…` are the rule's metavariables (universally quantified, i.e. the
-`all_elim` order). `rule_set(def)` returns the `metalogic::RuleSet`; `derive(rs,
-i, n, args, premise_ders)` applies rule `i` to build a
-`⊢ Derivable_R ⌜concl[args]⌝` witness. First landed instance: a toy `Even`
-relation deriving `⊢ Derivable_Even ⌜Even (succ² zero)⌝`.
+over `Φ = nat`. Every judgement is `encode::tag`-ged with its **relation name**,
+so cross-relation premises `R'(e)` are just `d (rel.R' ⌜e⌝)` under one shared `d`
+— which is what lets a single combined rule set span the whole mutually-referential
+WASM type system. Two entry points:
+
+- `rule_set(def)` — one relation, **all** rules (errors if any can't be lowered):
+  the "is this whole relation expressible" view. `derive(rs, i, n, args, ders)`
+  applies rule `i` to build a `⊢ Derivable ⌜concl[args]⌝` witness (toy `Even`
+  deriving `⊢ Derivable ⌜rel.Even (succ² zero)⌝`).
+- `spec_rule_set(defs)` — the whole spec as **one** combined rule set, **skipping**
+  rules it can't lower yet and returning a `LoweringReport` of what it dropped
+  (sound but incomplete; no silent truncation).
 
 ## Phasing
 
-1. **Expr/syntax encoding** *(expr done; syntax pending)* — the reusable
-   foundation. `wasm::encode` covers the structural core; `Typ` → reified
-   datatypes via `crate::init` is next.
-2. **Relations → `Derivable_R`** *(inductive core done)* — lift real WASM
-   judgements (start with a small closed one, e.g. `⊢ valtype ok`). Grow premises
-   past the inductive-only base: `if`/`let` side conditions (need the function
-   layer), cross-relation premises (multi-`d` rule set), iterated `…*` premises.
-3. **Functions + grammars** — recursive `define` for metafunctions; finish the
-   **CFG stratum** in `grammar/spectec` so the binary decoder covers whole `gram`
-   productions (`grammar/spectec/SKELETONS.md`).
-4. **WASM acceleration (the payoff, roadmap Phase E/F).** Once `Step`/typing are
-   `Derivable_R` predicates and reduction functions have computation rules, a
-   real WASM engine (`covalence-wasm` / wasmtime) is an **untrusted oracle**
-   exactly like a Metamath proof: it runs the module fast and emits a trace; we
-   replay/certify the trace step-by-step against the reduction relation.
-   Execution-as-proof, construct-don't-trust.
-5. **Mirror-principle confidence (roadmap Phase F).** Cross-check
-   `SpecTec ⟶ our-prover` against `SpecTec ⟶ HOL ⟶ HOL-in-our-prover`; two
-   independent lowerings agreeing is the evidence.
+1. **Leg A: syntactic encoding + relations** *(done)* — `wasm::encode` is total
+   over `SpecTecExp`; `wasm::relation` lowers single + combined (whole-spec) rule
+   sets with cross-relation premises; `wasm::spec` grounds it in the real 3.0 dump
+   (274 rules / 64-of-125 relations). Remaining leg-A gap: iterated (`…*`) premises
+   (list recursion over premises).
+2. **Leg B: denotational typed HOL** *(next — the user-requested "explicit HOL
+   terms")*. `Typ` → real HOL types (via `crate::init` inductive engine), `Dec`
+   functions → recursive `define`s + computation rules, relations → HOL predicates
+   over those types. Unlocks the 221 skipped **side-condition** rules (a side
+   condition is a decidable function predicate). Modules: `wasm/{syntax,function,
+   denote}.rs`.
+3. **Grammars** — finish the **CFG stratum** in `grammar/spectec` so the binary
+   decoder covers whole `gram` productions (`grammar/spectec/SKELETONS.md`).
+4. **WASM acceleration (the payoff, roadmap Phase E/F).** With `Step`/typing as
+   predicates and reduction functions with computation rules, a real WASM engine
+   (`covalence-wasm` / wasmtime) is an **untrusted oracle** exactly like a Metamath
+   proof: it runs the module fast and emits a trace; we replay/certify the trace
+   step-by-step against the reduction relation. Execution-as-proof,
+   construct-don't-trust.
+5. **Mirror-principle confidence (roadmap Phase F).** Cross-check leg A
+   (`SpecTec ⟶ our-prover`) against leg B (`SpecTec ⟶ HOL ⟶ HOL-in-our-prover`);
+   two independent renderings agreeing is the evidence.
 
 ## Trust boundary
 

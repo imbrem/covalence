@@ -2,35 +2,42 @@
 
 The SpecTec → kernel front end (WASM-spec acceleration). Input is SpecTec AST
 S-expressions (`covalence_spectec::parse`); no `.watsup` frontend. Design +
-phasing: [`notes/wasm-spec.md`](../../../../notes/wasm-spec.md). See
+phasing: [`notes/wasm-spec.md`](../../../../notes/wasm-spec.md). Live coverage:
+`spec::coverage_report` (currently 274 rules / 64-of-125 whole relations of the
+bundled WASM 3.0 spec via the *syntactic* leg). See
 [CLAUDE.md](../../../../CLAUDE.md) § Skeletons, the
 [crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
 
 ## Severe / blocking
 
-- **Syntax (`SpecTecDef::Typ`) not lowered.** No reified datatype for
-  `valtype`/`instr`/`store`/… — encodings are untyped `nat` leaves. Needs the
-  `crate::init` inductive engine wired in (a `wasm/syntax.rs`).
-- **Functions (`SpecTecDef::Dec`) not lowered.** Metafunctions (`expand`,
-  `default_`, …) have no `define` + computation rules yet (a `wasm/function.rs`).
-- **Relation premises are inductive-only.** `relation::lower_rule` accepts only
-  same-relation `SpecTecPrem::Rule` premises; `if`/`let` side conditions,
-  cross-relation premises, and iterated (`…*`) premises are rejected — a rule
-  using them contributes no clause. Side conditions need the function layer;
-  cross-relation needs a multi-`d` rule set; iteration needs list recursion.
+- **Denotational leg (`SpecTec ⟶ typed HOL`) not started.** Only the *syntactic*
+  leg (uninterpreted `nat` algebra → `Derivable_R`) exists. The second leg — `Typ`
+  → real HOL types (via `crate::init`), `Dec` functions → real `define`s,
+  relations → HOL predicates over those types — is the user-requested "explicit
+  HOL terms" and the other half of the mirror. Needs `wasm/{syntax,function,
+  denote}.rs`.
+- **Side-condition premises (`if`/`let`) skipped** — 221 rules of the spec. These
+  need the denotational leg (a side condition is a decidable *function* predicate,
+  not an inductive premise). Biggest single coverage blocker.
+- **Iterated premises (`…*`) skipped** — 63 rules. Need list recursion over
+  premises (`init/list` recursion, cf. `grammar` word normalisation).
 
 ## Polish / increments
 
-- **`encode::encode_exp` covers the structural core only.** Arithmetic
-  (`Un`/`Idx`/`Slice`), records (`Str`/`Dot`/`Upd`/`Ext`), `Iter`/`Proj`/`Comp`/
-  `Cat`/`Cvt`/`Sub`/`Len`/… return `unsupported`. Grow as relations need them.
-- **No end-to-end `parse_defs` test.** The derivation tests build the `rel` AST
+- **Coarse-tagged encoding positions.** `encode::shape` drops iteration binders
+  (`xes`), `upd`/`ext` path index exps, non-expression `call` arguments, and `sub`
+  types from the tag/children — collisions there lose faithfulness (never
+  soundness). Tighten as needed.
+- **No end-to-end `parse_defs` test.** Derivation tests build the `rel` AST
   directly; add one driving a real SpecTec S-expression through
-  `covalence_spectec::parse::parse_defs → rule_set → derive`.
-- **Trace certification (WASM acceleration payoff) not started.** The goal —
-  run a WASM engine (`covalence-wasm`) as an untrusted oracle and certify each
-  step against the reduction relation's `Derivable_R`, à la Metamath proof
-  replay — is design-only (`notes/wasm-spec.md` phase 4).
+  `covalence_spectec::parse::parse_defs → spec_rule_set → derive`.
+- **`derive` addresses combined clauses by flat index.** For `spec_rule_set`, map
+  `(relation, rule)` → clause index (a name/index table) so whole-spec derivations
+  can address a specific rule.
+- **Trace certification (WASM acceleration payoff) not started.** Run a WASM engine
+  (`covalence-wasm`) as an untrusted oracle and certify each step against the
+  reduction relation (`Step`/`Step_pure`/`Step_read`), à la Metamath proof replay
+  (`notes/wasm-spec.md` phase 4).
 - **Mirror-principle cross-check not started.** `SpecTec ⟶ our-prover` vs
   `SpecTec ⟶ HOL ⟶ HOL-in-our-prover` commutative-diagram confidence
   (`notes/wasm-spec.md` phase 5).

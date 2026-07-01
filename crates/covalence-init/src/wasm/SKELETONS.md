@@ -10,15 +10,21 @@ bundled WASM 3.0 spec via the *syntactic* leg). See
 
 ## Severe / blocking
 
-- **Denotational leg (`SpecTec ⟶ typed HOL`) not started.** Only the *syntactic*
-  leg (uninterpreted `nat` algebra → `Derivable_R`) exists. The second leg — `Typ`
-  → real HOL types (via `crate::init`), `Dec` functions → real `define`s,
-  relations → HOL predicates over those types — is the user-requested "explicit
-  HOL terms" and the other half of the mirror. Needs `wasm/{syntax,function,
-  denote}.rs`.
+- **Denotational leg: only the value fragment.** `wasm::denote` renders bool/
+  `nat`/`int` literals + arithmetic/comparison, tuples (→ `prod`), non-empty lists,
+  `some`, and env-typed metavariables to real typed HOL. Still missing: **`Typ` →
+  real HOL types** (variant types `valtype`/`instr`/… as datatypes via the
+  `crate::init` inductive engine — `wasm/syntax.rs`), **`Dec` functions → real
+  recursive `define`s** + computation rules (`wasm/function.rs`), records, `cat`,
+  empty collections (need element-type annotations). Until types exist, `denote`
+  errors on variant-typed expressions.
+- **Relations → HOL predicates over those types (leg B) not started.** Once
+  `syntax`/`function` land, lift each `Rel` to a real HOL inductive predicate
+  (the denotational mirror of `relation`'s `Derivable_R`).
 - **Side-condition premises (`if`/`let`) skipped** — 221 rules of the spec. These
   need the denotational leg (a side condition is a decidable *function* predicate,
-  not an inductive premise). Biggest single coverage blocker.
+  `denote`-d to a `bool`, not an inductive premise). Biggest single coverage
+  blocker.
 - **Iterated premises (`…*`) skipped** — 63 rules. Need list recursion over
   premises (`init/list` recursion, cf. `grammar` word normalisation).
 

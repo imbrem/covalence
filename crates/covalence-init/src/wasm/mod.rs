@@ -39,6 +39,7 @@
 //!
 //! [SpecTec]: https://github.com/Wasm-DSL/spectec
 
+pub mod denote;
 pub mod encode;
 pub mod relation;
 pub mod spec;

@@ -2,6 +2,9 @@
 
 See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
 
+Module-local skeletons: [`src/thm/SKELETONS.md`](src/thm/SKELETONS.md) (the
+`covalence-pure` mint-gate future seams).
+
 ## Declaration-only catalogue ops (no definitional body yet)
 
 These `defs/` term-specs carry `tm = None`: sound/complete on literals (via

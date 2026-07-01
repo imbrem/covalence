@@ -26,8 +26,8 @@ impl Thm {
         witness: Thm,
     ) -> Result<TypeDef> {
         // 1. Decompose witness's concl as `P x` (an application).
-        let TermKind::App(p, x) = witness.concl.kind() else {
-            return Err(Error::BadTypeDefWitness(format!("{}", witness.concl)));
+        let TermKind::App(p, x) = witness.concl().kind() else {
+            return Err(Error::BadTypeDefWitness(format!("{}", witness.concl())));
         };
         let p = p.clone();
         let x = x.clone();
@@ -107,7 +107,7 @@ impl Thm {
         //    fact about the new typedef depends on the witness's
         //    inhabitedness justification. `TermSet` clones share the
         //    underlying set via `Arc`.
-        let hyps = witness.hyps.clone();
+        let hyps = witness.hyps().clone();
         let abs_rep = Self::build(hyps.clone(), abs_rep_concl)?;
         let rep_abs_fwd = Self::build(hyps.clone(), fwd_concl)?;
         let rep_abs_back = Self::build(hyps, back_concl)?;

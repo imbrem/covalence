@@ -51,14 +51,22 @@ use crate::term::{
 };
 use crate::ty::{TypeList, TypeSpec};
 
+mod lang;
 mod typedef;
 pub use typedef::TypeDef;
 
+use lang::{CoreLang, CoreProp, MintRule};
+
+/// The kernel certificate. A newtype over a `covalence_pure` theorem carrying the
+/// structured proposition `IsThm(Γ, φ)` in the crate-private [`CoreLang`]; see
+/// [`lang`] for the mint gate + soundness floor.
+///
+/// The inner `pure::Thm` field stays PRIVATE with no `inner`/`From`/`Deref`
+/// accessor — that wrapping is the forgery barrier: even a forged
+/// `pure::Thm<CoreLang, _>` cannot be wrapped into a `core::Thm`, and the ungated
+/// pure calculus can never conclude an `IsThm`-headed proposition.
 #[derive(Clone)]
-pub struct Thm {
-    hyps: Ctx,
-    concl: Term,
-}
+pub struct Thm(covalence_pure::Thm<CoreLang, CoreProp>);
 
 impl Thm {
     /// The single private constructor. Validates that the conclusion and every
@@ -86,17 +94,24 @@ impl Thm {
                 return Err(Error::NotBool(hty));
             }
         }
-        Ok(Thm { hyps, concl })
+        // Mint through the pure gate. `CoreLang::admits` returns `true` for
+        // `MintRule`'s `TypeId`, so `NotAdmitted` is statically unreachable and
+        // the `expect` never fires; all soundness stays in the `is_bool`
+        // validation above + the (unchanged) rule methods.
+        let inner = covalence_pure::apply(CoreLang, MintRule, (hyps, concl))
+            .expect("CoreLang admits MintRule");
+        Ok(Thm(inner))
     }
 
     pub fn hyps(&self) -> &Ctx {
-        &self.hyps
+        &self.0.prop().1.0.0
     }
     pub fn concl(&self) -> &Term {
-        &self.concl
+        &self.0.prop().1.1.0
     }
     pub fn into_parts(self) -> (Ctx, Term) {
-        (self.hyps, self.concl)
+        let p = self.0.prop();
+        (p.1.0.0.clone(), p.1.1.0.clone())
     }
 
     /// Returns `true` iff no `Obs` leaf appears anywhere in the
@@ -104,22 +119,22 @@ impl Thm {
     /// universally true with no oracle dependencies — equivalent to
     /// HOL Light's `thm`.
     pub fn has_no_obs(&self) -> bool {
-        self.concl.has_no_obs() && self.hyps.iter().all(|h| h.has_no_obs())
+        self.concl().has_no_obs() && self.hyps().iter().all(|h| h.has_no_obs())
     }
 
     /// Returns `true` iff every `Obs` leaf in the theorem (concl and
     /// hyps) carries an observer whose dynamic type is `O`. Trivially
     /// `true` for a theorem with no `Obs` leaves.
     pub fn all_obs_match<O: Observer>(&self) -> bool {
-        self.concl.all_obs_match::<O>() && self.hyps.iter().all(|h| h.all_obs_match::<O>())
+        self.concl().all_obs_match::<O>() && self.hyps().iter().all(|h| h.all_obs_match::<O>())
     }
 
     /// Walk the theorem and call `f` on every `Obs` leaf's observer
     /// downcast to `O`. Returns `Err(ObsDowncastTypeMismatch)` at
     /// the first leaf whose dynamic type does not match `O`.
     pub fn for_each_obs<O: Observer, F: FnMut(&O)>(&self, f: &mut F) -> Result<()> {
-        self.concl.for_each_obs::<O, F>(f)?;
-        for h in self.hyps.iter() {
+        self.concl().for_each_obs::<O, F>(f)?;
+        for h in self.hyps().iter() {
             h.for_each_obs::<O, F>(f)?;
         }
         Ok(())
@@ -132,10 +147,10 @@ impl Thm {
     /// every term in `target` is re-validated at kind `bool` by
     /// `Thm::build`.
     pub fn weaken(self, target: Ctx) -> Result<Thm> {
-        if !self.hyps.is_subset(&target) {
+        if !self.hyps().is_subset(&target) {
             return Err(Error::NotASuperset);
         }
-        Self::build(target, self.concl)
+        Self::build(target, self.concl().clone())
     }
 
     // ========================================================================
@@ -207,8 +222,8 @@ impl Thm {
     /// Soundness: identical to [`trans`](Self::trans); the cons only shares
     /// the `Arc`s of the conclusion's spine, with no soundness role.
     pub fn trans_with<C: TrustedCons + ?Sized>(self, other: Thm, cons: &mut C) -> Result<Thm> {
-        let (s, t1, alpha) = parse_hol_eq_at(&self.concl)?;
-        let (t2, u) = parse_hol_eq(&other.concl)?;
+        let (s, t1, alpha) = parse_hol_eq_at(self.concl())?;
+        let (t2, u) = parse_hol_eq(other.concl())?;
         if t1 != t2 {
             return Err(Error::TransMiddleMismatch {
                 left: format!("{}", t1),
@@ -217,7 +232,7 @@ impl Thm {
         }
         // `alpha` is `s`'s element type, read off the `Eq` head — no walk.
         let concl = hol::hol_eq_at_with(alpha.clone(), s.clone(), u.clone(), cons);
-        let hyps = self.hyps.union(&other.hyps);
+        let hyps = self.hyps().union(other.hyps());
         Self::build(hyps, concl)
     }
 
@@ -239,8 +254,8 @@ impl Thm {
     /// `TrustedCons` contract guarantees they are structurally equal to the
     /// un-interned builds — so it has no soundness role.
     pub fn mk_comb_with<C: TrustedCons + ?Sized>(self, arg: Thm, cons: &mut C) -> Result<Thm> {
-        let (f, g, funty) = parse_hol_eq_at(&self.concl)?;
-        let (x, y) = parse_hol_eq(&arg.concl)?;
+        let (f, g, funty) = parse_hol_eq_at(self.concl())?;
+        let (x, y) = parse_hol_eq(arg.concl())?;
         // The result `f x = g y` has element type = codomain of `f`'s
         // (function) type, which is the `Eq` head's type argument on the
         // input theorem — no `type_of` walk. If `f` is not a function the
@@ -256,7 +271,7 @@ impl Thm {
         // argument-domain match, and Free-var consistency across f/g/x/y
         // — so the previous per-side `type_of` pre-checks were redundant.
         let concl = hol::hol_eq_at_with(cod, lhs, rhs, cons);
-        let hyps = self.hyps.union(&arg.hyps);
+        let hyps = self.hyps().union(arg.hyps());
         Self::build(hyps, concl)
     }
 
@@ -280,12 +295,12 @@ impl Thm {
         ty: Type,
         cons: &mut C,
     ) -> Result<Thm> {
-        let (s, t, alpha) = parse_hol_eq_at(&self.concl)?;
+        let (s, t, alpha) = parse_hol_eq_at(self.concl())?;
         let alpha = alpha.clone();
         let var = Var::new(name, ty.clone());
         // The bound variable `var` must not be free in the hypotheses
         // (HOL Light's ABS side-condition).
-        for h in self.hyps.iter() {
+        for h in self.hyps().iter() {
             if has_free_var_typed(h, &var) {
                 return Err(Error::FreeVarInHyps { name: name.into() });
             }
@@ -300,7 +315,7 @@ impl Thm {
         // shared element type from the input `Eq` head), so that is the
         // result equation's element type — no walk.
         let concl = hol::hol_eq_at_with(Type::fun(ty, alpha), s_abs, t_abs, cons);
-        Self::build(self.hyps, concl)
+        Self::build(self.hyps().clone(), concl)
     }
 
     /// `⊢ (λx:τ. body) arg = body[arg/0]` — one β-step as a HOL
@@ -374,21 +389,21 @@ impl Thm {
     /// accepted only so a rewrite driver can thread one cons uniformly
     /// through `trans` / `mk_comb` / `eq_mp`. No soundness role.
     pub fn eq_mp_with<C: TrustedCons + ?Sized>(self, p_thm: Thm, _cons: &mut C) -> Result<Thm> {
-        let (p, q, alpha) = parse_hol_eq_at(&self.concl)?;
+        let (p, q, alpha) = parse_hol_eq_at(self.concl())?;
         // p = q must be at type bool (otherwise it's not an
         // implication-shaped equation). `alpha` is p's type, read off the
         // `Eq` head — no walk.
         if !alpha.is_bool() {
             return Err(Error::NotBool(alpha.clone()));
         }
-        if *p != p_thm.concl {
+        if *p != *p_thm.concl() {
             return Err(Error::ImpAntecedentMismatch {
                 expected: format!("{}", p),
-                got: format!("{}", p_thm.concl),
+                got: format!("{}", p_thm.concl()),
             });
         }
         let concl = q.clone();
-        let hyps = self.hyps.union(&p_thm.hyps);
+        let hyps = self.hyps().union(p_thm.hyps());
         Self::build(hyps, concl)
     }
 
@@ -397,18 +412,18 @@ impl Thm {
     /// Both `p` and `q` must be `bool`-typed; equality at `bool`
     /// IS biconditional.
     pub fn deduct_antisym(self, other: Thm) -> Result<Thm> {
-        let p_ty = self.concl.type_of()?;
-        let q_ty = other.concl.type_of()?;
+        let p_ty = self.concl().type_of()?;
+        let q_ty = other.concl().type_of()?;
         if !p_ty.is_bool() {
             return Err(Error::NotBool(p_ty));
         }
         if !q_ty.is_bool() {
             return Err(Error::NotBool(q_ty));
         }
-        let p = self.concl.clone();
-        let q = other.concl.clone();
-        let hyps_p_minus_q = self.hyps.remove(&q);
-        let hyps_q_minus_p = other.hyps.remove(&p);
+        let p = self.concl().clone();
+        let q = other.concl().clone();
+        let hyps_p_minus_q = self.hyps().remove(&q);
+        let hyps_q_minus_p = other.hyps().remove(&p);
         let hyps = hyps_p_minus_q.union(&hyps_q_minus_p);
         let concl = hol::hol_eq(p, q);
         Self::build(hyps, concl)
@@ -421,8 +436,8 @@ impl Thm {
     /// substitution is a no-op, as in HOL Light's `vsubst`).
     pub fn inst(self, name: &str, replacement: Term) -> Result<Thm> {
         let var = Var::new(name, replacement.type_of()?);
-        let concl = subst_free(&self.concl, &var, &replacement);
-        let hyps = self.hyps.map(|h| subst_free(h, &var, &replacement));
+        let concl = subst_free(self.concl(), &var, &replacement);
+        let hyps = self.hyps().map(|h| subst_free(h, &var, &replacement));
         Self::build(hyps, concl)
     }
 
@@ -454,9 +469,9 @@ impl Thm {
     /// `eq_mp` to get `b = a`. Implemented directly here as
     /// "parse the equation, return reversed".
     pub fn sym(self) -> Result<Thm> {
-        let (a, b, alpha) = parse_hol_eq_at(&self.concl)?;
+        let (a, b, alpha) = parse_hol_eq_at(self.concl())?;
         let concl = hol::hol_eq_at(alpha.clone(), b.clone(), a.clone());
-        Self::build(self.hyps, concl)
+        Self::build(self.hyps().clone(), concl)
     }
 
     /// Alias for [`Thm::mk_comb`]. `cong_app` is the equational-
@@ -491,8 +506,8 @@ impl Thm {
         if !phi_ty.is_bool() {
             return Err(Error::NotBool(phi_ty));
         }
-        let hyps = self.hyps.remove(phi);
-        let concl = hol::hol_imp(phi.clone(), self.concl);
+        let hyps = self.hyps().remove(phi);
+        let concl = hol::hol_imp(phi.clone(), self.concl().clone());
         Self::build(hyps, concl)
     }
 
@@ -503,15 +518,15 @@ impl Thm {
     /// unfolding `⟹`'s definition (`p ⟹ q  ≡  p ∧ q = p`) and
     /// using `AND_INTRO` / `AND_ELIM`.
     pub fn imp_elim(self, hyp: Thm) -> Result<Thm> {
-        let (phi, psi) = parse_hol_imp(&self.concl)?;
-        if *phi != hyp.concl {
+        let (phi, psi) = parse_hol_imp(self.concl())?;
+        if *phi != *hyp.concl() {
             return Err(Error::ImpAntecedentMismatch {
                 expected: format!("{}", phi),
-                got: format!("{}", hyp.concl),
+                got: format!("{}", hyp.concl()),
             });
         }
         let concl = psi.clone();
-        let hyps = self.hyps.union(&hyp.hyps);
+        let hyps = self.hyps().union(hyp.hyps());
         Self::build(hyps, concl)
     }
 
@@ -527,13 +542,13 @@ impl Thm {
         // The generalised variable `(name, ty)` must not be free in the
         // hypotheses.
         let var = Var::new(name, ty.clone());
-        for h in self.hyps.iter() {
+        for h in self.hyps().iter() {
             if has_free_var_typed(h, &var) {
                 return Err(Error::FreeVarInHyps { name: name.into() });
             }
         }
-        let concl = hol::hol_forall(name, ty, self.concl);
-        Self::build(self.hyps, concl)
+        let concl = hol::hol_forall(name, ty, self.concl().clone());
+        Self::build(self.hyps().clone(), concl)
     }
 
     /// `Γ ⊢ φ[t/x]`, given `Γ ⊢ ∀x:τ. φ` and `t : τ`
@@ -561,7 +576,7 @@ impl Thm {
         witness: Term,
         cons: &mut C,
     ) -> Result<Thm> {
-        let (ty, body) = parse_hol_forall(&self.concl)?;
+        let (ty, body) = parse_hol_forall(self.concl())?;
         let wit_ty = witness.type_of()?;
         if wit_ty != *ty {
             return Err(Error::TypeMismatch {
@@ -570,7 +585,7 @@ impl Thm {
             });
         }
         let concl = open_with(body, &witness, cons);
-        Self::build(self.hyps, concl)
+        Self::build(self.hyps().clone(), concl)
     }
 
     /// `⊢ (λx:τ. f x) = f`, when `Bound(0)` does not appear free
@@ -620,16 +635,16 @@ impl Thm {
     /// into `⊢ p = T`, `⊢ q = T`; congruence + `abs` then build
     /// `⊢ (λf. f p q) = (λf. f T T)`, which is `p ∧ q` unfolded.
     pub fn and_intro(self, other: Thm) -> Result<Thm> {
-        let p_ty = self.concl.type_of()?;
+        let p_ty = self.concl().type_of()?;
         if !p_ty.is_bool() {
             return Err(Error::NotBool(p_ty));
         }
-        let q_ty = other.concl.type_of()?;
+        let q_ty = other.concl().type_of()?;
         if !q_ty.is_bool() {
             return Err(Error::NotBool(q_ty));
         }
-        let concl = hol::hol_and(self.concl.clone(), other.concl.clone());
-        let hyps = self.hyps.union(&other.hyps);
+        let concl = hol::hol_and(self.concl().clone(), other.concl().clone());
+        let hyps = self.hyps().union(other.hyps());
         Self::build(hyps, concl)
     }
 
@@ -639,17 +654,17 @@ impl Thm {
     /// to the selector `λa b. a` and β-reduce both sides to `p = T`,
     /// then `EQT_ELIM`.
     pub fn and_elim_l(self) -> Result<Thm> {
-        let (p, _q) = parse_hol_and(&self.concl)?;
+        let (p, _q) = parse_hol_and(self.concl())?;
         let concl = p.clone();
-        Self::build(self.hyps, concl)
+        Self::build(self.hyps().clone(), concl)
     }
 
     /// `Γ ⊢ q`, given `Γ ⊢ p ∧ q` (HOL Light `CONJUNCT2`; selector
     /// `λa b. b`).
     pub fn and_elim_r(self) -> Result<Thm> {
-        let (_p, q) = parse_hol_and(&self.concl)?;
+        let (_p, q) = parse_hol_and(self.concl())?;
         let concl = q.clone();
-        Self::build(self.hyps, concl)
+        Self::build(self.hyps().clone(), concl)
     }
 
     /// `Γ ⊢ p ∨ q`, given `Γ ⊢ p` and the other disjunct `q : bool`
@@ -658,7 +673,7 @@ impl Thm {
     /// Soundness: fold `⊢ p` into `p ∨ q ≜ ∀r. (p⟹r) ⟹ (q⟹r) ⟹ r`
     /// — assume each implication, MP the first with `⊢ p`, generalise.
     pub fn or_intro_l(self, q: Term) -> Result<Thm> {
-        let p_ty = self.concl.type_of()?;
+        let p_ty = self.concl().type_of()?;
         if !p_ty.is_bool() {
             return Err(Error::NotBool(p_ty));
         }
@@ -666,14 +681,14 @@ impl Thm {
         if !q_ty.is_bool() {
             return Err(Error::NotBool(q_ty));
         }
-        let concl = hol::hol_or(self.concl.clone(), q);
-        Self::build(self.hyps, concl)
+        let concl = hol::hol_or(self.concl().clone(), q);
+        Self::build(self.hyps().clone(), concl)
     }
 
     /// `Γ ⊢ p ∨ q`, given `Γ ⊢ q` and the other disjunct `p : bool`
     /// (HOL Light `DISJ2`).
     pub fn or_intro_r(self, p: Term) -> Result<Thm> {
-        let q_ty = self.concl.type_of()?;
+        let q_ty = self.concl().type_of()?;
         if !q_ty.is_bool() {
             return Err(Error::NotBool(q_ty));
         }
@@ -681,8 +696,8 @@ impl Thm {
         if !p_ty.is_bool() {
             return Err(Error::NotBool(p_ty));
         }
-        let concl = hol::hol_or(p, self.concl.clone());
-        Self::build(self.hyps, concl)
+        let concl = hol::hol_or(p, self.concl().clone());
+        Self::build(self.hyps().clone(), concl)
     }
 
     /// `Γ ∪ Δ₁ ∪ Δ₂ ⊢ r`, given `Γ ⊢ p ∨ q`, `Δ₁ ⊢ p ⟹ r` and
@@ -692,9 +707,9 @@ impl Thm {
     /// Soundness: specialise `p ∨ q ≜ ∀r. (p⟹r) ⟹ (q⟹r) ⟹ r` at `r`
     /// and MP with the two branches.
     pub fn or_elim(self, left: Thm, right: Thm) -> Result<Thm> {
-        let (p, q) = parse_hol_or(&self.concl)?;
-        let (lp, lr) = parse_hol_imp(&left.concl)?;
-        let (rq, rr) = parse_hol_imp(&right.concl)?;
+        let (p, q) = parse_hol_or(self.concl())?;
+        let (lp, lr) = parse_hol_imp(left.concl())?;
+        let (rq, rr) = parse_hol_imp(right.concl())?;
         if lp != p {
             return Err(Error::ConnectiveRule(format!(
                 "or_elim: left branch antecedent {lp} ≠ left disjunct {p}"
@@ -711,7 +726,7 @@ impl Thm {
             )));
         }
         let concl = lr.clone();
-        let hyps = self.hyps.union(&left.hyps).union(&right.hyps);
+        let hyps = self.hyps().union(left.hyps()).union(right.hyps());
         Self::build(hyps, concl)
     }
 
@@ -719,29 +734,29 @@ impl Thm {
     ///
     /// Soundness: `¬p ≜ (p ⟹ F)`, so this just folds the definition.
     pub fn not_intro(self) -> Result<Thm> {
-        let (p, f) = parse_hol_imp(&self.concl)?;
+        let (p, f) = parse_hol_imp(self.concl())?;
         if !matches!(f.kind(), TermKind::Bool(false)) {
             return Err(Error::ConnectiveRule(format!(
                 "not_intro: consequent {f} is not F"
             )));
         }
         let concl = hol::hol_not(p.clone());
-        Self::build(self.hyps, concl)
+        Self::build(self.hyps().clone(), concl)
     }
 
     /// `Γ ∪ Δ ⊢ F`, given `Γ ⊢ ¬p` and `Δ ⊢ p` (HOL Light `NOT_ELIM`).
     ///
     /// Soundness: unfold `¬p` to `p ⟹ F` and MP with `⊢ p`.
     pub fn not_elim(self, other: Thm) -> Result<Thm> {
-        let p = parse_hol_not(&self.concl)?;
-        if *p != other.concl {
+        let p = parse_hol_not(self.concl())?;
+        if *p != *other.concl() {
             return Err(Error::ConnectiveRule(format!(
                 "not_elim: negated {p} ≠ hypothesis {}",
-                other.concl
+                other.concl()
             )));
         }
         let concl = Term::bool_lit(false);
-        let hyps = self.hyps.union(&other.hyps);
+        let hyps = self.hyps().union(other.hyps());
         Self::build(hyps, concl)
     }
 
@@ -1073,9 +1088,9 @@ impl Thm {
 
     /// `Γ[α:=σ] ⊢ φ[α:=σ]`.
     pub fn inst_tfree(self, name: &str, replacement: Type) -> Result<Thm> {
-        let concl = subst_tfree_in_term(&self.concl, name, &replacement);
+        let concl = subst_tfree_in_term(self.concl(), name, &replacement);
         let hyps = self
-            .hyps
+            .hyps()
             .map(|h| subst_tfree_in_term(h, name, &replacement));
         Self::build(hyps, concl)
     }
@@ -1249,22 +1264,22 @@ impl Thm {
         let zero = Term::nat_lit(covalence_types::Nat::zero());
 
         // base : ⊢ p 0
-        let TermKind::App(p, base_arg) = base.concl.kind() else {
+        let TermKind::App(p, base_arg) = base.concl().kind() else {
             return Err(Error::ConnectiveRule(format!(
                 "nat_induct: base conclusion {} is not `p 0`",
-                base.concl
+                base.concl()
             )));
         };
         if base_arg != &zero {
             return Err(Error::ConnectiveRule(format!(
                 "nat_induct: base conclusion {} is not the motive applied to 0",
-                base.concl
+                base.concl()
             )));
         }
         let p = p.clone();
 
         // step : ⊢ p n ⟹ p (succ n)
-        let (ante, conseq) = parse_hol_imp(&step.concl)?;
+        let (ante, conseq) = parse_hol_imp(step.concl())?;
         let TermKind::App(ante_p, n_free) = ante.kind() else {
             return Err(Error::ConnectiveRule(format!(
                 "nat_induct: step antecedent {ante} is not `p n`"
@@ -1299,7 +1314,7 @@ impl Thm {
                 "nat_induct: induction variable occurs free in the motive".into(),
             ));
         }
-        for h in step.hyps.iter() {
+        for h in step.hyps().iter() {
             if has_free_var_typed(h, nv) {
                 return Err(Error::FreeVarInHyps {
                     name: nv.name().into(),
@@ -1310,7 +1325,7 @@ impl Thm {
         let n_name = nv.name().to_string();
         let body = Term::app(p, n_free.clone());
         let concl = hol::hol_forall(&n_name, nat, body);
-        let hyps = base.hyps.union(&step.hyps);
+        let hyps = base.hyps().union(step.hyps());
         Self::build(hyps, concl)
     }
 
@@ -1325,17 +1340,17 @@ impl Thm {
     /// this cannot be derived from the other rules; it is the kernel's
     /// second non-computational primitive (alongside [`Thm::nat_induct`]).
     pub fn false_elim(self, p: Term) -> Result<Thm> {
-        if !matches!(self.concl.kind(), TermKind::Bool(false)) {
+        if !matches!(self.concl().kind(), TermKind::Bool(false)) {
             return Err(Error::ConnectiveRule(format!(
                 "false_elim: conclusion {} is not F",
-                self.concl
+                self.concl()
             )));
         }
         let p_ty = p.type_of()?;
         if !p_ty.is_bool() {
             return Err(Error::NotBool(p_ty));
         }
-        Self::build(self.hyps, p)
+        Self::build(self.hyps().clone(), p)
     }
 
     // ========================================================================
@@ -1605,16 +1620,16 @@ impl fmt::Debug for Thm {
 
 impl fmt::Display for Thm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.hyps.is_empty() {
-            return write!(f, "⊢ {}", self.concl);
+        if self.hyps().is_empty() {
+            return write!(f, "⊢ {}", self.concl());
         }
-        for (i, h) in self.hyps.iter().enumerate() {
+        for (i, h) in self.hyps().iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
             write!(f, "{}", h)?;
         }
-        write!(f, " ⊢ {}", self.concl)
+        write!(f, " ⊢ {}", self.concl())
     }
 }
 

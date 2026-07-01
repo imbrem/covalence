@@ -17,10 +17,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::op::Op;
-
-mod sealed {
-    pub trait Sealed {}
-}
+use crate::sealed;
 
 /// A **faithful** pointer whose [`Deref::Target`] *is* the value it stands for —
 /// `&T`, `Box<T>`, `Rc<T>`, `Arc<T>`. Marks "deref gives the actual value" (an
@@ -97,11 +94,61 @@ impl<A: Expr + ?Sized> Expr for &A {
     type Ty = A::Ty;
 }
 
-// A dynamic, runtime-shaped expression — sealed ⇒ genuine, ZERO new TCB. (It is
-// not `Eq`, so it cannot be a `trans` middle term — "no Eq, no comparison".)
-impl<T> sealed::Sealed for Box<dyn Expr<Ty = T>> {}
-impl<T> Expr for Box<dyn Expr<Ty = T>> {
+// The unsized principal `dyn Expr<Ty=T>` is *already* an `Expr` (and `Sealed`): a
+// trait object automatically implements its own trait and its supertrait, so no
+// explicit impl is written (nor allowed). Consequently the existing
+// `impl Expr for &A` blanket covers `&dyn Expr<Ty=T>` for free. (Not `Eq`, so no
+// `dyn` value can be a `trans` middle term — "no Eq, no comparison".)
+
+// A pointer to an expression is itself an expression of the same sort, for ANY
+// expr `A` — concrete OR `dyn` (the `?Sized` bound covers `Box<dyn Expr<Ty=T>>`).
+// Each pointer needs its own impl (no `impl<A> Expr for Box<A>` in std to lean on),
+// so a macro keeps the three in lockstep. Distinct self types ⇒ no coherence clash.
+macro_rules! ptr_expr {
+    ($p:ident) => {
+        impl<A: Expr + ?Sized> sealed::Sealed for $p<A> {}
+        impl<A: Expr + ?Sized> Expr for $p<A> {
+            type Ty = A::Ty;
+        }
+    };
+}
+ptr_expr!(Box);
+ptr_expr!(Rc);
+ptr_expr!(Arc);
+
+/// A dynamic, runtime-shaped operand of sort `T` (`Arc<dyn Expr<Ty=T>>`) with
+/// **pointer equality**: two `Dyn`s are equal iff they share the same allocation.
+/// That makes `Dyn` a valid `trans` middle through the *ordinary* [`Eqn::trans`]
+/// (it is `Eq`), giving pointer-equality transitivity with NO `Eq` on the
+/// underlying dynamic expression. Sealed ⇒ ZERO new TCB.
+pub struct Dyn<T>(pub Arc<dyn Expr<Ty = T>>);
+
+impl<T> sealed::Sealed for Dyn<T> {}
+impl<T> Expr for Dyn<T> {
     type Ty = T;
+}
+impl<T> Clone for Dyn<T> {
+    fn clone(&self) -> Self {
+        Dyn(Arc::clone(&self.0))
+    }
+}
+impl<T> Dyn<T> {
+    /// Wrap any expression of sort `T` as a shared dynamic operand.
+    pub fn new(e: impl Expr<Ty = T> + 'static) -> Self {
+        Dyn(Arc::new(e))
+    }
+}
+// Pointer equality: same allocation ⇒ same expression (sound, incomplete).
+impl<T> PartialEq for Dyn<T> {
+    fn eq(&self, o: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &o.0)
+    }
+}
+impl<T> Eq for Dyn<T> {}
+impl<T> std::fmt::Debug for Dyn<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Dyn(@{:p})", Arc::as_ptr(&self.0))
+    }
 }
 
 // Products: tuples of expressions are expressions of the product sort (up to

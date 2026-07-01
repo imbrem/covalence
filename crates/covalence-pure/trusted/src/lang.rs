@@ -4,6 +4,7 @@
 use std::any::TypeId;
 
 use crate::eqn::Error;
+use crate::expr::Expr;
 use crate::op::Op;
 
 /// A language / theory / ruleset. **PARAMETER-FREE on purpose**: the only type in
@@ -78,24 +79,44 @@ pub struct LangMeta;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RuleMeta;
 
-/// A general gated rule: its premises/data ride inside `self`, and `conclude`
-/// produces the two sides of an [`Eqn`](crate::Eqn). Applying it via
-/// [`apply`](crate::apply) is gated on **`Self`'s own `TypeId`** being admitted.
+/// A general gated rule, phrased as a **decision procedure**: given an `Input` and
+/// a **read-only** view of the language, it either fails or proposes the two sides
+/// of an [`Eqn`](crate::Eqn). Applying it via [`apply`](crate::apply) is gated on
+/// **`Self`'s own `TypeId`** being admitted.
 ///
-/// Keying on `Self` (not a separate, implementor-chosen tag) is **load-bearing**:
-/// the gate identity must be the very type whose `conclude` produces the equation,
-/// so a downstream crate cannot impersonate an admitted rule. The orphan rule then
-/// blocks `impl Rule<L> for SomeFrameworkRule`, so an admit-set entry cannot be
-/// "borrowed" by an unrelated conclusion. (A `'static` bound is required for the
-/// `TypeId`; non-`'static`/borrowing rules need a *sealed*, behaviour-tied identity
-/// mechanism — deferred, see SKELETONS.)
+/// - `Input` is the freely-constructible thing consumed: `()` for a nullary axiom
+///   (use [`apply0`](crate::apply0)); a [`Cand`](crate::Cand) to *validate* a
+///   proposed equation; a bare expression to *rewrite*.
+/// - `Lhs`/`Rhs` are **bounded `: Expr` at the same sort** — a real tightening (a
+///   rule can no longer conclude `Eqn<u8, String, _>`).
+/// - `decide` is UNTRUSTED (it only proposes); the single gated mint is in
+///   [`apply`](crate::apply), which ignores this output until *after* the
+///   `admits` check.
+///
+/// Keying the gate on `Self` (not a separate, implementor-chosen tag) is
+/// **load-bearing**: the gate identity must be the very type whose `decide`
+/// produces the equation, so a downstream crate cannot impersonate an admitted
+/// rule. The orphan rule then blocks `impl Rule<L> for SomeFrameworkRule`, so an
+/// admit-set entry cannot be "borrowed" by an unrelated conclusion. (A `'static`
+/// bound is required for the `TypeId`; non-`'static`/borrowing rules need a
+/// *sealed*, behaviour-tied identity mechanism — deferred, see SKELETONS.)
+///
+/// The language is passed by **shared reference** (`&L`): reading context is
+/// enough, and it keeps the value available to mint against afterwards. A future
+/// genuinely-linear/resource theory wants a by-value
+/// `decide(self, input, lang: L) -> Result<((Lhs, Rhs), L), Error>` variant (making
+/// context enrichment visible in the type, more honest than `&mut`) — deferred, see
+/// SKELETONS.
 pub trait Rule<L>: 'static {
+    /// The candidate / input consumed. Freely constructible.
+    type Input;
     /// Left side of the concluded equation.
-    type Lhs;
-    /// Right side of the concluded equation.
-    type Rhs;
-    /// Run the rule, yielding the two sides of the equation it concludes.
-    fn conclude(self) -> Result<(Self::Lhs, Self::Rhs), Error>;
+    type Lhs: Expr;
+    /// Right side of the concluded equation — the **same sort** as `Lhs`.
+    type Rhs: Expr<Ty = <Self::Lhs as Expr>::Ty>;
+    /// Inspect the input + read-only language, returning the two sides to bless or
+    /// failing.
+    fn decide(self, input: Self::Input, lang: &L) -> Result<(Self::Lhs, Self::Rhs), Error>;
 }
 
 /// An op that is also its own canonical evaluation rule: `App<Self, Val(v)>`

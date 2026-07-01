@@ -5,12 +5,12 @@
 //! public constructor** — the unforgeability gate. The only ways to mint one are
 //! the methods/functions in this module: the **ungated** equality calculus
 //! (`refl`/`sym`/`trans`/`cong_*`, sound in *every* language) and the **gated**
-//! injectors ([`of_teq`]/[`apply`]/[`canon`]/[`Eqn::lift`]), each of which
+//! injectors ([`apply`]/[`apply0`]/[`canon`]/[`Eqn::lift`]), each of which
 //! runtime-checks `lang.admits(..)`/`lang.extends(..)` *before* minting.
 
 use std::any::TypeId;
 
-use crate::expr::{App, Ref, TrustedDeref, Val};
+use crate::expr::{App, Expr, Ref, TrustedDeref, Val};
 use crate::lang::{CanonRule, Language, Rule};
 
 /// Errors from the gated minting paths and `trans`.
@@ -26,7 +26,9 @@ pub enum Error {
     LangMismatch,
     /// `semidecide` could not prove equality (`a != b` under untrusted `Eq`).
     Undecided,
-    /// A [`Rule::conclude`] failed.
+    /// A pattern/decision rule inspected its input and declined to fire (no match).
+    NoMatch,
+    /// A [`Rule::decide`](crate::Rule::decide) failed.
     RuleFailed(String),
 }
 
@@ -45,6 +47,25 @@ pub struct Eqn<A, B, L> {
 pub type Thm<P, L> = Eqn<P, True, L>;
 
 use crate::expr::True;
+
+/// An **UNPROVEN** proposed equation `lhs ?= rhs` (same sort). Public fields, freely
+/// constructible — building one proves *nothing*. A [`Rule`] may take this as its
+/// `Input` to validate; only [`apply`] mints an actual [`Eqn`] from a blessed
+/// candidate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Cand<A, B> {
+    /// Proposed left-hand side.
+    pub lhs: A,
+    /// Proposed right-hand side (same sort as `lhs`).
+    pub rhs: B,
+}
+
+impl<A: Expr, B: Expr<Ty = A::Ty>> Cand<A, B> {
+    /// Propose `lhs ?= rhs` (same sort). Proves nothing on its own.
+    pub fn new(lhs: A, rhs: B) -> Self {
+        Cand { lhs, rhs }
+    }
+}
 
 impl<A, B, L> Eqn<A, B, L> {
     /// The sole constructor — the minting gate, `pub(crate)` so the calculus here
@@ -179,20 +200,39 @@ impl<A, B, L2: Language> Eqn<A, B, L2> {
     }
 }
 
-/// `Val(a) = Val(b)` whenever `a == b` (`C: Eq`). **Ungated** — leaf equality is
-/// intrinsic to a sort (a sort *is* its `Eq`), so this is sound in every language;
-/// it is just a typed convenience over `refl` (it never bridges values `Eq` calls
-/// unequal). `None` if `a != b`.
-pub fn of_eq<C: Eq, L>(a: C, b: C, lang: L) -> Option<Eqn<Val<C>, Val<C>, L>> {
+/// `Val(a) = Val(b)` whenever `a == b` (`C: Eq`), in an explicit language value.
+/// **Ungated** — leaf equality is intrinsic to a sort (a sort *is* its `Eq`), so
+/// this is sound in every language; it is just a typed convenience over `refl` (it
+/// never bridges values `Eq` calls unequal). `None` if `a != b`.
+pub fn of_eq_with<C: Eq, L>(a: C, b: C, lang: L) -> Option<Eqn<Val<C>, Val<C>, L>> {
     (a == b).then(|| Eqn::new(Val(a), Val(b), lang))
+}
+
+/// [`of_eq_with`] in the **default** language value (`L: Default`).
+pub fn of_eq<C: Eq, L: Default>(a: C, b: C) -> Option<Eqn<Val<C>, Val<C>, L>> {
+    of_eq_with(a, b, L::default())
+}
+
+/// The equality **certificate** `Val(a) = Val(b)` from `a == b` (`C: Eq`), or
+/// [`Error::Undecided`] when `a != b` (plain `Eq` trusts only the `true` direction).
+/// This is the certificate form; the old bool-proposition form is
+/// `semidecide(..)?.internalize()`.
+pub fn semidecide<C: Eq, L>(a: C, b: C, lang: L) -> Result<Eqn<Val<C>, Val<C>, L>, Error> {
+    of_eq_with(a, b, lang).ok_or(Error::Undecided)
 }
 
 // ---- Gated: anything that injects external trust (runtime `admits`) ----
 
-/// Apply a general [`Rule`] (premises ride inside `rho`). Gated on **`Rho`'s own
-/// `TypeId`** being admitted — the gate identity is the very type whose `conclude`
-/// produces the equation, so an admitted rule cannot be impersonated.
-pub fn apply<L, Rho>(lang: L, rho: Rho) -> Result<Eqn<Rho::Lhs, Rho::Rhs, L>, Error>
+/// Apply a general [`Rule`] to `input`. Gated on **`Rho`'s own `TypeId`** being
+/// admitted — the gate identity is the very type whose `decide` produces the
+/// equation, so an admitted rule cannot be impersonated. The untrusted `decide` runs
+/// only *after* the gate passes; its output is unused until minted here (the sole
+/// choke point).
+pub fn apply<L, Rho>(
+    lang: L,
+    rho: Rho,
+    input: Rho::Input,
+) -> Result<Eqn<Rho::Lhs, Rho::Rhs, L>, Error>
 where
     L: Language,
     Rho: Rule<L>,
@@ -201,8 +241,17 @@ where
     if !lang.admits(rule) {
         return Err(Error::NotAdmitted(rule));
     }
-    let (lhs, rhs) = rho.conclude()?;
+    let (lhs, rhs) = rho.decide(input, &lang)?;
     Ok(Eqn::new(lhs, rhs, lang))
+}
+
+/// Convenience for a **nullary-axiom** rule (`Rule<L, Input = ()>`), so a callsite
+/// need not pass a `()` explicitly.
+pub fn apply0<L: Language, Rho: Rule<L, Input = ()>>(
+    lang: L,
+    rho: Rho,
+) -> Result<Eqn<Rho::Lhs, Rho::Rhs, L>, Error> {
+    apply(lang, rho, ())
 }
 
 /// Evaluate an op to its canonical value: `App<F, Val(v)> = Val(F.eval(v))`. Gated

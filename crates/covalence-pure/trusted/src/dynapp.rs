@@ -1,0 +1,57 @@
+//! Dynamic application: an operator held behind `Arc<dyn DynOp>` applied to a
+//! statically-sorted [`Dyn`] argument.
+//!
+//! [`DynApp`] is another **sealed** [`Expr`] shape (a grammar extension, ZERO new
+//! mint): building one derives nothing — it is inert until an admitted rule
+//! interprets it. It is *not* `Eq`, so it can never be a `trans` middle term.
+//!
+//! The escape hatch for when the **operator** is not known statically. When the
+//! operator *is* static (only the operands vary), prefer a fixed-`Input`
+//! [`Rule`](crate::Rule) over `App<StaticOp, (Dyn, Dyn)>` — one rule `TypeId` then
+//! gates every operand shape at a sort (see the `Comm` pattern in the tests).
+
+use std::any::{Any, TypeId};
+use std::sync::Arc;
+
+use crate::expr::{Dyn, Expr};
+use crate::sealed;
+
+/// An object-safe operator with a runtime identity. `op_id` is an **UNTRUSTED**
+/// hint (a lying op may return any `TypeId`); the *sound* identity check is
+/// [`DynApp::as_op`], which downcasts through [`Any`]. Requiring `Any` (⇒ `'static`)
+/// is what makes that downcast possible.
+pub trait DynOp: Any {
+    /// The argument sort.
+    type In;
+    /// The result sort.
+    type Out;
+    /// Untrusted identity hint — a filter only; never the soundness gate.
+    fn op_id(&self) -> TypeId;
+    /// Upcast to [`Any`] so [`DynApp::as_op`] can perform the trusted downcast.
+    fn as_any(&self) -> &dyn Any;
+}
+
+/// A runtime-shaped application: a dynamic operator applied to a statically-sorted
+/// argument. Sealed [`Expr`] of sort `Out`; inert until an admitted rule interprets
+/// it. Not `Eq` ⇒ never a `trans` middle.
+pub struct DynApp<In, Out> {
+    /// The dynamic operator.
+    pub op: Arc<dyn DynOp<In = In, Out = Out>>,
+    /// The (dynamic) argument, of sort `In`.
+    pub arg: Dyn<In>,
+}
+
+impl<In, Out> sealed::Sealed for DynApp<In, Out> {}
+impl<In, Out> Expr for DynApp<In, Out> {
+    type Ty = Out;
+}
+
+impl<In: 'static, Out: 'static> DynApp<In, Out> {
+    /// View this as an application of the concrete operator `F`. Identity is checked
+    /// by a **trusted** `Any` downcast (`op_id` is only a cheap pre-filter, never
+    /// trusted); returns `(&F, &arg)` when the operator really is an `F`, else
+    /// `None`. A lying `op_id` cannot fool this — the downcast is the gate.
+    pub fn as_op<F: DynOp + 'static>(&self) -> Option<(&F, &Dyn<In>)> {
+        self.op.as_any().downcast_ref::<F>().map(|f| (f, &self.arg))
+    }
+}

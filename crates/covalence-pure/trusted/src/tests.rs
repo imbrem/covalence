@@ -80,16 +80,20 @@ impl CanonRule for Flip {
 /// An axiom `⊢ (⊤ ⟹ ⊤)` (for `mp`).
 struct ImpTT;
 impl Rule<Calc> for ImpTT {
+    type Input = ();
     type Lhs = App<Imp, (True, True)>;
     type Rhs = True;
-    fn conclude(self) -> Result<(Self::Lhs, Self::Rhs), Error> {
+    fn decide(self, _: (), _: &Calc) -> Result<(Self::Lhs, Self::Rhs), Error> {
         Ok((App(Imp, (True, True)), True))
     }
 }
 
 impl Language for Calc {
     fn admits(&self, r: TypeId) -> bool {
-        r == TypeId::of::<Flip>() || r == TypeId::of::<ImpTT>()
+        r == TypeId::of::<Flip>()
+            || r == TypeId::of::<ImpTT>()
+            || r == TypeId::of::<CheckCand>()
+            || r == TypeId::of::<ReflRw>()
     }
     fn extends(&self, p: TypeId) -> bool {
         p == TypeId::of::<()>()
@@ -105,9 +109,10 @@ impl Language for Calc {
 struct Cov2;
 struct MyAx;
 impl Rule<Cov2> for MyAx {
+    type Input = ();
     type Lhs = Val<bool>;
     type Rhs = True;
-    fn conclude(self) -> Result<(Self::Lhs, Self::Rhs), Error> {
+    fn decide(self, _: (), _: &Cov2) -> Result<(Self::Lhs, Self::Rhs), Error> {
         Ok((Val(true), True))
     }
 }
@@ -241,7 +246,7 @@ fn or_intro_both_sides() {
 
 #[test]
 fn modus_ponens() {
-    let imp = apply(Calc, ImpTT).expect("Calc admits ImpTT"); // ⊢ ⊤ ⟹ ⊤
+    let imp = apply0(Calc, ImpTT).expect("Calc admits ImpTT"); // ⊢ ⊤ ⟹ ⊤
     let t: Eqn<True, True, Calc> = Eqn::refl(True, Calc); // ⊢ ⊤
     let q = imp.mp(t).expect("antecedent matches, contexts union"); // ⊢ ⊤
     assert_eq!(q.lhs(), &True);
@@ -281,14 +286,26 @@ fn canon_rejected_when_not_admitted() {
 #[test]
 fn of_eq_is_ungated() {
     // leaf equality is intrinsic — works in empty `()`, no admits.
-    let e = of_eq(true, true, ()).expect("true == true");
+    let e = of_eq_with(true, true, ()).expect("true == true");
     assert_eq!(e.lhs(), &Val(true));
-    assert!(of_eq(true, false, ()).is_none());
+    assert!(of_eq_with(true, false, ()).is_none());
+    // `of_eq` uses the default language value:
+    let d: Eqn<Val<u8>, Val<u8>, ()> = of_eq(9u8, 9u8).expect("9 == 9");
+    assert_eq!(d.lhs(), &Val(9));
+}
+
+#[test]
+fn semidecide_certificate() {
+    // certificate form: Val(a) = Val(b), not the bool proposition.
+    let ok = semidecide(4u8, 4u8, ()).expect("4 == 4");
+    assert_eq!(ok.lhs(), &Val(4));
+    assert_eq!(ok.rhs(), &Val(4));
+    assert_eq!(semidecide(4u8, 5u8, ()).unwrap_err(), Error::Undecided);
 }
 
 #[test]
 fn apply_axiom() {
-    let thm: Thm<Val<bool>, Cov2> = apply(Cov2, MyAx).expect("Cov2 admits MyAx");
+    let thm: Thm<Val<bool>, Cov2> = apply0(Cov2, MyAx).expect("Cov2 admits MyAx");
     assert_eq!(thm.lhs(), &Val(true));
     assert_eq!(thm.rhs(), &True);
 }
@@ -297,14 +314,15 @@ fn apply_axiom() {
 fn apply_rejects_unadmitted() {
     struct AxForUnit;
     impl Rule<()> for AxForUnit {
+        type Input = ();
         type Lhs = Val<bool>;
         type Rhs = True;
-        fn conclude(self) -> Result<(Self::Lhs, Self::Rhs), Error> {
+        fn decide(self, _: (), _: &()) -> Result<(Self::Lhs, Self::Rhs), Error> {
             Ok((Val(true), True))
         }
     }
     assert_eq!(
-        apply((), AxForUnit).unwrap_err(),
+        apply0((), AxForUnit).unwrap_err(),
         Error::NotAdmitted(TypeId::of::<AxForUnit>())
     );
 }
@@ -316,14 +334,15 @@ fn apply_rejects_unadmitted() {
 fn apply_cannot_forge_false() {
     struct Forge;
     impl Rule<()> for Forge {
+        type Input = ();
         type Lhs = False;
         type Rhs = True;
-        fn conclude(self) -> Result<(Self::Lhs, Self::Rhs), Error> {
+        fn decide(self, _: (), _: &()) -> Result<(Self::Lhs, Self::Rhs), Error> {
             Ok((False, True)) // ⊢ False = ⊤ would be catastrophic
         }
     }
     assert_eq!(
-        apply((), Forge).unwrap_err(),
+        apply0((), Forge).unwrap_err(),
         Error::NotAdmitted(TypeId::of::<Forge>())
     );
 }
@@ -374,14 +393,6 @@ fn decide_true_and_false() {
     let f = decide(5u32, 6u32, ());
     assert!(f.is_right(), "5 = 6 decided false");
     assert_eq!(f.right().unwrap().rhs(), &False);
-}
-
-#[test]
-fn semidecide_positive_only() {
-    let ok = semidecide(3u8, 3u8, ()).expect("3 == 3");
-    assert_eq!(ok.rhs(), &True);
-    // plain `Eq` only trusts the true direction ⇒ inequality is Undecided.
-    assert_eq!(semidecide(3u8, 4u8, ()).unwrap_err(), Error::Undecided);
 }
 
 #[test]
@@ -455,4 +466,138 @@ fn trans_ptr_through_shared_middle() {
     let g1 = of_ptr_eq(Ref(s.clone()), Ref(s.clone()), ()).unwrap();
     let g2 = of_ptr_eq(Ref(other.clone()), Ref(other.clone()), ()).unwrap();
     assert_eq!(g1.trans_ptr(g2).unwrap_err(), Error::TransMismatch);
+}
+
+// ============================ Rule as a decision procedure ============================
+
+/// A rule whose `Input` is a candidate equation it validates (accept only if the
+/// two proposed sides are the literally-equal value).
+struct CheckCand;
+impl<L: Language> Rule<L> for CheckCand {
+    type Input = Cand<Val<u8>, Val<u8>>;
+    type Lhs = Val<u8>;
+    type Rhs = Val<u8>;
+    fn decide(self, c: Self::Input, _: &L) -> Result<(Val<u8>, Val<u8>), Error> {
+        if c.lhs == c.rhs {
+            Ok((c.lhs, c.rhs))
+        } else {
+            Err(Error::Undecided)
+        }
+    }
+}
+
+#[test]
+fn candidate_is_inert_until_decided() {
+    // A `Cand` is freely constructible and proves nothing on its own.
+    let good = Cand::new(Val(3u8), Val(3u8));
+    let e = apply(Calc, CheckCand, good).expect("candidate validates");
+    assert_eq!(e.lhs(), &Val(3));
+    // a bad candidate is rejected by the rule's decision procedure:
+    let bad = Cand::new(Val(3u8), Val(4u8));
+    assert_eq!(apply(Calc, CheckCand, bad).unwrap_err(), Error::Undecided);
+    // and the gate still rejects the whole rule where it is not admitted:
+    assert_eq!(
+        apply((), CheckCand, Cand::new(Val(3u8), Val(3u8))).unwrap_err(),
+        Error::NotAdmitted(TypeId::of::<CheckCand>())
+    );
+}
+
+// ============================ MatchApp / rewrite rules ============================
+
+#[test]
+fn match_app_hits_only_apps() {
+    // `as_app` recovers an application, and misses everything else.
+    assert!(App(Not, Val(true)).as_app().is_ok());
+    assert!(Val(5u8).as_app().is_err());
+    assert!(True.as_app().is_err());
+    assert!((Val(1u8), Val(2u8)).as_app().is_err());
+}
+
+/// A generic-method rewrite rule firing at ANY expression shape under ONE
+/// `TypeId` — proves `e = e` (a box is transparent: `Box<A>` denotes its pointee).
+struct ReflRw;
+impl<L> Rewrite<L> for ReflRw {
+    fn rewrite<E: MatchApp + Clone + 'static>(
+        &self,
+        e: E,
+        _: &L,
+    ) -> Result<(E, Box<dyn Expr<Ty = E::Ty>>), Error> {
+        Ok((e.clone(), Box::new(e) as Box<dyn Expr<Ty = E::Ty>>))
+    }
+}
+
+#[test]
+fn apply_rewrite_gated_and_shape_polymorphic() {
+    // one rule `TypeId` gates the rewrite at every shape:
+    let a = apply_rewrite(Calc, ReflRw, App(Flip, Val(true))).expect("admitted");
+    assert_eq!(a.lhs(), &App(Flip, Val(true)));
+    let b = apply_rewrite(Calc, ReflRw, Val(7u8)).expect("admitted at another shape");
+    assert_eq!(b.lhs(), &Val(7u8));
+    // unadmitted ⇒ rejected on the rule's own TypeId. (The `Ok` type wraps a
+    // non-`Debug` `Box<dyn Expr>`, so match rather than `unwrap_err`.)
+    match apply_rewrite((), ReflRw, Val(7u8)) {
+        Err(Error::NotAdmitted(id)) => assert_eq!(id, TypeId::of::<ReflRw>()),
+        _ => panic!("unadmitted rewrite must be rejected"),
+    }
+}
+
+// ============================ dynamic App ============================
+
+struct MyDynOp;
+impl DynOp for MyDynOp {
+    type In = u8;
+    type Out = u8;
+    fn op_id(&self) -> TypeId {
+        TypeId::of::<MyDynOp>()
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+struct OtherDynOp;
+impl DynOp for OtherDynOp {
+    type In = u8;
+    type Out = u8;
+    fn op_id(&self) -> TypeId {
+        TypeId::of::<OtherDynOp>()
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+#[test]
+fn dynapp_downcast_is_trusted() {
+    let app: DynApp<u8, u8> = DynApp {
+        op: Arc::new(MyDynOp),
+        arg: Dyn::new(Val(3u8)),
+    };
+    // trusted downcast: recognizes the real operator, rejects the wrong one.
+    assert!(app.as_op::<MyDynOp>().is_some());
+    assert!(app.as_op::<OtherDynOp>().is_none());
+}
+
+// ============================ Box/Arc/Rc general + Dyn pointer-eq ============================
+
+#[test]
+fn pointer_wrapped_expressions() {
+    // Box/Arc/Rc of ANY expr (not just dyn) is an expression.
+    let e: Eqn<Box<Val<u8>>, Box<Val<u8>>, ()> = Eqn::refl(Box::new(Val(1)), ());
+    assert_eq!(**e.lhs(), Val(1));
+    let _a: Arc<App<Not, Val<bool>>> = Arc::new(App(Not, Val(false)));
+    let _r: Rc<True> = Rc::new(True);
+}
+
+#[test]
+fn dyn_pointer_equality_transits() {
+    // `Dyn` is `Eq` by pointer identity, so it works as an ordinary `trans` middle
+    // with NO `Eq` on the underlying expression.
+    let d: Dyn<bool> = Dyn::new(App(Not, Val(true)));
+    let e1: Eqn<Dyn<bool>, Dyn<bool>, ()> = Eqn::refl(d.clone(), ());
+    let e2: Eqn<Dyn<bool>, Dyn<bool>, ()> = Eqn::refl(d.clone(), ());
+    assert!(e1.trans(e2).is_ok()); // same allocation
+    // distinct allocations of an equal expression are pointer-unequal:
+    let x: Eqn<Dyn<bool>, Dyn<bool>, ()> = Eqn::refl(Dyn::new(True), ());
+    let y: Eqn<Dyn<bool>, Dyn<bool>, ()> = Eqn::refl(Dyn::new(True), ());
+    assert_eq!(x.trans(y).unwrap_err(), Error::TransMismatch);
 }

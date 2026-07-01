@@ -13,8 +13,9 @@
 //!    ([`Val`]/[`Ref`]/[`App`]/[`True`]/[`False`]/`&A`/`Box<dyn Expr>`/tuples),
 //!    each with a unique sort [`Expr::Ty`]. Compared by **stdlib [`Eq`]**
 //!    (`derive(Eq)` *is* the structural equality `trans` uses).
-//! 3. The **gated** minting functions [`apply`]/[`canon`] and [`Eqn::lift`] — each
-//!    runtime-checks `admits`/`extends` *before* minting. ([`of_eq`], [`of_ptr_eq`],
+//! 3. The **gated** minting functions [`apply`]/[`apply0`]/[`canon`]/
+//!    [`apply_rewrite`] and [`Eqn::lift`] — each runtime-checks `admits`/`extends`
+//!    *before* minting. ([`of_eq`]/[`of_eq_with`], [`of_ptr_eq`],
 //!    [`decide`]/[`semidecide`], the calculus, and the [`prop`] bool theory are
 //!    ungated — leaf/structural equality is intrinsic to a sort.)
 //! 4. [`StructuralEq`] (in [`eq`]) — the sealed "`Eq` is fully correct" claim that
@@ -41,18 +42,29 @@
 // aliases would obscure the kernel rather than clarify it.
 #![allow(clippy::type_complexity)]
 
+/// The one crate-level seal: [`Expr`] (and its `MatchApp`/`DynApp` companions) are
+/// sealed against this trait, so the expression grammar is closed to this crate.
+/// ([`eq`] keeps its own separate seal for [`StructuralEq`].)
+pub(crate) mod sealed {
+    pub trait Sealed {}
+}
+
 mod base;
+mod dynapp;
 mod eq;
 mod eqn;
 mod expr;
 mod lang;
+mod matching;
 mod op;
 mod prop;
 
+pub use dynapp::*;
 pub use eq::*;
 pub use eqn::*;
 pub use expr::*;
 pub use lang::*;
+pub use matching::*;
 pub use op::*;
 pub use prop::*;
 

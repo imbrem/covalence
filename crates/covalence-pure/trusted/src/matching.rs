@@ -32,7 +32,9 @@ pub trait MatchApp: Expr + Sized {
     /// The application shape recovered on a hit (`App<F, A>`), or [`Infallible`].
     type AsApp;
     /// Consume and view as an application: `Ok` only for a real [`App`], else the
-    /// value is handed back unchanged as `Err(self)`.
+    /// value is handed back unchanged as `Err(self)`. (Takes `self` by value on
+    /// purpose — a miss returns ownership via `Err(self)`, no clone.)
+    #[allow(clippy::wrong_self_convention)]
     fn as_app(self) -> Result<Self::AsApp, Self>;
 }
 

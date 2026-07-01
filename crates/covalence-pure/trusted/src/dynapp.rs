@@ -18,8 +18,15 @@ use crate::sealed;
 
 /// An object-safe operator with a runtime identity. `op_id` is an **UNTRUSTED**
 /// hint (a lying op may return any `TypeId`); the *sound* identity check is
-/// [`DynApp::as_op`], which downcasts through [`Any`]. Requiring `Any` (⇒ `'static`)
-/// is what makes that downcast possible.
+/// [`DynApp::as_op`], which downcasts the operator **trait object itself** through
+/// its `Any` supertrait — the compiler-built vtable carries the real concrete
+/// `TypeId`, which downstream code cannot forge. Requiring `Any` (⇒ `'static`) is
+/// what enables that upcast+downcast.
+///
+/// **There is deliberately no `as_any` method:** an `as_any` hook is implemented by
+/// (untrusted) downstream code and could return a reference to a *different* value
+/// of the target type, spoofing the downcast. Upcasting the real `&dyn DynOp` to
+/// `&dyn Any` avoids trusting any downstream-supplied hook.
 pub trait DynOp: Any {
     /// The argument sort.
     type In;
@@ -27,8 +34,6 @@ pub trait DynOp: Any {
     type Out;
     /// Untrusted identity hint — a filter only; never the soundness gate.
     fn op_id(&self) -> TypeId;
-    /// Upcast to [`Any`] so [`DynApp::as_op`] can perform the trusted downcast.
-    fn as_any(&self) -> &dyn Any;
 }
 
 /// A runtime-shaped application: a dynamic operator applied to a statically-sorted
@@ -48,10 +53,13 @@ impl<In, Out> Expr for DynApp<In, Out> {
 
 impl<In: 'static, Out: 'static> DynApp<In, Out> {
     /// View this as an application of the concrete operator `F`. Identity is checked
-    /// by a **trusted** `Any` downcast (`op_id` is only a cheap pre-filter, never
-    /// trusted); returns `(&F, &arg)` when the operator really is an `F`, else
-    /// `None`. A lying `op_id` cannot fool this — the downcast is the gate.
+    /// by upcasting the **real** operator trait object to `&dyn Any` (via the `Any`
+    /// supertrait, stable trait-upcasting) and downcasting — the vtable's `TypeId`
+    /// is the genuine concrete type, so **no downstream hook is trusted** and a
+    /// lying op cannot spoof it. Returns `(&F, &arg)` iff the operator really is an
+    /// `F`, else `None`.
     pub fn as_op<F: DynOp + 'static>(&self) -> Option<(&F, &Dyn<In>)> {
-        self.op.as_any().downcast_ref::<F>().map(|f| (f, &self.arg))
+        let op: &dyn Any = &*self.op;
+        op.downcast_ref::<F>().map(|f| (f, &self.arg))
     }
 }

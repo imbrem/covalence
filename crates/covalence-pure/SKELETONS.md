@@ -18,6 +18,16 @@ few deferred seams remain.
 
 ## Minor — deferred seams
 
+- **Leaf `Eq` must be *stable*** — a certificate is eternal, so a leaf type with
+  *shared* interior mutability (`Rc<Cell<_>>`, …) can make a true-at-mint equality
+  false later. Currently a documented trust obligation (all `StructuralEq` leaves
+  are immutable); not machine-enforced (no stable "no interior mutability" bound).
+- **`Rewrite` conclusion is shape-erased** — `apply_rewrite` mints
+  `Eqn<E, Box<dyn Expr<Ty=E::Ty>>, L>`; the rhs is only sort-checked, not
+  shape-checked (larger trust surface than `Rule`'s typed `Lhs`/`Rhs`). Sound
+  (gated on the rule's `TypeId`), but the rule author must ensure the proposed rhs
+  is genuinely equal.
+
 - **`covalence-pure-derive` (proc macros)** — not built (and no proc-macro crate /
   `syn`/`quote` in the workspace yet — a dependency-policy decision). Wanted: the
   `language!` macro (a child's `MANIFEST.extends` can't embed a parent `Manifest`

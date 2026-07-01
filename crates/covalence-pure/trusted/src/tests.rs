@@ -550,9 +550,6 @@ impl DynOp for MyDynOp {
     fn op_id(&self) -> TypeId {
         TypeId::of::<MyDynOp>()
     }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 struct OtherDynOp;
 impl DynOp for OtherDynOp {
@@ -561,8 +558,17 @@ impl DynOp for OtherDynOp {
     fn op_id(&self) -> TypeId {
         TypeId::of::<OtherDynOp>()
     }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+}
+
+/// A malicious op: its `op_id` claims to be `MyDynOp`. Before the fix (`as_op`
+/// delegating to a downstream `as_any`) this could spoof the downcast; now `as_op`
+/// upcasts the real trait object, so it cannot.
+struct Liar;
+impl DynOp for Liar {
+    type In = u8;
+    type Out = u8;
+    fn op_id(&self) -> TypeId {
+        TypeId::of::<MyDynOp>() // LIE
     }
 }
 
@@ -575,6 +581,19 @@ fn dynapp_downcast_is_trusted() {
     // trusted downcast: recognizes the real operator, rejects the wrong one.
     assert!(app.as_op::<MyDynOp>().is_some());
     assert!(app.as_op::<OtherDynOp>().is_none());
+}
+
+/// Regression for the audit's `as_op` forgery: a lying operator (whose `op_id`
+/// impersonates `MyDynOp`) is NOT accepted as `MyDynOp` — the downcast is on the
+/// real vtable `TypeId`, not any downstream-supplied hook.
+#[test]
+fn dynapp_downcast_rejects_liar() {
+    let app: DynApp<u8, u8> = DynApp {
+        op: Arc::new(Liar),
+        arg: Dyn::new(Val(3u8)),
+    };
+    assert!(app.as_op::<MyDynOp>().is_none(), "must not be spoofed");
+    assert!(app.as_op::<Liar>().is_some(), "sees the real op");
 }
 
 // ============================ Box/Arc/Rc general + Dyn pointer-eq ============================

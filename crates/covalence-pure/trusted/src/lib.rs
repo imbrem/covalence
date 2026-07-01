@@ -6,13 +6,15 @@
 //!
 //! The trust surface, in order of what an auditor must scrutinize:
 //!
-//! 1. [`Eqn`] — the unforgeable certificate. Private fields, no public
-//!    constructor; the only minting paths are this module's calculus + gated
-//!    injectors. `Eqn::new` is **private to [`eqn`]**.
+//! 1. [`Eqn`] — the unforgeable certificate. Private fields, no public constructor.
+//!    The sole mint is `pub(crate) Eqn::new`; audit **every** call site — they are
+//!    exactly: the [`eqn`] equality calculus + gated injectors, the [`prop`] bool
+//!    theory, [`eq`]'s [`decide`], and [`matching`]'s [`apply_rewrite`].
 //! 2. [`Expr`] — **sealed**: the closed grammar of expressions
-//!    ([`Val`]/[`Ref`]/[`App`]/[`True`]/[`False`]/`&A`/`Box<dyn Expr>`/tuples),
-//!    each with a unique sort [`Expr::Ty`]. Compared by **stdlib [`Eq`]**
-//!    (`derive(Eq)` *is* the structural equality `trans` uses).
+//!    ([`Val`]/[`Ref`]`<P: TrustedDeref>`/[`App`]/[`True`]/[`False`]/`&A`/
+//!    `Box`/`Rc`/`Arc<A>`/[`Dyn`]/[`DynApp`]/tuples), each with a unique sort
+//!    [`Expr::Ty`]. Compared by **stdlib [`Eq`]** (`derive(Eq)` *is* the structural
+//!    equality `trans` uses; [`Dyn`] uses pointer equality).
 //! 3. The **gated** minting functions [`apply`]/[`apply0`]/[`canon`]/
 //!    [`apply_rewrite`] and [`Eqn::lift`] — each runtime-checks `admits`/`extends`
 //!    *before* minting. ([`of_eq`]/[`of_eq_with`], [`of_ptr_eq`],
@@ -25,8 +27,13 @@
 //!    manifest rules), and `Bool`, the first real layer (the connectives).
 //!
 //! Equality is trusted via stdlib [`Eq`]: using a sort trusts its `Eq` (true ⟹
-//! equal); "no `Eq`, no comparison". Everything else (the [`Language`] gates,
-//! [`Op`], [`Rule`]/[`CanonRule`]) funnels through the items above.
+//! equal); "no `Eq`, no comparison". **The trusted `Eq` must also be *stable*** —
+//! a certificate is eternal, so a leaf whose equality can change over time (a type
+//! with *shared* interior mutability, e.g. `Rc<Cell<_>>`) can leave a true-at-mint
+//! certificate false later. The audited [`StructuralEq`] leaves are all immutable;
+//! a bespoke interior-mutable leaf is a self-inflicted unsoundness (like a lying
+//! `Eq`). Everything else (the [`Language`] gates, [`Op`], [`Rule`]/[`CanonRule`])
+//! funnels through the items above.
 //!
 //! ## Soundness, in one line
 //!

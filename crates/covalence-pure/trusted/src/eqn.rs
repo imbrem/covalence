@@ -135,6 +135,8 @@ impl<A, A2, L> Eqn<A, A2, L> {
     pub fn cong_app<F>(self, f: F) -> Eqn<App<F, A>, App<F, A2>, L>
     where
         F: crate::op::Op + Clone,
+        A: Expr<Ty = F::In>,
+        A2: Expr<Ty = F::In>,
     {
         Eqn::new(App(f.clone(), self.lhs), App(f, self.rhs), self.lang)
     }

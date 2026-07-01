@@ -10,7 +10,7 @@
 
 use std::any::TypeId;
 
-use crate::expr::{App, Val};
+use crate::expr::{App, Ref, TrustedDeref, Val};
 use crate::lang::{CanonRule, Language, Rule};
 
 /// Errors from the gated minting paths and `trans`.
@@ -24,6 +24,8 @@ pub enum Error {
     TransMismatch,
     /// `trans` was given two different language values.
     LangMismatch,
+    /// `semidecide` could not prove equality (`a != b` under untrusted `Eq`).
+    Undecided,
     /// A [`Rule::conclude`] failed.
     RuleFailed(String),
 }
@@ -124,6 +126,42 @@ impl<A, A2, L: Language> Eqn<A, A2, L> {
         let lang = self.lang.union(other.lang).ok_or(Error::LangMismatch)?;
         Ok(Eqn::new((self.lhs, other.lhs), (self.rhs, other.rhs), lang))
     }
+}
+
+// ---- Pointer equality (via TrustedDeref; no `Eq` on the pointee needed) ----
+
+impl<A, P, L: Language> Eqn<A, Ref<P>, L>
+where
+    P: TrustedDeref,
+    P::Target: Sized,
+{
+    /// Transitivity through a **pointer-equal** middle: from `a = Ref(p)` and
+    /// `Ref(q) = c`, where `p` and `q` are the *same pointer* (address-equal), get
+    /// `a = c` — no `Eq` on the pointee required. Sound: the same address is the
+    /// same value.
+    pub fn trans_ptr<Q, C>(self, rhs: Eqn<Ref<Q>, C, L>) -> Result<Eqn<A, C, L>, Error>
+    where
+        Q: TrustedDeref<Target = P::Target>,
+    {
+        let (a, p, l1) = self.into_parts();
+        let (q, c, l2) = rhs.into_parts();
+        if !std::ptr::eq(&*p.0, &*q.0) {
+            return Err(Error::TransMismatch);
+        }
+        let lang = l1.union(l2).ok_or(Error::LangMismatch)?;
+        Ok(Eqn::new(a, c, lang))
+    }
+}
+
+/// `Ref(p) = Ref(q)` when `p` and `q` are the **same pointer** (address-equal) —
+/// sound without any `Eq` on the pointee. The pointer-equality seam for sharing.
+pub fn of_ptr_eq<P, Q, L>(p: Ref<P>, q: Ref<Q>, lang: L) -> Option<Eqn<Ref<P>, Ref<Q>, L>>
+where
+    P: TrustedDeref,
+    Q: TrustedDeref<Target = P::Target>,
+    P::Target: Sized,
+{
+    std::ptr::eq(&*p.0, &*q.0).then(|| Eqn::new(p, q, lang))
 }
 
 // ---- Lift: weaken the language one layer (sound: tree(L2) ⊆ tree(L)) ----

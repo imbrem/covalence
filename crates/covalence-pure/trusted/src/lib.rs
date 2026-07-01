@@ -14,9 +14,12 @@
 //!    each with a unique sort [`Expr::Ty`]. Compared by **stdlib [`Eq`]**
 //!    (`derive(Eq)` *is* the structural equality `trans` uses).
 //! 3. The **gated** minting functions [`apply`]/[`canon`] and [`Eqn::lift`] — each
-//!    runtime-checks `admits`/`extends` *before* minting. ([`of_eq`] is ungated —
-//!    leaf equality is intrinsic to a sort.)
-//! 4. `impl Language for ()` (in [`base`]) — the **empty** trivial base every
+//!    runtime-checks `admits`/`extends` *before* minting. ([`of_eq`], [`of_ptr_eq`],
+//!    [`decide`]/[`semidecide`], the calculus, and the [`prop`] bool theory are
+//!    ungated — leaf/structural equality is intrinsic to a sort.)
+//! 4. [`StructuralEq`] (in [`eq`]) — the sealed "`Eq` is fully correct" claim that
+//!    powers [`decide`]; the audited base-type leaves live here.
+//! 5. `impl Language for ()` (in [`base`]) — the **empty** trivial base every
 //!    language inherits (the equality calculus is ungated `Eqn` methods, not
 //!    manifest rules), and `Bool`, the first real layer (the connectives).
 //!
@@ -39,12 +42,14 @@
 #![allow(clippy::type_complexity)]
 
 mod base;
+mod eq;
 mod eqn;
 mod expr;
 mod lang;
 mod op;
 mod prop;
 
+pub use eq::*;
 pub use eqn::*;
 pub use expr::*;
 pub use lang::*;

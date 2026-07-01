@@ -361,3 +361,98 @@ fn unit_manifest_is_empty() {
 fn dyn_expr_is_constructible() {
     let _d: Box<dyn Expr<Ty = bool>> = Box::new(App(Not, Val(true)));
 }
+
+// ============================ StructuralEq / decide ============================
+
+#[test]
+fn decide_true_and_false() {
+    // A `StructuralEq` sort (u32) decides equality BOTH ways.
+    let t = decide(5u32, 5u32, ());
+    assert!(t.is_left(), "5 = 5 decided true");
+    assert_eq!(t.left().unwrap().rhs(), &True);
+
+    let f = decide(5u32, 6u32, ());
+    assert!(f.is_right(), "5 = 6 decided false");
+    assert_eq!(f.right().unwrap().rhs(), &False);
+}
+
+#[test]
+fn semidecide_positive_only() {
+    let ok = semidecide(3u8, 3u8, ()).expect("3 == 3");
+    assert_eq!(ok.rhs(), &True);
+    // plain `Eq` only trusts the true direction ⇒ inequality is Undecided.
+    assert_eq!(semidecide(3u8, 4u8, ()).unwrap_err(), Error::Undecided);
+}
+
+#[test]
+fn structural_eq_covers_component_types() {
+    // Composite / covalence base types are decidable sorts.
+    assert!(decide(vec![1u8, 2, 3], vec![1u8, 2, 3], ()).is_left());
+    assert!(decide(Some(4u16), None, ()).is_right());
+    assert!(decide((1u8, 2u16, 3u32), (1u8, 2u16, 3u32), ()).is_left());
+    assert!(
+        decide(
+            covalence_types::Nat::from(7u32),
+            covalence_types::Nat::from(7u32),
+            ()
+        )
+        .is_left()
+    );
+}
+
+#[test]
+fn float_wrapper_canonicalizes_nan_and_splits_zero() {
+    // Every NaN canonicalizes to one value ⇒ reflexive (bare f32 could not).
+    assert_eq!(F32::new(f32::NAN), F32::new(f32::NAN));
+    assert!(decide(F32::new(f32::NAN), F32::new(f32::NAN), ()).is_left());
+    // structural (bitwise) identity distinguishes +0.0 from -0.0.
+    assert_ne!(F32::new(0.0), F32::new(-0.0));
+    assert!(decide(F64::new(0.0), F64::new(-0.0), ()).is_right());
+}
+
+// ============================ n-ary tuples ============================
+
+#[test]
+fn nary_tuple_is_an_expr() {
+    let t = (Val(1u8), Val(2u16), Val(3u32), Val(4u64), Val(5u128));
+    let e = Eqn::refl(t, ());
+    assert_eq!(e.lhs().0, Val(1u8));
+    assert_eq!(e.lhs().4, Val(5u128));
+}
+
+// ============================ pointer equality ============================
+
+// A type deliberately WITHOUT `Eq` — pointer equality must still work. (`Debug`
+// only so `Result::unwrap_err` can print the `Ok` side in the mismatch test.)
+#[derive(Debug)]
+struct NoEq(u8);
+
+#[test]
+fn of_ptr_eq_same_allocation() {
+    let shared = Rc::new(NoEq(7));
+    let e = of_ptr_eq(Ref(shared.clone()), Ref(shared.clone()), ()).expect("same allocation");
+    assert_eq!((e.lhs().0).0, 7);
+    // distinct allocations are not pointer-equal (no `Eq` to fall back on):
+    assert!(of_ptr_eq(Ref(Rc::new(NoEq(7))), Ref(Rc::new(NoEq(7))), ()).is_none());
+    // works for &T and Arc<T> too:
+    let x = NoEq(1);
+    assert!(of_ptr_eq(Ref(&x), Ref(&x), ()).is_some());
+    let a = Arc::new(NoEq(2));
+    assert!(of_ptr_eq(Ref(a.clone()), Ref(a.clone()), ()).is_some());
+}
+
+#[test]
+fn trans_ptr_through_shared_middle() {
+    let s = Rc::new(NoEq(9));
+    let e1 = of_ptr_eq(Ref(s.clone()), Ref(s.clone()), ()).unwrap();
+    let e2 = of_ptr_eq(Ref(s.clone()), Ref(s.clone()), ()).unwrap();
+    // the two middles are the same pointer ⇒ trans_ptr succeeds without `Eq`.
+    let chained = e1.trans_ptr(e2).expect("pointer-equal middle");
+    assert_eq!((chained.lhs().0).0, 9);
+
+    // different middle allocations ⇒ mismatch (g1's middle is `s`, g2's is `other`).
+    let other = Rc::new(NoEq(1));
+    let g1 = of_ptr_eq(Ref(s.clone()), Ref(s.clone()), ()).unwrap();
+    let g2 = of_ptr_eq(Ref(other.clone()), Ref(other.clone()), ()).unwrap();
+    assert_eq!(g1.trans_ptr(g2).unwrap_err(), Error::TransMismatch);
+}

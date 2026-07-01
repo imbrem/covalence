@@ -104,9 +104,24 @@ impl<T> Expr for Box<dyn Expr<Ty = T>> {
     type Ty = T;
 }
 
-// Products: 2-tuples of expressions are expressions of the product sort. `(A, B)`
-// is `Eq` (via std) whenever `A` and `B` are.
-impl<A: Expr, B: Expr> sealed::Sealed for (A, B) {}
-impl<A: Expr, B: Expr> Expr for (A, B) {
-    type Ty = (A::Ty, B::Ty);
+// Products: tuples of expressions are expressions of the product sort (up to
+// 12-ary). `(A, …)` is `Eq` (via std) whenever its components are.
+macro_rules! tuple_expr {
+    ($($T:ident),+) => {
+        impl<$($T: Expr),+> sealed::Sealed for ($($T,)+) {}
+        impl<$($T: Expr),+> Expr for ($($T,)+) {
+            type Ty = ($($T::Ty,)+);
+        }
+    };
 }
+tuple_expr!(A, B);
+tuple_expr!(A, B, C);
+tuple_expr!(A, B, C, D);
+tuple_expr!(A, B, C, D, E);
+tuple_expr!(A, B, C, D, E, F);
+tuple_expr!(A, B, C, D, E, F, G);
+tuple_expr!(A, B, C, D, E, F, G, H);
+tuple_expr!(A, B, C, D, E, F, G, H, I);
+tuple_expr!(A, B, C, D, E, F, G, H, I, J);
+tuple_expr!(A, B, C, D, E, F, G, H, I, J, K);
+tuple_expr!(A, B, C, D, E, F, G, H, I, J, K, L);

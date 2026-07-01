@@ -11,3 +11,7 @@ covalence-types = { path = "../covalence-types" }
 covalence-sat = { path = "../covalence-sat" }
 covalence-sexp = { path = "../covalence-sexp" }
 thiserror = "2"
+
+[package.metadata.cargo-machete]
+# Intentional layering (SMT = SAT + theories); no code use yet, wired when solving lands.
+ignored = ["covalence-sat"]

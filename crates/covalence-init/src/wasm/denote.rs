@@ -231,6 +231,25 @@ mod tests {
         assert_eq!(t.type_of().unwrap(), Type::nat());
     }
 
+    /// The denotation is not just well-typed — it is genuinely *computable* HOL:
+    /// the kernel reduces `⌜1 + 2⌝ = nat.add 1 2` to `3`. This is the payoff of
+    /// leg B over leg A's uninterpreted `nat` algebra: real terms you can evaluate
+    /// and reason about.
+    #[test]
+    fn denotation_is_computable() {
+        use crate::init::ext::TermExt;
+        let e = SpecTecExp::Bin {
+            op: SpecTecBinOp::Add,
+            t: nat_op_ty(),
+            e1: Box::new(num(1)),
+            e2: Box::new(num(2)),
+        };
+        let t = denote(&e, &empty()).unwrap();
+        let thm = t.reduce().unwrap(); // ⊢ nat.add 1 2 = <nf>
+        let rhs = thm.concl().as_eq().expect("an equation").1.clone();
+        assert_eq!(rhs, Term::nat_lit(3u32));
+    }
+
     #[test]
     fn comparison_is_bool_typed() {
         // 1 < 2 : bool

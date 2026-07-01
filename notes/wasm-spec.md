@@ -124,11 +124,13 @@ WASM type system. Two entry points:
 2. **Leg B: denotational typed HOL** *(started — the user-requested "explicit HOL
    terms")*. `wasm::denote` renders the value fragment to real catalogue-typed HOL;
    `wasm::syntax` renders types (aliases/primitives/tuples/iteration + **struct →
-   `prod`** + **non-recursive variant → coproduct-of-payloads** — 72-of-207).
-   Variants go through a generic, **backend-swappable** API
-   (`crate::init::inductive::{Variant, VariantBackend, CoprodBackend}`) so the
-   encoding can change (sealed `new_type_definition` / impredicative) without the
-   callers — important while `covalence-pure` (the kernel backend) is in flux.
+   `prod`** + **non-recursive variant → coproduct-of-payloads** + **self-recursive
+   variant → impredicative `ChurchBackend` `Φ⟨'r⟩`** + **parametric application
+   `T(A…)`** — 113-of-207; remaining are mutually-recursive variants and
+   `text`/`rat`/`real`). Variants go through a generic, **backend-swappable** API
+   (`crate::init::inductive::{Variant, VariantBackend, CoprodBackend, ChurchBackend}`)
+   so the encoding can change (sealed `new_type_definition` / impredicative) without
+   the callers — important while `covalence-pure` (the kernel backend) is in flux.
    `denote` also renders variant **constructor** applications (`DenoteCtx::from_spec`
    builds a case→constructor registry over the rendered variants; `case` →
    `CoprodBackend` ctor applied to the payload).

@@ -43,3 +43,4 @@ pub mod denote;
 pub mod encode;
 pub mod relation;
 pub mod spec;
+pub mod syntax;

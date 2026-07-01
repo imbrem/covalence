@@ -121,12 +121,14 @@ WASM type system. Two entry points:
    sets with cross-relation premises; `wasm::spec` grounds it in the real 3.0 dump
    (274 rules / 64-of-125 relations). Remaining leg-A gap: iterated (`…*`) premises
    (list recursion over premises).
-2. **Leg B: denotational typed HOL** *(next — the user-requested "explicit HOL
-   terms")*. `Typ` → real HOL types (via `crate::init` inductive engine), `Dec`
-   functions → recursive `define`s + computation rules, relations → HOL predicates
-   over those types. Unlocks the 221 skipped **side-condition** rules (a side
-   condition is a decidable function predicate). Modules: `wasm/{syntax,function,
-   denote}.rs`.
+2. **Leg B: denotational typed HOL** *(started — the user-requested "explicit HOL
+   terms")*. `wasm::denote` renders the value fragment to real catalogue-typed HOL;
+   `wasm::syntax` renders types (aliases/primitives/tuples/iteration — 25-of-207;
+   variants/structs need the `crate::init` datatype engine, the gating item).
+   Remaining: variant/struct datatypes, `Dec` functions → recursive `define`s +
+   computation rules (`wasm/function.rs`), then relations → HOL predicates over
+   those types — which unlocks the 221 skipped **side-condition** rules (a side
+   condition is a decidable function predicate `denote`-d to `bool`).
 3. **Grammars** — finish the **CFG stratum** in `grammar/spectec` so the binary
    decoder covers whole `gram` productions (`grammar/spectec/SKELETONS.md`).
 4. **WASM acceleration (the payoff, roadmap Phase E/F).** With `Step`/typing as

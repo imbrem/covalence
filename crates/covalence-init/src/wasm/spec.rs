@@ -15,7 +15,7 @@
 use covalence_spectec::ast::SpecTecDef;
 use covalence_spectec::wasm::get_wasm_spectec_ast;
 
-use super::relation;
+use super::{relation, syntax};
 
 /// The bundled WebAssembly 3.0 spec as a flat list of top-level definitions.
 pub fn wasm_spec() -> Vec<SpecTecDef> {
@@ -68,6 +68,28 @@ pub fn fully_lowered_relations(defs: &[SpecTecDef]) -> (usize, usize) {
     (ok, total)
 }
 
+/// How many `Typ` definitions render to a HOL type via [`syntax::resolve_def`]
+/// (aliases/primitives/tuples/iteration; variants/structs/parametric don't yet),
+/// out of the total type count.
+pub fn rendered_types(defs: &[SpecTecDef]) -> (usize, usize) {
+    fn typs<'a>(d: &'a SpecTecDef, out: &mut Vec<&'a SpecTecDef>) {
+        match d {
+            SpecTecDef::Typ { .. } => out.push(d),
+            SpecTecDef::Rec { ds } => ds.iter().for_each(|x| typs(x, out)),
+            _ => {}
+        }
+    }
+    let mut all = Vec::new();
+    defs.iter().for_each(|d| typs(d, &mut all));
+    let ctx = syntax::TypeCtx::new(defs);
+    let total = all.len();
+    let ok = all
+        .iter()
+        .filter(|d| syntax::resolve_def(d, &ctx).is_ok())
+        .count();
+    (ok, total)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,6 +117,7 @@ mod tests {
         let (rs, report) = relation::spec_rule_set(&defs);
         let clauses = rs.n_clauses().unwrap();
         let (full_ok, full_total) = fully_lowered_relations(&defs);
+        let (typ_ok, typ_total) = rendered_types(&defs);
 
         println!("inventory: {inv:?}");
         println!(
@@ -102,6 +125,7 @@ mod tests {
             clauses, report.lowered, report.skipped
         );
         println!("whole relations lowered: {full_ok} / {full_total}");
+        println!("types rendered to HOL (leg B): {typ_ok} / {typ_total}");
         println!("--- skip reasons ---");
         let mut v: Vec<_> = report.skips.iter().collect();
         v.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
@@ -116,5 +140,6 @@ mod tests {
         assert!(report.lowered >= 250, "rules lowered = {}", report.lowered);
         assert_eq!(clauses, report.lowered);
         assert!(full_ok >= 60, "whole relations lowered = {full_ok}");
+        assert!(typ_ok >= 10, "types rendered = {typ_ok}");
     }
 }

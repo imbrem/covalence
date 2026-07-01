@@ -3,24 +3,25 @@
 The SpecTec → kernel front end (WASM-spec acceleration). Input is SpecTec AST
 S-expressions (`covalence_spectec::parse`); no `.watsup` frontend. Design +
 phasing: [`notes/wasm-spec.md`](../../../../notes/wasm-spec.md). Live coverage:
-`spec::coverage_report` (currently 274 rules / 64-of-125 whole relations of the
-bundled WASM 3.0 spec via the *syntactic* leg). See
+`spec::coverage_report` (bundled WASM 3.0 spec — leg A: 274 rules / 64-of-125
+relations; leg B: 25-of-207 types rendered). See
 [CLAUDE.md](../../../../CLAUDE.md) § Skeletons, the
 [crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
 
 ## Severe / blocking
 
-- **Denotational leg: only the value fragment.** `wasm::denote` renders bool/
-  `nat`/`int` literals + arithmetic/comparison, tuples (→ `prod`), non-empty lists,
-  `some`, and env-typed metavariables to real typed HOL. Still missing: **`Typ` →
-  real HOL types** (variant types `valtype`/`instr`/… as datatypes via the
-  `crate::init` inductive engine — `wasm/syntax.rs`), **`Dec` functions → real
-  recursive `define`s** + computation rules (`wasm/function.rs`), records, `cat`,
-  empty collections (need element-type annotations). Until types exist, `denote`
-  errors on variant-typed expressions.
+- **Variant/struct types → HOL datatypes.** `wasm::syntax` renders aliases /
+  primitives / tuples / iteration (25-of-207 spec types); the rest are **variant**
+  (`valtype`/`instr`/…) and **struct** types that need real inductive datatypes via
+  the `crate::init` engine, plus parametric types (`vec(X)`) and `text`/`rat`/`real`.
+  This is the gating item — until variants render, `denote` errors on their
+  expressions and most typing relations can't get a denotational reading.
+- **`Dec` functions → real `define`s.** The 462 metafunctions have no recursive
+  `define` + computation rules yet (`wasm/function.rs`). `denote` covers the value
+  *expressions* they're built from, not the definitions.
 - **Relations → HOL predicates over those types (leg B) not started.** Once
-  `syntax`/`function` land, lift each `Rel` to a real HOL inductive predicate
-  (the denotational mirror of `relation`'s `Derivable_R`).
+  `syntax` (variants) + `function` land, lift each `Rel` to a real HOL inductive
+  predicate (the denotational mirror of `relation`'s `Derivable_R`).
 - **Side-condition premises (`if`/`let`) skipped** — 221 rules of the spec. These
   need the denotational leg (a side condition is a decidable *function* predicate,
   `denote`-d to a `bool`, not an inductive premise). Biggest single coverage

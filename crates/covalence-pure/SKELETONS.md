@@ -18,12 +18,17 @@ few deferred seams remain.
 
 ## Minor — deferred seams
 
-- **`language!` macro + `covalence-pure-derive`** — not built; languages are
-  hand-written. Consequence: a child `Language`'s `MANIFEST.extends` cannot embed
-  a parent `Manifest` by value in a `const` (const-eval wrinkle), so the macro
-  must build the nested static tree; until then `extends()` (the function) is the
-  authoritative `lift` gate, and hand-written child manifests leave `extends`
-  empty.
+- **`covalence-pure-derive` (proc macros)** — not built (and no proc-macro crate /
+  `syn`/`quote` in the workspace yet — a dependency-policy decision). Wanted: the
+  `language!` macro (a child's `MANIFEST.extends` can't embed a parent `Manifest`
+  by value in a `const` — const-eval wrinkle — so `extends()` is the authoritative
+  `lift` gate for now), and a **rewrite-rule** macro (e.g. `(a+b)=(b+a)`). The
+  rewrite macro is **blocked on a design fork**: a parameterized rule's full
+  `TypeId` differs per operand, so it can't be admitted once — needs either
+  dynamic operands (`Box<dyn Expr>`, monomorphic rule, one `TypeId`) or an
+  `admits`-family predicate. NOT a coarse associated `Id` (that's the forgery hole).
+- **Unsized sorts** — `Ref` requires `P::Target: Sized`, and `StructuralEq` is only
+  wired for sized types, so `str`/`[T]` can't be sorts yet.
 - **Name overlay + golden-file pin** — the untrusted `Named`/`TypeId→name` trait
   and the name-projected golden `MANIFEST` diff are not built; the test asserts
   the raw `TypeId` list directly.

@@ -6,6 +6,8 @@
 
 use super::*;
 
+use crate::hol;
+
 fn n() -> Term {
     Term::free("n", Type::nat())
 }

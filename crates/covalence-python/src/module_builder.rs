@@ -53,8 +53,6 @@ impl FuncRef {
 #[derive(Clone)]
 pub struct InstanceRef {
     pub(crate) index: usize,
-    #[allow(dead_code)]
-    pub(crate) exports: Vec<String>,
 }
 
 #[pymethods]
@@ -409,10 +407,7 @@ impl ModuleBuilder {
             push_import(&mut sys.modules[self.id], &ns, name, &[], &[]);
         }
 
-        Ok(InstanceRef {
-            index: inst_index,
-            exports: export_names,
-        })
+        Ok(InstanceRef { index: inst_index })
     }
 }
 

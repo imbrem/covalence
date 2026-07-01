@@ -125,6 +125,45 @@ impl VariantBackend for CoprodBackend {
     }
 }
 
+/// The reserved type variable a **recursive** payload uses for the type being
+/// defined (`Φ⟨'r⟩`'s `'r`). A caller building a recursive [`Variant`] substitutes
+/// this for the type's self-references before handing the payloads over, and
+/// [`ChurchBackend`] uses it as the fold's result type.
+pub fn self_ty_var() -> Type {
+    Type::tfree("cov$self")
+}
+
+/// The impredicative (Church-encoded) backend, for **recursive** variants the
+/// coproduct backend can't express: `ty = (P₀ → r) → (P₁ → r) → … → r` where `r`
+/// is [`self_ty_var`] and each recursive occurrence inside a payload is already
+/// `r`. This is the polymorphic `Φ⟨'r⟩` encoding used across the catalogue
+/// (`init::prop`, `metalogic::toy`); a monomorphic sealed type is a later backend.
+///
+/// Only the type is built here; the recursive constructor/fold terms need the
+/// handler-threading machinery (`metalogic::toy`-style) and are deferred.
+pub struct ChurchBackend;
+
+impl VariantBackend for ChurchBackend {
+    fn ty(&self, v: &Variant) -> Result<Type> {
+        if v.ctors.is_empty() {
+            return Err(variant_err("empty variant has no type"));
+        }
+        let r = self_ty_var();
+        let mut acc = r.clone();
+        for p in v.payloads().iter().rev() {
+            // handler for this constructor: payload → r
+            acc = Type::fun(Type::fun(p.clone(), r.clone()), acc);
+        }
+        Ok(acc)
+    }
+
+    fn ctor(&self, _v: &Variant, _i: usize) -> Result<Term> {
+        Err(variant_err(
+            "recursive constructor terms not built yet (needs handler-threading)",
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +229,23 @@ mod tests {
     #[test]
     fn out_of_range_constructor_errors() {
         assert!(CoprodBackend.ctor(&enum3(), 3).is_err());
+    }
+
+    #[test]
+    fn church_backend_builds_a_recursive_type() {
+        // nat-like: ZERO (unit) | SUCC (self) — the SUCC payload is `self_ty_var`.
+        let r = self_ty_var();
+        let v = Variant::new(vec![
+            VCtor::new("ZERO", Type::unit()),
+            VCtor::new("SUCC", r.clone()),
+        ]);
+        // Φ = (unit → r) → (r → r) → r
+        let expected = Type::fun(
+            Type::fun(Type::unit(), r.clone()),
+            Type::fun(Type::fun(r.clone(), r.clone()), r.clone()),
+        );
+        assert_eq!(ChurchBackend.ty(&v).unwrap(), expected);
+        // the recursive constructor terms are deferred.
+        assert!(ChurchBackend.ctor(&v, 1).is_err());
     }
 }

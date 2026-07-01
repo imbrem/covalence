@@ -23,7 +23,9 @@ use covalence_spectec::ast::{
     SpecTecTypCase, SpecTecTypField,
 };
 
-use crate::init::inductive::{CoprodBackend, VCtor, Variant, VariantBackend};
+use crate::init::inductive::{
+    ChurchBackend, CoprodBackend, VCtor, Variant, VariantBackend, self_ty_var,
+};
 use crate::init::{list, option, prod};
 
 fn syntax_err(msg: impl Into<String>) -> Error {
@@ -60,7 +62,7 @@ impl<'a> TypeCtx<'a> {
 
 /// Render a SpecTec type to a HOL [`Type`], chasing named aliases through `ctx`.
 pub fn resolve_typ(t: &SpecTecTyp, ctx: &TypeCtx) -> Result<Type> {
-    resolve_typ_d(t, ctx, &mut Vec::new())
+    resolve_typ_d(t, ctx, &mut Vec::new(), None)
 }
 
 /// Render the type a `SpecTecDef::Typ` denotes (a top-level alias). Errors on
@@ -72,10 +74,16 @@ pub fn resolve_def(def: &SpecTecDef, ctx: &TypeCtx) -> Result<Type> {
     resolve_named(x, ctx, &mut Vec::new())
 }
 
+/// `self_name` is `Some(T)` while resolving the *direct payload structure* of
+/// variant `T`: a `Var { T }` there maps to [`self_ty_var`] (a recursive
+/// occurrence) instead of recursing — which is what lets [`ChurchBackend`] render
+/// recursive variants. It does not cross a named-type boundary (a payload that
+/// references another type resolves that type fresh, `self_name = None`).
 fn resolve_typ_d<'a>(
     t: &'a SpecTecTyp,
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
+    self_name: Option<&str>,
 ) -> Result<Type> {
     match t {
         SpecTecTyp::Bool => Ok(Type::bool()),
@@ -83,9 +91,9 @@ fn resolve_typ_d<'a>(
         SpecTecTyp::Num(SpecTecNumTyp::Int) => Ok(Type::int()),
         SpecTecTyp::Num(nt) => Err(syntax_err(format!("numeric type {nt:?} not modelled yet"))),
         SpecTecTyp::Text => Err(syntax_err("text type not modelled yet")),
-        SpecTecTyp::Tup { ets } => resolve_tuple(ets, ctx, visited),
+        SpecTecTyp::Tup { ets } => resolve_tuple(ets, ctx, visited, self_name),
         SpecTecTyp::Iter { t1, it } => {
-            let mut ty = resolve_typ_d(t1, ctx, visited)?;
+            let mut ty = resolve_typ_d(t1, ctx, visited, self_name)?;
             for step in it {
                 ty = match step {
                     SpecTecIter::Opt => option::option(ty),
@@ -102,6 +110,10 @@ fn resolve_typ_d<'a>(
                     "parametric type `{x}` not modelled yet"
                 )));
             }
+            // A recursive self-reference inside the current variant's payload.
+            if self_name == Some(x.as_str()) {
+                return Ok(self_ty_var());
+            }
             resolve_named(x, ctx, visited)
         }
     }
@@ -113,13 +125,14 @@ fn resolve_tuple<'a>(
     ets: &'a [SpecTecTypBind],
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
+    self_name: Option<&str>,
 ) -> Result<Type> {
     match ets {
         [] => Ok(Type::unit()),
-        [SpecTecTypBind::Bind { typ, .. }] => resolve_typ_d(typ, ctx, visited),
+        [SpecTecTypBind::Bind { typ, .. }] => resolve_typ_d(typ, ctx, visited, self_name),
         [SpecTecTypBind::Bind { typ, .. }, rest @ ..] => {
-            let head = resolve_typ_d(typ, ctx, visited)?;
-            let tail = resolve_tuple(rest, ctx, visited)?;
+            let head = resolve_typ_d(typ, ctx, visited, self_name)?;
+            let tail = resolve_tuple(rest, ctx, visited, self_name)?;
             Ok(prod::prod(head, tail))
         }
     }
@@ -148,19 +161,21 @@ fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str
             "parametric type `{name}` not modelled yet"
         )));
     }
-    // Descend under `name` so a self-referential (recursive) type surfaces as a
-    // cyclic-alias error and is deferred to the recursion engine, not looped on.
+    // Descend under `name`: aliases/structs surface a self-reference as a cyclic
+    // error (deferred), while variants map self-references to `self_ty_var` and
+    // render recursively via `ChurchBackend`.
     visited.push(name);
     let r = match dt {
-        SpecTecDefTyp::Alias { typ } => resolve_typ_d(typ, ctx, visited),
+        SpecTecDefTyp::Alias { typ } => resolve_typ_d(typ, ctx, visited, None),
         SpecTecDefTyp::Struct { tfs } => resolve_struct(tfs, ctx, visited),
-        SpecTecDefTyp::Variant { tcs } => resolve_variant(tcs, ctx, visited),
+        SpecTecDefTyp::Variant { tcs } => resolve_variant(name, tcs, ctx, visited),
     };
     visited.pop();
     r
 }
 
 /// A record type → the right-nested `prod` of its field types (`{}` = `unit`).
+/// (Structs are not self-recursive here — a recursive record is deferred.)
 fn resolve_struct<'a>(
     tfs: &'a [SpecTecTypField],
     ctx: &TypeCtx<'a>,
@@ -170,32 +185,46 @@ fn resolve_struct<'a>(
         [] => Ok(Type::unit()),
         [SpecTecTypField::Field { t, qs, .. }] => {
             reject_parametric_field(qs)?;
-            resolve_typ_d(t, ctx, visited)
+            resolve_typ_d(t, ctx, visited, None)
         }
         [SpecTecTypField::Field { t, qs, .. }, rest @ ..] => {
             reject_parametric_field(qs)?;
-            let head = resolve_typ_d(t, ctx, visited)?;
+            let head = resolve_typ_d(t, ctx, visited, None)?;
             let tail = resolve_struct(rest, ctx, visited)?;
             Ok(prod::prod(head, tail))
         }
     }
 }
 
-/// A variant type → a coproduct-of-payloads via the generic non-recursive
-/// datatype backend ([`crate::init::inductive`]). Each case's payload is its
-/// resolved field type; a self-referential case fails the cyclic-alias guard and
-/// defers the whole type.
+/// A variant type → a coproduct-of-payloads (non-recursive, [`CoprodBackend`]) or,
+/// if any payload references `name` (a recursive occurrence, now `self_ty_var`),
+/// the impredicative [`ChurchBackend`] `Φ⟨'r⟩`.
 fn resolve_variant<'a>(
+    name: &'a str,
     tcs: &'a [SpecTecTypCase],
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
 ) -> Result<Type> {
-    CoprodBackend.ty(&build_variant(tcs, ctx, visited)?)
+    let v = build_variant(name, tcs, ctx, visited)?;
+    if is_recursive(&v) {
+        ChurchBackend.ty(&v)
+    } else {
+        CoprodBackend.ty(&v)
+    }
 }
 
-/// The generic [`Variant`] description a non-recursive variant's cases denote
-/// (constructor name = case mixop key, payload = resolved case type).
+/// Whether any constructor payload mentions the self type variable.
+fn is_recursive(v: &Variant) -> bool {
+    let self_tv = self_ty_var().free_tvars();
+    v.ctors
+        .iter()
+        .any(|c| c.payload.free_tvars().iter().any(|t| self_tv.contains(t)))
+}
+
+/// The generic [`Variant`] description a variant's cases denote (constructor name
+/// = case mixop key, payload = resolved case type, self-references → `self_ty_var`).
 fn build_variant<'a>(
+    name: &'a str,
     tcs: &'a [SpecTecTypCase],
     ctx: &TypeCtx<'a>,
     visited: &mut Vec<&'a str>,
@@ -206,7 +235,7 @@ fn build_variant<'a>(
     let mut ctors = Vec::with_capacity(tcs.len());
     for SpecTecTypCase::Field { op, t, qs, .. } in tcs {
         reject_parametric_field(qs)?;
-        let payload = resolve_typ_d(t, ctx, visited)?;
+        let payload = resolve_typ_d(t, ctx, visited, Some(name))?;
         ctors.push(VCtor::new(super::encode::mixop_key(op), payload));
     }
     Ok(Variant::new(ctors))
@@ -236,9 +265,8 @@ pub fn variant_of(def: &SpecTecDef, ctx: &TypeCtx) -> Result<Variant> {
     let SpecTecDefTyp::Variant { tcs } = dt else {
         return Err(syntax_err(format!("`{x}` is not a variant")));
     };
-    // Guard self-reference (recursive variants deferred), matching `resolve_named`.
     let mut visited = vec![x.as_str()];
-    build_variant(tcs, ctx, &mut visited)
+    build_variant(x, tcs, ctx, &mut visited)
 }
 
 fn reject_parametric_field(qs: &[covalence_spectec::ast::SpecTecParam]) -> Result<()> {
@@ -386,10 +414,10 @@ mod tests {
         );
     }
 
-    /// A recursive variant (a case referring back to itself) is deferred, not
-    /// looped on — the cyclic-alias guard fires.
+    /// A recursive variant renders to the impredicative Church type `Φ⟨'r⟩`
+    /// (self-references → the result var), not looped on.
     #[test]
-    fn recursive_variant_is_deferred() {
+    fn recursive_variant_renders_to_church_type() {
         // tree = LEAF | NODE tree   (NODE's payload references `tree`)
         let def = variant_def(
             "tree",
@@ -399,7 +427,40 @@ mod tests {
             ],
         );
         let ctx = TypeCtx::new(std::slice::from_ref(&def));
-        assert!(resolve_def(&def, &ctx).is_err());
+        let r = self_ty_var();
+        // Φ = (unit → r) → (r → r) → r
+        let expected = Type::fun(
+            Type::fun(Type::unit(), r.clone()),
+            Type::fun(Type::fun(r.clone(), r.clone()), r.clone()),
+        );
+        assert_eq!(resolve_def(&def, &ctx).unwrap(), expected);
+    }
+
+    /// A recursive occurrence *under a list* (`instr*`-style) renders too: the
+    /// self reference becomes `list r`.
+    #[test]
+    fn recursion_under_list_renders() {
+        let def = variant_def(
+            "seq",
+            vec![
+                variant_case("NIL", unit_ty()),
+                variant_case(
+                    "MORE",
+                    SpecTecTyp::Iter {
+                        t1: Box::new(var("seq")),
+                        it: vec![SpecTecIter::List],
+                    },
+                ),
+            ],
+        );
+        let ctx = TypeCtx::new(std::slice::from_ref(&def));
+        let r = self_ty_var();
+        // Φ = (unit → r) → (list r → r) → r
+        let expected = Type::fun(
+            Type::fun(Type::unit(), r.clone()),
+            Type::fun(Type::fun(list::list(r.clone()), r.clone()), r.clone()),
+        );
+        assert_eq!(resolve_def(&def, &ctx).unwrap(), expected);
     }
 
     #[test]

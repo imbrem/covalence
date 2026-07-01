@@ -12,6 +12,7 @@
 //! terms (and [`of_eq`](crate::of_eq) to introduce a leaf equation). "No `Eq`, no
 //! comparison": a shape whose leaves aren't `Eq` simply can't be a `trans` middle.
 
+use std::any::Any;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -71,6 +72,27 @@ impl<F: Op, A: Expr<Ty = F::In>> Expr for App<F, A> {
     type Ty = F::Out;
 }
 
+/// Downcast the **dynamic operator** of a dynamic application `App<Arc<dyn Op<..>>,
+/// A>` to a concrete op type `F`, returning `(&F, &arg)` iff the operator really is
+/// an `F`.
+///
+/// **Trusted, and load-bearing.** Identity is checked by upcasting the *real*
+/// operator trait object `&dyn Op<In=I, Out=O>` to `&dyn Any` (via the [`Any`]
+/// supertrait — stable trait-upcasting) and calling [`Any::downcast_ref`]: the
+/// vtable's `TypeId` is the genuine concrete type, so **no downstream-supplied hook
+/// is trusted** and a lying op cannot spoof the downcast. There is deliberately no
+/// `as_any` hook (a downstream `as_any` could return a reference to a *different*
+/// value of the target type). This was the previous audit's HIGH fix; do NOT
+/// reintroduce a downstream identity hook.
+impl<I: 'static, O: 'static, A> App<Arc<dyn Op<In = I, Out = O>>, A> {
+    /// View the operator as a concrete `F`. `Some((&f, &arg))` iff the operator's
+    /// real type is `F`, else `None`.
+    pub fn as_op<F: Op<In = I, Out = O>>(&self) -> Option<(&F, &A)> {
+        let op: &dyn Any = &*self.0;
+        op.downcast_ref::<F>().map(|f| (f, &self.1))
+    }
+}
+
 /// The canonical boolean constant `⊤`. Propositions reduce to `True`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct True;
@@ -118,9 +140,10 @@ ptr_expr!(Arc);
 
 /// A dynamic, runtime-shaped operand of sort `T` (`Arc<dyn Expr<Ty=T>>`) with
 /// **pointer equality**: two `Dyn`s are equal iff they share the same allocation.
-/// That makes `Dyn` a valid `trans` middle through the *ordinary* [`Eqn::trans`]
-/// (it is `Eq`), giving pointer-equality transitivity with NO `Eq` on the
-/// underlying dynamic expression. Sealed ⇒ ZERO new TCB.
+/// That makes `Dyn` a valid `trans` middle through the *ordinary*
+/// [`Thm::trans`](crate::Thm::trans) (it is `Eq`), giving pointer-equality
+/// transitivity with NO `Eq` on the underlying dynamic expression. Sealed ⇒ ZERO
+/// new TCB.
 pub struct Dyn<T>(pub Arc<dyn Expr<Ty = T>>);
 
 impl<T> sealed::Sealed for Dyn<T> {}

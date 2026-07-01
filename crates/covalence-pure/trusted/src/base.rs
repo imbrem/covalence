@@ -1,10 +1,10 @@
 //! The base language `()` — the trivial, empty theory every language inherits.
 //!
 //! Its manifest is **empty**: it admits no gated rules. What you get "for free" is
-//! the always-available builtin `Eqn` methods — the equality calculus
+//! the always-available builtin [`Thm`](crate::Thm) methods — the equality calculus
 //! (`refl`/`sym`/`trans`/`cong`) and the [bool theory](crate::prop)
-//! (`and_*`/`or_*`/`mp`/`internalize`) — none of which are manifest rules. So `()`
-//! is what every user implicitly trusts, with nothing per-language to audit.
+//! (`and_*`/`or_*`/`mp`) — none of which are manifest rules. So `()` is what every
+//! user implicitly trusts, with nothing per-language to audit.
 
 use std::any::TypeId;
 

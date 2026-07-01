@@ -1,13 +1,24 @@
 # covalence-pure — skeletons
 
-Stage 0 of the closed-world equality kernel
-([`notes/closed-world-kernel.md`](../../notes/closed-world-kernel.md)) is built:
-`Op`/`Expr`/`Eqn`/`Language`/`Manifest` + the equality calculus + gated
-`of_teq`/`apply`/`canon`/`lift` + the base language `()`. The later stages and a
-few deferred seams remain.
+Stage 0 of the closed-world kernel
+([`notes/closed-world-kernel.md`](../../notes/closed-world-kernel.md)) is built in
+the LCF-style shape: `Op` (with pointer/`dyn` forwarding) / `Expr` (incl.
+`Eqn<A,B>` as a bool proposition) / the `Thm<L, P>` certificate / `Language` /
+`Manifest`, the equality + propositional calculus, the gated
+`apply`/`canon`/`apply_rewrite`/`lift`, and the base language `()`. The later
+stages and a few deferred seams remain.
 
 ## Severe — unbuilt stages
 
+- **`Evaluate` seam (decision + evaluation)** — the kernel has **no disequality /
+  no expression-evaluation** rule. Planned: a trait `Evaluate` on `Expr<Ty=A>` giving
+  `evaluate() -> Val<A>` (recursively, incl. builtin arithmetic ops and a `Dyn`
+  downcast), minting `⊢ e = Val(eval(e))`; equality-decision (the old `decide`/
+  `StructuralEq`, giving `⊢ ¬(a=b)`) is then just evaluating an `Eqn` bool expression
+  to `false`. Kept out of the TCB for now: it must **preserve the `admits` gate**
+  (ungated eval of a `CanonRule` would bypass gating) and needs the Stage 3 builtin
+  ops. May land as a plugin/impl rather than core. The `float` `CanonRule`s are the
+  narrow gated precursor.
 - **Stage 1 ADTs + `Set<T>`/`InterpSet`** — the abstract-sort + interpretation
   pattern; first concrete theory, needed by HOL.
 - **Stage 2 HOL** — `HolTy`/`HolTm<V>` ops, `Fv`/`Bv`/`subst`/β as
@@ -18,15 +29,11 @@ few deferred seams remain.
 
 ## Minor — deferred seams
 
-- **Leaf `Eq` must be *stable*** — a certificate is eternal, so a leaf type with
-  *shared* interior mutability (`Rc<Cell<_>>`, …) can make a true-at-mint equality
-  false later. Currently a documented trust obligation (all `StructuralEq` leaves
-  are immutable); not machine-enforced (no stable "no interior mutability" bound).
 - **`Rewrite` conclusion is shape-erased** — `apply_rewrite` mints
-  `Eqn<E, Box<dyn Expr<Ty=E::Ty>>, L>`; the rhs is only sort-checked, not
-  shape-checked (larger trust surface than `Rule`'s typed `Lhs`/`Rhs`). Sound
-  (gated on the rule's `TypeId`), but the rule author must ensure the proposed rhs
-  is genuinely equal.
+  `Thm<L, Eqn<E, Box<dyn Expr<Ty=E::Ty>>>>`; the rhs is only sort-checked, not
+  shape-checked (larger trust surface than `Rule`'s typed `Concl`). Sound (gated on
+  the rule's `TypeId`), but the rule author must ensure the proposed rhs is genuinely
+  equal.
 
 - **`covalence-pure-derive` (proc macros)** — not built (and no proc-macro crate /
   `syn`/`quote` in the workspace yet — a dependency-policy decision). Wanted: the
@@ -37,8 +44,12 @@ few deferred seams remain.
   `TypeId` differs per operand, so it can't be admitted once — needs either
   dynamic operands (`Box<dyn Expr>`, monomorphic rule, one `TypeId`) or an
   `admits`-family predicate. NOT a coarse associated `Id` (that's the forgery hole).
-- **Unsized sorts** — `Ref` requires `P::Target: Sized`, and `StructuralEq` is only
-  wired for sized types, so `str`/`[T]` can't be sorts yet.
+- **`Op` reference forwarding is `&'static F` only** — the `Op: Any` supertrait
+  forces `Op: 'static`, so a generic `&'a F: Op` is impossible; only `&'static F`
+  forwards (Box/Rc/Arc forward for all lifetimes). Non-`'static` op references are
+  out of scope (ops are symbols ⇒ `'static` in practice).
+- **Unsized sorts** — `Ref` requires `P::Target: Sized`, so `str`/`[T]` can't be
+  sorts yet.
 - **Name overlay + golden-file pin** — the untrusted `Named`/`TypeId→name` trait
   and the name-projected golden `MANIFEST` diff are not built; the test asserts
   the raw `TypeId` list directly.

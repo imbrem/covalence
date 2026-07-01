@@ -1,14 +1,20 @@
 # Closed-world kernel: first-order theories in the type system
 
-**Status:** design sketch (2026-06). Supersedes the opaque-context / `IsThm`
-direction in [`pure-design.md`](./pure-design.md) for the kernel layer — and the
-unforgeable-certificate idea survives, now as an **equality** certificate
-`Eqn<A,B,L>` rather than a generic `MThm`. The *trust surface* is reworked so the
-TCB is a **closed, enumerable set of rules** rather than "trust each context's
-crate". **Build plan:** rip out `covalence-pure` in place and replace it with this
-framework (nothing depends on `covalence-pure` yet, so we have a free hand): the
-TCB in `covalence-pure/trusted`, the `language!` macro in `covalence-pure-derive`,
-ergonomics in the `covalence-pure` facade.
+**Status:** Stage 0 **built** (2026-07); stages 1–5 are still a forward-looking
+sketch. Supersedes the opaque-context / `IsThm` direction in
+[`pure-design.md`](./pure-design.md) for the kernel layer. The *trust surface* is a
+**closed, enumerable set of rules** rather than "trust each context's crate".
+
+The realized Stage-0 shape settled on an **LCF-style** certificate `Thm<L, P>`
+(`P: Expr<Ty = bool>`) as the single unforgeable judgement, with `Eqn<A, B>` an
+ordinary bool-sorted *proposition* (freely constructible ⇒ proves nothing); a
+proven equality is `ThmEqn<L, A, B> = Thm<L, Eqn<A, B>>`. This replaced the earlier
+`Eqn<A,B,L>`-as-certificate + `Thm<P,L> = Eqn<P,True,L>` alias sketched below.
+**For realized details the built code is the source of truth**
+(`crates/covalence-pure/trusted/src/`, whose crate-root docs enumerate the mint
+sites); this doc keeps the design rationale and the still-unbuilt stages. Layout:
+the TCB in `covalence-pure/trusted`, the `language!` macro (unbuilt) in
+`covalence-pure-derive`, ergonomics in the `covalence-pure` facade.
 
 ## Why
 
@@ -97,15 +103,27 @@ Notes:
 `and/or/not/imp` are ops `Op<In=(bool,bool), Out=bool>`. Matches HOL (a prop *is* a
 `bool` term). "`P` holds" is then an *equality* — see `Eqn`/`Thm` below.
 
-### Equality is stdlib `Eq` — the leaf, and how native values enter
+### Leaf equality is *defined* by `Eq` + `Clone` (not "trusted")
 
-The kernel trusts **`Eq`** for leaf/expression comparison: a sort *is* its `Eq`,
-and `a == b` (true) ⟹ genuinely equal. We use `Eq` (the equivalence marker), *not*
-`PartialEq` — so a type whose `==` isn't a true equivalence (`f64`: `NaN`) correctly
-can't be a leaf (it doesn't impl `Eq`), which would otherwise break `refl`. Using a
-sort trusts its `Eq` impl; the leaf-equality TCB is `grep impl/derive Eq`, and most
-are `derive`d-structural (correct by construction). This is also how native Rust (or
-later WASM) computation enters — `of_eq` mints `Val(a) = Val(b)` from `a == b`.
+Leaf equality is not an external fact the kernel trusts a sort not to violate — it is
+**defined** by two introduction rules: `of_eq` reads stdlib `Eq` (`a == b` possible ⟹
+`⊢ Val(a) = Val(b)`), and `refl`/`cong` use `Clone` (`⊢ a = a`, built by duplicating
+the value). Together a sort's `Eq` and `Clone` *generate* the equality the kernel
+certifies; the calculus (`sym`/`trans`/`cong`) is its equivalence-and-congruence
+closure. So a sort with an unusual `Eq`/`Clone` simply *has* an unusual equality —
+there is no external truth to contradict, hence nothing forgeable in `()`. A step that
+*distinguishes* two so-identified values must itself be an **admitted** rule (a
+`CanonRule` eval, gated) — so a "lying" `Eq`/`Clone` is inert until you vouch for a
+conflicting rule, which is then a self-inflicted inconsistency in *that* language
+(like a false axiom). This is also how native computation enters — `of_eq`.
+
+Crucially there is **no stability obligation** on this direction: we mint `⊢ a = b`
+only from a comparison/clone that was *possible*, so even a flaky `Eq`/`Clone` only
+ever proves *more equalities*, never a false disequality. Proving a **disequality**
+`⊢ ¬(a = b)` is the one place real trust would enter — a trusted *non-equality* — and
+that is deferred to the `Evaluate` seam (below); until it lands the kernel proves no
+disequalities. `f64` still can't be a leaf (`NaN` breaks `refl`) — use the `F32`/`F64`
+bit-wrappers.
 
 ### Rules: structure is free, computation is gated
 
@@ -233,11 +251,14 @@ promotion — a const-eval wrinkle to get right, but a contained one. Hand-writi
 the impl is a short, eyeball-auditable function — no trait machinery, no sealing.
 
 **Non-`'static` rules (future).** `TypeId::of` needs `'static`, which blocks rules
-that borrow their arguments. The escape hatch: give `Rule` an associated
-identity tag `type Id: 'static` (a marker, e.g. `PhantomData`-style), and key
-`admits` on `TypeId::of::<Rho::Id>()`. Then a borrowing `Rho<'a>` shares the
-`'static` tag `Rho::Id` and still participates. Deferred, but the `Id`-tag seam
-should exist from the start so we don't have to thread it in later.
+that borrow their arguments. An earlier sketch gave `Rule` an associated identity
+tag `type Id: 'static` and gated on `TypeId::of::<Rho::Id>()` — **this was found
+unsound and removed**: an implementor-chosen `Id` decoupled from `decide` lets a
+downstream rule *borrow* an admitted identity and mint a false conclusion under it.
+The gate MUST be keyed on the rule's **own** `TypeId` (the very type whose `decide`
+produces the conclusion), so `apply` requires `Rule: 'static`. Re-introducing
+borrowing rules needs a *sealed, behaviour-tied* identity mechanism, not a free tag.
+Only rules/ops are `TypeId`-keyed; *expressions* borrow freely.
 
 ### The certificate: `Eqn<A, B, L>`
 
@@ -508,14 +529,17 @@ used none of the builtin TCB; later `Wasm`/`X86` join `Builtins` the same way.
 
 ## Implementation stages
 
-0. **Framework core**: `Op`; `Expr` (`Val`/`Ref`/`App`/`True`/`False`/`&A`/`dyn`/
-   products, sealed, associated `Ty`) compared by stdlib `Eq`;
-   `Eqn<A,B,L>` + the equality calculus + ungated `of_eq` + gated `apply`/`canon`/`lift`;
-   `Language` (`admits`/`extends`/`const MANIFEST`) + `Rule`/`CanonRule` (`Id`-tag
-   seam); the **base language `()`** (equality/congruence + propositional logic);
-   `language!` macro; name-projected golden-`MANIFEST` test. *Milestone: prove a
-   real equational theorem in `()` (a `cong`/`trans` chain + a boolean law) and diff
-   its manifest.*
+0. **Framework core** — **BUILT** (LCF shape, see the crate). `Op` (`Any` + pointer/
+   `dyn` forwarding); `Expr` (`Val`/`Ref`/`App`/`True`/`False`/`Eqn`/`&A`/`Box`/`Rc`/
+   `Arc`/`Dyn`/products, sealed, associated `Ty`) compared by stdlib `Eq`; the
+   certificate `Thm<L, P>` (`P: Expr<Ty=bool>`) with `Eqn<A,B>` a bool proposition;
+   the equality + propositional calculus + ungated `of_eq`/`semidecide` + gated
+   `apply`/`canon`/`apply_rewrite`/`lift`; `Language` (`admits`/`extends`/
+   `const MANIFEST`) + `Rule` (own-`TypeId` gate, `: 'static`)/`CanonRule`; the
+   **base language `()`** (equality/congruence + propositional logic). *Deferred from
+   this stage:* the `language!` macro + golden-`MANIFEST` test, and the `Evaluate`
+   decision/evaluation seam (disequality). *Milestone met: a `cong`/`trans` chain +
+   a boolean law in `()`.*
 1. **ADTs + `Set`**: the abstract-sort + interpretation pattern, with `Set<T>` /
    `InterpSet(BTreeSet)` as the first concrete theory (we need it for HOL anyway).
    *Milestone: prove `Member(x, Union(Singleton x, s)) = ⊤` by `canon`.*

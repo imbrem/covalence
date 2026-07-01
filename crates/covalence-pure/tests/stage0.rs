@@ -9,21 +9,19 @@ use covalence_pure::*;
 #[test]
 fn calculus_prop_and_manifest() {
     // cong + trans chain in the empty base `()`
-    let base: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(false), ());
+    let base: Thm<(), Eqn<Val<bool>, Val<bool>>> = Thm::refl(Val(false), ());
     let c1 = base.cong_app(Not);
-    let c2: Eqn<App<Not, Val<bool>>, App<Not, Val<bool>>, ()> = Eqn::refl(App(Not, Val(false)), ());
+    let c2: Thm<(), Eqn<App<Not, Val<bool>>, App<Not, Val<bool>>>> =
+        Thm::refl(App(Not, Val(false)), ());
     let chained = c1.trans(c2).expect("middles match");
     assert_eq!(chained.lhs(), &App(Not, Val(false)));
 
-    // bool theory is available in every language (here `()`): ∧-intro/elim
-    let p: Eqn<True, True, ()> = Eqn::refl(True, ());
-    let q: Eqn<True, True, ()> = Eqn::refl(True, ());
+    // bool theory is available in every language (here `()`): ∧-intro/elim over two
+    // proven equalities (which are bool propositions).
+    let p = of_eq_with(5u8, 5u8, ()).expect("5 == 5");
+    let q = of_eq_with(6u8, 6u8, ()).expect("6 == 6");
     let (p2, _q2) = p.and_intro(q).expect("union").and_elim();
-    assert_eq!(p2.lhs(), &True);
-
-    // equality internalizes to a bool proposition and reflects back
-    let e: Eqn<Val<u8>, Val<u8>, ()> = Eqn::refl(Val(5), ());
-    assert_eq!(e.internalize().reflect().lhs(), &Val(5));
+    assert_eq!(p2.lhs(), &Val(5));
 
     // `()` is the trivial base — empty manifest.
     let m = <() as Language>::MANIFEST.expect("base manifest");

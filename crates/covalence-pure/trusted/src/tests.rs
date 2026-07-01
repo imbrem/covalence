@@ -1,5 +1,5 @@
-//! Stage-0 tests, exercised through the public kernel API (the calculus + gated
-//! injectors + bool theory; field reads via `lhs`/`rhs`/`lang`).
+//! Kernel tests, exercised through the public API (the `Thm` calculus + gated
+//! injectors + bool theory; reads via `prop`/`lhs`/`rhs`/`lang`).
 
 use std::any::TypeId;
 use std::rc::Rc;
@@ -26,7 +26,7 @@ impl Language for Empty {
 }
 
 /// A hypothesis-bitset context: `union` is bitwise-OR (always succeeds), so two
-/// equations under different hypotheses combine.
+/// theorems under different hypotheses combine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Ctx(u8);
 impl Language for Ctx {
@@ -59,8 +59,8 @@ impl Language for Exact {
     const MANIFEST: Option<&'static Manifest> = None;
 }
 
-/// A computational language: admits a `CanonRule` (`Flip`) and an axiom (`ImpTT`),
-/// directly extends `()`.
+/// A computational language: admits a `CanonRule` (`Flip`), a truth axiom, an
+/// implication axiom, a candidate-checker, and a rewrite; directly extends `()`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Calc;
 
@@ -77,22 +77,32 @@ impl CanonRule for Flip {
     }
 }
 
+/// An axiom `⊢ ⊤` (a non-equality conclusion, for `mp`).
+struct TruthAx;
+impl Rule<Calc> for TruthAx {
+    type Input = ();
+    type Concl = True;
+    fn decide(self, _: (), _: &Calc) -> Result<True, Error> {
+        Ok(True)
+    }
+}
+
 /// An axiom `⊢ (⊤ ⟹ ⊤)` (for `mp`).
 struct ImpTT;
 impl Rule<Calc> for ImpTT {
     type Input = ();
-    type Lhs = App<Imp, (True, True)>;
-    type Rhs = True;
-    fn decide(self, _: (), _: &Calc) -> Result<(Self::Lhs, Self::Rhs), Error> {
-        Ok((App(Imp, (True, True)), True))
+    type Concl = App<Imp, (True, True)>;
+    fn decide(self, _: (), _: &Calc) -> Result<Self::Concl, Error> {
+        Ok(App(Imp, (True, True)))
     }
 }
 
 impl Language for Calc {
     fn admits(&self, r: TypeId) -> bool {
         r == TypeId::of::<Flip>()
+            || r == TypeId::of::<TruthAx>()
             || r == TypeId::of::<ImpTT>()
-            || r == TypeId::of::<CheckCand>()
+            || r == TypeId::of::<CheckEqn>()
             || r == TypeId::of::<ReflRw>()
     }
     fn extends(&self, p: TypeId) -> bool {
@@ -104,16 +114,15 @@ impl Language for Calc {
     const MANIFEST: Option<&'static Manifest> = None;
 }
 
-/// A child of `()` admitting one axiom `MyAx: ⊢ true` (for apply/lift).
+/// A child of `()` admitting one axiom `MyAx: ⊢ Val(true)` (for apply/lift).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Cov2;
 struct MyAx;
 impl Rule<Cov2> for MyAx {
     type Input = ();
-    type Lhs = Val<bool>;
-    type Rhs = True;
-    fn decide(self, _: (), _: &Cov2) -> Result<(Self::Lhs, Self::Rhs), Error> {
-        Ok((Val(true), True))
+    type Concl = Val<bool>;
+    fn decide(self, _: (), _: &Cov2) -> Result<Val<bool>, Error> {
+        Ok(Val(true))
     }
 }
 static COV2_MANIFEST: Manifest = Manifest {
@@ -142,7 +151,7 @@ impl Language for Cov2 {
 
 #[test]
 fn refl_sym() {
-    let e: Eqn<Val<u8>, Val<u8>, ()> = Eqn::refl(Val(3), ());
+    let e: Thm<(), Eqn<Val<u8>, Val<u8>>> = Thm::refl(Val(3), ());
     assert_eq!(e.lhs(), &Val(3));
     let s = e.sym();
     assert_eq!(s.lhs(), &Val(3));
@@ -150,27 +159,33 @@ fn refl_sym() {
 
 #[test]
 fn cong_then_trans() {
-    let base: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(false), ());
+    let base: Thm<(), Eqn<Val<bool>, Val<bool>>> = Thm::refl(Val(false), ());
     let c1 = base.cong_app(Not); // ¬false = ¬false
-    let c2: Eqn<App<Not, Val<bool>>, App<Not, Val<bool>>, ()> = Eqn::refl(App(Not, Val(false)), ());
+    let c2: Thm<(), Eqn<App<Not, Val<bool>>, App<Not, Val<bool>>>> =
+        Thm::refl(App(Not, Val(false)), ());
     let chained = c1.trans(c2).expect("middles match");
     assert_eq!(chained.lhs(), &App(Not, Val(false)));
 }
 
 #[test]
 fn trans_rejects_mismatched_middle() {
-    let a: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(true), ());
-    let b: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(false), ());
+    let a: Thm<(), Eqn<Val<bool>, Val<bool>>> = Thm::refl(Val(true), ());
+    let b: Thm<(), Eqn<Val<bool>, Val<bool>>> = Thm::refl(Val(false), ());
     assert_eq!(a.trans(b).unwrap_err(), Error::TransMismatch);
 }
 
 #[test]
-fn derive_eq_is_structural_equality() {
-    let a = App(And, (Val(true), App(Not, Val(false))));
-    let b = App(And, (Val(true), App(Not, Val(false))));
-    let c = App(And, (Val(true), App(Not, Val(true))));
+fn eqn_is_a_bool_expr_and_derive_eq_is_structural() {
+    // `Eqn<A, B>` is a freely-constructible bool-sorted proposition; building it
+    // proves nothing. `derive(Eq)` gives structural comparison (the `trans` middle).
+    let a = Eqn(Val(true), App(Not, Val(false)));
+    let b = Eqn(Val(true), App(Not, Val(false)));
+    let c = Eqn(Val(true), App(Not, Val(true)));
     assert_eq!(a, b);
     assert_ne!(a, c);
+    // it typechecks as an Expr<Ty = bool>:
+    fn is_bool<E: Expr<Ty = bool>>(_: &E) {}
+    is_bool(&a);
 }
 
 // ============================ union of contexts ============================
@@ -178,23 +193,23 @@ fn derive_eq_is_structural_equality() {
 #[test]
 fn trans_unions_hypotheses() {
     // `a = b` under Ctx(0b01), `b = c` under Ctx(0b10) ⇒ `a = c` under Ctx(0b11).
-    let l: Eqn<Val<u8>, Val<u8>, Ctx> = Eqn::refl(Val(7), Ctx(0b01));
-    let r: Eqn<Val<u8>, Val<u8>, Ctx> = Eqn::refl(Val(7), Ctx(0b10));
+    let l: Thm<Ctx, Eqn<Val<u8>, Val<u8>>> = Thm::refl(Val(7), Ctx(0b01));
+    let r: Thm<Ctx, Eqn<Val<u8>, Val<u8>>> = Thm::refl(Val(7), Ctx(0b10));
     let t = l.trans(r).expect("middles match, contexts union");
     assert_eq!(t.lang(), &Ctx(0b11));
 }
 
 #[test]
 fn trans_fails_when_union_fails() {
-    let l: Eqn<Val<u8>, Val<u8>, Exact> = Eqn::refl(Val(7), Exact(1));
-    let r: Eqn<Val<u8>, Val<u8>, Exact> = Eqn::refl(Val(7), Exact(2));
+    let l: Thm<Exact, Eqn<Val<u8>, Val<u8>>> = Thm::refl(Val(7), Exact(1));
+    let r: Thm<Exact, Eqn<Val<u8>, Val<u8>>> = Thm::refl(Val(7), Exact(2));
     assert_eq!(l.trans(r).unwrap_err(), Error::LangMismatch);
 }
 
 #[test]
 fn cong_pair_unions() {
-    let l: Eqn<Val<u8>, Val<u8>, Ctx> = Eqn::refl(Val(1), Ctx(0b01));
-    let r: Eqn<Val<u8>, Val<u8>, Ctx> = Eqn::refl(Val(2), Ctx(0b10));
+    let l: Thm<Ctx, Eqn<Val<u8>, Val<u8>>> = Thm::refl(Val(1), Ctx(0b01));
+    let r: Thm<Ctx, Eqn<Val<u8>, Val<u8>>> = Thm::refl(Val(2), Ctx(0b10));
     let p = l.cong_pair(r).expect("contexts union");
     assert_eq!(p.lang(), &Ctx(0b11));
     assert_eq!(p.lhs(), &(Val(1), Val(2)));
@@ -214,8 +229,8 @@ fn ref_over_each_pointer() {
     assert_eq!(Ref(Rc::new(5u8)), Ref(Rc::new(5u8)));
     assert_ne!(Ref(Rc::new(5u8)), Ref(Rc::new(6u8)));
 
-    let a: Eqn<Ref<Rc<u8>>, Ref<Rc<u8>>, ()> = Eqn::refl(Ref(Rc::new(9)), ());
-    let b: Eqn<Ref<Rc<u8>>, Ref<Rc<u8>>, ()> = Eqn::refl(Ref(Rc::new(9)), ());
+    let a: Thm<(), Eqn<Ref<Rc<u8>>, Ref<Rc<u8>>>> = Thm::refl(Ref(Rc::new(9)), ());
+    let b: Thm<(), Eqn<Ref<Rc<u8>>, Ref<Rc<u8>>>> = Thm::refl(Ref(Rc::new(9)), ());
     let t = a.trans(b).expect("Rc pointees compare equal");
     assert_eq!(t.lhs(), &Ref(Rc::new(9)));
 }
@@ -224,42 +239,38 @@ fn ref_over_each_pointer() {
 
 #[test]
 fn and_intro_then_elim() {
-    let p: Eqn<True, True, ()> = Eqn::refl(True, ()); // ⊢ ⊤
-    let q: Eqn<True, True, ()> = Eqn::refl(True, ());
-    let pq = p.and_intro(q).expect("contexts union"); // ⊢ ⊤ ∧ ⊤
-    assert_eq!(pq.lhs(), &App(And, (True, True)));
-    let (p2, q2) = pq.and_elim(); // ⊢ ⊤, ⊢ ⊤
-    assert_eq!(p2.lhs(), &True);
-    assert_eq!(q2.lhs(), &True);
+    let p = of_eq_with(true, true, ()).unwrap(); // ⊢ (true = true)
+    let q = of_eq_with(false, false, ()).unwrap(); // ⊢ (false = false)
+    let pq = p.and_intro(q).expect("contexts union"); // ⊢ (t=t) ∧ (f=f)
+    assert_eq!(
+        pq.prop(),
+        &App(
+            And,
+            (Eqn(Val(true), Val(true)), Eqn(Val(false), Val(false)))
+        )
+    );
+    let (p2, q2) = pq.and_elim(); // ⊢ (t=t), ⊢ (f=f)
+    assert_eq!(p2.lhs(), &Val(true));
+    assert_eq!(q2.lhs(), &Val(false));
 }
 
 #[test]
 fn or_intro_both_sides() {
-    let p: Eqn<True, True, ()> = Eqn::refl(True, ());
-    let l = p.or_inl(False); // ⊢ ⊤ ∨ ⊥
-    assert_eq!(l.lhs(), &App(Or, (True, False)));
+    let p = of_eq_with(true, true, ()).unwrap();
+    let l = p.or_inl(False); // ⊢ (t=t) ∨ ⊥
+    assert_eq!(l.prop(), &App(Or, (Eqn(Val(true), Val(true)), False)));
 
-    let p2: Eqn<True, True, ()> = Eqn::refl(True, ());
-    let r = p2.or_inr(False); // ⊢ ⊥ ∨ ⊤
-    assert_eq!(r.lhs(), &App(Or, (False, True)));
+    let p2 = of_eq_with(true, true, ()).unwrap();
+    let r = p2.or_inr(False); // ⊢ ⊥ ∨ (t=t)
+    assert_eq!(r.prop(), &App(Or, (False, Eqn(Val(true), Val(true)))));
 }
 
 #[test]
 fn modus_ponens() {
     let imp = apply0(Calc, ImpTT).expect("Calc admits ImpTT"); // ⊢ ⊤ ⟹ ⊤
-    let t: Eqn<True, True, Calc> = Eqn::refl(True, Calc); // ⊢ ⊤
+    let t = apply0(Calc, TruthAx).expect("Calc admits TruthAx"); // ⊢ ⊤
     let q = imp.mp(t).expect("antecedent matches, contexts union"); // ⊢ ⊤
-    assert_eq!(q.lhs(), &True);
-}
-
-#[test]
-fn internalize_reflect_roundtrip() {
-    let e: Eqn<Val<u8>, Val<u8>, ()> = Eqn::refl(Val(5), ()); // 5 = 5
-    let prop = e.internalize(); // ⊢ (5 = 5)
-    assert_eq!(prop.lhs(), &App(EqOp::<u8>::new(), (Val(5), Val(5))));
-    let back = prop.reflect(); // 5 = 5
-    assert_eq!(back.lhs(), &Val(5));
-    assert_eq!(back.rhs(), &Val(5));
+    assert_eq!(q.prop(), &True);
 }
 
 // ============================ gated minting ============================
@@ -290,13 +301,12 @@ fn of_eq_is_ungated() {
     assert_eq!(e.lhs(), &Val(true));
     assert!(of_eq_with(true, false, ()).is_none());
     // `of_eq` uses the default language value:
-    let d: Eqn<Val<u8>, Val<u8>, ()> = of_eq(9u8, 9u8).expect("9 == 9");
+    let d: Thm<(), Eqn<Val<u8>, Val<u8>>> = of_eq(9u8, 9u8).expect("9 == 9");
     assert_eq!(d.lhs(), &Val(9));
 }
 
 #[test]
 fn semidecide_certificate() {
-    // certificate form: Val(a) = Val(b), not the bool proposition.
     let ok = semidecide(4u8, 4u8, ()).expect("4 == 4");
     assert_eq!(ok.lhs(), &Val(4));
     assert_eq!(ok.rhs(), &Val(4));
@@ -305,9 +315,8 @@ fn semidecide_certificate() {
 
 #[test]
 fn apply_axiom() {
-    let thm: Thm<Val<bool>, Cov2> = apply0(Cov2, MyAx).expect("Cov2 admits MyAx");
-    assert_eq!(thm.lhs(), &Val(true));
-    assert_eq!(thm.rhs(), &True);
+    let thm: Thm<Cov2, Val<bool>> = apply0(Cov2, MyAx).expect("Cov2 admits MyAx");
+    assert_eq!(thm.prop(), &Val(true));
 }
 
 #[test]
@@ -315,10 +324,9 @@ fn apply_rejects_unadmitted() {
     struct AxForUnit;
     impl Rule<()> for AxForUnit {
         type Input = ();
-        type Lhs = Val<bool>;
-        type Rhs = True;
-        fn decide(self, _: (), _: &()) -> Result<(Self::Lhs, Self::Rhs), Error> {
-            Ok((Val(true), True))
+        type Concl = True;
+        fn decide(self, _: (), _: &()) -> Result<True, Error> {
+            Ok(True)
         }
     }
     assert_eq!(
@@ -328,17 +336,16 @@ fn apply_rejects_unadmitted() {
 }
 
 /// Regression: `apply` gates on the rule's OWN `TypeId`, so a downstream rule that
-/// concludes a FALSE equation cannot mint where it isn't admitted (and cannot
+/// concludes a FALSE proposition cannot mint where it isn't admitted (and cannot
 /// impersonate an admitted rule — the orphan rule blocks `impl Rule<()> for And`).
 #[test]
 fn apply_cannot_forge_false() {
     struct Forge;
     impl Rule<()> for Forge {
         type Input = ();
-        type Lhs = False;
-        type Rhs = True;
-        fn decide(self, _: (), _: &()) -> Result<(Self::Lhs, Self::Rhs), Error> {
-            Ok((False, True)) // ⊢ False = ⊤ would be catastrophic
+        type Concl = False;
+        fn decide(self, _: (), _: &()) -> Result<False, Error> {
+            Ok(False) // ⊢ False would be catastrophic
         }
     }
     assert_eq!(
@@ -351,14 +358,14 @@ fn apply_cannot_forge_false() {
 
 #[test]
 fn lift_to_child() {
-    let e: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(true), ());
+    let e: Thm<(), Eqn<Val<bool>, Val<bool>>> = Thm::refl(Val(true), ());
     let up = e.lift(Cov2).expect("Cov2 extends ()");
     assert_eq!(up.lang(), &Cov2);
 }
 
 #[test]
 fn lift_rejects_non_extender() {
-    let e: Eqn<Val<bool>, Val<bool>, ()> = Eqn::refl(Val(true), ());
+    let e: Thm<(), Eqn<Val<bool>, Val<bool>>> = Thm::refl(Val(true), ());
     assert_eq!(
         e.lift(Empty).unwrap_err(),
         Error::NotExtended(TypeId::of::<()>())
@@ -381,44 +388,30 @@ fn dyn_expr_is_constructible() {
     let _d: Box<dyn Expr<Ty = bool>> = Box::new(App(Not, Val(true)));
 }
 
-// ============================ StructuralEq / decide ============================
-
-#[test]
-fn decide_true_and_false() {
-    // A `StructuralEq` sort (u32) decides equality BOTH ways.
-    let t = decide(5u32, 5u32, ());
-    assert!(t.is_left(), "5 = 5 decided true");
-    assert_eq!(t.left().unwrap().rhs(), &True);
-
-    let f = decide(5u32, 6u32, ());
-    assert!(f.is_right(), "5 = 6 decided false");
-    assert_eq!(f.right().unwrap().rhs(), &False);
-}
-
-#[test]
-fn structural_eq_covers_component_types() {
-    // Composite / covalence base types are decidable sorts.
-    assert!(decide(vec![1u8, 2, 3], vec![1u8, 2, 3], ()).is_left());
-    assert!(decide(Some(4u16), None, ()).is_right());
-    assert!(decide((1u8, 2u16, 3u32), (1u8, 2u16, 3u32), ()).is_left());
-    assert!(
-        decide(
-            covalence_types::Nat::from(7u32),
-            covalence_types::Nat::from(7u32),
-            ()
-        )
-        .is_left()
-    );
-}
+// ============================ float value sorts ============================
 
 #[test]
 fn float_wrapper_canonicalizes_nan_and_splits_zero() {
-    // Every NaN canonicalizes to one value ⇒ reflexive (bare f32 could not).
+    // Every NaN canonicalizes to one value ⇒ reflexive (bare f32 could not), so a
+    // wrapped NaN is a usable `Eq` leaf and `refl` holds over it.
     assert_eq!(F32::new(f32::NAN), F32::new(f32::NAN));
-    assert!(decide(F32::new(f32::NAN), F32::new(f32::NAN), ()).is_left());
+    let r: Thm<(), Eqn<Val<F32>, Val<F32>>> = Thm::refl(Val(F32::new(f32::NAN)), ());
+    assert_eq!(r.lhs(), r.rhs());
     // structural (bitwise) identity distinguishes +0.0 from -0.0.
     assert_ne!(F32::new(0.0), F32::new(-0.0));
-    assert!(decide(F64::new(0.0), F64::new(-0.0), ()).is_right());
+    assert_ne!(F64::new(0.0), F64::new(-0.0));
+}
+
+#[test]
+fn float_op_canon_is_gated() {
+    // WASM float arithmetic ops are `CanonRule`s: `App<F32Add, Val(a,b)> = Val(a+b)`,
+    // but reducing one is gated — `Calc` does not admit `F32Add`.
+    let a = F32::new(1.5);
+    let b = F32::new(2.25);
+    assert_eq!(
+        canon(F32Add, (a, b), Calc).unwrap_err(),
+        Error::NotAdmitted(TypeId::of::<F32Add>())
+    );
 }
 
 // ============================ n-ary tuples ============================
@@ -426,15 +419,14 @@ fn float_wrapper_canonicalizes_nan_and_splits_zero() {
 #[test]
 fn nary_tuple_is_an_expr() {
     let t = (Val(1u8), Val(2u16), Val(3u32), Val(4u64), Val(5u128));
-    let e = Eqn::refl(t, ());
+    let e = Thm::refl(t, ());
     assert_eq!(e.lhs().0, Val(1u8));
     assert_eq!(e.lhs().4, Val(5u128));
 }
 
 // ============================ pointer equality ============================
 
-// A type deliberately WITHOUT `Eq` — pointer equality must still work. (`Debug`
-// only so `Result::unwrap_err` can print the `Ok` side in the mismatch test.)
+// A type deliberately WITHOUT `Eq` — pointer equality must still work.
 #[derive(Debug)]
 struct NoEq(u8);
 
@@ -461,7 +453,7 @@ fn trans_ptr_through_shared_middle() {
     let chained = e1.trans_ptr(e2).expect("pointer-equal middle");
     assert_eq!((chained.lhs().0).0, 9);
 
-    // different middle allocations ⇒ mismatch (g1's middle is `s`, g2's is `other`).
+    // different middle allocations ⇒ mismatch.
     let other = Rc::new(NoEq(1));
     let g1 = of_ptr_eq(Ref(s.clone()), Ref(s.clone()), ()).unwrap();
     let g2 = of_ptr_eq(Ref(other.clone()), Ref(other.clone()), ()).unwrap();
@@ -470,16 +462,16 @@ fn trans_ptr_through_shared_middle() {
 
 // ============================ Rule as a decision procedure ============================
 
-/// A rule whose `Input` is a candidate equation it validates (accept only if the
-/// two proposed sides are the literally-equal value).
-struct CheckCand;
-impl<L: Language> Rule<L> for CheckCand {
-    type Input = Cand<Val<u8>, Val<u8>>;
-    type Lhs = Val<u8>;
-    type Rhs = Val<u8>;
-    fn decide(self, c: Self::Input, _: &L) -> Result<(Val<u8>, Val<u8>), Error> {
-        if c.lhs == c.rhs {
-            Ok((c.lhs, c.rhs))
+/// A rule whose `Input` is a candidate equation (an `Eqn`) it validates: accept
+/// only if the two proposed sides are the literally-equal value. `Eqn` replaces the
+/// old `Cand`.
+struct CheckEqn;
+impl<L: Language> Rule<L> for CheckEqn {
+    type Input = Eqn<Val<u8>, Val<u8>>;
+    type Concl = Eqn<Val<u8>, Val<u8>>;
+    fn decide(self, c: Self::Input, _: &L) -> Result<Self::Concl, Error> {
+        if c.0 == c.1 {
+            Ok(c)
         } else {
             Err(Error::Undecided)
         }
@@ -488,17 +480,17 @@ impl<L: Language> Rule<L> for CheckCand {
 
 #[test]
 fn candidate_is_inert_until_decided() {
-    // A `Cand` is freely constructible and proves nothing on its own.
-    let good = Cand::new(Val(3u8), Val(3u8));
-    let e = apply(Calc, CheckCand, good).expect("candidate validates");
+    // An `Eqn` candidate is freely constructible and proves nothing on its own.
+    let good = Eqn(Val(3u8), Val(3u8));
+    let e = apply(Calc, CheckEqn, good).expect("candidate validates");
     assert_eq!(e.lhs(), &Val(3));
     // a bad candidate is rejected by the rule's decision procedure:
-    let bad = Cand::new(Val(3u8), Val(4u8));
-    assert_eq!(apply(Calc, CheckCand, bad).unwrap_err(), Error::Undecided);
+    let bad = Eqn(Val(3u8), Val(4u8));
+    assert_eq!(apply(Calc, CheckEqn, bad).unwrap_err(), Error::Undecided);
     // and the gate still rejects the whole rule where it is not admitted:
     assert_eq!(
-        apply((), CheckCand, Cand::new(Val(3u8), Val(3u8))).unwrap_err(),
-        Error::NotAdmitted(TypeId::of::<CheckCand>())
+        apply((), CheckEqn, Eqn(Val(3u8), Val(3u8))).unwrap_err(),
+        Error::NotAdmitted(TypeId::of::<CheckEqn>())
     );
 }
 
@@ -506,11 +498,11 @@ fn candidate_is_inert_until_decided() {
 
 #[test]
 fn match_app_hits_only_apps() {
-    // `as_app` recovers an application, and misses everything else.
     assert!(App(Not, Val(true)).as_app().is_ok());
     assert!(Val(5u8).as_app().is_err());
     assert!(True.as_app().is_err());
     assert!((Val(1u8), Val(2u8)).as_app().is_err());
+    assert!(Eqn(Val(1u8), Val(2u8)).as_app().is_err());
 }
 
 /// A generic-method rewrite rule firing at ANY expression shape under ONE
@@ -541,57 +533,45 @@ fn apply_rewrite_gated_and_shape_polymorphic() {
     }
 }
 
-// ============================ dynamic App ============================
+// ============================ dynamic-op App + as_op ============================
 
+#[derive(Debug)]
 struct MyDynOp;
-impl DynOp for MyDynOp {
+impl Op for MyDynOp {
     type In = u8;
     type Out = u8;
-    fn op_id(&self) -> TypeId {
-        TypeId::of::<MyDynOp>()
-    }
 }
 struct OtherDynOp;
-impl DynOp for OtherDynOp {
+impl Op for OtherDynOp {
     type In = u8;
     type Out = u8;
-    fn op_id(&self) -> TypeId {
-        TypeId::of::<OtherDynOp>()
-    }
 }
-
-/// A malicious op: its `op_id` claims to be `MyDynOp`. Before the fix (`as_op`
-/// delegating to a downstream `as_any`) this could spoof the downcast; now `as_op`
-/// upcasts the real trait object, so it cannot.
+/// A distinct op type that (were `as_op` spoofable) might try to pass as `MyDynOp`.
+/// With no downstream identity hook, the only identity is the real vtable `TypeId`.
 struct Liar;
-impl DynOp for Liar {
+impl Op for Liar {
     type In = u8;
     type Out = u8;
-    fn op_id(&self) -> TypeId {
-        TypeId::of::<MyDynOp>() // LIE
-    }
 }
 
 #[test]
-fn dynapp_downcast_is_trusted() {
-    let app: DynApp<u8, u8> = DynApp {
-        op: Arc::new(MyDynOp),
-        arg: Dyn::new(Val(3u8)),
-    };
+fn dynamic_op_app_is_a_first_class_expr() {
+    // `App<Arc<dyn Op<..>>, _>` IS the dynamic application (no separate `DynApp`).
+    let op: Arc<dyn Op<In = u8, Out = u8>> = Arc::new(MyDynOp);
+    let app = App(op, Val(3u8));
+    // it is a genuine Expr<Ty = u8> (Arc<dyn Op> is Clone ⇒ App is Clone):
+    let _thm: Thm<(), Eqn<_, _>> = Thm::refl(app.clone(), ());
     // trusted downcast: recognizes the real operator, rejects the wrong one.
     assert!(app.as_op::<MyDynOp>().is_some());
     assert!(app.as_op::<OtherDynOp>().is_none());
 }
 
-/// Regression for the audit's `as_op` forgery: a lying operator (whose `op_id`
-/// impersonates `MyDynOp`) is NOT accepted as `MyDynOp` — the downcast is on the
-/// real vtable `TypeId`, not any downstream-supplied hook.
+/// Regression for the audit's `as_op` forgery: identity is the real vtable `TypeId`,
+/// not any downstream hook, so a distinct op is never confused with `MyDynOp`.
 #[test]
-fn dynapp_downcast_rejects_liar() {
-    let app: DynApp<u8, u8> = DynApp {
-        op: Arc::new(Liar),
-        arg: Dyn::new(Val(3u8)),
-    };
+fn as_op_rejects_liar() {
+    let op: Arc<dyn Op<In = u8, Out = u8>> = Arc::new(Liar);
+    let app = App(op, Val(3u8));
     assert!(app.as_op::<MyDynOp>().is_none(), "must not be spoofed");
     assert!(app.as_op::<Liar>().is_some(), "sees the real op");
 }
@@ -601,7 +581,7 @@ fn dynapp_downcast_rejects_liar() {
 #[test]
 fn pointer_wrapped_expressions() {
     // Box/Arc/Rc of ANY expr (not just dyn) is an expression.
-    let e: Eqn<Box<Val<u8>>, Box<Val<u8>>, ()> = Eqn::refl(Box::new(Val(1)), ());
+    let e: Thm<(), Eqn<Box<Val<u8>>, Box<Val<u8>>>> = Thm::refl(Box::new(Val(1)), ());
     assert_eq!(**e.lhs(), Val(1));
     let _a: Arc<App<Not, Val<bool>>> = Arc::new(App(Not, Val(false)));
     let _r: Rc<True> = Rc::new(True);
@@ -612,11 +592,11 @@ fn dyn_pointer_equality_transits() {
     // `Dyn` is `Eq` by pointer identity, so it works as an ordinary `trans` middle
     // with NO `Eq` on the underlying expression.
     let d: Dyn<bool> = Dyn::new(App(Not, Val(true)));
-    let e1: Eqn<Dyn<bool>, Dyn<bool>, ()> = Eqn::refl(d.clone(), ());
-    let e2: Eqn<Dyn<bool>, Dyn<bool>, ()> = Eqn::refl(d.clone(), ());
+    let e1: Thm<(), Eqn<Dyn<bool>, Dyn<bool>>> = Thm::refl(d.clone(), ());
+    let e2: Thm<(), Eqn<Dyn<bool>, Dyn<bool>>> = Thm::refl(d.clone(), ());
     assert!(e1.trans(e2).is_ok()); // same allocation
     // distinct allocations of an equal expression are pointer-unequal:
-    let x: Eqn<Dyn<bool>, Dyn<bool>, ()> = Eqn::refl(Dyn::new(True), ());
-    let y: Eqn<Dyn<bool>, Dyn<bool>, ()> = Eqn::refl(Dyn::new(True), ());
+    let x: Thm<(), Eqn<Dyn<bool>, Dyn<bool>>> = Thm::refl(Dyn::new(True), ());
+    let y: Thm<(), Eqn<Dyn<bool>, Dyn<bool>>> = Thm::refl(Dyn::new(True), ());
     assert_eq!(x.trans(y).unwrap_err(), Error::TransMismatch);
 }

@@ -19,8 +19,7 @@ use std::any::TypeId;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::dynapp::DynApp;
-use crate::eqn::{Eqn, Error};
+use crate::eqn::{Eqn, Error, Thm};
 use crate::expr::{App, Dyn, Expr, False, Ref, True, TrustedDeref, Val};
 use crate::lang::Language;
 use crate::op::Op;
@@ -83,7 +82,8 @@ impl<A: Expr + ?Sized> MatchApp for &A {
         Err(self)
     }
 }
-impl<In, Out> MatchApp for DynApp<In, Out> {
+// The equality proposition `Eqn<A, B>` is a bool expression, never a top-level App.
+impl<A: Expr, B: Expr<Ty = A::Ty>> MatchApp for Eqn<A, B> {
     type AsApp = Infallible;
     fn as_app(self) -> Result<Infallible, Self> {
         Err(self)
@@ -165,11 +165,11 @@ pub fn apply_rewrite<L: Language, R: Rewrite<L>, E: MatchApp + Clone + 'static>(
     lang: L,
     r: R,
     e: E,
-) -> Result<Eqn<E, Box<dyn Expr<Ty = E::Ty>>, L>, Error> {
+) -> Result<Thm<L, Eqn<E, Box<dyn Expr<Ty = E::Ty>>>>, Error> {
     let id = TypeId::of::<R>();
     if !lang.admits(id) {
         return Err(Error::NotAdmitted(id));
     }
     let (lhs, rhs) = r.rewrite(e, &lang)?;
-    Ok(Eqn::new(lhs, rhs, lang))
+    Ok(Thm::new(lang, Eqn(lhs, rhs)))
 }

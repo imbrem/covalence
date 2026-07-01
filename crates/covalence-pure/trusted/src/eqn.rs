@@ -1,17 +1,24 @@
-//! The certificate [`Eqn<A, B, L>`] and the equality calculus.
+//! The certificate [`Thm<L, P>`], the equality proposition [`Eqn<A, B>`], and the
+//! equality calculus.
 //!
-//! Equality is the *primitive* judgement (HOL-Light style). `Eqn<A, B, L>` says
-//! `A = B` holds in language value `lang: L`. Its fields are **private with no
-//! public constructor** — the unforgeability gate. The only ways to mint one are
-//! the methods/functions in this module: the **ungated** equality calculus
-//! (`refl`/`sym`/`trans`/`cong_*`, sound in *every* language) and the **gated**
-//! injectors ([`apply`]/[`apply0`]/[`canon`]/[`Eqn::lift`]), each of which
-//! runtime-checks `lang.admits(..)`/`lang.extends(..)` *before* minting.
+//! [`Thm<L, P>`] (`P: Expr<Ty = bool>`) is THE certificate: "the proposition `P`
+//! holds in language value `lang: L`" (the LCF `thm`). Its fields are **private
+//! with no public constructor** — the unforgeability gate; the sole mint is the
+//! `pub(crate)` [`Thm::new`], and *every* call site is audited (they are exactly:
+//! this module's calculus + gated injectors, the [`crate::prop`] bool theory,
+//! [`crate::eq`]'s `decide`, and [`crate::matching`]'s `apply_rewrite`).
+//!
+//! [`Eqn<A, B>`] is the equality **proposition** `A = B` — a freely-constructible
+//! [`Expr`] of sort `bool`. Building one proves nothing; it also serves as the
+//! "candidate equation" a [`Rule`] may take as input. A **proven** equality is
+//! [`ThmEqn<L, A, B>`] = [`Thm<L, Eqn<A, B>>`], on which the congruence calculus
+//! lives.
 
 use std::any::TypeId;
 
 use crate::expr::{App, Expr, Ref, TrustedDeref, Val};
 use crate::lang::{CanonRule, Language, Rule};
+use crate::sealed;
 
 /// Errors from the gated minting paths and `trans`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,7 +29,7 @@ pub enum Error {
     NotExtended(TypeId),
     /// `trans` middle terms were not `Eq`-equal.
     TransMismatch,
-    /// `trans` was given two different language values.
+    /// Two language values could not be combined (`union`/`extends` mismatch).
     LangMismatch,
     /// `semidecide` could not prove equality (`a != b` under untrusted `Eq`).
     Undecided,
@@ -32,194 +39,234 @@ pub enum Error {
     RuleFailed(String),
 }
 
-/// `lhs` and `rhs` (expressions of the SAME sort) are equal in language value
-/// `lang`. Private fields ⇒ **unforgeable**; minted only by this module's calculus
-/// and admitted rules. The `L` value carries the hypotheses/axioms in scope, so
-/// `trans` requires equal `lang`s (same context).
-#[derive(Clone, Debug)]
-pub struct Eqn<A, B, L> {
-    lhs: A,
-    rhs: B,
-    lang: L,
-}
-
-/// A propositional theorem `⊢ P` is just equality with `⊤` (`P` holds ⟺ `P = ⊤`).
-pub type Thm<P, L> = Eqn<P, True, L>;
-
-use crate::expr::True;
-
-/// An **UNPROVEN** proposed equation `lhs ?= rhs` (same sort). Public fields, freely
-/// constructible — building one proves *nothing*. A [`Rule`] may take this as its
-/// `Input` to validate; only [`apply`] mints an actual [`Eqn`] from a blessed
-/// candidate.
+/// The equality **proposition** `A = B` (same sort) — an [`Expr`] of sort `bool`.
+/// Freely constructible (public fields); building one proves *nothing*. Doubles as
+/// the "candidate equation" a [`Rule`] can validate. A *proven* equality is
+/// [`ThmEqn`] = [`Thm<L, Eqn<A, B>>`]. Replaces the old `EqOp` and `Cand`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Cand<A, B> {
-    /// Proposed left-hand side.
-    pub lhs: A,
-    /// Proposed right-hand side (same sort as `lhs`).
-    pub rhs: B,
+pub struct Eqn<A, B>(pub A, pub B);
+
+impl<A: Expr, B: Expr<Ty = A::Ty>> sealed::Sealed for Eqn<A, B> {}
+impl<A: Expr, B: Expr<Ty = A::Ty>> Expr for Eqn<A, B> {
+    type Ty = bool;
 }
 
-impl<A: Expr, B: Expr<Ty = A::Ty>> Cand<A, B> {
-    /// Propose `lhs ?= rhs` (same sort). Proves nothing on its own.
-    pub fn new(lhs: A, rhs: B) -> Self {
-        Cand { lhs, rhs }
+/// The unforgeable certificate: "the proposition `prop: P` holds in language value
+/// `lang: L`" (the LCF `thm`). Private fields, no public constructor. The `L` value
+/// carries the hypotheses/axioms in scope, so combining two theorems requires
+/// combining their `lang`s (`Language::union`).
+#[derive(Clone, Debug)]
+pub struct Thm<L, P> {
+    lang: L,
+    prop: P,
+}
+
+/// A **proven** equality `⊢ A = B`, the home of the congruence calculus.
+pub type ThmEqn<L, A, B> = Thm<L, Eqn<A, B>>;
+
+impl<L, P: Expr<Ty = bool>> Thm<L, P> {
+    /// The sole constructor — the minting gate. `pub(crate)` so the calculus here,
+    /// the [`crate::prop`] bool theory, [`crate::eq`]'s `decide`, and
+    /// [`crate::matching`]'s `apply_rewrite` (the only minting sites, all audited)
+    /// can use it; never exposed outside the crate. The `P: Expr<Ty = bool>` bound
+    /// guarantees every certificate proposition is a boolean.
+    pub(crate) fn new(lang: L, prop: P) -> Self {
+        Thm { lang, prop }
     }
 }
 
-impl<A, B, L> Eqn<A, B, L> {
-    /// The sole constructor — the minting gate, `pub(crate)` so the calculus here
-    /// and the propositional rules in [`crate::prop`] (the only two minting sites,
-    /// both audited) can use it; never exposed outside the crate.
-    pub(crate) fn new(lhs: A, rhs: B, lang: L) -> Self {
-        Eqn { lhs, rhs, lang }
+impl<L, P> Thm<L, P> {
+    /// Owned destructure into `(lang, prop)` — `pub(crate)`, for the calculus to
+    /// move parts into a freshly-minted theorem. Forgets the proof (the parts
+    /// cannot be recombined without `new`).
+    pub(crate) fn into_parts(self) -> (L, P) {
+        (self.lang, self.prop)
     }
 
-    /// Owned destructure into `(lhs, rhs, lang)` — `pub(crate)`, for the
-    /// propositional rules to move parts into a freshly-minted equation. Forgets
-    /// the proof (the parts cannot be recombined without `new`).
-    pub(crate) fn into_parts(self) -> (A, B, L) {
-        (self.lhs, self.rhs, self.lang)
+    /// The proposition this theorem proves (read-only; reading never mints).
+    pub fn prop(&self) -> &P {
+        &self.prop
     }
-
-    /// The left-hand side (read-only; reading never mints).
-    pub fn lhs(&self) -> &A {
-        &self.lhs
-    }
-    /// The right-hand side.
-    pub fn rhs(&self) -> &B {
-        &self.rhs
-    }
-    /// The language value this equation was proved in.
+    /// The language value this theorem was proved in.
     pub fn lang(&self) -> &L {
         &self.lang
     }
 }
 
+// Convenience accessors on a proven equality.
+impl<L, A, B> Thm<L, Eqn<A, B>> {
+    /// The left-hand side of the proven equality.
+    pub fn lhs(&self) -> &A {
+        &self.prop.0
+    }
+    /// The right-hand side of the proven equality.
+    pub fn rhs(&self) -> &B {
+        &self.prop.1
+    }
+}
+
 // ---- Ungated: the universal equality calculus (sound in every L) ----
 
-impl<A: Clone, L> Eqn<A, A, L> {
-    /// Reflexivity: `a = a`. (`Clone` to duplicate the expression into both sides.)
+impl<L, A: Expr + Clone> Thm<L, Eqn<A, A>> {
+    /// Reflexivity: `⊢ a = a`, built by duplicating `a` via [`Clone`]. `Clone` is
+    /// **not trusted** as an external fact here: together with `of_eq`'s [`Eq`] it is
+    /// one of the two rules that *define* leaf equality (a sort's `Clone` is what
+    /// "the same value" means). A distinguishing step needs an *admitted* rule, so an
+    /// unusual `Clone` is inert in `()`. See the crate-root trust surface.
     pub fn refl(e: A, lang: L) -> Self {
-        Eqn::new(e.clone(), e, lang)
+        Thm::new(lang, Eqn(e.clone(), e))
     }
 }
 
-impl<A, B, L> Eqn<A, B, L> {
-    /// Symmetry: from `a = b` get `b = a`.
-    pub fn sym(self) -> Eqn<B, A, L> {
-        Eqn::new(self.rhs, self.lhs, self.lang)
+impl<L, A, B> Thm<L, Eqn<A, B>>
+where
+    A: Expr,
+    B: Expr<Ty = A::Ty>,
+{
+    /// Symmetry: from `⊢ a = b` get `⊢ b = a`.
+    pub fn sym(self) -> Thm<L, Eqn<B, A>> {
+        let (lang, Eqn(a, b)) = self.into_parts();
+        Thm::new(lang, Eqn(b, a))
     }
 }
 
-impl<A, B, L: Language> Eqn<A, B, L> {
-    /// Transitivity: from `a = b` and `b' = c`, where the middle terms `b`/`b'`
+impl<L: Language, A, B> Thm<L, Eqn<A, B>>
+where
+    A: Expr,
+    B: Expr<Ty = A::Ty>,
+{
+    /// Transitivity: from `⊢ a = b` and `⊢ b' = c`, where the middle terms `b`/`b'`
     /// match (`B: Eq`, stdlib `==` on the `derive(Eq)` structural equality), get
-    /// `a = c` under the **union** of the two contexts. `Err` if the middles differ
-    /// or the contexts cannot be combined.
-    pub fn trans<C>(self, rhs: Eqn<B, C, L>) -> Result<Eqn<A, C, L>, Error>
+    /// `⊢ a = c` under the **union** of the two contexts. `Err` if the middles
+    /// differ or the contexts cannot be combined.
+    pub fn trans<C>(self, other: Thm<L, Eqn<B, C>>) -> Result<Thm<L, Eqn<A, C>>, Error>
     where
         B: Eq,
+        C: Expr<Ty = A::Ty>,
     {
-        if self.rhs != rhs.lhs {
+        let (l1, Eqn(a, b)) = self.into_parts();
+        let (l2, Eqn(b2, c)) = other.into_parts();
+        if b != b2 {
             return Err(Error::TransMismatch);
         }
-        let lang = self.lang.union(rhs.lang).ok_or(Error::LangMismatch)?;
-        Ok(Eqn::new(self.lhs, rhs.rhs, lang))
+        let lang = l1.union(l2).ok_or(Error::LangMismatch)?;
+        Ok(Thm::new(lang, Eqn(a, c)))
     }
 }
 
-impl<A, A2, L> Eqn<A, A2, L> {
+impl<L, A, A2> Thm<L, Eqn<A, A2>> {
     /// Congruence in the ARGUMENT, under any op `F` (ops denote functions). There
     /// is deliberately no congruence in the *operator* — you cannot equate ops.
-    pub fn cong_app<F>(self, f: F) -> Eqn<App<F, A>, App<F, A2>, L>
+    ///
+    /// `F` is duplicated via [`Clone`] onto both sides, so (as for [`refl`](Self::refl))
+    /// `F::clone` *defines* op identity rather than being trusted. If `F` is
+    /// uninterpreted this is inert; the only way to observe `f.clone() ≠ f` is to
+    /// *admit* a [`CanonRule`] whose `clone`/`eval` disagree — a self-inflicted
+    /// inconsistency in that language (like a false axiom), not a framework hole.
+    pub fn cong_app<F>(self, f: F) -> Thm<L, Eqn<App<F, A>, App<F, A2>>>
     where
         F: crate::op::Op + Clone,
         A: Expr<Ty = F::In>,
         A2: Expr<Ty = F::In>,
     {
-        Eqn::new(App(f.clone(), self.lhs), App(f, self.rhs), self.lang)
+        let (lang, Eqn(a, a2)) = self.into_parts();
+        Thm::new(lang, Eqn(App(f.clone(), a), App(f, a2)))
     }
 }
 
-impl<A, A2, L: Language> Eqn<A, A2, L> {
-    /// Pair congruence: from `a = a2` and `b = b2` get `(a, b) = (a2, b2)` under the
-    /// **union** of the two contexts. `Err` if they cannot be combined.
-    pub fn cong_pair<B, B2>(self, other: Eqn<B, B2, L>) -> Result<Eqn<(A, B), (A2, B2), L>, Error> {
-        let lang = self.lang.union(other.lang).ok_or(Error::LangMismatch)?;
-        Ok(Eqn::new((self.lhs, other.lhs), (self.rhs, other.rhs), lang))
+impl<L: Language, A, A2> Thm<L, Eqn<A, A2>>
+where
+    A: Expr,
+    A2: Expr<Ty = A::Ty>,
+{
+    /// Pair congruence: from `⊢ a = a2` and `⊢ b = b2` get `⊢ (a, b) = (a2, b2)`
+    /// under the **union** of the two contexts. `Err` if they cannot be combined.
+    pub fn cong_pair<B, B2>(
+        self,
+        other: Thm<L, Eqn<B, B2>>,
+    ) -> Result<Thm<L, Eqn<(A, B), (A2, B2)>>, Error>
+    where
+        B: Expr,
+        B2: Expr<Ty = B::Ty>,
+    {
+        let (l1, Eqn(a, a2)) = self.into_parts();
+        let (l2, Eqn(b, b2)) = other.into_parts();
+        let lang = l1.union(l2).ok_or(Error::LangMismatch)?;
+        Ok(Thm::new(lang, Eqn((a, b), (a2, b2))))
     }
 }
 
 // ---- Pointer equality (via TrustedDeref; no `Eq` on the pointee needed) ----
 
-impl<A, P, L: Language> Eqn<A, Ref<P>, L>
+impl<L: Language, A, P> Thm<L, Eqn<A, Ref<P>>>
 where
+    A: Expr<Ty = P::Target>,
     P: TrustedDeref,
     P::Target: Sized,
 {
-    /// Transitivity through a **pointer-equal** middle: from `a = Ref(p)` and
-    /// `Ref(q) = c`, where `p` and `q` are the *same pointer* (address-equal), get
-    /// `a = c` — no `Eq` on the pointee required. Sound: the same address is the
+    /// Transitivity through a **pointer-equal** middle: from `⊢ a = Ref(p)` and
+    /// `⊢ Ref(q) = c`, where `p` and `q` are the *same pointer* (address-equal), get
+    /// `⊢ a = c` — no `Eq` on the pointee required. Sound: the same address is the
     /// same value.
-    pub fn trans_ptr<Q, C>(self, rhs: Eqn<Ref<Q>, C, L>) -> Result<Eqn<A, C, L>, Error>
+    pub fn trans_ptr<Q, C>(self, other: Thm<L, Eqn<Ref<Q>, C>>) -> Result<Thm<L, Eqn<A, C>>, Error>
     where
         Q: TrustedDeref<Target = P::Target>,
+        C: Expr<Ty = P::Target>,
     {
-        let (a, p, l1) = self.into_parts();
-        let (q, c, l2) = rhs.into_parts();
+        let (l1, Eqn(a, p)) = self.into_parts();
+        let (l2, Eqn(q, c)) = other.into_parts();
         if !std::ptr::eq(&*p.0, &*q.0) {
             return Err(Error::TransMismatch);
         }
         let lang = l1.union(l2).ok_or(Error::LangMismatch)?;
-        Ok(Eqn::new(a, c, lang))
+        Ok(Thm::new(lang, Eqn(a, c)))
     }
 }
 
-/// `Ref(p) = Ref(q)` when `p` and `q` are the **same pointer** (address-equal) —
+/// `⊢ Ref(p) = Ref(q)` when `p` and `q` are the **same pointer** (address-equal) —
 /// sound without any `Eq` on the pointee. The pointer-equality seam for sharing.
-pub fn of_ptr_eq<P, Q, L>(p: Ref<P>, q: Ref<Q>, lang: L) -> Option<Eqn<Ref<P>, Ref<Q>, L>>
+pub fn of_ptr_eq<P, Q, L>(p: Ref<P>, q: Ref<Q>, lang: L) -> Option<Thm<L, Eqn<Ref<P>, Ref<Q>>>>
 where
     P: TrustedDeref,
     Q: TrustedDeref<Target = P::Target>,
     P::Target: Sized,
 {
-    std::ptr::eq(&*p.0, &*q.0).then(|| Eqn::new(p, q, lang))
+    std::ptr::eq(&*p.0, &*q.0).then(|| Thm::new(lang, Eqn(p, q)))
 }
 
 // ---- Lift: weaken the language one layer (sound: tree(L2) ⊆ tree(L)) ----
 
-impl<A, B, L2: Language> Eqn<A, B, L2> {
-    /// Re-home this equation into a language `into` that **directly extends** `L2`.
+impl<L2: Language, P: Expr<Ty = bool>> Thm<L2, P> {
+    /// Re-home this theorem into a language `into` that **directly extends** `L2`.
     /// Runtime-checks `into.extends(TypeId::of::<L2>())` before minting; sound
     /// because `extends` guarantees `tree(L2) ⊆ tree(into)`.
-    pub fn lift<L: Language>(self, into: L) -> Result<Eqn<A, B, L>, Error> {
+    pub fn lift<L: Language>(self, into: L) -> Result<Thm<L, P>, Error> {
         let parent = TypeId::of::<L2>();
         if !into.extends(parent) {
             return Err(Error::NotExtended(parent));
         }
-        Ok(Eqn::new(self.lhs, self.rhs, into))
+        let (_, prop) = self.into_parts();
+        Ok(Thm::new(into, prop))
     }
 }
 
-/// `Val(a) = Val(b)` whenever `a == b` (`C: Eq`), in an explicit language value.
-/// **Ungated** — leaf equality is intrinsic to a sort (a sort *is* its `Eq`), so
-/// this is sound in every language; it is just a typed convenience over `refl` (it
-/// never bridges values `Eq` calls unequal). `None` if `a != b`.
-pub fn of_eq_with<C: Eq, L>(a: C, b: C, lang: L) -> Option<Eqn<Val<C>, Val<C>, L>> {
-    (a == b).then(|| Eqn::new(Val(a), Val(b), lang))
+// ---- Ungated leaf equality (intrinsic to a sort — a sort *is* its `Eq`) ----
+
+/// `⊢ Val(a) = Val(b)` whenever `a == b` (`C: Eq`), in an explicit language value.
+/// **Ungated** — leaf equality is intrinsic to a sort, so this is sound in every
+/// language (it never bridges values `Eq` calls unequal). `None` if `a != b`.
+pub fn of_eq_with<C: Eq, L>(a: C, b: C, lang: L) -> Option<Thm<L, Eqn<Val<C>, Val<C>>>> {
+    (a == b).then(|| Thm::new(lang, Eqn(Val(a), Val(b))))
 }
 
 /// [`of_eq_with`] in the **default** language value (`L: Default`).
-pub fn of_eq<C: Eq, L: Default>(a: C, b: C) -> Option<Eqn<Val<C>, Val<C>, L>> {
+pub fn of_eq<C: Eq, L: Default>(a: C, b: C) -> Option<Thm<L, Eqn<Val<C>, Val<C>>>> {
     of_eq_with(a, b, L::default())
 }
 
-/// The equality **certificate** `Val(a) = Val(b)` from `a == b` (`C: Eq`), or
+/// The certificate `⊢ Val(a) = Val(b)` from `a == b` (`C: Eq`), or
 /// [`Error::Undecided`] when `a != b` (plain `Eq` trusts only the `true` direction).
-/// This is the certificate form; the old bool-proposition form is
-/// `semidecide(..)?.internalize()`.
-pub fn semidecide<C: Eq, L>(a: C, b: C, lang: L) -> Result<Eqn<Val<C>, Val<C>, L>, Error> {
+pub fn semidecide<C: Eq, L>(a: C, b: C, lang: L) -> Result<Thm<L, Eqn<Val<C>, Val<C>>>, Error> {
     of_eq_with(a, b, lang).ok_or(Error::Undecided)
 }
 
@@ -227,14 +274,10 @@ pub fn semidecide<C: Eq, L>(a: C, b: C, lang: L) -> Result<Eqn<Val<C>, Val<C>, L
 
 /// Apply a general [`Rule`] to `input`. Gated on **`Rho`'s own `TypeId`** being
 /// admitted — the gate identity is the very type whose `decide` produces the
-/// equation, so an admitted rule cannot be impersonated. The untrusted `decide` runs
-/// only *after* the gate passes; its output is unused until minted here (the sole
-/// choke point).
-pub fn apply<L, Rho>(
-    lang: L,
-    rho: Rho,
-    input: Rho::Input,
-) -> Result<Eqn<Rho::Lhs, Rho::Rhs, L>, Error>
+/// conclusion, so an admitted rule cannot be impersonated. The untrusted `decide`
+/// runs only *after* the gate passes; its output is unused until minted here (the
+/// sole choke point).
+pub fn apply<L, Rho>(lang: L, rho: Rho, input: Rho::Input) -> Result<Thm<L, Rho::Concl>, Error>
 where
     L: Language,
     Rho: Rule<L>,
@@ -243,8 +286,8 @@ where
     if !lang.admits(rule) {
         return Err(Error::NotAdmitted(rule));
     }
-    let (lhs, rhs) = rho.decide(input, &lang)?;
-    Ok(Eqn::new(lhs, rhs, lang))
+    let concl = rho.decide(input, &lang)?;
+    Ok(Thm::new(lang, concl))
 }
 
 /// Convenience for a **nullary-axiom** rule (`Rule<L, Input = ()>`), so a callsite
@@ -252,18 +295,18 @@ where
 pub fn apply0<L: Language, Rho: Rule<L, Input = ()>>(
     lang: L,
     rho: Rho,
-) -> Result<Eqn<Rho::Lhs, Rho::Rhs, L>, Error> {
+) -> Result<Thm<L, Rho::Concl>, Error> {
     apply(lang, rho, ())
 }
 
-/// Evaluate an op to its canonical value: `App<F, Val(v)> = Val(F.eval(v))`. Gated
+/// Evaluate an op to its canonical value: `⊢ App<F, Val(v)> = Val(F.eval(v))`. Gated
 /// on `F`'s `TypeId` (the op-as-rule). Sound: the equation holds by literal
 /// denotation, since the argument is the ground value `Val(v)`.
 pub fn canon<L, F>(
     f: F,
     arg: F::In,
     lang: L,
-) -> Result<Eqn<App<F, Val<F::In>>, Val<F::Out>, L>, Error>
+) -> Result<Thm<L, Eqn<App<F, Val<F::In>>, Val<F::Out>>>, Error>
 where
     L: Language,
     F: CanonRule,
@@ -273,5 +316,5 @@ where
         return Err(Error::NotAdmitted(rule));
     }
     let out = Val(f.eval(&arg));
-    Ok(Eqn::new(App(f, Val(arg)), out, lang))
+    Ok(Thm::new(lang, Eqn(App(f, Val(arg)), out)))
 }

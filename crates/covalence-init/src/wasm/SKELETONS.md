@@ -4,18 +4,24 @@ The SpecTec → kernel front end (WASM-spec acceleration). Input is SpecTec AST
 S-expressions (`covalence_spectec::parse`); no `.watsup` frontend. Design +
 phasing: [`notes/wasm-spec.md`](../../../../notes/wasm-spec.md). Live coverage:
 `spec::coverage_report` (bundled WASM 3.0 spec — leg A: 274 rules / 64-of-125
-relations; leg B: 25-of-207 types rendered). See
+relations; leg B: 72-of-207 types rendered). See
 [CLAUDE.md](../../../../CLAUDE.md) § Skeletons, the
 [crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
 
 ## Severe / blocking
 
-- **Variant/struct types → HOL datatypes.** `wasm::syntax` renders aliases /
-  primitives / tuples / iteration (25-of-207 spec types); the rest are **variant**
-  (`valtype`/`instr`/…) and **struct** types that need real inductive datatypes via
-  the `crate::init` engine, plus parametric types (`vec(X)`) and `text`/`rat`/`real`.
-  This is the gating item — until variants render, `denote` errors on their
-  expressions and most typing relations can't get a denotational reading.
+- **Recursive variant types → HOL datatypes.** `wasm::syntax` now renders
+  aliases / primitives / tuples / iteration / **non-recursive variants + structs**
+  (72-of-207 spec types) via the generic `crate::init::inductive::VariantBackend`
+  (`CoprodBackend` = coproduct-of-payloads). Still deferred: **recursive** /
+  mutually-recursive variants (`instr`, `valtype`↔…, caught by the cyclic-alias
+  guard) — these need the recursion engine (`init/inductive` recursor) to synthesize
+  a real fixpoint type + induction, and a backend for it behind `VariantBackend`.
+  Plus parametric types (`vec(X)`) and `text`/`rat`/`real`.
+- **Constructor terms / freeness not yet threaded.** `CoprodBackend::ctor` builds
+  the injection terms but `wasm::syntax` only uses `ty`; wire the constructors (and
+  coprod injectivity/disjointness lemmas) through so `denote` can render `case`
+  expressions of variant type.
 - **`Dec` functions → real `define`s.** The 462 metafunctions have no recursive
   `define` + computation rules yet (`wasm/function.rs`). `denote` covers the value
   *expressions* they're built from, not the definitions.

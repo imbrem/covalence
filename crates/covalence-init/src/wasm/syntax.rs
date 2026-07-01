@@ -2,24 +2,28 @@
 //!
 //! Renders a SpecTec `SpecTecTyp` (and a whole `SpecTecDef::Typ`) to a genuine
 //! HOL [`Type`] over the [`crate::init`] catalogue: `bool`/`nat`/`int` primitives,
-//! tuples → right-nested `prod`, `X*`/`X?` → `list`/`option`, and named
-//! **alias** types chased through a [`TypeCtx`]. This is what [`super::denote`]
-//! needs to type metavariables that come from the spec, and the first step toward
-//! typing SpecTec functions and relations.
+//! tuples → right-nested `prod`, `X*`/`X?` → `list`/`option`, named **alias** types
+//! chased through a [`TypeCtx`], **struct** types → `prod` of their fields, and
+//! **non-recursive variant** types → a coproduct-of-payloads via the generic
+//! datatype backend ([`crate::init::inductive::VariantBackend`]). This is what
+//! [`super::denote`] needs to type metavariables from the spec, and the first step
+//! toward typing SpecTec functions and relations.
 //!
 //! Building a `Type` cannot be unsound (it grows no `Thm`), so this is a plain
-//! total-where-possible renderer: constructs the catalogue doesn't yet model —
-//! **variant** and **struct** types (WASM's `valtype`/`instr`/… — these need real
-//! inductive datatypes via the `crate::init` engine), parametric types (`vec(X)`),
-//! `text`, `rat`/`real` — return a typed error. See `SKELETONS.md`.
+//! total-where-possible renderer. Still deferred (typed error): **recursive**
+//! variants (e.g. `instr`, caught by the cyclic-alias guard — the recursion
+//! engine's job), parametric types (`vec(X)`), and `text`/`rat`/`real`. See
+//! `SKELETONS.md`.
 
 use std::collections::BTreeMap;
 
 use covalence_core::{Error, Result, Type};
 use covalence_spectec::ast::{
     SpecTecDef, SpecTecDefTyp, SpecTecInst, SpecTecIter, SpecTecNumTyp, SpecTecTyp, SpecTecTypBind,
+    SpecTecTypCase, SpecTecTypField,
 };
 
+use crate::init::inductive::{CoprodBackend, VCtor, Variant, VariantBackend};
 use crate::init::{list, option, prod};
 
 fn syntax_err(msg: impl Into<String>) -> Error {
@@ -144,26 +148,72 @@ fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str
             "parametric type `{name}` not modelled yet"
         )));
     }
-    match dt {
-        SpecTecDefTyp::Alias { typ } => {
-            visited.push(name);
-            let r = resolve_typ_d(typ, ctx, visited);
-            visited.pop();
-            r
+    // Descend under `name` so a self-referential (recursive) type surfaces as a
+    // cyclic-alias error and is deferred to the recursion engine, not looped on.
+    visited.push(name);
+    let r = match dt {
+        SpecTecDefTyp::Alias { typ } => resolve_typ_d(typ, ctx, visited),
+        SpecTecDefTyp::Struct { tfs } => resolve_struct(tfs, ctx, visited),
+        SpecTecDefTyp::Variant { tcs } => resolve_variant(tcs, ctx, visited),
+    };
+    visited.pop();
+    r
+}
+
+/// A record type → the right-nested `prod` of its field types (`{}` = `unit`).
+fn resolve_struct<'a>(
+    tfs: &'a [SpecTecTypField],
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+) -> Result<Type> {
+    match tfs {
+        [] => Ok(Type::unit()),
+        [SpecTecTypField::Field { t, qs, .. }] => {
+            reject_parametric_field(qs)?;
+            resolve_typ_d(t, ctx, visited)
         }
-        SpecTecDefTyp::Struct { .. } => Err(syntax_err(format!(
-            "record type `{name}` needs a datatype (not modelled yet)"
-        ))),
-        SpecTecDefTyp::Variant { .. } => Err(syntax_err(format!(
-            "variant type `{name}` needs a datatype (not modelled yet)"
-        ))),
+        [SpecTecTypField::Field { t, qs, .. }, rest @ ..] => {
+            reject_parametric_field(qs)?;
+            let head = resolve_typ_d(t, ctx, visited)?;
+            let tail = resolve_struct(rest, ctx, visited)?;
+            Ok(prod::prod(head, tail))
+        }
+    }
+}
+
+/// A variant type → a coproduct-of-payloads via the generic non-recursive
+/// datatype backend ([`crate::init::inductive`]). Each case's payload is its
+/// resolved field type; a self-referential case fails the cyclic-alias guard and
+/// defers the whole type.
+fn resolve_variant<'a>(
+    tcs: &'a [SpecTecTypCase],
+    ctx: &TypeCtx<'a>,
+    visited: &mut Vec<&'a str>,
+) -> Result<Type> {
+    if tcs.is_empty() {
+        return Err(syntax_err("empty variant has no type"));
+    }
+    let mut ctors = Vec::with_capacity(tcs.len());
+    for SpecTecTypCase::Field { op, t, qs, .. } in tcs {
+        reject_parametric_field(qs)?;
+        let payload = resolve_typ_d(t, ctx, visited)?;
+        ctors.push(VCtor::new(super::encode::mixop_key(op), payload));
+    }
+    CoprodBackend.ty(&Variant::new(ctors))
+}
+
+fn reject_parametric_field(qs: &[covalence_spectec::ast::SpecTecParam]) -> Result<()> {
+    if qs.is_empty() {
+        Ok(())
+    } else {
+        Err(syntax_err("parametric field/case not modelled yet"))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_spectec::ast::{SpecTecInst, SpecTecParam};
+    use covalence_spectec::ast::{MixOp, SpecTecInst, SpecTecParam};
 
     fn alias(name: &str, typ: SpecTecTyp) -> SpecTecDef {
         SpecTecDef::Typ {
@@ -254,24 +304,73 @@ mod tests {
         assert!(resolve_def(&defs[0], &ctx).is_err());
     }
 
-    #[test]
-    fn variant_and_parametric_error() {
-        let variant = SpecTecDef::Typ {
-            x: "valtype".into(),
+    fn variant_case(name: &str, t: SpecTecTyp) -> SpecTecTypCase {
+        SpecTecTypCase::Field {
+            op: MixOp::new(vec![name.into()]),
+            t,
+            qs: vec![],
+            prs: vec![],
+        }
+    }
+    fn variant_def(name: &str, cases: Vec<SpecTecTypCase>) -> SpecTecDef {
+        SpecTecDef::Typ {
+            x: name.into(),
             ps: vec![],
             insts: vec![SpecTecInst::Inst {
                 ps: vec![],
                 as_: vec![],
-                dt: SpecTecDefTyp::Variant { tcs: vec![] },
+                dt: SpecTecDefTyp::Variant { tcs: cases },
             }],
-        };
+        }
+    }
+    fn unit_ty() -> SpecTecTyp {
+        SpecTecTyp::Tup { ets: vec![] }
+    }
+
+    /// A non-recursive variant renders to a coproduct-of-payloads.
+    #[test]
+    fn nonrecursive_variant_renders_to_coprod() {
+        use crate::init::coprod::coprod;
+        // numtype = I32 | I64 | F32  (three nullary cases)
+        let def = variant_def(
+            "numtype",
+            vec![
+                variant_case("I32", unit_ty()),
+                variant_case("I64", unit_ty()),
+                variant_case("F32", unit_ty()),
+            ],
+        );
+        let ctx = TypeCtx::new(std::slice::from_ref(&def));
+        assert_eq!(
+            resolve_def(&def, &ctx).unwrap(),
+            coprod(Type::unit(), coprod(Type::unit(), Type::unit()))
+        );
+    }
+
+    /// A recursive variant (a case referring back to itself) is deferred, not
+    /// looped on — the cyclic-alias guard fires.
+    #[test]
+    fn recursive_variant_is_deferred() {
+        // tree = LEAF | NODE tree   (NODE's payload references `tree`)
+        let def = variant_def(
+            "tree",
+            vec![
+                variant_case("LEAF", unit_ty()),
+                variant_case("NODE", var("tree")),
+            ],
+        );
+        let ctx = TypeCtx::new(std::slice::from_ref(&def));
+        assert!(resolve_def(&def, &ctx).is_err());
+    }
+
+    #[test]
+    fn parametric_type_is_deferred() {
         let parametric = SpecTecDef::Typ {
             x: "vec".into(),
             ps: vec![SpecTecParam::Typ { x: "X".into() }],
             insts: vec![],
         };
         let ctx = TypeCtx::new(&[]);
-        assert!(resolve_def(&variant, &ctx).is_err());
         assert!(resolve_def(&parametric, &ctx).is_err());
     }
 }

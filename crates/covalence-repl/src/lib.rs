@@ -720,6 +720,7 @@ fn hex_nibble(b: u8) -> Result<u8, FError> {
     }
 }
 
+#[cfg(feature = "cogit")]
 fn parse_git_oid(bytes: &[u8]) -> Result<covalence_hash::gix_hash::ObjectId, FError> {
     let s = std::str::from_utf8(bytes)
         .map_err(|e| FError::Parse(format!("git OID is not valid UTF-8: {e}")))?;

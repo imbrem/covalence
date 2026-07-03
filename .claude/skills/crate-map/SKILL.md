@@ -55,7 +55,7 @@ consumer). The layers below mirror the dependency stack (see
 - **covalence-alethe** — Alethe (SMT) proof checking → HOL.
 - **covalence-egglog** — egglog integration (pinned upstream git rev for the `proof` module).
 - **covalence-opentheory** — OpenTheory article import (folds into the new thin covalence-hol).
-- **covalence-lean** — Lean export parsing (type-theory seed).
+- **covalence-lean** — Lean export parsing (type-theory seed). Intentionally has no in-workspace dependents yet: the seed for future Lean (and Dedukti) proof imports. Keep, don't prune.
 - **covalence-forsp** — Forsp Lisp (drives the repl).
 
 ## App / systems

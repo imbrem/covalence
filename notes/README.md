@@ -43,4 +43,5 @@ marked as not-yet-built where they are.
 |---|---|
 | [`cov-project.md`](./cov-project.md) | Compiling a multi-file `.cov` project (the dependency-resolving loader, the Rust↔`.cov` boundary). |
 | [`peano-arithmetic-plan.md`](./peano-arithmetic-plan.md) | DONE — pointer to the landed PA deep embedding; live status in `crates/covalence-hol/src/peano/SKELETONS.md`. |
+| [`sha256-round-keystone.md`](./sha256-round-keystone.md) | SKETCH — the universality keystone: prove one WASM SHA-256 round equal to the FIPS spec, with the hard step discharged by a fact imported from set.mm. The smallest demo that tests the verified-WASM + import-fuel thesis end-to-end. |
 | [`wasm3-rust.md`](./wasm3-rust.md) | Dated research note: WebAssembly 3.0 in Rust, backing the `web-kernel.md` async decision. |

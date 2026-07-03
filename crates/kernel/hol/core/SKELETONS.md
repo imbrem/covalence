@@ -1,6 +1,6 @@
 # Skeletons — covalence-core
 
-See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
+See [`CLAUDE.md`](../../../../CLAUDE.md) § Skeletons and the [root index](../../../../SKELETONS.md).
 
 Module-local skeletons: [`src/thm/SKELETONS.md`](src/thm/SKELETONS.md) (the
 `covalence-pure` mint-gate future seams).

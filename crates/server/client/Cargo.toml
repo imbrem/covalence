@@ -16,9 +16,9 @@ async = [
 ]
 
 [dependencies]
-covalence-shell = { path = "../kernel/shell" }
-covalence-hash = { path = "../lib/hash", default-features = false }
-covalence-store = { path = "../store/core" }
+covalence-shell = { path = "../../kernel/shell" }
+covalence-hash = { path = "../../lib/hash", default-features = false }
+covalence-store = { path = "../../store/core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -36,7 +36,7 @@ bytes = { version = "1", optional = true }
 [dev-dependencies]
 axum = "0.8"
 bytes = "1"
-covalence-serve = { path = "../covalence-serve", default-features = false }
-covalence-shell = { path = "../kernel/shell" }
+covalence-serve = { path = "../core", default-features = false }
+covalence-shell = { path = "../../kernel/shell" }
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }

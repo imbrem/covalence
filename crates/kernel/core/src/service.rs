@@ -43,7 +43,7 @@ pub enum Severity {
 /// A source span as byte offsets into the article source.
 ///
 /// Always `None` on diagnostics today: the `.cov` script layer does not yet
-/// carry source extents (see `crates/covalence-hol/src/script/SKELETONS.md`).
+/// carry source extents (see `crates/kernel/hol/init/src/script/SKELETONS.md`).
 /// Editor-grade, in-source error squiggles depend on that work landing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]

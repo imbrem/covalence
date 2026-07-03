@@ -2,7 +2,7 @@
 
 Open work in the **metalogic** layer: the generic `Derivable_L` engine, databases
 as HOL values, and Metamath import/replay. See `CLAUDE.md` § Skeletons, the
-[crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
+[crate index](../../SKELETONS.md), and the [root index](../../../../../../SKELETONS.md).
 Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
 
 ## Severe
@@ -19,7 +19,7 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
   Not built.
 - **`∃P. ValidProof(P,S,db) ⟺ Derivable_DB db S` grounding bridge.** `Derivable_DB`
   rests on the impredicative engine, not on a HOL reification of the
-  [`metamath`](../../../covalence-metamath/) verifier. Reifying that decidable checker as a HOL
+  [`metamath`](../../../../../proof/metamath/) verifier. Reifying that decidable checker as a HOL
   function and proving the equivalence is unbuilt. Upgrades the *grounding* only.
 
 ## Minor

@@ -109,12 +109,12 @@ jobs:
           python-version: "3.12"
       - name: Set up virtualenv and install tools
         run: |
-          python -m venv crates/covalence-python/.venv
-          source crates/covalence-python/.venv/bin/activate
+          python -m venv crates/ffi/python/.venv
+          source crates/ffi/python/.venv/bin/activate
           pip install maturin pytest
       - name: Build and test Python bindings
         run: |
-          cd crates/covalence-python
+          cd crates/ffi/python
           source .venv/bin/activate
           maturin develop
           pytest tests/ -v

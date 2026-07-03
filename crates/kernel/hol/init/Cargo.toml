@@ -18,7 +18,7 @@ covalence-types = { path = "../../../lib/types" }
 covalence-hash = { path = "../../../lib/hash", default-features = false }
 covalence-sexp = { path = "../../../lib/sexp" }
 covalence-metamath = { path = "../../../proof/metamath" }
-covalence-grammar = { path = "../../../covalence-grammar" }
+covalence-grammar = { path = "../../../lang/grammar" }
 covalence-spectec = { path = "../../../lib/wasm/spectec" }
 async-trait = "0.1"
 bytes = "1"

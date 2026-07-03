@@ -3,9 +3,9 @@
 Deferred work in this crate (the Metamath substitution engine + `.mm` format/IO
 reader, the lower HOL-free crate). Consumer-side bridge deferrals (`#logic` /
 `Derivable_L`, the import tactic + representation-equivalence metatheorem) live in
-`covalence-hol` ([`metalogic/SKELETONS.md`](../covalence-init/src/metalogic/SKELETONS.md),
-[`peano/SKELETONS.md`](../covalence-init/src/peano/SKELETONS.md)). See repo
-[`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
+`covalence-hol` ([`metalogic/SKELETONS.md`](../../kernel/hol/init/src/metalogic/SKELETONS.md),
+[`peano/SKELETONS.md`](../../kernel/hol/init/src/peano/SKELETONS.md)). See repo
+[`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the [root index](../../../SKELETONS.md).
 
 ## Deferred features (north stars)
 

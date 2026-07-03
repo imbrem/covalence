@@ -23,7 +23,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 const SET_LIMIT = process.argv[2] ?? "5000"; // "0" = whole set.mm
 const SET_MM = process.argv[3] ?? process.env.COV_SET_MM ?? "";
-const HOL_MM = "crates/covalence-metamath/tests/fixtures/hol.mm";
+const HOL_MM = "crates/proof/metamath/tests/fixtures/hol.mm";
 const log = (...a) => console.error("[profile-import]", ...a);
 
 // ---------------------------------------------------------------------------

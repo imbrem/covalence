@@ -1,7 +1,7 @@
 # Skeletons — `covalence-hol/src/ring`
 
-See [`CLAUDE.md`](../../../../../CLAUDE.md) § Skeletons, the
-[crate index](../../../SKELETONS.md), and the [root index](../../../../../SKELETONS.md).
+See [`CLAUDE.md`](../../../../../../../CLAUDE.md) § Skeletons, the
+[crate index](../../../SKELETONS.md), and the [root index](../../../../../../../SKELETONS.md).
 
 **Ring rewriter** (`normalize.rs` — `RingNormalizer` / `RingOps`).
 

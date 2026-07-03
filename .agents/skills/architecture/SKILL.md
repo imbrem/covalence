@@ -6,21 +6,21 @@ disable-model-invocation: true
 
 ## Repo Layout
 
-- `crates/covalence/` — Main binary crate (`cov` CLI)
+- `crates/app/cov/` — Main binary crate (`cov` CLI)
   - `src/main.rs` — Entry point with clap derive; dispatches to `cov lsp`, `cov cog`, `cov serve`, `cov repl`
   - `src/highlight.rs` — S-expression syntax highlighting for the REPL
   - `src/lib.rs` — Shared constants (`VERSION`, `TARGET`)
   - `build.rs` — Sets `COV_TARGET` env var from the Cargo build target triple
-- `crates/covalence-kernel/` — **HOL kernel** (experimental, planned for rewrite — see crate-level docs in `src/lib.rs`)
+- `crates/kernel/core/` — **HOL kernel** (experimental, planned for rewrite — see crate-level docs in `src/lib.rs`)
   - Files: `arena.rs`, `egraph.rs`, `eprop.rs`, `hash.rs`, `id.rs`, `kernel.rs`, `primop.rs`, `prop.rs`, `reduce.rs`, `subst.rs`, `term.rs`, `ty.rs`, `uf.rs`
   - Deps are minimal (`bytes`, `smol_str`, `covalence-hash`, `covalence-types`); does NOT depend on `covalence-wasm` or `wasmtime` in this branch.
-  - The Sync/Async backend traits (`SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`) now live in `crates/covalence-shell/` (`pub use traits::{...}` in `src/lib.rs`). Update this section when the kernel is re-integrated with the shell.
-- `crates/covalence-client/` — Remote backend implementations
+  - The Sync/Async backend traits (`SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`) now live in `crates/kernel/shell/` (`pub use traits::{...}` in `src/lib.rs`). Update this section when the kernel is re-integrated with the shell.
+- `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)
   - Features: `sync` (ureq), `async` (hyper)
 - `crates/lib/hash/` — Cryptographic hash types (`O256`, `IdentityHasher`), git hashing (feature-gated on `git`)
-- `crates/covalence-store/` — Generic store traits (`StoreGet`, `StoreGetRef`, `StorePut`, `StorePutMut`) and implementations
+- `crates/store/core/` — Generic store traits (`StoreGet`, `StoreGetRef`, `StorePut`, `StorePutMut`) and implementations
   - `MemoryStore`/`SharedMemoryStore` (feature `memory`, default)
   - `SqliteStore` (feature `sqlite`, backed by `covalence-sqlite`)
 - `crates/lib/sqlite/` — Low-level SQLite blob store (rusqlite)
@@ -33,10 +33,10 @@ disable-model-invocation: true
   - `src/val.rs` — engine-agnostic `Val` / `ValType` (component-model values)
   - `src/engine.rs` — one-line `pub use wasmtime;` gated behind `runtime` feature (no higher-level abstraction yet)
   - `src/lib.rs` — `WasmError` enum
-- `crates/covalence-lsp/` — Language server library (used by `cov lsp`)
+- `crates/server/lsp/` — Language server library (used by `cov lsp`)
   - `src/lib.rs` — LSP handlers for sexp files (`.smt`, `.smt2`, `.alethe`, `.cov`) and WAT files (`.wat`)
 - `crates/lib/git/` — Cogit VCS library (used by `cov cog`)
-- `crates/covalence-serve/` — Web server library (used by `cov serve`)
+- `crates/server/core/` — Web server library (used by `cov serve`)
   - `src/lib.rs` — `ServeConfig`, `ServeError`, `AppState` (holds `Kernel`), `run_serve()`
   - `src/api.rs` — REST API handlers (blobs, WAT, eval, decide, etc.)
   - `src/eval.rs` — `server_session()` — creates a REPL Session backed by a Kernel

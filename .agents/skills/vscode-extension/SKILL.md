@@ -35,4 +35,4 @@ The same `src/extension.ts` serves both desktop and web bundles. esbuild aliases
 
 Supported languages: SMT (`.smt`, `.smt2`), Alethe (`.alethe`), Cov (`.cov`), WAT (`.wat`).
 
-The target triple is set at build time via `crates/covalence/build.rs` (`COV_TARGET` env var) and passed into `covalence_lsp::run_lsp()` via `LspConfig`. The LSP server reports it in `serverInfo.version` during the initialize handshake.
+The target triple is set at build time via `crates/app/cov/build.rs` (`COV_TARGET` env var) and passed into `covalence_lsp::run_lsp()` via `LspConfig`. The LSP server reports it in `serverInfo.version` during the initialize handshake.

@@ -1,6 +1,6 @@
 # covalence-egglog — Skeletons
 
-See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
+See [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the [root index](../../../SKELETONS.md).
 
 - **egglog `external` bridge disabled.** The real-solver bridge (`src/external.rs`:
   run `(prove …)`, convert egglog's proof DAG into our `proof` types) is switched

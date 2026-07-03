@@ -2,8 +2,8 @@
 
 Open placeholders in the SpecTec-grammar → byte-predicate front end. The regex
 engine it sits on is [`crate::grammar::regex`](../regex/SKELETONS.md). See
-[CLAUDE.md](../../../../../CLAUDE.md) § Skeletons, the
-[crate index](../../../SKELETONS.md), and the [root index](../../../../../SKELETONS.md).
+[CLAUDE.md](../../../../../../../CLAUDE.md) § Skeletons, the
+[crate index](../../../SKELETONS.md), and the [root index](../../../../../../../SKELETONS.md).
 
 ## Severe / blocking
 

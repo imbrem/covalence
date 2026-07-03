@@ -17,34 +17,34 @@ hol = ["dep:covalence-hol", "dep:covalence-opentheory"]
 data = ["covalence-repl/arrow", "covalence-repl/parquet"]
 
 [dependencies]
-covalence-lsp = { path = "../covalence-lsp", optional = true }
+covalence-lsp = { path = "../../server/lsp", optional = true }
 # Default features (server discovery, XDG paths) need `dirs` / `nix` and only
 # build off-WASM. The `git` module — which `cog clone` uses for repo
 # discovery — has no extra deps and is always available.
-covalence-proto = { path = "../lib/proto", default-features = false }
+covalence-proto = { path = "../../lib/proto", default-features = false }
 clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-covalence-serve = { path = "../covalence-serve" }
-covalence-repl = { path = "../covalence-repl", features = ["fetch", "cogit"] }
-covalence-shell = { path = "../kernel/shell" }
-covalence-store = { path = "../store/core", features = ["sqlite"] }
+covalence-serve = { path = "../../server/core" }
+covalence-repl = { path = "../repl", features = ["fetch", "cogit"] }
+covalence-shell = { path = "../../kernel/shell" }
+covalence-store = { path = "../../store/core", features = ["sqlite"] }
 # covalence-git is gated off WASM: its `clone` feature transitively pulls
 # in libsqlite3-sys, whose sqlite3.c build needs a real WASI sysroot.
-covalence-git = { path = "../lib/git", optional = true, features = ["clone"] }
-covalence-hol = { path = "../kernel/hol/traits", optional = true }
-covalence-opentheory = { path = "../proof/opentheory", optional = true }
-covalence-wasm = { path = "../lib/wasm/core", default-features = false }
-covalence-client = { path = "../covalence-client", features = ["sync"] }
-covalence-proto = { path = "../lib/proto", features = ["discovery", "config"] }
-covalence-object = { path = "../vcs/object" }
-covalence-hash = { path = "../lib/hash" }
+covalence-git = { path = "../../lib/git", optional = true, features = ["clone"] }
+covalence-hol = { path = "../../kernel/hol/traits", optional = true }
+covalence-opentheory = { path = "../../proof/opentheory", optional = true }
+covalence-wasm = { path = "../../lib/wasm/core", default-features = false }
+covalence-client = { path = "../../server/client", features = ["sync"] }
+covalence-proto = { path = "../../lib/proto", features = ["discovery", "config"] }
+covalence-object = { path = "../../vcs/object" }
+covalence-hash = { path = "../../lib/hash" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-covalence-fuse = { path = "../lib/fuse" }
+covalence-fuse = { path = "../../lib/fuse" }
 color-eyre = "0.6"
 eyre = "0.6"
 rustyline = { version = "18", optional = true }
@@ -52,6 +52,6 @@ memchr = "2"
 
 [dev-dependencies]
 tempfile = "3"
-covalence-hash = { path = "../lib/hash" }
+covalence-hash = { path = "../../lib/hash" }
 serde_json = "1"
 wat = "1"

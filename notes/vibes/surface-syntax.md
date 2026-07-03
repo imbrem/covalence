@@ -201,7 +201,7 @@ layers stay firmly outside the TCB (they only ever *produce checkable
 obligations*); the term sublanguage is the one piece we may choose to
 trust directly, so it is kept as a sharply-delimited grammar from the
 start. The AST and its parser now live in the **fused** script layer
-[`crates/covalence-hol/src/script/`](../../crates/covalence-init/src/script/)
+[`crates/covalence-hol/src/script/`](../../crates/kernel/hol/init/src/script/)
 (the standalone `surface/` module was folded into `script/` per the
 surface↔script fusion — see [`surface-compiler.md`](./surface-compiler.md)
 §3.0).

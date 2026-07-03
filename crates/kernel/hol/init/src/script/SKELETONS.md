@@ -2,7 +2,7 @@
 
 Open placeholders for the S-expression proof authoring + replay layer. See
 `CLAUDE.md` § Skeletons for the rules, the [crate index](../../SKELETONS.md), and
-the [root index](../../../../SKELETONS.md).
+the [root index](../../../../../../SKELETONS.md).
 
 ## Severe
 

@@ -16,8 +16,8 @@ index of the per-crate files):
 - A large crate may split *further by module*: its `crates/<crate>/SKELETONS.md`
   becomes an index, and each module's skeletons live in a co-located
   **`crates/<crate>/src/<module>/SKELETONS.md`** (e.g.
-  `crates/covalence-hol/src/init/SKELETONS.md`,
-  `crates/covalence-hol/src/script/SKELETONS.md`).
+  `crates/kernel/hol/init/src/init/SKELETONS.md`,
+  `crates/kernel/hol/init/src/script/SKELETONS.md`).
 
 **Whenever you leave a skeleton — stub an operation, gut a module, disable or
 delete a test "for now", or drop in a placeholder — you MUST add a matching

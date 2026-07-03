@@ -2,7 +2,7 @@
 
 Open placeholders for the `init/*` theories. See `CLAUDE.md` § Skeletons for the
 rules, the [crate index](../../SKELETONS.md), and the [root
-index](../../../../SKELETONS.md).
+index](../../../../../../SKELETONS.md).
 
 ## Postulates pending proof
 

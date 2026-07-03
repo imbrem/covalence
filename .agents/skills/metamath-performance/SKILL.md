@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Metamath import performance
 
 Read **performance** first for the scaling-first methodology and the tools.
-This skill is the import-specific map. Concrete numbers + current bottleneck live in `crates/covalence-hol/PERF.md` (the results log; update it as you go). Benchmark target: import all of `set.mm`
+This skill is the import-specific map. Concrete numbers + current bottleneck live in `crates/kernel/hol/traits/PERF.md` (the results log; update it as you go). Benchmark target: import all of `set.mm`
 (~47k `|-` theorems) fast, with **linear-ish per-theorem cost** and 0 failures.
 
 ## The pipeline (where time goes)
@@ -27,7 +27,7 @@ This skill is the import-specific map. Concrete numbers + current bottleneck liv
 
 ## The bench
 
-`crates/covalence-hol/examples/mm_import_bench.rs`:
+`crates/kernel/hol/traits/examples/mm_import_bench.rs`:
 - `<mm> [limit] [workers]` — full parallel import; prints `imported N (ok/failed)`,
   throughput, and a JSON distribution (`median_ms`, `p99_ms`, `slowest[]`).
   `[FAILED] <label>: <err>` is printed per failure.

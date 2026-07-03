@@ -2,8 +2,8 @@
 
 Crate-level index of intentional placeholders in `covalence-init` (the
 semi-trusted API over `covalence-core`). Entries live in the per-module
-`SKELETONS.md` files co-located with the code. See [`CLAUDE.md`](../../CLAUDE.md)
-§ Skeletons and the [root index](../../SKELETONS.md).
+`SKELETONS.md` files co-located with the code. See [`CLAUDE.md`](../../../../CLAUDE.md)
+§ Skeletons and the [root index](../../../../SKELETONS.md).
 
 ## Per-module registries
 
@@ -24,6 +24,6 @@ rebuilt as the elaborator down to `.thy` (`§3.0.4`). Recover the old sketch fro
 git history.
 
 The Metamath substitution engine moved to the HOL-free
-[`covalence-metamath`](../covalence-metamath/SKELETONS.md) crate; its
+[`covalence-metamath`](../../../proof/metamath/SKELETONS.md) crate; its
 engine/reader deferrals are tracked there, the consumer-side bridge in
 `src/metalogic` above.

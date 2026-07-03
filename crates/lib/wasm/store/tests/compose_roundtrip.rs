@@ -13,7 +13,7 @@
 //!
 //! `get` and `head` forwarding through the composer is stubbed in
 //! the current `merge` composer (returns None); see
-//! `crates/covalence-wasm-store/src/merge.rs` for the rationale.
+//! `crates/lib/wasm/store/src/merge.rs` for the rationale.
 
 use bytes::Bytes;
 use covalence_hash::O256;

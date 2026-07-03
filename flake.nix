@@ -62,7 +62,7 @@
             echo "  bun run code:browser                 build + launch web VSCode"
             echo "  bun run code:desktop                 build + launch desktop VSCode"
             echo ""
-            echo "  cd crates/covalence-python"
+            echo "  cd crates/ffi/python"
             echo "  maturin develop                      build Python bindings (editable)"
             echo "  pytest tests/                        run Python tests"
           '';

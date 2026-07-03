@@ -1,6 +1,6 @@
 # Skeletons — covalence-alethe
 
-See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
+See [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the [root index](../../../SKELETONS.md).
 
 The negate-goal → refute → conclude `⊢ G` flow is wired (`goal.rs`,
 `discharge.rs`, `tactic.rs`, replayed through `hol::HolAletheBridge`; exposed as a

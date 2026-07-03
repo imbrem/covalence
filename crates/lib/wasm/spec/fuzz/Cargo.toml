@@ -7,7 +7,7 @@ publish = false
 # cargo-fuzz workspace fragment. Each binary target under
 # `fuzz_targets/` is a libFuzzer harness; run with
 # `cargo +nightly fuzz run <name> -- -max_total_time=60` from the
-# crate root (`crates/covalence-wasm-spec/`).
+# crate root (`crates/lib/wasm/spec/`).
 
 [package.metadata]
 cargo-fuzz = true

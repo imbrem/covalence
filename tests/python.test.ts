@@ -4,7 +4,7 @@ test("python tests", async () => {
   const proc = Bun.spawn(
     ["bash", "-c", "source activate.sh && pytest tests/ -v"],
     {
-      cwd: "crates/covalence-python",
+      cwd: "crates/ffi/python",
       stdout: "inherit",
       stderr: "inherit",
     },

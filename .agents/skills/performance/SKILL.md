@@ -55,7 +55,7 @@ Shared helper `scripts/_setmm.mjs` resolves set.mm: explicit arg → `$COV_SET_M
 → download to `${TMPDIR}/covalence-set.mm` (cached). `buildBench()` builds the
 `mm_import_bench` example.
 
-The bench binary (`crates/covalence-hol/examples/mm_import_bench.rs`) modes:
+The bench binary (`crates/kernel/hol/traits/examples/mm_import_bench.rs`) modes:
 `<mm> [limit] [workers]` (full parallel import) and `--only <label> [reps]`
 (single theorem on one thread, persistent `ClauseCache` like the real import;
 `--only-cons` routes through a `HashCons` to test interning).

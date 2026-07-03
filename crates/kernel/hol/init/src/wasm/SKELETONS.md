@@ -2,11 +2,11 @@
 
 The SpecTec → kernel front end (WASM-spec acceleration). Input is SpecTec AST
 S-expressions (`covalence_spectec::parse`); no `.watsup` frontend. Design +
-phasing: [`notes/vibes/wasm-spec.md`](../../../../notes/vibes/wasm-spec.md). Live coverage:
+phasing: [`notes/vibes/wasm-spec.md`](../../../../../../notes/vibes/wasm-spec.md). Live coverage:
 `spec::coverage_report` (bundled WASM 3.0 spec — leg A: 274 rules / 64-of-125
 relations; leg B: 113-of-207 types rendered). See
-[CLAUDE.md](../../../../CLAUDE.md) § Skeletons, the
-[crate index](../../SKELETONS.md), and the [root index](../../../../SKELETONS.md).
+[CLAUDE.md](../../../../../../CLAUDE.md) § Skeletons, the
+[crate index](../../SKELETONS.md), and the [root index](../../../../../../SKELETONS.md).
 
 ## Severe / blocking
 

@@ -1,6 +1,6 @@
 # Skeletons — covalence-kernel
 
-See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
+See [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the [root index](../../../SKELETONS.md).
 
 ## Empty / stub modules
 

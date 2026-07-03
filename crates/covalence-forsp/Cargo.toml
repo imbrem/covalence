@@ -1,9 +1,0 @@
-[package]
-name = "covalence-forsp"
-version = "0.0.0"
-edition = "2024"
-
-[dependencies]
-covalence-sexp = { path = "../lib/sexp" }
-covalence-hash = { path = "../lib/hash", default-features = false }
-thiserror = "2"

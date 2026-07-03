@@ -20,16 +20,16 @@ thiserror = "2"
 tracing = "0.1"
 # Demo: decode `$t` althtmldef HTML (full HTML5 entity table) to Unicode.
 html-escape = "0.2"
-covalence-git = { path = "../lib/git" }
-covalence-hash = { path = "../lib/hash", default-features = false }
-covalence-object = { path = "../vcs/object" }
-covalence-store = { path = "../store/core", features = ["memory"] }
-covalence-shell = { path = "../kernel/shell" }
-covalence-repl = { path = "../covalence-repl" }
-covalence-init = { path = "../kernel/hol/init" }
-covalence-core = { path = "../kernel/hol/core" }
-covalence-metamath = { path = "../proof/metamath" }
-covalence-proto = { path = "../lib/proto", features = ["discovery"] }
+covalence-git = { path = "../../lib/git" }
+covalence-hash = { path = "../../lib/hash", default-features = false }
+covalence-object = { path = "../../vcs/object" }
+covalence-store = { path = "../../store/core", features = ["memory"] }
+covalence-shell = { path = "../../kernel/shell" }
+covalence-repl = { path = "../../app/repl" }
+covalence-init = { path = "../../kernel/hol/init" }
+covalence-core = { path = "../../kernel/hol/core" }
+covalence-metamath = { path = "../../proof/metamath" }
+covalence-proto = { path = "../../lib/proto", features = ["discovery"] }
 ureq = "3"
 
 [dev-dependencies]

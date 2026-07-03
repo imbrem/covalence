@@ -54,3 +54,12 @@ in the kernel (rules taking arbitrary theorem terms already use the type-aware
 `init/` construction sites in `covalence-hol` call it. Eventually reimplement in
 userspace (`TermExt`) or migrate the call sites to `close_var(&Var::new(...))`.
 Deferred for call-site churn.
+
+## `_with` rules intern post-hoc, not through construction
+
+The cons-threaded `_with` rule variants build via the plain rule then
+`intern_concl`/`intern_thm` (table-priming only — the returned theorem keeps its
+own `Arc`s). The stranded 9d3673f9 design instead threaded `cons` through term
+*construction* (`hol_and_with`-style builders in `hol.rs`), so the theorem itself
+holds interned nodes. Pure perf nuance, no soundness role; revisit if profiles
+show residual alloc churn on the replay paths.

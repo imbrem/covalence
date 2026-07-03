@@ -56,6 +56,8 @@ pub mod recursor;
 pub mod sig;
 pub mod uniqueness;
 mod util;
+pub mod variant;
 
 pub use data::Inductive;
 pub use sig::{Arg, Constructor, GenArg, GenConstructor, GenSig, InductiveSig};
+pub use variant::{ChurchBackend, CoprodBackend, VCtor, Variant, VariantBackend, self_ty_var};

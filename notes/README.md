@@ -35,6 +35,7 @@ marked as not-yet-built where they are.
 | [`theories-models-and-logics.md`](./theories-models-and-logics.md) | Design record: the signature → theory → model architecture, within-logic model multiplicity, two-axis consumability, Metamath as the shared logic-definition substrate, the PA→SOA→ZF chain. |
 | [`metatheory.md`](./metatheory.md) | Object theories + their derivations as first-class HOL objects; theory morphisms/transport; the metavariable layering. |
 | [`logic-frontends.md`](./logic-frontends.md) | Umbrella plan + difficulty matrix for bringing external systems in as object logics over the Metamath waist (MLTT/HoTT/NuPRL, ACL2/Lisp, LF/Dedukti); per-family sketches in `sketches/`. |
+| [`wasm-spec.md`](./wasm-spec.md) | The WebAssembly-spec front end (`covalence-init/src/wasm`): lower SpecTec AST S-expressions into `Derivable_R` relations (dual to the Metamath front end), toward WASM acceleration via trace certification. |
 | [`observers.md`](./observers.md) | How untrusted code feeds facts into the kernel's HOL model without growing the TCB (the `Observer`/`ObsEq`/`ObsTrue`/`ObsImp` substrate + the proposed validator layer). |
 | [`web-kernel.md`](./web-kernel.md) | Running the kernel in the browser: the `category.wiki` north star, `.cov` articles, the deployment seam, federation. |
 | [`sketches/`](./sketches/) | Scratch sketches and per-subsystem task/status notes (reorganized separately). |

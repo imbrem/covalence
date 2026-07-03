@@ -33,6 +33,7 @@ pub mod project;
 pub mod proofs;
 pub mod script;
 pub mod sexp;
+pub mod wasm;
 
 // The thin HOL surface lives in `covalence-hol`. Re-export its modules and items
 // so `crate::types` / `crate::traits` / `crate::hol_light_obs` / `crate::HolLightCtx`

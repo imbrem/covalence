@@ -1,6 +1,6 @@
 //! The **first internal object logic**: propositional logic reified as
 //! data *inside* HOL, with a soundness theorem proved by the metatheory
-//! itself (`notes/metatheory.md` §8).
+//! itself (`notes/vibes/metatheory.md` §8).
 //!
 //! This is the smallest end-to-end instance of "metatheory is the default
 //! mode": an object language whose formulas are HOL data, whose

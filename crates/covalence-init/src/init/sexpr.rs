@@ -1,5 +1,5 @@
 //! **S-expressions reified inside HOL** — the universal syntax carrier
-//! (`notes/metatheory.md` §8.1). Every reified object language's concrete
+//! (`notes/vibes/metatheory.md` §8.1). Every reified object language's concrete
 //! syntax is an `SExpr`; this module gives the datatype, its constructors,
 //! a recursor, and a structural induction principle, all as honest HOL
 //! objects with no new kernel TCB.

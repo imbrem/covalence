@@ -7,6 +7,7 @@
     "covalence-core",
     "covalence-parse",
     "covalence-pure",
+    "covalence-pure-trusted",
     "covalence-sexp",
     "covalence-types"
   ],

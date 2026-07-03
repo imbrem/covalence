@@ -49,14 +49,14 @@
 //!    ([`pa::project`]) is that theorem applied to a finished derivation —
 //!    one step. This is the *proper* deep embedding: you derive in PA without
 //!    ever building the HOL theorem, then project in a single move
-//!    (`notes/VISION.md` §2; `notes/theories-models-and-logics.md §5.5`).
+//!    (`notes/vibes/VISION.md` §2; `notes/vibes/theories-models-and-logics.md §5.5`).
 //!
 //! Because both implement the *same* trait, a generic routine written
 //! against [`Peano`] runs against either. The bridge between them is a
 //! **soundness** map `PaDerivation → Thm` — "every PA derivation
 //! denotes a valid HOL theorem" — which is Covalence's first piece of
 //! *symbolic metatheory*: PA as an object logic with HOL as the
-//! metalogic (see `notes/VISION.md` §2).
+//! metalogic (see `notes/vibes/VISION.md` §2).
 //!
 //! ## Status of the axioms
 //!

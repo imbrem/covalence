@@ -25,14 +25,14 @@ git diff --cached --name-only --diff-filter=ACM | grep '\.rs$' | while read -r f
     [ -f "$f" ] && git add -- "$f"
 done
 
-# Regenerate the dependency graph + TCB closure (notes/deps/) when any manifest
+# Regenerate the dependency graph + TCB closure (docs/deps/) when any manifest
 # changes, so the tracked graph and CI `deps:check` stay in sync. Best-effort:
 # never block a commit if the toolchain or network is unavailable.
 if git diff --cached --name-only --diff-filter=ACM | grep -qE '(^|/)Cargo\.(toml|lock)$'; then
     if command -v bun >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
         echo "pre-commit: regenerating dependency graph (bun run deps)"
         if bun scripts/dep-graph.mjs; then
-            git add notes/deps
+            git add docs/deps
         else
             echo "pre-commit: dep-graph generation failed; run 'bun run deps' manually" >&2
         fi

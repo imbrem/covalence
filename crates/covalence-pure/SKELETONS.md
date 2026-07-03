@@ -1,7 +1,7 @@
 # covalence-pure — skeletons
 
 Stage 0 of the closed-world kernel
-([`notes/closed-world-kernel.md`](../../notes/closed-world-kernel.md)) is built in
+([`notes/vibes/closed-world-kernel.md`](../../notes/vibes/closed-world-kernel.md)) is built in
 the LCF-style shape: `Op` (with pointer/`dyn` forwarding) / `Expr` (incl.
 `Eqn<A,B>` as a bool proposition) / the `Thm<L, P>` certificate / `Language` /
 `Manifest`, the equality + propositional calculus, the gated

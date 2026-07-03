@@ -6,7 +6,7 @@ edition = "2024"
 # The semi-trusted covalence API: the `defs`/`init` theory catalogue, proof
 # machinery, the `.cov` script surface, the Metamath/Peano metalogic. Built on
 # the thin `covalence-hol` surface (which it re-exports). See
-# `notes/init-hol-split.md`.
+# `notes/vibes/init-hol-split.md`.
 
 [features]
 default = []

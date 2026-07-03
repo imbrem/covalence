@@ -100,7 +100,7 @@ Evidence-backed; each removal its own commit, recoverable from git.
    `covalence-init`; leave the builder-API users on `covalence-hol`. A blanket
    `covalence-init` re-export keeps the diff small; tighten later.
 5. Update workspace `members`, the root `SKELETONS.md` index, `crate-map` skill,
-   and `notes/crate-graph.md`.
+   and `notes/vibes/crate-graph.md`.
 6. Verify with `bun test` (Rust + Python) before merge. Watch for the re-entrant
    `LazyLock` class of failure when `init`/`defs`/env move — it only shows at
    runtime, so this MUST be cargo-test-gated, never merged build-only.

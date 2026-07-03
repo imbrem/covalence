@@ -38,7 +38,7 @@ tokens):**
   `## Severe` / `## Minor` split is fine when a file has many entries.
 - **One terse line or two per entry.** Name the stub and what's missing. Push
   long rationale, design context, or status history into a separate Markdown doc
-  (under `notes/`) and link it; don't inline it here.
+  (under `notes/vibes/`) and link it; don't inline it here.
 
 ## Build & Run
 
@@ -59,8 +59,8 @@ cargo check                # check Rust crates
 cargo test                 # run Rust tests
 bun run fmt                # cargo fmt --all (also runs on commit via .githooks/pre-commit)
 bun run fmt:check          # cargo fmt --all --check (the CI fmt gate)
-bun run deps               # regenerate notes/deps/ dep graph + TCB closure (runs on commit)
-bun run deps:check         # fail if notes/deps/ is stale (the CI deps gate)
+bun run deps               # regenerate docs/deps/ dep graph + TCB closure (runs on commit)
+bun run deps:check         # fail if docs/deps/ is stale (the CI deps gate)
 bun test                   # run all tests (Rust + Python)
 bun run test:python        # run Python tests only
 bun run build:python       # build Python extension (maturin develop)
@@ -91,15 +91,28 @@ COV_API=https://cov.example.com bun run dev:web # remote backend
 - **Bun** — JS package manager and build script runner
 - **wasm-pack**, **wasm-bindgen-cli**, **binaryen** (`wasm-opt`)
 
-## Reference Notes
+## Docs, Notes & Authorship (IMPORTANT)
 
-Design notes and research live in **[`notes/`](./notes/)** — start at the
-categorized index **[`notes/README.md`](./notes/README.md)**. Read first:
-[`notes/VISION.md`](./notes/VISION.md) (the vision),
-[`notes/kernel-design.md`](./notes/kernel-design.md) (the TCB — before touching
-`covalence-core`), [`notes/roadmap.md`](./notes/roadmap.md) (what's next), and
-[`notes/refactor-plan.md`](./notes/refactor-plan.md) (the in-flight three-layer
-reorg). `notes/sketches/` holds forward-looking sketches + research notes.
+Documentation is split by **trust and authorship**:
+
+- **[`docs/`](./docs/README.md)** — *true* documentation only (what the codebase
+  actually is, aggressively synced). Machine-generated artifacts live here
+  (`docs/deps/` — the dep graph + TCB closure, `bun run deps`).
+- **[`notes/`](./notes/README.md)** — the map. `notes/plans/` holds active plans
+  ([`notes/plans/next-stage.md`](./notes/plans/next-stage.md) is the current
+  one); structured topic notes (`ideas/`, `experiments/`, …) are *aspirational*.
+- **[`notes/vibes/`](./notes/vibes/README.md)** — the AI-generated design corpus
+  (index in its README). Read first: `VISION.md` (the vision),
+  `kernel-design.md` (the TCB — before touching `covalence-core`),
+  `roadmap.md`, `closed-world-kernel.md` (the covalence-pure kernel).
+  Sketches in `sketches/`.
+
+**Authorship policy (current):** everything outside `notes/vibes/` — all of
+`docs/` and the non-vibes `notes/` tiers — is **maintainer-authored, not
+AI-generated** (until the vision is fully written out by hand). Agents: write
+design notes/analysis into `notes/vibes/`; do not author or substantially
+rewrite `docs/` or non-vibes `notes/` prose — flag gaps instead.
+(Machine-generated artifacts like `docs/deps/` are exempt.)
 
 ## Skills (use them, keep them current)
 
@@ -130,8 +143,8 @@ per external dep) → **storage/content-addressing** → **kernel/TCB**
 crate — never import the underlying dep directly.
 
 The full per-crate catalogue (what each wraps/provides) lives in the
-**crate-map** skill; the dependency graph is `notes/crate-graph.md`. Read
-`notes/kernel-design.md` before touching the TCB (`covalence-core`).
+**crate-map** skill; the dependency graph is `notes/vibes/crate-graph.md`. Read
+`notes/vibes/kernel-design.md` before touching the TCB (`covalence-core`).
 
 ## Conventions
 

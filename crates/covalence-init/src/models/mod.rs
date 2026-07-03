@@ -1,5 +1,5 @@
 //! `models` — the **minimal surface-compiler core**: the
-//! `Logic`/`Model`/`Theory` triad of `notes/theories-models-and-logics.md`
+//! `Logic`/`Model`/`Theory` triad of `notes/vibes/theories-models-and-logics.md`
 //! §1, cut down to the smallest shape that makes the **objective function**
 //! pass:
 //!

@@ -1,6 +1,6 @@
 //! Proof scripts — an S-expression authoring + replay layer over the
 //! kernel, the bottom rung of the surface-syntax ladder
-//! (`notes/surface-syntax.md`).
+//! (`notes/vibes/surface-syntax.md`).
 //!
 //! A script file is a sequence of directives:
 //!
@@ -326,7 +326,7 @@ pub async fn run_async(
                 }
             }
             // The four **definition directives** — inline term/type definitions
-            // (`notes/surface-syntax.md §1.4`), the script-layer counterpart of
+            // (`notes/vibes/surface-syntax.md §1.4`), the script-layer counterpart of
             // `covalence-core`'s `defs::cov` parser. Each elaborates its body
             // against the running env and binds the result, replacing the old
             // Rust `*_env()` / `*prim` givens pattern (a constant built in Rust
@@ -356,7 +356,7 @@ pub async fn run_async(
             // proof's `(NAME)` (by name) (or the force) simply **awaits** it,
             // polling it on the shared runtime. No blocking thread, no nested
             // `block_on` — any genuinely blocking work is the FFI tactic's own
-            // responsibility (see SKELETONS.md / notes/surface-syntax.md).
+            // responsibility (see SKELETONS.md / notes/vibes/surface-syntax.md).
             Stmt::Spawn(sexpr) => {
                 let ch = syntax::list(&sexpr, "#spawn")?;
                 let name = syntax::sym(&ch[1], "spawn name")?.to_string();
@@ -391,7 +391,7 @@ pub async fn run_async(
             // operators + axioms + induction handler) on top of a fresh scope,
             // run each nested `#thm`, and bind the result under `MODEL.NAME`.
             // The SAME nested proof text dispatches to whichever model is named
-            // — the surface form of the model-replay (`notes/surface-compiler.md`
+            // — the surface form of the model-replay (`notes/vibes/surface-compiler.md`
             // §2/§3). Only `#thm` is supported inside a block today (enough to
             // replay `add_comm`); richer nesting is future work (SKELETONS).
             Stmt::In { model, body } => {
@@ -565,7 +565,7 @@ enum Stmt {
     /// `(#in MODEL STMT…)` — run the nested `#thm` statements with a
     /// previously-`#import`ed **model** namespace opened on top of scope, so
     /// `(induct …)`/`+`/`succ`/`0`/the axioms dispatch to that model's
-    /// handlers + interpretation (`notes/surface-compiler.md` §2/§3). Each
+    /// handlers + interpretation (`notes/vibes/surface-compiler.md` §2/§3). Each
     /// nested theorem is bound under the `MODEL.` prefix so multiple `#in`
     /// blocks (one per model) can replay the *same* proof without colliding.
     In { model: String, body: Vec<SExpr> },

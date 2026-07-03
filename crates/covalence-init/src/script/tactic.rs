@@ -555,7 +555,7 @@ impl Tactic for Funext {
 }
 
 /// `(#comp HEAD STEP…)` — a **calculational / stepwise equational** proof
-/// (`notes/surface-syntax.md` §5.1). The chain starts at `HEAD`; each `STEP` is
+/// (`notes/vibes/surface-syntax.md` §5.1). The chain starts at `HEAD`; each `STEP` is
 /// `(= RHS [JUST])`, asserting `prev = RHS`. The steps fold under `trans` into
 /// one end-to-end `⊢ HEAD = <last RHS>`.
 ///

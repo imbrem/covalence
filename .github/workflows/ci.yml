@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: oven-sh/setup-bun@v2
-      # Fails if notes/deps/ (the tracked graph + TCB closure) is stale.
+      # Fails if docs/deps/ (the tracked graph + TCB closure) is stale.
       # Regenerate locally with `bun run deps`.
       - run: bun run deps:check
 

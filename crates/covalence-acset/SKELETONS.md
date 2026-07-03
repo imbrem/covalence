@@ -16,7 +16,7 @@
   `datalog` is **positive** (no negation/stratification) and set-valued; its
   rule language does not yet aggregate into a `JoinSemilattice` (only the
   standalone `lattice::lfp` does). The Datafun surface that would enforce
-  monotonicity is sketched in `notes/sketches/acset-datalog-datafun.md`.
+  monotonicity is sketched in `notes/vibes/sketches/acset-datalog-datafun.md`.
 - **`lattice::lfp` assumes monotonicity + termination.** The step's monotonicity
   and the lattice's ascending-chain condition are the caller's obligation, not
   checked. `datalog::solve` is not yet *implemented* on top of `lfp` (only proven

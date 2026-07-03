@@ -5,7 +5,7 @@
 > external system that is *itself* a universal logic substrate, a direct cousin
 > of our Metamath thin waist. Part of the
 > [`logic-frontends.md`](../logic-frontends.md) umbrella. Shares the dependent-TT
-> binding machinery of [`sketches/type-theories.md`](./sketches/type-theories.md)
+> binding machinery of [`sketches/type-theories.md`](./type-theories.md)
 > §2.
 
 ---
@@ -18,7 +18,7 @@ no Σ/Id/inductive families. That makes it the ideal place to *first* build the
 type-theory infrastructure:
 
 - the four judgment forms and the binding discipline
-  ([`sketches/type-theories.md`](./sketches/type-theories.md) §2) — written here,
+  ([`sketches/type-theories.md`](./type-theories.md) §2) — written here,
   reused by MLTT / HoTT / NuPRL / CIC;
 - conversion (βη) as the only computation — the simplest executor on the
   conversion axis;
@@ -64,7 +64,7 @@ Artifacts (umbrella §2):
 (`Type`, `Πx:A. K`), families, objects, the Π-formation/intro/elim rules, and βη
 **conversion** as the equality judgment. Because λΠ is "MLTT with only Π," this is
 a *strict sub-case* of the MLTT plan
-([`sketches/type-theories.md`](./sketches/type-theories.md) §3) — drop universes,
+([`sketches/type-theories.md`](./type-theories.md) §3) — drop universes,
 Σ, Id, ℕ, the HIT/equality-congruence bulk. The CwF/explicit-substitution
 presentation (§2 there) applies and keeps it binder-free.
 

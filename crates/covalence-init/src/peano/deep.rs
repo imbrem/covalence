@@ -1,6 +1,6 @@
 //! **The two-sorted denotation carrier + the standard `nat` interpretation**
 //! for the deep PA-in-HOL embedding (Phase A4 + B2 of
-//! `notes/peano-arithmetic-plan.md`).
+//! `notes/vibes/peano-arithmetic-plan.md`).
 //!
 //! [`fol`](super::fol) reifies PA syntax *locally-nameless* as the AST
 //! [`Fol`](super::fol::Fol) (with the proven de Bruijn substitution) and as a

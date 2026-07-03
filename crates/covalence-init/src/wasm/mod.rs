@@ -33,7 +33,7 @@
 //! - [`relation`] — a `SpecTecDef::Rel` → a [`crate::metalogic::RuleSet`], with a
 //!   [`relation::derive`] constructor that builds `⊢ Derivable_R ⌜J⌝` witnesses.
 //!
-//! See `notes/wasm-spec.md` for the phasing (syntax/functions, the CFG stratum,
+//! See `notes/vibes/wasm-spec.md` for the phasing (syntax/functions, the CFG stratum,
 //! trace certification, and the mirror-principle commutative-diagram check) and
 //! `SKELETONS.md` for the open increments.
 //!

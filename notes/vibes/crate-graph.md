@@ -1,11 +1,11 @@
 # Internal crate dependency graph
 
 > This page is **curated narrative** (the proposed grouping + findings). The
-> **machine-tracked, always-current** graph lives in [`deps/`](./deps/), emitted
+> **machine-tracked, always-current** graph lives in [`deps/`](../../docs/deps/), emitted
 > by `bun run deps` (`scripts/dep-graph.mjs`) and verified in CI (`deps:check`):
-> [`deps/graph.mmd`](./deps/graph.mmd) (rendered), [`deps/graph.json`](./deps/graph.json),
-> [`deps/graph.dot`](./deps/graph.dot), and — the one to watch —
-> [`deps/tcb.json`](./deps/tcb.json), the trusted-base closure of
+> [`deps/graph.mmd`](../../docs/deps/graph.mmd) (rendered), [`deps/graph.json`](../../docs/deps/graph.json),
+> [`deps/graph.dot`](../../docs/deps/graph.dot), and — the one to watch —
+> [`deps/tcb.json`](../../docs/deps/tcb.json), the trusted-base closure of
 > `covalence-core` + `covalence-pure`. A change there means the TCB grew/shrank.
 >
 > The narrative snapshot below (**2026-06-25**) is a point-in-time picture for

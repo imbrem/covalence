@@ -238,7 +238,7 @@ features is an explicit later decision.)
 Flat `crates/covalence-*` no longer reads clearly. The reorg has two goals:
 *conceptual clarity* (the tree should be a map of **what we reason about** and
 **what the TCB is**) and *ergonomics* (depend on a domain in one line). The
-machine-tracked graph + TCB closure live in [`deps/`](./deps/) (`bun run deps`).
+machine-tracked graph + TCB closure live in [`deps/`](../../docs/deps/) (`bun run deps`).
 
 ### 5.1 The organizing axis: domain vs layer
 
@@ -396,7 +396,7 @@ Plus the executor/tooling north stars:
 
 ## 8. Docs & skills cleanup
 
-Audit of `notes/` (reconcile against the layers above):
+Audit of `notes/vibes/` (reconcile against the layers above):
 
 | Doc | Disposition |
 |---|---|
@@ -407,7 +407,7 @@ Audit of `notes/` (reconcile against the layers above):
 | `soundness-audit.md` | Keep; re-anchor to the Pure/Core/init trust boundary. |
 | `peano-arithmetic-plan.md` | **Likely retire** — superseded (recursion theorem done; PA postulate-free). Confirm then delete. |
 | `cov-project.md`, `web-kernel.md`, `wasm3-rust.md` | Keep, but re-home once `script`/`project` move into `covalence-init`/`covalence-lang`. |
-| `notes/sketches/*` (MAPS, OBSERVERS, SAMPLE, ml-naive-compiler, spectec-phase1-status, spectec-verification-plan, `spectec-tasks/*`) | **Mostly retire** — spectec task cards (23–37) are completed branch work; archive. Keep only what's still a live design input. |
+| `notes/vibes/sketches/*` (MAPS, OBSERVERS, SAMPLE, ml-naive-compiler, spectec-phase1-status, spectec-verification-plan, `spectec-tasks/*`) | **Mostly retire** — spectec task cards (23–37) are completed branch work; archive. Keep only what's still a live design input. |
 
 Audit of `.claude/skills/` (all `disable-model-invocation: true`, i.e. reference
 docs): `metamath-performance`, `performance`, `vscode-extension`, `wasm-guide`,

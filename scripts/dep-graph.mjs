@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 // Generate the internal crate dependency graph + the TCB closure from
 // `cargo metadata` (resolve only — no compile). Emits deterministic artifacts
-// under notes/deps/ so the graph (and especially the TCB) is tracked in git:
+// under docs/deps/ so the graph (and especially the TCB) is tracked in git:
 //
-//   notes/deps/graph.json   machine-readable nodes + edges + tcb
-//   notes/deps/tcb.json     the TCB closure (workspace + external) — watch this
-//   notes/deps/graph.mmd    Mermaid (renders on GitHub; TCB highlighted)
-//   notes/deps/graph.dot    Graphviz DOT (TCB highlighted)
-//   notes/deps/graph.svg    rendered from DOT iff `dot` is on PATH (best-effort)
+//   docs/deps/graph.json   machine-readable nodes + edges + tcb
+//   docs/deps/tcb.json     the TCB closure (workspace + external) — watch this
+//   docs/deps/graph.mmd    Mermaid (renders on GitHub; TCB highlighted)
+//   docs/deps/graph.dot    Graphviz DOT (TCB highlighted)
+//   docs/deps/graph.svg    rendered from DOT iff `dot` is on PATH (best-effort)
 //
 // Usage:
 //   bun scripts/dep-graph.mjs           regenerate the artifacts
@@ -21,7 +21,7 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const CHECK = process.argv.includes("--check");
-const OUT_DIR = "notes/deps";
+const OUT_DIR = "docs/deps";
 const TCB_ROOTS = ["covalence-core", "covalence-pure"];
 
 // ---------------------------------------------------------------------------

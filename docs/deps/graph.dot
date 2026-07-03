@@ -32,6 +32,7 @@ digraph deps {
   "parse" [style=filled, fillcolor="#ffd6d6"];
   "proto";
   "pure" [style=filled, fillcolor="#ffd6d6"];
+  "pure-trusted" [style=filled, fillcolor="#ffd6d6"];
   "python";
   "rand";
   "repl";
@@ -115,7 +116,8 @@ digraph deps {
   "object" -> "parse";
   "opentheory" -> "hol";
   "parquet" -> "arrow";
-  "pure" -> "types";
+  "pure" -> "pure-trusted";
+  "pure-trusted" -> "types";
   "python" -> "git";
   "python" -> "graph";
   "python" -> "hash";
@@ -164,10 +166,8 @@ digraph deps {
   "store" -> "hash";
   "store" -> "json";
   "store" -> "sqlite";
-  "wasm" -> "core";
   "wasm-build-guest" -> "wasm";
   "wasm-spec" -> "hash";
-  "wasm-spec" -> "types";
   "wasm-spec" -> "wasm";
   "wasm-store" -> "json";
   "wasm-store" -> "store";

@@ -19,7 +19,7 @@ semi-trusted API over `covalence-core`). Entries live in the per-module
 - **[`src/ring`](./src/algebra/ring/SKELETONS.md)** — sum-of-monomials normalizer: coefficient collection, `neg`/`sub` expansion, literal folding, `Semiring`/`Ring`-generic rewrite.
 
 `src/surface/` was **removed** — superseded by the `script`
-`#sig`/`#thy`/`#model`/`#models` fusion (`notes/surface-compiler.md §3.0`); to be
+`#sig`/`#thy`/`#model`/`#models` fusion (`notes/vibes/surface-compiler.md §3.0`); to be
 rebuilt as the elaborator down to `.thy` (`§3.0.4`). Recover the old sketch from
 git history.
 

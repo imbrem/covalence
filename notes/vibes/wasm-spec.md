@@ -158,8 +158,8 @@ Same as Metamath: the SpecTec AST is untrusted input, the kernel re-checks every
 construction, and a `Derivable_R` witness is pure syntactic data (`has_no_obs()`,
 no hypotheses). Bugs in `wasm/` cost faithfulness/completeness, never soundness.
 
-Related: `notes/metatheory.md` (derivations as first-class objects),
-`notes/roadmap.md` (Phase E/F), `crates/covalence-init/src/wasm/SKELETONS.md`
+Related: `notes/vibes/metatheory.md` (derivations as first-class objects),
+`notes/vibes/roadmap.md` (Phase E/F), `crates/covalence-init/src/wasm/SKELETONS.md`
 (open increments). `covalence-spectec` crate details in the **crate-map** skill.
 
 [SpecTec]: https://github.com/Wasm-DSL/spectec

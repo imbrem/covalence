@@ -2,7 +2,7 @@
 
 The SpecTec → kernel front end (WASM-spec acceleration). Input is SpecTec AST
 S-expressions (`covalence_spectec::parse`); no `.watsup` frontend. Design +
-phasing: [`notes/wasm-spec.md`](../../../../notes/wasm-spec.md). Live coverage:
+phasing: [`notes/vibes/wasm-spec.md`](../../../../notes/vibes/wasm-spec.md). Live coverage:
 `spec::coverage_report` (bundled WASM 3.0 spec — leg A: 274 rules / 64-of-125
 relations; leg B: 113-of-207 types rendered). See
 [CLAUDE.md](../../../../CLAUDE.md) § Skeletons, the
@@ -55,7 +55,7 @@ relations; leg B: 113-of-207 types rendered). See
 - **Trace certification (WASM acceleration payoff) not started.** Run a WASM engine
   (`covalence-wasm`) as an untrusted oracle and certify each step against the
   reduction relation (`Step`/`Step_pure`/`Step_read`), à la Metamath proof replay
-  (`notes/wasm-spec.md` phase 4).
+  (`notes/vibes/wasm-spec.md` phase 4).
 - **Mirror-principle cross-check not started.** `SpecTec ⟶ our-prover` vs
   `SpecTec ⟶ HOL ⟶ HOL-in-our-prover` commutative-diagram confidence
-  (`notes/wasm-spec.md` phase 5).
+  (`notes/vibes/wasm-spec.md` phase 5).

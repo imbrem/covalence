@@ -10,20 +10,20 @@ so the direct cognitive load when first approaching the codebase is high.
 
 We want to experiment with a more hierarchical structure.
 
-Likewise -- our notes/ and documentation are not particularly good.
+Likewise -- our notes/vibes/ and documentation are not particularly good.
 
 # Notes, Documentation, and Skills
 
-First -- right now the notes/ folder is mainly AI generated notes with some cross referencing, with the primary purpose being
+First -- right now the notes/vibes/ folder is mainly AI generated notes with some cross referencing, with the primary purpose being
 
 - Capturing the "vibes" of our long-term plans -- it's not particularly consistent!
 - Documenting a few of our basic design decisions, but not in a very structured way
 
 I propose breaking this up into:
 
-- "vibes" -- basically everything we have right now; either vibes/ or notes/vibes -- probably the latter
+- "vibes" -- basically everything we have right now; either vibes/ or notes/vibes/vibes -- probably the latter
 
-- notes/ -- a more structured tree, with different subdirectories for different topics, e.g. notes/ideas, notes/experiments, etc. -- this is "aspirational" in that things here are what we _want_ rather than necessarily what we currently have -- and may be out of sync or contain historical information
+- notes/vibes/ -- a more structured tree, with different subdirectories for different topics, e.g. notes/vibes/ideas, notes/vibes/experiments, etc. -- this is "aspirational" in that things here are what we _want_ rather than necessarily what we currently have -- and may be out of sync or contain historical information
 
 - docs/ -- more formal documentation, with the constraint that this should be _true_ -- i.e. what we actually have, and should be kept aggressively in sync with the codebase
 

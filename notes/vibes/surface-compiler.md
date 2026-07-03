@@ -584,7 +584,7 @@ hazard that motivated `#spawn`). A proper compiler wants:
   add them at stage 1 and thread them.
 - **A `Diagnostic` type** (severity, span, message, related notes) **accumulated
   and reported as a group**. The `LazyMap` already holds *deferred* errors à la
-  Python's `ExceptionGroup` ([`SKELETONS.md`](../SKELETONS.md)) — generalize that
+  Python's `ExceptionGroup` ([`SKELETONS.md`](../../SKELETONS.md)) — generalize that
   into a diagnostics sink.
 - **Staged, accumulating failure.** A stage yields *either* typed IR *or*
   diagnostics; later stages don't run on a hard error, but a stage reports *all*

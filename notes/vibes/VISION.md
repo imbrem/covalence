@@ -2,7 +2,7 @@
 
 > **The canonical kernel / foundation vision** — read in ~10 minutes. Its
 > frontend/UX counterpart is [`frontend.md`](./frontend.md). See
-> [`notes/README.md`](./README.md) for the full doc index. (The older,
+> [`notes/vibes/README.md`](./README.md) for the full doc index. (The older,
 > longer `ARCHITECTURE.md` was retired to `backup/pre-hol-cleanup`.)
 
 ---
@@ -290,7 +290,7 @@ pre-collapse detail lives in the retired `ARCHITECTURE.md` (and the
 
 ## 7. Where to read next
 
-See [`notes/README.md`](./README.md) for the full doc index. Older
+See [`notes/vibes/README.md`](./README.md) for the full doc index. Older
 deep-dives (the full `ARCHITECTURE.md`, the `layered-framework` and
 `shared-backbone` proposal sets, the session notes) were retired to the
 `backup/pre-hol-cleanup` branch.

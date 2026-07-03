@@ -32,7 +32,7 @@ pub enum TypeKind {
     TFree(SmolStr),
     /// Type of `TermKind::Nat(_)` term values. Built in. The natural
     /// numbers (non-negative integers, arbitrary precision). The
-    /// kernel's foundational data type (see `notes/type-hierarchy.md`).
+    /// kernel's foundational data type (see `notes/vibes/type-hierarchy.md`).
     Nat,
     /// The HOL formula type — two inhabitants `T` and `F`. Built in
     /// as a first-class variant (not a named `Tycon`) so the HOL-

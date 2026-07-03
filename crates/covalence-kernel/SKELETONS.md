@@ -6,7 +6,7 @@ See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELE
 
 - **`src/facts.rs`** — empty module. The observer layer recording and
   content-addressing proven `covalence-hol` theorems lands here as the
-  HOL-on-store stack comes online (see crate-root docs, `notes/roadmap.md`).
+  HOL-on-store stack comes online (see crate-root docs, `notes/vibes/roadmap.md`).
 
 ## Removed-pending-rewrite subsystems
 
@@ -28,4 +28,4 @@ Synchronous `check` of a self-contained `.cov` article is in place. Deferred:
 - **No diagnostic spans** — `Diagnostic::span` always `None` until the `.cov` script
   layer carries source extents (see `covalence-hol/src/script/SKELETONS.md`).
 - **Statement rendering is canonical S-expression**, not math notation; MathML
-  printer is future work (`notes/web-kernel.md`).
+  printer is future work (`notes/vibes/web-kernel.md`).

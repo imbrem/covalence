@@ -1,5 +1,5 @@
 //! **Metamath-PA → HOL replay** — the constructive `∃P.ValidProof ⟹ ⊢⟦S⟧`
-//! bridge (`notes/theories-models-and-logics.md §5.6`).
+//! bridge (`notes/vibes/theories-models-and-logics.md §5.6`).
 //!
 //! This mirrors the structure of `covalence-alethe`'s "untrusted proof → kernel
 //! re-derivation": given a **verified** Metamath proof in the PA database

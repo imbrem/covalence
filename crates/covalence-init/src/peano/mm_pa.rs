@@ -2,7 +2,7 @@
 //! [`crate::metamath`] engine's [`Database`]/[`Frame`] API.
 //!
 //! This is the **`ValidProof` side** of the Metamath ⇄ HOL connection
-//! (`notes/theories-models-and-logics.md §5.6`): the primitive notion is the
+//! (`notes/vibes/theories-models-and-logics.md §5.6`): the primitive notion is the
 //! decidable relation `ValidProof(P, S, A)` — "`P` is a valid Metamath proof of
 //! statement `S` under axioms `A`" — exactly what [`crate::metamath::verify`]
 //! checks. The derived notion `Derivable_A(S) := ∃P. ValidProof(P, S, A)` is

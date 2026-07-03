@@ -71,7 +71,7 @@ macro_rules! let_term {
 /// **This is a placeholder, not a finished op.** Every op should
 /// eventually be `let_term!` (a body) or `spec_term!` (a first-order
 /// ε-selector spec) instead — see the "sound vs complete" note in the
-/// `defs` module docs and the op tracker in `notes/roadmap.md`. The
+/// `defs` module docs and the op tracker in `notes/vibes/roadmap.md`. The
 /// definition does *not* affect reduction efficiency.
 macro_rules! term_decl {
     (

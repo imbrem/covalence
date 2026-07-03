@@ -1,9 +1,10 @@
-# Next-stage breakdown (companion to REFACTOR.md)
+# Next-stage breakdown (companion to the plan)
 
-**Status:** working breakdown (2026-07) of [`../REFACTOR.md`](../REFACTOR.md),
-to start once `pure-impl-1` lands in `main`. REFACTOR.md is the intent (the
-user's voice); this is the execution plan — sequencing, dependencies, open
-decisions.
+**Status:** AI-drafted working breakdown (2026-07) of the maintainer-authored
+plan [`../plans/next-stage.md`](../plans/next-stage.md), to start once
+`pure-impl-1` lands in `main`. The plan is the intent (the maintainer's voice);
+this is a proposed execution order — sequencing, dependencies, open decisions.
+Lives in `vibes/` per the authorship policy in [`../README.md`](../README.md).
 
 ## The dependency structure
 
@@ -27,16 +28,22 @@ The four workstreams are not independent:
 Suggested order: **A → B(foundations) → C (group-by-group) → D**, with D's
 theory side and B's long tail running concurrently.
 
-## Phase A — notes/docs/skills split (cheap, first)
+## Phase A — notes/docs/skills split — **DONE 2026-07-03** (structural part)
 
-1. `notes/vibes/` ← everything currently in `notes/` (the AI-generated,
-   cross-referenced plans). One `git mv` + link fixups.
-2. `notes/` ← new structured tree (`ideas/`, `experiments/`, …) — *aspirational*
-   (what we want; may drift).
-3. `docs/` ← *true* documentation only, aggressively synced (start tiny: build,
-   crate map, kernel TCB inventory — things CI could even check).
-4. Refresh `README.md`, `CLAUDE.md` (thin), skills to match; simplify SKELETONS
-   *organizationally* now (severe-first stays), and note the future
+What landed (this branch): `notes/` → `notes/vibes/` (the AI corpus, its README
+is the index) · `notes/plans/` (maintainer-authored; the plan moved here from
+root `REFACTOR.md` as `next-stage.md` — the "where does the plan live" decision)
+· `docs/` created under the **true-only** contract, with `deps/` moved in
+(machine-generated truth; generator + CI gate re-pointed) · CLAUDE.md / root
+README / skills / source-comment references updated · the **authorship policy**
+recorded in `notes/README.md`, `docs/README.md`, and CLAUDE.md: everything
+outside `vibes/` is maintainer-authored (not fully AI-generated) until the
+vision is written out by hand.
+
+Deliberately left for the maintainer (per that policy): the structured `notes/`
+content (`ideas/`, `experiments/`, …), all `docs/` prose (build, crate map, TCB
+inventory — things CI could even check). Still open as later Phase-A work:
+1. Simplify SKELETONS *organizationally* (severe-first stays), and the future
    **skeleton database** (parse `SKELETON:`-style comments into a queryable
    index — future work, not now).
 
@@ -105,7 +112,8 @@ JS+Svelte library.
 
 ## Immediate next actions (once merged to main)
 
-1. Phase A wholesale (one or two sittings).
+1. ~~Phase A wholesale~~ — structural part DONE (see above); maintainer authors
+   the `docs/` + structured-`notes/` content; SKELETONS reshaping still open.
 2. B1 interim cache + B3 CI reliability; start the buck2 spike.
 3. C pilot on `lib/`.
 4. D1 theory work continues in-kernel regardless (closed-world Stage 1+).

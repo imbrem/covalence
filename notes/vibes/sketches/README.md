@@ -1,8 +1,8 @@
 # Sketches
 
 Forward-looking design sketches and raw research notes that feed the canonical
-docs in `notes/` but aren't themselves load-bearing. Aspirational and informal —
-when one of these graduates into a real plan, it moves up to `notes/` and its
+docs in `notes/vibes/` but aren't themselves load-bearing. Aspirational and informal —
+when one of these graduates into a real plan, it moves up to `notes/vibes/` and its
 sketch is deleted.
 
 ## Design sketches (forward-looking)
@@ -15,10 +15,10 @@ sketch is deleted.
 ## Research notes (background / raw brainstorm)
 
 - [`OBSERVERS.md`](./OBSERVERS.md) — the observer/validator/precondition
-  substrate behind `notes/observers.md` (witness → observer → validator →
+  substrate behind `notes/vibes/observers.md` (witness → observer → validator →
   facts).
 - [`MAPS.md`](./MAPS.md) — theory-interpretation transport across PA/HOL/ZFC
-  behind `notes/metatheory.md`'s two pillars.
+  behind `notes/vibes/metatheory.md`'s two pillars.
 - [`SAMPLE.md`](./SAMPLE.md) — sample surface syntax (`#tydecl`/`#decl`/
   `#clause` for `option`) and the spec-question forms (entailment, uniqueness,
   categoricity) for the surface-syntax direction.

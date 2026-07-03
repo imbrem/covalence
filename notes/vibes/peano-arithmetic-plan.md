@@ -13,7 +13,7 @@ soundness theorem, and one-step projection — plus the Metamath ⇄ HOL side an
 the replay bridge. The authoritative, up-to-date status (including what is still
 **deferred** and why) lives next to the code:
 
-- **[`crates/covalence-hol/src/peano/SKELETONS.md`](../crates/covalence-hol/src/peano/SKELETONS.md)**
+- **[`crates/covalence-hol/src/peano/SKELETONS.md`](../../crates/covalence-init/src/peano/SKELETONS.md)**
   — module-by-module status: `fol.rs` (reified locally-nameless FOL syntax +
   substitution), `sem.rs` (two-sorted HOAS carrier + single-Church-fold
   denotation), `pa.rs` (`Derivable_PA A := ∀d. Closed_PA d ⟹ d A`, the

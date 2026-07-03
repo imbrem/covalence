@@ -65,7 +65,8 @@ graph LR
   object --> parse
   opentheory --> hol
   parquet --> arrow
-  pure --> types
+  pure --> pure-trusted
+  pure-trusted --> types
   python --> git
   python --> graph
   python --> hash
@@ -114,14 +115,12 @@ graph LR
   store --> hash
   store --> json
   store --> sqlite
-  wasm --> core
   wasm-build-guest --> wasm
   wasm-spec --> hash
-  wasm-spec --> types
   wasm-spec --> wasm
   wasm-store --> json
   wasm-store --> store
   wasm-store --> wasm
   web-kernel --> kernel
   classDef tcb fill:#ffd6d6,stroke:#cc0000,color:#000;
-  class core,parse,pure,sexp,types tcb;
+  class core,parse,pure,pure-trusted,sexp,types tcb;

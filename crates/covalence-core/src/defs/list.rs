@@ -43,7 +43,7 @@ use super::stream::{finite, stream, stream_at, stream_const, stream_head, stream
 /// structural induction over `nil` / `cons` would be *false*. With it,
 /// every list is `nil` (the empty prefix) or `cons x xs` (a `some` head
 /// over a shorter contiguous tail). Matches the design in
-/// `notes/type-hierarchy.md` (`∃n. ∀i. (i<n → ∃a. s i = some a) ∧
+/// `notes/vibes/type-hierarchy.md` (`∃n. ∀i. (i<n → ∃a. s i = some a) ∧
 /// (n≤i → s i = none)`); contiguity + finiteness is the equivalent,
 /// proof-friendlier phrasing.
 fn list_predicate() -> Term {

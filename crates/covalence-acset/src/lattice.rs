@@ -7,7 +7,7 @@
 //! from `⊥` to its least fixpoint (Kleene iteration). This is exactly the
 //! semantics Datafun's `fix : (L →⁺ L) → L` denotes — here the monotonicity of
 //! the step is the caller's obligation (Datafun's type system would discharge
-//! it). See `notes/sketches/acset-datalog-datafun.md`.
+//! it). See `notes/vibes/sketches/acset-datalog-datafun.md`.
 //!
 //! Because `lfp` is generic over the lattice, the same combinator gives both
 //! relational closures (set-valued: reachability) and **lattice-valued**

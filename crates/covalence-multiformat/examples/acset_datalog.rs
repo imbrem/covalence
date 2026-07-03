@@ -109,7 +109,7 @@ fn main() {
     println!("  this fixpoint = a monotone map on a set-lattice iterated to its lfp.");
     println!("  a Datafun surface (monotone types + `fix`) would compile to exactly this,");
     println!("  with termination/monotonicity guaranteed by typing rather than assumed.");
-    println!("  see notes/sketches/acset-datalog-datafun.md");
+    println!("  see notes/vibes/sketches/acset-datalog-datafun.md");
 }
 
 fn short(s: &str) -> String {

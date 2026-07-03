@@ -1,7 +1,7 @@
 //! Runtime + build trait impls for the `cov:wasm@0.1.0` WIT package.
 //!
 //! See `wit/cov-wasm.wit` for the interface definitions and
-//! `notes/design/proposals/wasm-runtime/` for the broader plan.
+//! `notes/vibes/design/proposals/wasm-runtime/` for the broader plan.
 //!
 //! The build interface is intentionally a 1:1 mirror of
 //! `crate::build::{ModuleBuilder, FuncBody}` — every WIT method on

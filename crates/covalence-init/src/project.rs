@@ -7,7 +7,7 @@
 //! dependency graph and no topological build.
 //!
 //! This module is the first concrete step toward the vision in
-//! [`notes/cov-project.md`]: a single [`compile_project`] entry point that takes
+//! [`notes/vibes/cov-project.md`]: a single [`compile_project`] entry point that takes
 //! a set of `.cov` sources (plus the Rust-supplied "seam" envs / FFI tactics
 //! they need), reads the `(#import NAME)` edges **out of the sources
 //! themselves**, builds the dependency graph, topologically orders it, and
@@ -29,7 +29,7 @@
 //! mutual recursion between a Rust module and a `.cov` file (the two-phase /
 //! SCC fixpoint described in the design doc), plus the longer-term framing of a
 //! Covalence project as a WASM component compiled against an abstract API and
-//! distributed via Cargo features. See [`notes/cov-project.md`].
+//! distributed via Cargo features. See [`notes/vibes/cov-project.md`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

@@ -24,7 +24,7 @@
 //! comprehensions, and a `fix` whose **monotonicity is enforced by the type
 //! system** — would *compile to* this engine, replacing hand-written [`Rule`]s
 //! and guaranteeing the monotonicity this layer currently assumes. See
-//! `notes/sketches/acset-datalog-datafun.md`.
+//! `notes/vibes/sketches/acset-datalog-datafun.md`.
 
 use std::collections::{HashMap, HashSet};
 

@@ -32,6 +32,7 @@
     "covalence-parse",
     "covalence-proto",
     "covalence-pure",
+    "covalence-pure-trusted",
     "covalence-python",
     "covalence-rand",
     "covalence-repl",
@@ -314,6 +315,10 @@
     },
     {
       "from": "covalence-pure",
+      "to": "covalence-pure-trusted"
+    },
+    {
+      "from": "covalence-pure-trusted",
       "to": "covalence-types"
     },
     {
@@ -509,20 +514,12 @@
       "to": "covalence-sqlite"
     },
     {
-      "from": "covalence-wasm",
-      "to": "covalence-core"
-    },
-    {
       "from": "covalence-wasm-build-guest",
       "to": "covalence-wasm"
     },
     {
       "from": "covalence-wasm-spec",
       "to": "covalence-hash"
-    },
-    {
-      "from": "covalence-wasm-spec",
-      "to": "covalence-types"
     },
     {
       "from": "covalence-wasm-spec",
@@ -554,6 +551,7 @@
       "covalence-core",
       "covalence-parse",
       "covalence-pure",
+      "covalence-pure-trusted",
       "covalence-sexp",
       "covalence-types"
     ],

@@ -9,9 +9,9 @@ edition = "2024"
 # (untrusted) HOL builder shell live downstream in `covalence-hol`.
 
 [dependencies]
-covalence-pure = { path = "../covalence-pure" }
-covalence-types = { path = "../lib/types" }
-covalence-sexp = { path = "../lib/sexp" }
+covalence-pure = { path = "../../base" }
+covalence-types = { path = "../../../lib/types" }
+covalence-sexp = { path = "../../../lib/sexp" }
 fnv = "1"
 indexmap = "2"
 smol_str = "0.3"

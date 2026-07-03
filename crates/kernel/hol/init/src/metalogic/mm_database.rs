@@ -1435,7 +1435,7 @@ mod tests {
     /// The vendored real `hol.mm` (CC0; all 151 `$p` proofs are *compressed*).
     const HOL_MM: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../proof/metamath/tests/fixtures/hol.mm"
+        "/../../../proof/metamath/tests/fixtures/hol.mm"
     ));
 
     /// **Performance benchmark** for `derive_theorem`. Times every `$p` theorem

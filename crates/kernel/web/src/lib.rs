@@ -11,7 +11,7 @@
 //! Today [`check`] is **synchronous** and resolves only the built-in
 //! standard-library prelude (self-contained articles). Network dependency
 //! loading is the async `ArticleSource` path driven via `wasm-bindgen-futures`
-//! — see `notes/vibes/web-kernel.md` and `crates/covalence-kernel/src/service.rs`.
+//! — see `notes/vibes/web-kernel.md` and `crates/kernel/core/src/service.rs`.
 
 use covalence_kernel::KernelService;
 use wasm_bindgen::prelude::*;

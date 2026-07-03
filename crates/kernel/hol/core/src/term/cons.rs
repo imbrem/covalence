@@ -63,7 +63,7 @@ use super::term::{Term, TermKind};
 /// so it locates the same representative. Private: this is an internal
 /// fast-path, not public API.
 ///
-/// FUTURE (see `crates/covalence-hol/PERF.md`): to probe an *ordered*
+/// FUTURE (see `crates/kernel/hol/traits/PERF.md`): to probe an *ordered*
 /// interner (`BTreeSet<Term>`) alloc-free — which reuses the O(1) fingerprint
 /// `cmp` and needs no cached wide hash — make this `#[repr(transparent)]` over
 /// `TermKind` and obtain `&KindRef` from `&TermKind` via a safe reference-cast

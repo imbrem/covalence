@@ -4,8 +4,8 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-covalence-core = { path = "../../covalence-core" }
-covalence-init = { path = "../../covalence-init" }
+covalence-core = { path = "../../kernel/hol/core" }
+covalence-init = { path = "../../kernel/hol/init" }
 covalence-sexp = { path = "../../lib/sexp" }
 covalence-smt = { path = "../../lib/smt" }
 covalence-types = { path = "../../lib/types" }

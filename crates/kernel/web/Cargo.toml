@@ -12,7 +12,7 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-covalence-kernel = { path = "../covalence-kernel", features = ["serde"] }
+covalence-kernel = { path = "../core", features = ["serde"] }
 serde_json = "1"
 # The bindgen schema is version-locked: the crate and `wasm-bindgen-cli` must
 # match exactly. We do NOT exact-pin here — Cargo.lock is the single source of

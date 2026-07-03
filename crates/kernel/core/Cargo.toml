@@ -6,11 +6,11 @@ edition = "2024"
 # The "OS-kernel" layer: wires covalence-hol (proof API over the
 # covalence-core TCB) to the content-addressed blob store + tree objects.
 [dependencies]
-covalence-init = { path = "../covalence-init" }
-covalence-store = { path = "../store/core" }
-covalence-object = { path = "../vcs/object" }
-covalence-hash = { path = "../lib/hash", default-features = false }
-covalence-sexp = { path = "../lib/sexp" }
+covalence-init = { path = "../hol/init" }
+covalence-store = { path = "../../store/core" }
+covalence-object = { path = "../../vcs/object" }
+covalence-hash = { path = "../../lib/hash", default-features = false }
+covalence-sexp = { path = "../../lib/sexp" }
 thiserror = "2"
 serde = { version = "1", features = ["derive"], optional = true }
 

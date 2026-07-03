@@ -24,10 +24,10 @@ covalence-git = { path = "../lib/git" }
 covalence-hash = { path = "../lib/hash", default-features = false }
 covalence-object = { path = "../vcs/object" }
 covalence-store = { path = "../store/core", features = ["memory"] }
-covalence-shell = { path = "../covalence-shell" }
+covalence-shell = { path = "../kernel/shell" }
 covalence-repl = { path = "../covalence-repl" }
-covalence-init = { path = "../covalence-init" }
-covalence-core = { path = "../covalence-core" }
+covalence-init = { path = "../kernel/hol/init" }
+covalence-core = { path = "../kernel/hol/core" }
 covalence-metamath = { path = "../proof/metamath" }
 covalence-proto = { path = "../lib/proto", features = ["discovery"] }
 ureq = "3"

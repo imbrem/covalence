@@ -12,14 +12,14 @@ edition = "2024"
 default = []
 
 [dependencies]
-covalence-hol = { path = "../covalence-hol" }
-covalence-core = { path = "../covalence-core" }
-covalence-types = { path = "../lib/types" }
-covalence-hash = { path = "../lib/hash", default-features = false }
-covalence-sexp = { path = "../lib/sexp" }
-covalence-metamath = { path = "../proof/metamath" }
-covalence-grammar = { path = "../covalence-grammar" }
-covalence-spectec = { path = "../lib/wasm/spectec" }
+covalence-hol = { path = "../traits" }
+covalence-core = { path = "../core" }
+covalence-types = { path = "../../../lib/types" }
+covalence-hash = { path = "../../../lib/hash", default-features = false }
+covalence-sexp = { path = "../../../lib/sexp" }
+covalence-metamath = { path = "../../../proof/metamath" }
+covalence-grammar = { path = "../../../covalence-grammar" }
+covalence-spectec = { path = "../../../lib/wasm/spectec" }
 async-trait = "0.1"
 bytes = "1"
 fnv = "1"

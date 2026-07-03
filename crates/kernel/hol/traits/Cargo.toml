@@ -17,5 +17,5 @@ edition = "2024"
 default = []
 
 [dependencies]
-covalence-core = { path = "../covalence-core" }
+covalence-core = { path = "../core" }
 thiserror = "2"

@@ -17,9 +17,9 @@ bytes = "1"
 covalence-forsp = { path = "../covalence-forsp" }
 covalence-graph = { path = "../lib/graph" }
 covalence-hash = { path = "../lib/hash", default-features = false }
-covalence-init = { path = "../covalence-init" }
+covalence-init = { path = "../kernel/hol/init" }
 covalence-wasm = { path = "../lib/wasm/core", default-features = false }
-covalence-shell = { path = "../covalence-shell" }
+covalence-shell = { path = "../kernel/shell" }
 covalence-arrow = { path = "../lib/arrow", optional = true }
 covalence-parquet = { path = "../lib/parquet", optional = true }
 covalence-object = { path = "../vcs/object", optional = true, default-features = false }
@@ -32,5 +32,5 @@ ureq = { version = "3", optional = true }
 covalence-arrow = { path = "../lib/arrow" }
 covalence-parquet = { path = "../lib/parquet" }
 covalence-object = { path = "../vcs/object", default-features = false }
-covalence-shell = { path = "../covalence-shell" }
+covalence-shell = { path = "../kernel/shell" }
 parquet = { version = "58", default-features = false, features = ["arrow"] }

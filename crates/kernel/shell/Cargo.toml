@@ -6,5 +6,5 @@ edition = "2024"
 # Userspace helpers over the kernel. Re-exports the kernel's backend
 # surface + the HOL builder API; downstream consumers depend only on this.
 [dependencies]
-covalence-kernel = { path = "../covalence-kernel" }
-covalence-hol = { path = "../covalence-hol" }
+covalence-kernel = { path = "../core" }
+covalence-hol = { path = "../hol/traits" }

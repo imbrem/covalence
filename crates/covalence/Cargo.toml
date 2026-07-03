@@ -29,12 +29,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 covalence-serve = { path = "../covalence-serve" }
 covalence-repl = { path = "../covalence-repl", features = ["fetch", "cogit"] }
-covalence-shell = { path = "../covalence-shell" }
+covalence-shell = { path = "../kernel/shell" }
 covalence-store = { path = "../store/core", features = ["sqlite"] }
 # covalence-git is gated off WASM: its `clone` feature transitively pulls
 # in libsqlite3-sys, whose sqlite3.c build needs a real WASI sysroot.
 covalence-git = { path = "../lib/git", optional = true, features = ["clone"] }
-covalence-hol = { path = "../covalence-hol", optional = true }
+covalence-hol = { path = "../kernel/hol/traits", optional = true }
 covalence-opentheory = { path = "../proof/opentheory", optional = true }
 covalence-wasm = { path = "../lib/wasm/core", default-features = false }
 covalence-client = { path = "../covalence-client", features = ["sync"] }

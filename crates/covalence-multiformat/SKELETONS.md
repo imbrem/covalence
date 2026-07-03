@@ -7,7 +7,7 @@
   private-use range (`>= 0x30_0000`). Register real codes before any
   cross-project wire commitment.
 - **No signed envelopes.** Federation / authored Thm exchange needs ed25519
-  signatures over the body (via `covalence-sig`). Not yet modelled.
+  signatures over the body (via `covalence-crypto-sig`). Not yet modelled.
 - **Multihash is blake3-only.** `Cid::parse` rejects every other multihash code.
   Add SHA-256/etc. when a peer requires it.
 - **Ingest does not re-derive the proof.** `examples/kernel_ingest` parses the

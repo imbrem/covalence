@@ -6,9 +6,9 @@ edition = "2024"
 [dependencies]
 covalence-core = { path = "../covalence-core" }
 covalence-init = { path = "../covalence-init" }
-covalence-sexp = { path = "../covalence-sexp" }
-covalence-smt = { path = "../covalence-smt" }
-covalence-types = { path = "../covalence-types" }
+covalence-sexp = { path = "../lib/sexp" }
+covalence-smt = { path = "../lib/smt" }
+covalence-types = { path = "../lib/types" }
 thiserror = "2"
 
 [features]

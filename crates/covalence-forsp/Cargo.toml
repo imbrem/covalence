@@ -4,6 +4,6 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-covalence-sexp = { path = "../covalence-sexp" }
-covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-sexp = { path = "../lib/sexp" }
+covalence-hash = { path = "../lib/hash", default-features = false }
 thiserror = "2"

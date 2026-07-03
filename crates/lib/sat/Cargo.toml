@@ -1,0 +1,20 @@
+[package]
+name = "covalence-sat"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+default = ["drat", "lrat"]
+drat = []
+lrat = []
+wasm = ["dep:covalence-wasm"]
+
+[dependencies]
+covalence-parse = { path = "../parse" }
+covalence-types = { path = "../types" }
+covalence-wasm = { path = "../wasm/core", optional = true }
+thiserror = "2"
+
+[dev-dependencies]
+covalence-wasm = { path = "../wasm/core", features = ["runtime"] }
+varisat = "0.2"

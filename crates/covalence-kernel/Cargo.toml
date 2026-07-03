@@ -9,8 +9,8 @@ edition = "2024"
 covalence-init = { path = "../covalence-init" }
 covalence-store = { path = "../covalence-store" }
 covalence-object = { path = "../covalence-object" }
-covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-sexp = { path = "../covalence-sexp" }
+covalence-hash = { path = "../lib/hash", default-features = false }
+covalence-sexp = { path = "../lib/sexp" }
 thiserror = "2"
 serde = { version = "1", features = ["derive"], optional = true }
 

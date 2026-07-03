@@ -1,0 +1,9 @@
+[package]
+name = "covalence-crypto-sig"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+# Pinned to 0.6 to match ed25519-dalek's rand_core dependency.
+rand_core = { version = "0.6", features = ["getrandom"] }

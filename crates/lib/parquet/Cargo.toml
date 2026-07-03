@@ -1,0 +1,10 @@
+[package]
+name = "covalence-parquet"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-arrow = { path = "../arrow" }
+parquet = { version = "58", default-features = false, features = ["arrow"] }
+bytes = "1"
+thiserror = "2"

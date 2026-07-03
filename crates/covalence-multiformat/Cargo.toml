@@ -10,8 +10,8 @@ license = "0BSD OR CC0-1.0"
 
 [dependencies]
 covalence-acset = { path = "../covalence-acset" }
-covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-parse = { path = "../covalence-parse" }
+covalence-hash = { path = "../lib/hash", default-features = false }
+covalence-parse = { path = "../lib/parse" }
 thiserror = "2"
 
 [dev-dependencies]
@@ -19,4 +19,4 @@ thiserror = "2"
 # the library itself stays kernel-free (wire layer only).
 covalence-init = { path = "../covalence-init" }
 # Canonical S-expression encoding of the HOL term payload (author + parse back).
-covalence-sexp = { path = "../covalence-sexp" }
+covalence-sexp = { path = "../lib/sexp" }

@@ -20,8 +20,8 @@ thiserror = "2"
 tracing = "0.1"
 # Demo: decode `$t` althtmldef HTML (full HTML5 entity table) to Unicode.
 html-escape = "0.2"
-covalence-git = { path = "../covalence-git" }
-covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-git = { path = "../lib/git" }
+covalence-hash = { path = "../lib/hash", default-features = false }
 covalence-object = { path = "../covalence-object" }
 covalence-store = { path = "../covalence-store", features = ["memory"] }
 covalence-shell = { path = "../covalence-shell" }
@@ -29,7 +29,7 @@ covalence-repl = { path = "../covalence-repl" }
 covalence-init = { path = "../covalence-init" }
 covalence-core = { path = "../covalence-core" }
 covalence-metamath = { path = "../covalence-metamath" }
-covalence-proto = { path = "../covalence-proto", features = ["discovery"] }
+covalence-proto = { path = "../lib/proto", features = ["discovery"] }
 ureq = "3"
 
 [dev-dependencies]

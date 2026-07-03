@@ -18,7 +18,7 @@
 #![cfg(target_arch = "wasm32")]
 
 wit_bindgen::generate!({
-    path: "../covalence-wasm/wit/pure.wit",
+    path: "../lib/wasm/core/wit/pure.wit",
     world: "pure-guest",
 });
 

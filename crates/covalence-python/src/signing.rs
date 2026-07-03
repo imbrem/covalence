@@ -7,7 +7,7 @@ use covalence_hash::O256;
 /// An authenticated entity (wraps an Ed25519 public key).
 #[pyclass(frozen)]
 pub struct Principal {
-    key: covalence_sig::VerifyingKey,
+    key: covalence_crypto_sig::VerifyingKey,
 }
 
 #[pymethods]
@@ -18,7 +18,7 @@ impl Principal {
         let arr: [u8; 32] = bytes
             .try_into()
             .map_err(|_| PyValueError::new_err("expected exactly 32 bytes"))?;
-        let key = covalence_sig::VerifyingKey::from_bytes(&arr)
+        let key = covalence_crypto_sig::VerifyingKey::from_bytes(&arr)
             .map_err(|e| PyValueError::new_err(format!("invalid public key: {e}")))?;
         Ok(Principal { key })
     }
@@ -49,7 +49,7 @@ impl Principal {
 /// An opaque detached signature over some data.
 #[pyclass]
 pub struct Signature {
-    sig: covalence_sig::Signature,
+    sig: covalence_crypto_sig::Signature,
 }
 
 #[pymethods]
@@ -57,7 +57,7 @@ impl Signature {
     /// Verify this signature against a principal and data.
     fn verify(&self, principal: &Principal, data: &[u8]) -> bool {
         let hash = O256::blob(data);
-        covalence_sig::Verifier::verify(&principal.key, hash.as_bytes(), &self.sig).is_ok()
+        covalence_crypto_sig::Verifier::verify(&principal.key, hash.as_bytes(), &self.sig).is_ok()
     }
 
     fn __repr__(&self) -> String {
@@ -70,7 +70,7 @@ impl Signature {
 /// A signing capability (wraps an Ed25519 keypair).
 #[pyclass]
 pub struct Signer {
-    key: covalence_sig::SigningKey,
+    key: covalence_crypto_sig::SigningKey,
 }
 
 #[pymethods]
@@ -78,7 +78,9 @@ impl Signer {
     /// Generate a fresh keypair.
     #[staticmethod]
     fn generate() -> Self {
-        let key = covalence_sig::SigningKey::generate(&mut covalence_sig::dalek_rand_core::OsRng);
+        let key = covalence_crypto_sig::SigningKey::generate(
+            &mut covalence_crypto_sig::dalek_rand_core::OsRng,
+        );
         Signer { key }
     }
 
@@ -92,7 +94,7 @@ impl Signer {
     /// Sign data, returning an opaque Signature.
     fn sign(&self, data: &[u8]) -> Signature {
         let hash = O256::blob(data);
-        let sig = covalence_sig::Signer::sign(&self.key, hash.as_bytes());
+        let sig = covalence_crypto_sig::Signer::sign(&self.key, hash.as_bytes());
         Signature { sig }
     }
 

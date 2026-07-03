@@ -974,6 +974,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-crypto-sig"
+version = "0.0.0"
+dependencies = [
+ "ed25519-dalek",
+ "rand_core 0.6.4",
+]
+
+[[package]]
 name = "covalence-egglog"
 version = "0.0.0"
 dependencies = [
@@ -1257,6 +1265,7 @@ dependencies = [
  "axum",
  "bytes",
  "bzip2",
+ "covalence-crypto-sig",
  "covalence-git",
  "covalence-graph",
  "covalence-hash",
@@ -1268,7 +1277,6 @@ dependencies = [
  "covalence-serve",
  "covalence-sexp",
  "covalence-shell",
- "covalence-sig",
  "covalence-store",
  "covalence-wasm",
  "covalence-wasm-store",
@@ -1362,14 +1370,6 @@ version = "0.0.0"
 dependencies = [
  "covalence-hol",
  "covalence-kernel",
-]
-
-[[package]]
-name = "covalence-sig"
-version = "0.0.0"
-dependencies = [
- "ed25519-dalek",
- "rand_core 0.6.4",
 ]
 
 [[package]]

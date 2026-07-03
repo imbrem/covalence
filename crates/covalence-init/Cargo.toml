@@ -14,9 +14,9 @@ default = []
 [dependencies]
 covalence-hol = { path = "../covalence-hol" }
 covalence-core = { path = "../covalence-core" }
-covalence-types = { path = "../covalence-types" }
-covalence-hash = { path = "../covalence-hash", default-features = false }
-covalence-sexp = { path = "../covalence-sexp" }
+covalence-types = { path = "../lib/types" }
+covalence-hash = { path = "../lib/hash", default-features = false }
+covalence-sexp = { path = "../lib/sexp" }
 covalence-metamath = { path = "../covalence-metamath" }
 covalence-grammar = { path = "../covalence-grammar" }
 covalence-spectec = { path = "../covalence-spectec" }

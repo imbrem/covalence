@@ -18,7 +18,7 @@ consumer). The layers below mirror the dependency stack (see
 - **covalence-hash** — wraps `blake3`, `sha2`, optionally `gix-hash` (`git` feature). `O256` hash, `HashCtx` (BLAKE3/SHA-256/git), `ContentHash`/`ContentId`, `CovRoot` domain-separated hashing.
 - **covalence-sqlite** — wraps `rusqlite`; `open()`/`open_memory()` with WAL + NORMAL sync + busy-timeout pragmas.
 - **covalence-rand** — wraps `rand`. All randomness goes through here.
-- **covalence-sig** — wraps `ed25519-dalek` (EdDSA). Re-exports pinned `rand_core` 0.6 as `dalek_rand_core` (the one exception to the covalence-rand rule).
+- **covalence-crypto-sig** — wraps `ed25519-dalek` (EdDSA). Re-exports pinned `rand_core` 0.6 as `dalek_rand_core` (the one exception to the covalence-rand rule).
 - **covalence-parse** — wraps `winnow`; `leb128` module (unsigned LEB128 varints).
 - **covalence-sexp** — S-expression parser. Parametric `SExp<A>`; default `SExpr = SExp<Atom>` (`Symbol(SmolStr)` | `Str{format,bytes}`). Layers: `SExpVisitor` (SAX + dialect), `SExpBuilder`/`TreeBuilder`, `SExp`. Dialects: `CovalenceDialect` (`;;`, `(; ;)`, `|...|`), `SmtLibDialect`, `WatDialect`. `parse()`/`parse_smt()`/`parse_wat()`/`parse_with()`; `map()`/`map_ref()`.
 - **covalence-types** — `Decision` (sat/unknown/unsat), `Bits`, and (default `int` feature) `Nat`/`Int` arbitrary-precision (wraps `num-bigint`/`num-traits`/`num-integer`), `Sign`, errors. `Nat` subtraction saturates; use `checked_sub`.

@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-covalence-types = { path = "../../covalence-types" }
+covalence-types = { path = "../../lib/types" }
 serde = { version = "1", features = ["derive"], optional = true }
 
 [features]

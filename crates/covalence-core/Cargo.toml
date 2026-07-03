@@ -10,8 +10,8 @@ edition = "2024"
 
 [dependencies]
 covalence-pure = { path = "../covalence-pure" }
-covalence-types = { path = "../covalence-types" }
-covalence-sexp = { path = "../covalence-sexp" }
+covalence-types = { path = "../lib/types" }
+covalence-sexp = { path = "../lib/sexp" }
 fnv = "1"
 indexmap = "2"
 smol_str = "0.3"

@@ -9,6 +9,7 @@ digraph deps {
   "client";
   "core" [style=filled, fillcolor="#ffd6d6"];
   "core-test-guest";
+  "crypto-sig";
   "egglog";
   "forsp";
   "fuse";
@@ -40,7 +41,6 @@ digraph deps {
   "serve";
   "sexp" [style=filled, fillcolor="#ffd6d6"];
   "shell";
-  "sig";
   "smt";
   "spectec";
   "sqlite";
@@ -118,6 +118,7 @@ digraph deps {
   "parquet" -> "arrow";
   "pure" -> "pure-trusted";
   "pure-trusted" -> "types";
+  "python" -> "crypto-sig";
   "python" -> "git";
   "python" -> "graph";
   "python" -> "hash";
@@ -129,7 +130,6 @@ digraph deps {
   "python" -> "serve";
   "python" -> "sexp";
   "python" -> "shell";
-  "python" -> "sig";
   "python" -> "store";
   "python" -> "wasm";
   "python" -> "wasm-store";

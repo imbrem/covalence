@@ -189,7 +189,9 @@ fn main() {
     }
 
     section("next layers (not in this demo)");
-    println!("  · ed25519-signed envelopes (covalence-sig) — federation / authored Thm exchange");
+    println!(
+        "  · ed25519-signed envelopes (covalence-crypto-sig) — federation / authored Thm exchange"
+    );
     println!("  · wire-CID ↦ internal identity (COV_ROOT Name256 / Coln Sedimentree address)");
     println!("  · ACSet-schema-as-geometric-theory soundness-certificate facts");
     println!("  · CAR-style bundles: a fact plus the transitive closure of its witnesses");

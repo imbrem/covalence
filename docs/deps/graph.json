@@ -9,6 +9,7 @@
     "covalence-client",
     "covalence-core",
     "covalence-core-test-guest",
+    "covalence-crypto-sig",
     "covalence-egglog",
     "covalence-forsp",
     "covalence-fuse",
@@ -40,7 +41,6 @@
     "covalence-serve",
     "covalence-sexp",
     "covalence-shell",
-    "covalence-sig",
     "covalence-smt",
     "covalence-spectec",
     "covalence-sqlite",
@@ -323,6 +323,10 @@
     },
     {
       "from": "covalence-python",
+      "to": "covalence-crypto-sig"
+    },
+    {
+      "from": "covalence-python",
       "to": "covalence-git"
     },
     {
@@ -364,10 +368,6 @@
     {
       "from": "covalence-python",
       "to": "covalence-shell"
-    },
-    {
-      "from": "covalence-python",
-      "to": "covalence-sig"
     },
     {
       "from": "covalence-python",

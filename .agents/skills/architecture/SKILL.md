@@ -19,13 +19,13 @@ disable-model-invocation: true
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)
   - Features: `sync` (ureq), `async` (hyper)
-- `crates/covalence-hash/` — Cryptographic hash types (`O256`, `IdentityHasher`), git hashing (feature-gated on `git`)
+- `crates/lib/hash/` — Cryptographic hash types (`O256`, `IdentityHasher`), git hashing (feature-gated on `git`)
 - `crates/covalence-store/` — Generic store traits (`StoreGet`, `StoreGetRef`, `StorePut`, `StorePutMut`) and implementations
   - `MemoryStore`/`SharedMemoryStore` (feature `memory`, default)
   - `SqliteStore` (feature `sqlite`, backed by `covalence-sqlite`)
-- `crates/covalence-sqlite/` — Low-level SQLite blob store (rusqlite)
-- `crates/covalence-sexp/` — S-expression parser/printer (`parse()`, `prettyprint()`, `offset_to_line_col()`)
-- `crates/covalence-wasm/` — WASM/WAT gateway (see `wasm-guide` skill)
+- `crates/lib/sqlite/` — Low-level SQLite blob store (rusqlite)
+- `crates/lib/sexp/` — S-expression parser/printer (`parse()`, `prettyprint()`, `offset_to_line_col()`)
+- `crates/lib/wasm/core/` — WASM/WAT gateway (see `wasm-guide` skill)
   - `src/validate.rs` — `compile_wat()` (WAT→WASM), `wasm_to_wat()` (WASM→WAT) — always available
   - `src/parse.rs` — `parse_module()`, `parse_component()` — binary inspection via wasmparser
   - `src/build.rs` — programmatic `ModuleBuilder` (~840 LoC)
@@ -35,14 +35,14 @@ disable-model-invocation: true
   - `src/lib.rs` — `WasmError` enum
 - `crates/covalence-lsp/` — Language server library (used by `cov lsp`)
   - `src/lib.rs` — LSP handlers for sexp files (`.smt`, `.smt2`, `.alethe`, `.cov`) and WAT files (`.wat`)
-- `crates/covalence-git/` — Cogit VCS library (used by `cov cog`)
+- `crates/lib/git/` — Cogit VCS library (used by `cov cog`)
 - `crates/covalence-serve/` — Web server library (used by `cov serve`)
   - `src/lib.rs` — `ServeConfig`, `ServeError`, `AppState` (holds `Kernel`), `run_serve()`
   - `src/api.rs` — REST API handlers (blobs, WAT, eval, decide, etc.)
   - `src/eval.rs` — `server_session()` — creates a REPL Session backed by a Kernel
   - `src/static_files.rs` — rust-embed static file serving with SPA fallback (feature `static`)
   - `build.rs` — Warns if `apps/covalence-web/build/` is missing (only when `static` feature enabled)
-- `crates/covalence-proto/` — Service discovery + configuration
+- `crates/lib/proto/` — Service discovery + configuration
   - `src/discovery.rs` — Server registration/discovery via XDG runtime dir
   - `src/config.rs` — Default paths (XDG data dir)
   - `src/error.rs` — `DiscoveryError`

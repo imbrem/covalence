@@ -1,6 +1,6 @@
 //! **Declared signatures, theories, and models** — the script-layer data the
 //! `#sig` / `#thy` / `#model` / `#models` directives build
-//! (`notes/surface-compiler.md` §3.0–§3.0.3). This is the surface↔script
+//! (`notes/vibes/surface-compiler.md` §3.0–§3.0.3). This is the surface↔script
 //! *fusion*: the `.cov` language gains the theory-defining forms, so the
 //! `Nat` signature + theory the `models::` module hand-built in Rust can be
 //! written as **declared data** and the abstract `add_comm` proof replayed
@@ -58,7 +58,7 @@ pub struct SigOp {
 }
 
 /// A **single-sorted, first-order signature**: a name, the sort variable name
-/// `α`, and the typed operation symbols. The `notes/surface-compiler.md` §3.0
+/// `α`, and the typed operation symbols. The `notes/vibes/surface-compiler.md` §3.0
 /// `(#sig …)` form. A generic multi-sort / kinded-family (HOL-ω) signature is
 /// deferred — see `SKELETONS.md`.
 #[derive(Clone)]
@@ -111,7 +111,7 @@ pub struct Spec {
 }
 
 /// A **theory**: a signature plus named abstract specs — the proof obligations
-/// any model of the signature must discharge (the `notes/surface-compiler.md`
+/// any model of the signature must discharge (the `notes/vibes/surface-compiler.md`
 /// §3.0 `(#thy …)` form, `(#spec …)` clauses). The signature is stored inline
 /// (resolved from the `(over SIG)` ref at parse time).
 #[derive(Clone)]
@@ -123,7 +123,7 @@ pub struct Theory {
 
 /// A **model** of a signature: a carrier type, an interpretation term for each
 /// op (typechecked against the op's template with `α := carrier`), and the name
-/// of the induction-handler tactic. The `notes/surface-compiler.md` §3.0.3
+/// of the induction-handler tactic. The `notes/vibes/surface-compiler.md` §3.0.3
 /// `(#model …)` form. Pure semantics — *nothing about axioms*; satisfaction is
 /// the separate `(#models …)` certificate.
 #[derive(Clone)]

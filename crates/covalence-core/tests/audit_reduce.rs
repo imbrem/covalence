@@ -1047,21 +1047,22 @@ fn unfold_def_style_errs() {
 #[test]
 fn unfold_declaration_only_errs() {
     // `nat.bitAnd` is declaration-only (`tm = None`): unfold => SpecHasNoBody.
-    // (`nat.div` and `cond`, by contrast, carry bodies — div a def-style
-    // Euclidean selector, cond the HOL Light `COND` let-body — see
-    // `defs::nat_div` / `init::cond`.)
+    // (`nat.div` and `cond`, by contrast, carry let-style bodies — div the
+    // explicit course-of-values recursion fixpoint, cond the HOL Light `COND`
+    // let-body — see `defs::nat_div_body` / `defs::cond`.)
     let t = defs::nat_bit_and();
     let err = Thm::unfold_term_spec(t).expect_err("declaration-only spec must not unfold");
     assert!(
         matches!(err, covalence_core::Error::SpecHasNoBody),
         "expected SpecHasNoBody, got {err:?}"
     );
-    // `nat.div` is now def-style (selector predicate): unfold => SpecIsDefStyle.
-    let err =
-        Thm::unfold_term_spec(defs::nat_div()).expect_err("def-style spec must not let-unfold");
-    assert!(
-        matches!(err, covalence_core::Error::SpecIsDefStyle),
-        "expected SpecIsDefStyle for nat.div, got {err:?}"
+    // `nat.div` is now a let-style def (the recursive fixpoint): unfold succeeds,
+    // yielding `nat.div = body`.
+    let eq = Thm::unfold_term_spec(defs::nat_div()).expect("nat.div is let-style, must unfold");
+    assert_eq!(
+        eq.concl().as_eq().expect("unfold yields an equation").0,
+        &defs::nat_div(),
+        "nat.div unfold LHS should be nat.div"
     );
     // The fixed-width *conversions* (toNat/toInt/fromNat/fromInt) stay
     // declaration-only — they are the primitive reducible interface.

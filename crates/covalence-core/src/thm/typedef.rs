@@ -1,22 +1,21 @@
 //! Conservative-extension primitives: `Thm::define` (fresh defined
 //! constants) and `Thm::new_type_definition` (fresh subtypes), plus
-//! the [`TypeDef`] result bundle and the private fresh-identity
-//! markers. Split out of `thm/mod.rs` so the two extension primitives
-//! are auditable as one unit; they still mint `Thm`s only through the
-//! module-private `Thm::build`, which (as a descendant module of
-//! `thm`) this file may call.
-
-use std::fmt;
-use std::sync::Arc;
+//! the [`TypeDef`] result bundle.
+//!
+//! Both are the admits-only glue over the generative rules in [`super::rules`]:
+//! all fresh identity (the `Def`, and the τ/abs/rep markers) is allocated INSIDE
+//! the rules' `decide`, never taken as an input, so an adversary cannot force a
+//! collision. `new_type_definition` mints a single conjunction
+//! `abs_rep ∧ (fwd ∧ back)` and splits it with core's own admitted `and_elim`
+//! rules, recovering τ/abs/rep by shape-parsing the returned theorem.
 
 use smol_str::SmolStr;
 
-use crate::ctx::Ctx;
 use crate::error::{Error, Result};
-use crate::hol;
-use crate::term::{Def, Term, TermKind, Type, TypeKind};
+use crate::term::{Term, TermKind, Type};
 
 use super::Thm;
+use super::rules::{Define, NewTypeDefRule, mint};
 
 impl Thm {
     pub fn new_type_definition(
@@ -25,92 +24,31 @@ impl Thm {
         rep_hint: impl Into<SmolStr>,
         witness: Thm,
     ) -> Result<TypeDef> {
-        // 1. Decompose witness's concl as `P x` (an application).
-        let TermKind::App(p, x) = witness.concl.kind() else {
-            return Err(Error::BadTypeDefWitness(format!("{}", witness.concl)));
-        };
-        let p = p.clone();
-        let x = x.clone();
+        // The τ name hint is display-only; the fresh τ marker carries none.
+        let _ = hint.into();
+        let abs_hint = abs_hint.into();
+        let rep_hint = rep_hint.into();
 
-        // 2. Read α from x's type.
-        let alpha = x.type_of()?;
+        // Mint the bijection conjunction `abs_rep ∧ (fwd ∧ back)` for a FRESH
+        // subtype (all freshness allocated inside `NewTypeDefRule::decide`).
+        let big: Thm = mint!(
+            NewTypeDefRule,
+            (witness.0.clone(), abs_hint.clone(), rep_hint.clone()),
+            (witness.0, abs_hint, rep_hint)
+        )?;
 
-        // 3. Validate P : α → bool.
-        let p_ty = p.type_of()?;
-        let TypeKind::Fun(p_dom, p_cod) = p_ty.kind() else {
-            return Err(Error::NotFunction(p_ty));
-        };
-        if *p_dom != alpha {
-            return Err(Error::TypeMismatch {
-                expected: alpha.clone(),
-                got: p_dom.clone(),
-            });
-        }
-        if !p_cod.is_bool() {
-            return Err(Error::NotBool(p_cod.clone()));
-        }
+        // Split via core's own admitted `and_elim` rules.
+        let abs_rep = big.clone().and_elim_l()?;
+        let rest = big.and_elim_r()?;
+        let rep_abs_fwd = rest.clone().and_elim_l()?;
+        let rep_abs_back = rest.and_elim_r()?;
 
-        // 4. Compute the type-variable arity from α's free TFrees.
-        //    τ becomes parametric in those tvars (in canonical order),
-        //    so `inst_tfree` after typedef substitutes inside τ's args.
-        let tvar_names = alpha.free_tvars();
-        let tvar_types: Vec<Type> = tvar_names.iter().map(|n| Type::tfree(n.clone())).collect();
-
-        // 5. Allocate ONE fresh marker tying the typedef + abs + rep
-        //    together via Arc identity. The marker is a kernel-private
-        //    zero-sized struct with no methods, so user code can never
-        //    forge or equate it across calls.
-        let marker = TypeDefMarker::new();
-        let _ = hint;
-        let tau = Type::tycon_obs(marker.clone(), tvar_types);
-
-        // 6. Build abs and rep as Obs leaves wrapping per-role markers
-        //    that carry a reference to the shared typedef marker. This
-        //    gives abs and rep their own Arc identities while keeping
-        //    them tied to the typedef.
-        let abs_marker = TypeDefAbsMarker::new(&marker, abs_hint.into());
-        let rep_marker = TypeDefRepMarker::new(&marker, rep_hint.into());
-        let abs_ty = Type::fun(alpha.clone(), tau.clone());
-        let rep_ty = Type::fun(tau.clone(), alpha.clone());
-        let abs = Term::obs(abs_marker, abs_ty);
-        let rep = Term::obs(rep_marker, rep_ty);
-
-        // 7. Build the three bijection theorems at HOL `=` / `⟹` /
-        //    `∀` — all conclusions are `bool`-typed.
-        //
-        //    abs_rep: ⊢ ∀a:τ. abs (rep a) = a
-        let a_free = Term::free("a", tau.clone());
-        let abs_rep_body = hol::hol_eq(
-            Term::app(abs.clone(), Term::app(rep.clone(), a_free.clone())),
-            a_free,
-        );
-        let abs_rep_concl = hol::hol_forall("a", tau.clone(), abs_rep_body);
-
-        //    rep_abs_eq : `rep (abs r) = r`
-        //    p_at_r     : `P r`
-        let r_free = Term::free("r", alpha.clone());
-        let p_at_r = Term::app(p, r_free.clone());
-        let rep_abs_eq = hol::hol_eq(
-            Term::app(rep.clone(), Term::app(abs.clone(), r_free.clone())),
-            r_free,
-        );
-        //    fwd: ⊢ ∀r:α. P r ⟹ rep (abs r) = r
-        let fwd_concl = hol::hol_forall(
-            "r",
-            alpha.clone(),
-            hol::hol_imp(p_at_r.clone(), rep_abs_eq.clone()),
-        );
-        //    back: ⊢ ∀r:α. rep (abs r) = r ⟹ P r
-        let back_concl = hol::hol_forall("r", alpha, hol::hol_imp(rep_abs_eq, p_at_r));
-
-        // 8. Propagate witness's hyps to each emitted theorem — every
-        //    fact about the new typedef depends on the witness's
-        //    inhabitedness justification. `TermSet` clones share the
-        //    underlying set via `Arc`.
-        let hyps = witness.hyps.clone();
-        let abs_rep = Self::build(hyps.clone(), abs_rep_concl)?;
-        let rep_abs_fwd = Self::build(hyps.clone(), fwd_concl)?;
-        let rep_abs_back = Self::build(hyps, back_concl)?;
+        // Recover τ / abs / rep from `abs_rep`'s conclusion `∀a:τ. abs (rep a) = a`,
+        // and α (⇒ tvars) from `fwd`'s `∀r:α. P r ⟹ …`. This shape is exactly
+        // what the rule built, so a malformed parse is an internal invariant break.
+        let (tau, abs, rep) = parse_typedef_bijection(abs_rep.concl())?;
+        let (alpha, _body) = super::parse_hol_forall(rep_abs_fwd.concl())?;
+        let tvars = alpha.free_tvars();
 
         Ok(TypeDef {
             tau,
@@ -119,60 +57,51 @@ impl Thm {
             abs_rep,
             rep_abs_fwd,
             rep_abs_back,
-            tvars: tvar_names,
+            tvars,
         })
     }
 
     /// Introduce a fresh defined constant: emit `⊢ Def(name, body) ≡ body`.
     ///
-    /// Each call allocates a *fresh* `Arc` for the body, so two
-    /// distinct `define` calls — even with the same name and the same
-    /// body term — produce distinct `Def`s. The kernel never reuses a
-    /// `Def` identity, so users cannot accidentally derive
-    /// `⊢ body₁ ≡ body₂` by `trans`+`sym`-ing two equations for "the
-    /// same name" — the two `Def`s are simply different symbols that
-    /// happen to share a display label.
+    /// The fresh `Def` is allocated INSIDE [`super::rules::Define`]'s `decide`
+    /// (never a caller-supplied `Def`), so two distinct `define` calls — even with
+    /// the same name and body — produce distinct `Def`s. The kernel never reuses a
+    /// `Def` identity, so users cannot derive `⊢ body₁ ≡ body₂` by `trans`+`sym`.
     ///
-    /// The `name` is a display-only label (a `SmolStr`). The
-    /// `body` must be a valid Core term (typeable in isolation).
+    /// The `name` is a display-only label; the `body` must be a valid Core term
+    /// (typeable in isolation, with no phantom type variables).
     ///
     /// ## Soundness
     ///
-    /// Sound because the resulting `Def` is a brand-new symbol whose
-    /// only equation says it equals `body`. In any model satisfying
-    /// the prior theory, we extend by interpreting this `Def` as
-    /// `⟦body⟧` — a conservative extension. No global signature is
-    /// needed because the allocator gives us uniqueness per call.
+    /// Sound because the resulting `Def` is a brand-new symbol whose only equation
+    /// says it equals `body` — a conservative extension. No global signature is
+    /// needed because the allocator gives uniqueness per call.
     pub fn define(name: impl Into<SmolStr>, body: Term) -> Result<Thm> {
-        let body_type = body.type_of()?;
-        // Soundness check (Isabelle/Pure parity): no "phantom"
-        // tvars — every free tvar appearing inside any type
-        // annotation in `body` must also appear in `body_type`.
-        // Without this, a phantom tvar inside `body` would be
-        // invisible to `instance_type`, so `subst_tfree_in_term`
-        // could leave a `Def` whose body still mentions the
-        // phantom tvar at the original type — inconsistent with
-        // the `Def ≡ body` equation it stands for.
-        let type_tvars: std::collections::BTreeSet<smol_str::SmolStr> =
-            body_type.free_tvars().into_iter().collect();
-        let mut body_tvars = std::collections::BTreeSet::new();
-        crate::subst::collect_term_tvars(&body, &mut body_tvars);
-        for tv in &body_tvars {
-            if !type_tvars.contains(tv) {
-                return Err(crate::error::Error::DefPhantomTFree {
-                    tvar: tv.clone(),
-                    body_type,
-                });
-            }
-        }
-        let d = Def::new_internal(name.into(), body.clone(), body_type);
-        let concl = hol::hol_eq(Term::def(d), body);
-        Self::build(Ctx::new(), concl)
+        let name = name.into();
+        mint!(Define, (name.clone(), body.clone()), (name, body))
     }
 }
 
+/// Shape-parse a typedef `abs_rep` conclusion `∀a:τ. abs (rep a) = a`, returning
+/// `(τ, abs, rep)`. The theorem was just minted by [`super::rules::NewTypeDefRule`]
+/// in exactly this shape, so a parse failure indicates an internal invariant break.
+fn parse_typedef_bijection(concl: &Term) -> Result<(Type, Term, Term)> {
+    let malformed =
+        || Error::BadTypeDefWitness(format!("internal: malformed typedef bijection {concl}"));
+    let (tau, body) = super::parse_hol_forall(concl)?;
+    let (lhs, _rhs) = super::parse_hol_eq(body)?;
+    // lhs = App(abs, App(rep, Bound(0)))
+    let TermKind::App(abs, inner) = lhs.kind() else {
+        return Err(malformed());
+    };
+    let TermKind::App(rep, _) = inner.kind() else {
+        return Err(malformed());
+    };
+    Ok((tau.clone(), abs.clone(), rep.clone()))
+}
+
 // ============================================================================
-// new_type_definition — result bundle and private markers
+// new_type_definition — result bundle
 // ============================================================================
 
 /// Result of [`Thm::new_type_definition`]: the fresh subtype τ along
@@ -199,75 +128,4 @@ pub struct TypeDef {
     /// Sorted list of type-variable names that appear in α. τ is
     /// parametric in exactly these tvars (positionally, in this order).
     pub tvars: Vec<smol_str::SmolStr>,
-}
-
-/// Private marker carried inside a `TypeDef`'s `Type::tycon_obs` and
-/// (via the abs/rep markers below) inside its abs/rep `Term::obs`
-/// leaves. Zero-sized, no methods — its sole purpose is to provide
-/// fresh `Arc` identity per `new_type_definition` call. Cannot be
-/// constructed outside this module.
-#[derive(Debug, Clone)]
-struct TypeDefMarker(Arc<TypeDefMarkerInner>);
-
-#[derive(Debug)]
-struct TypeDefMarkerInner;
-
-impl TypeDefMarker {
-    fn new() -> Self {
-        TypeDefMarker(Arc::new(TypeDefMarkerInner))
-    }
-}
-
-/// Marker carried by a typedef's `abs` constant. Holds an Arc to the
-/// shared typedef marker so it's uniquely tied to the typedef, plus
-/// a display hint for pretty-printing.
-struct TypeDefAbsMarker {
-    #[allow(dead_code)]
-    typedef: Arc<TypeDefMarkerInner>,
-    hint: SmolStr,
-}
-
-impl TypeDefAbsMarker {
-    fn new(m: &TypeDefMarker, hint: SmolStr) -> Self {
-        TypeDefAbsMarker {
-            typedef: Arc::clone(&m.0),
-            hint,
-        }
-    }
-}
-
-impl fmt::Debug for TypeDefAbsMarker {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.hint.is_empty() {
-            write!(f, "abs")
-        } else {
-            write!(f, "{}", self.hint)
-        }
-    }
-}
-
-/// Marker for the typedef's `rep` constant.
-struct TypeDefRepMarker {
-    #[allow(dead_code)]
-    typedef: Arc<TypeDefMarkerInner>,
-    hint: SmolStr,
-}
-
-impl TypeDefRepMarker {
-    fn new(m: &TypeDefMarker, hint: SmolStr) -> Self {
-        TypeDefRepMarker {
-            typedef: Arc::clone(&m.0),
-            hint,
-        }
-    }
-}
-
-impl fmt::Debug for TypeDefRepMarker {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.hint.is_empty() {
-            write!(f, "rep")
-        } else {
-            write!(f, "{}", self.hint)
-        }
-    }
 }

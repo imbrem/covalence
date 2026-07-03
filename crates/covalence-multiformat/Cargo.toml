@@ -1,0 +1,22 @@
+[package]
+name = "covalence-multiformat"
+version = "0.0.0"
+edition = "2024"
+license = "0BSD OR CC0-1.0"
+
+# Self-describing, content-addressed interchange format (multihash / multicodec
+# / multibase) for derivation facts exchanged between covalence and peer provers
+# (e.g. Coln). The wire layer; logical payloads stay opaque to it.
+
+[dependencies]
+covalence-acset = { path = "../covalence-acset" }
+covalence-hash = { path = "../covalence-hash", default-features = false }
+covalence-parse = { path = "../covalence-parse" }
+thiserror = "2"
+
+[dev-dependencies]
+# Only the `kernel_ingest` example binds the wire format to the real HOL kernel;
+# the library itself stays kernel-free (wire layer only).
+covalence-init = { path = "../covalence-init" }
+# Canonical S-expression encoding of the HOL term payload (author + parse back).
+covalence-sexp = { path = "../covalence-sexp" }

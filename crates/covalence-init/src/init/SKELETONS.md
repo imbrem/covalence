@@ -124,18 +124,8 @@ index](../../../../SKELETONS.md).
   - **`bytes`/`string` newtype-wrapped codec lemmas** — carrier-level lemmas proved,
     newtype-wrapped equational lemmas not all surfaced.
 
-- **Nat division / modulus theory** (`init/nat.rs`). Recursion equations + algebraic
-  laws done. Not yet proved — the **Euclidean division-algorithm facts**: `nat.div` is a
-  selector; transferring its bounds needs a recursive floor *witness* built by
-  strong/complete induction over the graph, which first needs strong induction derived
-  from `Thm::nat_induct`. Deferred until that machinery exists. Targets:
-  - `div_mod` — `n = (n/m)·m + (n mod m)`.
-  - `mod_lt` — `m ≠ 0 ⟹ n mod m < m`.
-  - the `div`/`mod` recurrences and `(a·b)/b = a` (`b ≠ 0`); the
-    `shr a (S m) = a/2^m` bridge (`shr` defined through `nat.div`).
-
 - **Reified object logic (S-expr → prop logic)** (`init/sexpr.rs` + `init/prop.rs`,
-  `notes/metatheory.md` §8). Datatypes, recursors, soundness, rule induction, and the
+  `notes/vibes/metatheory.md` §8). Datatypes, recursors, soundness, rule induction, and the
   `prop.cov` surface are done. Open:
   - **SURFACE GAPS (the `.cov` stress-test findings)** — next-language-feature drivers,
     none block the proofs (all live in Rust):
@@ -163,6 +153,22 @@ index](../../../../SKELETONS.md).
   structural `tree`/`sexp` induction (the `tree-induct`/`sexp-induct` tactic) — all need
   the recursor's subtree-recovery identity + the `Wf` carve `init/sexpr.rs` defers.
 
+- **λ_iter deep embedding** (`init/lambda_iter.rs` + `.cov`, `init/cv_recursion.rs`).
+  Tarski-style nat-encoding documented; **proved**: course-of-values induction
+  (`strong.below`/`strong.induct`) and the full course-of-values *recursion*
+  theorem — uniqueness (`cv.unique`) + existence (`cv_recursion::cv_exists`,
+  `⊢ Hext F ⟹ ∃f. ∀n. f n = F n f`, by bounded iteration) — plus the supporting
+  function-valued `natRec` equations and `nat` order helpers. Deferred:
+  - **Encoding functions** — injective pairing `⟨·,·⟩`/`π₁`/`π₂` + strict-decrease
+    laws, constructor `tag` constants, and `WfTyCode`/`WfExCode`/`WfCtxCode` +
+    `El_*`, now definable via `cv_exists` (course-of-values recursion on codes).
+  - **Reified judgements** — `Typed : nat→nat→nat→bool` (least relation closed
+    under coded Fig 2 rules) and `Checks` (derivation-code well-formedness).
+  - **Metatheorems** — subtyping reflexivity/transitivity (type fragment, no
+    binders — the natural first target), then weakening (2.1.1.2.1) and
+    substitution (2.1.1.2.2), each by `strong.induct` on the derivation code.
+  - SSA⇔λ_iter equivalence is out of scope here (deferred separately).
+
 ## `nat.thy` — carrier-generic model deferred
 
 `init/nat.sig`+`nat.thy` (checked by `nat_thy.rs`) are the canonical `nat` spec;
@@ -174,5 +180,5 @@ index](../../../../SKELETONS.md).
   full theory to a carrier-abstract presentation, giving `nat/self` as one model among others
   (reified-PA, bool-stream coding) via `#sig`/`#thy`/`#model`/`#models`.
 - **Haskell-like surface extraction** — `nat.sig`/`nat.thy` are hand-written; they are the
-  eventual elaboration target of the declarative surface language (`notes/surface-syntax.md`),
+  eventual elaboration target of the declarative surface language (`notes/vibes/surface-syntax.md`),
   not yet produced by it.

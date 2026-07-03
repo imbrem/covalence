@@ -1,7 +1,7 @@
 //! **The generic `Derivable_L` engine** — the reusable impredicative
 //! rule-induction substrate that [`crate::init::prop`]'s `Derivable_Prop` and
 //! [`crate::peano::pa`]'s `Derivable_PA` are two instances of
-//! (`notes/theories-models-and-logics.md §5.5/§5.6`, the Phase-A3 boundary).
+//! (`notes/vibes/theories-models-and-logics.md §5.5/§5.6`, the Phase-A3 boundary).
 //!
 //! ## What a "logic" is here
 //!
@@ -57,7 +57,7 @@ use crate::init::ext::TermExt;
 
 pub mod toy;
 
-// The **HOL database type + relation lattice** (`notes/theories-models-and-logics.md
+// The **HOL database type + relation lattice** (`notes/vibes/theories-models-and-logics.md
 // §5.6`): databases as first-class HOL *values* (an axiom-selecting predicate), with
 // `⊑`/monotonicity and `⟹_σ`/transport proved over `Derivable_DB`. UNIFIED (Phase A):
 // `database::Derivable_DB db A` is now literally `derivable(&db_rule_set(db), A)` — a
@@ -68,7 +68,7 @@ pub mod database;
 pub mod relations;
 
 // **Generic interpretation/transport between Metamath-database logics**
-// (`notes/metatheory.md`, "relate formal systems"): `transport` proves
+// (`notes/vibes/metatheory.md`, "relate formal systems"): `transport` proves
 // `Derivable_L1 ⟹ Derivable_L2 ∘ σ` ONCE via `rule_induction` (predicate
 // `d := λx. Derivable_L2 (σ x)`); the caller's `clause_sims` are the per-rule
 // "σ simulates this rule in the target" obligations. Worked instance:
@@ -76,13 +76,13 @@ pub mod relations;
 // rule sets. The long-term target is `Derivable_HOL ⟹ Derivable_ZFC ∘ σ`.
 pub mod transport_db;
 
-// **Metamath-Prop → HOL replay** (`notes/metatheory.md`): replay a *verified*
+// **Metamath-Prop → HOL replay** (`notes/vibes/metatheory.md`): replay a *verified*
 // propositional-calculus Metamath proof into a kernel-constructed
 // `⊢ Derivable_Prop ⌜S⌝` theorem — the "construct, don't trust" bridge landing in
 // *pure derivability over the encoded syntax* (NO denotation, NO observer).
 pub mod mm_replay;
 
-// **General schema-database Metamath replay** (`notes/metatheory.md`): generalise
+// **General schema-database Metamath replay** (`notes/vibes/metatheory.md`): generalise
 // `mm_replay` from the fixed prop-calc rule set to an *arbitrary*
 // `metamath::Database` — build a data-driven `RuleSet` from the database's
 // assertions (an uninterpreted free term algebra over `nat`; substitution =
@@ -90,7 +90,7 @@ pub mod mm_replay;
 // function replays many logics. "A Metamath database IS a logic."
 pub mod mm_database;
 
-// **Import a whole Metamath database INTO covalence-hol** (`notes/metatheory.md`):
+// **Import a whole Metamath database INTO covalence-hol** (`notes/vibes/metatheory.md`):
 // the high-level API over `mm_database::replay_db` — `import_theorems(db)` /
 // `read_and_import(source)` re-derive `⊢ Derivable_L ⌜S⌝` for *every* `$p`
 // theorem from its (possibly compressed) proof. Tested on the real, vendored

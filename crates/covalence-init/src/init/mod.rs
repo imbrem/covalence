@@ -85,16 +85,19 @@ pub mod cat;
 pub mod char;
 pub mod cond;
 pub mod coprod;
+pub mod cv_recursion;
 pub mod eq;
 pub mod ext;
 pub mod inductive;
 pub mod int;
+pub mod lambda_iter;
 pub mod lang;
 pub mod list;
 pub mod list_recursion;
 pub mod logic;
 pub mod monoid;
 pub mod nat;
+pub mod nat_div;
 pub mod nat_thy;
 pub mod option;
 pub mod preorder;
@@ -153,6 +156,7 @@ pub fn library_env(name: &str) -> Option<Env> {
         "tauto" => Some(tauto::cov::env()),
         "logic" => Some(logic::cov::env()),
         "nat" => Some(nat::cov::env()),
+        "lambda_iter" => Some(lambda_iter::cov::env()),
         "set" => Some(set::cov::env()),
         "rat" => Some(rat::cov::env()),
         // `tree`/`sexp` expose BOTH the constructor constants (from the seam

@@ -1362,6 +1362,76 @@ mod tests {
         assert_eq!(thm.concl(), &expected, "bj-1 concl mismatch");
     }
 
+    /// **Regression for the `bj-1` mismatch** (a *nesting* syntactic former).
+    ///
+    /// The proof applies a syntactic `$p` theorem `bj0` — proving the *compound*
+    /// wff `( ( ph -> ps ) -> ch )` — as a former, then the rule `id`
+    /// (`|- ( ph -> ph )`) with that wff as `ph`. The buggy `encode_former`
+    /// right-folded `bj0`'s literal body *flat*, so the inner `( ph -> ps )` was
+    /// not nested as a sub-tree; the proof-built encoding then disagreed with
+    /// `encode_expr` of the stated conclusion and replay failed the final check.
+    /// The fix parses the former body structurally before substituting. This is
+    /// the minimal `.mm` reproducing the exact `( p -> p )`, `p := ((ph->ps)->ch)`
+    /// shape of set.mm's `bj-1`.
+    #[test]
+    fn replay_nesting_former_bj1_shape() {
+        // `bj0` is a syntactic `$p` theorem proving the *compound* wff
+        // `( ( ph -> ps ) -> ch )`; `idax` is `|- ( ph -> ph )` (an axiom here —
+        // the exact `|-` rule shape is irrelevant; what matters is applying it
+        // with the compound `bj0`-built wff substituted for `ph`). `bj1` does
+        // exactly that, reproducing set.mm `bj-1`'s `( p -> p )` shape.
+        let src = format!(
+            "{PROP}\n\
+            bj0 $p wff ( ( ph -> ps ) -> ch ) $=\n\
+              wph wps wi wch wi $.\n\
+            idax $a |- ( ph -> ph ) $.\n\
+            bj1 $p |- ( ( ( ph -> ps ) -> ch ) -> ( ( ph -> ps ) -> ch ) ) $=\n\
+              wph wps wch bj0 idax $.\n"
+        );
+        let db = crate::metamath::parse(&src).unwrap();
+        // The Metamath verifier accepts both `$p` proofs (`bj0` and `bj1`).
+        assert_eq!(crate::metamath::verify_all(&db).unwrap(), 2);
+
+        let a = db.assertions().find(|a| a.label == "bj1").unwrap();
+
+        // Full-database rule set (`replay_db`): the conclusion is exactly
+        // `Derivable_L ⌜concl⌝` for the *structured* encoding of the stated
+        // conclusion (the proof-built encoding now matches `encode_expr`).
+        let thm = replay_db(&db, a).unwrap();
+        assert!(thm.hyps().is_empty(), "bj1 replay must be hypothesis-free");
+        assert_genuine(&thm);
+        let rs = rule_set(&db);
+        let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
+        assert_eq!(thm.concl(), &expected);
+
+        // The proof-scoped fast path (`derive_theorem`) also succeeds: its final
+        // self-check (proof-built `concl()` vs `encode_expr`) is the exact check
+        // set.mm's `bj-1` was failing. A successful return *is* that match.
+        let scoped = derive_theorem(&db, "bj1").unwrap();
+        assert!(scoped.hyps().is_empty());
+        assert_genuine(&scoped);
+    }
+
+    /// The real `bj-1` from set.mm — the first set.mm theorem whose proof uses a
+    /// nesting syntactic former (`bj-0`). Gated on `COV_SET_MM`.
+    #[test]
+    fn replay_set_mm_bj1() {
+        let Ok(path) = std::env::var("COV_SET_MM") else {
+            eprintln!("skipping replay_set_mm_bj1 (set COV_SET_MM to run)");
+            return;
+        };
+        let source = std::fs::read_to_string(&path).expect("read set.mm");
+        let db = crate::metamath::parse(&source).expect("set.mm parses");
+        let parser = Parser::new(&db);
+        // `derive_theorem_with` returning `Ok` *is* the assertion: its final
+        // self-check compares the proof-built `concl()` against
+        // `encode_expr(conclusion)` and errors on mismatch — the exact check
+        // that was failing before the fix. The result is genuine + oracle-free.
+        let thm = derive_theorem_with(&db, &parser, "bj-1").expect("bj-1 replays");
+        assert_genuine(&thm);
+        assert!(thm.hyps().is_empty(), "bj-1 is hypothesis-free");
+    }
+
     /// The vendored real `hol.mm` (CC0; all 151 `$p` proofs are *compressed*).
     const HOL_MM: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),

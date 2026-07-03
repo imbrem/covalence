@@ -12,7 +12,7 @@
 //!
 //! Nothing here is consumed by `covalence-core`'s inference rules — a bug here
 //! cannot produce a false `Thm`. The semi-trusted catalogue, proof machinery,
-//! and `.cov` surface live in `covalence-init`. See `notes/init-hol-split.md`.
+//! and `.cov` surface live in `covalence-init`. See `notes/vibes/init-hol-split.md`.
 //!
 //! Long-term this crate becomes a core-free HOL syntax/proof substrate (a peer
 //! of `covalence-metamath`) and absorbs OpenTheory import behind an `opentheory`

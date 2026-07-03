@@ -421,4 +421,32 @@ mod tests {
             "expected to sample at least one set.mm theorem"
         );
     }
+
+    /// TEMP broad verification: import the first N set.mm theorems in parallel,
+    /// asserting `failed: 0` (covers the bj-1 region).
+    #[test]
+    #[ignore = "temp broad verify; needs COV_SET_MM"]
+    fn temp_import_set_mm_broad() {
+        let path = std::env::var("COV_SET_MM").expect("set COV_SET_MM");
+        let source = std::fs::read_to_string(&path).expect("read set.mm");
+        let db = crate::metamath::parse(&source).expect("set.mm parses");
+        let n: usize = std::env::var("MM_N")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3000);
+        let parser = Parser::new(&db);
+        let labels = theorem_labels(&db);
+        let mut failed = 0usize;
+        for l in labels.iter().take(n) {
+            match crate::metalogic::mm_database::derive_theorem_with(&db, &parser, l) {
+                Ok(thm) => assert!(thm.has_no_obs(), "`{l}` not oracle-free"),
+                Err(e) => {
+                    eprintln!("FAILED {l}: {e}");
+                    failed += 1;
+                }
+            }
+        }
+        eprintln!("imported first {n} theorems, failed: {failed}");
+        assert_eq!(failed, 0, "expected failed: 0");
+    }
 }

@@ -2,12 +2,15 @@
 
 See [`CLAUDE.md`](../../CLAUDE.md) § Skeletons and the [root index](../../SKELETONS.md).
 
+Module-local skeletons: [`src/thm/SKELETONS.md`](src/thm/SKELETONS.md) (the
+`covalence-pure` mint-gate future seams).
+
 ## Declaration-only catalogue ops (no definitional body yet)
 
 These `defs/` term-specs carry `tm = None`: sound/complete on literals (via
 `builtins.rs`) but no open-form body, so nothing is provable by
 `unfold_term_spec`. Each should become a `let_term!` / `spec_term!` def (see
-`notes/roadmap.md`); on adding a body, delete here and — if reducible — add to
+`notes/vibes/roadmap.md`); on adding a body, delete here and — if reducible — add to
 `audit_reduce.rs::audit_reduce_matches_body`.
 
 - **`sN.shr` (arithmetic right shift), `defs/int_ops.rs`** — needs floor-division
@@ -51,3 +54,12 @@ in the kernel (rules taking arbitrary theorem terms already use the type-aware
 `init/` construction sites in `covalence-hol` call it. Eventually reimplement in
 userspace (`TermExt`) or migrate the call sites to `close_var(&Var::new(...))`.
 Deferred for call-site churn.
+
+## `_with` rules intern post-hoc, not through construction
+
+The cons-threaded `_with` rule variants build via the plain rule then
+`intern_concl`/`intern_thm` (table-priming only — the returned theorem keeps its
+own `Arc`s). The stranded 9d3673f9 design instead threaded `cons` through term
+*construction* (`hol_and_with`-style builders in `hol.rs`), so the theorem itself
+holds interned nodes. Pure perf nuance, no soundness role; revisit if profiles
+show residual alloc churn on the replay paths.

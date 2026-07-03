@@ -7,7 +7,7 @@ edition = "2024"
 # `HolLightKernel`/`HolLightTerms`/`HolLightTypes` traits, and the shared
 # `NameId`/`HolError` types — the surface HOL proof *consumers* (the OpenTheory
 # importer, `covalence-init`) build against. The bulk semi-trusted API lives in
-# `covalence-init`. See `notes/init-hol-split.md`.
+# `covalence-init`. See `notes/vibes/init-hol-split.md`.
 #
 # Still depends on `covalence-core` for now (the builder constructs
 # `covalence_core::Term`); the core-free "peer of covalence-metamath" form is a

@@ -348,6 +348,16 @@ impl Env {
         op(&["nat.mod"], defs::nat_mod());
         op(&["succ", "nat.succ"], Term::succ());
         drop(op);
+        // The Boolean conditional `cond : bool → 'a → 'a → 'a` (the kernel
+        // `defs::cond` / `bool.cond`). Registered here so `cond.cov` proves its
+        // clauses *about the kernel constant* rather than minting a same-bodied
+        // duplicate via `#def` — keeping one `cond` across core and the
+        // catalogue. **Polymorphic** (`'a` re-instantiated per use site), like
+        // the `#def`-registered constant it replaces.
+        e.entries.insert_ready(
+            "cond".to_string(),
+            Entry::Const(ConstDef::Poly(defs::cond(Type::tfree("a")))),
+        );
         e.entries
             .insert_ready("=".to_string(), Entry::Const(ConstDef::Eq));
         e.entries
@@ -410,7 +420,7 @@ impl Env {
     // Like the unification seams above, these route the β / congruence /
     // funext / calc-default operations through methods on `Env`, so a logic
     // can later swap them for its own handler set (the `HandlerSet` of
-    // `notes/surface-compiler.md` §9 — `ctx.active.rewrite` / `.reduce`).
+    // `notes/vibes/surface-compiler.md` §9 — `ctx.active.rewrite` / `.reduce`).
     // Today they are the model-agnostic HOL defaults, but they are *requested*
     // through this seam rather than hard-wired into the rules that use them.
 

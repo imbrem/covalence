@@ -15,7 +15,7 @@
 //!
 //! The thin HOL builder/trait surface (`HolLightCtx`, the `HolLight*` traits,
 //! `NameId`/`HolError`) lives in `covalence-hol` and is re-exported here so
-//! `crate::…` paths resolve. See `notes/init-hol-split.md`.
+//! `crate::…` paths resolve. See `notes/vibes/init-hol-split.md`.
 
 pub mod algebra;
 pub mod debug;
@@ -33,6 +33,7 @@ pub mod project;
 pub mod proofs;
 pub mod script;
 pub mod sexp;
+pub mod wasm;
 
 // The thin HOL surface lives in `covalence-hol`. Re-export its modules and items
 // so `crate::types` / `crate::traits` / `crate::hol_light_obs` / `crate::HolLightCtx`

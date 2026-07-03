@@ -5,10 +5,10 @@ Metatheory is the default mode; the kernel extends itself by proof
 rather than by trust.
 
 Recommended reading path:
-[`notes/VISION.md`](./notes/VISION.md) (10-minute overview) →
-[`notes/kernel-design.md`](./notes/kernel-design.md) (the kernel TCB) →
-[`notes/type-hierarchy.md`](./notes/type-hierarchy.md) (type catalogue) →
-[`notes/roadmap.md`](./notes/roadmap.md) (what's next) →
+[`notes/vibes/VISION.md`](./notes/vibes/VISION.md) (10-minute overview) →
+[`notes/vibes/kernel-design.md`](./notes/vibes/kernel-design.md) (the kernel TCB) →
+[`notes/vibes/type-hierarchy.md`](./notes/vibes/type-hierarchy.md) (type catalogue) →
+[`notes/vibes/roadmap.md`](./notes/vibes/roadmap.md) (what's next) →
 [`CLAUDE.md`](./CLAUDE.md) (build commands & crate map).
 
 ## Repository Layout
@@ -18,7 +18,9 @@ Recommended reading path:
 - `apps/covalence-web/` — SvelteKit browser UI
 - `packages/` — shared TypeScript packages
 - `extensions/covalence-vscode/` — VS Code extension
-- `notes/` — current-state docs, proposal docs, and planning/history
+- `docs/` — true, synced documentation (incl. the generated dep graph / TCB closure)
+- `notes/` — plans (`notes/plans/`) and design notes; `notes/vibes/` is the
+  AI-generated corpus (see `notes/README.md` for the tiers + authorship policy)
 - `assets/`, `tests/`, `test-workbench/` — fixtures, samples, and test scaffolding
 
 ## Prerequisites

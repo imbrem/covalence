@@ -66,7 +66,7 @@ fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // (The HOL kernel Python API — `pure` module exposing
     // Type/Term/Thm — is to be reinstated on `covalence-hol`.
-    // See notes/type-hierarchy.md.)
+    // See notes/vibes/type-hierarchy.md.)
 
     // Builder types
     m.add_class::<container_builder::ContainerBuilder>()?;

@@ -39,7 +39,7 @@
             pkgs.binaryen
             pkgs.esbuild
             pkgs.cargo-nextest
-            pkgs.graphviz # `dot` — renders notes/deps/graph.svg (bun run deps)
+            pkgs.graphviz # `dot` — renders docs/deps/graph.svg (bun run deps)
 
             # Python bindings
             python

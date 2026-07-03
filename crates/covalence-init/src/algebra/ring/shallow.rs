@@ -10,9 +10,9 @@
 
 use covalence_core::{Term, Thm};
 
-use crate::init::int;
 use crate::algebra::ring::Ring;
 use crate::algebra::semiring::Int;
+use crate::init::int;
 
 impl Ring for Int {
     fn neg(&self, a: Term) -> Term {

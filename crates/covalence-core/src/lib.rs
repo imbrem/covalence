@@ -23,7 +23,7 @@
 //!
 //! Content hashing, S-expression syntax, FFI bridges, and the untrusted
 //! HOL builder shell live downstream in `covalence-hol`. The canonical
-//! reference is `notes/kernel-design.md`.
+//! reference is `notes/vibes/kernel-design.md`.
 //!
 //! ## Conventions
 //!
@@ -61,7 +61,7 @@
 //!   HOL `=` on literal arguments by reflexivity.
 //! - The hypothesis context (`ctx.rs`) and HOL term builders (`hol.rs`).
 //! - The inference rules (`thm/`) and the derived-type/term catalogue
-//!   (`defs/`, semi-trusted — see `notes/kernel-design.md` §6).
+//!   (`defs/`, semi-trusted — see `notes/vibes/kernel-design.md` §6).
 
 mod builtins;
 pub mod ctx;

@@ -6,6 +6,8 @@
 
 use super::*;
 
+use crate::hol;
+
 fn n() -> Term {
     Term::free("n", Type::nat())
 }
@@ -1141,4 +1143,109 @@ fn unfold_term_spec_handles_swapped_type_params() {
         expected_ty,
         "unfolded body preserves swapped type parameters"
     );
+}
+
+// ===========================================================================
+// Cons-threaded (`_with`) rule variants — port of the 9d3673f9 audit tests.
+//
+// These exercise the cons-threaded rule variants: routing through a
+// `HashCons` must (a) produce a result structurally equal to the plain
+// rule, and (b) populate the interner with the conclusion's spine so
+// structurally-equal subterms dedup to one `Arc` (`ptr_id`) through it.
+// (Under the intern-after-mint `_with` contract the theorem itself keeps
+// the rule's own `Arc`s; sharing is observed via the interner's table.)
+
+#[test]
+fn refl_with_interns_duplicated_term() {
+    use crate::term::HashCons;
+    // refl x = (= x x); the conclusion must match the plain `refl`, the
+    // two `x` occurrences share one Arc (refl builds `t = t` from one
+    // term), and the interner picked up the conclusion's spine.
+    let x = Term::free("x", Type::nat());
+    let plain = Thm::refl(x.clone()).expect("refl");
+    let mut hc = HashCons::new();
+    let interned = Thm::refl_with(x.clone(), &mut hc).expect("refl_with");
+    assert_eq!(plain.concl(), interned.concl());
+
+    // concl = App(App(Eq, lhs), rhs); lhs and rhs are both `x`.
+    let (lhs, rhs) = parse_hol_eq(interned.concl()).unwrap();
+    assert_eq!(lhs.ptr_id(), rhs.ptr_id(), "both `x` occurrences shared");
+    assert!(!hc.is_empty(), "conclusion spine interned");
+}
+
+#[test]
+fn trans_with_matches_plain_and_shares_outer_terms() {
+    use crate::term::HashCons;
+    // a = b, b = c  ⊢  a = c. `trans_with` must (a) produce the same
+    // conclusion as plain `trans`, and (b) reuse — by Arc identity — the
+    // exact `a` and `c` subterms read off the input theorems (`s.clone()`
+    // / `u.clone()`), rather than rebuilding them.
+    let a = Term::free("a", Type::nat());
+    let b = Term::free("b", Type::nat());
+    let c = Term::free("c", Type::nat());
+
+    let eq_ab = hol::hol_eq(a.clone(), b.clone());
+    let eq_bc = hol::hol_eq(b.clone(), c.clone());
+    // Grab the exact Arc leaves the input theorems carry, so we can check
+    // the result reuses them.
+    let (in_a, _) = parse_hol_eq(&eq_ab).unwrap();
+    let in_a = in_a.clone();
+    let (_, in_c) = parse_hol_eq(&eq_bc).unwrap();
+    let in_c = in_c.clone();
+    let t_ab = Thm::assume(eq_ab).expect("assume a=b");
+    let t_bc = Thm::assume(eq_bc).expect("assume b=c");
+
+    let mut hc = HashCons::new();
+    let plain = t_ab.clone().trans(t_bc.clone()).expect("trans");
+    let interned = t_ab.trans_with(t_bc, &mut hc).expect("trans_with");
+    assert_eq!(plain.concl(), interned.concl());
+
+    let (lhs, rhs) = parse_hol_eq(interned.concl()).unwrap();
+    assert_eq!(lhs.ptr_id(), in_a.ptr_id(), "result reuses input lhs `a`");
+    assert_eq!(rhs.ptr_id(), in_c.ptr_id(), "result reuses input rhs `c`");
+}
+
+#[test]
+fn mk_comb_with_interns_heads() {
+    use crate::term::HashCons;
+    // f = f, x = x  ⊢  f x = f x. The rule builds the two `f x`
+    // applications as separate nodes; routed through one HashCons they
+    // dedup to a single representative in the interner's table.
+    let fty = Type::fun(Type::nat(), Type::bool());
+    let f = Term::free("f", fty.clone());
+    let x = Term::free("x", Type::nat());
+
+    let mut hc = HashCons::new();
+    let f_eq = Thm::refl_with(f.clone(), &mut hc).expect("refl f");
+    let x_eq = Thm::refl_with(x.clone(), &mut hc).expect("refl x");
+
+    let plain = f_eq.clone().mk_comb(x_eq.clone()).expect("mk_comb");
+    let interned = f_eq.mk_comb_with(x_eq, &mut hc).expect("mk_comb_with");
+    assert_eq!(plain.concl(), interned.concl());
+
+    // concl = (f x) = (f x): lhs and rhs are structurally equal `App`s.
+    // The interner saw both, so re-consing the conclusion through it
+    // canonicalises them to one shared Arc.
+    let canon = interned.concl().cons_with(&mut hc);
+    let (lhs, rhs) = parse_hol_eq(&canon).unwrap();
+    assert_eq!(
+        lhs.ptr_id(),
+        rhs.ptr_id(),
+        "the two `f x` applications shared via the interner"
+    );
+}
+
+#[test]
+fn imp_intro_with_matches_plain() {
+    use crate::term::HashCons;
+    // Γ ⊢ q  ⊢  q ⟹ q via DISCH on an assumed q (a degenerate but
+    // construction-exercising shape). Result must match the plain rule.
+    let q = Term::free("q", Type::bool());
+    let assumed = Thm::assume(q.clone()).expect("assume q");
+    let plain = assumed.clone().imp_intro(&q).expect("imp_intro");
+    let mut hc = HashCons::new();
+    let interned = assumed.imp_intro_with(&q, &mut hc).expect("imp_intro_with");
+    assert_eq!(plain.concl(), interned.concl());
+    assert!(interned.hyps().is_empty());
+    assert!(!hc.is_empty(), "conclusion spine interned");
 }

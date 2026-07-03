@@ -23,3 +23,7 @@ s3s = "0.13"
 s3s-fs = "0.13"
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+
+[package.metadata.cargo-machete]
+# Reserved for the streaming BlobSource surface (kv is async-first); no code use yet.
+ignored = ["futures-core"]

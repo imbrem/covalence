@@ -2,7 +2,7 @@
 //!
 //! This module is the home of the kernel's canonical
 //! `TypeSpec` / `TermSpec` definitions — see
-//! `notes/type-hierarchy.md` for the design vision.
+//! `notes/vibes/type-hierarchy.md` for the design vision.
 //!
 //! ## Trust status
 //!
@@ -47,7 +47,7 @@
 //! relation is an equivalence, …) belong in `covalence-hol`. That
 //! separation is what lets the definitions be filled in independently.
 //!
-//! Status (see `notes/roadmap.md` for the live tracker):
+//! Status (see `notes/vibes/roadmap.md` for the live tracker):
 //! - **Defined.** The structural types and their constructors —
 //!   `prod` (`pair`/`fst`/`snd`), `coprod` (`inl`/`inr`/`coprodCase`),
 //!   `option`/`result` (via the kernel `abs`/`rep` coercions),

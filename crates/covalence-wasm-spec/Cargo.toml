@@ -17,7 +17,6 @@ rebuild-c = []
 [dependencies]
 covalence-wasm = { path = "../covalence-wasm" }
 covalence-hash = { path = "../covalence-hash", features = ["sha1", "sha512"] }
-covalence-types = { path = "../covalence-types" }
 thiserror = "2"
 
 [build-dependencies]

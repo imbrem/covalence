@@ -1,12 +1,9 @@
 ;; cond.cov — cond reduction clauses over `core`.
 ;;
-;; `cond : bool → 'a → 'a → 'a` is **defined inline here** via `#def`
-;; (no Rust `condprim` env / `*prim` given) — the script-layer `#def`
-;; builds the same `defs/` `TermSpec` the hand-written `defs::cond` did,
-;; so the same `unfold-at-2 cond …` step fires on it. No other seam
-;; givens are needed: every step uses only `unfold-at-2`, `cong-fn`,
-;; `beta-conv`, `select-ax`, `reduce-prim`, and the standard
-;; propositional rules — all in the core proof language.
+;; `cond : bool → 'a → 'a → 'a` is the **kernel** `defs::cond` (`bool.cond`),
+;; registered in the `core` prelude — these clauses are proved *about that one
+;; constant* (no inline `#def`, which would mint a same-bodied duplicate). Its
+;; body, exposed by `unfold-at-2 cond …`, is
 ;;
 ;;   cond ≡ λt u v. ε z. (t = T ⟹ z = u) ∧ (t = F ⟹ z = v)
 ;;
@@ -25,15 +22,6 @@
 
 (#import core)
 (#open core)
-
-;; cond ≡ λt x y. ε z. (t = T ⟹ z = x) ∧ (t = F ⟹ z = y)
-(#def cond
-  (lam (t bool)
-    (lam (x 'a)
-      (lam (y 'a)
-        (select (z 'a)
-          (and (==> (= t true)  (= z x))
-               (==> (= t false) (= z y))))))))
 
 ;; ⊢ ∀x y : 'a. cond T x y = x
 (#thm cond.true

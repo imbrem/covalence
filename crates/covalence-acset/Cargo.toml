@@ -1,0 +1,13 @@
+[package]
+name = "covalence-acset"
+version = "0.0.0"
+edition = "2024"
+license = "0BSD OR CC0-1.0"
+
+# A small, generic ACSet (attributed C-set) library: define a schema (an olog),
+# build an instance (a functor schema → Set), validate it (functoriality, path
+# equations, acyclicity, attribute laws), and migrate it along a functor (Δ /
+# pullback). No covalence dependencies — a standalone categorical-data crate.
+
+[dependencies]
+thiserror = "2"

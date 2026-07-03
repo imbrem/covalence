@@ -1,6 +1,6 @@
 //! **Metamath-Prop → HOL replay** — the *construct, don't trust* bridge into
-//! **pure derivability over the encoded syntax** (`notes/metatheory.md`,
-//! `notes/theories-models-and-logics.md §5.6`).
+//! **pure derivability over the encoded syntax** (`notes/vibes/metatheory.md`,
+//! `notes/vibes/theories-models-and-logics.md §5.6`).
 //!
 //! Given a **verified** Metamath proof in a propositional-calculus database
 //! (set.mm's `ax-1` / `ax-2` / `ax-mp` fragment), [`replay_prop`] walks the

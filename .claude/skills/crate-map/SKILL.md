@@ -10,7 +10,7 @@ The workspace is many `covalence-*` crates. **Dependency discipline:** all use o
 an external library goes through its wrapper crate — never import the underlying
 dep directly (so deps are centralized and extensible without touching every
 consumer). The layers below mirror the dependency stack (see
-`notes/crate-graph.md`) and the in-flight three-layer reorg (`notes/refactor-plan.md`).
+`notes/vibes/crate-graph.md`) and the in-flight three-layer reorg (`notes/vibes/refactor-plan.md`).
 
 ## Wrappers (external deps — the leaves)
 
@@ -38,11 +38,13 @@ consumer). The layers below mirror the dependency stack (see
 - **covalence-git** — git-compatible object storage + hashing. `hash_blob`, loose/odb backends, Git LFS.
 - **covalence-kv** — key-value store surface (`cov:kv@0.1.0`).
 - **covalence-wasm-store** — host-side wasmtime store adapters (kept out of portable covalence-store).
+- **covalence-acset** — generic **ACSet** (attributed C-set) library, no covalence deps. `Schema::builder` (olog: objects, morphisms, attributes, path equations) + `check`; `Instance` (order-independent `add_part`→`Part`, `set_hom`/`set_attr`, `follow`) + `validate` (functoriality + equations), `acyclic`, `attr_injective`; `Functor` + `Instance::pullback` (Δ functorial data migration); `AttrVal` typed attributes; `query` (`Query::builder` conjunctive queries — answers = homomorphisms, join-style backtracking); `datalog` (`Program`/`Rule` recursive queries — derived relations to a least fixpoint, e.g. transitive closure); `lattice` (`JoinSemilattice` + `lfp` = Datafun's `fix`; `MinDist` for min-plus, set/map/bool instances — set-valued *and* lattice-valued recursion through one combinator; the Datafun seam is `notes/vibes/sketches/acset-datalog-datafun.md`). Used by covalence-multiformat.
+- **covalence-multiformat** — self-describing, content-addressed *interchange format* (multihash/multicodec/multibase) for derivation facts exchanged with peer provers (e.g. Coln). `Cid` (blake3 multihash, base16 multibase), `codec` content-type registry, `DerivationFact` envelope (reifies the waist existential), `FactStore::check` (proof-checking *as* a constraint query), `identity::covalence_name` (verified wire CID ↦ `COV_ROOT` `Name256`), `acset` (the interchange schema + `validate_store`, built on covalence-acset — structural/meta-theoretic validation of a `FactStore`, native to a geometric kernel). Wire layer only — logical payloads stay opaque; the `kernel_ingest` example (dev-dep on covalence-init) binds an envelope to a real `covalence-core` `Thm`. See `crates/covalence-multiformat/SKELETONS.md`.
 
 ## Kernel / TCB (the three-layer stack)
 
-- **covalence-pure** — *base logic, TCB floor* (empty scaffold today). A small constructive first-order logic; `covalence-core` builds on it. See `notes/covalence-pure.md`.
-- **covalence-core** — **THE TCB** (safe Rust). HOL-Light-style kernel, locally-nameless `Term`/`Type`. Logical primitives are only `=` (`TermKind::Eq`) and `ε` (`TermKind::Select`); connectives are defined constants in `defs/logic.rs`. HOL Light's 10 primitives + fast derived constructors with `Soundness:` docstrings; `define` + `new_type_definition`; `reduce_prim`/`unfold_term_spec`; `spec_abs`/`spec_rep`. Four non-computational primitive rules: `nat_induct`, `false_elim`, `unit_eq`, `lem`. Observer rules `obs_eq`/`obs_true`/`obs_imp`. `defs/` catalogue. **Read `notes/kernel-design.md` before touching.**
+- **covalence-pure** — *base logic, TCB floor* (empty scaffold today). A small constructive first-order logic; `covalence-core` builds on it. See `notes/vibes/covalence-pure.md`.
+- **covalence-core** — **THE TCB** (safe Rust). HOL-Light-style kernel, locally-nameless `Term`/`Type`. Logical primitives are only `=` (`TermKind::Eq`) and `ε` (`TermKind::Select`); connectives are defined constants in `defs/logic.rs`. HOL Light's 10 primitives + fast derived constructors with `Soundness:` docstrings; `define` + `new_type_definition`; `reduce_prim`/`unfold_term_spec`; `spec_abs`/`spec_rep`. Four non-computational primitive rules: `nat_induct`, `false_elim`, `unit_eq`, `lem`. Observer rules `obs_eq`/`obs_true`/`obs_imp`. `defs/` catalogue. **Read `notes/vibes/kernel-design.md` before touching.**
 - **covalence-hol** — the thin HOL surface (non-TCB): the builder context `HolLightCtx` + the `HolLightKernel`/`HolLightTerms`/`HolLightTypes` traits + shared `NameId`/`HolError` types. The surface HOL proof consumers (covalence-init, the OpenTheory importer) build against. Depends only on `covalence-core`.
 - **covalence-init** — the semi-trusted API over `covalence-core`: the `init/` theory catalogue, `proofs/` tactics, the `script/` `.cov` layer + `project`, `metalogic`/`peano` (Metamath bridge), `models`, `regex`/`spectec` grammars, the algebra theories, `hash`/`sexp`. Depends on `covalence-hol` and re-exports its surface (so `covalence_init::{HolLightCtx,traits,types,Term,…}` resolve).
 - **covalence-metamath** — HOL-free Metamath substrate: expression model, substitution, frames, RPN/compressed-proof checker, `.mm` reader, `Database`. `covalence-init` consumes it.
@@ -53,7 +55,7 @@ consumer). The layers below mirror the dependency stack (see
 - **covalence-alethe** — Alethe (SMT) proof checking → HOL.
 - **covalence-egglog** — egglog integration (pinned upstream git rev for the `proof` module).
 - **covalence-opentheory** — OpenTheory article import (folds into the new thin covalence-hol).
-- **covalence-lean** — Lean export parsing (type-theory seed).
+- **covalence-lean** — Lean export parsing (type-theory seed). Intentionally has no in-workspace dependents yet: the seed for future Lean (and Dedukti) proof imports. Keep, don't prune.
 - **covalence-forsp** — Forsp Lisp (drives the repl).
 
 ## App / systems

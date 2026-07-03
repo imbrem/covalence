@@ -3,7 +3,7 @@
 //! its type, constructors, recursor, and induction principle as **genuine
 //! kernel theorems**.
 //!
-//! This is the surface-directive seam described in `notes/surface-syntax.md`:
+//! This is the surface-directive seam described in `notes/vibes/surface-syntax.md`:
 //! a declaration names a type, its (optional) type parameters, and its
 //! constructors with their argument types, and the elaborator drives the
 //! engine to emit the structural artifacts. Nothing here is trusted — every

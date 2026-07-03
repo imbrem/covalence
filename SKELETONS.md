@@ -4,8 +4,9 @@
 
 Ranked, most blocking first. Each links to the registry where it's detailed.
 
-1. **`covalence-pure` base logic unbuilt** — empty scaffold; the `core → pure`
-   foundation the whole substrate refactor rests on. [`covalence-pure`](crates/covalence-pure/SKELETONS.md)
+1. **`covalence-pure` closed-world kernel — only Stage 0 built** — `Op`/`Expr`/
+   `Eqn`/`Language` + base `()` exist; ADTs/`Set`, HOL, the builtins, and the
+   `language!` macro are unbuilt. [`covalence-pure`](crates/covalence-pure/SKELETONS.md)
 2. **Term hash-consing not threaded through the inference rules** — proofs don't
    share one interner end-to-end; ~29% alloc churn and the source of the
    `list.cov`/`utf8.cov`/regex blow-ups. [`covalence-core`](crates/covalence-core/SKELETONS.md), [`script` perf](crates/covalence-init/src/script/SKELETONS.md)
@@ -38,7 +39,7 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 
 ## Per-crate registries
 
-- **[`covalence-pure`](crates/covalence-pure/SKELETONS.md)** — empty base-logic scaffold.
+- **[`covalence-pure`](crates/covalence-pure/SKELETONS.md)** — closed-world equality kernel; Stage 0 built, later stages pending.
 - **[`covalence-core`](crates/covalence-core/SKELETONS.md)** — declaration-only catalogue ops.
 - **[`covalence-init`](crates/covalence-init/SKELETONS.md)** — split per module (project loader, theory catalogue, `.cov` script layer, models, regex/spectec grammars, metalogic, peano, ring). (The thin `covalence-hol` surface has no skeletons.)
 - **[`covalence-kernel`](crates/covalence-kernel/SKELETONS.md)** — empty `facts` observer module; removed legacy prover.
@@ -46,6 +47,8 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-alethe`](crates/covalence-alethe/SKELETONS.md)** — Alethe rule coverage.
 - **[`covalence-egglog`](crates/covalence-egglog/SKELETONS.md)** — egglog `external` bridge disabled (released egglog lacks the proof module).
 - **[`covalence-metamath`](crates/covalence-metamath/SKELETONS.md)** — substitution engine + `.mm` reader: `set.mm`-scale streaming, canonical serializer, structured-tree encoding, symbol interning.
+- **[`covalence-multiformat`](crates/covalence-multiformat/SKELETONS.md)** — derivation-fact interchange format: unregistered private-use codecs, no signed envelopes, blake3-only multihash, simulated Coln reader.
+- **[`covalence-acset`](crates/covalence-acset/SKELETONS.md)** — generic ACSet library: only Δ migration (no Σ/Π), pullback skips attributes, string-only attribute values, `&'static str` schema names.
 
 A crate with no skeletons has no file. When you add the first skeleton to a
 crate (or module) without one, create its `SKELETONS.md` and link it from its

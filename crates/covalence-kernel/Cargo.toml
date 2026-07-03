@@ -7,8 +7,8 @@ edition = "2024"
 # covalence-core TCB) to the content-addressed blob store + tree objects.
 [dependencies]
 covalence-init = { path = "../covalence-init" }
-covalence-store = { path = "../covalence-store" }
-covalence-object = { path = "../covalence-object" }
+covalence-store = { path = "../store/core" }
+covalence-object = { path = "../vcs/object" }
 covalence-hash = { path = "../lib/hash", default-features = false }
 covalence-sexp = { path = "../lib/sexp" }
 thiserror = "2"

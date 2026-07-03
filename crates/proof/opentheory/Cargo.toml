@@ -8,7 +8,7 @@ default = []
 fetch = ["dep:ureq"]
 
 [dependencies]
-covalence-hol = { path = "../covalence-hol" }
+covalence-hol = { path = "../../covalence-hol" }
 smol_str = "0.3"
 thiserror = "2"
 ureq = { version = "3", optional = true }

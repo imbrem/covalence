@@ -16,11 +16,11 @@ clone-async = ["clone", "dep:tokio"]
 [dependencies]
 covalence-hash = { path = "../hash" }
 covalence-sqlite = { path = "../sqlite", optional = true }
-covalence-store = { path = "../../covalence-store", optional = true, default-features = false }
+covalence-store = { path = "../../store/core", optional = true, default-features = false }
 flate2 = { version = "1", optional = true }
 gix-odb = { version = "0.80", optional = true }
 gix-object = { version = "0.60", optional = true }
-covalence-object = { path = "../../covalence-object", optional = true }
+covalence-object = { path = "../../vcs/object", optional = true }
 serde_json = "1"
 ureq = { version = "3", optional = true }
 tokio = { version = "1", features = ["rt"], optional = true }

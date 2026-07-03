@@ -9,8 +9,8 @@ description = "FUSE filesystem mounts for covalence content stores. Linux-only."
 # `cfg(target_os = "linux")` in lib.rs.
 [target.'cfg(target_os = "linux")'.dependencies]
 covalence-hash = { path = "../hash" }
-covalence-store = { path = "../../covalence-store" }
-covalence-object = { path = "../../covalence-object" }
+covalence-store = { path = "../../store/core" }
+covalence-object = { path = "../../vcs/object" }
 
 fuse3 = { version = "0.8", features = ["tokio-runtime", "unprivileged"] }
 tokio = { version = "1", features = ["sync", "rt", "fs", "macros", "signal"] }

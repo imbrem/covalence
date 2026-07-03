@@ -1,6 +1,6 @@
 //! Bridge from egglog (2.0 proof DAGs) into a pluggable backend.
 //!
-//! Surface mirrors [`covalence_alethe`](../../covalence-alethe/index.html):
+//! Surface mirrors [`covalence_alethe`](../../alethe/index.html):
 //!
 //!   - [`EgglogBridge`] — the *stable*, egglog-shaped trait that any backend
 //!     implements. One method per egglog 2.0 [`Justification`] variant plus

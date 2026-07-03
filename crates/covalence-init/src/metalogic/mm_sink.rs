@@ -151,7 +151,7 @@ mod tests {
     /// The propositional-calculus database (set.mm's ax-1/ax-2/ax-mp), plus two
     /// `$p` theorems: `ax2i` (a single ax-2 instance, hypothesis-free) and `a1i`
     /// (a derived rule carrying one essential). Mirrors
-    /// `covalence-metamath/tests/theories.rs`.
+    /// `proof/metamath/tests/theories.rs`.
     const PROP_WITH_THEOREMS: &str = "\
         $c ( ) -> wff |- $.
         $v ph ps ch $.

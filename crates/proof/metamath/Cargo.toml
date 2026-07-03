@@ -17,8 +17,8 @@ checker = []
 # MmError) AND the `.mm` reader both live here — this is the lower, HOL-free
 # crate. `covalence-hol` depends on it (a HOL-backed `Database` consumer), not
 # the other way around.
-covalence-sexp = { path = "../lib/sexp" }
-covalence-parse = { path = "../lib/parse" }
+covalence-sexp = { path = "../../lib/sexp" }
+covalence-parse = { path = "../../lib/parse" }
 smol_str = "0.3"
 thiserror = "2"
 # Fast (non-DoS-resistant) hasher for the internal symbol/label maps — keys are

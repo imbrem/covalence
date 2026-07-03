@@ -8,11 +8,11 @@ description = "WASM-component-backed content-addressed stores. Wraps a wasmtime 
 async-trait = "0.1"
 bytes = "1"
 covalence-json = { path = "../../json" }
-covalence-store = { path = "../../../covalence-store", default-features = false, features = ["async", "metadata"] }
+covalence-store = { path = "../../../store/core", default-features = false, features = ["async", "metadata"] }
 covalence-wasm = { path = "../core", features = ["runtime"] }
 thiserror = "2"
 
 [dev-dependencies]
 covalence-hash = { path = "../../hash", default-features = false }
-covalence-store = { path = "../../../covalence-store", features = ["async", "memory", "metadata"] }
+covalence-store = { path = "../../../store/core", features = ["async", "memory", "metadata"] }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }

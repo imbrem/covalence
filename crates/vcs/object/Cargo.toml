@@ -8,6 +8,6 @@ default = ["git"]
 git = ["covalence-hash/git"]
 
 [dependencies]
-covalence-hash = { path = "../lib/hash", default-features = false }
-covalence-parse = { path = "../lib/parse" }
+covalence-hash = { path = "../../lib/hash", default-features = false }
+covalence-parse = { path = "../../lib/parse" }
 thiserror = "2"

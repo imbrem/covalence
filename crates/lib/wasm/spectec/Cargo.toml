@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-covalence-grammar = { path = "../covalence-grammar" }
+covalence-grammar = { path = "../../../covalence-grammar" }
 thiserror = "2"
 wasm_spec_ast = "1"
 spectec_ast = "2"

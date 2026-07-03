@@ -14,17 +14,17 @@ llm = ["dep:covalence-llm"]
 
 [dependencies]
 pyo3 = "0.28"
-covalence-llm = { path = "../covalence-llm", optional = true, default-features = false, features = ["sync", "openai"] }
+covalence-llm = { path = "../lib/llm", optional = true, default-features = false, features = ["sync", "openai"] }
 bytes = "1"
-covalence-graph = { path = "../covalence-graph" }
+covalence-graph = { path = "../lib/graph" }
 covalence-hash = { path = "../lib/hash" }
 covalence-sexp = { path = "../lib/sexp" }
 covalence-shell = { path = "../covalence-shell" }
-covalence-store = { path = "../covalence-store", features = ["memory", "sqlite"] }
-covalence-kv = { path = "../covalence-kv" }
+covalence-store = { path = "../store/core", features = ["memory", "sqlite"] }
+covalence-kv = { path = "../store/kv" }
 covalence-git = { path = "../lib/git", features = ["object-store", "clone"] }
 covalence-crypto-sig = { path = "../lib/crypto/sig" }
-covalence-object = { path = "../covalence-object" }
+covalence-object = { path = "../vcs/object" }
 covalence-wasm = { path = "../lib/wasm/core" }
 covalence-wasm-store = { path = "../lib/wasm/store" }
 covalence-repl = { path = "../covalence-repl" }

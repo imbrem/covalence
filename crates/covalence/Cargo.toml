@@ -30,16 +30,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 covalence-serve = { path = "../covalence-serve" }
 covalence-repl = { path = "../covalence-repl", features = ["fetch", "cogit"] }
 covalence-shell = { path = "../covalence-shell" }
-covalence-store = { path = "../covalence-store", features = ["sqlite"] }
+covalence-store = { path = "../store/core", features = ["sqlite"] }
 # covalence-git is gated off WASM: its `clone` feature transitively pulls
 # in libsqlite3-sys, whose sqlite3.c build needs a real WASI sysroot.
 covalence-git = { path = "../lib/git", optional = true, features = ["clone"] }
 covalence-hol = { path = "../covalence-hol", optional = true }
-covalence-opentheory = { path = "../covalence-opentheory", optional = true }
+covalence-opentheory = { path = "../proof/opentheory", optional = true }
 covalence-wasm = { path = "../lib/wasm/core", default-features = false }
 covalence-client = { path = "../covalence-client", features = ["sync"] }
 covalence-proto = { path = "../lib/proto", features = ["discovery", "config"] }
-covalence-object = { path = "../covalence-object" }
+covalence-object = { path = "../vcs/object" }
 covalence-hash = { path = "../lib/hash" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 

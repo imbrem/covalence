@@ -3,7 +3,7 @@
 //! This module is the HOL-layer **deep embedding** of `λ_iter` (the first-order
 //! expression language with branching and iteration from §2.1 of *Categorical
 //! Imperative Programming*). Where the *shallow* embedding
-//! (`crates/covalence-metamath/tests/lambda_iter.rs`) makes each typing rule a
+//! (`crates/proof/metamath/tests/lambda_iter.rs`) makes each typing rule a
 //! Metamath axiom — so a derivation *is* a proof and the metatheory is not
 //! statable — the deep embedding **reifies syntax and derivations as data** so
 //! that weakening, substitution, and the rest become ordinary theorems proved

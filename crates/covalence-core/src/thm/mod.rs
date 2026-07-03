@@ -157,7 +157,18 @@ impl Thm {
     /// to type-check at `unit` (an open or ill-typed term is rejected),
     /// and the equation carries no hypotheses.
     pub fn unit_eq(a: Term, b: Term) -> Result<Thm> {
-        mint!(UnitEq, (a.clone(), b.clone()), (a, b))
+        Self::unit_eq_with(a, b, &mut ())
+    }
+
+    /// [`unit_eq`](Self::unit_eq) building its `a = b` equation through a
+    /// caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`unit_eq`](Self::unit_eq); the cons only
+    /// shares the `Arc`s of the conclusion's spine, with no soundness role.
+    pub fn unit_eq_with<C: TrustedCons + ?Sized>(a: Term, b: Term, cons: &mut C) -> Result<Thm> {
+        let thm = mint!(UnitEq, (a.clone(), b.clone()), (a, b))?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// `Γ ∪ Δ ⊢ s = u`, given `Γ ⊢ s = t` and `Δ ⊢ t = u` (HOL `=`).
@@ -290,11 +301,27 @@ impl Thm {
     /// Both `p` and `q` must be `bool`-typed; equality at `bool`
     /// IS biconditional.
     pub fn deduct_antisym(self, other: Thm) -> Result<Thm> {
-        mint!(
+        self.deduct_antisym_with(other, &mut ())
+    }
+
+    /// [`deduct_antisym`](Self::deduct_antisym) building its `p ⇔ q`
+    /// equation through a caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`deduct_antisym`](Self::deduct_antisym);
+    /// the cons only shares the `Arc`s of the conclusion's spine, with no
+    /// soundness role.
+    pub fn deduct_antisym_with<C: TrustedCons + ?Sized>(
+        self,
+        other: Thm,
+        cons: &mut C,
+    ) -> Result<Thm> {
+        let thm = mint!(
             DeductAntisym,
             (self.0.clone(), other.0.clone()),
             (self.0, other.0)
-        )
+        )?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// HOL Light's `INST`: substitute the free variable `(name,
@@ -303,12 +330,29 @@ impl Thm {
     /// distinct variable and is left untouched (so a type-mismatched
     /// substitution is a no-op, as in HOL Light's `vsubst`).
     pub fn inst(self, name: &str, replacement: Term) -> Result<Thm> {
+        self.inst_with(name, replacement, &mut ())
+    }
+
+    /// [`inst`](Self::inst) interning its substituted conclusion **and
+    /// hypotheses** (both are freshly rebuilt by the substitution) through
+    /// a caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`inst`](Self::inst); the cons only shares
+    /// the `Arc`s of the rebuilt spines, with no soundness role.
+    pub fn inst_with<C: TrustedCons + ?Sized>(
+        self,
+        name: &str,
+        replacement: Term,
+        cons: &mut C,
+    ) -> Result<Thm> {
         let n = SmolStr::from(name);
-        mint!(
+        let thm = mint!(
             Inst,
             (self.0.clone(), n.clone(), replacement.clone()),
             (self.0, n, replacement)
-        )
+        )?;
+        intern_thm(&thm, cons);
+        Ok(thm)
     }
 
     // (HOL Light's `INST_TYPE` is the same operation as the existing
@@ -339,7 +383,18 @@ impl Thm {
     /// `eq_mp` to get `b = a`. Implemented directly here as
     /// "parse the equation, return reversed".
     pub fn sym(self) -> Result<Thm> {
-        mint!(Sym, (self.0.clone(),), (self.0,))
+        self.sym_with(&mut ())
+    }
+
+    /// [`sym`](Self::sym) building its reversed `b = a` equation through a
+    /// caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`sym`](Self::sym); the cons only shares the
+    /// `Arc`s of the conclusion's spine, with no soundness role.
+    pub fn sym_with<C: TrustedCons + ?Sized>(self, cons: &mut C) -> Result<Thm> {
+        let thm = mint!(Sym, (self.0.clone(),), (self.0,))?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// Alias for [`Thm::mk_comb`]. `cong_app` is the equational-
@@ -361,6 +416,17 @@ impl Thm {
         self.abs(name, ty)
     }
 
+    /// Alias for [`Thm::abs_with`] — the cons-aware
+    /// [`cong_abs`](Self::cong_abs).
+    pub fn cong_abs_with<C: TrustedCons + ?Sized>(
+        self,
+        name: &str,
+        ty: Type,
+        cons: &mut C,
+    ) -> Result<Thm> {
+        self.abs_with(name, ty, cons)
+    }
+
     /// `Γ \ {φ} ⊢ φ ⟹ ψ`, given `Γ ⊢ ψ` (HOL Light's `DISCH`).
     ///
     /// `φ` must be `bool`-typed (otherwise it can't be a HOL
@@ -370,11 +436,22 @@ impl Thm {
     /// `DEDUCT_ANTISYM_RULE` + `MP`. Implemented directly here as
     /// a one-step rule for performance.
     pub fn imp_intro(self, phi: &Term) -> Result<Thm> {
-        mint!(
+        self.imp_intro_with(phi, &mut ())
+    }
+
+    /// [`imp_intro`](Self::imp_intro) building its `φ ⟹ ψ` conclusion
+    /// through a caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`imp_intro`](Self::imp_intro); the cons only
+    /// shares the `Arc`s of the conclusion's spine, with no soundness role.
+    pub fn imp_intro_with<C: TrustedCons + ?Sized>(self, phi: &Term, cons: &mut C) -> Result<Thm> {
+        let thm = mint!(
             ImpIntro,
             (self.0.clone(), phi.clone()),
             (self.0, phi.clone())
-        )
+        )?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// `Γ ∪ Δ ⊢ ψ`, given `Γ ⊢ φ ⟹ ψ` and `Δ ⊢ φ`
@@ -396,12 +473,29 @@ impl Thm {
     /// close the free variable into a `Bound(0)` and wrap with
     /// `Forall_at(τ)`.
     pub fn all_intro(self, name: &str, ty: Type) -> Result<Thm> {
+        self.all_intro_with(name, ty, &mut ())
+    }
+
+    /// [`all_intro`](Self::all_intro) building its `∀x:τ. φ` conclusion
+    /// (the closed body and the `∀`-wrapper around it) through a
+    /// caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`all_intro`](Self::all_intro); the cons only
+    /// shares the `Arc`s of the conclusion's spine, with no soundness role.
+    pub fn all_intro_with<C: TrustedCons + ?Sized>(
+        self,
+        name: &str,
+        ty: Type,
+        cons: &mut C,
+    ) -> Result<Thm> {
         let n = SmolStr::from(name);
-        mint!(
+        let thm = mint!(
             AllIntro,
             (self.0.clone(), n.clone(), ty.clone()),
             (self.0, n, ty)
-        )
+        )?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// `Γ ⊢ φ[t/x]`, given `Γ ⊢ ∀x:τ. φ` and `t : τ`
@@ -443,7 +537,19 @@ impl Thm {
     /// exposed as a rule that discharges well-formedness in one
     /// step).
     pub fn eta_conv(abs: Term) -> Result<Thm> {
-        mint!(EtaConv, (abs.clone(),), (abs,))
+        Self::eta_conv_with(abs, &mut ())
+    }
+
+    /// [`eta_conv`](Self::eta_conv) building its `(λx. f x) = f` equation
+    /// (including the un-shifted `f` on the right) through a caller-supplied
+    /// [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`eta_conv`](Self::eta_conv); the cons only
+    /// shares the `Arc`s of the conclusion's spine, with no soundness role.
+    pub fn eta_conv_with<C: TrustedCons + ?Sized>(abs: Term, cons: &mut C) -> Result<Thm> {
+        let thm = mint!(EtaConv, (abs.clone(),), (abs,))?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     // ========================================================================
@@ -469,11 +575,22 @@ impl Thm {
     /// into `⊢ p = T`, `⊢ q = T`; congruence + `abs` then build
     /// `⊢ (λf. f p q) = (λf. f T T)`, which is `p ∧ q` unfolded.
     pub fn and_intro(self, other: Thm) -> Result<Thm> {
-        mint!(
+        self.and_intro_with(other, &mut ())
+    }
+
+    /// [`and_intro`](Self::and_intro) building its `p ∧ q` conclusion
+    /// through a caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`and_intro`](Self::and_intro); the cons only
+    /// shares the `Arc`s of the conclusion's spine, with no soundness role.
+    pub fn and_intro_with<C: TrustedCons + ?Sized>(self, other: Thm, cons: &mut C) -> Result<Thm> {
+        let thm = mint!(
             AndIntro,
             (self.0.clone(), other.0.clone()),
             (self.0, other.0)
-        )
+        )?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// `Γ ⊢ p`, given `Γ ⊢ p ∧ q` (HOL Light `CONJUNCT1`).
@@ -497,13 +614,37 @@ impl Thm {
     /// Soundness: fold `⊢ p` into `p ∨ q ≜ ∀r. (p⟹r) ⟹ (q⟹r) ⟹ r`
     /// — assume each implication, MP the first with `⊢ p`, generalise.
     pub fn or_intro_l(self, q: Term) -> Result<Thm> {
-        mint!(OrIntroL, (self.0.clone(), q.clone()), (self.0, q))
+        self.or_intro_l_with(q, &mut ())
+    }
+
+    /// [`or_intro_l`](Self::or_intro_l) building its `p ∨ q` conclusion
+    /// through a caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`or_intro_l`](Self::or_intro_l); the cons
+    /// only shares the `Arc`s of the conclusion's spine, with no soundness
+    /// role.
+    pub fn or_intro_l_with<C: TrustedCons + ?Sized>(self, q: Term, cons: &mut C) -> Result<Thm> {
+        let thm = mint!(OrIntroL, (self.0.clone(), q.clone()), (self.0, q))?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// `Γ ⊢ p ∨ q`, given `Γ ⊢ q` and the other disjunct `p : bool`
     /// (HOL Light `DISJ2`).
     pub fn or_intro_r(self, p: Term) -> Result<Thm> {
-        mint!(OrIntroR, (self.0.clone(), p.clone()), (self.0, p))
+        self.or_intro_r_with(p, &mut ())
+    }
+
+    /// [`or_intro_r`](Self::or_intro_r) building its `p ∨ q` conclusion
+    /// through a caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`or_intro_r`](Self::or_intro_r); the cons
+    /// only shares the `Arc`s of the conclusion's spine, with no soundness
+    /// role.
+    pub fn or_intro_r_with<C: TrustedCons + ?Sized>(self, p: Term, cons: &mut C) -> Result<Thm> {
+        let thm = mint!(OrIntroR, (self.0.clone(), p.clone()), (self.0, p))?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// `Γ ∪ Δ₁ ∪ Δ₂ ⊢ r`, given `Γ ⊢ p ∨ q`, `Δ₁ ⊢ p ⟹ r` and
@@ -524,18 +665,42 @@ impl Thm {
     ///
     /// Soundness: `¬p ≜ (p ⟹ F)`, so this just folds the definition.
     pub fn not_intro(self) -> Result<Thm> {
-        mint!(NotIntro, (self.0.clone(),), (self.0,))
+        self.not_intro_with(&mut ())
+    }
+
+    /// [`not_intro`](Self::not_intro) building its `¬p` conclusion through
+    /// a caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`not_intro`](Self::not_intro); the cons only
+    /// shares the `Arc`s of the conclusion's spine, with no soundness role.
+    pub fn not_intro_with<C: TrustedCons + ?Sized>(self, cons: &mut C) -> Result<Thm> {
+        let thm = mint!(NotIntro, (self.0.clone(),), (self.0,))?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// `Γ ∪ Δ ⊢ F`, given `Γ ⊢ ¬p` and `Δ ⊢ p` (HOL Light `NOT_ELIM`).
     ///
     /// Soundness: unfold `¬p` to `p ⟹ F` and MP with `⊢ p`.
     pub fn not_elim(self, other: Thm) -> Result<Thm> {
-        mint!(
+        self.not_elim_with(other, &mut ())
+    }
+
+    /// [`not_elim`](Self::not_elim) with a caller-supplied [`TrustedCons`].
+    /// The conclusion is just the `F` literal (a single leaf), so interning
+    /// is near-trivial here — the `_with` exists mainly for API uniformity
+    /// with the other cons-aware connective rules.
+    ///
+    /// Soundness: identical to [`not_elim`](Self::not_elim); no soundness
+    /// role for the cons.
+    pub fn not_elim_with<C: TrustedCons + ?Sized>(self, other: Thm, cons: &mut C) -> Result<Thm> {
+        let thm = mint!(
             NotElim,
             (self.0.clone(), other.0.clone()),
             (self.0, other.0)
-        )
+        )?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// `⊢ Spec(spec, args) = subst(spec.tm, tvars, args)` for a
@@ -763,12 +928,29 @@ impl Thm {
 
     /// `Γ[α:=σ] ⊢ φ[α:=σ]`.
     pub fn inst_tfree(self, name: &str, replacement: Type) -> Result<Thm> {
+        self.inst_tfree_with(name, replacement, &mut ())
+    }
+
+    /// [`inst_tfree`](Self::inst_tfree) interning its substituted conclusion
+    /// **and hypotheses** (both are freshly rebuilt by the type
+    /// substitution) through a caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`inst_tfree`](Self::inst_tfree); the cons
+    /// only shares the `Arc`s of the rebuilt spines, with no soundness role.
+    pub fn inst_tfree_with<C: TrustedCons + ?Sized>(
+        self,
+        name: &str,
+        replacement: Type,
+        cons: &mut C,
+    ) -> Result<Thm> {
         let n = SmolStr::from(name);
-        mint!(
+        let thm = mint!(
             InstTFree,
             (self.0.clone(), n.clone(), replacement.clone()),
             (self.0, n, replacement)
-        )
+        )?;
+        intern_thm(&thm, cons);
+        Ok(thm)
     }
 
     /// `⊢ expr1 ≡ expr2`, where:
@@ -933,11 +1115,28 @@ impl Thm {
     /// theorem — assume the conjunction, split it, apply this rule,
     /// discharge, generalise.
     pub fn nat_induct(base: Thm, step: Thm) -> Result<Thm> {
-        mint!(
+        Self::nat_induct_with(base, step, &mut ())
+    }
+
+    /// [`nat_induct`](Self::nat_induct) building its `∀n:nat. p n`
+    /// conclusion (the closed motive body and the `∀`-wrapper) through a
+    /// caller-supplied [`TrustedCons`].
+    ///
+    /// Soundness: identical to [`nat_induct`](Self::nat_induct); the cons
+    /// only shares the `Arc`s of the conclusion's spine, with no soundness
+    /// role.
+    pub fn nat_induct_with<C: TrustedCons + ?Sized>(
+        base: Thm,
+        step: Thm,
+        cons: &mut C,
+    ) -> Result<Thm> {
+        let thm = mint!(
             NatInduct,
             (base.0.clone(), step.0.clone()),
             (base.0, step.0)
-        )
+        )?;
+        intern_concl(&thm, cons);
+        Ok(thm)
     }
 
     /// `Γ ⊢ p`, given `Γ ⊢ F` and any `bool`-typed target `p`
@@ -1029,6 +1228,17 @@ impl Thm {
 /// rewrite-engine / Metamath-replay sharing path). Pure sharing, no soundness role.
 fn intern_concl<C: TrustedCons + ?Sized>(thm: &Thm, cons: &mut C) {
     let _ = thm.concl().cons_with(cons);
+}
+
+/// [`intern_concl`] plus the hypotheses — for the substitution rules
+/// (`inst_with` / `inst_tfree_with`), whose hypotheses are freshly rebuilt
+/// alongside the conclusion and so are equally worth sharing. Pure sharing,
+/// no soundness role.
+fn intern_thm<C: TrustedCons + ?Sized>(thm: &Thm, cons: &mut C) {
+    intern_concl(thm, cons);
+    for h in thm.hyps().iter() {
+        let _ = h.cons_with(cons);
+    }
 }
 
 fn spec_coercions(spec: &TypeSpec, args: &TypeList) -> Result<(Term, Term, Type, Type)> {

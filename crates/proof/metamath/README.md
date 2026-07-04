@@ -81,7 +81,7 @@ parent list), sidestep grammar ambiguity (the checker never needs to know that
 trivially correct. Structured trees are nicer for the downstream *metatheory*
 (substitution becomes a plain tree rewrite) but require the grammar to build,
 reintroducing the ambiguity Metamath was designed to avoid — so that encoding is
-deferred to the future `covalence-hol` bridge layer, where the grammar lives in
+deferred to the HOL-backed consumer layer (`covalence-init`), where the grammar lives in
 the (untrusted) representation rather than the checker. We use `SExpr` rather
 than a bare `Vec<Symbol>` because it is the project's canonical expression
 medium: turning today's flat list into tomorrow's structured tree is one
@@ -114,7 +114,7 @@ theory) with proofs that verify and bad proofs that are rejected. Deferred for
 this reader (see [`SKELETONS.md`](./SKELETONS.md)): the compressed proof format,
 `$[ $]` file inclusion, and `set.mm`-scale streaming. Engine-side deferrals (the
 `#logic` correspondence layer, the import tactic + representation-equivalence
-metatheorem) are tracked in `covalence-hol/src/metamath/SKELETONS.md`.
+metatheorem) are tracked in `crates/kernel/hol/init/src/metalogic/SKELETONS.md`.
 
 [Metamath]: https://us.metamath.org/
 [`covalence-sexp`]: ../covalence-sexp

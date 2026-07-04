@@ -12,8 +12,8 @@ use covalence_hash::O256;
 use covalence_object::{DirBuilder, DirMode, TableBuilder};
 use covalence_repl::{Session, SyncBackend};
 use covalence_shell::Kernel;
-use parquet::arrow::ArrowWriter;
-use parquet::file::properties::WriterProperties;
+use covalence_parquet::parquet::arrow::ArrowWriter;
+use covalence_parquet::parquet::file::properties::WriterProperties;
 
 fn arrow_ipc_blob(rows: &[i32]) -> Vec<u8> {
     let schema = Arc::new(Schema::new(vec![Field::new("v", DataType::Int32, false)]));

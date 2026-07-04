@@ -1309,7 +1309,6 @@ dependencies = [
  "covalence-parquet",
  "covalence-shell",
  "covalence-wasm",
- "parquet",
  "ureq",
 ]
 

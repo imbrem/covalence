@@ -4,13 +4,13 @@ The **`.mm` format / IO reader** for the theory-agnostic Metamath proof checker
 whose expressions are [`covalence-sexp`] `SExpr`s.
 
 > **Crate split.** Because a Metamath database *is* the substrate for defining a
-> logic (`notes/vibes/theories-models-and-logics.md` §5.6), the substitution **engine**
-> — the expression model, substitution, the frame/database model, and the RPN
-> proof checker — lives first-class in [`covalence_hol::metamath`]. *This* crate
-> is the messy reader on top of it: `.mm` tokenising, scoping, comments, and (as
-> north stars) compressed-proof decoding, file inclusion, and `set.mm`
-> ingestion. The engine types are re-exported here, so
-> `covalence_metamath::{Database, parse, verify_all, …}` keeps working.
+> logic (`notes/vibes/theories-models-and-logics.md` §5.6), the substitution
+> **engine** — the expression model, substitution, the frame/database model, and
+> the RPN proof checker — lives first-class *here*, HOL-free (depending only on
+> `covalence-sexp`), together with the `.mm` reader: tokenising, scoping,
+> comments, and (as north stars) compressed-proof decoding, file inclusion, and
+> `set.mm` ingestion. `covalence-init` is the HOL-backed *consumer* of a
+> [`Database`] (replay into kernel theorems), not the other way around.
 
 ## Why this exists — Metamath as the shared logic-definition substrate
 
@@ -106,8 +106,8 @@ let n  = verify_all(&db)?;         // kernel-recheck every $p; returns #verified
 ## Status
 
 Implemented: the engine (frame/database model, substitution, schematic rule
-application, distinct-variable checking, the RPN proof checker — now in
-[`covalence_hol::metamath`]), this crate's uncompressed `.mm` parser, and ≥3
+application, distinct-variable checking, the RPN proof checker — all in this
+crate), the uncompressed `.mm` parser, and ≥3
 hand-encoded example theories (propositional calculus, the Metamath-book "demo0"
 arithmetic/logic theory, a small binary-operation theory, and a distinct-variable
 theory) with proofs that verify and bad proofs that are rejected. Deferred for

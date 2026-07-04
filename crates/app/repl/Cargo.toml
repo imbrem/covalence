@@ -33,4 +33,3 @@ covalence-arrow = { path = "../../lib/arrow" }
 covalence-parquet = { path = "../../lib/parquet" }
 covalence-object = { path = "../../vcs/object", default-features = false }
 covalence-shell = { path = "../../kernel/shell" }
-parquet = { version = "58", default-features = false, features = ["arrow"] }

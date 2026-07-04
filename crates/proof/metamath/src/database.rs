@@ -424,9 +424,10 @@ impl Database {
 /// The construction API a `.mm` reader drives, abstracted over the backend.
 ///
 /// The in-memory [`Database`] implements this trait directly (its mutators are
-/// the canonical implementation). A future **HOL-backed** sink in
-/// `covalence-hol` can implement the same trait, constructing `⊢ Derivable_…`
-/// theorems as the reader streams declarations through it — without the reader
+/// the canonical implementation). The **HOL-backed** sink in `covalence-init`
+/// (`metalogic::mm_sink::HolPropSink`) implements the same trait, constructing
+/// `⊢ Derivable_…` theorems as the reader streams declarations through it —
+/// without the reader
 /// knowing which backend it is feeding. The method set mirrors `Database`'s own
 /// construction methods.
 pub trait DatabaseSink {

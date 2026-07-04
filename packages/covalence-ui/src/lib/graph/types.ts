@@ -1,5 +1,5 @@
 /**
- * TypeScript mirrors of the Rust types in `crates/covalence-graph`.
+ * TypeScript mirrors of the Rust types in `crates/lib/graph`.
  *
  * Three layers, matching the Rust split:
  * - `Graph` / `GraphNode` / `GraphPort` / `GraphEdge` : pure topology.

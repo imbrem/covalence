@@ -1,4 +1,4 @@
-# Skeletons — `covalence-hol/src/ring`
+# Skeletons — `covalence-init/src/algebra/ring`
 
 See [`CLAUDE.md`](../../../../../../../CLAUDE.md) § Skeletons, the
 [crate index](../../../SKELETONS.md), and the [root index](../../../../../../../SKELETONS.md).

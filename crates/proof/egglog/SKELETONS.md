@@ -2,6 +2,10 @@
 
 See [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the [root index](../../../SKELETONS.md).
 
+- **`EgglogBridge` is Stage 0 — only `fiat` succeeds.** The `rule`/`merge_fn`/
+  `trans`/`sym`/`congr` justification-replay handlers default to
+  `BridgeError::NotImplemented` (`src/bridge.rs`), and no concrete kernel-backed
+  `impl EgglogBridge` exists in the workspace.
 - **egglog `external` bridge disabled.** The real-solver bridge (`src/external.rs`:
   run `(prove …)`, convert egglog's proof DAG into our `proof` types) is switched
   off: the `egglog` dep, the `external-egglog` feature, the `pub mod external`

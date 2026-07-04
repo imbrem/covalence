@@ -1,4 +1,4 @@
-# Skeletons — `covalence-hol/src/metalogic`
+# Skeletons — `covalence-init/src/metalogic`
 
 Open work in the **metalogic** layer: the generic `Derivable_L` engine, databases
 as HOL values, and Metamath import/replay. See `CLAUDE.md` § Skeletons, the
@@ -51,6 +51,12 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
   frontend (namespacing, tactics) with set.mm FFI kept as the mirror-principle
   check; two-phase definitions-first import; import instrumentation
   (inference/memory counters); definition/dependency-graph explorer.
+- **`mm_import.rs` `temp_import_set_mm_broad` `#[ignore]`d "TEMP" sweep** — retire
+  or keep as the standing COV_SET_MM broad-verify harness.
+- **`mm_database.rs` `repro_bj1` `#[ignore]`d repro** — kept as a COV_SET_MM-gated
+  regression for the bj-1 namespacing fix; fold into the gated sweep or delete.
+  (The other `#[ignore]`s in `mm_import.rs`/`mm_database.rs` are intentional
+  env-gated set.mm (~48 MB, not vendored) / benchmark harnesses, not deferred work.)
 
 ## North stars (design only — do NOT build)
 

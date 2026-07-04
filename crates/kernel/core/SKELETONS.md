@@ -5,7 +5,7 @@ See [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the [root index](../../..
 ## Empty / stub modules
 
 - **`src/facts.rs`** — empty module. The observer layer recording and
-  content-addressing proven `covalence-hol` theorems lands here as the
+  content-addressing proven `covalence-init` theorems lands here as the
   HOL-on-store stack comes online (see crate-root docs, `notes/vibes/roadmap.md`).
 
 ## Removed-pending-rewrite subsystems
@@ -20,12 +20,13 @@ See [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the [root index](../../..
 Synchronous `check` of a self-contained `.cov` article is in place. Deferred:
 
 - **Async dependency loading.** `ArticleSource` + `TrustPolicy` are defined as
-  seams but not wired through `covalence_hol::script::run_async`; network
+  seams but not wired through `covalence_init::script::run_async`; network
   `#import`s need it so a `fetch` can be `await`ed rather than dead-locking a
   blocking executor on the browser main thread.
 - **`TrustLevel::DeepCheck` not enforced** — both levels behave identically (stdlib
   always re-checked; no dependency-trust bypass).
 - **No diagnostic spans** — `Diagnostic::span` always `None` until the `.cov` script
-  layer carries source extents (see `covalence-hol/src/script/SKELETONS.md`).
+  layer carries source extents (see
+  `crates/kernel/hol/init/src/script/SKELETONS.md`).
 - **Statement rendering is canonical S-expression**, not math notation; MathML
   printer is future work (`notes/vibes/web-kernel.md`).

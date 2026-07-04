@@ -1,6 +1,6 @@
 /**
  * Decoders for the `cov:graph` blob family. Mirrors of the Rust
- * canonical-byte encoders in `crates/covalence-graph`.
+ * canonical-byte encoders in `crates/lib/graph`.
  *
  * Magics: `COVG` (graph topology), `LBLS` (label-list overlay),
  * `KFLG` (kind-flags overlay), `SDGM` (string-diagram composite).

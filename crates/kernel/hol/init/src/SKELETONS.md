@@ -1,4 +1,4 @@
-# Skeletons — `covalence-hol/src` (crate-root modules)
+# Skeletons — `covalence-init/src` (crate-root modules)
 
 Placeholders in crate-root `src/*.rs` (modules without their own
 `SKELETONS.md`). See [`CLAUDE.md`](../../../../../CLAUDE.md) § Skeletons, the

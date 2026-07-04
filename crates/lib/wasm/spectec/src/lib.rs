@@ -21,7 +21,7 @@
 //! - [`regex`] — the bridge between the elaborated SpecTec grammar AST
 //!   ([`ast::SpecTecSym`]) and the [`covalence_grammar`] proper-regex AST,
 //!   over both the `char` and `u8` (byte) alphabets. The byte path is what
-//!   feeds `covalence-hol`'s grammar → bytes-predicate compiler.
+//!   feeds `covalence-init`'s grammar → bytes-predicate compiler.
 //!
 //! # Trust
 //!

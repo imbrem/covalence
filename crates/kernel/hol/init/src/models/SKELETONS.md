@@ -1,4 +1,4 @@
-# Skeletons — `covalence-hol/src/models`
+# Skeletons — `covalence-init/src/models`
 
 Open placeholders in the minimal surface-compiler core (the `Logic`/`Model`
 triad + cross-model `add_comm` replay). See `CLAUDE.md` § Skeletons, the

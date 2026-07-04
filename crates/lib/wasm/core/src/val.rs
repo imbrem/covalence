@@ -437,7 +437,7 @@ mod tests {
         assert_eq!(Val::Bool(true).val_type(), ValType::Bool);
         assert_eq!(Val::U32(42).val_type(), ValType::U32);
         assert_eq!(Val::S64(-1).val_type(), ValType::S64);
-        assert_eq!(Val::F64(3.14).val_type(), ValType::F64);
+        assert_eq!(Val::F64(3.5).val_type(), ValType::F64);
         assert_eq!(Val::Char('x').val_type(), ValType::Char);
         assert_eq!(Val::String("hello".into()).val_type(), ValType::String);
     }

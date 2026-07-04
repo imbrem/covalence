@@ -139,7 +139,7 @@ fn step_label(
 
 /// A decoded proof step — the common currency of *both* proof encodings, so a
 /// consumer (the in-crate verifier, or an out-of-crate replay like
-/// `covalence-hol`'s `mm_database::replay_db`) can process compressed and normal
+/// `covalence-init`'s `mm_database::replay_db`) can process compressed and normal
 /// proofs uniformly with a stack + heap. The heap preserves the compressed
 /// proof's **sharing**: re-using a saved sub-proof is a heap push, not a
 /// recomputation, so there is no exponential re-expansion.

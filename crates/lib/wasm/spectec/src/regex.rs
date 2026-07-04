@@ -178,7 +178,7 @@ fn endpoint_char(sym: &SpecTecSym) -> Result<char, BridgeError> {
 /// Convert a `SpecTecSym` into a [`Regex<u8>`] when it falls inside the
 /// proper-regex subset, reading it as a grammar over **bytes** — the natural
 /// interpretation of WASM's *binary* (`B*`) grammars and the form that feeds
-/// `covalence-hol`'s grammar → bytes-predicate compiler.
+/// `covalence-init`'s grammar → bytes-predicate compiler.
 ///
 /// The differences from [`sym_to_regex`] (the `char` path) are exactly where
 /// the alphabet bites:

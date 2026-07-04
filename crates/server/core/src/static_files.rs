@@ -3,7 +3,7 @@ use axum::response::{IntoResponse, Response};
 use rust_embed::Embed;
 
 #[derive(Embed)]
-#[folder = "../../apps/covalence-web/build/"]
+#[folder = "../../../apps/covalence-web/build/"]
 struct WebAssets;
 
 const NOT_EMBEDDED_HTML: &str = r#"<!DOCTYPE html>

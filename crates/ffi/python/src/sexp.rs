@@ -169,8 +169,8 @@ impl PySExp {
     /// Map atom SExps to Python objects, producing a PySExp.
     ///
     /// The callback receives each atom SExp and should return a Python object.
-    fn map(&self, py: Python<'_>, f: &Bound<'_, PyAny>) -> PyResult<PyPySExp> {
-        map_sexp_to_pysexp(py, &self.inner, f)
+    fn map(&self, f: &Bound<'_, PyAny>) -> PyResult<PyPySExp> {
+        map_sexp_to_pysexp(&self.inner, f)
     }
 
     /// Convert to PySExp with default mapping: Symbol→str, Str→bytes.
@@ -179,7 +179,7 @@ impl PySExp {
     }
 }
 
-fn map_sexp_to_pysexp(py: Python<'_>, sexp: &SExpr, f: &Bound<'_, PyAny>) -> PyResult<PyPySExp> {
+fn map_sexp_to_pysexp(sexp: &SExpr, f: &Bound<'_, PyAny>) -> PyResult<PyPySExp> {
     match sexp {
         SExp::Atom(_) => {
             let py_sexp = PySExp::from_inner(sexp.clone());
@@ -192,7 +192,7 @@ fn map_sexp_to_pysexp(py: Python<'_>, sexp: &SExpr, f: &Bound<'_, PyAny>) -> PyR
             let children: Vec<SExp<Py<PyAny>>> = items
                 .iter()
                 .map(|item| {
-                    let mapped = map_sexp_to_pysexp(py, item, f)?;
+                    let mapped = map_sexp_to_pysexp(item, f)?;
                     Ok(mapped.inner)
                 })
                 .collect::<PyResult<_>>()?;

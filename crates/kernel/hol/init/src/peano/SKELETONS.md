@@ -1,4 +1,4 @@
-# Skeletons — `covalence-hol/src/peano`
+# Skeletons — `covalence-init/src/peano`
 
 Open work in the Peano-arithmetic deep embedding. See `CLAUDE.md` § Skeletons, the
 [crate index](../../SKELETONS.md), and the [root index](../../../../../../SKELETONS.md).

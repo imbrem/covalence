@@ -81,7 +81,7 @@ fn prove_imp_intro_p_implies_p() -> Result<String, String> {
 fn prove_beta_identity() -> Result<String, String> {
     let bytes_ty = PureType::bytes();
     let body = Term::bound(0);
-    let id = Term::abs(&bytes_ty, &body);
+    let id = Term::abs("x", &bytes_ty, &body);
     let hi = Term::blob(&b"hi".to_vec());
     let app = Term::app(&id, &hi);
     let thm = Thm::beta_conv(&app).map_err(|e| format!("beta-conv: {e}"))?;

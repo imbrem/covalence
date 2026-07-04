@@ -35,23 +35,22 @@ references from the partial env under construction (or a build-local Rust
 resolver), never the `core_env`-backed accessors — and must be **test-gated**.
 Porting the numeric tower to data is the remaining follow-up.
 
-## Hash-consing not threaded through the inference rules
+## Hash-consing not on-by-default
 
-Term/type interners (`term::cons`, `ty::cons`) are wired through the
-smart-constructor baselines and the `*_with` subst variants, but the rules in
-`thm/`, `Ctx`, and `hol.rs` builders construct via plain constructors, so a proof
-does not share one interner end-to-end. Thread a caller-supplied
-`&mut dyn TrustedCons` through the rule surface (+ a `Ctx`-owned interner) to make
-it on-by-default; this would cut the ~29% allocation dominating the list-bootstrap
-profile. Soundness unaffected either way. (Then also intern `TermInfo::Wf(Type)`
-cached types, currently freshly allocated.)
+The rule surface has cons-threaded `_with` variants (done), but `Ctx` has no
+owned interner, `hol.rs` builders construct plain, `TermInfo::Wf(Type)` cached
+types are freshly allocated, and the script/init consumers do not thread a cons
+(only the metamath replay path in `metalogic/mm_database.rs` does) — so replay
+proofs still don't share one interner end-to-end. Making it on-by-default would
+cut the ~29% allocation dominating the list-bootstrap profile. Soundness
+unaffected either way.
 
 ## Name-only `subst::close` should move out of the TCB
 
 `subst::close(t, name)` is a trusted construction convenience that doesn't belong
 in the kernel (rules taking arbitrary theorem terms already use the type-aware
-`close_var` / `subst_free` / `has_free_var_typed`). It remains only because ~169
-`init/` construction sites in `covalence-hol` call it. Eventually reimplement in
+`close_var` / `subst_free` / `has_free_var_typed`). It remains only because many
+`init/` construction sites in `covalence-init` call it. Eventually reimplement in
 userspace (`TermExt`) or migrate the call sites to `close_var(&Var::new(...))`.
 Deferred for call-site churn.
 

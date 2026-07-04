@@ -4,7 +4,7 @@ Skipped automatically unless:
   * The extension was built with the `llm` feature (so `covalence.Llm` exists)
   * A local Ollama daemon is reachable on http://localhost:11434
 
-Run with: COV_LLM_MODEL=mathstral:7b pytest crates/covalence-python/tests/test_llm.py
+Run with: COV_LLM_MODEL=mathstral:7b pytest crates/ffi/python/tests/test_llm.py
 """
 
 import urllib.error

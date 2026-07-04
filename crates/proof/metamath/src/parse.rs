@@ -12,7 +12,8 @@
 //!
 //! The reader drives a [`DatabaseSink`]: [`parse`] / [`parse_with_resolver`]
 //! build the in-memory [`crate::Database`] (the canonical sink), but the same
-//! reader can feed any sink (e.g. a future HOL-backed one in `covalence-hol`).
+//! reader can feed any sink (e.g. the HOL-backed `HolPropSink` in
+//! `covalence-init`'s `metalogic::mm_sink`).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -120,7 +121,8 @@ pub fn parse(input: &str) -> Result<Database, MmError> {
 /// Parse a `.mm` source string, driving a caller-supplied [`DatabaseSink`] (no
 /// file inclusion). Unlike [`parse`] — which builds the in-memory [`Database`] —
 /// this lets an *alternative backend* consume the statement stream directly: in
-/// particular a HOL-backed sink (in `covalence-hol`) that **constructs
+/// particular a HOL-backed sink (`covalence-init`'s
+/// `metalogic::mm_sink::HolPropSink`) that **constructs
 /// `⊢ Derivable_…` theorems as it reads**. The reader drives the high-level
 /// `DatabaseSink` API; the backend decides what to build.
 pub fn parse_into(input: &str, sink: &mut impl DatabaseSink) -> Result<(), MmError> {

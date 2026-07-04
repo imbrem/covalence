@@ -1,4 +1,4 @@
-# Skeletons — `covalence-hol::script` (proof-script authoring + replay layer)
+# Skeletons — `covalence-init::script` (proof-script authoring + replay layer)
 
 Open placeholders for the S-expression proof authoring + replay layer. See
 `CLAUDE.md` § Skeletons for the rules, the [crate index](../../SKELETONS.md), and
@@ -50,7 +50,7 @@ the [root index](../../../../../../SKELETONS.md).
   `prop.cov` ~2s (vs `nat.cov` 240ms, rest <85ms). Real proof-replay cost, likely the
   same impredicative-term / structural-equality blow-ups as `init/regex` soundness (large
   terms re-traversed without sharing). Repro:
-  `COV_PROFILE=1 cargo test -p covalence-hol --lib init -- --nocapture` then grep
+  `COV_PROFILE=1 cargo test -p covalence-init --lib init -- --nocapture` then grep
   `cov-profile`. Candidate fix: term hash-consing / the `covalence-pure` split.
 
 ## Minor / deferred features

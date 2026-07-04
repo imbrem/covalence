@@ -2,7 +2,7 @@
 //!
 //! A tiny, theory-agnostic [Metamath] proof checker **and** its `.mm` format
 //! reader. This is the **lower, HOL-free crate**: the engine here depends only
-//! on [`covalence_sexp`], so `covalence-hol` depends on *this* crate (a
+//! on [`covalence_sexp`], so `covalence-init` depends on *this* crate (a
 //! HOL-backed consumer of a Metamath [`Database`]) — not the other way around.
 //!
 //! Metamath is a *metalogic*: its sole proof primitive is **metavariable
@@ -56,7 +56,7 @@
 //! See `SKELETONS.md` (co-located) for deferrals: symbol interning for `set.mm`
 //! scale/performance, the structured-tree encoding, the canonical `.mm`
 //! serializer, the HOL-backed [`DatabaseSink`], and the consumer-side `#logic` /
-//! `Derivable_L` correspondence layer (in `covalence-hol`).
+//! `Derivable_L` correspondence layer (in `covalence-init`).
 //!
 //! [Metamath]: https://us.metamath.org/
 

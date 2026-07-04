@@ -20,7 +20,7 @@
 	export type BlobResolver = (hash: Hash) => Promise<Uint8Array | null>;
 
 	// Tag strings — keep in sync with `*_HASH_CTX` constants in
-	// crates/covalence-graph. These are BLAKE3 derivation contexts that
+	// crates/lib/graph. These are BLAKE3 derivation contexts that
 	// double as tag registry keys.
 	const TAG_GRAPH_ORDERED = 'cov:graph@0.1.0 ordered';
 	const TAG_STRING_DIAGRAM = 'cov:graph@0.1.0 string-diagram';

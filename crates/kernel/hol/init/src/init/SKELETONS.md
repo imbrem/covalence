@@ -1,4 +1,4 @@
-# Skeletons — `covalence-hol::init` (theory catalogue)
+# Skeletons — `covalence-init::init` (theory catalogue)
 
 Open placeholders for the `init/*` theories. See `CLAUDE.md` § Skeletons for the
 rules, the [crate index](../../SKELETONS.md), and the [root
@@ -102,9 +102,10 @@ index](../../../../../../SKELETONS.md).
     `∀S` makes terms large. Memoised/staged `beta_nf` or caching `denote` would help.
 
 - **Text theory** (`init/char.rs`, `string.rs`). Element types + `nil`-side facts done.
-  Missing — **all blocked on the in-flight `list` recursion (cons-side)**; do NOT build
-  until `init::list` exposes the cons-side surface:
-  - **Sequence `length`** (`bytes.len`/`string.len`) — blocked on `list.length`'s cons clause.
+  The list recursion theorem + `length`/`cat` cons clauses have landed
+  (`init/list_recursion.rs`); these ops now just need surfacing through the
+  `bytes`/`string` newtype seam:
+  - **Sequence `length`** (`bytes.len`/`string.len`) — bridge to `list.length`.
   - **`cat`/`at`/`index`/`slice`/`consNat`** for `bytes`/`string` — bridge to `list` ops.
     (`bytesConsNat`/`bytesAt` additionally need a `nat ↔ u8` conversion — see
     declaration-only ops.)

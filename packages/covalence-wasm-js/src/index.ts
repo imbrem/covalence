@@ -1,6 +1,6 @@
 // JS host backend for the `cov:wasm/runtime@0.1.0` WIT interface.
 //
-// Mirrors the Rust impl in `crates/covalence-wasm/src/runtime.rs` —
+// Mirrors the Rust impl in `crates/lib/wasm/core/src/runtime.rs` —
 // same conceptual surface (`compile` / `instantiate` / `callU32`)
 // using the browser/Node `WebAssembly.*` APIs.
 //

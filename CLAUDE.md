@@ -12,10 +12,10 @@ empty/stub modules, removed-pending-rewrite subsystems, `NotImplemented` /
 It is **split per crate** (the root [`SKELETONS.md`](./SKELETONS.md) is just an
 index of the per-crate files):
 
-- Each crate keeps its own **`crates/<crate>/SKELETONS.md`**.
-- A large crate may split *further by module*: its `crates/<crate>/SKELETONS.md`
+- Each crate keeps its own **`crates/<group>/<crate>/SKELETONS.md`**.
+- A large crate may split *further by module*: its `crates/<group>/<crate>/SKELETONS.md`
   becomes an index, and each module's skeletons live in a co-located
-  **`crates/<crate>/src/<module>/SKELETONS.md`** (e.g.
+  **`crates/<group>/<crate>/src/<module>/SKELETONS.md`** (e.g.
   `crates/kernel/hol/init/src/init/SKELETONS.md`,
   `crates/kernel/hol/init/src/script/SKELETONS.md`).
 
@@ -133,18 +133,26 @@ to work more effectively — capture repeatable procedures as skills.
 
 ## Crates
 
-The workspace is many `covalence-*` crates, layered roughly: **wrappers** (one
-per external dep) → **storage/content-addressing** → **kernel/TCB**
-(`covalence-pure` → `covalence-core` → thin `covalence-hol` + `covalence-metamath`
-→ `covalence-init` → `covalence-kernel`) → **proof-format frontends** →
-**app/systems**.
+`crates/` is hierarchical — `app/ ffi/ kernel/ lang/ lib/ proof/ server/ store/
+vcs/` — but package names keep their `covalence-*` prefixes (e.g.
+`covalence-pure` = `crates/kernel/base`, `covalence-core` =
+`crates/kernel/hol/core`, the `cov` CLI = `crates/app/cov`). Layered roughly:
+**wrappers** (one per external dep, mostly `crates/lib/`) →
+**storage/content-addressing** (`crates/store/`, `crates/vcs/`) → **kernel/TCB**
+(`covalence-pure(-trusted)` `crates/kernel/base` → `covalence-core`
+`crates/kernel/hol/core` → thin `covalence-hol` `crates/kernel/hol/traits` +
+`covalence-metamath` `crates/proof/metamath` → `covalence-init`
+`crates/kernel/hol/init` → `covalence-kernel` `crates/kernel/core`) →
+**proof-format frontends** (`crates/proof/`) → **app/systems** (`crates/app/`,
+`crates/server/`, `crates/ffi/`).
 
 **Dependency discipline:** all use of an external library goes through its wrapper
 crate — never import the underlying dep directly.
 
 The full per-crate catalogue (what each wraps/provides) lives in the
-**crate-map** skill; the dependency graph is `notes/vibes/crate-graph.md`. Read
-`notes/vibes/kernel-design.md` before touching the TCB (`covalence-core`).
+**crate-map** skill; the machine-tracked dependency graph + TCB closure is
+`docs/deps/` (`bun run deps`). Read `notes/vibes/kernel-design.md` before
+touching the TCB (`crates/kernel/base/trusted` + `crates/kernel/hol/core`).
 
 ## Conventions
 

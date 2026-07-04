@@ -1,4 +1,4 @@
-# Skeletons — `covalence-hol/src/spectec`
+# Skeletons — `covalence-init/src/grammar/spectec`
 
 Open placeholders in the SpecTec-grammar → byte-predicate front end. The regex
 engine it sits on is [`crate::grammar::regex`](../regex/SKELETONS.md). See

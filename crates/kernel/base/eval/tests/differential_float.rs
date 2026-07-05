@@ -89,6 +89,9 @@ const F32_BITS: &[u32] = &[
     0x3f00_0000, // 0.5
     0x3fc0_0000, // 1.5
     0x4020_0000, // 2.5
+    0xbf00_0000, // -0.5   (trunc/ceil/nearest -> -0.0: sign-of-zero)
+    0xbfc0_0000, // -1.5   (nearest ties-to-even -> -2.0)
+    0xc020_0000, // -2.5   (nearest ties-to-even -> -2.0)
     0x7f7f_ffff, // max normal
     0xff7f_ffff, // -max normal
     0x0000_0001, // smallest subnormal
@@ -118,6 +121,9 @@ const F64_BITS: &[u64] = &[
     0x3ff0_0000_0000_0000, // 1.0
     0xbff0_0000_0000_0000, // -1.0
     0x3fe0_0000_0000_0000, // 0.5
+    0xbfe0_0000_0000_0000, // -0.5   (trunc/ceil/nearest -> -0.0: sign-of-zero)
+    0xbff8_0000_0000_0000, // -1.5   (nearest ties-to-even -> -2.0)
+    0xc004_0000_0000_0000, // -2.5   (nearest ties-to-even -> -2.0)
     0x3ff8_0000_0000_0000, // 1.5
     0x4004_0000_0000_0000, // 2.5
     0x7fef_ffff_ffff_ffff, // max normal

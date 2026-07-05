@@ -86,17 +86,39 @@ buck2 compatibility is an interchange, not a rewrite.
   TCB *by declaration*, enumerable, diffable.
 - **The bridge is the existing core-on-pure seam**: `hol::Thm` is already a
   newtype over `pure::Thm<CoreLang, IsThm(Γ, p)>`. Acceleration = a base rule
-  that mints `IsThm(Γ, ⌜2+3=5⌝)` *directly* (sound because the definitional
-  unfolding exists in HOL — the rule is a certified shortcut, never new
-  strength). Nat/int/bytes facts enter HOL as `IsThm` certificates minted by
-  admitted base rules, not as kernel primitives.
-- **Numerals/literals become definitional**: nat = HOL-Light-style binary
-  numerals (`NUMERAL`/`BIT0`/`BIT1` over Peano zero/suc); int = the existing
-  `(nat × nat)/~` quotient; bytes = `list u8` with u8 as a defined enumeration
-  — and their *literal syntax* is sugar that elaborates to those terms, with
-  equality/arithmetic on big literals discharged by base-rule certificates (so
-  we keep the "kernel as binary-data substrate" efficiency WITHOUT the kernel
-  primitives).
+  that mints `IsThm(Γ, p)` *directly*, where `p`'s literal leaves are `toHOL`
+  denotations (below) — sound because the derivation exists in pure HOL; the
+  rule is a certified shortcut, never new strength. Nat/int/bytes facts enter
+  HOL as `IsThm` certificates minted by admitted base rules, not as kernel
+  primitives.
+- **Literals: denote, never construct (`toHOL`).** The maintainer's key move
+  (2026-07): the canonical HOL term for a native value is **never materialized**.
+  `toHOL` is an *uninterpreted base op* per carrier —
+  `ToHOL: Op<In = Nat, Out = HolTm>` (likewise `Int`, `Bytes`) — so the base
+  expression `toHOL 5` *denotes* `S(S(S(S(S(Z)))))` without building it, and
+  `toHOL b` for a megabyte bytestring denotes the mega-`cons`-tower for free.
+  The HOL term formers (`app`, `const`, …) are base ops on the `HolTm` sort too,
+  so partially-symbolic terms like `S (toHOL 4)` are just base expressions.
+  Admits-gated rules then derive facts about the denotations directly:
+  - **structural/unfolding equations** (`Eqn` at sort `HolTm`):
+    `toHOL (n+1) = S (toHOL n)`, `toHOL (byte:rest) = cons (toHOL byte) (toHOL rest)`
+    — the defining properties of the denotation;
+  - **computation-backed derivability certificates** (`IsThm` facts):
+    from native `2 + 2 = 4` (the Nat `CanonRule`) derive
+    `IsThm(⊢ toHOL 2 + toHOL 2 = toHOL 4)` — HOL-provable equations minted
+    because the arithmetic computes, without ever unfolding either side.
+
+  The **soundness contract** of every such rule (its docstring obligation): for
+  every native value `b` there *exists* a HOL term `[b]` such that the defining
+  properties are derivable in pure HOL — existence-without-construction, the
+  same principle as "a standard theorem means a derivation exists". This
+  dissolves the numeral-representation question entirely (no binary-numeral
+  machinery needed for efficiency — the Peano/cons denotations are fine because
+  they are never built), and it keeps the "kernel as binary-data substrate"
+  efficiency with ZERO kernel support: big values live as native leaves under
+  `toHOL`, and only the equations you actually use ever exist. (This is the
+  `ToHOL(Nat, Tm)` idea from the covalence-fol sketch, now landing as base ops
+  + admitted rules.)
 
 Trust story after: **TCB = base kernel (~1k LoC) + the base MANIFEST (each
 admitted rule auditable in isolation) + textbook HOL Light (~small)**. The
@@ -147,8 +169,10 @@ is the progress meter, and CI forbids new edges.
    discipline as `reduce_prim`'s docstrings today, but *enumerable* in the
    manifest instead of latent in the kernel.
 4. **Re-route + shrink** (many small PRs): consumer by consumer, init's
-   accelerated paths call `hol/eval` instead of `obs/`; numerals switch to the
-   definitional representation with certificate-backed literal equality.
+   accelerated paths call `hol/eval` instead of `obs/`; literal-carrying terms
+   switch to `toHOL` denotations (never-constructed canonical terms) with the
+   unfolding equations + computation-backed certificates replacing kernel
+   literals.
 5. **Delete**: `obs/` reaches zero consumers → delete crate; `TermKind::Int`/
    `Blob` reach zero constructors → remove variants (a *kernel-shrinking*
    change — celebrate it); `hol/logic` diff-checked against the HOL Light

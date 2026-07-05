@@ -66,8 +66,9 @@ pub use blob::{
 };
 pub use cov::{CoreEnv, CovError, Entry, core_env, parse_core, term_str, type_str};
 pub use floats::{
-    FLOAT_CVT_TAGS, FloatKey, FloatOp, FloatWidth, f32_spec, f32_ty, f64_spec, f64_ty,
-    float_bits_op, float_bits_spec, lookup_float_op,
+    FLOAT_CVT_TAGS, FloatKey, FloatOp, FloatWidth, TypedF64, as_f64_bits, f32_spec, f32_ty,
+    f64_from_bits, f64_op, f64_op_spec, f64_spec, f64_to_bits, f64_ty, float_bits_op,
+    float_bits_spec, lookup_f64_op, lookup_float_op, mk_f64,
 };
 pub use fun::{compose, compose_spec, flip, flip_spec, id, id_spec, konst, konst_spec};
 pub use int::{

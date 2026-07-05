@@ -291,6 +291,26 @@ mod tests {
         assert!(twin_for(&spec).unwrap().is_none());
     }
 
+    /// The typed `f64` ops (stage F2c) are monomorphic let-style coercion
+    /// wrappers, so they twin like the connectives: the stored defining
+    /// theorem `⊢ const = fromBits (opBits (toBits a) (toBits b))` and the
+    /// transitional spec equation share the body, reversibly.
+    #[test]
+    fn typed_f64_ops_twin_like_connectives() {
+        use covalence_hol_eval::defs::{TypedF64, f64_op_spec};
+        for op in TypedF64::ALL {
+            let spec = f64_op_spec(op);
+            let twin = twin_for(&spec)
+                .unwrap()
+                .unwrap_or_else(|| panic!("{op:?} is let-style and monomorphic"));
+            let (const_lhs, def_body) = twin.def_thm.concl().as_eq().unwrap();
+            let (_, spec_body) = twin.spec_eq.concl().as_eq().unwrap();
+            assert_eq!(def_body, spec_body, "{op:?}: twin and spec share the body");
+            assert_eq!(const_lhs, &twin.const_tm);
+            assert!(matches!(twin.const_tm.kind(), TermKind::Def(_)));
+        }
+    }
+
     /// The `unit` TypeSpec re-home prototype: `new_type_definition` yields a
     /// fresh subtype with working bijection theorems.
     #[test]

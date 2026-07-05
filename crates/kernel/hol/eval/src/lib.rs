@@ -41,8 +41,10 @@ pub mod lit;
 pub mod rules;
 mod tohol;
 mod tohol_ops;
+mod typed_float;
 
 pub use certs::{PrimFamily, prim_family};
+pub use defs::{as_f64_bits, mk_f64};
 pub use lang::{CoreEval, EvalThm, EvalTypeDef};
 pub use lit::{
     as_blob, as_int, as_nat, as_u32, as_u64, kind_name, mk_blob, mk_int, mk_nat, mk_u32, mk_u64,
@@ -67,7 +69,7 @@ fn unwind_app(t: &Term) -> (Term, Vec<Term>) {
 }
 
 /// Apply an admitted `CoreProp`-concluding rule and land it as an [`EvalThm`].
-fn mint<R: Rule<CoreEval, Concl = covalence_core::seam::CoreProp>>(
+pub(crate) fn mint<R: Rule<CoreEval, Concl = covalence_core::seam::CoreProp>>(
     rule: R,
     input: R::Input,
 ) -> Option<EvalThm> {
@@ -84,9 +86,12 @@ fn mint<R: Rule<CoreEval, Concl = covalence_core::seam::CoreProp>>(
 /// The catalogue: HOL `=` over two same-kind literals (equality AND
 /// disequality), the primitive `succ`, the `nat.*` / `int.*` / `bytes.*`
 /// catalogue ops, the nat↔int/bytes coercions, the fixed-width `uN`/`sN`
-/// ops, and the bit-level WASM float ops (`f32.addBits`, `f64.leBits`,
+/// ops, the bit-level WASM float ops (`f32.addBits`, `f64.leBits`,
 /// `u32.truncSatBits.f32`, … — WASM deterministic profile on `u32`/`u64` bit
-/// patterns). Conventions: saturating nat `sub`/`pred`; `n / 0 = 0` and
+/// patterns), the typed `f64.*` ops on `f64` literals (`fromBits ⌜bits⌝` —
+/// the F2c layer, a composite of gated steps, see [`defs::TypedF64`]), and
+/// the coercion round-trip `rep (abs v) = v` on the float newtypes.
+/// Conventions: saturating nat `sub`/`pred`; `n / 0 = 0` and
 /// `n mod 0 = n`; fixed-width arithmetic wraps mod `2^width`; detectably
 /// unrepresentable results refuse (oversize `pow` exponents on a base ≥ 2,
 /// oversize `shl` shifts on a non-zero operand; `shr` is total).
@@ -121,17 +126,25 @@ pub fn reduce_with<C: TrustedCons + ?Sized>(t: &Term, cons: &mut C) -> Option<Ev
         // Catalogue dispatch by canonical handle (empty type args only —
         // the same restriction as the legacy reducer).
         TermKind::Spec(spec, targs) if targs.is_empty() => {
-            let lits: Vec<Lit> = args.iter().map(Lit::from_term).collect::<Option<_>>()?;
-            let input = (spec.clone(), lits);
-            match prim_family(spec)? {
-                PrimFamily::NatArith => mint(rules::NatArithCert, input)?,
-                PrimFamily::IntArith => mint(rules::IntArithCert, input)?,
-                PrimFamily::Bytes => mint(rules::BytesCert, input)?,
-                PrimFamily::Coercion => mint(rules::CoercionCert, input)?,
-                PrimFamily::FixedWidth => mint(rules::FixedWidthCert, input)?,
-                PrimFamily::Float => mint(rules::FloatCert, input)?,
+            if let Some(op) = defs::lookup_f64_op(spec) {
+                // The typed float layer (F2c): a composite of already-gated
+                // steps (δ/β + coercion round-trip + FloatCert), not a rule.
+                typed_float::typed_f64_step(op, spec, &args)?
+            } else {
+                let lits: Vec<Lit> = args.iter().map(Lit::from_term).collect::<Option<_>>()?;
+                let input = (spec.clone(), lits);
+                match prim_family(spec)? {
+                    PrimFamily::NatArith => mint(rules::NatArithCert, input)?,
+                    PrimFamily::IntArith => mint(rules::IntArithCert, input)?,
+                    PrimFamily::Bytes => mint(rules::BytesCert, input)?,
+                    PrimFamily::Coercion => mint(rules::CoercionCert, input)?,
+                    PrimFamily::FixedWidth => mint(rules::FixedWidthCert, input)?,
+                    PrimFamily::Float => mint(rules::FloatCert, input)?,
+                }
             }
         }
+        // Coercion round-trip on a float newtype: `⊢ rep (abs v) = v`.
+        TermKind::SpecRep(..) if args.len() == 1 => typed_float::collapse_step(&head, &args[0])?,
         _ => return None,
     };
     let _ = thm.concl().cons_with(cons);
@@ -140,7 +153,7 @@ pub fn reduce_with<C: TrustedCons + ?Sized>(t: &Term, cons: &mut C) -> Option<Ev
 
 /// `⊢ T` — derived through the cert path: `LitEqCert` gives
 /// `⊢ (T = T) = T`, `refl` gives `⊢ T = T`, and `eq_mp` concludes `⊢ T`.
-fn truth() -> Result<EvalThm> {
+pub(crate) fn truth() -> Result<EvalThm> {
     let bridge =
         mint(rules::LitEqCert, (Lit::Bool(true), Lit::Bool(true))).ok_or(Error::NotReducible)?; // ⊢ (T = T) = T
     let refl = EvalThm::refl(Term::bool_lit(true))?; // ⊢ T = T

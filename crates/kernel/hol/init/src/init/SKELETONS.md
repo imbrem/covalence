@@ -23,6 +23,14 @@ Bridge built (S9a); the flip is maintainer-gated. See
   the **`int` quotient** needs a *quotient-typedef helper* over `⊢ equivalence R`
   (design in `defs-rehome-design.md` §e). No accessor is flipped onto a twin.
 
+## Ball arithmetic — enclosure theorems (F4)
+
+- **`ball.add` containment unproved** (`init/ball.rs`, F2c groundwork = data +
+  evaluation only): `x ∈ X ∧ y ∈ Y ⟹ x + y ∈ ball.add X Y` needs a real-side
+  ball-membership predicate plus IEEE rounding-error lemmas over the typed
+  `f64` ops. The outward-rounding formula (module docs) is **provisional**
+  until that proof pins it.
+
 ## Postulates pending proof
 
 - **`rat` field/order leaves** (`init/rat.rs`, postulated via the `axiom` helper).

@@ -36,10 +36,11 @@
 //! (`SKELETONS.md`).
 //!
 //! Family coverage: `nat.add` (NatArithCert), `int.add` (IntArithCert),
-//! `bytes.cat` (BytesCert), `u8.add` (FixedWidthCert). The bytes and
-//! fixed-width *definitional evaluations* are blocked (list recursion
-//! pending / intentionally declaration-only conversions — see the module
-//! notes on each test); their body-forcing differentials live in
+//! `bytes.cat` (BytesCert), `u8.add` (FixedWidthCert), `f64.add` (the F2c
+//! typed layer over FloatCert). The bytes and fixed-width *definitional
+//! evaluations* are blocked (list recursion pending / intentionally
+//! declaration-only conversions — see the module notes on each test); their
+//! body-forcing differentials live in
 //! `tests/audit_reduce.rs::audit_reduce_matches_body`.
 
 use covalence_core::seam::HolTier;
@@ -305,6 +306,103 @@ fn pure_hol_unit_u8_add_wrap_spine_and_cert() {
     let by_cert = reduce(&redex).expect("FixedWidthCert decides the sample");
     assert!(by_cert.hyps().is_empty());
     assert_eq!(rhs_of(&by_cert), Term::u8_lit(44));
+}
+
+// ============================================================================
+// f64.add 1.5 2.25 = 3.75  (the F2c typed layer over FloatCert)
+// ============================================================================
+
+/// The typed `f64` layer's sample, per the honest scoping above: the typed
+/// op is a let-style coercion wrapper (the twin-eligible definition), so the
+/// **pure δ/β spine** at `Thm<CoreLang>` reaches
+/// `fromBits (f64.addBits (toBits x) (toBits y))`, and even the coercion
+/// round-trip laws (`spec_rep_abs_fwd` + the β of the trivial newtype
+/// selector) are pure-tier — only two facts are eval-tier: `⊢ T` (the D3
+/// literal residue discharging the selector) and the layer-1 `FloatCert`
+/// bit equation. The hand-built chain must agree with the typed reduction
+/// driver's fact, conclusion-for-conclusion.
+#[test]
+fn pure_hol_unit_f64_add_1_5_2_25() {
+    use covalence_hol_eval::defs::{
+        FloatKey, FloatOp, FloatWidth, TypedF64, f64_from_bits, f64_op, f64_spec, f64_to_bits,
+        float_bits_op,
+    };
+    use covalence_hol_eval::{mk_f64, mk_u64};
+
+    let (la, lb) = (mk_u64(1.5f64.to_bits()), mk_u64(2.25f64.to_bits()));
+    let (x, y) = (mk_f64(1.5), mk_f64(2.25));
+    let redex = app2(f64_op(TypedF64::Add), x.clone(), y.clone());
+
+    // (1) The pure δ/β spine, at Thm<CoreLang>:
+    //     ⊢ f64.add x y = fromBits (f64.addBits (toBits x) (toBits y)).
+    let spine_thm = pure_spine(&redex);
+    assert_pure_spine(&spine_thm, &redex);
+    let bits_head = float_bits_op(FloatKey::Op(FloatWidth::F64, FloatOp::Add));
+    let unfolded = Term::app(
+        f64_from_bits(),
+        app2(
+            bits_head.clone(),
+            Term::app(f64_to_bits(), x.clone()),
+            Term::app(f64_to_bits(), y.clone()),
+        ),
+    );
+    assert_eq!(
+        rhs_of(&spine_thm),
+        unfolded,
+        "f64.add unfolds to its coercion-sandwich definition on the sample"
+    );
+
+    // (2) The definitional derivation. Pure part per argument: the kernel
+    //     subtype law `⊢ P ⌜bits⌝ ⟹ toBits (fromBits ⌜bits⌝) = ⌜bits⌝` and
+    //     the selector β `⊢ P ⌜bits⌝ = T`, both at Thm<CoreLang>; the ⊢ T
+    //     discharge is the eval-tier residue.
+    let truth = covalence_init::init::logic::truth(); // ⊢ T (eval tier)
+    let round_trip = |l: &Term| -> EvalThm {
+        let fwd: PureThm = PureThm::spec_rep_abs_fwd(f64_spec(), Vec::new(), l.clone()).unwrap();
+        let pred = f64_spec().tm().unwrap().clone(); // λ_:u64. T
+        let beta: PureThm = PureThm::beta_conv(Term::app(pred, l.clone())).unwrap();
+        assert_eq!(
+            rhs_of(&beta),
+            Term::bool_lit(true),
+            "the f64 newtype selector β-reduces to T"
+        );
+        // Lift the two pure facts and discharge with ⊢ T.
+        let fwd: EvalThm = fwd.lift().unwrap();
+        let beta: EvalThm = beta.lift().unwrap();
+        let p = beta.sym().unwrap().eq_mp(truth.clone()).unwrap(); // ⊢ P ⌜l⌝
+        fwd.imp_elim(p).unwrap() // ⊢ toBits (fromBits ⌜l⌝) = ⌜l⌝
+    };
+
+    //     The layer-1 bit certificate (FloatCert — the F2b family; the typed
+    //     driver itself is never invoked in this chain).
+    let bits_redex = app2(bits_head.clone(), la.clone(), lb.clone());
+    let cert = reduce(&bits_redex).expect("FloatCert decides the bit sample");
+
+    //     Assemble: spine ∘ congruence(round-trips) ∘ cert ∘ fromBits-cong.
+    let bits_eq = EvalThm::refl(bits_head)
+        .unwrap()
+        .mk_comb(round_trip(&la))
+        .unwrap()
+        .mk_comb(round_trip(&lb))
+        .unwrap()
+        .trans(cert)
+        .unwrap(); // ⊢ f64.addBits (toBits x) (toBits y) = ⌜3.75 bits⌝
+    let under_abs = EvalThm::refl(f64_from_bits())
+        .unwrap()
+        .mk_comb(bits_eq)
+        .unwrap();
+    let lifted: EvalThm = spine_thm.lift().unwrap();
+    let by_def = lifted.trans(under_abs).unwrap();
+    assert!(by_def.hyps().is_empty());
+
+    // (3) The typed driver's fact — conclusion-equal to (2).
+    let by_drv = reduce(&redex).expect("the typed driver decides the sample");
+    assert_eq!(
+        by_def.concl(),
+        by_drv.concl(),
+        "definitional chain and the typed float driver disagree on 1.5 + 2.25"
+    );
+    assert_eq!(rhs_of(&by_drv), mk_f64(3.75));
 }
 
 // ============================================================================

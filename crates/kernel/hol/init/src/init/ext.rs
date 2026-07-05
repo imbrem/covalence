@@ -160,8 +160,8 @@ pub trait TermExt: Sized {
     /// **Constant folding** — build `⊢ self = self'`, evaluating every
     /// closed primitive application in `self`'s spine via
     /// [`covalence_hol_eval::reduce`] (`nat`/`int`/`bytes`/`bool`
-    /// arithmetic, `succ`/`pred`, literal `=`), innermost-first and
-    /// repeatedly.
+    /// arithmetic, `succ`/`pred`, literal `=`, the typed `f64` ops and
+    /// coercion round-trips), innermost-first and repeatedly.
     ///
     /// **Weak — does not descend under λ.** This is ι/prim reduction
     /// only: no β, no δ. It folds closed primitive applications in
@@ -470,6 +470,96 @@ fn reduce_opt<C: TrustedCons + ?Sized>(
         Some(step) => cong(f_eq, x_eq, cons)?.trans_with(step, cons).map(Some), // ⊢ t = fx = literal
         None if f_eq.is_some() || x_eq.is_some() => cong(f_eq, x_eq, cons).map(Some),
         None => Ok(None), // fully irreducible — `t` unchanged
+    }
+}
+
+/// ι′-step: the **proved product projections** — `⊢ fst (pair a b) = a` /
+/// `⊢ snd (pair a b) = b` when `t` is a canonical projection applied to a
+/// canonical `pair` application (both heads matched by pointer identity on
+/// the catalogue handles, with equal type args). The equation comes from
+/// [`crate::init::prod::fst_pair`] / [`snd_pair`](crate::init::prod::snd_pair)
+/// — genuine theorems assembled from kernel rules, so this step composes
+/// proofs and cannot forge.
+///
+/// Deliberately **not** wired into [`TermExt::reduce`]: existing derivations
+/// (the `int` quotient theory) hand-assemble `trans` chains against the
+/// reducer's exact normal forms, and firing projections globally shifts
+/// those forms mid-proof. Consumers that want projection evaluation opt in
+/// per conversion (the `ball` evaluator's [`fire_all`] pass).
+pub(crate) fn prod_proj_step(t: &Term) -> Option<Thm> {
+    let (proj, p) = t.as_app()?;
+    let (proj_spec, proj_args) = proj.as_spec()?;
+    let first = if proj_spec.ptr_eq(&covalence_hol_eval::defs::fst_spec()) {
+        true
+    } else if proj_spec.ptr_eq(&covalence_hol_eval::defs::snd_spec()) {
+        false
+    } else {
+        return None;
+    };
+    // `p` must be `pair α β a b` at the projection's own type args.
+    let (pa, b) = p.as_app()?;
+    let (ph, a) = pa.as_app()?;
+    let (pair_spec, pair_args) = ph.as_spec()?;
+    if !pair_spec.ptr_eq(&covalence_hol_eval::defs::pair_spec())
+        || pair_args != proj_args
+        || pair_args.len() != 2
+    {
+        return None;
+    }
+    let (alpha, beta) = (&pair_args[0], &pair_args[1]);
+    if first {
+        crate::init::prod::fst_pair(alpha, beta, a, b).ok()
+    } else {
+        crate::init::prod::snd_pair(alpha, beta, a, b).ok()
+    }
+}
+
+/// `⊢ t = t'` firing an opt-in conversion `step` (e.g. [`prod_proj_step`])
+/// at every node of `t`'s application spine, innermost-first. **Weak — does
+/// not descend under λ.** `step` must yield `⊢ node = node'` equations
+/// (anything else fails the congruence assembly); the identity conversion
+/// when nothing fires. This is how evaluation passes that must not perturb
+/// [`TermExt::reduce`]'s normal forms (see [`prod_proj_step`]) compose in.
+pub(crate) fn fire_all(t: &Term, step: &dyn Fn(&Term) -> Option<Thm>) -> Result<Thm> {
+    match fire_all_opt(t, step)? {
+        Some(thm) => Ok(thm),
+        None => Thm::refl(t.clone()),
+    }
+}
+
+/// Sharing-preserving core of [`fire_all`]: `None` when `step` fires nowhere
+/// in `t`'s spine (so `t` is unchanged — no no-op congruence).
+fn fire_all_opt(t: &Term, step: &dyn Fn(&Term) -> Option<Thm>) -> Result<Option<Thm>> {
+    let Some((f, x)) = t.as_app() else {
+        return Ok(None);
+    };
+    let f_eq = fire_all_opt(f, step)?;
+    let x_eq = fire_all_opt(x, step)?;
+    let rhs = |e: &Thm| {
+        e.concl()
+            .as_eq()
+            .expect("conv yields an equation")
+            .1
+            .clone()
+    };
+    let f2 = f_eq.as_ref().map(&rhs).unwrap_or_else(|| f.clone());
+    let x2 = x_eq.as_ref().map(&rhs).unwrap_or_else(|| x.clone());
+    let fired = step(&Term::app(f2, x2));
+    if fired.is_none() && f_eq.is_none() && x_eq.is_none() {
+        return Ok(None); // nothing fired — reuse `t`
+    }
+    let fe = match f_eq {
+        Some(e) => e,
+        None => Thm::refl(f.clone())?,
+    };
+    let xe = match x_eq {
+        Some(e) => e,
+        None => Thm::refl(x.clone())?,
+    };
+    let cong = fe.cong_app(xe)?; // ⊢ t = f₂ x₂
+    match fired {
+        Some(s) => cong.trans(s).map(Some),
+        None => Ok(Some(cong)),
     }
 }
 

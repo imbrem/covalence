@@ -1,20 +1,21 @@
-//! UNTRUSTED proof drivers over the [`crate::seam`] — zero TCB.
+//! The toHOL **symbolic-tier** driver (moved here from `covalence-core`'s
+//! in-crate `proofs` module — the S4 first slice): a computation-backed
+//! `IsThm` certificate whose numeral leaves are `toHOL` denotations, reified
+//! through the admitted toHOL rules and transported with the base `eq_mp`,
+//! landing as a [`Thm`] bit-for-bit equal to the legacy literal-reduction
+//! fact. UNTRUSTED — composes gated mints only.
 //!
-//! Everything here only *composes* already-gated mints (`apply` / `canon` /
-//! the ungated equality calculus / the base `eq_mp`); it can fail, but it
-//! cannot forge. For the toHOL first slice the driver lives in-crate; it
-//! moves to the dedicated `covalence-hol-eval` driver crate in the next
-//! stage.
+//! This is the exemplar of the never-materialize pipeline (big values stay
+//! symbolic; only the equations actually used ever exist). The bulk
+//! `reduce_prim`-replacement path in [`crate::reduce`] instead lands the
+//! per-family certificates directly.
 
 use covalence_pure::{CanonRule as _, Eqn, Expr, Thm as PThm, Val, apply, canon};
 use covalence_pure_eval::NatAdd;
 use covalence_types::Nat;
 
-use crate::ctx::Ctx;
-use crate::error::{Error, Result};
-use crate::seam::{CoreLang, HolApp, HolAppE, IsThm, NatAddCert, PairVal, ToHolNatVal};
-use crate::term::{Term, Type};
-use crate::thm::Thm;
+use covalence_core::seam::{CoreLang, HolApp, HolAppE, IsThm, NatAddCert, PairVal, ToHolNatVal};
+use covalence_core::{Ctx, Error, Result, Term, Thm, Type, defs};
 
 /// A pure theorem in the core language.
 type PT<P> = PThm<CoreLang, P>;
@@ -57,7 +58,7 @@ pub fn nat_add_thm(a: Nat, b: Nat) -> Result<Thm> {
 
     // … and push them up the HolApp spine, innermost-first (the nesting must
     // mirror `seam::NatAddEqE` exactly for eq_mp's structural match).
-    let add = PThm::refl(Val(crate::defs::nat_add()), CoreLang);
+    let add = PThm::refl(Val(defs::nat_add()), CoreLang);
     let lhs_partial = reify_app(add, ta)?; // ⊢ (nat.add (toHOL a)) = Val
     let lhs = reify_app(lhs_partial, tb)?; // ⊢ (nat.add (toHOL a) (toHOL b)) = Val
     let eq_op = PThm::refl(Val(Term::eq_op(Type::nat())), CoreLang);

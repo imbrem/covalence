@@ -18,6 +18,7 @@ digraph deps {
   "graph";
   "hash";
   "hol";
+  "hol-eval";
   "init";
   "json";
   "kernel";
@@ -93,6 +94,10 @@ digraph deps {
   "graph" -> "parse";
   "hash" -> "rand";
   "hol" -> "core";
+  "hol-eval" -> "core";
+  "hol-eval" -> "pure";
+  "hol-eval" -> "pure-eval";
+  "hol-eval" -> "types";
   "init" -> "core";
   "init" -> "grammar";
   "init" -> "hash";

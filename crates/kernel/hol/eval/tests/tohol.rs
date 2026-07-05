@@ -1,13 +1,14 @@
-//! The toHOL first-slice acceptance tests (purge stage S4).
+//! The toHOL first-slice acceptance tests (purge stage S4, driver moved here
+//! from `covalence-core` in S5).
 //!
 //! Proves the design end-to-end: a computation-backed `IsThm` certificate,
 //! reified through the admitted toHOL rules and transported with the base
 //! `eq_mp`, lands as a `core::Thm` **bit-for-bit equal** to the legacy
 //! literal-reduction fact — plus the seam's gating negative tests.
 
-use covalence_core::proofs::nat_add_thm;
 use covalence_core::seam::{CoreLang, HolApp, NatAddCert};
 use covalence_core::{Term, Thm, defs};
+use covalence_hol_eval::nat_add_thm;
 use covalence_pure::{Error as PureError, Thm as PThm, apply, canon};
 use covalence_pure_eval::{Builtins, NatAdd};
 use covalence_types::Nat;

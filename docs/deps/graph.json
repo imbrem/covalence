@@ -18,6 +18,7 @@
     "covalence-graph",
     "covalence-hash",
     "covalence-hol",
+    "covalence-hol-eval",
     "covalence-init",
     "covalence-json",
     "covalence-kernel",
@@ -217,6 +218,22 @@
     {
       "from": "covalence-hol",
       "to": "covalence-core"
+    },
+    {
+      "from": "covalence-hol-eval",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-hol-eval",
+      "to": "covalence-pure"
+    },
+    {
+      "from": "covalence-hol-eval",
+      "to": "covalence-pure-eval"
+    },
+    {
+      "from": "covalence-hol-eval",
+      "to": "covalence-types"
     },
     {
       "from": "covalence-init",

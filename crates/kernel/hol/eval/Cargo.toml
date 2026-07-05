@@ -1,0 +1,17 @@
+[package]
+name = "covalence-hol-eval"
+version = "0.0.0"
+edition = "2024"
+
+# UNTRUSTED reduction driver over the covalence-core seam — zero TCB.
+# Recognizes concrete literal redexes and re-derives them through the
+# admitted per-family certificate rules (`covalence_core::seam`) computed by
+# `covalence-pure-eval`; it can fail, but it cannot forge. This crate must
+# NEVER be depended on by the kernel (and never depends on the
+# `covalence-init` catalogue — BANNED edge in scripts/dep-graph.mjs).
+
+[dependencies]
+covalence-core = { path = "../core" }
+covalence-pure = { path = "../../base" }
+covalence-pure-eval = { path = "../../base/eval" }
+covalence-types = { path = "../../../lib/types" }

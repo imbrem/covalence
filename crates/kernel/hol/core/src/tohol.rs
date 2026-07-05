@@ -85,6 +85,12 @@ impl CanonRule for HolApp {
 /// A `toHOL`-denoted natural: `App<ToHolNat, Val<Nat>>`.
 pub type ToHolNatE = App<ToHolNat, Val<Nat>>;
 
+/// A `toHOL`-denoted integer: `App<ToHolInt, Val<Int>>`.
+pub type ToHolIntE = App<ToHolInt, Val<Int>>;
+
+/// A `toHOL`-denoted bytestring: `App<ToHolBytes, Val<Bytes>>`.
+pub type ToHolBytesE = App<ToHolBytes, Val<Bytes>>;
+
 /// A symbolic HOL application `f x` at the base layer.
 pub type HolAppE<F, X> = App<HolApp, (F, X)>;
 

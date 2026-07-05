@@ -12,9 +12,15 @@
 //! - The toHOL vocabulary ([`ToHolNat`] / [`ToHolInt`] / [`ToHolBytes`] /
 //!   [`HolApp`] and the slice's expression aliases) — uninterpreted ops plus
 //!   the admitted `HolApp` evaluation.
-//! - The admitted toHOL rules ([`ToHolNatVal`] / [`PairVal`] /
-//!   [`NatAddCert`]) — appliable from outside via [`covalence_pure::apply`]
-//!   (still gated on their `TypeId`s being admitted).
+//! - The admitted toHOL rules — the transitional reify rules
+//!   ([`ToHolNatVal`] / [`ToHolIntVal`] / [`ToHolBytesVal`] / [`PairVal`]),
+//!   the per-op symbolic certificate ([`NatAddCert`]), and the per-family
+//!   computation-backed certificates ([`NatArithCert`] / [`SuccCert`] /
+//!   [`IntArithCert`] / [`BytesCert`] / [`FixedWidthCert`] / [`LitEqCert`] /
+//!   [`CoercionCert`], with their [`Lit`] argument currency and the
+//!   [`prim_family`] recognizer metadata) — appliable from outside via
+//!   [`covalence_pure::apply`] (still gated on their `TypeId`s being
+//!   admitted).
 //! - The landing constructor is [`Thm::from_pure`](crate::Thm::from_pure).
 //!
 //! The other half of the seam is `CoreLang`'s `extends` opening to
@@ -24,8 +30,13 @@
 //! they change the TCB shape (`docs/deps/tcb.json` gains
 //! `covalence-pure-eval`).
 
+pub use crate::thm::certs::{Lit, PrimFamily, prim_family};
 pub use crate::thm::lang::{CoreLang, CoreProp, IsThm};
-pub use crate::thm::rules::{NatAddCert, PairVal, ToHolNatVal};
+pub use crate::thm::rules::{
+    BytesCert, CoercionCert, FixedWidthCert, IntArithCert, LitEqCert, NatAddCert, NatArithCert,
+    PairVal, SuccCert, ToHolBytesVal, ToHolIntVal, ToHolNatVal,
+};
 pub use crate::tohol::{
-    HolApp, HolAppE, NatAddEqE, NatAddLhsE, ToHolBytes, ToHolInt, ToHolNat, ToHolNatE,
+    HolApp, HolAppE, NatAddEqE, NatAddLhsE, ToHolBytes, ToHolBytesE, ToHolInt, ToHolIntE, ToHolNat,
+    ToHolNatE,
 };

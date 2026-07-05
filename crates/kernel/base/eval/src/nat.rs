@@ -33,6 +33,14 @@ fn shift_amount(shift: &Nat) -> usize {
 }
 
 canon_op! {
+    /// `nat.succ` — the successor (the kernel's primitive `succ` on a closed
+    /// literal: `succ n = n + 1`, transcribing the succ arm of
+    /// `builtins.rs`).
+    NatSucc("nat.succ"): Nat => Nat,
+    |n| n + &Nat::one()
+}
+
+canon_op! {
     /// `nat.pred` — saturating predecessor: `pred 0 = 0`.
     NatPred("nat.pred"): Nat => Nat,
     |n| n.checked_sub(&Nat::one()).unwrap_or_else(Nat::zero)

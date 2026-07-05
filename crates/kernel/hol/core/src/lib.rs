@@ -61,16 +61,15 @@
 //! - The hypothesis context (`ctx.rs`) and HOL term builders (`hol.rs`).
 //! - The inference rules (`thm/`) and the derived-type/term catalogue
 //!   (`defs/`, semi-trusted — see `notes/vibes/kernel-design.md` §6).
-//! - The toHOL denotation ops (`tohol.rs`), the audited core-on-pure seam
-//!   surface (`seam.rs`), and the untrusted reification driver (`proofs.rs`,
-//!   headed to `covalence-hol-eval`).
+//! - The toHOL denotation ops (`tohol.rs`) and the audited core-on-pure
+//!   seam surface (`seam.rs`). The untrusted reduction/reification drivers
+//!   live downstream in `covalence-hol-eval`.
 
 mod builtins;
 pub mod ctx;
 pub mod defs;
 pub mod error;
 mod hol;
-pub mod proofs;
 pub mod seam;
 pub mod subst;
 pub mod term;

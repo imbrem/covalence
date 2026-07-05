@@ -5,23 +5,26 @@ future seams left open by the core-on-pure port.
 
 ## Minor
 
-- **toHOL tier is one slice deep.** `crate::tohol` + the `raw`/`canon` sections of
-  `rules::core_rules!` cover only nat.add (`ToHolNatVal`/`PairVal`/`NatAddCert`/
-  `HolApp`). Open: `ToHolInt`/`ToHolBytes` unfolding + certificate rules, the
-  permanent structural unfolding rules (`toHOL 0 = ⌜zero⌝`, `toHOL (n+1) =
-  S (toHOL n)`, bytes cons), the per-family certs (NatArith/IntArith/Bytes/
-  FixedWidth/LitEq/Coercion), and the remaining HOL term formers (const/abs).
-- **`ToHolNatVal` is TRANSITIONAL.** It reifies to `Term::nat_lit` literals; at
-  kernel-literal deletion it is deleted and the permanent structural rules take
-  over (only the reify target flips; consumers don't move).
-- **toHOL driver lives in `core::proofs`.** `nat_add_thm` + `reify_app` are
-  untrusted and move to the dedicated `covalence-hol-eval` crate next stage.
+- **Permanent structural toHOL unfolding rules not yet admitted.**
+  `ToHolNatZero`/`ToHolNatSucc`, `ToHolBytesNil`/`ToHolBytesCons`, `ToHolIntMk`
+  land only at kernel-literal deletion: the `tohol_unfolding_rules_are_exclusive`
+  guard (rules.rs) forbids co-admitting them with the transitional `*Val` rules
+  (contradictory `toHOL` denotations at the `Term` sort). Same-commit swap.
+- **The `*Val` rules + the family certs' `Lit::to_term` are TRANSITIONAL.**
+  `ToHolNatVal`/`ToHolIntVal`/`ToHolBytesVal` and `certs::Lit::to_term` reify to
+  kernel literals (`Term::nat_lit` & co.); at literal deletion only the reify
+  target flips (consumers don't move).
+- **Per-op symbolic certs cover nat.add only.** The never-materialize tier
+  (`NatAddCert`-style symbolic conclusions) grows per-op rules as big-value use
+  cases arrive; the per-family certs conclude the reified `CoreProp` shape.
+  Also open: the remaining HOL term formers (const/abs) as base ops.
 - **No native pure-HOL embedding.** `IsThm` carries `(Ctx, Term)` as opaque `Val`
   leaves. Future: `HasTy` judgement Op; a native pure-HOL theory.
-- **Builtins computation not offloaded to pure.** `ReducePrim` / `UnfoldTermSpec`
-  keep the `builtins` evaluator in-TCB inside their `decide` (the toHOL cert path
-  covers nat.add only so far). Re-route to the `covalence-pure-eval` `CanonRule`s
-  as the per-family certs land; the legacy evaluator stays trusted until then.
+- **Legacy `builtins` evaluator still in-TCB.** `ReducePrim`/`UnfoldTermSpec`
+  keep it inside their `decide`. The cert path (`thm/certs.rs` families over
+  `covalence-pure-eval`, driven by `covalence-hol-eval`) now covers the whole
+  reduce catalogue; `ReducePrim` + `builtins.rs` delete once TermExt/scripts/
+  peripherals re-route (purge S8; `UnfoldTermSpec` survives to the defs re-home).
 - **`_with` interning is post-hoc.** The cons-aware `*_with` methods mint via the
   base rule (canonical build) then deep-intern the result conclusion into the
   caller's `TrustedCons` (`intern_concl`). This populates the cons table for

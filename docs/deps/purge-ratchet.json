@@ -38,25 +38,29 @@
   "counts": {
     "obs-rules": {},
     "reduce_prim": {
-      "covalence-core": 85,
+      "covalence-core": 83,
+      "covalence-hol-eval": 9,
       "covalence-init": 15,
       "covalence-pure-eval": 1,
       "covalence-types": 1
     },
     "unfold_term_spec": {
       "covalence-core": 39,
+      "covalence-hol-eval": 5,
       "covalence-init": 10
     },
     "termkind-literals": {
       "covalence-alethe": 6,
-      "covalence-core": 112,
+      "covalence-core": 118,
+      "covalence-hol-eval": 1,
       "covalence-init": 12
     },
     "tycon-obs": {},
     "term-literal-ctors": {
       "covalence-alethe": 9,
-      "covalence-core": 134,
+      "covalence-core": 172,
       "covalence-core-test-guest": 4,
+      "covalence-hol-eval": 8,
       "covalence-init": 120,
       "covalence-pure-eval": 3
     },
@@ -67,11 +71,11 @@
   },
   "totals": {
     "obs-rules": 0,
-    "reduce_prim": 102,
-    "unfold_term_spec": 49,
-    "termkind-literals": 130,
+    "reduce_prim": 109,
+    "unfold_term_spec": 54,
+    "termkind-literals": 137,
     "tycon-obs": 0,
-    "term-literal-ctors": 270,
+    "term-literal-ctors": 316,
     "has_no_obs": 0,
     "cov-script-reduce": 18
   },
@@ -91,6 +95,22 @@
       "delta": "+2/+5",
       "reason": "S4 slice: ToHolNatVal's transitional nat_lit reify target + the reduce_prim acceptance-comparison calls",
       "diesWith": "S8/S10 (transitional rule + literal deletion)"
+    },
+    {
+      "commit": "S5",
+      "pattern": "termkind-literals/term-literal-ctors",
+      "crate": "covalence-core",
+      "delta": "+6/+38",
+      "reason": "S5 family certs: thm/certs.rs Lit::from_term/to_term + per-family literal rebuild arms (the transitional reify target) and the ToHolIntVal/ToHolBytesVal reify rules",
+      "diesWith": "S10 literal deletion (reify target flips to defined numeral/cons forms)"
+    },
+    {
+      "commit": "S5",
+      "pattern": "reduce_prim/unfold_term_spec/termkind-literals/term-literal-ctors",
+      "crate": "covalence-hol-eval",
+      "delta": "+9/+5/+1/+8",
+      "reason": "S5 driver crate: differential suite pins reduce vs Thm::reduce_prim; delta passthrough still routes unfold_term_spec; recognizer matches TermKind::Succ; test fixtures build literal terms",
+      "diesWith": "S8 reduce_prim deletion (differential suite + passthrough) / S10 literal deletion (fixtures)"
     }
   ]
 }

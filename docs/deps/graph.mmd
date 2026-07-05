@@ -41,6 +41,10 @@ graph LR
   graph --> parse
   hash --> rand
   hol --> core
+  hol-eval --> core
+  hol-eval --> pure
+  hol-eval --> pure-eval
+  hol-eval --> types
   init --> core
   init --> grammar
   init --> hash

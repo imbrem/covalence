@@ -31,7 +31,7 @@ use covalence_pure::{
     App, CanonRule as _, Eqn, Error as PureError, LangMeta, Language, Manifest, Rule, RuleMeta,
     RuleRecord, Val,
 };
-use covalence_types::Nat;
+use covalence_types::{Bytes, Int, Nat};
 
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
@@ -40,10 +40,14 @@ use crate::subst::{
     close_var, collect_term_tvars, has_free_var_typed, open, shift_by, subst_free,
     subst_tfree_in_term, uses_bound_outer,
 };
-use crate::term::{Def, FreshId, Term, TermKind, Type, TypeKind, Var};
-use crate::tohol::{HolApp, NatAddEqE, ToHolNat, ToHolNatE, nat_add_eq_expr};
+use crate::term::{Def, FreshId, Term, TermKind, TermSpec, Type, TypeKind, Var};
+use crate::tohol::{
+    HolApp, NatAddEqE, ToHolBytes, ToHolBytesE, ToHolInt, ToHolIntE, ToHolNat, ToHolNatE,
+    nat_add_eq_expr,
+};
 use crate::ty::{TypeList, TypeSpec};
 
+use super::certs;
 use super::lang::{CoreLang, CoreProp, IsThm};
 
 /// An unforgeable premise: a `pure::Thm` carrying an `IsThm`-headed proposition,
@@ -970,6 +974,172 @@ core_rules! {
     NatAddCert((Nat, Nat)) -> App<IsThm, (Val<Ctx>, NatAddEqE)> = |(a, b), _| {
         let sum = covalence_pure_eval::NatAdd.eval(&(a.clone(), b.clone()));
         Ok(App(IsThm, (Val(Ctx::new()), nat_add_eq_expr(a, b, sum))))
+    }
+
+    /// TRANSITIONAL (dies with the kernel `Int` literals): `⊢ toHOL i =
+    /// Val(⌜i⌝)` — reify a `toHOL`-denoted integer to today's literal `Term`.
+    ///
+    /// ## Soundness
+    ///
+    /// Same argument as [`ToHolNatVal`]: while the kernel `Int` literals
+    /// exist, the literal IS the kernel's canonical HOL term for the integer
+    /// `i`, and `toHOL i` denotes exactly that term, so the equation holds by
+    /// definition of the denotation. At literal-deletion time this rule dies
+    /// and the permanent structural rule (`toHOL i = int.mk (toHOL p) (toHOL
+    /// n)`) takes over; only the reify target flips.
+    ToHolIntVal(Int) -> Eqn<ToHolIntE, Val<Term>> = |i, _| {
+        let t = Term::int_lit(i.clone());
+        Ok(Eqn(App(ToHolInt, Val(i)), Val(t)))
+    }
+
+    /// TRANSITIONAL (dies with the kernel `Blob` literals): `⊢ toHOL bs =
+    /// Val(⌜bs⌝)` — reify a `toHOL`-denoted bytestring to today's literal
+    /// `Term`.
+    ///
+    /// ## Soundness
+    ///
+    /// Same argument as [`ToHolNatVal`], at the `bytes` carrier: the `Blob`
+    /// literal IS the canonical HOL term for the bytestring while it exists.
+    /// At literal-deletion time the permanent structural rules (`toHOL [] =
+    /// ⌜nil⌝`, `toHOL (b:rest) = cons (toHOL b) (toHOL rest)`) take over.
+    ToHolBytesVal(Bytes) -> Eqn<ToHolBytesE, Val<Term>> = |bs, _| {
+        let t = Term::blob(bs.clone());
+        Ok(Eqn(App(ToHolBytes, Val(bs)), Val(t)))
+    }
+
+    // ------------- The per-family computation-backed certificates -----------
+    //
+    // Concl = `CoreProp` (the `IsThm` sequent shape), minted through the same
+    // `seq` well-typedness floor as every sequent rule; the equation is built
+    // and computed by the audited dispatch in `super::certs` (canonical
+    // `TermSpec::ptr_id` tables → `covalence-pure-eval` `CanonRule` evals —
+    // the enumerable computation-TCB record in the `Builtins` manifest).
+    //
+    // ## Soundness (the existence-without-construction contract)
+    //
+    // The soundness contract of every such rule (its docstring obligation):
+    // for every native value `b` there *exists* a HOL term `[b]` such that
+    // the defining properties are derivable in pure HOL —
+    // existence-without-construction, the same principle as "a standard
+    // theorem means a derivation exists". Whenever the native computation
+    // yields `op(args) = r`, the HOL equation `op ⌜args⌝ = ⌜r⌝` is derivable
+    // in pure HOL from the op's definitional equations on the literal
+    // denotations; each family rule is a certified shortcut that never adds
+    // strength. Every rule derives its whole conclusion from the input
+    // (selector + native args; the selector only fires on the canonical
+    // catalogue handle, by pointer identity), so it is sound on ALL inputs.
+
+    /// `nat.*` arithmetic / comparison certificate:
+    /// `⊢ IsThm(∅, ⌜op ⌜args⌝ = ⌜op(args)⌝⌝)` for the canonical `nat.pred` /
+    /// `add` / `mul` / `sub` / `div` / `mod` / `pow` / `shl` / `shr` /
+    /// `bitAnd` / `bitOr` / `bitXor` / `le` / `lt` handles.
+    ///
+    /// ## Soundness
+    ///
+    /// The family contract above, plus the FORCED edge-case conventions
+    /// (shared with the legacy `builtins.rs` by the pure-eval transcription):
+    /// saturating `pred`/`sub`; `n / 0 = 0` and **`n mod 0 = n`** (forced by
+    /// `nat.mod`'s let-style body `λn m. n - (n/m)*m`, which at `m = 0`
+    /// evaluates to `n`; any other value would let definitional unfolding
+    /// derive `⊢ False`); oversize `pow`/`shl`/`shr` operands REFUSE.
+    NatArithCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
+        certs::nat_arith(&spec, &args)
+            .and_then(|eq| seq(Ctx::new(), eq))
+            .map_err(to_pure)
+    }
+
+    /// The kernel-primitive successor certificate:
+    /// `⊢ IsThm(∅, ⌜succ ⌜n⌝ = ⌜n + 1⌝⌝)` (`succ` is [`TermKind::Succ`], not
+    /// a catalogue spec, hence no `TermSpec` selector).
+    ///
+    /// ## Soundness
+    ///
+    /// The family contract above: `succ` on the literal denotations is
+    /// exactly native `n + 1` (the `nat.succ` pure-eval `CanonRule`).
+    SuccCert(Nat) -> CoreProp = |n, _| {
+        certs::succ_concl(&n)
+            .and_then(|eq| seq(Ctx::new(), eq))
+            .map_err(to_pure)
+    }
+
+    /// `int.*` arithmetic / comparison certificate for the canonical
+    /// `int.succ` / `pred` / `neg` / `abs` / `sgn` / `add` / `mul` / `sub` /
+    /// `div` / `mod` / `le` / `lt` handles (`abs : int → nat`).
+    ///
+    /// ## Soundness
+    ///
+    /// The family contract above, plus the FORCED conventions: truncating
+    /// division, remainder takes the dividend's sign, and `a / 0 = 0`,
+    /// **`a mod 0 = a`** — forced by `int.div`/`int.mod`'s let-style
+    /// catalogue bodies exactly as for `nat.mod`.
+    IntArithCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
+        certs::int_arith(&spec, &args)
+            .and_then(|eq| seq(Ctx::new(), eq))
+            .map_err(to_pure)
+    }
+
+    /// `bytes.*` certificate for the canonical `bytes.cat` / `consNat` /
+    /// `len` / `at` / `slice` handles.
+    ///
+    /// ## Soundness
+    ///
+    /// The family contract above, plus the conventions: the `consNat`
+    /// operand is reduced mod 256; an out-of-bounds `at` index reads 0;
+    /// `slice (start, len)` saturates to the buffer.
+    BytesCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
+        certs::bytes_cert(&spec, &args)
+            .and_then(|eq| seq(Ctx::new(), eq))
+            .map_err(to_pure)
+    }
+
+    /// The fixed-width `uN`/`sN` certificate, keyed by the canonical
+    /// `defs::int_ops` registry (arithmetic / bitwise / shifts / comparisons
+    /// / `zext`/`sext` casts / nat-int conversions).
+    ///
+    /// ## Soundness
+    ///
+    /// The family contract above, plus the conventions: arithmetic wraps mod
+    /// `2^width`; signed/unsigned `div`/`rem`/`shr`/comparisons read the
+    /// operand's tag; shift amounts are taken mod width; and `x / 0 = 0`,
+    /// **`x rem 0 = x`** — forced by the ops' let-style catalogue bodies
+    /// through `int.div`/`int.mod` (see `builtins.rs`).
+    FixedWidthCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
+        certs::fixed_width(&spec, &args)
+            .and_then(|eq| seq(Ctx::new(), eq))
+            .map_err(to_pure)
+    }
+
+    /// Closed literal (dis)equality certificate:
+    /// `⊢ IsThm(∅, ⌜(a = b) = ⌜a == b⌝⌝)` for two same-kind literals
+    /// (`Bool`/`Nat`/`Int`/`SmallInt`/`Bytes`) — equality AND disequality
+    /// (`⊢ (a = b) = F`) decided natively.
+    ///
+    /// ## Soundness
+    ///
+    /// The family contract above, resting on the kernel's literal
+    /// denotational commitment: literals denote the standard values, and two
+    /// same-kind literals are equal iff structurally equal (distinct
+    /// literals denote distinct values — what makes the `F` direction
+    /// sound). Mixed kinds refuse.
+    LitEqCert((certs::Lit, certs::Lit)) -> CoreProp = |(a, b), _| {
+        certs::lit_eq(&a, &b)
+            .and_then(|eq| seq(Ctx::new(), eq))
+            .map_err(to_pure)
+    }
+
+    /// nat ↔ int / bytes coercion certificate for the canonical `nat.toInt`
+    /// / `nat.toBytesLe` / `nat.toBytesBe` / `nat.fromBytesLe` /
+    /// `nat.fromBytesBe` handles.
+    ///
+    /// ## Soundness
+    ///
+    /// The family contract above: each coercion on the literal denotations
+    /// is the standard embedding / radix-256 (de)serialisation the catalogue
+    /// op denotes.
+    CoercionCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
+        certs::coercion(&spec, &args)
+            .and_then(|eq| seq(Ctx::new(), eq))
+            .map_err(to_pure)
     }
     }
 

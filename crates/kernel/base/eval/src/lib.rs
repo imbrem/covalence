@@ -86,7 +86,8 @@ pub use int::{
 };
 pub use nat::{
     NatAdd, NatBitAnd, NatBitOr, NatBitXor, NatDiv, NatFromBytesBe, NatFromBytesLe, NatLe, NatLt,
-    NatMod, NatMul, NatPow, NatPred, NatShl, NatShr, NatSub, NatToBytesBe, NatToBytesLe, NatToInt,
+    NatMod, NatMul, NatPow, NatPred, NatShl, NatShr, NatSub, NatSucc, NatToBytesBe, NatToBytesLe,
+    NatToInt,
 };
 
 /// Untrusted name overlay for the manifest projection: the kernel
@@ -195,7 +196,7 @@ macro_rules! builtins_manifest {
 
 builtins_manifest! {
     simple {
-        NatPred, NatAdd, NatMul, NatSub, NatDiv, NatMod, NatPow, NatShl, NatShr,
+        NatSucc, NatPred, NatAdd, NatMul, NatSub, NatDiv, NatMod, NatPow, NatShl, NatShr,
         NatBitAnd, NatBitOr, NatBitXor, NatLe, NatLt,
         NatToInt, NatToBytesLe, NatToBytesBe, NatFromBytesLe, NatFromBytesBe,
         IntSucc, IntPred, IntNeg, IntAbs, IntSgn,

@@ -1,3 +1,4 @@
+nat.succ
 nat.pred
 nat.add
 nat.mul

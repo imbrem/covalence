@@ -44,6 +44,7 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 
 - **[`covalence-pure`](crates/kernel/base/SKELETONS.md)** — closed-world equality kernel; Stage 0 built, later stages pending.
 - **[`covalence-core`](crates/kernel/hol/core/SKELETONS.md)** — declaration-only catalogue ops.
+- **[`covalence-hol-eval`](crates/kernel/hol/eval/SKELETONS.md)** — untrusted reduction driver; single-step `prove_true`, consumers not yet re-routed.
 - **[`covalence-init`](crates/kernel/hol/init/SKELETONS.md)** — split per module (project loader, theory catalogue, `.cov` script layer, models, regex/spectec grammars, metalogic, peano, ring). (The thin `covalence-hol` surface has no skeletons.)
 - **[`covalence-kernel`](crates/kernel/core/SKELETONS.md)** — empty `facts` observer module; removed legacy prover.
 - **[`covalence-shell`](crates/kernel/shell/SKELETONS.md)** — re-export shell; userspace helpers pending the HOL-on-store stack.

@@ -88,7 +88,8 @@ const BANNED_EDGES = [
   // not an edge here: dev/build deps are skipped above)
   ["covalence-pure-eval", "covalence-core"], // base eval knows nothing of HOL
   ["covalence-pure", "covalence-pure-eval"], // base kernel stays eval-free
-  // ["covalence-hol-eval", "covalence-init"], // drivers must not depend on the catalogue
+  ["covalence-hol-eval", "covalence-init"], // drivers must not depend on the catalogue
+  ["covalence-core", "covalence-hol-eval"], // the kernel never depends on its drivers
 ];
 const bannedHits = edges.filter(([f, t]) =>
   BANNED_EDGES.some(([bf, bt]) => f === bf && t === bt),

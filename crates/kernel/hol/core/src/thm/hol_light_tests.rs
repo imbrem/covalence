@@ -6,10 +6,73 @@
 
 use super::*;
 
+/// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
+type Thm = crate::thm::Thm;
+
 use crate::hol;
 
 fn n() -> Term {
     Term::free("n", Type::nat())
+}
+
+// ============================================================================
+// The tier machinery (stage E1): a test HolTier extending CoreLang, standing
+// in for the planned `CoreEval` in covalence-hol-eval.
+// ============================================================================
+
+/// A test tier that `extends` [`CoreLang`] and (per the Language contract's
+/// implementor-choice clause for inherited rules) admits the whole inherited
+/// HOL catalogue directly — exactly the shape `CoreEval` will take, so these
+/// tests pin the two behaviours init relies on: minting HOL rules directly at
+/// the higher tier, and lifting pure-tier theorems into it.
+#[derive(Clone, Copy, Debug, Default)]
+struct TestTier;
+
+impl covalence_pure::Language for TestTier {
+    fn admits(&self, rule: std::any::TypeId) -> bool {
+        super::rules::core_admits(rule)
+    }
+    fn extends(&self, parent: std::any::TypeId) -> bool {
+        parent == std::any::TypeId::of::<lang::CoreLang>()
+    }
+    fn union(self, _other: Self) -> Option<Self> {
+        Some(self)
+    }
+    const MANIFEST: Option<&'static covalence_pure::Manifest> = None;
+}
+
+impl lang::HolTier for TestTier {}
+
+/// The HOL rule constructors mint DIRECTLY at a higher tier (no `.lift()`
+/// churn): the same catalogue serves any `HolTier` that admits it.
+#[test]
+fn tier_mints_hol_rules_directly() {
+    let thm: crate::thm::Thm<TestTier> = crate::thm::Thm::refl(n()).expect("refl at TestTier");
+    let (l, r) = parse_hol_eq(thm.concl()).expect("conclusion is HOL =");
+    assert_eq!(l, &n());
+    assert_eq!(r, &n());
+    // ... and composes with premises at the same tier.
+    let sym = thm.sym().expect("sym at TestTier");
+    let _: &crate::thm::Thm<TestTier> = &sym;
+}
+
+/// `lift` re-homes a pure-tier theorem into an extending tier, preserving the
+/// sequent; there is no path down (and no self-lift — `extends` is strict).
+#[test]
+fn tier_lift_low_to_high_only() {
+    let pure_thm = Thm::assume(hol::hol_eq(n(), n())).expect("assume");
+    let expected = pure_thm.concl().clone();
+    let lifted: crate::thm::Thm<TestTier> = pure_thm.lift().expect("lift CoreLang -> TestTier");
+    assert_eq!(lifted.concl(), &expected);
+    assert_eq!(lifted.hyps().len(), 1);
+
+    // CoreLang does not extend TestTier: no path down.
+    let high = crate::thm::Thm::<TestTier>::refl(n()).unwrap();
+    assert!(matches!(high.lift::<lang::CoreLang>(), Err(Error::Pure(_))));
+
+    // CoreLang does not extend itself (extends is the DIRECT-parent gate).
+    let refl: Thm = Thm::refl(n()).unwrap();
+    assert!(matches!(refl.lift::<lang::CoreLang>(), Err(Error::Pure(_))));
 }
 
 #[test]

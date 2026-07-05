@@ -31,7 +31,7 @@
 //! `covalence-pure-eval`).
 
 pub use crate::thm::certs::{Lit, PrimFamily, prim_family};
-pub use crate::thm::lang::{CoreLang, CoreProp, IsThm};
+pub use crate::thm::lang::{CoreLang, CoreProp, HolTier, IsThm};
 pub use crate::thm::rules::{
     BytesCert, CoercionCert, FixedWidthCert, IntArithCert, LitEqCert, NatAddCert, NatArithCert,
     PairVal, SuccCert, ToHolBytesVal, ToHolIntVal, ToHolNatVal,

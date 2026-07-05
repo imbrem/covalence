@@ -14,7 +14,9 @@
 //! (the cert path — the kernel no longer carries an in-TCB reducer).
 
 use covalence_core::defs;
-use covalence_core::{Thm, Type, TypeKind};
+use covalence_core::{Type, TypeKind};
+/// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
+type Thm = covalence_core::Thm;
 
 // ============================================================================
 // 1. `int` type structure

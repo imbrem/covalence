@@ -279,7 +279,7 @@ mod tests {
     fn unfold_spec_matches_kernel_rule() {
         let op = covalence_core::defs::and();
         let via_twin = unfold_spec(&op).unwrap();
-        let via_kernel = Thm::unfold_term_spec(op.clone()).unwrap();
+        let via_kernel: Thm = Thm::unfold_term_spec(op.clone()).unwrap();
         assert_eq!(via_twin.concl(), via_kernel.concl());
     }
 

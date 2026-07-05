@@ -383,7 +383,7 @@ mod tests {
 
         // `id S` is genuinely the identity: it β-reduces to `S`.
         let id_s = id.apply(s.clone()).unwrap();
-        let id_beta = Thm::beta_conv(id_s).unwrap();
+        let id_beta: Thm = Thm::beta_conv(id_s).unwrap();
         assert_eq!(id_beta.concl().as_eq().unwrap().1, &s, "id S = S");
     }
 

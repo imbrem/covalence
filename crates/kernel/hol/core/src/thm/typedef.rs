@@ -15,15 +15,16 @@ use crate::error::{Error, Result};
 use crate::term::{Term, TermKind, Type};
 
 use super::Thm;
+use super::lang::{CoreLang, HolTier};
 use super::rules::{Define, NewTypeDefRule, mint};
 
-impl Thm {
+impl<L: HolTier> Thm<L> {
     pub fn new_type_definition(
         hint: impl Into<SmolStr>,
         abs_hint: impl Into<SmolStr>,
         rep_hint: impl Into<SmolStr>,
-        witness: Thm,
-    ) -> Result<TypeDef> {
+        witness: Thm<L>,
+    ) -> Result<TypeDef<L>> {
         // The τ name hint is display-only; the fresh τ marker carries none.
         let _ = hint.into();
         let abs_hint = abs_hint.into();
@@ -31,7 +32,7 @@ impl Thm {
 
         // Mint the bijection conjunction `abs_rep ∧ (fwd ∧ back)` for a FRESH
         // subtype (all freshness allocated inside `NewTypeDefRule::decide`).
-        let big: Thm = mint!(
+        let big: Thm<L> = mint!(
             NewTypeDefRule,
             (witness.0.clone(), abs_hint.clone(), rep_hint.clone()),
             (witness.0, abs_hint, rep_hint)
@@ -76,7 +77,7 @@ impl Thm {
     /// Sound because the resulting `Def` is a brand-new symbol whose only equation
     /// says it equals `body` — a conservative extension. No global signature is
     /// needed because the allocator gives uniqueness per call.
-    pub fn define(name: impl Into<SmolStr>, body: Term) -> Result<Thm> {
+    pub fn define(name: impl Into<SmolStr>, body: Term) -> Result<Thm<L>> {
         let name = name.into();
         mint!(Define, (name.clone(), body.clone()), (name, body))
     }
@@ -109,7 +110,7 @@ fn parse_typedef_bijection(concl: &Term) -> Result<(Type, Term, Term)> {
 /// witness the bijection. All three theorems carry the witness's
 /// hypotheses.
 #[derive(Clone, Debug)]
-pub struct TypeDef {
+pub struct TypeDef<L: HolTier = CoreLang> {
     /// The freshly-introduced type. A `FreshTyCon` carrying a private
     /// `FreshId` token allocated inside the rule. Parametric in
     /// `tvars` (in canonical order, so `inst_tfree` propagates
@@ -121,11 +122,11 @@ pub struct TypeDef {
     /// The fresh `rep : τ → α` constant.
     pub rep: Term,
     /// `⊢ ⋀a:τ. abs (rep a) ≡ a`.
-    pub abs_rep: Thm,
+    pub abs_rep: Thm<L>,
     /// `⊢ ⋀r:α. P r ⟹ rep (abs r) ≡ r`.
-    pub rep_abs_fwd: Thm,
+    pub rep_abs_fwd: Thm<L>,
     /// `⊢ ⋀r:α. rep (abs r) ≡ r ⟹ P r`.
-    pub rep_abs_back: Thm,
+    pub rep_abs_back: Thm<L>,
     /// Sorted list of type-variable names that appear in α. τ is
     /// parametric in exactly these tvars (positionally, in this order).
     pub tvars: Vec<smol_str::SmolStr>,

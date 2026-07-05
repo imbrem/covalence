@@ -376,12 +376,8 @@ fn intro_exists_rec(ex_term: &Term, witnesses: &[Term], body: Thm) -> Result<Thm
         body
     } else {
         // The inner `∃…` term is `pred w` β-reduced; recurse into it.
-        let inner_ex = Thm::beta_conv(Term::app(pred.clone(), w.clone()))?
-            .concl()
-            .as_eq()
-            .unwrap()
-            .1
-            .clone();
+        let bc: Thm = Thm::beta_conv(Term::app(pred.clone(), w.clone()))?;
+        let inner_ex = bc.concl().as_eq().unwrap().1.clone();
         intro_exists_rec(&inner_ex, &witnesses[1..], body)?
     };
     let at = beta_expand(&pred, w.clone(), inner)?;

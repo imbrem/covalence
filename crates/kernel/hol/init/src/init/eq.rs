@@ -212,8 +212,8 @@ mod tests {
         let id = Term::abs(nat(), Term::bound(0));
         let inner = id.clone().apply(nat_lit(7)).unwrap(); // (λy.y) 7
         let redex = id.apply(inner.clone()).unwrap();
-        let (lhs, rhs) = Thm::beta_conv(redex.clone())
-            .unwrap()
+        let bc: Thm = Thm::beta_conv(redex.clone()).unwrap();
+        let (lhs, rhs) = bc
             .concl()
             .as_eq()
             .map(|(l, r)| (l.clone(), r.clone()))

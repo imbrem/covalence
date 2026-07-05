@@ -50,24 +50,37 @@ pub(crate) mod rules;
 mod typedef;
 pub use typedef::TypeDef;
 
-use lang::{CoreLang, CoreProp};
+use lang::{CoreLang, CoreProp, HolTier};
 use rules::*;
 
-/// The kernel certificate. A newtype over a `covalence_pure` theorem carrying the
-/// structured proposition `IsThm(Γ, φ)` in the crate-private `CoreLang`; see
-/// `lang` for the admits-only soundness argument and `rules` for the
+/// The kernel certificate, generic over its **tier** `L` (default
+/// [`CoreLang`], the pure-HOL tier). A newtype over a `covalence_pure`
+/// theorem carrying the structured proposition `IsThm(Γ, φ)` at tier `L`;
+/// see `lang` for the admits-only soundness argument and `rules` for the
 /// fine-grained rule catalogue that mints it.
 ///
-/// The inner `pure::Thm` field is **hygiene-only**: it keeps `pure::Thm`/`CoreLang`
-/// out of the public signature and preserves `Arc`-identity, but it is NOT
-/// load-bearing for soundness. Soundness rests on `admits()` alone — every rule
-/// `CoreLang` admits derives its conclusion from unforgeable premise `pure::Thm`s
-/// and is sound on all inputs — so even a hypothetically-public field could only
-/// wrap already-true theorems.
+/// ## Tiers
+///
+/// The tier parameter is a *trust declaration*, not a proof mechanism:
+/// `Thm<CoreLang>` certifies derivability from the HOL rule catalogue alone
+/// (no computation axioms), while a higher tier (a [`HolTier`] language that
+/// `extends` `CoreLang` and admits additional rules — the planned `CoreEval`
+/// in `covalence-hol-eval`) certifies derivability from that tier's larger
+/// admitted set. Low-tier theorems enter a higher tier via [`Thm::lift`];
+/// there is no path down. Every rule constructor below is tier-generic and
+/// mints at `L::default()` — the gate is always `admits` on the rule's own
+/// `TypeId`, so a tier proves nothing it does not itself admit.
+///
+/// The inner `pure::Thm` field is **hygiene-only**: it keeps `pure::Thm`/the
+/// tier language out of the public signature and preserves `Arc`-identity, but
+/// it is NOT load-bearing for soundness. Soundness rests on `admits()` alone —
+/// every rule a tier admits derives its conclusion from unforgeable premise
+/// `pure::Thm`s and is sound on all inputs — so even a hypothetically-public
+/// field could only wrap already-true theorems.
 #[derive(Clone)]
-pub struct Thm(covalence_pure::Thm<CoreLang, CoreProp>);
+pub struct Thm<L: HolTier = CoreLang>(covalence_pure::Thm<L, CoreProp>);
 
-impl Thm {
+impl<L: HolTier> Thm<L> {
     pub fn hyps(&self) -> &Ctx {
         &self.0.prop().1.0.0
     }
@@ -79,7 +92,7 @@ impl Thm {
         (p.1.0.0.clone(), p.1.1.0.clone())
     }
 
-    /// Wrap an already-minted pure theorem `⊢ IsThm(Γ, φ)` in [`CoreLang`]
+    /// Wrap an already-minted pure theorem `⊢ IsThm(Γ, φ)` at tier `L`
     /// as a kernel [`Thm`] — the core-on-pure seam's landing constructor
     /// (see [`crate::seam`]). This is how a toHOL fact, reified to the
     /// concrete `CoreProp` shape and transported with the base `eq_mp`,
@@ -93,16 +106,31 @@ impl Thm {
     ///
     /// Soundness: trivial. The inner `pure::Thm` field is hygiene-only —
     /// soundness rests on `admits()` alone (see `lang`/`rules`): a
-    /// `pure::Thm<CoreLang, CoreProp>` can only ever have been minted by an
-    /// admitted, sound rule (or by the ungated equality/propositional
-    /// calculus from such mints), so it is already a true theorem; wrapping
-    /// it adds nothing.
-    pub fn from_pure(t: covalence_pure::Thm<lang::CoreLang, lang::CoreProp>) -> Result<Thm> {
+    /// `pure::Thm<L, CoreProp>` can only ever have been minted by a rule
+    /// the tier `L` admits (or by the ungated equality/propositional
+    /// calculus from such mints), so it is already a true theorem *of that
+    /// tier*; wrapping it adds nothing.
+    pub fn from_pure(t: covalence_pure::Thm<L, lang::CoreProp>) -> Result<Thm<L>> {
         {
             let (hyps, concl) = rules::parts(&t);
             rules::check_sequent(hyps, concl)?;
         }
         Ok(Thm(t))
+    }
+
+    /// Re-home this theorem at tier `L2`, where `L2` **directly extends**
+    /// `L` (runtime-checked via [`covalence_pure::Language::extends`]) —
+    /// the low→high tier coercion (there is no path down). Delegates to
+    /// [`covalence_pure::Thm::lift`]; errors with [`Error::Pure`] if `L2`
+    /// does not extend `L`.
+    ///
+    /// Soundness: `extends` guarantees `tree(L) ⊆ tree(L2)`, so a theorem
+    /// derivable at `L` is derivable at `L2` — lifting adds no strength.
+    pub fn lift<L2: HolTier>(self) -> Result<Thm<L2>> {
+        self.0
+            .lift(L2::default())
+            .map(Thm)
+            .map_err(|e| Error::Pure(format!("{e:?}")))
     }
 
     /// Structural weakening: `Δ ⊢ φ`, given `Γ ⊢ φ` and `Γ ⊆ Δ`.
@@ -111,7 +139,7 @@ impl Thm {
     /// `self` is missing from `target`. The conclusion is unchanged;
     /// every term in `target` is re-validated at kind `bool` by the
     /// `rules::Weaken` rule's `seq` floor.
-    pub fn weaken(self, target: Ctx) -> Result<Thm> {
+    pub fn weaken(self, target: Ctx) -> Result<Thm<L>> {
         mint!(Weaken, (self.0.clone(), target.clone()), (self.0, target))
     }
 
@@ -129,7 +157,7 @@ impl Thm {
     // is sound under that interpretation.
 
     /// `⊢ t = t : bool` — HOL reflexivity of equality.
-    pub fn refl(t: Term) -> Result<Thm> {
+    pub fn refl(t: Term) -> Result<Thm<L>> {
         Self::refl_with(t, &mut ())
     }
 
@@ -139,7 +167,7 @@ impl Thm {
     /// Soundness: identical to [`refl`](Self::refl); the cons only shares
     /// the `Arc`s of the conclusion's spine (the `TrustedCons` contract
     /// guarantees a structurally-equal result), so it has no soundness role.
-    pub fn refl_with<C: TrustedCons + ?Sized>(t: Term, cons: &mut C) -> Result<Thm> {
+    pub fn refl_with<C: TrustedCons + ?Sized>(t: Term, cons: &mut C) -> Result<Thm<L>> {
         let thm = mint!(Refl, (t.clone(),), (t,))?;
         intern_concl(&thm, cons);
         Ok(thm)
@@ -154,7 +182,7 @@ impl Thm {
     /// the same element and `a = b` holds. Both arguments are required
     /// to type-check at `unit` (an open or ill-typed term is rejected),
     /// and the equation carries no hypotheses.
-    pub fn unit_eq(a: Term, b: Term) -> Result<Thm> {
+    pub fn unit_eq(a: Term, b: Term) -> Result<Thm<L>> {
         Self::unit_eq_with(a, b, &mut ())
     }
 
@@ -163,14 +191,14 @@ impl Thm {
     ///
     /// Soundness: identical to [`unit_eq`](Self::unit_eq); the cons only
     /// shares the `Arc`s of the conclusion's spine, with no soundness role.
-    pub fn unit_eq_with<C: TrustedCons + ?Sized>(a: Term, b: Term, cons: &mut C) -> Result<Thm> {
+    pub fn unit_eq_with<C: TrustedCons + ?Sized>(a: Term, b: Term, cons: &mut C) -> Result<Thm<L>> {
         let thm = mint!(UnitEq, (a.clone(), b.clone()), (a, b))?;
         intern_concl(&thm, cons);
         Ok(thm)
     }
 
     /// `Γ ∪ Δ ⊢ s = u`, given `Γ ⊢ s = t` and `Δ ⊢ t = u` (HOL `=`).
-    pub fn trans(self, other: Thm) -> Result<Thm> {
+    pub fn trans(self, other: Thm<L>) -> Result<Thm<L>> {
         self.trans_with(other, &mut ())
     }
 
@@ -179,7 +207,11 @@ impl Thm {
     ///
     /// Soundness: identical to [`trans`](Self::trans); the cons only shares
     /// the `Arc`s of the conclusion's spine, with no soundness role.
-    pub fn trans_with<C: TrustedCons + ?Sized>(self, other: Thm, cons: &mut C) -> Result<Thm> {
+    pub fn trans_with<C: TrustedCons + ?Sized>(
+        self,
+        other: Thm<L>,
+        cons: &mut C,
+    ) -> Result<Thm<L>> {
         let thm = mint!(Trans, (self.0.clone(), other.0.clone()), (self.0, other.0))?;
         intern_concl(&thm, cons);
         Ok(thm)
@@ -188,7 +220,7 @@ impl Thm {
     /// `Γ ∪ Δ ⊢ f x = g y`, given `Γ ⊢ f = g` and `Δ ⊢ x = y`. The
     /// applications must type-check: `f` (and so `g`) must have
     /// function type whose domain matches `x`'s (and so `y`'s) type.
-    pub fn mk_comb(self, arg: Thm) -> Result<Thm> {
+    pub fn mk_comb(self, arg: Thm<L>) -> Result<Thm<L>> {
         self.mk_comb_with(arg, &mut ())
     }
 
@@ -202,7 +234,11 @@ impl Thm {
     /// shares the `Arc`s of the freshly built `App` nodes — the
     /// `TrustedCons` contract guarantees they are structurally equal to the
     /// un-interned builds — so it has no soundness role.
-    pub fn mk_comb_with<C: TrustedCons + ?Sized>(self, arg: Thm, cons: &mut C) -> Result<Thm> {
+    pub fn mk_comb_with<C: TrustedCons + ?Sized>(
+        self,
+        arg: Thm<L>,
+        cons: &mut C,
+    ) -> Result<Thm<L>> {
         let thm = mint!(MkComb, (self.0.clone(), arg.0.clone()), (self.0, arg.0))?;
         intern_concl(&thm, cons);
         Ok(thm)
@@ -210,7 +246,7 @@ impl Thm {
 
     /// `Γ ⊢ (λx:τ. s[x]) = (λx:τ. t[x])`, given `Γ ⊢ s = t` with
     /// `Free(name:τ)` not free in `Γ`.
-    pub fn abs(self, name: &str, ty: Type) -> Result<Thm> {
+    pub fn abs(self, name: &str, ty: Type) -> Result<Thm<L>> {
         self.abs_with(name, ty, &mut ())
     }
 
@@ -227,7 +263,7 @@ impl Thm {
         name: &str,
         ty: Type,
         cons: &mut C,
-    ) -> Result<Thm> {
+    ) -> Result<Thm<L>> {
         let n = SmolStr::from(name);
         let thm = mint!(
             Abs,
@@ -253,7 +289,7 @@ impl Thm {
     ///   `covalence-hol-eval` — e.g. `(λx. x) (2 + 3)` reduces to
     ///   `2 + 3`, *not* `5`), and no η-contraction (see
     ///   [`Thm::eta_conv`]).
-    pub fn beta_conv(app: Term) -> Result<Thm> {
+    pub fn beta_conv(app: Term) -> Result<Thm<L>> {
         Self::beta_conv_with(app, &mut ())
     }
 
@@ -266,21 +302,21 @@ impl Thm {
     /// contract guarantees returns structurally-equal terms, so the
     /// conclusion is the same `(λx. body) arg = body[arg/0]` regardless of
     /// the interning policy — sharing only, no soundness role.
-    pub fn beta_conv_with<C: TrustedCons + ?Sized>(app: Term, cons: &mut C) -> Result<Thm> {
+    pub fn beta_conv_with<C: TrustedCons + ?Sized>(app: Term, cons: &mut C) -> Result<Thm<L>> {
         let thm = mint!(BetaConv, (app.clone(),), (app,))?;
         intern_concl(&thm, cons);
         Ok(thm)
     }
 
     /// `{p} ⊢ p` for any `p : bool` — HOL-level assume.
-    pub fn assume(p: Term) -> Result<Thm> {
+    pub fn assume(p: Term) -> Result<Thm<L>> {
         mint!(Assume, (p.clone(),), (p,))
     }
 
     /// `Γ ∪ Δ ⊢ q`, given `Γ ⊢ p = q : bool` and `Δ ⊢ p`. HOL Light's
     /// `EQ_MP` — equality at `bool` IS biconditional, so this also
     /// implements the `⇔`-elim direction.
-    pub fn eq_mp(self, p_thm: Thm) -> Result<Thm> {
+    pub fn eq_mp(self, p_thm: Thm<L>) -> Result<Thm<L>> {
         self.eq_mp_with(p_thm, &mut ())
     }
 
@@ -291,7 +327,11 @@ impl Thm {
     /// directly from the input equation — so the cons is unused. It is
     /// accepted only so a rewrite driver can thread one cons uniformly
     /// through `trans` / `mk_comb` / `eq_mp`. No soundness role.
-    pub fn eq_mp_with<C: TrustedCons + ?Sized>(self, p_thm: Thm, _cons: &mut C) -> Result<Thm> {
+    pub fn eq_mp_with<C: TrustedCons + ?Sized>(
+        self,
+        p_thm: Thm<L>,
+        _cons: &mut C,
+    ) -> Result<Thm<L>> {
         mint!(EqMp, (self.0.clone(), p_thm.0.clone()), (self.0, p_thm.0))
     }
 
@@ -299,7 +339,7 @@ impl Thm {
     /// `(Γ \ {q}) ∪ (Δ \ {p}) ⊢ p ⇔ q`, given `Γ ⊢ p` and `Δ ⊢ q`.
     /// Both `p` and `q` must be `bool`-typed; equality at `bool`
     /// IS biconditional.
-    pub fn deduct_antisym(self, other: Thm) -> Result<Thm> {
+    pub fn deduct_antisym(self, other: Thm<L>) -> Result<Thm<L>> {
         self.deduct_antisym_with(other, &mut ())
     }
 
@@ -311,9 +351,9 @@ impl Thm {
     /// soundness role.
     pub fn deduct_antisym_with<C: TrustedCons + ?Sized>(
         self,
-        other: Thm,
+        other: Thm<L>,
         cons: &mut C,
-    ) -> Result<Thm> {
+    ) -> Result<Thm<L>> {
         let thm = mint!(
             DeductAntisym,
             (self.0.clone(), other.0.clone()),
@@ -328,7 +368,7 @@ impl Thm {
     /// `replacement`. A same-named variable at a different type is a
     /// distinct variable and is left untouched (so a type-mismatched
     /// substitution is a no-op, as in HOL Light's `vsubst`).
-    pub fn inst(self, name: &str, replacement: Term) -> Result<Thm> {
+    pub fn inst(self, name: &str, replacement: Term) -> Result<Thm<L>> {
         self.inst_with(name, replacement, &mut ())
     }
 
@@ -343,7 +383,7 @@ impl Thm {
         name: &str,
         replacement: Term,
         cons: &mut C,
-    ) -> Result<Thm> {
+    ) -> Result<Thm<L>> {
         let n = SmolStr::from(name);
         let thm = mint!(
             Inst,
@@ -381,7 +421,7 @@ impl Thm {
     /// `refl a : ⊢ a = a`, then transport along `a = b` with
     /// `eq_mp` to get `b = a`. Implemented directly here as
     /// "parse the equation, return reversed".
-    pub fn sym(self) -> Result<Thm> {
+    pub fn sym(self) -> Result<Thm<L>> {
         self.sym_with(&mut ())
     }
 
@@ -390,7 +430,7 @@ impl Thm {
     ///
     /// Soundness: identical to [`sym`](Self::sym); the cons only shares the
     /// `Arc`s of the conclusion's spine, with no soundness role.
-    pub fn sym_with<C: TrustedCons + ?Sized>(self, cons: &mut C) -> Result<Thm> {
+    pub fn sym_with<C: TrustedCons + ?Sized>(self, cons: &mut C) -> Result<Thm<L>> {
         let thm = mint!(Sym, (self.0.clone(),), (self.0,))?;
         intern_concl(&thm, cons);
         Ok(thm)
@@ -399,19 +439,23 @@ impl Thm {
     /// Alias for [`Thm::mk_comb`]. `cong_app` is the equational-
     /// congruence name (`f = g, x = y ⊢ f x = g y`); HOL Light
     /// calls it `MK_COMB`. Same rule.
-    pub fn cong_app(self, arg: Thm) -> Result<Thm> {
+    pub fn cong_app(self, arg: Thm<L>) -> Result<Thm<L>> {
         self.mk_comb(arg)
     }
 
     /// Alias for [`Thm::mk_comb_with`] — the cons-aware
     /// [`cong_app`](Self::cong_app).
-    pub fn cong_app_with<C: TrustedCons + ?Sized>(self, arg: Thm, cons: &mut C) -> Result<Thm> {
+    pub fn cong_app_with<C: TrustedCons + ?Sized>(
+        self,
+        arg: Thm<L>,
+        cons: &mut C,
+    ) -> Result<Thm<L>> {
         self.mk_comb_with(arg, cons)
     }
 
     /// Alias for [`Thm::abs`]. HOL Light's `ABS`; the equational-
     /// congruence name for the same rule.
-    pub fn cong_abs(self, name: &str, ty: Type) -> Result<Thm> {
+    pub fn cong_abs(self, name: &str, ty: Type) -> Result<Thm<L>> {
         self.abs(name, ty)
     }
 
@@ -422,7 +466,7 @@ impl Thm {
         name: &str,
         ty: Type,
         cons: &mut C,
-    ) -> Result<Thm> {
+    ) -> Result<Thm<L>> {
         self.abs_with(name, ty, cons)
     }
 
@@ -434,7 +478,7 @@ impl Thm {
     /// Soundness: HOL Light derives `DISCH` from
     /// `DEDUCT_ANTISYM_RULE` + `MP`. Implemented directly here as
     /// a one-step rule for performance.
-    pub fn imp_intro(self, phi: &Term) -> Result<Thm> {
+    pub fn imp_intro(self, phi: &Term) -> Result<Thm<L>> {
         self.imp_intro_with(phi, &mut ())
     }
 
@@ -443,7 +487,11 @@ impl Thm {
     ///
     /// Soundness: identical to [`imp_intro`](Self::imp_intro); the cons only
     /// shares the `Arc`s of the conclusion's spine, with no soundness role.
-    pub fn imp_intro_with<C: TrustedCons + ?Sized>(self, phi: &Term, cons: &mut C) -> Result<Thm> {
+    pub fn imp_intro_with<C: TrustedCons + ?Sized>(
+        self,
+        phi: &Term,
+        cons: &mut C,
+    ) -> Result<Thm<L>> {
         let thm = mint!(
             ImpIntro,
             (self.0.clone(), phi.clone()),
@@ -459,7 +507,7 @@ impl Thm {
     /// Soundness: standard modus ponens. HOL Light derives it by
     /// unfolding `⟹`'s definition (`p ⟹ q  ≡  p ∧ q = p`) and
     /// using `AND_INTRO` / `AND_ELIM`.
-    pub fn imp_elim(self, hyp: Thm) -> Result<Thm> {
+    pub fn imp_elim(self, hyp: Thm<L>) -> Result<Thm<L>> {
         mint!(ImpElim, (self.0.clone(), hyp.0.clone()), (self.0, hyp.0))
     }
 
@@ -471,7 +519,7 @@ impl Thm {
     /// `∀x. P x ⇔ (λx. P x) = (λx. ⊤)`). Implemented directly:
     /// close the free variable into a `Bound(0)` and wrap with
     /// `Forall_at(τ)`.
-    pub fn all_intro(self, name: &str, ty: Type) -> Result<Thm> {
+    pub fn all_intro(self, name: &str, ty: Type) -> Result<Thm<L>> {
         self.all_intro_with(name, ty, &mut ())
     }
 
@@ -486,7 +534,7 @@ impl Thm {
         name: &str,
         ty: Type,
         cons: &mut C,
-    ) -> Result<Thm> {
+    ) -> Result<Thm<L>> {
         let n = SmolStr::from(name);
         let thm = mint!(
             AllIntro,
@@ -502,7 +550,7 @@ impl Thm {
     ///
     /// Soundness: standard universal elimination, derived in HOL
     /// Light from `INST` and `∀`'s definitional unfolding.
-    pub fn all_elim(self, witness: Term) -> Result<Thm> {
+    pub fn all_elim(self, witness: Term) -> Result<Thm<L>> {
         self.all_elim_with(witness, &mut ())
     }
 
@@ -521,7 +569,7 @@ impl Thm {
         self,
         witness: Term,
         cons: &mut C,
-    ) -> Result<Thm> {
+    ) -> Result<Thm<L>> {
         let thm = mint!(
             AllElim,
             (self.0.clone(), witness.clone()),
@@ -535,7 +583,7 @@ impl Thm {
     /// in `f`. HOL Light's `ETA_AX` (a primitive axiom there; here
     /// exposed as a rule that discharges well-formedness in one
     /// step).
-    pub fn eta_conv(abs: Term) -> Result<Thm> {
+    pub fn eta_conv(abs: Term) -> Result<Thm<L>> {
         Self::eta_conv_with(abs, &mut ())
     }
 
@@ -545,7 +593,7 @@ impl Thm {
     ///
     /// Soundness: identical to [`eta_conv`](Self::eta_conv); the cons only
     /// shares the `Arc`s of the conclusion's spine, with no soundness role.
-    pub fn eta_conv_with<C: TrustedCons + ?Sized>(abs: Term, cons: &mut C) -> Result<Thm> {
+    pub fn eta_conv_with<C: TrustedCons + ?Sized>(abs: Term, cons: &mut C) -> Result<Thm<L>> {
         let thm = mint!(EtaConv, (abs.clone(),), (abs,))?;
         intern_concl(&thm, cons);
         Ok(thm)
@@ -573,7 +621,7 @@ impl Thm {
     /// Soundness (HOL Light `CONJ`): `EQT_INTRO` turns `⊢ p`, `⊢ q`
     /// into `⊢ p = T`, `⊢ q = T`; congruence + `abs` then build
     /// `⊢ (λf. f p q) = (λf. f T T)`, which is `p ∧ q` unfolded.
-    pub fn and_intro(self, other: Thm) -> Result<Thm> {
+    pub fn and_intro(self, other: Thm<L>) -> Result<Thm<L>> {
         self.and_intro_with(other, &mut ())
     }
 
@@ -582,7 +630,11 @@ impl Thm {
     ///
     /// Soundness: identical to [`and_intro`](Self::and_intro); the cons only
     /// shares the `Arc`s of the conclusion's spine, with no soundness role.
-    pub fn and_intro_with<C: TrustedCons + ?Sized>(self, other: Thm, cons: &mut C) -> Result<Thm> {
+    pub fn and_intro_with<C: TrustedCons + ?Sized>(
+        self,
+        other: Thm<L>,
+        cons: &mut C,
+    ) -> Result<Thm<L>> {
         let thm = mint!(
             AndIntro,
             (self.0.clone(), other.0.clone()),
@@ -597,13 +649,13 @@ impl Thm {
     /// Soundness: apply the unfolded body `(λf. f p q) = (λf. f T T)`
     /// to the selector `λa b. a` and β-reduce both sides to `p = T`,
     /// then `EQT_ELIM`.
-    pub fn and_elim_l(self) -> Result<Thm> {
+    pub fn and_elim_l(self) -> Result<Thm<L>> {
         mint!(AndElimL, (self.0.clone(),), (self.0,))
     }
 
     /// `Γ ⊢ q`, given `Γ ⊢ p ∧ q` (HOL Light `CONJUNCT2`; selector
     /// `λa b. b`).
-    pub fn and_elim_r(self) -> Result<Thm> {
+    pub fn and_elim_r(self) -> Result<Thm<L>> {
         mint!(AndElimR, (self.0.clone(),), (self.0,))
     }
 
@@ -612,7 +664,7 @@ impl Thm {
     ///
     /// Soundness: fold `⊢ p` into `p ∨ q ≜ ∀r. (p⟹r) ⟹ (q⟹r) ⟹ r`
     /// — assume each implication, MP the first with `⊢ p`, generalise.
-    pub fn or_intro_l(self, q: Term) -> Result<Thm> {
+    pub fn or_intro_l(self, q: Term) -> Result<Thm<L>> {
         self.or_intro_l_with(q, &mut ())
     }
 
@@ -622,7 +674,7 @@ impl Thm {
     /// Soundness: identical to [`or_intro_l`](Self::or_intro_l); the cons
     /// only shares the `Arc`s of the conclusion's spine, with no soundness
     /// role.
-    pub fn or_intro_l_with<C: TrustedCons + ?Sized>(self, q: Term, cons: &mut C) -> Result<Thm> {
+    pub fn or_intro_l_with<C: TrustedCons + ?Sized>(self, q: Term, cons: &mut C) -> Result<Thm<L>> {
         let thm = mint!(OrIntroL, (self.0.clone(), q.clone()), (self.0, q))?;
         intern_concl(&thm, cons);
         Ok(thm)
@@ -630,7 +682,7 @@ impl Thm {
 
     /// `Γ ⊢ p ∨ q`, given `Γ ⊢ q` and the other disjunct `p : bool`
     /// (HOL Light `DISJ2`).
-    pub fn or_intro_r(self, p: Term) -> Result<Thm> {
+    pub fn or_intro_r(self, p: Term) -> Result<Thm<L>> {
         self.or_intro_r_with(p, &mut ())
     }
 
@@ -640,7 +692,7 @@ impl Thm {
     /// Soundness: identical to [`or_intro_r`](Self::or_intro_r); the cons
     /// only shares the `Arc`s of the conclusion's spine, with no soundness
     /// role.
-    pub fn or_intro_r_with<C: TrustedCons + ?Sized>(self, p: Term, cons: &mut C) -> Result<Thm> {
+    pub fn or_intro_r_with<C: TrustedCons + ?Sized>(self, p: Term, cons: &mut C) -> Result<Thm<L>> {
         let thm = mint!(OrIntroR, (self.0.clone(), p.clone()), (self.0, p))?;
         intern_concl(&thm, cons);
         Ok(thm)
@@ -652,7 +704,7 @@ impl Thm {
     ///
     /// Soundness: specialise `p ∨ q ≜ ∀r. (p⟹r) ⟹ (q⟹r) ⟹ r` at `r`
     /// and MP with the two branches.
-    pub fn or_elim(self, left: Thm, right: Thm) -> Result<Thm> {
+    pub fn or_elim(self, left: Thm<L>, right: Thm<L>) -> Result<Thm<L>> {
         mint!(
             OrElim,
             (self.0.clone(), left.0.clone(), right.0.clone()),
@@ -663,7 +715,7 @@ impl Thm {
     /// `Γ ⊢ ¬p`, given `Γ ⊢ p ⟹ F` (HOL Light `NOT_INTRO`).
     ///
     /// Soundness: `¬p ≜ (p ⟹ F)`, so this just folds the definition.
-    pub fn not_intro(self) -> Result<Thm> {
+    pub fn not_intro(self) -> Result<Thm<L>> {
         self.not_intro_with(&mut ())
     }
 
@@ -672,7 +724,7 @@ impl Thm {
     ///
     /// Soundness: identical to [`not_intro`](Self::not_intro); the cons only
     /// shares the `Arc`s of the conclusion's spine, with no soundness role.
-    pub fn not_intro_with<C: TrustedCons + ?Sized>(self, cons: &mut C) -> Result<Thm> {
+    pub fn not_intro_with<C: TrustedCons + ?Sized>(self, cons: &mut C) -> Result<Thm<L>> {
         let thm = mint!(NotIntro, (self.0.clone(),), (self.0,))?;
         intern_concl(&thm, cons);
         Ok(thm)
@@ -681,7 +733,7 @@ impl Thm {
     /// `Γ ∪ Δ ⊢ F`, given `Γ ⊢ ¬p` and `Δ ⊢ p` (HOL Light `NOT_ELIM`).
     ///
     /// Soundness: unfold `¬p` to `p ⟹ F` and MP with `⊢ p`.
-    pub fn not_elim(self, other: Thm) -> Result<Thm> {
+    pub fn not_elim(self, other: Thm<L>) -> Result<Thm<L>> {
         self.not_elim_with(other, &mut ())
     }
 
@@ -692,7 +744,11 @@ impl Thm {
     ///
     /// Soundness: identical to [`not_elim`](Self::not_elim); no soundness
     /// role for the cons.
-    pub fn not_elim_with<C: TrustedCons + ?Sized>(self, other: Thm, cons: &mut C) -> Result<Thm> {
+    pub fn not_elim_with<C: TrustedCons + ?Sized>(
+        self,
+        other: Thm<L>,
+        cons: &mut C,
+    ) -> Result<Thm<L>> {
         let thm = mint!(
             NotElim,
             (self.0.clone(), other.0.clone()),
@@ -725,7 +781,7 @@ impl Thm {
     /// commit two facts about it, so the body MUST denote the same
     /// function the certificates compute; see
     /// `covalence-hol-eval`'s `tests/audit_reduce.rs::audit_reduce_matches_body`.)
-    pub fn unfold_term_spec(t: Term) -> Result<Thm> {
+    pub fn unfold_term_spec(t: Term) -> Result<Thm<L>> {
         mint!(UnfoldTermSpec, (t.clone(),), (t,))
     }
 
@@ -760,7 +816,7 @@ impl Thm {
     /// `(body = body) ⟹ (c = body)`, and `refl` discharges the
     /// premise — exactly [`Thm::unfold_term_spec`]. The two spec kinds
     /// will eventually be consolidated on this footing.)
-    pub fn spec_ax(t: Term, w: Term) -> Result<Thm> {
+    pub fn spec_ax(t: Term, w: Term) -> Result<Thm<L>> {
         mint!(SpecAx, (t.clone(), w.clone()), (t, w))
     }
 
@@ -776,7 +832,7 @@ impl Thm {
     /// the standard Hilbert-choice interpretation of `Select`. Combined with
     /// the connective definitions it yields the existence form
     /// `(∃x. p x) ⟹ p (ε p)` downstream.
-    pub fn select_ax(p: Term, x: Term) -> Result<Thm> {
+    pub fn select_ax(p: Term, x: Term) -> Result<Thm<L>> {
         mint!(SelectAx, (p.clone(), x.clone()), (p, x))
     }
 
@@ -822,7 +878,7 @@ impl Thm {
     /// holds). Errors with [`Error::SpecHasNoCarrier`] if the spec has no
     /// carrier, and a [type mismatch](Error::TypeMismatch) unless
     /// `a : τ = spec args`.
-    pub fn spec_abs_rep(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm> {
+    pub fn spec_abs_rep(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm<L>> {
         let args = args.into();
         mint!(
             SpecAbsRep,
@@ -847,7 +903,7 @@ impl Thm {
     /// unless `spec.tm()` is a `carrier → bool` predicate (so quotient
     /// specs, whose `tm` is a relation, are rejected), and with a type
     /// mismatch unless `a : carrier`.
-    pub fn spec_rep_abs_fwd(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm> {
+    pub fn spec_rep_abs_fwd(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm<L>> {
         let args = args.into();
         mint!(
             SpecRepAbsFwd,
@@ -874,7 +930,7 @@ impl Thm {
     /// image `S`, so `a = rep (abs a) ∈ S`, giving `⟦P⟧ a`, the left
     /// disjunct. Same shape/error conditions as
     /// [`spec_rep_abs_fwd`](Thm::spec_rep_abs_fwd).
-    pub fn spec_rep_abs_back(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm> {
+    pub fn spec_rep_abs_back(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm<L>> {
         let args = args.into();
         mint!(
             SpecRepAbsBack,
@@ -884,7 +940,7 @@ impl Thm {
     }
 
     /// `Γ[α:=σ] ⊢ φ[α:=σ]`.
-    pub fn inst_tfree(self, name: &str, replacement: Type) -> Result<Thm> {
+    pub fn inst_tfree(self, name: &str, replacement: Type) -> Result<Thm<L>> {
         self.inst_tfree_with(name, replacement, &mut ())
     }
 
@@ -899,7 +955,7 @@ impl Thm {
         name: &str,
         replacement: Type,
         cons: &mut C,
-    ) -> Result<Thm> {
+    ) -> Result<Thm<L>> {
         let n = SmolStr::from(name);
         let thm = mint!(
             InstTFree,
@@ -951,7 +1007,7 @@ impl Thm {
     /// `⊢ ∀P. (P 0 ∧ (∀n. P n ⟹ P (succ n))) ⟹ ∀n. P n` is a trivial
     /// theorem — assume the conjunction, split it, apply this rule,
     /// discharge, generalise.
-    pub fn nat_induct(base: Thm, step: Thm) -> Result<Thm> {
+    pub fn nat_induct(base: Thm<L>, step: Thm<L>) -> Result<Thm<L>> {
         Self::nat_induct_with(base, step, &mut ())
     }
 
@@ -963,10 +1019,10 @@ impl Thm {
     /// only shares the `Arc`s of the conclusion's spine, with no soundness
     /// role.
     pub fn nat_induct_with<C: TrustedCons + ?Sized>(
-        base: Thm,
-        step: Thm,
+        base: Thm<L>,
+        step: Thm<L>,
         cons: &mut C,
-    ) -> Result<Thm> {
+    ) -> Result<Thm<L>> {
         let thm = mint!(
             NatInduct,
             (base.0.clone(), step.0.clone()),
@@ -986,7 +1042,7 @@ impl Thm {
     /// anything. Because `F` is a literal with no defining equation,
     /// this cannot be derived from the other rules; it is the kernel's
     /// second non-computational primitive (alongside [`Thm::nat_induct`]).
-    pub fn false_elim(self, p: Term) -> Result<Thm> {
+    pub fn false_elim(self, p: Term) -> Result<Thm<L>> {
         mint!(FalseElim, (self.0.clone(), p.clone()), (self.0, p))
     }
 
@@ -1012,7 +1068,7 @@ impl Thm {
     /// `0` and `succ`; a free constructor is injective. Sound in every
     /// model the kernel admits (the same `nat` semantics
     /// [`Thm::nat_induct`] and [`Thm::zero_ne_succ`] rest on).
-    pub fn succ_inj(m: Term, n: Term) -> Result<Thm> {
+    pub fn succ_inj(m: Term, n: Term) -> Result<Thm<L>> {
         mint!(SuccInj, (m.clone(), n.clone()), (m, n))
     }
 
@@ -1024,7 +1080,7 @@ impl Thm {
     /// As [`Thm::succ_inj`]: `0` and `succ _` are distinct constructors
     /// of the freely-generated `nat`, so they never denote the same
     /// number.
-    pub fn zero_ne_succ(n: Term) -> Result<Thm> {
+    pub fn zero_ne_succ(n: Term) -> Result<Thm<L>> {
         mint!(ZeroNeSucc, (n.clone(),), (n,))
     }
 
@@ -1044,7 +1100,7 @@ impl Thm {
     /// with that derivation (and dropping it from the axiom surface) is
     /// a standing cleanup, mirroring the connective fast-rules whose
     /// soundness witnesses live in `covalence-hol::proofs`.
-    pub fn lem(p: Term) -> Result<Thm> {
+    pub fn lem(p: Term) -> Result<Thm<L>> {
         mint!(Lem, (p.clone(),), (p,))
     }
 }
@@ -1060,7 +1116,7 @@ impl Thm {
 /// conclusion; deep-interning that result into the caller's [`TrustedCons`] table
 /// lets subsequent cons-aware builds dedup structurally-equal subterms (the
 /// rewrite-engine / Metamath-replay sharing path). Pure sharing, no soundness role.
-fn intern_concl<C: TrustedCons + ?Sized>(thm: &Thm, cons: &mut C) {
+fn intern_concl<L: HolTier, C: TrustedCons + ?Sized>(thm: &Thm<L>, cons: &mut C) {
     let _ = thm.concl().cons_with(cons);
 }
 
@@ -1068,7 +1124,7 @@ fn intern_concl<C: TrustedCons + ?Sized>(thm: &Thm, cons: &mut C) {
 /// (`inst_with` / `inst_tfree_with`), whose hypotheses are freshly rebuilt
 /// alongside the conclusion and so are equally worth sharing. Pure sharing,
 /// no soundness role.
-fn intern_thm<C: TrustedCons + ?Sized>(thm: &Thm, cons: &mut C) {
+fn intern_thm<L: HolTier, C: TrustedCons + ?Sized>(thm: &Thm<L>, cons: &mut C) {
     intern_concl(thm, cons);
     for h in thm.hyps().iter() {
         let _ = h.cons_with(cons);
@@ -1218,13 +1274,13 @@ fn parse_hol_not(t: &Term) -> Result<&Term> {
     Ok(p)
 }
 
-impl fmt::Debug for Thm {
+impl<L: HolTier> fmt::Debug for Thm<L> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self, f)
     }
 }
 
-impl fmt::Display for Thm {
+impl<L: HolTier> fmt::Display for Thm<L> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.hyps().is_empty() {
             return write!(f, "⊢ {}", self.concl());

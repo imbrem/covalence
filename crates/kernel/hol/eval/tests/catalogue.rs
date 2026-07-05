@@ -379,6 +379,6 @@ fn delta_passthrough_matches_unfold_term_spec() {
     // A let-style catalogue spec unfolds identically through the passthrough.
     let t = defs::nat_pred();
     let via_delta = delta(&t).expect("nat.pred unfolds");
-    let via_kernel = Thm::unfold_term_spec(t).expect("nat.pred unfolds");
+    let via_kernel: Thm = Thm::unfold_term_spec(t).expect("nat.pred unfolds");
     assert_eq!(via_delta.concl(), via_kernel.concl());
 }

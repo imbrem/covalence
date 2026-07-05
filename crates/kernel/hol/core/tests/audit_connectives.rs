@@ -17,7 +17,9 @@
 
 use covalence_core::defs;
 use covalence_core::subst::close;
-use covalence_core::{Error, Term, TermKind, Thm, Type};
+use covalence_core::{Error, Term, TermKind, Type};
+/// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
+type Thm = covalence_core::Thm;
 
 // ============================================================================
 // Term-builder helpers (mirror `covalence_core::hol`, public-API-only)

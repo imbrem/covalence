@@ -325,7 +325,7 @@ pub fn term_from_sexp(s: &SExpr) -> Result<Term> {
             // Term shape directly. We use `Term::def` via a fresh
             // `Def` constructed through a kernel rule call to keep
             // the construction visible.
-            let thm = covalence_core::Thm::define(name, body)
+            let thm: covalence_core::Thm = covalence_core::Thm::define(name, body)
                 .map_err(|e| SexpError(format!("invalid def: {}", e)))?;
             // The Thm has conclusion `Def(name, body) = body` (HOL
             // equation). Walk the two `App`s to extract the LHS (the

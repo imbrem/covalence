@@ -24,7 +24,9 @@
 //! are flagged with `// SUSPECT:` rather than a failing test.
 
 use covalence_core::subst::close;
-use covalence_core::{Term, TermKind, Thm, Type, TypeDef, TypeKind};
+use covalence_core::{Term, TermKind, Type, TypeDef, TypeKind};
+/// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
+type Thm = covalence_core::Thm;
 
 // ---------------------------------------------------------------------------
 // Helpers — build the HOL connectives that the kernel uses internally

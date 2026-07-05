@@ -28,7 +28,9 @@
 
 use covalence_core::defs;
 use covalence_core::subst::close;
-use covalence_core::{Term, TermKind, Thm, Type, TypeKind};
+use covalence_core::{Term, TermKind, Type, TypeKind};
+/// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
+type Thm = covalence_core::Thm;
 use covalence_types::Nat;
 
 // ============================================================================

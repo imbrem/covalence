@@ -50,6 +50,26 @@ use covalence_pure::{App, Language, Manifest, Op, Val};
 use crate::ctx::Ctx;
 use crate::term::Term;
 
+/// A **HOL tier**: a language a [`Thm`](super::Thm) can be minted at.
+///
+/// The kernel certificate is `Thm<L = CoreLang>` — generic over the tier so a
+/// downstream crate owning a language that `extends` [`CoreLang`] (the planned
+/// `CoreEval` in `covalence-hol-eval`) can host its own `Rule<CoreEval>` impls
+/// and mint the HOL rules directly at its tier. The trait is deliberately
+/// **public and implementable downstream** (it is a plain marker, not a sealed
+/// gate): implementing `HolTier` for a language confers NO proving power —
+/// soundness rests on `admits()` alone, exactly as for [`CoreLang`] (see the
+/// module docs). A tier that admits an unsound rule is unsound *by its own
+/// declaration*; `Thm<CoreLang>` remains the pure-HOL tier regardless of what
+/// other tiers exist.
+///
+/// Supertraits: [`Language`] (the admits gate), `Default + Copy + 'static`
+/// (tiers are stateless ZST languages; `Default` is how the rule glue
+/// summons the language value to mint against).
+pub trait HolTier: Language + Default + Copy + 'static {}
+
+impl HolTier for CoreLang {}
+
 /// The kernel judgement operator: `IsThm(Γ, φ) : bool` — "the sequent `Γ ⊢ φ` is
 /// a theorem". A ZST; writing it is inert. Only the admitted rules in
 /// `super::rules` (via the [`covalence_pure::apply`] gate) ever conclude an

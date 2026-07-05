@@ -11,7 +11,9 @@
 //! Every rejection path is a soundness guard; both happy paths and
 //! every reachable error path are exercised.
 
-use covalence_core::{Error, Term, TermKind, Thm, Type};
+use covalence_core::{Error, Term, TermKind, Type};
+/// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
+type Thm = covalence_core::Thm;
 
 // ============================================================================
 // Helpers

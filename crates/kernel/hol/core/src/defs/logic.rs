@@ -204,7 +204,10 @@ poly_let_term! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{TermKind, Thm};
+    use crate::TermKind;
+
+    /// Pin the pure tier: `Thm<CoreLang>` unit tests (stage E1).
+    type Thm = crate::Thm;
 
     fn bin() -> Type {
         Type::fun(b(), Type::fun(b(), b()))

@@ -36,6 +36,7 @@
 //! motive, no β-capture, no deduction theorem.** The wall was an artifact of the
 //! encoding, not of the mathematics.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;
 
 use covalence_core::{Error, Result, Term, Type};

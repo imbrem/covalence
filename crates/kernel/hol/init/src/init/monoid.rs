@@ -51,6 +51,7 @@
 
 use covalence_core::{Result, Term};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 
 use crate::init::ext::TermExt;
 

@@ -38,6 +38,7 @@
 //! is still untrusted — the kernel re-checks every rule the builder applies, so
 //! a buggy recognizer can only fail to find a proof, never forge one.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;

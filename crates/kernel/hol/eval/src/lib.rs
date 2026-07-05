@@ -36,6 +36,7 @@ use covalence_pure::{Rule, apply};
 
 pub mod certs;
 pub mod defs;
+pub mod derived;
 mod lang;
 pub mod lit;
 pub mod rules;
@@ -44,7 +45,14 @@ mod tohol_ops;
 mod typed_float;
 
 pub use certs::{PrimFamily, prim_family};
+// The HOL term-builder helpers (`hol_eq` / `hol_imp` / `hol_forall` / …)
+// still live in core (the staying axiom rules and the D3 type-catalogue
+// residue state their conclusions with them); re-exported here so
+// downstream imports route through the eval catalogue, the same alias
+// route as `defs` — the eventual physical move is then invisible.
+pub use covalence_core::hol;
 pub use defs::{as_f64_bits, mk_f64};
+pub use derived::{DerivedRules, TypeDefExt};
 pub use lang::{CoreEval, EvalThm, EvalTypeDef};
 pub use lit::{
     as_blob, as_int, as_nat, as_u32, as_u64, kind_name, mk_blob, mk_int, mk_nat, mk_u32, mk_u64,

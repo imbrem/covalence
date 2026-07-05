@@ -37,6 +37,7 @@ pub use covalence_hol_eval::defs::{
 use covalence_core::{Error, Result, Term, Type, TypeKind};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs::cond_spec;
+use covalence_hol_eval::derived::DerivedRules;
 
 use crate::init::cond::{cond_false, cond_true};
 use crate::init::ext::{TermExt, ThmExt};

@@ -15,6 +15,7 @@
 //! transient proof state — goal, context facts, variable scope — separate from
 //! the importable namespace [`Env`]. (The kernel replay [`check`] stays sync.)
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;
 use std::sync::Arc;
 

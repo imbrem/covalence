@@ -36,6 +36,7 @@
 
 use covalence_core::Term;
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_init::init::{int, logic};
 
 use crate::error::BridgeError;

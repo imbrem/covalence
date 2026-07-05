@@ -41,6 +41,7 @@
 use covalence_core::{Error, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_sexp::SExpr;
 
 /// The kernel's `Result` (one type argument; error fixed to

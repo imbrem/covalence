@@ -20,6 +20,7 @@
 //! [`check`] is **async** (a `Rule` may await) so it returns a `BoxFuture` —
 //! the recursion through `Rule::apply` needs a known size.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::sync::Arc;
 
 use async_trait::async_trait;

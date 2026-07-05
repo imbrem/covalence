@@ -1,5 +1,7 @@
 //! Exhaustive edge-case audit of the HOL connective + quantifier
-//! inference rules in `covalence_core::thm`:
+//! rules — since stage L2 these are **derivations**
+//! ([`covalence_hol_eval::derived::DerivedRules`]), no longer kernel
+//! rules; the audit moved here from `covalence-core/tests` with them:
 //!
 //! `imp_intro`, `imp_elim`, `all_intro`, `all_elim`, `and_intro`,
 //! `and_elim_l`, `and_elim_r`, `or_intro_l`, `or_intro_r`, `or_elim`,
@@ -13,13 +15,17 @@
 //! acceptance / rejection and inspecting hypothesis bookkeeping.
 //!
 //! This is an external (integration-test) crate, so it sees only the
-//! public API.
+//! public API. Every acceptance/rejection below is now enforced by the
+//! derivation bottoming out in the kernel equality-core rules (plus its
+//! own up-front shape checks) rather than by a dedicated kernel rule —
+//! same contract, zero TCB.
 
-use covalence_core::defs;
 use covalence_core::subst::close;
 use covalence_core::{Error, Term, TermKind, Type};
-/// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
-type Thm = covalence_core::Thm;
+use covalence_hol_eval::defs;
+use covalence_hol_eval::derived::DerivedRules;
+/// The derivations live at the eval tier (`⊢ T` is certificate-derived).
+type Thm = covalence_hol_eval::EvalThm;
 
 // ============================================================================
 // Term-builder helpers (mirror `covalence_core::hol`, public-API-only)
@@ -361,7 +367,7 @@ fn all_elim_instantiates_witness() {
     // ⊢ ∀x:nat. x = x  --[5]-->  ⊢ 5 = 5
     let x = Term::free("x", nat());
     let univ = Thm::refl(x).unwrap().all_intro("x", nat()).unwrap();
-    let five = Term::nat_lit(5u32);
+    let five = covalence_hol_eval::mk_nat(covalence_types::Nat::from(5u32));
     let inst = univ.all_elim(five.clone()).expect("all_elim");
     let (lhs, rhs) = binop_args(inst.concl());
     assert_eq!(lhs, five);
@@ -371,7 +377,9 @@ fn all_elim_instantiates_witness() {
 #[test]
 fn all_elim_rejects_non_forall() {
     let p = pvar("p");
-    let err = assume(p).all_elim(Term::nat_lit(0u32)).unwrap_err();
+    let err = assume(p)
+        .all_elim(covalence_hol_eval::mk_nat(covalence_types::Nat::from(0u32)))
+        .unwrap_err();
     assert!(matches!(err, Error::NotHolForall(_)));
 }
 
@@ -411,7 +419,9 @@ fn all_elim_preserves_hyps() {
     });
     let big: covalence_core::Ctx = [q.clone(), univ_term.clone()].into_iter().collect();
     let univ = assume(univ_term).weaken(big).unwrap();
-    let inst = univ.all_elim(Term::nat_lit(7u32)).unwrap();
+    let inst = univ
+        .all_elim(covalence_hol_eval::mk_nat(covalence_types::Nat::from(7u32)))
+        .unwrap();
     assert!(inst.hyps().contains(&q));
 }
 

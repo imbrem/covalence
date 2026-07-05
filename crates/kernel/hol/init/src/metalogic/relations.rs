@@ -45,6 +45,7 @@
 
 use covalence_core::{Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 
 use super::database::{app, closed, d_var, derivable_db, enc_imp, fvar, phi, pred_ty};
 use crate::init::ext::{TermExt, ThmExt};

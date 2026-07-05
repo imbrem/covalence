@@ -18,29 +18,36 @@
 //! `expect` on these `Result`s because a failure there is a build-time
 //! bug, not a runtime condition.
 //!
-//! ## The kernel rules are the primitives — call them directly
+//! ## The kernel rules + derived rules are the primitives — call them directly
 //!
-//! The kernel already exposes the full HOL-Light rule set on [`Thm`]
-//! as `Result`-returning constructors. **Treat these as the
-//! primitives and call them directly** (with `?`); `ThmExt` does not
-//! re-wrap them:
+//! The kernel exposes the equality-core rule set on [`Thm`] as
+//! `Result`-returning constructors, and `covalence-hol-eval`'s
+//! [`DerivedRules`] (re-exported here) provides the connective /
+//! quantifier rules with the same signatures as zero-TCB derivations
+//! (stage L2). **Treat these as the primitives and call them
+//! directly** (with `?`); `ThmExt` does not re-wrap them:
 //!
 //! - equality: [`Thm::refl`], [`Thm::sym`], [`Thm::trans`],
 //!   [`Thm::cong_app`], [`Thm::cong_abs`], [`Thm::beta_conv`],
 //!   [`Thm::eta_conv`];
 //! - logical framework: [`Thm::assume`], [`Thm::eq_mp`],
-//!   [`Thm::deduct_antisym`], [`Thm::imp_intro`], [`Thm::imp_elim`],
-//!   [`Thm::all_intro`], [`Thm::all_elim`];
-//! - connectives: [`Thm::and_intro`], [`Thm::and_elim_l`],
-//!   [`Thm::and_elim_r`], [`Thm::or_intro_l`], [`Thm::or_intro_r`],
-//!   [`Thm::or_elim`], [`Thm::not_intro`], [`Thm::not_elim`];
+//!   [`Thm::deduct_antisym`]; derived: [`DerivedRules::imp_intro`],
+//!   [`DerivedRules::imp_elim`], [`DerivedRules::all_intro`],
+//!   [`DerivedRules::all_elim`];
+//! - connectives (all derived): [`DerivedRules::and_intro`],
+//!   [`DerivedRules::and_elim_l`], [`DerivedRules::and_elim_r`],
+//!   [`DerivedRules::or_intro_l`], [`DerivedRules::or_intro_r`],
+//!   [`DerivedRules::or_elim`], [`DerivedRules::not_intro`],
+//!   [`DerivedRules::not_elim`], [`DerivedRules::lem`];
 //! - substitution / structural: [`Thm::inst`], [`Thm::inst_tfree`],
 //!   [`Thm::weaken`], [`Thm::false_elim`], [`Thm::nat_induct`] (the
 //!   sequent form; for the classic formula form use this module's
 //!   [`nat_induct`] derivation);
 //! - reduction: [`covalence_hol_eval::reduce`] (the untrusted cert-path
 //!   driver — single-step closed primitive computation),
-//!   [`Thm::unfold_term_spec`].
+//!   [`Thm::unfold_term_spec`];
+//! - typedef projections: [`TypeDefExt`] splits the
+//!   `new_type_definition` bijection conjunction into its three laws.
 //!
 //! `ThmExt` only adds derived steps the kernel doesn't ship: the two
 //! congruence specialisations, the `p ⟺ (p = T)` bridge, conjunction
@@ -65,11 +72,13 @@
 //! named subterm rather than evaluating — so it *does* traverse under
 //! binders, capture-avoiding with a fresh witness.
 
-use covalence_core::seam::HolTier;
 use covalence_core::term::{TermKind, TrustedCons};
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs::Symbol;
+// Re-exported so downstream proof code has one insulation point for the
+// whole rule surface (kernel equality core + the L2 derived rules).
+pub use covalence_hol_eval::derived::{DerivedRules, TypeDefExt};
 
 use crate::HolLightCtx;
 
@@ -749,11 +758,7 @@ impl ThmExt for Thm {
 ///    `n ∈ FV(p)` makes `(p x)[0/x] ≠ p 0` fail the base match)
 ///    → `Γ₁ ∪ Γ₂ ⊢ p x`.
 /// 5. `all_intro x` → `Γ₁ ∪ Γ₂ ⊢ ∀x:nat. p x`.
-pub fn nat_induct<L: HolTier>(
-    base: covalence_core::Thm<L>,
-    step: covalence_core::Thm<L>,
-) -> Result<covalence_core::Thm<L>> {
-    type CThm<L> = covalence_core::Thm<L>;
+pub fn nat_induct(base: Thm, step: Thm) -> Result<Thm> {
     let nat = Type::nat();
 
     // 1. `Γ₂ ⊢ (p n) ⟹ (p (succ n))` — extract the applied motive & var.
@@ -799,22 +804,17 @@ pub fn nat_induct<L: HolTier>(
 
     // 3. Discharge the implication into hypothesis form.
     let p_x = Term::app(p, x);
-    let ih = CThm::assume(p_x.clone())?; //      {p x} ⊢ p x
+    let ih = Thm::assume(p_x.clone())?; //      {p x} ⊢ p x
     let step = step.imp_elim(ih)?; //       Γ₂ ∪ {p x} ⊢ p (succ x)
 
-    // 4–5. Sequent-form induction, then generalize.
-    let ind = CThm::nat_induct(base, step, p_x, &x_name)?; // Γ₁ ∪ Γ₂ ⊢ p x
+    // 4–5. Sequent-form induction, then generalize (derived GEN).
+    let ind = Thm::nat_induct(base, step, p_x, &x_name)?; // Γ₁ ∪ Γ₂ ⊢ p x
     ind.all_intro(&x_name, nat) //                            Γ₁ ∪ Γ₂ ⊢ ∀x. p x
 }
 
 /// A variable name not free (at any type) in `p`, either premise's
 /// hypotheses, or either conclusion.
-fn fresh_ind_var<L: HolTier>(
-    hint: &str,
-    base: &covalence_core::Thm<L>,
-    step: &covalence_core::Thm<L>,
-    p: &Term,
-) -> String {
+fn fresh_ind_var(hint: &str, base: &Thm, step: &Thm, p: &Term) -> String {
     let clashes = |name: &str| {
         subst::has_free_var(p, name)
             || subst::has_free_var(base.concl(), name)

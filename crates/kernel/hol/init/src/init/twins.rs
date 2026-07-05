@@ -43,6 +43,7 @@
 //! for the design decisions (name-collision handling, the def-style plan, and
 //! the `TypeSpec` re-home route prototyped by [`unit_typedef`]).
 
+use covalence_hol_eval::derived::{DerivedRules, TypeDefExt};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
@@ -188,7 +189,7 @@ pub fn unit_typedef() -> Result<TypeDef> {
 pub fn unit_rep_abs_t(td: &TypeDef) -> Result<Thm> {
     let t_lit = Term::bool_lit(true);
     // rep_abs_fwd at r := T : ⊢ P T ⟹ rep (abs T) = T.
-    let fwd_at_t = td.rep_abs_fwd.clone().all_elim(t_lit)?;
+    let fwd_at_t = td.rep_abs_fwd()?.all_elim(t_lit)?;
     fwd_at_t.imp_elim(unit_witness()?) // ⊢ rep (abs T) = T
 }
 
@@ -199,12 +200,12 @@ pub fn unit_rep_abs_t(td: &TypeDef) -> Result<Thm> {
 pub fn unit_rep_is_t(td: &TypeDef, a: Term) -> Result<Thm> {
     let rep = td.rep.clone();
     // (i) abs (rep a) = a — the wrapper-side round trip at `a`.
-    let abs_rep_a = td.abs_rep.clone().all_elim(a.clone())?;
+    let abs_rep_a = td.abs_rep()?.all_elim(a.clone())?;
     // (ii) rep (abs (rep a)) = rep a — apply `rep` to both sides of (i).
     let rep_cong = Thm::refl(rep.clone())?.cong_app(abs_rep_a)?;
     // rep_abs_back at r := rep a : ⊢ rep (abs (rep a)) = rep a ⟹ P (rep a).
     let rep_a = Term::app(rep, a);
-    let back_at = td.rep_abs_back.clone().all_elim(rep_a.clone())?;
+    let back_at = td.rep_abs_back()?.all_elim(rep_a.clone())?;
     let p_rep_a = back_at.imp_elim(rep_cong)?; // ⊢ P (rep a)
     // β: `P (rep a) = (rep a = T)`, then transport to `⊢ rep a = T`.
     let beta = Thm::beta_conv(Term::app(unit_predicate()?, rep_a))?;
@@ -227,8 +228,8 @@ pub fn unit_singleton(td: &TypeDef) -> Result<Thm> {
     // abs (rep x) = abs (rep y) — apply `abs` to both sides.
     let abs_cong = Thm::refl(td.abs.clone())?.cong_app(rep_x_eq_y)?;
     // x = abs (rep x) = abs (rep y) = y.
-    let abs_rep_x = td.abs_rep.clone().all_elim(x.clone())?; // ⊢ abs (rep x) = x
-    let abs_rep_y = td.abs_rep.clone().all_elim(y.clone())?; // ⊢ abs (rep y) = y
+    let abs_rep_x = td.abs_rep()?.all_elim(x.clone())?; // ⊢ abs (rep x) = x
+    let abs_rep_y = td.abs_rep()?.all_elim(y.clone())?; // ⊢ abs (rep y) = y
     let x_eq_y = abs_rep_x
         .sym()? // ⊢ x = abs (rep x)
         .trans(abs_cong)? // ⊢ x = abs (rep y)
@@ -316,10 +317,12 @@ mod tests {
     #[test]
     fn unit_typedef_prototype() {
         let td = unit_typedef().expect("unit introduced via new_type_definition");
-        // abs_rep : ⊢ ∀a:τ. abs (rep a) = a — hypothesis-free (closed witness).
-        assert!(td.abs_rep.hyps().is_empty());
-        assert!(td.rep_abs_fwd.hyps().is_empty());
-        assert!(td.rep_abs_back.hyps().is_empty());
+        // The bijection (and so each projected law) is hypothesis-free
+        // (closed witness).
+        assert!(td.bijection.hyps().is_empty());
+        assert!(td.abs_rep().unwrap().hyps().is_empty());
+        assert!(td.rep_abs_fwd().unwrap().hyps().is_empty());
+        assert!(td.rep_abs_back().unwrap().hyps().is_empty());
         // τ is a fresh type constructor, distinct from the `defs/` unit spec type.
         assert_ne!(td.tau, covalence_core::Type::unit());
     }

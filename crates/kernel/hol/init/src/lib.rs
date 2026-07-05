@@ -7,7 +7,8 @@
 //!    the algebra theories, the inductive engine.
 //! 2. **Proof tactics & soundness witnesses** ([`proofs`]) — pure combinators
 //!    over the kernel rules (`beta_nf`, `unfold_at_*`, rewriting) plus the
-//!    executable derivations witnessing the kernel's fast connective methods.
+//!    rewriting combinators (the connective/quantifier rules themselves are
+//!    `covalence-hol-eval::derived` derivations since stage L2).
 //! 3. **The `.cov` surface** ([`script`], [`project`]) and the Metamath/Peano
 //!    metalogic ([`metalogic`], [`peano`]).
 //! 4. **Serialisation** ([`hash`], [`sexp`]) — content hashing + canonical

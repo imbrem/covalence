@@ -47,6 +47,7 @@ use covalence_core::seam::HolTier;
 use covalence_core::{IntTag, Term, TermKind, Type};
 use covalence_hol_eval::defs;
 use covalence_hol_eval::defs::IntOp;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::{EvalThm, mk_blob, mk_int, mk_nat, reduce};
 
 /// The pure-HOL tier: `covalence_core::Thm` defaults to `Thm<CoreLang>`,

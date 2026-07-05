@@ -19,6 +19,7 @@
 //! Arithmetic + `cond`/`bool` helper lemmas live in `nat_div.cov`; the term
 //! construction (step functional, `Hext`, recurrence) lives here.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::BTreeMap;
 
 use covalence_core::{Result, Term, Type, subst};

@@ -19,6 +19,7 @@
 //!   (false for general lists; holds for `list unit` because every head is
 //!   `unit.nil`).
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::sync::Arc;
 
 use async_trait::async_trait;

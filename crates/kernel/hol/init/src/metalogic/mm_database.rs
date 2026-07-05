@@ -75,6 +75,7 @@
 //!   derivability rules: they build `Slot::Wff` terms during replay but
 //!   contribute **no** clause to the rule set.
 
+use covalence_hol_eval::derived::DerivedRules;
 use fnv::FnvHashMap as HashMap;
 
 use covalence_core::term::TrustedCons;

@@ -53,6 +53,7 @@
 //! reported `NotImplemented`. Subproofs (`anchor` / `:discharge`) and the
 //! remaining rule families are likewise reported; see `SKELETONS.md`.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;
 
 use covalence_core::{Term, Type};

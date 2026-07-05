@@ -39,6 +39,7 @@
 
 use covalence_core::{Error, Result, Term, TermKind, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 
 use crate::init::ext::TermExt;
 

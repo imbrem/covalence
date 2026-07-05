@@ -303,7 +303,7 @@ core_rules! {
         Ok((Ctx::new(), hol::hol_eq(abs.clone(), f_outer)))
     }
 
-    // ================= Group B: LF / imp / quantifiers =================
+    // ================= Group B: LF =================
 
     /// `{p} ⊢ p` for `p : bool`.
     Assume(Term) = |(p,), _| {
@@ -350,165 +350,10 @@ core_rules! {
         Ok((hyps_p_minus_q.union(&hyps_q_minus_p), hol::hol_eq(p, q)))
     }
 
-    /// `Γ \ {φ} ⊢ φ ⟹ ψ`, given `Γ ⊢ ψ` (`φ : bool`).
-    ImpIntro(Prem<L>, Term) = |(t, phi), _| {
-        let (hyps, concl) = parts(&t);
-        let phi_ty = phi.type_of()?;
-        if !phi_ty.is_bool() {
-            return Err(Error::NotBool(phi_ty));
-        }
-        let hyps2 = hyps.remove(&phi);
-        Ok((hyps2, hol::hol_imp(phi.clone(), concl.clone())))
-    }
-
-    /// `Γ ∪ Δ ⊢ ψ`, given `Γ ⊢ φ ⟹ ψ` and `Δ ⊢ φ`.
-    ImpElim(Prem<L>, Prem<L>) = |(imp, hyp), _| {
-        let (himp, cimp) = parts(&imp);
-        let (hh, ch) = parts(&hyp);
-        let (phi, psi) = super::parse_hol_imp(cimp)?;
-        if *phi != *ch {
-            return Err(Error::ImpAntecedentMismatch {
-                expected: format!("{}", phi),
-                got: format!("{}", ch),
-            });
-        }
-        Ok((himp.union(hh), psi.clone()))
-    }
-
-    /// `Γ ⊢ ∀x:τ. φ`, given `Γ ⊢ φ` with `(name:τ)` not free in `Γ`.
-    AllIntro(Prem<L>, SmolStr, Type) = |(t, name, ty), _| {
-        let (hyps, concl) = parts(&t);
-        let var = Var::new(name.as_str(), ty.clone());
-        for h in hyps.iter() {
-            if has_free_var_typed(h, &var) {
-                return Err(Error::FreeVarInHyps { name: name.clone() });
-            }
-        }
-        Ok((hyps.clone(), hol::hol_forall(name.as_str(), ty, concl.clone())))
-    }
-
-    /// `Γ ⊢ φ[t/x]`, given `Γ ⊢ ∀x:τ. φ` and `t : τ`.
-    AllElim(Prem<L>, Term) = |(t, witness), _| {
-        let (hyps, concl) = parts(&t);
-        let (ty, body) = super::parse_hol_forall(concl)?;
-        let wit_ty = witness.type_of()?;
-        if wit_ty != *ty {
-            return Err(Error::TypeMismatch { expected: ty.clone(), got: wit_ty });
-        }
-        let opened = open(body, &witness);
-        Ok((hyps.clone(), opened))
-    }
-
-    // ================= Group C: connectives =================
-
-    /// `Γ ∪ Δ ⊢ p ∧ q`, given `Γ ⊢ p` and `Δ ⊢ q`.
-    AndIntro(Prem<L>, Prem<L>) = |(a, b), _| {
-        let (ha, ca) = parts(&a);
-        let (hb, cb) = parts(&b);
-        let p_ty = ca.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
-        }
-        let q_ty = cb.type_of()?;
-        if !q_ty.is_bool() {
-            return Err(Error::NotBool(q_ty));
-        }
-        Ok((ha.union(hb), hol::hol_and(ca.clone(), cb.clone())))
-    }
-
-    /// `Γ ⊢ p`, given `Γ ⊢ p ∧ q`.
-    AndElimL(Prem<L>) = |(t,), _| {
-        let (hyps, concl) = parts(&t);
-        let (p, _q) = super::parse_hol_and(concl)?;
-        Ok((hyps.clone(), p.clone()))
-    }
-
-    /// `Γ ⊢ q`, given `Γ ⊢ p ∧ q`.
-    AndElimR(Prem<L>) = |(t,), _| {
-        let (hyps, concl) = parts(&t);
-        let (_p, q) = super::parse_hol_and(concl)?;
-        Ok((hyps.clone(), q.clone()))
-    }
-
-    /// `Γ ⊢ p ∨ q`, given `Γ ⊢ p` and `q : bool`.
-    OrIntroL(Prem<L>, Term) = |(t, q), _| {
-        let (hyps, concl) = parts(&t);
-        let p_ty = concl.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
-        }
-        let q_ty = q.type_of()?;
-        if !q_ty.is_bool() {
-            return Err(Error::NotBool(q_ty));
-        }
-        Ok((hyps.clone(), hol::hol_or(concl.clone(), q)))
-    }
-
-    /// `Γ ⊢ p ∨ q`, given `Γ ⊢ q` and `p : bool`.
-    OrIntroR(Prem<L>, Term) = |(t, p), _| {
-        let (hyps, concl) = parts(&t);
-        let q_ty = concl.type_of()?;
-        if !q_ty.is_bool() {
-            return Err(Error::NotBool(q_ty));
-        }
-        let p_ty = p.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
-        }
-        Ok((hyps.clone(), hol::hol_or(p, concl.clone())))
-    }
-
-    /// `Γ ∪ Δ₁ ∪ Δ₂ ⊢ r`, given `Γ ⊢ p ∨ q`, `Δ₁ ⊢ p ⟹ r`, `Δ₂ ⊢ q ⟹ r`.
-    OrElim(Prem<L>, Prem<L>, Prem<L>) = |(disj, left, right), _| {
-        let (hd, cd) = parts(&disj);
-        let (hl, cl) = parts(&left);
-        let (hr, cr) = parts(&right);
-        let (p, q) = super::parse_hol_or(cd)?;
-        let (lp, lr) = super::parse_hol_imp(cl)?;
-        let (rq, rr) = super::parse_hol_imp(cr)?;
-        if lp != p {
-            return Err(Error::ConnectiveRule(format!(
-                "or_elim: left branch antecedent {lp} ≠ left disjunct {p}"
-            )));
-        }
-        if rq != q {
-            return Err(Error::ConnectiveRule(format!(
-                "or_elim: right branch antecedent {rq} ≠ right disjunct {q}"
-            )));
-        }
-        if lr != rr {
-            return Err(Error::ConnectiveRule(format!(
-                "or_elim: branch consequents differ ({lr} vs {rr})"
-            )));
-        }
-        Ok((hd.union(hl).union(hr), lr.clone()))
-    }
-
-    /// `Γ ⊢ ¬p`, given `Γ ⊢ p ⟹ F`.
-    NotIntro(Prem<L>) = |(t,), _| {
-        let (hyps, concl) = parts(&t);
-        let (p, f) = super::parse_hol_imp(concl)?;
-        if !matches!(f.kind(), TermKind::Bool(false)) {
-            return Err(Error::ConnectiveRule(format!(
-                "not_intro: consequent {f} is not F"
-            )));
-        }
-        Ok((hyps.clone(), hol::hol_not(p.clone())))
-    }
-
-    /// `Γ ∪ Δ ⊢ F`, given `Γ ⊢ ¬p` and `Δ ⊢ p`.
-    NotElim(Prem<L>, Prem<L>) = |(neg, other), _| {
-        let (hn, cn) = parts(&neg);
-        let (ho, co) = parts(&other);
-        let p = super::parse_hol_not(cn)?;
-        if *p != *co {
-            return Err(Error::ConnectiveRule(format!(
-                "not_elim: negated {p} ≠ hypothesis {}",
-                co
-            )));
-        }
-        Ok((hn.union(ho), Term::bool_lit(false)))
-    }
+    // (The connective / quantifier rules — imp/all/and/or/not intro+elim —
+    // left the kernel in stage L2: they are *derivations* over the rules
+    // above, provided with identical signatures by
+    // `covalence-hol-eval::derived::DerivedRules`. Zero TCB.)
 
     // ================= Group D: substitution =================
 
@@ -749,16 +594,9 @@ core_rules! {
         Ok((base_h.union(&rest), p))
     }
 
-    // ================= Group G': flagged postulates =================
-
-    /// `⊢ p ∨ ¬p` — the law of excluded middle (classicality axiom).
-    Lem(Term) = |(p,), _| {
-        let p_ty = p.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
-        }
-        Ok((Ctx::new(), hol::hol_or(p.clone(), hol::hol_not(p))))
-    }
+    // (`Lem` — excluded middle — also left the kernel in stage L2: it is
+    // derivable from `SelectAx` the standard HOL way; see
+    // `covalence-hol-eval::derived`'s cached LEM schema.)
 
     /// `⊢ (p x) ⟹ (p (ε p))` — Hilbert's choice axiom.
     SelectAx(Term, Term) = |(p, x), _| {

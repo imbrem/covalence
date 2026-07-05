@@ -33,6 +33,7 @@
 //! iterated (`…*`) premises need list recursion. Rules using them are rejected
 //! ([`rule_set`]) / skipped ([`spec_rule_set`]).
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::BTreeMap;
 
 use covalence_core::{Error, Result, Term};

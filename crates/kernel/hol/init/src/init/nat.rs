@@ -52,6 +52,7 @@
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_types::Nat;
 
 use crate::init::eq::{beta_expand, beta_nf_concl, beta_reduce};

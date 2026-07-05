@@ -29,7 +29,6 @@
 //!   int/unit incl. polymorphic args.
 
 use covalence_core::defs;
-use covalence_core::subst::close;
 use covalence_core::{Term, TermKind, Type, TypeKind};
 /// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
 type Thm = covalence_core::Thm;
@@ -52,14 +51,6 @@ fn hol_eq(a: Term, b: Term) -> Term {
 /// `p ⟹ q` using the defined `imp` connective.
 fn hol_imp(p: Term, q: Term) -> Term {
     Term::app(Term::app(defs::imp(), p), q)
-}
-
-/// `∀n:nat. body`, with `n` closed into the binder.
-fn forall_nat(body: Term) -> Term {
-    Term::app(
-        defs::forall(Type::nat()),
-        Term::abs(Type::nat(), close(&body, "n")),
-    )
 }
 
 /// `succ n` for a term `n : nat`.
@@ -121,16 +112,9 @@ fn nat_induct_happy_path_derives_open_conclusion() {
     assert!(thm.hyps().is_empty(), "IH discharged; no residual hyps");
 }
 
-#[test]
-fn nat_induct_generalizes_with_gen() {
-    // The ∀-form is one `all_intro` away (the formula-form wrapper in
-    // covalence-init packages this).
-    let (base, step, p) = refl_induction_inputs();
-    let thm = Thm::nat_induct(base, step, p.clone(), "n").unwrap();
-    let all = thm.all_intro("n", Type::nat()).unwrap();
-    let expected = forall_nat(p);
-    assert_eq!(all.concl(), &expected, "GEN gives ∀n:nat. p");
-}
+// (The ∀-form is one derived `all_intro` away — the formula-form wrapper in
+// covalence-init packages this; generalisation is exercised by
+// covalence-hol-eval's `tests/derived_rules.rs`.)
 
 #[test]
 fn nat_induct_allows_free_var_in_base_hyps() {

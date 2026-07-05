@@ -31,10 +31,15 @@
 //! iff          ←  (=)
 //! ```
 //!
-//! The `imp_intro` / `imp_elim` / `all_intro` / `all_elim` kernel
-//! rules operate on the `imp` / `forall` specs defined here; they
-//! remain kernel-provided derived rules (sound by the standard HOL
-//! Light derivations) rather than being re-derived from scratch.
+//! Since stage L2 NO kernel rule destructures these definitions — the
+//! connective / quantifier intro-elim rules are executable derivations
+//! in `covalence-hol-eval::derived`. The staying axiom rules
+//! (`succ_inj`, `select_ax`, `spec_ax`, the `spec_*` subtype laws,
+//! `new_type_definition`) still *state* their conclusions with `imp` /
+//! `not` / `or` / `exists` / `and` / `forall`, and the D3 residue type
+//! catalogue quantifies with them — which is exactly why these
+//! definitions are still core residue rather than eval catalogue: they
+//! move out with the literal-leaf endgame (see `SKELETONS.md`).
 
 use crate::hol;
 use crate::term::{Term, Type};

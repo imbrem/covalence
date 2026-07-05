@@ -30,6 +30,7 @@
 //! Alethe blob, shared across a session and persisted) is a follow-up —
 //! see `SKELETONS.md`.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

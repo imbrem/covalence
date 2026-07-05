@@ -212,6 +212,45 @@
         "crates/kernel/hol/core/src/ty/ty.rs:132: LazyLock::new(|| Type::spec(crate::defs::int_ty_spec(), Vec::new()));",
         "crates/kernel/hol/core/src/ty/ty.rs:144: LazyLock::new(|| Type::spec(crate::defs::unit_spec(), Vec::new()));"
       ]
+    },
+    "base+HOL+eval+wasm": {
+      "files": 68,
+      "nonTestLoc": 10592,
+      "unsafe": 0,
+      "unsafeLocations": [],
+      "mintSites": 18,
+      "mintSiteLocations": [
+        "crates/kernel/base/trusted/src/eqn.rs:117: Thm::new(lang, Eqn(e.clone(), e))",
+        "crates/kernel/base/trusted/src/eqn.rs:129: Thm::new(lang, Eqn(b, a))",
+        "crates/kernel/base/trusted/src/eqn.rs:153: Ok(Thm::new(lang, Eqn(a, c)))",
+        "crates/kernel/base/trusted/src/eqn.rs:179: Some(Thm::new(lang, q))",
+        "crates/kernel/base/trusted/src/eqn.rs:199: Thm::new(lang, Eqn(App(f.clone(), a), App(f, a2)))",
+        "crates/kernel/base/trusted/src/eqn.rs:221: Ok(Thm::new(lang, Eqn((a, b), (a2, b2))))",
+        "crates/kernel/base/trusted/src/eqn.rs:248: Ok(Thm::new(lang, Eqn(a, c)))",
+        "crates/kernel/base/trusted/src/eqn.rs:260: std::ptr::eq(&*p.0, &*q.0).then(|| Thm::new(lang, Eqn(p, q)))",
+        "crates/kernel/base/trusted/src/eqn.rs:275: Ok(Thm::new(into, prop))",
+        "crates/kernel/base/trusted/src/eqn.rs:285: (a == b).then(|| Thm::new(lang, Eqn(Val(a), Val(b))))",
+        "crates/kernel/base/trusted/src/eqn.rs:316: Ok(Thm::new(lang, concl))",
+        "crates/kernel/base/trusted/src/eqn.rs:345: Ok(Thm::new(lang, Eqn(App(f, Val(arg)), Val(out))))",
+        "crates/kernel/base/trusted/src/matching.rs:174: Ok(Thm::new(lang, Eqn(lhs, rhs)))",
+        "crates/kernel/base/trusted/src/prop.rs:50: Some(Thm::new(lang, App(And, (p, q))))",
+        "crates/kernel/base/trusted/src/prop.rs:59: Thm::new(lang, App(Or, (p, q)))",
+        "crates/kernel/base/trusted/src/prop.rs:64: Thm::new(lang, App(Or, (q, p)))",
+        "crates/kernel/base/trusted/src/prop.rs:72: (Thm::new(lang.clone(), p), Thm::new(lang, q))",
+        "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
+      ],
+      "publicSurface": {
+        "fn": 492,
+        "struct": 56,
+        "enum": 13,
+        "trait": 21,
+        "macro": 30
+      },
+      "publicSurfaceTotal": 612,
+      "defsCoupling": 82,
+      "defsCouplingLocations": [
+        "82 refs (list suppressed >60)"
+      ]
     }
   },
   "globals": {

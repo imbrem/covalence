@@ -65,6 +65,12 @@ const CONFIGS = [
     roots: [BASE, CORE, `${EVAL}/float.rs`],
     exclude: [`${CORE}/defs/`, `${CORE}/thm/certs.rs`, `${EVAL}/nat.rs`, `${EVAL}/int.rs`, `${EVAL}/bytes.rs`, `${EVAL}/fixed.rs`],
   },
+  {
+    name: "base+HOL+eval+wasm",
+    // Everything trusted: the full cumulative tower (top tier).
+    roots: [BASE, CORE, EVAL],
+    exclude: [],
+  },
 ];
 
 // ---------------------------------------------------------------------------

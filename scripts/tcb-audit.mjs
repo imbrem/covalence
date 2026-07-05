@@ -79,8 +79,12 @@ const CONFIGS = [
   {
     name: "base+HOL+wasm",
     // The WASM-oracle tier = minimal HOL + the float ops (base/eval
-    // float.rs + the hol/eval float defs). (The dedicated wasm-oracle /
-    // F2b CoreEval rules are nascent; extend this as they land.)
+    // float.rs + the hol/eval float defs/registry). CAVEAT: the F2b
+    // `FloatCert` rule + dispatch (hol/eval rules.rs/certs.rs) landed but
+    // share their files with the other eval cert families, so file
+    // granularity cannot include just the float slice — the full float
+    // trust surface is this config PLUS the float sections of those two
+    // files (read them under `base+HOL+eval`).
     roots: [BASE, CORE, `${EVAL}/float.rs`, `${HOLEVAL}/defs/floats.rs`],
     exclude: [`${CORE}/defs/`],
   },

@@ -36,8 +36,9 @@ delete here and — if reducible — add to
   (need a `nat ↔ u8` conversion).
 
 (Fixed-width conversions `toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/`sext` in
-`int_ops.rs` are *intentionally* declaration-only — the primitive reducible
-interface, not a stub.)
+`int_ops.rs` and the F2b bit-level float ops in `defs/floats.rs` are
+*intentionally* declaration-only — the primitive reducible interface, not a
+stub.)
 
 ## defs/core.cov source-of-truth flip (deferred, blocked on re-entrancy)
 

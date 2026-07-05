@@ -21,7 +21,7 @@
 //!   by literal denotation — `HolApp` *means* HOL application, and the
 //!   equation's two sides are the same term value by construction.
 
-use covalence_pure::{App, CanonRule, Op, Val};
+use covalence_pure::{App, CanonRule, F32, F64, Op, Val};
 use covalence_types::{Bytes, Int, Nat};
 
 use covalence_core::Term;
@@ -52,6 +52,30 @@ pub struct ToHolBytes;
 
 impl Op for ToHolBytes {
     type In = Bytes;
+    type Out = Term;
+}
+
+/// `toHOL : F32 → Term` — the uninterpreted denotation of a native `f32`
+/// bit-pattern (the base [`F32`] sort: raw bits, bitwise `Eq`, WASM
+/// deterministic profile) as its canonical HOL term. Never evaluated (no
+/// [`CanonRule`]); like [`ToHolNat`], its defining properties arrive only as
+/// admitted rules. Under the F2b bit-level layer the denoted term is the
+/// `u32` bit-pattern literal (`f32 := u32`); the typed layer (F2c) wraps it
+/// with the newtype coercion.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct ToHolF32;
+
+impl Op for ToHolF32 {
+    type In = F32;
+    type Out = Term;
+}
+
+/// `toHOL : F64 → Term` — uninterpreted (see [`ToHolF32`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct ToHolF64;
+
+impl Op for ToHolF64 {
+    type In = F64;
     type Out = Term;
 }
 
@@ -90,6 +114,12 @@ pub type ToHolIntE = App<ToHolInt, Val<Int>>;
 
 /// A `toHOL`-denoted bytestring: `App<ToHolBytes, Val<Bytes>>`.
 pub type ToHolBytesE = App<ToHolBytes, Val<Bytes>>;
+
+/// A `toHOL`-denoted `f32` bit-pattern: `App<ToHolF32, Val<F32>>`.
+pub type ToHolF32E = App<ToHolF32, Val<F32>>;
+
+/// A `toHOL`-denoted `f64` bit-pattern: `App<ToHolF64, Val<F64>>`.
+pub type ToHolF64E = App<ToHolF64, Val<F64>>;
 
 /// A symbolic HOL application `f x` at the base layer.
 pub type HolAppE<F, X> = App<HolApp, (F, X)>;

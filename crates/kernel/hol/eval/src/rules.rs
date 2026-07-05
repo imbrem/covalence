@@ -371,6 +371,43 @@ eval_rules! {
             .and_then(|eq| seq(Ctx::new(), eq))
             .map_err(to_pure)
     }
+
+    /// The bit-level WASM float certificate (stage F2b), keyed by the
+    /// canonical `defs::floats` registry: arithmetic / min-max / copysign /
+    /// rounding / comparisons on `f32`/`f64` bit patterns (`f32.addBits :
+    /// u32 → u32 → u32`, …), `promoteBits`/`demoteBits`, and the saturating
+    /// `truncSatBits`/`convertBits` int↔float families at the WASM scalar
+    /// tags `u32`/`u64`/`s32`/`s64`.
+    ///
+    /// ## Soundness
+    ///
+    /// The family contract above, with one difference from the other
+    /// families: the bit-level float constants are **declaration-only**
+    /// (`tm = None` — no definitional body), so this certificate family is
+    /// what pins their denotation. The contract: each constant denotes the
+    /// corresponding **WASM deterministic-profile** operation *on bit
+    /// patterns* — a total function on `u32`/`u64` (arithmetic NaN results
+    /// collapse to the single canonical NaN; `abs`/`neg`/`copysign` are pure
+    /// bit ops preserving NaN payloads; `trunc_sat` saturates with NaN → 0;
+    /// comparisons follow IEEE 754 with `+0 = −0` and NaN unordered). Such a
+    /// function exists (existence-without-construction: it is definable in
+    /// HOL over the `u32`/`u64` carriers, bit by bit), and since the
+    /// constants carry no other defining equations, interpreting them by it
+    /// is conservative. The dispatch (`certs::float_bits`) computes exactly
+    /// that function via the trusted `covalence-pure-trusted::float`
+    /// `CanonRule`s — the audited single NaN-canonicalization point, pinned
+    /// bit-for-bit against wasmtime's deterministic profile by
+    /// `covalence-pure-eval`'s differential suite — so every minted equation
+    /// is true under the pinned denotation. Every float body is total on bit
+    /// patterns: the only refusals are shape refusals (wrong arity / wrong
+    /// literal tag / non-canonical selector), never a wrong equation. The
+    /// rule derives its whole conclusion from the input (selector + native
+    /// args), so it is sound on ALL inputs.
+    FloatCert((TermSpec, Vec<Lit>)) -> CoreProp = |(spec, args), _| {
+        certs::float_bits(&spec, &args)
+            .and_then(|eq| seq(Ctx::new(), eq))
+            .map_err(to_pure)
+    }
     }
 
     // CanonRule ops admitted for `covalence_pure::canon` under `CoreEval`

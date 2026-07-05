@@ -65,7 +65,10 @@ pub use blob::{
     bytes_len, bytes_len_spec, bytes_slice, bytes_slice_spec,
 };
 pub use cov::{CoreEnv, CovError, Entry, core_env, parse_core, term_str, type_str};
-pub use floats::{f32_spec, f32_ty, f64_spec, f64_ty};
+pub use floats::{
+    FLOAT_CVT_TAGS, FloatKey, FloatOp, FloatWidth, f32_spec, f32_ty, f64_spec, f64_ty,
+    float_bits_op, float_bits_spec, lookup_float_op,
+};
 pub use fun::{compose, compose_spec, flip, flip_spec, id, id_spec, konst, konst_spec};
 pub use int::{
     int_abs, int_abs_spec, int_add, int_add_spec, int_div, int_div_spec, int_le, int_le_spec,

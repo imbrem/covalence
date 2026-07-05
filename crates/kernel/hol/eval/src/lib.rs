@@ -44,11 +44,13 @@ mod tohol_ops;
 
 pub use certs::{PrimFamily, prim_family};
 pub use lang::{CoreEval, EvalThm, EvalTypeDef};
-pub use lit::{as_blob, as_int, as_nat, kind_name, mk_blob, mk_int, mk_nat};
+pub use lit::{
+    as_blob, as_int, as_nat, as_u32, as_u64, kind_name, mk_blob, mk_int, mk_nat, mk_u32, mk_u64,
+};
 pub use tohol::nat_add_thm;
 pub use tohol_ops::{
-    HolApp, HolAppE, NatAddEqE, NatAddLhsE, ToHolBytes, ToHolBytesE, ToHolInt, ToHolIntE, ToHolNat,
-    ToHolNatE,
+    HolApp, HolAppE, NatAddEqE, NatAddLhsE, ToHolBytes, ToHolBytesE, ToHolF32, ToHolF32E, ToHolF64,
+    ToHolF64E, ToHolInt, ToHolIntE, ToHolNat, ToHolNatE,
 };
 
 /// Unwind an application spine: `((f a) b) c ↦ (f, [a, b, c])`.
@@ -81,8 +83,10 @@ fn mint<R: Rule<CoreEval, Concl = covalence_core::seam::CoreProp>>(
 ///
 /// The catalogue: HOL `=` over two same-kind literals (equality AND
 /// disequality), the primitive `succ`, the `nat.*` / `int.*` / `bytes.*`
-/// catalogue ops, the nat↔int/bytes coercions, and the fixed-width `uN`/`sN`
-/// ops. Conventions: saturating nat `sub`/`pred`; `n / 0 = 0` and
+/// catalogue ops, the nat↔int/bytes coercions, the fixed-width `uN`/`sN`
+/// ops, and the bit-level WASM float ops (`f32.addBits`, `f64.leBits`,
+/// `u32.truncSatBits.f32`, … — WASM deterministic profile on `u32`/`u64` bit
+/// patterns). Conventions: saturating nat `sub`/`pred`; `n / 0 = 0` and
 /// `n mod 0 = n`; fixed-width arithmetic wraps mod `2^width`; detectably
 /// unrepresentable results refuse (oversize `pow` exponents on a base ≥ 2,
 /// oversize `shl` shifts on a non-zero operand; `shr` is total).
@@ -125,6 +129,7 @@ pub fn reduce_with<C: TrustedCons + ?Sized>(t: &Term, cons: &mut C) -> Option<Ev
                 PrimFamily::Bytes => mint(rules::BytesCert, input)?,
                 PrimFamily::Coercion => mint(rules::CoercionCert, input)?,
                 PrimFamily::FixedWidth => mint(rules::FixedWidthCert, input)?,
+                PrimFamily::Float => mint(rules::FloatCert, input)?,
             }
         }
         _ => return None,

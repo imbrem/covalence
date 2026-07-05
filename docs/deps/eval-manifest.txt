@@ -10,4 +10,5 @@ BytesCert
 FixedWidthCert
 LitEqCert
 CoercionCert
+FloatCert
 HolApp

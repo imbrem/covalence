@@ -1,7 +1,7 @@
 //! Per-family certificate **dispatch**: the `decide` bodies of the
 //! computation-backed `IsThm` certificate rules in `crate::rules`
 //! (`NatArithCert` / `IntArithCert` / `BytesCert` / `FixedWidthCert` /
-//! `LitEqCert` / `CoercionCert` / `SuccCert`).
+//! `FloatCert` / `LitEqCert` / `CoercionCert` / `SuccCert`).
 //!
 //! Each helper takes an **op selector** (a [`TermSpec`], keyed by canonical
 //! pointer identity — `spec.ptr_id()` against a table built from the
@@ -36,6 +36,7 @@ use covalence_types::{Int, Nat};
 
 use crate::defs;
 use crate::defs::int_ops::{IntOp, OpKey, lookup_op};
+use crate::defs::{FloatKey, FloatOp, FloatWidth};
 use covalence_core::hol;
 use covalence_core::seam::Lit;
 use covalence_core::{Error, Result};
@@ -60,6 +61,8 @@ pub enum PrimFamily {
     Coercion,
     /// The fixed-width `uN`/`sN` ops ([`crate::rules::FixedWidthCert`]).
     FixedWidth,
+    /// The bit-level WASM float ops ([`crate::rules::FloatCert`]).
+    Float,
 }
 
 /// Classify a spec by canonical pointer identity, or `None` if it is not a
@@ -76,6 +79,8 @@ pub fn prim_family(spec: &TermSpec) -> Option<PrimFamily> {
         Some(PrimFamily::Coercion)
     } else if lookup_op(spec).is_some() {
         Some(PrimFamily::FixedWidth)
+    } else if defs::lookup_float_op(spec).is_some() {
+        Some(PrimFamily::Float)
     } else {
         None
     }
@@ -656,4 +661,178 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
         }
     };
     eq_concl(spec, args, rhs)
+}
+
+// ============================================================================
+// Bit-level float dispatch
+// ============================================================================
+
+/// Dispatch one width's bit-level [`FloatOp`] through its trusted base
+/// CanonRules: decode the `uN` bit literals into the width's float sort
+/// (`from_bits` — a raw bit move, no canonicalization), run the op, re-encode
+/// (float results back to bit literals via `to_bits`, comparisons to bool
+/// literals). The op↔rule pairing below is a trusted table: a transposed
+/// entry would mint a false equation (guarded value-for-value by
+/// `tests/floats.rs`).
+macro_rules! float_op_arm {
+    ($W:ident, $tag:expr, $op:expr, $args:expr;
+     bin { $($bin:ident => $BinRule:ident),+ $(,)? }
+     un { $($un:ident => $UnRule:ident),+ $(,)? }
+     cmp { $($cmp:ident => $CmpRule:ident),+ $(,)? }) => {{
+        let dec = |l: SmallIntLiteral| covalence_pure::$W::from_bits(l.bits() as _);
+        match $op {
+            $(FloatOp::$bin => {
+                let (a, b) = small2($args, $tag)?;
+                let r = pe::$BinRule
+                    .eval(&(dec(a), dec(b)))
+                    .ok_or(Error::NotReducible)?;
+                Term::small_int(small_lit($tag, r.to_bits()))
+            })+
+            $(FloatOp::$un => {
+                let a = small1($args, $tag)?;
+                let r = pe::$UnRule.eval(&dec(a)).ok_or(Error::NotReducible)?;
+                Term::small_int(small_lit($tag, r.to_bits()))
+            })+
+            $(FloatOp::$cmp => {
+                let (a, b) = small2($args, $tag)?;
+                Term::bool_lit(
+                    pe::$CmpRule
+                        .eval(&(dec(a), dec(b)))
+                        .ok_or(Error::NotReducible)?,
+                )
+            })+
+        }
+    }};
+}
+
+/// The bit-level WASM float ops — see [`crate::rules::FloatCert`]. Keyed by
+/// the canonical `defs::floats` registry ([`defs::lookup_float_op`], pointer
+/// identity); computed by the trusted `covalence-pure-trusted::float`
+/// [`CanonRule`](covalence_pure::CanonRule)s (bitwise sorts with the single
+/// NaN-canonicalization point — the WASM deterministic profile, pinned
+/// bit-for-bit against wasmtime by `covalence-pure-eval`'s
+/// `tests/differential_float.rs`). Every float body is total on bit patterns,
+/// so the only refusals here are shape refusals (wrong arity / literal tag).
+pub(crate) fn float_bits(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
+    let key = defs::lookup_float_op(spec).ok_or(Error::NotReducible)?;
+    let rhs = match key {
+        FloatKey::Op(FloatWidth::F32, op) => float_op_arm!(F32, IntTag::U32, op, args;
+        bin {
+            Add => F32Add, Sub => F32Sub, Mul => F32Mul, Div => F32Div,
+            Min => F32Min, Max => F32Max, Copysign => F32Copysign,
+        }
+        un {
+            Sqrt => F32Sqrt, Abs => F32Abs, Neg => F32Neg, Ceil => F32Ceil,
+            Floor => F32Floor, Trunc => F32Trunc, Nearest => F32Nearest,
+        }
+        cmp {
+            Eq => F32Eq, Ne => F32Ne, Lt => F32Lt, Gt => F32Gt,
+            Le => F32Le, Ge => F32Ge,
+        }),
+        FloatKey::Op(FloatWidth::F64, op) => float_op_arm!(F64, IntTag::U64, op, args;
+        bin {
+            Add => F64Add, Sub => F64Sub, Mul => F64Mul, Div => F64Div,
+            Min => F64Min, Max => F64Max, Copysign => F64Copysign,
+        }
+        un {
+            Sqrt => F64Sqrt, Abs => F64Abs, Neg => F64Neg, Ceil => F64Ceil,
+            Floor => F64Floor, Trunc => F64Trunc, Nearest => F64Nearest,
+        }
+        cmp {
+            Eq => F64Eq, Ne => F64Ne, Lt => F64Lt, Gt => F64Gt,
+            Le => F64Le, Ge => F64Ge,
+        }),
+        FloatKey::Promote => {
+            let a = small1(args, IntTag::U32)?;
+            let r = pe::F64PromoteF32
+                .eval(&covalence_pure::F32::from_bits(a.bits() as u32))
+                .ok_or(Error::NotReducible)?;
+            Term::small_int(small_lit(IntTag::U64, r.to_bits()))
+        }
+        FloatKey::Demote => {
+            let a = small1(args, IntTag::U64)?;
+            let r = pe::F32DemoteF64
+                .eval(&covalence_pure::F64::from_bits(a.bits()))
+                .ok_or(Error::NotReducible)?;
+            Term::small_int(small_lit(IntTag::U32, r.to_bits()))
+        }
+        FloatKey::TruncSat(w, dst) => float_trunc_sat(w, dst, args)?,
+        FloatKey::Convert(w, src) => float_convert(w, src, args)?,
+    };
+    eq_concl(spec, args, rhs)
+}
+
+/// WASM `trunc_sat` on bits: float bits at width `w` → the `dst` tag's value
+/// (saturating; NaN → 0). Only the four WASM scalar int tags are registered
+/// ([`defs::FLOAT_CVT_TAGS`]); anything else refuses defensively.
+fn float_trunc_sat(w: FloatWidth, dst: IntTag, args: &[Lit]) -> Result<Term> {
+    use covalence_pure::{F32, F64};
+    let lit = match w {
+        FloatWidth::F32 => {
+            let v = F32::from_bits(small1(args, IntTag::U32)?.bits() as u32);
+            match dst {
+                IntTag::U32 => {
+                    small_lit(dst, pe::U32TruncSatF32.eval(&v).ok_or(Error::NotReducible)?)
+                }
+                IntTag::U64 => {
+                    small_lit(dst, pe::U64TruncSatF32.eval(&v).ok_or(Error::NotReducible)?)
+                }
+                IntTag::S32 => {
+                    small_lit(dst, pe::I32TruncSatF32.eval(&v).ok_or(Error::NotReducible)?)
+                }
+                IntTag::S64 => {
+                    small_lit(dst, pe::I64TruncSatF32.eval(&v).ok_or(Error::NotReducible)?)
+                }
+                _ => return Err(Error::NotReducible),
+            }
+        }
+        FloatWidth::F64 => {
+            let v = F64::from_bits(small1(args, IntTag::U64)?.bits());
+            match dst {
+                IntTag::U32 => {
+                    small_lit(dst, pe::U32TruncSatF64.eval(&v).ok_or(Error::NotReducible)?)
+                }
+                IntTag::U64 => {
+                    small_lit(dst, pe::U64TruncSatF64.eval(&v).ok_or(Error::NotReducible)?)
+                }
+                IntTag::S32 => {
+                    small_lit(dst, pe::I32TruncSatF64.eval(&v).ok_or(Error::NotReducible)?)
+                }
+                IntTag::S64 => {
+                    small_lit(dst, pe::I64TruncSatF64.eval(&v).ok_or(Error::NotReducible)?)
+                }
+                _ => return Err(Error::NotReducible),
+            }
+        }
+    };
+    Ok(Term::small_int(lit))
+}
+
+/// WASM `convert` on bits: the `src` tag's value → float bits at width `w`
+/// (round-to-nearest-even; total, never NaN).
+fn float_convert(w: FloatWidth, src: IntTag, args: &[Lit]) -> Result<Term> {
+    let a = small1(args, src)?;
+    let lit = match w {
+        FloatWidth::F32 => {
+            let r = match src {
+                IntTag::U32 => pe::F32ConvertU32.eval(&(a.bits() as u32)),
+                IntTag::U64 => pe::F32ConvertU64.eval(&a.bits()),
+                IntTag::S32 => pe::F32ConvertI32.eval(&(a.bits() as i32)),
+                IntTag::S64 => pe::F32ConvertI64.eval(&(a.bits() as i64)),
+                _ => return Err(Error::NotReducible),
+            };
+            small_lit(IntTag::U32, r.ok_or(Error::NotReducible)?.to_bits())
+        }
+        FloatWidth::F64 => {
+            let r = match src {
+                IntTag::U32 => pe::F64ConvertU32.eval(&(a.bits() as u32)),
+                IntTag::U64 => pe::F64ConvertU64.eval(&a.bits()),
+                IntTag::S32 => pe::F64ConvertI32.eval(&(a.bits() as i32)),
+                IntTag::S64 => pe::F64ConvertI64.eval(&(a.bits() as i64)),
+                _ => return Err(Error::NotReducible),
+            };
+            small_lit(IntTag::U64, r.ok_or(Error::NotReducible)?.to_bits())
+        }
+    };
+    Ok(Term::small_int(lit))
 }

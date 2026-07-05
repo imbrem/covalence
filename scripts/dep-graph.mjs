@@ -58,6 +58,42 @@ const edges = [...edgeSet]
   .sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
 
 // ---------------------------------------------------------------------------
+// Group graph (crates/<group>/…) + banned-edge lint.
+// Group-level cycles are allowed by design (strange loops); the pinned
+// docs/deps/groups.json makes any NEW cross-group edge a deliberate,
+// reviewed decision (stale-artifact failure) instead of silent sprawl.
+// BANNED_EDGES is the hard lint: crate-level edges that must never (re)appear
+// — e.g. the observer-quarantine freeze. Violations fail immediately.
+// ---------------------------------------------------------------------------
+const groupOf = new Map(
+  md.packages
+    .filter((p) => wsIds.has(p.id))
+    .map((p) => {
+      const m = p.manifest_path.match(/\/crates\/([^/]+)\//);
+      return [p.name, m ? m[1] : "?"];
+    }),
+);
+const groupEdgeSet = new Set();
+for (const [from, to] of edges) {
+  const gf = groupOf.get(from), gt = groupOf.get(to);
+  if (gf !== gt) groupEdgeSet.add(`${gf} -> ${gt}`);
+}
+const groupEdges = [...groupEdgeSet].sort();
+
+// crate-level "must never appear" edges: [consumer, dependency]
+const BANNED_EDGES = [
+  // (obs-quarantine freeze lands here: e.g. ["covalence-init", "covalence-hol-obs"])
+];
+const bannedHits = edges.filter(([f, t]) =>
+  BANNED_EDGES.some(([bf, bt]) => f === bf && t === bt),
+);
+if (bannedHits.length) {
+  console.error("dep-graph: BANNED dependency edges present:");
+  for (const [f, t] of bannedHits) console.error(`  ${f} -> ${t}`);
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
 // TCB closure: normal-dep transitive closure of the trusted roots, via resolve.
 // ---------------------------------------------------------------------------
 const resolveById = new Map((md.resolve?.nodes ?? []).map((n) => [n.id, n]));
@@ -131,8 +167,20 @@ const dot =
     "}",
   ].join("\n") + "\n";
 
+const groupsJson =
+  JSON.stringify(
+    {
+      generatedBy: "scripts/dep-graph.mjs",
+      note: "Cross-group dependency edges (group cycles allowed by design). A NEW edge appearing here must be a deliberate decision — this file is golden-checked in CI.",
+      groupEdges,
+    },
+    null,
+    2,
+  ) + "\n";
+
 const artifacts = {
   [`${OUT_DIR}/graph.json`]: graphJson,
+  [`${OUT_DIR}/groups.json`]: groupsJson,
   [`${OUT_DIR}/tcb.json`]: tcbJson,
   [`${OUT_DIR}/graph.mmd`]: mmd,
   [`${OUT_DIR}/graph.dot`]: dot,

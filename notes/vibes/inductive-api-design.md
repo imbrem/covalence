@@ -492,3 +492,54 @@ this API compatible:
   `list` as consumers); backend-swap test: one consumer proof script run
   against both backends verbatim.
 - **I5+** (design-gated): ACL2 layer; set.mm backend; parameterized specs.
+
+---
+
+## 9. I2 outcome (built 2026-07; contract deltas from the §2 sketch)
+
+Stage I2 landed `crates/lang/inductive` (`covalence-inductive`: spec model,
+`Logic`/`LogicOps`, `InductiveTheory`/`InductiveFacts`/`InductiveBackend`,
+`InductiveError`, and a **generic `conformance` suite** — the consumer-facing
+example, written once over `LogicOps` and used as the backend-swap test), plus
+both HOL backends in `covalence-init::init::inductive`:
+
+- **`church::ImpredicativeBackend`** — realizes *any* v1 spec; delivered the
+  `sexpr` flagship (`init/sexpr.rs::{sexpr_spec, sexpr_backend, sexpr_theory}`,
+  handler names pinned to `fa`/`fn_`/`fc` so the bundle ctors β-agree with the
+  hand-rolled encoding), the `btree` second datatype, and the Church `nat`.
+  `mem = Wf` (impredicative least fixpoint), genuine relativized
+  induction/cases/mem_ctor, distinctness via bool tag folds, Ext-position
+  injectivity via projection folds at the payload observation instance.
+- **`engine::NatEngineBackend`** — the adapter over the existing typedef +
+  recursion engine (`rec_holds_proof_at` = the full graph/uniqueness/ε run),
+  `mem = λt.⊤` + `mem_trivial`; kernel `succ_inj`/`zero_ne_succ` surfaced in
+  bundle shapes. Generic `Inductive`→bundle adapter deferred (SKELETONS).
+
+Contract deltas vs the §2 sketch (all recorded in `theory.rs`'s module docs):
+
+1. **Recursion is iteration (catamorphism), not primitive recursion** — steps
+   receive fold images only. A rank-1 Church encoding *cannot* pass raw
+   recursive arguments (paramorphism needs subtree recovery); `natRec` is
+   wrapped (`λn b. s b`) and its equations β-bridged to the iteration shape.
+   Primitive recursion is a later additive capability.
+2. **`injective` is per-position** (`injective(i, k, xs, ys)`), not a
+   conjunction — more schematic, and lets capability be per-position.
+3. **Rec-position injectivity is a hard wall for the Church backend**
+   (confirmed: at a collapsing instance of `'r` the statement is *false*, so
+   no polymorphic proof exists — the pre-existing `tree::branch_inj`
+   deferral). Surfaced honestly as `BackendCaps::rec_injective = false` +
+   `InductiveError::Unsupported`; the exact-type backend supplies it.
+4. **Freeness antecedents sit at a backend-chosen observation instance** of
+   the carrier (`'r := bool` for tags, `'r := payload` for projections; the
+   carrier itself for exact backends) — the `tree.rs` `leaf_inj` pattern,
+   now part of the documented contract.
+5. **Applied-form convention** — every `P x`/`mem x` in bundle statements is
+   the unreduced application; binder hints are reserved names (hygiene is
+   validated up front; violations are rule errors, never unsoundness).
+6. `cases()` is **derived generically from `induct`** (`api.rs`'s
+   `derive_cases_native`, shared by both backends): refl + ∃-intro + ∨-intro
+   per constructor.
+
+The `sexpr` induction skeleton (`init/SKELETONS.md` "Genuine SExpr structural
+induction") is **closed** — the honest `Wf`-relativized form ships in the
+bundle. New open items live under "Inductive-types API backends" there.

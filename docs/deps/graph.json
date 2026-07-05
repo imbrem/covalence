@@ -19,6 +19,7 @@
     "covalence-hash",
     "covalence-hol",
     "covalence-hol-eval",
+    "covalence-inductive",
     "covalence-init",
     "covalence-json",
     "covalence-kernel",
@@ -258,6 +259,10 @@
     {
       "from": "covalence-init",
       "to": "covalence-hol-eval"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-inductive"
     },
     {
       "from": "covalence-init",

@@ -30,6 +30,7 @@ consumer). The layers below mirror the dependency stack (see
 - **covalence-graph** — ordered, typed, payload-polymorphic graph (`Graph<P>`/`GraphBuilder<P>`, `BytesGraph`), `LabelList`/`KindFlags` overlays, `StringDiagram`, `cov:graph@0.1.0` WIT, pure-Rust `render_svg`. Symmetric premonoidal: insertion order = init order; linear inputs, fan-out outputs.
 - **covalence-json** — wraps `serde_json` only (serde itself stays a normal direct dep).
 - **covalence-grammar** — grammar/parsing support (used by hol + spectec).
+- **covalence-inductive** (`crates/lang/inductive`) — the logic-agnostic **inductive-types API**: plain-data `InductiveSpec<X>` (simple = single/non-indexed/strictly-positive/first-order), two-tier `Logic`/`LogicOps` abstraction, `InductiveTheory`/`InductiveFacts` bundle (membership-relativized contract, iteration recursor, rule-form schematic theorems, honest `BackendCaps`), `InductiveBackend` seam, generic `conformance` suite. Deps: `smol_str`+`thiserror` only. HOL backends live in `covalence-init::init::inductive::{api,church,engine}` (impredicative Church = any spec incl. the `sexpr` flagship; engine adapter = exact `nat`); a set.mm backend slots in later. Design: `notes/vibes/inductive-api-design.md`.
 
 ## Storage / content-addressing
 

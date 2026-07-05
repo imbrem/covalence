@@ -158,15 +158,21 @@ pub fn open_with<C: TrustedCons + ?Sized>(body: &Term, u: &Term, cons: &mut C) -
     // guard `body.bvi() <= 0` means `λ. body` is closed (the only free de
     // Bruijn index is the one being substituted), so no `Bound(i)` ever refers
     // *above* the substituted binder — keeping the binder context exact.
+    //
+    // `inst_typed` returns `None` when `body` turns out to be ill-typed under
+    // the binder — then we fall through to the type-agnostic general path
+    // below, exactly as if the guard had failed. (`open` is a `pub` utility,
+    // so an ill-typed `body` is reachable from outside the kernel rules; the
+    // fast path must never stamp a type derived from an ill-typed tree.)
     if cons.allow_clone()
         && body.bvi() <= 0
         && let Ok(u_ty) = u.ty()
     {
         let u_ty = u_ty.clone();
         let mut env = TypeEnv::new(vec![u_ty.clone()]);
-        return inst_typed(body, u, &u_ty, &mut env, cons)
-            .0
-            .unwrap_or_else(|| body.clone());
+        if let Some((changed, _ty)) = inst_typed(body, u, &u_ty, &mut env, cons) {
+            return changed.unwrap_or_else(|| body.clone());
+        }
     }
     inst_opt(body, u, 0, cons).unwrap_or_else(|| body.clone())
 }
@@ -174,83 +180,97 @@ pub fn open_with<C: TrustedCons + ?Sized>(body: &Term, u: &Term, cons: &mut C) -
 /// Type the *unchanged* subterm `t` in binder context `env`: O(1) from its
 /// cached type when closed, else a `type_of_in` walk under `env` (reached only
 /// for subterms that are open but free of the substituted index — i.e. they
-/// mention an inner binder only). Used by [`inst_typed`].
-fn type_in_ctx(t: &Term, env: &mut TypeEnv) -> Type {
+/// mention an inner binder only). Returns `None` when `t` does not type-check
+/// in `env` — the [`inst_typed`] caller then abandons the fast path. Used by
+/// [`inst_typed`].
+fn type_in_ctx(t: &Term, env: &mut TypeEnv) -> Option<Type> {
     if let Ok(ty) = t.ty() {
-        return ty.clone();
+        return Some(ty.clone());
     }
-    // Invariant: `inst_typed` only runs on well-typed terms, so this succeeds.
-    type_of_in(t, env).expect("inst_typed: well-typed subterm failed to type")
+    type_of_in(t, env).ok()
 }
 
 /// Type-preserving [`inst_opt`] used by the [`open_with`] fast path: substitutes
 /// `Bound(env.len()-1) := u` (with `u : u_ty`) **and** returns the type of the
 /// result in binder context `env` (`env.bound_ty(i)` is the type of `Bound(i)`,
-/// innermost last). Returns `(None, ty)` when the subterm is unchanged (caller
-/// reuses the `Arc`), `(Some(new), ty)` otherwise; `ty` is the result's type.
+/// innermost last). Returns `Some((None, ty))` when the subterm is unchanged
+/// (caller reuses the `Arc`), `Some((Some(new), ty))` otherwise; `ty` is the
+/// result's type. Returns `None` when the subterm does **not** type-check in
+/// `env` — the caller must abandon the fast path (fall back to [`inst_opt`])
+/// rather than build anything from a type computed off an ill-typed tree.
 ///
 /// `Soundness:` substitution is type-preserving — `u : u_ty` is the type of the
 /// binder it replaces — so each rebuilt node has the same type as the original.
-/// This computes that type inline (taking an `App`'s type from its function
-/// side's codomain, trusting the well-typedness already established when the
-/// inputs were built) and stamps closing abstractions via
-/// [`Term::abs_with_ty`], doing the work [`type_of_in`] would but fused into the
-/// single substitution traversal instead of a second walk per closing `Abs`.
+/// This computes that type inline, **verifying** (not trusting) well-typedness
+/// as it goes: an `App`'s type is its function side's codomain only after
+/// checking the function side is an arrow whose domain equals the argument's
+/// type (the same check as [`type_of_in`]); unchanged subtrees are typed by
+/// [`type_in_ctx`]. Any failure aborts the whole fast path via `None`. On
+/// success it stamps closing abstractions via [`Term::abs_with_ty`], doing the
+/// work [`type_of_in`] would but fused into the single substitution traversal
+/// instead of a second walk per closing `Abs`. (An earlier version *trusted*
+/// the input's well-typedness here; a `pub`-reachable ill-typed `body` then
+/// stamped a false cached type — a broken `TermInfo::Wf` invariant — or
+/// panicked. Verified inline typing restores the invariant on every path.)
 fn inst_typed<C: TrustedCons + ?Sized>(
     t: &Term,
     u: &Term,
     u_ty: &Type,
     env: &mut TypeEnv,
     cons: &mut C,
-) -> (Option<Term>, Type) {
+) -> Option<(Option<Term>, Type)> {
     let depth = (env.len() - 1) as u32;
     // Unchanged subtree (no `Bound(i ≥ depth)`): reuse it; its type is cached
     // when closed, else computed under `env`.
     if t.bvi() < depth as i64 {
-        return (None, type_in_ctx(t, env));
+        return Some((None, type_in_ctx(t, env)?));
     }
     match t.kind() {
         TermKind::Bound(i) => {
             let i = *i;
             match i.cmp(&depth) {
                 // `i < depth` was handled by the skip above.
-                Ordering::Less => (None, env.bound_ty(i as usize)),
-                Ordering::Equal => (Some(shift_with(u, depth as i64, 0, cons)), u_ty.clone()),
+                Ordering::Less => Some((None, env.bound_ty(i as usize))),
+                Ordering::Equal => Some((Some(shift_with(u, depth as i64, 0, cons)), u_ty.clone())),
                 // `i > depth` cannot occur under the `body.bvi() <= 0` guard.
-                Ordering::Greater => (
+                Ordering::Greater => Some((
                     Some(cons.make(TermKind::Bound(i - 1))),
                     env.bound_ty((i - 1) as usize),
-                ),
+                )),
             }
         }
         TermKind::App(f, x) => {
-            let (f2, f_ty) = inst_typed(f, u, u_ty, env, cons);
-            let (x2, _x_ty) = inst_typed(x, u, u_ty, env, cons);
-            // Result type = codomain of the function side (input is well-typed).
+            let (f2, f_ty) = inst_typed(f, u, u_ty, env, cons)?;
+            let (x2, x_ty) = inst_typed(x, u, u_ty, env, cons)?;
+            // Result type = codomain of the function side, *checked* the same
+            // way `type_of_in` checks an `App`: the function side must be an
+            // arrow and its domain must equal the argument's type. An
+            // ill-typed application aborts the fast path.
             let cod = match f_ty.kind() {
-                TypeKind::Fun(_, cod) => cod.clone(),
-                _ => f_ty.clone(),
+                TypeKind::Fun(dom, cod) if *dom == x_ty => cod.clone(),
+                _ => return None,
             };
             if f2.is_none() && x2.is_none() {
-                (None, cod)
+                Some((None, cod))
             } else {
                 let f = f2.unwrap_or_else(|| f.clone());
                 let x = x2.unwrap_or_else(|| x.clone());
-                (Some(cons.make(TermKind::App(f, x))), cod)
+                Some((Some(cons.make(TermKind::App(f, x))), cod))
             }
         }
         TermKind::Abs(ty, body) => {
             env.push(ty.clone());
-            let (body2, body_ty) = inst_typed(body, u, u_ty, env, cons);
+            let r = inst_typed(body, u, u_ty, env, cons);
             env.pop();
+            let (body2, body_ty) = r?;
             let abs_ty = Type::fun(ty.clone(), body_ty.clone());
             match body2 {
-                None => (None, abs_ty),
-                Some(body) => (Some(Term::abs_with_ty(ty.clone(), body, body_ty)), abs_ty),
+                None => Some((None, abs_ty)),
+                Some(body) => Some((Some(Term::abs_with_ty(ty.clone(), body, body_ty)), abs_ty)),
             }
         }
         // Other leaves are closed (`bvi == -1 < depth`) — handled by the skip.
-        _ => (None, type_in_ctx(t, env)),
+        _ => Some((None, type_in_ctx(t, env)?)),
     }
 }
 

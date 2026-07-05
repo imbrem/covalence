@@ -46,6 +46,17 @@ in the kernel (rules taking arbitrary theorem terms already use the type-aware
 userspace (`TermExt`) or migrate the call sites to `close_var(&Var::new(...))`.
 Deferred for call-site churn.
 
+## Property-test coverage gaps (P2 audit mediums)
+
+- `tests/subst_props.rs` generator lacks `FreshConst`/`FreshTyCon`/`Tycon`/
+  polymorphic-`Def` leaves — the INST_TYPE-critical arm is undertested.
+- Missing locally-nameless interaction lemmas: subst/open commutation,
+  open-of-close = subst, shift/open, cross-index families.
+- Tvar substitution (`subst_tfree`/`subst_tfrees`) has no independent naive
+  reference — only self-consistency laws.
+- `tests/panic_envelopes.rs` covers 2 of ~17 `Thm` rule constructors
+  (`eta_conv`, `beta_conv`).
+
 ## `_with` rules intern post-hoc, not through construction
 
 The cons-threaded `_with` rule variants build via the plain rule then

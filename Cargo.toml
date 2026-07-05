@@ -22,6 +22,7 @@ members = [
     "crates/lib/llm",
     "crates/lib/parquet",
     "crates/lib/parse",
+    "crates/lib/proptest",
     "crates/lib/proto",
     "crates/lib/rand",
     "crates/lib/sat",

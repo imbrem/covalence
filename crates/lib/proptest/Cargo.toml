@@ -1,0 +1,10 @@
+[package]
+name = "covalence-proptest"
+version = "0.0.0"
+edition = "2024"
+
+# Property-based-testing wrapper. Dev-dependency consumers only: this
+# crate must never appear in a non-dev dependency edge (see docs/deps/).
+
+[dependencies]
+proptest = "1"

@@ -279,6 +279,15 @@ core_rules! {
         if arg_ty != *ty {
             return Err(Error::TypeMismatch { expected: ty.clone(), got: arg_ty });
         }
+        // Validate the WHOLE redex, not just the argument: the abstraction
+        // BODY may be ill-typed or ill-scoped (e.g. an out-of-scope Bound),
+        // and `hol::hol_eq` requires a well-typed lhs — its contract says
+        // inference-rule callers pre-validate. Without this, `hol_eq`'s
+        // `expect` PANICKED on such input (found by the `panic_envelopes`
+        // property test; a fail-stop, not a soundness hole — `build`
+        // re-validates every conclusion). Strictly narrows the rule's
+        // domain: inputs that previously panicked now `Err` cleanly.
+        let _ = app.type_of()?;
         let rhs = open(body, arg);
         Ok((Ctx::new(), hol::hol_eq(app.clone(), rhs)))
     }

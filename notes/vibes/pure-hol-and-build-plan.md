@@ -72,12 +72,29 @@ buck2 compatibility is an interchange, not a rewrite.
 
 ### End state (the invariant to hold in your head)
 
-- **`kernel/hol` is textbook HOL Light.** Types = `TyVar | Bool | Ind | Fun`
-  (+ conservative `new_type_definition`); terms = `Var | Const | App | Abs`
-  with `=` and `ε` the only primitive constants; `Thm` minted by the 10 rules +
-  `define`/`new_type_definition`. **No `TermKind::Int`, no `TermKind::Blob`, no
-  `obs_*` rules, no `reduce_prim`, no defs/ acceleration in the kernel.** The
-  HOL crate is small enough to audit against the HOL Light manual page-by-page.
+- **`kernel/hol` is textbook HOL Light + laziness (no global state).** The
+  logical vocabulary is `Var | App | Abs` with `=` and the **one leaf family we
+  add over HOL Light: predicate-parameterized `ε`/`rep`/`abs`** (`epsilon P : T`,
+  `rep P e : (subtype P)→T`, `abs P e : T→(subtype P)`, `P : T→bool`). These
+  replace globally-`define`d *named constants* — a definition inlines via
+  `ε`/`rep`/`abs` on its predicate, computed **lazily**, so there is **no global
+  constant table / no global mutable state** (which pure, parallel,
+  content-addressed reasoning can't have). `Thm` minted by the 10 rules +
+  `new_type_definition` + the admitted toHOL/cert rules. **No `obs_*`, no
+  `reduce_prim`, no defs/ acceleration.**
+- **Literals are lazy regular Terms — there is NO literal/`toHOL` leaf type.**
+  `toHOL v` maps to an *ordinary* Term (built from the vocabulary above) produced
+  by a lazy thunk that carries the native value; laziness is the efficiency (a
+  megabyte blob's canonical cons-tower Term is never eagerly forced — only the
+  parts a proof inspects get forced) and the "symbolic by default" behaviour
+  (the thunk stays unforced unless a proof computes on the value). **Never
+  eagerly materialize** (no cons-towers for "small" blobs — that pays the cost
+  the whole design exists to avoid, and isn't first-class). Adding a datatype =
+  its toHOL lowering (a lazy Term) + its cert rules (the TCB growth), and **zero
+  new Term leaves** — the first-class datatype experience. (Corrects an earlier
+  draft that spoke of "deleting `TermKind::Int`/`Blob`" or a "symbolic value
+  leaf": the target is a lazy *regular* Term over the ε/rep/abs vocabulary, not
+  a new leaf.) The HOL crate stays small enough to audit against the manual.
 - **All computational power lives at the base layer** (`kernel/base`, the
   closed-world `Thm<L,P>`/`Language` kernel): `Nat`/`Int`/`Bytes` are base
   *languages* whose `CanonRule`s evaluate native `covalence_types` values,
@@ -185,6 +202,17 @@ is the progress meter, and CI forbids new edges.
 6. **Rename with the splits**: as each new crate stabilizes it takes its
    hierarchical name (`covalence-kernel-hol-logic`, …) — names move when
    content moves, never before.
+
+### `defs/` leaves the TCB (maintainer goal, 2026-07)
+
+Once the kernel's HOL rules no longer *accelerate* on the catalogue (post-purge),
+the **eval axioms (cert rules) are the only consumer of `defs/`**. So `defs/`
+moves OUT of `kernel/hol/core` (the TCB) INTO `kernel/hol/eval` (untrusted):
+the type/term definitions become untrusted *data* whose soundness rests on the
+toHOL/cert contract, not on residence in the kernel — a straight TCB shrink.
+Prerequisite: the cert dispatch must stop referencing `defs::` specifics from
+*inside* core (core → hol-eval is a BANNED_EDGE), so the op/spec identity a cert
+keys on has to be passed in or the dispatch itself relocates to `hol-eval`.
 
 ### Anti-sprawl rails (make regression structurally hard)
 

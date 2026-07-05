@@ -29,3 +29,18 @@
 
 pub use proptest;
 pub use proptest::*;
+
+/// Case count for a `ProptestConfig`: the `PROPTEST_CASES` env var if
+/// set and parseable, else `default`.
+///
+/// **Every explicit `cases:` in a `ProptestConfig` must go through this
+/// helper.** `ProptestConfig::default()` reads `PROPTEST_CASES` itself,
+/// but an explicit `cases: N, ..ProptestConfig::default()` *overrides*
+/// the env-derived value — so a hard-coded count silently defeats
+/// `PROPTEST_CASES=…` high-count sweeps.
+pub fn cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}

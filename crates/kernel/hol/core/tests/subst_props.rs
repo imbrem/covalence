@@ -18,8 +18,10 @@
 //!
 //! Case count: the committed default is modest for CI cost; run
 //! `PROPTEST_CASES=2048 cargo test -p covalence-core --test subst_props`
-//! for a generous local sweep (configs below use `..Default::default()`,
-//! so the env var still overrides).
+//! for a generous local sweep. Every config below routes its count
+//! through [`covalence_proptest::cases`] — an explicit `cases:` field
+//! would otherwise *override* the env-derived default and silently
+//! defeat the sweep.
 //!
 //! ## Bugs found by these properties (fixed in `src/subst.rs`)
 //!
@@ -49,6 +51,7 @@ use covalence_core::subst::{
     subst_free, uses_bound_outer,
 };
 use covalence_core::{Term, TermKind, Thm, Type, TypeKind, Var, defs};
+use covalence_proptest::cases;
 use covalence_proptest::proptest::prelude::*;
 use covalence_proptest::proptest::sample::{Index, select};
 use covalence_proptest::proptest::strategy::Union;
@@ -420,7 +423,7 @@ fn pick_var(t: &Term, idx: &Index) -> Option<Var> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 256,
+        cases: cases(256),
         ..ProptestConfig::default()
     })]
 
@@ -518,7 +521,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 256,
+        cases: cases(256),
         ..ProptestConfig::default()
     })]
 
@@ -619,7 +622,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 64,
+        cases: cases(64),
         ..ProptestConfig::default()
     })]
 
@@ -696,7 +699,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 256,
+        cases: cases(256),
         ..ProptestConfig::default()
     })]
 

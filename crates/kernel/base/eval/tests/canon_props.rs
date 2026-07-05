@@ -35,9 +35,11 @@
 //! this adversarial domain, pinning their panic-free envelope.
 //!
 //! Case counts use proptest defaults (env-overridable via
-//! `PROPTEST_CASES`); the big-buffer suites set a smaller explicit
-//! count for CI cost.
+//! `PROPTEST_CASES`); the big-buffer suites set a smaller default via
+//! [`covalence_proptest::cases`] for CI cost — a hard-coded `cases:`
+//! would override the env var and silently defeat high-count sweeps.
 
+use covalence_proptest::cases;
 use covalence_proptest::proptest::collection::vec as pvec;
 use covalence_proptest::proptest::prelude::*;
 use covalence_proptest::proptest::sample::select;
@@ -502,7 +504,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 96,
+        cases: cases(96),
         ..ProptestConfig::default()
     })]
 

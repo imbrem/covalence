@@ -6,3 +6,11 @@ edition = "2024"
 [dependencies]
 covalence-pure = { path = ".." }
 covalence-types = { path = "../../../lib/types" }
+
+# Native-only: the float differential suite (`tests/differential_float.rs`)
+# compiles tiny WASM modules and runs them in wasmtime (via covalence-wasm's
+# `runtime` feature = wasmtime v45), asserting bit-for-bit agreement with the
+# float CanonRules. Target-gated so `covalence-pure-eval` stays wasm32-clean:
+# this dev-dependency never enters a wasm32 build, and it is NOT a graph edge.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+covalence-wasm = { path = "../../../lib/wasm/core", features = ["runtime"] }

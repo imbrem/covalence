@@ -28,10 +28,13 @@ stages and a few deferred seams remain.
   `docs/deps/builtins-manifest.txt`); still open: `Text` ops and
   `Cov = (Hol, Builtins)`.
 - **Stage 5** — `Wasm`/`X86` languages. The WASM `f32`/`f64` numeric op inventory
-  is complete as `CanonRule`s (`float.rs`: arith/sqrt/min/max/abs/neg/copysign/
-  rounding/compares/promote/demote/`trunc_sat`/convert/reinterpret), but no
-  `Language` admits them yet — a `Wasm`/`Float` language + its manifest is still
-  open (they're unreachable via `canon` until then).
+  (`float.rs`: arith/sqrt/min/max/abs/neg/copysign/rounding/compares/promote/
+  demote/`trunc_sat`/convert/reinterpret) is complete as `CanonRule`s and now
+  **admitted by `Builtins`** (dotted `f32.*`/`f64.*`/`sN.trunc_sat.*` in the
+  golden manifest; the overlay lives in `covalence-pure-eval::float`; bit-for-bit
+  vs. wasmtime in `tests/differential_float.rs`). Remaining: a dedicated
+  `Wasm`/`X86` `Language` for the rest of the instruction set (control flow,
+  memory, SIMD, …).
 
 ## Minor — deferred seams
 

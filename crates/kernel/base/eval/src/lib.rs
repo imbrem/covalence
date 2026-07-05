@@ -122,6 +122,7 @@ macro_rules! canon_op_partial {
 
 pub mod bytes;
 pub mod fixed;
+pub mod float;
 pub mod int;
 pub mod nat;
 
@@ -129,6 +130,16 @@ pub use bytes::{BytesAt, BytesCat, BytesConsNat, BytesLen, BytesSlice};
 pub use fixed::{
     FwAdd, FwAnd, FwDiv, FwFromInt, FwFromNat, FwGe, FwGt, FwLe, FwLt, FwMul, FwNeg, FwNot, FwOr,
     FwRem, FwRepr, FwShl, FwShr, FwSub, FwToInt, FwToNat, FwXor, Sext, Zext,
+};
+pub use float::{
+    F32Abs, F32Add, F32Ceil, F32ConvertI32, F32ConvertI64, F32ConvertU32, F32ConvertU64,
+    F32Copysign, F32DemoteF64, F32Div, F32Eq, F32Floor, F32Ge, F32Gt, F32Le, F32Lt, F32Max, F32Min,
+    F32Mul, F32Ne, F32Nearest, F32Neg, F32ReinterpretI32, F32Sqrt, F32Sub, F32Trunc, F64Abs,
+    F64Add, F64Ceil, F64ConvertI32, F64ConvertI64, F64ConvertU32, F64ConvertU64, F64Copysign,
+    F64Div, F64Eq, F64Floor, F64Ge, F64Gt, F64Le, F64Lt, F64Max, F64Min, F64Mul, F64Ne, F64Nearest,
+    F64Neg, F64PromoteF32, F64ReinterpretI64, F64Sqrt, F64Sub, F64Trunc, I32ReinterpretF32,
+    I32TruncSatF32, I32TruncSatF64, I64ReinterpretF64, I64TruncSatF32, I64TruncSatF64,
+    U32TruncSatF32, U32TruncSatF64, U64TruncSatF32, U64TruncSatF64,
 };
 pub use int::{
     IntAbs, IntAdd, IntDiv, IntLe, IntLt, IntMod, IntMul, IntNeg, IntPred, IntSgn, IntSub, IntSucc,
@@ -171,6 +182,7 @@ macro_rules! builtins_manifest {
         simple { $($S:ty),* $(,)? }
         fw { $($T:ty),* $(,)? }
         casts { $($Src:ty => [$($Dst:ty),* $(,)?]);* $(;)? }
+        floats { $($F:ty),* $(,)? }
     ) => {
         /// Every rule [`Builtins`] admits, in catalogue order (nat, int,
         /// bytes, then the fixed-width families per representation, then
@@ -204,6 +216,7 @@ macro_rules! builtins_manifest {
                 rule_record::<Zext<$Src, $Dst>>(),
                 rule_record::<Sext<$Src, $Dst>>(),
             )*)*
+            $(rule_record::<$F>(),)*
         ];
 
         /// The dotted label + `TypeId` of every entry of the [`Builtins`]
@@ -238,6 +251,7 @@ macro_rules! builtins_manifest {
                     name_of::<Zext<$Src, $Dst>>(),
                     name_of::<Sext<$Src, $Dst>>(),
                 )*)*
+                $(name_of::<$F>(),)*
             ]
         }
     };
@@ -262,6 +276,30 @@ builtins_manifest! {
         i16 => [u8, u16, u32, u64, i8, i16, i32, i64];
         i32 => [u8, u16, u32, u64, i8, i16, i32, i64];
         i64 => [u8, u16, u32, u64, i8, i16, i32, i64];
+    }
+    floats {
+        // arithmetic
+        F32Add, F32Sub, F32Mul, F32Div,
+        F64Add, F64Sub, F64Mul, F64Div,
+        // min / max / copysign
+        F32Min, F32Max, F32Copysign,
+        F64Min, F64Max, F64Copysign,
+        // unary (sqrt / abs / neg / rounding)
+        F32Sqrt, F32Abs, F32Neg, F32Ceil, F32Floor, F32Trunc, F32Nearest,
+        F64Sqrt, F64Abs, F64Neg, F64Ceil, F64Floor, F64Trunc, F64Nearest,
+        // comparisons
+        F32Eq, F32Ne, F32Lt, F32Gt, F32Le, F32Ge,
+        F64Eq, F64Ne, F64Lt, F64Gt, F64Le, F64Ge,
+        // width conversions
+        F64PromoteF32, F32DemoteF64,
+        // reinterpret
+        F32ReinterpretI32, I32ReinterpretF32, F64ReinterpretI64, I64ReinterpretF64,
+        // float → int, saturating
+        I32TruncSatF32, U32TruncSatF32, I64TruncSatF32, U64TruncSatF32,
+        I32TruncSatF64, U32TruncSatF64, I64TruncSatF64, U64TruncSatF64,
+        // int → float
+        F32ConvertI32, F32ConvertU32, F32ConvertI64, F32ConvertU64,
+        F64ConvertI32, F64ConvertU32, F64ConvertI64, F64ConvertU64,
     }
 }
 

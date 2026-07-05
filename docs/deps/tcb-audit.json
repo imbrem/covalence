@@ -185,8 +185,8 @@
       ]
     },
     "base+HOL+eval": {
-      "files": 81,
-      "nonTestLoc": 11012,
+      "files": 82,
+      "nonTestLoc": 11611,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -211,21 +211,21 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 515,
-        "struct": 57,
-        "enum": 13,
+        "fn": 537,
+        "struct": 59,
+        "enum": 17,
         "trait": 22,
-        "macro": 33
+        "macro": 34
       },
-      "publicSurfaceTotal": 640,
-      "defsCoupling": 125,
+      "publicSurfaceTotal": 669,
+      "defsCoupling": 139,
       "defsCouplingLocations": [
-        "125 refs (list suppressed >60)"
+        "139 refs (list suppressed >60)"
       ]
     },
     "base+HOL+wasm": {
       "files": 33,
-      "nonTestLoc": 4995,
+      "nonTestLoc": 5326,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -250,13 +250,13 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 337,
+        "fn": 354,
         "struct": 42,
-        "enum": 7,
+        "enum": 11,
         "trait": 16,
         "macro": 15
       },
-      "publicSurfaceTotal": 417,
+      "publicSurfaceTotal": 438,
       "defsCoupling": 32,
       "defsCouplingLocations": [
         "crates/kernel/hol/core/src/hol.rs:30: Term::app(Term::app(defs::imp(), p), q)",
@@ -288,14 +288,14 @@
         "crates/kernel/hol/core/src/ty/ty.rs:113: LazyLock::new(|| Type::spec(crate::defs::bytes_spec(), Vec::new()));",
         "crates/kernel/hol/core/src/ty/ty.rs:132: LazyLock::new(|| Type::spec(crate::defs::int_ty_spec(), Vec::new()));",
         "crates/kernel/hol/core/src/ty/ty.rs:144: LazyLock::new(|| Type::spec(crate::defs::unit_spec(), Vec::new()));",
-        "crates/kernel/hol/eval/src/defs/floats.rs:7: use crate::defs::Canonical;",
-        "crates/kernel/hol/eval/src/defs/floats.rs:8: use crate::defs::TypeSpec;",
-        "crates/kernel/hol/eval/src/defs/floats.rs:9: use crate::defs::{u32_ty, u64_ty};"
+        "crates/kernel/hol/eval/src/defs/floats.rs:56: use crate::defs::Canonical;",
+        "crates/kernel/hol/eval/src/defs/floats.rs:57: use crate::defs::TypeSpec;",
+        "crates/kernel/hol/eval/src/defs/floats.rs:58: use crate::defs::{TermSpec, u32_ty, u64_ty};"
       ]
     },
     "base+HOL+eval+wasm": {
-      "files": 81,
-      "nonTestLoc": 11012,
+      "files": 82,
+      "nonTestLoc": 11611,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -320,16 +320,16 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 515,
-        "struct": 57,
-        "enum": 13,
+        "fn": 537,
+        "struct": 59,
+        "enum": 17,
         "trait": 22,
-        "macro": 33
+        "macro": 34
       },
-      "publicSurfaceTotal": 640,
-      "defsCoupling": 125,
+      "publicSurfaceTotal": 669,
+      "defsCoupling": 139,
       "defsCouplingLocations": [
-        "125 refs (list suppressed >60)"
+        "139 refs (list suppressed >60)"
       ]
     }
   },
@@ -338,7 +338,7 @@
     "typeKindVariants": 7,
     "admittedRules": {
       "coreManifest": 39,
-      "evalManifest": 13,
+      "evalManifest": 14,
       "builtinsManifest": 387
     },
     "externalDeps": {

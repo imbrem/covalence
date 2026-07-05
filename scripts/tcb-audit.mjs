@@ -31,7 +31,8 @@ import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const WRITE_JSON = process.argv.includes("--json");
+const WRITE_JSON = process.argv.includes("--json") || process.argv.includes("--check");
+const CHECK = process.argv.includes("--check");
 
 // ---------------------------------------------------------------------------
 // Configurations. Each is a set of source ROOTS (dirs or files) plus EXCLUDES
@@ -339,7 +340,18 @@ console.log(
 if (report["base+HOL+eval"].unsafe > 0) console.log(`\n⚠ unsafe in TCB: ${report["base+HOL+eval"].unsafe} — must be 0`);
 
 if (WRITE_JSON) {
-  writeFileSync("docs/deps/tcb-audit.json", JSON.stringify({ generatedBy: "scripts/tcb-audit.mjs", configs: report, globals }, null, 2) + "\n");
-  console.log("\nwrote docs/deps/tcb-audit.json");
+  const OUT = "docs/deps/tcb-audit.json";
+  const next = JSON.stringify({ generatedBy: "scripts/tcb-audit.mjs", configs: report, globals }, null, 2) + "\n";
+  if (CHECK) {
+    const prev = existsSync(OUT) ? readFileSync(OUT, "utf8") : "";
+    if (prev !== next) {
+      console.error("tcb-audit: docs/deps/tcb-audit.json is STALE — run `bun run deps` (or bun scripts/tcb-audit.mjs --json)");
+      process.exit(1);
+    }
+    console.error("tcb-audit: up to date");
+  } else {
+    writeFileSync(OUT, next);
+    console.log("\nwrote docs/deps/tcb-audit.json");
+  }
 }
 console.log();

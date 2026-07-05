@@ -740,59 +740,6 @@ core_rules! {
         Ok((Ctx::new(), hol::hol_imp(prem, concl)))
     }
 
-    // ================= Group H: observers (non-generic; O-policy in the method) =================
-
-    /// `⊢ expr`, where `expr = (obs)(args…)` has final type `bool`. The per-`O`
-    /// policy (`O::obs_true`) is applied in the public method before `apply`.
-    ObsTrueRule(Term) = |(expr,), _| {
-        let _ = super::decompose_obs_app(&expr)?;
-        let ty = expr.type_of()?;
-        if !ty.is_bool() {
-            return Err(Error::NotBool(ty));
-        }
-        Ok((Ctx::new(), expr))
-    }
-
-    /// `⊢ hyps[0] ⟹ … ⟹ hyps[n] ⟹ expr`, where `expr = (obs)(args…)` and every
-    /// hyp is bool. The per-`O` policy (`O::obs_imp`) is applied in the method.
-    ObsImpRule(Term, Vec<Term>) = |(expr, hyps), _| {
-        let _ = super::decompose_obs_app(&expr)?;
-        let ty = expr.type_of()?;
-        if !ty.is_bool() {
-            return Err(Error::NotBool(ty));
-        }
-        for h in &hyps {
-            let h_ty = h.type_of()?;
-            if !h_ty.is_bool() {
-                return Err(Error::NotBool(h_ty));
-            }
-        }
-        let mut result = expr;
-        for h in hyps.into_iter().rev() {
-            result = hol::hol_imp(h, result);
-        }
-        Ok((Ctx::new(), result))
-    }
-
-    /// `⊢ e1 = e2`, where both decompose as `(obs)(args…)` with the SAME dynamic
-    /// observer type (same ε-family) and equal Core types. The per-`O` policy
-    /// (`O::obs_eq`) is applied in the public method before `apply`.
-    ObsEqRule(Term, Term) = |(e1, e2), _| {
-        let (o1, _a1) = super::decompose_obs_app(&e1)?;
-        let (o2, _a2) = super::decompose_obs_app(&e2)?;
-        // Same ε-family = same KERNEL-allocated observer TypeId. Read from the
-        // `Object`'s own dynamic type — never a downstream/spoofable hook.
-        if o1.type_id() != o2.type_id() {
-            return Err(Error::ObsDowncastTypeMismatch);
-        }
-        let t1 = e1.type_of()?;
-        let t2 = e2.type_of()?;
-        if t1 != t2 {
-            return Err(Error::TypeMismatch { expected: t1, got: t2 });
-        }
-        Ok((Ctx::new(), hol::hol_eq(e1.clone(), e2.clone())))
-    }
-
     // ================= Group I: generative (fresh identity INSIDE decide) =================
 
     /// `⊢ Def(name, body) ≡ body` with a FRESH `Def` allocated here — never a

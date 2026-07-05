@@ -155,9 +155,14 @@ is the progress meter, and CI forbids new edges.
 
 ### The migration ladder
 
-1. **Freeze + inventory** (1 sitting): CI check "no new deps on the observer
-   surface"; a generated list of every `obs_eq/obs_true/obs_imp`,
-   `hol_light_obs`, `TermKind::Int/Blob`, `reduce_prim` call site.
+1. **Freeze + inventory** — DONE, without the `obs/` quarantine crate
+   (maintainer decision: the observer rules were externally dead, so the
+   quarantine's enumerability job is done by `scripts/purge-ratchet.mjs` +
+   `docs/deps/purge-ratchet.json` (per-crate counts, decrease-only) and
+   `dep-graph.mjs` `BANNED_EDGES`; the rules `Thm::obs_eq/obs_true/obs_imp`
+   + `ObsEq`/`ObsTrue`/`ObsImp`/`Hint` were then deleted directly from
+   `covalence-core`). `Obs` LEAVES remain as `new_type_definition`
+   freshness tokens pending the `FreshId` reclassification.
 2. **Base builtins** (closed-world Stages 3–4, already planned): `base/eval`
    with `Nat`/`Int`/`Bytes` languages; each op an admits-gated `CanonRule`
    over `covalence_types`; MANIFEST pinned by a golden test.

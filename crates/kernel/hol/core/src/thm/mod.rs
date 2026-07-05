@@ -8,19 +8,22 @@
 //! is hygiene-only.
 //!
 //! The rules are split across the `thm/` module: the equality / connective /
-//! quantifier / reduction / observation rules' glue lives here; the
+//! quantifier / reduction rules' glue lives here; the
 //! conservative-extension primitives (`define`, `new_type_definition`) live in
 //! `typedef`; every rule's ZST + `decide` (the fine-grained TCB) lives in
 //! `rules`.
 //!
 //! ## Observations and universality
 //!
-//! Observation leaves carry kernel-allocated [`Object`] handles,
+//! Observation leaves carry kernel-allocated `Object` handles,
 //! compared by `Arc` pointer identity rather than by user-supplied
 //! `Eq` impls — so a misbehaving observer cannot corrupt the
 //! kernel's hyp `BTreeSet`. A theorem with no `Obs` leaves anywhere
 //! (test via [`Thm::has_no_obs`]) is **universally true** with no
 //! oracle dependencies, the same property HOL Light's `thm` has.
+//! The observer *rules* (`obs_eq`/`obs_true`/`obs_imp`) are gone
+//! (toHOL purge); `Obs` leaves remain solely as `new_type_definition`
+//! freshness tokens.
 //!
 //! The rule set is Core-shaped:
 //!
@@ -34,7 +37,6 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::Arc;
 
 use smol_str::SmolStr;
 
@@ -42,9 +44,7 @@ use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::subst::subst_tfrees_in_term;
 
-use crate::term::{
-    Object, ObsEq, ObsImp, ObsTrue, Observer, Term, TermKind, TrustedCons, Type, TypeKind,
-};
+use crate::term::{Observer, Term, TermKind, TrustedCons, Type, TypeKind};
 use crate::ty::{TypeList, TypeSpec};
 
 mod lang;
@@ -953,127 +953,6 @@ impl Thm {
         Ok(thm)
     }
 
-    /// `⊢ expr1 ≡ expr2`, where:
-    /// - `expr1` and `expr2` each have the form `(obs head)(arg1)(arg2)…`
-    ///   (zero or more applications of an `Obs` leaf at the head).
-    /// - both head observers downcast successfully to Rust type `O`.
-    /// - both expressions have the same Core type.
-    /// - the observer's [`ObsEq::obs_eq`] method, called with the two
-    ///   observers and their args, returns `true`.
-    ///
-    /// ## Soundness
-    ///
-    /// The kernel rule is **unconditionally sound** regardless of
-    /// what `O::obs_eq` returns. See [`ObsEq`]'s documentation for the
-    /// parametric ε-model that makes this work. Observer impls are
-    /// *not* part of the TCB — they are a per-Rust-type policy lever,
-    /// not a soundness obligation. Different observer types `O`, `O'`
-    /// get independent ε-families, so the rule never lets one
-    /// observer's policy compromise another's.
-    /// `⊢ expr`, where:
-    /// - `expr` decomposes as `(obs head)(arg1)(arg2)…` with an `Obs`
-    ///   leaf at the head and zero or more applications.
-    /// - the head observer downcasts to Rust type `O`.
-    /// - `expr` has final Core type `prop`.
-    /// - `O::obs_true(args, hint)` returns `true`.
-    ///
-    /// ## Soundness
-    ///
-    /// The rule is **unconditionally sound** regardless of what
-    /// `O::obs_true` returns. The standard ε-interpretation of any
-    /// observation whose result type is `prop` maps it to `⊤`, so
-    /// every `(obs O) args` of type `prop` is already true in the
-    /// model. Per-`O` ε-families means a policy choice in `WasmObs`
-    /// can't affect equations or assertions involving `HolLight`.
-    ///
-    /// `hint` is the same opaque pass-through as on `obs_eq`.
-    pub fn obs_true<O: ObsTrue>(
-        expr: Term,
-        hint: Option<Arc<dyn crate::term::Hint>>,
-    ) -> Result<Thm> {
-        // Untrusted per-`O` policy filter, applied BEFORE the sound rule fires.
-        // The rule ([`rules::ObsTrueRule`]) is unconditionally sound for any `O`;
-        // this oracle only gates whether it fires.
-        let (obs, args) = decompose_obs_app(&expr)?;
-        let o = obs.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
-        let ty = expr.type_of()?;
-        if !ty.is_bool() {
-            return Err(Error::NotBool(ty));
-        }
-        if !o.obs_true(&args, hint.as_deref()) {
-            return Err(Error::ObsEqRefused);
-        }
-        mint!(ObsTrueRule, (expr.clone(),), (expr,))
-    }
-
-    /// `⊢ hyps[0] ⟹ hyps[1] ⟹ … ⟹ hyps[n] ⟹ expr` — a **lazy
-    /// theorem** declared by the observer policy. Used to encode
-    /// HOL-style derivation rules as reusable implications: callers
-    /// then chain `imp_elim` with concrete source theorems to get the
-    /// specialised result.
-    ///
-    /// Validates:
-    /// - `expr` decomposes as `(obs head)(arg1)(arg2)…`.
-    /// - the head observer downcasts to `O`.
-    /// - `expr` has final type `prop`.
-    /// - every hyp has type `prop`.
-    /// - `O::obs_imp(args, hyps, hint)` returns `true`.
-    ///
-    /// ## Soundness
-    ///
-    /// Strictly weaker than [`Thm::obs_true`]. Any chain of
-    /// implications ending in a prop-typed obs application is sound to
-    /// assert under the same parametric-ε model that makes `obs_true`
-    /// sound. Per-`O` ε-families means a policy bug in `MyObs` can't
-    /// touch implications about `HolLight`.
-    pub fn obs_imp<O: ObsImp>(
-        expr: Term,
-        hyps: Vec<Term>,
-        hint: Option<Arc<dyn crate::term::Hint>>,
-    ) -> Result<Thm> {
-        // Untrusted per-`O` policy filter, applied BEFORE the sound rule fires.
-        let (obs, args) = decompose_obs_app(&expr)?;
-        let o = obs.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
-        let ty = expr.type_of()?;
-        if !ty.is_bool() {
-            return Err(Error::NotBool(ty));
-        }
-        for h in &hyps {
-            let h_ty = h.type_of()?;
-            if !h_ty.is_bool() {
-                return Err(Error::NotBool(h_ty));
-            }
-        }
-        if !o.obs_imp(&args, &hyps, hint.as_deref()) {
-            return Err(Error::ObsEqRefused);
-        }
-        mint!(ObsImpRule, (expr.clone(), hyps.clone()), (expr, hyps))
-    }
-
-    pub fn obs_eq<O: ObsEq>(
-        expr1: Term,
-        expr2: Term,
-        hint: Option<Arc<dyn crate::term::Hint>>,
-    ) -> Result<Thm> {
-        // Untrusted per-`O` policy filter, applied BEFORE the sound rule fires.
-        let (obs1, args1) = decompose_obs_app(&expr1)?;
-        let (obs2, args2) = decompose_obs_app(&expr2)?;
-        let o1 = obs1.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
-        let o2 = obs2.downcast::<O>().ok_or(Error::ObsDowncastTypeMismatch)?;
-        let ty1 = expr1.type_of()?;
-        let ty2 = expr2.type_of()?;
-        if ty1 != ty2 {
-            return Err(Error::TypeMismatch {
-                expected: ty1,
-                got: ty2,
-            });
-        }
-        if !o1.obs_eq(o2, &args1, &args2, hint.as_deref()) {
-            return Err(Error::ObsEqRefused);
-        }
-        mint!(ObsEqRule, (expr1.clone(), expr2.clone()), (expr1, expr2))
-    }
-
     // ========================================================================
     // The single kernel postulate: Peano induction on `nat`
     // ========================================================================
@@ -1382,24 +1261,6 @@ fn parse_hol_not(t: &Term) -> Result<&Term> {
         return Err(Error::ConnectiveRule(format!("expected ~p, got {t}")));
     }
     Ok(p)
-}
-
-fn decompose_obs_app(t: &Term) -> Result<(&Object, Vec<Term>)> {
-    let mut args_rev = Vec::new();
-    let mut cur = t;
-    loop {
-        match cur.kind() {
-            TermKind::App(f, x) => {
-                args_rev.push(x.clone());
-                cur = f;
-            }
-            TermKind::Obs(observer, _) => {
-                args_rev.reverse();
-                return Ok((observer, args_rev));
-            }
-            _ => return Err(Error::NotObsHead(format!("{}", t))),
-        }
-    }
 }
 
 impl fmt::Debug for Thm {

@@ -17,9 +17,8 @@
 //! ([`Thm::nat_induct`], [`Thm::false_elim`], [`Thm::unit_eq`],
 //! [`Thm::lem`] — the classicality axiom); the
 //! conservative-extension primitives ([`Thm::define`],
-//! [`Thm::new_type_definition`]); the accelerated reduction rules
-//! ([`Thm::reduce_prim`], [`Thm::unfold_term_spec`]); and the observer
-//! rules (`obs_eq`/`obs_true`/`obs_imp`) sound under a parametric ε-model.
+//! [`Thm::new_type_definition`]); and the accelerated reduction rules
+//! ([`Thm::reduce_prim`], [`Thm::unfold_term_spec`]).
 //!
 //! Content hashing, S-expression syntax, FFI bridges, and the untrusted
 //! HOL builder shell live downstream in `covalence-hol`. The canonical
@@ -77,8 +76,8 @@ pub use ctx::Ctx;
 pub use error::{Error, Result};
 pub use term::TermSpec;
 pub use term::{
-    Checked, Def, HashCons, Hint, IntTag, Object, ObsEq, ObsImp, ObsTrue, Observer,
-    SmallIntLiteral, Term, TermCons, TermKind, TrustedCons, TyError, Type, TypeKind, Var,
+    Checked, Def, HashCons, IntTag, Object, Observer, SmallIntLiteral, Term, TermCons, TermKind,
+    TrustedCons, TyError, Type, TypeKind, Var,
 };
 pub use thm::{Thm, TypeDef};
 pub use ty::{TrustedTypeCons, TypeCons, TypeHashCons, TypeList, TypeSpec};

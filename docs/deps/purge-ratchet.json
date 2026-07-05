@@ -36,9 +36,7 @@
     }
   },
   "counts": {
-    "obs-rules": {
-      "covalence-core": 3
-    },
+    "obs-rules": {},
     "reduce_prim": {
       "covalence-core": 83,
       "covalence-init": 15,
@@ -50,7 +48,7 @@
     },
     "termkind-literals": {
       "covalence-alethe": 7,
-      "covalence-core": 160,
+      "covalence-core": 159,
       "covalence-init": 15
     },
     "tycon-obs": {
@@ -65,7 +63,7 @@
       "covalence-init": 120
     },
     "has_no_obs": {
-      "covalence-core": 16,
+      "covalence-core": 15,
       "covalence-init": 164,
       "covalence-serve": 1
     },
@@ -74,13 +72,13 @@
     }
   },
   "totals": {
-    "obs-rules": 3,
+    "obs-rules": 0,
     "reduce_prim": 99,
     "unfold_term_spec": 49,
-    "termkind-literals": 182,
+    "termkind-literals": 181,
     "tycon-obs": 30,
     "term-literal-ctors": 262,
-    "has_no_obs": 181,
+    "has_no_obs": 180,
     "cov-script-reduce": 18
   }
 }

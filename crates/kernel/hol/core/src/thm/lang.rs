@@ -17,7 +17,7 @@
 //!
 //! ## Soundness rests on `admits()` ALONE
 //!
-//! [`CoreLang`] admits exactly the ~43 sound `Rule<CoreLang>` ZSTs in
+//! [`CoreLang`] admits exactly the sound `Rule<CoreLang>` ZSTs in
 //! [`super::rules`], one per HOL inference step. Each rule's `decide` takes its
 //! premises as unforgeable `pure::Thm`s and **derives** its conclusion (it never
 //! accepts a caller-supplied conclusion), so every firing on any input yields a

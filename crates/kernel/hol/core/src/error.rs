@@ -56,12 +56,6 @@ pub enum Error {
     #[error("dynamic downcast failed: observation's runtime type does not match the target")]
     ObsDowncastTypeMismatch,
 
-    #[error("expected an (obs ...) leaf at the head of {0}")]
-    NotObsHead(String),
-
-    #[error("observer's obs_eq method refused to equate the expressions")]
-    ObsEqRefused,
-
     #[error("term has a dangling de Bruijn index (term is not closed at the kernel boundary)")]
     NotClosed,
 

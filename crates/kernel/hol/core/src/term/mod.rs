@@ -9,8 +9,8 @@
 //! Submodules:
 //!
 //! - `observer` — the observer-pattern infrastructure: the
-//!   `Observer` / `Hint` marker traits, the `ObsTrue` / `ObsImp` /
-//!   `ObsEq` policy traits, and the type-erased `Object` handle.
+//!   `Observer` marker trait and the type-erased `Object` handle
+//!   (freshness tokens for `new_type_definition`).
 //! - `term` — the term language: `Term`, `TermKind`,
 //!   `Def`, and the type-checker (`TypeEnv` + `type_of_in`).
 //! - [`set`] — `TermSet`, the structurally-shared set of terms that
@@ -29,7 +29,7 @@ mod spec;
 mod term;
 
 pub use cons::{Checked, HashCons, TermCons, TrustedCons};
-pub use observer::{Hint, Object, ObsEq, ObsImp, ObsTrue, Observer};
+pub use observer::{Object, Observer};
 pub use set::TermSet;
 pub use spec::TermSpec;
 pub use term::{Def, IntTag, SmallIntLiteral, Term, TermKind, TyError, Var};

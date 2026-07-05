@@ -82,19 +82,23 @@ buck2 compatibility is an interchange, not a rewrite.
   content-addressed reasoning can't have). `Thm` minted by the 10 rules +
   `new_type_definition` + the admitted toHOL/cert rules. **No `obs_*`, no
   `reduce_prim`, no defs/ acceleration.**
-- **Literals are lazy regular Terms — there is NO literal/`toHOL` leaf type.**
-  `toHOL v` maps to an *ordinary* Term (built from the vocabulary above) produced
-  by a lazy thunk that carries the native value; laziness is the efficiency (a
-  megabyte blob's canonical cons-tower Term is never eagerly forced — only the
-  parts a proof inspects get forced) and the "symbolic by default" behaviour
-  (the thunk stays unforced unless a proof computes on the value). **Never
-  eagerly materialize** (no cons-towers for "small" blobs — that pays the cost
-  the whole design exists to avoid, and isn't first-class). Adding a datatype =
-  its toHOL lowering (a lazy Term) + its cert rules (the TCB growth), and **zero
-  new Term leaves** — the first-class datatype experience. (Corrects an earlier
-  draft that spoke of "deleting `TermKind::Int`/`Blob`" or a "symbolic value
-  leaf": the target is a lazy *regular* Term over the ε/rep/abs vocabulary, not
-  a new leaf.) The HOL crate stays small enough to audit against the manual.
+- **Literals are lazy base expressions — no literal/`toHOL` leaf, and the
+  laziness already exists in the pure infrastructure.** `toHOL v` is the base
+  *expression* `App<ToHol, Val(v)>` of sort `Term` (the closed-world kernel's
+  Op/App/Val algebra) — an *unevaluated* op-application (`ToHol*` is
+  uninterpreted, no `CanonRule`) that the admitted axioms (the unfolding `Eqn`s
+  `toHOL(succ n) = S(toHOL n)` + the cert rules) rewrite toward the concrete
+  *regular* `core::Term` `[v]`, forcing only what a proof inspects. That base
+  expression-and-rules evaluation model **is** the laziness — not a Rust thunk,
+  not a new `Term` leaf, and nothing to build (it's the S4/S5 machinery). A
+  megabyte blob's cons-tower `[b]` is never eagerly forced; `toHOL b` stays the
+  lazy base expression until an axiom fires. "Symbolic by default" = unforced
+  unless a proof computes on the value. **Never eagerly materialize.** Adding a
+  datatype = its `toHOL` lowering + its cert rules (the TCB growth), **zero new
+  Term leaves** — the first-class experience. (Corrects earlier drafts that said
+  "delete `TermKind::Int`/`Blob`", a "symbolic value leaf", or a "lazy thunk":
+  the mechanism is the existing base Expr algebra.) The HOL crate stays small
+  enough to audit against the manual.
 - **All computational power lives at the base layer** (`kernel/base`, the
   closed-world `Thm<L,P>`/`Language` kernel): `Nat`/`Int`/`Bytes` are base
   *languages* whose `CanonRule`s evaluate native `covalence_types` values,

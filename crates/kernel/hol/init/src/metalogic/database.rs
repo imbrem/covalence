@@ -9,6 +9,7 @@
 //! honest HOL theorems.
 
 use covalence_core::{Result, Term, Thm, Type};
+use covalence_hol_eval::mk_nat;
 
 use crate::init::ext::TermExt;
 use crate::init::prop::{p_imp_at, p_var_at};
@@ -29,7 +30,7 @@ pub(crate) fn phi() -> Type {
     // `enc(var 0) : Φ⟨bool⟩` has exactly the carrier type we want; read it off.
     p_var_at(
         &bool_ty(),
-        Term::nat_lit(covalence_types::Nat::from_inner(0u32.into())),
+        mk_nat(covalence_types::Nat::from_inner(0u32.into())),
     )
     .type_of()
     .expect("enc(var 0) is well-typed")
@@ -289,7 +290,7 @@ mod tests {
     fn var(k: u32) -> Term {
         p_var_at(
             &bool_ty(),
-            Term::nat_lit(covalence_types::Nat::from_inner(k.into())),
+            mk_nat(covalence_types::Nat::from_inner(k.into())),
         )
     }
 

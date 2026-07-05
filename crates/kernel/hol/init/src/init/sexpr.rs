@@ -223,7 +223,7 @@ mod tests {
     /// as terms (genuine syntax, not collapsed to a meaning).
     #[test]
     fn constructors_typed_and_distinct() {
-        let b = Term::blob(covalence_types::Bytes::from(vec![1u8, 2, 3]));
+        let b = covalence_hol_eval::mk_blob(covalence_types::Bytes::from(vec![1u8, 2, 3]));
         let at = atom(b.clone());
         assert_eq!(at.type_of().unwrap(), sexpr_ty());
         assert_eq!(snil().type_of().unwrap(), sexpr_ty());
@@ -237,8 +237,12 @@ mod tests {
     /// `slist` nests `scons` over `snil`, and is typed.
     #[test]
     fn slist_nests_scons() {
-        let a0 = atom(Term::blob(covalence_types::Bytes::from(vec![0u8])));
-        let a1 = atom(Term::blob(covalence_types::Bytes::from(vec![1u8])));
+        let a0 = atom(covalence_hol_eval::mk_blob(covalence_types::Bytes::from(
+            vec![0u8],
+        )));
+        let a1 = atom(covalence_hol_eval::mk_blob(covalence_types::Bytes::from(
+            vec![1u8],
+        )));
         let built = slist(vec![a0.clone(), a1.clone()]);
         assert_eq!(built, scons(a0, scons(a1, snil())));
         assert_eq!(built.type_of().unwrap(), sexpr_ty());
@@ -276,7 +280,7 @@ mod tests {
     #[test]
     fn rec_atom_holds() {
         let (fa, fnil, fc) = handlers_count();
-        let b = Term::blob(covalence_types::Bytes::from(vec![7u8]));
+        let b = covalence_hol_eval::mk_blob(covalence_types::Bytes::from(vec![7u8]));
         let thm = rec_atom(fa.clone(), fnil, fc, b.clone()).unwrap();
         assert!(thm.hyps().is_empty());
         // rhs = fa b, which β-reduces to 0; we only check the equation holds.
@@ -300,7 +304,9 @@ mod tests {
     #[test]
     fn rec_scons_holds() {
         let (fa, fnil, fc) = handlers_count();
-        let h = atom(Term::blob(covalence_types::Bytes::from(vec![1u8])));
+        let h = atom(covalence_hol_eval::mk_blob(covalence_types::Bytes::from(
+            vec![1u8],
+        )));
         let t = snil();
         let thm = rec_scons(fa, fnil, fc, h, t).unwrap();
         assert!(thm.hyps().is_empty());
@@ -313,8 +319,12 @@ mod tests {
     fn length_of_two_element_list_is_two() {
         use crate::init::ext::TermExt;
         let (fa, fnil, fc) = handlers_count();
-        let a0 = atom(Term::blob(covalence_types::Bytes::from(vec![0u8])));
-        let a1 = atom(Term::blob(covalence_types::Bytes::from(vec![1u8])));
+        let a0 = atom(covalence_hol_eval::mk_blob(covalence_types::Bytes::from(
+            vec![0u8],
+        )));
+        let a1 = atom(covalence_hol_eval::mk_blob(covalence_types::Bytes::from(
+            vec![1u8],
+        )));
         let lst = slist(vec![a0, a1]);
         let len = rec(fa, fnil, fc, lst).unwrap();
         // βι-normalise: should reduce to the literal 2.

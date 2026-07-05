@@ -7,7 +7,7 @@ semi-trusted API over `covalence-core`). Entries live in the per-module
 
 ## Per-module registries
 
-- **[`src`](./src/SKELETONS.md)** — crate-root `*.rs`: the multi-file `.cov` project loader (`project.rs`) — Rust↔`.cov` mutual recursion, single-`Project` `init/mod.rs` fold, WASM project units, concurrent compilation.
+- **[`src`](./src/SKELETONS.md)** — crate-root `*.rs`: the multi-file `.cov` project loader (`project.rs`) — Rust↔`.cov` mutual recursion, single-`Project` `init/mod.rs` fold, WASM project units, concurrent compilation; `sexp.rs` one-way `nat-lit`/`int-lit`/`bool-lit` serialize forms (no parse arms).
 - **[`src/init`](./src/init/SKELETONS.md)** — theory catalogue: `rat`/`real` postulates pending proof; partial inductive engine, `list`, `prod`.
 - **[`src/script`](./src/script/SKELETONS.md)** — `.cov` proof authoring + replay: pluggable unifier, proof/`Term` printer, async core + holes, `#dep`/`#spawn`, error spans, typed pipeline, WASM/WIT kernel API.
 - **[`src/models`](./src/models/SKELETONS.md)** — surface-compiler core: general `Signature`/`HandlerSet`, `#model` directive, multi-theory/iso shape.

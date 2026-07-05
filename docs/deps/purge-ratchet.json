@@ -48,18 +48,16 @@
       "covalence-init": 10
     },
     "termkind-literals": {
-      "covalence-alethe": 6,
       "covalence-core": 118,
-      "covalence-hol-eval": 1,
-      "covalence-init": 12
+      "covalence-hol-eval": 6,
+      "covalence-init": 10
     },
     "tycon-obs": {},
     "term-literal-ctors": {
-      "covalence-alethe": 9,
       "covalence-core": 172,
       "covalence-core-test-guest": 4,
       "covalence-hol-eval": 8,
-      "covalence-init": 120,
+      "covalence-init": 72,
       "covalence-pure-eval": 3
     },
     "has_no_obs": {},
@@ -71,9 +69,9 @@
     "obs-rules": 0,
     "reduce_prim": 93,
     "unfold_term_spec": 54,
-    "termkind-literals": 137,
+    "termkind-literals": 134,
     "tycon-obs": 0,
-    "term-literal-ctors": 316,
+    "term-literal-ctors": 259,
     "has_no_obs": 0,
     "cov-script-reduce": 18
   },
@@ -109,6 +107,14 @@
       "delta": "+9/+5/+1/+8",
       "reason": "S5 driver crate: differential suite pins reduce vs Thm::reduce_prim; delta passthrough still routes unfold_term_spec; recognizer matches TermKind::Succ; test fixtures build literal terms",
       "diesWith": "S8 reduce_prim deletion (differential suite + passthrough) / S10 literal deletion (fixtures)"
+    },
+    {
+      "commit": "S7",
+      "pattern": "termkind-literals",
+      "crate": "covalence-hol-eval",
+      "delta": "+5",
+      "reason": "S7 literal facade (lit.rs): the kind_name diagnostic arms — the DESIGNATED single peripheral chokepoint the variant deletion edits; mk_*/as_* route through core::seam::Lit and add no counts",
+      "diesWith": "S10/S11 literal deletion (arms deleted with the variants)"
     }
   ]
 }

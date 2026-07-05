@@ -57,6 +57,7 @@
 
 use covalence_core::defs::{fst, int_pos_spec, int_pos_ty, prod, snd};
 use covalence_core::{Error, Result, Term, Thm, Type, subst};
+use covalence_hol_eval::mk_int;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::{int, logic, nat};
@@ -140,10 +141,7 @@ fn expand_rel(eq: Thm, app: &Term) -> Result<Thm> {
 /// `1 : int.pos` — the abstraction of the `int` literal `1`. The
 /// canonical denominator for the integer / rational embeddings.
 fn one_pos() -> Term {
-    Term::app(
-        Term::spec_abs(int_pos_spec(), Vec::new()),
-        Term::int_lit(1i128),
-    )
+    Term::app(Term::spec_abs(int_pos_spec(), Vec::new()), mk_int(1i128))
 }
 
 /// `pair a b : int × int.pos`.
@@ -179,7 +177,7 @@ fn ivar(name: &str) -> Term {
 
 /// `0 : int`.
 fn izero() -> Term {
-    Term::int_lit(0i128)
+    mk_int(0i128)
 }
 
 /// `⊢ ∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` — `int` integral-domain
@@ -398,12 +396,12 @@ fn binary_rat(build: impl Fn(&Term, &Term) -> Term) -> Term {
 
 /// `0 : rat` ≡ `mkRat (0, 1)`.
 pub fn rat_zero() -> Term {
-    mk_rat(&ip(Term::int_lit(0i128), one_pos()))
+    mk_rat(&ip(mk_int(0i128), one_pos()))
 }
 
 /// `1 : rat` ≡ `mkRat (1, 1)`.
 pub fn rat_one() -> Term {
-    mk_rat(&ip(Term::int_lit(1i128), one_pos()))
+    mk_rat(&ip(mk_int(1i128), one_pos()))
 }
 
 /// `ratAdd : rat → rat → rat` ≡ `(a/b) + (c/d) = (a·d + c·b)/(b·d)`.
@@ -1276,7 +1274,7 @@ fn zero_given() -> Result<Thm> {
     Thm::refl(rat_zero())?.trans(mk) // rat_zero = mkfs 0 one_pos = rat.MK 0 one_pos
 }
 fn one_given() -> Result<Thm> {
-    let mk = mk_unfold(&Term::int_lit(1i128), &one_pos())?.sym()?;
+    let mk = mk_unfold(&mk_int(1i128), &one_pos())?.sym()?;
     Thm::refl(rat_one())?.trans(mk)
 }
 
@@ -1853,7 +1851,7 @@ fn add_zero_impl() -> Result<Thm> {
     let lhs = add_via_components(&ra, &r0)?;
     let (fa, da) = (rfst(&a), rden(&a));
     let rda = den(&rep_pair(a.clone())); // rep da
-    let i0 = Term::int_lit(0i128);
+    let i0 = mk_int(0i128);
 
     // Numerator: fa·rep one_pos + 0·rep da = fa.
     let t1 = imul_l_cong(&fa, one_pos_rt())? // fa·rep one_pos = fa·1
@@ -1892,7 +1890,7 @@ fn add_neg_impl() -> Result<Thm> {
     let fa = rfst(&a);
     let rda = den(&rep_pair(a.clone())); // rep da
     let nfa = Term::app(int::int_neg(), fa.clone());
-    let i0 = Term::int_lit(0i128);
+    let i0 = mk_int(0i128);
 
     // Numerator: fa·rda + (-fa)·rda = (fa + -fa)·rda = 0·rda = 0.
     let f_eq = idistrib_r(&fa, &nfa, &rda)?
@@ -2061,7 +2059,7 @@ fn mul_zero_impl() -> Result<Thm> {
     let lhs = mul_via_components(&ra, &r0)?; // a·0 = MK(fa·0, to_pos(rep da · rep one_pos))
     let (fa, da) = (rfst(&a), rden(&a));
     let rda = den(&rep_pair(a.clone())); // rep da
-    let i0 = Term::int_lit(0i128);
+    let i0 = mk_int(0i128);
     let rop = Term::app(Term::spec_rep(int_pos_spec(), Vec::new()), one_pos()); // rep(one_pos)
 
     let f_eq = int::mul_zero().all_elim(fa)?; // fa·0 = 0
@@ -3133,8 +3131,8 @@ mod tests {
     #[test]
     fn rel_app_reduces_to_a_cross_multiplication() {
         // rat_rel (a,1) (c,1)  β-reduces to  a·den(c,1) = c·den(a,1).
-        let p = ip(Term::int_lit(2i128), one_pos());
-        let q = ip(Term::int_lit(3i128), one_pos());
+        let p = ip(mk_int(2i128), one_pos());
+        let q = ip(mk_int(3i128), one_pos());
         let reduced = rel_app(&p, &q).reduce().unwrap();
         // The reduct is a bool equation between two int products.
         let rhs = reduced.concl().as_eq().unwrap().1;
@@ -3143,7 +3141,7 @@ mod tests {
 
     #[test]
     fn mk_rat_is_a_rational() {
-        let p = ip(Term::int_lit(5i128), one_pos());
+        let p = ip(mk_int(5i128), one_pos());
         assert_eq!(mk_rat(&p).type_of().unwrap(), rat());
     }
 
@@ -3280,8 +3278,8 @@ mod tests {
     #[test]
     fn add_comm_specialises() {
         // ∀a b. a+b = b+a  ⟹  of_int 1 + of_int 2 = of_int 2 + of_int 1.
-        let one = Term::app(of_int(), Term::int_lit(1i128));
-        let two = Term::app(of_int(), Term::int_lit(2i128));
+        let one = Term::app(of_int(), mk_int(1i128));
+        let two = Term::app(of_int(), mk_int(2i128));
         let inst = add_comm()
             .all_elim(one.clone())
             .and_then(|t| t.all_elim(two.clone()))

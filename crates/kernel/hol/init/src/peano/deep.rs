@@ -34,6 +34,7 @@
 //! operations; nothing is added to `covalence-core`.
 
 use covalence_core::{Term, Type, defs};
+use covalence_hol_eval::mk_nat;
 use covalence_types::Nat;
 
 use super::fol::Fol;
@@ -67,7 +68,7 @@ pub fn denote_term(t: &Fol, ctx: &[Term]) -> Term {
             ctx[n - 1 - idx].clone()
         }
         Fol::FVar(k) => fvar_hol(*k),
-        Fol::Zero => Term::nat_lit(Nat::zero()),
+        Fol::Zero => mk_nat(Nat::zero()),
         Fol::Succ(a) => Term::app(defs::nat_succ(), denote_term(a, ctx)),
         Fol::Add(a, b) => Term::app(
             Term::app(defs::nat_add(), denote_term(a, ctx)),

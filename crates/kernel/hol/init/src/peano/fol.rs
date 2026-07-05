@@ -58,6 +58,7 @@
 
 use covalence_core::subst::close;
 use covalence_core::{Term, Type};
+use covalence_hol_eval::mk_nat;
 use covalence_types::Nat;
 
 // ============================================================================
@@ -257,7 +258,7 @@ pub fn ex_at(r: &Type, body: Term) -> Term {
 
 /// `nat` literal `k` as a term.
 pub fn nat_lit(k: u64) -> Term {
-    Term::nat_lit(Nat::from_inner(k.into()))
+    mk_nat(Nat::from_inner(k.into()))
 }
 
 /// `enc(bvar i) : Φ⟨'r⟩`.

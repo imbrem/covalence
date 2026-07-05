@@ -30,6 +30,7 @@
 use std::collections::BTreeMap;
 
 use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::{mk_int, mk_nat};
 use covalence_spectec::ast::{
     SpecTecBinOp, SpecTecCmpOp, SpecTecDef, SpecTecExp, SpecTecNum, SpecTecNumTyp, SpecTecOpTyp,
     SpecTecUnOp,
@@ -162,8 +163,8 @@ pub fn denote(e: &SpecTecExp, ctx: &DenoteCtx) -> Result<Term> {
 
 fn denote_num(n: &SpecTecNum) -> Result<Term> {
     match n {
-        SpecTecNum::Nat(u) => Ok(Term::nat_lit(*u)),
-        SpecTecNum::Int(i) => Ok(Term::int_lit(*i as i128)),
+        SpecTecNum::Nat(u) => Ok(mk_nat(*u)),
+        SpecTecNum::Int(i) => Ok(mk_int(*i as i128)),
         SpecTecNum::Rat(_) | SpecTecNum::Real(_) => Err(denote_err(
             "rat/real literals not in the value fragment yet",
         )),

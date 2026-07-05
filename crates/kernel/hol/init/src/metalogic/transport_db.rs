@@ -527,7 +527,9 @@ mod tests {
             .float_vars
             .iter()
             .enumerate()
-            .map(|(i, _)| Term::nat_lit(covalence_types::Nat::from_inner((i as u32).into())))
+            .map(|(i, _)| {
+                covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner((i as u32).into()))
+            })
             .collect();
         let (der_s, formula) = derive_axiom_instance(&src_rs, info, k_ax1, n_src, &args);
         assert_genuine(&der_s);

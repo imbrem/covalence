@@ -25,6 +25,9 @@
 //! - [`nat_add_thm`] — the S4 toHOL slice driver (symbolic-tier certificate
 //!   reified through the admitted toHOL rules and transported with the base
 //!   `eq_mp`), kept as the exemplar of the never-materialize pipeline.
+//! - [`lit`] — the literal build/recognize facade ([`mk_nat`]/[`as_nat`]/…):
+//!   the single peripheral chokepoint that moves when the kernel literal
+//!   variants die.
 
 #![forbid(unsafe_code)]
 
@@ -35,8 +38,10 @@ use covalence_core::seam::{
 use covalence_core::{Error, Result, Term, TermKind, Thm, TrustedCons};
 use covalence_pure::{Rule, apply};
 
+pub mod lit;
 mod tohol;
 
+pub use lit::{as_blob, as_int, as_nat, kind_name, mk_blob, mk_int, mk_nat};
 pub use tohol::nat_add_thm;
 
 /// Unwind an application spine: `((f a) b) c ↦ (f, [a, b, c])`.

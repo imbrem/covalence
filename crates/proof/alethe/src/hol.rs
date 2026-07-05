@@ -56,6 +56,7 @@
 use std::collections::HashMap;
 
 use covalence_core::{Term, Thm, Type, defs};
+use covalence_hol_eval::mk_int;
 use covalence_init::HolLightCtx;
 use covalence_init::init::logic;
 use covalence_sexp::SExpr;
@@ -156,9 +157,7 @@ impl HolAletheBridge {
                         })
                     }
                     // An integer literal (cvc5 writes negatives bare, e.g. `-6`).
-                    _ if sym.parse::<i128>().is_ok() => {
-                        Ok(Term::int_lit(sym.parse::<i128>().unwrap()))
-                    }
+                    _ if sym.parse::<i128>().is_ok() => Ok(mk_int(sym.parse::<i128>().unwrap())),
                     _ => {
                         let ty = self
                             .funs
@@ -764,7 +763,7 @@ mod tests {
     fn translates_integer_literals_and_arithmetic() {
         let int = Type::int();
         let x = || Term::free("x", int.clone());
-        let lit = |n: i128| Term::int_lit(n);
+        let lit = |n: i128| mk_int(n);
         let app2 = |op: Term, a: Term, c: Term| Term::app(Term::app(op, a), c);
 
         // negative literal
@@ -790,7 +789,7 @@ mod tests {
     fn comparisons_map_gt_to_swapped_lt() {
         let int = Type::int();
         let x = || Term::free("x", int.clone());
-        let lit5 = Term::int_lit(5);
+        let lit5 = mk_int(5);
         let app2 = |op: Term, a: Term, c: Term| Term::app(Term::app(op, a), c);
         // (< x 5)  →  int.lt x 5
         assert_eq!(

@@ -18,6 +18,7 @@
 use std::collections::BTreeMap;
 
 use covalence_core::{Term, TermKind, Type, TypeKind, defs};
+use covalence_hol_eval::{as_int, kind_name};
 use covalence_sexp::{SExp, SExpr};
 use covalence_smt::SmtProblem;
 use covalence_types::Int;
@@ -83,9 +84,12 @@ impl Collect {
             let rs = self.render(r)?;
             return Ok(SExp::List(vec![SExp::symbol("="), ls, rs]));
         }
+        // Integer literal — recognized through the hol-eval literal facade.
+        if let Some(n) = as_int(t) {
+            return Ok(int_lit_sexpr(&n));
+        }
         match t.kind() {
             TermKind::Bool(b) => Ok(SExp::symbol(if *b { "true" } else { "false" })),
-            TermKind::Int(n) => Ok(int_lit_sexpr(n)),
             TermKind::Free(v) => {
                 self.declare_fun_from_type(v.name(), v.ty())?;
                 Ok(SExp::symbol(v.name()))
@@ -232,31 +236,10 @@ fn int_lit_sexpr(n: &Int) -> SExpr {
     }
 }
 
-fn kind_name(k: &TermKind) -> &'static str {
-    match k {
-        TermKind::Bound(_) => "bound",
-        TermKind::Free(..) => "free",
-        TermKind::Const(..) => "const",
-        TermKind::App(..) => "app",
-        TermKind::Abs(..) => "abs",
-        TermKind::Blob(_) => "blob",
-        TermKind::Nat(_) => "nat",
-        TermKind::Int(_) => "int",
-        TermKind::SmallInt(_) => "smallint",
-        TermKind::Bool(_) => "bool",
-        TermKind::Eq(_) => "eq",
-        TermKind::Select(_) => "select",
-        TermKind::Succ => "succ",
-        TermKind::Spec(..) => "spec",
-        TermKind::SpecAbs(..) => "specabs",
-        TermKind::SpecRep(..) => "specrep",
-        TermKind::FreshConst(..) => "fresh-const",
-        TermKind::Def(_) => "def",
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use covalence_hol_eval::mk_int;
+
     use super::*;
     use covalence_init::HolLightCtx;
 
@@ -286,7 +269,7 @@ mod tests {
         let x = Term::free("x", int.clone());
         let lt = |a: Term, b: Term| Term::app(Term::app(defs::int_lt(), a), b);
         let ctx = HolLightCtx::new();
-        let goal = ctx.mk_imp(lt(x.clone(), Term::int_lit(0)), lt(x, Term::int_lit(1)));
+        let goal = ctx.mk_imp(lt(x.clone(), mk_int(0)), lt(x, mk_int(1)));
         let problem = goal_to_problem(&goal).expect("translate");
         assert_eq!(problem.logic(), Some("QF_UFLIA"));
         assert!(problem.funs().iter().any(|f| f.name == "x"));
@@ -294,7 +277,7 @@ mod tests {
 
     #[test]
     fn rejects_non_bool_goal() {
-        let goal = Term::int_lit(3);
+        let goal = mk_int(3);
         assert!(goal_to_problem(&goal).is_err());
     }
 }

@@ -36,6 +36,7 @@
 
 use covalence_core::subst::close;
 use covalence_core::{Term, Type, defs};
+use covalence_hol_eval::mk_nat;
 use covalence_types::Nat;
 
 use super::fol::Fol;
@@ -188,7 +189,7 @@ impl<'a> SemFol<'a> {
                 assert!(idx < n, "sem: dangling BVar {i} (ctx depth {n})");
                 ctx[n - 1 - idx].clone()
             }
-            Fol::FVar(k) => Term::app(self.h("fvar"), Term::nat_lit(Nat::from_inner((*k).into()))),
+            Fol::FVar(k) => Term::app(self.h("fvar"), mk_nat(Nat::from_inner((*k).into()))),
             Fol::Zero => self.h("zero"),
             Fol::Succ(a) => Term::app(self.h("succ"), self.term_body(a, ctx)),
             Fol::Add(a, b) => self.bin_t("add", a, b, ctx),
@@ -378,7 +379,7 @@ pub fn std_handlers() -> Vec<Term> {
     // closed formulas PA states, never reach a free atom.)
     let fvar = Term::free("pa.env", Type::fun(n.clone(), n.clone()));
 
-    let zero = Term::nat_lit(Nat::zero());
+    let zero = mk_nat(Nat::zero());
     let succ = defs::nat_succ();
     let add = defs::nat_add();
     let mul = defs::nat_mul();

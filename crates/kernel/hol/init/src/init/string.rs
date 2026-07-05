@@ -234,14 +234,18 @@ mod tests {
         // type of `bytes`). These are exactly the types the surface
         // compiler's byte/byte-string literal lifters target.
         assert_eq!(
-            Term::blob(vec![1u8, 2, 3]).type_of().unwrap(),
+            covalence_hol_eval::mk_blob(vec![1u8, 2, 3])
+                .type_of()
+                .unwrap(),
             Type::bytes()
         );
         assert_eq!(Term::u8_lit(255).type_of().unwrap(), byte_elem());
         // The empty `Blob` and our `bytes.empty` are both `bytes` (their
         // equality is a `cons`-recursion fact, deferred — see SKELETONS).
         assert_eq!(
-            Term::blob(Vec::<u8>::new()).type_of().unwrap(),
+            covalence_hol_eval::mk_blob(Vec::<u8>::new())
+                .type_of()
+                .unwrap(),
             Type::bytes()
         );
         assert_eq!(bytes_empty().type_of().unwrap(), Type::bytes());

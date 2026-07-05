@@ -87,7 +87,7 @@ fn int() -> Type {
 }
 
 fn lit(n: i128) -> Term {
-    Term::int_lit(n)
+    covalence_hol_eval::mk_int(n)
 }
 
 fn var(name: &str) -> Term {
@@ -982,7 +982,8 @@ fn mk_components(mk: &Term) -> Result<(Term, Term)> {
 // Literal coherence — relating `int_lit n` to its `MK` representative
 // ============================================================================
 //
-// Integer literals are builtin `TermKind::Int`, opaque to the quotient. But
+// Integer literals are opaque kernel leaves (built via the hol-eval
+// facade), invisible to the quotient. But
 // `int.add`/`int.succ` on literals reduce (the cert path) AND unfold to the
 // Grothendieck body, and those two must agree — which pins the literal's
 // class. We exploit that to derive `int_lit 0 = MK(0, 0)` (and `int_lit 1 =
@@ -2808,7 +2809,7 @@ pub fn int_env() -> crate::script::Env {
     e.define_const("mk", ConstDef::Op(int_mk_op()));
     e.define_const("fc", ConstDef::Op(int_fc_op()));
     e.define_const("sc", ConstDef::Op(int_sc_op()));
-    // literals (builtin `TermKind::Int`)
+    // literals (opaque kernel int leaves)
     e.define_const("0", ConstDef::Op(lit(0)));
     e.define_const("1", ConstDef::Op(lit(1)));
 

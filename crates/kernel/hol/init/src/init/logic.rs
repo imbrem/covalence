@@ -1547,19 +1547,19 @@ mod tests {
     fn normalize_and_tauto_decide_closed_arithmetic() {
         // tauto now folds closed arithmetic, not just connectives.
         let two_plus_two = covalence_core::defs::int_add()
-            .apply(Term::int_lit(2))
+            .apply(covalence_hol_eval::mk_int(2))
             .unwrap()
-            .apply(Term::int_lit(2))
+            .apply(covalence_hol_eval::mk_int(2))
             .unwrap();
-        let goal = two_plus_two.equals(Term::int_lit(4)).unwrap(); // (2+2 = 4)
+        let goal = two_plus_two.equals(covalence_hol_eval::mk_int(4)).unwrap(); // (2+2 = 4)
         assert!(tauto(&goal).is_ok(), "tauto proves a closed integer fact");
         // The false version: 2 + 2 = 5 → decide proves its negation.
         let bad = covalence_core::defs::int_add()
-            .apply(Term::int_lit(2))
+            .apply(covalence_hol_eval::mk_int(2))
             .unwrap()
-            .apply(Term::int_lit(2))
+            .apply(covalence_hol_eval::mk_int(2))
             .unwrap()
-            .equals(Term::int_lit(5))
+            .equals(covalence_hol_eval::mk_int(5))
             .unwrap();
         assert_eq!(decide(&bad).unwrap().concl(), &bad.not().unwrap());
     }

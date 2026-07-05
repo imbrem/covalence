@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 covalence-core = { path = "../../kernel/hol/core" }
+covalence-hol-eval = { path = "../../kernel/hol/eval" }
 covalence-init = { path = "../../kernel/hol/init" }
 covalence-sexp = { path = "../../lib/sexp" }
 covalence-smt = { path = "../../lib/smt" }

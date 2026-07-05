@@ -415,6 +415,8 @@ fn rhs(thm: &Thm) -> Result<Term> {
 
 #[cfg(test)]
 mod tests {
+    use covalence_hol_eval::mk_int;
+
     use super::*;
     use crate::init::{int, nat};
     use covalence_core::Type;
@@ -515,8 +517,8 @@ mod tests {
         let ops = RingOps::new(
             int::int_add(),
             int::int_mul(),
-            Term::int_lit(0),
-            Term::int_lit(1),
+            mk_int(0),
+            mk_int(1),
             int::add_assoc(),
             int::add_comm(),
             int::mul_assoc(),

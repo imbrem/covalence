@@ -917,6 +917,7 @@ name = "covalence-alethe"
 version = "0.0.0"
 dependencies = [
  "covalence-core",
+ "covalence-hol-eval",
  "covalence-init",
  "covalence-sexp",
  "covalence-smt",

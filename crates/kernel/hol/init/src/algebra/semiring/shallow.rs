@@ -18,6 +18,7 @@
 //! [`cong_add`](Semiring::cong_add) → `cong_arg`/`cong_app`).
 
 use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_hol_eval::mk_int;
 
 use crate::algebra::semiring::Semiring;
 use crate::init::ext::{TermExt, ThmExt};
@@ -176,10 +177,10 @@ impl Semiring for Int {
         Term::free(name, Type::int())
     }
     fn zero(&self) -> Term {
-        Term::int_lit(0)
+        mk_int(0)
     }
     fn one(&self) -> Term {
-        Term::int_lit(1)
+        mk_int(1)
     }
     fn add(&self, a: Term, b: Term) -> Term {
         Term::app(Term::app(int::int_add(), a), b)
@@ -341,13 +342,10 @@ mod tests {
         // ∀a b. a + b = b + a  ⟹  (3 + 5) = (5 + 3).
         let s = Int::new();
         let p = s
-            .specialize(s.add_comm(), Term::int_lit(3))
-            .and_then(|t| s.specialize(t, Term::int_lit(5)))
+            .specialize(s.add_comm(), mk_int(3))
+            .and_then(|t| s.specialize(t, mk_int(5)))
             .unwrap();
-        let expected = s.eq(
-            s.add(Term::int_lit(3), Term::int_lit(5)),
-            s.add(Term::int_lit(5), Term::int_lit(3)),
-        );
+        let expected = s.eq(s.add(mk_int(3), mk_int(5)), s.add(mk_int(5), mk_int(3)));
         assert_eq!(s.concl(&p), expected);
     }
 

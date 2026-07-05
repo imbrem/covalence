@@ -12,6 +12,7 @@ use std::sync::Arc;
 use covalence_alethe::discharge::CachedProof;
 use covalence_alethe::{ProofCache, SmtDischarger, goal_to_problem, smt_tactic};
 use covalence_core::{Term, Type, defs};
+use covalence_hol_eval::mk_int;
 use covalence_init::HolLightCtx;
 use covalence_init::script::{Env, Tactic, run};
 
@@ -26,7 +27,7 @@ use covalence_init::script::{Env, Tactic, run};
 fn arith_goal() -> Term {
     let ctx = HolLightCtx::new();
     let plus = |a: Term, b: Term| Term::app(Term::app(defs::int_add(), a), b);
-    ctx.mk_eq(plus(Term::int_lit(1), Term::int_lit(2)), Term::int_lit(3))
+    ctx.mk_eq(plus(mk_int(1), mk_int(2)), mk_int(3))
         .expect("well-typed equation")
 }
 

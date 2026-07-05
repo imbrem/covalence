@@ -117,6 +117,10 @@
     },
     {
       "from": "covalence-alethe",
+      "to": "covalence-hol-eval"
+    },
+    {
+      "from": "covalence-alethe",
       "to": "covalence-init"
     },
     {

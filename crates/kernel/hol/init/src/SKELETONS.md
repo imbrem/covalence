@@ -4,6 +4,14 @@ Placeholders in crate-root `src/*.rs` (modules without their own
 `SKELETONS.md`). See [`CLAUDE.md`](../../../../../CLAUDE.md) § Skeletons, the
 [crate index](../SKELETONS.md), and the [root index](../../../../../SKELETONS.md).
 
+## `sexp.rs` — term S-expression round-trip asymmetry
+
+`term_to_sexp` serializes `nat-lit` / `int-lit` / `bool-lit` forms that
+`term_from_sexp` has **no parse arms for** (one-way; `blob`/`small-int` do
+round-trip). Dies with the literal `TermKind` variants (toHOL purge S10/S11) —
+the serialize arms go with them; do not add parse arms meanwhile without the
+maintainer's serialization sign-off (persisted-format wall).
+
 ## `project.rs` — multi-file `.cov` project loader
 
 `Project` / `compile_project` does the `.cov`→`.cov` import graph + topological

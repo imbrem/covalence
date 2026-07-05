@@ -13,7 +13,7 @@
 //! soundness obligation.
 
 use covalence_core::seam::Lit;
-use covalence_core::{Term, TermKind};
+use covalence_core::{IntTag, SmallIntLiteral, Term, TermKind};
 use covalence_types::{Bytes, Int, Nat};
 
 /// Build the concrete `nat` term for `n` (today the kernel `nat` literal).
@@ -29,6 +29,18 @@ pub fn mk_int(i: impl Into<Int>) -> Term {
 /// Build the concrete `bytes` term for `b` (today the kernel blob literal).
 pub fn mk_blob(b: impl Into<Bytes>) -> Term {
     Lit::Bytes(b.into()).to_term()
+}
+
+/// Build the concrete `u32` term for `v` (today the kernel fixed-width literal).
+/// Used e.g. as the bit pattern of an `f32` (`f32 := u32`).
+pub fn mk_u32(v: u32) -> Term {
+    Lit::Small(SmallIntLiteral::u32(v)).to_term()
+}
+
+/// Build the concrete `u64` term for `v` (today the kernel fixed-width literal).
+/// Used e.g. as the bit pattern of an `f64` (`f64 := u64`).
+pub fn mk_u64(v: u64) -> Term {
+    Lit::Small(SmallIntLiteral::u64(v)).to_term()
 }
 
 /// Recognize a concrete `nat` term, returning its value.
@@ -51,6 +63,24 @@ pub fn as_int(t: &Term) -> Option<Int> {
 pub fn as_blob(t: &Term) -> Option<Bytes> {
     match Lit::from_term(t)? {
         Lit::Bytes(b) => Some(b),
+        _ => None,
+    }
+}
+
+/// Recognize a concrete `u32` term (a `u32`-tagged fixed-width literal),
+/// returning its bit value. `None` for any other kind/tag.
+pub fn as_u32(t: &Term) -> Option<u32> {
+    match Lit::from_term(t)? {
+        Lit::Small(l) if l.tag() == IntTag::U32 => Some(l.bits() as u32),
+        _ => None,
+    }
+}
+
+/// Recognize a concrete `u64` term (a `u64`-tagged fixed-width literal),
+/// returning its bit value. `None` for any other kind/tag.
+pub fn as_u64(t: &Term) -> Option<u64> {
+    match Lit::from_term(t)? {
+        Lit::Small(l) if l.tag() == IntTag::U64 => Some(l.bits()),
         _ => None,
     }
 }

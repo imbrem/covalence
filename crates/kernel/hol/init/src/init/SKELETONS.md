@@ -16,9 +16,12 @@ Bridge built (S9a); the flip is maintainer-gated. See
 - **Def-style (ε-selector) and declaration-only specs get no body-twin** —
   their re-home route (`const := ε pred` via `define` + `spec_ax`; opaque `Def`
   for `term_decl!`) is designed but not built.
-- **`TypeSpec` re-home is prototype-only** — `twins::unit_typedef()` shows the
-  `new_type_definition` route for `unit`; the other derived types (incl. the
-  `int` quotient) are not re-homed, and no accessor is flipped onto a twin.
+- **`TypeSpec` re-home is prototype-only** — `twins::unit_typedef()` re-homes
+  `unit` via `new_type_definition` and S9b re-proves its full fact set through
+  that rep (`unit_rep_abs_t` / `unit_rep_is_t` / `unit_singleton`). The other
+  subtype/newtype specs follow the same shape (need a non-emptiness witness);
+  the **`int` quotient** needs a *quotient-typedef helper* over `⊢ equivalence R`
+  (design in `defs-rehome-design.md` §e). No accessor is flipped onto a twin.
 
 ## Postulates pending proof
 

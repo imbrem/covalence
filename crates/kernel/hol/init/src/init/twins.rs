@@ -141,31 +141,98 @@ pub fn unfold_spec(t: &Term) -> Result<Thm> {
     Thm::unfold_term_spec(t.clone())
 }
 
-/// **Prototype (S9a):** introduce `unit`'s carrier subtype through the
+/// The `unit` selector predicate `P = λb. b = T` (from `defs/unit`) — the
+/// carrier `bool` carved down to its single inhabitant `T`. Shared by the
+/// witness and the β-reductions of `P (rep a)` below.
+fn unit_predicate() -> Result<Term> {
+    Ok(covalence_core::defs::unit_spec()
+        .tm()
+        .ok_or(Error::NotAnEquation)?
+        .clone())
+}
+
+/// `⊢ (λb. b = T) T` — the non-emptiness witness for `unit`'s carrier
+/// subtype: the selector `P` holds of `T`. Shared by [`unit_typedef`] (as the
+/// `new_type_definition` witness) and the round-trip / singleton derivations.
+fn unit_witness() -> Result<Thm> {
+    let t_lit = Term::bool_lit(true);
+    // Build `⊢ (λb. b = T) T` from `⊢ T = T` and the β-equation
+    // `⊢ (λb. b = T) T = (T = T)`.
+    let redex = Term::app(unit_predicate()?, t_lit.clone());
+    let beta = Thm::beta_conv(redex)?; // ⊢ (λb. b = T) T = (T = T)
+    let refl_tt = Thm::refl(t_lit)?; // ⊢ T = T
+    beta.sym()?.eq_mp(refl_tt) // ⊢ (λb. b = T) T
+}
+
+/// **Prototype (S9a/S9b):** introduce `unit`'s carrier subtype through the
 /// conservative-extension route [`Thm::new_type_definition`] rather than the
 /// `TypeSpec` abs/rep laws — the `TypeSpec` analogue of the const-twin bridge
 /// above. `unit = { b : bool | b = T }`, witnessed by `⊢ (λb. b = T) T`.
 ///
 /// This is the re-home template for `defs/`'s derived `TypeSpec`s (a fresh τ
 /// with `abs`/`rep` and the three bijection theorems, all freshness allocated
-/// inside the kernel rule). It is exercised by the test below, not yet wired
-/// into the catalogue — that swap is the maintainer-gated flip.
+/// inside the kernel rule). S9b drives it end-to-end: [`unit_rep_abs_t`],
+/// [`unit_rep_is_t`], and [`unit_singleton`] re-prove — through *this*
+/// representation — the abs/rep round-trips and the singleton law that the
+/// `TypeSpec`-unit gets from the coercion laws and [`Thm::unit_eq`]. Still not
+/// wired into the catalogue: that swap is the maintainer-gated flip.
 pub fn unit_typedef() -> Result<TypeDef> {
-    // P = `λb. b = T` (the unit selector predicate) and the witness `x = T`.
-    let p = covalence_core::defs::unit_spec()
-        .tm()
-        .ok_or(Error::NotAnEquation)?
-        .clone();
+    Thm::new_type_definition("unit", "unit.abs", "unit.rep", unit_witness()?)
+}
+
+/// `⊢ rep (abs T) = T` — the *carrier-side* round trip on the witness,
+/// through the [`unit_typedef`] representation. Discharges the subtype premise
+/// `P T` (which β-reduces to `T = T`) of `rep_abs_fwd` with the witness.
+/// The `TypeSpec`-unit analogue is [`Thm::spec_rep_abs_fwd`] on `T`.
+pub fn unit_rep_abs_t(td: &TypeDef) -> Result<Thm> {
     let t_lit = Term::bool_lit(true);
+    // rep_abs_fwd at r := T : ⊢ P T ⟹ rep (abs T) = T.
+    let fwd_at_t = td.rep_abs_fwd.clone().all_elim(t_lit)?;
+    fwd_at_t.imp_elim(unit_witness()?) // ⊢ rep (abs T) = T
+}
 
-    // Build `⊢ (λb. b = T) T` from `⊢ T = T` and the β-equation
-    // `⊢ (λb. b = T) T = (T = T)`.
-    let redex = Term::app(p, t_lit.clone());
-    let beta = Thm::beta_conv(redex)?; // ⊢ (λb. b = T) T = (T = T)
-    let refl_tt = Thm::refl(t_lit)?; // ⊢ T = T
-    let witness = beta.sym()?.eq_mp(refl_tt)?; // ⊢ (λb. b = T) T
+/// `⊢ rep a = T` for a free `a : τ` — every inhabitant's representative is the
+/// witness `T`, because `rep`'s image lands in `{ b : bool | P b } = { T }`.
+/// The engine of the singleton law: obtained from the `abs (rep a) = a` round
+/// trip (applied under `rep`) fed into the back direction `rep_abs_back`.
+pub fn unit_rep_is_t(td: &TypeDef, a: Term) -> Result<Thm> {
+    let rep = td.rep.clone();
+    // (i) abs (rep a) = a — the wrapper-side round trip at `a`.
+    let abs_rep_a = td.abs_rep.clone().all_elim(a.clone())?;
+    // (ii) rep (abs (rep a)) = rep a — apply `rep` to both sides of (i).
+    let rep_cong = Thm::refl(rep.clone())?.cong_app(abs_rep_a)?;
+    // rep_abs_back at r := rep a : ⊢ rep (abs (rep a)) = rep a ⟹ P (rep a).
+    let rep_a = Term::app(rep, a);
+    let back_at = td.rep_abs_back.clone().all_elim(rep_a.clone())?;
+    let p_rep_a = back_at.imp_elim(rep_cong)?; // ⊢ P (rep a)
+    // β: `P (rep a) = (rep a = T)`, then transport to `⊢ rep a = T`.
+    let beta = Thm::beta_conv(Term::app(unit_predicate()?, rep_a))?;
+    beta.eq_mp(p_rep_a)
+}
 
-    Thm::new_type_definition("unit", "unit.abs", "unit.rep", witness)
+/// `⊢ ∀x:τ. ∀y:τ. x = y` — the **singleton law** for `unit`, *proved* through
+/// the [`unit_typedef`] representation. The `TypeSpec`-unit gets this as the
+/// kernel rule [`Thm::unit_eq`]; here it falls out of the bijection theorems
+/// plus `rep`'s image being `{T}` ([`unit_rep_is_t`]): `x = abs (rep x) =
+/// abs (rep y) = y` since `rep x = T = rep y`.
+pub fn unit_singleton(td: &TypeDef) -> Result<Thm> {
+    let tau = td.tau.clone();
+    let x = Term::free("x", tau.clone());
+    let y = Term::free("y", tau.clone());
+    // rep x = T = rep y, so rep x = rep y.
+    let rep_x_t = unit_rep_is_t(td, x.clone())?;
+    let rep_y_t = unit_rep_is_t(td, y.clone())?;
+    let rep_x_eq_y = rep_x_t.trans(rep_y_t.sym()?)?; // ⊢ rep x = rep y
+    // abs (rep x) = abs (rep y) — apply `abs` to both sides.
+    let abs_cong = Thm::refl(td.abs.clone())?.cong_app(rep_x_eq_y)?;
+    // x = abs (rep x) = abs (rep y) = y.
+    let abs_rep_x = td.abs_rep.clone().all_elim(x.clone())?; // ⊢ abs (rep x) = x
+    let abs_rep_y = td.abs_rep.clone().all_elim(y.clone())?; // ⊢ abs (rep y) = y
+    let x_eq_y = abs_rep_x
+        .sym()? // ⊢ x = abs (rep x)
+        .trans(abs_cong)? // ⊢ x = abs (rep y)
+        .trans(abs_rep_y)?; // ⊢ x = y
+    x_eq_y.all_intro("y", tau.clone())?.all_intro("x", tau)
 }
 
 #[cfg(test)]
@@ -234,5 +301,69 @@ mod tests {
         assert!(td.rep_abs_back.hyps().is_empty());
         // τ is a fresh type constructor, distinct from the `defs/` unit spec type.
         assert_ne!(td.tau, covalence_core::Type::unit());
+    }
+
+    /// The carrier-side round trip through the new representation:
+    /// `⊢ rep (abs T) = T`, hypothesis-free (the subtype premise `P T`
+    /// discharges to the witness). Mirrors the `TypeSpec`-unit's
+    /// `spec_rep_abs_fwd` discharged on `T`.
+    #[test]
+    fn unit_typedef_rep_abs_witness() {
+        let td = unit_typedef().unwrap();
+        let thm = unit_rep_abs_t(&td).expect("rep (abs T) = T");
+        assert!(thm.hyps().is_empty());
+        let (lhs, rhs) = thm.concl().as_eq().expect("an equation");
+        // rhs is the witness `T`; lhs is `rep (abs T)`.
+        assert_eq!(rhs, &Term::bool_lit(true));
+        // lhs = App(rep, App(abs, T)).
+        let TermKind::App(rep, inner) = lhs.kind() else {
+            panic!("lhs is rep (abs T)")
+        };
+        assert_eq!(rep, &td.rep);
+        let TermKind::App(abs, w) = inner.kind() else {
+            panic!("inner is abs T")
+        };
+        assert_eq!(abs, &td.abs);
+        assert_eq!(w, &Term::bool_lit(true));
+    }
+
+    /// `rep`'s image is `{T}`: `⊢ rep a = T` for a free `a : τ`.
+    #[test]
+    fn unit_typedef_rep_is_witness() {
+        let td = unit_typedef().unwrap();
+        let a = Term::free("a", td.tau.clone());
+        let thm = unit_rep_is_t(&td, a.clone()).expect("rep a = T");
+        assert!(thm.hyps().is_empty());
+        let (lhs, rhs) = thm.concl().as_eq().unwrap();
+        assert_eq!(rhs, &Term::bool_lit(true));
+        assert_eq!(lhs, &Term::app(td.rep.clone(), a));
+    }
+
+    /// The **singleton law** re-proved through `new_type_definition`:
+    /// `⊢ ∀x:τ. ∀y:τ. x = y`, hypothesis-free. This is the fact the
+    /// `TypeSpec`-unit gets as the kernel rule `Thm::unit_eq`; here it is
+    /// *derived* from the bijection theorems, validating the coercion story
+    /// end-to-end.
+    #[test]
+    fn unit_typedef_singleton_law() {
+        let td = unit_typedef().unwrap();
+        let thm = unit_singleton(&td).expect("∀x y:τ. x = y");
+        assert!(thm.hyps().is_empty());
+
+        // ⊢ ∀x:τ. ∀y:τ. x = y: instantiating both quantifiers must succeed and
+        // — crucially — the two witnesses may DIFFER, which is the singleton
+        // content. Feed two distinct τ inhabitants (`abs T` and a free `w:τ`);
+        // the result `⊢ abs T = w` is the same fact `Thm::unit_eq` delivers for
+        // the TypeSpec unit.
+        let abs_t = Term::app(td.abs.clone(), Term::bool_lit(true));
+        let w = Term::free("w", td.tau.clone());
+        let inst = thm
+            .all_elim(abs_t.clone())
+            .expect("outer ∀ over τ")
+            .all_elim(w.clone())
+            .expect("inner ∀ over τ");
+        let (l, r) = inst.concl().as_eq().expect("instantiated body is x = y");
+        assert_eq!(l, &abs_t);
+        assert_eq!(r, &w);
     }
 }

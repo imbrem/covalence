@@ -37,7 +37,7 @@ pub fn trans2(ab: Thm, bc: Thm) -> Thm {
 
 /// Given `Γ ⊢ A` and `Δ ⊢ A ≡ B`, return `Γ ∪ Δ ⊢ B`. Useful for
 /// rewriting a theorem with an equation derived from the kernel
-/// (e.g. `Thm::reduce_prim` or a definitional unfolding).
+/// (e.g. `covalence_hol_eval::reduce` or a definitional unfolding).
 pub fn rewrite_with(thm: Thm, eq: Thm) -> Thm {
     eq.eq_mp(thm).expect("rewrite_with: eq_mp")
 }

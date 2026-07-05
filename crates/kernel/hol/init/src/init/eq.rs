@@ -28,7 +28,7 @@
 //! |------|------------------|----------|------------------------------|
 //! | **β** | `(λx. t) u → t[u/x]` | [`Thm::beta_conv`] | (via [`reduce`](crate::init::ext::TermExt::reduce)) |
 //! | **δ** | defined constant → its body (`nat.add → λn m. …`) | [`Thm::unfold_term_spec`] / [`delta`](crate::init::ext::TermExt::delta) | [`delta_all`](crate::init::ext::TermExt::delta_all) (per symbol) |
-//! | **prim / ι** | closed literal computation: `nat`/`int`/`bytes`/`bool` arithmetic, `succ`/`pred`, literal `=` | [`Thm::reduce_prim`] | [`reduce_consts`](crate::init::ext::TermExt::reduce_consts) |
+//! | **prim / ι** | closed literal computation: `nat`/`int`/`bytes`/`bool` arithmetic, `succ`/`pred`, literal `=` | [`covalence_hol_eval::reduce`] | [`reduce_consts`](crate::init::ext::TermExt::reduce_consts) |
 //! | **βι** | β + ι together | — | [`reduce`](crate::init::ext::TermExt::reduce) |
 //! | **η** | `(λx. f x) → f` | [`Thm::eta_conv`] | — |
 //! | **spec coercion** | carrier ↔ wrapper for a derived type | [`Term::spec_abs`](covalence_core::Term::spec_abs) / [`spec_rep`](covalence_core::Term::spec_rep) | — |
@@ -127,7 +127,8 @@ pub fn trans_chain(steps: impl IntoIterator<Item = Thm>) -> Result<Thm> {
 /// Spec:
 /// - Reduces **β and only β**. It fires a redex exactly when a subterm
 ///   has the syntactic shape `App(Abs(..), _)`. It never unfolds a
-///   `Spec`/defined constant (δ), never runs [`Thm::reduce_prim`] (so
+///   `Spec`/defined constant (δ), never evaluates primitives
+///   ([`covalence_hol_eval::reduce`] — so
 ///   `nat`/`int`/`bytes`/`bool` arithmetic and literal `=` are **not**
 ///   evaluated), and never η-contracts. A `Spec` head applied to
 ///   arguments — e.g. `nat.add 1 1` — is therefore returned unchanged:

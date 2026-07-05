@@ -182,7 +182,8 @@ fn pred_at(pred: &Term, w: &Term, b: bool, x: &Term, y: &Term) -> Result<Thm> {
 ///
 /// On the live branch (`satisfiable`) `w` *is* `branch`, so `w = branch`
 /// is reflexive. On the dead branch `ante` is a false literal equation
-/// (`T = F` / `F = T`); `reduce_prim` decides it to `F`, and ex falso
+/// (`T = F` / `F = T`); the cert-path reducer
+/// ([`covalence_hol_eval::reduce`]) decides it to `F`, and ex falso
 /// gives the consequent vacuously.
 fn clause_branch(ante: &Term, satisfiable: bool, w: &Term, branch: &Term) -> Result<Thm> {
     if satisfiable {
@@ -190,8 +191,10 @@ fn clause_branch(ante: &Term, satisfiable: bool, w: &Term, branch: &Term) -> Res
         Thm::refl(w.clone())?.imp_intro(ante)
     } else {
         let goal = w.clone().equals(branch.clone())?;
-        // {ante} ⊢ F  via  ⊢ ante = F  (reduce_prim)  and  {ante} ⊢ ante.
-        let to_false = Thm::reduce_prim(ante.clone())?.eq_mp(Thm::assume(ante.clone())?)?;
+        // {ante} ⊢ F  via  ⊢ ante = F  (cert-path reduce)  and  {ante} ⊢ ante.
+        let to_false = covalence_hol_eval::reduce(ante)
+            .ok_or(Error::NotReducible)?
+            .eq_mp(Thm::assume(ante.clone())?)?;
         to_false.false_elim(goal)?.imp_intro(ante)
     }
 }

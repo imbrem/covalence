@@ -223,7 +223,13 @@ macro_rules! term_sub_rule {
 // (`refl` is dual-mode — its rule facet lives on the `Refl` inference in tactic.rs.)
 term_rule!(AssumeRule, "assume", |t| Ok(Thm::assume(t)?));
 term_rule!(LemRule, "lem", |t| Ok(Thm::lem(t)?));
-term_rule!(ReducePrimRule, "reduce-prim", |t| Ok(Thm::reduce_prim(t)?));
+// `(reduce-prim TERM)` → `⊢ TERM = value`: single-step closed primitive
+// computation, routed through the untrusted cert-path driver
+// (`covalence-hol-eval`) — same catalogue and conclusions as the legacy
+// kernel rule it replaces, so existing `.cov` scripts replay unchanged.
+term_rule!(ReducePrimRule, "reduce-prim", |t: Term| Ok(
+    covalence_hol_eval::reduce(&t).ok_or(covalence_core::Error::NotReducible)?
+));
 term_rule!(UnfoldTermSpecRule, "unfold-term-spec", |t| Ok(
     Thm::unfold_term_spec(t)?
 ));

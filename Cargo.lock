@@ -1092,6 +1092,7 @@ dependencies = [
  "covalence-grammar",
  "covalence-hash",
  "covalence-hol",
+ "covalence-hol-eval",
  "covalence-metamath",
  "covalence-sexp",
  "covalence-spectec",

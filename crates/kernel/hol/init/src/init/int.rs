@@ -983,7 +983,7 @@ fn mk_components(mk: &Term) -> Result<(Term, Term)> {
 // ============================================================================
 //
 // Integer literals are builtin `TermKind::Int`, opaque to the quotient. But
-// `int.add`/`int.succ` on literals reduce (`reduce_prim`) AND unfold to the
+// `int.add`/`int.succ` on literals reduce (the cert path) AND unfold to the
 // Grothendieck body, and those two must agree — which pins the literal's
 // class. We exploit that to derive `int_lit 0 = MK(0, 0)` (and `int_lit 1 =
 // MK(1, 0)`), the `0`/`1` coherence the unit/inverse axioms need.
@@ -1012,7 +1012,7 @@ fn class_eq_to_nat(eq: Thm, a1: &Term, a2: &Term, b1: &Term, b2: &Term) -> Resul
 }
 
 /// `⊢ int_lit 0 = MK(0, 0)` — literal-`0` coherence. `int.add 0 0` reduces to
-/// `0` (`reduce_prim`) and unfolds to `MK(f0+f0)(s0+s0)` (`f0`/`s0` the
+/// `0` (the cert path) and unfolds to `MK(f0+f0)(s0+s0)` (`f0`/`s0` the
 /// components of `0`'s chosen representative); with `recon`'s `0 = MK(f0, s0)`
 /// the two force `f0 = s0`, hence `MK(f0, s0) = MK(0, 0)`.
 fn lit0_mk() -> Result<Thm> {

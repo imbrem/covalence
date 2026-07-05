@@ -36,7 +36,9 @@
 //!   [`Thm::or_elim`], [`Thm::not_intro`], [`Thm::not_elim`];
 //! - substitution / structural: [`Thm::inst`], [`Thm::inst_tfree`],
 //!   [`Thm::weaken`], [`Thm::false_elim`], [`Thm::nat_induct`];
-//! - reduction: [`Thm::reduce_prim`], [`Thm::unfold_term_spec`].
+//! - reduction: [`covalence_hol_eval::reduce`] (the untrusted cert-path
+//!   driver — single-step closed primitive computation),
+//!   [`Thm::unfold_term_spec`].
 //!
 //! `ThmExt` only adds derived steps the kernel doesn't ship: the two
 //! congruence specialisations, the `p ⟺ (p = T)` bridge, conjunction
@@ -154,8 +156,9 @@ pub trait TermExt: Sized {
 
     /// **Constant folding** — build `⊢ self = self'`, evaluating every
     /// closed primitive application in `self`'s spine via
-    /// [`Thm::reduce_prim`] (`nat`/`int`/`bytes`/`bool` arithmetic,
-    /// `succ`/`pred`, literal `=`), innermost-first and repeatedly.
+    /// [`covalence_hol_eval::reduce`] (`nat`/`int`/`bytes`/`bool`
+    /// arithmetic, `succ`/`pred`, literal `=`), innermost-first and
+    /// repeatedly.
     ///
     /// **Weak — does not descend under λ.** This is ι/prim reduction
     /// only: no β, no δ. It folds closed primitive applications in
@@ -167,7 +170,7 @@ pub trait TermExt: Sized {
 
     /// **βι reduction** — build `⊢ self = self'`, combining β
     /// ([`Thm::beta_conv`]) and constant folding
-    /// ([`Thm::reduce_prim`]) to weak-normal form: fire spine redexes
+    /// ([`covalence_hol_eval::reduce`]) to weak-normal form: fire spine redexes
     /// and evaluate closed primitive applications, innermost-first and
     /// repeatedly.
     ///
@@ -390,8 +393,8 @@ fn delta_all_opt<C: TrustedCons + ?Sized>(
 /// `⊢ t = t'` weak-reducing `t`: descend the application spine (args
 /// innermost-first), then fire a redex at the current node — β
 /// ([`Thm::beta_conv`]) when `with_beta` and the head is a λ, else ι
-/// ([`Thm::reduce_prim`]) on a closed primitive application — and keep
-/// reducing the result. **Never descends under `Abs`.**
+/// ([`covalence_hol_eval::reduce`] — the cert path) on a closed primitive
+/// application — and keep reducing the result. **Never descends under `Abs`.**
 fn reduce_conv<C: TrustedCons + ?Sized>(t: &Term, with_beta: bool, cons: &mut C) -> Result<Thm> {
     match reduce_opt(t, with_beta, cons)? {
         Some(thm) => Ok(thm),
@@ -459,11 +462,11 @@ fn reduce_opt<C: TrustedCons + ?Sized>(
         };
     }
 
-    // ι: evaluate a closed primitive application.
-    match Thm::reduce_prim_with(fx, cons) {
-        Ok(step) => cong(f_eq, x_eq, cons)?.trans_with(step, cons).map(Some), // ⊢ t = fx = literal
-        Err(_) if f_eq.is_some() || x_eq.is_some() => cong(f_eq, x_eq, cons).map(Some),
-        Err(_) => Ok(None), // fully irreducible — `t` unchanged
+    // ι: evaluate a closed primitive application via the cert path.
+    match covalence_hol_eval::reduce_with(&fx, cons) {
+        Some(step) => cong(f_eq, x_eq, cons)?.trans_with(step, cons).map(Some), // ⊢ t = fx = literal
+        None if f_eq.is_some() || x_eq.is_some() => cong(f_eq, x_eq, cons).map(Some),
+        None => Ok(None), // fully irreducible — `t` unchanged
     }
 }
 

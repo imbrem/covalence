@@ -253,6 +253,10 @@
     },
     {
       "from": "covalence-init",
+      "to": "covalence-hol-eval"
+    },
+    {
+      "from": "covalence-init",
       "to": "covalence-metamath"
     },
     {

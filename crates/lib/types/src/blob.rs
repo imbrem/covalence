@@ -3,9 +3,10 @@
 //! `bytes` is `list u8` at the type level, but stored and computed as
 //! a flat buffer for efficiency. These are the byte operations the
 //! kernel commits to denotationally — `cat`, `cons`, `at`, `slice`;
-//! `covalence-core`'s `reduce_prim` dispatches its `bytes*` specs here
-//! so there is a single, tested implementation rather than byte
-//! fiddling inlined across the kernel.
+//! the kernel-side bytes evaluators (`covalence-pure-eval`'s `bytes.*`
+//! `CanonRule`s and `covalence-core`'s legacy reducer) dispatch here so
+//! there is a single, tested implementation rather than byte fiddling
+//! inlined across the kernel.
 //!
 //! Index/length arguments are `usize`; callers convert from the
 //! kernel's arbitrary-precision `nat`, mapping out-of-range values to

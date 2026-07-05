@@ -1128,7 +1128,7 @@ mod tests {
     }
 
     #[test]
-    fn ground_arithmetic_via_reduce_prim() {
+    fn ground_arithmetic_via_the_cert_path() {
         // ⊢ 2 + 3 = 5, by primitive computation.
         let thm = one(r#"
             (#import core)

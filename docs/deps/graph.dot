@@ -102,6 +102,7 @@ digraph deps {
   "init" -> "grammar";
   "init" -> "hash";
   "init" -> "hol";
+  "init" -> "hol-eval";
   "init" -> "metamath";
   "init" -> "sexp";
   "init" -> "spectec";

@@ -124,8 +124,10 @@ pub trait TermExt: Sized {
     /// defined-constant `Spec` leaf (e.g. `nat.add`, `∧`), return its
     /// defining equation `⊢ self = body`.
     ///
-    /// Thin Result wrapper over [`Thm::unfold_term_spec`] — errors if
-    /// `self` is not a `Spec` leaf, or is a def-style (Hilbert-ε
+    /// Routed through the [twin registry](crate::init::twins::unfold_spec):
+    /// a monomorphic let-style catalogue spec returns its stored definitional
+    /// equation, everything else falls back to the kernel unfold rule. Errors
+    /// if `self` is not a `Spec` leaf, or is a def-style (Hilbert-ε
     /// selector) / declaration-only spec with no let-body. It unfolds
     /// the constant *itself*; to fold the body into surrounding
     /// arguments, follow with a β step ([`Thm::beta_conv`] /
@@ -248,7 +250,7 @@ impl TermExt for Term {
     }
 
     fn delta(&self) -> Result<Thm> {
-        Thm::unfold_term_spec(self.clone())
+        crate::init::twins::unfold_spec(self)
     }
 
     fn delta_all(&self, symbol: &dyn Symbol) -> Result<Thm> {
@@ -368,7 +370,7 @@ fn delta_all_opt<C: TrustedCons + ?Sized>(
     if let Some((spec, _args)) = t.as_spec()
         && spec.symbol().label() == symbol.label()
     {
-        return Ok(Some(Thm::unfold_term_spec(t.clone())?));
+        return Ok(Some(crate::init::twins::unfold_spec(t)?));
     }
     // Descend the application spine, but never under a binder.
     if let Some((f, x)) = t.as_app() {

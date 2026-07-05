@@ -4,6 +4,22 @@ Open placeholders for the `init/*` theories. See `CLAUDE.md` § Skeletons for th
 rules, the [crate index](../../SKELETONS.md), and the [root
 index](../../../../../../SKELETONS.md).
 
+## `defs/` re-home bridge (toHOL purge, `init/twins.rs`)
+
+Bridge built (S9a); the flip is maintainer-gated. See
+[`notes/vibes/defs-rehome-design.md`](../../../../../../notes/vibes/defs-rehome-design.md).
+
+- **Polymorphic let-style specs are not yet twinned** — `twins::unfold_spec`
+  falls back to `unfold_term_spec` for them. Instantiate the cached base
+  `spec_eq` via `inst_tfree` (tvar order) to cover the poly case; pure-derivation
+  change, no new kernel surface.
+- **Def-style (ε-selector) and declaration-only specs get no body-twin** —
+  their re-home route (`const := ε pred` via `define` + `spec_ax`; opaque `Def`
+  for `term_decl!`) is designed but not built.
+- **`TypeSpec` re-home is prototype-only** — `twins::unit_typedef()` shows the
+  `new_type_definition` route for `unit`; the other derived types (incl. the
+  `int` quotient) are not re-homed, and no accessor is flipped onto a twin.
+
 ## Postulates pending proof
 
 - **`rat` field/order leaves** (`init/rat.rs`, postulated via the `axiom` helper).

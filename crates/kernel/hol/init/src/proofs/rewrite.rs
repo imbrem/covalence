@@ -192,7 +192,7 @@ fn fresh_name(body: &Term) -> String {
 /// *inside* `arg` are preserved (callers that want them reduced apply
 /// [`beta_nf`] themselves).
 pub fn unfold_at_1(op: Term, arg: Term) -> Thm {
-    let def = Thm::unfold_term_spec(op).expect("unfold_at_1: unfold_term_spec");
+    let def = crate::init::twins::unfold_spec(&op).expect("unfold_at_1: unfold_spec");
     let applied = cong_at_fn(def, arg); // ⊢ op arg = (λx.body) arg
     let (_, redex) = eq_sides(applied.concl()).expect("unfold_at_1: applied is an equation");
     let beta = Thm::beta_conv(redex).expect("unfold_at_1: beta_conv");

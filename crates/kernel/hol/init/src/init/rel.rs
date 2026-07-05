@@ -275,7 +275,7 @@ fn holds_of(
 fn delta_head(t: &Term, op: &dyn Symbol) -> Result<Thm> {
     if let Some((spec, _args)) = t.as_spec() {
         if spec.symbol().label() == op.label() {
-            return Thm::unfold_term_spec(t.clone());
+            return crate::init::twins::unfold_spec(t);
         }
         return Thm::refl(t.clone());
     }

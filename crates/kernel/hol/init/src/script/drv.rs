@@ -230,8 +230,8 @@ term_rule!(LemRule, "lem", |t| Ok(Thm::lem(t)?));
 term_rule!(ReducePrimRule, "reduce-prim", |t: Term| Ok(
     covalence_hol_eval::reduce(&t).ok_or(covalence_core::Error::NotReducible)?
 ));
-term_rule!(UnfoldTermSpecRule, "unfold-term-spec", |t| Ok(
-    Thm::unfold_term_spec(t)?
+term_rule!(UnfoldTermSpecRule, "unfold-term-spec", |t: Term| Ok(
+    crate::init::twins::unfold_spec(&t)?
 ));
 term_rule!(BetaConvRule, "beta-conv", |t| Ok(Thm::beta_conv(t)?));
 // `(eta-conv (λx. f x))` → `⊢ (λx. f x) = f`.

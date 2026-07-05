@@ -41,7 +41,7 @@
     "unfold_term_spec": {
       "covalence-core": 24,
       "covalence-hol-eval": 5,
-      "covalence-init": 10
+      "covalence-init": 7
     },
     "termkind-literals": {
       "covalence-core": 101,
@@ -63,7 +63,7 @@
   "totals": {
     "obs-rules": 0,
     "reduce_prim": 0,
-    "unfold_term_spec": 39,
+    "unfold_term_spec": 36,
     "termkind-literals": 117,
     "tycon-obs": 0,
     "term-literal-ctors": 203,

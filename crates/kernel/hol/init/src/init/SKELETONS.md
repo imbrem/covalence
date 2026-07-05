@@ -26,7 +26,7 @@ index](../../../../../../SKELETONS.md).
   any rat operator requires rebuilding the entire seam-given layer over the
   `term_spec` forms (strict structural equality + shared `to_pos` coercion +
   concl-parity tests block it). Pervasive `recon`/component-computation/`class_intro`
-  rewrite; deferred. Surface support (`spec-abs`/`spec-rep` in `infer.rs`) is done.
+  rewrite; deferred.
 - **`real.cov` non-order theorems** — `of_rat_mono`, `zero_ne_one`, `is_cut` are
   not ported (proved *modulo* the still-postulated `rat` order facts). Needs the
   extra cut seam + `rat` order givens; deferred until the `rat` order postulates
@@ -52,8 +52,7 @@ index](../../../../../../SKELETONS.md).
     full `graph_total`/`graph_det`/`recursion_theorem` run on a fresh ≥2-rec-arg type
     still needs a genuine `Inductive` adapter (the carrier/`Wf` seam `#inductive` reports).
 
-- **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Foundation,
-  recursion theorem, and append-monoid/length-homomorphism `.cov` laws are done. Missing:
+- **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Missing:
   - **`list_foldl`** — the left-fold recursor's defining equations not yet discharged.
   - **`filter` / `flatten` clauses** — `foldr`-factored; follow the `length`/`cat`
     pattern but not built.
@@ -89,8 +88,7 @@ index](../../../../../../SKELETONS.md).
     `⊆`) and the **least-fixpoint half** `L* ⊆ ε ∪ L·L*` (induction over the
     impredicative star).
 
-- **Regex on lists / `Matches`** (`init/regex/`). Constructors, denotation, `Matches`,
-  Rust soundness, and six `.cov` derivations are done. Deferred:
+- **Regex on lists / `Matches`** (`init/regex/`). Deferred:
   - **`Matches`-completeness** `mem w ⟦r⟧ ⟹ Matches r w` — star case needs the
     least-fixpoint half of the star unfolding above.
   - **`.cov` soundness** — needs the rule-induction `inst` of the impredicative
@@ -101,10 +99,8 @@ index](../../../../../../SKELETONS.md).
   - **Performance** — soundness proof is slow (~70s debug); the `star` impredicative
     `∀S` makes terms large. Memoised/staged `beta_nf` or caching `denote` would help.
 
-- **Text theory** (`init/char.rs`, `string.rs`). Element types + `nil`-side facts done.
-  The list recursion theorem + `length`/`cat` cons clauses have landed
-  (`init/list_recursion.rs`); these ops now just need surfacing through the
-  `bytes`/`string` newtype seam:
+- **Text theory** (`init/char.rs`, `string.rs`). Surface the list ops
+  (`init/list_recursion.rs`) through the `bytes`/`string` newtype seam:
   - **Sequence `length`** (`bytes.len`/`string.len`) — bridge to `list.length`.
   - **`cat`/`at`/`index`/`slice`/`consNat`** for `bytes`/`string` — bridge to `list` ops.
     (`bytesConsNat`/`bytesAt` additionally need a `nat ↔ u8` conversion — see
@@ -114,8 +110,7 @@ index](../../../../../../SKELETONS.md).
   - **Bitvector ops on `u8`/`bytes`** — width-respecting `and/or/xor/shl/shr/not`,
     `add`/`mul` mod `2^N`, `nat ↔ uN`/`bytes ↔ uN` conversions. Not started.
 
-- **UTF-8 / UTF-16 codecs** (`init/utf8.rs` + `utf8.cov`, `init/utf16.rs`). Encoders +
-  per-char round-trip + encoder homomorphism done. Deferred (do NOT claim done):
+- **UTF-8 / UTF-16 codecs** (`init/utf8.rs` + `utf8.cov`, `init/utf16.rs`). Deferred:
   - **Validating decoders** `utf8Decode`/`utf16Decode` past the single ASCII byte —
     multi-byte continuation validation, over-long/lone-surrogate rejection, codepoint
     reassembly (large `nat`-range case analysis). `decodeAscii1` covers only the 1-byte case.
@@ -126,8 +121,7 @@ index](../../../../../../SKELETONS.md).
     newtype-wrapped equational lemmas not all surfaced.
 
 - **Reified object logic (S-expr → prop logic)** (`init/sexpr.rs` + `init/prop.rs`,
-  `notes/vibes/metatheory.md` §8). Datatypes, recursors, soundness, rule induction, and the
-  `prop.cov` surface are done. Open:
+  `notes/vibes/metatheory.md` §8). Open:
   - **SURFACE GAPS (the `.cov` stress-test findings)** — next-language-feature drivers,
     none block the proofs (all live in Rust):
     1. **Impredicative `inst d := P` not expressible in `.cov`** — `prop_induction` has
@@ -147,8 +141,7 @@ index](../../../../../../SKELETONS.md).
   - **Prop variables are `nat` indices, not `SExpr` atoms** — wiring `var` to carry an
     `SExpr` atom (formulas literally S-expressions) is a later unification.
 
-- **`tree` / `sexp` theory** (`init/tree.rs`, `sexp.rs`). Constructors, recursors,
-  freeness/distinctness, and `.cov` surface done. Still deferred: `branch_inj`; the
+- **`tree` / `sexp` theory** (`init/tree.rs`, `sexp.rs`). Still deferred: `branch_inj`; the
   recursor `rec_leaf`/`rec_branch` `.cov` ports (blocked on polymorphic-result-type `'r`
   instantiation in the proof language — the TFree-clash `cat`/`coprod` document); and full
   structural `tree`/`sexp` induction (the `tree-induct`/`sexp-induct` tactic) — all need

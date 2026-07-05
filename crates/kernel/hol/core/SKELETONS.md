@@ -37,8 +37,7 @@ Porting the numeric tower to data is the remaining follow-up.
 
 ## Hash-consing not on-by-default
 
-The rule surface has cons-threaded `_with` variants (done), but `Ctx` has no
-owned interner, `hol.rs` builders construct plain, `TermInfo::Wf(Type)` cached
+`Ctx` has no owned interner, `hol.rs` builders construct plain, `TermInfo::Wf(Type)` cached
 types are freshly allocated, and the script/init consumers do not thread a cons
 (only the metamath replay path in `metalogic/mm_database.rs` does) — so replay
 proofs still don't share one interner end-to-end. Making it on-by-default would

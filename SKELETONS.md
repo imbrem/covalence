@@ -25,9 +25,8 @@ Ranked, most blocking first. Each links to the registry where it's detailed.
    `bytesConsNat`/`bytesAt`, `sN.shr` carry `tm = None` (sound on literals only,
    nothing provable by `unfold_term_spec`). [`covalence-core`](crates/kernel/hol/core/SKELETONS.md)
 7. **`list_foldl` + `map`/`filter` clauses and the `bytes`/`string` newtype
-   surfacing** — the list recursion theorem and nat Euclidean division
-   (`div_mod`/`mod_lt`) have landed; remaining: discharge the foldl/map/filter
-   clauses and bridge `bytes`/`string` length/index/cat onto the list ops. [`init`](crates/kernel/hol/init/src/init/SKELETONS.md)
+   surfacing** — discharge the foldl/map/filter recursor clauses and bridge
+   `bytes`/`string` length/index/cat onto the list ops. [`init`](crates/kernel/hol/init/src/init/SKELETONS.md)
 8. **CFG stratum for grammars** — SpecTec/regex front ends cover only the regular
    base case; `Var` non-terminals rejected, blocking full WASM binary grammar. [`hol/spectec`](crates/kernel/hol/init/src/grammar/spectec/SKELETONS.md), [`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)
 9. **`rat`/`real` ordered-field postulates pending proof** — `mul_inv`, `le_def`,

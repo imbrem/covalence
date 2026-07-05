@@ -27,9 +27,8 @@ regular base case used by every grammar front end). See
   category, nor split one variable across two goals. Full resolution belongs to the
   CFG stratum (see `../spectec/SKELETONS.md`).
 - **Word normalisation deferred.** The word `w` in `Matches ⌜r⌝ w` is rule-shaped
-  (`cat`/`cons`/`nil` tree), not flattened to a `cons`-list. The `list_cat` cons
-  clauses have landed in `init::list_recursion`; what remains is actually driving
-  the flattening rewrite with them.
+  (`cat`/`cons`/`nil` tree), not flattened to a `cons`-list — drive the flattening
+  rewrite with the `list_cat` cons clauses (`init::list_recursion`).
 
 (`tests/regex_matching.rs` also carries an intentional `#[ignore]`d timing
 harness — run explicitly with `--nocapture` — not deferred work.)

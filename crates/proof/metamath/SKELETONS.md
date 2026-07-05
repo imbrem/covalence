@@ -9,8 +9,7 @@ reader, the lower HOL-free crate). Consumer-side bridge deferrals (`#logic` /
 
 ## Deferred features (north stars)
 
-- **HOL-backed `DatabaseSink` over an arbitrary database.** The prop fragment is
-  done (`covalence-init`'s `HolPropSink` → `⊢ Derivable_Prop ⌜S⌝`). Remaining: a HOL
+- **HOL-backed `DatabaseSink` over an arbitrary database.** A HOL
   sink over an arbitrary database (`RuleSet`-from-`Database` / schema-database
   replay → `⊢ Derivable_DB ⌜db⌝ ⌜S⌝`) — tracked in `covalence-init`'s
   `metalogic/SKELETONS.md`.

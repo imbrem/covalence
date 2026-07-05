@@ -46,7 +46,11 @@ fn perr(e: covalence_pure::Error) -> Error {
 /// 4. [`Thm::from_pure`] wraps it, re-running the sequent well-typedness
 ///    floor — indistinguishable from a rule-minted theorem.
 pub fn nat_add_thm(a: Nat, b: Nat) -> Result<Thm> {
-    let sum = NatAdd.eval(&(a.clone(), b.clone()));
+    // `NatAdd` is total (addition never refuses), so the `None` arm is
+    // unreachable; refuse cleanly if it ever fires.
+    let sum = NatAdd
+        .eval(&(a.clone(), b.clone()))
+        .ok_or_else(|| Error::Pure("nat.add: CanonRule refused a ground input".into()))?;
 
     // 1. The computation-backed certificate (symbolic tier).
     let cert = apply(CoreLang, NatAddCert, (a.clone(), b.clone())).map_err(perr)?;

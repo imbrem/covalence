@@ -71,8 +71,8 @@ impl Op for HolApp {
 }
 
 impl CanonRule for HolApp {
-    fn eval(&self, (f, x): &Self::In) -> Term {
-        Term::app(f.clone(), x.clone())
+    fn eval(&self, (f, x): &Self::In) -> Option<Term> {
+        Some(Term::app(f.clone(), x.clone()))
     }
 }
 

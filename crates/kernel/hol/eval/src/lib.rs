@@ -74,8 +74,9 @@ fn mint<R: Rule<CoreLang, Concl = CoreProp>>(rule: R, input: R::Input) -> Option
 /// disequality), the primitive `succ`, the `nat.*` / `int.*` / `bytes.*`
 /// catalogue ops, the nat↔int/bytes coercions, and the fixed-width `uN`/`sN`
 /// ops. Conventions: saturating nat `sub`/`pred`; `n / 0 = 0` and
-/// `n mod 0 = n`; fixed-width arithmetic wraps mod `2^width`; oversize
-/// `pow`/`shl`/`shr` operands refuse.
+/// `n mod 0 = n`; fixed-width arithmetic wraps mod `2^width`; detectably
+/// unrepresentable results refuse (oversize `pow` exponents on a base ≥ 2,
+/// oversize `shl` shifts on a non-zero operand; `shr` is total).
 pub fn reduce(t: &Term) -> Option<Thm> {
     reduce_with(t, &mut ())
 }

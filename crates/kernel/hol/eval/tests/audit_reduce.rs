@@ -10,7 +10,7 @@
 //!
 //! Coverage map (one or more tests each):
 //!   nat: succ/pred(sat)/add/mul/sub(sat)/div(n/0=0)/mod(n%0=n)/
-//!        pow(oversize-exp refusal)/le/lt/shl/shr(oversize refusal)/
+//!        pow(oversize-exp refusal)/le/lt/shl(oversize refusal, total on 0)/shr(total)/
 //!        bitand/or/xor/to_int/to_bytes_{le,be}/from_bytes_{le,be}
 //!   int: succ/pred/add/sub/mul/div(trunc, /0=0)/mod(%0=x)/neg/abs/
 //!        sgn/le/lt
@@ -300,10 +300,46 @@ fn nat_shl_shr() {
 
 #[test]
 fn nat_shl_oversize_shift_refuses() {
-    // Shift count exceeding one u64 digit must NOT reduce (avoids an
-    // unbounded-size allocation).
+    // Shift count exceeding one u64 digit on a NON-ZERO operand: the true
+    // result needs ≥ 2^64 bits (unrepresentable), so the cert REFUSES (`None`)
+    // rather than clamp/truncate the shift.
     let huge_shift = Nat::from_inner((u128::from(u64::MAX) + 1).into());
     assert_no_reduce(app2(defs::nat_shl(), nat(1), nat_big(huge_shift)));
+}
+
+#[test]
+fn nat_shl_zero_and_shr_are_total_over_oversize_shift() {
+    // No cert clamps a `Nat`: `0 << huge = 0` and `a >> huge = 0` are the
+    // true answers, so they REDUCE (never refuse) even for an over-usize
+    // shift — the total counterpart of the `shl` refusal above.
+    let huge_shift = Nat::from_inner((u128::from(u64::MAX) + 1).into());
+    assert_reduces(
+        app2(defs::nat_shl(), nat(0), nat_big(huge_shift.clone())),
+        nat(0),
+    );
+    assert_reduces(app2(defs::nat_shr(), nat(5), nat_big(huge_shift)), nat(0));
+}
+
+#[test]
+fn nat_shl_cert_refuses_or_reduces_by_representability() {
+    // Straight to the admitted `NatArithCert`: an oversize LEFT shift on a
+    // non-zero operand REFUSES (unrepresentable), but the same shift on `0`
+    // now SUCCEEDS (`0 << s = 0` is total) — the base-TCB fallibility change.
+    let huge = Nat::from(u64::MAX) + Nat::from(1u32);
+    let shl = defs::nat_shl_spec();
+    assert!(
+        apply(
+            CoreLang,
+            NatArithCert,
+            (shl.clone(), vec![lnat(1), Lit::Nat(huge.clone())])
+        )
+        .is_err(),
+        "1 << huge is unrepresentable ⇒ cert must refuse"
+    );
+    assert!(
+        apply(CoreLang, NatArithCert, (shl, vec![lnat(0), Lit::Nat(huge)])).is_ok(),
+        "0 << huge = 0 is total ⇒ cert must succeed"
+    );
 }
 
 #[test]

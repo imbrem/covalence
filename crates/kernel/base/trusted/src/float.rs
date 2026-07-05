@@ -132,8 +132,8 @@ macro_rules! float_op {
             type Out = $flt;
         }
         impl CanonRule for $op {
-            fn eval(&self, (a, b): &($flt, $flt)) -> $flt {
-                a.$method(*b)
+            fn eval(&self, (a, b): &($flt, $flt)) -> Option<$flt> {
+                Some(a.$method(*b))
             }
         }
     };

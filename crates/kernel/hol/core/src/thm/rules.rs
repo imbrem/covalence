@@ -968,7 +968,11 @@ core_rules! {
     /// strength. The rule derives its whole conclusion from the input pair
     /// (no caller-supplied conclusion), so it is sound on ALL inputs.
     NatAddCert((Nat, Nat)) -> App<IsThm, (Val<Ctx>, NatAddEqE)> = |(a, b), _| {
-        let sum = covalence_pure_eval::NatAdd.eval(&(a.clone(), b.clone()));
+        // `NatAdd` is total (addition never refuses), so the `None` arm is
+        // unreachable; refuse (never mint) if it ever fires.
+        let sum = covalence_pure_eval::NatAdd
+            .eval(&(a.clone(), b.clone()))
+            .ok_or(covalence_pure::Error::NoMatch)?;
         Ok(App(IsThm, (Val(Ctx::new()), nat_add_eq_expr(a, b, sum))))
     }
 
@@ -1037,7 +1041,9 @@ core_rules! {
     /// saturating `pred`/`sub`; `n / 0 = 0` and **`n mod 0 = n`** (forced by
     /// `nat.mod`'s let-style body `λn m. n - (n/m)*m`, which at `m = 0`
     /// evaluates to `n`; any other value would let definitional unfolding
-    /// derive `⊢ False`); oversize `pow`/`shl`/`shr` operands REFUSE.
+    /// derive `⊢ False`); detectably-unrepresentable results REFUSE (`None`
+    /// from the fallible `CanonRule::eval` — oversize `pow` exponents on a
+    /// base ≥ 2, oversize `shl` shifts on a non-zero operand; `shr` is total).
     NatArithCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
         certs::nat_arith(&spec, &args)
             .and_then(|eq| seq(Ctx::new(), eq))

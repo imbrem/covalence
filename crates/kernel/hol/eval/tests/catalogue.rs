@@ -115,12 +115,15 @@ fn nat_family() {
     check_reduces(app2(defs::nat_shl(), nat(1), nat(4)));
     check_reduces(app2(defs::nat_shr(), nat(16), nat(2)));
 
-    // Oversize pow exponent / shift amounts: MUST refuse (the pure-eval
-    // CanonRule would abort; the rules refuse first).
+    // Oversize pow exponent / left-shift amount on a non-zero operand: the
+    // true result is unrepresentable, so the cert REFUSES (`None`) rather
+    // than clamp/truncate. `nat.shr` is TOTAL (an over-usize shift is larger
+    // than any bit-length ⇒ 0), and `0 << huge = 0` is total too.
     let huge = mk_nat(Nat::from(u64::MAX) + Nat::from(1u32));
     check_refuses(app2(defs::nat_pow(), nat(2), huge.clone()));
     check_refuses(app2(defs::nat_shl(), nat(1), huge.clone()));
-    check_refuses(app2(defs::nat_shr(), nat(1), huge));
+    check_reduces(app2(defs::nat_shr(), nat(1), huge.clone()));
+    check_reduces(app2(defs::nat_shl(), nat(0), huge));
 }
 
 // ============================================================================

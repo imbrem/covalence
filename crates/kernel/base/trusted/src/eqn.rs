@@ -341,6 +341,6 @@ where
     if !lang.admits(rule) {
         return Err(Error::NotAdmitted(rule));
     }
-    let out = Val(f.eval(&arg));
-    Ok(Thm::new(lang, Eqn(App(f, Val(arg)), out)))
+    let out = f.eval(&arg).ok_or(Error::NoMatch)?;
+    Ok(Thm::new(lang, Eqn(App(f, Val(arg)), Val(out))))
 }

@@ -21,10 +21,10 @@
 //! - arity and literal kinds are matched exactly (anything else refuses with
 //!   [`Error::NotReducible`] — a refusal, never a wrong equation);
 //! - the computation is the matching `covalence-pure-eval` op (whose FORCED
-//!   conventions are pinned by that crate's semantics suite), with the
-//!   oversize `nat.pow` / `nat.shl` / `nat.shr` refusals re-checked HERE
-//!   (the `CanonRule` panics on oversize operands; refusing first keeps the
-//!   decide total).
+//!   conventions are pinned by that crate's semantics suite). `CanonRule::eval`
+//!   is fallible: an op REFUSES (`None`) on a detectably unrepresentable
+//!   result (oversize `nat.pow` exponents / `nat.shl` shifts), which is mapped
+//!   to [`Error::NotReducible`] here — a refusal, never a wrong equation.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -310,27 +310,6 @@ fn int2(args: &[Lit]) -> Result<(&Int, &Int)> {
     }
 }
 
-/// Oversize refusal for `nat.pow`: the exponent must fit one `u32` digit
-/// (the pure-eval `CanonRule` would panic).
-fn check_pow_exponent(exp: &Nat) -> Result<()> {
-    if exp.as_inner().to_u32_digits().len() > 1 {
-        return Err(Error::NotReducible);
-    }
-    Ok(())
-}
-
-/// Oversize refusal for `nat.shl`/`nat.shr`: the shift amount must fit one
-/// `u64` digit and `usize`.
-fn check_shift_amount(shift: &Nat) -> Result<()> {
-    let digits = shift.as_inner().to_u64_digits();
-    if digits.len() > 1 {
-        return Err(Error::NotReducible);
-    }
-    let v = digits.first().copied().unwrap_or(0);
-    usize::try_from(v).map_err(|_| Error::NotReducible)?;
-    Ok(())
-}
-
 // ============================================================================
 // Family dispatch
 // ============================================================================
@@ -340,61 +319,58 @@ pub(crate) fn nat_arith(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     let op = *NAT_TABLE.get(&spec.ptr_id()).ok_or(Error::NotReducible)?;
     let pair = |a: &Nat, b: &Nat| (a.clone(), b.clone());
     let rhs = match op {
-        NatOp::Pred => Term::nat_lit(pe::NatPred.eval(nat1(args)?)),
+        NatOp::Pred => Term::nat_lit(pe::NatPred.eval(nat1(args)?).ok_or(Error::NotReducible)?),
         NatOp::Add => {
             let (a, b) = nat2(args)?;
-            Term::nat_lit(pe::NatAdd.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatAdd.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::Mul => {
             let (a, b) = nat2(args)?;
-            Term::nat_lit(pe::NatMul.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatMul.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::Sub => {
             let (a, b) = nat2(args)?;
-            Term::nat_lit(pe::NatSub.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatSub.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::Div => {
             let (a, b) = nat2(args)?;
-            Term::nat_lit(pe::NatDiv.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatDiv.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::Mod => {
             let (a, b) = nat2(args)?;
-            Term::nat_lit(pe::NatMod.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatMod.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::Pow => {
             let (a, b) = nat2(args)?;
-            check_pow_exponent(b)?;
-            Term::nat_lit(pe::NatPow.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatPow.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::Shl => {
             let (a, b) = nat2(args)?;
-            check_shift_amount(b)?;
-            Term::nat_lit(pe::NatShl.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatShl.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::Shr => {
             let (a, b) = nat2(args)?;
-            check_shift_amount(b)?;
-            Term::nat_lit(pe::NatShr.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatShr.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::BitAnd => {
             let (a, b) = nat2(args)?;
-            Term::nat_lit(pe::NatBitAnd.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatBitAnd.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::BitOr => {
             let (a, b) = nat2(args)?;
-            Term::nat_lit(pe::NatBitOr.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatBitOr.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::BitXor => {
             let (a, b) = nat2(args)?;
-            Term::nat_lit(pe::NatBitXor.eval(&pair(a, b)))
+            Term::nat_lit(pe::NatBitXor.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::Le => {
             let (a, b) = nat2(args)?;
-            Term::bool_lit(pe::NatLe.eval(&pair(a, b)))
+            Term::bool_lit(pe::NatLe.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         NatOp::Lt => {
             let (a, b) = nat2(args)?;
-            Term::bool_lit(pe::NatLt.eval(&pair(a, b)))
+            Term::bool_lit(pe::NatLt.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
     };
     eq_concl(spec, args, rhs)
@@ -405,7 +381,7 @@ pub(crate) fn nat_arith(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
 /// not a catalogue spec, so it has no `TermSpec` selector.)
 pub(crate) fn succ_concl(n: &Nat) -> Result<Term> {
     let lhs = Term::app(Term::succ(), Term::nat_lit(n.clone()));
-    let rhs = Term::nat_lit(pe::NatSucc.eval(n));
+    let rhs = Term::nat_lit(pe::NatSucc.eval(n).ok_or(Error::NotReducible)?);
     Ok(hol::hol_eq_at(Type::nat(), lhs, rhs))
 }
 
@@ -414,39 +390,39 @@ pub(crate) fn int_arith(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     let op = *INT_TABLE.get(&spec.ptr_id()).ok_or(Error::NotReducible)?;
     let pair = |a: &Int, b: &Int| (a.clone(), b.clone());
     let rhs = match op {
-        IntFamOp::Succ => Term::int_lit(pe::IntSucc.eval(int1(args)?)),
-        IntFamOp::Pred => Term::int_lit(pe::IntPred.eval(int1(args)?)),
-        IntFamOp::Neg => Term::int_lit(pe::IntNeg.eval(int1(args)?)),
+        IntFamOp::Succ => Term::int_lit(pe::IntSucc.eval(int1(args)?).ok_or(Error::NotReducible)?),
+        IntFamOp::Pred => Term::int_lit(pe::IntPred.eval(int1(args)?).ok_or(Error::NotReducible)?),
+        IntFamOp::Neg => Term::int_lit(pe::IntNeg.eval(int1(args)?).ok_or(Error::NotReducible)?),
         // `int.abs : int → nat`.
-        IntFamOp::Abs => Term::nat_lit(pe::IntAbs.eval(int1(args)?)),
-        IntFamOp::Sgn => Term::int_lit(pe::IntSgn.eval(int1(args)?)),
+        IntFamOp::Abs => Term::nat_lit(pe::IntAbs.eval(int1(args)?).ok_or(Error::NotReducible)?),
+        IntFamOp::Sgn => Term::int_lit(pe::IntSgn.eval(int1(args)?).ok_or(Error::NotReducible)?),
         IntFamOp::Add => {
             let (a, b) = int2(args)?;
-            Term::int_lit(pe::IntAdd.eval(&pair(a, b)))
+            Term::int_lit(pe::IntAdd.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         IntFamOp::Mul => {
             let (a, b) = int2(args)?;
-            Term::int_lit(pe::IntMul.eval(&pair(a, b)))
+            Term::int_lit(pe::IntMul.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         IntFamOp::Sub => {
             let (a, b) = int2(args)?;
-            Term::int_lit(pe::IntSub.eval(&pair(a, b)))
+            Term::int_lit(pe::IntSub.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         IntFamOp::Div => {
             let (a, b) = int2(args)?;
-            Term::int_lit(pe::IntDiv.eval(&pair(a, b)))
+            Term::int_lit(pe::IntDiv.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         IntFamOp::Mod => {
             let (a, b) = int2(args)?;
-            Term::int_lit(pe::IntMod.eval(&pair(a, b)))
+            Term::int_lit(pe::IntMod.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         IntFamOp::Le => {
             let (a, b) = int2(args)?;
-            Term::bool_lit(pe::IntLe.eval(&pair(a, b)))
+            Term::bool_lit(pe::IntLe.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
         IntFamOp::Lt => {
             let (a, b) = int2(args)?;
-            Term::bool_lit(pe::IntLt.eval(&pair(a, b)))
+            Term::bool_lit(pe::IntLt.eval(&pair(a, b)).ok_or(Error::NotReducible)?)
         }
     };
     eq_concl(spec, args, rhs)
@@ -456,19 +432,29 @@ pub(crate) fn int_arith(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
 pub(crate) fn bytes_cert(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     let op = *BYTES_TABLE.get(&spec.ptr_id()).ok_or(Error::NotReducible)?;
     let rhs = match (op, args) {
-        (BytesOp::Cat, [Lit::Bytes(a), Lit::Bytes(b)]) => {
-            Term::blob(pe::BytesCat.eval(&(a.clone(), b.clone())))
+        (BytesOp::Cat, [Lit::Bytes(a), Lit::Bytes(b)]) => Term::blob(
+            pe::BytesCat
+                .eval(&(a.clone(), b.clone()))
+                .ok_or(Error::NotReducible)?,
+        ),
+        (BytesOp::ConsNat, [Lit::Nat(n), Lit::Bytes(bs)]) => Term::blob(
+            pe::BytesConsNat
+                .eval(&(n.clone(), bs.clone()))
+                .ok_or(Error::NotReducible)?,
+        ),
+        (BytesOp::Len, [Lit::Bytes(bs)]) => {
+            Term::nat_lit(pe::BytesLen.eval(bs).ok_or(Error::NotReducible)?)
         }
-        (BytesOp::ConsNat, [Lit::Nat(n), Lit::Bytes(bs)]) => {
-            Term::blob(pe::BytesConsNat.eval(&(n.clone(), bs.clone())))
-        }
-        (BytesOp::Len, [Lit::Bytes(bs)]) => Term::nat_lit(pe::BytesLen.eval(bs)),
-        (BytesOp::At, [Lit::Bytes(bs), Lit::Nat(i)]) => {
-            Term::nat_lit(pe::BytesAt.eval(&(bs.clone(), i.clone())))
-        }
-        (BytesOp::Slice, [Lit::Bytes(bs), Lit::Nat(start), Lit::Nat(len)]) => {
-            Term::blob(pe::BytesSlice.eval(&(bs.clone(), start.clone(), len.clone())))
-        }
+        (BytesOp::At, [Lit::Bytes(bs), Lit::Nat(i)]) => Term::nat_lit(
+            pe::BytesAt
+                .eval(&(bs.clone(), i.clone()))
+                .ok_or(Error::NotReducible)?,
+        ),
+        (BytesOp::Slice, [Lit::Bytes(bs), Lit::Nat(start), Lit::Nat(len)]) => Term::blob(
+            pe::BytesSlice
+                .eval(&(bs.clone(), start.clone(), len.clone()))
+                .ok_or(Error::NotReducible)?,
+        ),
         _ => return Err(Error::NotReducible),
     };
     eq_concl(spec, args, rhs)
@@ -480,11 +466,21 @@ pub(crate) fn coercion(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
         .get(&spec.ptr_id())
         .ok_or(Error::NotReducible)?;
     let rhs = match (op, args) {
-        (CoerceOp::ToInt, [Lit::Nat(n)]) => Term::int_lit(pe::NatToInt.eval(n)),
-        (CoerceOp::ToBytesLe, [Lit::Nat(n)]) => Term::blob(pe::NatToBytesLe.eval(n)),
-        (CoerceOp::ToBytesBe, [Lit::Nat(n)]) => Term::blob(pe::NatToBytesBe.eval(n)),
-        (CoerceOp::FromBytesLe, [Lit::Bytes(bs)]) => Term::nat_lit(pe::NatFromBytesLe.eval(bs)),
-        (CoerceOp::FromBytesBe, [Lit::Bytes(bs)]) => Term::nat_lit(pe::NatFromBytesBe.eval(bs)),
+        (CoerceOp::ToInt, [Lit::Nat(n)]) => {
+            Term::int_lit(pe::NatToInt.eval(n).ok_or(Error::NotReducible)?)
+        }
+        (CoerceOp::ToBytesLe, [Lit::Nat(n)]) => {
+            Term::blob(pe::NatToBytesLe.eval(n).ok_or(Error::NotReducible)?)
+        }
+        (CoerceOp::ToBytesBe, [Lit::Nat(n)]) => {
+            Term::blob(pe::NatToBytesBe.eval(n).ok_or(Error::NotReducible)?)
+        }
+        (CoerceOp::FromBytesLe, [Lit::Bytes(bs)]) => {
+            Term::nat_lit(pe::NatFromBytesLe.eval(bs).ok_or(Error::NotReducible)?)
+        }
+        (CoerceOp::FromBytesBe, [Lit::Bytes(bs)]) => {
+            Term::nat_lit(pe::NatFromBytesBe.eval(bs).ok_or(Error::NotReducible)?)
+        }
         _ => return Err(Error::NotReducible),
     };
     eq_concl(spec, args, rhs)
@@ -590,8 +586,8 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(tag, T, {
                 let av = a.bits() as T;
                 let res: T = match op {
-                    IntOp::Neg => pe::FwNeg::<T>::new().eval(&av),
-                    IntOp::Not => pe::FwNot::<T>::new().eval(&av),
+                    IntOp::Neg => pe::FwNeg::<T>::new().eval(&av).ok_or(Error::NotReducible)?,
+                    IntOp::Not => pe::FwNot::<T>::new().eval(&av).ok_or(Error::NotReducible)?,
                     _ => unreachable!("non-unary op in unary arm"),
                 };
                 Term::small_int(small_lit(tag, res))
@@ -602,10 +598,10 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(tag, T, {
                 let ab = (a.bits() as T, b.bits() as T);
                 let res = match op {
-                    IntOp::Lt => pe::FwLt::<T>::new().eval(&ab),
-                    IntOp::Le => pe::FwLe::<T>::new().eval(&ab),
-                    IntOp::Gt => pe::FwGt::<T>::new().eval(&ab),
-                    IntOp::Ge => pe::FwGe::<T>::new().eval(&ab),
+                    IntOp::Lt => pe::FwLt::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Le => pe::FwLe::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Gt => pe::FwGt::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Ge => pe::FwGe::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
                     _ => unreachable!("non-comparison op in cmp arm"),
                 };
                 Term::bool_lit(res)
@@ -616,16 +612,16 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(tag, T, {
                 let ab = (a.bits() as T, b.bits() as T);
                 let res: T = match op {
-                    IntOp::Add => pe::FwAdd::<T>::new().eval(&ab),
-                    IntOp::Sub => pe::FwSub::<T>::new().eval(&ab),
-                    IntOp::Mul => pe::FwMul::<T>::new().eval(&ab),
-                    IntOp::Div => pe::FwDiv::<T>::new().eval(&ab),
-                    IntOp::Rem => pe::FwRem::<T>::new().eval(&ab),
-                    IntOp::And => pe::FwAnd::<T>::new().eval(&ab),
-                    IntOp::Or => pe::FwOr::<T>::new().eval(&ab),
-                    IntOp::Xor => pe::FwXor::<T>::new().eval(&ab),
-                    IntOp::Shl => pe::FwShl::<T>::new().eval(&ab),
-                    IntOp::Shr => pe::FwShr::<T>::new().eval(&ab),
+                    IntOp::Add => pe::FwAdd::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Sub => pe::FwSub::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Mul => pe::FwMul::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Div => pe::FwDiv::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Rem => pe::FwRem::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::And => pe::FwAnd::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Or => pe::FwOr::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Xor => pe::FwXor::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Shl => pe::FwShl::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
+                    IntOp::Shr => pe::FwShr::<T>::new().eval(&ab).ok_or(Error::NotReducible)?,
                     _ => unreachable!("non-binary-arith op in binop arm"),
                 };
                 Term::small_int(small_lit(tag, res))
@@ -636,7 +632,12 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(src, S, {
                 let av = a.bits() as S;
                 per_tag!(dst, D, {
-                    Term::small_int(small_lit(dst, pe::Zext::<S, D>::new().eval(&av)))
+                    Term::small_int(small_lit(
+                        dst,
+                        pe::Zext::<S, D>::new()
+                            .eval(&av)
+                            .ok_or(Error::NotReducible)?,
+                    ))
                 })
             })
         }
@@ -645,7 +646,12 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(src, S, {
                 let av = a.bits() as S;
                 per_tag!(dst, D, {
-                    Term::small_int(small_lit(dst, pe::Sext::<S, D>::new().eval(&av)))
+                    Term::small_int(small_lit(
+                        dst,
+                        pe::Sext::<S, D>::new()
+                            .eval(&av)
+                            .ok_or(Error::NotReducible)?,
+                    ))
                 })
             })
         }
@@ -654,7 +660,11 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(
                 tag,
                 T,
-                Term::nat_lit(pe::FwToNat::<T>::new().eval(&(a.bits() as T)))
+                Term::nat_lit(
+                    pe::FwToNat::<T>::new()
+                        .eval(&(a.bits() as T))
+                        .ok_or(Error::NotReducible)?
+                )
             )
         }
         OpKey::ToInt(tag) => {
@@ -662,7 +672,11 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(
                 tag,
                 T,
-                Term::int_lit(pe::FwToInt::<T>::new().eval(&(a.bits() as T)))
+                Term::int_lit(
+                    pe::FwToInt::<T>::new()
+                        .eval(&(a.bits() as T))
+                        .ok_or(Error::NotReducible)?
+                )
             )
         }
         OpKey::FromNat(tag) => {
@@ -673,7 +687,12 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(
                 tag,
                 T,
-                Term::small_int(small_lit(tag, pe::FwFromNat::<T>::new().eval(n)))
+                Term::small_int(small_lit(
+                    tag,
+                    pe::FwFromNat::<T>::new()
+                        .eval(n)
+                        .ok_or(Error::NotReducible)?
+                ))
             )
         }
         OpKey::FromInt(tag) => {
@@ -684,7 +703,12 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(
                 tag,
                 T,
-                Term::small_int(small_lit(tag, pe::FwFromInt::<T>::new().eval(z)))
+                Term::small_int(small_lit(
+                    tag,
+                    pe::FwFromInt::<T>::new()
+                        .eval(z)
+                        .ok_or(Error::NotReducible)?
+                ))
             )
         }
     };

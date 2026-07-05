@@ -122,6 +122,7 @@ pub trait Rule<L>: 'static {
 /// `App<F, _>` (uninterpreted ⇒ sound by vacuity), but only *reduce* it where `F`
 /// is in your TCB.
 pub trait CanonRule: Op + 'static {
-    /// Evaluate the operator on a ground input value.
-    fn eval(&self, arg: &Self::In) -> Self::Out;
+    /// Evaluate the operator on a ground input value. Returns `None` to REFUSE (the
+    /// op declines on an unrepresentable input); the mint only fires on `Some`.
+    fn eval(&self, arg: &Self::In) -> Option<Self::Out>;
 }

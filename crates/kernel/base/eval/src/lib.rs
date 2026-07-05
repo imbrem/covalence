@@ -28,11 +28,24 @@
 //! `⊢ False`). This is enforced by the differential suite
 //! (`tests/differential.rs`) while the legacy kernel reducer still exists.
 //!
-//! Where `builtins.rs` *refuses* to reduce (returns `None` — oversize
-//! `nat.pow` exponents and `nat.shl`/`nat.shr` shift amounts), the
-//! [`CanonRule::eval`](covalence_pure::CanonRule::eval) here **panics** instead: `eval` is total-or-abort,
-//! and a panic aborts the derivation without minting anything, which is the
-//! same soundness posture as the kernel's refusal.
+//! ## Refusal vs. totality vs. OOM
+//!
+//! [`CanonRule::eval`](covalence_pure::CanonRule::eval) is **fallible** (returns
+//! `Option`): an op computes the true answer where the result is representable,
+//! **REFUSES** (`None`) where the answer is detectably unrepresentable, and panics
+//! ONLY on genuine allocation failure (we attempt and the allocator aborts). No op
+//! ever clamps an arbitrary-precision `Nat` to `usize`. Concretely:
+//!
+//! - `nat.shl` (`a·2^s`): `0` for `a = 0`; the true product where `s` fits `usize`
+//!   (may OOM-panic on a huge but representable result); `None` when `a ≠ 0` and `s`
+//!   exceeds `usize` (result has ≥ 2^64 bits — unrepresentable).
+//! - `nat.pow` (`base^exp`): `0`/`1` for `base ∈ {0, 1}`; the true power where `exp`
+//!   fits `u32` (OOM-panic acceptable); `None` when `exp` exceeds `u32`.
+//! - `nat.shr` (`⌊a/2^s⌋`) is **total** — `0` for any `s ≥ 2^64` (any representable
+//!   `a` has bit-length ≪ 2^64), so it never refuses.
+//! - `bytes.at`/`bytes.slice` are **total** over `Nat` indices/lengths (out-of-range
+//!   saturates to `0` / the empty or clamped-to-real-length subslice); `bytes.cat`/
+//!   `bytes.consNat` may OOM-panic on allocation only.
 
 use std::any::TypeId;
 
@@ -57,7 +70,41 @@ macro_rules! canon_op {
         }
 
         impl covalence_pure::CanonRule for $name {
-            fn eval(&self, arg: &Self::In) -> Self::Out {
+            fn eval(&self, arg: &Self::In) -> Option<Self::Out> {
+                let $arg = arg;
+                Some($body)
+            }
+        }
+
+        impl NamedRule for $name {
+            fn name() -> String {
+                String::from($label)
+            }
+        }
+    };
+}
+
+/// Like [`canon_op!`] but the `$body` **already yields `Option<$out>`** — for a
+/// [`CanonRule`](covalence_pure::CanonRule) that REFUSES (returns `None`) on a
+/// detectably unrepresentable input rather than computing a value. Used by the
+/// fallible arbitrary-precision ops (`nat.shl`/`nat.pow`).
+macro_rules! canon_op_partial {
+    (
+        $(#[$doc:meta])*
+        $name:ident($label:literal): $in:ty => $out:ty,
+        |$arg:pat_param| $body:expr
+    ) => {
+        $(#[$doc])*
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+        pub struct $name;
+
+        impl covalence_pure::Op for $name {
+            type In = $in;
+            type Out = $out;
+        }
+
+        impl covalence_pure::CanonRule for $name {
+            fn eval(&self, arg: &Self::In) -> Option<Self::Out> {
                 let $arg = arg;
                 $body
             }

@@ -154,7 +154,10 @@ write and a computation you may (if admitted) run:
 /// `App<Fv, tm>` (uninterpreted ⇒ sound by vacuity); you may only *reduce* it to
 /// the actual free-variable set where `Fv` is in the TCB.
 pub trait CanonRule: Op + 'static {
-    fn eval(&self, arg: &Self::In) -> Self::Out;   // on a ground value `v`
+    /// `None` = REFUSE (detectably unrepresentable result); the mint only
+    /// fires on `Some`. Ops compute the true value or refuse — never clamp,
+    /// never truncate; panic only on genuine allocation failure.
+    fn eval(&self, arg: &Self::In) -> Option<Self::Out>;   // on a ground value `v`
 }
 ```
 
@@ -316,7 +319,7 @@ pub fn of_eq<C: Eq, L>(a: C, b: C, lang: L) -> Option<Eqn<Val<C>, Val<C>, L>>;
 pub fn apply<L: Language, Rho: Rule<L>>(lang: L, rho: Rho)
     -> Result<Eqn<Rho::Lhs, Rho::Rhs, L>, Error>;
 /// Evaluate an op to its canonical value `App<F, Val(v)> = Val(F.eval(v))`. Gated
-/// on `F`'s `TypeId` (the op-as-rule).
+/// on `F`'s `TypeId` (the op-as-rule); an `eval` refusal (`None`) is `Error::NoMatch`.
 pub fn canon<L: Language, F: CanonRule>(f: F, arg: F::In, lang: L)
     -> Result<Eqn<App<F, Val<F::In>>, Val<F::Out>, L>, Error>;
 ```

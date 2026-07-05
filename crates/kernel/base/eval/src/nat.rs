@@ -2,8 +2,9 @@
 //! [`covalence_types::Nat`].
 //!
 //! Every body transcribes the matching arm of `covalence-core`'s
-//! `builtins.rs::eval_prim` exactly. Edge-case conventions that bear on
-//! soundness (all FORCED — see the crate docs):
+//! `builtins.rs::eval_prim` exactly. Edge-case / totality conventions that
+//! bear on soundness (all FORCED — see the crate docs); note that no `Nat` is
+//! ever clamped to `usize`:
 //!
 //! - saturating predecessor and subtraction (`pred 0 = 0`, `a - b = 0` when
 //!   `b > a`);
@@ -11,25 +12,29 @@
 //!   `λn m. n - (n/m)*m` evaluates to `n - 0 = n` at `m = 0`, so any other
 //!   value would let definitional unfolding and this rule derive `n = 0` for
 //!   every `n`;
-//! - `nat.pow` / `nat.shl` / `nat.shr` REFUSE (panic) oversize exponents /
-//!   shift amounts rather than truncate them, mirroring `builtins.rs`'s
-//!   `None` refusal.
+//! - `nat.shl` (`a·2^s`) computes the true product where `s` fits `usize`
+//!   (OOM-panic on a huge-but-representable result); it is `0` for `a = 0`, and
+//!   REFUSES (`None`) when `a ≠ 0` and `s` exceeds `usize` (result ≥ 2^64 bits);
+//! - `nat.shr` (`⌊a/2^s⌋`) is **total**: `0` for any `s ≥ 2^64` (any
+//!   representable `a` has bit-length ≪ 2^64), so it never refuses;
+//! - `nat.pow` (`base^exp`) is `0`/`1` for `base ∈ {0, 1}`, the true power where
+//!   `exp` fits `u32` (OOM-panic acceptable), and REFUSES (`None`) when `exp`
+//!   exceeds `u32`.
 
 use covalence_types::{Bytes, Int, Nat, Sign};
 
 use crate::NamedRule;
 
-/// Shift amount as `usize`; REFUSES (panics) shifts that do not fit in one
-/// `u64` digit / in `usize`, mirroring `builtins.rs::reduce_nat_shift`'s
-/// `None` (truncating an unbounded exponent would be unsound).
-fn shift_amount(shift: &Nat) -> usize {
+/// The shift amount as `usize`, or `None` if it exceeds `usize` (more than one
+/// `u64` digit, or a single digit above `usize::MAX`). Never clamps — the caller
+/// decides whether an over-`usize` shift means refuse (`shl`) or is trivially
+/// out-of-range (`shr`).
+fn shift_usize(shift: &Nat) -> Option<usize> {
     let digits = shift.as_inner().to_u64_digits();
-    assert!(
-        digits.len() <= 1,
-        "nat shift: oversize shift amount (refusing to evaluate)"
-    );
-    usize::try_from(digits.first().copied().unwrap_or(0))
-        .expect("nat shift: shift amount exceeds usize (refusing to evaluate)")
+    if digits.len() > 1 {
+        return None;
+    }
+    usize::try_from(digits.first().copied().unwrap_or(0)).ok()
 }
 
 canon_op! {
@@ -80,32 +85,51 @@ canon_op! {
     |(a, b)| if b.is_zero() { a.clone() } else { a % b }
 }
 
-canon_op! {
-    /// `nat.pow`. REFUSES (panics) an exponent that does not fit in `u32`
-    /// rather than truncate it (mirrors `builtins.rs`'s `None`).
+canon_op_partial! {
+    /// `nat.pow` (`base^exp`). Total for `base ∈ {0, 1}`; otherwise computes the
+    /// true power where `exp` fits `u32` (may OOM-panic on a huge-but-representable
+    /// result) and REFUSES (`None`) when `exp` exceeds `u32`. Never truncates.
     NatPow("nat.pow"): (Nat, Nat) => Nat,
     |(base, exp)| {
-        let digits = exp.as_inner().to_u32_digits();
-        assert!(
-            digits.len() <= 1,
-            "nat.pow: oversize exponent (refusing to evaluate)"
-        );
-        base.pow(digits.first().copied().unwrap_or(0))
+        if base.is_zero() {
+            Some(if exp.is_zero() { Nat::one() } else { Nat::zero() })
+        } else if *base == Nat::one() {
+            Some(Nat::one())
+        } else {
+            let digits = exp.as_inner().to_u32_digits();
+            if digits.len() > 1 {
+                None
+            } else {
+                Some(base.pow(digits.first().copied().unwrap_or(0)))
+            }
+        }
     }
 }
 
-canon_op! {
-    /// `nat.shl` — left shift; the shift amount must fit `u64`/`usize`
-    /// (else REFUSES by panic).
+canon_op_partial! {
+    /// `nat.shl` (`a·2^s`). `0` for `a = 0`; the true product where `s` fits `usize`
+    /// (may OOM-panic on a huge-but-representable result); REFUSES (`None`) when
+    /// `a ≠ 0` and `s` exceeds `usize` (result would need ≥ 2^64 bits). Never
+    /// truncates.
     NatShl("nat.shl"): (Nat, Nat) => Nat,
-    |(a, s)| Nat::from_inner(a.as_inner() << shift_amount(s))
+    |(a, s)| {
+        if a.is_zero() {
+            Some(Nat::zero())
+        } else {
+            shift_usize(s).map(|s| Nat::from_inner(a.as_inner() << s))
+        }
+    }
 }
 
-canon_op! {
-    /// `nat.shr` — right shift; the shift amount must fit `u64`/`usize`
-    /// (else REFUSES by panic).
+canon_op_partial! {
+    /// `nat.shr` (`⌊a/2^s⌋`) — **total**. Any `s` that exceeds `usize` is `≥ 2^64`,
+    /// which is larger than the bit-length of any representable `a`, so the result is
+    /// `0`; num-bigint drops limbs for a large in-`usize` `s`, so that is cheap too.
     NatShr("nat.shr"): (Nat, Nat) => Nat,
-    |(a, s)| Nat::from_inner(a.as_inner() >> shift_amount(s))
+    |(a, s)| Some(match shift_usize(s) {
+        Some(s) => Nat::from_inner(a.as_inner() >> s),
+        None => Nat::zero(),
+    })
 }
 
 canon_op! {

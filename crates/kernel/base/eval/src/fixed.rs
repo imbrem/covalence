@@ -185,8 +185,8 @@ macro_rules! fw_op2 {
         }
 
         impl<T: FwRepr> CanonRule for $name<T> {
-            fn eval(&self, &($a, $b): &Self::In) -> Self::Out {
-                $body
+            fn eval(&self, &($a, $b): &Self::In) -> Option<Self::Out> {
+                Some($body)
             }
         }
 
@@ -222,8 +222,8 @@ macro_rules! fw_op1 {
         }
 
         impl<T: FwRepr> CanonRule for $name<T> {
-            fn eval(&self, $a: &Self::In) -> Self::Out {
-                $body
+            fn eval(&self, $a: &Self::In) -> Option<Self::Out> {
+                Some($body)
             }
         }
 
@@ -386,8 +386,8 @@ impl<S: FwRepr, D: FwRepr> Op for Zext<S, D> {
 }
 
 impl<S: FwRepr, D: FwRepr> CanonRule for Zext<S, D> {
-    fn eval(&self, a: &S) -> D {
-        D::from_bits(a.value_u())
+    fn eval(&self, a: &S) -> Option<D> {
+        Some(D::from_bits(a.value_u()))
     }
 }
 
@@ -416,8 +416,8 @@ impl<S: FwRepr, D: FwRepr> Op for Sext<S, D> {
 }
 
 impl<S: FwRepr, D: FwRepr> CanonRule for Sext<S, D> {
-    fn eval(&self, a: &S) -> D {
-        D::from_bits(a.value_s() as u128)
+    fn eval(&self, a: &S) -> Option<D> {
+        Some(D::from_bits(a.value_s() as u128))
     }
 }
 

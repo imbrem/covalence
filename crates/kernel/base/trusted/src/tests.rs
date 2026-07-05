@@ -72,8 +72,8 @@ impl Op for Flip {
     type Out = bool;
 }
 impl CanonRule for Flip {
-    fn eval(&self, b: &bool) -> bool {
-        !b
+    fn eval(&self, b: &bool) -> Option<bool> {
+        Some(!b)
     }
 }
 

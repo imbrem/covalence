@@ -200,3 +200,60 @@ is the progress meter, and CI forbids new edges.
 - **One-way doors documented**: SKELETONS stays open-work-only (this pass);
   each quarantine/freeze gets its SKELETONS entry deleted on completion, so
   the registry monotonically shrinks toward the vision instead of recording it.
+
+## Track 3 — the CoreLang three-tier tower (maintainer directive, 2026-07)
+
+Split `CoreLang` into a **tower of three `Language` subsets**, lower casting
+into higher via the existing `extends`/`lift` (never downward):
+
+1. **`CoreHol`** — pure HOL Light: the 10 rules + `define`/`new_type_definition`
+   + `FreshLeaf` typedef freshness. Nothing computational; auditable
+   page-by-page against the HOL Light manual.
+2. **`CoreEval`** — extends `CoreHol` + `Builtins` (the covalence-pure-eval
+   CanonRules) + the toHOL/cert rules. (Today's post-purge `CoreLang` ≈ this.)
+3. **`CoreWasm`** — extends `CoreEval` + the WASM-oracle/executor rules (the
+   substrate vision's executor tier).
+
+**Payoff = the test story.** An eval-tier definition's properties can be
+*proved in `CoreHol`* — a `Thm<CoreHol, …>` about an op's defining equations is
+machine-checked evidence its `CanonRule` semantics match the definitional
+unfolding, upgrading the cert docstrings' existence-without-construction prose
+(and the differential suites) into theorems. And a theorem's *language
+parameter becomes its trust label*: `Thm<CoreHol, _>` carries no computation
+TCB at all. Lands with S11 (when the pure set becomes exactly textbook HOL
+Light) — mostly splitting the manifest downward, not new kernel surface.
+
+## Track 4 — f32/f64 + ball arithmetic (parallel to the purge)
+
+Floats unlock **ball arithmetic** → statistics. The design falls out of what
+exists: `f32 := u32` / `f64 := u64` newtype specs already sit in
+`defs/floats.rs`, and `base/trusted/float.rs` already solves the leaf problem
+(bitwise `Eq` so `NaN ≠ NaN` never breaks reflexivity; one audited
+NaN-canonicalization point implementing the WASM deterministic profile). A
+float **is** its bit-pattern, so every op is definitional + computable and the
+cert/toHOL machinery applies unchanged; the fallibility rule (Track just above)
+is trivially met (ops are total on bit-patterns).
+
+- **F0** finish the base op inventory in `float.rs` (has add/sub/mul/div; add
+  sqrt, min/max, abs/neg/copysign, ceil/floor/trunc/nearest, comparisons,
+  promote/demote, int↔float converts + `trunc_sat`, reinterprets).
+- **F1** `covalence-pure-eval` `FloatOps` CanonRules + a **differential suite
+  against real wasmtime execution** (`covalence-wasm` `runtime` feature) — the
+  oracle is an actual engine, not self-comparison.
+- **F2** HOL op definitions via the S9 Const-twin machinery (defining
+  properties = the WASM spec equations on bits); script literal display/parse.
+- **F3** `FloatCert` admitted family (FixedWidthCert pattern) + `covalence-hol-eval`
+  wiring + `ToHolF32`/`ToHolF64`; route literals through the S7 `mk_u32` facade
+  so S10's `SmallInt` deletion stays transparent (the parallelism enabler).
+- **F4** ball arithmetic (init, untrusted): `ball := f64 × f64` (center,radius);
+  ops **concrete** (`fl(a•b)` + outward ulp-bump) so statistics runs on
+  certified computation immediately, with **enclosure theorems**
+  (`x∈a, y∈b ⟹ x•y ∈ ball_add a b`) proved incrementally — pure-`CoreHol`-tier
+  lemmas about eval-tier definitions, i.e. Track 3's test story with a real
+  application.
+- **F5** long-term: lower the WASM numerics via `covalence-spectec` to replace
+  the hand-written defining properties; wasmtime differential becomes certified
+  redundancy.
+
+**Interlock:** F0/F1 are parallel-safe with S10/S11 (disjoint files/families,
+run in a worktree); F2 needs S9 (landed); F4 enclosure lemmas exercise Track 3.

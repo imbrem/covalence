@@ -723,7 +723,6 @@ mod tests {
             thm.hyps().is_empty(),
             "encode_char_lit({k:#x}) is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "encode_char_lit is oracle-free");
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(
             lhs,
@@ -787,7 +786,6 @@ mod tests {
             thm.hyps().is_empty(),
             "encode_nil is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "encode_nil is oracle-free");
         assert_eq!(thm.concl().as_eq().unwrap().1, &unil());
     }
 
@@ -800,7 +798,6 @@ mod tests {
             thm.hyps().is_empty(),
             "encode_cons is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "encode_cons is oracle-free");
         // RHS is (encodeChar c) ++ rep (utf8Encode s).
         let ec = Term::app(encode_char(), c.clone());
         let rep_enc_s = Term::app(
@@ -830,7 +827,6 @@ mod tests {
                 thm.hyps().is_empty(),
                 "decode_ascii1_round_trip({k:#x}) is proved, not postulated"
             );
-            assert!(thm.has_no_obs(), "decode round-trip is oracle-free");
             let (lhs, rhs) = thm.concl().as_eq().unwrap();
             let enc = Term::app(encode_char(), crate::init::char::char_lit(k));
             assert_eq!(lhs, &Term::app(decode_ascii1(), enc));
@@ -851,10 +847,10 @@ mod tests {
         let c = Term::free("c", char_ty());
         let cs = Term::free("cs", list(char_ty()));
         let en = encode_bytes_nil().unwrap();
-        assert!(en.hyps().is_empty() && en.has_no_obs());
+        assert!(en.hyps().is_empty());
         assert_eq!(en.concl().as_eq().unwrap().1, &unil());
         let ec = encode_bytes_cons(&c, &cs).unwrap();
-        assert!(ec.hyps().is_empty() && ec.has_no_obs());
+        assert!(ec.hyps().is_empty());
     }
 }
 
@@ -872,7 +868,6 @@ mod cov_tests {
             thm.hyps().is_empty(),
             "encode_cat is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "encode_cat is oracle-free");
         // It is a `∀cs ds. _ = _` over `list char`.
         assert!(thm.concl().type_of().unwrap().is_bool());
     }

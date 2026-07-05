@@ -637,7 +637,7 @@ mod tests {
     fn rep_pair_round_trips() {
         let (a, b) = ab();
         let thm = rep_pair(&alpha(), &beta(), &a, &b).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // LHS is `rep (pair a b)`.
         let (lhs, _rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(
@@ -651,7 +651,6 @@ mod tests {
         let (a, b) = ab();
         let thm = fst_pair(&alpha(), &beta(), &a, &b).unwrap();
         assert!(thm.hyps().is_empty(), "fst.pair is proved, not postulated");
-        assert!(thm.has_no_obs(), "fst.pair is oracle-free");
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(
             lhs,
@@ -664,7 +663,7 @@ mod tests {
     fn snd_pair_is_second() {
         let (a, b) = ab();
         let thm = snd_pair(&alpha(), &beta(), &a, &b).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(
             lhs,
@@ -691,7 +690,7 @@ mod tests {
         let c = Term::free("c", alpha());
         let d = Term::free("d", beta());
         let thm = pair_inj(&alpha(), &beta(), &a, &b, &c, &d).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // ⊢ (pair a b = pair c d) ⟹ (a = c ∧ b = d)
         let expected = pair_at(&alpha(), &beta(), &a, &b)
             .equals(pair_at(&alpha(), &beta(), &c, &d))
@@ -715,7 +714,6 @@ mod tests {
             thm.hyps().is_empty(),
             "surjective.pairing is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "surjective.pairing is oracle-free");
         let expected = pair_at(
             &alpha(),
             &beta(),

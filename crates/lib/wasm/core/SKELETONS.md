@@ -6,3 +6,5 @@
   re-derived against the current `covalence-core` rules. `wit/pure.wit` and the
   guest fixture `covalence-core-test-guest` (`crates/kernel/hol/test-guest`)
   remain, but nothing builds or loads the guest — no CI target covers it.
+  The WIT still declares `has-no-obs` funcs from the deleted observer system
+  (toHOL purge S2); drop them when the host binding is re-derived.

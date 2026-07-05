@@ -272,7 +272,6 @@ mod tests {
 
     fn assert_genuine(thm: &Thm) {
         assert!(thm.hyps().is_empty(), "theorem is hypothesis-free");
-        assert!(thm.has_no_obs(), "theorem is oracle-free");
     }
 
     fn database_ty() -> Type {

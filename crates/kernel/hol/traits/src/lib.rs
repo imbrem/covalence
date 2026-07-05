@@ -18,11 +18,11 @@
 //! of `covalence-metamath`) and absorbs OpenTheory import behind an `opentheory`
 //! feature; today it still depends on `covalence-core`.
 
-pub mod hol_light_obs;
+pub mod hol_light_ctx;
 pub mod traits;
 pub mod types;
 
-pub use hol_light_obs::HolLightCtx;
+pub use hol_light_ctx::HolLightCtx;
 pub use traits::{HolLightKernel, HolLightTerms, HolLightTypes};
 pub use types::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID, HolError, NameId};
 

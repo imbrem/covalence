@@ -497,9 +497,8 @@ mod tests {
         assert_eq!(rhs, expect_r);
 
         // The only hypotheses are the two assumed faces — the chase added
-        // none of its own, and used no observers.
+        // none of its own.
         let proof = rect.proof();
-        assert!(proof.has_no_obs());
         assert_eq!(proof.hyps().len(), 2);
     }
 }

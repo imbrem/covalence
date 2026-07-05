@@ -528,7 +528,7 @@ mod tests {
             Term::abs(alpha(), covalence_core::subst::close(&lam_v, "u"))
         };
         let thm = holds_mk(&alpha(), &beta(), &x, &y, &inner).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         let mk_p = Term::app(rel_mk(alpha(), beta()), inner.clone());
         assert_eq!(lhs, &holds(&alpha(), &beta(), &mk_p, &x, &y));
@@ -541,7 +541,7 @@ mod tests {
     fn holds_id_is_equality() {
         let (x, y) = (a_elem("x"), a_elem("y"));
         let thm = holds_id(&alpha(), &x, &y).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(rhs_of(&thm).unwrap(), x.equals(y).unwrap());
     }
 
@@ -607,7 +607,6 @@ mod tests {
             thm.hyps().is_empty(),
             "converse.converse is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "converse.converse is oracle-free");
         let r = relvar("r");
         let cr = converse(&alpha(), &beta(), &r);
         let cc = converse(&beta(), &alpha(), &cr);
@@ -618,7 +617,6 @@ mod tests {
     fn converse_id_is_genuine() {
         let thm = converse_id();
         assert!(thm.hyps().is_empty(), "converse.id is proved");
-        assert!(thm.has_no_obs());
         let id = rel_id(alpha());
         let conv_id = converse(&alpha(), &alpha(), &id);
         assert_eq!(thm.concl(), &conv_id.equals(id).unwrap());

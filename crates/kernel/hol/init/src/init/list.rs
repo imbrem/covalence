@@ -1620,7 +1620,6 @@ mod tests {
             thm.hyps().is_empty(),
             "finite_const_none is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "finite_const_none is oracle-free");
         let expected = Term::app(finite(alpha()), const_none(&alpha()));
         assert_eq!(thm.concl(), &expected);
     }
@@ -1633,7 +1632,6 @@ mod tests {
             thm.hyps().is_empty(),
             "finite_rep is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "finite_rep is oracle-free");
         let expected = Term::app(finite(alpha()), rep_of(&alpha(), &xs));
         assert_eq!(thm.concl(), &expected);
     }
@@ -1658,7 +1656,6 @@ mod tests {
             thm.hyps().is_empty(),
             "finite_cons is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "finite_cons is oracle-free");
         // ⊢ finite (streamMk (consStream x xs))
         let g = cons_stream(&alpha(), &x, &xs);
         let expected = Term::app(finite(alpha()), mk_stream(&alpha(), &g));
@@ -1668,7 +1665,7 @@ mod tests {
     #[test]
     fn pred_nonempty_is_genuine() {
         let thm = pred_nonempty(&alpha()).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // ⊢ ∃s. list_predicate s
         let expected = Term::app(
             covalence_core::defs::exists(crate::init::stream::stream(option(alpha()))),
@@ -1682,10 +1679,10 @@ mod tests {
         let x = Term::free("x", alpha());
         let xs = Term::free("xs", list(alpha()));
         let pc = pred_const_none(&alpha()).unwrap();
-        assert!(pc.hyps().is_empty() && pc.has_no_obs());
+        assert!(pc.hyps().is_empty());
         assert_eq!(pc.concl(), &list_pred(&alpha(), &const_none(&alpha())));
         let pk = pred_cons(&alpha(), &x, &xs).unwrap();
-        assert!(pk.hyps().is_empty() && pk.has_no_obs());
+        assert!(pk.hyps().is_empty());
         let g = cons_stream(&alpha(), &x, &xs);
         assert_eq!(pk.concl(), &list_pred(&alpha(), &mk_stream(&alpha(), &g)));
     }
@@ -1705,7 +1702,6 @@ mod tests {
         let n = Term::free("n", nat());
         let thm = index_nil(&alpha(), &n).unwrap();
         assert!(thm.hyps().is_empty(), "index_nil is proved, not postulated");
-        assert!(thm.has_no_obs(), "index_nil is oracle-free");
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &index(&alpha(), &n, &nil(alpha())));
         assert_eq!(rhs, &none(alpha()));
@@ -1724,7 +1720,7 @@ mod tests {
         let x = Term::free("x", alpha());
         let xs = Term::free("xs", list(alpha()));
         let thm = index_cons_zero(&alpha(), &x, &xs).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         let consed = cons(alpha())
             .apply(x.clone())
@@ -1741,7 +1737,7 @@ mod tests {
         let xs = Term::free("xs", list(alpha()));
         let k = Term::free("k", nat());
         let thm = index_cons_succ(&alpha(), &x, &xs, &k).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         let consed = cons(alpha())
             .apply(x.clone())
@@ -1757,7 +1753,7 @@ mod tests {
         let x = Term::free("x", alpha());
         let xs = Term::free("xs", list(alpha()));
         let thm = head_cons(&alpha(), &x, &xs).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         let consed = cons(alpha())
             .apply(x.clone())
@@ -1773,7 +1769,7 @@ mod tests {
         let x = Term::free("x", alpha());
         let xs = Term::free("xs", list(alpha()));
         let thm = tail_cons(&alpha(), &x, &xs).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         let consed = cons(alpha())
             .apply(x.clone())
@@ -1788,7 +1784,6 @@ mod tests {
     fn head_nil_is_none() {
         let thm = head_nil(&alpha()).unwrap();
         assert!(thm.hyps().is_empty(), "head_nil is proved, not postulated");
-        assert!(thm.has_no_obs(), "head_nil is oracle-free");
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &Term::app(head(alpha()), nil(alpha())));
         assert_eq!(rhs, &none(alpha()));
@@ -1799,7 +1794,7 @@ mod tests {
         let a = Term::free("a", alpha());
         let l = Term::free("l", list(alpha()));
         let thm = cons_head_tail(&alpha(), &a, &l).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // ⊢ (head l = some a) ⟹ (cons a (tail l) = l)
         let some_a = Term::app(some(alpha()), a.clone());
         let prem = Term::app(head(alpha()), l.clone()).equals(some_a).unwrap();
@@ -1851,7 +1846,7 @@ mod tests {
                 .unwrap()
         };
         let thm = list_induct(&a, &p, pl_nil, cons_case).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // ⊢ ∀l. P l
         let l = Term::free("l", list(a.clone()));
         let expected = Term::app(p.clone(), l).forall("l", list(a)).unwrap();
@@ -1862,14 +1857,14 @@ mod tests {
     fn allnone_from_head_none_is_genuine() {
         let l = Term::free("l", list(alpha()));
         let thm = allnone_from_head_none(&alpha(), &l).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 
     #[test]
     fn nil_from_allnone_is_genuine() {
         let l = Term::free("l", list(alpha()));
         let thm = nil_from_allnone(&alpha(), &l).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let i = Term::free("i", nat());
         let allnone = index(&alpha(), &i, &l)
             .equals(none(alpha()))
@@ -1885,7 +1880,7 @@ mod tests {
         let i = Term::free("i", nat());
         let l = Term::free("l", list(alpha()));
         let thm = index_tail(&alpha(), &i, &l).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         let tailed = Term::app(tail(alpha()), l.clone());
         assert_eq!(lhs, &index(&alpha(), &i, &tailed));
@@ -1897,7 +1892,7 @@ mod tests {
         let x = Term::free("x", alpha());
         let xs = Term::free("xs", list(alpha()));
         let thm = nil_ne_cons(&alpha(), &x, &xs).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let consed = cons(alpha())
             .apply(x.clone())
             .unwrap()
@@ -1914,7 +1909,7 @@ mod tests {
         let y = Term::free("y", alpha());
         let ys = Term::free("ys", list(alpha()));
         let thm = cons_inj(&alpha(), &x, &xs, &y, &ys).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let cxs = cons(alpha())
             .apply(x.clone())
             .unwrap()
@@ -1973,7 +1968,6 @@ mod tests {
     /// Every `list.cov` theorem is genuine (hypothesis- and oracle-free).
     fn assert_genuine(thm: &Thm) {
         assert!(thm.hyps().is_empty(), "expected a hypothesis-free theorem");
-        assert!(thm.has_no_obs(), "expected an oracle-free theorem");
     }
 
     #[test]

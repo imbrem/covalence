@@ -385,7 +385,7 @@ mod tests {
         let alpha = a_ty();
         let a = Term::free("a", alpha.clone());
         let thm = atom_ne_nil(&alpha, &a).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert!(thm.concl().as_app().is_some(), "a `¬…` conclusion");
     }
 
@@ -396,7 +396,7 @@ mod tests {
         let x = nil(&alpha).unwrap();
         let y = nil(&alpha).unwrap();
         let thm = atom_ne_cons(&alpha, &a, &x, &y).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 
     #[test]
@@ -405,7 +405,7 @@ mod tests {
         let x = nil(&alpha).unwrap();
         let y = nil(&alpha).unwrap();
         let thm = nil_ne_cons(&alpha, &x, &y).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 
     // -- applied-form bridges (used by the `.cov` seam) -------------------
@@ -434,7 +434,7 @@ mod tests {
         let alpha = a_ty();
         let a = Term::free("a", alpha.clone());
         let thm = atom_ne_nil_app(&alpha, &a).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 }
 
@@ -453,19 +453,19 @@ mod cov_tests {
             .unwrap();
         let thm = cov::atom_ne_nil_cov();
         assert_eq!(thm.concl(), expected.concl());
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 
     #[test]
     fn atom_ne_cons_cov_is_genuine() {
         let thm = cov::atom_ne_cons_cov();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 
     #[test]
     fn nil_ne_cons_cov_is_genuine() {
         let thm = cov::nil_ne_cons_cov();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 
     /// A downstream-style `.cov` script can `(#import sexp)` and consume the
@@ -485,6 +485,6 @@ mod cov_tests {
         let thms = crate::init::check_script(src).expect("downstream script checks");
         assert_eq!(thms.len(), 1);
         let thm = &thms[0].thm;
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 }

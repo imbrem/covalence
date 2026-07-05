@@ -24,7 +24,6 @@
 
 use std::any::TypeId;
 use std::fmt;
-use std::sync::Arc;
 
 use smol_str::SmolStr;
 
@@ -39,7 +38,7 @@ use crate::subst::{
     close_var, collect_term_tvars, has_free_var_typed, open, shift_by, subst_free,
     subst_tfree_in_term, uses_bound_outer,
 };
-use crate::term::{Def, Term, TermKind, Type, TypeKind, Var};
+use crate::term::{Def, FreshId, Term, TermKind, Type, TypeKind, Var};
 use crate::ty::{TypeList, TypeSpec};
 
 use super::lang::{CoreLang, CoreProp, IsThm};
@@ -795,15 +794,14 @@ core_rules! {
         let tvar_names = alpha.free_tvars();
         let tvar_types: Vec<Type> = tvar_names.iter().map(|n| Type::tfree(n.clone())).collect();
 
-        // 5-6. Fresh markers (τ, abs, rep) allocated INSIDE decide.
-        let marker = TypeDefMarker::new();
-        let tau = Type::tycon_obs(marker.clone(), tvar_types);
-        let abs_marker = TypeDefAbsMarker::new(&marker, abs_hint);
-        let rep_marker = TypeDefRepMarker::new(&marker, rep_hint);
+        // 5-6. Fresh identity (τ, abs, rep) allocated INSIDE decide: three
+        //      `FreshId` tokens over the private markers below, so no caller
+        //      can supply (or collide) an identity.
+        let tau = Type::fresh_tycon(FreshId::new(TypeDefMarker), tvar_types);
         let abs_ty = Type::fun(alpha.clone(), tau.clone());
         let rep_ty = Type::fun(tau.clone(), alpha.clone());
-        let abs = Term::obs(abs_marker, abs_ty);
-        let rep = Term::obs(rep_marker, rep_ty);
+        let abs = Term::fresh_const(FreshId::new(TypeDefAbsMarker { hint: abs_hint }), abs_ty);
+        let rep = Term::fresh_const(FreshId::new(TypeDefRepMarker { hint: rep_hint }), rep_ty);
 
         // 7. The three bijection theorems, combined into one conjunction.
         //    abs_rep: ∀a:τ. abs (rep a) = a
@@ -835,40 +833,22 @@ core_rules! {
 }
 
 // ============================================================================
-// new_type_definition fresh-identity markers (allocated only inside
-// `NewTypeDefRule::decide`).
+// new_type_definition fresh-identity markers (wrapped in `FreshId` tokens
+// allocated only inside `NewTypeDefRule::decide`).
 // ============================================================================
+//
+// The freshness itself comes from each `FreshId::new` call (a fresh `Arc`
+// per token); the markers below are display-only payloads (`Debug` feeds
+// `Term`/`Type` printing). They are private to this module, so even the
+// marker *types* cannot be named downstream.
 
-/// Private marker carried inside a fresh subtype's `Type::tycon_obs` and (via the
-/// abs/rep markers below) inside its abs/rep `Term::obs` leaves. Zero-sized, no
-/// methods — provides fresh `Arc` identity per `new_type_definition`. Cannot be
-/// constructed outside this module.
-#[derive(Debug, Clone)]
-struct TypeDefMarker(Arc<TypeDefMarkerInner>);
-
+/// Marker inside a fresh subtype's `Type::fresh_tycon` token.
 #[derive(Debug)]
-struct TypeDefMarkerInner;
+struct TypeDefMarker;
 
-impl TypeDefMarker {
-    fn new() -> Self {
-        TypeDefMarker(Arc::new(TypeDefMarkerInner))
-    }
-}
-
-/// Marker carried by a typedef's `abs` constant, tied to the shared typedef marker.
+/// Marker inside a typedef's `abs` constant token.
 struct TypeDefAbsMarker {
-    #[allow(dead_code)]
-    typedef: Arc<TypeDefMarkerInner>,
     hint: SmolStr,
-}
-
-impl TypeDefAbsMarker {
-    fn new(m: &TypeDefMarker, hint: SmolStr) -> Self {
-        TypeDefAbsMarker {
-            typedef: Arc::clone(&m.0),
-            hint,
-        }
-    }
 }
 
 impl fmt::Debug for TypeDefAbsMarker {
@@ -881,20 +861,9 @@ impl fmt::Debug for TypeDefAbsMarker {
     }
 }
 
-/// Marker for the typedef's `rep` constant.
+/// Marker inside a typedef's `rep` constant token.
 struct TypeDefRepMarker {
-    #[allow(dead_code)]
-    typedef: Arc<TypeDefMarkerInner>,
     hint: SmolStr,
-}
-
-impl TypeDefRepMarker {
-    fn new(m: &TypeDefMarker, hint: SmolStr) -> Self {
-        TypeDefRepMarker {
-            typedef: Arc::clone(&m.0),
-            hint,
-        }
-    }
 }
 
 impl fmt::Debug for TypeDefRepMarker {

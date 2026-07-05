@@ -158,8 +158,8 @@ mod tests {
         let g = Term::free("g", Type::fun(b.clone(), c.clone()));
         let l = h.copair_inl(f.clone(), g.clone()).unwrap();
         let r = h.copair_inr(f.clone(), g.clone()).unwrap();
-        assert!(l.hyps().is_empty() && l.has_no_obs());
-        assert!(r.hyps().is_empty() && r.has_no_obs());
+        assert!(l.hyps().is_empty());
+        assert!(r.hyps().is_empty());
         // [f,g] ∘ inl = f  and  [f,g] ∘ inr = g.
         assert_eq!(h.concl(&l).1, f);
         assert_eq!(h.concl(&r).1, g);
@@ -171,7 +171,7 @@ mod tests {
         let (a, b, c) = (obj("a"), obj("b"), obj("c"));
         let m = Term::free("m", Type::fun(h.oplus(a, b), c));
         let p = h.fusion(m.clone()).unwrap();
-        assert!(p.hyps().is_empty() && p.has_no_obs());
+        assert!(p.hyps().is_empty());
         assert_eq!(h.concl(&p).0, m);
     }
 
@@ -183,7 +183,6 @@ mod tests {
         let (a, b) = (obj("a"), obj("b"));
         let p = swap_involution(&h, a.clone(), b.clone()).unwrap();
         assert!(p.hyps().is_empty(), "derived from proved axioms only");
-        assert!(p.has_no_obs());
         // RHS is the identity on a ⊕ b.
         let (_lhs, rhs) = h.concl(&p);
         assert_eq!(rhs, h.id(h.oplus(a, b)));

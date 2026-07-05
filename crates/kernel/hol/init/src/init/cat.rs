@@ -403,7 +403,7 @@ mod tests {
         let (a, b) = ab();
         let f = Term::free("f", Type::fun(a.clone(), b.clone()));
         let thm = id_left(&f).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let lhs = comp(&id(b), &f).unwrap();
         assert_eq!(thm.concl(), &lhs.equals(f).unwrap());
     }
@@ -413,7 +413,7 @@ mod tests {
         let (a, b) = ab();
         let f = Term::free("f", Type::fun(a.clone(), b));
         let thm = id_right(&f).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let lhs = comp(&f, &id(a)).unwrap();
         assert_eq!(thm.concl(), &lhs.equals(f).unwrap());
     }
@@ -428,7 +428,7 @@ mod tests {
         let g = Term::free("g", Type::fun(b.clone(), c.clone()));
         let h = Term::free("h", Type::fun(c, d));
         let thm = comp_assoc(&h, &g, &f).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let lhs = comp(&comp(&h, &g).unwrap(), &f).unwrap();
         let rhs = comp(&h, &comp(&g, &f).unwrap()).unwrap();
         assert_eq!(thm.concl(), &lhs.equals(rhs).unwrap());
@@ -464,7 +464,7 @@ mod tests {
         // (h ∘ g) ∘ f  →  h ∘ (g ∘ f).
         let expr = comp(&comp(&h, &g).unwrap(), &f).unwrap();
         let thm = cat_normalize(&expr).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &expr);
         assert_eq!(rhs, &comp(&h, &comp(&g, &f).unwrap()).unwrap());
@@ -478,7 +478,7 @@ mod tests {
         // (id_b ∘ f) ∘ id_a  →  f.
         let expr = comp(&comp(&id(b), &f).unwrap(), &id(a)).unwrap();
         let thm = cat_normalize(&expr).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (_, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(rhs, &f);
     }
@@ -495,7 +495,7 @@ mod tests {
         let lhs = comp(&comp(&h, &g).unwrap(), &f).unwrap();
         let rhs = comp(&h, &comp(&g, &f).unwrap()).unwrap();
         let thm = cat_prove_eq(&lhs, &rhs).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(thm.concl().as_eq().unwrap(), (&lhs, &rhs));
     }
 

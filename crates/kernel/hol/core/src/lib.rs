@@ -76,7 +76,7 @@ pub use ctx::Ctx;
 pub use error::{Error, Result};
 pub use term::TermSpec;
 pub use term::{
-    Checked, Def, HashCons, IntTag, Object, Observer, SmallIntLiteral, Term, TermCons, TermKind,
+    Checked, Def, FreshId, HashCons, IntTag, SmallIntLiteral, Term, TermCons, TermKind,
     TrustedCons, TyError, Type, TypeKind, Var,
 };
 pub use thm::{Thm, TypeDef};

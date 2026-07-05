@@ -598,7 +598,6 @@ mod tests {
         // equations, fully proved (no hypotheses).
         let thm = super::foldr_holds().unwrap();
         assert!(thm.hyps().is_empty(), "foldr_holds must be axiom-free");
-        assert!(thm.has_no_obs(), "foldr_holds is oracle-free");
         // It is `list_foldr_predicate list_foldr` (β-reduced to the
         // ∀f z conjunction of the nil/cons fold equations).
         assert!(thm.concl().type_of().unwrap().is_bool());
@@ -701,7 +700,7 @@ mod tests {
         let x = Term::free("x", elem());
         let xs = Term::free("xs", list_ty());
         let nil_eq = super::foldr_nil(&elem(), &super::fold_beta(), &f, &z).unwrap();
-        assert!(nil_eq.hyps().is_empty() && nil_eq.has_no_obs());
+        assert!(nil_eq.hyps().is_empty());
         let (l, r) = nil_eq.concl().as_eq().unwrap();
         let foldr = covalence_core::defs::list_foldr(elem(), super::fold_beta());
         assert_eq!(
@@ -713,7 +712,7 @@ mod tests {
         );
         assert_eq!(r, &z);
         let cons_eq = super::foldr_cons(&elem(), &super::fold_beta(), &f, &z, &x, &xs).unwrap();
-        assert!(cons_eq.hyps().is_empty() && cons_eq.has_no_obs());
+        assert!(cons_eq.hyps().is_empty());
     }
 
     #[test]
@@ -721,7 +720,7 @@ mod tests {
         let x = Term::free("x", elem());
         let xs = Term::free("xs", list_ty());
         let ln = super::length_nil(&elem()).unwrap();
-        assert!(ln.hyps().is_empty() && ln.has_no_obs());
+        assert!(ln.hyps().is_empty());
         let (l, r) = ln.concl().as_eq().unwrap();
         assert_eq!(
             l,
@@ -730,7 +729,7 @@ mod tests {
         assert_eq!(r, &Term::nat_lit(0u32));
 
         let lc = super::length_cons(&elem(), &x, &xs).unwrap();
-        assert!(lc.hyps().is_empty() && lc.has_no_obs());
+        assert!(lc.hyps().is_empty());
         let (l, r) = lc.concl().as_eq().unwrap();
         let consed = cons(elem())
             .apply(x.clone())
@@ -754,7 +753,7 @@ mod tests {
         let xs = Term::free("xs", list_ty());
         let ys = Term::free("ys", list_ty());
         let cn = super::cat_nil(&elem(), &ys).unwrap();
-        assert!(cn.hyps().is_empty() && cn.has_no_obs());
+        assert!(cn.hyps().is_empty());
         let (l, r) = cn.concl().as_eq().unwrap();
         let cat = covalence_core::defs::list_cat(elem());
         assert_eq!(
@@ -764,7 +763,7 @@ mod tests {
         assert_eq!(r, &ys);
 
         let cc = super::cat_cons(&elem(), &x, &xs, &ys).unwrap();
-        assert!(cc.hyps().is_empty() && cc.has_no_obs());
+        assert!(cc.hyps().is_empty());
         let (l, r) = cc.concl().as_eq().unwrap();
         let consed = cons(elem())
             .apply(x.clone())

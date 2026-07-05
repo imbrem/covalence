@@ -250,7 +250,7 @@ fn kind_name(k: &TermKind) -> &'static str {
         TermKind::Spec(..) => "spec",
         TermKind::SpecAbs(..) => "specabs",
         TermKind::SpecRep(..) => "specrep",
-        TermKind::Obs(..) => "obs",
+        TermKind::FreshConst(..) => "fresh-const",
         TermKind::Def(_) => "def",
     }
 }

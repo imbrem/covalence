@@ -508,7 +508,6 @@ mod cov_tests {
             cov::ne_none_imp_some_cov(),
         ] {
             assert!(thm.hyps().is_empty(), "new theorem must be hyp-free");
-            assert!(thm.has_no_obs(), "new theorem must be oracle-free");
         }
     }
 
@@ -556,7 +555,7 @@ mod tests {
         let a = Type::tfree("a");
         let x = Term::free("x", a.clone());
         let thm = some_ne_none(&a, &x).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let expected = Term::app(some(a.clone()), x)
             .equals(none(a))
             .unwrap()
@@ -586,10 +585,7 @@ mod tests {
         let f = Term::free("f", Type::fun(a.clone(), b.clone()));
         let x = Term::free("x", a.clone());
         let thm = case_some(&a, &b, &d, &f, &x).unwrap();
-        assert!(
-            thm.hyps().is_empty() && thm.has_no_obs(),
-            "proved, not postulated"
-        );
+        assert!(thm.hyps().is_empty(), "proved, not postulated");
         let lhs = option_case(a.clone(), b.clone())
             .apply(d)
             .unwrap()
@@ -607,7 +603,7 @@ mod tests {
         let d = Term::free("d", b.clone());
         let f = Term::free("f", Type::fun(a.clone(), b.clone()));
         let thm = case_none(&a, &b, &d, &f).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(rhs_of(&thm).unwrap(), d);
     }
 
@@ -629,7 +625,7 @@ mod tests {
         let x = Term::free("x", a.clone());
         let y = Term::free("y", a.clone());
         let thm = some_inj(&a, &x, &y).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let some_x = Term::app(some(a.clone()), x.clone());
         let some_y = Term::app(some(a.clone()), y.clone());
         let expected = some_x
@@ -646,7 +642,7 @@ mod tests {
         let a = Type::tfree("a");
         let o = Term::free("o", option(a.clone()));
         let thm = option_cases(&a, &o).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let some_g = some_goal(&a, &o).unwrap();
         let none_g = o.equals(none(a)).unwrap();
         assert_eq!(thm.concl(), &some_g.or(none_g).unwrap());

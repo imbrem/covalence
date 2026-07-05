@@ -308,7 +308,7 @@ mod tests {
         let f = Term::free("f", Type::fun(Type::nat(), alpha()));
         let n = Term::free("n", Type::nat());
         let thm = at_mk(&alpha(), &f, &n).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &at(&alpha(), &mk(&alpha(), &f), &n));
         assert_eq!(rhs, &Term::app(f, n));

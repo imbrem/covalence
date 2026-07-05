@@ -22,11 +22,10 @@ fn re(src: &str) -> Regex<u8> {
     parse_regex_u8(src).unwrap_or_else(|e| panic!("parse {src:?}: {e}"))
 }
 
-/// A proved theorem with no hypotheses and no observer/oracle dependence.
+/// A proved theorem with no hypotheses (oracle-free by construction).
 #[track_caller]
 fn assert_clean(thm: &covalence_init::Thm) {
     assert!(thm.hyps().is_empty(), "expected no hypotheses");
-    assert!(thm.has_no_obs(), "expected an oracle-free theorem");
 }
 
 // ----------------------------------------------------------------------------
@@ -341,7 +340,6 @@ fn word_variable_discharges_by_assumption() {
     let w = Word::cat(Word::Byte(0x00), Word::var("X", cat));
     let thm = prove_word(&r, &w).unwrap().unwrap();
     assert_eq!(thm.hyps().len(), 1, "exactly the parses-as assumption");
-    assert!(thm.has_no_obs());
 }
 
 #[test]
@@ -356,7 +354,6 @@ fn word_two_variables_under_star() {
         2,
         "two distinct variables -> two assumptions"
     );
-    assert!(thm.has_no_obs());
 }
 
 #[test]

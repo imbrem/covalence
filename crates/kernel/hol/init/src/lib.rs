@@ -36,12 +36,12 @@ pub mod sexp;
 pub mod wasm;
 
 // The thin HOL surface lives in `covalence-hol`. Re-export its modules and items
-// so `crate::types` / `crate::traits` / `crate::hol_light_obs` / `crate::HolLightCtx`
+// so `crate::types` / `crate::traits` / `crate::hol_light_ctx` / `crate::HolLightCtx`
 // / `crate::Term` paths in this crate resolve unchanged.
 pub use covalence_hol::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID, HolError, NameId};
 pub use covalence_hol::{HolLightCtx, HolLightKernel, HolLightTerms, HolLightTypes};
 pub use covalence_hol::{Term, Thm, Type, TypeDef, TypeKind};
-pub use covalence_hol::{hol_light_obs, traits, types};
+pub use covalence_hol::{hol_light_ctx, traits, types};
 
 /// Type-builder handler shapes used by the per-theory `HANDLERS` signature
 /// tables (`init::prop`, `init::sexpr`, `peano::fol`, `peano::sem`, …).

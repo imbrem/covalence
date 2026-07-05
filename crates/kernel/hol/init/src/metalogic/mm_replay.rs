@@ -28,8 +28,7 @@
 //!   `Derivable_Prop ⌜S⌝` says "`S` has a derivation in the Hilbert system",
 //!   nothing about what `S` *means*. There is no `⟦·⟧`, no valuation `v`, no
 //!   appeal to the standard model.
-//! - **No observer / no oracle.** Every step is an ordinary kernel rule; the
-//!   returned `Thm` is `has_no_obs()`.
+//! - **No oracle.** Every step is an ordinary kernel rule.
 //!
 //! Because we never denote, the bridge is *proof-irrelevant*: it certifies the
 //! **existence** of a derivation (the §5.6 primitive `Derivable_A(S)`) by
@@ -431,10 +430,6 @@ mod tests {
         "
     }
 
-    fn assert_genuine_obs_free(thm: &Thm) {
-        assert!(thm.has_no_obs(), "replayed theorem must be oracle-free");
-    }
-
     /// **`ax2i`** — a single `ax-2` instance (`ch := ph`), NO essentials. The
     /// replay re-derives a hypothesis-free, oracle-free kernel theorem whose
     /// conclusion is exactly `Derivable_Prop ⌜S⌝` for the claimed `S`.
@@ -455,7 +450,6 @@ mod tests {
 
         // Hypothesis-free (no essentials) and oracle-free.
         assert!(thm.hyps().is_empty(), "ax2i replay must be hypothesis-free");
-        assert_genuine_obs_free(&thm);
 
         // Its conclusion is `Derivable_Prop ⌜S⌝` for the parsed conclusion `S`.
         let expected = parse_prov(&a.conclusion, &mut VarIndex::new()).unwrap();
@@ -481,8 +475,6 @@ mod tests {
 
         let a = db.assertions().find(|a| a.label == "a1i").unwrap();
         let thm = replay_prop(&db, a).unwrap();
-
-        assert_genuine_obs_free(&thm);
 
         // The replay's `VarIndex` is driven by *proof* order: the proof opens
         // `wph wps …`, so `ph`↦0, `ps`↦1 in the returned theorem (regardless of

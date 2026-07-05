@@ -891,7 +891,6 @@ mod tests {
             c.hyps().is_empty(),
             "le.refl is fully proved (no postulates)"
         );
-        assert!(c.has_no_obs());
     }
 
     #[test]
@@ -902,7 +901,6 @@ mod tests {
             c.hyps().is_empty(),
             "le.trans is fully proved (no postulates)"
         );
-        assert!(c.has_no_obs());
     }
 
     #[test]
@@ -913,6 +911,5 @@ mod tests {
             c.hyps().is_empty(),
             "le.antisym is fully proved (no postulates)"
         );
-        assert!(c.has_no_obs());
     }
 }

@@ -110,12 +110,13 @@ fn parse_typedef_bijection(concl: &Term) -> Result<(Type, Term, Term)> {
 /// hypotheses.
 #[derive(Clone, Debug)]
 pub struct TypeDef {
-    /// The freshly-introduced type. `TyConObs` carrying a marker Arc
-    /// shared by `abs` and `rep`. Parametric in `tvars` (in canonical
-    /// order, so `inst_tfree` propagates correctly).
+    /// The freshly-introduced type. A `FreshTyCon` carrying a private
+    /// `FreshId` token allocated inside the rule. Parametric in
+    /// `tvars` (in canonical order, so `inst_tfree` propagates
+    /// correctly).
     pub tau: Type,
-    /// The fresh `abs : α → τ` constant. An `Obs` leaf whose marker
-    /// references the typedef.
+    /// The fresh `abs : α → τ` constant. A `FreshConst` leaf with its
+    /// own `FreshId` token.
     pub abs: Term,
     /// The fresh `rep : τ → α` constant.
     pub rep: Term,

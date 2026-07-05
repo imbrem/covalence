@@ -74,4 +74,4 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
 ## Notes
 
 - No `unsafe` (project rule). Every relation theorem is kernel-proved and genuine;
-  tests assert hypothesis- and oracle-freeness (`has_no_obs`). No postulates.
+  tests assert hypothesis-freeness. No postulates.

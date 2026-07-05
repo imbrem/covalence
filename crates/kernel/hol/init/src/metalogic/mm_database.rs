@@ -11,8 +11,8 @@
 //! Same "construct, don't trust" discipline as `mm_replay`: the Metamath
 //! verifier's say-so is **not** trusted for the HOL theorem; every step is
 //! re-checked through the kernel, and the result lands in *pure derivability
-//! over encoded syntax* — **no denotation `⟦S⟧`, no observer, no oracle**. The
-//! returned `Thm` is `has_no_obs()`.
+//! over encoded syntax* — **no denotation `⟦S⟧`, no oracle, no trust in the
+//! Metamath verifier's say-so**.
 //!
 //! # The encoding: an uninterpreted free term algebra (former-structured)
 //!
@@ -1338,10 +1338,6 @@ fn derive_clause(
 mod tests {
     use super::*;
 
-    fn assert_genuine(thm: &Thm) {
-        assert!(thm.has_no_obs(), "replayed theorem must be oracle-free");
-    }
-
     #[test]
     #[ignore = "repro bj-1"]
     fn repro_bj1() {
@@ -1351,7 +1347,6 @@ mod tests {
         let parser = Parser::new(&db);
         let a = db.assertions().find(|a| a.label == "bj-1").expect("bj-1");
         let thm = derive_theorem_with(&db, &parser, "bj-1").expect("replay bj-1");
-        assert_genuine(&thm);
         let rs = rule_set(&db);
         let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
         if thm.concl() != &expected {
@@ -1398,7 +1393,6 @@ mod tests {
         // conclusion (the proof-built encoding now matches `encode_expr`).
         let thm = replay_db(&db, a).unwrap();
         assert!(thm.hyps().is_empty(), "bj1 replay must be hypothesis-free");
-        assert_genuine(&thm);
         let rs = rule_set(&db);
         let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
         assert_eq!(thm.concl(), &expected);
@@ -1408,7 +1402,6 @@ mod tests {
         // set.mm's `bj-1` was failing. A successful return *is* that match.
         let scoped = derive_theorem(&db, "bj1").unwrap();
         assert!(scoped.hyps().is_empty());
-        assert_genuine(&scoped);
     }
 
     /// The real `bj-1` from set.mm — the first set.mm theorem whose proof uses a
@@ -1427,7 +1420,6 @@ mod tests {
         // `encode_expr(conclusion)` and errors on mismatch — the exact check
         // that was failing before the fix. The result is genuine + oracle-free.
         let thm = derive_theorem_with(&db, &parser, "bj-1").expect("bj-1 replays");
-        assert_genuine(&thm);
         assert!(thm.hyps().is_empty(), "bj-1 is hypothesis-free");
     }
 
@@ -1460,9 +1452,8 @@ mod tests {
         let mut timings: Vec<(String, std::time::Duration)> = Vec::new();
         for label in &labels {
             let t = std::time::Instant::now();
-            let thm = derive_theorem_with(&db, &parser, label)
+            let _thm = derive_theorem_with(&db, &parser, label)
                 .unwrap_or_else(|e| panic!("hol.mm `{label}` failed: {e}"));
-            assert!(thm.has_no_obs());
             timings.push((label.clone(), t.elapsed()));
         }
         let total = t0.elapsed();
@@ -1637,7 +1628,6 @@ mod tests {
         let thm = replay_db(&db, a).unwrap();
 
         assert!(thm.hyps().is_empty(), "ax2i replay must be hypothesis-free");
-        assert_genuine(&thm);
 
         // ONE function, stated expectation via the public helpers.
         let rs = rule_set(&db);
@@ -1662,7 +1652,6 @@ mod tests {
 
         let a = db.assertions().find(|a| a.label == "a1i").unwrap();
         let thm = replay_db(&db, a).unwrap();
-        assert_genuine(&thm);
 
         let rs = rule_set(&db);
         let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
@@ -1713,7 +1702,6 @@ mod tests {
         let thm = replay_db(&db, a).unwrap();
 
         assert!(thm.hyps().is_empty(), "th1 replay must be hypothesis-free");
-        assert_genuine(&thm);
 
         let rs = rule_set(&db);
         let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
@@ -1751,7 +1739,6 @@ mod tests {
         let thm = replay_db(&db, a).unwrap();
 
         assert!(thm.hyps().is_empty(), "th replay must be hypothesis-free");
-        assert_genuine(&thm);
 
         let rs = rule_set(&db);
         let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();

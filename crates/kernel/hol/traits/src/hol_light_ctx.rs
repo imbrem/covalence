@@ -63,7 +63,7 @@ impl HolLightCtx {
 
     /// HOL `bool` — the cached canonical `Type::bool()` instance.
     /// HOL is folded into the kernel, so `bool` is a regular kernel
-    /// type, not a `TyConObs` over an observer identity.
+    /// type.
     pub fn bool_type(&self) -> Type {
         Type::bool()
     }

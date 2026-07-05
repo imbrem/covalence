@@ -5,10 +5,8 @@ use crate::term::Type;
 /// Errors produced by Core's typing and inference rules.
 ///
 /// Term-shaped fields are carried as `String` (their `Display` form)
-/// rather than concrete `Term<O>` values, so `Error` is *not* generic
-/// over the observer type. This keeps error handling uniform across
-/// kernels with different observer types and avoids leaking
-/// observation data through error types.
+/// rather than concrete `Term` values, keeping the error type small
+/// and `Display`-stable regardless of term representation changes.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
     #[error("expected term of kind bool, got type {0}")]
@@ -49,12 +47,6 @@ pub enum Error {
 
     #[error("η-conversion: body must be (app f (bound 0)) with bound 0 not free in f")]
     EtaShape,
-
-    #[error("cannot cast observer type: term contains an Obs leaf")]
-    ObsInCast,
-
-    #[error("dynamic downcast failed: observation's runtime type does not match the target")]
-    ObsDowncastTypeMismatch,
 
     #[error("term has a dangling de Bruijn index (term is not closed at the kernel boundary)")]
     NotClosed,

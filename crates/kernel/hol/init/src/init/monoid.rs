@@ -356,7 +356,6 @@ mod tests {
 
     fn assert_genuine(thm: &Thm) {
         assert!(thm.hyps().is_empty(), "expected a hypothesis-free theorem");
-        assert!(thm.has_no_obs(), "expected an oracle-free theorem");
     }
 
     // -- (nat, +, 0) ---------------------------------------------------------
@@ -501,7 +500,7 @@ mod tests {
             .iter()
             .map(|n| {
                 let t = theory.lemma(n);
-                assert!(t.hyps().is_empty() && t.has_no_obs(), "{n} must be genuine");
+                assert!(t.hyps().is_empty(), "{n} must be genuine");
                 (t.clone(), format!("{}", t.concl()))
             })
             .collect()

@@ -784,7 +784,6 @@ mod tests {
             thm.hyps().is_empty(),
             "replayed theorem must be hypothesis-free"
         );
-        assert!(thm.has_no_obs(), "replayed theorem must be oracle-free");
     }
 
     /// The expression→Fol parser round-trips a PA formula: a `|-` statement

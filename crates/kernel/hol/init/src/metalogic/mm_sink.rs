@@ -12,7 +12,7 @@
 //! This is the "construct, don't trust" discipline at the *reader* level: the
 //! Metamath proof is untrusted, every kernel step is re-checked, and the result
 //! lands in *pure derivability over the encoded syntax* — no denotation, no
-//! observer, no oracle (see [`super::mm_replay`]).
+//! oracle (see [`super::mm_replay`]).
 //!
 //! ## Scope
 //!
@@ -191,7 +191,6 @@ mod tests {
         let (l0, ax2i) = &thms[0];
         assert_eq!(l0, "ax2i");
         assert!(ax2i.hyps().is_empty(), "ax2i is hypothesis-free");
-        assert!(ax2i.has_no_obs(), "ax2i is oracle-free");
         let v = |k| prop::p_var_lit(k);
         let imp = prop::p_imp;
         let ax2_inst = imp(
@@ -207,7 +206,6 @@ mod tests {
         // a1i: carries exactly one hypothesis (its essential `|- ph`), oracle-free.
         let (l1, a1i) = &thms[1];
         assert_eq!(l1, "a1i");
-        assert!(a1i.has_no_obs(), "a1i is oracle-free");
         assert_eq!(
             a1i.hyps().len(),
             1,

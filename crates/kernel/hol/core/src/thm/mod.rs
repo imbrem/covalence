@@ -13,17 +13,14 @@
 //! `typedef`; every rule's ZST + `decide` (the fine-grained TCB) lives in
 //! `rules`.
 //!
-//! ## Observations and universality
+//! ## Universality
 //!
-//! Observation leaves carry kernel-allocated `Object` handles,
-//! compared by `Arc` pointer identity rather than by user-supplied
-//! `Eq` impls — so a misbehaving observer cannot corrupt the
-//! kernel's hyp `BTreeSet`. A theorem with no `Obs` leaves anywhere
-//! (test via [`Thm::has_no_obs`]) is **universally true** with no
-//! oracle dependencies, the same property HOL Light's `thm` has.
-//! The observer *rules* (`obs_eq`/`obs_true`/`obs_imp`) are gone
-//! (toHOL purge); `Obs` leaves remain solely as `new_type_definition`
-//! freshness tokens.
+//! Every `Thm` is oracle-free: the observer rules and their `Obs`
+//! leaves were deleted in the toHOL purge, so a theorem is
+//! **universally true** with no oracle dependencies — the same
+//! property HOL Light's `thm` has. `new_type_definition`'s freshness
+//! now rides the dedicated `FreshConst`/`FreshTyCon` leaves (private
+//! `FreshId` tokens, allocated only inside the rule).
 //!
 //! The rule set is Core-shaped:
 //!
@@ -44,7 +41,7 @@ use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::subst::subst_tfrees_in_term;
 
-use crate::term::{Observer, Term, TermKind, TrustedCons, Type, TypeKind};
+use crate::term::{Term, TermKind, TrustedCons, Type, TypeKind};
 use crate::ty::{TypeList, TypeSpec};
 
 mod lang;
@@ -79,32 +76,6 @@ impl Thm {
     pub fn into_parts(self) -> (Ctx, Term) {
         let p = self.0.prop();
         (p.1.0.0.clone(), p.1.1.0.clone())
-    }
-
-    /// Returns `true` iff no `Obs` leaf appears anywhere in the
-    /// theorem (conclusion or any hypothesis). Such a theorem is
-    /// universally true with no oracle dependencies — equivalent to
-    /// HOL Light's `thm`.
-    pub fn has_no_obs(&self) -> bool {
-        self.concl().has_no_obs() && self.hyps().iter().all(|h| h.has_no_obs())
-    }
-
-    /// Returns `true` iff every `Obs` leaf in the theorem (concl and
-    /// hyps) carries an observer whose dynamic type is `O`. Trivially
-    /// `true` for a theorem with no `Obs` leaves.
-    pub fn all_obs_match<O: Observer>(&self) -> bool {
-        self.concl().all_obs_match::<O>() && self.hyps().iter().all(|h| h.all_obs_match::<O>())
-    }
-
-    /// Walk the theorem and call `f` on every `Obs` leaf's observer
-    /// downcast to `O`. Returns `Err(ObsDowncastTypeMismatch)` at
-    /// the first leaf whose dynamic type does not match `O`.
-    pub fn for_each_obs<O: Observer, F: FnMut(&O)>(&self, f: &mut F) -> Result<()> {
-        self.concl().for_each_obs::<O, F>(f)?;
-        for h in self.hyps().iter() {
-            h.for_each_obs::<O, F>(f)?;
-        }
-        Ok(())
     }
 
     /// Structural weakening: `Δ ⊢ φ`, given `Γ ⊢ φ` and `Γ ⊆ Δ`.
@@ -805,7 +776,7 @@ impl Thm {
     //   `⟦τ⟧ = A` with `⟦abs⟧ = ⟦rep⟧ = id`.
     // Every other kernel rule treats `abs`/`rep` as uninterpreted symbols,
     // so committing to this interpretation is consistent. (The `TypeSpec`
-    // coercions are entirely separate from the obs-leaf abs/rep that
+    // coercions are entirely separate from the fresh-const abs/rep that
     // `new_type_definition` introduces, so the two never interfere.)
 
     /// `⊢ abs (rep a) = a`, for any `a : τ` of a carrier-bearing
@@ -965,7 +936,7 @@ impl Thm {
     // `new_type_definition`. Until those derivations land downstream,
     // consumers can postulate the unproved facts via `Thm::assume`
     // (the resulting Thm has a self-hyp, so it's clearly marked as
-    // unproved in `Thm::has_no_obs`-style audits).
+    // unproved in hypothesis audits).
     //
     // **Computational axioms** (the reduce-on-literals rules) live
     // separately on `Thm::reduce_prim` and `Thm::unfold_term_spec`.
@@ -1091,9 +1062,6 @@ impl Thm {
     }
 }
 
-/// Walk down through `App`s collecting arguments left-to-right. If
-/// the final node is an `Obs` leaf, return its observer and the args
-/// list; otherwise return an error.
 /// Parse an `Eq`-headed application — `App(App(=, lhs), rhs)` — and
 /// return `(lhs, rhs)` by reference.
 /// Build the typed `abs`/`rep` coercions of a `TypeSpec` at `args` and

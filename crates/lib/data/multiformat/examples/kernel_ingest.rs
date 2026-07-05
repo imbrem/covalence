@@ -17,8 +17,8 @@
 //!
 //! Run:  `cargo run -p covalence-multiformat --example kernel_ingest`
 
-use covalence_init::hash::{UnitObsHasher, hash_term};
-use covalence_init::sexp::{UnitObs, term_from_sexp, term_to_sexp};
+use covalence_init::hash::hash_term;
+use covalence_init::sexp::{term_from_sexp, term_to_sexp};
 use covalence_init::{HolLightCtx, Term, Thm};
 use covalence_multiformat::{Cid, DerivationFact, codec, identity};
 use covalence_sexp::prettyprint;
@@ -39,7 +39,7 @@ fn eq_refl(name: &str) -> Thm {
 
 /// Encode a term as canonical S-expression bytes (the `COV_HOL_THM` payload).
 fn term_bytes(t: &Term) -> Vec<u8> {
-    let sx = term_to_sexp(t, &UnitObs).expect("obs-free term serialises");
+    let sx = term_to_sexp(t).expect("term serialises");
     let mut buf = Vec::new();
     prettyprint(&[sx], &mut buf).expect("writing to a Vec is infallible");
     buf
@@ -58,13 +58,13 @@ fn parse_term(bytes: &[u8]) -> Result<Term, String> {
     let text = std::str::from_utf8(bytes).map_err(|e| format!("utf8: {e}"))?;
     let sxs = covalence_sexp::parse(text).map_err(|e| format!("s-expr: {e:?}"))?;
     let sx = sxs.into_iter().next().ok_or("empty s-expression")?;
-    term_from_sexp(&sx, &UnitObs).map_err(|e| format!("term: {e}"))
+    term_from_sexp(&sx).map_err(|e| format!("term: {e}"))
 }
 
 /// Author an envelope *from* a real theorem.
 fn author(thm: &Thm) -> DerivationFact {
     let concl = thm.concl();
-    let term_hash = hash_term(concl, &UnitObsHasher);
+    let term_hash = hash_term(concl);
     DerivationFact {
         logic: codec::logic::HOL,
         axioms: Cid::of(codec::AXIOM_SET, b"theory:HOL-classical/core"),
@@ -97,7 +97,7 @@ fn ingest(body: &[u8], advertised: Cid) -> Result<covalence_hash::O256, String> 
     }
 
     // 4. pin the parsed term to the advertised witness hash.
-    let hash = hash_term(&term, &UnitObsHasher);
+    let hash = hash_term(&term);
     if fact.derivation != Cid::from_digest(codec::MM_DERIVATION, *hash.as_bytes()) {
         return Err("witness CID is not the hash of the payload term".into());
     }

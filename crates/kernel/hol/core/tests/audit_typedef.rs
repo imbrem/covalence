@@ -126,8 +126,8 @@ fn define_polymorphic_over_spec_type_instantiates_without_panic() {
     // After `inst_tfree 'a := nat`, `Def::instance_type()` is `set nat`
     // ≠ the recorded `body_type` `set 'a`, so `Def::body()` must recover
     // the substitution via `match_types(set 'a, set nat)`. Before
-    // `match_types` learned the `Spec` arm this panicked; the walk below
-    // (`has_no_obs` reaches `Def::body`) must now succeed.
+    // `match_types` learned the `Spec` arm this panicked; forcing
+    // `Def::body()` below must now succeed.
     let alpha = Type::tfree("a");
     let set_a = covalence_core::defs::set(alpha.clone());
     let body = Term::free("s", set_a.clone());
@@ -136,13 +136,13 @@ fn define_polymorphic_over_spec_type_instantiates_without_panic() {
     let inst = thm
         .inst_tfree("a", Type::nat())
         .expect("inst_tfree set spec");
-    // Forces Def::body() -> match_types(set 'a, set nat).
-    assert!(inst.has_no_obs(), "body has no obs leaves");
     // The Def now reads at the instantiated type.
     let (l, _r) = parse_hol_eq(inst.concl()).unwrap();
     let TermKind::Def(d) = l.kind() else {
         panic!("lhs not a Def")
     };
+    // Forces Def::body() -> match_types(set 'a, set nat).
+    let _ = d.body();
     assert_eq!(d.instance_type(), &covalence_core::defs::set(Type::nat()));
 }
 
@@ -316,9 +316,9 @@ fn typedef_happy_path_shapes() {
     let td: TypeDef =
         Thm::new_type_definition("tau", "myabs", "myrep", nat_witness()).expect("typedef over nat");
 
-    // tau is a fresh TyConObs with no tvar args (α = nat is closed).
-    let TypeKind::TyConObs(_, args) = td.tau.kind() else {
-        panic!("tau is not a TyConObs: {:?}", td.tau.kind());
+    // tau is a fresh FreshTyCon with no tvar args (α = nat is closed).
+    let TypeKind::FreshTyCon(_, args) = td.tau.kind() else {
+        panic!("tau is not a FreshTyCon: {:?}", td.tau.kind());
     };
     assert!(
         args.iter().next().is_none(),
@@ -336,9 +336,9 @@ fn typedef_happy_path_shapes() {
         Type::fun(td.tau.clone(), Type::nat())
     );
 
-    // abs / rep are Obs leaves.
-    assert!(matches!(td.abs.kind(), TermKind::Obs(..)));
-    assert!(matches!(td.rep.kind(), TermKind::Obs(..)));
+    // abs / rep are FreshConst leaves.
+    assert!(matches!(td.abs.kind(), TermKind::FreshConst(..)));
+    assert!(matches!(td.rep.kind(), TermKind::FreshConst(..)));
 }
 
 #[test]
@@ -436,9 +436,9 @@ fn typedef_polymorphic_witness_tracks_tvars() {
     let td = Thm::new_type_definition("t", "a", "r", w).unwrap();
     assert_eq!(td.tvars, vec![smol_str::SmolStr::new("c")]);
 
-    // tau is parametric: TyConObs with one arg = tfree c.
-    let TypeKind::TyConObs(_, args) = td.tau.kind() else {
-        panic!("tau not TyConObs");
+    // tau is parametric: FreshTyCon with one arg = tfree c.
+    let TypeKind::FreshTyCon(_, args) = td.tau.kind() else {
+        panic!("tau not FreshTyCon");
     };
     let argv: Vec<Type> = args.iter().cloned().collect();
     assert_eq!(argv, vec![Type::tfree("c")]);
@@ -454,35 +454,38 @@ fn typedef_two_calls_distinct_tau_identity() {
 
     // Two typedefs over the same α must produce DISTINCT τ — otherwise
     // their abs/rep would be confusable and the extension non-conservative.
-    let TypeKind::TyConObs(oa, _) = a.tau.kind() else {
+    let TypeKind::FreshTyCon(ia, _) = a.tau.kind() else {
         panic!()
     };
-    let TypeKind::TyConObs(ob, _) = b.tau.kind() else {
+    let TypeKind::FreshTyCon(ib, _) = b.tau.kind() else {
         panic!()
     };
     assert_ne!(
-        oa.ptr_id(),
-        ob.ptr_id(),
-        "distinct typedefs must mint distinct tau markers"
+        ia.ptr_id(),
+        ib.ptr_id(),
+        "distinct typedefs must mint distinct tau tokens"
     );
+    assert_ne!(ia, ib, "FreshId equality is pointer identity");
+    assert_ne!(a.tau, b.tau, "the two tau types must not compare equal");
 
     // abs leaves are distinct too.
-    let TermKind::Obs(absa, _) = a.abs.kind() else {
+    let TermKind::FreshConst(absa, _) = a.abs.kind() else {
         panic!()
     };
-    let TermKind::Obs(absb, _) = b.abs.kind() else {
+    let TermKind::FreshConst(absb, _) = b.abs.kind() else {
         panic!()
     };
     assert_ne!(absa.ptr_id(), absb.ptr_id(), "distinct abs identities");
+    assert_ne!(a.abs, b.abs, "the two abs terms must not compare equal");
 }
 
 #[test]
 fn typedef_abs_and_rep_have_distinct_identity() {
     let td = Thm::new_type_definition("t", "a", "r", nat_witness()).unwrap();
-    let TermKind::Obs(abs, _) = td.abs.kind() else {
+    let TermKind::FreshConst(abs, _) = td.abs.kind() else {
         panic!()
     };
-    let TermKind::Obs(rep, _) = td.rep.kind() else {
+    let TermKind::FreshConst(rep, _) = td.rep.kind() else {
         panic!()
     };
     assert_ne!(
@@ -624,13 +627,13 @@ fn inst_tfree_preserves_def_identity() {
 #[test]
 fn inst_tfree_preserves_abs_rep_identity() {
     // A polymorphic typedef over tvar c; instantiating c must preserve
-    // abs/rep Obs identity (they substitute instance_type, not marker).
+    // abs/rep FreshId identity (they substitute the type, not the token).
     let alpha = Type::tfree("c");
     let x = Term::free("x", alpha.clone());
     let w = witness_for(alpha.clone(), hol_eq(x.clone(), x));
     let td = Thm::new_type_definition("t", "a", "r", w).unwrap();
 
-    let TermKind::Obs(abs_before, _) = td.abs.kind() else {
+    let TermKind::FreshConst(abs_before, _) = td.abs.kind() else {
         panic!()
     };
     let abs_id = abs_before.ptr_id();
@@ -642,19 +645,20 @@ fn inst_tfree_preserves_abs_rep_identity() {
         .inst_tfree("c", Type::nat())
         .expect("inst c");
 
-    // Find the abs Obs leaf in the instantiated conclusion and compare id.
-    fn first_obs_id(t: &Term) -> Option<usize> {
+    // Find the abs FreshConst leaf in the instantiated conclusion and
+    // compare identity.
+    fn first_fresh_id(t: &Term) -> Option<usize> {
         match t.kind() {
-            TermKind::Obs(o, _) => Some(o.ptr_id()),
-            TermKind::App(f, x) => first_obs_id(f).or_else(|| first_obs_id(x)),
-            TermKind::Abs(_, b) => first_obs_id(b),
+            TermKind::FreshConst(id, _) => Some(id.ptr_id()),
+            TermKind::App(f, x) => first_fresh_id(f).or_else(|| first_fresh_id(x)),
+            TermKind::Abs(_, b) => first_fresh_id(b),
             _ => None,
         }
     }
-    let after = first_obs_id(inst.concl()).expect("obs in instantiated concl");
+    let after = first_fresh_id(inst.concl()).expect("fresh const in instantiated concl");
     assert_eq!(
         abs_id, after,
-        "inst_tfree must preserve abs/rep Obs Arc identity"
+        "inst_tfree must preserve abs/rep FreshId Arc identity"
     );
 }
 
@@ -678,8 +682,8 @@ fn inst_tfree_into_typedef_concl_retypes_binder() {
     let TermKind::Abs(binder_ty, _) = lam.kind() else {
         panic!()
     };
-    let TypeKind::TyConObs(_, args) = binder_ty.kind() else {
-        panic!("binder type not TyConObs: {binder_ty}");
+    let TypeKind::FreshTyCon(_, args) = binder_ty.kind() else {
+        panic!("binder type not FreshTyCon: {binder_ty}");
     };
     let argv: Vec<Type> = args.iter().cloned().collect();
     assert_eq!(argv, vec![Type::nat()], "tau arg substituted to nat");

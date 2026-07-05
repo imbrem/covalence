@@ -14,7 +14,7 @@ use std::sync::{Arc, LazyLock};
 
 use smol_str::SmolStr;
 
-use crate::term::{Object, Observer};
+use crate::term::FreshId;
 
 use super::list::TypeList;
 use super::spec::TypeSpec;
@@ -47,18 +47,17 @@ pub enum TypeKind {
     /// **Structural identity** by name + args — cross-process stable.
     /// Best for "named uninterpreted" cases (HOL `num`, `list`, …).
     Tycon(SmolStr, TypeList),
-    /// Type constructor whose identity is the wrapped observer's `Arc`
-    /// pointer. **Process-local** — two `Type::tycon_obs` calls with
-    /// independently constructed observers compare unequal even if they
-    /// share the same observer. Mirrors `TermKind::Obs` on the
-    /// type side: the same Rust observer type is the unifying ε-family
-    /// across term- and type-level uses (one theory → one identity).
+    /// Type constructor whose identity is a kernel-allocated
+    /// [`FreshId`] token (`Arc` pointer identity). **Process-local**
+    /// — each `new_type_definition` call mints a distinct token, so
+    /// two typedefs' subtypes can never be confused. Mirrors
+    /// `TermKind::FreshConst` on the type side.
     ///
-    /// Identity is the `Object` plus the args; the args participate in
-    /// equality so that `list α` and `list β` are distinct even though
+    /// Identity is the `FreshId` plus the args; the args participate
+    /// in equality so that `τ α` and `τ β` are distinct even though
     /// they share the same constructor. The constructor is anonymous —
     /// no display label is stored.
-    TyConObs(Object, TypeList),
+    FreshTyCon(FreshId, TypeList),
     /// Application of a derived-type [`TypeSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional
@@ -169,20 +168,13 @@ impl Type {
         Self::alloc(TypeKind::Spec(spec, args.into()))
     }
 
-    /// Construct a fresh-identity type constructor wrapping an
-    /// observer. The Arc-pointer identity of `observer` is the
-    /// distinguishing identity. Distinct calls with independently-
-    /// constructed observers produce distinct types — that's the
-    /// freshness primitive [`crate::Thm::new_type_definition`] uses.
-    pub fn tycon_obs<O: Observer>(observer: O, args: impl Into<TypeList>) -> Self {
-        Self::alloc(TypeKind::TyConObs(Object::new(observer), args.into()))
-    }
-
-    /// Like [`Type::tycon_obs`] but reuses an existing [`Object`]
-    /// handle (preserving its `Arc` identity). Used internally by
-    /// kernel rules and by deserialisers that already have a `Object`.
-    pub fn tycon_obs_from_dyn(observer: Object, args: impl Into<TypeList>) -> Self {
-        Self::alloc(TypeKind::TyConObs(observer, args.into()))
+    /// Construct a fresh-identity type constructor from a
+    /// kernel-allocated [`FreshId`]. The token's Arc-pointer identity
+    /// is the distinguishing identity — that's the freshness primitive
+    /// [`crate::Thm::new_type_definition`] uses. Crate-private:
+    /// identity is minted only inside the generative kernel rules.
+    pub(crate) fn fresh_tycon(id: FreshId, args: impl Into<TypeList>) -> Self {
+        Self::alloc(TypeKind::FreshTyCon(id, args.into()))
     }
 
     /// True when this is `Type::bool()` — the HOL formula type. The
@@ -213,7 +205,7 @@ pub(crate) fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<Sm
             free_tvars_into(a, out);
             free_tvars_into(b, out);
         }
-        TypeKind::Tycon(_, args) | TypeKind::TyConObs(_, args) | TypeKind::Spec(_, args) => {
+        TypeKind::Tycon(_, args) | TypeKind::FreshTyCon(_, args) | TypeKind::Spec(_, args) => {
             for a in args {
                 free_tvars_into(a, out);
             }
@@ -281,10 +273,10 @@ impl fmt::Display for Type {
                     write!(f, ")")
                 }
             }
-            TypeKind::TyConObs(observer, args) => {
+            TypeKind::FreshTyCon(id, args) => {
                 // Anonymous fresh-identity constructor: `tycon#ptr`,
-                // disambiguated by the observer's pointer identity.
-                let ptr = observer.ptr_id();
+                // disambiguated by the token's pointer identity.
+                let ptr = id.ptr_id();
                 let label = format!("tycon#{ptr:x}");
                 if args.is_empty() {
                     write!(f, "{label}")

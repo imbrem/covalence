@@ -756,7 +756,6 @@ mod tests {
     /// A genuine theorem: hypothesis-free and oracle-free.
     fn assert_genuine(thm: &Thm) {
         assert!(thm.hyps().is_empty(), "expected a hypothesis-free theorem");
-        assert!(thm.has_no_obs(), "expected an oracle-free theorem");
     }
 
     fn word(name: &str) -> Term {

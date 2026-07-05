@@ -2,9 +2,9 @@
 //!
 //! Locally-nameless convention: `Bound(i)` refers to the i-th enclosing
 //! binder (innermost first). `Free` and `Const` carry their type and
-//! are unaffected by de Bruijn shifts. `Obs` is opaque to substitution
-//! over term structure, but its `ty` field participates in type-
-//! variable substitution. The operations here are pure syntactic and
+//! are unaffected by de Bruijn shifts. `FreshConst` is opaque to
+//! substitution over term structure, but its `ty` field participates
+//! in type-variable substitution. The operations here are pure syntactic and
 //! used by the inference rules in `crate::thm`.
 
 use std::cmp::Ordering;
@@ -60,7 +60,7 @@ fn close_at<C: TrustedCons + ?Sized>(t: &Term, name: &str, depth: u32, cons: &mu
         | TermKind::Spec(_, _)
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
-        | TermKind::Obs(..)
+        | TermKind::FreshConst(..)
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => {
@@ -119,7 +119,7 @@ fn close_var_opt(t: &Term, var: &Var, depth: u32) -> Option<Term> {
         | TermKind::Spec(_, _)
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
-        | TermKind::Obs(..)
+        | TermKind::FreshConst(..)
         | TermKind::Succ
         | TermKind::Def(_) => None,
         TermKind::App(f, x) => {
@@ -367,7 +367,7 @@ fn shift_inner<C: TrustedCons + ?Sized>(t: &Term, delta: i64, cutoff: u32, cons:
         | TermKind::Spec(_, _)
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
-        | TermKind::Obs(..)
+        | TermKind::FreshConst(..)
         | TermKind::Succ
         | TermKind::Def(_) => t.clone(),
         TermKind::App(f, x) => {
@@ -451,7 +451,7 @@ fn subst_free_opt<C: TrustedCons + ?Sized>(
         | TermKind::Spec(_, _)
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
-        | TermKind::Obs(..)
+        | TermKind::FreshConst(..)
         | TermKind::Succ
         | TermKind::Def(_) => None,
         TermKind::App(f, x) => {
@@ -501,12 +501,12 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
                 .map(|a| subst_tfree_in_type(a, name, r))
                 .collect::<Vec<_>>(),
         ),
-        // The observer Arc identity is preserved; only the type-arg
-        // substitution propagates. `list 'a` after 'a := bytes becomes
-        // `list bytes` with the same constructor identity — exactly
+        // The `FreshId` identity is preserved; only the type-arg
+        // substitution propagates. `τ 'a` after 'a := bytes becomes
+        // `τ bytes` with the same constructor identity — exactly
         // what we want for polymorphic typedefs.
-        TypeKind::TyConObs(observer, args) => Type::tycon_obs_from_dyn(
-            observer.clone(),
+        TypeKind::FreshTyCon(id, args) => Type::fresh_tycon(
+            id.clone(),
             args.iter()
                 .map(|a| subst_tfree_in_type(a, name, r))
                 .collect::<Vec<_>>(),
@@ -534,8 +534,8 @@ pub fn subst_tfrees_in_type(ty: &Type, sub: &BTreeMap<SmolStr, Type>) -> Type {
         TypeKind::Spec(spec, args) => {
             Type::spec(spec.clone(), args.iter().map(go).collect::<Vec<_>>())
         }
-        TypeKind::TyConObs(observer, args) => {
-            Type::tycon_obs_from_dyn(observer.clone(), args.iter().map(go).collect::<Vec<_>>())
+        TypeKind::FreshTyCon(id, args) => {
+            Type::fresh_tycon(id.clone(), args.iter().map(go).collect::<Vec<_>>())
         }
     }
 }
@@ -591,7 +591,7 @@ pub fn subst_tfrees_in_term_with<C: TrustedCons + ?Sized>(
             spec.clone(),
             args.iter().map(&st).collect::<Vec<_>>().into(),
         ),
-        TermKind::Obs(observer, ty) => TermKind::Obs(observer.clone(), st(ty)),
+        TermKind::FreshConst(id, ty) => TermKind::FreshConst(id.clone(), st(ty)),
         TermKind::Def(d) => {
             TermKind::Def(d.with_instance_type(subst_tfrees_in_type(d.instance_type(), sub)))
         }
@@ -600,8 +600,8 @@ pub fn subst_tfrees_in_term_with<C: TrustedCons + ?Sized>(
 }
 
 /// Replace every `TFree(name)` with `r` in every type annotation inside
-/// `t`, including the `ty` field of any `Obs` leaf. The observer value
-/// itself is opaque and untouched.
+/// `t`, including the `ty` field of any `FreshConst` leaf. The identity
+/// token itself is opaque and untouched.
 pub fn subst_tfree_in_term(t: &Term, name: &str, r: &Type) -> Term {
     subst_tfree_in_term_with(t, name, r, &mut ())
 }
@@ -653,7 +653,7 @@ pub fn subst_tfree_in_term_with<C: TrustedCons + ?Sized>(
             spec.clone(),
             args.iter().map(&st).collect::<Vec<_>>().into(),
         ),
-        TermKind::Obs(observer, ty) => TermKind::Obs(observer.clone(), st(ty)),
+        TermKind::FreshConst(id, ty) => TermKind::FreshConst(id.clone(), st(ty)),
         // `Def` carries an `original` Arc identity (the unique
         // `Thm::define` call) plus an `instance_type`. Substitution
         // updates `instance_type` without rebuilding `original`, so
@@ -692,7 +692,7 @@ fn is_closed_at(t: &Term, depth: u32) -> bool {
         | TermKind::Spec(_, _)
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
-        | TermKind::Obs(..)
+        | TermKind::FreshConst(..)
         | TermKind::Succ
         | TermKind::Def(_) => true,
         TermKind::App(a, b) => is_closed_at(a, depth) && is_closed_at(b, depth),
@@ -748,7 +748,7 @@ pub fn find_free_type(t: &Term, name: &str) -> Option<Type> {
         | TermKind::Spec(_, _)
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
-        | TermKind::Obs(..)
+        | TermKind::FreshConst(..)
         | TermKind::Succ
         | TermKind::Def(_) => None,
         TermKind::App(a, b) => find_free_type(a, name).or_else(|| find_free_type(b, name)),
@@ -779,7 +779,7 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
         | TermKind::Spec(_, _)
         | TermKind::SpecAbs(..)
         | TermKind::SpecRep(..)
-        | TermKind::Obs(..)
+        | TermKind::FreshConst(..)
         | TermKind::Succ
         | TermKind::Def(_) => false,
         TermKind::App(a, b) => uses_bound_at(a, target, depth) || uses_bound_at(b, target, depth),
@@ -788,7 +788,7 @@ fn uses_bound_at(t: &Term, target: u32, depth: u32) -> bool {
 }
 
 /// Collect every free type variable name appearing inside any
-/// type annotation in `t` — `Free`/`Const`/`Obs` `ty` fields,
+/// type annotation in `t` — `Free`/`Const`/`FreshConst` `ty` fields,
 /// `Abs`/`All` binder types, and recursively into `Def` bodies.
 ///
 /// Used by `Thm::define` to enforce the soundness invariant that
@@ -802,7 +802,7 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
                 out.insert(n);
             }
         }
-        TermKind::Const(_, ty) | TermKind::Obs(_, ty) => {
+        TermKind::Const(_, ty) | TermKind::FreshConst(_, ty) => {
             for n in ty.free_tvars() {
                 out.insert(n);
             }
@@ -859,7 +859,7 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
 ///
 /// Used by `Def::body` to recover the type substitution from
 /// `body_type` → `instance_type` when reconstructing the body for
-/// utility walks (`has_no_obs`, etc.).
+/// utility walks.
 // TCB: `Err(())` is the documented "no consistent substitution" signal; a
 // dedicated error type would add nothing here.
 #[allow(clippy::result_unit_err)]
@@ -889,8 +889,8 @@ pub fn match_types(
             }
             Ok(())
         }
-        (TypeKind::TyConObs(po, pa), TypeKind::TyConObs(to, ta))
-            if po.ptr_id() == to.ptr_id() && pa.len() == ta.len() =>
+        (TypeKind::FreshTyCon(pi, pa), TypeKind::FreshTyCon(ti, ta))
+            if pi == ti && pa.len() == ta.len() =>
         {
             for (p, t) in pa.iter().zip(ta) {
                 match_types(p, t, sub)?;

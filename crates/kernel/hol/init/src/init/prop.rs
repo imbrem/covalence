@@ -1124,7 +1124,6 @@ mod tests {
     fn soundness_is_genuine() {
         let thm = soundness().expect("soundness proof");
         assert!(thm.hyps().is_empty(), "soundness is proved, not assumed");
-        assert!(thm.has_no_obs(), "soundness is oracle-free");
         // Conclusion is a ∀v. (… ⟹ …) — a forall whose body is an imp.
         let v = Term::free("v", Type::fun(nat(), bool_ty()));
         let a = fvar("A");
@@ -1144,7 +1143,7 @@ mod tests {
     fn soundness_at_concrete_formula() {
         let a = p_imp(p_var_lit(0), p_var_lit(0));
         let thm = soundness_at(&a).expect("soundness for p ⟹ p");
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // The conclusion is `∀v. Derivable_Prop ⌜a⌝ ⟹ ⟦a⟧ v`.
         let v = Term::free("v", Type::fun(nat(), bool_ty()));
         let expected = inst_tfree_term(&derivable(&a).unwrap())
@@ -1183,7 +1182,7 @@ mod tests {
         let c = p_var_lit(2);
         // ⊢ Derivable_Prop ⌜axiom_1 (= a ⟹ (b ⟹ a))⌝  (at 'r, no denotation)
         let der = derive_axiom(1, &a, &b, &c).expect("derive axiom 1");
-        assert!(der.hyps().is_empty() && der.has_no_obs());
+        assert!(der.hyps().is_empty());
         let ax = axiom_schema(&rty(), 1, &a, &b, &c);
         assert_eq!(der.concl(), &derivable(&ax).unwrap());
 
@@ -1193,7 +1192,7 @@ mod tests {
         let v = Term::free("v", Type::fun(nat(), bool_ty()));
         let der_bool = der.inst_tfree("r", bool_ty()).unwrap();
         let truth = snd.all_elim(v).unwrap().imp_elim(der_bool).unwrap(); // ⊢ ⟦ax⟧ v
-        assert!(truth.hyps().is_empty() && truth.has_no_obs());
+        assert!(truth.hyps().is_empty());
     }
 
     /// `derive_mp` is a genuine reified modus ponens.
@@ -1202,7 +1201,7 @@ mod tests {
         let a = p_var_lit(0);
         let b = p_var_lit(1);
         let mp = derive_mp(&a, &b).expect("derive mp");
-        assert!(mp.hyps().is_empty() && mp.has_no_obs());
+        assert!(mp.hyps().is_empty());
         // Shape (at 'r): Der ⌜A⌝ ⟹ Der ⌜A⟹B⌝ ⟹ Der ⌜B⌝.
         let expected_r = derivable(&a)
             .unwrap()
@@ -1240,7 +1239,7 @@ mod tests {
     fn soundness_general_is_genuine() {
         let v = Term::free("v", Type::fun(nat(), bool_ty()));
         let thm = soundness_general(&v).expect("soundness via prop_induction");
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // It is a `∀A. …` (a forall over the formula carrier).
         assert!(thm.concl().as_app().is_some());
     }
@@ -1251,7 +1250,7 @@ mod tests {
     #[test]
     fn derivable_self_is_a_second_instance() {
         let thm = derivable_closed_under_rules().expect("derivable_self");
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 
     /// `consistency` — `⊢ ¬Derivable_Prop ⌜var 0⌝` — is genuine (a real
@@ -1259,7 +1258,7 @@ mod tests {
     #[test]
     fn consistency_is_genuine() {
         let thm = consistency().expect("consistency");
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // Conclusion is `¬(Derivable_Prop ⌜var 0⌝)`: build `Derivable_Prop A`
         // at the polymorphic carrier, instantiate `'r := bool`, then substitute
         // `A := ⌜var 0⌝` (the order `consistency` itself uses — `derivable`'s
@@ -1278,7 +1277,7 @@ mod tests {
     #[test]
     fn consistency_app_is_genuine() {
         let thm = consistency_app().expect("consistency_app");
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let var0_app = inst_tfree_term(&Term::app(var_fn(), Term::nat_lit(0u32)));
         let applied = inst_tfree_term(&Term::app(derivable_fn(), var0_app));
         assert_eq!(thm.concl(), &applied.not().unwrap());
@@ -1328,7 +1327,7 @@ mod cov_tests {
     #[test]
     fn consistency_cov_matches_rust() {
         let thm = cov::consistency_cov();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(thm.concl(), consistency_app().unwrap().concl());
     }
 
@@ -1337,7 +1336,7 @@ mod cov_tests {
     #[test]
     fn axiom1_shape_refl_cov_is_genuine() {
         let thm = cov::axiom1_shape_refl_cov();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // It is an `=` whose sides are the built formula.
         assert!(thm.concl().as_eq().is_some());
     }
@@ -1355,6 +1354,6 @@ mod cov_tests {
         "#;
         let thms = crate::init::check_script(src).expect("downstream prop script checks");
         assert_eq!(thms.len(), 1);
-        assert!(thms[0].thm.hyps().is_empty() && thms[0].thm.has_no_obs());
+        assert!(thms[0].thm.hyps().is_empty());
     }
 }

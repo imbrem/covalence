@@ -67,8 +67,8 @@ pub(super) fn match_term(
         {
             match_type_args(pa.iter(), ta.iter(), &mut out.types)
         }
-        // Type-free leaves (Bound, Succ, Bool, Nat/Int/SmallInt/Blob, Obs, Def):
-        // require structural equality.
+        // Remaining leaves (Bound, Succ, Bool, Nat/Int/SmallInt/Blob,
+        // FreshConst, Def): require structural equality.
         _ => (pattern == target).then_some(()).ok_or(()),
     }
 }

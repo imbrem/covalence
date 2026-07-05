@@ -206,14 +206,14 @@ mod tests {
     #[test]
     fn bytes_rep_empty_is_nil() {
         let thm = bytes_rep_empty().unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(thm.concl().as_eq().unwrap().1, &nil(byte_elem()));
     }
 
     #[test]
     fn string_rep_empty_is_nil() {
         let thm = string_rep_empty().unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(thm.concl().as_eq().unwrap().1, &nil(char_elem()));
     }
 
@@ -224,7 +224,6 @@ mod tests {
             thm.hyps().is_empty(),
             "bytes_head_empty is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "bytes_head_empty is oracle-free");
         assert_eq!(thm.concl().as_eq().unwrap().1, &none_byte());
     }
 
@@ -255,7 +254,6 @@ mod tests {
             thm.hyps().is_empty(),
             "string_head_empty is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "string_head_empty is oracle-free");
         assert_eq!(thm.concl().as_eq().unwrap().1, &none_char());
     }
 }

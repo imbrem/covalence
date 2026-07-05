@@ -304,7 +304,6 @@ mod tests {
             thm.hyps().is_empty(),
             "encode_char_lit({k:#x}) is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "encode_char_lit is oracle-free");
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &Term::app(encode_char(), char_lit(k)));
         let want = unit_list_of(expected.iter().map(|&u| u16_lit(u)).collect());
@@ -344,7 +343,7 @@ mod tests {
     #[test]
     fn encode_nil_is_empty() {
         let thm = encode_nil().unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(thm.concl().as_eq().unwrap().1, &unil());
     }
 
@@ -353,7 +352,7 @@ mod tests {
         let c = Term::free("c", char_ty());
         let s = Term::free("s", crate::init::string::string_ty());
         let thm = encode_cons(&c, &s).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let ec = Term::app(encode_char(), c.clone());
         let enc_s = Term::app(encode(), s.clone());
         let expected_rhs = app2(list_cat(u16_ty()), ec, enc_s);

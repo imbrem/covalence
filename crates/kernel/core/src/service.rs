@@ -28,7 +28,7 @@
 
 use covalence_init::init::check_script;
 use covalence_init::script::{NamedThm, ScriptError};
-use covalence_init::sexp::{UnitObs, term_to_sexp};
+use covalence_init::sexp::term_to_sexp;
 
 /// Severity of a [`Diagnostic`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,7 +246,7 @@ fn error_report(message: String) -> CheckReport {
 /// Render a checked theorem's conclusion to a display string (canonical
 /// S-expression for now).
 fn render_thm(nt: &NamedThm) -> TheoremInfo {
-    let statement = term_to_sexp(nt.thm.concl(), &UnitObs)
+    let statement = term_to_sexp(nt.thm.concl())
         .map(|s| sexp_to_string(&s))
         .unwrap_or_else(|_| "<unrenderable>".to_string());
     TheoremInfo {

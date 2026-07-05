@@ -304,7 +304,6 @@ mod tests {
 
     fn assert_genuine(thm: &Thm) {
         assert!(thm.hyps().is_empty(), "hypothesis-free");
-        assert!(thm.has_no_obs(), "oracle-free");
     }
 
     #[test]

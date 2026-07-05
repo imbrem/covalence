@@ -298,7 +298,6 @@ mod tests {
     fn cond_true_reduces_to_then_branch() {
         let thm = cond_true(&alpha(), &x(), &y()).unwrap();
         assert!(thm.hyps().is_empty(), "cond.true is proved, not postulated");
-        assert!(thm.has_no_obs(), "cond.true is oracle-free");
         let lhs = Term::cond(Term::bool_lit(true), x(), y());
         assert_eq!(thm.concl(), &lhs.equals(x()).unwrap());
     }
@@ -310,7 +309,6 @@ mod tests {
             thm.hyps().is_empty(),
             "cond.false is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "cond.false is oracle-free");
         let lhs = Term::cond(Term::bool_lit(false), x(), y());
         assert_eq!(thm.concl(), &lhs.equals(y()).unwrap());
     }

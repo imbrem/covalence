@@ -542,7 +542,7 @@ mod tests {
         let l = leaf(&alpha, a.clone()).unwrap();
         let r = leaf(&alpha, a.clone()).unwrap();
         let thm = leaf_ne_branch(&alpha, &a, &l, &r).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // The freeness fact is stated at the boolean observation type.
         let bool_ty = Type::bool();
         let expected = at_r(&leaf(&alpha, a.clone()).unwrap(), &bool_ty)
@@ -560,7 +560,7 @@ mod tests {
         let a = Term::free("a", alpha.clone());
         let b = Term::free("b", alpha.clone());
         let thm = leaf_inj(&alpha, &a, &b).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // Stated at the `'r := α` observation type.
         let expected = at_r(&leaf(&alpha, a.clone()).unwrap(), &alpha)
             .unwrap()
@@ -610,7 +610,7 @@ mod tests {
         let a = Term::free("a", alpha.clone());
         let b = Term::free("b", alpha.clone());
         let thm = leaf_inj_app(&alpha, &a, &b).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 }
 
@@ -632,14 +632,14 @@ mod cov_tests {
             .unwrap();
         let thm = cov::leaf_inj_cov();
         assert_eq!(thm.concl(), expected.concl());
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
     }
 
     /// `leaf_ne_branch` from `tree.cov` — genuinely re-derived over the seam.
     #[test]
     fn leaf_ne_branch_cov_is_genuine() {
         let thm = cov::leaf_ne_branch_cov();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // a `¬…` conclusion (an application of `not`).
         assert!(thm.concl().as_app().is_some());
     }
@@ -659,6 +659,6 @@ mod cov_tests {
         "#;
         let thms = crate::init::check_script(src).expect("downstream script checks");
         assert_eq!(thms.len(), 1);
-        assert!(thms[0].thm.hyps().is_empty() && thms[0].thm.has_no_obs());
+        assert!(thms[0].thm.hyps().is_empty());
     }
 }

@@ -1283,20 +1283,18 @@ mod tests {
         Term::free(name, Type::int())
     }
 
-    /// Genuine = no hypotheses, no observers.
+    /// Genuine = no hypotheses.
     fn assert_genuine(thm: &Thm) {
         assert!(
             thm.hyps().is_empty(),
             "expected a hypothesis-free theorem, got `{}`",
             thm.concl()
         );
-        assert!(thm.has_no_obs(), "expected an oracle-free theorem");
     }
     /// A chained theorem proved *only* from the supplied assumed facts: its
     /// hypotheses are a subset of the assumed facts (the model lemmas it also
-    /// uses are themselves hyp-free), and it never touches an observer.
+    /// uses are themselves hyp-free).
     fn assert_from(thm: &Thm, facts: &[Thm]) {
-        assert!(thm.has_no_obs(), "chained theorem must be oracle-free");
         for h in thm.hyps().iter() {
             assert!(
                 facts.iter().any(|f| f.concl() == h),
@@ -1559,7 +1557,7 @@ mod tests {
             .iter()
             .map(|n| {
                 let t = theory.lemma(n);
-                assert!(t.hyps().is_empty() && t.has_no_obs(), "{n} must be genuine");
+                assert!(t.hyps().is_empty(), "{n} must be genuine");
                 t.clone()
             })
             .collect()

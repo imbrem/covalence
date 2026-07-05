@@ -15,15 +15,12 @@
 //! indices with no display label — so structural equality on
 //! `TermKind` is exactly α-equivalence; rules can use `==` freely.
 //!
-//! ## Observations
+//! ## Fresh constants
 //!
-//! `TermKind::Obs { observer: Object, ty: Type }` is the only leaf
-//! that carries oracle-supplied data. The kernel never sees the
-//! observer's concrete type. Construct an observation with
-//! `Term::obs(o, ty)`. Two `Term::obs(o, ty)` calls — even with
-//! identical `o` values — produce **distinct** leaves; clone the
-//! constructed `Term` to share an observation across multiple call
-//! sites.
+//! `TermKind::FreshConst(FreshId, Type)` is the typed fresh-constant
+//! leaf backing `new_type_definition`'s `abs`/`rep`. Its identity is
+//! the kernel-allocated [`FreshId`] token (`Arc` pointer identity), so
+//! two typedefs can never confuse their constants; see `term::fresh`.
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -38,7 +35,7 @@ use crate::ty::TypeSpec;
 use super::spec::TermSpec;
 use crate::error::{Error, Result};
 
-use super::observer::{Object, Observer};
+use super::fresh::FreshId;
 use crate::ty::{Type, TypeKind, TypeList};
 
 // ============================================================================
@@ -346,7 +343,7 @@ impl TermKind {
             TermKind::SpecAbs(s, _) | TermKind::SpecRep(s, _) => s.symbol().label().hash(&mut h),
             TermKind::Def(d) => d.name().hash(&mut h),
             // No further payload (the discriminant already distinguishes these).
-            TermKind::Eq(_) | TermKind::Select(_) | TermKind::Succ | TermKind::Obs(_, _) => {}
+            TermKind::Eq(_) | TermKind::Select(_) | TermKind::Succ | TermKind::FreshConst(..) => {}
         }
         // Fold the 64-bit FNV digest down to the 16-bit fingerprint.
         let v = h.finish();
@@ -594,8 +591,7 @@ pub enum TermKind {
     /// `Thm::reduce_prim` (structural literal equality).
     SmallInt(SmallIntLiteral),
     /// Builtin: HOL `bool` literal (`T` / `F`). Kernel type
-    /// `TypeKind::Bool`. First-class kernel atom — not a separate
-    /// observer system.
+    /// `TypeKind::Bool`. First-class kernel atom.
     Bool(bool),
     /// HOL `=` at element type α (full type `α → α → bool`). One of
     /// the two logical primitives. Applications are formed by the
@@ -632,7 +628,7 @@ pub enum TermKind {
     /// [`TypeKind::Spec`] wrapper.
     ///
     /// This is HOL Light's typedef `abs`, but keyed by the
-    /// process-shared spec handle rather than a fresh `Obs` marker —
+    /// process-shared spec handle rather than a fresh identity token —
     /// so every catalogue type gets its abstraction "for free"
     /// (`inl`/`some`/`ok`/`pair`/… are built from it). It carries **no
     /// theorems**: the bijection equations (`rep (abs x) = x` when the
@@ -648,10 +644,13 @@ pub enum TermKind {
     /// eliminators (`coprodCase`/`fst`/`snd`/`option_case`/…) to reach
     /// a wrapper value's underlying carrier representation.
     SpecRep(TypeSpec, TypeList),
-    /// Typed observation leaf: observer + Core type. The kernel
-    /// compares these by `Arc` pointer identity (via [`Object`]'s
-    /// impls), never by the user's `Eq` on the underlying observer.
-    Obs(Object, Type),
+    /// Typed **fresh constant**: kernel-allocated identity token +
+    /// Core type. Compared by the [`FreshId`]'s `Arc` pointer identity
+    /// (plus the type). The freshness backing
+    /// [`crate::Thm::new_type_definition`]'s `abs`/`rep` constants —
+    /// tokens are allocated only inside that rule's `decide`, so the
+    /// constants are unforgeable.
+    FreshConst(FreshId, Type),
     /// A defined constant. Each [`crate::Thm::define`] call produces
     /// a fresh `Def` (a fresh `Arc<Term>` allocation); the
     /// unfolding equation `Def ≡ body` is emitted by the same rule
@@ -988,18 +987,11 @@ impl Term {
         Self::alloc(TermKind::SpecRep(spec, args.into()))
     }
 
-    /// Wrap an observer as a typed leaf. The kernel treats the
-    /// underlying value opaquely; only the user code constructing
-    /// `o` controls what observations exist.
-    pub fn obs<O: Observer>(o: O, ty: Type) -> Self {
-        Self::alloc(TermKind::Obs(Object::new(o), ty))
-    }
-
-    /// Like [`Term::obs`] but reuses an existing [`Object`] handle
-    /// (preserving its `Arc` identity). Used by deserialisers and
-    /// other shells that have already constructed a `Object`.
-    pub fn obs_from_dyn(observer: Object, ty: Type) -> Self {
-        Self::alloc(TermKind::Obs(observer, ty))
+    /// Typed fresh-constant leaf from a kernel-allocated [`FreshId`].
+    /// Crate-private: identity is minted only inside the generative
+    /// kernel rules (`NewTypeDefRule`).
+    pub(crate) fn fresh_const(id: FreshId, ty: Type) -> Self {
+        Self::alloc(TermKind::FreshConst(id, ty))
     }
 
     /// Wrap an existing [`Def`] as a `Term` leaf. Sharing the same
@@ -1029,93 +1021,6 @@ impl Term {
         // a *specific* error (NotClosed / NotFunction / TypeMismatch).
         let mut env = TypeEnv::default();
         type_of_in(self, &mut env)
-    }
-
-    /// Returns `true` iff no `Obs` leaf appears anywhere in this
-    /// term (including transitively through any `Def` bodies). Used
-    /// at theorem level via [`crate::Thm::has_no_obs`].
-    pub fn has_no_obs(&self) -> bool {
-        match self.kind() {
-            TermKind::Obs(..) => false,
-            TermKind::Bound(_)
-            | TermKind::Free(..)
-            | TermKind::Const(..)
-            | TermKind::Blob(_)
-            | TermKind::Nat(_)
-            | TermKind::Int(_)
-            | TermKind::SmallInt(_)
-            | TermKind::Bool(_)
-            | TermKind::Spec(_, _)
-            | TermKind::SpecAbs(..)
-            | TermKind::SpecRep(..)
-            | TermKind::Eq(_)
-            | TermKind::Select(_)
-            | TermKind::Succ => true,
-            TermKind::App(a, b) => a.has_no_obs() && b.has_no_obs(),
-            TermKind::Abs(_, body) => body.has_no_obs(),
-            TermKind::Def(d) => d.body().has_no_obs(),
-        }
-    }
-
-    /// Returns `true` iff every `Obs` leaf carries an observer
-    /// whose dynamic type is `O`. Trivially `true` for a term with
-    /// no `Obs` leaves.
-    pub fn all_obs_match<O: Observer>(&self) -> bool {
-        match self.kind() {
-            TermKind::Obs(observer, _) => observer.downcast::<O>().is_some(),
-            TermKind::Bound(_)
-            | TermKind::Free(..)
-            | TermKind::Const(..)
-            | TermKind::Blob(_)
-            | TermKind::Nat(_)
-            | TermKind::Int(_)
-            | TermKind::SmallInt(_)
-            | TermKind::Bool(_)
-            | TermKind::Spec(_, _)
-            | TermKind::SpecAbs(..)
-            | TermKind::SpecRep(..)
-            | TermKind::Eq(_)
-            | TermKind::Select(_)
-            | TermKind::Succ => true,
-            TermKind::App(a, b) => a.all_obs_match::<O>() && b.all_obs_match::<O>(),
-            TermKind::Abs(_, body) => body.all_obs_match::<O>(),
-            TermKind::Def(d) => d.body().all_obs_match::<O>(),
-        }
-    }
-
-    /// Walk the term and call `f` on every `Obs` leaf's observer
-    /// downcast to `O`. Returns `Err(ObsDowncastTypeMismatch)` at
-    /// the first leaf whose dynamic type does not match `O`.
-    pub fn for_each_obs<O: Observer, F: FnMut(&O)>(&self, f: &mut F) -> Result<()> {
-        match self.kind() {
-            TermKind::Obs(observer, _) => {
-                let o = observer
-                    .downcast::<O>()
-                    .ok_or(Error::ObsDowncastTypeMismatch)?;
-                f(o);
-                Ok(())
-            }
-            TermKind::Bound(_)
-            | TermKind::Free(..)
-            | TermKind::Const(..)
-            | TermKind::Blob(_)
-            | TermKind::Nat(_)
-            | TermKind::Int(_)
-            | TermKind::SmallInt(_)
-            | TermKind::Bool(_)
-            | TermKind::Spec(_, _)
-            | TermKind::SpecAbs(..)
-            | TermKind::SpecRep(..)
-            | TermKind::Eq(_)
-            | TermKind::Select(_)
-            | TermKind::Succ => Ok(()),
-            TermKind::App(a, b) => {
-                a.for_each_obs::<O, F>(f)?;
-                b.for_each_obs::<O, F>(f)
-            }
-            TermKind::Abs(_, body) => body.for_each_obs::<O, F>(f),
-            TermKind::Def(d) => d.body().for_each_obs::<O, F>(f),
-        }
     }
 }
 
@@ -1211,7 +1116,7 @@ impl fmt::Display for Term {
             }
             TermKind::SpecAbs(spec, args) => fmt_coercion(f, "abs", spec.symbol().label(), args),
             TermKind::SpecRep(spec, args) => fmt_coercion(f, "rep", spec.symbol().label(), args),
-            TermKind::Obs(observer, ty) => write!(f, "obs[{:?}:{}]", observer, ty),
+            TermKind::FreshConst(id, ty) => write!(f, "fresh[{:?}:{}]", id, ty),
             TermKind::Def(d) => write!(f, "{}", d),
         }
     }
@@ -1325,7 +1230,7 @@ fn term_info(kind: &TermKind) -> TermInfo {
             alpha.clone(),
         )),
         TermKind::Succ => wf(Type::fun(Type::nat(), Type::nat())),
-        TermKind::Obs(_, ty) => wf(ty.clone()),
+        TermKind::FreshConst(_, ty) => wf(ty.clone()),
         TermKind::Def(d) => wf(d.instance_type().clone()),
         TermKind::Spec(spec, args) => closed(
             spec.ty()
@@ -1490,7 +1395,7 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         )),
         // `succ : nat → nat`, monomorphic.
         TermKind::Succ => Ok(Type::fun(Type::nat(), Type::nat())),
-        TermKind::Obs(_, ty) => Ok(ty.clone()),
+        TermKind::FreshConst(_, ty) => Ok(ty.clone()),
         // A `Def` denotes its body at the current instance type.
         // The body was validated once at `Thm::define` time, and
         // `subst_tfree_in_term` updates `instance_type` consistently

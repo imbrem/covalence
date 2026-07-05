@@ -231,7 +231,6 @@ mod cov_tests {
             "case_eta from coprod.cov must match the Rust proof"
         );
         assert!(cov_thm.hyps().is_empty(), "case_eta_cov is hypothesis-free");
-        assert!(cov_thm.has_no_obs(), "case_eta_cov is oracle-free");
     }
 
     /// `case_eq` from `coprod.cov` — the genuinely-proved case-analysis
@@ -241,7 +240,6 @@ mod cov_tests {
     fn case_eq_cov_is_genuine() {
         let thm = cov::case_eq_cov();
         assert!(thm.hyps().is_empty(), "case_eq is proved, not postulated");
-        assert!(thm.has_no_obs(), "case_eq is oracle-free");
     }
 }
 
@@ -956,7 +954,6 @@ mod tests {
         let bv = Term::free("bv", u.clone());
         let thm = inl_ne_inr(&u, &u, &av, &bv).unwrap();
         assert!(thm.hyps().is_empty(), "disjointness is proved, no hyps");
-        assert!(thm.has_no_obs(), "and oracle-free");
         let inl_av = Term::app(inl(u.clone(), u.clone()), av);
         let inr_bv = Term::app(inr(u.clone(), u.clone()), bv);
         assert_eq!(thm.concl(), &inl_av.equals(inr_bv).unwrap().not().unwrap());
@@ -984,7 +981,6 @@ mod tests {
         let av = Term::free("av", a.clone());
         let thm = case_inl(&a, &b, &c, &f, &g, &av).unwrap();
         assert!(thm.hyps().is_empty(), "case_inl is proved, not postulated");
-        assert!(thm.has_no_obs(), "case_inl is oracle-free");
         let lhs = coprod_case(a, b, c)
             .apply(f.clone())
             .unwrap()
@@ -1006,7 +1002,7 @@ mod tests {
         let g = Term::free("g", Type::fun(b.clone(), c.clone()));
         let bv = Term::free("bv", b.clone());
         let thm = case_inr(&a, &b, &c, &f, &g, &bv).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(rhs_of(&thm).unwrap(), Term::app(g, bv));
     }
 
@@ -1015,7 +1011,7 @@ mod tests {
         let (a, b, _c) = abc();
         let c = Term::free("c", coprod(a.clone(), b.clone()));
         let thm = cases(&a, &b, &c).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let (ex_l, ex_r) = cases_goal(&a, &b, &c).unwrap();
         assert_eq!(thm.concl(), &ex_l.or(ex_r).unwrap());
     }
@@ -1027,7 +1023,6 @@ mod tests {
         let m = Term::free("m", Type::fun(coprod(a.clone(), b.clone()), g.clone()));
         let thm = case_eta(&a, &b, &g, &m).unwrap();
         assert!(thm.hyps().is_empty(), "η/fusion is proved, not postulated");
-        assert!(thm.has_no_obs());
         // LHS is `m`.
         assert_eq!(thm.concl().as_eq().unwrap().0, &m);
     }
@@ -1040,7 +1035,6 @@ mod tests {
         let av2 = Term::free("av2", a.clone());
         let thm = inl_inj(&a, &b, &av, &av2).unwrap();
         assert!(thm.hyps().is_empty(), "inl_inj is proved, not postulated");
-        assert!(thm.has_no_obs(), "inl_inj is oracle-free");
         let inl_av = Term::app(inl(a.clone(), b.clone()), av.clone());
         let inl_av2 = Term::app(inl(a.clone(), b.clone()), av2.clone());
         let expected = inl_av
@@ -1058,7 +1052,7 @@ mod tests {
         let bv = Term::free("bv", b.clone());
         let bv2 = Term::free("bv2", b.clone());
         let thm = inr_inj(&a, &b, &bv, &bv2).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let inr_bv = Term::app(inr(a.clone(), b.clone()), bv.clone());
         let inr_bv2 = Term::app(inr(a.clone(), b.clone()), bv2.clone());
         let expected = inr_bv

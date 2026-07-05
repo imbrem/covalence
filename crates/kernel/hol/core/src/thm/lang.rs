@@ -38,7 +38,7 @@
 //! keeps `pure::Thm`/`CoreLang` out of the public signature and preserves
 //! `Arc`-identity, but is no longer load-bearing for soundness. What still remains
 //! trusted (unchanged, documented seams): the `builtins` evaluator inside
-//! `reduce_prim`/`unfold_term_spec`, and the observer parametric-ε model.
+//! `reduce_prim`/`unfold_term_spec`.
 
 use std::any::TypeId;
 

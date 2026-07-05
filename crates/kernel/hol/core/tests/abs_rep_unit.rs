@@ -334,12 +334,7 @@ fn unit_eq_reflexive_same_term() {
     assert_eq!(rhs, u);
 }
 
-#[test]
-fn unit_eq_no_obs() {
-    // No observation leaves: a fully trusted theorem.
-    let thm = Thm::unit_eq(unit_val(), unit_val()).unwrap();
-    assert!(thm.has_no_obs());
-}
+// (`unit_eq` hypothesis-freeness is covered by `unit_eq_no_hyps` above.)
 
 // ---- failure cases ----
 

@@ -734,7 +734,7 @@ mod tests {
     #[test]
     fn mem_empty_is_false() {
         let thm = mem_empty(&alpha(), &elem("x")).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(rhs_of(&thm).unwrap(), Term::bool_lit(false));
     }
 
@@ -780,7 +780,6 @@ mod tests {
             thm.hyps().is_empty(),
             "union.comm is proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "union.comm is oracle-free");
         let alpha = alpha();
         let s = setvar("s");
         let t = setvar("t");
@@ -792,14 +791,12 @@ mod tests {
     fn inter_comm_is_genuine() {
         let thm = inter_comm();
         assert!(thm.hyps().is_empty());
-        assert!(thm.has_no_obs());
     }
 
     #[test]
     fn union_empty_right_identity() {
         let thm = union_empty();
         assert!(thm.hyps().is_empty(), "union.empty is proved");
-        assert!(thm.has_no_obs());
         let alpha = alpha();
         let s = setvar("s");
         let expected = union(&alpha, &s, &set_empty(alpha.clone()))
@@ -814,7 +811,6 @@ mod tests {
             thm.hyps().is_empty(),
             "theorem must be proved, not postulated"
         );
-        assert!(thm.has_no_obs(), "theorem must be oracle-free");
     }
 
     #[test]
@@ -852,7 +848,7 @@ mod tests {
     #[test]
     fn subset_refl_is_genuine() {
         let thm = subset_refl();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let s = setvar("s");
         assert_eq!(thm.concl(), &subset_tm(&alpha(), &s, &s));
     }
@@ -867,7 +863,6 @@ mod tests {
             inter_subset_l(),
         ] {
             assert!(thm.hyps().is_empty(), "subset law must be proved");
-            assert!(thm.has_no_obs(), "subset law must be oracle-free");
         }
     }
 
@@ -906,7 +901,6 @@ mod tests {
         // ⊢ s ⊆ t ⟹ t ⊆ s ⟹ s = t.
         let thm = subset_antisym();
         assert!(thm.hyps().is_empty(), "subset.antisym is proved");
-        assert!(thm.has_no_obs());
         let (a, s, t, _u) = vars();
         let expected = subset_tm(&a, &s, &t)
             .imp(subset_tm(&a, &t, &s).imp(s.equals(t).unwrap()).unwrap())

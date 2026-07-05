@@ -268,7 +268,7 @@ mod tests {
     fn rec_snil_holds() {
         let (fa, fnil, fc) = handlers_count();
         let thm = rec_snil(fa, fnil.clone(), fc).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(thm.concl().as_eq().unwrap().1, &fnil);
     }
 
@@ -278,7 +278,7 @@ mod tests {
         let (fa, fnil, fc) = handlers_count();
         let b = Term::blob(covalence_types::Bytes::from(vec![7u8]));
         let thm = rec_atom(fa.clone(), fnil, fc, b.clone()).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // rhs = fa b, which β-reduces to 0; we only check the equation holds.
         let (lhs, _) = thm.concl().as_eq().unwrap();
         assert_eq!(
@@ -303,7 +303,7 @@ mod tests {
         let h = atom(Term::blob(covalence_types::Bytes::from(vec![1u8])));
         let t = snil();
         let thm = rec_scons(fa, fnil, fc, h, t).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert!(thm.concl().as_eq().is_some());
     }
 

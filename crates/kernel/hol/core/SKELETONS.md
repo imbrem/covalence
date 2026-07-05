@@ -5,15 +5,6 @@ See [`CLAUDE.md`](../../../../CLAUDE.md) § Skeletons and the [root index](../..
 Module-local skeletons: [`src/thm/SKELETONS.md`](src/thm/SKELETONS.md) (the
 `covalence-pure` mint-gate future seams).
 
-## toHOL purge: Obs leaves await `FreshId` reclassification
-
-The observer *rules* are gone (`notes/vibes/pure-hol-and-build-plan.md`), but
-`TermKind::Obs`/`TypeKind::TyConObs` + `Object`/`Observer` remain solely as
-`new_type_definition`'s freshness tokens (`rules.rs::NewTypeDefRule`). Replace
-them with dedicated private `FreshId` leaves
-(`TermKind::FreshConst`/`TypeKind::FreshTyCon`), then delete `Observer`/`Object`
-and the `has_no_obs`/`all_obs_match`/`for_each_obs` walkers.
-
 ## Declaration-only catalogue ops (no definitional body yet)
 
 These `defs/` term-specs carry `tm = None`: sound/complete on literals (via

@@ -79,7 +79,7 @@ pub mod transport_db;
 // **Metamath-Prop → HOL replay** (`notes/vibes/metatheory.md`): replay a *verified*
 // propositional-calculus Metamath proof into a kernel-constructed
 // `⊢ Derivable_Prop ⌜S⌝` theorem — the "construct, don't trust" bridge landing in
-// *pure derivability over the encoded syntax* (NO denotation, NO observer).
+// *pure derivability over the encoded syntax* (NO denotation, NO oracle).
 pub mod mm_replay;
 
 // **General schema-database Metamath replay** (`notes/vibes/metatheory.md`): generalise

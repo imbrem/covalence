@@ -7,7 +7,6 @@ use super::*;
 /// A theorem is *genuine* iff it has no hypotheses and no oracle observations.
 fn assert_genuine(thm: &Thm, what: &str) {
     assert!(thm.hyps().is_empty(), "{what}: must be hypothesis-free");
-    assert!(thm.has_no_obs(), "{what}: must be oracle-free");
 }
 
 #[test]

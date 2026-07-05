@@ -189,7 +189,6 @@ mod tests {
         let n = nat_lit(65);
         let thm = code_mk(&n).unwrap();
         assert!(thm.hyps().is_empty(), "code_mk is proved, not postulated");
-        assert!(thm.has_no_obs(), "code_mk is oracle-free");
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &code(&mk(&n)));
         assert_eq!(rhs, &n);
@@ -201,7 +200,7 @@ mod tests {
         // codepoint (0x110000 - 1).
         let n = nat_lit(CHAR_MAX_EXCL - 1);
         let thm = code_mk(&n).unwrap();
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         assert_eq!(thm.concl().as_eq().unwrap().1, &n);
     }
 
@@ -230,7 +229,7 @@ mod tests {
         for &k in &[SURROGATE_LO - 1, SURROGATE_HI + 1] {
             let n = nat_lit(k);
             let thm = code_mk(&n).unwrap();
-            assert!(thm.hyps().is_empty() && thm.has_no_obs());
+            assert!(thm.hyps().is_empty());
             assert_eq!(thm.concl().as_eq().unwrap().1, &n);
         }
     }
@@ -241,7 +240,6 @@ mod tests {
         let c = Term::free("c", char_ty());
         let thm = mk_code(&c).unwrap();
         assert!(thm.hyps().is_empty(), "mk_code is proved, not postulated");
-        assert!(thm.has_no_obs(), "mk_code is oracle-free");
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &mk(&code(&c)));
         assert_eq!(rhs, &c);

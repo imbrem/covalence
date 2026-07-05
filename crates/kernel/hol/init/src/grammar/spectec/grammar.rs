@@ -67,6 +67,5 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(thm.hyps().is_empty());
-        assert!(thm.has_no_obs());
     }
 }

@@ -1262,7 +1262,6 @@ mod tests {
     fn and_comm_is_an_axiom_free_equation() {
         let thm = and_comm();
         assert!(thm.hyps().is_empty(), "and_comm must be axiom-free");
-        assert!(thm.has_no_obs(), "and_comm must be oracle-free");
         let p = Term::free("p", Type::bool());
         let q = Term::free("q", Type::bool());
         // ⊢ (p ∧ q) = (q ∧ p)
@@ -1290,7 +1289,6 @@ mod tests {
     fn or_comm_is_an_axiom_free_equation() {
         let thm = or_comm();
         assert!(thm.hyps().is_empty(), "or_comm must be axiom-free");
-        assert!(thm.has_no_obs(), "or_comm must be oracle-free");
         let p = Term::free("p", Type::bool());
         let q = Term::free("q", Type::bool());
         // ⊢ (p ∨ q) = (q ∨ p)
@@ -1650,7 +1648,7 @@ mod tests {
         let want = |l: Term, r: Term| {
             let eq = prop_eq(&l, &r).unwrap();
             assert_eq!(eq.concl(), &l.clone().equals(r).unwrap());
-            assert!(eq.hyps().is_empty() && eq.has_no_obs());
+            assert!(eq.hyps().is_empty());
         };
         // De Morgan: ¬(a ∧ c) = (¬a ∨ ¬c)
         want(
@@ -1794,7 +1792,7 @@ mod tests {
     fn exists_false_const_is_genuine() {
         // ⊢ (∃x:nat. F) = F.
         let thm = exists_false_const(&Type::nat()).expect("exists_false_const");
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let pred = Term::abs(Type::nat(), Term::bool_lit(false));
         let ex = mk_exists_of(&Type::nat(), pred);
         assert_eq!(thm.concl().as_eq().unwrap(), (&ex, &Term::bool_lit(false)));
@@ -1813,7 +1811,7 @@ mod tests {
         let body_eq = bwd.deduct_antisym(fwd).unwrap(); // ⊢ (x=0) = (0=x)
         let peq = body_eq.all_intro("x", Type::nat()).unwrap(); // ⊢ ∀x. (x=0)=(0=x)
         let thm = exists_cong(&Type::nat(), peq).expect("exists_cong");
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         let lhs = nat_pred("x", l).equals_ex();
         let rhs = nat_pred("x", r).equals_ex();
         let (gl, gr) = thm.concl().as_eq().unwrap();
@@ -1840,7 +1838,7 @@ mod tests {
         let body_eq_f = from_f.deduct_antisym(to_f).unwrap(); // ⊢ body = F
         let pf = body_eq_f.all_intro("x", Type::nat()).unwrap(); // ⊢ ∀x. body = F
         let thm = exists_false(&Type::nat(), pf).expect("exists_false");
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // Conclusion: (∃x. body) = F.
         let ex = nat_pred("x", body).equals_ex();
         assert_eq!(thm.concl().as_eq().unwrap(), (&ex, &Term::bool_lit(false)));
@@ -1852,7 +1850,7 @@ mod tests {
         let p = Term::free("P", Type::fun(Type::nat(), Type::bool())); // P : nat → bool
         let t = nat0();
         let thm = exists_one_point(&Type::nat(), &t, &p).expect("one-point rule");
-        assert!(thm.hyps().is_empty() && thm.has_no_obs());
+        assert!(thm.hyps().is_empty());
         // RHS is `P 0`.
         let (_lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(rhs, &p.clone().apply(t.clone()).unwrap());

@@ -242,7 +242,10 @@ fn proved_result(result: &covalence_core::Result<covalence_core::Thm>, import_ms
                 "status": "proved",
                 "ok": true,
                 "hyps": thm.hyps().len(),
-                "genuine": thm.has_no_obs(),
+                // Every kernel Thm is oracle-free since the observer system was
+                // deleted (toHOL purge); kept as a hardcoded field for JSON API
+                // compatibility until an admits-manifest provenance story lands.
+                "genuine": true,
                 "holPreview": hol_preview,
                 "importMs": import_ms,
             })

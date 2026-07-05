@@ -1,7 +1,7 @@
 //! Core's type language.
 //!
 //! Mutually recursive with [`crate::term`]: a [`Type`] (via
-//! `TyConObs`) carries an `Object` from `term::observer`, and a `Term`
+//! `FreshTyCon`) carries a `FreshId` from `term::fresh`, and a `Term`
 //! carries `Type`s.
 //!
 //! Submodules:

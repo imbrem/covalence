@@ -731,7 +731,6 @@ mod tests {
 
     fn assert_genuine(thm: &Thm) {
         assert!(thm.hyps().is_empty(), "derivation is hypothesis-free");
-        assert!(thm.has_no_obs(), "derivation is oracle-free");
     }
 
     /// A derivation's conclusion must be a `Derivable_PA ⌜form⌝` value (at the

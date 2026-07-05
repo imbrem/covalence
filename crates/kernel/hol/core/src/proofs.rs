@@ -42,8 +42,8 @@ fn perr(e: covalence_pure::Error) -> Error {
 /// 3. The base `eq_mp` transports the `IsThm` proposition along the
 ///    reification equation (lifted through `cong_pair`/`cong_app(IsThm)`),
 ///    landing a genuine `CoreProp`.
-/// 4. [`Thm::from_pure`] wraps it — indistinguishable from a rule-minted
-///    theorem.
+/// 4. [`Thm::from_pure`] wraps it, re-running the sequent well-typedness
+///    floor — indistinguishable from a rule-minted theorem.
 pub fn nat_add_thm(a: Nat, b: Nat) -> Result<Thm> {
     let sum = NatAdd.eval(&(a.clone(), b.clone()));
 
@@ -71,7 +71,7 @@ pub fn nat_add_thm(a: Nat, b: Nat) -> Result<Thm> {
     let landed = cert
         .eq_mp(isthm_eq)
         .ok_or_else(|| Error::Pure("eq_mp: reified lhs did not match the certificate".into()))?;
-    Ok(Thm::from_pure(landed))
+    Thm::from_pure(landed)
 }
 
 /// Reify one symbolic HOL application node: given `⊢ F = Val(f)` and

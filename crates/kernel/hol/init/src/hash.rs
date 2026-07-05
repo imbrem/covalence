@@ -175,7 +175,8 @@ impl Hasher {
             // is deliberately excluded: hash tag + arg hashes only. Two
             // distinct fresh tycons with equal args collide — fine for
             // the `Hash`-vs-`Eq` contract (equal values hash equally).
-            TypeKind::FreshTyCon(_, args) => {
+            TypeKind::FreshTyCon(leaf) => {
+                let args = leaf.args();
                 let mut buf = Vec::with_capacity(1 + 4 + 32 * args.len());
                 buf.push(TY_FRESH_TYCON);
                 buf.extend_from_slice(&(args.len() as u32).to_le_bytes());
@@ -243,8 +244,8 @@ impl Hasher {
             // A fresh constant's identity is a process-local pointer, so
             // it is deliberately excluded: hash tag + type hash only (see
             // the module doc — equal values still hash equally).
-            TermKind::FreshConst(_, ty) => {
-                let th = self.hash_type(ty);
+            TermKind::FreshConst(leaf) => {
+                let th = self.hash_type(leaf.ty());
                 let mut buf = Vec::with_capacity(1 + 32);
                 buf.push(T_FRESH_CONST);
                 buf.extend_from_slice(th.as_bytes());

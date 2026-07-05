@@ -317,11 +317,11 @@ fn typedef_happy_path_shapes() {
         Thm::new_type_definition("tau", "myabs", "myrep", nat_witness()).expect("typedef over nat");
 
     // tau is a fresh FreshTyCon with no tvar args (α = nat is closed).
-    let TypeKind::FreshTyCon(_, args) = td.tau.kind() else {
+    let TypeKind::FreshTyCon(tau_leaf) = td.tau.kind() else {
         panic!("tau is not a FreshTyCon: {:?}", td.tau.kind());
     };
     assert!(
-        args.iter().next().is_none(),
+        tau_leaf.args().iter().next().is_none(),
         "nat has no tvars, tau is nullary"
     );
     assert!(td.tvars.is_empty());
@@ -437,10 +437,10 @@ fn typedef_polymorphic_witness_tracks_tvars() {
     assert_eq!(td.tvars, vec![smol_str::SmolStr::new("c")]);
 
     // tau is parametric: FreshTyCon with one arg = tfree c.
-    let TypeKind::FreshTyCon(_, args) = td.tau.kind() else {
+    let TypeKind::FreshTyCon(tau_leaf) = td.tau.kind() else {
         panic!("tau not FreshTyCon");
     };
-    let argv: Vec<Type> = args.iter().cloned().collect();
+    let argv: Vec<Type> = tau_leaf.args().iter().cloned().collect();
     assert_eq!(argv, vec![Type::tfree("c")]);
 
     // abs : c -> tau.
@@ -454,12 +454,13 @@ fn typedef_two_calls_distinct_tau_identity() {
 
     // Two typedefs over the same α must produce DISTINCT τ — otherwise
     // their abs/rep would be confusable and the extension non-conservative.
-    let TypeKind::FreshTyCon(ia, _) = a.tau.kind() else {
+    let TypeKind::FreshTyCon(la) = a.tau.kind() else {
         panic!()
     };
-    let TypeKind::FreshTyCon(ib, _) = b.tau.kind() else {
+    let TypeKind::FreshTyCon(lb) = b.tau.kind() else {
         panic!()
     };
+    let (ia, ib) = (la.id(), lb.id());
     assert_ne!(
         ia.ptr_id(),
         ib.ptr_id(),
@@ -469,12 +470,13 @@ fn typedef_two_calls_distinct_tau_identity() {
     assert_ne!(a.tau, b.tau, "the two tau types must not compare equal");
 
     // abs leaves are distinct too.
-    let TermKind::FreshConst(absa, _) = a.abs.kind() else {
+    let TermKind::FreshConst(la) = a.abs.kind() else {
         panic!()
     };
-    let TermKind::FreshConst(absb, _) = b.abs.kind() else {
+    let TermKind::FreshConst(lb) = b.abs.kind() else {
         panic!()
     };
+    let (absa, absb) = (la.id(), lb.id());
     assert_ne!(absa.ptr_id(), absb.ptr_id(), "distinct abs identities");
     assert_ne!(a.abs, b.abs, "the two abs terms must not compare equal");
 }
@@ -482,12 +484,13 @@ fn typedef_two_calls_distinct_tau_identity() {
 #[test]
 fn typedef_abs_and_rep_have_distinct_identity() {
     let td = Thm::new_type_definition("t", "a", "r", nat_witness()).unwrap();
-    let TermKind::FreshConst(abs, _) = td.abs.kind() else {
+    let TermKind::FreshConst(la) = td.abs.kind() else {
         panic!()
     };
-    let TermKind::FreshConst(rep, _) = td.rep.kind() else {
+    let TermKind::FreshConst(lr) = td.rep.kind() else {
         panic!()
     };
+    let (abs, rep) = (la.id(), lr.id());
     assert_ne!(
         abs.ptr_id(),
         rep.ptr_id(),
@@ -633,10 +636,10 @@ fn inst_tfree_preserves_abs_rep_identity() {
     let w = witness_for(alpha.clone(), hol_eq(x.clone(), x));
     let td = Thm::new_type_definition("t", "a", "r", w).unwrap();
 
-    let TermKind::FreshConst(abs_before, _) = td.abs.kind() else {
+    let TermKind::FreshConst(abs_before) = td.abs.kind() else {
         panic!()
     };
-    let abs_id = abs_before.ptr_id();
+    let abs_id = abs_before.id().ptr_id();
 
     // The abs_rep theorem mentions abs/rep; instantiate c := nat.
     let inst = td
@@ -649,7 +652,7 @@ fn inst_tfree_preserves_abs_rep_identity() {
     // compare identity.
     fn first_fresh_id(t: &Term) -> Option<usize> {
         match t.kind() {
-            TermKind::FreshConst(id, _) => Some(id.ptr_id()),
+            TermKind::FreshConst(leaf) => Some(leaf.id().ptr_id()),
             TermKind::App(f, x) => first_fresh_id(f).or_else(|| first_fresh_id(x)),
             TermKind::Abs(_, b) => first_fresh_id(b),
             _ => None,
@@ -682,9 +685,9 @@ fn inst_tfree_into_typedef_concl_retypes_binder() {
     let TermKind::Abs(binder_ty, _) = lam.kind() else {
         panic!()
     };
-    let TypeKind::FreshTyCon(_, args) = binder_ty.kind() else {
+    let TypeKind::FreshTyCon(leaf) = binder_ty.kind() else {
         panic!("binder type not FreshTyCon: {binder_ty}");
     };
-    let argv: Vec<Type> = args.iter().cloned().collect();
+    let argv: Vec<Type> = leaf.args().iter().cloned().collect();
     assert_eq!(argv, vec![Type::nat()], "tau arg substituted to nat");
 }

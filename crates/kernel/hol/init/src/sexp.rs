@@ -76,10 +76,10 @@ pub fn type_to_sexp(ty: &Type) -> Result<SExpr> {
             }
             SExp::List(children)
         }
-        TypeKind::FreshTyCon(id, _) => {
+        TypeKind::FreshTyCon(leaf) => {
             return Err(SexpError(format!(
                 "fresh tycon#{:x} is process-local and not serialisable",
-                id.ptr_id()
+                leaf.id().ptr_id()
             )));
         }
         TypeKind::Spec(spec, args) => {
@@ -228,10 +228,10 @@ pub fn term_to_sexp(t: &Term) -> Result<SExpr> {
         }
         TermKind::SpecAbs(spec, args) => spec_coercion_to_sexp("spec-abs", spec, args)?,
         TermKind::SpecRep(spec, args) => spec_coercion_to_sexp("spec-rep", spec, args)?,
-        TermKind::FreshConst(id, _) => {
+        TermKind::FreshConst(leaf) => {
             return Err(SexpError(format!(
                 "fresh constant fresh#{:x} is process-local and not serialisable",
-                id.ptr_id()
+                leaf.id().ptr_id()
             )));
         }
         TermKind::Def(d) => list3("def", sym(d.name()), term_to_sexp(&d.body())?),

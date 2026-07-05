@@ -28,7 +28,7 @@ mod spec;
 mod term;
 
 pub use cons::{Checked, HashCons, TermCons, TrustedCons};
-pub use fresh::FreshId;
+pub use fresh::{FreshId, FreshLeaf, FreshTyLeaf};
 pub use set::TermSet;
 pub use spec::TermSpec;
 pub use term::{Def, IntTag, SmallIntLiteral, Term, TermKind, TyError, Var};

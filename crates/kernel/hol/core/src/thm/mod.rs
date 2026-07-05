@@ -84,14 +84,24 @@ impl Thm {
     /// concrete `CoreProp` shape and transported with the base `eq_mp`,
     /// re-enters the ordinary `Thm` API.
     ///
+    /// **The sequent floor is enforced here**: the conclusion and every
+    /// hypothesis are re-checked well-typed at kind `bool` (the same
+    /// `rules::check_sequent` helper every sequent rule's `seq` floor
+    /// runs), so no landing path bypasses `seq()`. Rejects with
+    /// [`Error::NotBool`] (or a typing error) otherwise.
+    ///
     /// Soundness: trivial. The inner `pure::Thm` field is hygiene-only —
     /// soundness rests on `admits()` alone (see `lang`/`rules`): a
     /// `pure::Thm<CoreLang, CoreProp>` can only ever have been minted by an
     /// admitted, sound rule (or by the ungated equality/propositional
     /// calculus from such mints), so it is already a true theorem; wrapping
     /// it adds nothing.
-    pub fn from_pure(t: covalence_pure::Thm<lang::CoreLang, lang::CoreProp>) -> Thm {
-        Thm(t)
+    pub fn from_pure(t: covalence_pure::Thm<lang::CoreLang, lang::CoreProp>) -> Result<Thm> {
+        {
+            let (hyps, concl) = rules::parts(&t);
+            rules::check_sequent(hyps, concl)?;
+        }
+        Ok(Thm(t))
     }
 
     /// Structural weakening: `Δ ⊢ φ`, given `Γ ⊢ φ` and `Γ ⊆ Δ`.

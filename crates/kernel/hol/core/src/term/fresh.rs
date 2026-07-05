@@ -11,19 +11,25 @@
 //!
 //! `FreshId` values are allocated **only** inside
 //! `crate::thm::rules::NewTypeDefRule::decide` ([`FreshId::new`] is
-//! `pub(crate)`), and appear in terms/types only via the `pub(crate)`
+//! `pub(crate)`), and appear in terms/types only inside the opaque
+//! [`FreshLeaf`] / [`FreshTyLeaf`] pairings built by the `pub(crate)`
 //! constructors [`crate::Term::fresh_const`] /
-//! [`crate::Type::fresh_tycon`]. Downstream code can *clone* an
-//! existing token out of a matched `TermKind::FreshConst` /
-//! `TypeKind::FreshTyCon`, but a clone shares the `Arc` and therefore
-//! the identity — it can only reconstruct constants the kernel already
-//! minted, never a fresh one.
+//! [`crate::Type::fresh_tycon`]. The **token↔type pairing is a
+//! structural invariant**: the leaf structs have private fields and no
+//! public constructor, so downstream code can *read* the token and its
+//! type/args (via the accessors) and *clone* a whole leaf out of a
+//! matched `TermKind::FreshConst` / `TypeKind::FreshTyCon`, but can
+//! never re-pair a cloned `FreshId` with a *different* type — it can
+//! only reconstruct constants the kernel already minted, never a
+//! fresh (or forged) one.
 
 use std::any::Any;
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+
+use crate::ty::{Type, TypeList};
 
 /// Type-erased fresh-identity token. Wraps a private marker value in
 /// an `Arc` and compares / hashes / orders by the `Arc`'s data-pointer
@@ -102,5 +108,87 @@ impl Hash for FreshId {
 impl fmt::Debug for FreshId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (self.debug_fn)(&*self.inner, f)
+    }
+}
+
+/// Opaque `(FreshId, Type)` pairing — the payload of
+/// `TermKind::FreshConst`. Fields are **private** and the only
+/// constructor is `pub(crate)`, so the kernel's token↔type pairing is
+/// a structural invariant: downstream code can read (and clone) a leaf
+/// out of a matched kind, but can never re-pair a cloned [`FreshId`]
+/// with a different [`Type`].
+///
+/// ```compile_fail
+/// use covalence_core::{FreshId, FreshLeaf, Type};
+/// fn forge(id: FreshId, ty: Type) -> FreshLeaf {
+///     FreshLeaf { id, ty } // ERROR: fields are private
+/// }
+/// ```
+///
+/// Equality / ordering / hashing are the derived field-order
+/// (`id`, then `ty`) semantics — identical to the former
+/// `FreshConst(FreshId, Type)` tuple payload: the token by `Arc`
+/// pointer identity, then the type structurally.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FreshLeaf {
+    id: FreshId,
+    ty: Type,
+}
+
+impl FreshLeaf {
+    /// Pair a kernel-minted token with its type. Crate-private: only
+    /// the kernel (and its type-substitution walkers, which preserve
+    /// identity) may build the pairing.
+    pub(crate) fn new(id: FreshId, ty: Type) -> Self {
+        FreshLeaf { id, ty }
+    }
+
+    /// The fresh-identity token (compared by `Arc` pointer identity).
+    pub fn id(&self) -> &FreshId {
+        &self.id
+    }
+
+    /// The type the kernel minted this constant at.
+    pub fn ty(&self) -> &Type {
+        &self.ty
+    }
+}
+
+/// Opaque `(FreshId, TypeList)` pairing — the payload of
+/// `TypeKind::FreshTyCon`. The type-side mirror of [`FreshLeaf`]:
+/// private fields, `pub(crate)` constructor, read-only accessors —
+/// so a cloned token can never be re-paired with different args.
+///
+/// ```compile_fail
+/// use covalence_core::{FreshId, FreshTyLeaf, TypeList};
+/// fn forge(id: FreshId, args: TypeList) -> FreshTyLeaf {
+///     FreshTyLeaf { id, args } // ERROR: fields are private
+/// }
+/// ```
+///
+/// Equality / ordering / hashing are the derived field-order
+/// (`id`, then `args`) semantics — identical to the former
+/// `FreshTyCon(FreshId, TypeList)` tuple payload.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FreshTyLeaf {
+    id: FreshId,
+    args: TypeList,
+}
+
+impl FreshTyLeaf {
+    /// Pair a kernel-minted token with its type arguments.
+    /// Crate-private — see [`FreshLeaf::new`].
+    pub(crate) fn new(id: FreshId, args: TypeList) -> Self {
+        FreshTyLeaf { id, args }
+    }
+
+    /// The fresh-identity token (compared by `Arc` pointer identity).
+    pub fn id(&self) -> &FreshId {
+        &self.id
+    }
+
+    /// The type arguments the constructor is applied to.
+    pub fn args(&self) -> &TypeList {
+        &self.args
     }
 }

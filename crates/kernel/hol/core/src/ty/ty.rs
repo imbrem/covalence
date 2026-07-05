@@ -14,7 +14,7 @@ use std::sync::{Arc, LazyLock};
 
 use smol_str::SmolStr;
 
-use crate::term::FreshId;
+use crate::term::{FreshId, FreshTyLeaf};
 
 use super::list::TypeList;
 use super::spec::TypeSpec;
@@ -56,8 +56,11 @@ pub enum TypeKind {
     /// Identity is the `FreshId` plus the args; the args participate
     /// in equality so that `τ α` and `τ β` are distinct even though
     /// they share the same constructor. The constructor is anonymous —
-    /// no display label is stored.
-    FreshTyCon(FreshId, TypeList),
+    /// no display label is stored. The payload is an opaque
+    /// [`FreshTyLeaf`]: its private fields make the token↔args pairing
+    /// structural, so a cloned token can never be re-paired with
+    /// different args.
+    FreshTyCon(FreshTyLeaf),
     /// Application of a derived-type [`TypeSpec`]
     /// factory to type arguments. The spec is process-shared
     /// (`LazyLock`-backed) and `args` is the positional
@@ -174,7 +177,7 @@ impl Type {
     /// [`crate::Thm::new_type_definition`] uses. Crate-private:
     /// identity is minted only inside the generative kernel rules.
     pub(crate) fn fresh_tycon(id: FreshId, args: impl Into<TypeList>) -> Self {
-        Self::alloc(TypeKind::FreshTyCon(id, args.into()))
+        Self::alloc(TypeKind::FreshTyCon(FreshTyLeaf::new(id, args.into())))
     }
 
     /// True when this is `Type::bool()` — the HOL formula type. The
@@ -205,8 +208,13 @@ pub(crate) fn free_tvars_into(ty: &Type, out: &mut std::collections::BTreeSet<Sm
             free_tvars_into(a, out);
             free_tvars_into(b, out);
         }
-        TypeKind::Tycon(_, args) | TypeKind::FreshTyCon(_, args) | TypeKind::Spec(_, args) => {
+        TypeKind::Tycon(_, args) | TypeKind::Spec(_, args) => {
             for a in args {
+                free_tvars_into(a, out);
+            }
+        }
+        TypeKind::FreshTyCon(leaf) => {
+            for a in leaf.args() {
                 free_tvars_into(a, out);
             }
         }
@@ -273,9 +281,10 @@ impl fmt::Display for Type {
                     write!(f, ")")
                 }
             }
-            TypeKind::FreshTyCon(id, args) => {
+            TypeKind::FreshTyCon(leaf) => {
                 // Anonymous fresh-identity constructor: `tycon#ptr`,
                 // disambiguated by the token's pointer identity.
+                let (id, args) = (leaf.id(), leaf.args());
                 let ptr = id.ptr_id();
                 let label = format!("tycon#{ptr:x}");
                 if args.is_empty() {

@@ -56,20 +56,30 @@ pub(crate) fn parts(p: &Prem) -> (&Ctx, &Term) {
     (&q.1.0.0, &q.1.1.0)
 }
 
-/// The soundness floor (the old `Thm::build` body): the conclusion and every
-/// hypothesis must be well-typed at kind `bool`, then wrap into the `IsThm`
-/// proposition. Every rule bottoms out here.
-fn seq(hyps: Ctx, concl: Term) -> Result<CoreProp> {
+/// The shared well-typedness check behind the sequent floor: the
+/// conclusion and every hypothesis must be well-typed at kind `bool`.
+/// Called by [`seq`] (every sequent rule) and by
+/// [`crate::Thm::from_pure`] (the seam's landing constructor), so both
+/// paths into a kernel `Thm` enforce the same floor.
+pub(crate) fn check_sequent(hyps: &Ctx, concl: &Term) -> Result<()> {
     let ty = concl.type_of()?;
     if !ty.is_bool() {
         return Err(Error::NotBool(ty));
     }
-    for h in &hyps {
+    for h in hyps {
         let hty = h.type_of()?;
         if !hty.is_bool() {
             return Err(Error::NotBool(hty));
         }
     }
+    Ok(())
+}
+
+/// The soundness floor (the old `Thm::build` body): the conclusion and every
+/// hypothesis must be well-typed at kind `bool` ([`check_sequent`]), then wrap
+/// into the `IsThm` proposition. Every rule bottoms out here.
+fn seq(hyps: Ctx, concl: Term) -> Result<CoreProp> {
+    check_sequent(&hyps, &concl)?;
     Ok(App(IsThm, (Val(hyps), Val(concl))))
 }
 

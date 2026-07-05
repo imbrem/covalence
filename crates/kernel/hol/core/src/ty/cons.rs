@@ -155,9 +155,10 @@ impl Type {
         let kind = match self.kind() {
             TypeKind::Fun(a, b) => TypeKind::Fun(a.cons_with(cons), b.cons_with(cons)),
             TypeKind::Tycon(n, args) => TypeKind::Tycon(n.clone(), cons_args(args, cons)),
-            TypeKind::FreshTyCon(id, args) => {
-                TypeKind::FreshTyCon(id.clone(), cons_args(args, cons))
-            }
+            TypeKind::FreshTyCon(leaf) => TypeKind::FreshTyCon(crate::term::FreshTyLeaf::new(
+                leaf.id().clone(),
+                cons_args(leaf.args(), cons),
+            )),
             TypeKind::Spec(s, args) => TypeKind::Spec(s.clone(), cons_args(args, cons)),
             // TFree / Nat / Bool are leaves.
             other => other.clone(),

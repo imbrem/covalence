@@ -17,7 +17,8 @@
 //!
 //! ## Fresh constants
 //!
-//! `TermKind::FreshConst(FreshId, Type)` is the typed fresh-constant
+//! `TermKind::FreshConst(FreshLeaf)` — an opaque, kernel-paired
+//! `(FreshId, Type)` — is the typed fresh-constant
 //! leaf backing `new_type_definition`'s `abs`/`rep`. Its identity is
 //! the kernel-allocated [`FreshId`] token (`Arc` pointer identity), so
 //! two typedefs can never confuse their constants; see `term::fresh`.
@@ -35,7 +36,7 @@ use crate::ty::TypeSpec;
 use super::spec::TermSpec;
 use crate::error::{Error, Result};
 
-use super::fresh::FreshId;
+use super::fresh::{FreshId, FreshLeaf};
 use crate::ty::{Type, TypeKind, TypeList};
 
 // ============================================================================
@@ -644,13 +645,15 @@ pub enum TermKind {
     /// eliminators (`coprodCase`/`fst`/`snd`/`option_case`/…) to reach
     /// a wrapper value's underlying carrier representation.
     SpecRep(TypeSpec, TypeList),
-    /// Typed **fresh constant**: kernel-allocated identity token +
-    /// Core type. Compared by the [`FreshId`]'s `Arc` pointer identity
-    /// (plus the type). The freshness backing
-    /// [`crate::Thm::new_type_definition`]'s `abs`/`rep` constants —
-    /// tokens are allocated only inside that rule's `decide`, so the
-    /// constants are unforgeable.
-    FreshConst(FreshId, Type),
+    /// Typed **fresh constant**: an opaque [`FreshLeaf`] pairing a
+    /// kernel-allocated identity token with its Core type. Compared by
+    /// the [`FreshId`]'s `Arc` pointer identity (plus the type). The
+    /// freshness backing [`crate::Thm::new_type_definition`]'s
+    /// `abs`/`rep` constants — tokens are allocated only inside that
+    /// rule's `decide`, and the leaf's private fields make the
+    /// token↔type pairing structural, so the constants are
+    /// unforgeable.
+    FreshConst(FreshLeaf),
     /// A defined constant. Each [`crate::Thm::define`] call produces
     /// a fresh `Def` (a fresh `Arc<Term>` allocation); the
     /// unfolding equation `Def ≡ body` is emitted by the same rule
@@ -991,7 +994,7 @@ impl Term {
     /// Crate-private: identity is minted only inside the generative
     /// kernel rules (`NewTypeDefRule`).
     pub(crate) fn fresh_const(id: FreshId, ty: Type) -> Self {
-        Self::alloc(TermKind::FreshConst(id, ty))
+        Self::alloc(TermKind::FreshConst(FreshLeaf::new(id, ty)))
     }
 
     /// Wrap an existing [`Def`] as a `Term` leaf. Sharing the same
@@ -1116,7 +1119,7 @@ impl fmt::Display for Term {
             }
             TermKind::SpecAbs(spec, args) => fmt_coercion(f, "abs", spec.symbol().label(), args),
             TermKind::SpecRep(spec, args) => fmt_coercion(f, "rep", spec.symbol().label(), args),
-            TermKind::FreshConst(id, ty) => write!(f, "fresh[{:?}:{}]", id, ty),
+            TermKind::FreshConst(leaf) => write!(f, "fresh[{:?}:{}]", leaf.id(), leaf.ty()),
             TermKind::Def(d) => write!(f, "{}", d),
         }
     }
@@ -1230,7 +1233,7 @@ fn term_info(kind: &TermKind) -> TermInfo {
             alpha.clone(),
         )),
         TermKind::Succ => wf(Type::fun(Type::nat(), Type::nat())),
-        TermKind::FreshConst(_, ty) => wf(ty.clone()),
+        TermKind::FreshConst(leaf) => wf(leaf.ty().clone()),
         TermKind::Def(d) => wf(d.instance_type().clone()),
         TermKind::Spec(spec, args) => closed(
             spec.ty()
@@ -1395,7 +1398,7 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         )),
         // `succ : nat → nat`, monomorphic.
         TermKind::Succ => Ok(Type::fun(Type::nat(), Type::nat())),
-        TermKind::FreshConst(_, ty) => Ok(ty.clone()),
+        TermKind::FreshConst(leaf) => Ok(leaf.ty().clone()),
         // A `Def` denotes its body at the current instance type.
         // The body was validated once at `Thm::define` time, and
         // `subst_tfree_in_term` updates `instance_type` consistently

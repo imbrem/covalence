@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 
 use smol_str::SmolStr;
 
-use crate::term::{Term, TermKind, TrustedCons, Type, TypeKind, Var};
+use crate::term::{FreshLeaf, Term, TermKind, TrustedCons, Type, TypeKind, Var};
 use crate::term::{TypeEnv, type_of_in};
 
 // ============================================================================
@@ -505,9 +505,10 @@ pub fn subst_tfree_in_type(ty: &Type, name: &str, r: &Type) -> Type {
         // substitution propagates. `τ 'a` after 'a := bytes becomes
         // `τ bytes` with the same constructor identity — exactly
         // what we want for polymorphic typedefs.
-        TypeKind::FreshTyCon(id, args) => Type::fresh_tycon(
-            id.clone(),
-            args.iter()
+        TypeKind::FreshTyCon(leaf) => Type::fresh_tycon(
+            leaf.id().clone(),
+            leaf.args()
+                .iter()
                 .map(|a| subst_tfree_in_type(a, name, r))
                 .collect::<Vec<_>>(),
         ),
@@ -534,9 +535,10 @@ pub fn subst_tfrees_in_type(ty: &Type, sub: &BTreeMap<SmolStr, Type>) -> Type {
         TypeKind::Spec(spec, args) => {
             Type::spec(spec.clone(), args.iter().map(go).collect::<Vec<_>>())
         }
-        TypeKind::FreshTyCon(id, args) => {
-            Type::fresh_tycon(id.clone(), args.iter().map(go).collect::<Vec<_>>())
-        }
+        TypeKind::FreshTyCon(leaf) => Type::fresh_tycon(
+            leaf.id().clone(),
+            leaf.args().iter().map(go).collect::<Vec<_>>(),
+        ),
     }
 }
 
@@ -591,7 +593,9 @@ pub fn subst_tfrees_in_term_with<C: TrustedCons + ?Sized>(
             spec.clone(),
             args.iter().map(&st).collect::<Vec<_>>().into(),
         ),
-        TermKind::FreshConst(id, ty) => TermKind::FreshConst(id.clone(), st(ty)),
+        TermKind::FreshConst(leaf) => {
+            TermKind::FreshConst(FreshLeaf::new(leaf.id().clone(), st(leaf.ty())))
+        }
         TermKind::Def(d) => {
             TermKind::Def(d.with_instance_type(subst_tfrees_in_type(d.instance_type(), sub)))
         }
@@ -653,7 +657,9 @@ pub fn subst_tfree_in_term_with<C: TrustedCons + ?Sized>(
             spec.clone(),
             args.iter().map(&st).collect::<Vec<_>>().into(),
         ),
-        TermKind::FreshConst(id, ty) => TermKind::FreshConst(id.clone(), st(ty)),
+        TermKind::FreshConst(leaf) => {
+            TermKind::FreshConst(FreshLeaf::new(leaf.id().clone(), st(leaf.ty())))
+        }
         // `Def` carries an `original` Arc identity (the unique
         // `Thm::define` call) plus an `instance_type`. Substitution
         // updates `instance_type` without rebuilding `original`, so
@@ -802,8 +808,13 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
                 out.insert(n);
             }
         }
-        TermKind::Const(_, ty) | TermKind::FreshConst(_, ty) => {
+        TermKind::Const(_, ty) => {
             for n in ty.free_tvars() {
+                out.insert(n);
+            }
+        }
+        TermKind::FreshConst(leaf) => {
+            for n in leaf.ty().free_tvars() {
                 out.insert(n);
             }
         }
@@ -889,10 +900,10 @@ pub fn match_types(
             }
             Ok(())
         }
-        (TypeKind::FreshTyCon(pi, pa), TypeKind::FreshTyCon(ti, ta))
-            if pi == ti && pa.len() == ta.len() =>
+        (TypeKind::FreshTyCon(pl), TypeKind::FreshTyCon(tl))
+            if pl.id() == tl.id() && pl.args().len() == tl.args().len() =>
         {
-            for (p, t) in pa.iter().zip(ta) {
+            for (p, t) in pl.args().iter().zip(tl.args()) {
                 match_types(p, t, sub)?;
             }
             Ok(())

@@ -82,8 +82,8 @@ pub use ctx::Ctx;
 pub use error::{Error, Result};
 pub use term::TermSpec;
 pub use term::{
-    Checked, Def, FreshId, HashCons, IntTag, SmallIntLiteral, Term, TermCons, TermKind,
-    TrustedCons, TyError, Type, TypeKind, Var,
+    Checked, Def, FreshId, FreshLeaf, FreshTyLeaf, HashCons, IntTag, SmallIntLiteral, Term,
+    TermCons, TermKind, TrustedCons, TyError, Type, TypeKind, Var,
 };
 pub use thm::{Thm, TypeDef};
 pub use ty::{TrustedTypeCons, TypeCons, TypeHashCons, TypeList, TypeSpec};

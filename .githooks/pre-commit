@@ -39,4 +39,22 @@ if git diff --cached --name-only --diff-filter=ACM | grep -qE '(^|/)Cargo\.(toml
     fi
 fi
 
+# Purge ratchet (toHOL purge): regenerate docs/deps/purge-ratchet.json when any
+# Rust or .cov file changes. Unlike the dep graph, an INCREASE in deprecated
+# call-site counts is a policy violation and BLOCKS the commit (the script
+# refuses to regenerate); a decrease just refreshes the golden. Tool absence
+# never blocks.
+if git diff --cached --name-only --diff-filter=ACMD | grep -qE '\.(rs|cov)$'; then
+    if command -v bun >/dev/null 2>&1 && command -v rg >/dev/null 2>&1 \
+        && command -v cargo >/dev/null 2>&1; then
+        echo "pre-commit: purge ratchet (bun scripts/purge-ratchet.mjs)"
+        if bun scripts/purge-ratchet.mjs; then
+            git add docs/deps/purge-ratchet.json
+        else
+            echo "pre-commit: purge ratchet failed — deprecated call-site counts may only decrease" >&2
+            exit 1
+        fi
+    fi
+fi
+
 exit 0

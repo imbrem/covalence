@@ -1,0 +1,86 @@
+{
+  "generatedBy": "scripts/purge-ratchet.mjs",
+  "note": "toHOL-purge ratchet: per-crate call-site counts of deprecated kernel surfaces. Counts may only DECREASE (regen via `bun run deps`); no crate is exempt. An increase fails CI and refuses regeneration — remove the new call site instead.",
+  "patterns": {
+    "obs-rules": {
+      "glob": "*.rs",
+      "regex": "\\.obs_eq\\(|\\.obs_true\\(|\\.obs_imp\\("
+    },
+    "reduce_prim": {
+      "glob": "*.rs",
+      "regex": "reduce_prim"
+    },
+    "unfold_term_spec": {
+      "glob": "*.rs",
+      "regex": "unfold_term_spec"
+    },
+    "termkind-literals": {
+      "glob": "*.rs",
+      "regex": "TermKind::(Obs|Int|Blob|SmallInt|Nat|Succ)"
+    },
+    "tycon-obs": {
+      "glob": "*.rs",
+      "regex": "TyConObs"
+    },
+    "term-literal-ctors": {
+      "glob": "*.rs",
+      "regex": "Term::(int_lit|blob|nat_lit)"
+    },
+    "has_no_obs": {
+      "glob": "*.rs",
+      "regex": "has_no_obs"
+    },
+    "cov-script-reduce": {
+      "glob": "*.cov",
+      "regex": "(reduce-prim|reduce |delta)"
+    }
+  },
+  "counts": {
+    "obs-rules": {
+      "covalence-core": 3
+    },
+    "reduce_prim": {
+      "covalence-core": 83,
+      "covalence-init": 15,
+      "covalence-types": 1
+    },
+    "unfold_term_spec": {
+      "covalence-core": 39,
+      "covalence-init": 10
+    },
+    "termkind-literals": {
+      "covalence-alethe": 7,
+      "covalence-core": 160,
+      "covalence-init": 15
+    },
+    "tycon-obs": {
+      "covalence-core": 24,
+      "covalence-hol": 1,
+      "covalence-init": 5
+    },
+    "term-literal-ctors": {
+      "covalence-alethe": 9,
+      "covalence-core": 129,
+      "covalence-core-test-guest": 4,
+      "covalence-init": 120
+    },
+    "has_no_obs": {
+      "covalence-core": 16,
+      "covalence-init": 164,
+      "covalence-serve": 1
+    },
+    "cov-script-reduce": {
+      "covalence-init": 18
+    }
+  },
+  "totals": {
+    "obs-rules": 3,
+    "reduce_prim": 99,
+    "unfold_term_spec": 49,
+    "termkind-literals": 182,
+    "tycon-obs": 30,
+    "term-literal-ctors": 262,
+    "has_no_obs": 181,
+    "cov-script-reduce": 18
+  }
+}

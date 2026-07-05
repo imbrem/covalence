@@ -82,7 +82,11 @@ const groupEdges = [...groupEdgeSet].sort();
 
 // crate-level "must never appear" edges: [consumer, dependency]
 const BANNED_EDGES = [
-  // (obs-quarantine freeze lands here: e.g. ["covalence-init", "covalence-hol-obs"])
+  // toHOL-purge freezes — uncomment each as its crate lands
+  // (notes/vibes/pure-hol-and-build-plan.md; ratchet: scripts/purge-ratchet.mjs):
+  // ["covalence-pure-eval", "covalence-core"], // base eval knows nothing of HOL
+  // ["covalence-pure", "covalence-pure-eval"], // base kernel stays eval-free
+  // ["covalence-hol-eval", "covalence-init"], // drivers must not depend on the catalogue
 ];
 const bannedHits = edges.filter(([f, t]) =>
   BANNED_EDGES.some(([bf, bt]) => f === bf && t === bt),

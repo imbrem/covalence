@@ -44,8 +44,8 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 ## Per-crate registries
 
 - **[`covalence-pure`](crates/kernel/base/SKELETONS.md)** — closed-world equality kernel; Stage 0 built, later stages pending.
-- **[`covalence-core`](crates/kernel/hol/core/SKELETONS.md)** — declaration-only catalogue ops.
-- **[`covalence-hol-eval`](crates/kernel/hol/eval/SKELETONS.md)** — the eval tier (`CoreEval` + the moved `defs/` catalogue); declaration-only ops, the `core.cov` flip, single-step `prove_true`.
+- **[`covalence-core`](crates/kernel/hol/core/SKELETONS.md)** — the `defs/` D3 residue (dies with the literal leaves), hash-consing default, `subst::close`.
+- **[`covalence-hol-eval`](crates/kernel/hol/eval/SKELETONS.md)** — the eval tier (`CoreEval` + the moved `defs/` catalogue); pure-HOL unit-test gaps (tier-generic init), declaration-only ops, the `core.cov` flip, single-step `prove_true`.
 - **[`covalence-init`](crates/kernel/hol/init/SKELETONS.md)** — split per module (project loader, theory catalogue, `.cov` script layer, models, regex/spectec grammars, metalogic, peano, ring). (The thin `covalence-hol` surface has no skeletons.)
 - **[`covalence-kernel`](crates/kernel/core/SKELETONS.md)** — empty `facts` observer module; removed legacy prover.
 - **[`covalence-shell`](crates/kernel/shell/SKELETONS.md)** — re-export shell; userspace helpers pending the HOL-on-store stack.

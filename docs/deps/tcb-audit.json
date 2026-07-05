@@ -40,7 +40,7 @@
     },
     "base+HOL": {
       "files": 31,
-      "nonTestLoc": 4958,
+      "nonTestLoc": 4888,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -65,23 +65,23 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 330,
-        "struct": 47,
-        "enum": 6,
-        "trait": 15,
+        "fn": 333,
+        "struct": 42,
+        "enum": 7,
+        "trait": 16,
         "macro": 14
       },
       "publicSurfaceTotal": 412,
-      "defsCoupling": 30,
+      "defsCoupling": 29,
       "defsCouplingLocations": [
-        "crates/kernel/hol/core/src/hol.rs:28: Term::app(Term::app(defs::imp(), p), q)",
-        "crates/kernel/hol/core/src/hol.rs:33: Term::app(Term::app(defs::and(), p), q)",
-        "crates/kernel/hol/core/src/hol.rs:38: Term::app(Term::app(defs::or(), p), q)",
-        "crates/kernel/hol/core/src/hol.rs:43: Term::app(defs::not(), p)",
-        "crates/kernel/hol/core/src/hol.rs:50: Term::app(defs::exists(alpha), lambda)",
-        "crates/kernel/hol/core/src/hol.rs:55: defs::forall(alpha)",
-        "crates/kernel/hol/core/src/hol.rs:117: crate::defs::nat_succ()",
-        "crates/kernel/hol/core/src/hol.rs:123: crate::defs::nat_pred()",
+        "crates/kernel/hol/core/src/hol.rs:30: Term::app(Term::app(defs::imp(), p), q)",
+        "crates/kernel/hol/core/src/hol.rs:35: Term::app(Term::app(defs::and(), p), q)",
+        "crates/kernel/hol/core/src/hol.rs:40: Term::app(Term::app(defs::or(), p), q)",
+        "crates/kernel/hol/core/src/hol.rs:45: Term::app(defs::not(), p)",
+        "crates/kernel/hol/core/src/hol.rs:52: Term::app(defs::exists(alpha), lambda)",
+        "crates/kernel/hol/core/src/hol.rs:57: defs::forall(alpha)",
+        "crates/kernel/hol/core/src/hol.rs:119: crate::defs::nat_succ()",
+        "crates/kernel/hol/core/src/hol.rs:125: crate::defs::nat_pred()",
         "crates/kernel/hol/core/src/term/spec.rs:13: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
         "crates/kernel/hol/core/src/term/term.rs:394: IntTag::U8 => crate::defs::u8_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:395: IntTag::U16 => crate::defs::u16_ty(),",
@@ -91,14 +91,13 @@
         "crates/kernel/hol/core/src/term/term.rs:399: IntTag::S16 => crate::defs::s16_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:400: IntTag::S32 => crate::defs::s32_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:401: IntTag::S64 => crate::defs::s64_ty(),",
-        "crates/kernel/hol/core/src/thm/mod.rs:1150: if !is_spec(head, &crate::defs::imp_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1165: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1176: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1184: op: &crate::defs::TermSpec,",
-        "crates/kernel/hol/core/src/thm/mod.rs:1202: parse_hol_binop(t, &crate::defs::and_spec(), \"p /\\\\ q\")",
-        "crates/kernel/hol/core/src/thm/mod.rs:1207: parse_hol_binop(t, &crate::defs::or_spec(), \"p \\\\/ q\")",
-        "crates/kernel/hol/core/src/thm/mod.rs:1215: if !is_spec(head, &crate::defs::not_spec()) {",
-        "crates/kernel/hol/core/src/tohol.rs:108: let add = Val(crate::defs::nat_add());",
+        "crates/kernel/hol/core/src/thm/mod.rs:1206: if !is_spec(head, &crate::defs::imp_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1221: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1232: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1240: op: &crate::defs::TermSpec,",
+        "crates/kernel/hol/core/src/thm/mod.rs:1258: parse_hol_binop(t, &crate::defs::and_spec(), \"p /\\\\ q\")",
+        "crates/kernel/hol/core/src/thm/mod.rs:1263: parse_hol_binop(t, &crate::defs::or_spec(), \"p \\\\/ q\")",
+        "crates/kernel/hol/core/src/thm/mod.rs:1271: if !is_spec(head, &crate::defs::not_spec()) {",
         "crates/kernel/hol/core/src/ty/spec.rs:17: use crate::defs::helpers;",
         "crates/kernel/hol/core/src/ty/spec.rs:18: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
         "crates/kernel/hol/core/src/ty/ty.rs:113: LazyLock::new(|| Type::spec(crate::defs::bytes_spec(), Vec::new()));",
@@ -107,8 +106,8 @@
       ]
     },
     "base+HOL+eval": {
-      "files": 68,
-      "nonTestLoc": 10592,
+      "files": 81,
+      "nonTestLoc": 11012,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -133,21 +132,21 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 492,
-        "struct": 56,
+        "fn": 515,
+        "struct": 57,
         "enum": 13,
-        "trait": 21,
-        "macro": 30
+        "trait": 22,
+        "macro": 33
       },
-      "publicSurfaceTotal": 612,
-      "defsCoupling": 82,
+      "publicSurfaceTotal": 640,
+      "defsCoupling": 125,
       "defsCouplingLocations": [
-        "82 refs (list suppressed >60)"
+        "125 refs (list suppressed >60)"
       ]
     },
     "base+HOL+wasm": {
-      "files": 32,
-      "nonTestLoc": 5044,
+      "files": 33,
+      "nonTestLoc": 4995,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -172,23 +171,23 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 330,
-        "struct": 47,
-        "enum": 6,
-        "trait": 15,
+        "fn": 337,
+        "struct": 42,
+        "enum": 7,
+        "trait": 16,
         "macro": 15
       },
-      "publicSurfaceTotal": 413,
-      "defsCoupling": 30,
+      "publicSurfaceTotal": 417,
+      "defsCoupling": 32,
       "defsCouplingLocations": [
-        "crates/kernel/hol/core/src/hol.rs:28: Term::app(Term::app(defs::imp(), p), q)",
-        "crates/kernel/hol/core/src/hol.rs:33: Term::app(Term::app(defs::and(), p), q)",
-        "crates/kernel/hol/core/src/hol.rs:38: Term::app(Term::app(defs::or(), p), q)",
-        "crates/kernel/hol/core/src/hol.rs:43: Term::app(defs::not(), p)",
-        "crates/kernel/hol/core/src/hol.rs:50: Term::app(defs::exists(alpha), lambda)",
-        "crates/kernel/hol/core/src/hol.rs:55: defs::forall(alpha)",
-        "crates/kernel/hol/core/src/hol.rs:117: crate::defs::nat_succ()",
-        "crates/kernel/hol/core/src/hol.rs:123: crate::defs::nat_pred()",
+        "crates/kernel/hol/core/src/hol.rs:30: Term::app(Term::app(defs::imp(), p), q)",
+        "crates/kernel/hol/core/src/hol.rs:35: Term::app(Term::app(defs::and(), p), q)",
+        "crates/kernel/hol/core/src/hol.rs:40: Term::app(Term::app(defs::or(), p), q)",
+        "crates/kernel/hol/core/src/hol.rs:45: Term::app(defs::not(), p)",
+        "crates/kernel/hol/core/src/hol.rs:52: Term::app(defs::exists(alpha), lambda)",
+        "crates/kernel/hol/core/src/hol.rs:57: defs::forall(alpha)",
+        "crates/kernel/hol/core/src/hol.rs:119: crate::defs::nat_succ()",
+        "crates/kernel/hol/core/src/hol.rs:125: crate::defs::nat_pred()",
         "crates/kernel/hol/core/src/term/spec.rs:13: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
         "crates/kernel/hol/core/src/term/term.rs:394: IntTag::U8 => crate::defs::u8_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:395: IntTag::U16 => crate::defs::u16_ty(),",
@@ -198,24 +197,26 @@
         "crates/kernel/hol/core/src/term/term.rs:399: IntTag::S16 => crate::defs::s16_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:400: IntTag::S32 => crate::defs::s32_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:401: IntTag::S64 => crate::defs::s64_ty(),",
-        "crates/kernel/hol/core/src/thm/mod.rs:1150: if !is_spec(head, &crate::defs::imp_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1165: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1176: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1184: op: &crate::defs::TermSpec,",
-        "crates/kernel/hol/core/src/thm/mod.rs:1202: parse_hol_binop(t, &crate::defs::and_spec(), \"p /\\\\ q\")",
-        "crates/kernel/hol/core/src/thm/mod.rs:1207: parse_hol_binop(t, &crate::defs::or_spec(), \"p \\\\/ q\")",
-        "crates/kernel/hol/core/src/thm/mod.rs:1215: if !is_spec(head, &crate::defs::not_spec()) {",
-        "crates/kernel/hol/core/src/tohol.rs:108: let add = Val(crate::defs::nat_add());",
+        "crates/kernel/hol/core/src/thm/mod.rs:1206: if !is_spec(head, &crate::defs::imp_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1221: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1232: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1240: op: &crate::defs::TermSpec,",
+        "crates/kernel/hol/core/src/thm/mod.rs:1258: parse_hol_binop(t, &crate::defs::and_spec(), \"p /\\\\ q\")",
+        "crates/kernel/hol/core/src/thm/mod.rs:1263: parse_hol_binop(t, &crate::defs::or_spec(), \"p \\\\/ q\")",
+        "crates/kernel/hol/core/src/thm/mod.rs:1271: if !is_spec(head, &crate::defs::not_spec()) {",
         "crates/kernel/hol/core/src/ty/spec.rs:17: use crate::defs::helpers;",
         "crates/kernel/hol/core/src/ty/spec.rs:18: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
         "crates/kernel/hol/core/src/ty/ty.rs:113: LazyLock::new(|| Type::spec(crate::defs::bytes_spec(), Vec::new()));",
         "crates/kernel/hol/core/src/ty/ty.rs:132: LazyLock::new(|| Type::spec(crate::defs::int_ty_spec(), Vec::new()));",
-        "crates/kernel/hol/core/src/ty/ty.rs:144: LazyLock::new(|| Type::spec(crate::defs::unit_spec(), Vec::new()));"
+        "crates/kernel/hol/core/src/ty/ty.rs:144: LazyLock::new(|| Type::spec(crate::defs::unit_spec(), Vec::new()));",
+        "crates/kernel/hol/eval/src/defs/floats.rs:7: use crate::defs::Canonical;",
+        "crates/kernel/hol/eval/src/defs/floats.rs:8: use crate::defs::TypeSpec;",
+        "crates/kernel/hol/eval/src/defs/floats.rs:9: use crate::defs::{u32_ty, u64_ty};"
       ]
     },
     "base+HOL+eval+wasm": {
-      "files": 68,
-      "nonTestLoc": 10592,
+      "files": 81,
+      "nonTestLoc": 11012,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -240,16 +241,16 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 492,
-        "struct": 56,
+        "fn": 515,
+        "struct": 57,
         "enum": 13,
-        "trait": 21,
-        "macro": 30
+        "trait": 22,
+        "macro": 33
       },
-      "publicSurfaceTotal": 612,
-      "defsCoupling": 82,
+      "publicSurfaceTotal": 640,
+      "defsCoupling": 125,
       "defsCouplingLocations": [
-        "82 refs (list suppressed >60)"
+        "125 refs (list suppressed >60)"
       ]
     }
   },
@@ -257,7 +258,8 @@
     "termKindVariants": 18,
     "typeKindVariants": 7,
     "admittedRules": {
-      "coreManifest": 52,
+      "coreManifest": 39,
+      "evalManifest": 13,
       "builtinsManifest": 387
     },
     "externalDeps": {
@@ -278,7 +280,34 @@
           "unicode-ident"
         ]
       },
-      "base+HOL+eval(core closure)": {
+      "base+HOL(core closure)": {
+        "count": 22,
+        "crates": [
+          "borsh",
+          "bytes",
+          "either",
+          "equivalent",
+          "fnv",
+          "foldhash",
+          "hashbrown",
+          "indexmap",
+          "libm",
+          "num-bigint",
+          "num-integer",
+          "num-traits",
+          "proc-macro2",
+          "quote",
+          "serde",
+          "serde_core",
+          "serde_derive",
+          "smol_str",
+          "syn",
+          "thiserror",
+          "thiserror-impl",
+          "unicode-ident"
+        ]
+      },
+      "base+HOL+eval(hol-eval closure)": {
         "count": 28,
         "crates": [
           "arrayvec",

@@ -2,6 +2,23 @@
 
 See [`CLAUDE.md`](../../../../CLAUDE.md) § Skeletons and the [root index](../../../../SKELETONS.md).
 
+## Pure-HOL unit tests: coverage gaps (stage E3, D5)
+
+`tests/pure_hol_units.rs` checks definition-vs-native per cert family; open
+gaps (full scoping in that file's module docs):
+
+- **nat/int definitional derivations are `EvalThm`-typed** — the chains use
+  HOL rules only, but `covalence-init` pins `EvalThm`; tier-generic init
+  derivations (`Thm<L: HolTier>`) would land them at `Thm<CoreLang>` verbatim.
+  Until then the pure tier holds only the δ/β spines (it cannot state literal
+  equations at all — the D3 denotation axioms are eval-tier by design).
+- **bytes definitional evaluation missing** — blocked on the `Blob` ↔ `list u8`
+  bridge + list recursion (covalence-init `init/SKELETONS.md`); the test pins
+  only the spine + the cert value.
+- **fixed-width definitional evaluation stops at `toNat`/`fromNat`**
+  (intentionally declaration-only); the body-forced differential is
+  `tests/audit_reduce.rs::audit_reduce_matches_body`.
+
 ## Declaration-only catalogue ops (no definitional body yet)
 
 These `defs/` term-specs carry `tm = None`: sound/complete on literals (via

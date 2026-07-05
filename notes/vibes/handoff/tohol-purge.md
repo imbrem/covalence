@@ -30,9 +30,18 @@ memory + [`../pure-hol-and-build-plan.md`](../pure-hol-and-build-plan.md).
   [`../defs-rehome-design.md`](../defs-rehome-design.md). Bench baseline:
   `docs/deps/proving-baseline.json` (rat 229ms / int 111ms / regex / utf heavies).
   Audited sound (0 findings).
+- **E1–E3 (defs-out, the tower):** `Thm<L: HolTier = CoreLang>`; `CoreEval` in
+  `crates/kernel/hol/eval` owns the cert/toHOL rules (`docs/deps/eval-manifest.txt`,
+  13 rules; core-manifest 52 → 39) + the moved `defs/` term catalogue next to
+  them; `EvalThm = Thm<CoreEval>`; core keeps only the D3 residue
+  (`core/SKELETONS.md`). Pure-HOL unit tests
+  (`crates/kernel/hol/eval/tests/pure_hol_units.rs`) machine-check
+  definition-vs-native per cert family; `scripts/tcb-audit.mjs` tracks the
+  tiers (base+HOL 4,888 src-lines vs eval tier 11,012 — trust a
+  `Thm<CoreLang>` consumer never depends on).
 
 Ratchet now: obs 0, reduce_prim 0, tycon-obs 0, has_no_obs 0; remaining
-unfold_term_spec ~36, termkind-literals 117, term-literal-ctors ~205,
+unfold_term_spec 38, termkind-literals 123, term-literal-ctors 201,
 cov-script-reduce 18.
 
 ## Remaining — reframed under the defs-out-of-core priority

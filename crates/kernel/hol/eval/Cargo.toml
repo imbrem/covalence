@@ -11,7 +11,12 @@ edition = "2024"
 # untrusted — it can fail, but it cannot forge. This crate must NEVER be
 # depended on by the kernel (core -> hol-eval is a BANNED edge in
 # scripts/dep-graph.mjs; hol-eval -> core is the direction we keep) and never
-# depends on the `covalence-init` catalogue (also BANNED).
+# NORMALLY depends on the `covalence-init` catalogue (also BANNED). The
+# dev-dependency on covalence-init is the differential-test pattern (the
+# covalence-pure-eval -> covalence-core precedent): dev/build deps are not
+# dep-graph edges, and the pure-HOL unit tests (tests/pure_hol_units.rs)
+# consume init's *proved* defining theorems to check the cert families
+# against the catalogue definitions.
 
 [dependencies]
 covalence-core = { path = "../core" }
@@ -21,3 +26,6 @@ covalence-sexp = { path = "../../../lib/sexp" }
 covalence-types = { path = "../../../lib/types" }
 smol_str = "0.3"
 thiserror = "2"
+
+[dev-dependencies]
+covalence-init = { path = "../init" }

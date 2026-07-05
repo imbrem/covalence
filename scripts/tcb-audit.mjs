@@ -20,10 +20,12 @@
 //   bun scripts/tcb-audit.mjs            print the report
 //   bun scripts/tcb-audit.mjs --json     also write docs/deps/tcb-audit.json
 //
-// PRELIMINARY + MEANT TO BE UPDATED. The CONFIGS globs approximate the post-split
-// TCB *today* (defs/ + certs.rs still physically live in core); tighten the
-// include/exclude sets as crates actually split. Add metrics as new trust
-// constructs appear.
+// PRELIMINARY + MEANT TO BE UPDATED. The CONFIGS reflect the post-E2 split:
+// the cert/toHOL rules + the defs/ term catalogue live in covalence-hol-eval
+// (the CoreEval tier); what remains under core/src/defs/ is the D3 residue
+// (type handles the literal LEAVES need — u8_ty..int_ty, connective builders),
+// which dies with the literal leaves. Add metrics as new trust constructs
+// appear.
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -33,13 +35,16 @@ const WRITE_JSON = process.argv.includes("--json");
 
 // ---------------------------------------------------------------------------
 // Configurations. Each is a set of source ROOTS (dirs or files) plus EXCLUDES
-// (path substrings). `+HOL` deliberately EXCLUDES defs/ + certs.rs so the number
-// reflects the *minimal* HOL kernel we are driving toward — the gap between
-// `base+HOL` and `base+HOL+eval` is exactly the defs-out-of-core opportunity.
+// (path substrings). `+HOL` EXCLUDES only core's defs/ residue (the D3
+// transitional type handles, dying with the literal leaves) — the cert
+// families + the term catalogue physically moved to the CoreEval tier
+// (crates/kernel/hol/eval), so the gap between `base+HOL` and `base+HOL+eval`
+// is now a *declared* trust boundary, not an exclude-glob fiction.
 // ---------------------------------------------------------------------------
 const BASE = "crates/kernel/base/trusted/src";
 const CORE = "crates/kernel/hol/core/src";
 const EVAL = "crates/kernel/base/eval/src";
+const HOLEVAL = "crates/kernel/hol/eval/src";
 
 const CONFIGS = [
   {
@@ -50,25 +55,30 @@ const CONFIGS = [
   {
     name: "base+HOL",
     roots: [BASE, CORE],
-    // defs/ and the cert families are the eval axiom layer — not minimal HOL.
-    exclude: [`${CORE}/defs/`, `${CORE}/thm/certs.rs`],
+    // core/src/defs/ = the D3 residue (literal-leaf type handles +
+    // connective builders); transitional, not minimal HOL.
+    exclude: [`${CORE}/defs/`],
   },
   {
     name: "base+HOL+eval",
-    roots: [BASE, CORE, EVAL],
+    // The CoreEval tier: the eval axioms = the native CanonRules
+    // (base/eval) + the cert/toHOL rules, their dispatch, and the defs/
+    // catalogue they key on (hol/eval) + the D3 residue in core.
+    roots: [BASE, CORE, EVAL, HOLEVAL],
     exclude: [],
   },
   {
     name: "base+HOL+wasm",
-    // The WASM-oracle tier = minimal HOL + the float ops (base + eval float.rs).
-    // (The dedicated wasm-oracle rules are nascent; extend this as they land.)
-    roots: [BASE, CORE, `${EVAL}/float.rs`],
-    exclude: [`${CORE}/defs/`, `${CORE}/thm/certs.rs`, `${EVAL}/nat.rs`, `${EVAL}/int.rs`, `${EVAL}/bytes.rs`, `${EVAL}/fixed.rs`],
+    // The WASM-oracle tier = minimal HOL + the float ops (base/eval
+    // float.rs + the hol/eval float defs). (The dedicated wasm-oracle /
+    // F2b CoreEval rules are nascent; extend this as they land.)
+    roots: [BASE, CORE, `${EVAL}/float.rs`, `${HOLEVAL}/defs/floats.rs`],
+    exclude: [`${CORE}/defs/`],
   },
   {
     name: "base+HOL+eval+wasm",
     // Everything trusted: the full cumulative tower (top tier).
-    roots: [BASE, CORE, EVAL],
+    roots: [BASE, CORE, EVAL, HOLEVAL],
     exclude: [],
   },
 ];
@@ -182,8 +192,8 @@ function nonTestLoc(bodies) {
 }
 
 // Admitted-rule manifests (each rule = one trust obligation). Attributed:
-// core-manifest → the CoreLang rules (HOL + eval certs); builtins → the native
-// CanonRules. base+HOL should tend toward ONLY the HOL rules here as certs leave.
+// core-manifest → the CoreLang HOL rules; eval-manifest → the CoreEval
+// cert/toHOL rules; builtins → the native CanonRules.
 function manifestCount(path) {
   if (!existsSync(path)) return null;
   return readFileSync(path, "utf8").split("\n").filter((l) => l.trim() && !l.startsWith("#")).length;
@@ -256,17 +266,24 @@ for (const cfg of CONFIGS) {
 const termLeaves = enumVariants(`${CORE}/term/term.rs`, "TermKind");
 const typeLeaves = enumVariants(`${CORE}/ty/ty.rs`, "TypeKind");
 const coreRules = manifestCount("docs/deps/core-manifest.txt");
+const evalRules = manifestCount("docs/deps/eval-manifest.txt");
 const builtinRules = manifestCount("docs/deps/builtins-manifest.txt");
 const baseExt = externalDeps("covalence-pure-trusted");
 const coreExt = externalDeps("covalence-core");
+const evalExt = externalDeps("covalence-hol-eval");
 
 const globals = {
   termKindVariants: termLeaves,
   typeKindVariants: typeLeaves,
-  admittedRules: { coreManifest: coreRules, builtinsManifest: builtinRules },
+  admittedRules: {
+    coreManifest: coreRules,
+    evalManifest: evalRules,
+    builtinsManifest: builtinRules,
+  },
   externalDeps: {
     base: baseExt ? { count: baseExt.length, crates: baseExt } : null,
-    "base+HOL+eval(core closure)": coreExt ? { count: coreExt.length, crates: coreExt } : null,
+    "base+HOL(core closure)": coreExt ? { count: coreExt.length, crates: coreExt } : null,
+    "base+HOL+eval(hol-eval closure)": evalExt ? { count: evalExt.length, crates: evalExt } : null,
   },
 };
 
@@ -285,15 +302,25 @@ for (const cfg of CONFIGS) {
   );
 }
 console.log("\nLeaves:  TermKind variants =", termLeaves, " TypeKind variants =", typeLeaves);
-console.log("Admitted rules:  CoreLang(core-manifest) =", coreRules, " Builtins =", builtinRules);
-console.log("External deps in TCB:  base =", baseExt?.length, " core-closure =", coreExt?.length);
+console.log(
+  "Admitted rules:  CoreLang(core-manifest) =", coreRules,
+  " CoreEval(eval-manifest) =", evalRules,
+  " Builtins =", builtinRules,
+);
+console.log(
+  "External deps in TCB:  base =", baseExt?.length,
+  " core-closure =", coreExt?.length,
+  " hol-eval-closure =", evalExt?.length,
+);
 if (baseExt) console.log("  base:", baseExt.join(", "));
 
-// The headline for the defs-out goal:
+// The headline for the defs-out goal (E2: the catalogue + certs are now a
+// DECLARED tier in hol/eval; what keeps base+HOL above its floor is the D3
+// residue's couplings + the literal leaves):
 const hol = report["base+HOL"], evl = report["base+HOL+eval"];
 console.log(
-  `\nDefs-out opportunity: base+HOL src-lines ${hol.nonTestLoc} vs base+HOL+eval ${evl.nonTestLoc}` +
-  `  (Δ ${evl.nonTestLoc - hol.nonTestLoc} lines + ${evl.defsCoupling - hol.defsCoupling} defs:: refs move out of the minimal kernel)`,
+  `\nTier gap: base+HOL src-lines ${hol.nonTestLoc} vs base+HOL+eval ${evl.nonTestLoc}` +
+  `  (Δ ${evl.nonTestLoc - hol.nonTestLoc} lines of eval-tier trust a Thm<CoreLang> consumer never depends on)`,
 );
 
 if (report["base+HOL+eval"].unsafe > 0) console.log(`\n⚠ unsafe in TCB: ${report["base+HOL+eval"].unsafe} — must be 0`);

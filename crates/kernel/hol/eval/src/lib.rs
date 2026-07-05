@@ -12,7 +12,8 @@
 //! untrusted: they can fail, but they cannot forge.
 //!
 //! Surface (semantics pinned by `tests/audit_reduce.rs`, the S8 port of the
-//! retired in-kernel audit suite):
+//! retired in-kernel audit suite; definition-vs-native consistency per cert
+//! family pinned by `tests/pure_hol_units.rs`, the stage-E3 pure-HOL units):
 //!
 //! - [`CoreEval`] / [`EvalThm`] — the tier and its theorem type.
 //! - [`reduce`] / [`reduce_with`] — single-step closed-form computation

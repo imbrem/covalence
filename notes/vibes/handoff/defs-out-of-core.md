@@ -155,4 +155,37 @@ consistency of definition vs native impl, living in hol/eval next to both.
 S10/S11 and the float cert families inherit this architecture (floats' F2b
 becomes a CoreEval family in hol/eval directly).
 
+---
+
+## STATUS (stages E1–E3 landed, 2026-07)
+
+- **E1** — `core::Thm` genericized: `Thm<L: HolTier = CoreLang>`; `HolTier` is
+  a plain public marker (admits-only soundness; sealing would block hol/eval
+  from owning `CoreEval`).
+- **E2** — the tower is real: `CoreEval` in `crates/kernel/hol/eval`
+  (`covalence-hol-eval`) with its own `EVAL_MANIFEST` golden
+  (`docs/deps/eval-manifest.txt`, 13 rules); `certs.rs` + `tohol*.rs` + the
+  `defs/` TERM catalogue moved there as `Rule<CoreEval>`s next to the tables;
+  `EvalThm = Thm<CoreEval>`; init consumes the top tier. Core-manifest shrank
+  52 → 39. Deviation D-E2a: the connective/quantifier rules + `hol.rs`/
+  `logic.rs` builders stay in core (the D3 residue type-spec bodies need them,
+  and the pure tier proves with them).
+- **E3** — the payoff: `crates/kernel/hol/eval/tests/pure_hol_units.rs`
+  machine-checks definition-vs-native per cert family (nat.add, int.add,
+  bytes.cat, u8.add). **Scoping correction to D5:** a `Thm<CoreLang>`
+  derivation of a literal-leaf equation is *mathematically impossible* — the
+  pure tier has NO literal-denotation axioms (that is the tier split working
+  as designed; even `⊢ T` is eval-tier while `T` is a `Bool` literal). What
+  lands: pure δ/β spines at `Thm<CoreLang>` + definitional derivations that
+  never invoke the family under test (init's proved recursion/ring theorems +
+  the D3 `succ`-literal bridge), asserted concl-equal to the cert facts.
+  Follow-up (hol/eval `SKELETONS.md`): tier-generic init derivations would
+  land the numeral computations at `Thm<CoreLang>` verbatim.
+  `scripts/tcb-audit.mjs` now measures the declared tiers (base+HOL = 4,888
+  src-lines / 29 defs refs, vs 4,958 / 30 pre-move — and the excluded defs/
+  path is now genuinely only the D3 residue).
+
+Remaining: **L4** (ε/rep/abs endgame) and the D3 residue deletion (with the
+literal leaves, S10/S11) — both maintainer-gated.
+
 [three-tier tower]: ../pure-hol-and-build-plan.md

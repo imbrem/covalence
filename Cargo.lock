@@ -1077,6 +1077,7 @@ name = "covalence-hol-eval"
 version = "0.0.0"
 dependencies = [
  "covalence-core",
+ "covalence-init",
  "covalence-pure",
  "covalence-pure-eval",
  "covalence-sexp",

@@ -40,6 +40,7 @@
     "reduce_prim": {
       "covalence-core": 83,
       "covalence-init": 15,
+      "covalence-pure-eval": 1,
       "covalence-types": 1
     },
     "unfold_term_spec": {
@@ -56,7 +57,8 @@
       "covalence-alethe": 9,
       "covalence-core": 129,
       "covalence-core-test-guest": 4,
-      "covalence-init": 120
+      "covalence-init": 120,
+      "covalence-pure-eval": 3
     },
     "has_no_obs": {},
     "cov-script-reduce": {
@@ -65,11 +67,11 @@
   },
   "totals": {
     "obs-rules": 0,
-    "reduce_prim": 99,
+    "reduce_prim": 100,
     "unfold_term_spec": 49,
     "termkind-literals": 130,
     "tycon-obs": 0,
-    "term-literal-ctors": 262,
+    "term-literal-ctors": 265,
     "has_no_obs": 0,
     "cov-script-reduce": 18
   }

@@ -84,8 +84,10 @@ const groupEdges = [...groupEdgeSet].sort();
 const BANNED_EDGES = [
   // toHOL-purge freezes — uncomment each as its crate lands
   // (notes/vibes/pure-hol-and-build-plan.md; ratchet: scripts/purge-ratchet.mjs):
-  // ["covalence-pure-eval", "covalence-core"], // base eval knows nothing of HOL
-  // ["covalence-pure", "covalence-pure-eval"], // base kernel stays eval-free
+  // (the differential-test dev-dep covalence-pure-eval -> covalence-core is
+  // not an edge here: dev/build deps are skipped above)
+  ["covalence-pure-eval", "covalence-core"], // base eval knows nothing of HOL
+  ["covalence-pure", "covalence-pure-eval"], // base kernel stays eval-free
   // ["covalence-hol-eval", "covalence-init"], // drivers must not depend on the catalogue
 ];
 const bannedHits = edges.filter(([f, t]) =>

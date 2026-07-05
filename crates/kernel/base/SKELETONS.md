@@ -16,15 +16,17 @@ stages and a few deferred seams remain.
   downcast), minting `⊢ e = Val(eval(e))`; equality-decision (the old `decide`/
   `StructuralEq`, giving `⊢ ¬(a=b)`) is then just evaluating an `Eqn` bool expression
   to `false`. Kept out of the TCB for now: it must **preserve the `admits` gate**
-  (ungated eval of a `CanonRule` would bypass gating) and needs the Stage 3 builtin
-  ops. May land as a plugin/impl rather than core. The `float` `CanonRule`s are the
-  narrow gated precursor.
+  (ungated eval of a `CanonRule` would bypass gating). The Stage-3 builtin ops it
+  needs now exist (`covalence-pure-eval`). May land as a plugin/impl rather than
+  core. The `float` `CanonRule`s are the narrow gated precursor.
 - **Stage 1 ADTs + `Set<T>`/`InterpSet`** — the abstract-sort + interpretation
   pattern; first concrete theory, needed by HOL.
 - **Stage 2 HOL** — `HolTy`/`HolTm<V>` ops, `Fv`/`Bv`/`subst`/β as
   ops-that-are-rules, `Hol` over `()` (+ `Set<Var>`).
-- **Stages 3–4 builtins** — `Nat`/`Int`/`Bytes`/`Text`/`FixedWidth` `CanonRule`s
-  over `covalence_types`, then `Cov = (Hol, Builtins)`.
+- **Stage 3 `Text` builtins + Stage 4 `Cov`** — the `Nat`/`Int`/`Bytes`/fixed-width
+  `CanonRule`s landed as `covalence-pure-eval` (`Builtins`; golden
+  `docs/deps/builtins-manifest.txt`); still open: `Text` ops and
+  `Cov = (Hol, Builtins)`.
 - **Stage 5** — `Wasm`/`X86` languages.
 
 ## Minor — deferred seams
@@ -50,9 +52,6 @@ stages and a few deferred seams remain.
   out of scope (ops are symbols ⇒ `'static` in practice).
 - **Unsized sorts** — `Ref` requires `P::Target: Sized`, so `str`/`[T]` can't be
   sorts yet.
-- **Name overlay + golden-file pin** — the untrusted `Named`/`TypeId→name` trait
-  and the name-projected golden `MANIFEST` diff are not built; the test asserts
-  the raw `TypeId` list directly.
 - **Non-`'static` rules** — the `Rule::Id` tag seam was **removed** (it was
   unsound: an implementor-chosen `Id` decoupled from `conclude` let `apply`
   borrow an admitted identity to mint a false equation — closed by gating `apply`

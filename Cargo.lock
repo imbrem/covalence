@@ -1251,6 +1251,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-pure-eval"
+version = "0.0.0"
+dependencies = [
+ "covalence-core",
+ "covalence-pure",
+ "covalence-types",
+]
+
+[[package]]
 name = "covalence-pure-trusted"
 version = "0.0.0"
 dependencies = [

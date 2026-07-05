@@ -4,6 +4,7 @@ members = [
     "crates/app/*",
     "crates/ffi/*",
     "crates/kernel/base",
+    "crates/kernel/base/eval",
     "crates/kernel/base/trusted",
     "crates/kernel/core",
     "crates/kernel/hol/*",

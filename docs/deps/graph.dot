@@ -33,6 +33,7 @@ digraph deps {
   "parse" [style=filled, fillcolor="#ffd6d6"];
   "proto";
   "pure" [style=filled, fillcolor="#ffd6d6"];
+  "pure-eval";
   "pure-trusted" [style=filled, fillcolor="#ffd6d6"];
   "python";
   "rand";
@@ -117,6 +118,8 @@ digraph deps {
   "opentheory" -> "hol";
   "parquet" -> "arrow";
   "pure" -> "pure-trusted";
+  "pure-eval" -> "pure";
+  "pure-eval" -> "types";
   "pure-trusted" -> "types";
   "python" -> "crypto-sig";
   "python" -> "git";

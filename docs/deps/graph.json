@@ -33,6 +33,7 @@
     "covalence-parse",
     "covalence-proto",
     "covalence-pure",
+    "covalence-pure-eval",
     "covalence-pure-trusted",
     "covalence-python",
     "covalence-rand",
@@ -316,6 +317,14 @@
     {
       "from": "covalence-pure",
       "to": "covalence-pure-trusted"
+    },
+    {
+      "from": "covalence-pure-eval",
+      "to": "covalence-pure"
+    },
+    {
+      "from": "covalence-pure-eval",
+      "to": "covalence-types"
     },
     {
       "from": "covalence-pure-trusted",

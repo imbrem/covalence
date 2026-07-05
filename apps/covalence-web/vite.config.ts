@@ -142,6 +142,10 @@ export default defineConfig({
 		format: 'es',
 	},
 	server: {
+		fs: {
+			// the /tcb page imports the repo-level docs/deps/tcb-audit.json snapshot
+			allow: ['../..'],
+		},
 		proxy: {
 			'/api': {
 				target: apiTarget,

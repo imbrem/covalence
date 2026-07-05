@@ -249,7 +249,8 @@ impl Thm {
     ///   `body` or `arg`, so redexes nested in either are preserved.
     /// - β only: it performs no δ-unfolding (see
     ///   [`Thm::unfold_term_spec`]), no literal/primitive computation
-    ///   (see [`Thm::reduce_prim`] — e.g. `(λx. x) (2 + 3)` reduces to
+    ///   (that lives in the certificate path driven by
+    ///   `covalence-hol-eval` — e.g. `(λx. x) (2 + 3)` reduces to
     ///   `2 + 3`, *not* `5`), and no η-contraction (see
     ///   [`Thm::eta_conv`]).
     pub fn beta_conv(app: Term) -> Result<Thm> {
@@ -719,10 +720,11 @@ impl Thm {
     /// type-args — that is the definitional equation the kernel commits
     /// to when the spec is built. This holds for any body, including
     /// user-constructed `TermSpec`s, so the rule needs no trust in the
-    /// catalogue. (Note: when a spec is **also** in `reduce_prim`'s table
-    /// — e.g. `nat.add`, `nat.mod` — the two rules commit two facts about
-    /// it, so the body MUST denote the same function `reduce_prim`
-    /// computes; see `audit_reduce::audit_reduce_matches_body_nat_ops`.)
+    /// catalogue. (Note: when a spec is **also** decided by the family
+    /// certificate rules — e.g. `nat.add`, `nat.mod` — the two paths
+    /// commit two facts about it, so the body MUST denote the same
+    /// function the certificates compute; see
+    /// `covalence-hol-eval`'s `tests/audit_reduce.rs::audit_reduce_matches_body`.)
     pub fn unfold_term_spec(t: Term) -> Result<Thm> {
         mint!(UnfoldTermSpec, (t.clone(),), (t,))
     }
@@ -881,49 +883,6 @@ impl Thm {
         )
     }
 
-    /// Single-step closed-form computation: `⊢ t = result` where `t` is a
-    /// kernel literal operation applied to all-literal arguments, and
-    /// `result` is the computed value. Returns [`Error::NotReducible`] for
-    /// any other shape — the rule is deliberately conservative: it does
-    /// not reduce subterms or follow β/δ chains.
-    ///
-    /// The catalogue (dispatched by `builtins::reduce_prim_term`):
-    ///
-    /// - HOL `=` over two same-kind literals (`Bool`/`Nat`/`Int`/
-    ///   `SmallInt`/`Blob`) → `Bool(a == b)`.
-    /// - the `nat.*` / `int.*` / `bytes.*` arithmetic, comparison, bitwise
-    ///   and conversion specs (see `builtins::Prim` for the full list),
-    ///   and the fixed-width `uN`/`sN` ops (`defs::int_ops`).
-    ///
-    /// Conventions worth noting: nat `sub`/`pred` saturate at 0; `n/0 = 0`
-    /// and `n mod 0 = n` (the latter forced by `nat.mod`'s body — see
-    /// `builtins::eval_prim`); fixed-width arithmetic wraps mod `2^width`.
-    ///
-    /// ## Soundness
-    ///
-    /// Each reduction is `t = canonical_value`, true by the literals'
-    /// fixed denotation in every model — not a logical postulate. (The
-    /// literal-distinctness case `Nat(5) = Nat(6) → F` is the kernel's
-    /// denotational commitment that distinct literals denote distinct
-    /// values.)
-    pub fn reduce_prim(t: Term) -> Result<Thm> {
-        Self::reduce_prim_with(t, &mut ())
-    }
-
-    /// [`reduce_prim`](Self::reduce_prim) building its `t = result`
-    /// equation through a caller-supplied [`TrustedCons`].
-    ///
-    /// Soundness: identical to [`reduce_prim`](Self::reduce_prim); the cons
-    /// only shares the `Arc`s of the result equation's spine (the computed
-    /// literal `result` and the `=` around it), with no soundness role. It
-    /// lets a reduction driver thread one cons uniformly through
-    /// `beta_conv` / `reduce_prim` / `trans`.
-    pub fn reduce_prim_with<C: TrustedCons + ?Sized>(t: Term, cons: &mut C) -> Result<Thm> {
-        let thm = mint!(ReducePrim, (t.clone(),), (t,))?;
-        intern_concl(&thm, cons);
-        Ok(thm)
-    }
-
     /// `Γ[α:=σ] ⊢ φ[α:=σ]`.
     pub fn inst_tfree(self, name: &str, replacement: Type) -> Result<Thm> {
         self.inst_tfree_with(name, replacement, &mut ())
@@ -966,8 +925,9 @@ impl Thm {
     // unproved in hypothesis audits).
     //
     // **Computational axioms** (the reduce-on-literals rules) live
-    // separately on `Thm::reduce_prim` and `Thm::unfold_term_spec`.
-    // Those are *accelerated* reduction steps — each is a one-shot
+    // separately: `Thm::unfold_term_spec` plus the per-family
+    // certificate rules (driven by `covalence-hol-eval`). Those are
+    // *accelerated* reduction steps — each is a one-shot
     // `t = canonical_form` equation justified by the literal's
     // denotation, not a logical postulate.
 
@@ -1041,7 +1001,7 @@ impl Thm {
     // relies on; these two rules expose its other half — that distinct
     // constructor expressions denote distinct numbers — as
     // non-computational primitives (the literal cases already reduce
-    // via [`Thm::reduce_prim`]; these cover *open* terms).
+    // via the certificate path; these cover *open* terms).
 
     /// `⊢ (succ m = succ n) ⟹ (m = n)` — successor injectivity. `m`
     /// and `n` must type-check at `nat`.

@@ -5,7 +5,7 @@
 //!
 //! Each helper takes an **op selector** (a [`TermSpec`], keyed by canonical
 //! pointer identity — `spec.ptr_id()` against a table built from the
-//! `crate::defs` handles, exactly the `builtins::PRIM_TABLE` discipline) plus
+//! `crate::defs` handles — canonical pointer-identity dispatch) plus
 //! **native argument values** ([`Lit`]), computes the result through the
 //! matching `covalence-pure-eval` [`CanonRule`](covalence_pure::CanonRule)
 //! (the enumerable computation-TCB record — see the `Builtins` manifest
@@ -13,18 +13,18 @@
 //! [`Term`]. The rule bodies in `super::rules` then pass it through the
 //! `seq` well-typedness floor.
 //!
-//! In-TCB (audit like `builtins.rs`): a wrong table entry or a wrong literal
-//! rebuild here would mint a false equation. The invariants to check:
+//! In-TCB: a wrong table entry or a wrong literal rebuild here would mint a
+//! false equation. The invariants to check:
 //!
 //! - every table key is a canonical `defs::*_spec()` handle (a user-built
 //!   spec sharing the label is a different `Arc` ⇒ absent ⇒ never fires);
 //! - arity and literal kinds are matched exactly (anything else refuses with
-//!   [`Error::NotReducible`], mirroring `builtins.rs`'s `None`);
-//! - the computation is the matching `covalence-pure-eval` op (whose body
-//!   transcribes `builtins.rs` — enforced by the S3 differential suite), with
-//!   the oversize `nat.pow` / `nat.shl` / `nat.shr` refusals re-checked HERE
-//!   (the `CanonRule` panics where `builtins.rs` returns `None`; refusing
-//!   first keeps the decide total).
+//!   [`Error::NotReducible`] — a refusal, never a wrong equation);
+//! - the computation is the matching `covalence-pure-eval` op (whose FORCED
+//!   conventions are pinned by that crate's semantics suite), with the
+//!   oversize `nat.pow` / `nat.shl` / `nat.shr` refusals re-checked HERE
+//!   (the `CanonRule` panics on oversize operands; refusing first keeps the
+//!   decide total).
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -310,8 +310,8 @@ fn int2(args: &[Lit]) -> Result<(&Int, &Int)> {
     }
 }
 
-/// Oversize-refusal mirror of `builtins.rs::eval_prim`'s `nat.pow` arm: the
-/// exponent must fit one `u32` digit (the pure-eval `CanonRule` would panic).
+/// Oversize refusal for `nat.pow`: the exponent must fit one `u32` digit
+/// (the pure-eval `CanonRule` would panic).
 fn check_pow_exponent(exp: &Nat) -> Result<()> {
     if exp.as_inner().to_u32_digits().len() > 1 {
         return Err(Error::NotReducible);
@@ -319,8 +319,8 @@ fn check_pow_exponent(exp: &Nat) -> Result<()> {
     Ok(())
 }
 
-/// Oversize-refusal mirror of `builtins.rs::reduce_nat_shift`: the shift
-/// amount must fit one `u64` digit and `usize`.
+/// Oversize refusal for `nat.shl`/`nat.shr`: the shift amount must fit one
+/// `u64` digit and `usize`.
 fn check_shift_amount(shift: &Nat) -> Result<()> {
     let digits = shift.as_inner().to_u64_digits();
     if digits.len() > 1 {
@@ -513,7 +513,8 @@ pub(crate) fn lit_eq(a: &Lit, b: &Lit) -> Result<Term> {
 // ============================================================================
 
 /// Encode a fixed-width result back into the canonical `u64` payload
-/// (sign-extend signed, zero-extend unsigned — `builtins.rs`'s `store`).
+/// (sign-extend signed, zero-extend unsigned — the kernel literal payload
+/// convention).
 fn small_lit<T: FwRepr>(tag: IntTag, v: T) -> SmallIntLiteral {
     let bits = if T::SIGNED {
         v.value_s() as u64

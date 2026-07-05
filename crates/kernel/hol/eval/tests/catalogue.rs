@@ -1,31 +1,26 @@
-//! DIFFERENTIAL suite: `covalence_hol_eval::reduce` (the cert path) against
-//! the legacy `Thm::reduce_prim`, over every catalogue entry the legacy
-//! `PRIM_TABLE` / `defs::int_ops` registry dispatches, plus the edge cases.
-//!
-//! A divergence here is a HARD WALL for the purge (it would mean the
-//! retained rules can mint `⊢ False`): the two paths must produce identical
-//! conclusions and identical refusals while both exist.
+//! Catalogue coverage: [`covalence_hol_eval::reduce`] decides exactly the
+//! documented closed-form catalogue — every family, every fixed-width tag,
+//! the 8×8 cast grid — and refuses everything else. The successor of the S5
+//! differential suite (which pinned `reduce` against the now-deleted legacy
+//! `Thm::reduce_*` kernel rule): shape/coverage is asserted here, exact
+//! result values are pinned in `tests/audit_reduce.rs` (the S8 port of the
+//! retired in-kernel audit suite) and in `covalence-pure-eval`'s own tests.
 
+use covalence_core::seam::Lit;
 use covalence_core::{IntTag, SmallIntLiteral, Term, Thm, defs};
-use covalence_hol_eval::{delta, prove_true, reduce, reduce_with};
-use covalence_types::{Int, Nat, Sign};
+use covalence_hol_eval::{delta, mk_blob, mk_int, mk_nat, prove_true, reduce, reduce_with};
+use covalence_types::Nat;
 
 fn nat(n: u64) -> Term {
-    Term::nat_lit(Nat::from(n))
+    mk_nat(Nat::from(n))
 }
 
 fn int(n: i64) -> Term {
-    let mag = Nat::from(n.unsigned_abs());
-    let sign = match n {
-        0 => Sign::Zero,
-        _ if n > 0 => Sign::Positive,
-        _ => Sign::Negative,
-    };
-    Term::int_lit(Int::from_sign_nat(sign, mag))
+    mk_int(n as i128)
 }
 
 fn blob(bs: &[u8]) -> Term {
-    Term::blob(bs.to_vec())
+    mk_blob(bs.to_vec())
 }
 
 /// Canonically-encoded fixed-width literal from a signed value (mask to
@@ -63,38 +58,27 @@ fn hol_eq(lhs: Term, rhs: Term) -> Term {
     Term::app(Term::app(Term::eq_op(alpha), lhs), rhs)
 }
 
-/// THE differential assertion: identical conclusions, or identical refusal.
-#[track_caller]
-fn check(t: Term) {
-    let legacy = Thm::reduce_prim(t.clone());
-    let cert = reduce(&t);
-    match (&legacy, &cert) {
-        (Ok(l), Some(c)) => {
-            assert_eq!(
-                l.concl(),
-                c.concl(),
-                "DIVERGENT conclusions for {t} — HARD WALL"
-            );
-            assert!(l.hyps().is_empty() && c.hyps().is_empty());
-        }
-        (Err(_), None) => {}
-        _ => panic!(
-            "DIVERGENT reducibility for {t}: legacy={} cert={} — HARD WALL",
-            legacy.is_ok(),
-            cert.is_some()
-        ),
-    }
-}
-
-/// Reducible via BOTH paths (guards against vacuously-refusing coverage).
+/// THE coverage assertion: `t` cert-reduces to a hypothesis-free equation
+/// `⊢ t = v` with a closed literal `v`.
 #[track_caller]
 fn check_reduces(t: Term) {
+    let thm = reduce(&t).unwrap_or_else(|| panic!("expected cert-reducible: {t}"));
+    assert!(thm.hyps().is_empty(), "cert facts are hypothesis-free: {t}");
+    let (lhs, rhs) = thm
+        .concl()
+        .as_eq()
+        .unwrap_or_else(|| panic!("cert conclusion must be an equation: {t}"));
+    assert_eq!(lhs, &t, "conclusion LHS must be the redex itself");
     assert!(
-        Thm::reduce_prim(t.clone()).is_ok(),
-        "expected legacy-reducible: {t}"
+        Lit::from_term(rhs).is_some(),
+        "conclusion RHS must be a closed literal: {t} = {rhs}"
     );
-    assert!(reduce(&t).is_some(), "expected cert-reducible: {t}");
-    check(t);
+}
+
+/// The negative twin: the driver must refuse `t`.
+#[track_caller]
+fn check_refuses(t: Term) {
+    assert!(reduce(&t).is_none(), "expected cert-refusal: {t}");
 }
 
 // ============================================================================
@@ -106,6 +90,7 @@ fn nat_family() {
     // succ (the kernel primitive) + pred saturation.
     check_reduces(app1(defs::nat_succ(), nat(0)));
     check_reduces(app1(defs::nat_succ(), nat(41)));
+    check_reduces(app1(Term::succ(), nat(7)));
     check_reduces(app1(defs::nat_pred(), nat(0)));
     check_reduces(app1(defs::nat_pred(), nat(7)));
 
@@ -113,7 +98,8 @@ fn nat_family() {
         check_reduces(app2(defs::nat_add(), nat(a), nat(b)));
         check_reduces(app2(defs::nat_mul(), nat(a), nat(b)));
         // Saturating subtraction; Euclidean div/mod with the FORCED
-        // `n / 0 = 0`, `n mod 0 = n` conventions.
+        // `n / 0 = 0`, `n mod 0 = n` conventions (values pinned in
+        // tests/audit_reduce.rs).
         check_reduces(app2(defs::nat_sub(), nat(a), nat(b)));
         check_reduces(app2(defs::nat_div(), nat(a), nat(b)));
         check_reduces(app2(defs::nat_mod(), nat(a), nat(b)));
@@ -129,12 +115,12 @@ fn nat_family() {
     check_reduces(app2(defs::nat_shl(), nat(1), nat(4)));
     check_reduces(app2(defs::nat_shr(), nat(16), nat(2)));
 
-    // Oversize pow exponent / shift amounts: BOTH paths must refuse (the
-    // pure-eval CanonRule would abort; the rules refuse first).
-    let huge = Term::nat_lit(Nat::from(u64::MAX) + Nat::from(1u32));
-    check(app2(defs::nat_pow(), nat(2), huge.clone()));
-    check(app2(defs::nat_shl(), nat(1), huge.clone()));
-    check(app2(defs::nat_shr(), nat(1), huge));
+    // Oversize pow exponent / shift amounts: MUST refuse (the pure-eval
+    // CanonRule would abort; the rules refuse first).
+    let huge = mk_nat(Nat::from(u64::MAX) + Nat::from(1u32));
+    check_refuses(app2(defs::nat_pow(), nat(2), huge.clone()));
+    check_refuses(app2(defs::nat_shl(), nat(1), huge.clone()));
+    check_refuses(app2(defs::nat_shr(), nat(1), huge));
 }
 
 // ============================================================================
@@ -252,13 +238,13 @@ fn fixed_width_ops_all_tags() {
                 check_reduces(app1(defs::int_op(tag, op), sm(tag, v)));
             }
         }
-        // Mismatched operand tag: both paths refuse.
+        // Mismatched operand tag: refuse.
         let other = if tag == IntTag::U8 {
             IntTag::U16
         } else {
             IntTag::U8
         };
-        check(app2(defs::int_op(tag, Add), sm(tag, 1), sm(other, 1)));
+        check_refuses(app2(defs::int_op(tag, Add), sm(tag, 1), sm(other, 1)));
     }
 }
 
@@ -316,26 +302,26 @@ fn literal_equality_all_kinds() {
 }
 
 // ============================================================================
-// Refusals (both paths must refuse identically)
+// Refusals
 // ============================================================================
 
 #[test]
-fn refusals_match_legacy() {
+fn refusals() {
     // Partial application.
-    check(defs::nat_add());
-    check(app1(defs::nat_add(), nat(1)));
+    check_refuses(defs::nat_add());
+    check_refuses(app1(defs::nat_add(), nat(1)));
     // Over-application.
-    check(app3(defs::nat_add(), nat(1), nat(2), nat(3)));
+    check_refuses(app3(defs::nat_add(), nat(1), nat(2), nat(3)));
     // Open argument.
-    check(app2(
+    check_refuses(app2(
         defs::nat_add(),
         nat(1),
         Term::free("x", covalence_core::Type::nat()),
     ));
     // Open literal equation.
-    check(hol_eq(nat(5), Term::free("n", covalence_core::Type::nat())));
+    check_refuses(hol_eq(nat(5), Term::free("n", covalence_core::Type::nat())));
     // Wrong literal kind for the op.
-    check(app2(defs::nat_add(), nat(1), int(1)));
+    check_refuses(app2(defs::nat_add(), nat(1), int(1)));
     // A user-built spec that merely shares the label/type/body is a
     // different allocation — pointer-identity keying must refuse it.
     let canonical = defs::nat_add_spec();
@@ -344,10 +330,10 @@ fn refusals_match_legacy() {
         canonical.ty().cloned(),
         canonical.tm().cloned(),
     );
-    check(app2(Term::term_spec(fake, Vec::new()), nat(1), nat(2)));
+    check_refuses(app2(Term::term_spec(fake, Vec::new()), nat(1), nat(2)));
     // A non-catalogue head.
     let nat_ty = covalence_core::Type::nat();
-    check(app1(
+    check_refuses(app1(
         Term::const_("f", covalence_core::Type::fun(nat_ty.clone(), nat_ty)),
         nat(5),
     ));

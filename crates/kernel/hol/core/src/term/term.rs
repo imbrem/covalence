@@ -188,7 +188,7 @@ impl fmt::Display for Def {
 // only logical primitives. Every other connective / quantifier
 // (`∧ ∨ ¬ ⟹ ⟺ ∀ ∃`) is an ordinary defined constant in
 // [`crate::defs::logic`], unfolded by `Thm::unfold_term_spec` and
-// reduced on `bool` literals by `Thm::reduce_prim`. `T` / `F` are the
+// reduced on `bool` literals by the certificate path. `T` / `F` are the
 // `TermKind::Bool` literals. Each primitive carries its *element* type
 // α: `Eq(α) : α → α → bool` and `Select(α) : (α → bool) → α`.
 
@@ -579,17 +579,17 @@ pub enum TermKind {
     Abs(Type, Term),
     /// Builtin: opaque byte literal of kernel type `bytes`.
     Blob(Bytes),
-    /// Builtin: natural-number literal. Kernel type `nat`. See
-    /// [`crate::Thm::reduce_prim`] for the single-step computation
-    /// rule that decides closed-form arithmetic by reflexivity.
+    /// Builtin: natural-number literal. Kernel type `nat`. Closed-form
+    /// arithmetic on literals is decided by the per-family certificate
+    /// rules (driven by `covalence-hol-eval`).
     Nat(Nat),
     /// Builtin: integer literal. Kernel type `int`.
     Int(Int),
     /// Builtin: fixed-width integer literal (`u8`…`u64`, `s8`…`s64`) —
     /// the WebAssembly component model's small integers. Carries a
     /// [`SmallIntLiteral`] (type tag + raw `u64` value); the kernel
-    /// type is `lit.ty()`. Closed `=` over two of these decides by
-    /// `Thm::reduce_prim` (structural literal equality).
+    /// type is `lit.ty()`. Closed `=` over two of these decides via
+    /// the `LitEqCert` certificate (structural literal equality).
     SmallInt(SmallIntLiteral),
     /// Builtin: HOL `bool` literal (`T` / `F`). Kernel type
     /// `TypeKind::Bool`. First-class kernel atom.
@@ -608,8 +608,8 @@ pub enum TermKind {
     /// commits to `succ` being injective and
     /// `0 ≠ succ n` — exposed as the freeness rules
     /// [`crate::Thm::succ_inj`] / [`crate::Thm::zero_ne_succ`], and to
-    /// `succ (n : literal)` reducing to the next literal
-    /// ([`crate::Thm::reduce_prim`]). Applied via the usual `App` chain.
+    /// `succ (n : literal)` reducing to the next literal (the
+    /// `SuccCert` certificate). Applied via the usual `App` chain.
     Succ,
     /// Application of a derived-term [`TermSpec`]
     /// factory to type arguments. The spec is process-shared
@@ -618,7 +618,7 @@ pub enum TermKind {
     ///
     /// Used by `crate::defs::*` to embed semi-trusted term constants
     /// (`natAdd`, `listMap`, …) as catalogue entries instead of
-    /// dedicated kernel variants. `Thm::reduce_prim` recognises a
+    /// dedicated kernel variants. The certificate path recognises a
     /// `Spec(h, args)` leaf by `h.ptr_eq(&catalogue_handle)`.
     Spec(TermSpec, TypeList),
     /// Abstraction coercion `abs : carrier → (spec args)` for a

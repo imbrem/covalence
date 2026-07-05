@@ -3,12 +3,12 @@
 //!
 //! Proves the design end-to-end: a computation-backed `IsThm` certificate,
 //! reified through the admitted toHOL rules and transported with the base
-//! `eq_mp`, lands as a `core::Thm` **bit-for-bit equal** to the legacy
-//! literal-reduction fact — plus the seam's gating negative tests.
+//! `eq_mp`, lands as a `core::Thm` **bit-for-bit equal** to the equation the
+//! per-family cert path mints — plus the seam's gating negative tests.
 
 use covalence_core::seam::{CoreLang, HolApp, NatAddCert};
-use covalence_core::{Term, Thm, defs};
-use covalence_hol_eval::nat_add_thm;
+use covalence_core::{Term, Type, defs};
+use covalence_hol_eval::{nat_add_thm, reduce};
 use covalence_pure::{Error as PureError, Thm as PThm, apply, canon};
 use covalence_pure_eval::{Builtins, NatAdd};
 use covalence_types::Nat;
@@ -17,20 +17,36 @@ fn n(v: u32) -> Nat {
     Nat::from(v)
 }
 
+/// The expected literal equation `⊢ nat.add ⌜a⌝ ⌜b⌝ = ⌜a + b⌝`, built by hand.
+fn expected_eq(a: Nat, b: Nat) -> Term {
+    let lhs = Term::app(
+        Term::app(defs::nat_add(), Term::nat_lit(a.clone())),
+        Term::nat_lit(b.clone()),
+    );
+    let sum = Term::nat_lit(a + b);
+    Term::app(Term::app(Term::eq_op(Type::nat()), lhs), sum)
+}
+
 /// THE slice test: the toHOL-minted fact is indistinguishable from the
-/// legacy literal-reduction fact — same (empty) hyps, same conclusion term.
+/// per-family cert-path fact — same (empty) hyps, same conclusion term —
+/// and both equal the hand-built literal equation.
 #[test]
-fn tohol_nat_add_matches_legacy_reduction() {
+fn tohol_nat_add_matches_cert_path() {
     let lit_app = Term::app(
         Term::app(defs::nat_add(), Term::nat_lit(n(2))),
         Term::nat_lit(n(3)),
     );
-    let legacy = Thm::reduce_prim(lit_app).expect("legacy reduction of 2 + 3");
+    let via_family = reduce(&lit_app).expect("cert-path reduction of 2 + 3");
 
     let via_tohol = nat_add_thm(n(2), n(3)).expect("toHOL slice derivation of 2 + 3");
 
     assert!(via_tohol.hyps().is_empty(), "no hypotheses");
-    assert_eq!(via_tohol.concl(), legacy.concl(), "identical conclusions");
+    assert_eq!(
+        via_tohol.concl(),
+        via_family.concl(),
+        "identical conclusions"
+    );
+    assert_eq!(via_tohol.concl(), &expected_eq(n(2), n(3)));
 }
 
 /// A couple more values, including 0 edge cases (the driver must reify the
@@ -39,12 +55,7 @@ fn tohol_nat_add_matches_legacy_reduction() {
 fn tohol_nat_add_more_values() {
     for (a, b) in [(0u32, 0u32), (0, 7), (255, 1)] {
         let thm = nat_add_thm(n(a), n(b)).expect("toHOL derivation");
-        let lit_app = Term::app(
-            Term::app(defs::nat_add(), Term::nat_lit(n(a))),
-            Term::nat_lit(n(b)),
-        );
-        let legacy = Thm::reduce_prim(lit_app).expect("legacy reduction");
-        assert_eq!(thm.concl(), legacy.concl());
+        assert_eq!(thm.concl(), &expected_eq(n(a), n(b)));
         assert!(
             thm.hyps().is_empty(),
             "toHOL certificates are hypothesis-free"

@@ -10,13 +10,13 @@
 //!   `⊢ c = <body>` — the same way it does for `natAdd` — so the
 //!   connectives' introduction / elimination rules are *derived*
 //!   downstream, never postulated.
-//! - [`crate::Thm::reduce_prim`] evaluates a connective applied to
-//!   `bool` literals by pointer-match on the spec handle (see
-//!   `builtins::reduce_spec`), exactly like closed arithmetic.
+//! - the certificate path evaluates a connective applied to `bool`
+//!   literals by pointer-match on the spec handle, exactly like closed
+//!   arithmetic.
 //!
 //! `T` / `F` remain `TermKind::Bool` literals; `⊢ T` is derivable via
-//! `reduce_prim`, and the literals' distinctness is the kernel's
-//! denotational commitment.
+//! the `LitEqCert` certificate, and the literals' distinctness is the
+//! kernel's denotational commitment.
 //!
 //! ## Definition order
 //!

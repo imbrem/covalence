@@ -2,13 +2,13 @@
 //! in-crate `proofs` module — the S4 first slice): a computation-backed
 //! `IsThm` certificate whose numeral leaves are `toHOL` denotations, reified
 //! through the admitted toHOL rules and transported with the base `eq_mp`,
-//! landing as a [`Thm`] bit-for-bit equal to the legacy literal-reduction
-//! fact. UNTRUSTED — composes gated mints only.
+//! landing as a [`Thm`] bit-for-bit equal to the fact the per-family cert
+//! path mints. UNTRUSTED — composes gated mints only.
 //!
 //! This is the exemplar of the never-materialize pipeline (big values stay
 //! symbolic; only the equations actually used ever exist). The bulk
-//! `reduce_prim`-replacement path in [`crate::reduce`] instead lands the
-//! per-family certificates directly.
+//! reduction path in [`crate::reduce`] instead lands the per-family
+//! certificates directly.
 
 use covalence_pure::{CanonRule as _, Eqn, Expr, Thm as PThm, Val, apply, canon};
 use covalence_pure_eval::NatAdd;

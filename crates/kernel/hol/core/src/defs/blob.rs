@@ -8,15 +8,15 @@
 //! → bytes` wraps back up.
 //!
 //! `bytesLen`/`bytesCat`/`bytesSlice` are *defined* here that way —
-//! their bodies match the literal-level semantics in
-//! [`crate::builtins`] (`list.length` = `blob.len`, `list.cat` =
-//! `blob.cat`, `take len ∘ skip start` = the saturating `blob.slice`
-//! with its `(start, len)` argument convention).
+//! their bodies match the literal-level semantics of the certificate
+//! path (`list.length` = `blob.len`, `list.cat` = `blob.cat`,
+//! `take len ∘ skip start` = the saturating `blob.slice` with its
+//! `(start, len)` argument convention).
 //!
 //! `bytesConsNat`/`bytesAt` stay **declaration-only**: both cross
 //! between `nat` and the element type `u8`, and the catalogue does not
 //! yet carry a `nat ↔ u8` (i.e. `bits ↔ nat`) conversion. They still
-//! **reduce on `Blob` literals** via `builtins::reduce_spec`; they just
+//! **reduce on `Blob` literals** via the certificate path; they just
 //! lack open-form definitional bodies until that conversion lands.
 
 use std::sync::LazyLock;
@@ -108,7 +108,7 @@ term_decl! {
     /// `bytesConsNat : nat → bytes → bytes` — cons a nat (mod 256)
     /// onto the front of a bytes value. **Declaration-only**: needs a
     /// `nat → u8` conversion the catalogue does not yet carry. Closed
-    /// forms reduce via `builtins::reduce_spec`.
+    /// forms reduce via the certificate path.
     bytes_cons_nat_spec, bytes_cons_nat, Canonical::BytesConsNat,
     Type::fun(Type::nat(), Type::fun(Type::bytes(), Type::bytes()))
 }
@@ -116,8 +116,8 @@ term_decl! {
 term_decl! {
     /// `bytesAt : bytes → nat → nat` — byte at index, 0 if OOB.
     /// **Declaration-only**: needs a `u8 → nat` conversion the
-    /// catalogue does not yet carry. Closed forms reduce via
-    /// `builtins::reduce_spec`.
+    /// catalogue does not yet carry. Closed forms reduce via the
+    /// certificate path.
     bytes_at_spec, bytes_at, Canonical::BytesAt,
     Type::fun(Type::bytes(), Type::fun(Type::nat(), Type::nat()))
 }

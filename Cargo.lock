@@ -1267,7 +1267,6 @@ dependencies = [
 name = "covalence-pure-eval"
 version = "0.0.0"
 dependencies = [
- "covalence-core",
  "covalence-pure",
  "covalence-types",
 ]

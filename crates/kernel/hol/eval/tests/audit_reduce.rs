@@ -1,19 +1,18 @@
-//! TCB audit: computational reduction (`Thm::reduce_prim`,
-//! `Thm::unfold_term_spec`, and the `builtins.rs` matcher).
-//!
-//! These tests exercise the *external public API only* (this is an
-//! integration test = separate crate). Every reduction here is checked
-//! against the documented semantics of the op. A wrong reduction would
-//! mint a false equation, so a failing assert here is a *soundness*
-//! finding. Where current behavior is surprising-but-not-wrong, the
-//! test documents actual behavior and is flagged with `// SUSPECT:` if
-//! it looks like a genuine bug.
+//! Cert-path audit: closed-form computation via [`covalence_hol_eval::reduce`]
+//! plus the surviving definitional unfolding (via [`delta`]), checked value-for-value against
+//! the documented semantics of every op. This is the S8 port of the retired
+//! in-kernel `covalence-core/tests/audit_reduce.rs` (which audited the
+//! deleted legacy kernel reducer): the assertions are the SAME semantic
+//! commitments — a
+//! wrong reduction would mint a false equation, so a failing assert here is a
+//! *soundness* finding against the family certificate rules / their
+//! `covalence-pure-eval` computations.
 //!
 //! Coverage map (one or more tests each):
-//!   nat: succ/pred(sat)/add/mul/sub(sat)/div(n/0=0)/mod(n%0=0)/
+//!   nat: succ/pred(sat)/add/mul/sub(sat)/div(n/0=0)/mod(n%0=n)/
 //!        pow(oversize-exp refusal)/le/lt/shl/shr(oversize refusal)/
 //!        bitand/or/xor/to_int/to_bytes_{le,be}/from_bytes_{le,be}
-//!   int: succ/pred/add/sub/mul/div(trunc, /0=0)/mod(%0=0)/neg/abs/
+//!   int: succ/pred/add/sub/mul/div(trunc, /0=0)/mod(%0=x)/neg/abs/
 //!        sgn/le/lt
 //!   bytes: cat/cons_nat(mod 256)/len/at(OOB=0)/slice(saturating)
 //!   small int (uN/sN): add/sub/mul wrap, div/rem (signed & unsigned,
@@ -21,43 +20,43 @@
 //!        and/or/xor/not/neg, cmp (signed vs unsigned), zext/sext,
 //!        wrap, to_nat/to_int/from_nat/from_int
 //!   HOL `=`: bool/nat/int/blob/small-int true & false; cross-kind and
-//!        non-literal => Err
+//!        non-literal => refuse
 //!   negative space: partial application / non-literal arg / wrong
-//!        arity / wrong small-int tag => Err
-//!   unfold_term_spec: let-style => body; def-style => SpecIsDefStyle;
-//!        declaration-only => SpecHasNoBody; non-spec => NotASpec.
+//!        arity / wrong small-int tag => refuse
+//!   delta (definitional unfolding): let-style => body; def-style => SpecIsDefStyle;
+//!        declaration-only => SpecHasNoBody; non-spec => NotASpec
+//!   ADVERSARIAL cert audit: wrong-shaped inputs fed straight to the
+//!        admitted rules (fake specs, wrong families, mixed literal
+//!        kinds) must not mint.
 
 use covalence_core::defs;
 use covalence_core::defs::IntOp;
+use covalence_core::seam::{
+    BytesCert, CoreLang, FixedWidthCert, IntArithCert, Lit, LitEqCert, NatArithCert,
+};
 use covalence_core::{IntTag, Term, TermKind, Thm, Type};
-use covalence_types::{Int, Nat, Sign};
+use covalence_hol_eval::{delta, mk_blob, mk_int, mk_nat, reduce};
+use covalence_pure::apply;
+use covalence_types::Nat;
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
 fn nat(n: u64) -> Term {
-    Term::nat_lit(Nat::from_inner(n.into()))
+    mk_nat(Nat::from(n))
 }
 
 fn nat_big(n: Nat) -> Term {
-    Term::nat_lit(n)
+    mk_nat(n)
 }
 
 fn int(n: i64) -> Term {
-    let mag = Nat::from_inner((n.unsigned_abs()).into());
-    let sign = if n == 0 {
-        Sign::Zero
-    } else if n > 0 {
-        Sign::Positive
-    } else {
-        Sign::Negative
-    };
-    Term::int_lit(Int::from_sign_nat(sign, mag))
+    mk_int(n as i128)
 }
 
 fn blob(bytes: Vec<u8>) -> Term {
-    Term::blob(bytes)
+    mk_blob(bytes)
 }
 
 fn app1(f: Term, a: Term) -> Term {
@@ -72,10 +71,10 @@ fn app3(f: Term, a: Term, b: Term, c: Term) -> Term {
     Term::app(Term::app(Term::app(f, a), b), c)
 }
 
-/// Run `reduce_prim` and assert it yields `⊢ t = want` (HOL eq).
+/// Run the cert-path `reduce` and assert it yields `⊢ t = want` (HOL eq).
 fn assert_reduces(t: Term, want: Term) {
-    let thm =
-        Thm::reduce_prim(t.clone()).unwrap_or_else(|e| panic!("reduce failed for {t:?}: {e:?}"));
+    let thm = reduce(&t).unwrap_or_else(|| panic!("reduce refused {t:?}"));
+    assert!(thm.hyps().is_empty(), "cert facts are hypothesis-free");
     let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else {
         panic!("concl is not an App: {:?}", thm.concl());
     };
@@ -91,10 +90,10 @@ fn assert_reduces(t: Term, want: Term) {
     assert_eq!(rhs, &want, "RHS mismatch for {t:?}");
 }
 
-/// Assert `reduce_prim` refuses to reduce `t` (returns Err).
+/// Assert the cert path refuses to reduce `t`.
 fn assert_no_reduce(t: Term) {
     assert!(
-        Thm::reduce_prim(t.clone()).is_err(),
+        reduce(&t).is_none(),
         "expected NO reduction for {t:?}, but it reduced"
     );
 }
@@ -113,6 +112,8 @@ fn hol_eq(lhs: Term, rhs: Term) -> Term {
 fn nat_succ() {
     assert_reduces(app1(defs::nat_succ(), nat(0)), nat(1));
     assert_reduces(app1(defs::nat_succ(), nat(41)), nat(42));
+    // The primitive `succ` leaf reduces too (SuccCert).
+    assert_reduces(app1(Term::succ(), nat(7)), nat(8));
 }
 
 #[test]
@@ -162,9 +163,9 @@ fn nat_div_zero_is_zero() {
 fn nat_mod_by_zero_is_identity() {
     // n % 0 = n (Euclidean convention). This value is FORCED by
     // soundness: `nat.mod` has a let-style body `λn m. n - (n/m)*m`,
-    // which at m=0 (with n/0=0) is `n - 0 = n`. If `reduce_prim` gave 0
-    // here, `unfold_term_spec` + `reduce_prim` would derive `n = 0` for
-    // any n. See `audit_natmod_by_zero_sound` for the regression guard.
+    // which at m=0 (with n/0=0) is `n - 0 = n`. If the certificate gave
+    // 0 here, definitional unfolding + the cert path would derive `n = 0`
+    // for any n. See `audit_reduce_matches_body` for the regression guard.
     assert_reduces(app2(defs::nat_mod(), nat(10), nat(0)), nat(10));
     assert_reduces(app2(defs::nat_mod(), nat(0), nat(0)), nat(0));
     assert_reduces(app2(defs::nat_mod(), nat(17), nat(5)), nat(2));
@@ -177,14 +178,14 @@ fn nat_div_reduction_satisfies_its_selector_predicate() {
     // selector predicate
     //   λd. ∀n m. (m=0 ⟹ d n m = 0) ∧
     //             (¬(m=0) ⟹ d n m * m ≤ n ∧ n < S(d n m) * m)
-    // and `spec_ax` only stays consistent with the `builtins` reduction
+    // and `spec_ax` only stays consistent with the certificate reduction
     // if the *reduction itself* satisfies that predicate (otherwise the
     // kernel has no model — nat.div cannot be both the floor and a
     // predicate-satisfier). Here we evaluate each predicate clause on the
     // reduced `q = n / m` and assert it holds, across a wide range of
     // (n, m) — every quotient/divisor shape including the boundaries
     // n < m, n = q*m exactly, and m = 0.
-    let red = |t: Term| rhs_of(&Thm::reduce_prim(t).expect("reduces"));
+    let red = |t: Term| rhs_of(&reduce(&t).expect("reduces"));
     let t = || Term::bool_lit(true);
     let mut probes: Vec<(u64, u64)> = Vec::new();
     for n in [0u64, 1, 2, 3, 5, 7, 10, 16, 17, 23, 24, 100, 255, 1000] {
@@ -216,12 +217,12 @@ fn nat_div_reduction_satisfies_its_selector_predicate() {
 
 #[test]
 fn nat_div_mod_satisfy_euclidean_law() {
-    // The two `builtins` reductions must jointly satisfy the Euclidean
+    // The div/mod certificate reductions must jointly satisfy the Euclidean
     // division law: for all n, m,  n = (n / m) * m + (n mod m),  and for
     // m > 0 the remainder is bounded, 0 ≤ n mod m < m. This is exactly
     // the def-style selector predicate `nat_div_predicate` characterises,
     // checked here on the closed-literal reduction.
-    let red = |t: Term| rhs_of(&Thm::reduce_prim(t).expect("reduces"));
+    let red = |t: Term| rhs_of(&reduce(&t).expect("reduces"));
     for (n, m) in [
         (0u64, 0u64),
         (0, 1),
@@ -913,21 +914,18 @@ fn hol_eq_non_literal_refuses() {
 #[test]
 fn hol_eq_ill_typed_operands_refuse_without_panic() {
     // `Eq(nat)` applied to two `bool` literals is ILL-TYPED (the eq
-    // operator wants `nat` operands). `literal_eq` matches the
-    // `(Bool, Bool)` shape, so before the `type_of` guard in
-    // `reduce_prim` this panicked while building the conclusion. It must
-    // now return a clean `Err`.
+    // operator wants `nat` operands). The `Lit` recognizer matches the
+    // `(Bool, Bool)` shape, so without the `type_of` guard in `reduce`
+    // the cert path would rebuild a *repaired* equation instead of
+    // mirroring the ill-typed one. It must refuse cleanly.
     let t = Term::app(
         Term::app(Term::eq_op(Type::nat()), Term::bool_lit(true)),
         Term::bool_lit(false),
     );
-    assert!(
-        Thm::reduce_prim(t).is_err(),
-        "ill-typed Eq application must Err, not panic"
-    );
+    assert_no_reduce(t);
     // Symmetric: `Eq(bool)` over two `nat` literals.
     let t2 = Term::app(Term::app(Term::eq_op(Type::bool()), nat(1)), nat(2));
-    assert!(Thm::reduce_prim(t2).is_err());
+    assert_no_reduce(t2);
 }
 
 #[test]
@@ -1000,7 +998,91 @@ fn over_application_refuses() {
 }
 
 // ============================================================================
-// unfold_term_spec
+// Adversarial cert audit: wrong-shaped inputs fed straight to the admitted
+// rules must not mint (the rules derive their whole conclusion, so the only
+// attack surface is the selector/args input — probe it directly).
+// ============================================================================
+
+/// Native `Lit` args for the direct rule probes.
+fn lnat(n: u64) -> Lit {
+    Lit::Nat(Nat::from(n))
+}
+
+#[test]
+fn fake_spec_does_not_mint_via_any_family_rule() {
+    // A user-built spec sharing `nat.add`'s label/type/body is a DIFFERENT
+    // `Arc`: absent from every canonical-handle table, so no family rule
+    // fires — even when the fake is fed straight to `apply`.
+    let canonical = defs::nat_add_spec();
+    let fake = covalence_core::TermSpec::new_untrusted(
+        "natAdd",
+        canonical.ty().cloned(),
+        canonical.tm().cloned(),
+    );
+    let args = vec![lnat(1), lnat(2)];
+    assert!(apply(CoreLang, NatArithCert, (fake.clone(), args.clone())).is_err());
+    assert!(apply(CoreLang, IntArithCert, (fake.clone(), args.clone())).is_err());
+    assert!(apply(CoreLang, BytesCert, (fake.clone(), args.clone())).is_err());
+    assert!(apply(CoreLang, FixedWidthCert, (fake.clone(), args)).is_err());
+    // And through the driver.
+    assert_no_reduce(app2(Term::term_spec(fake, Vec::new()), nat(1), nat(2)));
+}
+
+#[test]
+fn wrong_family_or_arity_does_not_mint() {
+    // The right op fed to the WRONG family rule refuses (each family's own
+    // table is the gate, not the shared `Lit` currency).
+    let nat_add = defs::nat_add_spec();
+    assert!(
+        apply(
+            CoreLang,
+            IntArithCert,
+            (nat_add.clone(), vec![lnat(1), lnat(2)])
+        )
+        .is_err()
+    );
+    assert!(
+        apply(
+            CoreLang,
+            BytesCert,
+            (nat_add.clone(), vec![lnat(1), lnat(2)])
+        )
+        .is_err()
+    );
+    // Wrong arity refuses.
+    assert!(apply(CoreLang, NatArithCert, (nat_add.clone(), vec![lnat(1)])).is_err());
+    assert!(
+        apply(
+            CoreLang,
+            NatArithCert,
+            (nat_add.clone(), vec![lnat(1), lnat(2), lnat(3)])
+        )
+        .is_err()
+    );
+    // Wrong literal kind refuses.
+    assert!(
+        apply(
+            CoreLang,
+            NatArithCert,
+            (nat_add, vec![Lit::Int(1.into()), Lit::Int(2.into())])
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn lit_eq_cert_mixed_kinds_do_not_mint() {
+    // Mixed literal kinds must refuse (the equation would be ill-typed).
+    assert!(apply(CoreLang, LitEqCert, (lnat(1), Lit::Int(1.into()))).is_err());
+    assert!(apply(CoreLang, LitEqCert, (Lit::Bool(true), lnat(1))).is_err());
+    // Mixed fixed-width TAGS must refuse too (same-kind, different type).
+    let u8v = Lit::Small(covalence_core::SmallIntLiteral::new(IntTag::U8, 1));
+    let u16v = Lit::Small(covalence_core::SmallIntLiteral::new(IntTag::U16, 1));
+    assert!(apply(CoreLang, LitEqCert, (u8v, u16v)).is_err());
+}
+
+// ============================================================================
+// delta (definitional unfolding — the kernel unfold rule via the driver)
 // ============================================================================
 
 #[test]
@@ -1008,7 +1090,7 @@ fn unfold_let_style_yields_body() {
     // `nat_add` is a let-style spec (its `tm` is the body and has the
     // spec's declared type). Unfolding yields `⊢ natAdd = body`.
     let t = defs::nat_add();
-    let thm = Thm::unfold_term_spec(t.clone()).expect("let-style spec should unfold");
+    let thm = delta(&t).expect("let-style spec should unfold");
     // Conclusion is a HOL eq with the spec on the LHS.
     let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else {
         panic!("unfold concl is not App: {:?}", thm.concl());
@@ -1037,7 +1119,7 @@ fn unfold_def_style_errs() {
     // `nat_le` is a def-style (ε selector predicate) spec: its `tm` has
     // type `(declared_ty -> bool)`, so unfold must refuse.
     let t = defs::nat_le();
-    let err = Thm::unfold_term_spec(t).expect_err("def-style spec must not unfold");
+    let err = delta(&t).expect_err("def-style spec must not unfold");
     assert!(
         matches!(err, covalence_core::Error::SpecIsDefStyle),
         "expected SpecIsDefStyle, got {err:?}"
@@ -1051,14 +1133,14 @@ fn unfold_declaration_only_errs() {
     // explicit course-of-values recursion fixpoint, cond the HOL Light `COND`
     // let-body — see `defs::nat_div_body` / `defs::cond`.)
     let t = defs::nat_bit_and();
-    let err = Thm::unfold_term_spec(t).expect_err("declaration-only spec must not unfold");
+    let err = delta(&t).expect_err("declaration-only spec must not unfold");
     assert!(
         matches!(err, covalence_core::Error::SpecHasNoBody),
         "expected SpecHasNoBody, got {err:?}"
     );
     // `nat.div` is now a let-style def (the recursive fixpoint): unfold succeeds,
     // yielding `nat.div = body`.
-    let eq = Thm::unfold_term_spec(defs::nat_div()).expect("nat.div is let-style, must unfold");
+    let eq = delta(&defs::nat_div()).expect("nat.div is let-style, must unfold");
     assert_eq!(
         eq.concl().as_eq().expect("unfold yields an equation").0,
         &defs::nat_div(),
@@ -1067,7 +1149,7 @@ fn unfold_declaration_only_errs() {
     // The fixed-width *conversions* (toNat/toInt/fromNat/fromInt) stay
     // declaration-only — they are the primitive reducible interface.
     let conv = defs::int_to_nat(IntTag::U8);
-    let err = Thm::unfold_term_spec(conv).expect_err("conversion spec must not unfold");
+    let err = delta(&conv).expect_err("conversion spec must not unfold");
     assert!(
         matches!(err, covalence_core::Error::SpecHasNoBody),
         "expected SpecHasNoBody for conversion, got {err:?}"
@@ -1080,7 +1162,7 @@ fn defined_fixed_width_ops_unfold_to_their_bodies() {
     // succeeds and yields `⊢ op = body` with the spec on the LHS.
     for op in [IntOp::Add, IntOp::Sub, IntOp::Mul, IntOp::Neg] {
         let t = defs::int_op(IntTag::U8, op);
-        let thm = Thm::unfold_term_spec(t.clone()).expect("defined op unfolds");
+        let thm = delta(&t).expect("defined op unfolds");
         assert!(thm.hyps().is_empty());
         let TermKind::App(eq_lhs, _) = thm.concl().kind() else {
             panic!("unfold concl not an application");
@@ -1096,36 +1178,38 @@ fn defined_fixed_width_ops_unfold_to_their_bodies() {
 #[test]
 fn unfold_non_spec_errs() {
     // A plain application is not a spec leaf.
-    let err = Thm::unfold_term_spec(nat(5)).expect_err("non-spec must not unfold");
+    let err = delta(&nat(5)).expect_err("non-spec must not unfold");
     assert!(
         matches!(err, covalence_core::Error::NotASpec),
         "expected NotASpec, got {err:?}"
     );
     // An Eq op is not a spec.
-    let err = Thm::unfold_term_spec(Term::eq_op(Type::nat())).expect_err("eq op is not a spec");
+    let err = delta(&Term::eq_op(Type::nat())).expect_err("eq op is not a spec");
     assert!(matches!(err, covalence_core::Error::NotASpec));
 }
 
 // ============================================================================
-// reduce_prim ↔ unfold_term_spec consistency (the nat.mod soundness class)
+// cert path ↔ definitional-unfolding consistency (the nat.mod soundness class)
 //
-// A spec reachable by BOTH rules commits the kernel to two facts about it:
-// `spec lit… = reduce_prim(spec lit…)` and `spec = body`. If the body,
-// evaluated on the same literals, disagrees with `reduce_prim`, the theory
-// is INCONSISTENT (`⊢ litₐ = lit_b` for distinct literals, hence `⊢ F`).
+// A spec reachable by BOTH the certificate rules and definitional unfolding
+// commits the kernel to two facts about it: `spec lit… = reduce(spec lit…)`
+// and `spec = body`. If the body, evaluated on the same literals, disagrees
+// with the certificate, the theory is INCONSISTENT (`⊢ litₐ = lit_b` for
+// distinct literals, hence `⊢ F`).
 //
 // The risk is *derivable* (and thus testable here) only when the body
-// bottoms out in reduce_prim-reducible sub-ops, so the body itself reduces
-// to a literal. That is the case for `nat.mod` (`n − (n/m)·m`) and `int.div`
+// bottoms out in cert-reducible sub-ops, so the body itself reduces to a
+// literal. That is the case for `nat.mod` (`n − (n/m)·m`) and `int.div`
 // / `int.mod` (built from `intSgn`/`intAbs`/`intMul`/`intSub` + `natDiv`/
 // `natToInt`). The Grothendieck / `iter` ops (`nat.add`, `int.add`, …)
 // bottom out at `ε` (`natRec`, `abs`/`rep`) and are STUCK — sound by the
 // model alone, with no derivable contradiction to guard (see
 // `iter_based_bodies_are_stuck` for that distinction).
 //
-// `body_eval` FORCES the unfold path at the root (so reduce_prim cannot
-// short-circuit it), then reduces the resulting body via reduce_prim of its
-// inner ops; comparing that to reduce_prim-at-the-root is the real check.
+// `body_eval` FORCES the unfold path at the root (so the cert path cannot
+// short-circuit it), then reduces the resulting body via cert reduction of
+// its inner ops; comparing that to cert-reduction-at-the-root is the real
+// check.
 // ============================================================================
 
 /// The RHS of a `⊢ lhs = rhs` theorem.
@@ -1151,18 +1235,21 @@ fn spine(t: &Term) -> (Term, Vec<Term>) {
     (head, args)
 }
 
+/// `true` iff `t` is a concrete closed literal leaf (any kind).
+fn is_literal(t: &Term) -> bool {
+    Lit::from_term(t).is_some()
+}
+
 /// Prove `⊢ t = v` (a literal) for a term whose every application node is a
-/// `reduce_prim`-reducible op applied to (recursively) literal args.
-/// Call-by-value via congruence + `reduce_prim`. Returns `None` if some node
+/// cert-reducible op applied to (recursively) literal args.
+/// Call-by-value via congruence + `reduce`. Returns `None` if some node
 /// is not reducible (e.g. a bare `natRec`/`succ` spec leaf reached through an
 /// `iter`-based body) — used to distinguish reducible from stuck bodies.
 fn eval(t: &Term) -> Option<Thm> {
+    if is_literal(t) {
+        return Some(Thm::refl(t.clone()).unwrap());
+    }
     match t.kind() {
-        TermKind::Nat(_)
-        | TermKind::Int(_)
-        | TermKind::Bool(_)
-        | TermKind::Blob(_)
-        | TermKind::SmallInt(_) => Some(Thm::refl(t.clone()).unwrap()),
         TermKind::App(..) => {
             let (head, args) = spine(t);
             // Thread congruence so `cur : ⊢ t = head v1 … vn`.
@@ -1171,7 +1258,7 @@ fn eval(t: &Term) -> Option<Thm> {
                 cur = cur.mk_comb(eval(a)?).ok()?;
             }
             let applied = rhs_of(&cur);
-            let red = Thm::reduce_prim(applied).ok()?;
+            let red = reduce(&applied)?;
             cur.trans(red).ok()
         }
         _ => None,
@@ -1180,11 +1267,11 @@ fn eval(t: &Term) -> Option<Thm> {
 
 /// Prove `⊢ (spec lit…) = v` by FORCING the spec's body: unfold the head
 /// spec, β-reduce the spine, then `eval` the body (its inner ops reduce by
-/// `reduce_prim`). Returns `None` if the head is not let-style or the body
+/// the cert path). Returns `None` if the head is not let-style or the body
 /// does not reduce to a literal.
 fn body_eval(applied: &Term) -> Option<Thm> {
     let (head, args) = spine(applied);
-    let unf = Thm::unfold_term_spec(head).ok()?; // ⊢ head = body
+    let unf = delta(&head).ok()?; // ⊢ head = body
     let mut cong = unf;
     for a in &args {
         cong = cong.mk_comb(Thm::refl(a.clone()).unwrap()).ok()?;
@@ -1212,10 +1299,10 @@ fn beta_spine(t: &Term) -> Thm {
     }
 }
 
-/// For every op with a reducible body, `reduce_prim(op lits)` MUST equal the
+/// For every op with a reducible body, `reduce(op lits)` MUST equal the
 /// value obtained by forcing op's unfolded body. A mismatch is a soundness
 /// hole (the kernel could then prove `litₐ = lit_b`). Covers `nat.mod` (the
-/// historical hole) and the newly-defined `int.div` / `int.mod`, exercising
+/// historical hole) and the defined `int.div` / `int.mod`, exercising
 /// the div/mod-by-zero and all four sign quadrants.
 #[test]
 fn audit_reduce_matches_body() {
@@ -1320,13 +1407,13 @@ fn audit_reduce_matches_body() {
         }
     }
     for t in probes {
-        let via_reduce = rhs_of(&Thm::reduce_prim(t.clone()).unwrap());
+        let via_reduce = rhs_of(&reduce(&t).unwrap());
         let via_body = rhs_of(
             &body_eval(&t).unwrap_or_else(|| panic!("{t}: body did not reduce to a literal")),
         );
         assert_eq!(
             via_reduce, via_body,
-            "{t}: reduce_prim={via_reduce} but unfolded body={via_body} \
+            "{t}: cert path={via_reduce} but unfolded body={via_body} \
              — these MUST agree or the kernel is inconsistent"
         );
     }
@@ -1345,11 +1432,8 @@ fn iter_based_bodies_are_stuck() {
         app2(defs::int_add(), int(3), int(4)),
         app1(defs::nat_to_int(), nat(5)),
     ] {
-        // reduce_prim still decides it…
-        assert!(
-            Thm::reduce_prim(t.clone()).is_ok(),
-            "{t} should reduce_prim"
-        );
+        // The cert path still decides it…
+        assert!(reduce(&t).is_some(), "{t} should cert-reduce");
         // …but the body cannot be driven to a literal by the kernel.
         assert!(
             body_eval(&t).is_none(),
@@ -1360,19 +1444,20 @@ fn iter_based_bodies_are_stuck() {
 
 /// A SECOND coupling, introduced by `Thm::spec_ax`: it exposes a def-style
 /// spec's *predicate* as a kernel fact (`(pred w) ⟹ pred(t)`). For a
-/// def-style spec that is ALSO in the `reduce_prim` table — only `nat.le`
-/// and `nat.lt` — the predicate's solutions must agree with `reduce_prim`,
-/// or `spec_ax` + `reduce_prim` are jointly inconsistent (the theory has no
+/// def-style spec that is ALSO cert-reducible — only `nat.le` and `nat.lt`
+/// — the predicate's solutions must agree with the certificate, or
+/// `spec_ax` + the cert path are jointly inconsistent (the theory has no
 /// model). Their predicates are the four defining recursion equations,
-/// which pin down a UNIQUE solution, so it suffices that `reduce_prim`
+/// which pin down a UNIQUE solution, so it suffices that the certificate
 /// *satisfies* those equations (uniqueness is by construction). See
 /// `kernel-design.md` §9.
 #[test]
 fn audit_reduced_def_specs_satisfy_their_predicate() {
     fn reduce_bool(t: Term) -> bool {
-        match rhs_of(&Thm::reduce_prim(t.clone()).unwrap()).kind() {
-            TermKind::Bool(b) => *b,
-            other => panic!("{t}: reduced to non-bool {other:?}"),
+        let rhs = rhs_of(&reduce(&t).unwrap());
+        match rhs.as_bool() {
+            Some(b) => b,
+            None => panic!("{t}: reduced to non-bool {rhs:?}"),
         }
     }
     // (accessor, cmp 0 0, cmp 0 (S m), cmp (S n) 0) — the three base clauses

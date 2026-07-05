@@ -1,6 +1,7 @@
 //! # `covalence-hol-eval` — the UNTRUSTED reduction driver (zero TCB)
 //!
-//! The `reduce_prim`-shaped public API over the **cert path**: recognize a
+//! THE public API for closed-form literal computation, over the **cert
+//! path**: recognize a
 //! concrete literal redex ([`Term`] pattern-matching — untrusted), extract
 //! the op selector + native argument values, and re-derive the equation
 //! through the admitted per-family certificate rules exported by
@@ -14,8 +15,8 @@
 //! `covalence-core`'s manifest (`docs/deps/core-manifest.txt`) and
 //! `covalence-pure-eval`'s (`docs/deps/builtins-manifest.txt`).
 //!
-//! Surface (mirroring the legacy `Thm::reduce_prim`, which this crate's
-//! differential suite pins itself against while the legacy rule exists):
+//! Surface (semantics pinned by `tests/audit_reduce.rs`, the S8 port of the
+//! retired in-kernel audit suite):
 //!
 //! - [`reduce`] / [`reduce_with`] — single-step closed-form computation
 //!   `⊢ t = result` (the `_with` twin keeps the `TrustedCons` sharing seam).
@@ -64,11 +65,10 @@ fn mint<R: Rule<CoreLang, Concl = CoreProp>>(rule: R, input: R::Input) -> Option
 }
 
 /// Single-step closed-form computation via the cert path: `⊢ t = result`
-/// where `t` is a literal operation applied to all-literal arguments —
-/// the drop-in equivalent of the legacy `Thm::reduce_prim` (same catalogue,
-/// same conclusions, same refusals; pinned by this crate's differential
-/// suite). Returns `None` for any other shape: it does not reduce subterms
-/// or follow β/δ chains.
+/// where `t` is a literal operation applied to all-literal arguments
+/// (catalogue, conclusions, and refusals pinned by `tests/audit_reduce.rs`
+/// and `tests/catalogue.rs`). Returns `None` for any other shape: it does
+/// not reduce subterms or follow β/δ chains.
 ///
 /// The catalogue: HOL `=` over two same-kind literals (equality AND
 /// disequality), the primitive `succ`, the `nat.*` / `int.*` / `bytes.*`

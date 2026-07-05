@@ -2,76 +2,19 @@
 //! `rat` (`(int×int)/~` by cross-multiplication) derived types in
 //! `covalence_core::defs`.
 //!
-//! Three flavours of assertion:
+//! Two flavours of assertion:
 //!   - **type structure** of the quotient type specs and the op
 //!     accessors,
 //!   - **definitional-body shape**: the defined ops carry a `.tm()`
 //!     body whose `type_of()` matches the recorded `.ty()`; the
-//!     declaration-only ops (`intDiv`/`intMod`/`ratLe`) carry none,
-//!   - **literal reduction** via the real kernel rule
-//!     `Thm::reduce_prim` (closed applications to literal args), which
-//!     goes through `builtins::reduce_spec` independent of the bodies.
+//!     declaration-only ops (`ratLe`) carry none.
 //!
-//! We cannot *prove* derived equalities here, so the only equational
-//! facts asserted are `reduce_prim` one-step reductions on literals.
+//! We cannot *prove* derived equalities here; closed-literal reduction
+//! semantics live in `covalence-hol-eval`'s `tests/audit_reduce.rs`
+//! (the cert path — the kernel no longer carries an in-TCB reducer).
 
 use covalence_core::defs;
-use covalence_core::{Term, TermKind, Thm, Type, TypeKind};
-use covalence_types::{Int, Nat, Sign};
-
-// ============================================================================
-// Literal + reduction helpers (mirrors builtins.rs `#[cfg(test)]` style)
-// ============================================================================
-
-fn nat(n: u32) -> Term {
-    Term::nat_lit(Nat::from_inner(n.into()))
-}
-
-fn int(n: i32) -> Term {
-    let nat = Nat::from_inner((n.unsigned_abs()).into());
-    let sign = if n == 0 {
-        Sign::Zero
-    } else if n > 0 {
-        Sign::Positive
-    } else {
-        Sign::Negative
-    };
-    Term::int_lit(Int::from_sign_nat(sign, nat))
-}
-
-fn bool_lit(b: bool) -> Term {
-    Term::bool_lit(b)
-}
-
-/// `f a` — one-arg application.
-fn un(f: Term, a: Term) -> Term {
-    Term::app(f, a)
-}
-
-/// `f a b` — two-arg application.
-fn bin(f: Term, a: Term, b: Term) -> Term {
-    Term::app(Term::app(f, a), b)
-}
-
-/// Reduce `t` one step and assert the conclusion is the HOL equation
-/// `t = want`. Walks the conclusion `App(App(Eq, lhs), rhs)`.
-fn assert_reduces(t: Term, want: Term) {
-    let thm =
-        Thm::reduce_prim(t.clone()).unwrap_or_else(|e| panic!("reduce failed for {t:?}: {e:?}"));
-    let TermKind::App(eq_lhs_app, rhs) = thm.concl().kind() else {
-        panic!("concl is not an App: {:?}", thm.concl());
-    };
-    let TermKind::App(eq_op, lhs) = eq_lhs_app.kind() else {
-        panic!("concl LHS is not an App: {:?}", thm.concl());
-    };
-    assert!(
-        matches!(eq_op.kind(), TermKind::Eq(_)),
-        "concl head is not HOL =: {:?}",
-        thm.concl()
-    );
-    assert_eq!(lhs, &t, "LHS mismatch");
-    assert_eq!(rhs, &want, "RHS mismatch");
-}
+use covalence_core::{Thm, Type, TypeKind};
 
 // ============================================================================
 // 1. `int` type structure
@@ -210,98 +153,6 @@ fn int_div_mod_have_let_style_bodies() {
     // And the unfolding equation is derivable.
     assert!(Thm::unfold_term_spec(defs::int_div()).is_ok());
     assert!(Thm::unfold_term_spec(defs::int_mod()).is_ok());
-}
-
-// ============================================================================
-// 4. Literal reduction edge cases (via Thm::reduce_prim)
-// ============================================================================
-
-#[test]
-fn int_add_literals() {
-    assert_reduces(bin(defs::int_add(), int(-3), int(4)), int(1));
-    assert_reduces(bin(defs::int_add(), int(0), int(0)), int(0));
-    assert_reduces(bin(defs::int_add(), int(-5), int(-7)), int(-12));
-}
-
-#[test]
-fn int_sub_literals() {
-    assert_reduces(bin(defs::int_sub(), int(3), int(7)), int(-4));
-    assert_reduces(bin(defs::int_sub(), int(-3), int(-3)), int(0));
-}
-
-#[test]
-fn int_mul_literals() {
-    assert_reduces(bin(defs::int_mul(), int(-2), int(-3)), int(6));
-    assert_reduces(bin(defs::int_mul(), int(-2), int(3)), int(-6));
-    assert_reduces(bin(defs::int_mul(), int(0), int(99)), int(0));
-}
-
-#[test]
-fn int_neg_literals() {
-    assert_reduces(un(defs::int_neg(), int(7)), int(-7));
-    assert_reduces(un(defs::int_neg(), int(-7)), int(7));
-    assert_reduces(un(defs::int_neg(), int(0)), int(0));
-}
-
-#[test]
-fn int_abs_literals() {
-    assert_reduces(un(defs::int_abs(), int(-12)), nat(12));
-    assert_reduces(un(defs::int_abs(), int(12)), nat(12));
-    assert_reduces(un(defs::int_abs(), int(0)), nat(0));
-}
-
-#[test]
-fn int_sgn_literals() {
-    assert_reduces(un(defs::int_sgn(), int(-9)), int(-1));
-    assert_reduces(un(defs::int_sgn(), int(0)), int(0));
-    assert_reduces(un(defs::int_sgn(), int(9)), int(1));
-}
-
-#[test]
-fn int_succ_pred_literals() {
-    assert_reduces(un(defs::int_succ(), int(-1)), int(0));
-    assert_reduces(un(defs::int_succ(), int(41)), int(42));
-    assert_reduces(un(defs::int_pred(), int(0)), int(-1));
-    assert_reduces(un(defs::int_pred(), int(-41)), int(-42));
-}
-
-#[test]
-fn int_div_literals() {
-    assert_reduces(bin(defs::int_div(), int(17), int(5)), int(3));
-    // Truncation toward zero on the negative dividend.
-    assert_reduces(bin(defs::int_div(), int(-17), int(5)), int(-3));
-    // Division by zero → 0 (kernel convention).
-    assert_reduces(bin(defs::int_div(), int(17), int(0)), int(0));
-    assert_reduces(bin(defs::int_div(), int(-17), int(0)), int(0));
-}
-
-#[test]
-fn int_mod_literals() {
-    assert_reduces(bin(defs::int_mod(), int(17), int(5)), int(2));
-    // x mod 0 = x (Euclidean convention, matching int.mod's body).
-    assert_reduces(bin(defs::int_mod(), int(17), int(0)), int(17));
-    assert_reduces(bin(defs::int_mod(), int(-17), int(0)), int(-17));
-}
-
-#[test]
-fn int_le_literals() {
-    assert_reduces(bin(defs::int_le(), int(-3), int(2)), bool_lit(true));
-    assert_reduces(bin(defs::int_le(), int(2), int(2)), bool_lit(true));
-    assert_reduces(bin(defs::int_le(), int(5), int(-1)), bool_lit(false));
-}
-
-#[test]
-fn int_lt_literals() {
-    assert_reduces(bin(defs::int_lt(), int(-3), int(2)), bool_lit(true));
-    assert_reduces(bin(defs::int_lt(), int(2), int(2)), bool_lit(false));
-    assert_reduces(bin(defs::int_lt(), int(5), int(-1)), bool_lit(false));
-}
-
-#[test]
-fn partial_application_does_not_reduce() {
-    // A binary op applied to a single literal is not a closed-form
-    // reduction; `reduce_prim` errors.
-    assert!(Thm::reduce_prim(un(defs::int_add(), int(1))).is_err());
 }
 
 // ============================================================================

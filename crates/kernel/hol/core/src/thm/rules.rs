@@ -626,7 +626,13 @@ core_rules! {
         Ok((Ctx::new(), hol::hol_imp(prem, concl)))
     }
 
-    // ================= Group A': computational (builtins in-TCB) =================
+    // ================= Group A': definitional unfolding =================
+    //
+    // (Closed-form literal *computation* is NOT here: it lives in the
+    // per-family certificate rules below, computed by `covalence-pure-eval`
+    // and driven by the untrusted `covalence-hol-eval`. `UnfoldTermSpec` is
+    // sound definitional unfolding tied to `TermKind::Spec` and survives
+    // until the `defs/` catalogue re-homes.)
 
     /// `⊢ Spec(spec, args) = subst(spec.tm, tvars, args)` for a let-style spec.
     UnfoldTermSpec(Term) = |(t,), _| {
@@ -643,16 +649,6 @@ core_rules! {
         let tvars = declared_ty.free_tvars();
         let unfolded = super::inst_spec_tvars(&body, &tvars, &args);
         Ok((Ctx::new(), hol::hol_eq(t, unfolded)))
-    }
-
-    /// `⊢ t = result` — single-step closed-form literal computation.
-    ReducePrim(Term) = |(t,), _| {
-        // Type-check `t` first: `reduce_prim_term` matches purely on shape and
-        // would "reduce" an ill-typed application, which `hol_eq` would then
-        // reject on a bad type. Validating here turns that into a clean `Err`.
-        let _ = t.type_of()?;
-        let reduced = crate::builtins::reduce_prim_term(&t).ok_or(Error::NotReducible)?;
-        Ok((Ctx::new(), hol::hol_eq(t, reduced)))
     }
 
     // ================= Group G: kernel primitive axioms =================
@@ -1037,7 +1033,7 @@ core_rules! {
     /// ## Soundness
     ///
     /// The family contract above, plus the FORCED edge-case conventions
-    /// (shared with the legacy `builtins.rs` by the pure-eval transcription):
+    /// (pinned by `covalence-pure-eval`'s semantics suite):
     /// saturating `pred`/`sub`; `n / 0 = 0` and **`n mod 0 = n`** (forced by
     /// `nat.mod`'s let-style body `λn m. n - (n/m)*m`, which at `m = 0`
     /// evaluates to `n`; any other value would let definitional unfolding
@@ -1102,7 +1098,7 @@ core_rules! {
     /// `2^width`; signed/unsigned `div`/`rem`/`shr`/comparisons read the
     /// operand's tag; shift amounts are taken mod width; and `x / 0 = 0`,
     /// **`x rem 0 = x`** — forced by the ops' let-style catalogue bodies
-    /// through `int.div`/`int.mod` (see `builtins.rs`).
+    /// through `int.div`/`int.mod` (see `defs::int_ops::op_body`).
     FixedWidthCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
         certs::fixed_width(&spec, &args)
             .and_then(|eq| seq(Ctx::new(), eq))

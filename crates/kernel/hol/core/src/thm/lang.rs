@@ -39,8 +39,9 @@
 //! The inner `pure::Thm` field on [`Thm`](super::Thm) is now **hygiene-only**: it
 //! keeps `pure::Thm`/`CoreLang` out of the public signature and preserves
 //! `Arc`-identity, but is no longer load-bearing for soundness. What still remains
-//! trusted (unchanged, documented seams): the `builtins` evaluator inside
-//! `reduce_prim`/`unfold_term_spec`.
+//! trusted (unchanged, documented seams): the `unfold_term_spec` definitional
+//! unfolding and the per-family certificate dispatch (`super::certs` over
+//! `covalence-pure-eval`).
 
 use std::any::TypeId;
 

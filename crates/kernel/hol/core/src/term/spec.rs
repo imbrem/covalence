@@ -4,9 +4,9 @@
 //! pairing an `Arc<dyn Symbol>` with an optional `Type` and an optional
 //! body/predicate `Term`. Same shape as [`crate::ty::TypeSpec`], but
 //! for the term-level catalogue (`nat.add`, `list.map`, …). Reduction
-//! (`Thm::reduce_prim` and successors) recognises a `TermKind::Spec(h,
-//! args)` leaf by `h.ptr_eq(&catalogue_handle)` — pointer identity on
-//! the underlying `Arc`.
+//! (the certificate path in `crate::thm::certs`) recognises a
+//! `TermKind::Spec(h, args)` leaf by `h.ptr_eq(&catalogue_handle)` —
+//! pointer identity on the underlying `Arc`.
 
 use std::sync::Arc;
 

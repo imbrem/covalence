@@ -7,7 +7,7 @@
 //! Every other operation funnels through these two, so they are the
 //! only place the raw `abs`/`rep` coercions appear — which is also the
 //! single seam to teach a future literal-backed `set` builtin (the
-//! way `bytes` is accelerated today via [`crate::builtins`]).
+//! way `bytes` is accelerated today via the certificate path).
 //!
 //! `set.empty`/`set.singleton`/`set.insert` are the constructors;
 //! `set.union`/`set.intersect`/`set.diff`/`set.subset`/`set.isEmpty`

@@ -19,7 +19,7 @@ pub enum Canonical {
     // `=` (`TermKind::Eq`) and `ε` (`TermKind::Select`) are the only
     // logical *primitives*; every connective below is an ordinary
     // let-style definition, unfolded by `Thm::unfold_term_spec` and
-    // (on `bool` literals) reduced by `Thm::reduce_prim` — exactly
+    // (on `bool` literals) reduced by the certificate path — exactly
     // like the arithmetic ops. `T`/`F` stay `TermKind::Bool` literals.
     /// `(/\) := λp q. (λf. f p q) = (λf. f T T)`.
     And,
@@ -262,7 +262,7 @@ pub enum Canonical {
 
     // ---- Term-level: nat arithmetic ----
     /// `natSucc : nat → nat` — the constructor `λn. n + 1`. Closed
-    /// forms reduce via `builtins::reduce_spec`.
+    /// forms reduce via the certificate path.
     NatSucc,
     /// `natPred : nat → nat` — saturating predecessor (`0 - 1 = 0`).
     NatPred,
@@ -313,7 +313,7 @@ pub enum Canonical {
 
     // ---- Term-level: int arithmetic ----
     /// `intSucc : int → int` — `λz. z + 1`. Closed forms reduce via
-    /// `builtins::reduce_spec`.
+    /// the certificate path.
     IntSucc,
     /// `intPred : int → int` — `λz. z − 1`.
     IntPred,

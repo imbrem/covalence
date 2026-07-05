@@ -24,7 +24,7 @@
 //! ```
 //!
 //! Integer *literals* stay the builtin `TermKind::Int`; closed-form
-//! reduction continues to go through `builtins::reduce_spec` (handle
+//! reduction continues to go through the certificate path (handle
 //! `ptr_eq`), independent of these bodies. The bodies make the open
 //! ops *provable* (`covalence-hol` derives the defining equations);
 //! they do not change reduction.
@@ -33,7 +33,7 @@
 //! (`intSgn`/`intAbs`/`intMul`/`intSub`, `natDiv`, `natToInt`) rather than
 //! via the Grothendieck pairs — truncating division toward zero with
 //! `x / 0 = 0` and `x mod 0 = x`. Because those sub-ops reduce on
-//! literals, these bodies reduce too, so the reductions in `builtins.rs`
+//! literals, these bodies reduce too, so the certificate reductions
 //! must agree with them (see the section comment on the definitions).
 
 use std::sync::LazyLock;
@@ -180,8 +180,8 @@ fn int_succ_body() -> Term {
 
 let_term! {
     /// `intSucc : int → int` ≡ `λx. mkInt (succ a, b)` where
-    /// `(a, b) = repPair x`. Reduces on literals via
-    /// `builtins::reduce_spec`.
+    /// `(a, b) = repPair x`. Reduces on literals via the
+    /// certificate path.
     int_succ_spec, int_succ, Canonical::IntSucc, int_succ_body()
 }
 
@@ -367,14 +367,14 @@ fn int_neg_lit() -> Term {
 // zero, and `intMod x y = x − (intDiv x y)·y` is the matching remainder
 // (sign of the dividend). Unlike the Grothendieck ops above — whose bodies
 // are stuck at `ε`/`abs`/`rep` and are sound by the model alone — these
-// bodies are built from *reduce_prim-reducible* sub-ops (`intSgn`/`intAbs`/
+// bodies are built from *certificate-reducible* sub-ops (`intSgn`/`intAbs`/
 // `intMul`/`intSub`, `natDiv`, `natToInt`), so they reduce to a literal on
-// literal arguments. The `unfold`/`reduce_prim` coupling is therefore
-// *derivable*, and the reductions in `builtins.rs` MUST agree with these
+// literal arguments. The `unfold`/certificate coupling is therefore
+// *derivable*, and the certificate reductions MUST agree with these
 // bodies on every input: `x / 0 = 0` (because `sgn 0 = 0`) and
 // `x mod 0 = x` (the Euclidean identity `x = (x/y)·y + x mod y` at y=0).
 // This is the same coupling as `nat.mod`; see `kernel-design.md` §9 and the
-// guard in `tests/audit_reduce.rs`.
+// guard in `covalence-hol-eval`'s `tests/audit_reduce.rs`.
 // ============================================================================
 
 fn int_div_body() -> Term {

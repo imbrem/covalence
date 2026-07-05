@@ -863,9 +863,16 @@ fn false_elim_rejects_non_false() {
 
 #[test]
 fn succ_reduces_on_literals() {
-    // The primitive `succ` evaluates on a closed literal.
+    // The primitive `succ` evaluates on a closed literal — via the
+    // admitted `SuccCert` certificate rule (the cert path).
     let app = Term::app(Term::succ(), Term::nat_lit(7u32));
-    let thm = Thm::reduce_prim(app.clone()).expect("reduce succ 7");
+    let landed = covalence_pure::apply(
+        lang::CoreLang,
+        rules::SuccCert,
+        covalence_types::Nat::from(7u32),
+    )
+    .expect("SuccCert 7");
+    let thm = Thm::from_pure(landed).expect("lands as a core Thm");
     let (lhs, rhs) = parse_hol_eq(thm.concl()).unwrap();
     assert_eq!(lhs, &app);
     assert_eq!(rhs, &Term::nat_lit(8u32));

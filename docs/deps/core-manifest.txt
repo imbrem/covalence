@@ -28,7 +28,6 @@ SpecRepAbsFwd
 SpecRepAbsBack
 SpecAx
 UnfoldTermSpec
-ReducePrim
 UnitEq
 SuccInj
 ZeroNeSucc

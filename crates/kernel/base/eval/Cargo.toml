@@ -6,12 +6,3 @@ edition = "2024"
 [dependencies]
 covalence-pure = { path = ".." }
 covalence-types = { path = "../../../lib/types" }
-
-[dev-dependencies]
-# DIFFERENTIAL TESTING ONLY (tests/differential.rs): every CanonRule here is
-# checked value-for-value against covalence-core's Thm::reduce_prim while the
-# latter still exists. This is a dev-dependency — it is NOT a normal dep edge
-# (scripts/dep-graph.mjs skips dev deps), so the BANNED_EDGES freeze
-# `covalence-pure-eval -> covalence-core` stays satisfied and this crate stays
-# HOL-free at build time. The dev-dep dies with reduce_prim.
-covalence-core = { path = "../../hol/core" }

@@ -20,11 +20,9 @@ future seams left open by the core-on-pure port.
   Also open: the remaining HOL term formers (const/abs) as base ops.
 - **No native pure-HOL embedding.** `IsThm` carries `(Ctx, Term)` as opaque `Val`
   leaves. Future: `HasTy` judgement Op; a native pure-HOL theory.
-- **Legacy `builtins` evaluator still in-TCB.** `ReducePrim`/`UnfoldTermSpec`
-  keep it inside their `decide`. The cert path (`thm/certs.rs` families over
-  `covalence-pure-eval`, driven by `covalence-hol-eval`) now covers the whole
-  reduce catalogue; `ReducePrim` + `builtins.rs` delete once TermExt/scripts/
-  peripherals re-route (purge S8; `UnfoldTermSpec` survives to the defs re-home).
+- **`UnfoldTermSpec` survives to the defs re-home.** Sound definitional
+  unfolding tied to `TermKind::Spec`; deletes with `TermKind::Spec` when the
+  `defs/` catalogue re-homes as ordinary `define`d constants.
 - **`_with` interning is post-hoc.** The cons-aware `*_with` methods mint via the
   base rule (canonical build) then deep-intern the result conclusion into the
   caller's `TrustedCons` (`intern_concl`). This populates the cons table for

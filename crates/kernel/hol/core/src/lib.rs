@@ -17,8 +17,10 @@
 //! ([`Thm::nat_induct`], [`Thm::false_elim`], [`Thm::unit_eq`],
 //! [`Thm::lem`] — the classicality axiom); the
 //! conservative-extension primitives ([`Thm::define`],
-//! [`Thm::new_type_definition`]); and the accelerated reduction rules
-//! ([`Thm::reduce_prim`], [`Thm::unfold_term_spec`]).
+//! [`Thm::new_type_definition`]); the accelerated definitional
+//! unfolding rule ([`Thm::unfold_term_spec`]); and the per-family
+//! computation certificate rules (exported via [`seam`], computed by
+//! `covalence-pure-eval`, driven by the untrusted `covalence-hol-eval`).
 //!
 //! Content hashing, S-expression syntax, FFI bridges, and the untrusted
 //! HOL builder shell live downstream in `covalence-hol`. The canonical
@@ -56,8 +58,9 @@
 //!   (`term/`, `ty/`).
 //! - Capture-avoiding substitution, β/η, type-variable substitution
 //!   (`subst.rs`).
-//! - Closed-form reduction (`builtins.rs`) — decides catalogue ops and
-//!   HOL `=` on literal arguments by reflexivity.
+//! - Closed-form literal computation via the per-family certificate
+//!   rules (`thm/rules.rs` dispatching through `thm/certs.rs` to the
+//!   enumerable `covalence-pure-eval` `CanonRule`s).
 //! - The hypothesis context (`ctx.rs`) and HOL term builders (`hol.rs`).
 //! - The inference rules (`thm/`) and the derived-type/term catalogue
 //!   (`defs/`, semi-trusted — see `notes/vibes/kernel-design.md` §6).
@@ -65,7 +68,6 @@
 //!   seam surface (`seam.rs`). The untrusted reduction/reification drivers
 //!   live downstream in `covalence-hol-eval`.
 
-mod builtins;
 pub mod ctx;
 pub mod defs;
 pub mod error;

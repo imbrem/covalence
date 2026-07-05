@@ -19,8 +19,9 @@
 //! [`crate::Thm::select_ax`] — the same way HOL Light proves
 //! `COND_CLAUSES`. At the kernel level `cond` unfolds to its body
 //! through [`crate::Thm::unfold_term_spec`] like any other defined
-//! constant; `reduce_prim` has no `cond`-specific rule (the branches
-//! are arbitrary terms, not literals), so it is δ-unfolded explicitly.
+//! constant; the certificate path has no `cond`-specific rule (the
+//! branches are arbitrary terms, not literals), so it is δ-unfolded
+//! explicitly.
 
 use std::sync::LazyLock;
 

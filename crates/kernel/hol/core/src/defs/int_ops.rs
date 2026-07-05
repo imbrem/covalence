@@ -11,20 +11,20 @@
 //! `SmolStr` symbol (`"u8.add"`, `"s32.lt"`, `"u16.zext.u64"`, …) and
 //! cached in a process-wide registry keyed by [`OpKey`].
 //!
-//! Closed-form reduction (`builtins::reduce_spec`) dispatches the same
-//! way the rest of the catalogue does — by pointer identity on the
-//! cached `Arc` — via [`lookup_op`], which reverse-maps a spec's
-//! `ptr_id()` back to its [`OpKey`]. A user-built spec that merely
-//! *shares a label* is a different allocation, so it is absent from
-//! the reverse map and never reduces — the same safety the `ptr_eq`
-//! dispatch gives the hand-written ops.
+//! Closed-form reduction (the `FixedWidthCert` certificate dispatch in
+//! `crate::thm::certs`) works the same way the rest of the catalogue
+//! does — by pointer identity on the cached `Arc` — via [`lookup_op`],
+//! which reverse-maps a spec's `ptr_id()` back to its [`OpKey`]. A
+//! user-built spec that merely *shares a label* is a different
+//! allocation, so it is absent from the reverse map and never reduces —
+//! the same safety the `ptr_eq` dispatch gives the hand-written ops.
 //!
 //! ## Definitional bodies
 //!
 //! The **conversions** (`toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/`sext`)
 //! stay **declaration-only** (`tm = None`): they are the primitive
 //! reducible interface between `uN`/`sN` and `nat`/`int` (sound, and
-//! complete *on literals* via `builtins.rs`). Every **operation** is then
+//! complete *on literals* via the certificate path). Every **operation** is then
 //! *defined* over them in [`op_body`] — `add`/`sub`/`mul`/`neg` and
 //! `div`/`rem` as `fromInt(intOp (toInt x) (toInt y))` (signed tags) or
 //! `fromNat(natOp (toNat x) (toNat y))` (unsigned), bitwise / shifts via
@@ -34,8 +34,8 @@
 //! `SKELETONS.md`), which remains declaration-only.
 //!
 //! Because every body reduces to a literal on literal arguments, it is
-//! *derivably coupled* to `builtins::reduce_int_op` and must denote the
-//! exact same function — guarded by
+//! *derivably coupled* to the `FixedWidthCert` reduction and must denote
+//! the exact same function — guarded by `covalence-hol-eval`'s
 //! `tests/audit_reduce.rs::audit_reduce_matches_body`. See the
 //! [`op_body`] section comment and `kernel-design.md` §9.
 //!
@@ -256,9 +256,9 @@ static FORWARD: LazyLock<HashMap<OpKey, TermSpec>> = LazyLock::new(|| {
 // are the reducible interface to `nat`/`int`) with `nat`/`int` arithmetic.
 //
 // SOUNDNESS: every body reduces to a literal on literal arguments (its
-// sub-ops all reduce), so it is *derivably coupled* to `builtins::
-// reduce_int_op` — each body MUST denote exactly the function the reduction
-// computes, on every input. The coupling is enforced by
+// sub-ops all reduce), so it is *derivably coupled* to the `FixedWidthCert`
+// reduction — each body MUST denote exactly the function the reduction
+// computes, on every input. The coupling is enforced by `covalence-hol-eval`'s
 // `tests/audit_reduce.rs::audit_reduce_matches_body`. See `kernel-design.md`
 // §9 for the coupling and the `nat.mod` precedent.
 // ============================================================================
@@ -307,18 +307,18 @@ fn op_body(key: OpKey, map: &HashMap<OpKey, TermSpec>) -> Option<Term> {
         IntOp::Ge => nat_cmp_body(tag, nat_le(), true, map),
 
         // Division / remainder are sign-DEPENDENT (truncating). `x / 0 = 0`
-        // and `x rem 0 = x` (Euclidean) on both sides — see
-        // `builtins::int_binop`.
+        // and `x rem 0 = x` (Euclidean) on both sides — see the pure-eval
+        // `FwDiv`/`FwRem` ops.
         IntOp::Div if signed => int_ring_body(tag, int_div(), map),
         IntOp::Rem if signed => int_ring_body(tag, int_mod(), map),
         IntOp::Div => nat_binop_body(tag, nat_div(), map),
         IntOp::Rem => nat_binop_body(tag, nat_mod(), map),
 
         // Left shift is sign-uniform; the shift amount is taken mod width
-        // (matching `builtins`). Right shift differs by sign — only the
-        // unsigned (logical) case has a body here; arithmetic `sN >>` needs
-        // a floor-division the catalogue does not yet expose, so it stays
-        // declaration-only (reduces on literals via `builtins`).
+        // (matching the certificate reduction). Right shift differs by sign —
+        // only the unsigned (logical) case has a body here; arithmetic `sN >>`
+        // needs a floor-division the catalogue does not yet expose, so it
+        // stays declaration-only (reduces on literals via the certificates).
         IntOp::Shl => shift_body(tag, nat_shl(), map),
         IntOp::Shr if !signed => shift_body(tag, nat_shr(), map),
         IntOp::Shr => return None,
@@ -393,7 +393,7 @@ fn cmp_body(tag: IntTag, conv: Term, cmp: Term, swap: bool) -> Term {
 }
 
 /// `λx y:tag. fromNat[tag] (shift (toNat x) (toNat y mod width))` — a shift
-/// by `toNat y mod width` (matching `builtins`'s shift-amount masking).
+/// by `toNat y mod width` (matching the certificate shift-amount masking).
 /// `shift` is `nat.shl` (left) or `nat.shr` (logical right).
 fn shift_body(tag: IntTag, shift: Term, map: &HashMap<OpKey, TermSpec>) -> Term {
     let to_nat = conv(map, OpKey::ToNat(tag));

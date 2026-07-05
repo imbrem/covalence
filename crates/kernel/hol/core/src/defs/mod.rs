@@ -32,7 +32,7 @@
 //!
 //! **The goal is for every op to be defined**, not declaration-only.
 //! Crucially, **the definition does not affect efficiency**: closed
-//! literal computation always goes through `builtins::reduce_spec`
+//! literal computation always goes through the certificate path
 //! (pointer-match on the handle), which is independent of `tm`. So
 //! giving `intAdd` its full first-order spec costs nothing at runtime;
 //! it just makes the op *complete*.
@@ -63,7 +63,7 @@
 //!   (`bytes{Cat,ConsNat,Len,At,Slice}`), the higher-order `list` ops
 //!   (`list{Length,Cat,Map,Filter,Foldr,Foldl,Take,Skip,Repeat,
 //!   Flatten}`), and `ratLe`. These still **reduce on
-//!   literals** via `builtins::reduce_spec` where applicable; they
+//!   literals** via the certificate path where applicable; they
 //!   just lack open-form definitional bodies. (`rat` now draws its
 //!   denominator from `int.pos`, so it is correctly nonzero.)
 //!   `cond` is now a let-style definition (HOL Light `COND`); its

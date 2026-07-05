@@ -37,28 +37,23 @@
   },
   "counts": {
     "obs-rules": {},
-    "reduce_prim": {
-      "covalence-core": 83,
-      "covalence-hol-eval": 9,
-      "covalence-pure-eval": 1
-    },
+    "reduce_prim": {},
     "unfold_term_spec": {
-      "covalence-core": 39,
+      "covalence-core": 24,
       "covalence-hol-eval": 5,
       "covalence-init": 10
     },
     "termkind-literals": {
-      "covalence-core": 118,
+      "covalence-core": 101,
       "covalence-hol-eval": 6,
       "covalence-init": 10
     },
     "tycon-obs": {},
     "term-literal-ctors": {
-      "covalence-core": 172,
+      "covalence-core": 122,
       "covalence-core-test-guest": 4,
-      "covalence-hol-eval": 8,
-      "covalence-init": 72,
-      "covalence-pure-eval": 3
+      "covalence-hol-eval": 5,
+      "covalence-init": 72
     },
     "has_no_obs": {},
     "cov-script-reduce": {
@@ -67,30 +62,22 @@
   },
   "totals": {
     "obs-rules": 0,
-    "reduce_prim": 93,
-    "unfold_term_spec": 54,
-    "termkind-literals": 134,
+    "reduce_prim": 0,
+    "unfold_term_spec": 39,
+    "termkind-literals": 117,
     "tycon-obs": 0,
-    "term-literal-ctors": 259,
+    "term-literal-ctors": 203,
     "has_no_obs": 0,
     "cov-script-reduce": 18
   },
   "exceptions": [
     {
-      "commit": "81a9b316",
-      "pattern": "reduce_prim/term-literal-ctors",
-      "crate": "covalence-pure-eval",
-      "delta": "+1/+3",
-      "reason": "S3 differential test compares CanonRules against builtins.rs via reduce_prim; literal ctors in the test fixtures",
-      "diesWith": "S8 reduce_prim deletion"
-    },
-    {
       "commit": "c9164309",
-      "pattern": "reduce_prim/term-literal-ctors",
+      "pattern": "term-literal-ctors",
       "crate": "covalence-core",
-      "delta": "+2/+5",
-      "reason": "S4 slice: ToHolNatVal's transitional nat_lit reify target + the reduce_prim acceptance-comparison calls",
-      "diesWith": "S8/S10 (transitional rule + literal deletion)"
+      "delta": "+3",
+      "reason": "S4 slice: ToHolNatVal's transitional nat_lit reify target (the reduce_prim acceptance-comparison calls were deleted in S8)",
+      "diesWith": "S10 literal deletion"
     },
     {
       "commit": "S5",
@@ -102,11 +89,11 @@
     },
     {
       "commit": "S5",
-      "pattern": "reduce_prim/unfold_term_spec/termkind-literals/term-literal-ctors",
+      "pattern": "unfold_term_spec/termkind-literals/term-literal-ctors",
       "crate": "covalence-hol-eval",
-      "delta": "+9/+5/+1/+8",
-      "reason": "S5 driver crate: differential suite pins reduce vs Thm::reduce_prim; delta passthrough still routes unfold_term_spec; recognizer matches TermKind::Succ; test fixtures build literal terms",
-      "diesWith": "S8 reduce_prim deletion (differential suite + passthrough) / S10 literal deletion (fixtures)"
+      "delta": "+5/+1/+5",
+      "reason": "S5 driver crate: delta passthrough still routes the kernel unfold rule; recognizer matches TermKind::Succ; test fixtures build literal terms (the reduce_prim differential suite was deleted in S8)",
+      "diesWith": "defs/ re-home (delta re-routes) / S10 literal deletion (fixtures)"
     },
     {
       "commit": "S7",

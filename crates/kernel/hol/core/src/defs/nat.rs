@@ -26,7 +26,7 @@ use super::canonical::Canonical;
 use super::sigs;
 
 // ============================================================================
-// natSucc / natPred — TermSpec constants. No body; `builtins::reduce_spec`
+// natSucc / natPred — TermSpec constants. No body; the certificate path
 // matches on them to evaluate closed-form applications.
 // ============================================================================
 
@@ -59,7 +59,7 @@ let_term! {
     /// `natPred : nat → nat` ≡ `λn. natRec 0 (λk _. k) n` — saturating
     /// predecessor. Equations: `pred 0 = 0`, `pred (S n) = n` (both
     /// provable from the `natRec` recursion equations). Closed-literal
-    /// reduction still goes through `builtins::reduce_spec`.
+    /// reduction still goes through the certificate path.
     nat_pred_spec, nat_pred, Canonical::NatPred, nat_pred_body()
 }
 
@@ -381,7 +381,7 @@ let_term! {
 /// Euclidean bounds, keeps the kernel definition foundation-neutral (no Hilbert
 /// `ε` beyond the shared `natRec`). The bounds `d·m ≤ n < (d+1)·m` and the
 /// recurrence are then **theorems** (`covalence_init::init::nat_div`), and the
-/// closed-literal `builtins` reduction (`n/0 = 0`, else truncating = flooring
+/// closed-literal certificate reduction (`n/0 = 0`, else truncating = flooring
 /// division) computes the same floor.
 fn nat_div_body() -> Term {
     let nat = Type::nat();
@@ -508,7 +508,7 @@ fn nat_to_int_body() -> Term {
 
 let_term! {
     /// `natToInt : nat → int` ≔ `λn. iter[int] n intSucc 0`.
-    /// Closed-form reduction continues to work via
-    /// `builtins::reduce_spec` (ptr_eq dispatch on the spec).
+    /// Closed-form reduction continues to work via the
+    /// certificate path (ptr_eq dispatch on the spec).
     nat_to_int_spec, nat_to_int, Canonical::NatToInt, nat_to_int_body()
 }

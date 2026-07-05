@@ -58,9 +58,15 @@ a couple of well-justified additions:
   `TypeSpec` analogue of the `new_type_definition` bijection theorems
   and are what `covalence-hol::init::set` builds its membership /
   extensionality API on.
-- Two accelerated reduction rules (`reduce_prim`, `unfold_term_spec`)
-  that emit `⊢ t = canonical_form` for closed-literal computations.
-  Sound by the literal's denotation, not a logical postulate.
+- Accelerated reduction: `unfold_term_spec` (definitional unfolding)
+  plus the per-family computation certificate rules (`NatArithCert` /
+  `IntArithCert` / `BytesCert` / `FixedWidthCert` / `LitEqCert` /
+  `CoercionCert` / `SuccCert` in `thm/rules.rs`, dispatch in
+  `thm/certs.rs`, computation in `covalence-pure-eval`, untrusted driver
+  `covalence-hol-eval`) that emit `⊢ t = canonical_form` for
+  closed-literal computations. Sound by the literal's denotation, not a
+  logical postulate. (The old in-TCB `reduce_prim` rule + `builtins.rs`
+  evaluator were deleted in the toHOL purge, S8.)
 - Conservative-extension primitives (`define`, `new_type_definition`)
   for introducing fresh constants and subtypes.
 - ~~An observer system~~ **DELETED (toHOL purge, 2026-07)**: the observer
@@ -96,7 +102,6 @@ crates/covalence-core/src/
 │   └── list.rs        — TypeList
 ├── ctx.rs             — Ctx (hypothesis set, structurally shared)
 ├── subst.rs           — close / open / shift_by / subst_free / subst_tfree_in_* / match_types
-├── builtins.rs        — reduce_prim_term + reduce_spec (PRIM_TABLE ptr_id dispatch)
 ├── hol.rs             — HOL-connective constructors (hol_eq/hol_imp/hol_forall/hol_not/…)
 ├── thm/
 │   ├── mod.rs         — Thm + the equality/connective/induction/observer rules (the LCF API)
@@ -180,7 +185,7 @@ bootstrap), e.g. `(∧) ≜ λp q. (λf. f p q) = (λf. f T T)` and
 - `Thm::unfold_term_spec(op)` hands back the defining equation
   `⊢ op = <body>` — the hook `covalence-hol` uses to *derive* the
   connectives' intro/elim rules instead of postulating them.
-- `Thm::reduce_prim` decides them on `bool` literals by the same
+- The certificate path decides them on `bool` literals by the same
   pointer-match dispatch as the arithmetic specs.
 
 `imp_intro`/`imp_elim`/`all_intro`/`all_elim` remain kernel-provided
@@ -274,15 +279,15 @@ Thm::new_type_definition(hint, abs_hint, rep_hint, witness)
 sound one-shot computation step)
 
 ```rust
-Thm::reduce_prim(t) -> Result<Thm>
-    // Closed-form arithmetic on literal operands. Returns ⊢ t = canonical.
-    // Catalogue:
-    //   App(App(Eq(_), lit_a), lit_b)         →  Bool(a == b)
-    //   App(nat_succ_spec, Nat(n))            →  Nat(n+1)
-    //   App(nat_pred_spec, Nat(n))            →  Nat(max(n-1, 0))
-    //   App(App(nat_add_spec, Nat(a)), Nat(b)) →  Nat(a+b)
-    //   ... similarly for mul/sub/div/mod/pow, int_*, bytes_*
-    // Dispatches by TermSpec ptr_eq against catalogue handles.
+// Closed-form arithmetic on literal operands: the per-family certificate
+// rules (applied through covalence_pure::apply, driven by the untrusted
+// covalence-hol-eval::reduce). Each returns ⊢ t = canonical:
+//   LitEqCert:      App(App(Eq(_), lit_a), lit_b)  →  Bool(a == b)
+//   SuccCert:       App(Succ, Nat(n))              →  Nat(n+1)
+//   NatArithCert:   App(App(nat_add_spec, Nat(a)), Nat(b)) → Nat(a+b), …
+//   IntArithCert / BytesCert / CoercionCert / FixedWidthCert likewise.
+    // Dispatches by TermSpec ptr_eq against catalogue handles; computes
+    // via the enumerable covalence-pure-eval CanonRules (Builtins manifest).
     // Returns Err(NotReducible) for shapes not in the table.
 
 Thm::unfold_term_spec(t) -> Result<Thm>
@@ -344,7 +349,8 @@ Thm::spec_ax(t, w) -> Result<Thm>
     //   ⟹  ⊢ (p w) ⟹ p(t)   (each named def-spec is its own choice; the
     // def-style analogue of select_ax). Sound unconditionally; does NOT
     // equate t with ε p or any other spec sharing p. See §9 for its
-    // coupling with reduce_prim on the reduced def-specs nat.le / nat.lt.
+    // coupling with the certificate reduction on the reduced def-specs
+    // nat.le / nat.lt.
 ```
 
 **That is the entire non-computational axiom surface.** The classic
@@ -414,7 +420,9 @@ ctx.insert(&t)                // assume
 - `term/` (Term/Type/Eq/Select/Object structural representation)
 - `ctx.rs` (hypothesis set)
 - `subst.rs` (substitution and de Bruijn shifting)
-- `builtins.rs` (reduce_prim_term, reduce_spec)
+- `thm/certs.rs` (the family certificate dispatch tables) together with
+  `covalence-pure-eval` (the enumerable `Builtins` CanonRules it computes
+  through — see `docs/deps/builtins-manifest.txt`)
 - `hol.rs` (axiom term + connective constructors)
 - `thm.rs` (the rule API)
 - `error.rs` (error variants)
@@ -447,7 +455,7 @@ produce a false `Thm`):
 - HOL `=` is interpreted as equality in the model.
 
 These commitments are what makes `nat_induct` (and `false_elim`)
-sound, what makes `reduce_prim`'s `T = F → F` sound, etc.
+sound, what makes `LitEqCert`'s `T = F → F` sound, etc.
 
 ### Things the kernel does NOT do
 
@@ -464,18 +472,18 @@ sound, what makes `reduce_prim`'s `T = F → F` sound, etc.
 
 ### A coupling the catalogue MUST respect
 
-When a catalogue spec is reachable by **both** `reduce_prim` and
+When a catalogue spec is reachable by **both** the certificate rules and
 `unfold_term_spec` — i.e. it is a `let_term!` (let-style body) **and**
-listed in `builtins::PRIM_TABLE` (e.g. `nat.add`, `nat.mod`,
+listed in a family cert table (`thm/certs.rs`; e.g. `nat.add`, `nat.mod`,
 `bytes.cat`) — the kernel commits to two facts about it:
-`spec lit… = reduce_prim(spec lit…)` and `spec = body`. These are
-consistent **only if the body denotes the same function `reduce_prim`
+`spec lit… = reduce(spec lit…)` and `spec = body`. These are
+consistent **only if the body denotes the same function the certificate
 computes**, on every input. A divergence makes the theory inconsistent
 (it derives `litₐ = lit_b` for distinct literals, hence `⊢ F`).
 
-The risk is **derivable** — and so guarded by
+The risk is **derivable** — and so guarded by `covalence-hol-eval`'s
 `tests/audit_reduce.rs::audit_reduce_matches_body` — exactly when the
-body bottoms out in `reduce_prim`-reducible sub-ops, so the body itself
+body bottoms out in cert-reducible sub-ops, so the body itself
 reduces to a literal. That is the case for `nat.mod` (`n − (n/m)·m`) and
 `int.div` / `int.mod` (built from `intSgn`/`intAbs`/`intMul`/`intSub` +
 `natDiv`/`natToInt`); for those, `x / 0 = 0` and `x mod 0 = x` (the
@@ -486,35 +494,37 @@ so they are sound by the model alone with no derivable contradiction
 (see `iter_based_bodies_are_stuck`). Declaration-only specs (`tm = None`,
 e.g. the `uN`/`sN` conversions) have no body and are likewise immune.
 
-**A second coupling — `spec_ax` vs `reduce_prim`.** `Thm::spec_ax`
-exposes a *def-style* spec's selector predicate `p` as a kernel fact
-(`(p w) ⟹ p(t)`, the per-spec choice axiom). For a def-style spec that
-is **also** in `PRIM_TABLE` — currently only `nat.le` and `nat.lt` — the
-kernel then commits to *both* `(p w) ⟹ p(t)` and the `reduce_prim`
-values, so they must be jointly satisfiable: **every function satisfying
-`p` must agree with `reduce_prim` on all reducible inputs.** If `p` were
-weak enough to admit a function disagreeing with `reduce_prim` at a
-reducible point, `spec_ax` (discharging `p w` for that function) plus
-`reduce_prim` would derive `litₐ = lit_b` — `⊢ F`. `nat.le`/`nat.lt`'s
-predicates are their four defining recursion equations, which have a
-*unique* solution (the real `≤`/`<`) that `reduce_prim` computes, so
-they are safe. The guard
+**A second coupling — `spec_ax` vs the certificate reduction.**
+`Thm::spec_ax` exposes a *def-style* spec's selector predicate `p` as a
+kernel fact (`(p w) ⟹ p(t)`, the per-spec choice axiom). For a def-style
+spec that is **also** cert-reducible — currently only `nat.le` and
+`nat.lt` — the kernel then commits to *both* `(p w) ⟹ p(t)` and the
+certificate values, so they must be jointly satisfiable: **every
+function satisfying `p` must agree with the certificate on all reducible
+inputs.** If `p` were weak enough to admit a function disagreeing with
+the certificate at a reducible point, `spec_ax` (discharging `p w` for
+that function) plus the certificate would derive `litₐ = lit_b` — `⊢ F`.
+`nat.le`/`nat.lt`'s predicates are their four defining recursion
+equations, which have a *unique* solution (the real `≤`/`<`) that the
+certificate computes, so they are safe. The guard (`covalence-hol-eval`)
 `tests/audit_reduce.rs::audit_reduced_def_specs_satisfy_their_predicate`
-checks `reduce_prim` satisfies those equations; uniqueness is by
-construction. **Any future def-style spec added to `PRIM_TABLE` must
+checks the certificate satisfies those equations; uniqueness is by
+construction. **Any future def-style spec added to a cert table must
 satisfy this** (give it a predicate with a unique solution = its
 reduction, and add it to that guard).
 
 ### Audit confidence (as of 2026-06-14)
 
-A third audit pass (2026-06-14) found and fixed one real hole: `nat.mod
-n 0` reduced to `0` while its let-style body `λn m. n - (n/m)*m`
-evaluates to `n` at `m = 0`, so `unfold` + `reduce_prim` derived
+A third audit pass (2026-06-14, against the then-extant legacy
+`reduce_prim` rule — deleted in purge S8, its semantics carried over
+verbatim into the certificate path) found and fixed one real hole:
+`nat.mod n 0` reduced to `0` while its let-style body `λn m. n - (n/m)*m`
+evaluates to `n` at `m = 0`, so `unfold` + reduction derived
 `n = 0` (`⊢ 0 = 5` reproduced unconditionally). The reduction now
 returns `n` (the Euclidean convention `n mod 0 = n`), matching the body;
 see the coupling note above. The same pass added the
-`reduce_prim`/`unfold` consistency guards and hardened two non-soundness
-panics (`reduce_prim` on an ill-typed `Eq` application; `match_types`
+reduce/`unfold` consistency guards and hardened two non-soundness
+panics (reduction of an ill-typed `Eq` application; `match_types`
 missing its `Bool`/`Spec` arms, panicking in `Def::body`).
 
 A fourth pass (2026-06-14) audited the `high-hol` merge, which added new
@@ -526,7 +536,7 @@ existing model commitments (standard naturals + classical HOL with
 choice); `select_ax`/`spec_ax` coexist with the observer ε-families
 (distinct operators). `Succ` is handled as a closed, tvar-free no-op
 leaf in every substitution / predicate walk. The pass surfaced the
-second coupling documented above (`spec_ax` × `reduce_prim` on `nat.le`/
+second coupling documented above (`spec_ax` × reduction on `nat.le`/
 `nat.lt`) and added its guard; no hole.
 
 With these the kernel has no known soundness holes. Every rule produces

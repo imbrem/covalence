@@ -111,7 +111,7 @@ pub(crate) fn zero() -> Term {
 }
 
 /// `succ : nat → nat` — the user-facing `defs::nat_succ` TermSpec
-/// constant. Closed forms reduce via `builtins::reduce_spec`. Used by
+/// constant. Closed forms reduce via the certificate path. Used by
 /// `defs/nat.rs` selector predicates and by [`crate::Thm::nat_induct`].
 pub(crate) fn succ_fn() -> Term {
     crate::defs::nat_succ()

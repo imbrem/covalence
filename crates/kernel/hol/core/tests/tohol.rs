@@ -44,6 +44,7 @@ fn tohol_nat_add_more_values() {
         );
         let legacy = Thm::reduce_prim(lit_app).expect("legacy reduction");
         assert_eq!(thm.concl(), legacy.concl());
+        assert!(thm.hyps().is_empty(), "toHOL certificates are hypothesis-free");
     }
 }
 

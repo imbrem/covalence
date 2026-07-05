@@ -7,7 +7,9 @@
 //
 //   docs/deps/purge-ratchet.json
 //
-// THE RATCHET RULE: counts may only DECREASE. There are no exemptions —
+// THE RATCHET RULE: counts may only DECREASE. The only exemption is
+// transitional purge machinery, and it MUST be recorded in the golden's
+// `exceptions` ledger in the same commit —
 // covalence-core counts itself; the endgame drives every count to 0.
 //
 // Usage:
@@ -99,6 +101,9 @@ for (const { name, glob, re } of PATTERNS) {
   totals[name] = Object.values(perCrate).reduce((a, b) => a + b, 0);
 }
 
+const priorGolden = existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")) : null;
+const exceptions = priorGolden?.exceptions ?? [];
+
 const artifact =
   JSON.stringify(
     {
@@ -107,6 +112,12 @@ const artifact =
       patterns: Object.fromEntries(PATTERNS.map((p) => [p.name, { glob: p.glob, regex: p.re }])),
       counts,
       totals,
+      // Increase-exception LEDGER: an increase is permitted ONLY when the same
+      // commit appends an entry here ({ commit, pattern, crate, delta, reason,
+      // diesWith }). Hand-editing the golden without a ledger entry is a
+      // process violation — reviewers diff this file. Entries are carried
+      // forward verbatim on regeneration and removed when their call sites die.
+      exceptions,
     },
     null,
     2,
@@ -115,7 +126,7 @@ const artifact =
 // ---------------------------------------------------------------------------
 // Ratchet comparison against the golden.
 // ---------------------------------------------------------------------------
-const golden = existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")) : null;
+const golden = priorGolden;
 function increases() {
   if (!golden) return [];
   const out = [];
@@ -137,7 +148,10 @@ if (inc.length) {
   );
   for (const line of inc) console.error(line);
   console.error(
-    "purge-ratchet: remove the new call sites (counts may only decrease; see docs/deps/purge-ratchet.json).",
+    "purge-ratchet: remove the new call sites, or (rare, transitional-machinery only)",
+  );
+  console.error(
+    "purge-ratchet: hand-bump the golden WITH a new `exceptions` ledger entry in the same commit.",
   );
   process.exit(1);
 }

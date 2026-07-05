@@ -1035,6 +1035,28 @@ mod manifest_tests {
     /// `docs/deps/core-manifest.txt` — a PR that grows the admitted-rule TCB
     /// shows it in-diff. Regenerate with:
     /// `COV_REGEN_GOLDEN=1 cargo test -p covalence-core manifest_matches_golden`
+    /// The transitional literal-unfolding rule and the permanent structural
+    /// (succ-tower) rules pin CONTRADICTORY denotations for `toHOL n` at the
+    /// `Term` sort — admitting both makes the base tier inconsistent (audit
+    /// wave-1 finding: sym+trans would equate `Val(nat_lit 1)` with
+    /// `Val(app(succ, nat_lit 0))`, a false definitional-Eq fact). This guard
+    /// fires the moment both appear in the manifest: delete `ToHolNatVal` in
+    /// the SAME commit that admits the structural rules.
+    #[test]
+    fn tohol_unfolding_rules_are_exclusive() {
+        let names = core_rule_names();
+        let transitional = names.iter().any(|(n, _)| *n == "ToHolNatVal");
+        let structural = names
+            .iter()
+            .any(|(n, _)| n.starts_with("ToHolNatZero") || n.starts_with("ToHolNatSucc"));
+        assert!(
+            !(transitional && structural),
+            "ToHolNatVal (literal denotation) and the structural succ-tower rules \
+             must never be admitted together — they pin contradictory `toHOL` \
+             denotations (see thm/SKELETONS.md)"
+        );
+    }
+
     #[test]
     fn manifest_matches_golden() {
         let names = core_rule_names();

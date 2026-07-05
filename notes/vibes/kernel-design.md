@@ -63,9 +63,12 @@ a couple of well-justified additions:
   Sound by the literal's denotation, not a logical postulate.
 - Conservative-extension primitives (`define`, `new_type_definition`)
   for introducing fresh constants and subtypes.
-- An observer system (`obs_eq`, `obs_true`, `obs_imp`) sound under a
-  parametric ε-model — the hook for non-HOL theories (Store, BLAKE3,
-  future provers) to inject facts without contaminating the kernel.
+- ~~An observer system~~ **DELETED (toHOL purge, 2026-07)**: the observer
+  rules and leaves are gone; external facts now enter as admits-gated
+  base-language rules (`toHOL` denotations + `IsThm` certificates — see
+  [`pure-hol-and-build-plan.md`](./pure-hol-and-build-plan.md)). Typedef
+  freshness survives as the dedicated `FreshId` token
+  (`TermKind::FreshConst` / `TypeKind::FreshTyCon`).
 
 The propositional layer (`∧`/`∨`/`¬` rules, `¬p ⇔ (p ⟹ F)`, ex falso,
 quantifier intro/elim) is **fully derived** — see
@@ -83,7 +86,7 @@ so the audit chain is visible in any final theorem.
 crates/covalence-core/src/
 ├── lib.rs             — module declarations + re-exports
 ├── term/
-│   ├── observer.rs    — Observer / ObsTrue / ObsImp / ObsEq traits + Object
+│   ├── fresh.rs       — FreshId (Arc-identity typedef-freshness token)
 │   ├── term.rs        — Term, TermKind (incl. Eq/Select primitives), Def, TypeEnv, type_of_in
 │   ├── spec.rs        — TermSpec handle
 │   └── set.rs         — TermSet (structurally-shared hyp set backing Ctx)
@@ -112,8 +115,7 @@ Nat                            Type::nat()          kernel-primitive
 Bool                           Type::bool()         HOL formula type
 Fun(Type, Type)                Type::fun(d, c)      function type
 Tycon(SmolStr, Vec<Type>)      Type::tycon(name, args)        named structural tycon
-TyConObs(Object, BinderHint,
-         Vec<Type>)                                  fresh-identity tycon (typedef result)
+FreshTyCon(FreshId, Vec<Type>)                     fresh-identity tycon (typedef result)
 Spec(TypeSpec, Vec<Type>)      Type::spec(spec, args)         derived TypeSpec application
 ```
 
@@ -145,7 +147,7 @@ Blob(Bytes)                    Term::blob(bs)           byte-string literal
 Eq(Type)                       Term::eq_op(alpha)       `=` at element type α
 Select(Type)                   Term::select_op(alpha)   `ε` (choice) at element type α
 Spec(TermSpec, Vec<Type>)      Term::term_spec(spec, ty_args)   derived TermSpec
-Obs(Object, Type)              Term::obs(o, ty)         observer leaf
+FreshConst(FreshId, Type)     (pub(crate))             fresh typedef constant (abs/rep)
 Def(Def)                       Term::def(d)             defined constant
 ```
 
@@ -291,30 +293,16 @@ Thm::unfold_term_spec(t) -> Result<Thm>
     // in user-constructed TermSpecs.
 ```
 
-### 5.6 Observer rules
+### 5.6 Observer rules — DELETED (toHOL purge S1/S2, 2026-07)
 
-```rust
-Thm::obs_eq<O: ObsEq>(expr1, expr2, hint) -> Result<Thm>
-    // ⊢ expr1 = expr2 if both are obs-leaf-headed applications
-    // of the same observer Rust-type O, the same final type, and
-    // O::obs_eq returns true.
-
-Thm::obs_true<O: ObsTrue>(expr, hint)
-    // ⊢ expr for bool-typed obs application if O::obs_true returns true.
-
-Thm::obs_imp<O: ObsImp>(expr, hyps, hint)
-    // ⊢ h0 ⟹ h1 ⟹ ... ⟹ expr for bool-typed obs application
-    // if O::obs_imp returns true.
-```
-
-**All three rules are unconditionally sound regardless of what the
-observer's policy returns**, under the parametric ε-model: each Rust
-observer type `O` gets its own ε-family in the model
-(`ε_O(α → β) = λ_. ε_O(β)`, `ε_O(bool) = ⊤`), so the rule's
-conclusions are always true in the model. The policy is a per-`O`
-choice of which true facts to expose, not a soundness obligation.
-Different `O` and `O'` get independent ε-families, so a bug in
-`WasmObs::obs_eq` cannot affect `HolLight` theorems.
+The three observer rules (`obs_eq`/`obs_true`/`obs_imp`), the
+`Observer`/`Object` machinery, the `Obs`/`TyConObs` leaves, and
+`has_no_obs` no longer exist. Their replacement is the base layer:
+uninterpreted `toHOL` ops + admits-gated unfolding/certificate rules
+(enumerated in `docs/deps/core-manifest.txt` + the Builtins manifest),
+per [`pure-hol-and-build-plan.md`](./pure-hol-and-build-plan.md). The
+parametric-ε-model soundness story lives on only in the history
+(`git log covalence-core -- '**/observer.rs'`).
 
 ### 5.7 The non-computational primitive rules
 

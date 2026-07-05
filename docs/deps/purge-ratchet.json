@@ -74,5 +74,23 @@
     "term-literal-ctors": 270,
     "has_no_obs": 0,
     "cov-script-reduce": 18
-  }
+  },
+  "exceptions": [
+    {
+      "commit": "81a9b316",
+      "pattern": "reduce_prim/term-literal-ctors",
+      "crate": "covalence-pure-eval",
+      "delta": "+1/+3",
+      "reason": "S3 differential test compares CanonRules against builtins.rs via reduce_prim; literal ctors in the test fixtures",
+      "diesWith": "S8 reduce_prim deletion"
+    },
+    {
+      "commit": "c9164309",
+      "pattern": "reduce_prim/term-literal-ctors",
+      "crate": "covalence-core",
+      "delta": "+2/+5",
+      "reason": "S4 slice: ToHolNatVal's transitional nat_lit reify target + the reduce_prim acceptance-comparison calls",
+      "diesWith": "S8/S10 (transitional rule + literal deletion)"
+    }
+  ]
 }

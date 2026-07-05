@@ -5,8 +5,8 @@
 //! holds in language value `lang: L`" (the LCF `thm`). Its fields are **private
 //! with no public constructor** — the unforgeability gate; the sole mint is the
 //! `pub(crate)` [`Thm::new`], and *every* call site is audited (they are exactly:
-//! this module's calculus + gated injectors, the [`crate::prop`] bool theory,
-//! [`crate::eq`]'s `decide`, and [`crate::matching`]'s `apply_rewrite`).
+//! this module's calculus + gated injectors incl. `eq_mp`, the [`crate::prop`]
+//! bool theory, and [`crate::matching`]'s `apply_rewrite`).
 //!
 //! [`Eqn<A, B>`] is the equality **proposition** `A = B` — a freely-constructible
 //! [`Expr`] of sort `bool`. Building one proves nothing; it also serves as the
@@ -65,10 +65,10 @@ pub struct Thm<L, P> {
 pub type ThmEqn<L, A, B> = Thm<L, Eqn<A, B>>;
 
 impl<L, P: Expr<Ty = bool>> Thm<L, P> {
-    /// The sole constructor — the minting gate. `pub(crate)` so the calculus here,
-    /// the [`crate::prop`] bool theory, [`crate::eq`]'s `decide`, and
-    /// [`crate::matching`]'s `apply_rewrite` (the only minting sites, all audited)
-    /// can use it; never exposed outside the crate. The `P: Expr<Ty = bool>` bound
+    /// The sole constructor — the minting gate. `pub(crate)` so the calculus here
+    /// (incl. `eq_mp`), the [`crate::prop`] bool theory, and [`crate::matching`]'s
+    /// `apply_rewrite` (the only minting sites, all audited) can use it; never
+    /// exposed outside the crate. The `P: Expr<Ty = bool>` bound
     /// guarantees every certificate proposition is a boolean.
     pub(crate) fn new(lang: L, prop: P) -> Self {
         Thm { lang, prop }
@@ -170,7 +170,9 @@ impl<L: Language, P: Expr<Ty = bool> + Eq> Thm<L, P> {
     pub fn eq_mp<Q: Expr<Ty = bool>>(self, eq: Thm<L, Eqn<P, Q>>) -> Option<Thm<L, Q>> {
         let (l1, p) = self.into_parts();
         let (l2, Eqn(p2, q)) = eq.into_parts();
-        if p != p2 {
+        // NB `!(p == p2)`, not `p != p2`: `ne` is independently overridable on
+        // `PartialEq`; the trusted match must be the same `eq` the calculus uses.
+        if !(p == p2) {
             return None;
         }
         let lang = l1.union(l2)?;

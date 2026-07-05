@@ -40,7 +40,7 @@
     "reduce_prim": {},
     "unfold_term_spec": {
       "covalence-core": 19,
-      "covalence-hol-eval": 12,
+      "covalence-hol-eval": 13,
       "covalence-init": 7
     },
     "termkind-literals": {
@@ -63,7 +63,7 @@
   "totals": {
     "obs-rules": 0,
     "reduce_prim": 0,
-    "unfold_term_spec": 38,
+    "unfold_term_spec": 39,
     "termkind-literals": 123,
     "tycon-obs": 0,
     "term-literal-ctors": 201,
@@ -126,6 +126,14 @@
       "delta": "+1",
       "reason": "E3 pure-HOL unit tests: tests/pure_hol_units.rs derives each sample's definitional unfolding at the PURE tier (Thm<CoreLang>), so the spine helper calls the kernel unfold rule directly (the delta driver is EvalThm-typed)",
       "diesWith": "defs/ re-home (unfold re-routes to stored definitional theorems)"
+    },
+    {
+      "commit": "P2",
+      "pattern": "unfold_term_spec",
+      "crate": "covalence-hol-eval",
+      "delta": "+1",
+      "reason": "P2 kernel property campaign: tests/decl_only.rs pins that the unfold rule yields a CLEAN SpecHasNoBody error (never a junk theorem) for EVERY declaration-only (tm=None) spec in the registries — negative tests OF the deprecated surface, funneled through one textual call site",
+      "diesWith": "defs/ re-home (the rule and this negative-test file go together)"
     }
   ]
 }

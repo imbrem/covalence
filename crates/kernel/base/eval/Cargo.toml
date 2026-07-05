@@ -7,6 +7,12 @@ edition = "2024"
 covalence-pure = { path = ".." }
 covalence-types = { path = "../../../lib/types" }
 
+# Property tests (`tests/canon_props.rs`): totality/refusal-boundary and
+# algebraic cross-check properties over the CanonRules with adversarial
+# value generators. Dev-dependency only — never a shipped graph edge.
+[dev-dependencies]
+covalence-proptest = { path = "../../../lib/proptest" }
+
 # Native-only: the float differential suite (`tests/differential_float.rs`)
 # compiles tiny WASM modules and runs them in wasmtime (via covalence-wasm's
 # `runtime` feature = wasmtime v45), asserting bit-for-bit agreement with the

@@ -1293,6 +1293,7 @@ dependencies = [
 name = "covalence-pure-eval"
 version = "0.0.0"
 dependencies = [
+ "covalence-proptest",
  "covalence-pure",
  "covalence-types",
  "covalence-wasm",

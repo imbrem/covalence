@@ -189,3 +189,40 @@ Remaining: **L4** (ε/rep/abs endgame) and the D3 residue deletion (with the
 literal leaves, S10/S11) — both maintainer-gated.
 
 [three-tier tower]: ../pure-hol-and-build-plan.md
+
+---
+
+## STATUS 2026-07 (post tower-split): L1+L2 DONE, audited, merged
+
+Commits 86364ab1 (E1 `Thm<L=CoreLang>` tier param) → bbae5db6 (E2 CoreEval +
+certs/tohol/defs moved to `kernel/hol/eval`) → 5351433b (E3 pure-HOL unit tests
++ tiered tcb-audit) → 6602ea72 (audit fixes). Results:
+
+- **CoreLang manifest 52 → 39 rules** (pure HOL only); **CoreEval manifest = 13**
+  (the cert/toHOL rules), hosted in hol/eval next to the CanonRules + defs.
+- **CoreLang extends NOTHING** (audit fix cut the stale Builtins edge):
+  `Thm<CoreLang,_>` is computation-free by declaration; a Builtins fact
+  *refuses* to lift into it (test-pinned).
+- **Pure-HOL unit tests** (`hol/eval/tests/pure_hol_units.rs`): per cert family,
+  a `Thm<CoreLang>` δ/β derivation of the same equation the cert mints —
+  definition-vs-native consistency, machine-checked.
+- core dropped `covalence-sexp` (+4 transitive) from its closure (28 → 22).
+- **Honest audit lines:** base+HOL (reality) = 6,661 src-lines / 41 defs refs;
+  base+HOL (target) = 4,888 / 29. **The 1.8k gap = the D3 residue** (spec
+  machinery, literal TYPE chain incl. int's quotient body + its nat-op closure,
+  logic.rs + connective builders — the connective RULES stay core, their
+  definitions couple them).
+
+## The next wall (needs maintainer design, do NOT improvise)
+
+Killing the D3 residue = killing the literal LEAVES = the **symbolic-prop
+question**: a `core::Thm`'s `CoreProp` holds `Val<Term>` (concrete values), so
+deleting literal leaves without materializing succ-towers requires theorems
+whose props stay *symbolic base exprs* (`App<ToHolNat, Val(n)>` in place of the
+literal subterm) — the S5-walled "varying `E: Expr` conclusions are
+un-transportable through `eq_mp` without new base machinery" problem. Options
+to design with the maintainer: (a) a base-level `Dyn`-expr equality/transport
+story; (b) `CoreProp` generalized over a sealed family of prop shapes; (c) keep
+literal leaves as the ground representation and accept the residue as the
+permanent (small) cost of the binary-data substrate. Until decided, the residue
+stays and is measured.

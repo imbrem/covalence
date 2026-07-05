@@ -16,8 +16,10 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use covalence_core::defs::TypeSpec;
-use covalence_core::{Term, TermKind, Thm, Type, defs, subst};
+use covalence_core::{Term, TermKind, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs;
+use covalence_hol_eval::defs::TypeSpec;
 use futures::FutureExt;
 use imbl::HashMap;
 use smol_str::SmolStr;

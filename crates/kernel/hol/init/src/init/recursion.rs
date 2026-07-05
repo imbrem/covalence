@@ -26,7 +26,9 @@
 //! a non-kernel `Inductive` impl (e.g. `nat`-from-`ind`, or `list`) to feed
 //! the same engine. See `SKELETONS.md`.
 //!
-use covalence_core::{Result, Term, Thm, Type, defs, subst};
+use covalence_core::{Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs;
 
 use crate::init::eq::beta_reduce;
 use crate::init::ext::TermExt;

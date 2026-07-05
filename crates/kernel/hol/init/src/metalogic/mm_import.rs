@@ -10,7 +10,7 @@
 //! theorem. The Metamath verifier's say-so is never trusted — each step is
 //! re-checked — so this is real `.mm` data flowing into HOL, not a bridge tag.
 
-use covalence_core::Thm;
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::metamath::{Database, MmError};
 

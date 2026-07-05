@@ -50,11 +50,11 @@ use std::collections::BTreeMap;
 use covalence_sexp::{Atom, SExp, SExpr};
 use covalence_types::{Int, Nat};
 
-use crate::subst::close;
-use crate::term::{Term, Type};
+use covalence_core::subst::close;
+use covalence_core::term::{Term, Type};
 
-use super::canonical::Canonical;
-use super::spec::TypeSpec;
+use crate::defs::Canonical;
+use crate::defs::TypeSpec;
 
 // ============================================================================
 // Errors

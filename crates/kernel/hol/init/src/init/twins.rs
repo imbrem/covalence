@@ -46,8 +46,9 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
-use covalence_core::defs::TermSpec;
-use covalence_core::{Error, Result, Term, Thm, TypeDef};
+use covalence_core::{Error, Result, Term};
+use covalence_hol_eval::defs::TermSpec;
+use covalence_hol_eval::{EvalThm as Thm, EvalTypeDef as TypeDef};
 
 /// A let-style spec's dual representation: the ordinary-constant twin plus the
 /// two stored theorems (the permanent `⊢ const = body` and the transitional
@@ -145,7 +146,7 @@ pub fn unfold_spec(t: &Term) -> Result<Thm> {
 /// carrier `bool` carved down to its single inhabitant `T`. Shared by the
 /// witness and the β-reductions of `P (rep a)` below.
 fn unit_predicate() -> Result<Term> {
-    Ok(covalence_core::defs::unit_spec()
+    Ok(covalence_hol_eval::defs::unit_spec()
         .tm()
         .ok_or(Error::NotAnEquation)?
         .clone())
@@ -246,11 +247,11 @@ mod tests {
     #[test]
     fn connective_twins_bridge_reversibly() {
         for spec in [
-            covalence_core::defs::and_spec(),
-            covalence_core::defs::or_spec(),
-            covalence_core::defs::imp_spec(),
-            covalence_core::defs::not_spec(),
-            covalence_core::defs::iff_spec(),
+            covalence_hol_eval::defs::and_spec(),
+            covalence_hol_eval::defs::or_spec(),
+            covalence_hol_eval::defs::imp_spec(),
+            covalence_hol_eval::defs::not_spec(),
+            covalence_hol_eval::defs::iff_spec(),
         ] {
             let twin = twin_for(&spec).unwrap().expect("connective is let-style");
             // def_thm : ⊢ const = body ; spec_eq : ⊢ spec = body — same RHS.
@@ -277,7 +278,7 @@ mod tests {
     /// would (`⊢ op = body`), so `delta` is behaviourally unchanged.
     #[test]
     fn unfold_spec_matches_kernel_rule() {
-        let op = covalence_core::defs::and();
+        let op = covalence_hol_eval::defs::and();
         let via_twin = unfold_spec(&op).unwrap();
         let via_kernel: Thm = Thm::unfold_term_spec(op.clone()).unwrap();
         assert_eq!(via_twin.concl(), via_kernel.concl());
@@ -286,7 +287,7 @@ mod tests {
     /// A polymorphic spec falls back to the kernel rule (not yet twinned).
     #[test]
     fn polymorphic_spec_falls_back() {
-        let spec = covalence_core::defs::forall_spec();
+        let spec = covalence_hol_eval::defs::forall_spec();
         assert!(twin_for(&spec).unwrap().is_none());
     }
 

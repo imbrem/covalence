@@ -27,13 +27,14 @@
 //! exactly `ε P = x` / `ε P = y`. So every theorem here is genuine
 //! (hypothesis- and oracle-free) — there is nothing to postulate.
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::{TermExt, ThmExt};
 
 // Re-export the `defs/cond.rs` catalogue (the `cond_spec` handle stays
-// in `covalence_core::defs`, reached via the blanket re-export there).
-pub use covalence_core::defs::{cond, cond_spec};
+// in `covalence_hol_eval::defs`, reached via the blanket re-export there).
+pub use covalence_hol_eval::defs::{cond, cond_spec};
 
 // ============================================================================
 // The reduction clauses.
@@ -256,9 +257,9 @@ mod cov_tests {
         let body = Term::app(Term::app(Term::eq_op(a.clone()), lhs), rhs);
         // close over y then x, wrapping each in ∀.
         let inner = Term::abs(a.clone(), close(&body, "y"));
-        let inner = Term::app(covalence_core::defs::forall(a.clone()), inner);
+        let inner = Term::app(covalence_hol_eval::defs::forall(a.clone()), inner);
         let outer = Term::abs(a.clone(), close(&inner, "x"));
-        Term::app(covalence_core::defs::forall(a.clone()), outer)
+        Term::app(covalence_hol_eval::defs::forall(a.clone()), outer)
     }
 
     /// The `.cov`-proved clauses match the **inline-`cond`** statement exactly

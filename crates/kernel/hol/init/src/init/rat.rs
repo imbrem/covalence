@@ -55,16 +55,17 @@
 //!   **derived** from the two mediant-inequality postulates via the
 //!   mediant `(a+c)/(b+d)`, the witness that needs no division.
 
-use covalence_core::defs::{fst, int_pos_spec, int_pos_ty, prod, snd};
-use covalence_core::{Error, Result, Term, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs::{fst, int_pos_spec, int_pos_ty, prod, snd};
 use covalence_hol_eval::mk_int;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::{int, logic, nat};
 
 // Re-export the `defs/rat.rs` catalogue (the type handles + the declared
-// `ratLe` order constant; bodies stay in `covalence_core::defs`).
-pub use covalence_core::defs::{rat_le, rat_le_spec, rat_spec, rat_ty};
+// `ratLe` order constant; bodies stay in `covalence_hol_eval::defs`).
+pub use covalence_hol_eval::defs::{rat_le, rat_le_spec, rat_spec, rat_ty};
 
 // ============================================================================
 // Small term helpers (private — the public surface is theorems / maps)
@@ -147,7 +148,7 @@ fn one_pos() -> Term {
 /// `pair a b : int × int.pos`.
 fn ip(a: Term, b: Term) -> Term {
     Term::app(
-        Term::app(covalence_core::defs::pair(Type::int(), int_pos_ty()), a),
+        Term::app(covalence_hol_eval::defs::pair(Type::int(), int_pos_ty()), a),
         b,
     )
 }
@@ -498,7 +499,7 @@ fn binary_beta(op: Term, a: Term, b: Term) -> Result<Thm> {
 /// From `⊢ n1 = n2` and `⊢ d1 = d2` build `⊢ pair n1 d1 = pair n2 d2` at
 /// `int × int.pos` — congruence of the representative pair in both slots.
 fn pair_cong(num_eq: Thm, den_eq: Thm) -> Result<Thm> {
-    let pair_op = covalence_core::defs::pair(Type::int(), int_pos_ty());
+    let pair_op = covalence_hol_eval::defs::pair(Type::int(), int_pos_ty());
     let d1 = den_eq
         .concl()
         .as_eq()
@@ -3064,7 +3065,7 @@ mod tests {
     #[test]
     fn rat_ty_matches_the_catalogue() {
         // The re-exported `rat` type is the `defs/rat.rs` one, and not bool.
-        assert_eq!(rat(), covalence_core::defs::rat_ty());
+        assert_eq!(rat(), covalence_hol_eval::defs::rat_ty());
         assert!(!rat().is_bool());
     }
 
@@ -3565,7 +3566,7 @@ mod tests {
         assert_eq!(ante, rlt(x, y));
         // The consequent is `exists[rat] pred`.
         let head = conseq.as_app().expect("consequent is an application").0;
-        assert_eq!(head, &covalence_core::defs::exists(rat()));
+        assert_eq!(head, &covalence_hol_eval::defs::exists(rat()));
 
         // dense is now fully genuine — the two mediant inequalities it rests
         // on are proved, so it carries no hypotheses.

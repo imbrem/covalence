@@ -37,7 +37,8 @@
 //! memberships and bridges every inner `rec rⱼ` to its applied form. The
 //! nullary and single-argument shapes are the `k = 0` / `k = 1` instances.
 
-use covalence_core::{Error, Result, Term, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::data::Inductive;
 use super::determinacy::graph_det;

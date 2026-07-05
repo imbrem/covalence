@@ -63,9 +63,10 @@
 //! named subterm rather than evaluating — so it *does* traverse under
 //! binders, capture-avoiding with a fresh witness.
 
-use covalence_core::defs::Symbol;
 use covalence_core::term::TrustedCons;
-use covalence_core::{Error, Result, Term, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs::Symbol;
 
 use crate::HolLightCtx;
 
@@ -755,7 +756,7 @@ mod tests {
     }
 
     fn add(x: Term, y: Term) -> Term {
-        covalence_core::defs::nat_add()
+        covalence_hol_eval::defs::nat_add()
             .apply(x)
             .unwrap()
             .apply(y)
@@ -764,9 +765,9 @@ mod tests {
 
     #[test]
     fn delta_unfolds_a_single_definition() {
-        let eq = covalence_core::defs::and().delta().unwrap(); // ⊢ ∧ = body
+        let eq = covalence_hol_eval::defs::and().delta().unwrap(); // ⊢ ∧ = body
         let (lhs, rhs) = eq.concl().as_eq().unwrap();
-        assert_eq!(lhs, &covalence_core::defs::and());
+        assert_eq!(lhs, &covalence_hol_eval::defs::and());
         assert_ne!(rhs, lhs);
         assert!(eq.hyps().is_empty());
     }
@@ -781,7 +782,7 @@ mod tests {
         let a = Term::free("a", b());
         let bb = Term::free("b", b());
         let t = a.and(bb).unwrap(); // a ∧ b
-        let spec = covalence_core::defs::and_spec();
+        let spec = covalence_hol_eval::defs::and_spec();
         let conv = t.delta_all(spec.symbol()).unwrap();
         let (lhs, rhs) = conv.concl().as_eq().unwrap();
         assert_eq!(lhs, &t);
@@ -795,14 +796,14 @@ mod tests {
         let conj = a.and(bb).unwrap();
 
         // `or` does not occur → identity conversion.
-        let or_spec = covalence_core::defs::or_spec();
+        let or_spec = covalence_hol_eval::defs::or_spec();
         let noop = conj.delta_all(or_spec.symbol()).unwrap();
         let (l, r) = noop.concl().as_eq().unwrap();
         assert_eq!(l, r);
 
         // A matching symbol *under a binder* is left alone (weak).
         let under = Term::abs(b(), conj); // λ_. (a ∧ b)
-        let and_spec = covalence_core::defs::and_spec();
+        let and_spec = covalence_hol_eval::defs::and_spec();
         let weak = under.delta_all(and_spec.symbol()).unwrap();
         let (l2, r2) = weak.concl().as_eq().unwrap();
         assert_eq!(l2, r2, "delta_all must not unfold under λ");
@@ -812,7 +813,7 @@ mod tests {
     fn thm_delta_all_unfolds_in_conclusion() {
         let tt = Term::bool_lit(true).and(Term::bool_lit(true)).unwrap();
         let thm = Thm::assume(tt.clone()).unwrap();
-        let and_spec = covalence_core::defs::and_spec();
+        let and_spec = covalence_hol_eval::defs::and_spec();
         let out = thm.delta_all(and_spec.symbol()).unwrap();
         assert_ne!(out.concl(), &tt, "conclusion's ∧ must be unfolded");
         assert!(out.hyps().iter().any(|h| h == &tt), "hyp kept");

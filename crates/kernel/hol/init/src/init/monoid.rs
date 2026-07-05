@@ -49,7 +49,8 @@
 //! *batched* form of those same rewrites — the seed for a future
 //! `(monoid-normalize)` rewriter inference (see `SKELETONS.md`).
 
-use covalence_core::{Result, Term, Thm};
+use covalence_core::{Result, Term};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::TermExt;
 
@@ -217,7 +218,7 @@ impl Monoid {
 pub fn nat_add_monoid() -> Monoid {
     use crate::init::nat;
     Monoid::new(
-        covalence_core::defs::nat_add(),
+        covalence_hol_eval::defs::nat_add(),
         Term::nat_lit(0u32),
         nat::add_assoc(),
         nat::add_base(),
@@ -243,7 +244,7 @@ pub fn nat_mul_monoid() -> Monoid {
     })()
     .expect("nat_mul_monoid: derive 1×a=a from mul.comm + mul.one");
     Monoid::new(
-        covalence_core::defs::nat_mul(),
+        covalence_hol_eval::defs::nat_mul(),
         one,
         nat::mul_assoc(),
         one_mul,
@@ -301,8 +302,8 @@ pub fn list_cat_monoid(elem: covalence_core::Type) -> Monoid {
     // `a`; specialise it to the requested `elem`.
     let inst = |t: Thm| t.inst_tfree("a", elem.clone()).expect("inst element type");
     Monoid::new(
-        covalence_core::defs::list_cat(elem.clone()),
-        covalence_core::defs::nil(elem.clone()),
+        covalence_hol_eval::defs::list_cat(elem.clone()),
+        covalence_hol_eval::defs::nil(elem.clone()),
         inst(cat_assoc_cov()),
         inst(cat_nil_cov()),
         inst(cat_nil_r_cov()),
@@ -348,10 +349,10 @@ mod tests {
 
     /// `add` of two terms.
     fn add(a: Term, b: Term) -> Term {
-        Term::app(Term::app(covalence_core::defs::nat_add(), a), b)
+        Term::app(Term::app(covalence_hol_eval::defs::nat_add(), a), b)
     }
     fn mul(a: Term, b: Term) -> Term {
-        Term::app(Term::app(covalence_core::defs::nat_mul(), a), b)
+        Term::app(Term::app(covalence_hol_eval::defs::nat_mul(), a), b)
     }
 
     fn assert_genuine(thm: &Thm) {

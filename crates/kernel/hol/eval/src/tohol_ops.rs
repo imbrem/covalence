@@ -13,18 +13,18 @@
 //! - [`ToHolNat`] / [`ToHolInt`] / [`ToHolBytes`] are **uninterpreted** ops
 //!   (no [`CanonRule`]): writing `App<ToHolNat, _>` is inert and always sound.
 //!   Their *meaning* is pinned only by admitted rules — the unfolding-equation
-//!   and certificate rules in `thm::rules` (`ToHolNatVal`, `NatAddCert`, …).
+//!   and certificate rules in `crate::rules` (`ToHolNatVal`, `NatAddCert`, …).
 //! - [`HolApp`] is an [`Op`] **and** a [`CanonRule`] whose `eval` is the raw,
 //!   untyped [`Term::app`]. Reducing it via [`covalence_pure::canon`] is gated
-//!   on its `TypeId` being admitted; `CoreLang` admits it (it is enumerated in
-//!   `CORE_MANIFEST`). Soundness: `App<HolApp, Val((f, x))> = Val(f x)` holds
+//!   on its `TypeId` being admitted; `CoreEval` admits it (it is enumerated in
+//!   `EVAL_MANIFEST`). Soundness: `App<HolApp, Val((f, x))> = Val(f x)` holds
 //!   by literal denotation — `HolApp` *means* HOL application, and the
 //!   equation's two sides are the same term value by construction.
 
 use covalence_pure::{App, CanonRule, Op, Val};
 use covalence_types::{Bytes, Int, Nat};
 
-use crate::term::Term;
+use covalence_core::Term;
 
 /// `toHOL : Nat → Term` — the uninterpreted denotation of a native natural as
 /// its canonical HOL numeral. Never evaluated (no [`CanonRule`]); its defining
@@ -95,7 +95,7 @@ pub type ToHolBytesE = App<ToHolBytes, Val<Bytes>>;
 pub type HolAppE<F, X> = App<HolApp, (F, X)>;
 
 /// The symbolic HOL term `nat.add (toHOL a) (toHOL b)` (the `Val<Term>` leaf
-/// is the `defs::nat_add` constant).
+/// is the `covalence_core::defs::nat_add` constant).
 pub type NatAddLhsE = HolAppE<HolAppE<Val<Term>, ToHolNatE>, ToHolNatE>;
 
 /// The symbolic HOL equation `nat.add (toHOL a) (toHOL b) = toHOL (a + b)`
@@ -106,7 +106,7 @@ pub type NatAddEqE = HolAppE<HolAppE<Val<Term>, NatAddLhsE>, ToHolNatE>;
 /// `NatAddCert::decide` and (implicitly, node by node) the reification driver.
 pub(crate) fn nat_add_eq_expr(a: Nat, b: Nat, sum: Nat) -> NatAddEqE {
     let add = Val(crate::defs::nat_add());
-    let eq = Val(Term::eq_op(crate::term::Type::nat()));
+    let eq = Val(Term::eq_op(covalence_core::Type::nat()));
     let lhs = App(
         HolApp,
         (

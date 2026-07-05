@@ -352,7 +352,8 @@ mod tests {
     use super::*;
     use crate::algebra::category::Hol;
     use crate::init::ext::TermExt;
-    use covalence_core::{Term, Thm, Type};
+    use covalence_core::{Term, Type};
+    use covalence_hol_eval::EvalThm as Thm;
 
     fn obj(n: &str) -> Type {
         Type::tfree(n)

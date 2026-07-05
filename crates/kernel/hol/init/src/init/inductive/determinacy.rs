@@ -20,7 +20,8 @@
 //! single-recursive-argument shape (`nat`'s `succ`) is the degenerate `k = 1`
 //! instance of the same code.
 
-use covalence_core::{Error, Result, Term, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::data::Inductive;
 use super::graph::{self, CtorInstance};

@@ -18,7 +18,8 @@
 //! This is the first foundation block under `list α := stream (option α)
 //! where finite`, hence under `set.finite` / `set.card`.
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::eq::{delta_head, trans_chain};
 use crate::init::ext::{TermExt, ThmExt};
@@ -26,12 +27,12 @@ use crate::init::logic::truth;
 use crate::script::{ConstDef, Env};
 
 // Re-export the `defs/stream.rs` term catalogue.
-pub use covalence_core::defs::{
+pub use covalence_hol_eval::defs::{
     finite, stream, stream_at, stream_const, stream_head, stream_iterate, stream_mk, stream_nth,
     stream_tail,
 };
 
-use covalence_core::defs::{stream_at_spec, stream_mk_spec, stream_spec};
+use covalence_hol_eval::defs::{stream_at_spec, stream_mk_spec, stream_spec};
 
 // ============================================================================
 // Term helpers.
@@ -191,7 +192,7 @@ pub fn tail_const(alpha: &Type, x: &Term) -> Result<Thm> {
     let cst = Term::app(stream_const(alpha.clone()), x.clone());
     let tail = Term::app(stream_tail(alpha.clone()), cst.clone());
     let n = Term::free("n", Type::nat());
-    let succ_n = Term::app(covalence_core::defs::nat_succ(), n.clone());
+    let succ_n = Term::app(covalence_hol_eval::defs::nat_succ(), n.clone());
     // streamAt (streamTail (streamConst x)) n = x  vs  streamAt (streamConst x) n = x.
     let lhs_at = tail_at(alpha, &cst, &n)?.trans(const_at(alpha, x, &succ_n)?)?;
     let rhs_at = const_at(alpha, x, &n)?;
@@ -354,7 +355,7 @@ mod tests {
         let thm = tail_at(&alpha(), &s, &n).unwrap();
         assert!(thm.hyps().is_empty());
         // rhs is `streamAt s (succ n)`.
-        let succ_n = Term::app(covalence_core::defs::nat_succ(), n.clone());
+        let succ_n = Term::app(covalence_hol_eval::defs::nat_succ(), n.clone());
         assert_eq!(thm.concl().as_eq().unwrap().1, &at(&alpha(), &s, &succ_n));
     }
 

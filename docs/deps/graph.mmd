@@ -25,7 +25,6 @@ graph LR
   client --> store
   core --> pure
   core --> pure-eval
-  core --> sexp
   core --> types
   egglog --> sexp
   egglog --> types
@@ -45,6 +44,7 @@ graph LR
   hol-eval --> core
   hol-eval --> pure
   hol-eval --> pure-eval
+  hol-eval --> sexp
   hol-eval --> types
   init --> core
   init --> grammar
@@ -132,4 +132,4 @@ graph LR
   wasm-store --> wasm
   web-kernel --> kernel
   classDef tcb fill:#ffd6d6,stroke:#cc0000,color:#000;
-  class core,parse,pure,pure-eval,pure-trusted,sexp,types tcb;
+  class core,pure,pure-eval,pure-trusted,types tcb;

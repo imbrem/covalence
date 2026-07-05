@@ -35,7 +35,8 @@
 
 use std::collections::BTreeMap;
 
-use covalence_core::{Error, Result, Term, Thm};
+use covalence_core::{Error, Result, Term};
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_spectec::ast::{SpecTecDef, SpecTecPrem, SpecTecRule};
 
 use super::encode::{collect_metavars, encode_exp, metavar_name, phi, tag};

@@ -25,13 +25,13 @@
 
 use std::sync::LazyLock;
 
-use crate::hol;
-use crate::term::{Term, Type};
+use covalence_core::hol;
+use covalence_core::term::{Term, Type};
 
-use super::canonical::Canonical;
-use super::int::{int_mul, int_pos_spec, int_pos_ty};
-use super::prod::{fst, prod, snd};
-use super::spec::{TermSpec, TypeSpec};
+use crate::defs::Canonical;
+use crate::defs::{TermSpec, TypeSpec};
+use crate::defs::{fst, prod, snd};
+use crate::defs::{int_mul, int_pos_spec, int_pos_ty};
 
 /// `int × int.pos` — the numerator/denominator carrier.
 fn ip_pair() -> Type {

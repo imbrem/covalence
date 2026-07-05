@@ -15,7 +15,9 @@
 //! in [`crate::init::recursion`]), so a shallow PA proof is an outright
 //! HOL theorem.
 
-use covalence_core::{Error, Result, Term, Thm, Type, defs, subst};
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs;
 use covalence_types::Nat;
 
 use crate::HolLightCtx;

@@ -1,7 +1,7 @@
 //! Euclidean division facts for `nat`.
 //!
 //! `nat.div` is **defined by recursion** in the kernel (`defs/nat.rs`,
-//! [`nat_div_body`](covalence_core::defs)) — the explicit course-of-values
+//! [`nat_div_body`](covalence_hol_eval::defs)) — the explicit course-of-values
 //! fixpoint of the division step functional `F n g := λm. cond (m=0 ∨ n<m) 0
 //! (S (g (n−m) m))` (`g` is read only at `n−m < n`, so `Hext F` holds). This
 //! module proves the rest **about that constant, choice-free** — no Hilbert ε
@@ -21,7 +21,9 @@
 
 use std::collections::BTreeMap;
 
-use covalence_core::{Result, Term, Thm, Type, defs, subst};
+use covalence_core::{Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs;
 use smol_str::SmolStr;
 
 use crate::init::cv_recursion::{cv_exists, cv_fixpoint, cv_witness};
@@ -533,7 +535,7 @@ mod tests {
     #[test]
     fn nat_div_def_matches_explicit() {
         use crate::init::ext::TermExt;
-        let unfold = covalence_core::defs::nat_div()
+        let unfold = covalence_hol_eval::defs::nat_div()
             .delta()
             .expect("delta nat.div");
         let body = unfold.concl().as_eq().expect("eq").1.clone();

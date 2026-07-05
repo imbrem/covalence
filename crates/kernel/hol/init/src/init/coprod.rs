@@ -26,13 +26,14 @@
 //! *genuinely* over the seam givens — driving the `cases` disjunction
 //! through `(exists-elim …)` rather than re-exporting a Rust bridge.
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::eq::delta_head;
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{exists_elim, exists_intro, simp, truth};
 
-pub use covalence_core::defs::{coprod, coprod_case, inl, inr};
+pub use covalence_hol_eval::defs::{coprod, coprod_case, inl, inr};
 
 // ============================================================================
 // The `.cov` proof-script layer for `coprod`.
@@ -66,7 +67,7 @@ pub use covalence_core::defs::{coprod, coprod_case, inl, inr};
 pub fn coprod_env() -> crate::script::Env {
     use crate::init::cat::{comp, comp_beta, fun_ext};
     use crate::script::ConstDef;
-    use covalence_core::defs::compose;
+    use covalence_hol_eval::defs::compose;
 
     let alpha = Type::tfree("a");
     let beta = Type::tfree("b");
@@ -243,7 +244,7 @@ mod cov_tests {
     }
 }
 
-use covalence_core::defs::coprod_spec;
+use covalence_hol_eval::defs::coprod_spec;
 
 // ============================================================================
 // Raw coercions + injection unfolding.
@@ -937,7 +938,7 @@ fn parse_or(t: &Term) -> Option<(Term, Term)> {
     let (f, q) = t.as_app()?;
     let (head, p) = f.as_app()?;
     let (spec, _) = head.as_spec()?;
-    spec.ptr_eq(&covalence_core::defs::or_spec())
+    spec.ptr_eq(&covalence_hol_eval::defs::or_spec())
         .then(|| (p.clone(), q.clone()))
 }
 

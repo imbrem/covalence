@@ -37,16 +37,3 @@ Lem
 SelectAx
 Define
 NewTypeDefRule
-ToHolNatVal
-PairVal
-NatAddCert
-ToHolIntVal
-ToHolBytesVal
-NatArithCert
-SuccCert
-IntArithCert
-BytesCert
-FixedWidthCert
-LitEqCert
-CoercionCert
-HolApp

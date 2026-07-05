@@ -22,8 +22,8 @@
 
 use std::collections::HashMap;
 
-use covalence_core::defs::{self, TypeSpec};
 use covalence_core::{Term, Type, TypeKind, subst};
+use covalence_hol_eval::defs::{self, TypeSpec};
 use covalence_sexp::{SExp, SExpr};
 
 use super::ScriptError;
@@ -806,7 +806,7 @@ mod tests {
     /// same `Arc`-shared catalogue spec.)
     #[test]
     fn spec_coercion_matches_core_cov() {
-        use covalence_core::defs::cov;
+        use covalence_hol_eval::defs::cov;
         let core = cov::core_env();
         let env = Env::empty();
         let scope = Scope::new();
@@ -835,7 +835,7 @@ mod tests {
     /// helper to construct its body.
     #[test]
     fn spec_coercion_inlines_rat_to_pos() {
-        use covalence_core::defs::int_pos_spec;
+        use covalence_hol_eval::defs::int_pos_spec;
         let env = Env::empty();
         let scope = Scope::new();
 

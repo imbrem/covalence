@@ -39,20 +39,20 @@
     "obs-rules": {},
     "reduce_prim": {},
     "unfold_term_spec": {
-      "covalence-core": 24,
-      "covalence-hol-eval": 5,
+      "covalence-core": 19,
+      "covalence-hol-eval": 11,
       "covalence-init": 7
     },
     "termkind-literals": {
-      "covalence-core": 101,
-      "covalence-hol-eval": 6,
+      "covalence-core": 104,
+      "covalence-hol-eval": 9,
       "covalence-init": 10
     },
     "tycon-obs": {},
     "term-literal-ctors": {
-      "covalence-core": 122,
+      "covalence-core": 64,
       "covalence-core-test-guest": 4,
-      "covalence-hol-eval": 5,
+      "covalence-hol-eval": 61,
       "covalence-init": 72
     },
     "has_no_obs": {},
@@ -63,10 +63,10 @@
   "totals": {
     "obs-rules": 0,
     "reduce_prim": 0,
-    "unfold_term_spec": 36,
-    "termkind-literals": 117,
+    "unfold_term_spec": 37,
+    "termkind-literals": 123,
     "tycon-obs": 0,
-    "term-literal-ctors": 203,
+    "term-literal-ctors": 201,
     "has_no_obs": 0,
     "cov-script-reduce": 18
   },
@@ -101,6 +101,22 @@
       "crate": "covalence-hol-eval",
       "delta": "+5",
       "reason": "S7 literal facade (lit.rs): the kind_name diagnostic arms — the DESIGNATED single peripheral chokepoint the variant deletion edits; mk_*/as_* route through core::seam::Lit and add no counts",
+      "diesWith": "S10/S11 literal deletion (arms deleted with the variants)"
+    },
+    {
+      "commit": "E2",
+      "pattern": "unfold_term_spec/termkind-literals/term-literal-ctors",
+      "crate": "covalence-hol-eval",
+      "delta": "+6/+3/+56",
+      "reason": "E2 defs-out-of-core: the term-op catalogue (defs/) + its literal-fixture tests moved from covalence-core into this crate (core dropped -5/-58 unfold/ctor counts in the same commit; total ctor count DECREASED 203->201). Relocation, not new surface.",
+      "diesWith": "S10/S11 literal deletion (the moved bodies' literal seeds flip to defined numeral forms)"
+    },
+    {
+      "commit": "E2",
+      "pattern": "termkind-literals",
+      "crate": "covalence-core",
+      "delta": "+3",
+      "reason": "E2 core prep: thm/lit.rs — the extracted Lit build/recognize chokepoint (certs.rs's per-family arms left with the cert rules; the from/to arms concentrate here as the single peripheral literal facade twin of hol-eval's lit.rs)",
       "diesWith": "S10/S11 literal deletion (arms deleted with the variants)"
     }
   ]

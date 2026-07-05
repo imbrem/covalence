@@ -45,7 +45,8 @@ pub use theory::{Model, SigOp, Signature, Spec, Theory as TheoryDecl};
 
 use std::sync::Arc;
 
-use covalence_core::{Thm, Type};
+use covalence_core::Type;
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_sexp::SExpr;
 use futures::FutureExt;
 
@@ -842,7 +843,7 @@ async fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
 // ============================================================================
 // Definition directives — `#def` / `#newtype` / `#subtype` / `#quot`
 //
-// The script-layer counterpart of `covalence_core::defs::cov`'s four-directive
+// The script-layer counterpart of `covalence_hol_eval::defs::cov`'s four-directive
 // parser. They elaborate their body through the **script** elaborator
 // (`syntax`/`infer`), so a `.cov` author writes definitions in the same richer
 // surface syntax used for proofs (implicit types, named binders, catalogue
@@ -850,7 +851,7 @@ async fn run_thm(ch: &[SExpr], env: &Env) -> Result<NamedThm, ScriptError> {
 // ============================================================================
 
 use covalence_core::Term;
-use covalence_core::defs::{TermSpec, TypeSpec};
+use covalence_hol_eval::defs::{TermSpec, TypeSpec};
 use smol_str::SmolStr;
 
 /// Elaborate a single closed term from a directive body against `env`.
@@ -2001,7 +2002,7 @@ mod tests {
     /// catalogue spec leaves they reference).
     #[test]
     fn script_def_agrees_with_core_cov() {
-        use covalence_core::defs::cov;
+        use covalence_hol_eval::defs::cov;
 
         // Script side: `#def myand (lam (p bool) (lam (q bool) (and p q)))`.
         let env = run_env(
@@ -2045,7 +2046,7 @@ mod tests {
     /// `#subtype` shape (the `unit` singleton `{ b : bool | b = T }`).
     #[test]
     fn subtype_directive_matches_core_carrier_and_pred() {
-        use covalence_core::defs::cov;
+        use covalence_hol_eval::defs::cov;
 
         let env = run_env(
             r#"

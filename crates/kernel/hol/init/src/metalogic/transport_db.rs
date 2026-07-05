@@ -63,7 +63,8 @@
 //! with its per-rule simulations honestly proved is the next step — see
 //! [`SKELETONS.md`](./SKELETONS.md).
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::{RuleSet, derivable, rule_induction};
 use crate::init::ext::TermExt;

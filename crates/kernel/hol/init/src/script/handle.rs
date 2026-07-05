@@ -10,7 +10,7 @@
 //! `#spawn`-ing lemmas, but the same machinery covers "one async task per
 //! definition" (e.g. a `bytes` const loaded from the network) with no new code.
 
-use covalence_core::Thm;
+use covalence_hol_eval::EvalThm as Thm;
 use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
 
@@ -136,7 +136,8 @@ impl<T: Clone + Send + Sync + 'static> LazyMap<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_core::{Term, Thm};
+    use covalence_core::Term;
+    use covalence_hol_eval::EvalThm as Thm;
 
     fn rt() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_current_thread()

@@ -7,7 +7,8 @@
 //! retired in-kernel audit suite) and in `covalence-pure-eval`'s own tests.
 
 use covalence_core::seam::Lit;
-use covalence_core::{IntTag, SmallIntLiteral, Term, Thm, defs};
+use covalence_core::{IntTag, SmallIntLiteral, Term, Thm};
+use covalence_hol_eval::defs;
 use covalence_hol_eval::{delta, mk_blob, mk_int, mk_nat, prove_true, reduce, reduce_with};
 use covalence_types::Nat;
 

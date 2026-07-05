@@ -3,15 +3,21 @@ name = "covalence-hol-eval"
 version = "0.0.0"
 edition = "2024"
 
-# UNTRUSTED reduction driver over the covalence-core seam — zero TCB.
-# Recognizes concrete literal redexes and re-derives them through the
-# admitted per-family certificate rules (`covalence_core::seam`) computed by
-# `covalence-pure-eval`; it can fail, but it cannot forge. This crate must
-# NEVER be depended on by the kernel (and never depends on the
-# `covalence-init` catalogue — BANNED edge in scripts/dep-graph.mjs).
+# The EVAL TIER: owns `CoreEval` (the language extending `CoreLang` with the
+# computation-backed certificate/toHOL rules) and hosts the moved `defs/`
+# term-op catalogue next to those rules' dispatch tables. NOT zero-TCB any
+# more: trust is per-rule via `admits` (golden: docs/deps/eval-manifest.txt);
+# everything else (the reduction drivers, the catalogue-as-data) stays
+# untrusted — it can fail, but it cannot forge. This crate must NEVER be
+# depended on by the kernel (core -> hol-eval is a BANNED edge in
+# scripts/dep-graph.mjs; hol-eval -> core is the direction we keep) and never
+# depends on the `covalence-init` catalogue (also BANNED).
 
 [dependencies]
 covalence-core = { path = "../core" }
 covalence-pure = { path = "../../base" }
 covalence-pure-eval = { path = "../../base/eval" }
+covalence-sexp = { path = "../../../lib/sexp" }
 covalence-types = { path = "../../../lib/types" }
+smol_str = "0.3"
+thiserror = "2"

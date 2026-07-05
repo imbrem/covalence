@@ -43,7 +43,8 @@
 //! induction needs a well-formedness side condition (junk inhabits the bare
 //! `T⟨α,'r⟩`); see [`induct_note`] + `SKELETONS.md`.
 
-use covalence_core::{Result, Term, Thm, Type, subst};
+use covalence_core::{Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::eq::beta_nf;
 use crate::init::ext::{TermExt, ThmExt};

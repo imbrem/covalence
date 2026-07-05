@@ -33,7 +33,8 @@
 //! Everything here builds HOL terms with the kernel's existing `nat`
 //! operations; nothing is added to `covalence-core`.
 
-use covalence_core::{Term, Type, defs};
+use covalence_core::{Term, Type};
+use covalence_hol_eval::defs;
 use covalence_hol_eval::mk_nat;
 use covalence_types::Nat;
 

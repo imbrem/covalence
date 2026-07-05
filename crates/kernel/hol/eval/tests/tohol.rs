@@ -6,9 +6,10 @@
 //! `eq_mp`, lands as a `core::Thm` **bit-for-bit equal** to the equation the
 //! per-family cert path mints — plus the seam's gating negative tests.
 
-use covalence_core::seam::{CoreLang, HolApp, NatAddCert};
+use covalence_core::seam::CoreLang;
 use covalence_core::{Term, Type, defs};
-use covalence_hol_eval::{nat_add_thm, reduce};
+use covalence_hol_eval::rules::NatAddCert;
+use covalence_hol_eval::{CoreEval, HolApp, nat_add_thm, reduce};
 use covalence_pure::{Error as PureError, Thm as PThm, apply, canon};
 use covalence_pure_eval::{Builtins, NatAdd};
 use covalence_types::Nat;
@@ -77,12 +78,12 @@ fn nat_add_cert_not_admitted_elsewhere() {
     ));
 }
 
-/// NEGATIVE: `HolApp` evaluation is admitted in `CoreLang` only.
+/// NEGATIVE: `HolApp` evaluation is admitted in `CoreEval` only.
 #[test]
 fn hol_app_canon_gated_on_core_lang() {
     let f = defs::nat_add();
     let x = defs::nat_succ();
-    assert!(canon(HolApp, (f.clone(), x.clone()), CoreLang).is_ok());
+    assert!(canon(HolApp, (f.clone(), x.clone()), CoreEval).is_ok());
     assert!(matches!(
         canon(HolApp, (f, x), ()),
         Err(PureError::NotAdmitted(_))

@@ -8,7 +8,8 @@
 //! that term — so the kernel re-checks every step and the relation theorems are
 //! honest HOL theorems.
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::mk_nat;
 
 use crate::init::ext::TermExt;

@@ -960,7 +960,6 @@ version = "0.0.0"
 dependencies = [
  "covalence-pure",
  "covalence-pure-eval",
- "covalence-sexp",
  "covalence-types",
  "fnv",
  "indexmap",
@@ -1080,7 +1079,10 @@ dependencies = [
  "covalence-core",
  "covalence-pure",
  "covalence-pure-eval",
+ "covalence-sexp",
  "covalence-types",
+ "smol_str",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -10,7 +10,8 @@
 //! also carries the coproduct's [`Monoidal`](crate::algebra::monoidal::Monoidal)
 //! structure, implemented one layer up.
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::algebra::category::Category;
 use crate::init::cat;

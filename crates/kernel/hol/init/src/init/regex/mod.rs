@@ -81,7 +81,8 @@
 //! - **Ambiguity** (multiple derivations of one match) and **sexpr
 //!   lift/lower**: design-note only — see the module's bottom + the report.
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::TermExt;
 use crate::init::lang;
@@ -830,7 +831,7 @@ use soundness::{
 
 /// The byte alphabet `u8` — regexes over `u8` match `bytes` / `list u8`.
 pub fn u8_alphabet() -> Type {
-    covalence_core::defs::u8_ty()
+    covalence_hol_eval::defs::u8_ty()
 }
 
 // ============================================================================

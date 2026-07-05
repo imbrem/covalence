@@ -22,12 +22,13 @@
 //! proofs), which the higher-level
 //! [`monoidal`](crate::algebra::monoidal) API builds on.
 
-use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
+use covalence_core::{Error, Result, Term, Type, TypeKind};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::script::{ConstDef, Env};
 
-pub use covalence_core::defs::{compose, compose_spec, flip, id, id_spec, konst};
+pub use covalence_hol_eval::defs::{compose, compose_spec, flip, id, id_spec, konst};
 
 // ============================================================================
 // Typed composition of morphism terms.

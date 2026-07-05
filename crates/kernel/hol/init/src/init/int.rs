@@ -63,8 +63,9 @@
 //! `D + (fa+sb)·m` / `D + (fb+sa)·m` over the same `D` — the shuffle handled
 //! by the reusable `nat` additive normaliser `nat::prove_add_eq`.
 
-use covalence_core::defs::{fst, pair, prod, snd};
-use covalence_core::{Error, Result, Term, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs::{fst, pair, prod, snd};
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic;
@@ -72,8 +73,8 @@ use crate::init::nat;
 use crate::init::quotient;
 
 // Re-export the `defs/int.rs` term catalogue (the operations; the
-// `*_spec` handles stay in `covalence_core::defs`).
-pub use covalence_core::defs::{
+// `*_spec` handles stay in `covalence_hol_eval::defs`).
+pub use covalence_hol_eval::defs::{
     int_abs, int_add, int_div, int_le, int_lt, int_mod, int_mul, int_neg, int_pred, int_sgn,
     int_sub, int_succ, int_zero,
 };
@@ -257,7 +258,7 @@ fn rep_pair(a: &Term) -> Term {
 /// `Pb = snd(rep a) + snd(rep b)`.
 fn add_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
     add(a.clone(), b.clone())
-        .delta_all(covalence_core::defs::int_add_spec().symbol())?
+        .delta_all(covalence_hol_eval::defs::int_add_spec().symbol())?
         .rhs_conv(|t| t.reduce())
 }
 
@@ -266,7 +267,7 @@ fn add_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
 /// (`fa = fst(rep a)`, `sa = snd(rep a)`, …).
 fn mul_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
     mul(a.clone(), b.clone())
-        .delta_all(covalence_core::defs::int_mul_spec().symbol())?
+        .delta_all(covalence_hol_eval::defs::int_mul_spec().symbol())?
         .rhs_conv(|t| t.reduce())
 }
 
@@ -303,8 +304,8 @@ fn rewrite_seq_with<C: covalence_core::term::TrustedCons + ?Sized>(
 // nose) or by [`quotient::class_intro`] from a `~`-fact (when they don't).
 
 /// The `int` type-spec handle.
-fn spec() -> covalence_core::defs::TypeSpec {
-    covalence_core::defs::int_ty_spec()
+fn spec() -> covalence_hol_eval::defs::TypeSpec {
+    covalence_hol_eval::defs::int_ty_spec()
 }
 
 /// `pair a b : nat × nat`.
@@ -477,7 +478,7 @@ fn neg_pair(x: &Term) -> Term {
 /// `⊢ int.neg a = abs(class_of_defs (neg_pair (rep_pair a)))`.
 fn neg_defining_eq(a: &Term) -> Result<Thm> {
     Term::app(int_neg(), a.clone())
-        .delta_all(covalence_core::defs::int_neg_spec().symbol())?
+        .delta_all(covalence_hol_eval::defs::int_neg_spec().symbol())?
         .rhs_conv(|t| t.reduce())
 }
 
@@ -528,7 +529,7 @@ fn sub_pair(x: &Term, y: &Term) -> Term {
 /// `⊢ int.sub a b = abs(class_of_defs (sub_pair (rep_pair a) (rep_pair b)))`.
 fn sub_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
     Term::app(Term::app(int_sub(), a.clone()), b.clone())
-        .delta_all(covalence_core::defs::int_sub_spec().symbol())?
+        .delta_all(covalence_hol_eval::defs::int_sub_spec().symbol())?
         .rhs_conv(|t| t.reduce())
 }
 
@@ -749,7 +750,7 @@ fn succ_pair(x: &Term) -> Term {
 /// `⊢ int.succ a = abs(class_of_defs (succ_pair (rep_pair a)))`.
 fn succ_defining_eq(a: &Term) -> Result<Thm> {
     Term::app(int_succ(), a.clone())
-        .delta_all(covalence_core::defs::int_succ_spec().symbol())?
+        .delta_all(covalence_hol_eval::defs::int_succ_spec().symbol())?
         .rhs_conv(|t| t.reduce())
 }
 
@@ -1434,13 +1435,13 @@ cached_thm! {
 /// `⊢ int.lt a b = nat.lt (fst(rep a)+snd(rep b)) (fst(rep b)+snd(rep a))`.
 fn lt_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
     lt(a.clone(), b.clone())
-        .delta_all(covalence_core::defs::int_lt_spec().symbol())?
+        .delta_all(covalence_hol_eval::defs::int_lt_spec().symbol())?
         .rhs_conv(|t| t.reduce())
 }
 /// `⊢ int.le a b = nat.le (…)(…)` — the `≤` mirror of [`lt_defining_eq`].
 fn le_defining_eq(a: &Term, b: &Term) -> Result<Thm> {
     le(a.clone(), b.clone())
-        .delta_all(covalence_core::defs::int_le_spec().symbol())?
+        .delta_all(covalence_hol_eval::defs::int_le_spec().symbol())?
         .rhs_conv(|t| t.reduce())
 }
 
@@ -2227,7 +2228,7 @@ cached_thm! {
     /// witness-free back rule ([`Thm::spec_rep_abs_back`]) at `rep p`, whose
     /// `¬∃x. 0<x` escape disjunct is killed by the witness `1`.
     pub fn int_pos_pos() -> Result<Thm> {
-        use covalence_core::defs::{int_pos_spec, int_pos_ty};
+        use covalence_hol_eval::defs::{int_pos_spec, int_pos_ty};
         let spec = int_pos_spec();
         let p = Term::free("p", int_pos_ty());
         let rep = Term::spec_rep(spec.clone(), Vec::<Type>::new());
@@ -2294,9 +2295,9 @@ cached_thm! {
     /// From [`int_pos_pos`] (`0 < rep p`): if `rep p = 0` then `0 < 0`,
     /// contradicting [`lt_irrefl`]. Relocated here from `init::rat`.
     pub fn int_pos_nonzero() -> Result<Thm> {
-        use covalence_core::defs::int_pos_ty;
+        use covalence_hol_eval::defs::int_pos_ty;
         let p = Term::free("p", int_pos_ty());
-        let rep = Term::spec_rep(covalence_core::defs::int_pos_spec(), Vec::<Type>::new());
+        let rep = Term::spec_rep(covalence_hol_eval::defs::int_pos_spec(), Vec::<Type>::new());
         let rep_p = Term::app(rep, p.clone());
         let pos = int_pos_pos().all_elim(p.clone())?; // 0 < rep p
         let eq0 = rep_p.clone().equals(lit(0))?; // rep p = 0
@@ -2500,7 +2501,7 @@ fn rewrite_seq_int_with<C: covalence_core::term::TrustedCons + ?Sized>(
 /// `⊢ rep(abs z) = z` for an `int` value `z` with `pos : ⊢ 0 < z` — the
 /// `int.pos` wrapper is faithful on positives ([`Thm::spec_rep_abs_fwd`]).
 pub fn int_pos_round_trip_at(z: &Term, pos: Thm) -> Result<Thm> {
-    use covalence_core::defs::int_pos_spec;
+    use covalence_hol_eval::defs::int_pos_spec;
     let spec = int_pos_spec();
     let fwd = Thm::spec_rep_abs_fwd(spec, Vec::<Type>::new(), z.clone())?; // P z ⟹ rep(abs z) = z
     let prem = fwd
@@ -2538,9 +2539,9 @@ cached_thm! {
     /// integers is strictly positive. `lt_mul_pos` at `0 < rep a` scaled by
     /// the positive `rep b`, with `0 · rep b = 0`.
     pub fn int_pos_prod_pos() -> Result<Thm> {
-        use covalence_core::defs::int_pos_ty;
+        use covalence_hol_eval::defs::int_pos_ty;
         let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
-        let rep = Term::spec_rep(covalence_core::defs::int_pos_spec(), Vec::<Type>::new());
+        let rep = Term::spec_rep(covalence_hol_eval::defs::int_pos_spec(), Vec::<Type>::new());
         let (ra, rb) = (Term::app(rep.clone(), a.clone()), Term::app(rep, b.clone()));
         let pos_a = int_pos_pos().all_elim(a.clone())?; // 0 < rep a
         let pos_b = int_pos_pos().all_elim(b.clone())?; // 0 < rep b
@@ -2565,7 +2566,7 @@ cached_thm! {
     /// premise `0 < rep a · rep b` is [`int_pos_prod_pos`]. Relocated here from
     /// `init::rat` (`pos_prod_rt`).
     pub fn int_pos_prod_rt() -> Result<Thm> {
-        use covalence_core::defs::{int_pos_spec, int_pos_ty};
+        use covalence_hol_eval::defs::{int_pos_spec, int_pos_ty};
         let spec = int_pos_spec();
         let (a, b) = (Term::free("a", int_pos_ty()), Term::free("b", int_pos_ty()));
         let rep = Term::spec_rep(spec.clone(), Vec::<Type>::new());
@@ -2595,7 +2596,7 @@ cached_thm! {
     /// `int.pos`, by [`Thm::spec_rep_abs_fwd`] at `1` with premise `0 < 1`.
     /// Relocated here from `init::rat` (`one_pos_rt`).
     pub fn int_pos_one_rt() -> Result<Thm> {
-        use covalence_core::defs::int_pos_spec;
+        use covalence_hol_eval::defs::int_pos_spec;
         let spec = int_pos_spec();
         let fwd = Thm::spec_rep_abs_fwd(spec.clone(), Vec::<Type>::new(), lit(1))?;
         let prem = fwd
@@ -3146,7 +3147,7 @@ mod tests {
 
     #[test]
     fn integral_domain_cancellation_is_genuine() {
-        use covalence_core::defs::int_pos_ty;
+        use covalence_hol_eval::defs::int_pos_ty;
         // int_mul_rcancel: ∀x y d. ¬(d=0) ⟹ x·d = y·d ⟹ x=y.
         let (x, y, d) = (var("x"), var("y"), var("d"));
         let rc = int_mul_rcancel();
@@ -3176,7 +3177,7 @@ mod tests {
 
         // int_pos_pos / int_pos_nonzero: ∀p:int.pos. 0 < rep p / ¬(rep p = 0).
         let p = Term::free("p", int_pos_ty());
-        let rep = Term::spec_rep(covalence_core::defs::int_pos_spec(), Vec::<Type>::new());
+        let rep = Term::spec_rep(covalence_hol_eval::defs::int_pos_spec(), Vec::<Type>::new());
         let rep_p = Term::app(rep, p.clone());
         let pos = int_pos_pos();
         assert!(pos.hyps().is_empty(), "int_pos_pos is proved");
@@ -3251,7 +3252,7 @@ mod tests {
 
     #[test]
     fn int_pos_round_trips_are_genuine() {
-        use covalence_core::defs::{int_pos_spec, int_pos_ty};
+        use covalence_hol_eval::defs::{int_pos_spec, int_pos_ty};
         // int_pos_one_rt: rep(abs 1) = 1.
         let one_rt = int_pos_one_rt();
         assert!(one_rt.hyps().is_empty(), "int_pos_one_rt is proved");
@@ -3488,7 +3489,7 @@ mod tests {
     #[test]
     fn round_trip_relates_the_chosen_representative() {
         use crate::init::quotient;
-        let spec = covalence_core::defs::int_ty_spec();
+        let spec = covalence_hol_eval::defs::int_ty_spec();
         let p = Term::free("p", nn());
         // ⊢ int_rel p (rep_class (mk_class p)) — a genuine, hyp-free theorem.
         let rt = quotient::round_trip(&spec, &[], &nn(), &int_rel(), &int_rel_refl(), &p)
@@ -3509,7 +3510,7 @@ mod tests {
         // The payoff: with int_rel proven an equivalence, the forward
         // quotient law lifts a `~`-fact to an int-class equation.
         use crate::init::quotient;
-        let spec = covalence_core::defs::int_ty_spec();
+        let spec = covalence_hol_eval::defs::int_ty_spec();
         let (p, q) = (Term::free("p", nn()), Term::free("q", nn()));
         // From {int_rel p q} ⊢ int_rel p q, lift to mkClass p = mkClass q.
         let ab = Thm::assume(rel_app(&p, &q)).unwrap();

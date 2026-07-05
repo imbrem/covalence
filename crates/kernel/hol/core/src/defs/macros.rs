@@ -61,42 +61,6 @@ macro_rules! let_term {
     };
 }
 
-/// `term_decl!(/// doc...\nspec_fn, accessor, Canonical::Sym, ty_expr);`
-///
-/// Declare a term-spec with only a type (no body, no predicate) — an
-/// **opaque atom**. `reduce_spec` can still evaluate it on closed
-/// literals, but it has no definition, so it is **sound but
-/// incomplete**: nothing about it is provable in open form.
-///
-/// **This is a placeholder, not a finished op.** Every op should
-/// eventually be `let_term!` (a body) or `spec_term!` (a first-order
-/// ε-selector spec) instead — see the "sound vs complete" note in the
-/// `defs` module docs and the op tracker in `notes/vibes/roadmap.md`. The
-/// definition does *not* affect reduction efficiency.
-macro_rules! term_decl {
-    (
-        $(#[$accessor_meta:meta])*
-        $spec_fn:ident, $accessor:ident, $sym:expr, $ty:expr $(,)?
-    ) => {
-        pub fn $spec_fn() -> $crate::defs::TermSpec {
-            static LAZY: std::sync::LazyLock<$crate::defs::TermSpec> =
-                std::sync::LazyLock::new(|| {
-                    $crate::defs::TermSpec::new($sym, Some($ty), None)
-                });
-            LAZY.clone()
-        }
-
-        $(#[$accessor_meta])*
-        pub fn $accessor() -> $crate::term::Term {
-            static LAZY: std::sync::LazyLock<$crate::term::Term> =
-                std::sync::LazyLock::new(|| {
-                    $crate::term::Term::term_spec($spec_fn(), vec![])
-                });
-            LAZY.clone()
-        }
-    };
-}
-
 /// `spec_term!(/// doc...\nspec_fn, accessor, Canonical::Sym, ty_expr, pred_expr);`
 ///
 /// Defines a `pub fn spec_fn() -> TermSpec` whose `tm` holds the

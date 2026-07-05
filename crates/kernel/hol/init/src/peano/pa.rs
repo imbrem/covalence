@@ -52,7 +52,8 @@
 //! (`project_axiom_in_one_step`) exercises: derive a `Derivable_PA` witness,
 //! then project in one move.
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::fol::Fol;
 use super::sem;

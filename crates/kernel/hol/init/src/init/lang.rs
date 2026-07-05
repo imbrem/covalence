@@ -69,7 +69,8 @@
 //!   the closure direction; the rest awaits the existential one-point rule and
 //!   the concat-closure lemma.
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::monoid::Monoid;

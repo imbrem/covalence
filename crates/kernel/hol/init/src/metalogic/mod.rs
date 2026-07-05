@@ -51,7 +51,8 @@
 //! end-to-end (axiom + one rule + soundness + projection). Nothing here is
 //! added to `covalence-core`: every move is an existing kernel primitive.
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::TermExt;
 

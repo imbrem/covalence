@@ -38,7 +38,9 @@
 //! directive *shape* and the *dispatch* generalise; the missing piece is the
 //! fresh-carrier construction, isolated behind [`LogicInductive`].
 
-use covalence_core::{Error, Term, Thm, Type, defs, subst};
+use covalence_core::{Error, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs;
 use covalence_sexp::SExpr;
 
 /// The kernel's `Result` (one type argument; error fixed to

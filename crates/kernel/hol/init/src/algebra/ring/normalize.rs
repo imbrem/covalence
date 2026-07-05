@@ -33,7 +33,8 @@
 //! Every rewrite step is a genuine kernel equality (distrib / AC / identity
 //! axioms instantiated and threaded through `trans` + congruence).
 
-use covalence_core::{Error, Result, Term, Thm};
+use covalence_core::{Error, Result, Term};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::algebra::ac::{Ac, AcOp, HolAc};
 use crate::init::ext::{TermExt, ThmExt};

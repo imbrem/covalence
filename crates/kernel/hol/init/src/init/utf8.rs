@@ -58,7 +58,8 @@
 //! delivered now; the prefix-consumption step is the skeleton.
 
 use covalence_core::term::IntTag;
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use smol_str::SmolStr;
 use std::sync::LazyLock;
@@ -67,7 +68,7 @@ use crate::init::char::{char_code, char_ty};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::list_recursion::{foldr_cons, foldr_nil};
 
-use covalence_core::defs::{
+use covalence_hol_eval::defs::{
     TermSpec, cons, int_from_nat, list, list_cat, nat_add, nat_div, nat_lt, nat_mod, nil, option,
 };
 
@@ -273,7 +274,7 @@ fn encode_body() -> Term {
     let folded = Term::app(
         Term::app(
             Term::app(
-                covalence_core::defs::list_foldr(char_ty(), byte_list()),
+                covalence_hol_eval::defs::list_foldr(char_ty(), byte_list()),
                 encode_step(),
             ),
             unil(),
@@ -281,7 +282,7 @@ fn encode_body() -> Term {
         rep_s,
     );
     let bytes_abs = Term::app(
-        Term::spec_abs(covalence_core::defs::bytes_spec(), Vec::new()),
+        Term::spec_abs(covalence_hol_eval::defs::bytes_spec(), Vec::new()),
         folded,
     );
     Term::abs(
@@ -323,7 +324,7 @@ fn encode_bytes_body() -> Term {
     let folded = Term::app(
         Term::app(
             Term::app(
-                covalence_core::defs::list_foldr(char_ty(), byte_list()),
+                covalence_hol_eval::defs::list_foldr(char_ty(), byte_list()),
                 encode_step(),
             ),
             unil(),
@@ -390,7 +391,7 @@ fn encode_carrier(rep_s: &Term) -> Term {
     Term::app(
         Term::app(
             Term::app(
-                covalence_core::defs::list_foldr(char_ty(), byte_list()),
+                covalence_hol_eval::defs::list_foldr(char_ty(), byte_list()),
                 encode_step(),
             ),
             unil(),
@@ -407,7 +408,7 @@ fn encode_rep(s: &Term) -> Result<Thm> {
     let rep_s = Term::app(Term::spec_rep(string_spec(), Vec::new()), s.clone());
     // rep (utf8Encode s) = rep (abs (foldr step nil (rep s)))   [δ + β]
     let rep_enc = Term::app(
-        Term::spec_rep(covalence_core::defs::bytes_spec(), Vec::new()),
+        Term::spec_rep(covalence_hol_eval::defs::bytes_spec(), Vec::new()),
         Term::app(encode(), s.clone()),
     );
     let unfold = Thm::refl(rep_enc)?.rhs_conv(|t| t.rw_all(&encode_def(s)?))?;
@@ -495,9 +496,9 @@ pub fn encode_cons(c: &Term, s: &Term) -> Result<Thm> {
 /// `optionCase` `some`-branch of [`decode_ascii1`]. Factored out so the
 /// round-trip's `case_some` application uses the *identical* function term.
 fn decode_some_branch() -> Term {
-    use covalence_core::defs::{none, some};
+    use covalence_hol_eval::defs::{none, some};
     let b = Term::free("b", u8_ty());
-    let to_nat = Term::app(covalence_core::defs::int_to_nat(IntTag::U8), b.clone());
+    let to_nat = Term::app(covalence_hol_eval::defs::int_to_nat(IntTag::U8), b.clone());
     let is_ascii = app2(nat_lt(), to_nat.clone(), lit(0x80));
     let mk = Term::app(crate::init::char::char_mk(), to_nat);
     let some_c = Term::app(some(char_ty()), mk);
@@ -506,7 +507,7 @@ fn decode_some_branch() -> Term {
 }
 
 fn decode_ascii1_body() -> Term {
-    use covalence_core::defs::{head, none, option_case};
+    use covalence_hol_eval::defs::{head, none, option_case};
     let l = Term::free("l", byte_list());
     let f = decode_some_branch();
     let head_l = Term::app(head(u8_ty()), l.clone());
@@ -574,7 +575,7 @@ pub fn decode_ascii1_round_trip(k: u64) -> Result<Thm> {
     let case_clause = crate::init::option::case_some(
         &u8_ty(),
         &option(char_ty()),
-        &covalence_core::defs::none(char_ty()),
+        &covalence_hol_eval::defs::none(char_ty()),
         &some_branch,
         &byte0,
     )?;
@@ -616,7 +617,7 @@ pub fn utf8_env() -> crate::script::Env {
     use crate::script::{ConstDef, Env};
 
     use crate::init::list_recursion::{cat_cons, cat_nil};
-    use covalence_core::defs::nil as defs_nil;
+    use covalence_hol_eval::defs::nil as defs_nil;
 
     let cty = char_ty();
     let bty = u8_ty();
@@ -801,7 +802,7 @@ mod tests {
         // RHS is (encodeChar c) ++ rep (utf8Encode s).
         let ec = Term::app(encode_char(), c.clone());
         let rep_enc_s = Term::app(
-            Term::spec_rep(covalence_core::defs::bytes_spec(), Vec::new()),
+            Term::spec_rep(covalence_hol_eval::defs::bytes_spec(), Vec::new()),
             Term::app(encode(), s.clone()),
         );
         let expected_rhs = app2(list_cat(u8_ty()), ec, rep_enc_s);
@@ -818,7 +819,7 @@ mod tests {
 
     #[test]
     fn decode_ascii_round_trips() {
-        use covalence_core::defs::some;
+        use covalence_hol_eval::defs::some;
         // ⊢ decodeAscii1 (utf8EncodeChar (char.mk k)) = some (char.mk k) for
         // ASCII k. Genuine per-character round-trip.
         for &k in &[0x00u64, 0x41, 0x7F] {

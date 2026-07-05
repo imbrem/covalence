@@ -53,7 +53,8 @@ pub mod unary;
 
 use std::sync::Arc;
 
-use covalence_core::{Term, Thm, Type};
+use covalence_core::{Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_types::Int;
 
 use crate::script::{ConstDef, Env, Tactic};
@@ -212,7 +213,7 @@ impl Logic for NatSelf {
             carrier: Type::nat(),
             zero: Term::nat_lit(0u32),
             succ: Term::succ(),
-            add: covalence_core::defs::nat_add(),
+            add: covalence_hol_eval::defs::nat_add(),
         };
         // The induction handler is the kernel-`nat` `induct` tactic from
         // `core` — `nat/self`'s induction principle is HOL `nat_induct`.

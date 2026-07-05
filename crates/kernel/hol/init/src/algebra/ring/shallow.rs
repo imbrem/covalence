@@ -8,7 +8,8 @@
 //! now; see `SKELETONS.md`), and `neg` / `sub` build the corresponding
 //! `int` terms.
 
-use covalence_core::{Term, Thm};
+use covalence_core::Term;
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::algebra::ring::Ring;
 use crate::algebra::semiring::Int;

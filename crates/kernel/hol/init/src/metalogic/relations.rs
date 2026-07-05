@@ -43,7 +43,8 @@
 //! non-trivial variable-renaming `σ` (with a genuinely structural `σ_hom`
 //! proof) is the next step; see [`SKELETONS.md`](./SKELETONS.md).
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::database::{app, closed, d_var, derivable_db, enc_imp, fvar, phi, pred_ty};
 use crate::init::ext::{TermExt, ThmExt};

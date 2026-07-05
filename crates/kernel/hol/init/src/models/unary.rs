@@ -22,7 +22,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use covalence_core::{Term, Thm, Type, defs, subst};
+use covalence_core::{Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs;
 use covalence_sexp::SExpr;
 
 use crate::init::ext::{TermExt, ThmExt};

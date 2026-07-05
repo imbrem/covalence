@@ -17,7 +17,8 @@
 
 use std::collections::BTreeMap;
 
-use covalence_core::{Term, TermKind, Type, TypeKind, defs};
+use covalence_core::{Term, TermKind, Type, TypeKind};
+use covalence_hol_eval::defs;
 use covalence_hol_eval::{as_int, kind_name};
 use covalence_sexp::{SExp, SExpr};
 use covalence_smt::SmtProblem;

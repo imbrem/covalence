@@ -42,8 +42,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
 use covalence_grammar::regex::Regex as Surface;
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::{Core, CoreKind, desugar};
 use crate::init::ext::TermExt;

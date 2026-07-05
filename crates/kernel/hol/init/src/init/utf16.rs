@@ -53,7 +53,8 @@
 //! for a well-formed surrogate pair).
 
 use covalence_core::term::IntTag;
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use smol_str::SmolStr;
 use std::sync::LazyLock;
@@ -63,7 +64,7 @@ use crate::init::ext::{TermExt, ThmExt};
 use crate::init::list_recursion::{foldr_cons, foldr_nil};
 use crate::init::string::string_spec;
 
-use covalence_core::defs::{
+use covalence_hol_eval::defs::{
     TermSpec, cons, int_from_nat, list, list_cat, list_foldr, nat_add, nat_div, nat_lt, nat_mod,
     nat_sub, nil,
 };

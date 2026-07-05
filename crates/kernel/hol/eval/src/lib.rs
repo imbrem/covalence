@@ -1,28 +1,25 @@
-//! # `covalence-hol-eval` — the UNTRUSTED reduction driver (zero TCB)
+//! # `covalence-hol-eval` — the **eval tier** (`CoreEval`) + reduction drivers
 //!
-//! THE public API for closed-form literal computation, over the **cert
-//! path**: recognize a
-//! concrete literal redex ([`Term`] pattern-matching — untrusted), extract
-//! the op selector + native argument values, and re-derive the equation
-//! through the admitted per-family certificate rules exported by
-//! [`covalence_core::seam`] (each computing via the enumerable
-//! `covalence-pure-eval` `CanonRule`s), landing back as an ordinary
-//! [`Thm`] via [`Thm::from_pure`].
-//!
-//! Everything here only *composes* already-gated mints (`apply` / `canon` /
-//! the ungated equality calculus / the base `eq_mp` / `from_pure`); it can
-//! fail, but it cannot forge — the trust story lives entirely in
-//! `covalence-core`'s manifest (`docs/deps/core-manifest.txt`) and
-//! `covalence-pure-eval`'s (`docs/deps/builtins-manifest.txt`).
+//! This crate owns [`CoreEval`], the language extending
+//! [`CoreLang`](covalence_core::seam::CoreLang) with the computation-backed
+//! certificate and toHOL rules (stage E2 of
+//! `notes/vibes/handoff/defs-out-of-core.md`). It is **no longer zero-TCB**:
+//! trust is per-rule via `admits` — the [`rules`] catalogue (golden:
+//! `docs/deps/eval-manifest.txt`) and the [`certs`] dispatch it drives are
+//! trusted *at the eval tier* (`Thm<CoreEval>` = [`EvalThm`]), while
+//! `Thm<CoreLang>` remains the pure-HOL tier with no computation TCB. The
+//! *drivers* below (everything that only composes gated mints) stay
+//! untrusted: they can fail, but they cannot forge.
 //!
 //! Surface (semantics pinned by `tests/audit_reduce.rs`, the S8 port of the
 //! retired in-kernel audit suite):
 //!
+//! - [`CoreEval`] / [`EvalThm`] — the tier and its theorem type.
 //! - [`reduce`] / [`reduce_with`] — single-step closed-form computation
 //!   `⊢ t = result` (the `_with` twin keeps the `TrustedCons` sharing seam).
 //! - [`prove_true`] — `⊢ t` for a `t` that single-step reduces to `T`.
-//! - [`delta`] — definitional unfolding passthrough (still
-//!   [`Thm::unfold_term_spec`] until the `defs/` catalogue re-homes).
+//! - [`delta`] — definitional unfolding passthrough
+//!   ([`covalence_core::Thm::unfold_term_spec`] at the eval tier).
 //! - [`nat_add_thm`] — the S4 toHOL slice driver (symbolic-tier certificate
 //!   reified through the admitted toHOL rules and transported with the base
 //!   `eq_mp`), kept as the exemplar of the never-materialize pipeline.
@@ -32,18 +29,26 @@
 
 #![forbid(unsafe_code)]
 
-use covalence_core::seam::{
-    BytesCert, CoercionCert, CoreLang, CoreProp, FixedWidthCert, IntArithCert, Lit, LitEqCert,
-    NatArithCert, PrimFamily, SuccCert, prim_family,
-};
-use covalence_core::{Error, Result, Term, TermKind, Thm, TrustedCons};
+use covalence_core::seam::Lit;
+use covalence_core::{Error, Result, Term, TermKind, TrustedCons};
 use covalence_pure::{Rule, apply};
 
+pub mod certs;
+pub mod defs;
+mod lang;
 pub mod lit;
+pub mod rules;
 mod tohol;
+mod tohol_ops;
 
+pub use certs::{PrimFamily, prim_family};
+pub use lang::{CoreEval, EvalThm, EvalTypeDef};
 pub use lit::{as_blob, as_int, as_nat, kind_name, mk_blob, mk_int, mk_nat};
 pub use tohol::nat_add_thm;
+pub use tohol_ops::{
+    HolApp, HolAppE, NatAddEqE, NatAddLhsE, ToHolBytes, ToHolBytesE, ToHolInt, ToHolIntE, ToHolNat,
+    ToHolNatE,
+};
 
 /// Unwind an application spine: `((f a) b) c ↦ (f, [a, b, c])`.
 fn unwind_app(t: &Term) -> (Term, Vec<Term>) {
@@ -58,10 +63,13 @@ fn unwind_app(t: &Term) -> (Term, Vec<Term>) {
     (cursor, args)
 }
 
-/// Apply an admitted `CoreProp`-concluding rule and land it as a [`Thm`].
-fn mint<R: Rule<CoreLang, Concl = CoreProp>>(rule: R, input: R::Input) -> Option<Thm> {
-    let landed = apply(CoreLang, rule, input).ok()?;
-    Thm::from_pure(landed).ok()
+/// Apply an admitted `CoreProp`-concluding rule and land it as an [`EvalThm`].
+fn mint<R: Rule<CoreEval, Concl = covalence_core::seam::CoreProp>>(
+    rule: R,
+    input: R::Input,
+) -> Option<EvalThm> {
+    let landed = apply(CoreEval, rule, input).ok()?;
+    EvalThm::from_pure(landed).ok()
 }
 
 /// Single-step closed-form computation via the cert path: `⊢ t = result`
@@ -77,7 +85,7 @@ fn mint<R: Rule<CoreLang, Concl = CoreProp>>(rule: R, input: R::Input) -> Option
 /// `n mod 0 = n`; fixed-width arithmetic wraps mod `2^width`; detectably
 /// unrepresentable results refuse (oversize `pow` exponents on a base ≥ 2,
 /// oversize `shl` shifts on a non-zero operand; `shr` is total).
-pub fn reduce(t: &Term) -> Option<Thm> {
+pub fn reduce(t: &Term) -> Option<EvalThm> {
     reduce_with(t, &mut ())
 }
 
@@ -85,7 +93,7 @@ pub fn reduce(t: &Term) -> Option<Thm> {
 /// [`TrustedCons`] — the sharing seam, letting a reduction driver thread one
 /// cons uniformly through `beta_conv` / `reduce` / `trans`. Pure sharing, no
 /// soundness role.
-pub fn reduce_with<C: TrustedCons + ?Sized>(t: &Term, cons: &mut C) -> Option<Thm> {
+pub fn reduce_with<C: TrustedCons + ?Sized>(t: &Term, cons: &mut C) -> Option<EvalThm> {
     // Mirror the legacy rule's validation: `reduce` matches purely on shape,
     // so an ill-typed application must be refused up front (the cert rules
     // rebuild the redex from the canonical handle, which would silently
@@ -98,11 +106,11 @@ pub fn reduce_with<C: TrustedCons + ?Sized>(t: &Term, cons: &mut C) -> Option<Th
         TermKind::Eq(_) if args.len() == 2 => {
             let a = Lit::from_term(&args[0])?;
             let b = Lit::from_term(&args[1])?;
-            mint(LitEqCert, (a, b))?
+            mint(rules::LitEqCert, (a, b))?
         }
         // The primitive successor.
         TermKind::Succ if args.len() == 1 => match Lit::from_term(&args[0])? {
-            Lit::Nat(n) => mint(SuccCert, n)?,
+            Lit::Nat(n) => mint(rules::SuccCert, n)?,
             _ => return None,
         },
         // Catalogue dispatch by canonical handle (empty type args only —
@@ -111,11 +119,11 @@ pub fn reduce_with<C: TrustedCons + ?Sized>(t: &Term, cons: &mut C) -> Option<Th
             let lits: Vec<Lit> = args.iter().map(Lit::from_term).collect::<Option<_>>()?;
             let input = (spec.clone(), lits);
             match prim_family(spec)? {
-                PrimFamily::NatArith => mint(NatArithCert, input)?,
-                PrimFamily::IntArith => mint(IntArithCert, input)?,
-                PrimFamily::Bytes => mint(BytesCert, input)?,
-                PrimFamily::Coercion => mint(CoercionCert, input)?,
-                PrimFamily::FixedWidth => mint(FixedWidthCert, input)?,
+                PrimFamily::NatArith => mint(rules::NatArithCert, input)?,
+                PrimFamily::IntArith => mint(rules::IntArithCert, input)?,
+                PrimFamily::Bytes => mint(rules::BytesCert, input)?,
+                PrimFamily::Coercion => mint(rules::CoercionCert, input)?,
+                PrimFamily::FixedWidth => mint(rules::FixedWidthCert, input)?,
             }
         }
         _ => return None,
@@ -126,9 +134,10 @@ pub fn reduce_with<C: TrustedCons + ?Sized>(t: &Term, cons: &mut C) -> Option<Th
 
 /// `⊢ T` — derived through the cert path: `LitEqCert` gives
 /// `⊢ (T = T) = T`, `refl` gives `⊢ T = T`, and `eq_mp` concludes `⊢ T`.
-fn truth() -> Result<Thm> {
-    let bridge = mint(LitEqCert, (Lit::Bool(true), Lit::Bool(true))).ok_or(Error::NotReducible)?; // ⊢ (T = T) = T
-    let refl = Thm::refl(Term::bool_lit(true))?; // ⊢ T = T
+fn truth() -> Result<EvalThm> {
+    let bridge =
+        mint(rules::LitEqCert, (Lit::Bool(true), Lit::Bool(true))).ok_or(Error::NotReducible)?; // ⊢ (T = T) = T
+    let refl = EvalThm::refl(Term::bool_lit(true))?; // ⊢ T = T
     bridge.eq_mp(refl) // ⊢ T
 }
 
@@ -139,7 +148,7 @@ fn truth() -> Result<Thm> {
 /// This is the single-step twin of the recursive
 /// `TermExt::prove_true` in `covalence-init` (which normalises first); it
 /// decides one-redex closed goals like `⊢ nat.le ⌜3⌝ ⌜5⌝` or `⊢ ⌜4⌝ = ⌜4⌝`.
-pub fn prove_true(t: &Term) -> Result<Thm> {
+pub fn prove_true(t: &Term) -> Result<EvalThm> {
     let conv = reduce(t).ok_or(Error::NotReducible)?; // ⊢ t = v
     let (_, v) = conv.concl().as_eq().ok_or(Error::NotAnEquation)?;
     if v.as_bool() != Some(true) {
@@ -151,10 +160,11 @@ pub fn prove_true(t: &Term) -> Result<Thm> {
 }
 
 /// Definitional unfolding passthrough: `⊢ t = body` for a let-style
-/// catalogue spec leaf. Still routed to [`Thm::unfold_term_spec`] — sound
-/// definitional unfolding tied to `TermKind::Spec`, which survives until the
-/// `defs/` catalogue re-homes as ordinary `define`d constants with stored
-/// definitional theorems (then this re-routes without callers moving).
-pub fn delta(t: &Term) -> Result<Thm> {
-    Thm::unfold_term_spec(t.clone())
+/// catalogue spec leaf, at the eval tier. Still routed to
+/// [`covalence_core::Thm::unfold_term_spec`] — sound definitional unfolding
+/// tied to `TermKind::Spec`, which survives until the `defs/` catalogue
+/// re-homes as ordinary `define`d constants with stored definitional
+/// theorems (then this re-routes without callers moving).
+pub fn delta(t: &Term) -> Result<EvalThm> {
+    EvalThm::unfold_term_spec(t.clone())
 }

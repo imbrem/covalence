@@ -253,7 +253,7 @@ fn denote_un(op: &SpecTecUnOp, a: Term) -> Result<Term> {
 /// empty tuple is the `unit` value (the payload of a nullary variant case).
 fn denote_tuple(es: &[SpecTecExp], ctx: &DenoteCtx) -> Result<Term> {
     match es {
-        [] => Ok(covalence_core::defs::unit_nil()),
+        [] => Ok(covalence_hol_eval::defs::unit_nil()),
         [single] => denote(single, ctx),
         [head, rest @ ..] => {
             let a = denote(head, ctx)?;

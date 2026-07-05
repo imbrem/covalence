@@ -40,21 +40,22 @@
 //! the existential toolkit grows the matching tactic, with no change to
 //! the seam below.
 
-use covalence_core::defs::Symbol;
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs::Symbol;
 
 use crate::init::eq::trans_chain;
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::truth;
 
 // Re-export the `defs/rel.rs` term catalogue (the `*_spec` handles stay
-// in `covalence_core::defs`, reached via the blanket re-export there).
-pub use covalence_core::defs::{
+// in `covalence_hol_eval::defs`, reached via the blanket re-export there).
+pub use covalence_hol_eval::defs::{
     part, per, pord, preord, rel, rel_compose, rel_converse, rel_deterministic, rel_graph,
     rel_holds, rel_id, rel_is_function, rel_mk, rel_to_fun, rel_total,
 };
 
-use covalence_core::defs::{
+use covalence_hol_eval::defs::{
     rel_compose_spec, rel_converse_spec, rel_graph_spec, rel_holds_spec, rel_id_spec, rel_mk_spec,
     rel_spec,
 };

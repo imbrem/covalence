@@ -7,8 +7,8 @@
 //! handle identity. The kernel does not prove equations, so we never
 //! assert derived equalities (e.g. `head (cons x xs) = some x`).
 
-use covalence_core::defs::*;
 use covalence_core::{Type, TypeKind};
+use covalence_hol_eval::defs::*;
 
 // ============================================================================
 // Helpers

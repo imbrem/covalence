@@ -29,13 +29,12 @@
 //!        admitted rules (fake specs, wrong families, mixed literal
 //!        kinds) must not mint.
 
-use covalence_core::defs;
-use covalence_core::defs::IntOp;
-use covalence_core::seam::{
-    BytesCert, CoreLang, FixedWidthCert, IntArithCert, Lit, LitEqCert, NatArithCert,
-};
-use covalence_core::{IntTag, Term, TermKind, Thm, Type};
-use covalence_hol_eval::{delta, mk_blob, mk_int, mk_nat, reduce};
+use covalence_core::seam::Lit;
+use covalence_core::{IntTag, Term, TermKind, Type};
+use covalence_hol_eval::defs;
+use covalence_hol_eval::defs::IntOp;
+use covalence_hol_eval::rules::{BytesCert, FixedWidthCert, IntArithCert, LitEqCert, NatArithCert};
+use covalence_hol_eval::{CoreEval, EvalThm as Thm, delta, mk_blob, mk_int, mk_nat, reduce};
 use covalence_pure::apply;
 use covalence_types::Nat;
 
@@ -329,7 +328,7 @@ fn nat_shl_cert_refuses_or_reduces_by_representability() {
     let shl = defs::nat_shl_spec();
     assert!(
         apply(
-            CoreLang,
+            CoreEval,
             NatArithCert,
             (shl.clone(), vec![lnat(1), Lit::Nat(huge.clone())])
         )
@@ -337,7 +336,7 @@ fn nat_shl_cert_refuses_or_reduces_by_representability() {
         "1 << huge is unrepresentable ⇒ cert must refuse"
     );
     assert!(
-        apply(CoreLang, NatArithCert, (shl, vec![lnat(0), Lit::Nat(huge)])).is_ok(),
+        apply(CoreEval, NatArithCert, (shl, vec![lnat(0), Lit::Nat(huge)])).is_ok(),
         "0 << huge = 0 is total ⇒ cert must succeed"
     );
 }
@@ -1056,10 +1055,10 @@ fn fake_spec_does_not_mint_via_any_family_rule() {
         canonical.tm().cloned(),
     );
     let args = vec![lnat(1), lnat(2)];
-    assert!(apply(CoreLang, NatArithCert, (fake.clone(), args.clone())).is_err());
-    assert!(apply(CoreLang, IntArithCert, (fake.clone(), args.clone())).is_err());
-    assert!(apply(CoreLang, BytesCert, (fake.clone(), args.clone())).is_err());
-    assert!(apply(CoreLang, FixedWidthCert, (fake.clone(), args)).is_err());
+    assert!(apply(CoreEval, NatArithCert, (fake.clone(), args.clone())).is_err());
+    assert!(apply(CoreEval, IntArithCert, (fake.clone(), args.clone())).is_err());
+    assert!(apply(CoreEval, BytesCert, (fake.clone(), args.clone())).is_err());
+    assert!(apply(CoreEval, FixedWidthCert, (fake.clone(), args)).is_err());
     // And through the driver.
     assert_no_reduce(app2(Term::term_spec(fake, Vec::new()), nat(1), nat(2)));
 }
@@ -1071,7 +1070,7 @@ fn wrong_family_or_arity_does_not_mint() {
     let nat_add = defs::nat_add_spec();
     assert!(
         apply(
-            CoreLang,
+            CoreEval,
             IntArithCert,
             (nat_add.clone(), vec![lnat(1), lnat(2)])
         )
@@ -1079,17 +1078,17 @@ fn wrong_family_or_arity_does_not_mint() {
     );
     assert!(
         apply(
-            CoreLang,
+            CoreEval,
             BytesCert,
             (nat_add.clone(), vec![lnat(1), lnat(2)])
         )
         .is_err()
     );
     // Wrong arity refuses.
-    assert!(apply(CoreLang, NatArithCert, (nat_add.clone(), vec![lnat(1)])).is_err());
+    assert!(apply(CoreEval, NatArithCert, (nat_add.clone(), vec![lnat(1)])).is_err());
     assert!(
         apply(
-            CoreLang,
+            CoreEval,
             NatArithCert,
             (nat_add.clone(), vec![lnat(1), lnat(2), lnat(3)])
         )
@@ -1098,7 +1097,7 @@ fn wrong_family_or_arity_does_not_mint() {
     // Wrong literal kind refuses.
     assert!(
         apply(
-            CoreLang,
+            CoreEval,
             NatArithCert,
             (nat_add, vec![Lit::Int(1.into()), Lit::Int(2.into())])
         )
@@ -1109,12 +1108,12 @@ fn wrong_family_or_arity_does_not_mint() {
 #[test]
 fn lit_eq_cert_mixed_kinds_do_not_mint() {
     // Mixed literal kinds must refuse (the equation would be ill-typed).
-    assert!(apply(CoreLang, LitEqCert, (lnat(1), Lit::Int(1.into()))).is_err());
-    assert!(apply(CoreLang, LitEqCert, (Lit::Bool(true), lnat(1))).is_err());
+    assert!(apply(CoreEval, LitEqCert, (lnat(1), Lit::Int(1.into()))).is_err());
+    assert!(apply(CoreEval, LitEqCert, (Lit::Bool(true), lnat(1))).is_err());
     // Mixed fixed-width TAGS must refuse too (same-kind, different type).
     let u8v = Lit::Small(covalence_core::SmallIntLiteral::new(IntTag::U8, 1));
     let u16v = Lit::Small(covalence_core::SmallIntLiteral::new(IntTag::U16, 1));
-    assert!(apply(CoreLang, LitEqCert, (u8v, u16v)).is_err());
+    assert!(apply(CoreEval, LitEqCert, (u8v, u16v)).is_err());
 }
 
 #[test]
@@ -1134,7 +1133,7 @@ fn lit_eq_cert_non_canonical_payloads_agree() {
     assert_eq!(neg_raw, neg, "0xFF_s8 must canonicalize to -1_s8");
     // The cert admits on the canonicalized (now equal) pair — it cannot
     // witness them apart, so no false `(a = z) = F` is derivable.
-    apply(CoreLang, LitEqCert, (Lit::Small(a), Lit::Small(z)))
+    apply(CoreEval, LitEqCert, (Lit::Small(a), Lit::Small(z)))
         .expect("LitEqCert on equal (canonicalized) literals");
 }
 

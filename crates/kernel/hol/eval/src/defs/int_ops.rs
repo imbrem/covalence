@@ -25,7 +25,7 @@
 //! stay **declaration-only** (`tm = None`): they are the primitive
 //! reducible interface between `uN`/`sN` and `nat`/`int` (sound, and
 //! complete *on literals* via the certificate path). Every **operation** is then
-//! *defined* over them in [`op_body`] — `add`/`sub`/`mul`/`neg` and
+//! *defined* over them in `op_body` — `add`/`sub`/`mul`/`neg` and
 //! `div`/`rem` as `fromInt(intOp (toInt x) (toInt y))` (signed tags) or
 //! `fromNat(natOp (toNat x) (toNat y))` (unsigned), bitwise / shifts via
 //! the `nat` bit ops, comparisons via `nat.<` / `int.<`. The lone
@@ -37,7 +37,7 @@
 //! *derivably coupled* to the `FixedWidthCert` reduction and must denote
 //! the exact same function — guarded by `covalence-hol-eval`'s
 //! `tests/audit_reduce.rs::audit_reduce_matches_body`. See the
-//! [`op_body`] section comment and `kernel-design.md` §9.
+//! `op_body` section comment and `kernel-design.md` §9.
 //!
 //! Also defined: list-indexing-by-`uN`/`sN`, a real body (`list.index`
 //! composed with `toNat`).
@@ -47,16 +47,16 @@ use std::sync::LazyLock;
 
 use smol_str::SmolStr;
 
-use crate::hol;
-use crate::term::{IntTag, Term, Type};
+use covalence_core::hol;
+use covalence_core::term::{IntTag, Term, Type};
 
-use super::int::{int_add, int_div, int_le, int_lt, int_mod, int_mul, int_neg, int_sub};
-use super::list::{list, list_index};
-use super::nat::{
+use crate::defs::TermSpec;
+use crate::defs::{int_add, int_div, int_le, int_lt, int_mod, int_mul, int_neg, int_sub};
+use crate::defs::{list, list_index};
+use crate::defs::{
     nat_bit_and, nat_bit_or, nat_bit_xor, nat_div, nat_le, nat_lt, nat_mod, nat_shl, nat_shr,
     nat_sub,
 };
-use super::spec::TermSpec;
 
 // ============================================================================
 // Op vocabulary
@@ -112,12 +112,12 @@ impl IntOp {
     }
 
     /// `true` for the comparison ops (`T → T → bool`).
-    pub(crate) fn is_cmp(self) -> bool {
+    pub fn is_cmp(self) -> bool {
         matches!(self, IntOp::Lt | IntOp::Le | IntOp::Gt | IntOp::Ge)
     }
 
     /// `true` for the unary ops (`T → T`).
-    pub(crate) fn is_unary(self) -> bool {
+    pub fn is_unary(self) -> bool {
         matches!(self, IntOp::Neg | IntOp::Not)
     }
 
@@ -144,7 +144,7 @@ impl IntOp {
 /// Identity of a catalogue entry — the registry key and the value
 /// [`lookup_op`] returns for reduction dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum OpKey {
+pub enum OpKey {
     /// Width-homogeneous op at a tag.
     Op(IntTag, IntOp),
     /// `zext src → dst` — zero-extend (unsigned reinterpret) `src` then
@@ -224,7 +224,7 @@ fn all_keys() -> Vec<OpKey> {
 /// re-entering this `LazyLock` through the public accessors:
 ///
 /// 1. a declaration-only (`tm = None`) spec for every op;
-/// 2. overwrite each *defined* op (see [`op_body`]) with a let-style spec
+/// 2. overwrite each *defined* op (see `op_body`) with a let-style spec
 ///    whose body is built from the phase-1 conversion specs in the map.
 static FORWARD: LazyLock<HashMap<OpKey, TermSpec>> = LazyLock::new(|| {
     let keys = all_keys();
@@ -428,7 +428,7 @@ fn spec_for(key: OpKey) -> TermSpec {
 
 /// Recover the [`OpKey`] of a catalogue spec by pointer identity, or
 /// `None` if `handle` is not one of the canonical fixed-width-int ops.
-pub(crate) fn lookup_op(handle: &TermSpec) -> Option<OpKey> {
+pub fn lookup_op(handle: &TermSpec) -> Option<OpKey> {
     REVERSE.get(&handle.ptr_id()).copied()
 }
 

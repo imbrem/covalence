@@ -130,23 +130,6 @@ fn option_abs_rep_are_inverse_shaped() {
 }
 
 #[test]
-fn result_abs_rep_types() {
-    // carrier of result is `coprod a b`; here a = nat, b = bool.
-    let args = vec![Type::nat(), Type::bool()];
-    let carrier = defs::coprod(Type::nat(), Type::bool());
-    let wrapper = defs::result(Type::nat(), Type::bool());
-
-    let abs = Term::spec_abs(defs::result_spec(), args.clone());
-    assert_eq!(
-        abs.type_of().unwrap(),
-        Type::fun(carrier.clone(), wrapper.clone())
-    );
-
-    let rep = Term::spec_rep(defs::result_spec(), args);
-    assert_eq!(rep.type_of().unwrap(), Type::fun(wrapper, carrier));
-}
-
-#[test]
 fn coprod_abs_rep_types() {
     // carrier of coprod is the tagged relation `a -> b -> bool -> bool`.
     let args = vec![Type::nat(), Type::bool()];
@@ -253,16 +236,6 @@ fn polymorphic_option_abs_rep_types() {
 
     let rep = Term::spec_rep(defs::option_spec(), vec![a]);
     assert_eq!(rep.type_of().unwrap(), Type::fun(wrapper, carrier));
-}
-
-#[test]
-fn polymorphic_result_abs_type() {
-    // Two distinct polymorphic args.
-    let a = Type::tfree("a");
-    let b = Type::tfree("b");
-    let abs = Term::spec_abs(defs::result_spec(), vec![a.clone(), b.clone()]);
-    let expected = Type::fun(defs::coprod(a.clone(), b.clone()), defs::result(a, b));
-    assert_eq!(abs.type_of().unwrap(), expected);
 }
 
 #[test]

@@ -6,7 +6,8 @@
 //! resolution lives in [`super::env::Env`]; the variable scope in
 //! [`super::scope::Scope`].
 
-use covalence_core::{Term, Type, defs};
+use covalence_core::{Term, Type};
+use covalence_hol_eval::defs;
 use covalence_sexp::{Atom, SExp, SExpr};
 
 use super::{ScriptError, env::Env, scope::Scope};
@@ -149,7 +150,7 @@ pub fn parse_type(s: &SExpr, env: &Env) -> R<Type> {
 /// in its carrier (alphabetical `free_tvars` order, the kernel convention),
 /// so a bare `NAME` reference yields the same `Type::spec(spec, ['a, 'b…])`
 /// leaf the directive stored — mirroring `defs::cov::apply_spec`.
-pub(crate) fn applied_user_spec(spec: covalence_core::defs::TypeSpec) -> Type {
+pub(crate) fn applied_user_spec(spec: covalence_hol_eval::defs::TypeSpec) -> Type {
     let args: Vec<Type> = match spec.ty() {
         Some(carrier) => carrier
             .free_tvars()

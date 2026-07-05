@@ -29,10 +29,8 @@ use std::fmt;
 use smol_str::SmolStr;
 
 use covalence_pure::{
-    App, CanonRule as _, Eqn, Error as PureError, LangMeta, Language, Manifest, Rule, RuleMeta,
-    RuleRecord, Val,
+    App, Error as PureError, LangMeta, Language, Manifest, Rule, RuleMeta, RuleRecord, Val,
 };
-use covalence_types::{Bytes, Int, Nat};
 
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
@@ -41,14 +39,9 @@ use crate::subst::{
     close_var, collect_term_tvars, has_free_var_typed, open, shift_by, subst_free,
     subst_tfree_in_term, uses_bound_outer,
 };
-use crate::term::{Def, FreshId, Term, TermKind, TermSpec, Type, TypeKind, Var};
-use crate::tohol::{
-    HolApp, NatAddEqE, ToHolBytes, ToHolBytesE, ToHolInt, ToHolIntE, ToHolNat, ToHolNatE,
-    nat_add_eq_expr,
-};
+use crate::term::{Def, FreshId, Term, TermKind, Type, TypeKind, Var};
 use crate::ty::{TypeList, TypeSpec};
 
-use super::certs;
 use super::lang::{CoreLang, CoreProp, HolTier, IsThm};
 
 /// An unforgeable premise: a `pure::Thm` carrying an `IsThm`-headed proposition,
@@ -100,24 +93,19 @@ fn to_pure(e: Error) -> PureError {
 /// One rule ⇒ ZST + typed `prove` + `Rule` impl + admits arm + `RuleRecord`, all
 /// in lockstep from one source list, so `admits()`/`MANIFEST` cannot drift.
 ///
-/// Three sections, all feeding the SAME manifest/admits emission:
+/// One section feeding the manifest/admits emission:
 /// - `rules { … }` — the sequent rules: `Concl = CoreProp`, minted through the
 ///   `seq` well-typedness floor; `Rule<L>` for every [`HolTier`] (premises are
 ///   `Prem<L>` at the minting tier), so a higher tier that admits the rule
 ///   mints it directly.
-/// - `raw { … }` — the toHOL tier: rules whose `Concl` is an arbitrary
-///   `Expr<Ty = bool>` (symbolic-term equations / certificates), implemented
-///   `Rule<L>` for **every** `L: Language` (the gate is still `admits` on the
-///   rule's own `TypeId`, so a language admits it only by enumerating it —
-///   this is what lets the NotAdmitted negative test run under `()`).
-/// - `canon { … }` — [`covalence_pure::CanonRule`] ops admitted for
-///   [`covalence_pure::canon`] evaluation (no `Rule` impl; the op's own
-///   `TypeId` is the gate identity).
+///
+/// (The former `raw { … }` toHOL/certificate section and the `canon { … }`
+/// [`covalence_pure::CanonRule`] section moved to `covalence-hol-eval`'s
+/// `eval_rules!` — the `CoreEval` tier hosts the computation-backed rules, so
+/// `Thm<CoreLang>` carries no computation TCB.)
 macro_rules! core_rules {
     (
         rules { $( $(#[$d:meta])* $N:ident($($ty:ty),* $(,)?) = |$p:pat_param, $l:pat_param| $b:block )+ }
-        raw { $( $(#[$rd:meta])* $R:ident($rin:ty) -> $rc:ty = |$rp:pat_param, $rl:pat_param| $rb:block )+ }
-        canon { $( $K:ident ),+ $(,)? }
     ) => {
         $(
             $(#[$d])*
@@ -153,48 +141,31 @@ macro_rules! core_rules {
             }
         )+
 
-        $(
-            $(#[$rd])*
-            #[derive(Clone, Copy)]
-            pub struct $R;
-
-            impl<L: Language> Rule<L> for $R {
-                type Input = $rin;
-                type Concl = $rc;
-                fn decide(
-                    self,
-                    input: Self::Input,
-                    lang: &L,
-                ) -> core::result::Result<$rc, PureError> {
-                    let ($rp, $rl) = (input, lang);
-                    $rb
-                }
-            }
-        )+
-
         /// The static TCB manifest for [`CoreLang`] — one [`RuleRecord`] per
-        /// admitted rule (sequent, raw, and canon sections alike), emitted from
-        /// the same source lists as [`core_admits`]. The single parent is the
+        /// admitted rule, emitted from the same source list as
+        /// [`core_admits`]. The single parent is the
         /// [`covalence_pure_eval::Builtins`] manifest (embedded by value), so
         /// `tree(CoreLang)` — core's rules plus the enumerable native
-        /// computation — is readable from this one static.
-        pub(crate) static CORE_MANIFEST: Manifest = Manifest {
+        /// computation — is readable from this one item. `pub const` (re-exported
+        /// through [`crate::seam`]) so a downstream tier language owning its own
+        /// rules (`CoreEval` in `covalence-hol-eval`) can embed it as a parent in
+        /// its own manifest; reading it mints nothing.
+        pub const CORE_MANIFEST: Manifest = Manifest {
             ty: TypeId::of::<CoreLang>(),
             extends: &[covalence_pure_eval::BUILTINS_MANIFEST],
             admits: &[
                 $( RuleRecord { ty: TypeId::of::<$N>(), metadata: RuleMeta }, )+
-                $( RuleRecord { ty: TypeId::of::<$R>(), metadata: RuleMeta }, )+
-                $( RuleRecord { ty: TypeId::of::<$K>(), metadata: RuleMeta }, )+
             ],
             metadata: LangMeta,
         };
 
         /// The admits predicate for [`CoreLang`], emitted from the same lists as
         /// [`CORE_MANIFEST`]: `true` exactly for the admitted rule TypeIds.
-        pub(crate) fn core_admits(r: TypeId) -> bool {
+        /// `pub` (re-exported through [`crate::seam`]) so a downstream tier that
+        /// `extends` [`CoreLang`] can delegate its inherited-rule gate here;
+        /// querying the gate mints nothing.
+        pub fn core_admits(r: TypeId) -> bool {
             $( r == TypeId::of::<$N>() )||+
-            $( || r == TypeId::of::<$R>() )+
-            $( || r == TypeId::of::<$K>() )+
         }
 
         /// Untrusted name projection of [`CORE_MANIFEST`] (same order, 1:1) —
@@ -204,8 +175,6 @@ macro_rules! core_rules {
         pub(crate) fn core_rule_names() -> Vec<(&'static str, TypeId)> {
             vec![
                 $( (stringify!($N), TypeId::of::<$N>()), )+
-                $( (stringify!($R), TypeId::of::<$R>()), )+
-                $( (stringify!($K), TypeId::of::<$K>()), )+
             ]
         }
     };
@@ -916,252 +885,6 @@ core_rules! {
         Ok((w_hyps.clone(), conj))
     }
     }
-
-    // ================= Group H: the toHOL tier (symbolic conclusions) =========
-    //
-    // These rules' conclusions are NOT `CoreProp`: they are base propositions
-    // over symbolic HOL-term expressions (`toHOL` denotations, never-constructed
-    // canonical terms). They mint via `covalence_pure::apply` directly — the
-    // public `mint!` glue (and its cold-path invariant) does not apply; every
-    // `decide` below is deterministic and total on its input.
-
-    raw {
-    /// TRANSITIONAL (dies with the kernel `Nat` literals — see `SKELETONS.md`):
-    /// `⊢ toHOL n = Val(⌜n⌝)` — reify a `toHOL`-denoted natural to today's
-    /// literal-numeral `Term`.
-    ///
-    /// ## Soundness
-    ///
-    /// While the kernel `Nat` literals exist, the literal numeral IS the
-    /// kernel's canonical HOL term for the natural `n` (the same denotational
-    /// commitment the legacy literal reducer documents: literals denote the
-    /// standard values). `toHOL n` denotes exactly that term, so the equation
-    /// holds by definition of the denotation. At literal-deletion time this
-    /// rule is deleted and the permanent structural rules (`toHOL 0 = ⌜zero⌝`,
-    /// `toHOL (n+1) = S (toHOL n)`) take over; only the reify target flips.
-    ToHolNatVal(Nat) -> Eqn<ToHolNatE, Val<Term>> = |n, _| {
-        let t = Term::nat_lit(n.clone());
-        Ok(Eqn(App(ToHolNat, Val(n)), Val(t)))
-    }
-
-    /// `⊢ (Val f, Val x) = Val((f, x))` at the `(Term, Term)` product sort —
-    /// fuse a tuple of ground leaves into one ground tuple leaf. The bridge
-    /// between `cong_pair` (which produces tuples **of** `Val`s) and
-    /// [`covalence_pure::canon`] (whose evaluated redex takes its whole input
-    /// as one `Val` **of** a tuple).
-    ///
-    /// ## Soundness
-    ///
-    /// Both sides denote the same pair `(f, x)` of the product sort — tuple
-    /// expressions denote tuples of their components' denotations, and `Val`
-    /// leaves denote themselves. The two shapes are one value read two ways;
-    /// no computation, no new equalities between distinct values.
-    PairVal((Term, Term)) -> Eqn<(Val<Term>, Val<Term>), Val<(Term, Term)>> = |(f, x), _| {
-        Ok(Eqn((Val(f.clone()), Val(x.clone())), Val((f, x))))
-    }
-
-    /// The nat.add computation-backed derivability certificate:
-    /// `⊢ IsThm(∅, ⌜nat.add (toHOL a) (toHOL b) = toHOL (a + b)⌝)`, where the
-    /// sum is computed natively by the [`covalence_pure_eval::NatAdd`]
-    /// [`CanonRule`](covalence_pure::CanonRule) and the HOL equation stays
-    /// **symbolic** (its numeral leaves are `toHOL` denotations — never
-    /// materialized).
-    ///
-    /// ## Soundness (the existence-without-construction contract)
-    ///
-    /// The soundness contract of every such rule (its docstring obligation):
-    /// for every native value `b` there *exists* a HOL term `[b]` such that
-    /// the defining properties are derivable in pure HOL —
-    /// existence-without-construction, the same principle as "a standard
-    /// theorem means a derivation exists". Concretely here: `[n]` is the
-    /// numeral `S^n(Z)`, and whenever the native addition computes
-    /// `a + b = c`, the HOL equation `nat.add [a] [b] = [c]` is derivable in
-    /// pure HOL by `c` primitive-recursive unfoldings of `nat.add`'s
-    /// definitional equations on the numerals — the derivation exists for
-    /// every `(a, b)`, and this rule is a certified shortcut that never adds
-    /// strength. The rule derives its whole conclusion from the input pair
-    /// (no caller-supplied conclusion), so it is sound on ALL inputs.
-    NatAddCert((Nat, Nat)) -> App<IsThm, (Val<Ctx>, NatAddEqE)> = |(a, b), _| {
-        // `NatAdd` is total (addition never refuses), so the `None` arm is
-        // unreachable; refuse (never mint) if it ever fires.
-        let sum = covalence_pure_eval::NatAdd
-            .eval(&(a.clone(), b.clone()))
-            .ok_or(covalence_pure::Error::NoMatch)?;
-        Ok(App(IsThm, (Val(Ctx::new()), nat_add_eq_expr(a, b, sum))))
-    }
-
-    /// TRANSITIONAL (dies with the kernel `Int` literals): `⊢ toHOL i =
-    /// Val(⌜i⌝)` — reify a `toHOL`-denoted integer to today's literal `Term`.
-    ///
-    /// ## Soundness
-    ///
-    /// Same argument as [`ToHolNatVal`]: while the kernel `Int` literals
-    /// exist, the literal IS the kernel's canonical HOL term for the integer
-    /// `i`, and `toHOL i` denotes exactly that term, so the equation holds by
-    /// definition of the denotation. At literal-deletion time this rule dies
-    /// and the permanent structural rule (`toHOL i = int.mk (toHOL p) (toHOL
-    /// n)`) takes over; only the reify target flips.
-    ToHolIntVal(Int) -> Eqn<ToHolIntE, Val<Term>> = |i, _| {
-        let t = Term::int_lit(i.clone());
-        Ok(Eqn(App(ToHolInt, Val(i)), Val(t)))
-    }
-
-    /// TRANSITIONAL (dies with the kernel `Blob` literals): `⊢ toHOL bs =
-    /// Val(⌜bs⌝)` — reify a `toHOL`-denoted bytestring to today's literal
-    /// `Term`.
-    ///
-    /// ## Soundness
-    ///
-    /// Same argument as [`ToHolNatVal`], at the `bytes` carrier: the `Blob`
-    /// literal IS the canonical HOL term for the bytestring while it exists.
-    /// At literal-deletion time the permanent structural rules (`toHOL [] =
-    /// ⌜nil⌝`, `toHOL (b:rest) = cons (toHOL b) (toHOL rest)`) take over.
-    ToHolBytesVal(Bytes) -> Eqn<ToHolBytesE, Val<Term>> = |bs, _| {
-        let t = Term::blob(bs.clone());
-        Ok(Eqn(App(ToHolBytes, Val(bs)), Val(t)))
-    }
-
-    // ------------- The per-family computation-backed certificates -----------
-    //
-    // Concl = `CoreProp` (the `IsThm` sequent shape), minted through the same
-    // `seq` well-typedness floor as every sequent rule; the equation is built
-    // and computed by the audited dispatch in `super::certs` (canonical
-    // `TermSpec::ptr_id` tables → `covalence-pure-eval` `CanonRule` evals —
-    // the enumerable computation-TCB record in the `Builtins` manifest).
-    //
-    // ## Soundness (the existence-without-construction contract)
-    //
-    // The soundness contract of every such rule (its docstring obligation):
-    // for every native value `b` there *exists* a HOL term `[b]` such that
-    // the defining properties are derivable in pure HOL —
-    // existence-without-construction, the same principle as "a standard
-    // theorem means a derivation exists". Whenever the native computation
-    // yields `op(args) = r`, the HOL equation `op ⌜args⌝ = ⌜r⌝` is derivable
-    // in pure HOL from the op's definitional equations on the literal
-    // denotations; each family rule is a certified shortcut that never adds
-    // strength. Every rule derives its whole conclusion from the input
-    // (selector + native args; the selector only fires on the canonical
-    // catalogue handle, by pointer identity), so it is sound on ALL inputs.
-
-    /// `nat.*` arithmetic / comparison certificate:
-    /// `⊢ IsThm(∅, ⌜op ⌜args⌝ = ⌜op(args)⌝⌝)` for the canonical `nat.pred` /
-    /// `add` / `mul` / `sub` / `div` / `mod` / `pow` / `shl` / `shr` /
-    /// `bitAnd` / `bitOr` / `bitXor` / `le` / `lt` handles.
-    ///
-    /// ## Soundness
-    ///
-    /// The family contract above, plus the FORCED edge-case conventions
-    /// (pinned by `covalence-pure-eval`'s semantics suite):
-    /// saturating `pred`/`sub`; `n / 0 = 0` and **`n mod 0 = n`** (forced by
-    /// `nat.mod`'s let-style body `λn m. n - (n/m)*m`, which at `m = 0`
-    /// evaluates to `n`; any other value would let definitional unfolding
-    /// derive `⊢ False`); detectably-unrepresentable results REFUSE (`None`
-    /// from the fallible `CanonRule::eval` — oversize `pow` exponents on a
-    /// base ≥ 2, oversize `shl` shifts on a non-zero operand; `shr` is total).
-    NatArithCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
-        certs::nat_arith(&spec, &args)
-            .and_then(|eq| seq(Ctx::new(), eq))
-            .map_err(to_pure)
-    }
-
-    /// The kernel-primitive successor certificate:
-    /// `⊢ IsThm(∅, ⌜succ ⌜n⌝ = ⌜n + 1⌝⌝)` (`succ` is [`TermKind::Succ`], not
-    /// a catalogue spec, hence no `TermSpec` selector).
-    ///
-    /// ## Soundness
-    ///
-    /// The family contract above: `succ` on the literal denotations is
-    /// exactly native `n + 1` (the `nat.succ` pure-eval `CanonRule`).
-    SuccCert(Nat) -> CoreProp = |n, _| {
-        certs::succ_concl(&n)
-            .and_then(|eq| seq(Ctx::new(), eq))
-            .map_err(to_pure)
-    }
-
-    /// `int.*` arithmetic / comparison certificate for the canonical
-    /// `int.succ` / `pred` / `neg` / `abs` / `sgn` / `add` / `mul` / `sub` /
-    /// `div` / `mod` / `le` / `lt` handles (`abs : int → nat`).
-    ///
-    /// ## Soundness
-    ///
-    /// The family contract above, plus the FORCED conventions: truncating
-    /// division, remainder takes the dividend's sign, and `a / 0 = 0`,
-    /// **`a mod 0 = a`** — forced by `int.div`/`int.mod`'s let-style
-    /// catalogue bodies exactly as for `nat.mod`.
-    IntArithCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
-        certs::int_arith(&spec, &args)
-            .and_then(|eq| seq(Ctx::new(), eq))
-            .map_err(to_pure)
-    }
-
-    /// `bytes.*` certificate for the canonical `bytes.cat` / `consNat` /
-    /// `len` / `at` / `slice` handles.
-    ///
-    /// ## Soundness
-    ///
-    /// The family contract above, plus the conventions: the `consNat`
-    /// operand is reduced mod 256; an out-of-bounds `at` index reads 0;
-    /// `slice (start, len)` saturates to the buffer.
-    BytesCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
-        certs::bytes_cert(&spec, &args)
-            .and_then(|eq| seq(Ctx::new(), eq))
-            .map_err(to_pure)
-    }
-
-    /// The fixed-width `uN`/`sN` certificate, keyed by the canonical
-    /// `defs::int_ops` registry (arithmetic / bitwise / shifts / comparisons
-    /// / `zext`/`sext` casts / nat-int conversions).
-    ///
-    /// ## Soundness
-    ///
-    /// The family contract above, plus the conventions: arithmetic wraps mod
-    /// `2^width`; signed/unsigned `div`/`rem`/`shr`/comparisons read the
-    /// operand's tag; shift amounts are taken mod width; and `x / 0 = 0`,
-    /// **`x rem 0 = x`** — forced by the ops' let-style catalogue bodies
-    /// through `int.div`/`int.mod` (see `defs::int_ops::op_body`).
-    FixedWidthCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
-        certs::fixed_width(&spec, &args)
-            .and_then(|eq| seq(Ctx::new(), eq))
-            .map_err(to_pure)
-    }
-
-    /// Closed literal (dis)equality certificate:
-    /// `⊢ IsThm(∅, ⌜(a = b) = ⌜a == b⌝⌝)` for two same-kind literals
-    /// (`Bool`/`Nat`/`Int`/`SmallInt`/`Bytes`) — equality AND disequality
-    /// (`⊢ (a = b) = F`) decided natively.
-    ///
-    /// ## Soundness
-    ///
-    /// The family contract above, resting on the kernel's literal
-    /// denotational commitment: literals denote the standard values, and two
-    /// same-kind literals are equal iff structurally equal (distinct
-    /// literals denote distinct values — what makes the `F` direction
-    /// sound). Mixed kinds refuse.
-    LitEqCert((certs::Lit, certs::Lit)) -> CoreProp = |(a, b), _| {
-        certs::lit_eq(&a, &b)
-            .and_then(|eq| seq(Ctx::new(), eq))
-            .map_err(to_pure)
-    }
-
-    /// nat ↔ int / bytes coercion certificate for the canonical `nat.toInt`
-    /// / `nat.toBytesLe` / `nat.toBytesBe` / `nat.fromBytesLe` /
-    /// `nat.fromBytesBe` handles.
-    ///
-    /// ## Soundness
-    ///
-    /// The family contract above: each coercion on the literal denotations
-    /// is the standard embedding / radix-256 (de)serialisation the catalogue
-    /// op denotes.
-    CoercionCert((TermSpec, Vec<certs::Lit>)) -> CoreProp = |(spec, args), _| {
-        certs::coercion(&spec, &args)
-            .and_then(|eq| seq(Ctx::new(), eq))
-            .map_err(to_pure)
-    }
-    }
-
-    // CanonRule ops admitted for `covalence_pure::canon` under `CoreLang`
-    // (soundness documented on each op — see `crate::tohol`).
-    canon { HolApp }
 }
 
 // ============================================================================

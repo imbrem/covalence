@@ -33,15 +33,16 @@
 //! codepoints — the predicate reduces to `F`). The wrapper-side
 //! round-trip [`mk_code`] is unconditional ([`Thm::spec_abs_rep`]).
 
-use covalence_core::{Error, Result, Term, Thm};
+use covalence_core::{Error, Result, Term};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::{TermExt, ThmExt};
 
-pub use covalence_core::defs::{
+pub use covalence_hol_eval::defs::{
     CHAR_MAX_EXCL, SURROGATE_HI, SURROGATE_LO, char_code, char_mk, char_spec, char_ty,
 };
 
-use covalence_core::defs::{and, char_code_spec, char_mk_spec, nat_lt, or};
+use covalence_hol_eval::defs::{and, char_code_spec, char_mk_spec, nat_lt, or};
 
 // ============================================================================
 // Term helpers (private — the public surface is the lemmas + builders).

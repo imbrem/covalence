@@ -44,8 +44,8 @@ use crate::subst::subst_tfrees_in_term;
 use crate::term::{Term, TermKind, TrustedCons, Type, TypeKind};
 use crate::ty::{TypeList, TypeSpec};
 
-pub(crate) mod certs;
 pub(crate) mod lang;
+pub(crate) mod lit;
 pub(crate) mod rules;
 mod typedef;
 pub use typedef::TypeDef;

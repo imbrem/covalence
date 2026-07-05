@@ -9,8 +9,9 @@
 //! types, definitional-body type-checking, structure, and identity —
 //! never derived equalities like `optionCase d f none = d`.
 
-use covalence_core::defs::*;
 use covalence_core::{Term, TermKind, Type, TypeKind};
+use covalence_hol_eval::defs;
+use covalence_hol_eval::defs::*;
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -354,4 +355,76 @@ fn option_case_collapsing_branch_types() {
         ),
     );
     assert_ty(&option_case(Type::nat(), Type::nat()), &expected);
+}
+
+// ---- moved from covalence-core tests (abs_rep_unit / audit_induct) with
+// ---- the `result` catalogue fixture (stage E2) ----
+
+fn assert_abs_rep_moved(
+    spec: covalence_core::TypeSpec,
+    args: Vec<Type>,
+    carrier: Type,
+    wrapper: Type,
+) {
+    let abs = Term::spec_abs(spec.clone(), args.clone());
+    assert_eq!(
+        abs.type_of().unwrap(),
+        Type::fun(carrier.clone(), wrapper.clone()),
+        "abs : carrier → wrapper"
+    );
+    let rep = Term::spec_rep(spec, args);
+    assert_eq!(
+        rep.type_of().unwrap(),
+        Type::fun(wrapper, carrier),
+        "rep : wrapper → carrier"
+    );
+}
+
+#[test]
+fn result_abs_rep_types() {
+    // carrier of result is `coprod a b`; here a = nat, b = bool.
+    let args = vec![Type::nat(), Type::bool()];
+    let carrier = defs::coprod(Type::nat(), Type::bool());
+    let wrapper = defs::result(Type::nat(), Type::bool());
+
+    let abs = Term::spec_abs(defs::result_spec(), args.clone());
+    assert_eq!(
+        abs.type_of().unwrap(),
+        Type::fun(carrier.clone(), wrapper.clone())
+    );
+
+    let rep = Term::spec_rep(defs::result_spec(), args);
+    assert_eq!(rep.type_of().unwrap(), Type::fun(wrapper, carrier));
+}
+
+#[test]
+fn polymorphic_result_abs_type() {
+    // Two distinct polymorphic args.
+    let a = Type::tfree("a");
+    let b = Type::tfree("b");
+    let abs = Term::spec_abs(defs::result_spec(), vec![a.clone(), b.clone()]);
+    let expected = Type::fun(defs::coprod(a.clone(), b.clone()), defs::result(a, b));
+    assert_eq!(abs.type_of().unwrap(), expected);
+}
+
+#[test]
+fn spec_abs_rep_result_monomorphic() {
+    assert_abs_rep_moved(
+        defs::result_spec(),
+        vec![Type::nat(), Type::bool()],
+        defs::coprod(Type::nat(), Type::bool()),
+        defs::result(Type::nat(), Type::bool()),
+    );
+}
+
+#[test]
+fn spec_abs_rep_result_polymorphic_two_vars() {
+    let a = Type::tfree("a");
+    let b = Type::tfree("b");
+    assert_abs_rep_moved(
+        defs::result_spec(),
+        vec![a.clone(), b.clone()],
+        defs::coprod(a.clone(), b.clone()),
+        defs::result(a, b),
+    );
 }

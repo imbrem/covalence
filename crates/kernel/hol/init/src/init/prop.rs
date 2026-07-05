@@ -85,7 +85,8 @@
 //!
 //! Everything here is genuine: hypothesis-free and oracle-free.
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::eq::beta_nf;
 use crate::init::ext::{TermExt, ThmExt};
@@ -1005,7 +1006,7 @@ pub fn consistency_app() -> Result<Thm> {
     // `rewrite` here: its `rewrite_conv` walks the *whole* `¬derivable(var0)`
     // tree — and that tree is an enormous Church fold — making the rewrite
     // O(size²); the targeted congruence touches only the `¬` head.
-    let not_eq = bridge.sym()?.cong_arg(covalence_core::defs::not())?; // ⊢ ¬reduced = ¬applied
+    let not_eq = bridge.sym()?.cong_arg(covalence_hol_eval::defs::not())?; // ⊢ ¬reduced = ¬applied
     not_eq.eq_mp(thm)
 }
 

@@ -15,7 +15,8 @@
 //! [`super::determinacy`]; only the **ε-assembly** remains specialised to
 //! `nat` (see `SKELETONS.md`).
 
-use covalence_core::{Result, Term, Thm, Type, subst};
+use covalence_core::{Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::data::Inductive;
 use super::graph::{self, CtorInstance};

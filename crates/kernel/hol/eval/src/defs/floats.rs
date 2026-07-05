@@ -2,11 +2,11 @@
 
 use std::sync::LazyLock;
 
-use crate::term::Type;
+use covalence_core::term::Type;
 
-use super::bits::{u32_ty, u64_ty};
-use super::canonical::Canonical;
-use super::spec::TypeSpec;
+use crate::defs::Canonical;
+use crate::defs::TypeSpec;
+use crate::defs::{u32_ty, u64_ty};
 
 /// `f32 := u32` — bitwise.
 pub fn f32_spec() -> TypeSpec {

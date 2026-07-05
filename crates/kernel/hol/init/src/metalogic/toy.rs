@@ -32,7 +32,8 @@
 //! The acceptance test derives `box (box tt)` purely, then projects in one move.
 
 use covalence_core::subst::close;
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::RuleSet;
 use crate::init::ext::{TermExt, ThmExt};

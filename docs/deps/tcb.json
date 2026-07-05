@@ -5,15 +5,12 @@
   ],
   "workspace": [
     "covalence-core",
-    "covalence-parse",
     "covalence-pure",
     "covalence-pure-eval",
     "covalence-pure-trusted",
-    "covalence-sexp",
     "covalence-types"
   ],
   "external": [
-    "arrayvec",
     "borsh",
     "bytes",
     "either",
@@ -23,11 +20,9 @@
     "hashbrown",
     "indexmap",
     "libm",
-    "memchr",
     "num-bigint",
     "num-integer",
     "num-traits",
-    "pretty",
     "proc-macro2",
     "quote",
     "serde",
@@ -37,9 +32,6 @@
     "syn",
     "thiserror",
     "thiserror-impl",
-    "typed-arena",
-    "unicode-ident",
-    "unicode-width",
-    "winnow"
+    "unicode-ident"
   ]
 }

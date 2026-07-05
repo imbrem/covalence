@@ -11,7 +11,8 @@ use std::sync::Arc;
 
 use covalence_alethe::discharge::CachedProof;
 use covalence_alethe::{ProofCache, SmtDischarger, goal_to_problem, smt_tactic};
-use covalence_core::{Term, Type, defs};
+use covalence_core::{Term, Type};
+use covalence_hol_eval::defs;
 use covalence_hol_eval::mk_int;
 use covalence_init::HolLightCtx;
 use covalence_init::script::{Env, Tactic, run};

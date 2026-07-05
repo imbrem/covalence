@@ -71,12 +71,11 @@
 pub mod ctx;
 pub mod defs;
 pub mod error;
-mod hol;
+pub mod hol;
 pub mod seam;
 pub mod subst;
 pub mod term;
 pub mod thm;
-mod tohol;
 pub mod ty;
 
 pub use ctx::Ctx;

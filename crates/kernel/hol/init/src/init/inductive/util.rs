@@ -6,7 +6,8 @@
 //! call sites stay unchanged while the engine ports module-by-module. See
 //! [`super::hol`].
 
-use covalence_core::{Result, Term, TermKind, Thm};
+use covalence_core::{Result, Term, TermKind};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::hol::{self, NativeHol};
 

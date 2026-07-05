@@ -5,35 +5,22 @@ See [`CLAUDE.md`](../../../../CLAUDE.md) § Skeletons and the [root index](../..
 Module-local skeletons: [`src/thm/SKELETONS.md`](src/thm/SKELETONS.md) (the
 `covalence-pure` mint-gate future seams).
 
-## Declaration-only catalogue ops (no definitional body yet)
+## `defs/` residue — dies with the literal leaves (D3)
 
-These `defs/` term-specs carry `tm = None`: sound/complete on literals (via
-the family certificate rules) but no open-form body, so nothing is provable by
-`unfold_term_spec`. Each should become a `let_term!` / `spec_term!` def (see
-`notes/vibes/roadmap.md`); on adding a body, delete here and — if reducible — add to
-`covalence-hol-eval`'s `tests/audit_reduce.rs::audit_reduce_matches_body`.
-
-- **`sN.shr` (arithmetic right shift), `defs/int_ops.rs`** — needs floor-division
-  (round toward −∞), not yet exposed (`int.div` truncates toward zero).
-- **`nat` ops, `defs/nat.rs`** — `natBitAnd/Or/Xor`, `natToBytesLe/Be`,
-  `natFromBytesLe/Be` are declaration-only (`term_decl!`).
-- **`bytes` ops, `defs/blob.rs`** — `bytesConsNat`, `bytesAt` declaration-only
-  (need a `nat ↔ u8` conversion).
-
-(Fixed-width conversions `toNat`/`toInt`/`fromNat`/`fromInt`/`zext`/`sext` in
-`int_ops.rs` are *intentionally* declaration-only — the primitive reducible
-interface, not a stub.)
-
-## defs/core.cov source-of-truth flip (deferred, blocked on re-entrancy)
-
-`core.cov` + the `defs::cov` parser mirror part of the catalogue as data, proven
-byte-identical to the hand-written `defs::*` (`cov::tests`), but the accessors
-still source from Rust. Flipping `defs::*` to source from `core_env()` is
-DEFERRED: a prior attempt deadlocked (a `LazyLock` re-entered the same accessor
-during its own init; reverted in `fed9819`). To redo: `parse_core` must resolve
-references from the partial env under construction (or a build-local Rust
-resolver), never the `core_env`-backed accessors — and must be **test-gated**.
-Porting the numeric tower to data is the remaining follow-up.
+The term-op catalogue moved to `covalence-hol-eval::defs` (stage E2 of
+`notes/vibes/handoff/defs-out-of-core.md`). What remains in `src/defs/` is the
+**D3 transitional residue**: the spec machinery (`spec`/`symbol`/`canonical`/
+`quotient`/`macros`/`helpers`/`sigs`) plus the structural TYPE chain the literal
+leaves' `type_of` forces — `bits` (`u8`…`s512`), `int`, `bytes`, `unit` and
+their carrier closure (`prod`/`coprod`/`option`/`list`/`stream`/`fail`/`cond`,
+the `logic` connectives their bodies quantify with, and the residue term ops
+`nat.{succ,pred,add,le,lt,rec}`/`iter`/`nil`/`cons`/`listFoldr`/`listLength`/
+`finite` + stream accessors). It all leaves core when the literal
+`TermKind::Nat/Int/SmallInt/Blob` variants die in favor of the lazy toHOL base
+expressions (S10/S11); until then every remaining `defs/` file is this one
+skeleton. (`hol.rs` connective builders and the connective/`forall` rules stay
+with `logic.rs` for the same reason — and the pure tier needs them for
+`Thm<CoreLang>` derivations.)
 
 ## Hash-consing not on-by-default
 

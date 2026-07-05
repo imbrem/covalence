@@ -41,7 +41,8 @@
 //! operands keep their original order), so the normal form is canonical for the
 //! chosen key.
 
-use covalence_core::{Result, Term, Thm};
+use covalence_core::{Result, Term};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::ThmExt;
 
@@ -603,7 +604,7 @@ mod tests {
         // `and.comm` / `and.assoc` from `init::logic` (Part 1 → Part 2).
         // `and.comm` / `and.assoc` are free-variable equations over `p, q, r`.
         let e = HolAc::from_free(
-            covalence_core::defs::and(),
+            covalence_hol_eval::defs::and(),
             crate::init::logic::and_assoc(),
             crate::init::logic::and_comm(),
             ["p", "q", "r"],
@@ -643,7 +644,7 @@ mod tests {
     // so the AC tactic decides `∪`/`∩` rearrangements the same way it does
     // `+`/`∧`.
 
-    use covalence_core::defs::{set_intersect, set_union};
+    use covalence_hol_eval::defs::{set_intersect, set_union};
 
     fn set_alpha() -> Type {
         Type::tfree("a")

@@ -1,16 +1,16 @@
 //! Per-family certificate **dispatch**: the `decide` bodies of the
-//! computation-backed `IsThm` certificate rules in `super::rules`
+//! computation-backed `IsThm` certificate rules in `crate::rules`
 //! (`NatArithCert` / `IntArithCert` / `BytesCert` / `FixedWidthCert` /
 //! `LitEqCert` / `CoercionCert` / `SuccCert`).
 //!
 //! Each helper takes an **op selector** (a [`TermSpec`], keyed by canonical
 //! pointer identity — `spec.ptr_id()` against a table built from the
-//! `crate::defs` handles — canonical pointer-identity dispatch) plus
+//! `covalence_core::defs` handles — canonical pointer-identity dispatch) plus
 //! **native argument values** ([`Lit`]), computes the result through the
 //! matching `covalence-pure-eval` [`CanonRule`](covalence_pure::CanonRule)
 //! (the enumerable computation-TCB record — see the `Builtins` manifest
 //! golden), and returns the HOL equation `⊢ op ⌜args⌝ = ⌜result⌝` as a
-//! [`Term`]. The rule bodies in `super::rules` then pass it through the
+//! [`Term`]. The rule bodies in `crate::rules` then pass it through the
 //! `seq` well-typedness floor.
 //!
 //! In-TCB: a wrong table entry or a wrong literal rebuild here would mint a
@@ -32,71 +32,14 @@ use std::sync::LazyLock;
 use covalence_pure::CanonRule as _;
 use covalence_pure_eval as pe;
 use covalence_pure_eval::FwRepr;
-use covalence_types::{Bytes, Int, Nat};
+use covalence_types::{Int, Nat};
 
 use crate::defs;
 use crate::defs::int_ops::{IntOp, OpKey, lookup_op};
-use crate::error::{Error, Result};
-use crate::hol;
-use crate::term::{IntTag, SmallIntLiteral, Term, TermKind, TermSpec, Type};
-
-// ============================================================================
-// Native literal values
-// ============================================================================
-
-/// A native literal value — the argument currency of the family certificate
-/// rules. One variant per kernel literal kind (`Bool` / `Nat` / `Int` /
-/// fixed-width `SmallInt` / `Bytes`).
-///
-/// TRANSITIONAL reify target: [`Lit::to_term`] builds today's kernel literal
-/// leaves (`Term::nat_lit` & co.); at kernel-literal deletion the target
-/// flips to the defined numeral/cons forms and callers don't move.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Lit {
-    Bool(bool),
-    Nat(Nat),
-    Int(Int),
-    Small(SmallIntLiteral),
-    Bytes(Bytes),
-}
-
-impl Lit {
-    /// The kernel literal [`Term`] denoting this value (the transitional
-    /// literal-numeral reify target).
-    pub fn to_term(&self) -> Term {
-        match self {
-            Lit::Bool(b) => Term::bool_lit(*b),
-            Lit::Nat(n) => Term::nat_lit(n.clone()),
-            Lit::Int(i) => Term::int_lit(i.clone()),
-            Lit::Small(l) => Term::small_int(*l),
-            Lit::Bytes(b) => Term::blob(b.clone()),
-        }
-    }
-
-    /// Read a literal leaf back off a [`Term`] — the (untrusted) recognizer
-    /// counterpart of [`Lit::to_term`]. `None` for any non-literal.
-    pub fn from_term(t: &Term) -> Option<Lit> {
-        match t.kind() {
-            TermKind::Bool(b) => Some(Lit::Bool(*b)),
-            TermKind::Nat(n) => Some(Lit::Nat(n.clone())),
-            TermKind::Int(i) => Some(Lit::Int(i.clone())),
-            TermKind::SmallInt(l) => Some(Lit::Small(*l)),
-            TermKind::Blob(b) => Some(Lit::Bytes(b.clone())),
-            _ => None,
-        }
-    }
-
-    /// The HOL type of this literal.
-    fn hol_type(&self) -> Type {
-        match self {
-            Lit::Bool(_) => Type::bool(),
-            Lit::Nat(_) => Type::nat(),
-            Lit::Int(_) => Type::int(),
-            Lit::Small(l) => l.ty(),
-            Lit::Bytes(_) => Type::bytes(),
-        }
-    }
-}
+use covalence_core::hol;
+use covalence_core::seam::Lit;
+use covalence_core::{Error, Result};
+use covalence_core::{IntTag, SmallIntLiteral, Term, TermSpec, Type};
 
 // ============================================================================
 // Families (untrusted classification metadata for drivers)
@@ -107,15 +50,15 @@ impl Lit {
 /// gate stays each family rule's own table + `admits`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrimFamily {
-    /// `nat.*` arithmetic / comparison ([`super::rules::NatArithCert`]).
+    /// `nat.*` arithmetic / comparison ([`crate::rules::NatArithCert`]).
     NatArith,
-    /// `int.*` arithmetic / comparison ([`super::rules::IntArithCert`]).
+    /// `int.*` arithmetic / comparison ([`crate::rules::IntArithCert`]).
     IntArith,
-    /// `bytes.*` ops ([`super::rules::BytesCert`]).
+    /// `bytes.*` ops ([`crate::rules::BytesCert`]).
     Bytes,
-    /// nat ↔ int / bytes coercions ([`super::rules::CoercionCert`]).
+    /// nat ↔ int / bytes coercions ([`crate::rules::CoercionCert`]).
     Coercion,
-    /// The fixed-width `uN`/`sN` ops ([`super::rules::FixedWidthCert`]).
+    /// The fixed-width `uN`/`sN` ops ([`crate::rules::FixedWidthCert`]).
     FixedWidth,
 }
 
@@ -314,7 +257,7 @@ fn int2(args: &[Lit]) -> Result<(&Int, &Int)> {
 // Family dispatch
 // ============================================================================
 
-/// `nat.*` arithmetic / comparison — see [`super::rules::NatArithCert`].
+/// `nat.*` arithmetic / comparison — see [`crate::rules::NatArithCert`].
 pub(crate) fn nat_arith(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     let op = *NAT_TABLE.get(&spec.ptr_id()).ok_or(Error::NotReducible)?;
     let pair = |a: &Nat, b: &Nat| (a.clone(), b.clone());
@@ -377,7 +320,7 @@ pub(crate) fn nat_arith(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
 }
 
 /// The primitive successor on a closed literal — see
-/// [`super::rules::SuccCert`]. (`succ` is a kernel [`TermKind::Succ`] leaf,
+/// [`crate::rules::SuccCert`]. (`succ` is a kernel `TermKind::Succ` leaf,
 /// not a catalogue spec, so it has no `TermSpec` selector.)
 pub(crate) fn succ_concl(n: &Nat) -> Result<Term> {
     let lhs = Term::app(Term::succ(), Term::nat_lit(n.clone()));
@@ -385,7 +328,7 @@ pub(crate) fn succ_concl(n: &Nat) -> Result<Term> {
     Ok(hol::hol_eq_at(Type::nat(), lhs, rhs))
 }
 
-/// `int.*` arithmetic / comparison — see [`super::rules::IntArithCert`].
+/// `int.*` arithmetic / comparison — see [`crate::rules::IntArithCert`].
 pub(crate) fn int_arith(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     let op = *INT_TABLE.get(&spec.ptr_id()).ok_or(Error::NotReducible)?;
     let pair = |a: &Int, b: &Int| (a.clone(), b.clone());
@@ -428,7 +371,7 @@ pub(crate) fn int_arith(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     eq_concl(spec, args, rhs)
 }
 
-/// `bytes.*` — see [`super::rules::BytesCert`].
+/// `bytes.*` — see [`crate::rules::BytesCert`].
 pub(crate) fn bytes_cert(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     let op = *BYTES_TABLE.get(&spec.ptr_id()).ok_or(Error::NotReducible)?;
     let rhs = match (op, args) {
@@ -460,7 +403,7 @@ pub(crate) fn bytes_cert(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     eq_concl(spec, args, rhs)
 }
 
-/// nat ↔ int / bytes coercions — see [`super::rules::CoercionCert`].
+/// nat ↔ int / bytes coercions — see [`crate::rules::CoercionCert`].
 pub(crate) fn coercion(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     let op = *COERCE_TABLE
         .get(&spec.ptr_id())
@@ -486,7 +429,7 @@ pub(crate) fn coercion(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
     eq_concl(spec, args, rhs)
 }
 
-/// Closed literal (dis)equality — see [`super::rules::LitEqCert`]:
+/// Closed literal (dis)equality — see [`crate::rules::LitEqCert`]:
 /// `⊢ (a = b) = ⌜a == b⌝` for two same-kind literals (the kernel's
 /// literal-distinctness commitment: same-kind literals are equal iff
 /// structurally equal). Mixed kinds refuse (the equation would be
@@ -575,7 +518,7 @@ macro_rules! per_tag {
     };
 }
 
-/// The fixed-width `uN`/`sN` ops — see [`super::rules::FixedWidthCert`].
+/// The fixed-width `uN`/`sN` ops — see [`crate::rules::FixedWidthCert`].
 /// Keyed by the canonical `defs::int_ops` registry ([`lookup_op`], pointer
 /// identity); computed by the matching monomorphic pure-eval `Fw*` op.
 pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {

@@ -1,6 +1,6 @@
 //! `init` — the high-level, run-once bootstrap layer.
 //!
-//! This module re-exports the whole `covalence_core::defs` catalogue
+//! This module re-exports the whole `covalence_hol_eval::defs` catalogue
 //! (the type / term definitions) and pairs it with the **proofs** the
 //! kernel deliberately omits — the connective properties, the equality
 //! / rewriting toolkit — expressed through a deliberately high-level
@@ -57,8 +57,8 @@
 macro_rules! cached_thm {
     ($(#[$attr:meta])* $vis:vis fn $name:ident() -> Thm $body:block) => {
         $(#[$attr])*
-        $vis fn $name() -> ::covalence_core::Thm {
-            static CACHE: ::std::sync::LazyLock<::covalence_core::Thm> =
+        $vis fn $name() -> ::covalence_hol_eval::EvalThm {
+            static CACHE: ::std::sync::LazyLock<::covalence_hol_eval::EvalThm> =
                 ::std::sync::LazyLock::new(|| {
                     // `COV_PROFILE=1` prints how long this cached build took.
                     $crate::debug::timed(stringify!($name), || $body)
@@ -68,11 +68,11 @@ macro_rules! cached_thm {
     };
     ($(#[$attr:meta])* $vis:vis fn $name:ident() -> Result<Thm> $body:block) => {
         $(#[$attr])*
-        $vis fn $name() -> ::covalence_core::Thm {
-            static CACHE: ::std::sync::LazyLock<::covalence_core::Thm> =
+        $vis fn $name() -> ::covalence_hol_eval::EvalThm {
+            static CACHE: ::std::sync::LazyLock<::covalence_hol_eval::EvalThm> =
                 ::std::sync::LazyLock::new(|| {
                     $crate::debug::timed(stringify!($name), || {
-                        (|| -> ::covalence_core::Result<::covalence_core::Thm> { $body })()
+                        (|| -> ::covalence_core::Result<::covalence_hol_eval::EvalThm> { $body })()
                             .expect(concat!("init: ", stringify!($name), " derivation"))
                     })
                 });
@@ -122,7 +122,7 @@ pub mod utf8;
 
 /// The full `covalence-core` definition catalogue (types, term
 /// constructors, the `TypeSpec` / `TermSpec` handles, `Canonical`, …).
-pub use covalence_core::defs::*;
+pub use covalence_hol_eval::defs::*;
 
 pub use ext::{TermExt, ThmExt};
 // `truth` lives in the foundational `tauto` layer (it must be reachable without

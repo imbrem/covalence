@@ -34,7 +34,8 @@
 //! *scale-each-literal-by-its-coefficient-and-sum* combination that does
 //! not reduce to a transitivity cycle.
 
-use covalence_core::{Term, Thm};
+use covalence_core::Term;
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_init::init::{int, logic};
 
 use crate::error::BridgeError;
@@ -179,7 +180,7 @@ fn coeff_is_one(a: &covalence_sexp::SExpr) -> bool {
 fn dest_not(t: &Term) -> Option<Term> {
     let (head, p) = t.as_app()?;
     let (spec, _) = head.as_spec()?;
-    spec.ptr_eq(&covalence_core::defs::not_spec())
+    spec.ptr_eq(&covalence_hol_eval::defs::not_spec())
         .then(|| p.clone())
 }
 
@@ -189,7 +190,7 @@ fn dest_lt(t: &Term) -> Option<(Term, Term)> {
     let (f, b) = t.as_app()?;
     let (head, a) = f.as_app()?;
     let (spec, _) = head.as_spec()?;
-    let lt = covalence_core::defs::int_lt();
+    let lt = covalence_hol_eval::defs::int_lt();
     let (lt_spec, _) = lt.as_spec()?;
     spec.ptr_eq(lt_spec).then(|| (a.clone(), b.clone()))
 }

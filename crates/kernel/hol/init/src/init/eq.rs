@@ -45,7 +45,8 @@
 //!   they never reduce under a binder. The lone exception is the strong
 //!   normaliser [`beta_nf`] below, kept for the connective derivations.
 
-use covalence_core::{Error, Result, Term, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::HolLightCtx;
 use crate::init::ext::{TermExt, ThmExt};
@@ -227,7 +228,7 @@ mod tests {
         // `nat.add 1 1` is a `Spec` head applied to literals — no
         // λ-redex anywhere — so β-normalisation returns it unchanged.
         // (NOT unfolded to its body, NOT evaluated to `2`.)
-        let t = covalence_core::defs::nat_add()
+        let t = covalence_hol_eval::defs::nat_add()
             .apply(nat_lit(1))
             .unwrap()
             .apply(nat_lit(1))

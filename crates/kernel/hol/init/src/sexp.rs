@@ -45,7 +45,8 @@
 //! Theorems serialise but do **not** parse back from S-expressions.
 
 use bytes::Bytes;
-use covalence_core::{IntTag, SmallIntLiteral, Term, TermKind, Thm, Type, TypeKind};
+use covalence_core::{IntTag, SmallIntLiteral, Term, TermKind, Type, TypeKind};
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_sexp::{Atom, SExp, SExpr};
 
 /// Errors produced by S-expression parsing of Core terms / types.
@@ -142,7 +143,7 @@ pub fn type_from_sexp(s: &SExpr) -> Result<Type> {
 /// canonical TypeSpec catalogue. This is the round-trip inverse of
 /// the `TypeKind::Spec` printer above.
 fn parse_type_spec(children: &[SExpr]) -> Result<Type> {
-    use covalence_core::defs;
+    use covalence_hol_eval::defs;
 
     if children.len() < 2 {
         return Err(SexpError("spec: missing canonical label".into()));
@@ -178,7 +179,7 @@ fn parse_type_spec(children: &[SExpr]) -> Result<Type> {
 /// `spec-rep`.
 fn spec_coercion_to_sexp(
     head: &str,
-    spec: &covalence_core::defs::TypeSpec,
+    spec: &covalence_hol_eval::defs::TypeSpec,
     args: &[Type],
 ) -> Result<SExpr> {
     let mut children = Vec::with_capacity(2 + args.len());

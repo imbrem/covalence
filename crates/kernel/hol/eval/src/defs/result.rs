@@ -10,12 +10,12 @@
 
 use std::sync::LazyLock;
 
-use crate::hol;
-use crate::term::{Term, Type};
+use covalence_core::hol;
+use covalence_core::term::{Term, Type};
 
-use super::canonical::Canonical;
-use super::coprod::{coprod, inl, inr};
-use super::spec::{TermSpec, TypeSpec};
+use crate::defs::Canonical;
+use crate::defs::{TermSpec, TypeSpec};
+use crate::defs::{coprod, inl, inr};
 
 /// `result 'a 'b := coprod 'a 'b` — WASM component-model result. Just
 /// a distinct *symbol* whose carrier is `coprod 'a 'b`; the disjoint-

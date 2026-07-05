@@ -29,7 +29,7 @@
 //! `none`, so not a `cons`; but `index 1 = some a ≠ none`, so not `nil`),
 //! and list induction would be **false**. With contiguity every list is
 //! `nil` (empty prefix) or `cons x xs` (a `some` head over a shorter
-//! contiguous tail). See [`defs::list_spec`](covalence_core::defs::list_spec).
+//! contiguous tail). See [`defs::list_spec`](covalence_hol_eval::defs::list_spec).
 //!
 //! ## The selector gate
 //!
@@ -73,7 +73,8 @@
 //! [`Inductive`]: crate::init::inductive::Inductive
 //! [`init::nat`]: crate::init::nat
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::eq::{beta_expand, trans_chain};
 use crate::init::ext::{TermExt, ThmExt};
@@ -81,13 +82,13 @@ use crate::init::logic::{exists_elim, exists_intro};
 use crate::init::stream::{const_at, head_const, stream_at, stream_head, stream_mk, stream_tail};
 
 // Re-export the `defs/list.rs` term catalogue (the `*_spec` handles stay
-// in `covalence_core::defs`, reached via the blanket re-export there).
-pub use covalence_core::defs::{
+// in `covalence_hol_eval::defs`, reached via the blanket re-export there).
+pub use covalence_hol_eval::defs::{
     cons, head, list, list_cat, list_filter, list_flatten, list_foldl, list_foldr, list_index,
     list_length, list_map, list_repeat, list_skip, list_take, nil, tail,
 };
 
-use covalence_core::defs::{
+use covalence_hol_eval::defs::{
     finite, finite_spec, head_spec, list_index_spec, list_spec, nat_le, nat_rec, nat_succ, none,
     option, some, stream_const, tail_spec,
 };
@@ -1422,7 +1423,7 @@ pub fn list_env() -> crate::script::Env {
         cat_cons, cat_nil, foldr_cons, foldr_nil, length_cons, length_nil,
     };
     use crate::script::{ConstDef, Env};
-    use covalence_core::defs::{nat_succ, some};
+    use covalence_hol_eval::defs::{nat_succ, some};
 
     let a = Type::tfree("a");
     let b = Type::tfree("b");
@@ -1668,7 +1669,7 @@ mod tests {
         assert!(thm.hyps().is_empty());
         // ⊢ ∃s. list_predicate s
         let expected = Term::app(
-            covalence_core::defs::exists(crate::init::stream::stream(option(alpha()))),
+            covalence_hol_eval::defs::exists(crate::init::stream::stream(option(alpha()))),
             list_pred_op(&alpha()),
         );
         assert_eq!(thm.concl(), &expected);

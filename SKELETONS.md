@@ -21,9 +21,10 @@ Ranked, most blocking first. Each links to the registry where it's detailed.
 5. **Metalogic structural `σ` transport + set.mm-scale rule sets** — transport
    proven only for `id`/`⟹`-homomorphic σ; the metatheory ladder
    (HOL→ZFC, `Metamath-L ≅ native-L`) waits on a reified inductive encoding. [`metalogic`](crates/kernel/hol/init/src/metalogic/SKELETONS.md)
-6. **Declaration-only `covalence-core` catalogue ops** — `nat` bit-ops, nat↔bytes,
+6. **Declaration-only catalogue ops** — `nat` bit-ops, nat↔bytes,
    `bytesConsNat`/`bytesAt`, `sN.shr` carry `tm = None` (sound on literals only,
-   nothing provable by `unfold_term_spec`). [`covalence-core`](crates/kernel/hol/core/SKELETONS.md)
+   nothing provable by `unfold_term_spec`); the catalogue now lives in
+   `covalence-hol-eval::defs` (stage E2). [`covalence-hol-eval`](crates/kernel/hol/eval/SKELETONS.md)
 7. **`list_foldl` + `map`/`filter` clauses and the `bytes`/`string` newtype
    surfacing** — discharge the foldl/map/filter recursor clauses and bridge
    `bytes`/`string` length/index/cat onto the list ops. [`init`](crates/kernel/hol/init/src/init/SKELETONS.md)
@@ -44,7 +45,7 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 
 - **[`covalence-pure`](crates/kernel/base/SKELETONS.md)** — closed-world equality kernel; Stage 0 built, later stages pending.
 - **[`covalence-core`](crates/kernel/hol/core/SKELETONS.md)** — declaration-only catalogue ops.
-- **[`covalence-hol-eval`](crates/kernel/hol/eval/SKELETONS.md)** — untrusted reduction driver; single-step `prove_true`, consumers not yet re-routed.
+- **[`covalence-hol-eval`](crates/kernel/hol/eval/SKELETONS.md)** — the eval tier (`CoreEval` + the moved `defs/` catalogue); declaration-only ops, the `core.cov` flip, single-step `prove_true`.
 - **[`covalence-init`](crates/kernel/hol/init/SKELETONS.md)** — split per module (project loader, theory catalogue, `.cov` script layer, models, regex/spectec grammars, metalogic, peano, ring). (The thin `covalence-hol` surface has no skeletons.)
 - **[`covalence-kernel`](crates/kernel/core/SKELETONS.md)** — empty `facts` observer module; removed legacy prover.
 - **[`covalence-shell`](crates/kernel/shell/SKELETONS.md)** — re-export shell; userspace helpers pending the HOL-on-store stack.

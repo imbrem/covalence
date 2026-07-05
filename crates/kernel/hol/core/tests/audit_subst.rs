@@ -413,27 +413,27 @@ fn type_of_abs_body_uses_binder_type() {
 
 #[test]
 fn type_of_spec_abs_newtype_no_tvars() {
-    // f32 := newtype over u32 (carrier u32, no tvars).
-    // spec_abs(f32) : u32 -> f32.
-    let abs = Term::spec_abs(covalence_core::defs::f32_spec(), Vec::<Type>::new());
+    // s8 := newtype over u8 (carrier u8, no tvars).
+    // spec_abs(s8) : u8 -> s8.
+    let abs = Term::spec_abs(covalence_core::defs::s8_spec(), Vec::<Type>::new());
     let ty = abs.type_of().unwrap();
     let TypeKind::Fun(dom, cod) = ty.kind() else {
         panic!("expected a function type, got {ty:?}");
     };
-    assert_eq!(*dom, covalence_core::defs::u32_ty());
-    assert_eq!(*cod, covalence_core::defs::f32_ty());
+    assert_eq!(*dom, covalence_core::defs::u8_ty());
+    assert_eq!(*cod, covalence_core::defs::s8_ty());
 }
 
 #[test]
 fn type_of_spec_rep_newtype_no_tvars() {
-    // rep(f32) : f32 -> u32 (the reverse of abs).
-    let rep = Term::spec_rep(covalence_core::defs::f32_spec(), Vec::<Type>::new());
+    // rep(s8) : s8 -> u8 (the reverse of abs).
+    let rep = Term::spec_rep(covalence_core::defs::s8_spec(), Vec::<Type>::new());
     let ty = rep.type_of().unwrap();
     let TypeKind::Fun(dom, cod) = ty.kind() else {
         panic!("expected a function type, got {ty:?}");
     };
-    assert_eq!(*dom, covalence_core::defs::f32_ty());
-    assert_eq!(*cod, covalence_core::defs::u32_ty());
+    assert_eq!(*dom, covalence_core::defs::s8_ty());
+    assert_eq!(*cod, covalence_core::defs::u8_ty());
 }
 
 /// Coprod's tagged carrier relation `nat → bool → bool → bool`.
@@ -662,16 +662,17 @@ fn match_types_bool_and_spec_arms() {
     assert!(sub.is_empty());
 
     // A `Spec` pattern with an inner tvar binds it from the target:
-    // `set 'a` vs `set nat` → {a := nat}. This is the path `Def::body`
-    // uses to recover the substitution; without the `Spec` arm it would
-    // erroneously fail (and `Def::body`'s `.expect` would panic).
-    let set_a = covalence_core::defs::set(Type::tfree("a"));
-    let set_nat = covalence_core::defs::set(Type::nat());
+    // `stream 'a` vs `stream nat` → {a := nat}. This is the path
+    // `Def::body` uses to recover the substitution; without the `Spec`
+    // arm it would erroneously fail (and `Def::body`'s `.expect` would
+    // panic).
+    let set_a = covalence_core::defs::stream(Type::tfree("a"));
+    let set_nat = covalence_core::defs::stream(Type::nat());
     let mut sub = BTreeMap::new();
     assert!(subst::match_types(&set_a, &set_nat, &mut sub).is_ok());
     assert_eq!(sub.get("a"), Some(&Type::nat()));
 
-    // Different spec heads do not match (`set 'a` vs `option nat`).
+    // Different spec heads do not match (`stream 'a` vs `option nat`).
     let opt_nat = covalence_core::defs::option(Type::nat());
     let mut sub = BTreeMap::new();
     assert!(subst::match_types(&set_a, &opt_nat, &mut sub).is_err());

@@ -1,6 +1,6 @@
 //! Integration tests for the `int` (Grothendieck `(nat×nat)/~`) and
 //! `rat` (`(int×int)/~` by cross-multiplication) derived types in
-//! `covalence_core::defs`.
+//! `covalence_hol_eval::defs`.
 //!
 //! Two flavours of assertion:
 //!   - **type structure** of the quotient type specs and the op
@@ -13,8 +13,8 @@
 //! semantics live in `covalence-hol-eval`'s `tests/audit_reduce.rs`
 //! (the cert path — the kernel no longer carries an in-TCB reducer).
 
-use covalence_core::defs;
 use covalence_core::{Type, TypeKind};
+use covalence_hol_eval::defs;
 /// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
 type Thm = covalence_core::Thm;
 

@@ -13,7 +13,8 @@
 //! `TermKind::Eq`-headed term, so the helpers here work uniformly on
 //! any equational theorem.
 
-use covalence_core::{Term, Thm};
+use covalence_core::Term;
+use covalence_hol_eval::EvalThm as Thm;
 
 /// Chain TRANS across a non-empty list of equational theorems:
 /// `[A ≡ B, B ≡ C, C ≡ D]` → `A ≡ D`. Panics on an empty list.

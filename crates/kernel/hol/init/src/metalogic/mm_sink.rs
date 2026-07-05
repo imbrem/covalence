@@ -33,7 +33,7 @@
 //! and the assertion is added with the scope still open, the inner database has
 //! exactly what the replay needs at that point.
 
-use covalence_core::Thm;
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::metamath::{
     Assertion, Database, DatabaseSink, Expr, MmError, Proof, Statement, SymbolKind,

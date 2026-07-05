@@ -31,7 +31,7 @@ digraph deps {
   "object";
   "opentheory";
   "parquet";
-  "parse" [style=filled, fillcolor="#ffd6d6"];
+  "parse";
   "proto";
   "pure" [style=filled, fillcolor="#ffd6d6"];
   "pure-eval" [style=filled, fillcolor="#ffd6d6"];
@@ -41,7 +41,7 @@ digraph deps {
   "repl";
   "sat";
   "serve";
-  "sexp" [style=filled, fillcolor="#ffd6d6"];
+  "sexp";
   "shell";
   "smt";
   "spectec";
@@ -78,7 +78,6 @@ digraph deps {
   "client" -> "store";
   "core" -> "pure";
   "core" -> "pure-eval";
-  "core" -> "sexp";
   "core" -> "types";
   "egglog" -> "sexp";
   "egglog" -> "types";
@@ -98,6 +97,7 @@ digraph deps {
   "hol-eval" -> "core";
   "hol-eval" -> "pure";
   "hol-eval" -> "pure-eval";
+  "hol-eval" -> "sexp";
   "hol-eval" -> "types";
   "init" -> "core";
   "init" -> "grammar";

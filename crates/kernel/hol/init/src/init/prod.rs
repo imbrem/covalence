@@ -42,7 +42,8 @@
 //! `a = c` and `b = d` (apply both relations to `a`, `b` and read off the
 //! conjuncts), which both projections and injectivity ride on.
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{exists_elim, exists_intro};
@@ -102,9 +103,17 @@ pub fn prod_env() -> crate::script::Env {
     e.define_lemma("snd.pair", sp);
 
     // ⊢ ∀p : prod 'a 'b. pair (fst p) (snd p) = p
-    let p = Term::free("p", covalence_core::defs::prod(alpha.clone(), beta.clone()));
+    let p = Term::free(
+        "p",
+        covalence_hol_eval::defs::prod(alpha.clone(), beta.clone()),
+    );
     let surj = surjective_pairing(&alpha, &beta, &p)
-        .and_then(|t| t.all_intro("p", covalence_core::defs::prod(alpha.clone(), beta.clone())))
+        .and_then(|t| {
+            t.all_intro(
+                "p",
+                covalence_hol_eval::defs::prod(alpha.clone(), beta.clone()),
+            )
+        })
         .expect("prod_env: surjective.pairing");
     e.define_lemma("surjective.pairing", surj);
 
@@ -146,10 +155,10 @@ mod cov_tests {
 }
 
 // Re-export the `defs/prod.rs` term catalogue (the `*_spec` handles stay
-// in `covalence_core::defs`, reached via the blanket re-export there).
-pub use covalence_core::defs::{fst, pair, prod, snd};
+// in `covalence_hol_eval::defs`, reached via the blanket re-export there).
+pub use covalence_hol_eval::defs::{fst, pair, prod, snd};
 
-use covalence_core::defs::{fst_spec, pair_spec, prod_spec, snd_spec};
+use covalence_hol_eval::defs::{fst_spec, pair_spec, prod_spec, snd_spec};
 
 // ============================================================================
 // Term helpers (private — the public surface is the clauses).

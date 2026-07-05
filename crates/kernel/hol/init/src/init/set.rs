@@ -54,21 +54,22 @@
 //!
 //! [`init::nat`]: crate::init::nat
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::eq::{delta_head, spine, trans_chain};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{prop_eq, truth};
 
 // Re-export the `defs/set.rs` term catalogue (the `*_spec` handles stay
-// in `covalence_core::defs`, reached via the blanket re-export there).
-pub use covalence_core::defs::{
+// in `covalence_hol_eval::defs`, reached via the blanket re-export there).
+pub use covalence_hol_eval::defs::{
     list_elems, set, set_all, set_any, set_card, set_card_opt, set_diff, set_empty, set_finite,
     set_flatten, set_image, set_insert, set_intersect, set_is_empty, set_mem, set_min, set_mk,
     set_preimage, set_singleton, set_subset, set_union,
 };
 
-use covalence_core::defs::{
+use covalence_hol_eval::defs::{
     set_diff_spec, set_empty_spec, set_insert_spec, set_intersect_spec, set_mem_spec, set_mk_spec,
     set_singleton_spec, set_spec, set_subset_spec, set_union_spec,
 };

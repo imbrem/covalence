@@ -11,16 +11,17 @@
 //! This is the foundation under `list α := stream (option α) where
 //! finite`, hence under `set.finite` / `set.card`.
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::coprod::{case_inl, case_inr, cases, inl, inl_ne_inr, inr};
 use crate::init::eq::delta_head;
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{exists_elim, exists_intro, truth};
 
-pub use covalence_core::defs::{is_some, none, option, option_case, some, unwrap};
+pub use covalence_hol_eval::defs::{is_some, none, option, option_case, some, unwrap};
 
-use covalence_core::defs::{option_spec, unit_nil};
+use covalence_hol_eval::defs::{option_spec, unit_nil};
 
 // ============================================================================
 // The `.cov` proof-script layer for `option`.

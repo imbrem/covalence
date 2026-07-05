@@ -57,7 +57,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use covalence_core::{Result, Term, Thm};
+use covalence_core::{Result, Term};
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_sexp::SExpr;
 
 use crate::init::ext::TermExt;
@@ -844,14 +845,14 @@ impl EdgeMap {
 // ============================================================================
 
 fn dest_and(t: &Term) -> Option<(Term, Term)> {
-    let and = covalence_core::defs::and();
+    let and = covalence_hol_eval::defs::and();
     let (f, b) = t.as_app()?;
     let (h, a) = f.as_app()?;
     (*h == and).then(|| (a.clone(), b.clone()))
 }
 
 fn dest_not(t: &Term) -> Option<Term> {
-    let not = covalence_core::defs::not();
+    let not = covalence_hol_eval::defs::not();
     let (h, p) = t.as_app()?;
     (*h == not).then(|| p.clone())
 }
@@ -904,7 +905,7 @@ fn dest_imp_concl(thm: &Thm) -> Result<(Term, Term)> {
     let (h, a) = f
         .as_app()
         .ok_or_else(|| err(format!("expected `p ⟹ q`, got `{c}`")))?;
-    if *h != covalence_core::defs::imp() {
+    if *h != covalence_hol_eval::defs::imp() {
         return Err(err(format!("expected `⟹`, got `{c}`")));
     }
     Ok((a.clone(), b.clone()))
@@ -919,7 +920,7 @@ fn dest_imp_concl(thm: &Thm) -> Result<(Term, Term)> {
 pub fn nat_partial_order() -> PartialOrder {
     use crate::init::nat;
     PartialOrder::from_laws(
-        covalence_core::defs::nat_le(),
+        covalence_hol_eval::defs::nat_le(),
         nat::le_refl(),
         nat::le_trans(),
         nat::le_antisym(),
@@ -933,8 +934,8 @@ pub fn nat_partial_order() -> PartialOrder {
 pub fn int_partial_order() -> Result<PartialOrder> {
     use crate::init::int;
     from_strict(
-        covalence_core::defs::int_le(),
-        covalence_core::defs::int_lt(),
+        covalence_hol_eval::defs::int_le(),
+        covalence_hol_eval::defs::int_lt(),
         covalence_core::Type::int(),
         int::le_def(),
         int::lt_irrefl(),

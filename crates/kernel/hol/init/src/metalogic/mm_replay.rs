@@ -48,7 +48,8 @@
 
 use std::collections::HashMap;
 
-use covalence_core::{Error, Result, Term, Thm};
+use covalence_core::{Error, Result, Term};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::prop;
 use crate::metamath::expr::{body_of, typecode_of};

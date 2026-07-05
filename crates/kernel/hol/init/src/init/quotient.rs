@@ -1,6 +1,6 @@
 //! Quotient lifting — `base / rel` reasoning, derived (no postulates).
 //!
-//! A quotient `TypeSpec` ([`TypeSpec::quot`](covalence_core::defs::TypeSpec))
+//! A quotient `TypeSpec` ([`TypeSpec::quot`](covalence_hol_eval::defs::TypeSpec))
 //! is **literally a subtype of the powerset** `base → bool`: an element is
 //! an equivalence class, represented as the set of its members. So the
 //! kernel's witness-free subtype laws ([`Thm::spec_abs_rep`] /
@@ -46,8 +46,9 @@
 //! `symm`/`trans`/`or_elim` proof), only the single membership equation
 //! `classOf a = classOf z`.
 
-use covalence_core::defs::TypeSpec;
-use covalence_core::{Error, Result, Term, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs::TypeSpec;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic;
@@ -249,7 +250,7 @@ pub fn round_trip(
 /// **Converse lifting.** From `eq : Γ ⊢ mkClass a = mkClass b` conclude
 /// `Γ ⊢ rel a b`. The dual of [`class_intro`], for dis-equations and
 /// order: a class equation now *implies* the underlying `~`-fact, because
-/// the [junk-free `quot`](covalence_core::defs::TypeSpec::quot) predicate
+/// the [junk-free `quot`](covalence_hol_eval::defs::TypeSpec::quot) predicate
 /// makes every inhabitant exactly one class.
 ///
 /// `a`, `b` are passed explicitly (they cannot be read off `mkClass a`,
@@ -434,7 +435,7 @@ pub fn recon(
 mod tests {
     use super::*;
     use crate::init::ext::TermExt;
-    use covalence_core::defs::TypeSpec;
+    use covalence_hol_eval::defs::TypeSpec;
 
     /// Symmetry / transitivity of `=` at `nat`, as the ∀-theorems
     /// `class_intro` expects.

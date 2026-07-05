@@ -35,7 +35,8 @@
 //! kernel's existing `nat` operations and `bool` connectives.
 
 use covalence_core::subst::close;
-use covalence_core::{Term, Type, defs};
+use covalence_core::{Term, Type};
+use covalence_hol_eval::defs;
 use covalence_hol_eval::mk_nat;
 use covalence_types::Nat;
 

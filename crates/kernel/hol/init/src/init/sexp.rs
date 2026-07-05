@@ -30,7 +30,8 @@
 //! - reconstruction lemmas: [`atom_ne_nil`], [`atom_ne_cons`],
 //!   [`nil_ne_cons`] (all genuine kernel theorems via `tree` freeness).
 
-use covalence_core::{Result, Term, Thm, Type, subst};
+use covalence_core::{Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::option::{none, some, some_ne_none};
@@ -38,7 +39,7 @@ use crate::init::tree;
 
 /// `option α` — the element type of the `tree` underlying `sexp α`.
 pub fn sexp_elem_ty(alpha: &Type) -> Type {
-    covalence_core::defs::option(alpha.clone())
+    covalence_hol_eval::defs::option(alpha.clone())
 }
 
 /// `sexp α = tree (option α)` (at the encoding's polymorphic result `'r`).

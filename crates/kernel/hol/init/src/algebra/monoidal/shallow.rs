@@ -8,8 +8,9 @@
 //! [`init::coprod`](mod@crate::init::coprod). So a shallow point-free
 //! proof is an outright HOL theorem — nothing is postulated.
 
-use covalence_core::defs::coprod_spec;
-use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
+use covalence_core::{Error, Result, Term, Type, TypeKind};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs::coprod_spec;
 
 use crate::algebra::category::{Category, Hol};
 use crate::algebra::monoidal::Monoidal;

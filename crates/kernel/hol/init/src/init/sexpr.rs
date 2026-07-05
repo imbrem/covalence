@@ -38,7 +38,8 @@
 //! Distinct constructor applications are distinct HOL terms, so this is
 //! genuine reified syntax (not a shallow embedding).
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::TermExt;
 
@@ -261,7 +262,7 @@ mod tests {
         let fnil = Term::nat_lit(covalence_types::Nat::from_inner(0u32.into()));
         // fc = λx y:nat. succ y
         let y = Term::free("y", nat_r());
-        let succ_y = Term::app(covalence_core::defs::nat_succ(), y.clone());
+        let succ_y = Term::app(covalence_hol_eval::defs::nat_succ(), y.clone());
         let inner = Term::abs(nat_r(), covalence_core::subst::close(&succ_y, "y"));
         let fc = Term::abs(nat_r(), inner); // x ignored
         (fa, fnil, fc)

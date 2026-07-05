@@ -38,7 +38,8 @@
 //! in [`super::determinacy`]; only the ε-assembly remains in
 //! [`crate::init::recursion`] (see `SKELETONS.md`).
 
-use covalence_core::{Result, Term, Thm, Type, subst};
+use covalence_core::{Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::data::Inductive;
 use super::graph;

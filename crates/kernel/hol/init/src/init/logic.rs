@@ -2,7 +2,7 @@
 //! re-exported, plus the *proved* properties the kernel deliberately
 //! omits.
 //!
-//! `covalence_core::defs::logic` only **defines** `∧ ∨ ¬ ⟹ ⟺ ∀ ∃`
+//! `covalence_hol_eval::defs::logic` only **defines** `∧ ∨ ¬ ⟹ ⟺ ∀ ∃`
 //! (each as a `TermSpec` body); the kernel-separation discipline
 //! forbids it from proving anything. This is where the expected facts
 //! — `⊢ T`, commutativity of `∧` / `∨`, … — get **derived**, using the
@@ -29,13 +29,14 @@
 //!   [`eq::beta_nf`](crate::init::eq::beta_nf)), with [`tauto`] and
 //!   [`decide`] deciding trivial (anti)tautologies on top of it.
 
-pub use covalence_core::defs::{
+pub use covalence_hol_eval::defs::{
     and, and_spec, exists, exists_spec, forall, forall_spec, iff, iff_spec, imp, imp_spec, not,
     not_spec, or, or_spec,
 };
 
-use covalence_core::defs::cond_spec;
-use covalence_core::{Error, Result, Term, Thm, Type, TypeKind};
+use covalence_core::{Error, Result, Term, Type, TypeKind};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs::cond_spec;
 
 use crate::init::cond::{cond_false, cond_true};
 use crate::init::ext::{TermExt, ThmExt};
@@ -1226,7 +1227,7 @@ fn iff_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
 
 /// Parse a binary-connective application `App(App(op, a), b)` →
 /// `(op_spec, a, b)`. Callers filter on the spec by `ptr_eq`.
-fn parse_binop(t: &Term) -> Option<(covalence_core::defs::TermSpec, Term, Term)> {
+fn parse_binop(t: &Term) -> Option<(covalence_hol_eval::defs::TermSpec, Term, Term)> {
     let (f, b) = t.as_app()?;
     let (head, a) = f.as_app()?;
     let (spec, _) = head.as_spec()?;
@@ -1546,7 +1547,7 @@ mod tests {
     #[test]
     fn normalize_and_tauto_decide_closed_arithmetic() {
         // tauto now folds closed arithmetic, not just connectives.
-        let two_plus_two = covalence_core::defs::int_add()
+        let two_plus_two = covalence_hol_eval::defs::int_add()
             .apply(covalence_hol_eval::mk_int(2))
             .unwrap()
             .apply(covalence_hol_eval::mk_int(2))
@@ -1554,7 +1555,7 @@ mod tests {
         let goal = two_plus_two.equals(covalence_hol_eval::mk_int(4)).unwrap(); // (2+2 = 4)
         assert!(tauto(&goal).is_ok(), "tauto proves a closed integer fact");
         // The false version: 2 + 2 = 5 → decide proves its negation.
-        let bad = covalence_core::defs::int_add()
+        let bad = covalence_hol_eval::defs::int_add()
             .apply(covalence_hol_eval::mk_int(2))
             .unwrap()
             .apply(covalence_hol_eval::mk_int(2))

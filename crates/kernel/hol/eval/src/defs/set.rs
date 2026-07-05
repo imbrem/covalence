@@ -24,14 +24,14 @@
 
 use std::sync::LazyLock;
 
-use crate::hol;
-use crate::term::{Term, Type};
+use covalence_core::hol;
+use covalence_core::term::{Term, Type};
 
-use super::canonical::Canonical;
-use super::list::{list, list_index, list_length};
-use super::nat::nat_le;
-use super::option::{none, some};
-use super::spec::{TermSpec, TypeSpec};
+use crate::defs::Canonical;
+use crate::defs::nat_le;
+use crate::defs::{TermSpec, TypeSpec};
+use crate::defs::{list, list_index, list_length};
+use crate::defs::{none, some};
 
 /// `set 'a := 'a → bool` — predicate-style sets.
 pub fn set_spec() -> TypeSpec {

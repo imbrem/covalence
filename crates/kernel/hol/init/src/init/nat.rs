@@ -49,15 +49,17 @@
 //!   [`le_add_r`] (`a ≤ a + k`) and [`le_add_sub`]
 //!   (`a ≤ b ⟹ a + (b - a) = b`), making `≤` a full linear order.
 
-use covalence_core::{Error, Result, Term, Thm, Type, defs, subst};
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs;
 use covalence_types::Nat;
 
 use crate::init::eq::{beta_expand, beta_nf_concl, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
 
 // Re-export the `defs/nat.rs` term catalogue (the operations; the
-// `*_spec` handles stay in `covalence_core::defs`).
-pub use covalence_core::defs::{
+// `*_spec` handles stay in `covalence_hol_eval::defs`).
+pub use covalence_hol_eval::defs::{
     iter, nat_add, nat_div, nat_le, nat_lt, nat_mod, nat_mul, nat_pow, nat_pred, nat_rec, nat_shl,
     nat_shr, nat_sub, nat_succ, nat_to_int,
 };

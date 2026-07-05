@@ -602,28 +602,6 @@ fn spec_abs_rep_option_polymorphic() {
 }
 
 #[test]
-fn spec_abs_rep_result_monomorphic() {
-    assert_abs_rep(
-        defs::result_spec(),
-        vec![Type::nat(), Type::bool()],
-        defs::coprod(Type::nat(), Type::bool()),
-        defs::result(Type::nat(), Type::bool()),
-    );
-}
-
-#[test]
-fn spec_abs_rep_result_polymorphic_two_vars() {
-    let a = Type::tfree("a");
-    let b = Type::tfree("b");
-    assert_abs_rep(
-        defs::result_spec(),
-        vec![a.clone(), b.clone()],
-        defs::coprod(a.clone(), b.clone()),
-        defs::result(a, b),
-    );
-}
-
-#[test]
 fn spec_abs_rep_coprod() {
     // carrier of coprod a b is the tagged relation `a → b → bool → bool`.
     let carrier = Type::fun(
@@ -698,10 +676,11 @@ fn spec_abs_rejects_carrier_less_spec() {
     // A `TermSpec` constant (e.g. `forall_spec`) is not a TypeSpec, so
     // we instead probe a TypeSpec whose `ty()` is None. The logic
     // connectives are term specs; for a carrier-less *type* spec we look
-    // for one whose `ty()` returns None. `set`/`rel` may be carrier-
-    // less. Find one dynamically and assert spec_abs errors on it.
+    // for one whose `ty()` returns None (residue specs only — the
+    // `set`/`rel` fixtures moved to `covalence-hol-eval`). Find one
+    // dynamically and assert spec_abs errors on it.
     let candidates: Vec<covalence_core::TypeSpec> =
-        vec![defs::set_spec(), defs::rel_spec(), defs::stream_spec()];
+        vec![defs::stream_spec(), defs::option_spec(), defs::prod_spec()];
     let carrier_less: Vec<_> = candidates
         .into_iter()
         .filter(|s| s.ty().is_none())

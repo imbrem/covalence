@@ -2,11 +2,11 @@
 
 use std::sync::LazyLock;
 
-use crate::hol;
-use crate::term::{Term, Type};
+use covalence_core::hol;
+use covalence_core::term::{Term, Type};
 
-use super::canonical::Canonical;
-use super::spec::TypeSpec;
+use crate::defs::Canonical;
+use crate::defs::TypeSpec;
 
 /// `rel 'a 'b := 'a → 'b → bool`.
 pub fn rel_spec() -> TypeSpec {

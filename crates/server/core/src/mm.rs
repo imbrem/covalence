@@ -233,7 +233,7 @@ fn graph_item(db: &covalence_init::metamath::Database, label: &str) -> Value {
 
 /// Build the proved-result JSON for one finished theorem (stored in `results`
 /// and broadcast over the status WS).
-fn proved_result(result: &covalence_core::Result<covalence_core::Thm>, import_ms: f64) -> Value {
+fn proved_result(result: &covalence_core::Result<covalence_init::Thm>, import_ms: f64) -> Value {
     match result {
         Ok(thm) => {
             let full = format!("{}", thm.concl());

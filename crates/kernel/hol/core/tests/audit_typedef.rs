@@ -125,15 +125,15 @@ fn define_accepts_polymorphic_body() {
 #[test]
 fn define_polymorphic_over_spec_type_instantiates_without_panic() {
     // A `Def` whose body type is a `Spec` carrying a tvar (`set 'a`).
-    // After `inst_tfree 'a := nat`, `Def::instance_type()` is `set nat`
-    // ≠ the recorded `body_type` `set 'a`, so `Def::body()` must recover
-    // the substitution via `match_types(set 'a, set nat)`. Before
+    // After `inst_tfree 'a := nat`, `Def::instance_type()` is `stream nat`
+    // ≠ the recorded `body_type` `stream 'a`, so `Def::body()` must recover
+    // the substitution via `match_types(stream 'a, stream nat)`. Before
     // `match_types` learned the `Spec` arm this panicked; forcing
     // `Def::body()` below must now succeed.
     let alpha = Type::tfree("a");
-    let set_a = covalence_core::defs::set(alpha.clone());
+    let set_a = covalence_core::defs::stream(alpha.clone());
     let body = Term::free("s", set_a.clone());
-    let thm = Thm::define("poly_set", body).expect("define over set 'a");
+    let thm = Thm::define("poly_set", body).expect("define over stream 'a");
     // body_type is set 'a; no instantiation yet.
     let inst = thm
         .inst_tfree("a", Type::nat())
@@ -145,7 +145,10 @@ fn define_polymorphic_over_spec_type_instantiates_without_panic() {
     };
     // Forces Def::body() -> match_types(set 'a, set nat).
     let _ = d.body();
-    assert_eq!(d.instance_type(), &covalence_core::defs::set(Type::nat()));
+    assert_eq!(
+        d.instance_type(),
+        &covalence_core::defs::stream(Type::nat())
+    );
 }
 
 // ===========================================================================

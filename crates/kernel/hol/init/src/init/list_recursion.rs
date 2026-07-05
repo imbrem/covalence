@@ -21,13 +21,14 @@
 //! catalogue equations — a *catamorphic* specialisation of the paramorphic
 //! recursor the engine produces).
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::inductive::{Arg, Constructor, Inductive, InductiveSig};
 use crate::init::list::{cons_inj, list_induct, nil_ne_cons};
 
-use covalence_core::defs::{cons, list, nil, option};
+use covalence_hol_eval::defs::{cons, list, nil, option};
 
 /// The element type `α` the adapter is specialised at.
 fn elem() -> Type {
@@ -131,7 +132,8 @@ fn cons_app(x: &Term, xs: &Term) -> Result<Term> {
 
 use crate::init::eq::{beta_expand, beta_nf, beta_reduce};
 use crate::init::logic::{exists_elim, exists_intro};
-use covalence_core::{defs, subst};
+use covalence_core::subst;
+use covalence_hol_eval::defs;
 
 /// `β` — the fold's result type (the catalogue's generic `b`).
 fn fold_beta() -> Type {
@@ -618,7 +620,7 @@ mod tests {
         let base = conj.clone().and_elim_l().unwrap(); // foldr f z nil = z
         assert!(base.hyps().is_empty());
         let (lhs, rhs) = base.concl().as_eq().unwrap();
-        let foldr = covalence_core::defs::list_foldr(elem(), super::fold_beta());
+        let foldr = covalence_hol_eval::defs::list_foldr(elem(), super::fold_beta());
         let foldr_f_z_nil = Term::app(
             Term::app(Term::app(foldr.clone(), f.clone()), z.clone()),
             nil(elem()),
@@ -702,7 +704,7 @@ mod tests {
         let nil_eq = super::foldr_nil(&elem(), &super::fold_beta(), &f, &z).unwrap();
         assert!(nil_eq.hyps().is_empty());
         let (l, r) = nil_eq.concl().as_eq().unwrap();
-        let foldr = covalence_core::defs::list_foldr(elem(), super::fold_beta());
+        let foldr = covalence_hol_eval::defs::list_foldr(elem(), super::fold_beta());
         assert_eq!(
             l,
             &Term::app(
@@ -724,7 +726,7 @@ mod tests {
         let (l, r) = ln.concl().as_eq().unwrap();
         assert_eq!(
             l,
-            &Term::app(covalence_core::defs::list_length(elem()), nil(elem()))
+            &Term::app(covalence_hol_eval::defs::list_length(elem()), nil(elem()))
         );
         assert_eq!(r, &Term::nat_lit(0u32));
 
@@ -738,11 +740,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             l,
-            &Term::app(covalence_core::defs::list_length(elem()), consed)
+            &Term::app(covalence_hol_eval::defs::list_length(elem()), consed)
         );
         let expected_r = Term::app(
-            covalence_core::defs::nat_succ(),
-            Term::app(covalence_core::defs::list_length(elem()), xs.clone()),
+            covalence_hol_eval::defs::nat_succ(),
+            Term::app(covalence_hol_eval::defs::list_length(elem()), xs.clone()),
         );
         assert_eq!(r, &expected_r);
     }
@@ -755,7 +757,7 @@ mod tests {
         let cn = super::cat_nil(&elem(), &ys).unwrap();
         assert!(cn.hyps().is_empty());
         let (l, r) = cn.concl().as_eq().unwrap();
-        let cat = covalence_core::defs::list_cat(elem());
+        let cat = covalence_hol_eval::defs::list_cat(elem());
         assert_eq!(
             l,
             &Term::app(Term::app(cat.clone(), nil(elem())), ys.clone())

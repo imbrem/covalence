@@ -11,10 +11,10 @@
 //! `const` is a Rust keyword; the catalogue label is still
 //! `"fun.const"`.)
 
-use crate::hol;
-use crate::term::{Term, Type};
+use covalence_core::hol;
+use covalence_core::term::{Term, Type};
 
-use super::canonical::Canonical;
+use crate::defs::Canonical;
 
 fn id_body() -> Term {
     // λx:'a. x

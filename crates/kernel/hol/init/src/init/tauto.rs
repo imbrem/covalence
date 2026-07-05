@@ -15,7 +15,7 @@
 //! (`and.assoc`, …). Everything the deciders need is **exported** from
 //! `tauto.cov` for that re-export.
 
-use covalence_core::Thm;
+use covalence_hol_eval::EvalThm as Thm;
 
 /// The `tauto` **inference** — a trivial-tautology decider usable in **both**
 /// proof modes: as a `#by` tactic `(tauto)` closing the current goal, and as a

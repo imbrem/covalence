@@ -38,7 +38,8 @@
 
 use std::collections::HashMap;
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use super::fol::Fol;
 use super::{deep, mm_pa};
@@ -903,7 +904,7 @@ mod tests {
 
     use crate::init::ext::{TermExt, ThmExt};
     use crate::init::nat::{add, succ, zero};
-    use covalence_core::defs;
+    use covalence_hol_eval::defs;
 
     /// `P(x) := (x + 0 = x)` as an open `Fol` whose setvar is `FVar(k)`.
     fn add_zero_motive(k: u64) -> Fol {

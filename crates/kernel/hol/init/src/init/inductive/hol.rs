@@ -37,7 +37,8 @@
 //! `determinacy` / `recursor` proofs (the `Inductive` trait → `Inductive<H>`).
 //! See `SKELETONS.md`.
 
-use covalence_core::{Error, Result, Term, TermKind, Thm, Type, subst};
+use covalence_core::{Error, Result, Term, TermKind, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::TermExt;
 

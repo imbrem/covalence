@@ -17,7 +17,8 @@
 //! [`specialize`](Semiring::specialize) → `Thm::all_elim`,
 //! [`cong_add`](Semiring::cong_add) → `cong_arg`/`cong_app`).
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::mk_int;
 
 use crate::algebra::semiring::Semiring;

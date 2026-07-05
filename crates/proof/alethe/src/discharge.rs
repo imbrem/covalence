@@ -33,7 +33,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use covalence_core::{Term, Thm};
+use covalence_core::Term;
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_init::HolLightCtx;
 use covalence_smt::{AletheProof, SmtProblem, SmtSolver, parse_alethe};
 use covalence_types::Decision;

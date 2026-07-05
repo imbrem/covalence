@@ -55,7 +55,9 @@
 
 use std::collections::HashMap;
 
-use covalence_core::{Term, Thm, Type, defs};
+use covalence_core::{Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs;
 use covalence_hol_eval::mk_int;
 use covalence_init::HolLightCtx;
 use covalence_init::init::logic;

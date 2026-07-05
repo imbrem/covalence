@@ -49,8 +49,9 @@
 
 use std::sync::LazyLock;
 
-use covalence_core::defs::TypeSpec;
-use covalence_core::{Result, Term, Thm, Type, subst};
+use covalence_core::{Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs::TypeSpec;
 use smol_str::SmolStr;
 
 use crate::init::ext::{TermExt, ThmExt};
@@ -854,7 +855,7 @@ mod tests {
         let inst = thm.clone().all_elim(a_set.clone()).unwrap();
         let s = Term::free("s", real());
         let pred = Term::abs(real(), subst::close(&is_lub(&a_set, &s), "s"));
-        let exists_lub = Term::app(covalence_core::defs::exists(real()), pred);
+        let exists_lub = Term::app(covalence_hol_eval::defs::exists(real()), pred);
         let expected = nonempty(&a_set)
             .imp(bounded(&a_set).imp(exists_lub).unwrap())
             .unwrap();

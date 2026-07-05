@@ -23,7 +23,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use covalence_core::{Term, TermKind, Thm, Type};
+use covalence_core::{Term, TermKind, Type};
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_sexp::SExpr;
 use futures::future::BoxFuture;
 

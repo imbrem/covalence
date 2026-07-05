@@ -38,7 +38,9 @@
 //! Authored in Rust (not `.cov`): the function-valued `natRec` term algebra is
 //! impractical to drive by hand in the script surface.
 
-use covalence_core::{Result, Term, Thm, Type, defs, subst};
+use covalence_core::{Result, Term, Type, subst};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::defs;
 
 use crate::init::eq::{beta_expand, beta_nf, beta_nf_concl, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};

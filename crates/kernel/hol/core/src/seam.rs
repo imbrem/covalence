@@ -1,42 +1,40 @@
-//! The **core-on-pure seam**, deliberately widened for the toHOL tier — ONE
-//! module to audit (everything here is a re-export; nothing new is defined).
+//! The **core-on-pure seam** — ONE module to audit (everything here is a
+//! re-export; nothing new is defined).
 //!
 //! `covalence-core`'s [`Thm`](crate::Thm) is a newtype over
-//! `pure::Thm<CoreLang, IsThm(Γ, φ)>`. This module makes that seam usable by
-//! *untrusted* drivers (the reify drivers headed to `covalence-hol-eval`):
+//! `pure::Thm<L, IsThm(Γ, φ)>` at a [`HolTier`] `L` (default [`CoreLang`]).
+//! This module makes that seam usable by the downstream tier crate
+//! (`covalence-hol-eval`, which owns the `CoreEval` tier and hosts the
+//! computation-certificate rules) and by untrusted drivers:
 //!
-//! - [`CoreLang`] / [`IsThm`] / [`CoreProp`] — the admitting language, the
-//!   judgement op, and the concrete sequent-proposition shape. Publishing
-//!   them mints nothing: every mint is gated on `CoreLang::admits`, and
-//!   `pure::Thm` remains unforgeable.
-//! - The toHOL vocabulary ([`ToHolNat`] / [`ToHolInt`] / [`ToHolBytes`] /
-//!   [`HolApp`] and the slice's expression aliases) — uninterpreted ops plus
-//!   the admitted `HolApp` evaluation.
-//! - The admitted toHOL rules — the transitional reify rules
-//!   ([`ToHolNatVal`] / [`ToHolIntVal`] / [`ToHolBytesVal`] / [`PairVal`]),
-//!   the per-op symbolic certificate ([`NatAddCert`]), and the per-family
-//!   computation-backed certificates ([`NatArithCert`] / [`SuccCert`] /
-//!   [`IntArithCert`] / [`BytesCert`] / [`FixedWidthCert`] / [`LitEqCert`] /
-//!   [`CoercionCert`], with their [`Lit`] argument currency and the
-//!   [`prim_family`] recognizer metadata) — appliable from outside via
-//!   [`covalence_pure::apply`] (still gated on their `TypeId`s being
-//!   admitted).
-//! - The landing constructor is [`Thm::from_pure`](crate::Thm::from_pure).
+//! - [`CoreLang`] / [`IsThm`] / [`CoreProp`] / [`HolTier`] — the pure-HOL
+//!   tier language, the judgement op, the concrete sequent-proposition
+//!   shape, and the tier marker trait. Publishing them mints nothing: every
+//!   mint is gated on the minting language's `admits`, and `pure::Thm`
+//!   remains unforgeable.
+//! - [`CORE_MANIFEST`] / [`core_admits`] — the static TCB manifest of the
+//!   pure-HOL tier and its admits predicate, so a downstream tier that
+//!   `extends` [`CoreLang`] can embed the manifest as its parent and
+//!   delegate its inherited-rule gate. Reading them mints nothing; a tier
+//!   admitting these rules mints *only* what the sound rule catalogue
+//!   derives.
+//! - [`Lit`] — the native-value ↔ literal-leaf currency (TRANSITIONAL,
+//!   dies with the kernel literal leaves; see `thm/lit.rs`).
+//! - The landing constructor is [`Thm::from_pure`](crate::Thm::from_pure)
+//!   (re-checks the sequent floor), and the tier coercion is
+//!   [`Thm::lift`](crate::Thm::lift).
 //!
 //! The other half of the seam is `CoreLang`'s `extends` opening to
 //! [`covalence_pure_eval::Builtins`] (see `thm::lang`): canon-minted
 //! `Thm<Builtins, _>` facts lift into `CoreLang` via
 //! [`covalence_pure::Thm::lift`]. Both halves ship under maintainer review —
-//! they change the TCB shape (`docs/deps/tcb.json` gains
-//! `covalence-pure-eval`).
+//! they change the TCB shape (`docs/deps/tcb.json`).
+//!
+//! (The toHOL vocabulary and the per-family computation certificates that
+//! used to be re-exported here moved to `covalence-hol-eval` — they are
+//! `Rule<CoreEval>`s of the eval tier now, so `Thm<CoreLang>` carries no
+//! computation TCB.)
 
-pub use crate::thm::certs::{Lit, PrimFamily, prim_family};
 pub use crate::thm::lang::{CoreLang, CoreProp, HolTier, IsThm};
-pub use crate::thm::rules::{
-    BytesCert, CoercionCert, FixedWidthCert, IntArithCert, LitEqCert, NatAddCert, NatArithCert,
-    PairVal, SuccCert, ToHolBytesVal, ToHolIntVal, ToHolNatVal,
-};
-pub use crate::tohol::{
-    HolApp, HolAppE, NatAddEqE, NatAddLhsE, ToHolBytes, ToHolBytesE, ToHolInt, ToHolIntE, ToHolNat,
-    ToHolNatE,
-};
+pub use crate::thm::lit::Lit;
+pub use crate::thm::rules::{CORE_MANIFEST, core_admits};

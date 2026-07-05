@@ -40,15 +40,16 @@
 //! (see `init/SKELETONS.md`). The [`string_rep_abs`] / [`bytes_rep_abs`]
 //! newtype round-trips below are the seam those codecs cross.
 
-use covalence_core::{Error, Result, Term, Thm, Type};
+use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::list::head_nil;
 use crate::init::logic::truth;
 
-pub use covalence_core::defs::{bytes_spec, string_spec, string_ty};
+pub use covalence_hol_eval::defs::{bytes_spec, string_spec, string_ty};
 
-use covalence_core::defs::{TypeSpec, head, nil, u8_ty};
+use covalence_hol_eval::defs::{TypeSpec, head, nil, u8_ty};
 
 use crate::init::char::char_ty;
 
@@ -187,7 +188,7 @@ pub fn string_head_empty() -> Result<Thm> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_core::defs::none;
+    use covalence_hol_eval::defs::none;
 
     fn none_byte() -> Term {
         none(byte_elem())

@@ -23,8 +23,9 @@
 
 use std::sync::{Arc, LazyLock};
 
-use covalence_core::{Result, Term, Thm, Type};
+use covalence_core::{Result, Term, Type};
 use covalence_grammar::regex::{Class, Regex as Surface};
+use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::regex as ir;
 use crate::init::regex::{r_alt, r_empty, r_eps, r_lit, r_seq, r_star};

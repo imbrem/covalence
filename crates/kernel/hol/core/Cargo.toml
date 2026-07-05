@@ -16,7 +16,6 @@ covalence-pure = { path = "../../base" }
 # covalence-pure-eval) — maintainer-review territory.
 covalence-pure-eval = { path = "../../base/eval" }
 covalence-types = { path = "../../../lib/types" }
-covalence-sexp = { path = "../../../lib/sexp" }
 fnv = "1"
 indexmap = "2"
 smol_str = "0.3"

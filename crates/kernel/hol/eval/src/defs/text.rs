@@ -32,13 +32,13 @@
 
 use std::sync::LazyLock;
 
-use crate::hol;
-use crate::term::{Term, Type};
+use covalence_core::hol;
+use covalence_core::term::{Term, Type};
 
-use super::canonical::Canonical;
-use super::list::list;
-use super::nat::nat_lt;
-use super::spec::TypeSpec;
+use crate::defs::Canonical;
+use crate::defs::TypeSpec;
+use crate::defs::list;
+use crate::defs::nat_lt;
 
 /// The exclusive upper bound on Unicode scalar values: `0x110000`
 /// (`1114112`).

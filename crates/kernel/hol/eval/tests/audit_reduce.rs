@@ -1081,6 +1081,27 @@ fn lit_eq_cert_mixed_kinds_do_not_mint() {
     assert!(apply(CoreLang, LitEqCert, (u8v, u16v)).is_err());
 }
 
+#[test]
+fn lit_eq_cert_non_canonical_payloads_agree() {
+    // Regression (audit wave-2 critical): a non-canonical fixed-width payload
+    // must NOT let LitEqCert mint a false disequality. `SmallIntLiteral::new`
+    // canonicalizes to the tag width, so `256_u8` and `0_u8` are the SAME
+    // literal (both denote the zero u8) — LitEqCert on them mints an
+    // *equality*, never `(256_u8 = 0_u8) = F`.
+    use covalence_core::SmallIntLiteral;
+    let a = SmallIntLiteral::new(IntTag::U8, 256);
+    let z = SmallIntLiteral::new(IntTag::U8, 0);
+    assert_eq!(a, z, "256_u8 must canonicalize to 0_u8");
+    assert_eq!(a.bits(), 0);
+    let neg_raw = SmallIntLiteral::new(IntTag::S8, 0xFF);
+    let neg = SmallIntLiteral::s8(-1);
+    assert_eq!(neg_raw, neg, "0xFF_s8 must canonicalize to -1_s8");
+    // The cert admits on the canonicalized (now equal) pair — it cannot
+    // witness them apart, so no false `(a = z) = F` is derivable.
+    apply(CoreLang, LitEqCert, (Lit::Small(a), Lit::Small(z)))
+        .expect("LitEqCert on equal (canonicalized) literals");
+}
+
 // ============================================================================
 // delta (definitional unfolding — the kernel unfold rule via the driver)
 // ============================================================================

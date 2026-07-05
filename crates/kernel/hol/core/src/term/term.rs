@@ -461,20 +461,55 @@ impl IntTag {
     ];
 }
 
-/// A fixed-width integer literal: a type tag plus the raw value held
-/// in a `u64`. Unsigned values are zero-extended, signed values
-/// sign-extended into the 64 bits, so `bits` round-trips with `tag`.
-/// Build one with [`SmallIntLiteral::u8`] … [`SmallIntLiteral::s64`].
+/// A fixed-width integer literal: a type tag plus the value held in a
+/// `u64`, **canonicalized** to the tag's width (unsigned zero-extended,
+/// signed sign-extended) so `bits` is the unique representative of its
+/// value class and round-trips with `tag`. Build one with
+/// [`SmallIntLiteral::new`] or [`SmallIntLiteral::u8`] … `s64`.
+///
+/// The `bits` field is private precisely to keep that canonical-payload
+/// invariant unbreakable from outside: `LitEqCert` relies on it (structural
+/// equality = denotational equality), so a non-canonical payload would let it
+/// mint a false disequality (see [`SmallIntLiteral::new`]).
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SmallIntLiteral {
-    pub tag: IntTag,
-    pub bits: u64,
+    tag: IntTag,
+    bits: u64,
 }
 
 impl SmallIntLiteral {
-    /// Raw constructor from a tag and an already-extended `u64`.
+    /// Constructor from a tag and a value. `bits` is **canonicalized** to the
+    /// tag's width — unsigned tags zero-extend (mask to `width` bits), signed
+    /// tags sign-extend from the top width bit — so the stored `bits` is the
+    /// unique representative of its value class and structural equality
+    /// coincides with denotational equality (`bits as T`). This is a
+    /// *soundness* invariant: `LitEqCert` compares `SmallIntLiteral`s
+    /// structurally, so a non-canonical payload (e.g. `256` at `u8`) would
+    /// otherwise let it mint `⊢ (256_u8 = 0_u8) = F` — a false theorem, since
+    /// both denote the zero `u8`.
     pub fn new(tag: IntTag, bits: u64) -> Self {
-        Self { tag, bits }
+        let w = tag.width();
+        let canon = if w >= 64 {
+            bits
+        } else if tag.is_signed() {
+            // sign-extend from bit (w-1)
+            let shift = 64 - w;
+            (((bits << shift) as i64) >> shift) as u64
+        } else {
+            // zero-extend: keep the low w bits
+            bits & ((1u64 << w) - 1)
+        };
+        Self { tag, bits: canon }
+    }
+
+    /// The (canonical) raw payload.
+    pub fn bits(self) -> u64 {
+        self.bits
+    }
+
+    /// The width/signedness tag.
+    pub fn tag(self) -> IntTag {
+        self.tag
     }
 
     /// The kernel type of this literal (`self.tag.ty()`).

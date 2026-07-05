@@ -500,7 +500,7 @@ pub(crate) fn lit_eq(a: &Lit, b: &Lit) -> Result<Term> {
         (Lit::Bool(x), Lit::Bool(y)) => x == y,
         (Lit::Nat(x), Lit::Nat(y)) => x == y,
         (Lit::Int(x), Lit::Int(y)) => x == y,
-        (Lit::Small(x), Lit::Small(y)) if x.tag == y.tag => x == y,
+        (Lit::Small(x), Lit::Small(y)) if x.tag() == y.tag() => x == y,
         (Lit::Bytes(x), Lit::Bytes(y)) => x == y,
         _ => return Err(Error::NotReducible),
     };
@@ -526,14 +526,14 @@ fn small_lit<T: FwRepr>(tag: IntTag, v: T) -> SmallIntLiteral {
 
 fn small1(args: &[Lit], tag: IntTag) -> Result<SmallIntLiteral> {
     match args {
-        [Lit::Small(a)] if a.tag == tag => Ok(*a),
+        [Lit::Small(a)] if a.tag() == tag => Ok(*a),
         _ => Err(Error::NotReducible),
     }
 }
 
 fn small2(args: &[Lit], tag: IntTag) -> Result<(SmallIntLiteral, SmallIntLiteral)> {
     match args {
-        [Lit::Small(a), Lit::Small(b)] if a.tag == tag && b.tag == tag => Ok((*a, *b)),
+        [Lit::Small(a), Lit::Small(b)] if a.tag() == tag && b.tag() == tag => Ok((*a, *b)),
         _ => Err(Error::NotReducible),
     }
 }
@@ -588,7 +588,7 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
         OpKey::Op(tag, op) if op.is_unary() => {
             let a = small1(args, tag)?;
             per_tag!(tag, T, {
-                let av = a.bits as T;
+                let av = a.bits() as T;
                 let res: T = match op {
                     IntOp::Neg => pe::FwNeg::<T>::new().eval(&av),
                     IntOp::Not => pe::FwNot::<T>::new().eval(&av),
@@ -600,7 +600,7 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
         OpKey::Op(tag, op) if op.is_cmp() => {
             let (a, b) = small2(args, tag)?;
             per_tag!(tag, T, {
-                let ab = (a.bits as T, b.bits as T);
+                let ab = (a.bits() as T, b.bits() as T);
                 let res = match op {
                     IntOp::Lt => pe::FwLt::<T>::new().eval(&ab),
                     IntOp::Le => pe::FwLe::<T>::new().eval(&ab),
@@ -614,7 +614,7 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
         OpKey::Op(tag, op) => {
             let (a, b) = small2(args, tag)?;
             per_tag!(tag, T, {
-                let ab = (a.bits as T, b.bits as T);
+                let ab = (a.bits() as T, b.bits() as T);
                 let res: T = match op {
                     IntOp::Add => pe::FwAdd::<T>::new().eval(&ab),
                     IntOp::Sub => pe::FwSub::<T>::new().eval(&ab),
@@ -634,7 +634,7 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
         OpKey::Zext(src, dst) => {
             let a = small1(args, src)?;
             per_tag!(src, S, {
-                let av = a.bits as S;
+                let av = a.bits() as S;
                 per_tag!(dst, D, {
                     Term::small_int(small_lit(dst, pe::Zext::<S, D>::new().eval(&av)))
                 })
@@ -643,7 +643,7 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
         OpKey::Sext(src, dst) => {
             let a = small1(args, src)?;
             per_tag!(src, S, {
-                let av = a.bits as S;
+                let av = a.bits() as S;
                 per_tag!(dst, D, {
                     Term::small_int(small_lit(dst, pe::Sext::<S, D>::new().eval(&av)))
                 })
@@ -654,7 +654,7 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(
                 tag,
                 T,
-                Term::nat_lit(pe::FwToNat::<T>::new().eval(&(a.bits as T)))
+                Term::nat_lit(pe::FwToNat::<T>::new().eval(&(a.bits() as T)))
             )
         }
         OpKey::ToInt(tag) => {
@@ -662,7 +662,7 @@ pub(crate) fn fixed_width(spec: &TermSpec, args: &[Lit]) -> Result<Term> {
             per_tag!(
                 tag,
                 T,
-                Term::int_lit(pe::FwToInt::<T>::new().eval(&(a.bits as T)))
+                Term::int_lit(pe::FwToInt::<T>::new().eval(&(a.bits() as T)))
             )
         }
         OpKey::FromNat(tag) => {

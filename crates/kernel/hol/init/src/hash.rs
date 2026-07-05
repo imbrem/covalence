@@ -287,12 +287,12 @@ impl Hasher {
             // Hash a small-int literal by its tag label + the raw
             // `u64` bits — both stable across processes.
             TermKind::SmallInt(lit) => {
-                let label = lit.tag.label().as_bytes();
+                let label = lit.tag().label().as_bytes();
                 let mut buf = Vec::with_capacity(1 + 1 + label.len() + 8);
                 buf.push(T_SMALL_INT);
                 buf.push(label.len() as u8);
                 buf.extend_from_slice(label);
-                buf.extend_from_slice(&lit.bits.to_le_bytes());
+                buf.extend_from_slice(&lit.bits().to_le_bytes());
                 ctx.tag(buf)
             }
             TermKind::Bool(b) => ctx.tag([T_BOOL, u8::from(*b)]),

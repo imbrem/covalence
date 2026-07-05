@@ -210,8 +210,8 @@ pub fn term_to_sexp(t: &Term) -> Result<SExpr> {
         TermKind::Int(n) => list2("int-lit", sym(n.as_inner().to_string().as_str())),
         TermKind::SmallInt(lit) => list3(
             "small-int",
-            sym(lit.tag.label()),
-            sym(lit.bits.to_string().as_str()),
+            sym(lit.tag().label()),
+            sym(lit.bits().to_string().as_str()),
         ),
         TermKind::Bool(b) => list2("bool-lit", sym(if *b { "T" } else { "F" })),
         TermKind::Eq(alpha) => list2("eq", type_to_sexp(alpha)?),

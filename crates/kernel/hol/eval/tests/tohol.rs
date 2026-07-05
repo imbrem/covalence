@@ -90,15 +90,21 @@ fn hol_app_canon_gated_on_core_lang() {
     ));
 }
 
-/// The seam's other half: a canon-minted `Thm<Builtins, _>` fact lifts into
-/// `CoreLang` (`CoreLang.extends(Builtins)`), but not into `()`.
+/// The tower's seam: a canon-minted `Thm<Builtins, _>` fact lifts into
+/// `CoreEval` (its direct parent), but NOT into `CoreLang` — the pure-HOL
+/// tier extends nothing and accepts no computation facts (audit fix: the
+/// historical `CoreLang.extends(Builtins)` edge is gone) — and not into `()`.
 #[test]
-fn builtins_facts_lift_into_core_lang() {
+fn builtins_facts_lift_into_core_eval_not_core_lang() {
     let fact = canon(NatAdd, (n(2), n(2)), Builtins).expect("Builtins admits NatAdd");
-    let lifted: PThm<CoreLang, _> = fact
+    let lifted: PThm<CoreEval, _> = fact
         .clone()
-        .lift(CoreLang)
-        .expect("CoreLang extends Builtins");
+        .lift(CoreEval)
+        .expect("CoreEval extends Builtins directly");
     let _ = lifted;
+    assert!(matches!(
+        fact.clone().lift(CoreLang),
+        Err(PureError::NotExtended(_))
+    ));
     assert!(matches!(fact.lift(()), Err(PureError::NotExtended(_))));
 }

@@ -53,10 +53,19 @@ const CONFIGS = [
     exclude: [],
   },
   {
+    // REALITY: everything compiled into covalence-core is CoreLang trust
+    // surface — including the D3 defs/ residue (literal typing, spec
+    // machinery, connectives), load-bearing for Thm<CoreLang> until the
+    // literal leaves die. (Audit fix: excluding it overstated the tier gap.)
     name: "base+HOL",
     roots: [BASE, CORE],
-    // core/src/defs/ = the D3 residue (literal-leaf type handles +
-    // connective builders); transitional, not minimal HOL.
+    exclude: [],
+  },
+  {
+    // ASPIRATION: minimal HOL once the D3 residue dies with the literal
+    // leaves. Gap vs base+HOL = the remaining in-core defs debt.
+    name: "base+HOL (target)",
+    roots: [BASE, CORE],
     exclude: [`${CORE}/defs/`],
   },
   {

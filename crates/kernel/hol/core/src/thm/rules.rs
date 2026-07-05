@@ -152,7 +152,7 @@ macro_rules! core_rules {
         /// its own manifest; reading it mints nothing.
         pub const CORE_MANIFEST: Manifest = Manifest {
             ty: TypeId::of::<CoreLang>(),
-            extends: &[covalence_pure_eval::BUILTINS_MANIFEST],
+            extends: &[],
             admits: &[
                 $( RuleRecord { ty: TypeId::of::<$N>(), metadata: RuleMeta }, )+
             ],
@@ -980,18 +980,14 @@ mod manifest_tests {
     fn manifest_matches_golden() {
         let names = core_rule_names();
 
-        // Structure: the manifest is CoreLang's own; its single parent is
-        // Builtins (the opened core-on-pure seam); the name projection is 1:1
-        // and in the same order.
+        // Structure: the manifest is CoreLang's own; the pure-HOL tier has NO
+        // parents (the historical Builtins edge moved to CoreEval with the
+        // tower split — audit fix); the name projection is 1:1 and in order.
         assert_eq!(CORE_MANIFEST.ty, TypeId::of::<CoreLang>());
-        assert_eq!(CORE_MANIFEST.extends.len(), 1, "one parent: Builtins");
-        assert_eq!(
-            CORE_MANIFEST.extends[0].ty,
-            TypeId::of::<covalence_pure_eval::Builtins>()
-        );
+        assert_eq!(CORE_MANIFEST.extends.len(), 0, "pure tier: no parents");
         assert!(
-            CoreLang.extends(TypeId::of::<covalence_pure_eval::Builtins>()),
-            "extends() mirrors the manifest parent"
+            !CoreLang.extends(TypeId::of::<covalence_pure_eval::Builtins>()),
+            "extends() mirrors the (empty) manifest parents — no computation TCB"
         );
         assert_eq!(names.len(), CORE_MANIFEST.admits.len(), "1:1 projection");
         for ((name, ty), rec) in names.iter().zip(CORE_MANIFEST.admits) {

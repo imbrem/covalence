@@ -92,15 +92,12 @@ pub type CoreProp = App<IsThm, (Val<Ctx>, Val<Term>)>;
 /// rule catalogue in `super::rules`. Hypotheses live INSIDE the proposition (the
 /// `Val<Ctx>` operand), not in the language value, so `union` is trivial.
 ///
-/// Since the toHOL slice, `CoreLang` **extends
-/// [`covalence_pure_eval::Builtins`]** — the deliberate opening of the
-/// core-on-pure seam: canon-minted `Thm<Builtins, Eqn<…>>` facts (the
-/// enumerable native-computation TCB) lift into `CoreLang` via
-/// [`covalence_pure::Thm::lift`], and the certificate rules in
-/// `super::rules` may call the same `CanonRule` evals natively inside
-/// `decide`. `pub` (re-exported through [`crate::seam`]) so untrusted drivers
-/// can apply the admitted toHOL rules; publishing the language value mints
-/// nothing — every mint stays gated on `admits`.
+/// Since the tower split (E2 + audit fix), `CoreLang` extends **nothing**:
+/// it is the pure-HOL tier, and computation lives one tier up — `CoreEval`
+/// (in `covalence-hol-eval`) extends both `CoreLang` and
+/// [`covalence_pure_eval::Builtins`] directly, hosting the certificate rules
+/// next to the native `CanonRule`s. `Thm<CoreLang, _>` therefore certifies
+/// derivability from the 39 HOL rules alone.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CoreLang;
 
@@ -108,11 +105,14 @@ impl Language for CoreLang {
     fn admits(&self, rule: TypeId) -> bool {
         super::rules::core_admits(rule)
     }
-    /// `CoreLang` directly extends exactly [`covalence_pure_eval::Builtins`]
-    /// (`tree(Builtins) ⊆ tree(CoreLang)`) — mirrored by the parent entry in
-    /// `super::rules::CORE_MANIFEST`, so the manifest stays canonical.
-    fn extends(&self, parent: TypeId) -> bool {
-        parent == TypeId::of::<covalence_pure_eval::Builtins>()
+    /// `CoreLang` extends **nothing** — the pure-HOL tier carries no
+    /// computation TCB *by declaration* (audit fix: the historical
+    /// `extends(Builtins)` edge from the first toHOL slice became dead once
+    /// the cert rules moved to `CoreEval`, which accepts `Builtins` as a
+    /// direct parent itself). Mirrored by the empty parent list in
+    /// `super::rules::CORE_MANIFEST`.
+    fn extends(&self, _parent: TypeId) -> bool {
+        false
     }
     fn union(self, _other: Self) -> Option<Self> {
         Some(self)

@@ -148,6 +148,10 @@
     },
     {
       "from": "covalence-core",
+      "to": "covalence-pure-eval"
+    },
+    {
+      "from": "covalence-core",
       "to": "covalence-sexp"
     },
     {
@@ -560,6 +564,7 @@
       "covalence-core",
       "covalence-parse",
       "covalence-pure",
+      "covalence-pure-eval",
       "covalence-pure-trusted",
       "covalence-sexp",
       "covalence-types"

@@ -28,8 +28,10 @@ use std::fmt;
 use smol_str::SmolStr;
 
 use covalence_pure::{
-    App, Error as PureError, LangMeta, Manifest, Rule, RuleMeta, RuleRecord, Val,
+    App, CanonRule as _, Eqn, Error as PureError, LangMeta, Language, Manifest, Rule, RuleMeta,
+    RuleRecord, Val,
 };
+use covalence_types::Nat;
 
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
@@ -39,6 +41,7 @@ use crate::subst::{
     subst_tfree_in_term, uses_bound_outer,
 };
 use crate::term::{Def, FreshId, Term, TermKind, Type, TypeKind, Var};
+use crate::tohol::{HolApp, NatAddEqE, ToHolNat, ToHolNatE, nat_add_eq_expr};
 use crate::ty::{TypeList, TypeSpec};
 
 use super::lang::{CoreLang, CoreProp, IsThm};
@@ -78,8 +81,24 @@ fn to_pure(e: Error) -> PureError {
 
 /// One rule ⇒ ZST + typed `prove` + `Rule` impl + admits arm + `RuleRecord`, all
 /// in lockstep from one source list, so `admits()`/`MANIFEST` cannot drift.
+///
+/// Three sections, all feeding the SAME manifest/admits emission:
+/// - `rules { … }` — the sequent rules: `Concl = CoreProp`, minted through the
+///   `seq` well-typedness floor; `Rule<CoreLang>` only.
+/// - `raw { … }` — the toHOL tier: rules whose `Concl` is an arbitrary
+///   `Expr<Ty = bool>` (symbolic-term equations / certificates), implemented
+///   `Rule<L>` for **every** `L: Language` (the gate is still `admits` on the
+///   rule's own `TypeId`, so a language admits it only by enumerating it —
+///   this is what lets the NotAdmitted negative test run under `()`).
+/// - `canon { … }` — [`covalence_pure::CanonRule`] ops admitted for
+///   [`covalence_pure::canon`] evaluation (no `Rule` impl; the op's own
+///   `TypeId` is the gate identity).
 macro_rules! core_rules {
-    ($( $(#[$d:meta])* $N:ident($($ty:ty),* $(,)?) = |$p:pat_param, $l:pat_param| $b:block )+) => {
+    (
+        rules { $( $(#[$d:meta])* $N:ident($($ty:ty),* $(,)?) = |$p:pat_param, $l:pat_param| $b:block )+ }
+        raw { $( $(#[$rd:meta])* $R:ident($rin:ty) -> $rc:ty = |$rp:pat_param, $rl:pat_param| $rb:block )+ }
+        canon { $( $K:ident ),+ $(,)? }
+    ) => {
         $(
             $(#[$d])*
             #[derive(Clone, Copy)]
@@ -110,19 +129,60 @@ macro_rules! core_rules {
             }
         )+
 
+        $(
+            $(#[$rd])*
+            #[derive(Clone, Copy)]
+            pub struct $R;
+
+            impl<L: Language> Rule<L> for $R {
+                type Input = $rin;
+                type Concl = $rc;
+                fn decide(
+                    self,
+                    input: Self::Input,
+                    lang: &L,
+                ) -> core::result::Result<$rc, PureError> {
+                    let ($rp, $rl) = (input, lang);
+                    $rb
+                }
+            }
+        )+
+
         /// The static TCB manifest for [`CoreLang`] — one [`RuleRecord`] per
-        /// admitted HOL inference step, emitted from the same list as [`core_admits`].
+        /// admitted rule (sequent, raw, and canon sections alike), emitted from
+        /// the same source lists as [`core_admits`]. The single parent is the
+        /// [`covalence_pure_eval::Builtins`] manifest (embedded by value), so
+        /// `tree(CoreLang)` — core's rules plus the enumerable native
+        /// computation — is readable from this one static.
         pub(crate) static CORE_MANIFEST: Manifest = Manifest {
             ty: TypeId::of::<CoreLang>(),
-            extends: &[],
-            admits: &[ $( RuleRecord { ty: TypeId::of::<$N>(), metadata: RuleMeta }, )+ ],
+            extends: &[covalence_pure_eval::BUILTINS_MANIFEST],
+            admits: &[
+                $( RuleRecord { ty: TypeId::of::<$N>(), metadata: RuleMeta }, )+
+                $( RuleRecord { ty: TypeId::of::<$R>(), metadata: RuleMeta }, )+
+                $( RuleRecord { ty: TypeId::of::<$K>(), metadata: RuleMeta }, )+
+            ],
             metadata: LangMeta,
         };
 
-        /// The admits predicate for [`CoreLang`], emitted from the same list as
+        /// The admits predicate for [`CoreLang`], emitted from the same lists as
         /// [`CORE_MANIFEST`]: `true` exactly for the admitted rule TypeIds.
         pub(crate) fn core_admits(r: TypeId) -> bool {
             $( r == TypeId::of::<$N>() )||+
+            $( || r == TypeId::of::<$R>() )+
+            $( || r == TypeId::of::<$K>() )+
+        }
+
+        /// Untrusted name projection of [`CORE_MANIFEST`] (same order, 1:1) —
+        /// the source-level rule idents, for the `docs/deps/core-manifest.txt`
+        /// golden. Identity is always the `TypeId`.
+        #[cfg(test)]
+        pub(crate) fn core_rule_names() -> Vec<(&'static str, TypeId)> {
+            vec![
+                $( (stringify!($N), TypeId::of::<$N>()), )+
+                $( (stringify!($R), TypeId::of::<$R>()), )+
+                $( (stringify!($K), TypeId::of::<$K>()), )+
+            ]
         }
     };
 }
@@ -145,6 +205,7 @@ macro_rules! mint {
 pub(crate) use mint;
 
 core_rules! {
+    rules {
     // ================= Group A: equality + congruence =================
 
     /// `⊢ t = t`.
@@ -830,6 +891,81 @@ core_rules! {
         let conj = hol::hol_and(abs_rep_concl, hol::hol_and(fwd_concl, back_concl));
         Ok((w_hyps.clone(), conj))
     }
+    }
+
+    // ================= Group H: the toHOL tier (symbolic conclusions) =========
+    //
+    // These rules' conclusions are NOT `CoreProp`: they are base propositions
+    // over symbolic HOL-term expressions (`toHOL` denotations, never-constructed
+    // canonical terms). They mint via `covalence_pure::apply` directly — the
+    // public `mint!` glue (and its cold-path invariant) does not apply; every
+    // `decide` below is deterministic and total on its input.
+
+    raw {
+    /// TRANSITIONAL (dies with the kernel `Nat` literals — see `SKELETONS.md`):
+    /// `⊢ toHOL n = Val(⌜n⌝)` — reify a `toHOL`-denoted natural to today's
+    /// literal-numeral `Term`.
+    ///
+    /// ## Soundness
+    ///
+    /// While the kernel `Nat` literals exist, the literal numeral IS the
+    /// kernel's canonical HOL term for the natural `n` (the same denotational
+    /// commitment the legacy literal reducer documents: literals denote the
+    /// standard values). `toHOL n` denotes exactly that term, so the equation
+    /// holds by definition of the denotation. At literal-deletion time this
+    /// rule is deleted and the permanent structural rules (`toHOL 0 = ⌜zero⌝`,
+    /// `toHOL (n+1) = S (toHOL n)`) take over; only the reify target flips.
+    ToHolNatVal(Nat) -> Eqn<ToHolNatE, Val<Term>> = |n, _| {
+        let t = Term::nat_lit(n.clone());
+        Ok(Eqn(App(ToHolNat, Val(n)), Val(t)))
+    }
+
+    /// `⊢ (Val f, Val x) = Val((f, x))` at the `(Term, Term)` product sort —
+    /// fuse a tuple of ground leaves into one ground tuple leaf. The bridge
+    /// between `cong_pair` (which produces tuples **of** `Val`s) and
+    /// [`covalence_pure::canon`] (whose evaluated redex takes its whole input
+    /// as one `Val` **of** a tuple).
+    ///
+    /// ## Soundness
+    ///
+    /// Both sides denote the same pair `(f, x)` of the product sort — tuple
+    /// expressions denote tuples of their components' denotations, and `Val`
+    /// leaves denote themselves. The two shapes are one value read two ways;
+    /// no computation, no new equalities between distinct values.
+    PairVal((Term, Term)) -> Eqn<(Val<Term>, Val<Term>), Val<(Term, Term)>> = |(f, x), _| {
+        Ok(Eqn((Val(f.clone()), Val(x.clone())), Val((f, x))))
+    }
+
+    /// The nat.add computation-backed derivability certificate:
+    /// `⊢ IsThm(∅, ⌜nat.add (toHOL a) (toHOL b) = toHOL (a + b)⌝)`, where the
+    /// sum is computed natively by the [`covalence_pure_eval::NatAdd`]
+    /// [`CanonRule`](covalence_pure::CanonRule) and the HOL equation stays
+    /// **symbolic** (its numeral leaves are `toHOL` denotations — never
+    /// materialized).
+    ///
+    /// ## Soundness (the existence-without-construction contract)
+    ///
+    /// The soundness contract of every such rule (its docstring obligation):
+    /// for every native value `b` there *exists* a HOL term `[b]` such that
+    /// the defining properties are derivable in pure HOL —
+    /// existence-without-construction, the same principle as "a standard
+    /// theorem means a derivation exists". Concretely here: `[n]` is the
+    /// numeral `S^n(Z)`, and whenever the native addition computes
+    /// `a + b = c`, the HOL equation `nat.add [a] [b] = [c]` is derivable in
+    /// pure HOL by `c` primitive-recursive unfoldings of `nat.add`'s
+    /// definitional equations on the numerals — the derivation exists for
+    /// every `(a, b)`, and this rule is a certified shortcut that never adds
+    /// strength. The rule derives its whole conclusion from the input pair
+    /// (no caller-supplied conclusion), so it is sound on ALL inputs.
+    NatAddCert((Nat, Nat)) -> App<IsThm, (Val<Ctx>, NatAddEqE)> = |(a, b), _| {
+        let sum = covalence_pure_eval::NatAdd.eval(&(a.clone(), b.clone()));
+        Ok(App(IsThm, (Val(Ctx::new()), nat_add_eq_expr(a, b, sum))))
+    }
+    }
+
+    // CanonRule ops admitted for `covalence_pure::canon` under `CoreLang`
+    // (soundness documented on each op — see `crate::tohol`).
+    canon { HolApp }
 }
 
 // ============================================================================
@@ -873,5 +1009,75 @@ impl fmt::Debug for TypeDefRepMarker {
         } else {
             write!(f, "{}", self.hint)
         }
+    }
+}
+
+// ============================================================================
+// The CORE_MANIFEST golden (TCB budget): docs/deps/core-manifest.txt
+// ============================================================================
+
+#[cfg(test)]
+mod manifest_tests {
+    use std::any::TypeId;
+    use std::collections::HashSet;
+
+    use covalence_pure::Language;
+
+    use super::super::lang::CoreLang;
+    use super::{CORE_MANIFEST, core_admits, core_rule_names};
+
+    const GOLDEN: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../../docs/deps/core-manifest.txt"
+    );
+
+    /// Pins the name-projected rule inventory of [`CoreLang`] to
+    /// `docs/deps/core-manifest.txt` — a PR that grows the admitted-rule TCB
+    /// shows it in-diff. Regenerate with:
+    /// `COV_REGEN_GOLDEN=1 cargo test -p covalence-core manifest_matches_golden`
+    #[test]
+    fn manifest_matches_golden() {
+        let names = core_rule_names();
+
+        // Structure: the manifest is CoreLang's own; its single parent is
+        // Builtins (the opened core-on-pure seam); the name projection is 1:1
+        // and in the same order.
+        assert_eq!(CORE_MANIFEST.ty, TypeId::of::<CoreLang>());
+        assert_eq!(CORE_MANIFEST.extends.len(), 1, "one parent: Builtins");
+        assert_eq!(
+            CORE_MANIFEST.extends[0].ty,
+            TypeId::of::<covalence_pure_eval::Builtins>()
+        );
+        assert!(
+            CoreLang.extends(TypeId::of::<covalence_pure_eval::Builtins>()),
+            "extends() mirrors the manifest parent"
+        );
+        assert_eq!(names.len(), CORE_MANIFEST.admits.len(), "1:1 projection");
+        for ((name, ty), rec) in names.iter().zip(CORE_MANIFEST.admits) {
+            assert_eq!(*ty, rec.ty, "name/manifest order drift at {name}");
+        }
+
+        // Identity: no duplicates; admits ⟺ manifest.
+        let mut tys = HashSet::new();
+        for (name, ty) in &names {
+            assert!(tys.insert(*ty), "duplicate rule TypeId for {name}");
+            assert!(core_admits(*ty), "manifest rule {name} not admitted");
+        }
+        assert!(!core_admits(TypeId::of::<CoreLang>()));
+        assert!(!core_admits(TypeId::of::<covalence_pure_eval::NatAdd>()));
+
+        // The golden.
+        let ours: String = names.iter().map(|(n, _)| *n).collect::<Vec<_>>().join("\n") + "\n";
+        if std::env::var_os("COV_REGEN_GOLDEN").is_some() {
+            std::fs::write(GOLDEN, &ours).expect("write golden");
+            return;
+        }
+        let golden = std::fs::read_to_string(GOLDEN)
+            .expect("read docs/deps/core-manifest.txt (regenerate with COV_REGEN_GOLDEN=1)");
+        assert_eq!(
+            golden, ours,
+            "CORE_MANIFEST drifted from docs/deps/core-manifest.txt — audit \
+             the diff, then regenerate with COV_REGEN_GOLDEN=1"
+        );
     }
 }

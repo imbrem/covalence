@@ -124,8 +124,9 @@ macro_rules! builtins_manifest {
     ) => {
         /// Every rule [`Builtins`] admits, in catalogue order (nat, int,
         /// bytes, then the fixed-width families per representation, then
-        /// the 8×8 `zext`/`sext` cast grid).
-        static BUILTINS_RULES: &[RuleRecord] = &[
+        /// the 8×8 `zext`/`sext` cast grid). A `const` (not a `static`) so
+        /// [`BUILTINS_MANIFEST`] can embed it in const context.
+        const BUILTINS_RULES: &[RuleRecord] = &[
             $(rule_record::<$S>(),)*
             $(
                 rule_record::<FwAdd<$T>>(),
@@ -214,9 +215,13 @@ builtins_manifest! {
     }
 }
 
-/// The static TCB manifest of [`Builtins`]: no parents, exactly
-/// [`struct@BUILTINS_RULES`] admitted.
-static BUILTINS_MANIFEST: Manifest = Manifest {
+/// The TCB manifest of [`Builtins`]: no parents, exactly the catalogue's
+/// `RuleRecord`s admitted. A `pub const` so a language that **extends**
+/// [`Builtins`] (e.g. `covalence-core`'s `CoreLang`, through the audited
+/// core-on-pure seam) can embed this manifest *by value* as a parent in its
+/// own static [`Manifest::extends`] list — keeping the combined tree
+/// enumerable from one place.
+pub const BUILTINS_MANIFEST: Manifest = Manifest {
     ty: TypeId::of::<Builtins>(),
     extends: &[],
     admits: BUILTINS_RULES,

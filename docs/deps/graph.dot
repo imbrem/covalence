@@ -33,7 +33,7 @@ digraph deps {
   "parse" [style=filled, fillcolor="#ffd6d6"];
   "proto";
   "pure" [style=filled, fillcolor="#ffd6d6"];
-  "pure-eval";
+  "pure-eval" [style=filled, fillcolor="#ffd6d6"];
   "pure-trusted" [style=filled, fillcolor="#ffd6d6"];
   "python";
   "rand";
@@ -75,6 +75,7 @@ digraph deps {
   "client" -> "shell";
   "client" -> "store";
   "core" -> "pure";
+  "core" -> "pure-eval";
   "core" -> "sexp";
   "core" -> "types";
   "egglog" -> "sexp";

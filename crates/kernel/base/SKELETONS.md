@@ -39,9 +39,10 @@ stages and a few deferred seams remain.
 
 - **`covalence-pure-derive` (proc macros)** — not built (and no proc-macro crate /
   `syn`/`quote` in the workspace yet — a dependency-policy decision). Wanted: the
-  `language!` macro (a child's `MANIFEST.extends` can't embed a parent `Manifest`
-  by value in a `const` — const-eval wrinkle — so `extends()` is the authoritative
-  `lift` gate for now), and a **rewrite-rule** macro (e.g. `(a+b)=(b+a)`). The
+  `language!` macro (a child's `MANIFEST.extends` embeds a parent `Manifest` by
+  value when the parent exposes it as a `pub const` — done by hand for
+  Builtins ⊂ CoreLang; the macro would automate the pattern), and a
+  **rewrite-rule** macro (e.g. `(a+b)=(b+a)`). The
   rewrite macro is **blocked on a design fork**: a parameterized rule's full
   `TypeId` differs per operand, so it can't be admitted once — needs either
   dynamic operands (`Box<dyn Expr>`, monomorphic rule, one `TypeId`) or an

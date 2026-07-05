@@ -44,8 +44,8 @@ use crate::subst::subst_tfrees_in_term;
 use crate::term::{Term, TermKind, TrustedCons, Type, TypeKind};
 use crate::ty::{TypeList, TypeSpec};
 
-mod lang;
-mod rules;
+pub(crate) mod lang;
+pub(crate) mod rules;
 mod typedef;
 pub use typedef::TypeDef;
 
@@ -76,6 +76,22 @@ impl Thm {
     pub fn into_parts(self) -> (Ctx, Term) {
         let p = self.0.prop();
         (p.1.0.0.clone(), p.1.1.0.clone())
+    }
+
+    /// Wrap an already-minted pure theorem `⊢ IsThm(Γ, φ)` in [`CoreLang`]
+    /// as a kernel [`Thm`] — the core-on-pure seam's landing constructor
+    /// (see [`crate::seam`]). This is how a toHOL fact, reified to the
+    /// concrete `CoreProp` shape and transported with the base `eq_mp`,
+    /// re-enters the ordinary `Thm` API.
+    ///
+    /// Soundness: trivial. The inner `pure::Thm` field is hygiene-only —
+    /// soundness rests on `admits()` alone (see `lang`/`rules`): a
+    /// `pure::Thm<CoreLang, CoreProp>` can only ever have been minted by an
+    /// admitted, sound rule (or by the ungated equality/propositional
+    /// calculus from such mints), so it is already a true theorem; wrapping
+    /// it adds nothing.
+    pub fn from_pure(t: covalence_pure::Thm<lang::CoreLang, lang::CoreProp>) -> Thm {
+        Thm(t)
     }
 
     /// Structural weakening: `Δ ⊢ φ`, given `Γ ⊢ φ` and `Γ ⊆ Δ`.

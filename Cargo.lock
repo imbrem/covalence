@@ -958,6 +958,7 @@ name = "covalence-core"
 version = "0.0.0"
 dependencies = [
  "covalence-pure",
+ "covalence-pure-eval",
  "covalence-sexp",
  "covalence-types",
  "fnv",

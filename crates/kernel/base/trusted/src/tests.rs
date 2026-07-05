@@ -273,6 +273,24 @@ fn modus_ponens() {
     assert_eq!(q.prop(), &True);
 }
 
+#[test]
+fn eq_mp_transports_along_proven_equation() {
+    // ⊢ P with P = (true = true), and ⊢ P = P (refl at the bool sort); eq_mp
+    // matches the lhs structurally and re-mints the rhs under the union.
+    let p = of_eq_with(true, true, Calc).expect("true == true"); // ⊢ P
+    let refl_eq = Thm::refl(Eqn(Val(true), Val(true)), Calc); // ⊢ P = P
+    let q = p.eq_mp(refl_eq).expect("lhs matches, contexts union");
+    assert_eq!(q.prop(), &Eqn(Val(true), Val(true)));
+}
+
+#[test]
+fn eq_mp_rejects_mismatched_lhs() {
+    let p = of_eq_with(true, true, ()).expect("true == true"); // ⊢ (true = true)
+    // ⊢ (false = false) = (false = false) — lhs ≠ p's proposition.
+    let refl_eq = Thm::refl(Eqn(Val(false), Val(false)), ());
+    assert!(p.eq_mp(refl_eq).is_none());
+}
+
 // ============================ gated minting ============================
 
 #[test]

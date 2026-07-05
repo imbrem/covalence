@@ -154,6 +154,30 @@ where
     }
 }
 
+impl<L: Language, P: Expr<Ty = bool> + Eq> Thm<L, P> {
+    /// Equality modus ponens: from `⊢ P` and `⊢ P = Q` (both `bool`-sorted), get
+    /// `⊢ Q`, under the **union** of the two contexts. `None` if the equation's
+    /// left-hand side does not match this theorem's proposition (`P: Eq`, the same
+    /// structural middle-match [`trans`](Self::trans) uses) or the contexts cannot
+    /// be combined. The equality-calculus mirror of [`mp`](Self::mp).
+    ///
+    /// Soundness: Leibniz on the definitional equality — `⊢ P = Q` certifies that
+    /// `P` and `Q` denote the same boolean, so if `P` holds then `Q` holds. This is
+    /// the same class of ungated, sound-in-every-`L` step as [`trans`](Self::trans)
+    /// (transport along a proven equation, matched by structural `Eq`); it
+    /// introduces no new equalities and no new evaluation, only re-labels a proven
+    /// proposition by an already-proven equation.
+    pub fn eq_mp<Q: Expr<Ty = bool>>(self, eq: Thm<L, Eqn<P, Q>>) -> Option<Thm<L, Q>> {
+        let (l1, p) = self.into_parts();
+        let (l2, Eqn(p2, q)) = eq.into_parts();
+        if p != p2 {
+            return None;
+        }
+        let lang = l1.union(l2)?;
+        Some(Thm::new(lang, q))
+    }
+}
+
 impl<L, A, A2> Thm<L, Eqn<A, A2>> {
     /// Congruence in the ARGUMENT, under any op `F` (ops denote functions). There
     /// is deliberately no congruence in the *operator* — you cannot equate ops.

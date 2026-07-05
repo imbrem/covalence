@@ -10,6 +10,11 @@ edition = "2024"
 
 [dependencies]
 covalence-pure = { path = "../../base" }
+# The audited core-on-pure seam (toHOL slice): `CoreLang` extends `Builtins`,
+# so the enumerable native-computation CanonRules back the IsThm accelerator
+# rules. This edge IS a TCB-shape change (docs/deps/tcb.json gains
+# covalence-pure-eval) — maintainer-review territory.
+covalence-pure-eval = { path = "../../base/eval" }
 covalence-types = { path = "../../../lib/types" }
 covalence-sexp = { path = "../../../lib/sexp" }
 fnv = "1"

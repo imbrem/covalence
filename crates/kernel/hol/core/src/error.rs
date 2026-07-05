@@ -108,6 +108,9 @@ pub enum Error {
          relation), so the rep/abs subtype laws do not apply"
     )]
     NotASubtype,
+
+    #[error("pure-kernel step failed: {0}")]
+    Pure(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

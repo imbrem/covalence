@@ -9,9 +9,9 @@
 //! 1. [`Thm`] — the unforgeable certificate `⊢ P` in language `L`. Private fields,
 //!    no public constructor. The sole mint is `pub(crate) Thm::new`; audit **every**
 //!    call site:
-//!    - in `eqn` — `refl`/`sym`/`trans`/`cong_app`/`cong_pair`, `trans_ptr`,
-//!      `of_ptr_eq`, `of_eq_with` (used by `of_eq`/`semidecide`), `lift`, `apply`
-//!      (⇒ `apply0`), `canon`;
+//!    - in `eqn` — `refl`/`sym`/`trans`/`cong_app`/`cong_pair`/`eq_mp`,
+//!      `trans_ptr`, `of_ptr_eq`, `of_eq_with` (used by `of_eq`/`semidecide`),
+//!      `lift`, `apply` (⇒ `apply0`), `canon`;
 //!    - in `prop` — `and_intro`/`and_elim`/`or_inl`/`or_inr`/`mp`;
 //!    - in `matching` — `apply_rewrite`.
 //! 2. [`Expr`] — **sealed**: the closed grammar of expressions

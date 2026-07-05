@@ -38,11 +38,13 @@
 //!
 //! - `nat.shl` (`a·2^s`): `0` for `a = 0`; the true product where `s` fits `usize`
 //!   (may OOM-panic on a huge but representable result); `None` when `a ≠ 0` and `s`
-//!   exceeds `usize` (result has ≥ 2^64 bits — unrepresentable).
+//!   exceeds `usize` (product unrepresentable — refusing is sound on every target).
 //! - `nat.pow` (`base^exp`): `0`/`1` for `base ∈ {0, 1}`; the true power where `exp`
 //!   fits `u32` (OOM-panic acceptable); `None` when `exp` exceeds `u32`.
-//! - `nat.shr` (`⌊a/2^s⌋`) is **total** — `0` for any `s ≥ 2^64` (any representable
-//!   `a` has bit-length ≪ 2^64), so it never refuses.
+//! - `nat.shr` (`⌊a/2^s⌋`): `0` exactly when `s ≥ bits(a)` (compared against the
+//!   operand’s ACTUAL bit-length — target-independent, NOT the `usize` boundary,
+//!   which is `2^32` on wasm32); computes where `s` fits `usize`; refuses only when
+//!   `s` exceeds `usize` yet is below `bits(a)` (reachable only on <64-bit targets).
 //! - `bytes.at`/`bytes.slice` are **total** over `Nat` indices/lengths (out-of-range
 //!   saturates to `0` / the empty or clamped-to-real-length subslice); `bytes.cat`/
 //!   `bytes.consNat` may OOM-panic on allocation only.

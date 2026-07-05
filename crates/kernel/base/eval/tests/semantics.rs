@@ -103,11 +103,29 @@ fn oversize_pow_and_shl_refuse_shr_is_total() {
     assert_eq!(NatShl.eval(&(n(1), huge_shift.clone())), None);
     // a = 0: total (0 · 2^s = 0).
     assert_eq!(NatShl.eval(&(n(0), huge_shift.clone())), Some(n(0)));
-    // shr is TOTAL: any representable `a` has bit-length < 2^64, so an
-    // over-usize shift yields 0 — never a refusal.
+    // shr returns 0 exactly when the shift ≥ bits(a) — compared against the
+    // operand's ACTUAL bit-length, target-independent (NOT the usize boundary,
+    // which is 2^32 on wasm32 and would mint a false `a >> s = 0`).
     assert_eq!(NatShr.eval(&(n(1), huge_shift.clone())), Some(n(0)));
     let big = NatShl.eval(&(n(0xFFFF), n(1000))).unwrap();
     assert_eq!(NatShr.eval(&(big, huge_shift)), Some(n(0)));
+}
+
+#[test]
+fn shr_keys_off_bit_length_not_usize() {
+    // Regression (audit: 32-bit/wasm32 ⊢False). `a = 2^100` has 101 bits.
+    let a = NatShl.eval(&(n(1), n(100))).unwrap(); // 2^100
+    // s < bits(a): the true nonzero value, computed.
+    assert_eq!(NatShr.eval(&(a.clone(), n(98))), Some(n(4))); // 2^100 >> 98 = 4
+    assert_eq!(NatShr.eval(&(a.clone(), n(99))), Some(n(2))); // 2^100 >> 99 = 2
+    assert_eq!(NatShr.eval(&(a.clone(), n(100))), Some(n(1))); // = 1
+    // s == bits(a) and s > bits(a): exactly 0 (the boundary the fix keys on).
+    assert_eq!(NatShr.eval(&(a.clone(), n(101))), Some(n(0)));
+    assert_eq!(NatShr.eval(&(a.clone(), n(200))), Some(n(0)));
+    // Oversize shift (> usize on 64-bit) still 0 because it exceeds bits(a).
+    assert_eq!(NatShr.eval(&(a, n(1u128 << 64))), Some(n(0)));
+    // a = 0 → 0 for any shift (bits(0) = 0).
+    assert_eq!(NatShr.eval(&(n(0), n(1u128 << 64))), Some(n(0)));
 }
 
 // ============================================================================

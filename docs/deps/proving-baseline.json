@@ -1,0 +1,230 @@
+{
+  "generatedBy": "scripts/bench-proving.mjs",
+  "note": "Pre-S10 proving-performance baseline (toHOL purge). Wall-clock ms per covalence-init compute-heavy proving suite. Compare S10 against `min` on the SAME machine (numbers are hardware-dependent; the check is ratio-based).",
+  "gitCommit": "7d57a291",
+  "profile": "release",
+  "reps": 5,
+  "warmup": 1,
+  "suites": [
+    {
+      "name": "utf8",
+      "bin": "lib",
+      "filter": "init::utf8",
+      "note": "UTF-8 encode/decode by computation (utf8.cov + Rust)",
+      "tests": 12,
+      "ms": {
+        "min": 69.55,
+        "median": 69.64,
+        "mean": 69.88,
+        "max": 70.72
+      },
+      "samples": [
+        70.72,
+        69.55,
+        69.64,
+        69.89,
+        69.59
+      ]
+    },
+    {
+      "name": "utf16",
+      "bin": "lib",
+      "filter": "init::utf16",
+      "note": "UTF-16 encode by computation",
+      "tests": 6,
+      "ms": {
+        "min": 32.65,
+        "median": 43.82,
+        "mean": 41.01,
+        "max": 45.06
+      },
+      "samples": [
+        45.06,
+        44.04,
+        43.82,
+        39.46,
+        32.65
+      ]
+    },
+    {
+      "name": "string",
+      "bin": "lib",
+      "filter": "init::string",
+      "note": "string/bytes newtype seam (light; prelude floor)",
+      "tests": 6,
+      "ms": {
+        "min": 4.2,
+        "median": 4.32,
+        "mean": 4.35,
+        "max": 4.53
+      },
+      "samples": [
+        4.41,
+        4.29,
+        4.2,
+        4.53,
+        4.32
+      ]
+    },
+    {
+      "name": "regex-init",
+      "bin": "lib",
+      "filter": "init::regex",
+      "note": "regex.cov derivative-matching, oracle agreement",
+      "tests": 10,
+      "ms": {
+        "min": 71.84,
+        "median": 75.17,
+        "mean": 79.77,
+        "max": 97.24
+      },
+      "samples": [
+        71.84,
+        73.35,
+        75.17,
+        97.24,
+        81.23
+      ]
+    },
+    {
+      "name": "regex-grammar",
+      "bin": "lib",
+      "filter": "grammar::regex",
+      "note": "regex desugar/compile to a byte language",
+      "tests": 5,
+      "ms": {
+        "min": 57.45,
+        "median": 58.6,
+        "mean": 61.7,
+        "max": 74.75
+      },
+      "samples": [
+        57.72,
+        74.75,
+        58.6,
+        60,
+        57.45
+      ]
+    },
+    {
+      "name": "regex-corpus",
+      "bin": "regex",
+      "filter": "",
+      "note": "regex_matching integration: oracle corpus + timing regexes",
+      "tests": 15,
+      "ms": {
+        "min": 159.78,
+        "median": 163.56,
+        "mean": 176.05,
+        "max": 205.9
+      },
+      "samples": [
+        205.9,
+        188.01,
+        163.56,
+        159.78,
+        163
+      ]
+    },
+    {
+      "name": "nat",
+      "bin": "lib",
+      "filter": "init::nat::",
+      "note": "nat arithmetic proving",
+      "tests": 28,
+      "ms": {
+        "min": 16.26,
+        "median": 17.78,
+        "mean": 17.31,
+        "max": 17.95
+      },
+      "samples": [
+        17.85,
+        17.95,
+        17.78,
+        16.26,
+        16.72
+      ]
+    },
+    {
+      "name": "nat-div",
+      "bin": "lib",
+      "filter": "init::nat_div",
+      "note": "nat division/mod by computation",
+      "tests": 11,
+      "ms": {
+        "min": 21.61,
+        "median": 23.23,
+        "mean": 23.44,
+        "max": 26.94
+      },
+      "samples": [
+        21.94,
+        26.94,
+        21.61,
+        23.23,
+        23.48
+      ]
+    },
+    {
+      "name": "int",
+      "bin": "lib",
+      "filter": "init::int::",
+      "note": "int (quotient) arithmetic proving",
+      "tests": 22,
+      "ms": {
+        "min": 111.2,
+        "median": 119.57,
+        "mean": 120.69,
+        "max": 133.84
+      },
+      "samples": [
+        133.84,
+        117.52,
+        119.57,
+        111.2,
+        121.32
+      ]
+    },
+    {
+      "name": "rat",
+      "bin": "lib",
+      "filter": "init::rat",
+      "note": "rat arithmetic proving (heaviest numeral suite)",
+      "tests": 34,
+      "ms": {
+        "min": 229.51,
+        "median": 237.39,
+        "mean": 241.47,
+        "max": 270.69
+      },
+      "samples": [
+        270.69,
+        231.55,
+        237.39,
+        229.51,
+        238.22
+      ]
+    },
+    {
+      "name": "real",
+      "bin": "lib",
+      "filter": "init::real",
+      "note": "real/analysis proving over int/rat",
+      "tests": 14,
+      "ms": {
+        "min": 50.56,
+        "median": 60.15,
+        "mean": 65.27,
+        "max": 92.03
+      },
+      "samples": [
+        92.03,
+        60.15,
+        58.16,
+        50.56,
+        65.46
+      ]
+    }
+  ]
+}

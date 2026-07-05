@@ -32,6 +32,7 @@
     "covalence-opentheory",
     "covalence-parquet",
     "covalence-parse",
+    "covalence-proptest",
     "covalence-proto",
     "covalence-pure",
     "covalence-pure-eval",

@@ -40,7 +40,7 @@
     },
     "base+HOL": {
       "files": 52,
-      "nonTestLoc": 6661,
+      "nonTestLoc": 6662,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -119,7 +119,7 @@
     },
     "base+HOL (target)": {
       "files": 31,
-      "nonTestLoc": 4888,
+      "nonTestLoc": 4889,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -186,7 +186,7 @@
     },
     "base+HOL+eval": {
       "files": 82,
-      "nonTestLoc": 11611,
+      "nonTestLoc": 11612,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -225,7 +225,7 @@
     },
     "base+HOL+wasm": {
       "files": 33,
-      "nonTestLoc": 5326,
+      "nonTestLoc": 5327,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -295,7 +295,7 @@
     },
     "base+HOL+eval+wasm": {
       "files": 82,
-      "nonTestLoc": 11611,
+      "nonTestLoc": 11612,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,

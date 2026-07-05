@@ -392,7 +392,7 @@ fn induct_on(ivar: &str, motive: &Term, base: Thm, step: Thm) -> Result<Thm> {
     let body_sn = step.imp_elim(body_n)?; //               {motive n} ⊢ body[S n]
     let p_sn = beta_expand(motive, succ(n.clone()), body_sn)?; // {motive n} ⊢ motive (S n)
     let step = p_sn.imp_intro(&pn)?; //                          ⊢ motive n ⟹ motive (S n)
-    beta_nf_concl(Thm::nat_induct(base, step)?) //              ⊢ ∀n. body
+    beta_nf_concl(crate::init::ext::nat_induct(base, step)?) //              ⊢ ∀n. body
 }
 
 cached_thm! {

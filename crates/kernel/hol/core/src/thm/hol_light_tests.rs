@@ -873,38 +873,25 @@ fn gen_spec_at_different_witness_substitutes() {
 }
 
 #[test]
-fn nat_induct_rule_builds_forall() {
-    // Motive p := λn. (n = n). base ⊢ p 0; step ⊢ p n ⟹ p (succ n).
-    let p = {
-        let nf = Term::free("n", Type::nat());
-        hol::pub_abs("n", Type::nat(), hol::hol_eq(nf.clone(), nf))
-    };
-    let zero = Term::nat_lit(covalence_types::Nat::zero());
-    // base : ⊢ p 0  (build `p 0` then β-reduce, then refl gives p 0).
-    let base = {
-        let redex = Term::app(p.clone(), zero);
-        let beta = Thm::beta_conv(redex).unwrap(); // ⊢ p 0 = (0 = 0)
-        let refl00 = Thm::refl(Term::nat_lit(covalence_types::Nat::zero())).unwrap();
-        beta.sym().unwrap().eq_mp(refl00).unwrap() // ⊢ p 0
-    };
-    // step : ⊢ p n ⟹ p (succ n) — assume `p n`, prove `p (succ n)`.
+fn nat_induct_rule_derives_open_conclusion() {
+    // Sequent form: proposition p := (n = n) with n : nat free.
+    // base : ⊢ p[0/n] = (0 = 0); step : {p} ⊢ p[succ n/n].
     let n = Term::free("n", Type::nat());
-    let p_n = Term::app(p.clone(), n.clone());
+    let p = hol::hol_eq(n.clone(), n.clone());
+    let base = Thm::refl(Term::nat_lit(covalence_types::Nat::zero())).unwrap(); // ⊢ 0 = 0
     let succ_n = Term::app(hol::succ_fn(), n);
-    let p_succ_n = Term::app(p.clone(), succ_n.clone());
-    // ⊢ p (succ n) : beta-reduce to (succ n = succ n), refl, fold back.
-    let psucc = {
-        let beta = Thm::beta_conv(p_succ_n).unwrap(); // ⊢ p(succ n) = (succ n = succ n)
-        let refl_s = Thm::refl(succ_n).unwrap();
-        beta.sym().unwrap().eq_mp(refl_s).unwrap()
-    };
-    let step = psucc.imp_intro(&p_n).unwrap(); // ⊢ p n ⟹ p (succ n)
-
-    let thm = Thm::nat_induct(base, step).unwrap();
-    // ⊢ ∀n:nat. p n
-    let (ty, _) = parse_hol_forall(thm.concl()).unwrap();
-    assert_eq!(ty, &Type::nat());
+    let step = Thm::refl(succ_n)
+        .unwrap() // ⊢ succ n = succ n
+        .weaken(crate::Ctx::singleton(p.clone()))
+        .unwrap(); // {p} ⊢ succ n = succ n
+    let thm = Thm::nat_induct(base, step, p.clone(), "n").unwrap();
+    // Γ empty (the IH hypothesis `p` is discharged), conclusion is `p`
+    // itself with `n` free — generalize with the ordinary GEN rule.
+    assert_eq!(thm.concl(), &p);
     assert!(thm.hyps().is_empty());
+    let all = thm.all_intro("n", Type::nat()).unwrap();
+    let (ty, _) = parse_hol_forall(all.concl()).unwrap();
+    assert_eq!(ty, &Type::nat());
 }
 
 #[test]

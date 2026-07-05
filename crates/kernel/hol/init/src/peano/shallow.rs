@@ -236,7 +236,7 @@ impl Peano for Hol {
     // ---- the induction schema ----
 
     fn induct(&self, base: Thm, step: Thm) -> Result<Thm> {
-        Thm::nat_induct(base, step)
+        crate::init::ext::nat_induct(base, step)
     }
 }
 

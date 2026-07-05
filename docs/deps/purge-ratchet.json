@@ -50,7 +50,7 @@
     },
     "tycon-obs": {},
     "term-literal-ctors": {
-      "covalence-core": 64,
+      "covalence-core": 63,
       "covalence-core-test-guest": 4,
       "covalence-hol-eval": 61,
       "covalence-init": 72
@@ -66,7 +66,7 @@
     "unfold_term_spec": 38,
     "termkind-literals": 123,
     "tycon-obs": 0,
-    "term-literal-ctors": 201,
+    "term-literal-ctors": 200,
     "has_no_obs": 0,
     "cov-script-reduce": 18
   },

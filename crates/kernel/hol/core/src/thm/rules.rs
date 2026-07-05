@@ -693,74 +693,60 @@ core_rules! {
         Ok((hyps.clone(), p))
     }
 
-    /// `Γ₁ ∪ Γ₂ ⊢ ∀n:nat. p n`, given `Γ₁ ⊢ p 0` and `Γ₂ ⊢ p n ⟹ p (succ n)`
-    /// with the GEN side conditions on `n`.
-    NatInduct(Prem<L>, Prem<L>) = |(base, step), _| {
+    /// `Γ_b ∪ (Γ_s \ {p}) ⊢ p` — Peano induction on `nat`, **sequent form**
+    /// (connective-free): from `Γ_b ⊢ p[0/x]` (base) and
+    /// `Γ_s ⊢ p[succ x/x]` with `p ∈ Γ_s` and `x : nat` not free in
+    /// `Γ_s \ {p}` (step), conclude `p` with `x` free — universal by
+    /// genericity. See `Thm::nat_induct` for the audit-grade soundness
+    /// argument.
+    NatInduct(Prem<L>, Prem<L>, Term, SmolStr) = |(base, step, p, x), _| {
         let nat = Type::nat();
-        let zero = Term::nat_lit(covalence_types::Nat::zero());
+        let var = Var::new(x.as_str(), nat.clone());
+        let p_ty = p.type_of()?;
+        if !p_ty.is_bool() {
+            return Err(Error::NotBool(p_ty));
+        }
         let (base_h, base_c) = parts(&base);
         let (step_h, step_c) = parts(&step);
 
-        // base : ⊢ p 0
-        let TermKind::App(p, base_arg) = base_c.kind() else {
+        // base : Γ_b ⊢ p[0/x]. (`x` MAY be free in Γ_b — see the
+        // soundness docstring; the base is only consumed at the x↦0
+        // instance, via the substitution lemma at the ambient valuation.)
+        let zero = Term::nat_lit(covalence_types::Nat::zero());
+        let p_zero = subst_free(&p, &var, &zero);
+        if *base_c != p_zero {
             return Err(Error::ConnectiveRule(format!(
-                "nat_induct: base conclusion {} is not `p 0`",
-                base_c
-            )));
-        };
-        if base_arg != &zero {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: base conclusion {} is not the motive applied to 0",
-                base_c
-            )));
-        }
-        let p = p.clone();
-
-        // step : ⊢ p n ⟹ p (succ n)
-        let (ante, conseq) = super::parse_hol_imp(step_c)?;
-        let TermKind::App(ante_p, n_free) = ante.kind() else {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: step antecedent {ante} is not `p n`"
-            )));
-        };
-        if *ante_p != p {
-            return Err(Error::ConnectiveRule(
-                "nat_induct: step uses a different motive than the base".into(),
-            ));
-        }
-        let TermKind::Free(nv) = n_free.kind() else {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: induction variable {n_free} is not a free variable"
-            )));
-        };
-        if *nv.ty() != nat {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: induction variable {n_free} is not of type nat"
-            )));
-        }
-        let expected_conseq = Term::app(p.clone(), Term::app(hol::succ_fn(), n_free.clone()));
-        if *conseq != expected_conseq {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: step consequent {conseq} is not `p (succ n)`"
+                "nat_induct: base conclusion {base_c} is not p[0/{x}] = {p_zero}"
             )));
         }
 
-        // GEN side conditions.
-        if has_free_var_typed(&p, nv) {
-            return Err(Error::ConnectiveRule(
-                "nat_induct: induction variable occurs free in the motive".into(),
-            ));
+        // step : Γ_s ⊢ p[succ x/x] with p ∈ Γ_s (the discharged IH).
+        let succ_x = Term::app(hol::succ_fn(), Term::free(x.as_str(), nat));
+        let p_succ = subst_free(&p, &var, &succ_x);
+        if *step_c != p_succ {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: step conclusion {step_c} is not p[succ {x}/{x}] = {p_succ}"
+            )));
         }
-        for h in step_h.iter() {
-            if has_free_var_typed(h, nv) {
-                return Err(Error::FreeVarInHyps { name: nv.name().into() });
+        if !step_h.contains(&p) {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: step hypotheses do not contain the motive {p}"
+            )));
+        }
+
+        // Genericity side condition (soundness-critical): `x` must not be
+        // free in the RESIDUAL step hypotheses — the step must hold for
+        // every value of `x`, since the induction re-instantiates it at
+        // 0, 1, …, k. (`p` itself is exempt: it IS the induction
+        // hypothesis being discharged.)
+        let rest = step_h.remove(&p);
+        for h in rest.iter() {
+            if has_free_var_typed(h, &var) {
+                return Err(Error::FreeVarInHyps { name: x.clone() });
             }
         }
 
-        let n_name = nv.name().to_string();
-        let body = Term::app(p, n_free.clone());
-        let concl = hol::hol_forall(&n_name, nat, body);
-        Ok((base_h.union(step_h), concl))
+        Ok((base_h.union(&rest), p))
     }
 
     // ================= Group G': flagged postulates =================

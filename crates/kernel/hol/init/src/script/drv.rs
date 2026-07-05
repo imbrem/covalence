@@ -457,7 +457,7 @@ impl Tactic for NatInductRule {
         ctx_arity(a, 2, "nat-induct")?;
         let base = c.check(&a[0]).await?;
         let step = c.check(&a[1]).await?;
-        Ok(Thm::nat_induct(base, step)?)
+        Ok(crate::init::ext::nat_induct(base, step)?)
     }
 }
 

@@ -597,7 +597,7 @@ fn discharge_induct(d_pred: &Term) -> Result<Thm> {
     let base_assumed = Thm::assume(base_pred.clone())?; // {base} ⊢ ⟦·⟧⌜Q0⌝
     let base_h = br_base.clone().eq_mp(base_assumed)?; // {base} ⊢ Q 0
 
-    let induct = Thm::nat_induct(base_h, step_x)?; // {base, step} ⊢ ∀x. Q x
+    let induct = crate::init::ext::nat_induct(base_h, step_x)?; // {base, step} ⊢ ∀x. Q x
     debug_assert_eq!(induct.concl(), &qall);
     let concl = br_all.sym()?.eq_mp(induct)?; // {base, step} ⊢ ⟦·⟧⌜∀x. Q x⌝
 

@@ -623,7 +623,7 @@ pub fn induct_via_replay(motive: &Fol, k: u64, base: Thm, step: Thm) -> Result<(
     };
     let step_thm = induction_step(&p, k, &step_ref)?;
 
-    let induct = Thm::nat_induct(base_thm, step_thm)?; // ⊢ ∀n. p n
+    let induct = crate::init::ext::nat_induct(base_thm, step_thm)?; // ⊢ ∀n. p n
     let induct = crate::init::eq::beta_nf_concl(induct)?; // ⊢ ∀n. ⟦P(n)⟧
 
     // Result formula: `A. x P` (close the setvar into the binder).

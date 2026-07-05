@@ -259,7 +259,7 @@ impl Inductive for NatTheory {
         let [base, step]: [Thm; 2] = cases
             .try_into()
             .map_err(|_| Error::ConnectiveRule("nat induct: expected 2 cases".into()))?;
-        Thm::nat_induct(base, step)
+        crate::init::ext::nat_induct(base, step)
     }
 
     fn injective(&self, i: usize, xs: &[Term], ys: &[Term]) -> KResult<Thm> {

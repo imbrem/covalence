@@ -111,21 +111,48 @@ the minimal kernel, the defs+certs are `CoreEval` (in eval).
 
 ---
 
-## Open decisions (need maintainer steer before L1)
+## DECISIONS (locked 2026-07, autonomous per maintainer's "be aggressive, record
+## + we can roll back"; supersede the earlier open questions)
 
-1. **Do the cert families collapse into base `canon` + untrusted unfolding, or
-   stay as core cert families re-keyed on base ops?** The former shrinks the TCB
-   more but is more rework; the latter is a smaller step. (Recommend: aim for
-   collapse, but a re-keying intermediate is a valid first commit.)
-2. **`ε/rep/abs` migration (L4) — now or deferred?** An *opaque-spec-handle*
-   intermediate (Term keeps `Spec` leaves carrying handles built in eval) gets
-   `defs/` out FASTER without the full vocabulary change; the `ε/rep/abs` cleanup
-   then follows. (Recommend: defer L4; chase defs-out first via opaque handles.)
-3. **L3 family ordering** — first family for the fastest visible win (recommend
-   **logic**: connectives are the simplest defined constants and exercise the
-   whole move end-to-end, or **nat** if we want the cert path proven first).
+**D1 — L1 = MAKE THE TOWER REAL (the load-bearing decision).** Do NOT try to
+decouple the cert tables from `defs::` inside core (analysis dead-ends: every
+"re-key" variant either re-imports the definitions, needs unforgeable untrusted
+registration, or loses the universal defining equations init's theories prove
+from). Instead, compose the maintainer's two directives: create **`CoreEval`, a
+new base `Language` in `crates/kernel/hol/eval` that `extends` `CoreLang`**, and
+move **`certs.rs` + `tohol.rs` + the cert/toHOL rules + `defs/`** there as
+`Rule<CoreEval>` impls with their own manifest golden. This works because the
+orphan-rule constraint binds rules to the crate that OWNS the language — so a
+language owned by hol/eval hosts the rules there, and the `defs::` tables become
+*same-crate* references sitting NEXT TO the native CanonRules (exactly the
+auditability the maintainer asked for). Trust becomes tiered *by declaration*:
+`Thm<CoreLang,_>` = pure HOL (no computation TCB); `Thm<CoreEval,_>` = +eval
+axioms. `covalence-hol-eval` stops being "zero-TCB" and becomes the eval-tier
+crate (trust is per-rule via `admits`, so its untrusted driver parts remain
+untrusted). core-manifest shrinks to the HOL rules; a new eval-manifest golden
+carries the cert/toHOL entries.
 
-Everything else (S10 literal deletion, S11 endgame, the float cert families) is
-downstream of this and inherits the clean base-op-keyed cert architecture.
+**D2 — typed-Thm tiering.** `core::Thm` gains the language as a parameter
+(`Thm<L = CoreLang>`; alias `EvalThm = Thm<CoreEval>`), lift low→high only.
+init consumes the top tier through the existing driver/TermExt seam (S6 already
+re-routed the chokepoints). Mechanical churn where signatures pin the tier.
+
+**D3 — transitional residue.** The literal LEAVES (`TermKind::Nat/Int/SmallInt/
+Blob`) stay in core until the toHOL literal path replaces them; their TYPES
+(`u8_ty`…`int_ty`, the type-spec handles they return) therefore stay in core
+transitionally too — the TERM catalogue (all op/constant definitions, the bulk)
+moves now. Record in SKELETONS; dies with the literal leaves.
+
+**D4 — ε/rep/abs deferred** (unchanged): the predicate-parameterized vocabulary
+replaces `define`/typedef's named machinery in a later arc; defs-out does not
+wait on it.
+
+**D5 — pure-HOL unit tests land WITH the move** (the payoff): for sample values,
+derive in the `CoreLang` tier (definitional unfolding via twin theorems) the same
+equation each cert family mints, and assert equality — machine-checked
+consistency of definition vs native impl, living in hol/eval next to both.
+
+S10/S11 and the float cert families inherit this architecture (floats' F2b
+becomes a CoreEval family in hol/eval directly).
 
 [three-tier tower]: ../pure-hol-and-build-plan.md

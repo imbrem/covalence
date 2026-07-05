@@ -17,9 +17,18 @@
 //! - **Recursion is iteration** (catamorphism): the recursor takes one
 //!   *step* per constructor, `stepᵢ : B₁ → … → Bₖ → β` where `Bⱼ = β` at
 //!   recursive positions and the external type elsewhere; recursive
-//!   arguments are *not* passed raw. (A primitive-recursion variant that
-//!   also passes the raw arguments is a later, additive extension — some
-//!   backends cannot deliver it.)
+//!   arguments are *not* passed raw.
+//! - **Primitive recursion (paramorphism) is an optional capability**
+//!   ([`BackendCaps::prim_rec`], the [`InductiveFacts::prec_app`] /
+//!   [`InductiveFacts::pcomp`] methods): the para step
+//!   `stepᵢ : A₁ → … → Aₖ → B₁ → … → Bₘ → β` receives the **raw**
+//!   constructor arguments (recursive ones at the carrier) *and then* the
+//!   fold images of the recursive arguments (in positional order). This is
+//!   what a rec-position *extractor* (`cdr (scons h t) = t`, via the step
+//!   `λh t bh bt. h`/… raw projection) needs — it is **unstatable** for a
+//!   rank-1 Church/impredicative backend (the subtree-recovery wall), so
+//!   the methods default to [`InductiveError::Unsupported`]; exact-type
+//!   backends override them.
 //! - **Observation instances.** For representation-polymorphic carriers
 //!   (e.g. a Church encoding `S⟨'r⟩`), the *freeness* statements take
 //!   their constructor-equation antecedent at a backend-chosen concrete
@@ -38,6 +47,9 @@
 //! ```text
 //! comp(steps, i)     ⊢ ∀x⃗. rec steps (Cᵢ x⃗) = stepᵢ x⃗ʳ        (x⃗ʳ = x⃗ with
 //!                       recursive xⱼ replaced by rec steps xⱼ)
+//! pcomp(steps, i)    ⊢ ∀x⃗. prec steps (Cᵢ x⃗) = stepᵢ x⃗ b⃗      (b⃗ = the
+//!                       prec-images of the recursive xⱼ; optional — see
+//!                       BackendCaps::prim_rec)
 //! injective(i,k,x⃗,y⃗) ⊢ (Cᵢ x⃗ = Cᵢ y⃗) ⟹ xₖ = yₖ               (at the obs.
 //!                       instance; may be Unsupported at Rec positions)
 //! distinct(i,j,x⃗,y⃗)  ⊢ (Cᵢ x⃗ = Cⱼ y⃗) ⟹ F                     (i ≠ j)
@@ -72,6 +84,12 @@ pub struct BackendCaps {
     /// (Rank-1 Church/impredicative encodings cannot deliver it — the
     /// subtree-recovery wall; carved/exact representations can.)
     pub rec_injective: bool,
+    /// Primitive recursion (paramorphism) is available:
+    /// [`InductiveFacts::prec_app`] / [`InductiveFacts::pcomp`] are
+    /// implemented (steps receive the raw recursive arguments in addition
+    /// to their fold images). Same wall as `rec_injective` for rank-1
+    /// encodings.
+    pub prim_rec: bool,
 }
 
 /// The theorem surface of a realized inductive type. See the [module
@@ -108,6 +126,30 @@ pub trait InductiveFacts<L: Logic> {
     /// Exhaustiveness: `⊢ ∀t. mem t ⟹ ⋁ᵢ ∃x⃗. t = Cᵢ x⃗` (right-nested
     /// disjunction in constructor order).
     fn cases(&self) -> IndResult<L::Thm, L>;
+
+    /// The **primitive recursor** applied: `prec steps t` as a term, with
+    /// para-shaped `steps` (raw arguments then images — see the module
+    /// docs). Optional: defaults to [`InductiveError::Unsupported`]; check
+    /// [`BackendCaps::prim_rec`].
+    fn prec_app(&self, steps: &[L::Term], t: &L::Term) -> IndResult<L::Term, L> {
+        let _ = (steps, t);
+        Err(InductiveError::Unsupported {
+            what: "primitive recursion (prec_app)",
+            why: "this backend serves iteration only".into(),
+        })
+    }
+
+    /// Primitive-recursion computation law for constructor `i`:
+    /// `⊢ ∀x⃗. prec steps (Cᵢ x⃗) = stepᵢ x⃗ b⃗` (raw arguments *and* the
+    /// prec-images of the recursive ones). Optional: defaults to
+    /// [`InductiveError::Unsupported`]; check [`BackendCaps::prim_rec`].
+    fn pcomp(&self, steps: &[L::Term], i: usize) -> IndResult<L::Thm, L> {
+        let _ = (steps, i);
+        Err(InductiveError::Unsupported {
+            what: "primitive recursion (pcomp)",
+            why: "this backend serves iteration only".into(),
+        })
+    }
 
     /// Constructor membership: `⊢ mem (Cᵢ x⃗)` given proofs `⊢ mem xⱼ` for
     /// the recursive argument positions (in positional order). `args` is
@@ -187,6 +229,35 @@ impl<L: Logic> InductiveTheory<L> {
         L: LogicOps,
     {
         Ok(logic.app(self.mem.clone(), t.clone())?)
+    }
+
+    /// **Total induction**: run [`InductiveFacts::induct`] and discharge
+    /// the membership guard with [`InductiveFacts::mem_trivial`], yielding
+    /// the unguarded `⊢ ∀t. motive t` (applied form). Errors with
+    /// [`InductiveError::Unsupported`] when the carrier is not exact.
+    pub fn induct_total(
+        &self,
+        logic: &L,
+        motive: &L::Term,
+        cases: Vec<L::Thm>,
+    ) -> IndResult<L::Thm, L>
+    where
+        L: LogicOps,
+    {
+        let guarded = self.facts.induct(motive, cases)?;
+        let Some(triv) = self.facts.mem_trivial() else {
+            return Err(InductiveError::Unsupported {
+                what: "induct_total",
+                why: "the carrier is not exact (mem_trivial unavailable); \
+                      use the membership-relativized induct"
+                    .into(),
+            });
+        };
+        let tv = logic.var("__tot_t", self.ty.clone());
+        let at_t = logic.all_elim(guarded, tv.clone())?; // ⊢ mem t ⟹ motive t
+        let mem_t = logic.all_elim(triv, tv)?; // ⊢ mem t
+        let body = logic.imp_elim(at_t, mem_t)?; // ⊢ motive t
+        Ok(logic.all_intro(body, "__tot_t", self.ty.clone())?)
     }
 
     /// The **case obligation** for constructor `i` under `motive`: the

@@ -55,6 +55,30 @@ fn step_ty<L: LogicOps>(
     ty
 }
 
+/// The **para** step type for constructor `i` at result type `beta`:
+/// `A₁ → … → Aₖ → B₁ → … → Bₘ → β` — raw arguments (recursive ones at the
+/// `carrier`), then one image slot per recursive argument.
+fn para_step_ty<L: LogicOps>(
+    logic: &L,
+    spec: &InductiveSpec<L::Type>,
+    carrier: &L::Type,
+    i: usize,
+    beta: &L::Type,
+) -> L::Type {
+    let mut ty = beta.clone();
+    for _ in spec.ctors[i].rec_positions() {
+        ty = logic.fun_ty(beta.clone(), ty);
+    }
+    for (_, sort) in spec.ctors[i].args.iter().rev() {
+        let arg = match sort {
+            ArgSort::Rec => carrier.clone(),
+            ArgSort::Ext(x) => x.clone(),
+        };
+        ty = logic.fun_ty(arg, ty);
+    }
+    ty
+}
+
 /// Fresh argument variables for constructor `i`, named by the spec's
 /// binder hints (recursive arguments at the carrier).
 fn ctor_arg_vars<L: LogicOps>(logic: &L, theory: &InductiveTheory<L>, i: usize) -> Vec<L::Term> {
@@ -114,6 +138,35 @@ pub fn check_theory<L: LogicOps>(
                     logic.concl(&comp),
                     expected
                 )));
+            }
+        }
+    }
+
+    // -- primitive recursion, when the backend claims it --
+    if theory.facts.caps().prim_rec {
+        let psteps: Vec<L::Term> = (0..n)
+            .map(|i| {
+                logic.var(
+                    &format!("__conf_p{i}"),
+                    para_step_ty(logic, &theory.spec, &theory.ty, i, beta),
+                )
+            })
+            .collect();
+        for i in 0..n {
+            let pc = theory.facts.pcomp(&psteps, i)?;
+            if !logic.hyps(&pc).is_empty() {
+                return Err(fail(format!("pcomp({i}) has hypotheses")));
+            }
+            if theory.spec.ctors[i].arity() == 0 {
+                let lhs = theory.facts.prec_app(&psteps, theory.ctor(i)?)?;
+                let expected = logic.eq(lhs, psteps[i].clone())?;
+                if logic.concl(&pc) != expected {
+                    return Err(fail(format!(
+                        "pcomp({i}): got {:?}, expected {:?}",
+                        logic.concl(&pc),
+                        expected
+                    )));
+                }
             }
         }
     }

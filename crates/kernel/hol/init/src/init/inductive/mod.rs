@@ -60,6 +60,7 @@
 //! value (`engine::tests::backend_swap_same_consumer`).
 
 pub mod api;
+pub mod carved;
 pub mod church;
 pub mod data;
 pub mod determinacy;
@@ -73,6 +74,7 @@ pub mod uniqueness;
 mod util;
 pub mod variant;
 
+pub use carved::{CarvedSExpr, CarvedSExprBackend, carved, carved_backend};
 pub use church::ImpredicativeBackend;
 pub use data::Inductive;
 pub use engine::{NatEngineBackend, nat_backend, nat_spec};

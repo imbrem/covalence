@@ -251,6 +251,32 @@ impl InductiveFacts<NativeHol> for NatEngineTheory {
         BackendCaps {
             mem_trivial: true,
             rec_injective: true,
+            prim_rec: true,
+        }
+    }
+
+    fn prec_app(&self, steps: &[Term], t: &Term) -> IndResult<Term, NativeHol> {
+        // `natRec` *is* primitive-recursive: the para steps `[z, s]` with
+        // `s : nat → β → β` are exactly its own shape — no wrapping.
+        let (z, s) = self.steps(steps)?;
+        let beta = z.type_of()?;
+        Ok(defs::nat_rec(beta)
+            .apply(z.clone())?
+            .apply(s.clone())?
+            .apply(t.clone())?)
+    }
+
+    fn pcomp(&self, steps: &[Term], i: usize) -> IndResult<Thm, NativeHol> {
+        let (z, s) = self.steps(steps)?;
+        let beta = z.type_of()?;
+        // ⊢ (natRec z s 0 = z) ∧ (∀n. natRec z s (S n) = s n (natRec z s n))
+        let eqs = rec_holds_proof_at(&beta)?
+            .all_elim(z.clone())?
+            .all_elim(s.clone())?;
+        match i {
+            0 => Ok(eqs.and_elim_l()?),
+            1 => Ok(eqs.and_elim_r()?),
+            _ => Err(InductiveError::CtorIndex { index: i, arity: 2 }),
         }
     }
 }

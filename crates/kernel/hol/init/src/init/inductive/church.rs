@@ -655,6 +655,7 @@ impl InductiveFacts<NativeHol> for ChurchTheory {
         BackendCaps {
             mem_trivial: false,
             rec_injective: false,
+            prim_rec: false,
         }
     }
 }

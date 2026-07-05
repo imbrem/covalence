@@ -355,7 +355,7 @@ impl TermKind {
 }
 
 /// A HOL term: an `Arc`-shared node carrying its [`TermKind`] plus a cached
-/// [`TermInfo`] (type + closedness) computed once at construction. As a
+/// `TermInfo` (type + closedness) computed once at construction. As a
 /// result [`Term::ty`] / [`Term::type_of`] and `Thm` well-formedness
 /// checks are O(1) for closed terms (the common case), instead of an
 /// O(size) re-walk per query.

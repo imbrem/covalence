@@ -25,10 +25,7 @@ impl OtName {
                 name: SmolStr::new(parts[0]),
             }
         } else {
-            let namespace = parts[..parts.len() - 1]
-                .iter()
-                .map(|p| SmolStr::new(p))
-                .collect();
+            let namespace = parts[..parts.len() - 1].iter().map(SmolStr::new).collect();
             let name = SmolStr::new(parts[parts.len() - 1]);
             OtName { namespace, name }
         }

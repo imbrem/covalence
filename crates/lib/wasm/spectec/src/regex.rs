@@ -26,7 +26,7 @@
 //! routed through `ListN`, because `ListN` carries a SpecTec expression
 //! payload that has no obvious meaning when produced from a regex.
 //!
-//! When [`covalence-grammar`] grows other classes of grammar (CFGs, etc.),
+//! When `covalence-grammar` grows other classes of grammar (CFGs, etc.),
 //! the converse — accepting `Var` as a non-terminal reference — is the
 //! natural next step. Until then, all bridges live here in this file.
 

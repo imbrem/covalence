@@ -70,7 +70,8 @@ pub fn sexpr_ty() -> Type {
 }
 
 /// The three handler binder names, in fold order.
-const HANDLERS: [(&str, fn() -> Type); 3] = [("fa", atom_h_ty), ("fn_", rty), ("fc", cons_h_ty)];
+const HANDLERS: [(&str, crate::NullaryTypeHandler); 3] =
+    [("fa", atom_h_ty), ("fn_", rty), ("fc", cons_h_ty)];
 
 fn handler(name: &str) -> Term {
     let ty = HANDLERS

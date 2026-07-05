@@ -1,7 +1,7 @@
 //! TEMPORARY / THROWAWAY DEMO SURFACE — the `/metamath` web page's backend.
 //!
 //! Clean REST for data + a thin WebSocket for live status only. The server is
-//! **stateful**: a `.mm` source is parsed once into a cached [`MmSession`]
+//! **stateful**: a `.mm` source is parsed once into a cached `MmSession`
 //! (keyed by content hash + optional user), then:
 //!
 //!   - graph + per-theorem data are served by **REST** (cacheable, immutable
@@ -417,26 +417,26 @@ fn build_hol_surface(
     }
     let mut decls: Vec<Decl> = Vec::with_capacity(total);
     for (i, label) in thm_labels.iter().enumerate() {
-        if let Some(Statement::Assert(a)) = db.statement_by_label(label) {
-            if let Ok(c) = parser.encode_expr(&a.conclusion) {
-                let concl = c.cons_with(&mut cons);
-                let hyps: Vec<Term> = a
-                    .frame
-                    .essentials
-                    .iter()
-                    .filter_map(|h| {
-                        parser
-                            .encode_expr(&h.expr)
-                            .ok()
-                            .map(|e| e.cons_with(&mut cons))
-                    })
-                    .collect();
-                decls.push(Decl {
-                    label: label.clone(),
-                    concl,
-                    hyps,
-                });
-            }
+        if let Some(Statement::Assert(a)) = db.statement_by_label(label)
+            && let Ok(c) = parser.encode_expr(&a.conclusion)
+        {
+            let concl = c.cons_with(&mut cons);
+            let hyps: Vec<Term> = a
+                .frame
+                .essentials
+                .iter()
+                .filter_map(|h| {
+                    parser
+                        .encode_expr(&h.expr)
+                        .ok()
+                        .map(|e| e.cons_with(&mut cons))
+                })
+                .collect();
+            decls.push(Decl {
+                label: label.clone(),
+                concl,
+                hyps,
+            });
         }
         if i % 512 == 0 {
             progress(i, total, cons.len());
@@ -616,10 +616,10 @@ pub async fn create_db(
     if let Some(sess) = state.mm.lock().unwrap().get(&key).cloned() {
         // Cache-hit: keep the existing origin, but fill it if it was unknown.
         let mut origin = sess.origin.write().unwrap();
-        if origin.is_none() {
-            if let Some(from) = &q.from {
-                *origin = Some(from.clone());
-            }
+        if origin.is_none()
+            && let Some(from) = &q.from
+        {
+            *origin = Some(from.clone());
         }
         return Json(json!({ "file": hash, "total": sess.total, "origin": *origin }))
             .into_response();
@@ -902,11 +902,11 @@ pub async fn theorem(
         o.insert("holTerm".into(), Value::String(t));
     }
 
-    if let Some(res) = sess.results.read().unwrap().get(&name) {
-        if let (Value::Object(base), Value::Object(extra)) = (&mut out, res) {
-            for (k, v) in extra {
-                base.insert(k.clone(), v.clone());
-            }
+    if let Some(res) = sess.results.read().unwrap().get(&name)
+        && let (Value::Object(base), Value::Object(extra)) = (&mut out, res)
+    {
+        for (k, v) in extra {
+            base.insert(k.clone(), v.clone());
         }
     }
 

@@ -16,19 +16,19 @@
 //!   properties ([`truth`], commutativity, …) and the classical clause /
 //!   simplification procedures ([`logic::resolve`], [`logic::simp`], …).
 //! - [`eq`] — equality reasoning and the canonical rewriting
-//!   conversion ([`eq::rewrite`]) that proof code should use everywhere.
+//!   conversion (`eq::rewrite`) that proof code should use everywhere.
 //! - [`nat`] / [`int`] — the arithmetic catalogues re-exported, paired
 //!   with their Peano / ordered-ring theorems (some proved, some
 //!   postulated pending the downstream derivations; see each module).
-//! - [`set`] — the `TypeSpec`-backed set membership / extensionality API.
+//! - [`mod@set`] — the `TypeSpec`-backed set membership / extensionality API.
 //!
-//! plus the per-theory theorem catalogues — [`cond`] (the boolean
+//! plus the per-theory theorem catalogues — [`mod@cond`] (the boolean
 //! conditional's reduction clauses), [`nat`], [`int`], [`rat`], [`real`],
-//! [`coprod`], [`option`], [`prod`] (the pair projections, surjective
-//! pairing, and injectivity), [`list`] (the `nil`-side element
-//! computations), [`char`] (the Unicode-codepoint subtype + round-trips),
+//! [`mod@coprod`], [`mod@option`], [`mod@prod`] (the pair projections, surjective
+//! pairing, and injectivity), [`mod@list`] (the `nil`-side element
+//! computations), [`mod@char`] (the Unicode-codepoint subtype + round-trips),
 //! [`string`] (the `string`/`bytes` newtype seams + empty-sequence facts),
-//! [`stream`], [`recursion`], [`rel`], and [`set`].
+//! [`mod@stream`], [`recursion`], [`mod@rel`], and [`mod@set`].
 //!
 //! Efficiency is explicitly *not* a goal: `init` runs once at startup.
 //! The point is for the rest of `covalence-hol` to depend on this

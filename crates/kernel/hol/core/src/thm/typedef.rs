@@ -63,7 +63,7 @@ impl Thm {
 
     /// Introduce a fresh defined constant: emit `⊢ Def(name, body) ≡ body`.
     ///
-    /// The fresh `Def` is allocated INSIDE [`super::rules::Define`]'s `decide`
+    /// The fresh `Def` is allocated INSIDE `super::rules::Define`'s `decide`
     /// (never a caller-supplied `Def`), so two distinct `define` calls — even with
     /// the same name and body — produce distinct `Def`s. The kernel never reuses a
     /// `Def` identity, so users cannot derive `⊢ body₁ ≡ body₂` by `trans`+`sym`.

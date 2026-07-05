@@ -3,8 +3,8 @@
 //! lemmas. Same abstraction-barrier shape as [`init::list`] /
 //! [`init::option`].
 //!
-//! [`init::list`]: crate::init::list
-//! [`init::option`]: crate::init::option
+//! [`init::list`]: mod@crate::init::list
+//! [`init::option`]: mod@crate::init::option
 //!
 //! ## What `char` is
 //!
@@ -27,7 +27,7 @@
 //! carrier-side round-trip [`Thm::spec_rep_abs_fwd`] is *conditional* on
 //! the scalar-value selector predicate — exactly like the finiteness
 //! gate in [`init::list`]. For a *literal* codepoint that premise is a
-//! closed `nat.lt`/`∧`/`∨` proposition, decided by [`reduce`], so
+//! closed `nat.lt`/`∧`/`∨` proposition, decided by `reduce`, so
 //! [`code_mk`] is genuine (hypothesis- and oracle-free) at every Unicode
 //! scalar value (and **errors on surrogates** and out-of-range
 //! codepoints — the predicate reduces to `F`). The wrapper-side
@@ -118,7 +118,7 @@ fn rep_abs_in_range(n: &Term, prem: Thm) -> Result<Thm> {
 /// `⊢ char.code (char.mk n) = n` for a literal `n` that is a Unicode
 /// **scalar value** (`n < 0xD800 ∨ (0xDFFF < n ∧ n < 0x110000)`).
 /// Genuine: hypothesis- and oracle-free — the subtype premise is a
-/// closed `nat.lt`/`∧`/`∨` proposition, decided by [`reduce`]. Errors if
+/// closed `nat.lt`/`∧`/`∨` proposition, decided by `reduce`. Errors if
 /// `n` is a surrogate (`0xD800 ..= 0xDFFF`) or out of range (the
 /// predicate reduces to `F`, so the round-trip does not hold).
 pub fn code_mk(n: &Term) -> Result<Thm> {

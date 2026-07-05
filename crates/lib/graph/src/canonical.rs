@@ -150,12 +150,16 @@ impl<P> Graph<P> {
             let to = nodes
                 .get(e.to_node.0 as usize)
                 .ok_or(FromPartsError::Wire(i, WireError::UnknownNode(e.to_node)))?;
-            let fp = from.ports.get(e.from_port.0 as usize).ok_or_else(|| {
+            let fp = from.ports.get(e.from_port.0 as usize).ok_or({
                 FromPartsError::Wire(i, WireError::UnknownPort(e.from_node, e.from_port))
             })?;
-            let tp = to.ports.get(e.to_port.0 as usize).ok_or_else(|| {
-                FromPartsError::Wire(i, WireError::UnknownPort(e.to_node, e.to_port))
-            })?;
+            let tp = to
+                .ports
+                .get(e.to_port.0 as usize)
+                .ok_or(FromPartsError::Wire(
+                    i,
+                    WireError::UnknownPort(e.to_node, e.to_port),
+                ))?;
             if fp.kind != PortKind::Output || tp.kind != PortKind::Input {
                 return Err(FromPartsError::Wire(i, WireError::KindMismatch));
             }

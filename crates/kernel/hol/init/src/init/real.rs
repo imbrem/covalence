@@ -8,15 +8,15 @@
 //! (see [`real_spec`] for why). A real is a non-empty subset of
 //! `rat` that is upward-closed under `≤`. The carrier of the subtype is
 //! the powerset `rat → bool`, and the selector predicate (the `close`
-//! predicate, [`cut_pred`]) is
+//! predicate, `cut_pred`) is
 //!
 //! ```text
 //!     λS. (∀x y. ratLe x y ⟹ S x ⟹ S y) ∧ (∃x. S x)
 //! ```
 //!
 //! — "`S` is upward-closed under `≤` and non-empty". We bridge a real and
-//! its cut-set with the kernel subtype coercions: [`mk_real`] (`abs`)
-//! wraps a cut-set into a real and [`cut_of`] (`rep`) recovers it.
+//! its cut-set with the kernel subtype coercions: `mk_real` (`abs`)
+//! wraps a cut-set into a real and `cut_of` (`rep`) recovers it.
 //!
 //! The **principal cut** of a rational `q` is its up-set `{x | q ≤ x}`,
 //! written η-cleanly as the partial application `ratLe q : rat → bool`
@@ -297,7 +297,7 @@ cached_thm! {
     /// embedding is **monotone**. Reverse inclusion: `a ≤ b` shrinks the
     /// up-set, so `{x | b ≤ x} ⊆ {x | a ≤ x}` (by `rat::le_trans`). The
     /// cut-sets are recovered through the subtype round-trip
-    /// ([`Thm::spec_rep_abs_fwd`] discharged by [`is_cut`]). Genuine *modulo*
+    /// ([`Thm::spec_rep_abs_fwd`] discharged by `is_cut`). Genuine *modulo*
     /// the `rat` order postulates `rat::le_trans` / `is_cut` rest on.
     pub fn of_rat_mono() -> Thm {
         of_rat_mono_impl().expect("real::of_rat_mono")
@@ -423,7 +423,7 @@ cached_thm! {
     /// rational `0`: `0 ≤ 0` holds (`le_refl`) but `1 ≤ 0` does not
     /// (`not_one_le_zero`). Assuming `0 = 1`, congruence under `rep` plus
     /// the subtype round-trip [`Thm::spec_rep_abs_fwd`] (discharged by
-    /// [`is_cut`]) collapses the two cut-sets, so `0 ≤ 0 = 1 ≤ 0`,
+    /// `is_cut`) collapses the two cut-sets, so `0 ≤ 0 = 1 ≤ 0`,
     /// contradicting `not_one_le_zero`. Genuine *modulo* the `rat` order
     /// postulates `is_cut` / `not_one_le_zero` rest on.
     pub fn zero_ne_one() -> Thm {

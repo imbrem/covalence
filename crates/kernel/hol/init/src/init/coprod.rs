@@ -9,7 +9,7 @@
 //! round-trips (`rep (abs (inj …)) = inj …`, which need the subtype
 //! predicate discharged) and disjointness go through unconditionally.
 //!
-//! This is the foundation under [`init::option`](crate::init::option).
+//! This is the foundation under [`init::option`](mod@crate::init::option).
 //!
 //! On top of the round-trips this module now proves the full coproduct
 //! **universal property**: the `coprod_case` computation equations

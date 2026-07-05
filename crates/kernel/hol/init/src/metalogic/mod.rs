@@ -125,6 +125,9 @@ pub struct RuleSet<'a> {
     pub phi: Type,
     /// Build the closure clauses for a given `d ⌜·⌝` application builder.
     /// Returns them in fold order; the engine right-nests them into `Closed_L`.
+    // An alias would force a `'static` object-lifetime default on the inner
+    // `&dyn Fn`; the higher-order shape is the point here.
+    #[allow(clippy::type_complexity)]
     pub clauses: Box<dyn Fn(&dyn Fn(&Term) -> Result<Term>) -> Result<Vec<Term>> + 'a>,
 }
 

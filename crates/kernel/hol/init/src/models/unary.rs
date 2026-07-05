@@ -78,12 +78,12 @@ fn cat(a: Term, b: Term) -> Term {
 
 /// `⊢ ∀a. cat nil a = a` — the left unit (`0 + a = a`), `cat_nil` at `unit`.
 pub(super) fn zero_add() -> Result<Thm, covalence_core::Error> {
-    Ok(crate::init::list::cov::cat_nil_cov().inst_tfree("a", Type::unit())?)
+    crate::init::list::cov::cat_nil_cov().inst_tfree("a", Type::unit())
 }
 
 /// `⊢ ∀a. cat a nil = a` — the right unit (`a + 0 = a`), `cat_nil_r` at `unit`.
 pub(super) fn add_zero() -> Result<Thm, covalence_core::Error> {
-    Ok(crate::init::list::cov::cat_nil_r_cov().inst_tfree("a", Type::unit())?)
+    crate::init::list::cov::cat_nil_r_cov().inst_tfree("a", Type::unit())
 }
 
 /// `⊢ ∀a b. cat (succ a) b = succ (cat a b)` — `S a + b = S(a + b)`.
@@ -100,9 +100,7 @@ pub(super) fn succ_add() -> Result<Thm, covalence_core::Error> {
         .all_elim(b.clone())?;
     // `cons u a = succ a` and `cons u (cat a b) = succ (cat a b)` definitionally
     // (succ ≡ cons unit.nil), so this IS the `succ.add` shape already.
-    cc.all_intro("b", carrier())?
-        .all_intro("a", carrier())
-        .map_err(Into::into)
+    cc.all_intro("b", carrier())?.all_intro("a", carrier())
 }
 
 /// `⊢ ∀a b. cat a (succ b) = succ (cat a b)` — `a + S b = S(a + b)`.
@@ -118,7 +116,7 @@ pub(super) fn add_succ() -> Result<Thm, covalence_core::Error> {
     let body_at = |t: &Term| -> Result<Term, covalence_core::Error> {
         let bb = Term::free("b", la.clone());
         let eq = cat(t.clone(), succ(bb.clone())).equals(succ(cat(t.clone(), bb.clone())))?;
-        Ok(eq.forall("b", la.clone())?)
+        eq.forall("b", la.clone())
     };
     let p = Term::abs(la.clone(), subst::close(&body_at(&a)?, "a"));
 
@@ -164,11 +162,11 @@ pub(super) fn add_succ() -> Result<Thm, covalence_core::Error> {
         // and cons u (succ (cat xs b)) = cons u (cons u (cat xs b)) likewise.
         let cat_cons_u = |p: Term, q: Term| -> Result<Thm, covalence_core::Error> {
             // cat (cons u p) q = cons u (cat p q).
-            Ok(crate::init::list::cov::cat_cons_cov()
+            crate::init::list::cov::cat_cons_cov()
                 .inst_tfree("a", Type::unit())?
                 .all_elim(u())?
                 .all_elim(p)?
-                .all_elim(q)?)
+                .all_elim(q)
         };
         // LHS chain.
         let l1 = cat_cons_u(xs.clone(), succ(b.clone()))?; // cat (cons u xs)(succ b) = cons u (cat xs (succ b))
@@ -204,7 +202,7 @@ pub(super) fn add_succ() -> Result<Thm, covalence_core::Error> {
     let ind = crate::init::list::list_induct(&alpha, &p, base, cons_case)?; // ⊢ ∀a. (λa.P) a
     // β-normalise the applied-motive body back to `∀a. ∀b. …`.
     let nf = crate::proofs::rewrite::beta_nf(ind.concl().clone());
-    Ok(nf.eq_mp(ind)?)
+    nf.eq_mp(ind)
 }
 
 // ============================================================================
@@ -217,7 +215,7 @@ pub(super) fn add_succ() -> Result<Thm, covalence_core::Error> {
 fn beta_expand(motive: &Term, arg: Term, body: Thm) -> Result<Thm, covalence_core::Error> {
     let applied = Term::app(motive.clone(), arg);
     let beta = Thm::beta_conv(applied)?; // ⊢ (λx.M) arg = body
-    Ok(beta.sym()?.eq_mp(body)?)
+    beta.sym()?.eq_mp(body)
 }
 
 /// Given `arg_eq : ⊢ s = t`, a `motive = λx.M`, and `proof : ⊢ motive t`
@@ -240,7 +238,7 @@ fn beta_expand_eq(
     // to `motive lhs` (cong reversed: motive rhs = motive lhs).
     let p_rhs = beta_expand(motive, rhs.clone(), proof_body)?; // ⊢ motive rhs
     let _ = lhs;
-    cong.sym()?.eq_mp(p_rhs).map_err(Into::into) // ⊢ motive lhs
+    cong.sym()?.eq_mp(p_rhs) // ⊢ motive lhs
 }
 
 /// `⊢ a ⟹ c` from `eq : ⊢ a = a'` and `imp : ⊢ a' ⟹ c` — rewrite an
@@ -259,7 +257,7 @@ impl MkCombImp for Thm {
             .as_app()
             .ok_or(covalence_core::Error::NotAnEquation)?;
         let full = cong.mk_comb(Thm::refl(conseq.clone())?)?; // ⊢ (a ⟹ c) = (a' ⟹ c)
-        full.eq_mp(imp.clone()).map_err(Into::into)
+        full.eq_mp(imp.clone())
     }
 }
 
@@ -382,7 +380,7 @@ fn body_subst_cong(
         .ok_or(covalence_core::Error::NotAnEquation)?;
     let bl = Thm::beta_conv(l.clone())?; // (λvar.body) s' = body[s']
     let br = Thm::beta_conv(r.clone())?; // (λvar.body) s  = body[s]
-    bl.sym()?.trans(cong)?.trans(br).map_err(Into::into) // body[s'] = body[s]
+    bl.sym()?.trans(cong)?.trans(br) // body[s'] = body[s]
 }
 
 /// The unary model's induction handler as a registry object.

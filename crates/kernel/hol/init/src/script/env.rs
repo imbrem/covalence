@@ -60,7 +60,7 @@ enum Entry {
 }
 
 /// A name-resolution environment — the **namespace** part of the system: one
-/// lazy name→[`Entry`] map (constants, proven lemmas, tactics, rules), plus the
+/// lazy name→`Entry` map (constants, proven lemmas, tactics, rules), plus the
 /// set of imported (but not necessarily opened) sub-namespaces. Fields are
 /// encapsulated behind methods.
 ///
@@ -347,7 +347,6 @@ impl Env {
         op(&["nat.div"], defs::nat_div());
         op(&["nat.mod"], defs::nat_mod());
         op(&["succ", "nat.succ"], Term::succ());
-        drop(op);
         // The Boolean conditional `cond : bool → 'a → 'a → 'a` (the kernel
         // `defs::cond` / `bool.cond`). Registered here so `cond.cov` proves its
         // clauses *about the kernel constant* rather than minting a same-bodied

@@ -774,10 +774,10 @@ impl<'a, A: RegexLetter> Parser<'a, A> {
         } else {
             return Err(BraceQuantErr::Bad(ParseError::BadQuantifier { at: start }));
         };
-        if let Some(m) = max {
-            if m < min {
-                return Err(BraceQuantErr::Bad(ParseError::BadQuantifier { at: start }));
-            }
+        if let Some(m) = max
+            && m < min
+        {
+            return Err(BraceQuantErr::Bad(ParseError::BadQuantifier { at: start }));
         }
         Ok((min, max))
     }
@@ -805,13 +805,11 @@ impl<'a, A: RegexLetter> Parser<'a, A> {
             '(' => {
                 self.bump_char();
                 // Non-capturing group prefix `(?:` is accepted but optional.
-                if self.eat_byte(b'?') {
-                    if !self.eat_byte(b':') {
-                        return Err(ParseError::BadEscape {
-                            at: self.pos,
-                            detail: "only `(?:` non-capturing groups are supported".into(),
-                        });
-                    }
+                if self.eat_byte(b'?') && !self.eat_byte(b':') {
+                    return Err(ParseError::BadEscape {
+                        at: self.pos,
+                        detail: "only `(?:` non-capturing groups are supported".into(),
+                    });
                 }
                 let inner = self.parse_alt()?;
                 if !self.eat_byte(b')') {

@@ -1,5 +1,5 @@
 //! **S-expressions as `sexp α := tree (option α)`** — the Lisp cons-cell
-//! encoding layered on the binary-[`tree`](crate::init::tree) theory.
+//! encoding layered on the binary-[`tree`] theory.
 //!
 //! A node of `tree (option α)` is read as an S-expression:
 //!
@@ -16,7 +16,7 @@
 //! `sexp` is a **view / alias** over `tree`, not a fresh datatype — it reuses
 //! `tree`'s constructors, recursor, and constructor-freeness theorems with
 //! the element type fixed to `option α`. The kernel `option` constructors
-//! ([`some`](crate::init::option::some) / [`none`](crate::init::option::none))
+//! ([`some`] / [`none`])
 //! carry the atom/nil distinction; [`tree::leaf_inj`](crate::init::tree)
 //! plus [`option::some_ne_none`](crate::init::option::some_ne_none) give the
 //! genuine `atom a ≠ nil` fact, and `tree::leaf_ne_branch` gives
@@ -112,7 +112,7 @@ pub fn cons_app(alpha: &Type, x: &Term, y: &Term) -> Result<Term> {
 
 /// `⊢ ¬(atom a = nil)` — an atom is never nil. From `leaf` injectivity
 /// (`leaf (some a) = leaf none ⟹ some a = none`) contradicting
-/// [`some_ne_none`](crate::init::option::some_ne_none).
+/// [`some_ne_none`].
 pub fn atom_ne_nil(alpha: &Type, a: &Term) -> Result<Thm> {
     let elem = sexp_elem_ty(alpha);
     let some_a = some(alpha.clone()).apply(a.clone())?;

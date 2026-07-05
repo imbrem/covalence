@@ -387,7 +387,7 @@ impl Default for DagLayoutOpts {
 /// distributed by topological rank, with smoothstep-style edges
 /// between them. Multi-edges between the same node pair are collapsed
 /// into a single visible line, matching the frontend
-/// [`GraphDagView`] aesthetic.
+/// `GraphDagView` aesthetic.
 pub fn render_dag_svg<P: AsRef<[u8]>>(graph: &Graph<P>, opts: &DagLayoutOpts) -> String {
     let n = graph.node_count() as usize;
     let (ranks, _max_rank) = topo_ranks(graph);

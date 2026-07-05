@@ -4,7 +4,7 @@
 //! `option α = coprod α unit` (a newtype), with `some a = abs (inl a)`,
 //! `none = abs (inr unit.nil)`. So `some x ≠ none` reduces — through the
 //! option round-trip — to the coprod injection disjointness
-//! [`coprod::inl_ne_inr`], which the tagged encoding makes universal.
+//! [`coprod::inl_ne_inr`](crate::init::coprod::inl_ne_inr), which the tagged encoding makes universal.
 //! (Under the *old* untagged coprod, `some unit.nil = none` was provable
 //! in `option unit`; this module is the downstream payoff of the fix.)
 //!

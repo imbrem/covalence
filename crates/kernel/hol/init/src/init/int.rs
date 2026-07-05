@@ -42,9 +42,9 @@
 //!   well-definedness lemma (`*_pair_cong`). Multiplication
 //!   (`mul_pair_cong`) is the one tedious case — proved per-argument
 //!   (`distrib` on the defining `nat` equation) and chained by transitivity;
-//! - derives **literal coherence** ([`lit0_mk`]: `int_lit 0 = MK(0, 0)`,
+//! - derives **literal coherence** (`lit0_mk`: `int_lit 0 = MK(0, 0)`,
 //!   from the two readings of `0 + 0` forcing `fst(rep 0) = snd(rep 0)`;
-//!   [`lit1_mk`]: `int_lit 1 = MK(1, 0)` via `int.succ 0 = succ (MK 0 0)`).
+//!   `lit1_mk`: `int_lit 1 = MK(1, 0)` via `int.succ 0 = succ (MK 0 0)`).
 //!
 //! Each ring axiom then reduces to `nat` algebra on the `f`/`s` components
 //! (e.g. `add_assoc` is `nat::add_assoc` per component; `mul_assoc` /
@@ -1157,7 +1157,7 @@ fn elim3(thm: Thm, a: &Term, b: &Term, c: &Term) -> Result<Thm> {
 }
 
 cached_thm! {
-    /// `⊢ ∀a. a + 0 = a` — **proved**. `0 = MK(0,0)` ([`lit0_mk`]), so
+    /// `⊢ ∀a. a + 0 = a` — **proved**. `0 = MK(0,0)` (`lit0_mk`), so
     /// `a + 0 = MK(fa+0)(sa+0) = MK(fa)(sa) = a` by `nat::add_zero` on each
     /// component.
     pub fn add_zero() -> Result<Thm> {
@@ -1244,7 +1244,7 @@ cached_thm! {
 cached_thm! {
     /// `⊢ ∀a b c. (a * b) * c = a * (b * c)` — **proved**. On `MK`
     /// components each side expands (`distrib`/`distrib_r` + `nat::mul_assoc`)
-    /// to the same four triple-products, re-paired by [`mid_swap`].
+    /// to the same four triple-products, re-paired by `mid_swap`.
     pub fn mul_assoc() -> Result<Thm> {
         let (a, b, c) = (var("a"), var("b"), var("c"));
         let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
@@ -1314,7 +1314,7 @@ cached_thm! {
 }
 
 cached_thm! {
-    /// `⊢ ∀a. a * 1 = a` — **proved**. `1 = MK(1,0)` ([`lit1_mk`]), so
+    /// `⊢ ∀a. a * 1 = a` — **proved**. `1 = MK(1,0)` (`lit1_mk`), so
     /// `a * 1 = MK(fa·1+sa·0)(fa·0+sa·1) = MK(fa)(sa) = a` by
     /// `nat::mul_one`/`mul_zero` on each component.
     pub fn mul_one() -> Result<Thm> {
@@ -1341,7 +1341,7 @@ cached_thm! {
 }
 
 cached_thm! {
-    /// `⊢ ∀a. a * 0 = 0` — **proved**. `0 = MK(0,0)` ([`lit0_mk`]), so
+    /// `⊢ ∀a. a * 0 = 0` — **proved**. `0 = MK(0,0)` (`lit0_mk`), so
     /// `a * 0 = MK(fa·0+sa·0)(fa·0+sa·0) = MK(0)(0) = 0`.
     pub fn mul_zero() -> Result<Thm> {
         let a = var("a");
@@ -1363,7 +1363,7 @@ cached_thm! {
 cached_thm! {
     /// `⊢ ∀a b c. a * (b + c) = a * b + a * c` — **proved** (left
     /// distributivity). On `MK` components: each side's `fst`/`snd` expands
-    /// by `nat::distrib` to the same four products, re-paired by [`mid_swap`].
+    /// by `nat::distrib` to the same four products, re-paired by `mid_swap`.
     pub fn distrib() -> Result<Thm> {
         let (a, b, c) = (var("a"), var("b"), var("c"));
         let (ra, rb, rc) = (recon_mk(&a)?, recon_mk(&b)?, recon_mk(&c)?);
@@ -2145,8 +2145,8 @@ cached_thm! {
 cached_thm! {
     /// `⊢ ∀x y d. ¬(d = 0) ⟹ x·d = y·d ⟹ x = y` — **proved** integral-domain
     /// right-cancellation. `¬(d=0)` + trichotomy gives `0 < d` or `d < 0`; the
-    /// positive case is [`mul_rcancel_pos`], the negative case flips `d ↦ -d`
-    /// ([`lt_neg_swap`] + [`mul_neg_r`]) and cancels `x·(-d) = y·(-d)`.
+    /// positive case is `mul_rcancel_pos`, the negative case flips `d ↦ -d`
+    /// (`lt_neg_swap` + `mul_neg_r`) and cancels `x·(-d) = y·(-d)`.
     pub fn int_mul_rcancel() -> Result<Thm> {
         let (x, y, d) = (var("x"), var("y"), var("d"));
         let neq = d.clone().equals(lit(0))?.not()?; // ¬(d=0)

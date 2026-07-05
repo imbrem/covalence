@@ -1,7 +1,7 @@
 //! A trait for reasoning in a **commutative ring** — a
-//! [`Semiring`](crate::algebra::semiring::Semiring) with additive inverses.
+//! [`Semiring`] with additive inverses.
 //!
-//! [`Ring`] extends [`Semiring`](crate::algebra::semiring::Semiring): a ring is a
+//! [`Ring`] extends [`Semiring`]: a ring is a
 //! semiring whose additive monoid is a *group*, so it adds negation `-a`
 //! ([`neg`](Ring::neg)), subtraction `a - b` ([`sub`](Ring::sub)), and the
 //! two extra axioms that pin them down:

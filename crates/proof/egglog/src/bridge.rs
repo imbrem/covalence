@@ -23,7 +23,7 @@ use crate::proof::{ProofId, ProofStore, Proposition, TermDag, TermId};
 /// High-level egglog ingestion API.
 ///
 /// Implementations may stub any justification by returning
-/// [`BridgeError::NotImplemented("<variant>")`]. The driver
+/// `BridgeError::NotImplemented("<variant>")`. The driver
 /// ([`crate::ingest::ingest_proof_store`]) calls these methods once per
 /// proof node, in dependency-first order.
 pub trait EgglogBridge {

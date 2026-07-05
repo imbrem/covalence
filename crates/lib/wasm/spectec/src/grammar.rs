@@ -19,7 +19,7 @@
 //! # Simple grammars
 //!
 //! [`simple`] holds a few small, self-contained byte grammars (the WASM
-//! preamble, unsigned LEB128, ASCII runs) as [`Regex<u8>`] values. They are
+//! preamble, unsigned LEB128, ASCII runs) as [`Regex<u8>`](covalence_grammar::regex::Regex) values. They are
 //! the easiest thing to point the grammar → bytes-predicate compiler at while
 //! the full SpecTec lowering is built out, and double as worked examples.
 
@@ -93,7 +93,7 @@ pub fn wasm3_binary() -> Vec<Grammar> {
     wasm3().into_iter().filter(Grammar::is_binary).collect()
 }
 
-/// Small, self-contained byte grammars for bootstrapping, as [`Regex<u8>`].
+/// Small, self-contained byte grammars for bootstrapping, as [`Regex<u8>`](covalence_grammar::regex::Regex).
 pub mod simple {
     use covalence_grammar::regex::{Regex, parse_regex_u8};
 
@@ -167,9 +167,8 @@ mod tests {
         let mut bridged = 0usize;
         for g in wasm3_binary() {
             for sym in g.symbols() {
-                match crate::regex::sym_to_regex_u8(sym) {
-                    Ok(_) => bridged += 1,
-                    Err(_) => {}
+                if crate::regex::sym_to_regex_u8(sym).is_ok() {
+                    bridged += 1
                 }
             }
         }

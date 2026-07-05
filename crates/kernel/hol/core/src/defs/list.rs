@@ -72,8 +72,8 @@ fn list_predicate() -> Term {
 
 /// `list 'a := stream (option 'a) where (finite ∧ contiguous)`. The
 /// carrier is the spec'd `stream (option α)`; the selector predicate is
-/// [`list_predicate`] — finite *and* hole-free, so `nil` / `cons` cover
-/// every value (see [`list_predicate`] for why contiguity is required).
+/// `list_predicate` — finite *and* hole-free, so `nil` / `cons` cover
+/// every value (see `list_predicate` for why contiguity is required).
 pub fn list_spec() -> TypeSpec {
     static LAZY: LazyLock<TypeSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -378,7 +378,7 @@ fn list_foldr_predicate() -> Term {
 }
 
 /// `listFoldr : ('a → 'b → 'b) → 'b → list 'a → 'b`. The right-fold
-/// recursor; pinned by [`list_foldr_predicate`] (Hilbert ε).
+/// recursor; pinned by `list_foldr_predicate` (Hilbert ε).
 pub fn list_foldr_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
@@ -441,7 +441,7 @@ fn list_foldl_predicate() -> Term {
 }
 
 /// `listFoldl : ('b → 'a → 'b) → 'b → list 'a → 'b`. The left-fold
-/// recursor; pinned by [`list_foldl_predicate`] (Hilbert ε).
+/// recursor; pinned by `list_foldl_predicate` (Hilbert ε).
 pub fn list_foldl_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {
         let alpha = Type::tfree("a");

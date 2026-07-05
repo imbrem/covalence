@@ -39,7 +39,7 @@ type R<T> = Result<T, ScriptError>;
 // CheckCtx — what a rule needs to resolve its arguments
 // ============================================================================
 
-/// The replay context handed to every [`Rule`]: the resolution [`Env`] and the
+/// The replay context handed to every `Rule`: the resolution [`Env`] and the
 /// mutable proof [`Scope`]. A rule uses it to parse term/type/name arguments
 /// and to recursively [`check`](CheckCtx::check) sub-derivations. Binder rules
 /// extend the scope (via [`push_var`](CheckCtx::push_var)) for their sub-proof.

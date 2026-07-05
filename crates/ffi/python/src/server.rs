@@ -120,7 +120,7 @@ pub fn serve(port: u16, store: Option<&str>) -> PyResult<Server> {
     let actual_port = port_rx
         .recv()
         .map_err(|_| PyRuntimeError::new_err("server thread died before binding"))?
-        .map_err(|e| PyRuntimeError::new_err(e))?;
+        .map_err(PyRuntimeError::new_err)?;
 
     Ok(Server {
         port: actual_port,

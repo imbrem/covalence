@@ -16,7 +16,7 @@
 //!
 //! # Representation
 //!
-//! A language is a `set μ`. Building on [`crate::init::set`], the operations
+//! A language is a `set μ`. Building on [`mod@crate::init::set`], the operations
 //! are:
 //!
 //! ```text
@@ -43,7 +43,7 @@
 //!   [`union_empty`]);
 //! - [`concat_empty_l`] / [`concat_empty_r`] — `∅·L = ∅`, `L·∅ = ∅`
 //!   (the empty language annihilates concatenation), proved with the new
-//!   generic existential tactics ([`logic::exists_false`] /
+//!   generic existential tactics ([`logic::exists_false`](crate::init::logic::exists_false) /
 //!   [`logic::exists_cong`](crate::init::logic::exists_cong));
 //! - [`mem_star`] — `mem w L* = ∀S. Closed L S ⟹ mem w S`, the star's
 //!   defining membership; and [`star_contains_epsilon`] — `ε ⊆ L*` (one

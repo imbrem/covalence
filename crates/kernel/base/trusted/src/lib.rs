@@ -9,11 +9,11 @@
 //! 1. [`Thm`] — the unforgeable certificate `⊢ P` in language `L`. Private fields,
 //!    no public constructor. The sole mint is `pub(crate) Thm::new`; audit **every**
 //!    call site:
-//!    - in [`eqn`] — `refl`/`sym`/`trans`/`cong_app`/`cong_pair`, `trans_ptr`,
+//!    - in `eqn` — `refl`/`sym`/`trans`/`cong_app`/`cong_pair`, `trans_ptr`,
 //!      `of_ptr_eq`, `of_eq_with` (used by `of_eq`/`semidecide`), `lift`, `apply`
 //!      (⇒ `apply0`), `canon`;
-//!    - in [`prop`] — `and_intro`/`and_elim`/`or_inl`/`or_inr`/`mp`;
-//!    - in [`matching`] — `apply_rewrite`.
+//!    - in `prop` — `and_intro`/`and_elim`/`or_inl`/`or_inr`/`mp`;
+//!    - in `matching` — `apply_rewrite`.
 //! 2. [`Expr`] — **sealed**: the closed grammar of expressions
 //!    ([`Val`]/[`Ref`]`<P: TrustedDeref>`/[`App`]/[`True`]/[`False`]/[`Eqn`]/`&A`/
 //!    `Box`/`Rc`/`Arc<A>`/[`Dyn`]/tuples), each with a unique sort [`Expr::Ty`].
@@ -27,9 +27,9 @@
 //! 4. The **gated** minting functions [`apply`]/[`apply0`]/[`canon`]/
 //!    [`apply_rewrite`] and [`Thm::lift`] — each runtime-checks `admits`/`extends`
 //!    *before* minting. ([`of_eq`]/[`of_eq_with`], [`of_ptr_eq`], [`semidecide`], the
-//!    calculus, and the [`prop`] bool theory are ungated — leaf equality is
+//!    calculus, and the `prop` bool theory are ungated — leaf equality is
 //!    *definitional*, see below.)
-//! 5. `impl Language for ()` (in [`base`]) — the **empty** trivial base every
+//! 5. `impl Language for ()` (in `base`) — the **empty** trivial base every
 //!    language inherits (the calculus and bool theory are ungated `Thm` methods, not
 //!    manifest rules).
 //!

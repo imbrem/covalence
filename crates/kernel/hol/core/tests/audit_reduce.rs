@@ -1377,7 +1377,8 @@ fn audit_reduced_def_specs_satisfy_their_predicate() {
     }
     // (accessor, cmp 0 0, cmp 0 (S m), cmp (S n) 0) — the three base clauses
     // of `nat_cmp_predicate`; the fourth (recursion) is checked below.
-    let cases: &[(fn() -> Term, bool, bool, bool)] = &[
+    type CmpCase = (fn() -> Term, bool, bool, bool);
+    let cases: &[CmpCase] = &[
         (defs::nat_le as fn() -> Term, true, true, false),
         (defs::nat_lt, false, true, false),
     ];

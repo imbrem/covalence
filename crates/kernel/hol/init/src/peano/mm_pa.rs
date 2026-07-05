@@ -1,5 +1,5 @@
 //! **A Metamath database for first-order Peano arithmetic**, built with the
-//! [`crate::metamath`] engine's [`Database`]/[`Frame`] API.
+//! [`crate::metamath`] engine's [`Database`]/[`Frame`](crate::metamath::Frame) API.
 //!
 //! This is the **`ValidProof` side** of the Metamath ⇄ HOL connection
 //! (`notes/vibes/theories-models-and-logics.md §5.6`): the primitive notion is the
@@ -30,26 +30,26 @@
 //!
 //! Three typecodes — `term` (PA terms, sort `nat`), `wff` (formulas), `|-`
 //! (provability) — and a faithful **flat, parenthesised** surface syntax that
-//! the replay's reader ([`expr_to_term`] / [`expr_to_form`]) parses back to the
-//! [`Fol`] AST unambiguously:
+//! the replay's reader ([`expr_to_term`](crate::peano::mm_replay::expr_to_term) / [`expr_to_form`](crate::peano::mm_replay::expr_to_form)) parses back to the
+//! [`Fol`](crate::peano::fol::Fol) AST unambiguously:
 //!
 //! | constructor | surface form        | `Fol`        |
 //! |-------------|---------------------|--------------|
-//! | zero        | `0`                 | [`Fol::Zero`]|
-//! | successor   | `( S t )`           | [`Fol::Succ`]|
-//! | addition    | `( t + r )`         | [`Fol::Add`] |
-//! | mult.       | `( t x. r )`        | [`Fol::Mul`] |
-//! | equality    | `( t = r )`         | [`Fol::Eq`]  |
-//! | implication | `( ph -> ps )`      | [`Fol::Imp`] |
-//! | negation    | `-. ph`             | [`Fol::Neg`] |
-//! | conjunction | `( ph /\ ps )`      | [`Fol::And`] |
-//! | disjunction | `( ph \/ ps )`      | [`Fol::Or`]  |
-//! | universal   | `A. x ph`           | [`Fol::All`] |
-//! | existential | `E. x ph`           | [`Fol::Ex`]  |
+//! | zero        | `0`                 | [`Fol::Zero`](crate::peano::fol::Fol::Zero)|
+//! | successor   | `( S t )`           | [`Fol::Succ`](crate::peano::fol::Fol::Succ)|
+//! | addition    | `( t + r )`         | [`Fol::Add`](crate::peano::fol::Fol::Add) |
+//! | mult.       | `( t x. r )`        | [`Fol::Mul`](crate::peano::fol::Fol::Mul) |
+//! | equality    | `( t = r )`         | [`Fol::Eq`](crate::peano::fol::Fol::Eq)  |
+//! | implication | `( ph -> ps )`      | [`Fol::Imp`](crate::peano::fol::Fol::Imp) |
+//! | negation    | `-. ph`             | [`Fol::Neg`](crate::peano::fol::Fol::Neg) |
+//! | conjunction | `( ph /\ ps )`      | [`Fol::And`](crate::peano::fol::Fol::And) |
+//! | disjunction | `( ph \/ ps )`      | [`Fol::Or`](crate::peano::fol::Fol::Or)  |
+//! | universal   | `A. x ph`           | [`Fol::All`](crate::peano::fol::Fol::All) |
+//! | existential | `E. x ph`           | [`Fol::Ex`](crate::peano::fol::Fol::Ex)  |
 //!
 //! **Setvars** `x y z` (and the free PA variables `va vb …`) are `term`-typed
 //! variables; `A.`/`E.` bind a setvar (named binders), which the interpretation
-//! converts to the locally-nameless [`Fol`] de Bruijn form.
+//! converts to the locally-nameless [`Fol`](crate::peano::fol::Fol) de Bruijn form.
 //!
 //! ## Rules and axioms
 //!
@@ -64,7 +64,7 @@
 //!   Here `ph0`/`phS` are independent `wff` metavariables an *instance* binds
 //!   to the concrete `P(0)`/`P(S x)`; the engine checks the substitution, and
 //!   the **replay re-derives soundness in the kernel** by reading off the
-//!   concrete `P` and calling [`Thm::nat_induct`]. (The Metamath schema's own
+//!   concrete `P` and calling [`Thm::nat_induct`](covalence_core::Thm::nat_induct). (The Metamath schema's own
 //!   soundness is not relied on — the proof is *untrusted input*.)
 
 use crate::metamath::expr::make_expr;
@@ -79,6 +79,8 @@ fn prov<'a>(body: impl IntoIterator<Item = &'a str>) -> crate::metamath::Expr {
 }
 
 /// Add a `$f` float `label $f typecode var`.
+// Cold database-setup path; `MmError` is a rich diagnostic enum, not worth boxing.
+#[allow(clippy::result_large_err)]
 fn float(db: &mut Database, label: &str, typecode: &str, var: &str) -> Result<(), MmError> {
     db.add_float(FloatHyp {
         label: label.into(),
@@ -88,6 +90,8 @@ fn float(db: &mut Database, label: &str, typecode: &str, var: &str) -> Result<()
 }
 
 /// Add a `$e` essential `label $e <expr>`.
+// Cold database-setup path; `MmError` is a rich diagnostic enum, not worth boxing.
+#[allow(clippy::result_large_err)]
 fn essential(db: &mut Database, label: &str, expr: crate::metamath::Expr) -> Result<(), MmError> {
     db.add_essential(Hypothesis {
         label: label.into(),
@@ -99,6 +103,8 @@ fn essential(db: &mut Database, label: &str, expr: crate::metamath::Expr) -> Res
 /// schema). The result is a finished, scope-balanced [`Database`] that
 /// [`crate::metamath::verify_all`] accepts (the bundled `$p` self-checks below
 /// verify).
+// Cold database-setup path; `MmError` is a rich diagnostic enum, not worth boxing.
+#[allow(clippy::result_large_err)]
 pub fn database() -> Result<Database, MmError> {
     let mut db = Database::new();
 

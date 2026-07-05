@@ -3,7 +3,7 @@
 //! `notes/vibes/peano-arithmetic-plan.md`).
 //!
 //! [`fol`](super::fol) reifies PA syntax *locally-nameless* as the AST
-//! [`Fol`](super::fol::Fol) (with the proven de Bruijn substitution) and as a
+//! [`Fol`] (with the proven de Bruijn substitution) and as a
 //! single-sorted Church carrier. For the **denotation** `⟦·⟧` we need PA
 //! terms to land in HOL `nat` and PA formulas in HOL `bool` — two sorts — so
 //! here we denote the AST *directly* into HOL by a Rust meta-function (the
@@ -18,7 +18,7 @@
 //! - a **free-variable interpretation**: each `fvar k` becomes a **named HOL
 //!   free variable** `pa.v{k} : nat` (the natural standard interpretation —
 //!   PA free variables *are* HOL free variables). This is what lets the
-//!   induction schema discharge to [`Thm::nat_induct`], whose induction
+//!   induction schema discharge to [`Thm::nat_induct`](covalence_core::Thm::nat_induct), whose induction
 //!   variable must be a bare free variable.
 //! - a **bound-variable context** — a Rust `Vec<Term>` of the HOL `nat` terms
 //!   the enclosing binders introduced (innermost last), so `⟦bvar i⟧` is the

@@ -33,7 +33,7 @@
 //!
 //! `σ_hom` (σ commutes with `⟹`) is carried as an explicit hypothesis rather
 //! than baked into the encoding, so [`transport`] is fully general over any
-//! `⟹`-homomorphic translation. The concrete demonstration ([`tests`]) is the
+//! `⟹`-homomorphic translation. The concrete demonstration (`tests`) is the
 //! **identity translation** `σ := λx. x`, for which `σ_hom` holds by
 //! reflexivity (β); transport then specialises to
 //! `Interp A B id ⟹ Derivable_DB A S ⟹ Derivable_DB B S`, and since `A ⊑ B`

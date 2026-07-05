@@ -4,9 +4,8 @@
 //! into `$OUT_DIR`:
 //!   - `hashes.rs`   — `pub const <ALGO>_<VARIANT>_BLAKE3: O256 = ...; ...`
 //!   - `bytes.rs`    — `include_str!`/`include_bytes!` constants for the
-//!                     committed `.wat`, `.wasm`, and `.wit` files. For
-//!                     C-sourced variants (which have no `.wat`) the
-//!                     `WAT` constant is the empty string.
+//!     committed `.wat`, `.wasm`, and `.wit` files. For C-sourced variants
+//!     (which have no `.wat`) the `WAT` constant is the empty string.
 //!   - `registry.rs` — `pub const ALL_SPECS: &[&Spec<'static>] = &[...]`
 //!
 //! Hashes (BLAKE3 + SHA-256) are computed from the committed `.wasm`
@@ -672,7 +671,7 @@ fn extract_string(obj: &str, key: &str) -> Option<String> {
 }
 
 fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     let mut out = Vec::with_capacity(s.len() / 2);

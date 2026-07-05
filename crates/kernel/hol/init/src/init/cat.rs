@@ -135,7 +135,7 @@ pub fn comp_assoc(h: &Term, g: &Term, f: &Term) -> Result<Thm> {
 }
 
 /// `⊢ (g ∘ f) x = g (f x)` — δβ-unfold a single composition applied to a
-/// point. Only the **outermost** `∘` is reduced (via [`delta_head`]), so
+/// point. Only the **outermost** `∘` is reduced (via [`delta_head`](crate::init::eq::delta_head)), so
 /// `g` / `f` may themselves contain compositions (or copairings) that are
 /// left intact — essential when reducing composites of structure
 /// morphisms.

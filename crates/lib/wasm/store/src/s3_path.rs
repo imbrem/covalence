@@ -284,7 +284,7 @@ pub fn s3_path_wat(prefix: &str) -> Result<String, BuildError> {
 /// Build a fully validated s3-path composer component.
 ///
 /// The result implements `cov:store/api` via routing
-/// `key → upstream.get(prefix + hex(key))`. Use [`WasmStore::compose`]
+/// `key → upstream.get(prefix + hex(key))`. Use [`WasmStore::compose`](crate::WasmStore::compose)
 /// to instantiate with N upstream stores (typically N = 1 for the
 /// S3 case).
 pub fn build_component(prefix: &str) -> Result<Vec<u8>, BuildError> {

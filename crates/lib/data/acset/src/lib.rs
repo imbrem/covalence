@@ -626,10 +626,10 @@ impl Instance {
                     let start = stack.iter().position(|&x| x == w).unwrap_or(0);
                     return Some(stack[start..].to_vec());
                 }
-                if color[w] == 0 {
-                    if let Some(c) = dfs(w, adj, color, stack) {
-                        return Some(c);
-                    }
+                if color[w] == 0
+                    && let Some(c) = dfs(w, adj, color, stack)
+                {
+                    return Some(c);
                 }
             }
             stack.pop();
@@ -637,10 +637,10 @@ impl Instance {
             None
         }
         for u in 0..nv {
-            if color[u] == 0 {
-                if let Some(cycle) = dfs(u, &adj, &mut color, &mut stack) {
-                    return Err(AcsetError::Cyclic { obj: v, cycle });
-                }
+            if color[u] == 0
+                && let Some(cycle) = dfs(u, &adj, &mut color, &mut stack)
+            {
+                return Err(AcsetError::Cyclic { obj: v, cycle });
             }
         }
         Ok(())

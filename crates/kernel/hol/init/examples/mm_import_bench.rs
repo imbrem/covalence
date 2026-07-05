@@ -136,7 +136,7 @@ fn main() {
     let n = ok + failed;
 
     let mut ts = timings.into_inner().unwrap();
-    ts.sort_unstable_by(|a, b| b.0.cmp(&a.0)); // slowest first
+    ts.sort_unstable_by_key(|t| std::cmp::Reverse(t.0)); // slowest first
     let us_at = |frac: f64| -> f64 {
         if ts.is_empty() {
             return 0.0;

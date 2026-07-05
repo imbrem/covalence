@@ -82,22 +82,22 @@ fn three_coloring_triangle() {
 
     // c[i][k] = variable for "node i has color k"
     let mut c = [[cnf.fresh(); 3]; 3]; // placeholder, overwrite below
-    for i in 0..3 {
-        for k in 0..3 {
-            c[i][k] = cnf.fresh();
+    for row in &mut c {
+        for slot in row {
+            *slot = cnf.fresh();
         }
     }
 
     // At-least-one color per node
-    for i in 0..3 {
-        cnf.clause(c[i]);
+    for &row in &c {
+        cnf.clause(row);
     }
 
     // At-most-one color per node (pairwise exclusion)
-    for i in 0..3 {
+    for row in &c {
         for k1 in 0..3 {
             for k2 in (k1 + 1)..3 {
-                cnf.clause([!c[i][k1], !c[i][k2]]);
+                cnf.clause([!row[k1], !row[k2]]);
             }
         }
     }
@@ -105,8 +105,8 @@ fn three_coloring_triangle() {
     // Adjacent nodes differ (K₃: every pair is an edge)
     let edges = [(0, 1), (0, 2), (1, 2)];
     for &(u, v) in &edges {
-        for k in 0..3 {
-            cnf.clause([!c[u][k], !c[v][k]]);
+        for (&cu, &cv) in c[u].iter().zip(&c[v]) {
+            cnf.clause([!cu, !cv]);
         }
     }
 
@@ -146,27 +146,27 @@ fn two_coloring_triangle_unsat() {
     let mut cnf = Cnf::new();
 
     let mut c = [[cnf.fresh(); 2]; 3];
-    for i in 0..3 {
-        for k in 0..2 {
-            c[i][k] = cnf.fresh();
+    for row in &mut c {
+        for slot in row {
+            *slot = cnf.fresh();
         }
     }
 
     // At-least-one color per node
-    for i in 0..3 {
-        cnf.clause(c[i]);
+    for &row in &c {
+        cnf.clause(row);
     }
 
     // At-most-one color per node
-    for i in 0..3 {
-        cnf.clause([!c[i][0], !c[i][1]]);
+    for row in &c {
+        cnf.clause([!row[0], !row[1]]);
     }
 
     // Adjacent nodes differ
     let edges = [(0, 1), (0, 2), (1, 2)];
     for &(u, v) in &edges {
-        for k in 0..2 {
-            cnf.clause([!c[u][k], !c[v][k]]);
+        for (&cu, &cv) in c[u].iter().zip(&c[v]) {
+            cnf.clause([!cu, !cv]);
         }
     }
 

@@ -23,7 +23,7 @@
 //!   to the async trait.
 //!
 //! For a sync façade over an async store, see
-//! [`BlockingBlobStore`](crate::BlockingBlobStore) under the `blocking`
+//! `BlockingBlobStore` under the `blocking`
 //! feature.
 
 use std::ops::Range;
@@ -50,6 +50,9 @@ use crate::{ContentStore, StoreError};
 ///
 /// `K: Send + Sync` is a trait-level bound so default impls can hold
 /// `&K` across `.await` points.
+// `len` is `Option<usize>` ("count if cheaply available"), so an `is_empty`
+// counterpart would conflate "unknown" with "empty".
+#[allow(clippy::len_without_is_empty)]
 #[async_trait]
 pub trait AsyncContentStore<K: Send + Sync>: Send + Sync {
     /// Fetch a half-open byte range — the simple API.
@@ -138,7 +141,7 @@ impl<K: Send + Sync> AsyncBlobStore<K> {
 
     /// Direct access to the underlying `Arc`. Useful when handing off to
     /// adapter types that hold the trait object directly (e.g.
-    /// [`BlockingBlobStore`](crate::BlockingBlobStore)).
+    /// `BlockingBlobStore`).
     pub fn as_arc(&self) -> &Arc<dyn AsyncContentStore<K>> {
         &self.0
     }

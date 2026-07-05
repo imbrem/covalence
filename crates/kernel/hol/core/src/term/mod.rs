@@ -8,10 +8,10 @@
 //!
 //! Submodules:
 //!
-//! - [`observer`] — the observer-pattern infrastructure: the
+//! - `observer` — the observer-pattern infrastructure: the
 //!   `Observer` / `Hint` marker traits, the `ObsTrue` / `ObsImp` /
 //!   `ObsEq` policy traits, and the type-erased `Object` handle.
-//! - [`term`](self::term) — the term language: `Term`, `TermKind`,
+//! - `term` — the term language: `Term`, `TermKind`,
 //!   `Def`, and the type-checker (`TypeEnv` + `type_of_in`).
 //! - [`set`] — `TermSet`, the structurally-shared set of terms that
 //!   [`crate::Ctx`] wraps.
@@ -25,6 +25,7 @@ pub mod cons;
 mod observer;
 pub mod set;
 mod spec;
+#[allow(clippy::module_inception)]
 mod term;
 
 pub use cons::{Checked, HashCons, TermCons, TrustedCons};

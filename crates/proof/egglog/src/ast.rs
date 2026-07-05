@@ -3,12 +3,12 @@
 //!
 //! Scope deliberately minimal: this is *not* a complete egglog parser. It
 //! covers the commands needed to declare a signature, assert ground
-//! equalities, and designate a target equality to ingest as a [`Proof`].
+//! equalities, and designate a target equality to ingest as a [`Proof`](crate::proof::Proof).
 //! Rewrites, datatypes-with-arity, schedules, relations, run/check, etc.
 //! all sit outside the scope here — they belong to later Stages.
 //!
 //! The supported subset is in 1-1 correspondence with what
-//! [`KernelEgglogBridge`](crate::KernelEgglogBridge) wires through
+//! [`EgglogBridge`](crate::EgglogBridge) wires through
 //! kernel-checked (i.e. without the `Rule` trust shim). Once we add the
 //! external-egglog dep we'll consume real proof DAGs from upstream and
 //! this AST stays small for hand-written fixtures and tests.

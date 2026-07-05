@@ -32,7 +32,7 @@
 //! that the recursor abstracts and the equations generalise over.
 //!
 //! Constructors with **any** number of recursive arguments are handled (as
-//! in [`super::determinacy`]): the `k ≥ 1` arm of [`rec_equation`] feeds graph
+//! in [`super::determinacy`]): the `k ≥ 1` arm of `rec_equation` feeds graph
 //! introduction the conjunction of the per-argument `Graph rⱼ (rec rⱼ)`
 //! memberships and bridges every inner `rec rⱼ` to its applied form. The
 //! nullary and single-argument shapes are the `k = 0` / `k = 1` instances.

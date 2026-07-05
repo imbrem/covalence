@@ -67,12 +67,12 @@ impl TreeStore for MemoryTreeStore {
 
     fn ns(&self, key: &[u8]) -> Arc<dyn TreeStore> {
         let mut data = self.data.lock().unwrap();
-        let child = data
+
+        (data
             .children
             .entry(key.to_vec())
             .or_insert_with(|| Arc::new(MemoryTreeStore::new()))
-            .clone();
-        child
+            .clone()) as _
     }
 
     fn dup(&self) -> Arc<dyn TreeStore> {

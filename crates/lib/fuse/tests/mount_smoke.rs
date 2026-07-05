@@ -115,11 +115,11 @@ async fn mount_tree_and_read() {
                 Err(e) => panic!("mount failed: {e}"),
             }
         }
-        if let Ok(md) = std::fs::metadata(&mountpoint_path) {
-            if md.dev() != outer_dev {
-                ready = true;
-                break;
-            }
+        if let Ok(md) = std::fs::metadata(&mountpoint_path)
+            && md.dev() != outer_dev
+        {
+            ready = true;
+            break;
         }
     }
     assert!(ready, "mount never became live within 5s");

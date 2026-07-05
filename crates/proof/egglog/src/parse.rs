@@ -1,9 +1,9 @@
-//! Egglog-source → [`ast::Command`] parser.
+//! Egglog-source → [`ast::Command`](crate::ast::Command) parser.
 //!
 //! Thin wrapper over [`covalence_sexp::parse_egglog`]. Each top-level
 //! S-expression is dispatched by its head symbol to a per-command parser.
 //! Anything unrecognised surfaces as
-//! [`BridgeError::Malformed`](crate::BridgeError::Malformed) — we don't yet
+//! [`BridgeError::Malformed`] — we don't yet
 //! parse the full egglog command set, so loud failure on unknown heads
 //! is intentional.
 

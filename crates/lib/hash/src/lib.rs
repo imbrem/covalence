@@ -87,13 +87,13 @@ mod trait_tests {
 
     #[test]
     fn to_id_vec() {
-        assert_eq!(vec![1u8, 2, 3].to_id(), O256::blob(&[1, 2, 3]));
+        assert_eq!(vec![1u8, 2, 3].to_id(), O256::blob([1, 2, 3]));
     }
 
     #[test]
     fn to_id_slice() {
         let data: &[u8] = &[1, 2, 3];
-        assert_eq!(data.to_id(), O256::blob(&[1, 2, 3]));
+        assert_eq!(data.to_id(), O256::blob([1, 2, 3]));
     }
 
     #[test]

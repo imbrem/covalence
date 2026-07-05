@@ -139,7 +139,7 @@ fn push_hex(s: &mut String, bytes: &[u8]) {
 
 fn decode_hex(s: &str) -> Result<Vec<u8>, ParseError> {
     let bytes = s.as_bytes();
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err(ParseError::BadHex);
     }
     let nibble = |c: u8| -> Result<u8, ParseError> {

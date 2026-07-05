@@ -122,15 +122,15 @@ pub fn min_bytes(n: usize) -> u8 {
         return 1;
     }
     let bits = usize::BITS - (n - 1).leading_zeros();
-    ((bits + 7) / 8) as u8
+    bits.div_ceil(8) as u8
 }
 
 /// Minimum power-of-2 bytes to represent a value (for offset table widths).
 fn min_pow2_bytes(max_val: u64) -> u8 {
     match max_val {
         0..=0xFF => 1,
-        0..=0xFFFF => 2,
-        0..=0xFFFF_FFFF => 4,
+        0x100..=0xFFFF => 2,
+        0x1_0000..=0xFFFF_FFFF => 4,
         _ => 8,
     }
 }
@@ -138,8 +138,8 @@ fn min_pow2_bytes(max_val: u64) -> u8 {
 /// Read a little-endian unsigned integer of `width` bytes.
 pub(crate) fn read_le(data: &[u8], width: usize) -> u64 {
     let mut val = 0u64;
-    for i in 0..width {
-        val |= (data[i] as u64) << (i * 8);
+    for (i, &byte) in data[..width].iter().enumerate() {
+        val |= (byte as u64) << (i * 8);
     }
     val
 }
@@ -801,7 +801,7 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<ParsedHeader, TableError> {
     }
 
     let mh_size = data[0] as usize;
-    if mh_size % 32 != 0 {
+    if !mh_size.is_multiple_of(32) {
         return Err(TableError::BadAlignment(data[0]));
     }
     if data.len() < mh_size {

@@ -77,7 +77,7 @@ impl Backend {
     }
 
     fn blob_count(&self, py: Python<'_>) -> PyResult<Option<usize>> {
-        kernel_call(py, &self.tx, |k| SyncBackend::blob_count(k))?
+        kernel_call(py, &self.tx, SyncBackend::blob_count)?
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
@@ -93,7 +93,7 @@ impl Backend {
     }
 
     fn info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let info = kernel_call(py, &self.tx, |k| SyncBackend::info(k))?;
+        let info = kernel_call(py, &self.tx, SyncBackend::info)?;
         let dict = pyo3::types::PyDict::new(py);
         dict.set_item("kind", info.kind)?;
         dict.set_item("target", info.target)?;

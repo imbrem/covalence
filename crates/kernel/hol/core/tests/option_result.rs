@@ -26,7 +26,7 @@ fn assert_ty(term: &Term, expected: &Type) {
 }
 
 /// Pull the `(spec, args)` out of a `TypeKind::Spec`, asserting the label.
-fn type_spec_label<'a>(ty: &'a Type) -> (&'a TypeSpec, &'a [Type]) {
+fn type_spec_label(ty: &Type) -> (&TypeSpec, &[Type]) {
     match ty.kind() {
         TypeKind::Spec(spec, args) => (spec, args.as_slice()),
         other => panic!("expected TypeKind::Spec, got {other:?}"),
@@ -275,7 +275,7 @@ fn nested_option_of_option() {
     let outer = option(inner.clone());
     let (spec, args) = type_spec_label(&outer);
     assert_eq!(spec.symbol().label(), "option");
-    assert_eq!(args, [inner.clone()]);
+    assert_eq!(args, std::slice::from_ref(&inner));
     // the single arg is itself an `option` Spec.
     let (inner_spec, inner_args) = type_spec_label(&args[0]);
     assert_eq!(inner_spec.symbol().label(), "option");

@@ -14,7 +14,7 @@
 //! This and the ε-assembly are the last pieces of the recursor construction
 //! that were specialised to `nat`; `graph_det` here is now generic. The
 //! **multi-recursive-argument** case — two or more recursive arguments in one
-//! constructor (a binary tree's `branch`) — is now handled: [`det_step`]
+//! constructor (a binary tree's `branch`) — is now handled: `det_step`
 //! peels *all* the inversion witnesses on each side, equates each pair by its
 //! own induction hypothesis, and chains the resulting congruences. The
 //! single-recursive-argument shape (`nat`'s `succ`) is the degenerate `k = 1`

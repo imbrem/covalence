@@ -120,10 +120,10 @@ pub async fn run_serve(config: ServeConfig) -> Result<(), ServeError> {
         let url = format!("http://{addr}");
         tracing::info!("{url}");
 
-        if config.open {
-            if let Err(e) = open::that(&url) {
-                tracing::warn!("failed to open browser: {e}");
-            }
+        if config.open
+            && let Err(e) = open::that(&url)
+        {
+            tracing::warn!("failed to open browser: {e}");
         }
 
         // Also listen on Unix socket

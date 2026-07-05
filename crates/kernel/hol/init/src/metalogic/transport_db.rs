@@ -42,7 +42,7 @@
 //!
 //! ## The worked instance: conservative extension / monotonicity (σ = id)
 //!
-//! [`tests`] builds two real [`mm_database`] rule sets where the **target
+//! `tests` builds two real [`mm_database`](crate::metalogic::mm_database) rule sets where the **target
 //! extends the source** — the target database has all of the source's `|-`
 //! assertions plus an extra axiom (same signature) — and transports with the
 //! **identity** translation `σ := λx. x`. Each source clause is *literally also

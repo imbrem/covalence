@@ -346,11 +346,11 @@ impl FuncBody {
     pub fn finish(self, builder: &mut ModuleBuilder) -> FuncIdx {
         let mut local_groups: Vec<(u32, ValType)> = Vec::new();
         for &ty in &self.locals {
-            if let Some(last) = local_groups.last_mut() {
-                if last.1 == ty {
-                    last.0 += 1;
-                    continue;
-                }
+            if let Some(last) = local_groups.last_mut()
+                && last.1 == ty
+            {
+                last.0 += 1;
+                continue;
             }
             local_groups.push((1, ty));
         }

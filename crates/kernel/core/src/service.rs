@@ -205,9 +205,9 @@ std::thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-/// Build (or fetch the memoized) `natmodel` env for a named model: its operators
-/// + addition axioms + induction handler, under the abstract names the
-/// model-relative proof uses.
+/// Build (or fetch the memoized) `natmodel` env for a named model: its
+/// operators + addition axioms + induction handler, under the abstract names
+/// the model-relative proof uses.
 fn build_nat_model_env(model: &str) -> Result<covalence_init::script::Env, String> {
     use covalence_init::models::{Logic, NatSelf, NatUnary};
     let key = if model.is_empty() { "nat/self" } else { model };

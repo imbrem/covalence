@@ -55,7 +55,7 @@ pub fn write_smtlib2(problem: &SmtProblem, w: &mut impl io::Write) -> io::Result
         write!(w, "{}", params_str)?;
         write!(w, ") ")?;
         let mut buf = Vec::new();
-        prettyprint(&[fun.sort.clone()], &mut buf)?;
+        prettyprint(std::slice::from_ref(&fun.sort), &mut buf)?;
         let sort_str =
             String::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         writeln!(w, "{})", sort_str)?;
@@ -64,7 +64,7 @@ pub fn write_smtlib2(problem: &SmtProblem, w: &mut impl io::Write) -> io::Result
     for assertion in problem.assertions() {
         write!(w, "(assert ")?;
         let mut buf = Vec::new();
-        prettyprint(&[assertion.clone()], &mut buf)?;
+        prettyprint(std::slice::from_ref(assertion), &mut buf)?;
         let term_str =
             String::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         writeln!(w, "{})", term_str)?;

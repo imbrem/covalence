@@ -1,4 +1,4 @@
-//! String diagram: a [`Graph`](crate::Graph) plus optional overlays
+//! String diagram: a [`Graph`] plus optional overlays
 //! ([`LabelList`], [`KindFlags`]).
 //!
 //! Three slots, each holding a reference to an overlay blob. Slots

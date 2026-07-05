@@ -15,7 +15,7 @@ use super::backend::{GitBackend, GitObject, GitObjectKind};
 /// packed objects.
 ///
 /// Internally holds an `Arc<gix_odb::Store>`. Each method creates a short-lived
-/// `Cache` handle via [`Store::to_cache_arc`] — this is cheap (no I/O) and the
+/// `Cache` handle via `Store::to_cache_arc` — this is cheap (no I/O) and the
 /// handle is dropped at the end of the call.
 #[derive(Clone)]
 pub struct OdbBackend {

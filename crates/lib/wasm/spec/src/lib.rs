@@ -109,6 +109,7 @@ pub struct SpecDoc<'a> {
 ///   * `expected` = signature bytes (64 bytes for Ed25519),
 ///   * `expected_result` = expected `verify` return (`true` for an
 ///     accept vector, `false` for a reject vector).
+///
 /// For all other modes `expected_result` is unused (defaults to `true`).
 #[cfg(feature = "bytes")]
 #[derive(Debug)]

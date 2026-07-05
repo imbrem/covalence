@@ -5,8 +5,8 @@
 //! [`Thm::beta_conv`], [`Thm::eq_mp`] — **are the primitives**; call
 //! them directly with `?`. The two congruence specialisations and the
 //! whole-term rewriting conversion live as methods on
-//! [`ThmExt`](crate::init::ext::ThmExt) /
-//! [`TermExt`](crate::init::ext::TermExt)
+//! [`ThmExt`] /
+//! [`TermExt`]
 //! ([`cong_fn`](crate::init::ext::ThmExt::cong_fn) /
 //! [`cong_arg`](crate::init::ext::ThmExt::cong_arg) /
 //! [`rw_all`](crate::init::ext::TermExt::rw_all) /

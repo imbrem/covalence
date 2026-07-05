@@ -21,14 +21,14 @@
 //! Matching is split into a fast **recognizer** and a separate **builder**, so
 //! the kernel only ever sees the *winning* derivation:
 //!
-//! 1. **Recognizer** ([`Recognizer`]) — a pure-Rust search (no kernel calls)
-//!    that decides whether the input matches and, if so, returns a [`Plan`]: the
+//! 1. **Recognizer** (`Recognizer`) — a pure-Rust search (no kernel calls)
+//!    that decides whether the input matches and, if so, returns a `Plan`: the
 //!    shape of the derivation (which `alt` branch, where each `seq`/`star`
 //!    splits). It memoises on `(node, span)`, so it is polynomial rather than
 //!    exponential, and it only checks *simple* properties — does this byte match
 //!    this literal, does this prefix match — so it is the natural place to drop
 //!    in a WASM/builtin accelerator later.
-//! 2. **Builder** ([`build`]) — walks the `Plan` once and assembles the `Thm`
+//! 2. **Builder** (`build`) — walks the `Plan` once and assembles the `Thm`
 //!    from [`crate::init::regex`]'s rules, with **no search and no failed kernel
 //!    calls**. Kernel work is exactly the size of the final derivation.
 //!
@@ -157,15 +157,14 @@ impl Recognizer<'_> {
     fn rec_uncached(&mut self, c: &Core, lo: usize, hi: usize) -> Option<Rc<Plan>> {
         // Variable rule: a lone variable token (a one-atom span) is consumed
         // only by the regex goal that *is* its category.
-        if hi - lo == 1 {
-            if let Atom::Var(i) = self.atoms[lo] {
-                if *c == *self.vars[i].category {
-                    return Some(Rc::new(Plan::Var(i)));
-                }
-                // Otherwise fall through: a structural goal (alt/seq/star) may
-                // still recurse and bottom out here with a matching sub-core.
-            }
+        if hi - lo == 1
+            && let Atom::Var(i) = self.atoms[lo]
+            && *c == *self.vars[i].category
+        {
+            return Some(Rc::new(Plan::Var(i)));
         }
+        // Otherwise fall through: a structural goal (alt/seq/star) may
+        // still recurse and bottom out here with a matching sub-core.
 
         match c.kind() {
             CoreKind::Empty => None,
@@ -182,10 +181,10 @@ impl Recognizer<'_> {
             }
             CoreKind::Seq(x, y) => {
                 for k in lo..=hi {
-                    if let Some(px) = self.rec(x, lo, k) {
-                        if let Some(py) = self.rec(y, k, hi) {
-                            return Some(Rc::new(Plan::Seq(px, py)));
-                        }
+                    if let Some(px) = self.rec(x, lo, k)
+                        && let Some(py) = self.rec(y, k, hi)
+                    {
+                        return Some(Rc::new(Plan::Seq(px, py)));
                     }
                 }
                 None
@@ -197,10 +196,10 @@ impl Recognizer<'_> {
                 // Non-empty prefix (k > lo) keeps the recursion strictly
                 // decreasing and avoids looping on a nullable `x`.
                 for k in (lo + 1)..=hi {
-                    if let Some(px) = self.rec(x, lo, k) {
-                        if let Some(ps) = self.rec(c, k, hi) {
-                            return Some(Rc::new(Plan::StarStep(px, ps)));
-                        }
+                    if let Some(px) = self.rec(x, lo, k)
+                        && let Some(ps) = self.rec(c, k, hi)
+                    {
+                        return Some(Rc::new(Plan::StarStep(px, ps)));
                     }
                 }
                 None

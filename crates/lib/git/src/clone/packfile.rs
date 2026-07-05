@@ -5,7 +5,7 @@
 //! - Offset deltas (type 6) — resolved against earlier objects in the pack
 //! - Reference deltas (type 7) — resolved against objects in the store
 //!
-//! Objects are stored directly into a [`GitBackend`](crate::store::GitBackend)
+//! Objects are stored directly into a [`GitBackend`]
 //! as they are resolved.
 
 use std::collections::HashMap;
@@ -72,7 +72,7 @@ pub fn parse_pack(pack_data: &[u8], backend: &impl GitBackend) -> io::Result<Pac
 
         match obj_type {
             // Non-delta: commit(1), tree(2), blob(3), tag(4)
-            1 | 2 | 3 | 4 => {
+            1..=4 => {
                 let kind = type_to_kind(obj_type)?;
                 let (data, consumed) = zlib_decompress(content, pos, size)?;
                 pos += consumed;
@@ -488,7 +488,7 @@ mod tests {
             self.objects
                 .lock()
                 .unwrap()
-                .insert(oid.clone(), (kind, data.to_vec()));
+                .insert(oid, (kind, data.to_vec()));
             Ok(oid)
         }
 
@@ -580,13 +580,14 @@ mod tests {
     fn apply_delta_copy_only() {
         let base = b"hello world";
         // Delta: src_size=11, tgt_size=5, copy offset=0 size=5
-        let mut delta = Vec::new();
-        delta.push(11); // src size
-        delta.push(5); // tgt size
-        // Copy instruction: 1_0001_0001 -> offset byte + size byte
-        delta.push(0x80 | 0x01 | 0x10); // copy, offset byte 0, size byte 0
-        delta.push(0x00); // offset = 0
-        delta.push(0x05); // size = 5
+        let delta = vec![
+            11, // src size
+            5,  // tgt size
+            // Copy instruction: 1_0001_0001 -> offset byte + size byte
+            0x80 | 0x01 | 0x10, // copy, offset byte 0, size byte 0
+            0x00,               // offset = 0
+            0x05,               // size = 5
+        ];
 
         let result = apply_delta(base, &delta).unwrap();
         assert_eq!(result, b"hello");
@@ -596,15 +597,16 @@ mod tests {
     fn apply_delta_copy_and_insert() {
         let base = b"hello";
         // Target: "hello world" — copy "hello" from base, insert " world"
-        let mut delta = Vec::new();
-        delta.push(5); // src size
-        delta.push(11); // tgt size
-        // Copy: offset=0, size=5
-        delta.push(0x80 | 0x01 | 0x10);
-        delta.push(0x00); // offset = 0
-        delta.push(0x05); // size = 5
-        // Insert 6 bytes: " world"
-        delta.push(6);
+        let mut delta = vec![
+            5,  // src size
+            11, // tgt size
+            // Copy: offset=0, size=5
+            0x80 | 0x01 | 0x10,
+            0x00, // offset = 0
+            0x05, // size = 5
+            // Insert 6 bytes: " world"
+            6,
+        ];
         delta.extend_from_slice(b" world");
 
         let result = apply_delta(base, &delta).unwrap();
@@ -618,13 +620,14 @@ mod tests {
         let target_data = b"the base content here, extended!";
 
         // Build delta instructions: copy all of base, insert ", extended!"
-        let mut delta_instr = Vec::new();
-        delta_instr.push(base_data.len() as u8); // src size
-        delta_instr.push(target_data.len() as u8); // tgt size
-        // Copy offset=0, size=base_data.len()
-        delta_instr.push(0x80 | 0x01 | 0x10);
-        delta_instr.push(0x00);
-        delta_instr.push(base_data.len() as u8);
+        let mut delta_instr = vec![
+            base_data.len() as u8,   // src size
+            target_data.len() as u8, // tgt size
+            // Copy offset=0, size=base_data.len()
+            0x80 | 0x01 | 0x10,
+            0x00,
+            base_data.len() as u8,
+        ];
         // Insert the rest
         let suffix = b", extended!";
         delta_instr.push(suffix.len() as u8);

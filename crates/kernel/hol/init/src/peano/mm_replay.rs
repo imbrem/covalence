@@ -636,7 +636,7 @@ pub fn induct_via_replay(motive: &Fol, k: u64, base: Thm, step: Thm) -> Result<(
 // ============================================================================
 
 /// Collect the proved (`|-`) operands in order.
-fn proved_slots<'a>(args: &'a [Slot]) -> Vec<&'a Slot> {
+fn proved_slots(args: &[Slot]) -> Vec<&Slot> {
     args.iter()
         .filter(|s| matches!(s, Slot::Proved { .. }))
         .collect()

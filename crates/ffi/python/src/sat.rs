@@ -114,10 +114,10 @@ pub fn load_drat(path: &str, binary: Option<bool>) -> PyResult<PyDratProof> {
         }
         None => {
             // Try text first, fall back to binary.
-            if let Ok(text) = String::from_utf8(data.clone()) {
-                if let Ok(proof) = parse_drat_text(&text) {
-                    return Ok(PyDratProof(proof));
-                }
+            if let Ok(text) = String::from_utf8(data.clone())
+                && let Ok(proof) = parse_drat_text(&text)
+            {
+                return Ok(PyDratProof(proof));
             }
             parse_drat_binary(&data)
                 .map(PyDratProof)

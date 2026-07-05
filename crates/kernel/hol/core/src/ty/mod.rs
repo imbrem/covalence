@@ -6,14 +6,15 @@
 //!
 //! Submodules:
 //!
-//! - [`ty`](self::ty) — `Type`, `TypeKind`, the cached primitive types
+//! - `ty` — `Type`, `TypeKind`, the cached primitive types
 //!   (`nat`, `bool`, `int`, `bytes`, `unit`).
-//! - [`list`] — `TypeList`, the wrapper around an ordered list of
+//! - `list` — `TypeList`, the wrapper around an ordered list of
 //!   type arguments used throughout `TypeKind` / `TermKind`.
 
 pub mod cons;
 mod list;
 mod spec;
+#[allow(clippy::module_inception)]
 mod ty;
 
 pub use cons::{TrustedTypeCons, TypeCons, TypeHashCons};

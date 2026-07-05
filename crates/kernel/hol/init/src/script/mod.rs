@@ -113,7 +113,7 @@ impl LazyTheory {
 
     /// Force the theory on the current thread — the blocking wrapper over
     /// [`LazyTheory::resolve`]. Runs on a tokio current-thread runtime (see
-    /// [`block_on`]); native only, and not for callers already inside a tokio
+    /// `block_on`); native only, and not for callers already inside a tokio
     /// runtime (which should `.resolve().await` instead).
     pub fn resolve_blocking(self) -> Result<Theory, ScriptError> {
         block_on(self.resolve())
@@ -209,7 +209,7 @@ pub struct NamedThm {
 /// directives are checked and accumulate so later theorems can reference
 /// earlier ones — and any opened namespace's lemmas — via `(NAME)` (by name).
 /// Replay a script, blocking until the whole theory is proved. The blocking
-/// half of the async core ([`run_async`]) — see [`block_on`]. This is the
+/// half of the async core ([`run_async`]) — see `block_on`. This is the
 /// stable entry point; the kernel/TCB stays synchronous, so today the future
 /// completes without ever pending.
 pub fn run(
@@ -226,7 +226,7 @@ pub fn run(
     ))
 }
 
-/// The async core: parse a whole script into structured [`Stmt`]s and execute
+/// The async core: parse a whole script into structured `Stmt`s and execute
 /// them into a [`LazyTheory`].
 ///
 /// `#import` is the one genuinely **async** step: it `await`s the

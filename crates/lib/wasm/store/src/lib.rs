@@ -385,8 +385,7 @@ impl WasmStore {
                         .get(rep as usize)
                         .ok_or_else(|| wasmtime_err("contains: rep out of range"))?
                         .clone();
-                    // Release the borrow before calling back into wasm.
-                    drop(cx);
+                    // (The `cx` borrow ends here, before calling the backing.)
                     let r = backing
                         .blob_contains(&key)
                         .map_err(|e| wasmtime_err(&format!("upstream contains: {e}")))?;
@@ -407,7 +406,6 @@ impl WasmStore {
                         .get(rep as usize)
                         .ok_or_else(|| wasmtime_err("get: rep out of range"))?
                         .clone();
-                    drop(cx);
                     let r = backing
                         .blob_get(&key)
                         .map_err(|e| wasmtime_err(&format!("upstream get: {e}")))?;
@@ -433,7 +431,6 @@ impl WasmStore {
                         .get(rep as usize)
                         .ok_or_else(|| wasmtime_err("head: rep out of range"))?
                         .clone();
-                    drop(cx);
                     let r = backing
                         .blob_head(&key)
                         .map_err(|e| wasmtime_err(&format!("upstream head: {e}")))?;
@@ -467,7 +464,7 @@ impl WasmStore {
                 .get_export_index(&mut store, Some(&compose_idx), "build")
                 .ok_or(WasmStoreError::MissingExport("build", COMPOSE_API))?;
             instance
-                .get_func(&mut store, &idx)
+                .get_func(&mut store, idx)
                 .ok_or(WasmStoreError::MissingExport("build", COMPOSE_API))?
         };
 
@@ -551,7 +548,7 @@ fn lookup(
         .get_export_index(&mut *store, Some(api_idx), name)
         .ok_or(WasmStoreError::MissingExport(name, STORE_API))?;
     instance
-        .get_func(&mut *store, &idx)
+        .get_func(&mut *store, idx)
         .ok_or(WasmStoreError::MissingExport(name, STORE_API))
 }
 

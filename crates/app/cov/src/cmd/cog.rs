@@ -145,9 +145,9 @@ fn run_clone(args: CloneArgs) -> std::io::Result<()> {
 
     let store = match &args.store {
         Some(path) => GitStore::open(path, gix_hash::Kind::Sha1)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?,
+            .map_err(|e| std::io::Error::other(e.to_string()))?,
         None => GitStore::memory(gix_hash::Kind::Sha1)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?,
+            .map_err(|e| std::io::Error::other(e.to_string()))?,
     };
 
     let ref_prefixes = match &args.branch {
@@ -246,19 +246,19 @@ fn push_to_server(
 
     let blobs = store
         .all_blob_data()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     for data in &blobs {
         backend
             .store_blob(data)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
     }
     let trees = store
         .all_tree_data()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     for data in &trees {
         backend
             .store_tree(data)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
     }
     println!("Pushed {} blob(s) and {} tree(s)", blobs.len(), trees.len());
     Ok(())
@@ -351,10 +351,10 @@ fn parse_o256(s: &str) -> Result<covalence_hash::O256, String> {
         return Err(format!("expected 64 hex chars, got {}", s.len()));
     }
     let mut bytes = [0u8; 32];
-    for i in 0..32 {
+    for (i, byte) in bytes.iter_mut().enumerate() {
         let hi = hex_nibble(s.as_bytes()[i * 2])?;
         let lo = hex_nibble(s.as_bytes()[i * 2 + 1])?;
-        bytes[i] = (hi << 4) | lo;
+        *byte = (hi << 4) | lo;
     }
     Ok(covalence_hash::O256::from_bytes(bytes))
 }
@@ -378,8 +378,7 @@ fn resolve_mount_store(
     use covalence_store::{BlobStore, SqliteStore};
 
     if let Some(path) = store {
-        let sqlite = SqliteStore::open(path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        let sqlite = SqliteStore::open(path).map_err(|e| std::io::Error::other(e.to_string()))?;
         return Ok(BlobStore::new(sqlite));
     }
 
@@ -399,7 +398,7 @@ fn resolve_mount_store(
     Ok(BlobStore::new(BackendContentStore(backend)))
 }
 
-/// Adapter that exposes a [`SyncHttpBackend`] as a [`ContentStore<O256>`].
+/// Adapter that exposes a [`SyncHttpBackend`](covalence_client::SyncHttpBackend) as a [`ContentStore<O256>`](covalence_store::ContentStore).
 ///
 /// Read-only: `put`/`insert` are wired to error because the tree mount never
 /// writes. If we ever support a writable mount, plumb those through the

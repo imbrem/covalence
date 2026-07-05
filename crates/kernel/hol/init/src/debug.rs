@@ -6,7 +6,7 @@
 //! layers around here are expected to change a lot first) — these are the basic
 //! primitives that work today.
 //!
-//! The [`cached_thm!`](crate::cached_thm) macro routes every cached theorem
+//! The `cached_thm!` macro routes every cached theorem
 //! build through [`timed`], so `COV_PROFILE=1 cargo test …` prints how long each
 //! cached derivation took to build.
 

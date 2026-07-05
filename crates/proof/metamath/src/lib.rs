@@ -47,7 +47,7 @@
 //!   normal and compressed proofs); a HOL-free "sanity-check" backend behind the
 //!   default-on `checker` feature.
 //! * [`error`] — the `MmError` type shared across the engine.
-//! * [`parse`] — the `.mm` source reader (tokenise, scope `${ ... $}`, comments
+//! * [`mod@parse`] — the `.mm` source reader (tokenise, scope `${ ... $}`, comments
 //!   `$( ... $)`, `$[ include $]` via [`SourceResolver`]) driving a
 //!   [`DatabaseSink`].
 //!

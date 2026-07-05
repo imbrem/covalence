@@ -549,7 +549,7 @@ impl PartialOrder {
     /// 2. Compute the transitive closure: `(a→b) · (b→c) ⊢ (a→c)`, where the
     ///    composite is strict iff either factor is (`<` absorbs `≤`).
     /// 3. Read the goal off the closure:
-    ///    - `a ≤ b` — any `a→b` edge (strict ones weakened via [`lt_imp_le`]-
+    ///    - `a ≤ b` — any `a→b` edge (strict ones weakened via `lt_imp_le`-
     ///      style `and_elim_l`).
     ///    - `a < b` — a *strict* `a→b` edge.
     ///    - `a = b` — both `a→b` and `b→a` weak edges, combined by antisymmetry.
@@ -1244,7 +1244,7 @@ async fn check_fact(
     crate::script::check(f, &mut CheckCtx::new(env, scope)).await
 }
 
-/// Build an [`Env`] that registers this model's `order` tactic plus its derived
+/// Build an [`Env`](crate::script::Env) that registers this model's `order` tactic plus its derived
 /// order lemmas under conventional names — ready to `(#import …)` into a `.cov`
 /// proof. Mirrors [`crate::init::monoid::monoid_env`]: one model, one env, the
 /// same proof script works over any installed model.

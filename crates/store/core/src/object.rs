@@ -103,7 +103,7 @@ pub trait ObjectStore<K, T: Object>: Send + Sync {
 ///   `O256::blob(data)`.
 /// - **Trees** are stored tagged via [`TaggedStore::insert_tagged`] with tag
 ///   `O256::blob("tree")`, keyed by the BLAKE3 keyed hash — the same
-///   domain-separated scheme used by [`dir_hash`](covalence_object::dir_hash).
+///   domain-separated scheme used by `dir_hash`.
 ///
 /// Only `Blob` and `Tree` types are supported.
 pub struct KeyedObjectStore<S> {

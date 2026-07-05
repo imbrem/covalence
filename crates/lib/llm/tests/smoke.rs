@@ -16,9 +16,11 @@ fn model() -> String {
 #[ignore = "requires local ollama daemon on :11434"]
 fn ollama_sync_complete() {
     use covalence_llm::{ChatOptions, Llm};
-    let mut opts = ChatOptions::default();
-    opts.temperature = Some(0.0);
-    opts.max_tokens = Some(16);
+    let opts = ChatOptions {
+        temperature: Some(0.0),
+        max_tokens: Some(16),
+        ..Default::default()
+    };
     let llm = Llm::ollama(model()).with_options(opts);
     let answer = llm
         .complete("Answer with a single integer and nothing else. What is 2 + 2?")
@@ -32,9 +34,11 @@ fn ollama_sync_complete() {
 #[ignore = "requires local ollama daemon on :11434"]
 async fn ollama_async_complete() {
     use covalence_llm::{AsyncLlm, ChatOptions};
-    let mut opts = ChatOptions::default();
-    opts.temperature = Some(0.0);
-    opts.max_tokens = Some(16);
+    let opts = ChatOptions {
+        temperature: Some(0.0),
+        max_tokens: Some(16),
+        ..Default::default()
+    };
     let llm = AsyncLlm::ollama(model()).with_options(opts);
     let answer = llm
         .complete("Answer with a single integer and nothing else. What is 2 + 2?")
@@ -49,9 +53,11 @@ async fn ollama_async_complete() {
 #[ignore = "requires local ollama daemon on :11434"]
 fn ollama_sync_chat_messages() {
     use covalence_llm::{ChatMessage, ChatOptions, Llm};
-    let mut opts = ChatOptions::default();
-    opts.temperature = Some(0.0);
-    opts.max_tokens = Some(16);
+    let opts = ChatOptions {
+        temperature: Some(0.0),
+        max_tokens: Some(16),
+        ..Default::default()
+    };
     let llm = Llm::ollama(model()).with_options(opts);
     let resp = llm
         .chat(vec![
@@ -97,9 +103,11 @@ fn ollama_sync_4xx_is_backend_error() {
 #[ignore = "requires local ollama daemon on :11434"]
 fn ollama_sync_from_env() {
     use covalence_llm::{ChatOptions, Llm, Provider};
-    let mut opts = ChatOptions::default();
-    opts.temperature = Some(0.0);
-    opts.max_tokens = Some(16);
+    let opts = ChatOptions {
+        temperature: Some(0.0),
+        max_tokens: Some(16),
+        ..Default::default()
+    };
     let llm = Llm::from_env(Provider::Ollama, model())
         .expect("from_env failed")
         .with_options(opts);

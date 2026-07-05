@@ -13,7 +13,7 @@
 //!
 //! The realization is behind the [`VariantBackend`] trait so the *how* can change
 //! without the callers (e.g. [`crate::wasm::syntax`]) changing. [`CoprodBackend`]
-//! is the first backend: a right-nested [`coprod`](crate::init::coprod) of the
+//! is the first backend: a right-nested [`coprod`](mod@crate::init::coprod) of the
 //! payloads — a genuine monomorphic HOL type whose constructor **injectivity** and
 //! **disjointness** come free from the coproduct lemmas. Later backends (a sealed
 //! `new_type_definition`, or an impredicative Church encoding once recursion is in
@@ -79,7 +79,7 @@ pub trait VariantBackend {
 
 /// The coproduct-of-payloads backend: `ty = P₀ ⊕ (P₁ ⊕ (… ⊕ Pₙ))`, constructors
 /// are the corresponding injection composites. Constructor injectivity /
-/// disjointness are inherited from [`coprod`](crate::init::coprod)'s lemmas.
+/// disjointness are inherited from [`coprod`](mod@crate::init::coprod)'s lemmas.
 pub struct CoprodBackend;
 
 /// `P₀ ⊕ (P₁ ⊕ (… ⊕ Pₙ))` — right-nested coproduct (`[P]` = `P`).

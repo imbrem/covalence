@@ -78,7 +78,7 @@ impl<F: Op, A: Expr<Ty = F::In>> Expr for App<F, A> {
 ///
 /// **Trusted, and load-bearing.** Identity is checked by upcasting the *real*
 /// operator trait object `&dyn Op<In=I, Out=O>` to `&dyn Any` (via the [`Any`]
-/// supertrait — stable trait-upcasting) and calling [`Any::downcast_ref`]: the
+/// supertrait — stable trait-upcasting) and calling `Any::downcast_ref`: the
 /// vtable's `TypeId` is the genuine concrete type, so **no downstream-supplied hook
 /// is trusted** and a lying op cannot spoof the downcast. There is deliberately no
 /// `as_any` hook (a downstream `as_any` could return a reference to a *different*

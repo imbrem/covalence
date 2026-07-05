@@ -1,7 +1,7 @@
 //! Clone a git repository into a covalence store.
 //!
 //! Implements the git smart HTTP protocol v2 with packfile parsing, storing
-//! fetched objects directly into a [`GitStore`](crate::store::GitStore).
+//! fetched objects directly into a [`GitStore`].
 
 mod http;
 pub mod local;
@@ -108,7 +108,7 @@ pub fn classify_url(url: &str) -> CloneSource {
 ///
 /// This is the synchronous entry point. To call from a tokio context — e.g.
 /// from an axum handler in `covalence-serve` — enable the `clone-async`
-/// feature and use [`async_clone_into`] instead.
+/// feature and use `async_clone_into` instead.
 pub fn clone_into(
     opts: &CloneOptions,
     store: &GitStore,
@@ -229,14 +229,14 @@ fn clone_http_into(
     for oid in &fetch_resp.shallow_oids {
         store
             .insert_shallow(oid, None)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
     }
 
     // 7. Convert git trees to covalence trees
     progress("Converting trees...");
     let cov_trees = store
         .convert_trees()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| io::Error::other(e.to_string()))?;
     progress(&format!("Converted {} tree(s)", cov_trees.len()));
 
     // Convert refs

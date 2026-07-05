@@ -59,7 +59,7 @@ fn cond_body() -> Term {
 }
 
 /// `cond : bool → 'a → 'a → 'a` — the Boolean conditional, a let-style
-/// definition (body via [`cond_body`]). Its defining equation is
+/// definition (body via `cond_body`). Its defining equation is
 /// available through [`crate::Thm::unfold_term_spec`].
 pub fn cond_spec() -> TermSpec {
     static LAZY: LazyLock<TermSpec> = LazyLock::new(|| {

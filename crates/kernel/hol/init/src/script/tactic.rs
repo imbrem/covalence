@@ -232,7 +232,6 @@ pub fn core_tactics() -> HashMap<String, Arc<dyn Tactic>> {
     reg("induct", Arc::new(Induct));
     reg("list-induct", Arc::new(ListInduct));
     reg("#have", Arc::new(Have));
-    drop(reg);
     t
 }
 

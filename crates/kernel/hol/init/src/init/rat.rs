@@ -261,10 +261,10 @@ cached_thm! {
     ///
     /// From `num p · den q = num q · den p` and `num q · den r =
     /// num r · den q`, right-multiply the first by `den r` and the second
-    /// by `den p`, rearrange by `int` comm/assoc ([`swap_last_two`]) so the
+    /// by `den p`, rearrange by `int` comm/assoc (`swap_last_two`) so the
     /// common `den q` lines up — giving `(num p · den r) · den q =
     /// (num r · den p) · den q` — then cancel the strictly-positive `den q`
-    /// ([`int_mul_rcancel`] + [`int_pos_nonzero`]).
+    /// (`int_mul_rcancel` + `int_pos_nonzero`).
     pub fn rat_rel_trans() -> Thm {
         rat_rel_trans_impl().expect("rat_rel_trans")
     }
@@ -1734,7 +1734,7 @@ cached_thm! {
     /// `int` polynomials (`distrib_r` to split, `mul_assoc`/`mul_comm` to
     /// align the three monomials `fa·(db·dc)`, `fb·(da·dc)`, `fc·(da·db)`,
     /// `add_assoc` to re-bracket the sum) and the denominators by `mul_assoc`
-    /// under `to_pos` (nested `to_pos` via [`pos_prod_rt`]).
+    /// under `to_pos` (nested `to_pos` via `pos_prod_rt`).
     pub fn add_assoc() -> Thm {
         add_assoc_impl().expect("rat::add_assoc")
     }
@@ -1964,7 +1964,7 @@ cached_thm! {
     /// rational in component form (`MK(f, d)`), push `ratMul` through to
     /// `MK` of the componentwise int product / `int.pos` denominator, then
     /// close: numerators by `int::mul_assoc`, denominators by `int::mul_assoc`
-    /// under `to_pos` (the nested `to_pos` round-trips via [`pos_prod_rt`]).
+    /// under `to_pos` (the nested `to_pos` round-trips via `pos_prod_rt`).
     pub fn mul_assoc() -> Thm {
         mul_assoc_impl().expect("rat::mul_assoc")
     }
@@ -2406,7 +2406,7 @@ fn lt_trans_impl() -> Result<Thm> {
 cached_thm! {
     /// `⊢ ∀a b. a < b ∨ a = b ∨ b < a` — **proved**. `int::lt_trichotomy` on
     /// the cross-products `(fa·db, fb·da)` gives the three cases; map `<`/`>`
-    /// back through [`lt_via_components`] and the middle `=` case through the
+    /// back through `lt_via_components` and the middle `=` case through the
     /// quotient (`rel_of_pairs` + `class_intro` lifts `fa·db = fb·da` to
     /// `a = b`).
     pub fn lt_trichotomy() -> Thm {
@@ -2515,7 +2515,7 @@ pub fn le_def() -> Thm {
 cached_thm! {
     /// `⊢ 0 < 1` — **proved** by lifting through the quotient: `0 = MK 0 1`,
     /// `1 = MK 1 1`, so `ratLt 0 1 = int.lt (0·rep 1)(1·rep 1)`
-    /// ([`lt_via_components`]); resolve `rep one_pos = 1` ([`one_pos_rt`]) and
+    /// (`lt_via_components`); resolve `rep one_pos = 1` (`one_pos_rt`) and
     /// the literal products to land on the `int` fact `0 < 1`.
     pub fn zero_lt_one() -> Thm {
         zero_lt_one_impl().expect("rat::zero_lt_one")
@@ -2883,7 +2883,7 @@ fn mediant_beta(x: &Term, y: &Term) -> Result<Thm> {
 cached_thm! {
     /// `⊢ ∀x y. x < y ⟹ x < mediant x y` — **proved**. With representatives
     /// `x = fx/dx`, `y = fy/dy`, the mediant is `(fx+fy)/(dx+dy)`; lifting
-    /// both `ratLt`s ([`lt_via_components`]) turns the goal into the `int`
+    /// both `ratLt`s (`lt_via_components`) turns the goal into the `int`
     /// fact `fx·dx + fx·dy < fx·dx + fy·dx`, which `lt_add_cancel_iff`
     /// reduces to the hypothesis `fx·dy < fy·dx` (= `x < y`).
     pub fn mediant_gt() -> Thm {
@@ -3298,7 +3298,8 @@ mod tests {
         // declaration-only kernel `ratLe`); `lt_irrefl`/`zero_lt_one`/
         // `lt_trans`/`lt_trichotomy` are all proved now (see their genuine
         // tests).
-        for ax in [le_def()] {
+        {
+            let ax = le_def();
             assert!(ax.concl().type_of().unwrap().is_bool());
             assert!(ax.hyps().iter().any(|h| h == ax.concl()));
         }

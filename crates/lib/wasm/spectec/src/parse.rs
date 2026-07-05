@@ -11,7 +11,7 @@
 //!
 //! It is a thin layer over the same machinery `parse_spectec_stream` uses:
 //! [`sexpr_parse`] tokenises the S-expression into [`sexpr_parse::SExprItem`]s
-//! and the derived [`decode::Decode`] impl turns those into the typed AST.
+//! and the derived `decode::Decode` impl turns those into the typed AST.
 
 use crate::ast;
 use crate::decode::Decode;

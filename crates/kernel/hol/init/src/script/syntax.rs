@@ -167,7 +167,7 @@ pub(crate) fn applied_user_spec(spec: covalence_core::defs::TypeSpec) -> Type {
 
 /// Build a term from the surface syntax against a fully-typed `scope`,
 /// inferring any implicit types. (Thin wrapper over
-/// [`super::infer::elaborate_term`]; `scope` mutability is unused here —
+/// `super::infer::elaborate_term`; `scope` mutability is unused here —
 /// binders manage their own scope inside the elaborator.)
 pub fn parse_term(s: &SExpr, scope: &mut Scope, env: &Env) -> R<Term> {
     super::infer::elaborate_term(s, &*scope, env)

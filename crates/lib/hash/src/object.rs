@@ -41,18 +41,12 @@ pub trait HashCtx {
 }
 
 /// A 256-bit value — either a content-addressed hash or a random identifier.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct O256(pub(crate) [u8; 32]);
 
 impl hash::Hash for O256 {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         state.write(&self.0);
-    }
-}
-
-impl Default for O256 {
-    fn default() -> Self {
-        Self([0u8; 32])
     }
 }
 
@@ -154,7 +148,7 @@ pub fn blake3_keyed_hash(key: &[u8; 32], data: &[u8]) -> [u8; 32] {
 /// `key_material` under the application-specific UTF-8 context string
 /// `ctx`.
 ///
-/// This is the raw-bytes mirror of [`Blake3Ctx::new(ctx).tag(key_material)`],
+/// This is the raw-bytes mirror of `Blake3Ctx::new(ctx).tag(key_material)`,
 /// exposed for differential testing where callers want `[u8; 32]` rather
 /// than [`O256`].
 pub fn blake3_derive_key(ctx: &str, key_material: &[u8]) -> [u8; 32] {
@@ -206,6 +200,12 @@ pub fn sha1(data: &[u8]) -> [u8; 20] {
 /// );
 /// ```
 pub struct CovRoot(Blake3Ctx);
+
+impl Default for CovRoot {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl CovRoot {
     /// Pre-computed context key for "covalence development".

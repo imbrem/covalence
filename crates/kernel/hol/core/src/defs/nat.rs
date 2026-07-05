@@ -436,7 +436,7 @@ fn nat_div_body() -> Term {
 let_term! {
     /// `natDiv : nat → nat → nat` — Euclidean (flooring) division, defined by
     /// course-of-values recursion (the explicit, choice-free fixpoint
-    /// [`nat_div_body`]). `n mod m` is `n - (n / m) * m` (see [`nat_mod`]).
+    /// `nat_div_body`). `n mod m` is `n - (n / m) * m` (see [`nat_mod`]).
     nat_div_spec, nat_div, Canonical::NatDiv, nat_div_body()
 }
 

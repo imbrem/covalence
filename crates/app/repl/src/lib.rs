@@ -233,7 +233,7 @@ impl ReplPrims {
             }
         }
         let clean = clean.strip_prefix("0x").unwrap_or(&clean);
-        if clean.len() % 2 != 0 {
+        if !clean.len().is_multiple_of(2) {
             return Err(FError::Parse(format!(
                 "hex input has odd length: {}",
                 clean.len()

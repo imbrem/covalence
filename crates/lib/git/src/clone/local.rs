@@ -104,7 +104,7 @@ pub fn clone_local_into(
 }
 
 fn store_err_to_io(e: covalence_store::StoreError) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, e.to_string())
+    io::Error::other(e.to_string())
 }
 
 /// Layout of a git repository on disk.
@@ -218,18 +218,18 @@ fn read_refs(layout: &RepoLayout, prefixes: &[String]) -> io::Result<Vec<RemoteR
     }
 
     // 4. Resolve HEAD symref to the corresponding concrete OID, if known.
-    if let Some(target) = head_symref {
-        if let Some(target_ref) = by_name.get(&target) {
-            let oid = target_ref.oid;
-            by_name.insert(
-                "HEAD".to_string(),
-                RemoteRef {
-                    name: "HEAD".to_string(),
-                    oid,
-                    symref_target: Some(target),
-                },
-            );
-        }
+    if let Some(target) = head_symref
+        && let Some(target_ref) = by_name.get(&target)
+    {
+        let oid = target_ref.oid;
+        by_name.insert(
+            "HEAD".to_string(),
+            RemoteRef {
+                name: "HEAD".to_string(),
+                oid,
+                symref_target: Some(target),
+            },
+        );
     }
 
     // 5. Apply prefix filter (HEAD is always kept).

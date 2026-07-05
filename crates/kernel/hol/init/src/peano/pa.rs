@@ -4,7 +4,7 @@
 //! "proper-deep-embedding test" of `notes/vibes/theories-models-and-logics.md §5.5`).
 //!
 //! [`fol`](super::fol) reified PA's locally-nameless syntax + substitution;
-//! [`sem`](super::sem) gave the **two-sorted HOAS semantic carrier**
+//! [`sem`] gave the **two-sorted HOAS semantic carrier**
 //! `Φ_sem⟨'t,'r⟩` and the standard denotation `⟦·⟧` into HOL `nat`/`bool` *as a
 //! single fold* (the re-packaging that makes the impredicative proof go
 //! through). Here we build the two halves of a *proper* deep embedding:
@@ -331,7 +331,7 @@ fn closed(d_apply: &dyn Fn(&Term) -> Result<Term>, t: &Type, r: &Type) -> Result
 /// **PA's rule set as a [`metalogic::RuleSet`](crate::metalogic::RuleSet)** —
 /// the data that makes `Derivable_PA` an *instance* of the generic
 /// [`Derivable_L`](crate::metalogic) engine. The carrier is the two-sorted
-/// `Φ_sem⟨'t,'r⟩` and the clauses are exactly [`clauses_at`] at the polymorphic
+/// `Φ_sem⟨'t,'r⟩` and the clauses are exactly `clauses_at` at the polymorphic
 /// carrier. [`derivable`] / [`derive_axiom`] / [`derive_mp`] are reimplemented
 /// on top of the engine (validated clause-for-clause against the bespoke shape
 /// by `derivable_via_engine_matches`).

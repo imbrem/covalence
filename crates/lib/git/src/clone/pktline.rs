@@ -32,8 +32,8 @@ pub fn read_pkt_line(r: &mut impl BufRead) -> io::Result<Option<PktLine>> {
         Err(e) => return Err(e),
     }
 
-    let len = u16::from_str_radix(std::str::from_utf8(&hex).map_err(invalid)?, 16)
-        .map_err(|e| invalid(e))?;
+    let len =
+        u16::from_str_radix(std::str::from_utf8(&hex).map_err(invalid)?, 16).map_err(invalid)?;
 
     match len {
         0 => Ok(Some(PktLine::Flush)),

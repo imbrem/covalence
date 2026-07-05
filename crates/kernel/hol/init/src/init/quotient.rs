@@ -5,7 +5,7 @@
 //! an equivalence class, represented as the set of its members. So the
 //! kernel's witness-free subtype laws ([`Thm::spec_abs_rep`] /
 //! [`Thm::spec_rep_abs_fwd`]) apply directly, and quotient reasoning needs
-//! no new primitive — exactly the way [`init::set`](crate::init::set)
+//! no new primitive — exactly the way [`init::set`](mod@crate::init::set)
 //! builds the `set` API over a `newtype`.
 //!
 //! The bridge between a representative `a : base` and its class is
@@ -36,7 +36,7 @@
 //! `⊢ rel a (rep_class (mk_class a))`. It rests on the kernel's
 //! carrier-side round-trip [`Thm::spec_rep_abs_fwd`] (which needs that
 //! `classOf a` satisfies the `quot` carving predicate `λS. ∃z. S =
-//! classOf z` — proved trivially by [`quot_pred_holds`], witness `z := a`,
+//! classOf z` — proved trivially by `quot_pred_holds`, witness `z := a`,
 //! `classOf a = classOf a` by `refl`) plus Hilbert choice
 //! [`Thm::select_ax`] (with `refl` supplying the non-emptiness witness
 //! that the ε-picked representative is real).
@@ -257,10 +257,13 @@ pub fn round_trip(
 /// only `rel` property needed.
 ///
 /// Derivation: apply `rep` to both sides — `rep(mkClass a) = rep(mkClass
-/// b)` — and use [`quot_pred_holds`] + [`Thm::spec_rep_abs_fwd`] to rewrite
+/// b)` — and use `quot_pred_holds` + [`Thm::spec_rep_abs_fwd`] to rewrite
 /// each into its class set, giving `classOf a = classOf b`. Apply both
 /// sides to `b`: `rel a b = rel b b`; `rel b b` holds by `refl`, so
 /// `rel a b`.
+// Every argument names a distinct ingredient of the quotient (spec, args,
+// base, rel, refl, the two representatives, the class equation).
+#[allow(clippy::too_many_arguments)]
 pub fn class_elim(
     spec: &TypeSpec,
     args: &[Type],

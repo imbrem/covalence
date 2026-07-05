@@ -5,7 +5,7 @@
 //! [`init::logic`]: crate::init::logic
 //!
 //! This module is the home of the *theorems*; the **shallow embedding**
-//! of Peano arithmetic into HOL (the [`Peano`] trait impl) lives in
+//! of Peano arithmetic into HOL (the [`Peano`](crate::peano::Peano) trait impl) lives in
 //! [`crate::peano::shallow`] and reads its axioms from here.
 //!
 //! ## Everything is proved — no postulates
@@ -23,7 +23,7 @@
 //!   [`add_zero`] / [`add_succ_r`] / [`add_comm`] / [`add_assoc`] /
 //!   [`add_cancel`] (via [`succ_inj`]) and the multiplicative theory
 //!   [`mul_zero`] / [`mul_succ_r`] / [`mul_comm`], proved by `nat`-induction
-//!   (the [`induct`] helper). Since
+//!   (the `induct` helper). Since
 //!   `rec_holds` is hypothesis-free, all of these are genuine theorems — and
 //!   the whole shallow Peano embedding with them.
 //!

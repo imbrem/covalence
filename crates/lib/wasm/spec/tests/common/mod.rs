@@ -86,7 +86,7 @@ impl Harness {
             .get_export_index(&mut self.store, Some(&self.api_index), name)
             .unwrap_or_else(|| panic!("missing export {api}#{name}"));
         self.instance
-            .get_func(&mut self.store, &idx)
+            .get_func(&mut self.store, idx)
             .unwrap_or_else(|| panic!("export {api}#{name} is not a function"))
     }
 

@@ -44,7 +44,7 @@
 //! (see `SKELETONS.md`).
 //!
 //! cvc5's `hole` ("untranslated rewrite") is **re-derived, not trusted**:
-//! every hole is a unit clause `(cl L)` and [`hole`] proves `⊢ L` in the
+//! every hole is a unit clause `(cl L)` and `hole` proves `⊢ L` in the
 //! kernel by βι-`reduce` (closed `int` arithmetic, literal `=`) + `simp`
 //! (connective identities). That discharges the *closed-arithmetic* and
 //! propositional rewrites; a hole needing variable-level ring
@@ -84,6 +84,12 @@ pub struct HolAletheBridge {
     /// the witnessing refutation. Surfaced by [`HolAletheBridge::refutation`]
     /// so a caller can conclude `⊢ G` by reductio from a goal-negation.
     refutation: Option<Thm>,
+}
+
+impl Default for HolAletheBridge {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HolAletheBridge {

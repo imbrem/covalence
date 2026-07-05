@@ -1,17 +1,17 @@
 //! Core theorems and the LCF rule API.
 //!
 //! `Thm` is the opaque kernel certificate. Every public method here is thin glue
-//! over the sound rule catalogue in [`rules`]: it pulls the inner `pure::Thm`s out
+//! over the sound rule catalogue in `rules`: it pulls the inner `pure::Thm`s out
 //! of its premise `core::Thm`s and mints through [`covalence_pure::apply`] on the
 //! admitted rule, which DERIVES the conclusion. Soundness rests on `admits()` alone
-//! (see [`lang`] and [`rules`]) — no method may forge a `Thm`, and the inner field
+//! (see `lang` and `rules`) — no method may forge a `Thm`, and the inner field
 //! is hygiene-only.
 //!
 //! The rules are split across the `thm/` module: the equality / connective /
 //! quantifier / reduction / observation rules' glue lives here; the
 //! conservative-extension primitives (`define`, `new_type_definition`) live in
-//! [`typedef`]; every rule's ZST + `decide` (the fine-grained TCB) lives in
-//! [`rules`].
+//! `typedef`; every rule's ZST + `decide` (the fine-grained TCB) lives in
+//! `rules`.
 //!
 //! ## Observations and universality
 //!
@@ -56,14 +56,14 @@ use lang::{CoreLang, CoreProp};
 use rules::*;
 
 /// The kernel certificate. A newtype over a `covalence_pure` theorem carrying the
-/// structured proposition `IsThm(Γ, φ)` in the crate-private [`CoreLang`]; see
-/// [`lang`] for the admits-only soundness argument and [`rules`] for the
+/// structured proposition `IsThm(Γ, φ)` in the crate-private `CoreLang`; see
+/// `lang` for the admits-only soundness argument and `rules` for the
 /// fine-grained rule catalogue that mints it.
 ///
 /// The inner `pure::Thm` field is **hygiene-only**: it keeps `pure::Thm`/`CoreLang`
 /// out of the public signature and preserves `Arc`-identity, but it is NOT
 /// load-bearing for soundness. Soundness rests on `admits()` alone — every rule
-/// [`CoreLang`] admits derives its conclusion from unforgeable premise `pure::Thm`s
+/// `CoreLang` admits derives its conclusion from unforgeable premise `pure::Thm`s
 /// and is sound on all inputs — so even a hypothetically-public field could only
 /// wrap already-true theorems.
 #[derive(Clone)]
@@ -112,7 +112,7 @@ impl Thm {
     /// Rejects with [`Error::NotASuperset`] if any hypothesis of
     /// `self` is missing from `target`. The conclusion is unchanged;
     /// every term in `target` is re-validated at kind `bool` by the
-    /// [`rules::Weaken`] rule's `seq` floor.
+    /// `rules::Weaken` rule's `seq` floor.
     pub fn weaken(self, target: Ctx) -> Result<Thm> {
         mint!(Weaken, (self.0.clone(), target.clone()), (self.0, target))
     }

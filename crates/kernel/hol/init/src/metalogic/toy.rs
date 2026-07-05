@@ -46,7 +46,7 @@ fn bool_ty() -> Type {
 }
 
 /// Handler names + slot-type builders, in fold order: `tt`, `box`.
-const HANDLERS: [(&str, fn(&Type) -> Type); 2] = [
+const HANDLERS: [(&str, crate::UnaryTypeHandler); 2] = [
     ("tt", |r| r.clone()),
     ("box", |r| Type::fun(r.clone(), r.clone())),
 ];
@@ -228,7 +228,7 @@ pub fn soundness_at(a: &Term) -> Result<Thm> {
 /// `⊢ ∀A. Derivable_L A ⟹ ⟦·⟧ A` — soundness as a single rule-induction, via
 /// the generic [`super::rule_induction`] (exercising that engine path, the
 /// way [`crate::init::prop::soundness_general`] does for prop). The per-clause
-/// proofs are the two conjuncts of [`discharge_closed`].
+/// proofs are the two conjuncts of `discharge_closed`.
 pub fn soundness_general() -> Result<Thm> {
     let d_pred = denote_pred();
     let closed = discharge_closed(&d_pred)?;

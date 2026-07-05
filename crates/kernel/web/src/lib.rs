@@ -23,7 +23,7 @@ pub fn start() {
     console_error_panic_hook::set_once();
 }
 
-/// Check a `.cov` article and return the [`CheckReport`] as a JSON string.
+/// Check a `.cov` article and return the [`CheckReport`](covalence_kernel::CheckReport) as a JSON string.
 ///
 /// JS side: `JSON.parse(check(src))` →
 /// `{ ok: boolean, theorems: [{ name, statement }], diagnostics: [{ severity, message, span }] }`.

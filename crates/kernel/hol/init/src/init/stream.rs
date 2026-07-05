@@ -2,7 +2,7 @@
 //! the computational lemmas for the `stream` newtype — the same
 //! abstraction-barrier pattern as [`init::set`].
 //!
-//! [`init::set`]: crate::init::set
+//! [`init::set`]: mod@crate::init::set
 //!
 //! `stream α` is a `newtype` over `nat → α`, with `streamMk = abs` and
 //! `streamAt = rep` the round-trip coercions. The single computational

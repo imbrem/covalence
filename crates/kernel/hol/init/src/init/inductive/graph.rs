@@ -216,12 +216,12 @@ pub(super) fn relation_ty(sig: &InductiveSig, beta: &Type) -> Type {
     gen_relation_ty(&NativeHol, sig, beta)
 }
 
-/// [`gen_closed`] at [`NativeHol`].
+/// `gen_closed` at [`NativeHol`].
 pub fn closed(sig: &InductiveSig, steps: &[Term], beta: &Type, g: &Term) -> Result<Term> {
     gen_closed(&NativeHol, sig, steps, beta, g)
 }
 
-/// [`gen_graph`] at [`NativeHol`].
+/// `gen_graph` at [`NativeHol`].
 pub fn graph(sig: &InductiveSig, steps: &[Term], beta: &Type, t: Term, a: Term) -> Result<Term> {
     gen_graph(&NativeHol, sig, steps, beta, t, a)
 }
@@ -357,7 +357,7 @@ mod tests {
         };
         let g = Term::free("G", relation_ty(&sig, &beta));
 
-        let got = closed(&sig, &[f.clone()], &beta, &g).unwrap();
+        let got = closed(&sig, std::slice::from_ref(&f), &beta, &g).unwrap();
 
         let x = Term::free("x", elem.clone());
         let xs = Term::free("xs", t.clone());

@@ -90,8 +90,13 @@ impl MinDist {
     pub fn finite(d: u64) -> MinDist {
         MinDist(Some(d))
     }
+}
+
+impl core::ops::Add<u64> for MinDist {
+    type Output = MinDist;
+
     /// Add an edge weight (saturating; `+∞` stays `+∞`).
-    pub fn add(self, w: u64) -> MinDist {
+    fn add(self, w: u64) -> MinDist {
         MinDist(self.0.map(|d| d.saturating_add(w)))
     }
 }
@@ -157,7 +162,7 @@ mod tests {
             for &i in &nodes {
                 for &(k, j, w) in &edges {
                     if let Some(&dik) = d.get(&(i, k)) {
-                        let cand = dik.add(w);
+                        let cand = dik + w;
                         let cur = out.get(&(i, j)).copied().unwrap_or(MinDist::INF);
                         out.insert((i, j), cur.join(cand));
                     }

@@ -10,7 +10,7 @@
 //! The carrier is `Φ = `[`Type::nat`]`()` and every node is built from two kinds
 //! of uninterpreted free variable:
 //!
-//! - one binary combinator `app : nat → nat → nat` ([`app_fn`]) that attaches an
+//! - one binary combinator `app : nat → nat → nat` (`app_fn`) that attaches an
 //!   argument to a node head;
 //! - one `nat` **constant** per SpecTec constructor/atom (`st$c$…`, [`con`]);
 //! - each SpecTec **variable** (a rule metavariable) `x` is the plain free var
@@ -26,13 +26,13 @@
 //! metavariables are *variables*, HOL's capture-avoiding substitution of
 //! `⌜arg⌝` for `st$v$x` in `⌜schema⌝` is syntactically identical to SpecTec
 //! metavariable substitution. So a rule clause `∀ x…. premises ⟹ d ⌜concl⌝`
-//! instantiates by [`Thm::all_elim`] on the nose — no denotation, no β-redex,
+//! instantiates by [`Thm::all_elim`](covalence_core::Thm::all_elim) on the nose — no denotation, no β-redex,
 //! no normalisation. This is what makes [`super::relation`] a rule set the
 //! generic [`crate::metalogic`] engine drives unchanged.
 //!
 //! ## Shape: one source of truth
 //!
-//! Both [`encode_exp`] and [`collect_metavars`] route through [`shape`], which
+//! Both [`encode_exp`] and [`collect_metavars`] route through `shape`, which
 //! maps a `SpecTecExp` to a tag plus the child sub-expressions the encoding
 //! exposes. So the metavariables a clause quantifies over are *exactly* those in
 //! its encoding — no vacuous binders, no free leaks.
@@ -91,7 +91,7 @@ pub fn metavar_name(id: impl AsRef<str>) -> String {
 }
 
 /// A SpecTec **metavariable** `st$v$<id> : nat` — a leaf to be `∀`-bound in its
-/// rule's clause (and instantiated by [`Thm::all_elim`]).
+/// rule's clause (and instantiated by [`Thm::all_elim`](covalence_core::Thm::all_elim)).
 pub fn metavar(id: impl AsRef<str>) -> Term {
     Term::free(metavar_name(id), phi())
 }
@@ -233,7 +233,7 @@ pub fn encode_exp(e: &SpecTecExp) -> Result<Term> {
 
 /// Collect a rule's metavariables (free [`SpecTecExp::Var`] ids) in first-seen
 /// order — the universal-quantifier order of its clause (see [`super::relation`]).
-/// Routes through [`shape`], so it sees exactly the positions [`encode_exp`]
+/// Routes through `shape`, so it sees exactly the positions [`encode_exp`]
 /// encodes.
 pub fn collect_metavars(e: &SpecTecExp, out: &mut Vec<String>) {
     match shape(e) {

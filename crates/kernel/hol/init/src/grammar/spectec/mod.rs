@@ -12,7 +12,7 @@
 //! is the separate, general-purpose [`crate::grammar::regex`] module (regexes are the
 //! regular base case of *every* grammar, not just SpecTec, so they live on their
 //! own). Here we take a [`grammar::SpecTecSym`], route its regular fragment
-//! through `covalence-spectec`'s byte bridge into a [`crate::grammar::regex::Regex<u8>`],
+//! through `covalence-spectec`'s byte bridge into a [`Regex<u8>`](covalence_grammar::regex::Regex),
 //! and hand it to [`crate::grammar::regex`].
 //!
 //! # The pipeline

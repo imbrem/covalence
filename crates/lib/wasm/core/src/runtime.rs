@@ -153,7 +153,7 @@ impl cov::wasm::runtime::Host for RuntimeHost {
             HostInstance::Component { store, instance } => {
                 let func = match instance
                     .get_export_index(&mut *store, None, &name)
-                    .and_then(|idx| instance.get_func(&mut *store, &idx))
+                    .and_then(|idx| instance.get_func(&mut *store, idx))
                 {
                     Some(f) => f,
                     None => return Ok(Err(format!("export not found or not a function: {name}"))),
@@ -227,15 +227,13 @@ fn block_type_from_wit(b: cov::wasm::build::BlockType) -> crate::build::BlockTyp
     }
 }
 
-fn current<'a>(b: &'a mut HostModuleBuilder) -> wasmtime::Result<&'a mut crate::build::FuncBody> {
+fn current(b: &mut HostModuleBuilder) -> wasmtime::Result<&mut crate::build::FuncBody> {
     b.current
         .as_mut()
         .ok_or_else(|| wasmtime::Error::msg("no function is open; call start-func first"))
 }
 
-fn builder_mut<'a>(
-    b: &'a mut HostModuleBuilder,
-) -> wasmtime::Result<&'a mut crate::build::ModuleBuilder> {
+fn builder_mut(b: &mut HostModuleBuilder) -> wasmtime::Result<&mut crate::build::ModuleBuilder> {
     b.builder
         .as_mut()
         .ok_or_else(|| wasmtime::Error::msg("module-builder already finished"))

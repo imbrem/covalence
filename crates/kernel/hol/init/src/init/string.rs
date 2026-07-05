@@ -8,13 +8,13 @@
 //!
 //! Both are **newtypes** over a `list` (so the `abs`/`rep` round-trips
 //! are unconditional, premise `λ_. T`), exactly like
-//! [`init::rel`](crate::init::rel). Their structural operations bridge
+//! [`init::rel`](mod@crate::init::rel). Their structural operations bridge
 //! through the kernel coercions
 //!
 //! - `rep : bytes → list u8` / `rep : string → list char` (unwrap),
 //! - `abs : list u8 → bytes` / `abs : list char → string` (wrap),
 //!
-//! down to the corresponding [`init::list`](crate::init::list)
+//! down to the corresponding [`init::list`](mod@crate::init::list)
 //! operations. **Downstream proofs must not see that** — they reason
 //! through the lemmas here.
 //!
@@ -26,7 +26,7 @@
 //!   ([`bytes_rep_empty`] / [`string_rep_empty`]),
 //! - the empty-sequence head fact `⊢ list.head (rep empty) = none`
 //!   ([`bytes_head_empty`] / [`string_head_empty`]), built on
-//!   [`init::list::head_nil`].
+//!   [`init::list::head_nil`](crate::init::list::head_nil).
 //!
 //! ## Not yet here (see `SKELETONS.md`)
 //!
@@ -156,7 +156,7 @@ pub fn string_rep_empty() -> Result<Thm> {
 }
 
 /// `⊢ list.head (rep bytes.empty) = none` — the empty byte string has no
-/// first element. Built on [`init::list::head_nil`] through the newtype
+/// first element. Built on [`init::list::head_nil`](crate::init::list::head_nil) through the newtype
 /// seam. Genuine: hypothesis- and oracle-free.
 pub fn bytes_head_empty() -> Result<Thm> {
     let elem = byte_elem();
@@ -170,7 +170,7 @@ pub fn bytes_head_empty() -> Result<Thm> {
 }
 
 /// `⊢ list.head (rep string.empty) = none` — the empty string has no
-/// first character. Built on [`init::list::head_nil`] through the
+/// first character. Built on [`init::list::head_nil`](crate::init::list::head_nil) through the
 /// newtype seam. Genuine: hypothesis- and oracle-free.
 pub fn string_head_empty() -> Result<Thm> {
     let elem = char_elem();

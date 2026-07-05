@@ -11,10 +11,10 @@
 //!
 //! | Metamath step             | HOL re-derivation                                |
 //! |---------------------------|--------------------------------------------------|
-//! | syntax former `wi`        | [`init::prop::p_imp`] (a term-building step)      |
-//! | axiom instance `ax-1`     | [`init::prop::derive_axiom`]`(1, …)`             |
-//! | axiom instance `ax-2`     | [`init::prop::derive_axiom`]`(2, …)`             |
-//! | modus ponens `ax-mp`      | [`init::prop::derive_mp`] + [`Thm::imp_elim`]    |
+//! | syntax former `wi`        | [`init::prop::p_imp`](crate::init::prop::p_imp) (a term-building step)      |
+//! | axiom instance `ax-1`     | [`init::prop::derive_axiom`](crate::init::prop::derive_axiom)`(1, …)`             |
+//! | axiom instance `ax-2`     | [`init::prop::derive_axiom`](crate::init::prop::derive_axiom)`(2, …)`             |
+//! | modus ponens `ax-mp`      | [`init::prop::derive_mp`](crate::init::prop::derive_mp) + [`Thm::imp_elim`]    |
 //! | essential hypothesis `$e` | [`Thm::assume`]`(Derivable_Prop ⌜hyp⌝)`          |
 //!
 //! ## Proof irrelevance: we land in *derivability*, never *denotation*
@@ -41,10 +41,10 @@
 //!
 //! A propositional wff in this database is built from `(`, `)`, `->`, and the
 //! variables `ph`/`ps`/`ch`. [`parse_wff`] is a recursive-descent parser over the
-//! flat token body: a single variable token → [`init::prop::p_var_lit`] at a
+//! flat token body: a single variable token → [`init::prop::p_var_lit`](crate::init::prop::p_var_lit) at a
 //! **stable** name→index (`ph`↦0, `ps`↦1, `ch`↦2, …, via [`VarIndex`]); a
-//! parenthesised `( A -> B )` → [`init::prop::p_imp`]. The database's `ax-1` /
-//! `ax-2` schemas match set.mm's exactly, so [`init::prop::derive_axiom`]'s
+//! parenthesised `( A -> B )` → [`init::prop::p_imp`](crate::init::prop::p_imp). The database's `ax-1` /
+//! `ax-2` schemas match set.mm's exactly, so [`init::prop::derive_axiom`](crate::init::prop::derive_axiom)'s
 //! schemas 1/2 are their kernel images byte-for-byte.
 
 use std::collections::HashMap;

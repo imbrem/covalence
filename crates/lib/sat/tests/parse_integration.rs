@@ -41,8 +41,8 @@ fn load_model(problem: &str) -> Vec<i32> {
     let mut lits = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with('v') {
-            for token in trimmed[1..].split_whitespace() {
+        if let Some(rest) = trimmed.strip_prefix('v') {
+            for token in rest.split_whitespace() {
                 let val: i32 = token.parse().expect("model literal should be integer");
                 if val == 0 {
                     break;

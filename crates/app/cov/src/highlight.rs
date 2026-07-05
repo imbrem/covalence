@@ -119,9 +119,11 @@ pub fn highlight_sexp(text: &str) -> String {
                     out.push_str(BLUE);
                 } else if atom.starts_with('$') {
                     out.push_str(PURPLE);
-                } else if atom.len() == 64 && atom.chars().all(|c| c.is_ascii_hexdigit()) {
-                    out.push_str(ORANGE);
-                } else if atom.starts_with('-')
+                } else if
+                // Hashes (64 hex chars) and numeric literals are both
+                // rendered orange today; keep them as one merged arm.
+                (atom.len() == 64 && atom.chars().all(|c| c.is_ascii_hexdigit()))
+                    || atom.starts_with('-')
                     || atom.as_bytes()[0].is_ascii_digit()
                     || atom.starts_with("0x")
                 {

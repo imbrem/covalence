@@ -452,7 +452,7 @@ fn nested_list_of_list_nat() {
     // list (list nat) — outer spec leaf with one arg = list nat.
     let inner = list(Type::nat());
     let outer = list(inner.clone());
-    assert_spec(&outer, "list", &[inner.clone()]);
+    assert_spec(&outer, "list", std::slice::from_ref(&inner));
     // inner arg is itself a list-spec leaf.
     assert_spec(&inner, "list", &[Type::nat()]);
 }
@@ -462,7 +462,7 @@ fn list_of_option_nat() {
     // list (option nat).
     let elem = option(Type::nat());
     let ty = list(elem.clone());
-    assert_spec(&ty, "list", &[elem.clone()]);
+    assert_spec(&ty, "list", std::slice::from_ref(&elem));
     assert_spec(&elem, "option", &[Type::nat()]);
 }
 
@@ -471,7 +471,7 @@ fn stream_of_option_nat() {
     // stream (option nat) — exactly the carrier shape of `list nat`.
     let elem = option(Type::nat());
     let ty = stream(elem.clone());
-    assert_spec(&ty, "stream", &[elem.clone()]);
+    assert_spec(&ty, "stream", std::slice::from_ref(&elem));
     assert_spec(&elem, "option", &[Type::nat()]);
 }
 

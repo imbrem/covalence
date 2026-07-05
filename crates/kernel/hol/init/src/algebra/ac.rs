@@ -74,7 +74,7 @@ pub trait AcOp {
 ///
 /// `key` maps each operand [`Term`] to a sort key `K`; operands are sorted by
 /// it (stably) to form the normal form. A typical key is the term's printed
-/// form ([`Term::to_string`]) for a deterministic syntactic order.
+/// form (`Term::to_string`) for a deterministic syntactic order.
 pub struct Ac<O, F, K> {
     op: O,
     key: F,

@@ -25,7 +25,7 @@
 //!
 //! So here we add the *semantic* carrier `Φ_sem⟨'t,'r⟩` (formulas) /
 //! `Θ_sem⟨'t,'r⟩` (terms) with HOAS quantifiers, plus an encoder
-//! [`SemFol::encode_form`] that lowers the locally-nameless [`super::fol::Fol`]
+//! [`encode_form`] that lowers the locally-nameless [`super::fol::Fol`]
 //! AST into it (de Bruijn → HOAS). The **denotation** `⟦A⟧` is then literally
 //! *the encoded formula applied to the standard `nat`/`bool` handlers*, a
 //! single fold — which is what lets the soundness proof `inst` the predicate
@@ -76,7 +76,7 @@ fn nat() -> Type {
 /// | `imp`  | `'r → 'r → 'r`   | `⟹`                           |
 /// | `all`  | `('t → 'r) → 'r` | `∀` (HOAS body)               |
 /// | `ex`   | `('t → 'r) → 'r` | `∃` (HOAS body)               |
-pub const HANDLERS: [(&str, fn(&Type, &Type) -> Type); 12] = [
+pub const HANDLERS: [(&str, crate::BinaryTypeHandler); 12] = [
     ("fvar", |t, _r| Type::fun(nat(), t.clone())),
     ("zero", |t, _r| t.clone()),
     ("succ", |t, _r| Type::fun(t.clone(), t.clone())),

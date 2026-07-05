@@ -23,7 +23,7 @@ const STORE_WIT: &str = include_str!("../../core/wit/store.wit");
 /// The WIT package text that single-blob components target.
 ///
 /// Re-exposed so consumers (tests, fuzzers, alternative implementers)
-/// can hand it to [`encode_core_as_component`] without rediscovering
+/// can hand it to [`encode_core_as_component`](covalence_wasm::encode_core_as_component) without rediscovering
 /// the path.
 pub fn store_wit() -> &'static str {
     STORE_WIT

@@ -62,7 +62,7 @@
 //! We pick a **Hilbert system** over `{¬, ∧, ∨, ⟹}` because it makes
 //! soundness trivial: every axiom *schema instance denotes a propositional
 //! tautology* (dischargeable by the complete propositional decision
-//! procedure [`prop_eq`](crate::init::logic::prop_eq) against `T`) and the
+//! procedure [`prop_eq`] against `T`) and the
 //! single rule (modus ponens) is just [`Thm::imp_elim`] on the denotations.
 //! `Derivable_Prop` is the impredicative "smallest predicate closed under
 //! the axioms and MP":
@@ -110,7 +110,7 @@ fn bool_ty() -> Type {
 
 /// The five handler binder names + slot-type builders, in fold order
 /// `var ¬ ∧ ∨ ⟹`, each parametric in the result type `r`.
-const HANDLERS: [(&str, fn(&Type) -> Type); 5] = [
+const HANDLERS: [(&str, crate::UnaryTypeHandler); 5] = [
     ("var", var_h_ty),
     ("neg", un_h_ty),
     ("and", bin_h_ty),
@@ -675,10 +675,10 @@ pub fn prop_induction(
 ///
 /// - each **axiom clause** `∀A B C. ⟦axiom_i A B C⟧ v` is a propositional
 ///   tautology in the atoms `⟦A⟧ v`, `⟦B⟧ v`, `⟦C⟧ v`, closed by
-///   [`prove_taut`] (β-normalise, then complete Shannon decision);
+///   `prove_taut` (β-normalise, then complete Shannon decision);
 /// - the **MP clause** `∀A B. ⟦A⟧ v ∧ ⟦A ⟹ B⟧ v ⟹ ⟦B⟧ v` is, after
 ///   unfolding `⟦A ⟹ B⟧ v = (⟦A⟧ v ⟹ ⟦B⟧ v)`, ordinary modus ponens,
-///   also a tautology in the atoms — likewise [`prove_taut`].
+///   also a tautology in the atoms — likewise `prove_taut`.
 ///
 /// Returns `⊢ ∀v. Derivable_Prop A ⟹ ⟦A⟧ v` (closed over `v`; `A` free).
 /// The proof runs at `'r := bool`, so the returned theorem is at that
@@ -770,7 +770,7 @@ fn sound_mp_case(v: &Term, d_pred: &Term, a: &Term, b: &Term) -> Result<Thm> {
 /// to the bound `A` — a single β-step short of `⟦A⟧ v`, which cannot be fired
 /// under the `∀A` binder (it must be reduced per-instance after `all_elim`, as
 /// [`consistency`] does). The two closure obligations are the tautology cases
-/// [`sound_axiom_case`] / [`sound_mp_case`].
+/// `sound_axiom_case` / `sound_mp_case`.
 pub fn soundness_general(v: &Term) -> Result<Thm> {
     let d_pred = denote_pred(v)?;
     prop_induction(

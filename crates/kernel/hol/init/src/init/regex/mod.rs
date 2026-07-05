@@ -14,7 +14,7 @@
 //!
 //! - a **denotation** `⟦r⟧ : set (list 'a)` — the language `r` describes,
 //!   built from [`crate::init::lang`]'s Kleene-algebra operations over the
-//!   **free monoid** `(list 'a, cat, nil)` ([`monoid::list_cat_monoid`]);
+//!   **free monoid** `(list 'a, cat, nil)` ([`monoid::list_cat_monoid`](crate::init::monoid::list_cat_monoid));
 //! - a **matching predicate** `Matches r w : bool` — "the word `w` matches
 //!   `r`" — defined *impredicatively* as the smallest relation closed under
 //!   the seven matching rules, so **induction on a match derivation** is a
@@ -54,12 +54,12 @@
 //! - **soundness** [`soundness`] — `⊢ Matches r w ⟹ mem w ⟦r⟧`, by rule
 //!   induction (all seven cases discharged against the `lang` membership
 //!   computations + the star pre-fixpoint
-//!   [`lang::star_concat_closed`](crate::init::lang::star_concat_closed)).
+//!   [`lang::star_concat_closed`]).
 //!
 //! ## Bytestrings
 //!
 //! Instantiating the alphabet at `u8` gives regexes over `list u8` (the
-//! `bytes` carrier). [`u8_alphabet`] and the [`tests`] worked example show a
+//! `bytes` carrier). [`u8_alphabet`] and the `tests` worked example show a
 //! concrete bytestring regex and its denotation.
 //!
 //! ## The `.cov` port
@@ -128,7 +128,7 @@ fn un_h_ty(_a: &Type, r: &Type) -> Type {
 }
 
 /// The six handler binder names + slot-type builders, in fold order.
-const HANDLERS: [(&str, fn(&Type, &Type) -> Type); 6] = [
+const HANDLERS: [(&str, crate::BinaryTypeHandler); 6] = [
     ("h_empty", empty_h_ty),
     ("h_eps", eps_h_ty),
     ("h_lit", lit_h_ty),
@@ -403,36 +403,24 @@ fn closure_clauses(
     let w1 = Term::free("w1", wty.clone());
     let w2 = Term::free("w2", wty.clone());
 
-    let mut clauses = Vec::new();
-
-    // 1. eps: M eps nil.
-    clauses.push(m_apply(&r_eps(alpha), &nil_w(alpha))?);
-
-    // 2. lit: ∀c. M (lit c) [c].
-    clauses.push(
+    let clauses = vec![
+        // 1. eps: M eps nil.
+        m_apply(&r_eps(alpha), &nil_w(alpha))?,
+        // 2. lit: ∀c. M (lit c) [c].
         m_apply(&r_lit(alpha, c.clone()), &singleton_w(alpha, &c)?)?.forall("c", alpha.clone())?,
-    );
-
-    // 3. alt-left: ∀x y w. M x w ⟹ M (alt x y) w.
-    clauses.push(
+        // 3. alt-left: ∀x y w. M x w ⟹ M (alt x y) w.
         m_apply(&x, &w)?
             .imp(m_apply(&r_alt(alpha, x.clone(), y.clone()), &w)?)?
             .forall("w", wty.clone())?
             .forall("y", rty_a.clone())?
             .forall("x", rty_a.clone())?,
-    );
-
-    // 4. alt-right: ∀x y w. M y w ⟹ M (alt x y) w.
-    clauses.push(
+        // 4. alt-right: ∀x y w. M y w ⟹ M (alt x y) w.
         m_apply(&y, &w)?
             .imp(m_apply(&r_alt(alpha, x.clone(), y.clone()), &w)?)?
             .forall("w", wty.clone())?
             .forall("y", rty_a.clone())?
             .forall("x", rty_a.clone())?,
-    );
-
-    // 5. seq: ∀x y w1 w2. M x w1 ⟹ M y w2 ⟹ M (seq x y) (cat w1 w2).
-    clauses.push(
+        // 5. seq: ∀x y w1 w2. M x w1 ⟹ M y w2 ⟹ M (seq x y) (cat w1 w2).
         m_apply(&x, &w1)?
             .imp(m_apply(&y, &w2)?.imp(m_apply(
                 &r_seq(alpha, x.clone(), y.clone()),
@@ -442,13 +430,9 @@ fn closure_clauses(
             .forall("w1", wty.clone())?
             .forall("y", rty_a.clone())?
             .forall("x", rty_a.clone())?,
-    );
-
-    // 6. star-nil: ∀x. M (star x) nil.
-    clauses.push(m_apply(&r_star(alpha, x.clone()), &nil_w(alpha))?.forall("x", rty_a.clone())?);
-
-    // 7. star-step: ∀x w1 w2. M x w1 ⟹ M (star x) w2 ⟹ M (star x) (cat w1 w2).
-    clauses.push(
+        // 6. star-nil: ∀x. M (star x) nil.
+        m_apply(&r_star(alpha, x.clone()), &nil_w(alpha))?.forall("x", rty_a.clone())?,
+        // 7. star-step: ∀x w1 w2. M x w1 ⟹ M (star x) w2 ⟹ M (star x) (cat w1 w2).
         m_apply(&x, &w1)?
             .imp(m_apply(&r_star(alpha, x.clone()), &w2)?.imp(m_apply(
                 &r_star(alpha, x.clone()),
@@ -457,7 +441,7 @@ fn closure_clauses(
             .forall("w2", wty.clone())?
             .forall("w1", wty.clone())?
             .forall("x", rty_a.clone())?,
-    );
+    ];
 
     Ok(clauses)
 }
@@ -653,19 +637,19 @@ fn mem(alpha: &Type, w: &Term, l: &Term) -> Term {
 /// each matching rule holds with `mem`-into-denotation in place of `M`:
 ///
 /// - **eps** `mem nil ⟦eps⟧ = mem nil {[]}` — `(nil = nil)` is `T`
-///   ([`lang::mem_epsilon`](crate::init::lang::mem_epsilon));
+///   ([`lang::mem_epsilon`]);
 /// - **lit** `mem [c] ⟦lit c⟧ = mem [c] {[c]}` — `([c]=[c])` is `T`
 ///   ([`set::mem_singleton`](crate::init::set::mem_singleton));
 /// - **alt** `mem w ⟦x⟧ ⟹ mem w (⟦x⟧∪⟦y⟧)` — `or_intro` after
 ///   [`lang::mem_union`](crate::init::set::mem_union) (and the right form);
 /// - **seq** `mem w1⟦x⟧ ⟹ mem w2⟦y⟧ ⟹ mem (cat w1 w2)(⟦x⟧·⟦y⟧)` — witness
-///   the concat existential ([`lang::mem_concat`](crate::init::lang::mem_concat))
+///   the concat existential ([`lang::mem_concat`])
 ///   at `w1, w2`;
 /// - **star-nil** `mem nil ⟦x⟧*` — `nil∈ε⊆⟦x⟧*`
-///   ([`lang::star_contains_epsilon`](crate::init::lang::star_contains_epsilon));
+///   ([`lang::star_contains_epsilon`]);
 /// - **star-step** `mem w1⟦x⟧ ⟹ mem w2⟦x⟧* ⟹ mem (cat w1 w2)⟦x⟧*` — `cat w1
 ///   w2 ∈ ⟦x⟧·⟦x⟧* ⊆ ⟦x⟧*`, the pre-fixpoint
-///   [`lang::star_concat_closed`](crate::init::lang::star_concat_closed).
+///   [`lang::star_concat_closed`].
 ///
 /// Returns `⊢ Matches r w ⟹ mem w ⟦r⟧`, both `r`, `w` free.
 pub fn soundness(alpha: &Type) -> Result<Thm> {
@@ -768,8 +752,8 @@ pub fn soundness_at(alpha: &Type, r: &Term, w: &Term) -> Result<Thm> {
     let step2 = Thm::beta_conv(g_body.apply(w.clone())?)?; // ⊢ (λw. …) w = mem w ⟦r_set⟧
     let to_mem = step1w.trans(step2)?; // ⊢ D r w = mem w ⟦r⟧
     let d_rw_beta = to_mem.eq_mp(d_rw)?; // {Matches r w} ⊢ mem w ⟦r⟧
-    let out = d_rw_beta.imp_intro(&matches_set);
-    out
+
+    d_rw_beta.imp_intro(&matches_set)
 }
 
 /// Prove `⊢ Closed D` where `D = λr w. mem w ⟦r⟧`, clause by clause, in the
@@ -861,7 +845,7 @@ pub fn u8_alphabet() -> Type {
 /// seven `Matches`-rule givens with `all-elim` / `imp-elim` to build worked
 /// match derivations.
 ///
-/// **Constants** (nullary [`ConstDef::Op`] terms — concrete byte regexes /
+/// **Constants** (nullary [`ConstDef::Op`](crate::script::ConstDef::Op) terms — concrete byte regexes /
 /// words used by the worked examples)
 ///
 /// - `regex.lit_a` / `regex.lit_b`  : `lit 0x61` / `lit 0x62`   (`regex u8`)
@@ -875,14 +859,14 @@ pub fn u8_alphabet() -> Type {
 /// **Lemmas** (the seven matching rules, ∀-closed, at `u8`, schematic in `'r`)
 ///
 /// - `match_eps`       : ⊢ Matches eps nil
-/// - `match_lit`       : ⊢ ∀c. Matches (lit c) [c]
+/// - `match_lit`       : ⊢ ∀c. Matches (lit c) \[c\]
 /// - `match_alt_l`     : ⊢ ∀x y w. Matches x w ⟹ Matches (alt x y) w
 /// - `match_alt_r`     : ⊢ ∀x y w. Matches y w ⟹ Matches (alt x y) w
 /// - `match_seq`       : ⊢ ∀x y w1 w2. Matches x w1 ⟹ Matches y w2
-///                                     ⟹ Matches (seq x y) (cat w1 w2)
+///   ⟹ Matches (seq x y) (cat w1 w2)
 /// - `match_star_nil`  : ⊢ ∀x. Matches (star x) nil
 /// - `match_star_step` : ⊢ ∀x w1 w2. Matches x w1 ⟹ Matches (star x) w2
-///                                    ⟹ Matches (star x) (cat w1 w2)
+///   ⟹ Matches (star x) (cat w1 w2)
 pub fn regex_env() -> crate::script::Env {
     use crate::script::{ConstDef, Env};
 

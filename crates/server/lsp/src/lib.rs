@@ -141,6 +141,12 @@ fn parse_sexp_for_uri(
     }
 }
 
+impl Default for Server {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Server {
     pub fn new() -> Self {
         Server {

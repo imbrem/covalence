@@ -5,13 +5,13 @@
 //! principle**. The recursion theorem and the `list_foldr` discharge ride
 //! on top in [`crate::init::list_recursion`].
 //!
-//! [`init::stream`]: crate::init::stream
-//! [`init::set`]: crate::init::set
+//! [`init::stream`]: mod@crate::init::stream
+//! [`init::set`]: mod@crate::init::set
 //!
 //! ## What `list α` is
 //!
 //! `list α := stream (option α) where (finite ∧ contiguous)` — the
-//! **subtype** of `stream (option α)` carved by [`list_pred`]: streams
+//! **subtype** of `stream (option α)` carved by `list_pred`: streams
 //! that are finite (eventually `none`) **and** contiguous (`s i = none ⟹
 //! s (succ i) = none`, no interior holes). The constructors funnel through
 //! the kernel coercions `abs : stream (option α) → list α` and `rep : list
@@ -586,7 +586,7 @@ pub fn contig_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
 
 /// `⊢ list_predicate (streamMk (consStream x xs))` — the cons carrier
 /// stream satisfies the full list selector (finite ∧ contiguous), for any
-/// `xs : list α`. The premise [`rep_cons`] discharges.
+/// `xs : list α`. The premise `rep_cons` discharges.
 pub fn pred_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
     let g = cons_stream(alpha, x, xs);
     let made = mk_stream(alpha, &g);
@@ -1053,7 +1053,7 @@ pub fn nil_from_allnone(alpha: &Type, l: &Term) -> Result<Thm> {
 /// `⊢ l = m`, given `pointwise : ⊢ index i l = index i m` with `i =
 /// Free(name, nat)` not free in `l` / `m` — **list extensionality**.
 /// `index = λn xs. streamAt (rep xs) n`, so a pointwise index equality is
-/// a pointwise carrier equality; [`stream::ext`] lifts it to `rep l = rep
+/// a pointwise carrier equality; [`stream::ext`](crate::init::stream::ext) lifts it to `rep l = rep
 /// m`, and `abs (rep ·) = ·` bridges back.
 pub fn list_ext(alpha: &Type, l: &Term, m: &Term, name: &str, pointwise: Thm) -> Result<Thm> {
     let opt = option(alpha.clone());
@@ -1164,7 +1164,7 @@ fn p_of_nil_list(alpha: &Type, p: &Term, l: &Term, pl_nil: &Thm, allnone: Thm) -
 /// Proof: an inner `nat`-induction on a finiteness bound `N` establishes
 /// `Aux(N) ≜ ∀l. (∀i. N ≤ i ⟹ index i l = none) ⟹ P l`. The base `N=0`
 /// forces every element `none`, so `l = nil`. The step splits on `head l`
-/// ([`option_cases`]): a `none` head propagates ([`allnone_from_head_none`])
+/// (`option_cases`): a `none` head propagates ([`allnone_from_head_none`])
 /// to `l = nil`; a `some a` head reconstructs `l = cons a (tail l)`
 /// ([`cons_head_tail`]), with `P (tail l)` from the `IH` (the tail's bound
 /// drops to `M`) and the `cons` case. Finally `finite_rep` supplies the

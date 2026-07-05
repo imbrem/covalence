@@ -61,13 +61,15 @@
 //! each canonical-ABI function — no out-of-band `exports.json` map is
 //! needed. The required export list for a `*-stateful` C variant is:
 //!
-//!     covalence:hash/api@0.1.0#init       — `()           → ()`
-//!     covalence:hash/api@0.1.0#update     — `(i32 i32)    → ()`
-//!     covalence:hash/api@0.1.0#finalize   — `()           → i32` (return area)
-//!     covalence:hash/api@0.1.0#compress   — `(i32 i32 i32 i32) → i32`
-//!     covalence:hash/api@0.1.0#hash       — `(i32 i32)    → i32`
-//!     cabi_realloc                         — bump allocator
-//!     memory                               — exported linear memory
+//! ```text
+//! covalence:hash/api@0.1.0#init       — ()           → ()
+//! covalence:hash/api@0.1.0#update     — (i32 i32)    → ()
+//! covalence:hash/api@0.1.0#finalize   — ()           → i32 (return area)
+//! covalence:hash/api@0.1.0#compress   — (i32 i32 i32 i32) → i32
+//! covalence:hash/api@0.1.0#hash       — (i32 i32)    → i32
+//! cabi_realloc                         — bump allocator
+//! memory                               — exported linear memory
+//! ```
 //!
 //! For non-stateful (`resource`) C variants the required exports
 //! match `<algo>.wit`'s resource shape; we don't currently ship any

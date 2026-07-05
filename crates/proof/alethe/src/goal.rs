@@ -134,19 +134,19 @@ impl Collect {
                 ("<", defs::int_lt as fn() -> Term),
                 ("<=", defs::int_le as fn() -> Term),
             ] {
-                if let Some((opspec, _)) = opf().as_spec() {
-                    if spec.ptr_eq(opspec) {
-                        self.uses_int = true;
-                        return self.render_op(sym, &args);
-                    }
+                if let Some((opspec, _)) = opf().as_spec()
+                    && spec.ptr_eq(opspec)
+                {
+                    self.uses_int = true;
+                    return self.render_op(sym, &args);
                 }
             }
             // Unary integer negation.
-            if let Some((negspec, _)) = defs::int_neg().as_spec() {
-                if spec.ptr_eq(negspec) {
-                    self.uses_int = true;
-                    return self.render_op("-", &args);
-                }
+            if let Some((negspec, _)) = defs::int_neg().as_spec()
+                && spec.ptr_eq(negspec)
+            {
+                self.uses_int = true;
+                return self.render_op("-", &args);
             }
             return Err(BridgeError::NotImplemented(format!(
                 "smt goal: unsupported spec head in `{t}`"

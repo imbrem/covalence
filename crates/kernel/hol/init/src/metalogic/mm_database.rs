@@ -72,7 +72,7 @@
 //!   / heap back-references drive a `Slot` heap alongside the stack, so a re-used
 //!   sub-proof is a cheap re-push (its sharing is preserved, no re-expansion).
 //! - **Syntactic formers** (`wff`/`term`/… assertions) are *grammar*, not
-//!   derivability rules: they build [`Slot::Wff`] terms during replay but
+//!   derivability rules: they build `Slot::Wff` terms during replay but
 //!   contribute **no** clause to the rule set.
 
 use fnv::FnvHashMap as HashMap;
@@ -144,7 +144,7 @@ fn leaf(db: &Database, tok: &str) -> Term {
 /// Right-fold one former body `[s₁,…,sₙ]` into `concat(enc s₁, concat(enc s₂, …
 /// enc sₙ))` (a singleton is just `enc s₁`). `resolve` maps each token to its
 /// term — a former-application's metavars to the encoded sub-trees, every other
-/// token to its [`leaf`].
+/// token to its `leaf`.
 pub fn encode(body: &[impl AsRef<str>], resolve: &dyn Fn(&str) -> Result<Term>) -> Result<Term> {
     let mut iter = body.iter().rev();
     let last = iter
@@ -297,12 +297,12 @@ impl<'a> Parser<'a> {
     /// If the statement's typecode has a production (some former concludes it,
     /// e.g. `wff`/`term`), the body is parsed *strictly* as one expression of
     /// that typecode. A `|-` body (the provability layer) has **no** former
-    /// production, so it is encoded *greedily* ([`encode_greedy`]): maximal
+    /// production, so it is encoded *greedily* (`encode_greedy`): maximal
     /// syntactic sub-expressions are parsed compactly and every other token is a
     /// literal constant — which still makes a `|-` schema's metavar positions
     /// (single typed-variable leaves) line up with substituted instances.
     ///
-    /// Parsing is **packrat-memoized** (see [`Memo`]): a recursive-descent
+    /// Parsing is **packrat-memoized** (see `Memo`): a recursive-descent
     /// parse of this grammar backtracks (every infix former re-parses its left
     /// operand under each candidate operator), which is exponential in nesting
     /// depth on large set.mm expressions. The memo caches each
@@ -593,11 +593,7 @@ impl Clause {
         let mut body = if self.ess_encs.is_empty() {
             d_apply(&self.concl_enc)?
         } else {
-            let prems: Vec<Term> = self
-                .ess_encs
-                .iter()
-                .map(|e| d_apply(e))
-                .collect::<Result<_>>()?;
+            let prems: Vec<Term> = self.ess_encs.iter().map(d_apply).collect::<Result<_>>()?;
             conj(prems)?.imp(d_apply(&self.concl_enc)?)?
         };
         // Bind float_vars[0] OUTERMOST, so `all_elim(arg0)` strips it first.
@@ -609,12 +605,12 @@ impl Clause {
     }
 }
 
-/// A reusable cache of compiled `|-` [`Clause`]s, keyed by assertion label. A
+/// A reusable cache of compiled `|-` `Clause`s, keyed by assertion label. A
 /// clause depends only on the assertion (not the proof using it), so it is
 /// identical every time — build one per import worker and thread it across
 /// [`derive_theorem_cached`] calls so each lemma's conclusion is encoded **once**
 /// instead of being re-parsed in every proof that cites it (lemmas like `ax-mp`
-/// / `simp*` are cited by thousands of proofs). Opaque: the inner [`Clause`]
+/// / `simp*` are cited by thousands of proofs). Opaque: the inner `Clause`
 /// stays crate-private.
 #[derive(Default)]
 pub struct ClauseCache(HashMap<String, Clause>);
@@ -940,7 +936,7 @@ pub struct InternedDecl {
 /// does **not** replay proofs. Metamath statements share enormous structure
 /// across theorems (the same constants, the same sub-expressions), so the
 /// resulting interner is a compact shared DAG (~15–20× fewer nodes than the sum
-/// of the statement trees; see [`tests::measure_dedup`]). That DAG is the basis
+/// of the statement trees; see `tests::measure_dedup`). That DAG is the basis
 /// for pretty-printing the HOL form and for cheap retention of the whole
 /// imported surface.
 ///
@@ -1093,6 +1089,9 @@ fn replay_with(
 ///   surfaces on the final theorem);
 /// - a `$a`/`$p` assertion → a syntactic former (`Slot::Wff`) or a `|-` rule
 ///   instance (`Slot::Proved`), via [`apply_assert`].
+// Threads the full replay state (database, rules, caches, cons) through one
+// proof step; bundling into a struct would just rename the problem.
+#[allow(clippy::too_many_arguments)]
 fn apply_label(
     db: &Database,
     rs: &RuleSet,
@@ -1467,7 +1466,7 @@ mod tests {
             timings.push((label.clone(), t.elapsed()));
         }
         let total = t0.elapsed();
-        timings.sort_by(|a, b| b.1.cmp(&a.1));
+        timings.sort_by_key(|t| std::cmp::Reverse(t.1));
         eprintln!(
             "\n=== hol.mm import (shared parser): {} theorems in {:?} ===",
             labels.len(),
@@ -1521,7 +1520,7 @@ mod tests {
                 timings.push((label.clone(), t.elapsed()));
             }
             let total = t0.elapsed();
-            timings.sort_by(|a, b| b.1.cmp(&a.1));
+            timings.sort_by_key(|t| std::cmp::Reverse(t.1));
             eprintln!(
                 "\n=== set.mm import (shared parser): {} theorems in {:?} ===",
                 sample.len(),

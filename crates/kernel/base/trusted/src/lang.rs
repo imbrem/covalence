@@ -20,7 +20,7 @@ pub trait Language: 'static {
     ///   `admits(r) == true` ⟹ `r ∈ tree(self)`;
     /// - UNSPECIFIED for inherited (indirect) rules — implementor's choice
     ///   (returning `true` lets an inherited rule be applied directly here; `false`
-    ///   requires the apply-in-home + [`lift`](crate::Eqn::lift) composition).
+    ///   requires the apply-in-home + [`lift`](crate::Thm::lift) composition).
     fn admits(&self, rule: TypeId) -> bool;
 
     /// Parent gate. Same 3-part contract: `true` for DIRECT parents, `false` for

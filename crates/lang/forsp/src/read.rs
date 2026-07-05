@@ -28,19 +28,17 @@ fn convert_body(sexps: &[SExpr], heap: &mut Heap, out: &mut Vec<ValRef>) -> Resu
     while i < sexps.len() {
         if let Some(sym) = sexps[i].as_symbol() {
             // Standalone sugar character followed by a next expression.
-            if matches!(sym, "'" | "$" | "^") {
-                if i + 1 < sexps.len() {
-                    let expr = convert_expr(&sexps[i + 1], heap)?;
-                    out.push(heap.atom("quote"));
-                    out.push(expr);
-                    match sym {
-                        "$" => out.push(heap.atom("pop")),
-                        "^" => out.push(heap.atom("push")),
-                        _ => {}
-                    }
-                    i += 2;
-                    continue;
+            if matches!(sym, "'" | "$" | "^") && i + 1 < sexps.len() {
+                let expr = convert_expr(&sexps[i + 1], heap)?;
+                out.push(heap.atom("quote"));
+                out.push(expr);
+                match sym {
+                    "$" => out.push(heap.atom("pop")),
+                    "^" => out.push(heap.atom("push")),
+                    _ => {}
                 }
+                i += 2;
+                continue;
             }
             // Sugar prefix attached to atom: `$x`, `^foo`, `'bar`, `!HEX`.
             if let Some(expanded) = try_expand_sugar(sym, heap)? {

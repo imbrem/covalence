@@ -11,7 +11,7 @@
 //! ```
 //!
 //! over the reified carrier `Φ = nat` ([`super::encode`]). Every judgement is
-//! [`encode::tag`]-ged with its **relation name**, so one rule set can mix many
+//! [`encode::tag`](crate::wasm::encode::tag)-ged with its **relation name**, so one rule set can mix many
 //! mutually-referential relations and a cross-relation premise `R'(e)` is just
 //! `d (rel.R' ⌜e⌝)` under the same `d`. A concrete judgement derivation is a value
 //! `⊢ Derivable ⌜J⌝` — pure syntactic data, oracle-free, kernel-checked.
@@ -19,7 +19,7 @@
 //! ## Two entry points
 //!
 //! - [`rule_set`] — one relation, **all** its rules (errors if any rule can't be
-//!   lowered): the "is this whole relation expressible" view. [`derive`] applies
+//!   lowered): the "is this whole relation expressible" view. [`fn@derive`] applies
 //!   a rule of it.
 //! - [`spec_rule_set`] — a whole set of definitions (the real WASM spec), one
 //!   combined rule set over every relation's rules, **skipping** rules it can't
@@ -143,7 +143,7 @@ fn rule_set_of(rules: Vec<LoweredRule>) -> RuleSet<'static> {
 /// The rule set of a **single** relation: one clause per rule, in rule order.
 ///
 /// `def` must be a [`SpecTecDef::Rel`]; errors if *any* rule can't be lowered
-/// (the "whole relation expressible" view). Clause `i` = rule `i`, so [`derive`]
+/// (the "whole relation expressible" view). Clause `i` = rule `i`, so [`fn@derive`]
 /// can address rules by their definition index.
 pub fn rule_set(def: &SpecTecDef) -> Result<RuleSet<'static>> {
     let SpecTecDef::Rel { x, rules, .. } = def else {
@@ -200,7 +200,7 @@ pub fn spec_rule_set(defs: &[SpecTecDef]) -> (RuleSet<'static>, LoweringReport) 
 }
 
 /// `Derivable ⌜J⌝ := ∀d. Closed d ⟹ d ⌜J⌝` for a judgement `J` already encoded
-/// (and relation-tagged) to a `Φ = nat` term. Build one with [`judgement`] /
+/// (and relation-tagged) to a `Φ = nat` term. Build one with `judgement` /
 /// [`super::encode::tag`].
 pub fn derivable(rs: &RuleSet, judgement: &Term) -> Result<Term> {
     metalogic::derivable(rs, judgement)

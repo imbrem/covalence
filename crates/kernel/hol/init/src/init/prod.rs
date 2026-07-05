@@ -3,8 +3,8 @@
 //! projection clauses, surjective pairing, and pair injectivity. Same
 //! abstraction-barrier shape as [`init::set`] / [`init::list`].
 //!
-//! [`init::set`]: crate::init::set
-//! [`init::list`]: crate::init::list
+//! [`init::set`]: mod@crate::init::set
+//! [`init::list`]: mod@crate::init::list
 //!
 //! ## What `prod α β` is
 //!
@@ -30,14 +30,14 @@
 //! [`Thm::spec_rep_abs_fwd`] is *conditional* on the selector predicate
 //! `prod_predicate R = ∃a b. R = λx y. x = a ∧ y = b`. For `pair a b`
 //! that relation is `λx y. x = a ∧ y = b`, which is a singleton by its
-//! own definition ([`singleton_pred`]) — so the seam [`rep_pair`] is
+//! own definition (`singleton_pred`) — so the seam [`rep_pair`] is
 //! reachable with no further machinery.
 //!
 //! ## No postulates
 //!
 //! Everything bottoms out in the kernel's witness-free subtype laws plus
 //! the choice axiom ([`Thm::select_ax`]); every theorem here is genuine
-//! (hypothesis- and oracle-free). The key engine is [`determines`]: the
+//! (hypothesis- and oracle-free). The key engine is `determines`: the
 //! singleton-relation equation `λx y. x=a ∧ y=b = λx y. x=c ∧ y=d` pins
 //! `a = c` and `b = d` (apply both relations to `a`, `b` and read off the
 //! conjuncts), which both projections and injectivity ride on.
@@ -211,7 +211,7 @@ fn prove_singleton_exists(ex_term: &Term, a: &Term, b: &Term, rel: &Term) -> Res
 
 /// `⊢ rep (pair a b) = (λx y. x = a ∧ y = b)` — the carrier-side
 /// round-trip for `prod`, with the singleton premise discharged by
-/// [`singleton_pred`]. The seam every clause builds on; its RHS is the
+/// `singleton_pred`. The seam every clause builds on; its RHS is the
 /// canonical `pairRel a b` relation.
 pub fn rep_pair(alpha: &Type, beta: &Type, a: &Term, b: &Term) -> Result<Thm> {
     // pair a b = abs (pairRel a b). Unfold the **head** `pair` only

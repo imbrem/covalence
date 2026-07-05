@@ -17,7 +17,7 @@
 //! ## Scope
 //!
 //! This first HOL backend handles the **propositional fragment** (set.mm's
-//! `ax-1`/`ax-2`/`ax-mp` shape — whatever [`replay_prop`](super::mm_replay::replay_prop)
+//! `ax-1`/`ax-2`/`ax-mp` shape — whatever [`replay_prop`]
 //! interprets). A backend over an *arbitrary* database (one substitution-instance
 //! clause per assertion — the `RuleSet`-from-`Database` generalisation, landing
 //! `⊢ Derivable_DB ⌜db⌝ ⌜S⌝`) is the follow-on north star; see
@@ -136,6 +136,8 @@ impl DatabaseSink for HolPropSink {
 /// Read a propositional `.mm` source and **construct** `⊢ Derivable_Prop ⌜S⌝`
 /// for each `$p` theorem, in read order. The Metamath proofs are untrusted; the
 /// kernel re-checks every step (see the [module docs](self)).
+// Cold import path; `MmError` is a rich diagnostic enum, not worth boxing.
+#[allow(clippy::result_large_err)]
 pub fn read_prop(source: &str) -> Result<Vec<(String, Thm)>, MmError> {
     let mut sink = HolPropSink::new();
     crate::metamath::parse_into(source, &mut sink)?;

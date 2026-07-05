@@ -2,9 +2,9 @@
 //!
 //! Read-only mount of a [`covalence_object::Dir`] tree backed by any
 //! [`covalence_store::ContentStore<O256>`]. Each `read(off, size)` calls
-//! [`ContentStore::get_slice`] for just the requested range — backends
+//! [`ContentStore::get_slice`](covalence_store::ContentStore::get_slice) for just the requested range — backends
 //! with native partial reads (sqlite `substr`) only transfer those bytes
-//! from disk. Size lookups use [`ContentStore::head`].
+//! from disk. Size lookups use [`ContentStore::head`](covalence_store::ContentStore::head).
 //!
 //! The store is sync; FUSE runs in tokio. Calls go through
 //! [`tokio::task::spawn_blocking`] so a slow backend (sqlite, disk, future

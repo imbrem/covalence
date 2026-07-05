@@ -1,6 +1,6 @@
 //! Course-of-values recursion — **existence**.
 //!
-//! The recursion dual of [`strong_induct`](crate::init::lambda_iter::strong_induct):
+//! The recursion dual of [`strong_induct`]:
 //! every below-`x`-extensional step functional `F : nat → (nat → 'a) → 'a` has a
 //! fixpoint. This is what lets a *function* be **defined** by course-of-values
 //! recursion on a `nat` code — the `WfTyCode` / `Typed` / `El` decoders the
@@ -20,11 +20,11 @@
 //!
 //! The seed `d : 'a` and the **bounded approximation**
 //! `B := natRec (λx. d) (λk g x. F x g) : nat → (nat → 'a)` iterate `F`:
-//! `B 0 = (λx. d)` and `B (S k) = (λx. F x (B k))` ([`b_succ`]). `B j x` is `F`
+//! `B 0 = (λx. d)` and `B (S k) = (λx. F x (B k))` (`b_succ`). `B j x` is `F`
 //! iterated `j` times read off at `x`. Because `F` reads its argument only
 //! *below* `x`, the value stabilises once the fuel exceeds `x`:
 //!
-//! > [`key`] :  `Hext F ⊢ ∀j m. m < j ⟹ B j m = B (S m) m`
+//! > `key` :  `Hext F ⊢ ∀j m. m < j ⟹ B j m = B (S m) m`
 //!
 //! proved by course-of-values induction on `j` (the one essential use of
 //! `strong_induct`): at a positive `j = S k`, `B j m = F m (B k)` and

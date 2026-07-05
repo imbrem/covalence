@@ -22,7 +22,7 @@ pub use range::{BlobInfo, ByteRange, ResolvedRange, clip_slice, slice_range};
 /// Keys and values are raw byte slices — type tagging (if needed)
 /// is the caller's responsibility.
 ///
-/// Distinct from [`covalence_kv::KvStore`]: that's a flat key/value
+/// Distinct from `covalence_kv::KvStore`: that's a flat key/value
 /// blob store (S3-shaped). This is a tree of namespaces with read
 /// tracking, suited to kernel-internal scaffolding.
 pub trait TreeStore: Send + Sync {
@@ -103,6 +103,9 @@ pub enum StoreError {
 /// Multi-range requests live above the trait — see [`fetch_ranges`] for
 /// the batch helper and [`ByteRange::parse_http_header_multi`] for the
 /// parser.
+// `len` is `Option<usize>` ("count if cheaply available"), so an `is_empty`
+// counterpart would conflate "unknown" with "empty".
+#[allow(clippy::len_without_is_empty)]
 pub trait ContentStore<K>: Send + Sync {
     /// Store data under the given key.
     fn put(&self, key: K, data: &[u8]) -> Result<(), StoreError>;
@@ -180,6 +183,10 @@ pub trait ContentStore<K>: Send + Sync {
     }
 }
 
+/// One served byte range: the bytes plus the resolved (clamped) range they
+/// cover. The element type of [`fetch_ranges`]'s result.
+pub type RangePart = (Vec<u8>, ResolvedRange);
+
 /// Batch-fetch a list of byte ranges from one blob.
 ///
 /// One [`ContentStore::head`] call to learn total size + one
@@ -199,7 +206,7 @@ pub fn fetch_ranges<K, S>(
     store: &S,
     key: &K,
     ranges: &[ByteRange],
-) -> Result<Option<Vec<(Vec<u8>, ResolvedRange)>>, StoreError>
+) -> Result<Option<Vec<RangePart>>, StoreError>
 where
     S: ContentStore<K> + ?Sized,
 {

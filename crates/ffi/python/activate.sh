@@ -6,8 +6,6 @@ if [ ! -d "$VENV" ]; then
     MAIN=$(git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')
     if [ -n "$MAIN" ]; then
         VENV="$MAIN/crates/ffi/python/.venv"
-        # transitional: main checkouts predating the crate-layout migration
-        [ -d "$VENV" ] || VENV="$MAIN/crates/covalence-python/.venv"
     fi
 fi
 if [ ! -d "$VENV" ]; then

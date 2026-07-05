@@ -13,7 +13,7 @@
 //! substitution, typecode, and `$d` constraint is re-derived and re-checked.
 //!
 //! Both proof encodings are handled: the [`Proof::Normal`] label sequence and
-//! the [`Proof::Compressed`] letter scheme (decoded by [`decompress_proof`],
+//! the [`Proof::Compressed`] letter scheme (decoded by `decompress_proof`,
 //! which recovers the `A`–`T` / `U`–`Y` base-20/5 integers, the `Z` save
 //! markers, and the mandatory-hyp / label-block / heap addressing).
 

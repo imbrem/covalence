@@ -2,7 +2,7 @@
 //!
 //! Hand a [`Provider`] to [`Provider::resolve_api_key`] / [`Provider::resolve_base_url`]
 //! to read the key and endpoint from the environment using the
-//! [`secrets`](crate::secrets) module's `COV_<VAR>` → `<VAR>` override chain.
+//! [`secrets`] module's `COV_<VAR>` → `<VAR>` override chain.
 
 use crate::secrets::{self, SecretError, SecretString};
 

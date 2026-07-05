@@ -489,6 +489,9 @@ fn int_binop(tag: IntTag, op: IntOp, ab: u64, bb: u64) -> u64 {
         // y=0, since `int.div n 0 = 0`), and `Rem`'s is `fromInt(intMod …)`
         // / `fromNat(natMod …)` (→ the dividend at y=0). `au` is the
         // dividend's low-`w` bits, i.e. its own value.
+        // TCB: keep the explicit `y = 0` branch mirroring the signed/`Rem`
+        // arms rather than restructuring into `checked_div`.
+        #[allow(clippy::manual_checked_ops)]
         IntOp::Div => {
             if tag.is_signed() {
                 let bv = value_s(tag, bb);
@@ -762,7 +765,7 @@ mod tests {
         Term::nat_lit(Nat::from_inner(n.into()))
     }
     fn int(n: i32) -> Term {
-        let nat = Nat::from_inner((n.unsigned_abs() as u32).into());
+        let nat = Nat::from_inner(n.unsigned_abs().into());
         let sign = if n == 0 {
             Sign::Zero
         } else if n > 0 {

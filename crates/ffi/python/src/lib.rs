@@ -30,8 +30,8 @@ mod worker;
 
 use pyo3::prelude::*;
 
-#[pymodule]
-fn covalence(m: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pymodule(name = "covalence")]
+fn covalence_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types
     m.add_class::<hash::O256>()?;
     m.add_class::<hash::Hasher>()?;

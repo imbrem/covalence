@@ -195,6 +195,12 @@ pub struct Heap {
     pub(crate) by_hash: HashMap<O256, ValRef>,
 }
 
+impl Default for Heap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Heap {
     pub fn new() -> Self {
         Heap {
@@ -375,6 +381,12 @@ pub struct Forsp<F: ForeignPrims = ()> {
     pub foreign: F,
 }
 
+impl Default for Forsp<()> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Forsp<()> {
     pub fn new() -> Self {
         Self::new_with(())
@@ -434,12 +446,12 @@ impl<F: ForeignPrims> Forsp<F> {
 
     /// Convert a heap value to an [`SExpr`] for external consumption.
     /// Closures are rendered as `!<hash>` and registered on the heap as a
-    /// side effect, so the resulting sexp can be read back through [`read`].
+    /// side effect, so the resulting sexp can be read back through `read`.
     pub fn to_sexp(&mut self, v: ValRef) -> SExpr {
         print::to_sexp(&mut self.heap, v)
     }
 
-    /// Format a heap value as a Forsp S-expression string. See [`to_sexp`].
+    /// Format a heap value as a Forsp S-expression string. See [`to_sexp`](Self::to_sexp).
     pub fn show(&mut self, v: ValRef) -> String {
         print::show(&mut self.heap, v)
     }

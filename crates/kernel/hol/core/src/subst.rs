@@ -860,6 +860,9 @@ pub fn collect_term_tvars(t: &Term, out: &mut std::collections::BTreeSet<SmolStr
 /// Used by `Def::body` to recover the type substitution from
 /// `body_type` → `instance_type` when reconstructing the body for
 /// utility walks (`has_no_obs`, etc.).
+// TCB: `Err(())` is the documented "no consistent substitution" signal; a
+// dedicated error type would add nothing here.
+#[allow(clippy::result_unit_err)]
 pub fn match_types(
     pattern: &Type,
     target: &Type,

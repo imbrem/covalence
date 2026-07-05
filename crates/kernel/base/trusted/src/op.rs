@@ -15,7 +15,7 @@ use std::sync::Arc;
 /// [`crate::CanonRule`], and is gated by a language's manifest.
 ///
 /// **`Any` supertrait** (⇒ `Op: 'static`): a `dyn Op` operator can be downcast to
-/// its real concrete type through [`App::as_op`], whose soundness rests on the
+/// its real concrete type through [`App::as_op`](crate::App::as_op), whose soundness rests on the
 /// compiler-built vtable's genuine `TypeId`. Ops are already `'static` (they are
 /// symbols), so this costs nothing. This is the **open vocabulary** — extend it by
 /// declaring new `Op`s, never with a `newtype Op(F)` wrapper.

@@ -41,6 +41,9 @@ impl Var {
     }
 
     /// Negative literal for this variable.
+    // Deliberate `pos()`/`neg()` pair; `std::ops::Neg` would be odd here since
+    // the output is a `Lit`, not a `Var`.
+    #[allow(clippy::should_implement_trait)]
     pub fn neg(self) -> Lit {
         // Safe: self.0 is positive NonZeroI32, negation is negative NonZeroI32
         Lit(self.0.checked_neg().expect("variable index overflow"))

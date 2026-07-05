@@ -283,7 +283,7 @@ impl<C: TermCons + ?Sized> TrustedCons for Checked<C> {
 /// state with [`HashCons::with_data`] and reach it via [`HashCons::data`]
 /// / [`HashCons::data_mut`].
 /// The interner carries a **type-cons template** `T` (default
-/// [`TypeHashCons`]) alongside its term set, and is itself a
+/// [`TypeHashCons`](crate::ty::TypeHashCons)) alongside its term set, and is itself a
 /// [`crate::ty::TrustedTypeCons`] (delegating to `T`) — so one `HashCons`
 /// threaded through a proof shares both terms and types. The type params
 /// are ordered `<D, T>` (data first) so `HashCons<MyData>` keeps the

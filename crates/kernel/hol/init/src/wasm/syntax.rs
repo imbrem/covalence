@@ -12,7 +12,7 @@
 //! Recursive variants render via the impredicative [`ChurchBackend`] `Φ⟨'r⟩`
 //! (self-references → a result type variable), and **parametric** types `T(A…)`
 //! instantiate by resolving `T`'s body with its type parameters bound (value/`exp`
-//! parameters don't affect the HOL type). A [`Scope`] threads the self-reference
+//! parameters don't affect the HOL type). A `Scope` threads the self-reference
 //! name and the type-parameter bindings.
 //!
 //! Building a `Type` cannot be unsound (it grows no `Thm`), so this is a plain

@@ -43,7 +43,7 @@ pub mod tactic;
 /// Caching `⌜c⌝` on the node avoids a separate `core_to_term` pass: the
 /// matcher and soundness read `c.term()` directly instead of rebuilding the
 /// reified term at every `alt`/`seq`/`star` node. The term is interned through
-/// the [`HashCons`] threaded down [`desugar`], so structurally-equal sub-terms
+/// the [`HashCons`](covalence_core::term::HashCons) threaded down [`desugar`], so structurally-equal sub-terms
 /// (a repeated sub-regex, the alphabet type) share one allocation.
 ///
 /// Sub-regexes are held behind [`Arc`] so identical subtrees share (a single
@@ -219,7 +219,7 @@ fn balanced(mut items: Vec<Arc<Core>>) -> Arc<Core> {
 // ============================================================================
 
 /// Desugar a full byte regex into a compiled [`Core`] (each node carrying its
-/// cached `⌜·⌝`; leaf terms come from the global [`R_LEAVES`] cache).
+/// cached `⌜·⌝`; leaf terms come from the global `R_LEAVES` cache).
 ///
 /// - character classes become a balanced alternation of their member byte
 ///   literals (a negated class is complemented against `0x00..=0xFF` first; an

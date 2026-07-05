@@ -4,8 +4,8 @@
 //!
 //! The construction is the standard graph route, at `α = nat`. It is now
 //! **fully driven by the generic inductive engine**
-//! ([`crate::init::inductive`]) at the [`nat_sig`] signature, with the
-//! [`NatTheory`] adapter supplying induction + freeness. This module is
+//! ([`crate::init::inductive`]) at the `nat_sig` signature, with the
+//! `NatTheory` adapter supplying induction + freeness. This module is
 //! reduced to that adapter plus the assembly wiring — every proof step
 //! below is `nat` *consuming* the engine, not a `nat`-specific derivation:
 //!
@@ -19,8 +19,8 @@
 //!    [`graph_det`](crate::init::inductive::determinacy::graph_det). ✓
 //! 4. **Assembly** — the recursor `λz f n. ε a. Graph z f n a`, its
 //!    equations, and `∃r. P_rec r` from [`recursor::recursion_theorem`],
-//!    given `natRec`'s [`p_rec_pred`]; `spec_ax` then transfers to `natRec`
-//!    ([`rec_holds_proof`]). ✓
+//!    given `natRec`'s `p_rec_pred`; `spec_ax` then transfers to `natRec`
+//!    (`rec_holds_proof`). ✓
 //!
 //! What remains is one direction of *lifting*, not construction: deriving
 //! a non-kernel `Inductive` impl (e.g. `nat`-from-`ind`, or `list`) to feed

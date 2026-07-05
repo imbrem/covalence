@@ -73,15 +73,15 @@ pub fn from_env_optional(var: &str) -> Result<Option<SecretString>, SecretError>
 /// Returns `Some(value)` for the first non-empty hit, otherwise `None`.
 pub fn endpoint_from_env(var: &str) -> Option<String> {
     let cov_var = format!("COV_{var}");
-    if let Ok(v) = std::env::var(&cov_var) {
-        if !v.trim().is_empty() {
-            return Some(v);
-        }
+    if let Ok(v) = std::env::var(&cov_var)
+        && !v.trim().is_empty()
+    {
+        return Some(v);
     }
-    if let Ok(v) = std::env::var(var) {
-        if !v.trim().is_empty() {
-            return Some(v);
-        }
+    if let Ok(v) = std::env::var(var)
+        && !v.trim().is_empty()
+    {
+        return Some(v);
     }
     None
 }

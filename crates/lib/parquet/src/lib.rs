@@ -7,10 +7,9 @@
 //!
 //! The hive scanner is decoupled from any storage backend: callers provide
 //! the directory listing and a closure that loads bytes by name. This keeps
-//! the crate usable from the REPL (where blobs live in a [`SyncBackend`])
+//! the crate usable from the REPL (where blobs live in a `SyncBackend`)
 //! and from any future file-system or remote backend.
 //!
-//! [`SyncBackend`]: covalence_shell::SyncBackend
 
 use std::collections::BTreeSet;
 use std::fmt;

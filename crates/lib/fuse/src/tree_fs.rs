@@ -133,10 +133,10 @@ impl TreeFs {
     /// Resolve the on-disk size of a file inode, asking the store via
     /// `head` if we don't already have it cached.
     async fn realize_size(&self, ino: u64, hash: O256) -> Result<u64, FuseError> {
-        if let Some(entry) = self.inodes.get(ino) {
-            if let Some(size) = entry.size {
-                return Ok(size);
-            }
+        if let Some(entry) = self.inodes.get(ino)
+            && let Some(size) = entry.size
+        {
+            return Ok(size);
         }
         let size = self.head_blob(hash).await?;
         self.inodes.set_size(ino, size);

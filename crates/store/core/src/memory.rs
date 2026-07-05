@@ -110,20 +110,20 @@ impl MemoryStore {
     /// Checks the tag index first (validating the tag matches), then falls
     /// back to a direct content-hash lookup.
     pub fn get_repr_with(&self, tag: &O256, key: &O256) -> Option<&[u8]> {
-        if let Some(&(t, index)) = self.tags.get(key) {
-            if &t == tag {
-                return self.blobs.get_index(index).map(|(_, v)| v.as_slice());
-            }
+        if let Some(&(t, index)) = self.tags.get(key)
+            && &t == tag
+        {
+            return self.blobs.get_index(index).map(|(_, v)| v.as_slice());
         }
         self.blobs.get(key).map(|v| v.as_slice())
     }
 
     /// Get the tag given both tag and key (validates the stored tag matches).
     pub fn get_tag_with(&self, tag: &O256, key: &O256) -> Option<O256> {
-        if let Some(&(t, _)) = self.tags.get(key) {
-            if &t == tag {
-                return Some(t);
-            }
+        if let Some(&(t, _)) = self.tags.get(key)
+            && &t == tag
+        {
+            return Some(t);
         }
         None
     }

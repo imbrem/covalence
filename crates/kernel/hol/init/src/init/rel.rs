@@ -3,7 +3,7 @@
 //! mirroring how [`init::set`] pairs the `set` definitions with their
 //! proved facts.
 //!
-//! [`init::set`]: crate::init::set
+//! [`init::set`]: mod@crate::init::set
 //!
 //! ## The abstraction barrier
 //!
@@ -145,7 +145,7 @@ pub fn holds_mk(alpha: &Type, beta: &Type, x: &Term, y: &Term, p: &Term) -> Resu
 /// side's holds is `(rep ·) x y`, so `∀x y. (rep r) x y = (rep s) x y`;
 /// `abs` + η-contraction on each argument give `rep r = rep s`,
 /// congruence under `abs` gives `abs (rep r) = abs (rep s)`, and the
-/// wrapper round-trip [`abs_rep`] rewrites both sides to `r` and `s`.
+/// wrapper round-trip `abs_rep` rewrites both sides to `r` and `s`.
 pub fn ext(alpha: &Type, beta: &Type, r: &Term, s: &Term, holds_eq: Thm) -> Result<Thm> {
     const PX: &str = "_ext_x";
     const PY: &str = "_ext_y";

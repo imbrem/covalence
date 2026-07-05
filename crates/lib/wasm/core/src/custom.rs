@@ -64,10 +64,10 @@ fn framed_custom_section(section: &CustomSection<'_>, component: bool) -> Vec<u8
 pub fn find_custom_section(bytes: &[u8], name: &str) -> Result<Option<Vec<u8>>, WasmError> {
     for payload in Parser::new(0).parse_all(bytes) {
         let payload = payload.map_err(|e| WasmError::InvalidComponent(e.to_string()))?;
-        if let Payload::CustomSection(reader) = payload {
-            if reader.name() == name {
-                return Ok(Some(reader.data().to_vec()));
-            }
+        if let Payload::CustomSection(reader) = payload
+            && reader.name() == name
+        {
+            return Ok(Some(reader.data().to_vec()));
         }
     }
     Ok(None)

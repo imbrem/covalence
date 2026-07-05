@@ -84,13 +84,13 @@ pub fn parse_dimacs(input: &str) -> Result<Cnf, ParseError> {
 
     let nv = num_vars.ok_or(ParseError::MissingHeader)?;
 
-    if let Some(declared) = declared_clauses {
-        if declared != clauses.len() {
-            return Err(ParseError::ClauseCountMismatch {
-                declared,
-                actual: clauses.len(),
-            });
-        }
+    if let Some(declared) = declared_clauses
+        && declared != clauses.len()
+    {
+        return Err(ParseError::ClauseCountMismatch {
+            declared,
+            actual: clauses.len(),
+        });
     }
 
     Ok(Cnf::from_parts(nv, clauses))

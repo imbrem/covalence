@@ -1234,6 +1234,20 @@ fn parse_binop(t: &Term) -> Option<(covalence_core::defs::TermSpec, Term, Term)>
 }
 
 #[cfg(test)]
+/// Test-only helper: build `∃x. pred-body` from a closed predicate `λx. …`.
+trait ExistsOf {
+    fn equals_ex(self) -> Term;
+}
+
+#[cfg(test)]
+impl ExistsOf for Term {
+    fn equals_ex(self) -> Term {
+        // `self` is `λx. body : nat → bool`; wrap it as `exists[nat] self`.
+        Term::app(exists(Type::nat()), self)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1852,19 +1866,5 @@ mod tests {
             .unwrap();
         let ex = nat_pred("_op_x", body).equals_ex();
         assert_eq!(thm.concl().as_eq().unwrap().0, &ex);
-    }
-}
-
-#[cfg(test)]
-/// Test-only helper: build `∃x. pred-body` from a closed predicate `λx. …`.
-trait ExistsOf {
-    fn equals_ex(self) -> Term;
-}
-
-#[cfg(test)]
-impl ExistsOf for Term {
-    fn equals_ex(self) -> Term {
-        // `self` is `λx. body : nat → bool`; wrap it as `exists[nat] self`.
-        Term::app(exists(Type::nat()), self)
     }
 }

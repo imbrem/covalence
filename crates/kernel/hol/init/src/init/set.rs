@@ -23,7 +23,7 @@
 //! On top of those sits the one-shot prover [`set_eq`]: it normalises
 //! both sides' membership with [`mem_norm`] (recursively expanding
 //! nested `∪ ∩ \ …`) and decides the resulting boolean equality with
-//! [`prop_eq`](crate::init::logic::prop_eq) — so a whole set identity
+//! [`prop_eq`] — so a whole set identity
 //! (`union_comm`, `union_assoc`, `inter_union_distrib`, …) is stated and
 //! discharged in one line. The [`subset_unfold`] / [`subset_refl`] /
 //! [`subset_antisym`] family connects `⊆` to equality on the same
@@ -153,7 +153,7 @@ pub fn mem_mk(alpha: &Type, x: &Term, p: &Term) -> Result<Thm> {
 /// Derivation (HOL Light's `EQ_EXT` over the newtype): each side's
 /// membership is `(rep ·) x`, so `∀x. (rep s) x = (rep t) x`; `abs` +
 /// η-contraction give `rep s = rep t`, congruence under `abs` gives
-/// `abs (rep s) = abs (rep t)`, and the wrapper round-trip [`abs_rep`]
+/// `abs (rep s) = abs (rep t)`, and the wrapper round-trip `abs_rep`
 /// rewrites both sides to `s` and `t`.
 pub fn ext(alpha: &Type, s: &Term, t: &Term, mem_eq: Thm) -> Result<Thm> {
     const PT: &str = "_ext_x";
@@ -313,7 +313,7 @@ fn expand_children(alpha: &Type, x: &Term, base: Thm, children: &[&Term]) -> Res
 /// `⊢ s = t` for set expressions `s`, `t` whose memberships are
 /// propositionally equal. Normalises `set.mem x s` and `set.mem x t`
 /// with [`mem_norm`], bridges the two boolean formulas with
-/// [`prop_eq`](crate::init::logic::prop_eq) (which handles commutativity,
+/// [`prop_eq`] (which handles commutativity,
 /// associativity, distribution, …), and closes by [`ext`]. This is the
 /// one-shot prover the set-algebra theorems below are built on — a
 /// consumer states the equation and `set_eq` discharges it, never

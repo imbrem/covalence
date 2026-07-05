@@ -26,11 +26,11 @@ impl Bits {
     /// Returns `None` if `data` is shorter than `ceil(len / 8)` bytes,
     /// or if `data` has trailing bits set beyond `len`.
     pub fn from_bytes(data: Bytes, len: u64) -> Option<Self> {
-        let needed = ((len + 7) / 8) as usize;
+        let needed = len.div_ceil(8) as usize;
         if data.len() != needed {
             return None;
         }
-        if len % 8 != 0 && !data.is_empty() {
+        if !len.is_multiple_of(8) && !data.is_empty() {
             let last = *data.last()?;
             let shift = (len % 8) as u8;
             let mask = (1u8 << shift) - 1;

@@ -68,7 +68,7 @@ pub fn list_sig() -> &'static InductiveSig {
 }
 
 /// `list`'s [`Inductive`] adapter, sourcing induction + freeness from the
-/// derived theorems in [`crate::init::list`].
+/// derived theorems in [`mod@crate::init::list`].
 pub struct ListTheory;
 
 impl Inductive for ListTheory {

@@ -44,7 +44,7 @@
 //!
 //! Codes are built from two pieces of arithmetic:
 //!
-//! * a **tag** `nat` per constructor (a small constant — see [`tag`] below), and
+//! * a **tag** `nat` per constructor (a small constant — see `tag` below), and
 //! * an injective **pairing** `⟨·,·⟩ : nat → nat → nat` with projections
 //!   `π₁, π₂` and the strict-decrease laws `π₁⟨a,b⟩ < ⟨a,b⟩` and
 //!   `π₂⟨a,b⟩ < ⟨a,b⟩` whenever the pair is non-trivial (Cantor pairing, or any

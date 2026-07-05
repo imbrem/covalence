@@ -75,8 +75,8 @@ fn parse_capabilities(r: &mut impl BufRead) -> io::Result<Capabilities> {
             if text.starts_with("# service=") {
                 continue;
             }
-            if text.starts_with("version ") {
-                if let Ok(v) = text["version ".len()..].trim().parse::<u8>() {
+            if let Some(rest) = text.strip_prefix("version ") {
+                if let Ok(v) = rest.trim().parse::<u8>() {
                     caps.version = v;
                 }
                 continue;
@@ -92,8 +92,8 @@ fn parse_capabilities(r: &mut impl BufRead) -> io::Result<Capabilities> {
             if let PktLine::Data(data) = line {
                 let text = String::from_utf8_lossy(data);
                 let text = text.trim();
-                if text.starts_with("version ") {
-                    if let Ok(v) = text["version ".len()..].trim().parse::<u8>() {
+                if let Some(rest) = text.strip_prefix("version ") {
+                    if let Ok(v) = rest.trim().parse::<u8>() {
                         caps.version = v;
                     }
                     continue;
@@ -148,10 +148,10 @@ pub fn ls_refs(
     let mut refs = Vec::new();
 
     for line in lines {
-        if let PktLine::Data(data) = line {
-            if let Some(r) = parse_ref_line(&data) {
-                refs.push(r);
-            }
+        if let PktLine::Data(data) = line
+            && let Some(r) = parse_ref_line(&data)
+        {
+            refs.push(r);
         }
     }
 
@@ -162,9 +162,7 @@ pub fn ls_refs(
 fn parse_ref_line(data: &[u8]) -> Option<RemoteRef> {
     let text = std::str::from_utf8(data).ok()?;
     let text = text.trim_end_matches('\n');
-    let mut parts = text.splitn(2, ' ');
-    let oid_hex = parts.next()?;
-    let rest = parts.next()?;
+    let (oid_hex, rest) = text.split_once(' ')?;
 
     let oid = covalence_hash::gix_hash::ObjectId::from_hex(oid_hex.as_bytes()).ok()?;
 
@@ -192,7 +190,7 @@ fn parse_ref_line(data: &[u8]) -> Option<RemoteRef> {
             .map(|i| attr_start + i)
             .unwrap_or(rest.len());
         if let Ok(p) =
-            covalence_hash::gix_hash::ObjectId::from_hex(rest[attr_start..attr_end].as_bytes())
+            covalence_hash::gix_hash::ObjectId::from_hex(&rest.as_bytes()[attr_start..attr_end])
         {
             peeled = Some(p);
         }
@@ -299,12 +297,11 @@ fn parse_fetch_response(r: &mut impl BufRead) -> io::Result<FetchResponse> {
                     in_packfile_section = true;
                     continue;
                 }
-                if let Some(hex) = text.strip_prefix("shallow ") {
-                    if let Ok(oid) =
+                if let Some(hex) = text.strip_prefix("shallow ")
+                    && let Ok(oid) =
                         covalence_hash::gix_hash::ObjectId::from_hex(hex.trim().as_bytes())
-                    {
-                        shallow_oids.push(oid);
-                    }
+                {
+                    shallow_oids.push(oid);
                 }
                 continue;
             }
@@ -324,10 +321,7 @@ fn parse_fetch_response(r: &mut impl BufRead) -> io::Result<FetchResponse> {
                 3 => {
                     // Channel 3: error
                     let msg = String::from_utf8_lossy(&data[1..]);
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("server error: {msg}"),
-                    ));
+                    return Err(io::Error::other(format!("server error: {msg}")));
                 }
                 _ => {
                     // Unknown channel — ignore
@@ -343,5 +337,5 @@ fn parse_fetch_response(r: &mut impl BufRead) -> io::Result<FetchResponse> {
 }
 
 fn ureq_err(e: ureq::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, e.to_string())
+    io::Error::other(e.to_string())
 }

@@ -34,7 +34,7 @@ pub fn theorem_labels(db: &Database) -> Vec<String> {
 /// Import **every logical `$p` theorem** of `db` ([`theorem_labels`]) into its
 /// kernel derivability theorem `⊢ Derivable_L' ⌜S⌝`, collecting `(label,
 /// result)` in database order. Each theorem goes through the **fast per-theorem
-/// path** ([`derive_theorem`]): the rule set is scoped to that proof's referenced
+/// path** ([`derive_theorem`](crate::metalogic::mm_database::derive_theorem)): the rule set is scoped to that proof's referenced
 /// lemmas (small `Closed_L'`), so importing a whole database is linear-ish in
 /// total proof size rather than paying the full-database `Closed` cost per
 /// theorem. `L' ⊆ L` (the database logic); `metalogic::transport_db` lifts each
@@ -193,7 +193,9 @@ impl std::error::Error for ImportError {}
 /// `⊢ Derivable_L ⌜S⌝` theorems. Returns `(label, thm)` for every theorem on
 /// success; surfaces the **first** failure (parse, or the first theorem that
 /// would not replay). For a lenient, collect-all-errors view use
-/// [`crate::metamath::parse`] + [`import_theorems`] directly.
+/// [`fn@crate::metamath::parse`] + [`import_theorems`] directly.
+// Cold import path; `MmError` is a rich diagnostic enum, not worth boxing.
+#[allow(clippy::result_large_err)]
 pub fn read_and_import(source: &str) -> Result<Vec<(String, Thm)>, ImportError> {
     let db = crate::metamath::parse(source).map_err(ImportError::Parse)?;
     let mut out = Vec::new();

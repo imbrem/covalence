@@ -52,7 +52,7 @@
 //! For a quantifier `∀x. φ`, the encoded body is a fold *of the formula
 //! `φ`* in which the bound variable is `bvar 0` at the current depth; the
 //! `all` handler receives that fold. The denotation re-binds it with a real
-//! HOL `∀` (see [`denote`] in the PA module). The encoding is genuine
+//! HOL `∀` (see `denote` in the PA module). The encoding is genuine
 //! reified syntax — `enc(eq (fvar 0) zero)` is a distinct HOL term from its
 //! meaning.
 
@@ -75,7 +75,7 @@ pub(crate) fn nat() -> Type {
 
 /// The thirteen handler binder names + slot-type builders, in fold order.
 /// Each slot is parametric in the result type `r`.
-pub const HANDLERS: [(&str, fn(&Type) -> Type); 13] = [
+pub const HANDLERS: [(&str, crate::UnaryTypeHandler); 13] = [
     ("bvar", idx_h_ty),
     ("fvar", idx_h_ty),
     ("zero", nul_h_ty),

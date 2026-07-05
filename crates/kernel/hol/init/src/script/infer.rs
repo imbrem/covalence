@@ -172,24 +172,25 @@ impl<'e> Elab<'e> {
         }
     }
 
-    fn from_type(&mut self, ty: &Type) -> R<ETy> {
+    fn import_type(&mut self, ty: &Type) -> R<ETy> {
         Ok(match ty.kind() {
             TypeKind::TFree(n) => ETy::TFree(n.to_string()),
             TypeKind::Bool => ETy::Bool,
             TypeKind::Nat => ETy::Nat,
-            TypeKind::Fun(a, b) => {
-                ETy::Fun(Box::new(self.from_type(a)?), Box::new(self.from_type(b)?))
-            }
+            TypeKind::Fun(a, b) => ETy::Fun(
+                Box::new(self.import_type(a)?),
+                Box::new(self.import_type(b)?),
+            ),
             TypeKind::Spec(s, args) => ETy::Spec(
                 s.clone(),
                 args.iter()
-                    .map(|a| self.from_type(a))
+                    .map(|a| self.import_type(a))
                     .collect::<R<Vec<_>>>()?,
             ),
             TypeKind::Tycon(n, args) => ETy::Tycon(
                 n.to_string(),
                 args.iter()
-                    .map(|a| self.from_type(a))
+                    .map(|a| self.import_type(a))
                     .collect::<R<Vec<_>>>()?,
             ),
             other => {
@@ -235,24 +236,24 @@ impl<'e> Elab<'e> {
         name
     }
 
-    fn to_type(&mut self, t: &ETy) -> R<Type> {
+    fn export_type(&mut self, t: &ETy) -> R<Type> {
         Ok(match self.prune(t) {
             ETy::Meta(i) => Type::tfree(self.gen_name(i)),
             ETy::Bool => Type::bool(),
             ETy::Nat => Type::nat(),
             ETy::TFree(n) => Type::tfree(n),
-            ETy::Fun(a, b) => Type::fun(self.to_type(&a)?, self.to_type(&b)?),
+            ETy::Fun(a, b) => Type::fun(self.export_type(&a)?, self.export_type(&b)?),
             ETy::Spec(s, args) => {
                 let a = args
                     .iter()
-                    .map(|x| self.to_type(x))
+                    .map(|x| self.export_type(x))
                     .collect::<R<Vec<_>>>()?;
                 Type::spec(s, a)
             }
             ETy::Tycon(n, args) => {
                 let a = args
                     .iter()
-                    .map(|x| self.to_type(x))
+                    .map(|x| self.export_type(x))
                     .collect::<R<Vec<_>>>()?;
                 Type::tycon(n, a)
             }
@@ -280,7 +281,7 @@ impl<'e> Elab<'e> {
             SExp::Atom(covalence_sexp::Atom::Str { format, bytes }) => {
                 if format.is_empty() || format.as_str() == "b" {
                     let t = Term::blob(bytes.clone());
-                    let ety = self.from_type(&t.type_of()?)?;
+                    let ety = self.import_type(&t.type_of()?)?;
                     Ok((ETerm::Lit(t), ety))
                 } else {
                     Err(ScriptError::Syntax(format!(
@@ -298,7 +299,7 @@ impl<'e> Elab<'e> {
                 }
                 match self.env.lookup_const(n) {
                     Some(ConstDef::Op(t)) => {
-                        let ety = self.from_type(&t.type_of()?)?;
+                        let ety = self.import_type(&t.type_of()?)?;
                         Ok((ETerm::Lit(t.clone()), ety))
                     }
                     Some(ConstDef::Poly(t)) => self.inst_poly(&t),
@@ -321,7 +322,7 @@ impl<'e> Elab<'e> {
         match head_sym(ch)? {
             "free" => {
                 arity(ch, 3, "free")?;
-                let ety = self.from_type(&parse_type(&ch[2], self.env)?)?;
+                let ety = self.import_type(&parse_type(&ch[2], self.env)?)?;
                 Ok((
                     ETerm::Free(sym(&ch[1], "free name")?.into(), ety.clone()),
                     ety,
@@ -330,7 +331,7 @@ impl<'e> Elab<'e> {
             "const" => {
                 arity(ch, 3, "const")?;
                 let ty = parse_type(&ch[2], self.env)?;
-                let ety = self.from_type(&ty)?;
+                let ety = self.import_type(&ty)?;
                 Ok((
                     ETerm::Lit(Term::const_(sym(&ch[1], "const name")?, ty)),
                     ety,
@@ -345,7 +346,7 @@ impl<'e> Elab<'e> {
             }
             "abs" => {
                 arity(ch, 3, "abs")?;
-                let dom = self.from_type(&parse_type(&ch[1], self.env)?)?;
+                let dom = self.import_type(&parse_type(&ch[1], self.env)?)?;
                 let (body, bty) = self.infer(&ch[2])?;
                 Ok((
                     ETerm::AbsRaw(dom.clone(), Box::new(body)),
@@ -376,26 +377,26 @@ impl<'e> Elab<'e> {
             "forall-op" => {
                 arity(ch, 2, "forall-op")?;
                 let op = defs::forall(parse_type(&ch[1], self.env)?);
-                let ety = self.from_type(&op.type_of()?)?;
+                let ety = self.import_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
             "exists-op" => {
                 arity(ch, 2, "exists-op")?;
                 let op = defs::exists(parse_type(&ch[1], self.env)?);
-                let ety = self.from_type(&op.type_of()?)?;
+                let ety = self.import_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
             "select-op" => {
                 arity(ch, 2, "select-op")?;
                 let op = Term::select_op(parse_type(&ch[1], self.env)?);
-                let ety = self.from_type(&op.type_of()?)?;
+                let ety = self.import_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
             // `natRec` at a result type: `'a → (nat → 'a → 'a) → nat → 'a`.
             "natrec-op" => {
                 arity(ch, 2, "natrec-op")?;
                 let op = defs::nat_rec(parse_type(&ch[1], self.env)?);
-                let ety = self.from_type(&op.type_of()?)?;
+                let ety = self.import_type(&op.type_of()?)?;
                 Ok((ETerm::Lit(op), ety))
             }
             // TypeSpec carrier↔wrapper coercions (the script counterpart of
@@ -424,7 +425,7 @@ impl<'e> Elab<'e> {
                     .as_str()
                     .ok_or_else(|| ScriptError::Syntax("blob: expected a string literal".into()))?;
                 let t = Term::blob(bytes.to_vec());
-                let ety = self.from_type(&t.type_of()?)?;
+                let ety = self.import_type(&t.type_of()?)?;
                 Ok((ETerm::Lit(t), ety))
             }
             "=" | "eq" => {
@@ -438,7 +439,7 @@ impl<'e> Elab<'e> {
             }
             other => match self.env.lookup_const(other) {
                 Some(ConstDef::Op(t)) => {
-                    let head = (ETerm::Lit(t.clone()), self.from_type(&t.type_of()?)?);
+                    let head = (ETerm::Lit(t.clone()), self.import_type(&t.type_of()?)?);
                     self.apply_args(head, &ch[1..])
                 }
                 Some(ConstDef::Poly(t)) => {
@@ -490,7 +491,7 @@ impl<'e> Elab<'e> {
         };
         let head = (
             ETerm::Lit(coercion.clone()),
-            self.from_type(&coercion.type_of()?)?,
+            self.import_type(&coercion.type_of()?)?,
         );
         if ch.len() == 3 {
             self.apply_args(head, &ch[2..])
@@ -517,7 +518,7 @@ impl<'e> Elab<'e> {
         arity(ch, 3, "binder")?;
         let (name, ann) = parse_binder_spec(&ch[1], self.env)?;
         let dom = match ann {
-            Some(t) => self.from_type(&t)?,
+            Some(t) => self.import_type(&t)?,
             None => self.fresh(),
         };
         self.bound.push((name.clone(), dom.clone()));
@@ -549,36 +550,36 @@ impl<'e> Elab<'e> {
 
     fn zonk(&mut self, e: &ETerm) -> R<Term> {
         Ok(match e {
-            ETerm::Free(n, ety) => Term::free(n.as_str(), self.to_type(ety)?),
+            ETerm::Free(n, ety) => Term::free(n.as_str(), self.export_type(ety)?),
             ETerm::Bound(i) => Term::bound(*i),
             ETerm::Lit(t) => t.clone(),
             ETerm::Poly(t, binding) => {
                 let mut sub: std::collections::BTreeMap<smol_str::SmolStr, Type> =
                     std::collections::BTreeMap::new();
                 for (tv, ety) in binding {
-                    sub.insert(smol_str::SmolStr::from(tv.as_str()), self.to_type(ety)?);
+                    sub.insert(smol_str::SmolStr::from(tv.as_str()), self.export_type(ety)?);
                 }
                 subst::subst_tfrees_in_term(t, &sub)
             }
             ETerm::App(f, x) => Term::app(self.zonk(f)?, self.zonk(x)?),
-            ETerm::AbsRaw(d, b) => Term::abs(self.to_type(d)?, self.zonk(b)?),
+            ETerm::AbsRaw(d, b) => Term::abs(self.export_type(d)?, self.zonk(b)?),
             ETerm::Lam(n, d, b) => {
-                let dt = self.to_type(d)?;
+                let dt = self.export_type(d)?;
                 let bt = self.zonk(b)?;
                 Term::abs(dt, subst::close(&bt, n))
             }
             ETerm::Forall(n, d, b) => {
-                let dt = self.to_type(d)?;
+                let dt = self.export_type(d)?;
                 let bt = self.zonk(b)?;
                 HolLightCtx::new().mk_forall(n, dt, bt)
             }
             ETerm::Exists(n, d, b) => {
-                let dt = self.to_type(d)?;
+                let dt = self.export_type(d)?;
                 let bt = self.zonk(b)?;
                 HolLightCtx::new().mk_exists(n, dt, bt)
             }
             ETerm::Select(n, d, b) => {
-                let dt = self.to_type(d)?;
+                let dt = self.export_type(d)?;
                 let bt = self.zonk(b)?;
                 HolLightCtx::new().mk_select(n, dt, bt)
             }
@@ -636,7 +637,7 @@ pub fn parse_binder_spec(s: &SExpr, env: &Env) -> R<(String, Option<Type>)> {
 pub fn elaborate_term(s: &SExpr, scope: &Scope, env: &Env) -> R<Term> {
     let mut e = Elab::new(env);
     for (n, t) in scope.iter() {
-        let ety = e.from_type(t)?;
+        let ety = e.import_type(t)?;
         e.frees.push((n.clone(), ety));
     }
     let (et, _) = e.infer(s)?;
@@ -655,7 +656,7 @@ pub fn elaborate_concl(
     let mut e = Elab::new(env);
     for (n, t) in fix {
         let ety = match t {
-            Some(t) => e.from_type(t)?,
+            Some(t) => e.import_type(t)?,
             None => e.fresh(),
         };
         e.frees.push((n.clone(), ety));
@@ -667,7 +668,7 @@ pub fn elaborate_concl(
     let frees = e.frees.clone();
     let vars = frees
         .iter()
-        .map(|(n, ety)| Ok((n.clone(), e.to_type(ety)?)))
+        .map(|(n, ety)| Ok((n.clone(), e.export_type(ety)?)))
         .collect::<R<Vec<_>>>()?;
     Ok((term, vars))
 }

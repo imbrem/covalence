@@ -42,3 +42,11 @@ pub use covalence_hol::{BOOL_TYCON_ID, EQ_CONST_ID, FUN_TYCON_ID, HolError, Name
 pub use covalence_hol::{HolLightCtx, HolLightKernel, HolLightTerms, HolLightTypes};
 pub use covalence_hol::{Term, Thm, Type, TypeDef, TypeKind};
 pub use covalence_hol::{hol_light_obs, traits, types};
+
+/// Type-builder handler shapes used by the per-theory `HANDLERS` signature
+/// tables (`init::prop`, `init::sexpr`, `peano::fol`, `peano::sem`, …).
+pub type NullaryTypeHandler = fn() -> Type;
+/// One-argument type-builder handler (see [`NullaryTypeHandler`]).
+pub type UnaryTypeHandler = fn(&Type) -> Type;
+/// Two-argument type-builder handler (see [`NullaryTypeHandler`]).
+pub type BinaryTypeHandler = fn(&Type, &Type) -> Type;

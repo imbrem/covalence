@@ -60,7 +60,7 @@ fn main() {
         for &i in &nodes {
             for &(k, j, w) in &weighted {
                 if let Some(&dik) = d.get(&(i, k)) {
-                    relax((i, j), dik.add(w), &mut out);
+                    relax((i, j), dik + w, &mut out);
                 }
             }
         }

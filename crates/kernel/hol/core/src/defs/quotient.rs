@@ -88,7 +88,7 @@ impl TypeSpec {
 
     /// `quot base rel` — the quotient of `base` by the relation
     /// `rel : base → base → bool`. A subtype of the powerset
-    /// `base → bool` carved by [`quot_predicate`]: an element is an
+    /// `base → bool` carved by `quot_predicate`: an element is an
     /// equivalence class `classOf z = λy. rel z y` for some
     /// representative `z`. `rel` is expected to be an equivalence
     /// relation (reflexive / symmetric / transitive); only then do the

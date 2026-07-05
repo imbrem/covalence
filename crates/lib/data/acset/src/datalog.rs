@@ -404,17 +404,17 @@ impl Instance {
         for atom in &rule.body {
             match atom {
                 Body::Hom { src, hom, dst } => {
-                    if let (Some(&s), Some(&d)) = (bind.get(src), bind.get(dst)) {
-                        if self.hom_image(s, hom) != Some(d) {
-                            return false;
-                        }
+                    if let (Some(&s), Some(&d)) = (bind.get(src), bind.get(dst))
+                        && self.hom_image(s, hom) != Some(d)
+                    {
+                        return false;
                     }
                 }
                 Body::Attr { var, attr, value } => {
-                    if let Some(&v) = bind.get(var) {
-                        if self.attr_value(v, attr) != Some(value) {
-                            return false;
-                        }
+                    if let Some(&v) = bind.get(var)
+                        && self.attr_value(v, attr) != Some(value)
+                    {
+                        return false;
                     }
                 }
                 Body::Rel { rel, args } => {

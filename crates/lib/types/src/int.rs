@@ -201,9 +201,7 @@ impl FromStr for Int {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<BigInt>()
-            .map(Self)
-            .map_err(|e| ParseError::new(e))
+        s.parse::<BigInt>().map(Self).map_err(ParseError::new)
     }
 }
 

@@ -27,7 +27,11 @@ stages and a few deferred seams remain.
   `CanonRule`s landed as `covalence-pure-eval` (`Builtins`; golden
   `docs/deps/builtins-manifest.txt`); still open: `Text` ops and
   `Cov = (Hol, Builtins)`.
-- **Stage 5** — `Wasm`/`X86` languages.
+- **Stage 5** — `Wasm`/`X86` languages. The WASM `f32`/`f64` numeric op inventory
+  is complete as `CanonRule`s (`float.rs`: arith/sqrt/min/max/abs/neg/copysign/
+  rounding/compares/promote/demote/`trunc_sat`/convert/reinterpret), but no
+  `Language` admits them yet — a `Wasm`/`Float` language + its manifest is still
+  open (they're unreachable via `canon` until then).
 
 ## Minor — deferred seams
 

@@ -16,7 +16,7 @@
 //! stays O(1) while eager materialization would be O(n).
 
 use covalence_core::{Term, TermKind, Type, defs};
-use covalence_hol_eval::{HolApp, ToHolNat, nat_add_thm_symbolic};
+use covalence_hol_eval::{HolApp, ToHolNat, nat_add_thm, nat_add_thm_symbolic};
 use covalence_pure::{App, Val};
 use covalence_types::Nat;
 
@@ -111,4 +111,27 @@ fn symbolic_footprint_is_magnitude_independent() {
         small, huge,
         "symbolic materialized-term footprint is a magnitude-independent constant"
     );
+}
+
+/// AUDIT HARDENING (medium: `from_pure_sym` drops `check_sequent`, so its
+/// soundness rests on every IsThm-minting rule self-flooring to a well-typed
+/// HOL-bool sequent). The symbolic lander [`nat_add_thm_symbolic`] and the
+/// concrete lander [`nat_add_thm`] mint the SAME `NatAddCert`; the concrete one
+/// lands via `from_pure` → `check_sequent`, the symbolic one via the
+/// floor-skipping `from_pure_sym`. So the concrete lander SUCCEEDING for a given
+/// input is a machine-checked witness that this cert's (reified) conclusion is a
+/// well-typed HOL-bool sequent — i.e. the symbolic lander self-floors.
+///
+/// **EG2+ obligation:** every new symbolic lander MUST carry an analogous
+/// floored witness (a concrete sibling that passes `check_sequent`, or an
+/// equivalent well-typedness proof). This test pins the obligation for nat.add.
+#[test]
+fn nat_add_symbolic_lander_self_floors() {
+    for (a, b) in [(2u32, 3u32), (0, 0), (255, 1), (1_000_000, 7)] {
+        // Concrete sibling floors (check_sequent accepts a well-typed bool concl).
+        nat_add_thm(a.into(), b.into())
+            .expect("concrete NatAddCert lander passes the well-typedness floor");
+        // Symbolic sibling lands the same cert without forcing.
+        nat_add_thm_symbolic(a.into(), b.into()).expect("symbolic lander");
+    }
 }

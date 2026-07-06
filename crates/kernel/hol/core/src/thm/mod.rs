@@ -133,6 +133,17 @@ impl<L: HolTier, C: Expr<Ty = Term>> Thm<L, C> {
     /// demonstrated machine-checkably in
     /// `covalence-hol-eval`'s `nat_add_symbolic_never_materializes` test, which
     /// walks the operand and confirms it holds **no** materialized numeral.)
+    ///
+    /// **WIDENED TRUST OBLIGATION (audit):** unlike [`from_pure`], this does NOT
+    /// re-run `check_sequent` (it cannot, without forcing the symbolic operand —
+    /// the whole point). Its soundness therefore rests on the invariant that
+    /// EVERY admitted rule reachable to produce an `IsThm`-headed `Thm<L,
+    /// IsThmProp<C>>` self-floors to a well-typed HOL-bool sequent. Each symbolic
+    /// lander MUST carry a well-typedness witness (a floored concrete sibling, or
+    /// equivalent proof); see `covalence-hol-eval`'s
+    /// `nat_add_symbolic_lander_self_floors`. A future cert family that could mint
+    /// a non-bool / malformed `IsThm` conclusion MUST NOT be landed through here
+    /// without such a witness.
     pub fn from_pure_sym(t: covalence_pure::Thm<L, IsThmProp<C>>) -> Thm<L, C> {
         Thm(t)
     }

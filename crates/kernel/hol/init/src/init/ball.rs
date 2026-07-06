@@ -43,6 +43,7 @@
 //! compositional over kernel rules and the eval-tier certificates: it can
 //! fail, but it cannot forge.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::sync::LazyLock;
 
 use smol_str::SmolStr;

@@ -33,6 +33,28 @@ type Thm = covalence_core::Thm;
 // (the `hol` module is `pub(crate)`, so we reconstruct the shapes here).
 // ---------------------------------------------------------------------------
 
+/// Parse the typedef bijection conjunction `abs_rep ∧ (fwd ∧ back)` into
+/// its three conjunct TERMS (`∧` is the catalogue spec; parsing a term
+/// shape mints nothing).
+fn bijection_parts(t: &Term) -> (&Term, &Term, &Term) {
+    fn conj(t: &Term) -> (&Term, &Term) {
+        let TermKind::App(f, b) = t.kind() else {
+            panic!("not a conjunction: {t}");
+        };
+        let TermKind::App(head, a) = f.kind() else {
+            panic!("not a conjunction: {t}");
+        };
+        assert!(
+            matches!(head.kind(), TermKind::Spec(..)),
+            "conjunction head should be the ∧ spec, got {head}"
+        );
+        (a, b)
+    }
+    let (c1, rest) = conj(t);
+    let (c2, c3) = conj(rest);
+    (c1, c2, c3)
+}
+
 /// HOL `lhs = rhs : bool` — `App(App(Eq(α), lhs), rhs)` where α is the
 /// type of `lhs`.
 fn hol_eq(lhs: Term, rhs: Term) -> Term {
@@ -350,9 +372,9 @@ fn typedef_happy_path_shapes() {
 fn typedef_abs_rep_theorem_is_forall_eq() {
     let td = Thm::new_type_definition("t", "a", "r", nat_witness()).unwrap();
 
-    // abs_rep : ⊢ ∀a:τ. abs (rep a) = a
-    // Conclusion is `App(forall_spec, λa. abs(rep a) = a)`.
-    let concl = td.abs_rep.concl();
+    // First conjunct of the bijection: ∀a:τ. abs (rep a) = a
+    // — `App(forall_spec, λa. abs(rep a) = a)`.
+    let (concl, _, _) = bijection_parts(td.bijection.concl());
     let TermKind::App(forall_head, lam) = concl.kind() else {
         panic!("abs_rep concl is not an application: {concl}");
     };
@@ -385,8 +407,8 @@ fn typedef_abs_rep_theorem_is_forall_eq() {
 fn typedef_fwd_and_back_theorems_are_forall_imp() {
     let td = Thm::new_type_definition("t", "a", "r", nat_witness()).unwrap();
 
-    for thm in [&td.rep_abs_fwd, &td.rep_abs_back] {
-        let concl = thm.concl();
+    let (_, fwd, back) = bijection_parts(td.bijection.concl());
+    for concl in [fwd, back] {
         // ∀r:α. (... ⟹ ...)
         let TermKind::App(forall_head, lam) = concl.kind() else {
             panic!("not forall app: {concl}");
@@ -421,14 +443,16 @@ fn typedef_propagates_witness_hyps() {
 
     let td = Thm::new_type_definition("t", "a", "r", w).unwrap();
 
-    for thm in [&td.abs_rep, &td.rep_abs_fwd, &td.rep_abs_back] {
-        assert_eq!(thm.hyps().len(), 1, "each theorem carries the witness hyp");
-        assert!(
-            thm.hyps().contains(&hyp),
-            "witness hyp not propagated to theorem: {}",
-            thm.concl()
-        );
-    }
+    assert_eq!(
+        td.bijection.hyps().len(),
+        1,
+        "the bijection carries the witness hyp"
+    );
+    assert!(
+        td.bijection.hyps().contains(&hyp),
+        "witness hyp not propagated to the bijection: {}",
+        td.bijection.concl()
+    );
 }
 
 #[test]
@@ -646,9 +670,9 @@ fn inst_tfree_preserves_abs_rep_identity() {
     };
     let abs_id = abs_before.id().ptr_id();
 
-    // The abs_rep theorem mentions abs/rep; instantiate c := nat.
+    // The bijection mentions abs/rep; instantiate c := nat.
     let inst = td
-        .abs_rep
+        .bijection
         .clone()
         .inst_tfree("c", Type::nat())
         .expect("inst c");
@@ -680,11 +704,13 @@ fn inst_tfree_into_typedef_concl_retypes_binder() {
     let td = Thm::new_type_definition("t", "a", "r", w).unwrap();
 
     let inst = td
-        .abs_rep
+        .bijection
         .inst_tfree("c", Type::nat())
         .expect("inst c := nat");
-    // ∀a:τ[nat]. abs (rep a) = a — the τ in the binder now has nat arg.
-    let TermKind::App(_, lam) = inst.concl().kind() else {
+    // First conjunct: ∀a:τ[nat]. abs (rep a) = a — the τ in the binder
+    // now has nat arg.
+    let (c1, _, _) = bijection_parts(inst.concl());
+    let TermKind::App(_, lam) = c1.kind() else {
         panic!()
     };
     let TermKind::Abs(binder_ty, _) = lam.kind() else {

@@ -34,6 +34,7 @@ use std::sync::LazyLock;
 
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::inductive::carved::{CarvedSExpr, apply_def, carved};

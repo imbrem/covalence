@@ -13,6 +13,7 @@
 //! the *simple* unified design; finer-grained namespaces (separate const/type/
 //! tactic spaces, qualified names) can come later.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 

@@ -20,3 +20,7 @@ fnv = "1"
 indexmap = "2"
 smol_str = "0.3"
 thiserror = "2"
+
+[dev-dependencies]
+# Property-based tests only (tests/subst_props.rs); never a TCB edge.
+covalence-proptest = { path = "../../../lib/proptest" }

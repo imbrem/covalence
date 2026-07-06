@@ -10,12 +10,14 @@
 //!
 //! ## Audit summary (see module-level notes per section)
 //!
-//! - `nat_induct`: motive `p` and induction var `n` are read back from
-//!   the two conclusion shapes; `n` must be a `Free(_, nat)`, must not
-//!   occur free in the motive, and must not occur free in the step's
-//!   hyps (the GEN side condition). The base must be `p 0` and the step
-//!   `p n ⟹ p (succ n)` with the *same* `p`. All side conditions are
-//!   present and checked; no soundness gap found.
+//! - `nat_induct` (sequent form): the proposition `p` and induction var
+//!   `x : nat` are passed explicitly; the kernel *computes* `p[0/x]` and
+//!   `p[succ x/x]` and matches them syntactically against the premises'
+//!   conclusions, requires `p ∈ Γ_s` (the discharged IH), and rejects
+//!   `x` free in the residual step hyps `Γ_s \ {p}` (the genericity
+//!   side condition). `x` MAY be free in the base hyps (sound — the
+//!   base is only consumed at the ambient valuation). Conclusion is
+//!   `Γ_b ∪ (Γ_s \ {p}) ⊢ p` with `x` free.
 //! - `false_elim`: requires the premise's conclusion to be the literal
 //!   `Bool(false)` and the target `p` to be bool-typed. Hyps propagate.
 //!   Sound.
@@ -27,7 +29,6 @@
 //!   int/unit incl. polymorphic args.
 
 use covalence_core::defs;
-use covalence_core::subst::close;
 use covalence_core::{Term, TermKind, Type, TypeKind};
 /// Pin the pure tier: these are `Thm<CoreLang>` unit tests (stage E1).
 type Thm = covalence_core::Thm;
@@ -41,18 +42,6 @@ fn zero() -> Term {
     Term::nat_lit(Nat::zero())
 }
 
-/// A `nat → bool` motive `λn. body`, where `body` is an arbitrary
-/// bool-typed term that may reference the free var `n : nat`.
-fn motive_from(body: Term) -> Term {
-    Term::abs(Type::nat(), close(&body, "n"))
-}
-
-/// The "trivial" motive `p := λn. (n = n)` — a `nat → bool` predicate.
-fn refl_motive() -> Term {
-    let n = Term::free("n", Type::nat());
-    motive_from(hol_eq(n.clone(), n))
-}
-
 /// `App(App(=[ty], a), b)` — a HOL equation at `a`'s type.
 fn hol_eq(a: Term, b: Term) -> Term {
     let ty = a.type_of().expect("hol_eq: lhs must type-check");
@@ -64,26 +53,9 @@ fn hol_imp(p: Term, q: Term) -> Term {
     Term::app(Term::app(defs::imp(), p), q)
 }
 
-/// `∀n:nat. body`, with `n` closed into the binder.
-fn forall_nat(body: Term) -> Term {
-    Term::app(
-        defs::forall(Type::nat()),
-        Term::abs(Type::nat(), close(&body, "n")),
-    )
-}
-
 /// `succ n` for a term `n : nat`.
 fn succ(n: Term) -> Term {
     Term::app(defs::nat_succ(), n)
-}
-
-/// Prove `⊢ p k` for a refl-style motive `p := λn. n = n` and an
-/// arbitrary `nat`-typed `k`, with no hypotheses. Uses β + refl.
-fn prove_refl_motive_at(p: &Term, k: Term) -> Thm {
-    let redex = Term::app(p.clone(), k.clone());
-    let beta = Thm::beta_conv(redex).unwrap(); // ⊢ p k = (k = k)
-    let refl_k = Thm::refl(k).unwrap(); // ⊢ k = k
-    beta.sym().unwrap().eq_mp(refl_k).unwrap() // ⊢ p k
 }
 
 /// A canonical `unit` value `abs T : unit`.
@@ -110,60 +82,61 @@ fn parse_eq(concl: &Term) -> (Term, Term) {
 }
 
 // ============================================================================
-// nat_induct — happy path
+// nat_induct — happy path (sequent form)
 // ============================================================================
 
-/// Build a valid (base, step) pair for the refl motive.
+/// Build a valid (base, step, p) triple for the proposition
+/// `p := (n = n)` with `n : nat` free.
+///
+/// base : ⊢ p[0/n]       = (0 = 0)          (refl)
+/// step : {p} ⊢ p[S n/n] = (succ n = succ n) (refl + weaken-in the IH)
 fn refl_induction_inputs() -> (Thm, Thm, Term) {
-    let p = refl_motive();
-    let base = prove_refl_motive_at(&p, zero()); // ⊢ p 0
     let n = Term::free("n", Type::nat());
-    let p_n = Term::app(p.clone(), n.clone());
-    let psucc = prove_refl_motive_at(&p, succ(n)); // ⊢ p (succ n)
-    let step = psucc.imp_intro(&p_n).unwrap(); // ⊢ p n ⟹ p (succ n)
+    let p = hol_eq(n.clone(), n.clone());
+    let base = Thm::refl(zero()).unwrap(); // ⊢ 0 = 0
+    let step = Thm::refl(succ(n))
+        .unwrap()
+        .weaken(covalence_core::Ctx::singleton(p.clone()))
+        .unwrap(); // {p} ⊢ succ n = succ n
     (base, step, p)
 }
 
 #[test]
-fn nat_induct_happy_path_builds_forall() {
+fn nat_induct_happy_path_derives_open_conclusion() {
     let (base, step, p) = refl_induction_inputs();
-    let thm = Thm::nat_induct(base, step).unwrap();
+    let thm = Thm::nat_induct(base, step, p.clone(), "n").unwrap();
 
-    // Conclusion should be `∀n:nat. p n` — exactly the forall we'd build
-    // by hand from the motive.
-    let expected = forall_nat(Term::app(p, Term::free("n", Type::nat())));
-    assert_eq!(thm.concl(), &expected, "conclusion is ∀n:nat. p n");
-    assert!(thm.hyps().is_empty(), "no hyps in the all-trivial proof");
+    // Conclusion is `p` itself, with `n : nat` free (universal by
+    // genericity); the IH hypothesis `p` is discharged.
+    assert_eq!(thm.concl(), &p, "conclusion is p with n free");
+    assert!(thm.hyps().is_empty(), "IH discharged; no residual hyps");
 }
+
+// (The ∀-form is one derived `all_intro` away — the formula-form wrapper in
+// covalence-init packages this; generalisation is exercised by
+// covalence-hol-eval's `tests/derived_rules.rs`.)
 
 #[test]
 fn nat_induct_allows_free_var_in_base_hyps() {
     // SOUND asymmetry: the induction variable `n` MAY occur free in the
-    // base hypotheses Γ₁ (only Γ₂, the step's, must avoid it). The
-    // conclusion `∀n. p n` does not mention the free `n` (n ∉ FV(p)), so
-    // in any model + valuation where Γ₁ holds, the base still gives `p 0`
-    // and the step (n ∉ FV(Γ₂), so it holds ∀k) drives the induction —
-    // the free `n` in Γ₁ is simply fixed by the valuation. Hence
-    // `nat_induct` checks only the step's hyps, by design.
-    let p = refl_motive();
-    let base0 = prove_refl_motive_at(&p, zero()); // ⊢ p 0 (no hyps)
+    // base hypotheses Γ_b (only the residual step hyps must avoid it).
+    // The base premise is consumed exactly once, at the ambient
+    // valuation (`v ⊨ Γ_b` gives `v ⊨ p[0/n]`, i.e. `v[n↦0] ⊨ p`) —
+    // it is never re-instantiated at other values of `n`, so a free `n`
+    // in Γ_b is simply fixed by the valuation. (The conclusion carries
+    // Γ_b, so a downstream `all_intro n` will refuse — genericity is
+    // enforced where it's used.)
+    let (base0, step, p) = refl_induction_inputs();
     let n = Term::free("n", Type::nat());
     // Weaken the base to carry a hyp mentioning the free induction var.
     let base_hyp = hol_eq(n.clone(), n.clone()); // (n = n) : bool
     let base = base0
         .weaken(covalence_core::Ctx::singleton(base_hyp.clone()))
         .unwrap();
-    // Clean step: no free `n` in its hyps.
-    let p_n = Term::app(p.clone(), n.clone());
-    let psucc = prove_refl_motive_at(&p, succ(n.clone()));
-    let step = psucc.imp_intro(&p_n).unwrap(); // ⊢ p n ⟹ p (succ n)
 
-    let thm = Thm::nat_induct(base, step).expect("free `n` in base hyps is allowed");
-    assert_eq!(
-        thm.concl(),
-        &forall_nat(Term::app(p, n.clone())),
-        "conclusion is ∀n:nat. p n"
-    );
+    let thm =
+        Thm::nat_induct(base, step, p.clone(), "n").expect("free `n` in base hyps is allowed");
+    assert_eq!(thm.concl(), &p);
     assert!(
         thm.hyps().contains(&base_hyp),
         "the base hypothesis is carried"
@@ -171,56 +144,51 @@ fn nat_induct_allows_free_var_in_base_hyps() {
 }
 
 #[test]
-fn nat_induct_conclusion_is_forall_at_nat() {
-    let (base, step, _) = refl_induction_inputs();
-    let thm = Thm::nat_induct(base, step).unwrap();
-    // Head is the forall spec applied at nat; body is a `nat → bool` Abs.
-    let TermKind::App(head, lambda) = thm.concl().kind() else {
-        panic!("conclusion is not an application");
-    };
-    assert!(
-        matches!(head.kind(), TermKind::Spec(h, _) if h.ptr_eq(&defs::forall_spec())),
-        "head is the forall spec"
-    );
-    let TermKind::Abs(ty, _) = lambda.kind() else {
-        panic!("forall body is not an Abs");
-    };
-    assert_eq!(ty, &Type::nat(), "binder type is nat");
-}
-
-#[test]
-fn nat_induct_propagates_both_hyps() {
+fn nat_induct_propagates_both_hyps_and_discharges_ih() {
     // Add a (bool) hyp to each of base and step; both must survive into
-    // the conclusion. We use `assume` to introduce them, then `and`-free
-    // weakening via deduct is overkill — instead build hyps by attaching
-    // an extra assumption through imp_elim-free path: weaken.
+    // the conclusion — while the IH `p` itself must NOT.
     let (base, step, p) = refl_induction_inputs();
     let h_base = Term::free("hb", Type::bool());
     let h_step = Term::free("hs", Type::bool());
 
-    // weaken base/step to carry an extra hyp each.
     let base = base
         .weaken(covalence_core::Ctx::singleton(h_base.clone()))
         .unwrap();
-    let step = step
-        .weaken(covalence_core::Ctx::singleton(h_step.clone()))
-        .unwrap();
+    let step_target = step.hyps().insert(h_step.clone());
+    let step = step.weaken(step_target).unwrap();
 
-    let thm = Thm::nat_induct(base, step).unwrap();
+    let thm = Thm::nat_induct(base, step, p.clone(), "n").unwrap();
     let hyps: Vec<_> = thm.hyps().iter().cloned().collect();
     assert!(hyps.contains(&h_base), "base hyp propagated");
-    assert!(hyps.contains(&h_step), "step hyp propagated");
-    let expected = forall_nat(Term::app(p, Term::free("n", Type::nat())));
-    assert_eq!(thm.concl(), &expected);
+    assert!(hyps.contains(&h_step), "residual step hyp propagated");
+    assert!(!hyps.contains(&p), "the IH hypothesis is discharged");
+    assert_eq!(thm.concl(), &p);
 }
 
 #[test]
-fn nat_induct_motive_referencing_n_in_predicate_position() {
-    // A motive that genuinely uses n: p := λn. (n = n). (Already the
-    // refl motive.) Sanity: the motive's body uses Bound(0), not a free
-    // `n`, so the "n free in motive" check does NOT fire.
-    let (base, step, _) = refl_induction_inputs();
-    assert!(Thm::nat_induct(base, step).is_ok());
+fn nat_induct_degenerate_var_not_in_p() {
+    // `x` need not occur in `p`: then p[0/x] = p[S x/x] = p and the rule
+    // degenerates to weakening the base by the residual step hyps.
+    let m = Term::free("m", Type::nat());
+    let p = hol_eq(m.clone(), m); // no `k` inside
+    let base = Thm::refl(Term::free("m", Type::nat())).unwrap(); // ⊢ m = m  (= p)
+    let step = Thm::assume(p.clone()).unwrap(); // {p} ⊢ p
+    let thm = Thm::nat_induct(base, step, p.clone(), "k").unwrap();
+    assert_eq!(thm.concl(), &p);
+    assert!(thm.hyps().is_empty());
+}
+
+#[test]
+fn nat_induct_same_name_other_type_untouched() {
+    // Free-var identity is (name, type): a bool-typed `n` in `p` is NOT
+    // the nat induction variable, so p[0/n:nat] leaves it alone and the
+    // premises must be stated with it intact.
+    let n_bool = Term::free("n", Type::bool());
+    let p = hol_eq(n_bool.clone(), n_bool); // (n:bool) = (n:bool)
+    let base = Thm::refl(Term::free("n", Type::bool())).unwrap(); // ⊢ p[0/n:nat] = p
+    let step = Thm::assume(p.clone()).unwrap(); // {p} ⊢ p[S n/n:nat] = p
+    let thm = Thm::nat_induct(base, step, p.clone(), "n").unwrap();
+    assert_eq!(thm.concl(), &p);
 }
 
 // ============================================================================
@@ -228,180 +196,89 @@ fn nat_induct_motive_referencing_n_in_predicate_position() {
 // ============================================================================
 
 #[test]
-fn nat_induct_rejects_base_not_an_application() {
-    // base conclusion is `T`, not `p 0`.
-    let base = Thm::assume(Term::bool_lit(true)).unwrap();
-    let (_, step, _) = refl_induction_inputs();
-    assert!(Thm::nat_induct(base, step).is_err());
-}
-
-#[test]
-fn nat_induct_rejects_base_not_applied_to_zero() {
-    // base is `p 1`, not `p 0`.
-    let p = refl_motive();
-    let one = succ(zero());
-    let base = prove_refl_motive_at(&p, one); // ⊢ p 1
-    let n = Term::free("n", Type::nat());
-    let p_n = Term::app(p.clone(), n.clone());
-    let step = prove_refl_motive_at(&p, succ(n)).imp_intro(&p_n).unwrap();
+fn nat_induct_rejects_base_conclusion_mismatch() {
+    // base concludes `succ 0 = succ 0`, but p[0/n] = (0 = 0).
+    let (_, step, p) = refl_induction_inputs();
+    let base = Thm::refl(succ(zero())).unwrap(); // ⊢ succ 0 = succ 0 ≠ p[0/n]
     assert!(
-        Thm::nat_induct(base, step).is_err(),
-        "base applied to 1 must be rejected"
+        Thm::nat_induct(base, step, p, "n").is_err(),
+        "base conclusion must be exactly p[0/n]"
     );
 }
 
 #[test]
-fn nat_induct_rejects_step_not_an_implication() {
-    // step conclusion is `p (succ n)` directly (no ⟹).
-    let p = refl_motive();
-    let base = prove_refl_motive_at(&p, zero());
-    let n = Term::free("n", Type::nat());
-    let step = prove_refl_motive_at(&p, succ(n)); // ⊢ p (succ n), NOT an imp
-    assert!(Thm::nat_induct(base, step).is_err());
-}
-
-#[test]
-fn nat_induct_rejects_step_antecedent_not_p_n() {
-    // step is `T ⟹ p (succ n)` — antecedent is not `p n`.
-    let p = refl_motive();
-    let base = prove_refl_motive_at(&p, zero());
-    let n = Term::free("n", Type::nat());
-    let psucc = prove_refl_motive_at(&p, succ(n));
-    let step = psucc.imp_intro(&Term::bool_lit(true)).unwrap(); // T ⟹ p(succ n)
+fn nat_induct_rejects_step_conclusion_mismatch() {
+    // step concludes p itself, not p[succ n/n].
+    let (base, _, p) = refl_induction_inputs();
+    let step = Thm::assume(p.clone()).unwrap(); // {p} ⊢ p — not p[S n/n]
     assert!(
-        Thm::nat_induct(base, step).is_err(),
-        "antecedent `T` is not `p n`"
+        Thm::nat_induct(base, step, p, "n").is_err(),
+        "step conclusion must be exactly p[succ n/n]"
     );
 }
 
 #[test]
-fn nat_induct_rejects_motive_mismatch_base_vs_step() {
-    // base uses motive p := λn. n = n; step uses a *different* motive
-    // q := λn. n = 0. Both type-check, but they differ.
-    let p = refl_motive();
-    let base = prove_refl_motive_at(&p, zero()); // ⊢ p 0
-
-    // q := λn. n = 0
-    let q = {
-        let n = Term::free("n", Type::nat());
-        motive_from(hol_eq(n, zero()))
-    };
-    // ⊢ q n ⟹ q (succ n): we just need *some* proof of that shape.
-    // q(succ n) reduces to (succ n = 0); we can't prove that, so instead
-    // assume q n and q(succ n) and disch — but disch needs q(succ n)
-    // proved. Use the assume trick: ⊢ q(succ n) under hyp q(succ n).
+fn nat_induct_rejects_missing_ih_hypothesis() {
+    // A step proving p[succ n/n] WITHOUT assuming p: without the IH
+    // among the step's hyps the rule must refuse (otherwise any
+    // pointwise-provable p[S n/n] would smuggle in an unconditional
+    // conclusion for free — fine here, but the rule's contract is the
+    // schema, not the instance).
+    let (base, _, p) = refl_induction_inputs();
     let n = Term::free("n", Type::nat());
-    let q_n = Term::app(q.clone(), n.clone());
-    let q_succ = Term::app(q.clone(), succ(n));
-    // {q(succ n)} ⊢ q(succ n), then disch q n → q n ⟹ q(succ n) keeps
-    // q(succ n) as a hyp. That's fine; the rule should still reject on
-    // the motive mismatch (p vs q) before any hyp concern.
-    let step = Thm::assume(q_succ).unwrap().imp_intro(&q_n).unwrap();
+    let step = Thm::refl(succ(n)).unwrap(); // ⊢ succ n = succ n, no {p}
     assert!(
-        Thm::nat_induct(base, step).is_err(),
-        "base motive p ≠ step motive q"
+        Thm::nat_induct(base, step, p, "n").is_err(),
+        "step must carry the IH `p` as a hypothesis"
     );
 }
 
 #[test]
-fn nat_induct_rejects_step_consequent_wrong_shape() {
-    // step is `p n ⟹ p n` (consequent is `p n`, not `p (succ n)`).
-    let p = refl_motive();
-    let base = prove_refl_motive_at(&p, zero());
+fn nat_induct_rejects_n_free_in_residual_step_hyps() {
+    // The genericity side condition (soundness-critical): a residual
+    // step hypothesis mentioning `n` would pin the step to one value of
+    // `n`, e.g. Γ_s = {n = 0, p}: the step then only advances the
+    // induction at the single point v(n), not at every j.
+    let (base, step, p) = refl_induction_inputs();
     let n = Term::free("n", Type::nat());
-    let p_n = Term::app(p.clone(), n.clone());
-    // ⊢ p n ⟹ p n   (assume p n, disch).
-    let step = Thm::assume(p_n.clone()).unwrap().imp_intro(&p_n).unwrap();
+    let bad_hyp = hol_eq(n, zero()); // (n = 0) : bool, n free
+    let step_target = step.hyps().insert(bad_hyp);
+    let step = step.weaken(step_target).unwrap(); // {p, n=0} ⊢ p[S n/n]
     assert!(
-        Thm::nat_induct(base, step).is_err(),
-        "consequent `p n` is not `p (succ n)`"
+        Thm::nat_induct(base, step, p, "n").is_err(),
+        "n occurs free in a residual step hypothesis — genericity violated"
     );
 }
 
 #[test]
-fn nat_induct_rejects_induction_var_not_nat_typed() {
-    // Build a step whose "induction variable" is a bool-typed free var.
-    // p must then be a `bool → bool` motive so `p m` type-checks.
-    // base: ⊢ p 0 still requires p : nat → bool, so this can't satisfy
-    // BOTH base and step with consistent typing — which is itself the
-    // protection. We test the step-side check by constructing a step
-    // with a non-nat var and a base with a matching-shaped motive that
-    // applies to 0 via a nat motive; the rule should reject because the
-    // step's var is not nat (it parses base first, but the motive p from
-    // base is nat→bool, so `p m` with m:bool won't even type-check).
-    //
-    // Simplest faithful test: motive p := λn:nat. n = n (nat→bool),
-    // base ⊢ p 0, but step uses a bool free var `m` in `p m` — which is
-    // ill-typed, so the step Thm can't be built. Instead, give the step
-    // a *different* nat-shaped motive but feed a non-Free antecedent arg.
-    // We cover the non-Free arg case separately; here we confirm a step
-    // whose antecedent applies p to a non-variable (a literal) is
-    // rejected.
-    let p = refl_motive();
-    let base = prove_refl_motive_at(&p, zero());
-    // antecedent `p 0` (arg is the literal 0, not a Free var).
-    let p_lit = Term::app(p.clone(), zero());
-    let p_succ_lit = Term::app(p.clone(), succ(zero()));
-    let step = Thm::assume(p_succ_lit).unwrap().imp_intro(&p_lit).unwrap(); // ⊢ p 0 ⟹ p (succ 0)
+fn nat_induct_rejects_non_bool_p() {
+    // p must be a proposition. A nat-typed `p` can never match the
+    // premises (they're sequent-floored at bool) — and is rejected
+    // up-front by the rule's own type check.
+    let (base, step, _) = refl_induction_inputs();
+    let p_nat = Term::free("n", Type::nat());
     assert!(
-        Thm::nat_induct(base, step).is_err(),
-        "antecedent arg is a literal, not a free induction variable"
+        Thm::nat_induct(base, step, p_nat, "n").is_err(),
+        "nat-typed p rejected"
     );
 }
 
 #[test]
-fn nat_induct_rejects_n_free_in_hyps() {
-    // step carries a hypothesis mentioning the induction variable `n`.
-    // GEN side condition: n must not be free in Γ₂.
-    let p = refl_motive();
-    let base = prove_refl_motive_at(&p, zero());
-    let n = Term::free("n", Type::nat());
-    let p_n = Term::app(p.clone(), n.clone());
-    let psucc = prove_refl_motive_at(&p, succ(n.clone())); // ⊢ p (succ n)
-    // Introduce a hyp that mentions n: weaken to add `n = n` (bool).
-    let bad_hyp = hol_eq(n.clone(), n);
-    let psucc = psucc
-        .weaken(covalence_core::Ctx::singleton(bad_hyp))
-        .unwrap();
-    let step = psucc.imp_intro(&p_n).unwrap(); // {n=n} ⊢ p n ⟹ p (succ n)
-    assert!(
-        Thm::nat_induct(base, step).is_err(),
-        "n occurs free in a step hypothesis — GEN violated"
-    );
+fn nat_induct_rejects_ill_typed_p() {
+    let (base, step, _) = refl_induction_inputs();
+    let bad = Term::app(Term::bool_lit(true), Term::bool_lit(true)); // ill-typed
+    assert!(Thm::nat_induct(base, step, bad, "n").is_err());
 }
 
 #[test]
-fn nat_induct_rejects_n_free_in_motive() {
-    // Motive that captures a free `n` in its body (not via the binder):
-    // p := λ_. (n = n) where the inner n is a *free* var, distinct from
-    // the induction variable. Build it so the abstraction does NOT close
-    // over n. We use a fixed free `n` inside without closing.
-    //
-    // p := λk:nat. (n = n)  with n free (an Abs whose body ignores
-    // Bound(0) and references Free("n")).
-    let n_free = Term::free("n", Type::nat());
-    let p = Term::abs(Type::nat(), hol_eq(n_free.clone(), n_free.clone()));
-    // base: ⊢ p 0.  p 0 β-reduces to (n = n); refl gives it.
-    let base = {
-        let redex = Term::app(p.clone(), zero());
-        let beta = Thm::beta_conv(redex).unwrap(); // ⊢ p 0 = (n = n)
-        let refl_n = Thm::refl(n_free.clone()).unwrap(); // ⊢ n = n
-        beta.sym().unwrap().eq_mp(refl_n).unwrap() // ⊢ p 0
-    };
-    // step: ⊢ p n ⟹ p (succ n), where the antecedent/consequent both
-    // β-reduce to (n = n). The motive `p` has `n` free in its body, so
-    // the "n free in motive" check must fire.
-    let p_n = Term::app(p.clone(), n_free.clone());
-    let psucc = {
-        let redex = Term::app(p.clone(), succ(n_free.clone()));
-        let beta = Thm::beta_conv(redex).unwrap();
-        let refl_n = Thm::refl(n_free.clone()).unwrap();
-        beta.sym().unwrap().eq_mp(refl_n).unwrap()
-    };
-    let step = psucc.imp_intro(&p_n).unwrap();
+fn nat_induct_rejects_wrong_variable_choice() {
+    // Correct premises for induction var `n`, but the caller names `m`:
+    // p[0/m] = p (m not in p) ≠ base conclusion `0 = 0`… actually
+    // p = (n = n), p[0/m] = p, and base concludes (0 = 0) ≠ p → reject.
+    let (base, step, p) = refl_induction_inputs();
     assert!(
-        Thm::nat_induct(base, step).is_err(),
-        "induction variable n occurs free in the motive body"
+        Thm::nat_induct(base, step, p, "m").is_err(),
+        "mismatched induction variable must fail the substitution match"
     );
 }
 

@@ -46,6 +46,7 @@
 //! `ax-2` schemas match set.mm's exactly, so [`init::prop::derive_axiom`](crate::init::prop::derive_axiom)'s
 //! schemas 1/2 are their kernel images byte-for-byte.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;
 
 use covalence_core::{Error, Result, Term};

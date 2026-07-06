@@ -279,6 +279,15 @@ core_rules! {
         if arg_ty != *ty {
             return Err(Error::TypeMismatch { expected: ty.clone(), got: arg_ty });
         }
+        // Validate the WHOLE redex, not just the argument: the abstraction
+        // BODY may be ill-typed or ill-scoped (e.g. an out-of-scope Bound),
+        // and `hol::hol_eq` requires a well-typed lhs — its contract says
+        // inference-rule callers pre-validate. Without this, `hol_eq`'s
+        // `expect` PANICKED on such input (found by the `panic_envelopes`
+        // property test; a fail-stop, not a soundness hole — `build`
+        // re-validates every conclusion). Strictly narrows the rule's
+        // domain: inputs that previously panicked now `Err` cleanly.
+        let _ = app.type_of()?;
         let rhs = open(body, arg);
         Ok((Ctx::new(), hol::hol_eq(app.clone(), rhs)))
     }
@@ -303,7 +312,7 @@ core_rules! {
         Ok((Ctx::new(), hol::hol_eq(abs.clone(), f_outer)))
     }
 
-    // ================= Group B: LF / imp / quantifiers =================
+    // ================= Group B: LF =================
 
     /// `{p} ⊢ p` for `p : bool`.
     Assume(Term) = |(p,), _| {
@@ -350,165 +359,10 @@ core_rules! {
         Ok((hyps_p_minus_q.union(&hyps_q_minus_p), hol::hol_eq(p, q)))
     }
 
-    /// `Γ \ {φ} ⊢ φ ⟹ ψ`, given `Γ ⊢ ψ` (`φ : bool`).
-    ImpIntro(Prem<L>, Term) = |(t, phi), _| {
-        let (hyps, concl) = parts(&t);
-        let phi_ty = phi.type_of()?;
-        if !phi_ty.is_bool() {
-            return Err(Error::NotBool(phi_ty));
-        }
-        let hyps2 = hyps.remove(&phi);
-        Ok((hyps2, hol::hol_imp(phi.clone(), concl.clone())))
-    }
-
-    /// `Γ ∪ Δ ⊢ ψ`, given `Γ ⊢ φ ⟹ ψ` and `Δ ⊢ φ`.
-    ImpElim(Prem<L>, Prem<L>) = |(imp, hyp), _| {
-        let (himp, cimp) = parts(&imp);
-        let (hh, ch) = parts(&hyp);
-        let (phi, psi) = super::parse_hol_imp(cimp)?;
-        if *phi != *ch {
-            return Err(Error::ImpAntecedentMismatch {
-                expected: format!("{}", phi),
-                got: format!("{}", ch),
-            });
-        }
-        Ok((himp.union(hh), psi.clone()))
-    }
-
-    /// `Γ ⊢ ∀x:τ. φ`, given `Γ ⊢ φ` with `(name:τ)` not free in `Γ`.
-    AllIntro(Prem<L>, SmolStr, Type) = |(t, name, ty), _| {
-        let (hyps, concl) = parts(&t);
-        let var = Var::new(name.as_str(), ty.clone());
-        for h in hyps.iter() {
-            if has_free_var_typed(h, &var) {
-                return Err(Error::FreeVarInHyps { name: name.clone() });
-            }
-        }
-        Ok((hyps.clone(), hol::hol_forall(name.as_str(), ty, concl.clone())))
-    }
-
-    /// `Γ ⊢ φ[t/x]`, given `Γ ⊢ ∀x:τ. φ` and `t : τ`.
-    AllElim(Prem<L>, Term) = |(t, witness), _| {
-        let (hyps, concl) = parts(&t);
-        let (ty, body) = super::parse_hol_forall(concl)?;
-        let wit_ty = witness.type_of()?;
-        if wit_ty != *ty {
-            return Err(Error::TypeMismatch { expected: ty.clone(), got: wit_ty });
-        }
-        let opened = open(body, &witness);
-        Ok((hyps.clone(), opened))
-    }
-
-    // ================= Group C: connectives =================
-
-    /// `Γ ∪ Δ ⊢ p ∧ q`, given `Γ ⊢ p` and `Δ ⊢ q`.
-    AndIntro(Prem<L>, Prem<L>) = |(a, b), _| {
-        let (ha, ca) = parts(&a);
-        let (hb, cb) = parts(&b);
-        let p_ty = ca.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
-        }
-        let q_ty = cb.type_of()?;
-        if !q_ty.is_bool() {
-            return Err(Error::NotBool(q_ty));
-        }
-        Ok((ha.union(hb), hol::hol_and(ca.clone(), cb.clone())))
-    }
-
-    /// `Γ ⊢ p`, given `Γ ⊢ p ∧ q`.
-    AndElimL(Prem<L>) = |(t,), _| {
-        let (hyps, concl) = parts(&t);
-        let (p, _q) = super::parse_hol_and(concl)?;
-        Ok((hyps.clone(), p.clone()))
-    }
-
-    /// `Γ ⊢ q`, given `Γ ⊢ p ∧ q`.
-    AndElimR(Prem<L>) = |(t,), _| {
-        let (hyps, concl) = parts(&t);
-        let (_p, q) = super::parse_hol_and(concl)?;
-        Ok((hyps.clone(), q.clone()))
-    }
-
-    /// `Γ ⊢ p ∨ q`, given `Γ ⊢ p` and `q : bool`.
-    OrIntroL(Prem<L>, Term) = |(t, q), _| {
-        let (hyps, concl) = parts(&t);
-        let p_ty = concl.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
-        }
-        let q_ty = q.type_of()?;
-        if !q_ty.is_bool() {
-            return Err(Error::NotBool(q_ty));
-        }
-        Ok((hyps.clone(), hol::hol_or(concl.clone(), q)))
-    }
-
-    /// `Γ ⊢ p ∨ q`, given `Γ ⊢ q` and `p : bool`.
-    OrIntroR(Prem<L>, Term) = |(t, p), _| {
-        let (hyps, concl) = parts(&t);
-        let q_ty = concl.type_of()?;
-        if !q_ty.is_bool() {
-            return Err(Error::NotBool(q_ty));
-        }
-        let p_ty = p.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
-        }
-        Ok((hyps.clone(), hol::hol_or(p, concl.clone())))
-    }
-
-    /// `Γ ∪ Δ₁ ∪ Δ₂ ⊢ r`, given `Γ ⊢ p ∨ q`, `Δ₁ ⊢ p ⟹ r`, `Δ₂ ⊢ q ⟹ r`.
-    OrElim(Prem<L>, Prem<L>, Prem<L>) = |(disj, left, right), _| {
-        let (hd, cd) = parts(&disj);
-        let (hl, cl) = parts(&left);
-        let (hr, cr) = parts(&right);
-        let (p, q) = super::parse_hol_or(cd)?;
-        let (lp, lr) = super::parse_hol_imp(cl)?;
-        let (rq, rr) = super::parse_hol_imp(cr)?;
-        if lp != p {
-            return Err(Error::ConnectiveRule(format!(
-                "or_elim: left branch antecedent {lp} ≠ left disjunct {p}"
-            )));
-        }
-        if rq != q {
-            return Err(Error::ConnectiveRule(format!(
-                "or_elim: right branch antecedent {rq} ≠ right disjunct {q}"
-            )));
-        }
-        if lr != rr {
-            return Err(Error::ConnectiveRule(format!(
-                "or_elim: branch consequents differ ({lr} vs {rr})"
-            )));
-        }
-        Ok((hd.union(hl).union(hr), lr.clone()))
-    }
-
-    /// `Γ ⊢ ¬p`, given `Γ ⊢ p ⟹ F`.
-    NotIntro(Prem<L>) = |(t,), _| {
-        let (hyps, concl) = parts(&t);
-        let (p, f) = super::parse_hol_imp(concl)?;
-        if !matches!(f.kind(), TermKind::Bool(false)) {
-            return Err(Error::ConnectiveRule(format!(
-                "not_intro: consequent {f} is not F"
-            )));
-        }
-        Ok((hyps.clone(), hol::hol_not(p.clone())))
-    }
-
-    /// `Γ ∪ Δ ⊢ F`, given `Γ ⊢ ¬p` and `Δ ⊢ p`.
-    NotElim(Prem<L>, Prem<L>) = |(neg, other), _| {
-        let (hn, cn) = parts(&neg);
-        let (ho, co) = parts(&other);
-        let p = super::parse_hol_not(cn)?;
-        if *p != *co {
-            return Err(Error::ConnectiveRule(format!(
-                "not_elim: negated {p} ≠ hypothesis {}",
-                co
-            )));
-        }
-        Ok((hn.union(ho), Term::bool_lit(false)))
-    }
+    // (The connective / quantifier rules — imp/all/and/or/not intro+elim —
+    // left the kernel in stage L2: they are *derivations* over the rules
+    // above, provided with identical signatures by
+    // `covalence-hol-eval::derived::DerivedRules`. Zero TCB.)
 
     // ================= Group D: substitution =================
 
@@ -693,86 +547,65 @@ core_rules! {
         Ok((hyps.clone(), p))
     }
 
-    /// `Γ₁ ∪ Γ₂ ⊢ ∀n:nat. p n`, given `Γ₁ ⊢ p 0` and `Γ₂ ⊢ p n ⟹ p (succ n)`
-    /// with the GEN side conditions on `n`.
-    NatInduct(Prem<L>, Prem<L>) = |(base, step), _| {
+    /// `Γ_b ∪ (Γ_s \ {p}) ⊢ p` — Peano induction on `nat`, **sequent form**
+    /// (connective-free): from `Γ_b ⊢ p[0/x]` (base) and
+    /// `Γ_s ⊢ p[succ x/x]` with `p ∈ Γ_s` and `x : nat` not free in
+    /// `Γ_s \ {p}` (step), conclude `p` with `x` free — universal by
+    /// genericity. See `Thm::nat_induct` for the audit-grade soundness
+    /// argument.
+    NatInduct(Prem<L>, Prem<L>, Term, SmolStr) = |(base, step, p, x), _| {
         let nat = Type::nat();
-        let zero = Term::nat_lit(covalence_types::Nat::zero());
-        let (base_h, base_c) = parts(&base);
-        let (step_h, step_c) = parts(&step);
-
-        // base : ⊢ p 0
-        let TermKind::App(p, base_arg) = base_c.kind() else {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: base conclusion {} is not `p 0`",
-                base_c
-            )));
-        };
-        if base_arg != &zero {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: base conclusion {} is not the motive applied to 0",
-                base_c
-            )));
-        }
-        let p = p.clone();
-
-        // step : ⊢ p n ⟹ p (succ n)
-        let (ante, conseq) = super::parse_hol_imp(step_c)?;
-        let TermKind::App(ante_p, n_free) = ante.kind() else {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: step antecedent {ante} is not `p n`"
-            )));
-        };
-        if *ante_p != p {
-            return Err(Error::ConnectiveRule(
-                "nat_induct: step uses a different motive than the base".into(),
-            ));
-        }
-        let TermKind::Free(nv) = n_free.kind() else {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: induction variable {n_free} is not a free variable"
-            )));
-        };
-        if *nv.ty() != nat {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: induction variable {n_free} is not of type nat"
-            )));
-        }
-        let expected_conseq = Term::app(p.clone(), Term::app(hol::succ_fn(), n_free.clone()));
-        if *conseq != expected_conseq {
-            return Err(Error::ConnectiveRule(format!(
-                "nat_induct: step consequent {conseq} is not `p (succ n)`"
-            )));
-        }
-
-        // GEN side conditions.
-        if has_free_var_typed(&p, nv) {
-            return Err(Error::ConnectiveRule(
-                "nat_induct: induction variable occurs free in the motive".into(),
-            ));
-        }
-        for h in step_h.iter() {
-            if has_free_var_typed(h, nv) {
-                return Err(Error::FreeVarInHyps { name: nv.name().into() });
-            }
-        }
-
-        let n_name = nv.name().to_string();
-        let body = Term::app(p, n_free.clone());
-        let concl = hol::hol_forall(&n_name, nat, body);
-        Ok((base_h.union(step_h), concl))
-    }
-
-    // ================= Group G': flagged postulates =================
-
-    /// `⊢ p ∨ ¬p` — the law of excluded middle (classicality axiom).
-    Lem(Term) = |(p,), _| {
+        let var = Var::new(x.as_str(), nat.clone());
         let p_ty = p.type_of()?;
         if !p_ty.is_bool() {
             return Err(Error::NotBool(p_ty));
         }
-        Ok((Ctx::new(), hol::hol_or(p.clone(), hol::hol_not(p))))
+        let (base_h, base_c) = parts(&base);
+        let (step_h, step_c) = parts(&step);
+
+        // base : Γ_b ⊢ p[0/x]. (`x` MAY be free in Γ_b — see the
+        // soundness docstring; the base is only consumed at the x↦0
+        // instance, via the substitution lemma at the ambient valuation.)
+        let zero = Term::nat_lit(covalence_types::Nat::zero());
+        let p_zero = subst_free(&p, &var, &zero);
+        if *base_c != p_zero {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: base conclusion {base_c} is not p[0/{x}] = {p_zero}"
+            )));
+        }
+
+        // step : Γ_s ⊢ p[succ x/x] with p ∈ Γ_s (the discharged IH).
+        let succ_x = Term::app(hol::succ_fn(), Term::free(x.as_str(), nat));
+        let p_succ = subst_free(&p, &var, &succ_x);
+        if *step_c != p_succ {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: step conclusion {step_c} is not p[succ {x}/{x}] = {p_succ}"
+            )));
+        }
+        if !step_h.contains(&p) {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: step hypotheses do not contain the motive {p}"
+            )));
+        }
+
+        // Genericity side condition (soundness-critical): `x` must not be
+        // free in the RESIDUAL step hypotheses — the step must hold for
+        // every value of `x`, since the induction re-instantiates it at
+        // 0, 1, …, k. (`p` itself is exempt: it IS the induction
+        // hypothesis being discharged.)
+        let rest = step_h.remove(&p);
+        for h in rest.iter() {
+            if has_free_var_typed(h, &var) {
+                return Err(Error::FreeVarInHyps { name: x.clone() });
+            }
+        }
+
+        Ok((base_h.union(&rest), p))
     }
+
+    // (`Lem` — excluded middle — also left the kernel in stage L2: it is
+    // derivable from `SelectAx` the standard HOL way; see
+    // `covalence-hol-eval::derived`'s cached LEM schema.)
 
     /// `⊢ (p x) ⟹ (p (ε p))` — Hilbert's choice axiom.
     SelectAx(Term, Term) = |(p, x), _| {

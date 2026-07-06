@@ -33,6 +33,7 @@ digraph deps {
   "opentheory";
   "parquet";
   "parse";
+  "proptest";
   "proto";
   "pure" [style=filled, fillcolor="#ffd6d6"];
   "pure-eval" [style=filled, fillcolor="#ffd6d6"];

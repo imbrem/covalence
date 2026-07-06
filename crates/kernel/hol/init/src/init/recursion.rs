@@ -29,6 +29,7 @@
 use covalence_core::{Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs;
+use covalence_hol_eval::derived::DerivedRules;
 
 use crate::init::eq::beta_reduce;
 use crate::init::ext::TermExt;
@@ -117,7 +118,7 @@ impl Inductive for NatTheory {
         let [base, step]: [Thm; 2] = cases.try_into().map_err(|_| {
             covalence_core::Error::ConnectiveRule("nat induct: expected 2 cases".into())
         })?;
-        Thm::nat_induct(base, step)
+        crate::init::ext::nat_induct(base, step)
     }
 
     fn injective(&self, i: usize, xs: &[Term], ys: &[Term]) -> Result<Thm> {

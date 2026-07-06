@@ -10,6 +10,7 @@
 //! every clause bottoms out in a `lang`/`set` membership computation.
 
 use super::*;
+use covalence_hol_eval::derived::DerivedRules;
 
 /// `⊢ ⟦r⟧ = nf` — β-normal form of a regex denotation (a `lang` term).
 fn denote_nf(alpha: &Type, r: &Term) -> Result<Thm> {

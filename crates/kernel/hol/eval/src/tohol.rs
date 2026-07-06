@@ -17,9 +17,11 @@ use covalence_types::Nat;
 use covalence_core::seam::IsThm;
 use covalence_core::{Ctx, Error, Result, Term, Type, defs};
 
+use covalence_core::Thm;
+
 use crate::lang::{CoreEval, EvalThm};
 use crate::rules::{NatAddCert, PairVal, ToHolNatVal};
-use crate::tohol_ops::{HolApp, HolAppE};
+use crate::tohol_ops::{HolApp, HolAppE, NatAddEqE};
 
 /// A pure theorem at the eval tier.
 type PT<P> = PThm<CoreEval, P>;
@@ -81,6 +83,31 @@ pub fn nat_add_thm(a: Nat, b: Nat) -> Result<EvalThm> {
         .eq_mp(isthm_eq)
         .ok_or_else(|| Error::Pure("eq_mp: reified lhs did not match the certificate".into()))?;
     EvalThm::from_pure(landed)
+}
+
+/// `⊢ nat.add (toHOL a) (toHOL b) = toHOL (a + b)` as a **symbolic** kernel
+/// theorem — the literal-endgame proof-of-mechanism (design:
+/// `notes/vibes/literal-endgame-design.md`, stage EG1). Unlike
+/// [`nat_add_thm`], the `toHOL` numeral leaves are **never reified**: the three
+/// naturals `a`, `b`, `a+b` stay as native [`Nat`] values under the
+/// uninterpreted [`ToHolNat`](crate::tohol_ops::ToHolNat) op, so **no
+/// succ-tower is ever built** — the theorem's conclusion is the base expression
+/// [`NatAddEqE`], carried directly by [`Thm<CoreEval, NatAddEqE>`] with zero
+/// base-TCB machinery.
+///
+/// The pipeline is a single step: mint the already-admitted, already-sound
+/// [`NatAddCert`] (which derives the whole well-typed symbolic sequent from the
+/// input pair, computing the sum natively via
+/// [`covalence_pure_eval::NatAdd`]), then land it via
+/// [`Thm::from_pure_sym`] — **no** `ToHolNatVal`, **no** `reify_app`, **no**
+/// `eq_mp` reification. Soundness rests on `admits()` alone (`NatAddCert` is
+/// the sole, sound mint; see its docstring and `Thm::from_pure_sym`'s).
+///
+/// The never-materialize guarantee is machine-checked by
+/// `tests/nat_add_symbolic.rs::nat_add_symbolic_never_materializes`.
+pub fn nat_add_thm_symbolic(a: Nat, b: Nat) -> Result<Thm<CoreEval, NatAddEqE>> {
+    let cert = apply(CoreEval, NatAddCert, (a, b)).map_err(perr)?;
+    Ok(Thm::from_pure_sym(cert))
 }
 
 /// Reify one symbolic HOL application node: given `⊢ F = Val(f)` and

@@ -19,6 +19,7 @@
 
 use covalence_core::{Error, Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::mk_int;
 
 use crate::algebra::semiring::Semiring;

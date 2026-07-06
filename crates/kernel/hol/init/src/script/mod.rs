@@ -498,6 +498,16 @@ fn imported(internal: &Env, name: &str) -> Result<Env, ScriptError> {
 /// nests on forcing an imported one.
 #[cfg(not(target_arch = "wasm32"))]
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    // Re-entrancy-safe: building a nested current-thread tokio runtime panics
+    // ("Cannot start a runtime from within a runtime"), which under parallel
+    // test load poisoned a shared `LazyLock` (the alethe `discharge` flake). If
+    // we are already inside a tokio runtime, drive the same cooperative,
+    // non-blocking proof-core workload on `futures`' nestable single-threaded
+    // executor — identical to the `wasm32` path below, which already runs this
+    // workload. The common (non-nested) path keeps the tokio runtime unchanged.
+    if tokio::runtime::Handle::try_current().is_ok() {
+        return futures::executor::block_on(future);
+    }
     tokio::runtime::Builder::new_current_thread()
         .build()
         .expect("build a current-thread tokio runtime for the proof core")

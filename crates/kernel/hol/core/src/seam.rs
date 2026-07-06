@@ -7,11 +7,14 @@
 //! (`covalence-hol-eval`, which owns the `CoreEval` tier and hosts the
 //! computation-certificate rules) and by untrusted drivers:
 //!
-//! - [`CoreLang`] / [`IsThm`] / [`CoreProp`] / [`HolTier`] — the pure-HOL
-//!   tier language, the judgement op, the concrete sequent-proposition
-//!   shape, and the tier marker trait. Publishing them mints nothing: every
-//!   mint is gated on the minting language's `admits`, and `pure::Thm`
-//!   remains unforgeable.
+//! - [`CoreLang`] / [`IsThm`] / [`CoreProp`] / [`IsThmProp`] / [`HolTier`] —
+//!   the pure-HOL tier language, the judgement op, the concrete
+//!   sequent-proposition shape, its **conclusion-operand-generic** form
+//!   ([`IsThmProp<C>`] — the literal-endgame mechanism, so a downstream tier
+//!   can name the type of a symbolic-conclusion certificate it lands via
+//!   [`Thm::from_pure_sym`](crate::Thm::from_pure_sym)), and the tier marker
+//!   trait. Publishing them mints nothing: every mint is gated on the minting
+//!   language's `admits`, and `pure::Thm` remains unforgeable.
 //! - [`CORE_MANIFEST`] / [`core_admits`] — the static TCB manifest of the
 //!   pure-HOL tier and its admits predicate, so a downstream tier that
 //!   `extends` [`CoreLang`] can embed the manifest as its parent and
@@ -35,6 +38,6 @@
 //! `Rule<CoreEval>`s of the eval tier now, so `Thm<CoreLang>` carries no
 //! computation TCB.)
 
-pub use crate::thm::lang::{CoreLang, CoreProp, HolTier, IsThm};
+pub use crate::thm::lang::{CoreLang, CoreProp, HolTier, IsThm, IsThmProp};
 pub use crate::thm::lit::Lit;
 pub use crate::thm::rules::{CORE_MANIFEST, core_admits};

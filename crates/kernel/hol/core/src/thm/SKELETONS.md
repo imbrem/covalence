@@ -14,10 +14,22 @@ future seams left open by the core-on-pure port.
   `ToHolNatVal`/`ToHolIntVal`/`ToHolBytesVal` and `certs::Lit::to_term` reify to
   kernel literals (`Term::nat_lit` & co.); at literal deletion only the reify
   target flips (consumers don't move).
-- **Per-op symbolic certs cover nat.add only.** The never-materialize tier
-  (`NatAddCert`-style symbolic conclusions) grows per-op rules as big-value use
-  cases arrive; the per-family certs conclude the reified `CoreProp` shape.
-  Also open: the remaining HOL term formers (const/abs) as base ops.
+- **Symbolic-conclusion mechanism (`Thm<L, C>`) covers nat.add only.** The
+  additive `Thm<L, C = Val<Term>>` + `from_pure_sym` mechanism (EG1;
+  `notes/vibes/literal-endgame-design.md`) landed with `nat_add_thm_symbolic`;
+  EG2 extends the symbolic lander to int/bytes/u8/f32 (one `_symbolic` entry per
+  cert family, reusing the same `ToHolInt`/`Bytes`/`F32`/`F64` shapes). The
+  per-family certs still conclude the reified `CoreProp`. Also open: the
+  remaining HOL term formers (const/abs) as base ops.
+- **`from_pure_sym` trusts the mint (no non-forcing floor).** It cannot re-run
+  the concrete sequent floor (that would materialize the operand). A
+  non-forcing decode — a `Term` skeleton typed at the declared `toHOL` sort
+  without expanding — was the design's audit-cleanliness preference but is
+  orphan-rule-blocked (a `SymConcl` trait would span core and base's `App`,
+  neither local to eval where the `toHOL` shapes live). Soundness rests on
+  `admits()` alone regardless (only sound cert rules mint an `IsThm`-headed
+  prop); the never-materialize well-typedness is machine-checked in eval's
+  `nat_add_symbolic` test.
 - **No native pure-HOL embedding.** `IsThm` carries `(Ctx, Term)` as opaque `Val`
   leaves. Future: `HasTy` judgement Op; a native pure-HOL theory.
 - **`UnfoldTermSpec` survives to the defs re-home.** Sound definitional

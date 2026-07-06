@@ -20,6 +20,7 @@
 //! [`check`] is **async** (a `Rule` may await) so it returns a `BoxFuture` —
 //! the recursion through `Rule::apply` needs a known size.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -457,7 +458,7 @@ impl Tactic for NatInductRule {
         ctx_arity(a, 2, "nat-induct")?;
         let base = c.check(&a[0]).await?;
         let step = c.check(&a[1]).await?;
-        Ok(Thm::nat_induct(base, step)?)
+        Ok(crate::init::ext::nat_induct(base, step)?)
     }
 }
 

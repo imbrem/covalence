@@ -4,7 +4,8 @@
 //! `Thm` machinery is touched — building terms mints nothing, so the
 //! module is `pub`. Consumed by `thm/` (the inference rules need
 //! `hol_eq` / `hol_imp` / `hol_forall` / `hol_not` to build their
-//! conclusions — including [`crate::Thm::nat_induct`]), by
+//! conclusions, and [`crate::Thm::nat_induct`] builds its
+//! `p[succ x/x]` premise instance with [`succ_fn`]), by
 //! `defs/*.rs`'s spec carriers (which need `pub_abs` and the `zero` /
 //! `succ_fn` building blocks), and by the `covalence-hol-eval`
 //! catalogue (the moved term-op definitions build their bodies with

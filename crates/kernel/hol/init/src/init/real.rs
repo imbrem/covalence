@@ -47,6 +47,7 @@
 //!   exactly as `rat::dense` is derived from the mediant postulates: the
 //!   supremum is the *intersection of the cut-sets* ([`real_sup`]).
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::sync::LazyLock;
 
 use covalence_core::{Result, Term, Type, subst};

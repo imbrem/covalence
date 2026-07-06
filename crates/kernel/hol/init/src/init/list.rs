@@ -75,6 +75,7 @@
 
 use covalence_core::{Error, Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 
 use crate::init::eq::{beta_expand, trans_chain};
 use crate::init::ext::{TermExt, ThmExt};
@@ -233,7 +234,7 @@ fn bound_all(alpha: &Type, x: &Term, xs: &Term, g: &Term, big_n: &Term, tail: &T
         conseq.imp_intro(&ante)?
     };
 
-    let all = Thm::nat_induct(base, step)?; // {body[N]} ⊢ ∀m. motive m
+    let all = crate::init::ext::nat_induct(base, step)?; // {body[N]} ⊢ ∀m. motive m
     // β-reduce the body so it reads as the `finite`-body at bound `succ N`.
     let inst = all.all_elim(m.clone())?;
     crate::init::eq::beta_reduce(inst)?.all_intro("m", nat())
@@ -581,7 +582,7 @@ pub fn contig_cons(alpha: &Type, x: &Term, xs: &Term) -> Result<Thm> {
         conseq_wrap.imp_intro(&ante)? // motive k ⟹ motive (succ k)
     };
 
-    let all = Thm::nat_induct(base, step)?; // ⊢ ∀i. motive i
+    let all = crate::init::ext::nat_induct(base, step)?; // ⊢ ∀i. motive i
     crate::init::eq::beta_reduce(all.all_elim(iv.clone())?)?.all_intro("i", nat())
 }
 
@@ -975,7 +976,7 @@ pub fn cons_head_tail(alpha: &Type, a: &Term, l: &Term) -> Result<Thm> {
         conseq.imp_intro(&ante)?
     };
 
-    let all = Thm::nat_induct(base, step)?; // {hyp} ⊢ ∀i. motive i
+    let all = crate::init::ext::nat_induct(base, step)?; // {hyp} ⊢ ∀i. motive i
     let pointwise = crate::init::eq::beta_reduce(all.all_elim(iv.clone())?)?; // {hyp} ⊢ index i (...) = index i l
     let eq = list_ext(alpha, &consed, l, "i", pointwise)?; // {hyp} ⊢ cons a (tail l) = l
     eq.imp_intro(&hyp)
@@ -1028,7 +1029,7 @@ pub fn allnone_from_head_none(alpha: &Type, l: &Term) -> Result<Thm> {
         let conseq = beta_expand(&motive, succ(k.clone()), conseq_body)?; // {motive k} ⊢ motive (succ k)
         conseq.imp_intro(&ante)?
     };
-    let all = Thm::nat_induct(base, step)?; // {hyp} ⊢ ∀i. motive i
+    let all = crate::init::ext::nat_induct(base, step)?; // {hyp} ⊢ ∀i. motive i
     let allnone = crate::init::eq::beta_reduce(all.all_elim(iv.clone())?)?.all_intro("i", nat())?; // {hyp} ⊢ ∀i. index i l = none
     allnone.imp_intro(&hyp)
 }
@@ -1219,7 +1220,7 @@ pub fn list_induct(alpha: &Type, p: &Term, pl_nil: Thm, cons_case: Thm) -> Resul
         conseq.imp_intro(&ih_term)?
     };
 
-    let inner = Thm::nat_induct(inner_base, inner_step)?; // ⊢ ∀N. inner_motive N
+    let inner = crate::init::ext::nat_induct(inner_base, inner_step)?; // ⊢ ∀N. inner_motive N
 
     // --- close over an arbitrary l: get the bound from finite_rep ---
     // ∀l. (∀i. nat_le N i ⟹ index i l = none) ⟹ P l, at each N.

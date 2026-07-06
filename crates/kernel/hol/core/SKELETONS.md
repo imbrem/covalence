@@ -18,9 +18,15 @@ the `logic` connectives their bodies quantify with, and the residue term ops
 `finite` + stream accessors). It all leaves core when the literal
 `TermKind::Nat/Int/SmallInt/Blob` variants die in favor of the lazy toHOL base
 expressions (S10/S11); until then every remaining `defs/` file is this one
-skeleton. (`hol.rs` connective builders and the connective/`forall` rules stay
-with `logic.rs` for the same reason — and the pure tier needs them for
-`Thm<CoreLang>` derivations.)
+skeleton. (`hol.rs` builders and `logic.rs` stay for the same reason: the
+connective/quantifier *rules* left the kernel in stage L2 — they are
+`covalence-hol-eval::derived` derivations now — but the staying axiom rules
+(`succ_inj`/`zero_ne_succ`/`select_ax`/`spec_ax`/`spec_rep_abs_*`/
+`new_type_definition`) still *state* their conclusions with `imp`/`not`/`or`/
+`exists`/`and`/`forall`, and the residue type bodies quantify with them, so the
+*definitions* remain core residue until the literal-leaf endgame. Note the
+derived rules live at the eval tier only: `⊢ T` has no `Thm<CoreLang>`
+derivation while `T` is an undefined literal.)
 
 ## Hash-consing not on-by-default
 
@@ -39,6 +45,17 @@ in the kernel (rules taking arbitrary theorem terms already use the type-aware
 `init/` construction sites in `covalence-init` call it. Eventually reimplement in
 userspace (`TermExt`) or migrate the call sites to `close_var(&Var::new(...))`.
 Deferred for call-site churn.
+
+## Property-test coverage gaps (P2 audit mediums)
+
+- `tests/subst_props.rs` generator lacks `FreshConst`/`FreshTyCon`/`Tycon`/
+  polymorphic-`Def` leaves — the INST_TYPE-critical arm is undertested.
+- Missing locally-nameless interaction lemmas: subst/open commutation,
+  open-of-close = subst, shift/open, cross-index families.
+- Tvar substitution (`subst_tfree`/`subst_tfrees`) has no independent naive
+  reference — only self-consistency laws.
+- `tests/panic_envelopes.rs` covers 2 of ~17 `Thm` rule constructors
+  (`eta_conv`, `beta_conv`).
 
 ## `_with` rules intern post-hoc, not through construction
 

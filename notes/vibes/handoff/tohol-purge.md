@@ -61,3 +61,36 @@ shared tree bit us once). **Adversarial audit every TCB change** — it caught t
 wasm32 `⊢False` that green tests could not (64-bit CI can't see 32-bit unsoundness;
 consider a wasm32 test job). Robust wall-detection in workflow scripts ("no" ≠
 "none").
+
+## LOGIC-OUT DONE (L1+L2, audited 0 crit/high, on pure-impl-1)
+
+- **L1** (514edc6f): `nat_induct` reshaped to connective-free **sequent form** —
+  premises `Γ_b ⊢ p[0/x]`, `Γ_s ⊢ p[succ x/x]` with `p ∈ Γ_s` (IH), concl
+  `(Γ_b ∪ (Γ_s\{p})) ⊢ p`, freshness `x ∉ FV(Γ_s\{p})` only (x free in `Γ_b`
+  allowed — sound by the valuation argument in the docstring). Audit: **sound**.
+- **L2** (1e88a443): the 13 connective/quantifier rules + `lem` DELETED from the
+  kernel; **CoreLang manifest 39 → 26** (the auditable inventory: equality core
+  + subtype/spec + `SuccInj ZeroNeSucc FalseElim NatInduct SelectAx` +
+  `Define NewTypeDefRule`). Definitions moved to `hol-eval` defs; rules became
+  derivations in `hol-eval/src/derived.rs`. **`lem` is now DERIVED from
+  `select_ax`** (HOL Light `class.ml` construction) — closing a former bare
+  postulate, a net soundness *improvement*.
+
+### Two architectural facts the audit surfaced (record, don't lose)
+1. **The connective derivations are `EvalThm` (CoreEval) tier, not pure
+   `CoreLang`** — they bottom out in `truth()` (`⊢(T=T)=T`) which uses the
+   eval-tier `LitEqCert`. This is **transitional**: it's only because T/F are
+   still kernel `Bool` literals; when T/F become *definitions* in the
+   literal-leaf endgame, `truth()` derives at pure `CoreLang` and connectives
+   drop to the pure tier. Consequence for now: pure-`CoreLang`-tier proofs don't
+   get ∧/∨/⟹ for free — they need the eval tier. (Net TCB still shrank: 13
+   admitted rules → reuse of one existing eval axiom.)
+2. **PERF: connective rules were hot-path, now multi-step derivations.** Audit
+   measured real 1.67× / utf16 1.59× / int 1.54× / nat-div 1.50× vs the *stale
+   pre-S10 baseline* (so the ratios conflate S10 numeral reification + L1 + L2 —
+   cannot attribute to L2 alone). Maintainer pre-authorized this ("micro-
+   optimization; acceptable"). **Escape hatch if it ever matters: re-admit hot
+   connective rules as `CoreEval`-tier accelerator rules with the derivation as
+   the standing soundness witness** — the same derived-in-pure/accelerated-by-
+   axiom pattern the arithmetic certs use. Baseline refreshed to post-L2 so
+   future perf gates are honest.

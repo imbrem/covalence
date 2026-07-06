@@ -10,12 +10,12 @@
 //! denotations (`nat` = the standard naturals, `bool` = two values, …).
 //!
 //! On top of HOL Light's ten primitive rules the kernel adds, with a
-//! `Soundness:` docstring justifying each: the well-known derived rules
-//! (`sym`, `cong_app`/`cong_abs`, `imp_intro`/`imp_elim`,
-//! `all_intro`/`all_elim`, `eta_conv`) and connective rules
-//! (`and_*`/`or_*`/`not_*`); four non-computational primitives
-//! ([`Thm::nat_induct`], [`Thm::false_elim`], [`Thm::unit_eq`],
-//! [`Thm::lem`] — the classicality axiom); the
+//! `Soundness:` docstring justifying each: the well-known equality-core
+//! derived rules (`sym`, `cong_app`/`cong_abs`, `eta_conv` — the
+//! connective / quantifier rules and excluded middle are *derivations*
+//! in `covalence-hol-eval::derived`, not kernel rules, since stage L2);
+//! three non-computational primitives
+//! ([`Thm::nat_induct`], [`Thm::false_elim`], [`Thm::unit_eq`]); the
 //! conservative-extension primitives ([`Thm::define`],
 //! [`Thm::new_type_definition`]); the accelerated definitional
 //! unfolding rule ([`Thm::unfold_term_spec`]); and the per-family

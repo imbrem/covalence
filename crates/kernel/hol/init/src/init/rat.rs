@@ -58,6 +58,7 @@
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs::{fst, int_pos_spec, int_pos_ty, prod, snd};
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::mk_int;
 
 use crate::init::ext::{TermExt, ThmExt};

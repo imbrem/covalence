@@ -43,6 +43,7 @@
 use covalence_core::{Error, Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs::Symbol;
+use covalence_hol_eval::derived::DerivedRules;
 
 use crate::init::eq::trans_chain;
 use crate::init::ext::{TermExt, ThmExt};

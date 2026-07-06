@@ -18,6 +18,7 @@
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_types::Nat;
 
 use crate::HolLightCtx;
@@ -236,7 +237,7 @@ impl Peano for Hol {
     // ---- the induction schema ----
 
     fn induct(&self, base: Thm, step: Thm) -> Result<Thm> {
-        Thm::nat_induct(base, step)
+        crate::init::ext::nat_induct(base, step)
     }
 }
 

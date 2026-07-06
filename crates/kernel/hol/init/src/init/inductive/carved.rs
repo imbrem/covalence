@@ -64,6 +64,8 @@ use std::sync::LazyLock;
 
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::TypeDefExt;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_inductive::{
     ArgSort, BackendCaps, IndResult, InductiveBackend, InductiveError, InductiveFacts,
     InductiveSpec, InductiveTheory,
@@ -429,8 +431,8 @@ impl CarvedSExpr {
         let tau = td.tau.clone();
         let abs = td.abs.clone();
         let rep = td.rep.clone();
-        let abs_rep = td.abs_rep.clone();
-        let rep_abs_fwd = td.rep_abs_fwd.clone();
+        let abs_rep = td.abs_rep()?;
+        let rep_abs_fwd = td.rep_abs_fwd()?;
 
         // ⊢ Wf (rep __sr): rep(abs(rep s)) = rep s (congruence over abs_rep),
         // then the backward bijection direction.
@@ -438,8 +440,7 @@ impl CarvedSExpr {
             let s = Term::free("__sr", tau.clone());
             let ar = abs_rep.clone().all_elim(s.clone())?; // ⊢ abs (rep s) = s
             let rr = ar.cong_arg(rep.clone())?; // ⊢ rep (abs (rep s)) = rep s
-            td.rep_abs_back
-                .clone()
+            td.rep_abs_back()?
                 .all_elim(rep.clone().apply(s)?)?
                 .imp_elim(rr)?
         };

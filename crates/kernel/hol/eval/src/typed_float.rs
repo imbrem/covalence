@@ -30,6 +30,7 @@ use covalence_core::seam::Lit;
 use covalence_core::{Error, Result, SmallIntLiteral, Term, TermKind, TypeSpec};
 
 use crate::defs::{self, TypedF64};
+use crate::derived::DerivedRules;
 use crate::{EvalThm, rules};
 
 /// The RHS of an equational conclusion.

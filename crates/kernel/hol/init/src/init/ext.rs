@@ -18,27 +18,36 @@
 //! `expect` on these `Result`s because a failure there is a build-time
 //! bug, not a runtime condition.
 //!
-//! ## The kernel rules are the primitives — call them directly
+//! ## The kernel rules + derived rules are the primitives — call them directly
 //!
-//! The kernel already exposes the full HOL-Light rule set on [`Thm`]
-//! as `Result`-returning constructors. **Treat these as the
-//! primitives and call them directly** (with `?`); `ThmExt` does not
-//! re-wrap them:
+//! The kernel exposes the equality-core rule set on [`Thm`] as
+//! `Result`-returning constructors, and `covalence-hol-eval`'s
+//! [`DerivedRules`] (re-exported here) provides the connective /
+//! quantifier rules with the same signatures as zero-TCB derivations
+//! (stage L2). **Treat these as the primitives and call them
+//! directly** (with `?`); `ThmExt` does not re-wrap them:
 //!
 //! - equality: [`Thm::refl`], [`Thm::sym`], [`Thm::trans`],
 //!   [`Thm::cong_app`], [`Thm::cong_abs`], [`Thm::beta_conv`],
 //!   [`Thm::eta_conv`];
 //! - logical framework: [`Thm::assume`], [`Thm::eq_mp`],
-//!   [`Thm::deduct_antisym`], [`Thm::imp_intro`], [`Thm::imp_elim`],
-//!   [`Thm::all_intro`], [`Thm::all_elim`];
-//! - connectives: [`Thm::and_intro`], [`Thm::and_elim_l`],
-//!   [`Thm::and_elim_r`], [`Thm::or_intro_l`], [`Thm::or_intro_r`],
-//!   [`Thm::or_elim`], [`Thm::not_intro`], [`Thm::not_elim`];
+//!   [`Thm::deduct_antisym`]; derived: [`DerivedRules::imp_intro`],
+//!   [`DerivedRules::imp_elim`], [`DerivedRules::all_intro`],
+//!   [`DerivedRules::all_elim`];
+//! - connectives (all derived): [`DerivedRules::and_intro`],
+//!   [`DerivedRules::and_elim_l`], [`DerivedRules::and_elim_r`],
+//!   [`DerivedRules::or_intro_l`], [`DerivedRules::or_intro_r`],
+//!   [`DerivedRules::or_elim`], [`DerivedRules::not_intro`],
+//!   [`DerivedRules::not_elim`], [`DerivedRules::lem`];
 //! - substitution / structural: [`Thm::inst`], [`Thm::inst_tfree`],
-//!   [`Thm::weaken`], [`Thm::false_elim`], [`Thm::nat_induct`];
+//!   [`Thm::weaken`], [`Thm::false_elim`], [`Thm::nat_induct`] (the
+//!   sequent form; for the classic formula form use this module's
+//!   [`nat_induct`] derivation);
 //! - reduction: [`covalence_hol_eval::reduce`] (the untrusted cert-path
 //!   driver — single-step closed primitive computation),
-//!   [`Thm::unfold_term_spec`].
+//!   [`Thm::unfold_term_spec`];
+//! - typedef projections: [`TypeDefExt`] splits the
+//!   `new_type_definition` bijection conjunction into its three laws.
 //!
 //! `ThmExt` only adds derived steps the kernel doesn't ship: the two
 //! congruence specialisations, the `p ⟺ (p = T)` bridge, conjunction
@@ -63,10 +72,13 @@
 //! named subterm rather than evaluating — so it *does* traverse under
 //! binders, capture-avoiding with a fresh witness.
 
-use covalence_core::term::TrustedCons;
+use covalence_core::term::{TermKind, TrustedCons};
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs::Symbol;
+// Re-exported so downstream proof code has one insulation point for the
+// whole rule surface (kernel equality core + the L2 derived rules).
+pub use covalence_hol_eval::derived::{DerivedRules, TypeDefExt};
 
 use crate::HolLightCtx;
 
@@ -717,6 +729,116 @@ impl ThmExt for Thm {
     }
 }
 
+// ============================================================================
+// Formula-form nat induction (the old kernel rule's signature, now derived)
+// ============================================================================
+
+/// Mathematical induction on `nat`, **formula form** — the drop-in
+/// same-signature replacement for the pre-reshape kernel rule.
+///
+/// Given `base : Γ₁ ⊢ p 0` and `step : Γ₂ ⊢ p n ⟹ p (succ n)` for a
+/// free `n : nat` not free in the motive `p` nor in `Γ₂`, derives
+/// `Γ₁ ∪ Γ₂ ⊢ ∀n:nat. p n`. Untrusted: a pure derivation over the
+/// kernel's sequent-form [`Thm::nat_induct`] plus
+/// `assume`/`imp_elim`/`inst`/`all_intro` — no axiom beyond the kernel
+/// rule itself.
+///
+/// Derivation (writing `x` for the induction variable actually used):
+/// 1. Parse `step`'s conclusion as `(p n) ⟹ (p (succ n))` with
+///    `n : nat` free.
+/// 2. If `n` is free in `Γ₁` (the pre-reshape rule allowed this — the
+///    conclusion `∀n. p n` doesn't mention the free `n`), rename: `inst`
+///    `step` at a fresh `x`; otherwise `x := n`. Conclusions are
+///    locally nameless (binders carry no name hint), so the result is
+///    the same term either way.
+/// 3. `imp_elim` against `assume (p x)` → `Γ₂ ∪ {p x} ⊢ p (succ x)`.
+/// 4. Kernel `nat_induct` with proposition `p x`, variable `x`
+///    (discharges the `p x` hypothesis; checks `x ∉ FV(Γ₂)`, and its
+///    substituted-instance checks reproduce the old motive checks:
+///    `n ∈ FV(p)` makes `(p x)[0/x] ≠ p 0` fail the base match)
+///    → `Γ₁ ∪ Γ₂ ⊢ p x`.
+/// 5. `all_intro x` → `Γ₁ ∪ Γ₂ ⊢ ∀x:nat. p x`.
+pub fn nat_induct(base: Thm, step: Thm) -> Result<Thm> {
+    let nat = Type::nat();
+
+    // 1. `Γ₂ ⊢ (p n) ⟹ (p (succ n))` — extract the applied motive & var.
+    let (p, nv) = {
+        let (ante, _conseq) = dest_imp(step.concl()).ok_or_else(|| {
+            Error::ConnectiveRule(format!(
+                "nat_induct: step conclusion {} is not an implication",
+                step.concl()
+            ))
+        })?;
+        let TermKind::App(p, n_tm) = ante.kind() else {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: step antecedent {ante} is not `p n`"
+            )));
+        };
+        let TermKind::Free(nv) = n_tm.kind() else {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: induction variable {n_tm} is not a free variable"
+            )));
+        };
+        if *nv.ty() != nat {
+            return Err(Error::ConnectiveRule(format!(
+                "nat_induct: induction variable {n_tm} is not of type nat"
+            )));
+        }
+        (p.clone(), nv.clone())
+    };
+
+    // 2. Rename away from Γ₁ if needed (the old rule permitted a free `n`
+    //    in the base hypotheses; `all_intro` at step 5 does not).
+    let (step, x_name) = if base
+        .hyps()
+        .iter()
+        .any(|h| subst::has_free_var_typed(h, &nv))
+    {
+        let fresh = fresh_ind_var(nv.name(), &base, &step, &p);
+        let renamed = step.inst(nv.name(), Term::free(fresh.as_str(), nat.clone()))?;
+        (renamed, fresh)
+    } else {
+        (step, nv.name().to_string())
+    };
+    let x = Term::free(&x_name, nat.clone());
+
+    // 3. Discharge the implication into hypothesis form.
+    let p_x = Term::app(p, x);
+    let ih = Thm::assume(p_x.clone())?; //      {p x} ⊢ p x
+    let step = step.imp_elim(ih)?; //       Γ₂ ∪ {p x} ⊢ p (succ x)
+
+    // 4–5. Sequent-form induction, then generalize (derived GEN).
+    let ind = Thm::nat_induct(base, step, p_x, &x_name)?; // Γ₁ ∪ Γ₂ ⊢ p x
+    ind.all_intro(&x_name, nat) //                            Γ₁ ∪ Γ₂ ⊢ ∀x. p x
+}
+
+/// A variable name not free (at any type) in `p`, either premise's
+/// hypotheses, or either conclusion.
+fn fresh_ind_var(hint: &str, base: &Thm, step: &Thm, p: &Term) -> String {
+    let clashes = |name: &str| {
+        subst::has_free_var(p, name)
+            || subst::has_free_var(base.concl(), name)
+            || subst::has_free_var(step.concl(), name)
+            || base.hyps().iter().any(|h| subst::has_free_var(h, name))
+            || step.hyps().iter().any(|h| subst::has_free_var(h, name))
+    };
+    (0u32..)
+        .map(|i| format!("{hint}{i}"))
+        .find(|c| !clashes(c))
+        .expect("unbounded candidate stream")
+}
+
+fn dest_imp(t: &Term) -> Option<(&Term, &Term)> {
+    let imp = covalence_core::defs::imp();
+    let TermKind::App(f, b) = t.kind() else {
+        return None;
+    };
+    let TermKind::App(h, a) = f.kind() else {
+        return None;
+    };
+    (*h == imp).then_some((a, b))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -751,6 +873,91 @@ mod tests {
         // `bool ∧ nat` and `bool = nat` must be refused, not built.
         assert!(p.clone().and(n.clone()).is_err());
         assert!(p.equals(n).is_err());
+    }
+
+    // ---- formula-form nat_induct (the old kernel rule's signature) ----
+
+    /// base ⊢ p 0, step ⊢ p n ⟹ p (S n) for the motive `p := λn. n = n`,
+    /// via β-conv + refl (mirrors the pre-reshape kernel audit fixtures).
+    fn refl_motive_inputs() -> (Thm, Thm, Term) {
+        let nat = Type::nat();
+        let n = Term::free("n", nat.clone());
+        let p = Term::abs(
+            nat.clone(),
+            covalence_core::subst::close(&n.clone().equals(n.clone()).unwrap(), "n"),
+        );
+        let prove_at = |k: Term| {
+            let beta = Thm::beta_conv(Term::app(p.clone(), k.clone())).unwrap();
+            beta.sym().unwrap().eq_mp(Thm::refl(k).unwrap()).unwrap()
+        };
+        let base = prove_at(nat_lit(0)); // ⊢ p 0
+        let p_n = Term::app(p.clone(), n.clone());
+        let succ_n = Term::app(covalence_core::hol::succ_fn(), n);
+        let step = prove_at(succ_n).imp_intro(&p_n).unwrap(); // ⊢ p n ⟹ p (S n)
+        (base, step, p)
+    }
+
+    #[test]
+    fn nat_induct_formula_form_builds_forall() {
+        let (base, step, p) = refl_motive_inputs();
+        let thm = super::nat_induct(base, step).unwrap();
+        let n = Term::free("n", Type::nat());
+        let expected = Term::app(p, n).forall("n", Type::nat()).unwrap();
+        assert_eq!(thm.concl(), &expected, "conclusion is ∀n:nat. p n");
+        assert!(thm.hyps().is_empty());
+    }
+
+    #[test]
+    fn nat_induct_formula_form_allows_free_n_in_base_hyps() {
+        // The pre-reshape kernel rule allowed the induction var free in
+        // the BASE hypotheses; the wrapper preserves that via the
+        // fresh-rename path (conclusions are locally nameless, so the
+        // result term is identical).
+        let (base, step, p) = refl_motive_inputs();
+        let n = Term::free("n", Type::nat());
+        let base_hyp = n.clone().equals(n.clone()).unwrap();
+        let base = base
+            .weaken(covalence_core::Ctx::singleton(base_hyp.clone()))
+            .unwrap();
+        let thm = super::nat_induct(base, step).expect("free n in base hyps is allowed");
+        let expected = Term::app(p, n).forall("n", Type::nat()).unwrap();
+        assert_eq!(thm.concl(), &expected);
+        assert!(thm.hyps().contains(&base_hyp), "base hyp carried");
+    }
+
+    #[test]
+    fn nat_induct_formula_form_rejects_n_free_in_step_hyps() {
+        let (base, step, _) = refl_motive_inputs();
+        let n = Term::free("n", Type::nat());
+        let bad = n.clone().equals(n).unwrap();
+        let target = step.hyps().insert(bad);
+        let step = step.weaken(target).unwrap();
+        assert!(
+            super::nat_induct(base, step).is_err(),
+            "n free in step hyps — genericity violated"
+        );
+    }
+
+    #[test]
+    fn nat_induct_formula_form_rejects_n_free_in_motive() {
+        // p := λk. (n = n) with n FREE in the body (not the binder).
+        let n = Term::free("n", Type::nat());
+        let p = Term::abs(Type::nat(), n.clone().equals(n.clone()).unwrap());
+        let prove_at = |k: Term| {
+            let beta = Thm::beta_conv(Term::app(p.clone(), k)).unwrap();
+            beta.sym()
+                .unwrap()
+                .eq_mp(Thm::refl(n.clone()).unwrap())
+                .unwrap()
+        };
+        let base = prove_at(nat_lit(0));
+        let p_n = Term::app(p.clone(), n.clone());
+        let succ_n = Term::app(covalence_core::hol::succ_fn(), n.clone());
+        let step = prove_at(succ_n).imp_intro(&p_n).unwrap();
+        assert!(
+            super::nat_induct(base, step).is_err(),
+            "n free in the motive body must be rejected"
+        );
     }
 
     #[test]

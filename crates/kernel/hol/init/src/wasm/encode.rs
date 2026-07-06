@@ -26,7 +26,7 @@
 //! metavariables are *variables*, HOL's capture-avoiding substitution of
 //! `⌜arg⌝` for `st$v$x` in `⌜schema⌝` is syntactically identical to SpecTec
 //! metavariable substitution. So a rule clause `∀ x…. premises ⟹ d ⌜concl⌝`
-//! instantiates by [`Thm::all_elim`](covalence_core::Thm::all_elim) on the nose — no denotation, no β-redex,
+//! instantiates by [`all_elim`](covalence_hol_eval::derived::DerivedRules::all_elim) on the nose — no denotation, no β-redex,
 //! no normalisation. This is what makes [`super::relation`] a rule set the
 //! generic [`crate::metalogic`] engine drives unchanged.
 //!
@@ -91,7 +91,7 @@ pub fn metavar_name(id: impl AsRef<str>) -> String {
 }
 
 /// A SpecTec **metavariable** `st$v$<id> : nat` — a leaf to be `∀`-bound in its
-/// rule's clause (and instantiated by [`Thm::all_elim`](covalence_core::Thm::all_elim)).
+/// rule's clause (and instantiated by [`all_elim`](covalence_hol_eval::derived::DerivedRules::all_elim)).
 pub fn metavar(id: impl AsRef<str>) -> Term {
     Term::free(metavar_name(id), phi())
 }

@@ -1,7 +1,7 @@
 {
   "generatedBy": "scripts/bench-proving.mjs",
-  "note": "Pre-S10 proving-performance baseline (toHOL purge). Wall-clock ms per covalence-init compute-heavy proving suite. Compare S10 against `min` on the SAME machine (numbers are hardware-dependent; the check is ratio-based).",
-  "gitCommit": "7d57a291",
+  "note": "Post-logic-out proving baseline (CoreLang 26 rules; connectives now multi-step hol-eval derivations). Wall-clock ms per covalence-init compute-heavy proving suite; compare on `min`, same machine, ratio-based. The logic-out derivations cost real 1.67x/int 1.54x vs the old pre-S10 reference (maintainer-accepted; escape hatch = re-admit hot connectives as CoreEval accelerator rules).",
+  "gitCommit": "6a49377b (post L1+L2+proptest merge)",
   "profile": "release",
   "reps": 5,
   "warmup": 1,
@@ -13,17 +13,17 @@
       "note": "UTF-8 encode/decode by computation (utf8.cov + Rust)",
       "tests": 12,
       "ms": {
-        "min": 69.55,
-        "median": 69.64,
-        "mean": 69.88,
-        "max": 70.72
+        "min": 99.21,
+        "median": 109.34,
+        "mean": 111.54,
+        "max": 125.38
       },
       "samples": [
-        70.72,
-        69.55,
-        69.64,
-        69.89,
-        69.59
+        109.34,
+        106.13,
+        117.66,
+        99.21,
+        125.38
       ]
     },
     {
@@ -33,17 +33,17 @@
       "note": "UTF-16 encode by computation",
       "tests": 6,
       "ms": {
-        "min": 32.65,
-        "median": 43.82,
-        "mean": 41.01,
-        "max": 45.06
+        "min": 47.84,
+        "median": 52.61,
+        "mean": 52.79,
+        "max": 61.43
       },
       "samples": [
-        45.06,
-        44.04,
-        43.82,
-        39.46,
-        32.65
+        47.84,
+        52.61,
+        61.43,
+        48.77,
+        53.28
       ]
     },
     {
@@ -53,17 +53,17 @@
       "note": "string/bytes newtype seam (light; prelude floor)",
       "tests": 6,
       "ms": {
-        "min": 4.2,
-        "median": 4.32,
-        "mean": 4.35,
-        "max": 4.53
+        "min": 6.38,
+        "median": 6.88,
+        "mean": 6.98,
+        "max": 8.2
       },
       "samples": [
-        4.41,
-        4.29,
-        4.2,
-        4.53,
-        4.32
+        8.2,
+        6.95,
+        6.49,
+        6.38,
+        6.88
       ]
     },
     {
@@ -73,17 +73,17 @@
       "note": "regex.cov derivative-matching, oracle agreement",
       "tests": 10,
       "ms": {
-        "min": 71.84,
-        "median": 75.17,
-        "mean": 79.77,
-        "max": 97.24
+        "min": 100.14,
+        "median": 107.72,
+        "mean": 106.89,
+        "max": 118.2
       },
       "samples": [
-        71.84,
-        73.35,
-        75.17,
-        97.24,
-        81.23
+        118.2,
+        107.72,
+        108.04,
+        100.35,
+        100.14
       ]
     },
     {
@@ -93,17 +93,17 @@
       "note": "regex desugar/compile to a byte language",
       "tests": 5,
       "ms": {
-        "min": 57.45,
-        "median": 58.6,
-        "mean": 61.7,
-        "max": 74.75
+        "min": 82.85,
+        "median": 91.79,
+        "mean": 92.56,
+        "max": 112.54
       },
       "samples": [
-        57.72,
-        74.75,
-        58.6,
-        60,
-        57.45
+        91.79,
+        92.29,
+        83.31,
+        82.85,
+        112.54
       ]
     },
     {
@@ -113,17 +113,17 @@
       "note": "regex_matching integration: oracle corpus + timing regexes",
       "tests": 15,
       "ms": {
-        "min": 159.78,
-        "median": 163.56,
-        "mean": 176.05,
-        "max": 205.9
+        "min": 196.13,
+        "median": 217.74,
+        "mean": 215.7,
+        "max": 235.97
       },
       "samples": [
-        205.9,
-        188.01,
-        163.56,
-        159.78,
-        163
+        227.73,
+        217.74,
+        196.13,
+        235.97,
+        200.93
       ]
     },
     {
@@ -133,17 +133,17 @@
       "note": "nat arithmetic proving",
       "tests": 28,
       "ms": {
-        "min": 16.26,
-        "median": 17.78,
-        "mean": 17.31,
-        "max": 17.95
+        "min": 23.03,
+        "median": 23.91,
+        "mean": 24.89,
+        "max": 29.99
       },
       "samples": [
-        17.85,
-        17.95,
-        17.78,
-        16.26,
-        16.72
+        29.99,
+        23.03,
+        23.55,
+        23.91,
+        23.99
       ]
     },
     {
@@ -153,17 +153,17 @@
       "note": "nat division/mod by computation",
       "tests": 11,
       "ms": {
-        "min": 21.61,
-        "median": 23.23,
-        "mean": 23.44,
-        "max": 26.94
+        "min": 29.06,
+        "median": 35.57,
+        "mean": 35.89,
+        "max": 43.13
       },
       "samples": [
-        21.94,
-        26.94,
-        21.61,
-        23.23,
-        23.48
+        29.06,
+        40.07,
+        31.61,
+        43.13,
+        35.57
       ]
     },
     {
@@ -173,17 +173,17 @@
       "note": "int (quotient) arithmetic proving",
       "tests": 22,
       "ms": {
-        "min": 111.2,
-        "median": 119.57,
-        "mean": 120.69,
-        "max": 133.84
+        "min": 167.88,
+        "median": 191.04,
+        "mean": 188.3,
+        "max": 200.82
       },
       "samples": [
-        133.84,
-        117.52,
-        119.57,
-        111.2,
-        121.32
+        200.82,
+        182.84,
+        198.91,
+        191.04,
+        167.88
       ]
     },
     {
@@ -193,17 +193,17 @@
       "note": "rat arithmetic proving (heaviest numeral suite)",
       "tests": 34,
       "ms": {
-        "min": 229.51,
-        "median": 237.39,
-        "mean": 241.47,
-        "max": 270.69
+        "min": 372.99,
+        "median": 379.97,
+        "mean": 394.9,
+        "max": 442.57
       },
       "samples": [
-        270.69,
-        231.55,
-        237.39,
-        229.51,
-        238.22
+        379.97,
+        372.99,
+        373.31,
+        442.57,
+        405.65
       ]
     },
     {
@@ -213,17 +213,17 @@
       "note": "real/analysis proving over int/rat",
       "tests": 14,
       "ms": {
-        "min": 50.56,
-        "median": 60.15,
-        "mean": 65.27,
-        "max": 92.03
+        "min": 85.91,
+        "median": 89.16,
+        "mean": 94.73,
+        "max": 111.63
       },
       "samples": [
-        92.03,
-        60.15,
-        58.16,
-        50.56,
-        65.46
+        86.2,
+        85.91,
+        111.63,
+        100.76,
+        89.16
       ]
     }
   ]

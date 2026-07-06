@@ -15,6 +15,7 @@
 //! transient proof state — goal, context facts, variable scope — separate from
 //! the importable namespace [`Env`]. (The kernel replay [`check`] stays sync.)
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -793,7 +794,7 @@ impl Tactic for Induct {
             .mk_comb(eb.sym()?)?
             .eq_mp(step_imp)?;
 
-        let ind = Thm::nat_induct(base, step)?;
+        let ind = crate::init::ext::nat_induct(base, step)?;
         let nf = crate::proofs::rewrite::beta_nf(ind.concl().clone());
         Ok(nf.eq_mp(ind)?)
     }

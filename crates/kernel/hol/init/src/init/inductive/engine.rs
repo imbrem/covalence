@@ -33,6 +33,7 @@
 use covalence_core::{Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_inductive::{
     ArgSort, BackendCaps, CtorSpec, IndResult, InductiveBackend, InductiveError, InductiveFacts,
     InductiveSpec, InductiveTheory,
@@ -213,7 +214,7 @@ impl InductiveFacts<NativeHol> for NatEngineTheory {
                     expected: 2,
                     got: c.len(),
                 })?;
-        let bare = Thm::nat_induct(base, step)?; // ⊢ ∀n. motive n
+        let bare = crate::init::ext::nat_induct(base, step)?; // ⊢ ∀n. motive n
         Ok(relativize_induct(bare, &self.mem, &Type::nat())?)
     }
 

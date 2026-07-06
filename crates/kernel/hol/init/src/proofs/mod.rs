@@ -6,8 +6,9 @@
 //! multi-step kernel sequences into one-line call sites. They can't
 //! produce a false `Thm` independently; they're plumbing.
 //!
-//! The connectives are kernel primitives (`and_intro`, `or_elim`, …
-//! on [`covalence_core::Thm`]) and the `nat` facts live in
+//! The connective / quantifier rules are zero-TCB derivations
+//! (`covalence_hol_eval::derived::DerivedRules`, re-exported through
+//! [`crate::init::ext`]) and the `nat` facts live in
 //! [`crate::init::nat`].
 
 pub mod rewrite;

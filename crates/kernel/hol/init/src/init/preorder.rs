@@ -53,6 +53,7 @@
 //! with no change to the algorithm. See [`order_env`] /
 //! [`OrderTactic`] for the `.cov` registration.
 
+use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;
 use std::sync::Arc;
 

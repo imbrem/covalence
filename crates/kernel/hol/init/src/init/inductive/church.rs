@@ -50,6 +50,7 @@
 
 use covalence_core::{Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_inductive::{
     ArgSort, BackendCaps, IndResult, InductiveBackend, InductiveError, InductiveFacts,
     InductiveSpec, InductiveTheory,

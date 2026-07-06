@@ -8,18 +8,6 @@ EtaConv
 Assume
 EqMp
 DeductAntisym
-ImpIntro
-ImpElim
-AllIntro
-AllElim
-AndIntro
-AndElimL
-AndElimR
-OrIntroL
-OrIntroR
-OrElim
-NotIntro
-NotElim
 Inst
 InstTFree
 Weaken
@@ -33,7 +21,6 @@ SuccInj
 ZeroNeSucc
 FalseElim
 NatInduct
-Lem
 SelectAx
 Define
 NewTypeDefRule

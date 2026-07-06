@@ -98,6 +98,7 @@ pub mod list_recursion;
 pub mod logic;
 pub mod monoid;
 pub mod nat;
+pub mod nat_binary;
 pub mod nat_div;
 pub mod nat_thy;
 pub mod option;

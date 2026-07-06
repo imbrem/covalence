@@ -79,6 +79,20 @@ Bridge built (S9a); the flip is maintainer-gated. See
     full `graph_total`/`graph_det`/`recursion_theorem` run on a fresh ≥2-rec-arg type
     still needs a genuine `Inductive` adapter (the carrier/`Wf` seam `#inductive` reports).
 
+- **Binary normal form** (`init/nat_binary.rs`). `double`/`bit0`/`bit1` +
+  `nat_of_bits : list bool → nat` + the representation theorem
+  (`nat_of_bits_surjective`, via `inc_lemma`) are proved. Stretch, not built:
+  - **Parity facts** — `double_ne_succ_double` (`¬(double m = succ (double n))`,
+    even ≠ odd) and the derived `bit0`/`bit1` distinctness. Route: trichotomy +
+    `double` monotonicity (mirror `double_inj`).
+  - **Canonical form / uniqueness** — `nat_of_bits` restricted to *normalised*
+    (no trailing-`false`) bit lists is injective, giving a genuine `list bool ≅ nat`
+    (needs a `bits_of_nat` direction + round-trips; NP3).
+  - **Log-depth addition** — `bit_add` carry laws over the binary form
+    (`bit0`/`bit1` recursion) so `+` runs in `O(log n)` depth as a pure-HOL tactic;
+    the point of the whole normal form. Needs `bit_add`/`bit_add_carry` defined by
+    list/binary recursion + their `nat_of_bits`-correctness proof.
+
 - **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Missing:
   - **`list_foldl`** — the left-fold recursor's defining equations not yet discharged.
   - **`filter` / `flatten` clauses** — `foldr`-factored; follow the `length`/`cat`

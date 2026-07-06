@@ -56,3 +56,12 @@ Porting the numeric tower to data is the remaining follow-up.
 - **`prove_true` is single-step only.** It reduces one redex and bridges `= T`;
   the recursive normalise-then-decide workhorse remains `TermExt::prove_true` in
   `covalence-init` (whose ι steps route here since the S6 re-route).
+
+## Minor
+
+- **Connective-rule perf (logic-out).** and/or/imp/not/all/lem are now multi-step
+  `CoreLang` derivations (`derived.rs`), not kernel rules — ~1.5–1.7x on the
+  hot proving suites (real/int/utf16). Acceptable for now; if it bites, re-admit
+  the hottest as `CoreEval` accelerator rules with the derivation as the standing
+  soundness witness (same pattern as the arithmetic certs). See
+  `notes/vibes/handoff/tohol-purge.md`.

@@ -181,8 +181,10 @@ Bridge built (S9a); the flip is maintainer-gated. See
   - **`Hol` trait ↔ `LogicOps` unification** — `inductive/hol.rs`'s `Hol` should extend
     `covalence_inductive::LogicOps` instead of duplicating its surface (`api.rs` forwards
     method-by-method today).
-  - **Primitive-recursion (paramorphism) `comp` variant** — the bundle contract is
-    iteration-only; exact-type backends could additionally serve raw recursive arguments.
+  - **Carved backend is `sexpr`-shape-only** — `inductive/carved.rs` realizes exactly the
+    `atom bytes | snil | scons rec rec` shape (full-caps: `prim_rec`/`rec_injective`/
+    `mem_trivial`, paramorphic recursor); a generic exact-type carver for arbitrary specs is
+    future work.
   - **`covalence-sexp` quotation helper** — surface `SExp` → `sexpr_theory()` constructor
     terms, next to the backend (the Lisp pole's data path).
 

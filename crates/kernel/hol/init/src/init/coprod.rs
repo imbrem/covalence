@@ -29,7 +29,7 @@
 use covalence_core::{Error, Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;
 
-use crate::init::eq::delta_head;
+use crate::init::eq::{beta_nf_concl, delta_head};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::{exists_elim, exists_intro, simp, truth};
 
@@ -424,27 +424,35 @@ fn left_ne_right(a: &Type, b: &Type, av: &Term, bv: &Term) -> Result<Thm> {
 fn rel_inj(rel: &Term, rel2: &Term, v: &Term, x: &Term, y: &Term, z: bool) -> Result<Thm> {
     let eq = rel.clone().equals(rel2.clone())?;
     let h = Thm::assume(eq.clone())?;
-    let applied = h
-        .cong_fn(x.clone())?
-        .cong_fn(y.clone())?
-        .cong_fn(Term::bool_lit(z))?
-        .reduce_lhs()?
-        .reduce_rhs()?; // {H} ⊢ (z' ∧ (v = v)) = (z' ∧ (v = v2))
-    // Fold `v = v` to `T` (simp leaves carrier equalities), then let `simp`
-    // collapse the discriminator and `T ∧ _`.
+    // β-reduce the two `left_rel`/`right_rel` applications — **β only**, so
+    // the carrier equality `v = v2` survives verbatim. A full βι `reduce`
+    // would ι-collapse it at `α = bool` (e.g. `(F = v2)` → `¬v2`), leaving a
+    // bare negation where the projection below expects an equation.
+    let applied = beta_nf_concl(
+        h.cong_fn(x.clone())?
+            .cong_fn(y.clone())?
+            .cong_fn(Term::bool_lit(z))?,
+    )?; // {H} ⊢ (z' ∧ (v = v)) = (z' ∧ (v = v2))
+    // Fold `v = v` to `T`; `simp` then collapses the (fully literal) LHS
+    // discriminator to `T`.
     let vv_t = Thm::refl(v.clone())?.eqt_intro()?; // ⊢ (v=v) = T
     let applied = applied.rewrite(&vv_t)?; // {H} ⊢ (z' ∧ T) = (z' ∧ (v = v2))
-    let (lhs, rhs) = {
-        let (l, r) = applied.concl().as_eq().ok_or(Error::NotAnEquation)?;
-        (l.clone(), r.clone())
-    };
-    let v_eq = simp(&lhs)? // ⊢ (z' ∧ T) = T
+    let lhs = applied
+        .concl()
+        .as_eq()
+        .ok_or(Error::NotAnEquation)?
+        .0
+        .clone();
+    // Project the surviving second conjunct instead of `simp`-ing the RHS:
+    // at `α = bool` `simp` would rewrite `v = v2` to `¬v2` / `v2`, but the
+    // caller needs it as a genuine equation.
+    simp(&lhs)? // ⊢ (z' ∧ T) = T
         .sym()?
         .trans(applied)? // {H} ⊢ T = (z' ∧ (v = v2))
-        .trans(simp(&rhs)?)? // {H} ⊢ T = (v = v2)
         .sym()?
-        .eqt_elim()?; // {H} ⊢ v = v2
-    v_eq.imp_intro(&eq)
+        .eqt_elim()? // {H} ⊢ z' ∧ (v = v2)
+        .and_elim_r()? // {H} ⊢ v = v2
+        .imp_intro(&eq)
 }
 
 // ============================================================================

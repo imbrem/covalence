@@ -620,6 +620,26 @@ mod tests {
     }
 
     #[test]
+    fn some_inj_at_bool_is_genuine() {
+        // `some_inj` at the `bool` carrier with literal arguments — the
+        // instantiation the carved sexpr `car`/`cdr` discriminator needs
+        // (`head (cons d q) = some true`). Regression guard for the
+        // `coprod::rel_inj` β-only fix (a full βι reduce ι-collapsed the
+        // carrier equality `F = v2` to `¬v2` at `α = bool`).
+        let b = Type::bool();
+        let thm = some_inj(&b, &Term::bool_lit(false), &Term::bool_lit(true)).unwrap();
+        assert!(thm.hyps().is_empty());
+        let some_f = Term::app(some(b.clone()), Term::bool_lit(false));
+        let some_t = Term::app(some(b.clone()), Term::bool_lit(true));
+        let expected = some_f
+            .equals(some_t)
+            .unwrap()
+            .imp(Term::bool_lit(false).equals(Term::bool_lit(true)).unwrap())
+            .unwrap();
+        assert_eq!(thm.concl(), &expected);
+    }
+
+    #[test]
     fn some_inj_is_genuine() {
         // ⊢ some x = some y ⟹ x = y.
         let a = Type::tfree("a");

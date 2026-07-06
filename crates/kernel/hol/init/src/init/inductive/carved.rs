@@ -58,7 +58,7 @@
 //! β-inert for the engine's normalization passes), built exactly once in a
 //! process-global [`LazyLock`].
 //!
-//! Consumers: [`crate::init::lisp`] (the Lisp/ACL2 groundwork theory).
+//! Consumers: the Lisp/ACL2 groundwork theory (`crate::init::lisp`, planned).
 
 use std::sync::LazyLock;
 
@@ -236,9 +236,7 @@ pub struct CarvedSExpr {
     u_nil_eq: Thm,
     u_cons: Term,
     u_cons_eq: Thm,
-    u_car: Term,
     u_car_eq: Thm,
-    u_cdr: Term,
     u_cdr_eq: Thm,
     /// `Wf : U → bool`.
     wf: Term,
@@ -517,9 +515,7 @@ impl CarvedSExpr {
             u_nil_eq,
             u_cons,
             u_cons_eq,
-            u_car,
             u_car_eq,
-            u_cdr,
             u_cdr_eq,
             wf,
             wf_eq,
@@ -621,10 +617,10 @@ impl CarvedSExpr {
     /// `⊢ projU (sconsU x y) = x|y` — the projections compute (pointwise +
     /// function extensionality).
     fn u_proj_cons(&self, take_cdr: bool, x: &Term, y: &Term) -> Result<Thm> {
-        let (proj_eq, target) = if take_cdr {
-            (&self.u_cdr_eq, y)
+        let proj_eq = if take_cdr {
+            &self.u_cdr_eq
         } else {
-            (&self.u_car_eq, x)
+            &self.u_car_eq
         };
         let scons_xy = self.u_cons.clone().apply(x.clone())?.apply(y.clone())?;
         let acc = apply_def(proj_eq, std::slice::from_ref(&scons_xy))?; // ⊢ projU (sconsU x y) = λq. sconsU x y (cons flag q)

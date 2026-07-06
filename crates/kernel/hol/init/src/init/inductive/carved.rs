@@ -144,7 +144,7 @@ fn cons_path(d: Term, q: Term) -> Result<Term> {
 
 /// `⊢ C x₁ … xₙ = body[x⃗]` — unfold a [`Thm::define`]d constant through
 /// its λ-body, one argument at a time (`cong_fn` + top β).
-fn apply_def(def_eq: &Thm, args: &[Term]) -> Result<Thm> {
+pub(crate) fn apply_def(def_eq: &Thm, args: &[Term]) -> Result<Thm> {
     let mut acc = def_eq.clone();
     for a in args {
         acc = acc.cong_fn(a.clone())?;
@@ -1088,6 +1088,41 @@ fn rec_at(beta: &Type) -> Result<(Term, Vec<Thm>)> {
         .map(|e| e.clone().inst_tfree(REC_B, beta.clone()))
         .collect::<Result<_>>()?;
     Ok((rec_b, eqs_b))
+}
+
+// ============================================================================
+// The recursor, exposed for defining recursive functions (the Lisp layer)
+// ============================================================================
+
+impl CarvedSExpr {
+    /// The paramorphic recursor `rec s⃗ : sexpr → β` at result type `beta`,
+    /// fully applied to the three step terms (their types are
+    /// [`para_step_tys`]`(tau, beta)`). This is the term the Lisp layer
+    /// [`Thm::define`]s a total recursive function as.
+    pub(crate) fn prec(&self, steps: &[Term], beta: &Type) -> Result<Term> {
+        let (rec, _) = rec_at(beta)?;
+        let mut r = rec;
+        for s in steps {
+            r = r.apply(s.clone())?;
+        }
+        Ok(r)
+    }
+
+    /// The paramorphic computation equation for constructor `i` with the
+    /// three steps substituted: `⊢ ∀x⃗. rec s⃗ (Cᵢ x⃗) = sᵢ x⃗ (rec s⃗ r⃗)`
+    /// (`r⃗` = the recursive arguments among `x⃗`). The `rec s⃗ …`
+    /// applications match [`Self::prec`]`(steps, beta).apply(…)` verbatim,
+    /// so an unfolded definition rewrites against this equation directly.
+    pub(crate) fn prec_eq(&self, steps: &[Term], i: usize, beta: &Type) -> Result<Thm> {
+        let (_, eqs) = rec_at(beta)?;
+        let mut eq = eqs.get(i).cloned().ok_or_else(|| {
+            Error::ConnectiveRule(format!("carved prec_eq: bad constructor index {i}"))
+        })?;
+        for (name, s) in STEP_VARS.iter().zip(steps) {
+            eq = eq.inst(name, s.clone())?;
+        }
+        Ok(eq)
+    }
 }
 
 // ============================================================================

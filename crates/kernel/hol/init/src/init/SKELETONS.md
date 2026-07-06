@@ -188,6 +188,17 @@ Bridge built (S9a); the flip is maintainer-gated. See
   - **`covalence-sexp` quotation helper** — surface `SExp` → `sexpr_theory()` constructor
     terms, next to the backend (the Lisp pole's data path).
 
+- **Lisp / ACL2 layer** (`init/lisp.rs`, over the carved carrier). Built: `car`/`cdr`/
+  `cons`/`consp`/`atom?`/`len`/`append` with comp laws + `append_assoc`/`len_append` by
+  structural induction. Open:
+  - **`eq` (sexpr equality) and `assoc` (a-list lookup)** — the next recursive functions;
+    follow the `len`/`append` catamorphism/paramorphism pattern.
+  - **ACL2 `defun` admission** — general measure-based termination + per-definition
+    induction-scheme generation (design in `inductive-api-design.md` §4.2). The current
+    theorems hand-pick structural measures; no admission machinery yet.
+  - **`proof/acl2` frontend** — the `.lisp`/`defun`/`defthm` reader that lowers onto this
+    API (mapping in `inductive-api-design.md` §4.3). Not started.
+
 - **λ_iter deep embedding** (`init/lambda_iter.rs` + `.cov`, `init/cv_recursion.rs`).
   Tarski-style nat-encoding documented; **proved**: course-of-values induction
   (`strong.below`/`strong.induct`) and the full course-of-values *recursion*

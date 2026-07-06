@@ -389,6 +389,63 @@ The layer's home when built: a new module/crate above `covalence-inductive`
 implemented; it must NOT live in the core trait crate, since it needs
 `LogicOps` machinery but stays logic-generic).
 
+### 4.3 What a `proof/acl2` frontend consumes
+
+A future ACL2 *frontend* (the `.lisp` / `defun` / `defthm` reader, a peer of the
+`proof/metamath` and `proof/alethe` replayers) never touches the kernel
+directly. It compiles each top-level form onto the bundle + the derived-theorem
+API, exactly the way the built `init/lisp.rs` slice already does by hand:
+
+| ACL2 surface | Bundle / derived-theorem call it lowers to |
+|---|---|
+| `(defun f (x⃗) body)` with measure `m` | pick step terms for the sexpr recursor; `Thm::define` `f := prec[steps]`; discharge termination (`m(rec-args) < m(x)`) → **the definitional equation `⊢ ∀x. f x = body`** as a theorem (via `nat` strong induction transported along `m`). `init/lisp.rs` builds this shape unconditionally for structural (measure = subterm) recursion — `len`/`append` *are* two hand-lowered `defun`s. |
+| a `defun`'s computation on each constructor | `prec_eq(steps, i, β)` + `apply_def` unfolding — the per-constructor comp laws (`len_scons`, `append_scons`, `consp_atom`, …). |
+| `car`/`cdr`/`consp`/`atom`/`cons`/`eq` primitives | the carved carrier's recursion-position extractors + `bool` catamorphisms (`Lisp::{car,cdr,cons,consp,atom_p}`) — `car`/`cdr` are *why* the carved (exact) backend is required (§4.4). |
+| `(defthm name claim :hints ((:induct (f x))))` | `CarvedSExpr::induct(motive, [leaf-cases…, cons-case])` — the induction scheme read off the datatype (or, later, off `f`'s recursion). `Lisp::{append_assoc,len_append}` are two hand-lowered `defthm`s by structural `:induct`. |
+| the ACL2 ground-term evaluator (`(len '(a b))` ⇒ `2`) | the eval tier (`Thm<CoreEval>`) accelerating the same comp laws on quoted data — §6.3's accelerated backend slot. |
+
+So the frontend's job reduces to: parse → choose a measure/induction scheme →
+emit these calls. Everything it emits is an ordinary derived theorem over this
+API; the frontend adds **zero** trusted surface.
+
+### 4.4 The universal-vs-exact backend split (permanent capability story)
+
+The two HOL backends are **not** a temporary "one is better" situation — they
+are two permanent points on a genuine expressiveness tradeoff, and a datatype's
+*Lisp-completeness* is exactly what distinguishes them:
+
+- **Church / `ImpredicativeBackend` — universal, no `cdr`.** Realizes *any* v1
+  spec in a single rank-1 impredicative encoding; this is the portable,
+  logic-light backend (it needs only ∀/λ, so it transports to any `LogicOps`).
+  Its recursor is an **iteration** (catamorphism): a step sees the *fold images*
+  of recursive subterms, never the subterms themselves. Consequently the
+  recursion-position destructor `cdr : sexpr → sexpr` (and `car` reading a `Rec`
+  field, and rec-position injectivity `scons h t = scons h' t' ⟹ t = t'`) is
+  **provably unstatable** — at a collapsing instance of the result tyvar the
+  claim is false, so no rank-1 polymorphic proof can exist (`tree::branch_inj`,
+  §9 delta 3). `BackendCaps::rec_injective = false` reports this honestly. You
+  get `atom?`, `consp`, `len` (a cata) — but not a real `cdr`, hence not Lisp.
+- **Carved / typedef `CarvedSExpr` — exact, full Lisp.** Realizes the *specific*
+  `atom bytes | snil | scons rec rec` shape as a genuine `new_type_definition`
+  subtype of a well-founded tree pre-carrier. Its terms are the honest carrier
+  type (not a polymorphic Church code), so it delivers the full-caps set:
+  **`prim_rec`** (a paramorphic recursor whose step sees raw subterms), **`car`/
+  `cdr` as recursion-position extractors**, **rec-position injectivity**, and
+  `mem = ⊤` (every carrier element is well-formed). This is what `init/lisp.rs`
+  builds on — `cdr`, `append` (a paramorphism), and structural-`:induct`
+  theorems all require it.
+
+The dividing line is crisp: **anything Lisp needs `cdr`, and `cdr` is a
+rec-position extractor, which only the exact backend can state.** The Church
+backend is the right tool for datatypes consumed purely by folds
+(`bool`-tests, size measures, evaluators); the carved backend is the right tool
+whenever you must take a datatype apart structurally. Same `InductiveFacts`
+surface, `BackendCaps` names the difference, and consumers dispatch on the caps
+they need — the within-/across-logic swap made honest about capability rather
+than pretending uniformity. Future exact backends (a generic carver for
+arbitrary specs; the set.mm ordered-pair construction, §5) inhabit the same
+"exact, full-caps" pole.
+
 ---
 
 ## 5. The set.mm backend sketch (design only — NOT implemented now)
@@ -543,3 +600,44 @@ Contract deltas vs the §2 sketch (all recorded in `theory.rs`'s module docs):
 The `sexpr` induction skeleton (`init/SKELETONS.md` "Genuine SExpr structural
 induction") is **closed** — the honest `Wf`-relativized form ships in the
 bundle. New open items live under "Inductive-types API backends" there.
+
+---
+
+## 10. I3/J outcome (built 2026-07: the carved carrier + the Lisp theory)
+
+The exact-type pole and the first consumer theory landed:
+
+- **The carved SExpr carrier** (`init/inductive/carved.rs`, `CarvedSExpr`) — the
+  `atom bytes | snil | scons rec rec` shape realized via `new_type_definition`
+  over a well-founded tree pre-carrier, delivering the full-caps set the Church
+  backend cannot: a **paramorphic** recursor (`prec`/`prec_eq`, steps see raw
+  subterms), the recursion-position extractors `car`/`cdr`, **rec-position
+  injectivity** (`scons` is injective in *both* fields — the `prod.rs`
+  pair-injectivity route), constructor distinctness across all three pairs, and
+  `mem = ⊤`. Proof machinery cribbed from `recursion.rs`/`list_recursion.rs`
+  (recursor), `prod.rs` (injectivity), `tree.rs` (`leaf_inj`), and
+  `cond`/`coprod` (distinctness). Everything flows through existing kernel rules
+  — a failed derivation is an error, never unsoundness; base/trusted + core were
+  untouched.
+- **The Lisp theory** (`init/lisp.rs`, `Lisp`) — the ACL2 groundwork, a
+  *consumer* of the carved carrier: `car`/`cdr`/`cons` (re-exported), the
+  `bool` catamorphisms `consp`/`atom?`, the `nat` catamorphism `len`, and the
+  **paramorphism** `append` (its `scons` step re-uses the raw head), each a
+  `Thm::define`d constant with its per-constructor computation laws proved off
+  `prec_eq`. Two genuine **structural-induction** theorems ship as ordinary
+  derived theorems via `CarvedSExpr::induct`: `append_assoc`
+  (`append (append x y) z = append x (append y z)`) and `len_append`
+  (`len (append x y) = len x + len y`, tying the catamorphism, the
+  paramorphism, and `nat`'s `add` recursion together) — the two archetypal
+  ACL2 `defun` + `:induct` pairs, hand-lowered per §4.3.
+
+Proof lesson worth keeping (recorded in `lisp.rs`): a paramorphic comp law's
+RHS holds the *recursor images* `rec s⃗ h`/`rec s⃗ t`; fold them back to the
+function applications (`append h w`, `len t`) via the definitional equation
+**before** `reduce_rhs`, so β-reduction cannot unfold the recursor's ε-term.
+
+Still open (Lisp/ACL2 layer, tracked in `init/SKELETONS.md`): `eq`
+(sexpr equality) and `assoc` (association-list lookup) are the obvious next
+recursive functions; the full ACL2 `defun` **measure-based admission** +
+per-definition induction-scheme generation (§4.2) is the frontend's job, not
+yet built (the current theorems hand-pick structural measures).

@@ -84,9 +84,30 @@ impl Op for IsThm {
     type Out = bool;
 }
 
-/// The structured proposition carried by every [`Thm`](super::Thm): the sequent
-/// `(hyps, concl)` under the `IsThm` judgement.
-pub type CoreProp = App<IsThm, (Val<Ctx>, Val<Term>)>;
+/// The structured proposition carried by a [`Thm`](super::Thm), **generalized
+/// over its conclusion operand** `C`: the sequent `IsThm(Γ, φ)` where the
+/// conclusion `φ : Term` is denoted by the expression `C` (`C: Expr<Ty =
+/// Term>`).
+///
+/// The default operand `C = Val<Term>` (a *concrete* term leaf) recovers
+/// [`CoreProp`]; a *symbolic* operand (e.g. `NatAddEqE` in
+/// `covalence-hol-eval` — `nat.add (toHOL a) (toHOL b) = toHOL (a+b)` with
+/// `Val<Nat>` bignum leaves under the uninterpreted `ToHolNat` op) lets a
+/// theorem carry a `toHOL` value **without ever materializing** its
+/// succ-tower. This is the literal-endgame's additive mechanism (design:
+/// `notes/vibes/literal-endgame-design.md`, stage EG1): `IsThmProp<C>` is an
+/// `Expr<Ty = bool>` for **every** `C: Expr<Ty = Term>` (the tuple sorts at
+/// `(Ctx, Term) = IsThm::In`), so the base `eq_mp`/`trans`/`cong` calculus
+/// transports it with **zero** new base machinery — the laziness *is* the
+/// existing `Expr`/`Op` algebra.
+pub type IsThmProp<C> = App<IsThm, (Val<Ctx>, C)>;
+
+/// The **concrete** sequent proposition carried by an ordinary
+/// [`Thm`](super::Thm) `= Thm<L>` (default operand): `IsThm(Γ, φ)` with the
+/// conclusion `φ` as a `Val<Term>` leaf. The `= IsThmProp<Val<Term>>`
+/// specialization — same value it always was, so every existing rule,
+/// accessor, and consumer is unchanged.
+pub type CoreProp = IsThmProp<Val<Term>>;
 
 /// The core kernel's language: a stateless [`Copy`] ZST admitting EXACTLY the sound
 /// rule catalogue in `super::rules`. Hypotheses live INSIDE the proposition (the

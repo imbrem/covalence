@@ -24,6 +24,10 @@
 //! - [`nat_add_thm`] — the S4 toHOL slice driver (symbolic-tier certificate
 //!   reified through the admitted toHOL rules and transported with the base
 //!   `eq_mp`), kept as the exemplar of the never-materialize pipeline.
+//! - [`nat_add_thm_symbolic`] — the literal-endgame (stage EG1) driver: the
+//!   same `NatAddCert`, landed **without reification** as a
+//!   `Thm<CoreEval, NatAddEqE>` whose `toHOL` leaves stay native `Nat`s — the
+//!   succ-tower is never built (design: `notes/vibes/literal-endgame-design.md`).
 //! - [`lit`] — the literal build/recognize facade ([`mk_nat`]/[`as_nat`]/…):
 //!   the single peripheral chokepoint that moves when the kernel literal
 //!   variants die.
@@ -57,7 +61,7 @@ pub use lang::{CoreEval, EvalThm, EvalTypeDef};
 pub use lit::{
     as_blob, as_int, as_nat, as_u32, as_u64, kind_name, mk_blob, mk_int, mk_nat, mk_u32, mk_u64,
 };
-pub use tohol::nat_add_thm;
+pub use tohol::{nat_add_thm, nat_add_thm_symbolic};
 pub use tohol_ops::{
     HolApp, HolAppE, NatAddEqE, NatAddLhsE, ToHolBytes, ToHolBytesE, ToHolF32, ToHolF32E, ToHolF64,
     ToHolF64E, ToHolInt, ToHolIntE, ToHolNat, ToHolNatE,

@@ -48,7 +48,9 @@ pub(crate) mod rules;
 mod typedef;
 pub use typedef::TypeDef;
 
-use lang::{CoreLang, CoreProp, HolTier};
+use covalence_pure::{Expr, Val};
+
+use lang::{CoreLang, HolTier, IsThmProp};
 use rules::*;
 
 /// The kernel certificate, generic over its **tier** `L` (default
@@ -75,8 +77,82 @@ use rules::*;
 /// every rule a tier admits derives its conclusion from unforgeable premise
 /// `pure::Thm`s and is sound on all inputs — so even a hypothetically-public
 /// field could only wrap already-true theorems.
+///
+/// ## The conclusion operand `C` (the literal-endgame mechanism)
+///
+/// The second parameter `C` (default `Val<Term>`) is the **conclusion
+/// operand** of the carried proposition `IsThm(Γ, φ)` — see [`IsThmProp`].
+/// `Thm<L>` still means `Thm<L, Val<Term>>` (a *concrete* term conclusion),
+/// so the entire HOL rule catalogue and every accessor below live in
+/// `impl<L: HolTier> Thm<L>` and resolve to the default operand **unchanged**.
+///
+/// A non-default `C` is a *symbolic* conclusion — e.g. `Thm<CoreEval,
+/// NatAddEqE>` carries `nat.add (toHOL a) (toHOL b) = toHOL (a+b)` with the
+/// naturals held as native `Val<Nat>` leaves under the uninterpreted
+/// `ToHolNat` op, so a big value's succ-tower is **never materialized**
+/// (design: `notes/vibes/literal-endgame-design.md`). Symbolic theorems are
+/// landed via [`Thm::from_pure_sym`] and read via [`Thm::sym_concl`]; the base
+/// `eq_mp`/`trans`/`cong` calculus already transports the `App`/`Val` operand
+/// shapes, so the mechanism adds **zero** base-TCB machinery.
 #[derive(Clone)]
-pub struct Thm<L: HolTier = CoreLang>(covalence_pure::Thm<L, CoreProp>);
+pub struct Thm<L: HolTier = CoreLang, C = Val<Term>>(covalence_pure::Thm<L, IsThmProp<C>>)
+where
+    C: Expr<Ty = Term>;
+
+/// The **symbolic-conclusion** surface, generic over the operand `C` (the
+/// literal-endgame mechanism). Available at every `C: Expr<Ty = Term>` —
+/// including the default `C = Val<Term>`, where it coexists with the concrete
+/// [`concl`](Thm::concl)/[`hyps`](Thm::hyps) accessors below.
+impl<L: HolTier, C: Expr<Ty = Term>> Thm<L, C> {
+    /// Wrap an already-minted pure theorem `⊢ IsThm(Γ, φ)` **whose conclusion
+    /// operand `φ` is the symbolic expression `C`** (never materialized) as a
+    /// kernel [`Thm<L, C>`] — the literal-endgame landing constructor (design:
+    /// `notes/vibes/literal-endgame-design.md`, stage EG1).
+    ///
+    /// ## Why there is no sequent floor here (and why that is sound)
+    ///
+    /// [`from_pure`](Thm::from_pure) re-runs `check_sequent` on the *concrete*
+    /// `Term` conclusion. That cannot be done here without **forcing** the
+    /// symbolic operand into a concrete term (materializing the very
+    /// succ-tower the mechanism exists to avoid), so this constructor does
+    /// **not** re-check well-typedness. It is sound on exactly the same
+    /// footing `from_pure`'s docstring already relies on — *soundness rests on
+    /// `admits()` alone*:
+    ///
+    /// A `pure::Thm<L, IsThmProp<C>>` (an `IsThm`-headed proposition) can only
+    /// have come from (a) an admitted rule whose `decide` **derives** the
+    /// whole conclusion — the only such rules with an `IsThm`-headed `Concl`
+    /// are the eval-tier certificate rules, each of which builds a
+    /// well-typed sequent (`NatAddCert` via `nat_add_eq_expr`, the others via
+    /// their `seq` floor) — or (b) the ungated equality/bool calculus
+    /// (`eq_mp`/`trans`/`cong`/…) transporting such a theorem, which preserves
+    /// well-typedness. No `refl`/`of_eq`/bool-theory mint produces an
+    /// `IsThm`-headed prop. So the landed theorem is already a true, well-typed
+    /// sequent of tier `L`; wrapping it adds nothing, exactly as for
+    /// `from_pure`. (The non-forcing well-typedness of a symbolic conclusion is
+    /// demonstrated machine-checkably in
+    /// `covalence-hol-eval`'s `nat_add_symbolic_never_materializes` test, which
+    /// walks the operand and confirms it holds **no** materialized numeral.)
+    pub fn from_pure_sym(t: covalence_pure::Thm<L, IsThmProp<C>>) -> Thm<L, C> {
+        Thm(t)
+    }
+
+    /// The **symbolic conclusion operand** `φ : Term` — the expression `C`,
+    /// read by reference (reading never mints, and never forces). For the
+    /// default `C = Val<Term>` this is the concrete-term leaf; for a symbolic
+    /// `C` (e.g. `NatAddEqE`) it is the un-materialized `toHOL` expression an
+    /// inspector can walk without building any succ-tower.
+    pub fn sym_concl(&self) -> &C {
+        &self.0.prop().1.1
+    }
+
+    /// The hypotheses `Γ`, read by reference. Always a concrete `Val<Ctx>`
+    /// regardless of the conclusion operand `C`, so this works at every tier
+    /// and every operand shape.
+    pub fn sym_hyps(&self) -> &Ctx {
+        &self.0.prop().1.0.0
+    }
+}
 
 impl<L: HolTier> Thm<L> {
     pub fn hyps(&self) -> &Ctx {

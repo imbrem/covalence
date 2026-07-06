@@ -14,12 +14,19 @@ future seams left open by the core-on-pure port.
   `ToHolNatVal`/`ToHolIntVal`/`ToHolBytesVal` and `certs::Lit::to_term` reify to
   kernel literals (`Term::nat_lit` & co.); at literal deletion only the reify
   target flips (consumers don't move).
-- **Symbolic-conclusion mechanism (`Thm<L, C>`) covers nat.add only.** The
-  additive `Thm<L, C = Val<Term>>` + `from_pure_sym` mechanism (EG1;
-  `notes/vibes/literal-endgame-design.md`) landed with `nat_add_thm_symbolic`;
-  EG2 extends the symbolic lander to int/bytes/u8/f32 (one `_symbolic` entry per
-  cert family, reusing the same `ToHolInt`/`Bytes`/`F32`/`F64` shapes). The
-  per-family certs still conclude the reified `CoreProp`. Also open: the
+- **Symbolic-conclusion mechanism (`Thm<L, C>`): float family blocked (EG2).**
+  The additive `Thm<L, C = Val<Term>>` + `from_pure_sym` mechanism (EG1;
+  `notes/vibes/literal-endgame-design.md`) now covers **nat** (`nat_add`), **int**
+  (`int_add`/`int_mul`/`int_neg`) and **bytes** (`bytes_cat`/`bytes_len`) via
+  symbolic landers in `covalence-hol-eval::tohol`. The int/bytes family certs
+  still conclude the reified `CoreProp`; their landers transport that concrete
+  cert onto the symbolic `ToHol*` shape with the existing `ToHol*Val` reify rules
+  + base `eq_mp` (zero new admitted rule). **FLOAT (`f32`/`f64`) is blocked:**
+  `FloatCert` concludes concrete `CoreProp`, but no `ToHolF32Val`/`ToHolF64Val`
+  reify rule is admitted, so the backward transport can't relate a
+  `ToHolF32`/`ToHolF64` leaf to the cert's `small_int` operand without a NEW
+  admitted rule (a `ToHolFloatVal` reify rule or a dedicated symbolic
+  `FloatAddCert`) — deferred to a maintainer-gated stage. Also open: the
   remaining HOL term formers (const/abs) as base ops.
 - **`from_pure_sym` trusts the mint (no non-forcing floor).** It cannot re-run
   the concrete sequent floor (that would materialize the operand). A

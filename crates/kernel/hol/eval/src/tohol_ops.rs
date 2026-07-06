@@ -132,6 +132,51 @@ pub type NatAddLhsE = HolAppE<HolAppE<Val<Term>, ToHolNatE>, ToHolNatE>;
 /// (the outer `Val<Term>` leaf is HOL `=` at `nat`).
 pub type NatAddEqE = HolAppE<HolAppE<Val<Term>, NatAddLhsE>, ToHolNatE>;
 
+// ---------------------------------------------------------------------------
+// Symbolic-conclusion shapes for the int / bytes landers (stage EG2 —
+// `notes/vibes/literal-endgame-design.md`). Each mirrors `NatAddEqE`: a HOL
+// equation `op (toHOL …) = toHOL result`, with the operands and result held as
+// native `Int`/`Bytes`/`Nat` leaves under the uninterpreted `ToHol*` ops, so a
+// megabyte bytestring stays a native leaf and never a `cons`-tower. Unlike
+// `NatAddCert`, the int/bytes family certificates conclude the *concrete*
+// `CoreProp`; the symbolic landers in `crate::tohol` transport that concrete
+// certificate onto these shapes with the existing `ToHol*Val` reify rules +
+// base `eq_mp` (no new admitted rule) — see `int_add_thm_symbolic` & co.
+// ---------------------------------------------------------------------------
+
+/// A **binary** `int` op applied to two `toHOL` integers:
+/// `int.op (toHOL a) (toHOL b)`.
+pub type IntBinLhsE = HolAppE<HolAppE<Val<Term>, ToHolIntE>, ToHolIntE>;
+
+/// The symbolic HOL equation `int.op (toHOL a) (toHOL b) = toHOL (op a b)` at
+/// the `int` sort (shared by `int.add` / `int.mul` — same shape, distinct
+/// values).
+pub type IntBinEqE = HolAppE<HolAppE<Val<Term>, IntBinLhsE>, ToHolIntE>;
+
+/// A **unary** `int` op applied to one `toHOL` integer: `int.op (toHOL a)`.
+pub type IntUnLhsE = HolAppE<Val<Term>, ToHolIntE>;
+
+/// The symbolic HOL equation `int.op (toHOL a) = toHOL (op a)` at the `int`
+/// sort (`int.neg`).
+pub type IntUnEqE = HolAppE<HolAppE<Val<Term>, IntUnLhsE>, ToHolIntE>;
+
+/// `bytes.cat (toHOL a) (toHOL b)` — a binary `bytes` op on two `toHOL`
+/// bytestrings.
+pub type BytesCatLhsE = HolAppE<HolAppE<Val<Term>, ToHolBytesE>, ToHolBytesE>;
+
+/// The symbolic HOL equation `bytes.cat (toHOL a) (toHOL b) = toHOL (cat a b)`
+/// at the `bytes` sort — the megabyte operands and result stay native `Bytes`
+/// leaves under `ToHolBytes`.
+pub type BytesCatEqE = HolAppE<HolAppE<Val<Term>, BytesCatLhsE>, ToHolBytesE>;
+
+/// `bytes.len (toHOL bs)` — a `bytes → nat` op on a `toHOL` bytestring.
+pub type BytesLenLhsE = HolAppE<Val<Term>, ToHolBytesE>;
+
+/// The symbolic HOL equation `bytes.len (toHOL bs) = toHOL (len bs)` at the
+/// `nat` sort — mixed toHOL sorts: a `ToHolBytes` operand and a `ToHolNat`
+/// result.
+pub type BytesLenEqE = HolAppE<HolAppE<Val<Term>, BytesLenLhsE>, ToHolNatE>;
+
 /// Build the [`NatAddEqE`] expression for concrete `a`, `b`, `sum` — shared by
 /// `NatAddCert::decide` and (implicitly, node by node) the reification driver.
 pub(crate) fn nat_add_eq_expr(a: Nat, b: Nat, sum: Nat) -> NatAddEqE {

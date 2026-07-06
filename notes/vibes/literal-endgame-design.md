@@ -302,9 +302,12 @@ parameter and the tree is identical.
 - **EG1** (this design's slice): generalized `Thm<L, C>` + `from_pure_sym` +
   `nat_add_thm_symbolic` + the never-materialize test. Additive. *Committed
   mechanism.*
-- **EG2**: extend the symbolic lander to int/bytes/u8/f32 — one `_symbolic`
-  entry per existing cert family (`ToHolInt`/`Bytes`/`F32`/`F64`), reusing B1.
-  Still additive; still zero base delta.
+- **EG2** (DONE — int/bytes; float blocked): symbolic landers for **int**
+  (`int_add_thm_symbolic` / `int_mul` / `int_neg`) and **bytes**
+  (`bytes_cat_thm_symbolic` / `bytes_len`) in `covalence-hol-eval::tohol`,
+  reusing B1. Additive; **zero base delta; zero new admitted rule** (`CoreEval`
+  manifest unchanged at 14 rules; `TermKind` unchanged at 18). See the EG2
+  outcome note below.
 - **EG3**: add `Zero` to the term enum (replacing reliance on the `Nat(0)`
   literal for the pure nat theory); make `T`/`F` defined constants (coordinate
   with logic-out, `handoff/tohol-purge.md`); `nat_induct` unchanged. Additive
@@ -322,3 +325,48 @@ parameter and the tree is identical.
 **One-way-door note.** EG1–EG3 are additive and revertible. EG4 touches the
 innermost TCB and EG5 is irreversible — both are explicitly maintainer-gated and
 out of this wave.
+
+---
+
+## 7. EG2 outcome — int / bytes landed, float walled
+
+**Landed** (`covalence-hol-eval::tohol`, additive, zero base delta, zero new
+admitted rule): `int_add_thm_symbolic` / `int_mul_thm_symbolic` /
+`int_neg_thm_symbolic` (shapes `IntBinEqE` / `IntUnEqE`) and
+`bytes_cat_thm_symbolic` / `bytes_len_thm_symbolic` (shapes `BytesCatEqE` /
+`BytesLenEqE`, the latter a mixed-sort `ToHolBytes` operand + `ToHolNat`
+result). Tests: `tests/int_bytes_symbolic.rs` — a megabyte `bytes.cat` operand
+lands with an **O(1)** materialized-`Term` footprint (2 nodes) held natively
+under `ToHolBytes`, and every symbolic lander is pinned to a floored concrete
+sibling (`int_arith_thm` / `bytes_thm` → `from_pure` → `check_sequent`) as its
+well-typedness witness.
+
+**The realization that shaped the implementation.** Unlike `NatAddCert` (which
+already concludes the *symbolic* `NatAddEqE`, so `nat_add_thm_symbolic` is a
+one-step mint-and-land), the int/bytes **family** certificates
+(`IntArithCert` / `BytesCert`) conclude the *concrete* `CoreProp` (`Val<Term>`
+with kernel-literal leaves) — they take `(TermSpec, Vec<Lit>)` and produce
+heterogeneous per-op results, so they cannot carry a single symbolic `Concl`
+type. The symbolic landers therefore mint the existing sound family
+certificate and **transport it backwards** along a proven
+`⊢ symbolicE = Val(concrete)` reification equation (built with the existing
+`ToHolIntVal` / `ToHolBytesVal` / `ToHolNatVal` reify rules + the shared
+`reify_app` HolApp-spine driver, then flipped with `sym`), landing a
+`Thm<CoreEval, symbolicE>` via `from_pure_sym`. The transport is **only** the
+existing base `eq_mp` / `cong_pair` / `cong_app` / `sym` calculus — B1's "the
+laziness *is* the existing algebra," now exercised in the concrete→symbolic
+direction. No new admitted rule, no base-TCB change.
+
+**The wall — float.** `f32`/`f64` cannot be landed symbolically under EG2's
+zero-new-rule contract. `FloatCert` also concludes concrete `CoreProp` (with
+`small_int` bit-pattern leaves), but the backward transport needs a proven
+`⊢ toHOL_f64(bits) = Val(⌜bits⌝)` reify equation to relate a `ToHolF64` leaf to
+the certificate's operand — and **no `ToHolF32Val` / `ToHolF64Val` reify rule
+is admitted** (only `ToHolNatVal` / `ToHolIntVal` / `ToHolBytesVal` exist). So
+a float symbolic lander requires a **new admitted rule** — either a
+`ToHolFloatVal` reify rule (mirroring the transitional int/bytes ones) or a
+dedicated symbolic `FloatAddCert` (mirroring `NatAddCert`). This is a distinct
+wall from the EG4 `Dyn`-transport wall (that one is about *heterogeneous
+collections* of symbolic theorems; this one is a *missing per-family reify
+rule*). Both add to the eval-tier TCB, so both are deferred to a
+maintainer-gated stage. Recorded in `crates/kernel/hol/core/src/thm/SKELETONS.md`.

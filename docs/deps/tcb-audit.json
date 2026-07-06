@@ -178,7 +178,7 @@
     },
     "base+HOL+eval": {
       "files": 83,
-      "nonTestLoc": 12127,
+      "nonTestLoc": 12271,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -203,16 +203,16 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 521,
+        "fn": 528,
         "struct": 59,
         "enum": 17,
         "trait": 24,
         "macro": 34
       },
-      "publicSurfaceTotal": 655,
-      "defsCoupling": 153,
+      "publicSurfaceTotal": 662,
+      "defsCoupling": 154,
       "defsCouplingLocations": [
-        "153 refs (list suppressed >60)"
+        "154 refs (list suppressed >60)"
       ]
     },
     "base+HOL+wasm": {
@@ -283,7 +283,7 @@
     },
     "base+HOL+eval+wasm": {
       "files": 83,
-      "nonTestLoc": 12127,
+      "nonTestLoc": 12271,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -308,16 +308,16 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 521,
+        "fn": 528,
         "struct": 59,
         "enum": 17,
         "trait": 24,
         "macro": 34
       },
-      "publicSurfaceTotal": 655,
-      "defsCoupling": 153,
+      "publicSurfaceTotal": 662,
+      "defsCoupling": 154,
       "defsCouplingLocations": [
-        "153 refs (list suppressed >60)"
+        "154 refs (list suppressed >60)"
       ]
     }
   },

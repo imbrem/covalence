@@ -106,17 +106,23 @@ pub fn cond_false(alpha: &Type, x: &Term, y: &Term) -> Result<Thm> {
 /// δ-unfold `cond` and β-reduce to the bare choice `ε P`, then drive the
 /// selected branch out of the choice axiom.
 fn cond_clause(alpha: &Type, b: bool, x: &Term, y: &Term) -> Result<Thm> {
-    // `cond α b x y` — `.apply` validates `x, y : α` (rejecting a branch
-    // whose type disagrees with the supplied `α`).
-    let cond_b = cond(alpha.clone())
-        .apply(Term::bool_lit(b))?
-        .apply(x.clone())?
-        .apply(y.clone())?;
-
     // ⊢ cond b x y = ε P, where P = λz. (b=T ⟹ z=x) ∧ (b=F ⟹ z=y).
-    let unfold = cond_b
-        .delta_all(cond_spec().symbol())?
-        .rhs_conv(|t| t.reduce())?;
+    //
+    // Unfold **only the head** `cond` and β-reduce its three-arg redex,
+    // leaving the branches `x`/`y` verbatim. A nested `cond` sitting in a
+    // branch must NOT be δ-unfolded here: its ε-form would then appear in
+    // `P` (and hence in the `select_ax` antecedent below) while `pred_at`
+    // rebuilds the conjunction from the *literal* branch, so the two would
+    // no longer match. (This is why the old `delta_all` + full `reduce`,
+    // which unfold every `cond` occurrence on the spine, could not serve a
+    // nested-`cond` branch.) The per-argument `cong_fn` also validates
+    // `x, y : α` — an ill-typed branch is rejected as the application is built.
+    let mut unfold = cond(alpha.clone()).delta()?; // ⊢ cond α = λt x y. ε(…)
+    for a in [Term::bool_lit(b), x.clone(), y.clone()] {
+        unfold = unfold.cong_fn(a)?;
+        let rhs = rhs_of(&unfold)?;
+        unfold = unfold.trans(Thm::beta_conv(rhs)?)?;
+    }
     let eps = rhs_of(&unfold)?;
     let pred = eps.as_app().ok_or(Error::NotAnEquation)?.1.clone();
 

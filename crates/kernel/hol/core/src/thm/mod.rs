@@ -134,7 +134,7 @@ impl<L: HolTier, C: Expr<Ty = Term>> Thm<L, C> {
     /// `covalence-hol-eval`'s `nat_add_symbolic_never_materializes` test, which
     /// walks the operand and confirms it holds **no** materialized numeral.)
     ///
-    /// **WIDENED TRUST OBLIGATION (audit):** unlike [`from_pure`], this does NOT
+    /// **WIDENED TRUST OBLIGATION (audit):** unlike [`from_pure`](Thm::from_pure), this does NOT
     /// re-run `check_sequent` (it cannot, without forcing the symbolic operand —
     /// the whole point). Its soundness therefore rests on the invariant that
     /// EVERY admitted rule reachable to produce an `IsThm`-headed `Thm<L,

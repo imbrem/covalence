@@ -93,6 +93,7 @@ pub mod inductive;
 pub mod int;
 pub mod lambda_iter;
 pub mod lang;
+pub mod lisp;
 pub mod list;
 pub mod list_recursion;
 pub mod logic;

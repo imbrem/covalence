@@ -46,9 +46,25 @@
 //! a non-kernel [`Inductive`] impl (`nat`-from-`ind`, or `list`'s derived
 //! induction + freeness) to drive the same engine — and the
 //! multi-recursive-argument cases. Both are tracked in `SKELETONS.md`.
+//!
+//! ## The inductive-types API (`covalence-inductive`)
+//!
+//! This module also hosts the **HOL backends** for the logic-agnostic
+//! [`covalence_inductive`] API: [`api`] (the `Logic`/`LogicOps` glue for
+//! [`hol::NativeHol`] + shared derivations), [`church`] (the
+//! impredicative/Church backend — realizes *any* v1 spec, junk-guarded by a
+//! `Wf` membership predicate), and [`engine`] (the exact-type adapter over
+//! this very recursion engine — `nat` today). Consumers hold an
+//! [`InductiveTheory`](covalence_inductive::InductiveTheory) bundle and
+//! never see the representation; swapping backends is passing the other
+//! value (`engine::tests::backend_swap_same_consumer`).
 
+pub mod api;
+pub mod carved;
+pub mod church;
 pub mod data;
 pub mod determinacy;
+pub mod engine;
 pub mod existence;
 pub mod graph;
 pub mod hol;
@@ -58,6 +74,9 @@ pub mod uniqueness;
 mod util;
 pub mod variant;
 
+pub use carved::{CarvedSExpr, CarvedSExprBackend, carved, carved_backend};
+pub use church::ImpredicativeBackend;
 pub use data::Inductive;
+pub use engine::{NatEngineBackend, nat_backend, nat_spec};
 pub use sig::{Arg, Constructor, GenArg, GenConstructor, GenSig, InductiveSig};
 pub use variant::{ChurchBackend, CoprodBackend, VCtor, Variant, VariantBackend, self_ty_var};

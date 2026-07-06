@@ -201,6 +201,31 @@ fn rec_equation<I: Inductive>(
     Ok(t)
 }
 
+/// The recursor term and its per-constructor defining equations, **without**
+/// the `∃`/`P_rec` packaging — the bundle-shaped engine exit used by the
+/// inductive-types-API backends (`carved`), which want equations for a
+/// *concrete* recursor term rather than a `defs`-catalogue transfer.
+///
+/// Returns `(recursor, eqs)` where `recursor` is the closed
+/// `λ(steps). λt. ε a. Graph steps t a` (abstracting the given `step_vars`
+/// in order) and `eqs[i] : ⊢ ∀x⃗. recursor s⃗ (Cᵢ x⃗) = fᵢ x⃗ (rec r⃗)` — the
+/// **paramorphic** equation for constructor `i`, with the `step_vars` still
+/// free (callers `inst` them at concrete steps).
+pub fn recursion_equations<I: Inductive>(
+    theory: &I,
+    step_vars: &[Term],
+    beta: &Type,
+) -> Result<(Term, Vec<Thm>)> {
+    let sig = theory.sig();
+    let recursor = recursor_term(sig, step_vars, beta)?;
+    let g_at_rec = graph_at_rec(theory, step_vars, beta)?;
+    let mut det: Option<Thm> = None;
+    let eqs: Vec<Thm> = (0..sig.arity())
+        .map(|i| rec_equation(theory, &recursor, step_vars, beta, i, &g_at_rec, &mut det))
+        .collect::<Result<_>>()?;
+    Ok((recursor, eqs))
+}
+
 /// `⊢ ∃rec. P_rec rec` — **the recursion theorem**. `step_vars` are the free
 /// variables the recursor abstracts (one per constructor); `pred` is the
 /// recursor predicate from the `defs` catalogue (see the [module docs](self)).

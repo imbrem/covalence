@@ -161,18 +161,43 @@ Bridge built (S9a); the flip is maintainer-gated. See
        `Derivable_Prop`/`denote` as genuine `defs` constants with a δ-rule.
     3. **Seam-given/applied-constant mismatch is pervasive** — `#concl` checker should
        β-normalise both sides before comparing (`comp_default`-style equality seam).
-  - **Genuine `SExpr` structural induction** — `sexpr::induct_note` is a placeholder;
-    the bare Church encoding admits junk inhabitants, so induction needs a `Wf`
-    well-formedness predicate. Soundness doesn't need it; deferred.
   - **`ToProp : HOLTm ⇀ PropForm`** (metatheory §8 step 4, first language morphism) — not built.
   - **Prop variables are `nat` indices, not `SExpr` atoms** — wiring `var` to carry an
     `SExpr` atom (formulas literally S-expressions) is a later unification.
 
-- **`tree` / `sexp` theory** (`init/tree.rs`, `sexp.rs`). Still deferred: `branch_inj`; the
+- **`tree` / `sexp` theory** (`init/tree.rs`, `sexp.rs`). Still deferred: `branch_inj`
+  (rank-1 subtree-recovery wall — the inductive-API bundles report it honestly as
+  `BackendCaps::rec_injective = false`; an exact-type backend is the route); the
   recursor `rec_leaf`/`rec_branch` `.cov` ports (blocked on polymorphic-result-type `'r`
-  instantiation in the proof language — the TFree-clash `cat`/`coprod` document); and full
-  structural `tree`/`sexp` induction (the `tree-induct`/`sexp-induct` tactic) — all need
-  the recursor's subtree-recovery identity + the `Wf` carve `init/sexpr.rs` defers.
+  instantiation in the proof language — the TFree-clash `cat`/`coprod` document); and the
+  `tree-induct`/`sexp-induct` script tactics. `tree.rs` is not yet a wrapper over the
+  `ImpredicativeBackend` bundle (`Wf` induction is available by realizing a `tree` spec,
+  but the module's own API doesn't surface it).
+
+- **Inductive-types API backends** (`init/inductive/{api,church,engine}.rs`, over
+  `covalence-inductive`). Open:
+  - **Engine backend is `nat`-only** — a generic `Inductive`-impl → bundle adapter (and a
+    `list` instance) is deferred until a second carved consumer exists.
+  - **`Hol` trait ↔ `LogicOps` unification** — `inductive/hol.rs`'s `Hol` should extend
+    `covalence_inductive::LogicOps` instead of duplicating its surface (`api.rs` forwards
+    method-by-method today).
+  - **Carved backend is `sexpr`-shape-only** — `inductive/carved.rs` realizes exactly the
+    `atom bytes | snil | scons rec rec` shape (full-caps: `prim_rec`/`rec_injective`/
+    `mem_trivial`, paramorphic recursor); a generic exact-type carver for arbitrary specs is
+    future work.
+  - **`covalence-sexp` quotation helper** — surface `SExp` → `sexpr_theory()` constructor
+    terms, next to the backend (the Lisp pole's data path).
+
+- **Lisp / ACL2 layer** (`init/lisp.rs`, over the carved carrier). Built: `car`/`cdr`/
+  `cons`/`consp`/`atom?`/`len`/`append` with comp laws + `append_assoc`/`len_append` by
+  structural induction. Open:
+  - **`eq` (sexpr equality) and `assoc` (a-list lookup)** — the next recursive functions;
+    follow the `len`/`append` catamorphism/paramorphism pattern.
+  - **ACL2 `defun` admission** — general measure-based termination + per-definition
+    induction-scheme generation (design in `inductive-api-design.md` §4.2). The current
+    theorems hand-pick structural measures; no admission machinery yet.
+  - **`proof/acl2` frontend** — the `.lisp`/`defun`/`defthm` reader that lowers onto this
+    API (mapping in `inductive-api-design.md` §4.3). Not started.
 
 - **λ_iter deep embedding** (`init/lambda_iter.rs` + `.cov`, `init/cv_recursion.rs`).
   Tarski-style nat-encoding documented; **proved**: course-of-values induction

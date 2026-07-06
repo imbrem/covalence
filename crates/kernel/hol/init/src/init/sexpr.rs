@@ -193,23 +193,62 @@ fn prove_rec_eq(lhs: Term, rhs: Term) -> Result<Thm> {
 }
 
 // ============================================================================
-// Structural induction
+// Structural induction — via the inductive-types API bundle
 // ============================================================================
 
 /// `⊢ (∀b. P (atom b)) ⟹ P snil ⟹ (∀h t. P h ⟹ P t ⟹ P (scons h t))
 ///      ⟹ ∀s. P s` is **not** derivable for the bare Church encoding
 /// without a wellformedness side condition (junk terms inhabit `S⟨'r⟩`).
 ///
-/// We therefore expose the *recursor's* universal property instead, which
-/// is what downstream soundness-style proofs actually consume: any
-/// predicate respecting the three constructor cases agrees with the fold.
-/// See [`crate::init::prop::soundness`] for the pattern — derivability is
-/// itself impredicative, so it never needs this induction principle, only
-/// the recursor equations above.
-///
-/// Genuine induction (with the `Wf` predicate carving the well-formed
-/// encodings) is recorded in `SKELETONS.md`.
+/// The *membership-relativized* form **is** now available: the
+/// [`sexpr_theory`] bundle carries the well-formedness predicate
+/// `Wf := λs. ∀d. Closed d ⟹ d s` as its `mem`, and its
+/// `facts.induct(motive, cases)` concludes `⊢ ∀s. Wf s ⟹ motive s` — the
+/// honest form for this encoding (the bare-type statement is false at
+/// collapsing instances of `'r`). Downstream impredicative soundness
+/// proofs ([`crate::init::prop::soundness`]) still only need the recursor
+/// equations above.
 pub fn induct_note() {}
+
+// ============================================================================
+// The inductive-types API realization (the flagship bundle)
+// ============================================================================
+
+use covalence_inductive::{ArgSort, CtorSpec, InductiveBackend, InductiveSpec, InductiveTheory};
+
+use crate::init::inductive::ImpredicativeBackend;
+use crate::init::inductive::hol::NativeHol;
+
+/// The `sexpr` spec: `sexpr := atom bytes | snil | scons sexpr sexpr`.
+pub fn sexpr_spec() -> InductiveSpec<Type> {
+    InductiveSpec::new(
+        "sexpr",
+        vec![
+            CtorSpec::new("atom", [("b", ArgSort::Ext(bytes()))]),
+            CtorSpec::nullary("snil"),
+            CtorSpec::new("scons", [("h", ArgSort::Rec), ("t", ArgSort::Rec)]),
+        ],
+    )
+}
+
+/// The impredicative backend configured to reproduce **this module's
+/// encoding exactly** (same handler binder names, same `'r`), so the
+/// bundle's constructors β-agree with [`atom`]/[`snil`]/[`scons`] and its
+/// carrier *is* [`sexpr_ty`].
+pub fn sexpr_backend() -> ImpredicativeBackend {
+    ImpredicativeBackend::new().with_handler_names(["fa", "fn_", "fc"])
+}
+
+/// The `sexpr` theory bundle through the inductive-types API:
+/// constructors, recursor computation laws (β), freeness (distinctness +
+/// `atom`-payload injectivity), the `Wf` membership predicate, and genuine
+/// `Wf`-relativized induction/cases — everything this module provides plus
+/// the induction machinery it historically deferred.
+pub fn sexpr_theory() -> Result<InductiveTheory<NativeHol>> {
+    sexpr_backend()
+        .realize(&NativeHol, &sexpr_spec())
+        .map_err(|e| covalence_core::Error::ConnectiveRule(format!("sexpr_theory: {e}")))
+}
 
 #[cfg(test)]
 mod tests {
@@ -335,5 +374,124 @@ mod tests {
             rhs,
             Term::nat_lit(covalence_types::Nat::from_inner(2u32.into()))
         );
+    }
+}
+
+#[cfg(test)]
+mod bundle_tests {
+    use super::*;
+    use crate::init::eq::beta_nf;
+    use covalence_inductive::{InductiveError, conformance};
+    use covalence_types::Bytes;
+
+    fn blob(bs: &[u8]) -> Term {
+        covalence_hol_eval::mk_blob(Bytes::from(bs.to_vec()))
+    }
+
+    /// The bundle's carrier is exactly this module's `S⟨'r⟩`.
+    #[test]
+    fn bundle_carrier_is_sexpr_ty() {
+        let th = sexpr_theory().unwrap();
+        assert_eq!(th.ty, sexpr_ty());
+    }
+
+    /// The bundle's constructors β-reduce to this module's hand-rolled
+    /// encodings — `init/sexpr.rs` facts bridge over verbatim.
+    #[test]
+    fn bundle_ctors_bridge_to_hand_rolled() {
+        let th = sexpr_theory().unwrap();
+        let b = Term::free("b", bytes());
+        let h = Term::free("h", sexpr_ty());
+        let t = Term::free("t", sexpr_ty());
+
+        // β-nf of the applied bundle constructor = the reduced hand form.
+        let check = |applied: Term, reduced: Term| {
+            let conv = beta_nf(applied); // ⊢ applied = nf
+            let nf = conv.concl().as_eq().unwrap().1.clone();
+            let rconv = beta_nf(reduced);
+            assert_eq!(&nf, rconv.concl().as_eq().unwrap().1);
+        };
+        check(Term::app(th.ctors[0].clone(), b.clone()), atom(b));
+        check(th.ctors[1].clone(), snil());
+        check(
+            Term::app(Term::app(th.ctors[2].clone(), h.clone()), t.clone()),
+            scons(h, t),
+        );
+    }
+
+    /// The full conformance suite (comp/induct/mem/distinct) passes — the
+    /// genuine `Wf`-relativized induction the module historically deferred.
+    #[test]
+    fn bundle_conformance() {
+        let th = sexpr_theory().unwrap();
+        conformance::check_theory(&crate::init::inductive::hol::NativeHol, &th, &Type::nat())
+            .unwrap();
+    }
+
+    /// Membership: `⊢ Wf (scons (atom b) snil)` assembled bottom-up from
+    /// `mem_ctor`, hypothesis-free.
+    #[test]
+    fn wf_of_concrete_sexpr() {
+        let th = sexpr_theory().unwrap();
+        let b = blob(&[7]);
+        let atom_t = Term::app(th.ctors[0].clone(), b.clone());
+        let wa = th.facts.mem_ctor(0, &[b], vec![]).unwrap();
+        let ws = th.facts.mem_ctor(1, &[], vec![]).unwrap();
+        let m = th
+            .facts
+            .mem_ctor(2, &[atom_t.clone(), th.ctors[1].clone()], vec![wa, ws])
+            .unwrap();
+        assert!(m.hyps().is_empty());
+        let expected = Term::app(
+            th.mem.clone(),
+            Term::app(Term::app(th.ctors[2].clone(), atom_t), th.ctors[1].clone()),
+        );
+        assert_eq!(m.concl(), &expected);
+    }
+
+    /// Freeness: distinctness between all constructor pairs and
+    /// `atom`-payload injectivity are genuine theorems; injectivity at the
+    /// recursive `scons` positions reports the documented capability gap.
+    #[test]
+    fn freeness_facts() {
+        let th = sexpr_theory().unwrap();
+        let b = Term::free("b", bytes());
+        let b2 = Term::free("b2", bytes());
+        let h = Term::free("h", sexpr_ty());
+        let t = Term::free("t", sexpr_ty());
+
+        for (i, j, xs, ys) in [
+            (0usize, 1usize, vec![b.clone()], vec![]),
+            (0, 2, vec![b.clone()], vec![h.clone(), t.clone()]),
+            (1, 2, vec![], vec![h.clone(), t.clone()]),
+        ] {
+            let d = th.facts.distinct(i, j, &xs, &ys).unwrap();
+            assert!(d.hyps().is_empty(), "distinct({i},{j}) must be closed");
+        }
+
+        let inj = th
+            .facts
+            .injective(0, 0, std::slice::from_ref(&b), std::slice::from_ref(&b2))
+            .unwrap();
+        assert!(inj.hyps().is_empty());
+        // Conclusion ends in `b = b2`.
+        let (_, concl_rhs) = inj.concl().as_app().unwrap();
+        assert_eq!(concl_rhs, &b.clone().equals(b2).unwrap());
+
+        assert!(matches!(
+            th.facts.injective(2, 0, &[h.clone(), t.clone()], &[t, h]),
+            Err(InductiveError::Unsupported { .. })
+        ));
+        assert!(!th.facts.caps().rec_injective);
+    }
+
+    /// Exhaustiveness through the bundle: `⊢ ∀s. Wf s ⟹ (∃b. s = atom b)
+    /// ∨ (s = snil ∨ ∃h t. s = scons h t)` — a real theorem now.
+    #[test]
+    fn cases_theorem() {
+        let th = sexpr_theory().unwrap();
+        let c = th.facts.cases().unwrap();
+        assert!(c.hyps().is_empty());
+        assert!(c.concl().type_of().unwrap().is_bool());
     }
 }

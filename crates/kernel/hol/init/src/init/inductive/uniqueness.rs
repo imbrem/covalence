@@ -234,10 +234,15 @@ fn wit_match<I: Inductive>(theory: &I, steps: &[Term], beta: &Type, i: usize) ->
         graph_xs.push(rewrite_all(graph_y, &comps)?); // ⊢ Graph xₗ dₗ
     }
     let f_eq = rewrite_term_all(&value_y, &comps)?; // ⊢ fᵢ y⃗ d⃗ = fᵢ x⃗ d⃗
-    let body_thm = {
-        let mut all = graph_xs;
-        all.push(f_eq);
-        and_all(&all)?
+    // The body must match [`wit_existential`]'s `(⋀ₗ Graph xₗ dₗ) ∧ val_eq`
+    // *shape*: conjoin the graphs first (right-assoc, as `graph::conj`), then
+    // `∧` the value equation on the outside — `and_all([Gh, Gt, f_eq])` would
+    // instead nest as `Gh ∧ (Gt ∧ f_eq)`, which only coincides with the term
+    // for a single recursive argument (nat/list) and diverges for `scons`.
+    let body_thm = if graph_xs.is_empty() {
+        f_eq
+    } else {
+        and_all(&graph_xs)?.and_intro(f_eq)?
     };
 
     // `∃b⃗. <body>`, witnessing `b⃗ := d⃗`: drive `∃`-introduction over

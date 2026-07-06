@@ -1,0 +1,18 @@
+[package]
+name = "covalence-inductive"
+version = "0.0.0"
+edition = "2024"
+
+# The logic-agnostic inductive-types API: a plain-data spec model for simple
+# (single, non-indexed, strictly-positive, first-order) inductive datatypes,
+# and the backend/bundle traits through which a logic realizes a spec as a
+# carrier + constructors + the characteristic theorems (freeness / cases /
+# induction / computation). Backends live WITH their logics (covalence-init
+# implements the HOL backends; a set.mm backend slots in beside the Metamath
+# machinery later) — this crate depends on no logic.
+#
+# Design: notes/vibes/inductive-api-design.md.
+
+[dependencies]
+smol_str = "0.3"
+thiserror = "2"

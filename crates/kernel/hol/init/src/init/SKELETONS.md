@@ -79,6 +79,89 @@ Bridge built (S9a); the flip is maintainer-gated. See
     full `graph_total`/`graph_det`/`recursion_theorem` run on a fresh ≥2-rec-arg type
     still needs a genuine `Inductive` adapter (the carrier/`Wf` seam `#inductive` reports).
 
+- **Binary normal form** (`init/nat_binary.rs`). `double`/`bit0`/`bit1` +
+  `nat_of_bits : list bool → nat` + the representation theorem
+  (`nat_of_bits_surjective`, via `inc_lemma`) are proved. Stretch, not built:
+  - **Parity facts** — `double_ne_succ_double` (`¬(double m = succ (double n))`,
+    even ≠ odd) and the derived `bit0`/`bit1` distinctness. Route: trichotomy +
+    `double` monotonicity (mirror `double_inj`).
+  - **Log-depth addition** — `bit_add` carry laws over the binary form
+    (`bit0`/`bit1` recursion) so `+` runs in `O(log n)` depth as a pure-HOL tactic;
+    the point of the whole normal form. Needs `bit_add`/`bit_add_carry` defined by
+    list/binary recursion + their `nat_of_bits`-correctness proof. (`bit_succ`
+    increment is landed — see `nat_bits_iso.rs`; `bit_add` is the next step.)
+
+- **Bitstring iso** (`init/nat_bits_iso.rs`, stage NP3). `bit_succ` (increment,
+  the paramorphism-via-`foldr` pair trick), `nat_to_bits = natRec nil (λ_.
+  bit_succ)`, the operation lift `nat_of_bits (bit_succ bs) = succ (nat_of_bits
+  bs)`, the round-trip `nat_of_bits ∘ nat_to_bits = id`, `nat_to_bits`
+  injectivity, and constructive surjectivity are all proved — exhibiting the
+  bijection `nat ≅ {canonical bit lists}` with an explicit section. Remaining:
+  - **The other round-trip** `nat_to_bits (nat_of_bits bs) = bs` for a
+    *canonical* (no-trailing-`false`) `bs` — needs a `canonical : list bool →
+    bool` predicate + a normaliser (`strip trailing false`), then induction. This
+    closes the iso to a full bijection *of bit lists* (not just via the section).
+
+- **String parsers** (`init/nat_parse.rs`, stage NP2). `span_digits` /
+  `nat_of_digits` (+ binary `nat_of_bin_digits`) / `parse_nat` for radices
+  2/8/10/16 are built with their recursion clauses; `span_cat` (the split is a
+  partition, `cat prefix rest = l`) is proved generically; the value clauses
+  `go_nil`/`go_cons` are the left-fold; concrete evaluation of all four required
+  examples is tested. Remaining general correctness (each a `list`-induction like
+  `span_cat`, all radix-generic):
+  - **Prefix all-digits** — `∀l. list_all is_digit (fst (span l))` (needs a
+    `list_all : (α→bool)→list α→bool` `foldr` + its clauses).
+  - **Suffix maximality** — `∀l c t. snd (span l) = cons c t ⟹ is_digit c = F`
+    (the first non-consumed char is a non-digit; `cons`-case `bool.cases` split).
+  - **Value = radix fold, closed form** — a `∀`-quantified `nat_of_digits`
+    characterization over the *prefix* (the per-input concrete evals + `go_*`
+    clauses already witness it; the general statement wants `list_all`-gated
+    induction).
+- **Bytes parsers + string/bytes agreement** (`init/nat_parse_bytes.rs` +
+  `nat_parse_agree.rs`, stage NP3). `parseNatDec_bytes` over `list u8` (byte digit
+  predicate/value via `u8.toNat`, `span_cat` partition proof at `u8`, concrete
+  value eval) is built; the per-element `char`⇄`byte` digit relation
+  (`code_eq_byte_val`: `char.code (char.mk k) = u8.toNat (u8_lit k)`) and the
+  digit-value agreement (`digit_val_agree`) are proved. Remaining:
+  - **Whole-string agreement** — the `∀`-quantified
+    `nat_of_digits_bytes bs = nat_of_digits (map (char.mk ∘ u8.toNat) bs)` for
+    ASCII-digit `bs`: a `map`-fusion `list`-induction over the shared fold, keyed
+    on `code_eq_byte_val`. Needs a `map`/`list_all`-gated induction (same
+    machinery the NP2 prefix-all-digits skeleton wants).
+  - **Bytes `bin`/`oct`/`hex` configs** — only decimal is built; the other
+    radices are the NP2 `is_digit`/`digit_val` configs over `u8.toNat` (trivial
+    variants, not written).
+
+- **Signed-integer parsing** (`init/int_parse.rs`, stage NP3). `parse_int`
+  (optional `'-'`/`'+'` sign then `parseNatDec`, lifted via `nat_to_int` /
+  `int_neg`) is defined; the **sign-lift** lemmas (`lift_pos_some` /
+  `lift_neg_some` / `lift_none` — how a `nat`-parse result maps to the signed
+  `int` result) are proved. Remaining:
+  - **End-to-end sign selection** — `parse_int (cons '-' rest) = lift_signed true
+    (parseNatDec rest)` and the `'+'`/bare variants, then the conditional
+    correctness `(parseNatDec rest = some (n, suf)) ⟹ parse_int ('-'::rest) =
+    some (−n, suf)`. Blocked on reduce-stable `cond` handling: the selection
+    resolves two nested `cond`s whose branches contain redexes, and `cond_true`'s
+    internal `reduce` ε-ifies an inner `cond` (mismatch). The fix is NP2's
+    test-only eval pattern (reduce the whole application first so all branches are
+    reduce-stable) lifted into a reusable lemma.
+
+- **Rationals from decimal + scientific notation** (stretch, not built). A
+  `parseRat : string → option (rat × string)` = `parseInt` for the integer part,
+  optional `'.'` + `parseNat` for the fraction (value `frac / 10^len`), optional
+  `'e'`/`'E'` + signed exponent (`· 10^±exp`), assembled over `init/rat.rs`.
+  Needs `nat`/`int` powers of ten and the `rat` division/scaling already in
+  `init::rat`; the digit machinery is exactly the NP2/NP3 parsers.
+
+- **Float parsing** (eventual aspiration, design sketch only — no code). A
+  `parseFloat : string → option (f64 × string)` would parse a decimal rational
+  (as above) and *round* it to the nearest `f64` under the typed float layer
+  (`init/ball.rs` / `covalence-hol-eval` `defs/floats.rs`). This needs the
+  correctly-rounded decimal-to-binary conversion (a `ball`/interval enclosure of
+  the exact rational, then round-to-nearest-even) — the same rounding-error
+  lemmas the `ball.add` skeleton is blocked on. Parser front-end is trivial;
+  the *rounding* is the real content and should follow the `f64` enclosure work.
+
 - **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Missing:
   - **`list_foldl`** — the left-fold recursor's defining equations not yet discharged.
   - **`filter` / `flatten` clauses** — `foldr`-factored; follow the `length`/`cat`

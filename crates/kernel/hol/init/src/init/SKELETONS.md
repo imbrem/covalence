@@ -93,6 +93,25 @@ Bridge built (S9a); the flip is maintainer-gated. See
     the point of the whole normal form. Needs `bit_add`/`bit_add_carry` defined by
     list/binary recursion + their `nat_of_bits`-correctness proof.
 
+- **String parsers** (`init/nat_parse.rs`, stage NP2). `span_digits` /
+  `nat_of_digits` (+ binary `nat_of_bin_digits`) / `parse_nat` for radices
+  2/8/10/16 are built with their recursion clauses; `span_cat` (the split is a
+  partition, `cat prefix rest = l`) is proved generically; the value clauses
+  `go_nil`/`go_cons` are the left-fold; concrete evaluation of all four required
+  examples is tested. Remaining general correctness (each a `list`-induction like
+  `span_cat`, all radix-generic):
+  - **Prefix all-digits** — `∀l. list_all is_digit (fst (span l))` (needs a
+    `list_all : (α→bool)→list α→bool` `foldr` + its clauses).
+  - **Suffix maximality** — `∀l c t. snd (span l) = cons c t ⟹ is_digit c = F`
+    (the first non-consumed char is a non-digit; `cons`-case `bool.cases` split).
+  - **Value = radix fold, closed form** — a `∀`-quantified `nat_of_digits`
+    characterization over the *prefix* (the per-input concrete evals + `go_*`
+    clauses already witness it; the general statement wants `list_all`-gated
+    induction).
+- **Bytes parsers + string/bytes relation** (later stage). `parseNatR` over
+  `list u8` (byte digit predicate/value) and the theorem relating the `string`
+  and `bytes` parsers on ASCII digits (`char_code` ↔ `u8` value) are not built.
+
 - **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Missing:
   - **`list_foldl`** — the left-fold recursor's defining equations not yet discharged.
   - **`filter` / `flatten` clauses** — `foldr`-factored; follow the `length`/`cat`

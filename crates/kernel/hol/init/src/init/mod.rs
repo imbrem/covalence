@@ -100,6 +100,7 @@ pub mod monoid;
 pub mod nat;
 pub mod nat_binary;
 pub mod nat_div;
+pub mod nat_parse;
 pub mod nat_thy;
 pub mod option;
 pub mod preorder;

@@ -120,6 +120,7 @@ pub mod rel;
 pub mod set;
 pub mod sexp;
 pub mod sexpr;
+pub mod sexpr_parse;
 pub mod stream;
 pub mod string;
 pub mod tauto;

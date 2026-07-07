@@ -271,6 +271,27 @@ Bridge built (S9a); the flip is maintainer-gated. See
   - **`covalence-sexp` quotation helper** — surface `SExp` → `sexpr_theory()` constructor
     terms, next to the backend (the Lisp pole's data path).
 
+- **S-expression parsing** (`init/sexpr_parse.rs`, stage SP1). A fuel-bounded
+  reader `parseSexpr : nat → bytes → option (sexpr × bytes)` over `list u8`
+  producing the carved `sexpr` datatype — whitespace / atoms / nested lists via
+  `natRec` with a mode bit — is built with its defining equations
+  (`parse_base`/`parse_step`/`parse_unfold`), an unfolding harness proving
+  concrete parses (atoms, flat/nested/empty lists, `none` on malformed/empty,
+  suffix returned), and the structural agreement theorem `parsed_cons_struct`
+  (a parsed `scons` node's `consp`/`car`/`cdr`). Remaining:
+  - **`string` (list char) reader** — the same construction over `char` with
+    atoms `atom (bytes.abs (map (uN.fromNat ∘ char.code) run))`, plus the
+    ASCII string⇄bytes parser agreement (the `nat_parse_agree` `code_eq_byte_val`
+    pattern lifted to the whole reader, a `map`-fusion induction).
+  - **Total parse-invariant** — `∀fuel. parseSexpr fuel s = some (v, r) ⟹` the
+    consumed prefix is well-formed and `r` a genuine suffix; and fuel-monotone
+    success (enough fuel always succeeds on well-formed input). Each a `nat`/
+    `list` induction over the reader (the concrete evals witness instances).
+  - **Reader associativity / round-trip** — `printSexpr`-free for now; a
+    deparser + `parse ∘ print = id` round-trip is future work.
+  - **Quoted-string atoms** — `"…"`-delimited atoms with escape handling
+    (a second atom-class branch; not built).
+
 - **Lisp / ACL2 layer** (`init/lisp.rs`, over the carved carrier). Built: `car`/`cdr`/
   `cons`/`consp`/`atom?`/`len`/`append` with comp laws + `append_assoc`/`len_append` by
   structural induction. Open:

@@ -117,19 +117,20 @@ Bridge built (S9a); the flip is maintainer-gated. See
     radices are the NP2 `is_digit`/`digit_val` configs over `u8.toNat` (trivial
     variants, not written).
 
-- **Signed-integer parsing** (`init/int_parse.rs`, stage NP3). `parse_int`
-  (optional `'-'`/`'+'` sign then `parseNatDec`, lifted via `nat_to_int` /
-  `int_neg`) is defined; the **sign-lift** lemmas (`lift_pos_some` /
-  `lift_neg_some` / `lift_none` — how a `nat`-parse result maps to the signed
-  `int` result) are proved. Remaining:
-  - **End-to-end sign selection** — `parse_int (cons '-' rest) = lift_signed true
-    (parseNatDec rest)` and the `'+'`/bare variants, then the conditional
-    correctness `(parseNatDec rest = some (n, suf)) ⟹ parse_int ('-'::rest) =
-    some (−n, suf)`. Blocked on reduce-stable `cond` handling: the selection
-    resolves two nested `cond`s whose branches contain redexes, and `cond_true`'s
-    internal `reduce` ε-ifies an inner `cond` (mismatch). The fix is NP2's
-    test-only eval pattern (reduce the whole application first so all branches are
-    reduce-stable) lifted into a reusable lemma.
+- **Signed-integer parsing** (`init/int_parse.rs`, stage IP2). **Complete**:
+  radix-generic `parse_int_gen` (+ bin/oct/dec/hex), sign selection
+  (`select_minus`/`plus`/`bare`, head-first `cond`), forward composition
+  (`parse_int_neg`/`pos`/`bare`), the string bridge `sign_reconstruct`, and the
+  full hypothesis-free correctness theorem `parse_int_correct` (all four
+  radices) are proved, with the benchmark battery. Not built (future):
+  - **Bounded / checked integers** — a `parseIntN : string → option (intN ×
+    string)` that rejects (returns `none`, or a distinguished overflow) values
+    outside `[-2^(N-1), 2^(N-1))`; needs `int` order/`abs` bounds comparison and
+    a fixed-width `intN` seam.
+  - **Sign-string identity in the theorem body** — `parse_int_correct` states the
+    sign cases at `tail s` + the `head_is 45/43 s` guard; the full
+    `s = sign_str ++ consumed ++ rest` is derivable via `sign_reconstruct` but not
+    inlined (would carry an `∃`(sign char) in each disjunct).
 
 - **Rationals from decimal + scientific notation** (stretch, not built). A
   `parseRat : string → option (rat × string)` = `parseInt` for the integer part,

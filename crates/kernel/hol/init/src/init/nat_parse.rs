@@ -1075,8 +1075,11 @@ pub fn parse_nat_correct(is_digit: &Term, value: &Term) -> Result<Thm> {
         .all_intro("s", str_t())
 }
 
+/// Concrete parser evaluators (test-only), shared with the `init::int_parse`
+/// test battery. Compute `⊢ parse … <literal> = <result>` for a concrete
+/// input by chaining the (genuine) clause lemmas — no oracle.
 #[cfg(test)]
-mod tests {
+pub(crate) mod ceval {
     use super::*;
     use crate::init::char::{char_lit, code_mk};
     use crate::init::cond::collapse_conds;
@@ -1086,12 +1089,12 @@ mod tests {
     use crate::init::prod::{fst_pair, snd_pair};
 
     /// `char.mk k : char`.
-    fn ch(k: u64) -> Term {
+    pub(crate) fn ch(k: u64) -> Term {
         char_lit(k)
     }
 
     /// A `string` literal from ASCII bytes (each a `char.mk`).
-    fn s(bytes: &[u8]) -> Term {
+    pub(crate) fn s(bytes: &[u8]) -> Term {
         let mut t = nil_c();
         for &b in bytes.iter().rev() {
             t = cons_c(ch(b as u64), t);
@@ -1100,12 +1103,12 @@ mod tests {
     }
 
     /// `⊢ char_code (char.mk k) = k`, as a rewrite rule.
-    fn code_rw(k: u64) -> Thm {
+    pub(crate) fn code_rw(k: u64) -> Thm {
         code_mk(&lit(k)).unwrap()
     }
 
     /// The `(a, b)` of a concrete `pair a b` term.
-    fn pair_parts(t: &Term) -> (Term, Term) {
+    pub(crate) fn pair_parts(t: &Term) -> (Term, Term) {
         let (fa, b) = t.as_app().unwrap();
         let (_pair, a) = fa.as_app().unwrap();
         (a.clone(), b.clone())
@@ -1115,7 +1118,7 @@ mod tests {
     /// opacity is `char.code (char.mk k)` for the given `ks`. Reduces (β +
     /// `nat.le` folding), rewrites the codepoints, then decides the residual
     /// `∧`/`∨` combination with `prop_eq`.
-    fn decide(t: &Term, ks: &[u64]) -> (Thm, bool) {
+    pub(crate) fn decide(t: &Term, ks: &[u64]) -> (Thm, bool) {
         let mut red = Thm::refl(t.clone())
             .unwrap()
             .rhs_conv(|x| x.reduce())
@@ -1138,7 +1141,7 @@ mod tests {
     /// `char.code (char.mk k)`, and whose head may be a literal-conditioned
     /// `cond` (the hex `digit_val`): rewrite the codepoint, fold arithmetic,
     /// collapse the head `cond`, fold again.
-    fn eval_digit(t: &Term, k: u64) -> Thm {
+    pub(crate) fn eval_digit(t: &Term, k: u64) -> Thm {
         let r0 = Thm::refl(t.clone())
             .unwrap()
             .rhs_conv(|x| x.rw_all(&code_rw(k)))
@@ -1151,7 +1154,7 @@ mod tests {
 
     /// `⊢ go digit_val R (s bytes) acc = <nat literal>` (the left-fold value),
     /// for a concrete all-digit `bytes` and literal `acc`.
-    fn eval_go(dv: &Term, r: &Term, bytes: &[u8], acc: &Term) -> Thm {
+    pub(crate) fn eval_go(dv: &Term, r: &Term, bytes: &[u8], acc: &Term) -> Thm {
         if bytes.is_empty() {
             return go_nil(dv, r, acc).unwrap();
         }
@@ -1184,7 +1187,7 @@ mod tests {
 
     /// `⊢ bin_go (s bytes) acc = <bit tree>` — the binary value in NP1
     /// `bit0`/`bit1` normal form, for concrete `bytes` and a bit-tree `acc`.
-    fn eval_bin_go(bytes: &[u8], acc: &Term) -> Thm {
+    pub(crate) fn eval_bin_go(bytes: &[u8], acc: &Term) -> Thm {
         if bytes.is_empty() {
             return bin_go_nil(acc).unwrap();
         }
@@ -1210,7 +1213,7 @@ mod tests {
 
     /// `⊢ span_digits is_digit (s bytes) = pair <prefix> <rest>` — the maximal
     /// digit split, computed for a concrete `bytes`.
-    fn eval_span(is_digit: &Term, bytes: &[u8]) -> Thm {
+    pub(crate) fn eval_span(is_digit: &Term, bytes: &[u8]) -> Thm {
         if bytes.is_empty() {
             return span_nil(is_digit).unwrap();
         }
@@ -1273,7 +1276,7 @@ mod tests {
 
     /// `⊢ list_cat a b = <concrete list>` for a concrete char-list `a`, by the
     /// `cat_nil`/`cat_cons` clauses (both `a`, `b` free of nested `list_cat`).
-    fn eval_cat(a: &Term, b: &Term) -> Thm {
+    pub(crate) fn eval_cat(a: &Term, b: &Term) -> Thm {
         match a
             .as_app()
             .and_then(|(f, tl)| f.as_app().map(|(_, h)| (h.clone(), tl.clone())))
@@ -1293,7 +1296,7 @@ mod tests {
     /// computed for concrete `input`. `pre` is the (Rust-known) maximal digit
     /// prefix. `value_eq(prefix_term)` supplies `⊢ value <prefix_term> =
     /// <val>` (radix-specific).
-    fn eval_parse(
+    pub(crate) fn eval_parse(
         is_digit: &Term,
         value: &Term,
         input: &[u8],
@@ -1336,7 +1339,7 @@ mod tests {
 
     /// Resolve `parse l = cond OC TRUE none` given `oc_eq : ⊢ OC = <bool>`.
     #[allow(clippy::too_many_arguments)]
-    fn finish_parse(
+    pub(crate) fn finish_parse(
         red: Thm,
         oc_eq: Thm,
         is_dig: bool,
@@ -1383,6 +1386,12 @@ mod tests {
             .rhs_conv(|x| x.rw_all(&rrest))
             .unwrap()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ceval::*;
+    use super::*;
 
     // ---- genuineness of the general theorems ----
 

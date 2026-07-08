@@ -13,7 +13,10 @@
 //!      `trans_ptr`, `of_ptr_eq`, `of_eq_with` (used by `of_eq`/`semidecide`),
 //!      `lift`, `apply` (⇒ `apply0`), `canon`;
 //!    - in `prop` — `and_intro`/`and_elim`/`or_inl`/`or_inr`/`mp`;
-//!    - in `matching` — `apply_rewrite`.
+//!    - in `matching` — `apply_rewrite`;
+//!    - in `rel` — `execute` (gated on `Rel<F>`, mints only positive graph
+//!      membership — never falsity) and `Thm::transpose` (ungated-but-trusted,
+//!      like `and_intro`).
 //! 2. [`Expr`] — **sealed**: the closed grammar of expressions
 //!    ([`Val`]/[`Ref`]`<P: TrustedDeref>`/[`App`]/[`True`]/[`False`]/[`Eqn`]/`&A`/
 //!    `Box`/`Rc`/`Arc<A>`/[`Dyn`]/tuples), each with a unique sort [`Expr::Ty`].
@@ -104,6 +107,8 @@ mod lang;
 mod matching;
 mod op;
 mod prop;
+mod rel;
+mod tyrep;
 
 pub use eqn::*;
 pub use expr::*;
@@ -112,6 +117,10 @@ pub use lang::*;
 pub use matching::*;
 pub use op::*;
 pub use prop::*;
+pub use rel::*;
+pub use tyrep::*;
 
+#[cfg(test)]
+mod rel_tests;
 #[cfg(test)]
 mod tests;

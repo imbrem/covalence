@@ -1083,6 +1083,9 @@ dependencies = [
 [[package]]
 name = "covalence-haskell"
 version = "0.0.0"
+dependencies = [
+ "covalence-init",
+]
 
 [[package]]
 name = "covalence-hol"

@@ -28,12 +28,17 @@
 //! assert_eq!(lower(&e, &mut backend).unwrap(), "(f (S (S Z)))");
 //! ```
 //!
-//! The HOL backend that lowers this AST into real kernel `Term`s is a
-//! follow-on (it would depend on `covalence-init`); see `SKELETONS.md`.
+//! The `hol` backend (behind the `hol` feature) lowers this AST into real
+//! kernel `Term`s — the carved `sexpr` datatype from `covalence-init` — while
+//! the default build stays kernel-agnostic and zero-dep.
 
 #![forbid(unsafe_code)]
 
 pub mod ast;
 pub mod backends;
+/// The optional HOL backend: lowers the dialect into carved `sexpr` kernel
+/// `Term`s. Enabled by the `hol` feature; pulls in `covalence-init`.
+#[cfg(feature = "hol")]
+pub mod hol;
 pub mod lower;
 pub mod parse;

@@ -14,3 +14,11 @@ edition = "2024"
 # Deferred work: crates/lang/haskell/SKELETONS.md.
 
 [dependencies]
+# Optional HOL backend (`hol` feature): lowers the parsed Haskell subset into
+# the carved `sexpr` kernel datatype from `covalence-init`. The DEFAULT build
+# stays kernel-agnostic and zero-dep — this dep is pulled in only under `hol`.
+covalence-init = { path = "../../kernel/hol/init", optional = true }
+
+[features]
+# The HOL backend: `HolLower` lowers Haskell to a carved `sexpr` kernel `Term`.
+hol = ["dep:covalence-init"]

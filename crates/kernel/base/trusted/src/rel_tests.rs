@@ -386,3 +386,44 @@ fn kind_sort_in_base_transports() {
     // Both sides equal (well-formed reflexive kind equation).
     assert_eq!(arrow_eq.lhs(), arrow_eq.rhs());
 }
+
+/// Higher-rank HOL-ω binder syntax (B-K2): `TyAll`/`TyAbs`/`TyBound` build
+/// well-formed base terms; de-Bruijn structural equality **is** α-equivalence;
+/// and the existing `cong_pair`/`cong_app` calculus transports through the
+/// binders — all with inert (uninterpreted) ops, no new rule.
+#[test]
+fn tyrep_binders_are_debruijn_and_transport() {
+    // `∀(α : ⋆ : 0). α` as a base term of sort `TyRepDemo` — (kind, rank, body).
+    // Every leaf is `Copy`, so the reflected term is `Copy` too.
+    let arg = (
+        star::<Kdemo>(),                         // κ = ⋆
+        Val(0u32),                               // rank r = 0
+        App(ty_bound::<TyRepDemo>(), Val(0u32)), // body = tyvar #0
+    );
+    let all1 = App(ty_all::<TyRepDemo, Kdemo>(), arg);
+    let all2 = App(ty_all::<TyRepDemo, Kdemo>(), arg);
+    fn is_ty<E: Expr<Ty = TyRepDemo>>(_: &E) {}
+    is_ty(&all1);
+    // De-Bruijn ⇒ one canonical form ⇒ structural equality is α-equivalence: two
+    // independently-built `∀α.α` terms are equal with no α-renaming machinery.
+    assert_eq!(all1, all2);
+
+    // The calculus applies to binder terms (refl over the 3-tuple arg, then
+    // `cong_app(TyAll)`) — no new rule.
+    let r_arg: Thm<(), Eqn<_, _>> = Thm::refl(arg, ());
+    let all_eq = r_arg.cong_app(ty_all::<TyRepDemo, Kdemo>());
+    assert_eq!(all_eq.lhs(), &all1);
+
+    // `λ(α : ⋆). α` (TyAbs, a 2-tuple arg) — congruence via `cong_pair` +
+    // `cong_app`, showing sub-term equations transport into a binder equation.
+    let kappa = star::<Kdemo>();
+    let body = App(ty_bound::<TyRepDemo>(), Val(0u32));
+    let rk: Thm<(), Eqn<_, _>> = Thm::refl(kappa, ());
+    let rb: Thm<(), Eqn<_, _>> = Thm::refl(body, ());
+    let pair = rk.cong_pair(rb).expect("union of () contexts");
+    let abs_eq = pair.cong_app(ty_abs::<TyRepDemo, Kdemo>());
+    assert_eq!(
+        abs_eq.lhs(),
+        &App(ty_abs::<TyRepDemo, Kdemo>(), (kappa, body))
+    );
+}

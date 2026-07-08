@@ -101,4 +101,39 @@ commit(s).
   no CanonRule), the pattern already audited via `tyrep.rs`. Additive + trivially
   reversible. No irreversible/gated door touched.
 
+## 2026-07-08 — B-K1 landed: reflected Kind sort (zero-TCB)
+
+- **B-K1 done** (commit `c65b3f28`). New `crates/kernel/base/trusted/src/kind.rs`:
+  `KStar<K>` (`()→K`, the kind ⋆) + `KArrow<K>` (`(K,K)→K`, function kind) as inert
+  ops mirroring `tyrep.rs` (hand-written `Copy/Clone/Eq/Debug`, never derive). Helper
+  `star::<K>()` = `App(KStar, Val(()))` (⋆ as a term; `()` isn't an `Expr`, so the
+  arg is `Val(())`). Test `kind_sort_in_base_transports`.
+- **Zero-TCB verified:** no `Thm::new`, no `CanonRule`, no `Rule` (the 3 grep hits
+  in kind.rs are docstring mentions) ⇒ uninterpreted ⇒ inert ⇒ sound by vacuity;
+  base manifest + 18 mint sites unchanged; core builds; clippy clean. Pattern
+  pre-audited via `tyrep`, so no separate audit agent for an inert-op addition
+  (proportionate: an op that can mint nothing can't be a forgery vector).
+
+## 2026-07-08 — B-K2 landed: higher-rank HOL-ω binder syntax (zero-TCB)
+
+- **B-K2 done.** Extended `tyrep.rs` with reflected DE-BRUIJN binder syntax:
+  `TyBound<T>` (`u32→T`, de-Bruijn tyvar), `TyAll<T,K>` (`(K,u32,T)→T`, rank-N ∀ —
+  the `u32` is the rank), `TyAbs<T,K>` (`(K,T)→T`, type-level λ). All inert (no
+  `CanonRule`); **no reduction op in the base** (β = `TyBeta` lives in the middle),
+  so the base stays operationally binder-free. Test
+  `tyrep_binders_are_debruijn_and_transport` (well-formed terms; structural eq =
+  α-equivalence since de-Bruijn; `cong_pair`/`cong_app` transport through binders).
+- **Zero-TCB** (inert ops, same reasoning as B-K1). Rank *stratification* is NOT
+  enforced here — that is the middle-side `TyInst` side-condition (needs B-K3's
+  kind/rank `CanonRule`s + the Homeier-aligned consistency proof; see review
+  must-fixes). A malformed/ill-ranked spine is inert, not unsound.
+- **Note discovered:** the base has only `cong_pair` (2-tuple congruence); a 3-tuple
+  arg (`TyAll`) can't be driven component-wise by `cong_pair` (only refl+cong_app on
+  the whole tuple). Not a soundness issue — the middle nests or adds a helper. `TyAbs`
+  (2-tuple) shows full component-wise congruence.
+- **Next: B-K3** (KindOf/RankOf/RankLe as `CanonRule`s) — the FIRST stage with a real
+  TCB delta (3 gated mints), so it gets a full adversarial audit; KindOf must return
+  `None` on ill-kinded input, never a wrong kind (a wrong kind → false rank premise →
+  defeats the `TyInst` gate).
+
 <!-- APPEND NEW ENTRIES BELOW -->

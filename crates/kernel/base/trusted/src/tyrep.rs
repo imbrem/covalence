@@ -92,3 +92,114 @@ pub fn ty_fn<T>() -> TyFn<T> {
 pub fn ty_app<T>() -> TyApp<T> {
     TyApp(PhantomData)
 }
+
+// ============================================================================
+// Higher-rank binder syntax (stage B-K2) — reflected, DE-BRUIJN, INERT.
+//
+// These give the middle a HOL-ω type language with type quantification and
+// type-level abstraction. They are **reflected syntax only**: there is NO
+// reduction op in the base (β-substitution `TyBeta` lives in the middle), so the
+// base stays operationally binder-free and every op here is inert (no
+// `CanonRule`) ⇒ sound by vacuity, exactly like `TyFn`/`TyApp`.
+//
+// Variables are DE-BRUIJN indices ([`TyBound`] over a `u32` leaf), so structural
+// equality on a spine **is** α-equivalence — no names, no capture, no α-renaming
+// machinery. A malformed spine (dangling index, wrong kind) is *inert*, not
+// *unsound*: it just fails to be provably equal to anything meaningful. `K` is the
+// reflected kind-rep sort (see [`kind`](crate::kind)); the rank is a `u32` leaf,
+// making rank-N quantification expressible (the rank *stratification* that
+// consistency requires is enforced later, middle-side — B-K3 synthesises
+// kind/rank as `CanonRule`s, and `TyInst` checks the side-condition).
+// ============================================================================
+
+/// A **de-Bruijn type variable** reference `u32 → T` — `App(TyBound, Val(i))` is
+/// the bound tyvar at index `i` (0 = innermost binder).
+pub struct TyBound<T>(pub PhantomData<T>);
+
+/// **Rank-N universal type** `(K, u32, T) → T` — `TyAll(κ, r, τ)` reflects
+/// `∀(α : κ : r). τ` (binding one de-Bruijn tyvar of kind `κ` at rank `r`).
+pub struct TyAll<T, K>(pub PhantomData<(T, K)>);
+
+/// **Type-level abstraction** `(K, T) → T` — `TyAbs(κ, τ)` reflects `λ(α : κ). τ`
+/// (a type operator binding one de-Bruijn tyvar of kind `κ`).
+pub struct TyAbs<T, K>(pub PhantomData<(T, K)>);
+
+// Hand-written impls (never `derive` — spurious `T: Clone`/`K: Clone` bounds would
+// break `cong_app`); mirrors `TyFn`/`TyApp` above.
+impl<T> Copy for TyBound<T> {}
+impl<T> Clone for TyBound<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T, K> Copy for TyAll<T, K> {}
+impl<T, K> Clone for TyAll<T, K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T, K> Copy for TyAbs<T, K> {}
+impl<T, K> Clone for TyAbs<T, K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> std::fmt::Debug for TyBound<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TyBound")
+    }
+}
+impl<T, K> std::fmt::Debug for TyAll<T, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TyAll")
+    }
+}
+impl<T, K> std::fmt::Debug for TyAbs<T, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TyAbs")
+    }
+}
+impl<T> PartialEq for TyBound<T> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl<T> Eq for TyBound<T> {}
+impl<T, K> PartialEq for TyAll<T, K> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl<T, K> Eq for TyAll<T, K> {}
+impl<T, K> PartialEq for TyAbs<T, K> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl<T, K> Eq for TyAbs<T, K> {}
+
+impl<T: 'static> Op for TyBound<T> {
+    type In = u32;
+    type Out = T;
+}
+impl<T: 'static, K: 'static> Op for TyAll<T, K> {
+    type In = (K, u32, T);
+    type Out = T;
+}
+impl<T: 'static, K: 'static> Op for TyAbs<T, K> {
+    type In = (K, T);
+    type Out = T;
+}
+
+/// `TyBound::<T>` op (a de-Bruijn tyvar constructor).
+pub fn ty_bound<T>() -> TyBound<T> {
+    TyBound(PhantomData)
+}
+/// `TyAll::<T, K>` op (rank-N universal type).
+pub fn ty_all<T, K>() -> TyAll<T, K> {
+    TyAll(PhantomData)
+}
+/// `TyAbs::<T, K>` op (type-level abstraction).
+pub fn ty_abs<T, K>() -> TyAbs<T, K> {
+    TyAbs(PhantomData)
+}

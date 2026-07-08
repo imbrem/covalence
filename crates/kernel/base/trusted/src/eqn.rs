@@ -6,7 +6,9 @@
 //! with no public constructor** — the unforgeability gate; the sole mint is the
 //! `pub(crate)` [`Thm::new`], and *every* call site is audited (they are exactly:
 //! this module's calculus + gated injectors incl. `eq_mp`, the [`crate::prop`]
-//! bool theory, and [`crate::matching`]'s `apply_rewrite`).
+//! bool theory, [`crate::matching`]'s `apply_rewrite`, and [`crate::rel`]'s
+//! `execute` (gated) + the positive calculus `transpose`/`compose`/`meet`/
+//! `join_l`/`join_r` (ungated-but-trusted)).
 //!
 //! [`Eqn<A, B>`] is the equality **proposition** `A = B` — a freely-constructible
 //! [`Expr`] of sort `bool`. Building one proves nothing; it also serves as the

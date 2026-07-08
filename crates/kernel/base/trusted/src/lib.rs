@@ -126,6 +126,8 @@ pub use rel::*;
 pub use tyrep::*;
 
 #[cfg(test)]
+mod holomega_proto;
+#[cfg(test)]
 mod rel_tests;
 #[cfg(test)]
 mod tests;

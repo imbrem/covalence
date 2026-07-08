@@ -14,19 +14,18 @@ future seams left open by the core-on-pure port.
   `ToHolNatVal`/`ToHolIntVal`/`ToHolBytesVal` and `certs::Lit::to_term` reify to
   kernel literals (`Term::nat_lit` & co.); at literal deletion only the reify
   target flips (consumers don't move).
-- **Symbolic-conclusion mechanism (`Thm<L, C>`): float family blocked (EG2).**
+- **Symbolic-conclusion mechanism (`Thm<L, C>`): remaining float ops.**
   The additive `Thm<L, C = Val<Term>>` + `from_pure_sym` mechanism (EG1;
-  `notes/vibes/literal-endgame-design.md`) now covers **nat** (`nat_add`), **int**
-  (`int_add`/`int_mul`/`int_neg`) and **bytes** (`bytes_cat`/`bytes_len`) via
-  symbolic landers in `covalence-hol-eval::tohol`. The int/bytes family certs
-  still conclude the reified `CoreProp`; their landers transport that concrete
-  cert onto the symbolic `ToHol*` shape with the existing `ToHol*Val` reify rules
-  + base `eq_mp` (zero new admitted rule). **FLOAT (`f32`/`f64`) is blocked:**
-  `FloatCert` concludes concrete `CoreProp`, but no `ToHolF32Val`/`ToHolF64Val`
-  reify rule is admitted, so the backward transport can't relate a
-  `ToHolF32`/`ToHolF64` leaf to the cert's `small_int` operand without a NEW
-  admitted rule (a `ToHolFloatVal` reify rule or a dedicated symbolic
-  `FloatAddCert`) — deferred to a maintainer-gated stage. Also open: the
+  `notes/vibes/literal-endgame-design.md`) covers **nat** (`nat_add`), **int**
+  (`int_add`/`int_mul`/`int_neg`), **bytes** (`bytes_cat`/`bytes_len`) and now the
+  bit-level **float** binaries (`f32.addBits`/`mulBits`, `f64.addBits`/`mulBits`)
+  via symbolic landers in `covalence-hol-eval::tohol`. Landers transport the
+  concrete family cert onto the symbolic `ToHol*` shape with the `ToHol*Val` reify
+  rules + base `eq_mp`; float needed the two newly-admitted
+  `ToHolF32Val`/`ToHolF64Val` reify rules (the ONLY EG2 base delta). Still open:
+  the remaining float ops (`sub`/`div`/`min`/`max`/`copysign`, the unaries
+  `sqrt`/`abs`/`neg`/rounding, comparisons, `promote`/`demote`/`truncSat`/`convert`)
+  have no symbolic lander yet — recorded in `eval/SKELETONS.md`. Also open: the
   remaining HOL term formers (const/abs) as base ops.
 - **`from_pure_sym` trusts the mint (no non-forcing floor).** It cannot re-run
   the concrete sequent floor (that would materialize the operand). A

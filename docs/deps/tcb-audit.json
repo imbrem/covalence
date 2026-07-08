@@ -178,7 +178,7 @@
     },
     "base+HOL+eval": {
       "files": 83,
-      "nonTestLoc": 12271,
+      "nonTestLoc": 12383,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -203,13 +203,13 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 528,
+        "fn": 533,
         "struct": 59,
         "enum": 17,
         "trait": 24,
         "macro": 34
       },
-      "publicSurfaceTotal": 662,
+      "publicSurfaceTotal": 667,
       "defsCoupling": 154,
       "defsCouplingLocations": [
         "154 refs (list suppressed >60)"
@@ -283,7 +283,7 @@
     },
     "base+HOL+eval+wasm": {
       "files": 83,
-      "nonTestLoc": 12271,
+      "nonTestLoc": 12383,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 18,
@@ -308,13 +308,13 @@
         "crates/kernel/base/trusted/src/prop.rs:87: Some(Thm::new(lang, q))"
       ],
       "publicSurface": {
-        "fn": 528,
+        "fn": 533,
         "struct": 59,
         "enum": 17,
         "trait": 24,
         "macro": 34
       },
-      "publicSurfaceTotal": 662,
+      "publicSurfaceTotal": 667,
       "defsCoupling": 154,
       "defsCouplingLocations": [
         "154 refs (list suppressed >60)"
@@ -326,7 +326,7 @@
     "typeKindVariants": 7,
     "admittedRules": {
       "coreManifest": 26,
-      "evalManifest": 14,
+      "evalManifest": 16,
       "builtinsManifest": 387
     },
     "externalDeps": {

@@ -160,6 +160,25 @@ pub type IntUnLhsE = HolAppE<Val<Term>, ToHolIntE>;
 /// sort (`int.neg`).
 pub type IntUnEqE = HolAppE<HolAppE<Val<Term>, IntUnLhsE>, ToHolIntE>;
 
+/// A **binary** bit-level `f32` op applied to two `toHOL` floats:
+/// `f32.opBits (toHOL a) (toHOL b)`.
+pub type F32BinLhsE = HolAppE<HolAppE<Val<Term>, ToHolF32E>, ToHolF32E>;
+
+/// The symbolic HOL equation `f32.opBits (toHOL a) (toHOL b) = toHOL (op a b)`
+/// at the `u32` bit sort (shared by `f32.addBits` / `f32.mulBits` — same
+/// shape, distinct values; the operands and result stay native `F32`
+/// bit-patterns under the uninterpreted `ToHolF32` op).
+pub type F32BinEqE = HolAppE<HolAppE<Val<Term>, F32BinLhsE>, ToHolF32E>;
+
+/// A **binary** bit-level `f64` op applied to two `toHOL` floats:
+/// `f64.opBits (toHOL a) (toHOL b)`.
+pub type F64BinLhsE = HolAppE<HolAppE<Val<Term>, ToHolF64E>, ToHolF64E>;
+
+/// The symbolic HOL equation `f64.opBits (toHOL a) (toHOL b) = toHOL (op a b)`
+/// at the `u64` bit sort (see [`F32BinEqE`]; native `F64` bit-patterns under
+/// `ToHolF64`).
+pub type F64BinEqE = HolAppE<HolAppE<Val<Term>, F64BinLhsE>, ToHolF64E>;
+
 /// `bytes.cat (toHOL a) (toHOL b)` — a binary `bytes` op on two `toHOL`
 /// bytestrings.
 pub type BytesCatLhsE = HolAppE<HolAppE<Val<Term>, ToHolBytesE>, ToHolBytesE>;

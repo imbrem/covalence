@@ -315,6 +315,36 @@ Bridge built (S9a); the flip is maintainer-gated. See
   - **Quoted-string atoms** — `"…"`-delimited atoms with escape handling
     (a second atom-class branch; not built).
 
+- **JSON parsing** (`init/json_parse.rs`, stage JP). A fuel-bounded reader
+  `parseJson : nat → bytes → option (sexpr × bytes)` for the **integer + array**
+  fragment of RFC-8259, producing the carved `sexpr` datatype (numbers →
+  `atom <digits>`, arrays → `scons`-chains; commas/whitespace both treated as
+  separators — the array reader is the S-expr list reader with `[`/`]`), is
+  built with its defining equations, an unfolding harness for concrete parses
+  (integers, flat/nested arrays, `[]`, `none`, suffix), and the north-star PER
+  `same_json` (`s1 ~ s2 ⟺ same JSON value + parses`) proved a genuine partial
+  equivalence relation (`same_json_sym`/`same_json_trans`/`same_json_refl_dom`,
+  the last pinning its domain). Remaining:
+  - **`JsonValue` datatype** — a dedicated 6-constructor inductive
+    (`null | bool | number | string | array | object`) carved via the engine
+    (the carved backend is `sexpr`-shape-only); this stage reuses `sexpr` as the
+    carrier and tags numbers as digit-`atom`s. The number should carry a genuine
+    `int` (via the `int` parser's value machinery) not literal bytes.
+  - **Strict grammar + full value set** — objects (`{ "k": v }` + a-list value),
+    JSON strings (quoted, escapes), the `true`/`false`/`null` literals, and
+    strict comma placement (reject `[1,,2]`, trailing commas). Currently lenient:
+    commas are separators.
+  - **Float numbers** — swap the integer number token for `float_parse`'s
+    `-?int(.frac)?([eE]exp)?` production (the `floatval := int × int` value), so
+    JSON numbers are exact decimals.
+  - **`string` (list char) PER** — the `bytes` PER transports to a `string` PER
+    via the ASCII `char`⇄`byte` agreement (`nat_parse_agree::code_eq_byte_val`),
+    a `map`-fusion argument; only the `bytes` reader is built (as in `sexpr_parse`).
+  - **Integer subset ⊂ full JSON** — once the float/strict number reader lands,
+    prove the integer-subset parser's outputs are a genuine subset of the
+    full-JSON parser's (every integer literal is a valid JSON number), the JSON
+    analogue of `float_parse::int_subset`.
+
 - **Lisp / ACL2 layer** (`init/lisp.rs`, over the carved carrier). Built: `car`/`cdr`/
   `cons`/`consp`/`atom?`/`len`/`append` with comp laws + `append_assoc`/`len_append` by
   structural induction. Open:

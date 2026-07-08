@@ -98,6 +98,7 @@ pub mod lisp;
 pub mod list;
 pub mod list_recursion;
 pub mod logic;
+pub mod monad;
 pub mod monoid;
 pub mod nat;
 pub mod nat_binary;

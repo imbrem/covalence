@@ -10,24 +10,28 @@
 //! reduction path in [`crate::reduce`] instead lands the per-family
 //! certificates directly.
 
-use covalence_pure::{CanonRule as _, Eqn, Expr, Thm as PThm, Val, apply, canon};
+use covalence_pure::{CanonRule as _, Eqn, Expr, F32, F64, Thm as PThm, Val, apply, canon};
 use covalence_pure_eval::{self as pe, NatAdd};
 use covalence_types::{Bytes, Int, Nat};
 
 use covalence_core::seam::{CoreProp, IsThm, Lit};
-use covalence_core::{Ctx, Error, Result, Term, TermSpec, Type, defs};
+use covalence_core::{Ctx, Error, Result, SmallIntLiteral, Term, TermSpec, Type, defs};
 
 use covalence_core::Thm;
 
 use crate::defs::{
-    bytes_cat, bytes_cat_spec, bytes_len, bytes_len_spec, int_add, int_add_spec, int_mul,
-    int_mul_spec, int_neg, int_neg_spec,
+    FloatKey, FloatOp, FloatWidth, bytes_cat, bytes_cat_spec, bytes_len, bytes_len_spec,
+    float_bits_op, float_bits_spec, int_add, int_add_spec, int_mul, int_mul_spec, int_neg,
+    int_neg_spec, u32_ty, u64_ty,
 };
 use crate::lang::{CoreEval, EvalThm};
 use crate::rules::{
-    BytesCert, IntArithCert, NatAddCert, PairVal, ToHolBytesVal, ToHolIntVal, ToHolNatVal,
+    BytesCert, FloatCert, IntArithCert, NatAddCert, PairVal, ToHolBytesVal, ToHolF32Val,
+    ToHolF64Val, ToHolIntVal, ToHolNatVal,
 };
-use crate::tohol_ops::{BytesCatEqE, BytesLenEqE, HolApp, HolAppE, IntBinEqE, IntUnEqE, NatAddEqE};
+use crate::tohol_ops::{
+    BytesCatEqE, BytesLenEqE, F32BinEqE, F64BinEqE, HolApp, HolAppE, IntBinEqE, IntUnEqE, NatAddEqE,
+};
 
 /// A pure theorem at the eval tier.
 type PT<P> = PThm<CoreEval, P>;
@@ -132,12 +136,15 @@ pub fn nat_add_thm_symbolic(a: Nat, b: Nat) -> Result<Thm<CoreEval, NatAddEqE>> 
 // (design B1): the transport is the existing base `eq_mp`/`cong`/`sym`
 // calculus, exactly as for `nat_add_thm`.
 //
-// FLOAT IS BLOCKED (recorded in SKELETONS + the design doc): `FloatCert`
-// concludes concrete `CoreProp` too, but there is **no** `ToHolF32Val` /
-// `ToHolF64Val` reify rule admitted (only `ToHolNatVal`/`ToHolIntVal`/
-// `ToHolBytesVal` exist), so the backward transport cannot relate a
-// `ToHolF32`/`ToHolF64` leaf to the certificate's `small_int` operand without
-// adding a new admitted rule — out of scope for EG2's zero-new-rule contract.
+// FLOAT UNWALLED (stage EG2 `float-unwall`): `FloatCert` also concludes the
+// concrete `CoreProp`, so the float symbolic landers use the SAME
+// concrete→symbolic transport as int/bytes — the ONE difference from EG2's
+// original "zero-new-rule" contract is that the backward transport needs a
+// `⊢ toHOL_f32(bits) = Val(⌜bits⌝)` reify equation, which requires the two
+// newly-admitted `ToHolF32Val` / `ToHolF64Val` reify rules (mirroring the
+// transitional `ToHolIntVal`/`ToHolBytesVal`; `f32 := u32`, `f64 := u64`, so
+// the reify target is a `u32`/`u64` bit-pattern literal). With those admitted,
+// the landers below are the int template verbatim at the bit-level float ops.
 // ===========================================================================
 
 /// Transport a concrete family certificate `⊢ IsThm(∅, Val(concrete))` onto a
@@ -185,6 +192,17 @@ pub fn int_arith_thm(spec: TermSpec, args: Vec<Lit>) -> Result<EvalThm> {
 /// the `bytes.*` symbolic landers.
 pub fn bytes_thm(spec: TermSpec, args: Vec<Lit>) -> Result<EvalThm> {
     let cert = apply(CoreEval, BytesCert, (spec, args)).map_err(perr)?;
+    EvalThm::from_pure(cert)
+}
+
+/// `⊢ f32.opBits ⌜args⌝ = ⌜result⌝` (or `f64`) as a floored kernel [`EvalThm`]
+/// — the concrete bit-level float computation lander (mints [`FloatCert`],
+/// lands via [`Thm::from_pure`], re-running the well-typedness floor). Each
+/// bit-pattern argument/result is a native single-node `u32`/`u64` literal
+/// leaf (O(1)); this is the **self-floor witness** for the `f32`/`f64`
+/// symbolic landers.
+pub fn float_bits_thm(spec: TermSpec, args: Vec<Lit>) -> Result<EvalThm> {
+    let cert = apply(CoreEval, FloatCert, (spec, args)).map_err(perr)?;
     EvalThm::from_pure(cert)
 }
 
@@ -311,6 +329,145 @@ pub fn bytes_len_thm_symbolic(bs: Bytes) -> Result<Thm<CoreEval, BytesLenEqE>> {
     let tc = apply(CoreEval, ToHolNatVal, len).map_err(perr)?;
     let full = reify_app(eq_partial, tc)?; // ⊢ BytesLenEqE = Val(final)
     transport_symbolic(cert, full)
+}
+
+// ===========================================================================
+// The bit-level float symbolic landers (stage EG2 `float-unwall`). Identical
+// shape to the binary int landers, at the F2b bit-level float ops: the two
+// `F32`/`F64` bit patterns and their result stay native leaves under the
+// uninterpreted `ToHolF32`/`ToHolF64` op; no kernel bit-pattern literal is
+// materialized in the landed conclusion. The reify target is a `u32`/`u64`
+// literal (`f32 := u32`, `f64 := u64`) and the HOL `=` is at the bit sort
+// (`u32`/`u64`), which is the type `f32.addBits : u32 → u32 → u32` concludes.
+// ===========================================================================
+
+/// `⊢ f32.addBits (toHOL a) (toHOL b) = toHOL (a + b)` as a **symbolic** kernel
+/// theorem (stage EG2) — the `f32` analogue of [`int_add_thm_symbolic`]. The
+/// two `f32` bit patterns and their WASM-profile sum stay native [`F32`] values
+/// under the uninterpreted [`ToHolF32`](crate::tohol_ops::ToHolF32) op; no
+/// kernel bit-pattern literal is materialized in the landed conclusion.
+///
+/// Mints the existing sound [`FloatCert`] (concrete), then transports it onto
+/// [`F32BinEqE`] via `transport_symbolic`, using the newly-admitted
+/// [`ToHolF32Val`] reify rule. Self-floor witness: [`float_bits_thm`].
+pub fn f32_add_thm_symbolic(a: F32, b: F32) -> Result<Thm<CoreEval, F32BinEqE>> {
+    f32_bin_thm_symbolic(FloatOp::Add, pe::F32Add, a, b)
+}
+
+/// `⊢ f32.mulBits (toHOL a) (toHOL b) = toHOL (a * b)` — the `f32.mulBits`
+/// symbolic lander (see [`f32_add_thm_symbolic`]; same [`F32BinEqE`] shape,
+/// distinct value). Self-floor witness: [`float_bits_thm`].
+pub fn f32_mul_thm_symbolic(a: F32, b: F32) -> Result<Thm<CoreEval, F32BinEqE>> {
+    f32_bin_thm_symbolic(FloatOp::Mul, pe::F32Mul, a, b)
+}
+
+/// `⊢ f64.addBits (toHOL a) (toHOL b) = toHOL (a + b)` as a **symbolic** kernel
+/// theorem (stage EG2) — the `f64` analogue of [`f32_add_thm_symbolic`], with
+/// native [`F64`] leaves under [`ToHolF64`](crate::tohol_ops::ToHolF64).
+/// Self-floor witness: [`float_bits_thm`].
+pub fn f64_add_thm_symbolic(a: F64, b: F64) -> Result<Thm<CoreEval, F64BinEqE>> {
+    f64_bin_thm_symbolic(FloatOp::Add, pe::F64Add, a, b)
+}
+
+/// `⊢ f64.mulBits (toHOL a) (toHOL b) = toHOL (a * b)` — the `f64.mulBits`
+/// symbolic lander (see [`f64_add_thm_symbolic`]). Self-floor witness:
+/// [`float_bits_thm`].
+pub fn f64_mul_thm_symbolic(a: F64, b: F64) -> Result<Thm<CoreEval, F64BinEqE>> {
+    f64_bin_thm_symbolic(FloatOp::Mul, pe::F64Mul, a, b)
+}
+
+/// Shared body of the binary `f32` symbolic landers: mint the concrete
+/// [`FloatCert`] for `f32.opBits ⌜a⌝ ⌜b⌝` (bit patterns as `u32` literals),
+/// then transport it onto [`F32BinEqE`] along the reify equation built from
+/// [`ToHolF32Val`]. `native` is the trusted `covalence-pure-eval` `CanonRule`
+/// (agreeing bit-for-bit with the `FloatCert` dispatch); its result reifies the
+/// symbolic `toHOL` result leaf.
+fn f32_bin_thm_symbolic<R>(
+    op: FloatOp,
+    native: R,
+    a: F32,
+    b: F32,
+) -> Result<Thm<CoreEval, F32BinEqE>>
+where
+    R: covalence_pure::CanonRule + covalence_pure::Op<In = (F32, F32), Out = F32>,
+{
+    let key = FloatKey::Op(FloatWidth::F32, op);
+    let r = native
+        .eval(&(a, b))
+        .ok_or_else(|| Error::Pure("f32 op: CanonRule refused a ground input".into()))?;
+    let cert = apply(
+        CoreEval,
+        FloatCert,
+        (
+            float_bits_spec(key),
+            vec![
+                Lit::Small(SmallIntLiteral::u32(a.to_bits())),
+                Lit::Small(SmallIntLiteral::u32(b.to_bits())),
+            ],
+        ),
+    )
+    .map_err(perr)?;
+    let full = f32_bin_reify(float_bits_op(key), a, b, r)?;
+    transport_symbolic(cert, full)
+}
+
+/// Shared body of the binary `f64` symbolic landers (see
+/// [`f32_bin_thm_symbolic`]; `f64 := u64`).
+fn f64_bin_thm_symbolic<R>(
+    op: FloatOp,
+    native: R,
+    a: F64,
+    b: F64,
+) -> Result<Thm<CoreEval, F64BinEqE>>
+where
+    R: covalence_pure::CanonRule + covalence_pure::Op<In = (F64, F64), Out = F64>,
+{
+    let key = FloatKey::Op(FloatWidth::F64, op);
+    let r = native
+        .eval(&(a, b))
+        .ok_or_else(|| Error::Pure("f64 op: CanonRule refused a ground input".into()))?;
+    let cert = apply(
+        CoreEval,
+        FloatCert,
+        (
+            float_bits_spec(key),
+            vec![
+                Lit::Small(SmallIntLiteral::u64(a.to_bits())),
+                Lit::Small(SmallIntLiteral::u64(b.to_bits())),
+            ],
+        ),
+    )
+    .map_err(perr)?;
+    let full = f64_bin_reify(float_bits_op(key), a, b, r)?;
+    transport_symbolic(cert, full)
+}
+
+/// Build the reification equation `⊢ f32.opBits (toHOL a) (toHOL b) = toHOL r`
+/// `= Val(concrete)` for a **binary** bit-level `f32` op whose head term is
+/// `op`, eq at the `u32` bit sort — the shared reify chain of the binary `f32`
+/// symbolic landers (int template verbatim, at [`ToHolF32Val`]).
+fn f32_bin_reify(op: Term, a: F32, b: F32, r: F32) -> Result<PT<Eqn<F32BinEqE, Val<Term>>>> {
+    let op = PThm::refl(Val(op), CoreEval);
+    let ta = apply(CoreEval, ToHolF32Val, a).map_err(perr)?;
+    let tb = apply(CoreEval, ToHolF32Val, b).map_err(perr)?;
+    let lhs = reify_app(reify_app(op, ta)?, tb)?; // ⊢ f32.opBits (toHOL a) (toHOL b) = Val
+    let eq_op = PThm::refl(Val(Term::eq_op(u32_ty())), CoreEval);
+    let eq_partial = reify_app(eq_op, lhs)?;
+    let tc = apply(CoreEval, ToHolF32Val, r).map_err(perr)?;
+    reify_app(eq_partial, tc)
+}
+
+/// Build the reification equation for a **binary** bit-level `f64` op, eq at
+/// the `u64` bit sort (see [`f32_bin_reify`]; [`ToHolF64Val`]).
+fn f64_bin_reify(op: Term, a: F64, b: F64, r: F64) -> Result<PT<Eqn<F64BinEqE, Val<Term>>>> {
+    let op = PThm::refl(Val(op), CoreEval);
+    let ta = apply(CoreEval, ToHolF64Val, a).map_err(perr)?;
+    let tb = apply(CoreEval, ToHolF64Val, b).map_err(perr)?;
+    let lhs = reify_app(reify_app(op, ta)?, tb)?; // ⊢ f64.opBits (toHOL a) (toHOL b) = Val
+    let eq_op = PThm::refl(Val(Term::eq_op(u64_ty())), CoreEval);
+    let eq_partial = reify_app(eq_op, lhs)?;
+    let tc = apply(CoreEval, ToHolF64Val, r).map_err(perr)?;
+    reify_app(eq_partial, tc)
 }
 
 /// Build the reification equation `⊢ int.op (toHOL a) (toHOL b) = toHOL r`

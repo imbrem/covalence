@@ -62,13 +62,16 @@ pub use lit::{
     as_blob, as_int, as_nat, as_u32, as_u64, kind_name, mk_blob, mk_int, mk_nat, mk_u32, mk_u64,
 };
 pub use tohol::{
-    bytes_cat_thm_symbolic, bytes_len_thm_symbolic, bytes_thm, int_add_thm_symbolic, int_arith_thm,
-    int_mul_thm_symbolic, int_neg_thm_symbolic, nat_add_thm, nat_add_thm_symbolic,
+    bytes_cat_thm_symbolic, bytes_len_thm_symbolic, bytes_thm, f32_add_thm_symbolic,
+    f32_mul_thm_symbolic, f64_add_thm_symbolic, f64_mul_thm_symbolic, float_bits_thm,
+    int_add_thm_symbolic, int_arith_thm, int_mul_thm_symbolic, int_neg_thm_symbolic, nat_add_thm,
+    nat_add_thm_symbolic,
 };
 pub use tohol_ops::{
-    BytesCatEqE, BytesCatLhsE, BytesLenEqE, BytesLenLhsE, HolApp, HolAppE, IntBinEqE, IntBinLhsE,
-    IntUnEqE, IntUnLhsE, NatAddEqE, NatAddLhsE, ToHolBytes, ToHolBytesE, ToHolF32, ToHolF32E,
-    ToHolF64, ToHolF64E, ToHolInt, ToHolIntE, ToHolNat, ToHolNatE,
+    BytesCatEqE, BytesCatLhsE, BytesLenEqE, BytesLenLhsE, F32BinEqE, F32BinLhsE, F64BinEqE,
+    F64BinLhsE, HolApp, HolAppE, IntBinEqE, IntBinLhsE, IntUnEqE, IntUnLhsE, NatAddEqE, NatAddLhsE,
+    ToHolBytes, ToHolBytesE, ToHolF32, ToHolF32E, ToHolF64, ToHolF64E, ToHolInt, ToHolIntE,
+    ToHolNat, ToHolNatE,
 };
 
 /// Unwind an application spine: `((f a) b) c ↦ (f, [a, b, c])`.

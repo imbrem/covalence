@@ -26,8 +26,8 @@
 use std::any::TypeId;
 
 use covalence_pure::{
-    App, CanonRule as _, Eqn, Error as PureError, LangMeta, Language, Manifest, Rule, RuleMeta,
-    RuleRecord, Val,
+    App, CanonRule as _, Eqn, Error as PureError, F32, F64, LangMeta, Language, Manifest, Rule,
+    RuleMeta, RuleRecord, Val,
 };
 use covalence_types::{Bytes, Int, Nat};
 
@@ -37,7 +37,8 @@ use covalence_core::{Ctx, Error, Term, TermSpec};
 use crate::certs;
 use crate::lang::CoreEval;
 use crate::tohol_ops::{
-    NatAddEqE, ToHolBytes, ToHolBytesE, ToHolInt, ToHolIntE, ToHolNat, ToHolNatE, nat_add_eq_expr,
+    NatAddEqE, ToHolBytes, ToHolBytesE, ToHolF32, ToHolF32E, ToHolF64, ToHolF64E, ToHolInt,
+    ToHolIntE, ToHolNat, ToHolNatE, nat_add_eq_expr,
 };
 
 pub use crate::tohol_ops::HolApp;
@@ -233,6 +234,45 @@ eval_rules! {
     ToHolBytesVal(Bytes) -> Eqn<ToHolBytesE, Val<Term>> = |bs, _| {
         let t = Term::blob(bs.clone());
         Ok(Eqn(App(ToHolBytes, Val(bs)), Val(t)))
+    }
+
+    /// TRANSITIONAL (dies with the kernel bit-pattern literals): `⊢ toHOL f =
+    /// Val(⌜f⌝)` — reify a `toHOL`-denoted `f32` bit pattern to today's `u32`
+    /// literal `Term` (the F2b bit-level layer denotes `f32 := u32`, so the
+    /// canonical HOL term for the float IS the `u32` bit-pattern literal).
+    ///
+    /// ## Soundness
+    ///
+    /// Same argument as [`ToHolNatVal`], transposed to the float bit layer:
+    /// while the kernel `SmallInt` (`u32`) literals exist, the `u32`
+    /// bit-pattern literal IS the kernel's canonical HOL term for the `f32`
+    /// bit pattern `f` (`f32 := u32`, the same denotational commitment
+    /// [`FloatCert`] documents — the constants denote WASM operations *on bit
+    /// patterns*), so `toHOL f` denotes exactly that term and the equation
+    /// holds by definition of the denotation. The rule derives its WHOLE
+    /// conclusion from the input `f` (no caller-supplied conclusion) — a pure
+    /// `bits → term` reify with NO float semantics (all float semantics stay
+    /// in [`FloatCert`]) — so it is sound on ALL inputs. At literal-deletion
+    /// time only the reify target flips; consumers do not move.
+    ToHolF32Val(F32) -> Eqn<ToHolF32E, Val<Term>> = |f, _| {
+        let t = Term::u32_lit(f.to_bits());
+        Ok(Eqn(App(ToHolF32, Val(f)), Val(t)))
+    }
+
+    /// TRANSITIONAL (dies with the kernel bit-pattern literals): `⊢ toHOL f =
+    /// Val(⌜f⌝)` — reify a `toHOL`-denoted `f64` bit pattern to today's `u64`
+    /// literal `Term` (see [`ToHolF32Val`]; `f64 := u64`).
+    ///
+    /// ## Soundness
+    ///
+    /// Identical to [`ToHolF32Val`] at the `u64` bit layer: the `u64`
+    /// bit-pattern literal IS the canonical HOL term for the `f64` bit pattern
+    /// `f`, so the equation holds by definition of the denotation. Pure
+    /// `bits → term` reify, no float semantics, whole conclusion derived from
+    /// the input — sound on ALL inputs.
+    ToHolF64Val(F64) -> Eqn<ToHolF64E, Val<Term>> = |f, _| {
+        let t = Term::u64_lit(f.to_bits());
+        Ok(Eqn(App(ToHolF64, Val(f)), Val(t)))
     }
 
     // ------------- The per-family computation-backed certificates -----------

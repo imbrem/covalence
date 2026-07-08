@@ -3,6 +3,8 @@ PairVal
 NatAddCert
 ToHolIntVal
 ToHolBytesVal
+ToHolF32Val
+ToHolF64Val
 NatArithCert
 SuccCert
 IntArithCert

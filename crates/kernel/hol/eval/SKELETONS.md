@@ -51,6 +51,24 @@ references from the partial env under construction (or a build-local Rust
 resolver), never the `core_env`-backed accessors — and must be **test-gated**.
 Porting the numeric tower to data is the remaining follow-up.
 
+## Symbolic float landers: only the binaries add/mul (stage EG2 `float-unwall`)
+
+`tohol.rs` lands `f32.addBits`/`f32.mulBits`/`f64.addBits`/`f64.mulBits`
+symbolically (`f{32,64}_add/mul_thm_symbolic`, shapes `F{32,64}BinEqE`) via the
+newly-admitted `ToHolF32Val`/`ToHolF64Val` reify rules + `f{32,64}_bin_reify`.
+Not yet landed (all reuse `FloatCert` + the same reify rules — no new admitted
+rule needed):
+
+- **Other binaries** (`sub`/`div`/`min`/`max`/`copysign`): reuse
+  `f{32,64}_bin_reify` verbatim (same `F{32,64}BinEqE` shape); add a lander
+  passing the matching `FloatOp` + `pe::F{32,64}{Sub,Div,…}` rule.
+- **Unaries** (`sqrt`/`abs`/`neg`/`ceil`/`floor`/`trunc`/`nearest`): need a new
+  symbolic shape `F{32,64}UnEqE` (mirror `IntUnEqE`) + a unary reify chain.
+- **Comparisons** (`eq`/`ne`/`lt`/`gt`/`le`/`ge`): eq sort is `bool`, the result
+  leaf is a `bool` literal not a `ToHolF*` leaf — needs a `bool`-result shape.
+- **Conversions** (`promote`/`demote`/`truncSat`/`convert`): mixed operand/result
+  widths/tags — one shape per family (cf. the mixed-sort `BytesLenEqE`).
+
 ## Minor
 
 - **`prove_true` is single-step only.** It reduces one redex and bridges `= T`;

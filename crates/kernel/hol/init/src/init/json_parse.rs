@@ -57,17 +57,28 @@
 //!   concrete accept/reject decisions on `0`/`-7`/`42` vs `01`/`1.5`/`true`/
 //!   `1e3`/`-`, and the concrete **subset** witness `parse_json_int s =
 //!   parse_json fuel s` on the accepted tokens (strict ⊆ lenient, same value).
+//! - the **string PER** [`same_json_str`]: the `bytes` PER transported to
+//!   `list char` via the encoder [`str_to_bytes`] (`map (u8_of ∘ char.code)`).
+//!   [`same_json_str_sym`] / [`same_json_str_trans`] / [`same_json_str_refl_dom`]
+//!   are direct instances of the `bytes` laws at the encoded arguments — genuine
+//!   corollaries, hypothesis- and oracle-free.
+//! - the **∀-quantified whole-value integer subset** [`parse_json_int_subset`]:
+//!   `⊢ ∀ s v r. parse_json_int s = some (v, r) ⟹ parse_json (succ fuel) s =
+//!   some (v, r)` — every strict-integer *token* parse is a lenient parse with
+//!   the identical value/suffix (both readers skip the same separators and carve
+//!   the same maximal `is_atom` run; no array recursion, since `parse_json_int`
+//!   is non-recursive). Genuine, discharged against the real readers in tests.
 //!
-//! The `bytes` PER also transports to a `string` PER; that, the full datatype,
-//! objects/strings/bool/null, float numbers, and the *general* (whole-value,
-//! array-recursive) integer-subset theorem are `SKELETONS.md` follow-ups.
+//! The full `JsonValue` datatype, objects/strings/bool/null, float numbers, and
+//! a *recursive* strict reader (with its array-structure subset) are
+//! `SKELETONS.md` follow-ups.
 
-use covalence_core::{IntTag, Result, Term, Type, subst};
+use covalence_core::{Error, IntTag, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::defs;
 use covalence_hol_eval::defs::{
-    bytes_spec, cond, fst, head, int_to_nat, nat_le, nat_rec, none, option_case, pair, snd, some,
-    tail,
+    bytes_spec, char_code, char_ty, cond, fst, head, int_from_nat, int_to_nat, list_map, nat_le,
+    nat_rec, none, option_case, pair, snd, some, tail,
 };
 use covalence_hol_eval::derived::DerivedRules;
 
@@ -75,6 +86,7 @@ use crate::init::cond::{cond_false, cond_true};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::inductive::carved::carved;
 use crate::init::nat_parse_bytes::{is_digit_byte_dec, span_digits_bytes};
+use crate::init::option::some_ne_none;
 
 // ============================================================================
 // Types.
@@ -566,6 +578,114 @@ fn lift_impl(thm: Thm, args: &[(&Term, &Term, &Term)]) -> Result<Thm> {
 }
 
 // ============================================================================
+// The `string` PER — the north-star relation transported to `list char`.
+//
+// A `list char` string is encoded as `bytes` by mapping each character to its
+// codepoint's byte (`u8_of ∘ char.code`); the `bytes` PER [`same_json`] is then
+// reused verbatim. The three string laws are **direct instances** of the bytes
+// laws at the encoded arguments — genuine corollaries, no new content.
+// ============================================================================
+
+/// `char` — the string's element type.
+fn char_t() -> Type {
+    char_ty()
+}
+
+/// `list char` — the string type (the input of the string PER).
+fn str_t() -> Type {
+    defs::list(char_t())
+}
+
+/// `u8_of n : u8` — wrap a `nat` codepoint into a `u8` (the `int_from_nat U8`
+/// embedding, dual to the reader's `val`/`u8.toNat` reification).
+fn u8_of(n: Term) -> Term {
+    Term::app(int_from_nat(IntTag::U8), n)
+}
+
+/// `str_to_bytes : list char → bytes` ≡ `map (λc. u8_of (char.code c))` — the
+/// character-string encoder: each character becomes its codepoint's byte.
+pub fn str_to_bytes() -> Term {
+    let c = Term::free("__c", char_t());
+    let enc = lam("__c", char_t(), u8_of(Term::app(char_code(), c)));
+    Term::app(list_map(char_t(), u8_t()), enc)
+}
+
+/// `str_to_bytes c : bytes` — the encoder applied to a `list char`.
+fn str_encode(c: &Term) -> Term {
+    Term::app(str_to_bytes(), c.clone())
+}
+
+/// `same_json_str fuel c1 c2 : bool` ≡ `same_json fuel (str_to_bytes c1)
+/// (str_to_bytes c2)` — the `bytes` north-star PER [`same_json`] transported to
+/// character strings. A **partial** equivalence relation
+/// ([`same_json_str_sym`] / [`same_json_str_trans`] /
+/// [`same_json_str_refl_dom`]).
+pub fn same_json_str() -> Term {
+    let f = Term::free("__sf", Type::nat());
+    let c1 = Term::free("__sc1", str_t());
+    let c2 = Term::free("__sc2", str_t());
+    let body = same_json_str_prop(&f, &c1, &c2);
+    lam(
+        "__sf",
+        Type::nat(),
+        lam("__sc1", str_t(), lam("__sc2", str_t(), body)),
+    )
+}
+
+/// The applied `same_json fuel (str_to_bytes c1) (str_to_bytes c2)` that
+/// `same_json_str fuel c1 c2` computes to.
+fn same_json_str_prop(fuel: &Term, c1: &Term, c2: &Term) -> Term {
+    Term::app(
+        Term::app(Term::app(same_json(), fuel.clone()), str_encode(c1)),
+        str_encode(c2),
+    )
+}
+
+/// `⊢ same_json_str fuel c1 c2 = same_json fuel (str_to_bytes c1)
+/// (str_to_bytes c2)` — the defining unfolding (three β-steps). Genuine.
+pub fn same_json_str_unfold(fuel: &Term, c1: &Term, c2: &Term) -> Result<Thm> {
+    let head_f = Thm::beta_conv(Term::app(same_json_str(), fuel.clone()))?;
+    let after_c1 = head_f
+        .cong_fn(c1.clone())?
+        .rhs_conv(|t| Thm::beta_conv(t.clone()))?;
+    after_c1
+        .cong_fn(c2.clone())?
+        .rhs_conv(|t| Thm::beta_conv(t.clone()))
+}
+
+/// `⊢ same_json_str fuel c1 c2 ⟹ same_json_str fuel c2 c1` — **symmetry**, a
+/// direct instance of [`same_json_sym`] at the encoded byte strings. Genuine.
+pub fn same_json_str_sym(fuel: &Term, c1: &Term, c2: &Term) -> Result<Thm> {
+    let bytes = same_json_sym(fuel, &str_encode(c1), &str_encode(c2))?;
+    let u12 = same_json_str_unfold(fuel, c1, c2)?;
+    let u21 = same_json_str_unfold(fuel, c2, c1)?;
+    bytes.rewrite(&u12.sym()?)?.rewrite(&u21.sym()?)
+}
+
+/// `⊢ same_json_str fuel c1 c2 ⟹ same_json_str fuel c2 c3 ⟹ same_json_str
+/// fuel c1 c3` — **transitivity**, a direct instance of [`same_json_trans`].
+/// Genuine. Curried.
+pub fn same_json_str_trans(fuel: &Term, c1: &Term, c2: &Term, c3: &Term) -> Result<Thm> {
+    let bytes = same_json_trans(fuel, &str_encode(c1), &str_encode(c2), &str_encode(c3))?;
+    let u12 = same_json_str_unfold(fuel, c1, c2)?;
+    let u23 = same_json_str_unfold(fuel, c2, c3)?;
+    let u13 = same_json_str_unfold(fuel, c1, c3)?;
+    bytes
+        .rewrite(&u12.sym()?)?
+        .rewrite(&u23.sym()?)?
+        .rewrite(&u13.sym()?)
+}
+
+/// `⊢ ¬(json_value fuel (str_to_bytes c) = none) ⟹ same_json_str fuel c c` —
+/// **reflexivity on the domain**, a direct instance of [`same_json_refl_dom`]:
+/// the string PER holds `c ~ c` exactly when `c`'s encoding parses. Genuine.
+pub fn same_json_str_refl_dom(fuel: &Term, c: &Term) -> Result<Thm> {
+    let bytes = same_json_refl_dom(fuel, &str_encode(c))?;
+    let u = same_json_str_unfold(fuel, c, c)?;
+    bytes.rewrite(&u.sym()?)
+}
+
+// ============================================================================
 // Structural agreement (reused from the S-expression layer).
 // ============================================================================
 
@@ -704,6 +824,196 @@ pub fn json_int_rejects(run: &Term, rest: &Term) -> Result<Thm> {
         .rhs_conv(|t| t.rw_all(&h))? // branch = cond F val none
         .trans(cond_false(&res_t(), &val, &none_r())?)? // = none
         .imp_intro(&guard_false)
+}
+
+// ============================================================================
+// The ∀-quantified whole-value integer subset for `parse_json_int`.
+//
+// `⊢ ∀ s v r. parse_json_int s = some (v, r) ⟹ parse_json (succ fuel) s =
+//   some (v, r)` — a strict-integer parse is a lenient parse with the *same*
+// value. `parse_json_int` is non-recursive (rejects `[`), so no array
+// recursion is needed: both readers skip the *same* separators, compute the
+// *same* atom run `fst (atom_span s1)` / suffix `snd (atom_span s1)`, and carve
+// `some (atom run, rest)`. The proof extracts the three guard values forced by
+// the hypothesis (`is_open` head = F, `is_atom` head = T, `is_json_int run` =
+// T) by excluded-middle case analysis (the reject branches make the strict
+// reader return `none ≠ some (v, r)`), then fires the shared conds on both
+// readers to the common value. Genuine: hypothesis- and oracle-free.
+// ============================================================================
+
+/// The right side of `thm`'s conclusion equation.
+fn rhs_of(thm: &Thm) -> Result<Term> {
+    Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
+}
+
+/// Split `cond[τ] c x y` into `(c, x, y)`.
+fn cond_parts(t: &Term) -> Result<(Term, Term, Term)> {
+    let (cxy, y) = t.as_app().ok_or(Error::NotAnEquation)?;
+    let (cx, x) = cxy.as_app().ok_or(Error::NotAnEquation)?;
+    let (_cond, c) = cx.as_app().ok_or(Error::NotAnEquation)?;
+    Ok((c.clone(), x.clone(), y.clone()))
+}
+
+/// `⊢ P = F` from `⊢ ¬P` (the `F` mirror of `ThmExt::eqt_intro`).
+fn eqf_intro(not_p: Thm) -> Result<Thm> {
+    let p = not_p
+        .concl()
+        .as_app()
+        .ok_or_else(|| Error::ConnectiveRule("eqf_intro: not a ¬".into()))?
+        .1
+        .clone();
+    let pf = not_p.not_elim(Thm::assume(p.clone())?)?; // {P} ⊢ F
+    let fp = Thm::assume(Term::bool_lit(false))?.false_elim(p)?; // {F} ⊢ P
+    pf.deduct_antisym(fp)?.sym() // ⊢ P = F
+}
+
+/// `⊢ (g = T) ∨ (g = F)` for a boolean term `g` — the excluded-middle split as
+/// an equation disjunction, the primitive for firing a symbolic-guard `cond`.
+fn bool_cases_eq(g: &Term) -> Result<Thm> {
+    let g_t = g.clone().equals(Term::bool_lit(true))?;
+    let g_f = g.clone().equals(Term::bool_lit(false))?;
+    let ng = g.clone().not()?;
+    let left = Thm::assume(g.clone())?
+        .eqt_intro()? // {g} ⊢ g = T
+        .or_intro_l(g_f.clone())? // {g} ⊢ (g=T) ∨ (g=F)
+        .imp_intro(g)?; // ⊢ g ⟹ (g=T) ∨ (g=F)
+    let right = eqf_intro(Thm::assume(ng.clone())?)? // {¬g} ⊢ g = F
+        .or_intro_r(g_t.clone())? // {¬g} ⊢ (g=T) ∨ (g=F)
+        .imp_intro(&ng)?; // ⊢ ¬g ⟹ (g=T) ∨ (g=F)
+    Thm::lem(g.clone())?.or_elim(left, right)
+}
+
+/// Fire a symbolic-guard `cond`: given `thm : ⊢ LHS = cond g x y` and
+/// `guard_eq : ⊢ g = <T|F>`, return `⊢ LHS = (x if T else y)`.
+fn fire_cond(thm: Thm, guard_eq: &Thm, ty: &Type) -> Result<Thm> {
+    let fired = thm.rhs_conv(|t| t.rw_all(guard_eq))?; // LHS = cond <lit> x y
+    let (c, x, y) = cond_parts(&rhs_of(&fired)?)?;
+    let clause = if c == Term::bool_lit(true) {
+        cond_true(ty, &x, &y)?
+    } else {
+        cond_false(ty, &x, &y)?
+    };
+    fired.trans(clause)
+}
+
+/// `⊢ parse_json x s = parseFn x false s` — the two β-steps unfolding the
+/// [`parse_json`] wrapper at any fuel term `x`.
+fn parse_json_app_eq(x: &Term, s: &Term) -> Result<Thm> {
+    Thm::beta_conv(Term::app(parse_json(), x.clone()))?
+        .cong_fn(s.clone())?
+        .rhs_conv(|t| Thm::beta_conv(t.clone()))
+}
+
+/// A reject branch: from `ps_none : Δ ⊢ parse_json_int s = none` and the
+/// hypothesis `h : {H} ⊢ parse_json_int s = some p`, derive the goal by
+/// `some p ≠ none` (vacuously — this guard value cannot occur under `H`).
+fn reject_to_goal(h: &Thm, p: &Term, ps_none: Thm, goal_term: &Term) -> Result<Thm> {
+    let sp_none = h.clone().sym()?.trans(ps_none)?; // ⊢ some p = none
+    let f = some_ne_none(&payload_t(), p)?.not_elim(sp_none)?; // ⊢ F
+    f.false_elim(goal_term.clone())
+}
+
+/// `⊢ ∀ s v r. parse_json_int s = some (v, r) ⟹ parse_json (succ fuel) s =
+/// some (v, r)` — the **whole-value integer subset** theorem: every strict
+/// integer token parse is a lenient parse with the identical value/suffix.
+/// `fuel` is free (any successor fuel works). Genuine: hypothesis- and
+/// oracle-free.
+pub fn parse_json_int_subset() -> Result<Thm> {
+    let s = Term::free("s", blist_t());
+    let v = Term::free("v", tau());
+    let r = Term::free("r", blist_t());
+    let p = pair_r(v.clone(), r.clone());
+    let some_p = some_r(p.clone());
+    let fuel = Term::free("fuel", Type::nat());
+
+    // -- PL: parse_json (succ fuel) s reduced to its value-reader form.
+    let pu = parse_unfold(&fuel, &Term::bool_lit(false), &s)?; // parseFn X false s = cond F ab vb
+    let x_fuel = {
+        let lhs = pu.concl().as_eq().ok_or(Error::NotAnEquation)?.0;
+        let (a2, _s) = lhs.as_app().ok_or(Error::NotAnEquation)?;
+        let (a1, _false) = a2.as_app().ok_or(Error::NotAnEquation)?;
+        a1.as_app().ok_or(Error::NotAnEquation)?.1.clone()
+    };
+    let (_mode, ab, vb) = cond_parts(&rhs_of(&pu)?)?;
+    let pl_vb = pu.trans(cond_false(&res_t(), &ab, &vb)?)?; // parseFn X false s = vb
+    let pl0 = parse_json_app_eq(&x_fuel, &s)?.trans(pl_vb)?; // ⊢ parse_json X s = vb
+
+    // -- PS: parse_json_int s reduced to its guard-cond tree.
+    let ps0 = Thm::beta_conv(Term::app(parse_json_int(), s.clone()))?.reduce_rhs()?;
+    let (g1, _n1, ps_inner) = cond_parts(&rhs_of(&ps0)?)?; // cond g1 none inner
+    let (g2, ps_num, _n2) = cond_parts(&ps_inner)?; // cond g2 (cond g3 sv none) none
+    let (g3, _sv, _n3) = cond_parts(&ps_num)?; // cond g3 sv none
+
+    // -- the goal proposition and the working hypothesis.
+    let goal_term =
+        Term::app(Term::app(parse_json(), x_fuel.clone()), s.clone()).equals(some_p.clone())?;
+    let h_prop = Term::app(parse_json_int(), s.clone()).equals(some_p.clone())?;
+    let h = Thm::assume(h_prop.clone())?;
+
+    let t_lit = || Term::bool_lit(true);
+    let f_lit = || Term::bool_lit(false);
+    let g1_t = g1.clone().equals(t_lit())?;
+    let g1_f = g1.clone().equals(f_lit())?;
+    let g2_t = g2.clone().equals(t_lit())?;
+    let g2_f = g2.clone().equals(f_lit())?;
+    let g3_t = g3.clone().equals(t_lit())?;
+    let g3_f = g3.clone().equals(f_lit())?;
+
+    let e1f = Thm::assume(g1_f.clone())?;
+    let e2t = Thm::assume(g2_t.clone())?;
+
+    // ---- g3 split (under g1=F, g2=T): the value carve vs the strict reject.
+    let br_g3_true = {
+        let e3t = Thm::assume(g3_t.clone())?;
+        // strict reader → sv
+        let ps_sv = fire_cond(
+            fire_cond(fire_cond(ps0.clone(), &e1f, &res_t())?, &e2t, &res_t())?,
+            &e3t,
+            &res_t(),
+        )?; // parse_json_int s = sv
+        // lenient reader → sv
+        let pl_sv = fire_cond(fire_cond(pl0.clone(), &e1f, &res_t())?, &e2t, &res_t())?;
+        // parse_json X s = sv
+        let sv_eq_some_p = ps_sv.sym()?.trans(h.clone())?; // sv = some p
+        pl_sv.trans(sv_eq_some_p)?.imp_intro(&g3_t)? // g3=T ⟹ goal
+    };
+    let br_g3_false = {
+        let e3f = Thm::assume(g3_f.clone())?;
+        let ps_none = fire_cond(
+            fire_cond(fire_cond(ps0.clone(), &e1f, &res_t())?, &e2t, &res_t())?,
+            &e3f,
+            &res_t(),
+        )?; // parse_json_int s = none
+        reject_to_goal(&h, &p, ps_none, &goal_term)?.imp_intro(&g3_f)?
+    };
+    let br_g2_true = bool_cases_eq(&g3)?
+        .or_elim(br_g3_true, br_g3_false)?
+        .imp_intro(&g2_t)?; // g2=T ⟹ goal
+
+    // ---- g2 reject (under g1=F): is_atom head = F ⟹ strict none.
+    let br_g2_false = {
+        let e2f = Thm::assume(g2_f.clone())?;
+        let ps_none = fire_cond(fire_cond(ps0.clone(), &e1f, &res_t())?, &e2f, &res_t())?;
+        reject_to_goal(&h, &p, ps_none, &goal_term)?.imp_intro(&g2_f)?
+    };
+    let br_g1_false = bool_cases_eq(&g2)?
+        .or_elim(br_g2_true, br_g2_false)?
+        .imp_intro(&g1_f)?; // g1=F ⟹ goal
+
+    // ---- g1 reject: is_open head = T ⟹ strict none.
+    let br_g1_true = {
+        let e1t = Thm::assume(g1_t.clone())?;
+        let ps_none = fire_cond(ps0.clone(), &e1t, &res_t())?;
+        reject_to_goal(&h, &p, ps_none, &goal_term)?.imp_intro(&g1_t)?
+    };
+
+    let body = bool_cases_eq(&g1)?
+        .or_elim(br_g1_true, br_g1_false)?
+        .imp_intro(&h_prop)?; // ⊢ (parse_json_int s = some p) ⟹ goal
+
+    body.all_intro("r", blist_t())?
+        .all_intro("v", tau())?
+        .all_intro("s", blist_t())
 }
 
 #[cfg(test)]
@@ -1279,6 +1589,94 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
+    // The string PER (transported from the bytes PER).
+    // ------------------------------------------------------------------
+
+    /// A `list char` from an ASCII string (`char.mk` at each codepoint).
+    fn str_term(s: &str) -> Term {
+        let mut t = defs::nil(char_t());
+        for ch in s.chars().rev() {
+            t = Term::app(
+                Term::app(defs::cons(char_t()), crate::init::char::char_lit(ch as u64)),
+                t,
+            );
+        }
+        t
+    }
+
+    /// `same_json_str fuel c1 c2` (the applied form).
+    fn sjs(f: &Term, a: &Term, b: &Term) -> Term {
+        Term::app(
+            Term::app(Term::app(same_json_str(), f.clone()), a.clone()),
+            b.clone(),
+        )
+    }
+
+    #[test]
+    fn str_encoder_and_per_are_well_typed() {
+        assert_eq!(
+            str_to_bytes().type_of().unwrap(),
+            Type::fun(str_t(), blist_t())
+        );
+        assert_eq!(
+            same_json_str().type_of().unwrap(),
+            Type::fun(
+                Type::nat(),
+                Type::fun(str_t(), Type::fun(str_t(), bool_t()))
+            )
+        );
+    }
+
+    #[test]
+    fn str_per_unfold_is_genuine() {
+        let f = Term::free("f", Type::nat());
+        let c1 = Term::free("c1", str_t());
+        let c2 = Term::free("c2", str_t());
+        let u = same_json_str_unfold(&f, &c1, &c2).unwrap();
+        assert!(u.hyps().is_empty());
+        assert_eq!(rhs(&u), same_json_str_prop(&f, &c1, &c2));
+    }
+
+    #[test]
+    fn str_per_symmetric_is_genuine() {
+        let f = Term::free("f", Type::nat());
+        let c1 = str_term("42");
+        let c2 = str_term("[1,2]");
+        let thm = same_json_str_sym(&f, &c1, &c2).unwrap();
+        assert!(thm.hyps().is_empty(), "string symmetry must be oracle-free");
+        let want = crate::HolLightCtx::new().mk_imp(sjs(&f, &c1, &c2), sjs(&f, &c2, &c1));
+        assert_eq!(thm.concl(), &want);
+    }
+
+    #[test]
+    fn str_per_transitive_is_genuine() {
+        let f = Term::free("f", Type::nat());
+        let c1 = str_term("42");
+        let c2 = str_term("[1,2]");
+        let c3 = str_term("[]");
+        let thm = same_json_str_trans(&f, &c1, &c2, &c3).unwrap();
+        assert!(thm.hyps().is_empty(), "string transitivity oracle-free");
+        let ctx = crate::HolLightCtx::new();
+        let want = ctx.mk_imp(
+            sjs(&f, &c1, &c2),
+            ctx.mk_imp(sjs(&f, &c2, &c3), sjs(&f, &c1, &c3)),
+        );
+        assert_eq!(thm.concl(), &want);
+    }
+
+    #[test]
+    fn str_per_reflexive_on_domain_is_genuine() {
+        let f = Term::free("f", Type::nat());
+        let c = str_term("42");
+        let thm = same_json_str_refl_dom(&f, &c).unwrap();
+        assert!(thm.hyps().is_empty(), "string refl-on-domain oracle-free");
+        let ctx = crate::HolLightCtx::new();
+        let ante = bnot(json_value(&f, &str_encode(&c)).equals(none(tau())).unwrap());
+        let want = ctx.mk_imp(ante, sjs(&f, &c, &c));
+        assert_eq!(thm.concl(), &want);
+    }
+
+    // ------------------------------------------------------------------
     // Strict RFC-8259 integer number token.
     // ------------------------------------------------------------------
 
@@ -1561,5 +1959,85 @@ mod tests {
                 some_r(pair_r(atom_of(bytes_term(tok)), nil_u()))
             );
         }
+    }
+
+    // ------------------------------------------------------------------
+    // The ∀-quantified whole-value integer subset.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn whole_value_subset_is_genuine() {
+        let thm = parse_json_int_subset().unwrap();
+        assert!(
+            thm.hyps().is_empty(),
+            "whole-value subset must be oracle-free"
+        );
+        // A triple-∀: instantiating all three quantifiers must succeed.
+        let s = Term::free("s", blist_t());
+        let v = Term::free("v", tau());
+        let r = Term::free("r", blist_t());
+        let inst = thm
+            .all_elim(s.clone())
+            .unwrap()
+            .all_elim(v.clone())
+            .unwrap()
+            .all_elim(r.clone())
+            .unwrap();
+        // The body is the intended implication.
+        let some_p = some_r(pair_r(v, r));
+        let ante = Term::app(parse_json_int(), s.clone())
+            .equals(some_p.clone())
+            .unwrap();
+        let (imp_a, _imp_c) = inst.concl().as_app().unwrap();
+        let (_imp, a) = imp_a.as_app().unwrap();
+        assert_eq!(a, &ante, "antecedent is the strict parse hypothesis");
+    }
+
+    /// Discharge the ∀ theorem against the *real* readers on `0`/`-7`/`42`,
+    /// and confirm a non-integer (`1.5`) strict-rejects (so the subset is
+    /// vacuous there).
+    #[test]
+    fn whole_value_subset_discharges_on_real_readers() {
+        const K: usize = 30;
+        // Instantiate the free `fuel` so `succ fuel` becomes the concrete
+        // `fuel(K)` = `succ (fuel (K-1))`.
+        let thm = parse_json_int_subset()
+            .unwrap()
+            .inst("fuel", fuel(K - 1))
+            .unwrap();
+
+        for tok in [b"0".as_slice(), b"-7", b"42"] {
+            let strict = eval_strict(tok); // ⊢ parse_json_int [tok] = some(atom tok, nil)
+            assert!(strict.hyps().is_empty());
+            let vval = atom_of(bytes_term(tok));
+            let rval = nil_u();
+            let some_vr = some_r(pair_r(vval.clone(), rval.clone()));
+            assert_eq!(rhs(&strict), some_vr, "strict value for {tok:?}");
+
+            // Discharge: s := [tok], v := atom tok, r := nil, then MP with the
+            // strict parse. Yields the lenient reader's value, hyp-free.
+            let lenient = thm
+                .clone()
+                .all_elim(bytes_term(tok))
+                .unwrap()
+                .all_elim(vval)
+                .unwrap()
+                .all_elim(rval)
+                .unwrap()
+                .imp_elim(strict)
+                .unwrap();
+            assert!(
+                lenient.hyps().is_empty(),
+                "discharged subset must be genuine for {tok:?}"
+            );
+            assert_eq!(rhs(&lenient), some_vr, "lenient value for {tok:?}");
+
+            // The independent *real* lenient reader agrees on the value.
+            assert_eq!(rhs(&eval(K, false, tok)), some_vr, "real lenient {tok:?}");
+        }
+
+        // A float literal is not a strict integer: the strict reader rejects,
+        // so the subset theorem imposes nothing.
+        assert_eq!(rhs(&eval_strict(b"1.5")), none_r());
     }
 }

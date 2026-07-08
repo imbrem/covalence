@@ -74,4 +74,31 @@ commit(s).
   stage here, commit the roadmap, then implement that stage (additive, audited,
   reversible) and log the audit verdict.
 
+## 2026-07-08 — roadmap workflow landed; safe-first stage chosen
+
+- **Workflow `wsx6mbbnv` done** (5 architects + synth + adversarial review) →
+  [`tcb-holomega-roadmap.md`](./tcb-holomega-roadmap.md). Near-term ordering:
+  **B-K1** (reflected Kind sort, base, zero TCB) → **B-K2** (higher-rank Ty ctors,
+  base, zero TCB) → **B-K3** (KindOf/RankOf/RankLe CanonRules, 3 gated mints) →
+  EG3a (`TermKind::Zero`) → EG3b (T/F defined, connectives→CoreLang) → DEFS-OUT
+  sequent-reshape → close float-op gap → **EG5** (delete 5 literal leaves,
+  IRREVERSIBLE, wasm32-adversarial-audit-gated) → residual defs/. Steps 1–4
+  additive-first + independently mergeable; EG5 the single irreversible door.
+- **Review verdicts:** (a) leaf-removal symbolic-prop wall = SOUND-PLAN near-term
+  (zero new base method for the statically-shaped case; Dyn/heterogeneous case =
+  EG4, deferred); EG5 must be one atomic commit (the `rules.rs:797`
+  `tohol_unfolding_rules_are_exclusive` guard: co-admitting *Val reify + structural
+  unfolding mints ⊢False) + wasm32 audit. (b) HOL-ω rank = SOUND-PLAN-as-gated /
+  proof NEEDS-WORK (align rank formula to **Homeier's HOL-Omega** stratification;
+  audit vs SelectAx/bool; `TyInst` must structurally bind the rank premise; B-K3
+  KindOf must return None on ill-kinded, never a wrong kind). (c)
+  defs-without-global-state = SOUND (Def-as-value, `Arc::ptr_eq` identity, fresh Arc
+  per `define`, no global registry) but re-entrancy liveness NEEDS-WORK (the
+  LazyLock incident class). (d) persisted RelEdge ≠ free Thm (needs re-execution or
+  an admitted attestation axiom, else ⊢False). (e) shape-erased general matcher
+  (Dyn, no derive(Eq)) = deferred-hard wall; shaped Inst/Match is contained.
+- **Decision:** implement **B-K1 first** — zero-TCB inert base ops (no `Thm::new`,
+  no CanonRule), the pattern already audited via `tyrep.rs`. Additive + trivially
+  reversible. No irreversible/gated door touched.
+
 <!-- APPEND NEW ENTRIES BELOW -->

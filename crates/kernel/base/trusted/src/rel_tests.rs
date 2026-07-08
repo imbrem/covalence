@@ -351,3 +351,38 @@ fn tyrep_in_base_transports() {
         "distinct type reps must not be provably equal"
     );
 }
+
+// ---- HOL-ω Kind sort in the base (B-K1) ----
+
+/// A demo kind-rep sort (the `K` the base is generic over; picked by a consumer).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct Kdemo;
+
+/// Reflected kinds (`⋆`, `⋆ ⇒ ⋆`) are well-formed base terms of the kind-rep sort,
+/// and their equality/congruence come FREE from `refl`/`cong_pair`/`cong_app` — no
+/// new rule, no `Thm::new` site. The `KStar`/`KArrow` ops are inert (uninterpreted).
+#[test]
+fn kind_sort_in_base_transports() {
+    // `⋆` and `⋆ ⇒ ⋆` as base terms of sort `Kdemo`.
+    let s = star::<Kdemo>(); // ⋆  = App(KStar, Val(()))
+    let arrow = App(k_arrow::<Kdemo>(), (star::<Kdemo>(), star::<Kdemo>())); // ⋆ ⇒ ⋆
+    fn is_kind<E: Expr<Ty = Kdemo>>(_: &E) {}
+    is_kind(&s);
+    is_kind(&arrow);
+
+    // Congruence is free: from `⊢ ⋆ = ⋆` build `⊢ (⋆ ⇒ ⋆) = (⋆ ⇒ ⋆)` via
+    // `cong_pair` + `cong_app(KArrow)` — the machinery applies to kind terms with
+    // NO new rule (the point of B-K1).
+    let refl_star: Thm<(), Eqn<_, _>> = Thm::refl(star::<Kdemo>(), ());
+    let pair = refl_star
+        .clone()
+        .cong_pair(refl_star)
+        .expect("union of () contexts");
+    let arrow_eq = pair.cong_app(k_arrow::<Kdemo>());
+    assert_eq!(
+        arrow_eq.lhs(),
+        &App(k_arrow::<Kdemo>(), (star::<Kdemo>(), star::<Kdemo>()))
+    );
+    // Both sides equal (well-formed reflexive kind equation).
+    assert_eq!(arrow_eq.lhs(), arrow_eq.rhs());
+}

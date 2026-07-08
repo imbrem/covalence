@@ -1,11 +1,17 @@
 # The relation-calculus base + HOL-ω middle — authoritative design
 
-**Status:** AI-authored design panel (2026-07, branch `relcalc-design`). The
-authoritative plan for the **base + middle-language redesign**: a base that is a
-*calculus of relations-as-untrusted-functions* with `Ty` as a first-class base
-sort, and a middle that is **HOL-ω** rather than plain HOL. Records three
+**Status:** AI-authored design panel (2026-07, branch `relcalc-design`, revised
+to close an 8-finding HIGH audit — see the revision log at the end). The
+authoritative plan for the **base redesign**: a base that is a *calculus of
+relations-as-untrusted-functions* with a reflected type-representation sort
+`TyRep` as a first-class base sort. A HOL-ω middle is sketched as a **future
+direction only** (deferred to Appendix A — *not this pass*). Records three
 architect proposals, a judge scoring, the synthesized winner, and a **concrete,
 additive Phase-0 spec** the orchestrator will build next.
+
+**Committed scope of this design (binding):** base relation-calculus (`Rel`/
+`execute` + the positive calculus) + `TyRep`-in-base. HOL-ω is explicitly
+*out of committed scope* and lives only in Appendix A.
 
 Companions it must stay coherent with: [`closed-world-kernel.md`](./closed-world-kernel.md)
 (the realized base), [`literal-endgame-design.md`](./literal-endgame-design.md)
@@ -25,18 +31,32 @@ built here.
 Every base choice below is judged, above soundness alone, on whether it makes
 these two **first-class AND efficient**:
 
-1. **Content-addressing** — hashing/store/term-addressing as base `Op`/`Rel`,
-   addressing terms & data natively (no term materialization).
+1. **Content-addressing = hash-consing (interning), not merely a hash op.** The
+   term store's **native representation** addresses every term by its O256
+   content hash: structurally-identical terms built separately are *deduplicated*
+   and *shared* — one canonical `Arc` per content hash. This is an
+   *interning/hash-consing representation* decision, not an operation you invoke.
+   Its soundness payoff is concrete against the real base: `Dyn`'s `Arc::ptr_eq`
+   equality (`expr.rs:147-170`) **coincides with content equality** precisely
+   *because* the interner guarantees one `Arc` per content hash — pointer equality
+   becomes a sound, complete decision for structural equality on interned terms.
+   Separately, `Hash: Op<Bytes, O256>` (serialize-then-hash) remains available as
+   the *computational witness* `⊢ hash(blob) = h` via `canon` — but the
+   unification "hashing = addressing = hash-consing" is realized by the interning
+   *representation*, not by that op alone. Data & terms are addressed natively (no
+   term materialization).
 2. **WASM** — a WASM module run is a *subset of untrusted relations*: executing
    it witnesses `input → output`, i.e. `a R b = true`.
 
-The load-bearing observation that ties them together: **both are untrusted
-functions whose *execution* supplies positive facts and never negative ones.**
-Running a hash gives you `hash(x) = h`; running a store lookup gives you
+The load-bearing observation that ties the *execution* half together: **both a
+store lookup and a WASM run are untrusted functions whose *execution* supplies
+positive facts and never negative ones.** Running a store lookup gives you
 `addr ↦ blob` *if present*; running a WASM module gives you `a ↦ b` *if it
-halts with `b`*. None of them can ever prove a *negative* — a store miss on one
+halts with `b`*. Neither can ever prove a *negative* — a store miss on one
 backing says nothing (the blob may be on another), a non-halting module proves
 nothing (halting problem). **The base is built around exactly this asymmetry.**
+(The pure `Hash` op is the deterministic-total corner: its `canon` equation is a
+genuine functional identity, unlike the store/WASM relations.)
 
 ---
 
@@ -60,17 +80,18 @@ kernel:
   *functional* equation `App<F,Val(v)> = Val(eval(v))`).
 - `prop.rs` — the ungated bool theory (`and_intro`/`mp`/…), sound in every `L`.
 
-Three facts about this base decide the whole redesign:
+Three facts about this base decide the whole redesign (numbered *Fact 1–3* to
+avoid collision with the audit findings F1–F8 used elsewhere in this doc):
 
-- **F1 — `Op<In,Out>` is already the function sort; `CanonRule` already executes
-  ops.** `canon` runs `f.eval(v)` and mints a **functional** equation. What is
-  *missing* is the **relational** (partial / effectful / nondeterministic)
+- **Fact 1 — `Op<In,Out>` is already the function sort; `CanonRule` already
+  executes ops.** `canon` runs `f.eval(v)` and mints a **functional** equation.
+  What is *missing* is the **relational** (partial / effectful / nondeterministic)
   execution rule and the calculus over relations.
-- **F2 — `CanonRule` mints only a *functional* identity.** It cannot serve WASM
-  or a federated store, which are *not* functions (nondeterministic / partial /
-  present-on-some-backing). The relational reading `a R b` (b *is one* output of
+- **Fact 2 — `CanonRule` mints only a *functional* identity.** It cannot serve
+  WASM or a federated store, which are *not* functions (nondeterministic / partial
+  / present-on-some-backing). The relational reading `a R b` (b *is one* output of
   f on a) is sound where the functional reading `f(a)=b` is not.
-- **F3 — the base already proves *no disequalities*** (`closed-world-kernel.md`
+- **Fact 3 — the base already proves *no disequalities*** (`closed-world-kernel.md`
   §"Leaf equality", the deferred `Evaluate` seam). The relational base **turns
   this bug into the load-bearing feature**: positive membership is native;
   negative membership (`¬(a R b)`) is axiom-only. The "no falsity" wall the old
@@ -134,9 +155,24 @@ sole gate.
 ### 3A. Relation calculus base
 
 **Membership needs no new grammar.** For a relation op `R : Op<(In,Out), bool>`,
-the proposition `a R b` is just the existing `App<R, (Val<In>, Val<Out>)>`, an
-`Expr<Ty=bool>`. A *proven* membership is a `Thm<L, App<R, (Val,Val)>>`. The
+the proposition `a R b` is just the existing `App<R, (leaf<In>, leaf<Out>)>`, an
+`Expr<Ty=bool>`. A *proven* membership is a `Thm<L, App<R, (leaf,leaf)>>`. The
 existing `prop.rs`/`eqn.rs` calculus transports it for free.
+
+**Leaves are ZERO-COPY (`Ref<Arc<_>>`), not owned `Val` (F1).** The operand
+leaves must be the Arc-shared `Ref<P: TrustedDeref>` (`expr.rs:55-64`; `Arc:
+TrustedDeref` at `expr.rs:32`) — **never** owned `Val<C>` (`expr.rs:44`, which
+holds `C` *by value*). This is load-bearing on the WASM/store hot path: a
+megabyte input buffer or a store blob is seated as `Ref(Arc::new(buf))`, so the
+buffer lives behind one `Arc`. Every calculus step that duplicates a leaf then
+clones an **Arc handle, not the payload**: `refl` clones its leaf (`eqn.rs:116`)
+and `cong_app` clones its op (`eqn.rs:192`) — for a `Ref<Arc<_>>` leaf that is a
+refcount bump (O(1)), whereas for `Val<Buf>` it would deep-copy the whole buffer.
+The relevant `execute` bound is therefore `F::In: 'static` / `F::Out: 'static`
+(to seat behind `Arc` and satisfy `TrustedDeref`), **not** `F::In: Clone` over
+the payload — nothing ever clones the payload. (`Ref<Arc<C>>` compares by the
+`Arc`'s `Eq`, which compares pointees; on an *interned* store that pointee
+compare degenerates to `Arc::ptr_eq` — see §0 hash-consing.)
 
 **`Rel(F)` — the untrusted-function constructor** (analogue of `Val`, for
 functions):
@@ -163,25 +199,31 @@ is *only* a `Rel`.
 **The execution rule — the one new trusted primitive (gated):**
 
 ```rust
-/// Run untrusted `f` on ground input `a`. On `Ok(b)`, mint `⊢ a Rel(f) b`
-/// (= `App<Rel(f), (Val(a),Val(b))>`, a bool prop). Gated on `Rel<F>`'s TypeId.
-/// NEVER mints falsity — `Err`, or a different `b` next time, is simply unprovable.
+/// Run untrusted `f` on ground input `a`. On `Ok(b)`, mint `⊢ a Rel(f) b` over
+/// ZERO-COPY Arc-shared leaves (= `App<Rel(f), (Ref(Arc(a)),Ref(Arc(b)))>`, a
+/// bool prop). Gated on `Rel<F>`'s TypeId. NEVER mints falsity — `Err`, or a
+/// different `b` next time, is simply unprovable.
 pub fn execute<L: Language, F: UntrustedFn>(
     f: Rel<F>, a: F::In, lang: L,
-) -> Result<Thm<L, App<Rel<F>, (Val<F::In>, Val<F::Out>)>>, Error>
-where F::In: Clone {
+) -> Result<Thm<L, App<Rel<F>, (Ref<Arc<F::In>>, Ref<Arc<F::Out>>)>>, Error>
+where F::In: 'static, F::Out: 'static {
     let id = TypeId::of::<Rel<F>>();
     if !lang.admits(id) { return Err(Error::NotAdmitted(id)); }
     let b = f.0.run(&a).map_err(|e| Error::RuleFailed(format!("{e:?}")))?;
-    Ok(Thm::new(lang, App(f, (Val(a), Val(b)))))   // sole gate: Thm::new
+    // Seat both operands behind ONE Arc each — the buffer is never copied; every
+    // downstream refl/cong clones only the Arc handle (a refcount bump).
+    Ok(Thm::new(lang, App(f, (Ref(Arc::new(a)), Ref(Arc::new(b))))))  // sole gate: Thm::new
 }
 ```
 
 This is `canon`'s sibling: same shape, same single choke point, same `admits`
-gate — but it mints **graph membership** (`a R b`), which is sound for *any* `f`
-(the pair was observed), where `canon`'s **functional equation** (`f(a)=b`) is
-sound only for deterministic total `f`. Per-function TCB stays enumerated: each
-executable relation is a `Rel<F>` entry in the language's manifest.
+gate — but it mints **graph membership** (`a R b`) over Arc-shared leaves, which
+is sound for *any* `f` (the pair was observed), where `canon`'s **functional
+equation** (`f(a)=b`) is sound only for deterministic total `f`. Per-function TCB
+stays enumerated: each executable relation is a `Rel<F>` entry in the language's
+manifest. Note the operand-owning `Rel(f)` wraps `f` by value, but the *I/O
+payloads* — the only large data — ride in `Ref<Arc<_>>`, so a megabyte-I/O run
+still yields an O(1)-copy theorem whose every calculus transport bumps refcounts.
 
 **The soundness asymmetry, made precise.**
 
@@ -219,27 +261,42 @@ calculus is the IDB, negation/aggregation are the stratified/axiom layer.)
 nondeterminism/traps by construction* (a trap is `Err` ⇒ proves nothing; a
 nondeterministic result is still a true graph member). Composition `;` chains
 module runs; correctness-of-compilation is a relational inclusion (§5). The
-operands are native `Val` (the input/output buffers) — **no term
-materialization**, so a megabyte-I/O run mints an O(1)-node theorem.
+operands ride in **zero-copy `Ref<Arc<_>>` leaves** (the input/output buffers) —
+**no term materialization and no buffer copy** (F1), so a megabyte-I/O run mints
+an O(1)-node theorem *and* every subsequent calculus step over it bumps an Arc
+refcount rather than deep-copying the buffer.
 
-**North star #1 — content-addressing, made efficient & first-class, and the
-canon/execute duality.** Two *distinct* mechanisms, both needed:
+**North star #1 — content-addressing = hash-consing, made efficient &
+first-class, and the canon/execute duality (F2).** Content-addressing is
+**primarily a native representation** — hash-consing (interning) — and
+*secondarily* two op/rule mechanisms:
 
+- **The interning representation (the substance of "hashing = addressing").** The
+  term store keeps one canonical `Arc` per O256 content hash; building a
+  structurally-identical term twice returns the *same* `Arc`. On such interned
+  terms `Dyn`'s `Arc::ptr_eq` (`expr.rs:147-170`) is a sound *and complete*
+  decision for structural equality — pointer identity **is** content identity.
+  This is where "hashing = addressing = hash-consing" actually lives; it is a
+  representation decision, not a proof rule.
 - **`Hash : Op<Bytes, O256>` is a pure `CanonRule`** (deterministic, total) →
-  `canon` mints the **functional** `⊢ hash(blob) = h`. This is what makes `h`
-  *the* content-address (canonical, a genuine equation you can rewrite with).
+  `canon` mints the **functional witness** `⊢ hash(blob) = h`. This certifies
+  *which* O256 addresses a given blob (the computational side of interning); it
+  is a genuine equation you can rewrite with, but it is the *witness*, not the
+  addressing mechanism itself.
 - **`Store : Rel<O256, Bytes>` is an effectful `Rel`** → `execute` mints the
   **membership** `⊢ addr Store blob` when a lookup succeeds. A store is *not* a
   function (a miss ≠ "absent"; federated backings), so the relational reading is
   the *correct* one, and a miss soundly proves nothing (needs a "this store is
-  closed" axiom to conclude absence).
+  closed" axiom to conclude absence — see §3A-negation, F3).
 
 Content-addressing a *term* is `Hash ∘ serialize` where `serialize : Op<Term,
-Bytes>` and the whole thing runs over `Val<Term>`/`Val<Bytes>` leaves held
-natively — the term is addressed without walking a materialized tree. This is
-the same "never materialize" laziness as EG2 (`literal-endgame-design.md` §7:
-the megabyte `bytes.cat` operand with 2 materialized nodes), now the base's
-*native* content-addressing path.
+Bytes>` and the whole thing runs over zero-copy `Ref<Arc<Term>>`/`Ref<Arc<Bytes>>`
+leaves (F1) held natively — the term is addressed without walking a materialized
+tree *and* without copying the blob. This is the same "never materialize"
+laziness as EG2 (`literal-endgame-design.md` §7: the megabyte `bytes.cat`
+operand with 2 materialized nodes), now the base's *native* content-addressing
+path, and it composes with the interner: the canonical `Arc` a serialized term
+already lives behind is exactly the leaf `execute`/`canon` mint over.
 
 **What precisely happens to Val / App / Dyn / CanonRule (the Op/Val
 unification).**
@@ -262,73 +319,103 @@ unification).**
   the converse fails. Both stay in the base; each serves a north star (canon →
   the canonical hash; execute → the effectful store / WASM).
 
-### 3B. `Ty` in the base
+### 3A-negation. The admitted-axiom discipline (F3) — a USER soundness obligation
 
-Add a base sort `Ty` (an opaque marker — like every sort, it needs no trait) and
-**type constructors as ops**:
+`execute` and any functionality/totality/closure axiom are **not "complementary
+by construction"**; keeping them consistent is an *explicit soundness obligation
+the user discharges*, and the framework does **not** enforce it. State this
+precisely:
+
+- **`execute` grants ONLY positive facts, and is sound for ANY `f`** — including a
+  `run` that is nondeterministic (returns different `b` for the same `a` across
+  calls) or partial (`Err`/no output on some `a`). Every minted `⊢ a Rel(f) b`
+  records a pair that *was actually observed*; that pair is genuinely in the graph
+  no matter how erratic `f` is. The base can therefore never mint falsity from
+  `execute`.
+- **Any NEGATIVE or UNIQUENESS conclusion requires an explicitly-admitted axiom.**
+  To conclude `¬(a R b)`, or "`b` is *the* output of `a`" (functionality), or "`a`
+  is out of the domain" (totality/closure), you must *admit an axiom* — a
+  per-relation nullary `Rule` (§8.8) whose soundness is the **user's burden**,
+  exactly like admitting any other axiom.
+- **The two must be kept consistent BY THE USER, and the framework does not check
+  it.** If you populate a relation `R` via `execute` with a **nondeterministic**
+  `f` (can return two different `b` for one `a`) *and* also admit a
+  functionality/uniqueness axiom for `R`, that axiom is simply **false**, and
+  admitting a false axiom is *unsound — the user's error*, indistinguishable from
+  admitting `⊢ False`. The base does not, and cannot, detect that your `f` is
+  nondeterministic; asserting functionality about it is your assertion, not the
+  framework's guarantee.
+
+So the discipline is: **`execute` = positive-only, always sound; negation/
+uniqueness = admitted axiom, sound iff the user's `f` actually has the asserted
+property.** This is an *admitted-axiom discipline*, not an enforced invariant. Do
+not read the calculus as "the framework rules out inconsistency here" — it rules
+out *forging* a theorem, and it makes falsity axiom-only, but the *truth* of a
+functionality/closure axiom about an untrusted `f` is on the person who admits it.
+(This is the sound reading of the deferred `Evaluate` seam of
+`closed-world-kernel.md`: a disequality/decision is an admitted axiom that a
+relation is functional / total / closed — never auto-granted.)
+
+### 3B. `Ty` in the base — the reflected `TyRep` sort (F7)
+
+Add a base sort **`TyRep`** — a *reflected type-representation* sort with **real
+inhabitants** (not a marker with one value). Concrete object-language types enter
+as `Val<core::Type>` **leaves at sort `TyRep`**, and type constructors are ops
+that build `App` spines *over `TyRep`*:
 
 ```rust
-pub struct Ty;                                  // the sort of object-language types
-pub struct TyFn;  impl Op for TyFn  { type In = (Ty, Ty); type Out = Ty; }  // →
-pub struct TyBool; impl Op for TyBool { type In = (); type Out = Ty; }
-pub struct TyApp; impl Op for TyApp { type In = (/*op*/, /*args*/); type Out = Ty; } // HOL-ω
+/// The sort of reflected object-language type representations. Concrete types
+/// enter as `Val<core::Type>` leaves AT THIS SORT; constructor ops build spines
+/// over it. (A distinct base sort, so its inhabitants are distinguishable.)
+pub type TyRep = core::Type;   // the sort = the reflected concrete type; Val<TyRep> are its leaves
+
+pub struct TyFn;  impl Op for TyFn  { type In = (TyRep, TyRep); type Out = TyRep; }  // →
+pub struct TyApp; impl Op for TyApp { type In = (TyRep, TyRep); type Out = TyRep; }  // type-op application
 ```
 
-Types are now base **terms of sort `Ty`**, built by `App` like everything else.
-Two payoffs:
+The representation is picked ONCE and used everywhere (resolves the audit's F7
+contradiction — no "marker `Ty` with one inhabitant" competing with `Val<Type>`
+leaves, and no `TyFn::In = (core::Type, core::Type)` clash, because constructor
+`In`/`Out` are uniformly the reflected sort `TyRep`). A concrete `core::Type`
+enters as `Val<core::Type>` at sort `TyRep`; `TyFn`/`TyApp` produce
+`App<TyFn, (·,·)>` spines whose sort is again `TyRep`. Distinct type reps are
+distinct `Val<core::Type>` leaves, so `⊢ a = a'` between them is *meaningful*: it
+holds via `of_eq` exactly when the two `core::Type` values are `Eq`-equal
+(`eqn.rs:284`), and two *different* type reps are not provably equal (leaf
+equality proves no disequality, but it also does not spuriously equate distinct
+leaves). Two payoffs:
 
 - **Type equality/congruence/symbolic-transport come *free* from the existing
-  calculus.** `⊢ TyFn(a,b) = TyFn(a',b')` from `⊢ a=a'`, `⊢ b=b'` by `cong_app`
-  — no separate type-equality machinery in the middle (a real simplification;
-  today `core` re-implements `Type`/`TypeKind` equality).
-- **Leaf-elimination reuses the *same* symbolic mechanism for `Ty`.** A concrete
-  `core::Type` enters as `Val<Type>` *or* symbolically as the `TyFn`/`TyApp`
-  spine over `Val` leaves; `eq_mp`/`trans` transport it without materializing the
-  tree — B1 (`literal-endgame-design.md`) applied at sort `Ty` instead of
-  `Term`. §4 shows this subsumes the endgame.
+  calculus at sort `TyRep`.** `⊢ TyFn(a,b) = TyFn(a',b')` from `⊢ a=a'`, `⊢ b=b'`
+  by `cong_app` (`eqn.rs:192`) — no separate type-equality machinery in the
+  middle (a real simplification; today `core` re-implements `Type`/`TypeKind`
+  equality). Note `cong_app` clones the *op* `TyFn` (cheap ZST), transporting the
+  argument equation.
+- **Leaf-elimination reuses the *same* symbolic mechanism for `TyRep`.** A
+  concrete `core::Type` enters as `Val<core::Type>` *or* symbolically as the
+  `TyFn`/`TyApp` spine over `Val<core::Type>` leaves; `eq_mp`/`trans` transport it
+  without materializing the tree — B1 (`literal-endgame-design.md`) applied at
+  sort `TyRep` instead of `Term`. §5's EG5-subsumption note shows this subsumes
+  the endgame.
 
-### 3C. HOL-ω middle
+**Scope note (F5).** `TyRep`, `TyFn`, `TyApp` are *ground first-order type
+TERMS* — `App` spines over leaves, which the base grammar (`expr.rs`) fully
+supports. They are the whole of `Ty`-in-base committed by THIS design. Type
+*variables*, `TyAbs` binding, capture-avoiding `TyInst`, and kind-checking are a
+**binder layer the base does NOT provide** and are deferred to the future
+appendix (§A).
 
-Retarget the middle from plain HOL (CoreLang, 26 rules) to **HOL-ω** (Homeier's
-HOL-Omega: HOL + a **kind** system + **type-operator variables** + rank-N type
-quantification). The base changes above make this *simpler than plain HOL*:
+### 3C. HOL-ω middle — DEFERRED, NOT IN THIS PASS
 
-- **Kinds are base sorts; type operators are base ops.** Kind `ty` is the sort
-  `Ty`; kind `ty ⇒ ty` is `Op<Ty,Ty>`. A type-operator variable `m : ty⇒ty` is a
-  free variable at sort `Op<Ty,Ty>`. So HOL-ω's kind/type-operator layer is
-  *just the base `Op`/`App` calculus at sort `Ty`* — **no new middle machinery**.
-  This is *why* HOL-ω here is more elegant than plain HOL: plain HOL bolts a
-  fixed set of type constructors + a separate type-equality onto `core::Term`;
-  HOL-ω *inherits* the base's relation/equality calculus at `Ty` and gets type
-  operators, type-level equality, and symbolic types for free.
-- **Rule delta vs the current 26.** Group A (equality/congruence: `Refl`/`Sym`/
-  `Trans`/`MkComb`/`Abs`/`BetaConv`/`EtaConv`) is unchanged in spirit but now
-  *reuses* the base equality calculus at both `Ty` and `Term` (drop `core`'s
-  private type-equality). Add the HOL-ω trio: **`TyBeta`** (type-operator
-  application reduction), **`TyAbs`/`TyInst`** (kind-correct type-operator
-  abstraction/instantiation), and **rank-N `TyAll`** intro/elim for universal
-  types. `typedef` (abs/rep) generalizes to type-operator definitions. Net: a few
-  added kind-directed rules, minus the deleted bespoke type-equality — a wash or
-  a shrink in TCB, with strictly more expressive types.
-
-**Micro-Haskell → HOL-ω (the `Monad` worked example).** The small vision: a
-micro-Haskell dialect converts ~directly to HOL-ω.
-
-| micro-Haskell | HOL-ω |
-|---|---|
-| type `T` | type (term of sort `Ty`) |
-| `Maybe :: * -> *` | type operator: constant of kind `ty⇒ty`, i.e. sort `Op<Ty,Ty>` |
-| `class Monad m where return::a->m a; bind::m a->(a->m b)->m b` | a **dictionary** type operator `Monad : (ty⇒ty)⇒ty` + a predicate `LawfulMonad : ∀(m:ty⇒ty). Monad m → bool` (the 3 laws) |
-| `instance Monad Maybe` | a term `dict : Monad Maybe` + a proof `⊢ LawfulMonad Maybe dict` |
-| `f :: Monad m => a -> m a` | rank-1: `LawfulMonad m d ⊢ f : α → m α`; rank-N: `f : ∀(m:ty⇒ty). Monad m → …` (a `TyAll` type) |
-| `do { x <- p; k x }` | `bind d p (λx. k x)` |
-
-The typeclass is a **rank-n dictionary over a type-operator variable** — exactly
-what HOL-ω's kind system + universal types express directly, and *nothing else
-does as cleanly*. This is the payoff: a Haskell subset (eventually most of it)
-becomes a **native in-kernel language**, and the eventual big vision — **compile
-that Haskell to WASM, verified by the kernel** — is stated in the base relation
-calculus (§5).
+**HOL-ω is scoped OUT of this design's committed scope (F4/F5).** The committed
+scope of THIS design is *base relation-calculus + `TyRep`-in-base only* (§3A,
+§3B). Everything about the HOL-ω *middle* — the kind system, type-operator
+variables, rank-N type quantification, the `TyBeta`/`TyAbs`/`TyInst`/`TyAll`
+rules, and the micro-Haskell front end — is **future / aspirational** and moved
+to **Appendix A** (at the end of this doc). It is retained there as a direction,
+with its two hard prerequisites stated plainly (a required rank stratification for
+consistency; a real binder/kind middle layer the ground base does not provide)
+rather than hand-waved as "free".
 
 ---
 
@@ -362,10 +449,13 @@ Scores 1–5 (higher better), on the mission's axes.
 | north stars served effectively & efficiently | 5 | **5** | 2 |
 | soundness rigor (true/never-false + Op/Val unification, `Thm::new` sole gate) | 4 | **5** | 4 |
 | base-TCB minimality | 3 | **5** | 5 |
-| HOL-ω correctness + Haskell mapping | 4 | **5** | 4 |
+| (future) HOL-ω/Haskell direction — *Appendix A only, not scored for this pass* | 4 | **5** | 4 |
 | EG5 subsumption | 4 | **5** | 3 |
 | migration realism (additive, reversible, real Phase 0) | 1 | **5** | 4 |
 | **total** | 21 | **30** | 22 |
+
+(The HOL-ω/Haskell row reflects each proposal's *future* fit; HOL-ω is deferred
+to Appendix A and is **not** part of this design's committed scope — see F4.)
 
 **Winner: B**, grafting:
 
@@ -379,23 +469,47 @@ Scores 1–5 (higher better), on the mission's axes.
   additions.
 
 **Why B is sound and additive (no fork).** It adds **zero** to existing base
-behavior: `Val`/`App`/`Eqn`/`CanonRule`/the equality & bool calculus are
+behavior: `Val`/`Ref`/`App`/`Eqn`/`CanonRule`/the equality & bool calculus are
 untouched; `execute` is a new gated mint through the *same* `Thm::new` choke
-point as `canon`; the positive calculus is new ungated methods (sound-in-every-L,
-like `and_intro`). The Op/Val unification is *stated* (Val = the nullary op) and
-*bridged* thinly, with the full collapse (delete `Val`, `Expr := Op<(),_>`)
-deferred to a maintainer-gated stage — A's flag-day is never forced. Soundness
-still rests on `admits()` alone (the sole gate is `Thm::new`, the sole new
-trusted rule is `execute`, gated per-function).
+point as `canon`; the positive calculus is new methods. The Op/Val unification is
+*stated* (Val = the nullary op) and *bridged* thinly, with the full collapse
+(delete `Val`, `Expr := Op<(),_>`) deferred to a maintainer-gated stage — A's
+flag-day is never forced. Soundness rests on `admits()` for the *gated* additions
+plus **audit of every new `Thm::new` call site** (see the honest TCB-delta
+below).
+
+### Honest TCB-delta accounting (F8) — gating ⊥ trust
+
+**Manifest-gating is ORTHOGONAL to trust.** Every function that calls the
+`pub(crate) Thm::new` mint (`eqn.rs:73`) is IN THE TCB and must be audited,
+*whether or not it is manifest-gated* — exactly as `prop`'s `and_intro`/`or_inl`/
+`mp` are ungated yet trusted mint sites listed among the audited call sites at
+`lib.rs:11-16` (`prop.rs:40-89`). It is therefore **wrong** to call the positive
+relation calculus "zero trust / costless / trivially green because only `execute`
+and negation are gated." The honest delta this design adds to the base TCB:
+
+| new mint site | gated? | trust character |
+|---|---|---|
+| `execute` (§3A) | **yes** — `admits(TypeId::of::<Rel<F>>())` | new *external-trust* rule; per-`Rel<F>` enumerated; audit that it mints only the observed pair |
+| `transpose` / `compose` / `join` / `meet` (positive calculus, §3A) | **no** (ungated methods) | **TRUSTED-BUT-UNGATED** mint sites — *in the TCB*, audited like `and_intro`; each must be sound-in-every-`L` (monotone, true-from-true, mints no falsity) |
+| per-relation functionality/totality/closure **axioms** (§3A-negation, §8.8) | **yes** — admitted `Rule` | user-admitted; soundness is the **user's** burden (F3) |
+
+So the base-TCB minimality claim is real but **must be stated precisely**: the
+positive calculus adds *no manifest entries* and injects *no external trust*, but
+it does add *audited-but-ungated `Thm::new` call sites* to the TCB — a genuine
+(small, monotone, auditable) TCB cost, not "free." Only `execute` and the
+negation axioms are *gated*; the positive operators are *ungated-yet-trusted*.
+Each of these lines is a new entry in the crate-root audited-mint-site list
+(`lib.rs:11-16`) when built.
 
 **EG5 subsumption (axis it wins on).** The literal endgame's per-family symbolic
 landers (`ToHolNat`/`Int`/`Bytes`/… each needing its own reify rule — the **float
 wall**, `literal-endgame-design.md` §7) **dissolve**: in B, every native value is
-`Val<C>` (a nullary op), symbolic-by-default; `Ty` in the base extends the same
+`Val<C>` (a nullary op), symbolic-by-default; `TyRep` in the base extends the same
 mechanism to type trees; `Dyn` (erased point/relation) is EG's deferred B2, now
 the natural heterogeneous carrier. EG3–EG5 become *instances* of "Op/Val
-unification + Ty-in-base," not a separate ladder — one mechanism, no per-family
-rules, no float wall.
+unification + `TyRep`-in-base," not a separate ladder — one mechanism, no
+per-family rules, no float wall.
 
 ### Coherence with the binding maintainer decisions (closed-world-kernel + EG)
 
@@ -405,10 +519,11 @@ rules, no float wall.
 - **No disequalities in the base** (today's state) is *promoted to the design
   invariant*: negative membership is axiom-only. The deferred `Evaluate`/decision
   seam is now *defined* as "an admitted axiom that a relation is
-  functional/total/closed."
-- **Ty-in-base** replaces `core`'s private `Type`/`TypeKind` equality with the
-  base calculus at sort `Ty` — a middle simplification, additive (introduce `Ty`
-  ops alongside; migrate `core` later).
+  functional/total/closed" — a **user** obligation, never auto-granted (F3).
+- **`TyRep`-in-base** replaces `core`'s private `Type`/`TypeKind` equality with
+  the base calculus at sort `TyRep` — a middle simplification, additive (introduce
+  the `TyFn`/`TyApp` ops alongside; migrate `core` later). This is a *ground
+  first-order* type-term layer only; the binder/kind layer is deferred (F5, §A).
 
 ---
 
@@ -416,12 +531,14 @@ rules, no float wall.
 
 **Goal.** Prove end-to-end, with **zero change to existing base/core behavior**,
 that: (i) an untrusted function's *execution* mints a positive membership witness
-and *cannot* mint falsity; (ii) both north stars are served — a WASM-shaped run
-and a content-addressing run — with **O(1) materialized nodes** over large I/O;
-(iii) the canon/execute duality holds (functional hash vs. effectful store); (iv)
-the positive calculus (transpose) works as an ungated method; (v) `Ty`-in-base
-transports a type equation through the *existing* calculus. All through
-`Thm::new`. Delete **nothing**.
+and *cannot* mint falsity — **including for a NONDETERMINISTIC or PARTIAL `f`**,
+the case that actually justifies `execute`'s existence (F6); (ii) both north stars
+are served — a WASM-shaped run and a content-addressing run — with **O(1)
+materialized nodes AND O(1) copies** over large I/O (zero-copy `Ref<Arc<_>>`
+leaves, F1); (iii) the canon/execute duality holds (functional hash vs. effectful
+store); (iv) the positive calculus (transpose) works as an ungated-but-trusted
+method; (v) `TyRep`-in-base transports a type equation through the *existing*
+calculus. All through `Thm::new`. Delete **nothing**.
 
 **New code (all additive; existing files unchanged in behavior).**
 
@@ -430,70 +547,109 @@ transports a type equation through the *existing* calculus. All through
    - `trait UntrustedFn: Any { type In; type Out; fn run(&self, a:&In) -> Result<Out, RelErr>; }`
    - `struct Rel<F: UntrustedFn>(pub F); impl<F> Op for Rel<F> { In=(F::In,F::Out); Out=bool; }`
    - `enum RelErr { Refused, Trapped(String), … }` (untrusted error, no trust).
-   - `pub fn execute<L,F>(f: Rel<F>, a: F::In, lang: L) -> Result<Thm<L, App<Rel<F>,(Val<F::In>,Val<F::Out>)>>, Error>`
-     — gated on `TypeId::of::<Rel<F>>()`, mints via `Thm::new` (add one audited
-     call-site line to the `lib.rs` mint-site list).
-   - **Transpose** as an ungated method: define `struct Transpose<R>(R)` (a
-     relation-op with swapped input) and
+   - `pub fn execute<L,F>(f: Rel<F>, a: F::In, lang: L) -> Result<Thm<L, App<Rel<F>,(Ref<Arc<F::In>>,Ref<Arc<F::Out>>)>>, Error>`
+     where `F::In: 'static, F::Out: 'static` — **zero-copy leaves** (F1): seats
+     both operands behind one `Arc` each (never copies the payload); gated on
+     `TypeId::of::<Rel<F>>()`, mints via `Thm::new` (add one audited call-site
+     line — a *gated* mint — to the `lib.rs:11-16` mint-site list).
+   - **Transpose** as an ungated-but-trusted method: define `struct
+     Transpose<R>(R)` (a relation-op with swapped input) and
      `impl<L,R,A,B> Thm<L, App<R,(A,B)>> { pub fn transpose(self) -> Thm<L, App<Transpose<R>,(B,A)>>; }`
-     — sound in every `L` (recombines a proven positive fact), no manifest entry.
+     — sound in every `L` (recombines a proven positive fact), no manifest entry,
+     **but still a `Thm::new` call site ⇒ a TCB addition** (audited like
+     `and_intro`; add one *ungated-trusted* line to the `lib.rs:11-16` list, F8).
      (Compose/join/meet are the same pattern; Phase 0 ships only `transpose` to
      stay minimal, and documents the rest.)
 
-2. **`crates/kernel/base/trusted/src/ty.rs`** (new module): `struct Ty;` +
-   `TyFn`/`TyBool` constructor ops. No rules — types transport through the
-   *existing* `refl`/`cong_app`.
+2. **`crates/kernel/base/trusted/src/tyrep.rs`** (new module): `type TyRep =
+   core::Type;` + `TyFn`/`TyApp` constructor ops `Op<In=(TyRep,TyRep),
+   Out=TyRep>` (F7). No rules — type reps transport through the *existing*
+   `refl`/`cong_app`; concrete types enter as `Val<core::Type>` leaves at sort
+   `TyRep`. (If `core` is not a dependency of `base/trusted`, Phase 0 may use a
+   stand-in `struct TyRepDemo(u32)` sort in the tests to exercise the identical
+   `App`-spine transport; the *representation decision* — leaves at one reflected
+   sort, constructors `Op<(TyRep,TyRep),TyRep>` — is what Phase 0 pins.)
 
 3. **Tests — `crates/kernel/base/trusted/src/tests.rs`** (append; or a new
    `rel_tests` module). A demo `struct RelCalc;` `impl Language for RelCalc` whose
-   manifest admits exactly `Rel<Blake3Fn>`, `Rel<AddModFn>` (the enumerated new
-   trust). Prove:
-   - **`execute_witnesses_wasm_shaped`** — `AddModFn: (u64,u64)->u64` (stand-in
-     for a WASM run); `execute` mints `⊢ (a,b) Rel(AddMod) c`; assert the *wrong*
-     `c'` is **not** obtainable (no `execute` path, no falsity rule) — the
-     never-false asymmetry, machine-checked.
-   - **`execute_content_address_O1_nodes`** — `Blake3Fn: Bytes->O256` wrapping
+   manifest admits exactly `Rel<Blake3Fn>`, `Rel<AddModFn>`, `Rel<CoinFn>`,
+   `Rel<PartialFn>` (the enumerated new trust). Prove:
+   - **`execute_nondeterministic_or_partial`** (MANDATORY — the test that
+     *justifies* `execute`, F6) — `CoinFn: () -> u64` whose `run` returns a
+     *different* value on successive calls (nondeterministic), and `PartialFn:
+     u64 -> u64` whose `run` returns `Err(RelErr::Refused)` on some inputs
+     (partial). Show: (a) `execute` on `CoinFn` still soundly mints `⊢ () Rel(Coin)
+     b₀` for the *actually observed* `b₀`, and a *second* run observing `b₁ ≠ b₀`
+     mints `⊢ () Rel(Coin) b₁` — **both true** (both pairs are in the graph),
+     neither a functional equation; (b) you **cannot** derive functionality
+     (`b₀ = b₁`) or any negation from these — there is no rule that mints it
+     (§3A-negation) — so `canon`'s functional equation would here be *unsound*
+     while `execute`'s membership is *sound*; (c) on a `PartialFn` input where
+     `run` returns `Err`, `execute` returns `Err` and mints **nothing** — a
+     partial `f` proves no absence. This is the property the whole design rests on,
+     machine-checked.
+   - **`execute_witnesses_wasm_shaped`** — `AddModFn: (u64,u64)->u64` (a
+     deterministic-total stand-in for a WASM run); `execute` mints `⊢ (a,b)
+     Rel(AddMod) c`; assert the *wrong* `c'` is **not** obtainable (no `execute`
+     path, no falsity rule) — the never-false asymmetry, machine-checked.
+   - **`execute_content_address_O1_copies`** — `Blake3Fn: Bytes->O256` wrapping
      `crates/lib/hash::Blake3`; feed a ≥1 MB blob; `execute` mints `⊢ blob
-     Rel(Blake3) h`; a node-counting walk over the prop `Expr` returns **O(1)**
-     (the blob & hash sit in `Val` leaves, never a term tree) — the
-     content-addressing north star + EG2 laziness, machine-checked.
+     Rel(Blake3) h`; a node-counting walk over the prop `Expr` returns **O(1)**,
+     and the blob & hash sit in `Ref<Arc<_>>` leaves (F1) so a `refl`/`cong`
+     transport of the theorem bumps a refcount rather than copying the megabyte —
+     the content-addressing north star + EG2 laziness, machine-checked (assert the
+     `Arc` strong-count increments, payload pointer unchanged).
    - **`canon_vs_execute_duality`** — the *same* Blake3 as a pure `CanonRule`
      mints the **functional** `⊢ hash(blob) = h` via `canon`; contrast with the
      effectful-store **membership** shape via `execute`. Documents which north
      star each mechanism serves.
-   - **`transpose_positive`** — from `⊢ a R b` derive `⊢ b R° a` by the ungated
-     method.
-   - **`ty_in_base_transports`** — `⊢ a = a'` ⟹ `⊢ TyFn(a,b) = TyFn(a',b)` by
-     `cong_app`, with **no new rule** — the Ty-in-base foothold.
+   - **`transpose_positive`** — from `⊢ a R b` derive `⊢ b R° a` by the
+     ungated-but-trusted method.
+   - **`tyrep_in_base_transports`** — with distinct type reps `a ≠ a'` as
+     `Val<core::Type>` (or the demo `TyRep` sort) leaves, `⊢ a = a'` ⟹
+     `⊢ TyFn(a,b) = TyFn(a',b)` by `cong_app`, with **no new rule** — the
+     `TyRep`-in-base foothold. Also assert `⊢ a = a'` between *distinct* reps is
+     **not** derivable (leaf equality via `of_eq` only fires when the two
+     `core::Type` values are `Eq`-equal), so the equation is *meaningful* (F7).
 
 **What it proves.** The base natively mints WASM/content-addressing execution
-witnesses (positive-only), efficiently (O(1) nodes), through the sole `Thm::new`
-gate, with the positive calculus and Ty-in-base working off the *existing*
-machinery — de-risking every load-bearing claim of §3 in one small slice.
+witnesses (positive-only, **sound even under nondeterminism/partiality** — the F6
+test), efficiently (O(1) nodes *and* O(1) copies via `Ref<Arc<_>>`), through the
+sole `Thm::new` gate, with the positive calculus and `TyRep`-in-base working off
+the *existing* machinery — de-risking every load-bearing claim of §3 in one small
+slice.
 
 **Why reversible & zero-behavior-change.** Two new files + a `mod`/`pub use` +
-one mint-site audit line + test additions. No edit to the *behavior* of
-`expr.rs`/`op.rs`/`eqn.rs`/`lang.rs`/`prop.rs`/`matching.rs`. `Val`/`App`/`Thm`/
-`CanonRule` untouched; the Op/Val collapse is **not** attempted in Phase 0. The
-demo `RelCalc` language lives in tests, so **no production manifest changes**.
-Deleting `rel.rs`/`ty.rs` + their `pub use` + the tests returns the tree
-byte-identical. Fully additive; the full gate is trivially green.
+**audited mint-site lines** (one *gated* for `execute`, one *ungated-trusted* for
+`transpose` — both real TCB additions per F8) + test additions. No edit to the
+*behavior* of `expr.rs`/`op.rs`/`eqn.rs`/`lang.rs`/`prop.rs`/`matching.rs`.
+`Val`/`Ref`/`App`/`Thm`/`CanonRule` untouched; the Op/Val collapse is **not**
+attempted in Phase 0. The demo `RelCalc` language lives in tests, so **no
+production manifest changes**. Deleting `rel.rs`/`tyrep.rs` + their `pub use` +
+the tests returns the tree byte-identical. Fully additive — but note "the fmt/
+deps gate is green" is **not** the same as "no TCB delta": the two new mint sites
+*are* audited TCB additions (F8), just small and monotone.
 
 ---
 
 ## 7. Staged plan (additive first, collapse last)
 
-- **Phase 0** (§6): `rel.rs` (`UntrustedFn`/`Rel`/`execute`/`transpose`) + `ty.rs`
-  + the five tests. Additive, reversible. *The slice the orchestrator builds
-  next.*
+- **Phase 0** (§6): `rel.rs` (`UntrustedFn`/`Rel`/`execute`/`transpose`) +
+  `tyrep.rs` + the six tests (incl. the mandatory nondeterministic/partial test,
+  F6). Additive, reversible. *The slice the orchestrator builds next.*
 - **Phase 1** — the rest of the positive calculus (`compose`/`join`/`meet` as
-  ungated methods) + a real `WasmRun` `UntrustedFn` over `crates/lib/wasm` and a
-  `Store` `Rel` over `crates/store` (the two north stars, real backings).
-  Additive.
-- **Phase 2** — HOL-ω middle: kinds-as-sorts, type-operator ops at sort `Ty`,
-  the `TyBeta`/`TyAbs`/`TyInst`/`TyAll` rules; migrate `core` type-equality onto
-  the base `Ty` calculus. The micro-Haskell → HOL-ω front end (Monad worked
-  example) as a `lang/` crate. Additive alongside plain CoreLang.
+  ungated-but-trusted methods) + a real `WasmRun` `UntrustedFn` over
+  `crates/lib/wasm` and a `Store` `Rel` over `crates/store` (the two north stars,
+  real backings). Additive. Each new operator is another audited `Thm::new` site
+  (F8).
+- **Phase 2 (DEFERRED — Appendix A, not this pass)** — the HOL-ω middle:
+  kinds-as-sorts, type-operator ops, the `TyBeta`/`TyAbs`/`TyInst`/`TyAll` rules,
+  the required rank stratification, and the micro-Haskell front end. This needs
+  real binder/kind middle machinery the ground base does not provide (F5) and a
+  consistency-critical rank discipline (F4); it is **out of committed scope** and
+  specified only as a direction in Appendix A. Migrating `core` type-equality onto
+  the base `TyRep` calculus (a ground-first-order step) *is* in scope and can
+  happen independently of the HOL-ω binder layer.
 - **Phase 3** — EG5 subsumption: drop `TermKind::{Nat,Int,SmallInt,Blob,Bool}`
   (values are `Val` nullary ops reached through a single polymorphic embed; the
   per-family reify rules + float wall dissolve). Maintainer-gated (irreversible).
@@ -519,24 +675,173 @@ explicitly maintainer-gated, out of the additive track.
    rejected as a flag-day.)
 2. **Positive calculus: ungated methods vs. admitted rules.** Recommend
    **ungated framework methods** (transpose/join/meet/compose are monotone,
-   sound in every `L`, inject no trust — like `and_intro`); only `execute` and
-   negation are gated. Confirms base-TCB minimalism (graft from C).
+   sound in every `L`); only `execute` and negation are *gated*. **But be honest
+   (F8): ungated ≠ untrusted** — each is a `Thm::new` call site *in the TCB*,
+   audited like `and_intro`. "Base-TCB minimalism" means *no manifest entries and
+   no external trust*, **not** "zero TCB delta." Confirm the ungated-but-trusted
+   framing.
 3. **`execute` must stay gated** (per-`Rel<F>` `admits`) — the WASM/store TCB
    stays enumerated. Confirm.
 4. **Nondeterminism semantics of `Rel(F)`.** Recommend the **graph/membership**
    reading (any observed output ∈ graph; `execute` never mints a functional
    equation); reserve the functional equation for deterministic `CanonRule` ops
-   (hash). Confirm this is the intended WASM/store semantics.
-5. **`Ty` representation.** Recommend an **opaque base marker sort + constructor
-   ops** (base minimal; the concrete type algebra is middle/admitted), mirroring
-   "sorts need no trait." (Alternative: a concrete base `Ty` enum — more base
-   TCB.)
-6. **HOL-ω kind placement.** Recommend **kinds = base sorts** (`ty` = `Ty`,
-   `ty⇒ty` = `Op<Ty,Ty>`), so the kind layer *is* the base `Op`/`App` calculus.
-   Confirm vs. a separate middle kind judgement.
-7. **`execute` bounds.** `F::In: Clone` (to seat in `Val`); `F::Out: Clone`;
-   `Eq` on operands only *where used as a `trans`/`eq_mp` middle* ("no Eq, no
-   comparison"). Pin the exact bounds at implementation.
-8. **Negation/`Evaluate` seam.** The deferred disequality seam becomes "an
-   admitted axiom that a relation is functional / total / closed." Confirm this
-   is where `¬(a R b)` and op-decision live (out of base TCB).
+   (hash). **Consistency is a USER obligation (F3):** if you `execute` a
+   nondeterministic `f` into `R` you must **not** also admit a functionality axiom
+   for `R` — doing so admits a false axiom (the user's error). Confirm this is the
+   intended WASM/store semantics *and* the admitted-axiom discipline.
+5. **`TyRep` representation (F7).** Recommend a **reflected type-representation
+   sort `TyRep`** with real inhabitants: concrete types enter as `Val<core::Type>`
+   leaves at sort `TyRep`; constructors are `TyFn`/`TyApp : Op<(TyRep,TyRep),
+   TyRep>` building `App` spines over `TyRep`. This is the *single* coherent
+   representation — **rejecting** both a marker `Ty` with one inhabitant (no
+   distinguishable reps) and `TyFn::In=(core::Type,core::Type)` written directly
+   (which clashes with the marker reading). §3B, §6, and this decision now all
+   agree. Distinct `Val<core::Type>` leaves are distinguishable, so `⊢ a = a'`
+   between type reps is meaningful.
+6. **HOL-ω kind placement — DEFERRED (F4/F5, Appendix A).** *Not decided in this
+   pass.* The prior recommendation ("kinds = base sorts, no new middle machinery,
+   simpler than plain HOL") is **retracted**: the ground base has no binders, so
+   type variables / `TyAbs` / capture-avoiding `TyInst` / kind-checking are real
+   deferred middle machinery, and HOL-ω needs a rank stratification for
+   consistency. Reopen when HOL-ω is actually designed.
+7. **`execute` bounds (F1).** `F::In: 'static`, `F::Out: 'static` (to seat behind
+   `Arc` in a `Ref<Arc<_>>` **zero-copy** leaf — *not* `Val`, and *not* `F::In:
+   Clone` over the payload; nothing clones the payload). `Eq` on operands only
+   *where used as a `trans`/`eq_mp` middle* ("no Eq, no comparison"), and for
+   `Ref<Arc<C>>` that middle-match uses the `Arc`'s pointee `Eq` (or `ptr_eq` on an
+   interned store). Pin the exact bounds at implementation.
+8. **Negation/`Evaluate` seam (F3).** The deferred disequality seam becomes "an
+   admitted **axiom** that a relation is functional / total / closed" — a
+   per-relation `Rule` the **user** admits, whose soundness is the user's burden,
+   **never auto-granted** by the framework. This is where `¬(a R b)` and
+   op-decision live (out of base TCB). Confirm the admitted-axiom placement.
+
+---
+
+## Appendix A — HOL-ω middle (FUTURE / ASPIRATIONAL — NOT THIS PASS)
+
+**This appendix is out of the committed scope of this design (F4/F5).** The
+committed scope is base relation-calculus + `TyRep`-in-base (§3A, §3B). What
+follows is a *direction* for a later HOL-ω middle-language design, recorded so the
+idea is not lost — **not** a specification to build now. Two prerequisites, stated
+plainly, gate any future attempt; neither is "free from the base."
+
+### A.1 — Required soundness constraint: rank stratification (F4)
+
+HOL-ω (Homeier's HOL-Omega) extends HOL with a kind system, type-operator
+variables, and **type quantification** (`TyAll`, `TyInst`). **Unrestricted
+impredicative type quantification is INCONSISTENT over a HOL universe** (a
+type-in-type / Girard-style paradox). So a future HOL-ω design **MUST** impose a
+**rank stratification** on `TyAll`/`TyInst` — restricting which type quantifiers
+may instantiate at which rank — as a *required soundness constraint*, fully
+specified and discharged, not named as a "feature" and waved through. Until that
+stratification is designed and proved to block the paradox, HOL-ω is **not** a
+sound middle. (Homeier's system fixes ranks precisely for exactly this reason; any
+port inherits that obligation.)
+
+### A.2 — Required machinery: a real binder/kind middle layer (F5)
+
+The base grammar (`expr.rs`) is **ground, first-order, and binder-free** — there
+are **no variables, no binders, and no substitution** anywhere in it. HOL-ω needs
+all of:
+
+- **type variables** (a `TyVar` notion — absent from the ground base),
+- **`TyAbs` binding** (type-operator abstraction — a binder the base lacks),
+- **capture-avoiding `TyInst`** (type-operator instantiation — substitution under
+  binders, which the base has no machinery for), and
+- **kind-checking** (a judgement stratifying `ty`, `ty⇒ty`, … — a checker the
+  base does not run).
+
+**None of this comes "for free" from the base.** It is genuine middle-layer
+machinery — a binder representation (de Bruijn / locally-nameless), a
+capture-avoiding substitution, a kind-checker — that a future HOL-ω crate must
+build. The earlier draft's claims that "kinds ARE base sorts, no new middle
+machinery" and that HOL-ω is "simpler than plain HOL" are **retracted**: they
+conflated *ground type TERMS* with the *binder/kind layer*.
+
+**What the base DOES give (and what it does not):**
+
+- **DOES:** ground first-order type *terms* — `TyFn(a,b)`, `TyApp(f,x)` as `App`
+  spines over `Val<core::Type>` (= `TyRep`) leaves, with equality/congruence for
+  free from the existing calculus (§3B). This is real and in scope.
+- **DOES NOT:** any binder, any type variable, any substitution, any kind
+  judgement. These are the HOL-ω-specific middle layer, deferred here.
+
+### A.3 — The direction (unchanged in spirit, now correctly scoped)
+
+Retarget the middle from plain HOL to HOL-ω, using the base `TyRep` calculus for
+the *ground* type-term layer and building the binder/kind layer (A.2) with the
+rank discipline (A.1) on top. Rule delta vs the current CoreLang: Group A
+(equality/congruence) reuses the base equality calculus at `TyRep` and `Term`;
+add `TyBeta` (type-operator reduction), `TyAbs`/`TyInst` (kind-correct,
+capture-avoiding), and rank-N `TyAll` intro/elim — **all built on the deferred
+binder layer**, none inherited from the ground base.
+
+**Micro-Haskell → HOL-ω (the `Monad` worked example)** — the eventual payoff: a
+micro-Haskell dialect maps ~directly to HOL-ω, with a typeclass as a **rank-n
+dictionary over a type-operator variable**, which HOL-ω's kind system + universal
+types express directly.
+
+| micro-Haskell | HOL-ω (future) |
+|---|---|
+| type `T` | ground type term of sort `TyRep` |
+| `Maybe :: * -> *` | type operator: a `ty⇒ty` constant — needs the *kind* layer (A.2) |
+| `class Monad m` | dictionary type operator `Monad : (ty⇒ty)⇒ty` + `LawfulMonad` predicate |
+| `instance Monad Maybe` | term `dict : Monad Maybe` + proof `⊢ LawfulMonad Maybe dict` |
+| `f :: Monad m => a -> m a` | rank-N `f : ∀(m:ty⇒ty). Monad m → …` (a `TyAll` type — needs A.1's rank discipline) |
+| `do { x <- p; k x }` | `bind d p (λx. k x)` |
+
+The big-vision endpoint — **compile that Haskell to WASM, verified by the
+kernel** — is stated in the base relation calculus (§5, Phase 4) and does not
+itself require HOL-ω; the HOL-ω middle is the *typing* front end, deferred here.
+
+---
+
+## Audit revision log
+
+Eight HIGH findings from the adversarial audit, and how each was closed:
+
+- **F1 — `execute` deep-copied owned `Val` leaves on the WASM/store hot path.**
+  §3A + §6 + decision #7: `execute` now mints over **zero-copy `Ref<Arc<F::In>>`/
+  `Ref<Arc<F::Out>>`** leaves (`expr.rs:55-64`, `Arc: TrustedDeref`), not
+  `Val<C>`. Bound is `F::In/Out: 'static` (Arc handle), **not** `F::In: Clone`
+  over the payload; `refl`/`cong` transports bump a refcount, never copy the
+  buffer.
+- **F2 — content-addressing was a hash *op*, not a hash-consed representation.**
+  §0 + §3A: reframed as **hash-consing / interning** — the store's native
+  representation gives one canonical `Arc` per O256 content hash, making `Dyn`'s
+  `Arc::ptr_eq` (`expr.rs:147-170`) coincide with content equality. `Hash:
+  Op<Bytes,O256>` remains the *computational witness* (`canon`), not the
+  addressing mechanism.
+- **F3 — nondeterministic `execute` vs. a functionality axiom sold as
+  complementary.** New §3A-negation + decisions #4/#8: made the **admitted-axiom
+  discipline** explicit — `execute` grants positive facts only (sound for any
+  `f`); any negation/uniqueness is a **user-admitted axiom** whose soundness is the
+  user's burden and is **never framework-enforced**; asserting functionality for a
+  nondeterministic `f` is admitting a false axiom (the user's error).
+- **F4 — HOL-ω rank discipline named as a feature, not a soundness constraint.**
+  §3C reduced to a deferral pointer; moved to **Appendix A** with A.1 stating the
+  **required rank stratification** (unrestricted impredicative type quantification
+  is inconsistent over HOL). HOL-ω scoped **out** of committed scope; judge table
+  + decision #6 updated.
+- **F5 — HOL-ω binder/substitution/kind-checking hand-waved as "free."**
+  Appendix A.2 acknowledges the base is **ground/first-order/binder-free**; type
+  variables, `TyAbs`, capture-avoiding `TyInst`, kind-checking are **real deferred
+  middle machinery**. Retracted "kinds ARE base sorts / simpler than plain HOL."
+  Distinguished ground type *terms* (in scope) from the binder/kind layer (not).
+- **F6 — Phase 0 only tested deterministic-total functions.** §6: added the
+  **mandatory `execute_nondeterministic_or_partial` test** (a `CoinFn` returning
+  different outputs across calls + a `PartialFn` returning `Err`) proving `execute`
+  soundly mints observed membership yet cannot derive functionality/negation —
+  the case that justifies `execute` over `canon`.
+- **F7 — `Ty`-in-base specified incoherently (marker sort vs `Val<Type>`
+  leaves).** §3B + §6 + decision #5 now agree on ONE representation: a reflected
+  **`TyRep`** sort with real inhabitants (`Val<core::Type>` leaves), constructors
+  `TyFn`/`TyApp : Op<(TyRep,TyRep),TyRep>` building `App` spines; distinct reps are
+  distinguishable so `⊢ a = a'` is meaningful.
+- **F8 — TCB accounting conflated "ungated" with "untrusted."** New §5 honest
+  TCB-delta table + decisions #2 + §6/§7: the ungated positive calculus
+  (transpose/compose/join/meet) calls `Thm::new` and is therefore **in the TCB as
+  audited-but-ungated mint sites**, exactly like `prop`'s `and_intro`/`or_inl`
+  (`lib.rs:11-16`, `prop.rs:40-89`). Gating is orthogonal to trust; "zero
+  trust / trivially green" framing removed.

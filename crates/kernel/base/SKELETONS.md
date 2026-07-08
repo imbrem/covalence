@@ -36,6 +36,30 @@ stages and a few deferred seams remain.
   `Wasm`/`X86` `Language` for the rest of the instruction set (control flow,
   memory, SIMD, …).
 
+## Relation calculus (`rel.rs`) — Phase 0 only
+
+Phase 0 of the base redesign ([`notes/vibes/base-relcalc-holomega-design.md`](../../../notes/vibes/base-relcalc-holomega-design.md))
+landed additively: `UntrustedFn`/`Rel<F>`, gated `execute` (positive membership
+over zero-copy `Ref<Arc<_>>`), ungated-trusted `Thm::transpose`, and generic
+`TyFn<T>`/`TyApp<T>` type-rep ops (`tyrep.rs`). Open:
+
+- **Positive-only boundary is a STANDING soundness invariant** — `execute`'s
+  "sound for any `f`" rests on it minting *only* graph membership, never `¬(a R b)`.
+  Do NOT add `Rel<F>: CanonRule`/`Rule`, nor route `Rel` through the future
+  `Evaluate`/disequality seam, without re-auditing: a functional `f(a)=b` equation
+  is unsound for a nondeterministic `f`. (Audited sound at Phase 0.)
+- **Rest of the positive calculus** — only `transpose` shipped; `compose`/`join`/
+  `meet` follow the same ungated-trusted `Thm::new` pattern, not yet built.
+- **`Op`/`Val` collapse not attempted** — the design's unification of ops and
+  values (and `Lift : Op<In,Out> → Rel<In,Out>`) is deferred; Phase 0 keeps them
+  distinct.
+- **`TyRep` uses a demo rep** — the constructors are generic; full `core::Type`
+  integration (`core` supplying `C = core::Type`) is a later step *in `core`* (the
+  base cannot name `core::Type`). No interner yet, so `Dyn` ptr-eq ≠ content
+  equality (deferred; not relied upon).
+- **HOL-ω middle language** — deferred entirely (design Appendix A); needs a real
+  binder/kind layer + rank stratification, none of which the ground base provides.
+
 ## Minor — deferred seams
 
 - **`Rewrite` conclusion is shape-erased** — `apply_rewrite` mints

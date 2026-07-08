@@ -1,0 +1,16 @@
+[package]
+name = "covalence-haskell"
+version = "0.0.0"
+edition = "2024"
+
+# A kernel-agnostic surface crate: a hand-written recursive-descent parser for a
+# small Haskell EXPRESSION dialect plus top-level function definitions, and a
+# PLUGGABLE `Lower` trait through which a backend realizes that AST into its own
+# target. The point is that a backend overrides only the subset it lowers (e.g.
+# a different numeric-literal strategy), so this on-ramp can grow toward writing
+# `init/` in a Haskell dialect without committing to one lowering. Depends on no
+# logic and no external crate — the parser is hand-rolled.
+#
+# Deferred work: crates/lang/haskell/SKELETONS.md.
+
+[dependencies]

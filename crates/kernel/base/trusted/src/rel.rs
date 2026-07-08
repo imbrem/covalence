@@ -248,7 +248,10 @@ where
     {
         let (l1, App(r, (a, b1))) = self.into_parts();
         let (l2, App(s, (b2, c))) = other.into_parts();
-        if b1 != b2 {
+        // NB `!(b1 == b2)`, not `b1 != b2`: `ne` is independently overridable on
+        // `PartialEq`, so the trusted middle-match must use the same `eq` the
+        // calculus uses (the `eq_mp` discipline).
+        if !(b1 == b2) {
             return Err(Error::TransMismatch);
         }
         let lang = l1.union(l2).ok_or(Error::LangMismatch)?;
@@ -269,7 +272,8 @@ where
     {
         let (l1, App(r, (a1, b1))) = self.into_parts();
         let (l2, App(s, (a2, b2))) = other.into_parts();
-        if a1 != a2 || b1 != b2 {
+        // `!(x == y)`, not `x != y` — same `eq_mp` discipline as `compose`.
+        if !(a1 == a2) || !(b1 == b2) {
             return Err(Error::TransMismatch);
         }
         let lang = l1.union(l2).ok_or(Error::LangMismatch)?;

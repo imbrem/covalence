@@ -153,14 +153,37 @@ Bridge built (S9a); the flip is maintainer-gated. See
   Needs `nat`/`int` powers of ten and the `rat` division/scaling already in
   `init::rat`; the digit machinery is exactly the NP2/NP3 parsers.
 
-- **Float parsing** (eventual aspiration, design sketch only — no code). A
-  `parseFloat : string → option (f64 × string)` would parse a decimal rational
-  (as above) and *round* it to the nearest `f64` under the typed float layer
-  (`init/ball.rs` / `covalence-hol-eval` `defs/floats.rs`). This needs the
-  correctly-rounded decimal-to-binary conversion (a `ball`/interval enclosure of
-  the exact rational, then round-to-nearest-even) — the same rounding-error
-  lemmas the `ball.add` skeleton is blocked on. Parser front-end is trivial;
-  the *rounding* is the real content and should follow the `f64` enclosure work.
+- **Float parsing** (`init/float_parse.rs`, stage FP1). Built: `parseFloat`
+  (string) + `parseFloatBytes` (bytes) reading sign / int-part / `.`frac /
+  `[eE]`sign?exp into the **exact** value `floatval := int × int` (`(m,e)` ≙
+  `m·10ᵉ`); the sign-composition (`signed_pos`/`signed_neg`) + value-assembly
+  (`assemble_pos`/`assemble_neg`) lemmas (the "parts compose correctly" algebra,
+  genuine/general); the integer-subset lemmas (`int_subset`, `float_of_int`);
+  concrete end-to-end parses of `3.14`/`1e10`/`-0.5`/`2.5e-3`/`42` (both string
+  and bytes) via an unfolding harness. Remaining:
+  - **`f64` rounding + IEEE round-trip** — round the exact `floatval` to the
+    nearest `f64` (round-to-nearest-even) under the typed float layer
+    (`covalence-hol-eval` `defs/floats.rs`, `init/ball.rs`), and the
+    `parse ∘ print = id` round-trip. This is the real content: needs the
+    correctly-rounded decimal→binary conversion (a `ball`/interval enclosure of
+    the exact rational), the same rounding-error lemmas the `ball.add` skeleton
+    is blocked on. The exact-value front-end here is finished; rounding follows
+    the `f64` enclosure work.
+  - **General ∀-correctness** — `∀s. parseFloat s = some (v, r) ⟹` the consumed
+    prefix is well-formed float syntax and `r` a genuine suffix; the whole-string
+    string⇄bytes agreement (`parseFloatBytes` = `parseFloat ∘ map char.mk`), a
+    `map`-fusion induction keyed on `nat_parse_agree::code_eq_byte_val`. The
+    concrete evals witness instances; the general statements want the same
+    `list_all`/`map`-gated induction the NP2/NP3 parser skeletons need. (Same
+    nested-`cond` selection wall `int_parse` records; the FP1 harness dodges it
+    per-input by resolving each `cond` after deciding it.)
+  - **Strict JSON grammar** — reject `.5` (leading `.`), `1e` (empty exponent),
+    `01` (leading zeros); FP1 requires a leading integer digit but is otherwise
+    lenient (empty frac/exp default to `0`). The JSON north-star wants the exact
+    `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?` production.
+  - **`rat`/`real` value bridge + `Inf`/`NaN`/quoted forms** — a `float_value :
+    floatval → rat` (`m · 10ᵉ` into `init/rat.rs`) to state the value in `rat`;
+    special float tokens are not read.
 
 - **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Missing:
   - **`list_foldl`** — the left-fold recursor's defining equations not yet discharged.

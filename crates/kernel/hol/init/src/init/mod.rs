@@ -89,6 +89,7 @@ pub mod coprod;
 pub mod cv_recursion;
 pub mod eq;
 pub mod ext;
+pub mod float_parse;
 pub mod inductive;
 pub mod int;
 pub mod int_parse;

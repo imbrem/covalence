@@ -102,21 +102,6 @@ Bridge built (S9a); the flip is maintainer-gated. See
     bool` predicate + a normaliser (`strip trailing false`), then induction. This
     closes the iso to a full bijection *of bit lists* (not just via the section).
 
-- **String parsers** (`init/nat_parse.rs`, stage NP2). `span_digits` /
-  `nat_of_digits` (+ binary `nat_of_bin_digits`) / `parse_nat` for radices
-  2/8/10/16 are built with their recursion clauses; `span_cat` (the split is a
-  partition, `cat prefix rest = l`) is proved generically; the value clauses
-  `go_nil`/`go_cons` are the left-fold; concrete evaluation of all four required
-  examples is tested. Remaining general correctness (each a `list`-induction like
-  `span_cat`, all radix-generic):
-  - **Prefix all-digits** — `∀l. list_all is_digit (fst (span l))` (needs a
-    `list_all : (α→bool)→list α→bool` `foldr` + its clauses).
-  - **Suffix maximality** — `∀l c t. snd (span l) = cons c t ⟹ is_digit c = F`
-    (the first non-consumed char is a non-digit; `cons`-case `bool.cases` split).
-  - **Value = radix fold, closed form** — a `∀`-quantified `nat_of_digits`
-    characterization over the *prefix* (the per-input concrete evals + `go_*`
-    clauses already witness it; the general statement wants `list_all`-gated
-    induction).
 - **Bytes parsers + string/bytes agreement** (`init/nat_parse_bytes.rs` +
   `nat_parse_agree.rs`, stage NP3). `parseNatDec_bytes` over `list u8` (byte digit
   predicate/value via `u8.toNat`, `span_cat` partition proof at `u8`, concrete
@@ -126,25 +111,26 @@ Bridge built (S9a); the flip is maintainer-gated. See
   - **Whole-string agreement** — the `∀`-quantified
     `nat_of_digits_bytes bs = nat_of_digits (map (char.mk ∘ u8.toNat) bs)` for
     ASCII-digit `bs`: a `map`-fusion `list`-induction over the shared fold, keyed
-    on `code_eq_byte_val`. Needs a `map`/`list_all`-gated induction (same
-    machinery the NP2 prefix-all-digits skeleton wants).
+    on `code_eq_byte_val`. Needs a `map`-gated induction (mirroring the
+    `list_all`-gated `nat_parse::prefix_all_digits` induction, now built).
   - **Bytes `bin`/`oct`/`hex` configs** — only decimal is built; the other
     radices are the NP2 `is_digit`/`digit_val` configs over `u8.toNat` (trivial
     variants, not written).
 
-- **Signed-integer parsing** (`init/int_parse.rs`, stage NP3). `parse_int`
-  (optional `'-'`/`'+'` sign then `parseNatDec`, lifted via `nat_to_int` /
-  `int_neg`) is defined; the **sign-lift** lemmas (`lift_pos_some` /
-  `lift_neg_some` / `lift_none` — how a `nat`-parse result maps to the signed
-  `int` result) are proved. Remaining:
-  - **End-to-end sign selection** — `parse_int (cons '-' rest) = lift_signed true
-    (parseNatDec rest)` and the `'+'`/bare variants, then the conditional
-    correctness `(parseNatDec rest = some (n, suf)) ⟹ parse_int ('-'::rest) =
-    some (−n, suf)`. Blocked on reduce-stable `cond` handling: the selection
-    resolves two nested `cond`s whose branches contain redexes, and `cond_true`'s
-    internal `reduce` ε-ifies an inner `cond` (mismatch). The fix is NP2's
-    test-only eval pattern (reduce the whole application first so all branches are
-    reduce-stable) lifted into a reusable lemma.
+- **Signed-integer parsing** (`init/int_parse.rs`, stage IP2). **Complete**:
+  radix-generic `parse_int_gen` (+ bin/oct/dec/hex), sign selection
+  (`select_minus`/`plus`/`bare`, head-first `cond`), forward composition
+  (`parse_int_neg`/`pos`/`bare`), the string bridge `sign_reconstruct`, and the
+  full hypothesis-free correctness theorem `parse_int_correct` (all four
+  radices) are proved, with the benchmark battery. Not built (future):
+  - **Bounded / checked integers** — a `parseIntN : string → option (intN ×
+    string)` that rejects (returns `none`, or a distinguished overflow) values
+    outside `[-2^(N-1), 2^(N-1))`; needs `int` order/`abs` bounds comparison and
+    a fixed-width `intN` seam.
+  - **Sign-string identity in the theorem body** — `parse_int_correct` states the
+    sign cases at `tail s` + the `head_is 45/43 s` guard; the full
+    `s = sign_str ++ consumed ++ rest` is derivable via `sign_reconstruct` but not
+    inlined (would carry an `∃`(sign char) in each disjunct).
 
 - **Rationals from decimal + scientific notation** (stretch, not built). A
   `parseRat : string → option (rat × string)` = `parseInt` for the integer part,

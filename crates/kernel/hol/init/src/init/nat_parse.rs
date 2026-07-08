@@ -530,9 +530,11 @@ pub fn parse_nat_hex() -> Term {
 // head with `bool.cases` on `is_digit c`.
 // ============================================================================
 
-use crate::init::eq::{beta_expand, beta_nf_concl, beta_reduce};
+use crate::init::eq::{beta_expand, beta_nf, beta_nf_concl, beta_reduce};
+use crate::init::list::{head_cons, head_nil};
 use crate::init::nat_div::bool_cases;
-use crate::init::prod::{fst_pair, snd_pair};
+use crate::init::option::{case_none, case_some, some_inj, some_ne_none};
+use crate::init::prod::{fst_pair, pair_inj, snd_pair};
 
 /// `⊢ ∀l. cat (fst (span_digits is_digit l)) (snd (span_digits is_digit l)) =
 /// l` — **the split is a partition**: the consumed prefix concatenated with
@@ -654,8 +656,430 @@ pub fn span_cat(is_digit: &Term) -> Result<Thm> {
     beta_nf_concl(li)
 }
 
+// ============================================================================
+// `list_all` — "every element satisfies `p`", as a `foldr` into `bool`. This
+// is the predicate the parser-correctness spec uses to characterise the
+// consumed prefix ("all its chars are `R`-digits").
+// ============================================================================
+
+/// `λx:α. λacc:bool. p x ∧ acc` — the `list_all` fold step.
+fn all_step(alpha: &Type, p: &Term) -> Term {
+    let x = Term::free("x", alpha.clone());
+    let acc = Term::free("acc", bool_t());
+    let body = band(Term::app(p.clone(), x.clone()), acc.clone());
+    lam("x", alpha.clone(), lam("acc", bool_t(), body))
+}
+
+/// `list_all p : list α → bool` ≡ `foldr (λx acc. p x ∧ acc) T` — every
+/// element of the list satisfies `p`.
+pub fn list_all(alpha: &Type, p: &Term) -> Term {
+    Term::app(
+        Term::app(list_foldr(alpha.clone(), bool_t()), all_step(alpha, p)),
+        Term::bool_lit(true),
+    )
+}
+
+/// `list_all p l` applied.
+fn all_app(alpha: &Type, p: &Term, l: &Term) -> Term {
+    Term::app(list_all(alpha, p), l.clone())
+}
+
+/// `⊢ list_all p nil = T` — the empty list vacuously satisfies any `p`.
+/// Genuine (hypothesis- and oracle-free).
+pub fn all_nil(alpha: &Type, p: &Term) -> Result<Thm> {
+    foldr_nil(alpha, &bool_t(), &all_step(alpha, p), &Term::bool_lit(true))
+}
+
+/// `⊢ list_all p (cons x xs) = (p x ∧ list_all p xs)` — the `cons` clause.
+/// Genuine.
+///
+/// Proved with a *fresh* predicate variable `q`, then `INST q := p`. Because
+/// `q` is a free variable, the `foldr` β-step leaves `q x` opaque (it is not a
+/// redex); the instantiation then keeps `p x` un-β-reduced even when `p` is a
+/// λ (a radix digit predicate), so the clause reads uniformly `p x ∧ …`.
+pub fn all_cons(alpha: &Type, p: &Term, x: &Term, xs: &Term) -> Result<Thm> {
+    let q = Term::free("q__la", Type::fun(alpha.clone(), bool_t()));
+    let fc = foldr_cons(
+        alpha,
+        &bool_t(),
+        &all_step(alpha, &q),
+        &Term::bool_lit(true),
+        x,
+        xs,
+    )?; // list_all q (cons x xs) = all_step q x (list_all q xs)
+    let red = rhs(&fc).reduce()?; // β: = (q x ∧ list_all q xs)
+    fc.trans(red)?.inst("q__la", p.clone())
+}
+
+// ============================================================================
+// Prefix all-digits — the consumed prefix `fst (span l)` is entirely
+// `R`-digits, for every radix at once. By `list`-induction, splitting the
+// `cons` head with `bool.cases` on `is_digit c`.
+// ============================================================================
+
+/// `⊢ ∀l. list_all is_digit (fst (span_digits is_digit l)) = T` — **the
+/// consumed prefix is all digits**: every char of `fst (span l)` satisfies
+/// `is_digit`, for any digit predicate. By `list`-induction on `l`. Genuine
+/// (hypothesis- and oracle-free).
+pub fn prefix_all_digits(is_digit: &Term) -> Result<Thm> {
+    // motive P ≔ λl. list_all is_digit (fst (span l)) = T.
+    let l = Term::free("l", str_t());
+    let all_of =
+        |t: &Term| -> Term { all_app(&char_t(), is_digit, &fst_ss(span_app(is_digit, t))) };
+    let motive = {
+        let body = all_of(&l).equals(Term::bool_lit(true))?;
+        Term::abs(str_t(), subst::close(&body, "l"))
+    };
+
+    // ---- base: P nil. fst (span nil) = nil; list_all is_digit nil = T. ----
+    let base = {
+        let sn = span_nil(is_digit)?; // span nil = pair nil nil
+        let fp = fst_pair(&str_t(), &str_t(), &nil_c(), &nil_c())?; // fst (pair nil nil) = nil
+        let an = all_nil(&char_t(), is_digit)?; // list_all is_digit nil = T
+        let base_eq = Thm::refl(all_of(&nil_c()))?
+            .rhs_conv(|t| t.rw_all(&sn))? // span nil → pair nil nil
+            .rhs_conv(|t| t.rw_all(&fp))? // fst → nil
+            .rhs_conv(|t| t.rw_all(&an))?; // list_all is_digit nil → T
+        beta_expand(&motive, nil_c(), base_eq)?
+    };
+
+    // ---- cons_case: ∀c cs. P cs ⟹ P (cons c cs). ----
+    let c = Term::free("c", char_t());
+    let cs = Term::free("cs", str_t());
+    let cons_case = {
+        let consed = cons_c(c.clone(), cs.clone());
+        let ante = Term::app(motive.clone(), cs.clone());
+        let ih = beta_reduce(Thm::assume(ante.clone())?)?; // {P cs} ⊢ list_all is_digit (fst (span cs)) = T
+
+        let sp_cs = span_app(is_digit, &cs);
+        let pfx = fst_ss(sp_cs.clone()); // fst (span cs)
+        let rst = snd_ss(sp_cs); // snd (span cs)
+        let general = span_cons(is_digit, &c, &cs)?; // span (cons c cs) = cond …
+        // `span_cons` β-reduces the `is_digit c` redex; split on that reduced
+        // predicate application (as `span_cat` does).
+        let cond_c = rhs(&Term::app(is_digit.clone(), c.clone()).reduce()?);
+        let red_eq = Term::app(is_digit.clone(), c.clone()).reduce()?; // ⊢ is_digit c = cond_c
+
+        // b = true (digit): fst (span (cons c cs)) = cons c pfx.
+        let branch_t = {
+            let hbt = Thm::assume(cond_c.clone().equals(Term::bool_lit(true))?)?;
+            let digit_branch = pair_ss(cons_c(c.clone(), pfx.clone()), rst.clone());
+            let ct = cond_true(
+                &ss_t(),
+                &digit_branch,
+                &pair_ss(nil_c(), cons_c(c.clone(), cat(pfx.clone(), rst.clone()))),
+            )?;
+            let span_eq = general.clone().rewrite(&hbt)?.trans(ct)?; // span (cons c cs) = pair (cons c pfx) rst
+            let fp = fst_pair(&str_t(), &str_t(), &cons_c(c.clone(), pfx.clone()), &rst)?;
+            let fst_eq = span_eq.cong_arg(fst(str_t(), str_t()))?.trans(fp)?; // fst (span (cons c cs)) = cons c pfx
+            // list_all is_digit (fst (span (cons c cs))) = list_all is_digit (cons c pfx).
+            let e1 = fst_eq.cong_arg(list_all(&char_t(), is_digit))?;
+            // = (is_digit c ∧ list_all is_digit pfx).
+            let e2 = all_cons(&char_t(), is_digit, &c, &pfx)?;
+            // Both conjuncts are true, so the ∧ = T.
+            let isdig = red_eq.clone().trans(hbt.clone())?.eqt_elim()?; // {cond_c=T} ⊢ is_digit c
+            let ih_bool = ih.clone().eqt_elim()?; // {P cs} ⊢ list_all is_digit pfx
+            let conj_t = isdig.and_intro(ih_bool)?.eqt_intro()?; // (is_digit c ∧ list_all is_digit pfx) = T
+            e1.trans(e2)?
+                .trans(conj_t)?
+                .imp_intro(&cond_c.clone().equals(Term::bool_lit(true))?)?
+        };
+
+        // b = false (non-digit): fst (span (cons c cs)) = nil.
+        let branch_f = {
+            let hbf = Thm::assume(cond_c.clone().equals(Term::bool_lit(false))?)?;
+            let x = cons_c(c.clone(), cat(pfx.clone(), rst.clone()));
+            let cf = cond_false(
+                &ss_t(),
+                &pair_ss(cons_c(c.clone(), pfx.clone()), rst.clone()),
+                &pair_ss(nil_c(), x.clone()),
+            )?;
+            let span_eq = general.clone().rewrite(&hbf)?.trans(cf)?; // span (cons c cs) = pair nil x
+            let fp = fst_pair(&str_t(), &str_t(), &nil_c(), &x)?;
+            let fst_eq = span_eq.cong_arg(fst(str_t(), str_t()))?.trans(fp)?; // fst (span (cons c cs)) = nil
+            let e1 = fst_eq.cong_arg(list_all(&char_t(), is_digit))?; // list_all is_digit (fst..) = list_all is_digit nil
+            let an = all_nil(&char_t(), is_digit)?; // list_all is_digit nil = T
+            e1.trans(an)?
+                .imp_intro(&cond_c.clone().equals(Term::bool_lit(false))?)?
+        };
+
+        let combined = bool_cases()
+            .all_elim(cond_c.clone())?
+            .or_elim(branch_t, branch_f)?; // {P cs} ⊢ P (cons c cs) body
+        let p_cons = beta_expand(&motive, consed, combined)?;
+        p_cons
+            .imp_intro(&ante)?
+            .all_intro("cs", str_t())?
+            .all_intro("c", char_t())?
+    };
+
+    let li = crate::init::list::list_induct(&char_t(), &motive, base, cons_case)?;
+    beta_nf_concl(li)
+}
+
+// ============================================================================
+// Suffix maximality — the remaining suffix `snd (span l)` does not start with
+// a digit: either it is `nil` or its head is a non-digit. Both cases are
+// captured by `head_is_digit is_digit (snd (span l)) = F` (the very predicate
+// `parse` tests): `head nil = none` and a non-digit head both make it `F`.
+// ============================================================================
+
+/// `⊢ ∀l. head_is_digit is_digit (snd (span_digits is_digit l)) = F` — **the
+/// suffix is maximal**: the first un-consumed char (if any) is not a digit, so
+/// the parser stopped at the longest digit run. Equivalently `snd (span l) =
+/// nil ∨ ¬is_digit (head …)`. By `list`-induction on `l`. Genuine.
+pub fn suffix_maximal(is_digit: &Term) -> Result<Thm> {
+    // `option_case false is_digit : option char → bool`, the "head is a digit"
+    // decider applied under `head`.
+    let oc_fun = Term::app(
+        Term::app(option_case(char_t(), bool_t()), Term::bool_lit(false)),
+        is_digit.clone(),
+    );
+    let head_c = head(char_t());
+
+    // motive Q ≔ λl. head_is_digit is_digit (snd (span l)) = F.
+    let l = Term::free("l", str_t());
+    let hd_of = |t: &Term| -> Term { head_is_digit(is_digit, &snd_ss(span_app(is_digit, t))) };
+    let motive = {
+        let body = hd_of(&l).equals(Term::bool_lit(false))?;
+        Term::abs(str_t(), subst::close(&body, "l"))
+    };
+
+    // ---- base: Q nil. snd (span nil) = nil; head nil = none; option_case … = F.
+    let base = {
+        let sn = span_nil(is_digit)?; // span nil = pair nil nil
+        let sp = snd_pair(&str_t(), &str_t(), &nil_c(), &nil_c())?; // snd (pair nil nil) = nil
+        let hn = head_nil(&char_t())?; // head nil = none
+        let cn = case_none(&char_t(), &bool_t(), &Term::bool_lit(false), is_digit)?; // option_case false is_digit none = false
+        let base_eq = Thm::refl(hd_of(&nil_c()))?
+            .rhs_conv(|t| t.rw_all(&sn))? // span nil → pair nil nil
+            .rhs_conv(|t| t.rw_all(&sp))? // snd → nil
+            .rhs_conv(|t| t.rw_all(&hn))? // head nil → none
+            .rhs_conv(|t| t.rw_all(&cn))?; // option_case false is_digit none → F
+        beta_expand(&motive, nil_c(), base_eq)?
+    };
+
+    // ---- cons_case: ∀c cs. Q cs ⟹ Q (cons c cs). ----
+    let c = Term::free("c", char_t());
+    let cs = Term::free("cs", str_t());
+    let cons_case = {
+        let consed = cons_c(c.clone(), cs.clone());
+        let ante = Term::app(motive.clone(), cs.clone());
+        let ih = beta_reduce(Thm::assume(ante.clone())?)?; // {Q cs} ⊢ head_is_digit is_digit (snd (span cs)) = F
+
+        let sp_cs = span_app(is_digit, &cs);
+        let pfx = fst_ss(sp_cs.clone()); // fst (span cs)
+        let rst = snd_ss(sp_cs); // snd (span cs)
+        let general = span_cons(is_digit, &c, &cs)?;
+        let cond_c = rhs(&Term::app(is_digit.clone(), c.clone()).reduce()?);
+        let red_eq = Term::app(is_digit.clone(), c.clone()).reduce()?; // ⊢ is_digit c = cond_c
+
+        // b = true (digit): snd (span (cons c cs)) = rst = snd (span cs); Q reduces to IH.
+        let branch_t = {
+            let hbt = Thm::assume(cond_c.clone().equals(Term::bool_lit(true))?)?;
+            let digit_branch = pair_ss(cons_c(c.clone(), pfx.clone()), rst.clone());
+            let ct = cond_true(
+                &ss_t(),
+                &digit_branch,
+                &pair_ss(nil_c(), cons_c(c.clone(), cat(pfx.clone(), rst.clone()))),
+            )?;
+            let span_eq = general.clone().rewrite(&hbt)?.trans(ct)?; // span (cons c cs) = pair (cons c pfx) rst
+            let sp = snd_pair(&str_t(), &str_t(), &cons_c(c.clone(), pfx.clone()), &rst)?;
+            let snd_eq = span_eq.cong_arg(snd(str_t(), str_t()))?.trans(sp)?; // snd (span (cons c cs)) = rst
+            // head_is_digit is_digit (snd (span (cons c cs))) = head_is_digit is_digit rst.
+            let head_eq = snd_eq.cong_arg(head_c.clone())?.cong_arg(oc_fun.clone())?;
+            head_eq
+                .trans(ih.clone())?
+                .imp_intro(&cond_c.clone().equals(Term::bool_lit(true))?)?
+        };
+
+        // b = false (non-digit): snd (span (cons c cs)) = cons c (cat pfx rst); head = some c; = is_digit c = F.
+        let branch_f = {
+            let hbf = Thm::assume(cond_c.clone().equals(Term::bool_lit(false))?)?;
+            let tail = cat(pfx.clone(), rst.clone());
+            let x = cons_c(c.clone(), tail.clone());
+            let cf = cond_false(
+                &ss_t(),
+                &pair_ss(cons_c(c.clone(), pfx.clone()), rst.clone()),
+                &pair_ss(nil_c(), x.clone()),
+            )?;
+            let span_eq = general.clone().rewrite(&hbf)?.trans(cf)?; // span (cons c cs) = pair nil x
+            let sp = snd_pair(&str_t(), &str_t(), &nil_c(), &x)?;
+            let snd_eq = span_eq.cong_arg(snd(str_t(), str_t()))?.trans(sp)?; // snd (span (cons c cs)) = cons c (cat pfx rst)
+            let hc = head_cons(&char_t(), &c, &tail)?; // head (cons c (cat pfx rst)) = some c
+            let head_eq = snd_eq.cong_arg(head_c.clone())?.trans(hc)?; // head (snd (span (cons c cs))) = some c
+            // head_is_digit is_digit (snd (span (cons c cs))) = option_case false is_digit (some c) = is_digit c.
+            let e1 = head_eq.cong_arg(oc_fun.clone())?;
+            let cs_some = case_some(&char_t(), &bool_t(), &Term::bool_lit(false), is_digit, &c)?; // = is_digit c
+            let isdig_f = red_eq.clone().trans(hbf.clone())?; // is_digit c = F
+            e1.trans(cs_some)?
+                .trans(isdig_f)?
+                .imp_intro(&cond_c.clone().equals(Term::bool_lit(false))?)?
+        };
+
+        let combined = bool_cases()
+            .all_elim(cond_c.clone())?
+            .or_elim(branch_t, branch_f)?; // {Q cs} ⊢ Q (cons c cs) body
+        let q_cons = beta_expand(&motive, consed, combined)?;
+        q_cons
+            .imp_intro(&ante)?
+            .all_intro("cs", str_t())?
+            .all_intro("c", char_t())?
+    };
+
+    let li = crate::init::list::list_induct(&char_t(), &motive, base, cons_case)?;
+    beta_nf_concl(li)
+}
+
+// ============================================================================
+// The full parser-correctness theorem — a genuine, hypothesis-free implication
+// assembling the partition (`span_cat`), prefix all-digits, suffix maximality,
+// and the value characterisation. Radix-generic over `(is_digit, value)`.
+// ============================================================================
+
+/// `⊢ some x = some y ⟹ x = y` **with `x`,`y` verbatim** — the catalogue
+/// [`some_inj`](crate::init::option::some_inj) β-normalises its payload (via
+/// the internal `option_case` reduction), which would unfold `is_digit` inside
+/// the span and diverge from the span lemmas. Proving injectivity over *fresh
+/// variables* and then `INST`-ing the payloads sidesteps that: the reduction
+/// runs over variables (a no-op), and the kernel `Inst` substitutes the folded
+/// payloads without touching them.
+fn some_inj_raw(alpha: &Type, x: &Term, y: &Term) -> Result<Thm> {
+    let fx = Term::free("__six", alpha.clone());
+    let fy = Term::free("__siy", alpha.clone());
+    some_inj(alpha, &fx, &fy)? // some fx = some fy ⟹ fx = fy
+        .inst("__six", x.clone())?
+        .inst("__siy", y.clone())
+}
+
+/// `⊢ pair a b = pair c d ⟹ (a = c ∧ b = d)` **with `a`..`d` verbatim** — the
+/// same fresh-variable + `INST` trick as [`some_inj_raw`], since the catalogue
+/// [`pair_inj`](crate::init::prod::pair_inj) β-normalises the pair components.
+fn pair_inj_raw(alpha: &Type, beta: &Type, a: &Term, b: &Term, c: &Term, d: &Term) -> Result<Thm> {
+    let fa = Term::free("__pia", alpha.clone());
+    let fb = Term::free("__pib", beta.clone());
+    let fc = Term::free("__pic", alpha.clone());
+    let fd = Term::free("__pid", beta.clone());
+    pair_inj(alpha, beta, &fa, &fb, &fc, &fd)? // pair fa fb = pair fc fd ⟹ (fa=fc ∧ fb=fd)
+        .inst("__pia", a.clone())?
+        .inst("__pib", b.clone())?
+        .inst("__pic", c.clone())?
+        .inst("__pid", d.clone())
+}
+
+/// `⊢ ∀s v rest. parse_nat is_digit value s = some (pair v rest) ⟹`
+/// `  (s = cat consumed rest)`
+/// `∧ list_all is_digit consumed`
+/// `∧ (head_is_digit is_digit rest = F)`
+/// `∧ (v = value consumed)`
+///
+/// where `consumed = fst (span s)` — the **complete parser spec**: a successful
+/// parse splits `s` into a consumed prefix and the returned `rest`, the prefix
+/// is all digits, `rest` does not start with a digit (maximality), and the
+/// value is the radix fold of the prefix. Hypothesis- and oracle-free, for any
+/// radix configuration `(is_digit, value)`.
+///
+/// (The `span`/`list_all`/`consumed` subterms appear in β-normal form — the
+/// span lemmas evaluate `is_digit` inside the fold — but this is definitionally
+/// the maximal digit-prefix split; the third conjunct's `head_is_digit is_digit
+/// rest = F` is exactly "`rest` is `nil` or its head is a non-digit".)
+pub fn parse_nat_correct(is_digit: &Term, value: &Term) -> Result<Thm> {
+    let s = Term::free("s", str_t());
+    let v = Term::free("v", nat_t());
+    let rest = Term::free("rest", str_t());
+
+    let sp_s = span_app(is_digit, &s);
+    let consumed = fst_ss(sp_s.clone()); // fst (span s)
+    let sp_rest = snd_ss(sp_s); // snd (span s)
+    let val = Term::app(value.clone(), consumed.clone()); // value (fst (span s))
+
+    // parse s = cond OC (some (pair val sp_rest)) none (one outer β; the inner
+    // `value (fst (span s))` and `head_is_digit …` stay folded — crucially,
+    // `is_digit` inside the span stays a λ, unreduced, matching the span
+    // lemmas). `some_inj_raw`/`pair_inj` below are chosen to *not* β-reduce
+    // their payloads, so this folded representation is preserved throughout.
+    let parse_s = Term::app(parse_nat(is_digit, value), s.clone());
+    let parse_red = Thm::beta_conv(parse_s.clone())?;
+    let oc = head_is_digit(is_digit, &s); // OC
+    let a_payload = Term::app(
+        Term::app(pair(nat_t(), str_t()), val.clone()),
+        sp_rest.clone(),
+    ); // pair val sp_rest
+    let a_br = Term::app(some(ns_t()), a_payload.clone()); // some (pair val sp_rest)
+    let none_br = none(ns_t());
+
+    // The theorem hypothesis and its target conjunction.
+    let vr_pair = Term::app(Term::app(pair(nat_t(), str_t()), v.clone()), rest.clone()); // pair v rest
+    let some_vr = Term::app(some(ns_t()), vr_pair.clone()); // some (pair v rest)
+    let hyp_term = parse_s.clone().equals(some_vr.clone())?;
+    let h = Thm::assume(hyp_term.clone())?;
+
+    // The span lemmas β-normalise their conclusions (so `is_digit` inside the
+    // span is *evaluated*); the assembled goal is therefore taken directly from
+    // their (β-normal) outputs — and shared verbatim by both `bool_cases`
+    // branches, so the `or_elim` consequents agree. `consumed`/`sp_rest` are
+    // bridged to that β-normal form (`CF`/`CS`) via `beta_nf`.
+    let cf_eq = beta_nf(consumed.clone()); // ⊢ consumed = CF
+    let cs_eq = beta_nf(sp_rest.clone()); // ⊢ sp_rest = CS
+
+    let oc_t = oc.clone().equals(Term::bool_lit(true))?;
+    let oc_f = oc.clone().equals(Term::bool_lit(false))?;
+
+    // OC = T: parse s = A, so some (pair v rest) = some (pair val sp_rest);
+    // build the goal conjunction here (its conclusion becomes `goal`).
+    let hbt = Thm::assume(oc_t.clone())?;
+    let ct = cond_true(&opt_ns_t(), &a_br, &none_br)?; // cond T A none = A
+    let parse_eq_a = parse_red.clone().rewrite(&hbt)?.trans(ct)?; // parse s = A
+    let some_eq = h.clone().sym()?.trans(parse_eq_a)?; // some (pair v rest) = some (pair val sp_rest)
+    let pair_eq = some_inj_raw(&ns_t(), &vr_pair, &a_payload)?.imp_elim(some_eq)?; // pair v rest = pair val sp_rest
+    let vr_eq = pair_inj_raw(&nat_t(), &str_t(), &v, &rest, &val, &sp_rest)?.imp_elim(pair_eq)?;
+    let v_eq = vr_eq.clone().and_elim_l()?; // v = val = value consumed
+    let rest_eq = vr_eq.and_elim_r()?.trans(cs_eq)?; // rest = sp_rest = CS
+
+    // a1: s = cat CF rest (from span_cat, then CS ← rest).
+    let p1 = span_cat(is_digit)?
+        .all_elim(s.clone())? // cat CF CS = s
+        .sym()? // s = cat CF CS
+        .rewrite(&rest_eq.clone().sym()?)?; // CS → rest
+    // a2: list_all is_digit CF (from prefix_all_digits).
+    let p2 = prefix_all_digits(is_digit)?
+        .all_elim(s.clone())?
+        .eqt_elim()?;
+    // a3: head_is_digit is_digit rest = F (from suffix_maximal, then CS ← rest).
+    let p3 = suffix_maximal(is_digit)?
+        .all_elim(s.clone())? // head_is_digit is_digit CS = F
+        .rewrite(&rest_eq.clone().sym()?)?; // CS → rest
+    // a4: v = value CF (bridge the folded `value consumed` to `value CF`).
+    let p4 = v_eq.trans(cf_eq.clone().cong_arg(value.clone())?)?; // v = value consumed = value CF
+    let conj = p1.and_intro(p2.and_intro(p3.and_intro(p4)?)?)?; // {hyp, OC=T} ⊢ goal
+    let goal = conj.concl().clone();
+    let branch_t = conj.imp_intro(&oc_t)?;
+
+    // OC = F: parse s = none, contradicting some (pair v rest) = none.
+    let branch_f = {
+        let hbf = Thm::assume(oc_f.clone())?;
+        let cf = cond_false(&opt_ns_t(), &a_br, &none_br)?; // cond F A none = none
+        let parse_eq_none = parse_red.clone().rewrite(&hbf)?.trans(cf)?; // parse s = none
+        let some_eq_none = h.clone().sym()?.trans(parse_eq_none)?; // some (pair v rest) = none
+        let f = some_ne_none(&ns_t(), &vr_pair)?.not_elim(some_eq_none)?; // ⊢ F
+        f.false_elim(goal.clone())?.imp_intro(&oc_f)?
+    };
+
+    let combined = bool_cases()
+        .all_elim(oc.clone())?
+        .or_elim(branch_t, branch_f)?; // {hyp} ⊢ goal
+    combined
+        .imp_intro(&hyp_term)?
+        .all_intro("rest", str_t())?
+        .all_intro("v", nat_t())?
+        .all_intro("s", str_t())
+}
+
+/// Concrete parser evaluators (test-only), shared with the `init::int_parse`
+/// test battery. Compute `⊢ parse … <literal> = <result>` for a concrete
+/// input by chaining the (genuine) clause lemmas — no oracle.
 #[cfg(test)]
-mod tests {
+pub(crate) mod ceval {
     use super::*;
     use crate::init::char::{char_lit, code_mk};
     use crate::init::cond::collapse_conds;
@@ -665,12 +1089,12 @@ mod tests {
     use crate::init::prod::{fst_pair, snd_pair};
 
     /// `char.mk k : char`.
-    fn ch(k: u64) -> Term {
+    pub(crate) fn ch(k: u64) -> Term {
         char_lit(k)
     }
 
     /// A `string` literal from ASCII bytes (each a `char.mk`).
-    fn s(bytes: &[u8]) -> Term {
+    pub(crate) fn s(bytes: &[u8]) -> Term {
         let mut t = nil_c();
         for &b in bytes.iter().rev() {
             t = cons_c(ch(b as u64), t);
@@ -679,12 +1103,12 @@ mod tests {
     }
 
     /// `⊢ char_code (char.mk k) = k`, as a rewrite rule.
-    fn code_rw(k: u64) -> Thm {
+    pub(crate) fn code_rw(k: u64) -> Thm {
         code_mk(&lit(k)).unwrap()
     }
 
     /// The `(a, b)` of a concrete `pair a b` term.
-    fn pair_parts(t: &Term) -> (Term, Term) {
+    pub(crate) fn pair_parts(t: &Term) -> (Term, Term) {
         let (fa, b) = t.as_app().unwrap();
         let (_pair, a) = fa.as_app().unwrap();
         (a.clone(), b.clone())
@@ -694,7 +1118,7 @@ mod tests {
     /// opacity is `char.code (char.mk k)` for the given `ks`. Reduces (β +
     /// `nat.le` folding), rewrites the codepoints, then decides the residual
     /// `∧`/`∨` combination with `prop_eq`.
-    fn decide(t: &Term, ks: &[u64]) -> (Thm, bool) {
+    pub(crate) fn decide(t: &Term, ks: &[u64]) -> (Thm, bool) {
         let mut red = Thm::refl(t.clone())
             .unwrap()
             .rhs_conv(|x| x.reduce())
@@ -717,7 +1141,7 @@ mod tests {
     /// `char.code (char.mk k)`, and whose head may be a literal-conditioned
     /// `cond` (the hex `digit_val`): rewrite the codepoint, fold arithmetic,
     /// collapse the head `cond`, fold again.
-    fn eval_digit(t: &Term, k: u64) -> Thm {
+    pub(crate) fn eval_digit(t: &Term, k: u64) -> Thm {
         let r0 = Thm::refl(t.clone())
             .unwrap()
             .rhs_conv(|x| x.rw_all(&code_rw(k)))
@@ -730,7 +1154,7 @@ mod tests {
 
     /// `⊢ go digit_val R (s bytes) acc = <nat literal>` (the left-fold value),
     /// for a concrete all-digit `bytes` and literal `acc`.
-    fn eval_go(dv: &Term, r: &Term, bytes: &[u8], acc: &Term) -> Thm {
+    pub(crate) fn eval_go(dv: &Term, r: &Term, bytes: &[u8], acc: &Term) -> Thm {
         if bytes.is_empty() {
             return go_nil(dv, r, acc).unwrap();
         }
@@ -763,7 +1187,7 @@ mod tests {
 
     /// `⊢ bin_go (s bytes) acc = <bit tree>` — the binary value in NP1
     /// `bit0`/`bit1` normal form, for concrete `bytes` and a bit-tree `acc`.
-    fn eval_bin_go(bytes: &[u8], acc: &Term) -> Thm {
+    pub(crate) fn eval_bin_go(bytes: &[u8], acc: &Term) -> Thm {
         if bytes.is_empty() {
             return bin_go_nil(acc).unwrap();
         }
@@ -789,7 +1213,7 @@ mod tests {
 
     /// `⊢ span_digits is_digit (s bytes) = pair <prefix> <rest>` — the maximal
     /// digit split, computed for a concrete `bytes`.
-    fn eval_span(is_digit: &Term, bytes: &[u8]) -> Thm {
+    pub(crate) fn eval_span(is_digit: &Term, bytes: &[u8]) -> Thm {
         if bytes.is_empty() {
             return span_nil(is_digit).unwrap();
         }
@@ -852,7 +1276,7 @@ mod tests {
 
     /// `⊢ list_cat a b = <concrete list>` for a concrete char-list `a`, by the
     /// `cat_nil`/`cat_cons` clauses (both `a`, `b` free of nested `list_cat`).
-    fn eval_cat(a: &Term, b: &Term) -> Thm {
+    pub(crate) fn eval_cat(a: &Term, b: &Term) -> Thm {
         match a
             .as_app()
             .and_then(|(f, tl)| f.as_app().map(|(_, h)| (h.clone(), tl.clone())))
@@ -872,7 +1296,7 @@ mod tests {
     /// computed for concrete `input`. `pre` is the (Rust-known) maximal digit
     /// prefix. `value_eq(prefix_term)` supplies `⊢ value <prefix_term> =
     /// <val>` (radix-specific).
-    fn eval_parse(
+    pub(crate) fn eval_parse(
         is_digit: &Term,
         value: &Term,
         input: &[u8],
@@ -915,7 +1339,7 @@ mod tests {
 
     /// Resolve `parse l = cond OC TRUE none` given `oc_eq : ⊢ OC = <bool>`.
     #[allow(clippy::too_many_arguments)]
-    fn finish_parse(
+    pub(crate) fn finish_parse(
         red: Thm,
         oc_eq: Thm,
         is_dig: bool,
@@ -962,6 +1386,12 @@ mod tests {
             .rhs_conv(|x| x.rw_all(&rrest))
             .unwrap()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ceval::*;
+    use super::*;
 
     // ---- genuineness of the general theorems ----
 
@@ -1086,5 +1516,94 @@ mod tests {
             assert!(thm.hyps().is_empty());
             assert_eq!(rhs(&thm), none(ns_t()), "parse {input:?} = none");
         }
+    }
+
+    // ---- `list_all` + the universal parser-correctness theorem ----
+
+    /// The four radix configurations as `(is_digit, value)` pairs.
+    fn configs() -> Vec<(Term, Term)> {
+        vec![
+            (is_digit_bin(), nat_of_bin_digits()),
+            (is_digit_oct(), nat_of_digits(&digit_val_dec(), &lit(8))),
+            (is_digit_dec(), nat_of_digits(&digit_val_dec(), &lit(10))),
+            (is_digit_hex(), nat_of_digits(&digit_val_hex(), &lit(16))),
+        ]
+    }
+
+    #[test]
+    fn list_all_clauses_are_genuine() {
+        let p = is_digit_dec();
+        let x = ch(b'5' as u64);
+        let xs = Term::free("xs", str_t());
+        let an = all_nil(&char_t(), &p).unwrap();
+        assert!(an.hyps().is_empty());
+        let (l, r) = an.concl().as_eq().unwrap();
+        assert_eq!(l, &all_app(&char_t(), &p, &nil_c()));
+        assert_eq!(r, &Term::bool_lit(true));
+
+        let ac = all_cons(&char_t(), &p, &x, &xs).unwrap();
+        assert!(ac.hyps().is_empty());
+        let (l, r) = ac.concl().as_eq().unwrap();
+        assert_eq!(l, &all_app(&char_t(), &p, &cons_c(x.clone(), xs.clone())));
+        // rhs = (p x ∧ list_all p xs) with `p x` un-reduced.
+        let expect_r = band(Term::app(p.clone(), x.clone()), all_app(&char_t(), &p, &xs));
+        assert_eq!(r, &expect_r);
+    }
+
+    #[test]
+    fn prefix_all_digits_is_genuine() {
+        for (is_digit, _) in configs() {
+            let thm = prefix_all_digits(&is_digit).unwrap();
+            assert!(
+                thm.hyps().is_empty(),
+                "prefix_all_digits must be axiom-free"
+            );
+            assert!(thm.concl().type_of().unwrap().is_bool());
+        }
+    }
+
+    #[test]
+    fn suffix_maximal_is_genuine() {
+        for (is_digit, _) in configs() {
+            let thm = suffix_maximal(&is_digit).unwrap();
+            assert!(thm.hyps().is_empty(), "suffix_maximal must be axiom-free");
+            assert!(thm.concl().type_of().unwrap().is_bool());
+        }
+    }
+
+    #[test]
+    fn parse_nat_correct_is_genuine() {
+        for (is_digit, value) in configs() {
+            let thm = parse_nat_correct(&is_digit, &value).unwrap();
+            assert!(
+                thm.hyps().is_empty(),
+                "parse_nat_correct must be hypothesis-free"
+            );
+            assert!(thm.concl().type_of().unwrap().is_bool());
+        }
+    }
+
+    #[test]
+    fn parse_nat_correct_applied_to_a_concrete_input() {
+        // Instantiate the universal decimal theorem at parse "42x" = (42, "x").
+        // `imp_elim` succeeds only if the concrete parser output matches the
+        // theorem's hypothesis exactly, so this ties the spec to computation.
+        let value = nat_of_digits(&digit_val_dec(), &lit(10));
+        let corr = parse_nat_correct(&is_digit_dec(), &value).unwrap();
+        let inst = corr
+            .all_elim(s(b"42x"))
+            .unwrap()
+            .all_elim(lit(42))
+            .unwrap()
+            .all_elim(s(b"x"))
+            .unwrap();
+        let dvc = digit_val_dec();
+        let concrete = eval_parse(&is_digit_dec(), &value, b"42x", b"42", &move |pre| {
+            eval_go(&dvc, &lit(10), pre, &lit(0))
+        });
+        let facts = inst.imp_elim(concrete).unwrap();
+        assert!(facts.hyps().is_empty(), "derived facts must be oracle-free");
+        // The spec is a 4-way conjunction (partition ∧ all-digits ∧ maximal ∧ value).
+        assert_eq!(facts.into_conjuncts().len(), 4);
     }
 }

@@ -427,3 +427,125 @@ fn tyrep_binders_are_debruijn_and_transport() {
         &App(ty_abs::<TyRepDemo, Kdemo>(), (kappa, body))
     );
 }
+
+// ---- B-K3: kind/rank synthesis CanonRules ----
+
+/// A demo language admitting exactly the three kind/rank synthesis rules.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct KindLang;
+impl Language for KindLang {
+    fn admits(&self, r: TypeId) -> bool {
+        r == TypeId::of::<KindOf>() || r == TypeId::of::<RankOf>() || r == TypeId::of::<RankLe>()
+    }
+    fn extends(&self, p: TypeId) -> bool {
+        p == TypeId::of::<()>()
+    }
+    fn union(self, _: Self) -> Option<Self> {
+        Some(KindLang)
+    }
+    const MANIFEST: Option<&'static Manifest> = None;
+}
+
+/// `KindOf` synthesises the actual kind of a well-kinded type and **refuses**
+/// (`None` ⇒ `canon` `Err(NoMatch)`) on every ill-kinded shape — never a wrong
+/// kind. Gated: `()` does not admit it.
+#[test]
+fn kindof_synthesises_and_refuses() {
+    use KindC::*;
+    let arr = || Arrow(Box::new(Star), Box::new(Star));
+
+    // λα:⋆. α  :  ⋆ ⇒ ⋆
+    let id_op = TyC::Abs(Star, 0, Box::new(TyC::Bound(0)));
+    let k = canon(KindOf, id_op.clone(), KindLang).expect("well-kinded");
+    assert_eq!(k.rhs(), &Val(arr()));
+    // Left side is the applied op over the value leaf.
+    assert_eq!(k.lhs(), &App(KindOf, Val(id_op.clone())));
+
+    // (λα:⋆.α) c   with c:⋆   :  ⋆
+    let app = TyC::App(Box::new(id_op), Box::new(TyC::Con(0, Star)));
+    assert_eq!(canon(KindOf, app, KindLang).unwrap().rhs(), &Val(Star));
+
+    // ∀α:⋆:0. (α ⇒ α)  :  ⋆
+    let all = TyC::All(
+        Star,
+        0,
+        Box::new(TyC::Fn(Box::new(TyC::Bound(0)), Box::new(TyC::Bound(0)))),
+    );
+    assert_eq!(canon(KindOf, all, KindLang).unwrap().rhs(), &Val(Star));
+
+    // --- refusals: every ill-kinded shape ⇒ None ⇒ Err(NoMatch) ---
+    // apply a proper type (non-operator)
+    let bad_app = TyC::App(Box::new(TyC::Con(0, Star)), Box::new(TyC::Con(1, Star)));
+    assert!(matches!(
+        canon(KindOf, bad_app, KindLang),
+        Err(Error::NoMatch)
+    ));
+    // arrow with a non-⋆ (operator-kinded) side
+    let bad_fn = TyC::Fn(Box::new(TyC::Con(0, arr())), Box::new(TyC::Con(1, Star)));
+    assert!(matches!(
+        canon(KindOf, bad_fn, KindLang),
+        Err(Error::NoMatch)
+    ));
+    // operator/argument kind mismatch: (λα:⋆.α) applied to a ⋆⇒⋆ arg
+    let mismatch = TyC::App(
+        Box::new(TyC::Abs(Star, 0, Box::new(TyC::Bound(0)))),
+        Box::new(TyC::Con(0, arr())),
+    );
+    assert!(matches!(
+        canon(KindOf, mismatch, KindLang),
+        Err(Error::NoMatch)
+    ));
+    // dangling de-Bruijn index
+    assert!(matches!(
+        canon(KindOf, TyC::Bound(0), KindLang),
+        Err(Error::NoMatch)
+    ));
+
+    // Gated: the empty base `()` admits nothing.
+    assert!(matches!(
+        canon(KindOf, TyC::Con(0, Star), ()),
+        Err(Error::NotAdmitted(_))
+    ));
+}
+
+/// `RankOf` (gated on well-kindedness) computes `rank(∀α:κ:r.τ)=max(r+1,rank τ)`;
+/// `RankLe` decides `≤`.
+#[test]
+fn rankof_and_rankle() {
+    use KindC::*;
+    // ∀α:⋆:0. α   →   max(0+1, rank(Bound 0)=0) = 1
+    let all0 = TyC::All(Star, 0, Box::new(TyC::Bound(0)));
+    assert_eq!(canon(RankOf, all0, KindLang).unwrap().rhs(), &Val(1u32));
+    // ∀α:⋆:2. α   →   max(2+1, 0) = 3
+    let all2 = TyC::All(Star, 2, Box::new(TyC::Bound(0)));
+    assert_eq!(canon(RankOf, all2, KindLang).unwrap().rhs(), &Val(3u32));
+    // nested: ∀α:⋆:0. ∀β:⋆:1. α  →  outer max(1, inner); inner max(2, rank α=0)=2 ⇒ 2
+    let nested = TyC::All(
+        Star,
+        0,
+        Box::new(TyC::All(Star, 1, Box::new(TyC::Bound(1)))),
+    );
+    assert_eq!(canon(RankOf, nested, KindLang).unwrap().rhs(), &Val(2u32));
+    // a constant has rank 0
+    assert_eq!(
+        canon(RankOf, TyC::Con(0, Star), KindLang).unwrap().rhs(),
+        &Val(0u32)
+    );
+    // RankOf refuses ill-kinded input (shares KindOf's domain)
+    let bad = TyC::App(Box::new(TyC::Con(0, Star)), Box::new(TyC::Con(1, Star)));
+    assert!(matches!(canon(RankOf, bad, KindLang), Err(Error::NoMatch)));
+
+    // RankLe decides ≤.
+    assert_eq!(
+        canon(RankLe, (1u32, 2u32), KindLang).unwrap().rhs(),
+        &Val(true)
+    );
+    assert_eq!(
+        canon(RankLe, (2u32, 2u32), KindLang).unwrap().rhs(),
+        &Val(true)
+    );
+    assert_eq!(
+        canon(RankLe, (3u32, 2u32), KindLang).unwrap().rhs(),
+        &Val(false)
+    );
+}

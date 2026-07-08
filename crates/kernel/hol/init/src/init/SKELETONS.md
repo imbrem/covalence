@@ -139,14 +139,37 @@ Bridge built (S9a); the flip is maintainer-gated. See
   Needs `nat`/`int` powers of ten and the `rat` division/scaling already in
   `init::rat`; the digit machinery is exactly the NP2/NP3 parsers.
 
-- **Float parsing** (eventual aspiration, design sketch only — no code). A
-  `parseFloat : string → option (f64 × string)` would parse a decimal rational
-  (as above) and *round* it to the nearest `f64` under the typed float layer
-  (`init/ball.rs` / `covalence-hol-eval` `defs/floats.rs`). This needs the
-  correctly-rounded decimal-to-binary conversion (a `ball`/interval enclosure of
-  the exact rational, then round-to-nearest-even) — the same rounding-error
-  lemmas the `ball.add` skeleton is blocked on. Parser front-end is trivial;
-  the *rounding* is the real content and should follow the `f64` enclosure work.
+- **Float parsing** (`init/float_parse.rs`, stage FP1). Built: `parseFloat`
+  (string) + `parseFloatBytes` (bytes) reading sign / int-part / `.`frac /
+  `[eE]`sign?exp into the **exact** value `floatval := int × int` (`(m,e)` ≙
+  `m·10ᵉ`); the sign-composition (`signed_pos`/`signed_neg`) + value-assembly
+  (`assemble_pos`/`assemble_neg`) lemmas (the "parts compose correctly" algebra,
+  genuine/general); the integer-subset lemmas (`int_subset`, `float_of_int`);
+  concrete end-to-end parses of `3.14`/`1e10`/`-0.5`/`2.5e-3`/`42` (both string
+  and bytes) via an unfolding harness. Remaining:
+  - **`f64` rounding + IEEE round-trip** — round the exact `floatval` to the
+    nearest `f64` (round-to-nearest-even) under the typed float layer
+    (`covalence-hol-eval` `defs/floats.rs`, `init/ball.rs`), and the
+    `parse ∘ print = id` round-trip. This is the real content: needs the
+    correctly-rounded decimal→binary conversion (a `ball`/interval enclosure of
+    the exact rational), the same rounding-error lemmas the `ball.add` skeleton
+    is blocked on. The exact-value front-end here is finished; rounding follows
+    the `f64` enclosure work.
+  - **General ∀-correctness** — `∀s. parseFloat s = some (v, r) ⟹` the consumed
+    prefix is well-formed float syntax and `r` a genuine suffix; the whole-string
+    string⇄bytes agreement (`parseFloatBytes` = `parseFloat ∘ map char.mk`), a
+    `map`-fusion induction keyed on `nat_parse_agree::code_eq_byte_val`. The
+    concrete evals witness instances; the general statements want the same
+    `list_all`/`map`-gated induction the NP2/NP3 parser skeletons need. (Same
+    nested-`cond` selection wall `int_parse` records; the FP1 harness dodges it
+    per-input by resolving each `cond` after deciding it.)
+  - **Strict JSON grammar** — reject `.5` (leading `.`), `1e` (empty exponent),
+    `01` (leading zeros); FP1 requires a leading integer digit but is otherwise
+    lenient (empty frac/exp default to `0`). The JSON north-star wants the exact
+    `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?` production.
+  - **`rat`/`real` value bridge + `Inf`/`NaN`/quoted forms** — a `float_value :
+    floatval → rat` (`m · 10ᵉ` into `init/rat.rs`) to state the value in `rat`;
+    special float tokens are not read.
 
 - **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Missing:
   - **`list_foldl`** — the left-fold recursor's defining equations not yet discharged.
@@ -256,6 +279,57 @@ Bridge built (S9a); the flip is maintainer-gated. See
     future work.
   - **`covalence-sexp` quotation helper** — surface `SExp` → `sexpr_theory()` constructor
     terms, next to the backend (the Lisp pole's data path).
+
+- **S-expression parsing** (`init/sexpr_parse.rs`, stage SP1). A fuel-bounded
+  reader `parseSexpr : nat → bytes → option (sexpr × bytes)` over `list u8`
+  producing the carved `sexpr` datatype — whitespace / atoms / nested lists via
+  `natRec` with a mode bit — is built with its defining equations
+  (`parse_base`/`parse_step`/`parse_unfold`), an unfolding harness proving
+  concrete parses (atoms, flat/nested/empty lists, `none` on malformed/empty,
+  suffix returned), and the structural agreement theorem `parsed_cons_struct`
+  (a parsed `scons` node's `consp`/`car`/`cdr`). Remaining:
+  - **`string` (list char) reader** — the same construction over `char` with
+    atoms `atom (bytes.abs (map (uN.fromNat ∘ char.code) run))`, plus the
+    ASCII string⇄bytes parser agreement (the `nat_parse_agree` `code_eq_byte_val`
+    pattern lifted to the whole reader, a `map`-fusion induction).
+  - **Total parse-invariant** — `∀fuel. parseSexpr fuel s = some (v, r) ⟹` the
+    consumed prefix is well-formed and `r` a genuine suffix; and fuel-monotone
+    success (enough fuel always succeeds on well-formed input). Each a `nat`/
+    `list` induction over the reader (the concrete evals witness instances).
+  - **Reader associativity / round-trip** — `printSexpr`-free for now; a
+    deparser + `parse ∘ print = id` round-trip is future work.
+  - **Quoted-string atoms** — `"…"`-delimited atoms with escape handling
+    (a second atom-class branch; not built).
+
+- **JSON parsing** (`init/json_parse.rs`, stage JP). A fuel-bounded reader
+  `parseJson : nat → bytes → option (sexpr × bytes)` for the **integer + array**
+  fragment of RFC-8259, producing the carved `sexpr` datatype (numbers →
+  `atom <digits>`, arrays → `scons`-chains; commas/whitespace both treated as
+  separators — the array reader is the S-expr list reader with `[`/`]`), is
+  built with its defining equations, an unfolding harness for concrete parses
+  (integers, flat/nested arrays, `[]`, `none`, suffix), and the north-star PER
+  `same_json` (`s1 ~ s2 ⟺ same JSON value + parses`) proved a genuine partial
+  equivalence relation (`same_json_sym`/`same_json_trans`/`same_json_refl_dom`,
+  the last pinning its domain). Remaining:
+  - **`JsonValue` datatype** — a dedicated 6-constructor inductive
+    (`null | bool | number | string | array | object`) carved via the engine
+    (the carved backend is `sexpr`-shape-only); this stage reuses `sexpr` as the
+    carrier and tags numbers as digit-`atom`s. The number should carry a genuine
+    `int` (via the `int` parser's value machinery) not literal bytes.
+  - **Strict grammar + full value set** — objects (`{ "k": v }` + a-list value),
+    JSON strings (quoted, escapes), the `true`/`false`/`null` literals, and
+    strict comma placement (reject `[1,,2]`, trailing commas). Currently lenient:
+    commas are separators.
+  - **Float numbers** — swap the integer number token for `float_parse`'s
+    `-?int(.frac)?([eE]exp)?` production (the `floatval := int × int` value), so
+    JSON numbers are exact decimals.
+  - **`string` (list char) PER** — the `bytes` PER transports to a `string` PER
+    via the ASCII `char`⇄`byte` agreement (`nat_parse_agree::code_eq_byte_val`),
+    a `map`-fusion argument; only the `bytes` reader is built (as in `sexpr_parse`).
+  - **Integer subset ⊂ full JSON** — once the float/strict number reader lands,
+    prove the integer-subset parser's outputs are a genuine subset of the
+    full-JSON parser's (every integer literal is a valid JSON number), the JSON
+    analogue of `float_parse::int_subset`.
 
 - **Lisp / ACL2 layer** (`init/lisp.rs`, over the carved carrier). Built: `car`/`cdr`/
   `cons`/`consp`/`atom?`/`len`/`append` with comp laws + `append_assoc`/`len_append` by

@@ -127,7 +127,10 @@ fn rank_of(t: &TyC, ctx: &mut Vec<u32>) -> Option<u32> {
             ctx.push(*r);
             let rb = rank_of(body, ctx);
             ctx.pop();
-            Some((r + 1).max(rb?))
+            // `saturating_add`: never wrap a `u32::MAX` rank down to 0 (which would
+            // be a *too-small* rank and, once this feeds `TyInst`, unsound).
+            // Over-approximating rank only makes the `rank(σ) ≤ r` check stricter.
+            Some(r.saturating_add(1).max(rb?))
         }
         TyC::Abs(_k, r, body) => {
             ctx.push(*r);

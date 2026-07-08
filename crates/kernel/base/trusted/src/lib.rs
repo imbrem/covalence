@@ -15,8 +15,9 @@
 //!    - in `prop` — `and_intro`/`and_elim`/`or_inl`/`or_inr`/`mp`;
 //!    - in `matching` — `apply_rewrite`;
 //!    - in `rel` — `execute` (gated on `Rel<F>`, mints only positive graph
-//!      membership — never falsity) and `Thm::transpose` (ungated-but-trusted,
-//!      like `and_intro`).
+//!      membership — never falsity) and the ungated-but-trusted positive calculus
+//!      `Thm::transpose`/`compose`/`meet`/`join_l`/`join_r` (like `and_intro`;
+//!      complement is absent — negation needs an admitted axiom).
 //! 2. [`Expr`] — **sealed**: the closed grammar of expressions
 //!    ([`Val`]/[`Ref`]`<P: TrustedDeref>`/[`App`]/[`True`]/[`False`]/[`Eqn`]/`&A`/
 //!    `Box`/`Rc`/`Arc<A>`/[`Dyn`]/tuples), each with a unique sort [`Expr::Ty`].

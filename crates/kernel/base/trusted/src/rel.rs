@@ -30,12 +30,14 @@
 //!
 //! ## Trust surface (audited mint sites — F8 of the design)
 //!
-//! Two new [`Thm::new`] call sites, both real TCB additions:
+//! New [`Thm::new`] call sites, all real TCB additions:
 //! - [`execute`] — **gated** on `TypeId::of::<Rel<F>>()` (a language admits the
 //!   relations it vouches for), like [`canon`](crate::canon)/[`apply`](crate::apply);
-//! - [`Thm::transpose`] — **ungated-but-trusted** (sound in every language: it
-//!   only recombines an already-proven positive fact), like
-//!   [`and_intro`](crate::Thm::and_intro). Ungated ≠ untrusted.
+//! - the **positive calculus** [`Thm::transpose`]/[`Thm::compose`]/[`Thm::meet`]/
+//!   [`Thm::join_l`]/[`Thm::join_r`] — **ungated-but-trusted** (sound in every
+//!   language: each only recombines already-proven positive facts), like
+//!   [`and_intro`](crate::Thm::and_intro). Ungated ≠ untrusted. **Complement is
+//!   deliberately absent** — negation needs an admitted axiom, not a mint.
 
 use std::any::{Any, TypeId};
 use std::sync::Arc;
@@ -154,10 +156,152 @@ where
     /// an already-proven positive fact by swapping the pair and wrapping the op in
     /// [`Transpose`], introducing no new equality and no evaluation. Still a real
     /// [`Thm::new`] site (a TCB addition audited like
-    /// [`and_intro`](Thm::and_intro)). (Compose/join/meet follow the same pattern;
-    /// Phase 0 ships only `transpose`.)
+    /// [`and_intro`](Thm::and_intro)).
     pub fn transpose(self) -> Thm<L, App<Transpose<R>, (B, A)>> {
         let (lang, App(r, (a, b))) = self.into_parts();
         Thm::new(lang, App(Transpose(r), (b, a)))
+    }
+}
+
+// ============================================================================
+// The rest of the POSITIVE relation calculus — composition, union (join), and
+// intersection (meet). All ungated-but-trusted (sound in every language: each
+// recombines already-proven positive facts), like `transpose`/`or_inl`/
+// `and_intro`. **Complement is deliberately absent**: it is negation, which no
+// execution can witness — it needs the admitted-axiom discipline (§3A-negation),
+// not a mint here.
+// ============================================================================
+
+/// **Composition** `R ; S` — `⊢ a R b` ∧ `⊢ b S c` ⟹ `⊢ a (R;S) c`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Compose<R, S>(pub R, pub S);
+
+// `X`/`Y`/`Z` are determined by `R::In = (X, Y)` and `S::In = (Y, Z)` (the shared
+// `Y` is the composition middle) — coherent, one `In`/`Out` per `(R, S)`.
+impl<R, S, X, Y, Z> Op for Compose<R, S>
+where
+    R: Op<In = (X, Y), Out = bool>,
+    S: Op<In = (Y, Z), Out = bool>,
+    X: 'static,
+    Y: 'static,
+    Z: 'static,
+{
+    type In = (X, Z);
+    type Out = bool;
+}
+
+/// **Union** `R ∪ S` — `⊢ a R b` ⟹ `⊢ a (R∪S) b` (either injection).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Join<R, S>(pub R, pub S);
+
+impl<R, S, X, Y> Op for Join<R, S>
+where
+    R: Op<In = (X, Y), Out = bool>,
+    S: Op<In = (X, Y), Out = bool>,
+    X: 'static,
+    Y: 'static,
+{
+    type In = (X, Y);
+    type Out = bool;
+}
+
+/// **Intersection** `R ∩ S` — `⊢ a R b` ∧ `⊢ a S b` ⟹ `⊢ a (R∩S) b`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Meet<R, S>(pub R, pub S);
+
+impl<R, S, X, Y> Op for Meet<R, S>
+where
+    R: Op<In = (X, Y), Out = bool>,
+    S: Op<In = (X, Y), Out = bool>,
+    X: 'static,
+    Y: 'static,
+{
+    type In = (X, Y);
+    type Out = bool;
+}
+
+impl<L: Language, R, A, B, X, Y> Thm<L, App<R, (A, B)>>
+where
+    R: Op<In = (X, Y), Out = bool>,
+    A: Expr<Ty = X>,
+    B: Expr<Ty = Y>,
+    X: 'static,
+    Y: 'static,
+{
+    /// **Compose** `⊢ a R b` with `⊢ b S c` (the middle `b` matched, exactly as
+    /// [`trans`](Thm::trans) matches its middle) to get `⊢ a (R;S) c`, under the
+    /// **union** of the two contexts.
+    ///
+    /// Ungated-but-trusted: sound in every language (relational composition is a
+    /// positive fact). `Err` if the middles differ (`B: Eq`, the same structural
+    /// match `trans` uses — for `Ref<Arc<_>>` leaves this compares the shared
+    /// pointees, i.e. the values) or the contexts cannot be combined.
+    pub fn compose<S, C, Z>(
+        self,
+        other: Thm<L, App<S, (B, C)>>,
+    ) -> Result<Thm<L, App<Compose<R, S>, (A, C)>>, Error>
+    where
+        B: Eq,
+        S: Op<In = (Y, Z), Out = bool>,
+        C: Expr<Ty = Z>,
+        Z: 'static,
+    {
+        let (l1, App(r, (a, b1))) = self.into_parts();
+        let (l2, App(s, (b2, c))) = other.into_parts();
+        if b1 != b2 {
+            return Err(Error::TransMismatch);
+        }
+        let lang = l1.union(l2).ok_or(Error::LangMismatch)?;
+        Ok(Thm::new(lang, App(Compose(r, s), (a, c))))
+    }
+
+    /// **Meet** `⊢ a R b` with `⊢ a S b` (both operands matched) to get
+    /// `⊢ a (R∩S) b`, under the **union** of the two contexts. `Err` if the
+    /// operands differ (`A: Eq`, `B: Eq`) or the contexts cannot be combined.
+    pub fn meet<S>(
+        self,
+        other: Thm<L, App<S, (A, B)>>,
+    ) -> Result<Thm<L, App<Meet<R, S>, (A, B)>>, Error>
+    where
+        A: Eq,
+        B: Eq,
+        S: Op<In = (X, Y), Out = bool>,
+    {
+        let (l1, App(r, (a1, b1))) = self.into_parts();
+        let (l2, App(s, (a2, b2))) = other.into_parts();
+        if a1 != a2 || b1 != b2 {
+            return Err(Error::TransMismatch);
+        }
+        let lang = l1.union(l2).ok_or(Error::LangMismatch)?;
+        Ok(Thm::new(lang, App(Meet(r, s), (a1, b1))))
+    }
+}
+
+impl<L, R, A, B, X, Y> Thm<L, App<R, (A, B)>>
+where
+    R: Op<In = (X, Y), Out = bool>,
+    A: Expr<Ty = X>,
+    B: Expr<Ty = Y>,
+    X: 'static,
+    Y: 'static,
+{
+    /// **Union-left**: from `⊢ a R b` get `⊢ a (R∪S) b` for any relation `s: S`
+    /// (you supply the other disjunct op). Ungated, one-sided — like
+    /// [`or_inl`](Thm::or_inl).
+    pub fn join_l<S>(self, s: S) -> Thm<L, App<Join<R, S>, (A, B)>>
+    where
+        S: Op<In = (X, Y), Out = bool>,
+    {
+        let (lang, App(r, (a, b))) = self.into_parts();
+        Thm::new(lang, App(Join(r, s), (a, b)))
+    }
+
+    /// **Union-right**: from `⊢ a S b` get `⊢ a (R∪S) b` for any relation `r: R`.
+    pub fn join_r<R2>(self, r: R2) -> Thm<L, App<Join<R2, R>, (A, B)>>
+    where
+        R2: Op<In = (X, Y), Out = bool>,
+    {
+        let (lang, App(s, (a, b))) = self.into_parts();
+        Thm::new(lang, App(Join(r, s), (a, b)))
     }
 }

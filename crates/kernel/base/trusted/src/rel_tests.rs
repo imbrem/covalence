@@ -28,6 +28,9 @@ impl Language for RelCalc {
             || r == TypeId::of::<Rel<AddModFn>>()
             || r == TypeId::of::<Rel<CoinFn>>()
             || r == TypeId::of::<Rel<PartialFn>>()
+            || r == TypeId::of::<Rel<IncFn>>()
+            || r == TypeId::of::<Rel<DblFn>>()
+            || r == TypeId::of::<Rel<SubTwoFn>>()
             || r == TypeId::of::<HashOp>()
     }
     fn extends(&self, p: TypeId) -> bool {
@@ -120,6 +123,40 @@ impl UntrustedFn for PartialFn {
         } else {
             Err(RelErr::Refused)
         }
+    }
+}
+
+/// `u64 → u64`, `n ↦ n+1` — a total relation for composition tests.
+#[derive(Clone, Copy, Debug)]
+struct IncFn;
+impl UntrustedFn for IncFn {
+    type In = u64;
+    type Out = u64;
+    fn run(&self, a: &u64) -> Result<u64, RelErr> {
+        Ok(a + 1)
+    }
+}
+
+/// `u64 → u64`, `n ↦ 2n`.
+#[derive(Clone, Copy, Debug)]
+struct DblFn;
+impl UntrustedFn for DblFn {
+    type In = u64;
+    type Out = u64;
+    fn run(&self, a: &u64) -> Result<u64, RelErr> {
+        Ok(a * 2)
+    }
+}
+
+/// `u64 → u64`, `n ↦ n-2` — agrees with `PartialFn` (`n/2`) at `n = 4` (both
+/// give `2`), for the intersection test.
+#[derive(Clone, Copy, Debug)]
+struct SubTwoFn;
+impl UntrustedFn for SubTwoFn {
+    type In = u64;
+    type Out = u64;
+    fn run(&self, a: &u64) -> Result<u64, RelErr> {
+        Ok(a - 2)
     }
 }
 
@@ -240,6 +277,45 @@ fn transpose_positive() {
     // `⊢ 5 Rel(AddMod)° (2, 3)` — pair swapped, op wrapped in `Transpose`.
     assert_eq!(*t.prop().1.0.0, 5u64); // first component now the output
     assert_eq!(*t.prop().1.1.0, (2u64, 3u64)); // second now the input pair
+}
+
+/// The rest of the positive calculus: **compose** (`R;S`), **join** (`R∪S`),
+/// **meet** (`R∩S`) — all ungated-but-trusted, recombining positive facts.
+#[test]
+fn positive_calculus_compose_join_meet() {
+    // compose: `⊢ 5 Inc 6` ∧ `⊢ 6 Dbl 12` ⟹ `⊢ 5 (Inc;Dbl) 12`. The middle `6`
+    // is matched across the two theorems (fresh Arcs, but `Ref<Arc<u64>>: Eq`
+    // compares the shared pointees, i.e. the values).
+    let inc = execute(Rel(IncFn), 5u64, RelCalc).expect("Inc admitted"); // 5 ↦ 6
+    let dbl = execute(Rel(DblFn), 6u64, RelCalc).expect("Dbl admitted"); // 6 ↦ 12
+    let comp = inc.compose(dbl).expect("middle 6 matches");
+    // `⊢ 5 (Inc;Dbl) 12` — endpoints preserved, op is `Compose(Inc, Dbl)`.
+    assert_eq!(*comp.prop().1.0.0, 5u64);
+    assert_eq!(*comp.prop().1.1.0, 12u64);
+
+    // compose rejects a mismatched middle (5 Inc 6, but 7 Dbl 14 — 6 ≠ 7).
+    let inc2 = execute(Rel(IncFn), 5u64, RelCalc).unwrap();
+    let dbl2 = execute(Rel(DblFn), 7u64, RelCalc).unwrap();
+    assert_eq!(inc2.compose(dbl2).unwrap_err(), Error::TransMismatch);
+
+    // join: `⊢ 5 Inc 6` ⟹ `⊢ 5 (Inc∪Dbl) 6` (left injection, any other op).
+    let inc3 = execute(Rel(IncFn), 5u64, RelCalc).unwrap();
+    let j = inc3.join_l(Rel(DblFn));
+    assert_eq!(*j.prop().1.0.0, 5u64);
+    assert_eq!(*j.prop().1.1.0, 6u64);
+
+    // meet: `⊢ 4 Partial 2` ∧ `⊢ 4 SubTwo 2` ⟹ `⊢ 4 (Partial∩SubTwo) 2` (both
+    // operands matched). Rejects mismatched operands.
+    let p = execute(Rel(PartialFn), 4u64, RelCalc).unwrap(); // 4 ↦ 2 (n/2)
+    let s = execute(Rel(SubTwoFn), 4u64, RelCalc).unwrap(); // 4 ↦ 2 (n-2)
+    let m = p.meet(s).expect("both endpoints (4, 2) match");
+    assert_eq!(*m.prop().1.0.0, 4u64);
+    assert_eq!(*m.prop().1.1.0, 2u64);
+
+    // meet rejects when the pairs differ (4 Partial 2 vs 6 SubTwo 4).
+    let p2 = execute(Rel(PartialFn), 4u64, RelCalc).unwrap();
+    let s2 = execute(Rel(SubTwoFn), 6u64, RelCalc).unwrap(); // 6 ↦ 4
+    assert_eq!(p2.meet(s2).unwrap_err(), Error::TransMismatch);
 }
 
 // ---- TyRep-in-base ----

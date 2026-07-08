@@ -136,4 +136,33 @@ commit(s).
   `None` on ill-kinded input, never a wrong kind (a wrong kind → false rank premise →
   defeats the `TyInst` gate).
 
+## 2026-07-08 — checkpoint: B-K1+B-K2 merged to main; B-K3 teed up (needs design+audit)
+
+- **State:** local `main` = `c9fff3e8` — parsing + float + JSON + relcalc Phase 0 +
+  roadmap + **B-K1** (Kind sort) + **B-K2** (higher-rank binder syntax), all merged;
+  worklog current. Pushes still blocked (hook allows only main + classifier blocks
+  main) — maintainer pushes later.
+- **Deliberate stop before B-K3.** B-K1/B-K2 were the clean zero-TCB autonomous
+  wins (inert ops, pattern pre-audited via tyrep). **B-K3 crosses into real-TCB
+  territory** (3 new admitted `CanonRule`s) and is the soundness-critical hinge —
+  improvising it late in a long run would violate the "don't improvise the walls"
+  discipline. Teed up for a deliberate, audited pass:
+  - **Design to nail first:** the in-base demo type rep `Cdemo` (a flat encoding the
+    CanonRule computes over — analogous to `TyRepDemo`/`Kdemo`, but a *whole* type
+    term as one `Val<Cdemo>` leaf, since a `CanonRule` evals over a `Val` leaf, not
+    an App-spine); how `KindOf` recurses over it; and how the flat demo relates to
+    the B-K1/B-K2 App-spine syntax (bridge deferred to the `C = core::Type` wiring).
+  - **The three rules:** `KindOf : Cdemo → KindC` (**MUST return `None` on
+    ill-kinded input, NEVER a wrong kind** — a wrong kind ⇒ false rank premise ⇒
+    defeats the `TyInst` gate); `RankOf : Cdemo → u32` with
+    `rank(∀α:κ:r.τ) = max(r+1, rank(τ))` (`InstTFree` = the rank-0 case); `RankLe :
+    (u32,u32) → bool`. All gated `canon` mints; +3 lines at `lib.rs:11-33`.
+  - **Mandatory:** full adversarial audit (the KindOf totality/no-wrong-kind
+    contract, like the arithmetic certs) BEFORE merge; and the higher-rank *middle*
+    rules (`TyBeta`/`TyGen`/`TyInst`) must NOT enter `CORE_MANIFEST` until the rank
+    stratification is proven against the FULL rule set incl. `SelectAx`/`bool`
+    (Homeier-aligned) — the `rules.rs:812` `manifest_matches_golden` tripwire.
+- **Then:** EG3a (`TermKind::Zero`) → EG3b (T/F defined, connectives→CoreLang) →
+  DEFS-OUT sequent-reshape → close float-op gap → EG5 (irreversible, gated).
+
 <!-- APPEND NEW ENTRIES BELOW -->

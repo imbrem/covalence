@@ -330,20 +330,25 @@ Bridge built (S9a); the flip is maintainer-gated. See
     (the carved backend is `sexpr`-shape-only); this stage reuses `sexpr` as the
     carrier and tags numbers as digit-`atom`s. The number should carry a genuine
     `int` (via the `int` parser's value machinery) not literal bytes.
-  - **Strict grammar + full value set** — objects (`{ "k": v }` + a-list value),
-    JSON strings (quoted, escapes), the `true`/`false`/`null` literals, and
-    strict comma placement (reject `[1,,2]`, trailing commas). Currently lenient:
-    commas are separators.
+  - **Full value set + strict structure** — objects (`{ "k": v }` + a-list
+    value), JSON strings (quoted, escapes), the `true`/`false`/`null` literals,
+    and strict comma placement (reject `[1,,2]`, trailing commas). Currently
+    lenient: commas are separators. (The strict *integer number token*
+    `-?(0|[1-9][0-9]*)` is now built — `is_json_int` / `parse_json_int`, with
+    faithfulness `json_int_accepts`/`json_int_rejects`.)
   - **Float numbers** — swap the integer number token for `float_parse`'s
     `-?int(.frac)?([eE]exp)?` production (the `floatval := int × int` value), so
     JSON numbers are exact decimals.
   - **`string` (list char) PER** — the `bytes` PER transports to a `string` PER
     via the ASCII `char`⇄`byte` agreement (`nat_parse_agree::code_eq_byte_val`),
     a `map`-fusion argument; only the `bytes` reader is built (as in `sexpr_parse`).
-  - **Integer subset ⊂ full JSON** — once the float/strict number reader lands,
-    prove the integer-subset parser's outputs are a genuine subset of the
-    full-JSON parser's (every integer literal is a valid JSON number), the JSON
-    analogue of `float_parse::int_subset`.
+  - **General integer subset ⊂ lenient JSON** — the *token-level* subset is
+    proved (`json_int_accepts`: an accepted strict integer carves exactly the
+    lenient value) plus concrete whole-reader witnesses (`parse_json_int s =
+    parse_json fuel s` on `0`/`-7`/`42`). The **∀-quantified whole-value**
+    subset `parse_json_int s = some(v,r) ⟹ parse_json fuel s = some(v,r)` for
+    all `s` needs the reader `is_atom`↔`is_json_int` head lemma + the array
+    recursion induction (the documented `list`-induction wall).
 
 - **Lisp / ACL2 layer** (`init/lisp.rs`, over the carved carrier). Built: `car`/`cdr`/
   `cons`/`consp`/`atom?`/`len`/`append` with comp laws + `append_assoc`/`len_append` by

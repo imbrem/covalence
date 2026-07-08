@@ -197,4 +197,41 @@ commit(s).
   EG3b removes a CoreLang primitive (maintainer-gated) and EG5 is the irreversible
   door.
 
+## 2026-07-09 — end-to-end prototype chain (types → monads → Haskell surface → HOL data)
+
+Maintainer: "keep going … finish a working prototype end-to-end … we can always roll
+back" + "a general theory of monads instantiating theorems for list + option" + "work
+towards our Haskell-like syntax … parse a subset of Haskell and write init/ in our
+dialect … a trait to handle numeric literals etc. so different implementations lower
+different subsets." Delivered four composing prototype layers (all merged to main):
+
+- **HOL-ω type instantiation prototype** (`base/trusted/src/holomega_proto.rs`, commit
+  `8cd4a6ec`, test-only/untrusted). Rank-stratified `∀`-instantiation driven by the
+  B-K3 oracle: instantiate `∀(α:κ:r).τ` at σ ONLY when the base certifies
+  `kindof(σ)=κ` ∧ `rankof(σ)≤r`. 5 tests incl. the **Girard-blocking** demo (rank-0 `∀`
+  REJECTS a rank-1 polymorphic arg; a rank-1 binder admits it). Substitution is
+  untrusted; trust = the 3 base certs. Trusted-CoreLang `TyInst` stays gated on the
+  consistency proof.
+- **General monad theory → list + option** (`init/src/init/monad.rs`, merged
+  `c1568cb3`, zero-TCB). `monad_map_ret`: `{left-id law} ⊢ map f (ret a) = ret (f a)`
+  (general, one hypothesis) INSTANTIATED + discharged to hyps-free `option_map_ret`
+  and `list_map_ret` (list needed append-nil via `list_induct`). The "prove once,
+  instantiate for free" payoff, genuine. (Single-carrier plain-HOL rendering; a
+  two-type-param version wants HOL-ω type-operator vars — noted.)
+- **`covalence-haskell` surface crate** (`crates/lang/haskell`, merged, zero-dep,
+  kernel-agnostic). AST + hand-written recursive-descent parser (lambda/app/let/binops/
+  literals/top-level defs) + the **`Lower` trait** — per-construct methods DEFAULTING to
+  an "unsupported" error, so a backend lowers only its subset (the maintainer's ask).
+  Demo backends `SExprLower`/`PeanoLower` (differ on numeric-literal lowering)/`NoLitLower`
+  (proves subset-support). 15 tests.
+- **HOL backend** (`crates/lang/haskell/src/hol.rs`, feature `hol`, merged). `HolLower`
+  lowers the parsed Haskell → init's **carved `sexpr`** kernel Terms (untyped ⇒ no type
+  inference) via the same `Lower` driver: `\x->x` ⇒ `(lambda x x)`, `compose f g x =
+  f (g x)` ⇒ nested-lambda sexpr. 7 end-to-end tests. Default build stays kernel-
+  agnostic (init is an optional dep). **Closes the loop: Haskell source → HOL data.**
+- **Follow-ons (recorded in the haskell SKELETONS):** typed HOL-`Term` lowering with
+  inference; lowering to actual `init/` definitions (the real "write init/ in the
+  dialect" step); trusted-CoreLang `TyInst`/`TyGen`/`TyBeta` (gated on the Homeier
+  consistency proof); EG3a→EG5 core leaf-removal.
+
 <!-- APPEND NEW ENTRIES BELOW -->

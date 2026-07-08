@@ -325,15 +325,12 @@ Bridge built (S9a); the flip is maintainer-gated. See
   - **Float numbers** — swap the integer number token for `float_parse`'s
     `-?int(.frac)?([eE]exp)?` production (the `floatval := int × int` value), so
     JSON numbers are exact decimals.
-  - **`string` (list char) PER** — the `bytes` PER transports to a `string` PER
-    via the ASCII `char`⇄`byte` agreement (`nat_parse_agree::code_eq_byte_val`),
-    a `map`-fusion argument; only the `bytes` reader is built (as in `sexpr_parse`).
-  - **General integer subset ⊂ lenient JSON** — the *token-level* subset is
-    proved (`json_int_accepts`: an accepted strict integer carves exactly the
-    lenient value) plus concrete whole-reader witnesses (`parse_json_int s =
-    parse_json fuel s` on `0`/`-7`/`42`). The **∀-quantified whole-value**
-    subset `parse_json_int s = some(v,r) ⟹ parse_json fuel s = some(v,r)` for
-    all `s` needs the reader `is_atom`↔`is_json_int` head lemma + the array
+  - **Recursive strict-reader ⊂ lenient JSON** — the token-level subset
+    (`json_int_accepts`) and the **∀-quantified whole-value** subset for the
+    *non-recursive* strict integer token reader (`parse_json_int_subset`:
+    `∀ s v r. parse_json_int s = some(v,r) ⟹ parse_json (succ fuel) s =
+    some(v,r)`) are proved. A *recursive* strict reader that also parses arrays
+    strictly, and its whole-value subset over array structure, needs the array
     recursion induction (the documented `list`-induction wall).
 
 - **Lisp / ACL2 layer** (`init/lisp.rs`, over the carved carrier). Built: `car`/`cdr`/

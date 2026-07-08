@@ -13,12 +13,15 @@
 //! This is a deliberately **well-scoped slice** toward full JSON. The value
 //! grammar is:
 //!
-//! - **number** (integer subset) — a maximal run of digit/`'-'` bytes, read as
-//!   `atom (bytes.abs run)` (the literal digits; the semantic `int` value and
-//!   the strict `-?(0|[1-9][0-9]*)` production are follow-ups — see
-//!   `SKELETONS.md`). Reuses the decimal digit-byte range of the `int`/`nat`
-//!   parsers ([`crate::init::nat_parse_bytes::is_digit_byte_dec`]) as its
-//!   character class (via the shared conventions, not by editing that module).
+//! - **number** (integer subset) — the *lenient* reader tokenises a maximal run
+//!   of digit/`'-'` bytes (`is_atom`), read as `atom (bytes.abs run)`. A
+//!   **strict** variant now defines the RFC-8259 integer production
+//!   `-?(0|[1-9][0-9]*)` faithfully — see the strict-integer section below
+//!   ([`is_json_int`] / [`parse_json_int`]). Reuses the decimal digit-byte range
+//!   of the `int`/`nat` parsers
+//!   ([`crate::init::nat_parse_bytes::is_digit_byte_dec`]) as its character
+//!   class (via the shared conventions, not by editing that module). The
+//!   semantic `int` value remains a follow-up (see `SKELETONS.md`).
 //! - **array** — `'[' e₁ … eₙ ']'` yielding the `scons`-chain
 //!   `scons e₁ (scons e₂ … snil)` (`snil` for `[]`).
 //!
@@ -47,10 +50,17 @@
 //!   [`same_json_trans`] (transitive), with [`same_json_refl_dom`] pinning its
 //!   domain (reflexive *exactly* on the parseable strings, so genuinely
 //!   partial). All hypothesis- and oracle-free.
+//! - the **strict integer subset** ([`is_json_int`] / [`parse_json_int`]): a
+//!   decidable predicate for `-?(0|[1-9][0-9]*)`, the general faithfulness
+//!   theorems [`json_int_accepts`] / [`json_int_rejects`] (the strict number
+//!   branch fires with the lenient value iff the run is a strict integer), the
+//!   concrete accept/reject decisions on `0`/`-7`/`42` vs `01`/`1.5`/`true`/
+//!   `1e3`/`-`, and the concrete **subset** witness `parse_json_int s =
+//!   parse_json fuel s` on the accepted tokens (strict ⊆ lenient, same value).
 //!
-//! The `bytes` PER also transports to a `string` PER; that, the strict grammar,
-//! the full datatype, and proving the integer subset is a genuine subset of
-//! full JSON are `SKELETONS.md` follow-ups.
+//! The `bytes` PER also transports to a `string` PER; that, the full datatype,
+//! objects/strings/bool/null, float numbers, and the *general* (whole-value,
+//! array-recursive) integer-subset theorem are `SKELETONS.md` follow-ups.
 
 use covalence_core::{IntTag, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
@@ -61,9 +71,10 @@ use covalence_hol_eval::defs::{
 };
 use covalence_hol_eval::derived::DerivedRules;
 
+use crate::init::cond::{cond_false, cond_true};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::inductive::carved::carved;
-use crate::init::nat_parse_bytes::span_digits_bytes;
+use crate::init::nat_parse_bytes::{is_digit_byte_dec, span_digits_bytes};
 
 // ============================================================================
 // Types.
@@ -565,12 +576,142 @@ pub fn parsed_cons_struct(h: &Term, t: &Term) -> Result<(Thm, Thm, Thm)> {
     crate::init::sexpr_parse::parsed_cons_struct(h, t)
 }
 
+// ============================================================================
+// Strict RFC-8259 integer number token — the "integers-only subset, proved a
+// genuine subset" north-star (see module docs / `SKELETONS.md`).
+//
+// The lenient reader above tokenises a *number* as any maximal run of
+// non-separator, non-bracket bytes (`is_atom`): `true`, `1.5`, `1e3`, `abc`
+// all slip through. This section defines the **strict** integer production
+//
+//     json-int  ::=  '-'?  ( '0' | [1-9][0-9]* )
+//
+// as a decidable byte-string predicate [`is_json_int`], a strict number token
+// reader [`parse_json_int`] whose number branch fires *only* on a strict
+// integer literal, and the faithfulness + subset theorems relating the two.
+// ============================================================================
+
+/// `λ_:u8. F` — the constant-`false` byte function (the `none`-branch of the
+/// `is_empty`/`nonempty` option eliminators).
+fn const_false_u8() -> Term {
+    lam("_x", u8_t(), Term::bool_lit(false))
+}
+
+/// `λ_:u8. T` — the constant-`true` byte function.
+fn const_true_u8() -> Term {
+    lam("_x", u8_t(), Term::bool_lit(true))
+}
+
+/// `option.case[u8,bool] d f (head l)` — decide a property of `l`'s first byte
+/// (or fall back to `d` when `l` is empty). [`head_sat`] is this at `d = F`.
+fn opt_head_case(d: Term, f: Term, l: &Term) -> Term {
+    Term::app(
+        Term::app(Term::app(option_case(u8_t(), bool_t()), d), f),
+        head_b(l),
+    )
+}
+
+/// `λl. option.case T (λ_. F) (head l)` applied — "`l` is empty" (`head l =
+/// none`).
+fn is_empty(l: &Term) -> Term {
+    opt_head_case(Term::bool_lit(true), const_false_u8(), l)
+}
+
+/// "`l` is non-empty" (`head l = some _`).
+fn nonempty(l: &Term) -> Term {
+    opt_head_case(Term::bool_lit(false), const_true_u8(), l)
+}
+
+/// `is_json_int : bytes → bool` — the strict integer well-formedness predicate
+/// `-?(0 | [1-9][0-9]*)`. After an optional leading `'-'`, the remaining bytes
+/// must be a **non-empty all-decimal-digit** run (`span is_digit` consumes all
+/// of it) with **no leading zero** (if the first digit is `'0'`, there is no
+/// second digit). Genuine decidable term — built from `span`/`head`/`tail` and
+/// the propositional connectives, no recursion of its own.
+pub fn is_json_int() -> Term {
+    let s = Term::free("s", blist_t());
+    // Strip an optional leading '-' (byte 45).
+    let neg = head_sat(&byte_is(45), &s);
+    let body = cond_app(blist_t(), neg, tail_b(&s), s.clone());
+    // The digit run of the (sign-stripped) body.
+    let sp = Term::app(span_digits_bytes(&is_digit_byte_dec()), body);
+    let ds = fst_bb(sp.clone());
+    let rest = snd_bb(sp);
+    // All consumed ∧ non-empty ∧ no leading zero.
+    let no_leading_zero = bor(bnot(head_sat(&byte_is(48), &ds)), is_empty(&tail_b(&ds)));
+    let ok = band(is_empty(&rest), band(nonempty(&ds), no_leading_zero));
+    lam("s", blist_t(), ok)
+}
+
+/// `some (atom run, rest)` — the value the **lenient** number branch
+/// ([`value_body`]'s `atom_some`) carves for a run/suffix. The strict reader
+/// carves *exactly* this on the tokens it accepts (the subset witness).
+fn lenient_num_value(run: &Term, rest: &Term) -> Term {
+    some_r(pair_r(atom_of(run.clone()), rest.clone()))
+}
+
+/// `json_int_branch run rest ≡ cond (is_json_int run) (some (atom run, rest))
+/// none` — the strict number branch: emit the atom value **iff** the run is a
+/// strict integer literal.
+pub fn json_int_branch(run: &Term, rest: &Term) -> Term {
+    let guard = Term::app(is_json_int(), run.clone());
+    cond_app(res_t(), guard, lenient_num_value(run, rest), none_r())
+}
+
+/// `parse_json_int : bytes → option (sexpr × bytes)` — a strict integer number
+/// **token** reader: skip separators, then accept a strict integer literal
+/// (`is_json_int`) as `atom (bytes.abs run)`, else `none`. Mirrors the lenient
+/// [`value_body`] dispatch (open bracket → not a number → `none`; atom head →
+/// number) but guards the number branch with [`is_json_int`]. Non-recursive:
+/// it reads one number token, not arrays.
+pub fn parse_json_int() -> Term {
+    let s = Term::free("s", blist_t());
+    let s1 = skip_sep(&s);
+    let sp = atom_span(&s1);
+    let run = fst_bb(sp.clone());
+    let rest = snd_bb(sp);
+    let num = json_int_branch(&run, &rest);
+    let inner = cond_app(res_t(), head_sat(&is_atom(), &s1), num, none_r());
+    let body = cond_app(res_t(), head_sat(&is_open(), &s1), none_r(), inner);
+    lam("s", blist_t(), body)
+}
+
+/// `⊢ is_json_int run = T ⟹ json_int_branch run rest = some (atom run, rest)`
+/// — **acceptance = subset with the same value**: when the run is a strict
+/// integer literal the strict number branch carves *exactly* the value the
+/// lenient reader carves ([`lenient_num_value`]). Genuine, general (`run`/
+/// `rest` free), hypothesis-free after discharge. This is the token-level half
+/// of "the integer subset is a genuine subset of the lenient grammar".
+pub fn json_int_accepts(run: &Term, rest: &Term) -> Result<Thm> {
+    let guard = Term::app(is_json_int(), run.clone());
+    let guard_true = guard.equals(Term::bool_lit(true))?;
+    let h = Thm::assume(guard_true.clone())?; // {g=T} ⊢ is_json_int run = T
+    let val = lenient_num_value(run, rest);
+    Thm::refl(json_int_branch(run, rest))?
+        .rhs_conv(|t| t.rw_all(&h))? // branch = cond T val none
+        .trans(cond_true(&res_t(), &val, &none_r())?)? // = val
+        .imp_intro(&guard_true)
+}
+
+/// `⊢ is_json_int run = F ⟹ json_int_branch run rest = none` — **rejection**:
+/// a non-strict-integer run produces no number value. Genuine, general.
+pub fn json_int_rejects(run: &Term, rest: &Term) -> Result<Thm> {
+    let guard = Term::app(is_json_int(), run.clone());
+    let guard_false = guard.equals(Term::bool_lit(false))?;
+    let h = Thm::assume(guard_false.clone())?; // {g=F} ⊢ is_json_int run = F
+    let val = lenient_num_value(run, rest);
+    Thm::refl(json_int_branch(run, rest))?
+        .rhs_conv(|t| t.rw_all(&h))? // branch = cond F val none
+        .trans(cond_false(&res_t(), &val, &none_r())?)? // = none
+        .imp_intro(&guard_false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::init::cond::{cond_false, cond_true};
     use crate::init::ext::TermExt;
-    use crate::init::list::{head_cons, head_nil, tail_cons};
+    use crate::init::list::{head_cons, head_nil, tail_cons, tail_nil};
     use crate::init::logic::prop_eq;
     use crate::init::nat::{succ, zero};
     use crate::init::option::{case_none, case_some};
@@ -1135,5 +1276,290 @@ mod tests {
         let ante = bnot(json_value(&f, &s).equals(none(tau())).unwrap());
         let want = ctx.mk_imp(ante, sj(&f, &s, &s));
         assert_eq!(thm.concl(), &want);
+    }
+
+    // ------------------------------------------------------------------
+    // Strict RFC-8259 integer number token.
+    // ------------------------------------------------------------------
+
+    fn is_digit_b(x: u8) -> bool {
+        (48..=57).contains(&x)
+    }
+
+    fn span_digit_b(bs: &[u8]) -> (&[u8], &[u8]) {
+        let mut i = 0;
+        while i < bs.len() && is_digit_b(bs[i]) {
+            i += 1;
+        }
+        (&bs[..i], &bs[i..])
+    }
+
+    /// Rust reference for `is_json_int`: `-?(0|[1-9][0-9]*)`.
+    fn is_json_int_b(run: &[u8]) -> bool {
+        let neg = run.first() == Some(&45);
+        let body = if neg { &run[1..] } else { run };
+        let (ds, rest) = span_digit_b(body);
+        rest.is_empty() && !ds.is_empty() && (ds[0] != 48 || ds.len() == 1)
+    }
+
+    /// The maximal `is_atom` run of `bs` (the number/atom token the readers
+    /// carve).
+    fn atom_run_b(bs: &[u8]) -> &[u8] {
+        let mut i = 0;
+        while i < bs.len() && is_atom_b(bs[i]) {
+            i += 1;
+        }
+        &bs[..i]
+    }
+
+    /// `⊢ option.case[u8,bool] d f (head <bs>) = <bool>` + the decided value.
+    fn eval_opt_head(d: &Term, f: &Term, bs: &[u8]) -> (Thm, bool) {
+        let s = bytes_term(bs);
+        let oc = opt_head_case(d.clone(), f.clone(), &s);
+        if bs.is_empty() {
+            let hn = head_nil(&u8_t()).unwrap();
+            let cn = case_none(&u8_t(), &bool_t(), d, f).unwrap(); // = d
+            let eq = Thm::refl(oc)
+                .unwrap()
+                .rhs_conv(|t| t.rw_all(&hn))
+                .unwrap()
+                .trans(cn)
+                .unwrap();
+            (eq, d.as_bool().unwrap())
+        } else {
+            let c = Term::u8_lit(bs[0]);
+            let cs = bytes_term(&bs[1..]);
+            let hc = head_cons(&u8_t(), &c, &cs).unwrap();
+            let cse = case_some(&u8_t(), &bool_t(), d, f, &c).unwrap(); // = f c
+            let (dec, b) = decide_bool(&Term::app(f.clone(), c.clone()));
+            let eq = Thm::refl(oc)
+                .unwrap()
+                .rhs_conv(|t| t.rw_all(&hc))
+                .unwrap()
+                .trans(cse)
+                .unwrap()
+                .trans(dec)
+                .unwrap();
+            (eq, b)
+        }
+    }
+
+    /// `⊢ is_json_int <run> = <bool>` by unfolding the predicate against the
+    /// literal, via the `span`/`head`/`tail`/`option.case` clause harness.
+    fn eval_is_json_int(bs: &[u8]) -> (Thm, bool) {
+        let run = bytes_term(bs);
+        let mut e = Thm::beta_conv(Term::app(is_json_int(), run.clone())).unwrap();
+
+        // 1. neg = head_sat (byte_is 45) run
+        let (neg_eq, neg) = eval_opt_head(&Term::bool_lit(false), &byte_is(45), bs);
+        e = e.rhs_conv(|t| t.rw_all(&neg_eq)).unwrap();
+
+        // 2. body = cond neg (tail run) run
+        let x = tail_b(&run);
+        let cc = if neg {
+            cond_true(&blist_t(), &x, &run).unwrap()
+        } else {
+            cond_false(&blist_t(), &x, &run).unwrap()
+        };
+        e = e.rhs_conv(|t| t.rw_all(&cc)).unwrap();
+        let body_slice: Vec<u8> = if neg {
+            let te = eval_tail(bs); // ⊢ tail run = <bs[1..]>
+            e = e.rhs_conv(|t| t.rw_all(&te)).unwrap();
+            bs[1..].to_vec()
+        } else {
+            bs.to_vec()
+        };
+
+        // 3. span is_digit body → ds, rest
+        let asp = eval_span(&is_digit_byte_dec(), &body_slice);
+        let (ds_t, rest_t) = pair_parts(&rhs(&asp));
+        e = e.rhs_conv(|t| t.rw_all(&asp)).unwrap();
+        e = e
+            .rhs_conv(|t| t.rw_all(&fst_pair(&blist_t(), &blist_t(), &ds_t, &rest_t).unwrap()))
+            .unwrap();
+        e = e
+            .rhs_conv(|t| t.rw_all(&snd_pair(&blist_t(), &blist_t(), &ds_t, &rest_t).unwrap()))
+            .unwrap();
+        let (ds_bytes, rest_bytes) = span_digit_b(&body_slice);
+
+        // 4. the three leaf checks: is_empty rest, nonempty ds, no-leading-zero.
+        let (er_eq, _) = eval_opt_head(&Term::bool_lit(true), &const_false_u8(), rest_bytes);
+        e = e.rhs_conv(|t| t.rw_all(&er_eq)).unwrap();
+        let (ne_eq, _) = eval_opt_head(&Term::bool_lit(false), &const_true_u8(), ds_bytes);
+        e = e.rhs_conv(|t| t.rw_all(&ne_eq)).unwrap();
+        let (h48_eq, _) = eval_opt_head(&Term::bool_lit(false), &byte_is(48), ds_bytes);
+        e = e.rhs_conv(|t| t.rw_all(&h48_eq)).unwrap();
+        // is_empty (tail ds)
+        let tde = if ds_bytes.is_empty() {
+            tail_nil(&u8_t()).unwrap()
+        } else {
+            eval_tail(ds_bytes)
+        };
+        e = e.rhs_conv(|t| t.rw_all(&tde)).unwrap();
+        let tail_slice: &[u8] = if ds_bytes.is_empty() {
+            &[]
+        } else {
+            &ds_bytes[1..]
+        };
+        let (et_eq, _) = eval_opt_head(&Term::bool_lit(true), &const_false_u8(), tail_slice);
+        e = e.rhs_conv(|t| t.rw_all(&et_eq)).unwrap();
+
+        // 5. decide the band/bor/bnot combination.
+        let (dec, result) = decide_bool(&rhs(&e));
+        (e.trans(dec).unwrap(), result)
+    }
+
+    /// `⊢ parse_json_int <bs> = <reference result>` — the strict number-token
+    /// reader unfolded against a literal.
+    fn eval_strict(bs: &[u8]) -> Thm {
+        let s = bytes_term(bs);
+        let mut e = Thm::beta_conv(Term::app(parse_json_int(), s)).unwrap();
+        let s1 = skip_sep_b(bs);
+        e = e.rhs_conv(|t| t.rw_all(&eval_skip_sep(bs))).unwrap();
+        // open? → not a number → none
+        let (open_eq, is_open_first) = eval_head_sat(&is_open(), s1);
+        e = e.rhs_conv(|t| t.rw_all(&open_eq)).unwrap();
+        let (_c, x, y) = split_cond(&rhs(&e));
+        if is_open_first {
+            return e.trans(cond_true(&res_t(), &x, &y).unwrap()).unwrap();
+        }
+        let mut e = e.trans(cond_false(&res_t(), &x, &y).unwrap()).unwrap();
+        // atom head?
+        let (atom_eq, is_atom_first) = eval_head_sat(&is_atom(), s1);
+        e = e.rhs_conv(|t| t.rw_all(&atom_eq)).unwrap();
+        let (_c, x, y) = split_cond(&rhs(&e));
+        if !is_atom_first {
+            return e.trans(cond_false(&res_t(), &x, &y).unwrap()).unwrap();
+        }
+        let mut e = e.trans(cond_true(&res_t(), &x, &y).unwrap()).unwrap();
+        // resolve run/rest, then the strict guard.
+        let asp = eval_span(&is_atom(), s1);
+        let (run, rest) = pair_parts(&rhs(&asp));
+        let fpre = asp
+            .clone()
+            .cong_arg(fst(blist_t(), blist_t()))
+            .unwrap()
+            .trans(fst_pair(&blist_t(), &blist_t(), &run, &rest).unwrap())
+            .unwrap();
+        let rrest = asp
+            .cong_arg(snd(blist_t(), blist_t()))
+            .unwrap()
+            .trans(snd_pair(&blist_t(), &blist_t(), &run, &rest).unwrap())
+            .unwrap();
+        e = e.rhs_conv(|t| t.rw_all(&fpre)).unwrap();
+        e = e.rhs_conv(|t| t.rw_all(&rrest)).unwrap();
+        let run_bytes = atom_run_b(s1);
+        let (isint_eq, ok) = eval_is_json_int(run_bytes);
+        e = e.rhs_conv(|t| t.rw_all(&isint_eq)).unwrap();
+        let (_c, x, y) = split_cond(&rhs(&e));
+        if ok {
+            e.trans(cond_true(&res_t(), &x, &y).unwrap()).unwrap()
+        } else {
+            e.trans(cond_false(&res_t(), &x, &y).unwrap()).unwrap()
+        }
+    }
+
+    #[test]
+    fn strict_reader_is_well_typed() {
+        assert_eq!(
+            parse_json_int().type_of().unwrap(),
+            Type::fun(blist_t(), res_t())
+        );
+        let s = Term::free("s", blist_t());
+        assert_eq!(Term::app(is_json_int(), s).type_of().unwrap(), Type::bool());
+    }
+
+    /// `is_json_int` decides the strict grammar `-?(0|[1-9][0-9]*)` on each
+    /// token, matching the Rust reference. Genuine (hyps-free) equalities.
+    #[test]
+    fn is_json_int_decides_grammar() {
+        for tok in [
+            b"0".as_slice(),
+            b"-7",
+            b"42",
+            b"01",
+            b"1.5",
+            b"true",
+            b"1e3",
+            b"-",
+            b"00",
+            b"-0",
+            b"007",
+        ] {
+            let (thm, got) = eval_is_json_int(tok);
+            assert!(thm.hyps().is_empty(), "is_json_int {tok:?} must be genuine");
+            assert_eq!(got, is_json_int_b(tok), "is_json_int {tok:?}");
+            let want = Term::bool_lit(is_json_int_b(tok));
+            assert_eq!(rhs(&thm), want, "is_json_int {tok:?} value");
+        }
+    }
+
+    /// The strict reader accepts exactly the strict integers among the tokens:
+    /// `0`, `-7`, `42` carve `some (atom …)`; `01`, `1.5`, `true`, `1e3`, `-`
+    /// reject with `none`.
+    #[test]
+    fn strict_reader_accepts_iff_strict_integer() {
+        // accepted
+        for tok in [b"0".as_slice(), b"-7", b"42"] {
+            let thm = eval_strict(tok);
+            assert!(thm.hyps().is_empty(), "strict {tok:?} must be genuine");
+            let want = some_r(pair_r(atom_of(bytes_term(tok)), nil_u()));
+            assert_eq!(rhs(&thm), want, "strict accepts {tok:?}");
+        }
+        // rejected
+        for tok in [b"01".as_slice(), b"1.5", b"true", b"1e3", b"-"] {
+            let thm = eval_strict(tok);
+            assert!(thm.hyps().is_empty(), "strict {tok:?} must be genuine");
+            assert_eq!(rhs(&thm), none_r(), "strict rejects {tok:?}");
+        }
+        // an open bracket is not a number token → none.
+        assert_eq!(rhs(&eval_strict(b"[1]")), none_r());
+    }
+
+    /// `json_int_accepts` / `json_int_rejects` — the general (free-variable)
+    /// faithfulness theorems: the strict branch fires with the lenient value
+    /// iff the run is a strict integer.
+    #[test]
+    fn branch_faithfulness_is_genuine() {
+        let run = Term::free("run", blist_t());
+        let rest = Term::free("rest", blist_t());
+        let ctx = crate::HolLightCtx::new();
+
+        let acc = json_int_accepts(&run, &rest).unwrap();
+        assert!(acc.hyps().is_empty(), "acceptance must be oracle-free");
+        let guard = Term::app(is_json_int(), run.clone());
+        let want_acc = ctx.mk_imp(
+            guard.clone().equals(Term::bool_lit(true)).unwrap(),
+            json_int_branch(&run, &rest)
+                .equals(lenient_num_value(&run, &rest))
+                .unwrap(),
+        );
+        assert_eq!(acc.concl(), &want_acc);
+
+        let rej = json_int_rejects(&run, &rest).unwrap();
+        assert!(rej.hyps().is_empty(), "rejection must be oracle-free");
+        let want_rej = ctx.mk_imp(
+            guard.equals(Term::bool_lit(false)).unwrap(),
+            json_int_branch(&run, &rest).equals(none_r()).unwrap(),
+        );
+        assert_eq!(rej.concl(), &want_rej);
+    }
+
+    /// The subset relation, concretely against the *real* lenient reader:
+    /// every token the strict reader accepts, the lenient reader carves
+    /// identically (`parse_json_int s = parse_json fuel s`).
+    #[test]
+    fn strict_is_subset_of_lenient() {
+        for tok in [b"0".as_slice(), b"-7", b"42"] {
+            let strict = eval_strict(tok);
+            let lenient = eval(30, false, tok);
+            assert!(strict.hyps().is_empty() && lenient.hyps().is_empty());
+            assert_eq!(rhs(&strict), rhs(&lenient), "same value for {tok:?}");
+            // and the shared value is a `some (atom …)`.
+            assert_eq!(
+                rhs(&strict),
+                some_r(pair_r(atom_of(bytes_term(tok)), nil_u()))
+            );
+        }
     }
 }

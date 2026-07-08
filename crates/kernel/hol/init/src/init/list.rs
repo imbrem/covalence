@@ -654,6 +654,28 @@ pub fn head_nil(alpha: &Type) -> Result<Thm> {
         .trans(head_c)
 }
 
+/// `⊢ list.tail nil = nil` — the tail of the empty list is empty.
+/// Genuine: hypothesis- and oracle-free.
+pub fn tail_nil(alpha: &Type) -> Result<Thm> {
+    let opt = option(alpha.clone());
+    let cst = const_none(alpha);
+
+    // tail nil = abs (streamTail (rep nil))
+    let t = Term::app(tail(alpha.clone()), nil(alpha.clone()))
+        .delta_all(tail_spec().symbol())?
+        .rhs_conv(|t| t.reduce())?;
+    let nil_u = nil(alpha.clone()).delta()?; // nil = abs cst
+    let ra = rep_abs_pred(alpha, &cst, pred_const_none(alpha)?)?; // rep (abs cst) = cst
+    let tc = crate::init::stream::tail_const(&opt, &none(alpha.clone()))?; // streamTail cst = cst
+
+    // abs (streamTail (rep nil)) = abs (streamTail (rep (abs cst)))
+    //   = abs (streamTail cst) = abs cst = nil.
+    t.rhs_conv(|x| x.rw_all(&nil_u))?
+        .rhs_conv(|x| x.rw_all(&ra))?
+        .rhs_conv(|x| x.rw_all(&tc))?
+        .trans(nil_u.sym()?)
+}
+
 // ============================================================================
 // `cons`-side element access.
 // ============================================================================
@@ -1789,6 +1811,15 @@ mod tests {
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
         assert_eq!(lhs, &Term::app(head(alpha()), nil(alpha())));
         assert_eq!(rhs, &none(alpha()));
+    }
+
+    #[test]
+    fn tail_nil_is_nil() {
+        let thm = tail_nil(&alpha()).unwrap();
+        assert!(thm.hyps().is_empty(), "tail_nil is proved, not postulated");
+        let (lhs, rhs) = thm.concl().as_eq().unwrap();
+        assert_eq!(lhs, &Term::app(tail(alpha()), nil(alpha())));
+        assert_eq!(rhs, &nil(alpha()));
     }
 
     #[test]

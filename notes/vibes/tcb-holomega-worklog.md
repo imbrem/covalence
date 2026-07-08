@@ -165,4 +165,36 @@ commit(s).
 - **Then:** EG3a (`TermKind::Zero`) → EG3b (T/F defined, connectives→CoreLang) →
   DEFS-OUT sequent-reshape → close float-op gap → EG5 (irreversible, gated).
 
+## 2026-07-08 — B-K3 landed + audited SOUND: kind/rank synthesis CanonRules
+
+- **B-K3 done** (commits `1950f091` impl, `3621e689` overflow hardening). New
+  `crates/kernel/base/trusted/src/kindcheck.rs`: flat de-Bruijn demo rep `TyC`/
+  `KindC` + three `CanonRule`s — `KindOf` (standard simply-kinded synthesis; None on
+  ill-kinded, never a wrong kind), `RankOf` (gated on well-kindedness;
+  `rank(∀α:κ:r.τ)=max(r+1,rank τ)`, `saturating_add` so a `u32::MAX` rank never wraps
+  down — the conservative direction), `RankLe` (decides `≤`). Tests
+  `kindof_synthesises_and_refuses` (all ill-kinded shapes refuse via `Err(NoMatch)`)
+  + `rankof_and_rankle`. TCB delta = 3 new `eval` functions; **no new mint site**
+  (canon unchanged, 18 mint sites, base manifest untouched).
+- **Adversarial audit verdict: SOUND to merge** (no HOLE, no must-fix). Verified:
+  de-Bruijn `lookup` correct + push/pop balanced on all `?`-paths (no capture/
+  off-by-one → no wrong `Some(kind)`); all `eval`s deterministic+pure (the property
+  canon needs — a nondeterministic eval would be unsound like `execute` vs canon);
+  gating on own `TypeId`; RankOf's `kind_of` gate ⇒ `rank_of` never hits its own None
+  path; saturating over-approx only makes a future `rank≤r` check stricter. Scope
+  honesty confirmed: computes/certifies but does NOT enforce stratification.
+- **Robustness follow-up (non-blocking, recorded):** `kind_of`/`rank_of` are
+  unbounded structural recursion — an adversarially deep `TyC` could stack-overflow
+  `canon(KindOf,…)` (DoS, NOT a false theorem). Add a depth guard (returns None past
+  a limit = conservative refusal, sound) before this eval sees untrusted network
+  input. Deliberately NOT added now (avoids a premature magic constant + a
+  completeness caveat on legit deep types while it's a demo). Recorded in the base
+  SKELETONS.
+- **Milestone:** B-K1 + B-K2 + B-K3 complete the near-term **HOL-ω base-constructor
+  front** (roadmap Front B, stages 1–3): reflected Kind sort, higher-rank binder
+  syntax, and the base kind/rank oracle. Next stages (EG3a `TermKind::Zero` → EG3b
+  T/F-as-defs → DEFS-OUT → EG5) move into the **core** crate / leaf-removal, where
+  EG3b removes a CoreLang primitive (maintainer-gated) and EG5 is the irreversible
+  door.
+
 <!-- APPEND NEW ENTRIES BELOW -->

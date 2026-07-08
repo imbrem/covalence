@@ -60,6 +60,26 @@ over zero-copy `Ref<Arc<_>>`), ungated-trusted `Thm::transpose`, and generic
 - **HOL-ω middle language** — deferred entirely (design Appendix A); needs a real
   binder/kind layer + rank stratification, none of which the ground base provides.
 
+## HOL-ω base constructors (`kind.rs`/`tyrep.rs`/`kindcheck.rs`) — landed, follow-ups
+
+Stages B-K1/B-K2/B-K3 of [`notes/vibes/tcb-holomega-roadmap.md`](../../../notes/vibes/tcb-holomega-roadmap.md)
+landed: reflected `KStar`/`KArrow` (kind.rs), higher-rank de-Bruijn binder syntax
+`TyBound`/`TyAll`/`TyAbs` (tyrep.rs), and the `KindOf`/`RankOf`/`RankLe`
+`CanonRule` oracle over the demo `TyC`/`KindC` (kindcheck.rs, audited SOUND). Open:
+
+- **`kindcheck` recursion has no depth guard** — `kind_of`/`rank_of` are unbounded
+  structural recursion, so `canon(KindOf, …)` on an adversarially deep `TyC` can
+  stack-overflow (a DoS, *not* a false theorem — audit-confirmed). Add a depth
+  budget (returns `None` past a limit = conservative refusal, sound) before this
+  oracle is exposed to untrusted network input.
+- **`TyC`/`KindC` are the DEMO rep** — the real oracle is over `core::Type` (the
+  `C = core::Type` wiring, a later core-side step). The `λ` rank rule
+  (`rank(λα:κ:r.τ)=max(r,rank τ)`) is the demo discipline; the authoritative
+  Homeier-aligned rank formula + the consistency proof (vs `SelectAx`/`bool`) gate
+  the *middle* `TyInst`/`TyGen`/`TyBeta` rules before they enter `CORE_MANIFEST`.
+- **Middle HOL-ω rules not built** — `TyInst` (rank side-condition consuming
+  base-minted `⊢ (rankof σ ≤ r)=T`), `TyGen`, `TyBeta` are the next, gated step.
+
 ## Minor — deferred seams
 
 - **`Rewrite` conclusion is shape-erased** — `apply_rewrite` mints

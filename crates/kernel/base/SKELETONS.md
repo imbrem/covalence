@@ -82,6 +82,11 @@ landed: reflected `KStar`/`KArrow` (kind.rs), higher-rank de-Bruijn binder synta
 
 ## Minor — deferred seams
 
+- **Facade/algebra not yet consumed by core/eval** — `src/api.rs` (curated
+  supported surface) and `src/algebra.rs` (`CertificateAlgebra` + `EqnKernel`)
+  landed additively; migrating `covalence-core`/`covalence-hol-eval` imports onto
+  `covalence_pure::api` and the mint glue onto the trait is deferred until
+  in-flight core work merges. Plan: `notes/vibes/base-abstraction.md`.
 - **`Rewrite` conclusion is shape-erased** — `apply_rewrite` mints
   `Thm<L, Eqn<E, Box<dyn Expr<Ty=E::Ty>>>>`; the rhs is only sort-checked, not
   shape-checked (larger trust surface than `Rule`'s typed `Concl`). Sound (gated on

@@ -12,4 +12,5 @@
 
 pub use covalence_pure_trusted::*;
 
+pub mod algebra;
 pub mod api;

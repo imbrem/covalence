@@ -11,3 +11,5 @@
 //! [`Manifest`] trust enumeration, and the base language `()`.
 
 pub use covalence_pure_trusted::*;
+
+pub mod api;

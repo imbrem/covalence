@@ -62,6 +62,7 @@ consumer). The layers below mirror the dependency stack (see
 - **covalence-opentheory** — OpenTheory article import (folds into the new thin covalence-hol).
 - **covalence-lean** — Lean export parsing (type-theory seed). Intentionally has no in-workspace dependents yet: the seed for future Lean (and Dedukti) proof imports. Keep, don't prune.
 - **covalence-forsp** — Forsp Lisp (drives the repl).
+- **covalence-haskell** (`crates/lang/haskell`) — small Haskell-dialect surface built as the pipeline *Haskell ⇒ SExpr IR ⇒ backend*: hand-rolled parser, crate-local `sexpr` interchange IR (canonical text printer/parser; nat atoms = covalence-types `Nat`, arbitrary precision), ONE canonical desugaring (`lower`), pluggable `Realize` backend seam (`realize`; demo backends in `backends`), and a `hol`-feature backend realizing the IR as carved `sexpr` kernel `Term`s (atom payloads via `covalence_hol_eval::mk_blob` — keep the purge ratchet at 0). The "write `init/` in the dialect" on-ramp; flagship demo `tests/init_dialect.rs`.
 
 ## App / systems
 

@@ -2,24 +2,34 @@
 
 ## Severe
 
-- **Typed HOL-Term lowering not done.** The `hol` backend (`src/hol.rs`) lands
-  real kernel data but only via the *untyped* carved `sexpr` type (no type
-  inference). A well-typed HOL-term lowering (Church-style, with inference /
-  elaboration) is the follow-on.
-- **No lowering to `init/` definitions.** The end goal — lowering the dialect
-  into actual `covalence-init` definitions/theorems so `init/` can be written
-  in the Haskell dialect — is not started; the carved `sexpr` output is inert
-  data, not a `Def`/`Thm`.
+- **Typed HOL-Term realization not done.** The `hol` backend (`src/hol.rs`)
+  lands real kernel data but only via the *untyped* carved `sexpr` type (no
+  type inference). A well-typed HOL-term realization (Church-style, with
+  inference / elaboration) is the follow-on.
+- **No lowering to `init/` definitions.** The flagship demo
+  (`tests/init_dialect.rs`) lowers an init-flavored module to exact `(define
+  …)` interchange text and to carved `sexpr` kernel `Term`s, but that output
+  is *inert data* — realizing the dialect into actual `covalence-init`
+  definitions/theorems (typed `Term`s, `Def`/`Thm`) so `init/` can really be
+  written in it is not started.
 
 ## Minor
 
 - **No reader round-trip test.** The `hol` backend builds atoms as
-  `atom (blob …)`, whereas `sexpr_parse`'s reader yields `atom (bytes.abs …)`
-  over a symbolic byte list; the two are equal only after evaluation, so a
-  pretty-print → `sexpr_parse` → equal-Term round-trip needs the eval harness
+  `atom (mk_blob …)`, whereas `sexpr_parse`'s reader yields `atom (bytes.abs
+  …)` over a symbolic byte list; the two are equal only after evaluation, so
+  a to-text → `sexpr_parse` → equal-Term round-trip needs the eval harness
   and is skipped.
-- **`str_lit` collapses strings into atoms** (raw UTF-8 bytes, unquoted); a
-  string with whitespace/parens would not re-read as one atom.
+- **HOL backend collapses string atoms into raw-byte atoms** (unquoted,
+  unescaped UTF-8); a string with whitespace/parens would not re-read as one
+  atom through `sexpr_parse`.
+- **No quoted-symbol form in the interchange grammar** (`src/sexpr.rs`).
+  Non-bare symbols (whitespace/parens/`"`/`;`, or all-digit spellings) cannot
+  be printed round-trippably; `covalence-sexp` has `|…|` quoting if this is
+  ever needed (a dialect bridge to `covalence-sexp` would be the fix).
+- **`(define name body)` is a text convention, not a checked construct** —
+  `parse_sexprs` accepts any forms; nothing validates module shape on the
+  way back in.
 
 ## Minor — unsupported grammar
 

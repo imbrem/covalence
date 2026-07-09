@@ -227,6 +227,10 @@
       "to": "covalence-init"
     },
     {
+      "from": "covalence-haskell",
+      "to": "covalence-types"
+    },
+    {
       "from": "covalence-hol",
       "to": "covalence-core"
     },

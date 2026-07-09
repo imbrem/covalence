@@ -14,6 +14,9 @@ edition = "2024"
 # Deferred work: crates/lang/haskell/SKELETONS.md.
 
 [dependencies]
+# The covalence arbitrary-precision `Nat` (the type of Haskell nat literals
+# and S-expression nat atoms). Kernel-independent: wraps num-bigint only.
+covalence-types = { path = "../../lib/types" }
 # Optional HOL backend (`hol` feature): lowers the parsed Haskell subset into
 # the carved `sexpr` kernel datatype from `covalence-init`. The DEFAULT build
 # stays kernel-agnostic and zero-dep — these deps are pulled in only under

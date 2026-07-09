@@ -42,3 +42,4 @@ pub mod backends;
 pub mod hol;
 pub mod lower;
 pub mod parse;
+pub mod sexpr;

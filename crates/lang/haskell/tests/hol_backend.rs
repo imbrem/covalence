@@ -17,7 +17,7 @@ use covalence_init::init::inductive::carved::carved;
 /// `atom <bytes>` — the carved `atom` constructor on a byte literal.
 fn atom(bytes: &[u8]) -> Term {
     let c = carved().expect("carved sexpr theory builds");
-    Term::app(c.atom.clone(), Term::blob(bytes.to_vec()))
+    Term::app(c.atom.clone(), covalence_init::lit::mk_blob(bytes.to_vec()))
 }
 
 fn snil() -> Term {
@@ -108,7 +108,10 @@ fn output_uses_carved_constructors() {
     let c = carved().expect("carved sexpr theory builds");
     // `x` alone lowers to the carved `atom` applied to a blob.
     let x = lower_hs("x");
-    assert_eq!(x, Term::app(c.atom.clone(), Term::blob(b"x".to_vec())));
+    assert_eq!(
+        x,
+        Term::app(c.atom.clone(), covalence_init::lit::mk_blob(b"x".to_vec()))
+    );
     // The empty-ish structure bottoms out in the carved `snil`.
     let pair = lower_hs("f x"); // (f x) = scons f (scons x snil)
     assert_eq!(

@@ -103,6 +103,7 @@ pub fn kind_name(k: &TermKind) -> &'static str {
         TermKind::Bool(_) => "bool",
         TermKind::Eq(_) => "eq",
         TermKind::Select(_) => "select",
+        TermKind::Zero => "zero",
         TermKind::Succ => "succ",
         TermKind::Spec(..) => "spec",
         TermKind::SpecAbs(..) => "specabs",

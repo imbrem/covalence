@@ -44,6 +44,12 @@ pub use covalence_hol::{HolLightCtx, HolLightKernel, HolLightTerms, HolLightType
 pub use covalence_hol::{Term, Type, TypeDef, TypeKind};
 pub use covalence_hol::{hol_light_ctx, traits, types};
 pub use covalence_hol_eval::EvalThm as Thm;
+// The literal build/recognize facade (`lit::mk_nat` / `mk_blob` / …): the
+// sanctioned chokepoint for concrete literal terms, re-exported so surface
+// crates that depend only on `covalence-init` (e.g. `covalence-haskell`'s HOL
+// backend) never call the kernel literal constructors directly (the purge
+// ratchet pins those call sites).
+pub use covalence_hol_eval::lit;
 
 /// Type-builder handler shapes used by the per-theory `HANDLERS` signature
 /// tables (`init::prop`, `init::sexpr`, `peano::fol`, `peano::sem`, …).

@@ -83,6 +83,7 @@ const T_SPEC_REP: u8 = 0x13;
 const T_SMALL_INT: u8 = 0x14;
 const T_SUCC: u8 = 0x15;
 const T_FRESH_CONST: u8 = 0x16;
+const T_ZERO: u8 = 0x17;
 
 // ============================================================================
 // Stateless API
@@ -296,7 +297,8 @@ impl Hasher {
                 ctx.tag(buf)
             }
             TermKind::Bool(b) => ctx.tag([T_BOOL, u8::from(*b)]),
-            // The primitive successor constant — a bare tag.
+            // The primitive zero / successor constants — bare tags.
+            TermKind::Zero => ctx.tag([T_ZERO]),
             TermKind::Succ => ctx.tag([T_SUCC]),
             // `=` and `ε` carry their element type α.
             TermKind::Eq(alpha) => {
@@ -382,4 +384,22 @@ fn named_with_ty(ctx: &Blake3Ctx, tag: u8, name: &[u8], ty: O256) -> O256 {
     buf.extend_from_slice(name);
     buf.extend_from_slice(ty.as_bytes());
     ctx.tag(buf)
+}
+
+#[cfg(test)]
+mod zero_leaf_tests {
+    use super::*;
+    use covalence_core::Term;
+
+    /// EG3a: the primitive `zero` leaf hashes stably and DISTINCT from
+    /// both the `Nat(0)` literal and `succ` (injective tag catalogue).
+    #[test]
+    fn zero_hash_distinct() {
+        let z = hash_term(&Term::zero());
+        assert_eq!(z, hash_term(&Term::zero()));
+        // The literal built via the lit facade (the sanctioned chokepoint).
+        let lit = covalence_hol_eval::lit::mk_nat(covalence_types::Nat::zero());
+        assert_ne!(z, hash_term(&lit));
+        assert_ne!(z, hash_term(&Term::succ()));
+    }
 }

@@ -21,6 +21,15 @@ pub enum Canonical {
     // let-style definition, unfolded by `Thm::unfold_term_spec` and
     // (on `bool` literals) reduced by the certificate path — exactly
     // like the arithmetic ops. `T`/`F` stay `TermKind::Bool` literals.
+    /// `T := (λp:bool. p) = (λp:bool. p)` — truth as a **defined
+    /// constant** (HOL Light `T_DEF`). Coexists with the transitional
+    /// `TermKind::Bool(true)` literal until the literal-leaf endgame
+    /// (EG5); the two are bridged by a *derived* eval-tier theorem
+    /// (`covalence-hol-eval::derived`), never an admitted rule.
+    True,
+    /// `F := ∀p:bool. p` — falsity as a **defined constant** (HOL Light
+    /// `F_DEF`). Same coexistence story as [`Canonical::True`].
+    False,
     /// `(/\) := λp q. (λf. f p q) = (λf. f T T)`.
     And,
     /// `(\/) := λp q. !r. (p ==> r) ==> (q ==> r) ==> r`.
@@ -487,6 +496,8 @@ impl Canonical {
     /// serialisation.
     pub fn label(&self) -> &'static str {
         match self {
+            Canonical::True => "bool.true",
+            Canonical::False => "bool.false",
             Canonical::And => "bool.and",
             Canonical::Or => "bool.or",
             Canonical::Not => "bool.not",

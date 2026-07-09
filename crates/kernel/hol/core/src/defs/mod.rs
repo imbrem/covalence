@@ -84,8 +84,8 @@ pub use list::{
     nil, nil_spec,
 };
 pub use logic::{
-    and, and_spec, exists, exists_spec, forall, forall_spec, iff, iff_spec, imp, imp_spec, not,
-    not_spec, or, or_spec,
+    and, and_spec, exists, exists_spec, fal, fal_spec, forall, forall_spec, iff, iff_spec, imp,
+    imp_spec, not, not_spec, or, or_spec, tru, tru_spec,
 };
 pub use nat::{
     iter, iter_spec, nat_add, nat_add_spec, nat_le, nat_le_spec, nat_lt, nat_lt_spec, nat_pred,

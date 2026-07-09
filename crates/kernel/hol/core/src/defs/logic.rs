@@ -69,6 +69,24 @@ fn imp_app(p: Term, q: Term) -> Term {
 }
 
 // ============================================================================
+// tru — `(λp:bool. p) = (λp:bool. p)`  (HOL Light `T_DEF`)
+// ============================================================================
+
+fn tru_body() -> Term {
+    // λp:bool. p
+    let p = Term::free("p", b());
+    let id = hol::pub_abs("p", b(), p);
+    hol::hol_eq(id.clone(), id)
+}
+
+let_term! {
+    /// `T : bool` ≡ `(λp:bool. p) = (λp:bool. p)` — truth as a defined
+    /// constant. `⊢ T` is derivable at the pure `CoreLang` tier
+    /// (δ-unfold + `refl` + `eq_mp`), with no certificate.
+    tru_spec, tru, Canonical::True, tru_body()
+}
+
+// ============================================================================
 // and — `λp q. (λf. f p q) = (λf. f T T)`
 // ============================================================================
 
@@ -163,6 +181,22 @@ poly_let_term! {
 }
 
 // ============================================================================
+// fal — `∀p:bool. p`  (HOL Light `F_DEF`)
+// ============================================================================
+
+fn fal_body() -> Term {
+    let p = Term::free("p", b());
+    hol::hol_forall("p", b(), p)
+}
+
+let_term! {
+    /// `F : bool` ≡ `∀p:bool. p` — falsity as a defined constant.
+    /// Ex falso is a *derivation* (`unfold` + `∀`-elim at the target),
+    /// not a kernel rule.
+    fal_spec, fal, Canonical::False, fal_body()
+}
+
+// ============================================================================
 // or — `λp q. !r. (p ==> r) ==> (q ==> r) ==> r`
 // ============================================================================
 
@@ -220,6 +254,8 @@ mod tests {
 
     #[test]
     fn connectives_have_expected_types() {
+        assert_eq!(tru().type_of().unwrap(), b());
+        assert_eq!(fal().type_of().unwrap(), b());
         assert_eq!(and().type_of().unwrap(), bin());
         assert_eq!(or().type_of().unwrap(), bin());
         assert_eq!(imp().type_of().unwrap(), bin());
@@ -239,7 +275,7 @@ mod tests {
     /// rules.
     #[test]
     fn connectives_unfold_to_their_definitions() {
-        for op in [and(), or(), imp(), iff(), not()] {
+        for op in [tru(), fal(), and(), or(), imp(), iff(), not()] {
             let thm = Thm::unfold_term_spec(op.clone()).unwrap();
             // `⊢ op = <body>`: empty hyps, conclusion is an equation
             // whose LHS is the connective itself.
@@ -253,6 +289,24 @@ mod tests {
             assert!(matches!(eq_head.kind(), TermKind::Eq(_)));
             assert_eq!(lhs, &op);
         }
+    }
+
+    /// `⊢ T` for the **defined** `T`, at the pure `CoreLang` tier — the
+    /// EG3b keystone: the δ-unfold gives `⊢ T = ((λp.p) = (λp.p))`,
+    /// `refl` gives the right-hand side, and `eq_mp` (backwards through
+    /// `sym`) concludes. No certificate, no computation TCB, no axiom.
+    #[test]
+    fn defined_truth_derives_at_core_lang() {
+        let def = Thm::unfold_term_spec(tru()).unwrap(); // ⊢ T = ((λp.p) = (λp.p))
+        let rhs = def.concl().as_eq().unwrap().1.clone();
+        // `rhs` is itself the equation `(λp.p) = (λp.p)`; `refl` on its
+        // left side rebuilds it as a THEOREM.
+        let id_lambda = rhs.as_eq().unwrap().0.clone();
+        let refl = Thm::refl(id_lambda).unwrap(); // ⊢ (λp.p) = (λp.p)
+        assert_eq!(refl.concl(), &rhs);
+        let truth = def.sym().unwrap().eq_mp(refl).unwrap(); // ⊢ T
+        assert!(truth.hyps().is_empty());
+        assert_eq!(truth.concl(), &tru());
     }
 
     #[test]

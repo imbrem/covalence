@@ -1,0 +1,9 @@
+[package]
+name = "covalence-tcb-db"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-json = { path = "../../lib/json" }
+covalence-sqlite = { path = "../../lib/sqlite" }
+thiserror = "2"

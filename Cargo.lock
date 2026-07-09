@@ -1482,6 +1482,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-tcb-db"
+version = "0.0.0"
+dependencies = [
+ "covalence-json",
+ "covalence-sqlite",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-types"
 version = "0.0.0"
 dependencies = [

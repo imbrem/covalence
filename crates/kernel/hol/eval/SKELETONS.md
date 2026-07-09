@@ -69,6 +69,19 @@ rule needed):
 - **Conversions** (`promote`/`demote`/`truncSat`/`convert`): mixed operand/result
   widths/tags — one shape per family (cf. the mixed-sort `BytesLenEqE`).
 
+## EG3a `zero` bridge is transitional; freeness rules still literal-stated
+
+`rules::ZeroLitCert` (`⊢ zero = ⌜0⌝`) bridges the EG3a primitive
+`TermKind::Zero` to the coexisting `Nat(0)` literal; it dies with the literal
+at the maintainer-gated EG5 flip (compile-enforced — its body builds the
+literal). Until that flip, core's `ZeroNeSucc`/`NatInduct` keep their
+literal-stated conclusions (`⊢ ¬(⌜0⌝ = succ n)`, base `p[⌜0⌝/x]`) — switching
+them breaks every literal-based induction in `covalence-init`. `zero`-form
+facts derive through the bridge (`zero::zero_ne_succ_zero`); still open: a
+derived `zero`-base `nat_induct` transport (λ-abstract the motive, `mk_comb`
+the bridge, `beta_conv` both sides, `eq_mp` the base premise) if a consumer
+needs induction stated at `zero` before EG5.
+
 ## Minor
 
 - **`prove_true` is single-step only.** It reduces one redex and bridges `= T`;

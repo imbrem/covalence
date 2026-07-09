@@ -47,6 +47,7 @@ pub mod rules;
 mod tohol;
 mod tohol_ops;
 mod typed_float;
+mod zero;
 
 pub use certs::{PrimFamily, prim_family};
 // The HOL term-builder helpers (`hol_eq` / `hol_imp` / `hol_forall` / …)
@@ -67,6 +68,8 @@ pub use tohol::{
     int_add_thm_symbolic, int_arith_thm, int_mul_thm_symbolic, int_neg_thm_symbolic, nat_add_thm,
     nat_add_thm_symbolic,
 };
+pub use zero::{zero_eq_lit, zero_ne_succ_zero};
+
 pub use tohol_ops::{
     BytesCatEqE, BytesCatLhsE, BytesLenEqE, BytesLenLhsE, F32BinEqE, F32BinLhsE, F64BinEqE,
     F64BinLhsE, HolApp, HolAppE, IntBinEqE, IntBinLhsE, IntUnEqE, IntUnLhsE, NatAddEqE, NatAddLhsE,

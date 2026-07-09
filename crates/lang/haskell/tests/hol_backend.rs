@@ -1,16 +1,19 @@
 //! End-to-end tests for the HOL backend (`hol` feature): parse a Haskell
-//! snippet, lower it through the SAME [`lower`]/[`lower_decl`] driver the demo
-//! string backends use, and assert the produced carved `sexpr` kernel `Term`
-//! equals the hand-built carved term.
+//! snippet, run it through the SAME canonical lowering + [`realize`] driver
+//! the demo backends use, and assert the produced carved `sexpr` kernel
+//! `Term` equals the hand-built carved term.
 //!
-//! These prove the full loop *Haskell source → carved `sexpr` kernel data*, and
-//! that the shared parser + `Lower` seam supports a genuine kernel-data backend
-//! alongside the string ones — the same input, a different lowering.
+//! These prove the full loop *Haskell source → SExpr IR → carved `sexpr`
+//! kernel data*, and that the shared IR + `Realize` seam supports a genuine
+//! kernel-data backend alongside the string ones — the same input, a
+//! different realization.
 #![cfg(feature = "hol")]
 
-use covalence_haskell::hol::HolLower;
+use covalence_haskell::hol::HolBackend;
 use covalence_haskell::lower::{lower, lower_decl};
 use covalence_haskell::parse::{parse_expr, parse_module};
+use covalence_haskell::realize::realize;
+use covalence_haskell::sexpr::parse_sexpr;
 use covalence_hol_eval::mk_blob;
 use covalence_init::Term;
 use covalence_init::init::inductive::carved::carved;
@@ -42,7 +45,7 @@ fn list(items: Vec<Term>) -> Term {
 
 fn lower_hs(src: &str) -> Term {
     let e = parse_expr(src).expect("parses");
-    lower(&e, &mut HolLower).expect("lowers")
+    lower(&e, &mut HolBackend).expect("realizes")
 }
 
 #[test]
@@ -72,7 +75,7 @@ fn binop_plus() {
 
 #[test]
 fn nat_literal_is_ascii_digits() {
-    // A multi-digit literal lowers to the ASCII byte-run atom `123`.
+    // A multi-digit literal realizes to the ASCII byte-run atom `123`.
     let got = lower_hs("123");
     assert_eq!(got, atom(b"123"));
 }
@@ -92,7 +95,7 @@ fn top_level_decl_compose() {
     //   ⇒ (lambda f (lambda g (lambda x (f (g x)))))
     let module = parse_module("compose f g x = f (g x)").expect("parses");
     assert_eq!(module.len(), 1);
-    let (name, term) = lower_decl(&module[0], &mut HolLower).expect("lowers");
+    let (name, term) = lower_decl(&module[0], &mut HolBackend).expect("realizes");
     assert_eq!(name, "compose");
 
     let body = list(vec![atom(b"f"), list(vec![atom(b"g"), atom(b"x")])]);
@@ -102,13 +105,13 @@ fn top_level_decl_compose() {
     assert_eq!(term, want);
 }
 
-/// The lowered term really is a carved `sexpr`: its head constructor is the
+/// The realized term really is a carved `sexpr`: its head constructor is the
 /// carved `scons`, and `atom`/`snil` are the carved constructors — i.e. we
 /// landed kernel data, not a lookalike.
 #[test]
 fn output_uses_carved_constructors() {
     let c = carved().expect("carved sexpr theory builds");
-    // `x` alone lowers to the carved `atom` applied to a bytes literal.
+    // `x` alone realizes to the carved `atom` applied to a bytes literal.
     let x = lower_hs("x");
     assert_eq!(x, Term::app(c.atom.clone(), mk_blob(b"x".to_vec())));
     // The empty-ish structure bottoms out in the carved `snil`.
@@ -120,4 +123,23 @@ fn output_uses_carved_constructors() {
             Term::app(Term::app(c.scons.clone(), atom(b"x")), c.snil.clone()),
         )
     );
+}
+
+/// Third-party route: hand-written S-expression TEXT (no Haskell anywhere)
+/// realizes to the SAME kernel data as the Haskell route.
+#[test]
+fn third_party_text_equals_haskell_route() {
+    let via_haskell = lower_hs(r"\x -> f (g x)");
+    let ir = parse_sexpr("(lambda x (f (g x)))").expect("sexpr text parses");
+    let via_text = realize(&ir, &mut HolBackend).expect("realizes");
+    assert_eq!(via_text, via_haskell);
+}
+
+/// The empty list `()` — reachable from third-party text, never from the
+/// Haskell front end — lands as the carved `snil`.
+#[test]
+fn empty_list_is_snil() {
+    let ir = parse_sexpr("()").expect("parses");
+    let got = realize(&ir, &mut HolBackend).expect("realizes");
+    assert_eq!(got, snil());
 }

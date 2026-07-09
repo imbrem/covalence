@@ -8,7 +8,9 @@
 //! Expressions ([`parse_expr`]):
 //!
 //! - identifiers (`foo`, `map`, `x'`, `f2`);
-//! - natural-number literals (`0`, `42`) — up to [`u128`];
+//! - natural-number literals (`0`, `42`) — arbitrary precision (the
+//!   covalence [`Nat`](covalence_types::Nat); there is no machine-integer
+//!   cap);
 //! - string literals (`"hi\n"`) with `\n \t \\ \" \r \0` escapes;
 //! - lambdas `\x -> e` and the sugar `\x y -> e` (⇝ nested lambdas);
 //! - application by juxtaposition, left-associative and tighter than any
@@ -26,6 +28,8 @@
 //! Everything else (do-notation, guards, `where`, type signatures, pattern
 //! matching, multi-clause definitions, full layout) is out of scope — see the
 //! crate `SKELETONS.md`.
+
+use covalence_types::Nat;
 
 use crate::ast::{Decl, Expr, Lit, Module};
 
@@ -62,7 +66,7 @@ impl std::error::Error for ParseError {}
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Tok {
     Ident(String),
-    Nat(u128),
+    Nat(Nat),
     Str(String),
     Lambda,
     Arrow,
@@ -204,9 +208,10 @@ fn lex(src: &str) -> Result<Vec<Token>, ParseError> {
                     i += 1;
                 }
                 let text = &src[start..i];
-                let n: u128 = text
+                // Arbitrary precision — a digit run always parses.
+                let n: Nat = text
                     .parse()
-                    .map_err(|_| ParseError::new("numeric literal out of range", start))?;
+                    .map_err(|_| ParseError::new("invalid numeric literal", start))?;
                 out.push(Token {
                     tok: Tok::Nat(n),
                     pos: start,

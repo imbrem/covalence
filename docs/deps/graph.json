@@ -17,6 +17,7 @@
     "covalence-grammar",
     "covalence-graph",
     "covalence-hash",
+    "covalence-haskell",
     "covalence-hol",
     "covalence-hol-eval",
     "covalence-inductive",
@@ -216,6 +217,14 @@
     {
       "from": "covalence-hash",
       "to": "covalence-rand"
+    },
+    {
+      "from": "covalence-haskell",
+      "to": "covalence-hol-eval"
+    },
+    {
+      "from": "covalence-haskell",
+      "to": "covalence-init"
     },
     {
       "from": "covalence-hol",

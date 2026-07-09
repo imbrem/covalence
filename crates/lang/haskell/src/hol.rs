@@ -31,7 +31,9 @@
 //!
 //! where a list `(e₁ … eₙ)` is the `scons`-chain
 //! `scons e₁ (scons … (scons eₙ snil))` and `atom s` is `atom` applied to a
-//! [`Term::blob`] byte literal.
+//! bytes literal built via the designated literal facade
+//! ([`covalence_hol_eval::mk_blob`] — never the deprecated kernel literal
+//! constructors; see the toHOL purge ratchet).
 //!
 //! ## Atom byte conventions (matching `sexpr_parse`)
 //!
@@ -49,6 +51,7 @@
 //! containing whitespace or parentheses would *not* round-trip through the
 //! reader as a single atom; that is out of scope here (see `SKELETONS.md`).
 
+use covalence_hol_eval::mk_blob;
 use covalence_init::Term;
 use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 
@@ -94,11 +97,12 @@ impl HolLower {
         carved().map_err(|e| HolLowerError::Carved(e.to_string()))
     }
 
-    /// `atom <bytes>` — the carved `atom` constructor applied to a byte-literal
-    /// ([`Term::blob`]), matching `sexpr_parse`'s uninterpreted-byte-run atoms.
+    /// `atom <bytes>` — the carved `atom` constructor applied to a bytes
+    /// literal (built via [`mk_blob`], the designated literal facade),
+    /// matching `sexpr_parse`'s uninterpreted-byte-run atoms.
     fn atom(bytes: Vec<u8>) -> Result<Term, HolLowerError> {
         let c = Self::theory()?;
-        Ok(Term::app(c.atom.clone(), Term::blob(bytes)))
+        Ok(Term::app(c.atom.clone(), mk_blob(bytes)))
     }
 
     /// `snil` — the empty S-expression list.

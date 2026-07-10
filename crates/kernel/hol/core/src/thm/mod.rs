@@ -579,13 +579,15 @@ impl<L: HolTier> Thm<L> {
     // Connective / quantifier rules: DERIVED, not kernel (stage L2)
     // ========================================================================
     //
-    // `∧` / `∨` / `¬` / `⟹` / `∀` are ordinary defined constants in
-    // `defs/logic.rs`; their intro / elim rules (and excluded middle)
-    // are *derivations* over the equality-core rules above — the
-    // standard HOL Light `bool.ml` bootstrap. They live, with the same
-    // signatures, in `covalence-hol-eval::derived::DerivedRules`
-    // (eval tier: the bootstrap's `⊢ T` comes from the certificate
-    // path). Zero TCB: nothing connective-shaped is admitted here.
+    // `T` / `F` / `∧` / `∨` / `¬` / `⟹` / `∀` are ordinary defined
+    // constants in `defs/logic.rs`; their intro / elim rules (excluded
+    // middle and — since EG3b — ex falso too) are *derivations* over the
+    // equality-core rules above — the standard HOL Light `bool.ml`
+    // bootstrap. They live, with the same signatures, in
+    // `covalence-hol-eval::derived::DerivedRules`, tier-generic: the
+    // bootstrap's `⊢ T` derives from `tru`'s defining equation at the
+    // pure `CoreLang` tier. Zero TCB: nothing connective-shaped is
+    // admitted here.
 
     /// `⊢ Spec(spec, args) = subst(spec.tm, tvars, args)` for a
     /// **let-style** `TermSpec` — one whose body `tm` has the spec's own

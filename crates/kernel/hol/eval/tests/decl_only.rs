@@ -22,6 +22,7 @@ use covalence_core::{Error, IntTag, Term, TermKind};
 use covalence_hol_eval::defs::{
     self, FLOAT_CVT_TAGS, FloatKey, FloatOp, FloatWidth, IntOp, TermSpec,
 };
+use covalence_hol_eval::derived::DerivedRules;
 
 /// The pure tier (`Thm<CoreLang>`) — these are core-rule tests.
 type Thm = covalence_core::Thm;

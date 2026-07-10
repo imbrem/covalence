@@ -10,13 +10,21 @@
 //!   `⊢ c = <body>` — the same way it does for `natAdd` — so the
 //!   connectives' introduction / elimination rules are *derived*
 //!   downstream, never postulated.
-//! - the certificate path evaluates a connective applied to `bool`
-//!   literals by pointer-match on the spec handle, exactly like closed
-//!   arithmetic.
+//! - the derivations are ordinary equality reasoning, so the whole
+//!   calculus lives at the pure `CoreLang` tier (no certificate rule
+//!   ever destructures a connective).
 //!
-//! `T` / `F` remain `TermKind::Bool` literals; `⊢ T` is derivable via
-//! the `LitEqCert` certificate, and the literals' distinctness is the
-//! kernel's denotational commitment.
+//! `T` / `F` are the **defined constants** [`tru`] / [`fal`] (EG3b):
+//! `tru ≡ (λp:bool.p) = (λp:bool.p)` and `fal ≡ ∀p:bool. p`, and the
+//! connective bodies below reference *them*, so the whole derived
+//! connective calculus (`covalence-hol-eval::derived`) bottoms out in a
+//! `⊢ tru` derivable at the pure `CoreLang` tier — no certificate.
+//! The transitional `TermKind::Bool` literals `⌜T⌝`/`⌜F⌝` still exist
+//! (the closed-computation certificate path produces them, e.g.
+//! `⊢ (2+2=4) = ⌜T⌝`) and are bridged to the defined constants by
+//! *derived* eval-tier theorems (`⊢ tru = ⌜T⌝`, `⊢ fal = ⌜F⌝` in
+//! `covalence-hol-eval::boolean`) until the literal-leaf endgame (EG5)
+//! deletes them.
 //!
 //! ## Definition order
 //!
@@ -24,9 +32,11 @@
 //! dependency order (acyclic):
 //!
 //! ```text
-//! and, forall  ←  (=, T)         (no connective deps)
+//! tru          ←  (=)            (no deps)
+//! and, forall  ←  (=, tru)
 //! imp          ←  and
-//! not          ←  imp, F
+//! fal          ←  forall
+//! not          ←  imp, fal
 //! or, exists   ←  forall, imp
 //! iff          ←  (=)
 //! ```
@@ -34,7 +44,7 @@
 //! Since stage L2 NO kernel rule destructures these definitions — the
 //! connective / quantifier intro-elim rules are executable derivations
 //! in `covalence-hol-eval::derived`. The staying axiom rules
-//! (`succ_inj`, `select_ax`, `spec_ax`, the `spec_*` subtype laws,
+//! (`succ_eq_elim`, `select_intro`, `spec_intro`, the `spec_*` subtype laws,
 //! `new_type_definition`) still *state* their conclusions with `imp` /
 //! `not` / `or` / `exists` / `and` / `forall`, and the D3 residue type
 //! catalogue quantifies with them — which is exactly why these
@@ -54,18 +64,28 @@ fn b() -> Type {
     Type::bool()
 }
 
-fn t_lit() -> Term {
-    Term::bool_lit(true)
-}
-
-fn f_lit() -> Term {
-    Term::bool_lit(false)
-}
-
 /// `p ⟹ q` built from the `imp` spec (for use inside the bodies that
-/// need implication before `hol::hol_imp` would be circular-safe).
+/// need implication before the local `hol_imp` would be circular-safe).
 fn imp_app(p: Term, q: Term) -> Term {
     Term::app(Term::app(imp(), p), q)
+}
+
+// ============================================================================
+// tru — `(λp:bool. p) = (λp:bool. p)`  (HOL Light `T_DEF`)
+// ============================================================================
+
+fn tru_body() -> Term {
+    // λp:bool. p
+    let p = Term::free("p", b());
+    let id = hol::pub_abs("p", b(), p);
+    hol::hol_eq(id.clone(), id)
+}
+
+let_term! {
+    /// `T : bool` ≡ `(λp:bool. p) = (λp:bool. p)` — truth as a defined
+    /// constant. `⊢ T` is derivable at the pure `CoreLang` tier
+    /// (δ-unfold + `refl` + `eq_mp`), with no certificate.
+    tru_spec, tru, Canonical::True, tru_body()
 }
 
 // ============================================================================
@@ -82,8 +102,8 @@ fn and_body() -> Term {
     // λf. f p q
     let f_p_q = Term::app(Term::app(f.clone(), p.clone()), q.clone());
     let lhs = hol::pub_abs("f", bbb.clone(), f_p_q);
-    // λf. f T T
-    let f_t_t = Term::app(Term::app(f, t_lit()), t_lit());
+    // λf. f T T  (the DEFINED T)
+    let f_t_t = Term::app(Term::app(f, tru()), tru());
     let rhs = hol::pub_abs("f", bbb, f_t_t);
 
     let eq = hol::hol_eq(lhs, rhs);
@@ -118,7 +138,7 @@ let_term! {
 
 fn not_body() -> Term {
     let p = Term::free("p", b());
-    let body = imp_app(p.clone(), f_lit());
+    let body = imp_app(p.clone(), fal());
     hol::pub_abs("p", b(), body)
 }
 
@@ -151,8 +171,8 @@ fn forall_body() -> Term {
     let alpha = Type::tfree("a");
     let pred_ty = Type::fun(alpha.clone(), b());
     let pred = Term::free("P", pred_ty.clone());
-    // λx:α. T  (x unused; `pub_abs` close is a no-op but keeps shape)
-    let lam_x = hol::pub_abs("x", alpha, t_lit());
+    // λx:α. T  (the DEFINED T; x unused; `pub_abs` close is a no-op but keeps shape)
+    let lam_x = hol::pub_abs("x", alpha, tru());
     let eq = hol::hol_eq(pred, lam_x);
     hol::pub_abs("P", pred_ty, eq)
 }
@@ -160,6 +180,22 @@ fn forall_body() -> Term {
 poly_let_term! {
     /// `(!) : ('a → bool) → bool` ≡ `λP. P = (λx. T)`.
     forall_spec, forall(alpha), Canonical::Forall, forall_body()
+}
+
+// ============================================================================
+// fal — `∀p:bool. p`  (HOL Light `F_DEF`)
+// ============================================================================
+
+fn fal_body() -> Term {
+    let p = Term::free("p", b());
+    hol_forall("p", b(), p)
+}
+
+let_term! {
+    /// `F : bool` ≡ `∀p:bool. p` — falsity as a defined constant.
+    /// Ex falso is a *derivation* (`unfold` + `∀`-elim at the target),
+    /// not a kernel rule.
+    fal_spec, fal, Canonical::False, fal_body()
 }
 
 // ============================================================================
@@ -173,7 +209,7 @@ fn or_body() -> Term {
     let p_r = imp_app(p.clone(), r.clone());
     let q_r = imp_app(q.clone(), r.clone());
     let inner = imp_app(p_r, imp_app(q_r, r.clone()));
-    let forall_r = hol::hol_forall("r", b(), inner);
+    let forall_r = hol_forall("r", b(), inner);
     hol::pub_abs("p", b(), hol::pub_abs("q", b(), forall_r))
 }
 
@@ -195,15 +231,58 @@ fn exists_body() -> Term {
     let x = Term::free("x", alpha.clone());
     let p_x = Term::app(pred.clone(), x);
     let p_x_q = imp_app(p_x, q.clone());
-    let inner_forall = hol::hol_forall("x", alpha, p_x_q);
+    let inner_forall = hol_forall("x", alpha, p_x_q);
     let imp2 = imp_app(inner_forall, q.clone());
-    let forall_q = hol::hol_forall("q", b(), imp2);
+    let forall_q = hol_forall("q", b(), imp2);
     hol::pub_abs("P", pred_ty, forall_q)
 }
 
 poly_let_term! {
     /// `(?) : ('a → bool) → bool` ≡ `λP. !q. (!x. P x ==> q) ==> q`.
     exists_spec, exists(alpha), Canonical::Exists, exists_body()
+}
+
+// ============================================================================
+// Defined-connective term builders (crate-internal, stage A3)
+// ============================================================================
+//
+// Application-chain sugar over the catalogue specs above. These moved
+// here from `crate::hol` (which is now `defs`-free): they belong next to
+// the definitions they apply, and they die together at the literal-leaf
+// endgame. Crate-internal consumers: the D3 residue bodies in `defs/*.rs`
+// and the two staying connective-built rules (`SpecRepAbsBack`,
+// `NewTypeDefRule`). Everyone else uses the public copies in
+// `covalence-hol-eval::hol` (the untrusted home).
+
+/// HOL `p ⟹ q : bool` — `imp` applied to `p` and `q`.
+pub(crate) fn hol_imp(p: Term, q: Term) -> Term {
+    imp_app(p, q)
+}
+
+/// HOL `p ∧ q : bool`.
+pub(crate) fn hol_and(p: Term, q: Term) -> Term {
+    Term::app(Term::app(and(), p), q)
+}
+
+/// HOL `p ∨ q : bool`.
+pub(crate) fn hol_or(p: Term, q: Term) -> Term {
+    Term::app(Term::app(or(), p), q)
+}
+
+/// HOL `¬ p : bool` — `not` applied to `p`.
+pub(crate) fn hol_not(p: Term) -> Term {
+    Term::app(not(), p)
+}
+
+/// HOL `∃x:α. body[x]` — `exists[α] (λx:α. body[Bound 0])`.
+pub(crate) fn hol_exists(hint: &str, alpha: Type, body: Term) -> Term {
+    Term::app(exists(alpha.clone()), hol::pub_abs(hint, alpha, body))
+}
+
+/// HOL `∀x:α. body[x]` — `forall[α] (λx:α. body[Bound 0])`. The free
+/// variable `Free(hint, α)` in `body` is closed into `Bound(0)`.
+pub(crate) fn hol_forall(hint: &str, alpha: Type, body: Term) -> Term {
+    Term::app(forall(alpha.clone()), hol::pub_abs(hint, alpha, body))
 }
 
 #[cfg(test)]
@@ -220,6 +299,8 @@ mod tests {
 
     #[test]
     fn connectives_have_expected_types() {
+        assert_eq!(tru().type_of().unwrap(), b());
+        assert_eq!(fal().type_of().unwrap(), b());
         assert_eq!(and().type_of().unwrap(), bin());
         assert_eq!(or().type_of().unwrap(), bin());
         assert_eq!(imp().type_of().unwrap(), bin());
@@ -239,7 +320,7 @@ mod tests {
     /// rules.
     #[test]
     fn connectives_unfold_to_their_definitions() {
-        for op in [and(), or(), imp(), iff(), not()] {
+        for op in [tru(), fal(), and(), or(), imp(), iff(), not()] {
             let thm = Thm::unfold_term_spec(op.clone()).unwrap();
             // `⊢ op = <body>`: empty hyps, conclusion is an equation
             // whose LHS is the connective itself.
@@ -253,6 +334,24 @@ mod tests {
             assert!(matches!(eq_head.kind(), TermKind::Eq(_)));
             assert_eq!(lhs, &op);
         }
+    }
+
+    /// `⊢ T` for the **defined** `T`, at the pure `CoreLang` tier — the
+    /// EG3b keystone: the δ-unfold gives `⊢ T = ((λp.p) = (λp.p))`,
+    /// `refl` gives the right-hand side, and `eq_mp` (backwards through
+    /// `sym`) concludes. No certificate, no computation TCB, no axiom.
+    #[test]
+    fn defined_truth_derives_at_core_lang() {
+        let def = Thm::unfold_term_spec(tru()).unwrap(); // ⊢ T = ((λp.p) = (λp.p))
+        let rhs = def.concl().as_eq().unwrap().1.clone();
+        // `rhs` is itself the equation `(λp.p) = (λp.p)`; `refl` on its
+        // left side rebuilds it as a THEOREM.
+        let id_lambda = rhs.as_eq().unwrap().0.clone();
+        let refl = Thm::refl(id_lambda).unwrap(); // ⊢ (λp.p) = (λp.p)
+        assert_eq!(refl.concl(), &rhs);
+        let truth = def.sym().unwrap().eq_mp(refl).unwrap(); // ⊢ T
+        assert!(truth.hyps().is_empty());
+        assert_eq!(truth.concl(), &tru());
     }
 
     #[test]

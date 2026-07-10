@@ -31,7 +31,7 @@
 //!
 //! where a list `(e₁ … eₙ)` is the `scons`-chain
 //! `scons e₁ (scons … (scons eₙ snil))` and `atom s` is `atom` applied to a
-//! [`Term::blob`] byte literal.
+//! byte literal (built via the `covalence_init::lit` facade).
 //!
 //! ## Atom byte conventions (matching `sexpr_parse`)
 //!
@@ -94,11 +94,16 @@ impl HolLower {
         carved().map_err(|e| HolLowerError::Carved(e.to_string()))
     }
 
-    /// `atom <bytes>` — the carved `atom` constructor applied to a byte-literal
-    /// ([`Term::blob`]), matching `sexpr_parse`'s uninterpreted-byte-run atoms.
+    /// `atom <bytes>` — the carved `atom` constructor applied to a byte
+    /// literal (built via the `covalence_init::lit` facade, the sanctioned
+    /// literal chokepoint), matching `sexpr_parse`'s uninterpreted-byte-run
+    /// atoms.
     fn atom(bytes: Vec<u8>) -> Result<Term, HolLowerError> {
         let c = Self::theory()?;
-        Ok(Term::app(c.atom.clone(), Term::blob(bytes)))
+        Ok(Term::app(
+            c.atom.clone(),
+            covalence_init::lit::mk_blob(bytes),
+        ))
     }
 
     /// `snil` — the empty S-expression list.

@@ -38,23 +38,22 @@ use covalence_core::seam::Lit;
 use covalence_core::{Error, Result, Term, TermKind, TrustedCons};
 use covalence_pure::{Rule, apply};
 
+pub mod boolean;
 pub mod certs;
 pub mod defs;
 pub mod derived;
+pub mod hol;
 mod lang;
 pub mod lit;
 pub mod rules;
 mod tohol;
 mod tohol_ops;
 mod typed_float;
+mod zero;
 
+pub use boolean::{fal_eq_lit, fal_from_lit, fal_to_lit, tru_eq_lit, tru_from_lit, tru_to_lit};
 pub use certs::{PrimFamily, prim_family};
-// The HOL term-builder helpers (`hol_eq` / `hol_imp` / `hol_forall` / …)
-// still live in core (the staying axiom rules and the D3 type-catalogue
-// residue state their conclusions with them); re-exported here so
-// downstream imports route through the eval catalogue, the same alias
-// route as `defs` — the eventual physical move is then invisible.
-pub use covalence_core::hol;
+
 pub use defs::{as_f64_bits, mk_f64};
 pub use derived::{DerivedRules, TypeDefExt};
 pub use lang::{CoreEval, EvalThm, EvalTypeDef};
@@ -67,6 +66,8 @@ pub use tohol::{
     int_add_thm_symbolic, int_arith_thm, int_mul_thm_symbolic, int_neg_thm_symbolic, nat_add_thm,
     nat_add_thm_symbolic,
 };
+pub use zero::{zero_eq_lit, zero_ne_succ_zero};
+
 pub use tohol_ops::{
     BytesCatEqE, BytesCatLhsE, BytesLenEqE, BytesLenLhsE, F32BinEqE, F32BinLhsE, F64BinEqE,
     F64BinLhsE, HolApp, HolAppE, IntBinEqE, IntBinLhsE, IntUnEqE, IntUnLhsE, NatAddEqE, NatAddLhsE,
@@ -170,9 +171,13 @@ pub fn reduce_with<C: TrustedCons + ?Sized>(t: &Term, cons: &mut C) -> Option<Ev
     Some(thm)
 }
 
-/// `⊢ T` — derived through the cert path: `LitEqCert` gives
-/// `⊢ (T = T) = T`, `refl` gives `⊢ T = T`, and `eq_mp` concludes `⊢ T`.
-pub(crate) fn truth() -> Result<EvalThm> {
+/// `⊢ ⌜T⌝` — the transitional **literal** truth, derived through the
+/// cert path: `LitEqCert` gives `⊢ (⌜T⌝ = ⌜T⌝) = ⌜T⌝`, `refl` gives
+/// `⊢ ⌜T⌝ = ⌜T⌝`, and `eq_mp` concludes `⊢ ⌜T⌝`. This is what
+/// [`prove_true`] discharges reduce-to-`⌜T⌝` goals against; the
+/// *defined* `T`'s truth ([`derived::truth`]) lives at the pure
+/// `CoreLang` tier, and the two are bridged by [`boolean::tru_eq_lit`].
+pub(crate) fn lit_truth() -> Result<EvalThm> {
     let bridge =
         mint(rules::LitEqCert, (Lit::Bool(true), Lit::Bool(true))).ok_or(Error::NotReducible)?; // ⊢ (T = T) = T
     let refl = EvalThm::refl(Term::bool_lit(true))?; // ⊢ T = T
@@ -194,7 +199,7 @@ pub fn prove_true(t: &Term) -> Result<EvalThm> {
             "prove_true: reduced to `{v}`, not `T`"
         )));
     }
-    conv.sym()?.eq_mp(truth()?) // ⊢ T = t, ⊢ T ⇒ ⊢ t
+    conv.sym()?.eq_mp(lit_truth()?) // ⊢ T = t, ⊢ T ⇒ ⊢ t
 }
 
 /// Definitional unfolding passthrough: `⊢ t = body` for a let-style
@@ -204,5 +209,14 @@ pub fn prove_true(t: &Term) -> Result<EvalThm> {
 /// re-homes as ordinary `define`d constants with stored definitional
 /// theorems (then this re-routes without callers moving).
 pub fn delta(t: &Term) -> Result<EvalThm> {
-    EvalThm::unfold_term_spec(t.clone())
+    delta_at(t)
+}
+
+/// [`delta`] at an explicit [`HolTier`] — the same single kernel-rule
+/// call site, so the derived connective calculus (`derived.rs`) can
+/// build its cached ingredients at the pure `CoreLang` tier.
+pub(crate) fn delta_at<L: covalence_core::seam::HolTier>(
+    t: &Term,
+) -> Result<covalence_core::Thm<L>> {
+    covalence_core::Thm::unfold_term_spec(t.clone())
 }

@@ -47,7 +47,7 @@ use std::sync::LazyLock;
 
 use smol_str::SmolStr;
 
-use covalence_core::hol;
+use crate::hol;
 use covalence_core::term::{IntTag, Term, Type};
 
 use crate::defs::TermSpec;

@@ -11,7 +11,7 @@
 //! `const` is a Rust keyword; the catalogue label is still
 //! `"fun.const"`.)
 
-use covalence_core::hol;
+use crate::hol;
 use covalence_core::term::{Term, Type};
 
 use crate::defs::Canonical;

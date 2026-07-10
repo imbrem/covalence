@@ -363,6 +363,28 @@ impl Tactic for UnfoldAt2Rule {
 unary_rule!(AndElimLRule, "and-elim-l", and_elim_l);
 unary_rule!(AndElimRRule, "and-elim-r", and_elim_r);
 
+// -- the EG3b defined-T/F ↔ literal bridge -----------------------------------
+/// `(fal-to-lit SUB)` — `Γ ⊢ F` (defined) → `Γ ⊢ ⌜F⌝` (literal).
+struct FalToLitRule;
+#[async_trait]
+impl Tactic for FalToLitRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 1, "fal-to-lit")?;
+        let s = c.check(&a[0]).await?;
+        Ok(covalence_hol_eval::fal_to_lit(s)?)
+    }
+}
+/// `(fal-from-lit SUB)` — `Γ ⊢ ⌜F⌝` (literal) → `Γ ⊢ F` (defined).
+struct FalFromLitRule;
+#[async_trait]
+impl Tactic for FalFromLitRule {
+    async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
+        ctx_arity(a, 1, "fal-from-lit")?;
+        let s = c.check(&a[0]).await?;
+        Ok(covalence_hol_eval::fal_from_lit(s)?)
+    }
+}
+
 // -- term + sub -------------------------------------------------------------
 term_sub_rule!(ImpIntroRule, "imp-intro", |t, s: Thm| Ok(s.imp_intro(&t)?));
 term_sub_rule!(AllElimRule, "all-elim", |t, s: Thm| Ok(s.all_elim(t)?));
@@ -504,6 +526,8 @@ pub fn core_rules() -> Vec<(&'static str, Arc<dyn Tactic>)> {
         // unary
         ("and-elim-l", Arc::new(AndElimLRule)),
         ("and-elim-r", Arc::new(AndElimRRule)),
+        ("fal-to-lit", Arc::new(FalToLitRule)),
+        ("fal-from-lit", Arc::new(FalFromLitRule)),
         // term + sub
         ("imp-intro", Arc::new(ImpIntroRule)),
         ("all-elim", Arc::new(AllElimRule)),

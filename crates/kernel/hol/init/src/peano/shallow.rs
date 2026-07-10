@@ -95,10 +95,12 @@ impl Peano for Hol {
         HolLightCtx::new().mk_exists(name, Type::nat(), body)
     }
     fn falsum(&self) -> Term {
-        Term::bool_lit(false)
+        // The DEFINED falsity (EG3b): the derived `not_elim` concludes it,
+        // and the derived `false_elim` eliminates it.
+        covalence_hol_eval::defs::fal()
     }
     fn verum(&self) -> Term {
-        Term::bool_lit(true)
+        covalence_hol_eval::defs::tru()
     }
 
     fn concl(&self, proof: &Thm) -> Term {

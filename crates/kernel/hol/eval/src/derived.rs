@@ -18,12 +18,21 @@
 //!
 //! ## Tier
 //!
-//! Everything is stated on [`EvalThm`](crate::EvalThm) (`Thm<CoreEval>`):
-//! the bootstrap
-//! bottoms out in `⊢ T`, which this kernel derives through the eval-tier
-//! certificate path (`LitEqCert` on `T = T` — see [`truth`]); at the pure
-//! `CoreLang` tier `⊢ T` has no derivation (the `T` literal carries no
-//! defining equation until the literal-leaf endgame defines it).
+//! Since stage EG3b, `T` and `F` are the **defined constants**
+//! [`defs::tru`] / [`defs::fal`] and the connective bodies reference
+//! them, so the whole bootstrap bottoms out in [`truth`] — `⊢ T` derived
+//! from `tru`'s defining equation by `refl` + `eq_mp` — at the **pure
+//! `CoreLang` tier**. Every cached ingredient (the connective defining
+//! equations, the rule schemas, the LEM schema) is therefore derived
+//! once as a `Thm<CoreLang>`, and the whole module is generic over the
+//! [`HolTier`]: the rules serve `Thm<CoreLang>` and [`crate::EvalThm`]
+//! alike (cached pure-tier ingredients enter a higher tier via the
+//! sound low→high [`Thm::lift`]).
+//!
+//! The transitional `Bool` literals `⌜T⌝` / `⌜F⌝` are NOT this module's
+//! business: they remain eval-tier citizens of the certificate path,
+//! bridged to the defined constants by the derived equations in
+//! [`crate::boolean`] (`⊢ T = ⌜T⌝`, `⊢ F = ⌜F⌝`).
 //!
 //! ## Drop-in surface
 //!
@@ -48,52 +57,95 @@
 //! The remaining per-call β/congruence work is measured by
 //! `scripts/bench-proving.mjs` against `docs/deps/proving-baseline.json`.
 
+use std::any::{Any, TypeId};
 use std::sync::LazyLock;
 
+use covalence_core::seam::{CoreLang, HolTier};
 use covalence_core::term::TrustedCons;
-use covalence_core::{Error, Result, Term, TermKind, Type, subst};
+use covalence_core::{Error, Result, Term, TermKind, Thm, Type, TypeDef, subst};
 
-use crate::EvalThm as Thm;
 use crate::defs;
 
+/// The pure-HOL tier theorem — the tier every cached ingredient is
+/// derived at (`covalence_core::Thm`'s default tier parameter).
+type CoreThm = Thm<CoreLang>;
+
+/// Re-home a cached pure-tier ingredient at the working tier `L`:
+/// the identity when `L` **is** `CoreLang`, else the sound low→high
+/// [`Thm::lift`] (which mints nothing; it re-checks `extends` and
+/// re-wraps). Errors only for an exotic tier that does not extend
+/// `CoreLang` — such a tier cannot consume `CoreLang`-derived
+/// ingredients, so the derivations correctly fail there.
+fn at_tier<L: HolTier>(t: &CoreThm) -> Result<Thm<L>> {
+    if TypeId::of::<L>() == TypeId::of::<CoreLang>() {
+        let boxed: Box<dyn Any> = Box::new(t.clone());
+        return Ok(*boxed.downcast::<Thm<L>>().expect("same tier"));
+    }
+    t.clone().lift::<L>()
+}
+
+/// Statically-checked identity coercion between `Thm<L>` and `Thm<L2>`
+/// when `L` **is** `L2` (`TypeId` equality) — no mint, no lift, a pure
+/// move through `Any`. `None` when the tiers differ. Used to dispatch a
+/// tier-specific fallback (the eval-tier literal bridge) from generic
+/// code without weakening any other tier.
+fn same_tier<L: HolTier, L2: HolTier>(t: Thm<L>) -> Option<Thm<L2>> {
+    if TypeId::of::<L>() != TypeId::of::<L2>() {
+        return None;
+    }
+    let boxed: Box<dyn Any> = Box::new(t);
+    Some(*boxed.downcast::<Thm<L2>>().expect("same tier"))
+}
+
 // ============================================================================
-// Cached closed ingredients
+// Cached closed ingredients (all derived ONCE at the pure CoreLang tier)
 // ============================================================================
 
-/// `⊢ T`, derived through the eval-tier certificate path (`LitEqCert`
-/// gives `⊢ (T = T) = T`, `eq_mp` against `refl T` concludes) and cached. The root of the `EQT_INTRO` / `EQT_ELIM`
-/// bridge every connective derivation bottoms out in.
-pub fn truth() -> Thm {
-    static TRUTH: LazyLock<Thm> = LazyLock::new(|| crate::truth().expect("derived: ⊢ T"));
-    TRUTH.clone()
+/// `⊢ T` for the **defined** `T` ([`defs::tru`]), derived at the pure
+/// `CoreLang` tier from the defining equation: δ-unfold gives
+/// `⊢ T = ((λp.p) = (λp.p))`, `refl` proves the right-hand side, and
+/// `eq_mp` (through `sym`) concludes. No certificate, no computation
+/// TCB. The root of the `EQT_INTRO` / `EQT_ELIM` bridge every
+/// connective derivation bottoms out in.
+pub fn truth<L: HolTier>() -> Result<Thm<L>> {
+    static TRUTH: LazyLock<CoreThm> = LazyLock::new(|| {
+        (|| -> Result<CoreThm> {
+            let def = crate::delta_at::<CoreLang>(&defs::tru())?; // ⊢ T = ((λp.p) = (λp.p))
+            let rhs = def.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+            let id = rhs.as_eq().ok_or(Error::NotAnEquation)?.0.clone();
+            def.sym()?.eq_mp(Thm::refl(id)?) // ⊢ T
+        })()
+        .expect("derived: ⊢ T")
+    });
+    at_tier(&TRUTH)
 }
 
 /// `⊢ ∧ = λp q. (λf. f p q) = (λf. f T T)` (cached).
-fn and_def() -> Thm {
-    static D: LazyLock<Thm> =
-        LazyLock::new(|| crate::delta(&defs::and()).expect("derived: unfold ∧"));
-    D.clone()
+fn and_def<L: HolTier>() -> Result<Thm<L>> {
+    static D: LazyLock<CoreThm> =
+        LazyLock::new(|| crate::delta_at(&defs::and()).expect("derived: unfold ∧"));
+    at_tier(&D)
 }
 
 /// `⊢ ⟹ = λp q. (p ∧ q) = p` (cached).
-fn imp_def() -> Thm {
-    static D: LazyLock<Thm> =
-        LazyLock::new(|| crate::delta(&defs::imp()).expect("derived: unfold ⟹"));
-    D.clone()
+fn imp_def<L: HolTier>() -> Result<Thm<L>> {
+    static D: LazyLock<CoreThm> =
+        LazyLock::new(|| crate::delta_at(&defs::imp()).expect("derived: unfold ⟹"));
+    at_tier(&D)
 }
 
 /// `⊢ ¬ = λp. p ⟹ F` (cached).
-fn not_def() -> Thm {
-    static D: LazyLock<Thm> =
-        LazyLock::new(|| crate::delta(&defs::not()).expect("derived: unfold ¬"));
-    D.clone()
+fn not_def<L: HolTier>() -> Result<Thm<L>> {
+    static D: LazyLock<CoreThm> =
+        LazyLock::new(|| crate::delta_at(&defs::not()).expect("derived: unfold ¬"));
+    at_tier(&D)
 }
 
 /// `⊢ ∨ = λp q. ∀r. (p⟹r) ⟹ (q⟹r) ⟹ r` (cached).
-fn or_def() -> Thm {
-    static D: LazyLock<Thm> =
-        LazyLock::new(|| crate::delta(&defs::or()).expect("derived: unfold ∨"));
-    D.clone()
+fn or_def<L: HolTier>() -> Result<Thm<L>> {
+    static D: LazyLock<CoreThm> =
+        LazyLock::new(|| crate::delta_at(&defs::or()).expect("derived: unfold ∨"));
+    at_tier(&D)
 }
 
 // ============================================================================
@@ -104,13 +156,13 @@ fn b() -> Type {
     Type::bool()
 }
 
-fn rhs_of(thm: &Thm) -> Result<Term> {
+fn rhs_of<L: HolTier>(thm: &Thm<L>) -> Result<Term> {
     Ok(thm.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone())
 }
 
 /// From `⊢ f = (λx. body)` and `a`, build `⊢ f a = body[a]` (congruence
 /// with `refl a`, then one β-step on the right).
-fn unfold_at(op_eq: Thm, a: Term) -> Result<Thm> {
+fn unfold_at<L: HolTier>(op_eq: Thm<L>, a: Term) -> Result<Thm<L>> {
     let applied = op_eq.mk_comb(Thm::refl(a)?)?; // ⊢ f a = (λx. body) a
     let beta = Thm::beta_conv(rhs_of(&applied)?)?; // ⊢ (λx. body) a = body[a]
     applied.trans(beta)
@@ -118,7 +170,7 @@ fn unfold_at(op_eq: Thm, a: Term) -> Result<Thm> {
 
 /// `⊢ op a b = body[a, b]` for a binary connective's cached defining
 /// equation `op_eq : ⊢ op = λp q. body`.
-fn unfold_at_2(op_eq: Thm, a: Term, b: Term) -> Result<Thm> {
+fn unfold_at_2<L: HolTier>(op_eq: Thm<L>, a: Term, b: Term) -> Result<Thm<L>> {
     unfold_at(unfold_at(op_eq, a)?, b)
 }
 
@@ -129,7 +181,7 @@ fn unfold_at_2(op_eq: Thm, a: Term, b: Term) -> Result<Thm> {
 /// (λb. p) q →β p` — three), and stopping at that count is what keeps
 /// a component that is *itself* a β-redex intact (normalising to a
 /// fixpoint would reduce into it and change the conclusion).
-fn beta_head_steps(t: Term, n: usize) -> Result<Thm> {
+fn beta_head_steps<L: HolTier>(t: Term, n: usize) -> Result<Thm<L>> {
     let mut acc = Thm::refl(t)?;
     for _ in 0..n {
         let cur = rhs_of(&acc)?;
@@ -160,7 +212,7 @@ fn beta_head_steps(t: Term, n: usize) -> Result<Thm> {
 
 /// A variable name (from `hint`) not free — at any type — in any of
 /// `terms` nor in any hypothesis of `thms`.
-fn fresh_name(hint: &str, terms: &[&Term], thms: &[&Thm]) -> String {
+fn fresh_name<L: HolTier>(hint: &str, terms: &[&Term], thms: &[&Thm<L>]) -> String {
     let clashes = |name: &str| {
         terms.iter().any(|t| subst::has_free_var(t, name))
             || thms
@@ -179,6 +231,11 @@ fn fresh_name(hint: &str, terms: &[&Term], thms: &[&Thm]) -> String {
 
 fn is_spec(t: &Term, want: &covalence_core::TermSpec) -> bool {
     matches!(t.kind(), TermKind::Spec(h, _) if h.ptr_eq(want))
+}
+
+/// The defined falsity constant `F` (`defs::fal`) as a shape test.
+fn is_fal(t: &Term) -> bool {
+    is_spec(t, &defs::fal_spec())
 }
 
 fn parse_binop<'a>(
@@ -254,21 +311,21 @@ fn check_bool(t: &Term) -> Result<()> {
 
 /// `Γ ⊢ p` → `Γ ⊢ p = T` (HOL Light `EQT_INTRO`), via `deduct_antisym`
 /// against the cached [`truth`].
-fn eqt_intro(th: Thm) -> Result<Thm> {
-    th.deduct_antisym(truth())
+fn eqt_intro<L: HolTier>(th: Thm<L>) -> Result<Thm<L>> {
+    th.deduct_antisym(truth()?)
 }
 
 /// `Γ ⊢ p = T` → `Γ ⊢ p` (HOL Light `EQT_ELIM`), via `sym` + `eq_mp`
 /// against the cached [`truth`].
-fn eqt_elim(th: Thm) -> Result<Thm> {
-    th.sym()?.eq_mp(truth())
+fn eqt_elim<L: HolTier>(th: Thm<L>) -> Result<Thm<L>> {
+    th.sym()?.eq_mp(truth()?)
 }
 
 // ============================================================================
 // Conjunction — `p ∧ q ≡ (λf. f p q) = (λf. f T T)`
 // ============================================================================
 
-fn and_intro_slow(a: Thm, other: Thm) -> Result<Thm> {
+fn and_intro_slow<L: HolTier>(a: Thm<L>, other: Thm<L>) -> Result<Thm<L>> {
     let p = a.concl().clone();
     let q = other.concl().clone();
     check_bool(&p)?;
@@ -286,18 +343,18 @@ fn and_intro_slow(a: Thm, other: Thm) -> Result<Thm> {
     let lam_eq = fpq_eq.abs(&f_name, bbb)?;
 
     // Fold: ⊢ (p ∧ q) = <that body>, then eq_mp backwards.
-    unfold_at_2(and_def(), p, q)?.sym()?.eq_mp(lam_eq)
+    unfold_at_2(and_def()?, p, q)?.sym()?.eq_mp(lam_eq)
 }
 
 /// Shared `CONJUNCT1` / `CONJUNCT2`: apply the unfolded conjunction to a
 /// selector `λa b. a` / `λa b. b` and β-collapse both sides.
-fn and_elim_slow(conj: Thm, first: bool) -> Result<Thm> {
+fn and_elim_slow<L: HolTier>(conj: Thm<L>, first: bool) -> Result<Thm<L>> {
     let (p, q) = {
         let (p, q) = parse_and(conj.concl())?;
         (p.clone(), q.clone())
     };
     // Γ ⊢ (λf. f p q) = (λf. f T T)
-    let body = unfold_at_2(and_def(), p, q)?.eq_mp(conj)?;
+    let body = unfold_at_2(and_def()?, p, q)?.eq_mp(conj)?;
     // Selector: λa b:bool. a  /  λa b:bool. b.
     let sel = Term::abs(b(), Term::abs(b(), Term::bound(if first { 1 } else { 0 })));
     let applied = body.mk_comb(Thm::refl(sel)?)?; // Γ ⊢ (λf. f p q) sel = (λf. f T T) sel
@@ -312,7 +369,7 @@ fn and_elim_slow(conj: Thm, first: bool) -> Result<Thm> {
 // Implication — `p ⟹ q ≡ (p ∧ q) = p`
 // ============================================================================
 
-fn imp_intro_slow(th: Thm, phi: &Term) -> Result<Thm> {
+fn imp_intro_slow<L: HolTier>(th: Thm<L>, phi: &Term) -> Result<Thm<L>> {
     check_bool(phi)?;
     let psi = th.concl().clone();
     // Γ ∪ {φ} ⊢ φ ∧ ψ.
@@ -322,10 +379,10 @@ fn imp_intro_slow(th: Thm, phi: &Term) -> Result<Thm> {
     // deduct_antisym: (Γ ∪ {φ}) \ {φ}  ∪  {φ∧ψ} \ {φ∧ψ}  ⊢ (φ ∧ ψ) = φ.
     let eq = conj.deduct_antisym(elim)?;
     // Fold the definition backwards.
-    unfold_at_2(imp_def(), phi.clone(), psi)?.sym()?.eq_mp(eq)
+    unfold_at_2(imp_def()?, phi.clone(), psi)?.sym()?.eq_mp(eq)
 }
 
-fn imp_elim_slow(imp: Thm, hyp: Thm) -> Result<Thm> {
+fn imp_elim_slow<L: HolTier>(imp: Thm<L>, hyp: Thm<L>) -> Result<Thm<L>> {
     let (phi, psi) = {
         let (p, q) = parse_imp(imp.concl())?;
         (p.clone(), q.clone())
@@ -337,7 +394,7 @@ fn imp_elim_slow(imp: Thm, hyp: Thm) -> Result<Thm> {
         });
     }
     // Γ ⊢ (φ ∧ ψ) = φ, then transport ⊢ φ across it and project.
-    let conj_eq = unfold_at_2(imp_def(), phi, psi)?.eq_mp(imp)?;
+    let conj_eq = unfold_at_2(imp_def()?, phi, psi)?.eq_mp(imp)?;
     let conj = conj_eq.sym()?.eq_mp(hyp)?; // Γ ∪ Δ ⊢ φ ∧ ψ
     and_elim_drv(conj, false)
 }
@@ -346,7 +403,7 @@ fn imp_elim_slow(imp: Thm, hyp: Thm) -> Result<Thm> {
 // Universal quantification — `∀ ≡ λP. P = (λx. T)`
 // ============================================================================
 
-fn all_intro_drv(th: Thm, name: &str, ty: Type) -> Result<Thm> {
+fn all_intro_drv<L: HolTier>(th: Thm<L>, name: &str, ty: Type) -> Result<Thm<L>> {
     // Γ ⊢ (λx. φ') = (λx. T); the kernel `abs` enforces x ∉ FV(Γ).
     let lam_eq = eqt_intro(th)?.abs(name, ty.clone())?;
     let lam = lam_eq
@@ -359,7 +416,7 @@ fn all_intro_drv(th: Thm, name: &str, ty: Type) -> Result<Thm> {
     forall_at_eq(ty, lam)?.sym()?.eq_mp(lam_eq)
 }
 
-fn all_elim_slow(th: Thm, witness: Term) -> Result<Thm> {
+fn all_elim_slow<L: HolTier>(th: Thm<L>, witness: Term) -> Result<Thm<L>> {
     let (ty, lam) = parse_forall(th.concl())?;
     let wit_ty = witness.type_of()?;
     if wit_ty != ty {
@@ -387,7 +444,7 @@ fn imp_term(p: Term, q: Term) -> Term {
 }
 
 /// Shared `DISJ1` / `DISJ2`: `Γ ⊢ p` (resp. `q`) into `Γ ⊢ p ∨ q`.
-fn or_intro_slow(th: Thm, p: Term, q: Term, left: bool) -> Result<Thm> {
+fn or_intro_slow<L: HolTier>(th: Thm<L>, p: Term, q: Term, left: bool) -> Result<Thm<L>> {
     check_bool(&p)?;
     check_bool(&q)?;
     // Fresh r for the ∀-generalisation.
@@ -402,10 +459,10 @@ fn or_intro_slow(th: Thm, p: Term, q: Term, left: bool) -> Result<Thm> {
     let d1 = imp_intro_drv(fired, &q_r)?;
     let d2 = imp_intro_drv(d1, &p_r)?;
     let closed = all_intro_drv(d2, &r_name, b())?; // Γ ⊢ ∀r. (p⟹r) ⟹ (q⟹r) ⟹ r
-    unfold_at_2(or_def(), p, q)?.sym()?.eq_mp(closed)
+    unfold_at_2(or_def()?, p, q)?.sym()?.eq_mp(closed)
 }
 
-fn or_elim_slow(disj: Thm, left: Thm, right: Thm) -> Result<Thm> {
+fn or_elim_slow<L: HolTier>(disj: Thm<L>, left: Thm<L>, right: Thm<L>) -> Result<Thm<L>> {
     let (p, q) = {
         let (p, q) = parse_or(disj.concl())?;
         (p.clone(), q.clone())
@@ -434,26 +491,26 @@ fn or_elim_slow(disj: Thm, left: Thm, right: Thm) -> Result<Thm> {
         )));
     }
     // Γ ⊢ (p⟹r) ⟹ (q⟹r) ⟹ r at r := the branches' consequent.
-    let spec = all_elim_drv(unfold_at_2(or_def(), p, q)?.eq_mp(disj)?, lr)?;
+    let spec = all_elim_drv(unfold_at_2(or_def()?, p, q)?.eq_mp(disj)?, lr)?;
     imp_elim_drv(imp_elim_drv(spec, left)?, right)
 }
 
 // ============================================================================
-// Negation — `¬p ≡ p ⟹ F`
+// Negation — `¬p ≡ p ⟹ F`  (`F` = the defined `defs::fal`)
 // ============================================================================
 
-fn not_intro_slow(th: Thm) -> Result<Thm> {
+fn not_intro_slow<L: HolTier>(th: Thm<L>) -> Result<Thm<L>> {
     let (p, f) = parse_imp(th.concl())?;
-    if !matches!(f.kind(), TermKind::Bool(false)) {
+    if !is_fal(f) {
         return Err(Error::ConnectiveRule(format!(
             "not_intro: consequent {f} is not F"
         )));
     }
     let p = p.clone();
-    unfold_at(not_def(), p)?.sym()?.eq_mp(th)
+    unfold_at(not_def()?, p)?.sym()?.eq_mp(th)
 }
 
-fn not_elim_slow(neg: Thm, other: Thm) -> Result<Thm> {
+fn not_elim_slow<L: HolTier>(neg: Thm<L>, other: Thm<L>) -> Result<Thm<L>> {
     let p = parse_not(neg.concl())?.clone();
     if p != *other.concl() {
         return Err(Error::ConnectiveRule(format!(
@@ -461,8 +518,32 @@ fn not_elim_slow(neg: Thm, other: Thm) -> Result<Thm> {
             other.concl()
         )));
     }
-    let unfolded = unfold_at(not_def(), p)?.eq_mp(neg)?; // Γ ⊢ p ⟹ F
+    let unfolded = unfold_at(not_def()?, p)?.eq_mp(neg)?; // Γ ⊢ p ⟹ F
     imp_elim_drv(unfolded, other)
+}
+
+// ============================================================================
+// Ex falso — `F ≡ ∀p:bool. p`
+// ============================================================================
+
+fn false_elim_drv<L: HolTier>(th: Thm<L>, p: Term) -> Result<Thm<L>> {
+    if !is_fal(th.concl()) {
+        return Err(Error::ConnectiveRule(format!(
+            "false_elim: conclusion {} is not F",
+            th.concl()
+        )));
+    }
+    check_bool(&p)?;
+    // Γ ⊢ ∀q:bool. q, then ∀-elim at the target.
+    let unfolded = fal_def()?.eq_mp(th)?;
+    all_elim_drv(unfolded, p)
+}
+
+/// `⊢ F = (∀p:bool. p)` (cached) — `fal`'s defining equation.
+fn fal_def<L: HolTier>() -> Result<Thm<L>> {
+    static D: LazyLock<CoreThm> =
+        LazyLock::new(|| crate::delta_at(&defs::fal()).expect("derived: unfold F"));
+    at_tier(&D)
 }
 
 // ============================================================================
@@ -470,10 +551,11 @@ fn not_elim_slow(neg: Thm, other: Thm) -> Result<Thm> {
 // ============================================================================
 //
 // Each hot rule keeps a **schema** — the rule derived ONCE (via its slow
-// derivation above) at fresh `bool` variables — and per call instantiates
-// it with one kernel `inst` per variable, then cuts the premises in with
-// `PROVE_HYP` (`deduct_antisym` + `eq_mp`, 2 mints). That turns a
-// 15–100-mint derivation into 3–8 mints on the hot path.
+// derivation above) at fresh `bool` variables, at the pure `CoreLang`
+// tier — and per call instantiates it with one kernel `inst` per
+// variable, then cuts the premises in with `PROVE_HYP` (`deduct_antisym`
+// + `eq_mp`, 2 mints). That turns a 15–100-mint derivation into 3–8
+// mints on the hot path.
 //
 // **Verified, not trusted:** a fast path's result is checked against the
 // exact rule contract — conclusion term AND hypothesis set — and any
@@ -501,7 +583,7 @@ fn svar(name: &str) -> Term {
 /// `A ∪ (B \ {x}) ⊢ y` (via `deduct_antisym` + `eq_mp`). Strict: `None`
 /// unless `x` really is a hypothesis of `b` (so a cut can never silently
 /// leave a schema hypothesis behind).
-fn prove_hyp(a: &Thm, b: Thm) -> Option<Thm> {
+fn prove_hyp<L: HolTier>(a: &Thm<L>, b: Thm<L>) -> Option<Thm<L>> {
     if !b.hyps().contains(a.concl()) {
         return None;
     }
@@ -509,10 +591,11 @@ fn prove_hyp(a: &Thm, b: Thm) -> Option<Thm> {
     eq.eq_mp(a.clone()).ok()
 }
 
-/// Instantiate `schema` at `subs` in order (each at the replacement's own
-/// type). Purely mechanical; the callers verify the result shape.
-fn inst_schema(schema: &Thm, subs: &[(&str, &Term)]) -> Option<Thm> {
-    let mut out = schema.clone();
+/// Instantiate a cached pure-tier `schema` at `subs` in order (each at
+/// the replacement's own type), landing at the working tier `L`. Purely
+/// mechanical; the callers verify the result shape.
+fn inst_schema<L: HolTier>(schema: &CoreThm, subs: &[(&str, &Term)]) -> Option<Thm<L>> {
+    let mut out = at_tier::<L>(schema).ok()?;
     for (n, t) in subs {
         out = out.inst(n, (*t).clone()).ok()?;
     }
@@ -533,12 +616,12 @@ fn not_term(p: Term) -> Term {
 
 /// The final fast-path gate: conclusion and hypothesis set must match the
 /// rule contract exactly.
-fn verified(out: Thm, concl: &Term, hyps: &covalence_core::Ctx) -> Option<Thm> {
+fn verified<L: HolTier>(out: Thm<L>, concl: &Term, hyps: &covalence_core::Ctx) -> Option<Thm<L>> {
     (out.concl() == concl && out.hyps() == hyps).then_some(out)
 }
 
-fn schema_and_intro() -> &'static Thm {
-    static S: LazyLock<Thm> = LazyLock::new(|| {
+fn schema_and_intro() -> &'static CoreThm {
+    static S: LazyLock<CoreThm> = LazyLock::new(|| {
         // {∂p, ∂q} ⊢ ∂p ∧ ∂q
         and_intro_slow(
             Thm::assume(svar(SP)).unwrap(),
@@ -549,29 +632,30 @@ fn schema_and_intro() -> &'static Thm {
     &S
 }
 
-fn schema_and_elim(first: bool) -> &'static Thm {
+fn schema_and_elim(first: bool) -> &'static CoreThm {
     // {∂p ∧ ∂q} ⊢ ∂p   /   {∂p ∧ ∂q} ⊢ ∂q
-    static L: LazyLock<Thm> = LazyLock::new(|| {
+    static L: LazyLock<CoreThm> = LazyLock::new(|| {
         and_elim_slow(Thm::assume(and_term(svar(SP), svar(SQ))).unwrap(), true)
             .expect("derived: ∧-elim-l schema")
     });
-    static R: LazyLock<Thm> = LazyLock::new(|| {
+    static R: LazyLock<CoreThm> = LazyLock::new(|| {
         and_elim_slow(Thm::assume(and_term(svar(SP), svar(SQ))).unwrap(), false)
             .expect("derived: ∧-elim-r schema")
     });
     if first { &L } else { &R }
 }
 
-fn schema_imp_def() -> &'static Thm {
-    static S: LazyLock<Thm> = LazyLock::new(|| {
+fn schema_imp_def() -> &'static CoreThm {
+    static S: LazyLock<CoreThm> = LazyLock::new(|| {
         // ⊢ (∂p ⟹ ∂q) = ((∂p ∧ ∂q) = ∂p)
-        unfold_at_2(imp_def(), svar(SP), svar(SQ)).expect("derived: ⟹-def schema")
+        unfold_at_2(imp_def().expect("derived: ⟹-def"), svar(SP), svar(SQ))
+            .expect("derived: ⟹-def schema")
     });
     &S
 }
 
-fn schema_imp_elim() -> &'static Thm {
-    static S: LazyLock<Thm> = LazyLock::new(|| {
+fn schema_imp_elim() -> &'static CoreThm {
+    static S: LazyLock<CoreThm> = LazyLock::new(|| {
         // {∂p ⟹ ∂q, ∂p} ⊢ ∂q
         imp_elim_slow(
             Thm::assume(imp_term(svar(SP), svar(SQ))).unwrap(),
@@ -582,21 +666,21 @@ fn schema_imp_elim() -> &'static Thm {
     &S
 }
 
-fn schema_or_intro(left: bool) -> &'static Thm {
+fn schema_or_intro(left: bool) -> &'static CoreThm {
     // {∂p} ⊢ ∂p ∨ ∂q   /   {∂q} ⊢ ∂p ∨ ∂q
-    static L: LazyLock<Thm> = LazyLock::new(|| {
+    static L: LazyLock<CoreThm> = LazyLock::new(|| {
         or_intro_slow(Thm::assume(svar(SP)).unwrap(), svar(SP), svar(SQ), true)
             .expect("derived: ∨-intro-l schema")
     });
-    static R: LazyLock<Thm> = LazyLock::new(|| {
+    static R: LazyLock<CoreThm> = LazyLock::new(|| {
         or_intro_slow(Thm::assume(svar(SQ)).unwrap(), svar(SP), svar(SQ), false)
             .expect("derived: ∨-intro-r schema")
     });
     if left { &L } else { &R }
 }
 
-fn schema_or_elim() -> &'static Thm {
-    static S: LazyLock<Thm> = LazyLock::new(|| {
+fn schema_or_elim() -> &'static CoreThm {
+    static S: LazyLock<CoreThm> = LazyLock::new(|| {
         // {∂p ∨ ∂q, ∂p ⟹ ∂r, ∂q ⟹ ∂r} ⊢ ∂r
         or_elim_slow(
             Thm::assume(or_term(svar(SP), svar(SQ))).unwrap(),
@@ -608,17 +692,17 @@ fn schema_or_elim() -> &'static Thm {
     &S
 }
 
-fn schema_not_intro() -> &'static Thm {
-    static S: LazyLock<Thm> = LazyLock::new(|| {
+fn schema_not_intro() -> &'static CoreThm {
+    static S: LazyLock<CoreThm> = LazyLock::new(|| {
         // {∂p ⟹ F} ⊢ ¬∂p
-        not_intro_slow(Thm::assume(imp_term(svar(SP), Term::bool_lit(false))).unwrap())
+        not_intro_slow(Thm::assume(imp_term(svar(SP), defs::fal())).unwrap())
             .expect("derived: ¬-intro schema")
     });
     &S
 }
 
-fn schema_not_elim() -> &'static Thm {
-    static S: LazyLock<Thm> = LazyLock::new(|| {
+fn schema_not_elim() -> &'static CoreThm {
+    static S: LazyLock<CoreThm> = LazyLock::new(|| {
         // {¬∂p, ∂p} ⊢ F
         not_elim_slow(
             Thm::assume(not_term(svar(SP))).unwrap(),
@@ -629,14 +713,23 @@ fn schema_not_elim() -> &'static Thm {
     &S
 }
 
+fn schema_false_elim() -> &'static CoreThm {
+    static S: LazyLock<CoreThm> = LazyLock::new(|| {
+        // {F} ⊢ ∂p
+        false_elim_drv(Thm::assume(defs::fal()).unwrap(), svar(SP))
+            .expect("derived: ex-falso schema")
+    });
+    &S
+}
+
 /// `⊢ (∀[a] ∂P) = (∂P = (λx:a. T))` — the `∀`-unfold at a free predicate
 /// variable; per call two kernel `inst`s (`a := τ`, `∂P := λ`) rebuild the
 /// definitional equation with no congruence/β work.
-fn schema_forall_at() -> &'static Thm {
-    static S: LazyLock<Thm> = LazyLock::new(|| {
+fn schema_forall_at() -> &'static CoreThm {
+    static S: LazyLock<CoreThm> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         let pred = Term::free(SPRED, Type::fun(alpha.clone(), b()));
-        let fa_def = crate::delta(&defs::forall(alpha)).expect("derived: unfold ∀");
+        let fa_def = crate::delta_at(&defs::forall(alpha)).expect("derived: unfold ∀");
         unfold_at(fa_def, pred).expect("derived: ∀-at schema")
     });
     &S
@@ -645,9 +738,8 @@ fn schema_forall_at() -> &'static Thm {
 /// `⊢ (∀[ty] lam) = (lam = (λx:ty. T))` via [`schema_forall_at`]. Exact:
 /// the replacements are inserted wholesale (never re-scanned), so no
 /// capture is possible.
-fn forall_at_eq(ty: Type, lam: Term) -> Result<Thm> {
-    schema_forall_at()
-        .clone()
+fn forall_at_eq<L: HolTier>(ty: Type, lam: Term) -> Result<Thm<L>> {
+    at_tier::<L>(schema_forall_at())?
         .inst_tfree("a", ty)?
         .inst(SPRED, lam)
 }
@@ -655,8 +747,8 @@ fn forall_at_eq(ty: Type, lam: Term) -> Result<Thm> {
 /// `{∀[a] ∂P} ⊢ ∂P ∂w` — `SPEC` at a free witness variable, with the
 /// conclusion left as an **unreduced application** (the per-call β-step
 /// happens at the real witness).
-fn schema_all_elim() -> &'static Thm {
-    static S: LazyLock<Thm> = LazyLock::new(|| {
+fn schema_all_elim() -> &'static CoreThm {
+    static S: LazyLock<CoreThm> = LazyLock::new(|| {
         let alpha = Type::tfree("a");
         let pred = Term::free(SPRED, Type::fun(alpha.clone(), b()));
         let w = Term::free(SW, alpha.clone());
@@ -681,14 +773,14 @@ fn schema_all_elim() -> &'static Thm {
     &S
 }
 
-fn all_elim_fast(x: &Thm, w: &Term) -> Option<Thm> {
+fn all_elim_fast<L: HolTier>(x: &Thm<L>, w: &Term) -> Option<Thm<L>> {
     let (ty, lam) = parse_forall(x.concl()).ok()?;
     if w.type_of().ok()? != ty {
         return None; // slow path raises TypeMismatch
     }
     // {∀[ty] lam} ⊢ lam w  (three kernel `inst`s of the schema).
-    let s = schema_all_elim()
-        .clone()
+    let s = at_tier::<L>(schema_all_elim())
+        .ok()?
         .inst_tfree("a", ty)
         .ok()?
         .inst(SPRED, lam.clone())
@@ -704,7 +796,7 @@ fn all_elim_fast(x: &Thm, w: &Term) -> Option<Thm> {
     verified(out, &subst::open(body, w), x.hyps())
 }
 
-fn and_intro_fast(x: &Thm, y: &Thm) -> Option<Thm> {
+fn and_intro_fast<L: HolTier>(x: &Thm<L>, y: &Thm<L>) -> Option<Thm<L>> {
     let (p, q) = (x.concl().clone(), y.concl().clone());
     let s = inst_schema(schema_and_intro(), &[(SP, &p), (SQ, &q)])?;
     let t = prove_hyp(x, s)?;
@@ -712,7 +804,7 @@ fn and_intro_fast(x: &Thm, y: &Thm) -> Option<Thm> {
     verified(out, &and_term(p, q), &x.hyps().union(y.hyps()))
 }
 
-fn and_elim_fast(x: &Thm, first: bool) -> Option<Thm> {
+fn and_elim_fast<L: HolTier>(x: &Thm<L>, first: bool) -> Option<Thm<L>> {
     let (p, q) = parse_and(x.concl()).ok()?;
     let (p, q) = (p.clone(), q.clone());
     let s = inst_schema(schema_and_elim(first), &[(SP, &p), (SQ, &q)])?;
@@ -720,7 +812,7 @@ fn and_elim_fast(x: &Thm, first: bool) -> Option<Thm> {
     verified(out, if first { &p } else { &q }, x.hyps())
 }
 
-fn imp_elim_fast(x: &Thm, y: &Thm) -> Option<Thm> {
+fn imp_elim_fast<L: HolTier>(x: &Thm<L>, y: &Thm<L>) -> Option<Thm<L>> {
     let (phi, psi) = parse_imp(x.concl()).ok()?;
     let (phi, psi) = (phi.clone(), psi.clone());
     if y.concl() != &phi {
@@ -732,7 +824,7 @@ fn imp_elim_fast(x: &Thm, y: &Thm) -> Option<Thm> {
     verified(out, &psi, &x.hyps().union(y.hyps()))
 }
 
-fn imp_intro_fast(x: &Thm, phi: &Term) -> Option<Thm> {
+fn imp_intro_fast<L: HolTier>(x: &Thm<L>, phi: &Term) -> Option<Thm<L>> {
     if !phi.type_of().ok()?.is_bool() {
         return None; // slow path raises NotBool
     }
@@ -748,13 +840,13 @@ fn imp_intro_fast(x: &Thm, phi: &Term) -> Option<Thm> {
     verified(out, &imp_term(phi.clone(), psi), &x.hyps().remove(phi))
 }
 
-fn or_intro_fast(x: &Thm, p: &Term, q: &Term, left: bool) -> Option<Thm> {
+fn or_intro_fast<L: HolTier>(x: &Thm<L>, p: &Term, q: &Term, left: bool) -> Option<Thm<L>> {
     let s = inst_schema(schema_or_intro(left), &[(SP, p), (SQ, q)])?;
     let out = prove_hyp(x, s)?;
     verified(out, &or_term(p.clone(), q.clone()), x.hyps())
 }
 
-fn or_elim_fast(d: &Thm, l: &Thm, r: &Thm) -> Option<Thm> {
+fn or_elim_fast<L: HolTier>(d: &Thm<L>, l: &Thm<L>, r: &Thm<L>) -> Option<Thm<L>> {
     let (p, q) = parse_or(d.concl()).ok()?;
     let (p, q) = (p.clone(), q.clone());
     let (lp, lr) = parse_imp(l.concl()).ok()?;
@@ -770,9 +862,9 @@ fn or_elim_fast(d: &Thm, l: &Thm, r: &Thm) -> Option<Thm> {
     verified(out, &goal, &d.hyps().union(l.hyps()).union(r.hyps()))
 }
 
-fn not_intro_fast(x: &Thm) -> Option<Thm> {
+fn not_intro_fast<L: HolTier>(x: &Thm<L>) -> Option<Thm<L>> {
     let (p, f) = parse_imp(x.concl()).ok()?;
-    if !matches!(f.kind(), TermKind::Bool(false)) {
+    if !is_fal(f) {
         return None; // slow path raises ConnectiveRule
     }
     let p = p.clone();
@@ -781,7 +873,7 @@ fn not_intro_fast(x: &Thm) -> Option<Thm> {
     verified(out, &not_term(p), x.hyps())
 }
 
-fn not_elim_fast(neg: &Thm, other: &Thm) -> Option<Thm> {
+fn not_elim_fast<L: HolTier>(neg: &Thm<L>, other: &Thm<L>) -> Option<Thm<L>> {
     let p = parse_not(neg.concl()).ok()?.clone();
     if other.concl() != &p {
         return None; // slow path raises ConnectiveRule
@@ -789,74 +881,118 @@ fn not_elim_fast(neg: &Thm, other: &Thm) -> Option<Thm> {
     let s = inst_schema(schema_not_elim(), &[(SP, &p)])?;
     let t = prove_hyp(neg, s)?;
     let out = prove_hyp(other, t)?;
-    verified(out, &Term::bool_lit(false), &neg.hyps().union(other.hyps()))
+    verified(out, &defs::fal(), &neg.hyps().union(other.hyps()))
+}
+
+fn false_elim_fast<L: HolTier>(x: &Thm<L>, p: &Term) -> Option<Thm<L>> {
+    if !is_fal(x.concl()) || !p.type_of().ok()?.is_bool() {
+        return None; // slow path raises the shape/type errors
+    }
+    let s = inst_schema(schema_false_elim(), &[(SP, p)])?;
+    let out = prove_hyp(x, s)?;
+    verified(out, p, x.hyps())
 }
 
 // ============================================================================
 // Dispatchers: fast path, verified; else the slow derivation
 // ============================================================================
 
-fn and_intro_drv(a: Thm, other: Thm) -> Result<Thm> {
+fn and_intro_drv<L: HolTier>(a: Thm<L>, other: Thm<L>) -> Result<Thm<L>> {
     if let Some(t) = and_intro_fast(&a, &other) {
         return Ok(t);
     }
     and_intro_slow(a, other)
 }
 
-fn and_elim_drv(conj: Thm, first: bool) -> Result<Thm> {
+fn and_elim_drv<L: HolTier>(conj: Thm<L>, first: bool) -> Result<Thm<L>> {
     if let Some(t) = and_elim_fast(&conj, first) {
         return Ok(t);
     }
     and_elim_slow(conj, first)
 }
 
-fn imp_intro_drv(th: Thm, phi: &Term) -> Result<Thm> {
+fn imp_intro_drv<L: HolTier>(th: Thm<L>, phi: &Term) -> Result<Thm<L>> {
     if let Some(t) = imp_intro_fast(&th, phi) {
         return Ok(t);
     }
     imp_intro_slow(th, phi)
 }
 
-fn imp_elim_drv(imp: Thm, hyp: Thm) -> Result<Thm> {
+fn imp_elim_drv<L: HolTier>(imp: Thm<L>, hyp: Thm<L>) -> Result<Thm<L>> {
     if let Some(t) = imp_elim_fast(&imp, &hyp) {
         return Ok(t);
     }
     imp_elim_slow(imp, hyp)
 }
 
-fn all_elim_drv(th: Thm, witness: Term) -> Result<Thm> {
+fn all_elim_drv<L: HolTier>(th: Thm<L>, witness: Term) -> Result<Thm<L>> {
     if let Some(t) = all_elim_fast(&th, &witness) {
         return Ok(t);
     }
     all_elim_slow(th, witness)
 }
 
-fn or_intro_drv(th: Thm, p: Term, q: Term, left: bool) -> Result<Thm> {
+fn or_intro_drv<L: HolTier>(th: Thm<L>, p: Term, q: Term, left: bool) -> Result<Thm<L>> {
     if let Some(t) = or_intro_fast(&th, &p, &q, left) {
         return Ok(t);
     }
     or_intro_slow(th, p, q, left)
 }
 
-fn or_elim_drv(disj: Thm, left: Thm, right: Thm) -> Result<Thm> {
+fn or_elim_drv<L: HolTier>(disj: Thm<L>, left: Thm<L>, right: Thm<L>) -> Result<Thm<L>> {
     if let Some(t) = or_elim_fast(&disj, &left, &right) {
         return Ok(t);
     }
     or_elim_slow(disj, left, right)
 }
 
-fn not_intro_drv(th: Thm) -> Result<Thm> {
+fn not_intro_drv<L: HolTier>(th: Thm<L>) -> Result<Thm<L>> {
+    // Transitional drop-in tolerance (dies with EG5): a premise stated
+    // over the literal — `Γ ⊢ p ⟹ ⌜F⌝`, the shape the deleted kernel
+    // rule accepted — crosses the EG3b bridge at the eval tier first
+    // (re-point the consequent at the defined `F`, then fold).
+    if let Ok((p, f)) = parse_imp(th.concl())
+        && matches!(f.kind(), TermKind::Bool(false))
+        && let Some(eval_th) = same_tier::<L, crate::CoreEval>(th.clone())
+    {
+        let p = p.clone();
+        let bridged = (|| -> Result<crate::EvalThm> {
+            let fired = imp_elim_drv(eval_th, Thm::assume(p.clone())?)?; // Γ ∪ {p} ⊢ ⌜F⌝
+            imp_intro_drv(crate::boolean::fal_from_lit(fired)?, &p) // Γ ⊢ p ⟹ F
+        })()?;
+        let back = same_tier::<crate::CoreEval, L>(bridged).expect("same tier");
+        return not_intro_drv(back);
+    }
     if let Some(t) = not_intro_fast(&th) {
         return Ok(t);
     }
     not_intro_slow(th)
 }
 
-fn not_elim_drv(neg: Thm, other: Thm) -> Result<Thm> {
+fn not_elim_drv<L: HolTier>(neg: Thm<L>, other: Thm<L>) -> Result<Thm<L>> {
     if let Some(t) = not_elim_fast(&neg, &other) {
         return Ok(t);
     }
     not_elim_slow(neg, other)
+}
+
+fn false_elim_disp<L: HolTier>(th: Thm<L>, p: Term) -> Result<Thm<L>> {
+    // Transitional drop-in tolerance (dies with EG5): a literal-`⌜F⌝`
+    // premise — the shape the deleted kernel rule required — crosses the
+    // EG3b bridge at the eval tier (`fal_from_lit`, the derived literal
+    // ex falso) before the defined-`F` derivation runs. At any other
+    // tier the literal carries no commitments and is correctly rejected.
+    if matches!(th.concl().kind(), TermKind::Bool(false))
+        && let Some(eval_th) = same_tier::<L, crate::CoreEval>(th.clone())
+    {
+        let bridged = crate::boolean::fal_from_lit(eval_th)?; // Γ ⊢ F
+        let back = same_tier::<crate::CoreEval, L>(bridged).expect("same tier");
+        return false_elim_disp(back, p);
+    }
+    if let Some(t) = false_elim_fast(&th, &p) {
+        return Ok(t);
+    }
+    false_elim_drv(th, p)
 }
 
 // ============================================================================
@@ -864,8 +1000,10 @@ fn not_elim_drv(neg: Thm, other: Thm) -> Result<Thm> {
 // ============================================================================
 
 /// The classical `EXCLUDED_MIDDLE` derivation: `⊢ p ∨ ¬p` for the free
-/// variable `p : bool`, from Hilbert choice ([`covalence_core::Thm::select_ax`])
-/// + funext-via-`abs`, following HOL Light `class.ml`.
+/// variable `p : bool`, from Hilbert choice
+/// ([`covalence_core::Thm::select_ax`]) plus funext-via-`abs`, following
+/// HOL Light `class.ml` — derived at the pure `CoreLang` tier over the
+/// defined `T` / `F`.
 ///
 /// With `Pt := λx. (x = T) ∨ p` and `Pf := λx. (x = F) ∨ p`,
 /// `U := ε Pt`, `V := ε Pf`:
@@ -873,50 +1011,50 @@ fn not_elim_drv(neg: Thm, other: Thm) -> Result<Thm> {
 ///    `T` / `F` (each satisfies its predicate by `DISJ1` on `refl`).
 /// 2. Under `{p}`: both predicate bodies are `= T` (`DISJ2` + `EQT_INTRO`),
 ///    so `Pt = Pf` by `abs`, so `U = V` by congruence — hence under
-///    `{p, U = T, V = F}`: `T = U = V = F`, so `⊢ F` via [`truth`], so
-///    `{U = T, V = F} ⊢ ¬p`, so `p ∨ ¬p` by `DISJ2`.
+///    `{p, U = T, V = F}`: `T = U = V = F`, so `⊢ F` via [`truth`] +
+///    `eq_mp`, so `{U = T, V = F} ⊢ ¬p`, so `p ∨ ¬p` by `DISJ2`.
 /// 3. `DISJ_CASES` over (1)'s two disjunctions: every branch ends in
 ///    `p ∨ ¬p` (`{p}` branches by `DISJ1`). ∎
-fn lem_schema() -> Result<Thm> {
+fn lem_schema() -> Result<CoreThm> {
     let p = svar(SP);
     let not_p = Term::app(defs::not(), p.clone());
     let goal = Term::app(Term::app(defs::or(), p.clone()), not_p.clone());
-    let t_lit = Term::bool_lit(true);
-    let f_lit = Term::bool_lit(false);
+    let t_def = defs::tru();
+    let f_def = defs::fal();
 
     // The two selector predicates and their ε-choices.
     let x = Term::free("x", b());
-    let pred_at = |lit: &Term| -> Result<Term> {
-        // λx:bool. (x = lit) ∨ p
+    let pred_at = |c: &Term| -> Result<Term> {
+        // λx:bool. (x = c) ∨ p
         let body = Term::app(
             Term::app(
                 defs::or(),
-                covalence_core::hol::hol_eq(x.clone(), lit.clone()),
+                covalence_core::hol::hol_eq(x.clone(), c.clone()),
             ),
             p.clone(),
         );
         Ok(Term::abs(b(), subst::close(&body, "x")))
     };
-    let pt = pred_at(&t_lit)?;
-    let pf = pred_at(&f_lit)?;
+    let pt = pred_at(&t_def)?;
+    let pf = pred_at(&f_def)?;
     let u = Term::app(Term::select_op(b()), pt.clone());
     let v = Term::app(Term::select_op(b()), pf.clone());
 
     // 1. ⊢ (U = T) ∨ p  and  ⊢ (V = F) ∨ p.
-    let choose = |pred: &Term, lit: &Term, chosen: &Term| -> Result<Thm> {
-        // ⊢ (lit = lit) ∨ p, β-folded into `pred lit`.
-        let refl_lit = Thm::refl(lit.clone())?;
-        let lit_case = or_intro_drv(refl_lit.clone(), refl_lit.concl().clone(), p.clone(), true)?;
-        let beta_w = Thm::beta_conv(Term::app(pred.clone(), lit.clone()))?; // ⊢ pred lit = ((lit=lit) ∨ p)
-        let pred_holds = beta_w.sym()?.eq_mp(lit_case)?; // ⊢ pred lit
-        // select_ax: ⊢ pred lit ⟹ pred (ε pred), then β the conclusion.
-        let ax = Thm::select_ax(pred.clone(), lit.clone())?;
-        let at_choice = imp_elim_drv(ax, pred_holds)?; // ⊢ pred (ε pred)
+    let choose = |pred: &Term, c: &Term, chosen: &Term| -> Result<CoreThm> {
+        // ⊢ (c = c) ∨ p, β-folded into `pred c`.
+        let refl_c = Thm::refl(c.clone())?;
+        let c_case = or_intro_drv(refl_c.clone(), refl_c.concl().clone(), p.clone(), true)?;
+        let beta_w = Thm::beta_conv(Term::app(pred.clone(), c.clone()))?; // ⊢ pred c = ((c=c) ∨ p)
+        let pred_holds = beta_w.sym()?.eq_mp(c_case)?; // ⊢ pred c
+        // select_intro (sequent choice): ⊢ pred c gives ⊢ pred (ε pred),
+        // then β the conclusion.
+        let at_choice = Thm::select_intro(pred_holds)?; // ⊢ pred (ε pred)
         let beta_c = Thm::beta_conv(Term::app(pred.clone(), chosen.clone()))?;
-        beta_c.eq_mp(at_choice) // ⊢ (chosen = lit) ∨ p
+        beta_c.eq_mp(at_choice) // ⊢ (chosen = c) ∨ p
     };
-    let u_case = choose(&pt, &t_lit, &u)?; // ⊢ (U = T) ∨ p
-    let v_case = choose(&pf, &f_lit, &v)?; // ⊢ (V = F) ∨ p
+    let u_case = choose(&pt, &t_def, &u)?; // ⊢ (U = T) ∨ p
+    let v_case = choose(&pf, &f_def, &v)?; // ⊢ (V = F) ∨ p
 
     // Branch A: ⊢ p ⟹ (p ∨ ¬p).
     let branch_p = {
@@ -925,13 +1063,13 @@ fn lem_schema() -> Result<Thm> {
     };
 
     // Branch B: {U = T, V = F} ⊢ p ∨ ¬p (via ¬p).
-    let u_eq_t = covalence_core::hol::hol_eq(u.clone(), t_lit.clone());
-    let v_eq_f = covalence_core::hol::hol_eq(v.clone(), f_lit.clone());
+    let u_eq_t = covalence_core::hol::hol_eq(u.clone(), t_def.clone());
+    let v_eq_f = covalence_core::hol::hol_eq(v.clone(), f_def.clone());
     let branch_uv = {
         // Under {p}: Pt = Pf pointwise at the free x, then abs + congruence.
         let assume_p = Thm::assume(p.clone())?;
-        let xt = covalence_core::hol::hol_eq(x.clone(), t_lit.clone());
-        let xf = covalence_core::hol::hol_eq(x.clone(), f_lit.clone());
+        let xt = covalence_core::hol::hol_eq(x.clone(), t_def.clone());
+        let xf = covalence_core::hol::hol_eq(x.clone(), f_def.clone());
         let bt = eqt_intro(or_intro_drv(
             assume_p.clone(),
             xt.clone(),
@@ -947,7 +1085,7 @@ fn lem_schema() -> Result<Thm> {
             .sym()? // T = U
             .trans(u_eq_v)? // T = V
             .trans(Thm::assume(v_eq_f.clone())?)?; // T = F
-        let falsity = t_eq_f.eq_mp(truth())?; // {p, U=T, V=F} ⊢ F
+        let falsity = t_eq_f.eq_mp(truth()?)?; // {p, U=T, V=F} ⊢ F
         let neg = not_intro_drv(imp_intro_drv(falsity, &p)?)?; // {U=T, V=F} ⊢ ¬p
         or_intro_drv(neg, p.clone(), not_p.clone(), false)? // {U=T, V=F} ⊢ p ∨ ¬p
     };
@@ -963,15 +1101,108 @@ fn lem_schema() -> Result<Thm> {
     Ok(out)
 }
 
-fn lem_drv(p: Term) -> Result<Thm> {
-    static SCHEMA: LazyLock<Thm> = LazyLock::new(|| lem_schema().expect("derived: LEM schema"));
+fn lem_drv<L: HolTier>(p: Term) -> Result<Thm<L>> {
+    static SCHEMA: LazyLock<CoreThm> = LazyLock::new(|| lem_schema().expect("derived: LEM schema"));
     check_bool(&p)?;
     // One kernel `inst`: the schema's sole free variable is `∂p : bool`,
     // so the instance is exactly `⊢ p ∨ ¬p` at the given `p` (verified).
-    let out = SCHEMA.clone().inst(SP, p.clone())?;
+    let out = at_tier::<L>(&SCHEMA)?.inst(SP, p.clone())?;
     debug_assert_eq!(out.concl(), &or_term(p.clone(), not_term(p.clone())));
     debug_assert!(out.hyps().is_empty());
     Ok(out)
+}
+
+// ============================================================================
+// Derived axiom forms of the sequent-reshaped kernel rules (stage A3)
+// ============================================================================
+//
+// The kernel's choice / def-spec / subtype / nat-freeness rules are
+// connective-free **sequent** rules (`Thm::select_intro`, `Thm::spec_intro`,
+// `Thm::spec_rep_abs_intro`, `Thm::succ_eq_elim`, `Thm::zero_eq_succ_elim`);
+// the classic implication / negation axiom forms below are zero-TCB
+// derivations over them (`assume` + rule + `imp_intro` / `not_intro`),
+// provided as drop-ins with the pre-sequent kernel signatures.
+
+/// `⊢ p x ⟹ p (ε p)` — the classic Hilbert-choice axiom form
+/// (`assume` + [`Thm::select_intro`] + `imp_intro`).
+fn select_ax_drv<L: HolTier>(p: Term, x: Term) -> Result<Thm<L>> {
+    let px = Term::app(p, x);
+    let holds = Thm::assume(px.clone())?; // {p x} ⊢ p x (validates typing)
+    let chosen = Thm::select_intro(holds)?; // {p x} ⊢ p (ε p)
+    imp_intro_drv(chosen, &px) // ⊢ p x ⟹ p (ε p)
+}
+
+/// Rebuild a spec's instantiated selector predicate — the same positional
+/// simultaneous tvar substitution the kernel's `spec_intro` /
+/// `spec_rep_abs_intro` apply (their structural-equality premise check
+/// makes any divergence here fail closed, never mis-mint).
+fn spec_pred(
+    ty: Option<&Type>,
+    tm: Option<&Term>,
+    args: &covalence_core::TypeList,
+) -> Result<Term> {
+    let declared_ty = ty.ok_or(Error::SpecHasNoBody)?;
+    let body = tm.ok_or(Error::SpecHasNoBody)?;
+    let tvars = declared_ty.free_tvars();
+    let sub: std::collections::BTreeMap<_, _> =
+        tvars.iter().cloned().zip(args.iter().cloned()).collect();
+    Ok(subst::subst_tfrees_in_term(body, &sub))
+}
+
+/// `⊢ p w ⟹ p t` for a def-style `TermSpec` leaf `t` with selector
+/// predicate `p` and witness `w` (`assume` + [`Thm::spec_intro`] +
+/// `imp_intro`).
+fn spec_ax_drv<L: HolTier>(t: Term, w: Term) -> Result<Thm<L>> {
+    let (spec, args) = match t.kind() {
+        TermKind::Spec(spec, args) => (spec.clone(), args.clone()),
+        _ => return Err(Error::NotASpec),
+    };
+    let pred = spec_pred(spec.ty(), spec.tm(), &args)?;
+    let pw = Term::app(pred, w);
+    let holds = Thm::assume(pw.clone())?; // {p w} ⊢ p w (validates typing)
+    let concl = Thm::spec_intro(holds, t)?; // {p w} ⊢ p t
+    imp_intro_drv(concl, &pw)
+}
+
+/// `⊢ P a ⟹ rep (abs a) = a` for a subtype `TypeSpec` (`assume` +
+/// [`Thm::spec_rep_abs_intro`] + `imp_intro`).
+fn spec_rep_abs_fwd_drv<L: HolTier>(
+    spec: covalence_core::TypeSpec,
+    args: covalence_core::TypeList,
+    a: Term,
+) -> Result<Thm<L>> {
+    let pred = spec_pred(spec.ty(), spec.tm(), &args).map_err(|_| Error::NotASubtype)?;
+    let pa = Term::app(pred, a);
+    let holds = Thm::assume(pa.clone())?; // {P a} ⊢ P a (validates typing)
+    let eq = Thm::spec_rep_abs_intro(spec, args, holds)?; // {P a} ⊢ rep (abs a) = a
+    imp_intro_drv(eq, &pa)
+}
+
+/// `⊢ succ m = succ n ⟹ m = n` (`assume` + [`Thm::succ_eq_elim`] +
+/// `imp_intro`).
+fn succ_inj_drv<L: HolTier>(m: Term, n: Term) -> Result<Thm<L>> {
+    let eq = covalence_core::hol::hol_eq_at(
+        Type::nat(),
+        Term::app(Term::succ(), m),
+        Term::app(Term::succ(), n),
+    );
+    let holds = Thm::assume(eq.clone())?; // validates m, n : nat
+    let stripped = Thm::succ_eq_elim(holds)?; // {succ m = succ n} ⊢ m = n
+    imp_intro_drv(stripped, &eq)
+}
+
+/// `⊢ ¬(⌜0⌝ = succ n)` — `assume`, then [`Thm::zero_eq_succ_elim`] at
+/// `q := F`, then `imp_intro` and `not_intro`. The zero side is the
+/// `Nat` literal `⌜0⌝`, exactly as the pre-sequent kernel rule minted it.
+fn zero_ne_succ_drv<L: HolTier>(n: Term) -> Result<Thm<L>> {
+    let eq = covalence_core::hol::hol_eq_at(
+        Type::nat(),
+        covalence_core::hol::zero(),
+        Term::app(Term::succ(), n),
+    );
+    let holds = Thm::assume(eq.clone())?; // validates n : nat
+    let falsum = Thm::zero_eq_succ_elim(holds, defs::fal())?; // {0 = succ n} ⊢ F
+    not_intro_drv(imp_intro_drv(falsum, &eq)?) // ⊢ ¬(0 = succ n)
 }
 
 // ============================================================================
@@ -979,8 +1210,11 @@ fn lem_drv(p: Term) -> Result<Thm> {
 // ============================================================================
 
 /// The deleted kernel connective / quantifier rules, re-provided as
-/// **derivations** with identical signatures (see the [module docs](self)).
-/// Import this trait and the old call sites compile unchanged.
+/// **derivations** with identical signatures (see the [module docs](self)),
+/// implemented for `Thm<L>` at **every** [`HolTier`] `L` (the cached
+/// ingredients are pure-tier; higher tiers consume them via the sound
+/// low→high lift). Import this trait and the old call sites compile
+/// unchanged.
 pub trait DerivedRules: Sized {
     /// `Γ \ {φ} ⊢ φ ⟹ ψ`, given `Γ ⊢ ψ` (HOL Light `DISCH`).
     fn imp_intro(self, phi: &Term) -> Result<Self>;
@@ -1029,18 +1263,47 @@ pub trait DerivedRules: Sized {
     fn not_elim(self, other: Self) -> Result<Self>;
     /// [`not_elim`](Self::not_elim) interning its conclusion into `cons`.
     fn not_elim_with<C: TrustedCons + ?Sized>(self, other: Self, cons: &mut C) -> Result<Self>;
+    /// `Γ ⊢ p`, given `Γ ⊢ F` and `p : bool` — ex falso quodlibet,
+    /// **derived** (`F ≡ ∀p:bool. p`, unfold + `∀`-elim at the target;
+    /// the deleted kernel `FalseElim` primitive's drop-in). `F` here is
+    /// the *defined* [`defs::fal`]; at the **eval tier** a transitional
+    /// literal-`⌜F⌝` premise is also accepted, crossing the bridge
+    /// automatically ([`crate::boolean::fal_from_lit`] — a cert-backed
+    /// derivation, so other tiers correctly reject the literal form).
+    fn false_elim(self, p: Term) -> Result<Self>;
     /// `⊢ p ∨ ¬p` — excluded middle, derived from `ε` (one cached schema +
     /// one `inst` per call).
     fn lem(p: Term) -> Result<Self>;
+    /// `⊢ p x ⟹ p (ε p)` — Hilbert's choice axiom, the pre-sequent
+    /// kernel `select_ax` signature (derived over [`covalence_core::Thm::select_intro`]).
+    fn select_ax(p: Term, x: Term) -> Result<Self>;
+    /// `⊢ p w ⟹ p t` for a def-style `TermSpec` leaf `t` — the
+    /// pre-sequent kernel `spec_ax` signature (derived over
+    /// [`covalence_core::Thm::spec_intro`]).
+    fn spec_ax(t: Term, w: Term) -> Result<Self>;
+    /// `⊢ P a ⟹ rep (abs a) = a` for a subtype `TypeSpec` — the
+    /// pre-sequent kernel `spec_rep_abs_fwd` signature (derived over
+    /// [`covalence_core::Thm::spec_rep_abs_intro`]).
+    fn spec_rep_abs_fwd(
+        spec: covalence_core::TypeSpec,
+        args: impl Into<covalence_core::TypeList>,
+        a: Term,
+    ) -> Result<Self>;
+    /// `⊢ succ m = succ n ⟹ m = n` — the pre-sequent kernel `succ_inj`
+    /// signature (derived over [`covalence_core::Thm::succ_eq_elim`]).
+    fn succ_inj(m: Term, n: Term) -> Result<Self>;
+    /// `⊢ ¬(⌜0⌝ = succ n)` — the pre-sequent kernel `zero_ne_succ`
+    /// signature (derived over [`covalence_core::Thm::zero_eq_succ_elim`]).
+    fn zero_ne_succ(n: Term) -> Result<Self>;
 }
 
 /// Deep-intern a theorem's conclusion into `cons` — the `_with` sharing
 /// contract of the old kernel glue. Pure sharing, no soundness role.
-fn intern_concl<C: TrustedCons + ?Sized>(thm: &Thm, cons: &mut C) {
+fn intern_concl<L: HolTier, C: TrustedCons + ?Sized>(thm: &Thm<L>, cons: &mut C) {
     let _ = thm.concl().cons_with(cons);
 }
 
-impl DerivedRules for Thm {
+impl<L: HolTier> DerivedRules for Thm<L> {
     fn imp_intro(self, phi: &Term) -> Result<Self> {
         imp_intro_drv(self, phi)
     }
@@ -1126,8 +1389,30 @@ impl DerivedRules for Thm {
         intern_concl(&thm, cons);
         Ok(thm)
     }
+    fn false_elim(self, p: Term) -> Result<Self> {
+        false_elim_disp(self, p)
+    }
     fn lem(p: Term) -> Result<Self> {
         lem_drv(p)
+    }
+    fn select_ax(p: Term, x: Term) -> Result<Self> {
+        select_ax_drv(p, x)
+    }
+    fn spec_ax(t: Term, w: Term) -> Result<Self> {
+        spec_ax_drv(t, w)
+    }
+    fn spec_rep_abs_fwd(
+        spec: covalence_core::TypeSpec,
+        args: impl Into<covalence_core::TypeList>,
+        a: Term,
+    ) -> Result<Self> {
+        spec_rep_abs_fwd_drv(spec, args.into(), a)
+    }
+    fn succ_inj(m: Term, n: Term) -> Result<Self> {
+        succ_inj_drv(m, n)
+    }
+    fn zero_ne_succ(n: Term) -> Result<Self> {
+        zero_ne_succ_drv(n)
     }
 }
 
@@ -1139,23 +1424,23 @@ impl DerivedRules for Thm {
 /// `abs_rep ∧ (fwd ∧ back)` into the three `∀`-closed laws. The kernel's
 /// `new_type_definition` no longer splits it (that used the deleted
 /// `and_elim` rules); consumers derive the projections here instead.
-pub trait TypeDefExt {
+pub trait TypeDefExt<L: HolTier> {
     /// `⊢ ∀a:τ. abs (rep a) = a`.
-    fn abs_rep(&self) -> Result<Thm>;
+    fn abs_rep(&self) -> Result<Thm<L>>;
     /// `⊢ ∀r:α. P r ⟹ rep (abs r) = r`.
-    fn rep_abs_fwd(&self) -> Result<Thm>;
+    fn rep_abs_fwd(&self) -> Result<Thm<L>>;
     /// `⊢ ∀r:α. rep (abs r) = r ⟹ P r`.
-    fn rep_abs_back(&self) -> Result<Thm>;
+    fn rep_abs_back(&self) -> Result<Thm<L>>;
 }
 
-impl TypeDefExt for crate::EvalTypeDef {
-    fn abs_rep(&self) -> Result<Thm> {
+impl<L: HolTier> TypeDefExt<L> for TypeDef<L> {
+    fn abs_rep(&self) -> Result<Thm<L>> {
         and_elim_drv(self.bijection.clone(), true)
     }
-    fn rep_abs_fwd(&self) -> Result<Thm> {
+    fn rep_abs_fwd(&self) -> Result<Thm<L>> {
         and_elim_drv(and_elim_drv(self.bijection.clone(), false)?, true)
     }
-    fn rep_abs_back(&self) -> Result<Thm> {
+    fn rep_abs_back(&self) -> Result<Thm<L>> {
         and_elim_drv(and_elim_drv(self.bijection.clone(), false)?, false)
     }
 }

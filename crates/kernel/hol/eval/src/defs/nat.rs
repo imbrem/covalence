@@ -7,7 +7,7 @@
 //! `natSucc`, `natPred`, `natAdd`, `natLe`, `natLt`) are D3 residue in
 //! `covalence_core::defs::nat`.
 
-use covalence_core::hol;
+use crate::hol;
 use covalence_core::term::{Term, Type};
 
 use crate::defs::sigs;
@@ -61,7 +61,11 @@ let_term! {
 
 fn nat_sub_body() -> Term {
     // natSub n m ≔ iter m pred n
-    iter_binary(Either::M, hol::pred_fn(), Term::free("n", Type::nat()))
+    iter_binary(
+        Either::M,
+        covalence_core::defs::nat_pred(),
+        Term::free("n", Type::nat()),
+    )
 }
 
 let_term! {
@@ -75,11 +79,11 @@ let_term! {
 // ============================================================================
 
 fn one() -> Term {
-    Term::app(hol::succ_fn(), hol::zero())
+    Term::app(Term::succ(), hol::zero())
 }
 
 fn two() -> Term {
-    Term::app(hol::succ_fn(), one())
+    Term::app(Term::succ(), one())
 }
 
 fn nat_pow_body() -> Term {

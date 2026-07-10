@@ -7,6 +7,7 @@ use crate::term::{Term, Type};
 
 use super::bits::bit_ty;
 use super::canonical::Canonical;
+use super::logic;
 use super::spec::{TermSpec, TypeSpec};
 
 pub(super) fn prod_predicate_at(alpha: Type, beta: Type) -> Term {
@@ -20,12 +21,12 @@ pub(super) fn prod_predicate_at(alpha: Type, beta: Type) -> Term {
         let y_free = Term::free("y", beta.clone());
         let eq_x_a = hol::hol_eq(x_free, a_free);
         let eq_y_b = hol::hol_eq(y_free, b_free);
-        let conj = hol::hol_and(eq_x_a, eq_y_b);
+        let conj = logic::hol_and(eq_x_a, eq_y_b);
         let lam_y = hol::pub_abs("y", beta.clone(), conj);
         let lam_xy = hol::pub_abs("x", alpha.clone(), lam_y);
         let r_eq = hol::hol_eq(r.clone(), lam_xy);
-        let inner_exists = hol::hol_exists("b", beta.clone(), r_eq);
-        hol::hol_exists("a", alpha.clone(), inner_exists)
+        let inner_exists = logic::hol_exists("b", beta.clone(), r_eq);
+        logic::hol_exists("a", alpha.clone(), inner_exists)
     };
 
     hol::pub_abs("R", rel_ty, body)
@@ -92,7 +93,7 @@ pub fn signed2(alpha: Type) -> Type {
 fn pair_rel(a: Term, b: Term, alpha: Type, beta: Type) -> Term {
     let x = Term::free("x", alpha.clone());
     let y = Term::free("y", beta.clone());
-    let conj = hol::hol_and(hol::hol_eq(x, a), hol::hol_eq(y, b));
+    let conj = logic::hol_and(hol::hol_eq(x, a), hol::hol_eq(y, b));
     let lam_y = hol::pub_abs("y", beta, conj);
     hol::pub_abs("x", alpha, lam_y)
 }
@@ -144,7 +145,7 @@ fn projection_body(select_first: bool) -> Term {
     } else {
         ("b", beta.clone(), "a", alpha.clone())
     };
-    let ex_other = hol::hol_exists(other_name, other_ty, eq);
+    let ex_other = logic::hol_exists(other_name, other_ty, eq);
     let sel = hol::pub_abs(sel_name, sel_ty.clone(), ex_other);
     let eps = Term::app(Term::select_op(sel_ty), sel);
     hol::pub_abs("p", prod_ab, eps)

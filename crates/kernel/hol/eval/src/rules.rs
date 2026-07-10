@@ -448,6 +448,35 @@ eval_rules! {
             .and_then(|eq| seq(Ctx::new(), eq))
             .map_err(to_pure)
     }
+
+    /// TRANSITIONAL (literal-endgame stage EG3a; dies with the kernel `Nat`
+    /// literals at EG5): `⊢ IsThm(∅, ⌜zero = ⌜0⌝⌝)` — the bridge between the
+    /// primitive `nat` zero constructor (`TermKind::Zero`, added EG3a) and
+    /// the `Nat(0)` literal it transitionally coexists with.
+    ///
+    /// ## Soundness
+    ///
+    /// The same denotational commitment as [`ToHolNatVal`]: while the kernel
+    /// `Nat` literals exist, the literal `⌜0⌝` IS the kernel's canonical HOL
+    /// term for the natural number zero (literals denote the standard
+    /// values), and the primitive constructor `zero` denotes exactly that
+    /// number — `nat` is the freely-generated naturals and `zero` is its
+    /// base constructor. Both sides denote 0, so the **object-level** HOL
+    /// equation holds in the standard model. Note the conclusion is the
+    /// `IsThm` sequent shape (an equation *inside* a `Term`), NEVER a base
+    /// `Eqn` between the two `Term` values — as `Term`s, `zero` and `⌜0⌝`
+    /// are structurally DISTINCT, so a base-tier definitional equation
+    /// between them would be false (the same audit finding the
+    /// `tohol_unfolding_rules_are_exclusive` guard records). The rule takes
+    /// no input and derives its whole conclusion, so it is sound on ALL
+    /// inputs. At EG5 the `Nat` literal (and this rule with it — its body
+    /// references the literal constructor, so deletion is compile-enforced)
+    /// dies, and the freeness rules (`ZeroNeSucc`/`NatInduct`) flip their
+    /// conclusions onto `zero` — only then does `zero` need no bridge.
+    ZeroLitCert(()) -> CoreProp = |_, _| {
+        let eq = covalence_core::hol::hol_eq(Term::zero(), Lit::Nat(Nat::zero()).to_term());
+        seq(Ctx::new(), eq).map_err(to_pure)
+    }
     }
 
     // CanonRule ops admitted for `covalence_pure::canon` under `CoreEval`

@@ -344,7 +344,11 @@ impl TermKind {
             TermKind::SpecAbs(s, _) | TermKind::SpecRep(s, _) => s.symbol().label().hash(&mut h),
             TermKind::Def(d) => d.name().hash(&mut h),
             // No further payload (the discriminant already distinguishes these).
-            TermKind::Eq(_) | TermKind::Select(_) | TermKind::Succ | TermKind::FreshConst(..) => {}
+            TermKind::Eq(_)
+            | TermKind::Select(_)
+            | TermKind::Zero
+            | TermKind::Succ
+            | TermKind::FreshConst(..) => {}
         }
         // Fold the 64-bit FNV digest down to the 16-bit fingerprint.
         let v = h.finish();
@@ -637,12 +641,26 @@ pub enum TermKind {
     /// `(α → bool) → α`). The other logical primitive. Its
     /// characterising axiom (choice) is not yet exposed as a rule.
     Select(Type),
+    /// The `nat` zero constructor `zero : nat`. A primitive constructor
+    /// (not a `defs` definition), the partner of the successor
+    /// ([`Term::succ`]):
+    /// `nat` is the kernel's freely-generated naturals (`zero` + `succ`).
+    /// TRANSITIONAL COEXISTENCE (literal-endgame stage EG3a,
+    /// `notes/vibes/literal-endgame-design.md`): the `Nat` literal leaf
+    /// still exists and the freeness rules
+    /// ([`crate::Thm::zero_eq_succ_elim`], [`crate::Thm::nat_induct`]) still
+    /// state their conclusions with the `Nat(0)` literal; the two zeros
+    /// are bridged by the eval-tier transitional `ZeroLitCert`
+    /// (`⊢ zero = ⌜0⌝` in `covalence-hol-eval`) until the EG5 flip
+    /// deletes the literal and rewires the rules onto this constructor.
+    Zero,
     /// The `nat` successor function `succ : nat → nat`. A primitive
     /// constructor (not a `defs` definition): `nat` is the kernel's
-    /// freely-generated naturals (`0` literals + `succ`), so the kernel
+    /// freely-generated naturals (`zero` + `succ`; transitionally also
+    /// the `Nat` literals — see [`TermKind::Zero`]), so the kernel
     /// commits to `succ` being injective and
     /// `0 ≠ succ n` — exposed as the freeness rules
-    /// [`crate::Thm::succ_inj`] / [`crate::Thm::zero_ne_succ`], and to
+    /// [`crate::Thm::succ_eq_elim`] / [`crate::Thm::zero_eq_succ_elim`], and to
     /// `succ (n : literal)` reducing to the next literal (the
     /// `SuccCert` certificate). Applied via the usual `App` chain.
     Succ,
@@ -997,6 +1015,14 @@ impl Term {
         Self::alloc(TermKind::Select(alpha))
     }
 
+    /// The primitive zero constructor `zero : nat` — the partner of
+    /// [`Term::succ`]; see [`TermKind::Zero`]. A singleton (all calls
+    /// share one `Arc`).
+    pub fn zero() -> Self {
+        static ZERO: LazyLock<Term> = LazyLock::new(|| Term::alloc(TermKind::Zero));
+        ZERO.clone()
+    }
+
     /// The primitive successor function `succ : nat → nat`. Apply via
     /// [`Term::app`]; see [`TermKind::Succ`].
     pub fn succ() -> Self {
@@ -1140,6 +1166,7 @@ impl fmt::Display for Term {
             TermKind::Bool(b) => write!(f, "{}", if *b { "T" } else { "F" }),
             TermKind::Eq(alpha) => write!(f, "=:{alpha}"),
             TermKind::Select(alpha) => write!(f, "@:{alpha}"),
+            TermKind::Zero => write!(f, "zero"),
             TermKind::Succ => write!(f, "succ"),
             TermKind::Spec(spec, args) => {
                 if args.is_empty() {
@@ -1267,6 +1294,7 @@ fn term_info(kind: &TermKind) -> TermInfo {
             Type::fun(alpha.clone(), Type::bool()),
             alpha.clone(),
         )),
+        TermKind::Zero => wf(Type::nat()),
         TermKind::Succ => wf(Type::fun(Type::nat(), Type::nat())),
         TermKind::FreshConst(leaf) => wf(leaf.ty().clone()),
         TermKind::Def(d) => wf(d.instance_type().clone()),
@@ -1431,7 +1459,8 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
             Type::fun(alpha.clone(), Type::bool()),
             alpha.clone(),
         )),
-        // `succ : nat → nat`, monomorphic.
+        // `zero : nat` and `succ : nat → nat`, monomorphic.
+        TermKind::Zero => Ok(Type::nat()),
         TermKind::Succ => Ok(Type::fun(Type::nat(), Type::nat())),
         TermKind::FreshConst(leaf) => Ok(leaf.ty().clone()),
         // A `Def` denotes its body at the current instance type.
@@ -1443,6 +1472,49 @@ pub(crate) fn type_of_in(t: &Term, env: &mut TypeEnv) -> Result<Type> {
         // Def reference, there are no Free leaves to track at this
         // node.
         TermKind::Def(d) => Ok(d.instance_type().clone()),
+    }
+}
+
+#[cfg(test)]
+mod zero_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// EG3a: the primitive `zero` constructs, is a singleton, types at
+    /// `nat`, and prints as `zero`.
+    #[test]
+    fn zero_constructs_types_prints() {
+        let z = Term::zero();
+        assert!(matches!(z.kind(), TermKind::Zero));
+        // Singleton: every call shares one Arc.
+        assert_eq!(z.ptr_id(), Term::zero().ptr_id());
+        assert_eq!(z.type_of().unwrap(), Type::nat());
+        assert_eq!(format!("{z}"), "zero");
+        // `succ zero : nat` — the freely-generated spine types.
+        let sz = Term::app(Term::succ(), Term::zero());
+        assert_eq!(sz.type_of().unwrap(), Type::nat());
+    }
+
+    /// EG3a transitional coexistence: `zero` and the `Nat(0)` literal are
+    /// DISTINCT terms (bridged only by the eval-tier `ZeroLitCert`
+    /// theorem), and eq/hash are self-consistent.
+    #[test]
+    fn zero_distinct_from_literal() {
+        let z = Term::zero();
+        // Via the `Lit` bridge (the sanctioned literal chokepoint) so the
+        // purge ratchet's literal-ctor count stays flat.
+        let lit = crate::seam::Lit::Nat(Nat::zero()).to_term();
+        assert_ne!(z, lit);
+        assert_ne!(z, Term::succ());
+        assert_eq!(z, Term::zero());
+        // Eq/Hash consistency: equal terms collapse in a set, distinct
+        // terms coexist.
+        let mut set = HashSet::new();
+        set.insert(z.clone());
+        set.insert(Term::zero());
+        set.insert(lit);
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&z));
     }
 }
 

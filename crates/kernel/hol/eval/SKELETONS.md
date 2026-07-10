@@ -40,6 +40,17 @@ delete here and — if reducible — add to
 *intentionally* declaration-only — the primitive reducible interface, not a
 stub.)
 
+## EG3b transitional literal-T/F bridge (dies with EG5)
+
+`boolean.rs` (`tru_eq_lit`/`fal_eq_lit`/`fal_from_lit`/…), the eval-tier
+literal-premise tolerances in `derived.rs` (`false_elim`/`not_intro` accept
+`⌜F⌝`-shaped premises at `CoreEval` only), the `fal-to-lit`/`fal-from-lit`
+script rules, and init's bridge crossings (`init/logic.rs` simp locals,
+`eqf_intro` twins, `inductive/carved.rs::eq_f`) all exist ONLY because the
+`Bool` literals remain the certificate/normal-form currency. Delete the lot
+when EG5 removes the literal leaves (the defined `tru`/`fal` become the sole
+`T`/`F`).
+
 ## defs/core.cov source-of-truth flip (deferred, blocked on re-entrancy)
 
 `core.cov` + the `defs::cov` parser mirror part of the catalogue as data, proven
@@ -68,6 +79,19 @@ rule needed):
   leaf is a `bool` literal not a `ToHolF*` leaf — needs a `bool`-result shape.
 - **Conversions** (`promote`/`demote`/`truncSat`/`convert`): mixed operand/result
   widths/tags — one shape per family (cf. the mixed-sort `BytesLenEqE`).
+
+## EG3a `zero` bridge is transitional; freeness rules still literal-stated
+
+`rules::ZeroLitCert` (`⊢ zero = ⌜0⌝`) bridges the EG3a primitive
+`TermKind::Zero` to the coexisting `Nat(0)` literal; it dies with the literal
+at the maintainer-gated EG5 flip (compile-enforced — its body builds the
+literal). Until that flip, core's `ZeroNeSucc`/`NatInduct` keep their
+literal-stated conclusions (`⊢ ¬(⌜0⌝ = succ n)`, base `p[⌜0⌝/x]`) — switching
+them breaks every literal-based induction in `covalence-init`. `zero`-form
+facts derive through the bridge (`zero::zero_ne_succ_zero`); still open: a
+derived `zero`-base `nat_induct` transport (λ-abstract the motive, `mk_comb`
+the bridge, `beta_conv` both sides, `eq_mp` the base premise) if a consumer
+needs induction stated at `zero` before EG5.
 
 ## Minor
 

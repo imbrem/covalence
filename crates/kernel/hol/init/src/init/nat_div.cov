@@ -94,8 +94,10 @@
           (or-intro-l (= b false) (deduct-antisym (assume b) (truth))))
         (imp-intro (not b)
           (or-intro-r (= b true)
+            ;; `not-elim` concludes the DEFINED F (EG3b); the case split is
+            ;; stated over the literal, so cross the bridge (`fal-to-lit`).
             (deduct-antisym (false-elim b (assume false))
-                            (not-elim (assume (not b)) (assume b)))))))))
+                            (fal-to-lit (not-elim (assume (not b)) (assume b))))))))))
 
 ;; ⊢ ∀g a x y. (g = F ⟹ x = y) ⟹ cond g a x = cond g a y.  Congruence in the
 ;; FALSE arm only: the two conds agree because either `g` is true (both pick `a`)
@@ -141,7 +143,7 @@
   (#by
     (intro p h)
     (derive (deduct-antisym (false-elim p (assume false))
-                            (not-elim (assume (not p)) (assume p))))))
+                            (fal-to-lit (not-elim (assume (not p)) (assume p)))))))
 
 ;; ⊢ ∀a. (a ∨ T) = T.  A true disjunct wins.
 (#thm or.true_r

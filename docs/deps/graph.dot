@@ -17,6 +17,7 @@ digraph deps {
   "grammar";
   "graph";
   "hash";
+  "haskell";
   "hol";
   "hol-eval";
   "inductive";
@@ -95,6 +96,7 @@ digraph deps {
   "graph" -> "hash";
   "graph" -> "parse";
   "hash" -> "rand";
+  "haskell" -> "init";
   "hol" -> "core";
   "hol-eval" -> "core";
   "hol-eval" -> "pure";

@@ -892,7 +892,7 @@ mod tests {
         };
         let base = prove_at(nat_lit(0)); // ⊢ p 0
         let p_n = Term::app(p.clone(), n.clone());
-        let succ_n = Term::app(covalence_core::hol::succ_fn(), n);
+        let succ_n = Term::app(Term::succ(), n);
         let step = prove_at(succ_n).imp_intro(&p_n).unwrap(); // ⊢ p n ⟹ p (S n)
         (base, step, p)
     }
@@ -952,7 +952,7 @@ mod tests {
         };
         let base = prove_at(nat_lit(0));
         let p_n = Term::app(p.clone(), n.clone());
-        let succ_n = Term::app(covalence_core::hol::succ_fn(), n.clone());
+        let succ_n = Term::app(Term::succ(), n.clone());
         let step = prove_at(succ_n).imp_intro(&p_n).unwrap();
         assert!(
             super::nat_induct(base, step).is_err(),

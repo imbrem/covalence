@@ -14,9 +14,14 @@
 
 use std::sync::Arc;
 
-use crate::defs::helpers;
 use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};
 use crate::term::{Term, Type};
+
+/// The "any" predicate `λ_:τ. T` for the carrier type τ — the trivial
+/// selector every `newtype` carries.
+fn any(carrier: &Type) -> Term {
+    Term::abs(carrier.clone(), Term::bool_lit(true))
+}
 
 struct TypeSpecInner {
     symbol: SymbolRef,
@@ -57,7 +62,7 @@ impl TypeSpec {
     /// `base` but a distinct type (e.g. `result a b := coprod a b`,
     /// `u8 := prod u4 u4`).
     pub fn newtype<S: TrustedSymbol>(symbol: S, base: Type) -> Self {
-        let pred = helpers::any(&base);
+        let pred = any(&base);
         Self::raw(symbol, Some(base), Some(pred))
     }
 
@@ -78,7 +83,7 @@ impl TypeSpec {
     /// Like [`Self::newtype`] but with an **untrusted** name (see
     /// [`Self::subtype_untrusted`]).
     pub fn newtype_untrusted<S: Symbol>(symbol: S, base: Type) -> Self {
-        let pred = helpers::any(&base);
+        let pred = any(&base);
         Self::from_ref(SymbolRef::untrusted(symbol), Some(base), Some(pred))
     }
 

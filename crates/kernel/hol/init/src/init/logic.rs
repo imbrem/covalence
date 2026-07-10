@@ -267,7 +267,8 @@ pub fn exists_false_const(alpha: &Type) -> Result<Thm> {
         .all_intro("_ex_false_x", alpha.clone())?; // ⊢ ∀x. pred x ⟹ F
     let fwd = exists_elim(Thm::assume(ex.clone())?, false_t.clone(), step_to_f)?; // {∃x.F} ⊢ F
     // Backward: {F} ⊢ ∃x. F by ex falso.
-    let bwd = Thm::assume(false_t.clone())?.false_elim(ex.clone())?; // {F} ⊢ ∃x. F
+    let bwd =
+        covalence_hol_eval::fal_from_lit(Thm::assume(false_t.clone())?)?.false_elim(ex.clone())?; // {F} ⊢ ∃x. F
     // Deductive antisymmetry: `{F}⊢∃x.F` & `{∃x.F}⊢F` ⟹ `⊢ (∃x.F) = F`.
     bwd.deduct_antisym(fwd)
 }
@@ -949,11 +950,23 @@ fn cond_simp(node: &Term) -> Result<Option<Thm>> {
 }
 
 // -- the `T`/`F` literals --
+//
+// The deciders' NORMAL FORMS stay the transitional `Bool` literals (they
+// are `reduce`'s output currency until EG5). Since EG3b the *derived
+// connective rules* run over the defined `T`/`F` (`defs::tru`/`fal`), so
+// the local lemma proofs below cross the eval-tier bridge
+// (`covalence_hol_eval::boolean`) wherever a `not_elim` conclusion (the
+// defined `F`) meets a literal-`F` statement, and vice versa.
 fn tt() -> Term {
     Term::bool_lit(true)
 }
 fn ff() -> Term {
     Term::bool_lit(false)
+}
+/// `{⌜F⌝} ⊢ target` — literal ex falso: cross the EG3b bridge
+/// (`fal_from_lit`), then the derived `false_elim`.
+fn ff_elim(target: Term) -> Result<Thm> {
+    covalence_hol_eval::fal_from_lit(Thm::assume(ff())?)?.false_elim(target)
 }
 fn is_t(t: &Term) -> bool {
     matches!(t.as_bool(), Some(true))
@@ -971,13 +984,15 @@ fn not_simp(x: &Term) -> Result<Option<Thm>> {
     if is_t(x) {
         // ⊢ ¬T = F
         let nt = tt().not()?;
-        let fwd = Thm::assume(ff())?.false_elim(nt.clone())?; // {F} ⊢ ¬T
-        let bwd = Thm::assume(nt)?.not_elim(truth())?; // {¬T} ⊢ F
+        let fwd = ff_elim(nt.clone())?; // {F} ⊢ ¬T
+        let bwd = covalence_hol_eval::fal_to_lit(Thm::assume(nt)?.not_elim(truth())?)?; // {¬T} ⊢ F
         return Ok(Some(fwd.deduct_antisym(bwd)?));
     }
     if is_f(x) {
-        // ⊢ ¬F = T
-        let nf = Thm::assume(ff())?.imp_intro(&ff())?.not_intro()?; // ⊢ ¬F
+        // ⊢ ¬F = T: {⌜F⌝} ⊢ F(def) bridges, discharge, fold into ¬.
+        let nf = covalence_hol_eval::fal_from_lit(Thm::assume(ff())?)?
+            .imp_intro(&ff())?
+            .not_intro()?; // ⊢ ¬F
         return Ok(Some(nf.deduct_antisym(truth())?));
     }
     if let Some(y) = parse_not(x) {
@@ -1009,15 +1024,13 @@ fn and_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
     }
     if is_f(a) || is_f(b) {
         // (a ∧ b) = F
-        let fwd = Thm::assume(ff())?
-            .false_elim(a.clone())?
-            .and_intro(Thm::assume(ff())?.false_elim(b.clone())?)?; // {F} ⊢ a∧b
+        let fwd = ff_elim(a.clone())?.and_intro(ff_elim(b.clone())?)?; // {F} ⊢ a∧b
         let assumed = Thm::assume(ab.clone())?;
         let bwd = if is_f(a) {
             assumed.and_elim_l()?
         } else {
             assumed.and_elim_r()?
-        }; // {a∧b} ⊢ F
+        }; // {a∧b} ⊢ F  (the projected side IS the literal)
         return Ok(Some(fwd.deduct_antisym(bwd)?));
     }
     if complementary(a, b) {
@@ -1025,14 +1038,12 @@ fn and_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
         let assumed = Thm::assume(ab.clone())?;
         let la = assumed.clone().and_elim_l()?;
         let lb = assumed.and_elim_r()?;
-        let bwd = if parse_not(a).as_ref() == Some(b) {
+        let bwd = covalence_hol_eval::fal_to_lit(if parse_not(a).as_ref() == Some(b) {
             la.not_elim(lb)?
         } else {
             lb.not_elim(la)?
-        }; // {a∧b} ⊢ F
-        let fwd = Thm::assume(ff())?
-            .false_elim(a.clone())?
-            .and_intro(Thm::assume(ff())?.false_elim(b.clone())?)?;
+        })?; // {a∧b} ⊢ F
+        let fwd = ff_elim(a.clone())?.and_intro(ff_elim(b.clone())?)?;
         return Ok(Some(fwd.deduct_antisym(bwd)?));
     }
     if a == b {
@@ -1069,7 +1080,7 @@ fn or_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
         // (F ∨ b) = b
         let fwd = Thm::assume(b.clone())?.or_intro_r(ff())?; // {b} ⊢ F∨b
         let id_b = Thm::assume(b.clone())?.imp_intro(b)?; // ⊢ b ⟹ b
-        let f_imp = Thm::assume(ff())?.false_elim(b.clone())?.imp_intro(&ff())?; // ⊢ F ⟹ b
+        let f_imp = ff_elim(b.clone())?.imp_intro(&ff())?; // ⊢ F ⟹ b
         let bwd = Thm::assume(ab.clone())?.or_elim(f_imp, id_b)?; // {F∨b} ⊢ b
         return Ok(Some(fwd.deduct_antisym(bwd)?));
     }
@@ -1077,7 +1088,7 @@ fn or_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
         // (a ∨ F) = a
         let fwd = Thm::assume(a.clone())?.or_intro_l(ff())?; // {a} ⊢ a∨F
         let id_a = Thm::assume(a.clone())?.imp_intro(a)?; // ⊢ a ⟹ a
-        let f_imp = Thm::assume(ff())?.false_elim(a.clone())?.imp_intro(&ff())?; // ⊢ F ⟹ a
+        let f_imp = ff_elim(a.clone())?.imp_intro(&ff())?; // ⊢ F ⟹ a
         let bwd = Thm::assume(ab.clone())?.or_elim(id_a, f_imp)?; // {a∨F} ⊢ a
         return Ok(Some(fwd.deduct_antisym(bwd)?));
     }
@@ -1096,7 +1107,7 @@ fn imp_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
     let ab = a.clone().imp(b.clone())?;
     if is_f(a) {
         // (F ⟹ b) = T
-        let fwd = Thm::assume(ff())?.false_elim(b.clone())?.imp_intro(&ff())?; // ⊢ F⟹b
+        let fwd = ff_elim(b.clone())?.imp_intro(&ff())?; // ⊢ F⟹b
         return Ok(Some(fwd.deduct_antisym(truth())?));
     }
     if is_t(b) {
@@ -1111,11 +1122,18 @@ fn imp_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
         return Ok(Some(fwd.deduct_antisym(bwd)?));
     }
     if is_f(b) {
-        // (a ⟹ F) = ¬a
+        // (a ⟹ ⌜F⌝) = ¬a  (the node's F is the literal; ¬'s body F is
+        // the defined constant — bridge both directions)
         let na = a.clone().not()?;
-        let contra = Thm::assume(na.clone())?.not_elim(Thm::assume(a.clone())?)?; // {¬a,a} ⊢ F
-        let fwd = contra.imp_intro(a)?; // {¬a} ⊢ a⟹F
-        let bwd = Thm::assume(ab.clone())?.not_intro()?; // {a⟹F} ⊢ ¬a
+        let contra = covalence_hol_eval::fal_to_lit(
+            Thm::assume(na.clone())?.not_elim(Thm::assume(a.clone())?)?,
+        )?; // {¬a,a} ⊢ ⌜F⌝
+        let fwd = contra.imp_intro(a)?; // {¬a} ⊢ a⟹⌜F⌝
+        let bwd = covalence_hol_eval::fal_from_lit(
+            Thm::assume(ab.clone())?.imp_elim(Thm::assume(a.clone())?)?,
+        )?
+        .imp_intro(a)?
+        .not_intro()?; // {a⟹⌜F⌝} ⊢ ¬a
         return Ok(Some(fwd.deduct_antisym(bwd)?));
     }
     if a == b {
@@ -1179,8 +1197,8 @@ fn eq_simp(a: &Term, b: &Term) -> Result<Option<Thm>> {
             let xres = xeqnx.sym()?.eq_mp(nxt.clone())?; // ⊢ x
             nxt.not_elim(xres)?.imp_intro(&nx)?
         };
-        let fwd = Thm::lem(x)?.or_elim(from_x, from_nx)?; // {a=b} ⊢ F
-        let bwd = Thm::assume(ff())?.false_elim(eq)?; // {F} ⊢ a=b
+        let fwd = covalence_hol_eval::fal_to_lit(Thm::lem(x)?.or_elim(from_x, from_nx)?)?; // {a=b} ⊢ ⌜F⌝
+        let bwd = ff_elim(eq)?; // {F} ⊢ a=b
         return Ok(Some(bwd.deduct_antisym(fwd)?));
     }
     Ok(None)
@@ -1200,13 +1218,14 @@ fn eq_false(a: &Term, flipped: bool) -> Result<Thm> {
     } else {
         Thm::assume(eq.clone())? // {a=F} ⊢ a=F
     };
-    let fwd = a_eq_f
-        .eq_mp(Thm::assume(a.clone())?)? // {…, a} ⊢ F
+    let fwd = covalence_hol_eval::fal_from_lit(a_eq_f.eq_mp(Thm::assume(a.clone())?)?)? // {…, a} ⊢ F
         .imp_intro(a)?
         .not_intro()?; // {a=F or F=a} ⊢ ¬a
     // {¬a} ⊢ a = F : under ¬a, a and F agree.
-    let a_from_f = Thm::assume(ff())?.false_elim(a.clone())?; // {F} ⊢ a
-    let f_from_a = Thm::assume(na.clone())?.not_elim(Thm::assume(a.clone())?)?; // {¬a,a} ⊢ F
+    let a_from_f = ff_elim(a.clone())?; // {F} ⊢ a
+    let f_from_a = covalence_hol_eval::fal_to_lit(
+        Thm::assume(na.clone())?.not_elim(Thm::assume(a.clone())?)?,
+    )?; // {¬a,a} ⊢ ⌜F⌝
     let bwd_af = a_from_f.deduct_antisym(f_from_a)?; // {¬a} ⊢ a = F
     let bwd = if flipped { bwd_af.sym()? } else { bwd_af }; // {¬a} ⊢ (F=a)/(a=F)
     bwd.deduct_antisym(fwd) // ⊢ eq = ¬a

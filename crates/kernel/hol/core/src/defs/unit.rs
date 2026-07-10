@@ -8,8 +8,7 @@
 //!
 //! The singleton fact — *any* two inhabitants of `unit` are equal —
 //! is not derived here; it is the kernel rule [`crate::Thm::unit_eq`].
-//! The canonical inhabitant is `abs T` (see
-//! [`super::helpers::unit_val`]).
+//! The canonical inhabitant is `abs T` (see [`unit_nil`]).
 
 use std::sync::LazyLock;
 

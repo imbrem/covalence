@@ -13,4 +13,5 @@ FixedWidthCert
 LitEqCert
 CoercionCert
 FloatCert
+ZeroLitCert
 HolApp

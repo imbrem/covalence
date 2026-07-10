@@ -8,6 +8,7 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
+use super::logic;
 use super::spec::{TermSpec, TypeSpec};
 
 /// The carrier relation type `α → β → bool → bool` — a relation on
@@ -28,15 +29,15 @@ pub(super) fn coprod_predicate_at(alpha: Type, beta: Type) -> Term {
     let p1 = {
         let a_free = Term::free("a", alpha.clone());
         let r_eq = hol::hol_eq(r.clone(), left_rel(a_free, alpha.clone(), beta.clone()));
-        hol::hol_exists("a", alpha.clone(), r_eq)
+        logic::hol_exists("a", alpha.clone(), r_eq)
     };
     let p2 = {
         let b_free = Term::free("b", beta.clone());
         let r_eq = hol::hol_eq(r.clone(), right_rel(b_free, alpha.clone(), beta.clone()));
-        hol::hol_exists("b", beta.clone(), r_eq)
+        logic::hol_exists("b", beta.clone(), r_eq)
     };
 
-    let body = hol::hol_or(p1, p2);
+    let body = logic::hol_or(p1, p2);
     hol::pub_abs("R", rel_ty, body)
 }
 
@@ -95,7 +96,7 @@ pub fn coprod(alpha: Type, beta: Type) -> Type {
 fn left_rel(a: Term, alpha: Type, beta: Type) -> Term {
     let x = Term::free("x", alpha.clone());
     let z = Term::free("z", Type::bool());
-    let inner = hol::hol_and(z, hol::hol_eq(x, a)); // z ∧ (x = a)
+    let inner = logic::hol_and(z, hol::hol_eq(x, a)); // z ∧ (x = a)
     let lam_z = hol::pub_abs("z", Type::bool(), inner);
     let lam_yz = hol::pub_abs("y", beta, lam_z);
     hol::pub_abs("x", alpha, lam_yz)
@@ -106,7 +107,7 @@ fn left_rel(a: Term, alpha: Type, beta: Type) -> Term {
 fn right_rel(b: Term, alpha: Type, beta: Type) -> Term {
     let y = Term::free("y", beta.clone());
     let z = Term::free("z", Type::bool());
-    let inner = hol::hol_and(hol::hol_not(z), hol::hol_eq(y, b)); // ¬z ∧ (y = b)
+    let inner = logic::hol_and(logic::hol_not(z), hol::hol_eq(y, b)); // ¬z ∧ (y = b)
     let lam_z = hol::pub_abs("z", Type::bool(), inner);
     let lam_yz = hol::pub_abs("y", beta, lam_z);
     hol::pub_abs("x", alpha, lam_yz)
@@ -183,15 +184,15 @@ fn coprod_case_body() -> Term {
         left_rel(a.clone(), alpha.clone(), beta.clone()),
     );
     let r_eq_fa = hol::hol_eq(r.clone(), Term::app(f.clone(), a));
-    let left_clause = hol::hol_forall("a", alpha.clone(), hol::hol_imp(left_eq, r_eq_fa));
+    let left_clause = logic::hol_forall("a", alpha.clone(), logic::hol_imp(left_eq, r_eq_fa));
 
     // ∀b. rep c = (λx y. y = b) ⟹ r = g b
     let b = Term::free("b", beta.clone());
     let right_eq = hol::hol_eq(rep_c, right_rel(b.clone(), alpha.clone(), beta.clone()));
     let r_eq_gb = hol::hol_eq(r.clone(), Term::app(g.clone(), b));
-    let right_clause = hol::hol_forall("b", beta.clone(), hol::hol_imp(right_eq, r_eq_gb));
+    let right_clause = logic::hol_forall("b", beta.clone(), logic::hol_imp(right_eq, r_eq_gb));
 
-    let pred = hol::hol_and(left_clause, right_clause);
+    let pred = logic::hol_and(left_clause, right_clause);
     let sel = hol::pub_abs("r", gamma.clone(), pred);
     let eps = Term::app(Term::select_op(gamma.clone()), sel);
 

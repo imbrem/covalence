@@ -745,6 +745,8 @@ fn catalogue_term(name: &str, args: &[Type]) -> Option<Term> {
     let a = |i: usize| args.get(i).cloned();
     Some(match (name, args.len()) {
         // ---- logic connectives (monomorphic) ----
+        ("bool.true", 0) => tru(),
+        ("bool.false", 0) => fal(),
         ("bool.and", 0) => and(),
         ("bool.or", 0) => or(),
         ("bool.not", 0) => not(),
@@ -857,6 +859,8 @@ mod tests {
         let pairs: &[(&str, Term)] = &[
             ("bool.and", defs::and_spec().tm().unwrap().clone()),
             ("bool.or", defs::or_spec().tm().unwrap().clone()),
+            ("bool.true", defs::tru_spec().tm().unwrap().clone()),
+            ("bool.false", defs::fal_spec().tm().unwrap().clone()),
             ("bool.not", defs::not_spec().tm().unwrap().clone()),
             ("bool.imp", defs::imp_spec().tm().unwrap().clone()),
             ("bool.iff", defs::iff_spec().tm().unwrap().clone()),

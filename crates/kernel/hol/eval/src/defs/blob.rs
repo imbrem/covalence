@@ -21,7 +21,7 @@
 //! **reduce on `Blob` literals** via the certificate path; they just
 //! lack open-form definitional bodies until that conversion lands.
 
-use covalence_core::hol;
+use crate::hol;
 use covalence_core::term::{Term, Type};
 
 use crate::defs::{Canonical, bytes_spec, list_cat, list_length, list_skip, list_take, u8_ty};

@@ -16,7 +16,7 @@
 //!
 //! are **derived** (not postulated) downstream in
 //! `covalence-hol`'s `init::cond` via the choice axiom
-//! [`crate::Thm::select_ax`] — the same way HOL Light proves
+//! [`crate::Thm::select_intro`] — the same way HOL Light proves
 //! `COND_CLAUSES`. At the kernel level `cond` unfolds to its body
 //! through [`crate::Thm::unfold_term_spec`] like any other defined
 //! constant; the certificate path has no `cond`-specific rule (the
@@ -29,6 +29,7 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
+use super::logic;
 use super::spec::TermSpec;
 
 /// `λt x y. ε z. (t = T ⟹ z = x) ∧ (t = F ⟹ z = y)` — the HOL Light
@@ -45,7 +46,10 @@ fn cond_body() -> Term {
     let t_false = hol::hol_eq(t.clone(), Term::bool_lit(false));
     let z_is_x = hol::hol_eq(z.clone(), x.clone());
     let z_is_y = hol::hol_eq(z.clone(), y.clone());
-    let conj = hol::hol_and(hol::hol_imp(t_true, z_is_x), hol::hol_imp(t_false, z_is_y));
+    let conj = logic::hol_and(
+        logic::hol_imp(t_true, z_is_x),
+        logic::hol_imp(t_false, z_is_y),
+    );
 
     // ε z:α. conj
     let pred = hol::pub_abs("z", alpha.clone(), conj);

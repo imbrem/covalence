@@ -217,6 +217,7 @@ pub fn term_to_sexp(t: &Term) -> Result<SExpr> {
         TermKind::Bool(b) => list2("bool-lit", sym(if *b { "T" } else { "F" })),
         TermKind::Eq(alpha) => list2("eq", type_to_sexp(alpha)?),
         TermKind::Select(alpha) => list2("select", type_to_sexp(alpha)?),
+        TermKind::Zero => list1("zero"),
         TermKind::Succ => list1("succ"),
         TermKind::Spec(spec, args) => {
             let mut children = Vec::with_capacity(2 + args.len());
@@ -306,6 +307,10 @@ pub fn term_from_sexp(s: &SExpr) -> Result<Term> {
         "select" => {
             expect_arity(children, 2, "select")?;
             Ok(Term::select_op(type_from_sexp(&children[1])?))
+        }
+        "zero" => {
+            expect_arity(children, 1, "zero")?;
+            Ok(Term::zero())
         }
         "succ" => {
             expect_arity(children, 1, "succ")?;
@@ -423,5 +428,26 @@ fn expect_str<'a>(s: &'a SExpr, what: &str) -> Result<(&'a str, &'a Bytes)> {
     match s {
         SExp::Atom(Atom::Str { format, bytes }) => Ok((format.as_str(), bytes)),
         _ => Err(SexpError(format!("{}: not a string", what))),
+    }
+}
+
+#[cfg(test)]
+mod zero_leaf_tests {
+    use super::*;
+
+    /// EG3a: the primitive `zero` leaf serialises as `(zero)` and
+    /// round-trips distinct from the `Nat(0)` literal's `(nat-lit 0)`.
+    #[test]
+    fn zero_round_trips_distinct_from_literal() {
+        let z = Term::zero();
+        let s = term_to_sexp(&z).unwrap();
+        assert_eq!(term_from_sexp(&s).unwrap(), z);
+
+        // Distinct from the transitional `Nat(0)` literal's encoding, built
+        // via the lit facade (the sanctioned literal chokepoint).
+        // (No parse-back: the literal term heads are printer-only today.)
+        let lit = covalence_hol_eval::lit::mk_nat(covalence_types::Nat::zero());
+        let s_lit = term_to_sexp(&lit).unwrap();
+        assert_ne!(s, s_lit);
     }
 }

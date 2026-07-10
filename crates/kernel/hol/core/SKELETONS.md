@@ -10,23 +10,29 @@ Module-local skeletons: [`src/thm/SKELETONS.md`](src/thm/SKELETONS.md) (the
 The term-op catalogue moved to `covalence-hol-eval::defs` (stage E2 of
 `notes/vibes/handoff/defs-out-of-core.md`). What remains in `src/defs/` is the
 **D3 transitional residue**: the spec machinery (`spec`/`symbol`/`canonical`/
-`quotient`/`macros`/`helpers`/`sigs`) plus the structural TYPE chain the literal
+`quotient`/`macros`/`sigs`) plus the structural TYPE chain the literal
 leaves' `type_of` forces — `bits` (`u8`…`s512`), `int`, `bytes`, `unit` and
 their carrier closure (`prod`/`coprod`/`option`/`list`/`stream`/`fail`/`cond`,
 the `logic` connectives their bodies quantify with, and the residue term ops
-`nat.{succ,pred,add,le,lt,rec}`/`iter`/`nil`/`cons`/`listFoldr`/`listLength`/
+`nat.{pred,add,le,lt,rec}`/`iter`/`nil`/`cons`/`listFoldr`/`listLength`/
 `finite` + stream accessors). It all leaves core when the literal
 `TermKind::Nat/Int/SmallInt/Blob` variants die in favor of the lazy toHOL base
 expressions (S10/S11); until then every remaining `defs/` file is this one
-skeleton. (`hol.rs` builders and `logic.rs` stay for the same reason: the
-connective/quantifier *rules* left the kernel in stage L2 — they are
-`covalence-hol-eval::derived` derivations now — but the staying axiom rules
-(`succ_inj`/`zero_ne_succ`/`select_ax`/`spec_ax`/`spec_rep_abs_*`/
-`new_type_definition`) still *state* their conclusions with `imp`/`not`/`or`/
-`exists`/`and`/`forall`, and the residue type bodies quantify with them, so the
-*definitions* remain core residue until the literal-leaf endgame. Note the
-derived rules live at the eval tier only: `⊢ T` has no `Thm<CoreLang>`
-derivation while `T` is an undefined literal.)
+skeleton. (Since stage A3 the choice/spec/nat-freeness axioms are
+connective-free **sequent** rules (`select_intro`/`spec_intro`/
+`succ_eq_elim`/`zero_eq_succ_elim`/`spec_rep_abs_intro` — the old
+implication/negation forms are `covalence-hol-eval::derived` drop-ins), and
+the connective *builders* left `hol.rs` (public home:
+`covalence-hol-eval::hol`; `pub(crate)` copies in `defs::logic`). The
+`logic` *definitions* stay core residue because the residue type bodies
+quantify with them and TWO rules still construct connective packages —
+`SpecRepAbsBack` (witness-freeness needs the disjunction) and
+`NewTypeDefRule` (single-mint freshness needs the `∀/⟹/∧` conjunction);
+both documented in `thm/rules.rs`, both die/reshape at L4/EG5. Since EG3b
+`T`/`F` are the defined `tru`/`fal` specs and the derived rules are
+tier-generic — `⊢ T` and the whole connective calculus derive at
+`Thm<CoreLang>`; the transitional `Bool` literals bridge at the eval tier
+(`covalence-hol-eval::boolean`) until EG5 deletes them.)
 
 ## Hash-consing not on-by-default
 

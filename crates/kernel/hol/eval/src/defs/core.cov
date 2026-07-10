@@ -23,8 +23,10 @@
 ;; ===========================================================================
 
 ;; ---------------------------------------------------------------------------
-;; Logic connectives (defs/logic.rs) — over `=` / `ε` + bool literals.
-;; T / F are the bool literals `T` / `F` (TermKind::Bool).
+;; Logic connectives (defs/logic.rs) — over `=` / `ε`.
+;; T / F are the DEFINED constants `bool.true` / `bool.false` below
+;; (HOL Light T_DEF / F_DEF; the `TermKind::Bool` literals are a
+;; separate, eval-tier-bridged representation — see EG3b).
 ;; ---------------------------------------------------------------------------
 
 ;; T := (λp:bool. p) = (λp:bool. p)   (the DEFINED truth, EG3b)

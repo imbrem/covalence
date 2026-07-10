@@ -24,9 +24,11 @@ connective/quantifier *rules* left the kernel in stage L2 — they are
 (`succ_inj`/`zero_ne_succ`/`select_ax`/`spec_ax`/`spec_rep_abs_*`/
 `new_type_definition`) still *state* their conclusions with `imp`/`not`/`or`/
 `exists`/`and`/`forall`, and the residue type bodies quantify with them, so the
-*definitions* remain core residue until the literal-leaf endgame. Note the
-derived rules live at the eval tier only: `⊢ T` has no `Thm<CoreLang>`
-derivation while `T` is an undefined literal.)
+*definitions* remain core residue until the literal-leaf endgame. Since EG3b
+`T`/`F` are the defined `tru`/`fal` specs and the derived rules are
+tier-generic — `⊢ T` and the whole connective calculus derive at
+`Thm<CoreLang>`; the transitional `Bool` literals bridge at the eval tier
+(`covalence-hol-eval::boolean`) until EG5 deletes them.)
 
 ## Hash-consing not on-by-default
 

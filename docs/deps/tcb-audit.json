@@ -46,7 +46,7 @@
     },
     "base+HOL": {
       "files": 57,
-      "nonTestLoc": 6945,
+      "nonTestLoc": 6941,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -77,13 +77,13 @@
         "crates/kernel/base/trusted/src/rel.rs:309: Thm::new(lang, App(Join(r, s), (a, b)))"
       ],
       "publicSurface": {
-        "fn": 405,
+        "fn": 404,
         "struct": 58,
         "enum": 11,
         "trait": 21,
         "macro": 20
       },
-      "publicSurfaceTotal": 515,
+      "publicSurfaceTotal": 514,
       "defsCoupling": 37,
       "defsCouplingLocations": [
         "crates/kernel/hol/core/src/defs/macros.rs:34: pub fn $spec_fn() -> $crate::defs::TermSpec {",
@@ -115,8 +115,8 @@
         "crates/kernel/hol/core/src/term/term.rs:403: IntTag::S16 => crate::defs::s16_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:404: IntTag::S32 => crate::defs::s32_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:405: IntTag::S64 => crate::defs::s64_ty(),",
-        "crates/kernel/hol/core/src/thm/mod.rs:1055: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1066: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1048: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1059: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
         "crates/kernel/hol/core/src/thm/typedef.rs:102: if !h.ptr_eq(&crate::defs::and_spec()) {",
         "crates/kernel/hol/core/src/ty/spec.rs:17: use crate::defs::helpers;",
         "crates/kernel/hol/core/src/ty/spec.rs:18: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
@@ -127,7 +127,7 @@
     },
     "base+HOL (target)": {
       "files": 36,
-      "nonTestLoc": 5172,
+      "nonTestLoc": 5155,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -158,13 +158,13 @@
         "crates/kernel/base/trusted/src/rel.rs:309: Thm::new(lang, App(Join(r, s), (a, b)))"
       ],
       "publicSurface": {
-        "fn": 330,
+        "fn": 329,
         "struct": 57,
         "enum": 10,
         "trait": 17,
         "macro": 14
       },
-      "publicSurfaceTotal": 428,
+      "publicSurfaceTotal": 427,
       "defsCoupling": 25,
       "defsCouplingLocations": [
         "crates/kernel/hol/core/src/hol.rs:31: Term::app(Term::app(defs::imp(), p), q)",
@@ -184,8 +184,8 @@
         "crates/kernel/hol/core/src/term/term.rs:403: IntTag::S16 => crate::defs::s16_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:404: IntTag::S32 => crate::defs::s32_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:405: IntTag::S64 => crate::defs::s64_ty(),",
-        "crates/kernel/hol/core/src/thm/mod.rs:1055: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1066: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1048: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1059: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
         "crates/kernel/hol/core/src/thm/typedef.rs:102: if !h.ptr_eq(&crate::defs::and_spec()) {",
         "crates/kernel/hol/core/src/ty/spec.rs:17: use crate::defs::helpers;",
         "crates/kernel/hol/core/src/ty/spec.rs:18: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
@@ -195,8 +195,8 @@
       ]
     },
     "base+HOL+eval": {
-      "files": 89,
-      "nonTestLoc": 12989,
+      "files": 90,
+      "nonTestLoc": 13139,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -227,21 +227,21 @@
         "crates/kernel/base/trusted/src/rel.rs:309: Thm::new(lang, App(Join(r, s), (a, b)))"
       ],
       "publicSurface": {
-        "fn": 550,
+        "fn": 556,
         "struct": 74,
         "enum": 20,
         "trait": 25,
         "macro": 34
       },
-      "publicSurfaceTotal": 703,
-      "defsCoupling": 155,
+      "publicSurfaceTotal": 709,
+      "defsCoupling": 165,
       "defsCouplingLocations": [
-        "155 refs (list suppressed >60)"
+        "165 refs (list suppressed >60)"
       ]
     },
     "base+HOL+wasm": {
       "files": 38,
-      "nonTestLoc": 5610,
+      "nonTestLoc": 5593,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -272,13 +272,13 @@
         "crates/kernel/base/trusted/src/rel.rs:309: Thm::new(lang, App(Join(r, s), (a, b)))"
       ],
       "publicSurface": {
-        "fn": 351,
+        "fn": 350,
         "struct": 57,
         "enum": 14,
         "trait": 17,
         "macro": 15
       },
-      "publicSurfaceTotal": 454,
+      "publicSurfaceTotal": 453,
       "defsCoupling": 28,
       "defsCouplingLocations": [
         "crates/kernel/hol/core/src/hol.rs:31: Term::app(Term::app(defs::imp(), p), q)",
@@ -298,8 +298,8 @@
         "crates/kernel/hol/core/src/term/term.rs:403: IntTag::S16 => crate::defs::s16_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:404: IntTag::S32 => crate::defs::s32_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:405: IntTag::S64 => crate::defs::s64_ty(),",
-        "crates/kernel/hol/core/src/thm/mod.rs:1055: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1066: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1048: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1059: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
         "crates/kernel/hol/core/src/thm/typedef.rs:102: if !h.ptr_eq(&crate::defs::and_spec()) {",
         "crates/kernel/hol/core/src/ty/spec.rs:17: use crate::defs::helpers;",
         "crates/kernel/hol/core/src/ty/spec.rs:18: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
@@ -312,8 +312,8 @@
       ]
     },
     "base+HOL+eval+wasm": {
-      "files": 89,
-      "nonTestLoc": 12989,
+      "files": 90,
+      "nonTestLoc": 13139,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -344,16 +344,16 @@
         "crates/kernel/base/trusted/src/rel.rs:309: Thm::new(lang, App(Join(r, s), (a, b)))"
       ],
       "publicSurface": {
-        "fn": 550,
+        "fn": 556,
         "struct": 74,
         "enum": 20,
         "trait": 25,
         "macro": 34
       },
-      "publicSurfaceTotal": 703,
-      "defsCoupling": 155,
+      "publicSurfaceTotal": 709,
+      "defsCoupling": 165,
       "defsCouplingLocations": [
-        "155 refs (list suppressed >60)"
+        "165 refs (list suppressed >60)"
       ]
     }
   },
@@ -361,7 +361,7 @@
     "termKindVariants": 19,
     "typeKindVariants": 7,
     "admittedRules": {
-      "coreManifest": 26,
+      "coreManifest": 25,
       "evalManifest": 17,
       "builtinsManifest": 387
     },

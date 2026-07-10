@@ -902,9 +902,11 @@ fn eqf_intro(not_p: Thm) -> Result<Thm> {
         .ok_or_else(|| covalence_core::Error::ConnectiveRule("eqf_intro: not a ¬".into()))?
         .1
         .clone();
-    let pf = not_p.not_elim(Thm::assume(p.clone())?)?; // {P} ⊢ F
-    let fp = Thm::assume(Term::bool_lit(false))?.false_elim(p)?; // {F} ⊢ P
-    pf.deduct_antisym(fp)?.sym() // ⊢ P = F
+    // `not_elim` concludes the DEFINED `F` (EG3b); the clause statements
+    // use the literal `⌜F⌝`, so cross the bridge both ways.
+    let pf = covalence_hol_eval::fal_to_lit(not_p.not_elim(Thm::assume(p.clone())?)?)?; // {P} ⊢ ⌜F⌝
+    let fp = Thm::assume(Term::bool_lit(false))?.false_elim(p)?; // {⌜F⌝} ⊢ P
+    pf.deduct_antisym(fp)?.sym() // ⊢ P = ⌜F⌝
 }
 
 /// `⊢ ¬(S n = 0)`.

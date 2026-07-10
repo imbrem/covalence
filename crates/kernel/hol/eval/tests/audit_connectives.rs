@@ -81,12 +81,15 @@ fn forall(ty: Type, body: Term) -> Term {
     Term::app(defs::forall(ty), lambda)
 }
 
-/// `T` / `F`.
+/// `T` / `F` — the **defined** constants (EG3b): the connective bodies
+/// reference `defs::tru` / `defs::fal`, so the derived rules parse and
+/// produce these (the transitional `Bool` literals are the certificate
+/// path's currency, bridged in `covalence_hol_eval::boolean`).
 fn t() -> Term {
-    Term::bool_lit(true)
+    defs::tru()
 }
 fn f() -> Term {
-    Term::bool_lit(false)
+    defs::fal()
 }
 
 /// `{p} ⊢ p`.

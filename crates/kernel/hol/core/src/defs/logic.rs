@@ -10,13 +10,21 @@
 //!   `⊢ c = <body>` — the same way it does for `natAdd` — so the
 //!   connectives' introduction / elimination rules are *derived*
 //!   downstream, never postulated.
-//! - the certificate path evaluates a connective applied to `bool`
-//!   literals by pointer-match on the spec handle, exactly like closed
-//!   arithmetic.
+//! - the derivations are ordinary equality reasoning, so the whole
+//!   calculus lives at the pure `CoreLang` tier (no certificate rule
+//!   ever destructures a connective).
 //!
-//! `T` / `F` remain `TermKind::Bool` literals; `⊢ T` is derivable via
-//! the `LitEqCert` certificate, and the literals' distinctness is the
-//! kernel's denotational commitment.
+//! `T` / `F` are the **defined constants** [`tru`] / [`fal`] (EG3b):
+//! `tru ≡ (λp:bool.p) = (λp:bool.p)` and `fal ≡ ∀p:bool. p`, and the
+//! connective bodies below reference *them*, so the whole derived
+//! connective calculus (`covalence-hol-eval::derived`) bottoms out in a
+//! `⊢ tru` derivable at the pure `CoreLang` tier — no certificate.
+//! The transitional `TermKind::Bool` literals `⌜T⌝`/`⌜F⌝` still exist
+//! (the closed-computation certificate path produces them, e.g.
+//! `⊢ (2+2=4) = ⌜T⌝`) and are bridged to the defined constants by
+//! *derived* eval-tier theorems (`⊢ tru = ⌜T⌝`, `⊢ fal = ⌜F⌝` in
+//! `covalence-hol-eval::boolean`) until the literal-leaf endgame (EG5)
+//! deletes them.
 //!
 //! ## Definition order
 //!
@@ -24,9 +32,11 @@
 //! dependency order (acyclic):
 //!
 //! ```text
-//! and, forall  ←  (=, T)         (no connective deps)
+//! tru          ←  (=)            (no deps)
+//! and, forall  ←  (=, tru)
 //! imp          ←  and
-//! not          ←  imp, F
+//! fal          ←  forall
+//! not          ←  imp, fal
 //! or, exists   ←  forall, imp
 //! iff          ←  (=)
 //! ```
@@ -52,14 +62,6 @@ use super::canonical::Canonical;
 
 fn b() -> Type {
     Type::bool()
-}
-
-fn t_lit() -> Term {
-    Term::bool_lit(true)
-}
-
-fn f_lit() -> Term {
-    Term::bool_lit(false)
 }
 
 /// `p ⟹ q` built from the `imp` spec (for use inside the bodies that
@@ -100,8 +102,8 @@ fn and_body() -> Term {
     // λf. f p q
     let f_p_q = Term::app(Term::app(f.clone(), p.clone()), q.clone());
     let lhs = hol::pub_abs("f", bbb.clone(), f_p_q);
-    // λf. f T T
-    let f_t_t = Term::app(Term::app(f, t_lit()), t_lit());
+    // λf. f T T  (the DEFINED T)
+    let f_t_t = Term::app(Term::app(f, tru()), tru());
     let rhs = hol::pub_abs("f", bbb, f_t_t);
 
     let eq = hol::hol_eq(lhs, rhs);
@@ -136,7 +138,7 @@ let_term! {
 
 fn not_body() -> Term {
     let p = Term::free("p", b());
-    let body = imp_app(p.clone(), f_lit());
+    let body = imp_app(p.clone(), fal());
     hol::pub_abs("p", b(), body)
 }
 
@@ -169,8 +171,8 @@ fn forall_body() -> Term {
     let alpha = Type::tfree("a");
     let pred_ty = Type::fun(alpha.clone(), b());
     let pred = Term::free("P", pred_ty.clone());
-    // λx:α. T  (x unused; `pub_abs` close is a no-op but keeps shape)
-    let lam_x = hol::pub_abs("x", alpha, t_lit());
+    // λx:α. T  (the DEFINED T; x unused; `pub_abs` close is a no-op but keeps shape)
+    let lam_x = hol::pub_abs("x", alpha, tru());
     let eq = hol::hol_eq(pred, lam_x);
     hol::pub_abs("P", pred_ty, eq)
 }

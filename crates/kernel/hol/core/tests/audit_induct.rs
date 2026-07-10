@@ -1,5 +1,5 @@
 //! TCB audit: the non-computational primitive rules
-//! (`Thm::nat_induct`, `Thm::false_elim`, `Thm::unit_eq`) and the
+//! (`Thm::nat_induct`, `Thm::unit_eq`) and the
 //! `abs`/`rep` spec-coercion typing (`Term::spec_abs` / `Term::spec_rep`).
 //!
 //! These are kernel axioms/rules: there are no proof obligations the
@@ -18,9 +18,8 @@
 //!   side condition). `x` MAY be free in the base hyps (sound — the
 //!   base is only consumed at the ambient valuation). Conclusion is
 //!   `Γ_b ∪ (Γ_s \ {p}) ⊢ p` with `x` free.
-//! - `false_elim`: requires the premise's conclusion to be the literal
-//!   `Bool(false)` and the target `p` to be bool-typed. Hyps propagate.
-//!   Sound.
+//! - `false_elim`: LEFT THE KERNEL in stage EG3b (derived from the
+//!   defined `F ≡ ∀p:bool. p`; tests moved to covalence-hol-eval).
 //! - `unit_eq`: both args must type-check at exactly `Type::unit()`;
 //!   bool/nat/int are rejected even though unit's carrier is bool.
 //! - `spec_abs`/`spec_rep`: type is `carrier → wrapper` / `wrapper →
@@ -46,11 +45,6 @@ fn zero() -> Term {
 fn hol_eq(a: Term, b: Term) -> Term {
     let ty = a.type_of().expect("hol_eq: lhs must type-check");
     Term::app(Term::app(Term::eq_op(ty), a), b)
-}
-
-/// `p ⟹ q` using the defined `imp` connective.
-fn hol_imp(p: Term, q: Term) -> Term {
-    Term::app(Term::app(defs::imp(), p), q)
 }
 
 /// `succ n` for a term `n : nat`.
@@ -282,63 +276,9 @@ fn nat_induct_rejects_wrong_variable_choice() {
     );
 }
 
-// ============================================================================
-// false_elim
-// ============================================================================
-
-#[test]
-fn false_elim_happy_path_yields_target() {
-    let f = Thm::assume(Term::bool_lit(false)).unwrap(); // {F} ⊢ F
-    let p = Term::free("p", Type::bool());
-    let got = f.false_elim(p.clone()).unwrap();
-    assert_eq!(got.concl(), &p, "conclusion is the requested target");
-}
-
-#[test]
-fn false_elim_propagates_hyps() {
-    // {F} ⊢ F → the self-hyp F must survive into the derived theorem.
-    let f = Thm::assume(Term::bool_lit(false)).unwrap();
-    let got = f.false_elim(Term::free("q", Type::bool())).unwrap();
-    let hyps: Vec<_> = got.hyps().iter().cloned().collect();
-    assert_eq!(hyps, vec![Term::bool_lit(false)], "F hyp propagated");
-}
-
-#[test]
-fn false_elim_target_can_be_any_bool_term() {
-    let f = Thm::assume(Term::bool_lit(false)).unwrap();
-    // A compound bool target.
-    let target = hol_imp(Term::bool_lit(true), Term::bool_lit(false));
-    let got = f.false_elim(target.clone()).unwrap();
-    assert_eq!(got.concl(), &target);
-}
-
-#[test]
-fn false_elim_rejects_premise_true() {
-    let t = Thm::assume(Term::bool_lit(true)).unwrap(); // ⊢ T, not F
-    assert!(t.false_elim(Term::free("p", Type::bool())).is_err());
-}
-
-#[test]
-fn false_elim_rejects_premise_arbitrary_prop() {
-    // A premise whose conclusion is a free bool var (not the literal F).
-    let pp = Thm::assume(Term::free("r", Type::bool())).unwrap();
-    assert!(pp.false_elim(Term::free("p", Type::bool())).is_err());
-}
-
-#[test]
-fn false_elim_rejects_non_bool_target() {
-    // Target is a nat-typed term → not a proposition.
-    let f = Thm::assume(Term::bool_lit(false)).unwrap();
-    assert!(f.false_elim(zero()).is_err(), "nat target rejected");
-}
-
-#[test]
-fn false_elim_rejects_ill_typed_target() {
-    // Target is an open Bound(0) term that can't type-check.
-    let f = Thm::assume(Term::bool_lit(false)).unwrap();
-    let bad = Term::app(Term::bool_lit(true), Term::bool_lit(true)); // bool applied — ill-typed
-    assert!(f.false_elim(bad).is_err());
-}
+// (`false_elim` left the kernel in stage EG3b — ex falso is a derivation
+// over the defined `F ≡ ∀p:bool. p`; its contract tests moved to
+// covalence-hol-eval `tests/derived_false_elim.rs`.)
 
 // ============================================================================
 // unit_eq — happy path + structure

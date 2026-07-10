@@ -54,6 +54,7 @@ use crate::init::cond::{cond_false, cond_true};
 use crate::init::eq::{beta_expand, beta_reduce};
 use crate::init::ext::{TermExt, ThmExt};
 use crate::init::logic::exists_elim;
+use crate::init::logic::truth;
 use crate::init::nat_parse::{
     digit_val_dec, digit_val_hex, is_digit_bin, is_digit_dec, is_digit_hex, is_digit_oct,
     nat_of_bin_digits, nat_of_digits, parse_nat, parse_nat_correct,
@@ -67,7 +68,7 @@ use covalence_hol_eval::defs::{
     char_code, cond, fst, head, int_neg, nat_le, nat_to_int, none, option_case, pair, snd, some,
     tail,
 };
-use covalence_hol_eval::derived::{DerivedRules, truth};
+use covalence_hol_eval::derived::DerivedRules;
 
 // ============================================================================
 // Types.
@@ -562,7 +563,7 @@ pub fn sign_reconstruct(k: u64, s: &Term) -> Result<Thm> {
             )?)?; // head_is k s = F
         // {g} : head_is k s = T ; {none} : head_is k s = F ⟹ T = F ⟹ F.
         let tf = g.clone().sym()?.trans(hd_false)?; // {g,none} ⊢ T = F
-        let ff = tf.eq_mp(truth())?; // {g,none} ⊢ F
+        let ff = covalence_hol_eval::fal_from_lit(tf.eq_mp(truth())?)?; // {g,none} ⊢ F
         ff.false_elim(goal.clone())?.imp_intro(&none_term)?
     };
 

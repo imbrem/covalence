@@ -673,20 +673,9 @@ fn nat_induct_rule_derives_open_conclusion() {
     // covalence-hol-eval's `tests/derived_rules.rs`.)
 }
 
-#[test]
-fn false_elim_yields_anything() {
-    let f = Thm::assume(Term::bool_lit(false)).unwrap(); // {F} ⊢ F
-    let p = Term::free("p", Type::bool());
-    let got = f.false_elim(p.clone()).unwrap();
-    assert_eq!(got.concl(), &p);
-}
-
-#[test]
-fn false_elim_rejects_non_false() {
-    // A proof of `T` is not a proof of `F`; ex falso must reject it.
-    let t = Thm::assume(Term::bool_lit(true)).unwrap();
-    assert!(t.false_elim(Term::free("p", Type::bool())).is_err());
-}
+// (Ex falso — `false_elim` — left the kernel in stage EG3b; its contract
+// tests live with the derivation in covalence-hol-eval: see
+// `tests/derived_rules.rs`.)
 
 // ---- nat freeness primitives ----
 

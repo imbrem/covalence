@@ -59,7 +59,7 @@ fn rep_abs_eq(spec: &TypeSpec, v: &Term) -> Result<EvalThm> {
     if rhs_of(&beta)?.as_bool() != Some(true) {
         return Err(Error::NotReducible); // a genuine subtype, not a newtype
     }
-    let p_v = beta.sym()?.eq_mp(crate::truth()?)?; // ⊢ P v
+    let p_v = beta.sym()?.eq_mp(crate::lit_truth()?)?; // ⊢ P v  (the newtype pred body is the literal ⌜T⌝)
     fwd.imp_elim(p_v) // ⊢ rep (abs v) = v
 }
 

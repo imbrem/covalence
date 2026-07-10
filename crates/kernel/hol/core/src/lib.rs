@@ -12,10 +12,11 @@
 //! On top of HOL Light's ten primitive rules the kernel adds, with a
 //! `Soundness:` docstring justifying each: the well-known equality-core
 //! derived rules (`sym`, `cong_app`/`cong_abs`, `eta_conv` — the
-//! connective / quantifier rules and excluded middle are *derivations*
-//! in `covalence-hol-eval::derived`, not kernel rules, since stage L2);
-//! three non-computational primitives
-//! ([`Thm::nat_induct`], [`Thm::false_elim`], [`Thm::unit_eq`]); the
+//! connective / quantifier rules, excluded middle, and — since stage
+//! EG3b, with `T`/`F` ordinary defined constants — ex falso are
+//! *derivations* in `covalence-hol-eval::derived`, not kernel rules);
+//! two non-computational primitives
+//! ([`Thm::nat_induct`], [`Thm::unit_eq`]); the
 //! conservative-extension primitives ([`Thm::define`],
 //! [`Thm::new_type_definition`]); the accelerated definitional
 //! unfolding rule ([`Thm::unfold_term_spec`]); and the per-family

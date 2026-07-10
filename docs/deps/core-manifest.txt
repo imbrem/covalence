@@ -19,7 +19,6 @@ UnfoldTermSpec
 UnitEq
 SuccInj
 ZeroNeSucc
-FalseElim
 NatInduct
 SelectAx
 Define

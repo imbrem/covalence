@@ -27,30 +27,40 @@
 ;; T / F are the bool literals `T` / `F` (TermKind::Bool).
 ;; ---------------------------------------------------------------------------
 
-;; (/\) := λp q. (λf. f p q) = (λf. f T T)
+;; T := (λp:bool. p) = (λp:bool. p)   (the DEFINED truth, EG3b)
+(#def bool.true
+  (#eq (#lam (p bool) p) (#lam (p bool) p)))
+
+;; (/\) := λp q. (λf. f p q) = (λf. f T T)   (T = the defined bool.true)
 (#def bool.and
   (#lam (p bool) (#lam (q bool)
     (#eq
       (#lam (f (#fn bool bool bool)) (f p q))
-      (#lam (f (#fn bool bool bool)) (f T T))))))
+      (#lam (f (#fn bool bool bool)) (f bool.true bool.true))))))
 
 ;; (==>) := λp q. (p /\ q) = p
 (#def bool.imp
   (#lam (p bool) (#lam (q bool)
     (#eq (bool.and p q) p))))
 
-;; (~) := λp. p ==> F
+;; (~) := λp. p ==> F   (F = the defined bool.false, below — the parser
+;; resolves catalogue names through the cached specs, so the forward
+;; reference is fine at lowering time; order here mirrors defs/logic.rs)
 (#def bool.not
-  (#lam (p bool) (bool.imp p F)))
+  (#lam (p bool) (bool.imp p bool.false)))
 
 ;; (<=>) := λp q. p = q
 (#def bool.iff
   (#lam (p bool) (#lam (q bool) (#eq p q))))
 
-;; (!) := λP. P = (λx. T)
+;; (!) := λP. P = (λx. T)   (T = the defined bool.true)
 (#def bool.forall
   (#lam (P (#fn 'a bool))
-    (#eq P (#lam (x 'a) T))))
+    (#eq P (#lam (x 'a) bool.true))))
+
+;; F := ∀p:bool. p   (the DEFINED falsity, EG3b)
+(#def bool.false
+  ((#at bool.forall bool) (#lam (p bool) p)))
 
 ;; (\/) := λp q. !r. (p ==> r) ==> (q ==> r) ==> r
 (#def bool.or

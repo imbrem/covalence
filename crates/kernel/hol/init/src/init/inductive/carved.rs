@@ -156,9 +156,17 @@ pub(crate) fn apply_def(def_eq: &Thm, args: &[Term]) -> Result<Thm> {
     Ok(acc)
 }
 
-/// `⊢ p = F` from `{Γ, p} ⊢ F` (deduction antisymmetry; `Γ` survives).
+/// `⊢ p = ⌜F⌝` from `{Γ, p} ⊢ F` (deduction antisymmetry; `Γ` survives).
+/// The result is stated over the LITERAL `⌜F⌝` (the `cond`-guard
+/// currency `fire_cond` matches on); a premise concluding the defined
+/// `F` (what `not_elim` yields since EG3b) crosses the bridge first.
 fn eq_f(p: &Term, f_under_p: Thm) -> Result<Thm> {
-    let p_from_f = Thm::assume(Term::bool_lit(false))?.false_elim(p.clone())?; // {F} ⊢ p
+    let f_under_p = if f_under_p.concl().as_bool() == Some(false) {
+        f_under_p
+    } else {
+        covalence_hol_eval::fal_to_lit(f_under_p)?
+    };
+    let p_from_f = Thm::assume(Term::bool_lit(false))?.false_elim(p.clone())?; // {⌜F⌝} ⊢ p
     p_from_f.deduct_antisym(f_under_p)
 }
 

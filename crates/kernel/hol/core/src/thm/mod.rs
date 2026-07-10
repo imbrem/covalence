@@ -868,7 +868,8 @@ impl<L: HolTier> Thm<L> {
     ///   `v_j ⊨ p` for every `j`; at `j = k`, `v_k = v`, so `v ⊨ p`. ∎
     ///
     /// This is one of the kernel's two non-computational primitives (the
-    /// other is [`Thm::false_elim`]).
+    /// other is [`Thm::unit_eq`]; ex falso left the kernel in stage EG3b,
+    /// derived from the defined `F ≡ ∀p:bool. p`).
     pub fn nat_induct(base: Thm<L>, step: Thm<L>, p: Term, x: &str) -> Result<Thm<L>> {
         Self::nat_induct_with(base, step, p, x, &mut ())
     }
@@ -897,19 +898,11 @@ impl<L: HolTier> Thm<L> {
         Ok(thm)
     }
 
-    /// `Γ ⊢ p`, given `Γ ⊢ F` and any `bool`-typed target `p`
-    /// (ex falso quodlibet), as a primitive rule.
-    ///
-    /// ## Soundness
-    ///
-    /// `F` is the `Bool(false)` literal, which denotes falsity in
-    /// every model — so `Γ ⊢ F` means `Γ` is contradictory and entails
-    /// anything. Because `F` is a literal with no defining equation,
-    /// this cannot be derived from the other rules; it is the kernel's
-    /// second non-computational primitive (alongside [`Thm::nat_induct`]).
-    pub fn false_elim(self, p: Term) -> Result<Thm<L>> {
-        mint!(FalseElim, (self.0.clone(), p.clone()), (self.0, p))
-    }
+    // (`false_elim` — ex falso — is no longer a kernel rule: since EG3b
+    // `F` is the defined constant `defs::fal ≡ ∀p:bool. p`, so ex falso
+    // is the derivation "unfold + ∀-elim at the target", provided with
+    // the old signature by
+    // `covalence-hol-eval::derived::DerivedRules::false_elim`.)
 
     // ========================================================================
     // nat freeness (the constructors `0` / `succ` are free)

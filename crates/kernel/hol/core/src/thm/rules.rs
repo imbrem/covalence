@@ -531,21 +531,12 @@ core_rules! {
         Ok((Ctx::new(), hol::hol_not(eq)))
     }
 
-    /// `Γ ⊢ p`, given `Γ ⊢ F` and `p : bool` (ex falso).
-    FalseElim(Prem<L>, Term) = |(t, p), _| {
-        let (hyps, concl) = parts(&t);
-        if !matches!(concl.kind(), TermKind::Bool(false)) {
-            return Err(Error::ConnectiveRule(format!(
-                "false_elim: conclusion {} is not F",
-                concl
-            )));
-        }
-        let p_ty = p.type_of()?;
-        if !p_ty.is_bool() {
-            return Err(Error::NotBool(p_ty));
-        }
-        Ok((hyps.clone(), p))
-    }
+    // (`FalseElim` — ex falso — left the kernel in stage EG3b: with `F`
+    // the defined constant `defs::fal ≡ ∀p:bool. p`, ex falso is the
+    // derivation "unfold + ∀-elim at the target"
+    // (`covalence-hol-eval::derived::DerivedRules::false_elim`), and the
+    // transitional `Bool(false)` literal's ex falso is derived through
+    // the nat-freeness bridge (`covalence-hol-eval::boolean`).)
 
     /// `Γ_b ∪ (Γ_s \ {p}) ⊢ p` — Peano induction on `nat`, **sequent form**
     /// (connective-free): from `Γ_b ⊢ p[0/x]` (base) and

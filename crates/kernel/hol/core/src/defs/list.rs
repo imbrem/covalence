@@ -26,6 +26,7 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
+use super::logic;
 use super::nat::{nat_rec, nat_succ};
 use super::option::{none, option, some};
 use super::spec::{TermSpec, TypeSpec};
@@ -61,13 +62,13 @@ fn list_predicate() -> Term {
         Term::app(stream_at(opt), s.clone()),
         Term::app(nat_succ(), i.clone()),
     );
-    let contig_step = hol::hol_imp(
+    let contig_step = logic::hol_imp(
         hol::hol_eq(at_i, none(alpha.clone())),
         hol::hol_eq(at_si, none(alpha.clone())),
     );
-    let contig = hol::hol_forall("i", Type::nat(), contig_step);
+    let contig = logic::hol_forall("i", Type::nat(), contig_step);
 
-    hol::pub_abs("s", stream_opt, hol::hol_and(fin, contig))
+    hol::pub_abs("s", stream_opt, logic::hol_and(fin, contig))
 }
 
 /// `list 'a := stream (option 'a) where (finite ∧ contiguous)`. The
@@ -151,7 +152,7 @@ fn list_length_body() -> Term {
     // listLength ≔ λxs. listFoldr (λ_:α. λacc:nat. succ acc) 0 xs
     let alpha = Type::tfree("a");
     let acc = Term::free("acc", Type::nat());
-    let succ_acc = Term::app(hol::succ_fn(), acc);
+    let succ_acc = Term::app(Term::succ(), acc);
     // λ_:α. λacc:nat. succ acc  (the element is ignored)
     let step = Term::abs(alpha.clone(), hol::pub_abs("acc", Type::nat(), succ_acc));
     let xs = Term::free("xs", list(alpha.clone()));
@@ -214,10 +215,10 @@ fn list_foldr_predicate() -> Term {
         Term::app(fr_f_z, xs.clone()),
     );
     let step_eq = hol::hol_eq(lhs, rhs);
-    let step = hol::hol_forall("x", alpha, hol::hol_forall("xs", la, step_eq));
+    let step = logic::hol_forall("x", alpha, logic::hol_forall("xs", la, step_eq));
 
-    let body = hol::hol_and(base, step);
-    let body_fz = hol::hol_forall("f", f_ty, hol::hol_forall("z", beta, body));
+    let body = logic::hol_and(base, step);
+    let body_fz = logic::hol_forall("f", f_ty, logic::hol_forall("z", beta, body));
     hol::pub_abs("fr", fr_ty, body_fz)
 }
 

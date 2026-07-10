@@ -33,6 +33,7 @@ use crate::hol;
 use crate::term::{Term, Type};
 
 use super::canonical::Canonical;
+use super::logic;
 use super::nat::nat_le;
 use super::option::{none, option};
 use super::spec::TypeSpec;
@@ -129,7 +130,7 @@ fn stream_tail_body() -> Term {
     let stream_a = stream(alpha.clone());
     let s = Term::free("s", stream_a.clone());
     let n = Term::free("n", Type::nat());
-    let succ_n = Term::app(hol::succ_fn(), n.clone());
+    let succ_n = Term::app(Term::succ(), n.clone());
     // stream_at s (succ n)
     let elem = Term::app(Term::app(stream_at(alpha.clone()), s.clone()), succ_n);
     let lam_n = hol::pub_abs("n", Type::nat(), elem);
@@ -190,11 +191,11 @@ fn finite_body() -> Term {
     // nat_le N n
     let le = Term::app(Term::app(nat_le(), big_n.clone()), n_inner.clone());
     // nat_le N n ⟹ stream_at s n = none
-    let imp = hol::hol_imp(le, eq_none);
+    let imp = logic::hol_imp(le, eq_none);
     // ∀n:nat. ...
-    let all_n = hol::hol_forall("n", Type::nat(), imp);
+    let all_n = logic::hol_forall("n", Type::nat(), imp);
     // ∃N:nat. ...
-    let ex_n = hol::hol_exists("N", Type::nat(), all_n);
+    let ex_n = logic::hol_exists("N", Type::nat(), all_n);
     // λs:stream(option α). ...
     hol::pub_abs("s", stream_opt_a, ex_n)
 }

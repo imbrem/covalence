@@ -3,7 +3,7 @@
 //! `stream_at`/`stream_mk`/`stream_head`/`stream_tail`/`stream_const`/
 //! `finite` ops are D3 residue in `covalence_core::defs::stream`).
 
-use covalence_core::hol;
+use crate::hol;
 use covalence_core::term::{Term, Type};
 
 use crate::defs::{Canonical, iter, stream, stream_at, stream_mk};

@@ -33,6 +33,7 @@ use covalence_pure::{
 };
 
 use crate::ctx::Ctx;
+use crate::defs::logic;
 use crate::error::{Error, Result};
 use crate::hol;
 use crate::subst::{
@@ -450,13 +451,13 @@ core_rules! {
         let pred = super::subtype_pred(&spec, &args, &carrier)?;
         let prem = hol::hol_eq(Term::app(rep, Term::app(abs, a.clone())), a.clone());
         let pa = Term::app(pred.clone(), a);
-        let some_x = hol::hol_exists(
+        let some_x = logic::hol_exists(
             "x",
             carrier.clone(),
             Term::app(pred, Term::free("x", carrier)),
         );
-        let disj = hol::hol_or(pa, hol::hol_not(some_x));
-        Ok((Ctx::new(), hol::hol_imp(prem, disj)))
+        let disj = logic::hol_or(pa, logic::hol_not(some_x));
+        Ok((Ctx::new(), logic::hol_imp(prem, disj)))
     }
 
     /// `Γ ⊢ p t`, given `Γ ⊢ p w`, for a def-style `TermSpec` leaf
@@ -619,7 +620,7 @@ core_rules! {
         }
 
         // step : Γ_s ⊢ p[succ x/x] with p ∈ Γ_s (the discharged IH).
-        let succ_x = Term::app(hol::succ_fn(), Term::free(x.as_str(), nat));
+        let succ_x = Term::app(Term::succ(), Term::free(x.as_str(), nat));
         let p_succ = subst_free(&p, &var, &succ_x);
         if *step_c != p_succ {
             return Err(Error::ConnectiveRule(format!(
@@ -757,7 +758,7 @@ core_rules! {
             Term::app(abs.clone(), Term::app(rep.clone(), a_free.clone())),
             a_free,
         );
-        let abs_rep_concl = hol::hol_forall("a", tau.clone(), abs_rep_body);
+        let abs_rep_concl = logic::hol_forall("a", tau.clone(), abs_rep_body);
 
         let r_free = Term::free("r", alpha.clone());
         let p_at_r = Term::app(p, r_free.clone());
@@ -766,15 +767,15 @@ core_rules! {
             r_free,
         );
         //    fwd: ∀r:α. P r ⟹ rep (abs r) = r
-        let fwd_concl = hol::hol_forall(
+        let fwd_concl = logic::hol_forall(
             "r",
             alpha.clone(),
-            hol::hol_imp(p_at_r.clone(), rep_abs_eq.clone()),
+            logic::hol_imp(p_at_r.clone(), rep_abs_eq.clone()),
         );
         //    back: ∀r:α. rep (abs r) = r ⟹ P r
-        let back_concl = hol::hol_forall("r", alpha, hol::hol_imp(rep_abs_eq, p_at_r));
+        let back_concl = logic::hol_forall("r", alpha, logic::hol_imp(rep_abs_eq, p_at_r));
 
-        let conj = hol::hol_and(abs_rep_concl, hol::hol_and(fwd_concl, back_concl));
+        let conj = logic::hol_and(abs_rep_concl, logic::hol_and(fwd_concl, back_concl));
         Ok((w_hyps.clone(), conj))
     }
     }

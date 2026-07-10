@@ -15,9 +15,9 @@
 //! bootstrap `⊢ T` it sits on) works at the pure `Thm<CoreLang>` tier —
 //! no certificate, no computation TCB.
 
-use covalence_core::hol::hol_imp;
 use covalence_core::{Term, Type};
 use covalence_hol_eval::derived::{DerivedRules, truth};
+use covalence_hol_eval::hol::hol_imp;
 use covalence_hol_eval::{EvalThm, defs, fal_eq_lit, fal_from_lit, mk_nat, tru_eq_lit};
 
 /// The pure-HOL tier (`covalence_core::Thm` defaults to `Thm<CoreLang>`).

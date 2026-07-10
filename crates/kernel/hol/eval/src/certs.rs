@@ -37,7 +37,7 @@ use covalence_types::{Int, Nat};
 use crate::defs;
 use crate::defs::int_ops::{IntOp, OpKey, lookup_op};
 use crate::defs::{FloatKey, FloatOp, FloatWidth};
-use covalence_core::hol;
+use crate::hol;
 use covalence_core::seam::Lit;
 use covalence_core::{Error, Result};
 use covalence_core::{IntTag, SmallIntLiteral, Term, TermSpec, Type};

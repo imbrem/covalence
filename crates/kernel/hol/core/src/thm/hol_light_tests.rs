@@ -646,7 +646,7 @@ fn nat_induct_rule_derives_open_conclusion() {
     let n = Term::free("n", Type::nat());
     let p = hol::hol_eq(n.clone(), n.clone());
     let base = Thm::refl(Term::nat_lit(covalence_types::Nat::zero())).unwrap(); // ⊢ 0 = 0
-    let succ_n = Term::app(hol::succ_fn(), n);
+    let succ_n = Term::app(Term::succ(), n);
     let step = Thm::refl(succ_n)
         .unwrap() // ⊢ succ n = succ n
         .weaken(crate::Ctx::singleton(p.clone()))

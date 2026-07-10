@@ -42,6 +42,7 @@ pub mod boolean;
 pub mod certs;
 pub mod defs;
 pub mod derived;
+pub mod hol;
 mod lang;
 pub mod lit;
 pub mod rules;
@@ -52,12 +53,7 @@ mod zero;
 
 pub use boolean::{fal_eq_lit, fal_from_lit, fal_to_lit, tru_eq_lit, tru_from_lit, tru_to_lit};
 pub use certs::{PrimFamily, prim_family};
-// The HOL term-builder helpers (`hol_eq` / `hol_imp` / `hol_forall` / …)
-// still live in core (the staying axiom rules and the D3 type-catalogue
-// residue state their conclusions with them); re-exported here so
-// downstream imports route through the eval catalogue, the same alias
-// route as `defs` — the eventual physical move is then invisible.
-pub use covalence_core::hol;
+
 pub use defs::{as_f64_bits, mk_f64};
 pub use derived::{DerivedRules, TypeDefExt};
 pub use lang::{CoreEval, EvalThm, EvalTypeDef};

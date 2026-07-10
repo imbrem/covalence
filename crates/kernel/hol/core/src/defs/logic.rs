@@ -65,7 +65,7 @@ fn b() -> Type {
 }
 
 /// `p ⟹ q` built from the `imp` spec (for use inside the bodies that
-/// need implication before `hol::hol_imp` would be circular-safe).
+/// need implication before the local `hol_imp` would be circular-safe).
 fn imp_app(p: Term, q: Term) -> Term {
     Term::app(Term::app(imp(), p), q)
 }
@@ -188,7 +188,7 @@ poly_let_term! {
 
 fn fal_body() -> Term {
     let p = Term::free("p", b());
-    hol::hol_forall("p", b(), p)
+    hol_forall("p", b(), p)
 }
 
 let_term! {
@@ -209,7 +209,7 @@ fn or_body() -> Term {
     let p_r = imp_app(p.clone(), r.clone());
     let q_r = imp_app(q.clone(), r.clone());
     let inner = imp_app(p_r, imp_app(q_r, r.clone()));
-    let forall_r = hol::hol_forall("r", b(), inner);
+    let forall_r = hol_forall("r", b(), inner);
     hol::pub_abs("p", b(), hol::pub_abs("q", b(), forall_r))
 }
 
@@ -231,15 +231,58 @@ fn exists_body() -> Term {
     let x = Term::free("x", alpha.clone());
     let p_x = Term::app(pred.clone(), x);
     let p_x_q = imp_app(p_x, q.clone());
-    let inner_forall = hol::hol_forall("x", alpha, p_x_q);
+    let inner_forall = hol_forall("x", alpha, p_x_q);
     let imp2 = imp_app(inner_forall, q.clone());
-    let forall_q = hol::hol_forall("q", b(), imp2);
+    let forall_q = hol_forall("q", b(), imp2);
     hol::pub_abs("P", pred_ty, forall_q)
 }
 
 poly_let_term! {
     /// `(?) : ('a → bool) → bool` ≡ `λP. !q. (!x. P x ==> q) ==> q`.
     exists_spec, exists(alpha), Canonical::Exists, exists_body()
+}
+
+// ============================================================================
+// Defined-connective term builders (crate-internal, stage A3)
+// ============================================================================
+//
+// Application-chain sugar over the catalogue specs above. These moved
+// here from `crate::hol` (which is now `defs`-free): they belong next to
+// the definitions they apply, and they die together at the literal-leaf
+// endgame. Crate-internal consumers: the D3 residue bodies in `defs/*.rs`
+// and the two staying connective-built rules (`SpecRepAbsBack`,
+// `NewTypeDefRule`). Everyone else uses the public copies in
+// `covalence-hol-eval::hol` (the untrusted home).
+
+/// HOL `p ⟹ q : bool` — `imp` applied to `p` and `q`.
+pub(crate) fn hol_imp(p: Term, q: Term) -> Term {
+    imp_app(p, q)
+}
+
+/// HOL `p ∧ q : bool`.
+pub(crate) fn hol_and(p: Term, q: Term) -> Term {
+    Term::app(Term::app(and(), p), q)
+}
+
+/// HOL `p ∨ q : bool`.
+pub(crate) fn hol_or(p: Term, q: Term) -> Term {
+    Term::app(Term::app(or(), p), q)
+}
+
+/// HOL `¬ p : bool` — `not` applied to `p`.
+pub(crate) fn hol_not(p: Term) -> Term {
+    Term::app(not(), p)
+}
+
+/// HOL `∃x:α. body[x]` — `exists[α] (λx:α. body[Bound 0])`.
+pub(crate) fn hol_exists(hint: &str, alpha: Type, body: Term) -> Term {
+    Term::app(exists(alpha.clone()), hol::pub_abs(hint, alpha, body))
+}
+
+/// HOL `∀x:α. body[x]` — `forall[α] (λx:α. body[Bound 0])`. The free
+/// variable `Free(hint, α)` in `body` is closed into `Bound(0)`.
+pub(crate) fn hol_forall(hint: &str, alpha: Type, body: Term) -> Term {
+    Term::app(forall(alpha.clone()), hol::pub_abs(hint, alpha, body))
 }
 
 #[cfg(test)]

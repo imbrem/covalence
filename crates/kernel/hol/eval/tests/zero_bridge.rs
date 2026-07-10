@@ -5,8 +5,8 @@
 
 use std::any::TypeId;
 
-use covalence_core::hol;
 use covalence_core::{Term, Type};
+use covalence_hol_eval::hol;
 use covalence_hol_eval::{lit, rules, zero_eq_lit, zero_ne_succ_zero};
 
 /// The bridge equation is genuine: `⊢ zero = ⌜0⌝` with NO hypotheses —

@@ -53,7 +53,7 @@ mod fail;
 pub(crate) mod helpers;
 mod int;
 mod list;
-mod logic;
+pub(crate) mod logic;
 mod nat;
 mod option;
 mod prod;

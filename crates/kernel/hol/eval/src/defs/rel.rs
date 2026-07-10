@@ -2,7 +2,7 @@
 
 use std::sync::LazyLock;
 
-use covalence_core::hol;
+use crate::hol;
 use covalence_core::term::{Term, Type};
 
 use crate::defs::Canonical;

@@ -27,6 +27,7 @@
 use crate::hol;
 use crate::term::{Term, Type};
 
+use super::logic;
 use super::spec::TypeSpec;
 use super::symbol::TrustedSymbol;
 
@@ -41,14 +42,14 @@ fn close_predicate(base: Type, rel: Term) -> Term {
     let s_x = Term::app(s.clone(), x.clone());
     let s_y = Term::app(s.clone(), y.clone());
     let rel_xy = Term::app(Term::app(rel, x.clone()), y.clone());
-    let closed_imp = hol::hol_imp(rel_xy, hol::hol_imp(s_x, s_y));
-    let inner = hol::hol_forall("y", base.clone(), closed_imp);
-    let closed_part = hol::hol_forall("x", base.clone(), inner);
+    let closed_imp = logic::hol_imp(rel_xy, logic::hol_imp(s_x, s_y));
+    let inner = logic::hol_forall("y", base.clone(), closed_imp);
+    let closed_part = logic::hol_forall("x", base.clone(), inner);
 
     let x2 = Term::free("x", base.clone());
-    let nonempty_part = hol::hol_exists("x", base.clone(), Term::app(s.clone(), x2));
+    let nonempty_part = logic::hol_exists("x", base.clone(), Term::app(s.clone(), x2));
 
-    hol::pub_abs("S", powerset, hol::hol_and(closed_part, nonempty_part))
+    hol::pub_abs("S", powerset, logic::hol_and(closed_part, nonempty_part))
 }
 
 /// `λy:base. rel z y` — the `rel`-class of `z` as a subset of `base`.
@@ -73,7 +74,7 @@ fn quot_predicate(base: Type, rel: Term) -> Term {
     let z = Term::free("z", base.clone());
     // `S = classOf z`, with `z` free (bound by the ∃ below).
     let eq = hol::hol_eq(s, class_of(&base, &rel, &z));
-    let exists_z = hol::hol_exists("z", base.clone(), eq);
+    let exists_z = logic::hol_exists("z", base.clone(), eq);
     hol::pub_abs("S", powerset, exists_z)
 }
 

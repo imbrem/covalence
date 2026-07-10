@@ -234,4 +234,30 @@ different subsets." Delivered four composing prototype layers (all merged to mai
   dialect" step); trusted-CoreLang `TyInst`/`TyGen`/`TyBeta` (gated on the Homeier
   consistency proof); EG3a→EG5 core leaf-removal.
 
+## 2026-07-10 — ultracode: 3 parallel audited tracks merged to main (8e2e9f13)
+
+Workflow `wijd7ts4t` (13 agents): three worktree-isolated tracks, each stage
+adversarially audited (fix+re-audit loop) — **all SOUND**. Full joint-review doc:
+[`tcb-review-2026-07.md`](./tcb-review-2026-07.md).
+- **Track A (kernel):** EG3a (`TermKind::Zero` + transitional eval-tier `ZeroLitCert`
+  bridge, dies at EG5) → EG3b (**T/F defined constants; `FalseElim` DELETED,
+  coreManifest 26→25**; ⊢T at CoreLang; zero new axioms) → A3 (**5 CoreLang rules
+  reshaped to `Prem<L>`**; `ZeroNeSucc` now ex-falso; connective builders out of core;
+  coupling 37→29). **EG5 preflight = BLOCKED** (no structural target for SmallInt/f32/
+  f64; float-lander gap; unary-numeral perf wall) → EG5 NOT executed; plan in
+  `eg5-preflight.md`. Latent finding: the exclusivity guard is nat-only (extend to 5
+  families before EG5).
+- **Track B (haskell):** SExpr IR interchange pipeline (Haskell ⇒ S-expr ⇒ backend),
+  **Nat literals = covalence Nat** (not u128), `Realize` trait at the SExpr boundary,
+  HOL backend re-routed; third-party-text tests + init-dialect flagship. Also fixed a
+  pre-existing RED deps gate on main (haskell purge-ratchet breach). Zero-TCB.
+- **Track C (base):** `covalence_pure::api` facade + `CertificateAlgebra` trait (the
+  algebra the future relations-base implements) + `covalence-tcb-db` SQLite TCB-dump
+  PoC. Zero trusted-TCB delta. Notes: `base-api-surface.md`, `base-abstraction.md`.
+- **Merge:** B/C haskell + docs/deps conflicts reconciled (took B's crate rewrite,
+  regenerated deps deterministically). Full gate green: **193 test suites, 0 failures**,
+  clippy clean, fmt clean, `deps:check` up to date. Note: the tcb-audit base jump
+  (mintSites 18→24) measures ALREADY-LANDED rel.rs + B-K1..3 (earlier skipped `bun run
+  deps`), not new trust.
+
 <!-- APPEND NEW ENTRIES BELOW -->

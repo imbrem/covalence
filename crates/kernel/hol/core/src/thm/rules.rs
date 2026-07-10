@@ -407,20 +407,40 @@ core_rules! {
         Ok((Ctx::new(), hol::hol_eq(lhs, a)))
     }
 
-    /// `⊢ P a ⟹ rep (abs a) = a`.
-    SpecRepAbsFwd(TypeSpec, TypeList, Term) = |(spec, args, a), _| {
+    /// `Γ ⊢ rep (abs a) = a`, given `Γ ⊢ P a` — the conditional
+    /// carrier-side round-trip, in connective-free **sequent form**: the
+    /// premise's conclusion is parsed as `P a` (with `P` checked, by
+    /// structural equality, against the spec's instantiated selector
+    /// predicate), and the equation is concluded under the same
+    /// hypotheses. The old implication form `⊢ P a ⟹ rep (abs a) = a`
+    /// is the zero-TCB derivation `assume` + this rule + `imp_intro`
+    /// (`covalence-hol-eval::derived::DerivedRules::spec_rep_abs_fwd`).
+    SpecRepAbsFwd(TypeSpec, TypeList, Prem<L>) = |(spec, args, prem), _| {
         let (abs, rep, carrier, _wrapper) = super::spec_coercions(&spec, &args)?;
-        let a_ty = a.type_of()?;
-        if a_ty != carrier {
-            return Err(Error::TypeMismatch { expected: carrier, got: a_ty });
-        }
         let pred = super::subtype_pred(&spec, &args, &carrier)?;
-        let prem = Term::app(pred, a.clone());
-        let eq = hol::hol_eq(Term::app(rep, Term::app(abs, a.clone())), a);
-        Ok((Ctx::new(), hol::hol_imp(prem, eq)))
+        let (hyps, concl) = parts(&prem);
+        let TermKind::App(prem_pred, a) = concl.kind() else {
+            return Err(Error::NotApp(format!("{}", concl)));
+        };
+        if *prem_pred != pred {
+            return Err(Error::ConnectiveRule(format!(
+                "spec_rep_abs_intro: premise head {prem_pred} is not the selector predicate {pred}"
+            )));
+        }
+        let a = a.clone();
+        let eq = hol::hol_eq_at(carrier, Term::app(rep, Term::app(abs, a.clone())), a);
+        Ok((hyps.clone(), eq))
     }
 
     /// `⊢ rep (abs a) = a ⟹ (P a ∨ ¬∃x. P x)`.
+    ///
+    /// **Stays connective-built (not sequent-reshaped):** the `∨`-of-`¬∃`
+    /// disjunction is what makes the rule *witness-free* (sound even for
+    /// an empty `P`, so `TypeSpec`s postulate nothing) — a sequent form
+    /// would need a non-emptiness premise, reintroducing the witness this
+    /// rule exists to avoid. It therefore keeps building `⟹/∨/¬/∃` from
+    /// the `defs::logic` catalogue until the ε/rep/abs endgame (L4)
+    /// re-homes the `TypeSpec` machinery wholesale.
     SpecRepAbsBack(TypeSpec, TypeList, Term) = |(spec, args, a), _| {
         let (abs, rep, carrier, _wrapper) = super::spec_coercions(&spec, &args)?;
         let a_ty = a.type_of()?;
@@ -439,8 +459,15 @@ core_rules! {
         Ok((Ctx::new(), hol::hol_imp(prem, disj)))
     }
 
-    /// `⊢ (p w) ⟹ p(t)` for a def-style `TermSpec` leaf `t` with witness `w`.
-    SpecAx(Term, Term) = |(t, w), _| {
+    /// `Γ ⊢ p t`, given `Γ ⊢ p w`, for a def-style `TermSpec` leaf
+    /// `t = Spec(spec, args)` with selector predicate `p` — in
+    /// connective-free **sequent form**: the premise's conclusion is
+    /// parsed as `p w` (with `p` checked, by structural equality,
+    /// against the spec's instantiated selector predicate), and `p t`
+    /// is concluded under the same hypotheses. The old implication form
+    /// `⊢ p w ⟹ p t` is the zero-TCB derivation `assume` + this rule +
+    /// `imp_intro` (`covalence-hol-eval::derived::DerivedRules::spec_ax`).
+    SpecAx(Prem<L>, Term) = |(prem, t), _| {
         let (spec, args) = match t.kind() {
             TermKind::Spec(spec, args) => (spec.clone(), args.clone()),
             _ => return Err(Error::NotASpec),
@@ -453,14 +480,16 @@ core_rules! {
         }
         let tvars = declared_ty.free_tvars();
         let pred = super::inst_spec_tvars(&body, &tvars, &args);
-        let carrier = t.type_of()?;
-        let w_ty = w.type_of()?;
-        if w_ty != carrier {
-            return Err(Error::TypeMismatch { expected: carrier, got: w_ty });
+        let (hyps, concl) = parts(&prem);
+        let TermKind::App(prem_pred, _w) = concl.kind() else {
+            return Err(Error::NotApp(format!("{}", concl)));
+        };
+        if *prem_pred != pred {
+            return Err(Error::ConnectiveRule(format!(
+                "spec_intro: premise head {prem_pred} is not the spec's selector predicate {pred}"
+            )));
         }
-        let prem = Term::app(pred.clone(), w);
-        let concl = Term::app(pred, t.clone());
-        Ok((Ctx::new(), hol::hol_imp(prem, concl)))
+        Ok((hyps.clone(), Term::app(pred, t.clone())))
     }
 
     // ================= Group A': definitional unfolding =================
@@ -503,32 +532,56 @@ core_rules! {
         Ok((Ctx::new(), hol::hol_eq(a, b)))
     }
 
-    /// `⊢ (succ m = succ n) ⟹ (m = n)` — successor injectivity (`m, n : nat`).
-    SuccInj(Term, Term) = |(m, n), _| {
-        let nat = Type::nat();
-        for t in [&m, &n] {
-            let ty = t.type_of()?;
-            if ty != nat {
-                return Err(Error::TypeMismatch { expected: nat.clone(), got: ty });
+    /// `Γ ⊢ m = n`, given `Γ ⊢ succ m = succ n` — successor injectivity
+    /// in connective-free **sequent form**: the premise's conclusion is
+    /// parsed as an equation between two [`Term::succ`]-headed
+    /// applications, and the stripped equation is concluded under the
+    /// same hypotheses. The old implication form
+    /// `⊢ succ m = succ n ⟹ m = n` is the zero-TCB derivation `assume` +
+    /// this rule + `imp_intro`
+    /// (`covalence-hol-eval::derived::DerivedRules::succ_inj`).
+    SuccInj(Prem<L>) = |(prem,), _| {
+        let (hyps, concl) = parts(&prem);
+        let (lhs, rhs, alpha) = super::parse_hol_eq_at(concl)?;
+        let succ_arg = |t: &Term| -> Result<Term> {
+            match t.kind() {
+                TermKind::App(f, a) if *f == Term::succ() => Ok(a.clone()),
+                _ => Err(Error::ConnectiveRule(format!(
+                    "succ_eq_elim: {t} is not `succ _`"
+                ))),
             }
-        }
-        let prem = hol::hol_eq(
-            Term::app(Term::succ(), m.clone()),
-            Term::app(Term::succ(), n.clone()),
-        );
-        Ok((Ctx::new(), hol::hol_imp(prem, hol::hol_eq(m, n))))
+        };
+        let m = succ_arg(lhs)?;
+        let n = succ_arg(rhs)?;
+        Ok((hyps.clone(), hol::hol_eq_at(alpha.clone(), m, n)))
     }
 
-    /// `⊢ ¬(0 = succ n)` (`n : nat`).
-    ZeroNeSucc(Term) = |(n,), _| {
-        let nat = Type::nat();
-        let n_ty = n.type_of()?;
-        if n_ty != nat {
-            return Err(Error::TypeMismatch { expected: nat, got: n_ty });
+    /// `Γ ⊢ q`, given `Γ ⊢ 0 = succ n` and any `q : bool` — nat
+    /// no-confusion as **ex falso in sequent form**: `0` is never a
+    /// successor, so hypotheses proving `0 = succ n` are inconsistent
+    /// and support any conclusion. The premise's conclusion is parsed
+    /// as an equation whose left side is the zero constructor (the
+    /// [`Term::zero`] leaf or the `Nat` literal `⌜0⌝` — both denote
+    /// zero) and whose right side is a [`Term::succ`]-application.
+    /// The old negation form `⊢ ¬(0 = succ n)` is the zero-TCB
+    /// derivation `assume` + this rule at `q := F` + `imp_intro` +
+    /// `not_intro` (`covalence-hol-eval::derived::DerivedRules::zero_ne_succ`).
+    ZeroNeSucc(Prem<L>, Term) = |(prem, q), _| {
+        let (hyps, concl) = parts(&prem);
+        let (lhs, rhs, _alpha) = super::parse_hol_eq_at(concl)?;
+        // Both transitional zero shapes denote zero (bridged by the
+        // eval-tier `ZeroLitCert`); `hol::zero()` is the `⌜0⌝` literal.
+        if *lhs != Term::zero() && *lhs != hol::zero() {
+            return Err(Error::ConnectiveRule(format!(
+                "zero_eq_succ_elim: {lhs} is not the zero constructor"
+            )));
         }
-        let zero = Term::nat_lit(covalence_types::Nat::zero());
-        let eq = hol::hol_eq(zero, Term::app(Term::succ(), n));
-        Ok((Ctx::new(), hol::hol_not(eq)))
+        if !matches!(rhs.kind(), TermKind::App(f, _) if *f == Term::succ()) {
+            return Err(Error::ConnectiveRule(format!(
+                "zero_eq_succ_elim: {rhs} is not `succ _`"
+            )));
+        }
+        Ok((hyps.clone(), q))
     }
 
     // (`FalseElim` — ex falso — left the kernel in stage EG3b: with `F`
@@ -598,8 +651,20 @@ core_rules! {
     // derivable from `SelectAx` the standard HOL way; see
     // `covalence-hol-eval::derived`'s cached LEM schema.)
 
-    /// `⊢ (p x) ⟹ (p (ε p))` — Hilbert's choice axiom.
-    SelectAx(Term, Term) = |(p, x), _| {
+    /// `Γ ⊢ p (ε p)`, given `Γ ⊢ p x` — Hilbert's choice axiom in
+    /// connective-free **sequent form**: the premise's conclusion is
+    /// split as the application `p x`, and `p` transfers from the
+    /// witness `x` to the choice term `ε p` ([`TermKind::Select`]).
+    /// The old implication form `⊢ p x ⟹ p (ε p)` (HOL Light's
+    /// `SELECT_AX` instance) is the zero-TCB derivation `assume` + this
+    /// rule + `imp_intro`
+    /// (`covalence-hol-eval::derived::DerivedRules::select_ax`).
+    SelectAx(Prem<L>) = |(prem,), _| {
+        let (hyps, concl) = parts(&prem);
+        let TermKind::App(p, _x) = concl.kind() else {
+            return Err(Error::NotApp(format!("{}", concl)));
+        };
+        let p = p.clone();
         let p_ty = p.type_of()?;
         let TypeKind::Fun(dom, cod) = p_ty.kind() else {
             return Err(Error::NotFunction(p_ty));
@@ -607,14 +672,8 @@ core_rules! {
         if !cod.is_bool() {
             return Err(Error::NotBool(cod.clone()));
         }
-        let x_ty = x.type_of()?;
-        if *dom != x_ty {
-            return Err(Error::TypeMismatch { expected: dom.clone(), got: x_ty });
-        }
         let choice = Term::app(Term::select_op(dom.clone()), p.clone());
-        let prem = Term::app(p.clone(), x);
-        let concl = Term::app(p, choice);
-        Ok((Ctx::new(), hol::hol_imp(prem, concl)))
+        Ok((hyps.clone(), Term::app(p, choice)))
     }
 
     // ================= Group I: generative (fresh identity INSIDE decide) =================
@@ -643,8 +702,18 @@ core_rules! {
 
     /// From a witness `Γ ⊢ P x`, mint `Γ ⊢ abs_rep ∧ (fwd ∧ back)` for a FRESH
     /// subtype τ with fresh abs/rep — all freshness allocated here. The public
-    /// `new_type_definition` splits the conjunction via core's own `and_elim` and
-    /// shape-parses τ/abs/rep back out.
+    /// `new_type_definition` returns the conjunction unsplit (consumers project
+    /// with `covalence-hol-eval::derived::TypeDefExt`) and shape-parses
+    /// τ/abs/rep back out.
+    ///
+    /// **Stays connective-built (not sequent-reshaped):** one rule
+    /// application mints exactly one theorem, and the three bijection laws
+    /// must share the SAME fresh τ/abs/rep identity (allocated inside this
+    /// `decide`, unforgeable) — so they can only leave the mint as a single
+    /// `∧`-package of `∀`-closed laws. Splitting into three sequent rules
+    /// would need cross-mint fresh-identity sharing, a bigger trust surface
+    /// than the `∀/⟹/∧` construction. Dies/reshapes with the ε/rep/abs
+    /// endgame (L4).
     NewTypeDefRule(Prem<L>, SmolStr, SmolStr) = |(witness, abs_hint, rep_hint), _| {
         let (w_hyps, w_concl) = parts(&witness);
 

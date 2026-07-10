@@ -44,7 +44,7 @@
 //! Since stage L2 NO kernel rule destructures these definitions — the
 //! connective / quantifier intro-elim rules are executable derivations
 //! in `covalence-hol-eval::derived`. The staying axiom rules
-//! (`succ_inj`, `select_ax`, `spec_ax`, the `spec_*` subtype laws,
+//! (`succ_eq_elim`, `select_intro`, `spec_intro`, the `spec_*` subtype laws,
 //! `new_type_definition`) still *state* their conclusions with `imp` /
 //! `not` / `or` / `exists` / `and` / `forall`, and the D3 residue type
 //! catalogue quantifies with them — which is exactly why these

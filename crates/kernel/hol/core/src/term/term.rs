@@ -648,7 +648,7 @@ pub enum TermKind {
     /// TRANSITIONAL COEXISTENCE (literal-endgame stage EG3a,
     /// `notes/vibes/literal-endgame-design.md`): the `Nat` literal leaf
     /// still exists and the freeness rules
-    /// ([`crate::Thm::zero_ne_succ`], [`crate::Thm::nat_induct`]) still
+    /// ([`crate::Thm::zero_eq_succ_elim`], [`crate::Thm::nat_induct`]) still
     /// state their conclusions with the `Nat(0)` literal; the two zeros
     /// are bridged by the eval-tier transitional `ZeroLitCert`
     /// (`⊢ zero = ⌜0⌝` in `covalence-hol-eval`) until the EG5 flip
@@ -660,7 +660,7 @@ pub enum TermKind {
     /// the `Nat` literals — see [`TermKind::Zero`]), so the kernel
     /// commits to `succ` being injective and
     /// `0 ≠ succ n` — exposed as the freeness rules
-    /// [`crate::Thm::succ_inj`] / [`crate::Thm::zero_ne_succ`], and to
+    /// [`crate::Thm::succ_eq_elim`] / [`crate::Thm::zero_eq_succ_elim`], and to
     /// `succ (n : literal)` reducing to the next literal (the
     /// `SuccCert` certificate). Applied via the usual `App` chain.
     Succ,

@@ -1047,9 +1047,9 @@ fn lem_schema() -> Result<CoreThm> {
         let c_case = or_intro_drv(refl_c.clone(), refl_c.concl().clone(), p.clone(), true)?;
         let beta_w = Thm::beta_conv(Term::app(pred.clone(), c.clone()))?; // ⊢ pred c = ((c=c) ∨ p)
         let pred_holds = beta_w.sym()?.eq_mp(c_case)?; // ⊢ pred c
-        // select_ax: ⊢ pred c ⟹ pred (ε pred), then β the conclusion.
-        let ax = Thm::select_ax(pred.clone(), c.clone())?;
-        let at_choice = imp_elim_drv(ax, pred_holds)?; // ⊢ pred (ε pred)
+        // select_intro (sequent choice): ⊢ pred c gives ⊢ pred (ε pred),
+        // then β the conclusion.
+        let at_choice = Thm::select_intro(pred_holds)?; // ⊢ pred (ε pred)
         let beta_c = Thm::beta_conv(Term::app(pred.clone(), chosen.clone()))?;
         beta_c.eq_mp(at_choice) // ⊢ (chosen = c) ∨ p
     };
@@ -1110,6 +1110,99 @@ fn lem_drv<L: HolTier>(p: Term) -> Result<Thm<L>> {
     debug_assert_eq!(out.concl(), &or_term(p.clone(), not_term(p.clone())));
     debug_assert!(out.hyps().is_empty());
     Ok(out)
+}
+
+// ============================================================================
+// Derived axiom forms of the sequent-reshaped kernel rules (stage A3)
+// ============================================================================
+//
+// The kernel's choice / def-spec / subtype / nat-freeness rules are
+// connective-free **sequent** rules (`Thm::select_intro`, `Thm::spec_intro`,
+// `Thm::spec_rep_abs_intro`, `Thm::succ_eq_elim`, `Thm::zero_eq_succ_elim`);
+// the classic implication / negation axiom forms below are zero-TCB
+// derivations over them (`assume` + rule + `imp_intro` / `not_intro`),
+// provided as drop-ins with the pre-sequent kernel signatures.
+
+/// `⊢ p x ⟹ p (ε p)` — the classic Hilbert-choice axiom form
+/// (`assume` + [`Thm::select_intro`] + `imp_intro`).
+fn select_ax_drv<L: HolTier>(p: Term, x: Term) -> Result<Thm<L>> {
+    let px = Term::app(p, x);
+    let holds = Thm::assume(px.clone())?; // {p x} ⊢ p x (validates typing)
+    let chosen = Thm::select_intro(holds)?; // {p x} ⊢ p (ε p)
+    imp_intro_drv(chosen, &px) // ⊢ p x ⟹ p (ε p)
+}
+
+/// Rebuild a spec's instantiated selector predicate — the same positional
+/// simultaneous tvar substitution the kernel's `spec_intro` /
+/// `spec_rep_abs_intro` apply (their structural-equality premise check
+/// makes any divergence here fail closed, never mis-mint).
+fn spec_pred(
+    ty: Option<&Type>,
+    tm: Option<&Term>,
+    args: &covalence_core::TypeList,
+) -> Result<Term> {
+    let declared_ty = ty.ok_or(Error::SpecHasNoBody)?;
+    let body = tm.ok_or(Error::SpecHasNoBody)?;
+    let tvars = declared_ty.free_tvars();
+    let sub: std::collections::BTreeMap<_, _> =
+        tvars.iter().cloned().zip(args.iter().cloned()).collect();
+    Ok(subst::subst_tfrees_in_term(body, &sub))
+}
+
+/// `⊢ p w ⟹ p t` for a def-style `TermSpec` leaf `t` with selector
+/// predicate `p` and witness `w` (`assume` + [`Thm::spec_intro`] +
+/// `imp_intro`).
+fn spec_ax_drv<L: HolTier>(t: Term, w: Term) -> Result<Thm<L>> {
+    let (spec, args) = match t.kind() {
+        TermKind::Spec(spec, args) => (spec.clone(), args.clone()),
+        _ => return Err(Error::NotASpec),
+    };
+    let pred = spec_pred(spec.ty(), spec.tm(), &args)?;
+    let pw = Term::app(pred, w);
+    let holds = Thm::assume(pw.clone())?; // {p w} ⊢ p w (validates typing)
+    let concl = Thm::spec_intro(holds, t)?; // {p w} ⊢ p t
+    imp_intro_drv(concl, &pw)
+}
+
+/// `⊢ P a ⟹ rep (abs a) = a` for a subtype `TypeSpec` (`assume` +
+/// [`Thm::spec_rep_abs_intro`] + `imp_intro`).
+fn spec_rep_abs_fwd_drv<L: HolTier>(
+    spec: covalence_core::TypeSpec,
+    args: covalence_core::TypeList,
+    a: Term,
+) -> Result<Thm<L>> {
+    let pred = spec_pred(spec.ty(), spec.tm(), &args).map_err(|_| Error::NotASubtype)?;
+    let pa = Term::app(pred, a);
+    let holds = Thm::assume(pa.clone())?; // {P a} ⊢ P a (validates typing)
+    let eq = Thm::spec_rep_abs_intro(spec, args, holds)?; // {P a} ⊢ rep (abs a) = a
+    imp_intro_drv(eq, &pa)
+}
+
+/// `⊢ succ m = succ n ⟹ m = n` (`assume` + [`Thm::succ_eq_elim`] +
+/// `imp_intro`).
+fn succ_inj_drv<L: HolTier>(m: Term, n: Term) -> Result<Thm<L>> {
+    let eq = covalence_core::hol::hol_eq_at(
+        Type::nat(),
+        Term::app(Term::succ(), m),
+        Term::app(Term::succ(), n),
+    );
+    let holds = Thm::assume(eq.clone())?; // validates m, n : nat
+    let stripped = Thm::succ_eq_elim(holds)?; // {succ m = succ n} ⊢ m = n
+    imp_intro_drv(stripped, &eq)
+}
+
+/// `⊢ ¬(⌜0⌝ = succ n)` — `assume`, then [`Thm::zero_eq_succ_elim`] at
+/// `q := F`, then `imp_intro` and `not_intro`. The zero side is the
+/// `Nat` literal `⌜0⌝`, exactly as the pre-sequent kernel rule minted it.
+fn zero_ne_succ_drv<L: HolTier>(n: Term) -> Result<Thm<L>> {
+    let eq = covalence_core::hol::hol_eq_at(
+        Type::nat(),
+        covalence_core::hol::zero(),
+        Term::app(Term::succ(), n),
+    );
+    let holds = Thm::assume(eq.clone())?; // validates n : nat
+    let falsum = Thm::zero_eq_succ_elim(holds, defs::fal())?; // {0 = succ n} ⊢ F
+    not_intro_drv(imp_intro_drv(falsum, &eq)?) // ⊢ ¬(0 = succ n)
 }
 
 // ============================================================================
@@ -1181,6 +1274,27 @@ pub trait DerivedRules: Sized {
     /// `⊢ p ∨ ¬p` — excluded middle, derived from `ε` (one cached schema +
     /// one `inst` per call).
     fn lem(p: Term) -> Result<Self>;
+    /// `⊢ p x ⟹ p (ε p)` — Hilbert's choice axiom, the pre-sequent
+    /// kernel `select_ax` signature (derived over [`covalence_core::Thm::select_intro`]).
+    fn select_ax(p: Term, x: Term) -> Result<Self>;
+    /// `⊢ p w ⟹ p t` for a def-style `TermSpec` leaf `t` — the
+    /// pre-sequent kernel `spec_ax` signature (derived over
+    /// [`covalence_core::Thm::spec_intro`]).
+    fn spec_ax(t: Term, w: Term) -> Result<Self>;
+    /// `⊢ P a ⟹ rep (abs a) = a` for a subtype `TypeSpec` — the
+    /// pre-sequent kernel `spec_rep_abs_fwd` signature (derived over
+    /// [`covalence_core::Thm::spec_rep_abs_intro`]).
+    fn spec_rep_abs_fwd(
+        spec: covalence_core::TypeSpec,
+        args: impl Into<covalence_core::TypeList>,
+        a: Term,
+    ) -> Result<Self>;
+    /// `⊢ succ m = succ n ⟹ m = n` — the pre-sequent kernel `succ_inj`
+    /// signature (derived over [`covalence_core::Thm::succ_eq_elim`]).
+    fn succ_inj(m: Term, n: Term) -> Result<Self>;
+    /// `⊢ ¬(⌜0⌝ = succ n)` — the pre-sequent kernel `zero_ne_succ`
+    /// signature (derived over [`covalence_core::Thm::zero_eq_succ_elim`]).
+    fn zero_ne_succ(n: Term) -> Result<Self>;
 }
 
 /// Deep-intern a theorem's conclusion into `cons` — the `_with` sharing
@@ -1280,6 +1394,25 @@ impl<L: HolTier> DerivedRules for Thm<L> {
     }
     fn lem(p: Term) -> Result<Self> {
         lem_drv(p)
+    }
+    fn select_ax(p: Term, x: Term) -> Result<Self> {
+        select_ax_drv(p, x)
+    }
+    fn spec_ax(t: Term, w: Term) -> Result<Self> {
+        spec_ax_drv(t, w)
+    }
+    fn spec_rep_abs_fwd(
+        spec: covalence_core::TypeSpec,
+        args: impl Into<covalence_core::TypeList>,
+        a: Term,
+    ) -> Result<Self> {
+        spec_rep_abs_fwd_drv(spec, args.into(), a)
+    }
+    fn succ_inj(m: Term, n: Term) -> Result<Self> {
+        succ_inj_drv(m, n)
+    }
+    fn zero_ne_succ(n: Term) -> Result<Self> {
+        zero_ne_succ_drv(n)
     }
 }
 

@@ -19,6 +19,7 @@
 
 use covalence_core::{Error, Result, Term, Type};
 
+use crate::derived::DerivedRules;
 use crate::{EvalThm, defs, rules};
 
 /// The bridge equation `⊢ zero = ⌜0⌝` — the primitive `TermKind::Zero`

@@ -11,22 +11,9 @@ type Thm = crate::thm::Thm;
 
 use crate::hol;
 
-/// Test-local parse of `App(App(⟹, p), q)` → `(p, q)` — the kernel no
-/// longer ships an imp parser (the imp rules are derived downstream), but
-/// the staying axioms (`succ_inj`, `select_ax`, `spec_ax`, the spec laws)
-/// still *state* implications.
-fn parse_hol_imp(t: &Term) -> Option<(&Term, &Term)> {
-    let TermKind::App(f, q) = t.kind() else {
-        return None;
-    };
-    let TermKind::App(head, p) = f.kind() else {
-        return None;
-    };
-    match head.kind() {
-        TermKind::Spec(h, _) if h.ptr_eq(&crate::defs::imp_spec()) => Some((p, q)),
-        _ => None,
-    }
-}
+// (The old test-local imp parser is gone: since stage A3 the staying
+// axioms are connective-free sequent rules, so no kernel test states an
+// implication any more.)
 
 fn n() -> Term {
     Term::free("n", Type::nat())
@@ -677,112 +664,147 @@ fn nat_induct_rule_derives_open_conclusion() {
 // tests live with the derivation in covalence-hol-eval: see
 // `tests/derived_rules.rs`.)
 
-// ---- nat freeness primitives ----
+// ---- nat freeness primitives (sequent forms, stage A3) ----
 
 #[test]
-fn succ_inj_shape_and_hyp_free() {
-    // ⊢ (succ m = succ n) ⟹ (m = n), no hypotheses.
+fn succ_eq_elim_strips_succ_under_hyps() {
+    // {succ m = succ n} ⊢ m = n.
     let m = Term::free("m", Type::nat());
     let n = Term::free("n", Type::nat());
-    let thm = Thm::succ_inj(m.clone(), n.clone()).expect("succ_inj");
-    assert!(thm.hyps().is_empty());
-    let (prem, concl) = parse_hol_imp(thm.concl()).unwrap();
-    assert_eq!(
-        prem,
-        &Term::app(
-            Term::app(Term::eq_op(Type::nat()), Term::app(Term::succ(), m.clone())),
-            Term::app(Term::succ(), n.clone()),
-        )
+    let eq = Term::app(
+        Term::app(Term::eq_op(Type::nat()), Term::app(Term::succ(), m.clone())),
+        Term::app(Term::succ(), n.clone()),
     );
-    let (cl, cr) = parse_hol_eq(concl).unwrap();
+    let thm = Thm::succ_eq_elim(Thm::assume(eq.clone()).unwrap()).expect("succ_eq_elim");
+    assert_eq!(thm.hyps().iter().collect::<Vec<_>>(), vec![&eq]);
+    let (cl, cr) = parse_hol_eq(thm.concl()).unwrap();
     assert_eq!((cl, cr), (&m, &n));
 }
 
 #[test]
-fn zero_ne_succ_shape_and_hyp_free() {
-    // ⊢ ¬(0 = succ n).
+fn zero_eq_succ_elim_is_ex_falso() {
+    // {0 = succ n} ⊢ q, for BOTH zero shapes (Nat literal and Zero leaf).
     let n = Term::free("n", Type::nat());
-    let thm = Thm::zero_ne_succ(n).expect("zero_ne_succ");
-    assert!(thm.hyps().is_empty());
-    assert!(thm.concl().type_of().unwrap().is_bool());
+    let q = Term::free("q", Type::bool());
+    for zero in [hol::zero(), Term::zero()] {
+        let eq = Term::app(
+            Term::app(Term::eq_op(Type::nat()), zero),
+            Term::app(Term::succ(), n.clone()),
+        );
+        let thm = Thm::zero_eq_succ_elim(Thm::assume(eq.clone()).unwrap(), q.clone())
+            .expect("zero_eq_succ_elim");
+        assert_eq!(thm.hyps().iter().collect::<Vec<_>>(), vec![&eq]);
+        assert_eq!(thm.concl(), &q);
+    }
 }
 
 #[test]
-fn freeness_rules_reject_non_nat() {
+fn freeness_rules_reject_wrong_premise_shape() {
     let b = Term::free("b", Type::bool());
-    assert!(Thm::succ_inj(b.clone(), b.clone()).is_err());
-    assert!(Thm::zero_ne_succ(b).is_err());
+    let q = Term::free("q", Type::bool());
+    // Premise is not an equation at all …
+    let not_an_eq = Thm::assume(b.clone()).unwrap();
+    assert!(Thm::succ_eq_elim(not_an_eq.clone()).is_err());
+    assert!(Thm::zero_eq_succ_elim(not_an_eq, q.clone()).is_err());
+    // … or an equation between non-constructor terms.
+    let m = Term::free("m", Type::nat());
+    let n = Term::free("n", Type::nat());
+    let plain_eq = Term::app(Term::app(Term::eq_op(Type::nat()), m.clone()), n.clone());
+    let prem = Thm::assume(plain_eq).unwrap();
+    assert!(Thm::succ_eq_elim(prem.clone()).is_err());
+    assert!(Thm::zero_eq_succ_elim(prem.clone(), q.clone()).is_err());
+    // … or `succ m = succ n` offered to zero_eq_succ_elim (zero side wrong).
+    let succ_eq = Term::app(
+        Term::app(Term::eq_op(Type::nat()), Term::app(Term::succ(), m)),
+        Term::app(Term::succ(), n),
+    );
+    let succ_prem = Thm::assume(succ_eq).unwrap();
+    assert!(Thm::zero_eq_succ_elim(succ_prem, q).is_err());
 }
 
-// ---- choice (ε) + def-style spec unfolding ----
+#[test]
+fn zero_eq_succ_elim_rejects_non_bool_target() {
+    // The `q` conclusion must be bool (the `seq` floor).
+    let n = Term::free("n", Type::nat());
+    let eq = Term::app(
+        Term::app(Term::eq_op(Type::nat()), hol::zero()),
+        Term::app(Term::succ(), n.clone()),
+    );
+    let prem = Thm::assume(eq).unwrap();
+    assert!(matches!(
+        Thm::zero_eq_succ_elim(prem, n),
+        Err(Error::NotBool(_))
+    ));
+}
+
+// ---- choice (ε) + def-style spec unfolding (sequent forms, stage A3) ----
 
 #[test]
-fn select_ax_shape_and_hyp_free() {
-    // p : nat → bool, x : nat  ⊢  (p x) ⟹ (p (ε p))
+fn select_intro_transfers_witness_to_choice() {
+    // {p x} ⊢ p (ε p), hypotheses carried through.
     let p = Term::free("p", Type::fun(Type::nat(), Type::bool()));
     let x = Term::free("x", Type::nat());
-    let thm = Thm::select_ax(p.clone(), x.clone()).unwrap();
-    assert!(thm.hyps().is_empty());
-    let (prem, concl) = parse_hol_imp(thm.concl()).unwrap();
-    assert_eq!(prem, &Term::app(p.clone(), x));
+    let px = Term::app(p.clone(), x);
+    let thm = Thm::select_intro(Thm::assume(px.clone()).unwrap()).unwrap();
+    assert_eq!(thm.hyps().iter().collect::<Vec<_>>(), vec![&px]);
     let expected = Term::app(p.clone(), Term::app(Term::select_op(Type::nat()), p));
-    assert_eq!(concl, &expected);
+    assert_eq!(thm.concl(), &expected);
 }
 
 #[test]
-fn select_ax_rejects_non_predicate() {
-    // p must be `α → bool`.
-    let bad = Term::free("p", Type::fun(Type::nat(), Type::nat()));
-    assert!(Thm::select_ax(bad, Term::free("x", Type::nat())).is_err());
+fn select_intro_rejects_non_application_premise() {
+    // The premise's conclusion must split as `p x`.
+    let b = Term::free("b", Type::bool());
+    assert!(matches!(
+        Thm::select_intro(Thm::assume(b).unwrap()),
+        Err(Error::NotApp(_))
+    ));
 }
 
 #[test]
-fn spec_ax_on_natrec_is_the_choice_implication() {
-    // natRec is def-style; spec_ax gives `(P_rec w) ⟹ P_rec(natRec)`.
+fn spec_intro_on_natrec_transports_witness_to_spec() {
+    // natRec is def-style; from {P_rec w} ⊢ P_rec w conclude
+    // {P_rec w} ⊢ P_rec(natRec).
     let nr = crate::defs::nat_rec(Type::nat());
+    let TermKind::Spec(spec, args) = nr.kind() else {
+        panic!("natRec is not a Spec leaf");
+    };
+    // Rebuild the instantiated selector predicate the same way the rule does.
+    let pred = super::inst_spec_tvars(spec.tm().unwrap(), &spec.ty().unwrap().free_tvars(), args);
     let rty = nr.type_of().unwrap(); // the recursor carrier type
     let w = Term::free("w", rty);
-    let thm = Thm::spec_ax(nr.clone(), w.clone()).unwrap();
-    assert!(thm.hyps().is_empty());
-    let (prem, concl) = parse_hol_imp(thm.concl()).unwrap();
-    // premise applies the predicate to the witness …
-    let TermKind::App(_p1, pw_arg) = prem.kind() else {
-        panic!("premise is not `p w`");
-    };
-    assert_eq!(pw_arg, &w);
-    // … conclusion applies the SAME predicate to natRec itself (NOT to
+    let pw = Term::app(pred.clone(), w);
+    let thm = Thm::spec_intro(Thm::assume(pw.clone()).unwrap(), nr.clone()).unwrap();
+    assert_eq!(thm.hyps().iter().collect::<Vec<_>>(), vec![&pw]);
+    // The conclusion applies the SAME predicate to natRec itself (NOT to
     // `ε p` — the spec is not equated with the anonymous choice).
-    let TermKind::App(_p2, pt_arg) = concl.kind() else {
-        panic!("conclusion is not `p t`");
-    };
-    assert_eq!(pt_arg, &nr);
+    assert_eq!(thm.concl(), &Term::app(pred, nr));
 }
 
 #[test]
-fn spec_ax_rejects_let_style() {
-    // nat_add is a let-style spec → must be refused.
-    let w = Term::free("w", crate::defs::nat_add().type_of().unwrap());
+fn spec_intro_rejects_let_style() {
+    // nat_add is a let-style spec → must be refused (before the premise
+    // shape even matters).
+    let some_prem = Thm::assume(Term::free("b", Type::bool())).unwrap();
     assert!(matches!(
-        Thm::spec_ax(crate::defs::nat_add(), w),
+        Thm::spec_intro(some_prem, crate::defs::nat_add()),
         Err(Error::SpecIsLetStyle)
     ));
 }
 
 #[test]
-fn spec_ax_rejects_wrong_witness_type() {
+fn spec_intro_rejects_foreign_predicate() {
+    // A premise headed by some OTHER predicate of the right type must be
+    // refused — recognition is structural equality against the spec's own
+    // selector predicate.
     let nr = crate::defs::nat_rec(Type::nat());
-    // a `nat` witness, not the recursor carrier type → reject.
-    assert!(Thm::spec_ax(nr, Term::free("w", Type::nat())).is_err());
-}
-
-#[test]
-fn select_ax_rejects_witness_type_mismatch() {
-    // The witness `x` must inhabit the predicate's domain α.
-    let p = Term::free("p", Type::fun(Type::nat(), Type::bool()));
-    let x = Term::free("x", Type::bool()); // bool, not nat
+    let rty = nr.type_of().unwrap();
+    let q = Term::free("q", Type::fun(rty.clone(), Type::bool()));
+    let qw = Term::app(q, Term::free("w", rty));
+    let prem = Thm::assume(qw).unwrap();
     assert!(matches!(
-        Thm::select_ax(p, x),
-        Err(Error::TypeMismatch { .. })
+        Thm::spec_intro(prem, nr),
+        Err(Error::ConnectiveRule(_))
     ));
 }
 

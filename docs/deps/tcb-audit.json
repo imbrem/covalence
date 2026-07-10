@@ -46,7 +46,7 @@
     },
     "base+HOL": {
       "files": 57,
-      "nonTestLoc": 6941,
+      "nonTestLoc": 6957,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -115,8 +115,8 @@
         "crates/kernel/hol/core/src/term/term.rs:403: IntTag::S16 => crate::defs::s16_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:404: IntTag::S32 => crate::defs::s32_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:405: IntTag::S64 => crate::defs::s64_ty(),",
-        "crates/kernel/hol/core/src/thm/mod.rs:1050: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1061: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1095: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1106: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
         "crates/kernel/hol/core/src/thm/typedef.rs:102: if !h.ptr_eq(&crate::defs::and_spec()) {",
         "crates/kernel/hol/core/src/ty/spec.rs:17: use crate::defs::helpers;",
         "crates/kernel/hol/core/src/ty/spec.rs:18: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
@@ -127,7 +127,7 @@
     },
     "base+HOL (target)": {
       "files": 36,
-      "nonTestLoc": 5155,
+      "nonTestLoc": 5171,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -184,8 +184,8 @@
         "crates/kernel/hol/core/src/term/term.rs:403: IntTag::S16 => crate::defs::s16_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:404: IntTag::S32 => crate::defs::s32_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:405: IntTag::S64 => crate::defs::s64_ty(),",
-        "crates/kernel/hol/core/src/thm/mod.rs:1050: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1061: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1095: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1106: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
         "crates/kernel/hol/core/src/thm/typedef.rs:102: if !h.ptr_eq(&crate::defs::and_spec()) {",
         "crates/kernel/hol/core/src/ty/spec.rs:17: use crate::defs::helpers;",
         "crates/kernel/hol/core/src/ty/spec.rs:18: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
@@ -196,7 +196,7 @@
     },
     "base+HOL+eval": {
       "files": 90,
-      "nonTestLoc": 13139,
+      "nonTestLoc": 13243,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -234,14 +234,14 @@
         "macro": 34
       },
       "publicSurfaceTotal": 709,
-      "defsCoupling": 165,
+      "defsCoupling": 166,
       "defsCouplingLocations": [
-        "165 refs (list suppressed >60)"
+        "166 refs (list suppressed >60)"
       ]
     },
     "base+HOL+wasm": {
       "files": 38,
-      "nonTestLoc": 5593,
+      "nonTestLoc": 5609,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -298,8 +298,8 @@
         "crates/kernel/hol/core/src/term/term.rs:403: IntTag::S16 => crate::defs::s16_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:404: IntTag::S32 => crate::defs::s32_ty(),",
         "crates/kernel/hol/core/src/term/term.rs:405: IntTag::S64 => crate::defs::s64_ty(),",
-        "crates/kernel/hol/core/src/thm/mod.rs:1050: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
-        "crates/kernel/hol/core/src/thm/mod.rs:1061: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1095: if !is_spec(forall_head, &crate::defs::forall_spec()) {",
+        "crates/kernel/hol/core/src/thm/mod.rs:1106: fn is_spec(t: &Term, want: &crate::defs::TermSpec) -> bool {",
         "crates/kernel/hol/core/src/thm/typedef.rs:102: if !h.ptr_eq(&crate::defs::and_spec()) {",
         "crates/kernel/hol/core/src/ty/spec.rs:17: use crate::defs::helpers;",
         "crates/kernel/hol/core/src/ty/spec.rs:18: use crate::defs::symbol::{Symbol, SymbolRef, TrustedSymbol};",
@@ -313,7 +313,7 @@
     },
     "base+HOL+eval+wasm": {
       "files": 90,
-      "nonTestLoc": 13139,
+      "nonTestLoc": 13243,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -351,9 +351,9 @@
         "macro": 34
       },
       "publicSurfaceTotal": 709,
-      "defsCoupling": 165,
+      "defsCoupling": 166,
       "defsCouplingLocations": [
-        "165 refs (list suppressed >60)"
+        "166 refs (list suppressed >60)"
       ]
     }
   },

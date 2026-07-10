@@ -8,6 +8,7 @@
 
 use covalence_core::{Error, Term, Type, TypeList};
 use covalence_hol_eval::defs;
+use covalence_hol_eval::derived::DerivedRules;
 
 /// The pure tier (`Thm<CoreLang>`) — these are core-rule tests.
 type Thm = covalence_core::Thm;

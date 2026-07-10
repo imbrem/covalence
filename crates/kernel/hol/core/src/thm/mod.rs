@@ -616,55 +616,71 @@ impl<L: HolTier> Thm<L> {
         mint!(UnfoldTermSpec, (t.clone(),), (t,))
     }
 
-    /// `⊢ (p w) ⟹ p(t)` for a **def-style** TermSpec leaf
+    /// `Γ ⊢ p t`, given `Γ ⊢ p w`, for a **def-style** TermSpec leaf
     /// `t = Spec(spec, args)` with selector predicate `p` (its `tm` at
-    /// the supplied type args) and any witness `w` of the spec's
-    /// carrier type. The def-style analogue of [`Thm::select_ax`]: each
-    /// *named* def-spec is its OWN choice — if `p` is inhabited
-    /// (witnessed by `w`), then `t` satisfies `p`.
+    /// the supplied type args) — in connective-free **sequent form**.
+    /// The def-style analogue of [`Thm::select_intro`]: each *named*
+    /// def-spec is its OWN choice — if `p` is inhabited (the premise
+    /// exhibits some witness `w`), then `t` satisfies `p`.
     ///
     /// Returns [`Error::SpecIsLetStyle`] for a let-style spec,
     /// [`Error::SpecHasNoBody`] for a declaration-only one,
-    /// [`Error::NotASpec`] for a non-spec term, and a type mismatch if
-    /// `w` is not of the carrier type.
+    /// [`Error::NotASpec`] for a non-spec term, [`Error::NotApp`] if
+    /// the premise's conclusion is not an application, and
+    /// [`Error::ConnectiveRule`] if its head is not `p` (by structural
+    /// equality).
+    ///
+    /// The old implication form `⊢ p w ⟹ p t` is the zero-TCB
+    /// derivation `assume` + this rule + `imp_intro`, shipped as
+    /// `covalence-hol-eval::derived::DerivedRules::spec_ax` — a drop-in
+    /// for the pre-sequent kernel method.
     ///
     /// ## Soundness
     ///
-    /// Unconditionally sound, exactly like [`Thm::select_ax`]. If `p`
-    /// is inhabited, the kernel interprets the def-spec as some element
-    /// satisfying `p`, so `p(t)` holds; if `p` is empty, the premise
-    /// `p w` is false for every `w` and the implication is vacuous.
+    /// Fix a valuation `v ⊨ Γ`. The premise gives `⟦p w⟧v`, so `p`'s
+    /// extension under `v` is inhabited and the def-spec `t` — which the
+    /// kernel interprets as some element satisfying `p` whenever any
+    /// exists — satisfies it: `⟦p t⟧v`. (Equivalently: this sequent form
+    /// is derivable from the old axiom form by `assume` + `imp_elim`, so
+    /// it proves nothing the old kernel did not.)
     ///
     /// Crucially this does **not** equate `t` with `ε p` or with any
     /// other spec sharing `p`: distinct named def-specs are
     /// independent choices. Think of `ε` / [`TermKind::Select`] as the
-    /// single distinguished *anonymous* def-spec, whose choice axiom is
-    /// [`Thm::select_ax`]; every named def-spec gets its own via this
+    /// single distinguished *anonymous* def-spec, whose choice rule is
+    /// [`Thm::select_intro`]; every named def-spec gets its own via this
     /// rule.
     ///
     /// (A *let*-style spec `c ≡ body` is the special case whose
-    /// predicate is `λx. x = body`: `spec_ax` then yields
-    /// `(body = body) ⟹ (c = body)`, and `refl` discharges the
-    /// premise — exactly [`Thm::unfold_term_spec`]. The two spec kinds
-    /// will eventually be consolidated on this footing.)
-    pub fn spec_ax(t: Term, w: Term) -> Result<Thm<L>> {
-        mint!(SpecAx, (t.clone(), w.clone()), (t, w))
+    /// predicate is `λx. x = body`: this rule then transports
+    /// `Γ ⊢ body = body` to `Γ ⊢ c = body` — exactly
+    /// [`Thm::unfold_term_spec`]. The two spec kinds will eventually be
+    /// consolidated on this footing.)
+    pub fn spec_intro(prem: Thm<L>, t: Term) -> Result<Thm<L>> {
+        mint!(SpecAx, (prem.0.clone(), t.clone()), (prem.0, t))
     }
 
-    /// `⊢ (p x) ⟹ (p (ε p))` — Hilbert's choice axiom (HOL Light's
-    /// `SELECT_AX`), the characterising rule of the `ε` primitive
-    /// ([`TermKind::Select`]). `p` must have a function type
-    /// `α → bool` and `x : α`; then `ε p = Select(p) : α`.
+    /// `Γ ⊢ p (ε p)`, given `Γ ⊢ p x` — Hilbert's choice axiom (HOL
+    /// Light's `SELECT_AX`) in connective-free **sequent form**, the
+    /// characterising rule of the `ε` primitive ([`TermKind::Select`]).
+    /// The premise's conclusion is split as the application `p x`
+    /// (`p : α → bool`, `x : α`); then `ε p = Select(p) : α`.
+    ///
+    /// The old implication form `⊢ p x ⟹ p (ε p)` is the zero-TCB
+    /// derivation `assume` + this rule + `imp_intro`, shipped as
+    /// `covalence-hol-eval::derived::DerivedRules::select_ax` — a
+    /// drop-in for the pre-sequent kernel method.
     ///
     /// ## Soundness
     ///
-    /// `ε p` denotes *some* element satisfying `p` whenever one exists,
-    /// so if `p` holds at the witness `x` it holds at `ε p`. This is
-    /// the standard Hilbert-choice interpretation of `Select`. Combined with
-    /// the connective definitions it yields the existence form
+    /// Fix a valuation `v ⊨ Γ`. The premise gives `⟦p x⟧v`, so `⟦p⟧v`'s
+    /// extension is inhabited; `ε p` denotes *some* element satisfying
+    /// `p` whenever one exists, hence `⟦p (ε p)⟧v`. This is the standard
+    /// Hilbert-choice interpretation of `Select`. Combined with the
+    /// connective definitions it yields the existence form
     /// `(∃x. p x) ⟹ p (ε p)` downstream.
-    pub fn select_ax(p: Term, x: Term) -> Result<Thm<L>> {
-        mint!(SelectAx, (p.clone(), x.clone()), (p, x))
+    pub fn select_intro(prem: Thm<L>) -> Result<Thm<L>> {
+        mint!(SelectAx, (prem.0.clone(),), (prem.0,))
     }
 
     // ========================================================================
@@ -718,34 +734,45 @@ impl<L: HolTier> Thm<L> {
         )
     }
 
-    /// `⊢ P a ⟹ rep (abs a) = a`, for `a : carrier` of a **subtype**
-    /// [`TypeSpec`] with selector predicate `P = spec.tm()` — the
-    /// *conditional* round-trip on the carrier side.
+    /// `Γ ⊢ rep (abs a) = a`, given `Γ ⊢ P a`, for `a : carrier` of a
+    /// **subtype** [`TypeSpec`] with selector predicate `P = spec.tm()` —
+    /// the *conditional* round-trip on the carrier side, in
+    /// connective-free **sequent form**. The premise's conclusion is
+    /// parsed as `P a`, with `P` checked (structural equality) against
+    /// the spec's instantiated selector predicate.
     ///
-    /// For a `newtype` (`P = λ_. T`) the premise `P a` reduces to `T`, so
-    /// discharging it (β + `truth`) yields the unconditional
-    /// `⊢ rep (abs a) = a`.
+    /// The old implication form `⊢ P a ⟹ rep (abs a) = a` is the
+    /// zero-TCB derivation `assume` + this rule + `imp_intro`, shipped
+    /// as `covalence-hol-eval::derived::DerivedRules::spec_rep_abs_fwd` —
+    /// a drop-in for the pre-sequent kernel method. (For a `newtype`
+    /// (`P = λ_. T`) the premise `P a` reduces to `T`, so discharging it
+    /// (β + `truth`) yields the unconditional `⊢ rep (abs a) = a`.)
     ///
     /// ## Soundness
     ///
-    /// Assume `⟦P⟧ a`. Then `a ∈ S`, so `S ≠ ∅`; `abs` is the identity on
-    /// `S` and `rep` the inclusion, hence `rep (abs a) = a`. If `¬⟦P⟧ a`
-    /// the implication is vacuous. Errors with [`Error::NotASubtype`]
+    /// Fix `v ⊨ Γ`; the premise gives `⟦P a⟧v`. Then `a ∈ S`, so
+    /// `S ≠ ∅`; `abs` is the identity on `S` and `rep` the inclusion,
+    /// hence `rep (abs a) = a`. Errors with [`Error::NotASubtype`]
     /// unless `spec.tm()` is a `carrier → bool` predicate (so quotient
-    /// specs, whose `tm` is a relation, are rejected), and with a type
-    /// mismatch unless `a : carrier`.
-    pub fn spec_rep_abs_fwd(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm<L>> {
+    /// specs, whose `tm` is a relation, are rejected), with
+    /// [`Error::NotApp`] / [`Error::ConnectiveRule`] unless the premise
+    /// concludes `P _`.
+    pub fn spec_rep_abs_intro(
+        spec: TypeSpec,
+        args: impl Into<TypeList>,
+        prem: Thm<L>,
+    ) -> Result<Thm<L>> {
         let args = args.into();
         mint!(
             SpecRepAbsFwd,
-            (spec.clone(), args.clone(), a.clone()),
-            (spec, args, a)
+            (spec.clone(), args.clone(), prem.0.clone()),
+            (spec, args, prem.0)
         )
     }
 
     /// `⊢ rep (abs a) = a ⟹ (P a ∨ ¬∃x. P x)`, for `a : carrier` of a
     /// **subtype** [`TypeSpec`] — the *witness-free* converse of
-    /// [`spec_rep_abs_fwd`](Thm::spec_rep_abs_fwd).
+    /// [`spec_rep_abs_intro`](Thm::spec_rep_abs_intro).
     ///
     /// With a non-emptiness witness this would be the clean
     /// `rep (abs a) = a ⟹ P a` (HOL Light's `rep_abs` back direction).
@@ -760,7 +787,7 @@ impl<L: HolTier> Thm<L> {
     /// disjunct. If `S ≠ ∅` then `abs a ∈ S` and `rep` is injective with
     /// image `S`, so `a = rep (abs a) ∈ S`, giving `⟦P⟧ a`, the left
     /// disjunct. Same shape/error conditions as
-    /// [`spec_rep_abs_fwd`](Thm::spec_rep_abs_fwd).
+    /// [`spec_rep_abs_intro`](Thm::spec_rep_abs_intro).
     pub fn spec_rep_abs_back(spec: TypeSpec, args: impl Into<TypeList>, a: Term) -> Result<Thm<L>> {
         let args = args.into();
         mint!(
@@ -848,7 +875,7 @@ impl<L: HolTier> Thm<L> {
     /// `Type::nat()` denotes exactly the standard naturals, freely
     /// generated by `0` and `succ` — every element is reached from `0`
     /// by finitely many `succ` steps (the same commitment
-    /// [`Thm::succ_inj`] / [`Thm::zero_ne_succ`] rest on); and
+    /// [`Thm::succ_eq_elim`] / [`Thm::zero_eq_succ_elim`] rest on); and
     /// [`crate::hol::succ_fn`] (`defs::nat_succ`) denotes that successor
     /// (the commitment the pre-reshape rule already made by accepting
     /// steps stated with it).
@@ -919,33 +946,51 @@ impl<L: HolTier> Thm<L> {
     // non-computational primitives (the literal cases already reduce
     // via the certificate path; these cover *open* terms).
 
-    /// `⊢ (succ m = succ n) ⟹ (m = n)` — successor injectivity. `m`
-    /// and `n` must type-check at `nat`.
+    /// `Γ ⊢ m = n`, given `Γ ⊢ succ m = succ n` — successor injectivity
+    /// in connective-free **sequent form**. The premise's conclusion is
+    /// parsed as an equation between two [`Term::succ`]-applications.
+    ///
+    /// The old implication form `⊢ succ m = succ n ⟹ m = n` is the
+    /// zero-TCB derivation `assume` + this rule + `imp_intro`, shipped
+    /// as `covalence-hol-eval::derived::DerivedRules::succ_inj` — a
+    /// drop-in for the pre-sequent kernel method.
     ///
     /// ## Soundness
     ///
     /// `Type::nat()` denotes the standard naturals, freely generated by
-    /// `0` and `succ`; a free constructor is injective. Sound in every
-    /// model the kernel admits (the same `nat` semantics
-    /// [`Thm::nat_induct`] and [`Thm::zero_ne_succ`] rest on).
-    pub fn succ_inj(m: Term, n: Term) -> Result<Thm<L>> {
-        mint!(SuccInj, (m.clone(), n.clone()), (m, n))
+    /// `0` and `succ`; a free constructor is injective, so any valuation
+    /// satisfying `Γ` (hence `succ m = succ n`) satisfies `m = n`. Sound
+    /// in every model the kernel admits (the same `nat` semantics
+    /// [`Thm::nat_induct`] and [`Thm::zero_eq_succ_elim`] rest on).
+    pub fn succ_eq_elim(prem: Thm<L>) -> Result<Thm<L>> {
+        mint!(SuccInj, (prem.0.clone(),), (prem.0,))
     }
 
-    /// `⊢ ¬(0 = succ n)` — zero is not a successor. `n` must type-check
-    /// at `nat`.
+    /// `Γ ⊢ q`, given `Γ ⊢ 0 = succ n` and any `q : bool` — zero is not
+    /// a successor, as **ex falso in sequent form**: hypotheses proving
+    /// `0 = succ n` are inconsistent, so they support any conclusion.
+    /// The premise's zero side may be the [`Term::zero`] leaf or the
+    /// `Nat` literal `⌜0⌝` (both denote zero).
+    ///
+    /// The old negation form `⊢ ¬(0 = succ n)` is the zero-TCB
+    /// derivation `assume` + this rule at `q := F` + `imp_intro` +
+    /// `not_intro`, shipped as
+    /// `covalence-hol-eval::derived::DerivedRules::zero_ne_succ` — a
+    /// drop-in for the pre-sequent kernel method.
     ///
     /// ## Soundness
     ///
-    /// As [`Thm::succ_inj`]: `0` and `succ _` are distinct constructors
-    /// of the freely-generated `nat`, so they never denote the same
-    /// number.
-    pub fn zero_ne_succ(n: Term) -> Result<Thm<L>> {
-        mint!(ZeroNeSucc, (n.clone(),), (n,))
+    /// As [`Thm::succ_eq_elim`]: `0` and `succ _` are distinct
+    /// constructors of the freely-generated `nat`, so no valuation
+    /// satisfies `0 = succ n` — hence none satisfies all of `Γ`, and
+    /// `Γ ⊢ q` holds vacuously for every bool `q`.
+    pub fn zero_eq_succ_elim(prem: Thm<L>, q: Term) -> Result<Thm<L>> {
+        mint!(ZeroNeSucc, (prem.0.clone(), q.clone()), (prem.0, q))
     }
 
     // (Excluded middle — `⊢ p ∨ ¬p` — is no longer a kernel rule: it is
-    // derived from `select_ax` the standard HOL way in
+    // derived from `select_ax` (the derived implication form over
+    // `select_intro`) the standard HOL way in
     // `covalence-hol-eval::derived::DerivedRules::lem`, closing the
     // long-standing "derivable from ε" cleanup.)
 }
@@ -988,7 +1033,7 @@ fn spec_coercions(spec: &TypeSpec, args: &TypeList) -> Result<(Term, Term, Type,
 
 /// The selector predicate `P : carrier → bool` of a **subtype**
 /// `TypeSpec`, instantiated positionally at `args` (the same
-/// substitution [`Thm::unfold_term_spec`] / [`Thm::spec_ax`] use).
+/// substitution [`Thm::unfold_term_spec`] / [`Thm::spec_intro`] use).
 /// Errors with [`Error::NotASubtype`] unless the spec's `tm` is present
 /// and types as `carrier → bool` — rejecting carrier-less specs and
 /// quotient specs (whose `tm` is a `carrier → carrier → bool` relation).

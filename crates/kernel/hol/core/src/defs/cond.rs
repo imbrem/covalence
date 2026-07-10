@@ -16,7 +16,7 @@
 //!
 //! are **derived** (not postulated) downstream in
 //! `covalence-hol`'s `init::cond` via the choice axiom
-//! [`crate::Thm::select_ax`] — the same way HOL Light proves
+//! [`crate::Thm::select_intro`] — the same way HOL Light proves
 //! `COND_CLAUSES`. At the kernel level `cond` unfolds to its body
 //! through [`crate::Thm::unfold_term_spec`] like any other defined
 //! constant; the certificate path has no `cond`-specific rule (the

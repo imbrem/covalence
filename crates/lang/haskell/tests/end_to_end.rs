@@ -1,14 +1,17 @@
-//! End-to-end tests: parse real Haskell snippets and lower them through each
-//! demo backend.
+//! End-to-end tests: parse real Haskell snippets, lower them through the
+//! canonical Haskell ⇒ SExpr desugaring, and realize them through each demo
+//! backend.
 
 use covalence_haskell::ast::{Expr, Lit};
-use covalence_haskell::backends::{NoLitLower, PeanoLower, SExprLower};
-use covalence_haskell::lower::{lower, lower_decl};
+use covalence_haskell::backends::{NoLitBackend, PeanoBackend, TextBackend};
+use covalence_haskell::lower::{expr_to_sexpr, lower, lower_decl};
 use covalence_haskell::parse::{parse_expr, parse_module};
+use covalence_haskell::sexpr::Nat;
 
+/// Haskell source ⇒ canonical S-expression text (via the canonical lowering).
 fn sexpr(src: &str) -> String {
     let e = parse_expr(src).unwrap_or_else(|err| panic!("parse `{src}` failed: {err}"));
-    lower(&e, &mut SExprLower).expect("sexpr lowering failed")
+    expr_to_sexpr(&e).to_text()
 }
 
 // --------------------------------------------------------------------------
@@ -34,6 +37,25 @@ fn multi_param_lambda_desugars() {
 }
 
 #[test]
+fn nat_literal_is_covalence_nat() {
+    assert_eq!(
+        parse_expr("42").unwrap(),
+        Expr::Lit(Lit::Nat(Nat::from(42u64)))
+    );
+}
+
+#[test]
+fn nat_literal_is_arbitrary_precision() {
+    // 2^128 — strictly greater than u128::MAX; must parse and lower intact.
+    let big = "340282366920938463463374607431768211456";
+    assert_eq!(
+        parse_expr(big).unwrap(),
+        Expr::Lit(Lit::Nat(big.parse().unwrap()))
+    );
+    assert_eq!(sexpr(big), big);
+}
+
+#[test]
 fn application_is_left_assoc() {
     assert_eq!(sexpr("f x y"), "((f x) y)");
 }
@@ -42,7 +64,7 @@ fn application_is_left_assoc() {
 fn let_binding_parses() {
     assert_eq!(
         sexpr("let id = \\x -> x in id 5"),
-        "(let id = (\\x -> x) in (id 5))"
+        "(let id (lambda x x) (id 5))"
     );
 }
 
@@ -68,7 +90,7 @@ fn parenthesisation() {
 
 #[test]
 fn map_lambda_over_var() {
-    assert_eq!(sexpr("map (\\x -> x) xs"), "((map (\\x -> x)) xs)");
+    assert_eq!(sexpr("map (\\x -> x) xs"), "((map (lambda x x)) xs)");
 }
 
 #[test]
@@ -77,6 +99,8 @@ fn string_literal_with_escape() {
         parse_expr("\"hi\\n\"").unwrap(),
         Expr::Lit(Lit::Str("hi\n".into()))
     );
+    // ...and it lowers to a quoted, escaped string atom.
+    assert_eq!(sexpr("\"hi\\n\""), "\"hi\\n\"");
 }
 
 #[test]
@@ -96,15 +120,15 @@ fn module_top_level_defs() {
     let m = parse_module(src).unwrap();
     assert_eq!(m.len(), 2);
 
-    // `const x y = x` ⇝ `\x -> \y -> x`
-    let (name, out) = lower_decl(&m[0], &mut SExprLower).unwrap();
+    // `const x y = x` ⇝ `(lambda x (lambda y x))`
+    let (name, out) = lower_decl(&m[0], &mut TextBackend).unwrap();
     assert_eq!(name, "const");
-    assert_eq!(out, "(\\x -> (\\y -> x))");
+    assert_eq!(out, "(lambda x (lambda y x))");
 
     // `compose f g x = f (g x)`
-    let (name, out) = lower_decl(&m[1], &mut SExprLower).unwrap();
+    let (name, out) = lower_decl(&m[1], &mut TextBackend).unwrap();
     assert_eq!(name, "compose");
-    assert_eq!(out, "(\\f -> (\\g -> (\\x -> (f (g x)))))");
+    assert_eq!(out, "(lambda f (lambda g (lambda x (f (g x)))))");
 }
 
 #[test]
@@ -113,44 +137,57 @@ fn module_layout_lite_continuation() {
     let src = "big a =\n  a + 1\n";
     let m = parse_module(src).unwrap();
     assert_eq!(m.len(), 1);
-    let (name, out) = lower_decl(&m[0], &mut SExprLower).unwrap();
+    let (name, out) = lower_decl(&m[0], &mut TextBackend).unwrap();
     assert_eq!(name, "big");
-    assert_eq!(out, "(\\a -> (+ a 1))");
+    assert_eq!(out, "(lambda a (+ a 1))");
 }
 
 // --------------------------------------------------------------------------
-// Pluggable lowering — the centerpiece
+// Pluggable realization — the centerpiece
 // --------------------------------------------------------------------------
 
 #[test]
-fn numeric_literal_lowering_differs_per_backend() {
+fn numeric_atom_realization_differs_per_backend() {
     let e = parse_expr("f 3").unwrap();
 
-    let s = lower(&e, &mut SExprLower).unwrap();
-    let p = lower(&e, &mut PeanoLower).unwrap();
+    let s = lower(&e, &mut TextBackend).unwrap();
+    let p = lower(&e, &mut PeanoBackend).unwrap().to_text();
 
     assert_eq!(s, "(f 3)");
     assert_eq!(p, "(f (S (S (S Z))))");
-    assert_ne!(s, p, "same AST must lower differently per backend");
+    assert_ne!(s, p, "same IR must realize differently per backend");
 }
 
 #[test]
 fn peano_zero_is_z() {
     let e = parse_expr("0").unwrap();
-    assert_eq!(lower(&e, &mut PeanoLower).unwrap(), "Z");
+    assert_eq!(lower(&e, &mut PeanoBackend).unwrap().to_text(), "Z");
 }
 
 #[test]
 fn strict_subset_backend_rejects_literals() {
-    // NoLitLower does not implement nat_lit, so a literal-containing expr fails.
+    // NoLitBackend does not implement nat, so a literal-containing expr fails.
     let with_lit = parse_expr("f 5").unwrap();
-    let err = lower(&with_lit, &mut NoLitLower).unwrap_err();
-    assert_eq!(err.0.construct, "natural-number literal");
+    let err = lower(&with_lit, &mut NoLitBackend).unwrap_err();
+    assert_eq!(err.0.construct, "natural-number atom");
 
-    // ...but a literal-free expression lowers fine with the same backend.
+    // ...but a literal-free expression realizes fine with the same backend.
     let without_lit = parse_expr("\\x -> f x").unwrap();
     assert_eq!(
-        lower(&without_lit, &mut NoLitLower).unwrap(),
-        "(\\x -> (f x))"
+        lower(&without_lit, &mut NoLitBackend).unwrap(),
+        "(lambda x (f x))"
     );
+}
+
+#[test]
+fn text_backend_agrees_with_canonical_printer() {
+    for src in ["f x y", "let id = \\x -> x in id 5", "1 + 2 * 3", "\"s\""] {
+        let e = parse_expr(src).unwrap();
+        let ir = expr_to_sexpr(&e);
+        assert_eq!(
+            lower(&e, &mut TextBackend).unwrap(),
+            ir.to_text(),
+            "TextBackend must agree with SExpr::to_text for `{src}`"
+        );
+    }
 }

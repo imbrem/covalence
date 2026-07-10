@@ -6,12 +6,16 @@
 //! yet modelled (do-notation, guards, `where`, type signatures, pattern
 //! matching, full layout).
 
+use covalence_types::Nat;
+
 /// A literal — kept small on purpose. The [`Lit::Nat`] case is the emphasized
-/// one: numeric-literal lowering is exactly what a backend is expected to vary.
+/// one: numeric-literal realization is exactly what a backend is expected to
+/// vary.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Lit {
-    /// A natural-number literal, e.g. `5`.
-    Nat(u128),
+    /// A natural-number literal, e.g. `5`. **A Haskell `Nat` literal is a
+    /// covalence [`Nat`]** — arbitrary precision, no machine-integer cap.
+    Nat(Nat),
     /// A string literal, e.g. `"hi"` (already unescaped).
     Str(String),
 }

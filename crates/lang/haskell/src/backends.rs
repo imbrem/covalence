@@ -1,145 +1,121 @@
-//! Demonstration [`Lower`] backends showing the pluggability of the seam.
+//! Demonstration [`Realize`] backends showing the pluggability of the
+//! SExpr ⇒ backend seam.
 //!
-//! - [`SExprLower`] lowers the whole subset to a canonical S-expression string.
-//! - [`PeanoLower`] is identical *except* it lowers numeric literals to Peano
-//!   numerals — the same AST, a different numeric strategy.
-//! - [`NoLitLower`] leaves [`Lower::nat_lit`] at its default, so any expression
-//!   containing a numeric literal fails to lower while literal-free ones
-//!   succeed — a backend supporting a strict subset.
+//! - [`TextBackend`] realizes the whole IR back to canonical S-expression
+//!   text — it agrees exactly with [`SExpr::to_text`](crate::sexpr::SExpr::to_text).
+//! - [`PeanoBackend`] is an IR ⇒ IR transform that is the identity *except*
+//!   on natural-number atoms, which it realizes as Peano numerals — the same
+//!   IR, a different numeric strategy.
+//! - [`NoLitBackend`] leaves [`Realize::nat`] at its default, so any form
+//!   containing a natural-number atom fails to realize while literal-free
+//!   ones succeed — a backend supporting a strict subset.
 
-use crate::lower::{Lower, Unsupported};
+use covalence_types::Nat;
 
-/// The error type shared by the string-producing demo backends.
+use crate::realize::{Realize, Unsupported};
+use crate::sexpr::{SExpr, quote_string};
+
+/// The error type shared by the demo backends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LowerError(pub Unsupported);
+pub struct BackendError(pub Unsupported);
 
-impl From<Unsupported> for LowerError {
+impl From<Unsupported> for BackendError {
     fn from(u: Unsupported) -> Self {
-        LowerError(u)
+        BackendError(u)
     }
 }
 
-impl core::fmt::Display for LowerError {
+impl core::fmt::Display for BackendError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl std::error::Error for LowerError {}
+impl std::error::Error for BackendError {}
 
-/// Lowers the entire supported subset to a canonical S-expression string.
+/// Realizes the entire IR to canonical S-expression text (the same text
+/// [`SExpr::to_text`](crate::sexpr::SExpr::to_text) prints).
 #[derive(Clone, Copy, Debug, Default)]
-pub struct SExprLower;
+pub struct TextBackend;
 
-impl Lower for SExprLower {
+impl Realize for TextBackend {
     type Out = String;
-    type Error = LowerError;
+    type Error = BackendError;
 
-    fn nat_lit(&mut self, n: u128) -> Result<String, LowerError> {
+    fn nat(&mut self, n: &Nat) -> Result<String, BackendError> {
         Ok(n.to_string())
     }
 
-    fn str_lit(&mut self, s: &str) -> Result<String, LowerError> {
-        Ok(format!("{s:?}"))
+    fn string(&mut self, s: &str) -> Result<String, BackendError> {
+        Ok(quote_string(s))
     }
 
-    fn var(&mut self, name: &str) -> Result<String, LowerError> {
-        Ok(name.to_string())
+    fn symbol(&mut self, s: &str) -> Result<String, BackendError> {
+        Ok(s.to_string())
     }
 
-    fn app(&mut self, f: String, x: String) -> Result<String, LowerError> {
-        Ok(format!("({f} {x})"))
-    }
-
-    fn lam(&mut self, param: &str, body: String) -> Result<String, LowerError> {
-        Ok(format!("(\\{param} -> {body})"))
-    }
-
-    fn let_(&mut self, name: &str, val: String, body: String) -> Result<String, LowerError> {
-        Ok(format!("(let {name} = {val} in {body})"))
-    }
-
-    fn binop(&mut self, op: &str, l: String, r: String) -> Result<String, LowerError> {
-        Ok(format!("({op} {l} {r})"))
+    fn list(&mut self, items: Vec<String>) -> Result<String, BackendError> {
+        Ok(format!("({})", items.join(" ")))
     }
 }
 
-/// Same as [`SExprLower`] but lowers numeric literals to Peano numerals:
-/// `0` ⇝ `Z`, `n` ⇝ `(S (S ... Z))` with `n` applications of `S`.
+/// An IR ⇒ IR backend: the identity except that natural-number atoms are
+/// realized as Peano numerals — `0` ⇝ `Z`, `n` ⇝ `(S (S … Z))` with `n`
+/// applications of `S`. Print the result with
+/// [`SExpr::to_text`](crate::sexpr::SExpr::to_text).
 #[derive(Clone, Copy, Debug, Default)]
-pub struct PeanoLower;
+pub struct PeanoBackend;
 
-impl Lower for PeanoLower {
-    type Out = String;
-    type Error = LowerError;
+impl Realize for PeanoBackend {
+    type Out = SExpr;
+    type Error = BackendError;
 
-    fn nat_lit(&mut self, n: u128) -> Result<String, LowerError> {
-        let mut s = String::from("Z");
-        for _ in 0..n {
-            s = format!("(S {s})");
+    fn nat(&mut self, n: &Nat) -> Result<SExpr, BackendError> {
+        let mut acc = SExpr::sym("Z");
+        let mut i = n.clone();
+        // Arbitrary precision: count down the covalence Nat itself.
+        while !i.is_zero() {
+            acc = SExpr::list(vec![SExpr::sym("S"), acc]);
+            i -= Nat::one();
         }
-        Ok(s)
+        Ok(acc)
     }
 
-    fn str_lit(&mut self, s: &str) -> Result<String, LowerError> {
-        SExprLower.str_lit(s)
+    fn string(&mut self, s: &str) -> Result<SExpr, BackendError> {
+        Ok(SExpr::string(s))
     }
 
-    fn var(&mut self, name: &str) -> Result<String, LowerError> {
-        SExprLower.var(name)
+    fn symbol(&mut self, s: &str) -> Result<SExpr, BackendError> {
+        Ok(SExpr::sym(s))
     }
 
-    fn app(&mut self, f: String, x: String) -> Result<String, LowerError> {
-        SExprLower.app(f, x)
-    }
-
-    fn lam(&mut self, param: &str, body: String) -> Result<String, LowerError> {
-        SExprLower.lam(param, body)
-    }
-
-    fn let_(&mut self, name: &str, val: String, body: String) -> Result<String, LowerError> {
-        SExprLower.let_(name, val, body)
-    }
-
-    fn binop(&mut self, op: &str, l: String, r: String) -> Result<String, LowerError> {
-        SExprLower.binop(op, l, r)
+    fn list(&mut self, items: Vec<SExpr>) -> Result<SExpr, BackendError> {
+        Ok(SExpr::List(items))
     }
 }
 
-/// A strict-subset backend: it lowers everything *except* numeric literals,
-/// leaving [`Lower::nat_lit`] at its failing default. Lowering an expression
-/// that mentions a numeric literal returns [`Unsupported`]; literal-free
-/// expressions lower fine.
+/// A strict-subset backend: it realizes everything *except* natural-number
+/// atoms, leaving [`Realize::nat`] at its failing default. Realizing a form
+/// that mentions a nat atom returns [`Unsupported`]; literal-free forms
+/// realize fine (to canonical text, like [`TextBackend`]).
 #[derive(Clone, Copy, Debug, Default)]
-pub struct NoLitLower;
+pub struct NoLitBackend;
 
-impl Lower for NoLitLower {
+impl Realize for NoLitBackend {
     type Out = String;
-    type Error = LowerError;
+    type Error = BackendError;
 
-    // Note: `nat_lit` deliberately NOT overridden — it keeps the default error.
+    // Note: `nat` deliberately NOT overridden — it keeps the default error.
 
-    fn str_lit(&mut self, s: &str) -> Result<String, LowerError> {
-        SExprLower.str_lit(s)
+    fn string(&mut self, s: &str) -> Result<String, BackendError> {
+        TextBackend.string(s)
     }
 
-    fn var(&mut self, name: &str) -> Result<String, LowerError> {
-        SExprLower.var(name)
+    fn symbol(&mut self, s: &str) -> Result<String, BackendError> {
+        TextBackend.symbol(s)
     }
 
-    fn app(&mut self, f: String, x: String) -> Result<String, LowerError> {
-        SExprLower.app(f, x)
-    }
-
-    fn lam(&mut self, param: &str, body: String) -> Result<String, LowerError> {
-        SExprLower.lam(param, body)
-    }
-
-    fn let_(&mut self, name: &str, val: String, body: String) -> Result<String, LowerError> {
-        SExprLower.let_(name, val, body)
-    }
-
-    fn binop(&mut self, op: &str, l: String, r: String) -> Result<String, LowerError> {
-        SExprLower.binop(op, l, r)
+    fn list(&mut self, items: Vec<String>) -> Result<String, BackendError> {
+        TextBackend.list(items)
     }
 }

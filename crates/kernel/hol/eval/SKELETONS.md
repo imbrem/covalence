@@ -40,6 +40,17 @@ delete here and — if reducible — add to
 *intentionally* declaration-only — the primitive reducible interface, not a
 stub.)
 
+## EG3b transitional literal-T/F bridge (dies with EG5)
+
+`boolean.rs` (`tru_eq_lit`/`fal_eq_lit`/`fal_from_lit`/…), the eval-tier
+literal-premise tolerances in `derived.rs` (`false_elim`/`not_intro` accept
+`⌜F⌝`-shaped premises at `CoreEval` only), the `fal-to-lit`/`fal-from-lit`
+script rules, and init's bridge crossings (`init/logic.rs` simp locals,
+`eqf_intro` twins, `inductive/carved.rs::eq_f`) all exist ONLY because the
+`Bool` literals remain the certificate/normal-form currency. Delete the lot
+when EG5 removes the literal leaves (the defined `tru`/`fal` become the sole
+`T`/`F`).
+
 ## defs/core.cov source-of-truth flip (deferred, blocked on re-entrancy)
 
 `core.cov` + the `defs::cov` parser mirror part of the catalogue as data, proven

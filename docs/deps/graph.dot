@@ -50,6 +50,7 @@ digraph deps {
   "spectec";
   "sqlite";
   "store";
+  "tcb-db";
   "types" [style=filled, fillcolor="#ffd6d6"];
   "wasm";
   "wasm-build-guest";
@@ -182,6 +183,8 @@ digraph deps {
   "store" -> "hash";
   "store" -> "json";
   "store" -> "sqlite";
+  "tcb-db" -> "json";
+  "tcb-db" -> "sqlite";
   "wasm-build-guest" -> "wasm";
   "wasm-spec" -> "hash";
   "wasm-spec" -> "wasm";

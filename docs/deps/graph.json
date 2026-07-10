@@ -50,6 +50,7 @@
     "covalence-spectec",
     "covalence-sqlite",
     "covalence-store",
+    "covalence-tcb-db",
     "covalence-types",
     "covalence-wasm",
     "covalence-wasm-build-guest",
@@ -560,6 +561,14 @@
     },
     {
       "from": "covalence-store",
+      "to": "covalence-sqlite"
+    },
+    {
+      "from": "covalence-tcb-db",
+      "to": "covalence-json"
+    },
+    {
+      "from": "covalence-tcb-db",
       "to": "covalence-sqlite"
     },
     {

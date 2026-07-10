@@ -50,7 +50,6 @@ mod canonical;
 mod cond;
 mod coprod;
 mod fail;
-pub(crate) mod helpers;
 mod int;
 mod list;
 pub(crate) mod logic;

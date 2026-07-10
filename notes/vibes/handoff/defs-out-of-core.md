@@ -226,3 +226,46 @@ story; (b) `CoreProp` generalized over a sealed family of prop shapes; (c) keep
 literal leaves as the ground representation and accept the residue as the
 permanent (small) cost of the binary-data substrate. Until decided, the residue
 stays and is measured.
+
+---
+
+## STATUS 2026-07 (stage A3, worktree leaf-elim): core→defs coupling cut
+
+Commits ab2792ee (A3-1 sequent reshape) + follow-up (A3-2 builders move,
+A3-3 sweep). What changed:
+
+- **Five kernel rules sequent-reshaped** (the L1 nat_induct precedent):
+  `SelectAx`/`SpecAx`/`SuccInj`/`ZeroNeSucc`/`SpecRepAbsFwd` now take a
+  premise theorem and are connective-free (`Thm::select_intro`,
+  `spec_intro`, `succ_eq_elim`, `zero_eq_succ_elim` (ex-falso form),
+  `spec_rep_abs_intro`). Each is derivable from its old axiom form
+  (assume + MP), so no new strength. The classic imp/¬ forms are
+  `DerivedRules` drop-ins in hol/eval (same names + signatures as the old
+  kernel methods), so downstream call sites kept their text.
+- **Connective builders left `core::hol`**: public home is now
+  `covalence-hol-eval::hol` (eval's old `pub use core::hol` alias became
+  the real module); core keeps `pub(crate)` copies in `defs::logic` for
+  the residue bodies + the two staying rules. `core::hol` is `defs`-free
+  (primitive `hol_eq`/`hol_eq_at`/`pub_abs`/`zero` only). `succ_fn` /
+  `pred_fn` deleted (pure indirections; `Term::succ()` / `defs::nat_pred`
+  named directly — NatInduct's step instance is now stated with the
+  PRIMITIVE succ, matching SuccInj/ZeroNeSucc).
+- **Documented stayers**: `SpecRepAbsBack` (the `∨¬∃` disjunction IS the
+  witness-freeness) and `NewTypeDefRule` (single-mint freshness forces
+  the `∀/⟹/∧` package) still construct connectives; `thm/mod.rs`'s
+  `parse_hol_forall` + `typedef.rs`'s `and_spec` check still *recognize*
+  them for the typedef split. All documented in-code; die/reshape at
+  L4/EG5.
+- **Trivium**: `defs/helpers.rs` deleted (its `any()` inlined into
+  `ty/spec.rs`, the only consumer).
+
+**Measured (tcb-audit)**: defs coupling base+HOL (reality) 37 → 29 refs,
+(target) 25 → 17; pub-api 514 → 511. Src-lines ~flat (6,941 → 6,950;
+sequent soundness docstrings ≈ deleted builder lines). Remaining
+non-defs/ coupling in core: the literal TYPE chain (`IntTag::ty`,
+`Type::bytes/int/unit` singletons — D3, EG5), the typedef forall/and
+recognition, the spec/symbol machinery imports, and rules.rs's one
+`use crate::defs::logic`. Known audit caveat unchanged: the `(target)`
+config excludes `defs/` wholesale, yet `term/spec.rs`/`ty/spec.rs` (in
+target) import `defs::symbol` — the symbol machinery is load-bearing
+spec-identity infrastructure hiding in the excluded residue.

@@ -47,6 +47,7 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-core`](crates/kernel/hol/core/SKELETONS.md)** — the `defs/` D3 residue (dies with the literal leaves), hash-consing default, `subst::close`, property-test coverage gaps.
 - **[`covalence-hol-eval`](crates/kernel/hol/eval/SKELETONS.md)** — the eval tier (`CoreEval` + the moved `defs/` catalogue); pure-HOL unit-test gaps (tier-generic init), declaration-only ops, the `core.cov` flip, single-step `prove_true`.
 - **[`covalence-init`](crates/kernel/hol/init/SKELETONS.md)** — split per module (project loader, theory catalogue, `.cov` script layer, models, regex/spectec grammars, metalogic, peano, ring). (The thin `covalence-hol` surface has no skeletons.)
+- **[`covalence-hol-api`](crates/kernel/hol/api/SKELETONS.md)** — the trait-backed consumer surface (`Hol`/`Nat`): consumer migration not done, trait family incomplete (no `Inductives`/`HolOmega`/`Int`/`List`), `Hol` error type not associated.
 - **[`covalence-kernel`](crates/kernel/core/SKELETONS.md)** — empty `facts` observer module; removed legacy prover.
 - **[`covalence-shell`](crates/kernel/shell/SKELETONS.md)** — re-export shell; userspace helpers pending the HOL-on-store stack.
 - **[`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)** — removed native `.watsup` frontend; single-version WASM grammar; regular-only byte-grammar bridge.

@@ -1,0 +1,18 @@
+[package]
+name = "covalence-hol-api"
+version = "0.0.0"
+edition = "2024"
+
+# The high-level, TRAIT-backed consumer surface for the HOL tower. Consumers
+# build terms/theorems through the `Hol` / `Nat` traits (and re-exported
+# `LogicOps` / inductive API) instead of touching `covalence_core::TermKind`
+# directly, so the backend can be swapped with minimal porting. This crate
+# lives ABOVE the kernel/TCB: it only re-exports and delegates — zero TCB
+# delta, zero admitted rules. See `notes/vibes/backend-decoupling.md`.
+
+[dependencies]
+covalence-core = { path = "../core" }
+covalence-hol-eval = { path = "../eval" }
+covalence-init = { path = "../init" }
+covalence-inductive = { path = "../../../lang/inductive" }
+covalence-types = { path = "../../../lib/types" }

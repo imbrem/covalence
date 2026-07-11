@@ -1098,6 +1098,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-hol-api"
+version = "0.0.0"
+dependencies = [
+ "covalence-core",
+ "covalence-hol-eval",
+ "covalence-inductive",
+ "covalence-init",
+ "covalence-types",
+]
+
+[[package]]
 name = "covalence-hol-eval"
 version = "0.0.0"
 dependencies = [

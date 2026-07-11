@@ -63,6 +63,9 @@ pub trait Hol {
     fn bool_ty(&self) -> Self::Type;
     /// The function type `a → b`.
     fn fun_ty(&self, a: Self::Type, b: Self::Type) -> Self::Type;
+    /// A (free) type variable `'name` — standard HOL's polymorphic type
+    /// variable, e.g. the single carrier a monad theory abstracts over.
+    fn tvar(&self, name: &str) -> Self::Type;
 
     // -- Term builders --
 
@@ -178,6 +181,9 @@ impl Hol for NativeHol {
     }
     fn fun_ty(&self, a: Type, b: Type) -> Type {
         Type::fun(a, b)
+    }
+    fn tvar(&self, name: &str) -> Type {
+        Type::tfree(name)
     }
 
     fn var(&self, name: &str, ty: Type) -> Term {

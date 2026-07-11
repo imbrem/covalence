@@ -222,6 +222,10 @@
     },
     {
       "from": "covalence-haskell",
+      "to": "covalence-hol-api"
+    },
+    {
+      "from": "covalence-haskell",
       "to": "covalence-hol-eval"
     },
     {

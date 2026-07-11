@@ -15,12 +15,15 @@
 //! # The pieces
 //!
 //! - [`ast`] — a tiny Haskell expression subset ([`ast::Expr`]/[`ast::Lit`])
-//!   plus top-level function definitions ([`ast::Decl`]/[`ast::Module`]).
+//!   plus top-level function definitions ([`ast::Decl`]/[`ast::Module`]) and a
+//!   minimal **type surface** ([`ast::Ty`]: type variables, base/applied
+//!   constructors, function arrows) carried by signatures and annotated lambda
+//!   binders — the input a *typed* backend consumes (there is no inference).
 //!   **A Haskell `Nat` literal is a covalence `Nat`** (arbitrary precision,
 //!   from `covalence-types`), never a machine integer.
 //! - [`parse`] — a hand-written recursive-descent parser
-//!   ([`parse::parse_expr`], [`parse::parse_module`]) with positioned errors.
-//!   The module docs list the exact supported grammar.
+//!   ([`parse::parse_expr`], [`parse::parse_module`], [`parse::parse_ty`]) with
+//!   positioned errors. The module docs list the exact supported grammar.
 //! - [`sexpr`] — the interchange IR ([`sexpr::SExpr`]: symbol / nat / string
 //!   atoms + lists) with a canonical text printer and a text parser
 //!   (grammar in the module docs).
@@ -48,9 +51,17 @@
 //! ```
 //!
 //! The `hol` backend (behind the `hol` feature) realizes the IR into real
-//! kernel `Term`s — the carved `sexpr` datatype from `covalence-init` — while
-//! the default build stays kernel-agnostic (`covalence-types` is
+//! kernel `Term`s — the carved *untyped* `sexpr` datatype from `covalence-init`
+//! — while the default build stays kernel-agnostic (`covalence-types` is
 //! kernel-independent).
+//!
+//! The [`typed`] backend (behind the `hol-typed` feature) is the **typed**
+//! counterpart: it lowers *type-annotated* dialect definitions into well-typed
+//! HOL `Term`s **through the `covalence-hol-api` traits** (`Hol` + `Nat`),
+//! naming no backend type except through the trait bound — so swapping the
+//! trusted kernel is a matter of swapping the trait impl, not touching the
+//! dialect. Its flagship is the abstract monad (`tests/typed_monad.rs`); see
+//! `notes/vibes/init-in-dialect.md`.
 
 #![forbid(unsafe_code)]
 
@@ -64,3 +75,10 @@ pub mod lower;
 pub mod parse;
 pub mod realize;
 pub mod sexpr;
+/// The optional **typed** HOL backend: lowers type-annotated dialect
+/// definitions into well-typed HOL `Term`s **through the `covalence-hol-api`
+/// traits** (`Hol` + `Nat`). Enabled by the `hol-typed` feature. Unlike
+/// [`hol`], the concrete kernel is named only where a caller picks the trait
+/// impl — so swapping the TCB swaps the impl, not the dialect.
+#[cfg(feature = "hol-typed")]
+pub mod typed;

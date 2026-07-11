@@ -29,16 +29,31 @@
 //! Modules ([`parse_module`]): newline-separated top-level definitions
 //! `name p1 p2 = expr`, one per logical line. A line indented relative to the
 //! previous one continues it (layout-lite); there is no full layout algorithm.
-//! A top-level **type-signature** line `name :: Type` is accepted and ignored
-//! (the dialect carries no type information yet).
+//! A top-level **type-signature** line `name :: Ty` is parsed into a
+//! [`Ty`](crate::ast::Ty) and attached to the following same-named definition
+//! (its [`Decl::sig`](crate::ast::Decl::sig)); a lambda parameter may also be
+//! type-annotated as `\(x :: Ty) -> e`.
+//!
+//! **Type expressions** ([`parse_ty`], the [`Ty`](crate::ast::Ty) grammar):
+//!
+//! ```text
+//! ty      := ty_app ('->' ty)?         -- function arrow, right-assoc
+//! ty_app  := ty_atom+                  -- constructor application `option a`
+//! ty_atom := ident | '(' ty ')'
+//! ```
+//!
+//! A bare identifier is a **type variable** unless it is a recognised base
+//! type / constructor (`nat` `bool` `unit` `int` `bytes` `option` `list`) — the
+//! dialect spells both lowercase, so the split is by that fixed table. There is
+//! **no type inference**: a typed backend consumes exactly the written types.
 //!
 //! Everything else (do-notation, guards, `where`, `case`, pattern matching,
-//! multi-clause definitions, full layout) is out of scope — see the crate
-//! `SKELETONS.md`.
+//! multi-clause definitions, full layout, `data`/`class`/`instance`) is out of
+//! scope — see the crate `SKELETONS.md`.
 
 use covalence_types::Nat;
 
-use crate::ast::{Decl, Expr, Lit, Module};
+use crate::ast::{Decl, Expr, Lit, Module, Ty};
 
 /// A parse error with a byte offset into the input.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,9 +104,10 @@ enum Tok {
     If,
     Then,
     Else,
-    /// A `::` type-signature separator (the right-hand side is lexed as
-    /// ordinary tokens and skipped by the module parser — signatures are
-    /// parsed-and-ignored).
+    /// A `::` type-signature / type-annotation separator. Its right-hand side
+    /// is a type expression ([`Parser::ty`]): in a module a `name :: Ty` line
+    /// attaches to the following definition, and in a lambda `\(x :: Ty) -> e`
+    /// it annotates the binder.
     ColonColon,
 }
 
@@ -391,10 +407,37 @@ impl Parser {
     /// `lambda := '\' ident+ '->' expr`
     fn lambda(&mut self) -> Result<Expr, ParseError> {
         self.expect(&Tok::Lambda, "`\\`")?;
-        let mut params = Vec::new();
-        while let Some(Tok::Ident(name)) = self.peek() {
-            params.push(name.clone());
-            self.idx += 1;
+        // Each parameter is a bare `x` (no annotation) or a parenthesised,
+        // type-annotated `(x :: t)`.
+        let mut params: Vec<(String, Option<Ty>)> = Vec::new();
+        loop {
+            match self.peek() {
+                Some(Tok::Ident(name)) => {
+                    params.push((name.clone(), None));
+                    self.idx += 1;
+                }
+                Some(Tok::LParen) => {
+                    self.idx += 1;
+                    let end = self.end;
+                    let name = match self.bump() {
+                        Some(Token {
+                            tok: Tok::Ident(n), ..
+                        }) => n.clone(),
+                        other => {
+                            let pos = other.map_or(end, |t| t.pos);
+                            return Err(ParseError::new(
+                                "expected a parameter name after `(`",
+                                pos,
+                            ));
+                        }
+                    };
+                    self.expect(&Tok::ColonColon, "`::`")?;
+                    let ty = self.ty()?;
+                    self.expect(&Tok::RParen, "`)`")?;
+                    params.push((name, Some(ty)));
+                }
+                _ => break,
+            }
         }
         if params.is_empty() {
             return Err(ParseError::new(
@@ -404,10 +447,10 @@ impl Parser {
         }
         self.expect(&Tok::Arrow, "`->`")?;
         let body = self.expr()?;
-        // Desugar `\x y -> e` into nested single lambdas.
+        // Desugar `\x (y :: t) -> e` into nested single lambdas.
         let mut acc = body;
-        for p in params.into_iter().rev() {
-            acc = Expr::lam(p, acc);
+        for (p, ty) in params.into_iter().rev() {
+            acc = Expr::Lam(p, ty, Box::new(acc));
         }
         Ok(acc)
     }
@@ -535,6 +578,87 @@ impl Parser {
         self.expect(&Tok::RBracket, "`]` or `,`")?;
         Ok(Expr::List(items))
     }
+
+    // -- Type expressions -----------------------------------------------------
+
+    /// `ty := ty_app ('->' ty)?` — the function arrow is right-associative.
+    fn ty(&mut self) -> Result<Ty, ParseError> {
+        let dom = self.ty_app()?;
+        if self.peek() == Some(&Tok::Arrow) {
+            self.idx += 1;
+            let cod = self.ty()?;
+            Ok(Ty::fun(dom, cod))
+        } else {
+            Ok(dom)
+        }
+    }
+
+    /// `ty_app := ty_atom+` — juxtaposition is type-constructor application
+    /// (`option a`, `list a`). A single atom is just that atom; a run applies
+    /// the (identifier) head to the following atoms.
+    fn ty_app(&mut self) -> Result<Ty, ParseError> {
+        let head = self.ty_atom()?;
+        if !self.starts_ty_atom() {
+            return Ok(head);
+        }
+        // Applied form: the head must be a constructor identifier.
+        let head_name = match head {
+            Ty::Con(name, args) if args.is_empty() => name,
+            Ty::Var(name) => name,
+            _ => {
+                return Err(ParseError::new(
+                    "only a type constructor may be applied to arguments",
+                    self.peek_pos(),
+                ));
+            }
+        };
+        let mut args = Vec::new();
+        while self.starts_ty_atom() {
+            args.push(self.ty_atom()?);
+        }
+        Ok(Ty::Con(head_name, args))
+    }
+
+    fn starts_ty_atom(&self) -> bool {
+        matches!(self.peek(), Some(Tok::Ident(_) | Tok::LParen))
+    }
+
+    /// `ty_atom := ident | '(' ty ')'`. A bare identifier is a type variable
+    /// unless it names a recognised base type / constructor (see
+    /// [`is_known_tycon`]).
+    fn ty_atom(&mut self) -> Result<Ty, ParseError> {
+        let pos = self.peek_pos();
+        match self.peek().cloned() {
+            Some(Tok::Ident(name)) => {
+                self.idx += 1;
+                if is_known_tycon(&name) {
+                    Ok(Ty::Con(name, Vec::new()))
+                } else {
+                    Ok(Ty::Var(name))
+                }
+            }
+            Some(Tok::LParen) => {
+                self.idx += 1;
+                let inner = self.ty()?;
+                self.expect(&Tok::RParen, "`)`")?;
+                Ok(inner)
+            }
+            other => Err(ParseError::new(
+                format!("expected a type, found {}", describe(other.as_ref())),
+                pos,
+            )),
+        }
+    }
+}
+
+/// Is `name` a recognised (built-in) type constructor, as opposed to a type
+/// variable? The dialect uses lowercase spellings for both, so the split is by
+/// this fixed table rather than by case. Anything else is a type *variable*.
+fn is_known_tycon(name: &str) -> bool {
+    matches!(
+        name,
+        "nat" | "bool" | "unit" | "int" | "bytes" | "option" | "list"
+    )
 }
 
 /// A short human-readable name for a token (for error messages).
@@ -585,6 +709,19 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     Ok(e)
 }
 
+/// Parse a single **type expression** (the [`Ty`] grammar: type variables,
+/// base/applied constructors, function arrows), requiring that all input is
+/// consumed. Used by module signatures and annotated lambda parameters.
+pub fn parse_ty(src: &str) -> Result<Ty, ParseError> {
+    let toks = lex(src)?;
+    let mut p = Parser::new(toks, src.len());
+    let t = p.ty()?;
+    if p.idx != p.toks.len() {
+        return Err(ParseError::new("trailing input after type", p.peek_pos()));
+    }
+    Ok(t)
+}
+
 /// Parse a whole module: newline-separated `name p1 p2 = expr` definitions.
 ///
 /// Blank lines are ignored. A line whose first character is whitespace is
@@ -614,21 +751,44 @@ pub fn parse_module(src: &str) -> Result<Module, ParseError> {
         offset += line.len();
     }
 
+    // A pending signature `name :: Ty` attaches to the next definition of the
+    // same name (Haskell convention: the signature precedes the equation).
+    let mut pending_sig: Option<(String, Ty)> = None;
     for (start, text) in groups {
-        if let Some(d) = parse_decl(&text, start)? {
-            decls.push(d);
+        match parse_decl(&text, start)? {
+            DeclItem::Sig(name, ty) => {
+                pending_sig = Some((name, ty));
+            }
+            DeclItem::Def(mut d) => {
+                // A signature attaches only when its name matches the following
+                // definition; an unattached signature is simply dropped.
+                if let Some((sig_name, ty)) = pending_sig.take()
+                    && sig_name == d.name
+                {
+                    d.sig = Some(ty);
+                }
+                decls.push(d);
+            }
         }
     }
     Ok(decls)
 }
 
-/// Parse one declaration `name p1 p2 = expr`. `base` is the byte offset of the
-/// declaration in the enclosing source, used to relocate error positions.
+/// One parsed top-level item: a type signature `name :: Ty` (attached to the
+/// following definition by [`parse_module`]) or a value definition.
+enum DeclItem {
+    Sig(String, Ty),
+    Def(Decl),
+}
+
+/// Parse one top-level item — either a value definition `name p1 p2 = expr` or
+/// a type-signature line `name :: Ty`. `base` is the byte offset of the item in
+/// the enclosing source, used to relocate error positions.
 ///
-/// Returns `Ok(None)` for a top-level **type-signature** line `name :: Type`:
-/// signatures are parsed (lexed and shape-checked) but *ignored* — the dialect
-/// carries no type information yet (see `SKELETONS.md`).
-fn parse_decl(text: &str, base: usize) -> Result<Option<Decl>, ParseError> {
+/// A signature is now **parsed into a [`Ty`]** (no longer discarded): the type
+/// is checked and returned so [`parse_module`] can attach it to the following
+/// definition of the same name.
+fn parse_decl(text: &str, base: usize) -> Result<DeclItem, ParseError> {
     let toks = lex(text).map_err(|e| relocate(e, base))?;
     let mut p = Parser::new(toks, text.len());
 
@@ -646,10 +806,17 @@ fn parse_decl(text: &str, base: usize) -> Result<Option<Decl>, ParseError> {
         }
     };
 
-    // A type-signature line `name :: …` — accept and discard. We do not model
-    // the type; anything after `::` is tolerated (it lexed cleanly above).
+    // A type-signature line `name :: Ty` — parse the type and hand it back.
     if p.peek() == Some(&Tok::ColonColon) {
-        return Ok(None);
+        p.idx += 1;
+        let ty = p.ty().map_err(|e| relocate(e, base))?;
+        if p.idx != p.toks.len() {
+            return Err(relocate(
+                ParseError::new("trailing input after type signature", p.peek_pos()),
+                base,
+            ));
+        }
+        return Ok(DeclItem::Sig(name, ty));
     }
 
     let mut params = Vec::new();
@@ -679,7 +846,12 @@ fn parse_decl(text: &str, base: usize) -> Result<Option<Decl>, ParseError> {
             base,
         ));
     }
-    Ok(Some(Decl { name, params, body }))
+    Ok(DeclItem::Def(Decl {
+        name,
+        params,
+        body,
+        sig: None,
+    }))
 }
 
 fn relocate(mut e: ParseError, base: usize) -> ParseError {
@@ -790,11 +962,92 @@ mod tests {
     }
 
     #[test]
-    fn signature_line_is_dropped_and_offsets_are_relocated() {
+    fn signature_line_offsets_are_relocated() {
         // The bad token is in the SECOND definition; its position must point
         // past the signature line (relocation works).
-        let src = "f :: Int\nf = )";
+        let src = "f :: nat\nf = )";
         let err = parse_module(src).unwrap_err();
-        assert!(err.pos >= "f :: Int\n".len(), "pos was {}", err.pos);
+        assert!(err.pos >= "f :: nat\n".len(), "pos was {}", err.pos);
+    }
+
+    // -- Type-expression parsing --------------------------------------------
+
+    #[test]
+    fn parses_base_and_variable_types() {
+        // Known constructors are `Con`; anything else is a variable.
+        assert_eq!(parse_ty("nat").unwrap(), Ty::base("nat"));
+        assert_eq!(parse_ty("bool").unwrap(), Ty::base("bool"));
+        assert_eq!(parse_ty("a").unwrap(), Ty::var("a"));
+        assert_eq!(parse_ty("mcar").unwrap(), Ty::var("mcar"));
+    }
+
+    #[test]
+    fn parses_function_and_applied_types() {
+        // `->` is right-associative.
+        assert_eq!(
+            parse_ty("a -> a -> a").unwrap(),
+            Ty::fun(Ty::var("a"), Ty::fun(Ty::var("a"), Ty::var("a")))
+        );
+        // Constructor application: `option a`, `list a`.
+        assert_eq!(
+            parse_ty("option a").unwrap(),
+            Ty::con("option", vec![Ty::var("a")])
+        );
+        // Application binds tighter than the arrow, and parens group.
+        assert_eq!(
+            parse_ty("(a -> option a) -> option a").unwrap(),
+            Ty::fun(
+                Ty::fun(Ty::var("a"), Ty::con("option", vec![Ty::var("a")])),
+                Ty::con("option", vec![Ty::var("a")]),
+            )
+        );
+    }
+
+    #[test]
+    fn type_parse_errors_have_positions() {
+        assert!(parse_ty("").is_err());
+        // A dangling arrow.
+        assert!(parse_ty("a ->").is_err());
+        // Trailing junk.
+        assert_eq!(
+            parse_ty("a )").unwrap_err().message,
+            "trailing input after type"
+        );
+    }
+
+    #[test]
+    fn signature_attaches_to_following_definition() {
+        let m = parse_module("f :: nat -> nat\nf x = x").unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].sig, Some(Ty::fun(Ty::base("nat"), Ty::base("nat"))));
+    }
+
+    #[test]
+    fn mismatched_signature_name_is_not_attached() {
+        // A signature for `g` does not attach to a definition of `f`.
+        let m = parse_module("g :: nat\nf x = x").unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].name, "f");
+        assert_eq!(m[0].sig, None);
+    }
+
+    #[test]
+    fn annotated_lambda_param_carries_its_type() {
+        // `\(x :: a) -> x` desugars to an annotated single lambda.
+        let e = parse_expr(r"\(x :: a) -> x").unwrap();
+        assert_eq!(e, Expr::lam_ty("x", Ty::var("a"), Expr::Var("x".into())));
+        // Mixed: bare then annotated.
+        let e2 = parse_expr(r"\f (x :: a) -> f x").unwrap();
+        assert_eq!(
+            e2,
+            Expr::lam(
+                "f",
+                Expr::lam_ty(
+                    "x",
+                    Ty::var("a"),
+                    Expr::app(Expr::Var("f".into()), Expr::Var("x".into())),
+                ),
+            )
+        );
     }
 }

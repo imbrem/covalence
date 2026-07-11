@@ -1084,6 +1084,7 @@ dependencies = [
 name = "covalence-haskell"
 version = "0.0.0"
 dependencies = [
+ "covalence-hol-api",
  "covalence-hol-eval",
  "covalence-init",
  "covalence-types",

@@ -2,6 +2,20 @@
 
 See [`CLAUDE.md`](../../../../CLAUDE.md) § Skeletons and the [root index](../../../../SKELETONS.md).
 
+## EG5 S1 — bytes toHOL swap NOT landed (honest-stop 2026-07-11)
+
+`ToHolBytesVal` (`rules.rs:234`) still reifies `ToHolBytes(bs)` to a `Blob`
+literal; the structural `ToHolBytesNil`/`ToHolBytesCons` rules the exclusivity
+table (`rules.rs:550`) reserves are NOT admitted. The swap is a full
+cert-family flip, not a facade flip: removing `*Val` desyncs the
+`bytes_cat/len_thm_symbolic` transports (they reify operands through `*Val` into
+the `Val(blob)` that `certs::bytes_cert` mints as its RHS), and the honest
+structural target needs the missing `Blob ↔ list u8` bridge + list recursion
+(`bytesConsNat`/`bytesAt` are declaration-only, `defs/blob.rs:93,102`). Full
+finding + the two candidate paths (2(a) flip the whole cert family with a
+bytes-injectivity audit — the coherent one; 2(b) new structural↔blob bridge — a
+dead end) in `notes/vibes/eg5-preflight.md` §S1. Same shape gates int (S2).
+
 ## Pure-HOL unit tests: coverage gaps (stage E3, D5)
 
 `tests/pure_hol_units.rs` checks definition-vs-native per cert family; open

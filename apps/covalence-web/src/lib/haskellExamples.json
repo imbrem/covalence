@@ -1,0 +1,12 @@
+[
+  {"title":"Identity lambda","kind":"expr","src":"\\x -> x","sexpr":"(lambda x x)"},
+  {"title":"Multi-parameter lambda (curried)","kind":"expr","src":"\\f x -> f x","sexpr":"(lambda f (lambda x (f x)))"},
+  {"title":"Application is left-associative","kind":"expr","src":"f x y","sexpr":"((f x) y)"},
+  {"title":"Operator precedence (* over +)","kind":"expr","src":"1 + 2 * 3","sexpr":"(+ 1 (* 2 3))"},
+  {"title":"Equality is the loosest operator","kind":"expr","src":"1 + 2 == 3","sexpr":"(== (+ 1 2) 3)"},
+  {"title":"Application binds tighter than operators","kind":"expr","src":"f x + g y","sexpr":"(+ (f x) (g y))"},
+  {"title":"let-binding","kind":"expr","src":"let id = \\x -> x in id 5","sexpr":"(let id (lambda x x) (id 5))"},
+  {"title":"map a lambda over a list","kind":"expr","src":"map (\\x -> x) xs","sexpr":"((map (lambda x x)) xs)"},
+  {"title":"Arbitrary-precision Nat literal (2^128)","kind":"expr","src":"340282366920938463463374607431768211456","sexpr":"340282366920938463463374607431768211456"},
+  {"title":"init-flavoured module (the flagship on-ramp)","kind":"module","src":"compose f g x = f (g x)\nconst x y = x\nnone d f = d\nsome x d f = f x\nmapOption g m = m none (compose some g)\n","sexpr":"(define compose (lambda f (lambda g (lambda x (f (g x))))))\n(define const (lambda x (lambda y x)))\n(define none (lambda d (lambda f d)))\n(define some (lambda x (lambda d (lambda f (f x)))))\n(define mapOption (lambda g (lambda m ((m none) ((compose some) g)))))\n"}
+]

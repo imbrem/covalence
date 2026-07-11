@@ -1,10 +1,11 @@
 //! The abstract syntax for the supported Haskell expression dialect.
 //!
 //! This is deliberately tiny: enough shape to demonstrate a pluggable lowering
-//! and to grow toward a real `init/` dialect, no more. See the crate docs for
-//! the exact supported subset and [`crate`]'s `SKELETONS.md` for what is not
-//! yet modelled (do-notation, guards, `where`, type signatures, pattern
-//! matching, full layout).
+//! and to grow toward a real `init/` dialect, no more. It covers literals,
+//! variables, application, lambdas, `let`, infix operators, `if`/`then`/`else`,
+//! and list / tuple / unit literals. See the crate docs for the exact
+//! supported subset and [`crate`]'s `SKELETONS.md` for what is not yet modelled
+//! (do-notation, guards, `where`, `case`, pattern matching, full layout).
 
 use covalence_types::Nat;
 
@@ -36,6 +37,16 @@ pub enum Expr {
     Let(String, Box<Expr>, Box<Expr>),
     /// A binary operator application: `l <op> r`.
     BinOp(String, Box<Expr>, Box<Expr>),
+    /// A conditional `if c then t else e`.
+    If(Box<Expr>, Box<Expr>, Box<Expr>),
+    /// A list literal `[e1, e2, …]` (possibly empty).
+    List(Vec<Expr>),
+    /// A tuple literal `(e1, e2, …)` — always two or more elements (a
+    /// one-element parenthesized expression is just that expression, and the
+    /// zero-element `()` is the [unit][`Expr::Unit`]).
+    Tuple(Vec<Expr>),
+    /// The unit value `()`.
+    Unit,
 }
 
 impl Expr {
@@ -57,6 +68,11 @@ impl Expr {
     /// Convenience constructor for [`Expr::BinOp`].
     pub fn binop(op: impl Into<String>, l: Expr, r: Expr) -> Expr {
         Expr::BinOp(op.into(), Box::new(l), Box::new(r))
+    }
+
+    /// Convenience constructor for [`Expr::If`].
+    pub fn if_(c: Expr, t: Expr, e: Expr) -> Expr {
+        Expr::If(Box::new(c), Box::new(t), Box::new(e))
     }
 }
 

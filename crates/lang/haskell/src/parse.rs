@@ -17,17 +17,24 @@
 //!   operator (`f x y` = `(f x) y`);
 //! - parenthesisation `( e )`;
 //! - `let x = e in e'` (a single, non-recursive binder);
+//! - `if c then t else e` conditionals;
+//! - list literals `[e1, e2, …]` (possibly empty), tuple literals
+//!   `(e1, e2, …)` (two or more elements), and unit `()`;
 //! - the infix operators `==` (prec 4), `+` `-` (prec 6, left-assoc), `*`
 //!   (prec 7, left-assoc). Operator operands are applications, so a lambda or
 //!   `let` must be parenthesised to sit under an operator (as in Haskell).
+//! - `--` line comments and nested `{- … -}` block comments (skipped by the
+//!   lexer, so they may appear anywhere whitespace may).
 //!
 //! Modules ([`parse_module`]): newline-separated top-level definitions
 //! `name p1 p2 = expr`, one per logical line. A line indented relative to the
 //! previous one continues it (layout-lite); there is no full layout algorithm.
+//! A top-level **type-signature** line `name :: Type` is accepted and ignored
+//! (the dialect carries no type information yet).
 //!
-//! Everything else (do-notation, guards, `where`, type signatures, pattern
-//! matching, multi-clause definitions, full layout) is out of scope — see the
-//! crate `SKELETONS.md`.
+//! Everything else (do-notation, guards, `where`, `case`, pattern matching,
+//! multi-clause definitions, full layout) is out of scope — see the crate
+//! `SKELETONS.md`.
 
 use covalence_types::Nat;
 
@@ -73,9 +80,19 @@ enum Tok {
     Equals,
     LParen,
     RParen,
+    LBracket,
+    RBracket,
+    Comma,
     Op(String),
     Let,
     In,
+    If,
+    Then,
+    Else,
+    /// A `::` type-signature separator (the right-hand side is lexed as
+    /// ordinary tokens and skipped by the module parser — signatures are
+    /// parsed-and-ignored).
+    ColonColon,
 }
 
 #[derive(Clone, Debug)]
@@ -101,6 +118,65 @@ fn lex(src: &str) -> Result<Vec<Token>, ParseError> {
         match c {
             ' ' | '\t' | '\r' | '\n' => {
                 i += 1;
+            }
+            // `--` line comment: runs to end of line (but `-->` etc. are still
+            // comments in this dialect — a `--` run always starts a comment).
+            '-' if i + 1 < bytes.len() && bytes[i + 1] as char == '-' => {
+                while i < bytes.len() && bytes[i] as char != '\n' {
+                    i += 1;
+                }
+            }
+            // `{- … -}` block comment, nesting-aware (Haskell semantics).
+            '{' if i + 1 < bytes.len() && bytes[i + 1] as char == '-' => {
+                let start = i;
+                i += 2;
+                let mut depth = 1u32;
+                while i < bytes.len() && depth > 0 {
+                    if i + 1 < bytes.len() && bytes[i] as char == '{' && bytes[i + 1] as char == '-'
+                    {
+                        depth += 1;
+                        i += 2;
+                    } else if i + 1 < bytes.len()
+                        && bytes[i] as char == '-'
+                        && bytes[i + 1] as char == '}'
+                    {
+                        depth -= 1;
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                if depth > 0 {
+                    return Err(ParseError::new("unterminated block comment", start));
+                }
+            }
+            '[' => {
+                out.push(Token {
+                    tok: Tok::LBracket,
+                    pos: i,
+                });
+                i += 1;
+            }
+            ']' => {
+                out.push(Token {
+                    tok: Tok::RBracket,
+                    pos: i,
+                });
+                i += 1;
+            }
+            ',' => {
+                out.push(Token {
+                    tok: Tok::Comma,
+                    pos: i,
+                });
+                i += 1;
+            }
+            ':' if i + 1 < bytes.len() && bytes[i + 1] as char == ':' => {
+                out.push(Token {
+                    tok: Tok::ColonColon,
+                    pos: i,
+                });
+                i += 2;
             }
             '\\' => {
                 out.push(Token {
@@ -227,6 +303,9 @@ fn lex(src: &str) -> Result<Vec<Token>, ParseError> {
                 let tok = match text {
                     "let" => Tok::Let,
                     "in" => Tok::In,
+                    "if" => Tok::If,
+                    "then" => Tok::Then,
+                    "else" => Tok::Else,
                     _ => Tok::Ident(text.to_string()),
                 };
                 out.push(Token { tok, pos: start });
@@ -281,17 +360,32 @@ impl Parser {
                 self.idx += 1;
                 Ok(())
             }
-            _ => Err(ParseError::new(format!("expected {what}"), self.peek_pos())),
+            other => Err(ParseError::new(
+                format!("expected {what}, found {}", describe(other)),
+                self.peek_pos(),
+            )),
         }
     }
 
-    /// `expr := lambda | let | opexpr`
+    /// `expr := lambda | let | if | opexpr`
     fn expr(&mut self) -> Result<Expr, ParseError> {
         match self.peek() {
             Some(Tok::Lambda) => self.lambda(),
             Some(Tok::Let) => self.let_expr(),
+            Some(Tok::If) => self.if_expr(),
             _ => self.op_expr(0),
         }
+    }
+
+    /// `if := 'if' expr 'then' expr 'else' expr`
+    fn if_expr(&mut self) -> Result<Expr, ParseError> {
+        self.expect(&Tok::If, "`if`")?;
+        let c = self.expr()?;
+        self.expect(&Tok::Then, "`then`")?;
+        let t = self.expr()?;
+        self.expect(&Tok::Else, "`else`")?;
+        let e = self.expr()?;
+        Ok(Expr::if_(c, t, e))
     }
 
     /// `lambda := '\' ident+ '->' expr`
@@ -368,11 +462,16 @@ impl Parser {
     fn starts_atom(&self) -> bool {
         matches!(
             self.peek(),
-            Some(Tok::Ident(_) | Tok::Nat(_) | Tok::Str(_) | Tok::LParen)
+            Some(Tok::Ident(_) | Tok::Nat(_) | Tok::Str(_) | Tok::LParen | Tok::LBracket)
         )
     }
 
-    /// `atom := nat | str | ident | '(' expr ')'`
+    /// `atom := nat | str | ident | paren | list`
+    ///
+    /// `paren := '(' ')'                 -- unit`
+    /// `       | '(' expr ')'            -- grouping`
+    /// `       | '(' expr (',' expr)+ ')'-- tuple`
+    /// `list  := '[' ']' | '[' expr (',' expr)* ']'`
     fn atom(&mut self) -> Result<Expr, ParseError> {
         let pos = self.peek_pos();
         match self.peek().cloned() {
@@ -388,14 +487,78 @@ impl Parser {
                 self.idx += 1;
                 Ok(Expr::Var(name))
             }
-            Some(Tok::LParen) => {
-                self.idx += 1;
-                let e = self.expr()?;
-                self.expect(&Tok::RParen, "`)`")?;
-                Ok(e)
-            }
-            _ => Err(ParseError::new("expected an expression", pos)),
+            Some(Tok::LParen) => self.paren(),
+            Some(Tok::LBracket) => self.list_lit(),
+            other => Err(ParseError::new(
+                format!("expected an expression, found {}", describe(other.as_ref())),
+                pos,
+            )),
         }
+    }
+
+    /// A parenthesized form: `()` (unit), `(e)` (grouping), or
+    /// `(e1, e2, …)` (tuple).
+    fn paren(&mut self) -> Result<Expr, ParseError> {
+        self.expect(&Tok::LParen, "`(`")?;
+        if self.peek() == Some(&Tok::RParen) {
+            self.idx += 1;
+            return Ok(Expr::Unit);
+        }
+        let first = self.expr()?;
+        if self.peek() == Some(&Tok::RParen) {
+            self.idx += 1;
+            return Ok(first);
+        }
+        // A comma ⇒ tuple.
+        let mut items = vec![first];
+        while self.peek() == Some(&Tok::Comma) {
+            self.idx += 1;
+            items.push(self.expr()?);
+        }
+        self.expect(&Tok::RParen, "`)` or `,`")?;
+        Ok(Expr::Tuple(items))
+    }
+
+    /// A list literal `[e1, e2, …]` (possibly empty).
+    fn list_lit(&mut self) -> Result<Expr, ParseError> {
+        self.expect(&Tok::LBracket, "`[`")?;
+        let mut items = Vec::new();
+        if self.peek() == Some(&Tok::RBracket) {
+            self.idx += 1;
+            return Ok(Expr::List(items));
+        }
+        items.push(self.expr()?);
+        while self.peek() == Some(&Tok::Comma) {
+            self.idx += 1;
+            items.push(self.expr()?);
+        }
+        self.expect(&Tok::RBracket, "`]` or `,`")?;
+        Ok(Expr::List(items))
+    }
+}
+
+/// A short human-readable name for a token (for error messages).
+fn describe(t: Option<&Tok>) -> String {
+    match t {
+        None => "end of input".to_string(),
+        Some(Tok::Ident(n)) => format!("identifier `{n}`"),
+        Some(Tok::Nat(n)) => format!("number `{n}`"),
+        Some(Tok::Str(_)) => "a string literal".to_string(),
+        Some(Tok::Lambda) => "`\\`".to_string(),
+        Some(Tok::Arrow) => "`->`".to_string(),
+        Some(Tok::Equals) => "`=`".to_string(),
+        Some(Tok::LParen) => "`(`".to_string(),
+        Some(Tok::RParen) => "`)`".to_string(),
+        Some(Tok::LBracket) => "`[`".to_string(),
+        Some(Tok::RBracket) => "`]`".to_string(),
+        Some(Tok::Comma) => "`,`".to_string(),
+        Some(Tok::Op(op)) => format!("operator `{op}`"),
+        Some(Tok::Let) => "`let`".to_string(),
+        Some(Tok::In) => "`in`".to_string(),
+        Some(Tok::If) => "`if`".to_string(),
+        Some(Tok::Then) => "`then`".to_string(),
+        Some(Tok::Else) => "`else`".to_string(),
+        Some(Tok::ColonColon) => "`::`".to_string(),
     }
 }
 
@@ -428,6 +591,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
 /// treated as a continuation of the previous definition (layout-lite).
 pub fn parse_module(src: &str) -> Result<Module, ParseError> {
     let mut decls = Module::new();
+    // Blank out comments FIRST (preserving byte offsets and newlines) so the
+    // line-based grouper below is comment-aware — a `{- … -}` block comment may
+    // span physical lines without derailing the layout-lite continuation logic.
+    let blanked = strip_comments_to_spaces(src)?;
+    let src: &str = &blanked;
     // Group physical lines into logical declarations, tracking the byte offset
     // of each group's start so errors point into the original source.
     let mut offset = 0usize;
@@ -447,14 +615,20 @@ pub fn parse_module(src: &str) -> Result<Module, ParseError> {
     }
 
     for (start, text) in groups {
-        decls.push(parse_decl(&text, start)?);
+        if let Some(d) = parse_decl(&text, start)? {
+            decls.push(d);
+        }
     }
     Ok(decls)
 }
 
 /// Parse one declaration `name p1 p2 = expr`. `base` is the byte offset of the
 /// declaration in the enclosing source, used to relocate error positions.
-fn parse_decl(text: &str, base: usize) -> Result<Decl, ParseError> {
+///
+/// Returns `Ok(None)` for a top-level **type-signature** line `name :: Type`:
+/// signatures are parsed (lexed and shape-checked) but *ignored* — the dialect
+/// carries no type information yet (see `SKELETONS.md`).
+fn parse_decl(text: &str, base: usize) -> Result<Option<Decl>, ParseError> {
     let toks = lex(text).map_err(|e| relocate(e, base))?;
     let mut p = Parser::new(toks, text.len());
 
@@ -471,6 +645,12 @@ fn parse_decl(text: &str, base: usize) -> Result<Decl, ParseError> {
             ));
         }
     };
+
+    // A type-signature line `name :: …` — accept and discard. We do not model
+    // the type; anything after `::` is tolerated (it lexed cleanly above).
+    if p.peek() == Some(&Tok::ColonColon) {
+        return Ok(None);
+    }
 
     let mut params = Vec::new();
     loop {
@@ -499,10 +679,122 @@ fn parse_decl(text: &str, base: usize) -> Result<Decl, ParseError> {
             base,
         ));
     }
-    Ok(Decl { name, params, body })
+    Ok(Some(Decl { name, params, body }))
 }
 
 fn relocate(mut e: ParseError, base: usize) -> ParseError {
     e.pos += base;
     e
+}
+
+/// Replace every comment (`--` line, `{- … -}` nested block) with spaces,
+/// preserving byte offsets, newlines, and all non-comment bytes verbatim.
+///
+/// This is applied by [`parse_module`] before the line grouper so that
+/// comments — including block comments that span physical lines — never
+/// disturb the layout-lite continuation logic, while error positions still
+/// point into the original source. Strings are respected (a `--` or `{-`
+/// inside a string literal is not a comment).
+fn strip_comments_to_spaces(src: &str) -> Result<String, ParseError> {
+    let bytes = src.as_bytes();
+    // Start from an exact byte-length copy; overwrite only comment bytes.
+    let mut out: Vec<u8> = bytes.to_vec();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            // A string literal — copy through untouched (offsets already match).
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                if i < bytes.len() {
+                    i += 1; // closing quote
+                }
+            }
+            b'-' if i + 1 < bytes.len() && bytes[i + 1] == b'-' => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    out[i] = b' ';
+                    i += 1;
+                }
+            }
+            b'{' if i + 1 < bytes.len() && bytes[i + 1] == b'-' => {
+                let start = i;
+                let mut depth = 1u32;
+                out[i] = b' ';
+                out[i + 1] = b' ';
+                i += 2;
+                while i < bytes.len() && depth > 0 {
+                    if i + 1 < bytes.len() && bytes[i] == b'{' && bytes[i + 1] == b'-' {
+                        depth += 1;
+                        out[i] = b' ';
+                        out[i + 1] = b' ';
+                        i += 2;
+                    } else if i + 1 < bytes.len() && bytes[i] == b'-' && bytes[i + 1] == b'}' {
+                        depth -= 1;
+                        out[i] = b' ';
+                        out[i + 1] = b' ';
+                        i += 2;
+                    } else {
+                        // Preserve newlines so line structure survives.
+                        if bytes[i] != b'\n' {
+                            out[i] = b' ';
+                        }
+                        i += 1;
+                    }
+                }
+                if depth > 0 {
+                    return Err(ParseError::new("unterminated block comment", start));
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    // The overwrite kept the buffer valid UTF-8 (only ASCII bytes were touched,
+    // and only outside multi-byte sequences since delimiters are all ASCII).
+    Ok(String::from_utf8(out).expect("comment blanking preserves UTF-8"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_comments_preserves_length_and_strings() {
+        // Byte offsets are preserved: only comment bytes become spaces.
+        let src = "a -- c\nb {- x -} c";
+        let out = strip_comments_to_spaces(src).unwrap();
+        assert_eq!(out.len(), src.len());
+        assert_eq!(out, "a     \nb         c");
+        // A `--` / `{-` inside a string literal is NOT a comment.
+        let src = r#"x = "a -- b {- c"#.to_string() + "\"";
+        assert_eq!(strip_comments_to_spaces(&src).unwrap(), src);
+    }
+
+    #[test]
+    fn unterminated_block_comment_errors() {
+        let err = strip_comments_to_spaces("a {- oops").unwrap_err();
+        assert!(err.message.contains("unterminated block comment"));
+        assert_eq!(err.pos, 2);
+    }
+
+    #[test]
+    fn nested_block_comment_lexes_as_whitespace() {
+        // `f {- a {- b -} c -} x` ⇒ just `f x` after comment removal.
+        let toks = lex("f {- a {- b -} c -} x").unwrap();
+        let kinds: Vec<_> = toks.into_iter().map(|t| t.tok).collect();
+        assert_eq!(kinds, vec![Tok::Ident("f".into()), Tok::Ident("x".into())]);
+    }
+
+    #[test]
+    fn signature_line_is_dropped_and_offsets_are_relocated() {
+        // The bad token is in the SECOND definition; its position must point
+        // past the signature line (relocation works).
+        let src = "f :: Int\nf = )";
+        let err = parse_module(src).unwrap_err();
+        assert!(err.pos >= "f :: Int\n".len(), "pos was {}", err.pos);
+    }
 }

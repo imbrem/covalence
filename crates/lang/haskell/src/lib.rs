@@ -33,8 +33,8 @@
 //!   backends interpret the IR, overriding only the subset they realize
 //!   (most visibly how a natural-number atom is realised).
 //! - [`backends`] — demo backends (`TextBackend`, `PeanoBackend`,
-//!   `NoLitBackend`) showing that numeric-atom realization (and subset
-//!   coverage) is pluggable.
+//!   `NoLitBackend`, `DesugarBackend`) showing that numeric-atom realization,
+//!   subset coverage, and structural rewriting are all pluggable.
 //!
 //! # Example
 //!

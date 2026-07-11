@@ -243,7 +243,7 @@ pub fn signed_neg(n: &Term) -> Result<Thm> {
 ///     (nat_to_int (ip·10ᵏ + fr), ex − nat_to_int k)` — a **positive** parse's
 /// value: the mantissa is the (unsigned) significand lifted to `int`. Genuine.
 pub fn assemble_pos(ip: &Term, fr: &Term, k: &Term, ex: &Term) -> Result<Thm> {
-    let neg = Term::bool_lit(false);
+    let neg = covalence_hol_eval::mk_bool(false);
     let n = add(mul(ip.clone(), pow(lit(10), k.clone())), fr.clone());
     let collapse = signed_pos(&n)?; // signed false n = nat_to_int n
     Thm::refl(assemble(
@@ -260,7 +260,7 @@ pub fn assemble_pos(ip: &Term, fr: &Term, k: &Term, ex: &Term) -> Result<Thm> {
 ///     (int_neg (nat_to_int (ip·10ᵏ + fr)), ex − nat_to_int k)` — a
 /// **negative** parse negates the significand. Genuine.
 pub fn assemble_neg(ip: &Term, fr: &Term, k: &Term, ex: &Term) -> Result<Thm> {
-    let neg = Term::bool_lit(true);
+    let neg = covalence_hol_eval::mk_bool(true);
     let n = add(mul(ip.clone(), pow(lit(10), k.clone())), fr.clone());
     let collapse = signed_neg(&n)?;
     Thm::refl(assemble(
@@ -315,7 +315,10 @@ fn char_is(k: u64) -> Term {
 fn head_is(k: u64, s: &Term) -> Term {
     Term::app(
         Term::app(
-            Term::app(option_case(char_t(), bool_t()), Term::bool_lit(false)),
+            Term::app(
+                option_case(char_t(), bool_t()),
+                covalence_hol_eval::mk_bool(false),
+            ),
             char_is(k),
         ),
         Term::app(head(char_t()), s.clone()),
@@ -327,7 +330,10 @@ fn head_is(k: u64, s: &Term) -> Term {
 fn head_is_digit(s: &Term) -> Term {
     Term::app(
         Term::app(
-            Term::app(option_case(char_t(), bool_t()), Term::bool_lit(false)),
+            Term::app(
+                option_case(char_t(), bool_t()),
+                covalence_hol_eval::mk_bool(false),
+            ),
             crate::init::nat_parse::is_digit_dec(),
         ),
         Term::app(head(char_t()), s.clone()),
@@ -465,7 +471,10 @@ fn byte_is(k: u64) -> Term {
 fn head_sat_b(pred: &Term, s: &Term) -> Term {
     Term::app(
         Term::app(
-            Term::app(option_case(defs::u8_ty(), bool_t()), Term::bool_lit(false)),
+            Term::app(
+                option_case(defs::u8_ty(), bool_t()),
+                covalence_hol_eval::mk_bool(false),
+            ),
             pred.clone(),
         ),
         Term::app(head(defs::u8_ty()), s.clone()),
@@ -608,7 +617,7 @@ mod tests {
             signed_pos(&n).unwrap()
         };
         Thm::refl(assemble(
-            &Term::bool_lit(neg),
+            &covalence_hol_eval::mk_bool(neg),
             lit(ip),
             lit(fr),
             lit(k),
@@ -672,12 +681,15 @@ mod tests {
         // int the signed-integer parser yields, embedded as a float.
         let ip = Term::free("ip", nat_t());
         for neg in [false, true] {
-            let t = int_subset(&Term::bool_lit(neg), &ip).unwrap();
+            let t = int_subset(&covalence_hol_eval::mk_bool(neg), &ip).unwrap();
             assert!(t.hyps().is_empty());
             // value = (signed neg ip, int 0).
             assert_eq!(
                 rhs(&t),
-                fv_mk(signed(&Term::bool_lit(neg), ip.clone()), int_zero())
+                fv_mk(
+                    signed(&covalence_hol_eval::mk_bool(neg), ip.clone()),
+                    int_zero()
+                )
             );
         }
     }
@@ -756,10 +768,10 @@ mod tests {
         }
         let red = red.rhs_conv(|x| x.reduce()).unwrap();
         let combo = rhs(&red);
-        match prop_eq(&combo, &Term::bool_lit(true)) {
+        match prop_eq(&combo, &covalence_hol_eval::mk_bool(true)) {
             Ok(tt) => (red.trans(tt).unwrap(), true),
             Err(_) => {
-                let ff = prop_eq(&combo, &Term::bool_lit(false)).unwrap();
+                let ff = prop_eq(&combo, &covalence_hol_eval::mk_bool(false)).unwrap();
                 (red.trans(ff).unwrap(), false)
             }
         }
@@ -777,14 +789,23 @@ mod tests {
         let s = s_term(bytes);
         let oc = Term::app(
             Term::app(
-                Term::app(option_case(char_t(), bool_t()), Term::bool_lit(false)),
+                Term::app(
+                    option_case(char_t(), bool_t()),
+                    covalence_hol_eval::mk_bool(false),
+                ),
                 pred.clone(),
             ),
             Term::app(head(char_t()), s),
         );
         if bytes.is_empty() {
             let hn = head_nil(&char_t()).unwrap();
-            let cn = case_none(&char_t(), &bool_t(), &Term::bool_lit(false), pred).unwrap();
+            let cn = case_none(
+                &char_t(),
+                &bool_t(),
+                &covalence_hol_eval::mk_bool(false),
+                pred,
+            )
+            .unwrap();
             let eq = Thm::refl(oc)
                 .unwrap()
                 .rhs_conv(|x| x.rw_all(&hn))
@@ -796,7 +817,14 @@ mod tests {
         let c0 = ch(bytes[0]);
         let cs0 = s_term(&bytes[1..]);
         let hc = head_cons(&char_t(), &c0, &cs0).unwrap();
-        let cse = case_some(&char_t(), &bool_t(), &Term::bool_lit(false), pred, &c0).unwrap();
+        let cse = case_some(
+            &char_t(),
+            &bool_t(),
+            &covalence_hol_eval::mk_bool(false),
+            pred,
+            &c0,
+        )
+        .unwrap();
         let (dec, b) = decide(&Term::app(pred.clone(), c0.clone()), &[bytes[0]]);
         let eq = Thm::refl(oc)
             .unwrap()
@@ -1021,8 +1049,11 @@ mod tests {
 
     /// Fold a concrete `a ∨ b` (bool literals) to its literal on the RHS.
     fn fold_or(thm: Thm, a: bool, b: bool) -> Thm {
-        let t = bor(Term::bool_lit(a), Term::bool_lit(b));
-        let want = Term::bool_lit(a || b);
+        let t = bor(
+            covalence_hol_eval::mk_bool(a),
+            covalence_hol_eval::mk_bool(b),
+        );
+        let want = covalence_hol_eval::mk_bool(a || b);
         let eq = prop_eq(&t, &want).unwrap();
         rw(thm, &eq)
     }
@@ -1187,7 +1218,10 @@ mod tests {
     fn bs_term(bytes: &[u8]) -> Term {
         let mut t = defs::nil(u8t());
         for &b in bytes.iter().rev() {
-            t = Term::app(Term::app(defs::cons(u8t()), Term::u8_lit(b)), t);
+            t = Term::app(
+                Term::app(defs::cons(u8t()), covalence_hol_eval::mk_u8(b)),
+                t,
+            );
         }
         t
     }
@@ -1197,23 +1231,29 @@ mod tests {
             .rhs_conv(|x| x.reduce())
             .unwrap();
         let combo = rhs(&red);
-        match prop_eq(&combo, &Term::bool_lit(true)) {
+        match prop_eq(&combo, &covalence_hol_eval::mk_bool(true)) {
             Ok(tt) => (red.trans(tt).unwrap(), true),
             Err(_) => {
-                let ff = prop_eq(&combo, &Term::bool_lit(false)).unwrap();
+                let ff = prop_eq(&combo, &covalence_hol_eval::mk_bool(false)).unwrap();
                 (red.trans(ff).unwrap(), false)
             }
         }
     }
     fn eval_tail_b(bytes: &[u8]) -> Thm {
-        tail_cons(&u8t(), &Term::u8_lit(bytes[0]), &bs_term(&bytes[1..])).unwrap()
+        tail_cons(
+            &u8t(),
+            &covalence_hol_eval::mk_u8(bytes[0]),
+            &bs_term(&bytes[1..]),
+        )
+        .unwrap()
     }
     fn eval_head_b(pred: &Term, bytes: &[u8]) -> (Thm, bool) {
         let s = bs_term(bytes);
         let oc = head_sat_b(pred, &s);
         if bytes.is_empty() {
             let hn = head_nil(&u8t()).unwrap();
-            let cn = case_none(&u8t(), &bool_t(), &Term::bool_lit(false), pred).unwrap();
+            let cn =
+                case_none(&u8t(), &bool_t(), &covalence_hol_eval::mk_bool(false), pred).unwrap();
             let eq = Thm::refl(oc)
                 .unwrap()
                 .rhs_conv(|x| x.rw_all(&hn))
@@ -1222,10 +1262,17 @@ mod tests {
                 .unwrap();
             return (eq, false);
         }
-        let c0 = Term::u8_lit(bytes[0]);
+        let c0 = covalence_hol_eval::mk_u8(bytes[0]);
         let cs0 = bs_term(&bytes[1..]);
         let hc = head_cons(&u8t(), &c0, &cs0).unwrap();
-        let cse = case_some(&u8t(), &bool_t(), &Term::bool_lit(false), pred, &c0).unwrap();
+        let cse = case_some(
+            &u8t(),
+            &bool_t(),
+            &covalence_hol_eval::mk_bool(false),
+            pred,
+            &c0,
+        )
+        .unwrap();
         let (dec, b) = decide_b(&Term::app(pred.clone(), c0.clone()));
         let eq = Thm::refl(oc)
             .unwrap()
@@ -1271,7 +1318,7 @@ mod tests {
         if bytes.is_empty() {
             return span_nil_b(&is_digit).unwrap();
         }
-        let c = Term::u8_lit(bytes[0]);
+        let c = covalence_hol_eval::mk_u8(bytes[0]);
         let cs = bs_term(&bytes[1..]);
         let general = span_cons_b(&is_digit, &c, &cs).unwrap();
         let cond_c = rhs(&Term::app(is_digit.clone(), c.clone()).reduce().unwrap());
@@ -1356,7 +1403,7 @@ mod tests {
             return go_nil_b(&dv, &r, acc).unwrap();
         }
         let cs = bs_term(&bytes[1..]);
-        let step = go_cons_b(&dv, &r, &Term::u8_lit(bytes[0]), &cs)
+        let step = go_cons_b(&dv, &r, &covalence_hol_eval::mk_u8(bytes[0]), &cs)
             .unwrap()
             .all_elim(acc.clone())
             .unwrap();
@@ -1382,7 +1429,7 @@ mod tests {
             return length_nil(&u8t()).unwrap();
         }
         let cs = bs_term(&bytes[1..]);
-        let step = length_cons(&u8t(), &Term::u8_lit(bytes[0]), &cs).unwrap();
+        let step = length_cons(&u8t(), &covalence_hol_eval::mk_u8(bytes[0]), &cs).unwrap();
         step.rhs_conv(|x| x.rw_all(&eval_length_b(&bytes[1..])))
             .unwrap()
             .rhs_conv(|x| x.reduce())

@@ -92,7 +92,7 @@ fn cons_b(b: Term, bs: Term) -> Term {
 
 /// `[true] : list bool`.
 fn one_bits() -> Term {
-    cons_b(Term::bool_lit(true), nil_b())
+    cons_b(covalence_hol_eval::mk_bool(true), nil_b())
 }
 
 /// `pair a b : list bool × list bool`.
@@ -150,8 +150,8 @@ fn inc_step() -> Term {
     let orig = fst_pp(p.clone()); // reconstructed original tail
     let inc = snd_pp(p.clone()); // incremented tail
     let recon = cons_b(b.clone(), orig.clone());
-    let carry = cons_b(Term::bool_lit(false), inc); // b = true
-    let no_carry = cons_b(Term::bool_lit(true), orig); // b = false
+    let carry = cons_b(covalence_hol_eval::mk_bool(false), inc); // b = true
+    let no_carry = cons_b(covalence_hol_eval::mk_bool(true), orig); // b = false
     let body = pair_pp(recon, cond_lb(b.clone(), carry, no_carry));
     lam("b", boolt(), lam("p", pp(), body))
 }
@@ -233,8 +233,8 @@ cached_thm! {
             let cons_clause = inc_pair_cons(&b, &bs)?;
             let cond_branch = cond_lb(
                 b.clone(),
-                cons_b(Term::bool_lit(false), inc.clone()),
-                cons_b(Term::bool_lit(true), orig.clone()),
+                cons_b(covalence_hol_eval::mk_bool(false), inc.clone()),
+                cons_b(covalence_hol_eval::mk_bool(true), orig.clone()),
             );
             let fp = fst_pair(&lb(), &lb(), &cons_b(b.clone(), orig.clone()), &cond_branch)?;
             let fst_eq = cons_clause.cong_arg(fst(lb(), lb()))?.trans(fp)?; // = cons b orig
@@ -289,17 +289,17 @@ pub fn bit_succ_cons(b: &Term, bs: &Term) -> Result<Thm> {
 
 /// `⊢ bit_succ (cons true bs) = cons false (bit_succ bs)` — the carry clause.
 pub fn bit_succ_cons_true(bs: &Term) -> Result<Thm> {
-    let general = bit_succ_cons(&Term::bool_lit(true), bs)?;
-    let carry = cons_b(Term::bool_lit(false), bit_succ_app(bs));
-    let no_carry = cons_b(Term::bool_lit(true), bs.clone());
+    let general = bit_succ_cons(&covalence_hol_eval::mk_bool(true), bs)?;
+    let carry = cons_b(covalence_hol_eval::mk_bool(false), bit_succ_app(bs));
+    let no_carry = cons_b(covalence_hol_eval::mk_bool(true), bs.clone());
     general.trans(cond_true(&lb(), &carry, &no_carry)?)
 }
 
 /// `⊢ bit_succ (cons false bs) = cons true bs` — the no-carry clause.
 pub fn bit_succ_cons_false(bs: &Term) -> Result<Thm> {
-    let general = bit_succ_cons(&Term::bool_lit(false), bs)?;
-    let carry = cons_b(Term::bool_lit(false), bit_succ_app(bs));
-    let no_carry = cons_b(Term::bool_lit(true), bs.clone());
+    let general = bit_succ_cons(&covalence_hol_eval::mk_bool(false), bs)?;
+    let carry = cons_b(covalence_hol_eval::mk_bool(false), bit_succ_app(bs));
+    let no_carry = cons_b(covalence_hol_eval::mk_bool(true), bs.clone());
     general.trans(cond_false(&lb(), &carry, &no_carry)?)
 }
 
@@ -367,7 +367,7 @@ cached_thm! {
             // Prove `goal[true]` concretely, then transport to `goal[b]` via the
             // head congruence `cons true bs = cons b bs`.
             let branch_t = {
-                let hyp = b.clone().equals(Term::bool_lit(true))?;
+                let hyp = b.clone().equals(covalence_hol_eval::mk_bool(true))?;
                 // LHS: nat_of_bits (bit_succ (cons true bs))
                 //    = nat_of_bits (cons false (bit_succ bs))
                 //    = bit0 (nat_of_bits (bit_succ bs)) = double (nat_of_bits (bit_succ bs))
@@ -388,7 +388,7 @@ cached_thm! {
 
             // b = false (no carry): bit_succ (cons false bs) = cons true bs.
             let branch_f = {
-                let hyp = b.clone().equals(Term::bool_lit(false))?;
+                let hyp = b.clone().equals(covalence_hol_eval::mk_bool(false))?;
                 // LHS: nat_of_bits (bit_succ (cons false bs)) = nat_of_bits (cons true bs)
                 //    = bit1 nob = succ (double nob).
                 let l1 = bit_succ_cons_false(&bs)?.cong_arg(nat_of_bits())?;
@@ -581,7 +581,7 @@ mod tests {
         let bs = Term::free("bs", lb());
         for t in [
             bit_succ_nil().unwrap(),
-            bit_succ_cons(&Term::bool_lit(true), &bs).unwrap(),
+            bit_succ_cons(&covalence_hol_eval::mk_bool(true), &bs).unwrap(),
             bit_succ_cons_true(&bs).unwrap(),
             bit_succ_cons_false(&bs).unwrap(),
             inc_pair_fst(),
@@ -592,9 +592,15 @@ mod tests {
         assert_eq!(rhs(&bit_succ_nil().unwrap()), one_bits());
         // cons_true / cons_false resolve.
         let ct = bit_succ_cons_true(&bs).unwrap();
-        assert_eq!(rhs(&ct), cons_b(Term::bool_lit(false), bit_succ_app(&bs)));
+        assert_eq!(
+            rhs(&ct),
+            cons_b(covalence_hol_eval::mk_bool(false), bit_succ_app(&bs))
+        );
         let cf = bit_succ_cons_false(&bs).unwrap();
-        assert_eq!(rhs(&cf), cons_b(Term::bool_lit(true), bs.clone()));
+        assert_eq!(
+            rhs(&cf),
+            cons_b(covalence_hol_eval::mk_bool(true), bs.clone())
+        );
     }
 
     #[test]
@@ -629,7 +635,7 @@ mod tests {
     fn bits_term(bits: &[bool]) -> Term {
         let mut t = nil_b();
         for &b in bits.iter().rev() {
-            t = cons_b(Term::bool_lit(b), t);
+            t = cons_b(covalence_hol_eval::mk_bool(b), t);
         }
         t
     }
@@ -677,7 +683,7 @@ mod tests {
         while let Some((f, tail)) = cur.as_app() {
             // f = cons b ; extract b.
             let (_cons, b) = f.as_app().unwrap();
-            out.push(*b == Term::bool_lit(true));
+            out.push(*b == covalence_hol_eval::mk_bool(true));
             cur = tail.clone();
         }
         out

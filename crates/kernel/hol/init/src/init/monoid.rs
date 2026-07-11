@@ -220,7 +220,7 @@ pub fn nat_add_monoid() -> Monoid {
     use crate::init::nat;
     Monoid::new(
         covalence_hol_eval::defs::nat_add(),
-        Term::nat_lit(0u32),
+        covalence_hol_eval::mk_nat(0u32),
         nat::add_assoc(),
         nat::add_base(),
         nat::add_zero(),
@@ -235,7 +235,7 @@ pub fn nat_add_monoid() -> Monoid {
 pub fn nat_mul_monoid() -> Monoid {
     use crate::init::nat;
     let a = Term::free("a", covalence_core::Type::nat());
-    let one = Term::nat_lit(1u32);
+    let one = covalence_hol_eval::mk_nat(1u32);
     // left_id: ⊢ ∀a. 1 × a = a.
     let one_mul = (|| -> Result<Thm> {
         // mul_comm @ 1 @ a : 1 × a = a × 1 ; mul_one @ a : a × 1 = a.
@@ -366,7 +366,7 @@ mod tests {
     fn add_normalize_drops_units() {
         let m = nat_add_monoid();
         // (a + 0) + (0 + b)  normalizes to  a + b.
-        let zero = Term::nat_lit(0u32);
+        let zero = covalence_hol_eval::mk_nat(0u32);
         let expr = add(add(n("a"), zero.clone()), add(zero, n("b")));
         let thm = m.normalize(&expr).unwrap();
         assert_genuine(&thm);
@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn add_prove_eq_through_identities() {
         let m = nat_add_monoid();
-        let zero = Term::nat_lit(0u32);
+        let zero = covalence_hol_eval::mk_nat(0u32);
         // ((a + 0) + b) + 0  =  0 + (a + (0 + b))  — both sides are the word a·b.
         let lhs = add(add(add(n("a"), zero.clone()), n("b")), zero.clone());
         let rhs = add(zero.clone(), add(n("a"), add(zero, n("b"))));
@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn mul_normalize_drops_units() {
         let m = nat_mul_monoid();
-        let one = Term::nat_lit(1u32);
+        let one = covalence_hol_eval::mk_nat(1u32);
         // (a × 1) × (1 × b)  →  a × b.
         let expr = mul(mul(n("a"), one.clone()), mul(one, n("b")));
         let thm = m.normalize(&expr).unwrap();

@@ -103,7 +103,7 @@ fn nat() -> Type {
 }
 
 fn zero() -> Term {
-    Term::nat_lit(covalence_types::Nat::zero())
+    covalence_hol_eval::mk_nat(covalence_types::Nat::zero())
 }
 
 /// `streamConst none : stream (option α)` — the carrier stream behind
@@ -1634,7 +1634,7 @@ mod tests {
     }
 
     fn nat_lit(n: u32) -> Term {
-        Term::nat_lit(covalence_types::Nat::from_inner(n.into()))
+        covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(n.into()))
     }
 
     #[test]
@@ -1842,7 +1842,7 @@ mod tests {
         // P = λl. T. nil_case ⊢ T; cons_case ⊢ ∀x xs. T ⟹ T. Conclude ∀l. T.
         use crate::init::logic::truth;
         let a = alpha();
-        let p = Term::abs(list(a.clone()), Term::bool_lit(true)); // λl. T
+        let p = Term::abs(list(a.clone()), covalence_hol_eval::mk_bool(true)); // λl. T
         // P nil = T (β), so pl_nil ⊢ P nil from ⊢ T.
         let pl_nil = {
             let t = truth(); // ⊢ T

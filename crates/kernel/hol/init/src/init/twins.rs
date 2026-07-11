@@ -157,7 +157,7 @@ fn unit_predicate() -> Result<Term> {
 /// subtype: the selector `P` holds of `T`. Shared by [`unit_typedef`] (as the
 /// `new_type_definition` witness) and the round-trip / singleton derivations.
 fn unit_witness() -> Result<Thm> {
-    let t_lit = Term::bool_lit(true);
+    let t_lit = covalence_hol_eval::mk_bool(true);
     // Build `⊢ (λb. b = T) T` from `⊢ T = T` and the β-equation
     // `⊢ (λb. b = T) T = (T = T)`.
     let redex = Term::app(unit_predicate()?, t_lit.clone());
@@ -187,7 +187,7 @@ pub fn unit_typedef() -> Result<TypeDef> {
 /// `P T` (which β-reduces to `T = T`) of `rep_abs_fwd` with the witness.
 /// The `TypeSpec`-unit analogue is [`Thm::spec_rep_abs_fwd`] on `T`.
 pub fn unit_rep_abs_t(td: &TypeDef) -> Result<Thm> {
-    let t_lit = Term::bool_lit(true);
+    let t_lit = covalence_hol_eval::mk_bool(true);
     // rep_abs_fwd at r := T : ⊢ P T ⟹ rep (abs T) = T.
     let fwd_at_t = td.rep_abs_fwd()?.all_elim(t_lit)?;
     fwd_at_t.imp_elim(unit_witness()?) // ⊢ rep (abs T) = T
@@ -338,7 +338,7 @@ mod tests {
         assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().expect("an equation");
         // rhs is the witness `T`; lhs is `rep (abs T)`.
-        assert_eq!(rhs, &Term::bool_lit(true));
+        assert_eq!(rhs, &covalence_hol_eval::mk_bool(true));
         // lhs = App(rep, App(abs, T)).
         let TermKind::App(rep, inner) = lhs.kind() else {
             panic!("lhs is rep (abs T)")
@@ -348,7 +348,7 @@ mod tests {
             panic!("inner is abs T")
         };
         assert_eq!(abs, &td.abs);
-        assert_eq!(w, &Term::bool_lit(true));
+        assert_eq!(w, &covalence_hol_eval::mk_bool(true));
     }
 
     /// `rep`'s image is `{T}`: `⊢ rep a = T` for a free `a : τ`.
@@ -359,7 +359,7 @@ mod tests {
         let thm = unit_rep_is_t(&td, a.clone()).expect("rep a = T");
         assert!(thm.hyps().is_empty());
         let (lhs, rhs) = thm.concl().as_eq().unwrap();
-        assert_eq!(rhs, &Term::bool_lit(true));
+        assert_eq!(rhs, &covalence_hol_eval::mk_bool(true));
         assert_eq!(lhs, &Term::app(td.rep.clone(), a));
     }
 
@@ -379,7 +379,7 @@ mod tests {
         // content. Feed two distinct τ inhabitants (`abs T` and a free `w:τ`);
         // the result `⊢ abs T = w` is the same fact `Thm::unit_eq` delivers for
         // the TypeSpec unit.
-        let abs_t = Term::app(td.abs.clone(), Term::bool_lit(true));
+        let abs_t = Term::app(td.abs.clone(), covalence_hol_eval::mk_bool(true));
         let w = Term::free("w", td.tau.clone());
         let inst = thm
             .all_elim(abs_t.clone())

@@ -53,7 +53,7 @@
       "covalence-core": 55,
       "covalence-core-test-guest": 4,
       "covalence-hol-eval": 61,
-      "covalence-init": 72
+      "covalence-init": 6
     },
     "has_no_obs": {},
     "cov-script-reduce": {
@@ -66,7 +66,7 @@
     "unfold_term_spec": 40,
     "termkind-literals": 123,
     "tycon-obs": 0,
-    "term-literal-ctors": 192,
+    "term-literal-ctors": 126,
     "has_no_obs": 0,
     "cov-script-reduce": 18
   },

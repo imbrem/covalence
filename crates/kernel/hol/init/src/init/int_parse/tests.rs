@@ -25,7 +25,13 @@ fn decide_head_is(k: u64, input: &[u8]) -> (Thm, bool) {
     let oc_term = head_is(k, &ss);
     if input.is_empty() {
         let hn = head_nil(&char_t()).unwrap(); // head nil = none
-        let cn = case_none(&char_t(), &bool_t(), &Term::bool_lit(false), &char_is(k)).unwrap();
+        let cn = case_none(
+            &char_t(),
+            &bool_t(),
+            &covalence_hol_eval::mk_bool(false),
+            &char_is(k),
+        )
+        .unwrap();
         let eq = Thm::refl(oc_term)
             .unwrap()
             .rhs_conv(|t| t.rw_all(&hn))
@@ -41,7 +47,7 @@ fn decide_head_is(k: u64, input: &[u8]) -> (Thm, bool) {
     let cse = case_some(
         &char_t(),
         &bool_t(),
-        &Term::bool_lit(false),
+        &covalence_hol_eval::mk_bool(false),
         &char_is(k),
         &c0,
     )
@@ -136,7 +142,7 @@ fn eval_parse_int(
     } else {
         // `none`.
         lifted
-            .trans(lift_none(&Term::bool_lit(neg)).unwrap())
+            .trans(lift_none(&covalence_hol_eval::mk_bool(neg)).unwrap())
             .unwrap()
     }
 }
@@ -162,8 +168,8 @@ fn lift_and_select_lemmas_are_genuine() {
     for t in [
         lift_pos_some(&n, &suf).unwrap(),
         lift_neg_some(&n, &suf).unwrap(),
-        lift_none(&Term::bool_lit(true)).unwrap(),
-        lift_none(&Term::bool_lit(false)).unwrap(),
+        lift_none(&covalence_hol_eval::mk_bool(true)).unwrap(),
+        lift_none(&covalence_hol_eval::mk_bool(false)).unwrap(),
     ] {
         assert!(t.hyps().is_empty(), "lift lemma must be axiom-free");
     }

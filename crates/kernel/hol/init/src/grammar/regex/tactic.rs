@@ -69,7 +69,7 @@ fn nil_w() -> Term {
 
 fn cons_w(b: u8, rest: Term) -> Result<Term> {
     crate::init::list::cons(u8ty())
-        .apply(Term::u8_lit(b))?
+        .apply(covalence_hol_eval::mk_u8(b))?
         .apply(rest)
 }
 
@@ -229,7 +229,7 @@ fn build(c: &Core, plan: &Plan, vars: &[VarInfo]) -> Result<(Thm, Term)> {
         }
         (CoreKind::Eps, Plan::Eps) => Ok((ir::match_eps(&a)?, nil_w())),
         (CoreKind::Lit(b), Plan::Lit) => {
-            let th = ir::match_lit(&a)?.all_elim(Term::u8_lit(*b))?;
+            let th = ir::match_lit(&a)?.all_elim(covalence_hol_eval::mk_u8(*b))?;
             Ok((th, singleton_w(*b)?))
         }
         (CoreKind::Alt(x, y), Plan::AltL(p)) => {

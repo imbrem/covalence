@@ -378,7 +378,7 @@ impl Tactic for NotIntro {
         let p = dest_not(&it.goal).ok_or_else(|| {
             ScriptError::Syntax(format!("not-intro: goal is not `¬_`: {}", it.goal))
         })?;
-        it.goal = HolLightCtx::new().mk_imp(p, Term::bool_lit(false));
+        it.goal = HolLightCtx::new().mk_imp(p, covalence_hol_eval::mk_bool(false));
         Ok(it.run(rest).await?.not_intro()?)
     }
     async fn rule(&self, a: &[SExpr], c: &mut CheckCtx<'_>) -> R<Thm> {
@@ -756,7 +756,7 @@ impl Tactic for Induct {
             )));
         }
         let p = Term::abs(Type::nat(), body.clone());
-        let zero = Term::nat_lit(0u64);
+        let zero = covalence_hol_eval::mk_nat(0u64);
 
         let base_body = prove_with(
             &subst::open(&body, &zero),

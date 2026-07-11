@@ -975,8 +975,8 @@ mod tests {
 
     #[test]
     fn conjuncts_splits_a_conjunction() {
-        let p = Thm::assume(Term::bool_lit(true)).unwrap();
-        let q = Thm::assume(Term::bool_lit(false)).unwrap();
+        let p = Thm::assume(covalence_hol_eval::mk_bool(true)).unwrap();
+        let q = Thm::assume(covalence_hol_eval::mk_bool(false)).unwrap();
         let conj = p.clone().and_intro(q.clone()).unwrap();
         let (l, r) = conj.conjuncts().unwrap();
         assert_eq!(l.concl(), p.concl());
@@ -1049,7 +1049,7 @@ mod tests {
     // ---- δ-reduction ----
 
     fn nat_lit(n: u32) -> Term {
-        Term::nat_lit(covalence_types::Nat::from_inner(n.into()))
+        covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(n.into()))
     }
 
     fn add(x: Term, y: Term) -> Term {
@@ -1108,7 +1108,9 @@ mod tests {
 
     #[test]
     fn thm_delta_all_unfolds_in_conclusion() {
-        let tt = Term::bool_lit(true).and(Term::bool_lit(true)).unwrap();
+        let tt = covalence_hol_eval::mk_bool(true)
+            .and(covalence_hol_eval::mk_bool(true))
+            .unwrap();
         let thm = Thm::assume(tt.clone()).unwrap();
         let and_spec = covalence_hol_eval::defs::and_spec();
         let out = thm.delta_all(and_spec.symbol()).unwrap();

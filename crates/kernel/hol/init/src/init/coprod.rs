@@ -339,7 +339,7 @@ pub fn inl_ne_inr(a: &Type, b: &Type, av: &Term, bv: &Term) -> Result<Thm> {
         .trans(rep_cong)?
         .trans(round_trip(a, b, &rrel, bv, false)?)?; // {H} ⊢ LR = RR
     // Apply both sides to (av, bv, T) and βι-reduce.
-    let tt = Term::bool_lit(true);
+    let tt = covalence_hol_eval::mk_bool(true);
     let applied = rel_eq
         .cong_fn(av.clone())?
         .cong_fn(bv.clone())?
@@ -396,7 +396,7 @@ fn left_ne_right(a: &Type, b: &Type, av: &Term, bv: &Term) -> Result<Thm> {
     let eq = lrel.clone().equals(rrel.clone())?;
     let h = Thm::assume(eq.clone())?;
     // Apply both sides to (av, bv, T) and βι-reduce.
-    let tt = Term::bool_lit(true);
+    let tt = covalence_hol_eval::mk_bool(true);
     let applied = h
         .cong_fn(av.clone())?
         .cong_fn(bv.clone())?
@@ -432,7 +432,7 @@ fn rel_inj(rel: &Term, rel2: &Term, v: &Term, x: &Term, y: &Term, z: bool) -> Re
     let applied = beta_nf_concl(
         h.cong_fn(x.clone())?
             .cong_fn(y.clone())?
-            .cong_fn(Term::bool_lit(z))?,
+            .cong_fn(covalence_hol_eval::mk_bool(z))?,
     )?; // {H} ⊢ (z' ∧ (v = v)) = (z' ∧ (v = v2))
     // Fold `v = v` to `T`; `simp` then collapses the (fully literal) LHS
     // discriminator to `T`.

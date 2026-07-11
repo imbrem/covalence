@@ -176,7 +176,7 @@ impl<'a> RuleSet<'a> {
 pub fn conj(clauses: Vec<Term>) -> Result<Term> {
     let mut iter = clauses.into_iter().rev();
     let Some(mut acc) = iter.next() else {
-        return Ok(Term::bool_lit(true));
+        return Ok(covalence_hol_eval::mk_bool(true));
     };
     for cl in iter {
         acc = cl.and(acc)?;

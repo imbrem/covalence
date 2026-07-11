@@ -101,7 +101,9 @@ static R_LEAVES: LazyLock<Leaves> = LazyLock::new(|| {
     Leaves {
         empty: r_empty(&a),
         eps: r_eps(&a),
-        lit: Box::new(std::array::from_fn(|b| r_lit(&a, Term::u8_lit(b as u8)))),
+        lit: Box::new(std::array::from_fn(|b| {
+            r_lit(&a, covalence_hol_eval::mk_u8(b as u8))
+        })),
     }
 });
 

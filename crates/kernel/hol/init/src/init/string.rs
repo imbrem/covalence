@@ -241,7 +241,10 @@ mod tests {
                 .unwrap(),
             Type::bytes()
         );
-        assert_eq!(Term::u8_lit(255).type_of().unwrap(), byte_elem());
+        assert_eq!(
+            covalence_hol_eval::mk_u8(255).type_of().unwrap(),
+            byte_elem()
+        );
         // The empty `Blob` and our `bytes.empty` are both `bytes` (their
         // equality is a `cons`-recursion fact, deferred — see SKELETONS).
         assert_eq!(

@@ -93,6 +93,23 @@ derived `zero`-base `nat_induct` transport (λ-abstract the motive, `mk_comb`
 the bridge, `beta_conv` both sides, `eq_mp` the base premise) if a consumer
 needs induction stated at `zero` before EG5.
 
+## P2 facade sweep — remaining literal-ctor sites (EG5-prep)
+
+The `lit::mk_*`/`as_*` facade is the eventual single build/recognize chokepoint
+(so EG5's swap reduces to the `Lit::to_term` flip). The high-traffic init sweep
+is DONE (init `term-literal-ctors` ratchet 72→6). Remaining direct-ctor sites,
+deliberately left as subtle/serialization/shape-test surfaces:
+
+- **init `script/infer.rs`** — 4 code sites (`:283`/`:427` blob, `:298` nat
+  builders on the `.cov` literal-inference path; `:863` a test asserting the
+  exact `Term::blob(vec![1,2,3])` shape it produces + its `:858` doc comment).
+  Sweep the three builders and the `want` shape together in a follow-up.
+- **init `sexp.rs`** — 2 sites (`:290` blob / `:301` small_int deserialization
+  builders), paired with this file's `TermKind::Blob/SmallInt` recognizer arms
+  (tracked by the `purge-ratchet.json` ctor exception); flip together at EG5.
+- **downstream (out of this stage's scope)** — `kernel/hol/traits`
+  `hol_light_ctx.rs` (2× `bool_lit`), `proof/alethe` `hol.rs` (3× `bool_lit`).
+
 ## Minor
 
 - **`prove_true` is single-step only.** It reduces one redex and bridges `= T`;

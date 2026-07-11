@@ -136,7 +136,6 @@ impl<T: Clone + Send + Sync + 'static> LazyMap<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_core::Term;
     use covalence_hol_eval::EvalThm as Thm;
 
     fn rt() -> tokio::runtime::Runtime {
@@ -147,7 +146,7 @@ mod tests {
 
     /// A trivial theorem `⊢ 0 = 0`.
     fn refl0() -> Thm {
-        Thm::refl(Term::nat_lit(0u64)).unwrap()
+        Thm::refl(covalence_hol_eval::mk_nat(0u64)).unwrap()
     }
 
     #[test]

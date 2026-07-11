@@ -180,7 +180,7 @@
     },
     "base+HOL+eval": {
       "files": 90,
-      "nonTestLoc": 13265,
+      "nonTestLoc": 13281,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -211,13 +211,13 @@
         "crates/kernel/base/trusted/src/rel.rs:309: Thm::new(lang, App(Join(r, s), (a, b)))"
       ],
       "publicSurface": {
-        "fn": 559,
+        "fn": 563,
         "struct": 74,
         "enum": 20,
         "trait": 25,
         "macro": 34
       },
-      "publicSurfaceTotal": 712,
+      "publicSurfaceTotal": 716,
       "defsCoupling": 165,
       "defsCouplingLocations": [
         "165 refs (list suppressed >60)"
@@ -289,7 +289,7 @@
     },
     "base+HOL+eval+wasm": {
       "files": 90,
-      "nonTestLoc": 13265,
+      "nonTestLoc": 13281,
       "unsafe": 0,
       "unsafeLocations": [],
       "mintSites": 24,
@@ -320,13 +320,13 @@
         "crates/kernel/base/trusted/src/rel.rs:309: Thm::new(lang, App(Join(r, s), (a, b)))"
       ],
       "publicSurface": {
-        "fn": 559,
+        "fn": 563,
         "struct": 74,
         "enum": 20,
         "trait": 25,
         "macro": 34
       },
-      "publicSurfaceTotal": 712,
+      "publicSurfaceTotal": 716,
       "defsCoupling": 165,
       "defsCouplingLocations": [
         "165 refs (list suppressed >60)"

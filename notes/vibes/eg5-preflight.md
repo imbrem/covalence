@@ -1,6 +1,8 @@
 # EG5 preflight — literal-leaf deletion readiness analysis
 
-*AI-authored preflight (2026-07), analysis only — no kernel changes. Scope: the
+*AI-authored preflight (2026-07; UNBLOCKED update 2026-07-11 recording the two
+maintainer decisions in §0.5 + the P1 guard extension landed this stage — the
+EG5 deletion itself is still NOT executed). Scope: the
 irreversible EG5 stage of the literal endgame
 ([`literal-endgame-design.md`](./literal-endgame-design.md) §6,
 [`tcb-holomega-roadmap.md`](./tcb-holomega-roadmap.md) Front A) — deleting
@@ -9,10 +11,41 @@ Grounded against this worktree's post-EG3a/EG3b/A3 HEAD (`d8f4202e`; goldens
 verified green: `manifest_matches_golden` +
 `tohol_unfolding_rules_are_exclusive` pass).*
 
-**VERDICT: BLOCKED** — two named missing prerequisites (§5). The mechanical
-surface is fully enumerable and mostly compile-enforced, but the roadmap's own
-hard-sequencing gate (float-lander gap) is open, and the `SmallInt` (and float
-bit-pattern) structural replacement is unspecified in every design document.
+**VERDICT: UNBLOCKED-WITH-DECISIONS** (was BLOCKED). Two maintainer design
+decisions (2026-07-11, §0.5) resolve the two named preflight blockers:
+
+1. **Nat's structural target is a *binary* encoding (log-sized), NOT a unary
+   `zero`/`succ` tower.** This dissolves the O(value) perf wall — a moderate
+   literal like `0xD800` lowers to a ~16-deep binary term, not a 55k-node
+   succ-tower. `crates/kernel/hol/init/src/init/nat_binary.rs` already carries
+   the `double n = 2n` / `succ` binary normal form with surjectivity proved;
+   that is the intended encoding for the eventual `ToHolNat` structural
+   unfolding.
+2. **`SmallInt` becomes another `toHOL` *leaf*** — a `ToHolSmallInt` op over
+   `Val<SmallIntLiteral>` (exactly like `ToHolNat`/`ToHolInt`), with **NO
+   structural unfolding rule**. Because it has no structural partner it needs
+   no exclusivity-guard pairing and is deletable as a plain `toHOL` denotation.
+   f32/f64 are stored as SmallInt bit-patterns (tags `U32`/`U64`), so they ride
+   along on the same treatment — their `ToHolF32`/`F64` leaf ops already exist.
+   `SmallInt` is barely used, so churn is low. This means the float-lander gap
+   (old blocker 1) no longer gates deletion: unlanded float facts keep their
+   `ToHolSmallInt`/`ToHolF32/F64` *leaf* denotation, they are not stranded.
+
+Consequently the guard-pairing and structural-unfolding story applies to
+**nat, int, bytes only** (the three families that carry both a `*Val` reify
+rule and a future structural `*Mk`/`Zero`/`Succ`/`Nil`/`Cons` rule);
+smallint/float stay leaf-only.
+
+---
+
+## 0.5 Maintainer decisions (2026-07-11) — the unblock
+
+The two decisions above are recorded here as the authoritative resolution of
+the old §5 blockers. Their downstream consequences are folded into the S3/S4
+plan sections (§2) and the blocker table (§5), which now read
+`RESOLVED`/`UNBLOCKED`. The one remaining maintainer input — unary vs binary
+concrete numerals (old blocker 3, the perf wall) — is **resolved by decision 1
+in favor of the binary form**.
 
 ---
 
@@ -55,33 +88,43 @@ constructor/recognizer call sites, whole workspace.
   `Int`→canonical `mkInt` pair form (`eval/defs/int.rs:86`),
   `Bytes`→`bytesNil`/`bytesConsNat` chain (`eval/defs/blob.rs:94`;
   declaration-only is fine — the admitted rules pin the denotation),
-  `Bool`→`tru`/`fal`, `Small`→**unspecified (§5.2)**.
+  `Bool`→`tru`/`fal`, `Small`→a `ToHolSmallInt` **leaf** over
+  `Val<SmallIntLiteral>` (decision 2, §0.5 — a `toHOL` denotation, NOT a
+  structural form; f32/f64 bit patterns route through it).
 - `eval/src/lit.rs` — facade `mk_*`/`as_*` unchanged; `kind_name` literal arms
   die.
 
 ### 1c. Eval tier — the atomic-swap surface
 
 - **OUT of `eval_rules!`** (same-family commit as the structural rules —
-  guard-enforced): `ToHolNatVal`, `ToHolIntVal`, `ToHolBytesVal`,
-  `ToHolF32Val`, `ToHolF64Val` (`rules.rs:157,:219,:234,:257,:273`).
+  guard-enforced; **nat/int/bytes only** per decision 2): `ToHolNatVal`,
+  `ToHolIntVal`, `ToHolBytesVal` (`rules.rs:157,:219,:234`).
+  `ToHolF32Val`/`ToHolF64Val` (`rules.rs:257,:273`) **STAY** — they reify to a
+  `ToHolSmallInt` leaf (decision 2), not to a deleted structural form, so they
+  are unguarded and unswapped (only their reify *target* flips from the
+  `SmallInt` literal to the `ToHolSmallInt` leaf, in S3).
   `ZeroLitCert` (`rules.rs:476`) dies with the `Nat` literal (body is
   compile-enforced) — it is object-level (`⊢ zero = ⌜0⌝` inside `IsThm`), NOT
   part of the base-tier contradiction pair, so it may die in the deletion
   commit rather than the swap commit.
-- **IN**: `ToHolNatZero`/`ToHolNatSucc`, `ToHolBytesNil`/`ToHolBytesCons`,
-  `ToHolIntMk` (+ the §5.2 uN/f32/f64 story). Names must keep the
+- **IN**: `ToHolNatZero`/`ToHolNatSucc` (over the **binary** `nat_binary`
+  `double`/`succ` form, decision 1), `ToHolBytesNil`/`ToHolBytesCons`,
+  `ToHolIntMk`, and a `ToHolSmallInt` **leaf** (decision 2 — a plain `toHOL`
+  denotation, no structural partner, so NOT guarded). Names must keep the
   `ToHolNatZero`/`ToHolNatSucc` prefixes the guard string-matches.
 - **STAY, conclusions flip implicitly via `Lit::to_term`**: `NatAddCert`
   (already symbolic), `PairVal`, `NatArithCert`, `SuccCert`, `IntArithCert`,
   `BytesCert`, `FixedWidthCert`, `LitEqCert`, `CoercionCert`, `FloatCert`,
   `HolApp`.
-- **`tohol.rs` landers**: `nat_add_thm_symbolic` survives verbatim. Every
-  OTHER symbolic lander (`int_add/mul/neg`, `bytes_cat/len`,
-  `f32/f64_add/mul`) transports through the dying `*Val` reify rules
-  (`int_bin_reify`/`f32_bin_reify`/… + `transport_symbolic`) — all must be
-  rewritten onto the structural rules, and the concrete self-floor witnesses
-  (`int_arith_thm`/`bytes_thm`/`float_bits_thm`) inherit structural-form
-  conclusions. `nat_add_thm` (the reifying exemplar) flips its reify target.
+- **`tohol.rs` landers**: `nat_add_thm_symbolic` survives verbatim. The
+  int/bytes symbolic landers (`int_add/mul/neg`, `bytes_cat/len`) transport
+  through the dying `*Val` reify rules (`int_bin_reify` + `transport_symbolic`)
+  and must be rewritten onto the int/bytes structural rules; the concrete
+  self-floor witnesses (`int_arith_thm`/`bytes_thm`) inherit structural-form
+  conclusions. `nat_add_thm` (the reifying exemplar) flips its reify target to
+  the binary nat form. The **float landers** (`f32/f64_add/mul`) keep routing
+  through the surviving `f{32,64}_bin_reify` + `ToHolF32/F64Val` → the
+  `ToHolSmallInt` leaf, so they need no structural rewrite (decision 2).
 - **EG3b bridge — delete wholesale** (already enumerated in
   `eval/SKELETONS.md`): `boolean.rs` (`tru_eq_lit`/`fal_eq_lit`/…),
   `derived.rs` literal-premise tolerances (:955, :985), the
@@ -117,12 +160,18 @@ constructor/recognizer call sites, whole workspace.
 
 Pre-commits (additive, reversible, land now):
 
-- **P1 — guard extension.** `tohol_unfolding_rules_are_exclusive`
-  (`eval/src/rules.rs:515`) covers ONLY the nat pair
-  (`ToHolNatVal` vs `ToHolNatZero/Succ` prefixes). The identical base-tier
-  `⊢False` class exists per family (`ToHolIntVal` + `ToHolIntMk` ⇒
-  `Val(int_lit)` = `Val(mkInt-term)` via sym+trans — false definitional Eq).
-  Extend to all five families before any structural rule exists in-tree.
+- **P1 — guard extension (DONE, this stage).**
+  `tohol_unfolding_rules_are_exclusive` (`eval/src/rules.rs`) originally covered
+  ONLY the nat pair (`ToHolNatVal` vs `ToHolNatZero/Succ` prefixes). The
+  identical base-tier `⊢False` class exists per family (`ToHolIntVal` +
+  `ToHolIntMk` ⇒ `Val(int_lit)` = `Val(mkInt-term)` via sym+trans — false
+  definitional Eq). Extended to the **three families that carry both a `*Val`
+  reify rule and a future structural rule — nat, int, bytes** — via a per-family
+  exclusivity table keyed on the family name and its structural-rule prefixes.
+  **Not** smallint/float (leaf-only per decision 2, no structural partner) and
+  **not** the object-level `ZeroLitCert`. Adding a structural `*Mk` rule for a
+  family REQUIRES dropping that family's `*Val` rule in the same commit — the
+  guard fires at `cargo test` otherwise.
 - **P2 — C0 facade sweep.** Migrate every downstream direct constructor /
   recognizer (1e; ~220 init sites + traits/alethe/haskell/tests) onto the eval
   facade so post-sweep `grep Term::nat_lit` outside core + `thm/lit.rs` is
@@ -143,15 +192,25 @@ interact), so stage lowest-blast-radius first:
 - **S2 — int swap** (one commit): `ToHolIntMk` in, `ToHolIntVal` out,
   `Lit::Int` flips to the **canonical** pair form, int landers rewritten.
   Carries the §6.2 int-disequality audit note in `LitEqCert`'s docstring.
-- **S3 — smallint/float swap** (one commit): BLOCKED on §5.2 — no structural
-  target exists for `Lit::Small`, and `ToHolF32Val`/`ToHolF64Val` reify into
-  `SmallInt` literals, so this commit cannot be written today.
+- **S3 — smallint/float swap** (one commit): UNBLOCKED via decision 2.
+  `SmallInt`/f32/f64 become plain `toHOL` **leaves** — no structural rule, no
+  guard pairing. `Lit::Small` flips its reify target to a `ToHolSmallInt` op
+  over `Val<SmallIntLiteral>` (the same leaf shape as `ToHolNatVal` before nat
+  goes structural); `ToHolF32Val`/`ToHolF64Val` keep reifying to the
+  bit-pattern leaf (now `ToHolSmallInt`, not the deleted `SmallInt` literal).
+  Because there is no structural `SmallInt` partner rule, this commit does NOT
+  touch the exclusivity guard and can be written today. Unlanded float facts
+  are not stranded — they retain their leaf denotation.
 - **S4 — nat + bool swap** (one commit, the big one):
-  `ToHolNatZero`/`ToHolNatSucc` in; `ToHolNatVal` out (guard forces same
-  commit); `Lit::{Nat, Bool}` flip; `truth()`/`falsity()`/`as_bool` repoint to
-  `tru`/`fal`; `NatInduct`/`ZeroNeSucc` flip to `zero`-form (1d); EG3b bridge
-  deleted (1c); init induction/normal-form consumers repaired (1e). This is
-  where the init semantic churn concentrates.
+  `ToHolNatZero`/`ToHolNatSucc` in — over the **binary** `nat_binary`
+  `double`/`succ` normal form (decision 1), NOT a unary succ-tower;
+  `ToHolNatVal` out (guard forces same commit); `Lit::{Nat, Bool}` flip
+  (`Nat` → the binary structural form via `nat_binary.rs`);
+  `truth()`/`falsity()`/`as_bool` repoint to `tru`/`fal`;
+  `NatInduct`/`ZeroNeSucc` flip to `zero`-form (1d); EG3b bridge deleted (1c);
+  init induction/normal-form consumers repaired (1e). The binary encoding keeps
+  moderate-magnitude numeral proofs log-sized (no 55k-node towers), so this is
+  where the init semantic churn concentrates but NOT a perf regression.
 - **S5 — the deletion commit** (irreversible): delete the 5 `TermKind`
   variants + constructors + all 1a arms + `ZeroLitCert` + `kind_name` arms +
   `hash.rs`/`sexp.rs` literal arms; relocate `SmallIntLiteral` to the `Lit`
@@ -207,41 +266,37 @@ marks wasm32-adversarial-audit-gated.
   flip base-premise shape; the EG3b bool-bridge crossings; every
   `prove_true`/`reduce` consumer whose normal form was a literal. Days of
   proof repair, concentrated in nat/bool; bytes/int (S1/S2) are small.
-- **The honest perf wall (needs a maintainer decision, §5.3)**: post-S4 a
-  concrete numeral is a **unary** succ tower. Moderate-magnitude literal
-  proofs — `char.rs` surrogate bounds (`0xD800` ⇒ 55k-node towers per
-  literal), utf8/utf16 code points, `nat_parse`/`nat_div` radix arithmetic —
-  become O(value) per numeral on suites EG3b already slowed 1.5–1.7×.
-  Mitigations: route through symbolic landers, or a binary-numeral defined
-  form (`init/nat_binary.rs` / `nat_bits_iso.rs` exist as theory), or accept
-  and measure. Not addressed by any EG5 design text.
+- **The perf wall — RESOLVED (decision 1, §0.5): post-S4 a concrete numeral is
+  a *binary* term, not a unary succ tower.** Moderate-magnitude literal proofs
+  — `char.rs` surrogate bounds (`0xD800`), utf8/utf16 code points,
+  `nat_parse`/`nat_div` radix arithmetic — lower to log-sized binary terms
+  (~16 deep for `0xD800`, not 55k nodes), so they stay O(log value) per
+  numeral, not O(value). The binary normal form is `init/nat_binary.rs`'s
+  `double n = 2n` / `succ` with surjectivity proved; `ToHolNatZero/Succ` unfold
+  onto it. No longer a wall.
 - **Content addresses**: every literal-containing term re-addresses
   (`init/hash.rs` tags are documented in-flux, no persisted-hash compat — the
   roadmap's "changes content-addresses" is acknowledged, low-risk today).
 
-## 5. Blockers (the BLOCKED verdict)
+## 5. Blockers — all RESOLVED (see §0.5)
 
-1. **Float symbolic-lander gap — open, roadmap-gated.** Hard sequencing
-   (`tcb-holomega-roadmap.md:310`): "float-lander-gap … all precede EG5", and
-   the stage is the maintainer's go/no-go. `eval/SKELETONS.md` records only
-   the four binary add/mul landers exist; sub/div/min/max/copysign, all
-   unaries, comparisons, conversions have none. Until closed, deleting
-   `SmallInt` strands every unlanded float fact's big-value path.
-2. **`SmallInt` (and float bit-pattern) structural replacement is
-   unspecified.** The roadmap's structural-rule list (`ToHolNatZero/Succ`,
-   `ToHolBytesNil/Cons`, `ToHolIntMk`) has NO uN entry, yet
-   `TermKind::SmallInt` is on the delete list, `ToHolF32/F64Val` reify into
-   it, and `FixedWidthCert`/`FloatCert`/`CoercionCert`/`LitEqCert`-on-`Small`
-   conclusions are made of it. A `uN.fromNat ⌜n⌝` unary form is infeasible at
-   real bit-pattern magnitudes (2^32/2^64 towers), so the replacement is
-   either new `ToHolU32/U64`-style structural rules over symbolic nat leaves,
-   per-family symbolic conclusions (colliding with the EG4 `Dyn` wall), or a
-   binary numeral form — a genuine maintainer design fork, not a mechanical
-   choice. **S3 cannot be written until this is decided.**
-3. **Concrete-numeral feasibility decision** (§4 perf wall) — technically
-   executable without it, but the utf8/utf16/parse suites are hot enough that
-   proceeding without the decision invites an immediate revert-pressure
-   incident on a one-way door.
+1. **Float symbolic-lander gap — RESOLVED (decision 2).** It no longer gates
+   deletion: with `SmallInt`/f32/f64 as plain `toHOL` **leaves**
+   (`ToHolSmallInt`, `ToHolF32/F64Val` surviving), an unlanded float fact keeps
+   its leaf denotation rather than being stranded on a missing structural path.
+   Landing the remaining symbolic float binaries/unaries/comparisons/conversions
+   stays desirable (proving-power) but is decoupled from the one-way EG5 door.
+   The four binary add/mul landers still exist (`eval/SKELETONS.md`).
+2. **`SmallInt` (and float bit-pattern) structural replacement — RESOLVED
+   (decision 2): there is no structural replacement, by design.** `SmallInt`
+   becomes a `ToHolSmallInt` leaf over `Val<SmallIntLiteral>`; `ToHolF32/F64Val`
+   reify into that leaf; `FixedWidthCert`/`FloatCert`/`CoercionCert`/
+   `LitEqCert`-on-`Small` conclusions read the leaf. No `uN` structural rule, no
+   guard pairing, no unary-tower infeasibility. `SmallInt` is barely used, so
+   churn is low.
+3. **Concrete-numeral feasibility — RESOLVED (decision 1): binary, not unary.**
+   The `nat_binary.rs` `double`/`succ` form keeps hot utf8/utf16/parse suites
+   log-sized; the one-way door no longer risks a perf-driven revert.
 
 Named risks that remain AFTER unblocking (want maintainer eyes, not blockers):
 
@@ -251,8 +306,9 @@ Named risks that remain AFTER unblocking (want maintainer eyes, not blockers):
   `Lit::Int(i).to_term()` emits the **canonical** representative and the cert
   refuses non-canonical operand shapes — needs an explicit audit paragraph in
   the S2 commit.
-- The guard-extension gap (P1) — currently nothing forbids co-admitting
-  `ToHolIntVal` with `ToHolIntMk`.
+- The guard-extension gap (P1) — CLOSED this stage: the per-family
+  exclusivity table now forbids co-admitting `ToHolIntVal`/`ToHolBytesVal` with
+  their structural partners as well as the nat pair.
 - The wasm32 class (§3) on the new structural builders.
 - One-way-ness itself: deleted public ctors + re-addressed content hashes +
   a manifest swap with no reverse migration.
@@ -263,10 +319,10 @@ The mechanical deletion surface is completely enumerated, compile-enforced,
 and smaller than it looks (the facade + EG3b + A3 prep did their job: core's
 own literal coupling is ~10 walker arms, 5 constructors, and 2 rule checks).
 The swap choreography is well-defined and per-family stageable with the
-extended guard as tripwire. What blocks EG5 is not code volume but two
-unresolved design inputs — the float-lander gap the roadmap itself gates on,
-and the missing `SmallInt`/bit-pattern structural story — plus one perf
-decision (unary vs binary concrete numerals) that should be made deliberately
-before an irreversible door. Recommended immediate work that is NOT blocked:
-P1 (guard extension), P2 (facade sweep), P3 (wasm32 job) — all additive, all
-shrink the eventual swap to its essential, audited core.
+extended guard as tripwire. **EG5 is UNBLOCKED (§0.5):** the two former design
+inputs are decided — `SmallInt`/f32/f64 stay `toHOL` leaves (no structural
+story needed, so the float-lander gap is decoupled from the one-way door), and
+concrete nat numerals are binary (`nat_binary.rs`), dissolving the perf wall.
+The remaining prep is additive: P1 (guard extension — DONE this stage), P2
+(facade sweep — in progress), P3 (wasm32 job) — all shrink the eventual swap to
+its essential, audited core.

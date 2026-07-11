@@ -314,7 +314,7 @@ fn concat_exists_false(m: &Monoid, w: &Term, a: &Term, b: &Term, slot: ConjSlot)
 /// hypothesis `p` (i.e. `pf : {p} ⊢ F`), and that `F ⟹ p` by ex falso,
 /// deductive antisymmetry yields `⊢ p = F`.
 fn false_eq_of(p: &Term, pf_p_to_false: Thm) -> Result<Thm> {
-    let false_t = Term::bool_lit(false);
+    let false_t = covalence_hol_eval::mk_bool(false);
     // {F} ⊢ p  (ex falso).
     let from_false = Thm::assume(false_t.clone())?.false_elim(p.clone())?;
     // `{F}⊢p` & `{p}⊢F`  ⟹  `⊢ p = F`.
@@ -813,7 +813,10 @@ mod tests {
         assert_genuine(&thm);
         // mem w ε = (w = 0).
         let (_, rhs) = thm.concl().as_eq().unwrap();
-        assert_eq!(rhs, &w.clone().equals(Term::nat_lit(0u32)).unwrap());
+        assert_eq!(
+            rhs,
+            &w.clone().equals(covalence_hol_eval::mk_nat(0u32)).unwrap()
+        );
     }
 
     #[test]
@@ -821,7 +824,7 @@ mod tests {
         let m = nat_add_monoid();
         let thm = mem_empty_lang(&m, &word("w")).unwrap();
         assert_genuine(&thm);
-        assert_eq!(rhs_of(&thm).unwrap(), Term::bool_lit(false));
+        assert_eq!(rhs_of(&thm).unwrap(), covalence_hol_eval::mk_bool(false));
     }
 
     #[test]

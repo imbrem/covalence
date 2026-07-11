@@ -410,7 +410,10 @@ pub fn bin_go_cons(c: &Term, cs: &Term, acc: &Term) -> Result<Thm> {
 fn head_is_digit(is_digit: &Term, l: &Term) -> Term {
     Term::app(
         Term::app(
-            Term::app(option_case(char_t(), bool_t()), Term::bool_lit(false)),
+            Term::app(
+                option_case(char_t(), bool_t()),
+                covalence_hol_eval::mk_bool(false),
+            ),
             is_digit.clone(),
         ),
         Term::app(head(char_t()), l.clone()),
@@ -586,7 +589,7 @@ pub fn span_cat(is_digit: &Term) -> Result<Thm> {
 
         // b = true (digit): span (cons c cs) = pair (cons c p) r.
         let branch_t = {
-            let hbt = Thm::assume(cond_c.clone().equals(Term::bool_lit(true))?)?;
+            let hbt = Thm::assume(cond_c.clone().equals(covalence_hol_eval::mk_bool(true))?)?;
             let digit_branch = pair_ss(cons_c(c.clone(), p.clone()), r.clone());
             let ct = cond_true(
                 &ss_t(),
@@ -606,12 +609,12 @@ pub fn span_cat(is_digit: &Term) -> Result<Thm> {
             let use_ih = ih.clone().cong_arg(Term::app(cons(char_t()), c.clone()))?; // cons c (cat p r) = cons c cs
             let t1 = cat_eq.trans(cc)?;
             t1.trans(use_ih)?
-                .imp_intro(&cond_c.clone().equals(Term::bool_lit(true))?)?
+                .imp_intro(&cond_c.clone().equals(covalence_hol_eval::mk_bool(true))?)?
         };
 
         // b = false (non-digit): span (cons c cs) = pair nil (cons c (cat p r)).
         let branch_f = {
-            let hbf = Thm::assume(cond_c.clone().equals(Term::bool_lit(false))?)?;
+            let hbf = Thm::assume(cond_c.clone().equals(covalence_hol_eval::mk_bool(false))?)?;
             let x = cons_c(c.clone(), cat(p.clone(), r.clone()));
             let cf = cond_false(
                 &ss_t(),
@@ -638,7 +641,7 @@ pub fn span_cat(is_digit: &Term) -> Result<Thm> {
             cat_l
                 .trans(cn)?
                 .trans(snd_to_cons)?
-                .imp_intro(&cond_c.clone().equals(Term::bool_lit(false))?)?
+                .imp_intro(&cond_c.clone().equals(covalence_hol_eval::mk_bool(false))?)?
         };
 
         let combined = bool_cases()
@@ -675,7 +678,7 @@ fn all_step(alpha: &Type, p: &Term) -> Term {
 pub fn list_all(alpha: &Type, p: &Term) -> Term {
     Term::app(
         Term::app(list_foldr(alpha.clone(), bool_t()), all_step(alpha, p)),
-        Term::bool_lit(true),
+        covalence_hol_eval::mk_bool(true),
     )
 }
 
@@ -687,7 +690,12 @@ fn all_app(alpha: &Type, p: &Term, l: &Term) -> Term {
 /// `⊢ list_all p nil = T` — the empty list vacuously satisfies any `p`.
 /// Genuine (hypothesis- and oracle-free).
 pub fn all_nil(alpha: &Type, p: &Term) -> Result<Thm> {
-    foldr_nil(alpha, &bool_t(), &all_step(alpha, p), &Term::bool_lit(true))
+    foldr_nil(
+        alpha,
+        &bool_t(),
+        &all_step(alpha, p),
+        &covalence_hol_eval::mk_bool(true),
+    )
 }
 
 /// `⊢ list_all p (cons x xs) = (p x ∧ list_all p xs)` — the `cons` clause.
@@ -703,7 +711,7 @@ pub fn all_cons(alpha: &Type, p: &Term, x: &Term, xs: &Term) -> Result<Thm> {
         alpha,
         &bool_t(),
         &all_step(alpha, &q),
-        &Term::bool_lit(true),
+        &covalence_hol_eval::mk_bool(true),
         x,
         xs,
     )?; // list_all q (cons x xs) = all_step q x (list_all q xs)
@@ -727,7 +735,7 @@ pub fn prefix_all_digits(is_digit: &Term) -> Result<Thm> {
     let all_of =
         |t: &Term| -> Term { all_app(&char_t(), is_digit, &fst_ss(span_app(is_digit, t))) };
     let motive = {
-        let body = all_of(&l).equals(Term::bool_lit(true))?;
+        let body = all_of(&l).equals(covalence_hol_eval::mk_bool(true))?;
         Term::abs(str_t(), subst::close(&body, "l"))
     };
 
@@ -762,7 +770,7 @@ pub fn prefix_all_digits(is_digit: &Term) -> Result<Thm> {
 
         // b = true (digit): fst (span (cons c cs)) = cons c pfx.
         let branch_t = {
-            let hbt = Thm::assume(cond_c.clone().equals(Term::bool_lit(true))?)?;
+            let hbt = Thm::assume(cond_c.clone().equals(covalence_hol_eval::mk_bool(true))?)?;
             let digit_branch = pair_ss(cons_c(c.clone(), pfx.clone()), rst.clone());
             let ct = cond_true(
                 &ss_t(),
@@ -782,12 +790,12 @@ pub fn prefix_all_digits(is_digit: &Term) -> Result<Thm> {
             let conj_t = isdig.and_intro(ih_bool)?.eqt_intro()?; // (is_digit c ∧ list_all is_digit pfx) = T
             e1.trans(e2)?
                 .trans(conj_t)?
-                .imp_intro(&cond_c.clone().equals(Term::bool_lit(true))?)?
+                .imp_intro(&cond_c.clone().equals(covalence_hol_eval::mk_bool(true))?)?
         };
 
         // b = false (non-digit): fst (span (cons c cs)) = nil.
         let branch_f = {
-            let hbf = Thm::assume(cond_c.clone().equals(Term::bool_lit(false))?)?;
+            let hbf = Thm::assume(cond_c.clone().equals(covalence_hol_eval::mk_bool(false))?)?;
             let x = cons_c(c.clone(), cat(pfx.clone(), rst.clone()));
             let cf = cond_false(
                 &ss_t(),
@@ -800,7 +808,7 @@ pub fn prefix_all_digits(is_digit: &Term) -> Result<Thm> {
             let e1 = fst_eq.cong_arg(list_all(&char_t(), is_digit))?; // list_all is_digit (fst..) = list_all is_digit nil
             let an = all_nil(&char_t(), is_digit)?; // list_all is_digit nil = T
             e1.trans(an)?
-                .imp_intro(&cond_c.clone().equals(Term::bool_lit(false))?)?
+                .imp_intro(&cond_c.clone().equals(covalence_hol_eval::mk_bool(false))?)?
         };
 
         let combined = bool_cases()
@@ -832,7 +840,10 @@ pub fn suffix_maximal(is_digit: &Term) -> Result<Thm> {
     // `option_case false is_digit : option char → bool`, the "head is a digit"
     // decider applied under `head`.
     let oc_fun = Term::app(
-        Term::app(option_case(char_t(), bool_t()), Term::bool_lit(false)),
+        Term::app(
+            option_case(char_t(), bool_t()),
+            covalence_hol_eval::mk_bool(false),
+        ),
         is_digit.clone(),
     );
     let head_c = head(char_t());
@@ -841,7 +852,7 @@ pub fn suffix_maximal(is_digit: &Term) -> Result<Thm> {
     let l = Term::free("l", str_t());
     let hd_of = |t: &Term| -> Term { head_is_digit(is_digit, &snd_ss(span_app(is_digit, t))) };
     let motive = {
-        let body = hd_of(&l).equals(Term::bool_lit(false))?;
+        let body = hd_of(&l).equals(covalence_hol_eval::mk_bool(false))?;
         Term::abs(str_t(), subst::close(&body, "l"))
     };
 
@@ -850,7 +861,12 @@ pub fn suffix_maximal(is_digit: &Term) -> Result<Thm> {
         let sn = span_nil(is_digit)?; // span nil = pair nil nil
         let sp = snd_pair(&str_t(), &str_t(), &nil_c(), &nil_c())?; // snd (pair nil nil) = nil
         let hn = head_nil(&char_t())?; // head nil = none
-        let cn = case_none(&char_t(), &bool_t(), &Term::bool_lit(false), is_digit)?; // option_case false is_digit none = false
+        let cn = case_none(
+            &char_t(),
+            &bool_t(),
+            &covalence_hol_eval::mk_bool(false),
+            is_digit,
+        )?; // option_case false is_digit none = false
         let base_eq = Thm::refl(hd_of(&nil_c()))?
             .rhs_conv(|t| t.rw_all(&sn))? // span nil → pair nil nil
             .rhs_conv(|t| t.rw_all(&sp))? // snd → nil
@@ -876,7 +892,7 @@ pub fn suffix_maximal(is_digit: &Term) -> Result<Thm> {
 
         // b = true (digit): snd (span (cons c cs)) = rst = snd (span cs); Q reduces to IH.
         let branch_t = {
-            let hbt = Thm::assume(cond_c.clone().equals(Term::bool_lit(true))?)?;
+            let hbt = Thm::assume(cond_c.clone().equals(covalence_hol_eval::mk_bool(true))?)?;
             let digit_branch = pair_ss(cons_c(c.clone(), pfx.clone()), rst.clone());
             let ct = cond_true(
                 &ss_t(),
@@ -890,12 +906,12 @@ pub fn suffix_maximal(is_digit: &Term) -> Result<Thm> {
             let head_eq = snd_eq.cong_arg(head_c.clone())?.cong_arg(oc_fun.clone())?;
             head_eq
                 .trans(ih.clone())?
-                .imp_intro(&cond_c.clone().equals(Term::bool_lit(true))?)?
+                .imp_intro(&cond_c.clone().equals(covalence_hol_eval::mk_bool(true))?)?
         };
 
         // b = false (non-digit): snd (span (cons c cs)) = cons c (cat pfx rst); head = some c; = is_digit c = F.
         let branch_f = {
-            let hbf = Thm::assume(cond_c.clone().equals(Term::bool_lit(false))?)?;
+            let hbf = Thm::assume(cond_c.clone().equals(covalence_hol_eval::mk_bool(false))?)?;
             let tail = cat(pfx.clone(), rst.clone());
             let x = cons_c(c.clone(), tail.clone());
             let cf = cond_false(
@@ -910,11 +926,17 @@ pub fn suffix_maximal(is_digit: &Term) -> Result<Thm> {
             let head_eq = snd_eq.cong_arg(head_c.clone())?.trans(hc)?; // head (snd (span (cons c cs))) = some c
             // head_is_digit is_digit (snd (span (cons c cs))) = option_case false is_digit (some c) = is_digit c.
             let e1 = head_eq.cong_arg(oc_fun.clone())?;
-            let cs_some = case_some(&char_t(), &bool_t(), &Term::bool_lit(false), is_digit, &c)?; // = is_digit c
+            let cs_some = case_some(
+                &char_t(),
+                &bool_t(),
+                &covalence_hol_eval::mk_bool(false),
+                is_digit,
+                &c,
+            )?; // = is_digit c
             let isdig_f = red_eq.clone().trans(hbf.clone())?; // is_digit c = F
             e1.trans(cs_some)?
                 .trans(isdig_f)?
-                .imp_intro(&cond_c.clone().equals(Term::bool_lit(false))?)?
+                .imp_intro(&cond_c.clone().equals(covalence_hol_eval::mk_bool(false))?)?
         };
 
         let combined = bool_cases()
@@ -1022,8 +1044,8 @@ pub fn parse_nat_correct(is_digit: &Term, value: &Term) -> Result<Thm> {
     let cf_eq = beta_nf(consumed.clone()); // ⊢ consumed = CF
     let cs_eq = beta_nf(sp_rest.clone()); // ⊢ sp_rest = CS
 
-    let oc_t = oc.clone().equals(Term::bool_lit(true))?;
-    let oc_f = oc.clone().equals(Term::bool_lit(false))?;
+    let oc_t = oc.clone().equals(covalence_hol_eval::mk_bool(true))?;
+    let oc_f = oc.clone().equals(covalence_hol_eval::mk_bool(false))?;
 
     // OC = T: parse s = A, so some (pair v rest) = some (pair val sp_rest);
     // build the goal conjunction here (its conclusion becomes `goal`).
@@ -1128,10 +1150,10 @@ pub(crate) mod ceval {
         }
         let red = red.rhs_conv(|x| x.reduce()).unwrap();
         let combo = rhs(&red);
-        match prop_eq(&combo, &Term::bool_lit(true)) {
+        match prop_eq(&combo, &covalence_hol_eval::mk_bool(true)) {
             Ok(tt) => (red.trans(tt).unwrap(), true),
             Err(_) => {
-                let ff = prop_eq(&combo, &Term::bool_lit(false)).unwrap();
+                let ff = prop_eq(&combo, &covalence_hol_eval::mk_bool(false)).unwrap();
                 (red.trans(ff).unwrap(), false)
             }
         }
@@ -1310,7 +1332,13 @@ pub(crate) mod ceval {
         if input.is_empty() {
             // head nil = none ; option_case false is_digit none = false ; cond F → none.
             let hn = head_nil(&char_t()).unwrap();
-            let cn = case_none(&char_t(), &bool_t(), &Term::bool_lit(false), is_digit).unwrap();
+            let cn = case_none(
+                &char_t(),
+                &bool_t(),
+                &covalence_hol_eval::mk_bool(false),
+                is_digit,
+            )
+            .unwrap();
             let oc_eq = Thm::refl(oc_term)
                 .unwrap()
                 .rhs_conv(|x| x.rw_all(&hn))
@@ -1324,7 +1352,14 @@ pub(crate) mod ceval {
         let c0 = ch(k0);
         let cs0 = s(&input[1..]);
         let hc = head_cons(&char_t(), &c0, &cs0).unwrap(); // head l = some c0
-        let cse = case_some(&char_t(), &bool_t(), &Term::bool_lit(false), is_digit, &c0).unwrap(); // option_case false is_digit (some c0) = is_digit c0
+        let cse = case_some(
+            &char_t(),
+            &bool_t(),
+            &covalence_hol_eval::mk_bool(false),
+            is_digit,
+            &c0,
+        )
+        .unwrap(); // option_case false is_digit (some c0) = is_digit c0
         let (id_eq, is_dig) = decide(&Term::app(is_digit.clone(), c0.clone()), &[k0]);
         let oc_eq = Thm::refl(oc_term)
             .unwrap()
@@ -1539,7 +1574,7 @@ mod tests {
         assert!(an.hyps().is_empty());
         let (l, r) = an.concl().as_eq().unwrap();
         assert_eq!(l, &all_app(&char_t(), &p, &nil_c()));
-        assert_eq!(r, &Term::bool_lit(true));
+        assert_eq!(r, &covalence_hol_eval::mk_bool(true));
 
         let ac = all_cons(&char_t(), &p, &x, &xs).unwrap();
         assert!(ac.hyps().is_empty());

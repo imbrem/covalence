@@ -154,7 +154,10 @@ fn tail_b(s: &Term) -> Term {
 fn head_sat(pred: &Term, s: &Term) -> Term {
     Term::app(
         Term::app(
-            Term::app(option_case(u8_t(), bool_t()), Term::bool_lit(false)),
+            Term::app(
+                option_case(u8_t(), bool_t()),
+                covalence_hol_eval::mk_bool(false),
+            ),
             pred.clone(),
         ),
         head_b(s),
@@ -287,7 +290,10 @@ fn expr_body(rec: &Term, s: &Term) -> Term {
     cond_app(
         res_t(),
         head_sat(&is_open(), &s1),
-        Term::app(Term::app(rec.clone(), Term::bool_lit(true)), tail_b(&s1)),
+        Term::app(
+            Term::app(rec.clone(), covalence_hol_eval::mk_bool(true)),
+            tail_b(&s1),
+        ),
         inner,
     )
 }
@@ -305,7 +311,10 @@ fn opt_bind(r: Term, kont: Term) -> Term {
 /// on `')'` or read one element and recurse on the tail.
 fn list_body(rec: &Term, s: &Term) -> Term {
     let s1 = skip_ws(s);
-    let read_elem = Term::app(Term::app(rec.clone(), Term::bool_lit(false)), s1.clone());
+    let read_elem = Term::app(
+        Term::app(rec.clone(), covalence_hol_eval::mk_bool(false)),
+        s1.clone(),
+    );
     // inner_kont p2 = some (pair (scons <elem> (fst p2)) (snd p2)).
     // outer_kont p1 = bind (rec true (snd p1)) inner_kont, with elem = fst p1.
     let p1 = Term::free("__p1", payload_t());
@@ -315,7 +324,10 @@ fn list_body(rec: &Term, s: &Term) -> Term {
         lam("__p2", payload_t(), body)
     };
     let outer_kont = {
-        let rest_read = Term::app(Term::app(rec.clone(), Term::bool_lit(true)), snd_r(&p1));
+        let rest_read = Term::app(
+            Term::app(rec.clone(), covalence_hol_eval::mk_bool(true)),
+            snd_r(&p1),
+        );
         let body = opt_bind(rest_read, inner_kont);
         lam("__p1", payload_t(), body)
     };
@@ -370,7 +382,10 @@ pub fn parse_sexpr() -> Term {
     let fuel = Term::free("fuel", Type::nat());
     let s = Term::free("s", blist_t());
     let applied = Term::app(
-        Term::app(Term::app(parse_fn(), fuel.clone()), Term::bool_lit(false)),
+        Term::app(
+            Term::app(parse_fn(), fuel.clone()),
+            covalence_hol_eval::mk_bool(false),
+        ),
         s.clone(),
     );
     lam("fuel", Type::nat(), lam("s", blist_t(), applied))
@@ -462,7 +477,7 @@ mod tests {
     fn bytes_term(bs: &[u8]) -> Term {
         let mut t = nil_u();
         for &b in bs.iter().rev() {
-            t = cons_u(Term::u8_lit(b), t);
+            t = cons_u(covalence_hol_eval::mk_u8(b), t);
         }
         t
     }
@@ -561,10 +576,10 @@ mod tests {
             .rhs_conv(|x| x.reduce())
             .unwrap();
         let combo = rhs(&red);
-        match prop_eq(&combo, &Term::bool_lit(true)) {
+        match prop_eq(&combo, &covalence_hol_eval::mk_bool(true)) {
             Ok(tt) => (red.trans(tt).unwrap(), true),
             Err(_) => {
-                let ff = prop_eq(&combo, &Term::bool_lit(false)).unwrap();
+                let ff = prop_eq(&combo, &covalence_hol_eval::mk_bool(false)).unwrap();
                 (red.trans(ff).unwrap(), false)
             }
         }
@@ -594,7 +609,7 @@ mod tests {
         if bs.is_empty() {
             return span_nil(pred).unwrap();
         }
-        let c = Term::u8_lit(bs[0]);
+        let c = covalence_hol_eval::mk_u8(bs[0]);
         let cs = bytes_term(&bs[1..]);
         let general = span_cons(pred, &c, &cs).unwrap();
         let cond_c = rhs(&Term::app(pred.clone(), c.clone()).reduce().unwrap());
@@ -656,7 +671,13 @@ mod tests {
         let oc = head_sat(pred, &s);
         if bs.is_empty() {
             let hn = head_nil(&u8_t()).unwrap();
-            let cn = case_none(&u8_t(), &bool_t(), &Term::bool_lit(false), pred).unwrap();
+            let cn = case_none(
+                &u8_t(),
+                &bool_t(),
+                &covalence_hol_eval::mk_bool(false),
+                pred,
+            )
+            .unwrap();
             let eq = Thm::refl(oc)
                 .unwrap()
                 .rhs_conv(|t| t.rw_all(&hn))
@@ -665,10 +686,17 @@ mod tests {
                 .unwrap();
             return (eq, false);
         }
-        let c = Term::u8_lit(bs[0]);
+        let c = covalence_hol_eval::mk_u8(bs[0]);
         let cs = bytes_term(&bs[1..]);
         let hc = head_cons(&u8_t(), &c, &cs).unwrap();
-        let cse = case_some(&u8_t(), &bool_t(), &Term::bool_lit(false), pred, &c).unwrap();
+        let cse = case_some(
+            &u8_t(),
+            &bool_t(),
+            &covalence_hol_eval::mk_bool(false),
+            pred,
+            &c,
+        )
+        .unwrap();
         let (dec, b) = decide_bool(&Term::app(pred.clone(), c.clone()));
         let eq = Thm::refl(oc)
             .unwrap()
@@ -683,7 +711,7 @@ mod tests {
 
     /// `⊢ list.tail (bytes) = <tail bytes>`.
     fn eval_tail(bs: &[u8]) -> Thm {
-        let c = Term::u8_lit(bs[0]);
+        let c = covalence_hol_eval::mk_u8(bs[0]);
         let cs = bytes_term(&bs[1..]);
         tail_cons(&u8_t(), &c, &cs).unwrap()
     }
@@ -706,7 +734,7 @@ mod tests {
     /// large enough (≥ the token count) for the reference reader to succeed;
     /// exhausted fuel yields `none`.
     fn eval(k: usize, mode: bool, bs: &[u8]) -> Thm {
-        let mode_lit = Term::bool_lit(mode);
+        let mode_lit = covalence_hol_eval::mk_bool(mode);
         let s = bytes_term(bs);
         if k == 0 {
             return parse_base()
@@ -977,7 +1005,10 @@ mod tests {
         // consp tree = T, car tree = atom a, cdr tree = (scons (atom b) snil).
         let (consp, car, cdr) = parsed_cons_struct(&head, &tail).unwrap();
         assert!(consp.hyps().is_empty());
-        assert_eq!(consp.concl().as_eq().unwrap().1, &Term::bool_lit(true));
+        assert_eq!(
+            consp.concl().as_eq().unwrap().1,
+            &covalence_hol_eval::mk_bool(true)
+        );
         assert_eq!(car.concl().as_eq().unwrap().1, &head);
         assert_eq!(cdr.concl().as_eq().unwrap().1, &tail);
         // and the car of the tail is `atom b`.
@@ -995,7 +1026,10 @@ mod tests {
         let t = snil();
         let (consp, car, cdr) = parsed_cons_struct(&h, &t).unwrap();
         assert!(consp.hyps().is_empty());
-        assert_eq!(consp.concl().as_eq().unwrap().1, &Term::bool_lit(true));
+        assert_eq!(
+            consp.concl().as_eq().unwrap().1,
+            &covalence_hol_eval::mk_bool(true)
+        );
         assert_eq!(car.concl().as_eq().unwrap().1, &h);
         assert_eq!(cdr.concl().as_eq().unwrap().1, &t);
     }

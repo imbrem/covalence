@@ -145,7 +145,10 @@ mod tests {
         let t = Fol::Succ(Box::new(Fol::Zero));
         let d = denote_term(&t, &[]);
         assert_eq!(d.type_of().unwrap(), nat());
-        assert_eq!(d, Term::app(defs::nat_succ(), Term::nat_lit(Nat::zero())));
+        assert_eq!(
+            d,
+            Term::app(defs::nat_succ(), covalence_hol_eval::mk_nat(Nat::zero()))
+        );
     }
 
     /// A free atom denotes to its named HOL free variable.

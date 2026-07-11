@@ -82,10 +82,10 @@ impl Semiring for Nat {
         Term::free(name, Type::nat())
     }
     fn zero(&self) -> Term {
-        Term::nat_lit(0u32)
+        covalence_hol_eval::mk_nat(0u32)
     }
     fn one(&self) -> Term {
-        Term::nat_lit(1u32)
+        covalence_hol_eval::mk_nat(1u32)
     }
     fn add(&self, a: Term, b: Term) -> Term {
         Term::app(Term::app(nat::nat_add(), a), b)

@@ -74,7 +74,7 @@ fn nat() -> Type {
 }
 
 pub(crate) fn zero() -> Term {
-    Term::nat_lit(Nat::zero())
+    covalence_hol_eval::mk_nat(Nat::zero())
 }
 
 pub(crate) fn succ(n: Term) -> Term {
@@ -905,7 +905,7 @@ fn eqf_intro(not_p: Thm) -> Result<Thm> {
     // `not_elim` concludes the DEFINED `F` (EG3b); the clause statements
     // use the literal `⌜F⌝`, so cross the bridge both ways.
     let pf = covalence_hol_eval::fal_to_lit(not_p.not_elim(Thm::assume(p.clone())?)?)?; // {P} ⊢ ⌜F⌝
-    let fp = Thm::assume(Term::bool_lit(false))?.false_elim(p)?; // {⌜F⌝} ⊢ P
+    let fp = Thm::assume(covalence_hol_eval::mk_bool(false))?.false_elim(p)?; // {⌜F⌝} ⊢ P
     pf.deduct_antisym(fp)?.sym() // ⊢ P = ⌜F⌝
 }
 
@@ -1148,7 +1148,7 @@ cached_thm! {
     pub fn le_zero() -> Result<Thm> {
         // (0 ≤ m) = T by induction on m; then strip the `= T`.
         let m = var("m");
-        let body = le_t(zero(), m.clone()).equals(Term::bool_lit(true))?;
+        let body = le_t(zero(), m.clone()).equals(covalence_hol_eval::mk_bool(true))?;
         let motive = Term::abs(nat(), subst::close(&body, "m"));
         let base = le_c1(); // (0 ≤ 0) = T
         let ihc = body.clone();
@@ -1235,7 +1235,7 @@ cached_thm! {
     pub fn lt_irrefl() -> Result<Thm> {
         // (n < n) = F by induction on n; then ¬(n < n).
         let n = var("n");
-        let body = lt_t(n.clone(), n.clone()).equals(Term::bool_lit(false))?;
+        let body = lt_t(n.clone(), n.clone()).equals(covalence_hol_eval::mk_bool(false))?;
         let motive = Term::abs(nat(), subst::close(&body, "n"));
         let base = lt_c1(); // (0 < 0) = F
         let ihc = body.clone();
@@ -1259,7 +1259,7 @@ cached_thm! {
     pub fn not_lt_zero() -> Result<Thm> {
         // (n < 0) = F by induction on n.
         let n = var("n");
-        let body = lt_t(n.clone(), zero()).equals(Term::bool_lit(false))?;
+        let body = lt_t(n.clone(), zero()).equals(covalence_hol_eval::mk_bool(false))?;
         let motive = Term::abs(nat(), subst::close(&body, "n"));
         let base = lt_c1(); // (0 < 0) = F
         let ihc = body.clone();
@@ -1500,7 +1500,7 @@ cached_thm! {
     /// [`add_zero`] collapse `a * S 0`).
     pub fn mul_one() -> Result<Thm> {
         let a = var("a");
-        let one = Term::nat_lit(1u32);
+        let one = covalence_hol_eval::mk_nat(1u32);
         let one_is_s0 = succ(zero()).reduce()?.sym()?; // ⊢ 1 = S 0
         let c0 = one_is_s0.cong_arg(Term::app(nat_mul(), a.clone()))?; // a*1 = a*(S 0)
         let c1 = mul_succ_r().all_elim(a.clone())?.all_elim(zero())?; // a*(S 0) = a + a*0
@@ -1827,7 +1827,7 @@ cached_thm! {
     /// `⊢ ∀n. n ≤ S n`.
     pub fn le_succ_self() -> Result<Thm> {
         let n = var("n");
-        let one = Term::nat_lit(1u32);
+        let one = covalence_hol_eval::mk_nat(1u32);
         le_add_r()
             .all_elim(n.clone())?
             .all_elim(one)? // n ≤ n+1
@@ -2454,7 +2454,7 @@ pub(crate) fn shr(n: Term, m: Term) -> Term {
 // `nat.shl`/`nat.shr` *step* functions sits under a binder (`λx. 2*x`), where
 // `reduce` leaves it as `succ (succ 0)` (`two`) — so we match that shape there.
 fn one() -> Term {
-    Term::nat_lit(1u32)
+    covalence_hol_eval::mk_nat(1u32)
 }
 
 /// `succ (succ 0)` — the shape of `2` *inside* the `shl`/`shr` step lambdas,
@@ -2466,7 +2466,7 @@ fn two() -> Term {
 /// `2n` — the `Nat` literal `reduce` produces once the step lambda is applied
 /// (the multiplier in the `shl`/`shr` recursion equations).
 fn two_lit() -> Term {
-    Term::nat_lit(2u32)
+    covalence_hol_eval::mk_nat(2u32)
 }
 
 /// `iter[nat] m f a` as a `Term`.
@@ -3223,7 +3223,7 @@ mod tests {
         let one = mul_one().all_elim(a.clone()).unwrap();
         assert_eq!(
             one.concl(),
-            &mul(a.clone(), Term::nat_lit(1u32))
+            &mul(a.clone(), covalence_hol_eval::mk_nat(1u32))
                 .equals(a.clone())
                 .unwrap()
         );
@@ -3292,7 +3292,9 @@ mod tests {
         let le_c1 = le_body().and_elim_l().unwrap();
         assert_eq!(
             le_c1.concl(),
-            &le_t(zero(), zero()).equals(Term::bool_lit(true)).unwrap()
+            &le_t(zero(), zero())
+                .equals(covalence_hol_eval::mk_bool(true))
+                .unwrap()
         );
         // lt clause 4: ⊢ ∀n m. (S n < S m) = (n < m)
         let lt_c4 = lt_body()
@@ -3355,7 +3357,7 @@ mod tests {
     fn add_zero_proves_right_unit() {
         // ⊢ ∀n. n + 0 = n, specialising to 5 + 0 = 5.
         let thm = add_zero();
-        let five = Term::nat_lit(Nat::from_inner(5u32.into()));
+        let five = covalence_hol_eval::mk_nat(Nat::from_inner(5u32.into()));
         let inst = thm.clone().all_elim(five.clone()).unwrap();
         assert_eq!(
             inst.concl(),
@@ -3367,7 +3369,7 @@ mod tests {
 
     #[test]
     fn additive_theory_proves_the_ring_facts() {
-        let lit = |n: u32| Term::nat_lit(Nat::from_inner(n.into()));
+        let lit = |n: u32| covalence_hol_eval::mk_nat(Nat::from_inner(n.into()));
         // add_succ_r: 2 + S 3 = S (2 + 3)
         let sr = add_succ_r()
             .all_elim(lit(2))
@@ -3428,7 +3430,7 @@ mod tests {
     #[test]
     fn mul_zero_proves_right_zero() {
         // ⊢ ∀a. a * 0 = 0, specialising to 7 * 0 = 0.
-        let seven = Term::nat_lit(Nat::from_inner(7u32.into()));
+        let seven = covalence_hol_eval::mk_nat(Nat::from_inner(7u32.into()));
         let inst = mul_zero().all_elim(seven.clone()).unwrap();
         assert_eq!(inst.concl(), &mul(seven, zero()).equals(zero()).unwrap());
         // rec_holds is proved, so this is hypothesis-free.

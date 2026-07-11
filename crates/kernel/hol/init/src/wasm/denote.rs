@@ -125,7 +125,7 @@ fn apply2(f: Term, a: Term, b: Term) -> Result<Term> {
 pub fn denote(e: &SpecTecExp, ctx: &DenoteCtx) -> Result<Term> {
     use SpecTecExp as E;
     match e {
-        E::Bool { b } => Ok(Term::bool_lit(*b)),
+        E::Bool { b } => Ok(covalence_hol_eval::mk_bool(*b)),
         E::Num { n } => denote_num(n),
         E::Var { id } => match ctx.types.get(id) {
             Some(ty) => Ok(Term::free(id.clone(), ty.clone())),
@@ -325,7 +325,7 @@ mod tests {
         let t = denote(&e, &empty()).unwrap();
         let thm = t.reduce().unwrap(); // ⊢ nat.add 1 2 = <nf>
         let rhs = thm.concl().as_eq().expect("an equation").1.clone();
-        assert_eq!(rhs, Term::nat_lit(3u32));
+        assert_eq!(rhs, covalence_hol_eval::mk_nat(3u32));
     }
 
     #[test]

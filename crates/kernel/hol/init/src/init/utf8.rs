@@ -94,7 +94,7 @@ fn app2(f: Term, a: Term, b: Term) -> Term {
 
 /// `nat.lit k`.
 fn lit(k: u64) -> Term {
-    Term::nat_lit(k)
+    covalence_hol_eval::mk_nat(k)
 }
 
 /// `a + b` on `nat`.
@@ -236,7 +236,7 @@ pub fn encode_char_lit(k: u64) -> Result<Thm> {
     // ⊢ char.code (char.mk k) = k — the conditional codepoint round-trip,
     // with the scalar-value premise discharged by `prop_eq` (decided per
     // literal; errors on surrogates / out-of-range).
-    let code_mk = crate::init::char::code_mk(&Term::nat_lit(k))?;
+    let code_mk = crate::init::char::code_mk(&covalence_hol_eval::mk_nat(k))?;
     // δ-unfold the encoder and β-reduce the applied λ (so the bound `c` is
     // replaced by `char.mk k`), rewrite `char.code (char.mk k) → k`, then
     // reduce: the `cond` range tests fold and the byte arithmetic +
@@ -567,7 +567,7 @@ pub fn decode_ascii1_round_trip(k: u64) -> Result<Thm> {
         .delta_all(decode_ascii1_spec().symbol())?
         .rhs_conv(|t| Ok(crate::init::eq::beta_nf(t.clone())))?;
     // head [u8 k] = some (u8 k)   (head_cons on the literal cons).
-    let byte0 = Term::u8_lit(k as u8);
+    let byte0 = covalence_hol_eval::mk_u8(k as u8);
     let head_eq = crate::init::list::head_cons(&u8_ty(), &byte0, &unil())?;
     // The `optionCase`'s `some` branch — `λb. cond (toNat b < 0x80)
     // (some (char.mk (toNat b))) none` — needed to fire `case_some`.
@@ -714,7 +714,7 @@ mod tests {
     use super::*;
 
     fn u8_lit(v: u8) -> Term {
-        Term::u8_lit(v)
+        covalence_hol_eval::mk_u8(v)
     }
 
     /// Assert `encode_char_lit(k)` reduces to exactly `expected` (a list of

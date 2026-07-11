@@ -878,8 +878,8 @@ pub fn regex_env() -> crate::script::Env {
     let mut e = Env::empty();
 
     // -- concrete byte regexes / words (nullary `Op` constants) --------------
-    let lit = |k: u8| r_lit(&a, Term::u8_lit(k));
-    let byte = |k: u8| Term::u8_lit(k);
+    let lit = |k: u8| r_lit(&a, covalence_hol_eval::mk_u8(k));
+    let byte = |k: u8| covalence_hol_eval::mk_u8(k);
     let lit_a = lit(0x61);
     let lit_b = lit(0x62);
     let alt_ab = r_alt(&a, lit_a.clone(), lit_b.clone());
@@ -1215,7 +1215,7 @@ mod tests {
         // 'b' followed by any number of 'c's. Just exercise the builders +
         // denotation typecheck at the byte alphabet.
         let a = u8_alphabet();
-        let byte = |k: u8| Term::u8_lit(k);
+        let byte = |k: u8| covalence_hol_eval::mk_u8(k);
         let re = r_seq(
             &a,
             r_alt(&a, r_lit(&a, byte(0x61)), r_lit(&a, byte(0x62))),
@@ -1236,7 +1236,7 @@ mod tests {
         // soundness to obtain `⊢ mem [0x61] ⟦lit 0x61⟧` — a genuine membership
         // fact about the byte-string language the regex denotes.
         let a = u8_alphabet();
-        let byte_a = Term::u8_lit(0x61);
+        let byte_a = covalence_hol_eval::mk_u8(0x61);
         let lit_a = r_lit(&a, byte_a.clone());
         let word = singleton_w(&a, &byte_a).unwrap(); // [0x61] : list u8
 
@@ -1260,10 +1260,10 @@ mod tests {
     /// Byte-alphabet pieces the `.cov` worked examples are stated over.
     fn byte_pieces() -> (Type, Term, Term, Term, Term) {
         let a = u8_alphabet();
-        let lit_a = r_lit(&a, Term::u8_lit(0x61));
-        let lit_b = r_lit(&a, Term::u8_lit(0x62));
-        let wa = singleton_w(&a, &Term::u8_lit(0x61)).unwrap();
-        let wb = singleton_w(&a, &Term::u8_lit(0x62)).unwrap();
+        let lit_a = r_lit(&a, covalence_hol_eval::mk_u8(0x61));
+        let lit_b = r_lit(&a, covalence_hol_eval::mk_u8(0x62));
+        let wa = singleton_w(&a, &covalence_hol_eval::mk_u8(0x61)).unwrap();
+        let wb = singleton_w(&a, &covalence_hol_eval::mk_u8(0x62)).unwrap();
         (a, lit_a, lit_b, wa, wb)
     }
 

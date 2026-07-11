@@ -59,7 +59,7 @@ fn nvar(s: &str) -> Term {
     Term::free(s, nat())
 }
 fn zero() -> Term {
-    Term::nat_lit(0u64)
+    covalence_hol_eval::mk_nat(0u64)
 }
 fn succ(n: Term) -> Term {
     Term::app(defs::nat_succ(), n)
@@ -135,7 +135,7 @@ fn prove_hext_div() -> Result<Thm> {
 
     // false-arm obligation: guard = F ⟹ S(p(x−m)m) = S(q(x−m)m).
     let g = guard(&x, &m)?;
-    let h_g = Thm::assume(g.clone().equals(Term::bool_lit(false))?)?;
+    let h_g = Thm::assume(g.clone().equals(covalence_hol_eval::mk_bool(false))?)?;
     let m_eq_0 = m.clone().equals(zero())?;
     let x_lt_m = lt(x.clone(), m.clone());
     // ¬(m=0)
@@ -176,7 +176,7 @@ fn prove_hext_div() -> Result<Thm> {
         .imp_elim(sub_lt)? // {g=F, agree} ⊢ p(x−m) = q(x−m)
         .cong_fn(m.clone())? // p(x−m) m = q(x−m) m
         .cong_arg(defs::nat_succ())? // S(p(x−m)m) = S(q(x−m)m)
-        .imp_intro(&g.clone().equals(Term::bool_lit(false))?)?; // {agree} ⊢ g=F ⟹ S..=S..
+        .imp_intro(&g.clone().equals(covalence_hol_eval::mk_bool(false))?)?; // {agree} ⊢ g=F ⟹ S..=S..
 
     // cond congruence over the false arm, instantiated.
     let cong = cond_cong_arm()

@@ -118,7 +118,7 @@ fn cond_clause(alpha: &Type, b: bool, x: &Term, y: &Term) -> Result<Thm> {
     // nested-`cond` branch.) The per-argument `cong_fn` also validates
     // `x, y : α` — an ill-typed branch is rejected as the application is built.
     let mut unfold = cond(alpha.clone()).delta()?; // ⊢ cond α = λt x y. ε(…)
-    for a in [Term::bool_lit(b), x.clone(), y.clone()] {
+    for a in [covalence_hol_eval::mk_bool(b), x.clone(), y.clone()] {
         unfold = unfold.cong_fn(a)?;
         let rhs = rhs_of(&unfold)?;
         unfold = unfold.trans(Thm::beta_conv(rhs)?)?;
@@ -161,18 +161,18 @@ fn choose(pred: &Term, b: bool, witness: &Term, x: &Term, y: &Term) -> Result<Th
     } else {
         conj.and_elim_r()?
     };
-    selecting.imp_elim(Thm::refl(Term::bool_lit(b))?)
+    selecting.imp_elim(Thm::refl(covalence_hol_eval::mk_bool(b))?)
 }
 
 /// `⊢ pred w` — the conjunction `(b=T ⟹ w=x) ∧ (b=F ⟹ w=y)` proved at
 /// `w`, then β-folded back into the applied form `pred w` that
 /// `select_ax` expects.
 fn pred_at(pred: &Term, w: &Term, b: bool, x: &Term, y: &Term) -> Result<Thm> {
-    let t_lit = Term::bool_lit(true);
-    let f_lit = Term::bool_lit(false);
+    let t_lit = covalence_hol_eval::mk_bool(true);
+    let f_lit = covalence_hol_eval::mk_bool(false);
     // The two literal antecedents; exactly one is satisfiable.
-    let b_is_true = Term::bool_lit(b).equals(t_lit)?; //  b = T
-    let b_is_false = Term::bool_lit(b).equals(f_lit)?; // b = F
+    let b_is_true = covalence_hol_eval::mk_bool(b).equals(t_lit)?; //  b = T
+    let b_is_false = covalence_hol_eval::mk_bool(b).equals(f_lit)?; // b = F
 
     // `then` conjunct `b=T ⟹ w=x` (live iff b), `else` conjunct
     // `b=F ⟹ w=y` (live iff ¬b).
@@ -255,7 +255,7 @@ mod cov_tests {
         use covalence_core::subst::close;
         let x = Term::free("x", a.clone());
         let y = Term::free("y", a.clone());
-        let b = Term::bool_lit(then_branch);
+        let b = covalence_hol_eval::mk_bool(then_branch);
         let lhs = Term::app(
             Term::app(Term::app(cond_op.clone(), b), x.clone()),
             y.clone(),
@@ -309,7 +309,7 @@ mod tests {
     fn cond_true_reduces_to_then_branch() {
         let thm = cond_true(&alpha(), &x(), &y()).unwrap();
         assert!(thm.hyps().is_empty(), "cond.true is proved, not postulated");
-        let lhs = Term::cond(Term::bool_lit(true), x(), y());
+        let lhs = Term::cond(covalence_hol_eval::mk_bool(true), x(), y());
         assert_eq!(thm.concl(), &lhs.equals(x()).unwrap());
     }
 
@@ -320,7 +320,7 @@ mod tests {
             thm.hyps().is_empty(),
             "cond.false is proved, not postulated"
         );
-        let lhs = Term::cond(Term::bool_lit(false), x(), y());
+        let lhs = Term::cond(covalence_hol_eval::mk_bool(false), x(), y());
         assert_eq!(thm.concl(), &lhs.equals(y()).unwrap());
     }
 
@@ -328,8 +328,8 @@ mod tests {
     fn cond_clauses_work_at_a_concrete_type() {
         // cond at `nat` with literal branches.
         let nat = Type::nat();
-        let a = Term::nat_lit(covalence_types::Nat::from_inner(7u32.into()));
-        let bb = Term::nat_lit(covalence_types::Nat::from_inner(9u32.into()));
+        let a = covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(7u32.into()));
+        let bb = covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(9u32.into()));
         let t = cond_true(&nat, &a, &bb).unwrap();
         assert_eq!(rhs_of(&t).unwrap(), a);
         let f = cond_false(&nat, &a, &bb).unwrap();

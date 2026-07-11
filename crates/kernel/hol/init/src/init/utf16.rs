@@ -87,7 +87,7 @@ fn app2(f: Term, a: Term, b: Term) -> Term {
 }
 
 fn lit(k: u64) -> Term {
-    Term::nat_lit(k)
+    covalence_hol_eval::mk_nat(k)
 }
 
 fn add(a: Term, b: Term) -> Term {
@@ -182,7 +182,7 @@ pub fn encode_char() -> Term {
 pub fn encode_char_lit(k: u64) -> Result<Thm> {
     let c = char_lit(k);
     // ⊢ char.code (char.mk k) = k (scalar-value premise discharged per literal).
-    let code_mk = crate::init::char::code_mk(&Term::nat_lit(k))?;
+    let code_mk = crate::init::char::code_mk(&covalence_hol_eval::mk_nat(k))?;
     let applied = Term::app(encode_char(), c);
     let unfolded = applied
         .delta_all(encode_char_spec().symbol())?
@@ -296,7 +296,7 @@ mod tests {
     use super::*;
 
     fn u16_lit(v: u16) -> Term {
-        Term::u16_lit(v)
+        covalence_hol_eval::mk_u16(v)
     }
 
     fn assert_encodes(k: u64, expected: &[u16]) {

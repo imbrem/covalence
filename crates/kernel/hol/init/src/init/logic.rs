@@ -251,7 +251,7 @@ pub fn exists_cong(alpha: &Type, peq: Thm) -> Result<Thm> {
 /// false. Proved by antisymmetry: `(∃x. F) ⟹ F` by [`exists_elim`] (each
 /// witness assumes `F`, which is the goal), and `F ⟹ (∃x. F)` by ex falso.
 pub fn exists_false_const(alpha: &Type) -> Result<Thm> {
-    let false_t = Term::bool_lit(false);
+    let false_t = covalence_hol_eval::mk_bool(false);
     // pred = λx. F.
     let pred = Term::abs(alpha.clone(), false_t.clone());
     let ex = mk_exists_of(alpha, pred.clone()); // ∃x. F
@@ -359,7 +359,7 @@ pub fn exists_one_point(alpha: &Type, t: &Term, p_pred: &Term) -> Result<Thm> {
 /// when the literals are `bool`-typed.
 fn build_disj(lits: &[Term]) -> Result<Term> {
     match lits {
-        [] => Ok(Term::bool_lit(false)),
+        [] => Ok(covalence_hol_eval::mk_bool(false)),
         [last] => Ok(last.clone()),
         [head, rest @ ..] => head.clone().or(build_disj(rest)?),
     }
@@ -958,10 +958,10 @@ fn cond_simp(node: &Term) -> Result<Option<Thm>> {
 // (`covalence_hol_eval::boolean`) wherever a `not_elim` conclusion (the
 // defined `F`) meets a literal-`F` statement, and vice versa.
 fn tt() -> Term {
-    Term::bool_lit(true)
+    covalence_hol_eval::mk_bool(true)
 }
 fn ff() -> Term {
-    Term::bool_lit(false)
+    covalence_hol_eval::mk_bool(false)
 }
 /// `{⌜F⌝} ⊢ target` — literal ex falso: cross the EG3b bridge
 /// (`fal_from_lit`), then the derived `false_elim`.
@@ -1276,7 +1276,7 @@ mod tests {
     fn truth_is_axiom_free() {
         let t = truth();
         assert!(t.hyps().is_empty(), "TRUTH must be axiom-free");
-        assert_eq!(t.concl(), &Term::bool_lit(true));
+        assert_eq!(t.concl(), &covalence_hol_eval::mk_bool(true));
     }
 
     #[test]
@@ -1343,7 +1343,11 @@ mod tests {
         let pos = Thm::assume(a.clone()).unwrap();
         let neg = Thm::assume(a.clone().not().unwrap()).unwrap();
         let res = resolve(pos, neg).unwrap();
-        assert_eq!(res.concl(), &Term::bool_lit(false), "empty clause is F");
+        assert_eq!(
+            res.concl(),
+            &covalence_hol_eval::mk_bool(false),
+            "empty clause is F"
+        );
         assert_eq!(res.hyps().len(), 2);
     }
 
@@ -1717,15 +1721,15 @@ mod tests {
 
     #[test]
     fn and_sym_swaps_a_conjunction() {
-        let p = Thm::assume(Term::bool_lit(true)).unwrap();
-        let q = Thm::assume(Term::bool_lit(false)).unwrap();
+        let p = Thm::assume(covalence_hol_eval::mk_bool(true)).unwrap();
+        let q = Thm::assume(covalence_hol_eval::mk_bool(false)).unwrap();
         let conj = p.and_intro(q).unwrap(); // ⊢ T ∧ F (with hyps)
         let swapped = and_sym(conj).unwrap();
         // Now `F ∧ T`.
         let (f, r) = swapped.concl().as_app().unwrap();
         let (_head, l) = f.as_app().unwrap();
-        assert_eq!(l, &Term::bool_lit(false));
-        assert_eq!(r, &Term::bool_lit(true));
+        assert_eq!(l, &covalence_hol_eval::mk_bool(false));
+        assert_eq!(r, &covalence_hol_eval::mk_bool(true));
     }
 
     // ---- existential ----
@@ -1736,7 +1740,7 @@ mod tests {
     }
 
     fn nat0() -> Term {
-        Term::nat_lit(covalence_types::Nat::zero())
+        covalence_hol_eval::mk_nat(covalence_types::Nat::zero())
     }
 
     /// `⊢ pred witness` for `pred = λx. body`, given `⊢ body[witness]`.
@@ -1804,8 +1808,8 @@ mod tests {
             .all_intro("y", Type::nat())
             .unwrap();
 
-        let out = exists_elim(ex, Term::bool_lit(true), step).unwrap();
-        assert_eq!(out.concl(), &Term::bool_lit(true));
+        let out = exists_elim(ex, covalence_hol_eval::mk_bool(true), step).unwrap();
+        assert_eq!(out.concl(), &covalence_hol_eval::mk_bool(true));
         assert!(out.hyps().is_empty());
     }
 
@@ -1814,9 +1818,12 @@ mod tests {
         // ⊢ (∃x:nat. F) = F.
         let thm = exists_false_const(&Type::nat()).expect("exists_false_const");
         assert!(thm.hyps().is_empty());
-        let pred = Term::abs(Type::nat(), Term::bool_lit(false));
+        let pred = Term::abs(Type::nat(), covalence_hol_eval::mk_bool(false));
         let ex = mk_exists_of(&Type::nat(), pred);
-        assert_eq!(thm.concl().as_eq().unwrap(), (&ex, &Term::bool_lit(false)));
+        assert_eq!(
+            thm.concl().as_eq().unwrap(),
+            (&ex, &covalence_hol_eval::mk_bool(false))
+        );
     }
 
     #[test]
@@ -1848,11 +1855,11 @@ mod tests {
             .clone()
             .equals(nat0())
             .unwrap()
-            .and(Term::bool_lit(false))
+            .and(covalence_hol_eval::mk_bool(false))
             .unwrap();
         // ⊢ body = F: body ⟹ F (and_elim_r) and F ⟹ body (ex falso).
         let to_f = Thm::assume(body.clone()).unwrap().and_elim_r().unwrap(); // {body} ⊢ F
-        let from_f = Thm::assume(Term::bool_lit(false))
+        let from_f = Thm::assume(covalence_hol_eval::mk_bool(false))
             .unwrap()
             .false_elim(body.clone())
             .unwrap(); // {F} ⊢ body
@@ -1862,7 +1869,10 @@ mod tests {
         assert!(thm.hyps().is_empty());
         // Conclusion: (∃x. body) = F.
         let ex = nat_pred("x", body).equals_ex();
-        assert_eq!(thm.concl().as_eq().unwrap(), (&ex, &Term::bool_lit(false)));
+        assert_eq!(
+            thm.concl().as_eq().unwrap(),
+            (&ex, &covalence_hol_eval::mk_bool(false))
+        );
     }
 
     #[test]

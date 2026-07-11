@@ -285,7 +285,10 @@ pub fn go_cons(digit_val: &Term, radix: &Term, c: &Term, cs: &Term) -> Result<Th
 fn head_is_digit(is_digit: &Term, l: &Term) -> Term {
     Term::app(
         Term::app(
-            Term::app(option_case(u8_t(), bool_t()), Term::bool_lit(false)),
+            Term::app(
+                option_case(u8_t(), bool_t()),
+                covalence_hol_eval::mk_bool(false),
+            ),
             is_digit.clone(),
         ),
         Term::app(head(u8_t()), l.clone()),
@@ -392,7 +395,7 @@ pub fn span_cat(is_digit: &Term) -> Result<Thm> {
 
         // b = true (digit).
         let branch_t = {
-            let hbt = Thm::assume(cond_c.clone().equals(Term::bool_lit(true))?)?;
+            let hbt = Thm::assume(cond_c.clone().equals(covalence_hol_eval::mk_bool(true))?)?;
             let digit_branch = pair_bb(cons_u(c.clone(), p.clone()), r.clone());
             let ct = cond_true(
                 &bb_t(),
@@ -412,12 +415,12 @@ pub fn span_cat(is_digit: &Term) -> Result<Thm> {
             let use_ih = ih.clone().cong_arg(Term::app(cons(u8_t()), c.clone()))?;
             let t1 = cat_eq.trans(cc)?;
             t1.trans(use_ih)?
-                .imp_intro(&cond_c.clone().equals(Term::bool_lit(true))?)?
+                .imp_intro(&cond_c.clone().equals(covalence_hol_eval::mk_bool(true))?)?
         };
 
         // b = false (non-digit).
         let branch_f = {
-            let hbf = Thm::assume(cond_c.clone().equals(Term::bool_lit(false))?)?;
+            let hbf = Thm::assume(cond_c.clone().equals(covalence_hol_eval::mk_bool(false))?)?;
             let x = cons_u(c.clone(), cat(p.clone(), r.clone()));
             let cf = cond_false(
                 &bb_t(),
@@ -442,7 +445,7 @@ pub fn span_cat(is_digit: &Term) -> Result<Thm> {
             cat_l
                 .trans(cn)?
                 .trans(snd_to_cons)?
-                .imp_intro(&cond_c.clone().equals(Term::bool_lit(false))?)?
+                .imp_intro(&cond_c.clone().equals(covalence_hol_eval::mk_bool(false))?)?
         };
 
         let combined = bool_cases()
@@ -470,7 +473,7 @@ mod tests {
     fn s(bytes: &[u8]) -> Term {
         let mut t = nil_u();
         for &b in bytes.iter().rev() {
-            t = cons_u(Term::u8_lit(b), t);
+            t = cons_u(covalence_hol_eval::mk_u8(b), t);
         }
         t
     }
@@ -483,10 +486,10 @@ mod tests {
             .rhs_conv(|x| x.reduce())
             .unwrap();
         let combo = rhs(&red);
-        match prop_eq(&combo, &Term::bool_lit(true)) {
+        match prop_eq(&combo, &covalence_hol_eval::mk_bool(true)) {
             Ok(tt) => (red.trans(tt).unwrap(), true),
             Err(_) => {
-                let ff = prop_eq(&combo, &Term::bool_lit(false)).unwrap();
+                let ff = prop_eq(&combo, &covalence_hol_eval::mk_bool(false)).unwrap();
                 (red.trans(ff).unwrap(), false)
             }
         }
@@ -498,7 +501,7 @@ mod tests {
         if bytes.is_empty() {
             return go_nil(dv, r, acc).unwrap();
         }
-        let b = Term::u8_lit(bytes[0]);
+        let b = covalence_hol_eval::mk_u8(bytes[0]);
         let cs = s(&bytes[1..]);
         let step = go_cons(dv, r, &b, &cs)
             .unwrap()
@@ -534,7 +537,7 @@ mod tests {
         let r = lit(10);
         let acc = Term::free("a", nat_t());
         let cs = Term::free("cs", bytes_t());
-        let c = Term::u8_lit(b'5');
+        let c = covalence_hol_eval::mk_u8(b'5');
         assert!(go_nil(&dv, &r, &acc).unwrap().hyps().is_empty());
         assert!(go_cons(&dv, &r, &c, &cs).unwrap().hyps().is_empty());
     }
@@ -552,9 +555,9 @@ mod tests {
     fn is_digit_byte_decides() {
         // '5' (0x35) is a digit; ' ' (0x20) is not.
         let p = is_digit_byte_dec();
-        let (_e5, is5) = decide(&Term::app(p.clone(), Term::u8_lit(b'5')));
+        let (_e5, is5) = decide(&Term::app(p.clone(), covalence_hol_eval::mk_u8(b'5')));
         assert!(is5);
-        let (_esp, issp) = decide(&Term::app(p, Term::u8_lit(b' ')));
+        let (_esp, issp) = decide(&Term::app(p, covalence_hol_eval::mk_u8(b' ')));
         assert!(!issp);
         let _ = collapse_conds; // available for cond-headed digit values
     }

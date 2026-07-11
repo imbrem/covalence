@@ -737,7 +737,7 @@ mod tests {
     fn mem_empty_is_false() {
         let thm = mem_empty(&alpha(), &elem("x")).unwrap();
         assert!(thm.hyps().is_empty());
-        assert_eq!(rhs_of(&thm).unwrap(), Term::bool_lit(false));
+        assert_eq!(rhs_of(&thm).unwrap(), covalence_hol_eval::mk_bool(false));
     }
 
     #[test]

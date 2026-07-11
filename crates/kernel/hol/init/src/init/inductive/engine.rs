@@ -90,7 +90,7 @@ impl InductiveBackend<NativeHol> for NatEngineBackend {
         }
         let th = NatEngineTheory {
             spec: spec.clone(),
-            mem: Term::abs(Type::nat(), Term::bool_lit(true)),
+            mem: Term::abs(Type::nat(), covalence_hol_eval::mk_bool(true)),
         };
         Ok(InductiveTheory {
             spec: spec.clone(),

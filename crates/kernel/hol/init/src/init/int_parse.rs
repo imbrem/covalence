@@ -248,7 +248,10 @@ fn char_is(k: u64) -> Term {
 fn head_is(k: u64, s: &Term) -> Term {
     Term::app(
         Term::app(
-            Term::app(option_case(char_t(), bool_t()), Term::bool_lit(false)),
+            Term::app(
+                option_case(char_t(), bool_t()),
+                covalence_hol_eval::mk_bool(false),
+            ),
             char_is(k),
         ),
         Term::app(head(char_t()), s.clone()),
@@ -273,7 +276,7 @@ fn cond_opt(c: Term, x: Term, y: Term) -> Term {
 /// The `'-'` (minus) branch: `lift_signed true (parse_nat … (tail s))`.
 fn minus_branch(is_digit: &Term, value: &Term, s: &Term) -> Term {
     lift_app(
-        &Term::bool_lit(true),
+        &covalence_hol_eval::mk_bool(true),
         &parse_nat_app(is_digit, value, &tail_s(s)),
     )
 }
@@ -281,14 +284,17 @@ fn minus_branch(is_digit: &Term, value: &Term, s: &Term) -> Term {
 /// The `'+'` (plus) branch: `lift_signed false (parse_nat … (tail s))`.
 fn plus_branch(is_digit: &Term, value: &Term, s: &Term) -> Term {
     lift_app(
-        &Term::bool_lit(false),
+        &covalence_hol_eval::mk_bool(false),
         &parse_nat_app(is_digit, value, &tail_s(s)),
     )
 }
 
 /// The bare (no-sign) branch: `lift_signed false (parse_nat … s)`.
 fn bare_branch(is_digit: &Term, value: &Term, s: &Term) -> Term {
-    lift_app(&Term::bool_lit(false), &parse_nat_app(is_digit, value, s))
+    lift_app(
+        &covalence_hol_eval::mk_bool(false),
+        &parse_nat_app(is_digit, value, s),
+    )
 }
 
 /// The inner `cond`: `cond (head_is 43 s) (plus) (bare)`.
@@ -352,7 +358,7 @@ pub fn lift_none(neg: &Term) -> Result<Thm> {
 /// `⊢ lift_signed false (some (pair n suf)) = some (pair (nat_to_int n) suf)`
 /// — a **positive** parse lifts the `nat` value by `nat_to_int`. Genuine.
 pub fn lift_pos_some(n: &Term, suf: &Term) -> Result<Thm> {
-    let neg = Term::bool_lit(false);
+    let neg = covalence_hol_eval::mk_bool(false);
     let collapse = cond_signed_false(n)?; // signed_val false n = nat_to_int n
     lift_some_general(&neg, n, suf)?.rhs_conv(|t| t.rw_all(&collapse))
 }
@@ -361,7 +367,7 @@ pub fn lift_pos_some(n: &Term, suf: &Term) -> Result<Thm> {
 ///     some (pair (int_neg (nat_to_int n)) suf)` — a **negative** parse
 /// negates the lifted value. Genuine.
 pub fn lift_neg_some(n: &Term, suf: &Term) -> Result<Thm> {
-    let neg = Term::bool_lit(true);
+    let neg = covalence_hol_eval::mk_bool(true);
     let collapse = cond_signed_true(n)?; // signed_val true n = int_neg (nat_to_int n)
     lift_some_general(&neg, n, suf)?.rhs_conv(|t| t.rw_all(&collapse))
 }
@@ -448,7 +454,7 @@ pub fn select_bare(is_digit: &Term, value: &Term, s: &Term, a: &Thm, b: &Thm) ->
 ///    ⟹ parse_int_gen is_digit value s = some (pair (int_neg (nat_to_int n))
 ///    suf)`. Genuine.
 pub fn parse_int_neg(is_digit: &Term, value: &Term, s: &Term, n: &Term, suf: &Term) -> Result<Thm> {
-    let g_term = head_is(45, s).equals(Term::bool_lit(true))?;
+    let g_term = head_is(45, s).equals(covalence_hol_eval::mk_bool(true))?;
     let g = Thm::assume(g_term.clone())?;
     let sel = select_minus(is_digit, value, s, &g)?; // {g} ⊢ parse s = lift_signed true (parse_nat (tail s))
     let pn_term = parse_nat_app(is_digit, value, &tail_s(s))
@@ -465,8 +471,8 @@ pub fn parse_int_neg(is_digit: &Term, value: &Term, s: &Term, n: &Term, suf: &Te
 ///    parse_nat is_digit value (tail s) = some (pair n suf) ⟹
 ///    parse_int_gen is_digit value s = some (pair (nat_to_int n) suf)`. Genuine.
 pub fn parse_int_pos(is_digit: &Term, value: &Term, s: &Term, n: &Term, suf: &Term) -> Result<Thm> {
-    let a_term = head_is(45, s).equals(Term::bool_lit(false))?;
-    let b_term = head_is(43, s).equals(Term::bool_lit(true))?;
+    let a_term = head_is(45, s).equals(covalence_hol_eval::mk_bool(false))?;
+    let b_term = head_is(43, s).equals(covalence_hol_eval::mk_bool(true))?;
     let a = Thm::assume(a_term.clone())?;
     let b = Thm::assume(b_term.clone())?;
     let sel = select_plus(is_digit, value, s, &a, &b)?;
@@ -491,8 +497,8 @@ pub fn parse_int_bare(
     n: &Term,
     suf: &Term,
 ) -> Result<Thm> {
-    let a_term = head_is(45, s).equals(Term::bool_lit(false))?;
-    let b_term = head_is(43, s).equals(Term::bool_lit(false))?;
+    let a_term = head_is(45, s).equals(covalence_hol_eval::mk_bool(false))?;
+    let b_term = head_is(43, s).equals(covalence_hol_eval::mk_bool(false))?;
     let a = Thm::assume(a_term.clone())?;
     let b = Thm::assume(b_term.clone())?;
     let sel = select_bare(is_digit, value, s, &a, &b)?;
@@ -517,7 +523,7 @@ pub fn parse_int_bare(
 /// tail s`. Combined with a sign case's `tail s = consumed ++ rest`, this gives
 /// the full `s = sign_str ++ consumed ++ rest`. Genuine.
 pub fn sign_reconstruct(k: u64, s: &Term) -> Result<Thm> {
-    let g_term = head_is(k, s).equals(Term::bool_lit(true))?;
+    let g_term = head_is(k, s).equals(covalence_hol_eval::mk_bool(true))?;
     let g = Thm::assume(g_term.clone())?;
 
     // Goal: ∃c. cons c (tail s) = s.
@@ -558,7 +564,7 @@ pub fn sign_reconstruct(k: u64, s: &Term) -> Result<Thm> {
             .trans(case_none(
                 &char_t(),
                 &bool_t(),
-                &Term::bool_lit(false),
+                &covalence_hol_eval::mk_bool(false),
                 &char_is(k),
             )?)?; // head_is k s = F
         // {g} : head_is k s = T ; {none} : head_is k s = F ⟹ T = F ⟹ F.
@@ -667,7 +673,7 @@ fn case_facts(
     // ---- none branch: P = none ⟹ contradiction ----
     let none_asm = Thm::assume(none_term.clone())?;
     let m_none = some_eq_m.rhs_conv(|t| t.rw_all(&none_asm))?; // some (pair v rest) = lift_signed is_neg none
-    let contra = m_none.trans(lift_none(&Term::bool_lit(is_neg))?)?; // some (pair v rest) = none
+    let contra = m_none.trans(lift_none(&covalence_hol_eval::mk_bool(is_neg))?)?; // some (pair v rest) = none
     let ff = some_ne_none(&is_t(), &pair_is(v.clone(), rest.clone()))?.not_elim(contra)?; // ⊢ F
     let none_thm = ff.false_elim(goal.clone())?.imp_intro(&none_term)?;
 
@@ -709,7 +715,7 @@ pub fn parse_int_correct(is_digit: &Term, value: &Term) -> Result<Thm> {
     let hyp = Thm::assume(hyp_term.clone())?;
 
     // NEG: head_is 45 s = T.
-    let g_neg = head_is(45, &s).equals(Term::bool_lit(true))?;
+    let g_neg = head_is(45, &s).equals(covalence_hol_eval::mk_bool(true))?;
     let neg_c = {
         let g = Thm::assume(g_neg.clone())?;
         let sel = select_minus(is_digit, value, &s, &g)?;
@@ -718,8 +724,8 @@ pub fn parse_int_correct(is_digit: &Term, value: &Term) -> Result<Thm> {
 
     // POS: head_is 45 s = F ∧ head_is 43 s = T.
     let g_pos = band(
-        head_is(45, &s).equals(Term::bool_lit(false))?,
-        head_is(43, &s).equals(Term::bool_lit(true))?,
+        head_is(45, &s).equals(covalence_hol_eval::mk_bool(false))?,
+        head_is(43, &s).equals(covalence_hol_eval::mk_bool(true))?,
     );
     let pos_c = {
         let gc = Thm::assume(g_pos.clone())?;
@@ -731,8 +737,8 @@ pub fn parse_int_correct(is_digit: &Term, value: &Term) -> Result<Thm> {
 
     // BARE: head_is 45 s = F ∧ head_is 43 s = F.
     let g_bare = band(
-        head_is(45, &s).equals(Term::bool_lit(false))?,
-        head_is(43, &s).equals(Term::bool_lit(false))?,
+        head_is(45, &s).equals(covalence_hol_eval::mk_bool(false))?,
+        head_is(43, &s).equals(covalence_hol_eval::mk_bool(false))?,
     );
     let bare_c = {
         let gc = Thm::assume(g_bare.clone())?;

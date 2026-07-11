@@ -66,11 +66,14 @@ fn mk(n: &Term) -> Term {
 fn in_range(n: &Term) -> Term {
     let lt = |a: Term, b: Term| Term::app(Term::app(nat_lt(), a), b);
     // n < 0xD800
-    let below = lt(n.clone(), Term::nat_lit(SURROGATE_LO));
+    let below = lt(n.clone(), covalence_hol_eval::mk_nat(SURROGATE_LO));
     // 0xDFFF < n  ∧  n < 0x110000
     let above = Term::app(
-        Term::app(and(), lt(Term::nat_lit(SURROGATE_HI), n.clone())),
-        lt(n.clone(), Term::nat_lit(CHAR_MAX_EXCL)),
+        Term::app(
+            and(),
+            lt(covalence_hol_eval::mk_nat(SURROGATE_HI), n.clone()),
+        ),
+        lt(n.clone(), covalence_hol_eval::mk_nat(CHAR_MAX_EXCL)),
     );
     Term::app(Term::app(or(), below), above)
 }
@@ -131,13 +134,15 @@ pub fn code_mk(n: &Term) -> Result<Thm> {
     // (the complete propositional decider) — the `init/prop.rs` pattern.
     let red = in_range(n).reduce()?; // ⊢ predicate(n) = <bool-literal combination>
     let reduced = red.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
-    let to_t = crate::init::logic::prop_eq(&reduced, &Term::bool_lit(true)).map_err(|_| {
-        Error::ConnectiveRule(
-            "char::code_mk: codepoint is not a Unicode scalar value \
+    let to_t = crate::init::logic::prop_eq(&reduced, &covalence_hol_eval::mk_bool(true)).map_err(
+        |_| {
+            Error::ConnectiveRule(
+                "char::code_mk: codepoint is not a Unicode scalar value \
              (must be < 0xD800 or in 0xE000..0x110000)"
-                .into(),
-        )
-    })?; // ⊢ <combination> = T  (errors if it is F — surrogate / out of range)
+                    .into(),
+            )
+        },
+    )?; // ⊢ <combination> = T  (errors if it is F — surrogate / out of range)
     let prem = red.trans(to_t)?.eqt_elim()?; // ⊢ predicate(n)
     let unfold = code_mk_unfold(n)?; // char.code (char.mk n) = rep (abs n)
     let collapse = rep_abs_in_range(n, prem)?; // rep (abs n) = n
@@ -167,7 +172,7 @@ pub fn mk_code(c: &Term) -> Result<Thm> {
 /// the term only (no in-range proof); pair with [`code_mk`] to discharge
 /// the round-trip when `k < 0x110000`.
 pub fn char_lit(k: u64) -> Term {
-    mk(&Term::nat_lit(k))
+    mk(&covalence_hol_eval::mk_nat(k))
 }
 
 #[cfg(test)]
@@ -175,7 +180,7 @@ mod tests {
     use super::*;
 
     fn nat_lit(k: u64) -> Term {
-        Term::nat_lit(k)
+        covalence_hol_eval::mk_nat(k)
     }
 
     #[test]

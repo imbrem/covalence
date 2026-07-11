@@ -152,8 +152,8 @@ pub fn atom_ne_nil_bool(alpha: &Type, a: &Term) -> Result<Thm> {
     let none_t = none(alpha.clone());
 
     // fl = λo:option α. option_case F (λ_:α. T) o  : option α → bool
-    let ff = Term::bool_lit(false);
-    let tt = Term::bool_lit(true);
+    let ff = covalence_hol_eval::mk_bool(false);
+    let tt = covalence_hol_eval::mk_bool(true);
     let f_handler = Term::abs(alpha.clone(), tt.clone()); // λ_:α. T
     let o = Term::free("__o", elem.clone());
     let case_body = crate::init::option::option_case(alpha.clone(), bool_ty.clone())

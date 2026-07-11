@@ -628,14 +628,23 @@ mod tests {
         // `coprod::rel_inj` β-only fix (a full βι reduce ι-collapsed the
         // carrier equality `F = v2` to `¬v2` at `α = bool`).
         let b = Type::bool();
-        let thm = some_inj(&b, &Term::bool_lit(false), &Term::bool_lit(true)).unwrap();
+        let thm = some_inj(
+            &b,
+            &covalence_hol_eval::mk_bool(false),
+            &covalence_hol_eval::mk_bool(true),
+        )
+        .unwrap();
         assert!(thm.hyps().is_empty());
-        let some_f = Term::app(some(b.clone()), Term::bool_lit(false));
-        let some_t = Term::app(some(b.clone()), Term::bool_lit(true));
+        let some_f = Term::app(some(b.clone()), covalence_hol_eval::mk_bool(false));
+        let some_t = Term::app(some(b.clone()), covalence_hol_eval::mk_bool(true));
         let expected = some_f
             .equals(some_t)
             .unwrap()
-            .imp(Term::bool_lit(false).equals(Term::bool_lit(true)).unwrap())
+            .imp(
+                covalence_hol_eval::mk_bool(false)
+                    .equals(covalence_hol_eval::mk_bool(true))
+                    .unwrap(),
+            )
             .unwrap();
         assert_eq!(thm.concl(), &expected);
     }

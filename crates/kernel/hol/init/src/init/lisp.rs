@@ -91,11 +91,11 @@ impl Lisp {
         // answers `node` (raw arguments + subtree images all dropped).
         let bool_cata = |leaf: bool, node: bool| -> Result<Term> {
             let bt = Type::bool();
-            let sa = Term::abs(bytes_ty(), Term::bool_lit(leaf)); // λb. leaf
-            let sn = Term::bool_lit(leaf);
+            let sa = Term::abs(bytes_ty(), covalence_hol_eval::mk_bool(leaf)); // λb. leaf
+            let sn = covalence_hol_eval::mk_bool(leaf);
             let sc = {
                 // λh t bh bt. node
-                let l_bt = Term::abs(bt.clone(), Term::bool_lit(node));
+                let l_bt = Term::abs(bt.clone(), covalence_hol_eval::mk_bool(node));
                 let l_bh = Term::abs(bt.clone(), l_bt);
                 let l_t = Term::abs(tau.clone(), l_bh);
                 Term::abs(tau.clone(), l_t)
@@ -235,9 +235,9 @@ impl Lisp {
     }
     fn bool_cata_steps(cs: &CarvedSExpr, leaf: bool, node: bool) -> [Term; 3] {
         let bt = Type::bool();
-        let sa = Term::abs(bytes_ty(), Term::bool_lit(leaf));
-        let sn = Term::bool_lit(leaf);
-        let l_bt = Term::abs(bt.clone(), Term::bool_lit(node));
+        let sa = Term::abs(bytes_ty(), covalence_hol_eval::mk_bool(leaf));
+        let sn = covalence_hol_eval::mk_bool(leaf);
+        let l_bt = Term::abs(bt.clone(), covalence_hol_eval::mk_bool(node));
         let l_bh = Term::abs(bt.clone(), l_bt);
         let l_t = Term::abs(cs.tau.clone(), l_bh);
         let sc = Term::abs(cs.tau.clone(), l_t);
@@ -559,7 +559,10 @@ mod tests {
             (l.atom_scons(&h, &t).unwrap(), false),
         ] {
             assert!(thm.hyps().is_empty());
-            assert_eq!(thm.concl().as_eq().unwrap().1, &Term::bool_lit(want));
+            assert_eq!(
+                thm.concl().as_eq().unwrap().1,
+                &covalence_hol_eval::mk_bool(want)
+            );
         }
     }
 

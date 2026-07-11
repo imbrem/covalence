@@ -295,10 +295,10 @@ mod tests {
         // fa = λ_:bytes. 0
         let fa = Term::abs(
             bytes,
-            Term::nat_lit(covalence_types::Nat::from_inner(0u32.into())),
+            covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(0u32.into())),
         );
         // fn = 0
-        let fnil = Term::nat_lit(covalence_types::Nat::from_inner(0u32.into()));
+        let fnil = covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(0u32.into()));
         // fc = λx y:nat. succ y
         let y = Term::free("y", nat_r());
         let succ_y = Term::app(covalence_hol_eval::defs::nat_succ(), y.clone());
@@ -329,7 +329,7 @@ mod tests {
             lhs,
             &rec(
                 fa.clone(),
-                Term::nat_lit(covalence_types::Nat::from_inner(0u32.into())),
+                covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(0u32.into())),
                 {
                     let (_, _, fc2) = handlers_count();
                     fc2
@@ -372,7 +372,7 @@ mod tests {
         let rhs = conv.concl().as_eq().unwrap().1.clone();
         assert_eq!(
             rhs,
-            Term::nat_lit(covalence_types::Nat::from_inner(2u32.into()))
+            covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(2u32.into()))
         );
     }
 }

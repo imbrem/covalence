@@ -243,7 +243,9 @@ pub fn p_var(n: Term) -> Term {
 
 /// `enc(var k)` for a literal index `k`.
 pub fn p_var_lit(k: u32) -> Term {
-    p_var(Term::nat_lit(covalence_types::Nat::from_inner(k.into())))
+    p_var(covalence_hol_eval::mk_nat(
+        covalence_types::Nat::from_inner(k.into()),
+    ))
 }
 
 /// `enc(¬A)`.
@@ -945,7 +947,7 @@ pub fn derivable_closed_under_rules() -> Result<Thm> {
 pub fn consistency() -> Result<Thm> {
     let v_false = {
         // λ_:nat. F  — the all-false valuation.
-        Term::abs(nat(), Term::bool_lit(false))
+        Term::abs(nat(), covalence_hol_eval::mk_bool(false))
     };
     let var0 = inst_tfree_term(&p_var_lit(0)); // ⌜var 0⌝ at 'r := bool
 
@@ -985,7 +987,7 @@ pub fn consistency_app() -> Result<Thm> {
     // The bool-pinned constant constructor forms.
     let var_fn_b = inst_tfree_term(&var_fn());
     let derivable_fn_b = inst_tfree_term(&derivable_fn());
-    let zero = Term::nat_lit(0u32);
+    let zero = covalence_hol_eval::mk_nat(0u32);
 
     // ⊢ var_fn 0 = var0   (single β-step; var_fn = λn. p_var n).
     let var_app = var_fn_b.apply(zero)?;
@@ -1228,7 +1230,9 @@ mod tests {
         let nf = crate::init::eq::beta_nf(den);
         let rhs = nf.concl().as_eq().unwrap().1.clone();
         let expected = v
-            .apply(Term::nat_lit(covalence_types::Nat::from_inner(0u32.into())))
+            .apply(covalence_hol_eval::mk_nat(
+                covalence_types::Nat::from_inner(0u32.into()),
+            ))
             .unwrap();
         assert_eq!(rhs, expected);
     }
@@ -1280,7 +1284,7 @@ mod tests {
     fn consistency_app_is_genuine() {
         let thm = consistency_app().expect("consistency_app");
         assert!(thm.hyps().is_empty());
-        let var0_app = inst_tfree_term(&Term::app(var_fn(), Term::nat_lit(0u32)));
+        let var0_app = inst_tfree_term(&Term::app(var_fn(), covalence_hol_eval::mk_nat(0u32)));
         let applied = inst_tfree_term(&Term::app(derivable_fn(), var0_app));
         assert_eq!(thm.concl(), &applied.not().unwrap());
     }
@@ -1314,7 +1318,7 @@ mod tests {
             imp_fn().type_of().unwrap(),
             Type::fun(phi(), Type::fun(phi(), phi()))
         );
-        let app = Term::app(var_fn(), Term::nat_lit(0u32));
+        let app = Term::app(var_fn(), covalence_hol_eval::mk_nat(0u32));
         let nf = beta_nf(app).concl().as_eq().unwrap().1.clone();
         assert_eq!(nf, beta_nf(p_var_lit(0)).concl().as_eq().unwrap().1.clone());
     }

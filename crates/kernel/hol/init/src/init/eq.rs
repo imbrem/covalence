@@ -203,7 +203,7 @@ mod tests {
     }
 
     fn nat_lit(n: u32) -> Term {
-        Term::nat_lit(covalence_types::Nat::from_inner(n.into()))
+        covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(n.into()))
     }
 
     #[test]

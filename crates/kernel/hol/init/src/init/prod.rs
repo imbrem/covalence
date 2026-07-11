@@ -685,8 +685,8 @@ mod tests {
     #[test]
     fn projections_at_concrete_values() {
         // fst (pair 3 T) = 3, snd (pair 3 T) = T at (nat, bool).
-        let three = Term::nat_lit(covalence_types::Nat::from_inner(3u32.into()));
-        let tt = Term::bool_lit(true);
+        let three = covalence_hol_eval::mk_nat(covalence_types::Nat::from_inner(3u32.into()));
+        let tt = covalence_hol_eval::mk_bool(true);
         let f = fst_pair(&Type::nat(), &Type::bool(), &three, &tt).unwrap();
         assert_eq!(rhs_of(&f).unwrap(), three);
         let s = snd_pair(&Type::nat(), &Type::bool(), &three, &tt).unwrap();

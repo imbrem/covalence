@@ -413,14 +413,14 @@ pub fn nat_of_bits_cons(b: Term, bs: Term) -> Result<Thm> {
 /// `⊢ nat_of_bits (cons true bs) = bit1 (nat_of_bits bs)`.
 pub fn nat_of_bits_cons_true(bs: Term) -> Result<Thm> {
     let nob = nat_of_bits_app(bs.clone());
-    let general = nat_of_bits_cons(Term::bool_lit(true), bs)?;
+    let general = nat_of_bits_cons(covalence_hol_eval::mk_bool(true), bs)?;
     general.trans(cond_true(&nat(), &bit1(nob.clone()), &bit0(nob))?)
 }
 
 /// `⊢ nat_of_bits (cons false bs) = bit0 (nat_of_bits bs)`.
 pub fn nat_of_bits_cons_false(bs: Term) -> Result<Thm> {
     let nob = nat_of_bits_app(bs.clone());
-    let general = nat_of_bits_cons(Term::bool_lit(false), bs)?;
+    let general = nat_of_bits_cons(covalence_hol_eval::mk_bool(false), bs)?;
     general.trans(cond_false(&nat(), &bit1(nob.clone()), &bit0(nob))?)
 }
 
@@ -475,7 +475,7 @@ cached_thm! {
         // ---- base: P nil. witness `cons true nil` (nat_of_bits = succ 0). ----
         let base = {
             let nnil = nat_of_bits_app(defs::nil(boolt())); // nat_of_bits nil
-            let wit = cons_bool(Term::bool_lit(true), defs::nil(boolt()))?;
+            let wit = cons_bool(covalence_hol_eval::mk_bool(true), defs::nil(boolt()))?;
             let e_nil = nat_of_bits_nil()?; // nat_of_bits nil = 0
             // double (nat_of_bits nil) = nat_of_bits nil  (both are 0).
             let d_id = e_nil
@@ -508,7 +508,7 @@ cached_thm! {
 
             // b = true (carry): witness `cons false bs'`.
             let branch_t = {
-                let hbt = Thm::assume(b.clone().equals(Term::bool_lit(true))?)?; // {b=T}
+                let hbt = Thm::assume(b.clone().equals(covalence_hol_eval::mk_bool(true))?)?; // {b=T}
                 // nat_of_bits (cons b bs) = bit1 (nat_of_bits bs)   (via cons_true, b↦true).
                 let cb = nat_of_bits_cons_true(bs.clone())?.rewrite(&hbt.clone().sym()?)?;
                 // succ (nat_of_bits (cons b bs)) = succ (succ (double (nat_of_bits bs))).
@@ -519,25 +519,25 @@ cached_thm! {
                     .trans(hprime.clone().cong_arg(double())?)?
                     .trans(double_succ().all_elim(nob_bs.clone())?)?;
                 let proof = lhs.trans(rhs_bridge.sym()?)?; // = succ (nat_of_bits (cons b bs))
-                let wit = cons_bool(Term::bool_lit(false), bsp.clone())?;
+                let wit = cons_bool(covalence_hol_eval::mk_bool(false), bsp.clone())?;
                 let concl = exists_bits_intro(&succ(nat_of_bits_app(consbb.clone())), wit, proof)?; // {pred bs', b=T} ⊢ goal
                 let step = concl.imp_intro(&pred_bsp)?.all_intro("bs'", lbool())?; // {b=T} ⊢ ∀bs'. pred bs' ⟹ goal
                 exists_elim(ih.clone(), goal.clone(), step)? // {P bs, b=T} ⊢ goal
-                    .imp_intro(&b.clone().equals(Term::bool_lit(true))?)? // {P bs} ⊢ (b=T) ⟹ goal
+                    .imp_intro(&b.clone().equals(covalence_hol_eval::mk_bool(true))?)? // {P bs} ⊢ (b=T) ⟹ goal
             };
 
             // b = false (no carry): witness `cons true bs`.
             let branch_f = {
-                let hbf = Thm::assume(b.clone().equals(Term::bool_lit(false))?)?; // {b=F}
+                let hbf = Thm::assume(b.clone().equals(covalence_hol_eval::mk_bool(false))?)?; // {b=F}
                 // nat_of_bits (cons b bs) = bit0 (nat_of_bits bs) = double (nat_of_bits bs).
                 let cb = nat_of_bits_cons_false(bs.clone())?.rewrite(&hbf.clone().sym()?)?;
                 let rhs_bridge = cb.cong_arg(nat_succ())?; // succ(nat_of_bits(cons b bs)) = succ(double(nat_of_bits bs))
                 // nat_of_bits (cons true bs) = bit1 (nat_of_bits bs) = succ (double (nat_of_bits bs)).
                 let lhs = nat_of_bits_cons_true(bs.clone())?;
                 let proof = lhs.trans(rhs_bridge.sym()?)?; // = succ (nat_of_bits (cons b bs))
-                let wit = cons_bool(Term::bool_lit(true), bs.clone())?;
+                let wit = cons_bool(covalence_hol_eval::mk_bool(true), bs.clone())?;
                 exists_bits_intro(&succ(nat_of_bits_app(consbb.clone())), wit, proof)? // {b=F} ⊢ goal
-                    .imp_intro(&b.clone().equals(Term::bool_lit(false))?)? // ⊢ (b=F) ⟹ goal
+                    .imp_intro(&b.clone().equals(covalence_hol_eval::mk_bool(false))?)? // ⊢ (b=F) ⟹ goal
             };
 
             let combined = bool_cases()
@@ -708,7 +708,7 @@ mod tests {
         assert!(nil_eq.hyps().is_empty());
         assert_eq!(rhs(&nil_eq), zero());
         for t in [
-            nat_of_bits_cons(Term::bool_lit(true), bs.clone()).unwrap(),
+            nat_of_bits_cons(covalence_hol_eval::mk_bool(true), bs.clone()).unwrap(),
             nat_of_bits_cons_true(bs.clone()).unwrap(),
             nat_of_bits_cons_false(bs.clone()).unwrap(),
         ] {
@@ -739,9 +739,9 @@ mod tests {
     fn nat_of_bits_evaluates_little_endian() {
         // [true, false, true] little-endian = 1 + 0·2 + 1·4 = 5.
         let nil_b = defs::nil(boolt());
-        let l1 = cons_bool(Term::bool_lit(true), nil_b.clone()).unwrap(); // [t]
-        let l2 = cons_bool(Term::bool_lit(false), l1.clone()).unwrap(); // [f, t]
-        let l3 = cons_bool(Term::bool_lit(true), l2.clone()).unwrap(); // [t, f, t]
+        let l1 = cons_bool(covalence_hol_eval::mk_bool(true), nil_b.clone()).unwrap(); // [t]
+        let l2 = cons_bool(covalence_hol_eval::mk_bool(false), l1.clone()).unwrap(); // [f, t]
+        let l3 = cons_bool(covalence_hol_eval::mk_bool(true), l2.clone()).unwrap(); // [t, f, t]
 
         let e3 = nat_of_bits_cons_true(l2.clone()).unwrap(); // = bit1 (nat_of_bits l2)
         let e2 = nat_of_bits_cons_false(l1.clone()).unwrap();

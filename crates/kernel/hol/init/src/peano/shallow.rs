@@ -51,7 +51,7 @@ impl Peano for Hol {
     }
 
     fn zero(&self) -> Term {
-        Term::nat_lit(Nat::zero())
+        covalence_hol_eval::mk_nat(Nat::zero())
     }
 
     fn succ(&self, n: Term) -> Term {
@@ -416,7 +416,7 @@ mod tests {
     fn induction_is_genuine_and_axiom_free() {
         // Prove ⊢ ∀n. P n for the trivial motive P := λn. T.
         let h = hol();
-        let t = Term::bool_lit(true);
+        let t = covalence_hol_eval::mk_bool(true);
         let p = Term::abs(Type::nat(), t.clone()); // λn. T
 
         let base = Thm::beta_conv(Term::app(p.clone(), h.zero()))

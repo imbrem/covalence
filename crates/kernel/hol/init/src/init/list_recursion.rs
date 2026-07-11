@@ -427,7 +427,7 @@ fn nat_ty() -> Type {
 
 /// `0 : nat`.
 fn nat_zero() -> Term {
-    Term::nat_lit(0u32)
+    covalence_hol_eval::mk_nat(0u32)
 }
 
 /// `succ n`.
@@ -729,7 +729,7 @@ mod tests {
             l,
             &Term::app(covalence_hol_eval::defs::list_length(elem()), nil(elem()))
         );
-        assert_eq!(r, &Term::nat_lit(0u32));
+        assert_eq!(r, &covalence_hol_eval::mk_nat(0u32));
 
         let lc = super::length_cons(&elem(), &x, &xs).unwrap();
         assert!(lc.hyps().is_empty());

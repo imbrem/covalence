@@ -331,8 +331,8 @@ impl Env {
                     .insert_ready((*n).to_string(), Entry::Const(ConstDef::Op(t.clone())));
             }
         };
-        op(&["true"], Term::bool_lit(true));
-        op(&["false"], Term::bool_lit(false));
+        op(&["true"], covalence_hol_eval::mk_bool(true));
+        op(&["false"], covalence_hol_eval::mk_bool(false));
         op(&["and", "/\\"], defs::and());
         op(&["or", "\\/"], defs::or());
         op(&["not", "~"], defs::not());

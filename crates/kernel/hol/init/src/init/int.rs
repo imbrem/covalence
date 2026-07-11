@@ -2962,7 +2962,7 @@ pub fn int_env() -> crate::script::Env {
         "lit1",
         to_ops(
             lit1_mk().unwrap(),
-            &[(&Term::nat_lit(1u64), &nat::zero())],
+            &[(&covalence_hol_eval::mk_nat(1u64), &nat::zero())],
             &[],
         )
         .unwrap(),

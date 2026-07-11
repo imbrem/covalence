@@ -36,7 +36,7 @@ fn lit(k: u64) -> Term {
 
 /// `u8.toNat (u8_lit k) : nat`.
 fn byte_val_lit(k: u8) -> Term {
-    Term::app(int_to_nat(IntTag::U8), Term::u8_lit(k))
+    Term::app(int_to_nat(IntTag::U8), covalence_hol_eval::mk_u8(k))
 }
 
 /// The RHS of an equational theorem.
@@ -79,7 +79,7 @@ pub fn digit_val_agree(k: u8) -> Result<Thm> {
     // byte side: digit_val_byte_dec (u8_lit k) = u8.toNat (u8_lit k) − 48 = k − 48.
     let byte_dv = Term::app(
         crate::init::nat_parse_bytes::digit_val_byte_dec(),
-        Term::u8_lit(k),
+        covalence_hol_eval::mk_u8(k),
     );
     let byte_eq = Thm::refl(byte_dv)?.rhs_conv(|t| t.reduce())?; // = <literal k−48>
     char_eq.trans(byte_eq.sym()?)
@@ -127,7 +127,7 @@ mod tests {
                 r,
                 &Term::app(
                     crate::init::nat_parse_bytes::digit_val_byte_dec(),
-                    Term::u8_lit(k)
+                    covalence_hol_eval::mk_u8(k)
                 )
             );
             // both sides compute the same value k − 48.

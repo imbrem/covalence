@@ -427,8 +427,8 @@ mod tests {
         RingOps::new(
             nat::nat_add(),
             nat::nat_mul(),
-            Term::nat_lit(0u32),
-            Term::nat_lit(1u32),
+            covalence_hol_eval::mk_nat(0u32),
+            covalence_hol_eval::mk_nat(1u32),
             nat::add_assoc(),
             nat::add_comm(),
             nat::mul_assoc(),
@@ -492,8 +492,8 @@ mod tests {
     #[test]
     fn identities_are_simplified() {
         let rn = RingNormalizer::new(nat_ops());
-        let one = Term::nat_lit(1u32);
-        let zero = Term::nat_lit(0u32);
+        let one = covalence_hol_eval::mk_nat(1u32);
+        let zero = covalence_hol_eval::mk_nat(0u32);
         // a·1 + 0  =  a
         let e = add(mul(v("a"), one.clone()), zero.clone());
         let thm = rn.normalize(&e).unwrap();

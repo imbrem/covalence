@@ -166,7 +166,7 @@ fn eq_f(p: &Term, f_under_p: Thm) -> Result<Thm> {
     } else {
         covalence_hol_eval::fal_to_lit(f_under_p)?
     };
-    let p_from_f = Thm::assume(Term::bool_lit(false))?.false_elim(p.clone())?; // {⌜F⌝} ⊢ p
+    let p_from_f = Thm::assume(covalence_hol_eval::mk_bool(false))?.false_elim(p.clone())?; // {⌜F⌝} ⊢ p
     p_from_f.deduct_antisym(f_under_p)
 }
 
@@ -212,20 +212,24 @@ fn cons_eq_nil_f(d: &Term, q: &Term) -> Result<Thm> {
 
 /// `⊢ (head (cons true q) = some true) = T`.
 fn head_true_t(q: &Term) -> Result<Thm> {
-    head_cons(&Type::bool(), &Term::bool_lit(true), q)?.eqt_intro()
+    head_cons(&Type::bool(), &covalence_hol_eval::mk_bool(true), q)?.eqt_intro()
 }
 
 /// `⊢ (head (cons false q) = some true) = F`.
 fn head_false_f(q: &Term) -> Result<Thm> {
-    let some_t = some(Type::bool()).apply(Term::bool_lit(true))?;
+    let some_t = some(Type::bool()).apply(covalence_hol_eval::mk_bool(true))?;
     let p = head(Type::bool())
-        .apply(cons_path(Term::bool_lit(false), q.clone())?)?
+        .apply(cons_path(covalence_hol_eval::mk_bool(false), q.clone())?)?
         .equals(some_t)?;
     // {p} ⊢ some false = some true, hence F = T, hence F.
-    let hc = head_cons(&Type::bool(), &Term::bool_lit(false), q)?; // ⊢ head (cons F q) = some false
+    let hc = head_cons(&Type::bool(), &covalence_hol_eval::mk_bool(false), q)?; // ⊢ head (cons F q) = some false
     let ff_tt = hc.sym()?.trans(Thm::assume(p.clone())?)?; // {p} ⊢ some F = some T
-    let f_eq_t =
-        some_inj(&Type::bool(), &Term::bool_lit(false), &Term::bool_lit(true))?.imp_elim(ff_tt)?; // {p} ⊢ F = T
+    let f_eq_t = some_inj(
+        &Type::bool(),
+        &covalence_hol_eval::mk_bool(false),
+        &covalence_hol_eval::mk_bool(true),
+    )?
+    .imp_elim(ff_tt)?; // {p} ⊢ F = T
     let f = f_eq_t.sym()?.eq_mp(truth())?; // {p} ⊢ F
     eq_f(&p, f)
 }
@@ -335,7 +339,7 @@ impl CarvedSExpr {
             let go_false = x.clone().apply(tail_p)?;
             let test = head(Type::bool())
                 .apply(p.clone())?
-                .equals(some(Type::bool()).apply(Term::bool_lit(true))?)?;
+                .equals(some(Type::bool()).apply(covalence_hol_eval::mk_bool(true))?)?;
             let inner_cond = cond(lab_ty())
                 .apply(test)?
                 .apply(go_true)?
@@ -356,7 +360,7 @@ impl CarvedSExpr {
             let q = Term::free("__q", path_ty());
             let at = u
                 .clone()
-                .apply(cons_path(Term::bool_lit(flag), q.clone())?)?;
+                .apply(cons_path(covalence_hol_eval::mk_bool(flag), q.clone())?)?;
             let inner = Term::abs(path_ty(), subst::close(&at, "__q"));
             Ok(Term::abs(dom_ty(), subst::close(&inner, "__u")))
         };
@@ -608,7 +612,7 @@ impl CarvedSExpr {
 
     /// `⊢ sconsU x y (cons true q) = y q` / `… (cons false q) = x q`.
     fn u_cons_at_dir(&self, x: &Term, y: &Term, flag: bool, q: &Term) -> Result<Thm> {
-        let d = Term::bool_lit(flag);
+        let d = covalence_hol_eval::mk_bool(flag);
         let acc = apply_def(
             &self.u_cons_eq,
             &[x.clone(), y.clone(), cons_path(d.clone(), q.clone())?],
@@ -648,7 +652,7 @@ impl CarvedSExpr {
         } else {
             &self.u_car_eq
         };
-        let flag = Term::bool_lit(take_cdr);
+        let flag = covalence_hol_eval::mk_bool(take_cdr);
         let leaf_tm = match leaf {
             LeafKind::Atom(b) => self.u_atom.clone().apply(b.clone())?,
             LeafKind::Nil => self.u_nil.clone(),
@@ -1172,7 +1176,7 @@ impl InductiveBackend<NativeHol> for CarvedSExprBackend {
             )));
         }
         let cs = carved()?;
-        let mem = Term::abs(cs.tau.clone(), Term::bool_lit(true));
+        let mem = Term::abs(cs.tau.clone(), covalence_hol_eval::mk_bool(true));
         Ok(InductiveTheory {
             spec: spec.clone(),
             ty: cs.tau.clone(),

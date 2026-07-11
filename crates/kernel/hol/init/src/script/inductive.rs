@@ -222,7 +222,7 @@ fn is_nat_shape(decl: &Decl) -> bool {
 // ----------------------------------------------------------------------------
 
 fn zero() -> Term {
-    Term::nat_lit(0u8)
+    covalence_hol_eval::mk_nat(0u8)
 }
 
 fn succ(n: Term) -> KResult<Term> {

@@ -31,6 +31,22 @@ pub fn mk_blob(b: impl Into<Bytes>) -> Term {
     Lit::Bytes(b.into()).to_term()
 }
 
+/// Build the concrete `bool` term for `b` (today the kernel `bool` literal —
+/// `T` for `true`, `F` for `false`).
+pub fn mk_bool(b: bool) -> Term {
+    Lit::Bool(b).to_term()
+}
+
+/// Build the concrete `u8` term for `v` (today the kernel fixed-width literal).
+pub fn mk_u8(v: u8) -> Term {
+    Lit::Small(SmallIntLiteral::u8(v)).to_term()
+}
+
+/// Build the concrete `u16` term for `v` (today the kernel fixed-width literal).
+pub fn mk_u16(v: u16) -> Term {
+    Lit::Small(SmallIntLiteral::u16(v)).to_term()
+}
+
 /// Build the concrete `u32` term for `v` (today the kernel fixed-width literal).
 /// Used e.g. as the bit pattern of an `f32` (`f32 := u32`).
 pub fn mk_u32(v: u32) -> Term {
@@ -41,6 +57,14 @@ pub fn mk_u32(v: u32) -> Term {
 /// Used e.g. as the bit pattern of an `f64` (`f64 := u64`).
 pub fn mk_u64(v: u64) -> Term {
     Lit::Small(SmallIntLiteral::u64(v)).to_term()
+}
+
+/// Recognize a concrete `bool` term (a `bool` literal), returning its value.
+pub fn as_bool(t: &Term) -> Option<bool> {
+    match Lit::from_term(t)? {
+        Lit::Bool(b) => Some(b),
+        _ => None,
+    }
 }
 
 /// Recognize a concrete `nat` term, returning its value.

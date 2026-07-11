@@ -200,7 +200,7 @@ impl ChurchTheory {
             handlers,
             carrier: Type::bool(), // placeholder
             ctor_fns: Vec::new(),
-            wf: Term::bool_lit(true), // placeholder
+            wf: covalence_hol_eval::mk_bool(true), // placeholder
         };
         th.carrier = th.carrier_ty();
         th.ctor_fns = (0..th.spec.arity())
@@ -403,7 +403,7 @@ impl ChurchTheory {
     fn tag_handlers(&self, i: usize) -> Vec<Term> {
         (0..self.spec.arity())
             .map(|c| {
-                let mut t = Term::bool_lit(c == i);
+                let mut t = covalence_hol_eval::mk_bool(c == i);
                 for (_, sort) in self.spec.ctors[c].args.iter().rev() {
                     t = Term::abs(self.arg_ty(sort, &Type::bool()), t);
                 }
@@ -498,7 +498,7 @@ impl InductiveFacts<NativeHol> for ChurchTheory {
         // arbitrary (ε-chosen) element of `obs`.
         let arb = Term::app(
             Term::select_op(obs.clone()),
-            Term::abs(obs.clone(), Term::bool_lit(true)),
+            Term::abs(obs.clone(), covalence_hol_eval::mk_bool(true)),
         );
         let hs: Vec<Term> = (0..self.spec.arity())
             .map(|cc| {
@@ -557,7 +557,7 @@ impl InductiveFacts<NativeHol> for ChurchTheory {
         let Some((l, r)) = core.concl().as_eq() else {
             return internal("distinct: observation did not yield an equation");
         };
-        if *l != Term::bool_lit(true) || *r != Term::bool_lit(false) {
+        if *l != covalence_hol_eval::mk_bool(true) || *r != covalence_hol_eval::mk_bool(false) {
             return internal(format!("distinct: tag fold yielded `{l} = {r}`"));
         }
         // {H} ⊢ F, discharge.

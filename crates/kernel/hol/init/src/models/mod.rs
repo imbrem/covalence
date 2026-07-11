@@ -211,7 +211,7 @@ impl Logic for NatSelf {
         use crate::init::nat;
         let sig = NatSig {
             carrier: Type::nat(),
-            zero: Term::nat_lit(0u32),
+            zero: covalence_hol_eval::mk_nat(0u32),
             succ: Term::succ(),
             add: covalence_hol_eval::defs::nat_add(),
         };
@@ -236,7 +236,7 @@ impl Logic for NatSelf {
             .clone()
             .try_into()
             .map_err(|_| NoLiteral::of("int (negative — not a Nat)"))?;
-        Ok(Term::nat_lit(nat))
+        Ok(covalence_hol_eval::mk_nat(nat))
     }
 }
 

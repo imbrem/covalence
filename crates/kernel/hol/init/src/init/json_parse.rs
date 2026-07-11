@@ -182,7 +182,10 @@ fn tail_b(s: &Term) -> Term {
 fn head_sat(pred: &Term, s: &Term) -> Term {
     Term::app(
         Term::app(
-            Term::app(option_case(u8_t(), bool_t()), Term::bool_lit(false)),
+            Term::app(
+                option_case(u8_t(), bool_t()),
+                covalence_hol_eval::mk_bool(false),
+            ),
             pred.clone(),
         ),
         head_b(s),
@@ -310,7 +313,10 @@ fn value_body(rec: &Term, s: &Term) -> Term {
     cond_app(
         res_t(),
         head_sat(&is_open(), &s1),
-        Term::app(Term::app(rec.clone(), Term::bool_lit(true)), tail_b(&s1)),
+        Term::app(
+            Term::app(rec.clone(), covalence_hol_eval::mk_bool(true)),
+            tail_b(&s1),
+        ),
         inner,
     )
 }
@@ -327,7 +333,10 @@ fn opt_bind(r: Term, kont: Term) -> Term {
 /// and recurse.
 fn array_body(rec: &Term, s: &Term) -> Term {
     let s1 = skip_sep(s);
-    let read_elem = Term::app(Term::app(rec.clone(), Term::bool_lit(false)), s1.clone());
+    let read_elem = Term::app(
+        Term::app(rec.clone(), covalence_hol_eval::mk_bool(false)),
+        s1.clone(),
+    );
     let p1 = Term::free("__p1", payload_t());
     let p2 = Term::free("__p2", payload_t());
     let inner_kont = {
@@ -335,7 +344,10 @@ fn array_body(rec: &Term, s: &Term) -> Term {
         lam("__p2", payload_t(), body)
     };
     let outer_kont = {
-        let rest_read = Term::app(Term::app(rec.clone(), Term::bool_lit(true)), snd_r(&p1));
+        let rest_read = Term::app(
+            Term::app(rec.clone(), covalence_hol_eval::mk_bool(true)),
+            snd_r(&p1),
+        );
         let body = opt_bind(rest_read, inner_kont);
         lam("__p1", payload_t(), body)
     };
@@ -385,7 +397,10 @@ pub fn parse_json() -> Term {
     let fuel = Term::free("fuel", Type::nat());
     let s = Term::free("s", blist_t());
     let applied = Term::app(
-        Term::app(Term::app(parse_fn(), fuel.clone()), Term::bool_lit(false)),
+        Term::app(
+            Term::app(parse_fn(), fuel.clone()),
+            covalence_hol_eval::mk_bool(false),
+        ),
         s.clone(),
     );
     lam("fuel", Type::nat(), lam("s", blist_t(), applied))
@@ -714,12 +729,12 @@ pub fn parsed_cons_struct(h: &Term, t: &Term) -> Result<(Thm, Thm, Thm)> {
 /// `λ_:u8. F` — the constant-`false` byte function (the `none`-branch of the
 /// `is_empty`/`nonempty` option eliminators).
 fn const_false_u8() -> Term {
-    lam("_x", u8_t(), Term::bool_lit(false))
+    lam("_x", u8_t(), covalence_hol_eval::mk_bool(false))
 }
 
 /// `λ_:u8. T` — the constant-`true` byte function.
 fn const_true_u8() -> Term {
-    lam("_x", u8_t(), Term::bool_lit(true))
+    lam("_x", u8_t(), covalence_hol_eval::mk_bool(true))
 }
 
 /// `option.case[u8,bool] d f (head l)` — decide a property of `l`'s first byte
@@ -734,12 +749,12 @@ fn opt_head_case(d: Term, f: Term, l: &Term) -> Term {
 /// `λl. option.case T (λ_. F) (head l)` applied — "`l` is empty" (`head l =
 /// none`).
 fn is_empty(l: &Term) -> Term {
-    opt_head_case(Term::bool_lit(true), const_false_u8(), l)
+    opt_head_case(covalence_hol_eval::mk_bool(true), const_false_u8(), l)
 }
 
 /// "`l` is non-empty" (`head l = some _`).
 fn nonempty(l: &Term) -> Term {
-    opt_head_case(Term::bool_lit(false), const_true_u8(), l)
+    opt_head_case(covalence_hol_eval::mk_bool(false), const_true_u8(), l)
 }
 
 /// `is_json_int : bytes → bool` — the strict integer well-formedness predicate
@@ -804,7 +819,7 @@ pub fn parse_json_int() -> Term {
 /// of "the integer subset is a genuine subset of the lenient grammar".
 pub fn json_int_accepts(run: &Term, rest: &Term) -> Result<Thm> {
     let guard = Term::app(is_json_int(), run.clone());
-    let guard_true = guard.equals(Term::bool_lit(true))?;
+    let guard_true = guard.equals(covalence_hol_eval::mk_bool(true))?;
     let h = Thm::assume(guard_true.clone())?; // {g=T} ⊢ is_json_int run = T
     let val = lenient_num_value(run, rest);
     Thm::refl(json_int_branch(run, rest))?
@@ -817,7 +832,7 @@ pub fn json_int_accepts(run: &Term, rest: &Term) -> Result<Thm> {
 /// a non-strict-integer run produces no number value. Genuine, general.
 pub fn json_int_rejects(run: &Term, rest: &Term) -> Result<Thm> {
     let guard = Term::app(is_json_int(), run.clone());
-    let guard_false = guard.equals(Term::bool_lit(false))?;
+    let guard_false = guard.equals(covalence_hol_eval::mk_bool(false))?;
     let h = Thm::assume(guard_false.clone())?; // {g=F} ⊢ is_json_int run = F
     let val = lenient_num_value(run, rest);
     Thm::refl(json_int_branch(run, rest))?
@@ -865,15 +880,15 @@ fn eqf_intro(not_p: Thm) -> Result<Thm> {
     // `not_elim` concludes the DEFINED `F` (EG3b); the clause statements
     // use the literal `⌜F⌝`, so cross the bridge both ways.
     let pf = covalence_hol_eval::fal_to_lit(not_p.not_elim(Thm::assume(p.clone())?)?)?; // {P} ⊢ ⌜F⌝
-    let fp = Thm::assume(Term::bool_lit(false))?.false_elim(p)?; // {⌜F⌝} ⊢ P
+    let fp = Thm::assume(covalence_hol_eval::mk_bool(false))?.false_elim(p)?; // {⌜F⌝} ⊢ P
     pf.deduct_antisym(fp)?.sym() // ⊢ P = ⌜F⌝
 }
 
 /// `⊢ (g = T) ∨ (g = F)` for a boolean term `g` — the excluded-middle split as
 /// an equation disjunction, the primitive for firing a symbolic-guard `cond`.
 fn bool_cases_eq(g: &Term) -> Result<Thm> {
-    let g_t = g.clone().equals(Term::bool_lit(true))?;
-    let g_f = g.clone().equals(Term::bool_lit(false))?;
+    let g_t = g.clone().equals(covalence_hol_eval::mk_bool(true))?;
+    let g_f = g.clone().equals(covalence_hol_eval::mk_bool(false))?;
     let ng = g.clone().not()?;
     let left = Thm::assume(g.clone())?
         .eqt_intro()? // {g} ⊢ g = T
@@ -890,7 +905,7 @@ fn bool_cases_eq(g: &Term) -> Result<Thm> {
 fn fire_cond(thm: Thm, guard_eq: &Thm, ty: &Type) -> Result<Thm> {
     let fired = thm.rhs_conv(|t| t.rw_all(guard_eq))?; // LHS = cond <lit> x y
     let (c, x, y) = cond_parts(&rhs_of(&fired)?)?;
-    let clause = if c == Term::bool_lit(true) {
+    let clause = if c == covalence_hol_eval::mk_bool(true) {
         cond_true(ty, &x, &y)?
     } else {
         cond_false(ty, &x, &y)?
@@ -929,7 +944,7 @@ pub fn parse_json_int_subset() -> Result<Thm> {
     let fuel = Term::free("fuel", Type::nat());
 
     // -- PL: parse_json (succ fuel) s reduced to its value-reader form.
-    let pu = parse_unfold(&fuel, &Term::bool_lit(false), &s)?; // parseFn X false s = cond F ab vb
+    let pu = parse_unfold(&fuel, &covalence_hol_eval::mk_bool(false), &s)?; // parseFn X false s = cond F ab vb
     let x_fuel = {
         let lhs = pu.concl().as_eq().ok_or(Error::NotAnEquation)?.0;
         let (a2, _s) = lhs.as_app().ok_or(Error::NotAnEquation)?;
@@ -952,8 +967,8 @@ pub fn parse_json_int_subset() -> Result<Thm> {
     let h_prop = Term::app(parse_json_int(), s.clone()).equals(some_p.clone())?;
     let h = Thm::assume(h_prop.clone())?;
 
-    let t_lit = || Term::bool_lit(true);
-    let f_lit = || Term::bool_lit(false);
+    let t_lit = || covalence_hol_eval::mk_bool(true);
+    let f_lit = || covalence_hol_eval::mk_bool(false);
     let g1_t = g1.clone().equals(t_lit())?;
     let g1_f = g1.clone().equals(f_lit())?;
     let g2_t = g2.clone().equals(t_lit())?;
@@ -1041,7 +1056,7 @@ mod tests {
     fn bytes_term(bs: &[u8]) -> Term {
         let mut t = nil_u();
         for &b in bs.iter().rev() {
-            t = cons_u(Term::u8_lit(b), t);
+            t = cons_u(covalence_hol_eval::mk_u8(b), t);
         }
         t
     }
@@ -1133,10 +1148,10 @@ mod tests {
             .rhs_conv(|x| x.reduce())
             .unwrap();
         let combo = rhs(&red);
-        match prop_eq(&combo, &Term::bool_lit(true)) {
+        match prop_eq(&combo, &covalence_hol_eval::mk_bool(true)) {
             Ok(tt) => (red.trans(tt).unwrap(), true),
             Err(_) => {
-                let ff = prop_eq(&combo, &Term::bool_lit(false)).unwrap();
+                let ff = prop_eq(&combo, &covalence_hol_eval::mk_bool(false)).unwrap();
                 (red.trans(ff).unwrap(), false)
             }
         }
@@ -1168,7 +1183,7 @@ mod tests {
         if bs.is_empty() {
             return span_nil(pred).unwrap();
         }
-        let c = Term::u8_lit(bs[0]);
+        let c = covalence_hol_eval::mk_u8(bs[0]);
         let cs = bytes_term(&bs[1..]);
         let general = span_cons(pred, &c, &cs).unwrap();
         let cond_c = rhs(&Term::app(pred.clone(), c.clone()).reduce().unwrap());
@@ -1221,7 +1236,13 @@ mod tests {
         let oc = head_sat(pred, &s);
         if bs.is_empty() {
             let hn = head_nil(&u8_t()).unwrap();
-            let cn = case_none(&u8_t(), &bool_t(), &Term::bool_lit(false), pred).unwrap();
+            let cn = case_none(
+                &u8_t(),
+                &bool_t(),
+                &covalence_hol_eval::mk_bool(false),
+                pred,
+            )
+            .unwrap();
             let eq = Thm::refl(oc)
                 .unwrap()
                 .rhs_conv(|t| t.rw_all(&hn))
@@ -1230,10 +1251,17 @@ mod tests {
                 .unwrap();
             return (eq, false);
         }
-        let c = Term::u8_lit(bs[0]);
+        let c = covalence_hol_eval::mk_u8(bs[0]);
         let cs = bytes_term(&bs[1..]);
         let hc = head_cons(&u8_t(), &c, &cs).unwrap();
-        let cse = case_some(&u8_t(), &bool_t(), &Term::bool_lit(false), pred, &c).unwrap();
+        let cse = case_some(
+            &u8_t(),
+            &bool_t(),
+            &covalence_hol_eval::mk_bool(false),
+            pred,
+            &c,
+        )
+        .unwrap();
         let (dec, b) = decide_bool(&Term::app(pred.clone(), c.clone()));
         let eq = Thm::refl(oc)
             .unwrap()
@@ -1247,7 +1275,7 @@ mod tests {
     }
 
     fn eval_tail(bs: &[u8]) -> Thm {
-        let c = Term::u8_lit(bs[0]);
+        let c = covalence_hol_eval::mk_u8(bs[0]);
         let cs = bytes_term(&bs[1..]);
         tail_cons(&u8_t(), &c, &cs).unwrap()
     }
@@ -1265,7 +1293,7 @@ mod tests {
 
     /// `⊢ parseFn (fuel k) <mode> (bytes) = <reference result>`.
     fn eval(k: usize, mode: bool, bs: &[u8]) -> Thm {
-        let mode_lit = Term::bool_lit(mode);
+        let mode_lit = covalence_hol_eval::mk_bool(mode);
         let s = bytes_term(bs);
         if k == 0 {
             return parse_base()
@@ -1508,7 +1536,10 @@ mod tests {
 
         let (consp, car, cdr) = parsed_cons_struct(&head, &tail).unwrap();
         assert!(consp.hyps().is_empty());
-        assert_eq!(consp.concl().as_eq().unwrap().1, &Term::bool_lit(true));
+        assert_eq!(
+            consp.concl().as_eq().unwrap().1,
+            &covalence_hol_eval::mk_bool(true)
+        );
         assert_eq!(car.concl().as_eq().unwrap().1, &head);
         assert_eq!(cdr.concl().as_eq().unwrap().1, &tail);
     }
@@ -1727,7 +1758,7 @@ mod tests {
                 .unwrap();
             (eq, d.as_bool().unwrap())
         } else {
-            let c = Term::u8_lit(bs[0]);
+            let c = covalence_hol_eval::mk_u8(bs[0]);
             let cs = bytes_term(&bs[1..]);
             let hc = head_cons(&u8_t(), &c, &cs).unwrap();
             let cse = case_some(&u8_t(), &bool_t(), d, f, &c).unwrap(); // = f c
@@ -1751,7 +1782,7 @@ mod tests {
         let mut e = Thm::beta_conv(Term::app(is_json_int(), run.clone())).unwrap();
 
         // 1. neg = head_sat (byte_is 45) run
-        let (neg_eq, neg) = eval_opt_head(&Term::bool_lit(false), &byte_is(45), bs);
+        let (neg_eq, neg) = eval_opt_head(&covalence_hol_eval::mk_bool(false), &byte_is(45), bs);
         e = e.rhs_conv(|t| t.rw_all(&neg_eq)).unwrap();
 
         // 2. body = cond neg (tail run) run
@@ -1783,11 +1814,20 @@ mod tests {
         let (ds_bytes, rest_bytes) = span_digit_b(&body_slice);
 
         // 4. the three leaf checks: is_empty rest, nonempty ds, no-leading-zero.
-        let (er_eq, _) = eval_opt_head(&Term::bool_lit(true), &const_false_u8(), rest_bytes);
+        let (er_eq, _) = eval_opt_head(
+            &covalence_hol_eval::mk_bool(true),
+            &const_false_u8(),
+            rest_bytes,
+        );
         e = e.rhs_conv(|t| t.rw_all(&er_eq)).unwrap();
-        let (ne_eq, _) = eval_opt_head(&Term::bool_lit(false), &const_true_u8(), ds_bytes);
+        let (ne_eq, _) = eval_opt_head(
+            &covalence_hol_eval::mk_bool(false),
+            &const_true_u8(),
+            ds_bytes,
+        );
         e = e.rhs_conv(|t| t.rw_all(&ne_eq)).unwrap();
-        let (h48_eq, _) = eval_opt_head(&Term::bool_lit(false), &byte_is(48), ds_bytes);
+        let (h48_eq, _) =
+            eval_opt_head(&covalence_hol_eval::mk_bool(false), &byte_is(48), ds_bytes);
         e = e.rhs_conv(|t| t.rw_all(&h48_eq)).unwrap();
         // is_empty (tail ds)
         let tde = if ds_bytes.is_empty() {
@@ -1801,7 +1841,11 @@ mod tests {
         } else {
             &ds_bytes[1..]
         };
-        let (et_eq, _) = eval_opt_head(&Term::bool_lit(true), &const_false_u8(), tail_slice);
+        let (et_eq, _) = eval_opt_head(
+            &covalence_hol_eval::mk_bool(true),
+            &const_false_u8(),
+            tail_slice,
+        );
         e = e.rhs_conv(|t| t.rw_all(&et_eq)).unwrap();
 
         // 5. decide the band/bor/bnot combination.
@@ -1889,7 +1933,7 @@ mod tests {
             let (thm, got) = eval_is_json_int(tok);
             assert!(thm.hyps().is_empty(), "is_json_int {tok:?} must be genuine");
             assert_eq!(got, is_json_int_b(tok), "is_json_int {tok:?}");
-            let want = Term::bool_lit(is_json_int_b(tok));
+            let want = covalence_hol_eval::mk_bool(is_json_int_b(tok));
             assert_eq!(rhs(&thm), want, "is_json_int {tok:?} value");
         }
     }
@@ -1929,7 +1973,10 @@ mod tests {
         assert!(acc.hyps().is_empty(), "acceptance must be oracle-free");
         let guard = Term::app(is_json_int(), run.clone());
         let want_acc = ctx.mk_imp(
-            guard.clone().equals(Term::bool_lit(true)).unwrap(),
+            guard
+                .clone()
+                .equals(covalence_hol_eval::mk_bool(true))
+                .unwrap(),
             json_int_branch(&run, &rest)
                 .equals(lenient_num_value(&run, &rest))
                 .unwrap(),
@@ -1939,7 +1986,7 @@ mod tests {
         let rej = json_int_rejects(&run, &rest).unwrap();
         assert!(rej.hyps().is_empty(), "rejection must be oracle-free");
         let want_rej = ctx.mk_imp(
-            guard.equals(Term::bool_lit(false)).unwrap(),
+            guard.equals(covalence_hol_eval::mk_bool(false)).unwrap(),
             json_int_branch(&run, &rest).equals(none_r()).unwrap(),
         );
         assert_eq!(rej.concl(), &want_rej);

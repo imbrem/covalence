@@ -289,8 +289,8 @@ pub fn leaf_ne_branch(alpha: &Type, a: &Term, l: &Term, r: &Term) -> Result<Thm>
     let eq = at_r(&leaf(alpha, a.clone())?, &bool_ty)?
         .equals(at_r(&branch(alpha, l.clone(), r.clone())?, &bool_ty)?)?;
 
-    let tt = Term::bool_lit(true);
-    let ff = Term::bool_lit(false);
+    let tt = covalence_hol_eval::mk_bool(true);
+    let ff = covalence_hol_eval::mk_bool(false);
     // fl = λ_:α. T  (result type bool)
     let fl = Term::abs(alpha.clone(), tt.clone());
     // fb = λ_:bool _:bool. F
@@ -508,13 +508,13 @@ mod tests {
         let alpha = Type::nat();
         let r = Type::nat();
         // fl = λ_:nat. 0, fb = λu v:nat. u
-        let fl = Term::abs(alpha.clone(), Term::nat_lit(0u8));
+        let fl = Term::abs(alpha.clone(), covalence_hol_eval::mk_nat(0u8));
         let fb = {
             let u = Term::free("u", r.clone());
             let inner = Term::abs(r.clone(), u);
             Term::abs(r.clone(), subst::close(&inner, "u"))
         };
-        let a = Term::nat_lit(5u8);
+        let a = covalence_hol_eval::mk_nat(5u8);
         let thm = rec_leaf(&alpha, fl, fb, a).unwrap();
         assert!(thm.hyps().is_empty());
         assert!(thm.concl().as_eq().is_some());
@@ -524,14 +524,14 @@ mod tests {
     fn rec_branch_holds() {
         let alpha = Type::nat();
         let r = Type::nat();
-        let fl = Term::abs(alpha.clone(), Term::nat_lit(0u8));
+        let fl = Term::abs(alpha.clone(), covalence_hol_eval::mk_nat(0u8));
         let fb = {
             let u = Term::free("u", r.clone());
             let inner = Term::abs(r.clone(), u);
             Term::abs(r.clone(), subst::close(&inner, "u"))
         };
-        let l = leaf(&alpha, Term::nat_lit(1u8)).unwrap();
-        let rt = leaf(&alpha, Term::nat_lit(2u8)).unwrap();
+        let l = leaf(&alpha, covalence_hol_eval::mk_nat(1u8)).unwrap();
+        let rt = leaf(&alpha, covalence_hol_eval::mk_nat(2u8)).unwrap();
         let thm = rec_branch(&alpha, fl, fb, l, rt).unwrap();
         assert!(thm.hyps().is_empty());
         assert!(thm.concl().as_eq().is_some());

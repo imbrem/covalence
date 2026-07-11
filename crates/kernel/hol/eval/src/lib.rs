@@ -58,7 +58,8 @@ pub use defs::{as_f64_bits, mk_f64};
 pub use derived::{DerivedRules, TypeDefExt};
 pub use lang::{CoreEval, EvalThm, EvalTypeDef};
 pub use lit::{
-    as_blob, as_int, as_nat, as_u32, as_u64, kind_name, mk_blob, mk_int, mk_nat, mk_u32, mk_u64,
+    as_blob, as_bool, as_int, as_nat, as_u32, as_u64, kind_name, mk_blob, mk_bool, mk_int, mk_nat,
+    mk_u8, mk_u16, mk_u32, mk_u64,
 };
 pub use tohol::{
     bytes_cat_thm_symbolic, bytes_len_thm_symbolic, bytes_thm, f32_add_thm_symbolic,

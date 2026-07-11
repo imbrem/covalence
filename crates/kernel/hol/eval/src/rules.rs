@@ -503,26 +503,145 @@ mod manifest_tests {
         "/../../../../docs/deps/eval-manifest.txt"
     );
 
-    /// The transitional literal-reify rule and the permanent structural
-    /// (succ-tower) rules pin CONTRADICTORY denotations for `toHOL n` at the
-    /// `Term` sort — admitting both makes the base tier inconsistent (audit
-    /// wave-1 finding: sym+trans would equate `Val(nat_lit 1)` with
-    /// `Val(app(succ, nat_lit 0))`, a false definitional-Eq fact). This guard
-    /// fires the moment both appear in the manifest: delete `ToHolNatVal` in
-    /// the SAME commit that admits the structural rules. (Moved here from
-    /// core with the rules — stage E2.)
-    #[test]
-    fn tohol_unfolding_rules_are_exclusive() {
-        let names = eval_rule_names();
-        let transitional = names.iter().any(|(n, _)| *n == "ToHolNatVal");
+    /// A `toHOL` family that carries BOTH a transitional literal-reify rule
+    /// (`*Val`) and — in a future EG5 swap commit — a structural unfolding rule
+    /// (`*Zero`/`*Succ`/`*Mk`/`*Nil`/`*Cons`). For every such family the two
+    /// pin CONTRADICTORY denotations for `toHOL x` at the `Term` sort, so
+    /// co-admitting them makes the base tier inconsistent (audit wave-1
+    /// finding for nat: `sym+trans` equates `Val(nat_lit 1)` with
+    /// `Val(app(succ, nat_lit 0))`, a false definitional-`Eq` fact; the same
+    /// `⊢False` class exists for int (`Val(int_lit)` vs `Val(mkInt-term)`) and
+    /// bytes (`Val(blob)` vs `Val(cons-chain)`)).
+    ///
+    /// NOT a family here (deliberately, per the maintainer decisions in
+    /// `notes/vibes/eg5-preflight.md` §0.5): `smallint`/`f32`/`f64` stay
+    /// leaf-only (`ToHolSmallInt`/`ToHolF32Val`/`ToHolF64Val`) with NO
+    /// structural partner, so they can never form this contradictory pair; and
+    /// the object-level `ZeroLitCert` (`⊢ zero = ⌜0⌝` inside `IsThm`, not a
+    /// base `Eqn`) is not part of the base-tier pair.
+    struct ToHolFamily {
+        /// Display name for assertion messages.
+        family: &'static str,
+        /// The transitional literal-reify rule (exact match).
+        transitional: &'static str,
+        /// Prefixes of this family's future structural unfolding rules. The
+        /// structural rules do not exist in-tree yet — this table is the slot
+        /// they will fill; adding one REQUIRES dropping `transitional` in the
+        /// SAME commit or this guard fires.
+        structural_prefixes: &'static [&'static str],
+    }
+
+    /// The per-family exclusivity table (the P1 slot for the future structural
+    /// rules). Keyed on the family; each future structural rule slots in under
+    /// its family's `structural_prefixes`.
+    const TOHOL_FAMILIES: &[ToHolFamily] = &[
+        ToHolFamily {
+            family: "nat",
+            transitional: "ToHolNatVal",
+            structural_prefixes: &["ToHolNatZero", "ToHolNatSucc"],
+        },
+        ToHolFamily {
+            family: "int",
+            transitional: "ToHolIntVal",
+            structural_prefixes: &["ToHolIntMk"],
+        },
+        ToHolFamily {
+            family: "bytes",
+            transitional: "ToHolBytesVal",
+            structural_prefixes: &["ToHolBytesNil", "ToHolBytesCons"],
+        },
+    ];
+
+    /// The exclusivity predicate for one family over a rule-name list: `true`
+    /// exactly when the family co-admits its transitional `*Val` rule AND at
+    /// least one of its structural rules — i.e. the forbidden state. Pulled out
+    /// of the assertion so it can be pinned directly against synthetic lists
+    /// (`guard_ready_for_future_structural_rules`).
+    fn family_violates(fam: &ToHolFamily, names: &[&str]) -> bool {
+        let transitional = names.contains(&fam.transitional);
         let structural = names
             .iter()
-            .any(|(n, _)| n.starts_with("ToHolNatZero") || n.starts_with("ToHolNatSucc"));
+            .any(|n| fam.structural_prefixes.iter().any(|p| n.starts_with(p)));
+        transitional && structural
+    }
+
+    /// Guard: no `toHOL` family (nat/int/bytes) co-admits its transitional
+    /// literal-reify rule together with any of its structural unfolding rules.
+    /// Fires the moment both appear in the manifest — delete the family's
+    /// `*Val` rule in the SAME commit that admits its structural rules.
+    /// (Extended from nat-only to the three structural-bearing families —
+    /// stage EG5-prep P1; see `notes/vibes/eg5-preflight.md`.)
+    #[test]
+    fn tohol_unfolding_rules_are_exclusive() {
+        let names: Vec<&str> = eval_rule_names().iter().map(|(n, _)| *n).collect();
+        for fam in TOHOL_FAMILIES {
+            assert!(
+                !family_violates(fam, &names),
+                "{}: {} (literal denotation) and the structural unfolding rules \
+                 {:?} must never be admitted together — they pin contradictory \
+                 `toHOL` denotations (see notes/vibes/eg5-preflight.md §0.5)",
+                fam.family,
+                fam.transitional,
+                fam.structural_prefixes,
+            );
+        }
+    }
+
+    /// The guard is READY for the future structural rules that do not exist in
+    /// tree yet: for each of the three structural-bearing families, a synthetic
+    /// name list containing BOTH the family's `*Val` rule and a structural rule
+    /// under each of its prefixes must trip `family_violates`, while a list
+    /// with only one side (or a foreign family's rules) must not. This pins the
+    /// exclusivity mechanism independently of the current manifest contents, so
+    /// the guard cannot silently rot when `ToHolIntMk`/`ToHolBytesNil`/… land.
+    #[test]
+    fn guard_ready_for_future_structural_rules() {
+        for fam in TOHOL_FAMILIES {
+            // *Val alone: allowed (today's state).
+            assert!(
+                !family_violates(fam, &[fam.transitional]),
+                "{}: transitional rule alone must be allowed",
+                fam.family
+            );
+            for prefix in fam.structural_prefixes {
+                // A structural rule name is the prefix (+ optional suffix).
+                let structural_name = format!("{prefix}Rule");
+                // Structural alone: allowed (the post-swap state).
+                assert!(
+                    !family_violates(fam, &[structural_name.as_str()]),
+                    "{}: structural rule {structural_name} alone must be allowed",
+                    fam.family
+                );
+                // Both together: the forbidden state — must trip.
+                assert!(
+                    family_violates(fam, &[fam.transitional, structural_name.as_str()]),
+                    "{}: co-admitting {} with {structural_name} must trip the guard",
+                    fam.family,
+                    fam.transitional
+                );
+            }
+            // A foreign family's structural rule must NOT trip this family.
+            let foreign: Vec<&str> = TOHOL_FAMILIES
+                .iter()
+                .filter(|o| o.family != fam.family)
+                .flat_map(|o| o.structural_prefixes.iter().copied())
+                .collect();
+            assert!(
+                !family_violates(fam, &[&[fam.transitional], foreign.as_slice()].concat()),
+                "{}: another family's structural rules must not trip this family",
+                fam.family
+            );
+        }
+
+        // Leaf-only families (smallint/f32/f64) have no structural partner in
+        // the table, so they can never form the pair — pin their absence so a
+        // future editor doesn't wrongly add a structural entry for them.
         assert!(
-            !(transitional && structural),
-            "ToHolNatVal (literal denotation) and the structural succ-tower rules \
-             must never be admitted together — they pin contradictory `toHOL` \
-             denotations (see SKELETONS.md)"
+            !TOHOL_FAMILIES
+                .iter()
+                .any(|f| matches!(f.family, "smallint" | "f32" | "f64")),
+            "smallint/f32/f64 are leaf-only (decision 2) — they must NOT get a \
+             structural-rule table entry (see notes/vibes/eg5-preflight.md §0.5)"
         );
     }
 

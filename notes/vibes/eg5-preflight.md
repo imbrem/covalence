@@ -189,6 +189,58 @@ interact), so stage lowest-blast-radius first:
   `bytes_cat/len_thm_symbolic` transports, regen
   `docs/deps/eval-manifest.txt` (`COV_REGEN_GOLDEN=1`). Full test + wasm32
   gate in the same commit.
+
+  **S1 attempt (2026-07-11) — HONEST-STOP, not landed. Grounding finding:**
+  the bytes swap is NOT a clean single low-blast-radius stage, for three
+  compounding reasons discovered on grounding (recorded so the next attempt
+  starts from the real shape, not the optimistic sketch above):
+  1. **The guard forbids any additive rule-landing.** Admitting
+     `ToHolBytesNil`/`ToHolBytesCons` while `ToHolBytesVal` still lives trips
+     `tohol_unfolding_rules_are_exclusive` (correct tripwire). So the swap is
+     all-or-nothing within the family — there is no green intermediate that
+     admits the structural rules but keeps `*Val`.
+  2. **The concrete cert family is coupled to the blob literal, so removing
+     `*Val` desyncs the transports.** `bytes_cat/len_thm_symbolic` mint the
+     concrete `BytesCert` (whose LHS operands come from `Lit::Bytes::to_term()`
+     and whose RHS is a raw `Term::blob`, `certs.rs:383`), then build the
+     `transport_symbolic` reification `⊢ symbolicE = Val(blob)` by reifying each
+     `ToHolBytes(Val bs)` **through `ToHolBytesVal`** into that `Val(blob)`.
+     With `*Val` gone, `ToHolBytes(Val bs)` unfolds (Nil/Cons) to a cons-chain,
+     NOT `Val(blob)`, so the `eq_mp` structural match in `transport_symbolic`
+     no longer closes. Restoring it needs EITHER (a) flip the WHOLE bytes cert
+     family to a structural RHS — `certs::bytes_cert`/`lit_eq`/`coercion` +
+     every soundness docstring + `Lit::Bytes::to_term`/`from_term` + the ~17
+     `Term::blob`/`Lit::Bytes` downstream sites — a large first-of-kind
+     core+eval+init TCB change carrying a NEW bytes-structural-injectivity audit
+     obligation (`⟨struct a⟩ = ⟨struct b⟩ ⇔ a = b`, the bytes analogue of the
+     §6.2 int-disequality concern; sound for the `abs/nil/cons[u8]` encoding
+     iff `abs` is injective on the list image and u8 elements are canonical),
+     OR (b) add a NEW admitted structural↔blob bridge rule (a
+     `BytesLitCert`-analogue `⊢ ⟨cons-chain⟩ = Val(blob)`) to close the
+     transports — which is NOT derivable from existing machinery (no
+     pure-eval canon rule folds a HOL abs/cons **term**-chain back into a
+     `Val(blob)`; the `base/eval` bytes rules operate on native `Bytes`, not on
+     HOL `Term`s) and which merely relocates the `*Val` denotation, needing its
+     own exclusivity reasoning.
+  3. **The genuine structural target needs a real bytes structural theory that
+     does not yet exist.** `bytesConsNat`/`bytesAt` are declaration-only
+     (`eval/defs/blob.rs:93,102`; no `nat ↔ u8` conversion), so the honest
+     sound denotation is `abs_bytes(nil[u8])` / `abs_bytes(cons[u8] ⟨b:u8⟩
+     (rep_bytes …))` over the real `list u8` constructors — but the
+     `Blob ↔ list u8` bridge + list-recursion lemmas the swap's transports
+     would lean on are the exact gap flagged in `eval/SKELETONS.md`
+     ("bytes definitional evaluation missing — blocked on the `Blob` ↔ `list
+     u8` bridge + list recursion"). Building it is a substantial init-level
+     proof development, not part of a single low-blast-radius swap.
+
+  **What actually landed:** nothing to the TCB (no rule added/removed, manifest
+  unchanged, guard unchanged and still meaningful). Tree stays at the last green
+  commit; this analysis is the only change. **Next attempt should pick path
+  2(a)** (flip the whole bytes cert family to structural, with the injectivity
+  audit paragraph) — it is the coherent one — and budget it as a real
+  multi-file core+eval+init stage, not a facade flip. Path 2(b) is a dead end
+  (it re-invents `*Val`). The int (S2) swap has the identical structure and the
+  same 2(a) shape, so solving bytes designs the int template too.
 - **S2 — int swap** (one commit): `ToHolIntMk` in, `ToHolIntVal` out,
   `Lit::Int` flips to the **canonical** pair form, int landers rewritten.
   Carries the §6.2 int-disequality audit note in `LitEqCert`'s docstring.

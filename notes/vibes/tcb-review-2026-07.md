@@ -165,6 +165,34 @@ Commits `1a92775e`…`76c4e553`. `crates/kernel/base/trusted/**` **byte-identica
    `covalence-init` dep under the `hol` feature) was surfaced by the graph regen —
    flagged for your call, as a new cross-group edge is a deliberate-decision artifact.
 
+## EG5 status update (2026-07-11) — unblocked in design, prep landed, execution is bigger than sketched
+
+**Maintainer decisions received & recorded** (resolve the two preflight blockers):
+nat's structural target is a **binary** (log-sized) encoding via `nat_binary.rs`'s
+`double`/`succ` (no unary perf wall); **SmallInt becomes a `toHOL` leaf**
+(`ToHolSmallInt`, no structural rule, so leaf-only + deletable), and f32/f64 ride
+along as SmallInt bit-patterns. `eg5-preflight.md` is now UNBLOCKED-WITH-DECISIONS.
+
+**Prep landed (additive, merged, gate-green, manifests byte-identical):**
+- P1 — the `tohol_unfolding_rules_are_exclusive` guard extended to a per-family table
+  (nat/int/bytes; smallint/float deliberately excluded as leaf-only). Test-internal,
+  no rule/manifest change.
+- P2 — facade sweep: init literal-ctor sites routed through the eval `mk_*/as_*`
+  facade (`term-literal-ctors` 72→6; 6 subtle sites recorded).
+
+**S1 (bytes swap) attempted → honest-stop, no TCB change.** The finding (worth your
+eyes): the preflight's per-family swap sketch **underestimated the work**. Each swap
+is genuinely all-or-nothing (the guard forbids an additive intermediate that keeps
+`*Val`), and the *honest* structural target requires machinery that **doesn't exist
+yet** — `bytesConsNat`/`bytesAt` are declaration-only, and the `Blob ↔ list u8`
+bridge + list-recursion lemmas are a real init-level proof development. A sound swap
+therefore means, per family: (1) complete the structural HOL theory, (2) flip the
+**whole cert family** (`BytesCert`/`LitEqCert`/`CoercionCert` + `Lit::to_term/from_term`
++ ~17–23 downstream sites) to a structural RHS, (3) discharge a **new
+structural-injectivity audit obligation** (`⟨struct a⟩=⟨struct b⟩ ⇔ a=b`). Int (S2)
+has the identical structure; nat/smallint differ (binary / leaf). This is a
+multi-stage, per-family effort — not the quick swaps the sketch implied.
+
 ## Open items for us to decide together
 - **EG5 design fork**: the SmallInt/f32/f64 structural target + the unary-vs-binary
   numeral decision (the perf wall) — EG5 is gated on this.

@@ -260,4 +260,22 @@ adversarially audited (fix+re-audit loop) — **all SOUND**. Full joint-review d
   (mintSites 18→24) measures ALREADY-LANDED rel.rs + B-K1..3 (earlier skipped `bun run
   deps`), not new trust.
 
+## 2026-07-11 — EG5 unblocked + prep landed; S1 (bytes) honest-stop finding
+
+Maintainer decisions unblock EG5: **binary `ToHolNat`** (log-sized, via `nat_binary.rs`)
+kills the unary perf wall; **`SmallInt` = `toHOL` leaf** (`ToHolSmallInt`, no structural
+rule → leaf-only → deletable; f32/f64 ride along). Recorded in `eg5-preflight.md`
+(BLOCKED→UNBLOCKED-WITH-DECISIONS) + the review doc.
+- **Prep merged (main 57ab9f48, additive, manifests byte-identical):** P1 exclusivity
+  guard → per-family table (nat/int/bytes); P2 facade sweep (init literal-ctors 72→6).
+- **S1 bytes swap = HONEST-STOP** (docs-only `baaf576a`, merged `cfe4f218`). Key
+  finding: EG5's per-family swaps are **bigger than the preflight sketched** — each is
+  all-or-nothing (guard forbids additive intermediate) and needs (1) the missing
+  structural HOL theory completed (`bytesConsNat`/`bytesAt` are declaration-only;
+  `Blob↔list u8` bridge + list-recursion lemmas absent), (2) the WHOLE cert family
+  flipped to a structural RHS, (3) a new structural-injectivity audit obligation. Int
+  (S2) is identical. This is the real remaining EG5 cost — a multi-stage per-family
+  proof+cert effort, best run as a dedicated orchestrated push (ultracode) with the
+  structural theories built first. NOT rushed; the tree stayed green, no TCB change.
+
 <!-- APPEND NEW ENTRIES BELOW -->

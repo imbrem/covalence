@@ -4,6 +4,15 @@ The docs are pared to the **current design**. Everything removed in the
 pre-HOL-cleanup pass lives on `backup/pre-hol-cleanup` (`git checkout
 backup/pre-hol-cleanup -- <path>`).
 
+## Navigation (start here)
+
+| Doc | What it covers |
+|---|---|
+| [`project-map.md`](./project-map.md) | **The map** — crate groups at a glance + the active threads (backend/kernel, Haskell frontend, K-framework, relational-base-rewrite, leaf-elimination/EG5, HOL-ω, web demo), each with status + pointers. |
+| [`what-is-the-tcb.md`](./what-is-the-tcb.md) | Human-readable TCB: trusted crates, the 24 mint sites, admitted rules per language, from the golden manifests + `docs/deps/tcb-audit.json`. |
+| [`k-framework-vision.md`](./k-framework-vision.md) | The **K-framework north star**: full K + all sublanguages (WASM/x86/C/K), the KWasm⟷SpecTec relating goal, mapping onto Covalence. |
+| [`../design/README.md`](../design/README.md) | The **design-doc queue** (iterable decision records with status). |
+
 ## Canonical design
 
 The load-bearing docs. Read these first.

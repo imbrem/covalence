@@ -15,12 +15,15 @@
 //! # The pieces
 //!
 //! - [`ast`] — a tiny Haskell expression subset ([`ast::Expr`]/[`ast::Lit`])
-//!   plus top-level function definitions ([`ast::Decl`]/[`ast::Module`]).
+//!   plus top-level function definitions ([`ast::Decl`]/[`ast::Module`]) and a
+//!   minimal **type surface** ([`ast::Ty`]: type variables, base/applied
+//!   constructors, function arrows) carried by signatures and annotated lambda
+//!   binders — the input a *typed* backend consumes (there is no inference).
 //!   **A Haskell `Nat` literal is a covalence `Nat`** (arbitrary precision,
 //!   from `covalence-types`), never a machine integer.
 //! - [`parse`] — a hand-written recursive-descent parser
-//!   ([`parse::parse_expr`], [`parse::parse_module`]) with positioned errors.
-//!   The module docs list the exact supported grammar.
+//!   ([`parse::parse_expr`], [`parse::parse_module`], [`parse::parse_ty`]) with
+//!   positioned errors. The module docs list the exact supported grammar.
 //! - [`sexpr`] — the interchange IR ([`sexpr::SExpr`]: symbol / nat / string
 //!   atoms + lists) with a canonical text printer and a text parser
 //!   (grammar in the module docs).

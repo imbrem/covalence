@@ -47,7 +47,9 @@ pub fn expr_to_sexpr(e: &Expr) -> SExpr {
         Expr::Lit(Lit::Str(s)) => SExpr::Str(s.clone()),
         Expr::Var(name) => SExpr::sym(name.clone()),
         Expr::App(f, x) => SExpr::list(vec![expr_to_sexpr(f), expr_to_sexpr(x)]),
-        Expr::Lam(param, body) => SExpr::list(vec![
+        // The untyped IR drops the (optional) parameter annotation: the typed
+        // backend consumes it directly from the AST, not from the SExpr.
+        Expr::Lam(param, _ty, body) => SExpr::list(vec![
             SExpr::sym("lambda"),
             SExpr::sym(param.clone()),
             expr_to_sexpr(body),

@@ -9,6 +9,48 @@
 
 use covalence_types::Nat;
 
+/// A **type expression** — the minimal typing surface the dialect carries so a
+/// *typed* backend can build well-typed HOL terms (there is no inference; the
+/// types must be written). Covers a type variable (the monad carrier), a
+/// possibly-applied type constructor (`nat`, `bool`, `option a`, `list a`), and
+/// the function type `a -> b` (right-associative). See
+/// [`crate::parse::parse_ty`] for the grammar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Ty {
+    /// A type variable, e.g. `a` — a lowercase-initial identifier standing for
+    /// a HOL free type variable. The monad carrier is one such variable.
+    Var(String),
+    /// A type constructor applied to zero or more arguments: `nat`, `bool`,
+    /// `option a`, `list a`. The head is an identifier; base types are the
+    /// zero-argument case.
+    Con(String, Vec<Ty>),
+    /// A function type `a -> b` (right-associative, so `a -> b -> c` parses as
+    /// `a -> (b -> c)`).
+    Fun(Box<Ty>, Box<Ty>),
+}
+
+impl Ty {
+    /// A base type (nullary constructor): `Ty::base("nat")` = `nat`.
+    pub fn base(name: impl Into<String>) -> Ty {
+        Ty::Con(name.into(), Vec::new())
+    }
+
+    /// A type variable: `Ty::var("a")` = `a`.
+    pub fn var(name: impl Into<String>) -> Ty {
+        Ty::Var(name.into())
+    }
+
+    /// A function type `dom -> cod`.
+    pub fn fun(dom: Ty, cod: Ty) -> Ty {
+        Ty::Fun(Box::new(dom), Box::new(cod))
+    }
+
+    /// A type-constructor application `head arg1 arg2 …`.
+    pub fn con(head: impl Into<String>, args: Vec<Ty>) -> Ty {
+        Ty::Con(head.into(), args)
+    }
+}
+
 /// A literal — kept small on purpose. The [`Lit::Nat`] case is the emphasized
 /// one: numeric-literal realization is exactly what a backend is expected to
 /// vary.
@@ -30,9 +72,12 @@ pub enum Expr {
     Var(String),
     /// Application by juxtaposition: `f x`.
     App(Box<Expr>, Box<Expr>),
-    /// A single-parameter lambda: `\x -> e`. Multi-parameter lambdas
-    /// (`\x y -> e`) are parsed as nested [`Expr::Lam`].
-    Lam(String, Box<Expr>),
+    /// A single-parameter lambda: `\x -> e`, or the type-annotated form
+    /// `\(x :: t) -> e` carrying the binder's type. Multi-parameter lambdas
+    /// (`\x y -> e`) are parsed as nested [`Expr::Lam`]. The optional [`Ty`] is
+    /// the minimal typing surface a *typed* backend consumes (the untyped
+    /// [`crate::lower`] drops it); an unannotated binder leaves it `None`.
+    Lam(String, Option<Ty>, Box<Expr>),
     /// A `let x = e in e'` binding (single, non-recursive binder).
     Let(String, Box<Expr>, Box<Expr>),
     /// A binary operator application: `l <op> r`.
@@ -55,9 +100,15 @@ impl Expr {
         Expr::App(Box::new(f), Box::new(x))
     }
 
-    /// Convenience constructor for [`Expr::Lam`].
+    /// Convenience constructor for an *unannotated* [`Expr::Lam`].
     pub fn lam(param: impl Into<String>, body: Expr) -> Expr {
-        Expr::Lam(param.into(), Box::new(body))
+        Expr::Lam(param.into(), None, Box::new(body))
+    }
+
+    /// Convenience constructor for a *type-annotated* [`Expr::Lam`]
+    /// (`\(x :: t) -> body`).
+    pub fn lam_ty(param: impl Into<String>, ty: Ty, body: Expr) -> Expr {
+        Expr::Lam(param.into(), Some(ty), Box::new(body))
     }
 
     /// Convenience constructor for [`Expr::Let`].
@@ -89,6 +140,24 @@ pub struct Decl {
     pub params: Vec<String>,
     /// The definition body.
     pub body: Expr,
+    /// The declared type signature, if a `name :: Ty` line preceded this
+    /// definition (associated by name in [`crate::parse::parse_module`]).
+    /// `None` when no signature was given. A *typed* backend uses the signature
+    /// to type the parameters left-to-right; the untyped [`crate::lower`]
+    /// ignores it.
+    pub sig: Option<Ty>,
+}
+
+impl Decl {
+    /// A signature-free declaration (`name p1 … = body`).
+    pub fn new(name: impl Into<String>, params: Vec<String>, body: Expr) -> Decl {
+        Decl {
+            name: name.into(),
+            params,
+            body,
+            sig: None,
+        }
+    }
 }
 
 /// A module is a sequence of top-level declarations.

@@ -104,9 +104,10 @@ enum Tok {
     If,
     Then,
     Else,
-    /// A `::` type-signature separator (the right-hand side is lexed as
-    /// ordinary tokens and skipped by the module parser — signatures are
-    /// parsed-and-ignored).
+    /// A `::` type-signature / type-annotation separator. Its right-hand side
+    /// is a type expression ([`Parser::ty`]): in a module a `name :: Ty` line
+    /// attaches to the following definition, and in a lambda `\(x :: Ty) -> e`
+    /// it annotates the binder.
     ColonColon,
 }
 

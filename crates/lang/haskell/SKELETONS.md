@@ -2,19 +2,38 @@
 
 ## Severe
 
-- **Typed HOL-Term realization not done.** The `hol` backend (`src/hol.rs`)
-  lands real kernel data but only via the *untyped* carved `sexpr` type (no
-  type inference). A well-typed HOL-term realization (Church-style, with
-  inference / elaboration) is the follow-on.
-- **No lowering to `init/` definitions.** The flagship demos
-  (`tests/init_dialect.rs`, `tests/examples.rs` over `examples/*.hs`) lower
-  init-flavored modules to exact `(define …)` interchange text and to carved
-  `sexpr` kernel `Term`s, but that output is *inert data* — realizing the
-  dialect into actual `covalence-init` definitions/theorems (typed `Term`s,
-  `Def`/`Thm`) so `init/` can really be written in it is not started. The
-  `if` / `list` / `tuple` / `unit` sugar heads currently land as plain
-  symbols/atoms; a typed lowering would map them to the real kernel
-  conditional / list / product / unit.
+- **Typed backend: no per-theory type constructors.** The typed backend
+  (`src/typed.rs`, `hol-typed` feature) lowers annotated definitions to real
+  well-typed HOL `Term`s **through the `Hol`/`Nat` traits**, but `resolve_ty`
+  only knows type *variables*, `nat`, `bool`, and function types. Applied
+  constructors (`option a`, `list a`, `int`, `bytes`, `unit`) are reported
+  `UnsupportedType` — they need per-theory API traits (`Option`/`List`/… mirroring
+  `Nat`), which is why the flagship `tests/typed_monad.rs` lowers only the
+  **abstract** monad (ret/bind as free vars over a carrier type variable, `map`
+  defined, the `map f (ret a) = ret (f a)` law *stated*). The concrete `option`
+  / `list` instances from `init/monad.rs` (`some`/`none`/`option_bind`,
+  `singleton`/`concatMap`) need those traits.
+- **Typed backend lowers TERMS + law STATEMENTS, not PROOFS.** `typed.rs`
+  produces `Term`s (definitions and the monad-map-law equation), not `Thm`s: it
+  does not replay `monad.rs`'s derivation (assume left-id → instantiate →
+  β-reduce → discharge). Proof/tactic lowering — a dialect proof script driving
+  the `Hol` rule methods (`assume`/`all_elim`/`beta_conv`/`imp_intro`/…) to
+  build a `Thm` — is the follow-on; the Rust proof stays in `init/monad.rs`
+  against the same shapes (see `notes/vibes/init-in-dialect.md`).
+- **No typeclass / instance elaboration.** The monad is written with the ops as
+  plain free variables + an ambient env (`lower_decl_in`). Real `class Monad m` /
+  `instance` elaboration = dictionary passing (a class → a record of ops, an
+  instance → a value, methods → projections), and general `m`-polymorphism needs
+  HOL-omega type-operator variables (standard HOL has none — hence the
+  single-carrier `mcar` type *variable*). Both are deferred.
+- **Untyped `hol` backend: no lowering to `init/` definitions.** The demos
+  (`tests/init_dialect.rs`, `tests/examples.rs`) lower init-flavored modules to
+  exact `(define …)` interchange text and to carved (untyped) `sexpr` kernel
+  `Term`s — *inert data*. The typed backend (above) is the typed counterpart but
+  covers only the trait-reachable fragment. Realizing dialect defs into actual
+  `covalence-init` `Def`/`Thm` (so `init/` is really written in the dialect) is
+  still open; the untyped `if`/`list`/`tuple`/`unit` sugar heads land as plain
+  atoms.
 
 ## Minor
 
@@ -44,12 +63,17 @@
 
 The parser covers a deliberately small subset. Now supported: `if`/`then`/
 `else`, list `[…]` / tuple `(…,…)` / unit `()` literals, `--` line and nested
-`{- -}` block comments, and top-level type-signature lines (`name :: T`,
-parsed-and-ignored). Still not supported:
+`{- -}` block comments, top-level type-signature lines (`name :: Ty`, now
+**parsed into a `Ty` and attached** to the following definition), annotated
+lambda binders (`\(x :: Ty) -> e`), and the `Ty` grammar (type variables,
+base/applied constructors, function arrows — no inference). Still not supported:
 
 - do-notation, guards, `where`/`let` blocks with multiple binders, `case`;
-- `type`/`data`/`class`/`instance` declarations (only the ignored `name :: T`
-  signature form is recognised — the type itself is discarded, not checked);
+- `type`/`data`/`class`/`instance` declarations (only the `name :: Ty`
+  signature form is recognised; there is no typeclass/instance elaboration);
+- higher-kinded / `forall`-quantified / constrained types in the `Ty` grammar
+  (only rank-0 vars + constructors + arrows; the monad carrier is a plain type
+  *variable*, not a type-operator variable);
 - pattern matching (only bare parameter names) and multi-clause definitions;
 - full Haskell layout (only newline separation + indented-continuation
   layout-lite; no offside rule, no `{ ; }` explicit blocks). A multi-line

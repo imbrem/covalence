@@ -6,12 +6,15 @@
   lands real kernel data but only via the *untyped* carved `sexpr` type (no
   type inference). A well-typed HOL-term realization (Church-style, with
   inference / elaboration) is the follow-on.
-- **No lowering to `init/` definitions.** The flagship demo
-  (`tests/init_dialect.rs`) lowers an init-flavored module to exact `(define
-  …)` interchange text and to carved `sexpr` kernel `Term`s, but that output
-  is *inert data* — realizing the dialect into actual `covalence-init`
-  definitions/theorems (typed `Term`s, `Def`/`Thm`) so `init/` can really be
-  written in it is not started.
+- **No lowering to `init/` definitions.** The flagship demos
+  (`tests/init_dialect.rs`, `tests/examples.rs` over `examples/*.hs`) lower
+  init-flavored modules to exact `(define …)` interchange text and to carved
+  `sexpr` kernel `Term`s, but that output is *inert data* — realizing the
+  dialect into actual `covalence-init` definitions/theorems (typed `Term`s,
+  `Def`/`Thm`) so `init/` can really be written in it is not started. The
+  `if` / `list` / `tuple` / `unit` sugar heads currently land as plain
+  symbols/atoms; a typed lowering would map them to the real kernel
+  conditional / list / product / unit.
 
 ## Minor
 
@@ -33,12 +36,19 @@
 
 ## Minor — unsupported grammar
 
-The parser covers a deliberately small subset. Not yet supported:
+The parser covers a deliberately small subset. Now supported: `if`/`then`/
+`else`, list `[…]` / tuple `(…,…)` / unit `()` literals, `--` line and nested
+`{- -}` block comments, and top-level type-signature lines (`name :: T`,
+parsed-and-ignored). Still not supported:
 
-- do-notation, guards, `where`/`let` blocks with multiple binders;
-- type signatures and type/`data`/`class`/`instance` declarations;
+- do-notation, guards, `where`/`let` blocks with multiple binders, `case`;
+- `type`/`data`/`class`/`instance` declarations (only the ignored `name :: T`
+  signature form is recognised — the type itself is discarded, not checked);
 - pattern matching (only bare parameter names) and multi-clause definitions;
 - full Haskell layout (only newline separation + indented-continuation
-  layout-lite; no offside rule, no `{ ; }` explicit blocks);
-- operator sections, `if`/`case`, list/tuple syntax, negative literals,
-  floating-point/char literals, user-defined operators (only `+ - * ==`).
+  layout-lite; no offside rule, no `{ ; }` explicit blocks). A multi-line
+  block comment in a module is handled by a comment-blanking pre-pass, but the
+  underlying line grouper is still layout-lite;
+- operator sections, negative literals, floating-point/char literals,
+  user-defined operators (only `+ - * ==`);
+- list-cons `:` / list ranges `[a..b]` / list comprehensions.

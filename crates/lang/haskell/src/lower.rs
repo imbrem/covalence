@@ -17,6 +17,15 @@
 //! | lambda `\x -> b`      | `(lambda x b)`      |
 //! | `let n = v in b`      | `(let n v b)`       |
 //! | operator `l + r`      | `(+ l r)`           |
+//! | `if c then t else e`  | `(if c t e)`        |
+//! | list `[a, b, c]`      | `(list a b c)`      |
+//! | tuple `(a, b)`        | `(tuple a b)`       |
+//! | unit `()`             | `(unit)`            |
+//!
+//! The `if` / `list` / `tuple` / `unit` heads are reserved symbols in the IR:
+//! `(unit)` is written as a one-element list rather than the empty list `()`
+//! so it never collides with the empty S-expression list a third party might
+//! write directly.
 //!
 //! A top-level declaration `f x y = body` desugars to nested lambdas —
 //! `(lambda x (lambda y body'))` — and a module lowers to one
@@ -54,6 +63,23 @@ pub fn expr_to_sexpr(e: &Expr) -> SExpr {
             expr_to_sexpr(l),
             expr_to_sexpr(r),
         ]),
+        Expr::If(c, t, e) => SExpr::list(vec![
+            SExpr::sym("if"),
+            expr_to_sexpr(c),
+            expr_to_sexpr(t),
+            expr_to_sexpr(e),
+        ]),
+        Expr::List(items) => {
+            let mut out = vec![SExpr::sym("list")];
+            out.extend(items.iter().map(expr_to_sexpr));
+            SExpr::list(out)
+        }
+        Expr::Tuple(items) => {
+            let mut out = vec![SExpr::sym("tuple")];
+            out.extend(items.iter().map(expr_to_sexpr));
+            SExpr::list(out)
+        }
+        Expr::Unit => SExpr::list(vec![SExpr::sym("unit")]),
     }
 }
 

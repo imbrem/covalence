@@ -303,4 +303,25 @@ origin/main). 198 workspace suites green; web app builds.
   `relational-base-rewrite.md` STUB (signed-SQLite, maintainer to flesh out),
   `what-is-the-tcb.md`.
 
+## 2026-07-11 — init-in-dialect: monads lowered THROUGH the trait API (main 494847d7)
+
+Toward "write init/ in the dialect so TCB change = dialect/lowering change only." Merged
+`init-dialect` (zero-TCB, manifests byte-identical):
+- **covalence-hol-api += `Hol::tvar`** (type variable; the only builder the monad shape
+  needed — the trait already had bool_ty/fun_ty/lam/var/app/eq/imp/and/forall/exists +
+  rules). Zero-TCB delegation to `Type::tfree`.
+- **Dialect typing surface**: `Ty` AST + `parse_ty` + annotated lambdas `\(x::t)->e` +
+  `name :: Ty` sigs attached to defs (minimal, inference-free).
+- **Typed HOL backend** (`hol-typed` feature, `src/typed.rs`): lowers dialect source to
+  real HOL `Term`s **exclusively through `H: Hol + Nat`** (returns `H::Term`, names no
+  backend type) — THE crux: swap the TCB ⇒ swap the `NativeHol` impl, dialect unchanged.
+- **Dialect monad module** (`examples/monad_typed.hs`): the plain-HOL abstract monad from
+  init/monad.rs (ret/bind as free vars over a carrier tvar `mcar`, `map f x = bind x (\y
+  -> ret (f y))` defined) lowered to real HOL terms + the `map_ret` law STATEMENT (as a
+  bool prop of the exact monad_map_ret shape). Tests compare against trait-built refs.
+- Lowers **definitions + law statements**, NOT proofs (Rust proof stays in init/monad.rs
+  against the same shapes). Deferred (SKELETONS): Option/List type ctors for concrete
+  instances, proof/tactic lowering, typeclass elaboration + general polymorphism (HOL-ω).
+  Note: notes/vibes/init-in-dialect.md.
+
 <!-- APPEND NEW ENTRIES BELOW -->

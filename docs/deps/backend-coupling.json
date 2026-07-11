@@ -1,0 +1,50 @@
+{
+  "generatedAt": "2026-07-11T13:20:59.596Z",
+  "rows": [
+    {
+      "crate": "kernel/hol/init",
+      "termKind": 92,
+      "term": 2765
+    },
+    {
+      "crate": "kernel/hol/eval",
+      "termKind": 51,
+      "term": 561
+    },
+    {
+      "crate": "kernel/hol/core",
+      "termKind": 425,
+      "term": 476
+    },
+    {
+      "crate": "kernel/hol/traits",
+      "termKind": 7,
+      "term": 19
+    },
+    {
+      "crate": "proof/alethe",
+      "termKind": 4,
+      "term": 19
+    },
+    {
+      "crate": "kernel/hol/test-guest",
+      "termKind": 0,
+      "term": 10
+    },
+    {
+      "crate": "proof/egglog",
+      "termKind": 0,
+      "term": 9
+    },
+    {
+      "crate": "lang/haskell",
+      "termKind": 0,
+      "term": 2
+    },
+    {
+      "crate": "server/core",
+      "termKind": 2,
+      "term": 0
+    }
+  ]
+}

@@ -19,6 +19,7 @@
     "covalence-hash",
     "covalence-haskell",
     "covalence-hol",
+    "covalence-hol-api",
     "covalence-hol-eval",
     "covalence-inductive",
     "covalence-init",
@@ -234,6 +235,26 @@
     {
       "from": "covalence-hol",
       "to": "covalence-core"
+    },
+    {
+      "from": "covalence-hol-api",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-hol-api",
+      "to": "covalence-hol-eval"
+    },
+    {
+      "from": "covalence-hol-api",
+      "to": "covalence-inductive"
+    },
+    {
+      "from": "covalence-hol-api",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence-hol-api",
+      "to": "covalence-types"
     },
     {
       "from": "covalence-hol-eval",

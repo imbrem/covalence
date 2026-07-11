@@ -18,6 +18,12 @@
 
 ## Minor
 
+- **No WASM build for the web demo.** The web Haskell-frontend page
+  (`apps/covalence-web/src/routes/haskell`) ships *precomputed* `src → sexpr`
+  pairs (real crate output in `src/lib/haskellExamples.json`). A *live*
+  in-browser playground needs a wasm-bindgen build exposing
+  `parse_expr`/`parse_module` + `expr_to_sexpr`/`module_to_text` (the
+  `covalence-web-kernel` pattern), which is not wired.
 - **No reader round-trip test.** The `hol` backend builds atoms as
   `atom (mk_blob …)`, whereas `sexpr_parse`'s reader yields `atom (bytes.abs
   …)` over a symbolic byte list; the two are equal only after evaluation, so

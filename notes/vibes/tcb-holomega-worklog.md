@@ -278,4 +278,29 @@ rule → leaf-only → deletable; f32/f64 ride along). Recorded in `eg5-prefligh
   proof+cert effort, best run as a dedicated orchestrated push (ultracode) with the
   structural theories built first. NOT rushed; the tree stayed green, no TCB change.
 
+## 2026-07-11 — cleanup/decouple/demoable push (4 tracks, all PASS, zero-TCB, main bf0cde66)
+
+Workflow `wc3ue96f0`: 4 parallel tracks to a clear, decoupled, demoable state — each
+build/test/scope-reviewed PASS, **all zero-TCB** (core/eval manifests byte-identical to
+origin/main). 198 workspace suites green; web app builds.
+- **A — backend decoupling:** new `covalence-hol-api` (crates/kernel/hol/api) — a
+  consumer crate exposing `Hol` (promoted from init's inductive engine) + a NEW `Nat`
+  trait (term builders + Peano lemmas by name), impl'd for `NativeHol` by delegation.
+  Migration-proof test derives theorems entirely through `H: Hol + Nat` (no backend
+  type named). Inventory: `scripts/backend-coupling.mjs` + `docs/deps/backend-coupling.json`
+  (consumer TermKind::=13, Term::=59). Design note `notes/vibes/backend-decoupling.md`.
+  Deferred (SKELETONS): no real external consumer migrated yet; Inductives/HolOmega/Int/
+  List traits not built; Hol error type not associated.
+- **B — Haskell frontend:** dialect extended (if/list/tuple/unit/comments/type-sig lines),
+  `DesugarBackend`, an example-module library lowered to SExpr + (feat hol) kernel Terms.
+  57 tests, both configs green.
+- **C — web demo:** three new routes — `/deps` (dep-tree from graph.json/svg), `/tcb`
+  (TCB-audit from manifests + tcb-audit.json), `/haskell` (pipeline + precomputed
+  examples; live-WASM playground honest-stopped, recorded). Web build green.
+- **D — navigation + docs:** `notes/design/` framework (TEMPLATE + README index),
+  `notes/vibes/project-map.md` (crate groups + active threads), `k-framework-vision.md`
+  (the new K north star: full K + all sublanguages, relate K-WASM to SpecTec),
+  `relational-base-rewrite.md` STUB (signed-SQLite, maintainer to flesh out),
+  `what-is-the-tcb.md`.
+
 <!-- APPEND NEW ENTRIES BELOW -->

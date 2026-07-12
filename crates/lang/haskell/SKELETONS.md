@@ -21,10 +21,13 @@
   coverage (`exists_*`, `cong_app`, `false_elim`, rewriting — the trait exposes
   them, the replayer wires a subset); a higher-level **tactic** surface
   compiling to the low-level steps; the `monad.rs` `map_ret` proof (assume
-  left-id → instantiate → β-reduce → discharge) as a dialect theorem; a
-  whole-`ThmModule`-plus-proof-file driver emitting a per-theorem
-  proved/hole/rejected report. No inference: statement variables are typed by an
-  ambient env, not inferred. Design: `notes/vibes/proof-format.md`.
+  left-id → instantiate → β-reduce → discharge) as a dialect theorem. No
+  inference: statement variables are typed by an ambient env, not inferred.
+  Design: `notes/vibes/proof-format.md`. (A whole-module-plus-proof-file driver
+  emitting a per-theorem proved/hole/rejected report now exists —
+  `covalence-web-kernel::check_haskell_proofs`, demoed live on the `/proofs`
+  page — but types every statement variable as `nat`; a general ambient-op /
+  multi-sort driver is still open.)
 - **No typeclass / instance elaboration.** The monad is written with the ops as
   plain free variables + an ambient env (`lower_decl_in`). Real `class Monad m` /
   `instance` elaboration = dictionary passing (a class → a record of ops, an
@@ -42,13 +45,16 @@
 
 ## Minor
 
-- **Live web playground: DONE.** `covalence-web-kernel::haskell_to_sexpr`
-  (`crates/kernel/web`) exposes the default (kernel-agnostic) parse + lower-to-
-  S-expression pipeline via wasm-bindgen; the `/haskell` page
-  (`apps/covalence-web/src/routes/haskell`) loads that wasm and parses/lowers what
-  you type in the browser (examples remain as presets). Follow-on: a *typed HOL*
-  playground would need the `hol`/`hol-typed` feature (kernel deps) compiled to
-  wasm — heavier; the untyped SExpr pipeline is what ships.
+- **Live web playground: DONE (incl. typed HOL + proof checking).**
+  `covalence-web-kernel` (`crates/kernel/web`) compiles the dialect to wasm and
+  exposes four fns: `haskell_to_sexpr` (kernel-agnostic S-expr), `haskell_to_hol_term`
+  (untyped carved `Term`), `haskell_to_typed_hol` (annotated def/expr →
+  well-typed HOL `Term` + type, via `hol-typed`/`NativeHol`), and
+  `check_haskell_proofs` (link a theorem module to an S-expr proof file, per-theorem
+  proved/hole/axiom/mismatch). The `/haskell` page shows the sexpr / untyped /
+  typed views; the `/proofs` page is the live proof checker. All zero-TCB (the
+  kernel deps are already in the wasm via `covalence-kernel`). Follow-on: only the
+  gaps above (per-theory type traits, broader rule set, tactic layer).
 - **No reader round-trip test.** The `hol` backend builds atoms as
   `atom (mk_blob …)`, whereas `sexpr_parse`'s reader yields `atom (bytes.abs
   …)` over a symbolic byte list; the two are equal only after evaluation, so

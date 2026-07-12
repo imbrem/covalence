@@ -13,13 +13,18 @@
   defined, the `map f (ret a) = ret (f a)` law *stated*). The concrete `option`
   / `list` instances from `init/monad.rs` (`some`/`none`/`option_bind`,
   `singleton`/`concatMap`) need those traits.
-- **Typed backend lowers TERMS + law STATEMENTS, not PROOFS.** `typed.rs`
-  produces `Term`s (definitions and the monad-map-law equation), not `Thm`s: it
-  does not replay `monad.rs`'s derivation (assume left-id → instantiate →
-  β-reduce → discharge). Proof/tactic lowering — a dialect proof script driving
-  the `Hol` rule methods (`assume`/`all_elim`/`beta_conv`/`imp_intro`/…) to
-  build a `Thm` — is the follow-on; the Rust proof stays in `init/monad.rs`
-  against the same shapes (see `notes/vibes/init-in-dialect.md`).
+- **Proof format: workable rule subset + no tactic language.** `src/proof.rs`
+  (`hol-typed`) replays S-expr proofs through the `Hol`/`Nat` rules and the
+  linker checks the conclusion α-equals the lowered statement (demo:
+  `examples/nat_theorems.{hs,proof}`, `tests/proof_linker.rs` — `refl_a` /
+  `add_base_thm` checked, hole + wrong-proof cases). Deferred: broader rule
+  coverage (`exists_*`, `cong_app`, `false_elim`, rewriting — the trait exposes
+  them, the replayer wires a subset); a higher-level **tactic** surface
+  compiling to the low-level steps; the `monad.rs` `map_ret` proof (assume
+  left-id → instantiate → β-reduce → discharge) as a dialect theorem; a
+  whole-`ThmModule`-plus-proof-file driver emitting a per-theorem
+  proved/hole/rejected report. No inference: statement variables are typed by an
+  ambient env, not inferred. Design: `notes/vibes/proof-format.md`.
 - **No typeclass / instance elaboration.** The monad is written with the ops as
   plain free variables + an ambient env (`lower_decl_in`). Real `class Monad m` /
   `instance` elaboration = dictionary passing (a class → a record of ops, an

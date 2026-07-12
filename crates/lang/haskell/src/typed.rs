@@ -44,7 +44,7 @@
 //! type variable, `map` defined from them, and the `map f (ret a) = ret (f a)`
 //! law *stated* as a real HOL proposition — all through the traits.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use covalence_hol_api::{Hol, Nat};
 
@@ -208,6 +208,108 @@ pub fn lower_expr<H: Hol + Nat>(hol: &H, env: &Env<H>, e: &Expr) -> Result<H::Te
         Expr::Tuple(_) => Err(TypedError::Unsupported("tuple literal")),
         Expr::Unit => Err(TypedError::Unsupported("unit")),
     }
+}
+
+/// Collect the free variables of a dialect expression (identifiers used but not
+/// bound by an enclosing lambda or `let`), in a deterministic (sorted) order.
+///
+/// This is what a theorem statement's implicitly-∀-quantified variables are:
+/// every free identifier that is *not* a theory operation supplied by the
+/// ambient environment. Used by [`lower_statement`] to decide which binders to
+/// universally close.
+pub fn free_vars(e: &Expr) -> Vec<String> {
+    let mut acc = BTreeSet::new();
+    let mut bound = HashSet::new();
+    collect_free(e, &mut bound, &mut acc);
+    acc.into_iter().collect()
+}
+
+fn collect_free(e: &Expr, bound: &mut HashSet<String>, acc: &mut BTreeSet<String>) {
+    match e {
+        Expr::Var(n) => {
+            if !bound.contains(n) {
+                acc.insert(n.clone());
+            }
+        }
+        Expr::Lit(_) | Expr::Unit => {}
+        Expr::App(f, x) | Expr::BinOp(_, f, x) => {
+            collect_free(f, bound, acc);
+            collect_free(x, bound, acc);
+        }
+        Expr::Lam(p, _ty, body) => {
+            let fresh = bound.insert(p.clone());
+            collect_free(body, bound, acc);
+            if fresh {
+                bound.remove(p);
+            }
+        }
+        Expr::Let(n, v, body) => {
+            collect_free(v, bound, acc);
+            let fresh = bound.insert(n.clone());
+            collect_free(body, bound, acc);
+            if fresh {
+                bound.remove(n);
+            }
+        }
+        Expr::If(c, t, f) => {
+            collect_free(c, bound, acc);
+            collect_free(t, bound, acc);
+            collect_free(f, bound, acc);
+        }
+        Expr::List(xs) | Expr::Tuple(xs) => {
+            for x in xs {
+                collect_free(x, bound, acc);
+            }
+        }
+    }
+}
+
+/// Lower a **theorem statement** — an equation *expression* — into a HOL
+/// proposition (`Term : bool`) with its **implicitly-universal variables
+/// ∀-closed**, through the traits only.
+///
+/// This is the load-bearing definition/theorem symmetry: the statement is
+/// parsed with the very same expression grammar a definition's `lhs = rhs` uses
+/// (so `0 + m == m` is an [`Expr::BinOp`] with `==`), lowered by [`lower_expr`]
+/// to a `bool` term, then the implicitly-universally-quantified variables (here
+/// `m`) are each wrapped in a `∀`.
+///
+/// # Which variables are quantified
+///
+/// A statement's free identifiers fall into two classes, both typed by `env`:
+///
+/// - **theory operations** — the ambient signature (`ret` / `bind` / `map` /
+///   `add`, …) a theorem is stated *against*. These stay **free constants** in
+///   the proposition (they are the fixed vocabulary the proof also cites).
+/// - **statement variables** — the implicitly-∀ ones (`m`, `n`, `f`, `a`).
+///   These are ∀-closed.
+///
+/// The two are distinguished by the caller-supplied `quantify` set: every free
+/// variable **in** it is ∀-closed; every other free variable stays a constant.
+/// A free variable not typed by `env` is [`TypedError::UnboundVar`]. Closure is
+/// applied in the **sorted** order of `quantify` (innermost binder last) so the
+/// proposition is deterministic and a proof's conclusion checks against it by
+/// α-equality.
+pub fn lower_statement<H: Hol + Nat>(
+    hol: &H,
+    env: &Env<H>,
+    stmt: &Expr,
+    quantify: &BTreeSet<String>,
+) -> Result<H::Term> {
+    // Lower the equation body first (this also type-checks it: e.g. `==` builds
+    // an `eq`, so the whole thing is `bool`).
+    let body = lower_expr(hol, env, stmt)?;
+
+    // ∀-close exactly the requested variables, in sorted order, innermost last.
+    let mut prop = body;
+    for name in quantify.iter().rev() {
+        let ty = env
+            .get(name)
+            .ok_or_else(|| TypedError::UnboundVar(name.clone()))?
+            .clone();
+        prop = hol.forall(name, ty, prop)?;
+    }
+    Ok(prop)
 }
 
 /// Lower a top-level declaration `f p1 p2 = body` (with a signature) to a HOL

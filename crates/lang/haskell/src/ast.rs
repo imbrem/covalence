@@ -160,5 +160,81 @@ impl Decl {
     }
 }
 
-/// A module is a sequence of top-level declarations.
+/// A **theorem (or axiom) declaration**: `theorem NAME. <equation>`.
+///
+/// The crucial design point (see `notes/vibes/proof-format.md`): a theorem's
+/// **statement is an EQUATION expression**, written in the *same* expression
+/// grammar a definition's `lhs = rhs` uses — e.g. `0 + m == m` or
+/// `add (succ n) m == succ (add n m)` — **not** a `::` type signature. Free
+/// variables (here `n`, `m`) are implicitly universally quantified: a typed
+/// backend ∀-closes them and lowers the whole thing to a HOL `Term : bool`
+/// proposition. This mirrors the definition/theorem symmetry — a [`Decl`] is an
+/// equation that *introduces* its LHS head as a new constant; a [`Theorem`] is
+/// an equation *proved* from what already exists.
+///
+/// The proof lives in a **separate** file (the S-expression proof format),
+/// linked to this declaration **by name** — so the statement is the stable
+/// surface and the backend is free to be swapped. An [`axiom`](Theorem::axiom)
+/// is the same shape but postulated rather than proved (no proof is expected).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Theorem {
+    /// The theorem's name — the key a proof in the proof file is matched to.
+    pub name: String,
+    /// The statement, as an equation *expression* (typically an [`Expr::BinOp`]
+    /// with the `==` operator, but any `bool`-typed expression is admitted).
+    /// Free variables are implicitly ∀-quantified by the backend.
+    pub statement: Expr,
+    /// An optional type signature `NAME :: Ty` attached (as for [`Decl`]) so a
+    /// typed backend can type the statement's free variables. `None` when no
+    /// signature preceded the declaration.
+    pub sig: Option<Ty>,
+    /// Whether this is an `axiom` (postulated, no proof expected) rather than a
+    /// `theorem` (which requires a proof in the proof file).
+    pub axiom: bool,
+}
+
+impl Theorem {
+    /// A `theorem NAME. <statement>` declaration (proof expected).
+    pub fn new(name: impl Into<String>, statement: Expr) -> Theorem {
+        Theorem {
+            name: name.into(),
+            statement,
+            sig: None,
+            axiom: false,
+        }
+    }
+
+    /// An `axiom NAME. <statement>` declaration (postulated, no proof).
+    pub fn axiom(name: impl Into<String>, statement: Expr) -> Theorem {
+        Theorem {
+            name: name.into(),
+            statement,
+            sig: None,
+            axiom: true,
+        }
+    }
+}
+
+/// One top-level item in a module: a value definition or a theorem/axiom.
+///
+/// The dialect now carries **both** definitions (equations that introduce a new
+/// constant) and theorems (equations proved from what exists) in one module —
+/// with theorem proofs supplied externally, linked by name (see
+/// [`crate::proof`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Item {
+    /// A value definition `name p1 … = body`.
+    Def(Decl),
+    /// A theorem or axiom declaration `theorem/axiom NAME. <equation>`.
+    Thm(Theorem),
+}
+
+/// A module is a sequence of top-level declarations (a legacy alias — the
+/// definition-only view; [`parse_module`](crate::parse::parse_module) still
+/// returns this). The richer definition-**and**-theorem view is
+/// [`ThmModule`] via [`parse_items`](crate::parse::parse_items).
 pub type Module = Vec<Decl>;
+
+/// A module carrying **both** definitions and theorem/axiom declarations, in
+/// source order — the surface the proof linker consumes.
+pub type ThmModule = Vec<Item>;

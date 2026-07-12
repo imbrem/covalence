@@ -73,6 +73,14 @@ pub mod backends;
 pub mod hol;
 pub mod lower;
 pub mod parse;
+/// The **separate proof-file format** + name-linked replayer/checker (also the
+/// `hol-typed` feature): a dialect *theorem* declares a name + equation
+/// statement, its proof lives in an S-expression file linked by name, and the
+/// [`proof`] replayer drives the `Hol` / `Nat` rule methods — naming no backend
+/// type except through the trait bound — to build a `Thm` whose conclusion is
+/// checked against the lowered statement.
+#[cfg(feature = "hol-typed")]
+pub mod proof;
 pub mod realize;
 pub mod sexpr;
 /// The optional **typed** HOL backend: lowers type-annotated dialect

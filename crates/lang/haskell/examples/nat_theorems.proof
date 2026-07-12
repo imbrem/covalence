@@ -1,0 +1,17 @@
+; The SEPARATE proof file for `nat_theorems.hs`, linked BY NAME. Each
+; (proof NAME step+) form replays through the abstract Hol / Nat rules; the
+; last step's theorem is the result, checked against the lowered statement.
+;
+; Steps are numbered 1, 2, … in order; a step cites an earlier one as #K.
+
+; ∀a. a = a  —  (refl a) then generalise `a`.
+(proof refl_a
+  (refl (var a nat))
+  (all-intro #1 a nat))
+
+; ∀m. 0 + m = m  —  exactly the `add_base` Nat accessor, cited as a lemma.
+(proof add_base_thm
+  (lemma add_base))
+
+; NOTE: there is deliberately NO proof for `add_comm_thm` — the linker reports
+; it as an unproven hole.

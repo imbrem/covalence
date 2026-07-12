@@ -53,7 +53,7 @@
 
 use covalence_types::Nat;
 
-use crate::ast::{Decl, Expr, Lit, Module, Ty};
+use crate::ast::{Decl, Expr, Item, Lit, Module, Theorem, ThmModule, Ty};
 
 /// A parse error with a byte offset into the input.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,6 +104,13 @@ enum Tok {
     If,
     Then,
     Else,
+    /// The `theorem` keyword introducing a theorem declaration.
+    Theorem,
+    /// The `axiom` keyword introducing an axiom declaration.
+    Axiom,
+    /// A `.` — separates a theorem/axiom name from its equation statement
+    /// (`theorem NAME. <equation>`).
+    Dot,
     /// A `::` type-signature / type-annotation separator. Its right-hand side
     /// is a type expression ([`Parser::ty`]): in a module a `name :: Ty` line
     /// attaches to the following definition, and in a lambda `\(x :: Ty) -> e`
@@ -183,6 +190,16 @@ fn lex(src: &str) -> Result<Vec<Token>, ParseError> {
             ',' => {
                 out.push(Token {
                     tok: Tok::Comma,
+                    pos: i,
+                });
+                i += 1;
+            }
+            // A `.` separating a theorem/axiom name from its equation statement.
+            // Not otherwise used in the dialect (no qualified names, no
+            // composition operator), so it is unambiguous here.
+            '.' => {
+                out.push(Token {
+                    tok: Tok::Dot,
                     pos: i,
                 });
                 i += 1;
@@ -322,6 +339,8 @@ fn lex(src: &str) -> Result<Vec<Token>, ParseError> {
                     "if" => Tok::If,
                     "then" => Tok::Then,
                     "else" => Tok::Else,
+                    "theorem" => Tok::Theorem,
+                    "axiom" => Tok::Axiom,
                     _ => Tok::Ident(text.to_string()),
                 };
                 out.push(Token { tok, pos: start });
@@ -683,6 +702,9 @@ fn describe(t: Option<&Tok>) -> String {
         Some(Tok::Then) => "`then`".to_string(),
         Some(Tok::Else) => "`else`".to_string(),
         Some(Tok::ColonColon) => "`::`".to_string(),
+        Some(Tok::Theorem) => "`theorem`".to_string(),
+        Some(Tok::Axiom) => "`axiom`".to_string(),
+        Some(Tok::Dot) => "`.`".to_string(),
     }
 }
 
@@ -722,19 +744,16 @@ pub fn parse_ty(src: &str) -> Result<Ty, ParseError> {
     Ok(t)
 }
 
-/// Parse a whole module: newline-separated `name p1 p2 = expr` definitions.
+/// Split source into logical-declaration groups (comment-blanked, layout-lite
+/// continuation), each tagged with its byte offset in the original source.
 ///
-/// Blank lines are ignored. A line whose first character is whitespace is
-/// treated as a continuation of the previous definition (layout-lite).
-pub fn parse_module(src: &str) -> Result<Module, ParseError> {
-    let mut decls = Module::new();
-    // Blank out comments FIRST (preserving byte offsets and newlines) so the
-    // line-based grouper below is comment-aware — a `{- … -}` block comment may
-    // span physical lines without derailing the layout-lite continuation logic.
+/// Shared by [`parse_module`] and [`parse_items`]: blank out comments first
+/// (preserving byte offsets and newlines) so a `{- … -}` block comment may span
+/// physical lines without derailing the continuation logic, then group physical
+/// lines — a line beginning with whitespace continues the previous group.
+fn group_declarations(src: &str) -> Result<Vec<(usize, String)>, ParseError> {
     let blanked = strip_comments_to_spaces(src)?;
     let src: &str = &blanked;
-    // Group physical lines into logical declarations, tracking the byte offset
-    // of each group's start so errors point into the original source.
     let mut offset = 0usize;
     let mut groups: Vec<(usize, String)> = Vec::new();
     for line in src.split_inclusive('\n') {
@@ -750,9 +769,39 @@ pub fn parse_module(src: &str) -> Result<Module, ParseError> {
         }
         offset += line.len();
     }
+    Ok(groups)
+}
 
-    // A pending signature `name :: Ty` attaches to the next definition of the
-    // same name (Haskell convention: the signature precedes the equation).
+/// Parse a whole module: newline-separated `name p1 p2 = expr` definitions.
+///
+/// Blank lines are ignored. A line whose first character is whitespace is
+/// treated as a continuation of the previous definition (layout-lite). Theorem
+/// / axiom declarations are **ignored** by this entry point — use
+/// [`parse_items`] to get the definition-**and**-theorem view.
+pub fn parse_module(src: &str) -> Result<Module, ParseError> {
+    let items = parse_items(src)?;
+    Ok(items
+        .into_iter()
+        .filter_map(|it| match it {
+            Item::Def(d) => Some(d),
+            Item::Thm(_) => None,
+        })
+        .collect())
+}
+
+/// Parse a whole module into the richer **definition-and-theorem** view: a
+/// sequence of [`Item`]s (value definitions and `theorem` / `axiom`
+/// declarations) in source order.
+///
+/// This is the surface the proof linker consumes: theorem statements are the
+/// stable interface, their proofs supplied externally (in the S-expression
+/// proof file) and linked by name. Signatures (`name :: Ty`) attach to the
+/// following same-named definition **or** theorem.
+pub fn parse_items(src: &str) -> Result<ThmModule, ParseError> {
+    let groups = group_declarations(src)?;
+    let mut items = ThmModule::new();
+    // A pending signature `name :: Ty` attaches to the next definition or
+    // theorem of the same name (Haskell convention: the signature precedes it).
     let mut pending_sig: Option<(String, Ty)> = None;
     for (start, text) in groups {
         match parse_decl(&text, start)? {
@@ -760,25 +809,32 @@ pub fn parse_module(src: &str) -> Result<Module, ParseError> {
                 pending_sig = Some((name, ty));
             }
             DeclItem::Def(mut d) => {
-                // A signature attaches only when its name matches the following
-                // definition; an unattached signature is simply dropped.
                 if let Some((sig_name, ty)) = pending_sig.take()
                     && sig_name == d.name
                 {
                     d.sig = Some(ty);
                 }
-                decls.push(d);
+                items.push(Item::Def(d));
+            }
+            DeclItem::Thm(mut t) => {
+                if let Some((sig_name, ty)) = pending_sig.take()
+                    && sig_name == t.name
+                {
+                    t.sig = Some(ty);
+                }
+                items.push(Item::Thm(t));
             }
         }
     }
-    Ok(decls)
+    Ok(items)
 }
 
 /// One parsed top-level item: a type signature `name :: Ty` (attached to the
-/// following definition by [`parse_module`]) or a value definition.
+/// following definition/theorem), a value definition, or a theorem/axiom.
 enum DeclItem {
     Sig(String, Ty),
     Def(Decl),
+    Thm(Theorem),
 }
 
 /// Parse one top-level item — either a value definition `name p1 p2 = expr` or
@@ -791,6 +847,43 @@ enum DeclItem {
 fn parse_decl(text: &str, base: usize) -> Result<DeclItem, ParseError> {
     let toks = lex(text).map_err(|e| relocate(e, base))?;
     let mut p = Parser::new(toks, text.len());
+
+    // A theorem / axiom declaration: `theorem NAME. <equation>`. Its statement
+    // reuses the EXPRESSION grammar (`p.expr()`), NOT the type grammar — a
+    // theorem states an equation, not a type.
+    if matches!(p.peek(), Some(Tok::Theorem | Tok::Axiom)) {
+        let axiom = p.peek() == Some(&Tok::Axiom);
+        p.idx += 1;
+        let end = text.len();
+        let name = match p.bump() {
+            Some(Token {
+                tok: Tok::Ident(n), ..
+            }) => n.clone(),
+            other => {
+                let pos = other.map_or(end, |t| t.pos);
+                let kw = if axiom { "axiom" } else { "theorem" };
+                return Err(relocate(
+                    ParseError::new(format!("expected a name after `{kw}`"), pos),
+                    base,
+                ));
+            }
+        };
+        p.expect(&Tok::Dot, "`.` after the theorem name")
+            .map_err(|e| relocate(e, base))?;
+        let statement = p.expr().map_err(|e| relocate(e, base))?;
+        if p.idx != p.toks.len() {
+            return Err(relocate(
+                ParseError::new("trailing input after theorem statement", p.peek_pos()),
+                base,
+            ));
+        }
+        return Ok(DeclItem::Thm(Theorem {
+            name,
+            statement,
+            sig: None,
+            axiom,
+        }));
+    }
 
     let text_len = text.len();
     let name = match p.bump() {
@@ -1029,6 +1122,64 @@ mod tests {
         assert_eq!(m.len(), 1);
         assert_eq!(m[0].name, "f");
         assert_eq!(m[0].sig, None);
+    }
+
+    // -- Theorem / axiom declarations ---------------------------------------
+
+    #[test]
+    fn parses_theorem_equation_statement() {
+        // A theorem's statement is an EQUATION expression, not a type.
+        let items = parse_items("theorem add_base. 0 + m == m").unwrap();
+        assert_eq!(items.len(), 1);
+        let Item::Thm(t) = &items[0] else {
+            panic!("expected a theorem item")
+        };
+        assert_eq!(t.name, "add_base");
+        assert!(!t.axiom);
+        // `0 + m == m` parses as `(0 + m) == m` — a `==` BinOp at the top.
+        assert_eq!(
+            t.statement,
+            Expr::binop(
+                "==",
+                Expr::binop("+", Expr::Lit(Lit::Nat(0u64.into())), Expr::Var("m".into())),
+                Expr::Var("m".into()),
+            )
+        );
+    }
+
+    #[test]
+    fn parses_axiom_and_attaches_signature() {
+        let src = "peano :: nat\naxiom refl_zero. 0 == 0";
+        let items = parse_items(src).unwrap();
+        // Signature name `peano` does not match `refl_zero`, so it is dropped.
+        assert_eq!(items.len(), 1);
+        let Item::Thm(t) = &items[0] else {
+            panic!("expected a theorem item")
+        };
+        assert!(t.axiom);
+        assert_eq!(t.sig, None);
+
+        // A matching signature attaches.
+        let items = parse_items("thm :: nat\ntheorem thm. 0 == 0").unwrap();
+        let Item::Thm(t) = &items[0] else {
+            panic!("theorem")
+        };
+        assert_eq!(t.sig, Some(Ty::base("nat")));
+    }
+
+    #[test]
+    fn parse_module_ignores_theorems() {
+        // The legacy definition-only view skips theorem declarations.
+        let src = "f x = x\ntheorem t. 0 == 0";
+        let m = parse_module(src).unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].name, "f");
+    }
+
+    #[test]
+    fn theorem_needs_a_dot() {
+        // `theorem NAME <equation>` without the `.` is a parse error.
+        assert!(parse_items("theorem t 0 == 0").is_err());
     }
 
     #[test]

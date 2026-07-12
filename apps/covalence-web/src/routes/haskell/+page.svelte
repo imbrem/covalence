@@ -1,24 +1,49 @@
 <script lang="ts">
-	// HASKELL FRONTEND page. The `covalence-haskell` crate (crates/lang/haskell)
-	// is a kernel-agnostic surface: a hand-written parser for a small Haskell
-	// EXPRESSION dialect + top-level defs, ONE canonical lowering to an
-	// S-expression interchange IR, and a pluggable `Realize` backend.
+	// HASKELL FRONTEND page — LIVE. `covalence-haskell` (crates/lang/haskell), the
+	// kernel-agnostic dialect front end, is compiled to WASM inside
+	// `covalence-web-kernel` and exposed as `haskell_to_sexpr`; this page parses +
+	// lowers the Haskell you type, in your browser, to the S-expression interchange:
 	//
 	//   Haskell dialect  ==(one canonical lowering)==>  S-expressions  ==(pluggable)==>  backend
 	//
-	// The examples below are PRECOMPUTED: each `src -> sexpr` pair is the real
-	// output of running the crate's parse + `expr_to_sexpr` / `module_to_text`
-	// pipeline (generated from the crate, not hand-written). Wiring a *live*
-	// in-browser parse (compile `covalence-haskell` to wasm-bindgen the way
-	// `covalence-web-kernel` is built for the article page) is the recorded
-	// follow-on — see crates/lang/haskell/SKELETONS.md.
+	import { onMount } from 'svelte';
 	import examples from '$lib/haskellExamples.json';
 
 	type Example = { title: string; kind: string; src: string; sexpr: string };
 	const cases = examples as Example[];
 
 	let selected = $state(0);
-	let current = $derived(cases[selected]);
+	let src = $state(cases[0].src.replace(/\n$/, ''));
+	// The wasm-bindgen module (loaded on mount); `any` to avoid import-type churn.
+	let wasm = $state<any>(null);
+	let loadError = $state('');
+
+	// Live parse: recomputed whenever `src` (or `wasm`) changes.
+	let result = $derived.by(() => {
+		if (!wasm) return { ok: true as boolean, sexpr: '', error: '', pending: true };
+		try {
+			const r = JSON.parse(wasm.haskell_to_sexpr(src));
+			return { ok: !!r.ok, sexpr: r.sexpr ?? '', error: r.error ?? '', pending: false };
+		} catch (e) {
+			return { ok: false, sexpr: '', error: String(e), pending: false };
+		}
+	});
+
+	onMount(async () => {
+		try {
+			const mod = await import('$lib/kernel/covalence_web_kernel.js');
+			const wasmUrl = (await import('$lib/kernel/covalence_web_kernel_bg.wasm?url')).default;
+			await mod.default({ module_or_path: wasmUrl });
+			wasm = mod;
+		} catch (e) {
+			loadError = String(e);
+		}
+	});
+
+	function loadExample(i: number) {
+		selected = i;
+		src = cases[i].src.replace(/\n$/, '');
+	}
 </script>
 
 <svelte:head><title>haskell frontend — covalence</title></svelte:head>
@@ -29,7 +54,8 @@
 		<code>covalence-haskell</code> (<code>crates/lang/haskell</code>) is a
 		kernel-agnostic on-ramp: a small Haskell dialect lowered through ONE
 		canonical desugaring into an S-expression interchange IR, then realized by
-		a pluggable backend.
+		a pluggable backend. <strong>This page runs it live in your browser</strong>
+		via WASM.
 	</p>
 
 	<div class="pipeline">
@@ -44,33 +70,46 @@
 
 	<p class="note">
 		The <strong>S-expression IR</strong> is the interchange point: third-party
-		producers/consumers use it directly (text in / canonical text out) and
-		never touch Haskell syntax. The <code>hol</code> feature realizes the same
-		IR into carved <code>sexpr</code> kernel <code>Term</code>s.
+		producers/consumers use it directly (text in / canonical text out) and never
+		touch Haskell syntax. The <code>hol</code> feature realizes the same IR into
+		carved <code>sexpr</code> kernel <code>Term</code>s.
 	</p>
 
 	<div class="examples">
 		{#each cases as c, i}
-			<button class:on={selected === i} onclick={() => (selected = i)}>{c.title}</button>
+			<button class:on={selected === i} onclick={() => loadExample(i)}>{c.title}</button>
 		{/each}
 	</div>
 
 	<div class="panes">
 		<section class="pane">
-			<header>Haskell <span class="tag">{current.kind}</span></header>
-			<pre class="src">{current.src.replace(/\n$/, '')}</pre>
+			<header>Haskell <span class="tag">editable</span></header>
+			<textarea class="src" bind:value={src} spellcheck="false"></textarea>
 		</section>
 		<div class="mid">→</div>
 		<section class="pane">
-			<header>S-expression IR</header>
-			<pre class="sexpr">{current.sexpr.replace(/\n$/, '')}</pre>
+			<header>
+				S-expression IR
+				{#if result.pending && !loadError}<span class="tag">loading…</span>{/if}
+			</header>
+			{#if loadError}
+				<pre class="err">failed to load wasm: {loadError}</pre>
+			{:else if result.pending}
+				<pre class="sexpr muted">compiling the parser to WASM…</pre>
+			{:else if result.ok}
+				<pre class="sexpr">{result.sexpr}</pre>
+			{:else}
+				<pre class="err">{result.error}</pre>
+			{/if}
 		</section>
 	</div>
 
 	<p class="status">
-		<strong>Status:</strong> precomputed (real crate output). Live in-browser
-		parsing via WASM is the recorded follow-on — see
-		<code>crates/lang/haskell/SKELETONS.md</code>.
+		<strong>Status:</strong> live — parsed + lowered in your browser by
+		<code>covalence-haskell</code> compiled to WASM
+		(<code>covalence-web-kernel::haskell_to_sexpr</code>). Edit the Haskell above,
+		or pick an example. Try a top-level def (<code>compose f g x = f (g x)</code>)
+		or a bare expression (<code>\x -&gt; x</code>).
 	</p>
 </main>
 
@@ -175,16 +214,33 @@
 	.pane header .tag {
 		color: var(--accent);
 	}
-	.pane pre {
+	.pane pre,
+	.pane textarea {
 		padding: 0.7rem;
 		font-size: 0.85rem;
 		white-space: pre-wrap;
 		word-break: break-word;
 		line-height: 1.5;
 		flex: 1;
+		margin: 0;
+	}
+	.pane textarea {
+		resize: vertical;
+		min-height: 8rem;
+		font-family: var(--font-mono);
+		color: var(--fg);
+		background: transparent;
+		border: 0;
+		outline: none;
 	}
 	.pane .sexpr {
 		color: color-mix(in srgb, var(--accent) 55%, var(--fg));
+	}
+	.pane .sexpr.muted {
+		color: var(--muted);
+	}
+	.pane .err {
+		color: color-mix(in srgb, #e5484d 70%, var(--fg));
 	}
 	.mid {
 		display: flex;

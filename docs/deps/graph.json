@@ -634,6 +634,10 @@
     },
     {
       "from": "covalence-web-kernel",
+      "to": "covalence-haskell"
+    },
+    {
+      "from": "covalence-web-kernel",
       "to": "covalence-kernel"
     }
   ],

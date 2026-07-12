@@ -44,6 +44,39 @@ pub fn check_model(src: &str, model: &str) -> String {
     report_json(KernelService::new().check_model(src, model))
 }
 
+/// Parse a snippet of the **Haskell dialect** and lower it to the canonical
+/// S-expression interchange text — the live front end for the `/haskell` demo
+/// page. Tries a whole module (top-level `f x = …` defs) first, then falls back
+/// to a single expression.
+///
+/// JS side: `JSON.parse(haskell_to_sexpr(src))` →
+/// `{ ok: true, sexpr: string }` or `{ ok: false, error: string }`.
+///
+/// Kernel-agnostic: this drives only `covalence-haskell`'s parser + lowering
+/// (no proof-checking, no TCB), so it is cheap enough to run on the main thread.
+#[wasm_bindgen]
+pub fn haskell_to_sexpr(src: &str) -> String {
+    match covalence_haskell::parse::parse_module(src) {
+        Ok(m) => haskell_json_ok(&covalence_haskell::lower::module_to_text(&m)),
+        Err(mod_err) => match covalence_haskell::parse::parse_expr(src) {
+            Ok(e) => haskell_json_ok(&covalence_haskell::lower::expr_to_sexpr(&e).to_text()),
+            // Report the module-parse error: input failing both parses is
+            // usually intended as a module and its error is more informative.
+            Err(_) => haskell_json_err(&format!("{mod_err}")),
+        },
+    }
+}
+
+fn haskell_json_str(s: &str) -> String {
+    serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
+}
+fn haskell_json_ok(sexpr: &str) -> String {
+    format!(r#"{{"ok":true,"sexpr":{}}}"#, haskell_json_str(sexpr))
+}
+fn haskell_json_err(msg: &str) -> String {
+    format!(r#"{{"ok":false,"error":{}}}"#, haskell_json_str(msg))
+}
+
 fn report_json(report: covalence_kernel::CheckReport) -> String {
     serde_json::to_string(&report)
         .unwrap_or_else(|e| format!(r#"{{"ok":false,"theorems":[],"diagnostics":[{{"severity":"error","message":"internal: failed to serialize report: {e}","span":null}}]}}"#))
@@ -60,5 +93,28 @@ mod tests {
         // A broken proof → ok:false with at least one diagnostic.
         assert!(json.contains("\"ok\":false"), "json: {json}");
         assert!(json.contains("\"diagnostics\""), "json: {json}");
+    }
+
+    #[test]
+    fn haskell_to_sexpr_lowers_a_module() {
+        // A top-level def lowers to the S-expression interchange.
+        let json = haskell_to_sexpr("compose f g x = f (g x)");
+        assert!(json.contains("\"ok\":true"), "json: {json}");
+        assert!(json.contains("compose"), "json: {json}");
+        assert!(json.contains("lambda"), "json: {json}");
+    }
+
+    #[test]
+    fn haskell_to_sexpr_lowers_a_bare_expression() {
+        let json = haskell_to_sexpr("\\x -> x");
+        assert!(json.contains("\"ok\":true"), "json: {json}");
+        assert!(json.contains("lambda"), "json: {json}");
+    }
+
+    #[test]
+    fn haskell_to_sexpr_reports_a_parse_error() {
+        let json = haskell_to_sexpr("\\x ->");
+        assert!(json.contains("\"ok\":false"), "json: {json}");
+        assert!(json.contains("\"error\""), "json: {json}");
     }
 }

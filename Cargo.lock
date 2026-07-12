@@ -1567,6 +1567,7 @@ name = "covalence-web-kernel"
 version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
+ "covalence-haskell",
  "covalence-kernel",
  "serde_json",
  "wasm-bindgen",

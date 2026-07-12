@@ -12,6 +12,11 @@ edition = "2024"
 
 [dependencies]
 covalence-core = { path = "../core" }
+# The reflected HOL-omega TYPE layer (kinds + de-Bruijn tyrep + the kind/rank
+# CanonRule oracle) lives in the base TCB; the `HolOmega` extension trait is a
+# ZERO-TCB consumer of it — it only calls the already-audited `canon(KindOf/
+# RankOf/RankLe)` and declares no admitted rule of its own.
+covalence-pure = { path = "../../base" }
 covalence-hol-eval = { path = "../eval" }
 covalence-init = { path = "../init" }
 covalence-inductive = { path = "../../../lang/inductive" }

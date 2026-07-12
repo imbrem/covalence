@@ -1106,6 +1106,7 @@ dependencies = [
  "covalence-hol-eval",
  "covalence-inductive",
  "covalence-init",
+ "covalence-pure",
  "covalence-types",
 ]
 

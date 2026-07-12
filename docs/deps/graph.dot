@@ -107,6 +107,7 @@ digraph deps {
   "hol-api" -> "hol-eval";
   "hol-api" -> "inductive";
   "hol-api" -> "init";
+  "hol-api" -> "pure";
   "hol-api" -> "types";
   "hol-eval" -> "core";
   "hol-eval" -> "pure";

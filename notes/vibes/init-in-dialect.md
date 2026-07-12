@@ -97,6 +97,44 @@ So the demo lowers **definitions + the law statement**, not the proof.
 3. **Typeclass / instance elaboration = dictionary passing** (`class Monad m`
    → a record of ops; `instance` → a value; methods → projections), and
    **general `m`-polymorphism** → HOL-omega type-operator variables (standard
-   HOL has none; hence the single-carrier `mcar` *variable*).
+   HOL has none; hence the single-carrier `mcar` *variable*). **Update:** the
+   type-operator-variable half now exists at the *type* level — see below.
+
+## `HolOmega` — a real type-operator variable `m : ⋆ ⇒ ⋆` (landed)
+
+`covalence-hol-api` gained an EXTENSION trait `HolOmega` (`src/omega.rs`,
+demoed in `tests/monad_omega.rs`) exposing the base TCB's reflected HOL-ω *type*
+layer. Where the plain `Hol` trait offers only `tvar` (a single kind-`⋆`
+carrier — the `mcar` above), `HolOmega` offers:
+
+- kind builders `star()` / `arrow(k1,k2)` (`⋆`, `κ₁ ⇒ κ₂`);
+- `tyop_var(name, kind)` — a **higher-kinded type variable**, e.g. `m : ⋆ ⇒ ⋆`;
+- `ty_var` / `ty_con` / `ty_app(op,arg)` (`m a`) / `ty_fun` / `ty_all` /
+  `ty_abs` / `bound(i)`;
+- kind/rank checking (`kind_of` / `rank_of` / `well_kinded` / `rank_le`) and a
+  rank-stratified `ty_inst` — **all delegating to the base
+  `canon(KindOf/RankOf/RankLe)` oracle**, so it is a ZERO-TCB consumer (its
+  `OmegaLang` has `MANIFEST = None`, mints nothing).
+
+The demo builds the polymorphic monad **type** shape end to end: `m : ⋆ ⇒ ⋆`,
+`m a : ⋆`, `return : a → m a`, `bind : m a → (a → m b) → m b`, the schema
+`∀(m:⋆⇒⋆). ∀(a:⋆). a → m a`; kind-checks them; and confirms the rank oracle
+**rejects an impredicative instantiation** (`∀α:⋆:0.α` at a rank-1 `∀β:⋆:0.β`).
+
+So the dialect's monad module *could* state `Monad m` over a genuine
+type-operator variable instead of the single-carrier `mcar` tvar. **What's left
+to make that real end-to-end:**
+
+- **The reflected-vs-trusted-type split.** `HolOmega::TyRep = TyC` is the base's
+  flat *demo* rep the `CanonRule` oracle evaluates over — NOT the trusted
+  `Hol::Type`. Using it in `typed.rs` requires **bridging** a reflected HOL-ω
+  type into a trusted kernel type (`C = core::Type` wired into the base's
+  App-spine syntax), which is the **gated future step** — it needs the trusted
+  middle `TyInst` rule, guarded by the Homeier-aligned rank-stratification
+  consistency proof (vs `SelectAx`/`bool`) before any higher-rank rule enters
+  `CORE_MANIFEST`. See `notes/vibes/tcb-holomega-roadmap.md`.
+- **Term-level HOL-ω.** `HolOmega` types+kind-checks *types*; typing HOL-ω
+  *terms* (an actual `return`/`bind` term at the polymorphic type) needs the
+  same trusted bridge.
 
 See also `notes/vibes/backend-decoupling.md` for the api-trait migration story.

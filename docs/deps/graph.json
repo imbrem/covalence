@@ -258,6 +258,10 @@
     },
     {
       "from": "covalence-hol-api",
+      "to": "covalence-pure"
+    },
+    {
+      "from": "covalence-hol-api",
       "to": "covalence-types"
     },
     {

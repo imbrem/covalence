@@ -9,6 +9,7 @@
 		{ href: '/deps', label: 'dep tree' },
 		{ href: '/tcb', label: 'tcb audit' },
 		{ href: '/haskell', label: 'haskell' },
+		{ href: '/proofs', label: 'proof checker' },
 		{ href: '/graph', label: 'graph viewer' },
 		{ href: '/metamath', label: 'metamath' },
 	];

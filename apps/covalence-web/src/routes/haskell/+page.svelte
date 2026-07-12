@@ -41,6 +41,26 @@
 		}
 	});
 
+	// The TYPED HOL lowering: an *annotated* def/expr → a well-typed kernel
+	// `Term` with its HOL type (via `haskell_to_typed_hol`). Unlike the carved
+	// term above, this needs annotations — unannotated input reports a clean
+	// error, which is exactly the point of the typed backend.
+	let typed = $derived.by(() => {
+		if (!wasm) return { ok: true as boolean, term: '', type: '', error: '', pending: true };
+		try {
+			const r = JSON.parse(wasm.haskell_to_typed_hol(src));
+			return {
+				ok: !!r.ok,
+				term: r.term ?? '',
+				type: r.type ?? '',
+				error: r.error ?? '',
+				pending: false
+			};
+		} catch (e) {
+			return { ok: false, term: '', type: '', error: String(e), pending: false };
+		}
+	});
+
 	onMount(async () => {
 		try {
 			const mod = await import('$lib/kernel/covalence_web_kernel.js');
@@ -132,14 +152,34 @@
 		{/if}
 	</section>
 
+	<section class="pane kernel">
+		<header>
+			typed HOL <code>Term</code>
+			<span class="tag">well-typed — via the Hol/Nat traits (needs annotations)</span>
+		</header>
+		{#if loadError}
+			<pre class="err">failed to load wasm: {loadError}</pre>
+		{:else if typed.pending}
+			<pre class="termout muted">…</pre>
+		{:else if typed.ok}
+			<pre class="termout">{typed.term}<span class="ty">  :: {typed.type}</span></pre>
+		{:else}
+			<pre class="err">{typed.error}</pre>
+		{/if}
+	</section>
+
 	<p class="status">
 		<strong>Status:</strong> live — parsed + lowered in your browser, and
 		<strong>connected to the kernel</strong>: <code>haskell_to_sexpr</code> gives the
 		interchange IR, and <code>haskell_to_hol_term</code> realizes the same input to a
-		genuine carved <code>sexpr</code> kernel <code>Term</code> (both
-		<code>covalence-web-kernel</code> WASM). Edit the Haskell above, or pick an
-		example — a top-level def (<code>compose f g x = f (g x)</code>) or a bare
-		expression (<code>\x -&gt; x</code>).
+		genuine carved <code>sexpr</code> kernel <code>Term</code>, and
+		<code>haskell_to_typed_hol</code> lowers an <em>annotated</em> input
+		(e.g. <code>\(x :: nat) -&gt; x</code>) to a <strong>well-typed</strong> HOL
+		term with its HOL type — all <code>covalence-web-kernel</code> WASM. Edit the
+		Haskell above, or pick an example — a top-level def
+		(<code>compose f g x = f (g x)</code>) or a bare expression
+		(<code>\x -&gt; x</code>). Proof <em>checking</em> lives on the
+		<a href="/proofs">proof checker</a> page.
 	</p>
 </main>
 
@@ -286,6 +326,12 @@
 	}
 	.pane .termout.muted {
 		color: var(--muted);
+	}
+	.pane .termout .ty {
+		color: var(--accent);
+	}
+	.status a {
+		color: var(--accent);
 	}
 	.mid {
 		display: flex;

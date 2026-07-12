@@ -13,10 +13,23 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 covalence-kernel = { path = "../core", features = ["serde"] }
-# The Haskell dialect front end (default, kernel-agnostic features) — powers the
-# live browser playground on the /haskell page: parse + lower to the S-expression
-# interchange, no kernel/TCB deps, so it stays wasm-light.
-covalence-haskell = { path = "../../lang/haskell", features = ["hol"] }
+# The Haskell dialect front end — powers the live browser playground on the
+# /haskell and /proofs pages.
+#   * `hol`       — realize the S-expression IR into carved (untyped) kernel
+#                   `Term`s (the /haskell "kernel Term" view).
+#   * `hol-typed` — the trait-backed typed backend (`covalence-hol-api`): lower
+#                   ANNOTATED dialect input to well-typed HOL `Term`s and link
+#                   dialect theorems against S-expr proofs through the kernel
+#                   (the typed-term view + the /proofs checker). `NativeHol`
+#                   pulls in `covalence-init`/`-core`, already in the wasm via
+#                   `covalence-kernel`, so this adds no new TCB.
+covalence-haskell = { path = "../../lang/haskell", features = ["hol", "hol-typed"] }
+# The trait-backed HOL surface — the concrete `NativeHol` backend (and the
+# `Hol` / `Nat` traits) that `haskell_to_typed_hol` / `check_haskell_proofs`
+# pick as `H`. Already in the wasm via `covalence-kernel` → `covalence-init`, so
+# this adds no new code to the TCB; it just names the backend the typed dialect
+# lowers against.
+covalence-hol-api = { path = "../hol/api" }
 serde_json = "1"
 # The bindgen schema is version-locked: the crate and `wasm-bindgen-cli` must
 # match exactly. We do NOT exact-pin here — Cargo.lock is the single source of

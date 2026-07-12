@@ -638,6 +638,10 @@
     },
     {
       "from": "covalence-web-kernel",
+      "to": "covalence-hol-api"
+    },
+    {
+      "from": "covalence-web-kernel",
       "to": "covalence-kernel"
     }
   ],

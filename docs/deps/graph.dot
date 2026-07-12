@@ -202,5 +202,6 @@ digraph deps {
   "wasm-store" -> "store";
   "wasm-store" -> "wasm";
   "web-kernel" -> "haskell";
+  "web-kernel" -> "hol-api";
   "web-kernel" -> "kernel";
 }

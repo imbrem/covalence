@@ -1568,6 +1568,7 @@ version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
  "covalence-haskell",
+ "covalence-hol-api",
  "covalence-kernel",
  "serde_json",
  "wasm-bindgen",

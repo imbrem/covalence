@@ -16,7 +16,7 @@ covalence-kernel = { path = "../core", features = ["serde"] }
 # The Haskell dialect front end (default, kernel-agnostic features) — powers the
 # live browser playground on the /haskell page: parse + lower to the S-expression
 # interchange, no kernel/TCB deps, so it stays wasm-light.
-covalence-haskell = { path = "../../lang/haskell" }
+covalence-haskell = { path = "../../lang/haskell", features = ["hol"] }
 serde_json = "1"
 # The bindgen schema is version-locked: the crate and `wasm-bindgen-cli` must
 # match exactly. We do NOT exact-pin here — Cargo.lock is the single source of

@@ -29,6 +29,18 @@
 		}
 	});
 
+	// The same input lowered through the HOL backend to a real kernel `Term`
+	// (carved sexpr) — the dialect connected to the kernel, in your browser.
+	let term = $derived.by(() => {
+		if (!wasm) return { ok: true as boolean, term: '', error: '', pending: true };
+		try {
+			const r = JSON.parse(wasm.haskell_to_hol_term(src));
+			return { ok: !!r.ok, term: r.term ?? '', error: r.error ?? '', pending: false };
+		} catch (e) {
+			return { ok: false, term: '', error: String(e), pending: false };
+		}
+	});
+
 	onMount(async () => {
 		try {
 			const mod = await import('$lib/kernel/covalence_web_kernel.js');
@@ -104,12 +116,30 @@
 		</section>
 	</div>
 
+	<section class="pane kernel">
+		<header>
+			kernel <code>Term</code>
+			<span class="tag">carved sexpr — realized by the HOL backend, in the kernel</span>
+		</header>
+		{#if loadError}
+			<pre class="err">failed to load wasm: {loadError}</pre>
+		{:else if term.pending}
+			<pre class="termout muted">…</pre>
+		{:else if term.ok}
+			<pre class="termout">{term.term}</pre>
+		{:else}
+			<pre class="err">{term.error}</pre>
+		{/if}
+	</section>
+
 	<p class="status">
-		<strong>Status:</strong> live — parsed + lowered in your browser by
-		<code>covalence-haskell</code> compiled to WASM
-		(<code>covalence-web-kernel::haskell_to_sexpr</code>). Edit the Haskell above,
-		or pick an example. Try a top-level def (<code>compose f g x = f (g x)</code>)
-		or a bare expression (<code>\x -&gt; x</code>).
+		<strong>Status:</strong> live — parsed + lowered in your browser, and
+		<strong>connected to the kernel</strong>: <code>haskell_to_sexpr</code> gives the
+		interchange IR, and <code>haskell_to_hol_term</code> realizes the same input to a
+		genuine carved <code>sexpr</code> kernel <code>Term</code> (both
+		<code>covalence-web-kernel</code> WASM). Edit the Haskell above, or pick an
+		example — a top-level def (<code>compose f g x = f (g x)</code>) or a bare
+		expression (<code>\x -&gt; x</code>).
 	</p>
 </main>
 
@@ -241,6 +271,21 @@
 	}
 	.pane .err {
 		color: color-mix(in srgb, #e5484d 70%, var(--fg));
+	}
+	.pane.kernel {
+		margin-top: 0.75rem;
+	}
+	.pane.kernel header .tag {
+		text-transform: none;
+		letter-spacing: 0;
+		font-size: 0.68rem;
+	}
+	.pane .termout {
+		color: color-mix(in srgb, #30a46c 60%, var(--fg));
+		font-size: 0.8rem;
+	}
+	.pane .termout.muted {
+		color: var(--muted);
 	}
 	.mid {
 		display: flex;

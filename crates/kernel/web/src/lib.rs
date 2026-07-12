@@ -67,11 +67,47 @@ pub fn haskell_to_sexpr(src: &str) -> String {
     }
 }
 
+/// Parse a Haskell-dialect snippet and lower it through the **HOL backend** to a
+/// genuine carved `sexpr` kernel [`Term`](covalence_haskell::hol) — the same
+/// kernel data structure the `.cov` reader produces — then render it. This is the
+/// dialect "connected to the kernel": the browser builds a real `covalence` term,
+/// not just interchange text. (The carved representation is untyped, so any
+/// dialect input works; a *typed* HOL term needs annotations — the follow-on.)
+///
+/// JS side: `JSON.parse(haskell_to_hol_term(src))` →
+/// `{ ok: true, term: string }` or `{ ok: false, error: string }`.
+#[wasm_bindgen]
+pub fn haskell_to_hol_term(src: &str) -> String {
+    use covalence_haskell::hol::HolBackend;
+    use covalence_haskell::realize::realize;
+    use covalence_haskell::{lower, parse};
+
+    let sexprs = match parse::parse_module(src) {
+        Ok(m) => lower::module_to_sexprs(&m),
+        Err(mod_err) => match parse::parse_expr(src) {
+            Ok(e) => vec![lower::expr_to_sexpr(&e)],
+            Err(_) => return haskell_json_err(&format!("{mod_err}")),
+        },
+    };
+    let mut backend = HolBackend;
+    let mut rendered = Vec::new();
+    for sx in &sexprs {
+        match realize(sx, &mut backend) {
+            Ok(term) => rendered.push(format!("{term}")),
+            Err(e) => return haskell_json_err(&format!("kernel realization failed: {e}")),
+        }
+    }
+    haskell_json_ok_named("term", &rendered.join("\n"))
+}
+
 fn haskell_json_str(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
 }
+fn haskell_json_ok_named(field: &str, val: &str) -> String {
+    format!(r#"{{"ok":true,"{}":{}}}"#, field, haskell_json_str(val))
+}
 fn haskell_json_ok(sexpr: &str) -> String {
-    format!(r#"{{"ok":true,"sexpr":{}}}"#, haskell_json_str(sexpr))
+    haskell_json_ok_named("sexpr", sexpr)
 }
 fn haskell_json_err(msg: &str) -> String {
     format!(r#"{{"ok":false,"error":{}}}"#, haskell_json_str(msg))
@@ -116,5 +152,19 @@ mod tests {
         let json = haskell_to_sexpr("\\x ->");
         assert!(json.contains("\"ok\":false"), "json: {json}");
         assert!(json.contains("\"error\""), "json: {json}");
+    }
+
+    #[test]
+    fn haskell_to_hol_term_builds_a_kernel_term() {
+        // The dialect, connected to the kernel: lowers to a real carved sexpr Term.
+        let json = haskell_to_hol_term("\\x -> x");
+        assert!(json.contains("\"ok\":true"), "json: {json}");
+        assert!(json.contains("\"term\""), "json: {json}");
+    }
+
+    #[test]
+    fn haskell_to_hol_term_reports_a_parse_error() {
+        let json = haskell_to_hol_term("\\x ->");
+        assert!(json.contains("\"ok\":false"), "json: {json}");
     }
 }

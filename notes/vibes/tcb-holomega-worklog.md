@@ -324,4 +324,29 @@ Toward "write init/ in the dialect so TCB change = dialect/lowering change only.
   instances, proof/tactic lowering, typeclass elaboration + general polymorphism (HOL-ω).
   Note: notes/vibes/init-in-dialect.md.
 
+## 2026-07-12 — HOL-ω type-operator variables (extension trait) + proof-format (main 257a2ac5)
+
+Both zero-TCB (manifests byte-identical), merged.
+- **HolOmega extension trait** (`covalence-hol-api/src/omega.rs`): higher-kinded type
+  variables (`m : ⋆⇒⋆`), `ty_app` (`m a`), `ty_fun`, `ty_all`/`ty_abs` (rank-N),
+  kind/rank checking via the base `KindOf`/`RankOf`/`RankLe` oracle, rank-stratified
+  `ty_inst` (Girard-blocking). `NativeHolOmega` over the reflected `TyC`/`KindC` demo
+  rep (UNTRUSTED; reflected-vs-trusted-`Type` split documented — the trusted bridge is
+  gated on the middle `TyInst` consistency proof). 7 tests: `m a` kind-checks; impredicative
+  instantiation rejected. Lets the dialect express a properly polymorphic `Monad m`
+  instead of the single-carrier `tvar` workaround (term-level HOL-ω bridge = follow-on).
+- **Proof format** (`crates/lang/haskell`, notes/vibes/proof-format.md). Maintainer
+  correction absorbed: a theorem STATEMENT is an EQUATION (term-level proposition, e.g.
+  `add (succ n) m = succ (add n m)`), written in expression syntax like a definition —
+  NOT a type. Syntax `theorem NAME. lhs == rhs` (free vars ∀-closed → HOL `Term:bool`
+  via the typed backend); definition↔theorem symmetry (both equations; def introduces
+  its LHS head, theorem proves it). Proofs live in a SEPARATE S-expr file keyed by NAME;
+  a trait-generic REPLAYER (over `Hol`/`Nat` rule methods: refl/assume/sym/trans/eq_mp/
+  beta_conv/inst/all_elim/all_intro/imp_intro/imp_elim + `(lemma NAME)`) + a LINKER
+  check each proof's `Thm` α-equals the named statement (Proved/Axiom/Hole/Mismatch). 2
+  genuinely-checked theorems (refl; `0+m=m` via `add_base`) + hole + wrong-proof-rejected.
+  Replayer names NO backend type (decoupled). Deferred (SKELETONS): tactic language,
+  richer rule coverage, statement-var type inference, the `map_ret` multi-step proof,
+  whole-module driver.
+
 <!-- APPEND NEW ENTRIES BELOW -->

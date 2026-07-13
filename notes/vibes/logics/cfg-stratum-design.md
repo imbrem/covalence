@@ -181,6 +181,46 @@ lowering + census/ratchet tests + stale-SKELETONS fixes → M5 north-star demo +
 wiring + docs. M6 stretch: monomorphisation (`BuN` chain), S2, `Bname`/
 `Bcustom` if reachable. Every milestone lands with green `cargo test`.
 
+## Version lattice + metatheorems (added 2026-07-13, maintainer direction)
+
+Requirements: WASM **1.0 and 2.0** alongside 3.0, plus arbitrary *subsets* of
+WASM; and version-inclusion **metatheorems** — WASM 1.0 ⊆ 2.0 ⊆ 3.0 both
+syntactically and semantically — as the flagship test of the machinery.
+
+1. **Env transport is promoted from "future work" to a planned milestone
+   (M7).** The clause-set representation already supports it with no new
+   kernel machinery: to prove `⊢ ∀n w. Derives_E n w ⟹ Derives_E' (ρ n) w`
+   (ρ = Rust-computed tag remapping, aligning non-terminals *by name* across
+   envs since tags are per-env dense indices), run `rule_induction2` on E at
+   `pred := λn w. Derives_E' (ρ n) w` and discharge each E clause with the
+   matching E' derivation constructor (`derive_mixed`). Data-driven: a
+   Rust-side matcher pairs each E production with an E' production (or a
+   derivable composite); unmatched productions ⇒ skip+report, making the
+   theorem an honest per-matched-fragment inclusion rather than a false
+   blanket claim. Subgrammar-extraction envs get `Derives_sub ⟹ Derives_full`
+   the same way — that is the "subsets of WASM" story.
+2. **Semantic inclusion** rides the relation leg (`wasm/relation.rs`):
+   `spec_rule_set` per version yields `Derivable_S_v`; inclusion by the same
+   rule-induction-with-`pred := Derivable_S_v'` move on the unary engine.
+   `encode.rs` is version-independent, so rules unchanged across versions
+   encode to *identical* clauses (discharge is mechanical); reformulated rules
+   (3.0 rewrote several judgement shapes) need per-rule bridge lemmas —
+   matched/bridged/unmatched reported, never silently claimed.
+3. **Honesty caveat:** the versions are not literal rule-for-rule supersets;
+   the deliverable is "inclusion on the matched fragment + explicit residue
+   report", tightening as bridge lemmas land. Grammar-side (binary format)
+   inclusion is expected to be near-total; typing/reduction less so.
+4. **Blocker:** upstream bundles only the 3.0 dump. 1.0/2.0 need SpecTec AST
+   dumps produced with the OCaml toolchain against the older spec sources
+   (recipe under investigation; note older spec dirs may predate `gram`
+   binary-format definitions — if so, 1.0/2.0 grammar inclusion may need the
+   3.0-grammar-restricted-to-1.0-features subset instead, which the subset
+   machinery above provides anyway).
+5. Once cross-version metatheorems multiply, the grammar-as-value upgrade
+   (§1: one `monotone` theorem via `metalogic::database`'s recipe instead of
+   per-pair inductions) becomes the economical form — unchanged as the
+   recorded end-state; per-pair transport first.
+
 ## Risks / mitigations (short)
 
 Per-env S3 discharge cost → S1 is discharge-free, S3 tiny-env-only.

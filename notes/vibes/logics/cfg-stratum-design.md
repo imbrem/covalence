@@ -226,6 +226,15 @@ syntactically and semantically — as the flagship test of the machinery.
    versions ship full syntax/typing/reduction — so both metatheorem legs have
    data. Quirk: 1.0/2.0 spell the magic as literal bytes rather than a named
    `Bmagic` rule — don't key on grammar names across versions.
+   **Executed 2026-07-13:** both dumps produced and validated (0 decode
+   errors via `parse_spectec_stream`), staged at
+   `~/tmp/spectec-dumps/wasm-{1.0,2.0}.spectec-ast` pending embedding:
+   1.0 = 315 defs / 61 grams (sha256 4ee41611…), 2.0 = 467 defs / 71 grams
+   (sha256 af2da767…); 3.0 bundled = 972 defs / 231 grams. Toolchain notes:
+   `nix-shell -p ocaml dune_3 ocamlPackages.{findlib,zarith,menhir,menhirLib,mdx}`
+   (plain `nix shell` misses findlib hooks), build with `dune build` (the
+   Makefile's opam target fails), binary at
+   `_build/default/src/exe-spectec/main.exe`.
 5. Once cross-version metatheorems multiply, the grammar-as-value upgrade
    (§1: one `monotone` theorem via `metalogic::database`'s recipe instead of
    per-pair inductions) becomes the economical form — unchanged as the

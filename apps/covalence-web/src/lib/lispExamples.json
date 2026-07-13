@@ -1,0 +1,12 @@
+[
+  {"title":"car of a list","src":"(car (quote (a b c)))"},
+  {"title":"cdr of a list","src":"(cdr (quote (a b c)))"},
+  {"title":"cons onto a list","src":"(cons (quote a) (quote (b c)))"},
+  {"title":"atom? on an atom","src":"(atom? (quote a))"},
+  {"title":"atom? on a list","src":"(atom? (quote (a b)))"},
+  {"title":"null? on the empty list","src":"(null? (quote ()))"},
+  {"title":"eq? equal atoms","src":"(eq? (quote a) (quote a))"},
+  {"title":"eq? distinct atoms","src":"(eq? (quote a) (quote b))"},
+  {"title":"nested car / cdr","src":"(car (cdr (quote (a b c))))"},
+  {"title":"the theorem behind a value","src":"#show (car (cons (quote a) (quote (b))))"}
+]

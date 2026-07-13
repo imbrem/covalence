@@ -660,6 +660,10 @@
     },
     {
       "from": "covalence-web-kernel",
+      "to": "covalence-forsp"
+    },
+    {
+      "from": "covalence-web-kernel",
       "to": "covalence-haskell"
     },
     {
@@ -669,6 +673,10 @@
     {
       "from": "covalence-web-kernel",
       "to": "covalence-kernel"
+    },
+    {
+      "from": "covalence-web-kernel",
+      "to": "covalence-lisp"
     }
   ],
   "tcb": {

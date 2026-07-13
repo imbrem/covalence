@@ -286,6 +286,72 @@ pub fn check_haskell_proofs(module_src: &str, proof_src: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Little-language REPL demos — /lisp, /forsp, /forth.
+// ---------------------------------------------------------------------------
+
+/// Evaluate one cell of **Little Schemer ch1 Lisp** and return the printed
+/// value — the live front end for the `/lisp` demo page.
+///
+/// Creates a fresh kernel-backed [`Session`](covalence_lisp::Session) (stateless
+/// per call: ch1 has no persistent `defun` dictionary), parses + evaluates the
+/// source, and returns the value **read off a genuine `⊢ program = value`
+/// kernel theorem** — the Lisp `Session`'s honesty invariant: nothing is printed
+/// that did not come off a theorem.
+///
+/// JS side: `JSON.parse(lisp_eval_cell(src))` →
+/// `{ ok: true, result: string }` or `{ ok: false, error: string }`.
+#[wasm_bindgen]
+pub fn lisp_eval_cell(src: &str) -> String {
+    use covalence_lisp::session::Session;
+    let mut session = match Session::new() {
+        Ok(s) => s,
+        Err(e) => return json_err(&format!("failed to start Lisp session: {e}")),
+    };
+    match session.eval_cell(src) {
+        Ok(value) => json_ok_field("result", &value),
+        Err(e) => json_err(&format!("{e}")),
+    }
+}
+
+/// Evaluate one cell of **Forsp** (a concatenative read → compute → print
+/// language) and return the top-of-stack value as an S-expression string — the
+/// live front end for the `/forsp` demo page.
+///
+/// Runs the program on a fresh [`Forsp`](covalence_forsp::Forsp) runtime, then
+/// renders the top of the resulting stack via `to_sexp`. An empty stack (a
+/// program that pushes nothing) reports the empty result.
+///
+/// JS side: `JSON.parse(forsp_eval_cell(src))` →
+/// `{ ok: true, result: string }` or `{ ok: false, error: string }`.
+#[wasm_bindgen]
+pub fn forsp_eval_cell(src: &str) -> String {
+    use covalence_forsp::Forsp;
+    let mut f = Forsp::new();
+    if let Err(e) = f.run(src) {
+        return json_err(&format!("{e}"));
+    }
+    // Render the top of the resulting stack (the "result" of the program) as a
+    // Forsp S-expression string (`show` handles closures via `!<hash>`).
+    match f.try_peek() {
+        Ok(top) => {
+            let rendered = f.show(top);
+            json_ok_field("result", &rendered)
+        }
+        // An empty stack is a legal outcome (e.g. a program that only defines
+        // words or prints); report it as an empty result rather than an error.
+        Err(_) => json_ok_field("result", "()"),
+    }
+}
+
+/// Placeholder for a future **Forth** REPL demo (`/forth` page). Always reports
+/// `{ ok: false, error: "forth: coming soon" }` — the route + wasm seam exist so
+/// the page renders, but there is no evaluator yet.
+#[wasm_bindgen]
+pub fn forth_eval_cell(_src: &str) -> String {
+    json_err("forth: coming soon")
+}
+
+// ---------------------------------------------------------------------------
 // JSON helpers — a small, dependency-light boundary shared by the `haskell_*`
 // functions. Values are escaped via `serde_json` (strings only); the object
 // shells are formatted by hand to keep the wasm surface tiny.

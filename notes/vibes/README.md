@@ -40,6 +40,7 @@ Read `kernel-design.md` before touching the trusted base.
 | [`logics/metatheory.md`](./logics/metatheory.md) | Object theories + derivations as first-class HOL objects; theory morphisms/transport. |
 | [`logics/proof-format.md`](./logics/proof-format.md) | The Haskell dialect's theorem/proof split (equation statements + name-linked S-expr proofs). |
 | [`logics/wasm-spec.md`](./logics/wasm-spec.md) | The SpecTec WASM-spec front end; dual to the Metamath front end. |
+| [`logics/cfg-stratum-design.md`](./logics/cfg-stratum-design.md) | The CFG stratum: SpecTec grammars → per-env `Derives` judgement + family soundness; corpus facts; milestones. |
 | [`logics/init-in-dialect.md`](./logics/init-in-dialect.md) | Writing `init/` in the Haskell dialect over the typed HOL backend. |
 
 ## `surface/` — the authoring layer (aspirational)

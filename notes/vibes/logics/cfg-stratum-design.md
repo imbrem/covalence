@@ -210,12 +210,22 @@ syntactically and semantically — as the flagship test of the machinery.
    the deliverable is "inclusion on the matched fragment + explicit residue
    report", tightening as bridge lemmas land. Grammar-side (binary format)
    inclusion is expected to be near-total; typing/reduction less so.
-4. **Blocker:** upstream bundles only the 3.0 dump. 1.0/2.0 need SpecTec AST
-   dumps produced with the OCaml toolchain against the older spec sources
-   (recipe under investigation; note older spec dirs may predate `gram`
-   binary-format definitions — if so, 1.0/2.0 grammar inclusion may need the
-   3.0-grammar-restricted-to-1.0-features subset instead, which the subset
-   machinery above provides anyway).
+4. **Dumps (blocker resolved to a recipe, 2026-07-13):** upstream bundles only
+   the 3.0 dump, but the dump backend is *upstream* SpecTec (`--ast` prints the
+   elaborated IL as S-exprs; `spectec/src/backend-ast/` in WebAssembly/spec),
+   documented in `wasm_spec_ast`'s CONTRIBUTING.md. Recipe: checkout
+   WebAssembly/spec at pinned commit `d7b678327cd370cdbc5acfa94bd108772e2bef68`
+   (what `spectec_ast` 2.0's decoder tracks — do NOT use main, IL format
+   drifts), build spectec (OCaml ≥5.1 + dune + menhir + zarith + mdx; pure-nix
+   shell works, opam fallback), then from `specification/`:
+   `../spectec/spectec wasm-1.0/* --ast > wasm-1.0.spectec-ast` (same for
+   2.0); validate with `spectec_ast::parse_spectec_stream` before embedding in
+   covalence-spectec (`grammar::wasm1/wasm2` next to `wasm3`). **Verified:
+   `wasm-1.0/A-binary.spectec` and `wasm-2.0/A-binary.spectec` both define the
+   full binary grammars** (Bvaltype…Bmodule; 2.0 incl. SIMD Binstr), and both
+   versions ship full syntax/typing/reduction — so both metatheorem legs have
+   data. Quirk: 1.0/2.0 spell the magic as literal bytes rather than a named
+   `Bmagic` rule — don't key on grammar names across versions.
 5. Once cross-version metatheorems multiply, the grammar-as-value upgrade
    (§1: one `monotone` theorem via `metalogic::database`'s recipe instead of
    per-pair inductions) becomes the economical form — unchanged as the

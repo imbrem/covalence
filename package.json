@@ -32,6 +32,7 @@
     "code:browser": "bun run build:wasm && bun run --filter covalence-vscode code:browser",
     "code:desktop": "bun run build && bun run --filter covalence-vscode code:desktop",
     "check": "cargo check",
+    "bench:setmm": "bun scripts/bench-setmm.mjs",
     "profile:init": "bun scripts/profile-init.mjs",
     "profile:import": "bun scripts/profile-import.mjs",
     "profile:theorem": "bun scripts/profile-theorem.mjs",

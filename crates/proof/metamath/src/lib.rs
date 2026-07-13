@@ -60,6 +60,7 @@
 //!
 //! [Metamath]: https://us.metamath.org/
 
+pub mod axioms;
 pub mod database;
 pub mod error;
 pub mod expr;
@@ -69,6 +70,10 @@ pub mod typesetting;
 #[cfg(feature = "checker")]
 pub mod verify;
 
+pub use axioms::{
+    AxiomSet, Implication, MetaError, allow_definitions, axiom_closure, check_implication,
+    derivable_from, provable_closure, same_statement, setmm_witness,
+};
 pub use database::{
     Assertion, Database, DatabaseSink, FloatHyp, Frame, Hypothesis, Proof, Statement, SymbolKind,
 };

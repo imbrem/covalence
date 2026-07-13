@@ -191,7 +191,7 @@ The REPL is exactly the surface that makes those gaps *visible and demoable*.
 ## 7. What's reusable vs new (so this is small)
 
 - **Reuse (already built):** the S-expr reader/printer; the `SExpr` IR; `Realize` +
-  `HolBackend` (S-expr → carved Term); the carved `sexpr` type + the `Lisp` theory
+  `HolBackend` (S-expr → carved Term); the `sexpr` type + the `Lisp` theory
   (`car/cdr/cons/consp/atom?/len/append`, `append_assoc`, `len_append`);
   `covalence-hol-api`; the proof-format linker; the web-kernel wasm plumbing.
 - **New (the actual work):** the `TestLisp` interpreter (special forms + `eval`); the
@@ -249,7 +249,7 @@ The whole design rests on the `TestLisp` / `CertifiedLisp` split from
 
 | | **TestLisp** (the *runtime*) | **CertifiedLisp** (the *logic*) |
 |---|---|---|
-| what it is | a fast native Rust interpreter of standard Lisp | the same semantics as HOL equations over carved `sexpr` |
+| what it is | a fast native Rust interpreter of standard Lisp | the same semantics as HOL equations over `sexpr` |
 | speed | full native speed (this is the "real REPL") | kernel-speed, per-step proved |
 | role | run programs, fuzz properties, interactive dev | *prove* equalities/properties as `Thm`s |
 | trust | untrusted | TCB-bridged via `covalence-hol-api` |
@@ -331,7 +331,7 @@ The three rungs share **one property object** (`(x y z) ⊢ boolLispTerm`):
   TestLisp; still not a ∀-proof, but a *complete* check of a finite subdomain — and each
   case is `execute`-certifiable, so "bounded-verified" can be a real (finite conjunction)
   `Thm`, not just a test.
-- **RUNG 3 — prove.** The property is a HOL `∀` over carved `sexpr`; discharge it with
+- **RUNG 3 — prove.** The property is a HOL `∀` over `sexpr`; discharge it with
   induction + the linker. The *same S-expr* that was fuzzed is now the theorem statement.
 
 The upgrade path is the point: **the property never changes form** as it climbs from test

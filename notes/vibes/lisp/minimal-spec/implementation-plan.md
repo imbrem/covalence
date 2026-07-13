@@ -122,7 +122,7 @@ numerals — the second `Resolve` option — without touching phases 0–2's str
 
 **Do (feature `hol`, dep `covalence-hol-api`):**
 
-1. **`HolResolve`** — `resolve_number("1342")` → the carved-`sexpr` HOL term for 1342 as a
+1. **`HolResolve`** — `resolve_number("1342")` → the `sexpr` HOL term for 1342 as a
    *binary* numeral (`double (succ …)` style, reusing the nat literal path), `resolve_symbol`
    → the HOL symbol term. Same `Resolve` trait, different `Term = hol::Term`. This is the
    "1342 as `double (succ n)` in HOL *or* internal" switch — it's literally `TestLisp` vs

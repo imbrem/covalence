@@ -177,7 +177,7 @@ pub enum WordRule {
 }
 ```
 
-**Minimal builtin set** (over carved `sexpr`, reusing `init/lisp.rs`): `cons`, `car`,
+**Minimal builtin set** (over `sexpr`, reusing `init/lisp.rs`): `cons`, `car`,
 `cdr`, `atom?`, `eq`, `nil`, `+` on `nat` literals, and **`amb`** — the nondeterministic
 choice operator (two/three intro rules for `Reduces`), which showcases *why* the return
 type is a relation (one input, several witnessed outputs; `:next` enumerates). Each
@@ -212,7 +212,7 @@ real HOL term; `show(t,false)` = `prettyprint(output_sexpr)` under `state'` (§5
 defined `Reduces`/`Parses` relations; soundness is the kernel's.
 
 Lowering `SExpr → Term` (operands) reuses the Haskell path's `HolBackend` (S-expr →
-carved `sexpr` term). The REPL is untrusted; the `Thm` it returns is the trust boundary.
+`sexpr` term). The REPL is untrusted; the `Thm` it returns is the trust boundary.
 
 ### 5.1. `state` — an extensible world (only `defs` live now)
 

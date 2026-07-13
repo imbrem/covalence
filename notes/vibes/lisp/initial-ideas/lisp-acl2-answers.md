@@ -10,7 +10,7 @@ sketch's §"What exactly is the current state of our Lisp/ACL2 support?".
 
 Grounded in the code; file:line where it helps.
 
-**The carved `sexpr` datatype — the linchpin.** `init/inductive/carved.rs`. A genuine
+**The `sexpr` datatype — the linchpin.** `init/inductive/carved.rs`. A genuine
 HOL *exact-type* inductive type (via `new_type_definition`), carved from a universal
 domain `U := list bool → (bytes + unit + unit)`. It ships, all *proved*:
 - constructors `atom : bytes → sexpr`, `snil`, `scons : sexpr → sexpr → sexpr`;
@@ -29,7 +29,7 @@ proved computation laws — plus the two **ACL2 archetype theorems**: `append_as
 not production ACL2.
 
 **Parsers (text/bytes → HOL).** `init/sexpr_parse.rs` — a fuel-bounded reader
-`nat → bytes → option (sexpr × bytes)` producing carved terms, with proved step
+`nat → bytes → option (sexpr × bytes)` producing kernel S-expression terms, with proved step
 equations + `parsed_cons_struct` (the parsed list's `consp`/`car`/`cdr` compute
 right). `init/json_parse.rs` reuses it (JSON integer+array subset + the `same_json`
 PER). **There is no deparse** (`sexpr → bytes`) anywhere.

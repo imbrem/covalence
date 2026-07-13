@@ -1206,6 +1206,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-lisp"
+version = "0.0.0"
+dependencies = [
+ "covalence-core",
+ "covalence-hol-api",
+ "covalence-hol-eval",
+ "covalence-init",
+ "covalence-repl-core",
+ "covalence-sexp",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-llm"
 version = "0.0.0"
 dependencies = [
@@ -1391,6 +1404,10 @@ dependencies = [
  "covalence-wasm",
  "ureq",
 ]
+
+[[package]]
+name = "covalence-repl-core"
+version = "0.0.0"
 
 [[package]]
 name = "covalence-sat"

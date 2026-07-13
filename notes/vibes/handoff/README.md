@@ -1,15 +1,12 @@
-# Handoff docs — per-task current status (AI-generated)
+# Handoff docs — per-task status
 
-Consolidated, pick-up-here status for each active workstream, as of main @ 4d3337a5
-(2026-07). These are the "where things are / what's next" snapshots; the full
-plan is [`../pure-hol-and-build-plan.md`](../pure-hol-and-build-plan.md), the
-design corpus is [`../`](../README.md).
+Pick-up-here snapshots for active workstreams. Full plan:
+[`../pure-hol-and-build-plan.md`](../plans/pure-hol-and-build-plan.md).
 
-| Task | Doc | One-line status |
+| Task | Doc | Open work |
 |---|---|---|
-| **defs/ out of core** (PRIORITY) | [`defs-out-of-core.md`](./defs-out-of-core.md) | THE plan: shrink the TCB by moving the `defs/` catalogue out of `kernel/hol/core` → `kernel/hol/eval`. The literal-path foundations serve this. |
-| toHOL purge | [`tohol-purge.md`](./tohol-purge.md) | S0–S9 + fallibility DONE + merged; S10/S11 reframed under the defs-out plan. |
-| f32/f64 + ball arithmetic | [`float-ball.md`](./float-ball.md) | F0/F1 done+merged+audited; F2a facade done; F2b+ paused behind the defs-out priority. |
+| **defs/ out of core** | [`defs-out-of-core.md`](./defs-out-of-core.md) | Tower is real; D3 residue (literal leaves + type chain) remains, maintainer-gated (EG5). |
+| toHOL purge | [`tohol-purge.md`](./tohol-purge.md) | S0–S9 + logic-out done; EG5 (literal-leaf deletion) open. |
+| f32/f64 + ball | [`float-ball.md`](./float-ball.md) | Bit ops + certs + typed ops + ball data landed; F4 enclosure theorems open. |
 
-Authorship: AI-generated status/plan docs (vibes tier). The kernel TCB is
-`crates/kernel/base/trusted` + `crates/kernel/hol/core`.
+TCB = `crates/kernel/base/trusted` + `crates/kernel/hol/core`.

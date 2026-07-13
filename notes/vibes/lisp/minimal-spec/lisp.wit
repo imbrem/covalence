@@ -1,0 +1,86 @@
+// cov:lisp@0.1.0 — the /lisp REPL API as a WIT contract.
+//
+// The canonical interface the whole demo is built on. The Rust `Session` (crate
+// `covalence-lisp`, an `impl Repl + SExprRepl`) is the source of truth; this WIT mirrors
+// it 1:1 so the SAME API reaches JS (via jco transpile) and — with a pyo3 shim over the
+// same `Session` — Python. Handles are `resource`s so state (dialect, dictionary, the
+// world, named reductions, the content-address store) lives host-side across cells.
+//
+// A "cell" is one REPL submission (an S-expr, or a `#…` directive) — the unit the web
+// textbox / notebook cell sends. Not a line: a cell may span lines.
+//
+// ABI notes (see memory: wit-component-gotchas, wit-import-return-area,
+// interface-api-wrapping): exported resources need the interface-api wrapping; a method
+// returning a resource hands back a fresh handle; non-flat results on imported funcs take
+// a caller return-area pointer. None of that leaks into the Rust API — binding-layer only.
+
+package cov:lisp@0.1.0;
+
+interface repl {
+  // ----- opaque handles ------------------------------------------------------
+  // A parsed / built S-expression (an input cell, or a reduction's output).
+  resource sexpr;
+  // A kernel theorem: a reduction `⊢ Reduces (state,in) (state',out)` (the `~~>` relation),
+  // or a `Parses` theorem bracketing a cell. `amb` ⇒ several reduction witnesses (see `next`).
+  resource theorem;
+
+  // ----- per-phase errors (mirror the Rust Repl trait's assoc error types) ---
+  variant error {
+    start(string),        // session / prelude init failed
+    parse(string),        // reader: bad delimiters / ill-formed event stream / unknown macro
+    eval(string),         // unbound head, arity mismatch, stuck (no reduction witness)
+    directive(string),    // a `#…` directive failed
+  }
+
+  // The outcome of evaluating one cell.
+  variant cell-result {
+    value(string),        // the reduction theorem's printed output_sexpr
+    directive(string),    // a directive's ack / textual output
+    %error(error),
+  }
+
+  // ----- the session: owns dialect + dictionary + world + CA store -----------
+  resource session {
+    // --- lifecycle ---
+    constructor();                                     // = Repl::start: fresh world (prelude defs, default dialect)
+    reset: func();                                     // back to a fresh world
+    load: func(src: string) -> result<u32, error>;    // run a program (e.g. metacircular.lisp); returns #forms
+
+    // --- high-level API (Repl ≤ SExprRepl ≤ Lisp); the REPL is built ONLY from these ---
+    // text -> sexpr, via the streaming event reader under the current dialect (proves Thm 1: Parses)
+    parse: func(src: string) -> result<sexpr, error>;
+    // sexpr -> canonical text under the current state (may abbreviate via named defs; a Parses section)
+    prettyprint: func(x: borrow<sexpr>) -> string;
+    // evaluate-as-theorem: `⊢ Reduces (state, x) (state', output)` — a RELATION, so deterministic
+    // reduction reads as `x = output` and `amb` yields several witnesses.
+    reduce: func(x: borrow<sexpr>) -> result<theorem, error>;
+    // resume a nondeterministic (amb) reduction for the next witness, if any (`:next`)
+    next: func(t: borrow<theorem>) -> option<theorem>;
+    // a theorem's printed form; full => the whole `~~>` relation, else the output only
+    show: func(t: borrow<theorem>, full: bool) -> string;
+
+    // --- the convenience step: parse -> (#directive | reduce) -> print ---
+    eval-cell: func(src: string) -> cell-result;
+
+    // --- dialects (the `#dialect` seam) ---
+    dialect: func() -> string;
+    set-dialect: func(name: string) -> result<_, error>;
+    dictionary: func() -> list<string>;                // bound word names (builtins + user defs)
+
+    // --- directives, also callable structurally (not just as `#…` text) ---
+    // name a reduction: reduce EXPR, bind ID -> its theorem in state.defs (enables print-abbreviation)
+    define: func(id: string, expr: borrow<sexpr>) -> result<theorem, error>;
+    // refl-only prove: `⊢ lhs ~~> ·` and `rhs ~~> ·` share a normal form (else a hole error)
+    prove: func(goal: borrow<sexpr>) -> result<theorem, error>;
+
+    // --- content-addressing (RUNTIME-ONLY for now: pure sharing over the printed sexpr,
+    //     NOT internalized into HOL — that's a later `Hash<h>` certificate) ---
+    hash: func(x: borrow<sexpr>) -> string;            // H(prettyprint(x))
+    store: func(x: borrow<sexpr>) -> string;           // put; returns the hash
+    deref: func(h: string) -> option<sexpr>;           // get the stored sexpr, if present
+  }
+}
+
+world lisp {
+  export repl;
+}

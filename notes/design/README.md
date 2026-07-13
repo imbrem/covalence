@@ -43,9 +43,9 @@ maintainer step (see the repo authorship policy in
 
 ## See also
 
-- [`../vibes/project-map.md`](../vibes/project-map.md) — the map of crate groups
+- [`../vibes/vision/project-map.md`](../vibes/vision/project-map.md) — the map of crate groups
   and active threads (where everything is).
-- [`../vibes/what-is-the-tcb.md`](../vibes/what-is-the-tcb.md) — what the trusted
+- [`../vibes/kernel/tcb/what-is-the-tcb.md`](../vibes/kernel/tcb/what-is-the-tcb.md) — what the trusted
   base actually is, from the golden manifests + audit.
 - [`../vibes/k-framework-vision.md`](../vibes/k-framework-vision.md) — the
   K-framework north star (a north-star note, not yet a `design/` proposal).

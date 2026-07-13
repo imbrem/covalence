@@ -102,9 +102,9 @@ Documentation is split by **trust and authorship**:
   ([`notes/plans/next-stage.md`](./notes/plans/next-stage.md) is the current
   one); structured topic notes (`ideas/`, `experiments/`, …) are *aspirational*.
 - **[`notes/vibes/`](./notes/vibes/README.md)** — the AI-generated design corpus
-  (index in its README). Read first: `VISION.md` (the vision),
+  (index in its README). Read first: `vision/VISION.md` (the vision),
   `kernel-design.md` (the TCB — before touching `covalence-core`),
-  `roadmap.md`, `closed-world-kernel.md` (the covalence-pure kernel).
+  `vision/roadmap.md`, `closed-world-kernel.md` (the covalence-pure kernel).
   Sketches in `sketches/`.
 
 **Authorship policy (current):** everything outside `notes/vibes/` — all of

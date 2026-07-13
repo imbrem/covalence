@@ -4,7 +4,7 @@
 > judgments-as-types encodings, and **Dedukti** (λΠ-modulo-rewriting) — the one
 > external system that is *itself* a universal logic substrate, a direct cousin
 > of our Metamath thin waist. Part of the
-> [`logic-frontends.md`](../logic-frontends.md) umbrella. Shares the dependent-TT
+> [`logic-frontends.md`](../logics/logic-frontends.md) umbrella. Shares the dependent-TT
 > binding machinery of [`sketches/type-theories.md`](./type-theories.md)
 > §2.
 
@@ -52,9 +52,9 @@ choice that is itself illuminating for Covalence:
   artifact we already build for the type-theory family, instantiated at "HOAS vs.
   our representation."
 
-The HOAS point is worth stating sharply: **LF's binding-via-λ is one more
-representation in the pillar-2 `≅` web.** Bringing LF in extends that web with the
-HOAS node; nothing conceptually new beyond the type-theory binding work.
+So LF's binding-via-λ is one more representation in the pillar-2 `≅` web.
+Bringing LF in extends that web with the HOAS node; nothing conceptually new
+beyond the type-theory binding work.
 
 ## 3. `D_LF` — the database
 
@@ -104,11 +104,10 @@ Two things to do with it:
   from `Derivable_Dedukti`-under-that-encoding to our native HOL/etc. is the
   semantic payoff, gated per encoding on the usual strength axis.
 
-## 5. The deep point — Metamath ⟷ LF, waist to waist
+## 5. Metamath ⟷ LF, waist to waist
 
-This is the most ambitious and most interesting artifact in the whole frontend
-program. **Dedukti/LF and our Metamath waist are both universal logic
-substrates, with opposite design choices:**
+The most ambitious artifact in the frontend program. Dedukti/LF and our Metamath
+waist are both universal logic substrates, with opposite design choices:
 
 | | Metamath waist (ours) | LF / Dedukti |
 |---|---|---|
@@ -129,12 +128,11 @@ Because each is "just a logic," each can be *defined inside the other*:
 The **waist-to-waist `≅`** relates them: a proof-relevant λΠ derivation maps to
 the existence of a Metamath derivation and back (the proof-irrelevant direction
 is a forgetful collapse; the other direction reconstructs a witness). Establishing
-this positions Covalence to **consume the entire Dedukti/Logipedia interchange
-ecosystem through the substrate it already has** — every system that exports to
-Dedukti reaches Covalence's waist for free. It is the sharpest possible statement
-of "Metamath is the substrate the systems relate *through*, not an interchange
-format": we relate to the *other* universal substrate by a single metatheorem,
-and inherit its whole import surface.
+this lets Covalence consume the entire Dedukti/Logipedia interchange ecosystem
+through the substrate it already has — every system that exports to Dedukti
+reaches Covalence's waist for free. Metamath is the substrate the systems relate
+*through*, not an interchange format: we relate to the other universal substrate
+by a single metatheorem and inherit its whole import surface.
 
 ## 6. Difficulty summary
 

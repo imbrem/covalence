@@ -19,11 +19,11 @@ everything every round (naive, not semi-naive).
 ## What Datafun is
 
 Datafun (Arntzenius & Krishnaswami, ICFP'16) is a typed functional language for
-Datalog. Its core: **semilattice types**, a **monotone function space**
-`A →⁺ B`, and a fixpoint `fix : (L →⁺ L) → L` over a suitable (finite-height /
-pointed) semilattice `L`. Crucially, **monotonicity is tracked in the type
-system**, so `fix` is only applied to provably-monotone maps — which is exactly
-the side condition our engine assumes.
+Datalog. Core: semilattice types, a monotone function space `A →⁺ B`, and a
+fixpoint `fix : (L →⁺ L) → L` over a suitable (finite-height / pointed)
+semilattice `L`. Monotonicity is tracked in the type system, so `fix` only
+applies to provably-monotone maps — exactly the side condition our engine
+assumes.
 
 ## The seam
 

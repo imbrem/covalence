@@ -37,7 +37,7 @@ sharply enough that the goals below are obviously the right ones.
 The actual design. Prefer concrete types/signatures/schemas over prose where the
 shape is load-bearing. Say what changes, what stays, and — critically for this
 repo — **whether the TCB moves** (which manifests / admitted rules / mint sites).
-If it touches the TCB, say so loudly and link `notes/vibes/what-is-the-tcb.md`.
+If it touches the TCB, say so loudly and link `notes/vibes/kernel/tcb/what-is-the-tcb.md`.
 
 ## Alternatives considered
 

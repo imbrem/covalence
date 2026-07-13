@@ -9,7 +9,7 @@ disable-model-invocation: true
 Supports two file categories:
 
 - **S-expression files** (`.smt`, `.smt2`, `.alethe`, `.cov`) — diagnostics for unclosed/unmatched parens via `covalence-sexp`, formatting via `covalence_sexp::prettyprint()`
-- **WAT files** (`.wat`) — diagnostics via `covalence_wasm::validate_wat()` (reports compile errors with line/col)
+- **WAT files** (`.wat`) — diagnostics via `covalence_wasm::compile_wat()` (reports compile errors with line/col)
 
 Also provides `textDocument/formatting` for sexp files. WAT formatting is not yet implemented.
 

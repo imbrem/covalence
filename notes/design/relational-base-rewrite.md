@@ -21,7 +21,7 @@
     [`../vibes/base-relcalc-holomega-design.md`](../vibes/base-relcalc-holomega-design.md)
     (the authoritative relations-as-untrusted-functions redesign, Fronts D/E),
     [`../vibes/tcb-holomega-roadmap.md`](../vibes/tcb-holomega-roadmap.md).
-  - The human-readable TCB picture: [`../vibes/what-is-the-tcb.md`](../vibes/what-is-the-tcb.md).
+  - The human-readable TCB picture: [`../vibes/kernel/tcb/what-is-the-tcb.md`](../vibes/kernel/tcb/what-is-the-tcb.md).
 
 ## Context / problem
 

@@ -1,63 +1,63 @@
-# notes/vibes/ — the AI-generated design corpus (index)
+# notes/vibes/ — the AI-generated design corpus
 
-The docs are pared to the **current design**. Everything removed in the
-pre-HOL-cleanup pass lives on `backup/pre-hol-cleanup` (`git checkout
-backup/pre-hol-cleanup -- <path>`).
+Design notes and plans, organized by area. Deleted material is recoverable from
+git history (and `backup/pre-hol-cleanup` for the pre-HOL-cleanup pass).
 
-## Navigation (start here)
-
-| Doc | What it covers |
-|---|---|
-| [`project-map.md`](./project-map.md) | **The map** — crate groups at a glance + the active threads (backend/kernel, Haskell frontend, K-framework, relational-base-rewrite, leaf-elimination/EG5, HOL-ω, web demo), each with status + pointers. |
-| [`what-is-the-tcb.md`](./what-is-the-tcb.md) | Human-readable TCB: trusted crates, the 24 mint sites, admitted rules per language, from the golden manifests + `docs/deps/tcb-audit.json`. |
-| [`k-framework-vision.md`](./k-framework-vision.md) | The **K-framework north star**: full K + all sublanguages (WASM/x86/C/K), the KWasm⟷SpecTec relating goal, mapping onto Covalence. |
-| [`../design/README.md`](../design/README.md) | The **design-doc queue** (iterable decision records with status). |
-
-## Canonical design
-
-The load-bearing docs. Read these first.
+## Start here
 
 | Doc | What it covers |
 |---|---|
-| [`VISION.md`](./VISION.md) | The system vision — metatheory-as-default, the three-layer stack (executors → HOL → internal Metamath thin waist), scoped truths, the mirror principle. |
-| [`kernel-design.md`](./kernel-design.md) | `covalence-core`, the TCB: term/type representation, the inference-rule surface, the non-computational primitive rules, the `defs/` catalogue. **Read first if touching the kernel.** |
-| [`type-hierarchy.md`](./type-hierarchy.md) | The equality hierarchy and the `defs/` type catalogue (nat/int/rat/real/bytes/list/stream/option/result, → f32/f64). |
-| [`roadmap.md`](./roadmap.md) | What's next: time-to-product for the Metamath vision (verify all of set.mm in GT; analysis in SOA). Its "Active refactor" links the three docs below. |
-| [`refactor-plan.md`](./refactor-plan.md) | The in-flight three-layer kernel reorg: introduce `covalence-pure`, split `covalence-hol`, regroup crates. |
-| [`next-stage-breakdown.md`](./next-stage-breakdown.md) | Execution breakdown of the root [`REFACTOR.md`](../plans/next-stage.md) (next stage, post-main-merge): docs split → tooling foundations → hierarchical crate migration → WASM roadmap; sequencing, pilot, open decisions. |
-| [`pure-design.md`](./pure-design.md) | **Current** `covalence-pure` design: the value-directed `MThm<K,P,S>` kernel (`Stmt`/`MThm`/`Rule`/`Derive`), nuclei & bridges, TCB modules, content-addressing (store-as-world) + federation. Supersedes the *presentation* in `covalence-pure.md`. |
-| [`closed-world-kernel.md`](./closed-world-kernel.md) | **Current kernel direction**: first-order theories in the type system — `Sort`/`Op`/`Expr`, `Rule`, parameter-free `Language` with coherence-unique rule trees, a sealed/derived `Uses`/`Extends`, an enumerable TCB manifest. Soundness by *uniqueness of implementation* (no opacity). HOL + Nat/Int/Bytes/Text as layered languages; supersedes the opaque-context/`IsThm` story for the kernel. |
-| [`base-relcalc-holomega-design.md`](./base-relcalc-holomega-design.md) | **Base + middle redesign (authoritative)**: the base as a *calculus of relations-as-untrusted-functions* — `Rel(F)`/`Lift`/`execute` with the true/never-false asymmetry, `Ty` as a base sort, canon-vs-execute duality serving content-addressing + WASM; middle retargeted to **HOL-ω** (kinds = base sorts, micro-Haskell→HOL-ω Monad mapping). Subsumes the literal endgame (EG5). Additive Phase-0 spec + open decisions. |
-| [`pure-hol-and-build-plan.md`](./pure-hol-and-build-plan.md) | AI-drafted detailed plan: build-system ladder (artifact registry → buck2 spike → cog) + the observer/literal purge (HOL → textbook HOL Light; Nat/Int/Bytes as base-language axioms; obs/ quarantine crate + dep-freeze CI). |
-| [`covalence-fol.md`](./covalence-fol.md) | **Sketch** for the HOL fan-out: a `covalence-fol` crate above `covalence-pure` — typed representations + FOL-with-equality (`HasTy`/`EqAt`/`IsOp`/`IsImpl`); replaces HOL observers + constants via `ToHOL`. |
-| [`covalence-pure.md`](./covalence-pure.md) | Earlier base-logic blueprint: one trusted logic + N executors + K accelerators, everything-as-observers, the two assumption sets (logical + meta-assumption). Ideas still valid; map onto `pure-design.md`. |
-| [`crate-graph.md`](./crate-graph.md) | Dated snapshot of the internal crate dependency graph (layering, inversions). |
-| [`soundness-audit.md`](./soundness-audit.md) | Dated audit of the kernel TCB: the trusted base inventory, gaps/risks, and the assumption-tracking design. |
+| [`vision/project-map.md`](./vision/project-map.md) | The map — crate groups + active threads, each with status + pointers. |
+| [`vision/VISION.md`](./vision/VISION.md) | The system vision: metatheory-as-default, executors → HOL → internal Metamath waist, scoped truths. |
+| [`vision/k-framework-vision.md`](./vision/k-framework-vision.md) | North star: full K + all sublanguages, the K-Wasm ⟷ SpecTec goal. |
+| [`vision/roadmap.md`](./vision/roadmap.md) | Time-to-product for the Metamath vision (set.mm in GT; analysis in SOA). |
+| [`kernel/tcb/what-is-the-tcb.md`](./kernel/tcb/what-is-the-tcb.md) | The TCB in human terms: trusted crates, mint sites, admitted rules. |
+| [`../design/README.md`](../design/README.md) | The design-doc queue (decision records with status). |
 
-## Design sketches
+## `kernel/` — the TCB and its design
 
-Aspirational — the authoring layer *above* the kernel, and deployment. Clearly
-marked as not-yet-built where they are.
+Read `kernel-design.md` before touching the trusted base.
 
 | Doc | What it covers |
 |---|---|
-| [`frontend.md`](./frontend.md) | The frontend & UX vision: a single surface tracking terms as interpreted across many logics; reasoning as handler-dispatched algebraic effects. |
-| [`surface-compiler.md`](./surface-compiler.md) | The canonical surface-language design: theories with many models across many logics, the `#sig`/`#thy`/`#model`/`#logic` forms, the multi-stage compiler. |
-| [`surface-syntax.md`](./surface-syntax.md) | The high-level S-expression authoring syntax (rationale + still-aspirational reach). Concrete forms are canonical in `surface-compiler.md` §3.0. |
-| [`theories-models-and-logics.md`](./theories-models-and-logics.md) | Design record: the signature → theory → model architecture, within-logic model multiplicity, two-axis consumability, Metamath as the shared logic-definition substrate, the PA→SOA→ZF chain. |
-| [`metatheory.md`](./metatheory.md) | Object theories + their derivations as first-class HOL objects; theory morphisms/transport; the metavariable layering. |
-| [`logic-frontends.md`](./logic-frontends.md) | Umbrella plan + difficulty matrix for bringing external systems in as object logics over the Metamath waist (MLTT/HoTT/NuPRL, ACL2/Lisp, LF/Dedukti); per-family sketches in `sketches/`. |
-| [`proof-format.md`](./proof-format.md) | The Haskell dialect's **theorem/proof split**: theorem statements are EQUATION expressions (`theorem NAME. lhs == rhs`, not `::` types); proofs live in a **separate S-expr file linked by name** and are replayed through the abstract `Hol`/`Nat` traits (backend-decoupled) and α-checked against the lowered statement. Prototype landed (`hol-typed`). Sibling of `init-in-dialect.md`. |
-| [`wasm-spec.md`](./wasm-spec.md) | The WebAssembly-spec front end (`covalence-init/src/wasm`): lower SpecTec AST S-expressions into `Derivable_R` relations (dual to the Metamath front end), toward WASM acceleration via trace certification. |
-| [`observers.md`](./observers.md) | How untrusted code feeds facts into the kernel's HOL model without growing the TCB (the `Observer`/`ObsEq`/`ObsTrue`/`ObsImp` substrate + the proposed validator layer). |
-| [`web-kernel.md`](./web-kernel.md) | Running the kernel in the browser: the `category.wiki` north star, `.cov` articles, the deployment seam, federation. |
-| [`sketches/`](./sketches/) | Scratch sketches and per-subsystem task/status notes (reorganized separately). |
+| [`kernel/kernel-design.md`](./kernel/kernel-design.md) | `covalence-core`, the TCB: term/type representation, the rule surface, the `defs/` catalogue. |
+| [`kernel/closed-world-kernel.md`](./kernel/closed-world-kernel.md) | Current kernel direction: first-order theories in the type system; soundness by uniqueness-of-implementation. |
+| [`kernel/pure-design.md`](./kernel/pure-design.md) | The value-directed `Thm<C,P>` floor: `Stmt`/`Rule`/`Derive`, nuclei & bridges, content-addressing + federation. |
+| [`kernel/base-relcalc-holomega-design.md`](./kernel/base-relcalc-holomega-design.md) | Authoritative base + middle redesign: base as a relations-as-untrusted-functions calculus; middle retargeted to HOL-ω. |
+| [`kernel/type-hierarchy.md`](./kernel/type-hierarchy.md) | The equality hierarchy + the `defs/` type catalogue (nat/int/rat/real/bytes/list/…). |
+| [`kernel/covalence-fol.md`](./kernel/covalence-fol.md) · [`kernel/base-abstraction.md`](./kernel/base-abstraction.md) · [`kernel/base-api-surface.md`](./kernel/base-api-surface.md) · [`kernel/defs-rehome-design.md`](./kernel/defs-rehome-design.md) | Base API surface, the typed-repr FOL sketch, and the active defs re-home. |
 
-## Reference / notes
+**`kernel/tcb/`** — [`what-is-the-tcb.md`](./kernel/tcb/what-is-the-tcb.md) · [`soundness-audit.md`](./kernel/tcb/soundness-audit.md) · [`tcb-holomega-roadmap.md`](./kernel/tcb/tcb-holomega-roadmap.md)
+**`kernel/literals/`** — the leaf-elimination endgame: [`literal-endgame-design.md`](./kernel/literals/literal-endgame-design.md) · [`eg5-preflight.md`](./kernel/literals/eg5-preflight.md) · [`sha256-round-keystone.md`](./kernel/literals/sha256-round-keystone.md)
+**`kernel/inductive/`** — [`inductive-support.md`](./kernel/inductive/inductive-support.md) (how it works now) · [`inductive-api-design.md`](./kernel/inductive/inductive-api-design.md) (the `covalence-inductive` API)
+
+## `logics/` — object logics over the waist
 
 | Doc | What it covers |
 |---|---|
-| [`cov-project.md`](./cov-project.md) | Compiling a multi-file `.cov` project (the dependency-resolving loader, the Rust↔`.cov` boundary). |
-| [`peano-arithmetic-plan.md`](./peano-arithmetic-plan.md) | DONE — pointer to the landed PA deep embedding; live status in `crates/covalence-hol/src/peano/SKELETONS.md`. |
-| [`sha256-round-keystone.md`](./sha256-round-keystone.md) | SKETCH — the universality keystone: prove one WASM SHA-256 round equal to the FIPS spec, with the hard step discharged by a fact imported from set.mm. The smallest demo that tests the verified-WASM + import-fuel thesis end-to-end. |
-| [`wasm3-rust.md`](./wasm3-rust.md) | Dated research note: WebAssembly 3.0 in Rust, backing the `web-kernel.md` async decision. |
+| [`logics/logic-frontends.md`](./logics/logic-frontends.md) | Umbrella + difficulty matrix for external systems as object logics (MLTT/HoTT, ACL2/Lisp, LF/Dedukti). |
+| [`logics/theories-models-and-logics.md`](./logics/theories-models-and-logics.md) | signature → theory → model; within-logic model multiplicity; Metamath as shared substrate; PA→SOA→ZF. |
+| [`logics/metatheory.md`](./logics/metatheory.md) | Object theories + derivations as first-class HOL objects; theory morphisms/transport. |
+| [`logics/proof-format.md`](./logics/proof-format.md) | The Haskell dialect's theorem/proof split (equation statements + name-linked S-expr proofs). |
+| [`logics/wasm-spec.md`](./logics/wasm-spec.md) | The SpecTec WASM-spec front end; dual to the Metamath front end. |
+| [`logics/init-in-dialect.md`](./logics/init-in-dialect.md) | Writing `init/` in the Haskell dialect over the typed HOL backend. |
+
+## `surface/` — the authoring layer (aspirational)
+
+[`surface/surface-compiler.md`](./surface/surface-compiler.md) (canonical: theories/models/logics, the multi-stage compiler) ·
+[`surface/surface-syntax.md`](./surface/surface-syntax.md) (rationale) ·
+[`surface/frontend.md`](./surface/frontend.md) (UX vision: one surface, handler-dispatched reasoning)
+
+## `lisp/` — the Lisp/ACL2 frontend
+
+[`lisp/minimal-spec/`](./lisp/minimal-spec/) — the buildable spec: a `/lisp` REPL where an S-expr is evaluated as a reduction theorem, on a generic `Repl` ≤ `SExprRepl` ≤ `Lisp` trait stack, ending at the metacircular interpreter in the browser. [`lisp/initial-ideas/`](./lisp/initial-ideas/) — the design corpus behind it (dialects/UB, parsing relations, content-addressing, proptest-as-theorem, ACL2-inside).
+
+## `web/` · `observers/` · `plans/`
+
+- **web/** — [`web-kernel.md`](./web/web-kernel.md) (kernel in the browser; `.cov` articles; federation) · [`cov-project.md`](./web/cov-project.md) · [`wasm3-rust.md`](./web/wasm3-rust.md)
+- **observers/** — [`observers.md`](./observers/observers.md) (untrusted facts into HOL without growing the TCB) · [`backend-decoupling.md`](./observers/backend-decoupling.md) (the `covalence-hol-api` trait surface)
+- **plans/** — [`refactor-plan.md`](./plans/refactor-plan.md) · [`next-stage-breakdown.md`](./plans/next-stage-breakdown.md) · [`pure-hol-and-build-plan.md`](./plans/pure-hol-and-build-plan.md) · [`sketch-separation-thoughts.md`](./plans/sketch-separation-thoughts.md)
+
+## `sketches/` · `handoff/` · `build/`
+
+Scratch sketches ([`sketches/`](./sketches/)), open task handoffs ([`handoff/`](./handoff/)), and build known-issues ([`build/known-issues.md`](./build/known-issues.md)).

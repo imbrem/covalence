@@ -7,13 +7,13 @@ disable-model-invocation: true
 # Metamath import performance
 
 Read **performance** first for the scaling-first methodology and the tools.
-This skill is the import-specific map. Concrete numbers + current bottleneck live in `crates/kernel/hol/traits/PERF.md` (the results log; update it as you go). Benchmark target: import all of `set.mm`
+This skill is the import-specific map. Concrete numbers + current bottleneck live in `crates/kernel/hol/init/PERF.md` (the results log; update it as you go). Benchmark target: import all of `set.mm`
 (~47k `|-` theorems) fast, with **linear-ish per-theorem cost** and 0 failures.
 
 ## The pipeline (where time goes)
 
 1. **Parse** (`covalence-metamath::parse`) — one-time, ~0.8 s for set.mm.
-2. **Per theorem** (`covalence-hol::metalogic::mm_database::derive_theorem*`),
+2. **Per theorem** (`covalence-init::metalogic::mm_database::derive_theorem*`),
    "construct, don't trust": replay the proof to build a kernel theorem
    `⊢ Derivable_L ⌜S⌝` and check its conclusion against the claimed statement.
    - statements are encoded as flat `mm$concat` chains of `mm$c$…`/`mm$v$…`
@@ -27,7 +27,7 @@ This skill is the import-specific map. Concrete numbers + current bottleneck liv
 
 ## The bench
 
-`crates/kernel/hol/traits/examples/mm_import_bench.rs`:
+`crates/kernel/hol/init/examples/mm_import_bench.rs`:
 - `<mm> [limit] [workers]` — full parallel import; prints `imported N (ok/failed)`,
   throughput, and a JSON distribution (`median_ms`, `p99_ms`, `slowest[]`).
   `[FAILED] <label>: <err>` is printed per failure.

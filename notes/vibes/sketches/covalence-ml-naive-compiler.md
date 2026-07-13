@@ -13,25 +13,23 @@ mirrors**; agreement between naive and mature on test inputs discharges to consi
 
 ## Why this fits the architecture
 
-Three invariants converge on this answer:
+Three invariants converge:
 
-1. **Spec-level independence (executor-mirror consilience).** `wasm_of_ocaml` and
-   MLton-wasm share academic OCaml/SML lineage. A from-scratch Rust compiler is the
-   **independent executor mirror**. With it, "OCaml/SML semantics" becomes a consilience
-   claim between two genuinely different compilers, not a leap of faith on one.
+1. **Executor-mirror consilience.** `wasm_of_ocaml` and MLton-wasm share OCaml/SML
+   lineage; a from-scratch Rust compiler is the independent mirror. "OCaml/SML
+   semantics" becomes a consilience claim between two genuinely different compilers,
+   not a leap of faith on one.
 
-2. **TCB / "simple trusted core + clever untrusted machinery."** A small naive compiler
-   is auditable; the meaning-axiom "this compiler respects ML semantics" is eventually
-   *provable* against the Definition of SML — approximately unprovable for the mature
-   compilers. The naive compiler is the **silvered node** in the ML→WASM segment of the
-   executor graph.
+2. **Small trusted core.** A naive compiler is auditable; the meaning-axiom "this
+   compiler respects ML semantics" is eventually provable against the Definition of
+   SML — approximately unprovable for the mature compilers. The naive compiler is the
+   silvered node in the ML→WASM segment of the executor graph.
 
-3. **"Derive, don't trust."** Language-layer analogue: keep the trusted compilation
-   core minimal; promote to a fast/mature compiler only where measurement shows the win.
-   Same posture as `prod`/`unit` vs derived `coprod`/`option`.
+3. **Derive, don't trust.** Keep the trusted compilation core minimal; promote to a
+   mature compiler only where measurement shows the win. Same posture as `prod`/`unit`
+   vs derived `coprod`/`option`.
 
-The architecturally-correct framing isn't "naive instead of mature" — it's **naive as
-silvered node, mature as untrusted optimised mirror.**
+The framing: naive as silvered node, mature as untrusted optimised mirror.
 
 ## Target choices: stay high-level
 

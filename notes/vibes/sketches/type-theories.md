@@ -2,10 +2,10 @@
 
 > **STATUS: DESIGN SKETCH.** How dependent type theories enter Covalence as
 > object logics over the Metamath thin waist, and how set-theory→type-theory
-> translation works. Part of the [`logic-frontends.md`](../logic-frontends.md)
+> translation works. Part of the [`logic-frontends.md`](../logics/logic-frontends.md)
 > umbrella; see it for the four-artifact pattern and the difficulty axes. The
 > binding-representation `≅` here is pillar-2 of
-> [`metatheory.md`](../metatheory.md) §5.5; the transport `S` is pillar-1.
+> [`metatheory.md`](../logics/metatheory.md) §5.5; the transport `S` is pillar-1.
 
 ---
 
@@ -28,9 +28,9 @@ exists." As always (umbrella §1) this is pure existence — we replay `L`'s pro
 trees into the engine's constructors and never inspect the witness.
 
 The whole family — LF, MLTT, book HoTT, NuPRL, CIC — shares this skeleton. They
-differ in (a) **how binding is represented**, (b) **which type formers** the
-database has, and (c) **the computation/equality discipline**. (a) is written
-once and reused; (b) is bulk; (c) is where NuPRL diverges sharply.
+differ in (a) how binding is represented, (b) which type formers the database
+has, and (c) the computation/equality discipline. (a) is written once and reused;
+(b) is bulk; (c) is where NuPRL diverges sharply.
 
 ## 2. The binding decision (write once, reuse for all)
 
@@ -51,12 +51,12 @@ Metamath has no native binders. Two honest routes; we recommend the first as the
   substitution as a syntax function, rules over `Derivable_L`. de Bruijn (not
   named) so α-equivalence is definitional and needs no quotient.
 
-The user's framing — *"relate it to a locally-nameless impl, a de Bruijn impl,
-etc."* — is served precisely by making **(a) the representation-independent
-interface** and **(b) (and locally-nameless, and HOAS) concrete models** of it.
-Each model proves the CwF axioms; "two implementations agree" is an equivalence
-of CwFs. This is **pillar-2 representation equivalence**, and it is written
-*once for the family* — every type-theory frontend reuses it.
+"Relate it to a locally-nameless impl, a de Bruijn impl, etc." is served by
+making (a) the representation-independent interface and (b) (and
+locally-nameless, and HOAS) concrete models of it. Each model proves the CwF
+axioms; "two implementations agree" is an equivalence of CwFs. This is pillar-2
+representation equivalence, written once for the family — every type-theory
+frontend reuses it.
 
 ## 3. MLTT (predicative) — the base
 
@@ -138,7 +138,7 @@ ZF-strength Collection. Two breakages:
    strength, still far below ZF.
 2. *Collection/Replacement at ZF strength* needs the **universe structure itself**
    tall enough — the type-theoretic analogue of an inaccessible (Mahlo /
-   super-universe). This is exactly the [`metatheory.md`](../metatheory.md) §5.5
+   super-universe). This is exactly the [`metatheory.md`](../logics/metatheory.md) §5.5
    "**ZF needs a universe (TG)**" phenomenon, in type-theoretic clothing.
 
 So a *total sound* IZF→MLTT interpretation is **impossible on strength grounds**.

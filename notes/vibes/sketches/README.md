@@ -1,24 +1,24 @@
 # Sketches
 
-Forward-looking design sketches and raw research notes that feed the canonical
-docs in `notes/vibes/` but aren't themselves load-bearing. Aspirational and informal —
-when one of these graduates into a real plan, it moves up to `notes/vibes/` and its
-sketch is deleted.
+Forward-looking design sketches — aspirational and informal. When one graduates
+into a real plan it moves up to `notes/vibes/` and its sketch is deleted.
 
-## Design sketches (forward-looking)
+## Logic frontends (object logics over the Metamath waist)
 
+Umbrellas: [`../logics/logic-frontends.md`](../logics/logic-frontends.md),
+[`../logics/metatheory.md`](../logics/metatheory.md). ACL2/Lisp graduated to
+[`../lisp/`](../lisp/).
+
+- [`type-theories.md`](./type-theories.md) — MLTT, book HoTT, NuPRL, and
+  IZF/CZF → type-theory translation. Shared judgment-form + binding machinery.
+- [`lf-dedukti.md`](./lf-dedukti.md) — LF / λΠ / Dedukti: the smallest dependent
+  type theory (built first for the TT infra) and a second universal substrate to
+  federate with via a waist-to-waist `≅`.
+
+## Other
+
+- [`acset-datalog-datafun.md`](./acset-datalog-datafun.md) — where a Datafun-style
+  typed language slots into the `covalence-acset` recursive-query engine.
 - [`covalence-ml-naive-compiler.md`](./covalence-ml-naive-compiler.md) — a
-  maximally-naive SML→WASM compiler as the *silvered node* of the ML→WASM
-  executor graph; mature compilers ride alongside as untrusted mirrors.
-  (Deferred; revisit when an ML program needs the trusted pipeline.)
-
-## Research notes (background / raw brainstorm)
-
-- [`OBSERVERS.md`](./OBSERVERS.md) — the observer/validator/precondition
-  substrate behind `notes/vibes/observers.md` (witness → observer → validator →
-  facts).
-- [`MAPS.md`](./MAPS.md) — theory-interpretation transport across PA/HOL/ZFC
-  behind `notes/vibes/metatheory.md`'s two pillars.
-- [`SAMPLE.md`](./SAMPLE.md) — sample surface syntax (`#tydecl`/`#decl`/
-  `#clause` for `option`) and the spec-question forms (entailment, uniqueness,
-  categoricity) for the surface-syntax direction.
+  maximally-naive SML→WASM compiler as the silvered node of the ML→WASM executor
+  graph; mature compilers ride alongside as untrusted mirrors. Deferred.

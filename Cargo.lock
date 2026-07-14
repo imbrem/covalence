@@ -1171,6 +1171,8 @@ dependencies = [
 name = "covalence-k"
 version = "0.0.0"
 dependencies = [
+ "covalence-grammar",
+ "covalence-parse",
  "covalence-sexp",
  "smol_str",
  "thiserror 2.0.18",

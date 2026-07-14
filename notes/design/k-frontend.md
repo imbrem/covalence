@@ -2,7 +2,7 @@
 
 - **Status:** Draft
 - **Owner:** agents (drafted 2026-07-13 for maintainer review)
-- **Last touched:** 2026-07-13
+- **Last touched:** 2026-07-14
 - **Related:** [`notes/vibes/vision/k-framework-vision.md`](../vibes/vision/k-framework-vision.md)
   (the north star), [`notes/vibes/k/`](../vibes/k/README.md) (the sourced research
   corpus behind every external claim here), [`notes/vibes/logics/wasm-spec.md`](../vibes/logics/wasm-spec.md)
@@ -145,6 +145,44 @@ explicit `<valstack>` vs SpecTec's evaluation contexts — not a syntactic match
 dialect (hand-written K definition, ours). K itself (its meta-semantics) is the
 reflective capstone from the vision note.
 
+### The `.k`-source grammar frontend (`covalence-k::kdef`)
+
+A **second, complementary** input surface, distinct from KORE ingestion: read a
+K definition's *grammar* — its `syntax` (BNF) declarations — directly from `.k`
+source. This is the "custom frontend for a K fragment" the maintainer okayed
+(2026-07-13): rather than depend on kompile to read a tutorial language's
+grammar, parse it ourselves. Landed:
+
+- **Parser** (`kdef::parse`) — a [winnow]-based parser (via the workspace
+  wrapper `covalence_parse::winnow`, so it can grow toward a large K subset) for
+  `requires`/`module`/`imports` and `syntax Sort ::= …` productions: terminals,
+  non-terminals (with optional `name:` labels), `|` alternatives, `>` priority
+  blocks, `left:`/`right:`/`non-assoc:` block tags, `[attr]` lists, `List{}`/
+  `NeList{}` sugar. Non-`syntax` sentences (`rule`/`configuration`/…) are
+  *skipped* and counted — this reads grammar, not semantics.
+- **AST + S-expr IR** (`kdef::ast`, `kdef::sexpr`) — plain data + a canonical
+  deterministic rendering.
+- **CFG lowering** (`kdef::cfg`) — lower a module's grammar to a
+  `covalence_grammar::Cfg<char>` (terminals → char-regexes, non-terminals → refs,
+  `List{}` desugared, priority/brackets **flattened** — priorities are parse-time
+  filters over the same context-free language). This is the neutral IR the
+  **kernel CFG stratum** (`covalence-init::grammar::cfg`, `Derives_E`) already
+  consumes — the bridge from "parse a K grammar" to "internally certify that a
+  token string is a valid program of it".
+- **Imported builtin sorts as a strategy** (`kdef::cfg::SortResolver`) — sorts a
+  module references but does not define (`Id`/`Int`/`Bool` from
+  `DOMAINS-SYNTAX`) resolve through a swappable trait: `NoDomains` leaves them
+  empty (structural CFG only), `KDomains` injects the standard K token regexes so
+  the CFG recognises real tokens; a future resolver could follow `imports`
+  transitively. (Inter-token layout/whitespace is a separate scanner concern, not
+  yet modelled — see `SKELETONS.md`.)
+
+It parses the real **LAMBDA** and **IMP** tutorial grammars (vendored BSD-3 in
+`crates/lang/k/examples/k-tutorial/`). This surface is independent of the KORE
+pipeline: it does not (yet) read K *rules*, and does not kompile to KORE.
+
+[winnow]: https://docs.rs/winnow
+
 ### Trust boundary
 
 `covalence-k` and every lowering above it are untrusted drivers, exactly like
@@ -158,9 +196,13 @@ mirror from `wasm-spec.md`, replayed for K.
 
 ## Alternatives considered
 
-- **Parse `.k` directly** — no: the frontend is a large Java system (grammars,
-  strictness elaboration, configuration abstraction); kompile already emits the
-  elaborated theory. Same reasoning as SpecTec's no-`.watsup` decision.
+- **Parse `.k` directly for the *semantics*** — no: elaborating the full `.k`
+  language (strictness → heating/cooling, configuration abstraction, macro
+  expansion) is a large Java system; kompile already emits the elaborated theory
+  as KORE, which is what we ingest for reduction theorems (SpecTec's no-`.watsup`
+  reasoning). *Parsing the `.k` grammar itself is in scope, though* — that's the
+  `kdef` frontend above, a deliberately separate, smaller job that reads only the
+  `syntax` declarations (and will grow toward a larger subset over time).
 - **Ingest KAST JSON (`compiled.json`) instead of KORE** — pre-elaboration
   representation with meta-level `#And`/`#Equals`; less stable meaning, and the
   backends don't execute it. Kept as a skeleton for tooling interop (pyk speaks
@@ -204,6 +246,11 @@ mirror from `wasm-spec.md`, replayed for K.
   `⊢ Derivable_KStep ⌜Step(cfg, cfg')⌝` via `metalogic::apply` — hypothesis-free,
   kernel-checked, TCB unchanged. End-to-end test parses textual KORE →
   `Step(count(0), done)`. Skeletons in `src/k/SKELETONS.md`.
+- **Landed (`.k` grammar frontend):** `covalence-k::kdef` — a winnow-based
+  parser for K's `.k` `syntax` declarations + S-expr IR + `covalence_grammar::Cfg`
+  lowering with the swappable `SortResolver` strategy for imported builtin sorts.
+  Parses the real **LAMBDA and IMP** tutorial grammars (vendored BSD-3). See the
+  `.k`-source subsection above.
 - **Next:** (1) the **RTC / `Step*` layer** (F2 prerequisite — reflexive-
   transitive closure over `Derivable_KStep`, shared with the SpecTec reduction
   work) so `A →* B` with `B` open becomes statable; (2) an **untrusted redex

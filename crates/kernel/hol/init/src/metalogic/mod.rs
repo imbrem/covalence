@@ -66,6 +66,14 @@ pub mod toy;
 // shape hand-rolled; this packages it once.
 pub mod binary;
 
+// **Generic rule application over any [`RuleSet`]** — the forward/composition
+// direction of the impredicative engine: `apply_rule(rs, k, n, floats, premises)`
+// mints `⊢ Derivable_L (σ concl)` by instantiating clause `k`'s metavariables and
+// discharging its essential antecedents. `derive_clause` (mm_database replay) and
+// `derivable_db_mp` (the database-value world) are the two hardcoded instances
+// this generalises; `mm_session` builds the high-level Metamath-database API on it.
+pub mod apply;
+
 // The **HOL database type + relation lattice** (`notes/vibes/theories-models-and-logics.md
 // §5.6`): databases as first-class HOL *values* (an axiom-selecting predicate), with
 // `⊑`/monotonicity and `⟹_σ`/transport proved over `Derivable_DB`. UNIFIED (Phase A):
@@ -75,6 +83,27 @@ pub mod binary;
 // (`monotone`/`transport`) are thus theorems about *this engine's* `derivable`.
 pub mod database;
 pub mod relations;
+
+// **A genuinely structural (non-identity) `σ` for `relations::transport`**
+// (`notes/vibes/logics/structural-sigma-transport.md`): a variable-index
+// renaming `σ_f := λA. λ v ¬ ∧ ∨ ⟹. A (λn. v (f n)) ¬ ∧ ∨ ⟹` on the reified
+// `Φ⟨bool⟩` carrier, with its `⟹`-homomorphism proved for `f := succ` — the
+// first discharge of transport's `σ_hom` premise off `σ = id`.
+pub mod relations_sigma;
+
+// **L3 — the reified Metamath-expression algebra** (`notes/vibes/logics/
+// derivation-system-interp.md`): the `MmAlgebra` insulation trait + two impls
+// (`FreeAlgebra` recursor-free `Φ=nat`; `MmExprAlgebra` genuine inductive
+// `MmExpr := sym(nat) | app(Rec, Rec)` realized via `ImpredicativeBackend`).
+// `structural_sigma` catamorphism + `sigma_app_hom`-by-`comp` on `MmExpr`; the
+// acid-test op runs UNCHANGED on both backends (encoding-swap insulation).
+pub mod mm_algebra;
+
+// **L5 — the derivation-system interpretation mid-level API**: `DerivationSystem`
+// (each system supplies `rule_set` + `algebra`) + `DerivationInterp` (σ +
+// per-rule `clause_sims`, `interpret()` delegating to `transport_db::transport`).
+// The K matching-logic → Metamath cross-system bridge is one (deferred) instance.
+pub mod interp;
 
 // **Generic interpretation/transport between Metamath-database logics**
 // (`notes/vibes/metatheory.md`, "relate formal systems"): `transport` proves
@@ -112,9 +141,27 @@ pub mod mm_import;
 // is the HOL-free sanity-check backend; this is the HOL one.
 pub mod mm_sink;
 
+// **Composing derivability theorems from outside Metamath.** A session API over
+// `Derivable_DB db` that applies the database's rules (axiom introduction,
+// modus ponens) in the HOL kernel to assemble `⊢ Derivable_DB db ⌜S⌝` theorems
+// — including for statements `S` with no Metamath proof in the database.
+pub mod mm_compose;
+
+// **A high-level session over a real imported Metamath database.** `MmSession`
+// wraps a `metamath::Database`: `theorem(label)` re-derives `⊢ Derivable_L ⌜S⌝`
+// for a stored `$p` (via `replay_db`); `apply(rule, floats, premises)` composes
+// *new* `⊢ Derivable_L (σ concl)` theorems from ANY of the database's `|-` rules
+// (via the generic `apply_rule`) — including statements the database has no `$p`
+// proof for. All results share one full-database `Derivable_L` head, so they
+// compose. Sound: every theorem is a `replay_db` result or an `apply_rule` build.
+pub mod mm_session;
+
 // Re-exported WITHOUT `database::derivable` (a 0-ary schema builder) to avoid
 // colliding with this engine's `derivable`; reach it as `metalogic::database::derivable`.
+pub use apply::{apply_rule, derive_axiom_instance};
 pub use database::{derivable_db, extends, monotone};
+pub use mm_compose::DbSession;
+pub use mm_session::MmSession;
 pub use relations::{derivable_db_mp, interp, sigma_hom, transport};
 
 // ============================================================================

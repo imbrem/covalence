@@ -60,20 +60,32 @@
 //!
 //! [Metamath]: https://us.metamath.org/
 
+pub mod axioms;
 pub mod database;
+pub mod emit;
 pub mod error;
 pub mod expr;
+pub mod interpret;
 pub mod parse;
 pub mod subst;
 pub mod typesetting;
 #[cfg(feature = "checker")]
 pub mod verify;
 
+pub use axioms::{
+    AxiomSet, Implication, MetaError, allow_definitions, axiom_closure, check_implication,
+    derivable_from, provable_closure, same_statement, setmm_witness,
+};
 pub use database::{
     Assertion, Database, DatabaseSink, FloatHyp, Frame, Hypothesis, Proof, Statement, SymbolKind,
 };
+pub use emit::to_mm_string;
 pub use error::MmError;
 pub use expr::{Expr, Symbol, TYPECODE_POS, body_of, expr_symbols, typecode_of};
+pub use interpret::{
+    Coverage, InterpError, InterpretationCert, Renaming, TransportedTheorem, check_interpretation,
+    interpretation_coverage, matching_witnesses_mod_renaming, same_statement_mod_renaming,
+};
 pub use parse::{
     FileResolver, MemoryResolver, SourceResolver, parse, parse_into, parse_into_with_resolver,
     parse_with_resolver,

@@ -286,6 +286,56 @@ mod tests {
         Term::abs(phi(), covalence_core::subst::close(&x, "__x"))
     }
 
+    /// **Dedup: `derivable_db_mp` IS the database-value instance of the generic
+    /// [`super::super::apply_rule`] pattern.** The database's rule set
+    /// [`db_rule_set`](super::super::database::db_rule_set) has the modus-ponens
+    /// clause at **index 0** (`db_clauses` returns `[mp, axioms]`). Applying that
+    /// clause with `apply_rule` — floats `A`, `B`, premises `Der ⌜A⌝`,
+    /// `Der ⌜A⟹B⌝` — reproduces exactly the `Der ⌜B⌝` that the hand-written
+    /// `derivable_db_mp` mints, on a concrete database. Same `derive_via_closed` +
+    /// extract-clause + `all_elim` + `imp_elim` spine, now generic.
+    #[test]
+    fn apply_rule_reproduces_derivable_db_mp() {
+        use super::super::apply_rule;
+        use super::super::database::db_rule_set;
+
+        // A concrete database value `db = λf. f = p0 ∨ f = ⌜p0⟹p1⌝` (via DbSession).
+        let p0 = super::super::DbSession::var(0);
+        let p1 = super::super::DbSession::var(1);
+        let imp01 = super::super::DbSession::imp(&p0, &p1);
+        let sess = super::super::DbSession::new(vec![p0.clone(), imp01.clone()]).unwrap();
+        let db = sess.database().clone();
+
+        // Premises (assumed): Der ⌜p0⌝ and Der ⌜p0 ⟹ p1⌝.
+        let der_p0 = Thm::assume(derivable_db(&db, &p0).unwrap()).unwrap();
+        let der_imp = Thm::assume(derivable_db(&db, &imp01).unwrap()).unwrap();
+
+        // Generic path: apply clause 0 (MP) of `db_rule_set(db)`. `db_clauses`
+        // builds the MP clause as `…forall("A")?.forall("B")?`, i.e. it binds `A`
+        // *innermost* and `B` *outermost* — so `all_elim` strips `B` first and the
+        // witness order is `[B := p1, A := p0]` (unlike `mm_database`'s
+        // `.rev()`-bound clauses, where witness[0] is the first float). This binder
+        // convention is exactly what `apply_rule` faithfully threads.
+        let rs = db_rule_set(db.clone());
+        let n = rs.n_clauses().unwrap();
+        let via_generic = apply_rule(&rs, 0, n, &[p1.clone(), p0.clone()], &[&der_p0, &der_imp])
+            .expect("apply_rule MP");
+
+        // Hand-written path: `derivable_db_mp` instantiated + both premises fed.
+        let via_hand = super::super::DbSession::new(vec![p0.clone(), imp01.clone()])
+            .unwrap()
+            .mp(&p0, &p1, &der_p0, &der_imp)
+            .expect("DbSession::mp");
+
+        // Same conclusion `Der ⌜p1⌝`, same carried hypotheses.
+        assert_eq!(via_generic.concl(), &derivable_db(&db, &p1).unwrap());
+        assert_eq!(
+            via_generic.concl(),
+            via_hand.concl(),
+            "generic apply_rule reproduces derivable_db_mp's MP theorem"
+        );
+    }
+
     #[test]
     fn derivable_db_mp_is_genuine() {
         let thm = derivable_db_mp().unwrap();

@@ -1,32 +1,30 @@
 <script lang="ts">
-	// FORSP REPL — LIVE. `covalence-forsp` (crates/lang/forsp), a concatenative
-	// Forth+Lisp hybrid, compiled to WASM. A PERSISTENT runtime: variable
-	// bindings ($x) and word definitions accumulate across cells.
-	import { onMount } from 'svelte';
+	// FORSP REPL — connects to the RUNNING SERVER (POST /api/forsp), a native
+	// persistent per-tab session ($x bindings + word defs accumulate). No WASM.
 	import Repl from '$lib/Repl.svelte';
 	import examples from '$lib/forspExamples.json';
 
-	let wasm = $state<any>(null);
-	let ready = $state(false);
-	let loadError = $state('');
+	const session =
+		typeof crypto !== 'undefined' && crypto.randomUUID
+			? crypto.randomUUID()
+			: `s${Math.random().toString(36).slice(2)}`;
 
-	onMount(async () => {
-		try {
-			const mod = await import('$lib/kernel/covalence_web_kernel.js');
-			const wasmUrl = (await import('$lib/kernel/covalence_web_kernel_bg.wasm?url')).default;
-			await mod.default({ module_or_path: wasmUrl });
-			wasm = mod;
-			ready = true;
-		} catch (e) {
-			loadError = String(e);
-		}
-	});
+	async function post(path: string, body: unknown) {
+		const res = await fetch(path, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
+		});
+		return res.json();
+	}
 
-	const evalCell = (src: string) => {
-		const r = JSON.parse(wasm.forsp_eval_cell(src));
+	const evalCell = async (src: string) => {
+		const r = await post('/api/forsp', { session, src });
 		return { ok: !!r.ok, result: r.result ?? '', error: r.error ?? '' };
 	};
-	const onReset = () => wasm?.forsp_reset?.();
+	const onReset = () => {
+		post('/api/forsp/reset', { session });
+	};
 </script>
 
 <svelte:head><title>forsp — covalence</title></svelte:head>
@@ -36,7 +34,7 @@
 	<p class="sub">
 		<code>covalence-forsp</code> is a tiny <strong>concatenative</strong> language —
 		a Forth/Lisp hybrid (after xorvoid's Forsp) with a stack, an environment, and
-		call-by-push-value. Running live in your browser via WASM; the result shown is the
+		call-by-push-value. This REPL runs it on the running server; the result shown is the
 		top of the stack. A real REPL: <code>$x</code> bindings and word definitions persist
 		across cells.
 	</p>
@@ -46,7 +44,7 @@
 		<code>Semantics</code>) arranged so a kernel-backed Forsp theory can drop in later.
 	</p>
 
-	<Repl {evalCell} {onReset} {ready} {loadError} examples={examples as any} prompt="forsp>" />
+	<Repl {evalCell} {onReset} examples={examples as any} prompt="forsp>" />
 </main>
 
 <style>

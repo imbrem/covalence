@@ -493,3 +493,13 @@ impl Repl for Session {
         self.render(eval)
     }
 }
+
+#[cfg(test)]
+mod send_sync {
+    // The server holds `Session` across threads (`/api/lisp` persistent-session
+    // demo), so it must be `Send + Sync` — guaranteed by `Arc` (not `Rc`) in `Defs`.
+    const _: fn() = || {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<super::Session>();
+    };
+}

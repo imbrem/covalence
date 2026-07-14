@@ -1,8 +1,8 @@
 <script lang="ts">
-	// A reusable single-box REPL: a scrolling transcript + a prompt line.
-	// `evalCell` is the (synchronous) wasm call `src -> {ok, result, error}`.
-	// `showCell`, if given, lazily fetches HOL info for a cell on hover (e.g. the
-	// `⊢ lhs = rhs` theorem behind a Lisp value, via the `#show` directive).
+	// A reusable terminal-style REPL: a scrolling transcript + a prompt line.
+	// `evalCell` is async (a `fetch` to the running server's native kernel —
+	// e.g. POST /api/lisp). `showCell`, if given, lazily fetches HOL info for a
+	// cell on hover (the `⊢ lhs = rhs` theorem, via the `#show` directive).
 	type EvalResult = { ok: boolean; result: string; error: string };
 	type Example = { title: string; src: string };
 
@@ -10,17 +10,13 @@
 		evalCell,
 		showCell = null,
 		onReset = null,
-		ready = false,
-		loadError = '',
 		examples = [],
 		prompt = 'λ>',
 		placeholder = 'type a form, press Enter — Shift+Enter for a newline'
 	}: {
-		evalCell: (src: string) => EvalResult;
-		showCell?: ((src: string) => string) | null;
+		evalCell: (src: string) => Promise<EvalResult>;
+		showCell?: ((src: string) => Promise<string>) | null;
 		onReset?: (() => void) | null;
-		ready?: boolean;
-		loadError?: string;
 		examples?: Example[];
 		prompt?: string;
 		placeholder?: string;
@@ -38,6 +34,7 @@
 
 	let entries = $state<Entry[]>([]);
 	let input = $state('');
+	let busy = $state(false);
 	let scroller = $state<HTMLDivElement | null>(null);
 
 	function scrollSoon() {
@@ -46,9 +43,9 @@
 		});
 	}
 
-	function submit() {
+	async function submit() {
 		const src = input.trim();
-		if (!src || !ready) return;
+		if (!src || busy) return;
 		input = '';
 		const entry: Entry = {
 			input: src,
@@ -61,20 +58,18 @@
 		};
 		entries.push(entry);
 		scrollSoon();
-		// Defer the (possibly slow first) synchronous wasm call so the "proving…"
-		// state paints before the kernel-init blocks the main thread.
-		setTimeout(() => {
-			try {
-				const r = evalCell(src);
-				entry.output = r.ok ? r.result : r.error;
-				entry.ok = r.ok;
-			} catch (e) {
-				entry.output = String(e);
-				entry.ok = false;
-			}
-			entry.pending = false;
-			scrollSoon();
-		}, 0);
+		busy = true;
+		try {
+			const r = await evalCell(src);
+			entry.output = r.ok ? r.result : r.error;
+			entry.ok = r.ok;
+		} catch (e) {
+			entry.output = String(e);
+			entry.ok = false;
+		}
+		entry.pending = false;
+		busy = false;
+		scrollSoon();
 	}
 
 	function onKey(e: KeyboardEvent) {
@@ -96,11 +91,11 @@
 	}
 
 	// Hover a cell → lazily fetch its HOL theorem (once).
-	function loadHol(entry: Entry) {
+	async function loadHol(entry: Entry) {
 		if (!showCell || entry.holTried || entry.directive || !entry.ok || entry.pending) return;
 		entry.holTried = true;
 		try {
-			const h = showCell(entry.input);
+			const h = await showCell(entry.input);
 			entry.hol = h && h.length ? h : null;
 		} catch {
 			entry.hol = null;
@@ -111,21 +106,19 @@
 {#if examples.length}
 	<div class="examples">
 		{#each examples as c}
-			<button disabled={!ready} onclick={() => runExample(c.src)} title={c.src}>{c.title}</button>
+			<button onclick={() => runExample(c.src)} title={c.src}>{c.title}</button>
 		{/each}
+		{#if onReset || entries.length}
+			<button class="reset" onclick={reset} title="clear the transcript and reset the session">⟲ reset</button>
+		{/if}
 	</div>
 {/if}
 
-<div class="repl">
+<div class="term">
 	<div class="transcript" bind:this={scroller}>
-		{#if loadError}
-			<div class="line err">failed to load wasm: {loadError}</div>
-		{:else if !ready}
-			<div class="line muted">loading the kernel (WASM)…</div>
-		{:else if entries.length === 0}
-			<div class="line muted">ready — type a form below, or pick an example.</div>
+		{#if entries.length === 0}
+			<div class="hint">Type a form below and press Enter — or pick an example.</div>
 		{/if}
-
 		{#each entries as entry}
 			<div
 				class="cell"
@@ -133,7 +126,7 @@
 				onmouseenter={() => loadHol(entry)}
 				role="group"
 			>
-				<div class="in"><span class="p">{prompt}</span> <span class="src">{entry.input}</span></div>
+				<div class="in"><span class="p">{prompt}</span> {entry.input}</div>
 				{#if entry.pending}
 					<div class="out muted">proving…</div>
 				{:else if entry.ok}
@@ -143,8 +136,6 @@
 				{/if}
 				{#if entry.hol}
 					<div class="hol" title="the kernel theorem behind this value">{entry.hol}</div>
-				{:else if showCell && !entry.directive && entry.ok && !entry.pending && !entry.holTried}
-					<div class="hol-hint">hover for ⊢ proof</div>
 				{/if}
 			</div>
 		{/each}
@@ -159,11 +150,8 @@
 			{placeholder}
 			spellcheck="false"
 			rows="1"
-			disabled={!ready}
+			disabled={busy}
 		></textarea>
-		{#if entries.length}
-			<button class="reset" onclick={reset} title="clear the transcript and reset the session">⟲ reset</button>
-		{/if}
 	</div>
 </div>
 
@@ -172,7 +160,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.35rem;
-		margin: 1rem 0 0.6rem;
+		margin: 1rem 0 0.5rem;
 	}
 	.examples button {
 		font: inherit;
@@ -184,103 +172,89 @@
 		padding: 0.25rem 0.55rem;
 		cursor: pointer;
 	}
-	.examples button:hover:not(:disabled) {
+	.examples button:hover {
 		border-color: var(--accent);
 	}
-	.examples button:disabled {
-		opacity: 0.5;
-		cursor: default;
+	.examples .reset {
+		margin-left: auto;
+		color: var(--muted);
 	}
-	.repl {
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		background: var(--surface);
-		overflow: hidden;
+
+	/* A terminal, not a box: flush background, hairline separators, no card. */
+	.term {
 		font-family: var(--font-mono);
+		border-top: 1px solid var(--border);
 	}
 	.transcript {
-		max-height: 26rem;
-		min-height: 10rem;
+		max-height: 30rem;
 		overflow-y: auto;
-		padding: 0.6rem 0.7rem;
+		padding: 0.6rem 0.1rem;
 	}
-	.line {
+	.hint {
+		color: var(--muted);
 		font-size: 0.85rem;
-		padding: 0.2rem 0;
+		padding: 0.3rem 0.2rem;
 	}
 	.cell {
-		padding: 0.35rem 0.4rem;
-		margin: 0 -0.4rem;
-		border-radius: 5px;
+		padding: 0.25rem 0.3rem;
+		margin: 0 -0.3rem;
+		border-radius: 4px;
 	}
 	.cell.has-hol:hover {
-		background: color-mix(in srgb, var(--accent) 8%, transparent);
+		background: color-mix(in srgb, var(--accent) 7%, transparent);
 	}
 	.in {
-		font-size: 0.85rem;
+		font-size: 0.9rem;
 		line-height: 1.5;
 		white-space: pre-wrap;
 		word-break: break-word;
+		color: var(--fg);
 	}
 	.p {
 		color: var(--accent);
 		user-select: none;
 	}
-	.in .src {
-		color: var(--fg);
-	}
 	.out {
-		font-size: 0.85rem;
+		font-size: 0.9rem;
 		line-height: 1.5;
-		padding-left: 1.4rem;
+		padding-left: 1.5rem;
 		white-space: pre-wrap;
 		word-break: break-word;
-		color: color-mix(in srgb, #30a46c 55%, var(--fg));
+		color: color-mix(in srgb, #30a46c 60%, var(--fg));
 	}
 	.out.muted {
 		color: var(--muted);
 	}
 	.out.err {
-		color: color-mix(in srgb, #e5484d 65%, var(--fg));
+		color: color-mix(in srgb, #e5484d 70%, var(--fg));
 	}
 	.hol {
-		margin: 0.2rem 0 0.1rem 1.4rem;
+		margin: 0.2rem 0 0.15rem 1.5rem;
 		padding: 0.3rem 0.5rem;
-		font-size: 0.78rem;
+		font-size: 0.8rem;
 		line-height: 1.45;
 		color: var(--fg);
-		background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+		background: color-mix(in srgb, var(--accent) 9%, transparent);
 		border-left: 2px solid var(--accent);
 		border-radius: 0 4px 4px 0;
 		white-space: pre-wrap;
 		word-break: break-word;
 	}
-	.hol-hint {
-		margin-left: 1.4rem;
-		font-size: 0.72rem;
-		color: var(--muted);
-		opacity: 0;
-		transition: opacity 0.12s;
-	}
-	.cell.has-hol:hover .hol-hint {
-		opacity: 0.75;
-	}
 	.prompt-line {
 		display: flex;
 		align-items: flex-start;
-		gap: 0.4rem;
+		gap: 0.5rem;
 		border-top: 1px solid var(--border);
-		padding: 0.5rem 0.7rem;
-		background: color-mix(in srgb, var(--fg) 3%, var(--surface));
+		padding: 0.55rem 0.2rem;
 	}
 	.prompt-line .p {
-		font-size: 0.9rem;
-		padding-top: 0.15rem;
+		font-size: 0.95rem;
+		padding-top: 0.1rem;
 	}
 	.input {
 		flex: 1;
 		font: inherit;
-		font-size: 0.9rem;
+		font-size: 0.95rem;
 		font-family: var(--font-mono);
 		color: var(--fg);
 		background: transparent;
@@ -289,24 +263,8 @@
 		resize: none;
 		line-height: 1.5;
 		min-height: 1.5rem;
-		overflow: hidden;
 	}
 	.input::placeholder {
 		color: var(--muted);
-	}
-	.reset {
-		font: inherit;
-		font-size: 0.72rem;
-		color: var(--muted);
-		background: transparent;
-		border: 1px solid var(--border);
-		border-radius: 5px;
-		padding: 0.15rem 0.45rem;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-	.reset:hover {
-		color: var(--fg);
-		border-color: var(--accent);
 	}
 </style>

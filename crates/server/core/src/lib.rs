@@ -1,5 +1,8 @@
 mod api;
 pub mod eval;
+/// TEMPORARY / THROWAWAY DEMO: native `/api/lisp` + `/api/forsp` REPL endpoints
+/// (persistent per-session, over the native kernel). Not part of the stable API.
+pub mod lisp;
 /// TEMPORARY / THROWAWAY DEMO: the `/metamath` page backend (stateful sessions,
 /// REST for data + a thin status WebSocket). Not part of the stable API.
 pub mod mm;
@@ -46,6 +49,10 @@ pub struct AppState {
     /// TEMPORARY / THROWAWAY DEMO: cached Metamath sessions for the `/metamath`
     /// page (see [`mm`]). Not part of the stable API surface.
     pub mm: std::sync::Arc<mm::MmSessions>,
+    /// TEMPORARY / THROWAWAY DEMO: persistent Lisp / Forsp REPL sessions for the
+    /// `/lisp` + `/forsp` pages (see [`lisp`]). Not part of the stable API.
+    pub lisp: std::sync::Arc<lisp::LispSessions>,
+    pub forsp: std::sync::Arc<lisp::ForspSessions>,
 }
 
 pub struct ServeConfig {
@@ -76,6 +83,8 @@ pub async fn run_serve(config: ServeConfig) -> Result<(), ServeError> {
         tagged_store,
         object_store,
         mm: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        lisp: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        forsp: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
     let app = build_router(state, config.api_only);
@@ -172,6 +181,12 @@ pub fn build_router(state: AppState, api_only: bool) -> Router {
         // lives in one nested router (`mm::router()`) so it is trivially removable
         // / refactorable as a unit. REST for data + a thin WS for live status.
         .nest("/api/metamath", mm::router())
+        // TEMPORARY / THROWAWAY DEMO: native Lisp / Forsp REPL endpoints
+        // (persistent per-session) for the `/lisp` + `/forsp` pages.
+        .route("/api/lisp", post(lisp::lisp_eval))
+        .route("/api/lisp/reset", post(lisp::lisp_reset))
+        .route("/api/forsp", post(lisp::forsp_eval))
+        .route("/api/forsp/reset", post(lisp::forsp_reset))
         // Blob endpoints (concrete paths before parameterized)
         .route("/api/blobs", post(api::blob_store).get(api::blob_list))
         .route("/api/blobs/url", post(api::blob_store_url))

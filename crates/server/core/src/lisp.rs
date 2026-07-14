@@ -86,7 +86,9 @@ pub async fn forsp_eval(
     let out = tokio::task::spawn_blocking(move || {
         let CellRequest { session, src } = req;
         let mut map = sessions.lock().unwrap();
-        let f = map.entry(session).or_insert_with(covalence_forsp::Forsp::new);
+        let f = map
+            .entry(session)
+            .or_insert_with(covalence_forsp::Forsp::new);
         f.run(&src).map_err(|e| e.to_string())?;
         Ok(match f.try_peek() {
             Ok(top) => f.show(top),

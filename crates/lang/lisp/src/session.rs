@@ -42,7 +42,66 @@ use covalence_sexp::SExpr;
 use crate::defs::{Defs, build_def, build_def_with_ret};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
+use crate::relation::{Dialect, IntFlavour, LispRel};
 use crate::semantics::{LispRepr, LispSemantics, ValueKind};
+
+/// The dialect a [`Session`] evaluates in, chosen by the `#lang` directive.
+///
+/// The two **relational** dialects ([`Lisp`](Lang::Lisp) / [`Sector`](Lang::Sector))
+/// drive the genuine [`Step`](crate::relation)/`Reduces` relation and print a
+/// `⊢ Reduces input value` theorem; [`Scheme`](Lang::Scheme) drives the
+/// equational value [`LispSemantics`] (`⊢ input = value`) with `lambda`/`defun`
+/// recursion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Lang {
+    /// **Default.** The relational semantics with the integer dialect
+    /// (`SectorInt(Int)`): McCarthy primitives + integer arithmetic. Numerals
+    /// lower to `(int n)`. No `defun` recursion yet.
+    #[default]
+    Lisp,
+    /// The equational value semantics: primitives + `cond`/`lambda`/`defun`
+    /// recursion; numerals are symbol atoms (integer arithmetic is stuck).
+    Scheme,
+    /// The relational semantics WITHOUT integers (pure McCarthy): `(+ 2 2)` is
+    /// stuck. Demonstrates `sector ⊑ sector+int`.
+    Sector,
+}
+
+impl Lang {
+    /// Parse a `#lang` argument (case-insensitive, with aliases). `None` for an
+    /// unknown name.
+    fn parse(name: &str) -> Option<Lang> {
+        match name.to_ascii_lowercase().as_str() {
+            "lisp" | "lisp-int" | "int" => Some(Lang::Lisp),
+            "scheme" | "value" => Some(Lang::Scheme),
+            "sector" => Some(Lang::Sector),
+            _ => None,
+        }
+    }
+
+    /// The canonical name, as printed by `#lang`.
+    fn name(self) -> &'static str {
+        match self {
+            Lang::Lisp => "lisp",
+            Lang::Scheme => "scheme",
+            Lang::Sector => "sector",
+        }
+    }
+
+    /// The relational [`Dialect`] for a relational `Lang` (`None` for
+    /// [`Scheme`](Lang::Scheme), which uses the value semantics).
+    fn dialect(self) -> Option<Dialect> {
+        match self {
+            Lang::Lisp => Some(Dialect::SectorInt(IntFlavour::Int)),
+            Lang::Sector => Some(Dialect::Sector),
+            Lang::Scheme => None,
+        }
+    }
+}
+
+/// Fuel bound for the relational driver (closed ch1 programs terminate well
+/// within this).
+const REL_FUEL: usize = 10_000;
 
 /// The reduction of one form: the value term, the composite kernel theorem
 /// `⊢ input = value`, its value-kind, and the streaming status/step count.
@@ -69,6 +128,8 @@ pub struct Outcome {
 /// [`LispSemantics`] over the current dictionary so `(f args)` calls unfold
 /// against their assumed equations.
 pub struct Session {
+    /// The active dialect (selected by `#lang`; default [`Lang::Lisp`]).
+    lang: Lang,
     defs: Defs,
     /// A definition-free semantics used only for its **structural** render
     /// helpers (`is_snil` / `as_scons` / `atom_bytes`), which are independent
@@ -88,6 +149,7 @@ impl Session {
     /// user definitions.
     pub fn new() -> Result<Self, HolError> {
         Ok(Session {
+            lang: Lang::default(),
             defs: Defs::new(),
             render_sem: LispSemantics::new()?,
         })
@@ -98,18 +160,63 @@ impl Session {
         &self.defs
     }
 
+    /// The active dialect.
+    pub fn lang(&self) -> Lang {
+        self.lang
+    }
+
+    /// Switch dialect and **reset session state** (the `defun` dictionary) — the
+    /// programmatic twin of the `#lang` directive.
+    pub fn set_lang(&mut self, lang: Lang) {
+        self.lang = lang;
+        self.defs = Defs::new();
+    }
+
+    /// Build a relational engine for the active (relational) dialect.
+    fn rel(&self) -> Result<LispRel, HolError> {
+        let dialect = self
+            .lang
+            .dialect()
+            .ok_or_else(|| HolError::Theory("not a relational dialect".into()))?;
+        LispRel::with_dialect(dialect)
+    }
+
     /// Build a semantics over the current definition dictionary.
     fn semantics(&self) -> Result<LispSemantics, HolError> {
         LispSemantics::with_defs(self.defs.clone())
     }
 
     /// Reduce a parsed form to a value (run to normal form), returning the
-    /// [`Outcome`] (value + `definitions ⊢ input = value` theorem — the
-    /// theorem's hypotheses are exactly the `defun` equations used).
+    /// [`Outcome`]. In [`Scheme`](Lang::Scheme) this is the equational value
+    /// path (`⊢ input = value`, hypotheses = the `defun` equations used); in the
+    /// relational dialects ([`Lisp`](Lang::Lisp) / [`Sector`](Lang::Sector))
+    /// this drives the `Step`/`Reduces` relation (`⊢ Reduces input value`,
+    /// hypothesis-free for a closed program).
     pub fn reduce(&self, form: &SExpr) -> Result<Outcome, HolError> {
-        let sem = self.semantics()?;
-        let red = self.drive_fueled_with(&sem, form, Fuel::UNBOUNDED)?;
-        self.outcome(&sem, red)
+        match self.lang {
+            Lang::Scheme => {
+                let sem = self.semantics()?;
+                let red = self.drive_fueled_with(&sem, form, Fuel::UNBOUNDED)?;
+                self.outcome(&sem, red)
+            }
+            Lang::Lisp | Lang::Sector => self.reduce_relational(form),
+        }
+    }
+
+    /// The relational reduction path: compile the surface form, drive the
+    /// `Step`/`Reduces` relation, and package the `⊢ Reduces input value`
+    /// theorem into an [`Outcome`]. The value is always a `sexpr` datum
+    /// ([`ValueKind::Data`]).
+    fn reduce_relational(&self, form: &SExpr) -> Result<Outcome, HolError> {
+        let rel = self.rel()?;
+        let (value, thm) = rel.reduce_surface(form, REL_FUEL)?;
+        Ok(Outcome {
+            value,
+            thm,
+            kind: ValueKind::Data,
+            status: Status::Value,
+            steps: 0,
+        })
     }
 
     /// Drive a form under a step `fuel` bound and return the raw streaming
@@ -299,8 +406,13 @@ impl Session {
             return self.run_directive(rest).map_err(CellError::Directive);
         }
         let form = read_one(src).map_err(CellError::Read)?;
-        // A `defun` / `define` adds an assumption and returns an ack (no value).
-        if let Some(name) = self.try_define(&form).map_err(CellError::Eval)? {
+        // A `defun` / `define` adds an assumption and returns an ack (no value)
+        // — only in the value semantics (`scheme`); the relational dialects have
+        // no `defun` recursion yet, so a `(defun …)` there is an ordinary
+        // (stuck) form.
+        if self.lang == Lang::Scheme
+            && let Some(name) = self.try_define(&form).map_err(CellError::Eval)?
+        {
             return Ok(name);
         }
         let out = self.reduce(&form).map_err(CellError::Eval)?;
@@ -308,8 +420,13 @@ impl Session {
     }
 
     /// Render an outcome's value to Little-Schemer text — **off the value term
-    /// only** (the theorem's RHS).
+    /// only** (the theorem's RHS). Relational dialects render `(int n)` values
+    /// as decimals via [`LispRel::render_value`]; [`Scheme`](Lang::Scheme) uses
+    /// the value semantics' `bool`/`sexpr` printers.
     pub fn render(&self, out: &Outcome) -> String {
+        if let Ok(rel) = self.rel() {
+            return rel.render_value(&out.value);
+        }
         match out.kind {
             ValueKind::Bool => self.render_bool(&out.value),
             ValueKind::Data => self.render_data(&out.value),
@@ -371,6 +488,7 @@ impl Session {
         };
         match name {
             "help" => Ok(HELP.to_string()),
+            "lang" => self.run_lang(arg),
             "show" => {
                 if arg.is_empty() {
                     return Err(DirectiveError::Usage("#show EXPR".into()));
@@ -382,6 +500,28 @@ impl Session {
             }
             other => Err(DirectiveError::Unknown(other.to_string())),
         }
+    }
+
+    /// `#lang [name]`: with no argument, report the current + available
+    /// dialects; with a (case-insensitive) name, switch to it and **reset all
+    /// session state** (the `defun` dictionary). An unknown name is an error.
+    fn run_lang(&mut self, arg: &str) -> Result<String, DirectiveError> {
+        if arg.is_empty() {
+            return Ok(format!(
+                "current #lang: {}\navailable: lisp (default, integers on) | \
+                 scheme (defun/lambda recursion) | sector (no integers)",
+                self.lang.name()
+            ));
+        }
+        let lang = Lang::parse(arg).ok_or_else(|| {
+            DirectiveError::Usage(format!(
+                "unknown #lang `{arg}` (try: lisp | scheme | sector)"
+            ))
+        })?;
+        self.lang = lang;
+        // Reset session state on every switch (even to the same lang).
+        self.defs = Defs::new();
+        Ok(format!("#lang {} (session reset)", lang.name()))
     }
 }
 
@@ -404,9 +544,18 @@ Chapter 2 (recursion via kernel hypotheses):
   (defun f (x) E)  define f; calls of f unfold against the ASSUMED equation
                    f = (lambda (x) E), which rides the result theorem as a
                    hypothesis (never an axiom)
+Dialects (select with `#lang`; switching RESETS the session):
+  lisp             DEFAULT — relational semantics with integers on
+                   (car/cdr/cons/atom?/consp/null?/eq?/cond + `+ - * <= =`);
+                   `(+ 2 2)` => 4. Value is `|- Reduces input value`.
+  scheme           equational value semantics with `defun`/`lambda` recursion;
+                   numerals are symbol atoms (integer arithmetic is stuck).
+  sector           relational, NO integers (pure McCarthy); `(+ 2 2)` is stuck.
 Directives:
   #help            this text
-  #show EXPR       print the full `|- lhs = rhs` theorem behind EXPR";
+  #lang [NAME]     show / switch dialect (resets session state)
+  #show EXPR       print the full theorem behind EXPR
+                   (`|- lhs = rhs` in scheme; `|- Reduces …` relationally)";
 
 /// A `#`-directive error.
 #[derive(Debug, thiserror::Error)]
@@ -481,8 +630,11 @@ impl Repl for Session {
     }
 
     fn eval(&mut self, state: &mut State, term: Self::Term) -> Result<Outcome, HolError> {
-        // A `defun` / `define` installs an assumption and acks; otherwise reduce.
-        if let Some(name) = self.try_define(&term)? {
+        // A `defun` / `define` installs an assumption and acks (value semantics
+        // only); otherwise reduce.
+        if self.lang == Lang::Scheme
+            && let Some(name) = self.try_define(&term)?
+        {
             state.defs = self.defs.clone();
             return self.ack(&name);
         }

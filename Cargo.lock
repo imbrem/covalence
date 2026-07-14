@@ -1228,6 +1228,7 @@ dependencies = [
  "covalence-init",
  "covalence-repl-core",
  "covalence-sexp",
+ "covalence-types",
  "thiserror 2.0.18",
 ]
 

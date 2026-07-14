@@ -138,7 +138,7 @@
 
 <style>
 	main { max-width: 64rem; margin: 2rem auto; padding: 0 1rem;
-		font-family: ui-sans-serif, system-ui, sans-serif; color: var(--fg); }
+		font-family: var(--font-mono); color: var(--fg); }
 	h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; margin-top: 1.5rem; }
 	.sub { color: var(--muted); font-size: 0.9rem; }
 	table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }

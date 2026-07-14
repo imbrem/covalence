@@ -143,6 +143,7 @@ digraph deps {
   "lisp" -> "init";
   "lisp" -> "repl-core";
   "lisp" -> "sexp";
+  "lisp" -> "types";
   "llm" -> "proto";
   "lsp" -> "sexp";
   "lsp" -> "wasm";

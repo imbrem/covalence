@@ -1,15 +1,16 @@
 [
+  {"title":"2 + 2","src":"(+ 2 2)"},
+  {"title":"3 * 4","src":"(* 3 4)"},
+  {"title":"2 <= 5","src":"(<= 2 5)"},
   {"title":"car of a list","src":"(car (quote (a b c)))"},
   {"title":"cons onto a list","src":"(cons (quote a) (quote (b c)))"},
-  {"title":"atom?","src":"(atom? (quote a))"},
   {"title":"eq? atoms","src":"(eq? (quote a) (quote a))"},
-  {"title":"nested car / cdr","src":"(car (cdr (quote (a b c))))"},
-  {"title":"1. define lat? (recursion)","src":"(defun lat? (l) (cond ((null? l) t) ((atom? (car l)) (lat? (cdr l))) (t nil)))"},
-  {"title":"2. lat? of a flat list → t","src":"(lat? (quote (a b c)))"},
-  {"title":"2. lat? of a nested list → nil","src":"(lat? (quote (a (b) c)))"},
-  {"title":"define rember","src":"(defun rember (a l) (cond ((null? l) (quote ())) ((eq? (car l) a) (cdr l)) (t (cons (car l) (rember a (cdr l))))))"},
-  {"title":"rember b from (a b c) → (a c)","src":"(rember (quote b) (quote (a b c)))"},
-  {"title":"★ define eval (metacircular)","src":"(define eval (lambda (e a) (cond ((eq? (car e) (quote quote)) (car (cdr e))) ((eq? (car e) (quote car)) (car (eval (car (cdr e)) a))) ((eq? (car e) (quote cdr)) (cdr (eval (car (cdr e)) a))) ((eq? (car e) (quote cons)) (cons (eval (car (cdr e)) a) (eval (car (cdr (cdr e))) a))) (t (quote unknown)))))"},
-  {"title":"★ run eval on (car (cons 1 (2)))","src":"(eval (quote (car (cons (quote 1) (quote (2))))) (quote ()))"},
-  {"title":"the theorem behind a value","src":"#show (car (cons (quote a) (quote (b))))"}
+  {"title":"#show the proof","src":"#show (+ 2 2)"},
+  {"title":"→ #lang scheme (recursion)","src":"#lang scheme"},
+  {"title":"[scheme] define lat?","src":"(defun lat? (l) (cond ((null? l) t) ((atom? (car l)) (lat? (cdr l))) (t nil)))"},
+  {"title":"[scheme] lat? of a flat list","src":"(lat? (quote (a b c)))"},
+  {"title":"[scheme] define eval (metacircular)","src":"(define eval (lambda (e a) (cond ((eq? (car e) (quote quote)) (car (cdr e))) ((eq? (car e) (quote car)) (car (eval (car (cdr e)) a))) ((eq? (car e) (quote cdr)) (cdr (eval (car (cdr e)) a))) ((eq? (car e) (quote cons)) (cons (eval (car (cdr e)) a) (eval (car (cdr (cdr e))) a))) (t (quote unknown)))))"},
+  {"title":"[scheme] run eval","src":"(eval (quote (car (cons (quote 1) (quote (2))))) (quote ()))"},
+  {"title":"→ #lang sector (no ints)","src":"#lang sector"},
+  {"title":"→ back to #lang lisp","src":"#lang lisp"}
 ]

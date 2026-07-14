@@ -4,63 +4,61 @@
 	// accumulate). No client-side WASM. Every printed value is read off a genuine
 	// kernel theorem (`⊢ program = value`); hover a cell to see it (via `#show`).
 	import Repl from '$lib/Repl.svelte';
+	import { serverRepl } from '$lib/serverRepl';
 	import examples from '$lib/lispExamples.json';
 
-	// One persistent server session per tab.
-	const session =
-		typeof crypto !== 'undefined' && crypto.randomUUID
-			? crypto.randomUUID()
-			: `s${Math.random().toString(36).slice(2)}`;
-
-	async function post(path: string, body: unknown) {
-		const res = await fetch(path, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(body)
-		});
-		return res.json();
-	}
-
-	const evalCell = async (src: string) => {
-		const r = await post('/api/lisp', { session, src });
-		return { ok: !!r.ok, result: r.result ?? '', error: r.error ?? '' };
-	};
-	// Hover → the kernel theorem behind a value, via the `#show` directive.
-	const showCell = async (src: string) => {
-		const r = await post('/api/lisp', { session, src: `#show ${src}` });
-		return r.ok ? (r.result ?? '') : '';
-	};
-	const onReset = () => {
-		post('/api/lisp/reset', { session });
-	};
+	// A persistent per-tab session on the native kernel; `show` enables the
+	// hover-for-`⊢`-theorem affordance (`#show`).
+	const { evalCell, showCell, onReset } = serverRepl('/api/lisp', { show: true });
 </script>
 
 <svelte:head><title>lisp — covalence</title></svelte:head>
 
+<!-- The intro/help lives in a `#help` widget rendered inline in the REPL, so the
+     page chrome stays minimal. -->
+{#snippet help()}
+	<p>
+		<strong>covalence-lisp</strong> — a small, kernel-backed Lisp. Each cell is evaluated on
+		the <strong>native kernel</strong> (via <code>cov serve</code>); every printed value is
+		read off a genuine kernel theorem. <strong>Hover a result</strong> to see its proof.
+	</p>
+	<p>
+		<strong>Dialects</strong> — switch with <code>#lang &lt;name&gt;</code> (resets the
+		session):
+	</p>
+	<ul>
+		<li>
+			<code>#lang lisp</code> <em>(default)</em> — primitives + <strong>integers</strong>
+			(<code>+ - * &lt;= =</code>), run through the <em>reduction relation</em>: every value
+			is a <code>⊢ Reduces&nbsp;input&nbsp;value</code> theorem. Try <code>(+ 2 2)</code>.
+		</li>
+		<li>
+			<code>#lang scheme</code> — the equational value semantics with
+			<code>cond</code>/<code>lambda</code>/<code>defun</code> <strong>recursion</strong>
+			(<code>lat?</code>, the metacircular <code>eval</code>). No integers here (yet). User
+			definitions ride along as <em>hypotheses</em> — <code>definitions ⊢ program = value</code>.
+		</li>
+		<li>
+			<code>#lang sector</code> — pure McCarthy Lisp (no integers); <code>(+ 2 2)</code> is
+			stuck, showing <code>sector ⊑ sector+int</code>.
+		</li>
+	</ul>
+	<p class="muted">
+		<code>defun</code>s persist across cells (a per-tab server session). Integers are the
+		default dialect; recursion + integers together (full Scheme in one dialect) is the next
+		step. Other directives: <code>#show EXPR</code>, <code>#help</code>.
+	</p>
+	<p><strong>Examples</strong> — the buttons above the prompt, in order:</p>
+	<ul class="examples-list">
+		{#each examples as ex}
+			<li><span class="ex-title">{ex.title}</span> — <code>{ex.src}</code></li>
+		{/each}
+	</ul>
+{/snippet}
+
 <main>
-	<h1>lisp</h1>
-	<p class="sub">
-		A small, kernel-backed Lisp (<code>covalence-lisp</code>). This REPL talks to the
-		running <code>cov serve</code> and evaluates each cell on the <strong>native
-		kernel</strong> — <strong>every printed value is backed by a kernel theorem</strong>
-		(<code>⊢ program = value</code>). <strong>Hover a result</strong> to see its proof.
-	</p>
-	<p class="sub">
-		A real REPL: <code>defun</code>s persist across cells (a per-tab server session). Try
-		the numbered examples in order — define <code>lat?</code>, then use it; or define the
-		<code>★ metacircular eval</code> and run it. User definitions ride along as
-		<em>hypotheses</em> (<code>definitions ⊢ program = value</code>), sound even for
-		recursion that might not terminate.
-	</p>
-
-	<Repl {evalCell} {showCell} {onReset} examples={examples as any} />
-
-	<p class="foot">
-		Little Schemer ch1 primitives (<code>car cdr cons atom? null? eq?</code>) +
-		<code>cond</code>/<code>lambda</code>/<code>defun</code> recursion; the metacircular
-		interpreter runs its ground <code>quote/car/cdr/cons</code> fragment. Needs a running
-		server (<code>cov serve</code>, or <code>cov serve --api</code> + <code>bun run dev:web</code>).
-	</p>
+	<h1>lisp <span class="tag">type <code>#help</code> for docs</span></h1>
+	<Repl {evalCell} {showCell} {onReset} {help} examples={examples as any} />
 </main>
 
 <style>
@@ -73,24 +71,37 @@
 	}
 	h1 {
 		font-size: 1.4rem;
+		display: flex;
+		align-items: baseline;
+		gap: 0.6rem;
 	}
-	.sub {
+	.tag {
+		font-size: 0.72rem;
+		font-weight: 400;
 		color: var(--muted);
-		font-size: 0.85rem;
-		line-height: 1.55;
-		margin: 0.4rem 0 0.8rem;
 	}
-	.foot {
-		margin-top: 1.25rem;
-		font-size: 0.78rem;
+	.tag code,
+	:global(.widget code) {
+		font-size: 0.9em;
+	}
+	:global(.widget .muted) {
 		color: var(--muted);
-		line-height: 1.5;
 	}
-	code {
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: 3px;
-		padding: 0 3px;
-		font-size: 0.85em;
+	:global(.widget p) {
+		margin: 0 0 0.5rem;
+	}
+	:global(.widget ul) {
+		margin: 0 0 0.6rem;
+		padding-left: 1.2rem;
+	}
+	:global(.widget li) {
+		margin: 0.3rem 0;
+	}
+	:global(.widget .examples-list code) {
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	:global(.widget .ex-title) {
+		color: var(--muted);
 	}
 </style>

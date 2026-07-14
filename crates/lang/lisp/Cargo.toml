@@ -34,6 +34,9 @@ covalence-hol-api = { path = "../../kernel/hol/api", optional = true }
 # The kernel term/`TermKind` (for decoding atom blob payloads back to text
 # when printing a value read off a theorem conclusion).
 covalence-core = { path = "../../kernel/hol/core", optional = true }
+# The `Int` numeral type (the `sector+int` dialect's integer-literal backend
+# builds `mk_int`-shaped `int` literals from `covalence_types::Int`).
+covalence-types = { path = "../../lib/types", optional = true }
 
 [features]
 # The HOL backend: lowering (SExpr -> carved `sexpr` `Term`) + the symbolic
@@ -44,4 +47,5 @@ hol = [
     "dep:covalence-hol-eval",
     "dep:covalence-hol-api",
     "dep:covalence-core",
+    "dep:covalence-types",
 ]

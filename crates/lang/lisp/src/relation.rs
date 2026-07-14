@@ -40,12 +40,15 @@
 
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::mk_blob;
-use covalence_init::init::ext::TermExt;
+use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::metalogic::binary::{Premise, RuleSet2, derivable2, derive_mixed};
 use covalence_init::{Term, Type};
+use covalence_sexp::{Atom, SExpr};
+use covalence_types::Int;
 
 use crate::hol::HolError;
+use crate::int_backend::{IntBackend, IntOp, IntVariant, NatVariant};
 
 fn theory_err(e: impl core::fmt::Display) -> HolError {
     HolError::Theory(e.to_string())
@@ -65,6 +68,32 @@ fn kernel_err(e: impl core::fmt::Display) -> HolError {
 // sexpr-**valued** predicates / `eq?` / `cond`-cell heads (which the bool-valued
 // `lisp` theory constants cannot serve) are fresh, stable free-variable heads.
 
+/// Which Lisp **dialect** a [`LispRel`] realises. The two form the refinement
+/// order `sector ⊑ sector+int`: every `sector` program reduces identically in
+/// `sector+int`, which additionally reduces integer literals + arithmetic.
+///
+/// The dialect is exactly a *clause subset* of the `Step` `RuleSet2`:
+/// [`Sector`](Dialect::Sector) omits the integer clauses (so `(+ 2 2)` is
+/// **stuck** — no step), [`SectorInt`](Dialect::SectorInt) includes them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dialect {
+    /// The pure McCarthy fragment — no integer literals or arithmetic.
+    Sector,
+    /// `sector` plus integer literals + arithmetic, over the chosen
+    /// [`IntFlavour`] (signed `int` or non-negative `nat`).
+    SectorInt(IntFlavour),
+}
+
+/// The integer flavour of the `sector+int` dialect: honest signed integers, or
+/// naturals (which error on a negative literal / difference).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IntFlavour {
+    /// Signed integers — `-` may go negative.
+    Int,
+    /// Naturals — negative literals / differences are errors.
+    Nat,
+}
+
 /// The set of operator heads + the sexpr carrier, built once from [`carved`].
 pub struct LispRel {
     cs: &'static CarvedSExpr,
@@ -83,6 +112,12 @@ pub struct LispRel {
     eq_p: Term,
     /// `cond : sexpr → sexpr` (over a cond-cell-list argument).
     cond: Term,
+    /// The active dialect (which integer clauses, if any, are installed).
+    dialect: Dialect,
+    /// The integer backend for the `sector+int` dialect (`None` for `sector`).
+    /// Boxed so the two variants share one field; drives both the extra `Step`
+    /// clauses and the driver's integer-redex reduction.
+    int_be: Option<Box<dyn IntBackend>>,
 }
 
 /// A stable, sexpr-valued operator head named `name` with `arity` sexpr inputs.
@@ -95,21 +130,80 @@ fn op_head(name: &str, arity: usize, tau: &Type) -> Term {
 }
 
 impl LispRel {
-    /// Bind the process-global carved sexpr carrier and the operator heads.
+    /// Bind the process-global carved sexpr carrier and the operator heads, in
+    /// the pure [`Sector`](Dialect::Sector) dialect (no integer clauses).
     pub fn new() -> Result<Self, HolError> {
+        Self::with_dialect(Dialect::Sector)
+    }
+
+    /// Build a [`LispRel`] in the given [`Dialect`]. For
+    /// [`SectorInt`](Dialect::SectorInt) this installs the integer backend and
+    /// the extra integer `Step` clauses; [`Sector`](Dialect::Sector) has
+    /// neither (so `(+ 2 2)` is stuck).
+    pub fn with_dialect(dialect: Dialect) -> Result<Self, HolError> {
         let cs = carved().map_err(theory_err)?;
         let tau = &cs.tau;
         let atom_c = |s: &str| Term::app(cs.atom.clone(), mk_blob(s.as_bytes().to_vec()));
+        let t = atom_c("t");
+        let nil = atom_c("nil");
+        let int_be: Option<Box<dyn IntBackend>> = match dialect {
+            Dialect::Sector => None,
+            Dialect::SectorInt(IntFlavour::Int) => Some(Box::new(IntVariant::new(
+                tau.clone(),
+                t.clone(),
+                nil.clone(),
+            ))),
+            Dialect::SectorInt(IntFlavour::Nat) => Some(Box::new(NatVariant::new(
+                tau.clone(),
+                t.clone(),
+                nil.clone(),
+            ))),
+        };
         Ok(LispRel {
             cs,
-            t: atom_c("t"),
-            nil: atom_c("nil"),
+            t,
+            nil,
             atom_p: op_head("lisp.rel.atom?", 1, tau),
             consp: op_head("lisp.rel.consp", 1, tau),
             null_p: op_head("lisp.rel.null?", 1, tau),
             eq_p: op_head("lisp.rel.eq?", 2, tau),
             cond: op_head("lisp.rel.cond", 1, tau),
+            dialect,
+            int_be,
         })
+    }
+
+    /// The active dialect.
+    pub fn dialect(&self) -> Dialect {
+        self.dialect
+    }
+
+    /// The integer backend, if the dialect is `sector+int`.
+    pub fn int_backend(&self) -> Option<&dyn IntBackend> {
+        self.int_be.as_deref()
+    }
+
+    /// Build the sexpr value `(int n)` via the active backend. Errors in
+    /// `sector` (no integer backend) and — in the `nat` flavour — for `n < 0`.
+    pub fn int_lit(&self, n: &Int) -> Result<Term, HolError> {
+        self.int_be
+            .as_ref()
+            .ok_or_else(|| HolError::Theory("integer literals need the sector+int dialect".into()))?
+            .lit(n)
+    }
+
+    /// Build an integer op application `(op a b)` (`a`, `b` already sexpr
+    /// terms). In `sector`, the op heads still *exist* as fresh free variables
+    /// — this builds the (stuck) application — but no `Step` fires on it.
+    pub fn int_op_term(&self, op: IntOp, a: Term, b: Term) -> Result<Term, HolError> {
+        match self.int_be.as_deref() {
+            Some(be) => be.op_term(op, a, b),
+            None => crate::int_backend::op_head(op, &self.cs.tau)
+                .apply(a)
+                .map_err(kernel_err)?
+                .apply(b)
+                .map_err(kernel_err),
+        }
     }
 
     /// The sexpr carrier type.
@@ -205,6 +299,17 @@ impl LispRel {
     /// | 17 | `Step (cond snil) nil` |
     /// | 18 | `∀body rest. Step (cond ((nil . body) . rest)) (cond rest)` |
     /// | 19 | `∀body rest. Step (cond ((t . body) . rest)) body` |
+    ///
+    /// In the [`SectorInt`](Dialect::SectorInt) dialect, five more integer
+    /// clauses follow (indices 20–24, in [`IntOp::ALL`] order):
+    ///
+    /// | idx | clause |
+    /// |----:|--------|
+    /// | 20 | `∀a b:int. Step (+ (int a)(int b)) (int (int.add a b))` |
+    /// | 21 | `∀a b:int. Step (- (int a)(int b)) (int (int.sub a b))` |
+    /// | 22 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
+    /// | 23 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
+    /// | 24 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
     ///
     /// (`eq?` on *distinct* atoms is future work — see the builder / SKELETONS.)
     pub fn step_rule_set(&self) -> RuleSet2<'_> {
@@ -353,8 +458,39 @@ impl LispRel {
                 );
             }
 
+            // --- integer clauses (the `sector+int` dialect only) -----------
+            // One ∀-quantified clause per op:
+            //   ∀a b:int. Step (op (int a)(int b)) (TARGET a b)
+            // where TARGET is the sexpr injection of the kernel int result
+            // (ring) or `cond sexpr (int.<cmp> a b) t nil` (comparison). On
+            // concrete literals the driver instantiates a,b and normalises
+            // TARGET via the kernel int-computation equation (see `step_int`).
+            // `Sector` installs NONE of these (integers are stuck there).
+            if let Some(be) = self.int_be.as_deref() {
+                for &op in &IntOp::ALL {
+                    let a = Term::free("a", Type::int());
+                    let b = Term::free("b", Type::int());
+                    let ia = be.lit_var(&a).map_err(to_core)?; // (int a)
+                    let ib = be.lit_var(&b).map_err(to_core)?; // (int b)
+                    let from = be.op_term(op, ia, ib).map_err(to_core)?;
+                    let target = be.clause_target(op, &a, &b).map_err(to_core)?;
+                    cs.push(
+                        d(&from, &target)?
+                            .forall("b", Type::int())?
+                            .forall("a", Type::int())?,
+                    );
+                }
+            }
+
             Ok(cs)
         })
+    }
+
+    /// The clause index of int op `op` in the `sector+int` `Step` rule set
+    /// (the integer clauses follow the 20 primitive-fragment clauses, in
+    /// [`IntOp::ALL`] order). Only meaningful when a backend is installed.
+    fn int_clause_idx(op: IntOp) -> usize {
+        20 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
     }
 
     /// The number of `Step` clauses.
@@ -480,7 +616,63 @@ impl LispRel {
         if let Some(cells) = self.match_cond(term) {
             return self.step_cond(term, &cells);
         }
+        // Integer op `(op (int a)(int b))` — the `sector+int` dialect only.
+        // In `sector` (no backend) this match never fires, so `(+ 2 2)` is
+        // stuck (as an sexpr free-variable application, no step).
+        if let Some((op, a, b)) = self.match_int_op(term) {
+            return self.step_int(op, &a, &b);
+        }
         Ok(None)
+    }
+
+    /// Match an integer redex `(op (int a)(int b))` whose *both* operands are
+    /// already `(int n)` values, returning the op and the two integers.
+    /// (Reducing non-value operands via congruence is future work — like the
+    /// `eq?`-operand case, see `SKELETONS.md`.) `None` in `sector`.
+    fn match_int_op(&self, t: &Term) -> Option<(IntOp, Int, Int)> {
+        let be = self.int_be.as_deref()?;
+        let (inner, b_arg) = t.as_app()?;
+        let (head, a_arg) = inner.as_app()?;
+        let op = IntOp::ALL
+            .iter()
+            .copied()
+            .find(|&op| *head == be.op_head(op))?;
+        let a = be.as_lit(a_arg)?;
+        let b = be.as_lit(b_arg)?;
+        Some((op, a, b))
+    }
+
+    /// `⊢ Step (op (int a)(int b)) to` for two integer literals: instantiate
+    /// the op's `∀a b`-clause at `a`, `b` (giving `⊢ Step … (TARGET a b)`),
+    /// then rewrite `TARGET a b` down to the reduced value with the backend's
+    /// **kernel** equations (`int.<op> a b = c`, and for a comparison the
+    /// `cond` clause). The result is genuine — every rewrite is kernel-checked.
+    ///
+    /// Errors (nat flavour) if the op's result is negative — no step is
+    /// produced, so a negative subtraction is *stuck* rather than reduced.
+    fn step_int(&self, op: IntOp, a: &Int, b: &Int) -> Result<Option<(Term, Thm)>, HolError> {
+        let be = self
+            .int_be
+            .as_deref()
+            .ok_or_else(|| HolError::Theory("step_int without an int backend".into()))?;
+        // Nat-flavour negativity: a negative result is stuck (no step), not an
+        // error propagated up (the redex simply has no rule for it here).
+        let proof = match be.prove_reduce(op, a, b) {
+            Ok(p) => p,
+            Err(_) => return Ok(None),
+        };
+        // Instantiate the generic clause at the two int literals.
+        let a_lit = covalence_hol_eval::mk_int(a.clone());
+        let b_lit = covalence_hol_eval::mk_int(b.clone());
+        let n = self.step_n_clauses()?;
+        let idx = Self::int_clause_idx(op);
+        let mut thm = derive_mixed(&self.step_rule_set(), idx, n, &[a_lit, b_lit], vec![])
+            .map_err(kernel_err)?; // ⊢ Step (op (int a)(int b)) (TARGET a b)
+        // Normalise TARGET in the conclusion via the backend's kernel eqns.
+        for eq in &proof.eqs {
+            thm = thm.rewrite(eq).map_err(kernel_err)?;
+        }
+        Ok(Some((proof.to, thm)))
     }
 
     /// A unary elimination `K arg`: reduce `arg` (congruence, clause `cong_idx`)
@@ -660,6 +852,191 @@ impl LispRel {
     fn is_snil(&self, v: &Term) -> bool {
         *v == self.cs.snil
     }
+
+    // ------------------------------------------------------------------
+    // Surface compiler + driver + renderer (the relational REPL path)
+    // ------------------------------------------------------------------
+
+    /// Lower a surface [`SExpr`] into the relational operator-application term.
+    ///
+    /// Handles `quote` → data, the McCarthy primitives (`car`/`cdr`/`cons`/
+    /// `atom?`/`consp`/`null?`/`eq?`/`cond`/`if`), and — when the dialect has an
+    /// [`IntBackend`] — numeral atoms → `(int n)` and the int-op symbols
+    /// `+ - * <= =` → their relational op heads. In [`Sector`](Dialect::Sector)
+    /// (no backend) numerals stay symbol atoms and the int ops stay stuck free
+    /// applications.
+    pub fn compile_surface(&self, e: &SExpr) -> Result<Term, HolError> {
+        match e {
+            SExpr::Atom(a) => self.surface_atom(a),
+            SExpr::List(items) => self.surface_form(items),
+        }
+    }
+
+    /// An atom in operand position: a numeral (int dialect only), else a
+    /// symbol atom.
+    fn surface_atom(&self, a: &Atom) -> Result<Term, HolError> {
+        if let Atom::Symbol(s) = a
+            && self.int_be.is_some()
+            && let Ok(n) = s.parse::<Int>()
+        {
+            return self.int_lit(&n);
+        }
+        self.data_atom(a)
+    }
+
+    /// A symbol/string atom → the `atom "…"` datum (numerals-as-symbols too).
+    fn data_atom(&self, a: &Atom) -> Result<Term, HolError> {
+        let bytes: Vec<u8> = match a {
+            Atom::Symbol(s) => s.as_bytes().to_vec(),
+            Atom::Str { bytes, .. } => bytes.to_vec(),
+        };
+        Ok(Term::app(self.cs.atom.clone(), mk_blob(bytes)))
+    }
+
+    /// `quote` payload → nested `scons`/`atom`/`snil` data.
+    fn data(&self, e: &SExpr) -> Result<Term, HolError> {
+        match e {
+            SExpr::Atom(a) => self.data_atom(a),
+            SExpr::List(items) => {
+                let mut acc = self.cs.snil.clone();
+                for it in items.iter().rev() {
+                    let h = self.data(it)?;
+                    acc = self.scons(h, acc)?;
+                }
+                Ok(acc)
+            }
+        }
+    }
+
+    fn surface_form(&self, items: &[SExpr]) -> Result<Term, HolError> {
+        let (head, args) = items
+            .split_first()
+            .ok_or_else(|| HolError::Stuck("()".into()))?;
+        let op = head
+            .as_symbol()
+            .ok_or_else(|| HolError::Stuck("application head is not a symbol".into()))?;
+        // An int-op symbol `+ - * <= =`. In `sector+int` this builds a genuine
+        // integer redex; in `sector` (no backend) it still builds the op-head
+        // application — but with symbol-atom operands and no `Step` clause, so
+        // `(+ 2 2)` is **stuck** (reduces to itself) rather than erroring.
+        if let Some(iop) = IntOp::ALL.iter().copied().find(|o| o.symbol() == op) {
+            if args.len() != 2 {
+                return Err(HolError::Stuck(format!("`{op}` takes 2 arguments")));
+            }
+            let a = self.compile_surface(&args[0])?;
+            let b = self.compile_surface(&args[1])?;
+            return self.int_op_term(iop, a, b);
+        }
+        match (op, args.len()) {
+            ("quote", 1) => self.data(&args[0]),
+            ("car", 1) => self.car(self.compile_surface(&args[0])?),
+            ("cdr", 1) => self.cdr(self.compile_surface(&args[0])?),
+            ("cons", 2) => {
+                let h = self.compile_surface(&args[0])?;
+                let t = self.compile_surface(&args[1])?;
+                self.scons(h, t)
+            }
+            ("atom?" | "atom", 1) => self.atom_p_of(self.compile_surface(&args[0])?),
+            ("consp" | "pair?", 1) => self.consp_of(self.compile_surface(&args[0])?),
+            ("null?" | "null", 1) => self.null_p_of(self.compile_surface(&args[0])?),
+            ("eq?" | "eq", 2) => {
+                let a = self.compile_surface(&args[0])?;
+                let b = self.compile_surface(&args[1])?;
+                self.eq_of(a, b)
+            }
+            // `if C A B` → a two-clause `cond`.
+            ("if", 3) => {
+                let c = self.compile_surface(&args[0])?;
+                let a = self.compile_surface(&args[1])?;
+                let b = self.compile_surface(&args[2])?;
+                let else_cell = self.scons(self.t.clone(), b)?;
+                let then_cell = self.scons(c, a)?;
+                let rest = self.scons(else_cell, self.cs.snil.clone())?;
+                let cells = self.scons(then_cell, rest)?;
+                self.cond_of(cells)
+            }
+            // `cond (T E)...` → the relational `cond` over a scons-chain of
+            // `(test . body)` cells.
+            ("cond", _) => {
+                let mut cells = self.cs.snil.clone();
+                for clause in args.iter().rev() {
+                    let SExpr::List(parts) = clause else {
+                        return Err(HolError::Stuck("cond clause is not a list".into()));
+                    };
+                    if parts.len() != 2 {
+                        return Err(HolError::Stuck("cond clause must be (test body)".into()));
+                    }
+                    let test = self.compile_surface(&parts[0])?;
+                    let body = self.compile_surface(&parts[1])?;
+                    let cell = self.scons(test, body)?;
+                    cells = self.scons(cell, cells)?;
+                }
+                self.cond_of(cells)
+            }
+            (other, n) => Err(HolError::Stuck(format!(
+                "unknown or misapplied operator `{other}` (arity {n})"
+            ))),
+        }
+    }
+
+    /// Drive a surface form to a value: compile it, then run the step relation
+    /// (fuel-bounded), returning the value term and `⊢ Reduces input value`
+    /// (hypothesis-free for a closed program).
+    pub fn reduce_surface(&self, e: &SExpr, fuel: usize) -> Result<(Term, Thm), HolError> {
+        let input = self.compile_surface(e)?;
+        self.prove_reduces(&input, fuel)
+    }
+
+    /// Render a relational value term to Lisp text: `(int n)` → decimal `n`,
+    /// `atom "…"` → its text, `snil` → `()`, `scons` chains → `(e₁ e₂ …)`.
+    pub fn render_value(&self, v: &Term) -> String {
+        if let Some(be) = self.int_be.as_deref()
+            && let Some(n) = be.as_lit(v)
+        {
+            return n.to_string();
+        }
+        if self.is_snil(v) {
+            return "()".to_string();
+        }
+        if let Some(b) = self.as_atom(v)
+            && let Some(bytes) = blob_bytes(&b)
+        {
+            return String::from_utf8_lossy(&bytes).into_owned();
+        }
+        if self.as_scons(v).is_some() {
+            let mut out = String::from("(");
+            let mut cur = v.clone();
+            let mut first = true;
+            while let Some((h, t)) = self.as_scons(&cur) {
+                if !first {
+                    out.push(' ');
+                }
+                first = false;
+                out.push_str(&self.render_value(&h));
+                if self.is_snil(&t) {
+                    break;
+                }
+                if self.as_scons(&t).is_none() {
+                    out.push_str(" . ");
+                    out.push_str(&self.render_value(&t));
+                    break;
+                }
+                cur = t;
+            }
+            out.push(')');
+            return out;
+        }
+        format!("{v}") // unknown / stuck shape — surface the raw term
+    }
+}
+
+/// Extract the bytes of a blob literal term, via the designated `Lit` facade.
+fn blob_bytes(t: &Term) -> Option<Vec<u8>> {
+    use covalence_core::seam::Lit;
+    match Lit::from_term(t)? {
+        Lit::Bytes(b) => Some(b.to_vec()),
+        _ => None,
+    }
 }
 
 /// The head redex family a unary elimination fires.
@@ -821,11 +1198,212 @@ mod tests {
         assert!(r.prove_step(&r.car(a).unwrap()).unwrap().is_none());
     }
 
-    /// The rule sets have the expected clause counts.
+    /// The rule sets have the expected clause counts. `sector` has 20 `Step`
+    /// clauses; `sector+int` adds the 5 integer clauses (25 total).
     #[test]
     fn clause_counts() {
         let r = rel();
         assert_eq!(r.step_n_clauses().unwrap(), 20);
         assert_eq!(r.reduces_rule_set().n_clauses().unwrap(), 2);
+
+        let ri = LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Int)).unwrap();
+        assert_eq!(ri.step_n_clauses().unwrap(), 25);
+    }
+
+    // ---- integer dialect (sector+int) ------------------------------------
+
+    fn int_rel() -> LispRel {
+        LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Int)).unwrap()
+    }
+    fn nat_rel() -> LispRel {
+        LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Nat)).unwrap()
+    }
+    fn i(n: i128) -> Int {
+        Int::from(n)
+    }
+
+    /// `sector+int`: `⊢ Reduces (+ (int 2)(int 2)) (int 4)`, hyps-free, equal
+    /// to `derivable2(Reduces, input, value)`.
+    #[test]
+    fn int_add_reduces() {
+        let r = int_rel();
+        let a = r.int_lit(&i(2)).unwrap();
+        let b = r.int_lit(&i(2)).unwrap();
+        let input = r.int_op_term(IntOp::Add, a, b).unwrap();
+
+        let (value, thm) = r.prove_reduces(&input, 8).unwrap();
+        assert_eq!(value, r.int_lit(&i(4)).unwrap());
+        assert!(thm.hyps().is_empty(), "closed reduction must be hyps-free");
+        assert_eq!(thm.concl(), &r.reduces_prop(&input, &value).unwrap());
+    }
+
+    /// `(- (int 5)(int 3)) ⇒ (int 2)` and `(* (int 3)(int 4)) ⇒ (int 12)`.
+    #[test]
+    fn int_sub_mul_reduce() {
+        let r = int_rel();
+        let sub = r
+            .int_op_term(
+                IntOp::Sub,
+                r.int_lit(&i(5)).unwrap(),
+                r.int_lit(&i(3)).unwrap(),
+            )
+            .unwrap();
+        let (v, th) = r.prove_reduces(&sub, 8).unwrap();
+        assert_eq!(v, r.int_lit(&i(2)).unwrap());
+        assert!(th.hyps().is_empty());
+
+        let mul = r
+            .int_op_term(
+                IntOp::Mul,
+                r.int_lit(&i(3)).unwrap(),
+                r.int_lit(&i(4)).unwrap(),
+            )
+            .unwrap();
+        let (v, _) = r.prove_reduces(&mul, 8).unwrap();
+        assert_eq!(v, r.int_lit(&i(12)).unwrap());
+    }
+
+    /// A negative subtraction is fine in the `int` dialect: `(- (int 3)(int 5))
+    /// ⇒ (int -2)`.
+    #[test]
+    fn int_sub_may_go_negative() {
+        let r = int_rel();
+        let sub = r
+            .int_op_term(
+                IntOp::Sub,
+                r.int_lit(&i(3)).unwrap(),
+                r.int_lit(&i(5)).unwrap(),
+            )
+            .unwrap();
+        let (v, th) = r.prove_reduces(&sub, 8).unwrap();
+        assert_eq!(v, r.int_lit(&i(-2)).unwrap());
+        assert!(th.hyps().is_empty());
+    }
+
+    /// Comparisons reduce to the sexpr `t` / `nil` truthiness values.
+    #[test]
+    fn int_comparisons_reduce_to_sexpr_bool() {
+        let r = int_rel();
+        // 2 <= 5 → t.
+        let le = r
+            .int_op_term(
+                IntOp::Le,
+                r.int_lit(&i(2)).unwrap(),
+                r.int_lit(&i(5)).unwrap(),
+            )
+            .unwrap();
+        let (v, th) = r.prove_reduces(&le, 8).unwrap();
+        assert_eq!(v, r.t());
+        assert!(th.hyps().is_empty());
+        assert_eq!(th.concl(), &r.reduces_prop(&le, &r.t()).unwrap());
+
+        // 5 <= 2 → nil.
+        let le2 = r
+            .int_op_term(
+                IntOp::Le,
+                r.int_lit(&i(5)).unwrap(),
+                r.int_lit(&i(2)).unwrap(),
+            )
+            .unwrap();
+        let (v, _) = r.prove_reduces(&le2, 8).unwrap();
+        assert_eq!(v, r.nil());
+
+        // 4 = 4 → t ; 4 = 5 → nil.
+        let eq = r
+            .int_op_term(
+                IntOp::Eq,
+                r.int_lit(&i(4)).unwrap(),
+                r.int_lit(&i(4)).unwrap(),
+            )
+            .unwrap();
+        let (v, _) = r.prove_reduces(&eq, 8).unwrap();
+        assert_eq!(v, r.t());
+        let neq = r
+            .int_op_term(
+                IntOp::Eq,
+                r.int_lit(&i(4)).unwrap(),
+                r.int_lit(&i(5)).unwrap(),
+            )
+            .unwrap();
+        let (v, _) = r.prove_reduces(&neq, 8).unwrap();
+        assert_eq!(v, r.nil());
+    }
+
+    /// **`sector` has no integer clauses**: `(+ (int 2)(int 2))` is STUCK.
+    /// We build the same op application (the heads exist as free variables in
+    /// `sector` too) and confirm `prove_step` yields nothing — so `Reduces`
+    /// is just reflexivity at the input.
+    #[test]
+    fn sector_has_no_int_step() {
+        let sector = rel(); // Dialect::Sector
+        let intd = int_rel();
+        // Build `(+ (int 2)(int 2))` — a genuine sexpr application in both
+        // dialects (the `int`/`+` heads are the same free variables).
+        let a = intd.int_lit(&i(2)).unwrap();
+        let b = intd.int_lit(&i(2)).unwrap();
+        let input = sector.int_op_term(IntOp::Add, a, b).unwrap();
+
+        assert!(
+            sector.prove_step(&input).unwrap().is_none(),
+            "`(+ 2 2)` must be stuck in `sector`"
+        );
+        // In `sector`, Reduces input input (refl only).
+        let (v, _) = sector.prove_reduces(&input, 8).unwrap();
+        assert_eq!(v, input);
+
+        // The same input DOES step in `sector+int`.
+        assert!(intd.prove_step(&input).unwrap().is_some());
+    }
+
+    /// **`nat` variant**: `(+ 2 2) ⇒ 4`, but `(- 3 5)` is stuck (negative
+    /// difference), and building `lit(-1)` errors.
+    #[test]
+    fn nat_variant_rejects_negatives() {
+        let r = nat_rel();
+        // 2 + 2 → 4 (fine in nat).
+        let add = r
+            .int_op_term(
+                IntOp::Add,
+                r.int_lit(&i(2)).unwrap(),
+                r.int_lit(&i(2)).unwrap(),
+            )
+            .unwrap();
+        let (v, _) = r.prove_reduces(&add, 8).unwrap();
+        assert_eq!(v, r.int_lit(&i(4)).unwrap());
+
+        // 3 - 5 would be -2 → the nat dialect has no step here (stuck).
+        let sub = r
+            .int_op_term(
+                IntOp::Sub,
+                r.int_lit(&i(3)).unwrap(),
+                r.int_lit(&i(5)).unwrap(),
+            )
+            .unwrap();
+        assert!(
+            r.prove_step(&sub).unwrap().is_none(),
+            "negative subtraction is stuck in the nat dialect"
+        );
+        let (v, _) = r.prove_reduces(&sub, 8).unwrap();
+        assert_eq!(v, sub, "stuck → Reduces is reflexivity");
+
+        // Constructing a negative literal errors.
+        assert!(
+            r.int_lit(&i(-1)).is_err(),
+            "the nat dialect must refuse a negative literal"
+        );
+    }
+
+    /// The produced `⊢ Step (+ (int a)(int b)) (int c)` is a genuine membership
+    /// theorem: it equals `derivable2(Step, from, to)`, hyps-free.
+    #[test]
+    fn int_step_is_a_membership_theorem() {
+        let r = int_rel();
+        let a = r.int_lit(&i(7)).unwrap();
+        let b = r.int_lit(&i(5)).unwrap();
+        let from = r.int_op_term(IntOp::Add, a, b).unwrap();
+        let (to, thm) = r.prove_step(&from).unwrap().unwrap();
+        assert_eq!(to, r.int_lit(&i(12)).unwrap());
+        assert!(thm.hyps().is_empty());
+        assert_eq!(thm.concl(), &r.step_prop(&from, &to).unwrap());
     }
 }

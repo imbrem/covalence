@@ -13,7 +13,7 @@
 #![cfg(feature = "hol")]
 
 use covalence_lisp::semantics::ValueKind;
-use covalence_lisp::session::Session;
+use covalence_lisp::session::{Lang, Session};
 
 /// Run one cell, returning the printed value; also assert the reduction is a
 /// hyps-free theorem whose conclusion RHS renders to that same printed value.
@@ -34,7 +34,12 @@ fn eval(sess: &mut Session, src: &str) -> String {
 }
 
 fn session() -> Session {
-    Session::new().expect("session")
+    // These chapter batteries assert the equational `⊢ input = value` value
+    // semantics (with recursion), which is now the `scheme` dialect; the default
+    // `lisp` dialect is the relational `⊢ Reduces …` integer semantics.
+    let mut s = Session::new().expect("session");
+    s.set_lang(Lang::Scheme);
+    s
 }
 
 // ---- car / cdr / cons ---------------------------------------------------

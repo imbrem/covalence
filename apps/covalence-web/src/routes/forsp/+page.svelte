@@ -2,29 +2,10 @@
 	// FORSP REPL — connects to the RUNNING SERVER (POST /api/forsp), a native
 	// persistent per-tab session ($x bindings + word defs accumulate). No WASM.
 	import Repl from '$lib/Repl.svelte';
+	import { serverRepl } from '$lib/serverRepl';
 	import examples from '$lib/forspExamples.json';
 
-	const session =
-		typeof crypto !== 'undefined' && crypto.randomUUID
-			? crypto.randomUUID()
-			: `s${Math.random().toString(36).slice(2)}`;
-
-	async function post(path: string, body: unknown) {
-		const res = await fetch(path, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(body)
-		});
-		return res.json();
-	}
-
-	const evalCell = async (src: string) => {
-		const r = await post('/api/forsp', { session, src });
-		return { ok: !!r.ok, result: r.result ?? '', error: r.error ?? '' };
-	};
-	const onReset = () => {
-		post('/api/forsp/reset', { session });
-	};
+	const { evalCell, onReset } = serverRepl('/api/forsp');
 </script>
 
 <svelte:head><title>forsp — covalence</title></svelte:head>

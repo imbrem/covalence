@@ -3,6 +3,12 @@
 	// `evalCell` is async (a `fetch` to the running server's native kernel —
 	// e.g. POST /api/lisp). `showCell`, if given, lazily fetches HOL info for a
 	// cell on hover (the `⊢ lhs = rhs` theorem, via the `#show` directive).
+	//
+	// `help` is an optional snippet rendered *inline in the transcript* when the
+	// user types `#help` — a first, minimal "widget result" (rich HTML in the
+	// REPL), the groundwork for IPython-style widget outputs.
+	import type { Snippet } from 'svelte';
+
 	type EvalResult = { ok: boolean; result: string; error: string };
 	type Example = { title: string; src: string };
 
@@ -10,6 +16,7 @@
 		evalCell,
 		showCell = null,
 		onReset = null,
+		help = null,
 		examples = [],
 		prompt = 'λ>',
 		placeholder = 'type a form, press Enter — Shift+Enter for a newline'
@@ -17,6 +24,7 @@
 		evalCell: (src: string) => Promise<EvalResult>;
 		showCell?: ((src: string) => Promise<string>) | null;
 		onReset?: (() => void) | null;
+		help?: Snippet | null;
 		examples?: Example[];
 		prompt?: string;
 		placeholder?: string;
@@ -28,6 +36,7 @@
 		ok: boolean;
 		directive: boolean;
 		pending: boolean;
+		widget: boolean;
 		hol: string | null;
 		holTried: boolean;
 	};
@@ -43,31 +52,46 @@
 		});
 	}
 
-	async function submit() {
-		const src = input.trim();
-		if (!src || busy) return;
-		input = '';
-		const entry: Entry = {
+	function blankEntry(src: string, over: Partial<Entry> = {}): Entry {
+		return {
 			input: src,
 			output: '',
 			ok: true,
 			directive: src.startsWith('#'),
 			pending: true,
+			widget: false,
 			hol: null,
-			holTried: false
+			holTried: false,
+			...over
 		};
-		entries.push(entry);
+	}
+
+	async function submit() {
+		const src = input.trim();
+		if (!src || busy) return;
+		input = '';
+		// `#help` renders the help snippet inline as a widget — no server round-trip.
+		if (src === '#help' && help) {
+			entries.push(blankEntry(src, { pending: false, widget: true }));
+			scrollSoon();
+			return;
+		}
+		entries.push(blankEntry(src));
+		// Mutate through the array proxy (Svelte 5 deep reactivity): a captured
+		// raw reference would update the data but never fire the signal, leaving
+		// the cell stuck on "proving…".
+		const e = entries[entries.length - 1];
 		scrollSoon();
 		busy = true;
 		try {
 			const r = await evalCell(src);
-			entry.output = r.ok ? r.result : r.error;
-			entry.ok = r.ok;
-		} catch (e) {
-			entry.output = String(e);
-			entry.ok = false;
+			e.output = r.ok ? r.result : r.error;
+			e.ok = r.ok;
+		} catch (err) {
+			e.output = String(err);
+			e.ok = false;
 		}
-		entry.pending = false;
+		e.pending = false;
 		busy = false;
 		scrollSoon();
 	}
@@ -117,25 +141,33 @@
 <div class="term">
 	<div class="transcript" bind:this={scroller}>
 		{#if entries.length === 0}
-			<div class="hint">Type a form below and press Enter — or pick an example.</div>
+			<div class="hint">
+				Type a form below and press Enter — or pick an example.{#if help}
+					Type <code>#help</code> for docs.{/if}
+			</div>
 		{/if}
 		{#each entries as entry}
-			<div
-				class="cell"
-				class:has-hol={showCell && !entry.directive && entry.ok}
-				onmouseenter={() => loadHol(entry)}
-				role="group"
-			>
+			{@const hasHol = !!showCell && !entry.directive && entry.ok && !entry.pending && !entry.widget}
+			<div class="cell" class:has-hol={hasHol} onmouseenter={() => loadHol(entry)} role="group">
 				<div class="in"><span class="p">{prompt}</span> {entry.input}</div>
-				{#if entry.pending}
+				{#if entry.widget && help}
+					<!-- A "widget result": rich HTML rendered inline in the transcript
+					     (groundwork for IPython-style widget outputs). -->
+					<div class="widget">{@render help()}</div>
+				{:else if entry.pending}
 					<div class="out muted">proving…</div>
 				{:else if entry.ok}
 					<div class="out">{entry.output}</div>
 				{:else}
 					<div class="out err">{entry.output}</div>
 				{/if}
-				{#if entry.hol}
-					<div class="hol" title="the kernel theorem behind this value">{entry.hol}</div>
+				{#if hasHol}
+					<!-- Transient popover: hidden by default, shown only while the cell
+					     is hovered (CSS `.cell:hover .hol`), gone on mouse-leave. -->
+					<div class="hol" role="tooltip">
+						<span class="hol-turnstile">⊢</span>
+						<span class="hol-body">{entry.hol ?? 'fetching proof…'}</span>
+					</div>
 				{/if}
 			</div>
 		{/each}
@@ -188,6 +220,7 @@
 	.transcript {
 		max-height: 30rem;
 		overflow-y: auto;
+		overflow-x: hidden;
 		padding: 0.6rem 0.1rem;
 	}
 	.hint {
@@ -196,9 +229,13 @@
 		padding: 0.3rem 0.2rem;
 	}
 	.cell {
+		position: relative;
 		padding: 0.25rem 0.3rem;
 		margin: 0 -0.3rem;
 		border-radius: 4px;
+	}
+	.cell.has-hol {
+		cursor: help;
 	}
 	.cell.has-hol:hover {
 		background: color-mix(in srgb, var(--accent) 7%, transparent);
@@ -207,7 +244,7 @@
 		font-size: 0.9rem;
 		line-height: 1.5;
 		white-space: pre-wrap;
-		word-break: break-word;
+		overflow-wrap: anywhere;
 		color: var(--fg);
 	}
 	.p {
@@ -219,7 +256,7 @@
 		line-height: 1.5;
 		padding-left: 1.5rem;
 		white-space: pre-wrap;
-		word-break: break-word;
+		overflow-wrap: anywhere;
 		color: color-mix(in srgb, #30a46c 60%, var(--fg));
 	}
 	.out.muted {
@@ -228,17 +265,56 @@
 	.out.err {
 		color: color-mix(in srgb, #e5484d 70%, var(--fg));
 	}
-	.hol {
-		margin: 0.2rem 0 0.15rem 1.5rem;
-		padding: 0.3rem 0.5rem;
-		font-size: 0.8rem;
-		line-height: 1.45;
-		color: var(--fg);
-		background: color-mix(in srgb, var(--accent) 9%, transparent);
+	.widget {
+		margin: 0.35rem 0 0.35rem 1.5rem;
+		padding: 0.6rem 0.8rem;
+		border: 1px solid var(--border);
 		border-left: 2px solid var(--accent);
-		border-radius: 0 4px 4px 0;
+		border-radius: 0 6px 6px 0;
+		background: color-mix(in srgb, var(--accent) 5%, transparent);
+		font-size: 0.83rem;
+		line-height: 1.55;
+	}
+	.hint code,
+	.widget :global(code) {
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 3px;
+		padding: 0 3px;
+		font-size: 0.9em;
+	}
+	/* Transient hover popover — hidden until the cell is hovered, then a floating
+	   window ABOVE the cell that vanishes as soon as the cursor leaves. Anchored
+	   to the cell's bottom edge so it overlays *existing* content upward and never
+	   grows the transcript's scroll height (which was popping a scrollbar). Its
+	   own `max-height` keeps a long theorem contained. */
+	.hol {
+		display: none;
+		position: absolute;
+		bottom: calc(100% - 0.15rem);
+		left: 1.4rem;
+		right: 0.3rem;
+		z-index: 30;
+		max-height: 14rem;
+		overflow-y: auto;
+		padding: 0.45rem 0.6rem;
+		font-size: 0.78rem;
+		line-height: 1.5;
+		color: var(--fg);
+		background: var(--surface);
+		border: 1px solid var(--accent);
+		border-radius: 6px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 		white-space: pre-wrap;
-		word-break: break-word;
+		overflow-wrap: anywhere;
+	}
+	.cell:hover .hol {
+		display: block;
+	}
+	.hol-turnstile {
+		color: var(--accent);
+		font-weight: 700;
+		margin-right: 0.3rem;
 	}
 	.prompt-line {
 		display: flex;

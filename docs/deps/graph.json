@@ -392,6 +392,10 @@
       "to": "covalence-sexp"
     },
     {
+      "from": "covalence-lisp",
+      "to": "covalence-types"
+    },
+    {
       "from": "covalence-llm",
       "to": "covalence-proto"
     },

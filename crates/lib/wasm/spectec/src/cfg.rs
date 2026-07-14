@@ -50,13 +50,26 @@
 //! [`lower`] above is [`LowerMode::Under`] and never changes. In addition,
 //! [`lower_recognition`] runs the *recognition* mode of the design's M6
 //! milestone (`notes/vibes/logics/cfg-stratum-design.md` §"M6 — Missing
-//! grammars"). It **over-approximates**, flipping the invariant to
-//! `L(SpecTec grammar) ⊆ L(recognition Cfg)`: the emitted `Cfg` is a
-//! *recognizer* whose rejection is sound — a `⊢ ¬Derives_E n w` (a byte string
-//! the recognition `Cfg` rejects) proves the bytes are not a well-formed
+//! grammars"). Its per-production transformations **over-approximate**, flipping
+//! the invariant to `L(SpecTec grammar) ⊆ L(recognition Cfg)`: the emitted `Cfg`
+//! is a *recognizer* whose rejection is sound — a `⊢ ¬Derives_E n w` (a byte
+//! string the recognition `Cfg` rejects) proves the bytes are not a well-formed
 //! encoding, but membership means only "well-formed *recognition*", not "encodes
 //! an in-range value". This is the reverse direction from [`lower`]'s membership
 //! witness, so it is a deliberate, separately-reported opt-in.
+//!
+//! **Caveat — the over-approximation is per-grammar, gated on `Full` coverage.**
+//! Recognition mode still *drops* productions it cannot lower (unclassifiable
+//! premise, monomorphisation depth cap, grammar-valued parametric param), and a
+//! dropped production removes spec-accepted strings — an *under*-approximation.
+//! So `L(SpecTec grammar) ⊆ L(recognition Cfg)` holds cleanly only for a grammar
+//! the report classifies [`Coverage::Full`] (every production lowered — e.g.
+//! `Bu32`, the `*idx` family, the LEB128 chain). A [`Coverage::Partial`] grammar
+//! mixes both directions (some productions over-approximated, some dropped), so
+//! neither containment holds for it; consult the report's per-grammar coverage
+//! before reading a `Derives_E` theorem as a recognizer. The kernel theorem
+//! itself is always exact: `⊢ Derives_E ⌜nt⌝ w` means precisely `w ∈ L(lowered
+//! Cfg)` regardless of coverage.
 //!
 //! Recognition mode unlocks the parametric / LEB128 grammars [`lower`] skips:
 //!
@@ -73,7 +86,8 @@
 //!   (dropping the production when false — exact, this is what bounds the `BuN`
 //!   recursion); a premise over captured production-local values is dropped
 //!   (over-approximate, counted [`CfgReport::premises_dropped`]); anything not
-//!   cleanly classifiable is skipped (sound).
+//!   cleanly classifiable is skipped — which *under*-approximates that
+//!   production (see the coverage caveat above).
 //! - **`ListN`** widens to a Kleene star (`WASM` vectors may be empty), counted
 //!   [`CfgReport::listns_widened`].
 //!
@@ -163,9 +177,10 @@ impl SkipReason {
 ///
 /// [`Under`](LowerMode::Under) is the default [`lower`] behaviour —
 /// `L(Cfg) ⊆ L(SpecTec)`, a membership witness. [`Recognition`](LowerMode::Recognition)
-/// is the opt-in M6 mode — `L(SpecTec) ⊆ L(Cfg)`, a sound recognizer (see the
-/// module docs). The two share all machinery except the recognition-only hooks
-/// (LEB128 special-case, monomorphisation, premise classification, `ListN`
+/// is the opt-in M6 mode — `L(SpecTec) ⊆ L(Cfg)` per `Full`-coverage grammar, a
+/// sound recognizer (see the module docs' coverage caveat; `Partial` grammars
+/// mix both directions). The two share all machinery except the recognition-only
+/// hooks (LEB128 special-case, monomorphisation, premise classification, `ListN`
 /// widening), which are no-ops under `Under`.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum LowerMode {

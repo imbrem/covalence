@@ -236,10 +236,18 @@ opt-in **recognition mode** (`lower_recognition` / `LowerMode::Recognition`;
    grammar; the first cut may defer these with honest reporting (they also carry
    `ListN` + parameter-equality attrs). Not on the LEB128 critical path.
 
-**Honesty / invariant flip.** Recognition-mode Cfgs satisfy
-`L(SpecTec) ⊆ L(Cfg)` (a *recognizer*: soundness of rejection), the REVERSE of
-`lower()`'s `L(Cfg) ⊆ L(SpecTec)` (membership witness). This must be an explicit
-opt-in: new `CfgReport` counters (`premises_dropped`, `listns_widened`,
+**Honesty / invariant flip.** Recognition mode's per-production transformations
+over-approximate, flipping toward `L(SpecTec) ⊆ L(Cfg)` (a *recognizer*:
+soundness of rejection), the REVERSE of `lower()`'s `L(Cfg) ⊆ L(SpecTec)`
+(membership witness). **But it is per-grammar, gated on `Full` coverage:**
+recognition mode still *drops* productions it can't lower (unclassifiable
+premise, monomorphisation depth cap, grammar-valued param), and a dropped
+production under-approximates. So the clean `L(SpecTec) ⊆ L(Cfg)` holds only for
+`Full`-coverage grammars (`Bu32`, the `*idx` family, the LEB128 chain — the
+LEB128 targets are all `Full`); a `Partial` grammar mixes both directions and
+its report coverage must be consulted before reading a `Derives_E` as a
+recognizer. The kernel theorem is always exact regardless: `⊢ Derives_E ⌜nt⌝ w`
+means precisely `w ∈ L(lowered Cfg)`. This must be an explicit opt-in: new `CfgReport` counters (`premises_dropped`, `listns_widened`,
 `mono_instances`) mirror `attrs_constrained`; the module docstring + this note
 state the flip; a *separate* recognition-mode ratchet test pins the new coverage
 (don't mutate the under-approx ratchet). Kernel `Derives_E` theorems over a

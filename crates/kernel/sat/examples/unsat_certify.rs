@@ -19,7 +19,7 @@
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use covalence_kernel_sat::{Cnf, HolClauseBackend, Lit, replay_lrat};
+use covalence_kernel_sat::{Cnf, Lit, SatProblem, SequentClauseBackend, replay_lrat};
 use covalence_sat::parse::{parse_lrat_text, write_dimacs_to_string};
 
 /// `PHP(pigeons, holes)`: `p[i][j]` = "pigeon `i` in hole `j`". UNSAT when
@@ -86,10 +86,9 @@ fn main() {
         "{:->4}-+-{:->5}-+-{:->8}-+-{:->7}-+-{:->10}-+-{:->13}-+-{:->5}",
         "", "", "", "", "", "", ""
     );
-    // Replay cost grows with the (exponential) resolution-proof size; capped
-    // where it stays interactive. Scaling further wants the sequent-form clause
-    // backend (near-O(1) resolution) — see SKELETONS.md.
-    for h in 3..=6usize {
+    // The sequent-form backend makes resolution a hyp-set cut (~flat per step),
+    // so this scales with the (exponential) proof size rather than blowing up.
+    for h in 3..=7usize {
         let cnf = php_cnf(h + 1, h);
         let Some((lrat, solve)) = run_cadical(&cnf) else {
             continue;
@@ -99,10 +98,17 @@ fn main() {
             continue;
         };
         let steps = proof.steps().len();
+        // The input clause disjunctions — a genuine refutation's hypotheses are a
+        // subset of these (checked below).
+        let inputs: std::collections::HashSet<_> = {
+            let p = SequentClauseBackend::new();
+            cnf.clauses().map(|c| p.clause(c)).collect()
+        };
         let start = Instant::now();
-        let mut backend = HolClauseBackend::new();
+        let mut backend = SequentClauseBackend::new();
         let checked = match replay_lrat(&mut backend, &cnf, &proof) {
-            Ok(thm) => thm.concl().as_bool() == Some(false),
+            // Genuine `{inputs} ⊢ ⊥`: falsity from only input-clause hypotheses.
+            Ok(thm) => !thm.hyps().is_empty() && thm.hyps().iter().all(|h| inputs.contains(h)),
             Err(_) => false,
         };
         let replay = start.elapsed();

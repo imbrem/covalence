@@ -26,11 +26,13 @@
 //! [`HolClauseBackend`]).
 
 pub mod hol;
+pub mod sequent;
 
 use std::collections::{HashMap, HashSet};
 
 pub use covalence_sat::{Clause, Cnf, Lit, LratProof, Var};
 pub use hol::HolClauseBackend;
+pub use sequent::SequentClauseBackend;
 
 /// Errors from replaying a SAT proof.
 #[derive(Debug, thiserror::Error)]
@@ -168,7 +170,14 @@ impl ReplayStrategy for RupReplay {
                 } => {
                     let c_lits = clause.lits().to_vec();
                     let thm = rup_reconstruct(backend, &c_lits, antecedents, &clauses, *id)?;
-                    if refutation.is_none() && backend.is_empty_clause(&thm) {
+                    // Backend-agnostic refutation detection: the refutation is the
+                    // step whose LRAT clause is *empty*. This is correct for both
+                    // the disjunction backend (concl `F`) and the sequent backend
+                    // (every clause has concl `F`, so `is_empty_clause` alone would
+                    // fire on the first unit-contradiction step, not the empty one).
+                    // `backend.is_empty_clause` stays on the trait as the
+                    // backend-side check; here `c_lits.is_empty()` is authoritative.
+                    if refutation.is_none() && c_lits.is_empty() {
                         refutation = Some(thm.clone());
                     }
                     last = Some(thm.clone());

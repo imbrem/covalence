@@ -726,15 +726,17 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
 
     // --- Version 6+ commands ---
 
-    // hdTl: List (h :: t) -> h, List t
+    // hdTl: List (h :: t) -> ... push h, then push (List t) on top.
+    // Per the standard the resulting stack is `List t :: h :: stack` — the
+    // tail ends up on top, the head below it.
     fn cmd_hd_tl(&mut self) -> Result<(), OtError> {
         let mut list = self.pop_list()?;
         if list.is_empty() {
             return Err(OtError::EmptyList);
         }
         let head = list.remove(0);
-        self.stack.push(OtObject::List(list));
         self.stack.push(head);
+        self.stack.push(OtObject::List(list));
         Ok(())
     }
 
@@ -759,8 +761,9 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
     // Defines each constant cᵢ = tᵢ (tᵢ recovered from the matching hypothesis),
     // substitutes cᵢ for vᵢ throughout, and discharges the vᵢ = tᵢ hypotheses.
     fn cmd_define_const_list(&mut self) -> Result<(), OtError> {
-        let pairs_list = self.pop_list()?;
+        // Stack (top first): Thm ({vᵢ = tᵢ} ⊦ φ), then List [[Name, Var]].
         let th = self.pop_thm()?;
+        let pairs_list = self.pop_list()?;
 
         // Parse the [Name, Var] pairs into (name_id, var_term).
         let mut names_vars: Vec<(NameId, K::Term)> = Vec::new();
@@ -816,7 +819,13 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
                     )
                 })?;
 
-            let eq = self.kernel.mk_eq(var_tm.clone(), ti);
+            // Define the constant under its declared name nᵢ (NOT the
+            // hypothesis variable vᵢ): the equation's LHS is a variable named
+            // nᵢ, so the fresh `Def` is registered under nᵢ and `constTerm` can
+            // later look it up.
+            let ti_ty = self.kernel.type_of(ti.clone());
+            let const_var = self.kernel.mk_var(*name_id, ti_ty);
+            let eq = self.kernel.mk_eq(const_var, ti);
             let def_thm = self.kernel.new_basic_definition(eq)?; // ⊦ cᵢ = tᵢ
             let def_concl = self.kernel.concl(def_thm.clone());
             let (const_tm, _t) = self
@@ -824,6 +833,7 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
                 .dest_eq(def_concl)
                 .ok_or(HolError::NotAnEquation)?;
             const_objs.push(OtObject::Const(*name_id));
+            // Replace the hypothesis variable vᵢ by the new constant cᵢ.
             term_pairs.push((const_tm, var_tm.clone()));
             def_thms.push(def_thm);
         }

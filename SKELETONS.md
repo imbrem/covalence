@@ -53,6 +53,7 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)** — removed native `.watsup` frontend; single-version WASM grammar; regular-only byte-grammar bridge.
 - **[`covalence-wasm`](crates/lib/wasm/core/SKELETONS.md)** — removed `cov:pure` host binding; `wit/pure.wit` + `covalence-core-test-guest` orphaned.
 - **[`covalence-haskell`](crates/lang/haskell/SKELETONS.md)** — Haskell surface dialect: no HOL/kernel backend yet; small parser subset (no layout/patterns/types/do-notation).
+- **[`covalence-k`](crates/lang/k/SKELETONS.md)** — K frontend (textual KORE parser + S-expr IR + fragment classifier): no lowering into `covalence-init`; no KORE-JSON/KAST ingestion; claims/aliases unconsumed.
 - **[`covalence-alethe`](crates/proof/alethe/SKELETONS.md)** — Alethe rule coverage.
 - **[`covalence-egglog`](crates/proof/egglog/SKELETONS.md)** — `EgglogBridge` Stage 0 (only `fiat` implemented, no kernel-backed impl); egglog `external` bridge disabled (released egglog lacks the proof module).
 - **[`covalence-metamath`](crates/proof/metamath/SKELETONS.md)** — substitution engine + `.mm` reader: `set.mm`-scale streaming, canonical serializer, structured-tree encoding, symbol interning.

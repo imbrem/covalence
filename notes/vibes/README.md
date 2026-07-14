@@ -52,6 +52,15 @@ Read `kernel-design.md` before touching the trusted base.
 
 [`lisp/minimal-spec/`](./lisp/minimal-spec/) — the buildable spec: a `/lisp` REPL where an S-expr is evaluated as a reduction theorem, on a generic `Repl` ≤ `SExprRepl` ≤ `Lisp` trait stack, ending at the metacircular interpreter in the browser. [`lisp/initial-ideas/`](./lisp/initial-ideas/) — the design corpus behind it (dialects/UB, parsing relations, content-addressing, proptest-as-theorem, ACL2-inside).
 
+## `k/` — the K-framework frontend
+
+[`k/README.md`](./k/README.md) — index. Sourced research surveys (`k/research/`:
+K today, KORE, backends+SMT, the semantics ecosystem, RV's proof-generation
+line, reachability/matching-logic theory; researched 2026-07-13, verified,
+certainty-tagged) behind [`../design/k-frontend.md`](../design/k-frontend.md)
+(KORE ingestion + the F0–F4 fragment ladder; first slice `crates/lang/k`).
+North star: [`vision/k-framework-vision.md`](./vision/k-framework-vision.md).
+
 ## `web/` · `observers/` · `plans/`
 
 - **web/** — [`web-kernel.md`](./web/web-kernel.md) (kernel in the browser; `.cov` articles; federation) · [`cov-project.md`](./web/cov-project.md) · [`wasm3-rust.md`](./web/wasm3-rust.md)

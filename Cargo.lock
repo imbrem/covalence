@@ -1166,6 +1166,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-k"
+version = "0.0.0"
+dependencies = [
+ "covalence-sexp",
+ "smol_str",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-kernel"
 version = "0.0.0"
 dependencies = [

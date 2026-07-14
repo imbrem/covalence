@@ -2,9 +2,12 @@
 
 **Status:** north-star vision note (AI-drafted). Aspirational; the concrete
 existing scaffolding it composes with (`covalence-spectec`, the WASM front end)
-is real and linked below. Not yet a `notes/design/` proposal — when a slice is
-picked to build, promote it to a design doc via
-[`../../design/TEMPLATE.md`](../../design/TEMPLATE.md).
+is real and linked below. **2026-07-13: the first slice is now designed and
+started** — sourced research corpus in [`../k/`](../k/README.md), decision
+record in [`../../design/k-frontend.md`](../../design/k-frontend.md) (input
+surface = KORE, fragment ladder F0–F4), first code in `crates/lang/k`
+(`covalence-k`). The "input surface" open question below is settled (KORE);
+the others remain live and are carried in the design doc.
 
 **Companions:** [`wasm-spec.md`](../logics/wasm-spec.md) (the SpecTec/WASM front
 end that already exists), [`VISION.md`](./VISION.md) (the metatheory-as-default

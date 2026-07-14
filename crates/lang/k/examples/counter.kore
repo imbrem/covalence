@@ -1,0 +1,64 @@
+// counter.kore — HAND-WRITTEN in the style of kompile's definition.kore
+// output. NOT produced by kompile: shapes, attributes, and mangled names
+// (Lbl'-LT-'k'-GT-, 'Unds', UNIQUE'Unds'ID) mimic the real thing so the
+// lexer/parser/classifier are exercised realistically.
+//
+// The semantics: a <k> cell holding either count(N) or done(), with
+//   count(0)   => done()                       [ground, priority 50]
+//   count(N)   => count(N -Int 1)  requires N >Int 0   [conditional, priority 30]
+//   count(N)   => done()                       [owise fallback, priority 200]
+
+[]
+
+module COUNTER
+
+  import K []
+
+  hooked-sort SortBool{} [hook{}("BOOL.Bool")]
+  hooked-sort SortInt{} [hook{}("INT.Int")]
+  sort SortCfg{} []
+  sort SortKItem{} []
+
+  /* configuration cell + constructors, kompile-mangled style */
+  symbol Lbl'-LT-'k'-GT-{}(SortCfg{}) : SortCfg{} [constructor{}(), functional{}()]
+  symbol Lblcount{}(SortInt{}) : SortCfg{} [constructor{}(), functional{}()]
+  symbol Lbldone{}() : SortCfg{} [constructor{}(), functional{}()]
+  symbol inj{From, To}(From) : To [sortInjection{}()]
+  hooked-symbol Lbl'Unds'-Int'Unds'{}(SortInt{}, SortInt{}) : SortInt{} [hook{}("INT.sub"), functional{}()]
+  hooked-symbol Lbl'Unds-GT-'Int'Unds'{}(SortInt{}, SortInt{}) : SortBool{} [hook{}("INT.gt"), functional{}()]
+  symbol LblisZero{}(SortInt{}) : SortBool{} [function{}(), functional{}()]
+
+  // functional/no-junk style constructor axiom
+  axiom{R} \exists{R}(Val:SortCfg{}, \equals{SortCfg{}, R}(Val:SortCfg{}, Lbldone{}())) [functional{}()]
+
+  // subsort injection axiom
+  axiom{R} \exists{R}(Val:SortKItem{}, \equals{SortKItem{}, R}(Val:SortKItem{}, inj{SortCfg{}, SortKItem{}}(From:SortCfg{}))) [subsort{SortCfg{}, SortKItem{}}()]
+
+  // function-definition equation: isZero(0) = true
+  axiom{R} \equals{SortBool{}, R}(LblisZero{}(\dv{SortInt{}}("0")), \dv{SortBool{}}("true")) []
+
+  // ground rewrite: count(0) => done()
+  axiom{} \rewrites{SortCfg{}}(
+      \and{SortCfg{}}(Lbl'-LT-'k'-GT-{}(Lblcount{}(\dv{SortInt{}}("0"))), \top{SortCfg{}}()),
+      \and{SortCfg{}}(Lbl'-LT-'k'-GT-{}(Lbldone{}()), \top{SortCfg{}}()))
+    [priority{}("50"), label{}("COUNTER.count-zero"), UNIQUE'Unds'ID{}("id-count-zero")]
+
+  // conditional rewrite: count(N) => count(N -Int 1) requires N >Int 0
+  axiom{} \rewrites{SortCfg{}}(
+      \and{SortCfg{}}(
+        Lbl'-LT-'k'-GT-{}(Lblcount{}(VarN:SortInt{})),
+        \equals{SortBool{}, SortCfg{}}(
+          Lbl'Unds-GT-'Int'Unds'{}(VarN:SortInt{}, \dv{SortInt{}}("0")),
+          \dv{SortBool{}}("true"))),
+      \and{SortCfg{}}(
+        Lbl'-LT-'k'-GT-{}(Lblcount{}(Lbl'Unds'-Int'Unds'{}(VarN:SortInt{}, \dv{SortInt{}}("1")))),
+        \top{SortCfg{}}()))
+    [priority{}("30"), label{}("COUNTER.count-step"), UNIQUE'Unds'ID{}("id-count-step")]
+
+  // owise fallback: count(N) => done()
+  axiom{} \rewrites{SortCfg{}}(
+      \and{SortCfg{}}(Lbl'-LT-'k'-GT-{}(Lblcount{}(VarN:SortInt{})), \top{SortCfg{}}()),
+      \and{SortCfg{}}(Lbl'-LT-'k'-GT-{}(Lbldone{}()), \top{SortCfg{}}()))
+    [owise{}(), label{}("COUNTER.count-owise"), UNIQUE'Unds'ID{}("id-count-owise")]
+
+endmodule [att{}()]

@@ -86,15 +86,50 @@ the resulting `0 ⋈ D` (D a positive literal, decided by the eval TCB). Present
 These derive from what's there; they're just unbuilt. `lt_imp_le` also needs
 lifting from `le_def` (rat has it, int doesn't).
 
+## Parametric over representation AND discharge (the two axes)
+
+The replay is generic on two independent axes, both in `covalence-hol-api`:
+
+- **`LinOrder`** — the ordered carrier (`<`/`≤` + transitivity lemmas +
+  `lt_irrefl` refutation). Weaker than `Int` (no ring ops) so a non-ring carrier
+  like `succ`-`nat` qualifies. Impls: `NativeHol` (eval `int`), `SuccHol`
+  (`succ`-nat, eval-TCB-free).
+- **`Discharger`** — how a *closed* literal comparison (`5 ≤ 2`) is proved. This
+  is the swappable "`a < b` oracle" the whole design hinges on:
+  - `EvalDischarger` — decides it by computation (`covalence-hol-eval`
+    `IntArithCert` via `logic::decide`). Fast; leans on the eval TCB.
+  - `SuccDischarger` — proves it by **pure induction over `succ`-towers, no eval
+    TCB**. Same theorem, from-scratch core.
+
+`kernel-smt::refute_chain<L: LinOrder, D: Discharger<L>>` folds an ordering chain
+through the mixed-transitivity lemmas and closes it either as a cycle
+(`lt_irrefl`, representation-independent) or on a false literal bound (via the
+discharger). Swapping `D` moves the exact same proof between the trusted eval
+kernel and the eval-free `succ` core.
+
+## Demo + benchmark
+
+`cargo run --release --example smt_bench -p covalence-kernel-smt`: an infeasible
+bound chain `5 ≤ x₀ ≤ … ≤ xₙ₋₁ ≤ 2`, cvc5 decides UNSAT, the kernel replays it
+into a checked `⊢ (5≤x₀) ⟹ … ⟹ ⊥`. Kernel replay **beats** cvc5 wall time for
+small/medium n (no ~10 ms process startup), competitive at n≈2048. The faithful
+Alethe-import path (`proof/alethe`, live cvc5 tests) additionally parses and
+replays cvc5's *actual* Alethe proofs for QF-UF + basic LIA + the `(#by smt)`
+tactic.
+
 ## Status ledger
 
-- **Built + tested:** `covalence_hol_api::Int` (native impl over `init::int`);
-  `kernel-smt` `rational` + `lincomb` + `farkas` (the pure checker) + `RulePolicy`;
-  `kernel-sat` `ClauseBackend` trait + `replay_lrat` entry point.
-- **Next:** the missing `int` lemmas → the `LinArith` proof primitives → the
-  `Int`-generic parser (steps 1–3) → the kernel replay → the Alethe dispatcher →
-  migrate `crates/proof/alethe` onto it (preserving its current coverage and the
-  `(#by (smt))` tactic) → LRAT RUP→resolution in `kernel-sat`.
+- **Built + tested:** `covalence_hol_api::Int` (+ 6 derived order lemmas in
+  `init::int`); `LinOrder` + `Discharger` + `EvalDischarger` (+ `SuccHol` /
+  `SuccDischarger`, the eval-free `succ` backend); `kernel-smt` `rational` +
+  `lincomb` + `farkas` (pure checker) + `RulePolicy` + `refute_chain` (cycle +
+  literal-bound close, generic over both axes); the `smt_bench` cvc5 demo;
+  `kernel-sat` full CaDiCaL LRAT → `⊢ ⊥`. `proof/alethe` real Alethe import
+  (live cvc5).
+- **Next:** general scale-and-sum Farkas (needs the linear ring normaliser
+  `⊢ Σcᵢ·pᵢ = D`); the `Int`-generic term → chain/`NormLit` parser so raw cvc5
+  `la_generic` drives `refute_chain` directly; migrate `proof/alethe` onto
+  `kernel-smt`; wire the succ column into `smt_bench`.
 - **Deferred:** GCD strengthening; `la_mult_*`/`la_disequality`; subproofs
-  (`anchor`/`bind`/`let`); the internal-PA / SOA backends (each a new `Int` impl);
-  rational-coefficient Farkas run in `rat` vs. denominator-cleared in `int`.
+  (`anchor`/`bind`/`let`); the internal-PA / SOA backends (each a new `LinOrder`
+  impl); rational-coefficient Farkas run in `rat` vs. denominator-cleared in `int`.

@@ -70,11 +70,21 @@ rule application performed by the HOL kernel, no `.mm` proof of the composite
 genuine + hypothesis-free; no new trusted code. Example (two MP steps derive an
 un-stated `p2`): `crates/kernel/hol/init/examples/mm_compose.rs`.
 
-The `.mm` **importer** (`mm_database::replay_db`) produces the *other*
-derivability encoding (`Derivable_L` over a `RuleSet`, `Φ = nat`); composing
-imported set.mm theorems the same way needs a `RuleSet`-level MP (today
-`derivable_db_mp` is database-value-specific), and a general `apply(rule,
-floats, premises)` beyond MP — both in `metalogic/SKELETONS.md`.
+**Imported `.mm` databases** (the `Derivable_L` over a `RuleSet`, `Φ = nat`
+encoding that `mm_database::replay_db` produces) are composed by
+`metalogic::MmSession` + the generic `metalogic::apply_rule`.
+`apply_rule(rs, clause_index, n_clauses, floats, premises)` applies *any* rule
+of *any* `RuleSet` — instantiate the clause's `∀`-bound metavars (`all_elim`),
+discharge the essential premises (`imp_elim`) — generalizing `derivable_db_mp`
+(now recognizably its database-value instance). `MmSession::new(db)` wraps a
+real parsed `metamath::Database`: `theorem(label)` replays at the shared full-db
+`L`, `apply("ax-mp", floats, premises)` / `mp` compose, `encode(expr)` builds
+float witnesses. So an imported set.mm-style theorem can be combined in HOL to
+derive a statement the database has no `$p` for. Example (replay two theorems,
+apply ax-1, compose via ax-mp): `crates/kernel/hol/init/examples/mm_session.rs`.
+`MmSession::apply` inherits replay's `$d`/typecode over-approximation (documented
+— a `$d`-violating composite is a genuine HOL theorem but not a valid Metamath
+proof; sound for the existence/construct direction).
 
 ## Deferred (recorded in SKELETONS)
 

@@ -53,7 +53,8 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)** — removed native `.watsup` frontend; single-version WASM grammar; regular-only byte-grammar bridge.
 - **[`covalence-wasm`](crates/lib/wasm/core/SKELETONS.md)** — removed `cov:pure` host binding; `wit/pure.wit` + `covalence-core-test-guest` orphaned.
 - **[`covalence-haskell`](crates/lang/haskell/SKELETONS.md)** — Haskell surface dialect: no HOL/kernel backend yet; small parser subset (no layout/patterns/types/do-notation).
-- **[`covalence-lisp`](crates/lang/lisp/SKELETONS.md)** — `/lisp` demo: ch1 primitives work end-to-end (kernel-Thm-backed `Session` REPL); no ch2 recursion / `defun`; `eq?` atoms-only; equational `⊢ input = output`, not the `Reduces` relation.
+- **[`covalence-lisp`](crates/lang/lisp/SKELETONS.md)** — `/lisp` demo: ch1 + `defun` recursion + metacircular ground fragment (kernel-Thm-backed; `defun`-as-hypothesis → `definitions ⊢ program = value`); full `metacircular.lisp` (truthy-data `cond`) deferred; `eq?` atoms-only.
+- **[`covalence-forsp`](crates/lang/forsp/SKELETONS.md)** — `/forsp` small-step reduction: `ForspSemantics` machine relation is an untrusted before/after-snapshot witness (no kernel `Thm` yet); web-export handler unbuilt.
 - **[`covalence-repl-core`](crates/lib/repl-core/SKELETONS.md)** — REPL trait stack: `ReductionStrategy` is equational-only (no relational/stateful shape); no `SExprRepl` events.
 - **[`covalence-alethe`](crates/proof/alethe/SKELETONS.md)** — Alethe rule coverage.
 - **[`covalence-egglog`](crates/proof/egglog/SKELETONS.md)** — `EgglogBridge` Stage 0 (only `fiat` implemented, no kernel-backed impl); egglog `external` bridge disabled (released egglog lacks the proof module).

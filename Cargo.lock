@@ -1012,6 +1012,7 @@ name = "covalence-forsp"
 version = "0.0.0"
 dependencies = [
  "covalence-hash",
+ "covalence-repl-core",
  "covalence-sexp",
  "thiserror 2.0.18",
 ]

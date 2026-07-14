@@ -4,5 +4,6 @@
 //! Distinct from the catalogue's [`crate::init::regex`] theory — these are the
 //! compilers/tactics, not the type definitions.
 
+pub mod cfg;
 pub mod regex;
 pub mod spectec;

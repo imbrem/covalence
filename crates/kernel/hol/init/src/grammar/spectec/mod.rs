@@ -48,6 +48,8 @@
 //! non-terminal expansion, and discharging `Matches ⌜cᵢ⌝ Xᵢ` against an
 //! assumption is exactly how a CFG derivation will compose sub-derivations.
 
+pub mod cfg;
 pub mod grammar;
 
+pub use cfg::spec_grammar_env;
 pub use grammar::{BridgeError, SpecTecSym, compile_sym, sym_to_core};

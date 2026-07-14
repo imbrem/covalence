@@ -1954,6 +1954,80 @@ cached_thm! {
 }
 
 cached_thm! {
+    /// `⊢ ∀a b c. (a ≤ b) ⟹ (b < c) ⟹ (a < c)` — mixed transitivity.
+    ///
+    /// `a≤b` gives `Sa≤Sb` (`le_succ_succ`); `b<c` gives `Sb≤c`
+    /// (`lt_iff_succ_le`); chain with `le_trans` to `Sa≤c`, which is `a<c`.
+    pub fn lt_of_le_of_lt() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let hab = le_t(a.clone(), b.clone());
+        let hbc = lt_t(b.clone(), c.clone());
+        // {a≤b} ⊢ Sa ≤ Sb
+        let sa_le_sb = le_succ_succ()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .sym()?
+            .eq_mp(Thm::assume(hab.clone())?)?;
+        // {b<c} ⊢ Sb ≤ c
+        let sb_le_c = lt_iff_succ_le()
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .eq_mp(Thm::assume(hbc.clone())?)?;
+        // Sa ≤ c
+        let sa_le_c = le_trans()
+            .all_elim(succ(a.clone()))?
+            .all_elim(succ(b.clone()))?
+            .all_elim(c.clone())?
+            .imp_elim(sa_le_sb)?
+            .imp_elim(sb_le_c)?;
+        lt_iff_succ_le()
+            .all_elim(a.clone())?
+            .all_elim(c.clone())?
+            .sym()?
+            .eq_mp(sa_le_c)? // a < c
+            .imp_intro(&hbc)?
+            .imp_intro(&hab)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. (a < b) ⟹ (b ≤ c) ⟹ (a < c)` — mixed transitivity.
+    ///
+    /// `a<b` gives `Sa≤b` (`lt_iff_succ_le`); chain with `b≤c` via `le_trans`
+    /// to `Sa≤c`, which is `a<c`.
+    pub fn lt_of_lt_of_le() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let hab = lt_t(a.clone(), b.clone());
+        let hbc = le_t(b.clone(), c.clone());
+        // {a<b} ⊢ Sa ≤ b
+        let sa_le_b = lt_iff_succ_le()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .eq_mp(Thm::assume(hab.clone())?)?;
+        // Sa ≤ c
+        let sa_le_c = le_trans()
+            .all_elim(succ(a.clone()))?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(sa_le_b)?
+            .imp_elim(Thm::assume(hbc.clone())?)?;
+        lt_iff_succ_le()
+            .all_elim(a.clone())?
+            .all_elim(c.clone())?
+            .sym()?
+            .eq_mp(sa_le_c)? // a < c
+            .imp_intro(&hbc)?
+            .imp_intro(&hab)?
+            .all_intro("c", nat())?
+            .all_intro("b", nat())?
+            .all_intro("a", nat())
+    }
+}
+
+cached_thm! {
     /// `⊢ ∀a b c d. (a < b) ⟹ (c < d) ⟹ (a + c < b + d)` — add two strict
     /// inequalities (`lt_add_mono_r` on each side, bridged by `lt_trans`).
     pub fn add_lt_add() -> Result<Thm> {
@@ -3118,6 +3192,46 @@ mod tests {
             lt_trichotomy(),
         ] {
             assert!(t.hyps().is_empty(), "nat strict-order facts are genuine");
+        }
+    }
+
+    #[test]
+    fn mixed_transitivity_lemmas_are_genuine() {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let elim3 = |t: Thm| -> Thm {
+            t.all_elim(a.clone())
+                .unwrap()
+                .all_elim(b.clone())
+                .unwrap()
+                .all_elim(c.clone())
+                .unwrap()
+        };
+        // lt_of_le_of_lt: (a≤b) ⟹ (b<c) ⟹ (a<c).
+        let lelt = elim3(lt_of_le_of_lt());
+        assert_eq!(
+            lelt.concl(),
+            &le_t(a.clone(), b.clone())
+                .imp(
+                    lt_t(b.clone(), c.clone())
+                        .imp(lt_t(a.clone(), c.clone()))
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        // lt_of_lt_of_le: (a<b) ⟹ (b≤c) ⟹ (a<c).
+        let ltle = elim3(lt_of_lt_of_le());
+        assert_eq!(
+            ltle.concl(),
+            &lt_t(a.clone(), b.clone())
+                .imp(
+                    le_t(b.clone(), c.clone())
+                        .imp(lt_t(a.clone(), c.clone()))
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        for t in [lt_of_le_of_lt(), lt_of_lt_of_le()] {
+            assert!(t.hyps().is_empty(), "mixed-transitivity facts are genuine");
         }
     }
 

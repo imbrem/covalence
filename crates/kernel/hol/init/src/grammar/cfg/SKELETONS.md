@@ -10,21 +10,25 @@ stratum [`crate::grammar::regex`](../regex/SKELETONS.md). See
 
 ## Severe / blocking
 
-- **Soundness (`soundness.rs`).** Stub only. Needs the discharge-free family
-  least-fixpoint theorem `⊢ ∀F. ClosedFam_E F ⟹ ∀n w. Derives_E n w ⟹
-  mem w (F n)` via `metalogic::binary::rule_induction2` (S1), the `ClosedFam`
-  builder with the 2-outer-β normal form, the trivial-family witness (S0), and a
-  toy regular-fragment agreement (S3).
-
-## Minor / later
-
 - **SpecTec wiring + north-star demo (M5).** `spec_grammar_env` bridging
   `wasm3_binary()` → `covalence_spectec::cfg::lower` → `GrammarEnv`, and the
   `tests/cfg_grammar.rs` real-bytes theorems (Bmagic/Bversion preamble, the
-  Breftype→Bheaptype→Babsheaptype chain).
-- **S2 comprehension family** (least-ness), **S3 at scale** (per-env
-  discharge cost), and **env transport** (`Derives_E ⟹ Derives_E' ∘ ρ` for the
-  WASM version-inclusion metatheorems) — see the design note.
+  Breftype→Bheaptype→Babsheaptype chain). `soundness::derives_in_family` is the
+  T3 hook M5 calls.
+
+## Minor / later
+
+- **S2 comprehension family least-ness.** The full fixpoint characterisation
+  `L_E := λn. {w | Derives_E n w}` is E-closed *and* least; `soundness.rs` has
+  only the upper-bound half (S1). The dual (leastness → completeness) is unbuilt.
+- **S3 at scale / per-env discharge cost.** `derives_in_family_regular` discharges
+  `ClosedFam_E F_reg` per-env via regex `soundness_at`; it cannot reuse regex's
+  polymorphic `Closed-D` cache across envs, and only covers a *single-production
+  Var-free* env. Multi-production regular envs + a general S3 are unbuilt.
+- **Env transport for version-inclusion metatheorems.** `⊢ Derives_E n w ⟹
+  Derives_E' (ρ n) w` (ρ = tag remapping) for WASM 1.0 ⊆ 2.0 ⊆ 3.0 and subset
+  grammars — `rule_induction2` at `pred := λn w. Derives_E' (ρ n) w` discharged
+  per-matched-production (design note §"Version lattice"). Unbuilt.
 - **Tactic recognizer acceleration (`tactic.rs`).** The phase-1 recognizer is a
   plain memoised top-down parser (`O(n³)`-ish span enumeration, terminal match
   delegated whole-slice to the regex tactic per span). No WASM/builtin

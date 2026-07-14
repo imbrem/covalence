@@ -77,6 +77,13 @@ pub mod apply;
 pub mod database;
 pub mod relations;
 
+// **A genuinely structural (non-identity) `σ` for `relations::transport`**
+// (`notes/vibes/logics/structural-sigma-transport.md`): a variable-index
+// renaming `σ_f := λA. λ v ¬ ∧ ∨ ⟹. A (λn. v (f n)) ¬ ∧ ∨ ⟹` on the reified
+// `Φ⟨bool⟩` carrier, with its `⟹`-homomorphism proved for `f := succ` — the
+// first discharge of transport's `σ_hom` premise off `σ = id`.
+pub mod relations_sigma;
+
 // **Generic interpretation/transport between Metamath-database logics**
 // (`notes/vibes/metatheory.md`, "relate formal systems"): `transport` proves
 // `Derivable_L1 ⟹ Derivable_L2 ∘ σ` ONCE via `rule_induction` (predicate

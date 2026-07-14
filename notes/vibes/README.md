@@ -39,6 +39,7 @@ Read `kernel-design.md` before touching the trusted base.
 | [`logics/theories-models-and-logics.md`](./logics/theories-models-and-logics.md) | signature → theory → model; within-logic model multiplicity; Metamath as shared substrate; PA→SOA→ZF. |
 | [`logics/metatheory.md`](./logics/metatheory.md) | Object theories + derivations as first-class HOL objects; theory morphisms/transport. |
 | [`logics/metamath-axiom-set-metatheory.md`](./logics/metamath-axiom-set-metatheory.md) | Axiom sets (ZFC/TG/IZF/reals) as first-class objects; checked implication/interpretation certificates; reals-over-ZFC; HOL-side composition facade. |
+| [`logics/structural-sigma-transport.md`](./logics/structural-sigma-transport.md) | Structural (non-identity) σ for `transport`: the variable-renaming slice landed on the reified-prop `Φ⟨bool⟩` carrier; the inductive-`MmExpr` `Φ=nat` path still open. |
 | [`logics/proof-format.md`](./logics/proof-format.md) | The Haskell dialect's theorem/proof split (equation statements + name-linked S-expr proofs). |
 | [`logics/wasm-spec.md`](./logics/wasm-spec.md) | The SpecTec WASM-spec front end; dual to the Metamath front end. |
 | [`logics/init-in-dialect.md`](./logics/init-in-dialect.md) | Writing `init/` in the Haskell dialect over the typed HOL backend. |

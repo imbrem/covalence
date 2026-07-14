@@ -8,13 +8,18 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
 
 ## Severe
 
-- **Structural `σ` for transport.** `transport`/`transport_db` are proven only for
-  `⟹`-homomorphic `σ`, demonstrated at `σ=id`. A genuinely structural `σ`
-  (constant-symbol renaming, connective mapping; per-rule simulations honestly
-  proved) is **not built**. *Blocker:* the `mm_database` carrier `Φ=nat` is a free
-  algebra of uninterpreted free vars (`mm$concat`, `mm$c$<tok>`) with no
-  recursor — a `σ` descending `concat`-trees needs the encoding reified as a
-  genuine inductive datatype first.
+- **Structural `σ` for transport — MM-import `Φ=nat` carrier still open.**
+  `transport` is now demonstrated at a **real non-identity structural `σ`** on the
+  reified-prop `Φ⟨bool⟩` carrier: `relations_sigma` builds the variable-index
+  renaming `σ_f := λA. λ v ¬ ∧ ∨ ⟹. A (λn. v (f n)) ¬ ∧ ∨ ⟹`, proves its
+  `⟹`-homomorphism at `f := succ` (`sigma_hom_of_var_rename`), and discharges
+  `transport()`'s `σ_hom` premise with it (`transport_at_var_rename`) — the first
+  discharge off `σ=id`. What remains: (a) the **MM-import** carrier `Φ=nat`
+  (`mm_database`, `concat`/`mm$c$<tok>` free vars) is still a recursor-free free
+  algebra — a `σ` descending `concat`-trees needs it reified as an inductive
+  `MmExpr` (`sym(nat) | app(Rec,Rec)`) with a catamorphic recursor (church.rs
+  backend) first; (b) `transport` is *demonstrated* at `σ_f`, not re-stated over
+  an inductive encoding. Design: `notes/vibes/logics/structural-sigma-transport.md`.
 - **HOL→ZFC-scale transport** (`Derivable_HOL ⟹ Derivable_ZFC ∘ σ`) — the
   north-star instance; needs structural-`σ` above + concrete HOL/ZFC rule sets.
   Not built.

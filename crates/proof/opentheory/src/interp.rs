@@ -353,10 +353,14 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
         let abs_var_name = self.names.intern_str("a");
         let rep_var_name = self.names.intern_str("r");
 
+        // TODO(interp): pass the article-declared tyvar order from
+        // `tyvar_names` instead of `&[]` (backends then fall back to the
+        // canonical order, which is wrong for multi-tyvar typedefs).
         let (thm1, thm2) = self.kernel.new_basic_type_definition(
             tyname_id,
             abs_id,
             rep_id,
+            &[],
             abs_var_name,
             rep_var_name,
             th,

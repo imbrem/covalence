@@ -213,6 +213,11 @@ pub trait HolLightKernel: HolLightTerms {
 
     /// Define a new abstract type from an existence theorem.
     ///
+    /// `tyvars` is the **article-declared type-parameter order** (OpenTheory's
+    /// `defineTypeOp` name list). Backends that canonicalise type-variable
+    /// order internally must remember this order so later `opType`
+    /// applications instantiate positionally as the article intends.
+    ///
     /// `abs_var_name` and `rep_var_name` are the variable names to use in the
     /// generated theorems (e.g. `"a"` and `"r"` in the OpenTheory convention).
     fn new_basic_type_definition(
@@ -220,6 +225,7 @@ pub trait HolLightKernel: HolLightTerms {
         tyname: NameId,
         abs_name: NameId,
         rep_name: NameId,
+        tyvars: &[NameId],
         abs_var_name: NameId,
         rep_var_name: NameId,
         th: Self::Thm,

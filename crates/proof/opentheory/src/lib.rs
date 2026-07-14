@@ -9,6 +9,8 @@ pub mod fetch;
 pub mod interp;
 pub mod machine;
 pub mod name;
+#[cfg(feature = "native")]
+pub mod native;
 pub mod object;
 pub mod reader;
 pub mod resolve;
@@ -20,6 +22,8 @@ pub use fetch::{CachingUrlResolver, OPENTHEORY_REPO, UrlResolver};
 pub use interp::ArticleInterp;
 pub use machine::{ArticleMachine, ArticleResult};
 pub use name::{NameTable, OtName};
+#[cfg(feature = "native")]
+pub use native::NativeOt;
 pub use object::OtObject;
 pub use reader::read_article;
 pub use resolve::{

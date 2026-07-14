@@ -25,3 +25,9 @@ edition = "2024"
 covalence-hol-api = { path = "../hol/api" }
 covalence-core = { path = "../hol/core" }
 thiserror = "2"
+
+[dev-dependencies]
+# The `smt_bench` demo builds theorems + folds implications (DerivedRules) and
+# times a real cvc5 (shelled out from $PATH). No cvc5 crate dep — the demo runs
+# `cvc5` directly and skips gracefully if absent.
+covalence-hol-eval = { path = "../hol/eval" }

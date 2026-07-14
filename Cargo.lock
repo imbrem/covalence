@@ -1195,6 +1195,7 @@ version = "0.0.0"
 dependencies = [
  "covalence-core",
  "covalence-hol-api",
+ "covalence-hol-eval",
  "thiserror 2.0.18",
 ]
 

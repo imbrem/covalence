@@ -31,6 +31,19 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
 - **Tie the Rust `RuleSet` to a first-class HOL `Database` value.** `mm_database`'s
   rule set is a Rust closure, not yet a HOL `db` value à la `database.rs`'s
   `Derivable_DB`.
+- **`DbSession` composition over the `.mm` (`Φ=nat`) encoding.** `mm_compose::DbSession`
+  composes `Derivable_DB db` theorems (axiom-intro + modus ponens + non-axiom
+  derivation) in the reified-**prop** `Φ⟨bool⟩` world. The `.mm` importer
+  (`mm_database::replay_db`) produces the *other* encoding (`Derivable_L` over a
+  `RuleSet`, `Φ=nat`); composing imported set.mm theorems the same way needs a
+  modus-ponens theorem at the generic `RuleSet` level (today `derivable_db_mp`
+  is database-value-specific) — or the "tie Rust `RuleSet` to a HOL `Database`
+  value" item below, which would let `DbSession` wrap a real imported database.
+- **`DbSession` schema/rule application beyond MP.** `DbSession::mp` is the
+  concrete modus-ponens instance; a general `apply(rule, floats, premises)` that
+  instantiates an arbitrary database rule's clause (`Thm::all_elim` over the
+  metavars, `imp_elim` over the essential premises) is not built — MP is the only
+  reified rule so far.
 - **Lift scoped `L' ⊆ L` to full `L`.** `derive_theorem` yields `Derivable_L'`;
   `transport_db` monotonicity can lift it to `Derivable_L` but is not auto-applied.
 - **Typecodes & `$d` over-approximated** (sound for construct direction): clauses

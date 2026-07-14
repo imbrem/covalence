@@ -105,9 +105,16 @@ pub mod mm_import;
 // is the HOL-free sanity-check backend; this is the HOL one.
 pub mod mm_sink;
 
+// **Composing derivability theorems from outside Metamath.** A session API over
+// `Derivable_DB db` that applies the database's rules (axiom introduction,
+// modus ponens) in the HOL kernel to assemble `⊢ Derivable_DB db ⌜S⌝` theorems
+// — including for statements `S` with no Metamath proof in the database.
+pub mod mm_compose;
+
 // Re-exported WITHOUT `database::derivable` (a 0-ary schema builder) to avoid
 // colliding with this engine's `derivable`; reach it as `metalogic::database::derivable`.
 pub use database::{derivable_db, extends, monotone};
+pub use mm_compose::DbSession;
 pub use relations::{derivable_db_mp, interp, sigma_hom, transport};
 
 // ============================================================================

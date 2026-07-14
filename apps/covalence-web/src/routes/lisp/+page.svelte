@@ -48,6 +48,12 @@
 		default dialect; recursion + integers together (full Scheme in one dialect) is the next
 		step. Other directives: <code>#show EXPR</code>, <code>#help</code>.
 	</p>
+	<p><strong>Examples</strong> — the buttons above the prompt, in order:</p>
+	<ul class="examples-list">
+		{#each examples as ex}
+			<li><span class="ex-title">{ex.title}</span> — <code>{ex.src}</code></li>
+		{/each}
+	</ul>
 {/snippet}
 
 <main>
@@ -90,5 +96,12 @@
 	}
 	:global(.widget li) {
 		margin: 0.3rem 0;
+	}
+	:global(.widget .examples-list code) {
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	:global(.widget .ex-title) {
+		color: var(--muted);
 	}
 </style>

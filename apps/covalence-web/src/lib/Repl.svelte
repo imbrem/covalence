@@ -284,14 +284,19 @@
 		font-size: 0.9em;
 	}
 	/* Transient hover popover — hidden until the cell is hovered, then a floating
-	   window that vanishes as soon as the cursor leaves. */
+	   window ABOVE the cell that vanishes as soon as the cursor leaves. Anchored
+	   to the cell's bottom edge so it overlays *existing* content upward and never
+	   grows the transcript's scroll height (which was popping a scrollbar). Its
+	   own `max-height` keeps a long theorem contained. */
 	.hol {
 		display: none;
 		position: absolute;
-		top: calc(100% - 0.15rem);
+		bottom: calc(100% - 0.15rem);
 		left: 1.4rem;
 		right: 0.3rem;
 		z-index: 30;
+		max-height: 14rem;
+		overflow-y: auto;
 		padding: 0.45rem 0.6rem;
 		font-size: 0.78rem;
 		line-height: 1.5;

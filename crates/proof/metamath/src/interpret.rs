@@ -51,7 +51,7 @@
 //! astronomically large). Like [`crate::axioms`], these are Rust-level checked
 //! certificates (untrusted tooling), not kernel `⊢ Derivable` theorems.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::axioms::{MetaError, axiom_closure, same_statement};
 use crate::database::{Assertion, Database, FloatHyp, Frame, Hypothesis, Statement};
@@ -335,6 +335,208 @@ pub fn matching_witnesses<'db>(tgt: &'db Database, axiom: &Assertion) -> Vec<&'d
     hits
 }
 
+// --- α / variable-renaming statement matching -----------------------------
+
+/// A bijective renaming of variable names discovered by
+/// [`same_statement_mod_renaming`]: `forward` maps each `a`-variable to its
+/// `b`-image, `backward` is its inverse. Both are total on the variables that
+/// occur in the matched statement and mutually inverse (the map is a bijection).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Renaming {
+    /// `a`-variable → `b`-variable.
+    pub forward: BTreeMap<String, String>,
+    /// `b`-variable → `a`-variable (the inverse of `forward`).
+    pub backward: BTreeMap<String, String>,
+}
+
+impl Renaming {
+    /// Try to extend the bijection with `a_var ↔ b_var`, returning `false` on a
+    /// conflict (either direction already bound to a different partner). This is
+    /// the injectivity guard in *both* directions — the soundness crux: a
+    /// non-injective map could identify two distinct metavariables and mint a
+    /// false witness.
+    fn bind(&mut self, a_var: &str, b_var: &str) -> bool {
+        // Check both directions BEFORE mutating, so a rejected bind leaves the
+        // maps untouched (transactional — no stale forward entry on a backward
+        // conflict).
+        let fwd_ok = self.forward.get(a_var).is_none_or(|prev| prev == b_var);
+        let bwd_ok = self.backward.get(b_var).is_none_or(|prev| prev == a_var);
+        if !fwd_ok || !bwd_ok {
+            return false;
+        }
+        self.forward.insert(a_var.to_string(), b_var.to_string());
+        self.backward.insert(b_var.to_string(), a_var.to_string());
+        true
+    }
+}
+
+/// Match two flat expression bodies of `a` and `b` position-for-position under
+/// `is_var`, binding variables into `ren`. Constants must be *identical*
+/// (constants and typecodes are fixed under a variable renaming); a var must
+/// match a var (kind-preserving), a constant must match the same constant.
+fn match_symbols(
+    a: &[Symbol],
+    b: &[Symbol],
+    is_var: &dyn Fn(&str) -> bool,
+    ren: &mut Renaming,
+) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    for (sa, sb) in a.iter().zip(b) {
+        let (sa, sb) = (sa.as_str(), sb.as_str());
+        match (is_var(sa), is_var(sb)) {
+            (true, true) => {
+                if !ren.bind(sa, sb) {
+                    return false;
+                }
+            }
+            (false, false) => {
+                if sa != sb {
+                    return false; // distinct constants — a renaming can't change these
+                }
+            }
+            // A variable can never match a constant or vice versa.
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// Match a single expression (typecode + body): the typecode is a constant and
+/// must be identical; the body matches symbol-for-symbol under `is_var`.
+fn match_expr(a: &Expr, b: &Expr, is_var: &dyn Fn(&str) -> bool, ren: &mut Renaming) -> bool {
+    a.typecode() == b.typecode() && match_symbols(&a.body, &b.body, is_var, ren)
+}
+
+/// Do `a` and `b` assert the **same statement up to a consistent bijective
+/// renaming of their variables**? Returns `Some(renaming)` iff `b`'s statement
+/// is `a`'s conclusion + essentials (in order) under some bijection on variable
+/// names, with constants and typecodes held fixed, matched float typecodes
+/// agreeing, and `b`'s `$d` mapping *into* `a`'s (`ren`-image of each `b`-`$d`
+/// pair is an `a`-`$d` pair). `None` on any conflict.
+///
+/// A Metamath schema is invariant under a consistent bijective renaming of its
+/// variables ([`Database::map_symbols`](crate::Database::map_symbols) docs), so
+/// a witness that matches `mod renaming` is a sound substitute at every use site
+/// of the axiom — *provided* the renaming is a **bijection**. Non-injectivity
+/// (two `a`-vars to one `b`-var, or the reverse) would identify distinct
+/// metavariables and is rejected. `$d` is checked in the direction that keeps
+/// the witness no *stronger* than the axiom: every distinctness the witness
+/// requires (a `b`-`$d` pair, mapped back to `a`-vars) must already be granted
+/// by `a`'s `$d`.
+///
+/// This is the α-variant of [`crate::axioms::same_statement`] (which demands
+/// syntactic equality). `is_var(name)` classifies a symbol as a
+/// variable; over a single database use `|s| db.is_variable(s)`. A caller whose
+/// `is_var` misclassifies a constant as a variable cannot mint a false
+/// renaming: every matched variable is required to carry an agreeing `$f`
+/// typecode, and a constant has no `$f` — so the match is rejected.
+pub fn same_statement_mod_renaming(
+    a: &Assertion,
+    b: &Assertion,
+    is_var: &dyn Fn(&str) -> bool,
+) -> Option<Renaming> {
+    if a.frame.essentials.len() != b.frame.essentials.len() {
+        return None;
+    }
+    let mut ren = Renaming::default();
+    // Conclusion first, then essentials in order — one shared bijection.
+    if !match_expr(&a.conclusion, &b.conclusion, is_var, &mut ren) {
+        return None;
+    }
+    for (ha, hb) in a.frame.essentials.iter().zip(&b.frame.essentials) {
+        if !match_expr(&ha.expr, &hb.expr, is_var, &mut ren) {
+            return None;
+        }
+    }
+
+    // Matched-variable float typecodes must agree: if a-var `x` was bound to
+    // b-var `y`, their `$f` typecodes must be the same (a renaming preserves
+    // typing). Every matched variable occurs in the conclusion/essentials, so
+    // it is a *mandatory* variable and MUST have a floating hypothesis in a
+    // well-formed frame — so we **require** both sides to have a typecode and
+    // agree. This also hardens against a caller whose `is_var` misclassifies a
+    // constant as a variable: a constant has no `$f`, so the pair has no
+    // typecode on that side and the match is rejected rather than minting a
+    // false renaming.
+    let a_ty: BTreeMap<&str, &str> = a
+        .frame
+        .floats
+        .iter()
+        .map(|f| (f.var.as_str(), f.typecode.as_str()))
+        .collect();
+    let b_ty: BTreeMap<&str, &str> = b
+        .frame
+        .floats
+        .iter()
+        .map(|f| (f.var.as_str(), f.typecode.as_str()))
+        .collect();
+    for (av, bv) in &ren.forward {
+        match (a_ty.get(av.as_str()), b_ty.get(bv.as_str())) {
+            (Some(ta), Some(tb)) if ta == tb => {}
+            _ => return None,
+        }
+    }
+
+    // $d: every distinctness the witness `b` requires must be granted by `a`.
+    // Map each b-$d pair back to a-vars via the bijection; it must be an a-$d
+    // pair. A b-$d over a variable outside the bijection cannot be discharged,
+    // so it fails.
+    let a_pairs: BTreeSet<(String, String)> = a
+        .frame
+        .disjoints
+        .iter()
+        .map(|(x, y)| ordered(x, y))
+        .collect();
+    for (x, y) in &b.frame.disjoints {
+        let (Some(ax), Some(ay)) = (ren.backward.get(x), ren.backward.get(y)) else {
+            return None; // a b-$d variable with no a-preimage: undischargeable
+        };
+        if !a_pairs.contains(&ordered(ax, ay)) {
+            return None;
+        }
+    }
+
+    Some(ren)
+}
+
+fn ordered(x: &str, y: &str) -> (String, String) {
+    if x <= y {
+        (x.to_string(), y.to_string())
+    } else {
+        (y.to_string(), x.to_string())
+    }
+}
+
+/// Every assertion of `tgt` whose statement equals `axiom`'s **up to a
+/// consistent bijective variable renaming** (via [`same_statement_mod_renaming`]
+/// with `tgt`'s variable classification). The α-variant of
+/// [`matching_witnesses`]: it also finds witnesses that state the same schema
+/// with different bound-variable names (e.g. `|- ( ph -> ph )` witnessing
+/// `|- ( ps -> ps )`). Axioms sort before theorems.
+///
+/// Each hit is paired with the discovered renaming so callers can see the
+/// variable correspondence. `is_var` classifies `axiom`'s symbols; witnesses'
+/// symbols are classified by `tgt`.
+pub fn matching_witnesses_mod_renaming<'db>(
+    tgt: &'db Database,
+    axiom: &Assertion,
+    is_var: &dyn Fn(&str) -> bool,
+) -> Vec<(&'db Assertion, Renaming)> {
+    // A symbol is a variable if it is a variable in either the axiom's world or
+    // the target's — the two databases may declare different symbol sets, and a
+    // name that is a var in one but a constant in the other is genuinely a
+    // kind mismatch that `match_symbols`'s `(true,false)` arm rejects.
+    let classify = |s: &str| is_var(s) || tgt.is_variable(s);
+    let mut hits: Vec<(&Assertion, Renaming)> = tgt
+        .assertions()
+        .filter_map(|c| same_statement_mod_renaming(axiom, c, &classify).map(|r| (c, r)))
+        .collect();
+    hits.sort_by_key(|(a, _)| a.proof.is_some()); // axioms (proof None) first
+    hits
+}
+
 /// A **checked interpretation**: every `src` `$a` axiom has a σ-image witness in
 /// `tgt`. Holds the source/target/σ so [`transport`](Self::transport) can move
 /// derivability claims across. Build with [`check_interpretation`].
@@ -585,6 +787,184 @@ mod tests {
         let cov = interpretation_coverage(&src, &tgt, &sigma, &|_| None).unwrap();
         assert_eq!(cov.unmatched, ["ax-2"]);
         assert!(cov.matched_labels().contains("ax-1"));
+    }
+
+    // --- α / variable-renaming matching --------------------------------
+
+    /// A one-axiom database whose sole `$a` states `|- ( <p> -> <p> )` over a
+    /// variable `p` typed `wff`; used to build renaming fixtures.
+    fn self_impl_db(var: &str, label: &str) -> Database {
+        let src = format!(
+            "$c wff |- ( ) -> $.\n$v {var} $.\n\
+             w{var} $f wff {var} $.\n\
+             {label} $a |- ( {var} -> {var} ) $.\n"
+        );
+        parse(&src).unwrap()
+    }
+
+    fn sole_axiom<'a>(db: &'a Database, label: &str) -> &'a Assertion {
+        match db.statement_by_label(label).unwrap() {
+            Statement::Assert(a) => a,
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn renaming_matches_alpha_variant() {
+        // |- ( ph -> ph ) matches |- ( ps -> ps ) with ph ↔ ps.
+        let a_db = self_impl_db("ph", "aid");
+        let b_db = self_impl_db("ps", "bid");
+        let a = sole_axiom(&a_db, "aid");
+        let b = sole_axiom(&b_db, "bid");
+        let is_var = |s: &str| matches!(s, "ph" | "ps");
+        let ren = same_statement_mod_renaming(a, b, &is_var)
+            .expect("|- ( ph -> ph ) matches |- ( ps -> ps ) up to renaming");
+        assert_eq!(ren.forward.get("ph").map(String::as_str), Some("ps"));
+        assert_eq!(ren.backward.get("ps").map(String::as_str), Some("ph"));
+    }
+
+    #[test]
+    fn renaming_rejects_non_injective() {
+        // |- ( ph -> ps ) vs |- ( ph -> ph ): matching needs ph↦ph AND ps↦ph,
+        // which is non-injective (two a-vars to one b-var) → None. A wrong
+        // renaming here would be unsound.
+        let a_db = parse(
+            "$c wff |- ( ) -> $.\n$v ph ps $.\n\
+             wph $f wff ph $.\nwps $f wff ps $.\n\
+             adiff $a |- ( ph -> ps ) $.\n",
+        )
+        .unwrap();
+        let b_db = self_impl_db("ph", "bid");
+        let a = sole_axiom(&a_db, "adiff");
+        let b = sole_axiom(&b_db, "bid");
+        let is_var = |s: &str| matches!(s, "ph" | "ps");
+        assert!(same_statement_mod_renaming(a, b, &is_var).is_none());
+        // And the reverse (|- ( ph -> ph ) as `a`, |- ( ph -> ps ) as `b`) also
+        // fails: ph↦ph then ph↦ps conflicts in the forward map.
+        assert!(same_statement_mod_renaming(b, a, &is_var).is_none());
+    }
+
+    #[test]
+    fn renaming_holds_constants_fixed() {
+        // Same shape but a different constant connective (`->` vs `=>`) must NOT
+        // match — constants are never renamed.
+        let a_db = self_impl_db("ph", "aid");
+        let b_db = parse(
+            "$c wff |- ( ) => $.\n$v ph $.\n\
+             wph $f wff ph $.\n\
+             bid $a |- ( ph => ph ) $.\n",
+        )
+        .unwrap();
+        let a = sole_axiom(&a_db, "aid");
+        let b = sole_axiom(&b_db, "bid");
+        let is_var = |s: &str| s == "ph";
+        assert!(same_statement_mod_renaming(a, b, &is_var).is_none());
+    }
+
+    #[test]
+    fn renaming_var_cannot_match_constant() {
+        // A variable in `a` cannot align with a constant in `b` at the same slot.
+        let a_db = self_impl_db("ph", "aid");
+        // b: |- ( 0 -> 0 ) where 0 is a constant.
+        let b_db = parse(
+            "$c wff |- ( ) -> 0 $.\n\
+             bid $a |- ( 0 -> 0 ) $.\n",
+        )
+        .unwrap();
+        let a = sole_axiom(&a_db, "aid");
+        let b = sole_axiom(&b_db, "bid");
+        let is_var = |s: &str| s == "ph";
+        assert!(same_statement_mod_renaming(a, b, &is_var).is_none());
+    }
+
+    #[test]
+    fn renaming_witness_dd_must_be_granted() {
+        // a grants $d ph ps; b requires $d over its renamed images → OK.
+        let a_db = parse(
+            "$c wff |- ( ) -> $.\n$v ph ps $.\n\
+             wph $f wff ph $.\nwps $f wff ps $.\n\
+             ${ $d ph ps $. aimp $a |- ( ph -> ps ) $. $}\n",
+        )
+        .unwrap();
+        // b renames to P,Q and requires $d P Q.
+        let b_db = parse(
+            "$c wff |- ( ) -> $.\n$v P Q $.\n\
+             wP $f wff P $.\nwQ $f wff Q $.\n\
+             ${ $d P Q $. bimp $a |- ( P -> Q ) $. $}\n",
+        )
+        .unwrap();
+        // b' requires NO $d — a stronger schema, still fine (⊆).
+        let bnod_db = parse(
+            "$c wff |- ( ) -> $.\n$v P Q $.\n\
+             wP $f wff P $.\nwQ $f wff Q $.\n\
+             bimp $a |- ( P -> Q ) $.\n",
+        )
+        .unwrap();
+        // Classifier must cover both databases' variables (see
+        // `matching_witnesses_mod_renaming`, which unions the two var sets).
+        let is_var = |s: &str| matches!(s, "ph" | "ps" | "P" | "Q");
+        let a = sole_axiom(&a_db, "aimp");
+        assert!(same_statement_mod_renaming(a, sole_axiom(&b_db, "bimp"), &is_var).is_some());
+        assert!(same_statement_mod_renaming(a, sole_axiom(&bnod_db, "bimp"), &is_var).is_some());
+
+        // Now the reverse: a grants NO $d, b requires one → witness is STRONGER
+        // in the wrong direction (needs distinctness a doesn't grant) → None.
+        let anod_db = parse(
+            "$c wff |- ( ) -> $.\n$v ph ps $.\n\
+             wph $f wff ph $.\nwps $f wff ps $.\n\
+             aimp $a |- ( ph -> ps ) $.\n",
+        )
+        .unwrap();
+        assert!(
+            same_statement_mod_renaming(
+                sole_axiom(&anod_db, "aimp"),
+                sole_axiom(&b_db, "bimp"),
+                &is_var
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn renaming_rejects_misclassified_constant() {
+        // Hardening: a caller whose `is_var` wrongly classifies a *constant* as a
+        // variable must not mint a false renaming. Here `0` is a constant in both
+        // dbs (no `$f`), but `is_var` lies and calls it a variable. The two
+        // statements would "match" `0 ↦ 1` structurally — but a matched variable
+        // has no float typecode, so the typecode guard rejects it.
+        let a_db = parse(
+            "$c wff |- ( ) -> 0 1 $.\n\
+             aid $a |- ( 0 -> 0 ) $.\n",
+        )
+        .unwrap();
+        let b_db = parse(
+            "$c wff |- ( ) -> 0 1 $.\n\
+             bid $a |- ( 1 -> 1 ) $.\n",
+        )
+        .unwrap();
+        let a = sole_axiom(&a_db, "aid");
+        let b = sole_axiom(&b_db, "bid");
+        let lying_is_var = |s: &str| matches!(s, "0" | "1"); // WRONG: 0,1 are constants
+        assert!(
+            same_statement_mod_renaming(a, b, &lying_is_var).is_none(),
+            "a misclassified constant must not produce a renaming"
+        );
+    }
+
+    #[test]
+    fn matching_witnesses_mod_renaming_finds_alpha() {
+        // tgt has |- ( ps -> ps ); axiom is |- ( ph -> ph ). Exact match fails,
+        // renaming match succeeds.
+        let tgt = self_impl_db("ps", "bid");
+        let axiom_db = self_impl_db("ph", "aid");
+        let axiom = sole_axiom(&axiom_db, "aid");
+        // Exact matcher finds nothing (different variable name).
+        assert!(matching_witnesses(&tgt, axiom).is_empty());
+        // Renaming matcher finds `bid`.
+        let is_var = |s: &str| s == "ph";
+        let hits = matching_witnesses_mod_renaming(&tgt, axiom, &is_var);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].0.label, "bid");
     }
 
     #[test]

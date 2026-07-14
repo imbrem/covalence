@@ -1,13 +1,13 @@
-//! `.mm` file parsing (the uncompressed-subset stretch goal): read a small
-//! hand-written `.mm` from disk, parse it, and round-trip it.
+//! `.mm` file parsing + round-trip through the **canonical emitter**
+//! ([`covalence_metamath::to_mm_string`], `src/emit.rs`).
 //!
-//! "Round-trip" here means: parse the source, then re-emit a normalised `.mm`
-//! from the parsed [`covalence_metamath::Database`], parse *that*, and confirm
-//! both databases verify and agree on their assertions. We have no canonical
-//! serializer in the crate yet (north star), so the test ships a minimal
-//! emitter local to the test.
+//! "Round-trip" here means: parse the source, re-emit `.mm` from the parsed
+//! [`covalence_metamath::Database`] via the in-crate emitter, parse *that*, and
+//! confirm both databases verify and agree on their assertion statements. The
+//! test-local emitter this file used to ship has been retired now that the crate
+//! has a real one.
 
-use covalence_metamath::{Database, Proof, Statement, parse, verify_all};
+use covalence_metamath::{Database, Statement, parse, to_mm_string, verify_all};
 
 const FIXTURE: &str = include_str!("fixtures/demo0.mm");
 
@@ -19,100 +19,91 @@ fn parse_mm_file_and_verify() {
     assert!(db.statement_by_label("mp").is_some());
 }
 
+/// A statement snapshot that ignores `$f`/`$e` labels (the emitter regenerates
+/// them — floats globally, essentials per block — so the round-trip contract is
+/// *statement* equality: assertion label + conclusion + essential expressions +
+/// float typings + `$d`, not hypothesis labels).
+fn snapshot(
+    db: &Database,
+) -> Vec<(
+    String,
+    String,
+    Vec<String>,
+    Vec<(String, String)>,
+    Vec<(String, String)>,
+)> {
+    let mut v: Vec<_> = db
+        .assertions()
+        .map(|a| {
+            let mut dd: Vec<(String, String)> = a
+                .frame
+                .disjoints
+                .iter()
+                .map(|(x, y)| {
+                    if x <= y {
+                        (x.clone(), y.clone())
+                    } else {
+                        (y.clone(), x.clone())
+                    }
+                })
+                .collect();
+            dd.sort();
+            (
+                a.label.clone(),
+                a.conclusion.render(),
+                a.frame.essentials.iter().map(|h| h.expr.render()).collect(),
+                a.frame
+                    .floats
+                    .iter()
+                    .map(|f| (f.typecode.clone(), f.var.clone()))
+                    .collect(),
+                dd,
+            )
+        })
+        .collect();
+    v.sort_by(|x, y| x.0.cmp(&y.0));
+    v
+}
+
 #[test]
 fn roundtrip_through_emitter() {
     let db1 = parse(FIXTURE).unwrap();
-    let emitted = emit(&db1);
+    let emitted = to_mm_string(&db1);
     let db2 = parse(&emitted).unwrap_or_else(|e| panic!("re-parse failed: {e}\n---\n{emitted}"));
 
-    // Both verify.
+    // Both verify (the emitted database's proofs still check).
     assert_eq!(verify_all(&db1).unwrap(), 1);
     assert_eq!(verify_all(&db2).unwrap(), 1);
 
-    // The assertion sets agree (label + conclusion).
-    let mut a1: Vec<_> = db1
-        .assertions()
-        .map(|a| (a.label.clone(), a.conclusion.clone()))
-        .collect();
-    let mut a2: Vec<_> = db2
-        .assertions()
-        .map(|a| (a.label.clone(), a.conclusion.clone()))
-        .collect();
-    a1.sort_by(|x, y| x.0.cmp(&y.0));
-    a2.sort_by(|x, y| x.0.cmp(&y.0));
-    assert_eq!(a1, a2);
+    // The assertion statements agree exactly (label, conclusion, essentials,
+    // float typings, and $d).
+    assert_eq!(snapshot(&db1), snapshot(&db2));
 }
 
-/// A minimal `.mm` emitter (test-local; the canonical one is a north star).
-fn emit(db: &Database) -> String {
-    use covalence_metamath::expr_symbols;
-    let mut out = String::new();
-    for stmt in db.statements() {
-        match stmt {
-            Statement::Constant(syms) => {
-                out.push_str(&format!("$c {} $.\n", syms.join(" ")));
-            }
-            Statement::Variable(syms) => {
-                out.push_str(&format!("$v {} $.\n", syms.join(" ")));
-            }
-            Statement::Float(f) => {
-                out.push_str(&format!("{} $f {} {} $.\n", f.label, f.typecode, f.var));
-            }
-            Statement::Essential(h) => {
-                let body = expr_symbols(&h.expr).unwrap().join(" ");
-                out.push_str(&format!("{} $e {} $.\n", h.label, body));
-            }
-            Statement::Disjoint(vars) => {
-                out.push_str(&format!("$d {} $.\n", vars.join(" ")));
-            }
-            Statement::Assert(a) => {
-                let body = expr_symbols(&a.conclusion).unwrap().join(" ");
-                match &a.proof {
-                    None => out.push_str(&format!("{} $a {} $.\n", a.label, body)),
-                    Some(Proof::Normal(p)) => {
-                        out.push_str(&format!("{} $p {} $= {} $.\n", a.label, body, p.join(" ")))
-                    }
-                    Some(Proof::Compressed { labels, letters }) => out.push_str(&format!(
-                        "{} $p {} $= ( {} ) {} $.\n",
-                        a.label,
-                        body,
-                        labels.join(" "),
-                        String::from_utf8_lossy(letters),
-                    )),
-                }
-            }
-        }
-    }
-    // The emitter above ignores ${ $} nesting; re-insert a block around the
-    // essential hypotheses + their assertion so scoping round-trips. For demo0
-    // the only scoped group is `mp`; wrap any Essential...Assert run.
-    wrap_scopes(&out)
-}
+/// The emitter round-trips scoped `$e` hypotheses and `$d` conditions without
+/// leaking them into later assertions — the hazard the flat statement list (no
+/// `${ $}` markers) creates.
+#[test]
+fn roundtrip_scopes_and_disjoints() {
+    let src = "$c wff |- ( ) -> $.\n$v ph ps $.\n\
+               wph $f wff ph $.\nwps $f wff ps $.\n\
+               wi $a wff ( ph -> ps ) $.\n\
+               ${ $d ph ps $.  h $e |- ph $.  m $a |- ps $. $}\n\
+               free $a |- ph $.\n";
+    let db1 = parse(src).unwrap();
+    let db2 = parse(&to_mm_string(&db1)).unwrap();
+    assert_eq!(snapshot(&db1), snapshot(&db2));
 
-/// Wrap runs of `$e` hypotheses and the following assertion in `${ ... $}` so
-/// that scoping is preserved on re-parse. (demo0 has exactly one such run.)
-fn wrap_scopes(flat: &str) -> String {
-    let mut out = String::new();
-    let mut lines = flat.lines().peekable();
-    while let Some(line) = lines.next() {
-        if line.contains(" $e ") {
-            out.push_str("${\n");
-            out.push_str(line);
-            out.push('\n');
-            // Consume subsequent $e lines and the closing assertion.
-            while let Some(&next) = lines.peek() {
-                out.push_str(next);
-                out.push('\n');
-                lines.next();
-                if next.contains(" $a ") || next.contains(" $p ") {
-                    break;
-                }
-            }
-            out.push_str("$}\n");
-        } else {
-            out.push_str(line);
-            out.push('\n');
-        }
-    }
-    out
+    let free = match db2.statement_by_label("free").unwrap() {
+        Statement::Assert(a) => a,
+        _ => unreachable!(),
+    };
+    assert!(
+        free.frame.essentials.is_empty(),
+        "scoped $e leaked into `free`"
+    );
+    assert!(
+        free.frame.disjoints.is_empty(),
+        "scoped $d leaked into `free`"
+    );
 }

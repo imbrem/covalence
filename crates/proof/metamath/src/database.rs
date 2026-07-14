@@ -420,6 +420,13 @@ impl Database {
         })
     }
 
+    /// Render this database to canonical `.mm` source (see [`crate::emit`]).
+    /// The result re-parses to a structurally-equivalent database (same symbols
+    /// and assertion statements/frames), normalising scope structure.
+    pub fn to_mm_string(&self) -> String {
+        crate::emit::to_mm_string(self)
+    }
+
     // --- frame computation -------------------------------------------------
 
     /// Compute the mandatory frame for an assertion with the given conclusion.

@@ -62,6 +62,7 @@
 
 pub mod axioms;
 pub mod database;
+pub mod emit;
 pub mod error;
 pub mod expr;
 pub mod interpret;
@@ -78,11 +79,12 @@ pub use axioms::{
 pub use database::{
     Assertion, Database, DatabaseSink, FloatHyp, Frame, Hypothesis, Proof, Statement, SymbolKind,
 };
+pub use emit::to_mm_string;
 pub use error::MmError;
 pub use expr::{Expr, Symbol, TYPECODE_POS, body_of, expr_symbols, typecode_of};
 pub use interpret::{
-    Coverage, InterpError, InterpretationCert, TransportedTheorem, check_interpretation,
-    interpretation_coverage,
+    Coverage, InterpError, InterpretationCert, Renaming, TransportedTheorem, check_interpretation,
+    interpretation_coverage, matching_witnesses_mod_renaming, same_statement_mod_renaming,
 };
 pub use parse::{
     FileResolver, MemoryResolver, SourceResolver, parse, parse_into, parse_into_with_resolver,

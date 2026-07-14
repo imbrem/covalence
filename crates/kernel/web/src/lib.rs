@@ -286,6 +286,100 @@ pub fn check_haskell_proofs(module_src: &str, proof_src: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Little-language REPL demos — /lisp, /forsp, /forth.
+// ---------------------------------------------------------------------------
+
+/// Evaluate one cell of **Little Schemer ch1 Lisp** and return the printed
+/// value — the live front end for the `/lisp` demo page.
+///
+/// Creates a fresh kernel-backed [`Session`](covalence_lisp::Session) (stateless
+/// per call: ch1 has no persistent `defun` dictionary), parses + evaluates the
+/// source, and returns the value **read off a genuine `⊢ program = value`
+/// kernel theorem** — the Lisp `Session`'s honesty invariant: nothing is printed
+/// that did not come off a theorem.
+///
+/// JS side: `JSON.parse(lisp_eval_cell(src))` →
+/// `{ ok: true, result: string }` or `{ ok: false, error: string }`.
+#[wasm_bindgen]
+pub fn lisp_eval_cell(src: &str) -> String {
+    // A PERSISTENT session across cells (a real REPL): `defun`s accumulate, so
+    // you can define recursive functions and build the metacircular interpreter
+    // up over several cells. `lisp_reset` clears it.
+    LISP_SESSION.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            match covalence_lisp::session::Session::new() {
+                Ok(s) => *slot = Some(s),
+                Err(e) => return json_err(&format!("failed to start Lisp session: {e}")),
+            }
+        }
+        match slot.as_mut().unwrap().eval_cell(src) {
+            Ok(value) => json_ok_field("result", &value),
+            Err(e) => json_err(&format!("{e}")),
+        }
+    })
+}
+
+/// Reset the persistent Lisp REPL session (forget all `defun`s).
+#[wasm_bindgen]
+pub fn lisp_reset() {
+    LISP_SESSION.with(|c| *c.borrow_mut() = None);
+}
+
+/// Evaluate one cell of **Forsp** (a concatenative read → compute → print
+/// language) and return the top-of-stack value as an S-expression string — the
+/// live front end for the `/forsp` demo page.
+///
+/// Runs the program on a fresh [`Forsp`](covalence_forsp::Forsp) runtime, then
+/// renders the top of the resulting stack via `to_sexp`. An empty stack (a
+/// program that pushes nothing) reports the empty result.
+///
+/// JS side: `JSON.parse(forsp_eval_cell(src))` →
+/// `{ ok: true, result: string }` or `{ ok: false, error: string }`.
+#[wasm_bindgen]
+pub fn forsp_eval_cell(src: &str) -> String {
+    // A PERSISTENT Forsp runtime across cells: variable bindings and word
+    // definitions accumulate, like a real REPL. `forsp_reset` clears it.
+    FORSP_SESSION.with(|cell| {
+        let mut f = cell.borrow_mut();
+        if let Err(e) = f.run(src) {
+            return json_err(&format!("{e}"));
+        }
+        // Render the top of the resulting stack (the program's "result") as a
+        // Forsp S-expression string (`show` handles closures via `!<hash>`).
+        match f.try_peek() {
+            Ok(top) => {
+                let rendered = f.show(top);
+                json_ok_field("result", &rendered)
+            }
+            // An empty stack is legal (a program that only defines/prints).
+            Err(_) => json_ok_field("result", "()"),
+        }
+    })
+}
+
+/// Reset the persistent Forsp REPL runtime (forget bindings + word defs).
+#[wasm_bindgen]
+pub fn forsp_reset() {
+    FORSP_SESSION.with(|c| *c.borrow_mut() = covalence_forsp::Forsp::new());
+}
+
+thread_local! {
+    static LISP_SESSION: std::cell::RefCell<Option<covalence_lisp::session::Session>> =
+        const { std::cell::RefCell::new(None) };
+    static FORSP_SESSION: std::cell::RefCell<covalence_forsp::Forsp<()>> =
+        std::cell::RefCell::new(covalence_forsp::Forsp::new());
+}
+
+/// Placeholder for a future **Forth** REPL demo (`/forth` page). Always reports
+/// `{ ok: false, error: "forth: coming soon" }` — the route + wasm seam exist so
+/// the page renders, but there is no evaluator yet.
+#[wasm_bindgen]
+pub fn forth_eval_cell(_src: &str) -> String {
+    json_err("forth: coming soon")
+}
+
+// ---------------------------------------------------------------------------
 // JSON helpers — a small, dependency-light boundary shared by the `haskell_*`
 // functions. Values are escaped via `serde_json` (strings only); the object
 // shells are formatted by hand to keep the wasm surface tiny.

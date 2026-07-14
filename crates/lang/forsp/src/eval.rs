@@ -99,6 +99,16 @@ fn env_find(heap: &Heap, env: ValRef, name: ValRef) -> Result<ValRef, FError> {
     Err(FError::Unbound(target.to_string()))
 }
 
+/// Execute a single primitive against the runtime. Shared by the big-step
+/// [`compute`] engine and the small-step [`Machine`](crate::machine::Machine).
+///
+/// `Prim::Force` is a control-flow primitive: here it applies the forced value
+/// via the big-step [`apply`] (recursing). The small-step machine intercepts
+/// `Force` *before* calling this, so its own frame-pushing `apply` runs instead.
+pub(crate) fn exec_prim_pub<F: ForeignPrims>(f: &mut Forsp<F>, p: Prim) -> Result<(), FError> {
+    exec_prim(f, p)
+}
+
 fn exec_prim<F: ForeignPrims>(f: &mut Forsp<F>, p: Prim) -> Result<(), FError> {
     match p {
         Prim::Push => {

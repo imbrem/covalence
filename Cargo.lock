@@ -1012,6 +1012,7 @@ name = "covalence-forsp"
 version = "0.0.0"
 dependencies = [
  "covalence-hash",
+ "covalence-repl-core",
  "covalence-sexp",
  "thiserror 2.0.18",
 ]
@@ -1144,6 +1145,7 @@ dependencies = [
  "covalence-hol",
  "covalence-hol-eval",
  "covalence-inductive",
+ "covalence-k",
  "covalence-metamath",
  "covalence-sexp",
  "covalence-spectec",
@@ -1163,6 +1165,15 @@ name = "covalence-json"
 version = "0.0.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "covalence-k"
+version = "0.0.0"
+dependencies = [
+ "covalence-sexp",
+ "smol_str",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1202,6 +1213,19 @@ dependencies = [
  "serde",
  "serde_json",
  "smol_str",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-lisp"
+version = "0.0.0"
+dependencies = [
+ "covalence-core",
+ "covalence-hol-api",
+ "covalence-hol-eval",
+ "covalence-init",
+ "covalence-repl-core",
+ "covalence-sexp",
  "thiserror 2.0.18",
 ]
 
@@ -1393,6 +1417,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-repl-core"
+version = "0.0.0"
+
+[[package]]
 name = "covalence-sat"
 version = "0.0.0"
 dependencies = [
@@ -1567,9 +1595,11 @@ name = "covalence-web-kernel"
 version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
+ "covalence-forsp",
  "covalence-haskell",
  "covalence-hol-api",
  "covalence-kernel",
+ "covalence-lisp",
  "serde_json",
  "wasm-bindgen",
 ]

@@ -97,7 +97,7 @@ convention.)
 | assoc type | minimal Lisp instance |
 |---|---|
 | `State` | `{ defs, kv:(), log:() }` — the extensible world (`reduction-relations-and-state.md` §3) |
-| `Term` | a lowered carved-`sexpr` HOL `Term` (built straight from events, §3) — or a light AST |
+| `Term` | a lowered `sexpr` HOL `Term` (built straight from events, §3) — or a light AST |
 | `Eval` | `Thm` of `⊢ Reduces (state,input) (state',output)` |
 | `StartError` | prelude/dialect load failure |
 | `ParseError` | reader error (bad delimiters, ill-formed event stream, unknown reader macro) |
@@ -140,7 +140,7 @@ pub trait SExprRepl: Repl {
 ```
 
 A concrete `Session` sets `Repl::parse = SExprRepl::parse_events`. The builder's `Output`
-can be the carved-`sexpr` HOL `Term` itself (fold-to-kernel-term while parsing) or a small
+can be the `sexpr` HOL `Term` itself (fold-to-kernel-term while parsing) or a small
 resolved AST; either way the separate `SExpr` materialization + re-walk-to-lower of the
 tree path is gone. That's the allocation win the ask names, and it's *streaming* (parse
 and build interleave).
@@ -193,7 +193,7 @@ eagerly. Both are one-line variants of the same builder.)
 - `start()` replaces the ad-hoc `Session::new()` and returns a fresh `State` — enabling
   per-session state on the web (`session` resource) and checkpoint/undo.
 - `eval_cell` (the web entrypoint) = `ReplStep::step` + the `#`-directive pre-check.
-- Minimal instances: `TermBuilder = LispTermBuilder` (folds to carved-`sexpr` `Term`),
+- Minimal instances: `TermBuilder = LispTermBuilder` (folds to `sexpr` `Term`),
   `Dialect = CovalenceDialect` (reuse), errors as the table in §2.
 
 ## 6. Open questions

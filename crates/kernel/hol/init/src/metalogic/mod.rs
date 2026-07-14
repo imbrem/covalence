@@ -59,6 +59,13 @@ use crate::init::ext::TermExt;
 
 pub mod toy;
 
+// **The binary twin of this engine** (`d n w` over `(nt_ty, word_ty)` rather
+// than a single reified formula `d ⌜A⌝`) — the substrate for the CFG stratum's
+// `Derives_E n w` judgement (`crate::grammar::cfg`), reusing `conj` /
+// `nth_conjunct` / `conj_thms` here. `init::regex`'s `Matches r w` is the same
+// shape hand-rolled; this packages it once.
+pub mod binary;
+
 // **Generic rule application over any [`RuleSet`]** — the forward/composition
 // direction of the impredicative engine: `apply_rule(rs, k, n, floats, premises)`
 // mints `⊢ Derivable_L (σ concl)` by instantiating clause `k`'s metavariables and

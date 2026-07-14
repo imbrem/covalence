@@ -29,6 +29,7 @@ graph LR
   egglog --> sexp
   egglog --> types
   forsp --> hash
+  forsp --> repl-core
   forsp --> sexp
   fuse --> hash
   fuse --> object
@@ -71,6 +72,12 @@ graph LR
   kernel --> object
   kernel --> sexp
   kernel --> store
+  lisp --> core
+  lisp --> hol-api
+  lisp --> hol-eval
+  lisp --> init
+  lisp --> repl-core
+  lisp --> sexp
   llm --> proto
   lsp --> sexp
   lsp --> wasm
@@ -143,8 +150,10 @@ graph LR
   wasm-store --> json
   wasm-store --> store
   wasm-store --> wasm
+  web-kernel --> forsp
   web-kernel --> haskell
   web-kernel --> hol-api
   web-kernel --> kernel
+  web-kernel --> lisp
   classDef tcb fill:#ffd6d6,stroke:#cc0000,color:#000;
   class core,pure,pure-eval,pure-trusted,types tcb;

@@ -1,0 +1,12 @@
+[
+  {"title":"arithmetic (postfix)","src":"3 4 +"},
+  {"title":"nested arithmetic","src":"10 3 - 2 *"},
+  {"title":"variable binding","src":"42 $x ^x"},
+  {"title":"a closure, applied","src":"($x ^x 1 +) $inc  10 inc"},
+  {"title":"cons / car","src":"2 1 cons car"},
+  {"title":"equality of atoms","src":"'a 'a eq"},
+  {"title":"stack introspection","src":"1 2 3 stack"},
+  {"title":"a closure over the environment","src":"($n ($x ^x ^n +)) $make-adder\n5 make-adder $add5\n10 add5 force"},
+  {"title":"if via cswap","src":"($a $b ^a) $nip\n($cond $else $then ^else ^then ^cond cswap nip force) $if\n(10) (20) 't if"},
+  {"title":"recursive factorial","src":"($a $b ^a) $nip\n($cond $else $then ^else ^then ^cond cswap nip force) $if\n($self $n (1) (^n  ^n 1 - ^self ^self force  *) ^n 1 eq if) $fact-impl\n($n ^n ^fact-impl ^fact-impl force) $fact\n5 fact"}
+]

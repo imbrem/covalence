@@ -23,6 +23,10 @@ pub mod debug;
 pub mod grammar;
 pub mod hash;
 pub mod init;
+// The K-framework frontend lowering: KORE rewrite rules (via the untrusted
+// `covalence-k` driver) → `Derivable_KStep` relations over the reified free
+// term algebra. The K analogue of `wasm/`. See `notes/design/k-frontend.md`.
+pub mod k;
 pub mod metalogic;
 // The Metamath engine + `.mm` reader live in the lower, HOL-free
 // `covalence-metamath` crate; re-export it so `crate::metamath::…` (the peano

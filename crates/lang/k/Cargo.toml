@@ -1,0 +1,17 @@
+# An UNTRUSTED, kernel-free K-framework frontend driver: a hand-rolled
+# recursive-descent parser for textual KORE (the elaborated matching-logic IR
+# that K's `kompile` emits as `definition.kore`), a plain-data AST, ONE
+# canonical S-expression rendering of that AST (the interchange IR), and a
+# fragment classifier sorting kompiled axioms into the rewrite/function/
+# constructor/… ladder. No kernel deps — the lowering into `covalence-init`
+# comes later. Deferred work: crates/lang/k/SKELETONS.md.
+
+[package]
+name = "covalence-k"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-sexp = { path = "../../lib/sexp" }
+smol_str = "0.3"
+thiserror = "2"

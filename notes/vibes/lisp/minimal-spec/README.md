@@ -1,5 +1,13 @@
 # Minimal end-to-end `/lisp` REPL — a fully-defined spec (discussion draft, agent-authored)
 
+> **STATUS (branch `lisp-demo`):** the first build has landed — see
+> [`../STATUS.md`](../STATUS.md). The shipped shape is the **equational special
+> case** (`⊢ input = output`) of §0's Thm 2, covering Little Schemer **ch1**
+> only. The `Reduces` *relation* (nondeterminism/`amb`, threaded state) and ch2
+> recursion are **deferred**; the parametric refactor in
+> [`../initial-ideas/parametric-reduction.md`](../initial-ideas/parametric-reduction.md)
+> supersedes the single-seam design below.
+
 Goal (verbatim from the ask): a `/lisp` web endpoint exposing a **very basic Lisp REPL**
 where **the user types an S-expression, the S-expression is evaluated *as a theorem*, and
 the result is printed**. Minimal but *fully* defined: internal parse/deparse traits, a
@@ -177,7 +185,7 @@ pub enum WordRule {
 }
 ```
 
-**Minimal builtin set** (over carved `sexpr`, reusing `init/lisp.rs`): `cons`, `car`,
+**Minimal builtin set** (over `sexpr`, reusing `init/lisp.rs`): `cons`, `car`,
 `cdr`, `atom?`, `eq`, `nil`, `+` on `nat` literals, and **`amb`** — the nondeterministic
 choice operator (two/three intro rules for `Reduces`), which showcases *why* the return
 type is a relation (one input, several witnessed outputs; `:next` enumerates). Each
@@ -212,7 +220,7 @@ real HOL term; `show(t,false)` = `prettyprint(output_sexpr)` under `state'` (§5
 defined `Reduces`/`Parses` relations; soundness is the kernel's.
 
 Lowering `SExpr → Term` (operands) reuses the Haskell path's `HolBackend` (S-expr →
-carved `sexpr` term). The REPL is untrusted; the `Thm` it returns is the trust boundary.
+`sexpr` term). The REPL is untrusted; the `Thm` it returns is the trust boundary.
 
 ### 5.1. `state` — an extensible world (only `defs` live now)
 

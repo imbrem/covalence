@@ -749,8 +749,11 @@ impl CarvedSExpr {
     // Freeness
     // ------------------------------------------------------------------
 
-    /// `⊢ (atom b = atom b2) ⟹ b = b2`.
-    fn inj_atom(&self, b: &Term, b2: &Term) -> Result<Thm> {
+    /// `⊢ (atom b = atom b2) ⟹ b = b2` — `atom` constructor injectivity.
+    /// Genuine (a derived HOL theorem, no postulate); public so downstream
+    /// deciders (e.g. the `/lisp` `eq?`) can turn atom equality into the
+    /// underlying blob equality.
+    pub fn inj_atom(&self, b: &Term, b2: &Term) -> Result<Thm> {
         let lhs = self.atom.clone().apply(b.clone())?;
         let rhs = self.atom.clone().apply(b2.clone())?;
         let eq = lhs.equals(rhs)?;

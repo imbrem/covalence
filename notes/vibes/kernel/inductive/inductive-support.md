@@ -23,9 +23,9 @@ strategies for realizing an inductive spec as a HOL object:
 
 So "carved" ≈ "subtype-of-a-universal-domain." Alternatives: *exact-type*,
 *subset/subtype construction*, *tree-as-labeled-paths*. The name is everywhere because
-carved `sexpr` is the linchpin datatype (the Lisp/ACL2 layer + the parsers sit on it).
+`sexpr` is the linchpin datatype (the Lisp/ACL2 layer + the parsers sit on it).
 
-## 1. The carved construction (`init/inductive/carved.rs`)
+## 1. The S-expression construction (`init/inductive/carved.rs`)
 
 ### 1a. The universal domain — a tree as its path→label table
 
@@ -189,7 +189,7 @@ reconstruction fold whose result type is the carrier itself, unquantifiable at r
 at a collapsing instance of `r` the injectivity statement is false, so no polymorphic
 proof exists — the backend honestly reports `rec_injective = false` and `Unsupported`
 for `prim_rec`. So: **one generic-but-capability-limited backend (Church) + two
-full-capability but type-specific backends (carved sexpr, nat).**
+full-capability but type-specific backends (kernel S-expression, nat).**
 
 ## 7. Skeletons + improvements
 

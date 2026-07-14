@@ -98,7 +98,7 @@ sharing, so it must be a **certificate**, per `content-addressing-federation-rul
   it can prove injective*, so `hash-equal ⇒ structurally-equal`. Note this is the
   **opposite** default from tier 1's canonicalize-then-hash (see §4) — and that difference
   is the whole subtlety.
-- **The carved-`sexpr` bridge is already there.** Our HOL terms live over carved `sexpr`,
+- **The `sexpr` bridge is already there.** Our HOL terms live over `sexpr`,
   which *is* a first-class S-expr — so "content-address HOL" reuses the tier-1 S-expr
   hashing on the term's serialized form. The Lisp surface and the HOL kernel share one
   content-addressing mechanism because they share the `sexpr` universe. That's the payoff

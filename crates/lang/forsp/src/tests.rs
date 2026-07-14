@@ -1,6 +1,7 @@
 use covalence_hash::O256;
 
 use super::*;
+use covalence_repl_core::{Fuel, Status};
 
 // --- test foreign prims ---
 
@@ -660,4 +661,149 @@ fn structurally_equal_closures_share_a_hash() {
     assert_eq!(f.heap.tag(a), Tag::Closure);
     assert_eq!(f.heap.tag(b), Tag::Closure);
     assert_eq!(f.heap.content_hash(a), f.heap.content_hash(b));
+}
+
+// --- small-step reduction (differential: small-step == big-step) ------------
+
+/// Render the top-of-stack value produced by big-step [`exec`].
+fn big_step_top(source: &str) -> String {
+    let mut f = Forsp::new();
+    f.run(source).unwrap();
+    let top = f.try_peek().unwrap();
+    f.show(top)
+}
+
+/// Reduce `source` small-step and render the top-of-stack value off the final
+/// snapshot, keeping the runtime alive to read the heap.
+fn small_step_render(source: &str) -> (String, u64, Status) {
+    let mut f = Forsp::new();
+    let program = f.read(source).unwrap();
+    let sem = ForspSemantics::new(f);
+    let input = sem.initial(program);
+    use covalence_repl_core::{Reduction, RunToValue, Strategy};
+    let mut red: Reduction<ForspRepr, ForspSemantics<()>> = Reduction::start(input);
+    RunToValue.drive(&sem, &mut red, Fuel::UNBOUNDED).unwrap();
+    let status = red.status();
+    let steps = red.steps();
+    let (head, _) = red.into_parts();
+    let rendered = sem.with_runtime(|rt| {
+        if head.stack.is_nil() {
+            "()".to_string()
+        } else {
+            let top = rt.heap.car(head.stack);
+            rt.show(top)
+        }
+    });
+    (rendered, steps, status)
+}
+
+/// Assert small-step and big-step agree on the rendered top value, and that the
+/// small-step reduction halted with a positive step count.
+fn assert_differential(source: &str) {
+    let big = big_step_top(source);
+    let (small, steps, status) = small_step_render(source);
+    assert_eq!(small, big, "small-step != big-step for `{source}`");
+    assert_eq!(status, Status::Value, "did not halt: `{source}`");
+    assert!(steps > 0, "no steps taken for `{source}`");
+}
+
+#[test]
+fn small_step_push_int() {
+    assert_differential("42");
+}
+
+#[test]
+fn small_step_arithmetic() {
+    assert_differential("3 4 +");
+}
+
+#[test]
+fn small_step_variable_binding() {
+    assert_differential("42 $x ^x");
+}
+
+#[test]
+fn small_step_closure_force() {
+    assert_differential("(42) force");
+}
+
+#[test]
+fn small_step_closure_with_binding() {
+    assert_differential("($x ^x 1 +) $inc  10 inc");
+}
+
+#[test]
+fn small_step_church_false() {
+    assert_differential("($x $y ^y) $false  1 2 false");
+}
+
+#[test]
+fn small_step_cons_car() {
+    assert_differential("2 1 cons car");
+}
+
+#[test]
+fn small_step_lexical_scoping() {
+    // Two values on the stack; render checks the top (outer x == 1).
+    assert_differential("1 $x  ($x 2 $x ^x) $f  99 f  ^x");
+}
+
+#[test]
+fn small_step_nested_closures() {
+    assert_differential(
+        "
+        ($n ($x ^x ^n +)) $make-adder
+        5 make-adder $add5
+        10 add5 force
+    ",
+    );
+}
+
+#[test]
+fn small_step_recursive_factorial() {
+    // The recursion goes through the reified continuation, not the Rust stack.
+    assert_differential(
+        "
+        ($a $b ^a) $nip
+        ($cond $else $then ^else ^then ^cond cswap nip force) $if
+
+        ($self $n
+            (1)
+            (^n  ^n 1 - ^self ^self force  *)
+            ^n 1 eq
+            if
+        ) $fact-impl
+
+        ($n ^n ^fact-impl ^fact-impl force) $fact
+
+        5 fact
+    ",
+    );
+}
+
+#[test]
+fn small_step_trace_is_monotone() {
+    // The trace records input-first and grows by exactly `steps` transitions.
+    let f = Forsp::new();
+    let red = f.reduce_source("3 4 +").unwrap();
+    assert_eq!(red.status, Status::Value);
+    assert_eq!(red.trace.len() as u64, red.steps);
+    assert!(red.trace.states.len() >= 2);
+    // The first snapshot is the un-stepped input (empty stack, one frame).
+    let first = &red.trace.states[0];
+    assert!(first.stack.is_nil());
+    assert_eq!(first.control.len(), 1);
+    // The last snapshot is halted.
+    assert!(red.trace.states.last().unwrap().is_halted());
+}
+
+#[test]
+fn small_step_fuel_bound_diverges_not_hangs() {
+    // A bounded pull on a program that needs more than 2 steps reports
+    // `Diverging`, not a value — the streaming non-termination story.
+    let mut f = Forsp::new();
+    let program = f.read("1 2 3 4 + + +").unwrap();
+    let red = f.forsp_reduce(program, Fuel::steps(2)).unwrap();
+    assert!(matches!(red.status, Status::Diverging(_)));
+    assert_eq!(red.steps, 2);
 }

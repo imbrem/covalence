@@ -61,6 +61,11 @@ pub struct PkgArgs {
     #[arg(long)]
     keep_going: bool,
 
+    /// Discharge OpenTheory's axiom of infinity natively (map `ind → nat` and
+    /// prove it over the native naturals), so it is not left as an assumption.
+    #[arg(long)]
+    native_infinity: bool,
+
     /// Packages to check (names, with or without version suffix).
     packages: Vec<String>,
 }
@@ -135,7 +140,11 @@ fn pkg(args: PkgArgs) {
         std::process::exit(2);
     }
 
-    let mut kernel = NativeOt::new();
+    let mut kernel = if args.native_infinity {
+        NativeOt::new().with_overrides(covalence_opentheory::nat_infinity_override())
+    } else {
+        NativeOt::new()
+    };
     let mut names = NameTable::new();
     register_select(&mut kernel, &mut names);
     let mut cache: TheoryCache<NativeOt> = TheoryCache::new();

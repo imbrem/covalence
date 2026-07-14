@@ -6,8 +6,12 @@
 pub mod error;
 #[cfg(feature = "fetch")]
 pub mod fetch;
+#[cfg(feature = "native")]
+pub mod infinity;
 pub mod interp;
 pub mod machine;
+#[cfg(feature = "native")]
+pub mod matching;
 pub mod name;
 #[cfg(feature = "native")]
 pub mod native;
@@ -19,11 +23,18 @@ pub mod theory;
 pub use error::OtError;
 #[cfg(feature = "fetch")]
 pub use fetch::{CachingUrlResolver, OPENTHEORY_REPO, UrlResolver};
+#[cfg(feature = "native")]
+pub use infinity::{nat_infinity_override, prove_nat_infinity};
 pub use interp::ArticleInterp;
 pub use machine::{ArticleMachine, ArticleResult};
+#[cfg(feature = "native")]
+pub use matching::{
+    HolMatch, MatchLogic, MatchStrategy, Structural, UpToBeta, UpToBetaDelta, UpToDelta,
+    transport_hol,
+};
 pub use name::{NameTable, OtName};
 #[cfg(feature = "native")]
-pub use native::NativeOt;
+pub use native::{NativeOt, NativeOverrides, OverrideMap};
 pub use object::OtObject;
 pub use reader::read_article;
 pub use resolve::{

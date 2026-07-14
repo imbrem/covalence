@@ -89,6 +89,7 @@ digraph deps {
   "egglog" -> "sexp";
   "egglog" -> "types";
   "forsp" -> "hash";
+  "forsp" -> "repl-core";
   "forsp" -> "sexp";
   "fuse" -> "hash";
   "fuse" -> "object";

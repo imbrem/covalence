@@ -180,6 +180,10 @@
     },
     {
       "from": "covalence-forsp",
+      "to": "covalence-repl-core"
+    },
+    {
+      "from": "covalence-forsp",
       "to": "covalence-sexp"
     },
     {

@@ -35,9 +35,11 @@
 //! other directives are deferred (see `SKELETONS.md`).
 
 use covalence_hol_eval::EvalThm as Thm;
-use covalence_init::Term;
+use covalence_init::{Term, Type};
 use covalence_repl_core::{Fuel, Reduction, Repl, RunToValue, Status, Strategy};
+use covalence_sexp::SExpr;
 
+use crate::defs::{Defs, build_def, build_def_with_ret};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
 use crate::semantics::{LispRepr, LispSemantics, ValueKind};
@@ -61,30 +63,53 @@ pub struct Outcome {
 
 /// A REPL session driving the Lisp reduction relation.
 ///
-/// The `Repl` machinery is stateless here (the `sexpr` + Lisp theories are
-/// process-global), so [`State`] is a unit — but the trait shape leaves room
-/// for a future `defun` dictionary (see `SKELETONS.md`).
+/// The `sexpr` + Lisp theories are process-global; the session's mutable state
+/// is its **`defun` dictionary** ([`State`]) — user function definitions
+/// entered as kernel *hypotheses* (see [`crate::defs`]). Each cell rebuilds a
+/// [`LispSemantics`] over the current dictionary so `(f args)` calls unfold
+/// against their assumed equations.
 pub struct Session {
-    sem: LispSemantics,
+    defs: Defs,
+    /// A definition-free semantics used only for its **structural** render
+    /// helpers (`is_snil` / `as_scons` / `atom_bytes`), which are independent
+    /// of the `defun` dictionary.
+    render_sem: LispSemantics,
 }
 
-/// The (currently empty) per-session state.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct State;
+/// The per-session state: the `defun` dictionary.
+#[derive(Clone, Default)]
+pub struct State {
+    /// The user function definitions (each an assumed `f = λ…` equation).
+    pub defs: Defs,
+}
 
 impl Session {
-    /// Build a session, binding the process-global kernel theories.
+    /// Build a session, binding the process-global kernel theories, with no
+    /// user definitions.
     pub fn new() -> Result<Self, HolError> {
         Ok(Session {
-            sem: LispSemantics::new()?,
+            defs: Defs::new(),
+            render_sem: LispSemantics::new()?,
         })
     }
 
+    /// The current `defun` dictionary.
+    pub fn defs(&self) -> &Defs {
+        &self.defs
+    }
+
+    /// Build a semantics over the current definition dictionary.
+    fn semantics(&self) -> Result<LispSemantics, HolError> {
+        LispSemantics::with_defs(self.defs.clone())
+    }
+
     /// Reduce a parsed form to a value (run to normal form), returning the
-    /// [`Outcome`] (value + `⊢ input = value` theorem).
-    pub fn reduce(&self, form: &covalence_sexp::SExpr) -> Result<Outcome, HolError> {
-        let red = self.drive_fueled(form, Fuel::UNBOUNDED)?;
-        self.outcome(red)
+    /// [`Outcome`] (value + `definitions ⊢ input = value` theorem — the
+    /// theorem's hypotheses are exactly the `defun` equations used).
+    pub fn reduce(&self, form: &SExpr) -> Result<Outcome, HolError> {
+        let sem = self.semantics()?;
+        let red = self.drive_fueled_with(&sem, form, Fuel::UNBOUNDED)?;
+        self.outcome(&sem, red)
     }
 
     /// Drive a form under a step `fuel` bound and return the raw streaming
@@ -93,23 +118,159 @@ impl Session {
     /// `⊢ input = cur` certifies the steps taken so far.
     pub fn drive_fueled(
         &self,
-        form: &covalence_sexp::SExpr,
+        form: &SExpr,
         fuel: Fuel,
     ) -> Result<Reduction<LispRepr, LispSemantics>, HolError> {
-        let term = self.sem.compile(form)?;
+        let sem = self.semantics()?;
+        self.drive_fueled_with(&sem, form, fuel)
+    }
+
+    fn drive_fueled_with(
+        &self,
+        sem: &LispSemantics,
+        form: &SExpr,
+        fuel: Fuel,
+    ) -> Result<Reduction<LispRepr, LispSemantics>, HolError> {
+        let term = sem.compile(form)?;
         let mut red = Reduction::start(term);
-        RunToValue.drive(&self.sem, &mut red, fuel)?;
+        RunToValue.drive(sem, &mut red, fuel)?;
         Ok(red)
+    }
+
+    /// Is this form a `(defun f (params) body)` / `(define f (lambda …))`
+    /// definition? If so, add the assumed equation to the dictionary and
+    /// return the function name (for the ack), else `Ok(None)`.
+    pub fn try_define(&mut self, form: &SExpr) -> Result<Option<String>, HolError> {
+        let SExpr::List(items) = form else {
+            return Ok(None);
+        };
+        let Some(op) = items.first().and_then(SExpr::as_symbol) else {
+            return Ok(None);
+        };
+        match op {
+            // `(defun f (p₁ … pₙ) body)`.
+            "defun" if items.len() == 4 => {
+                let name = items[1]
+                    .as_symbol()
+                    .ok_or_else(|| HolError::Stuck("defun name is not a symbol".into()))?;
+                let params = self.param_names(&items[2])?;
+                self.install(name, &params, &items[3])?;
+                Ok(Some(name.to_string()))
+            }
+            // `(define f (lambda (p…) body))` — the metacircular `label`/`define`.
+            "define" | "label" if items.len() == 3 => {
+                let name = items[1]
+                    .as_symbol()
+                    .ok_or_else(|| HolError::Stuck("define name is not a symbol".into()))?;
+                let (params, body) = self.as_lambda(&items[2])?;
+                self.install(name, &params, body)?;
+                Ok(Some(name.to_string()))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Install `(name, params, body)` as an assumed `defun` equation. The body
+    /// is compiled with `name` **already in scope** (so recursion resolves to
+    /// the def's own free-variable head).
+    ///
+    /// Because HOL is typed but Lisp is not, the recursive head's *return type*
+    /// (`bool` for a predicate, `sexpr` for a list-valued function) must be
+    /// fixed **before** the body compiles. We try `bool` first, and on a type
+    /// error retry with `sexpr` — covering both `lat?`/`member?` (predicates,
+    /// whose `t`/`nil` must render as booleans) and `rember` (data). A
+    /// predicate's body only types under a `bool` head; a data function's
+    /// recursive call only fits its data context under a `sexpr` head, so the
+    /// two are disambiguated by which attempt type-checks.
+    fn install(&mut self, name: &str, params: &[String], body: &SExpr) -> Result<(), HolError> {
+        let tau = LispSemantics::new()?.tau();
+        let candidates = [Type::bool(), tau.clone()];
+        let mut last_err = None;
+        for ret in candidates {
+            match self.try_install_with_ret(name, params, body, &ret) {
+                Ok(()) => return Ok(()),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        Err(last_err.unwrap_or_else(|| HolError::Stuck(format!("cannot type `defun {name}`"))))
+    }
+
+    /// Attempt to install `name` with a chosen recursive return type `ret`.
+    /// The whole attempt is transactional: `self.defs` is only mutated on
+    /// success.
+    fn try_install_with_ret(
+        &mut self,
+        name: &str,
+        params: &[String],
+        body: &SExpr,
+        ret: &Type,
+    ) -> Result<(), HolError> {
+        // Pre-register a placeholder head (typed `sexpr… → ret`) so the body
+        // compiles its recursive calls against `name`.
+        let placeholder = build_def_with_ret(name, params, dummy_of(ret)?, ret)?;
+        let staged = self.defs.with(placeholder);
+        let sem = LispSemantics::with_defs(staged)?;
+        let body_term = sem.compile(body)?;
+        // The real def, whose head type is inferred from the compiled body — it
+        // must match `ret`, or `assume` (which type-checks `f = λ…`) rejects it.
+        let def = build_def(name, params, body_term)?;
+        self.defs = self.defs.with(def);
+        Ok(())
+    }
+
+    fn param_names(&self, params: &SExpr) -> Result<Vec<String>, HolError> {
+        let SExpr::List(items) = params else {
+            return Err(HolError::Stuck("parameter list is not a list".into()));
+        };
+        items
+            .iter()
+            .map(|p| {
+                p.as_symbol()
+                    .map(str::to_string)
+                    .ok_or_else(|| HolError::Stuck("parameter is not a symbol".into()))
+            })
+            .collect()
+    }
+
+    /// Destructure a `(lambda (params) body)` form.
+    fn as_lambda<'a>(&self, form: &'a SExpr) -> Result<(Vec<String>, &'a SExpr), HolError> {
+        let SExpr::List(items) = form else {
+            return Err(HolError::Stuck("define value is not a lambda".into()));
+        };
+        if items.len() != 3 || items[0].as_symbol() != Some("lambda") {
+            return Err(HolError::Stuck("define value is not a lambda".into()));
+        }
+        let params = self.param_names(&items[1])?;
+        Ok((params, &items[2]))
+    }
+
+    /// An acknowledgement [`Outcome`] for a definition cell: the function name
+    /// as a `sexpr` atom value, backed by a reflexivity theorem. (A definition
+    /// installs a hypothesis; it produces no reduction.)
+    fn ack(&self, name: &str) -> Result<Outcome, HolError> {
+        let value = self.render_sem.symbol_value(name);
+        let thm = Thm::refl(value.clone()).map_err(|e| HolError::Kernel(e.to_string()))?;
+        Ok(Outcome {
+            value,
+            thm,
+            kind: ValueKind::Data,
+            status: Status::Value,
+            steps: 0,
+        })
     }
 
     /// Package a completed [`Reduction`] into an [`Outcome`], reading the value
     /// kind off the normal-form term and minting reflexivity when zero steps
     /// were taken.
-    fn outcome(&self, red: Reduction<LispRepr, LispSemantics>) -> Result<Outcome, HolError> {
+    fn outcome(
+        &self,
+        sem: &LispSemantics,
+        red: Reduction<LispRepr, LispSemantics>,
+    ) -> Result<Outcome, HolError> {
         let status = red.status();
         let steps = red.steps();
         let (value, composite) = red.into_parts();
-        let kind = self.sem.value_kind(&value).ok_or_else(|| {
+        let kind = sem.value_kind(&value).ok_or_else(|| {
             HolError::Stuck(format!(
                 "reduction did not reach a value (status {status:?})"
             ))
@@ -138,6 +299,10 @@ impl Session {
             return self.run_directive(rest).map_err(CellError::Directive);
         }
         let form = read_one(src).map_err(CellError::Read)?;
+        // A `defun` / `define` adds an assumption and returns an ack (no value).
+        if let Some(name) = self.try_define(&form).map_err(CellError::Eval)? {
+            return Ok(name);
+        }
         let out = self.reduce(&form).map_err(CellError::Eval)?;
         Ok(self.render(&out))
     }
@@ -163,36 +328,32 @@ impl Session {
     /// A `sexpr` datum → Lisp text (`atom` → its bytes as text, `snil` → `()`,
     /// `scons` chains → `(e₁ e₂ …)`).
     fn render_data(&self, v: &Term) -> String {
-        if self.sem.is_snil(v) {
+        if self.render_sem.is_snil(v) {
             return "()".to_string();
         }
-        if let Some(bytes) = self.sem.atom_bytes(v) {
+        if let Some(bytes) = self.render_sem.atom_bytes(v) {
             return String::from_utf8_lossy(&bytes).into_owned();
         }
-        if self.sem.as_scons(v).is_some() {
+        if self.render_sem.as_scons(v).is_some() {
             let mut out = String::from("(");
             let mut cur = v.clone();
             let mut first = true;
-            loop {
-                if let Some((h, t)) = self.sem.as_scons(&cur) {
-                    if !first {
-                        out.push(' ');
-                    }
-                    first = false;
-                    out.push_str(&self.render_data(&h));
-                    if self.sem.is_snil(&t) {
-                        break;
-                    }
-                    // Improper list (dotted): a non-snil, non-scons tail.
-                    if self.sem.as_scons(&t).is_none() {
-                        out.push_str(" . ");
-                        out.push_str(&self.render_data(&t));
-                        break;
-                    }
-                    cur = t;
-                } else {
+            while let Some((h, t)) = self.render_sem.as_scons(&cur) {
+                if !first {
+                    out.push(' ');
+                }
+                first = false;
+                out.push_str(&self.render_data(&h));
+                if self.render_sem.is_snil(&t) {
                     break;
                 }
+                // Improper list (dotted): a non-snil, non-scons tail.
+                if self.render_sem.as_scons(&t).is_none() {
+                    out.push_str(" . ");
+                    out.push_str(&self.render_data(&t));
+                    break;
+                }
+                cur = t;
             }
             out.push(')');
             return out;
@@ -236,6 +397,13 @@ Little Schemer ch1 primitives:
   (consp E)        t if E is a cons, else nil     (alias pair?)
   (null? E)        t if E is the empty list, else nil
   (eq? E1 E2)      t if two atoms are equal, else nil
+Chapter 2 (recursion via kernel hypotheses):
+  (if C A B)       A if C is true, else B
+  (cond (T E)...)  first clause whose test T holds
+  (lambda (x) E)   an anonymous function (beta-reduces when applied)
+  (defun f (x) E)  define f; calls of f unfold against the ASSUMED equation
+                   f = (lambda (x) E), which rides the result theorem as a
+                   hypothesis (never an axiom)
 Directives:
   #help            this text
   #show EXPR       print the full `|- lhs = rhs` theorem behind EXPR";
@@ -271,6 +439,17 @@ pub enum CellError {
     Eval(HolError),
 }
 
+/// A trivial term of type `ret`, used as a placeholder body while compiling a
+/// recursive definition: `nil` for `sexpr`, `F` for `bool`.
+fn dummy_of(ret: &Type) -> Result<Term, HolError> {
+    let sem = LispSemantics::new()?;
+    if *ret == Type::bool() {
+        Ok(covalence_hol_eval::mk_bool(false))
+    } else {
+        Ok(sem.tau_nil())
+    }
+}
+
 /// A parsed directive (currently only the two built-ins; the table is
 /// extensible — see `SKELETONS.md`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -292,14 +471,21 @@ impl Repl for Session {
     type EvalError = HolError;
 
     fn start(&mut self) -> Result<State, HolError> {
-        Ok(State)
+        Ok(State {
+            defs: self.defs.clone(),
+        })
     }
 
     fn parse(&mut self, _state: &State, src: &str) -> Result<Self::Term, ReadError> {
         read_one(src)
     }
 
-    fn eval(&mut self, _state: &mut State, term: Self::Term) -> Result<Outcome, HolError> {
+    fn eval(&mut self, state: &mut State, term: Self::Term) -> Result<Outcome, HolError> {
+        // A `defun` / `define` installs an assumption and acks; otherwise reduce.
+        if let Some(name) = self.try_define(&term)? {
+            state.defs = self.defs.clone();
+            return self.ack(&name);
+        }
         self.reduce(&term)
     }
 

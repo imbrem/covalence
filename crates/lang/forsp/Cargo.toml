@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 covalence-sexp = { path = "../../lib/sexp" }
 covalence-hash = { path = "../../lib/hash", default-features = false }
+covalence-repl-core = { path = "../../lib/repl-core" }
 thiserror = "2"

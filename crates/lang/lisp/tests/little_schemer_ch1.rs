@@ -12,7 +12,7 @@
 //! `crates/lang/lisp/SKELETONS.md`.
 #![cfg(feature = "hol")]
 
-use covalence_lisp::eval::ValueKind;
+use covalence_lisp::semantics::ValueKind;
 use covalence_lisp::session::Session;
 
 /// Run one cell, returning the printed value; also assert the reduction is a
@@ -230,4 +230,30 @@ fn eq_on_non_atom_is_an_error() {
     let mut s = session();
     // eq? on lists is out of scope (ch1 eq? is atoms only).
     assert!(s.eval_cell("(eq? (quote (a)) (quote (a)))").is_err());
+}
+
+// ---- streaming / fuel-bounded reduction ---------------------------------
+
+// The parametric reduction is a *step relation*: `reduce` runs to a value, but
+// a bounded `drive_fueled` yields a CERTIFIED PARTIAL reduction instead of
+// hanging — the seam a non-terminating recursive program (ch2) will use.
+#[test]
+fn fuel_bound_is_a_certified_partial_not_a_hang() {
+    use covalence_repl_core::{Fuel, Status};
+    let s = session();
+    let form = covalence_lisp::reader::read_one("(car (cdr (quote (a b c))))").unwrap();
+
+    // One step: not yet a value, but the partial chain `⊢ input = cur` is real.
+    let one = s.drive_fueled(&form, Fuel::steps(1)).unwrap();
+    assert_eq!(one.steps(), 1);
+    assert!(matches!(one.status(), Status::Diverging(1)));
+    assert!(
+        one.composite().is_some(),
+        "one step must carry ⊢ input = cur"
+    );
+
+    // Unbounded: reaches the value `b`, and it equals the full `reduce`.
+    let full = s.drive_fueled(&form, Fuel::UNBOUNDED).unwrap();
+    assert!(matches!(full.status(), Status::Value));
+    assert_eq!(eval(&mut session(), "(car (cdr (quote (a b c))))"), "b");
 }

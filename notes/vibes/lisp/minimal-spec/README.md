@@ -1,5 +1,13 @@
 # Minimal end-to-end `/lisp` REPL — a fully-defined spec (discussion draft, agent-authored)
 
+> **STATUS (branch `lisp-demo`):** the first build has landed — see
+> [`../STATUS.md`](../STATUS.md). The shipped shape is the **equational special
+> case** (`⊢ input = output`) of §0's Thm 2, covering Little Schemer **ch1**
+> only. The `Reduces` *relation* (nondeterminism/`amb`, threaded state) and ch2
+> recursion are **deferred**; the parametric refactor in
+> [`../initial-ideas/parametric-reduction.md`](../initial-ideas/parametric-reduction.md)
+> supersedes the single-seam design below.
+
 Goal (verbatim from the ask): a `/lisp` web endpoint exposing a **very basic Lisp REPL**
 where **the user types an S-expression, the S-expression is evaluated *as a theorem*, and
 the result is printed**. Minimal but *fully* defined: internal parse/deparse traits, a

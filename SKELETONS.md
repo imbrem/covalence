@@ -28,8 +28,11 @@ Ranked, most blocking first. Each links to the registry where it's detailed.
 7. **`list_foldl` + `map`/`filter` clauses and the `bytes`/`string` newtype
    surfacing** — discharge the foldl/map/filter recursor clauses and bridge
    `bytes`/`string` length/index/cat onto the list ops. [`init`](crates/kernel/hol/init/src/init/SKELETONS.md)
-8. **CFG stratum for grammars** — SpecTec/regex front ends cover only the regular
-   base case; `Var` non-terminals rejected, blocking full WASM binary grammar. [`hol/spectec`](crates/kernel/hol/init/src/grammar/spectec/SKELETONS.md), [`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)
+8. **Whole-WASM-binary grammar coverage** — the CFG stratum landed
+   (`Derives_E` + family soundness + parsing tactic; real WASM 3.0 fragments
+   parse kernel-checked, `tests/cfg_grammar.rs`). Remaining: premise/parametric/
+   `ListN` productions skip (under-approximating), so `Bmodule`-scale parses and
+   the WASM 1.0/2.0 inclusion metatheorems are pending. [`hol/cfg`](crates/kernel/hol/init/src/grammar/cfg/SKELETONS.md), [`hol/spectec`](crates/kernel/hol/init/src/grammar/spectec/SKELETONS.md), [`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)
 9. **`rat`/`real` ordered-field postulates pending proof** — `mul_inv`, `le_def`,
    Dedekind-cut suprema still `axiom`-postulated. [`init`](crates/kernel/hol/init/src/init/SKELETONS.md)
 10. **Alethe rule coverage + LIA renderer** — `goal_to_problem` is QF_UF + linear
@@ -55,7 +58,8 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)** — removed native `.watsup` frontend; single-version WASM grammar; regular-only byte-grammar bridge.
 - **[`covalence-wasm`](crates/lib/wasm/core/SKELETONS.md)** — removed `cov:pure` host binding; `wit/pure.wit` + `covalence-core-test-guest` orphaned.
 - **[`covalence-haskell`](crates/lang/haskell/SKELETONS.md)** — Haskell surface dialect: no HOL/kernel backend yet; small parser subset (no layout/patterns/types/do-notation).
-- **[`covalence-lisp`](crates/lang/lisp/SKELETONS.md)** — `/lisp` demo: ch1 primitives work end-to-end (kernel-Thm-backed `Session` REPL); no ch2 recursion / `defun`; `eq?` atoms-only; equational `⊢ input = output`, not the `Reduces` relation.
+- **[`covalence-lisp`](crates/lang/lisp/SKELETONS.md)** — `/lisp` demo: ch1 + `defun` recursion + metacircular ground fragment (kernel-Thm-backed; `defun`-as-hypothesis → `definitions ⊢ program = value`); full `metacircular.lisp` (truthy-data `cond`) deferred; `eq?` atoms-only.
+- **[`covalence-forsp`](crates/lang/forsp/SKELETONS.md)** — `/forsp` small-step reduction: `ForspSemantics` machine relation is an untrusted before/after-snapshot witness (no kernel `Thm` yet); web-export handler unbuilt.
 - **[`covalence-repl-core`](crates/lib/repl-core/SKELETONS.md)** — REPL trait stack: `ReductionStrategy` is equational-only (no relational/stateful shape); no `SExprRepl` events.
 - **[`covalence-alethe`](crates/proof/alethe/SKELETONS.md)** — Alethe rule coverage.
 - **[`covalence-egglog`](crates/proof/egglog/SKELETONS.md)** — `EgglogBridge` Stage 0 (only `fiat` implemented, no kernel-backed impl); egglog `external` bridge disabled (released egglog lacks the proof module).

@@ -33,10 +33,13 @@
 pub mod reader;
 
 #[cfg(feature = "hol")]
-pub mod eval;
+pub mod hol;
 
 #[cfg(feature = "hol")]
-pub mod hol;
+pub mod defs;
+
+#[cfg(feature = "hol")]
+pub mod semantics;
 
 #[cfg(feature = "hol")]
 pub mod session;

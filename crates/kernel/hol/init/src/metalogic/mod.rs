@@ -59,6 +59,13 @@ use crate::init::ext::TermExt;
 
 pub mod toy;
 
+// **The binary twin of this engine** (`d n w` over `(nt_ty, word_ty)` rather
+// than a single reified formula `d ⌜A⌝`) — the substrate for the CFG stratum's
+// `Derives_E n w` judgement (`crate::grammar::cfg`), reusing `conj` /
+// `nth_conjunct` / `conj_thms` here. `init::regex`'s `Matches r w` is the same
+// shape hand-rolled; this packages it once.
+pub mod binary;
+
 // The **HOL database type + relation lattice** (`notes/vibes/theories-models-and-logics.md
 // §5.6`): databases as first-class HOL *values* (an axiom-selecting predicate), with
 // `⊑`/monotonicity and `⟹_σ`/transport proved over `Derivable_DB`. UNIFIED (Phase A):

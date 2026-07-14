@@ -1,13 +1,22 @@
-mod eval;
+#![forbid(unsafe_code)]
+
+pub(crate) mod eval;
 mod hash;
+pub mod machine;
 mod print;
 mod read;
+pub mod semantics;
 
 use std::collections::HashMap;
 use std::fmt;
 
 use covalence_hash::O256;
 pub use covalence_sexp::SExpr;
+
+use covalence_repl_core::{Fuel, Reduction, RunToValue, Status, Strategy};
+
+pub use machine::{Frame, Machine, MachineState};
+pub use semantics::{ForspRepr, ForspSemantics, ForspStep, Snapshot, StepTrace};
 
 /// Forsp runtime error.
 #[derive(Debug, thiserror::Error)]
@@ -523,6 +532,70 @@ impl<F: ForeignPrims> Forsp<F> {
     pub fn pop_blob(&mut self) -> Vec<u8> {
         let v = self.pop();
         self.heap.as_blob(v).to_vec()
+    }
+}
+
+/// The result of a small-step Forsp reduction: the full step trace (a sequence
+/// of machine [`Snapshot`]s), the final stack, the step count, and the streaming
+/// [`Status`]. The `/forsp` endpoint renders the trace as reduction steps.
+///
+/// `status` is [`Status::Value`] when the machine halted, or
+/// [`Status::Diverging`] when a fuel bound stopped it with work remaining
+/// (pull again with more fuel — never a hang).
+pub struct ForspReduction {
+    /// The ordered machine snapshots visited (input first, current head last).
+    pub trace: StepTrace,
+    /// The final value stack (a cons-list; top is car).
+    pub final_stack: ValRef,
+    /// How many small steps were taken.
+    pub steps: u64,
+    /// Streaming status of the head snapshot.
+    pub status: Status,
+}
+
+impl<F: ForeignPrims> Forsp<F> {
+    /// Reduce `program` (a parsed instruction list) **step by step**, returning
+    /// the [`ForspReduction`] — the trace of machine states plus the final
+    /// stack. `fuel` bounds the number of steps: use [`Fuel::UNBOUNDED`] to run
+    /// to a halt, or [`Fuel::steps(n)`](Fuel::steps) for an inspectable prefix
+    /// (a diverging program then reports [`Status::Diverging`] rather than
+    /// hanging).
+    ///
+    /// This is the differential twin of [`exec`](Self::exec): for a terminating
+    /// program the final stack matches what `exec` leaves behind. The `/forsp`
+    /// endpoint calls this to render reduction steps.
+    ///
+    /// Consumes `self` (the semantics needs to own the runtime + heap); the
+    /// runtime is recoverable via [`ForspReduction`] state if needed later.
+    pub fn forsp_reduce(self, program: ValRef, fuel: Fuel) -> Result<ForspReduction, FError> {
+        let sem = ForspSemantics::new(self);
+        let input = sem.initial(program);
+        let mut red: Reduction<ForspRepr, ForspSemantics<F>> = Reduction::start(input);
+        RunToValue.drive(&sem, &mut red, fuel)?;
+
+        let status = red.status();
+        let steps = red.steps();
+        let (head, composite) = red.into_parts();
+        // The composite trace is `None` iff no step was taken (program was
+        // already halted / empty); then the trace is just the single input.
+        let trace = composite.unwrap_or_else(|| StepTrace {
+            states: vec![head.clone()],
+        });
+        let final_stack = head.stack;
+        Ok(ForspReduction {
+            trace,
+            final_stack,
+            steps,
+            status,
+        })
+    }
+
+    /// Read + small-step reduce, running to a halt. Convenience over
+    /// [`read`](Self::read) + [`forsp_reduce`](Self::forsp_reduce).
+    pub fn reduce_source(self, source: &str) -> Result<ForspReduction, FError> {
+        let mut this = self;
+        let program = this.read(source)?;
+        this.forsp_reduce(program, Fuel::UNBOUNDED)
     }
 }
 

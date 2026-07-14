@@ -138,15 +138,16 @@
 
 <style>
 	main { max-width: 64rem; margin: 2rem auto; padding: 0 1rem;
-		font-family: ui-sans-serif, system-ui, sans-serif; }
+		font-family: ui-sans-serif, system-ui, sans-serif; color: var(--fg); }
 	h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; margin-top: 1.5rem; }
-	.sub { color: #666; font-size: 0.9rem; }
+	.sub { color: var(--muted); font-size: 0.9rem; }
 	table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-	th, td { text-align: right; padding: 0.35rem 0.6rem; border-bottom: 1px solid #ddd; }
+	th, td { text-align: right; padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--border); }
 	th:first-child, td.name { text-align: left; font-weight: 600; }
-	tr.target { color: #667; font-style: italic; }
-	td.bad { color: #b00; font-weight: 700; }
-	.headline { background: #f6f6ef; padding: 0.6rem 0.8rem; border-radius: 6px; }
+	tr.target { color: var(--accent); font-style: italic; }
+	td.bad { color: #ff6b6b; font-weight: 700; }
+	.headline { background: var(--surface); border: 1px solid var(--border);
+		padding: 0.6rem 0.8rem; border-radius: 6px; }
 	pre, code { font-size: 0.8rem; } pre { overflow-x: auto; }
 	details { margin-top: 0.3rem; }
 	.manifests details { margin-bottom: 0.4rem; }
@@ -168,5 +169,5 @@
 		font-weight: 700;
 		font-family: ui-monospace, monospace;
 	}
-	.ns-ops { color: #555; font-family: ui-monospace, monospace; }
+	.ns-ops { color: var(--muted); font-family: ui-monospace, monospace; }
 </style>

@@ -25,7 +25,25 @@ This skill is the import-specific map. Concrete numbers + current bottleneck liv
    - clauses are compiled once per worker (`ClauseCache`); `Closed d` + its
      conjuncts are built once per theorem (`ClauseCtx`).
 
-## The bench
+## The benches
+
+Two layers, two benches — don't conflate them:
+
+- **`bun run bench:setmm [reps] [--flame]`** (`scripts/bench-setmm.mjs` →
+  `covalence-metamath` example `mm_verify_bench.rs`): the **pure Metamath
+  checker** — download set.mm (pinned to `SET_MM_REV` in `scripts/_setmm.mjs`,
+  cached per-revision in `$TMPDIR/covalence-set.mm-<rev12>`), parse, RPN-verify
+  every proof. No HOL. JSON on stdout; `--flame` wraps it in `perf record` →
+  `/tmp/cov-mm-verify-flame.svg`. Baseline at pin `bcfef989` (2026-07-13):
+  parse ~0.8 s, verify 47,480 proofs ~5 s (~9.6k proofs/s).
+- **`profile:import` / `profile:theorem` / `profile:flame`**: the **HOL
+  import** below (the expensive pipeline this skill is mostly about). These
+  share the same pinned download helper.
+
+Bump the pin (`SET_MM_REV`) deliberately; env `COV_SET_MM`/`COV_ISET_MM`
+override it for local copies. The `iset.mm` of the same revision caches the
+same way (used by the axiom-set/interpretation metatheory tests,
+`covalence-metamath` `tests/axiom_sets.rs` / `tests/interpret.rs`).
 
 `crates/kernel/hol/init/examples/mm_import_bench.rs`:
 - `<mm> [limit] [workers]` — full parallel import; prints `imported N (ok/failed)`,

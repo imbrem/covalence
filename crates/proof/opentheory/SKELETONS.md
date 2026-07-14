@@ -15,10 +15,21 @@ Open work only. Severe first.
 
 ## Minor
 
+- **Online resolver can't version bare package names.** `UrlResolver`
+  (`fetch.rs`) only knows a version once an umbrella block registers it, so a
+  bare top-level name or a bare `requires:` in a `.thy` (`natural` needs
+  `bool`, …) fails with "no version known". *Versioned* names fetch, cache, and
+  verify fine (e.g. `bool-def-1.11`). Fix: fetch the repo's package/version
+  index (or accept a name→version map). This is the only thing blocking
+  `bun run opentheory` (online) from verifying the whole stdlib; offline
+  (`--offline`) verifies 20 packages / 428 theorems today.
+
 - **Vendored offline corpus is incomplete.** `assets/opentheory/gilith/std/`
-  is missing some packages (e.g. `natural-order-def`), so `natural` (umbrella),
-  `list-def`, and `base` cannot be checked offline. The downloading benchmark
-  (`bun run opentheory`, once wired) fetches the full set.
+  is missing a few base packages (`natural-order-def`, `natural-dest-def`,
+  `natural-numeral-def`), so `natural`/`list`/`base`/`real` etc. cannot be
+  checked offline. Every offline failure is this resolver error — none is a
+  verification failure. Vendor the missing packages (they fetch by versioned
+  name) or use the online path once the resolver above is fixed.
 
 - **Interpretation files (`.int`) parsed but not applied**
   (`resolve.rs::apply_interpretation`). Umbrella packages that rename

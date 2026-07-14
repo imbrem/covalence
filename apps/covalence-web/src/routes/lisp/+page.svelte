@@ -1,39 +1,38 @@
 <script lang="ts">
-	// LISP REPL — LIVE. `covalence-lisp` (crates/lang/lisp) compiled to WASM in
-	// `covalence-web-kernel`. A PERSISTENT session: `defun`s accumulate, so you
-	// can define recursive functions and build the metacircular interpreter up
-	// over several cells. Every printed value is read OFF a genuine kernel
-	// theorem (`⊢ program = value`); hover a cell to see it (via `#show`).
-	import { onMount } from 'svelte';
+	// LISP REPL — connects to the RUNNING SERVER (POST /api/lisp), which evaluates
+	// each cell on the NATIVE kernel in a persistent per-tab session (`defun`s
+	// accumulate). No client-side WASM. Every printed value is read off a genuine
+	// kernel theorem (`⊢ program = value`); hover a cell to see it (via `#show`).
 	import Repl from '$lib/Repl.svelte';
 	import examples from '$lib/lispExamples.json';
 
-	let wasm = $state<any>(null);
-	let ready = $state(false);
-	let loadError = $state('');
+	// One persistent server session per tab.
+	const session =
+		typeof crypto !== 'undefined' && crypto.randomUUID
+			? crypto.randomUUID()
+			: `s${Math.random().toString(36).slice(2)}`;
 
-	onMount(async () => {
-		try {
-			const mod = await import('$lib/kernel/covalence_web_kernel.js');
-			const wasmUrl = (await import('$lib/kernel/covalence_web_kernel_bg.wasm?url')).default;
-			await mod.default({ module_or_path: wasmUrl });
-			wasm = mod;
-			ready = true;
-		} catch (e) {
-			loadError = String(e);
-		}
-	});
+	async function post(path: string, body: unknown) {
+		const res = await fetch(path, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
+		});
+		return res.json();
+	}
 
-	const evalCell = (src: string) => {
-		const r = JSON.parse(wasm.lisp_eval_cell(src));
+	const evalCell = async (src: string) => {
+		const r = await post('/api/lisp', { session, src });
 		return { ok: !!r.ok, result: r.result ?? '', error: r.error ?? '' };
 	};
 	// Hover → the kernel theorem behind a value, via the `#show` directive.
-	const showCell = (src: string) => {
-		const r = JSON.parse(wasm.lisp_eval_cell('#show ' + src));
+	const showCell = async (src: string) => {
+		const r = await post('/api/lisp', { session, src: `#show ${src}` });
 		return r.ok ? (r.result ?? '') : '';
 	};
-	const onReset = () => wasm?.lisp_reset?.();
+	const onReset = () => {
+		post('/api/lisp/reset', { session });
+	};
 </script>
 
 <svelte:head><title>lisp — covalence</title></svelte:head>
@@ -41,26 +40,26 @@
 <main>
 	<h1>lisp</h1>
 	<p class="sub">
-		A small, kernel-backed Lisp (<code>covalence-lisp</code>), running live in your
-		browser via WASM. <strong>Every printed value is backed by a kernel theorem</strong>
-		— the REPL reduces a program to <code>⊢ program = value</code> and prints the value
-		off that theorem. <strong>Hover a result</strong> to see the proof.
+		A small, kernel-backed Lisp (<code>covalence-lisp</code>). This REPL talks to the
+		running <code>cov serve</code> and evaluates each cell on the <strong>native
+		kernel</strong> — <strong>every printed value is backed by a kernel theorem</strong>
+		(<code>⊢ program = value</code>). <strong>Hover a result</strong> to see its proof.
 	</p>
 	<p class="sub">
-		This is a real REPL: <code>defun</code>s persist across cells. Try the numbered
-		examples in order — define <code>lat?</code>, then use it; or define the
+		A real REPL: <code>defun</code>s persist across cells (a per-tab server session). Try
+		the numbered examples in order — define <code>lat?</code>, then use it; or define the
 		<code>★ metacircular eval</code> and run it. User definitions ride along as
-		<em>hypotheses</em> on the theorem (<code>definitions ⊢ program = value</code>),
-		which is sound even for recursion that might not terminate.
+		<em>hypotheses</em> (<code>definitions ⊢ program = value</code>), sound even for
+		recursion that might not terminate.
 	</p>
 
-	<Repl {evalCell} {showCell} {onReset} {ready} {loadError} examples={examples as any} />
+	<Repl {evalCell} {showCell} {onReset} examples={examples as any} />
 
 	<p class="foot">
 		Little Schemer ch1 primitives (<code>car cdr cons atom? null? eq?</code>) +
 		<code>cond</code>/<code>lambda</code>/<code>defun</code> recursion; the metacircular
-		interpreter runs its ground <code>quote/car/cdr/cons</code> fragment. Full
-		<code>metacircular.lisp</code> is in progress (see the crate's <code>SKELETONS.md</code>).
+		interpreter runs its ground <code>quote/car/cdr/cons</code> fragment. Needs a running
+		server (<code>cov serve</code>, or <code>cov serve --api</code> + <code>bun run dev:web</code>).
 	</p>
 </main>
 

@@ -29,6 +29,7 @@
     "proof -> lib",
     "server -> app",
     "server -> kernel",
+    "server -> lang",
     "server -> lib",
     "server -> proof",
     "server -> store",

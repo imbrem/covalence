@@ -251,14 +251,32 @@ mirror from `wasm-spec.md`, replayed for K.
   lowering with the swappable `SortResolver` strategy for imported builtin sorts.
   Parses the real **LAMBDA and IMP** tutorial grammars (vendored BSD-3). See the
   `.k`-source subsection above.
-- **Next:** (1) the **RTC / `Step*` layer** (F2 prerequisite — reflexive-
-  transitive closure over `Derivable_KStep`, shared with the SpecTec reduction
-  work) so `A →* B` with `B` open becomes statable; (2) an **untrusted redex
-  matcher** in `covalence-k` (find the firing rule + substitution at a concrete
-  configuration) to make it a real reducer + a `/k` REPL over the `repl-core`
-  stack; (3) **hook theories** (F1 — hooked `Bool`/`Int`/`Map` → catalogue types)
-  to admit conditional rules; then a tutorial IMP semantics as the first
-  whole-definition demo, en route to KWasm↔SpecTec.
+- **Landed (F2 — multi-step reduction):** `covalence-init::k::relation` — K
+  reduction as a *genuine relation* on the binary inductive engine
+  (`metalogic::binary::RuleSet2`, the same engine the CFG stratum and the merged
+  Lisp `Reduces` relation use). `kstep_rule_set` builds `KStep : Φ → Φ → bool`
+  (one base clause per unconditional rewrite rule); `kreduces_rule_set` builds
+  `KReduces = KStep*` (`refl` + `step` clauses). `prove_step` mints
+  `⊢ KStep a b`, `prove_reduces` folds a step chain into `⊢ KReduces a b` — so
+  `A →* B` with `B` open is directly statable. Headline test:
+  `⊢ KReduces ⌜count(0)⌝ ⌜done⌝` from two steps, hypothesis-free. This supersedes
+  `reduce`'s single-step unary encoding for multi-step work.
+- **Next → the end-to-end reduction demo.** Full scope + the **layered-API
+  architecture** (high-level K-shaped → reusable mid-level `metalogic::rewrite` →
+  binary engine → HOL-omega) + roadmap are written up in
+  [`../vibes/k/reduction-demo-scope.md`](../vibes/k/reduction-demo-scope.md).
+  Summary of the four missing pieces: (1) a reusable **mid-level rewrite
+  relation** (`metalogic::rewrite`) — generic `app`-congruence clauses + a
+  swappable `Matcher` trait + a fuel **driver** (`normalize → ⊢ Reduces`),
+  instantiated by both K and SpecTec; (2) refactor `k::relation` onto it;
+  (3) a **`.k` rule reader** in `kdef` (the minimal `rule LHS => RHS` fragment);
+  (4) a **`KSession`** (MmSession's peer) that parses a program and reduces it.
+  First demo target = K tutorial **Lesson 1.2** (`colorOf`/`contentsOfJar`, pure
+  first-order function rules) + a hand-written **PEANO**. Then the ladder:
+  `requires` + a comparison hook (Lesson 1.7); **hook theories** (F1 —
+  `Bool`/`Int`/`Map` → catalogue types); the `<k>` cell + `~>` + heating/cooling
+  (Lesson 1.13/1.14, IMP); binders/substitution (LAMBDA) — en route to
+  KWasm↔SpecTec.
 - **Longer term (matching-logic ↔ Metamath):** relate the `Derivable_KStep`
   world to the Metamath substrate now that `mm-metatheory` landed
   (`metalogic::{apply, mm_session, mm_compose}`): KORE axioms are an

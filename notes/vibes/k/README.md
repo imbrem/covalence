@@ -8,6 +8,13 @@ actionable decision record is
 KORE, the fragment ladder F0–F4, the sublanguage ladder). First code slice:
 `crates/lang/k` (`covalence-k`).
 
+**Resume here:** [`reduction-demo-scope.md`](./reduction-demo-scope.md) — the
+detailed scope + layered-API architecture + roadmap for the medium-term north
+star (*demo the basic K tutorial languages end-to-end*; K a first-class IR on
+par with Metamath). Target = Lesson 1.2 `colorOf`/`contentsOfJar` + a PEANO
+demo; the four missing pieces (matcher, congruence, driver, `.k` rule reader);
+the `KSession`-as-`MmSession`-peer framing.
+
 ## `research/` — sourced surveys (researched 2026-07-13)
 
 Web-researched from primary sources with an independent verification pass;

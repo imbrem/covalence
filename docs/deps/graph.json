@@ -24,6 +24,7 @@
     "covalence-inductive",
     "covalence-init",
     "covalence-json",
+    "covalence-k",
     "covalence-kernel",
     "covalence-kv",
     "covalence-lean",
@@ -316,6 +317,10 @@
     },
     {
       "from": "covalence-init",
+      "to": "covalence-k"
+    },
+    {
+      "from": "covalence-init",
       "to": "covalence-metamath"
     },
     {
@@ -329,6 +334,18 @@
     {
       "from": "covalence-init",
       "to": "covalence-types"
+    },
+    {
+      "from": "covalence-k",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-k",
+      "to": "covalence-parse"
+    },
+    {
+      "from": "covalence-k",
+      "to": "covalence-sexp"
     },
     {
       "from": "covalence-kernel",
@@ -556,6 +573,10 @@
     },
     {
       "from": "covalence-serve",
+      "to": "covalence-forsp"
+    },
+    {
+      "from": "covalence-serve",
       "to": "covalence-git"
     },
     {
@@ -565,6 +586,10 @@
     {
       "from": "covalence-serve",
       "to": "covalence-init"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-lisp"
     },
     {
       "from": "covalence-serve",

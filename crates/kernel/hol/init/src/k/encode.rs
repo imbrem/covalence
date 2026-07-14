@@ -167,6 +167,35 @@ fn push_unique(out: &mut Vec<String>, id: &str) {
     }
 }
 
+/// The element variables of a rewrite rule (its LHS then RHS), in first-seen
+/// order — the `∀`/instantiation order its clause quantifies over.
+pub fn rule_metavars(lhs: &Pattern, rhs: &Pattern) -> Vec<String> {
+    let mut order = Vec::new();
+    collect_metavars(lhs, &mut order);
+    collect_metavars(rhs, &mut order);
+    order
+}
+
+/// Substitute each element-variable leaf `k$v$<id>` in an encoded term by the
+/// corresponding `args[i]` (in the given `order`) — the term-level analogue of
+/// instantiating a rule clause with `all_elim`. `args` must match `order` in
+/// length. Used to recover the concrete endpoint configs of a fired rule.
+pub fn subst_metavars(t: &Term, order: &[String], args: &[Term]) -> Result<Term> {
+    if args.len() != order.len() {
+        return Err(encode_err(format!(
+            "expected {} argument(s) for the rule's element variables, got {}",
+            order.len(),
+            args.len()
+        )));
+    }
+    let mut t = t.clone();
+    for (mv, a) in order.iter().zip(args) {
+        let var = covalence_core::Var::new(metavar_name(mv), phi());
+        t = covalence_core::subst::subst_free(&t, &var, a);
+    }
+    Ok(t)
+}
+
 /// A short head name for error messages.
 fn pattern_head(p: &Pattern) -> &'static str {
     match p {

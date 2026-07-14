@@ -54,6 +54,112 @@ fn ce(e: CoreError) -> HolError {
     HolError::TypeMismatch(e.to_string())
 }
 
+// ===========================================================================
+// User overrides — check imported articles against a native theory
+// ===========================================================================
+
+/// Hooks for checking imported OpenTheory articles against a *native* theory
+/// rather than assuming OpenTheory's axioms and primitives. Install on a
+/// [`NativeOt`] with [`NativeOt::with_overrides`].
+///
+/// Every method defaults to "no override" (`None`), reproducing stock
+/// behaviour, so implementing only the parts you care about is fine. All hooks
+/// build native values through `covalence-core` / `covalence-hol-api` directly
+/// (they take no kernel handle), so they cannot forge anything — a returned
+/// theorem is a real kernel theorem, and the interpreter re-checks that it
+/// proves the requested statement.
+pub trait NativeOverrides {
+    /// A native proof of an `axiom` statement (`⊢ stmt`, ideally hypothesis
+    /// free), or `None` to hypothesis-track it as usual. Use this to discharge
+    /// axioms your logic already validates (e.g. infinity for a native
+    /// infinite type) or to graft in a lemma from another construction.
+    fn prove_axiom(&self, _stmt: &Term) -> Option<Result<EvalThm, HolError>> {
+        None
+    }
+
+    /// The native type an OpenTheory type-operator application resolves to
+    /// (`"ind"` → native `nat`, say), or `None` for the default handling.
+    fn resolve_type(&self, _name: &str, _args: &[Type]) -> Option<Type> {
+        None
+    }
+
+    /// The native term an OpenTheory constant at instance type `ty` resolves
+    /// to, or `None` for the default handling. Consulted *before* the
+    /// article's own definitions, so an override wins over a `defineConst`.
+    fn resolve_const(&self, _name: &str, _ty: &Type) -> Option<Term> {
+        None
+    }
+}
+
+/// A ready-made [`NativeOverrides`] built from maps + axiom provers — the
+/// convenient path when you don't need a bespoke `impl`. Build it fluently:
+///
+/// ```ignore
+/// let ov = OverrideMap::new()
+///     .type_("ind", nat_ty())                 // OpenTheory `ind` = native nat
+///     .const_("Data.Bool.T", tru_ty(), tru()) // graft a native constant
+///     .axiom(|stmt| is_infinity(stmt).then(|| prove_infinity()));
+/// let kernel = NativeOt::new().with_overrides(ov);
+/// ```
+#[derive(Default)]
+pub struct OverrideMap {
+    types: HashMap<SmolStr, Type>,
+    consts: HashMap<SmolStr, ConstEntry>,
+    #[allow(clippy::type_complexity)]
+    axioms: Vec<Box<dyn Fn(&Term) -> Option<Result<EvalThm, HolError>>>>,
+}
+
+impl OverrideMap {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Map an OpenTheory type-operator `name` to the native type `ty`
+    /// (0-ary; the override is returned as-is, ignoring any arguments).
+    pub fn type_(mut self, name: impl Into<SmolStr>, ty: Type) -> Self {
+        self.types.insert(name.into(), ty);
+        self
+    }
+
+    /// Map an OpenTheory constant `name` (most-general type `ty`) to the
+    /// native term `term`; uses at other type instances are derived by
+    /// type-substitution, exactly as for a kernel-defined constant.
+    pub fn const_(mut self, name: impl Into<SmolStr>, ty: Type, term: Term) -> Self {
+        self.consts.insert(name.into(), ConstEntry { term, ty });
+        self
+    }
+
+    /// Add an axiom prover: the first one that returns `Some` for a statement
+    /// discharges it. Each is `Fn(&Term) -> Option<Result<EvalThm>>`.
+    pub fn axiom(
+        mut self,
+        prover: impl Fn(&Term) -> Option<Result<EvalThm, HolError>> + 'static,
+    ) -> Self {
+        self.axioms.push(Box::new(prover));
+        self
+    }
+}
+
+impl NativeOverrides for OverrideMap {
+    fn prove_axiom(&self, stmt: &Term) -> Option<Result<EvalThm, HolError>> {
+        self.axioms.iter().find_map(|p| p(stmt))
+    }
+
+    fn resolve_type(&self, name: &str, _args: &[Type]) -> Option<Type> {
+        self.types.get(name).cloned()
+    }
+
+    fn resolve_const(&self, name: &str, ty: &Type) -> Option<Term> {
+        let e = self.consts.get(name)?;
+        if &e.ty == ty {
+            return Some(e.term.clone());
+        }
+        let mut sub = BTreeMap::new();
+        subst::match_types(&e.ty, ty, &mut sub).ok()?;
+        Some(subst::subst_tfrees_in_term(&e.term, &sub))
+    }
+}
+
 /// A registered constant: its term at the most-general (polymorphic) type,
 /// plus that general type. Instantiation at a concrete type is a one-way
 /// `match_types` + simultaneous tfree-substitution.
@@ -89,6 +195,9 @@ pub struct NativeOt {
     axioms: Vec<Term>,
     /// Monotone counter for fresh internal variable names.
     fresh: u64,
+    /// Optional user hooks: native proofs for axioms and native
+    /// types/constants for OpenTheory names (see [`NativeOverrides`]).
+    overrides: Option<Box<dyn NativeOverrides>>,
 }
 
 impl Default for NativeOt {
@@ -129,7 +238,22 @@ impl NativeOt {
             tycons: HashMap::new(),
             axioms: Vec::new(),
             fresh: 0,
+            overrides: None,
         }
+    }
+
+    /// Install user [`NativeOverrides`] — native proofs for axioms and native
+    /// types/constants for OpenTheory names — so imported articles are checked
+    /// against a native theory (e.g. axiom-free, or over a different natural
+    /// numbers). Builder form of [`set_overrides`](Self::set_overrides).
+    pub fn with_overrides(mut self, overrides: impl NativeOverrides + 'static) -> Self {
+        self.overrides = Some(Box::new(overrides));
+        self
+    }
+
+    /// Install user [`NativeOverrides`] (see [`with_overrides`](Self::with_overrides)).
+    pub fn set_overrides(&mut self, overrides: impl NativeOverrides + 'static) {
+        self.overrides = Some(Box::new(overrides));
     }
 
     /// NameId → string (falls back to a printable placeholder for ids the
@@ -162,6 +286,18 @@ impl NativeOt {
         let mut sub = BTreeMap::new();
         subst::match_types(&e.ty, ty, &mut sub).ok()?;
         Some(subst::subst_tfrees_in_term(&e.term, &sub))
+    }
+
+    /// Consult installed [`NativeOverrides`] for the native term of a constant.
+    fn override_const(&self, name: NameId, ty: &Type) -> Option<Term> {
+        let ov = self.overrides.as_deref()?;
+        ov.resolve_const(&self.resolve(name), ty)
+    }
+
+    /// Consult installed [`NativeOverrides`] for the native type of a type-op.
+    fn override_type(&self, name: NameId, args: &[Type]) -> Option<Type> {
+        let ov = self.overrides.as_deref()?;
+        ov.resolve_type(&self.resolve(name), args)
     }
 
     /// The element type `α` iff `ty` has `select`'s shape `(α → bool) → α`.
@@ -317,6 +453,9 @@ impl HolLightTypes for NativeOt {
             FUN_TYCON_ID if args.len() == 2 => Type::fun(args[0].clone(), args[1].clone()),
             BOOL_TYCON_ID if args.is_empty() => Type::bool(),
             _ => {
+                if let Some(ty) = self.override_type(name, &args) {
+                    return ty;
+                }
                 self.tycons
                     .entry(name)
                     .or_insert(TyconEntry::Opaque { arity: args.len() });
@@ -401,7 +540,8 @@ impl HolLightTerms for NativeOt {
     }
 
     fn mk_const(&mut self, name: NameId, ty: Type) -> Term {
-        self.instantiate_const(name, &ty)
+        self.override_const(name, &ty)
+            .or_else(|| self.instantiate_const(name, &ty))
             .unwrap_or_else(|| Term::free(self.resolve(name), ty))
     }
 
@@ -823,6 +963,13 @@ impl HolLightKernel for NativeOt {
     }
 
     fn mk_type_validated(&mut self, name: NameId, args: Vec<Type>) -> Result<Type, HolError> {
+        // An override wins over the article's own type definitions (but not
+        // over the structural `->` / `bool`).
+        if name != FUN_TYCON_ID && name != BOOL_TYCON_ID {
+            if let Some(ty) = self.override_type(name, &args) {
+                return Ok(ty);
+            }
+        }
         match name {
             FUN_TYCON_ID => {
                 if args.len() != 2 {
@@ -876,6 +1023,10 @@ impl HolLightKernel for NativeOt {
         }
     }
 
+    fn prove_axiom(&mut self, tm: Term) -> Option<Result<EvalThm, HolError>> {
+        self.overrides.as_deref()?.prove_axiom(&tm)
+    }
+
     fn discharges_as_axiom(&self, hyp: Term) -> bool {
         // A hypothesis is axiom-discharged if it is a *type instance* of some
         // tracked axiom term: `∃σ. axiom[σ] ≡ hyp`. (Plain equality is the
@@ -888,6 +1039,10 @@ impl HolLightKernel for NativeOt {
     }
 
     fn mk_const_validated(&mut self, name: NameId, ty: Type) -> Result<Term, HolError> {
+        // An override wins over the article's own definitions.
+        if let Some(term) = self.override_const(name, &ty) {
+            return Ok(term);
+        }
         match self.consts.get(&name) {
             None => {
                 // `select` is OpenTheory's only polymorphic primitive constant
@@ -1041,5 +1196,77 @@ mod tests {
         let c2 = k.concl(thm2);
         let (_pr, rhs) = c2.as_eq().expect("thm2 is an equation");
         assert!(rhs.as_eq().is_some(), "thm2 rhs should be `rep(abs r) = r`");
+    }
+
+    // -- Overrides --------------------------------------------------------
+
+    #[test]
+    fn default_prove_axiom_is_none() {
+        let mut k = NativeOt::new();
+        let p = Term::free("p", bool_ty());
+        assert!(k.prove_axiom(p).is_none());
+    }
+
+    #[test]
+    fn override_map_resolves_type_and_const() {
+        let ov = OverrideMap::new()
+            .type_("ind", Type::tycon("nat", vec![]))
+            .const_("Data.Bool.T", bool_ty(), Term::free("TRUE", bool_ty()));
+        assert_eq!(
+            ov.resolve_type("ind", &[]),
+            Some(Type::tycon("nat", vec![]))
+        );
+        assert!(ov.resolve_type("other", &[]).is_none());
+        assert!(ov.resolve_const("Data.Bool.T", &bool_ty()).is_some());
+        assert!(ov.resolve_const("missing", &bool_ty()).is_none());
+    }
+
+    /// A tiny article that `axiom`s `x = x` and exports it. Without an override
+    /// the export carries the axiom (1 assumption); an override that proves any
+    /// reflexive equation discharges it (0 assumptions) — same theorem, now
+    /// axiom-free.
+    const AXIOM_REFL_ARTICLE: &str = "\
+\"bool\"\ntypeOp\nnil\nopType\n0\ndef\npop\n\
+\"x\"\n0\nref\nvar\n1\ndef\nvarTerm\n2\ndef\npop\n\
+\"->\"\ntypeOp\n0\nref\n0\nref\nnil\ncons\ncons\nopType\n3\ndef\npop\n\
+\"->\"\ntypeOp\n0\nref\n3\nref\nnil\ncons\ncons\nopType\n4\ndef\npop\n\
+\"=\"\nconst\n4\nref\nconstTerm\n2\nref\nappTerm\n2\nref\nappTerm\n5\ndef\npop\n\
+nil\n5\nref\naxiom\n\
+nil\n5\nref\nthm\n";
+
+    fn run_article(kernel: &mut NativeOt) -> crate::ArticleResult<NativeOt> {
+        let mut names = crate::NameTable::new();
+        crate::ArticleInterp::new(kernel, &mut names)
+            .interpret(AXIOM_REFL_ARTICLE)
+            .expect("article interprets")
+    }
+
+    #[test]
+    fn axiom_tracked_without_override() {
+        let mut k = NativeOt::new();
+        let r = run_article(&mut k);
+        assert_eq!(r.theorems.len(), 1);
+        assert_eq!(
+            r.assumptions.len(),
+            1,
+            "the axiom is tracked as an assumption"
+        );
+    }
+
+    #[test]
+    fn axiom_discharged_with_override() {
+        // Override: prove any reflexive equation `a = a` by REFL.
+        let ov = OverrideMap::new().axiom(|stmt: &Term| {
+            stmt.as_eq()
+                .and_then(|(a, b)| (a == b).then(|| EvalThm::refl(a.clone()).map_err(ce)))
+        });
+        let mut k = NativeOt::new().with_overrides(ov);
+        let r = run_article(&mut k);
+        assert_eq!(r.theorems.len(), 1, "same theorem is still exported");
+        assert_eq!(
+            r.assumptions.len(),
+            0,
+            "the axiom was proved natively, so nothing is assumed"
+        );
     }
 }

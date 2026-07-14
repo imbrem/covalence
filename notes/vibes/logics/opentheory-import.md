@@ -77,6 +77,47 @@ design points keep it honest:
    axiom (new `HolLightKernel::discharges_as_axiom` hook + a term type-instance
    matcher in `NativeOt`) — sound, because it is exactly `INST_TYPE` of the axiom.
 
+## Custom handling: checking articles against a native theory
+
+By default an `axiom` command is hypothesis-tracked, so `base` verifies
+*relative to* the three HOL axioms. But a backend whose own logic already has
+the relevant structure can discharge them — the `HolLightKernel` trait carries
+one **optional** hook (default `None` reproduces stock behaviour):
+
+```rust
+fn prove_axiom(&mut self, tm: Self::Term) -> Option<Result<Self::Thm, HolError>>;
+```
+
+When an `axiom` fires, the interpreter offers the statement here first; a
+returned proof (whose conclusion it re-checks against `tm`) discharges the
+axiom, and it is *not* added to the assumption set — so downstream theorems
+come out axiom-free. `NativeOt` exposes a richer, injectable configuration via
+the `NativeOverrides` trait (with a fluent `OverrideMap` for the common case):
+
+- `prove_axiom(stmt)` — a native proof of an axiom (e.g. OpenTheory's infinity
+  for a native infinite type, or a lemma from a different construction);
+- `resolve_type(name, args)` — map an OpenTheory type operator to a native type
+  (e.g. `ind` → native `nat`), consulted in `opType`;
+- `resolve_const(name, ty)` — map an OpenTheory constant to a native term,
+  consulted in `constTerm` *before* the article's own definitions (so an
+  override wins over a `defineConst` — the hook for "swap out this natural
+  numbers / this lemma source").
+
+```rust
+let ov = OverrideMap::new()
+    .type_("ind", native_nat_ty())          // reinterpret the infinity type
+    .axiom(|stmt| prove_infinity_for_nat(stmt));   // discharge infinity
+let kernel = NativeOt::new().with_overrides(ov);
+```
+
+Everything is built through `covalence-core` / `covalence-hol-api` directly, so
+an override cannot forge a theorem — a returned `Thm` is a real kernel theorem,
+and the conclusion re-check rejects a mismatched proof. The tests demonstrate
+the mechanism end-to-end: the same article exports the same theorem with **1**
+assumption (stock) or **0** (with an override that proves the axiom by `REFL`).
+Writing the *full* infinity proof over native `nat` (unfolding OpenTheory's
+`injective`/`surjective`) is a larger exercise the API now makes expressible.
+
 ## Numerals (the "for now")
 
 No kernel numeral literal is ever constructed. The OpenTheory `std` library

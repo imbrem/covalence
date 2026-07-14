@@ -270,8 +270,27 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
                 }
             }
         }
-        let thm = self.kernel.new_axiom(concl)?;
-        self.assumptions.push(thm.clone());
+        // Offer the axiom to the backend for a native proof. If it supplies
+        // one (whose conclusion matches), the axiom is discharged and NOT
+        // tracked as an assumption; otherwise fall back to a hypothesis-tracked
+        // `assume`.
+        let thm = match self.kernel.prove_axiom(concl.clone()) {
+            Some(proof) => {
+                let thm = proof?;
+                let proved = self.kernel.concl(thm.clone());
+                if !self.kernel.aconv(proved, concl) {
+                    return Err(OtError::ParseError(
+                        "axiom: native proof does not prove the axiom statement".into(),
+                    ));
+                }
+                thm
+            }
+            None => {
+                let thm = self.kernel.new_axiom(concl)?;
+                self.assumptions.push(thm.clone());
+                thm
+            }
+        };
         self.stack.push(OtObject::Thm(thm));
         Ok(())
     }

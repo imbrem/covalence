@@ -265,4 +265,23 @@ pub trait HolLightKernel: HolLightTerms {
     fn discharges_as_axiom(&self, _hyp: Self::Term) -> bool {
         false
     }
+
+    /// Optionally supply a *native proof* of an `axiom` statement instead of
+    /// assuming it.
+    ///
+    /// When an `axiom` command introduces the statement `tm`, the interpreter
+    /// offers it here first. Returning `Some(Ok(thm))` — where `thm` proves
+    /// exactly `tm` (ideally with no hypotheses) in the backend's own theory —
+    /// discharges the axiom, so downstream theorems do not carry it as an
+    /// assumption. This is how a backend whose logic already has the relevant
+    /// structure can check an imported article *axiom-free* (e.g. proving
+    /// OpenTheory's axiom of infinity for a native infinite type, or supplying
+    /// a lemma from a different construction). `Some(Err(_))` fails the article;
+    /// the default `None` reproduces the hypothesis-tracked behaviour.
+    ///
+    /// The interpreter re-checks that the returned theorem's conclusion matches
+    /// `tm`, so a mismatched proof is rejected rather than silently substituted.
+    fn prove_axiom(&mut self, _tm: Self::Term) -> Option<Result<Self::Thm, HolError>> {
+        None
+    }
 }

@@ -4,31 +4,26 @@ Open work only. Severe first.
 
 ## Severe
 
-- **Cross-package polymorphic assumption discharge.** Packages with
-  `requires` whose theorems are used at a *different type instance* than
-  assumed (e.g. `unit-def`: the `!` definition is `axiom`'d at `'A` but the
-  proof needs it at `('A→bool)→bool`) leave a spurious hypothesis on the
-  exported theorem, so the final `thm` (asserted hyp-free) is rejected. A
-  `deductAntisym`/`proveHyp` that should cancel the two occurrences doesn't —
-  they differ by type instance / `Def` representation. Suspect `inst_type_rule`
-  (two-pass `inst_tfree`) or `deductAntisym`/`eq_mp` hyp matching not aligning
-  instantiated terms. Blocks every std package past the pure-`defineConst`
-  leaves (`unit-def`, `pair-def`, `function`, `list`, `natural`, `base`, …).
-  Ignored test: `tests/articles.rs::pkg_unit_def`.
+- **`defineConstList` not implemented.** `ArticleMachine::cmd_define_const_list`
+  still returns `UnknownCommand`. Needed for `list-def`, `option-def`,
+  `sum-def`, `stream-def`, `modular-def`, `word-bits-def`, `natural-bits-def`,
+  `probability-def` (and hence `base`). Semantics: pop `Thm ({vᵢ = tᵢ} ⊢ φ)`
+  and a `List [(Name, Var)]`; define each `cᵢ = tᵢ` (via `new_basic_definition`,
+  checking no `tᵢ` mentions any `vⱼ`), then push `List [Const cᵢ]` and
+  `Thm (φ[cᵢ/vᵢ])` with the `vᵢ = tᵢ` hyps discharged. Not offline-testable
+  until the missing deps below are fetched.
 
 ## Minor
+
+- **Vendored offline corpus is incomplete.** `assets/opentheory/gilith/std/`
+  is missing some packages (e.g. `natural-order-def`), so `natural` (umbrella),
+  `list-def`, and `base` cannot be checked offline. The downloading benchmark
+  (`bun run opentheory`, once wired) fetches the full set.
 
 - **Interpretation files (`.int`) parsed but not applied**
   (`resolve.rs::apply_interpretation`). Umbrella packages that rename
   types/constants across a dependency (e.g. `word`→`byte`) will report
   spurious assumptions until deep NameId renaming of theorem terms lands.
-
-- **`defineTypeOp` version gating.** `new_basic_type_definition` returns the
-  v5-shape theorems (`⊢ abs (rep a) = a` and `⊢ (P r) = (rep (abs r) = r)`).
-  The interpreter does not yet wrap them into the v6 λ-abstracted forms for
-  version-6 articles; verify against the OpenTheory article standard once the
-  discharge blocker above is cleared and a typedef-using package can run
-  end-to-end.
 
 - **`cov hol check` / `cov hol pkg` CLI** not yet wired (still the exit-2
   stub in `crates/app/cov/src/cmd/hol.rs`), and the `bun run opentheory`

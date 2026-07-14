@@ -227,6 +227,36 @@ impl NativeOt {
     }
 }
 
+/// True iff `pattern[σ] ≡ target` for some type substitution σ, accumulated in
+/// `sub`. Walks the two terms in lockstep; every type-bearing leaf constrains σ
+/// via one-way `match_types`. Term structure (including bound-variable indices
+/// and constant/`Def` identity) must match exactly — only *types* may vary.
+fn term_type_instance(pattern: &Term, target: &Term, sub: &mut BTreeMap<SmolStr, Type>) -> bool {
+    match (pattern.kind(), target.kind()) {
+        (TermKind::Bound(i), TermKind::Bound(j)) => i == j,
+        (TermKind::Free(p), TermKind::Free(t)) => {
+            p.name() == t.name() && subst::match_types(p.ty(), t.ty(), sub).is_ok()
+        }
+        (TermKind::Const(pn, pt), TermKind::Const(tn, tt)) => {
+            pn == tn && subst::match_types(pt, tt, sub).is_ok()
+        }
+        (TermKind::Def(pd), TermKind::Def(td)) => {
+            pd.ptr_id() == td.ptr_id()
+                && subst::match_types(pd.instance_type(), td.instance_type(), sub).is_ok()
+        }
+        (TermKind::App(pf, px), TermKind::App(tf, tx)) => {
+            term_type_instance(pf, tf, sub) && term_type_instance(px, tx, sub)
+        }
+        (TermKind::Abs(pt, pb), TermKind::Abs(tt, tb)) => {
+            subst::match_types(pt, tt, sub).is_ok() && term_type_instance(pb, tb, sub)
+        }
+        (TermKind::Eq(pt), TermKind::Eq(tt)) => subst::match_types(pt, tt, sub).is_ok(),
+        (TermKind::Select(pt), TermKind::Select(tt)) => subst::match_types(pt, tt, sub).is_ok(),
+        // Non-type-bearing / literal leaves: require exact equality.
+        _ => pattern == target,
+    }
+}
+
 /// Collect the names of all `Free` variables occurring in `t`.
 fn collect_free_names(t: &Term, out: &mut BTreeSet<SmolStr>) {
     match t.kind() {
@@ -827,9 +857,29 @@ impl HolLightKernel for NativeOt {
                     let sub: BTreeMap<SmolStr, Type> = tvars.into_iter().zip(args).collect();
                     Ok(subst::subst_tfrees_in_type(&tau, &sub))
                 }
-                None => Err(HolError::UnknownTypeConstructor(name)),
+                // An unregistered type constructor is a *primitive* uninterpreted
+                // type (e.g. `ind`, whose only characterisation is the infinity
+                // axiom): auto-register it as opaque of the observed arity. Sound
+                // — an opaque `Tycon` is just an uninterpreted type, and the name
+                // is an efficiency token, not a soundness one.
+                None => {
+                    self.tycons
+                        .insert(name, TyconEntry::Opaque { arity: args.len() });
+                    Ok(Type::tycon(self.resolve(name), args))
+                }
             },
         }
+    }
+
+    fn discharges_as_axiom(&self, hyp: Term) -> bool {
+        // A hypothesis is axiom-discharged if it is a *type instance* of some
+        // tracked axiom term: `∃σ. axiom[σ] ≡ hyp`. (Plain equality is the
+        // σ = identity case.) Sound because `⊢ axiom` ⟹ `⊢ axiom[σ]` by
+        // INST_TYPE — the hypothesis is exactly that instance.
+        self.axioms.iter().any(|ax| {
+            let mut sub = BTreeMap::new();
+            term_type_instance(ax, &hyp, &mut sub)
+        })
     }
 
     fn mk_const_validated(&mut self, name: NameId, ty: Type) -> Result<Term, HolError> {

@@ -56,7 +56,7 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-alethe`](crates/proof/alethe/SKELETONS.md)** — Alethe rule coverage.
 - **[`covalence-egglog`](crates/proof/egglog/SKELETONS.md)** — `EgglogBridge` Stage 0 (only `fiat` implemented, no kernel-backed impl); egglog `external` bridge disabled (released egglog lacks the proof module).
 - **[`covalence-metamath`](crates/proof/metamath/SKELETONS.md)** — substitution engine + `.mm` reader: `set.mm`-scale streaming, canonical serializer, structured-tree encoding, symbol interning.
-- **[`covalence-opentheory`](crates/proof/opentheory/SKELETONS.md)** — article verification on the native HOL backend: cross-package polymorphic assumption discharge blocks std packages past `defineConst` leaves; `.int` interpretations unapplied; `cov hol` CLI + `bun run opentheory` bench unwired.
+- **[`covalence-opentheory`](crates/proof/opentheory/SKELETONS.md)** — article verification on the native HOL backend: `defineConstList` unimplemented; offline corpus incomplete (missing deps block `list`/`natural`/`base`); `.int` interpretations unapplied; `cov hol` CLI + `bun run opentheory` bench unwired.
 - **[`covalence-multiformat`](crates/lib/data/multiformat/SKELETONS.md)** — derivation-fact interchange format: unregistered private-use codecs, no signed envelopes, blake3-only multihash, simulated Coln reader.
 - **[`covalence-acset`](crates/lib/data/acset/SKELETONS.md)** — generic ACSet library: only Δ migration (no Σ/Π), pullback skips attributes, string-only attribute values, `&'static str` schema names.
 - **[`covalence-python`](crates/ffi/python/SKELETONS.md)** — HOL kernel bindings (`pure` module) removed pending rewrite.

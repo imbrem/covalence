@@ -93,11 +93,52 @@ fn pkg_bool_def() {
 }
 
 #[test]
-#[ignore = "cross-package polymorphic assumption discharge (see SKELETONS.md): \
-            a connective definition assumed at 'A but used at a higher type \
-            instance is not discharged, leaving a spurious hypothesis on export"]
 fn pkg_unit_def() {
-    // Exercises defineTypeOp (the unit type) + the `bool` umbrella dependency.
+    // Exercises defineTypeOp v6 (the unit type) + the `bool` umbrella dependency
+    // + polymorphic-axiom type-instance tolerance.
     let (thms, _a) = check_pkg("unit-def");
     assert!(thms > 0, "unit-def should export theorems");
 }
+
+#[test]
+fn pkg_bool() {
+    // The `bool` umbrella: the full boolean theory (defs + classical + ext/int).
+    let (thms, _a) = check_pkg("bool");
+    assert!(thms > 0, "bool should export theorems");
+}
+
+#[test]
+fn pkg_function_def() {
+    let (thms, _a) = check_pkg("function-def");
+    assert!(thms > 0);
+}
+
+#[test]
+fn pkg_pair_def() {
+    // defineTypeOp for the product type.
+    let (thms, _a) = check_pkg("pair-def");
+    assert!(thms > 0);
+}
+
+#[test]
+fn pkg_axiom_infinity() {
+    // The infinity axiom over the primitive (opaque) `ind` type.
+    let _ = check_pkg("axiom-infinity");
+}
+
+#[test]
+fn pkg_function() {
+    let (thms, _a) = check_pkg("function");
+    assert!(thms > 0);
+}
+
+#[test]
+fn pkg_natural_def() {
+    // The natural numbers: defineTypeOp + the numeral (bit0/bit1) definitions.
+    let (thms, _a) = check_pkg("natural-def");
+    assert!(thms > 0);
+}
+
+// NOTE: `natural` (umbrella), `list-def` (defineConstList) et al. require
+// packages not present in the vendored offline tree (e.g. `natural-order-def`).
+// They are exercised by the downloading benchmark (`bun run opentheory`).

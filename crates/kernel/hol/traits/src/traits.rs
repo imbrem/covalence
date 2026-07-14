@@ -251,4 +251,18 @@ pub trait HolLightKernel: HolLightTerms {
 
     /// Construct a constant term with validation (checks type instance).
     fn mk_const_validated(&mut self, name: NameId, ty: Self::Type) -> Result<Self::Term, HolError>;
+
+    /// True if `hyp` is discharged by a tracked axiom — i.e. it is (a type
+    /// instance of) a term introduced via [`new_axiom`](Self::new_axiom).
+    ///
+    /// Backends that track axioms as *hypothesis-tracked* theorems
+    /// (`{p} ⊢ p`, adding no TCB) leave axiom terms as hypotheses on any
+    /// theorem that uses them; a polymorphic axiom propagates as a *type
+    /// instance* of itself. The `thm` article command uses this hook to
+    /// tolerate such hypotheses (they are exactly `INST_TYPE` of an axiom,
+    /// hence sound). The default is conservative: no hypothesis is
+    /// axiom-discharged.
+    fn discharges_as_axiom(&self, _hyp: Self::Term) -> bool {
+        false
+    }
 }

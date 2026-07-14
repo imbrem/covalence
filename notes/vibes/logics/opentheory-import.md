@@ -1,8 +1,10 @@
 # OpenTheory import — verifying articles on the native HOL kernel
 
-*Status: working. 20 stdlib packages / 428 theorems verify offline with zero
-verification failures; the article stack machine, the native kernel backend,
-the `cov hol` CLI, and the `bun run opentheory` benchmark are all live.*
+*Status: working. The **entire OpenTheory standard library verifies** — `cov hol
+pkg base` re-checks **1340 theorems** relative to exactly the 3 genuine HOL
+axioms (extensionality, choice, infinity), ~46s cached. The article stack
+machine, the native kernel backend, the `cov hol` CLI, and the
+download+cache+verify-all `bun run opentheory` benchmark are all live.*
 
 ## What this is
 
@@ -95,20 +97,20 @@ bun run opentheory            # download + cache + verify `base` (online)
 bun run opentheory:offline    # verify the vendored assets (no network)
 ```
 
-Offline today: `bool-def`, `bool`, `unit-def`, `function`, `pair-def`,
-`axiom-infinity`, `natural-def`, … — 20 packages, 428 theorems, and the only
-failures are missing vendored packages, never verification errors.
+`bun run opentheory` fetches the whole stdlib (once, cached) and verifies
+`base` — 1340 theorems. The online resolver turns a bare package name (or bare
+`.thy` `requires:`) into its latest version by reading the repo's
+`?pkg=<name>` package-info page; `CachingUrlResolver` resolves from the on-disk
+cache first, so re-runs need no network. Offline (`--offline`), ~20 packages
+verify from the vendored subset.
 
 ## Known limitations (see `crates/proof/opentheory/SKELETONS.md`)
 
-- **Online version resolution.** `UrlResolver` can't turn a bare package name
-  (or bare `.thy` `requires:`) into a version without a repo index; versioned
-  names fetch fine. This is the one thing between the online benchmark and the
-  full stdlib (incl. the `defineConstList` packages `list`/`option`/… and
-  `base`). Fetch the repo's package/version index, or seed a name→version map.
 - **`.int` interpretation files** are parsed but not applied (deep NameId
   renaming of theorem terms), so `word`↔`byte`-style renaming packages will
-  over-report assumptions.
+  over-report assumptions. `base` verifies whole regardless.
+- **Offline vendored corpus** is a subset; the full stdlib needs the online
+  (fetching) path.
 
 ## Next
 

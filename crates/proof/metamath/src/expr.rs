@@ -112,6 +112,18 @@ pub fn make_expr<'a>(typecode: &str, body: impl IntoIterator<Item = &'a str>) ->
     Expr::new(typecode, body.into_iter().map(Symbol::from).collect())
 }
 
+/// Rename every symbol of an expression (typecode included) through `f`. Used
+/// by database renaming and cross-database interpretation (`crate::interpret`)
+/// to apply a symbol map σ to a schema. Purely structural: the flat body is
+/// mapped position-for-position, so σ commutes with substitution and frame
+/// computation (the renaming metatheorem).
+pub fn map_symbols(e: &Expr, f: &dyn Fn(&str) -> Symbol) -> Expr {
+    Expr::new(
+        f(e.typecode.as_str()),
+        e.body.iter().map(|s| f(s.as_str())).collect(),
+    )
+}
+
 /// Build an expression from a flat list of symbol names where the first is the
 /// typecode. Returns `None` if `symbols` is empty.
 pub fn from_symbols<'a>(symbols: impl IntoIterator<Item = &'a str>) -> Option<Expr> {

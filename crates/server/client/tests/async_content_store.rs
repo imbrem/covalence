@@ -29,6 +29,8 @@ async fn spawn_server() -> (AsyncHttpBackend, tempfile::TempDir) {
         tagged_store,
         object_store,
         mm: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        lisp: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        forsp: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
     let app = build_router(state, true);

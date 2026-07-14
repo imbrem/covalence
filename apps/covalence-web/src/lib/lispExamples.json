@@ -1,12 +1,15 @@
 [
   {"title":"car of a list","src":"(car (quote (a b c)))"},
-  {"title":"cdr of a list","src":"(cdr (quote (a b c)))"},
   {"title":"cons onto a list","src":"(cons (quote a) (quote (b c)))"},
-  {"title":"atom? on an atom","src":"(atom? (quote a))"},
-  {"title":"atom? on a list","src":"(atom? (quote (a b)))"},
-  {"title":"null? on the empty list","src":"(null? (quote ()))"},
-  {"title":"eq? equal atoms","src":"(eq? (quote a) (quote a))"},
-  {"title":"eq? distinct atoms","src":"(eq? (quote a) (quote b))"},
+  {"title":"atom?","src":"(atom? (quote a))"},
+  {"title":"eq? atoms","src":"(eq? (quote a) (quote a))"},
   {"title":"nested car / cdr","src":"(car (cdr (quote (a b c))))"},
+  {"title":"1. define lat? (recursion)","src":"(defun lat? (l) (cond ((null? l) t) ((atom? (car l)) (lat? (cdr l))) (t nil)))"},
+  {"title":"2. lat? of a flat list → t","src":"(lat? (quote (a b c)))"},
+  {"title":"2. lat? of a nested list → nil","src":"(lat? (quote (a (b) c)))"},
+  {"title":"define rember","src":"(defun rember (a l) (cond ((null? l) (quote ())) ((eq? (car l) a) (cdr l)) (t (cons (car l) (rember a (cdr l))))))"},
+  {"title":"rember b from (a b c) → (a c)","src":"(rember (quote b) (quote (a b c)))"},
+  {"title":"★ define eval (metacircular)","src":"(define eval (lambda (e a) (cond ((eq? (car e) (quote quote)) (car (cdr e))) ((eq? (car e) (quote car)) (car (eval (car (cdr e)) a))) ((eq? (car e) (quote cdr)) (cdr (eval (car (cdr e)) a))) ((eq? (car e) (quote cons)) (cons (eval (car (cdr e)) a) (eval (car (cdr (cdr e))) a))) (t (quote unknown)))))"},
+  {"title":"★ run eval on (car (cons 1 (2)))","src":"(eval (quote (car (cons (quote 1) (quote (2))))) (quote ()))"},
   {"title":"the theorem behind a value","src":"#show (car (cons (quote a) (quote (b))))"}
 ]

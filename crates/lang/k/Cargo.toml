@@ -13,5 +13,9 @@ edition = "2024"
 
 [dependencies]
 covalence-sexp = { path = "../../lib/sexp" }
+covalence-grammar = { path = "../grammar" }
+# winnow is accessed through its workspace wrapper (`covalence_parse::winnow`),
+# per the dependency-discipline in CLAUDE.md — used by the `.k`-source parser.
+covalence-parse = { path = "../../lib/parse" }
 smol_str = "0.3"
 thiserror = "2"

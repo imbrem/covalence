@@ -30,6 +30,19 @@ full picture.
 
 ## Minor
 
+- **`relation.rs` reduction relation — next-phase clauses.** The `Step`/`Reduces`
+  relations (on the binary engine, `src/relation.rs`) land the primitive fragment
+  (car/cdr/cons, atom?/consp/null?, eq? on *equal* atoms, cond truthy/falsy
+  select, unary-elimination congruence). Deferred: **β/λ** (`Step ((λx.b) a) b[a/x]`)
+  and **δ/`defun`** (`Step (f args) body[args]`, via the defun-as-hypothesis
+  `Premise::Side`); **integer literals** (`Step (+ (int a)(int b)) (int a+b)`, the
+  `sector+int` dialect); **`eq?` on distinct atoms** (needs the blob-disequality
+  clause) and congruence *into* `eq?` operands; **congruence into `cond` tests**
+  (so a predicate result can drive a `cond`); and the metatheorems (`Step`
+  determinism, `Reduces` = `Step*`) via `rule_induction2`. No `RelationalSemantics`
+  `Semantics<LispRepr>` wrapper / `#semantics` toggle yet (driver is standalone
+  `prove_step`/`prove_reduces`).
+
 - **`defun` return type is a 2-way guess.** `Session::install` tries `bool`
   then `sexpr` for a recursive function's head (predicates vs data functions).
   Functions that are neither purely-bool nor purely-`sexpr`-valued (mixed, or

@@ -38,10 +38,19 @@
 //!   [`fragment::AxiomClass`]es and extracts [`fragment::RewriteRule`]s
 //!   (lhs/rhs/requires/ensures/priority/label/unique-id), feeding the
 //!   F0 → F1 → F2 → claims consumption ladder documented there.
+//!
+//! # The `.k`-source frontend ([`kdef`])
+//!
+//! [`kdef`] is a **separate** frontend over K's *surface* language (`.k`
+//! files), consuming the `syntax` (grammar) declarations directly — not KORE.
+//! It parses a simple tutorial language's grammar (LAMBDA, IMP) with
+//! [`winnow`](covalence_parse::winnow), renders it to an S-expression IR, and
+//! lowers it to a [`covalence_grammar::Cfg`] for the kernel CFG stratum.
 
 #![forbid(unsafe_code)]
 
 pub mod ast;
 pub mod fragment;
+pub mod kdef;
 pub mod parse;
 pub mod sexpr;

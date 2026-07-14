@@ -1,7 +1,72 @@
-# A structural (non-identity) `σ` for transport
+# A structural (non-identity) `σ` for transport — and induction-on-derivations to foreign systems
 
 *AI-authored design corpus. Status as of the `mm-metatheory` work: landed the
-`Φ⟨bool⟩` slice; the `Φ=nat` MM-import slice remains open.*
+`Φ⟨bool⟩` renaming slice (TIER 0) **and** the `Φ⟨bool⟩` propositional-SUBSTITUTION
+slice (TIER 1); the `Φ=nat` MM-import cross-rule-set slice (TIER 2) and genuine
+cross-system transport (TIER 3) remain open.*
+
+## The larger program: induction-on-derivations, including to foreign systems
+
+This note is one rung of a ladder whose long-run target is
+**induction-on-derivations transporting to *unrelated, non-Metamath* systems**.
+The shared substrate is already there: multiple foreign systems are reified as
+derivability relations over ONE impredicative rule-induction engine
+(`metalogic::RuleSet` + `derivable()` + `rule_induction`), including **K**
+(`k/reduce.rs`: `Derivable_KStep` over KORE rewrite rules — a genuinely
+non-Metamath rewrite system), **SpecTec/WASM** (`wasm/`), and CFG grammars
+(`grammar/cfg`), all sharing the `Φ=nat` free-term-algebra encoding with Metamath
+import.
+
+A **cross-system homomorphism** = a *signature/rule morphism* `σ` (mapping one
+system's syntax to another's) **plus a per-rule SIMULATION obligation**
+(`transport_db.rs:139` `clause_sims[k]`: "`σ` simulates source rule `k` in the
+target"), transported in one move by `rule_induction`. Two transport engines
+realise this shape:
+
+- `relations::transport` (reified-PROP `Φ⟨bool⟩`): carries ONE simulation
+  obligation, `σ_hom` ("`σ` commutes with `⟹`", i.e. simulates the single
+  structural rule — MP — that `Derivable_DB` has beyond axioms). This note's
+  TIER 0/1 live here.
+- `transport_db::transport` (free algebra `Φ=nat`): the generic CROSS-RULE-SET
+  transport, `clause_sims[k]` per source rule. Currently exercised ONLY at `σ=id`
+  (`id_clause_sims`) — the rule-inclusion case. An honest non-identity `σ` with
+  proved `clause_sims` is the true cross-system bridge (TIER 2/3).
+
+### The 4-tier ladder (only 0–1 are theorems today)
+
+- **TIER 0 (done).** `σ=id` monotonicity (`relations.rs` identity test) +
+  variable-index renaming `σ_f` (`relations_sigma::var_rename_sigma`). Every `σ_f`
+  is depth- and shape-preserving: the image of any `⌜var k⌝` is again a single var
+  LEAF `⌜var (f k)⌝`.
+- **TIER 1 (done — THIS slice).** Intra-carrier propositional **SUBSTITUTION**
+  homomorphism on `Φ⟨bool⟩`: atom ↦ arbitrary compound formula
+  (`relations_sigma::var_subst_sigma`) — the FOL/HOL-signature-morphism shape in
+  miniature, proving `σ` can restructure formulas while simulating the single
+  structural rule (MP). Details below.
+- **TIER 2 (OPEN — NOT demonstrated).** A cross-rule-set **non-identity `σ` on
+  `transport_db`** over the `Φ=nat` free algebra where `mm_database`, **K**
+  (`k/reduce.rs`), and WASM all live — a rule morphism between two DIFFERENT
+  `RuleSet`s with honest per-rule `clause_sims`. A SUBTERM-rewriting `σ` there
+  needs the encoding reified as an inductive `MmExpr := sym(nat) | app(Rec, Rec)`
+  with a catamorphic recursor (the `church.rs` backend of `crates/lang/inductive`)
+  — the named prerequisite and hard blocker. An OPAQUE whole-judgement `σ`
+  (prefix-tag / retag / inject) could land on `Φ=nat` *now* without `MmExpr`, and
+  is the right SECOND slice.
+- **TIER 3 (north star).** A genuine CROSS-SYSTEM `σ`. K is already the first
+  non-Metamath system on this engine, so the first concrete cross-system target is
+  **K→Metamath** (both already `RuleSet`s on `Φ=nat`). Then **LF/Dedukti** as the
+  UNIVERSAL target: Dedukti is the LF checker Lean/Coq export to, and every rule
+  becomes a rewrite rule matching our `RuleSet` + `clause_sims` shape (dual to
+  `covalence_k::fragment::rewrite_rules`, what `k/reduce` already lowers). A
+  Dedukti signature morphism IS a `σ` + per-rewrite-rule simulation =
+  `transport_db`'s interface, so Lean/Coq derivations arriving as rewrite systems
+  transport by the identical `rule_induction` move.
+
+Two things the ladder makes explicit: (a) TIER 1 generalises renaming to
+propositional **theory-interpretation** (free-monad substitution); (b) the honest
+`clause_sims` path on `transport_db` (`Φ=nat`) is the true cross-system bridge and
+needs inductive `MmExpr`; (c) K→Metamath is the first concrete cross-system
+target, Dedukti the eventual universal `σ`-target for Lean/Coq.
 
 ## The blocker this addresses
 
@@ -91,29 +156,106 @@ the `σ_hom` premise transport is parameterised over). No new kernel rules, no
 postulates, no TCB edit — every `Thm` comes from existing kernel/eval helpers
 (`beta_nf`, `trans`, `sym`, `all_intro`, `inst`, `imp_elim`).
 
+## TIER 1 — the propositional SUBSTITUTION `σ_g` (this slice)
+
+Renaming (TIER 0) is depth- and shape-preserving: `σ_f ⌜var k⌝` is always a
+single var LEAF. The escalation is **free-monad substitution** — atom ↦ arbitrary
+formula. Where `var_rename_sigma` re-plumbs the var slot to `λn. __var (f n)`
+(a `nat → nat` index map), `var_subst_sigma(g)` replaces the var slot with a
+COMPOUND body that RE-FOLDS an arbitrary substitutee `g n : Φ⟨bool⟩` (for
+`g : nat → Φ⟨bool⟩`) against the *other four bound handlers already in scope*:
+
+```text
+  σ_g := λA:Φ⟨bool⟩. λ v ¬ ∧ ∨ ⟹.  A (λn. (g n) v ¬ ∧ ∨ ⟹) ¬ ∧ ∨ ⟹
+```
+
+The inner `(g n) v ¬ ∧ ∨ ⟹` is `apply_handlers`-style folding of `g n` with the
+five bound handler frees (returns `bool = r`, so it typechecks in the `nat → bool`
+var slot). Passing the SAME five bound handlers means the substituted formula's
+own constructors are interpreted by the outer translation — this is exactly the
+free-monad *bind*. Same `__`-prefixed fresh-binder discipline avoids β-capture
+between `g`'s handlers and the bound ones; `g` is built via `prop.rs`'s
+`p_and_at`/`p_neg_at`/`p_var_at` at `bool` so the substitutee folds are hygienic
+closed terms (a mistyped `g` fails `type_of`, not soundness).
+
+### Why it is a genuine escalation, not a relabel
+
+1. `σ_g` changes formula STRUCTURE and DEPTH: `var 0 ↦ var(succ 0) ∧ var 0`
+   replaces a single var leaf with an `and`-rooted tree of strictly greater
+   constructor depth; the atom-expansion instance `var n ↦ ¬(var n)` adds a `neg`
+   former at the root. Every `σ_f` image is a var leaf, so `σ_g` lives strictly
+   outside the ENTIRE renaming family. The non-vacuity test asserts
+   `σ_g⌜var 0⌝ ≠ ⌜var 0⌝` AND `σ_g⌜var 0⌝ ≠ σ_succ⌜var 0⌝` (a var leaf) — a
+   decidable term-shape fact (`and`/`neg` ROOT former vs `var` root former).
+2. It is the genuine propositional shape of a **signature/theory-interpretation
+   morphism** (atom ↦ arbitrary formula) — the FOL/HOL translation used in real
+   metatheory, not a cosmetic relabel.
+3. The simulation obligation `σ_hom` is HONESTLY proved, not `σ=id` and not
+   reflexivity: `σ_g⌜X⟹Y⌝` and `⌜σ_g X ⟹ σ_g Y⌝` are two DISTINCT compound
+   redexes that merely share a β-normal form; `trans(sym)` genuinely relates two
+   different terms, and if `σ_g` ever touched the `⟹` slot the equation would be
+   FALSE and `trans` would ERROR rather than fabricate (the kernel is the check,
+   the `debug_assert_eq` the loud guard).
+4. It does NOT secretly need a recursor: `σ_g` rides the same
+   catamorphic re-fold-with-modified-handlers trick on carrier `Φ⟨bool⟩` (the
+   Church fold has a re-foldable handler). The recursor wall only bites carrier
+   `Φ=nat` (TIER 2).
+
+### The three theorems proved (all hypothesis-free)
+
+1. `sigma_hom_of_var_subst(g)` (T1): `⊢ ∀X Y. σ_g ⌜X ⟹ Y⌝ = ⌜σ_g X ⟹ σ_g Y⌝`,
+   verbatim equal to `relations::sigma_hom(σ_g)`, for BOTH `g := λn. var(succ n) ∧
+   var n` and `g := λn. ¬(var n)`. Same `beta_nf`/`trans`/`all_intro` spine.
+2. `sigma_subst_moves_and_deepens` (T2, non-vacuity witness — a `beta_nf`
+   equation, not a new axiom): `⊢ σ_g ⌜var 0⌝ = ⌜var(succ 0) ∧ var 0⌝`, with the
+   normal form asserted `≠ ⌜var 0⌝` and `≠ σ_succ ⌜var 0⌝` — so `σ_g`
+   restructures, not relabels.
+3. `transport_at_var_subst` (T3): `transport().inst("sigma", σ_g).imp_elim(T1)` is
+   `⊢ Interp DbA DbB σ_g ⟹ Der_DbA S ⟹ Der_DbB (σ_g S)`, hypothesis-free, over
+   free `DbA,DbB:Database`, `S:Φ⟨bool⟩`, for both `g`s. `assert_ne` shows
+   `derivable_db(DbB, σ_g S) ≠ derivable_db(DbB, S)` — derivability transports
+   along an atom-level theory interpretation.
+
+`transport()` is reused **unchanged** — the slice only supplies a richer
+`.inst("sigma", …)` + `.imp_elim(…)`. No new kernel rules, no postulates, no TCB
+edit.
+
 ## Honest scope — what is *not* claimed
 
-- This is **"transport demonstrated at a real structural σ"**, not "transport
-  re-stated over an inductive encoding". `transport()` itself is unchanged; we
-  feed it a genuine non-identity `σ_hom`.
-- The renaming re-plumbs handler slots of the existing Church fold; it is not a
-  catamorphism over a carved inductive `MmExpr`. That is fine for the `Φ⟨bool⟩`
-  carrier (no destructor needed), but does not by itself reify the MM-import
-  encoding.
+- This is **"transport demonstrated at real structural σ (renaming + intra-carrier
+  substitution)"**, not "transport re-stated over an inductive encoding" and NOT
+  "cross-system transport to Lean/Coq/Dedukti proved". `transport()` itself is
+  unchanged; we feed it a genuine non-identity `σ_hom`.
+- The substitution re-folds handler slots of the existing Church fold on
+  `Φ⟨bool⟩`; it is not a catamorphism over a carved inductive `MmExpr`. That is
+  fine for the `Φ⟨bool⟩` carrier (no destructor needed), but does not by itself
+  reify the MM-import encoding or cross a `RuleSet` boundary.
 
 ## What remains (open)
 
-- **MM-import `Φ = nat` structural `σ`.** Reify the `mm_database` encoding as an
-  inductive `MmExpr := sym(code: nat) | app(MmExpr, MmExpr)` (structurally the
-  current leaf/`concat` encoding) via the `church.rs` backend of
-  `crates/lang/inductive`, define a catamorphic constant/var renaming through
-  `rec_app`, and prove its concat-homomorphism from the `comp` laws + induction.
-  This is the harder path the `SKELETONS` blocker also names.
-- **Connective-mapping σ / per-rule simulations.** The same handler-passthrough β
-  argument gives other structural translations for free — e.g. a connective-swap
-  `σ` (swap the `∧`/`∨` handler slots, identity on `var`/`imp`) commutes with
-  `enc_imp` identically. A fallback if variable-rename normalisation ever
-  disagreed; also a template for genuine connective maps.
+- **Concrete satisfiable-`Interp` witness for `σ_g` (TIER-1 polish).** `transport_at_var_subst`
+  is a genuine hypothesis-free implication *schema* over free `DbA,DbB,S`; unlike the
+  `σ=id` case (where `A ⊑ B` gives a concrete `Interp A B id`), no concrete
+  `DbA,DbB` with `⊢ Interp DbA DbB σ_g` and a transported nonempty derivation is
+  exhibited yet. Straightforward via the `DbSession` singleton pattern
+  (`DbA = {var 0}`, `DbB = {var(succ 0) ∧ var 0} = {σ_g(var 0)}`): the one axiom
+  `var 0` maps under `σ_g` to `DbB`'s axiom, so `Interp` holds by membership +
+  the `T2` β-equation — makes "the transport actually fires" tangible.
+- **TIER 2 — MM-import `Φ = nat` cross-rule-set `σ`.** Reify the `mm_database`
+  encoding as an inductive `MmExpr := sym(code: nat) | app(MmExpr, MmExpr)` via the
+  `church.rs` backend of `crates/lang/inductive`, define a catamorphic
+  constant/var/subterm rewrite through `rec_app`, prove its concat-homomorphism
+  from the `comp` laws + induction, and feed `transport_db` honest non-identity
+  `clause_sims`. (An OPAQUE whole-judgement `σ` — prefix-tag/retag/inject — could
+  land on `Φ=nat` *now* without `MmExpr`, and is the right second slice.)
+- **Connective-mapping σ.** The same handler-passthrough β argument gives more
+  structural translations for free — a connective-swap `σ` (swap `∧`/`∨` handler
+  slots, identity on `var`/`imp`) commutes with `enc_imp` identically. A fallback
+  if a substitution normalisation ever disagreed; also a template for genuine
+  connective maps.
+- **TIER 3 — cross-system transport.** K→Metamath first (both `RuleSet`s on
+  `Φ=nat`), then Dedukti/LF as the universal `σ`-target for Lean/Coq. Needs TIER 2
+  (`transport_db` honest `clause_sims`) plus the concrete foreign rule sets.
 - **HOL→ZFC-scale transport** (`Derivable_HOL ⟹ Derivable_ZFC ∘ σ`) — the
-  north-star instance; needs the MM-import structural `σ` plus concrete HOL/ZFC
-  rule sets.
+  north-star Metamath instance; needs the MM-import structural `σ` plus concrete
+  HOL/ZFC rule sets.

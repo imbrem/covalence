@@ -1437,9 +1437,11 @@ version = "0.0.0"
 dependencies = [
  "axum",
  "covalence-core",
+ "covalence-forsp",
  "covalence-git",
  "covalence-hash",
  "covalence-init",
+ "covalence-lisp",
  "covalence-metamath",
  "covalence-object",
  "covalence-proto",

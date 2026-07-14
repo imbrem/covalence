@@ -8,18 +8,26 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
 
 ## Severe
 
-- **Structural `σ` for transport — MM-import `Φ=nat` carrier still open.**
-  `transport` is now demonstrated at a **real non-identity structural `σ`** on the
-  reified-prop `Φ⟨bool⟩` carrier: `relations_sigma` builds the variable-index
-  renaming `σ_f := λA. λ v ¬ ∧ ∨ ⟹. A (λn. v (f n)) ¬ ∧ ∨ ⟹`, proves its
-  `⟹`-homomorphism at `f := succ` (`sigma_hom_of_var_rename`), and discharges
-  `transport()`'s `σ_hom` premise with it (`transport_at_var_rename`) — the first
-  discharge off `σ=id`. What remains: (a) the **MM-import** carrier `Φ=nat`
-  (`mm_database`, `concat`/`mm$c$<tok>` free vars) is still a recursor-free free
-  algebra — a `σ` descending `concat`-trees needs it reified as an inductive
-  `MmExpr` (`sym(nat) | app(Rec,Rec)`) with a catamorphic recursor (church.rs
-  backend) first; (b) `transport` is *demonstrated* at `σ_f`, not re-stated over
-  an inductive encoding. Design: `notes/vibes/logics/structural-sigma-transport.md`.
+- **Structural `σ` for transport — MM-import `Φ=nat` carrier still open (TIER 2).**
+  `transport` is demonstrated at **non-identity structural `σ`** on the
+  reified-prop `Φ⟨bool⟩` carrier: `relations_sigma` builds (TIER 0) the
+  variable-index renaming `σ_f` and (TIER 1, done) the propositional-SUBSTITUTION
+  catamorphism `σ_g := λA. λ v ¬ ∧ ∨ ⟹. A (λn. (g n) v ¬ ∧ ∨ ⟹) ¬ ∧ ∨ ⟹` —
+  atom↦arbitrary-formula, the FOL/HOL signature-morphism shape in miniature.
+  `var_subst_sigma` / `sigma_hom_of_var_subst` prove its `⟹`-homomorphism and
+  `transport_at_var_subst` discharges `transport()`'s `σ_hom` at it, for both
+  `g := λn. var(succ n) ∧ var n` (structure-DEEPENING) and `g := λn. ¬(var n)`.
+  Non-vacuity is structural, not a leaf index: `σ_g⌜var 0⌝ = ⌜var(succ 0) ∧ var 0⌝`
+  has an `and` ROOT former, so `σ_g` lives strictly outside the whole
+  depth-preserving renaming family (`sigma_subst_moves_and_deepens` asserts
+  `≠ ⌜var 0⌝` AND `≠ σ_succ⌜var 0⌝`). What remains: (a) TIER 2 — a **cross-rule-set
+  non-identity `σ`** on `transport_db` over the **MM-import** `Φ=nat` carrier
+  (`mm_database`/K/wasm), needing the encoding reified as an inductive `MmExpr`
+  (`sym(nat) | app(Rec,Rec)`) with a catamorphic recursor (church.rs backend); an
+  OPAQUE whole-judgement `σ` (prefix-tag/retag/inject) could land on `Φ=nat` now
+  without `MmExpr` and is the right next slice; (b) TIER 3 — a genuine CROSS-SYSTEM
+  `σ` (K→Metamath first; Dedukti/LF as universal target for Lean/Coq). Design:
+  `notes/vibes/logics/structural-sigma-transport.md`.
 - **HOL→ZFC-scale transport** (`Derivable_HOL ⟹ Derivable_ZFC ∘ σ`) — the
   north-star instance; needs structural-`σ` above + concrete HOL/ZFC rule sets.
   Not built.

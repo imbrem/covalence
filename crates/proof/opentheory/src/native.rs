@@ -252,6 +252,11 @@ fn term_type_instance(pattern: &Term, target: &Term, sub: &mut BTreeMap<SmolStr,
         }
         (TermKind::Eq(pt), TermKind::Eq(tt)) => subst::match_types(pt, tt, sub).is_ok(),
         (TermKind::Select(pt), TermKind::Select(tt)) => subst::match_types(pt, tt, sub).is_ok(),
+        // Fresh constants (abs/rep and typedef-introduced symbols, e.g.
+        // `Set.fromPredicate`): same kernel-allocated identity, types may vary.
+        (TermKind::FreshConst(pl), TermKind::FreshConst(tl)) => {
+            pl.id() == tl.id() && subst::match_types(pl.ty(), tl.ty(), sub).is_ok()
+        }
         // Non-type-bearing / literal leaves: require exact equality.
         _ => pattern == target,
     }

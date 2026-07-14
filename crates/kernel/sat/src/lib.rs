@@ -22,7 +22,12 @@
 //! proof must first be elaborated to LRAT (e.g. by `drat-trim`) or have its
 //! propagation recomputed. See `SKELETONS.md`.
 
+pub mod hol;
+
+use std::collections::HashMap;
+
 pub use covalence_sat::{Clause, Cnf, Lit, Var};
+pub use hol::HolClauseBackend;
 
 /// Errors from replaying a SAT proof through a [`ClauseBackend`].
 #[derive(Debug, thiserror::Error)]
@@ -69,22 +74,74 @@ pub trait ClauseBackend {
 
 /// Replay an LRAT proof through a clause backend, returning the final `⊢ ⊥`.
 ///
-/// Algorithm (per RUP-with-hints step `id : clause C, antecedents [a₁ … aₖ]`):
-/// assume the negation of `C`, unit-propagate through the antecedent clauses in
-/// order (each must become unit or falsified under the running assignment),
-/// then read off the reverse propagation order as a resolution chain deriving
-/// `C` from the antecedents. `Delete` steps retire clause ids. The proof is
-/// complete when a step derives the empty clause.
+/// LRAT is RUP-*with-hints*: each `Add { id, clause C, antecedents [a₁ … aₖ] }`
+/// step's antecedents are a resolution chain (in propagation order) whose
+/// combined resolvent is `C`. We build it by seeding a clause map with the input
+/// CNF (DIMACS clause `k` → id `k+1`, via [`ClauseBackend::assume_clause`]) and,
+/// per step, left-folding [`ClauseBackend::resolve`] over the antecedent
+/// theorems in order: `R = clause(a₁); Rⱼ = resolve(Rⱼ₋₁, clause(aⱼ))`. The
+/// resolvent is stored under `id`; the last step's `C` is empty, so `R` is
+/// `⊢ ⊥`. `Delete` steps retire ids.
 ///
-/// Not yet wired — the RUP→resolution-chain extraction is the next module (it is
-/// pure and backend-independent, mirroring the `farkas` certificate check in
-/// `covalence-kernel-smt`). See `SKELETONS.md`.
+/// Returns the first empty-clause theorem derived (else the last step's
+/// theorem). The caller checks its hypotheses are a subset of the assumed input
+/// clauses — that is what makes it a genuine refutation.
+///
+/// The left-fold assumes each successive resolution has a *unique* complementary
+/// pair (so [`ClauseBackend::resolve`]'s own pivot-finding suffices); this holds
+/// for the reverse-unit-propagation chains CaDiCaL emits. A chain that needs an
+/// explicit pivot (from unit-propagation simulation) is not yet handled — see
+/// `SKELETONS.md`.
 pub fn replay_lrat<B: ClauseBackend>(
-    _backend: &mut B,
-    _cnf: &Cnf,
-    _proof: &covalence_sat::LratProof,
+    backend: &mut B,
+    cnf: &Cnf,
+    proof: &covalence_sat::LratProof,
 ) -> Result<B::Thm, ReplayError> {
-    Err(ReplayError::NotImplemented(
-        "LRAT RUP→resolution replay (see SKELETONS.md)",
-    ))
+    use covalence_sat::LratStep;
+
+    // Seed: DIMACS clause k (0-based) is LRAT id k+1.
+    let mut clauses: HashMap<u64, B::Thm> = HashMap::new();
+    for (i, clause) in cnf.clauses().enumerate() {
+        clauses.insert((i + 1) as u64, backend.assume_clause(clause)?);
+    }
+
+    let get = |clauses: &HashMap<u64, B::Thm>, id: u64| -> Result<B::Thm, ReplayError> {
+        clauses
+            .get(&id)
+            .cloned()
+            .ok_or(ReplayError::UndefinedClause(id))
+    };
+
+    let mut last: Option<B::Thm> = None;
+    let mut refutation: Option<B::Thm> = None;
+
+    for step in proof.steps() {
+        match step {
+            LratStep::Add {
+                id, antecedents, ..
+            } => {
+                let mut ants = antecedents.iter();
+                let first = *ants.next().ok_or(ReplayError::BadRup { id: *id })?;
+                let mut acc = get(&clauses, first)?;
+                for &a in ants {
+                    let next = get(&clauses, a)?;
+                    acc = backend.resolve(&acc, &next)?;
+                }
+                if refutation.is_none() && backend.is_empty_clause(&acc) {
+                    refutation = Some(acc.clone());
+                }
+                last = Some(acc.clone());
+                clauses.insert(*id, acc);
+            }
+            LratStep::Delete { clause_ids, .. } => {
+                for id in clause_ids {
+                    clauses.remove(id);
+                }
+            }
+        }
+    }
+
+    refutation
+        .or(last)
+        .ok_or(ReplayError::NotImplemented("empty LRAT proof (no steps)"))
 }

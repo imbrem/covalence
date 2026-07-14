@@ -350,6 +350,18 @@
     },
     {
       "from": "covalence-kernel-sat",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-kernel-sat",
+      "to": "covalence-hol-eval"
+    },
+    {
+      "from": "covalence-kernel-sat",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence-kernel-sat",
       "to": "covalence-sat"
     },
     {

@@ -33,7 +33,7 @@ Mirror the parsing note exactly. Each dialect `L` is an **inductively-defined re
 `Eval_L ⊆ Prog × Env × Value` (the impredicative-least-fixpoint shape:
 `Eval_L p e v := ∀R. Closed_L(R) ⟹ R p e v`, one closure clause per eval rule — `car`,
 `cdr`, `cons`, `cond`, `apply`, β, `label`/`Y`, …). Same machinery as the recursion
-engine's `Graph`, the carved `Wf`, and the parse relations.
+engine's `Graph`, the the `Wf` predicate, and the parse relations.
 
 Why a **relation** and not a function, restating the parsing-note reasons for eval:
 
@@ -145,7 +145,7 @@ Start the poset at a **McCarthy/SectorLISP core** — the ⊑-least real Lisp:
   language. SectorLISP (Tunney/Ikuta) famously fits this in a 512-byte boot sector, no
   GC, because pure eval needs no persistent allocation.
 - **Why it's the right bottom** — three reasons that matter for *us* specifically:
-  1. **It's nearly already built.** Its data universe *is* our carved `sexpr`
+  1. **It's nearly already built.** Its data universe *is* our `sexpr`
      (`inductive/carved.rs`); `init/lisp.rs` already has `car/cdr/cons/consp/atom`. The
      bottom dialect is `init/lisp.rs`'s theory + `eq/cond/quote/lambda/label` eval rules.
   2. **It's small enough to *prove* runtime = logic.** The §10.1 `TestLisp = CertifiedLisp`
@@ -229,7 +229,7 @@ nothing here needs new TCB.
 ## 8. Where to start (build order, folds into §Lisp-frontend-sketch §8/§10.6)
 
 1. **The sector core as `Eval_L₀`** — the McCarthy 7 + λ + `label` as an inductive eval
-   relation over carved `sexpr`, reusing `init/lisp.rs`. `TestLisp` for it is trivial;
+   relation over `sexpr`, reusing `init/lisp.rs`. `TestLisp` for it is trivial;
    prove `TestLisp = CertifiedLisp` for this fragment (the anchor theorem).
 2. **The metacircular `eval` + its reflection theorem** — the seed strange loop; the most
    striking small demo (a Lisp that runs its own interpreter, *proved* faithful).
@@ -243,7 +243,7 @@ nothing here needs new TCB.
 6. **Forsp (the bridge)** — a `lisp ⇄ forsp` translation with a certified simulation square
    (§4). The first cross-paradigm compiler-correctness `Thm`.
 
-Steps 1–2 are the high-signal core (self-hosting proved Lisp on carved `sexpr`); 3–4 make
+Steps 1–2 are the high-signal core (self-hosting proved Lisp on `sexpr`); 3–4 make
 the *ordering/UB* first-class; 5–6 open the concatenative axis and the first real
 morphism.
 

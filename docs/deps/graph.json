@@ -27,6 +27,7 @@
     "covalence-kernel",
     "covalence-kv",
     "covalence-lean",
+    "covalence-lisp",
     "covalence-llm",
     "covalence-lsp",
     "covalence-metamath",
@@ -43,6 +44,7 @@
     "covalence-python",
     "covalence-rand",
     "covalence-repl",
+    "covalence-repl-core",
     "covalence-sat",
     "covalence-serve",
     "covalence-sexp",
@@ -175,6 +177,10 @@
     {
       "from": "covalence-forsp",
       "to": "covalence-hash"
+    },
+    {
+      "from": "covalence-forsp",
+      "to": "covalence-repl-core"
     },
     {
       "from": "covalence-forsp",
@@ -343,6 +349,30 @@
     {
       "from": "covalence-kernel",
       "to": "covalence-store"
+    },
+    {
+      "from": "covalence-lisp",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-lisp",
+      "to": "covalence-hol-api"
+    },
+    {
+      "from": "covalence-lisp",
+      "to": "covalence-hol-eval"
+    },
+    {
+      "from": "covalence-lisp",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence-lisp",
+      "to": "covalence-repl-core"
+    },
+    {
+      "from": "covalence-lisp",
+      "to": "covalence-sexp"
     },
     {
       "from": "covalence-llm",
@@ -634,6 +664,10 @@
     },
     {
       "from": "covalence-web-kernel",
+      "to": "covalence-forsp"
+    },
+    {
+      "from": "covalence-web-kernel",
       "to": "covalence-haskell"
     },
     {
@@ -643,6 +677,10 @@
     {
       "from": "covalence-web-kernel",
       "to": "covalence-kernel"
+    },
+    {
+      "from": "covalence-web-kernel",
+      "to": "covalence-lisp"
     }
   ],
   "tcb": {

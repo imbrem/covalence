@@ -27,6 +27,7 @@ digraph deps {
   "kernel";
   "kv";
   "lean";
+  "lisp";
   "llm";
   "lsp";
   "metamath";
@@ -43,6 +44,7 @@ digraph deps {
   "python";
   "rand";
   "repl";
+  "repl-core";
   "sat";
   "serve";
   "sexp";
@@ -87,6 +89,7 @@ digraph deps {
   "egglog" -> "sexp";
   "egglog" -> "types";
   "forsp" -> "hash";
+  "forsp" -> "repl-core";
   "forsp" -> "sexp";
   "fuse" -> "hash";
   "fuse" -> "object";
@@ -129,6 +132,12 @@ digraph deps {
   "kernel" -> "object";
   "kernel" -> "sexp";
   "kernel" -> "store";
+  "lisp" -> "core";
+  "lisp" -> "hol-api";
+  "lisp" -> "hol-eval";
+  "lisp" -> "init";
+  "lisp" -> "repl-core";
+  "lisp" -> "sexp";
   "llm" -> "proto";
   "lsp" -> "sexp";
   "lsp" -> "wasm";
@@ -201,7 +210,9 @@ digraph deps {
   "wasm-store" -> "json";
   "wasm-store" -> "store";
   "wasm-store" -> "wasm";
+  "web-kernel" -> "forsp";
   "web-kernel" -> "haskell";
   "web-kernel" -> "hol-api";
   "web-kernel" -> "kernel";
+  "web-kernel" -> "lisp";
 }

@@ -1,0 +1,16 @@
+[package]
+name = "covalence-repl-core"
+version = "0.0.0"
+edition = "2024"
+
+# A tiny, paradigm-neutral REPL trait stack. `Repl` is the lifecycle core
+# (start / parse / eval / next / show, with per-phase error types and a
+# default `step`); `ReductionStrategy` is the swappable seam for *how* a
+# reduction is proved — its `reduce` returns a kernel theorem `⊢ term =
+# value`, so today's symbolic strategy and a future proven-WASM-interpreter
+# strategy plug in at the same point. Kernel-agnostic: generic over the
+# theorem/term types, no kernel dependency here.
+#
+# Deferred work: crates/lib/repl/SKELETONS.md.
+
+[dependencies]

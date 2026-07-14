@@ -44,6 +44,7 @@ pub use spectec_ast_decode as decode;
 pub use spectec_ast_decode_derive as decode_derive;
 pub use wasm_spec_ast as wasm;
 
+pub mod cfg;
 pub mod grammar;
 pub mod parse;
 pub mod regex;

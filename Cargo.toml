@@ -25,6 +25,7 @@ members = [
     "crates/lib/proptest",
     "crates/lib/proto",
     "crates/lib/rand",
+    "crates/lib/repl-core",
     "crates/lib/sat",
     "crates/lib/sexp",
     "crates/lib/smt",

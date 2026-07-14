@@ -1,5 +1,14 @@
 # Minimal Lisp → metacircular interpreter in the browser: step-by-step plan
 
+> **STATUS (branch `lisp-demo`):** the first build has landed — see
+> [`../STATUS.md`](../STATUS.md). What ships is the **equational special case**
+> covering Little Schemer **ch1** (Phases 0–1, a ch1 slice of 2–3, and 5's
+> wasm+`/lisp` wiring). The metacircular-interpreter target below — ch2 recursion
+> (`defun`/env/recursor), the `Reduces` step-relation for non-termination, and
+> the differential harness — is **deferred**; the parametric refactor in
+> [`../initial-ideas/parametric-reduction.md`](../initial-ideas/parametric-reduction.md)
+> supersedes the single-seam design.
+
 Target: the `/lisp` web page boots a REPL in which the **metacircular interpreter runs** —
 you type `(eval '(car (cons 1 2)) env)` and get `1` back, every result a kernel reduction
 theorem. Same path is exercised by **integration tests** (the metacircular interpreter is
@@ -122,7 +131,7 @@ numerals — the second `Resolve` option — without touching phases 0–2's str
 
 **Do (feature `hol`, dep `covalence-hol-api`):**
 
-1. **`HolResolve`** — `resolve_number("1342")` → the carved-`sexpr` HOL term for 1342 as a
+1. **`HolResolve`** — `resolve_number("1342")` → the `sexpr` HOL term for 1342 as a
    *binary* numeral (`double (succ …)` style, reusing the nat literal path), `resolve_symbol`
    → the HOL symbol term. Same `Resolve` trait, different `Term = hol::Term`. This is the
    "1342 as `double (succ n)` in HOL *or* internal" switch — it's literally `TestLisp` vs

@@ -70,7 +70,7 @@ No WASM 1.0/2.0 AST is separately bundled; "start with WASM 1" = work the featur
 | `Rel` / `Rule` | judgements: `⊢ instr : ft`, `s;f;e ↪ s';f';e'` | impredicative `Derivable_R`, one clause per `rule` | `wasm::relation` over `metalogic` |
 | `Typ` | syntax (`valtype`, `instr`, `store`, …) | reified inductive datatype | `crate::init` engine *(todo)* |
 | `Dec` (functions) | metafunctions (`expand`, `default_`, …) | recursive `define` + computation rules | *(todo)* |
-| `Gram` | binary/text format | byte-predicate / CFG recognizer | `crate::grammar::spectec` (CFG stratum *todo*) |
+| `Gram` | binary/text format | CFG `Derives_E` judgement (terminals = byte regexes) | `crate::grammar::cfg` + `covalence_spectec::cfg` lowering (*landed*; see [`cfg-stratum-design.md`](./cfg-stratum-design.md)) |
 | `Rec` | mutual-recursion group | mutually-inductive predicate/datatype | grouped forms of the above |
 
 The `Rel`/`Rule` row is the heart and the reason the metalogic engine is the
@@ -140,8 +140,15 @@ WASM type system. Two entry points:
    functions → recursive `define`s (`wasm/function.rs`), then relations → HOL
    predicates over those types — which unlocks the 221 skipped **side-condition**
    rules (a side condition is a decidable function predicate `denote`-d to `bool`).
-3. **Grammars** — finish the **CFG stratum** in `grammar/spectec` so the binary
-   decoder covers whole `gram` productions (`grammar/spectec/SKELETONS.md`).
+3. **Grammars** — the **CFG stratum** landed: `crate::grammar::cfg` (binary
+   metalogic engine `Derives_E`, discharge-free family soundness, two-phase
+   parsing tactic) + `covalence_spectec::cfg` whole-`gram` lowering, wired by
+   `spec_grammar_env`; real WASM 3.0 fragments parse kernel-checked
+   (`tests/cfg_grammar.rs`). Design + residuals:
+   [`cfg-stratum-design.md`](./cfg-stratum-design.md) — premise/parametric/
+   `ListN` productions still skip (under-approximating), and the
+   `1.0 ⊆ 2.0 ⊆ 3.0` inclusion metatheorems await env transport + the 1.0/2.0
+   dumps (recipe validated, dumps staged).
 4. **WASM acceleration (the payoff, roadmap Phase E/F).** With `Step`/typing as
    predicates and reduction functions with computation rules, a real WASM engine
    (`covalence-wasm` / wasmtime) is an **untrusted oracle** exactly like a Metamath

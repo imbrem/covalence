@@ -30,6 +30,11 @@ covalence-haskell = { path = "../../lang/haskell", features = ["hol", "hol-typed
 # this adds no new code to the TCB; it just names the backend the typed dialect
 # lowers against.
 covalence-hol-api = { path = "../hol/api" }
+# The /lisp demo — the kernel-backed Little Schemer ch1 REPL (`hol` feature:
+# every printed value is read off a genuine `⊢ program = value` theorem).
+covalence-lisp = { path = "../../lang/lisp", features = ["hol"] }
+# The /forsp demo — a real concatenative evaluator (read → compute → to_sexp).
+covalence-forsp = { path = "../../lang/forsp" }
 serde_json = "1"
 # The bindgen schema is version-locked: the crate and `wasm-bindgen-cli` must
 # match exactly. We do NOT exact-pin here — Cargo.lock is the single source of

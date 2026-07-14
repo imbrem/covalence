@@ -1,10 +1,13 @@
 # OpenTheory import — verifying articles on the native HOL kernel
 
 *Status: working. The **entire OpenTheory standard library verifies** — `cov hol
-pkg base` re-checks **1340 theorems** relative to exactly the 3 genuine HOL
-axioms (extensionality, choice, infinity), ~46s cached. The article stack
-machine, the native kernel backend, the `cov hol` CLI, and the
-download+cache+verify-all `bun run opentheory` benchmark are all live.*
+pkg base` re-checks **1340 theorems**, ~46s cached. By default it verifies
+relative to OpenTheory's three HOL axioms; with `--native-axioms` all three
+(infinity over `nat`, extensionality, choice) are **proved natively in
+covalence's kernel**, so `base` verifies relative to **zero** axioms. The
+article stack machine, the native kernel backend, the matching framework, the
+`cov hol` CLI, and the download+cache+verify-all `bun run opentheory` benchmark
+are all live.*
 
 ## What this is
 
@@ -112,11 +115,52 @@ let kernel = NativeOt::new().with_overrides(ov);
 
 Everything is built through `covalence-core` / `covalence-hol-api` directly, so
 an override cannot forge a theorem — a returned `Thm` is a real kernel theorem,
-and the conclusion re-check rejects a mismatched proof. The tests demonstrate
-the mechanism end-to-end: the same article exports the same theorem with **1**
-assumption (stock) or **0** (with an override that proves the axiom by `REFL`).
-Writing the *full* infinity proof over native `nat` (unfolding OpenTheory's
-`injective`/`surjective`) is a larger exercise the API now makes expressible.
+and the conclusion re-check rejects a mismatched proof.
+
+### Matching tactics (`matching.rs`) — the reusable bridge
+
+The gap the override has to cross is *representation*: an OpenTheory `axiom`
+statement is fully **δ-inlined Church-encoded** HOL (0 `Def`s, 0 `Spec`s, ~113
+nested `Abs`), whereas a native proof is stated with the kernel's *definitional*
+connectives (`∀ ∃ ∧ ¬ ⟹` as `TermSpec` leaves). Bridging them is a reusable
+concern, so it lives in a framework generic along two axes — stable as the
+internal logic evolves:
+
+- **`MatchLogic`** — the HOL representation being matched (the "thing being
+  matched"). `HolMatch` implements it for covalence-HOL; a metamath-HOL backend
+  would add its own. It supplies α-equality, `concl`/`eq_rhs`,
+  `refl`/`sym`/`trans`/`eq_mp`, and β/δ normalisation as `⊢ t = nf` theorems.
+  The δ-normaliser unfolds *every* connective spec via congruence **without**
+  β-reducing — reaching exactly the article's inlined shape.
+- **`MatchStrategy`** — how two terms are recognised equal and a proof carried
+  across: `Structural` (α), `UpToBeta`, `UpToDelta`, `UpToBetaDelta`. A strategy
+  defines only `normalize`; the shared `transport` composes the two normal-form
+  equations (`⊢ native = nf`, `⊢ target = nf`) and discharges with `eq_mp`, so
+  the result is a real kernel theorem of exactly `target`.
+
+### The three axioms, discharged (`axioms.rs`)
+
+Each of OpenTheory's HOL axioms is a theorem of covalence's kernel:
+
+- **infinity** — `prove_infinity` proves `⊢ ∃f:nat→nat. injective f ∧
+  ¬surjective f` (witness `succ`; injectivity is `succ_inj`, non-surjectivity
+  from `zero_ne_succ`). Mapped in via `ind→nat`.
+- **extensionality** — `prove_extensionality` proves `⊢ ∀f. (λx. f x) = f` (the
+  η axiom) via `eta_conv`.
+- **choice** — `prove_choice` proves `⊢ ∀P x. P x ⟹ P (ε P)` via `select_ax`
+  (Hilbert choice is already a kernel rule).
+
+`standard_axioms()` bundles all three into one `OverrideMap` (proofs built once;
+each incoming axiom `UpToDelta`-matches against them). `cov hol pkg
+--native-axioms base` then verifies all 1340 theorems relative to **zero**
+axioms.
+
+The one subtlety worth recording: each proof's predicate must match
+OpenTheory's *exactly* so the δ-normal forms are α-equal — same `injective` /
+`surjective` definitions, same conjunct order, and the `not` **connective** for
+negation (`imp(p, F)` would δ-unfold to a different, wrapper-free shape). The
+same trait seam is exactly what a swap-in "different natural numbers / lemma
+source" would use.
 
 ## Numerals (the "for now")
 

@@ -1,23 +1,32 @@
-//! Native proof of OpenTheory's **axiom of infinity** over covalence's `nat`.
+//! Native proofs of OpenTheory's three HOL **axioms**, so imported articles are
+//! checked against covalence's own theory rather than *assuming* them.
 //!
-//! OpenTheory's `axiom-infinity` package postulates
-//! `∃f:ind→ind. injective f ∧ ¬surjective f` (with `ind` its primitive
-//! infinite type). Mapping `ind → nat` and taking the witness `f := succ`,
-//! the statement becomes a *theorem* — `succ` is injective (`succ_inj`) and
-//! not surjective (`0` is not a successor, `zero_ne_succ`). This module proves
-//! it natively and packages the proof as a [`NativeOverrides`] so importing the
-//! `axiom-infinity` article discharges the axiom to **0 assumptions**.
+//! OpenTheory's `base` rests on three axioms; each is a theorem of covalence's
+//! HOL, so each can be discharged:
+//!
+//! - **infinity** — `∃f:ind→ind. injective f ∧ ¬surjective f`. Mapping
+//!   `ind → nat` and taking the witness `f := succ` makes it a theorem: `succ`
+//!   is injective ([`Nat::succ_inj`]) and not surjective (`0` is not a
+//!   successor, [`Nat::zero_ne_succ`]). [`prove_infinity`].
+//! - **extensionality** — `∀f. (λx. f x) = f`, the η axiom. [`prove_extensionality`]
+//!   (via [`EvalThm::eta_conv`]).
+//! - **choice** — `∀P x. P x ⟹ P (ε P)`, the Hilbert-choice property of `ε`.
+//!   [`prove_choice`] (via [`Hol::select_ax`]).
 //!
 //! Two concerns are kept deliberately separate:
 //!
-//! - [`prove_nat_infinity`] — the pure proof, stated in **SPEC form** (built
-//!   with `covalence-hol-api`'s `Hol`/`Nat` builders, so the connectives are
-//!   `TermSpec` leaves). It knows nothing about OpenTheory, and works in the
-//!   native `covalence_core::Result` (so it composes with the kernel rules).
-//! - the **transport** to the article's δ-inlined form, which is delegated to
-//!   the reusable [`crate::matching`] framework ([`UpToDelta`]): it δ-unfolds
-//!   every connective spec (no β-reduction) on both sides and, if α-equal,
-//!   carries `⊢ native` to `⊢ target`.
+//! - the pure `prove_*` functions — each stated in **SPEC form** (built with
+//!   `covalence-hol-api`'s `Hol`/`Nat` builders, so the connectives are
+//!   `TermSpec` leaves), knowing nothing about OpenTheory, and working in the
+//!   native `covalence_core::Result` so they compose with the kernel rules;
+//! - the **transport** to the article's δ-inlined form, delegated to the
+//!   reusable [`crate::matching`] framework ([`UpToDelta`]): it δ-unfolds every
+//!   connective spec (no β-reduction) on both sides and, if α-equal, carries
+//!   `⊢ native` to `⊢ target`.
+//!
+//! [`standard_axioms`] bundles all three into one [`NativeOverrides`], so
+//! `NativeOt::new().with_overrides(standard_axioms())` verifies `base` with
+//! **zero** assumptions.
 //!
 //! [`NativeOverrides`]: crate::native::NativeOverrides
 
@@ -47,7 +56,7 @@ type HolType = <NativeHol as Hol>::Type;
 ///
 /// The witness is `succ`: injectivity is [`Nat::succ_inj`], and non-surjectivity
 /// follows from [`Nat::zero_ne_succ`] (`0` is not in `succ`'s range).
-pub fn prove_nat_infinity() -> Result<EvalThm> {
+pub fn prove_infinity() -> Result<EvalThm> {
     let h = NativeHol;
     let nat = h.nat_ty();
     let nn = h.fun_ty(nat.clone(), nat.clone()); // nat → nat
@@ -75,6 +84,33 @@ pub fn prove_nat_infinity() -> Result<EvalThm> {
 
     // ⊢ ∃f. pred f.
     h.exists_intro(pred, succ_fn, pred_succ)
+}
+
+/// Prove `⊢ ∀f:'A→'B. (λx. f x) = f` — OpenTheory's **axiom of
+/// extensionality** (the η axiom), via [`EvalThm::eta_conv`].
+pub fn prove_extensionality() -> Result<EvalThm> {
+    let h = NativeHol;
+    let a = h.tvar("A");
+    let b = h.tvar("B");
+    let fun = h.fun_ty(a.clone(), b); // 'A → 'B
+    let f = h.var("f", fun.clone());
+    let fx = h.app(f.clone(), h.var("x", a.clone()))?;
+    let lam = h.lam("x", a, fx); // λx. f x
+    let eta = EvalThm::eta_conv(lam)?; // ⊢ (λx. f x) = f
+    h.all_intro(eta, "f", fun) // ⊢ ∀f. (λx. f x) = f
+}
+
+/// Prove `⊢ ∀P:'A→bool. ∀x. P x ⟹ P (ε P)` — OpenTheory's **axiom of choice**
+/// (the defining property of Hilbert's `ε`), via [`Hol::select_ax`].
+pub fn prove_choice() -> Result<EvalThm> {
+    let h = NativeHol;
+    let a = h.tvar("A");
+    let pred_ty = h.fun_ty(a.clone(), h.bool_ty()); // 'A → bool
+    let p = h.var("P", pred_ty.clone());
+    let x = h.var("x", a.clone());
+    let ax = h.select_ax(p, x)?; // ⊢ P x ⟹ P (ε P)
+    let all_x = h.all_intro(ax, "x", a)?; // ⊢ ∀x. P x ⟹ P (ε P)
+    h.all_intro(all_x, "P", pred_ty) // ⊢ ∀P x. …
 }
 
 /// The bare successor function `succ : nat → nat` as a term. `Nat::succ`
@@ -175,21 +211,33 @@ fn ce(e: covalence_core::Error) -> HolError {
     HolError::TypeMismatch(e.to_string())
 }
 
-/// An [`OverrideMap`] that makes `axiom-infinity` verify with 0 assumptions:
-/// maps `ind → nat` and installs an axiom prover that recognises the inlined
-/// infinity statement (via the [`UpToDelta`] matching strategy) and discharges
-/// it with the native proof. Other axioms δ-normalise to a different form, so
-/// the strategy returns `None` and they stay hypothesis-tracked as usual.
-pub fn nat_infinity_override() -> OverrideMap {
-    let nat = NativeHol.nat_ty();
-    // Prove infinity once; each axiom just tries to δ-match against it.
-    let proof: std::result::Result<EvalThm, String> =
-        prove_nat_infinity().map_err(|e| e.to_string());
+/// An [`OverrideMap`] discharging **all three** OpenTheory HOL axioms
+/// natively, so `NativeOt::new().with_overrides(standard_axioms())` verifies
+/// `base` with **zero** assumptions.
+///
+/// It maps `ind → nat` (for infinity) and installs one axiom prover per axiom.
+/// When an `axiom` fires, each pre-built native proof is δ-matched (via
+/// [`UpToDelta`]) against the article's inlined statement; the one that matches
+/// discharges it, and anything else stays hypothesis-tracked. Proofs are built
+/// once, up front.
+pub fn standard_axioms() -> OverrideMap {
+    // Build the native proofs once; each incoming axiom just tries to δ-match.
+    let proofs: Vec<std::result::Result<EvalThm, String>> =
+        [prove_infinity(), prove_extensionality(), prove_choice()]
+            .into_iter()
+            .map(|r| r.map_err(|e| e.to_string()))
+            .collect();
     OverrideMap::new()
-        .type_("ind", nat)
-        .axiom(move |stmt: &Term| match &proof {
-            Ok(native) => transport_hol(&UpToDelta, native.clone(), stmt).map(|r| r.map_err(ce)),
-            Err(s) => Some(Err(HolError::Unsupported(s.clone()))),
+        .type_("ind", NativeHol.nat_ty())
+        .axiom(move |stmt: &Term| {
+            // `flatten` skips any proof that failed to build; an axiom whose
+            // proof is missing simply stays hypothesis-tracked.
+            for native in proofs.iter().flatten() {
+                if let Some(r) = transport_hol(&UpToDelta, native.clone(), stmt) {
+                    return Some(r.map_err(ce));
+                }
+            }
+            None // no native proof matches → hypothesis-track as usual
         })
 }
 
@@ -203,7 +251,6 @@ mod tests {
 
     use super::*;
     use crate::{FileResolver, NameTable, NativeOt, TheoryCache, check_theory, register_select};
-    use covalence_core::TermKind;
 
     fn gilith_dirs() -> Vec<PathBuf> {
         let base =
@@ -212,42 +259,43 @@ mod tests {
     }
 
     #[test]
-    fn prove_nat_infinity_shape() {
-        let th = prove_nat_infinity().expect("prove_nat_infinity");
-        assert!(
-            th.hyps().is_empty(),
-            "infinity proof must be hypothesis-free"
-        );
-        // Conclusion is `∃f. …` — an `exists` connective applied to a predicate.
-        let concl = th.concl();
-        let (head, _pred) = concl
-            .as_app()
-            .expect("infinity conclusion is `exists pred`");
-        assert!(
-            matches!(head.kind(), TermKind::Spec(..)),
-            "head should be the `exists` connective spec, got {head:?}"
-        );
+    fn all_three_axioms_prove_hypothesis_free() {
+        for (name, th) in [
+            ("infinity", prove_infinity()),
+            ("extensionality", prove_extensionality()),
+            ("choice", prove_choice()),
+        ] {
+            let th = th.unwrap_or_else(|e| panic!("prove_{name}: {e}"));
+            assert!(th.hyps().is_empty(), "{name} proof must be hypothesis-free");
+        }
     }
 
-    #[test]
-    fn axiom_infinity_discharges_to_zero_assumptions() {
-        let mut kernel = NativeOt::new().with_overrides(nat_infinity_override());
+    /// Check each `axiom-*` package discharges to 0 assumptions under
+    /// [`standard_axioms`].
+    fn discharges(package: &str) -> usize {
+        let mut kernel = NativeOt::new().with_overrides(standard_axioms());
         let mut names = NameTable::new();
         register_select(&mut kernel, &mut names);
         let resolver = FileResolver::with_dirs(gilith_dirs());
         let mut cache: TheoryCache<NativeOt> = TheoryCache::new();
-        let theory = check_theory(
-            &mut kernel,
-            &mut names,
-            &resolver,
-            "axiom-infinity",
-            &mut cache,
-        )
-        .expect("check axiom-infinity");
-        assert_eq!(
-            theory.assumptions.len(),
-            0,
-            "axiom-infinity should discharge to 0 assumptions with the native override"
-        );
+        check_theory(&mut kernel, &mut names, &resolver, package, &mut cache)
+            .unwrap_or_else(|e| panic!("check {package}: {e}"))
+            .assumptions
+            .len()
+    }
+
+    #[test]
+    fn axiom_infinity_discharges() {
+        assert_eq!(discharges("axiom-infinity"), 0);
+    }
+
+    #[test]
+    fn axiom_extensionality_discharges() {
+        assert_eq!(discharges("axiom-extensionality"), 0);
+    }
+
+    #[test]
+    fn axiom_choice_discharges() {
+        assert_eq!(discharges("axiom-choice"), 0);
     }
 }

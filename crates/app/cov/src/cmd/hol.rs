@@ -61,10 +61,11 @@ pub struct PkgArgs {
     #[arg(long)]
     keep_going: bool,
 
-    /// Discharge OpenTheory's axiom of infinity natively (map `ind → nat` and
-    /// prove it over the native naturals), so it is not left as an assumption.
+    /// Discharge OpenTheory's HOL axioms (infinity, extensionality, choice)
+    /// natively, so they are not left as assumptions. Infinity is proved over
+    /// the native naturals (mapping `ind → nat`).
     #[arg(long)]
-    native_infinity: bool,
+    native_axioms: bool,
 
     /// Packages to check (names, with or without version suffix).
     packages: Vec<String>,
@@ -140,8 +141,8 @@ fn pkg(args: PkgArgs) {
         std::process::exit(2);
     }
 
-    let mut kernel = if args.native_infinity {
-        NativeOt::new().with_overrides(covalence_opentheory::nat_infinity_override())
+    let mut kernel = if args.native_axioms {
+        NativeOt::new().with_overrides(covalence_opentheory::standard_axioms())
     } else {
         NativeOt::new()
     };

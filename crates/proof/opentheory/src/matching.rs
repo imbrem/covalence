@@ -21,7 +21,7 @@
 //! returned theorem is a real kernel theorem of exactly `target`.
 //!
 //! The motivating use is discharging OpenTheory axioms against a native theory
-//! (see [`crate::infinity`]): the axiom statement is fully δ-inlined
+//! (see [`crate::axioms`]): the axiom statement is fully δ-inlined
 //! Church-encoded HOL, while a native proof is stated with the kernel's
 //! definitional connectives — [`UpToDelta`] bridges them.
 

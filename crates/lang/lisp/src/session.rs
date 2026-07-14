@@ -1,21 +1,31 @@
 //! The **`Session` REPL** (`hol` feature) — a concrete
-//! [`covalence_repl_core::Repl`] over the kernel-backed Lisp [`Evaluator`].
+//! [`covalence_repl_core::Repl`] that drives the Lisp
+//! [`LispSemantics`](crate::semantics::LispSemantics) reduction relation
+//! through the [`RunToValue`] strategy.
 //!
-//! A cell's lifecycle is `parse` (text → [`SExpr`]) → `eval` (→ a
-//! [`Reduction`], i.e. a kernel `⊢ program = value` theorem) → `show`
-//! (render the value **off the theorem's conclusion**). The
+//! A cell's lifecycle is `parse` (text → [`SExpr`]) → `reduce` (drive the
+//! step-relation to a normal form, yielding a kernel `⊢ input = value`
+//! theorem) → `render` (print the value **off the theorem's RHS**). The
 //! [`Session::eval_cell`] convenience runs the whole pipeline.
 //!
 //! # The honesty invariant
 //!
-//! `show` renders **only** the value carried in a [`Reduction`], which is by
-//! construction the RHS of a genuine kernel theorem
-//! ([`Reduction::thm`]). There is no code path that prints a value that did
-//! not come off a theorem: [`eval`](Session::eval) returns `Result<Reduction,
-//! _>`, and a `Reduction` cannot be built without a `Thm` (the field is
-//! populated only by [`Evaluator`], which chains kernel rules). A caller can
-//! independently audit [`Reduction::thm`] — it is hypothesis-free for every
-//! closed program.
+//! `render` prints **only** the value term carried in an [`Outcome`], which is
+//! by construction the RHS of a genuine kernel theorem (`Outcome::thm`). There
+//! is no code path that prints a value that did not come off a theorem:
+//! [`reduce`](Session::reduce) returns `Result<Outcome, _>`, the `Outcome`'s
+//! `value` is `Reduction::cur` after driving, and its `thm` is the
+//! trans-composed `⊢ input = value` (reflexivity when the input was already a
+//! value). A caller can independently audit `Outcome::thm` — it is
+//! hypothesis-free for every closed program.
+//!
+//! # Streaming / non-termination
+//!
+//! [`reduce`](Session::reduce) drives with [`Fuel::UNBOUNDED`] (ch1 programs
+//! terminate). [`drive_fueled`](Session::drive_fueled) exposes the raw
+//! [`Reduction`] under a step bound, so a caller can pull a partial certified
+//! reduction (`Status::Diverging`) instead of hanging — the seam a
+//! non-terminating recursive program (ch2) will use.
 //!
 //! # Directives
 //!
@@ -24,20 +34,38 @@
 //! `⊢ lhs = rhs` theorem behind `EXPR`. The directive table is extensible;
 //! other directives are deferred (see `SKELETONS.md`).
 
+use covalence_hol_eval::EvalThm as Thm;
 use covalence_init::Term;
-use covalence_repl_core::Repl;
+use covalence_repl_core::{Fuel, Reduction, Repl, RunToValue, Status, Strategy};
 
-use crate::eval::{Evaluator, Reduction, ValueKind};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
+use crate::semantics::{LispRepr, LispSemantics, ValueKind};
 
-/// A REPL session over the kernel-backed Lisp evaluator.
+/// The reduction of one form: the value term, the composite kernel theorem
+/// `⊢ input = value`, its value-kind, and the streaming status/step count.
+#[derive(Clone)]
+pub struct Outcome {
+    /// The normal-form value term (the theorem's RHS).
+    pub value: Term,
+    /// `⊢ input = value` — the trans-composed step chain (reflexivity when the
+    /// input was already a value).
+    pub thm: Thm,
+    /// Whether `value` is a `sexpr` datum or a `bool` literal (for printing).
+    pub kind: ValueKind,
+    /// The reduction status (always [`Status::Value`] for a completed `reduce`).
+    pub status: Status,
+    /// How many certified steps the reduction took.
+    pub steps: u64,
+}
+
+/// A REPL session driving the Lisp reduction relation.
 ///
-/// The `Repl` machinery is stateless here (the carved + Lisp theories are
+/// The `Repl` machinery is stateless here (the `sexpr` + Lisp theories are
 /// process-global), so [`State`] is a unit — but the trait shape leaves room
 /// for a future `defun` dictionary (see `SKELETONS.md`).
 pub struct Session {
-    eval: Evaluator,
+    sem: LispSemantics,
 }
 
 /// The (currently empty) per-session state.
@@ -48,12 +76,60 @@ impl Session {
     /// Build a session, binding the process-global kernel theories.
     pub fn new() -> Result<Self, HolError> {
         Ok(Session {
-            eval: Evaluator::new()?,
+            sem: LispSemantics::new()?,
         })
     }
 
-    /// Parse → evaluate → render, for one cell of source. The returned string
-    /// is read **off the reduction theorem's conclusion**.
+    /// Reduce a parsed form to a value (run to normal form), returning the
+    /// [`Outcome`] (value + `⊢ input = value` theorem).
+    pub fn reduce(&self, form: &covalence_sexp::SExpr) -> Result<Outcome, HolError> {
+        let red = self.drive_fueled(form, Fuel::UNBOUNDED)?;
+        self.outcome(red)
+    }
+
+    /// Drive a form under a step `fuel` bound and return the raw streaming
+    /// [`Reduction`] — for inspecting partial, certified reductions
+    /// ([`Status::Diverging`]) without running to a value. The composite
+    /// `⊢ input = cur` certifies the steps taken so far.
+    pub fn drive_fueled(
+        &self,
+        form: &covalence_sexp::SExpr,
+        fuel: Fuel,
+    ) -> Result<Reduction<LispRepr, LispSemantics>, HolError> {
+        let term = self.sem.compile(form)?;
+        let mut red = Reduction::start(term);
+        RunToValue.drive(&self.sem, &mut red, fuel)?;
+        Ok(red)
+    }
+
+    /// Package a completed [`Reduction`] into an [`Outcome`], reading the value
+    /// kind off the normal-form term and minting reflexivity when zero steps
+    /// were taken.
+    fn outcome(&self, red: Reduction<LispRepr, LispSemantics>) -> Result<Outcome, HolError> {
+        let status = red.status();
+        let steps = red.steps();
+        let (value, composite) = red.into_parts();
+        let kind = self.sem.value_kind(&value).ok_or_else(|| {
+            HolError::Stuck(format!(
+                "reduction did not reach a value (status {status:?})"
+            ))
+        })?;
+        let thm = match composite {
+            Some(t) => t,
+            // Zero steps: the input already was the value — `⊢ value = value`.
+            None => Thm::refl(value.clone()).map_err(|e| HolError::Kernel(e.to_string()))?,
+        };
+        Ok(Outcome {
+            value,
+            thm,
+            kind,
+            status,
+            steps,
+        })
+    }
+
+    /// Parse → reduce → render, for one cell of source. The returned string is
+    /// read **off the reduction theorem's conclusion**.
     ///
     /// A leading `#` selects a [directive](Directive) instead of a Lisp form.
     pub fn eval_cell(&mut self, src: &str) -> Result<String, CellError> {
@@ -62,22 +138,16 @@ impl Session {
             return self.run_directive(rest).map_err(CellError::Directive);
         }
         let form = read_one(src).map_err(CellError::Read)?;
-        let r = self.eval.eval(&form).map_err(CellError::Eval)?;
-        Ok(self.render(&r))
+        let out = self.reduce(&form).map_err(CellError::Eval)?;
+        Ok(self.render(&out))
     }
 
-    /// Evaluate one already-parsed form to its [`Reduction`] (the kernel
-    /// theorem + value).
-    pub fn reduce(&self, form: &covalence_sexp::SExpr) -> Result<Reduction, HolError> {
-        self.eval.eval(form)
-    }
-
-    /// Render a reduction's value to Little-Schemer text — **off the value
-    /// term only** (the theorem's RHS).
-    pub fn render(&self, r: &Reduction) -> String {
-        match r.kind {
-            ValueKind::Bool => self.render_bool(&r.value),
-            ValueKind::Data => self.render_data(&r.value),
+    /// Render an outcome's value to Little-Schemer text — **off the value term
+    /// only** (the theorem's RHS).
+    pub fn render(&self, out: &Outcome) -> String {
+        match out.kind {
+            ValueKind::Bool => self.render_bool(&out.value),
+            ValueKind::Data => self.render_data(&out.value),
         }
     }
 
@@ -90,31 +160,31 @@ impl Session {
         }
     }
 
-    /// A carved `sexpr` datum → Lisp text (`atom` → its bytes as text,
-    /// `snil` → `()`, `scons` chains → `(e₁ e₂ …)`).
+    /// A `sexpr` datum → Lisp text (`atom` → its bytes as text, `snil` → `()`,
+    /// `scons` chains → `(e₁ e₂ …)`).
     fn render_data(&self, v: &Term) -> String {
-        if self.eval.is_snil(v) {
+        if self.sem.is_snil(v) {
             return "()".to_string();
         }
-        if let Some(bytes) = self.eval.atom_bytes(v) {
+        if let Some(bytes) = self.sem.atom_bytes(v) {
             return String::from_utf8_lossy(&bytes).into_owned();
         }
-        if let Some((_, _)) = self.eval.as_scons(v) {
+        if self.sem.as_scons(v).is_some() {
             let mut out = String::from("(");
             let mut cur = v.clone();
             let mut first = true;
             loop {
-                if let Some((h, t)) = self.eval.as_scons(&cur) {
+                if let Some((h, t)) = self.sem.as_scons(&cur) {
                     if !first {
                         out.push(' ');
                     }
                     first = false;
                     out.push_str(&self.render_data(&h));
-                    if self.eval.is_snil(&t) {
+                    if self.sem.is_snil(&t) {
                         break;
                     }
                     // Improper list (dotted): a non-snil, non-scons tail.
-                    if self.eval.as_scons(&t).is_none() {
+                    if self.sem.as_scons(&t).is_none() {
                         out.push_str(" . ");
                         out.push_str(&self.render_data(&t));
                         break;
@@ -145,9 +215,9 @@ impl Session {
                     return Err(DirectiveError::Usage("#show EXPR".into()));
                 }
                 let form = read_one(arg).map_err(DirectiveError::Read)?;
-                let r = self.eval.eval(&form).map_err(DirectiveError::Eval)?;
-                // The full `⊢ lhs = rhs` theorem.
-                Ok(format!("{}", r.thm.concl()))
+                let out = self.reduce(&form).map_err(DirectiveError::Eval)?;
+                // The full `⊢ lhs = rhs` composite theorem.
+                Ok(format!("{}", out.thm.concl()))
             }
             other => Err(DirectiveError::Unknown(other.to_string())),
         }
@@ -216,7 +286,7 @@ pub enum Directive {
 impl Repl for Session {
     type State = State;
     type Term = covalence_sexp::SExpr;
-    type Eval = Reduction;
+    type Eval = Outcome;
     type StartError = HolError;
     type ParseError = ReadError;
     type EvalError = HolError;
@@ -229,11 +299,11 @@ impl Repl for Session {
         read_one(src)
     }
 
-    fn eval(&mut self, _state: &mut State, term: Self::Term) -> Result<Reduction, HolError> {
-        self.eval.eval(&term)
+    fn eval(&mut self, _state: &mut State, term: Self::Term) -> Result<Outcome, HolError> {
+        self.reduce(&term)
     }
 
-    fn show(&self, _state: &State, eval: &Reduction) -> String {
+    fn show(&self, _state: &State, eval: &Outcome) -> String {
         self.render(eval)
     }
 }

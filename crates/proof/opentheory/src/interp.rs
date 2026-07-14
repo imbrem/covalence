@@ -170,6 +170,15 @@ impl<'a, K: HolLightKernel> ArticleInterp<'a, K> {
         Ok(self.kernel.eq_mp(th2, refl_t)?)
     }
 
+    /// `proveHyp`: given a provider `Γ ⊢ φ` and a target `Δ ⊢ ψ`, produce
+    /// `Γ ∪ (Δ \ {φ}) ⊢ ψ` — i.e. discharge the hypothesis `φ` of the target
+    /// using the provider. Shared by the `proveHyp` command and
+    /// `defineConstList`.
+    fn prove_hyp_thm(&mut self, provider: K::Thm, target: K::Thm) -> Result<K::Thm, OtError> {
+        let iff_thm = self.kernel.deduct_antisym(provider.clone(), target)?;
+        Ok(self.kernel.eq_mp(iff_thm, provider)?)
+    }
+
     fn intern_name(&mut self, name: &OtName) -> NameId {
         let qualified = name.qualified();
         let id = self.names.intern(qualified.clone());
@@ -739,9 +748,97 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
     fn cmd_prove_hyp(&mut self) -> Result<(), OtError> {
         let th2 = self.pop_thm()?;
         let th1 = self.pop_thm()?;
-        let iff_thm = self.kernel.deduct_antisym(th1.clone(), th2)?;
-        let result = self.kernel.eq_mp(iff_thm, th1)?;
+        let result = self.prove_hyp_thm(th1, th2)?;
         self.stack.push(OtObject::Thm(result));
+        Ok(())
+    }
+
+    // defineConstList:
+    //   List [[Name nᵢ, Var vᵢ]], Thm ({vᵢ = tᵢ} ⊦ φ)
+    //     -> List [Const cᵢ], Thm (⊦ φ[cᵢ/vᵢ])
+    // Defines each constant cᵢ = tᵢ (tᵢ recovered from the matching hypothesis),
+    // substitutes cᵢ for vᵢ throughout, and discharges the vᵢ = tᵢ hypotheses.
+    fn cmd_define_const_list(&mut self) -> Result<(), OtError> {
+        let pairs_list = self.pop_list()?;
+        let th = self.pop_thm()?;
+
+        // Parse the [Name, Var] pairs into (name_id, var_term).
+        let mut names_vars: Vec<(NameId, K::Term)> = Vec::new();
+        for obj in pairs_list {
+            let pair = match obj {
+                OtObject::List(l) if l.len() == 2 => l,
+                other => {
+                    return Err(OtError::TypeError {
+                        expected: "List [Name, Var]".into(),
+                        got: obj_type_name(&other),
+                    });
+                }
+            };
+            let name = match &pair[0] {
+                OtObject::Name(n) => n.clone(),
+                other => {
+                    return Err(OtError::TypeError {
+                        expected: "Name".into(),
+                        got: obj_type_name(other),
+                    });
+                }
+            };
+            let var_tm = match &pair[1] {
+                OtObject::Var(n, ty) => self.kernel.mk_var(*n, ty.clone()),
+                other => {
+                    return Err(OtError::TypeError {
+                        expected: "Var".into(),
+                        got: obj_type_name(other),
+                    });
+                }
+            };
+            let name_id = self.intern_name(&name);
+            names_vars.push((name_id, var_tm));
+        }
+
+        // Phase 1: for each variable vᵢ, find its defining hypothesis vᵢ = tᵢ
+        // and introduce the constant cᵢ = tᵢ.
+        let hyps = self.kernel.hyps(th.clone());
+        let mut const_objs: Vec<OtObject<K>> = Vec::new();
+        let mut term_pairs: Vec<(K::Term, K::Term)> = Vec::new(); // (cᵢ, vᵢ)
+        let mut def_thms: Vec<K::Thm> = Vec::new();
+        for (name_id, var_tm) in &names_vars {
+            let ti = hyps
+                .iter()
+                .find_map(|h| {
+                    self.kernel.dest_eq(h.clone()).and_then(|(lhs, rhs)| {
+                        self.kernel.term_eq(lhs, var_tm.clone()).then_some(rhs)
+                    })
+                })
+                .ok_or_else(|| {
+                    OtError::ParseError(
+                        "defineConstList: no defining hypothesis for a variable".into(),
+                    )
+                })?;
+
+            let eq = self.kernel.mk_eq(var_tm.clone(), ti);
+            let def_thm = self.kernel.new_basic_definition(eq)?; // ⊦ cᵢ = tᵢ
+            let def_concl = self.kernel.concl(def_thm.clone());
+            let (const_tm, _t) = self
+                .kernel
+                .dest_eq(def_concl)
+                .ok_or(HolError::NotAnEquation)?;
+            const_objs.push(OtObject::Const(*name_id));
+            term_pairs.push((const_tm, var_tm.clone()));
+            def_thms.push(def_thm);
+        }
+
+        // Phase 2: simultaneously replace each vᵢ by cᵢ, turning the hypotheses
+        // vᵢ = tᵢ into cᵢ = tᵢ (the constants are defined simultaneously).
+        let mut cur = self.kernel.inst_rule(&term_pairs, th)?;
+
+        // Phase 3: discharge each cᵢ = tᵢ hypothesis with its definition.
+        for def_thm in def_thms {
+            cur = self.prove_hyp_thm(def_thm, cur)?;
+        }
+
+        self.stack.push(OtObject::List(const_objs));
+        self.stack.push(OtObject::Thm(cur));
         Ok(())
     }
 

@@ -14,13 +14,24 @@ Intentional placeholders in `crates/lib/wasm/spectec`. See [CLAUDE.md](../../../
 ## Partial subsystems
 
 - **WASM grammar versions** (`src/grammar.rs`). Only `grammar::wasm3` is wired —
-  `wasm_spec_ast` bundles only the WebAssembly 3.0 spec. `wasm1`/`wasm2` await
-  separately dumped ASTs (run OCaml SpecTec against the 1.0/2.0 specs and embed).
-  The `Grammar` view is version-independent, so this is purely "supply more blobs."
-- **Binary-grammar coverage** (`grammar.rs`, `regex.rs`). The 3.0 dump exposes only
-  a few `B*` binary grammars (bulk is decode `def`s, not `gram`s).
-  `regex::sym_to_regex_u8` bridges only the **regular** fragment — `Var`, `Attr`,
-  `ListN`, and dom-binding iteration return `BridgeError`. Non-terminal references
-  need a CFG layer (grammar environment + reference resolution) that
-  `covalence-grammar` lacks; until then a grammar with a `Var` can't flatten to a
-  `Regex`.
+  `wasm_spec_ast` bundles only the WebAssembly 3.0 spec. A validated recipe now
+  exists to dump the 1.0/2.0 SpecTec ASTs (build upstream OCaml SpecTec at the
+  pinned commit, `spectec … --ast`; see `notes/vibes/logics/cfg-stratum-design.md`
+  §"Version lattice"). Both dumps are **produced + validated** (0 decode errors,
+  staged in `~/tmp/spectec-dumps/`), **not yet embedded** — remaining work is to
+  vendor the blobs and add `grammar::wasm1`/`wasm2`. The `Grammar` view is
+  version-independent.
+- **CFG lowering — parametric / premise / ListN residue** (`src/cfg.rs`). `lower`
+  emits `Cfg<u8>` for the regular + non-terminal fragment (under-approximating:
+  `L(lowered) ⊆ L(SpecTec)`). Still skipped (per production, reported): premise
+  branches (11 `B*` grammars — `Bmodule BuN BsN Bname Bheaptype Bblocktype Bmemarg
+  Bsection_ Btable Bfunc Bcode`); param-**dependent** parametric refs (M6
+  monomorphisation — param-*independent* ones like `Bvar` are resolved); `ListN` /
+  dom-binding iteration (context-sensitive, `Blist`). No premise-drop
+  over-approximation mode.
+- **Byte-regex bridge scope** (`regex.rs`). `regex::sym_to_regex_u8` bridges only
+  the **regular** fragment — `Var`, `Attr`, `ListN`, and dom-binding iteration
+  return `BridgeError`; the CFG layer (`src/cfg.rs`) now handles non-terminal
+  references, Attr stripping, and `Opt`/`List`/`List1` desugaring on top of it.
+  The 3.0 dump carries the **complete** binary format (~89 `B*` grammars; `Binstr`
+  alone has 498 productions), not just a handful — pinned in `cfg::tests`.

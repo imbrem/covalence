@@ -19,10 +19,11 @@ use covalence_init::HolLightCtx;
 use covalence_init::init::logic;
 use covalence_sat::{Clause, Lit};
 
-use crate::{ClauseBackend, ReplayError};
+use crate::{ClauseBackend, ReplayError, SatProblem};
 
 /// A [`ClauseBackend`] that reads clauses as HOL boolean disjunctions and
-/// resolves through the `covalence-core` kernel.
+/// resolves through the `covalence-core` kernel. Its [`SatProblem`] lowering
+/// maps `Var(i)` to `xi : bool`; the proof seam assumes and resolves.
 #[derive(Default)]
 pub struct HolClauseBackend {
     ctx: HolLightCtx,
@@ -40,28 +41,36 @@ impl HolClauseBackend {
     fn var_term(lit: Lit) -> Term {
         Term::free(format!("x{}", lit.var().index()), Type::bool())
     }
+}
+
+impl SatProblem for HolClauseBackend {
+    type Term = Term;
 
     /// A literal's HOL term: the variable positively, `¬`-wrapped negatively.
-    fn lit_term(&self, lit: Lit) -> Term {
+    fn lit(&self, lit: Lit) -> Term {
         let v = Self::var_term(lit);
         if lit.is_pos() { v } else { self.ctx.mk_not(v) }
     }
 
-    /// The clause term: the right-associated `∨` of its literals, and `F` when
-    /// empty — matching the clause encoding `init::logic` resolves over.
-    fn clause_term(&self, clause: &Clause) -> Term {
+    /// The clause term: the right-associated `∨` of its literals, `F` when empty
+    /// — the encoding `init::logic` resolves over.
+    fn clause(&self, clause: &Clause) -> Term {
         match clause.lits() {
-            [] => Term::bool_lit(false),
-            [only] => self.lit_term(*only),
+            [] => self.falsity(),
+            [only] => self.lit(*only),
             [rest @ .., last] => {
                 // Fold from the right so the spine is `l₀ ∨ (l₁ ∨ … ∨ lₙ)`.
-                let mut acc = self.lit_term(*last);
+                let mut acc = self.lit(*last);
                 for lit in rest.iter().rev() {
-                    acc = self.ctx.mk_or(self.lit_term(*lit), acc);
+                    acc = self.ctx.mk_or(self.lit(*lit), acc);
                 }
                 acc
             }
         }
+    }
+
+    fn falsity(&self) -> Term {
+        Term::bool_lit(false)
     }
 }
 
@@ -69,7 +78,7 @@ impl ClauseBackend for HolClauseBackend {
     type Thm = Thm;
 
     fn assume_clause(&mut self, clause: &Clause) -> Result<Self::Thm, ReplayError> {
-        Thm::assume(self.clause_term(clause)).map_err(|e| ReplayError::Backend(e.to_string()))
+        Thm::assume(self.clause(clause)).map_err(|e| ReplayError::Backend(e.to_string()))
     }
 
     fn resolve(&mut self, a: &Self::Thm, b: &Self::Thm) -> Result<Self::Thm, ReplayError> {
@@ -85,6 +94,24 @@ impl ClauseBackend for HolClauseBackend {
 mod tests {
     use super::*;
     use covalence_sat::Cnf;
+
+    /// The [`SatProblem`] lowering yields a `Term` with no proof — a clause is a
+    /// disjunction, the empty clause is falsity, a literal is (negated) var.
+    #[test]
+    fn problem_lowering_is_term_only() {
+        let mut cnf = Cnf::new();
+        let (x, y) = (cnf.fresh(), cnf.fresh());
+        let b = HolClauseBackend::new();
+
+        // A clause is a `∨` term; no theorem involved.
+        let term = b.clause(&Clause::new([x, !y]));
+        let expected = b.ctx.mk_or(b.lit(x), b.lit(!y));
+        assert_eq!(term, expected);
+
+        // The empty clause lowers to falsity.
+        assert_eq!(b.clause(&Clause::new([])), b.falsity());
+        assert_eq!(b.falsity(), Term::bool_lit(false));
+    }
 
     #[test]
     fn empty_clause_is_false() {

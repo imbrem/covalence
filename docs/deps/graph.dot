@@ -26,6 +26,8 @@ digraph deps {
   "json";
   "k";
   "kernel";
+  "kernel-sat";
+  "kernel-smt";
   "kv";
   "lean";
   "lisp";
@@ -137,6 +139,12 @@ digraph deps {
   "kernel" -> "object";
   "kernel" -> "sexp";
   "kernel" -> "store";
+  "kernel-sat" -> "core";
+  "kernel-sat" -> "hol-eval";
+  "kernel-sat" -> "init";
+  "kernel-sat" -> "sat";
+  "kernel-smt" -> "core";
+  "kernel-smt" -> "hol-api";
   "lisp" -> "core";
   "lisp" -> "hol-api";
   "lisp" -> "hol-eval";

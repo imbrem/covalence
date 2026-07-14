@@ -15,6 +15,7 @@ semi-trusted API over `covalence-core`). Entries live in the per-module
 - **[`src/grammar/cfg`](./src/grammar/cfg/SKELETONS.md)** — the CFG stratum (`Derives_E` over the binary engine, family soundness, parsing tactic): recognizer acceleration, S2/S3-at-scale, env transport, first-class grammar values.
 - **[`src/grammar/spectec`](./src/grammar/spectec/SKELETONS.md)** — SpecTec grammar front end (whole-`gram` walk landed): coverage residuals (premise/parametric/`ListN` skips), WASM 1.0/2.0 dumps.
 - **[`src/wasm`](./src/wasm/SKELETONS.md)** — SpecTec → kernel (WASM-spec acceleration): relation→`Derivable_R` lowering built; syntax/function lowering, richer premises/exprs, trace certification, mirror-principle check pending.
+- **[`src/k`](./src/k/SKELETONS.md)** — K frontend lowering (KORE rewrite rules → `Derivable_KStep`, F0 built): no multi-step closure / automatic matching, conditional rules (F1) skipped, no `/k` REPL.
 - **[`src/metalogic`](./src/metalogic/SKELETONS.md)** — generic `Derivable_L` engine: `set.mm` rule-set scaling (`transport_db`), `S`-transport / `Metamath-L ≅ native-L` north stars.
 - **[`src/peano`](./src/peano/SKELETONS.md)** — deep PA embedding: quantifier/induction/Leibniz derivation constructors (β-capture wall), the `.cov` surface (Phase C).
 - **[`src/algebra/ring`](./src/algebra/ring/SKELETONS.md)** — sum-of-monomials normalizer: coefficient collection, `neg`/`sub` expansion, literal folding, `Semiring`/`Ring`-generic rewrite.

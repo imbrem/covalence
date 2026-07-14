@@ -1145,6 +1145,7 @@ dependencies = [
  "covalence-hol",
  "covalence-hol-eval",
  "covalence-inductive",
+ "covalence-k",
  "covalence-metamath",
  "covalence-sexp",
  "covalence-spectec",

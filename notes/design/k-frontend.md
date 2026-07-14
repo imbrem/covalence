@@ -193,10 +193,31 @@ mirror from `wasm-spec.md`, replayed for K.
 
 ## Status / next steps
 
-- **Landed (this change):** `covalence-k` slice 1 (parse + S-expr IR + fragment
-  classifier + tests), the research corpus (`notes/vibes/k/`), this doc.
-  Skeletons recorded in `crates/lang/k/SKELETONS.md`.
-- **Next:** F0 lowering — `init`-side `k` module reusing `metalogic` +
-  `wasm::encode`'s recipe; first internal theorem: a concrete two-counter /
-  IMP-tutorial reduction. Then the RTC layer (F2 prerequisite, shared with
-  SpecTec), then hook theories (F1).
+- **Landed (slice 1):** `covalence-k` (parse + S-expr IR + fragment classifier +
+  tests), the research corpus (`notes/vibes/k/`), this doc.
+- **Landed (F0 lowering):** `covalence-init::k` (`crates/kernel/hol/init/src/k/`)
+  — the K analogue of `wasm/`. `encode` reifies KORE configuration patterns into
+  the free term algebra over `Φ = nat` (evar → metavariable, app → tagged node,
+  `\dv`/string → literal constant); `reduce` lowers unconditional `RewriteRule`s
+  to a `Derivable_KStep` `RuleSet` (one `∀x…. d ⌜Step(LHS,RHS)⌝` clause per rule,
+  conditional rules skipped + reported) and `reduce::step` mints a concrete
+  `⊢ Derivable_KStep ⌜Step(cfg, cfg')⌝` via `metalogic::apply` — hypothesis-free,
+  kernel-checked, TCB unchanged. End-to-end test parses textual KORE →
+  `Step(count(0), done)`. Skeletons in `src/k/SKELETONS.md`.
+- **Next:** (1) the **RTC / `Step*` layer** (F2 prerequisite — reflexive-
+  transitive closure over `Derivable_KStep`, shared with the SpecTec reduction
+  work) so `A →* B` with `B` open becomes statable; (2) an **untrusted redex
+  matcher** in `covalence-k` (find the firing rule + substitution at a concrete
+  configuration) to make it a real reducer + a `/k` REPL over the `repl-core`
+  stack; (3) **hook theories** (F1 — hooked `Bool`/`Int`/`Map` → catalogue types)
+  to admit conditional rules; then a tutorial IMP semantics as the first
+  whole-definition demo, en route to KWasm↔SpecTec.
+- **Longer term (matching-logic ↔ Metamath):** relate the `Derivable_KStep`
+  world to the Metamath substrate now that `mm-metatheory` landed
+  (`metalogic::{apply, mm_session, mm_compose}`): KORE axioms are an
+  applicative-matching-logic theory, and RV's own trust story renders K proofs
+  *as Metamath* over a ~245-line AML formalization (see
+  `notes/vibes/k/research/proof-generation.md`). The `S`-transport /
+  `Derivable_L₁(A) ⟹ Derivable_L₂(S A)` machinery in `metalogic` is the bridge —
+  an AML-in-Metamath database `D_AML` as the semantic anchor, with F0–F3 as its
+  native accelerator.

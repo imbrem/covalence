@@ -128,6 +128,26 @@ pub trait Int: Hol {
     /// `⊢ ∀a b. (a < b) = (a + 1 ≤ b)` — discreteness / integer strengthening.
     fn lt_succ(&self) -> Result<Self::Thm>;
 
+    // -- Derived mixed-order chaining (the Farkas replay's kit) --
+
+    /// `⊢ ∀a b. a < b ⟹ a ≤ b`.
+    fn lt_imp_le(&self) -> Result<Self::Thm>;
+    /// `⊢ ∀a. a ≤ a`.
+    fn le_refl(&self) -> Result<Self::Thm>;
+    /// `⊢ ∀a b c. a ≤ b ⟹ b < c ⟹ a < c`.
+    fn lt_of_le_of_lt(&self) -> Result<Self::Thm>;
+    /// `⊢ ∀a b c. a < b ⟹ b ≤ c ⟹ a < c`.
+    fn lt_of_lt_of_le(&self) -> Result<Self::Thm>;
+    /// `⊢ ∀a b c. a ≤ b ⟹ b ≤ c ⟹ a ≤ c`.
+    fn le_trans(&self) -> Result<Self::Thm>;
+    /// `⊢ ∀a b c d. a < b ⟹ c < d ⟹ a + c < b + d`.
+    fn lt_add_lt(&self) -> Result<Self::Thm>;
+
+    /// From `⊢ a < a`, derive falsity `⊢ ⊥` (via `lt_irrefl`). The refutation
+    /// closer — kept on the backend so the generic `Hol` surface needn't expose
+    /// negation elimination.
+    fn absurd_lt(&self, a: Self::Term, lt_aa: Self::Thm) -> Result<Self::Thm>;
+
     // -- Derived cancellation / positivity --
 
     /// `⊢ ∀a b. 0 < a ⟹ 0 < b ⟹ 0 < a + b`.
@@ -254,6 +274,30 @@ impl Int for crate::NativeHol {
     }
     fn lt_succ(&self) -> Result<Self::Thm> {
         Ok(int::lt_succ())
+    }
+
+    fn lt_imp_le(&self) -> Result<Self::Thm> {
+        Ok(int::lt_imp_le())
+    }
+    fn le_refl(&self) -> Result<Self::Thm> {
+        Ok(int::le_refl())
+    }
+    fn lt_of_le_of_lt(&self) -> Result<Self::Thm> {
+        Ok(int::lt_of_le_of_lt())
+    }
+    fn lt_of_lt_of_le(&self) -> Result<Self::Thm> {
+        Ok(int::lt_of_lt_of_le())
+    }
+    fn le_trans(&self) -> Result<Self::Thm> {
+        Ok(int::le_trans())
+    }
+    fn lt_add_lt(&self) -> Result<Self::Thm> {
+        Ok(int::lt_add_lt())
+    }
+
+    fn absurd_lt(&self, a: Term, lt_aa: Self::Thm) -> Result<Self::Thm> {
+        use covalence_hol_eval::derived::DerivedRules;
+        int::lt_irrefl().all_elim(a)?.not_elim(lt_aa)
     }
 
     fn add_pos(&self) -> Result<Self::Thm> {

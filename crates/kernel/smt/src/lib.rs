@@ -38,8 +38,10 @@ pub mod farkas;
 pub mod lincomb;
 pub mod policy;
 pub mod rational;
+pub mod replay;
 
 pub use farkas::{FarkasCert, FarkasError, NormLit, Rel};
 pub use lincomb::LinComb;
 pub use policy::{RuleClass, RulePolicy};
 pub use rational::Rational;
+pub use replay::{Edge, ReplayError, Strict, refute_cycle};

@@ -353,6 +353,14 @@
       "to": "covalence-sat"
     },
     {
+      "from": "covalence-kernel-smt",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-kernel-smt",
+      "to": "covalence-hol-api"
+    },
+    {
       "from": "covalence-lisp",
       "to": "covalence-core"
     },

@@ -134,6 +134,8 @@ digraph deps {
   "kernel" -> "sexp";
   "kernel" -> "store";
   "kernel-sat" -> "sat";
+  "kernel-smt" -> "core";
+  "kernel-smt" -> "hol-api";
   "lisp" -> "core";
   "lisp" -> "hol-api";
   "lisp" -> "hol-eval";

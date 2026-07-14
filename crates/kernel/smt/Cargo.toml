@@ -22,4 +22,6 @@ edition = "2024"
 # format crate.
 
 [dependencies]
+covalence-hol-api = { path = "../hol/api" }
+covalence-core = { path = "../hol/core" }
 thiserror = "2"

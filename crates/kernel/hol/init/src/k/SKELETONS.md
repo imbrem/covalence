@@ -1,22 +1,25 @@
 # Skeletons — `covalence-init::k`
 
-The K-framework lowering: KORE rewrite rules → `Derivable_KStep` reduction
-relations. Design + fragment ladder: `notes/design/k-frontend.md`. This module
-is **F0** (unconditional single steps); the rungs below are open.
+The K-framework lowering: KORE rewrite rules → K reduction relations. Design +
+fragment ladder: `notes/design/k-frontend.md`. `reduce` = F0 single steps (unary
+engine); `relation` = **F2** `KStep`/`KReduces = KStep*` on the binary engine.
 
 ## Severe
 
-- **No multi-step / reflexive-transitive closure.** `reduce::step` mints one
-  `⊢ Derivable_KStep ⌜Step(a,b)⌝`; `A →* B` (with `B` open) needs a `Step*`
-  relation over the single-step one — the F2 rung, shared with the SpecTec
-  reduction work. Chaining is currently manual (caller threads `to`→`from`).
-- **No automatic matching.** `reduce::step` takes the element-variable
-  witnesses explicitly; the untrusted redex matcher (find the rule + substitution
-  that fires at a concrete configuration) is not built — the "construct" driver
-  that would make this a real reducer.
-- **Conditional rules skipped (F1).** Rules with a `requires` are dropped by
-  `rule_set` (reported). Modelling boolean side conditions needs the hooked-`Bool`
-  / hooked-`Int` theories (KORE `\dv`/`\equals` → kernel catalogue types with
+- **No automatic matching / no reduction driver.** `relation::prove_step` and
+  `reduce::step` take the element-variable witnesses explicitly; the untrusted
+  redex matcher (find the rule + substitution that fires at a concrete
+  configuration, and drive leftmost-innermost to a normal form building the
+  `KReduces` chain) is not built — the "construct" driver that makes this a real
+  reducer. Cf. the Lisp `relation::prove_reduces` fuel-bounded driver.
+- **No congruence clauses.** `KStep` has only redex (root-rewrite) clauses; there
+  are no `∀a a'. KStep a a' ⟹ KStep (C[a]) (C[a'])` context clauses, so a redex
+  buried inside a configuration can't step without the matcher rewriting the
+  whole term. K's rewriting is inside-out over the cell structure — needs a
+  congruence/context story (cf. Lisp's per-elimination-context clauses).
+- **Conditional rules skipped (F1).** Rules with a `requires` are dropped
+  (reported). Modelling boolean side conditions needs the hooked-`Bool` /
+  hooked-`Int` theories (KORE `\dv`/`\equals` → kernel catalogue types with
   computation rules) — the biggest F1 unknown (hooked `MAP` after).
 
 ## Minor

@@ -24,3 +24,4 @@
 
 pub mod encode;
 pub mod reduce;
+pub mod relation;

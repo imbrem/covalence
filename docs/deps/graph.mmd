@@ -63,10 +63,14 @@ graph LR
   init --> hol
   init --> hol-eval
   init --> inductive
+  init --> k
   init --> metamath
   init --> sexp
   init --> spectec
   init --> types
+  k --> grammar
+  k --> parse
+  k --> sexp
   kernel --> hash
   kernel --> init
   kernel --> object
@@ -123,9 +127,11 @@ graph LR
   sat --> types
   sat --> wasm
   serve --> core
+  serve --> forsp
   serve --> git
   serve --> hash
   serve --> init
+  serve --> lisp
   serve --> metamath
   serve --> object
   serve --> proto

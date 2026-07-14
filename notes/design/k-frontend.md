@@ -251,12 +251,22 @@ mirror from `wasm-spec.md`, replayed for K.
   lowering with the swappable `SortResolver` strategy for imported builtin sorts.
   Parses the real **LAMBDA and IMP** tutorial grammars (vendored BSD-3). See the
   `.k`-source subsection above.
-- **Next:** (1) the **RTC / `Step*` layer** (F2 prerequisite — reflexive-
-  transitive closure over `Derivable_KStep`, shared with the SpecTec reduction
-  work) so `A →* B` with `B` open becomes statable; (2) an **untrusted redex
-  matcher** in `covalence-k` (find the firing rule + substitution at a concrete
-  configuration) to make it a real reducer + a `/k` REPL over the `repl-core`
-  stack; (3) **hook theories** (F1 — hooked `Bool`/`Int`/`Map` → catalogue types)
+- **Landed (F2 — multi-step reduction):** `covalence-init::k::relation` — K
+  reduction as a *genuine relation* on the binary inductive engine
+  (`metalogic::binary::RuleSet2`, the same engine the CFG stratum and the merged
+  Lisp `Reduces` relation use). `kstep_rule_set` builds `KStep : Φ → Φ → bool`
+  (one base clause per unconditional rewrite rule); `kreduces_rule_set` builds
+  `KReduces = KStep*` (`refl` + `step` clauses). `prove_step` mints
+  `⊢ KStep a b`, `prove_reduces` folds a step chain into `⊢ KReduces a b` — so
+  `A →* B` with `B` open is directly statable. Headline test:
+  `⊢ KReduces ⌜count(0)⌝ ⌜done⌝` from two steps, hypothesis-free. This supersedes
+  `reduce`'s single-step unary encoding for multi-step work.
+- **Next:** (1) an **untrusted redex matcher + reduction driver** (find the
+  firing rule + substitution at a concrete configuration, drive
+  leftmost-innermost to normal form building the `KReduces` chain — cf. the Lisp
+  `prove_reduces` fuel driver) + **congruence/context clauses** for `KStep` (so a
+  redex buried in a cell can step) + a `/k` REPL over the merged `repl-core`
+  stack; (2) **hook theories** (F1 — hooked `Bool`/`Int`/`Map` → catalogue types)
   to admit conditional rules; then a tutorial IMP semantics as the first
   whole-definition demo, en route to KWasm↔SpecTec.
 - **Longer term (matching-logic ↔ Metamath):** relate the `Derivable_KStep`

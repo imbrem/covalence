@@ -25,6 +25,8 @@
     "covalence-init",
     "covalence-json",
     "covalence-kernel",
+    "covalence-kernel-sat",
+    "covalence-kernel-smt",
     "covalence-kv",
     "covalence-lean",
     "covalence-lisp",
@@ -345,6 +347,10 @@
     {
       "from": "covalence-kernel",
       "to": "covalence-store"
+    },
+    {
+      "from": "covalence-kernel-sat",
+      "to": "covalence-sat"
     },
     {
       "from": "covalence-lisp",

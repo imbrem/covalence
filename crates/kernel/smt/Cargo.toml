@@ -1,0 +1,25 @@
+[package]
+name = "covalence-kernel-smt"
+version = "0.0.0"
+edition = "2024"
+
+# The generic, backend-parameterised SMT-proof *replay* layer: it re-derives an
+# Alethe (cvc5/veriT) proof through the kernel, adding ZERO TCB. "Generic" means
+# generic over the target logic + integer representation — the linear-arithmetic
+# core is written against the `covalence-hol-api` `Int` trait, so the same engine
+# retargets HOL, a `succ`/numeral integer encoding, or a future internal-PA /
+# internal-SOA backend. A rule-acceptance policy lets a caller admit only a
+# subset of Alethe. The Alethe *format* itself lives in `covalence-smt` (lib/smt);
+# this crate turns a parsed proof into kernel theorems.
+#
+# NOTE: this lives under crates/kernel/ but is NOT part of the TCB — like
+# `covalence-init`, it only drives the trusted kernel API. See
+# notes/vibes/logics/smt-import-architecture.md.
+#
+# Current deps cover the pure Farkas-certificate core (rational/lincomb/farkas)
+# and the rule-acceptance policy. The `Int`-generic parse + kernel replay
+# modules (see SKELETONS.md) will add `covalence-hol-api` + the `covalence-smt`
+# format crate.
+
+[dependencies]
+thiserror = "2"

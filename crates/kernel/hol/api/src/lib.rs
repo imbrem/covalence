@@ -34,6 +34,7 @@
 //!
 //! Design: `notes/vibes/backend-decoupling.md`.
 
+pub mod int;
 pub mod nat;
 pub mod omega;
 
@@ -54,6 +55,7 @@ pub use covalence_inductive::{
 pub use covalence_core::{Error, Result, Term, Type};
 pub use covalence_hol_eval::EvalThm as Thm;
 
+pub use int::Int;
 pub use nat::Nat;
 
 // ---- The reflected HOL-omega TYPE layer (type-operator variables + kinds) ----

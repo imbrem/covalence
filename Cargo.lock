@@ -1179,6 +1179,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-kernel-sat"
+version = "0.0.0"
+dependencies = [
+ "covalence-sat",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-kernel-smt"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-kv"
 version = "0.0.0"
 dependencies = [

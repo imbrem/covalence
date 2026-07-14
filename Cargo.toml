@@ -8,6 +8,8 @@ members = [
     "crates/kernel/base/trusted",
     "crates/kernel/core",
     "crates/kernel/hol/*",
+    "crates/kernel/sat",
+    "crates/kernel/smt",
     "crates/kernel/shell",
     "crates/kernel/web",
     "crates/lang/*",

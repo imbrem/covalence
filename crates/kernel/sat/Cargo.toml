@@ -1,0 +1,18 @@
+[package]
+name = "covalence-kernel-sat"
+version = "0.0.0"
+edition = "2024"
+
+# The generic, backend-parameterised SAT-proof *replay* layer: it re-derives a
+# DRAT/LRAT refutation through a propositional-clause backend, adding ZERO TCB.
+# The SAT *formats* (DIMACS / DRAT / LRAT parsing + verdict checkers) live in
+# `covalence-sat` (crates/lib/sat); this crate turns a verified proof into
+# backend theorems. It is the SAT substrate the SMT replay (`covalence-kernel-smt`)
+# builds its propositional core on.
+#
+# NOTE: under crates/kernel/ but NOT part of the TCB — it only drives the trusted
+# kernel API. See notes/vibes/logics/smt-import-architecture.md.
+
+[dependencies]
+covalence-sat = { path = "../../lib/sat" }
+thiserror = "2"

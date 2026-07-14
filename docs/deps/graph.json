@@ -31,6 +31,7 @@
     "covalence-lsp",
     "covalence-metamath",
     "covalence-multiformat",
+    "covalence-numerals",
     "covalence-object",
     "covalence-opentheory",
     "covalence-parquet",
@@ -209,6 +210,10 @@
       "to": "covalence-store"
     },
     {
+      "from": "covalence-grammar",
+      "to": "covalence-types"
+    },
+    {
       "from": "covalence-graph",
       "to": "covalence-hash"
     },
@@ -375,6 +380,22 @@
     {
       "from": "covalence-multiformat",
       "to": "covalence-parse"
+    },
+    {
+      "from": "covalence-numerals",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-numerals",
+      "to": "covalence-hol-eval"
+    },
+    {
+      "from": "covalence-numerals",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence-numerals",
+      "to": "covalence-types"
     },
     {
       "from": "covalence-object",
@@ -669,6 +690,7 @@
       "libm",
       "num-bigint",
       "num-integer",
+      "num-rational",
       "num-traits",
       "proc-macro2",
       "quote",

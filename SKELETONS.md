@@ -53,9 +53,12 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)** — removed native `.watsup` frontend; single-version WASM grammar; regular-only byte-grammar bridge.
 - **[`covalence-wasm`](crates/lib/wasm/core/SKELETONS.md)** — removed `cov:pure` host binding; `wit/pure.wit` + `covalence-core-test-guest` orphaned.
 - **[`covalence-haskell`](crates/lang/haskell/SKELETONS.md)** — Haskell surface dialect: no HOL/kernel backend yet; small parser subset (no layout/patterns/types/do-notation).
+- **[`covalence-grammar`](crates/lang/grammar/SKELETONS.md)** — numeral literal grammars: atom zoo (base32/58/64, LEB128) deferred; regexes are description-only (recursive-descent parsers); spec numeral-figure slips.
+- **[`covalence-numerals`](crates/lang/numerals/SKELETONS.md)** — generic-backend numerals: `Wasm` backend is a stub; `ground_f32` enclosure certificate unproven; `prove_to_rat`/`prove_lt` cover only the `Decimal`/`Nat` rungs.
 - **[`covalence-alethe`](crates/proof/alethe/SKELETONS.md)** — Alethe rule coverage.
 - **[`covalence-egglog`](crates/proof/egglog/SKELETONS.md)** — `EgglogBridge` Stage 0 (only `fiat` implemented, no kernel-backed impl); egglog `external` bridge disabled (released egglog lacks the proof module).
 - **[`covalence-metamath`](crates/proof/metamath/SKELETONS.md)** — substitution engine + `.mm` reader: `set.mm`-scale streaming, canonical serializer, structured-tree encoding, symbol interning.
+- **[`covalence-types`](crates/lib/types/SKELETONS.md)** — numeral value ladder: `Decimal::from_parts` spec-figure reconciliation (`1.5e3`).
 - **[`covalence-multiformat`](crates/lib/data/multiformat/SKELETONS.md)** — derivation-fact interchange format: unregistered private-use codecs, no signed envelopes, blake3-only multihash, simulated Coln reader.
 - **[`covalence-acset`](crates/lib/data/acset/SKELETONS.md)** — generic ACSet library: only Δ migration (no Σ/Π), pullback skips attributes, string-only attribute values, `&'static str` schema names.
 - **[`covalence-python`](crates/ffi/python/SKELETONS.md)** — HOL kernel bindings (`pure` module) removed pending rewrite.

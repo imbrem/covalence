@@ -1,20 +1,18 @@
-//! # Demo: kernel-checked UNSAT certificates
+//! # Demo: kernel-checked UNSAT certificates (the pigeonhole principle)
 //!
 //! The reusable "**solve + kernel-certify**" capability: an infeasible SAT
 //! instance is decided by **CaDiCaL**, and its refutation is **replayed into a
 //! kernel theorem `⊢ ⊥`** — every resolution step re-derived through the trusted
 //! kernel. Any SAT-encoded infeasibility (dependency conflicts, scheduling,
-//! puzzles) then yields a proof object you can independently verify, without
-//! trusting the solver.
+//! puzzles) then yields a proof object you can independently verify.
 //!
-//! The instance here is the `k`-bit **exhaustive contradiction**: all `2^k`
-//! clauses excluding every assignment to `k` variables, so the CNF is UNSAT and
-//! CaDiCaL's proof is a pure resolution (RUP) chain the kernel replays directly.
+//! `PHP(h+1, h)` — `h+1` pigeons into `h` holes, each pigeon in some hole, no two
+//! sharing a hole — is unsatisfiable and famously has only *exponentially large*
+//! resolution proofs, so it is a genuine stress test for the replay.
 //!
-//! NOTE on harder instances: solvers use **RAT** steps (extended resolution /
-//! preprocessing) on structured problems like the pigeonhole principle — those
-//! LRAT proofs carry negative antecedent hints that this RUP-only replay does not
-//! yet handle. RAT support is the headline SAT-side gap (see `SKELETONS.md`).
+//! We run CaDiCaL with `--plain`, which emits **RUP-only** LRAT (no RAT steps),
+//! so the resolution replay applies directly. (General RAT proofs — non-`--plain`,
+//! other solvers — need the extension-variable reconstruction; see `SKELETONS.md`.)
 //!
 //! Run:  `cargo run --release --example unsat_certify -p covalence-kernel-sat --features cadical`
 
@@ -24,31 +22,36 @@ use std::time::{Duration, Instant};
 use covalence_kernel_sat::{Cnf, HolClauseBackend, Lit, replay_lrat};
 use covalence_sat::parse::{parse_lrat_text, write_dimacs_to_string};
 
-/// All `2^k` clauses excluding each full assignment to `k` variables — UNSAT.
-fn exhaustive(k: usize) -> Cnf {
+/// `PHP(pigeons, holes)`: `p[i][j]` = "pigeon `i` in hole `j`". UNSAT when
+/// `pigeons > holes`.
+fn php_cnf(pigeons: usize, holes: usize) -> Cnf {
     let mut cnf = Cnf::new();
-    let vars: Vec<Lit> = (0..k).map(|_| cnf.fresh()).collect();
-    for mask in 0..(1u32 << k) {
-        let clause: Vec<Lit> = vars
-            .iter()
-            .enumerate()
-            .map(|(i, &v)| if mask & (1 << i) == 0 { v } else { !v })
-            .collect();
-        cnf.clause(clause);
+    let p: Vec<Vec<Lit>> = (0..pigeons)
+        .map(|_| (0..holes).map(|_| cnf.fresh()).collect())
+        .collect();
+    for row in &p {
+        cnf.clause(row.iter().copied()); // each pigeon in ≥1 hole
+    }
+    for j in 0..holes {
+        for i1 in 0..pigeons {
+            for i2 in (i1 + 1)..pigeons {
+                cnf.clause([!p[i1][j], !p[i2][j]]); // no hole holds two pigeons
+            }
+        }
     }
     cnf
 }
 
-/// CaDiCaL `--lrat` refutation + solve time, or `None` if absent / SAT.
+/// CaDiCaL `--plain --lrat` (RUP-only) refutation + solve time.
 fn run_cadical(cnf: &Cnf) -> Option<(String, Duration)> {
     let dir = std::env::temp_dir();
-    let stamp = format!("cov-unsat-{}", std::process::id());
+    let stamp = format!("cov-php-{}", std::process::id());
     let cnf_path = dir.join(format!("{stamp}.cnf"));
     let lrat_path = dir.join(format!("{stamp}.lrat"));
     std::fs::write(&cnf_path, write_dimacs_to_string(cnf)).ok()?;
     let start = Instant::now();
     let status = Command::new("cadical")
-        .args(["--lrat=true", "--no-binary", "-q"])
+        .args(["--plain", "--lrat=true", "--no-binary", "-q"])
         .arg(&cnf_path)
         .arg(&lrat_path)
         .status();
@@ -67,40 +70,35 @@ fn ms(d: Duration) -> String {
 }
 
 fn main() {
-    println!("=== Kernel-checked UNSAT — CaDiCaL-found, kernel-replayed ===\n");
-    println!("k-bit exhaustive contradiction: 2^k clauses, no satisfying assignment.\n");
+    println!("=== Pigeonhole — CaDiCaL-found, kernel-checked UNSAT ===\n");
+    println!("PHP(h+1, h): h+1 pigeons, h holes — infeasible; exponential resolution proofs.\n");
 
-    if run_cadical(&exhaustive(2)).is_none() {
+    if run_cadical(&php_cnf(3, 2)).is_none() {
         println!("(cadical not on $PATH / not `--features cadical` — skipping.)");
         return;
     }
 
     println!(
-        "{:>4} | {:>5} | {:>8} | {:>10} | {:>13} | {:>7}",
-        "k", "vars", "clauses", "cadical", "kernel replay", "⊢ ⊥"
+        "{:>4} | {:>5} | {:>8} | {:>7} | {:>10} | {:>13} | {:>5}",
+        "h", "vars", "clauses", "steps", "cadical", "kernel replay", "⊢ ⊥"
     );
     println!(
-        "{:->4}-+-{:->5}-+-{:->8}-+-{:->10}-+-{:->13}-+-{:->7}",
-        "", "", "", "", "", ""
+        "{:->4}-+-{:->5}-+-{:->8}-+-{:->7}-+-{:->10}-+-{:->13}-+-{:->5}",
+        "", "", "", "", "", "", ""
     );
-    // Capped low for now: the RUP replay is quadratic-ish in clause size (a perf
-    // bug), and k≥6 CaDiCaL proofs use RAT (unhandled). Both are being fixed —
-    // then this scales up. See SKELETONS.md.
-    for k in 3..=5usize {
-        let cnf = exhaustive(k);
+    // Replay cost grows with the (exponential) resolution-proof size; capped
+    // where it stays interactive. Scaling further wants the sequent-form clause
+    // backend (near-O(1) resolution) — see SKELETONS.md.
+    for h in 3..=6usize {
+        let cnf = php_cnf(h + 1, h);
         let Some((lrat, solve)) = run_cadical(&cnf) else {
             continue;
         };
-        // A RAT proof (negative antecedent hints) can't be parsed by the RUP
-        // reader — report it rather than crash.
         let Ok(proof) = parse_lrat_text(&lrat) else {
-            println!(
-                "{k:>4} | {:>5} | {:>8} | solver used RAT — RUP replay N/A",
-                cnf.num_vars(),
-                cnf.num_clauses()
-            );
+            println!("{h:>4} | solver used RAT — see SKELETONS.md");
             continue;
         };
+        let steps = proof.steps().len();
         let start = Instant::now();
         let mut backend = HolClauseBackend::new();
         let checked = match replay_lrat(&mut backend, &cnf, &proof) {
@@ -109,19 +107,20 @@ fn main() {
         };
         let replay = start.elapsed();
         println!(
-            "{:>4} | {:>5} | {:>8} | {:>10} | {:>13} | {:>7}",
-            k,
+            "{:>4} | {:>5} | {:>8} | {:>7} | {:>10} | {:>13} | {:>5}",
+            h,
             cnf.num_vars(),
             cnf.num_clauses(),
+            steps,
             ms(solve),
             ms(replay),
-            if checked { "yes" } else { "RAT/—" },
+            if checked { "yes" } else { "—" },
         );
     }
     println!(
         "\nEach `⊢ ⊥` is a genuine kernel theorem whose hypotheses are a subset of\n\
-         the input clauses — the kernel re-derives every resolution step. The same\n\
-         capability certifies any SAT-encoded infeasibility; structured instances\n\
-         (pigeonhole, …) additionally need RAT-step support, the next SAT gap."
+         the input clauses — the kernel re-derives every one of the (many) resolution\n\
+         steps. A machine-checked proof that the pigeons don't fit; the same\n\
+         capability certifies any SAT-encoded infeasibility."
     );
 }

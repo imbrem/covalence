@@ -1,31 +1,37 @@
 # covalence-kernel-sat — skeletons
 
-Generic SAT-proof replay. Built: the [`ClauseBackend`](src/lib.rs) trait (the
-resolution seam), a native HOL backend ([`HolClauseBackend`](src/hol.rs)), and
-[`replay_lrat`](src/lib.rs) driving an LRAT proof end-to-end into a kernel
-`⊢ ⊥` (CaDiCaL → LRAT, `tests/cadical_e2e.rs`; `examples/unsat_certify.rs`).
-Design: `notes/vibes/logics/smt-import-architecture.md`. Open work, severe first:
+Generic SAT-proof replay. Built: the three-plug-point API ([`SatProblem`] →
+`Term`, [`ClauseBackend`] → `Thm`, [`ReplayStrategy`]), a native HOL backend
+([`HolClauseBackend`](src/hol.rs)), and [`RupReplay`](src/lib.rs) — proper
+trace-based RUP reconstruction (falsify `C`, unit-propagate the antecedents to
+compute each pivot, resolve backward from the conflict). Real CaDiCaL `--plain`
+proofs replay to a genuine `⊢ ⊥` (pigeonhole in `tests/cadical_e2e.rs`;
+`examples/unsat_certify.rs`). Design: `notes/vibes/logics/smt-import-architecture.md`.
+Open work, severe first:
 
-## Severe — blocks real solver proofs at scale
+## Severe
 
-- **RAT steps unhandled** (parser + replay). Real CaDiCaL proofs (pigeonhole,
-  and the k-bit exhaustive family for k≥6) use **RAT** — even `--plain` does.
-  `parse_lrat_text` rejects the negative antecedent hints (`ExpectedInteger
-  "-46"`), and `replay_lrat` is RUP-only. RAT clause additions are only
-  *satisfiability-preserving*, not entailed, so producing a genuine `{F} ⊢ ⊥`
-  from a RAT step is not just a resolution chain — approach under research.
-- **Replay perf blowup.** Replaying a k=6 exhaustive proof (64 clauses) took
-  ~12.5 s vs 26 ms at k=5 — superlinear. `HolClauseBackend::resolve` keeps
-  duplicate literals in resolvents (`logic::resolve_on` only drops the pivot), so
-  clause terms grow and per-step kernel work explodes. Fix: dedup literals + a
-  threaded term interner (keep the running clause as a literal-set, materialise
-  the HOL term once). Must scale like the set.mm import path.
+- **RAT steps unhandled** (parser + replay). Non-`--plain` CaDiCaL proofs, and
+  other solvers, use **RAT** (extended resolution / preprocessing). `parse_lrat_text`
+  rejects the negative antecedent hints; a RAT clause is only
+  satisfiability-preserving, not entailed, so `⊢ ⊥` reconstruction needs the
+  **extension-variable ("RAT-as-definition")** method (research-vetted: fresh
+  `z:bool` + `⟺` defining hypothesis per RAT step → RUP additions → discharge the
+  conservative definitions; polynomial, uses existing zero-TCB primitives). This
+  is a new `ReplayStrategy`. Stopgap in place: run CaDiCaL with `--plain` for
+  RUP-only proofs.
+- **Resolution is O(clause-size) per step.** `HolClauseBackend` represents a
+  clause as a `∨`-term, so each `resolve_on` (`logic::resolve_on`) does
+  `elim_disj` — a kernel inference per literal — and rebuilds the disjunction.
+  With the dedup fix the term stays bounded, but per-step cost is still linear in
+  clause size, so huge proofs (pigeonhole h≥7) are slow (~44 s at 6.6k steps).
+  The scale fix is a **sequent-form clause backend**: represent `C` as
+  `{¬l₁,…,¬lₙ} ⊢ ⊥`; then resolution is a hypothesis-set cut (near-O(1), sets not
+  rebuilt terms) — the LCF-standard efficient SAT-replay representation, and a
+  drop-in second `ClauseBackend` under the same API. (Interning/hash-consing is a
+  further constant-factor win on top.)
 
 ## Minor
 
-- **Left-fold pivot-finding.** `replay_lrat` folds `resolve` over antecedents in
-  order, relying on `logic::resolve`'s first-complementary-pair search. Works for
-  CaDiCaL RUP chains; a chain needing an explicit pivot (unit-propagation
-  simulation) has no fallback.
 - **DRAT (no hints) not handled.** Only LRAT (with per-step antecedents) is a
   replay entry point; a bare DRAT proof must be elaborated to LRAT first.

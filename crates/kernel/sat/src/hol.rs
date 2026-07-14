@@ -17,7 +17,7 @@ use covalence_core::{Term, Type};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_init::HolLightCtx;
 use covalence_init::init::logic;
-use covalence_sat::{Clause, Lit};
+use covalence_sat::{Clause, Lit, Var};
 
 use crate::{ClauseBackend, ReplayError, SatProblem};
 
@@ -83,6 +83,19 @@ impl ClauseBackend for HolClauseBackend {
 
     fn resolve(&mut self, a: &Self::Thm, b: &Self::Thm) -> Result<Self::Thm, ReplayError> {
         logic::resolve(a.clone(), b.clone()).map_err(|e| ReplayError::Backend(e.to_string()))
+    }
+
+    fn resolve_on(
+        &mut self,
+        a: &Self::Thm,
+        b: &Self::Thm,
+        pivot: Var,
+    ) -> Result<Self::Thm, ReplayError> {
+        // The pivot variable's positive term `x{i}` — `logic::resolve_on` orients
+        // it, so which of `a`/`b` carries it positively doesn't matter here.
+        let pivot_term = Term::free(format!("x{}", pivot.index()), Type::bool());
+        logic::resolve_on(a.clone(), b.clone(), &pivot_term)
+            .map_err(|e| ReplayError::Backend(e.to_string()))
     }
 
     fn is_empty_clause(&self, thm: &Self::Thm) -> bool {

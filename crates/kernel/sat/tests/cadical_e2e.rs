@@ -116,7 +116,8 @@ mod live {
         std::fs::write(&cnf_path, write_dimacs_to_string(cnf)).ok()?;
 
         let status = Command::new("cadical")
-            .args(["--lrat=true", "--no-binary", "-q"])
+            // `--plain` disables inprocessing so the LRAT is RUP-only (no RAT).
+            .args(["--plain", "--lrat=true", "--no-binary", "-q"])
             .arg(&cnf_path)
             .arg(&lrat_path)
             .status();
@@ -143,6 +144,32 @@ mod live {
         let cnf = unsat_cnf();
         let Some(lrat) = run_cadical(&cnf) else {
             return; // skipped: no cadical / SAT
+        };
+        assert_refutation(&cnf, &lrat);
+    }
+
+    /// `PHP(4,3)` — the pigeonhole principle, a real structured UNSAT whose RUP
+    /// chains have several complementary pairs per step (so the pivot must be
+    /// computed by propagation, not guessed). `--plain` keeps it RUP-only.
+    #[test]
+    fn live_cadical_pigeonhole() {
+        let (pigeons, holes) = (4, 3);
+        let mut cnf = Cnf::new();
+        let p: Vec<Vec<Lit>> = (0..pigeons)
+            .map(|_| (0..holes).map(|_| cnf.fresh()).collect())
+            .collect();
+        for row in &p {
+            cnf.clause(row.iter().copied());
+        }
+        for j in 0..holes {
+            for i1 in 0..pigeons {
+                for i2 in (i1 + 1)..pigeons {
+                    cnf.clause([!p[i1][j], !p[i2][j]]);
+                }
+            }
+        }
+        let Some(lrat) = run_cadical(&cnf) else {
+            return;
         };
         assert_refutation(&cnf, &lrat);
     }

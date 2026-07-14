@@ -213,6 +213,11 @@ pub trait HolLightKernel: HolLightTerms {
 
     /// Define a new abstract type from an existence theorem.
     ///
+    /// `tyvars` is the **article-declared type-parameter order** (OpenTheory's
+    /// `defineTypeOp` name list). Backends that canonicalise type-variable
+    /// order internally must remember this order so later `opType`
+    /// applications instantiate positionally as the article intends.
+    ///
     /// `abs_var_name` and `rep_var_name` are the variable names to use in the
     /// generated theorems (e.g. `"a"` and `"r"` in the OpenTheory convention).
     fn new_basic_type_definition(
@@ -220,6 +225,7 @@ pub trait HolLightKernel: HolLightTerms {
         tyname: NameId,
         abs_name: NameId,
         rep_name: NameId,
+        tyvars: &[NameId],
         abs_var_name: NameId,
         rep_var_name: NameId,
         th: Self::Thm,
@@ -245,4 +251,37 @@ pub trait HolLightKernel: HolLightTerms {
 
     /// Construct a constant term with validation (checks type instance).
     fn mk_const_validated(&mut self, name: NameId, ty: Self::Type) -> Result<Self::Term, HolError>;
+
+    /// True if `hyp` is discharged by a tracked axiom — i.e. it is (a type
+    /// instance of) a term introduced via [`new_axiom`](Self::new_axiom).
+    ///
+    /// Backends that track axioms as *hypothesis-tracked* theorems
+    /// (`{p} ⊢ p`, adding no TCB) leave axiom terms as hypotheses on any
+    /// theorem that uses them; a polymorphic axiom propagates as a *type
+    /// instance* of itself. The `thm` article command uses this hook to
+    /// tolerate such hypotheses (they are exactly `INST_TYPE` of an axiom,
+    /// hence sound). The default is conservative: no hypothesis is
+    /// axiom-discharged.
+    fn discharges_as_axiom(&self, _hyp: Self::Term) -> bool {
+        false
+    }
+
+    /// Optionally supply a *native proof* of an `axiom` statement instead of
+    /// assuming it.
+    ///
+    /// When an `axiom` command introduces the statement `tm`, the interpreter
+    /// offers it here first. Returning `Some(Ok(thm))` — where `thm` proves
+    /// exactly `tm` (ideally with no hypotheses) in the backend's own theory —
+    /// discharges the axiom, so downstream theorems do not carry it as an
+    /// assumption. This is how a backend whose logic already has the relevant
+    /// structure can check an imported article *axiom-free* (e.g. proving
+    /// OpenTheory's axiom of infinity for a native infinite type, or supplying
+    /// a lemma from a different construction). `Some(Err(_))` fails the article;
+    /// the default `None` reproduces the hypothesis-tracked behaviour.
+    ///
+    /// The interpreter re-checks that the returned theorem's conclusion matches
+    /// `tm`, so a mismatched proof is rejected rather than silently substituted.
+    fn prove_axiom(&mut self, _tm: Self::Term) -> Option<Result<Self::Thm, HolError>> {
+        None
+    }
 }

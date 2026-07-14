@@ -37,6 +37,8 @@
     "profile:import": "bun scripts/profile-import.mjs",
     "profile:theorem": "bun scripts/profile-theorem.mjs",
     "profile:flame": "bun scripts/flamegraph-import.mjs",
+    "opentheory": "bun scripts/opentheory.mjs",
+    "opentheory:offline": "bun scripts/opentheory.mjs --offline",
     "build:python": "cd crates/ffi/python && source activate.sh && maturin develop",
     "test:python": "cd crates/ffi/python && source activate.sh && pytest tests/ -v",
     "test:ui": "bun run --filter covalence-ui test",

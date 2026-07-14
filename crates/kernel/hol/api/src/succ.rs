@@ -74,6 +74,9 @@ impl Hol for SuccHol {
     fn imp(&self, a: Term, b: Term) -> Result<Term> {
         <NativeHol as Hol>::imp(&NativeHol, a, b)
     }
+    fn not(&self, a: Term) -> Result<Term> {
+        <NativeHol as Hol>::not(&NativeHol, a)
+    }
     fn and(&self, a: Term, b: Term) -> Result<Term> {
         <NativeHol as Hol>::and(&NativeHol, a, b)
     }
@@ -128,6 +131,9 @@ impl Hol for SuccHol {
     }
     fn beta_conv(&self, redex: Term) -> Result<EvalThm> {
         <NativeHol as Hol>::beta_conv(&NativeHol, redex)
+    }
+    fn eta_conv(&self, abs: Term) -> Result<EvalThm> {
+        <NativeHol as Hol>::eta_conv(&NativeHol, abs)
     }
     fn cong_app(&self, f: EvalThm, x: EvalThm) -> Result<EvalThm> {
         <NativeHol as Hol>::cong_app(&NativeHol, f, x)

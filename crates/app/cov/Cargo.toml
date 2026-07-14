@@ -35,7 +35,10 @@ covalence-store = { path = "../../store/core", features = ["sqlite"] }
 # in libsqlite3-sys, whose sqlite3.c build needs a real WASI sysroot.
 covalence-git = { path = "../../lib/git", optional = true, features = ["clone"] }
 covalence-hol = { path = "../../kernel/hol/traits", optional = true }
-covalence-opentheory = { path = "../../proof/opentheory", optional = true }
+covalence-opentheory = { path = "../../proof/opentheory", optional = true, features = [
+    "native",
+    "fetch",
+] }
 covalence-wasm = { path = "../../lib/wasm/core", default-features = false }
 covalence-client = { path = "../../server/client", features = ["sync"] }
 covalence-proto = { path = "../../lib/proto", features = ["discovery", "config"] }

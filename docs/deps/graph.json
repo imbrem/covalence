@@ -463,7 +463,19 @@
     },
     {
       "from": "covalence-opentheory",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-opentheory",
       "to": "covalence-hol"
+    },
+    {
+      "from": "covalence-opentheory",
+      "to": "covalence-hol-api"
+    },
+    {
+      "from": "covalence-opentheory",
+      "to": "covalence-hol-eval"
     },
     {
       "from": "covalence-parquet",

@@ -1314,7 +1314,10 @@ dependencies = [
 name = "covalence-opentheory"
 version = "0.0.0"
 dependencies = [
+ "covalence-core",
  "covalence-hol",
+ "covalence-hol-api",
+ "covalence-hol-eval",
  "smol_str",
  "thiserror 2.0.18",
  "ureq",

@@ -6,9 +6,20 @@ edition = "2024"
 [features]
 default = []
 fetch = ["dep:ureq"]
+# The native kernel backend (`NativeOt`): implements `HolLightKernel` over
+# covalence-core's value-typed kernel. Zero extra TCB — every rule delegates
+# to an already-audited core/eval operation.
+native = ["dep:covalence-core", "dep:covalence-hol-eval", "dep:covalence-hol-api"]
 
 [dependencies]
+covalence-core = { path = "../../kernel/hol/core", optional = true }
 covalence-hol = { path = "../../kernel/hol/traits" }
+covalence-hol-api = { path = "../../kernel/hol/api", optional = true }
+covalence-hol-eval = { path = "../../kernel/hol/eval", optional = true }
 smol_str = "0.3"
 thiserror = "2"
 ureq = { version = "3", optional = true }
+
+[[test]]
+name = "articles"
+required-features = ["native"]

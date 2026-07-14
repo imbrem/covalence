@@ -44,6 +44,7 @@ use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::metalogic::binary::{Premise, RuleSet2, derivable2, derive_mixed};
 use covalence_init::{Term, Type};
+use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
 use crate::hol::HolError;
@@ -850,6 +851,191 @@ impl LispRel {
 
     fn is_snil(&self, v: &Term) -> bool {
         *v == self.cs.snil
+    }
+
+    // ------------------------------------------------------------------
+    // Surface compiler + driver + renderer (the relational REPL path)
+    // ------------------------------------------------------------------
+
+    /// Lower a surface [`SExpr`] into the relational operator-application term.
+    ///
+    /// Handles `quote` → data, the McCarthy primitives (`car`/`cdr`/`cons`/
+    /// `atom?`/`consp`/`null?`/`eq?`/`cond`/`if`), and — when the dialect has an
+    /// [`IntBackend`] — numeral atoms → `(int n)` and the int-op symbols
+    /// `+ - * <= =` → their relational op heads. In [`Sector`](Dialect::Sector)
+    /// (no backend) numerals stay symbol atoms and the int ops stay stuck free
+    /// applications.
+    pub fn compile_surface(&self, e: &SExpr) -> Result<Term, HolError> {
+        match e {
+            SExpr::Atom(a) => self.surface_atom(a),
+            SExpr::List(items) => self.surface_form(items),
+        }
+    }
+
+    /// An atom in operand position: a numeral (int dialect only), else a
+    /// symbol atom.
+    fn surface_atom(&self, a: &Atom) -> Result<Term, HolError> {
+        if let Atom::Symbol(s) = a
+            && self.int_be.is_some()
+            && let Ok(n) = s.parse::<Int>()
+        {
+            return self.int_lit(&n);
+        }
+        self.data_atom(a)
+    }
+
+    /// A symbol/string atom → the `atom "…"` datum (numerals-as-symbols too).
+    fn data_atom(&self, a: &Atom) -> Result<Term, HolError> {
+        let bytes: Vec<u8> = match a {
+            Atom::Symbol(s) => s.as_bytes().to_vec(),
+            Atom::Str { bytes, .. } => bytes.to_vec(),
+        };
+        Ok(Term::app(self.cs.atom.clone(), mk_blob(bytes)))
+    }
+
+    /// `quote` payload → nested `scons`/`atom`/`snil` data.
+    fn data(&self, e: &SExpr) -> Result<Term, HolError> {
+        match e {
+            SExpr::Atom(a) => self.data_atom(a),
+            SExpr::List(items) => {
+                let mut acc = self.cs.snil.clone();
+                for it in items.iter().rev() {
+                    let h = self.data(it)?;
+                    acc = self.scons(h, acc)?;
+                }
+                Ok(acc)
+            }
+        }
+    }
+
+    fn surface_form(&self, items: &[SExpr]) -> Result<Term, HolError> {
+        let (head, args) = items
+            .split_first()
+            .ok_or_else(|| HolError::Stuck("()".into()))?;
+        let op = head
+            .as_symbol()
+            .ok_or_else(|| HolError::Stuck("application head is not a symbol".into()))?;
+        // An int-op symbol `+ - * <= =`. In `sector+int` this builds a genuine
+        // integer redex; in `sector` (no backend) it still builds the op-head
+        // application — but with symbol-atom operands and no `Step` clause, so
+        // `(+ 2 2)` is **stuck** (reduces to itself) rather than erroring.
+        if let Some(iop) = IntOp::ALL.iter().copied().find(|o| o.symbol() == op) {
+            if args.len() != 2 {
+                return Err(HolError::Stuck(format!("`{op}` takes 2 arguments")));
+            }
+            let a = self.compile_surface(&args[0])?;
+            let b = self.compile_surface(&args[1])?;
+            return self.int_op_term(iop, a, b);
+        }
+        match (op, args.len()) {
+            ("quote", 1) => self.data(&args[0]),
+            ("car", 1) => self.car(self.compile_surface(&args[0])?),
+            ("cdr", 1) => self.cdr(self.compile_surface(&args[0])?),
+            ("cons", 2) => {
+                let h = self.compile_surface(&args[0])?;
+                let t = self.compile_surface(&args[1])?;
+                self.scons(h, t)
+            }
+            ("atom?" | "atom", 1) => self.atom_p_of(self.compile_surface(&args[0])?),
+            ("consp" | "pair?", 1) => self.consp_of(self.compile_surface(&args[0])?),
+            ("null?" | "null", 1) => self.null_p_of(self.compile_surface(&args[0])?),
+            ("eq?" | "eq", 2) => {
+                let a = self.compile_surface(&args[0])?;
+                let b = self.compile_surface(&args[1])?;
+                self.eq_of(a, b)
+            }
+            // `if C A B` → a two-clause `cond`.
+            ("if", 3) => {
+                let c = self.compile_surface(&args[0])?;
+                let a = self.compile_surface(&args[1])?;
+                let b = self.compile_surface(&args[2])?;
+                let else_cell = self.scons(self.t.clone(), b)?;
+                let then_cell = self.scons(c, a)?;
+                let rest = self.scons(else_cell, self.cs.snil.clone())?;
+                let cells = self.scons(then_cell, rest)?;
+                self.cond_of(cells)
+            }
+            // `cond (T E)...` → the relational `cond` over a scons-chain of
+            // `(test . body)` cells.
+            ("cond", _) => {
+                let mut cells = self.cs.snil.clone();
+                for clause in args.iter().rev() {
+                    let SExpr::List(parts) = clause else {
+                        return Err(HolError::Stuck("cond clause is not a list".into()));
+                    };
+                    if parts.len() != 2 {
+                        return Err(HolError::Stuck("cond clause must be (test body)".into()));
+                    }
+                    let test = self.compile_surface(&parts[0])?;
+                    let body = self.compile_surface(&parts[1])?;
+                    let cell = self.scons(test, body)?;
+                    cells = self.scons(cell, cells)?;
+                }
+                self.cond_of(cells)
+            }
+            (other, n) => Err(HolError::Stuck(format!(
+                "unknown or misapplied operator `{other}` (arity {n})"
+            ))),
+        }
+    }
+
+    /// Drive a surface form to a value: compile it, then run the step relation
+    /// (fuel-bounded), returning the value term and `⊢ Reduces input value`
+    /// (hypothesis-free for a closed program).
+    pub fn reduce_surface(&self, e: &SExpr, fuel: usize) -> Result<(Term, Thm), HolError> {
+        let input = self.compile_surface(e)?;
+        self.prove_reduces(&input, fuel)
+    }
+
+    /// Render a relational value term to Lisp text: `(int n)` → decimal `n`,
+    /// `atom "…"` → its text, `snil` → `()`, `scons` chains → `(e₁ e₂ …)`.
+    pub fn render_value(&self, v: &Term) -> String {
+        if let Some(be) = self.int_be.as_deref()
+            && let Some(n) = be.as_lit(v)
+        {
+            return n.to_string();
+        }
+        if self.is_snil(v) {
+            return "()".to_string();
+        }
+        if let Some(b) = self.as_atom(v)
+            && let Some(bytes) = blob_bytes(&b)
+        {
+            return String::from_utf8_lossy(&bytes).into_owned();
+        }
+        if self.as_scons(v).is_some() {
+            let mut out = String::from("(");
+            let mut cur = v.clone();
+            let mut first = true;
+            while let Some((h, t)) = self.as_scons(&cur) {
+                if !first {
+                    out.push(' ');
+                }
+                first = false;
+                out.push_str(&self.render_value(&h));
+                if self.is_snil(&t) {
+                    break;
+                }
+                if self.as_scons(&t).is_none() {
+                    out.push_str(" . ");
+                    out.push_str(&self.render_value(&t));
+                    break;
+                }
+                cur = t;
+            }
+            out.push(')');
+            return out;
+        }
+        format!("{v}") // unknown / stuck shape — surface the raw term
+    }
+}
+
+/// Extract the bytes of a blob literal term, via the designated `Lit` facade.
+fn blob_bytes(t: &Term) -> Option<Vec<u8>> {
+    use covalence_core::seam::Lit;
+    match Lit::from_term(t)? {
+        Lit::Bytes(b) => Some(b.to_vec()),
+        _ => None,
     }
 }
 

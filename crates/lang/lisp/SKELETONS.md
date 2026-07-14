@@ -45,8 +45,17 @@ full picture.
   result can drive a `cond`); and the metatheorems (`Step` determinism, `Reduces` =
   `Step*`, `sector ⊑ sector+int` inclusion) via `rule_induction2`. No
   `RelationalSemantics` `Semantics<LispRepr>` wrapper / `#semantics` toggle yet
-  (driver is standalone `prove_step`/`prove_reduces`); the reader/`Session` do not
-  yet select a dialect or lower numerals into `(int n)`.
+  (driver is standalone `prove_step`/`prove_reduces`). The surface path
+  (`compile_surface`/`reduce_surface`/`render_value` + the `Session` `#lang`
+  dispatch) is now wired, but nested int operands are **not** congruence-reduced:
+  `(+ (car (quote (1))) 1)` is stuck because `match_int_op` requires both operands
+  already be `(int n)` values (same wall as the `eq?`-operand case).
+
+- **Relational recursion / more `#lang`s.** The `lisp`/`sector` dialects are the
+  relation; `defun`/`lambda` recursion is **only** in `scheme` (the value
+  semantics) because the `Step` relation lacks β/δ clauses. Adding those (see
+  above) is the path to a full relational `lisp` with recursion. Future `#lang`s
+  (`forsp`/`forth`/`haskell`) would slot into the same `session::Lang` dispatch.
 
 - **`defun` return type is a 2-way guess.** `Session::install` tries `bool`
   then `sexpr` for a recursive function's head (predicates vs data functions).

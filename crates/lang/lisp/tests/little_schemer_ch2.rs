@@ -20,10 +20,14 @@
 #![cfg(feature = "hol")]
 
 use covalence_lisp::reader::read_one;
-use covalence_lisp::session::Session;
+use covalence_lisp::session::{Lang, Session};
 
 fn session() -> Session {
-    Session::new().expect("session")
+    // Chapter 2 is `defun`/recursion in the equational value semantics — now the
+    // `scheme` dialect (the default `lisp` is the relational integer semantics).
+    let mut s = Session::new().expect("session");
+    s.set_lang(Lang::Scheme);
+    s
 }
 
 /// Reduce `src` and assert the value renders to `want` AND the theorem carries

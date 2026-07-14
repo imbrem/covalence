@@ -20,20 +20,33 @@
 	<p>
 		<strong>covalence-lisp</strong> — a small, kernel-backed Lisp. Each cell is evaluated on
 		the <strong>native kernel</strong> (via <code>cov serve</code>); every printed value is
-		read off a genuine <code>⊢ program = value</code> theorem. <strong>Hover a result</strong>
-		to see its proof.
+		read off a genuine kernel theorem. <strong>Hover a result</strong> to see its proof.
 	</p>
 	<p>
-		A real REPL — <code>defun</code>s persist across cells (a per-tab server session). Try the
-		numbered examples in order: define <code>lat?</code>, then use it; or define the
-		<code>★ metacircular eval</code> and run it. User definitions ride along as
-		<em>hypotheses</em> (<code>definitions ⊢ program = value</code>), sound even for recursion
-		that might not terminate.
+		<strong>Dialects</strong> — switch with <code>#lang &lt;name&gt;</code> (resets the
+		session):
 	</p>
+	<ul>
+		<li>
+			<code>#lang lisp</code> <em>(default)</em> — primitives + <strong>integers</strong>
+			(<code>+ - * &lt;= =</code>), run through the <em>reduction relation</em>: every value
+			is a <code>⊢ Reduces&nbsp;input&nbsp;value</code> theorem. Try <code>(+ 2 2)</code>.
+		</li>
+		<li>
+			<code>#lang scheme</code> — the equational value semantics with
+			<code>cond</code>/<code>lambda</code>/<code>defun</code> <strong>recursion</strong>
+			(<code>lat?</code>, the metacircular <code>eval</code>). No integers here (yet). User
+			definitions ride along as <em>hypotheses</em> — <code>definitions ⊢ program = value</code>.
+		</li>
+		<li>
+			<code>#lang sector</code> — pure McCarthy Lisp (no integers); <code>(+ 2 2)</code> is
+			stuck, showing <code>sector ⊑ sector+int</code>.
+		</li>
+	</ul>
 	<p class="muted">
-		Little Schemer ch1 primitives (<code>car cdr cons atom? null? eq?</code>) +
-		<code>cond</code>/<code>lambda</code>/<code>defun</code> recursion; the metacircular
-		interpreter runs its ground <code>quote/car/cdr/cons</code> fragment.
+		<code>defun</code>s persist across cells (a per-tab server session). Integers are the
+		default dialect; recursion + integers together (full Scheme in one dialect) is the next
+		step. Other directives: <code>#show EXPR</code>, <code>#help</code>.
 	</p>
 {/snippet}
 
@@ -67,5 +80,15 @@
 	}
 	:global(.widget .muted) {
 		color: var(--muted);
+	}
+	:global(.widget p) {
+		margin: 0 0 0.5rem;
+	}
+	:global(.widget ul) {
+		margin: 0 0 0.6rem;
+		padding-left: 1.2rem;
+	}
+	:global(.widget li) {
+		margin: 0.3rem 0;
 	}
 </style>

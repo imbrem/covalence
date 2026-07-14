@@ -101,6 +101,20 @@ impl GrammarEnv {
         self.prods.len()
     }
 
+    /// The number of productions (= clause count), for the tactic's clause-order
+    /// enumeration. Same value as [`n_clauses`](Self::n_clauses); named for the
+    /// production view.
+    pub(crate) fn prod_count(&self) -> usize {
+        self.prods.len()
+    }
+
+    /// Production `idx` (in `Cfg` = clause order): its lhs tag and reified
+    /// segments. Panics on out-of-range `idx` (callers iterate `0..prod_count`).
+    pub(crate) fn prod(&self, idx: usize) -> (NtId, &[RSeg]) {
+        let (lhs, segs) = &self.prods[idx];
+        (*lhs, segs)
+    }
+
     /// Resolve a non-terminal by name.
     pub fn nt(&self, name: &str) -> Option<NtId> {
         self.cfg.lookup(name)

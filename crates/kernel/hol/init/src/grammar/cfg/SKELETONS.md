@@ -10,12 +10,6 @@ stratum [`crate::grammar::regex`](../regex/SKELETONS.md). See
 
 ## Severe / blocking
 
-- **The parsing tactic (`tactic.rs`).** Stub only. Needs the two-phase
-  recognizer→plan→builder over concrete bytes (mirror `grammar/regex/tactic.rs`:
-  memoised `(NodeRef, lo, hi)` search, left-recursion in-progress guard, then a
-  builder discharging terminal segments via the regex tactic and non-terminal
-  segments by recursion). Public target: `prove_derives(env, nt, bytes)
-  -> Result<Option<Thm>>` yielding hypothesis-free `⊢ Derives_E ⌜nt⌝ w`.
 - **Soundness (`soundness.rs`).** Stub only. Needs the discharge-free family
   least-fixpoint theorem `⊢ ∀F. ClosedFam_E F ⟹ ∀n w. Derives_E n w ⟹
   mem w (F n)` via `metalogic::binary::rule_induction2` (S1), the `ClosedFam`
@@ -31,8 +25,18 @@ stratum [`crate::grammar::regex`](../regex/SKELETONS.md). See
 - **S2 comprehension family** (least-ness), **S3 at scale** (per-env
   discharge cost), and **env transport** (`Derives_E ⟹ Derives_E' ∘ ρ` for the
   WASM version-inclusion metatheorems) — see the design note.
-- **Word normalisation.** Conclusion words are rule-shaped `cat`/`cons`/`nil`
-  trees, not flattened cons-lists (inherited from the regex stratum).
+- **Tactic recognizer acceleration (`tactic.rs`).** The phase-1 recognizer is a
+  plain memoised top-down parser (`O(n³)`-ish span enumeration, terminal match
+  delegated whole-slice to the regex tactic per span). No WASM/builtin
+  accelerator seam yet; the `(NodeRef, lo, hi)` memo is the natural drop-in point.
+- **Terminal sub-span plan reuse (`tactic.rs`).** Terminal segments are recognised
+  twice: phase 1 calls `matches_core` for a yes/no verdict (result discarded),
+  phase 2 calls it again to build the `Thm`. The regex tactic's `Plan`/word are
+  not threaded through the CFG plan, so the winning regex derivation is rebuilt.
+- **Word flattening.** Conclusion words are rule-shaped `cat`/`cons`/`nil`
+  trees, not flattened cons-lists (inherited from the regex stratum). The tactic
+  extracts terminal words from `Matches` conclusions (`matches_word`) rather than
+  a shared word helper.
 - **First-class grammar values.** `Derives` is per-env (grammar baked into the
   clause set); a reified `g : set (prod nat (list sym))` with one
   grammar-independent rule set + `monotone` (à la `metalogic::database`) is the

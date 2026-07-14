@@ -96,7 +96,7 @@ pub fn prove_extensionality() -> Result<EvalThm> {
     let f = h.var("f", fun.clone());
     let fx = h.app(f.clone(), h.var("x", a.clone()))?;
     let lam = h.lam("x", a, fx); // λx. f x
-    let eta = EvalThm::eta_conv(lam)?; // ⊢ (λx. f x) = f
+    let eta = h.eta_conv(lam)?; // ⊢ (λx. f x) = f
     h.all_intro(eta, "f", fun) // ⊢ ∀f. (λx. f x) = f
 }
 
@@ -144,12 +144,11 @@ fn surjective_of(h: &NativeHol, nat: &HolType, f: Term) -> Result<Term> {
     h.forall("y", nat.clone(), exists_x)
 }
 
-/// `¬p` via the `not` *connective* — matching how the article negates
-/// `surjective` (`Data.Bool.~`), so the δ-normal forms agree. (Building
-/// `imp(p, F)` directly would δ-unfold to a different, `not`-wrapper-free
-/// shape.)
+/// `¬p` via the `not` *connective* ([`Hol::not`]) — matching how the article
+/// negates `surjective` (`Data.Bool.~`), so the δ-normal forms agree. (Building
+/// `imp(p, F)` directly would δ-unfold to a different, `not`-wrapper-free shape.)
 fn not_of(h: &NativeHol, p: Term) -> Result<Term> {
-    h.app(defs::not(), p)
+    h.not(p)
 }
 
 /// `⊢ ¬(surjective succ)` (the `not` connective form).

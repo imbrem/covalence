@@ -7,6 +7,38 @@ Fills the "CFG stratum (headline next step)" entry of
 three-design judge panel; the losing designs' verified corpus probes are folded
 in below.
 
+## Wrap-up status (2026-07-14) — what's built vs. designed-not-built
+
+**Built + green** (M0–M6, this branch): the neutral CFG IR, the binary metalogic
+engine, `GrammarEnv`/`Derives_E` + family soundness + the two-phase parsing
+tactic, the SpecTec→`Cfg<u8>` lowering (under-approx `lower()` + recognition-mode
+`lower_recognition()`), and **LEB128 *recognition*** — `⊢ Derives_E ⌜Bu32⌝ w` on
+real WASM varints, `*idx` family unlocked, cross-checked vs the `leb128_regex`
+oracle (`tests/cfg_grammar.rs`).
+
+**Designed, not yet built** (was mid-flight at wrap-up):
+
+- **LEB128 *value* decode** — `leb128_decode : list u8 → nat` + a round-trip
+  theorem (atoms.md's "binary: LEB128"). ORTHOGONAL to the recognition work;
+  belongs on `init::nat_binary`/`nat_bits_iso` (LSB-group-first 7-bit fold),
+  ultimately in a `covalence-numerals` crate per
+  [`../kernel/literals/numeral-literals-api.md`](../kernel/literals/numeral-literals-api.md).
+- **The layered trait API** (maintainer directive): high-level SpecTec-shaped
+  APIs implemented by traits, delegating down to a reusable mid-level, bottoming
+  out at HOL-omega, so low-level rewrites don't disturb high-level callers. The
+  mid-level should align with the K work's shared **term-rewrite relation in
+  `metalogic::rewrite`** (see the K API-layering memory / K vision note) rather
+  than diverging. A design workflow (4-probe understand → 2 proposals → judge
+  synthesis) was in progress and was stopped for this wrap-up; re-run or resume
+  `wasm-layered-api-design` to produce the final layer stack + first slice.
+- **Full WASM parse**: value-coupled `ListN` vectors (need a value-producing
+  parser, not just a recognizer), grammar-valued params (`Blist`/`Bsection_`
+  `BX`), `Bname` utf8, sections, `Bmodule`.
+- **Spec ingestion + version lattice**: relations/typing/reduction (`wasm/relation`),
+  `Dec` metafunctions, the WASM 1.0/2.0 dumps (validated, staged in
+  `~/tmp/spectec-dumps`, not embedded) + `1.0 ⊆ 2.0 ⊆ 3.0` env-transport
+  metatheorems (see §"Version lattice" below).
+
 Zero TCB growth: everything here is init-layer / lib-crate untrusted driver
 code; the kernel re-checks every construction. Lowering bugs cost
 faithfulness/completeness, never soundness.

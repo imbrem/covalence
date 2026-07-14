@@ -590,15 +590,32 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
             }
         }
 
+        // A hypothesis is acceptable if it matches a declared hypothesis, OR
+        // if it is the conclusion of a tracked axiom. Axioms are introduced as
+        // hypothesis-tracked `assume`s (`{ax} ⊢ ax`), so a theorem that uses an
+        // axiom legitimately carries the axiom term as a hypothesis; the
+        // article's declared hyp list does not (in OpenTheory axioms are
+        // hyp-free theorems). Tolerating axiom conclusions keeps the honest
+        // "verified relative to these assumptions" reading.
+        let axiom_concls: Vec<K::Term> = self
+            .kernel
+            .get_axioms()
+            .into_iter()
+            .map(|a| self.kernel.concl(a))
+            .collect();
+
         let th_hyps = self.kernel.hyps(th.clone());
         for hyp in &th_hyps {
-            if !expected_hyps
+            let matches_declared = expected_hyps
                 .iter()
-                .any(|e| self.kernel.aconv(hyp.clone(), e.clone()))
-            {
-                return Err(OtError::ParseError(
-                    "thm: unexpected hypothesis in theorem".into(),
-                ));
+                .any(|e| self.kernel.aconv(hyp.clone(), e.clone()));
+            let matches_axiom = axiom_concls
+                .iter()
+                .any(|a| self.kernel.aconv(hyp.clone(), a.clone()));
+            if !matches_declared && !matches_axiom {
+                return Err(OtError::ParseError(format!(
+                    "thm: unexpected hypothesis in theorem: {hyp:?}"
+                )));
             }
         }
         self.theorems.push(th);

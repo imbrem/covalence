@@ -834,7 +834,29 @@ impl HolLightKernel for NativeOt {
 
     fn mk_const_validated(&mut self, name: NameId, ty: Type) -> Result<Term, HolError> {
         match self.consts.get(&name) {
-            None => Err(HolError::UnknownConstant(name)),
+            None => {
+                // `select` is OpenTheory's only polymorphic primitive constant
+                // (type `(α → bool) → α`). Any *undefined* constant of exactly
+                // that shape must be it — articles never declare an opaque
+                // constant of their own, so this is sound and name-agnostic
+                // (the corpus writes it bare as `"select"`).
+                if Self::select_elem(&ty).is_some() {
+                    // Register at the *general* type `(A → bool) → A` so later
+                    // uses at other instances resolve, then instantiate to `ty`.
+                    let a = Type::tfree("A");
+                    let gen_ty = Type::fun(Type::fun(a.clone(), Type::bool()), a.clone());
+                    self.consts.insert(
+                        name,
+                        ConstEntry {
+                            term: Term::select_op(a),
+                            ty: gen_ty,
+                        },
+                    );
+                    self.mk_const_validated(name, ty)
+                } else {
+                    Err(HolError::UnknownConstant(name))
+                }
+            }
             Some(e) => {
                 if e.ty == ty {
                     Ok(e.term.clone())

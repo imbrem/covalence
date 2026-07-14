@@ -26,6 +26,9 @@ covalence-object = { path = "../../vcs/object" }
 covalence-store = { path = "../../store/core", features = ["memory"] }
 covalence-shell = { path = "../../kernel/shell" }
 covalence-repl = { path = "../../app/repl" }
+# TEMPORARY / THROWAWAY DEMO: native `/api/lisp` + `/api/forsp` REPL endpoints.
+covalence-lisp = { path = "../../lang/lisp", features = ["hol"] }
+covalence-forsp = { path = "../../lang/forsp" }
 covalence-init = { path = "../../kernel/hol/init" }
 covalence-core = { path = "../../kernel/hol/core" }
 covalence-metamath = { path = "../../proof/metamath" }

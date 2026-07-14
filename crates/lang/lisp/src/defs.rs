@@ -28,7 +28,7 @@
 //! and `beta_conv` are all existing sound primitives.
 
 use std::collections::BTreeMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use covalence_core::subst;
 use covalence_hol_eval::EvalThm as Thm;
@@ -61,11 +61,12 @@ pub struct LispDef {
 }
 
 /// The `name → definition` dictionary threaded through a session. Cheap to
-/// clone (an `Rc` over the map) so a fresh [`LispSemantics`](crate::semantics::LispSemantics)
-/// can be rebuilt per cell.
+/// clone (an `Arc` over the map) so a fresh [`LispSemantics`](crate::semantics::LispSemantics)
+/// can be rebuilt per cell. `Arc` (not `Rc`) so a `Session` is `Send + Sync` and
+/// can be held server-side (the `/api/lisp` persistent-session demo).
 #[derive(Clone, Default)]
 pub struct Defs {
-    map: Rc<BTreeMap<String, LispDef>>,
+    map: Arc<BTreeMap<String, LispDef>>,
 }
 
 impl Defs {
@@ -100,7 +101,7 @@ impl Defs {
     pub fn with(&self, def: LispDef) -> Self {
         let mut map = (*self.map).clone();
         map.insert(def.name.clone(), def);
-        Defs { map: Rc::new(map) }
+        Defs { map: Arc::new(map) }
     }
 
     /// Iterate over the definitions (name → def).

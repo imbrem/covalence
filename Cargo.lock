@@ -1216,6 +1216,7 @@ dependencies = [
  "covalence-init",
  "covalence-repl-core",
  "covalence-sexp",
+ "covalence-types",
  "thiserror 2.0.18",
 ]
 
@@ -1427,9 +1428,11 @@ version = "0.0.0"
 dependencies = [
  "axum",
  "covalence-core",
+ "covalence-forsp",
  "covalence-git",
  "covalence-hash",
  "covalence-init",
+ "covalence-lisp",
  "covalence-metamath",
  "covalence-object",
  "covalence-proto",

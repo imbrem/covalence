@@ -375,6 +375,10 @@
       "to": "covalence-sexp"
     },
     {
+      "from": "covalence-lisp",
+      "to": "covalence-types"
+    },
+    {
       "from": "covalence-llm",
       "to": "covalence-proto"
     },
@@ -556,6 +560,10 @@
     },
     {
       "from": "covalence-serve",
+      "to": "covalence-forsp"
+    },
+    {
+      "from": "covalence-serve",
       "to": "covalence-git"
     },
     {
@@ -565,6 +573,10 @@
     {
       "from": "covalence-serve",
       "to": "covalence-init"
+    },
+    {
+      "from": "covalence-serve",
+      "to": "covalence-lisp"
     },
     {
       "from": "covalence-serve",

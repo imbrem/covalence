@@ -42,6 +42,9 @@ pub mod defs;
 pub mod semantics;
 
 #[cfg(feature = "hol")]
+pub mod int_backend;
+
+#[cfg(feature = "hol")]
 pub mod relation;
 
 #[cfg(feature = "hol")]

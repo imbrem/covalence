@@ -1,8 +1,9 @@
 # Skeletons — `covalence-init/src/metalogic`
 
 Open work in the **metalogic** layer: the generic `Derivable_L` engine, databases
-as HOL values, and Metamath import/replay. See `CLAUDE.md` § Skeletons, the
-[crate index](../../SKELETONS.md), and the [root index](../../../../../../SKELETONS.md).
+as HOL values, and Metamath import/replay + composition. See `CLAUDE.md` §
+Skeletons, the [crate index](../../SKELETONS.md), and the
+[root index](../../../../../../SKELETONS.md).
 Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
 
 ## Severe
@@ -24,32 +25,16 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
 
 ## Minor
 
-- **`replay_prop` rejects compressed proofs.** The general `replay_db` path
-  decompresses via `metamath::proof_steps`, but the Prop-specific
-  `mm_replay::replay_prop` still accepts only `Proof::Normal`. Route it through
-  `proof_steps` (or retire it in favour of `replay_db`).
-- **Tie the Rust `RuleSet` to a first-class HOL `Database` value.** `mm_database`'s
-  rule set is a Rust closure, not yet a HOL `db` value à la `database.rs`'s
-  `Derivable_DB`.
-- **`DbSession` composition over the `.mm` (`Φ=nat`) encoding.** `mm_compose::DbSession`
-  composes `Derivable_DB db` theorems (axiom-intro + modus ponens + non-axiom
-  derivation) in the reified-**prop** `Φ⟨bool⟩` world. The `.mm` importer
-  (`mm_database::replay_db`) produces the *other* encoding (`Derivable_L` over a
-  `RuleSet`, `Φ=nat`); composing imported set.mm theorems the same way needs a
-  modus-ponens theorem at the generic `RuleSet` level (today `derivable_db_mp`
-  is database-value-specific) — or the "tie Rust `RuleSet` to a HOL `Database`
-  value" item below, which would let `DbSession` wrap a real imported database.
-- **`DbSession` schema/rule application beyond MP.** `DbSession::mp` is the
-  concrete modus-ponens instance; a general `apply(rule, floats, premises)` that
-  instantiates an arbitrary database rule's clause (`Thm::all_elim` over the
-  metavars, `imp_elim` over the essential premises) is not built — MP is the only
-  reified rule so far.
 - **Lift scoped `L' ⊆ L` to full `L`.** `derive_theorem` yields `Derivable_L'`;
   `transport_db` monotonicity can lift it to `Derivable_L` but is not auto-applied.
+  (`MmSession::apply`/`theorem` already share the *full-db* `L`, so composites
+  built with the session need no lifting; this is only for the scoped fast path.)
 - **Typecodes & `$d` over-approximated** (sound for construct direction): clauses
   quantify each metavar over all of `Φ`, not the typecode sub-language; `$d`
-  disjointness unenforced. Per-step replay re-checks each instance, so witnesses
-  stay genuine.
+  disjointness unenforced. `MmSession::apply` inherits this — it does NOT check
+  `$d` or the float-witness typecode; a `$d`-violating composite is a genuine HOL
+  theorem but not a valid Metamath proof. Per-step replay re-checks each instance,
+  so replayed witnesses stay genuine. Sound-by-design for the existence direction.
 - **Per-logic denotation** for `project`ing a finished `Derivable_L` to a concrete
   fact — not built.
 - **Declarations-only load + prove-on-demand.** Parse keeping only declarations
@@ -64,12 +49,6 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
   frontend (namespacing, tactics) with set.mm FFI kept as the mirror-principle
   check; two-phase definitions-first import; import instrumentation
   (inference/memory counters); definition/dependency-graph explorer.
-- **`mm_import.rs` `temp_import_set_mm_broad` `#[ignore]`d "TEMP" sweep** — retire
-  or keep as the standing COV_SET_MM broad-verify harness.
-- **`mm_database.rs` `repro_bj1` `#[ignore]`d repro** — kept as a COV_SET_MM-gated
-  regression for the bj-1 namespacing fix; fold into the gated sweep or delete.
-  (The other `#[ignore]`s in `mm_import.rs`/`mm_database.rs` are intentional
-  env-gated set.mm (~48 MB, not vendored) / benchmark harnesses, not deferred work.)
 
 ## North stars (design only — do NOT build)
 
@@ -79,12 +58,23 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
   **category of databases** (objects = databases, morphisms = `⟹_σ`, `⊑` the
   sub-order; monotonicity/transport as functoriality) as a `crate::algebra::category`
   instance.
-- **`Metamath-L ≅ native-L`** (§5.6) — lift a concrete `metamath::Database` into a
-  HOL `Database` value; needs the `∃ValidProof ⟺ impredicative` bridge + a
-  representation-equivalence metatheorem.
+- **`Metamath-L ≅ native-L`** (§5.6). The **composition** side is now built:
+  `MmSession` (`apply_rule`) applies an imported database's rules directly over the
+  `Φ=nat` `RuleSet` — no HOL `Database` *value* needed for that. What remains is a
+  *representation-equivalence metatheorem* (relate the `RuleSet`-derivability of an
+  imported db to the `Derivable_DB` of a first-class HOL `Database` value à la
+  `database.rs`), which needs the `∃ValidProof ⟺ impredicative` bridge. This is a
+  theorem-stating goal only — the composition API does not depend on it.
 - **Full `#logic` directive wiring** into the `.cov`/surface compiler (§5.6).
 
 ## Notes
 
-- No `unsafe` (project rule). Every relation theorem is kernel-proved and genuine;
-  tests assert hypothesis-freeness. No postulates.
+- No `unsafe` (project rule). Every relation/composition theorem is kernel-proved
+  and genuine; tests assert hypothesis-freeness. No postulates. `apply_rule`,
+  `MmSession`, and the `Derivable_DB`/replay paths all build only from existing
+  kernel rules + engine helpers (`derive_via_closed`, `nth_conjunct`, `all_elim`,
+  `imp_elim`, `and_intro`).
+- The env-gated `#[ignore]`s in `mm_import.rs`/`mm_database.rs` (`scan_failures`,
+  `import_set_mm_sample`, `replay_set_mm_bj1`, `bench_derive_theorem`,
+  `measure_dedup`) are intentional set.mm (~48 MB, not vendored) / benchmark
+  harnesses, not deferred work.

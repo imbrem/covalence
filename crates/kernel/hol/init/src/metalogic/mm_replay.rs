@@ -54,7 +54,7 @@ use covalence_hol_eval::EvalThm as Thm;
 
 use crate::init::prop;
 use crate::metamath::expr::{body_of, typecode_of};
-use crate::metamath::{Assertion, Database, Expr, Proof, Statement};
+use crate::metamath::{Assertion, Database, Expr, Statement};
 
 // ============================================================================
 // Errors
@@ -187,39 +187,62 @@ enum Slot {
 /// any **essential hypotheses** of the assertion appear as the theorem's
 /// hypotheses `Derivable_Prop ⌜hyp⌝ ⊢ Derivable_Prop ⌜S⌝`.
 pub fn replay_prop(db: &Database, assertion: &Assertion) -> Result<Thm> {
-    let labels = match assertion.proof.as_ref() {
-        Some(Proof::Normal(labels)) => labels,
-        Some(Proof::Compressed { .. }) => {
-            return Err(replay_err(
-                "compressed-proof replay is not supported (decompress to a normal proof first)",
-            ));
-        }
-        None => return Err(replay_err("assertion has no proof to replay")),
-    };
+    if assertion.proof.is_none() {
+        return Err(replay_err("assertion has no proof to replay"));
+    }
+    // Decode BOTH proof encodings (normal + compressed) to the uniform
+    // `ProofStep` sequence — a compressed proof's `Z`-saves / heap
+    // back-references drive a `Slot` heap alongside the stack, so a re-used
+    // sub-proof is a cheap `Slot`-clone re-push (its sharing preserved, no
+    // exponential re-expansion), exactly as `mm_database::replay_db` does.
+    let steps = crate::metamath::proof_steps(db, assertion)
+        .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
 
     let mut vars = VarIndex::new();
     let mut stack: Vec<Slot> = Vec::new();
+    let mut heap: Vec<Slot> = Vec::new();
 
-    for label in labels {
-        let stmt = db
-            .statement_by_label(label)
-            .ok_or_else(|| replay_err(format!("unknown proof label `{label}`")))?;
-        match stmt {
-            Statement::Float(f) => {
-                // `$f wff <var>` — push the encoded variable wff.
-                stack.push(Slot::Wff(prop::p_var_lit(vars.index(&f.var))));
+    for step in &steps {
+        match step {
+            crate::metamath::ProofStep::Label(label) => {
+                let stmt = db
+                    .statement_by_label(label)
+                    .ok_or_else(|| replay_err(format!("unknown proof label `{label}`")))?;
+                match stmt {
+                    Statement::Float(f) => {
+                        // `$f wff <var>` — push the encoded variable wff.
+                        stack.push(Slot::Wff(prop::p_var_lit(vars.index(&f.var))));
+                    }
+                    Statement::Essential(h) => {
+                        // `$e |- <hyp>` — a hypothesis. Its derivability is
+                        // *assumed*; it appears as a hypothesis of the final
+                        // theorem.
+                        let form = parse_prov(&h.expr, &mut vars)?;
+                        let thm = Thm::assume(prop::derivable(&form)?)?;
+                        stack.push(Slot::Proved { form, thm });
+                    }
+                    Statement::Assert(target) => {
+                        apply(target, label, &mut stack)?;
+                    }
+                    _ => return Err(replay_err(format!("label `{label}` is not applicable"))),
+                }
             }
-            Statement::Essential(h) => {
-                // `$e |- <hyp>` — a hypothesis. Its derivability is *assumed*;
-                // it appears as a hypothesis of the final theorem.
-                let form = parse_prov(&h.expr, &mut vars)?;
-                let thm = Thm::assume(prop::derivable(&form)?)?;
-                stack.push(Slot::Proved { form, thm });
+            crate::metamath::ProofStep::Save => {
+                // `Z` — clone the top of stack onto the sharing heap.
+                let top = stack
+                    .last()
+                    .ok_or_else(|| replay_err("`Z` save with an empty stack"))?
+                    .clone();
+                heap.push(top);
             }
-            Statement::Assert(target) => {
-                apply(target, label, &mut stack)?;
+            crate::metamath::ProofStep::Heap(idx) => {
+                // Re-push a saved sub-result: a cheap clone, never a recompute.
+                let slot = heap
+                    .get(*idx)
+                    .ok_or_else(|| replay_err(format!("heap backreference {idx} out of range")))?
+                    .clone();
+                stack.push(slot);
             }
-            _ => return Err(replay_err(format!("label `{label}` is not applicable"))),
         }
     }
 
@@ -454,6 +477,34 @@ mod tests {
         assert!(thm.hyps().is_empty(), "ax2i replay must be hypothesis-free");
 
         // Its conclusion is `Derivable_Prop ⌜S⌝` for the parsed conclusion `S`.
+        let expected = parse_prov(&a.conclusion, &mut VarIndex::new()).unwrap();
+        assert_eq!(thm.concl(), &prop::derivable(&expected).unwrap());
+    }
+
+    /// **Compressed-proof replay** (the cleanup): the *same* `ax2i` theorem, now
+    /// with a **compressed** proof `( ax-2 ) ABAC` (mandatory floats wph=1, wps=2;
+    /// label-block `ax-2`=3; the proof is `wph wps wph ax-2` = `A B A C`). Before
+    /// routing `replay_prop` through `proof_steps`, this errored ("compressed-proof
+    /// replay is not supported"); now it decodes and replays like the normal form,
+    /// yielding the identical hypothesis-free `⊢ Derivable_Prop ⌜S⌝`.
+    #[test]
+    fn replay_ax2i_compressed() {
+        let src = format!(
+            "{}\n\
+            ax2i $p |- ( ( ph -> ( ps -> ph ) ) -> ( ( ph -> ps ) -> ( ph -> ph ) ) ) $=\n\
+              ( ax-2 ) ABAC $.\n",
+            prop_src()
+        );
+        let db = crate::metamath::parse(&src).unwrap();
+        // The engine accepts the *compressed* proof (untrusted input).
+        assert_eq!(crate::metamath::verify_all(&db).unwrap(), 1);
+
+        let a = db.assertions().find(|a| a.label == "ax2i").unwrap();
+        let thm = replay_prop(&db, a).unwrap();
+        assert!(
+            thm.hyps().is_empty(),
+            "compressed ax2i replay must be hypothesis-free"
+        );
         let expected = parse_prov(&a.conclusion, &mut VarIndex::new()).unwrap();
         assert_eq!(thm.concl(), &prop::derivable(&expected).unwrap());
     }

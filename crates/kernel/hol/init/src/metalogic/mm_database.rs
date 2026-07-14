@@ -1340,23 +1340,10 @@ fn derive_clause(
 mod tests {
     use super::*;
 
-    #[test]
-    #[ignore = "repro bj-1"]
-    fn repro_bj1() {
-        let path = std::env::var("COV_SET_MM").expect("COV_SET_MM");
-        let source = std::fs::read_to_string(&path).expect("read set.mm");
-        let db = crate::metamath::parse(&source).expect("set.mm parses");
-        let parser = Parser::new(&db);
-        let a = db.assertions().find(|a| a.label == "bj-1").expect("bj-1");
-        let thm = derive_theorem_with(&db, &parser, "bj-1").expect("replay bj-1");
-        let rs = rule_set(&db);
-        let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
-        if thm.concl() != &expected {
-            eprintln!("PROOF-BUILT:\n{:#?}", thm.concl());
-            eprintln!("ENCODE_EXPR:\n{:#?}", expected);
-        }
-        assert_eq!(thm.concl(), &expected, "bj-1 concl mismatch");
-    }
+    // (Retired: `repro_bj1` — a COV_SET_MM-gated bj-1 repro — was redundant with
+    // `replay_set_mm_bj1` below, which env-gates the same real-set.mm bj-1 replay.
+    // The vendored `replay_nesting_former_bj1_shape` covers the shape without the
+    // 48 MB set.mm.)
 
     /// **Regression for the `bj-1` mismatch** (a *nesting* syntactic former).
     ///

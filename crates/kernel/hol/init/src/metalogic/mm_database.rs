@@ -120,6 +120,25 @@ fn concat(a: Term, b: Term) -> Result<Term> {
     concat_fn().apply(a)?.apply(b)
 }
 
+/// **Public accessor** — the free-term-algebra carrier `Φ = nat`. Exposed so the
+/// [`super::mm_algebra::FreeAlgebra`] backend can report `phi()` without
+/// duplicating the constant.
+pub fn phi_ty() -> Type {
+    phi()
+}
+
+/// **Public accessor** — `concat(a, b)`, the uninterpreted binary former.
+/// The [`super::mm_algebra::FreeAlgebra`] `app` delegates here.
+pub fn concat_node(a: Term, b: Term) -> Result<Term> {
+    concat(a, b)
+}
+
+/// **Public accessor** — the leaf resolver ([`leaf`]) for a database token.
+/// The [`super::mm_algebra::FreeAlgebra`] `sym` delegates here.
+pub fn leaf_of(db: &Database, tok: &str) -> Term {
+    leaf(db, tok)
+}
+
 /// The HOL free-variable name for a Metamath **metavariable** `tok`. Namespaced
 /// (`mm$v$<tok>`) so it can never collide with the impredicative engine's own
 /// reserved variable name `d` (the predicate `d : Φ→bool` in

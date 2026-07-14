@@ -19,15 +19,42 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
   `g := λn. var(succ n) ∧ var n` (structure-DEEPENING) and `g := λn. ¬(var n)`.
   Non-vacuity is structural, not a leaf index: `σ_g⌜var 0⌝ = ⌜var(succ 0) ∧ var 0⌝`
   has an `and` ROOT former, so `σ_g` lives strictly outside the whole
-  depth-preserving renaming family (`sigma_subst_moves_and_deepens` asserts
-  `≠ ⌜var 0⌝` AND `≠ σ_succ⌜var 0⌝`). What remains: (a) TIER 2 — a **cross-rule-set
-  non-identity `σ`** on `transport_db` over the **MM-import** `Φ=nat` carrier
-  (`mm_database`/K/wasm), needing the encoding reified as an inductive `MmExpr`
-  (`sym(nat) | app(Rec,Rec)`) with a catamorphic recursor (church.rs backend); an
-  OPAQUE whole-judgement `σ` (prefix-tag/retag/inject) could land on `Φ=nat` now
-  without `MmExpr` and is the right next slice; (b) TIER 3 — a genuine CROSS-SYSTEM
-  `σ` (K→Metamath first; Dedukti/LF as universal target for Lean/Coq). Design:
-  `notes/vibes/logics/structural-sigma-transport.md`.
+  depth-preserving renaming family.
+
+  **TIER 2a landed (`mm_algebra.rs`):** the MM-import encoding is now REIFIED as a
+  genuine inductive `MmExpr := sym(nat) | app(Rec,Rec)` via `ImpredicativeBackend`
+  (the `MmAlgebra`/`MmRecursor` trait tower rung + two impls `FreeAlgebra` /
+  `MmExprAlgebra`). A structural leaf-renaming `σ` is built by catamorphism
+  (`structural_sigma` = `rec_app([λc. sym(succ c), app])`) and its app-homomorphism
+  `⊢ ∀X Y. σ(app X Y) = app(σX)(σY)` is proved DIRECTLY from the `comp` law
+  (unconditional, hypothesis-free). The insulation acid-test runs one high-level op
+  UNCHANGED on both backends.
+
+  **What TIER 2a does NOT close (still open):**
+  1. **σ is `Φ_dom → Φ_obs`, not an endomorphism `Φ → Φ`.** The catamorphism folds
+     the carrier at `'r := Φ_obs` down to `Φ_obs = MmExpr⟨nat⟩` (a fixed
+     observation instance); an endomorphism `C → C` is not rank-1 expressible.
+     `transport_db::transport` wants `σ : Φ → Φ` on ONE carrier, so the structural
+     `MmExpr` σ does not yet plug in.
+  2. **Carrier migration.** The live `mm_database`/K encoders produce `Φ=nat`
+     free-algebra terms; `MmExpr` is the Church carrier. Firing `transport_db`
+     across two REAL rule sets with an `MmExpr` σ needs `replay_db` re-encoded onto
+     `MmExpr` (`MmExprAlgebra::encode` exists as a host-side re-lift, but the import
+     hot path is untouched) — `check_same_carrier` rejects `nat` vs `MmExpr`.
+  3. **`Wf`-preservation-by-induction** (`⊢ ∀t. Wf t ⟹ Wf(σ t)`) is NOT proved:
+     `induct`/`mem_ctor` are over the polymorphic carrier while σ is `Φ_dom →
+     Φ_obs`, so `λt. Wf(σ t)` does not typecheck against the induction carrier
+     without an observation-instance `induct` the church backend does not expose.
+     Deferred (the app-hom, needing only `comp`, lands).
+- **L5 `DerivationInterp` — K matching-logic → Metamath instance not built
+  (`interp.rs`).** The `DerivationSystem`/`DerivationInterp` traits + a Metamath
+  `DerivationSystem` shim landed; `interpret()` delegates to
+  `transport_db::transport` (the σ=id monotonicity result re-instantiates through
+  it, via the now-public `transport_db::id_clause_sims`). A concrete K→Metamath
+  `DerivationInterp` needs an honest structural σ (the endomorphism blocker above),
+  per-KORE-rule `clause_sims` (real Metamath simulation proofs), and the carrier
+  migration. Deferred. Design: `notes/vibes/logics/derivation-system-interp.md`.
+
 - **HOL→ZFC-scale transport** (`Derivable_HOL ⟹ Derivable_ZFC ∘ σ`) — the
   north-star instance; needs structural-`σ` above + concrete HOL/ZFC rule sets.
   Not built.
@@ -84,9 +111,12 @@ Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
 
 - No `unsafe` (project rule). Every relation/composition theorem is kernel-proved
   and genuine; tests assert hypothesis-freeness. No postulates. `apply_rule`,
-  `MmSession`, and the `Derivable_DB`/replay paths all build only from existing
+  `MmSession`, the `Derivable_DB`/replay paths, AND the `mm_algebra`
+  (`MmExprAlgebra`) reification (`sym`/`app`/σ/app-hom) all build only from existing
   kernel rules + engine helpers (`derive_via_closed`, `nth_conjunct`, `all_elim`,
-  `imp_elim`, `and_intro`).
+  `imp_elim`, `and_intro`, `comp`, `rec_app`, `beta_nf`, `trans`, `all_intro`). The
+  `mm_algebra`/`interp` trait tower is additive — no edit to `mm_database`/K/wasm or
+  the import hot path.
 - The env-gated `#[ignore]`s in `mm_import.rs`/`mm_database.rs` (`scan_failures`,
   `import_set_mm_sample`, `replay_set_mm_bj1`, `bench_derive_theorem`,
   `measure_dedup`) are intentional set.mm (~48 MB, not vendored) / benchmark

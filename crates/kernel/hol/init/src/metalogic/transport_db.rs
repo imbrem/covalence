@@ -159,21 +159,196 @@ fn beta_reduce_consequent_under_forall(thm: Thm, a: &Term, pred: &Term, a_ty: Ty
     inst.rewrite(&beta)?.all_intro("A", a_ty) // ⊢ ∀A. P A ⟹ Derivable(tgt, σ A)
 }
 
+// ============================================================================
+// The σ = id conservative-extension path, exposed publicly (the reusable L5
+// building block: `interp::DerivationInterp` for `T ⊇ S` instantiates these).
+// ============================================================================
+
+use crate::init::ext::ThmExt;
+use crate::metalogic::mm_database::{ClauseInfo, clause_infos, rule_set};
+use crate::metalogic::{closed_for_var, conj, conj_thms, nth_conjunct};
+use crate::metamath::Database;
+
+/// The identity translation `σ := λx. x` on the carrier `Φ = nat`.
+pub fn id_sigma() -> Term {
+    let x = Term::free("__x", ClauseInfo::phi());
+    Term::abs(ClauseInfo::phi(), covalence_core::subst::close(&x, "__x"))
+}
+
+/// Build the `clause_sims` for the **σ = id, T ⊇ S** case: for each source `|-`
+/// clause `k`, prove the statement `src`'s rule set lays out at
+/// `d := sigma_pred(tgt, id)` by routing the `σ`-image premises through the
+/// *corresponding* target clause (byte-identical, since `T ⊇ S`).
+///
+/// This is exactly what [`transport`] consumes for the conservative-extension /
+/// monotonicity theorem `⊢ ∀A. Derivable_S A ⟹ Derivable_T (id A)`. Exposed so
+/// the L5 [`super::interp::DerivationInterp`] can instantiate it for any `T ⊇ S`
+/// Metamath database pair without duplicating the proof.
+///
+/// `tgt_db` must extend `src_db` (every source `|-` label is a target `|-`
+/// label with a byte-identical clause).
+pub fn id_clause_sims(src_db: &Database, tgt_db: &Database) -> Vec<Thm> {
+    let tgt_rs = rule_set(tgt_db);
+    let id = id_sigma();
+    let pred = sigma_pred(&tgt_rs, &id).unwrap();
+    let pred_apply = |x: &Term| pred.clone().apply(x.clone());
+
+    let (src_infos, src_index) = clause_infos(src_db);
+    let (_tgt_infos, tgt_index) = clause_infos(tgt_db);
+    let mut src_labels: Vec<String> = vec![String::new(); src_infos.len()];
+    for (label, &k) in &src_index {
+        src_labels[k] = label.clone();
+    }
+    let n_tgt = tgt_index.len();
+
+    src_infos
+        .iter()
+        .enumerate()
+        .map(|(k, info)| {
+            let j = *tgt_index
+                .get(&src_labels[k])
+                .expect("T extends S: every S clause label is a T clause label");
+            simulate_via_target_clause(&tgt_rs, &pred_apply, info, j, n_tgt)
+        })
+        .collect()
+}
+
+/// Prove source clause `info` at `d := pred` by routing through target clause
+/// `j` (of `n_tgt`). `pred = λx. Derivable(tgt, id x)`; `info`'s encodings are
+/// byte-identical to target clause `j`'s (T ⊇ S, σ = id).
+fn simulate_via_target_clause(
+    tgt_rs: &RuleSet,
+    pred_apply: &dyn Fn(&Term) -> Result<Term>,
+    info: &ClauseInfo,
+    j: usize,
+    n_tgt: usize,
+) -> Thm {
+    let phi = ClauseInfo::phi();
+    let d_prime = tgt_rs.d_var();
+    let closed_t = closed_for_var(tgt_rs).unwrap();
+    let assumed_closed = Thm::assume(closed_t.clone()).unwrap();
+
+    let mut pred_ess_terms = Vec::new();
+    let mut d_prime_ess = Vec::new();
+    for e in &info.ess_encs {
+        let pred_e = pred_apply(e).unwrap();
+        pred_ess_terms.push(pred_e.clone());
+        let assume_pred_e = Thm::assume(pred_e.clone()).unwrap();
+        let beta = Thm::beta_conv(pred_e.clone()).unwrap();
+        let der_id_e = beta.eq_mp(assume_pred_e).unwrap();
+        let der_e = rewrite_id_arg(tgt_rs, der_id_e, e);
+        let d_e = der_e
+            .all_elim(d_prime.clone())
+            .unwrap()
+            .imp_elim(assumed_closed.clone())
+            .unwrap();
+        d_prime_ess.push(d_e);
+    }
+
+    let mut clause = nth_conjunct(assumed_closed.clone(), j, n_tgt).unwrap();
+    for v in &info.float_vars {
+        clause = clause
+            .all_elim(Term::free(
+                crate::metalogic::mm_database::mv(v),
+                phi.clone(),
+            ))
+            .unwrap();
+    }
+    let d_concl = if d_prime_ess.is_empty() {
+        clause
+    } else {
+        clause.imp_elim(conj_thms(d_prime_ess).unwrap()).unwrap()
+    };
+
+    let der_concl = d_concl
+        .imp_intro(&closed_t)
+        .unwrap()
+        .all_intro("d", tgt_rs.pred_ty())
+        .unwrap();
+
+    let pred_concl = pred_apply(&info.concl_enc).unwrap();
+    let der_concl_id = rewrite_arg_to_id(tgt_rs, der_concl, &info.concl_enc);
+    let beta_concl = Thm::beta_conv(pred_concl.clone()).unwrap();
+    let pred_concl_thm = beta_concl.sym().unwrap().eq_mp(der_concl_id).unwrap();
+
+    let body = if pred_ess_terms.is_empty() {
+        pred_concl_thm
+    } else {
+        let conj_ante = conj(pred_ess_terms).unwrap();
+        discharge_conj_antecedent(pred_concl_thm, &conj_ante)
+    };
+
+    let mut out = body;
+    for v in info.float_vars.iter().rev() {
+        out = out
+            .all_intro(&crate::metalogic::mm_database::mv(v), phi.clone())
+            .unwrap();
+    }
+    out
+}
+
+/// Given `Γ ⊢ q` whose hypotheses include each conjunct of `ante`, return
+/// `Γ' ⊢ ante ⟹ q` with the individual conjunct hypotheses replaced by the
+/// single conjunction.
+fn discharge_conj_antecedent(q_thm: Thm, ante: &Term) -> Thm {
+    let assume_ante = Thm::assume(ante.clone()).unwrap();
+    let conjuncts = split_conjunction(&assume_ante);
+    let mut acc = q_thm;
+    for c in &conjuncts {
+        let h = c.concl().clone();
+        acc = acc.imp_intro(&h).unwrap().imp_elim(c.clone()).unwrap();
+    }
+    acc.imp_intro(ante).unwrap()
+}
+
+/// Split `{ante} ⊢ c₀ ∧ (c₁ ∧ …)` into `[{ante} ⊢ c₀, {ante} ⊢ c₁, …]`.
+fn split_conjunction(thm: &Thm) -> Vec<Thm> {
+    let mut out = Vec::new();
+    let mut cur = thm.clone();
+    loop {
+        let is_conj = {
+            let c = cur.concl();
+            c.as_app()
+                .and_then(|(f, _)| f.as_app())
+                .map(|(op, _)| format!("{op}").contains("bool.and"))
+                .unwrap_or(false)
+        };
+        if is_conj {
+            out.push(cur.clone().and_elim_l().unwrap());
+            cur = cur.and_elim_r().unwrap();
+        } else {
+            out.push(cur);
+            break;
+        }
+    }
+    out
+}
+
+/// `Γ ⊢ Derivable(tgt, id e)` → `Γ ⊢ Derivable(tgt, e)` (`id e = e` by β).
+fn rewrite_id_arg(tgt_rs: &RuleSet, thm: Thm, e: &Term) -> Thm {
+    let id = id_sigma();
+    let id_e = id.apply(e.clone()).unwrap();
+    let beta = Thm::beta_conv(id_e).unwrap();
+    let _ = tgt_rs;
+    thm.rewrite(&beta).unwrap()
+}
+
+/// `Γ ⊢ Derivable(tgt, e)` → `Γ ⊢ Derivable(tgt, id e)` (reverse of above).
+fn rewrite_arg_to_id(tgt_rs: &RuleSet, thm: Thm, e: &Term) -> Thm {
+    let id = id_sigma();
+    let id_e = id.apply(e.clone()).unwrap();
+    let beta = Thm::beta_conv(id_e).unwrap();
+    let _ = tgt_rs;
+    thm.rewrite(&beta.sym().unwrap()).unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metalogic::mm_database::{ClauseInfo, clause_infos, rule_set};
-    use crate::metalogic::{closed_for_var, conj, conj_thms, nth_conjunct};
-    use crate::metamath::{Database, parse, verify_all};
+    use crate::metamath::{parse, verify_all};
 
     fn assert_genuine(thm: &Thm) {
         assert!(thm.hyps().is_empty(), "theorem is hypothesis-free");
-    }
-
-    /// The identity translation `σ := λx. x` on the carrier `Φ = nat`.
-    fn id_sigma() -> Term {
-        let x = Term::free("__x", ClauseInfo::phi());
-        Term::abs(ClauseInfo::phi(), covalence_core::subst::close(&x, "__x"))
     }
 
     // ---- the two databases: T extends S (same signature, one extra axiom) ----
@@ -214,202 +389,6 @@ mod tests {
           ax-mp $a |- ps $.
         $}
     ";
-
-    /// Build the `clause_sims` for the **σ = id, T ⊇ S** case: for each source
-    /// `|-` clause `k`, prove the statement `src`'s rule set lays out at
-    /// `d := sigma_pred(tgt, id)` by routing the `σ`-image premises through the
-    /// *corresponding* target clause (which is byte-identical, since `T ⊇ S`).
-    ///
-    /// The proof of one clause (free metavars `vᵢ`):
-    ///   * the clause body is `(⋀ d(essᵢ)) ⟹ d(concl)` with
-    ///     `d X = Derivable(tgt, id X)` (β, then `id X = X` by β again);
-    ///   * assume each `d(essᵢ)`, β-reduce to `Derivable(tgt, essᵢ)`;
-    ///   * derive `Derivable(tgt, concl)` via the target clause `j` (open
-    ///     `∀d'. Closed_T d' ⟹ d' …`, pull conjunct `j`, `all_elim` the metavars,
-    ///     feed the premise conjunction) — the impredicative derivation
-    ///     constructor;
-    ///   * β-expand `Derivable(tgt, concl)` back to `d(concl)`, discharge the
-    ///     antecedent, re-`∀` the metavars.
-    fn id_clause_sims(src_db: &Database, tgt_db: &Database) -> Vec<Thm> {
-        let tgt_rs = rule_set(tgt_db);
-        let id = id_sigma();
-        let pred = sigma_pred(&tgt_rs, &id).unwrap();
-        let pred_apply = |x: &Term| pred.clone().apply(x.clone());
-
-        let (src_infos, src_index) = clause_infos(src_db);
-        let (_tgt_infos, tgt_index) = clause_infos(tgt_db);
-        // The `|-` assertion labels in source-clause order.
-        let mut src_labels: Vec<String> = vec![String::new(); src_infos.len()];
-        for (label, &k) in &src_index {
-            src_labels[k] = label.clone();
-        }
-        let n_tgt = tgt_index.len();
-
-        src_infos
-            .iter()
-            .enumerate()
-            .map(|(k, info)| {
-                // The target clause index for the SAME assertion label.
-                let j = *tgt_index
-                    .get(&src_labels[k])
-                    .expect("T extends S: every S clause label is a T clause label");
-                simulate_via_target_clause(&tgt_rs, &pred_apply, info, j, n_tgt)
-            })
-            .collect()
-    }
-
-    /// Prove source clause `info` at `d := pred` by routing through target clause
-    /// `j` (of `n_tgt`). `pred = λx. Derivable(tgt, id x)`; `info`'s encodings are
-    /// byte-identical to target clause `j`'s (T ⊇ S, σ = id).
-    fn simulate_via_target_clause(
-        tgt_rs: &RuleSet,
-        pred_apply: &dyn Fn(&Term) -> Result<Term>,
-        info: &ClauseInfo,
-        j: usize,
-        n_tgt: usize,
-    ) -> Thm {
-        // Free metavariables (the ∀-binders); they appear free in the encodings.
-        let phi = ClauseInfo::phi();
-
-        // The target rule set's predicate var `d'` and its `Closed_T d'`.
-        let d_prime = tgt_rs.d_var();
-        let closed_t = closed_for_var(tgt_rs).unwrap();
-        let assumed_closed = Thm::assume(closed_t.clone()).unwrap(); // {Closed_T d'} ⊢ Closed_T d'
-
-        // For each essential premise eᵢ: assume `pred(eᵢ)`, β-reduce to
-        // `Derivable(tgt, eᵢ)`, then turn into `d' eᵢ` under `Closed_T d'`.
-        let mut pred_ess_terms = Vec::new(); // the `pred(eᵢ)` antecedent terms
-        let mut d_prime_ess = Vec::new(); // {Closed_T d', pred(eᵢ)} ⊢ d' eᵢ
-        for e in &info.ess_encs {
-            let pred_e = pred_apply(e).unwrap(); // (λx. Der(tgt, id x)) eᵢ
-            pred_ess_terms.push(pred_e.clone());
-            let assume_pred_e = Thm::assume(pred_e.clone()).unwrap(); // {pred eᵢ} ⊢ pred eᵢ
-            // β: pred eᵢ = Derivable(tgt, id eᵢ).
-            let beta = Thm::beta_conv(pred_e.clone()).unwrap();
-            let der_id_e = beta.eq_mp(assume_pred_e).unwrap(); // {pred eᵢ} ⊢ Der(tgt, id eᵢ)
-            // id eᵢ = eᵢ : rewrite the carried formula to eᵢ.
-            let der_e = rewrite_id_arg(tgt_rs, der_id_e, e); // {pred eᵢ} ⊢ Der(tgt, eᵢ)
-            // Der(tgt, eᵢ) is `∀d'. Closed_T d' ⟹ d' eᵢ`; instantiate at d', MP.
-            let d_e = der_e
-                .all_elim(d_prime.clone())
-                .unwrap()
-                .imp_elim(assumed_closed.clone())
-                .unwrap(); // {Closed_T d', pred eᵢ} ⊢ d' eᵢ
-            d_prime_ess.push(d_e);
-        }
-
-        // Pull target clause j, specialise its metavars, feed premises → d' concl.
-        let mut clause = nth_conjunct(assumed_closed.clone(), j, n_tgt).unwrap();
-        for v in &info.float_vars {
-            clause = clause
-                .all_elim(Term::free(
-                    crate::metalogic::mm_database::mv(v),
-                    phi.clone(),
-                ))
-                .unwrap();
-        }
-        let d_concl = if d_prime_ess.is_empty() {
-            clause // {Closed_T d'} ⊢ d' concl
-        } else {
-            clause.imp_elim(conj_thms(d_prime_ess).unwrap()).unwrap() // {Closed_T d', pred(essᵢ)…} ⊢ d' concl
-        };
-
-        // Discharge Closed_T d', generalise d' ⟹ Derivable(tgt, concl).
-        let der_concl = d_concl
-            .imp_intro(&closed_t)
-            .unwrap()
-            .all_intro("d", tgt_rs.pred_ty())
-            .unwrap(); // {pred(essᵢ)…} ⊢ Derivable(tgt, concl)
-
-        // β-expand `Derivable(tgt, concl)` back to `pred(concl)` (= id concl path).
-        let pred_concl = pred_apply(&info.concl_enc).unwrap();
-        let der_concl_id = rewrite_arg_to_id(tgt_rs, der_concl, &info.concl_enc); // ⊢ Der(tgt, id concl)
-        let beta_concl = Thm::beta_conv(pred_concl.clone()).unwrap(); // ⊢ pred concl = Der(tgt, id concl)
-        let pred_concl_thm = beta_concl.sym().unwrap().eq_mp(der_concl_id).unwrap(); // {pred(essᵢ)…} ⊢ pred concl
-
-        // Discharge the premise conjunction (if any), re-∀ the metavars.
-        let body = if pred_ess_terms.is_empty() {
-            pred_concl_thm
-        } else {
-            let conj_ante = conj(pred_ess_terms).unwrap();
-            // Re-split the assumed conjunction from `conj_ante` is implicit: the
-            // hypotheses are the individual `pred(eᵢ)`; introduce the conjunction
-            // by assuming it, projecting, and discharging.
-            discharge_conj_antecedent(pred_concl_thm, &conj_ante)
-        };
-
-        let mut out = body;
-        for v in info.float_vars.iter().rev() {
-            out = out
-                .all_intro(&crate::metalogic::mm_database::mv(v), phi.clone())
-                .unwrap();
-        }
-        out
-    }
-
-    /// Given `Γ ⊢ q` whose hypotheses include each conjunct of `ante`
-    /// (`c₀ ∧ (c₁ ∧ …)`), return `Γ' ⊢ ante ⟹ q` with the individual conjunct
-    /// hypotheses replaced by the single conjunction: assume `ante`, split it into
-    /// its conjuncts, cut each matching hypothesis of `q_thm`, then `imp_intro ante`.
-    fn discharge_conj_antecedent(q_thm: Thm, ante: &Term) -> Thm {
-        // Assume the conjunction, split into the individual conjuncts, and use
-        // them to discharge `q_thm`'s matching hypotheses via `imp`/`MP`.
-        let assume_ante = Thm::assume(ante.clone()).unwrap(); // {ante} ⊢ ante
-        let conjuncts = split_conjunction(&assume_ante);
-        // Discharge each conjunct hypothesis of `q_thm` by cut: imp_intro then
-        // imp_elim with the conjunct.
-        let mut acc = q_thm;
-        for c in &conjuncts {
-            let h = c.concl().clone();
-            acc = acc.imp_intro(&h).unwrap().imp_elim(c.clone()).unwrap();
-        }
-        acc.imp_intro(ante).unwrap()
-    }
-
-    /// Split `{ante} ⊢ c₀ ∧ (c₁ ∧ …)` into `[{ante} ⊢ c₀, {ante} ⊢ c₁, …]`.
-    fn split_conjunction(thm: &Thm) -> Vec<Thm> {
-        let mut out = Vec::new();
-        let mut cur = thm.clone();
-        loop {
-            // If the conclusion is a conjunction, peel the left and recurse right.
-            let is_conj = {
-                let c = cur.concl();
-                c.as_app()
-                    .and_then(|(f, _)| f.as_app())
-                    .map(|(op, _)| format!("{op}").contains("bool.and"))
-                    .unwrap_or(false)
-            };
-            if is_conj {
-                out.push(cur.clone().and_elim_l().unwrap());
-                cur = cur.and_elim_r().unwrap();
-            } else {
-                out.push(cur);
-                break;
-            }
-        }
-        out
-    }
-
-    /// `Γ ⊢ Derivable(tgt, id e)` → `Γ ⊢ Derivable(tgt, e)` (`id e = e` by β).
-    fn rewrite_id_arg(tgt_rs: &RuleSet, thm: Thm, e: &Term) -> Thm {
-        let id = id_sigma();
-        let id_e = id.apply(e.clone()).unwrap();
-        let beta = Thm::beta_conv(id_e).unwrap(); // ⊢ id e = e
-        // The conclusion `Derivable(tgt, id e)` mentions `id e`; rewrite to `e`.
-        let _ = tgt_rs;
-        use crate::init::ext::ThmExt;
-        thm.rewrite(&beta).unwrap()
-    }
-
-    /// `Γ ⊢ Derivable(tgt, e)` → `Γ ⊢ Derivable(tgt, id e)` (reverse of above).
-    fn rewrite_arg_to_id(tgt_rs: &RuleSet, thm: Thm, e: &Term) -> Thm {
-        let id = id_sigma();
-        let id_e = id.apply(e.clone()).unwrap();
-        let beta = Thm::beta_conv(id_e).unwrap(); // ⊢ id e = e
-        let _ = tgt_rs;
-        use crate::init::ext::ThmExt;
-        thm.rewrite(&beta.sym().unwrap()).unwrap()
-    }
 
     /// Derive `⊢ Derivable(rs, concl[v := args])` for the premise-free axiom
     /// clause `info` (index `k` of `n`), returning the theorem and the encoded

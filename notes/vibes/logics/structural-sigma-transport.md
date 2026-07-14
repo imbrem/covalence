@@ -220,6 +220,89 @@ closed terms (a mistyped `g` fails `type_of`, not soundness).
 `.inst("sigma", …)` + `.imp_elim(…)`. No new kernel rules, no postulates, no TCB
 edit.
 
+## TIER 2a — inductive `MmExpr` reified (bundle + structural σ + app-hom, carrier not yet migrated)
+
+*Landed in `crates/kernel/hol/init/src/metalogic/mm_algebra.rs`.* This is the
+first genuine reification of the MM-import encoding as an **inductive datatype**
+with a **catamorphic recursor**, and the first structural σ + app-homomorphism on
+that carrier — but NOT yet transport firing across two real rule sets (the
+carrier-migration blocker remains).
+
+### The trait tower rung (L3), and the two impls
+
+`MmAlgebra` is the L3 insulation boundary — "a reified Metamath-expression algebra
+over an opaque HOL carrier Φ": `phi`/`sym`/`app`/`encode` +
+`structural_sigma`/`sigma_app_hom` + `caps`. It is object-safe (returns bare core
+`Term`/`Thm`; Φ is a runtime `fn phi()->Type` value, NOT an associated type — so
+`&dyn MmAlgebra` works). The recursor surface (`rec_app`/`comp`/`induct`/`mem`/
+`mem_ctor`) lives on a SEPARATE `MmRecursor: MmAlgebra` companion, because only the
+inductive backend can honestly implement it. Two impls of the core trait:
+
+- **`FreeAlgebra(&Database)`** — the recursor-free `Φ=nat` free algebra
+  (`mm_database` `concat`/`leaf`/`Parser::encode_expr`). `structural_sigma` is an
+  OPAQUE identity wrap (no recursor over `concat`), `sigma_app_hom` returns `Err`,
+  `caps().structural = false`. The honest degenerate second impl.
+- **`MmExprAlgebra`** — the genuine inductive `MmExpr := sym(nat) | app(Rec,Rec)`,
+  realized by `ImpredicativeBackend::realize` (byte-identical in shape to the
+  `btree` conformance spec that already passes). `caps().structural = true`.
+
+Because BOTH implement the core trait with the same signature, the **insulation
+acid-test** is real: one high-level op `encode_pair(alg, db, e1, e2) = alg.app(alg.
+encode(db,e1), alg.encode(db,e2))` runs UNCHANGED on both backends, each returning
+a well-typed Φ-term of its own carrier (`nat` vs the Church `MmExpr`). A swap of the
+low-level encoding leaves the high-level code untouched.
+
+### The reification: `MmExpr` bundle
+
+`ImpredicativeBackend::realize(&NativeHol, &mmexpr_spec())` yields the opaque Church
+carrier `MmExpr⟨'r⟩ = (nat→'r)→('r→'r→'r)→'r`, `mem` (= `Wf`), `ctors = [sym, app]`,
+and `facts`: `rec_app`, `comp(steps,0/1)`, `induct`, `distinct`, `mem_ctor`,
+`injective` at the external `sym`-code position. NOT available (rank-1 wall):
+injectivity at `app`'s Rec positions, `prec_app`, decode. All hypothesis-free:
+`sym : nat→MmExpr`, `app : MmExpr→MmExpr→MmExpr`, `distinct(0,1)` fires, both `comp`
+laws fire.
+
+### The structural σ and its app-homomorphism (the headline)
+
+`structural_sigma(leaf_map)` is the catamorphism `λt. rec_app([λc. sym(leaf_map c),
+app], t)`. **The rank-1 subtlety (important):** a catamorphism *to the carrier
+itself* is NOT expressible — an endomorphism `C → C` would need `C = MmExpr⟨C⟩`
+(infinite), and `comp`'s result type must not mention `'r`. So the fold targets a
+**fixed observation instance** `Φ_obs := MmExpr⟨nat⟩`, giving `σ : Φ_dom → Φ_obs`
+with `Φ_dom = MmExpr⟨Φ_obs⟩` (the domain at `'r := Φ_obs`, whose handler slots
+`nat→Φ_obs` / `Φ_obs→Φ_obs→Φ_obs` match the steps). This is exactly the plan's
+risk-1 fallback (state σ at a fixed observation `'r`, as `church.rs`'s
+`injective`/`distinct` do).
+
+The **app-homomorphism** `⊢ ∀X Y. σ(app_dom X Y) = app_obs (σ X)(σ Y)` is proved
+DIRECTLY: `σ u ≡β rec steps u`, and `rec steps (app l r) ≡β step_app (rec l)(rec r)`
+by pure β (this IS `comp(steps,1)`, since the church `app`'s fold applies the
+`app`-handler to the folds of its children). Both sides `beta_nf` to the same term,
+so the proof is `beta_nf` both sides + `trans` + two `all_intro`s — the identical
+spine `relations_sigma` uses at `Φ⟨bool⟩`. **UNCONDITIONAL** (no `Wf` guard), hence
+non-vacuous. `sigma_moves_a_term` witnesses `σ(sym_dom 0) = sym_obs(succ 0) ≠
+sym_obs 0`, so σ ≠ id.
+
+### What TIER 2a does NOT close
+
+1. **σ is not an endomorphism** (`Φ_dom → Φ_obs`), so it does not plug into
+   `transport_db::transport` (which wants `σ : Φ → Φ` on one carrier).
+2. **Carrier migration.** The live `mm_database`/K encoders emit `Φ=nat`; `MmExpr`
+   is the Church carrier. `MmExprAlgebra::encode` re-lifts a `Φ=nat` tree onto
+   `MmExpr` host-side, but `replay_db` / the import hot path are untouched, and
+   `check_same_carrier` rejects `nat` vs `MmExpr`. So transport actually firing
+   with a structural `MmExpr` σ across two `RuleSet`s does NOT land.
+3. **`Wf`-preservation-by-induction** is deferred: `induct`/`mem_ctor` are over the
+   polymorphic carrier while σ is `Φ_dom → Φ_obs`, so `λt. Wf(σ t)` does not
+   typecheck against the induction carrier without an observation-instance `induct`
+   the church backend does not expose. The app-hom (needing only `comp`) lands; the
+   induction (needing a matched carrier) does not.
+
+So TIER 2a delivers: the trait tower rung + two impls + the `MmExpr` bundle + the
+structural σ + the app-homomorphism-by-`comp` + the non-vacuity witness + the
+insulation acid-test. It does NOT re-state transport over `MmExpr` or fire it
+across rule sets. See also `notes/vibes/logics/derivation-system-interp.md`.
+
 ## Honest scope — what is *not* claimed
 
 - This is **"transport demonstrated at real structural σ (renaming + intra-carrier

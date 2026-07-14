@@ -91,6 +91,20 @@ pub mod relations;
 // first discharge of transport's `σ_hom` premise off `σ = id`.
 pub mod relations_sigma;
 
+// **L3 — the reified Metamath-expression algebra** (`notes/vibes/logics/
+// derivation-system-interp.md`): the `MmAlgebra` insulation trait + two impls
+// (`FreeAlgebra` recursor-free `Φ=nat`; `MmExprAlgebra` genuine inductive
+// `MmExpr := sym(nat) | app(Rec, Rec)` realized via `ImpredicativeBackend`).
+// `structural_sigma` catamorphism + `sigma_app_hom`-by-`comp` on `MmExpr`; the
+// acid-test op runs UNCHANGED on both backends (encoding-swap insulation).
+pub mod mm_algebra;
+
+// **L5 — the derivation-system interpretation mid-level API**: `DerivationSystem`
+// (each system supplies `rule_set` + `algebra`) + `DerivationInterp` (σ +
+// per-rule `clause_sims`, `interpret()` delegating to `transport_db::transport`).
+// The K matching-logic → Metamath cross-system bridge is one (deferred) instance.
+pub mod interp;
+
 // **Generic interpretation/transport between Metamath-database logics**
 // (`notes/vibes/metatheory.md`, "relate formal systems"): `transport` proves
 // `Derivable_L1 ⟹ Derivable_L2 ∘ σ` ONCE via `rule_induction` (predicate

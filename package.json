@@ -42,6 +42,7 @@
     "build:python": "cd crates/ffi/python && source activate.sh && maturin develop",
     "test:python": "cd crates/ffi/python && source activate.sh && pytest tests/ -v",
     "test:ui": "bun run --filter covalence-ui test",
+    "test:web": "bun run --filter covalence-web test",
     "test:wasm-js": "bun run --filter covalence-wasm-js test",
     "build:wasm-build-guest": "cargo build --target wasm32-unknown-unknown --release -p covalence-wasm-build-guest && cp target/wasm32-unknown-unknown/release/covalence_wasm_build_guest.wasm packages/covalence-wasm-js/src/__fixtures__/build_guest.wasm",
     "tcb": "bun scripts/tcb-audit.mjs"

@@ -327,6 +327,99 @@ impl Database {
         Ok(self)
     }
 
+    /// Rename every **symbol** of the database through `f`, leaving labels,
+    /// proofs, and structure untouched. The result is an *isomorphic copy*
+    /// under the symbol map (the renaming metatheorem, see [`crate::interpret`]):
+    /// substitution, frame computation, and `$d` checking all commute with a
+    /// symbol renaming, so every proof that verifies against `self` verifies
+    /// verbatim against the renamed database and vice versa — provided `f` is
+    /// **injective on the declared symbols** and preserves kind (constant vs
+    /// variable). Both are checked; a collision is an error.
+    ///
+    /// This is the whole-database primitive; [`crate::interpret`] uses the same
+    /// [`crate::expr::map_symbols`] on individual assertions to compare a
+    /// σ-image statement against a witness without rebuilding a database.
+    pub fn map_symbols(&self, f: &dyn Fn(&str) -> String) -> Result<Database, MmError> {
+        let rename_expr = |e: &Expr| {
+            Expr::new(
+                f(e.typecode()),
+                e.body().iter().map(|s| f(s).into()).collect(),
+            )
+        };
+        let rename_float = |h: &FloatHyp| FloatHyp {
+            label: h.label.clone(),
+            typecode: f(&h.typecode),
+            var: f(&h.var),
+        };
+        let rename_ess = |h: &Hypothesis| Hypothesis {
+            label: h.label.clone(),
+            expr: rename_expr(&h.expr),
+        };
+        let rename_pairs = |ps: &[(String, String)]| -> Vec<(String, String)> {
+            ps.iter().map(|(a, b)| (f(a), f(b))).collect()
+        };
+        let rename_frame = |fr: &Frame| Frame {
+            floats: fr.floats.iter().map(rename_float).collect(),
+            essentials: fr.essentials.iter().map(rename_ess).collect(),
+            disjoints: rename_pairs(&fr.disjoints),
+        };
+
+        // Symbols map: check injectivity + kind consistency.
+        let mut symbols: FnvHashMap<String, bool> = FnvHashMap::default();
+        for (name, is_var) in &self.symbols {
+            let renamed = f(name);
+            match symbols.insert(renamed.clone(), *is_var) {
+                Some(prev) if prev != *is_var => {
+                    return Err(MmError::Parse(format!(
+                        "symbol renaming collides on `{renamed}` (constant and variable)"
+                    )));
+                }
+                Some(_) => {
+                    return Err(MmError::Parse(format!(
+                        "symbol renaming is not injective: two symbols map to `{renamed}`"
+                    )));
+                }
+                None => {}
+            }
+        }
+
+        let statements = self
+            .statements
+            .iter()
+            .map(|s| match s {
+                Statement::Constant(ns) => Statement::Constant(ns.iter().map(|n| f(n)).collect()),
+                Statement::Variable(ns) => Statement::Variable(ns.iter().map(|n| f(n)).collect()),
+                Statement::Float(h) => Statement::Float(rename_float(h)),
+                Statement::Essential(h) => Statement::Essential(rename_ess(h)),
+                Statement::Disjoint(vs) => Statement::Disjoint(vs.iter().map(|v| f(v)).collect()),
+                Statement::Assert(a) => Statement::Assert(Assertion {
+                    label: a.label.clone(),
+                    conclusion: rename_expr(&a.conclusion),
+                    frame: rename_frame(&a.frame),
+                    proof: a.proof.clone(),
+                    scope_disjoints: rename_pairs(&a.scope_disjoints),
+                }),
+            })
+            .collect();
+
+        let scopes = self
+            .scopes
+            .iter()
+            .map(|sc| Scope {
+                floats: sc.floats.iter().map(rename_float).collect(),
+                essentials: sc.essentials.iter().map(rename_ess).collect(),
+                disjoints: rename_pairs(&sc.disjoints),
+            })
+            .collect();
+
+        Ok(Database {
+            symbols,
+            statements,
+            labels: self.labels.clone(),
+            scopes,
+        })
+    }
+
     // --- frame computation -------------------------------------------------
 
     /// Compute the mandatory frame for an assertion with the given conclusion.

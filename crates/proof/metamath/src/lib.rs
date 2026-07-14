@@ -64,6 +64,7 @@ pub mod axioms;
 pub mod database;
 pub mod error;
 pub mod expr;
+pub mod interpret;
 pub mod parse;
 pub mod subst;
 pub mod typesetting;
@@ -79,6 +80,10 @@ pub use database::{
 };
 pub use error::MmError;
 pub use expr::{Expr, Symbol, TYPECODE_POS, body_of, expr_symbols, typecode_of};
+pub use interpret::{
+    Coverage, InterpError, InterpretationCert, TransportedTheorem, check_interpretation,
+    interpretation_coverage,
+};
 pub use parse::{
     FileResolver, MemoryResolver, SourceResolver, parse, parse_into, parse_into_with_resolver,
     parse_with_resolver,

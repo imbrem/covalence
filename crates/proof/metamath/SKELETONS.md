@@ -7,6 +7,26 @@ reader, the lower HOL-free crate). Consumer-side bridge deferrals (`#logic` /
 [`peano/SKELETONS.md`](../../kernel/hol/init/src/peano/SKELETONS.md)). See repo
 [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the [root index](../../../SKELETONS.md).
 
+## Axiom-set / interpretation metatheory (`axioms.rs`, `interpret.rs`)
+
+- **Definitional-extension conservativity.** `check_implication` / interpretation
+  *admit* `df-*` definitions (reported, not discharged): the reals result is
+  "reals ⊆ ZFC **+ definitions**". A metatheorem that a definitional extension
+  is conservative (each `df-*` eliminable) would discharge them. Includes
+  definition unfolding/renaming as statement transformers.
+- **Derived-witness bridges.** Implication/interpretation witnesses are existing
+  `tgt` assertions with an *identical* statement. The 3 unmatched core IZF
+  axioms (`ax-coll`/`ax-setind`/`ax-iinf`, see `tests/interpret.rs`) need a
+  witness that is a small `tgt` *proof* (collection from replacement, set
+  induction from foundation), not an existing same-statement assertion.
+- **α / `$d`-variant statement matching.** `same_statement` requires syntactic
+  equality of conclusion+essentials. Same-schema-up-to-bound-variable-renaming
+  and `$d`-reshaping witnesses are rejected; would widen witness auto-search.
+- **Kernel-level transport.** `Implication`/`InterpretationCert` are Rust-checked
+  certificates (untrusted tooling), not kernel `⊢ Derivable_A ⌜S⌝ ⟹
+  Derivable_B ⌜σS⌝` theorems. Reifying them via the metalogic engine is the
+  `transport_db` structural-σ program (`covalence-init` metalogic SKELETONS).
+
 ## Deferred features (north stars)
 
 - **HOL-backed `DatabaseSink` over an arbitrary database.** A HOL

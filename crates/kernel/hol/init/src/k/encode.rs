@@ -72,6 +72,12 @@ pub fn app(a: Term, b: Term) -> Result<Term> {
     app_fn().apply(a)?.apply(b)
 }
 
+/// The `app` combinator itself (`k$app : Φ→Φ→Φ`) — the one the
+/// [`crate::metalogic::rewrite::RewriteRelation`] congruence clauses range over.
+pub fn app_combinator() -> Term {
+    app_fn()
+}
+
 /// A KORE **symbol / atom** constant `k$c$<name> : nat`.
 pub fn con(name: impl AsRef<str>) -> Term {
     Term::free(format!("k$c${}", name.as_ref()), phi())

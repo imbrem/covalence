@@ -292,18 +292,19 @@ fn module(input: &mut &str) -> ModalResult<KModule> {
             Some("syntax") => {
                 // Lenient: a production we can't parse (K's unquoted-terminal /
                 // mixfix forms beyond our grammar fragment) is skipped, not fatal,
-                // so a real `.k` still yields its rules.
+                // so a real `.k` still yields its rules. A parse that stops
+                // *mid-sentence* (partial success, e.g. `separated` giving up at a
+                // `|` before an unparseable alternative) is also treated as a skip.
                 let mut probe = *input;
                 match syntax_sentence(&mut probe) {
-                    Ok(Some(decl)) => {
+                    Ok(decl) if at_sentence_boundary(probe) => {
                         *input = probe;
-                        syntax.push(decl);
+                        match decl {
+                            Some(d) => syntax.push(d),
+                            None => skipped_sentences += 1,
+                        }
                     }
-                    Ok(None) => {
-                        *input = probe;
-                        skipped_sentences += 1;
-                    }
-                    Err(_) => {
+                    _ => {
                         skip_sentence(input)?;
                         skipped_sentences += 1;
                     }

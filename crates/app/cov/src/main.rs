@@ -30,6 +30,8 @@ fn main() {
 
         #[cfg(all(feature = "hol", not(target_family = "wasm")))]
         Some(cmd::Command::Hol(args)) => cmd::hol::run(args),
+        #[cfg(all(feature = "k", not(target_family = "wasm")))]
+        Some(cmd::Command::K(args)) => cmd::k::run(args),
 
         #[cfg(feature = "lsp")]
         Some(cmd::Command::Lsp(args)) => cmd::lsp::run(args),

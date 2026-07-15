@@ -4,6 +4,8 @@ use clap::Subcommand;
 pub mod cog;
 #[cfg(all(feature = "hol", not(target_family = "wasm")))]
 pub mod hol;
+#[cfg(all(feature = "k", not(target_family = "wasm")))]
+pub mod k;
 #[cfg(feature = "lsp")]
 pub mod lsp;
 #[cfg(feature = "repl")]
@@ -20,6 +22,10 @@ pub enum Command {
     /// HOL Light kernel
     #[cfg(all(feature = "hol", not(target_family = "wasm")))]
     Hol(hol::HolArgs),
+
+    /// K framework: reduce K programs (kernel-checked)
+    #[cfg(all(feature = "k", not(target_family = "wasm")))]
+    K(k::KArgs),
 
     /// Start the LSP server
     #[cfg(feature = "lsp")]

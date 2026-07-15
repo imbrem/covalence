@@ -251,6 +251,16 @@ mirror from `wasm-spec.md`, replayed for K.
   lowering with the swappable `SortResolver` strategy for imported builtin sorts.
   Parses the real **LAMBDA and IMP** tutorial grammars (vendored BSD-3). See the
   `.k`-source subsection above.
+- **Landed (the end-to-end reducer, 2026-07-15/16):** the full layered stack —
+  **`metalogic::rewrite`** (reusable mid-level: generic `app`-congruence + a
+  swappable `Matcher` trait + a fuel `normalize` driver → `⊢ Reduces`),
+  **`k::rewrite::KReducer`** (K-shaped, delegates to the mid layer),
+  **`kdef` rule parsing** (`rule LHS => RHS` prefix fragment + `RuleTerm`→`Pattern`
+  bridge), and **`k::session::KSession`** (the narrow-waist API, peer of
+  `MmSession`/Lisp). `KSession::from_source(.k).reduce(program)` mints a
+  hypothesis-free `⊢ Reduces program nf`. Demos from `.k` source: PEANO, K
+  tutorial Lesson 1.2, boolean simplification (`examples/k-demo/`,
+  `tests/k_demo.rs`, `cov k demo`). The next rung is the hook/cell/binder ladder.
 - **Landed (F2 — multi-step reduction):** `covalence-init::k::relation` — K
   reduction as a *genuine relation* on the binary inductive engine
   (`metalogic::binary::RuleSet2`, the same engine the CFG stratum and the merged

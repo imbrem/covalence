@@ -47,16 +47,29 @@ function. The trait layer adds no kernel rules. Re-pointing `wasm::relation::der
 at `metalogic::apply::apply_rule`, or swapping the `Φ=nat` encoding, is invisible
 to `Fragment` callers — the layering goal.
 
-## Basic WASM semantics (the acceptance demo)
+## Basic WASM semantics (the acceptance demos)
 
 Derived kernel-checked, hypothesis-free, through `RelationEnv`
 (`spectec/relation.rs` tests):
 
-- **Value typing** — `Num_ok`: `⊢ S ⊢ CONST(I32, 0) : I32` (cross-checked vs
-  `env.derivable("Num_ok", ⌜J⌝)`).
-- **Reduction** — `Steps/refl`: `⊢ Z; [NOP] ↪* Z; [NOP]` (the reflexive closure
-  of single-step reduction — a genuine, if trivial, operational-semantics step).
+- **Actual instruction reduction** — `Step_pure` (the pure single-step relation
+  `instr* ↪ instr*`): `⊢ [NOP] ↪ []`, `⊢ [UNREACHABLE] ↪ [TRAP]`,
+  `⊢ [v, DROP] ↪ []`. The premise-free rules of `Step_pure` are genuine one-step
+  *executions*, reached through the combined spec env (which keeps the
+  premise-free rules and skips the side-condition ones). This is real WASM
+  operational semantics, not just reflexivity.
+- **Compositional validity typing** — `Valtype_ok/num` premised on `Numtype_ok`,
+  over the combined spec env: `⊢ C ⊢ (num I32) : ok` built by discharging the
+  `⊢ C ⊢ I32 : ok` inductive premise (cross-checked against the independently
+  built `Derivable_Valtype_ok` judgement). Real cross-relation premise
+  composition.
+- **Value typing / reduction closure** — `Num_ok`: `⊢ S ⊢ CONST(I32, 0) : I32`;
+  `Steps/refl`: `⊢ Z; [NOP] ↪* Z; [NOP]`.
 - Whole-spec `RelationEnv::spec(wasm_spec())` lowers 200+ rules with a report.
+
+Every `RelationEnv::derive_exprs(clause_idx, args, premises)` call takes
+**SpecTec expressions** (encoded internally) and rules addressed **by name**
+(`rule_index`) — the ergonomic win over calling `wasm::relation::derive` raw.
 
 ## Why this shape / K reuse
 

@@ -286,6 +286,69 @@ mod tests {
         assert_eq!(super::super::Fragment::n_clauses(&env), 2);
     }
 
+    /// `[e₀, e₁, …]` as a SpecTec instruction sequence expression.
+    fn list(es: Vec<SpecTecExp>) -> SpecTecExp {
+        SpecTecExp::List { es }
+    }
+
+    /// **Basic WASM semantics: actual instruction reduction.** `Step_pure` is
+    /// the pure single-step reduction relation (`instr* ↪ instr*`). Several of
+    /// its rules are premise-free — genuine one-step executions we derive
+    /// through the combined spec env (which keeps the premise-free rules and
+    /// skips the side-condition ones), kernel-checked and hypothesis-free:
+    ///
+    /// - `nop`:         `[NOP] ↪ []`               (fully ground, no metavars)
+    /// - `unreachable`: `[UNREACHABLE] ↪ [TRAP]`   (fully ground)
+    /// - `drop`:        `[v, DROP] ↪ []`           (one metavar, the dropped value)
+    #[test]
+    fn wasm_step_pure_reduction() {
+        let defs = wasm_spec();
+        let env = RelationEnv::spec(&defs);
+
+        // nop: [NOP] ↪ []  — the cleanest real reduction, zero metavars.
+        let nop = env.rule_index(Some("Step_pure"), "nop").expect("nop rule");
+        let thm = env.derive_exprs(nop, &[], vec![]).unwrap();
+        assert!(thm.hyps().is_empty());
+        let nop_judgement = SpecTecExp::Tup {
+            es: vec![list(vec![leaf("NOP")]), list(vec![])],
+        };
+        assert_eq!(
+            thm.concl(),
+            &env.derivable("Step_pure", &nop_judgement).unwrap(),
+            "nop reduces [NOP] to []"
+        );
+
+        // unreachable: [UNREACHABLE] ↪ [TRAP].
+        let unreach = env
+            .rule_index(Some("Step_pure"), "unreachable")
+            .expect("unreachable rule");
+        let thm = env.derive_exprs(unreach, &[], vec![]).unwrap();
+        assert!(thm.hyps().is_empty());
+        assert_eq!(
+            thm.concl(),
+            &env.derivable(
+                "Step_pure",
+                &SpecTecExp::Tup {
+                    es: vec![list(vec![leaf("UNREACHABLE")]), list(vec![leaf("TRAP")])],
+                }
+            )
+            .unwrap()
+        );
+
+        // drop: [v, DROP] ↪ []  — one metavar `val`, instantiated with a const.
+        let drop = env
+            .rule_index(Some("Step_pure"), "drop")
+            .expect("drop rule");
+        let val = SpecTecExp::Case {
+            op: covalence_spectec::ast::MixOp::new(vec!["CONST".to_string()]),
+            e1: Box::new(SpecTecExp::Tup {
+                es: vec![leaf("I32"), leaf("ZERO")],
+            }),
+        };
+        let thm = env.derive_exprs(drop, &[val], vec![]).unwrap();
+        assert!(thm.hyps().is_empty());
+    }
+
     /// **Basic WASM semantics: compositional validity typing.** A `valtype`
     /// that is a numeric type is valid iff that numeric type is valid —
     /// `Valtype_ok/num` has the inductive premise `Numtype_ok`. Over the

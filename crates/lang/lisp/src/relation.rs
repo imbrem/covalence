@@ -33,10 +33,12 @@
 //!
 //! The **primitive fragment** is solid: `car`/`cdr`/`cons` projections,
 //! `atom?`/`consp`/`null?` predicates, `eq?` on *equal* atoms, `cond` (truthy /
-//! falsy clause selection), and one congruence clause per unary elimination
-//! context. β/λ, δ/`defun`, integer literals, `eq?` on distinct atoms, and
-//! congruence *into* `eq?` operands and `cond` tests are the next phase (see
-//! `SKELETONS.md`).
+//! falsy clause selection), one congruence clause per unary elimination
+//! context, and — in the `sector+int` dialect — left/right congruence into the
+//! integer-op operands (so `(+ 1 (+ 2 3))` reduces). β/λ, δ/`defun`, `eq?` on
+//! distinct atoms, and congruence *into* `eq?` operands and `cond` tests are
+//! the next phase (see `SKELETONS.md` and
+//! `notes/vibes/lisp/relational-recursion.md`).
 
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::mk_blob;
@@ -301,7 +303,7 @@ impl LispRel {
     /// | 19 | `∀body rest. Step (cond ((t . body) . rest)) body` |
     ///
     /// In the [`SectorInt`](Dialect::SectorInt) dialect, five more integer
-    /// clauses follow (indices 20–24, in [`IntOp::ALL`] order):
+    /// redex clauses follow (indices 20–24, in [`IntOp::ALL`] order):
     ///
     /// | idx | clause |
     /// |----:|--------|
@@ -310,6 +312,14 @@ impl LispRel {
     /// | 22 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
     /// | 23 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
     /// | 24 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
+    ///
+    /// then ten integer **congruence** clauses (indices 25–34), a left/right
+    /// pair per op in [`IntOp::ALL`] order, so operands reduce in place:
+    ///
+    /// | idx | clause |
+    /// |----:|--------|
+    /// | 25 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
+    /// | 26 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
     ///
     /// (`eq?` on *distinct* atoms is future work — see the builder / SKELETONS.)
     pub fn step_rule_set(&self) -> RuleSet2<'_> {
@@ -480,6 +490,42 @@ impl LispRel {
                             .forall("a", Type::int())?,
                     );
                 }
+
+                // 25–34: congruence into the int-op operands (a left/right
+                // pair per op, in IntOp::ALL order), so nested expressions
+                // like `(+ 1 (+ 2 3))` reduce their operands in place:
+                //   left:  ∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)
+                //   right: ∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)
+                for &op in &IntOp::ALL {
+                    let a = Term::free("a", tau.clone());
+                    let a2 = Term::free("a2", tau.clone());
+                    let b = Term::free("b", tau.clone());
+                    let b2 = Term::free("b2", tau.clone());
+                    // left congruence.
+                    let concl = d(
+                        &be.op_term(op, a.clone(), b.clone()).map_err(to_core)?,
+                        &be.op_term(op, a2.clone(), b.clone()).map_err(to_core)?,
+                    )?;
+                    cs.push(
+                        d(&a, &a2)?
+                            .imp(concl)?
+                            .forall("b", tau.clone())?
+                            .forall("a2", tau.clone())?
+                            .forall("a", tau.clone())?,
+                    );
+                    // right congruence.
+                    let concl = d(
+                        &be.op_term(op, a.clone(), b.clone()).map_err(to_core)?,
+                        &be.op_term(op, a.clone(), b2.clone()).map_err(to_core)?,
+                    )?;
+                    cs.push(
+                        d(&b, &b2)?
+                            .imp(concl)?
+                            .forall("b2", tau.clone())?
+                            .forall("b", tau.clone())?
+                            .forall("a", tau.clone())?,
+                    );
+                }
             }
 
             Ok(cs)
@@ -491,6 +537,14 @@ impl LispRel {
     /// [`IntOp::ALL`] order). Only meaningful when a backend is installed.
     fn int_clause_idx(op: IntOp) -> usize {
         20 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
+    }
+
+    /// The clause index of int op `op`'s **congruence** clause (left = reduce
+    /// the first operand, right = the second) in the `sector+int` `Step` rule
+    /// set: the pairs follow the five redex clauses, in [`IntOp::ALL`] order.
+    fn int_cong_idx(op: IntOp, right: bool) -> usize {
+        let p = IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL");
+        25 + 2 * p + usize::from(right)
     }
 
     /// The number of `Step` clauses.
@@ -616,20 +670,18 @@ impl LispRel {
         if let Some(cells) = self.match_cond(term) {
             return self.step_cond(term, &cells);
         }
-        // Integer op `(op (int a)(int b))` — the `sector+int` dialect only.
-        // In `sector` (no backend) this match never fires, so `(+ 2 2)` is
-        // stuck (as an sexpr free-variable application, no step).
-        if let Some((op, a, b)) = self.match_int_op(term) {
-            return self.step_int(op, &a, &b);
+        // Integer op `(op a b)` — the `sector+int` dialect only. In `sector`
+        // (no backend) this match never fires, so `(+ 2 2)` is stuck (as an
+        // sexpr free-variable application, no step).
+        if let Some((op, a, b)) = self.match_int_app(term) {
+            return self.step_int_app(op, &a, &b);
         }
         Ok(None)
     }
 
-    /// Match an integer redex `(op (int a)(int b))` whose *both* operands are
-    /// already `(int n)` values, returning the op and the two integers.
-    /// (Reducing non-value operands via congruence is future work — like the
-    /// `eq?`-operand case, see `SKELETONS.md`.) `None` in `sector`.
-    fn match_int_op(&self, t: &Term) -> Option<(IntOp, Int, Int)> {
+    /// Match an integer-op application `(op a b)` (operands arbitrary sexpr
+    /// terms), returning the op and the two operand terms. `None` in `sector`.
+    fn match_int_app(&self, t: &Term) -> Option<(IntOp, Term, Term)> {
         let be = self.int_be.as_deref()?;
         let (inner, b_arg) = t.as_app()?;
         let (head, a_arg) = inner.as_app()?;
@@ -637,9 +689,50 @@ impl LispRel {
             .iter()
             .copied()
             .find(|&op| *head == be.op_head(op))?;
-        let a = be.as_lit(a_arg)?;
-        let b = be.as_lit(b_arg)?;
-        Some((op, a, b))
+        Some((op, a_arg.clone(), b_arg.clone()))
+    }
+
+    /// Step an integer-op application `(op a b)`: reduce the left operand
+    /// (left congruence clause), else the right (right congruence clause),
+    /// else — with both operands normal — fire the redex clause if both are
+    /// `(int n)` literals. Anything else is stuck (no step).
+    fn step_int_app(&self, op: IntOp, a: &Term, b: &Term) -> Result<Option<(Term, Thm)>, HolError> {
+        let be = self
+            .int_be
+            .as_deref()
+            .ok_or_else(|| HolError::Theory("step_int_app without an int backend".into()))?;
+        let n = self.step_n_clauses()?;
+        // Left operand steps → left congruence (word args [a, a2, b]).
+        if let Some((a2, sub)) = self.prove_step(a)? {
+            let to = be.op_term(op, a2.clone(), b.clone())?;
+            let thm = derive_mixed(
+                &self.step_rule_set(),
+                Self::int_cong_idx(op, false),
+                n,
+                &[a.clone(), a2, b.clone()],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, thm)));
+        }
+        // Right operand steps → right congruence (word args [a, b, b2]).
+        if let Some((b2, sub)) = self.prove_step(b)? {
+            let to = be.op_term(op, a.clone(), b2.clone())?;
+            let thm = derive_mixed(
+                &self.step_rule_set(),
+                Self::int_cong_idx(op, true),
+                n,
+                &[a.clone(), b.clone(), b2],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, thm)));
+        }
+        // Both operands normal — fire the redex clause on two literals.
+        if let (Some(ia), Some(ib)) = (be.as_lit(a), be.as_lit(b)) {
+            return self.step_int(op, &ia, &ib);
+        }
+        Ok(None)
     }
 
     /// `⊢ Step (op (int a)(int b)) to` for two integer literals: instantiate
@@ -911,7 +1004,7 @@ impl LispRel {
     fn surface_form(&self, items: &[SExpr]) -> Result<Term, HolError> {
         let (head, args) = items
             .split_first()
-            .ok_or_else(|| HolError::Stuck("()".into()))?;
+            .ok_or_else(|| HolError::Stuck("`()` is an empty application (no operator)".into()))?;
         let op = head
             .as_symbol()
             .ok_or_else(|| HolError::Stuck("application head is not a symbol".into()))?;
@@ -973,18 +1066,75 @@ impl LispRel {
                 }
                 self.cond_of(cells)
             }
-            (other, n) => Err(HolError::Stuck(format!(
-                "unknown or misapplied operator `{other}` (arity {n})"
+            // Function definition / abstraction forms: honestly unsupported
+            // here — the relational dialects have no β/δ clauses yet.
+            ("defun" | "define" | "label" | "lambda", _) => Err(HolError::Stuck(format!(
+                "`{op}` needs recursion, which this relational dialect does not \
+                 support yet — switch dialects with `#lang scheme`"
             ))),
+            (other, n) => {
+                let ints = if self.int_be.is_some() {
+                    " + - * <= ="
+                } else {
+                    ""
+                };
+                Err(HolError::Stuck(format!(
+                    "unknown or misapplied operator `{other}` (applied to {n} argument{}) — \
+                     this dialect supports: quote car cdr cons atom? consp null? eq? cond \
+                     if{ints}; `defun`/`lambda` need `#lang scheme`",
+                    if n == 1 { "" } else { "s" }
+                )))
+            }
         }
     }
 
-    /// Drive a surface form to a value: compile it, then run the step relation
-    /// (fuel-bounded), returning the value term and `⊢ Reduces input value`
+    /// Is `t` a **value** of the relation: an `(int n)` literal (int dialect),
+    /// an atom, `snil`/`nil`, or a cons of values?
+    pub fn is_value(&self, t: &Term) -> bool {
+        if let Some(be) = self.int_be.as_deref()
+            && be.as_lit(t).is_some()
+        {
+            return true;
+        }
+        if self.is_snil(t) || self.as_atom(t).is_some() {
+            return true;
+        }
+        if let Some((h, tl)) = self.as_scons(t) {
+            return self.is_value(&h) && self.is_value(&tl);
+        }
+        false
+    }
+
+    /// Drive a surface form to a **value**: compile it, run the step relation
+    /// (fuel-bounded), and return the value term and `⊢ Reduces input value`
     /// (hypothesis-free for a closed program).
+    ///
+    /// **Honesty guard:** if the fuel runs out, or the final term is *not* a
+    /// value (see [`is_value`](Self::is_value)) — a stuck non-redex — this
+    /// returns a clean `Err` instead of surfacing the raw kernel term as if it
+    /// were a result. (The partial `⊢ Reduces` theorem is still genuine; it
+    /// just does not end at a value, so nothing is printed.)
     pub fn reduce_surface(&self, e: &SExpr, fuel: usize) -> Result<(Term, Thm), HolError> {
         let input = self.compile_surface(e)?;
-        self.prove_reduces(&input, fuel)
+        let (value, thm) = self.prove_reduces(&input, fuel)?;
+        if self.is_value(&value) {
+            return Ok((value, thm));
+        }
+        if self.prove_step(&value)?.is_some() {
+            // Still steps — the fuel ran out before a value was reached.
+            return Err(HolError::Stuck(format!(
+                "`{}` ran out of fuel ({fuel} steps) before reaching a value",
+                surface_text(e)
+            )));
+        }
+        let hint = match self.dialect {
+            Dialect::Sector => " (integer arithmetic needs `#lang lisp`)",
+            Dialect::SectorInt(_) => "",
+        };
+        Err(HolError::Stuck(format!(
+            "`{}` does not reduce to a value: a subterm has no reduction rule in this dialect{hint}",
+            surface_text(e)
+        )))
     }
 
     /// Render a relational value term to Lisp text: `(int n)` → decimal `n`,
@@ -1027,6 +1177,21 @@ impl LispRel {
             return out;
         }
         format!("{v}") // unknown / stuck shape — surface the raw term
+    }
+}
+
+/// Render a surface [`SExpr`] back to Lisp text — for **error messages** only
+/// (never as a value; values print via [`LispRel::render_value`] off a theorem).
+fn surface_text(e: &SExpr) -> String {
+    match e {
+        SExpr::Atom(Atom::Symbol(s)) => s.to_string(),
+        SExpr::Atom(Atom::Str { bytes, .. }) => {
+            format!("\"{}\"", String::from_utf8_lossy(bytes))
+        }
+        SExpr::List(items) => {
+            let inner: Vec<String> = items.iter().map(surface_text).collect();
+            format!("({})", inner.join(" "))
+        }
     }
 }
 
@@ -1199,7 +1364,8 @@ mod tests {
     }
 
     /// The rule sets have the expected clause counts. `sector` has 20 `Step`
-    /// clauses; `sector+int` adds the 5 integer clauses (25 total).
+    /// clauses; `sector+int` adds the 5 integer redex clauses and the 10
+    /// integer congruence clauses (35 total).
     #[test]
     fn clause_counts() {
         let r = rel();
@@ -1207,7 +1373,7 @@ mod tests {
         assert_eq!(r.reduces_rule_set().n_clauses().unwrap(), 2);
 
         let ri = LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Int)).unwrap();
-        assert_eq!(ri.step_n_clauses().unwrap(), 25);
+        assert_eq!(ri.step_n_clauses().unwrap(), 35);
     }
 
     // ---- integer dialect (sector+int) ------------------------------------
@@ -1391,6 +1557,77 @@ mod tests {
             r.int_lit(&i(-1)).is_err(),
             "the nat dialect must refuse a negative literal"
         );
+    }
+
+    /// **Congruence into int operands**: `(+ (int 1) (+ (int 2)(int 3)))`
+    /// reduces the nested operand in place (right congruence) and then fires
+    /// the redex — a genuine hyps-free `⊢ Reduces input (int 6)`.
+    #[test]
+    fn nested_int_congruence_reduces() {
+        let r = int_rel();
+        let inner = r
+            .int_op_term(
+                IntOp::Add,
+                r.int_lit(&i(2)).unwrap(),
+                r.int_lit(&i(3)).unwrap(),
+            )
+            .unwrap();
+        let input = r
+            .int_op_term(IntOp::Add, r.int_lit(&i(1)).unwrap(), inner)
+            .unwrap();
+        let (v, thm) = r.prove_reduces(&input, 16).unwrap();
+        assert_eq!(v, r.int_lit(&i(6)).unwrap());
+        assert!(thm.hyps().is_empty(), "closed reduction must be hyps-free");
+        assert_eq!(thm.concl(), &r.reduces_prop(&input, &v).unwrap());
+
+        // Left congruence too: `(* (+ 1 2) (- 5 1)) ⇒ 12`.
+        let left = r
+            .int_op_term(
+                IntOp::Add,
+                r.int_lit(&i(1)).unwrap(),
+                r.int_lit(&i(2)).unwrap(),
+            )
+            .unwrap();
+        let right = r
+            .int_op_term(
+                IntOp::Sub,
+                r.int_lit(&i(5)).unwrap(),
+                r.int_lit(&i(1)).unwrap(),
+            )
+            .unwrap();
+        let input = r.int_op_term(IntOp::Mul, left, right).unwrap();
+        let (v, thm) = r.prove_reduces(&input, 16).unwrap();
+        assert_eq!(v, r.int_lit(&i(12)).unwrap());
+        assert!(thm.hyps().is_empty());
+        assert_eq!(thm.concl(), &r.reduces_prop(&input, &v).unwrap());
+    }
+
+    /// A single congruence step is itself a genuine membership theorem:
+    /// `⊢ Step (+ (+ 1 1) 2) (+ 2 2)`.
+    #[test]
+    fn int_cong_step_is_a_membership_theorem() {
+        let r = int_rel();
+        let inner = r
+            .int_op_term(
+                IntOp::Add,
+                r.int_lit(&i(1)).unwrap(),
+                r.int_lit(&i(1)).unwrap(),
+            )
+            .unwrap();
+        let from = r
+            .int_op_term(IntOp::Add, inner, r.int_lit(&i(2)).unwrap())
+            .unwrap();
+        let (to, thm) = r.prove_step(&from).unwrap().unwrap();
+        let expected = r
+            .int_op_term(
+                IntOp::Add,
+                r.int_lit(&i(2)).unwrap(),
+                r.int_lit(&i(2)).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(to, expected);
+        assert!(thm.hyps().is_empty());
+        assert_eq!(thm.concl(), &r.step_prop(&from, &to).unwrap());
     }
 
     /// The produced `⊢ Step (+ (int a)(int b)) (int c)` is a genuine membership

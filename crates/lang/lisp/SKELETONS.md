@@ -30,37 +30,59 @@ full picture.
 
 ## Minor
 
+- **ACL2 slice (`src/acl2.rs`) — open ends** (design + roadmap in
+  [`notes/vibes/lisp/acl2-dialect.md`](../../../notes/vibes/lisp/acl2-dialect.md)):
+  - **No induction**: `defthm` accepts only ground decidable goals (kernel
+    reduction + `eqt_elim`); universally quantified goals are rejected. Next:
+    the carved `sexpr` induction theorem per goal.
+  - **Admissibility is syntactic, not a termination proof**: structural
+    car/cdr-descent check only — no measures/ordinals, guard not verified
+    (fuel bound catches divergence). Soundness rests on defun-as-hypothesis.
+  - **`equal` cannot decide composite disequality** (equal-values and
+    atom-disequality only); needs `scons` discrimination laws. `equal`
+    int-vs-sexpr routing is syntactic (a user call returning `int` compared
+    to a non-arithmetic side routes to `eq?` and errors).
+  - **No int-typed formals** (params always `sexpr`; return type inferred
+    bool/sexpr/int by attempt); mixed int/list data (`(cons 1 nil)`) rejected.
 - **`relation.rs` reduction relation — next-phase clauses.** The `Step`/`Reduces`
   relations (on the binary engine, `src/relation.rs`) land the primitive fragment
   (car/cdr/cons, atom?/consp/null?, eq? on *equal* atoms, cond truthy/falsy
   select, unary-elimination congruence) and the **integer dialect** (`sector+int`:
   `Step (+ (int a)(int b)) (int a+b)` etc. for `+`/`-`/`*`/`<=`/`=`, the result
-  proved via the kernel int-computation equation; `int`/`nat` flavours behind the
+  proved via the kernel int-computation equation, plus left/right congruence into
+  the int operands so nested arithmetic reduces; `int`/`nat` flavours behind the
   `int_backend::IntBackend` trait; `sector` leaves `(+ 2 2)` stuck). Deferred:
-  **β/λ** (`Step ((λx.b) a) b[a/x]`) and **δ/`defun`** (`Step (f args) body[args]`,
-  via the defun-as-hypothesis `Premise::Side`); **congruence *into* int operands**
-  (so `(+ (+ 1 1) 2)` steps — currently both int operands must already be `(int n)`
-  values); **`eq?` on distinct atoms** (needs the blob-disequality clause) and
-  congruence *into* `eq?` operands; **congruence into `cond` tests** (so a predicate
-  result can drive a `cond`); and the metatheorems (`Step` determinism, `Reduces` =
-  `Step*`, `sector ⊑ sector+int` inclusion) via `rule_induction2`. No
-  `RelationalSemantics` `Semantics<LispRepr>` wrapper / `#semantics` toggle yet
-  (driver is standalone `prove_step`/`prove_reduces`). The surface path
-  (`compile_surface`/`reduce_surface`/`render_value` + the `Session` `#lang`
-  dispatch) is now wired, but nested int operands are **not** congruence-reduced:
-  `(+ (car (quote (1))) 1)` is stuck because `match_int_op` requires both operands
-  already be `(int n)` values (same wall as the `eq?`-operand case).
+  **β/λ** (`Step ((λx.b) a) b[a/x]`) and **δ/`defun`** (`Step (f args) body[args]`
+  via session-held clause schemas — design in
+  `notes/vibes/lisp/relational-recursion.md`); **`eq?` on distinct atoms** (needs
+  the blob-disequality clause) and congruence *into* `eq?` operands; **congruence
+  into `cond` tests** (so a predicate result can drive a `cond`); and the
+  metatheorems (`Step` determinism, `Reduces` = `Step*`, `sector ⊑ sector+int`
+  inclusion) via `rule_induction2`. No `RelationalSemantics` `Semantics<LispRepr>`
+  wrapper / `#semantics` toggle yet (driver is standalone
+  `prove_step`/`prove_reduces`).
 
 - **Relational recursion / more `#lang`s.** The `lisp`/`sector` dialects are the
   relation; `defun`/`lambda` recursion is **only** in `scheme` (the value
-  semantics) because the `Step` relation lacks β/δ clauses. Adding those (see
-  above) is the path to a full relational `lisp` with recursion. Future `#lang`s
+  semantics) because the `Step` relation lacks β/δ clauses — relationally these
+  forms are a clean error pointing at `#lang scheme`. The implementation path
+  (per-`defun` clause schemas + congruence pairs, then general β) is sketched in
+  `notes/vibes/lisp/relational-recursion.md`. Future `#lang`s
   (`forsp`/`forth`/`haskell`) would slot into the same `session::Lang` dispatch.
 
-- **`defun` return type is a 2-way guess.** `Session::install` tries `bool`
-  then `sexpr` for a recursive function's head (predicates vs data functions).
-  Functions that are neither purely-bool nor purely-`sexpr`-valued (mixed, or
-  higher-order) are not installable; there is no real Lisp type inference.
+- **`defun` return type is a 3-way guess; parameters are always `sexpr`.**
+  `Session::install` tries `bool`, then `sexpr`, then `int` for a recursive
+  function's head (predicates vs data vs counting functions like `len`).
+  Mixed / higher-order returns are not installable, and **parameters are always
+  `sexpr`-typed**, so `int`-parameter recursion (`(defun fact (n) …)`) does not
+  compile — needs per-parameter type inference. No real Lisp type inference.
+- **Value-semantics integers are typed `int` terms, not `sexpr` data.** Great
+  for `(+ 2 2)`/`len` (kernel-proved, hyps-free equations), but `(cons 1 nil)`
+  or an int passed to a list position is a compile-time "expects integer
+  operands"/stuck error, not a heterogeneous list. A `sexpr` integer injection
+  (the relational dialect's `(int n)`) with equational laws would unify them.
+  Also: an `int`-typed `cond` with no matching clause falls through to the
+  literal `0` (the typed stand-in for Lisp's `nil` default).
 - **Forward references default to `sexpr… → sexpr`.** A call to a not-yet-defined
   function compiles a `sexpr`-returning free-variable head
   (`semantics.rs::forward_head_ty`), so mutual recursion only closes when the
@@ -86,5 +108,5 @@ full picture.
   never a hang), but only as the equational fragment.
 - `resolve_number`/`resolve_string` numeral-vs-symbol split is cosmetic (both
   lower to raw-byte atoms); strings with whitespace/parens do not round-trip.
-- The `#`-directive table has only `#help` / `#show`; extensible
+- The `#`-directive table has only `#help` / `#show` / `#lang`; extensible
   (`session::Directive`) but no `#defun` / `#load` / `#type`.

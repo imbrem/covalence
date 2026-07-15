@@ -1,0 +1,303 @@
+//! End-to-end battery for the **ACL2-flavoured dialect**
+//! ([`covalence_lisp::acl2`]) — Little-Schemer-flavoured programs, `defun`
+//! admissibility, and the honest `defthm` story.
+//!
+//! # The contract these tests pin
+//!
+//! - **Every value assertion checks the backing kernel theorem**: the printed
+//!   value is the RHS of `out.thm`'s equational conclusion, and the theorem's
+//!   hypotheses are exactly the `defun` equations used (empty for closed
+//!   primitive/arithmetic programs, non-empty when user recursion unfolds).
+//! - **`defthm` never fakes**: a ground decidable goal mints a real theorem
+//!   (retrievable via [`Acl2Session::theorem`]); a universally quantified
+//!   goal is *rejected* with a message naming induction as the missing piece;
+//!   a false ground goal is rejected as refuted.
+//! - **`defun` admissibility is checked**: non-structural recursion is
+//!   rejected with a clear message (and no definition is installed).
+#![cfg(feature = "hol")]
+
+use covalence_lisp::acl2::{Acl2Outcome, Acl2Session, Acl2ValueKind};
+use covalence_lisp::reader::read_one;
+
+fn session() -> Acl2Session {
+    Acl2Session::new().expect("session")
+}
+
+/// Reduce `src` and assert the honesty invariant: the value is the RHS of the
+/// theorem's equational conclusion. Returns the outcome for further checks.
+fn eval_checked(s: &Acl2Session, src: &str) -> Acl2Outcome {
+    let form = read_one(src).expect("parse");
+    let out = s.reduce(&form).expect("reduce");
+    let (_, rhs) = out
+        .thm
+        .concl()
+        .as_eq()
+        .expect("conclusion must be an equation `input = value`");
+    assert_eq!(rhs, &out.value, "the value must be the theorem's RHS");
+    out
+}
+
+/// [`eval_checked`] + assert the rendered value and that the theorem is
+/// hypothesis-free (closed, definition-free programs).
+fn eval_closed(s: &Acl2Session, src: &str, want: &str) {
+    let out = eval_checked(s, src);
+    assert!(
+        out.thm.hyps().is_empty(),
+        "`{src}` must be hyps-free, got {:?}",
+        out.thm.hyps()
+    );
+    assert_eq!(s.render(&out), want, "value mismatch for `{src}`");
+}
+
+// ---- Little-Schemer app: defun + recursion --------------------------------
+
+const APP: &str = "(defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))";
+
+#[test]
+fn defun_app_and_apply() {
+    let mut s = session();
+    // A defun event returns the function name (the ACL2 convention).
+    assert_eq!(s.eval_cell(APP).unwrap(), "app");
+    // Apply it: value is right, AND the theorem carries the defun equation
+    // as a hypothesis (defun-as-hypothesis recursion, never an axiom).
+    let out = eval_checked(&s, "(app (quote (a b)) (quote (c)))");
+    assert_eq!(s.render(&out), "(a b c)");
+    assert!(
+        !out.thm.hyps().is_empty(),
+        "a recursive call must ride on the defun hypothesis"
+    );
+    assert_eq!(out.kind, Acl2ValueKind::Data);
+}
+
+#[test]
+fn defun_persists_across_cells() {
+    let mut s = session();
+    s.eval_cell(APP).unwrap();
+    assert_eq!(s.eval_cell("(app (quote ()) (quote (q)))").unwrap(), "(q)");
+    assert_eq!(
+        s.eval_cell("(app (quote (a b)) (app (quote (c)) (quote (d))))")
+            .unwrap(),
+        "(a b c d)"
+    );
+}
+
+// ---- ACL2 primitive spellings ---------------------------------------------
+
+#[test]
+fn acl2_primitives() {
+    let s = session();
+    eval_closed(&s, "(car (quote (a b)))", "a");
+    eval_closed(&s, "(cdr (quote (a b c)))", "(b c)");
+    eval_closed(&s, "(cons (quote a) (quote (b)))", "(a b)");
+    eval_closed(&s, "(consp (quote (a)))", "t");
+    eval_closed(&s, "(consp (quote a))", "nil");
+    eval_closed(&s, "(atom (quote a))", "t");
+    eval_closed(&s, "(atom (quote (a)))", "nil");
+    eval_closed(&s, "(endp (quote ()))", "t");
+    eval_closed(&s, "(endp (quote (a)))", "nil");
+    eval_closed(&s, "(if (consp (quote (a))) (quote yes) (quote no))", "yes");
+    eval_closed(&s, "(equal (quote a) (quote a))", "t");
+    eval_closed(&s, "(equal (quote a) (quote b))", "nil");
+}
+
+#[test]
+fn equal_on_equal_lists_is_proved_structurally() {
+    // `equal` on composite values succeeds exactly when the reduced values
+    // coincide — backed by a genuine trans/sym + eqt_intro theorem.
+    let s = session();
+    eval_closed(&s, "(equal (cons (quote a) (quote ())) (quote (a)))", "t");
+    // Disequality of composites is NOT decidable in this slice: clean error.
+    let form = read_one("(equal (quote (a)) (quote (b)))").unwrap();
+    assert!(s.reduce(&form).is_err());
+}
+
+#[test]
+fn cond_is_rejected() {
+    // The ACL2 slice is ternary-`if` only.
+    let mut s = session();
+    let err = s
+        .eval_cell("(cond ((consp (quote (a))) (quote y)) (t (quote n)))")
+        .unwrap_err();
+    assert!(err.to_string().contains("if"), "got: {err}");
+}
+
+// ---- ground integer arithmetic --------------------------------------------
+
+#[test]
+fn ground_arithmetic() {
+    let s = session();
+    eval_closed(&s, "(+ 2 2)", "4");
+    eval_closed(&s, "(- 5 3)", "2");
+    eval_closed(&s, "(* 3 4)", "12");
+    eval_closed(&s, "(+ 1 (* 2 3))", "7");
+    eval_closed(&s, "(- 2 5)", "-3");
+}
+
+#[test]
+fn ground_arithmetic_propositions() {
+    let s = session();
+    eval_closed(&s, "(<= 2 5)", "t");
+    eval_closed(&s, "(<= 5 2)", "nil");
+    eval_closed(&s, "(= 4 4)", "t");
+    eval_closed(&s, "(= 4 5)", "nil");
+    eval_closed(&s, "(equal (+ 2 2) 4)", "t");
+    eval_closed(&s, "(zp 0)", "t");
+    eval_closed(&s, "(zp 3)", "nil");
+    eval_closed(&s, "(natp 3)", "t");
+    eval_closed(&s, "(natp (- 2 5))", "nil");
+}
+
+#[test]
+fn integers_outside_arithmetic_are_cleanly_rejected() {
+    // Integers in list structure await the value semantics' integer backend;
+    // the error must be clean, not a stuck term or a fake value.
+    let s = session();
+    let form = read_one("(cons 1 (quote ()))").unwrap();
+    let err = s.reduce(&form).unwrap_err();
+    assert!(err.to_string().contains("integer"), "got: {err}");
+}
+
+// ---- defthm: ground success -----------------------------------------------
+
+#[test]
+fn defthm_ground_arithmetic_succeeds() {
+    let mut s = session();
+    assert_eq!(
+        s.eval_cell("(defthm four (equal (+ 2 2) 4))").unwrap(),
+        "four"
+    );
+    let thm = s.theorem("four").expect("stored theorem");
+    // A genuine, hypothesis-free kernel theorem concluding the equation.
+    assert!(thm.hyps().is_empty(), "arithmetic defthm must be hyps-free");
+    let (lhs, rhs) = thm.concl().as_eq().expect("concl is `2+2 = 4`");
+    assert_eq!(
+        covalence_hol_eval::as_int(rhs).expect("rhs is an int literal"),
+        covalence_types::Int::from(4i128)
+    );
+    assert!(lhs.as_app().is_some(), "lhs is the `int.add 2 2` redex");
+}
+
+#[test]
+fn defthm_ground_list_goal_rides_defun_hypotheses() {
+    let mut s = session();
+    s.eval_cell(APP).unwrap();
+    assert_eq!(
+        s.eval_cell("(defthm app-ab-c (equal (app (quote (a b)) (quote (c))) (quote (a b c))))")
+            .unwrap(),
+        "app-ab-c"
+    );
+    let thm = s.theorem("app-ab-c").expect("stored theorem");
+    // The proof unfolds `app`, so the defun equation rides as a hypothesis —
+    // honestly recorded, never discharged by fiat.
+    assert!(
+        !thm.hyps().is_empty(),
+        "a defun-using defthm must carry the defun hypothesis"
+    );
+    assert!(thm.concl().as_eq().is_some(), "concl is the equation goal");
+}
+
+// ---- defthm: honest rejections --------------------------------------------
+
+#[test]
+fn defthm_non_ground_is_rejected_pointing_at_induction() {
+    let mut s = session();
+    s.eval_cell(APP).unwrap();
+    let err = s
+        .eval_cell("(defthm app-nil (equal (app x (quote ())) x))")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("induction"),
+        "must name the missing piece: {msg}"
+    );
+    assert!(msg.contains('x'), "must name the free variable: {msg}");
+    assert!(s.theorem("app-nil").is_none(), "nothing may be stored");
+}
+
+#[test]
+fn defthm_false_ground_goal_is_refuted_not_faked() {
+    let mut s = session();
+    let err = s.eval_cell("(defthm bogus (equal (+ 2 2) 5))").unwrap_err();
+    assert!(err.to_string().contains("FALSE"), "got: {err}");
+    assert!(s.theorem("bogus").is_none(), "nothing may be stored");
+}
+
+#[test]
+fn defthm_non_boolean_goal_is_rejected() {
+    let mut s = session();
+    let err = s
+        .eval_cell("(defthm datum (cons (quote a) (quote ())))")
+        .unwrap_err();
+    assert!(err.to_string().contains("boolean"), "got: {err}");
+    assert!(s.theorem("datum").is_none());
+}
+
+// ---- defun: admissibility -------------------------------------------------
+
+#[test]
+fn non_structural_defun_is_rejected() {
+    let mut s = session();
+    // Identity-argument recursion: nothing decreases.
+    let err = s.eval_cell("(defun bad (x) (bad x))").unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("structurally recursive"), "got: {msg}");
+    // Growing-argument recursion: also rejected.
+    let err = s
+        .eval_cell("(defun grow (x) (grow (cons x x)))")
+        .unwrap_err();
+    assert!(err.to_string().contains("structurally recursive"));
+    // Neither definition was installed.
+    assert!(s.defs().is_empty());
+}
+
+#[test]
+fn structural_predicate_defun_is_admitted() {
+    let mut s = session();
+    assert_eq!(
+        s.eval_cell(
+            "(defun all-atoms (l) (if (endp l) t (if (atom (car l)) (all-atoms (cdr l)) nil)))"
+        )
+        .unwrap(),
+        "all-atoms"
+    );
+    let out = eval_checked(&s, "(all-atoms (quote (a b c)))");
+    assert_eq!(s.render(&out), "t");
+    assert!(!out.thm.hyps().is_empty());
+    let out = eval_checked(&s, "(all-atoms (quote (a (b) c)))");
+    assert_eq!(s.render(&out), "nil");
+}
+
+#[test]
+fn undefined_callee_is_rejected() {
+    let mut s = session();
+    // ACL2 requires definition before use — no forward references.
+    let err = s.eval_cell("(defun f (x) (g x))").unwrap_err();
+    assert!(err.to_string().contains("undefined"), "got: {err}");
+}
+
+#[test]
+fn integer_valued_recursion_over_lists_works() {
+    // `len` is structurally recursive AND integer-valued: the recursive
+    // head's return type is inferred as `int` (the value semantics carries
+    // the integer backend), and the value rides the defun hypothesis.
+    let mut s = session();
+    assert_eq!(
+        s.eval_cell("(defun len2 (x) (if (endp x) 0 (+ 1 (len2 (cdr x)))))")
+            .unwrap(),
+        "len2"
+    );
+    let out = eval_checked(&s, "(len2 (quote (a b c)))");
+    assert_eq!(s.render(&out), "3");
+    assert_eq!(out.kind, Acl2ValueKind::Int);
+    assert!(!out.thm.hyps().is_empty(), "rides the defun hypothesis");
+}
+
+// ---- expression-level honesty ---------------------------------------------
+
+#[test]
+fn unbound_variable_is_a_clean_error() {
+    let s = session();
+    let form = read_one("(car x)").unwrap();
+    let err = s.reduce(&form).unwrap_err();
+    assert!(err.to_string().contains("unbound"), "got: {err}");
+}

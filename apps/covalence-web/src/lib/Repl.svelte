@@ -2,7 +2,11 @@
 	// A reusable terminal-style REPL: a scrolling transcript + a prompt line.
 	// `evalCell` is async (a `fetch` to the running server's native kernel —
 	// e.g. POST /api/lisp). `showCell`, if given, lazily fetches HOL info for a
-	// cell on hover (the `⊢ lhs = rhs` theorem, via the `#show` directive).
+	// cell on hover: the FULL `hyps ⊢ lhs = rhs` sequent (turnstile included),
+	// via the `#show` directive. The string is rendered verbatim — the server
+	// prints the genuine kernel theorem, hypotheses and all; the client never
+	// adds a turnstile of its own (that would misstate a hypothesis-carrying
+	// theorem as `⊢ concl`).
 	//
 	// `help` is an optional snippet rendered *inline in the transcript* when the
 	// user types `#help` — a first, minimal "widget result" (rich HTML in the
@@ -10,7 +14,10 @@
 	import type { Snippet } from 'svelte';
 
 	type EvalResult = { ok: boolean; result: string; error: string };
-	type Example = { title: string; src: string };
+	// `active` marks a button as the currently-selected one (e.g. the current
+	// dialect's `#lang` tab on /lisp) — purely presentational, so the component
+	// stays agnostic about what "active" means.
+	type Example = { title: string; src: string; active?: boolean };
 
 	let {
 		evalCell,
@@ -39,6 +46,10 @@
 		widget: boolean;
 		hol: string | null;
 		holTried: boolean;
+		// `#show` failed (or returned nothing) for this cell — e.g. a
+		// defun/defthm ack, which is not a reducible expression. No popover:
+		// a turnstile with no theorem behind it would be a false claim.
+		holFailed: boolean;
 	};
 
 	let entries = $state<Entry[]>([]);
@@ -62,6 +73,7 @@
 			widget: false,
 			hol: null,
 			holTried: false,
+			holFailed: false,
 			...over
 		};
 	}
@@ -114,7 +126,25 @@
 		onReset?.();
 	}
 
-	// Hover a cell → lazily fetch its HOL theorem (once).
+	// Split an error message into plain / `#lang …` segments so a dialect hint
+	// in a server error ("unknown #lang `x` (try: …)", "… try #lang scheme")
+	// stands out visually. Light formatting only — the text itself is untouched.
+	function errSegments(msg: string): { text: string; hint: boolean }[] {
+		const out: { text: string; hint: boolean }[] = [];
+		const re = /#lang(?:\s+[A-Za-z][\w-]*)?/g;
+		let last = 0;
+		for (const m of msg.matchAll(re)) {
+			const at = m.index ?? 0;
+			if (at > last) out.push({ text: msg.slice(last, at), hint: false });
+			out.push({ text: m[0], hint: true });
+			last = at + m[0].length;
+		}
+		if (last < msg.length) out.push({ text: msg.slice(last), hint: false });
+		return out;
+	}
+
+	// Hover a cell → lazily fetch its HOL sequent (once). On failure the cell
+	// is marked `holFailed`, which removes its popover for good.
 	async function loadHol(entry: Entry) {
 		if (!showCell || entry.holTried || entry.directive || !entry.ok || entry.pending) return;
 		entry.holTried = true;
@@ -124,13 +154,16 @@
 		} catch {
 			entry.hol = null;
 		}
+		entry.holFailed = entry.hol === null;
 	}
 </script>
 
 {#if examples.length}
 	<div class="examples">
 		{#each examples as c}
-			<button onclick={() => runExample(c.src)} title={c.src}>{c.title}</button>
+			<button class:active={c.active} onclick={() => runExample(c.src)} title={c.src}>
+				{c.title}
+			</button>
 		{/each}
 		{#if onReset || entries.length}
 			<button class="reset" onclick={reset} title="clear the transcript and reset the session">⟲ reset</button>
@@ -147,7 +180,8 @@
 			</div>
 		{/if}
 		{#each entries as entry}
-			{@const hasHol = !!showCell && !entry.directive && entry.ok && !entry.pending && !entry.widget}
+			{@const hasHol =
+				!!showCell && !entry.directive && entry.ok && !entry.pending && !entry.widget && !entry.holFailed}
 			<div class="cell" class:has-hol={hasHol} onmouseenter={() => loadHol(entry)} role="group">
 				<div class="in"><span class="p">{prompt}</span> {entry.input}</div>
 				{#if entry.widget && help}
@@ -159,14 +193,28 @@
 				{:else if entry.ok}
 					<div class="out">{entry.output}</div>
 				{:else}
-					<div class="out err">{entry.output}</div>
+					<!-- Errors get the same care as values: a gutter mark, the message
+					     verbatim (only *marked up*, never rewritten), and any `#lang …`
+					     dialect hint highlighted as a chip. -->
+					<div class="out err">
+						<span class="err-mark" aria-hidden="true">✗</span
+						>{#each errSegments(entry.output) as seg}{#if seg.hint}<span class="lang-hint"
+									>{seg.text}</span
+								>{:else}{seg.text}{/if}{/each}
+					</div>
 				{/if}
 				{#if hasHol}
 					<!-- Transient popover: hidden by default, shown only while the cell
-					     is hovered (CSS `.cell:hover .hol`), gone on mouse-leave. -->
+					     is hovered (CSS `.cell:hover .hol`), gone on mouse-leave. The
+					     sequent string (`hyps ⊢ concl`, from `#show`) is rendered
+					     VERBATIM — no client-side turnstile. While the fetch is in
+					     flight a plain "fetching proof…" shows, asserting nothing. -->
 					<div class="hol" role="tooltip">
-						<span class="hol-turnstile">⊢</span>
-						<span class="hol-body">{entry.hol ?? 'fetching proof…'}</span>
+						{#if entry.hol}
+							<span class="hol-body">{entry.hol}</span>
+						{:else}
+							<span class="hol-body hol-pending">fetching proof…</span>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -206,6 +254,11 @@
 	}
 	.examples button:hover {
 		border-color: var(--accent);
+	}
+	.examples button.active {
+		border-color: var(--accent);
+		color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
 	}
 	.examples .reset {
 		margin-left: auto;
@@ -265,6 +318,22 @@
 	.out.err {
 		color: color-mix(in srgb, #e5484d 70%, var(--fg));
 	}
+	.err-mark {
+		color: #e5484d;
+		margin-right: 0.45rem;
+		user-select: none;
+	}
+	/* A `#lang …` mention inside an error — the "switch dialect" hint — pops as
+	   a small chip so the fix is obvious at a glance. */
+	.lang-hint {
+		display: inline-block;
+		padding: 0 4px;
+		border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
+		color: var(--accent);
+		white-space: nowrap;
+	}
 	.widget {
 		margin: 0.35rem 0 0.35rem 1.5rem;
 		padding: 0.6rem 0.8rem;
@@ -311,10 +380,9 @@
 	.cell:hover .hol {
 		display: block;
 	}
-	.hol-turnstile {
-		color: var(--accent);
-		font-weight: 700;
-		margin-right: 0.3rem;
+	.hol-pending {
+		color: var(--muted);
+		font-style: italic;
 	}
 	.prompt-line {
 		display: flex;

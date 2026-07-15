@@ -35,6 +35,18 @@
 //! `defun` equations ride the composite as **hypotheses** — sound recursion in
 //! a total HOL without any new axiom. See [`crate::defs`].
 //!
+//! **Integers** (when an [`IntBackend`] is wired — the default): numerals in
+//! expression position compile to kernel `int` literals, and `(+ a b)` /
+//! `(- a b)` / `(* a b)` / `(<= a b)` / `(= a b)` compile to the kernel
+//! `int.add` / `int.sub` / `int.mul` / `int.le` / `(=):int` operators applied
+//! to the compiled operands — *typed kernel terms, no sexpr injection*. An
+//! integer redex reduces its operands congruentially, then fires the
+//! **kernel-proved** computation from [`IntBackend::prove_reduce`]
+//! (`TermExt::reduce` underneath — never asserted), so integer results ride
+//! the same `⊢ program = value` equations as everything else, hypothesis-free
+//! for closed programs. Comparisons reduce to `bool` literals and print as
+//! `t` / `nil`. Numerals inside `quote`d data remain uninterpreted atoms.
+//!
 //! The value read off a normal form is always the RHS of a genuine kernel
 //! theorem; nothing here mints new trusted rules.
 
@@ -49,11 +61,15 @@ use covalence_init::init::lisp::{Lisp as KernelLisp, lisp};
 use covalence_init::init::logic::simp;
 use covalence_init::{Term, Type};
 
+use std::sync::Arc;
+
 use covalence_repl_core::{Repr, Semantics, StepCert};
 use covalence_sexp::{Atom, SExpr};
+use covalence_types::Int;
 
 use crate::defs::Defs;
 use crate::hol::HolError;
+use crate::int_backend::{self, IntBackend, IntOp, IntVariant, NatVariant};
 
 fn theory_err(e: impl core::fmt::Display) -> HolError {
     HolError::Theory(e.to_string())
@@ -68,8 +84,10 @@ fn kernel_err(e: impl core::fmt::Display) -> HolError {
 pub enum ValueKind {
     /// A carved `sexpr` datum (`atom` / `snil` / `scons`).
     Data,
-    /// A `bool` literal (a predicate / `eq?` result).
+    /// A `bool` literal (a predicate / `eq?` / comparison result).
     Bool,
+    /// A kernel `int` literal (an arithmetic result).
+    Int,
 }
 
 // ============================================================================
@@ -121,6 +139,10 @@ pub struct LispSemantics {
     cs: &'static CarvedSExpr,
     l: &'static KernelLisp,
     defs: Defs,
+    /// The integer backend (`None` disables the integer forms entirely —
+    /// numerals stay free variables and `+ - * <= =` stay user calls). The
+    /// default constructors wire the signed [`IntVariant`].
+    int: Option<Arc<dyn IntBackend + Send + Sync>>,
 }
 
 /// What a `t` / `nil` literal should compile to in a given position: a `bool`
@@ -141,13 +163,48 @@ impl LispSemantics {
     }
 
     /// Bind the theories with a user-`defun` dictionary — the calls in a
-    /// compiled program unfold against these assumed equations.
+    /// compiled program unfold against these assumed equations. Integers are
+    /// on (the signed [`IntVariant`] backend).
     pub fn with_defs(defs: Defs) -> Result<Self, HolError> {
+        let cs = carved().map_err(theory_err)?;
+        let (t, nil) = Self::truthiness(cs);
+        let int: Arc<dyn IntBackend + Send + Sync> =
+            Arc::new(IntVariant::new(cs.tau.clone(), t, nil));
+        Self::with_defs_and_int(defs, Some(int))
+    }
+
+    /// [`with_defs`](Self::with_defs) with the **nat-restricted** integer
+    /// backend ([`NatVariant`]): the same kernel computation, but negative
+    /// results (e.g. `(- 2 5)`) are a clean error, never a value.
+    pub fn with_defs_nat(defs: Defs) -> Result<Self, HolError> {
+        let cs = carved().map_err(theory_err)?;
+        let (t, nil) = Self::truthiness(cs);
+        let int: Arc<dyn IntBackend + Send + Sync> =
+            Arc::new(NatVariant::new(cs.tau.clone(), t, nil));
+        Self::with_defs_and_int(defs, Some(int))
+    }
+
+    /// The fully-explicit constructor: a `defun` dictionary plus an optional
+    /// [`IntBackend`] (`None` = the integer-free semantics — numerals stay
+    /// free variables, the int ops stay ordinary user calls).
+    pub fn with_defs_and_int(
+        defs: Defs,
+        int: Option<Arc<dyn IntBackend + Send + Sync>>,
+    ) -> Result<Self, HolError> {
         Ok(LispSemantics {
             cs: carved().map_err(theory_err)?,
             l: lisp().map_err(theory_err)?,
             defs,
+            int,
         })
+    }
+
+    /// The sexpr truthiness pair `(atom t, snil)` an [`IntBackend`] is
+    /// constructed over (only its `prove_reduce` comparison path touches them;
+    /// the value semantics reads comparison results off the `bool` equation).
+    fn truthiness(cs: &'static CarvedSExpr) -> (Term, Term) {
+        let t = Term::app(cs.atom.clone(), mk_blob(b"t".to_vec()));
+        (t, cs.snil.clone())
     }
 
     /// The definition dictionary this semantics reduces against.
@@ -191,9 +248,16 @@ impl LispSemantics {
                         Hint::Data => self.cs.snil.clone(),
                     });
                 }
-                // A parameter / bound variable of a surrounding `defun` /
-                // `lambda` compiles to a `sexpr`-typed free variable.
+                // A numeral (integers on) compiles to a kernel `int` literal —
+                // in *expression* position only (`quote`d numerals stay atoms).
                 other => {
+                    if self.int.is_some()
+                        && let Ok(n) = other.parse::<Int>()
+                    {
+                        return Ok(covalence_hol_eval::mk_int(n));
+                    }
+                    // A parameter / bound variable of a surrounding `defun` /
+                    // `lambda` compiles to a `sexpr`-typed free variable.
                     return Ok(Term::free(other, self.cs.tau.clone()));
                 }
             }
@@ -221,7 +285,7 @@ impl LispSemantics {
     fn compile_form(&self, items: &[SExpr]) -> Result<Term, HolError> {
         let (head, args) = items
             .split_first()
-            .ok_or_else(|| HolError::Stuck("()".into()))?;
+            .ok_or_else(|| HolError::Stuck("cannot evaluate the empty form `()`".into()))?;
         // A `((lambda …) …)` application: the head is itself a form.
         if let SExpr::List(_) = head {
             return self.compile_app(head, args);
@@ -265,6 +329,30 @@ impl LispSemantics {
             ("cond", _) => self.compile_cond(args),
             // `lambda` — an anonymous abstraction (β-reducible when applied).
             ("lambda", 2) => self.compile_lambda(&args[0], &args[1]),
+            // The integer operators `+ - * <= =` (integers on) compile to the
+            // **kernel** int operators applied to the compiled operands —
+            // `int.add a b` etc., a typed kernel redex whose reduction is the
+            // kernel-proved computation equation (see `step_int`).
+            (sym, n) if self.int.is_some() && IntOp::from_symbol(sym).is_some() => {
+                let op = IntOp::from_symbol(sym).expect("guard");
+                if n != 2 {
+                    return Err(HolError::Stuck(format!(
+                        "`{sym}` expects 2 arguments (got {n})"
+                    )));
+                }
+                let a = self.compile(&args[0])?;
+                let b = self.compile(&args[1])?;
+                // `kernel_redex` type-checks the application, so a non-`int`
+                // operand (e.g. `(+ (car '(a)) 1)`) fails HERE — surface the
+                // *surface* form, not the kernel's type-mismatch jargon.
+                int_backend::kernel_redex(op, &a, &b).map_err(|_| {
+                    HolError::Stuck(format!(
+                        "`{sym}` expects integer operands in `({sym} {} {})`",
+                        surface(&args[0]),
+                        surface(&args[1])
+                    ))
+                })
+            }
             // A call to a user-defined function `f` (an assumed `defun`), or a
             // **forward reference** to one not yet defined — mutual recursion in
             // the metacircular interpreter needs this. Either way it compiles to
@@ -368,10 +456,14 @@ impl LispSemantics {
         } else {
             Hint::Data
         };
-        // Default (no clause matched): `nil` in the inferred type.
-        let mut acc = match hint {
-            Hint::Bool => covalence_hol_eval::mk_bool(false),
-            Hint::Data => self.cs.snil.clone(),
+        // Default (no clause matched): `nil` in the inferred type — `F` at
+        // `bool`, the literal `0` at `int`, `snil` at `sexpr`.
+        let mut acc = if alpha == Type::bool() {
+            covalence_hol_eval::mk_bool(false)
+        } else if alpha == Type::int() {
+            covalence_hol_eval::mk_int(Int::from(0i128))
+        } else {
+            self.cs.snil.clone()
         };
         for (test, e) in clauses.iter().rev() {
             let branch = self.compile_h(e, hint)?;
@@ -433,6 +525,8 @@ impl LispSemantics {
             Some(ValueKind::Data)
         } else if t.as_bool().is_some() {
             Some(ValueKind::Bool)
+        } else if covalence_hol_eval::as_int(t).is_some() {
+            Some(ValueKind::Int)
         } else {
             None
         }
@@ -481,8 +575,19 @@ impl LispSemantics {
         if let Some(p) = self.as_not(t) {
             return self.step_not(t, &p);
         }
+        // An integer-op redex `int.<op> a b` (integers on) — reduce the
+        // operands to `int` literals (congruence), then fire the
+        // kernel-proved computation. Handled before the generic congruence:
+        // the partial spine `int.<op> a` is not itself reducible, so the
+        // whole redex steps at once (like a user-call spine).
+        if let Some((op, a, b)) = self.as_int_redex(t) {
+            return self.step_int(t, op, &a, &b).map(Some);
+        }
         // General application: `App(f, arg)`.
         let Some((f, arg)) = t.as_app() else {
+            if let Some(v) = t.as_free() {
+                return Err(HolError::Stuck(format!("unbound variable `{}`", v.name())));
+            }
             return Err(HolError::Stuck(format!("no reduction for `{t}`")));
         };
         // 1. Reduce inside the argument (innermost).
@@ -784,6 +889,95 @@ impl LispSemantics {
             .map_err(kernel_err)
     }
 
+    /// Match an integer-op redex `int.<op> a b` (the compiled `(+ a b)` /
+    /// `(- …)` / `(* …)` / `(<= …)` / `(= …)` form), returning `(op, a, b)`.
+    /// Only fires when an [`IntBackend`] is wired. Note the compiled `=` is
+    /// HOL equality at `int`, disjoint from the `eq?` redex (equality at
+    /// `sexpr`, handled earlier).
+    fn as_int_redex(&self, t: &Term) -> Option<(IntOp, Term, Term)> {
+        self.int.as_ref()?;
+        let (inner, b) = t.as_app()?;
+        let (head, a) = inner.as_app()?;
+        let op = IntOp::ALL
+            .into_iter()
+            .find(|op| *head == int_backend::kernel_op_term(*op))?;
+        Some((op, a.clone(), b.clone()))
+    }
+
+    /// One step of an integer-op redex `int.<op> a b`:
+    ///
+    /// 1. If `a` (then `b`) is not yet an `int` literal, step inside it and
+    ///    congruence-lift the step over the redex (leftmost-innermost, like
+    ///    the generic congruence).
+    /// 2. Both literals: fire the **kernel-proved** computation — the
+    ///    [`IntBackend::prove_reduce`] equation `⊢ int.<op> a b = r`
+    ///    (`TermExt::reduce` underneath), with the backend's guards applied
+    ///    (the nat variant rejects a negative result here). The step theorem
+    ///    *is* that kernel equation; nothing is asserted.
+    fn step_int(&self, t: &Term, op: IntOp, a: &Term, b: &Term) -> Result<LispStep, HolError> {
+        let backend = self
+            .int
+            .as_ref()
+            .ok_or_else(|| HolError::Theory("no integer backend".into()))?;
+        let head = int_backend::kernel_op_term(op);
+        // Left operand first.
+        if covalence_hol_eval::as_int(a).is_none() {
+            let inner = self.step_term(a)?.ok_or_else(|| {
+                HolError::Stuck(format!(
+                    "`{}` expects integer operands, got `{a}`",
+                    op.symbol()
+                ))
+            })?;
+            let thm = inner
+                .thm
+                .clone()
+                .cong_arg(head.clone()) // ⊢ op a = op a'
+                .map_err(kernel_err)?
+                .cong_fn(b.clone()) // ⊢ (op a) b = (op a') b
+                .map_err(kernel_err)?;
+            let to = Term::app(Term::app(head, inner.to.clone()), b.clone());
+            return Ok(LispStep { to, thm });
+        }
+        // Then the right operand.
+        if covalence_hol_eval::as_int(b).is_none() {
+            let inner = self.step_term(b)?.ok_or_else(|| {
+                HolError::Stuck(format!(
+                    "`{}` expects integer operands, got `{b}`",
+                    op.symbol()
+                ))
+            })?;
+            let spine = Term::app(head, a.clone());
+            let thm = inner
+                .thm
+                .clone()
+                .cong_arg(spine.clone()) // ⊢ (op a) b = (op a) b'
+                .map_err(kernel_err)?;
+            let to = Term::app(spine, inner.to.clone());
+            return Ok(LispStep { to, thm });
+        }
+        // Both operands are literals: the kernel-proved computation.
+        let va = covalence_hol_eval::as_int(a).expect("checked above");
+        let vb = covalence_hol_eval::as_int(b).expect("checked above");
+        let proof = backend.prove_reduce(op, &va, &vb)?;
+        let thm = proof
+            .eqs
+            .into_iter()
+            .next()
+            .ok_or_else(|| HolError::Kernel("integer backend returned no equation".into()))?;
+        let (lhs, rhs) = thm
+            .concl()
+            .as_eq()
+            .ok_or_else(|| HolError::Kernel("integer equation is not an equation".into()))?;
+        if lhs != t {
+            return Err(HolError::Kernel(format!(
+                "integer equation `{}` does not match the redex `{t}`",
+                thm.concl()
+            )));
+        }
+        let to = rhs.clone();
+        Ok(LispStep { to, thm })
+    }
+
     /// Wrap a head law `⊢ redex = rhs` into a [`LispStep`].
     fn package(&self, _redex: &Term, law: Thm) -> Result<LispStep, HolError> {
         let to = self.rhs(&law)?;
@@ -909,6 +1103,21 @@ fn unwind_app(t: &Term) -> (Term, Vec<Term>) {
     }
     args.reverse();
     (cur, args)
+}
+
+/// Re-render a surface [`SExpr`] as source text (for error messages — the
+/// user sees the form they typed, not internal kernel syntax).
+fn surface(e: &SExpr) -> String {
+    match e {
+        SExpr::Atom(Atom::Symbol(s)) => s.to_string(),
+        SExpr::Atom(Atom::Str { bytes, .. }) => {
+            format!("\"{}\"", String::from_utf8_lossy(bytes))
+        }
+        SExpr::List(items) => {
+            let inner: Vec<String> = items.iter().map(surface).collect();
+            format!("({})", inner.join(" "))
+        }
+    }
 }
 
 /// A bare `t` / `nil` symbol — the ambiguous atom that compiles to either a

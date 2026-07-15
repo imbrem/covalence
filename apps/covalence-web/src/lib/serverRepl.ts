@@ -4,7 +4,8 @@
 //
 // The endpoint gets `{ session, src }` and returns `{ ok, result?, error? }`;
 // `<endpoint>/reset` drops the session. With `show: true`, hovering a cell
-// fetches its `⊢` theorem via the `#show` directive.
+// fetches its full `hyps ⊢ concl` sequent via the `#show` directive (rendered
+// verbatim by `<Repl>` — the turnstile comes from the server's kernel `Thm`).
 
 export interface EvalResult {
 	ok: boolean;

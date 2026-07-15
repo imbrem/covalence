@@ -76,6 +76,12 @@ impl IntOp {
 
     /// Every op, in a stable order (used to lay out the `Step` clauses).
     pub const ALL: [IntOp; 5] = [IntOp::Add, IntOp::Sub, IntOp::Mul, IntOp::Le, IntOp::Eq];
+
+    /// Parse an operator symbol back to its op (`"+"` → `Add`, …). `None` for
+    /// anything that is not one of the five integer operators.
+    pub fn from_symbol(s: &str) -> Option<IntOp> {
+        IntOp::ALL.into_iter().find(|op| op.symbol() == s)
+    }
 }
 
 /// The reduced result of an integer operation: either an integer (for the
@@ -212,7 +218,12 @@ pub fn op_head(op: IntOp, tau: &Type) -> Term {
 
 /// The kernel op for `op`: `int.add` / `int.sub` / `int.mul` (ring, `int →
 /// int → int`) or `int.le` / `(=):int` (comparison, `int → int → bool`).
-fn kernel_op_term(op: IntOp) -> Term {
+///
+/// `pub(crate)`: the **value semantics** (`crate::semantics`) compiles its
+/// integer forms directly onto these kernel operators (typed `int` terms, no
+/// sexpr injection), so its redexes match the equations
+/// [`IntBackend::prove_reduce`] returns.
+pub(crate) fn kernel_op_term(op: IntOp) -> Term {
     use covalence_hol_eval::defs;
     match op {
         IntOp::Add => defs::int_add(),
@@ -226,7 +237,8 @@ fn kernel_op_term(op: IntOp) -> Term {
 }
 
 /// `int.<op> a b` — the closed kernel redex for `op` on two `int` terms.
-fn kernel_redex(op: IntOp, a: &Term, b: &Term) -> Result<Term, HolError> {
+/// (`pub(crate)`: also the value semantics' compiled form of `(op a b)`.)
+pub(crate) fn kernel_redex(op: IntOp, a: &Term, b: &Term) -> Result<Term, HolError> {
     kernel_op_term(op)
         .apply(a.clone())
         .map_err(kernel_err)?

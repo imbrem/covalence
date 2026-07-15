@@ -50,6 +50,9 @@ pub mod relation;
 #[cfg(feature = "hol")]
 pub mod session;
 
+#[cfg(feature = "hol")]
+pub mod acl2;
+
 use covalence_sexp::SExpr;
 
 /// The clear-Lisp surface: Forth-style atom resolution + an eval entry.

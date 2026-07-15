@@ -38,6 +38,7 @@
     "profile:flame": "bun scripts/flamegraph-import.mjs",
     "build:python": "cd crates/ffi/python && source activate.sh && maturin develop",
     "test:python": "cd crates/ffi/python && source activate.sh && pytest tests/ -v",
+    "e2e:lisp": "bun scripts/e2e-lisp.mjs",
     "test:ui": "bun run --filter covalence-ui test",
     "test:wasm-js": "bun run --filter covalence-wasm-js test",
     "build:wasm-build-guest": "cargo build --target wasm32-unknown-unknown --release -p covalence-wasm-build-guest && cp target/wasm32-unknown-unknown/release/covalence_wasm_build_guest.wasm packages/covalence-wasm-js/src/__fixtures__/build_guest.wasm",

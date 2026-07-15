@@ -86,8 +86,13 @@ and a K or WASM low-level rewrite doesn't disturb the other's high-level API.
    Side conditions need the denotational `wasm::denote` leg (decidable predicate
    → `bool`); iteration needs list recursion. This is the gate to real reduction
    *traces* (multi-step `↪*` via `Steps/trans` composing single steps).
-2. **LEB128 value-decode** (`leb128_decode : list u8 → nat` + round-trip) — still
-   the orthogonal atoms.md deliverable, on `nat_binary`/`nat_bits_iso`.
+2. **LEB128 value-decode** — LANDED (`crate::init::leb128`): `leb128_decode :
+   list nat → nat` = `foldr (λb acc. (b mod 128) + 128·acc) 0`, with
+   `prove_decode(bytes) → ⊢ leb128_decode ⌜bytes⌝ = value` computed via the
+   `list_recursion` fold clauses + nat arithmetic (0/127/128/624485/0xFFFFFFFF
+   tested, hypothesis-free). Residuals: a `u8 → nat` computable cast (bytes are
+   `nat` for now), a round-trip vs a `leb128_encode`, and rehoming into the
+   planned `covalence-numerals` crate. Orthogonal to the recognition-side LEB128.
 3. **`Typ`/`Dec` fragments** — wrap `wasm::syntax` (datatypes) and functions as
    `Fragment` impls; then a `SpecTecSpec` that indexes all fragments of a spec.
 4. **Value-coupled parsing** (grammar side) — `ListN` vectors / `Bmodule` need a

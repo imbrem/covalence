@@ -74,6 +74,12 @@ pub mod binary;
 // this generalises; `mm_session` builds the high-level Metamath-database API on it.
 pub mod apply;
 
+// **MID — a term-rewrite relation on the binary engine** (the reduction analogue
+// of `interp::DerivationSystem`): base rewrite clauses + generic `app`-congruence
+// + `Reduces = Step*`, plus a `Matcher` trait and a fuel driver. The reusable
+// layer K (`crate::k`) and SpecTec reduction instantiate. `notes/vibes/k/reduction-demo-scope.md`.
+pub mod rewrite;
+
 // The **HOL database type + relation lattice** (`notes/vibes/theories-models-and-logics.md
 // §5.6`): databases as first-class HOL *values* (an axiom-selecting predicate), with
 // `⊑`/monotonicity and `⟹_σ`/transport proved over `Derivable_DB`. UNIFIED (Phase A):

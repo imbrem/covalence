@@ -604,4 +604,194 @@ mod tests {
         assert_genuine(&thm2);
         assert_eq!(nf2, node("Apple", &[]));
     }
+
+    // ==================================================================
+    // ADVERSARIAL SOUNDNESS TESTS (audit)
+    // ==================================================================
+
+    /// A relation with the non-linear rule `eq(X, X) => tt`.
+    fn nonlinear_eq() -> RewriteRelation {
+        let eq = |a: Term, b: Term| node("eq", &[a, b]);
+        let rules = vec![Rule {
+            metavars: vec!["X".into()],
+            lhs: eq(mv("X"), mv("X")),
+            rhs: con("tt"),
+        }];
+        RewriteRelation::new(phi(), app_fn(), rules)
+    }
+
+    /// Non-linear LHS `eq(X,X)` must NOT match `eq(a,b)` with a≠b: the matcher
+    /// enforces metavar consistency, so `eq(a,b)` is a normal form (reflexive
+    /// Reduces only), never `⊢ Reduces eq(a,b) tt`.
+    #[test]
+    fn nonlinear_pattern_does_not_match_distinct_args() {
+        let rel = nonlinear_eq();
+        let cfg = node("eq", &[con("a"), con("b")]);
+        assert!(
+            Innermost.find(&rel, &cfg).is_none(),
+            "eq(a,b) must not match eq(X,X)"
+        );
+        let (nf, thm) = rel.normalize(&Innermost, &cfg, 10).unwrap();
+        assert_genuine(&thm);
+        assert_eq!(nf, cfg, "no reduction: eq(a,b) is a normal form");
+        // The theorem is exactly reflexive Reduces, never `Reduces eq(a,b) tt`.
+        assert_eq!(thm.concl(), &rel.reduces_prop(&cfg, &cfg).unwrap());
+        assert_ne!(
+            thm.concl(),
+            &rel.reduces_prop(&cfg, &con("tt")).unwrap(),
+            "must NOT have forged Reduces eq(a,b) tt"
+        );
+    }
+
+    /// Non-linear LHS DOES fire on genuinely-equal args: `eq(a,a) => tt`.
+    #[test]
+    fn nonlinear_pattern_matches_equal_args() {
+        let rel = nonlinear_eq();
+        let cfg = node("eq", &[con("a"), con("a")]);
+        let (nf, thm) = rel.normalize(&Innermost, &cfg, 10).unwrap();
+        assert_genuine(&thm);
+        assert_eq!(nf, con("tt"));
+        assert_eq!(thm.concl(), &rel.reduces_prop(&cfg, &con("tt")).unwrap());
+    }
+
+    /// A rule whose RHS introduces a variable `Y` absent from the LHS. The
+    /// matcher never binds `Y`, so `prove_root` cannot supply a witness for the
+    /// `∀Y` binder — it must ERROR, not forge a step with an arbitrary Y.
+    #[test]
+    fn rhs_fresh_variable_cannot_be_proved() {
+        // f(X) => g(Y)  — Y is fresh on the RHS (a non-left-linear "creative" rule).
+        let rules = vec![Rule {
+            metavars: vec!["X".into(), "Y".into()],
+            lhs: node("f", &[mv("X")]),
+            rhs: node("g", &[mv("Y")]),
+        }];
+        let rel = RewriteRelation::new(phi(), app_fn(), rules);
+        let cfg = node("f", &[con("a")]);
+        // The matcher binds only X (from the LHS), leaving Y unbound.
+        let redex = Innermost.find(&rel, &cfg).expect("f(a) matches f(X)");
+        assert!(
+            !redex.subst.iter().any(|(n, _)| n == "Y"),
+            "matcher must not invent a binding for the fresh RHS var Y"
+        );
+        // prove_root demands a witness for every metavar (X and Y): Y is missing.
+        let err = rel.prove_root(redex.rule_idx, &redex.subst);
+        assert!(
+            err.is_err(),
+            "a fresh RHS variable must make prove_root fail, not forge a step"
+        );
+        // And the driver surfaces that as an error, never a bogus theorem.
+        assert!(rel.normalize(&Innermost, &cfg, 10).is_err());
+    }
+
+    /// The kernel re-check is the sole trust anchor: `StepThm.from`/`to` are
+    /// UNTRUSTED metadata. We confirm the kernel-computed `thm.concl()` always
+    /// equals the independently-built `step_prop(from, to)` — so even if the
+    /// driver mislabelled endpoints, a consumer verifying `concl()` is safe.
+    #[test]
+    fn step_concl_is_independently_reconstructible() {
+        let rel = peano();
+        let cfg = node("s", &[node("plus", &[con("z"), con("z")])]);
+        let redex = Innermost.find(&rel, &cfg).expect("redex");
+        let s = rel.prove_step(&cfg, &redex).unwrap();
+        // The kernel conclusion matches the claimed endpoints exactly.
+        assert_eq!(s.thm.concl(), &rel.step_prop(&s.from, &s.to).unwrap());
+        // And crucially: it is NOT a step to some unrelated term.
+        assert_ne!(
+            s.thm.concl(),
+            &rel.step_prop(&cfg, &con("z")).unwrap(),
+            "kernel concl must reflect the real rewrite, not an arbitrary claim"
+        );
+    }
+
+    /// Feeding `lift_one` the WRONG congruence clause index must be rejected by
+    /// the kernel (the inner step's shape won't discharge the other clause's
+    /// antecedent / instantiate its binders coherently) — a wrong index can only
+    /// FAIL to build, never forge. We simulate by calling derive_mixed directly
+    /// with a swapped clause index and confirm the resulting concl (if any) is
+    /// never a false step.
+    #[test]
+    fn wrong_clause_index_cannot_forge() {
+        let rel = peano();
+        // Prove a genuine root step ⊢ Step plus(z,z) z.
+        let cfg = node("plus", &[con("z"), con("z")]);
+        let redex = Innermost.find(&rel, &cfg).expect("redex");
+        let inner = rel.prove_root(redex.rule_idx, &redex.subst).unwrap();
+        let sibling = con("z");
+        // Correct: head-congruence with word_args [from, sib, to].
+        let good = derive_mixed(
+            &rel.step_rule_set(),
+            rel.head_cong_idx(),
+            rel.step_n_clauses(),
+            &[inner.from.clone(), sibling.clone(), inner.to.clone()],
+            vec![Premise::Derivation(inner.thm.clone())],
+        );
+        assert!(good.is_ok());
+        // Adversarial: same premise, but the ARG-congruence clause with the SAME
+        // arg order. If it builds at all, its concl is whatever the kernel
+        // actually derives — assert it is never the false head-lifted step.
+        let arg_head = rel.mkapp(inner.from.clone(), sibling.clone()).unwrap();
+        let arg_tail = rel.mkapp(inner.to.clone(), sibling.clone()).unwrap();
+        let false_target = rel.step_prop(&arg_head, &arg_tail).unwrap();
+        match derive_mixed(
+            &rel.step_rule_set(),
+            rel.arg_cong_idx(),
+            rel.step_n_clauses(),
+            &[inner.from.clone(), sibling.clone(), inner.to.clone()],
+            vec![Premise::Derivation(inner.thm.clone())],
+        ) {
+            Err(_) => {} // fine: refused to build
+            Ok(t) => assert_ne!(
+                t.concl(),
+                &false_target,
+                "arg clause must not mint the head-congruence conclusion"
+            ),
+        }
+    }
+
+    /// Overlapping rules: two rules whose LHSs both match. The engine picks one
+    /// (first-match) and mints a genuine step for THAT rule; it never mints a
+    /// step justified by neither.
+    #[test]
+    fn overlapping_rules_stay_sound() {
+        // r0: f(X) => a ;  r1: f(g(Y)) => b  (both match f(g(z)))
+        let rules = vec![
+            Rule {
+                metavars: vec!["X".into()],
+                lhs: node("f", &[mv("X")]),
+                rhs: con("a"),
+            },
+            Rule {
+                metavars: vec!["Y".into()],
+                lhs: node("f", &[node("g", &[mv("Y")])]),
+                rhs: con("b"),
+            },
+        ];
+        let rel = RewriteRelation::new(phi(), app_fn(), rules);
+        let cfg = node("f", &[node("g", &[con("z")])]);
+        let (nf, thm) = rel.normalize(&Innermost, &cfg, 10).unwrap();
+        assert_genuine(&thm);
+        // Whichever fired, the concl equals step/reduces to the REAL result.
+        assert!(nf == con("a") || nf == con("b"));
+        assert_eq!(thm.concl(), &rel.reduces_prop(&cfg, &nf).unwrap());
+    }
+
+    /// A metavar bound to a compound (non-leaf) subterm must substitute exactly:
+    /// `id(X) => X` on `id(f(a,b))` yields `f(a,b)`, and the kernel concl proves
+    /// exactly that — a mis-decomposition in `as_node` would surface as a concl
+    /// mismatch, which we assert against the independent prop.
+    #[test]
+    fn compound_metavar_binding_is_exact() {
+        let rules = vec![Rule {
+            metavars: vec!["X".into()],
+            lhs: node("id", &[mv("X")]),
+            rhs: mv("X"),
+        }];
+        let rel = RewriteRelation::new(phi(), app_fn(), rules);
+        let inner = node("f", &[con("a"), con("b")]);
+        let cfg = node("id", &[inner.clone()]);
+        let (nf, thm) = rel.normalize(&Innermost, &cfg, 10).unwrap();
+        assert_genuine(&thm);
+        assert_eq!(nf, inner);
+        assert_eq!(thm.concl(), &rel.reduces_prop(&cfg, &inner).unwrap());
+    }
 }

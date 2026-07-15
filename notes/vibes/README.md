@@ -9,6 +9,7 @@ git history (and `backup/pre-hol-cleanup` for the pre-HOL-cleanup pass).
 |---|---|
 | [`vision/project-map.md`](./vision/project-map.md) | The map — crate groups + active threads, each with status + pointers. |
 | [`vision/VISION.md`](./vision/VISION.md) | The system vision: metatheory-as-default, executors → HOL → internal Metamath waist, scoped truths. |
+| [`vision/development-vision.md`](./vision/development-vision.md) | The breadth map: the parallel projects (base rewrite, datatypes/functors, arrows/monads, graph & computation theory, Lisp/ACL2, Prolog, K/MM/SpecTec/WASM consilience, verified I/O) and how they interlock. |
 | [`vision/k-framework-vision.md`](./vision/k-framework-vision.md) | North star: full K + all sublanguages, the K-Wasm ⟷ SpecTec goal. |
 | [`vision/roadmap.md`](./vision/roadmap.md) | Time-to-product for the Metamath vision (set.mm in GT; analysis in SOA). |
 | [`kernel/tcb/what-is-the-tcb.md`](./kernel/tcb/what-is-the-tcb.md) | The TCB in human terms: trusted crates, mint sites, admitted rules. |

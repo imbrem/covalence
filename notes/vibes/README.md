@@ -43,6 +43,7 @@ Read `kernel-design.md` before touching the trusted base.
 | [`logics/proof-format.md`](./logics/proof-format.md) | The Haskell dialect's theorem/proof split (equation statements + name-linked S-expr proofs). |
 | [`logics/wasm-spec.md`](./logics/wasm-spec.md) | The SpecTec WASM-spec front end; dual to the Metamath front end. |
 | [`logics/cfg-stratum-design.md`](./logics/cfg-stratum-design.md) | The CFG stratum: SpecTec grammars → per-env `Derives` judgement + family soundness; corpus facts; milestones. |
+| [`logics/spectec-fragment-api.md`](./logics/spectec-fragment-api.md) | High-level trait-based SpecTec-fragment API (`Fragment`, `RelationEnv` peer of `GrammarEnv`); basic WASM semantics derived; layering + K reuse. |
 | [`logics/init-in-dialect.md`](./logics/init-in-dialect.md) | Writing `init/` in the Haskell dialect over the typed HOL backend. |
 | [`logics/opentheory-import.md`](./logics/opentheory-import.md) | Verifying OpenTheory articles on the native HOL kernel (`NativeOt` backend, zero-TCB hyp-tracked axioms, defineTypeOp v6, `cov hol` + `bun run opentheory`). |
 

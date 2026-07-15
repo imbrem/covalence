@@ -26,3 +26,4 @@ pub mod encode;
 pub mod reduce;
 pub mod relation;
 pub mod rewrite;
+pub mod session;

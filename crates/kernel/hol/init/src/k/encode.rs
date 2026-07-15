@@ -78,6 +78,57 @@ pub fn app_combinator() -> Term {
     app_fn()
 }
 
+/// Render an encoded `Φ`-term back to readable K-ish text (`sym(a, b)`), the
+/// inverse of [`encode_pattern`] over the app/con/metavar fragment — for showing
+/// a reduced normal form. Unrecognised terms render as `?`.
+pub fn render(t: &Term) -> String {
+    // Walk the `app` spine: app(app(head, a1), a2)… collects head + args.
+    let mut args_rev = Vec::new();
+    let mut cur = t;
+    while let Some((f, x)) = cur.as_app() {
+        // `f` should itself be `app(app_fn, head-or-inner)`; peel one `app`.
+        if let Some((g, a)) = f.as_app()
+            && g == &app_fn()
+        {
+            args_rev.push(x);
+            cur = a;
+            continue;
+        }
+        break;
+    }
+    args_rev.reverse();
+    let head = render_leaf(cur);
+    if args_rev.is_empty() {
+        head
+    } else {
+        let inner: Vec<String> = args_rev.iter().map(|a| render(a)).collect();
+        format!("{head}({})", inner.join(", "))
+    }
+}
+
+/// Render a leaf constant/metavariable to its source name.
+fn render_leaf(t: &Term) -> String {
+    if let Some(v) = t.as_free() {
+        let n = v.name();
+        if let Some(sym) = n.strip_prefix("k$c$sym.") {
+            return sym.to_string();
+        }
+        if let Some(dv) = n.strip_prefix("k$c$dv.") {
+            return dv.to_string();
+        }
+        if let Some(s) = n.strip_prefix("k$c$str.") {
+            return format!("{s:?}");
+        }
+        if let Some(mv) = n.strip_prefix("k$v$") {
+            return mv.to_string();
+        }
+        if let Some(c) = n.strip_prefix("k$c$") {
+            return c.to_string();
+        }
+    }
+    "?".to_string()
+}
+
 /// A KORE **symbol / atom** constant `k$c$<name> : nat`.
 pub fn con(name: impl AsRef<str>) -> Term {
     Term::free(format!("k$c${}", name.as_ref()), phi())

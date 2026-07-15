@@ -286,6 +286,83 @@ mod tests {
         assert_eq!(super::super::Fragment::n_clauses(&env), 2);
     }
 
+    /// **Basic WASM semantics: compositional validity typing.** A `valtype`
+    /// that is a numeric type is valid iff that numeric type is valid —
+    /// `Valtype_ok/num` has the inductive premise `Numtype_ok`. Over the
+    /// *combined* spec rule set (where all relations share one predicate `d`, so
+    /// a cross-relation premise composes), we derive the `Numtype_ok` base then
+    /// discharge it into `Valtype_ok/num`, building `⊢ C ⊢ (num I32) : ok` from
+    /// `⊢ C ⊢ I32 : ok` — a real two-relation WASM validity derivation, kernel-
+    /// checked and hypothesis-free.
+    #[test]
+    fn wasm_valtype_ok_compositional() {
+        let defs = wasm_spec();
+        let env = RelationEnv::spec(&defs);
+
+        let numtype_ok = env
+            .rule_index(Some("Numtype_ok"), "")
+            .expect("Numtype_ok base");
+        let valtype_num = env
+            .rule_index(Some("Valtype_ok"), "num")
+            .expect("Valtype_ok/num");
+
+        // Base: ⊢ Derivable_Numtype_ok ⌜(C, I32)⌝  (metavars [C, numtype]).
+        let ctx = leaf("C"); // an opaque context constant
+        let i32 = leaf("I32");
+        let base = env
+            .derive_exprs(numtype_ok, &[ctx.clone(), i32.clone()], vec![])
+            .unwrap();
+        assert!(base.hyps().is_empty());
+        let num_judgement = SpecTecExp::Tup {
+            es: vec![ctx.clone(), i32.clone()],
+        };
+        assert_eq!(
+            base.concl(),
+            &env.derivable("Numtype_ok", &num_judgement).unwrap()
+        );
+
+        // Step: Valtype_ok/num (metavars [C, numtype]) discharging the base
+        // premise → ⊢ Derivable_Valtype_ok ⌜(C, num I32)⌝, hypothesis-free.
+        // (The `numtype ↑ valtype` subtype coercion encodes to its underlying
+        // numtype, so the valtype judgement is `(C, I32)` too.)
+        let valid = env
+            .derive_exprs(valtype_num, &[ctx.clone(), i32.clone()], vec![base])
+            .unwrap();
+        assert!(valid.hyps().is_empty());
+        // `numtype ↑ valtype` encodes as `sub(numtype)`, so the valtype
+        // judgement is `(C, sub I32)`.
+        let tyvar = |name: &str| covalence_spectec::ast::SpecTecTyp::Var {
+            x: name.to_string(),
+            as1: vec![],
+        };
+        let valtype_judgement = SpecTecExp::Tup {
+            es: vec![
+                ctx.clone(),
+                SpecTecExp::Sub {
+                    t1: tyvar("numtype"),
+                    t2: tyvar("valtype"),
+                    e1: Box::new(i32.clone()),
+                },
+            ],
+        };
+        assert_eq!(
+            valid.concl(),
+            &env.derivable("Valtype_ok", &valtype_judgement).unwrap(),
+            "the composed derivation concludes Derivable_Valtype_ok of the judgement"
+        );
+
+        // The premise genuinely feeds the conclusion: with NO premise
+        // derivation the rule's `Numtype_ok` antecedent stays undischarged, so
+        // the result is a strictly weaker conditional, NOT the Valtype_ok
+        // judgement above.
+        let undischarged = env.derive_exprs(valtype_num, &[ctx, i32], vec![]).unwrap();
+        assert_ne!(
+            undischarged.concl(),
+            valid.concl(),
+            "without the premise the conclusion is not the Valtype_ok judgement"
+        );
+    }
+
     /// The whole-spec entry point lowers many relations and reports the rest.
     #[test]
     fn wasm_spec_env_lowers_relations() {

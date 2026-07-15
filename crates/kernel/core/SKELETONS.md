@@ -6,7 +6,7 @@ See [`CLAUDE.md`](../../../CLAUDE.md) § Skeletons and the [root index](../../..
 
 - **`src/facts.rs`** — empty module. The observer layer recording and
   content-addressing proven `covalence-init` theorems lands here as the
-  HOL-on-store stack comes online (see crate-root docs, `notes/vibes/roadmap.md`).
+  HOL-on-store stack comes online (see crate-root docs, `notes/vibes/vision/roadmap.md`).
 
 ## Removed-pending-rewrite subsystems
 

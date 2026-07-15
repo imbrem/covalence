@@ -16,7 +16,7 @@ maintainer's serialization sign-off (persisted-format wall).
 
 `Project` / `compile_project` does the `.cov`→`.cov` import graph + topological
 compile (and `.cov`→Rust seam-env / FFI-tactic leaves). Design:
-[`notes/vibes/cov-project.md`](../../../../../notes/vibes/cov-project.md). Open:
+[`notes/vibes/web/cov-project.md`](../../../../../notes/vibes/web/cov-project.md). Open:
 
 - **Rust↔`.cov` mutual recursion.** Cycles through the Rust↔`.cov` boundary are
   **rejected** (`ProjectError::Cycle`), not resolved; the two-phase / SCC+fixpoint

@@ -42,13 +42,24 @@ tokens):**
 
 ## Build & Run
 
+All `bun run build:*` / `serve` / `release` commands route through the build-graph
+orchestrator ([`scripts/build.mjs`](./scripts/build.mjs)), which models the
+cross-toolchain artifact DAG — **web-kernel WASM → web bundle → rust-embed'd
+`cov` binary** — and builds a target's prerequisites first, skipping work that is
+already up to date. So building the server automatically (re)builds its WASM
+prerequisites; you never hand-order them. cargo stays the source of truth for
+Rust staleness. Run `bun run build:graph` to print the DAG. Missing tools fail
+with an install hint.
+
 ```sh
 bun install                # install JS dependencies
-bun run build              # full build: web (SvelteKit) + native (debug) + WASM + esbuild
-bun run build:native       # native debug only (cargo build) — embeds last-built web bundle
-bun run build:wasm         # WASM + esbuild only
-bun run build:web          # build SvelteKit web app (adapter-static)
-bun run build:serve        # build web app + native binary
+bun run build              # full build: native (debug, pulls web ⇒ web-kernel) + VSCode WASM
+bun run build:native       # native cov (auto-builds web bundle + web-kernel WASM first)
+bun run build:wasm         # VSCode extension WASM + esbuild
+bun run build:web          # SvelteKit web app (auto-builds web-kernel WASM first)
+bun run build:web-kernel   # web-kernel WASM only (cargo → wasm-bindgen → wasm-opt)
+bun run build:graph        # print the build dependency graph
+bun run build:serve        # native cov with a fresh embedded web bundle
 bun run dev:web            # SvelteKit dev server (proxies /api to localhost:3100)
 bun run dev:serve          # reminder + dev:web (run cov serve --api in another terminal)
 bun run release            # full release build: web + native (release) + WASM + esbuild
@@ -90,6 +101,12 @@ COV_API=https://cov.example.com bun run dev:web # remote backend
 - **Rust targets**: `wasm32-wasip1-threads`, `wasm32-unknown-unknown`
 - **Bun** — JS package manager and build script runner
 - **wasm-pack**, **wasm-bindgen-cli**, **binaryen** (`wasm-opt`)
+
+The [`flake.nix`](./flake.nix) devshell (`nix develop`, or direnv via `.envrc`)
+provides all of the above plus `sccache`, `buck2`, `reindeer`, and the Python
+toolchain. It shares a Rust build cache across git worktrees (sccache; toggle
+with `COV_CACHE=off` for local incremental). An optional, reproducible dev
+container built on the same flake lives in [`.devcontainer/`](./.devcontainer/README.md).
 
 ## Docs, Notes & Authorship (IMPORTANT)
 
@@ -151,7 +168,7 @@ crate — never import the underlying dep directly.
 
 The full per-crate catalogue (what each wraps/provides) lives in the
 **crate-map** skill; the machine-tracked dependency graph + TCB closure is
-`docs/deps/` (`bun run deps`). Read `notes/vibes/kernel-design.md` before
+`docs/deps/` (`bun run deps`). Read `notes/vibes/kernel/kernel-design.md` before
 touching the TCB (`crates/kernel/base/trusted` + `crates/kernel/hol/core`).
 
 ## Conventions

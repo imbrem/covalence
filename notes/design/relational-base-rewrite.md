@@ -14,13 +14,13 @@
     (`execute`/`transpose`/`compose`/`meet`/`join` — the positive-only mint sites).
   - TCB-as-data PoC: `crates/app/tcb-db` (`covalence-tcb-db`) — dumps the golden
     manifests + audit into a STRICT-schema `.db` with round-trip tests.
-  - Design corpus: [`../vibes/base-abstraction.md`](../vibes/base-abstraction.md)
+  - Design corpus: [`../vibes/kernel/base-abstraction.md`](../vibes/kernel/base-abstraction.md)
     (§4 relations impl, §5 TCB-to-SQLite, §6 what-must-be-preserved),
-    [`../vibes/base-api-surface.md`](../vibes/base-api-surface.md) (what core/eval
+    [`../vibes/kernel/base-api-surface.md`](../vibes/kernel/base-api-surface.md) (what core/eval
     actually consume — the surface the rewrite must keep),
-    [`../vibes/base-relcalc-holomega-design.md`](../vibes/base-relcalc-holomega-design.md)
+    [`../vibes/kernel/base-relcalc-holomega-design.md`](../vibes/kernel/base-relcalc-holomega-design.md)
     (the authoritative relations-as-untrusted-functions redesign, Fronts D/E),
-    [`../vibes/tcb-holomega-roadmap.md`](../vibes/tcb-holomega-roadmap.md).
+    [`../vibes/kernel/tcb/tcb-holomega-roadmap.md`](../vibes/kernel/tcb/tcb-holomega-roadmap.md).
   - The human-readable TCB picture: [`../vibes/kernel/tcb/what-is-the-tcb.md`](../vibes/kernel/tcb/what-is-the-tcb.md).
 
 ## Context / problem

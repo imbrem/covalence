@@ -568,7 +568,7 @@ prove" (soundness w.r.t. the Metamath base). **Per-system plans for bringing the
 external systems in as object logics** — MLTT / book HoTT / NuPRL / IZF→MLTT,
 ACL2 / Lisp, LF / Dedukti — are sketched in
 [`logic-frontends.md`](./logic-frontends.md) (umbrella + difficulty matrix) and
-the [`sketches/`](./sketches/) per-family docs. Efficient encodings (de Bruijn, …) are
+the [`sketches/`](../sketches/) per-family docs. Efficient encodings (de Bruijn, …) are
 HOL data structures proven sound against that base — Metamath both pins the meaning
 and lets us swap encodings freely behind proven equivalences; and since we **never
 look at the proofs** (only assert one exists), the databases stay dead-simple

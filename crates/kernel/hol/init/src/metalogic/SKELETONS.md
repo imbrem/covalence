@@ -4,7 +4,7 @@ Open work in the **metalogic** layer: the generic `Derivable_L` engine, database
 as HOL values, and Metamath import/replay + composition. See `CLAUDE.md` §
 Skeletons, the [crate index](../../SKELETONS.md), and the
 [root index](../../../../../../SKELETONS.md).
-Design: `notes/vibes/theories-models-and-logics.md` §5.5/§5.6.
+Design: `notes/vibes/logics/theories-models-and-logics.md` §5.5/§5.6.
 
 ## Severe
 

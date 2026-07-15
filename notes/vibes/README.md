@@ -73,4 +73,4 @@ North star: [`vision/k-framework-vision.md`](./vision/k-framework-vision.md).
 
 ## `sketches/` · `handoff/` · `build/`
 
-Scratch sketches ([`sketches/`](./sketches/)), open task handoffs ([`handoff/`](./handoff/)), and build known-issues ([`build/known-issues.md`](./build/known-issues.md)).
+Scratch sketches ([`sketches/`](./sketches/)), open task handoffs ([`handoff/`](./handoff/)), and build notes ([`build/known-issues.md`](./build/known-issues.md), [`build/buck2-experiment.md`](./build/buck2-experiment.md)).

@@ -9,7 +9,7 @@ Three tiers, split by *trust and authorship* (see
 - [`plans/`](./plans/) — active plans. **Maintainer-authored.**
   - [`plans/next-stage.md`](./plans/next-stage.md) — the current one (docs
     split, tooling, hierarchical crates, WASM roadmap). An AI-drafted execution
-    breakdown lives in [`vibes/next-stage-breakdown.md`](./vibes/next-stage-breakdown.md).
+    breakdown lives in [`vibes/plans/next-stage-breakdown.md`](./vibes/plans/next-stage-breakdown.md).
 - [`design/`](./design/README.md) — **design docs**: focused, iterable decision
   records (one file per proposal, each with an explicit Status). Agent-draftable
   scaffolding (template + index in its README); graduating content to `docs/` is

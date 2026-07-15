@@ -13,7 +13,7 @@
   bridging a reflected HOL-ω type into a trusted kernel type/term is unbuilt and
   gated on the middle `TyInst` rule + the Homeier consistency proof (vs
   `SelectAx`/`bool`) before any higher-rank rule may enter `CORE_MANIFEST`
-  (`notes/vibes/tcb-holomega-roadmap.md`). (2) No TERM layer: `HolOmega` builds
+  (`notes/vibes/kernel/tcb/tcb-holomega-roadmap.md`). (2) No TERM layer: `HolOmega` builds
   and kind-checks types only; typing HOL-ω *terms* (a `return`/`bind` term of the
   polymorphic type) still needs the trusted bridge.
 - **Trait family incomplete.** `Hol` + `Nat` + `Int` + `HolOmega` exist. Planned

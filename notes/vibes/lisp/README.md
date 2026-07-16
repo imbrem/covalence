@@ -37,3 +37,6 @@ move together and `cargo test` stays green throughout.
 - [`minimal-spec/`](./minimal-spec/) — the buildable spec: [`README.md`](./minimal-spec/README.md), [`implementation-plan.md`](./minimal-spec/implementation-plan.md), [`lisp.wit`](./minimal-spec/lisp.wit).
 - [`initial-ideas/`](./initial-ideas/) — the design corpus: parametric-reduction, reduction-relations-and-state, generic-repl-trait, lisp-dialects-and-order, parsing-relations, content-addressing-sexpr, lisp-frontend-sketch, lisp-acl2-answers, acl2-lisp.
 - Status report: [`STATUS.md`](./STATUS.md) once the first build lands.
+- ACL2: [`acl2-full-plan.md`](./acl2-full-plan.md) (the governing S0–S12 plan),
+  [`acl2-s0-s3-design.md`](./acl2-s0-s3-design.md) (concrete carrier/primitives/deep-terms/Derivable_ACL2 design),
+  [`acl2-dialect.md`](./acl2-dialect.md) (slice-1 dialect notes).

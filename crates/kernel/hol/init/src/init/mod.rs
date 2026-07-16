@@ -81,6 +81,7 @@ macro_rules! cached_thm {
     };
 }
 
+pub mod acl2;
 pub mod ball;
 pub mod cat;
 pub mod char;

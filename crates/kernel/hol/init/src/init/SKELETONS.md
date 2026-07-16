@@ -2,7 +2,9 @@
 
 Open placeholders for the `init/*` theories. See `CLAUDE.md` § Skeletons for the
 rules, the [crate index](../../SKELETONS.md), and the [root
-index](../../../../../../SKELETONS.md).
+index](../../../../../../SKELETONS.md). Sub-registries:
+[`acl2/SKELETONS.md`](./acl2/SKELETONS.md) (the staged ACL2 soundness ladder —
+S1 primitives / S2 semantics / S3 `Derivable_ACL2` all open; S0 carrier done).
 
 ## `defs/` re-home bridge (toHOL purge, `init/twins.rs`)
 
@@ -273,9 +275,11 @@ Bridge built (S9a); the flip is maintainer-gated. See
   - **`Hol` trait ↔ `LogicOps` unification** — `inductive/hol.rs`'s `Hol` should extend
     `covalence_inductive::LogicOps` instead of duplicating its surface (`api.rs` forwards
     method-by-method today).
-  - **Carved backend is `sexpr`-shape-only** — `inductive/carved.rs` realizes exactly the
-    `atom bytes | snil | scons rec rec` shape (full-caps: `prim_rec`/`rec_injective`/
-    `mem_trivial`, paramorphic recursor); a generic exact-type carver for arbitrary specs is
+  - **Carved backend is `sexpr`-shape-only** — the construction is now payload-parametric
+    (`CarvedSExpr::build_with(payload, prefix)`; instances: `sexpr` at `bytes`,
+    `init/acl2/carrier.rs` at `coprod int bytes`), but the `InductiveBackend` shape gate
+    still realizes only `atom bytes | snil | scons rec rec`; a generic exact-type carver
+    for arbitrary specs (≠ sexpr shape / other payloads through the bundle API) is
     future work.
   - **`covalence-sexp` quotation helper** — surface `SExp` → `sexpr_theory()` constructor
     terms, next to the backend (the Lisp pole's data path).
@@ -342,7 +346,9 @@ Bridge built (S9a); the flip is maintainer-gated. See
     induction-scheme generation (design in `inductive-api-design.md` §4.2). The current
     theorems hand-pick structural measures; no admission machinery yet.
   - **`proof/acl2` frontend** — the `.lisp`/`defun`/`defthm` reader that lowers onto this
-    API (mapping in `inductive-api-design.md` §4.3). Not started.
+    API (mapping in `inductive-api-design.md` §4.3). Not started; the kernel-side model it
+    will target is the staged ladder in [`acl2/`](./acl2/SKELETONS.md)
+    (`notes/vibes/lisp/acl2-full-plan.md`).
 
 - **λ_iter deep embedding** (`init/lambda_iter.rs` + `.cov`, `init/cv_recursion.rs`).
   Tarski-style nat-encoding documented; **proved**: course-of-values induction

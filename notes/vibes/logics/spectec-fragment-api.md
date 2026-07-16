@@ -79,13 +79,52 @@ version; K's `prove_step`/`KStepThm` is the free-function+result-struct altitude
 Both sit on `wasm::relation`/`metalogic` — so the mid-level is genuinely shared,
 and a K or WASM low-level rewrite doesn't disturb the other's high-level API.
 
+## Side conditions (the mirror-principle unlock — analysis + first piece)
+
+Real *parameterized* reduction (`select`, `br_if`, `i32.add` const-fold) is gated
+by `if`/`let` side-condition premises. The hard part is the **representation
+bridge**: the judgement encoding ([`wasm::encode`]) is *uninterpreted* (`Φ=nat`
+free algebra, metavars `st$v$c`, substitution = `all_elim`, and a numeric literal
+`Num n` is the **opaque** constant `st$c$num.nat.N`, NOT a real nat), while a
+condition (`c ≠ 0`, `c = c₁+c₂`) needs *real* arithmetic from the denotational leg
+([`wasm::denote`], computable via `reduce()`).
+
+**Faithful vs. gate.** Simply *dropping* the condition from the clause and gating
+at derive-time makes `Derivable_R` **over-approximate** (a skeptic could derive
+the rule when the condition is false) — unfaithful. The sound design keeps the
+condition as a real *denoted* antecedent in the clause (mangled `st$v$` metavar
+names, so it shares the `∀` with the judgement), instantiates condition-metavars
+with **real nats** (valid in both the opaque judgement spine and the computable
+condition), and discharges via `prove_true`.
+
+**Landed (`spectec::side_cond`):** the sound reusable core —
+`prove_side_condition(cond, binds) → ⊢ cond` for value-fragment conditions
+(`Bool`/`Num`/`Var`/`Cmp`/`Bin`/`Un`): substitute concrete bindings, denote the
+closed condition, discharge by kernel computation. It *gates* (proves `n=0` for
+`n:=0`, **refuses** `n:=5` — cannot fabricate), matching the front end's
+faithfulness contract. Tested on `=`/`<`/`≤` + arithmetic; non-value-fragment
+(`Uncase`/`Proj`/`Call`) rejected up front.
+
+**What's still needed to unlock a *whole* real rule** (findings from the probe):
+- No value-fragment-condition rule lowers on `if`-support *alone* — **every** one
+  (`Step_read/*-zero`'s `n=0`, `Limits_ok`'s `n≤k`, …) *also* carries an `Iter`
+  (`…*`) or `Let` premise. So the full unlock needs `if` + `let` + iterated
+  premises together (Let = a value-fragment binding `e₁=e₂`; iteration needs list
+  recursion), plus wiring the discharge into `lower_rule`/`clause_of`/`derive`
+  (condition as denoted antecedent + `derive` discharging it with the
+  `side_cond` Thm).
+- The flagship branch rules (`select`/`if`/`br_if`, condition
+  `Proj(Uncase c) ≠ 0`) additionally need the **datatype leg** (`Uncase`/`Proj`
+  denote support) — gated on `wasm::syntax` variants + a `Dec`/metafunction leg.
+- A `bool.not F → T` fold unblocks the `Ne` (`≠`) family for `side_cond`.
+
 ## Next (roadmap)
 
-1. **Richer premises** — the single-step `Step` relation and most reduction rules
-   carry `if`/`let` side conditions (221 rules) and iterated `…*` premises (63).
-   Side conditions need the denotational `wasm::denote` leg (decidable predicate
-   → `bool`); iteration needs list recursion. This is the gate to real reduction
-   *traces* (multi-step `↪*` via `Steps/trans` composing single steps).
+1. **Richer premises** — wire `side_cond` into the engine: `if` as a denoted
+   clause antecedent discharged in `derive`, `let` bindings, and iterated `…*`
+   premises (list recursion). That unlocks the first whole conditional rule
+   (`Step_read/*-zero` or `Limits_ok`) and, with `Steps/trans`, real multi-step
+   reduction *traces*.
 2. **LEB128 value-decode** — LANDED (`crate::init::leb128`): `leb128_decode :
    list nat → nat` = `foldr (λb acc. (b mod 128) + 128·acc) 0`, with
    `prove_decode(bytes) → ⊢ leb128_decode ⌜bytes⌝ = value` computed via the

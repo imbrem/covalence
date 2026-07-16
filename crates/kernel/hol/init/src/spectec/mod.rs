@@ -33,6 +33,7 @@ use covalence_core::{Result, Term};
 use covalence_hol_eval::EvalThm as Thm;
 
 pub mod relation;
+pub mod side_cond;
 
 pub use relation::RelationEnv;
 

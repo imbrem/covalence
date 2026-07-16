@@ -18,6 +18,16 @@ peer of `crate::grammar::cfg::GrammarEnv`). See
   reflexive closure `Steps/refl` and the premise-free typing rules do. Real
   reduction traces need those premise forms (side conditions → the denotational
   `wasm::denote` leg; iteration → list recursion).
+- **Side conditions: discharge primitive landed, not yet wired into lowering.**
+  `side_cond::prove_side_condition` soundly discharges value-fragment `if`
+  conditions (`=`/`</`/`≤` + arithmetic; it *gates*, never fabricates), but
+  `lower_rule` still SKIPS `if`/`let`/iterated premises, so no whole conditional
+  rule lowers yet. Wiring needs: the condition as a *denoted* clause antecedent
+  (mangled metavars, real-nat instantiation), `derive` discharging it with the
+  `side_cond` Thm, plus `let` bindings + iteration (every value-fragment rule
+  also carries an `Iter`/`Let`). `Ne` needs a `not F → T` fold; branch rules
+  (`Proj(Uncase c)≠0`) need the datatype leg. Design + analysis:
+  `notes/vibes/logics/spectec-fragment-api.md`.
 - **No `state` in the `Fragment` trait.** Judgement *statement* differs per kind
   (relation: `(rel, expr)`; grammar: `(nt, word)`), so it stays an inherent
   method (`RelationEnv::derivable`, `GrammarEnv::derivable`). Unify later if a

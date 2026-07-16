@@ -1075,4 +1075,264 @@ mod tests {
         assert_eq!(nf, inner);
         assert_eq!(thm.concl(), &rel.reduces_prop(&cfg, &inner).unwrap());
     }
+
+    // ------------------------------------------------------------------
+    // (b) STRATIFICATION: a guard that only holds via ANOTHER guarded rule
+    //     must NOT fire — guards evaluate in the unconditional stratum only.
+    // ------------------------------------------------------------------
+
+    /// A guarded rule whose *condition* can only reduce to `tt` by using a
+    /// second guarded rule. The stratification evaluates guards in the
+    /// **unconditional** sub-relation, which excludes BOTH guarded rules, so
+    /// the condition never reaches `tt` there and the rule does not fire.
+    /// This is sound (never forges) though incomplete (a "true-in-the-full-
+    /// relation" guard is simply not provable). We prove the negative rather
+    /// than only observing incompleteness.
+    #[test]
+    fn guard_depending_on_guarded_rule_does_not_fire() {
+        // Unconditional: cond0(X) => X       (identity, just to have a base)
+        // Guarded g1:    mk(X)   => tt        requires cond0(X)   (g1 makes tt)
+        //   — but we deliberately give g1 a guard that ONLY holds unconditionally
+        //     for a specific X, then use g1's RESULT as another guard.
+        // Simpler faithful shape:
+        //   Guarded gInner: pInner() => tt    requires yes()      (yes()→tt uncond)
+        //   Guarded gOuter: fire()   => won()  requires pInner()  (pInner→tt ONLY via gInner)
+        // gOuter's guard pInner() reduces to tt only by firing gInner, a GUARDED
+        // rule — excluded from the unconditional stratum — so gOuter must NOT fire.
+        let rules = vec![
+            // unconditional: yes() => tt
+            (
+                Rule {
+                    metavars: vec![],
+                    lhs: node("yes", &[]),
+                    rhs: con("tt"),
+                },
+                None,
+            ),
+            // guarded gInner: pInner() => tt requires yes()
+            (
+                Rule {
+                    metavars: vec![],
+                    lhs: node("pInner", &[]),
+                    rhs: con("tt"),
+                },
+                Some(node("yes", &[])),
+            ),
+            // guarded gOuter: fire() => won() requires pInner()
+            (
+                Rule {
+                    metavars: vec![],
+                    lhs: node("fire", &[]),
+                    rhs: node("won", &[]),
+                },
+                Some(node("pInner", &[])),
+            ),
+        ];
+        let rel = RewriteRelation::with_guards(phi(), app_fn(), rules, con("tt"));
+
+        // Layout: 1 uncond + 2 congruence + 2 guarded = 5 clauses.
+        assert_eq!(rel.n_base(), 1);
+        assert_eq!(rel.step_rule_set().n_clauses().unwrap(), 5);
+
+        // gInner (rule_idx 1) DOES fire: its guard yes() reduces to tt uncond.
+        let inner_start = node("pInner", &[]);
+        let (nf_inner, thm_inner) = rel.normalize(&Innermost, &inner_start, 100).unwrap();
+        assert_genuine(&thm_inner);
+        assert_eq!(nf_inner, con("tt"), "gInner fires: pInner() -> tt");
+
+        // gOuter (rule_idx 2) must NOT fire: its guard pInner() reduces to tt
+        // ONLY by firing gInner (a guarded rule), which the unconditional
+        // stratum excludes. So fire() is a normal form.
+        assert!(
+            !rel.guard_holds(2, &[]),
+            "gOuter's guard pInner() must NOT hold in the unconditional stratum"
+        );
+        let outer_start = node("fire", &[]);
+        assert!(
+            Innermost.find(&rel, &outer_start).is_none(),
+            "fire() must have no redex: its guard only holds via a guarded rule"
+        );
+        let (nf_outer, thm_outer) = rel.normalize(&Innermost, &outer_start, 100).unwrap();
+        assert_genuine(&thm_outer);
+        assert_eq!(nf_outer, outer_start, "fire() is a normal form");
+        assert_ne!(
+            thm_outer.concl(),
+            &rel.reduces_prop(&outer_start, &node("won", &[])).unwrap(),
+            "must NOT forge Reduces fire() won() via a guarded-rule guard"
+        );
+        // Calling prove_root directly on gOuter must also ERROR (guard unprovable
+        // in the unconditional stratum) — never forge the step.
+        assert!(
+            rel.prove_root(2, &[]).is_err(),
+            "prove_root(gOuter) must refuse: guard not derivable unconditionally"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // (c) GUARD-FALSE cannot forge — a guard that reduces (in the
+    //     unconditional stratum) to a NON-truth value must never certify.
+    // ------------------------------------------------------------------
+
+    /// A guard that is not a literal but genuinely *reduces* to a non-truth
+    /// value: `bad(X) => wrong() requires leq(s(z), z)`, where `leq` is
+    /// unconditional and `leq(s(z), z) => ff` (never `tt`). The guard is
+    /// reducible but reaches `ff`, so the rule must never fire, and a direct
+    /// `prove_root` must error rather than certify `Step bad(a) wrong()`.
+    #[test]
+    fn guard_reduces_to_nontruth_cannot_forge() {
+        let z = || con("z");
+        let s = |t: Term| node("s", &[t]);
+        let leq = |a: Term, b: Term| node("leq", &[a, b]);
+        let m = || mv("M");
+        let n = || mv("N");
+        let rules = vec![
+            // unconditional leq (tt/ff-valued)
+            (
+                Rule {
+                    metavars: vec!["N".into()],
+                    lhs: leq(z(), n()),
+                    rhs: con("tt"),
+                },
+                None,
+            ),
+            (
+                Rule {
+                    metavars: vec!["M".into()],
+                    lhs: leq(s(m()), z()),
+                    rhs: con("ff"),
+                },
+                None,
+            ),
+            (
+                Rule {
+                    metavars: vec!["M".into(), "N".into()],
+                    lhs: leq(s(m()), s(n())),
+                    rhs: leq(m(), n()),
+                },
+                None,
+            ),
+            // guarded: bad(X) => wrong() requires leq(s(z), z)  [reduces to ff]
+            (
+                Rule {
+                    metavars: vec!["X".into()],
+                    lhs: node("bad", &[mv("X")]),
+                    rhs: node("wrong", &[]),
+                },
+                Some(leq(s(z()), z())),
+            ),
+        ];
+        let rel = RewriteRelation::with_guards(phi(), app_fn(), rules, con("tt"));
+
+        // Sanity: the guard really does reduce (unconditionally) to ff, not tt.
+        let (guard_nf, _) = rel
+            .uncond()
+            .normalize(&Innermost, &leq(s(z()), z()), 100)
+            .unwrap();
+        assert_eq!(guard_nf, con("ff"), "guard reduces to ff, not the truth tt");
+
+        let cfg = node("bad", &[con("a")]);
+        // (i) matcher: no redex (guard_holds is false).
+        assert!(
+            Innermost.find(&rel, &cfg).is_none(),
+            "guard leq(s(z),z)=ff never holds, so bad(a) has no redex"
+        );
+        assert!(!rel.guard_holds(3, &[("X".to_string(), con("a"))]));
+        // (ii) prove_root ERRORS if called directly.
+        assert!(
+            rel.prove_root(3, &[("X".to_string(), con("a"))]).is_err(),
+            "prove_root must refuse a guard that reduces to a non-truth value"
+        );
+        // (iii) normalize never yields Reduces bad(a) wrong().
+        let (nf, thm) = rel.normalize(&Innermost, &cfg, 100).unwrap();
+        assert_genuine(&thm);
+        assert_eq!(nf, cfg, "bad(a) is a normal form");
+        assert_ne!(
+            thm.concl(),
+            &rel.reduces_prop(&cfg, &node("wrong", &[])).unwrap(),
+            "must NOT forge Reduces bad(a) wrong()"
+        );
+    }
+
+    /// (a)/(f) DEFENSE-IN-DEPTH: the antecedent-equality re-check inside
+    /// `imp_elim` is the trust anchor. We forge a *genuine* guard theorem for
+    /// the WRONG value — `⊢ Reduces_uncond cond ff` (true! the guard really
+    /// reduces to ff) — and try to discharge the guarded clause's antecedent,
+    /// which demands `Reduces_uncond cond tt`. `derive_mixed` must FAIL to
+    /// build: the two propositions differ (ff ≠ tt), so no `Step` is minted.
+    /// This directly exercises "could prove_guard return a theorem with
+    /// nf != truth that still discharges the truth antecedent?" — it cannot,
+    /// because imp_elim independently enforces the equality.
+    #[test]
+    fn wrong_value_guard_theorem_cannot_discharge_clause() {
+        let z = || con("z");
+        let s = |t: Term| node("s", &[t]);
+        let leq = |a: Term, b: Term| node("leq", &[a, b]);
+        let m = || mv("M");
+        let n = || mv("N");
+        let rules = vec![
+            (
+                Rule {
+                    metavars: vec!["N".into()],
+                    lhs: leq(z(), n()),
+                    rhs: con("tt"),
+                },
+                None,
+            ),
+            (
+                Rule {
+                    metavars: vec!["M".into()],
+                    lhs: leq(s(m()), z()),
+                    rhs: con("ff"),
+                },
+                None,
+            ),
+            (
+                Rule {
+                    metavars: vec!["M".into(), "N".into()],
+                    lhs: leq(s(m()), s(n())),
+                    rhs: leq(m(), n()),
+                },
+                None,
+            ),
+            // guarded: bad() => wrong() requires leq(s(z), z)  [reduces to ff]
+            (
+                Rule {
+                    metavars: vec![],
+                    lhs: node("bad", &[]),
+                    rhs: node("wrong", &[]),
+                },
+                Some(leq(s(z()), z())),
+            ),
+        ];
+        let rel = RewriteRelation::with_guards(phi(), app_fn(), rules, con("tt"));
+
+        // Build a GENUINE guard theorem for the WRONG value:
+        //   ⊢ Reduces_uncond (leq(s(z),z)) ff        (a real, hyp-free theorem)
+        let cond = leq(s(z()), z());
+        let (nf, guard_ff) = rel.uncond().normalize(&Innermost, &cond, 100).unwrap();
+        assert_eq!(nf, con("ff"));
+        assert!(guard_ff.hyps().is_empty());
+        // Its conclusion is Reduces_uncond cond ff — NOT the ...cond tt the
+        // guarded clause's antecedent demands.
+        assert_eq!(
+            guard_ff.concl(),
+            &rel.uncond().reduces_prop(&cond, &con("ff")).unwrap(),
+        );
+
+        // Try to discharge the guarded clause (rule_idx 3 -> clause_idx 3+2=5)
+        // using this wrong-value guard theorem as the Side premise.
+        let forged = derive_mixed(
+            &rel.step_rule_set(),
+            rel.clause_idx(3),
+            rel.step_n_clauses(),
+            &[], // no metavars on bad()
+            vec![Premise::Side(guard_ff)],
+        );
+        // imp_elim re-checks antecedent == premise.concl(): ff-theorem cannot
+        // discharge the tt-antecedent, so the build FAILS (never forges a Step).
+        assert!(
+            forged.is_err(),
+            "a Reduces_uncond ...ff theorem must NOT discharge the ...tt guard antecedent"
+        );
+    }
 }

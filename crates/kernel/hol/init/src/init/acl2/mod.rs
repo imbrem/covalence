@@ -10,13 +10,22 @@
 //!   of the payload-parametric carved construction
 //!   ([`crate::init::inductive::carved`]), with induction, case analysis,
 //!   constructor injectivity/distinctness, and the paramorphic recursor.
-//! - **S1** (`prims`, not yet built) — model primitives
-//!   (`consp`/`car`/`cdr`/`equal`/`if`/arithmetic via `intval`) with
-//!   ACL2's completion axioms *proved*.
-//! - **S2** (`term`, not yet built) — deep terms + valuation semantics.
+//! - **S1** ([`prims`]) — total model primitives
+//!   (`consp`/`atom`/`endp`/`symbolp`/`integerp`/`equal`/`if`/arithmetic
+//!   via the `intval : A → int` seam) with ACL2's completion axioms
+//!   *proved* (car/cdr of non-conses = `nil`, non-numbers read as `0`)
+//!   and the arithmetic axioms lifted from the proved
+//!   [`crate::init::int`] ring (`plus_comm`/`plus_assoc`).
+//! - **S2** ([`term`]) — metacircular pseudo-terms (terms *are* carrier
+//!   values) with the pair-valued paramorphic evaluator `ev`
+//!   (`eval`/`evlis`) and substituter (`subst`/`lsubst`), their
+//!   per-constructor computation laws, and the semantic-substitution
+//!   lemma `subst_sema` (S3's INST discharge).
 //! - **S3** (`ladder`/`derivable`, not yet built) — reified
 //!   `Derivable_ACL2` + soundness + transport into base HOL.
 //!
 //! Open work is tracked in this directory's `SKELETONS.md`.
 
 pub mod carrier;
+pub mod prims;
+pub mod term;

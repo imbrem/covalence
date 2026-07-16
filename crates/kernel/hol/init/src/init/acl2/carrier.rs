@@ -186,6 +186,18 @@ impl Acl2 {
         apply_def(eq, std::slice::from_ref(v))
     }
 
+    /// `⊢ aint i = aatom (inl i)` — public unfold of the integer-atom
+    /// constructor (the S1 payload-dispatch seam).
+    pub fn int_unfold(&self, i: &Term) -> Result<Thm> {
+        self.payload_unfold(true, i)
+    }
+
+    /// `⊢ asym s = aatom (inr s)` — public unfold of the symbol-atom
+    /// constructor.
+    pub fn sym_unfold(&self, s: &Term) -> Result<Thm> {
+        self.payload_unfold(false, s)
+    }
+
     /// `inl v` / `inr v` at the payload coprod.
     fn payload_wrap(is_int: bool, v: &Term) -> Result<Term> {
         if is_int {

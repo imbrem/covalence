@@ -556,6 +556,84 @@ S0 landed on the **primary route** — no fallback needed, no walls hit:
   lisp.rs transplant was mechanical, carrier handles only). All closed
   (`hyps().is_empty()`), exact statements asserted.
 
+### S1 implementation report (2026-07-16, branch `lisp-demo`)
+
+S1 landed in `init/acl2/prims.rs` exactly on the §4 route — no walls, every
+gate theorem closed on the first full test run. Deviations/additions:
+
+- **Additions beyond the §4 definition list** (deliverable-driven, all
+  definitional-only): `aatomp` (ACL2 `atom`, its own catamorphism),
+  `aendp := aatomp` (define), `aminus := λx y. aplus x (aneg y)` (the
+  `(- x y)` macro shape, with `intval_minus` through `int::sub_def`), and
+  `ale := λx y. aif (alt y x) anil t` (the `(<= x y)` macro shape). None are
+  primitive-table rows (the table is exactly the designed 11).
+- **`int_ne(i, j)` helper added** — `⊢ ¬(aint ⌜i⌝ = aint ⌜j⌝)` for distinct
+  int literals, the `aint` mirror of S0's `sym_ne` (contraposed `int_inj`
+  against `reduce`'s literal disequality). Used by the ground `aequal`
+  negative; will serve S2/S3 the same way `sym_ne` does.
+- **One bridge simpler than designed:** `ThmExt::eqt_intro` already lands on
+  the *literal* `⌜T⌝` (init's `truth()` concludes the literal), so firing
+  refl-guards needs no `tru_eq_lit` crossing; the `⌜F⌝` side uses a local
+  `eqf_intro` (the `init/nat.rs` shape). Guard firing throughout is
+  `rw_all(guard_eq)` + `cond::collapse_conds` — no bespoke cond machinery.
+- `carrier.rs` gained public `int_unfold`/`sym_unfold` accessors (the
+  payload-dispatch seam; previously private `payload_unfold`).
+- The five catamorphisms carry their step arrays in a private `Cata` bundle
+  so define-time and law-time `prec_eq` see identical terms; payload dispatch
+  is one generic `cata_payload` through `coprod::case_inl`/`case_inr` (the
+  catalogue has no reduce rule for `coprod_case`, as assumed).
+- Gate tests (`prims.rs`): `t_prims_build` (types + the 11-row table),
+  `t_car_cdr_completion` (computation + all completion instances),
+  `t_recognizers` (consp/atom/endp/symbolp/integerp incl. `asymbolp anil = t`),
+  `t_equal` (refl/ne/holds/`t_ne_nil` + ground both ways + equal-literal
+  negative control), `t_if`, `t_intval` (the seam + completion + per-op laws),
+  `t_lifted_arithmetic` (`plus_comm`/`plus_assoc`), `t_plus_ground_gate`
+  (`⊢ aplus (aint 2) (aint 2) = aint 4`). All closed, exact statements
+  asserted.
+- Deferred with SKELETONS entries: `alt`/`ale` laws, non-`+` literal folding,
+  the wider lifted-axiom set.
+
+### S2 implementation report (2026-07-16, branch `lisp-demo`)
+
+S2 landed in `init/acl2/term.rs` exactly on the §5 route — **no walls hit**;
+`subst_sema` (the flagged hotspot) closed on the designed case structure at
+the first full test run, with no deviation from the §5 plan (`coprod::cases`
+payload split in the atom case; ONE bool split on `h = ⌜QUOTE⌝` in the cons
+case; the `F` branch needed exactly the predicted single `rw_all` with the
+tail IH and **no further guard firing**). Deviations/additions, all minor:
+
+- **Both paramorphisms share one atom/nil step pair** (the designed atom
+  steps for `ev` and `subst-ev` are literally the same term), and share one
+  private `ParaDef` bundle (recursor constant + defining equation + exact
+  steps + the two projection defines) with common law plumbing
+  (`pd_{atom,nil,cons}_at` → `ctor_val` through `fst_pair`/`snd_pair` — never
+  `delta_all` on prod, per the gotcha). The dispatch spine is data-driven
+  from S1's `PrimRow` table as designed; guard firing is one shared
+  `fire_dispatch` (earlier guards `⌜F⌝` by `sym_ne`+`eqf_intro`, the target
+  `⌜T⌝` by refl, one `collapse_conds`).
+- **Laws added beyond the §5 list** (same one-liner shapes): `subst_int`,
+  `subst_nil`, `lsubst_nil`, `lsubst_atom`, and the `IF` special-form law
+  `eval_app_if`; `eval_app(k)` is one data-driven function covering all 11
+  rows rather than 11 hand-written laws. `arg_at` (`car (cdr^i vs)`) is
+  public — S3's computation clauses project with it.
+- **`sym_val_at`'s final `reduce` β-fires through a λ-valuation**: at
+  `σ := λv. eval (σs v) σ` the variable law lands directly on
+  `eval (σs y) σ` — this is what makes the atom case's `inr` branch close
+  with no σs-default reasoning, as §5 predicted.
+- `prims.rs`'s `eqf_intro` became `pub(crate)` (shared guard-firing bridge);
+  nothing else in S0/S1 was touched. No TCB edits, no new axioms — every
+  gate test asserts `hyps().is_empty()` and the exact statement.
+- Gate tests (`term.rs`): `t_terms_build`, `t_eval_atom_laws`
+  (var/int/nil/quote), `t_evlis_laws`, `t_eval_app_laws` (all 11 rows + IF,
+  exact arity-projected statements), `t_eval_ground`
+  (`⊢ eval ⌜(CAR (CONS '1 '2))⌝ σ = aint 1`, free σ), `t_subst_laws`,
+  `t_subst_ground` (`⊢ subst ⌜(EQUAL X X)⌝ σs = ⌜(EQUAL 'v 'v)⌝` at the
+  nested-cond finite σs), `t_subst_sema` (closed + exact conjunctive
+  ∀-statement + instantiated form).
+- The `subst_sema` statement's outer quantifier is the η-expanded
+  `∀φ. (λφ. …) φ` that carrier `induct` concludes (S0's `t_induct_instance`
+  shape); the test asserts that exact term and the β-reduced instance.
+
 ## 10. Order of work (implementation agent, S0 slice first)
 
 1. carved.rs parameterization (`build_with`), `carved()` unchanged; full test suite

@@ -634,6 +634,127 @@ tail IH and **no further guard firing**). Deviations/additions, all minor:
   `∀φ. (λφ. …) φ` that carrier `induct` concludes (S0's `t_induct_instance`
   shape); the test asserts that exact term and the β-reduced instance.
 
+### S3 implementation report — membership half (2026-07-16, branch `lisp-demo`)
+
+The §6.1–§6.3 slice landed: `init/acl2/ladder.rs` (the reusable seam) +
+`init/acl2/derivable.rs` (`Acl2Env`, the clause set, `Derivable_ACL2`, the
+derivation constructors). The **soundness half (§6.4–§6.5) is NOT in this
+slice** — `soundness`/`project_acl2`/`transport_equal` remain open (SKELETONS,
+severe); everything landed is honest without them (hypothesis-free membership
+theorems about the *defined* predicate). Deviations/additions:
+
+- **`ladder.rs` as designed**, with `br` returning the `(bridge, nf)` pair
+  (the pa.rs closure shape) and `expand_to_pred` routed through `br` +
+  `bridge_eq` — strong β-nf, strictly more general than pa.rs's single
+  `beta_conv` (needed nothing ACL2-specific; promotion flag in the module
+  docs + SKELETONS). Its own gate tests: a 3-clause toy rule set drilling
+  `derive_mixed`'s axiom / `Premise::Derivation` / `Premise::Side` paths,
+  plus a β-bridge round trip.
+- **Signature deviation (recorded):** `derive_mp(env, p, q, d_imp, d_p)` and
+  `derive_inst(env, φ, s, d_phi)` take the clause instantiations *explicitly*
+  instead of parsing them out of the premise conclusions (§6.3 sketched
+  2-premise signatures). Rationale: no under-binder destructuring of the
+  `∀d. …` conclusion; the kernel's `imp_elim` re-checks the match, so a wrong
+  `p`/`q`/`φ` fails, never mis-derives.
+- **Clause count is exactly 29** = 5 axioms + MP + INST + 11 congruence + 11
+  computation (§6.2's "≈27" was an estimate). All 11 rows get both family
+  clauses — the computation clause is the *quote-homomorphism* statement, so
+  no per-op model law is needed to state it (`<` included; only its *ground
+  folding* law remains deferred per §9).
+- `Acl2Env` holds `tm: &'static Terms` + `axioms: Vec<(SmolStr, Term)>` +
+  `rows: Vec<PrimRow>` (not `&'static [PrimRow]` — `PrimRow` holds `Term`s);
+  `ClauseKind` enum + `clause_index`/`n_clauses` give the deterministic
+  layout. `acl2_rule_set(env)` is infallible (fallibility lives in the clause
+  closure), so `derivable(env, φ)` is the one-step wrapper.
+- The `if-false` axiom's false-branch constant is the **quoted carrier
+  `anil`** (`'NIL` = `q(anil)`), consistent with §4's representation contract
+  — no encoded formula ever mentions `asym "NIL"`.
+- **Additions beyond §6.3** (the certificate-side helpers S11's importer will
+  drive): `derive_comp_folded` (fold the model image by an S1 law via
+  `ThmExt::rewrite` — safe: the folded LHS is closed and occurs only in the
+  `d ⌜…⌝` head, never in `Closed`'s bound-variable clauses),
+  `derive_plus_lit(env, i, j)` (the `(EQUAL (BINARY-+ 'i 'j) 'i+j)` ground
+  fact), `finite_sigma` (the nested-cond σs builder from S2's
+  `t_subst_ground`, packaged), and `subst_ground`/`lsubst_ground` (the ground
+  substitution computation engine chaining the S2 laws — head symbols
+  extracted by `TermKind::Blob` matching, guards decided by `reduce` +
+  `collapse_conds`) feeding `derive_inst_ground` (INST with the `subst` image
+  computed away).
+- Gate tests (`derivable.rs`): `t_clause_set_builds` (29 clauses, all
+  `bool`-typed, index map), `t_axioms_derive` (all five, exact statements),
+  `t_comp_two_plus_two` (raw + folded
+  `⊢ Derivable_ACL2 ⌜(EQUAL (BINARY-+ '2 '2) '4)⌝`), `t_inst_instance`
+  (equal-refl at `X ↦ '7`, raw + folded), `t_cong_instance`,
+  `t_mp_chain` (equal-symm → INST at `{X ↦ (BINARY-+ '2 '2), Y ↦ '4}` → MP
+  against the computation fact, landing
+  `⊢ Derivable_ACL2 ⌜(EQUAL '4 (BINARY-+ '2 '2))⌝` — INST/MP/COMP in one
+  chain), `t_subst_ground_engine`. All closed (`hyps().is_empty()`), exact
+  conclusions asserted against `derivable(env, φ)`.
+
+### S3 implementation report — soundness half (2026-07-16, branch `lisp-demo`)
+
+The §6.4–§6.5 slice landed in `derivable.rs`; **S3 is complete** and the
+plan's first-transported-theorem milestone is green:
+`(defthm four (equal (+ 2 2) 4))` = `derive_plus_lit(2,2)` → `soundness` →
+`transport_equal` → `⊢ aplus (aint 2) (aint 2) = aint 4`, a closed base-HOL
+theorem with no direct-arithmetic shortcut. No walls hit; every clause
+discharged on the designed route. Details/deviations:
+
+- **`sound_pred` internalizes ∀σ as designed**
+  (`λφ. ∀σ. ¬(eval φ σ = anil)`); the prop/PA free-valuation shape was NOT
+  copied. `soundness(env)` = `metalogic::rule_induction` at that predicate +
+  a β-cleanup round (assume/`all_elim`/`imp_elim`/`beta_conv`/re-close) so
+  the statement is the clean
+  `⊢ ∀A. Derivable_ACL2 A ⟹ (∀σ. ¬(eval A σ = anil))`, not the
+  `pred A`-redex form `rule_induction` returns.
+- **New shared engine `eval_open`/`evlis_open`** (the eval mirror of
+  `subst_ground`): `⊢ eval φ σ = ⟦φ⟧σ` for the S2/S3 fragment at an
+  *arbitrary* σ, with a `refl` fallback on free-`A`-variable subterms —
+  that fallback is what lets the MP/congruence discharges evaluate
+  *schematic* formulas (`eval p σ` stays symbolic). Argument projection =
+  `rw_all` with `evlis_open`'s list image + per-position
+  `proj_scons(car/cdr)` instances.
+- **Per-clause discharges, exactly §6.4's table**: axioms via a shared
+  `implies_holds` combinator (one bool split on `e_p = anil` through
+  `if_nil`/`if_t` + `t_ne_nil`; `equal-trans` nests it) with per-schema
+  cores on `equal_holds`/`equal_refl`; MP by computing the `IMPLIES` shape
+  and contradicting `¬(aif Ep (aif Eq t anil) t = anil)` under
+  `eval q σ = anil`; **INST is exactly `subst_sema`** (the composed
+  valuation `λv. eval (s v) σ` is read off the lemma's own RHS, so
+  `Terms::sigma_comp` stayed private); congruence via per-argument
+  `equal_holds` + an argument-wise `cong_args` chain (`cong_arg`+`cong_fn`
+  only — no MK_COMB needed); computation clauses are `eval_quote` both
+  sides + `equal_refl`.
+- **Discharge style deviation from pa.rs**: premises are assumed in the
+  *applied* form `pred ⌜enc⌝` and opened through `ladder::br` (rather than
+  assuming denotations and rewriting back with `br.sym()`), so there are no
+  rewrite-collision concerns; conclusions go back through
+  `ladder::expand_to_pred`. Clause quantifier/premise order mirrors
+  `acl2_rule_set`'s layout loops verbatim (the `rule_induction`
+  `imp_elim`-match invariant).
+- **Transport**: `project_with(soundness, φ, der)` (one `all_elim` +
+  `imp_elim`; `project_acl2` proves soundness afresh, documented cost) and
+  `transport_equal(env, projected)`: instantiate `σ₀ := λv. anil`, read
+  `⌜φ⌝` off the instantiated conclusion, `eval_open` at σ₀, require the
+  image head to be `aequal` (else error — mints nothing), finish with
+  `equal_holds`. The `projected`-parse means no under-binder destructuring.
+- Gate tests (`derivable.rs`): `t_soundness_closed_exact` (closed + the
+  exact ∀A statement), `t_defthm_four_transports` (THE gate: derivation,
+  projection, and `⊢ aplus (aint 2) (aint 2) = aint 4` each asserted
+  exactly), `t_transport_mp_chain` (the INST/MP-path derivation of
+  `⌜(EQUAL '4 (BINARY-+ '2 '2))⌝` transports to
+  `⊢ aint 4 = aplus (aint 2) (aint 2)`), `t_transport_negative_controls`
+  (mismatched projection and non-`EQUAL` transport both error, no theorem
+  minted). Tests share one `LazyLock` soundness (deterministic, ~seconds).
+- Verification pass (same day): `derivable.rs` literal handling moved onto
+  the `covalence-hol-eval` facade (`mk_blob`/`as_blob` for `Term::blob`/
+  `TermKind::Blob`, three sites) to satisfy the toHOL purge ratchet
+  (`bun run deps:check`) without a golden bump; no semantic change.
+- Open (SKELETONS): `discharge_axiom` knows only the five ground schemas —
+  new env axioms (S4 defuns) need their own discharge, failing safe until
+  then; transport is ground-`EQUAL`-only; per-call `soundness` cost → cfg
+  `family_soundness` is the escape hatch when S4 grows the clause set.
+
 ## 10. Order of work (implementation agent, S0 slice first)
 
 1. carved.rs parameterization (`build_with`), `carved()` unchanged; full test suite

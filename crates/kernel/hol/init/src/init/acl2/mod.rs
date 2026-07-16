@@ -21,11 +21,21 @@
 //!   (`eval`/`evlis`) and substituter (`subst`/`lsubst`), their
 //!   per-constructor computation laws, and the semantic-substitution
 //!   lemma `subst_sema` (S3's INST discharge).
-//! - **S3** (`ladder`/`derivable`, not yet built) — reified
-//!   `Derivable_ACL2` + soundness + transport into base HOL.
+//! - **S3** ([`ladder`]/[`derivable`]) — the reusable unary derivation
+//!   layer (`derive_mixed` twin + β-bridge discharge helpers, promotion
+//!   target `metalogic/`), the reified `Derivable_ACL2` (env-driven
+//!   clause set: axioms, MP, INST, per-primitive congruence/computation)
+//!   with its derivation constructors, and the **soundness half**: the
+//!   rule-inducted metatheorem
+//!   `⊢ ∀A. Derivable_ACL2 A ⟹ (∀σ. ¬(eval A σ = anil))` with one-step
+//!   projection and `transport_equal` landing ground equations in base
+//!   HOL (the plan's first transported theorem,
+//!   `⊢ aplus (aint 2) (aint 2) = aint 4`).
 //!
 //! Open work is tracked in this directory's `SKELETONS.md`.
 
 pub mod carrier;
+pub mod derivable;
+pub mod ladder;
 pub mod prims;
 pub mod term;

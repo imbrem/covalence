@@ -64,3 +64,36 @@ pub use succ::{SuccDischarger, SuccHol};
 
 // ---- The reflected HOL-omega TYPE layer (type-operator variables + kinds) ----
 pub use omega::{HolOmega, InstError, NativeHolOmega, OmegaLang};
+
+// ---- The high-level SpecTec-fragment API (grammars + relations over the core) ----
+// Reusable, trait-based surface for the universally useful pieces of a SpecTec
+// spec: `GrammarEnv` (grammars → `Derives_E`) and `RelationEnv` (relations →
+// `Derivable_R`) both implement the `Fragment` trait. Defined in `covalence-init`
+// next to the engines; re-exported here so consumers name one crate.
+pub use covalence_init::grammar::cfg::GrammarEnv;
+pub use covalence_init::spectec::{FragPremise, Fragment, RelationEnv};
+
+// ---- The whole-spec total load + spec slices (the WASM-semantics surface) ----
+// The bundled WASM 3.0 spec loads as ONE kernel-checked rule set
+// (`total_spec_clauses` / `total_rule_set`, censused by `TotalReport`; drive
+// whole-spec ops through `with_total_stack`). `SpecSlice`/`SliceEnv` carve
+// named premise-closed sub-specs out of it (presets: `lime_slice` — the
+// maximally-fireable core; `wasm1_slice`/`wasm2_slice` — approximate 1.0/2.0
+// feature subsets), and `transport` lifts a slice theorem into the full set,
+// kernel-derived — the `1.0 ⊆ 2.0 ⊆ 3.0` seed. `SliceEnv` implements
+// `Fragment` too. See `covalence_init::wasm::lower::slice`'s module docs for
+// a build → carve → derive → transport example.
+pub use covalence_init::wasm::lower::slice::{
+    SliceEnv, SliceReport, SliceSeed, SpecSlice, exec_slice, lime_slice, transport, wasm1_slice,
+    wasm2_slice,
+};
+pub use covalence_init::wasm::lower::total::{
+    ClauseMeta, TotalReport, total_rule_set, total_spec_clauses, with_total_stack,
+};
+// Execution traces (Wave G): chain single-`Step` theorems through the spec's
+// own `Steps/refl`+`Steps/trans` into multi-step runs; `TraceEnv` also
+// packages the `Step/pure`/`Step/read` lifts, the `Step/ctxt-instrs` framing
+// (`frame`) and the ground `ev.*` evaluation helpers. `exec_slice` is the
+// smallest preset on which the const-fold+drop demo executes.
+pub use covalence_init::wasm::lower::trace::{Config, TraceEnv, TraceStep, const_fold_drop_trace};
+pub use covalence_init::wasm::spec::wasm_spec;

@@ -252,8 +252,16 @@ pub struct CfgReport {
     /// (recognition mode) — over-approximate, WASM vectors may be any length.
     pub listns_widened: usize,
     /// Distinct monomorphised parametric instances created (recognition mode),
-    /// e.g. `BuN@32`, `BsN@33`. Deduped by (name, ground args).
+    /// e.g. `BuN@32`, `BsN@33`, `Bsection_@1,type,…`. Deduped by
+    /// (name, ground args) where a ground arg is an integer, a resolved
+    /// grammar-argument non-terminal, or a rendered type argument.
     pub mono_instances: usize,
+    /// Parameter-equality attrs over `Bbyte` constant-folded into a literal
+    /// byte terminal (recognition mode) — **exact**: the SpecTec capture
+    /// `[N]:Bbyte` with `N` ground constrains the byte to equal `N`, and the
+    /// fold realises exactly that constraint (e.g. `Bsection_`'s section-id
+    /// byte). Folded attrs are *not* also counted in `attrs_captured`.
+    pub attrs_folded: usize,
 }
 
 impl CfgReport {
@@ -281,6 +289,20 @@ impl CfgReport {
             .filter(move |(_, c)| **c == cov)
             .map(|(n, _)| n.as_str())
     }
+
+    /// Coverage class of the *source grammar* behind a `Cfg` non-terminal name.
+    ///
+    /// Whole-grammar non-terminals carry the grammar's own name; synthetic
+    /// iteration non-terminals are `{grammar}${kind}{n}` and monomorphised
+    /// instances `{grammar}@{args}`, so both attribute to their source grammar
+    /// by truncating at the first `$` / `@`. Conservative for instances: e.g.
+    /// `BuN@32` reports the coverage of the *generic* `BuN` (typically worse
+    /// than what the LEB128-instantiated NT actually achieves), never better.
+    /// `None` for names outside the lowered closure.
+    pub fn coverage_of_nt(&self, nt_name: &str) -> Option<Coverage> {
+        let base = nt_name.split(['$', '@']).next().unwrap_or(nt_name);
+        self.grammars.get(base).copied()
+    }
 }
 
 impl std::fmt::Display for CfgReport {
@@ -299,11 +321,15 @@ impl std::fmt::Display for CfgReport {
         )?;
         // Recognition-mode line — only emitted when a recognition counter fired,
         // so under-approximating (`lower`) reports render byte-identically.
-        if self.premises_dropped != 0 || self.listns_widened != 0 || self.mono_instances != 0 {
+        if self.premises_dropped != 0
+            || self.listns_widened != 0
+            || self.mono_instances != 0
+            || self.attrs_folded != 0
+        {
             writeln!(
                 f,
-                "  recognition: {} mono instances, {} premises dropped, {} listns widened",
-                self.mono_instances, self.premises_dropped, self.listns_widened,
+                "  recognition: {} mono instances, {} premises dropped, {} listns widened, {} attrs folded",
+                self.mono_instances, self.premises_dropped, self.listns_widened, self.attrs_folded,
             )?;
         }
         if !self.skipped.is_empty() {
@@ -473,6 +499,27 @@ fn attr_is_constraint(e: &SpecTecExp) -> bool {
     )
 }
 
+/// Is `sym` a bare (argument-free) reference to the corpus's full-range byte
+/// grammar `Bbyte`? Target check of the recognition-mode parameter-equality
+/// attr fold: `[e]:Bbyte` with `e` ground constrains the parsed byte to equal
+/// `e`, so the segment folds to the literal byte — exact because `Bbyte`'s
+/// value is the byte itself. Name-keyed like the `BuN`/`BsN`/`BfN`
+/// special-cases (corpus-specific, driver-side only).
+fn is_bare_bbyte(sym: &SpecTecSym) -> bool {
+    matches!(sym, SpecTecSym::Var { x, as1 } if x == "Bbyte" && as1.is_empty())
+}
+
+/// Const-fold an attr *capture expression* to a ground integer, unwrapping the
+/// constructor layers the corpus puts around byte values: `Case{op, Tup[e]}`
+/// (the byte/`u32` case wrapper) and single-element `Tup`s, then [`fold_exp`].
+fn fold_attr_exp(env: &ParamEnv, e: &SpecTecExp) -> Option<i64> {
+    match e {
+        SpecTecExp::Case { e1, .. } => fold_attr_exp(env, e1),
+        SpecTecExp::Tup { es } if es.len() == 1 => fold_attr_exp(env, &es[0]),
+        _ => fold_exp(env, e),
+    }
+}
+
 // ============================================================================
 // Recognition mode: constant folding, predicate evaluation, LEB128 regex
 // ============================================================================
@@ -481,6 +528,36 @@ fn attr_is_constraint(e: &SpecTecExp) -> bool {
 /// value. Threaded through recognition-mode lowering so [`fold_exp`] and
 /// [`eval_pred`] can resolve `Var{id}` / `Call` references to instance values.
 type ParamEnv = BTreeMap<String, i64>;
+
+/// The full per-instance binding threaded through lowering: `Exp` params bound
+/// to ground integers (the [`ParamEnv`] fragment [`fold_exp`]/[`eval_pred`]
+/// consume) plus **grammar-valued** params (`Blist`/`Bsection_`'s `BX`) bound
+/// to their resolved non-terminals. Empty at the top level and under
+/// [`LowerMode::Under`]; populated by [`instantiate`].
+#[derive(Debug, Clone, Default)]
+struct Binding {
+    /// `Exp`-param name → ground integer value.
+    ints: ParamEnv,
+    /// `Gram`-param name → resolved (possibly itself monomorphised)
+    /// non-terminal.
+    grams: BTreeMap<String, NtId>,
+}
+
+/// One ground argument of a monomorphisation key. Two references instantiate
+/// the same non-terminal iff their target name and *entire* argument vectors
+/// agree — including type arguments, which never affect the byte language
+/// (they only appear in stripped captures / dropped value premises) but are
+/// kept in the key conservatively so distinct call shapes stay distinct.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum InstArg {
+    /// A const-folded integer `Exp` argument.
+    Int(i64),
+    /// A grammar-valued argument, resolved to a non-terminal of the `Cfg`
+    /// under construction (a plain grammar NT or a nested instance NT).
+    Gram(NtId),
+    /// A type argument, canonically rendered by [`render_typ`].
+    Typ(String),
+}
 
 /// Constant-fold an expression to a ground integer under `env`, over the
 /// fragment the WASM binary grammars use for parameter arithmetic:
@@ -692,9 +769,10 @@ struct Ctx<'a> {
     synth_ctr: usize,
     /// Under- vs recognition-approximation.
     mode: LowerMode,
-    /// Deduped monomorphised instances, keyed by (grammar name, ground args).
+    /// Deduped monomorphised instances, keyed by (grammar name, ground args —
+    /// integers, resolved grammar-arg non-terminals, rendered type args).
     /// Recognition mode only; empty under [`LowerMode::Under`].
-    mono: BTreeMap<(String, Vec<i64>), NtId>,
+    mono: BTreeMap<(String, Vec<InstArg>), NtId>,
     /// Current instantiation recursion depth (guards [`MAX_INST_DEPTH`]).
     inst_depth: usize,
 }
@@ -819,7 +897,7 @@ fn lower_with(grammars: &[Grammar], roots: &[&str], mode: LowerMode) -> (Cfg<u8>
         .collect();
 
     // 3. Lower each grammar's productions (under the empty top-level binding).
-    let root_env = ParamEnv::new();
+    let root_env = Binding::default();
     for name in &order {
         let g = ctx.by_name[name];
         let lhs = ids[name];
@@ -854,7 +932,7 @@ fn lower_with(grammars: &[Grammar], roots: &[&str], mode: LowerMode) -> (Cfg<u8>
 fn lower_prod(
     ctx: &mut Ctx,
     ids: &BTreeMap<&str, NtId>,
-    env: &ParamEnv,
+    env: &Binding,
     g: &Grammar,
     lhs: NtId,
     p: &SpecTecProd,
@@ -912,11 +990,13 @@ enum PremiseVerdict {
 /// exactly (this is what bounds the `BuN` recursion at `N ≤ 7`). A premise
 /// mentioning captured production-local values (the `Attr`-bound `n`/`m`/…) is
 /// an *input-value* premise: it is dropped as an over-approximation and counted
-/// [`CfgReport::premises_dropped`]. Anything unclassifiable / unevaluable ⇒
+/// [`CfgReport::premises_dropped`]. An `Iter`-wrapped `if` over
+/// production-locals is treated as an input-value premise too (dropped,
+/// counted). Anything unclassifiable / unevaluable ⇒
 /// [`PremiseVerdict::Skip`] (sound).
 fn classify_premises(
     ctx: &mut Ctx,
-    env: &ParamEnv,
+    env: &Binding,
     g: &Grammar,
     prs: &[spectec_ast::SpecTecPrem],
 ) -> PremiseVerdict {
@@ -924,20 +1004,41 @@ fn classify_premises(
     let mut dropped_value_premises = 0usize;
     let mut verdict = PremiseVerdict::Keep;
     for pr in prs {
-        // Only `if e` premises are structured predicates we can classify; any
-        // other premise shape (rule / let / iter / else) is unclassifiable.
-        let spectec_ast::SpecTecPrem::If { e } = pr else {
-            return PremiseVerdict::Skip;
-        };
-        if premise_is_param_only(e, &param_names) {
-            match eval_pred(env, e) {
-                Some(true) => { /* guard holds — keep */ }
-                Some(false) => return PremiseVerdict::Drop,
-                None => return PremiseVerdict::Skip,
+        match pr {
+            spectec_ast::SpecTecPrem::If { e } => {
+                if premise_is_param_only(e, &param_names) {
+                    match eval_pred(&env.ints, e) {
+                        Some(true) => { /* guard holds — keep */ }
+                        Some(false) => return PremiseVerdict::Drop,
+                        None => return PremiseVerdict::Skip,
+                    }
+                } else {
+                    // Mentions a captured production-local value ⇒ input-value
+                    // premise.
+                    dropped_value_premises += 1;
+                }
             }
-        } else {
-            // Mentions a captured production-local value ⇒ input-value premise.
-            dropped_value_premises += 1;
+            // An **iterated** `if` premise (`(if e)^…` with `dom` bindings over
+            // captured production-locals — `Bmodule`'s data-count and
+            // func/code-correlation checks) instantiates its body once per
+            // element of a value-level iteration. When the body mentions
+            // production-local values it is an input-value premise exactly like
+            // the plain-`If` case: dropped as an over-approximation, counted.
+            // A param-only iterated body cannot be evaluated without the
+            // (value-level) iteration domain, so it stays a conservative skip.
+            spectec_ast::SpecTecPrem::Iter { pr1, .. } => {
+                let spectec_ast::SpecTecPrem::If { e } = pr1.as_ref() else {
+                    return PremiseVerdict::Skip;
+                };
+                if premise_is_param_only(e, &param_names) {
+                    return PremiseVerdict::Skip;
+                }
+                dropped_value_premises += 1;
+            }
+            // Other premise shapes (rule / let / else) are unclassifiable.
+            spectec_ast::SpecTecPrem::Rule { .. }
+            | spectec_ast::SpecTecPrem::Let { .. }
+            | spectec_ast::SpecTecPrem::Else => return PremiseVerdict::Skip,
         }
     }
     if dropped_value_premises > 0 {
@@ -1028,7 +1129,7 @@ type SegSeq = Vec<Seg<u8>>;
 fn segment_alts(
     ctx: &mut Ctx,
     ids: &BTreeMap<&str, NtId>,
-    env: &ParamEnv,
+    env: &Binding,
     g: &Grammar,
     sym: &SpecTecSym,
 ) -> Result<Vec<SegSeq>, CfgLowerError> {
@@ -1073,7 +1174,7 @@ fn flatten_seq(sym: &SpecTecSym) -> Vec<&SpecTecSym> {
 fn segment_item(
     ctx: &mut Ctx,
     ids: &BTreeMap<&str, NtId>,
-    env: &ParamEnv,
+    env: &Binding,
     g: &Grammar,
     item: &SpecTecSym,
 ) -> Result<Vec<SegSeq>, CfgLowerError> {
@@ -1084,6 +1185,22 @@ fn segment_item(
     }
     match item {
         SpecTecSym::Attr { e, g1 } => {
+            // Recognition mode: a *parameter-equality* attr over `Bbyte` whose
+            // expression const-folds to a ground byte (`Bsection_`'s id byte
+            // `[N]:Bbyte` under an instance binding, or a literal constant)
+            // folds to exactly that literal byte — **exact**: the SpecTec
+            // capture constrains the parsed byte to equal the ground value.
+            // Restricted to recognition mode so `lower()`'s corpus output is
+            // byte-identical to before (Under mode never has bindings and
+            // never reaches these productions anyway).
+            if ctx.mode.is_recognition()
+                && is_bare_bbyte(g1)
+                && let Some(v) = fold_attr_exp(&env.ints, e)
+                && (0..=255).contains(&v)
+            {
+                ctx.report.attrs_folded += 1;
+                return Ok(vec![vec![Seg::Term(Regex::Lit(v as u8))]]);
+            }
             if attr_is_constraint(e) {
                 ctx.report.attrs_constrained += 1;
             } else {
@@ -1093,6 +1210,15 @@ fn segment_item(
         }
         SpecTecSym::Seq { .. } => segment_alts(ctx, ids, env, g, item),
         SpecTecSym::Var { x, as1 } => {
+            // A bare reference to a **grammar-valued parameter** (`BX` inside
+            // `Blist`/`Bsection_`) resolves through the instance binding to
+            // the argument non-terminal. Only recognition-mode instantiation
+            // populates `grams`, so this arm is inert under `lower()`.
+            if as1.is_empty()
+                && let Some(&nt) = env.grams.get(x.as_str())
+            {
+                return Ok(vec![vec![Seg::NonTerm(nt)]]);
+            }
             if ctx.var_resolvable(x, as1) {
                 // Bare / param-independent ref → plain non-terminal (both modes).
                 return match ids.get(x.as_str()) {
@@ -1113,13 +1239,10 @@ fn segment_item(
                     args: as1.len(),
                 });
             }
-            // Recognition mode: const-fold the args and monomorphise.
-            let Some(gargs) = fold_args(env, as1) else {
-                return Err(CfgLowerError::ParametricRef {
-                    name: x.clone(),
-                    args: as1.len(),
-                });
-            };
+            // Recognition mode: resolve the args to ground instance arguments
+            // (const-folding `Exp`s, recursively instantiating grammar-valued
+            // args, rendering type args) and monomorphise.
+            let gargs = fold_inst_args(ctx, ids, env, x, as1)?;
             let nt = instantiate(ctx, ids, x, &gargs)?;
             Ok(vec![vec![Seg::NonTerm(nt)]])
         }
@@ -1171,21 +1294,113 @@ fn segment_item(
     }
 }
 
-/// Const-fold a parametric reference's `Exp` arguments to ground integers.
-/// Returns `None` unless **every** argument is a foldable `Exp` (a `Typ`/`Def`/
-/// `Gram` argument, or a non-integer expression, makes the whole instance
-/// key un-computable — the caller then skips). Grammar-valued params
-/// (`Blist`/`Bsection_` `BX`) are therefore currently not monomorphised
-/// (honest skip); the LEB128 critical path uses only `Exp` args.
-fn fold_args(env: &ParamEnv, as1: &[SpecTecArg]) -> Option<Vec<i64>> {
+/// Resolve a parametric reference's arguments to ground [`InstArg`]s
+/// (recognition mode):
+///
+/// - an `Exp` argument const-folds to an [`InstArg::Int`] via [`fold_exp`];
+/// - a **grammar-valued** argument (`Blist`/`Bsection_`'s `BX`) resolves via
+///   [`resolve_gram_sym`] to a non-terminal — a plain grammar NT, a
+///   pass-through of an enclosing grammar param, or a recursively
+///   monomorphised nested instance (`Btypesec`'s
+///   `Bsection_(1, type, Blist(type, Btype))`);
+/// - a `Typ` argument is rendered canonically ([`render_typ`]) — it never
+///   affects the byte language but stays in the key so distinct call shapes
+///   stay distinct;
+/// - a `Def` argument (none occur in the corpus's grammar refs) fails.
+///
+/// Any unresolvable argument fails the whole reference with a
+/// [`CfgLowerError::ParametricRef`] — the caller then skips that production
+/// (an honest under-approximation of the recognition `Cfg`).
+fn fold_inst_args(
+    ctx: &mut Ctx,
+    ids: &BTreeMap<&str, NtId>,
+    env: &Binding,
+    name: &str,
+    as1: &[SpecTecArg],
+) -> Result<Vec<InstArg>, CfgLowerError> {
+    let err = || CfgLowerError::ParametricRef {
+        name: name.to_string(),
+        args: as1.len(),
+    };
     let mut out = Vec::with_capacity(as1.len());
     for a in as1 {
         match a {
-            SpecTecArg::Exp { e } => out.push(fold_exp(env, e)?),
-            _ => return None,
+            SpecTecArg::Exp { e } => {
+                out.push(InstArg::Int(fold_exp(&env.ints, e).ok_or_else(err)?))
+            }
+            SpecTecArg::Gram { g } => {
+                out.push(InstArg::Gram(resolve_gram_sym(ctx, ids, env, name, g)?))
+            }
+            SpecTecArg::Typ { t } => out.push(InstArg::Typ(render_typ(t))),
+            SpecTecArg::Def { .. } => return Err(err()),
         }
     }
-    Some(out)
+    Ok(out)
+}
+
+/// Resolve a grammar-valued argument symbol to a non-terminal (recognition
+/// mode). The corpus's grammar args are always `Var` references; anything else
+/// fails with a typed [`CfgLowerError::ParametricRef`] (honest skip).
+fn resolve_gram_sym(
+    ctx: &mut Ctx,
+    ids: &BTreeMap<&str, NtId>,
+    env: &Binding,
+    referrer: &str,
+    sym: &SpecTecSym,
+) -> Result<NtId, CfgLowerError> {
+    let SpecTecSym::Var { x, as1 } = sym else {
+        return Err(CfgLowerError::ParametricRef {
+            name: format!("{referrer}<non-var grammar arg>"),
+            args: 0,
+        });
+    };
+    // A bare grammar-param name passes the enclosing binding through.
+    if as1.is_empty()
+        && let Some(&nt) = env.grams.get(x.as_str())
+    {
+        return Ok(nt);
+    }
+    // A bare / param-independent grammar resolves to its plain NT.
+    if ctx.var_resolvable(x, as1) {
+        return ids
+            .get(x.as_str())
+            .copied()
+            .ok_or(CfgLowerError::ParametricRef {
+                name: x.clone(),
+                args: as1.len(),
+            });
+    }
+    // Otherwise it is itself a parametric reference: recursively instantiate
+    // (`Blist(type, Btype)` nested inside `Bsection_`'s argument list).
+    let gargs = fold_inst_args(ctx, ids, env, x, as1)?;
+    instantiate(ctx, ids, x, &gargs)
+}
+
+/// Canonical rendering of a type argument for the instance key / name.
+/// Injective enough for the corpus (plain `Var` types, iterated types, small
+/// tuples); collisions could only merge instances whose byte languages agree
+/// anyway (type args never reach the byte level).
+fn render_typ(t: &spectec_ast::SpecTecTyp) -> String {
+    use spectec_ast::SpecTecTyp::*;
+    match t {
+        Var { x, as1 } if as1.is_empty() => x.clone(),
+        Var { x, as1 } => format!("{x}<{}>", as1.len()),
+        Bool => "bool".into(),
+        Num(_) => "num".into(),
+        Text => "text".into(),
+        Tup { ets } => format!("tup{}", ets.len()),
+        Iter { t1, it } => {
+            let mut s = render_typ(t1);
+            for i in it {
+                s.push(match i {
+                    SpecTecIter::Opt => '?',
+                    SpecTecIter::List | SpecTecIter::ListN { .. } => '*',
+                    SpecTecIter::List1 => '+',
+                });
+            }
+            s
+        }
+    }
 }
 
 /// Monomorphise grammar `name` at ground arguments `args` into a deduped
@@ -1202,7 +1417,7 @@ fn instantiate(
     ctx: &mut Ctx,
     ids: &BTreeMap<&str, NtId>,
     name: &str,
-    args: &[i64],
+    args: &[InstArg],
 ) -> Result<NtId, CfgLowerError> {
     let key = (name.to_string(), args.to_vec());
     if let Some(&nt) = ctx.mono.get(&key) {
@@ -1210,19 +1425,24 @@ fn instantiate(
     }
 
     // LEB128 special-case: a single regex terminal, exact on byte count.
-    if (name == "BuN" || name == "BsN") && args.len() == 1 {
-        let nt = ctx.cfg.add_nt(inst_name(name, args));
+    if (name == "BuN" || name == "BsN")
+        && let [InstArg::Int(n)] = args
+    {
+        let n = *n;
+        let nt = ctx.cfg.add_nt(inst_name(ctx, name, args));
         ctx.mono.insert(key, nt);
         ctx.report.mono_instances += 1;
-        ctx.cfg.add_prod(nt, vec![Seg::Term(leb128_regex(args[0]))]);
+        ctx.cfg.add_prod(nt, vec![Seg::Term(leb128_regex(n))]);
         return Ok(nt);
     }
     // BfN(N): exactly N/8 full-range bytes (fixed count, exact byte shape).
-    if name == "BfN" && args.len() == 1 {
-        let nt = ctx.cfg.add_nt(inst_name(name, args));
+    if name == "BfN"
+        && let [InstArg::Int(n)] = args
+    {
+        let k = n.div_euclid(8).max(0);
+        let nt = ctx.cfg.add_nt(inst_name(ctx, name, args));
         ctx.mono.insert(key, nt);
         ctx.report.mono_instances += 1;
-        let k = args[0].div_euclid(8).max(0);
         let segs: Vec<Seg<u8>> = (0..k).map(|_| Seg::Term(any_byte_regex())).collect();
         ctx.cfg.add_prod(nt, segs);
         return Ok(nt);
@@ -1235,22 +1455,37 @@ fn instantiate(
             args: args.len(),
         });
     };
-    if ctx.inst_depth >= MAX_INST_DEPTH {
+    if ctx.inst_depth >= MAX_INST_DEPTH || target.params.len() != args.len() {
         return Err(CfgLowerError::ParametricRef {
             name: name.to_string(),
             args: args.len(),
         });
     }
-    // Positionally bind the grammar's `Exp` params to the ground args.
-    let mut inst_env = ParamEnv::new();
-    for (p, &v) in target.params.iter().zip(args) {
-        if let SpecTecParam::Exp { x, .. } = p {
-            inst_env.insert(x.clone(), v);
+    // Positionally bind the grammar's params to the ground args: `Exp` params
+    // to integers, `Gram` params to resolved non-terminals. A `Typ` param
+    // binds nothing (type args never reach the byte level); any other
+    // param/arg shape mismatch fails the instantiation.
+    let mut inst_env = Binding::default();
+    for (p, a) in target.params.iter().zip(args) {
+        match (p, a) {
+            (SpecTecParam::Exp { x, .. }, InstArg::Int(v)) => {
+                inst_env.ints.insert(x.clone(), *v);
+            }
+            (SpecTecParam::Gram { x, .. }, InstArg::Gram(nt)) => {
+                inst_env.grams.insert(x.clone(), *nt);
+            }
+            (SpecTecParam::Typ { .. }, InstArg::Typ(_)) => {}
+            _ => {
+                return Err(CfgLowerError::ParametricRef {
+                    name: name.to_string(),
+                    args: args.len(),
+                });
+            }
         }
     }
     // Mint + cache the instance NT *before* lowering, so a self-reference at the
     // same key closes on the cache instead of recursing forever.
-    let nt = ctx.cfg.add_nt(inst_name(name, args));
+    let nt = ctx.cfg.add_nt(inst_name(ctx, name, args));
     ctx.mono.insert(key, nt);
     ctx.report.mono_instances += 1;
 
@@ -1266,11 +1501,18 @@ fn instantiate(
     Ok(nt)
 }
 
-/// Instance non-terminal name, e.g. `BuN@32`, `Bsection_@3,10,0`.
-fn inst_name(name: &str, args: &[i64]) -> String {
+/// Instance non-terminal name, e.g. `BuN@32`, `Bsection_@1,type,Blist@type,Btype`.
+/// Grammar args render as their resolved NT's name, type args as their
+/// canonical rendering. Purely a driver-side label (names are efficiency,
+/// never soundness); the dedup key is the full [`InstArg`] vector.
+fn inst_name(ctx: &Ctx, name: &str, args: &[InstArg]) -> String {
     let joined = args
         .iter()
-        .map(|a| a.to_string())
+        .map(|a| match a {
+            InstArg::Int(v) => v.to_string(),
+            InstArg::Gram(nt) => ctx.cfg.nt_name(*nt).unwrap_or("<nt>").to_string(),
+            InstArg::Typ(s) => s.clone(),
+        })
         .collect::<Vec<_>>()
         .join(",");
     format!("{name}@{joined}")
@@ -1280,7 +1522,7 @@ fn inst_name(name: &str, args: &[i64]) -> String {
 fn desugar_opt(
     ctx: &mut Ctx,
     ids: &BTreeMap<&str, NtId>,
-    env: &ParamEnv,
+    env: &Binding,
     g: &Grammar,
     body: &SpecTecSym,
 ) -> Result<Vec<SegSeq>, CfgLowerError> {
@@ -1298,7 +1540,7 @@ fn desugar_opt(
 fn desugar_star(
     ctx: &mut Ctx,
     ids: &BTreeMap<&str, NtId>,
-    env: &ParamEnv,
+    env: &Binding,
     g: &Grammar,
     body: &SpecTecSym,
 ) -> Result<Vec<SegSeq>, CfgLowerError> {
@@ -1317,7 +1559,7 @@ fn desugar_star(
 fn desugar_plus(
     ctx: &mut Ctx,
     ids: &BTreeMap<&str, NtId>,
-    env: &ParamEnv,
+    env: &Binding,
     g: &Grammar,
     body: &SpecTecSym,
 ) -> Result<Vec<SegSeq>, CfgLowerError> {
@@ -1953,6 +2195,66 @@ mod tests {
         );
     }
 
+    /// The **whole** bundled spec (all 231 grammars, binary `B*` + text `T*`)
+    /// as one universe: lowering is total in both modes, but — unlike the
+    /// `B*`-only corpus above — the `T*` text grammars introduce genuine
+    /// **left recursion** (the `Thexnum` cycle), which [`Cfg::left_recursion`]
+    /// flags. Consumers offering top-down parsing over a whole-spec env must
+    /// guard against it (the kernel-side tactic's in-progress set does).
+    #[test]
+    fn whole_spec_left_recursion() {
+        let grammars = crate::grammar::wasm3();
+        assert_eq!(grammars.len(), 231, "89 B* + 142 T*");
+        let roots: Vec<&str> = grammars.iter().map(|g| g.name.as_str()).collect();
+        for (label, (cfg, report)) in [
+            ("under", lower(&grammars, &roots)),
+            ("recognition", lower_recognition(&grammars, &roots)),
+        ] {
+            assert_eq!(cfg.validate(), Ok(()), "{label} validates");
+            assert_eq!(report.grammars.len(), 231, "{label} classifies all");
+            assert!(
+                cfg.left_recursion().is_some(),
+                "{label}: the T* corpus is left-recursive",
+            );
+        }
+        // Rooted at `Thexnum` alone, the offending cycle must name it.
+        let (cfg, _report) = lower_recognition(&grammars, &["Thexnum"]);
+        let cycle = cfg.left_recursion().expect("Thexnum is left-recursive");
+        let names: Vec<&str> = cycle.iter().filter_map(|nt| cfg.nt_name(*nt)).collect();
+        assert!(names.contains(&"Thexnum"), "cycle {names:?} names Thexnum");
+    }
+
+    /// [`CfgReport::coverage_of_nt`] attributes synthetic (`X$…`) and
+    /// monomorphised-instance (`X@…`) non-terminals to their source grammar.
+    #[test]
+    fn coverage_of_nt_attribution() {
+        // A → B* ; B → 0x70 — the star mints a synthetic `A$star…` NT.
+        let a = gram(
+            "A",
+            vec![prod(SpecTecSym::Iter {
+                g1: Box::new(var("B")),
+                it: SpecTecIter::List,
+                xes: Vec::new(),
+            })],
+        );
+        let b = gram("B", vec![prod(num(0x70))]);
+        let (cfg, report) = lower(&[a, b], &["A"]);
+        let synth = cfg
+            .nts()
+            .iter()
+            .find(|d| d.name.starts_with("A$"))
+            .expect("synthetic NT minted");
+        assert_eq!(report.coverage_of_nt(&synth.name), Some(Coverage::Full));
+        assert_eq!(report.coverage_of_nt("A"), Some(Coverage::Full));
+        assert_eq!(report.coverage_of_nt("nope"), None);
+        // Instance NTs attribute to the generic grammar (conservative).
+        assert_eq!(
+            report.coverage_of_nt("A@32,1"),
+            Some(Coverage::Full),
+            "X@args strips to X"
+        );
+    }
+
     // ========================================================================
     // Differential: lowered Cfg vs sym_to_regex_u8 for fully-regular grammars.
     // ========================================================================
@@ -2315,16 +2617,18 @@ mod tests {
     }
 
     /// THE RECOGNITION-MODE COVERAGE RATCHET (separate from `coverage_ratchet`).
-    /// Pins the M6 jump; raise only when recognition lowering genuinely improves.
+    /// Pins the M6 + grammar-valued-monomorphisation jump; raise only when
+    /// recognition lowering genuinely improves.
     #[test]
     fn recognition_coverage_ratchet() {
         let cov = coverage_recognition();
         assert_eq!(cov.total, 89, "B* grammar count (mode-independent)");
 
-        // The recognition-mode jump over Under mode (48/8/33 → 60/7/22).
-        assert_eq!(cov.count(Coverage::Full), 60, "recognition full");
-        assert_eq!(cov.count(Coverage::Partial), 7, "recognition partial");
-        assert_eq!(cov.count(Coverage::None), 22, "recognition none");
+        // The recognition-mode jump over Under mode: 48/8/33 → 60/7/22 (M6)
+        // → 84/3/2 (grammar-valued params + iter-premise drop + attr fold).
+        assert_eq!(cov.count(Coverage::Full), 84, "recognition full");
+        assert_eq!(cov.count(Coverage::Partial), 3, "recognition partial");
+        assert_eq!(cov.count(Coverage::None), 2, "recognition none");
         assert_eq!(
             cov.count(Coverage::Full) + cov.count(Coverage::Partial) + cov.count(Coverage::None),
             cov.total,
@@ -2338,10 +2642,44 @@ mod tests {
                 "{name} lowers Full in recognition mode",
             );
         }
-        // BuN / BsN lower Partial (prod0 lowers, the unfoldable self-recursive
-        // continuation at an open param skips) — they leave the None bucket.
-        for name in ["BuN", "BsN"] {
+        // The whole-module chain lowers Full: `Bmodule`, every section grammar,
+        // and the `Blist`-consuming leaf grammars (grammar-valued
+        // monomorphisation + iterated-premise drop + section-id attr fold).
+        for name in [
+            "Bmodule",
+            "Btypesec",
+            "Bimportsec",
+            "Bfuncsec",
+            "Btablesec",
+            "Bmemsec",
+            "Btagsec",
+            "Bglobalsec",
+            "Bexportsec",
+            "Bstartsec",
+            "Belemsec",
+            "Bdatacntsec",
+            "Bcodesec",
+            "Bdatasec",
+            "Bcustomsec",
+            "Bfunc",
+            "Bcode",
+            "Bdata",
+            "Belem",
+            "Bname",
+            "Bresulttype",
+        ] {
+            assert_eq!(cov.of(name), Some(Coverage::Full), "{name} Full");
+        }
+        // The *generic* parametric grammars stay honest: rooted alone (no
+        // ground call site) their open-param productions cannot lower. BuN /
+        // BsN / Bsection_ are Partial (a premise-free / Eps production lowers,
+        // the open-param one skips); BiN / Blist are None. Their coverage is
+        // realised through instances (`BuN@32`, `Blist@…`) at call sites.
+        for name in ["BuN", "BsN", "Bsection_"] {
             assert_eq!(cov.of(name), Some(Coverage::Partial), "{name} partial");
+        }
+        for name in ["BiN", "Blist"] {
+            assert_eq!(cov.of(name), Some(Coverage::None), "{name} generic-dead");
         }
         // Every `*idx` (Bu32 wrappers) is Full.
         for name in [
@@ -2371,11 +2709,22 @@ mod tests {
         let roots: Vec<&str> = grammars.iter().map(|g| g.name.as_str()).collect();
         let (cfg, report) = lower_recognition(&grammars, &roots);
         assert_eq!(cfg.validate(), Ok(()));
-        assert_eq!(
-            cfg.left_recursion(),
-            None,
-            "no left recursion across the recognition corpus",
-        );
+        // With `Bmodule` lowering, the recognition corpus contains exactly one
+        // kind of left-recursion finding: a synthetic star over a **nullable**
+        // body (`Bcustomsec*` — `Bcustomsec` is genuinely nullable per the
+        // spec, via `Bsection_`'s ε production). The named-grammar corpus
+        // stays left-recursion-free; the top-down tactic remains complete on
+        // nullable-body stars (a star derivation never needs a same-span
+        // re-entry: ε-contributions can be dropped).
+        if let Some(cycle) = cfg.left_recursion() {
+            for nt in &cycle {
+                let name = cfg.nt_name(*nt).unwrap_or("");
+                assert!(
+                    name.contains("$star") || name.contains("$plusStar"),
+                    "left-recursion only through nullable-body star synthetics, got {name}",
+                );
+            }
+        }
         // The monomorphiser fired and the LEB128 wrappers are present.
         assert!(report.mono_instances >= 1);
         assert!(cfg.lookup("BuN@32").is_some());
@@ -2398,5 +2747,223 @@ mod tests {
             e: SpecTecExp::Bool { b: true },
             prs: vec![spectec_ast::SpecTecPrem::If { e }],
         }
+    }
+
+    // ========================================================================
+    // Grammar-valued parameter monomorphisation (whole-module chain).
+    // ========================================================================
+
+    /// Synthetic `Blist`-shape: `L(el, BX) → 0x10 BX` instantiated at two
+    /// different grammar arguments mints two distinct, deduped instances.
+    #[test]
+    fn monomorphises_grammar_valued_params() {
+        let mut l = gram(
+            "L",
+            vec![prod(SpecTecSym::Seq {
+                gs: vec![num(0x10), var("BX")],
+            })],
+        );
+        l.params = vec![
+            SpecTecParam::Typ { x: "el".into() },
+            SpecTecParam::Gram {
+                x: "BX".into(),
+                t: spectec_ast::SpecTecTyp::Var {
+                    x: "el".into(),
+                    as1: Vec::new(),
+                },
+            },
+        ];
+        let gram_arg = |target: &str| SpecTecArg::Gram {
+            g: SpecTecSym::Var {
+                x: target.into(),
+                as1: Vec::new(),
+            },
+        };
+        let typ_arg = |t: &str| SpecTecArg::Typ {
+            t: spectec_ast::SpecTecTyp::Var {
+                x: t.into(),
+                as1: Vec::new(),
+            },
+        };
+        let root = gram(
+            "R",
+            vec![
+                prod(SpecTecSym::Var {
+                    x: "L".into(),
+                    as1: vec![typ_arg("a"), gram_arg("A")],
+                }),
+                prod(SpecTecSym::Var {
+                    x: "L".into(),
+                    as1: vec![typ_arg("b"), gram_arg("B")],
+                }),
+                // Same instance as the first — must dedup on the full key.
+                prod(SpecTecSym::Var {
+                    x: "L".into(),
+                    as1: vec![typ_arg("a"), gram_arg("A")],
+                }),
+            ],
+        );
+        let a = gram("A", vec![prod(num(0x0A))]);
+        let b = gram("B", vec![prod(num(0x0B))]);
+        // Under mode: grammar-valued args still skip (unchanged).
+        let (_c, ur) = lower(&[root.clone(), l.clone(), a.clone(), b.clone()], &["R"]);
+        assert_eq!(ur.mono_instances, 0, "Under mode never monomorphises");
+        assert_eq!(ur.grammars.get("R"), Some(&Coverage::None));
+
+        // Recognition mode: two deduped instances, each recognising its arm.
+        let (cfg, rep) = lower_recognition(&[root, l, a, b], &["R"]);
+        assert_eq!(cfg.validate(), Ok(()));
+        assert_eq!(rep.mono_instances, 2, "L@a,A and L@b,B, third ref deduped");
+        assert_eq!(rep.grammars.get("R"), Some(&Coverage::Full));
+        let r = cfg.lookup("R").unwrap();
+        assert!(cfg.naive_parse(r, &[0x10, 0x0A]));
+        assert!(cfg.naive_parse(r, &[0x10, 0x0B]));
+        assert!(!cfg.naive_parse(r, &[0x10, 0x0C]));
+    }
+
+    /// The parameter-equality attr fold: `[N]:Bbyte` under a ground instance
+    /// binding lowers to the literal byte `N` (exact), not a full-range byte.
+    #[test]
+    fn attr_over_bbyte_folds_to_literal_under_binding() {
+        // S(N) → [N]:Bbyte 0x02, referenced at S(7).
+        let byte_attr = SpecTecSym::Attr {
+            e: SpecTecExp::Var { id: "N".into() },
+            g1: Box::new(var("Bbyte")),
+        };
+        // param_gram adds the Exp param `N`.
+        let s = param_gram(
+            "S",
+            vec![prod(SpecTecSym::Seq {
+                gs: vec![byte_attr, num(0x02)],
+            })],
+        );
+        let bbyte = gram(
+            "Bbyte",
+            vec![prod(SpecTecSym::Range {
+                g1: Box::new(num(0x00)),
+                g2: Box::new(num(0xFF)),
+            })],
+        );
+        let root = gram("R", vec![prod(var_arg("S", nat(7)))]);
+        let (cfg, rep) = lower_recognition(&[root, s, bbyte], &["R"]);
+        assert_eq!(cfg.validate(), Ok(()));
+        assert_eq!(rep.attrs_folded, 1, "the id byte folded");
+        let r = cfg.lookup("R").unwrap();
+        assert!(cfg.naive_parse(r, &[0x07, 0x02]), "the ground id byte");
+        assert!(
+            !cfg.naive_parse(r, &[0x08, 0x02]),
+            "a wrong id byte is rejected (exact fold, not a stripped capture)",
+        );
+    }
+
+    /// An `Iter`-wrapped `if` premise over production-locals (`Bmodule`'s
+    /// data-count / func-code correlation shape) is dropped as an input-value
+    /// premise in recognition mode (counted), and still skips under Under mode.
+    #[test]
+    fn iterated_value_premise_dropped_in_recognition() {
+        let iter_prem = spectec_ast::SpecTecPrem::Iter {
+            pr1: Box::new(spectec_ast::SpecTecPrem::If {
+                e: cmp(SpecTecCmpOp::Eq, var_exp("n"), var_exp("m")),
+            }),
+            it: SpecTecIter::List,
+            xes: vec![spectec_ast::SpecTecIterExp::Dom {
+                x: "n".into(),
+                e: SpecTecExp::Var { id: "ns".into() },
+            }],
+        };
+        let g = Grammar {
+            prods: vec![SpecTecProd::Prod {
+                ps: Vec::new(),
+                g: num(0x2A),
+                e: SpecTecExp::Bool { b: true },
+                prs: vec![iter_prem],
+            }],
+            ..gram("A", Vec::new())
+        };
+        let (_c, ur) = lower(&[g.clone()], &["A"]);
+        assert_eq!(ur.grammars.get("A"), Some(&Coverage::None), "Under skips");
+        let (cfg, rep) = lower_recognition(&[g], &["A"]);
+        assert_eq!(rep.grammars.get("A"), Some(&Coverage::Full));
+        assert_eq!(rep.premises_dropped, 1, "iterated value premise counted");
+        let a = cfg.lookup("A").unwrap();
+        assert!(cfg.naive_parse(a, &[0x2A]));
+    }
+
+    /// **The whole-module differential** (the kernel-side end-to-end proof
+    /// lives in `covalence-init/tests/cfg_grammar.rs`): the recognition-mode
+    /// `Bmodule` closure accepts the real 27-byte binary for
+    /// `(module (func (result i32) i32.const 42))` and refuses corruptions the
+    /// recognizer can genuinely see. Also documents, as a *pinned caveat*, an
+    /// over-approximation this closure inherits: dropping the final byte is
+    /// still accepted, because section `len` premises are dropped and `ListN`
+    /// vectors are star-widened, so the func section's `typeidx*` swallows the
+    /// dangling tail. Recognition ≠ validation.
+    #[test]
+    fn bmodule_recognition_differential() {
+        let gs = crate::grammar::wasm3_binary();
+        let (cfg, rep) = lower_recognition(&gs, &["Bmodule"]);
+        assert_eq!(cfg.validate(), Ok(()));
+        assert_eq!(
+            rep.grammars.get("Bmodule"),
+            Some(&Coverage::Full),
+            "Bmodule lowers Full in recognition mode",
+        );
+        let m = cfg.lookup("Bmodule").unwrap();
+        let module = wasm_module_i32_const_42();
+        assert!(cfg.naive_parse(m, &module), "real module accepted");
+        // Magic/version alone: the empty module.
+        assert!(
+            cfg.naive_parse(m, &[0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00]),
+            "empty module accepted",
+        );
+        // Genuine refusals: corrupt magic; an invalid section id right after
+        // the version (before any `0x00` byte can open a custom section).
+        let mut bad_magic = module.clone();
+        bad_magic[0] = 0x01;
+        assert!(!cfg.naive_parse(m, &bad_magic), "bad magic refused");
+        let mut bad_secid = module.clone();
+        bad_secid[8] = 0xFF; // type-section id 0x01 → invalid id 0xFF
+        assert!(
+            !cfg.naive_parse(m, &bad_secid),
+            "invalid section id refused"
+        );
+        // PINNED CAVEATS (over-approximations, not bugs) — the two byte-sinks
+        // a recognition-mode `Bmodule` inherits:
+        //  1. truncating the final `end` opcode still recognises: section
+        //     `len` premises are dropped and `ListN` vectors star-widened, so
+        //     the func section's `typeidx*` swallows the low-LEB tail;
+        //  2. appending a dangling `0x80` still recognises: the parse can
+        //     re-split so a *custom section* opens at an earlier `0x00` byte,
+        //     and `Bcustom`'s `byte*` accepts arbitrary bytes.
+        assert!(
+            cfg.naive_parse(m, &module[..module.len() - 1]),
+            "known over-approximation: truncated tail swallowed by widened vectors",
+        );
+        let mut dangling = module.clone();
+        dangling.push(0x80);
+        assert!(
+            cfg.naive_parse(m, &dangling),
+            "known over-approximation: custom-section byte* is a universal sink",
+        );
+    }
+
+    /// The real 27-byte binary encoding of
+    /// `(module (func (result i32) i32.const 42))`, byte by byte.
+    pub(crate) fn wasm_module_i32_const_42() -> Vec<u8> {
+        vec![
+            0x00, 0x61, 0x73, 0x6D, // magic `\0asm`
+            0x01, 0x00, 0x00, 0x00, // version 1
+            0x01, 0x05, // type section: id 1, size 5
+            0x01, // — 1 rectype
+            0x60, 0x00, 0x01, 0x7F, // — functype [] → [i32]
+            0x03, 0x02, // func section: id 3, size 2
+            0x01, 0x00, // — 1 func, typeidx 0
+            0x0A, 0x06, // code section: id 10, size 6
+            0x01, // — 1 code entry
+            0x04, // — body size 4
+            0x00, // — 0 local groups
+            0x41, 0x2A, // — i32.const 42
+            0x0B, // — end
+        ]
     }
 }

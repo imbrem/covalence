@@ -31,14 +31,16 @@
 //!
 //! A line beginning with `#` is a [directive](Directive), not a Lisp form:
 //! `#help` prints the primitive list, `#show EXPR` prints the full
-//! `⊢ lhs = rhs` theorem behind `EXPR`. The directive table is extensible;
-//! other directives are deferred (see `SKELETONS.md`).
+//! `hyps ⊢ lhs = rhs` sequent behind `EXPR` (hypotheses — e.g. the assumed
+//! `defun` equations — included). The directive table is extensible; other
+//! directives are deferred (see `SKELETONS.md`).
 
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_init::{Term, Type};
 use covalence_repl_core::{Fuel, Reduction, Repl, RunToValue, Status, Strategy};
 use covalence_sexp::SExpr;
 
+use crate::acl2::{Acl2Error, Acl2Outcome, Acl2Proof, Acl2Session, Acl2ValueKind};
 use crate::defs::{Defs, build_def, build_def_with_ret};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
@@ -60,11 +62,19 @@ pub enum Lang {
     #[default]
     Lisp,
     /// The equational value semantics: primitives + `cond`/`lambda`/`defun`
-    /// recursion; numerals are symbol atoms (integer arithmetic is stuck).
+    /// recursion **and** integers (numerals are kernel `int` literals;
+    /// `+ - * <= =` reduce by kernel-proved computation) — the Scheme
+    /// convergence point.
     Scheme,
     /// The relational semantics WITHOUT integers (pure McCarthy): `(+ 2 2)` is
     /// stuck. Demonstrates `sector ⊑ sector+int`.
     Sector,
+    /// The ACL2 slice over the value semantics: `defun` with a syntactic
+    /// structural-recursion admissibility check, `defthm` for **ground**
+    /// goals (driven to a bool literal by certified reduction), and the ACL2
+    /// spellings (`equal`, ternary `if`, `consp`/`atom`/`endp`, `zp`/`natp`).
+    /// See [`crate::acl2`].
+    Acl2,
 }
 
 impl Lang {
@@ -75,6 +85,7 @@ impl Lang {
             "lisp" | "lisp-int" | "int" => Some(Lang::Lisp),
             "scheme" | "value" => Some(Lang::Scheme),
             "sector" => Some(Lang::Sector),
+            "acl2" => Some(Lang::Acl2),
             _ => None,
         }
     }
@@ -85,16 +96,18 @@ impl Lang {
             Lang::Lisp => "lisp",
             Lang::Scheme => "scheme",
             Lang::Sector => "sector",
+            Lang::Acl2 => "acl2",
         }
     }
 
     /// The relational [`Dialect`] for a relational `Lang` (`None` for
-    /// [`Scheme`](Lang::Scheme), which uses the value semantics).
+    /// [`Scheme`](Lang::Scheme) and [`Acl2`](Lang::Acl2), which use the value
+    /// semantics).
     fn dialect(self) -> Option<Dialect> {
         match self {
             Lang::Lisp => Some(Dialect::SectorInt(IntFlavour::Int)),
             Lang::Sector => Some(Dialect::Sector),
-            Lang::Scheme => None,
+            Lang::Scheme | Lang::Acl2 => None,
         }
     }
 }
@@ -131,6 +144,15 @@ pub struct Session {
     /// The active dialect (selected by `#lang`; default [`Lang::Lisp`]).
     lang: Lang,
     defs: Defs,
+    /// The ACL2 sub-session (`defun` dictionary + `defthm` table), active in
+    /// [`Lang::Acl2`]; reset (like `defs`) on every `#lang` switch.
+    acl2: Acl2Session,
+    /// The `#book` confinement root (default: the process working directory
+    /// at session start). Every `#book` / `include-book` path resolves
+    /// inside it — `..`, absolute paths, and symlink escapes are rejected
+    /// ([`crate::book`]), so the server's `/api/lisp` endpoint cannot
+    /// traverse outside the directory the server was started in.
+    book_root: Option<std::path::PathBuf>,
     /// A definition-free semantics used only for its **structural** render
     /// helpers (`is_snil` / `as_scons` / `atom_bytes`), which are independent
     /// of the `defun` dictionary.
@@ -151,8 +173,16 @@ impl Session {
         Ok(Session {
             lang: Lang::default(),
             defs: Defs::new(),
+            acl2: Acl2Session::new().map_err(acl2_hol_err)?,
+            book_root: std::env::current_dir().ok(),
             render_sem: LispSemantics::new()?,
         })
+    }
+
+    /// Override the `#book` confinement root (see the `book_root` field
+    /// docs). `None` disables `#book` entirely.
+    pub fn set_book_root(&mut self, root: Option<std::path::PathBuf>) {
+        self.book_root = root;
     }
 
     /// The current `defun` dictionary.
@@ -165,11 +195,18 @@ impl Session {
         self.lang
     }
 
-    /// Switch dialect and **reset session state** (the `defun` dictionary) — the
-    /// programmatic twin of the `#lang` directive.
+    /// Switch dialect and **reset session state** (the `defun` dictionary and
+    /// the ACL2 sub-session) — the programmatic twin of the `#lang` directive.
     pub fn set_lang(&mut self, lang: Lang) {
         self.lang = lang;
         self.defs = Defs::new();
+        self.acl2.reset();
+    }
+
+    /// The ACL2 sub-session (its `defun` dictionary and proved `defthm`
+    /// table), for auditing the theorems behind [`Lang::Acl2`] cells.
+    pub fn acl2(&self) -> &Acl2Session {
+        &self.acl2
     }
 
     /// Build a relational engine for the active (relational) dialect.
@@ -200,6 +237,11 @@ impl Session {
                 self.outcome(&sem, red)
             }
             Lang::Lisp | Lang::Sector => self.reduce_relational(form),
+            Lang::Acl2 => self
+                .acl2
+                .reduce(form)
+                .map(acl2_outcome)
+                .map_err(acl2_hol_err),
         }
     }
 
@@ -282,16 +324,16 @@ impl Session {
     /// the def's own free-variable head).
     ///
     /// Because HOL is typed but Lisp is not, the recursive head's *return type*
-    /// (`bool` for a predicate, `sexpr` for a list-valued function) must be
-    /// fixed **before** the body compiles. We try `bool` first, and on a type
-    /// error retry with `sexpr` — covering both `lat?`/`member?` (predicates,
-    /// whose `t`/`nil` must render as booleans) and `rember` (data). A
-    /// predicate's body only types under a `bool` head; a data function's
-    /// recursive call only fits its data context under a `sexpr` head, so the
-    /// two are disambiguated by which attempt type-checks.
+    /// (`bool` for a predicate, `sexpr` for a list-valued function, `int` for
+    /// a counting function) must be fixed **before** the body compiles. We try
+    /// `bool` first, then `sexpr`, then `int` — covering `lat?`/`member?`
+    /// (predicates, whose `t`/`nil` must render as booleans), `rember` (data),
+    /// and `len` (integer-valued). A body only type-checks under the head type
+    /// its recursive calls actually inhabit, so the attempts are disambiguated
+    /// by which one succeeds.
     fn install(&mut self, name: &str, params: &[String], body: &SExpr) -> Result<(), HolError> {
         let tau = LispSemantics::new()?.tau();
-        let candidates = [Type::bool(), tau.clone()];
+        let candidates = [Type::bool(), tau.clone(), Type::int()];
         let mut last_err = None;
         for ret in candidates {
             match self.try_install_with_ret(name, params, body, &ret) {
@@ -405,6 +447,12 @@ impl Session {
         if let Some(rest) = src.strip_prefix('#') {
             return self.run_directive(rest).map_err(CellError::Directive);
         }
+        // ACL2 cells (events *and* expressions) are handled by the ACL2
+        // sub-session, which enforces its own admissibility / proof
+        // discipline — every printed value still rides a kernel theorem.
+        if self.lang == Lang::Acl2 {
+            return self.acl2.eval_cell(src).map_err(CellError::Acl2);
+        }
         let form = read_one(src).map_err(CellError::Read)?;
         // A `defun` / `define` adds an assumption and returns an ack (no value)
         // — only in the value semantics (`scheme`); the relational dialects have
@@ -430,6 +478,15 @@ impl Session {
         match out.kind {
             ValueKind::Bool => self.render_bool(&out.value),
             ValueKind::Data => self.render_data(&out.value),
+            ValueKind::Int => self.render_int(&out.value),
+        }
+    }
+
+    /// A kernel `int` literal → its decimal text.
+    fn render_int(&self, v: &Term) -> String {
+        match covalence_hol_eval::as_int(v) {
+            Some(n) => n.to_string(),
+            None => format!("{v}"), // not a literal — surface the raw term
         }
     }
 
@@ -489,17 +546,65 @@ impl Session {
         match name {
             "help" => Ok(HELP.to_string()),
             "lang" => self.run_lang(arg),
+            "book" => self.run_book(arg),
             "show" => {
                 if arg.is_empty() {
                     return Err(DirectiveError::Usage("#show EXPR".into()));
                 }
                 let form = read_one(arg).map_err(DirectiveError::Read)?;
+                // In acl2, `#show NAME` reveals a stored defthm's full
+                // sequent — on the certificate path that is the transported
+                // base-HOL model equation — and says which machinery proved
+                // it. A non-theorem name falls through to expression
+                // evaluation below.
+                if self.lang == Lang::Acl2
+                    && let Some(name) = form.as_symbol()
+                    && let Some(entry) = self.acl2.theorem_entry(name)
+                {
+                    let via = match entry.proof {
+                        Acl2Proof::Certificate { .. } => {
+                            "proved via a reified Derivable_ACL2 certificate + the \
+                             machine-checked soundness metatheorem, transported to \
+                             the base-HOL model"
+                        }
+                        Acl2Proof::Reduction => "proved by certified kernel reduction",
+                    };
+                    return Ok(format!("{}\n  [{via}]", entry.thm));
+                }
                 let out = self.reduce(&form).map_err(DirectiveError::Eval)?;
-                // The full `⊢ lhs = rhs` composite theorem.
-                Ok(format!("{}", out.thm.concl()))
+                // The full sequent `hyps ⊢ concl` via the kernel `Thm`
+                // Display. Printing the conclusion alone would misstate a
+                // hypothesis-carrying theorem (e.g. `{f = λ…} ⊢ f x = v`
+                // after a `defun`, where `f` is FREE in the bare conclusion)
+                // as if it held outright — an honesty violation.
+                Ok(format!("{}", out.thm))
             }
             other => Err(DirectiveError::Unknown(other.to_string())),
         }
+    }
+
+    /// `#book PATH` (acl2 only): run the honest book-import pipeline
+    /// ([`crate::book::run_book`]) on a root-relative `.lisp` book and print
+    /// the per-event tally. Paths are confined to the session's book root
+    /// (default: the process working directory) — `..`, absolute paths, and
+    /// symlink escapes are rejected before any file is touched.
+    fn run_book(&mut self, arg: &str) -> Result<String, DirectiveError> {
+        if self.lang != Lang::Acl2 {
+            return Err(DirectiveError::Usage(
+                "#book is an ACL2 event pipeline — switch with `#lang acl2` first".into(),
+            ));
+        }
+        if arg.is_empty() {
+            return Err(DirectiveError::Usage("#book PATH (root-relative)".into()));
+        }
+        let Some(root) = self.book_root.clone() else {
+            return Err(DirectiveError::Book(
+                "no book root is configured for this session".into(),
+            ));
+        };
+        let report = crate::book::run_book(&mut self.acl2, &root, arg)
+            .map_err(|e| DirectiveError::Book(e.to_string()))?;
+        Ok(report.to_string())
     }
 
     /// `#lang [name]`: with no argument, report the current + available
@@ -509,18 +614,18 @@ impl Session {
         if arg.is_empty() {
             return Ok(format!(
                 "current #lang: {}\navailable: lisp (default, integers on) | \
-                 scheme (defun/lambda recursion) | sector (no integers)",
+                 scheme (defun/lambda recursion + integers) | sector (no integers) | \
+                 acl2 (defun with admissibility check + ground defthm)",
                 self.lang.name()
             ));
         }
         let lang = Lang::parse(arg).ok_or_else(|| {
             DirectiveError::Usage(format!(
-                "unknown #lang `{arg}` (try: lisp | scheme | sector)"
+                "unknown #lang `{arg}` (try: lisp | scheme | sector | acl2)"
             ))
         })?;
-        self.lang = lang;
         // Reset session state on every switch (even to the same lang).
-        self.defs = Defs::new();
+        self.set_lang(lang);
         Ok(format!("#lang {} (session reset)", lang.name()))
     }
 }
@@ -548,14 +653,36 @@ Dialects (select with `#lang`; switching RESETS the session):
   lisp             DEFAULT — relational semantics with integers on
                    (car/cdr/cons/atom?/consp/null?/eq?/cond + `+ - * <= =`);
                    `(+ 2 2)` => 4. Value is `|- Reduces input value`.
-  scheme           equational value semantics with `defun`/`lambda` recursion;
-                   numerals are symbol atoms (integer arithmetic is stuck).
+  scheme           equational value semantics with `defun`/`lambda` recursion
+                   AND integers (`+ - * <= =`, kernel-proved); `(+ 2 2)` => 4.
+                   Value is `|- input = value` (defuns ride as hypotheses).
   sector           relational, NO integers (pure McCarthy); `(+ 2 2)` is stuck.
+  acl2             ACL2 slice over the value semantics: `defun` admits only
+                   syntactically structural recursion; `defthm` proves GROUND
+                   goals only (free-variable goals are rejected — induction
+                   is not implemented). A ground (equal L R) over quoted
+                   data, integer literals, and car/cdr/cons/consp/equal/+ is
+                   proved via a reified Derivable_ACL2 certificate + a
+                   machine-checked soundness metatheorem, and the STORED
+                   theorem is the transported base-HOL model equation
+                   (`#show NAME` reveals it); other ground goals are driven
+                   to a bool literal by certified reduction. Spellings:
+                   equal, ternary if, consp/atom/endp, zp/natp.
 Directives:
   #help            this text
   #lang [NAME]     show / switch dialect (resets session state)
-  #show EXPR       print the full theorem behind EXPR
-                   (`|- lhs = rhs` in scheme; `|- Reduces …` relationally)";
+  #show EXPR       print the full sequent behind EXPR, hypotheses included
+                   (`defs |- lhs = rhs` in scheme; `|- Reduces …` relationally;
+                   in acl2, `#show NAME` prints a stored defthm's sequent and
+                   how it was proved)
+  #book PATH       (acl2 only) run a .lisp BOOK of ACL2 events through the
+                   session and print an honest per-event tally: transported
+                   (closed base-HOL theorem minted via the certificate path),
+                   admitted in dialect (defun installed / reduction defthm),
+                   skipped (in-package, include-book deps, local), rejected
+                   (with reasons — e.g. free-variable defthms need induction,
+                   which is not wired). Paths are root-relative and confined
+                   (no `..`, no absolute paths).";
 
 /// A `#`-directive error.
 #[derive(Debug, thiserror::Error)]
@@ -566,6 +693,10 @@ pub enum DirectiveError {
     /// Bad usage; the string is the expected form.
     #[error("usage: {0}")]
     Usage(String),
+    /// The `#book` pipeline failed at the top level (path / read / parse —
+    /// per-event failures are tallied, not raised).
+    #[error("book error: {0}")]
+    Book(String),
     /// The directive's argument failed to parse.
     #[error("read error: {0}")]
     Read(ReadError),
@@ -586,14 +717,48 @@ pub enum CellError {
     /// The program failed to evaluate to a value.
     #[error(transparent)]
     Eval(HolError),
+    /// An ACL2 cell (event or expression) failed.
+    #[error(transparent)]
+    Acl2(Acl2Error),
+}
+
+/// Map an [`Acl2Error`] into a [`HolError`] for the `reduce` / [`Repl`]
+/// seams (which are typed `HolError`). Evaluation errors pass through;
+/// event-level failures (inadmissible `defun`, rejected `defthm`, malformed
+/// or unreadable cells) keep their full message as a `Stuck` payload.
+fn acl2_hol_err(e: Acl2Error) -> HolError {
+    match e {
+        Acl2Error::Eval(h) => h,
+        other => HolError::Stuck(other.to_string()),
+    }
+}
+
+/// Repackage an [`Acl2Outcome`] as a session [`Outcome`] (the value is still
+/// the backing theorem's RHS; only the kind enum differs).
+fn acl2_outcome(out: Acl2Outcome) -> Outcome {
+    Outcome {
+        value: out.value,
+        thm: out.thm,
+        kind: match out.kind {
+            Acl2ValueKind::Data => ValueKind::Data,
+            Acl2ValueKind::Bool => ValueKind::Bool,
+            Acl2ValueKind::Int => ValueKind::Int,
+        },
+        status: Status::Value,
+        steps: 0,
+    }
 }
 
 /// A trivial term of type `ret`, used as a placeholder body while compiling a
-/// recursive definition: `nil` for `sexpr`, `F` for `bool`.
+/// recursive definition: `nil` for `sexpr`, `F` for `bool`, `0` for `int`.
 fn dummy_of(ret: &Type) -> Result<Term, HolError> {
     let sem = LispSemantics::new()?;
     if *ret == Type::bool() {
         Ok(covalence_hol_eval::mk_bool(false))
+    } else if *ret == Type::int() {
+        Ok(covalence_hol_eval::mk_int(covalence_types::Int::from(
+            0i128,
+        )))
     } else {
         Ok(sem.tau_nil())
     }
@@ -636,6 +801,12 @@ impl Repl for Session {
             && let Some(name) = self.try_define(&term)?
         {
             state.defs = self.defs.clone();
+            return self.ack(&name);
+        }
+        // An ACL2 event (`defun` / `defthm`) is admitted by the sub-session.
+        if self.lang == Lang::Acl2
+            && let Some(name) = self.acl2.try_event(&term).map_err(acl2_hol_err)?
+        {
             return self.ack(&name);
         }
         self.reduce(&term)

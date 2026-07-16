@@ -6,6 +6,15 @@
 > *importing large K developments and reducing terms in them*, with **K a
 > first-class input format + IR on par with Metamath**. Research is
 > certainty-tagged; the implementation plan is a proposal. Resume here.
+>
+> **UPDATE 2026-07-15/16 — the demo is BUILT.** All four missing pieces below
+> (matcher, `app`-congruence, fuel driver, `.k` rule reader) landed, plus the
+> `KSession` narrow-waist API and a `cov k` CLI. K programs reduce from `.k`
+> source to hypothesis-free `⊢ Reduces` theorems: PEANO (`plus`/`mult`),
+> K tutorial **Lesson 1.2** (`colorOf`/`contentsOfJar`), boolean simplification
+> (`crates/lang/k/examples/k-demo/`, `tests/k_demo.rs`, `cov k demo`). What
+> remains is the *ladder* (§5 step 6): hooks (F1), cells/`~>`/heating-cooling,
+> binders. §§2–4 below are the sourced design; §5 the roadmap (step 6 = next).
 
 Companions: [`../../design/k-frontend.md`](../../design/k-frontend.md) (the
 KORE-ingestion + F0–F4 decision record), [`research/`](./research/) (the sourced

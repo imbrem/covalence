@@ -304,6 +304,21 @@ pub(crate) fn matches_core(core: &Core, bytes: &[u8]) -> Result<Option<Thm>> {
     Ok(run(core, &byte_atoms(bytes), &[])?.map(|(thm, _)| thm))
 }
 
+/// Phase-1-only yes/no: does `bytes` match `core`? **No kernel calls** — just
+/// the pure-Rust recognizer. The CFG tactic's search phase uses this so its
+/// (many) failed terminal-span probes cost no theorem construction; the
+/// builder still re-derives accepted spans through [`matches_core`], so the
+/// kernel re-checks everything that ends up in a proof.
+pub(crate) fn recognizes_core(core: &Core, bytes: &[u8]) -> bool {
+    let atoms = byte_atoms(bytes);
+    let mut rec = Recognizer {
+        atoms: &atoms,
+        vars: &[],
+        memo: HashMap::new(),
+    };
+    rec.rec(core, 0, atoms.len()).is_some()
+}
+
 /// Prove that the input is **in the language** the regex denotes:
 /// `⊢ mem w ⟦⌜r⌝⟧`. Chains [`prove_matches`] through regex *soundness*
 /// ([`crate::init::regex::soundness_at`]). Accepts any [`AsRef<[u8]>`].

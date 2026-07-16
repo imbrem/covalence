@@ -36,4 +36,21 @@ move together and `cargo test` stays green throughout.
 
 - [`minimal-spec/`](./minimal-spec/) — the buildable spec: [`README.md`](./minimal-spec/README.md), [`implementation-plan.md`](./minimal-spec/implementation-plan.md), [`lisp.wit`](./minimal-spec/lisp.wit).
 - [`initial-ideas/`](./initial-ideas/) — the design corpus: parametric-reduction, reduction-relations-and-state, generic-repl-trait, lisp-dialects-and-order, parsing-relations, content-addressing-sexpr, lisp-frontend-sketch, lisp-acl2-answers, acl2-lisp.
+- [`abstract-sexpr-api.md`](./abstract-sexpr-api.md) — reusable-API design: the
+  `AbstractSExpr` carrier trait (carved `sexpr` / ACL2 `A` / surface `SExpr` as
+  impls) + the abstract reduction axes (equational / relational / certificate
+  shapes, `Composer` split, `CertifiedEval`, transport exit) with a sliced
+  migration plan.
 - Status report: [`STATUS.md`](./STATUS.md) once the first build lands.
+- ACL2: [`acl2-full-plan.md`](./acl2-full-plan.md) (the governing S0–S12 plan),
+  [`acl2-s7-s12-plan.md`](./acl2-s7-s12-plan.md) (remaining stages, concretely),
+  [`acl2-fidelity.md`](./acl2-fidelity.md) (assumptions/deviations ledger),
+  [`acl2-agent-guide.md`](./acl2-agent-guide.md) (agent orientation: module map, patterns, gotchas, process),
+  stage designs [`acl2-s0-s3-design.md`](./acl2-s0-s3-design.md) /
+  [`acl2-s4-s6-design.md`](./acl2-s4-s6-design.md) /
+  [`acl2-s5-design.md`](./acl2-s5-design.md) (each with implementation reports),
+  [`acl2-book-frontend.md`](./acl2-book-frontend.md) (book import pipeline),
+  [`acl2-premise-builder.md`](./acl2-premise-builder.md) (generic induction
+  premise builder: object-level simplifier + IH splicing — the
+  surface-defthm → S6-kernel-path design),
+  [`acl2-dialect.md`](./acl2-dialect.md) (slice-1 dialect notes).

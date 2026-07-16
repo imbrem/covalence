@@ -2,12 +2,14 @@
 
 Open placeholders for the `init/*` theories. See `CLAUDE.md` § Skeletons for the
 rules, the [crate index](../../SKELETONS.md), and the [root
-index](../../../../../../SKELETONS.md).
+index](../../../../../../SKELETONS.md). Sub-registries:
+[`acl2/SKELETONS.md`](./acl2/SKELETONS.md) (the staged ACL2 soundness ladder —
+S0–S6 incl. all of S5 done; open: S7 measured recursion + minors).
 
 ## `defs/` re-home bridge (toHOL purge, `init/twins.rs`)
 
 Bridge built (S9a); the flip is maintainer-gated. See
-[`notes/vibes/defs-rehome-design.md`](../../../../../../notes/vibes/defs-rehome-design.md).
+[`notes/vibes/kernel/defs-rehome-design.md`](../../../../../../notes/vibes/kernel/defs-rehome-design.md).
 
 - **Polymorphic let-style specs are not yet twinned** — `twins::unfold_spec`
   falls back to `unfold_term_spec` for them. Instantiate the cached base
@@ -171,6 +173,17 @@ Bridge built (S9a); the flip is maintainer-gated. See
     floatval → rat` (`m · 10ᵉ` into `init/rat.rs`) to state the value in `rat`;
     special float tokens are not read.
 
+- **`FloatCert32` round-to-nearest-even enclosure** (numeral W13, not built).
+  A `FloatCert32{ bits: u32, thm }` carrying `⊢ roundsToNearestEven dec bits`
+  for a finite decimal (`init/decimal.rs`, W12, built): decode `bits`→exact
+  `rat` value `v`, bound `|dec − v|` against the two `f32` neighbours with the
+  half-even tie rule, all via the `init::rat` order lemmas. Blocked on the same
+  IEEE rounding-error / `ball` enclosure work as the `float_parse` `f64`
+  rounding item above and `ball.add`. **Must not be admitted** — leave the top
+  enclosure theorem unproven until the enclosure lemmas land. The `decimal`
+  carrier + the proved `toRat(mkDec m k) = m / 10^k` injection (the exact-`rat`
+  value the certificate compares against) are done.
+
 - **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Missing:
   - **`list_foldl`** — the left-fold recursor's defining equations not yet discharged.
   - **`filter` / `flatten` clauses** — `foldr`-factored; follow the `length`/`cat`
@@ -273,9 +286,11 @@ Bridge built (S9a); the flip is maintainer-gated. See
   - **`Hol` trait ↔ `LogicOps` unification** — `inductive/hol.rs`'s `Hol` should extend
     `covalence_inductive::LogicOps` instead of duplicating its surface (`api.rs` forwards
     method-by-method today).
-  - **Carved backend is `sexpr`-shape-only** — `inductive/carved.rs` realizes exactly the
-    `atom bytes | snil | scons rec rec` shape (full-caps: `prim_rec`/`rec_injective`/
-    `mem_trivial`, paramorphic recursor); a generic exact-type carver for arbitrary specs is
+  - **Carved backend is `sexpr`-shape-only** — the construction is now payload-parametric
+    (`CarvedSExpr::build_with(payload, prefix)`; instances: `sexpr` at `bytes`,
+    `init/acl2/carrier.rs` at `coprod int bytes`), but the `InductiveBackend` shape gate
+    still realizes only `atom bytes | snil | scons rec rec`; a generic exact-type carver
+    for arbitrary specs (≠ sexpr shape / other payloads through the bundle API) is
     future work.
   - **`covalence-sexp` quotation helper** — surface `SExp` → `sexpr_theory()` constructor
     terms, next to the backend (the Lisp pole's data path).
@@ -342,7 +357,9 @@ Bridge built (S9a); the flip is maintainer-gated. See
     induction-scheme generation (design in `inductive-api-design.md` §4.2). The current
     theorems hand-pick structural measures; no admission machinery yet.
   - **`proof/acl2` frontend** — the `.lisp`/`defun`/`defthm` reader that lowers onto this
-    API (mapping in `inductive-api-design.md` §4.3). Not started.
+    API (mapping in `inductive-api-design.md` §4.3). Not started; the kernel-side model it
+    will target is the staged ladder in [`acl2/`](./acl2/SKELETONS.md)
+    (`notes/vibes/lisp/acl2-full-plan.md`).
 
 - **λ_iter deep embedding** (`init/lambda_iter.rs` + `.cov`, `init/cv_recursion.rs`).
   Tarski-style nat-encoding documented; **proved**: course-of-values induction

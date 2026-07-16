@@ -296,6 +296,65 @@ deliverable on `nat_binary`/`nat_bits_iso` under the future `covalence-numerals`
 crate — recognition and value-decode meet only at the regex oracle; do not
 conflate them.
 
+## M8 — Whole-module recognition: grammar-valued monomorphisation (landed 2026-07-17)
+
+The recognition-mode monomorphiser's keys now extend beyond `Vec<i64>`: an
+instance key is `(name, Vec<InstArg>)` with `InstArg = Int(i64) | Gram(NtId) |
+Typ(rendered)`. A grammar-valued argument (`Blist`/`Bsection_`'s `BX`) resolves
+to a non-terminal — a plain grammar, a pass-through of an enclosing `Gram`
+param, or a *recursively* monomorphised nested instance (`Btypesec` ⇒
+`Bsection_@1,type,Blist@type,Btype`). `Typ` args never reach the byte level but
+stay in the key conservatively. The pre-mint-then-lower cache order makes
+same-key self-references close on the cache; `MAX_INST_DEPTH` stays the
+belt-and-braces cap. Three companion moves:
+
+1. **Parameter-equality attr fold** (recognition-only): `[e]:Bbyte` with `e`
+   const-folding under the instance binding (through `Case`/`Tup` wrappers)
+   lowers to the literal byte — **exact**, this is `Bsection_`'s section-id
+   byte (the fold the Attr-classification section below anticipated). Not
+   applied to `Bu32`-typed constants (multiple LEB encodings — folding would
+   under-approximate).
+2. **Iterated value premises**: `Iter`-wrapped `if`s over production-locals
+   (`Bmodule`'s data-count / func-code correlation) drop like plain input-value
+   premises, counted. Param-only iterated bodies still skip (unevaluable
+   without the value-level dom).
+3. **Per-NT production index + pure terminal probes** in the parsing tactic
+   (`grammar/cfg/tactic.rs` + `regex::tactic::recognizes_core`): the search
+   phase does zero kernel calls and no longer scans the whole clause list per
+   goal — necessary at whole-spec scale.
+
+**Result (measured, pinned):** B\* recognition coverage 60/7/22 → **84 Full /
+3 Partial (`BuN` `BsN` `Bsection_`, open-param generics) / 2 None (`BiN`
+`Blist`, ditto)**; whole-231 recognition 1185 prods/1372 clauses/316 NTs/246
+skips → **1221/1526/385/210**. `Bmodule` + all 14 section grammars + the
+`Blist`-chain leaves (`Bfunc Bcode Bdata Belem Bname Bresulttype`) lower Full.
+**T5 (`tests/cfg_grammar.rs`): a real 27-byte module —
+`(module (func (result i32) i32.const 42))` — proves
+`⊢ Derives_E ⌜Bmodule⌝ ⌜bytes⌝` hypothesis-free**, with recognition-refusal on
+corrupt magic / invalid section id, and T5b re-proves it on the whole-spec
+1526-clause env with an honest `derives_meaning = Mixed` classification.
+
+**Honesty (pinned in T5 + `bmodule_recognition_differential`):** recognition
+`Bmodule` has two byte *sinks* beyond the familiar per-production widenings —
+(a) star-widened vectors + dropped `len` premises let a widened index star
+swallow trailing low-LEB bytes (truncating the final `end` still derives);
+(b) `Bcustom` ends in `byte*`, so a parse may re-split to open a custom
+section at any reachable `0x00` and swallow arbitrary garbage (dangling `0x80`
+still derives). Refusal is still sound (`L(SpecTec) ⊆ L(Cfg)` per Full
+grammar); derivability ≠ validity. Exact Under-mode `Bmodule` = the
+value-coupled `ListN` + faithful-`len` story. Also new: the recognition corpus
+has *nullable-body star* left-recursion (`Bcustomsec*` — `Bcustomsec` is
+genuinely nullable via `Bsection_`'s ε), which the tactic's in-progress guard
+handles without completeness loss (ε-contributions of a star are droppable).
+Whole-module proofs need the relation leg's 64 MiB
+`with_total_stack` (deep structural recursion over the ~800–1500-clause
+`Closed_E` conjunction) and tens of seconds each in debug — same scale risk,
+same recorded escape hatches (iterative kernel walks / arena).
+
+Residue: the 66 `T*_` context-param grammars (context-valued `Exp` args never
+const-fold; text format stays dead), `rule`/`let` premises (4 prods), 2 bridge
+terminals — see the two SKELETONS files.
+
 ## Version lattice + metatheorems (added 2026-07-13, maintainer direction)
 
 Requirements: WASM **1.0 and 2.0** alongside 3.0, plus arbitrary *subsets* of

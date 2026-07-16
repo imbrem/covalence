@@ -27,13 +27,17 @@
 //!   rules ⟹ fewer derivable judgements), incomplete — the honest way to grow
 //!   coverage against the real spec.
 //!
-//! ## Not lowered yet (see `SKELETONS.md`)
+//! ## Superseded by the total-load path
 //!
-//! Side-condition (`if`/`let`) premises need the denotational leg (functions);
-//! iterated (`…*`) premises need list recursion. Rules using them are rejected
-//! ([`rule_set`]) / skipped ([`spec_rule_set`]).
+//! This is the **v1** lowering: only plain `Rule` premises are supported, so
+//! side-condition / `Else` / iterated rules are rejected ([`rule_set`]) or
+//! skipped ([`spec_rule_set`]). The **v2 total-load** path
+//! ([`super::lower::total::total_spec_clauses`], served through
+//! `crate::spectec::RelationEnv::spec`) loads *every* rule — condition
+//! flattening, `Else` negation, star relations, `fn.*`/`ev.*` graphs — and is
+//! what new code should use; v1 stays for the single-relation view and
+//! comparison floors.
 
-use covalence_hol_eval::derived::DerivedRules;
 use std::collections::BTreeMap;
 
 use covalence_core::{Error, Result, Term};
@@ -42,7 +46,7 @@ use covalence_spectec::ast::{SpecTecDef, SpecTecPrem, SpecTecRule};
 
 use super::encode::{collect_metavars, encode_exp, metavar_name, phi, tag};
 use crate::init::ext::TermExt;
-use crate::metalogic::{self, RuleSet};
+use crate::metalogic::{self, Premise, RuleSet};
 
 /// One lowered rule: its relation-tagged conclusion/premise judgements plus the
 /// metavariable order its clause quantifies over (also the `all_elim` order for
@@ -217,6 +221,10 @@ pub fn derivable(rs: &RuleSet, judgement: &Term) -> Result<Term> {
 /// `⊢ Derivable ⌜premᵢ[args]⌝` per premise, in order. The kernel re-checks every
 /// instantiation and `imp_elim`, so a wrong arg/premise fails to build rather
 /// than fabricating a derivation.
+///
+/// The all-sub-derivations convenience over [`fn@derive_mixed`]; a clause with
+/// *side* antecedents (a SpecTec `if` condition lowered as a real `bool`
+/// proposition) takes the mixed form.
 pub fn derive(
     rs: &RuleSet,
     rule_idx: usize,
@@ -224,20 +232,31 @@ pub fn derive(
     args: &[Term],
     premise_ders: Vec<Thm>,
 ) -> Result<Thm> {
-    metalogic::derive_via_closed(rs, |assumed, _d_apply| {
-        // The instantiated clause: peel the metavar `∀`s with the given args.
-        let mut clause = metalogic::nth_conjunct(assumed.clone(), rule_idx, n_rules)?;
-        for a in args {
-            clause = clause.all_elim(a.clone())?;
-        }
-        // Turn each premise derivation `⊢ Derivable ⌜p⌝` into `d ⌜p⌝` under the
-        // assumed `Closed d`, then discharge the clause's antecedents in order.
-        for der in premise_ders {
-            let d_p = der.all_elim(rs.d_var())?.imp_elim(assumed.clone())?;
-            clause = clause.imp_elim(d_p)?;
-        }
-        Ok(clause)
-    })
+    derive_mixed(
+        rs,
+        rule_idx,
+        n_rules,
+        args,
+        premise_ders.into_iter().map(Premise::Derivation).collect(),
+    )
+}
+
+/// **Apply rule `rule_idx`** with **mixed** premises, in clause-antecedent
+/// order: a [`Premise::Side`] discharges a non-`d` antecedent (a side
+/// condition — e.g. proved by computation via
+/// [`side_cond`](crate::spectec::side_cond)) by direct `imp_elim`; a
+/// [`Premise::Derivation`] is a sub-derivation `⊢ Derivable ⌜premᵢ[args]⌝`
+/// opened under the assumed `Closed d` first. Pure delegation to
+/// [`metalogic::derive_mixed`] (the unary twin of the binary engine's
+/// `derive_mixed` the CFG stratum drives).
+pub fn derive_mixed(
+    rs: &RuleSet,
+    rule_idx: usize,
+    n_rules: usize,
+    args: &[Term],
+    premises: Vec<Premise>,
+) -> Result<Thm> {
+    metalogic::derive_mixed(rs, rule_idx, n_rules, args, premises)
 }
 
 #[cfg(test)]

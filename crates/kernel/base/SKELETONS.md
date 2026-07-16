@@ -1,7 +1,7 @@
 # covalence-pure — skeletons
 
 Stage 0 of the closed-world kernel
-([`notes/vibes/closed-world-kernel.md`](../../../notes/vibes/closed-world-kernel.md)) is built in
+([`notes/vibes/kernel/closed-world-kernel.md`](../../../notes/vibes/kernel/closed-world-kernel.md)) is built in
 the LCF-style shape: `Op` (with pointer/`dyn` forwarding) / `Expr` (incl.
 `Eqn<A,B>` as a bool proposition) / the `Thm<L, P>` certificate / `Language` /
 `Manifest`, the equality + propositional calculus, the gated
@@ -38,7 +38,7 @@ stages and a few deferred seams remain.
 
 ## Relation calculus (`rel.rs`) — Phase 0 only
 
-Phase 0 of the base redesign ([`notes/vibes/base-relcalc-holomega-design.md`](../../../notes/vibes/base-relcalc-holomega-design.md))
+Phase 0 of the base redesign ([`notes/vibes/kernel/base-relcalc-holomega-design.md`](../../../notes/vibes/kernel/base-relcalc-holomega-design.md))
 landed additively: `UntrustedFn`/`Rel<F>`, gated `execute` (positive membership
 over zero-copy `Ref<Arc<_>>`), ungated-trusted `Thm::transpose`, and generic
 `TyFn<T>`/`TyApp<T>` type-rep ops (`tyrep.rs`). Open:
@@ -62,7 +62,7 @@ over zero-copy `Ref<Arc<_>>`), ungated-trusted `Thm::transpose`, and generic
 
 ## HOL-ω base constructors (`kind.rs`/`tyrep.rs`/`kindcheck.rs`) — landed, follow-ups
 
-Stages B-K1/B-K2/B-K3 of [`notes/vibes/tcb-holomega-roadmap.md`](../../../notes/vibes/tcb-holomega-roadmap.md)
+Stages B-K1/B-K2/B-K3 of [`notes/vibes/kernel/tcb/tcb-holomega-roadmap.md`](../../../notes/vibes/kernel/tcb/tcb-holomega-roadmap.md)
 landed: reflected `KStar`/`KArrow` (kind.rs), higher-rank de-Bruijn binder syntax
 `TyBound`/`TyAll`/`TyAbs` (tyrep.rs), and the `KindOf`/`RankOf`/`RankLe`
 `CanonRule` oracle over the demo `TyC`/`KindC` (kindcheck.rs, audited SOUND). Open:
@@ -86,7 +86,7 @@ landed: reflected `KStar`/`KArrow` (kind.rs), higher-rank de-Bruijn binder synta
   supported surface) and `src/algebra.rs` (`CertificateAlgebra` + `EqnKernel`)
   landed additively; migrating `covalence-core`/`covalence-hol-eval` imports onto
   `covalence_pure::api` and the mint glue onto the trait is deferred until
-  in-flight core work merges. Plan: `notes/vibes/base-abstraction.md`.
+  in-flight core work merges. Plan: `notes/vibes/kernel/base-abstraction.md`.
 - **`Rewrite` conclusion is shape-erased** — `apply_rewrite` mints
   `Thm<L, Eqn<E, Box<dyn Expr<Ty=E::Ty>>>>`; the rhs is only sort-checked, not
   shape-checked (larger trust surface than `Rule`'s typed `Concl`). Sound (gated on

@@ -31,9 +31,51 @@ pub struct KModule {
     pub imports: Vec<Import>,
     /// The `syntax` declarations, in source order.
     pub syntax: Vec<SyntaxDecl>,
-    /// How many non-`syntax` sentences (`rule`/`context`/`configuration`/`claim`)
-    /// were skipped in this module — this frontend reads grammar only.
+    /// The `rule` declarations we could parse (the prefix-term fragment).
+    pub rules: Vec<KRule>,
+    /// How many sentences were *skipped* (`context`/`configuration`/`claim`, or a
+    /// `syntax`/`rule` we couldn't parse) — this frontend reads a fragment only.
     pub skipped_sentences: usize,
+}
+
+/// A `rule LHS => RHS [requires REQ] [ATTRS]` — the minimal prefix-term fragment
+/// (no cells, no `~>`, no nested/local `=>`). See the parser for what is
+/// deferred.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KRule {
+    pub lhs: RuleTerm,
+    pub rhs: RuleTerm,
+    pub requires: Option<RuleTerm>,
+    pub attrs: Vec<Attr>,
+}
+
+/// A first-order **rule/program term** in the prefix fragment: a constructor
+/// application `sym(args…)` (nullary written `sym()`), or a variable `X[:Sort]`.
+/// Bare identifiers are variables; constructors are always applied (even
+/// nullary) — the convention that lets us read rules without full sort analysis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuleTerm {
+    /// Constructor application `sym(args…)` — `args` empty for a nullary ctor.
+    App { sym: SmolStr, args: Vec<RuleTerm> },
+    /// A variable `name` with an optional sort annotation.
+    Var { name: SmolStr, sort: Option<Sort> },
+}
+
+impl RuleTerm {
+    /// A nullary constructor `sym()`.
+    pub fn con(sym: impl Into<SmolStr>) -> RuleTerm {
+        RuleTerm::App {
+            sym: sym.into(),
+            args: Vec::new(),
+        }
+    }
+    /// A variable `name`.
+    pub fn var(name: impl Into<SmolStr>) -> RuleTerm {
+        RuleTerm::Var {
+            name: name.into(),
+            sort: None,
+        }
+    }
 }
 
 /// `imports [public|private] NAME`.

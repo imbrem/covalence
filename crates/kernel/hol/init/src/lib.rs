@@ -38,6 +38,7 @@ pub mod project;
 pub mod proofs;
 pub mod script;
 pub mod sexp;
+pub mod spectec;
 pub mod wasm;
 
 // The thin HOL surface lives in `covalence-hol`. Re-export its modules and items

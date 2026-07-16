@@ -6,6 +6,9 @@ edition = "2024"
 [dependencies]
 bytes = "1"
 covalence-parse = { path = "../parse" }
+# The `Int` numeral type used by the abstract S-expression payloads
+# (`abstract_sexpr::PayloadLit`). Kernel-free (a `crates/lib` wrapper).
+covalence-types = { path = "../types" }
 pretty = "0.12"
 smol_str = "0.3"
 thiserror = "2"

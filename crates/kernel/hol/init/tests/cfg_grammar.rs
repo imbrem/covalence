@@ -228,3 +228,187 @@ fn t4b_typeidx_is_leb128() {
     );
     assert!(prove_derives(&env, typeidx, &[0x80]).unwrap().is_none());
 }
+
+// ----------------------------------------------------------------------------
+// T5 — **a real, whole WASM module**, recognized end to end through the kernel:
+// `⊢ Derives_E ⌜Bmodule⌝ ⌜bytes⌝`, hypothesis-free, over the recognition-mode
+// `Bmodule` closure (grammar-valued parameter monomorphisation: the 14 section
+// grammars, `Bsection_`/`Blist` instances, folded section-id bytes).
+//
+// # What the theorem means (recognition mode — read before citing)
+//
+// `L(SpecTec) ⊆ L(Cfg)` on the `Full`-coverage closure: every spec-valid module
+// derives, and REFUSAL is sound — but derivability over-approximates validity.
+// The widenings in `Bmodule`'s closure, and their concrete consequences:
+//
+//  - **section `len` / code-size premises dropped**: a section's length prefix
+//    is *not* tied to its contents — a module with a wrong `len` still derives;
+//  - **`ListN` vectors star-widened** (`Blist` = `Bu32` count + element star):
+//    a vector's count prefix is *not* tied to its element count — wrong counts
+//    still derive, and trailing low-LEB bytes can be swallowed by a widened
+//    index star (truncating the final `end` opcode still derives!);
+//  - **custom sections are a byte sink**: `Bcustom` ends in `byte*`, so a parse
+//    may re-split to open a custom section at any reachable `0x00` byte and
+//    swallow arbitrary garbage (an appended dangling `0x80` still derives);
+//  - **`Bname` utf8 / `Bmodule` correlation premises dropped**; **LEB128 final
+//    byte's high bits unchecked** (value-range over-approximation).
+//
+// So the REFUSAL test below is *recognition-refusal* — the tactic failing to
+// find a derivation in the over-approximated grammar (which soundly implies
+// the bytes are not a spec-valid module) — NOT a kernel theorem of
+// non-membership; and corruptions that fall inside a widening (wrong counts,
+// swallowed tails) are demonstrated to still derive. Exact `Bmodule` (Under
+// mode) remains blocked on value-coupled `ListN` + section-`len`/`Iter`
+// premises; see `crates/lib/wasm/spectec/SKELETONS.md`.
+// ----------------------------------------------------------------------------
+
+/// The real binary encoding of `(module (func (result i32) i32.const 42))`,
+/// 27 bytes, derived byte by byte.
+fn wasm_module_i32_const_42() -> Vec<u8> {
+    vec![
+        0x00, 0x61, 0x73, 0x6D, // magic `\0asm`
+        0x01, 0x00, 0x00, 0x00, // version 1
+        0x01, 0x05, // type section: id 1, size 5
+        0x01, // — vec: 1 rectype
+        0x60, 0x00, 0x01, 0x7F, // — functype: 0x60, [] params, [i32] results
+        0x03, 0x02, // func section: id 3, size 2
+        0x01, 0x00, // — vec: 1 func, typeidx 0
+        0x0A, 0x06, // code section: id 10, size 6
+        0x01, // — vec: 1 code entry
+        0x04, // — body size 4
+        0x00, // — vec: 0 local groups
+        0x41, 0x2A, // — i32.const 42
+        0x0B, // — end
+    ]
+}
+
+#[test]
+fn t5_whole_module_recognition() {
+    // The Bmodule closure's `Closed_E` is a right-nested conjunction of ~800
+    // clauses; kernel term walks recurse structurally, so whole-module proofs
+    // need the same big-stack driver as the relation leg's total load.
+    covalence_init::wasm::lower::total::with_total_stack(t5_whole_module_recognition_body)
+}
+
+fn t5_whole_module_recognition_body() {
+    let t_env = std::time::Instant::now();
+    let (env, report) = spec_grammar_env_recognition(&["Bmodule"]).unwrap();
+    let t_env = t_env.elapsed();
+    let module = wasm_module_i32_const_42();
+    let bmodule = env.nt("Bmodule").expect("Bmodule present");
+
+    // Bmodule itself lowers Full (every production of the grammar lowered) —
+    // the recognition direction holds for the grammar; instance NTs deeper in
+    // the closure attribute conservatively to their generics.
+    assert_eq!(
+        report.grammars.get("Bmodule"),
+        Some(&covalence_spectec::cfg::Coverage::Full),
+        "Bmodule lowers Full in recognition mode",
+    );
+
+    // THE HEADLINE: a real 27-byte module, kernel-checked, hypothesis-free.
+    let t_proof = std::time::Instant::now();
+    let thm = prove_derives(&env, bmodule, &module)
+        .unwrap()
+        .expect("the real module derives as Bmodule");
+    let t_proof = t_proof.elapsed();
+    assert_clean(&thm);
+    println!(
+        "T5: {} bytes, env {} clauses / {} NTs (built in {t_env:?}); \
+         ⊢ Derives_E ⌜Bmodule⌝ w proved in {t_proof:?}",
+        module.len(),
+        env.n_clauses(),
+        env.cfg().num_nts(),
+    );
+
+    // The empty module (magic + version only) also derives.
+    assert_clean(
+        &prove_derives(
+            &env,
+            bmodule,
+            &[0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00],
+        )
+        .unwrap()
+        .expect("the empty module derives"),
+    );
+
+    // RECOGNITION-REFUSAL (see the module comment: sound refusal, not a
+    // non-membership theorem): corrupt magic, and an invalid section id at the
+    // first post-version position — both fail cleanly, no kernel error.
+    let t_refuse = std::time::Instant::now();
+    let mut bad_magic = module.clone();
+    bad_magic[0] = 0x01;
+    assert!(
+        prove_derives(&env, bmodule, &bad_magic).unwrap().is_none(),
+        "bad magic refused",
+    );
+    let mut bad_secid = module.clone();
+    bad_secid[8] = 0xFF;
+    assert!(
+        prove_derives(&env, bmodule, &bad_secid).unwrap().is_none(),
+        "invalid section id refused",
+    );
+    println!("T5: two refusals in {:?}", t_refuse.elapsed());
+
+    // PINNED OVER-APPROXIMATION (kernel-checked demonstration of the module
+    // comment's caveats — this DERIVES even though it is not a valid module):
+    // a truncated tail is swallowed by a widened index star. (The dangling-
+    // `0x80` custom-section byte-sink twin is pinned at the `Cfg` level in
+    // `covalence-spectec`'s `bmodule_recognition_differential`; proving it here
+    // too would only re-spend another full-module proof.)
+    assert_clean(
+        &prove_derives(&env, bmodule, &module[..module.len() - 1])
+            .unwrap()
+            .expect("known widening: truncated tail still derives"),
+    );
+}
+
+// ----------------------------------------------------------------------------
+// T5b — the same module through the **whole-spec** env (all 231 grammars, both
+// corpora, 1500+ clauses): the per-NT production index keeps the tactic
+// tractable at full scale, and `derives_meaning` classifies `Bmodule`'s
+// guarantee honestly (Mixed: instance NTs attribute to their non-Full
+// generics, so no blanket direction is claimed for the closure).
+// ----------------------------------------------------------------------------
+
+/// Ignored by default: the whole-spec grammar env costs ~90 s (debug) on top
+/// of T5's already-representative 27-byte `Bmodule` proof — a perf lever, not
+/// extra coverage (see `crates/kernel/hol/init/SKELETONS.md`). Run explicitly:
+/// `cargo test -p covalence-init --test cfg_grammar t5b -- --ignored`.
+#[test]
+#[ignore = "~90 s debug whole-spec grammar env; T5 covers the headline — run with --ignored"]
+fn t5b_whole_module_on_whole_spec_env() {
+    covalence_init::wasm::lower::total::with_total_stack(t5b_whole_module_on_whole_spec_env_body)
+}
+
+fn t5b_whole_module_on_whole_spec_env_body() {
+    use covalence_init::grammar::spectec::cfg::{
+        DerivesMeaning, derives_meaning, spec_grammar_env_all,
+    };
+    use covalence_spectec::cfg::LowerMode;
+
+    let (env, report) = spec_grammar_env_all(LowerMode::Recognition).unwrap();
+    let bmodule = env.nt("Bmodule").expect("Bmodule present");
+    let module = wasm_module_i32_const_42();
+
+    let t = std::time::Instant::now();
+    let thm = prove_derives(&env, bmodule, &module)
+        .unwrap()
+        .expect("the real module derives on the whole-spec env");
+    assert_clean(&thm);
+    println!(
+        "T5b: whole-spec env ({} clauses / {} NTs): module proved in {:?}",
+        env.n_clauses(),
+        env.cfg().num_nts(),
+        t.elapsed(),
+    );
+
+    // Honest per-NT meaning: the closure mixes instance NTs (attributed
+    // conservatively to their generic grammars), so no blanket containment is
+    // claimed for Bmodule — the theorem still certifies derivability in the
+    // lowered Cfg exactly.
+    assert_eq!(
+        derives_meaning(&env, &report, LowerMode::Recognition, bmodule),
+        DerivesMeaning::Mixed,
+    );
+}

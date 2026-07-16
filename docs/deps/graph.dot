@@ -35,6 +35,7 @@ digraph deps {
   "lsp";
   "metamath";
   "multiformat";
+  "numerals";
   "object";
   "opentheory";
   "parquet";
@@ -68,6 +69,7 @@ digraph deps {
   "covalence" -> "git";
   "covalence" -> "hash";
   "covalence" -> "hol";
+  "covalence" -> "init";
   "covalence" -> "lsp";
   "covalence" -> "object";
   "covalence" -> "opentheory";
@@ -101,6 +103,7 @@ digraph deps {
   "git" -> "object";
   "git" -> "sqlite";
   "git" -> "store";
+  "grammar" -> "types";
   "graph" -> "hash";
   "graph" -> "parse";
   "hash" -> "rand";
@@ -160,6 +163,10 @@ digraph deps {
   "multiformat" -> "acset";
   "multiformat" -> "hash";
   "multiformat" -> "parse";
+  "numerals" -> "grammar";
+  "numerals" -> "hol-eval";
+  "numerals" -> "init";
+  "numerals" -> "types";
   "object" -> "hash";
   "object" -> "parse";
   "opentheory" -> "core";
@@ -212,6 +219,7 @@ digraph deps {
   "serve" -> "shell";
   "serve" -> "store";
   "sexp" -> "parse";
+  "sexp" -> "types";
   "shell" -> "hol";
   "shell" -> "kernel";
   "smt" -> "sat";

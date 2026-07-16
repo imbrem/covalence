@@ -46,15 +46,23 @@ use crate::init::{int, list, nat};
 pub type TypeEnv = BTreeMap<String, Type>;
 
 /// The context a denotation runs in: metavariable types plus a **constructor
-/// registry** (case name → the variant it belongs to and its index), built from
-/// the spec's non-recursive variant types so `case` expressions can render to
-/// real constructor applications.
+/// registry** — `(variant type name, case key)` → the rendered variant and the
+/// case's index — built from the spec's rendered variant types so `case`
+/// expressions can render to real constructor applications. Keying on the pair
+/// kills the bare-key ambiguities (16 in the bundled spec: shared mnemonics
+/// like `I32` live in `numtype`, `Inn`, `lanetype`, …); a bare-key lookup
+/// remains as a fallback for the (common) case where the expected type is not
+/// known, resolving only keys unique across all rendered variants.
 #[derive(Default, Clone)]
 pub struct DenoteCtx {
     pub types: TypeEnv,
-    /// Case key → `Some(variant, index)`, or `None` when the key is ambiguous
-    /// (defined in more than one rendered variant).
-    ctors: BTreeMap<String, Option<(Variant, usize)>>,
+    /// `(type name, case key)` → `Some(variant, index)`, or `None` when the key
+    /// occurs more than once *within* the type (e.g. `binop_`'s `ADD`, once per
+    /// family instance — genuinely ambiguous, refuse).
+    ctors: BTreeMap<(String, String), Option<(Variant, usize)>>,
+    /// Bare case key → `Some(owning type)` if unique across rendered variants,
+    /// `None` if ambiguous.
+    bare: BTreeMap<String, Option<String>>,
 }
 
 impl DenoteCtx {
@@ -62,33 +70,65 @@ impl DenoteCtx {
     pub fn values(types: TypeEnv) -> Self {
         DenoteCtx {
             types,
-            ctors: BTreeMap::new(),
+            ..DenoteCtx::default()
         }
     }
 
-    /// Build the constructor registry from every non-recursive variant type in
-    /// `defs` (recursive/parametric variants are skipped — they don't render).
-    /// A case name defined in two rendered variants is marked ambiguous.
+    /// Build the constructor registry from every variant type in `defs` that
+    /// renders (via [`syntax::variant_of`] — non-recursive, multi-instance
+    /// families included as their case-union; type-parametric variants and
+    /// SCC members are skipped — they don't render).
     pub fn from_spec(defs: &[SpecTecDef], types: TypeEnv) -> Self {
         let tctx = syntax::TypeCtx::new(defs);
-        let mut ctors: BTreeMap<String, Option<(Variant, usize)>> = BTreeMap::new();
+        let mut ctx = DenoteCtx {
+            types,
+            ..DenoteCtx::default()
+        };
         for def in typ_defs(defs) {
+            let SpecTecDef::Typ { x: name, .. } = def else {
+                continue;
+            };
             let Ok(v) = syntax::variant_of(def, &tctx) else {
                 continue;
             };
             for (i, c) in v.ctors.iter().enumerate() {
-                ctors
-                    .entry(c.name.clone())
-                    .and_modify(|e| *e = None) // seen before → ambiguous
+                ctx.ctors
+                    .entry((name.clone(), c.name.clone()))
+                    .and_modify(|e| *e = None) // twice in one type → ambiguous
                     .or_insert_with(|| Some((v.clone(), i)));
+                ctx.bare
+                    .entry(c.name.clone())
+                    .and_modify(|e| {
+                        if e.as_deref() != Some(name.as_str()) {
+                            *e = None; // a second type defines it → ambiguous
+                        }
+                    })
+                    .or_insert_with(|| Some(name.clone()));
             }
         }
-        DenoteCtx { types, ctors }
+        ctx
     }
 
-    fn constructor(&self, key: &str) -> Result<(&Variant, usize)> {
-        match self.ctors.get(key) {
+    /// The constructor for case `key` of the named variant type — the keyed
+    /// lookup for callers that *know* the expected type (e.g. ground
+    /// `Uncase`/`Case` evaluation).
+    pub fn constructor_in(&self, ty: &str, key: &str) -> Result<(&Variant, usize)> {
+        match self.ctors.get(&(ty.to_owned(), key.to_owned())) {
             Some(Some((v, i))) => Ok((v, *i)),
+            Some(None) => Err(denote_err(format!(
+                "ambiguous constructor `{key}` within `{ty}`"
+            ))),
+            None => Err(denote_err(format!(
+                "unknown constructor `{key}` in `{ty}` (not rendered)"
+            ))),
+        }
+    }
+
+    /// Bare-key fallback: resolve `key` when it is unique across all rendered
+    /// variants (used by [`denote`], which has no expected-type information).
+    fn constructor(&self, key: &str) -> Result<(&Variant, usize)> {
+        match self.bare.get(key) {
+            Some(Some(ty)) => self.constructor_in(ty, key),
             Some(None) => Err(denote_err(format!("ambiguous constructor `{key}`"))),
             None => Err(denote_err(format!(
                 "unknown constructor `{key}` (its variant is not rendered)"
@@ -431,5 +471,51 @@ mod tests {
         let t = denote(&e, &ctx).unwrap();
         let want_ty = syntax::resolve_def(&defs[0], &syntax::TypeCtx::new(&defs)).unwrap();
         assert_eq!(t.type_of().unwrap(), want_ty);
+    }
+
+    /// A case key shared by two rendered variants is ambiguous *bare* (the
+    /// fallback refuses), but the `(type, case)` keyed lookup disambiguates —
+    /// this is what kills the spec's 16 bare-key ambiguities.
+    #[test]
+    fn keyed_registry_disambiguates_shared_case_keys() {
+        use covalence_spectec::ast::{
+            MixOp, SpecTecDef, SpecTecDefTyp, SpecTecInst, SpecTecTyp, SpecTecTypCase,
+        };
+        let case = |name: &str| SpecTecTypCase::Field {
+            op: MixOp::new(vec![name.into()]),
+            t: SpecTecTyp::Tup { ets: vec![] },
+            qs: vec![],
+            prs: vec![],
+        };
+        let variant = |name: &str, cases: Vec<SpecTecTypCase>| SpecTecDef::Typ {
+            x: name.into(),
+            ps: vec![],
+            insts: vec![SpecTecInst::Inst {
+                ps: vec![],
+                as_: vec![],
+                dt: SpecTecDefTyp::Variant { tcs: cases },
+            }],
+        };
+        // `I32` lives in both `Inn` and `numtype` (the real spec's shape).
+        let defs = vec![
+            variant("Inn", vec![case("I32"), case("I64")]),
+            variant("numtype", vec![case("I32"), case("I64"), case("F32")]),
+        ];
+        let ctx = DenoteCtx::from_spec(&defs, TypeEnv::new());
+
+        // Bare lookup refuses the shared key…
+        let e = SpecTecExp::Case {
+            op: covalence_spectec::ast::MixOp::new(vec!["I32".into()]),
+            e1: Box::new(SpecTecExp::Tup { es: vec![] }),
+        };
+        assert!(denote(&e, &ctx).is_err());
+
+        // …but the keyed lookup lands in the right variant.
+        let (v_inn, i) = ctx.constructor_in("Inn", "I32").unwrap();
+        assert_eq!((v_inn.ctors.len(), i), (2, 0));
+        let (v_nt, j) = ctx.constructor_in("numtype", "F32").unwrap();
+        assert_eq!((v_nt.ctors.len(), j), (3, 2));
+        // Unknown pairs refuse.
+        assert!(ctx.constructor_in("Inn", "F32").is_err());
     }
 }

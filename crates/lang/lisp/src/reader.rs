@@ -11,6 +11,15 @@ pub fn read(src: &str) -> Result<Vec<SExpr>, ParseError> {
     parse(src)
 }
 
+/// Parse an **ACL2 book source** into its top-level forms. Books use
+/// single-`;` line comments (and `"..."` strings), which is the SMT-LIB
+/// trivia dialect — the REPL's [`read`]/[`read_one`] (Covalence dialect,
+/// `;;` comments) are unchanged. No `'x` reader macro and no `#|…|#` block
+/// comments — see `notes/vibes/lisp/acl2-book-frontend.md` §2.
+pub fn read_book(src: &str) -> Result<Vec<SExpr>, ParseError> {
+    covalence_sexp::parse_smt(src)
+}
+
 /// Parse `src` expecting exactly one top-level S-expression (one REPL cell).
 pub fn read_one(src: &str) -> Result<SExpr, ReadError> {
     let mut forms = parse(src).map_err(ReadError::Parse)?;

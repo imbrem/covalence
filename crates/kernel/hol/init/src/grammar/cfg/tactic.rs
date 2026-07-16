@@ -15,10 +15,16 @@
 //!    each of its productions and, per production, enumerates left-to-right span
 //!    splits across the production's segments — the same split enumeration the
 //!    regex tactic runs over `Seq`. An in-progress set on `(NtId, lo, hi)` is
-//!    the belt-and-braces left-recursion guard: re-entry with an identical key
-//!    fails that path. Sound (the kernel re-checks), incomplete only for
-//!    left-recursive grammars (the corpus is left-recursion-free — see
-//!    `Cfg::left_recursion`).
+//!    the **left-recursion guard**: re-entry with an identical key fails that
+//!    path, so the search always terminates (the key space is finite). Sound
+//!    (the kernel re-checks), incomplete only for left-recursive grammars —
+//!    the `B*` binary corpus is left-recursion-free, but the whole-spec env
+//!    (with the `T*` text grammars, e.g. the `Thexnum` cycle) is not; see
+//!    `Cfg::left_recursion` and
+//!    [`crate::grammar::spectec::cfg::left_recursion_cycle`]. On such a
+//!    non-terminal the tactic fails cleanly (`Ok(None)`) rather than diverging,
+//!    and still succeeds whenever the left-recursive descent strictly shrinks
+//!    the span.
 //! 2. **Builder** (`build`) — walks the [`CfgPlan`] once, assembling the `Thm`
 //!    with no search. Terminal segment → [`matches_core`] on the sub-span → a
 //!    [`Premise::Side`] plus its word; non-terminal segment → recurse → a
@@ -41,7 +47,7 @@ use covalence_hol_eval::EvalThm as Thm;
 
 use super::{GrammarEnv, RSeg};
 use crate::grammar::regex::Core;
-use crate::grammar::regex::tactic::matches_core;
+use crate::grammar::regex::tactic::{matches_core, recognizes_core};
 use crate::metalogic::binary::Premise;
 
 // ============================================================================
@@ -83,6 +89,10 @@ enum NodeRef {
 struct Recognizer<'a> {
     env: &'a GrammarEnv,
     bytes: &'a [u8],
+    /// Per-non-terminal production (= clause) indices, so a goal tries only
+    /// its own productions instead of scanning the whole env — essential on
+    /// whole-spec envs (1500+ clauses, a few productions per non-terminal).
+    by_nt: Vec<Vec<usize>>,
     /// Memo over `(node, lo, hi)`.
     memo: HashMap<(NodeRef, usize, usize), Option<Rc<CfgPlan>>>,
     /// Non-terminal spans currently on the recursion stack (left-recursion
@@ -113,11 +123,9 @@ impl Recognizer<'_> {
 
     fn rec_nt_uncached(&mut self, nt: NtId, lo: usize, hi: usize) -> Option<Rc<CfgPlan>> {
         // Try each production of `nt`, in clause order, at this span.
-        for clause_idx in 0..self.env.prod_count() {
-            let (lhs, segs) = self.env.prod(clause_idx);
-            if lhs != nt {
-                continue;
-            }
+        for i in 0..self.by_nt[nt.index()].len() {
+            let clause_idx = self.by_nt[nt.index()][i];
+            let (_lhs, segs) = self.env.prod(clause_idx);
             if let Some(seg_plans) = self.rec_segs(segs, 0, lo, hi) {
                 return Some(Rc::new(CfgPlan {
                     clause_idx,
@@ -171,13 +179,11 @@ impl Recognizer<'_> {
             // Reuse the yes/no verdict encoded as Some(_)/None.
             return cached.as_ref().map(|_| ());
         }
-        // Delegate the actual match decision to the regex tactic. A kernel
-        // error here is a real error, not a "no match", so surface it as a
-        // cache miss that the builder will hit again and report.
-        let matched = matches_core(core, &self.bytes[lo..hi])
-            .ok()
-            .flatten()
-            .is_some();
+        // Delegate the match decision to the regex tactic's **pure phase-1
+        // recognizer** — no kernel calls in the search, so the (many) failed
+        // span probes are cheap. The builder re-derives every accepted span
+        // through `matches_core`, so nothing escapes the kernel re-check.
+        let matched = recognizes_core(core, &self.bytes[lo..hi]);
         // Encode the verdict in the shared memo as a sentinel plan (never read
         // structurally — terminal builder work goes through `matches_core`).
         let sentinel = matched.then(|| {
@@ -254,9 +260,15 @@ fn build(env: &GrammarEnv, plan: &CfgPlan, bytes: &[u8]) -> Result<(Thm, Term)> 
 /// recognizer bug can only fail to find a proof, never forge one. Incomplete
 /// on left-recursive grammars (the belt-and-braces guard cuts such paths).
 pub fn prove_derives(env: &GrammarEnv, nt: NtId, bytes: &[u8]) -> Result<Option<Thm>> {
+    // Per-NT production index (one pass over the env's clauses).
+    let mut by_nt: Vec<Vec<usize>> = vec![Vec::new(); env.cfg().num_nts()];
+    for clause_idx in 0..env.prod_count() {
+        by_nt[env.prod(clause_idx).0.index()].push(clause_idx);
+    }
     let mut rec = Recognizer {
         env,
         bytes,
+        by_nt,
         memo: HashMap::new(),
         in_progress: HashSet::new(),
     };
@@ -368,6 +380,46 @@ mod tests {
                     assert_eq!(proved, oracle, "nt={nt:?} w={w:?}");
                 }
             });
+        }
+    }
+
+    /// Left-recursive grammars terminate cleanly instead of diverging: the
+    /// in-progress guard cuts same-span re-entry. `E → E` (pure cycle, empty
+    /// language) always rejects; `E → E a | a` (classic left recursion) still
+    /// parses `aⁿ` because each left descent strictly shrinks the span.
+    #[test]
+    fn left_recursion_terminates_cleanly() {
+        // E → E  — no base case, L(E) = ∅.
+        let mut cfg = Cfg::new();
+        let e = cfg.add_nt("E");
+        cfg.add_prod(e, vec![Seg::nt(e)]);
+        assert!(cfg.left_recursion().is_some(), "detector sees the cycle");
+        let env = GrammarEnv::new(cfg).unwrap();
+        for w in [&b""[..], b"a", b"aa"] {
+            assert!(
+                prove_derives(&env, e, w).unwrap().is_none(),
+                "empty language rejects {w:?}"
+            );
+        }
+
+        // E → E a | a  — left-recursive but span-shrinking; L(E) = a⁺.
+        let mut cfg = Cfg::new();
+        let e = cfg.add_nt("E");
+        cfg.add_prod(e, vec![Seg::nt(e), Seg::term(Regex::Lit(b'a'))]);
+        cfg.add_prod(e, vec![Seg::term(Regex::Lit(b'a'))]);
+        assert!(cfg.left_recursion().is_some(), "detector sees the cycle");
+        let env = GrammarEnv::new(cfg).unwrap();
+        for w in [&b"a"[..], b"aa", b"aaa"] {
+            let thm = prove_derives(&env, e, w)
+                .unwrap()
+                .unwrap_or_else(|| panic!("a+ accepts {w:?}"));
+            assert!(thm.hyps().is_empty());
+        }
+        for w in [&b""[..], b"b", b"ab"] {
+            assert!(
+                prove_derives(&env, e, w).unwrap().is_none(),
+                "a+ rejects {w:?}"
+            );
         }
     }
 

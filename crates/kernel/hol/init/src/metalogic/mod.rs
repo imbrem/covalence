@@ -51,6 +51,8 @@
 //! end-to-end (axiom + one rule + soundness + projection). Nothing here is
 //! added to `covalence-core`: every move is an existing kernel primitive.
 
+use std::cell::OnceCell;
+
 use covalence_core::{Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
@@ -73,6 +75,12 @@ pub mod binary;
 // `derivable_db_mp` (the database-value world) are the two hardcoded instances
 // this generalises; `mm_session` builds the high-level Metamath-database API on it.
 pub mod apply;
+
+// **MID — a term-rewrite relation on the binary engine** (the reduction analogue
+// of `interp::DerivationSystem`): base rewrite clauses + generic `app`-congruence
+// + `Reduces = Step*`, plus a `Matcher` trait and a fuel driver. The reusable
+// layer K (`crate::k`) and SpecTec reduction instantiate. `notes/vibes/k/reduction-demo-scope.md`.
+pub mod rewrite;
 
 // The **HOL database type + relation lattice** (`notes/vibes/theories-models-and-logics.md
 // §5.6`): databases as first-class HOL *values* (an axiom-selecting predicate), with
@@ -185,6 +193,28 @@ pub struct RuleSet<'a> {
     // `&dyn Fn`; the higher-order shape is the point here.
     #[allow(clippy::type_complexity)]
     pub clauses: Box<dyn Fn(&dyn Fn(&Term) -> Result<Term>) -> Result<Vec<Term>> + 'a>,
+    /// The memoized bound-`d` layout (see [`Layout`]). **Caching only** — the
+    /// clause closure is pure and the bound `d` is fixed, so laying the clauses
+    /// out once per rule set is observationally identical to laying them out
+    /// per call (terms are `Arc`-shared). Assumes `phi`/`clauses` are not
+    /// mutated after the first layout (nothing in-tree does).
+    layout: OnceCell<Layout>,
+}
+
+/// The memoized bound-`d` artifacts every statement/derivation over a
+/// [`RuleSet`] reuses: the laid-out clauses, their conjunction `Closed_L d`
+/// (the `Derivable_L` statement prefix), and the assumed
+/// `{Closed_L d} ⊢ Closed_L d` each derivation opens with. All three are
+/// deterministic per rule set and were previously rebuilt (and re-type-checked)
+/// on **every** operation — O(spec) per derive; with the cache, repeat derives
+/// are O(clause).
+struct Layout {
+    /// The clauses at the bound `d`, in fold order.
+    clauses: Vec<Term>,
+    /// `Closed_L d` — their right-nested conjunction.
+    closed: Term,
+    /// `{Closed_L d} ⊢ Closed_L d` (`Thm::assume`, kernel-checked once).
+    assumed: Thm,
 }
 
 impl<'a> RuleSet<'a> {
@@ -196,7 +226,27 @@ impl<'a> RuleSet<'a> {
         RuleSet {
             phi,
             clauses: Box::new(clauses),
+            layout: OnceCell::new(),
         }
+    }
+
+    /// The memoized bound-`d` layout, computed on first use.
+    fn layout(&self) -> Result<&Layout> {
+        if self.layout.get().is_none() {
+            let d = self.d_var();
+            let clauses = (self.clauses)(&|f| d.clone().apply(f.clone()))?;
+            let closed = conj(clauses.clone())?;
+            let assumed = Thm::assume(closed.clone())?;
+            // `OnceCell` is `!Sync`, so the only way `set` can fail is a
+            // re-entrant `clauses` closure — which would have computed the
+            // identical value; either copy is fine to keep.
+            let _ = self.layout.set(Layout {
+                clauses,
+                closed,
+                assumed,
+            });
+        }
+        Ok(self.layout.get().expect("layout just initialised"))
     }
 
     /// `Φ → bool` — the type of the impredicative predicate variable `d`.
@@ -209,11 +259,9 @@ impl<'a> RuleSet<'a> {
         Term::free("d", self.pred_ty())
     }
 
-    /// The number of closure clauses (computed by laying them out for `d`).
+    /// The number of closure clauses (memoized via the bound-`d` layout).
     pub fn n_clauses(&self) -> Result<usize> {
-        let d = self.d_var();
-        let d_apply = |f: &Term| d.clone().apply(f.clone());
-        Ok((self.clauses)(&d_apply)?.len())
+        Ok(self.layout()?.clauses.len())
     }
 }
 
@@ -245,17 +293,18 @@ pub fn closed_conj(rs: &RuleSet, d_apply: &dyn Fn(&Term) -> Result<Term>) -> Res
     conj((rs.clauses)(d_apply)?)
 }
 
-/// `Closed_L d` for the bound predicate variable `d`.
+/// `Closed_L d` for the bound predicate variable `d` (memoized — the
+/// `Arc`-shared cached term, not a fresh layout).
 pub fn closed_for_var(rs: &RuleSet) -> Result<Term> {
-    let d = rs.d_var();
-    closed_conj(rs, &|f| d.clone().apply(f.clone()))
+    Ok(rs.layout()?.closed.clone())
 }
 
 /// `Derivable_L A := ∀d. Closed_L d ⟹ d A` — the impredicative derivability
-/// predicate over an encoded formula `A : Φ`.
+/// predicate over an encoded formula `A : Φ`. The `Closed_L d` prefix is
+/// memoized, so repeat statements share one `Arc`-shared prefix term.
 pub fn derivable(rs: &RuleSet, a: &Term) -> Result<Term> {
     let d = rs.d_var();
-    let closed_d = closed_conj(rs, &|f| d.clone().apply(f.clone()))?;
+    let closed_d = closed_for_var(rs)?;
     let body = closed_d.imp(d.apply(a.clone())?)?;
     body.forall("d", rs.pred_ty())
 }
@@ -293,11 +342,62 @@ pub fn derive_via_closed(
     build_d_a: impl FnOnce(&Thm, &dyn Fn(&Term) -> Result<Term>) -> Result<Thm>,
 ) -> Result<Thm> {
     let d = rs.d_var();
-    let closed_t = closed_for_var(rs)?;
-    let assumed = Thm::assume(closed_t.clone())?; // {Closed d} ⊢ Closed d
+    let layout = rs.layout()?; // memoized `Closed d` + `{Closed d} ⊢ Closed d`
     let d_apply = |f: &Term| d.clone().apply(f.clone());
-    let d_a = build_d_a(&assumed, &d_apply)?; // {Closed d, …} ⊢ d ⌜A⌝
-    d_a.imp_intro(&closed_t)?.all_intro("d", rs.pred_ty())
+    let d_a = build_d_a(&layout.assumed, &d_apply)?; // {Closed d, …} ⊢ d ⌜A⌝
+    d_a.imp_intro(&layout.closed)?.all_intro("d", rs.pred_ty())
+}
+
+// ============================================================================
+// Mixed-premise clause application — the unary twin of `binary::derive_mixed`
+// ============================================================================
+
+/// A premise fed to [`derive_mixed`]: either a **side** antecedent already
+/// proved outright (an arbitrary `bool` proposition the clause carries — e.g. a
+/// computable side condition discharged by
+/// [`TermExt::prove_true`](crate::init::ext::TermExt::prove_true)), or a
+/// **sub-derivation** `⊢ Derivable_L ⌜p⌝` (opened under the assumed
+/// `Closed_L d` first). The unary twin of [`binary::Premise`].
+pub enum Premise {
+    /// A side antecedent proved outside the derivability predicate.
+    Side(Thm),
+    /// A sub-derivation `⊢ Derivable_L ⌜p⌝`.
+    Derivation(Thm),
+}
+
+/// **Apply clause `clause_idx`** of a rule set: peel its metavariable `∀`s with
+/// `args` (in the clause's quantifier order), then discharge its antecedents
+/// with `premises` in clause-antecedent order (one `imp_elim` per premise — the
+/// [`clause_of`](crate::wasm::relation) chained shape, *not* a conjunction),
+/// yielding `⊢ Derivable_L ⌜concl[args]⌝`.
+///
+/// The mixed-premise generalisation of [`crate::wasm::relation::derive`] and
+/// unary twin of [`binary::derive_mixed`]: a [`Premise::Side`] is a plain
+/// `imp_elim` — the kernel enforces that the theorem's conclusion is
+/// *syntactically* the instantiated antecedent, so nothing can be fabricated; a
+/// [`Premise::Derivation`] is opened to `d ⌜p⌝` under the assumed `Closed_L d`
+/// (via `all_elim(d) . imp_elim`) first, exactly the relation-engine move.
+pub fn derive_mixed(
+    rs: &RuleSet,
+    clause_idx: usize,
+    n_clauses: usize,
+    args: &[Term],
+    premises: Vec<Premise>,
+) -> Result<Thm> {
+    derive_via_closed(rs, |assumed, _d_apply| {
+        let mut clause = nth_conjunct(assumed.clone(), clause_idx, n_clauses)?;
+        for a in args {
+            clause = clause.all_elim(a.clone())?;
+        }
+        for prem in premises {
+            let ant = match prem {
+                Premise::Side(thm) => thm,
+                Premise::Derivation(der) => der.all_elim(rs.d_var())?.imp_elim(assumed.clone())?,
+            };
+            clause = clause.imp_elim(ant)?;
+        }
+        Ok(clause)
+    })
 }
 
 // ============================================================================
@@ -377,4 +477,115 @@ pub fn project_normalized(soundness: Thm, der: Thm) -> Result<Thm> {
     let denoted = project(soundness, der)?;
     let to_nf = crate::init::eq::beta_nf(denoted.concl().clone());
     to_nf.eq_mp(denoted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::init::nat;
+    use covalence_hol_eval::mk_nat;
+
+    /// A toy **mixed** rule set over the real carrier `Φ = nat` (mirroring the
+    /// binary engine's `derive_aabb_by_hand` precedent on the unary side):
+    ///
+    /// ```text
+    ///   clause 0 (axiom):          d 0
+    ///   clause 1 (mixed):  ∀n. n < 5  ⟹  d n  ⟹  d (n + 1)
+    /// ```
+    ///
+    /// The `n < 5` antecedent is a *real HOL `bool` proposition* (not a
+    /// `d`-application) — the side-condition shape SpecTec `if` premises lower
+    /// to — discharged by kernel computation ([`TermExt::prove_true`]).
+    fn mixed_rule_set() -> RuleSet<'static> {
+        RuleSet::new(Type::nat(), |d_apply| {
+            let c0 = d_apply(&mk_nat(0u32))?;
+            let n = Term::free("n", Type::nat());
+            let lt5 = Term::app(Term::app(nat::nat_lt(), n.clone()), mk_nat(5u32));
+            let body = lt5.imp(d_apply(&n)?.imp(d_apply(&nat::add(n.clone(), mk_nat(1u32)))?)?)?;
+            Ok(vec![c0, body.forall("n", Type::nat())?])
+        })
+    }
+
+    /// End-to-end mixed derivation, hypothesis-free: axiom `d 0`, then the
+    /// mixed clause at `n := 0` with its side condition `0 < 5` proved by
+    /// computation and its recursive premise discharged by the axiom.
+    #[test]
+    fn derive_mixed_side_and_derivation() {
+        let rs = mixed_rule_set();
+        let n_cl = rs.n_clauses().unwrap();
+        assert_eq!(n_cl, 2);
+        let zero = mk_nat(0u32);
+
+        // ⊢ Derivable ⌜0⌝  (the axiom clause).
+        let base = derive_mixed(&rs, 0, n_cl, &[], vec![]).unwrap();
+        assert!(base.hyps().is_empty());
+        assert_eq!(base.concl(), &derivable(&rs, &zero).unwrap());
+
+        // ⊢ 0 < 5 by computation — the side-condition discharge.
+        let side = Term::app(Term::app(nat::nat_lt(), zero.clone()), mk_nat(5u32))
+            .prove_true()
+            .unwrap();
+
+        // ⊢ Derivable ⌜0 + 1⌝ via the mixed clause.
+        let step = derive_mixed(
+            &rs,
+            1,
+            n_cl,
+            &[zero.clone()],
+            vec![Premise::Side(side), Premise::Derivation(base.clone())],
+        )
+        .unwrap();
+        assert!(
+            step.hyps().is_empty(),
+            "mixed derivation is hypothesis-free"
+        );
+        let concl = derivable(&rs, &nat::add(zero.clone(), mk_nat(1u32))).unwrap();
+        assert_eq!(step.concl(), &concl);
+
+        // Gating, not fabricating: a side theorem that is NOT the instantiated
+        // antecedent (⊢ 1 < 5 instead of ⊢ 0 < 5) fails to compose.
+        let wrong = Term::app(Term::app(nat::nat_lt(), mk_nat(1u32)), mk_nat(5u32))
+            .prove_true()
+            .unwrap();
+        assert!(
+            derive_mixed(
+                &rs,
+                1,
+                n_cl,
+                &[zero],
+                vec![Premise::Side(wrong), Premise::Derivation(base)],
+            )
+            .is_err()
+        );
+    }
+
+    /// The memoized layout: repeat statements/derivations are consistent (the
+    /// cached `Closed_L d` prefix produces the same terms/theorems as a fresh
+    /// layout does — structural equality all the way down).
+    #[test]
+    fn layout_memoization_is_consistent() {
+        let rs = mixed_rule_set();
+        let n_cl = rs.n_clauses().unwrap();
+        let zero = mk_nat(0u32);
+
+        // A fresh (uncached) layout for cross-checking.
+        let fresh = mixed_rule_set();
+        assert_eq!(
+            closed_for_var(&rs).unwrap(),
+            closed_for_var(&fresh).unwrap()
+        );
+        assert_eq!(
+            derivable(&rs, &zero).unwrap(),
+            derivable(&fresh, &zero).unwrap()
+        );
+
+        // Deriving twice through the same (now cached) rule set agrees, and
+        // agrees with a derivation over the fresh rule set.
+        let d1 = derive_mixed(&rs, 0, n_cl, &[], vec![]).unwrap();
+        let d2 = derive_mixed(&rs, 0, n_cl, &[], vec![]).unwrap();
+        let d3 = derive_mixed(&fresh, 0, n_cl, &[], vec![]).unwrap();
+        assert_eq!(d1.concl(), d2.concl());
+        assert_eq!(d1.concl(), d3.concl());
+        assert!(d1.hyps().is_empty() && d2.hyps().is_empty() && d3.hyps().is_empty());
+    }
 }

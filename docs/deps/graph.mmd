@@ -5,6 +5,7 @@ graph LR
   covalence --> git
   covalence --> hash
   covalence --> hol
+  covalence --> init
   covalence --> lsp
   covalence --> object
   covalence --> opentheory
@@ -38,6 +39,7 @@ graph LR
   git --> object
   git --> sqlite
   git --> store
+  grammar --> types
   graph --> hash
   graph --> parse
   hash --> rand
@@ -97,6 +99,10 @@ graph LR
   multiformat --> acset
   multiformat --> hash
   multiformat --> parse
+  numerals --> grammar
+  numerals --> hol-eval
+  numerals --> init
+  numerals --> types
   object --> hash
   object --> parse
   opentheory --> core
@@ -149,6 +155,7 @@ graph LR
   serve --> shell
   serve --> store
   sexp --> parse
+  sexp --> types
   shell --> hol
   shell --> kernel
   smt --> sat

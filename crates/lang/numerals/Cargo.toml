@@ -1,0 +1,36 @@
+[package]
+name = "covalence-numerals"
+version = "0.0.0"
+edition = "2024"
+
+# The generic-backend numeral crate: the numeral-literal ladder
+# (Nat/Int/Decimal/Rat, and — behind `hol` — kernel Terms) is parsed by the
+# compositional grammars in `covalence-grammar` and BUILT by a swappable
+# `NumeralBackend`. The default build stays kernel-agnostic (only
+# `covalence-grammar` + `covalence-types`); the kernel backends (`Symbolic`,
+# `Builtin`) are pulled in only under the optional `hol` feature — mirroring
+# `covalence-lisp` / `covalence-haskell`.
+#
+# Deferred work: crates/lang/numerals/SKELETONS.md.
+
+[dependencies]
+# The compositional literal parsers/deparsers + the value types they produce.
+covalence-grammar = { path = "../grammar" }
+# The numeral value ladder (Nat/Int/Decimal/Rat/Digit). Kernel-independent.
+covalence-types = { path = "../../lib/types" }
+
+# Optional HOL backends (`hol` feature): build kernel `Term`s and PROVE
+# equalities/orderings/`toRat` through the kernel's own equality machinery.
+# The DEFAULT build stays kernel-agnostic — these deps enter only under `hol`.
+# `covalence-hol-eval` supplies the literal builders (`mk_nat`/`mk_int`) and the
+# `reduce` / `prove_true` decision procedures; `covalence-init` supplies the
+# proved `decimal → rat` injection lemma (`init::decimal`).
+covalence-hol-eval = { path = "../../kernel/hol/eval", optional = true }
+covalence-init = { path = "../../kernel/hol/init", optional = true }
+
+[features]
+# The kernel numeral backends: `Symbolic` (structural, proves e.g.
+# `0xABC = 2748` by folding both to a common kernel normal form and chaining
+# kernel equations — NO new TCB) and `Builtin` (the same trait backed by the
+# existing CanonRule arith families, fast).
+hol = ["dep:covalence-hol-eval", "dep:covalence-init"]

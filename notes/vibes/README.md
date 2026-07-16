@@ -9,6 +9,7 @@ git history (and `backup/pre-hol-cleanup` for the pre-HOL-cleanup pass).
 |---|---|
 | [`vision/project-map.md`](./vision/project-map.md) | The map — crate groups + active threads, each with status + pointers. |
 | [`vision/VISION.md`](./vision/VISION.md) | The system vision: metatheory-as-default, executors → HOL → internal Metamath waist, scoped truths. |
+| [`vision/development-vision.md`](./vision/development-vision.md) | The breadth map: the parallel projects (base rewrite, datatypes/functors, arrows/monads, graph & computation theory, Lisp/ACL2, Prolog, K/MM/SpecTec/WASM consilience, verified I/O) and how they interlock. |
 | [`vision/k-framework-vision.md`](./vision/k-framework-vision.md) | North star: full K + all sublanguages, the K-Wasm ⟷ SpecTec goal. |
 | [`vision/roadmap.md`](./vision/roadmap.md) | Time-to-product for the Metamath vision (set.mm in GT; analysis in SOA). |
 | [`kernel/tcb/what-is-the-tcb.md`](./kernel/tcb/what-is-the-tcb.md) | The TCB in human terms: trusted crates, mint sites, admitted rules. |
@@ -43,6 +44,7 @@ Read `kernel-design.md` before touching the trusted base.
 | [`logics/proof-format.md`](./logics/proof-format.md) | The Haskell dialect's theorem/proof split (equation statements + name-linked S-expr proofs). |
 | [`logics/wasm-spec.md`](./logics/wasm-spec.md) | The SpecTec WASM-spec front end; dual to the Metamath front end. |
 | [`logics/cfg-stratum-design.md`](./logics/cfg-stratum-design.md) | The CFG stratum: SpecTec grammars → per-env `Derives` judgement + family soundness; corpus facts; milestones. |
+| [`logics/spectec-fragment-api.md`](./logics/spectec-fragment-api.md) | High-level trait-based SpecTec-fragment API (`Fragment`, `RelationEnv` peer of `GrammarEnv`); basic WASM semantics derived; layering + K reuse. |
 | [`logics/init-in-dialect.md`](./logics/init-in-dialect.md) | Writing `init/` in the Haskell dialect over the typed HOL backend. |
 | [`logics/opentheory-import.md`](./logics/opentheory-import.md) | Verifying OpenTheory articles on the native HOL kernel (`NativeOt` backend, zero-TCB hyp-tracked axioms, defineTypeOp v6, `cov hol` + `bun run opentheory`). |
 
@@ -73,4 +75,4 @@ North star: [`vision/k-framework-vision.md`](./vision/k-framework-vision.md).
 
 ## `sketches/` · `handoff/` · `build/`
 
-Scratch sketches ([`sketches/`](./sketches/)), open task handoffs ([`handoff/`](./handoff/)), and build known-issues ([`build/known-issues.md`](./build/known-issues.md)).
+Scratch sketches ([`sketches/`](./sketches/)), open task handoffs ([`handoff/`](./handoff/)), and build notes ([`build/known-issues.md`](./build/known-issues.md), [`build/buck2-experiment.md`](./build/buck2-experiment.md)).

@@ -60,7 +60,7 @@
 //!
 //! Consumers: the Lisp/ACL2 groundwork theory (`crate::init::lisp`, planned).
 
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
@@ -106,29 +106,30 @@ fn tag_ty() -> Type {
     covalence_hol_eval::defs::coprod(Type::unit(), Type::unit())
 }
 
-/// The label type `LB := coprod bytes (coprod unit unit)`.
-fn lab_ty() -> Type {
-    covalence_hol_eval::defs::coprod(bytes_ty(), tag_ty())
+/// The label type `LB := coprod P (coprod unit unit)` at atom payload `P`
+/// (`bytes` for the flagship `sexpr` instance).
+fn lab_ty(payload: &Type) -> Type {
+    covalence_hol_eval::defs::coprod(payload.clone(), tag_ty())
 }
 
 /// The universal domain `U := list bool → LB`.
-fn dom_ty() -> Type {
-    Type::fun(path_ty(), lab_ty())
+fn dom_ty(payload: &Type) -> Type {
+    Type::fun(path_ty(), lab_ty(payload))
 }
 
 /// `inl b : LB` — the `atom` label.
-fn atom_lab(b: Term) -> Result<Term> {
-    inl(bytes_ty(), tag_ty()).apply(b)
+fn atom_lab(payload: &Type, b: Term) -> Result<Term> {
+    inl(payload.clone(), tag_ty()).apply(b)
 }
 
 /// `inr (inl ()) : LB` — the `snil` label.
-fn snil_lab() -> Result<Term> {
-    inr(bytes_ty(), tag_ty()).apply(inl(Type::unit(), Type::unit()).apply(unit_nil())?)
+fn snil_lab(payload: &Type) -> Result<Term> {
+    inr(payload.clone(), tag_ty()).apply(inl(Type::unit(), Type::unit()).apply(unit_nil())?)
 }
 
 /// `inr (inr ()) : LB` — the `scons` label.
-fn scons_lab() -> Result<Term> {
-    inr(bytes_ty(), tag_ty()).apply(inr(Type::unit(), Type::unit()).apply(unit_nil())?)
+fn scons_lab(payload: &Type) -> Result<Term> {
+    inr(payload.clone(), tag_ty()).apply(inr(Type::unit(), Type::unit()).apply(unit_nil())?)
 }
 
 fn nil_path() -> Term {
@@ -241,8 +242,15 @@ fn head_false_f(q: &Term) -> Result<Thm> {
 /// The carved `sexpr` type: the fresh subtype, its constructors and
 /// extractors (all [`Thm::define`]d constants), the well-formedness
 /// machinery on the domain, and the freeness/induction theorems the
-/// recursion engine consumes. Built exactly once ([`carved`]).
+/// recursion engine consumes. Built exactly once per instance: the
+/// flagship `bytes`-payload instance is [`carved`]; the construction is
+/// **payload-parametric** ([`CarvedSExpr::build_with`]), so further
+/// sexpr-shaped carriers (e.g. the ACL2 universe at
+/// `P = coprod int bytes`, [`crate::init::acl2::carrier`]) are the same
+/// proofs run at another payload type.
 pub struct CarvedSExpr {
+    /// The atom payload type `P` (`bytes` for the `sexpr` instance).
+    pub payload: Type,
     // -- U-level constructors + Wf --
     u_atom: Term,
     u_atom_eq: Thm,
@@ -290,13 +298,17 @@ pub struct CarvedSExpr {
     cdr_eq: Thm,
     /// The engine signature (`atom`/`snil`/`scons` with hints `b`/`h`,`t`).
     sig: InductiveSig,
+    /// The cached engine run at the polymorphic result type ([`REC_B`]) —
+    /// per instance (each payload gets its own recursor).
+    rec_cell: OnceLock<std::result::Result<(Term, Vec<Thm>), String>>,
 }
 
 /// The process-global carved theory. All fresh identity (`Def`s, the
 /// subtype) is allocated exactly once.
 pub fn carved() -> Result<&'static CarvedSExpr> {
-    static CARVED: LazyLock<std::result::Result<CarvedSExpr, String>> =
-        LazyLock::new(|| CarvedSExpr::build().map_err(|e| e.to_string()));
+    static CARVED: LazyLock<std::result::Result<CarvedSExpr, String>> = LazyLock::new(|| {
+        CarvedSExpr::build_with(Type::bytes(), "sexpr").map_err(|e| e.to_string())
+    });
     CARVED
         .as_ref()
         .map_err(|e| Error::ConnectiveRule(format!("carved sexpr build failed: {e}")))
@@ -310,26 +322,41 @@ fn defined(name: &str, body: Term) -> Result<(Term, Thm)> {
 }
 
 impl CarvedSExpr {
-    fn build() -> Result<CarvedSExpr> {
+    /// Run the whole carved construction at atom payload `payload`, with
+    /// every [`Thm::define`] name under `prefix` (display hints only —
+    /// fresh identity is minted inside the rules — but kept distinct per
+    /// instance for sanity). The flagship `sexpr` instance is
+    /// `build_with(Type::bytes(), "sexpr")`; the construction never uses
+    /// payload *values*, only the type, so any payload works.
+    ///
+    /// Public so downstream carriers (e.g. the `covalence-lisp`
+    /// `AbstractSExpr` adapters) can instantiate further sexpr-shaped
+    /// carriers — the "same proofs at another payload" seam. Each call mints
+    /// fresh identity (a fresh subtype + `Def`s): build **once per instance**
+    /// and cache it (an initializer calling this directly, never through
+    /// another theory `LazyLock` — the re-entrancy discipline).
+    pub fn build_with(payload: Type, prefix: &str) -> Result<CarvedSExpr> {
+        let name = |s: &str| format!("{prefix}.{s}");
         // ---- U-level constructor bodies ----
-        let b = Term::free("__b", bytes_ty());
+        let b = Term::free("__b", payload.clone());
         let p = Term::free("__p", path_ty());
-        let x = Term::free("__x", dom_ty());
-        let y = Term::free("__y", dom_ty());
+        let x = Term::free("__x", dom_ty(&payload));
+        let y = Term::free("__y", dom_ty(&payload));
 
         // atomU := λb p. cond (p = nil) (inl b) snilLab
         let atom_body = {
-            let c = cond(lab_ty())
+            let c = cond(lab_ty(&payload))
                 .apply(p.clone().equals(nil_path())?)?
-                .apply(atom_lab(b.clone())?)?
-                .apply(snil_lab()?)?;
+                .apply(atom_lab(&payload, b.clone())?)?
+                .apply(snil_lab(&payload)?)?;
             let inner = Term::abs(path_ty(), subst::close(&c, "__p"));
-            Term::abs(bytes_ty(), subst::close(&inner, "__b"))
+            Term::abs(payload.clone(), subst::close(&inner, "__b"))
         };
-        let (u_atom, u_atom_eq) = defined("sexpr.rep.atom", atom_body)?;
+        let (u_atom, u_atom_eq) = defined(&name("rep.atom"), atom_body)?;
 
         // snilU := λp. snilLab
-        let (u_nil, u_nil_eq) = defined("sexpr.rep.nil", Term::abs(path_ty(), snil_lab()?))?;
+        let (u_nil, u_nil_eq) =
+            defined(&name("rep.nil"), Term::abs(path_ty(), snil_lab(&payload)?))?;
 
         // sconsU := λx y p. cond (p = nil) sconsLab
         //            (cond (head p = some true) (y (tail p)) (x (tail p)))
@@ -340,58 +367,58 @@ impl CarvedSExpr {
             let test = head(Type::bool())
                 .apply(p.clone())?
                 .equals(some(Type::bool()).apply(covalence_hol_eval::mk_bool(true))?)?;
-            let inner_cond = cond(lab_ty())
+            let inner_cond = cond(lab_ty(&payload))
                 .apply(test)?
                 .apply(go_true)?
                 .apply(go_false)?;
-            let c = cond(lab_ty())
+            let c = cond(lab_ty(&payload))
                 .apply(p.clone().equals(nil_path())?)?
-                .apply(scons_lab()?)?
+                .apply(scons_lab(&payload)?)?
                 .apply(inner_cond)?;
             let l_p = Term::abs(path_ty(), subst::close(&c, "__p"));
-            let l_y = Term::abs(dom_ty(), subst::close(&l_p, "__y"));
-            Term::abs(dom_ty(), subst::close(&l_y, "__x"))
+            let l_y = Term::abs(dom_ty(&payload), subst::close(&l_p, "__y"));
+            Term::abs(dom_ty(&payload), subst::close(&l_y, "__x"))
         };
-        let (u_cons, u_cons_eq) = defined("sexpr.rep.cons", cons_body)?;
+        let (u_cons, u_cons_eq) = defined(&name("rep.cons"), cons_body)?;
 
         // carU := λu q. u (cons false q); cdrU := λu q. u (cons true q).
         let proj_body = |flag: bool| -> Result<Term> {
-            let u = Term::free("__u", dom_ty());
+            let u = Term::free("__u", dom_ty(&payload));
             let q = Term::free("__q", path_ty());
             let at = u
                 .clone()
                 .apply(cons_path(covalence_hol_eval::mk_bool(flag), q.clone())?)?;
             let inner = Term::abs(path_ty(), subst::close(&at, "__q"));
-            Ok(Term::abs(dom_ty(), subst::close(&inner, "__u")))
+            Ok(Term::abs(dom_ty(&payload), subst::close(&inner, "__u")))
         };
-        let (u_car, u_car_eq) = defined("sexpr.rep.car", proj_body(false)?)?;
-        let (u_cdr, u_cdr_eq) = defined("sexpr.rep.cdr", proj_body(true)?)?;
+        let (u_car, u_car_eq) = defined(&name("rep.car"), proj_body(false)?)?;
+        let (u_cdr, u_cdr_eq) = defined(&name("rep.cdr"), proj_body(true)?)?;
 
         // ---- Wf: the impredicative least predicate on U ----
-        let d_ty = Type::fun(dom_ty(), Type::bool());
+        let d_ty = Type::fun(dom_ty(&payload), Type::bool());
         let dv = Term::free("__ud", d_ty.clone());
         let wf_body = {
-            let s = Term::free("__us", dom_ty());
-            let body = Self::closed_under(&u_atom, &u_nil, &u_cons, &dv)?
+            let s = Term::free("__us", dom_ty(&payload));
+            let body = Self::closed_under(&payload, &u_atom, &u_nil, &u_cons, &dv)?
                 .imp(dv.clone().apply(s.clone())?)?
                 .forall("__ud", d_ty.clone())?;
-            Term::abs(dom_ty(), subst::close(&body, "__us"))
+            Term::abs(dom_ty(&payload), subst::close(&body, "__us"))
         };
-        let (wf, wf_eq) = defined("sexpr.wf", wf_body)?;
+        let (wf, wf_eq) = defined(&name("wf"), wf_body)?;
 
         // Wf-introduction facts. `wf_at(t) : ⊢ Wf t = (∀d. closed d ⟹ d t)`.
         let wf_at = |t: &Term| apply_def(&wf_eq, std::slice::from_ref(t));
-        let closed_dv = Self::closed_under(&u_atom, &u_nil, &u_cons, &dv)?;
+        let closed_dv = Self::closed_under(&payload, &u_atom, &u_nil, &u_cons, &dv)?;
         let assumed = Thm::assume(closed_dv.clone())?;
 
         // ⊢ Wf (atomU __wb)
         let wf_atom = {
-            let wb = Term::free("__wb", bytes_ty());
+            let wb = Term::free("__wb", payload.clone());
             let target = u_atom.clone().apply(wb)?;
             let d_at = assumed
                 .clone()
                 .and_elim_l()?
-                .all_elim(Term::free("__wb", bytes_ty()))?; // {closed} ⊢ d (atomU __wb)
+                .all_elim(Term::free("__wb", payload.clone()))?; // {closed} ⊢ d (atomU __wb)
             let gen_ = d_at
                 .imp_intro(&closed_dv)?
                 .all_intro("__ud", d_ty.clone())?;
@@ -409,8 +436,8 @@ impl CarvedSExpr {
 
         // ⊢ Wf __wx ⟹ Wf __wy ⟹ Wf (sconsU __wx __wy)
         let wf_cons = {
-            let wx = Term::free("__wx", dom_ty());
-            let wy = Term::free("__wy", dom_ty());
+            let wx = Term::free("__wx", dom_ty(&payload));
+            let wy = Term::free("__wy", dom_ty(&payload));
             let wf_x = wf.clone().apply(wx.clone())?;
             let wf_y = wf.clone().apply(wy.clone())?;
             // {Wf x, closed} ⊢ d x  (unfold the hypothesis, specialise d).
@@ -439,7 +466,7 @@ impl CarvedSExpr {
         };
 
         // ---- carve the subtype ----
-        let td = Thm::new_type_definition("sexpr", "sexpr.abs", "sexpr.rep", wf_nil.clone())?;
+        let td = Thm::new_type_definition(prefix, name("abs"), name("rep"), wf_nil.clone())?;
         let tau = td.tau.clone();
         let abs = td.abs.clone();
         let rep = td.rep.clone();
@@ -459,14 +486,14 @@ impl CarvedSExpr {
 
         // ---- carved constructors + extractors ----
         let (atom, atom_eq) = {
-            let bb = Term::free("__b", bytes_ty());
+            let bb = Term::free("__b", payload.clone());
             let body = abs.clone().apply(u_atom.clone().apply(bb)?)?;
             defined(
-                "sexpr.atom",
-                Term::abs(bytes_ty(), subst::close(&body, "__b")),
+                &name("atom"),
+                Term::abs(payload.clone(), subst::close(&body, "__b")),
             )?
         };
-        let (snil, snil_eq) = defined("sexpr.nil", abs.clone().apply(u_nil.clone())?)?;
+        let (snil, snil_eq) = defined(&name("nil"), abs.clone().apply(u_nil.clone())?)?;
         let (scons, scons_eq) = {
             let h = Term::free("__h", tau.clone());
             let t = Term::free("__t", tau.clone());
@@ -478,19 +505,22 @@ impl CarvedSExpr {
             )?;
             let l_t = Term::abs(tau.clone(), subst::close(&body, "__t"));
             defined(
-                "sexpr.cons",
+                &name("cons"),
                 Term::abs(tau.clone(), subst::close(&l_t, "__h")),
             )?
         };
-        let proj_c = |name: &str, u_proj: &Term| -> Result<(Term, Thm)> {
+        let proj_c = |proj_name: &str, u_proj: &Term| -> Result<(Term, Thm)> {
             let s = Term::free("__s", tau.clone());
             let body = abs
                 .clone()
                 .apply(u_proj.clone().apply(rep.clone().apply(s.clone())?)?)?;
-            defined(name, Term::abs(tau.clone(), subst::close(&body, "__s")))
+            defined(
+                proj_name,
+                Term::abs(tau.clone(), subst::close(&body, "__s")),
+            )
         };
-        let (car, car_eq) = proj_c("sexpr.car", &u_car)?;
-        let (cdr, cdr_eq) = proj_c("sexpr.cdr", &u_cdr)?;
+        let (car, car_eq) = proj_c(&name("car"), &u_car)?;
+        let (cdr, cdr_eq) = proj_c(&name("cdr"), &u_cdr)?;
 
         // ---- the engine signature ----
         let sig = InductiveSig {
@@ -500,7 +530,7 @@ impl CarvedSExpr {
                 Constructor::new(
                     atom.clone(),
                     vec![Arg::Param {
-                        ty: bytes_ty(),
+                        ty: payload.clone(),
                         name: "b",
                     }],
                 ),
@@ -522,6 +552,7 @@ impl CarvedSExpr {
         };
 
         Ok(CarvedSExpr {
+            payload,
             u_atom,
             u_atom_eq,
             u_nil,
@@ -552,20 +583,27 @@ impl CarvedSExpr {
             cdr,
             cdr_eq,
             sig,
+            rec_cell: OnceLock::new(),
         })
     }
 
     /// `closed(d)` — `d` is closed under the three `U`-constructors:
     /// `(∀b. d (atomU b)) ∧ (d snilU ∧ (∀x y. d x ⟹ d y ⟹ d (sconsU x y)))`.
-    fn closed_under(u_atom: &Term, u_nil: &Term, u_cons: &Term, d: &Term) -> Result<Term> {
-        let b = Term::free("__wb", bytes_ty());
+    fn closed_under(
+        payload: &Type,
+        u_atom: &Term,
+        u_nil: &Term,
+        u_cons: &Term,
+        d: &Term,
+    ) -> Result<Term> {
+        let b = Term::free("__wb", payload.clone());
         let c_atom = d
             .clone()
             .apply(u_atom.clone().apply(b)?)?
-            .forall("__wb", bytes_ty())?;
+            .forall("__wb", payload.clone())?;
         let c_nil = d.clone().apply(u_nil.clone())?;
-        let x = Term::free("__wx", dom_ty());
-        let y = Term::free("__wy", dom_ty());
+        let x = Term::free("__wx", dom_ty(payload));
+        let y = Term::free("__wy", dom_ty(payload));
         let c_cons = d
             .clone()
             .apply(x.clone())?
@@ -575,8 +613,8 @@ impl CarvedSExpr {
                         .apply(u_cons.clone().apply(x.clone())?.apply(y.clone())?)?,
                 )?,
             )?
-            .forall("__wy", dom_ty())?
-            .forall("__wx", dom_ty())?;
+            .forall("__wy", dom_ty(payload))?
+            .forall("__wx", dom_ty(payload))?;
         c_atom.and(c_nil.and(c_cons)?)
     }
 
@@ -768,7 +806,7 @@ impl CarvedSExpr {
             .sym()?
             .trans(reps.cong_fn(nil_path())?)?
             .trans(self.u_atom_at_nil(b2)?)?; // {eq} ⊢ inl b = inl b2
-        inl_inj(&bytes_ty(), &tag_ty(), b, b2)?
+        inl_inj(&self.payload, &tag_ty(), b, b2)?
             .imp_elim(labs)?
             .imp_intro(&eq)
     }
@@ -814,14 +852,14 @@ impl CarvedSExpr {
         let inr_one = inr(Type::unit(), Type::unit()).apply(one)?;
         match (i, j) {
             // atom vs snil/scons: inl b ≠ inr tag.
-            (0, 1) => inl_ne_inr(&bytes_ty(), &tag_ty(), &args_i[0], &inl_one),
-            (0, 2) => inl_ne_inr(&bytes_ty(), &tag_ty(), &args_i[0], &inr_one),
+            (0, 1) => inl_ne_inr(&self.payload, &tag_ty(), &args_i[0], &inl_one),
+            (0, 2) => inl_ne_inr(&self.payload, &tag_ty(), &args_i[0], &inr_one),
             // snil vs scons: inr (inl ()) ≠ inr (inr ()) via inr-injectivity.
             (1, 2) => {
-                let lhs = inr(bytes_ty(), tag_ty()).apply(inl_one.clone())?;
-                let rhs = inr(bytes_ty(), tag_ty()).apply(inr_one.clone())?;
+                let lhs = inr(self.payload.clone(), tag_ty()).apply(inl_one.clone())?;
+                let rhs = inr(self.payload.clone(), tag_ty()).apply(inr_one.clone())?;
                 let eq = lhs.equals(rhs)?;
-                let inner = inr_inj(&bytes_ty(), &tag_ty(), &inl_one, &inr_one)?
+                let inner = inr_inj(&self.payload, &tag_ty(), &inl_one, &inr_one)?
                     .imp_elim(Thm::assume(eq.clone())?)?; // {eq} ⊢ inl () = inr ()
                 let one2 = unit_nil();
                 let f = inl_ne_inr(&Type::unit(), &Type::unit(), &one2, &one2)?.not_elim(inner)?; // {eq} ⊢ F
@@ -877,13 +915,13 @@ impl CarvedSExpr {
 
         // S := λu. Wf u ∧ P (abs u).
         let s_lam = {
-            let u = Term::free("__su", dom_ty());
+            let u = Term::free("__su", dom_ty(&self.payload));
             let body = self
                 .wf
                 .clone()
                 .apply(u.clone())?
                 .and(motive.clone().apply(self.abs.clone().apply(u.clone())?)?)?;
-            Term::abs(dom_ty(), subst::close(&body, "__su"))
+            Term::abs(dom_ty(&self.payload), subst::close(&body, "__su"))
         };
 
         // ⊢ P x = P y from ⊢ x = y.
@@ -891,14 +929,14 @@ impl CarvedSExpr {
 
         // -- clause 0: ∀b. S (atomU b) --
         let cl_atom = {
-            let b = Term::free("__wb", bytes_ty());
+            let b = Term::free("__wb", self.payload.clone());
             let target = self.u_atom.clone().apply(b.clone())?;
             let wf_part = self.wf_atom.clone(); // free __wb already
             // P (atom b) = P (abs (atomU b)).
             let unf = apply_def(&self.atom_eq, std::slice::from_ref(&b))?;
             let p_part = p_cong(unf)?.eq_mp(case_atom.inst("b", b.clone())?)?;
             beta_expand(&s_lam, target, wf_part.and_intro(p_part)?)?
-                .all_intro("__wb", bytes_ty())?
+                .all_intro("__wb", self.payload.clone())?
         };
 
         // -- clause 1: S snilU --
@@ -913,8 +951,8 @@ impl CarvedSExpr {
 
         // -- clause 2: ∀x y. S x ⟹ S y ⟹ S (sconsU x y) --
         let cl_cons = {
-            let x = Term::free("__wx", dom_ty());
-            let y = Term::free("__wy", dom_ty());
+            let x = Term::free("__wx", dom_ty(&self.payload));
+            let y = Term::free("__wy", dom_ty(&self.payload));
             let hyp_x = s_lam.clone().apply(x.clone())?;
             let hyp_y = s_lam.clone().apply(y.clone())?;
             let sx = beta_reduce(Thm::assume(hyp_x.clone())?)?; // {S x} ⊢ Wf x ∧ P (abs x)
@@ -954,8 +992,8 @@ impl CarvedSExpr {
             beta_expand(&s_lam, target, wf_part.and_intro(p_part)?)?
                 .imp_intro(&hyp_y)?
                 .imp_intro(&hyp_x)?
-                .all_intro("__wy", dom_ty())?
-                .all_intro("__wx", dom_ty())?
+                .all_intro("__wy", dom_ty(&self.payload))?
+                .all_intro("__wx", dom_ty(&self.payload))?
         };
 
         let closed_s = cl_atom.and_intro(cl_nil.and_intro(cl_cons)?)?;
@@ -995,15 +1033,23 @@ fn apply_ctor(sig: &InductiveSig, i: usize, args: &[Term]) -> Result<Term> {
 // ============================================================================
 
 /// The carved type's [`Inductive`] feeder — supplies structural induction
-/// and freeness to the generic recursion engine.
-pub struct SExprInductive(&'static CarvedSExpr);
+/// and freeness to the generic recursion engine (any instance).
+pub struct SExprInductive<'a>(&'a CarvedSExpr);
 
 /// The feeder over the process-global carved theory.
-pub fn sexpr_inductive() -> Result<SExprInductive> {
+pub fn sexpr_inductive() -> Result<SExprInductive<'static>> {
     Ok(SExprInductive(carved()?))
 }
 
-impl Inductive for SExprInductive {
+impl CarvedSExpr {
+    /// The [`Inductive`] feeder over *this* instance (injectivity /
+    /// distinctness / induction in the engine's packaging).
+    pub fn inductive(&self) -> SExprInductive<'_> {
+        SExprInductive(self)
+    }
+}
+
+impl Inductive for SExprInductive<'_> {
     fn sig(&self) -> &InductiveSig {
         &self.0.sig
     }
@@ -1059,11 +1105,11 @@ const REC_B: &str = "__srec_b";
 /// The three step variables (reserved names).
 const STEP_VARS: [&str; 3] = ["__sfa", "__sfn", "__sfc"];
 
-/// The para step types at result `beta`: `bytes → β`, `β`,
-/// `sexpr → sexpr → β → β → β`.
-fn para_step_tys(tau: &Type, beta: &Type) -> [Type; 3] {
+/// The para step types at result `beta`: `P → β`, `β`,
+/// `sexpr → sexpr → β → β → β` (with `P` the instance's atom payload).
+fn para_step_tys(payload: &Type, tau: &Type, beta: &Type) -> [Type; 3] {
     [
-        Type::fun(bytes_ty(), beta.clone()),
+        Type::fun(payload.clone(), beta.clone()),
         beta.clone(),
         Type::fun(
             tau.clone(),
@@ -1075,35 +1121,38 @@ fn para_step_tys(tau: &Type, beta: &Type) -> [Type; 3] {
     ]
 }
 
-/// The engine run — once, at the polymorphic `'__srec_b`.
-fn rec_poly() -> Result<&'static (Term, Vec<Thm>)> {
-    static REC: LazyLock<std::result::Result<(Term, Vec<Thm>), String>> = LazyLock::new(|| {
-        (|| {
-            let theory = sexpr_inductive()?;
-            let beta = Type::tfree(REC_B);
-            let tys = para_step_tys(&theory.0.tau, &beta);
-            let steps: Vec<Term> = STEP_VARS
-                .iter()
-                .zip(tys)
-                .map(|(n, ty)| Term::free(*n, ty))
-                .collect();
-            recursion_equations(&theory, &steps, &beta)
-        })()
-        .map_err(|e: Error| e.to_string())
-    });
-    REC.as_ref()
-        .map_err(|e| Error::ConnectiveRule(format!("carved sexpr recursor failed: {e}")))
-}
+impl CarvedSExpr {
+    /// The engine run — once per instance, at the polymorphic `'__srec_b`.
+    fn rec_poly(&self) -> Result<&(Term, Vec<Thm>)> {
+        self.rec_cell
+            .get_or_init(|| {
+                (|| {
+                    let theory = SExprInductive(self);
+                    let beta = Type::tfree(REC_B);
+                    let tys = para_step_tys(&self.payload, &self.tau, &beta);
+                    let steps: Vec<Term> = STEP_VARS
+                        .iter()
+                        .zip(tys)
+                        .map(|(n, ty)| Term::free(*n, ty))
+                        .collect();
+                    recursion_equations(&theory, &steps, &beta)
+                })()
+                .map_err(|e: Error| e.to_string())
+            })
+            .as_ref()
+            .map_err(|e| Error::ConnectiveRule(format!("carved sexpr recursor failed: {e}")))
+    }
 
-/// The recursor term and equations instantiated at result type `beta`.
-fn rec_at(beta: &Type) -> Result<(Term, Vec<Thm>)> {
-    let (rec, eqs) = rec_poly()?;
-    let rec_b = subst::subst_tfree_in_term(rec, REC_B, beta);
-    let eqs_b = eqs
-        .iter()
-        .map(|e| e.clone().inst_tfree(REC_B, beta.clone()))
-        .collect::<Result<_>>()?;
-    Ok((rec_b, eqs_b))
+    /// The recursor term and equations instantiated at result type `beta`.
+    pub(crate) fn rec_at(&self, beta: &Type) -> Result<(Term, Vec<Thm>)> {
+        let (rec, eqs) = self.rec_poly()?;
+        let rec_b = subst::subst_tfree_in_term(rec, REC_B, beta);
+        let eqs_b = eqs
+            .iter()
+            .map(|e| e.clone().inst_tfree(REC_B, beta.clone()))
+            .collect::<Result<_>>()?;
+        Ok((rec_b, eqs_b))
+    }
 }
 
 // ============================================================================
@@ -1116,7 +1165,7 @@ impl CarvedSExpr {
     /// [`para_step_tys`]`(tau, beta)`). This is the term the Lisp layer
     /// [`Thm::define`]s a total recursive function as.
     pub(crate) fn prec(&self, steps: &[Term], beta: &Type) -> Result<Term> {
-        let (rec, _) = rec_at(beta)?;
+        let (rec, _) = self.rec_at(beta)?;
         let mut r = rec;
         for s in steps {
             r = r.apply(s.clone())?;
@@ -1130,7 +1179,7 @@ impl CarvedSExpr {
     /// applications match [`Self::prec`]`(steps, beta).apply(…)` verbatim,
     /// so an unfolded definition rewrites against this equation directly.
     pub(crate) fn prec_eq(&self, steps: &[Term], i: usize, beta: &Type) -> Result<Thm> {
-        let (_, eqs) = rec_at(beta)?;
+        let (_, eqs) = self.rec_at(beta)?;
         let mut eq = eqs.get(i).cloned().ok_or_else(|| {
             Error::ConnectiveRule(format!("carved prec_eq: bad constructor index {i}"))
         })?;
@@ -1232,7 +1281,7 @@ impl CarvedTheory {
             return Err(InductiveError::CtorIndex { index: i, arity: 3 });
         }
         let beta = self.result_ty(steps)?;
-        let (_, eqs) = rec_at(&beta)?;
+        let (_, eqs) = carved()?.rec_at(&beta)?;
         let mut eq = eqs[i].clone();
         for (name, s) in STEP_VARS.iter().zip(steps) {
             eq = eq.inst(name, s.clone())?;
@@ -1282,7 +1331,7 @@ impl InductiveFacts<NativeHol> for CarvedTheory {
     fn prec_app(&self, steps: &[Term], t: &Term) -> IndResult<Term, NativeHol> {
         let steps = self.steps3(steps)?;
         let beta = self.result_ty(steps)?;
-        let (rec, _) = rec_at(&beta)?;
+        let (rec, _) = carved()?.rec_at(&beta)?;
         let mut r = rec;
         for s in steps {
             r = r.apply(s.clone())?;
@@ -1460,7 +1509,7 @@ mod tests {
         let th = theory();
         let cs = carved().unwrap();
         let beta = Type::nat();
-        let tys = para_step_tys(&cs.tau, &beta);
+        let tys = para_step_tys(&cs.payload, &cs.tau, &beta);
         let steps: Vec<Term> = ["sa", "sn", "sc"]
             .iter()
             .zip(tys)

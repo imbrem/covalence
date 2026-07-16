@@ -81,12 +81,14 @@ macro_rules! cached_thm {
     };
 }
 
+pub mod acl2;
 pub mod ball;
 pub mod cat;
 pub mod char;
 pub mod cond;
 pub mod coprod;
 pub mod cv_recursion;
+pub mod decimal;
 pub mod eq;
 pub mod ext;
 pub mod float_parse;
@@ -96,6 +98,7 @@ pub mod int_parse;
 pub mod json_parse;
 pub mod lambda_iter;
 pub mod lang;
+pub mod leb128;
 pub mod lisp;
 pub mod list;
 pub mod list_recursion;

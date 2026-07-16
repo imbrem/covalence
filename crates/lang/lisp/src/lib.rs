@@ -36,6 +36,9 @@ pub mod reader;
 pub mod hol;
 
 #[cfg(feature = "hol")]
+pub mod carrier;
+
+#[cfg(feature = "hol")]
 pub mod defs;
 
 #[cfg(feature = "hol")]
@@ -49,6 +52,12 @@ pub mod relation;
 
 #[cfg(feature = "hol")]
 pub mod session;
+
+#[cfg(feature = "hol")]
+pub mod acl2;
+
+#[cfg(feature = "hol")]
+pub mod book;
 
 use covalence_sexp::SExpr;
 

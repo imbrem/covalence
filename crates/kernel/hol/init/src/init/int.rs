@@ -2970,6 +2970,195 @@ fn gen4(thm: Thm) -> Result<Thm> {
         .all_intro("fa", Type::nat())
 }
 
+// ============================================================================
+// The nat ↪ int bridge — `natToInt` order coherence + nonneg reconstruction
+// ============================================================================
+//
+// S5 ordinal support (`notes/vibes/lisp/acl2-s5-design.md` §4): `int` `<`/`≤`
+// is only proved a linear order, and no induction principle reaches `int`.
+// These lemmas identify the nonnegative fragment with `nat` through
+// `natToInt` so `nat` strong induction transports (the `nonneg_si_on` driver
+// in `init/acl2/ordinal.rs`). They live here because they need the private
+// quotient recon layer (`recon_mk` / `le_mk` / `lit0_mk` / `succ_mk`).
+
+/// `natToInt n : int`.
+fn n2i(n: Term) -> Term {
+    Term::app(covalence_hol_eval::defs::nat_to_int(), n)
+}
+
+/// `⊢ natToInt t = natRec ⌜0⌝ (λ_:nat. intSucc) t` — δ-unfold `natToInt`
+/// through `iter`, weakly β-reduced (a `natRec` application at a free
+/// count is left intact).
+fn n2i_unfold(t: &Term) -> Result<Thm> {
+    let d1 = n2i(t.clone())
+        .delta_all(covalence_hol_eval::defs::nat_to_int_spec().symbol())?
+        .rhs_conv(|u| u.reduce())?;
+    let cur = dest_eq(&d1)?.1;
+    let d2 = cur
+        .delta_all(covalence_hol_eval::defs::iter_spec().symbol())?
+        .rhs_conv(|u| u.reduce())?;
+    d1.trans(d2)
+}
+
+/// `⊢ ∀n. natToInt (S n) = intSucc (natToInt n)` — the recursion step,
+/// through the `nat` recursion theorem at result type `int`
+/// ([`crate::init::recursion::rec_holds_proof_at`]).
+fn n2i_succ() -> Result<Thm> {
+    let k = Term::free("k", Type::nat());
+    let u = n2i_unfold(&nat::succ(k.clone()))?; // natToInt (S k) = natRec z f (S k)
+    // Parse `natRec z f (S k)` for the exact `z` / `f` the unfold produced.
+    let (_, rhs) = dest_eq(&u)?;
+    let (zf, _sk) = rhs.as_app().ok_or(Error::NotAnEquation)?;
+    let (z_hd, f) = zf.as_app().ok_or(Error::NotAnEquation)?;
+    let (_, z) = z_hd.as_app().ok_or(Error::NotAnEquation)?;
+    let re = crate::init::recursion::rec_holds_proof_at(&int())?
+        .all_elim(z.clone())?
+        .all_elim(f.clone())?
+        .and_elim_r()?
+        .all_elim(k.clone())? // natRec z f (S k) = f k (natRec z f k)
+        .rhs_conv(|t| t.reduce())?; // = intSucc (natRec z f k)
+    let fold = n2i_unfold(&k)?.sym()?; // natRec z f k = natToInt k
+    u.trans(re)?
+        .rhs_conv(|t| t.rw_all(&fold))?
+        .all_intro("k", Type::nat())
+}
+
+cached_thm! {
+    /// `⊢ ∀n. natToInt n = MK n 0` — `natToInt` in component form, by
+    /// `nat` induction through [`lit0_mk`] / [`succ_mk`].
+    pub(crate) fn n2i_mk() -> Result<Thm> {
+        let motive = {
+            let n = Term::free("n", Type::nat());
+            let body = n2i(n.clone()).equals(mkfs(&n, &nat::zero()))?;
+            Term::abs(Type::nat(), subst::close(&body, "n"))
+        };
+        // base: natToInt 0 = ⌜0⌝ (literal cert) = MK 0 0.
+        let base = crate::init::eq::beta_expand(
+            &motive,
+            nat::zero(),
+            n2i(nat::zero()).reduce()?.trans(lit0_mk()?)?,
+        )?;
+        // step: {motive k} ⊢ motive (S k).
+        let step = {
+            let k = Term::free("k", Type::nat());
+            let ih_redex = Term::app(motive.clone(), k.clone());
+            let ih = crate::init::eq::beta_reduce(Thm::assume(ih_redex.clone())?)?; // natToInt k = MK k 0
+            let eq = n2i_succ()?
+                .all_elim(k.clone())? // natToInt (S k) = intSucc (natToInt k)
+                .rhs_conv(|t| t.rw_all(&ih))? // = intSucc (MK k 0)
+                .trans(succ_mk(&k, &nat::zero())?)?; // = MK (S k) 0
+            crate::init::eq::beta_expand(&motive, nat::succ(k), eq)?.imp_intro(&ih_redex)?
+        };
+        crate::init::ext::nat_induct(base, step)
+    }
+}
+
+/// `⊢ natToInt n = MK n 0` at a fixed `n` — [`n2i_mk`] instantiated and
+/// top-β-reduced (single contraction only: the `mk_int` class bodies must
+/// stay in their unreduced `mk_class` shape for the component machinery).
+fn n2i_mk_at(n: &Term) -> Result<Thm> {
+    crate::init::eq::beta_reduce(n2i_mk().all_elim(n.clone())?)
+}
+
+/// `⊢ nat.le (0+0) (n+0) = nat.le 0 n`-style cleanup: rewrite `0 + x = x`
+/// and `x + 0 = x` (both `nat`) inside a conclusion.
+fn nat_add_units(thm: Thm, zero_plus: &Term, plus_zero: &Term) -> Result<Thm> {
+    thm.rewrite(&nat::add_base().all_elim(zero_plus.clone())?)?
+        .rewrite(&nat::add_zero().all_elim(plus_zero.clone())?)
+}
+
+cached_thm! {
+    /// `⊢ ∀m n. intLt (natToInt m) (natToInt n) = natLt m n` — `natToInt`
+    /// preserves **and reflects** the strict order (the two-way form; the
+    /// design's `nat_to_int_lt` is its forward reading).
+    pub(crate) fn n2i_lt_iff() -> Result<Thm> {
+        let (m, n) = (Term::free("m", Type::nat()), Term::free("n", Type::nat()));
+        let rm = n2i_mk_at(&m)?; // natToInt m = MK m 0
+        let rn = n2i_mk_at(&n)?;
+        let de = lt_via_components(&rm, &rn)?; // intLt (n2i m)(n2i n) = nat.lt (m+0)(n+0)
+        let de = de
+            .rewrite(&nat::add_zero().all_elim(m.clone())?)?
+            .rewrite(&nat::add_zero().all_elim(n.clone())?)?; // = natLt m n
+        de.all_intro("n", Type::nat())?.all_intro("m", Type::nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀n:nat. intLe ⌜0⌝ (natToInt n)` — `natToInt` lands in the
+    /// nonnegative fragment (design §4, lemma 1).
+    pub fn nat_to_int_nonneg() -> Result<Thm> {
+        let n = Term::free("n", Type::nat());
+        let rn = n2i_mk_at(&n)?; // natToInt n = MK n 0
+        let de = le_via_components(&lit0_mk()?, &rn)?; // (0 ≤ natToInt n) = nat.le (0+0)(n+0)
+        let de = nat_add_units(de, &nat::zero(), &n)?; // = nat.le 0 n
+        de.sym()?
+            .eq_mp(nat::le_zero().all_elim(n.clone())?)? // 0 ≤ natToInt n
+            .all_intro("n", Type::nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀m n. natLt m n ⟹ intLt (natToInt m) (natToInt n)` — strict
+    /// monotonicity (design §4, lemma 2; reflection is [`n2i_lt_iff`]'s
+    /// other direction).
+    pub fn nat_to_int_lt() -> Result<Thm> {
+        let (m, n) = (Term::free("m", Type::nat()), Term::free("n", Type::nat()));
+        let iff = n2i_lt_iff().all_elim(m.clone())?.all_elim(n.clone())?;
+        let hyp = Term::app(Term::app(nat::nat_lt(), m.clone()), n.clone());
+        iff.sym()?
+            .eq_mp(Thm::assume(hyp.clone())?)?
+            .imp_intro(&hyp)?
+            .all_intro("n", Type::nat())?
+            .all_intro("m", Type::nat())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀i:int. ⌜0⌝ ≤ i ⟹ ∃n:nat. i = natToInt n` — every nonnegative
+    /// `int` is a `nat` image (design §4, lemma 3): recon `i = MK fa sa`,
+    /// unfold `0 ≤ i` to `sa ≤ fa` on representatives, and witness
+    /// `n := fa - sa` through `nat::le_add_sub`.
+    pub fn int_nonneg_nat() -> Result<Thm> {
+        let a = var("a");
+        let ra = recon_mk(&a)?; // a = MK fa sa
+        let (fa, sa) = (fcomp(&a), scomp(&a));
+        let hyp = le(lit(0), a.clone());
+        // (0 ≤ a) = (sa ≤ fa) on components.
+        let de = le_via_components(&lit0_mk()?, &ra)?; // = nat.le (0+sa)(fa+0)
+        let de = nat_add_units(de, &sa, &fa)?; // = nat.le sa fa
+        let hle = de.eq_mp(Thm::assume(hyp.clone())?)?; // {0≤a} ⊢ sa ≤ fa
+        // Witness w := fa - sa;   fa + 0 = w + sa.
+        let w = nat::sub(fa.clone(), sa.clone());
+        let sw = nat::le_add_sub()
+            .all_elim(sa.clone())?
+            .all_elim(fa.clone())?
+            .imp_elim(hle)?; // sa + (fa - sa) = fa
+        let wsa = nat::add_comm()
+            .all_elim(w.clone())?
+            .all_elim(sa.clone())?
+            .trans(sw)?; // w + sa = fa
+        let g = nat::add_zero()
+            .all_elim(fa.clone())?
+            .trans(wsa.sym()?)?; // fa + 0 = w + sa
+        let rel = rel_of_pairs(&fa, &sa, &w, &nat::zero(), g)?;
+        let cls =
+            quotient::class_intro(&spec(), &[], &nn(), &int_rel_symm(), &int_rel_trans(), rel)?;
+        let eq = ra
+            .trans(cls)? // a = MK w 0
+            .trans(n2i_mk_at(&w)?.sym()?)?; // = natToInt w
+        // ∃n. a = natToInt n.
+        let pred = {
+            let nv = Term::free("__nn", Type::nat());
+            let body = a.clone().equals(n2i(nv.clone()))?;
+            Term::abs(Type::nat(), subst::close(&body, "__nn"))
+        };
+        let applied = crate::init::eq::beta_expand(&pred, w.clone(), eq)?; // (λn. a = natToInt n) w
+        logic::exists_intro(pred, w, applied)?
+            .imp_intro(&hyp)?
+            .all_intro("a", int())
+    }
+}
+
 /// The `intprim` seam environment imported by `int.cov`: the `int` operators
 /// (monomorphic — `int` is a ground type), the component constructor /
 /// destructors, and the **seam** lemmas (reconstruction, the per-op `*_mk`
@@ -3196,6 +3385,62 @@ crate::cov_theory! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **S5 G2 №6 (the nat ↪ int bridge):** the three designed lemmas,
+    /// closed with exact statements (`acl2-s5-design.md` §4).
+    #[test]
+    fn t_nat_int_bridge() {
+        let (m, n) = (Term::free("m", Type::nat()), Term::free("n", Type::nat()));
+        let a = var("a");
+
+        // ⊢ ∀n. 0 ≤ natToInt n.
+        let nonneg = nat_to_int_nonneg();
+        assert!(nonneg.hyps().is_empty());
+        let expected = le(lit(0), n2i(n.clone())).forall("n", Type::nat()).unwrap();
+        assert_eq!(nonneg.concl(), &expected);
+
+        // ⊢ ∀m n. natLt m n ⟹ intLt (natToInt m) (natToInt n).
+        let mono = nat_to_int_lt();
+        assert!(mono.hyps().is_empty());
+        let natlt = Term::app(Term::app(nat::nat_lt(), m.clone()), n.clone());
+        let expected = natlt
+            .imp(lt(n2i(m.clone()), n2i(n.clone())))
+            .unwrap()
+            .forall("n", Type::nat())
+            .unwrap()
+            .forall("m", Type::nat())
+            .unwrap();
+        assert_eq!(mono.concl(), &expected);
+
+        // ⊢ ∀a. 0 ≤ a ⟹ ∃n. a = natToInt n.
+        let recon = int_nonneg_nat();
+        assert!(recon.hyps().is_empty());
+        let pred = {
+            let nv = Term::free("__nn", Type::nat());
+            let body = a.clone().equals(n2i(nv.clone())).unwrap();
+            Term::abs(Type::nat(), subst::close(&body, "__nn"))
+        };
+        let ex = Term::app(covalence_hol_eval::defs::exists(Type::nat()), pred);
+        let expected = le(lit(0), a.clone())
+            .imp(ex)
+            .unwrap()
+            .forall("a", int())
+            .unwrap();
+        assert_eq!(recon.concl(), &expected);
+
+        // The two-way order coherence (driver seam): exact statement.
+        let iff = n2i_lt_iff();
+        assert!(iff.hyps().is_empty());
+        let natlt = Term::app(Term::app(nat::nat_lt(), m.clone()), n.clone());
+        let expected = lt(n2i(m.clone()), n2i(n.clone()))
+            .equals(natlt)
+            .unwrap()
+            .forall("n", Type::nat())
+            .unwrap()
+            .forall("m", Type::nat())
+            .unwrap();
+        assert_eq!(iff.concl(), &expected);
+    }
 
     #[test]
     fn int_cov_matches_rust() {

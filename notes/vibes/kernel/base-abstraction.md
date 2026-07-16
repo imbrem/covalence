@@ -15,7 +15,7 @@ dump a TCB to SQLite.*
 
 | piece | where | what it pins |
 |---|---|---|
-| inventory | `notes/vibes/base-api-surface.md` | what core/eval *actually* consume, file:line, trust-bearing vs vocabulary vs unused |
+| inventory | `notes/vibes/kernel/base-api-surface.md` | what core/eval *actually* consume, file:line, trust-bearing vs vocabulary vs unused |
 | facade | `crates/kernel/base/src/api.rs` (`covalence_pure::api`) | the SUPPORTED consumer surface, with the stability CONTRACT |
 | algebra sketch | `crates/kernel/base/src/algebra.rs` (`CertificateAlgebra` + `EqnKernel`) | the certificate algebra any base must provide, in code |
 | SQLite dump | `crates/app/tcb-db` (`covalence-tcb-db`) | TCB-as-data: languages/rules/configs/mint-sites round-tripped through a `.db` |

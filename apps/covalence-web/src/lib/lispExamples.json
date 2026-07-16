@@ -1,16 +1,53 @@
 [
-  {"title":"2 + 2","src":"(+ 2 2)"},
-  {"title":"3 * 4","src":"(* 3 4)"},
-  {"title":"2 <= 5","src":"(<= 2 5)"},
-  {"title":"car of a list","src":"(car (quote (a b c)))"},
-  {"title":"cons onto a list","src":"(cons (quote a) (quote (b c)))"},
-  {"title":"eq? atoms","src":"(eq? (quote a) (quote a))"},
-  {"title":"#show the proof","src":"#show (+ 2 2)"},
-  {"title":"→ #lang scheme (recursion)","src":"#lang scheme"},
-  {"title":"[scheme] define lat?","src":"(defun lat? (l) (cond ((null? l) t) ((atom? (car l)) (lat? (cdr l))) (t nil)))"},
-  {"title":"[scheme] lat? of a flat list","src":"(lat? (quote (a b c)))"},
-  {"title":"[scheme] define eval (metacircular)","src":"(define eval (lambda (e a) (cond ((eq? (car e) (quote quote)) (car (cdr e))) ((eq? (car e) (quote car)) (car (eval (car (cdr e)) a))) ((eq? (car e) (quote cdr)) (cdr (eval (car (cdr e)) a))) ((eq? (car e) (quote cons)) (cons (eval (car (cdr e)) a) (eval (car (cdr (cdr e))) a))) (t (quote unknown)))))"},
-  {"title":"[scheme] run eval","src":"(eval (quote (car (cons (quote 1) (quote (2))))) (quote ()))"},
-  {"title":"→ #lang sector (no ints)","src":"#lang sector"},
-  {"title":"→ back to #lang lisp","src":"#lang lisp"}
+	{ "lang": "lisp", "title": "2 + 2", "src": "(+ 2 2)" },
+	{ "lang": "lisp", "title": "nested arithmetic", "src": "(+ 1 (+ 2 3))" },
+	{ "lang": "lisp", "title": "3 * 4", "src": "(* 3 4)" },
+	{ "lang": "lisp", "title": "2 <= 5", "src": "(<= 2 5)" },
+	{ "lang": "lisp", "title": "car of a list", "src": "(car (quote (a b c)))" },
+	{ "lang": "lisp", "title": "cons onto a list", "src": "(cons (quote a) (quote (b c)))" },
+	{ "lang": "lisp", "title": "eq? atoms", "src": "(eq? (quote a) (quote a))" },
+	{ "lang": "lisp", "title": "#show the proof", "src": "#show (+ 2 2)" },
+	{
+		"lang": "scheme",
+		"title": "define lat?",
+		"src": "(defun lat? (l) (cond ((null? l) t) ((atom? (car l)) (lat? (cdr l))) (t nil)))"
+	},
+	{ "lang": "scheme", "title": "lat? of a flat list", "src": "(lat? (quote (a b c)))" },
+	{ "lang": "scheme", "title": "2 = 2", "src": "(= 2 2)" },
+	{
+		"lang": "scheme",
+		"title": "define len (recursion + integers)",
+		"src": "(defun len (l) (cond ((null? l) 0) (t (+ 1 (len (cdr l))))))"
+	},
+	{ "lang": "scheme", "title": "len of a list", "src": "(len (quote (a b c)))" },
+	{
+		"lang": "scheme",
+		"title": "define eval (metacircular)",
+		"src": "(define eval (lambda (e a) (cond ((eq? (car e) (quote quote)) (car (cdr e))) ((eq? (car e) (quote car)) (car (eval (car (cdr e)) a))) ((eq? (car e) (quote cdr)) (cdr (eval (car (cdr e)) a))) ((eq? (car e) (quote cons)) (cons (eval (car (cdr e)) a) (eval (car (cdr (cdr e))) a))) (t (quote unknown)))))"
+	},
+	{
+		"lang": "scheme",
+		"title": "run eval",
+		"src": "(eval (quote (car (cons (quote 1) (quote (2))))) (quote ()))"
+	},
+	{ "lang": "sector", "title": "car of a list", "src": "(car (quote (a b c)))" },
+	{ "lang": "sector", "title": "atom? an atom", "src": "(atom? (quote a))" },
+	{ "lang": "sector", "title": "eq? atoms", "src": "(eq? (quote a) (quote a))" },
+	{
+		"lang": "acl2",
+		"title": "define app (admissibility-checked)",
+		"src": "(defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))"
+	},
+	{ "lang": "acl2", "title": "run app", "src": "(app (quote (a b)) (quote (c)))" },
+	{
+		"lang": "acl2",
+		"title": "prove a ground defthm",
+		"src": "(defthm app-ab-c (equal (app (quote (a b)) (quote (c))) (quote (a b c))))"
+	},
+	{
+		"lang": "acl2",
+		"title": "defthm via the reified certificate",
+		"src": "(defthm four (equal (+ 2 2) 4))"
+	},
+	{ "lang": "acl2", "title": "#show the transported theorem", "src": "#show four" }
 ]

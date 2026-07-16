@@ -1,3 +1,4 @@
+pub mod abstract_sexpr;
 mod builder;
 pub mod dialect;
 mod parser;
@@ -5,6 +6,9 @@ mod pretty;
 mod types;
 mod visitor;
 
+pub use abstract_sexpr::{
+    AbstractSExpr, NumeralPolicy, PayloadLit, PayloadOwned, SurfaceError, SurfaceSExpr,
+};
 pub use builder::{DefaultBuilder, SExpBuilder, TreeBuilder};
 pub use dialect::{CovalenceDialect, Dialect, EgglogDialect, SmtLibDialect, WatDialect};
 pub use parser::parse_with;

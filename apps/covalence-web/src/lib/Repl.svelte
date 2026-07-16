@@ -2,7 +2,11 @@
 	// A reusable terminal-style REPL: a scrolling transcript + a prompt line.
 	// `evalCell` is async (a `fetch` to the running server's native kernel —
 	// e.g. POST /api/lisp). `showCell`, if given, lazily fetches HOL info for a
-	// cell on hover (the `⊢ lhs = rhs` theorem, via the `#show` directive).
+	// cell on hover: the FULL `hyps ⊢ lhs = rhs` sequent (turnstile included),
+	// via the `#show` directive. The string is rendered verbatim — the server
+	// prints the genuine kernel theorem, hypotheses and all; the client never
+	// adds a turnstile of its own (that would misstate a hypothesis-carrying
+	// theorem as `⊢ concl`).
 	//
 	// `help` is an optional snippet rendered *inline in the transcript* when the
 	// user types `#help` — a first, minimal "widget result" (rich HTML in the
@@ -10,7 +14,10 @@
 	import type { Snippet } from 'svelte';
 
 	type EvalResult = { ok: boolean; result: string; error: string };
-	type Example = { title: string; src: string };
+	// `active` marks a button as the currently-selected one (e.g. the current
+	// dialect's `#lang` tab on /lisp) — purely presentational, so the component
+	// stays agnostic about what "active" means.
+	type Example = { title: string; src: string; active?: boolean };
 
 	let {
 		evalCell,
@@ -39,6 +46,10 @@
 		widget: boolean;
 		hol: string | null;
 		holTried: boolean;
+		// `#show` failed (or returned nothing) for this cell — e.g. a
+		// defun/defthm ack, which is not a reducible expression. No popover:
+		// a turnstile with no theorem behind it would be a false claim.
+		holFailed: boolean;
 	};
 
 	let entries = $state<Entry[]>([]);
@@ -62,6 +73,7 @@
 			widget: false,
 			hol: null,
 			holTried: false,
+			holFailed: false,
 			...over
 		};
 	}
@@ -114,7 +126,25 @@
 		onReset?.();
 	}
 
-	// Hover a cell → lazily fetch its HOL theorem (once).
+	// Split an error message into plain / `#lang …` segments so a dialect hint
+	// in a server error ("unknown #lang `x` (try: …)", "… try #lang scheme")
+	// stands out visually. Light formatting only — the text itself is untouched.
+	function errSegments(msg: string): { text: string; hint: boolean }[] {
+		const out: { text: string; hint: boolean }[] = [];
+		const re = /#lang(?:\s+[A-Za-z][\w-]*)?/g;
+		let last = 0;
+		for (const m of msg.matchAll(re)) {
+			const at = m.index ?? 0;
+			if (at > last) out.push({ text: msg.slice(last, at), hint: false });
+			out.push({ text: m[0], hint: true });
+			last = at + m[0].length;
+		}
+		if (last < msg.length) out.push({ text: msg.slice(last), hint: false });
+		return out;
+	}
+
+	// Hover a cell → lazily fetch its HOL sequent (once). On failure the cell
+	// is marked `holFailed`, which removes its popover for good.
 	async function loadHol(entry: Entry) {
 		if (!showCell || entry.holTried || entry.directive || !entry.ok || entry.pending) return;
 		entry.holTried = true;
@@ -124,13 +154,58 @@
 		} catch {
 			entry.hol = null;
 		}
+		entry.holFailed = entry.hol === null;
+		// If the fetch failed while this cell's popover is up, drop it now — a
+		// lingering "fetching proof…" with no theorem behind it is a false claim.
+		if (entry.holFailed && hover?.entry === entry) hover = null;
 	}
+
+	// The hover popover is a single FIXED-position floating layer rendered
+	// outside the transcript, so the scrolling container can never clip it (the
+	// old in-cell absolute popover was cut off above the first cells and popped
+	// a scrollbar). It prefers to sit ABOVE the hovered cell and flips below
+	// when there isn't room; a short hide delay lets the cursor travel into the
+	// popover to scroll a long sequent.
+	let hover = $state<{ entry: Entry; rect: DOMRect } | null>(null);
+	let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function showHover(entry: Entry, el: HTMLElement) {
+		clearTimeout(hideTimer);
+		loadHol(entry);
+		hover = { entry, rect: el.getBoundingClientRect() };
+	}
+	function scheduleHide() {
+		clearTimeout(hideTimer);
+		hideTimer = setTimeout(() => (hover = null), 120);
+	}
+	function cancelHide() {
+		clearTimeout(hideTimer);
+	}
+
+	// Geometry for the floating popover. Above the cell when at least ~7rem of
+	// viewport is available there, else below; height capped to the free space.
+	const holStyle = $derived.by(() => {
+		if (!hover) return '';
+		const r = hover.rect;
+		const gap = 4;
+		const left = r.left + 16;
+		const width = Math.max(r.width - 24, 200);
+		const spaceAbove = r.top - gap - 8;
+		const above = spaceAbove > 112;
+		const maxH = Math.min(224, above ? spaceAbove : window.innerHeight - r.bottom - gap - 8);
+		const anchor = above
+			? `bottom: ${window.innerHeight - r.top + gap}px;`
+			: `top: ${r.bottom + gap}px;`;
+		return `left: ${left}px; width: ${width}px; max-height: ${Math.max(maxH, 60)}px; ${anchor}`;
+	});
 </script>
 
 {#if examples.length}
 	<div class="examples">
 		{#each examples as c}
-			<button onclick={() => runExample(c.src)} title={c.src}>{c.title}</button>
+			<button class:active={c.active} onclick={() => runExample(c.src)} title={c.src}>
+				{c.title}
+			</button>
 		{/each}
 		{#if onReset || entries.length}
 			<button class="reset" onclick={reset} title="clear the transcript and reset the session">⟲ reset</button>
@@ -139,7 +214,8 @@
 {/if}
 
 <div class="term">
-	<div class="transcript" bind:this={scroller}>
+	<!-- Scrolling makes the popover's anchor rect stale — just dismiss it. -->
+	<div class="transcript" bind:this={scroller} onscroll={() => (hover = null)}>
 		{#if entries.length === 0}
 			<div class="hint">
 				Type a form below and press Enter — or pick an example.{#if help}
@@ -147,8 +223,15 @@
 			</div>
 		{/if}
 		{#each entries as entry}
-			{@const hasHol = !!showCell && !entry.directive && entry.ok && !entry.pending && !entry.widget}
-			<div class="cell" class:has-hol={hasHol} onmouseenter={() => loadHol(entry)} role="group">
+			{@const hasHol =
+				!!showCell && !entry.directive && entry.ok && !entry.pending && !entry.widget && !entry.holFailed}
+			<div
+				class="cell"
+				class:has-hol={hasHol}
+				onmouseenter={(e) => hasHol && showHover(entry, e.currentTarget as HTMLElement)}
+				onmouseleave={scheduleHide}
+				role="group"
+			>
 				<div class="in"><span class="p">{prompt}</span> {entry.input}</div>
 				{#if entry.widget && help}
 					<!-- A "widget result": rich HTML rendered inline in the transcript
@@ -159,19 +242,42 @@
 				{:else if entry.ok}
 					<div class="out">{entry.output}</div>
 				{:else}
-					<div class="out err">{entry.output}</div>
-				{/if}
-				{#if hasHol}
-					<!-- Transient popover: hidden by default, shown only while the cell
-					     is hovered (CSS `.cell:hover .hol`), gone on mouse-leave. -->
-					<div class="hol" role="tooltip">
-						<span class="hol-turnstile">⊢</span>
-						<span class="hol-body">{entry.hol ?? 'fetching proof…'}</span>
+					<!-- Errors get the same care as values: a gutter mark, the message
+					     verbatim (only *marked up*, never rewritten), and any `#lang …`
+					     dialect hint highlighted as a chip. -->
+					<div class="out err">
+						<span class="err-mark" aria-hidden="true">✗</span
+						>{#each errSegments(entry.output) as seg}{#if seg.hint}<span class="lang-hint"
+									>{seg.text}</span
+								>{:else}{seg.text}{/if}{/each}
 					</div>
 				{/if}
 			</div>
 		{/each}
 	</div>
+
+	{#if hover}
+		<!-- Transient floating popover (single instance, position: fixed — never
+		     clipped by the transcript's scroll box, never affects its scroll
+		     height). Shown while the cursor is on the cell or the popover
+		     itself; gone on leave or scroll. The sequent string (`hyps ⊢ concl`,
+		     from `#show`) is rendered VERBATIM — no client-side turnstile. While
+		     the fetch is in flight a plain "fetching proof…" shows, asserting
+		     nothing. -->
+		<div
+			class="hol"
+			role="tooltip"
+			style={holStyle}
+			onmouseenter={cancelHide}
+			onmouseleave={scheduleHide}
+		>
+			{#if hover.entry.hol}
+				<span class="hol-body">{hover.entry.hol}</span>
+			{:else}
+				<span class="hol-body hol-pending">fetching proof…</span>
+			{/if}
+		</div>
+	{/if}
 
 	<div class="prompt-line">
 		<span class="p">{prompt}</span>
@@ -206,6 +312,11 @@
 	}
 	.examples button:hover {
 		border-color: var(--accent);
+	}
+	.examples button.active {
+		border-color: var(--accent);
+		color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
 	}
 	.examples .reset {
 		margin-left: auto;
@@ -265,6 +376,22 @@
 	.out.err {
 		color: color-mix(in srgb, #e5484d 70%, var(--fg));
 	}
+	.err-mark {
+		color: #e5484d;
+		margin-right: 0.45rem;
+		user-select: none;
+	}
+	/* A `#lang …` mention inside an error — the "switch dialect" hint — pops as
+	   a small chip so the fix is obvious at a glance. */
+	.lang-hint {
+		display: inline-block;
+		padding: 0 4px;
+		border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
+		color: var(--accent);
+		white-space: nowrap;
+	}
 	.widget {
 		margin: 0.35rem 0 0.35rem 1.5rem;
 		padding: 0.6rem 0.8rem;
@@ -283,19 +410,14 @@
 		padding: 0 3px;
 		font-size: 0.9em;
 	}
-	/* Transient hover popover — hidden until the cell is hovered, then a floating
-	   window ABOVE the cell that vanishes as soon as the cursor leaves. Anchored
-	   to the cell's bottom edge so it overlays *existing* content upward and never
-	   grows the transcript's scroll height (which was popping a scrollbar). Its
-	   own `max-height` keeps a long theorem contained. */
+	/* Transient hover popover — a single fixed-position floating layer (left/
+	   width/max-height/anchor set inline from the hovered cell's rect, above
+	   the cell or flipped below near the viewport top). Fixed positioning means
+	   the transcript's overflow can never clip it and it never disturbs the
+	   scroll geometry; its own overflow scrolls long sequents. */
 	.hol {
-		display: none;
-		position: absolute;
-		bottom: calc(100% - 0.15rem);
-		left: 1.4rem;
-		right: 0.3rem;
+		position: fixed;
 		z-index: 30;
-		max-height: 14rem;
 		overflow-y: auto;
 		padding: 0.45rem 0.6rem;
 		font-size: 0.78rem;
@@ -307,14 +429,11 @@
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
+		font-family: var(--font-mono);
 	}
-	.cell:hover .hol {
-		display: block;
-	}
-	.hol-turnstile {
-		color: var(--accent);
-		font-weight: 700;
-		margin-right: 0.3rem;
+	.hol-pending {
+		color: var(--muted);
+		font-style: italic;
 	}
 	.prompt-line {
 		display: flex;

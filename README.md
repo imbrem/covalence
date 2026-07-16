@@ -5,10 +5,10 @@ Metatheory is the default mode; the kernel extends itself by proof
 rather than by trust.
 
 Recommended reading path:
-[`notes/vibes/VISION.md`](./notes/vibes/VISION.md) (10-minute overview) →
-[`notes/vibes/kernel-design.md`](./notes/vibes/kernel-design.md) (the kernel TCB) →
-[`notes/vibes/type-hierarchy.md`](./notes/vibes/type-hierarchy.md) (type catalogue) →
-[`notes/vibes/roadmap.md`](./notes/vibes/roadmap.md) (what's next) →
+[`notes/vibes/vision/VISION.md`](./notes/vibes/vision/VISION.md) (10-minute overview) →
+[`notes/vibes/kernel/kernel-design.md`](./notes/vibes/kernel/kernel-design.md) (the kernel TCB) →
+[`notes/vibes/kernel/type-hierarchy.md`](./notes/vibes/kernel/type-hierarchy.md) (type catalogue) →
+[`notes/vibes/vision/roadmap.md`](./notes/vibes/vision/roadmap.md) (what's next) →
 [`CLAUDE.md`](./CLAUDE.md) (build commands & crate map).
 
 ## Repository Layout

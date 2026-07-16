@@ -40,8 +40,11 @@ pub enum HolError {
     /// A kernel operation (term construction, a proof step) failed.
     #[error("kernel error: {0}")]
     Kernel(String),
-    /// The term is not a reducible redex this strategy handles.
-    #[error("stuck: no reduction for `{0}`")]
+    /// The term is not a reducible redex this strategy handles. The payload is
+    /// a **complete, self-contained message** (e.g. "no reduction for `…`",
+    /// "unbound variable `x`") — the `Display` impl adds only the `stuck:`
+    /// prefix, never a second wrapping layer.
+    #[error("stuck: {0}")]
     Stuck(String),
 }
 
@@ -50,6 +53,11 @@ fn theory_err(e: impl core::fmt::Display) -> HolError {
 }
 fn kernel_err(e: impl core::fmt::Display) -> HolError {
     HolError::Kernel(e.to_string())
+}
+/// A `Stuck` error for a non-redex `term` — the payload is the full message
+/// (the `Stuck` display adds only the `stuck:` prefix).
+fn stuck(term: &Term) -> HolError {
+    HolError::Stuck(format!("no reduction for `{term}`"))
 }
 
 /// The HOL Lisp instance — lowers S-expressions to carved `sexpr` kernel
@@ -133,25 +141,19 @@ impl SymbolicStrategy {
     /// returning `(take_cdr, h, t)`.
     fn as_projection(&self, term: &Term) -> Result<(bool, Term, Term), HolError> {
         let l = self.lisp()?;
-        let (op, arg) = term
-            .as_app()
-            .ok_or_else(|| HolError::Stuck(term.to_string()))?;
+        let (op, arg) = term.as_app().ok_or_else(|| stuck(term))?;
         let take_cdr = if op == l.car() {
             false
         } else if op == l.cdr() {
             true
         } else {
-            return Err(HolError::Stuck(term.to_string()));
+            return Err(stuck(term));
         };
         // arg must be `cons h t` = `scons h t` = App(App(cons, h), t).
-        let (inner, t) = arg
-            .as_app()
-            .ok_or_else(|| HolError::Stuck(term.to_string()))?;
-        let (cons_op, h) = inner
-            .as_app()
-            .ok_or_else(|| HolError::Stuck(term.to_string()))?;
+        let (inner, t) = arg.as_app().ok_or_else(|| stuck(term))?;
+        let (cons_op, h) = inner.as_app().ok_or_else(|| stuck(term))?;
         if cons_op != l.cons() {
-            return Err(HolError::Stuck(term.to_string()));
+            return Err(stuck(term));
         }
         Ok((take_cdr, h.clone(), t.clone()))
     }

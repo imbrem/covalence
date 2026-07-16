@@ -2,8 +2,6 @@
 
 Open work in the Peano-arithmetic deep embedding. See `CLAUDE.md` § Skeletons, the
 [crate index](../../SKELETONS.md), and the [root index](../../../../../../SKELETONS.md).
-Build plan:
-[`notes/vibes/peano-arithmetic-plan.md`](../../../../../../notes/vibes/peano-arithmetic-plan.md).
 
 ## Severe
 

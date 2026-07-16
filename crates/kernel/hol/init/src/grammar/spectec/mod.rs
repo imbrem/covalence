@@ -51,5 +51,5 @@
 pub mod cfg;
 pub mod grammar;
 
-pub use cfg::spec_grammar_env;
+pub use cfg::{spec_grammar_env, spec_grammar_env_recognition};
 pub use grammar::{BridgeError, SpecTecSym, compile_sym, sym_to_core};

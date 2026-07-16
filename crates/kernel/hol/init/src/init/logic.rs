@@ -455,10 +455,17 @@ pub fn resolve_on(left: Thm, right: Thm, pivot: &Term) -> Result<Thm> {
         )));
     };
 
+    // Deduplicate literals (order-preserving, first occurrence). `x ∨ x ⟺ x`,
+    // and `lit_branch`/`n_branch` re-inject by first-occurrence position, so a
+    // deduped resolvent is still well-formed. Without this, chained resolution
+    // accumulates repeated disjuncts and clause terms grow with chain length —
+    // making replay Θ(N²) in proof size.
+    let mut seen = std::collections::HashSet::new();
     let resolvent: Vec<Term> = pl
         .iter()
         .filter(|l| *l != pivot)
         .chain(nl.iter().filter(|m| *m != &not_pivot))
+        .filter(|t| seen.insert((*t).clone()))
         .cloned()
         .collect();
     let goal = build_disj(&resolvent)?;

@@ -1,0 +1,35 @@
+[package]
+name = "covalence-kernel-sat"
+version = "0.0.0"
+edition = "2024"
+
+# The generic, backend-parameterised SAT-proof *replay* layer: it re-derives a
+# DRAT/LRAT refutation through a propositional-clause backend, adding ZERO TCB.
+# The SAT *formats* (DIMACS / DRAT / LRAT parsing + verdict checkers) live in
+# `covalence-sat` (crates/lib/sat); this crate turns a verified proof into
+# backend theorems. It is the SAT substrate the SMT replay (`covalence-kernel-smt`)
+# builds its propositional core on.
+#
+# NOTE: under crates/kernel/ but NOT part of the TCB — it only drives the trusted
+# kernel API. See notes/vibes/logics/smt-import-architecture.md.
+
+[dependencies]
+covalence-sat = { path = "../../lib/sat" }
+thiserror = "2"
+
+# The native HOL clause backend (`hol` module) drives the kernel API to read a
+# clause as a boolean disjunction and resolve — no TCB, only trusted inference.
+covalence-core = { path = "../hol/core" }
+covalence-hol-eval = { path = "../hol/eval" }
+covalence-init = { path = "../hol/init" }
+
+[dev-dependencies]
+# The e2e test names the SAT format parsers/writers (`parse_lrat_text`,
+# `write_dimacs_to_string`) directly.
+covalence-sat = { path = "../../lib/sat" }
+
+[features]
+# The `cadical_e2e` live test shells out to a real `cadical` on $PATH to
+# generate the LRAT proof (skips gracefully if absent). Off by default so CI
+# stays solver-free; the embedded (checked-in LRAT) test always runs.
+cadical = []

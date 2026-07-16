@@ -5,8 +5,12 @@
 # covalence-wasm-js is also vitest-style — its jco-transpiled component
 # loader uses long `data:text/javascript;base64,…` URLs that exceed Bun's
 # module-resolver path length. Delegate to vitest via tests/wasm-js.test.ts.
+#
+# covalence-web is also vitest-style — its Svelte component tests need jsdom +
+# the Svelte compiler. Delegate to vitest via tests/web.test.ts.
 [test]
 pathIgnorePatterns = [
   "**/packages/covalence-ui/**",
   "**/packages/covalence-wasm-js/**",
+  "**/apps/covalence-web/**",
 ]

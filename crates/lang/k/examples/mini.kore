@@ -1,0 +1,14 @@
+// mini.kore — hand-written minimal KORE (kompiled style) for parser unit
+// tests. NOT produced by kompile.
+
+[concrete{}()]
+
+module MINI
+  sort SortFoo{} []
+  hooked-sort SortBar{} [hook{}("BAR.Bar")]
+  symbol foo{}(SortFoo{}) : SortFoo{} [functional{}()]
+  alias id{S}(S) : S where id{S}(X:S) := X:S []
+  axiom{R} \top{R}() []
+  axiom{R} \implies{R}(\bottom{R}(), \top{R}()) []
+  claim{} \rewrites{SortFoo{}}(foo{}(X:SortFoo{}), X:SortFoo{}) []
+endmodule []

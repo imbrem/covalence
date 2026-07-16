@@ -439,10 +439,12 @@ fn apply_interpretation<K: HolLightKernel>(
 /// Register the `select` (Hilbert choice) primitive constant in the kernel.
 ///
 /// In the OpenTheory standard, `select` has type `(A -> bool) -> A` and is
-/// a primitive constant (not defined by any package).  This must be called
-/// before processing any package that references `Data.Bool.select`.
+/// a primitive constant (not defined by any package).  The `std` corpus
+/// refers to it by the bare name `"select"`. Calling this is optional: a
+/// type-directed fallback in the native backend also recognises any
+/// *undefined* constant of shape `(A -> bool) -> A` as `select`.
 pub fn register_select<K: HolLightKernel>(kernel: &mut K, names: &mut NameTable) {
-    let select_id = names.intern_str("Data.Bool.select");
+    let select_id = names.intern_str("select");
     // select : (A -> bool) -> A
     let a = kernel.mk_tyvar(names.intern_str("A"));
     let bool_ty = kernel.bool_type();

@@ -81,6 +81,8 @@ pub trait Hol {
     fn imp(&self, a: Self::Term, b: Self::Term) -> Result<Self::Term>;
     /// `a ∧ b`.
     fn and(&self, a: Self::Term, b: Self::Term) -> Result<Self::Term>;
+    /// `¬a` (via the negation connective, not `a ⟹ F`).
+    fn not(&self, a: Self::Term) -> Result<Self::Term>;
     /// `∀(name:ty). body`, closing free `name`.
     fn forall(&self, name: &str, ty: Self::Type, body: Self::Term) -> Result<Self::Term>;
     /// `∃(name:ty). body`, closing free `name`.
@@ -119,6 +121,8 @@ pub trait Hol {
     fn eq_mp(&self, eq: Self::Thm, p: Self::Thm) -> Result<Self::Thm>;
     /// `BETA ((λx.t) u)`: `⊢ (λx.t) u = t[u/x]` (single top redex).
     fn beta_conv(&self, redex: Self::Term) -> Result<Self::Thm>;
+    /// `ETA (λx. f x)`: `⊢ (λx. f x) = f` (`x` not free in `f`).
+    fn eta_conv(&self, abs: Self::Term) -> Result<Self::Thm>;
     /// `⊢ f = g` + `⊢ x = y` → `⊢ f x = g y` (MK_COMB).
     fn cong_app(&self, f: Self::Thm, x: Self::Thm) -> Result<Self::Thm>;
     /// Instantiate the free variable `name` by `t` in a theorem.
@@ -204,6 +208,9 @@ impl Hol for NativeHol {
     fn and(&self, a: Term, b: Term) -> Result<Term> {
         a.and(b)
     }
+    fn not(&self, a: Term) -> Result<Term> {
+        a.not()
+    }
     fn forall(&self, name: &str, ty: Type, body: Term) -> Result<Term> {
         body.forall(name, ty)
     }
@@ -253,6 +260,9 @@ impl Hol for NativeHol {
     }
     fn eq_mp(&self, eq: Thm, p: Thm) -> Result<Thm> {
         eq.eq_mp(p)
+    }
+    fn eta_conv(&self, abs: Term) -> Result<Thm> {
+        Thm::eta_conv(abs)
     }
     fn beta_conv(&self, redex: Term) -> Result<Thm> {
         Thm::beta_conv(redex)

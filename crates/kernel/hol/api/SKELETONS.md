@@ -16,10 +16,19 @@
   (`notes/vibes/tcb-holomega-roadmap.md`). (2) No TERM layer: `HolOmega` builds
   and kind-checks types only; typing HOL-ω *terms* (a `return`/`bind` term of the
   polymorphic type) still needs the trusted bridge.
-- **Trait family incomplete.** `Hol` + `Nat` + (now) `HolOmega` exist. Planned
-  peers: `Inductives` (declare type + recursor + induction, fronting
-  `covalence_inductive::InductiveBackend`), and further theory traits
-  (`Int`/`List`/`Bool`) mirroring `Nat`.
+- **Trait family incomplete.** `Hol` + `Nat` + `Int` + `HolOmega` exist. Planned
+  peers: `LinArith` (the Farkas proof primitives over `Int` — scale-nonneg,
+  add-inequalities, integer-strengthen, closed-literal refute — consumed by
+  `covalence-kernel-smt`; blocked on missing `int` lemmas, see
+  `notes/vibes/logics/smt-import-architecture.md`), `Inductives` (declare type +
+  recursor + induction, fronting `covalence_inductive::InductiveBackend`), and
+  further theory traits (`List`/`Bool`) mirroring `Nat`/`Int`.
+- **`SuccHol`/`SuccDischarger` are nat-only.** `src/succ.rs` lands the
+  eval-TCB-free `succ`-tower `LinOrder` + [`Discharger`] (closes `5 ≤ 2` by pure
+  induction; e2e in `kernel/smt/tests/succ_e2e.rs`). It carries **no negative
+  literals**: `lit(n<0)` clamps to the `0` tower and `close` fails to refute a
+  comparison it cannot express (never mints an unsound `⊢ ⊥`). A signed twin
+  (a `succ`/`pred`-tower or object-level `int` order) is unbuilt.
 - **`Hol` error type not associated.** Fixed to `covalence_core::Result`
   (inherited from the trait's origin in the inductive engine); a fully
   backend-agnostic surface makes `Error` an associated type. Deferred until a

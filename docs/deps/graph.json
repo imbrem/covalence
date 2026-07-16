@@ -24,7 +24,10 @@
     "covalence-inductive",
     "covalence-init",
     "covalence-json",
+    "covalence-k",
     "covalence-kernel",
+    "covalence-kernel-sat",
+    "covalence-kernel-smt",
     "covalence-kv",
     "covalence-lean",
     "covalence-lisp",
@@ -316,6 +319,10 @@
     },
     {
       "from": "covalence-init",
+      "to": "covalence-k"
+    },
+    {
+      "from": "covalence-init",
       "to": "covalence-metamath"
     },
     {
@@ -329,6 +336,18 @@
     {
       "from": "covalence-init",
       "to": "covalence-types"
+    },
+    {
+      "from": "covalence-k",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-k",
+      "to": "covalence-parse"
+    },
+    {
+      "from": "covalence-k",
+      "to": "covalence-sexp"
     },
     {
       "from": "covalence-kernel",
@@ -349,6 +368,30 @@
     {
       "from": "covalence-kernel",
       "to": "covalence-store"
+    },
+    {
+      "from": "covalence-kernel-sat",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-kernel-sat",
+      "to": "covalence-hol-eval"
+    },
+    {
+      "from": "covalence-kernel-sat",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence-kernel-sat",
+      "to": "covalence-sat"
+    },
+    {
+      "from": "covalence-kernel-smt",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-kernel-smt",
+      "to": "covalence-hol-api"
     },
     {
       "from": "covalence-lisp",
@@ -420,7 +463,19 @@
     },
     {
       "from": "covalence-opentheory",
+      "to": "covalence-core"
+    },
+    {
+      "from": "covalence-opentheory",
       "to": "covalence-hol"
+    },
+    {
+      "from": "covalence-opentheory",
+      "to": "covalence-hol-api"
+    },
+    {
+      "from": "covalence-opentheory",
+      "to": "covalence-hol-eval"
     },
     {
       "from": "covalence-parquet",

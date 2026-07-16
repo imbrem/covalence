@@ -120,6 +120,25 @@ fn concat(a: Term, b: Term) -> Result<Term> {
     concat_fn().apply(a)?.apply(b)
 }
 
+/// **Public accessor** — the free-term-algebra carrier `Φ = nat`. Exposed so the
+/// [`super::mm_algebra::FreeAlgebra`] backend can report `phi()` without
+/// duplicating the constant.
+pub fn phi_ty() -> Type {
+    phi()
+}
+
+/// **Public accessor** — `concat(a, b)`, the uninterpreted binary former.
+/// The [`super::mm_algebra::FreeAlgebra`] `app` delegates here.
+pub fn concat_node(a: Term, b: Term) -> Result<Term> {
+    concat(a, b)
+}
+
+/// **Public accessor** — the leaf resolver ([`leaf`]) for a database token.
+/// The [`super::mm_algebra::FreeAlgebra`] `sym` delegates here.
+pub fn leaf_of(db: &Database, tok: &str) -> Term {
+    leaf(db, tok)
+}
+
 /// The HOL free-variable name for a Metamath **metavariable** `tok`. Namespaced
 /// (`mm$v$<tok>`) so it can never collide with the impredicative engine's own
 /// reserved variable name `d` (the predicate `d : Φ→bool` in
@@ -1340,23 +1359,10 @@ fn derive_clause(
 mod tests {
     use super::*;
 
-    #[test]
-    #[ignore = "repro bj-1"]
-    fn repro_bj1() {
-        let path = std::env::var("COV_SET_MM").expect("COV_SET_MM");
-        let source = std::fs::read_to_string(&path).expect("read set.mm");
-        let db = crate::metamath::parse(&source).expect("set.mm parses");
-        let parser = Parser::new(&db);
-        let a = db.assertions().find(|a| a.label == "bj-1").expect("bj-1");
-        let thm = derive_theorem_with(&db, &parser, "bj-1").expect("replay bj-1");
-        let rs = rule_set(&db);
-        let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
-        if thm.concl() != &expected {
-            eprintln!("PROOF-BUILT:\n{:#?}", thm.concl());
-            eprintln!("ENCODE_EXPR:\n{:#?}", expected);
-        }
-        assert_eq!(thm.concl(), &expected, "bj-1 concl mismatch");
-    }
+    // (Retired: `repro_bj1` — a COV_SET_MM-gated bj-1 repro — was redundant with
+    // `replay_set_mm_bj1` below, which env-gates the same real-set.mm bj-1 replay.
+    // The vendored `replay_nesting_former_bj1_shape` covers the shape without the
+    // 48 MB set.mm.)
 
     /// **Regression for the `bj-1` mismatch** (a *nesting* syntactic former).
     ///

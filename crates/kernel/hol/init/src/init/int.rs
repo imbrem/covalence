@@ -1678,6 +1678,199 @@ cached_thm! {
 }
 
 // ============================================================================
+// Derived order lemmas (compositions of the base order theory above)
+//
+// These are the mixed-`<`/`≤` transitivity toolkit and a two-sided additive
+// monotonicity — everything a linear-arithmetic (Farkas) refutation needs to
+// chain and combine inequalities. Each is a *generic* HOL derivation from the
+// lemmas above (`lt_trans`, `lt_irrefl`, `le_def`, `lt_add_mono`, `add_comm`),
+// never touching the Grothendieck representation.
+// ============================================================================
+
+cached_thm! {
+    /// `⊢ ∀a b. a < b ⟹ a ≤ b` — weaken strict to non-strict via `le_def`.
+    pub fn lt_imp_le() -> Result<Thm> {
+        let (a, b) = (var("a"), var("b"));
+        let hab = lt(a.clone(), b.clone());
+        // {a<b} ⊢ (a<b) ∨ (a=b)
+        let disj = Thm::assume(hab.clone())?.or_intro_l(a.clone().equals(b.clone())?)?;
+        let led = le_def().all_elim(a.clone())?.all_elim(b.clone())?; // (a≤b) = (a<b ∨ a=b)
+        led.sym()?
+            .eq_mp(disj)? // {a<b} ⊢ a≤b
+            .imp_intro(&hab)?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a. a ≤ a` — reflexivity of `≤` (right disjunct of `le_def`).
+    pub fn le_refl() -> Result<Thm> {
+        let a = var("a");
+        let disj = Thm::refl(a.clone())?.or_intro_r(lt(a.clone(), a.clone()))?; // (a<a) ∨ (a=a)
+        let led = le_def().all_elim(a.clone())?.all_elim(a.clone())?;
+        led.sym()?.eq_mp(disj)?.all_intro("a", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. a ≤ b ⟹ b < c ⟹ a < c` — mixed transitivity.
+    pub fn lt_of_le_of_lt() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let hab = le(a.clone(), b.clone());
+        let hbc = lt(b.clone(), c.clone());
+        let led = le_def().all_elim(a.clone())?.all_elim(b.clone())?;
+        let disj = led.eq_mp(Thm::assume(hab.clone())?)?; // {a≤b} ⊢ (a<b ∨ a=b)
+
+        // a<b branch: transitivity with the assumed b<c.
+        let hlt = lt(a.clone(), b.clone());
+        let br_lt = lt_trans()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(Thm::assume(hlt.clone())?)?
+            .imp_elim(Thm::assume(hbc.clone())?)?
+            .imp_intro(&hlt)?; // {b<c} ⊢ a<b ⟹ a<c
+
+        // a=b branch: rewrite b to a in the assumed b<c.
+        let heq = a.clone().equals(b.clone())?;
+        let cong = Thm::refl(int_lt())?
+            .cong_app(Thm::assume(heq.clone())?.sym()?)? // int.lt b = int.lt a   (from b=a)
+            .cong_app(Thm::refl(c.clone())?)?; // int.lt b c = int.lt a c
+        let br_eq = cong
+            .eq_mp(Thm::assume(hbc.clone())?)? // {a=b, b<c} ⊢ a<c
+            .imp_intro(&heq)?; // {b<c} ⊢ a=b ⟹ a<c
+
+        disj
+            .or_elim(br_lt, br_eq)? // {a≤b, b<c} ⊢ a<c
+            .imp_intro(&hbc)?
+            .imp_intro(&hab)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. a < b ⟹ b ≤ c ⟹ a < c` — mixed transitivity.
+    pub fn lt_of_lt_of_le() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let hab = lt(a.clone(), b.clone());
+        let hbc = le(b.clone(), c.clone());
+        let led = le_def().all_elim(b.clone())?.all_elim(c.clone())?;
+        let disj = led.eq_mp(Thm::assume(hbc.clone())?)?; // {b≤c} ⊢ (b<c ∨ b=c)
+
+        // b<c branch: transitivity with the assumed a<b.
+        let hlt = lt(b.clone(), c.clone());
+        let br_lt = lt_trans()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(Thm::assume(hab.clone())?)?
+            .imp_elim(Thm::assume(hlt.clone())?)?
+            .imp_intro(&hlt)?; // {a<b} ⊢ b<c ⟹ a<c
+
+        // b=c branch: rewrite b to c in the assumed a<b.
+        let heq = b.clone().equals(c.clone())?;
+        let cong = Thm::refl(int_lt())?
+            .cong_app(Thm::refl(a.clone())?)? // int.lt a = int.lt a
+            .cong_app(Thm::assume(heq.clone())?)?; // int.lt a b = int.lt a c
+        let br_eq = cong
+            .eq_mp(Thm::assume(hab.clone())?)? // {a<b, b=c} ⊢ a<c
+            .imp_intro(&heq)?; // {a<b} ⊢ b=c ⟹ a<c
+
+        disj
+            .or_elim(br_lt, br_eq)? // {a<b, b≤c} ⊢ a<c
+            .imp_intro(&hbc)?
+            .imp_intro(&hab)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c. a ≤ b ⟹ b ≤ c ⟹ a ≤ c` — transitivity of `≤`.
+    pub fn le_trans() -> Result<Thm> {
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let hab = le(a.clone(), b.clone());
+        let hbc = le(b.clone(), c.clone());
+        let led = le_def().all_elim(a.clone())?.all_elim(b.clone())?;
+        let disj = led.eq_mp(Thm::assume(hab.clone())?)?; // {a≤b} ⊢ (a<b ∨ a=b)
+
+        // a<b branch: a<c by lt_of_lt_of_le, then weaken to a≤c.
+        let hlt = lt(a.clone(), b.clone());
+        let ac_lt = lt_of_lt_of_le()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(Thm::assume(hlt.clone())?)?
+            .imp_elim(Thm::assume(hbc.clone())?)?; // {a<b, b≤c} ⊢ a<c
+        let br_lt = lt_imp_le()
+            .all_elim(a.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(ac_lt)?
+            .imp_intro(&hlt)?; // {b≤c} ⊢ a<b ⟹ a≤c
+
+        // a=b branch: rewrite b to a in the assumed b≤c.
+        let heq = a.clone().equals(b.clone())?;
+        let cong = Thm::refl(int_le())?
+            .cong_app(Thm::assume(heq.clone())?.sym()?)? // int.le b = int.le a  (from b=a)
+            .cong_app(Thm::refl(c.clone())?)?; // int.le b c = int.le a c
+        let br_eq = cong
+            .eq_mp(Thm::assume(hbc.clone())?)? // {a=b, b≤c} ⊢ a≤c
+            .imp_intro(&heq)?; // {b≤c} ⊢ a=b ⟹ a≤c
+
+        disj
+            .or_elim(br_lt, br_eq)? // {a≤b, b≤c} ⊢ a≤c
+            .imp_intro(&hbc)?
+            .imp_intro(&hab)?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
+}
+
+cached_thm! {
+    /// `⊢ ∀a b c d. a < b ⟹ c < d ⟹ a + c < b + d` — add two strict
+    /// inequalities (`lt_add_mono` on each side + `add_comm` + `lt_trans`).
+    pub fn lt_add_lt() -> Result<Thm> {
+        let (a, b, c, d) = (var("a"), var("b"), var("c"), var("d"));
+        let (hab, hcd) = (lt(a.clone(), b.clone()), lt(c.clone(), d.clone()));
+
+        // a+c < b+c
+        let s1 = lt_add_mono()
+            .all_elim(a.clone())?
+            .all_elim(b.clone())?
+            .all_elim(c.clone())?
+            .imp_elim(Thm::assume(hab.clone())?)?;
+        // c+b < d+b, then rewrite c+b=b+c and d+b=b+d.
+        let s2raw = lt_add_mono()
+            .all_elim(c.clone())?
+            .all_elim(d.clone())?
+            .all_elim(b.clone())?
+            .imp_elim(Thm::assume(hcd.clone())?)?;
+        let cb = add_comm().all_elim(c.clone())?.all_elim(b.clone())?; // c+b = b+c
+        let db = add_comm().all_elim(d.clone())?.all_elim(b.clone())?; // d+b = b+d
+        let cong = Thm::refl(int_lt())?.cong_app(cb)?.cong_app(db)?; // int.lt(c+b)(d+b) = int.lt(b+c)(b+d)
+        let s2 = cong.eq_mp(s2raw)?; // b+c < b+d
+
+        lt_trans()
+            .all_elim(add(a.clone(), c.clone()))?
+            .all_elim(add(b.clone(), c.clone()))?
+            .all_elim(add(b.clone(), d.clone()))?
+            .imp_elim(s1)?
+            .imp_elim(s2)?
+            .imp_intro(&hcd)?
+            .imp_intro(&hab)?
+            .all_intro("d", int())?
+            .all_intro("c", int())?
+            .all_intro("b", int())?
+            .all_intro("a", int())
+    }
+}
+
+// ============================================================================
 // Ordered-ring compatibility
 // ============================================================================
 
@@ -3303,6 +3496,36 @@ mod tests {
             assert!(ax.hyps().is_empty(), "an int ordered-ring axiom is genuine");
             assert!(ax.concl().type_of().unwrap().is_bool());
         }
+    }
+
+    #[test]
+    fn derived_order_lemmas_are_genuine() {
+        // The mixed-`<`/`≤` transitivity toolkit + two-sided additive mono, each
+        // a real (hypothesis-free) derivation — the Farkas replay's chaining kit.
+        for ax in [
+            lt_imp_le(),
+            le_refl(),
+            lt_of_le_of_lt(),
+            lt_of_lt_of_le(),
+            le_trans(),
+            lt_add_lt(),
+        ] {
+            assert!(ax.hyps().is_empty(), "a derived order lemma is genuine");
+            assert!(ax.concl().type_of().unwrap().is_bool());
+        }
+    }
+
+    #[test]
+    fn lt_of_le_of_lt_instantiates() {
+        // `a ≤ b ⟹ b < c ⟹ a < c` specialises to a usable implication chain.
+        let (a, b, c) = (var("a"), var("b"), var("c"));
+        let inst = elim3(lt_of_le_of_lt(), &a, &b, &c).unwrap();
+        let concl = inst
+            .imp_elim(Thm::assume(le(a.clone(), b.clone())).unwrap())
+            .unwrap()
+            .imp_elim(Thm::assume(lt(b.clone(), c.clone())).unwrap())
+            .unwrap();
+        assert_eq!(concl.concl(), &lt(a, c));
     }
 
     #[test]

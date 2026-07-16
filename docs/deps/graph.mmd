@@ -63,15 +63,25 @@ graph LR
   init --> hol
   init --> hol-eval
   init --> inductive
+  init --> k
   init --> metamath
   init --> sexp
   init --> spectec
   init --> types
+  k --> grammar
+  k --> parse
+  k --> sexp
   kernel --> hash
   kernel --> init
   kernel --> object
   kernel --> sexp
   kernel --> store
+  kernel-sat --> core
+  kernel-sat --> hol-eval
+  kernel-sat --> init
+  kernel-sat --> sat
+  kernel-smt --> core
+  kernel-smt --> hol-api
   lisp --> core
   lisp --> hol-api
   lisp --> hol-eval
@@ -89,7 +99,10 @@ graph LR
   multiformat --> parse
   object --> hash
   object --> parse
+  opentheory --> core
   opentheory --> hol
+  opentheory --> hol-api
+  opentheory --> hol-eval
   parquet --> arrow
   pure --> pure-trusted
   pure-eval --> pure

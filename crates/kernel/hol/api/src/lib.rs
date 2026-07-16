@@ -34,8 +34,11 @@
 //!
 //! Design: `notes/vibes/backend-decoupling.md`.
 
+pub mod int;
 pub mod nat;
 pub mod omega;
+pub mod order;
+pub mod succ;
 
 // ---- The HOL trait surface + native backend (promoted from the inductive
 //      engine, where it was first grown) ----
@@ -54,7 +57,10 @@ pub use covalence_inductive::{
 pub use covalence_core::{Error, Result, Term, Type};
 pub use covalence_hol_eval::EvalThm as Thm;
 
+pub use int::Int;
 pub use nat::Nat;
+pub use order::{Discharger, EvalDischarger, LinOrder, Strict};
+pub use succ::{SuccDischarger, SuccHol};
 
 // ---- The reflected HOL-omega TYPE layer (type-operator variables + kinds) ----
 pub use omega::{HolOmega, InstError, NativeHolOmega, OmegaLang};

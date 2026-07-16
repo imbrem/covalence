@@ -30,9 +30,11 @@ Ranked, most blocking first. Each links to the registry where it's detailed.
    `bytes`/`string` length/index/cat onto the list ops. [`init`](crates/kernel/hol/init/src/init/SKELETONS.md)
 8. **Whole-WASM-binary grammar coverage** — the CFG stratum landed
    (`Derives_E` + family soundness + parsing tactic; real WASM 3.0 fragments
-   parse kernel-checked, `tests/cfg_grammar.rs`). Remaining: premise/parametric/
-   `ListN` productions skip (under-approximating), so `Bmodule`-scale parses and
-   the WASM 1.0/2.0 inclusion metatheorems are pending. [`hol/cfg`](crates/kernel/hol/init/src/grammar/cfg/SKELETONS.md), [`hol/spectec`](crates/kernel/hol/init/src/grammar/spectec/SKELETONS.md), [`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)
+   parse kernel-checked incl. LEB128 `Bu32`/`*idx` varints via recognition-mode
+   monomorphisation, `tests/cfg_grammar.rs`). Remaining: grammar-valued
+   parametric params (`Blist`/`Bsection_` `BX`) still skip, so whole-section /
+   `Bmodule` parses are pending; the WASM 1.0/2.0 inclusion metatheorems await
+   env transport + embedding the (validated, staged) 1.0/2.0 dumps. [`hol/cfg`](crates/kernel/hol/init/src/grammar/cfg/SKELETONS.md), [`hol/spectec`](crates/kernel/hol/init/src/grammar/spectec/SKELETONS.md), [`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)
 9. **`rat`/`real` ordered-field postulates pending proof** — `mul_inv`, `le_def`,
    Dedekind-cut suprema still `axiom`-postulated. [`init`](crates/kernel/hol/init/src/init/SKELETONS.md)
 10. **Alethe rule coverage + LIA renderer** — `goal_to_problem` is QF_UF + linear
@@ -50,18 +52,22 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-core`](crates/kernel/hol/core/SKELETONS.md)** — the `defs/` D3 residue (dies with the literal leaves), hash-consing default, `subst::close`, property-test coverage gaps.
 - **[`covalence-hol-eval`](crates/kernel/hol/eval/SKELETONS.md)** — the eval tier (`CoreEval` + the moved `defs/` catalogue); pure-HOL unit-test gaps (tier-generic init), declaration-only ops, the `core.cov` flip, single-step `prove_true`.
 - **[`covalence-init`](crates/kernel/hol/init/SKELETONS.md)** — split per module (project loader, theory catalogue, `.cov` script layer, models, regex/spectec grammars, metalogic, peano, ring). (The thin `covalence-hol` surface has no skeletons.)
-- **[`covalence-hol-api`](crates/kernel/hol/api/SKELETONS.md)** — the trait-backed consumer surface (`Hol`/`Nat`): consumer migration not done, trait family incomplete (no `Inductives`/`HolOmega`/`Int`/`List`), `Hol` error type not associated.
+- **[`covalence-hol-api`](crates/kernel/hol/api/SKELETONS.md)** — the trait-backed consumer surface (`Hol`/`Nat`/`Int`/`HolOmega`): consumer migration not done, trait family still incomplete (no `LinArith`/`Inductives`/`List`), `Hol` error type not associated.
 - **[`covalence-kernel`](crates/kernel/core/SKELETONS.md)** — empty `facts` observer module; removed legacy prover.
+- **[`covalence-kernel-sat`](crates/kernel/sat/SKELETONS.md)** — generic SAT-proof replay: `ClauseBackend` seam built; `replay_lrat` (RUP→resolution) stubbed, no backend impl.
+- **[`covalence-kernel-smt`](crates/kernel/smt/SKELETONS.md)** — generic SMT-proof replay: pure Farkas checker + `RulePolicy` built; `Int`-generic parser + kernel replay + Alethe dispatcher unbuilt (blocked on missing `int` lemmas).
 - **[`covalence-shell`](crates/kernel/shell/SKELETONS.md)** — re-export shell; userspace helpers pending the HOL-on-store stack.
 - **[`covalence-spectec`](crates/lib/wasm/spectec/SKELETONS.md)** — removed native `.watsup` frontend; single-version WASM grammar; regular-only byte-grammar bridge.
 - **[`covalence-wasm`](crates/lib/wasm/core/SKELETONS.md)** — removed `cov:pure` host binding; `wit/pure.wit` + `covalence-core-test-guest` orphaned.
 - **[`covalence-haskell`](crates/lang/haskell/SKELETONS.md)** — Haskell surface dialect: no HOL/kernel backend yet; small parser subset (no layout/patterns/types/do-notation).
+- **[`covalence-k`](crates/lang/k/SKELETONS.md)** — K frontend, two surfaces: KORE (`ast`/`parse`/`sexpr`/`fragment`; F0 rewrite→`Derivable_KStep` lives in `covalence-init::k`) — no KORE-JSON/KAST, claims/aliases unconsumed; and `.k`-source grammar (`kdef`; parses LAMBDA/IMP `syntax` → `Cfg`) — grammar only (rules skipped), no token/layout in the CFG lowering.
 - **[`covalence-lisp`](crates/lang/lisp/SKELETONS.md)** — `/lisp` demo: ch1 + `defun` recursion + metacircular ground fragment (kernel-Thm-backed; `defun`-as-hypothesis → `definitions ⊢ program = value`); full `metacircular.lisp` (truthy-data `cond`) deferred; `eq?` atoms-only.
 - **[`covalence-forsp`](crates/lang/forsp/SKELETONS.md)** — `/forsp` small-step reduction: `ForspSemantics` machine relation is an untrusted before/after-snapshot witness (no kernel `Thm` yet); web-export handler unbuilt.
 - **[`covalence-repl-core`](crates/lib/repl-core/SKELETONS.md)** — REPL trait stack: `ReductionStrategy` is equational-only (no relational/stateful shape); no `SExprRepl` events.
 - **[`covalence-alethe`](crates/proof/alethe/SKELETONS.md)** — Alethe rule coverage.
 - **[`covalence-egglog`](crates/proof/egglog/SKELETONS.md)** — `EgglogBridge` Stage 0 (only `fiat` implemented, no kernel-backed impl); egglog `external` bridge disabled (released egglog lacks the proof module).
 - **[`covalence-metamath`](crates/proof/metamath/SKELETONS.md)** — substitution engine + `.mm` reader: `set.mm`-scale streaming, canonical serializer, structured-tree encoding, symbol interning.
+- **[`covalence-opentheory`](crates/proof/opentheory/SKELETONS.md)** — article verification on the native HOL backend: `defineConstList` unimplemented; offline corpus incomplete (missing deps block `list`/`natural`/`base`); `.int` interpretations unapplied; `cov hol` CLI + `bun run opentheory` bench unwired.
 - **[`covalence-multiformat`](crates/lib/data/multiformat/SKELETONS.md)** — derivation-fact interchange format: unregistered private-use codecs, no signed envelopes, blake3-only multihash, simulated Coln reader.
 - **[`covalence-acset`](crates/lib/data/acset/SKELETONS.md)** — generic ACSet library: only Δ migration (no Σ/Π), pullback skips attributes, string-only attribute values, `&'static str` schema names.
 - **[`covalence-python`](crates/ffi/python/SKELETONS.md)** — HOL kernel bindings (`pure` module) removed pending rewrite.

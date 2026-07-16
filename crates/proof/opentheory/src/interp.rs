@@ -150,6 +150,35 @@ impl<'a, K: HolLightKernel> ArticleInterp<'a, K> {
     // Name resolution helpers
     // -------------------------------------------------------------------
 
+    /// `Γ ⊢ t = u` → `Γ ⊢ u = t`, built from the primitive rules (the
+    /// `HolLightKernel` trait exposes no `sym`). Reused by the `sym` command
+    /// and the v6 `defineTypeOp` theorem reshaping.
+    fn sym_thm(&mut self, th: K::Thm) -> Result<K::Thm, OtError> {
+        let concl = self.kernel.concl(th.clone());
+        let (lhs, _rhs) = self.kernel.dest_eq(concl).ok_or(HolError::NotAnEquation)?;
+
+        let lhs_ty = self.kernel.type_of(lhs.clone());
+        let bool_ty = self.kernel.bool_type();
+        let fun_lhs_bool = self.kernel.fun_type(lhs_ty.clone(), bool_ty);
+        let eq_full_ty = self.kernel.fun_type(lhs_ty, fun_lhs_bool);
+        let eq_const = self.kernel.mk_const(self.kernel.eq_id(), eq_full_ty);
+
+        let refl_eq = self.kernel.refl(eq_const)?;
+        let th1 = self.kernel.mk_comb_rule(refl_eq, th)?;
+        let refl_t = self.kernel.refl(lhs)?;
+        let th2 = self.kernel.mk_comb_rule(th1, refl_t.clone())?;
+        Ok(self.kernel.eq_mp(th2, refl_t)?)
+    }
+
+    /// `proveHyp`: given a provider `Γ ⊢ φ` and a target `Δ ⊢ ψ`, produce
+    /// `Γ ∪ (Δ \ {φ}) ⊢ ψ` — i.e. discharge the hypothesis `φ` of the target
+    /// using the provider. Shared by the `proveHyp` command and
+    /// `defineConstList`.
+    fn prove_hyp_thm(&mut self, provider: K::Thm, target: K::Thm) -> Result<K::Thm, OtError> {
+        let iff_thm = self.kernel.deduct_antisym(provider.clone(), target)?;
+        Ok(self.kernel.eq_mp(iff_thm, provider)?)
+    }
+
     fn intern_name(&mut self, name: &OtName) -> NameId {
         let qualified = name.qualified();
         let id = self.names.intern(qualified.clone());
@@ -241,8 +270,27 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
                 }
             }
         }
-        let thm = self.kernel.new_axiom(concl)?;
-        self.assumptions.push(thm.clone());
+        // Offer the axiom to the backend for a native proof. If it supplies
+        // one (whose conclusion matches), the axiom is discharged and NOT
+        // tracked as an assumption; otherwise fall back to a hypothesis-tracked
+        // `assume`.
+        let thm = match self.kernel.prove_axiom(concl.clone()) {
+            Some(proof) => {
+                let thm = proof?;
+                let proved = self.kernel.concl(thm.clone());
+                if !self.kernel.aconv(proved, concl) {
+                    return Err(OtError::ParseError(
+                        "axiom: native proof does not prove the axiom statement".into(),
+                    ));
+                }
+                thm
+            }
+            None => {
+                let thm = self.kernel.new_axiom(concl)?;
+                self.assumptions.push(thm.clone());
+                thm
+            }
+        };
         self.stack.push(OtObject::Thm(thm));
         Ok(())
     }
@@ -347,26 +395,62 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
         let abs_id = self.intern_name(&abs_name);
         let rep_id = self.intern_name(&rep_name);
 
-        let _ = tyvar_names;
+        // The article-declared type-parameter order (the backend remembers it
+        // for positional `opType` instantiation).
+        let mut tyvar_ids = Vec::with_capacity(tyvar_names.len());
+        for obj in &tyvar_names {
+            match obj {
+                OtObject::Name(n) => tyvar_ids.push(self.names.intern(n.qualified())),
+                _ => {
+                    return Err(OtError::TypeError {
+                        expected: "Name".into(),
+                        got: obj_type_name(obj),
+                    });
+                }
+            }
+        }
 
         // Variable names for the generated theorems (OpenTheory convention).
         let abs_var_name = self.names.intern_str("a");
         let rep_var_name = self.names.intern_str("r");
 
+        // The backend returns the v5-shape laws:
+        //   thm1 : ⊢ abs (rep a) = a
+        //   thm2 : ⊢ (φ r) = (rep (abs r) = r)
         let (thm1, thm2) = self.kernel.new_basic_type_definition(
             tyname_id,
             abs_id,
             rep_id,
+            &tyvar_ids,
             abs_var_name,
             rep_var_name,
             th,
         )?;
 
+        // Version ≥ 6 pushes the λ-abstracted forms:
+        //   absRepThm : ⊢ (λa. abs (rep a)) = (λa. a)
+        //   repAbsThm : ⊢ (λr. rep (abs r) = r) = (λr. φ r)
+        let (abs_rep_thm, rep_abs_thm) = if self.version >= 6 {
+            // Recover the free vars `a` and `r` from the law conclusions.
+            let c1 = self.kernel.concl(thm1.clone());
+            let (_l1, a_var) = self.kernel.dest_eq(c1).ok_or(HolError::NotAnEquation)?;
+            let c2 = self.kernel.concl(thm2.clone());
+            let (pr, _r2) = self.kernel.dest_eq(c2).ok_or(HolError::NotAnEquation)?;
+            let (_p, r_var) = self.kernel.dest_comb(pr).ok_or(HolError::NotACombination)?;
+
+            let abs_rep_thm = self.kernel.abs_rule(a_var, thm1)?;
+            let sym2 = self.sym_thm(thm2)?; // ⊢ (rep (abs r) = r) = (φ r)
+            let rep_abs_thm = self.kernel.abs_rule(r_var, sym2)?;
+            (abs_rep_thm, rep_abs_thm)
+        } else {
+            (thm1, thm2)
+        };
+
         self.stack.push(OtObject::TypeOp(tyname_id));
         self.stack.push(OtObject::Const(abs_id));
         self.stack.push(OtObject::Const(rep_id));
-        self.stack.push(OtObject::Thm(thm1));
-        self.stack.push(OtObject::Thm(thm2));
+        self.stack.push(OtObject::Thm(abs_rep_thm));
+        self.stack.push(OtObject::Thm(rep_abs_thm));
         Ok(())
     }
 
@@ -586,15 +670,23 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
             }
         }
 
+        // A hypothesis is acceptable if it matches a declared hypothesis, OR
+        // if it is discharged by a tracked axiom. Axioms are introduced as
+        // hypothesis-tracked `assume`s (`{ax} ⊢ ax`, adding no TCB), so a
+        // theorem that uses a (polymorphic) axiom legitimately carries a type
+        // instance of the axiom term as a hypothesis; the article's declared
+        // hyp list does not (in OpenTheory axioms are hyp-free). Tolerating
+        // axiom instances keeps the honest "verified relative to these
+        // assumptions" reading.
         let th_hyps = self.kernel.hyps(th.clone());
         for hyp in &th_hyps {
-            if !expected_hyps
+            let matches_declared = expected_hyps
                 .iter()
-                .any(|e| self.kernel.aconv(hyp.clone(), e.clone()))
-            {
-                return Err(OtError::ParseError(
-                    "thm: unexpected hypothesis in theorem".into(),
-                ));
+                .any(|e| self.kernel.aconv(hyp.clone(), e.clone()));
+            if !matches_declared && !self.kernel.discharges_as_axiom(hyp.clone()) {
+                return Err(OtError::ParseError(format!(
+                    "thm: unexpected hypothesis in theorem: {hyp:?}"
+                )));
             }
         }
         self.theorems.push(th);
@@ -653,15 +745,17 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
 
     // --- Version 6+ commands ---
 
-    // hdTl: List (h :: t) -> h, List t
+    // hdTl: List (h :: t) -> ... push h, then push (List t) on top.
+    // Per the standard the resulting stack is `List t :: h :: stack` — the
+    // tail ends up on top, the head below it.
     fn cmd_hd_tl(&mut self) -> Result<(), OtError> {
         let mut list = self.pop_list()?;
         if list.is_empty() {
             return Err(OtError::EmptyList);
         }
         let head = list.remove(0);
-        self.stack.push(OtObject::List(list));
         self.stack.push(head);
+        self.stack.push(OtObject::List(list));
         Ok(())
     }
 
@@ -675,29 +769,112 @@ impl<K: HolLightKernel> ArticleMachine for ArticleInterp<'_, K> {
     fn cmd_prove_hyp(&mut self) -> Result<(), OtError> {
         let th2 = self.pop_thm()?;
         let th1 = self.pop_thm()?;
-        let iff_thm = self.kernel.deduct_antisym(th1.clone(), th2)?;
-        let result = self.kernel.eq_mp(iff_thm, th1)?;
+        let result = self.prove_hyp_thm(th1, th2)?;
         self.stack.push(OtObject::Thm(result));
+        Ok(())
+    }
+
+    // defineConstList:
+    //   List [[Name nᵢ, Var vᵢ]], Thm ({vᵢ = tᵢ} ⊦ φ)
+    //     -> List [Const cᵢ], Thm (⊦ φ[cᵢ/vᵢ])
+    // Defines each constant cᵢ = tᵢ (tᵢ recovered from the matching hypothesis),
+    // substitutes cᵢ for vᵢ throughout, and discharges the vᵢ = tᵢ hypotheses.
+    fn cmd_define_const_list(&mut self) -> Result<(), OtError> {
+        // Stack (top first): Thm ({vᵢ = tᵢ} ⊦ φ), then List [[Name, Var]].
+        let th = self.pop_thm()?;
+        let pairs_list = self.pop_list()?;
+
+        // Parse the [Name, Var] pairs into (name_id, var_term).
+        let mut names_vars: Vec<(NameId, K::Term)> = Vec::new();
+        for obj in pairs_list {
+            let pair = match obj {
+                OtObject::List(l) if l.len() == 2 => l,
+                other => {
+                    return Err(OtError::TypeError {
+                        expected: "List [Name, Var]".into(),
+                        got: obj_type_name(&other),
+                    });
+                }
+            };
+            let name = match &pair[0] {
+                OtObject::Name(n) => n.clone(),
+                other => {
+                    return Err(OtError::TypeError {
+                        expected: "Name".into(),
+                        got: obj_type_name(other),
+                    });
+                }
+            };
+            let var_tm = match &pair[1] {
+                OtObject::Var(n, ty) => self.kernel.mk_var(*n, ty.clone()),
+                other => {
+                    return Err(OtError::TypeError {
+                        expected: "Var".into(),
+                        got: obj_type_name(other),
+                    });
+                }
+            };
+            let name_id = self.intern_name(&name);
+            names_vars.push((name_id, var_tm));
+        }
+
+        // Phase 1: for each variable vᵢ, find its defining hypothesis vᵢ = tᵢ
+        // and introduce the constant cᵢ = tᵢ.
+        let hyps = self.kernel.hyps(th.clone());
+        let mut const_objs: Vec<OtObject<K>> = Vec::new();
+        let mut term_pairs: Vec<(K::Term, K::Term)> = Vec::new(); // (cᵢ, vᵢ)
+        let mut def_thms: Vec<K::Thm> = Vec::new();
+        for (name_id, var_tm) in &names_vars {
+            let ti = hyps
+                .iter()
+                .find_map(|h| {
+                    self.kernel.dest_eq(h.clone()).and_then(|(lhs, rhs)| {
+                        self.kernel.term_eq(lhs, var_tm.clone()).then_some(rhs)
+                    })
+                })
+                .ok_or_else(|| {
+                    OtError::ParseError(
+                        "defineConstList: no defining hypothesis for a variable".into(),
+                    )
+                })?;
+
+            // Define the constant under its declared name nᵢ (NOT the
+            // hypothesis variable vᵢ): the equation's LHS is a variable named
+            // nᵢ, so the fresh `Def` is registered under nᵢ and `constTerm` can
+            // later look it up.
+            let ti_ty = self.kernel.type_of(ti.clone());
+            let const_var = self.kernel.mk_var(*name_id, ti_ty);
+            let eq = self.kernel.mk_eq(const_var, ti);
+            let def_thm = self.kernel.new_basic_definition(eq)?; // ⊦ cᵢ = tᵢ
+            let def_concl = self.kernel.concl(def_thm.clone());
+            let (const_tm, _t) = self
+                .kernel
+                .dest_eq(def_concl)
+                .ok_or(HolError::NotAnEquation)?;
+            const_objs.push(OtObject::Const(*name_id));
+            // Replace the hypothesis variable vᵢ by the new constant cᵢ.
+            term_pairs.push((const_tm, var_tm.clone()));
+            def_thms.push(def_thm);
+        }
+
+        // Phase 2: simultaneously replace each vᵢ by cᵢ, turning the hypotheses
+        // vᵢ = tᵢ into cᵢ = tᵢ (the constants are defined simultaneously).
+        let mut cur = self.kernel.inst_rule(&term_pairs, th)?;
+
+        // Phase 3: discharge each cᵢ = tᵢ hypothesis with its definition.
+        for def_thm in def_thms {
+            cur = self.prove_hyp_thm(def_thm, cur)?;
+        }
+
+        self.stack.push(OtObject::List(const_objs));
+        self.stack.push(OtObject::Thm(cur));
         Ok(())
     }
 
     // sym: Thm (Γ ⊦ t = u) -> Thm (Γ ⊦ u = t)
     fn cmd_sym(&mut self) -> Result<(), OtError> {
         let th = self.pop_thm()?;
-        let concl = self.kernel.concl(th.clone());
-        let (lhs, _rhs) = self.kernel.dest_eq(concl).ok_or(HolError::NotAnEquation)?;
-
-        let lhs_ty = self.kernel.type_of(lhs.clone());
-        let bool_ty = self.kernel.bool_type();
-        let fun_lhs_bool = self.kernel.fun_type(lhs_ty.clone(), bool_ty);
-        let eq_full_ty = self.kernel.fun_type(lhs_ty, fun_lhs_bool);
-        let eq_const = self.kernel.mk_const(self.kernel.eq_id(), eq_full_ty);
-
-        let refl_eq = self.kernel.refl(eq_const)?;
-        let th1 = self.kernel.mk_comb_rule(refl_eq, th)?;
-        let refl_t = self.kernel.refl(lhs)?;
-        let th2 = self.kernel.mk_comb_rule(th1, refl_t.clone())?;
-        let result = self.kernel.eq_mp(th2, refl_t)?;
+        let result = self.sym_thm(th)?;
         self.stack.push(OtObject::Thm(result));
         Ok(())
     }

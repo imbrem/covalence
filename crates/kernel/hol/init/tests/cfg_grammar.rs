@@ -9,7 +9,8 @@
 
 use covalence_init::Thm;
 use covalence_init::grammar::cfg::{soundness, tactic::prove_derives};
-use covalence_init::grammar::spectec::spec_grammar_env;
+use covalence_init::grammar::regex::tactic::prove_matches;
+use covalence_init::grammar::spectec::{spec_grammar_env, spec_grammar_env_recognition};
 
 /// A proved theorem with no hypotheses (oracle-free by construction).
 #[track_caller]
@@ -132,4 +133,98 @@ fn differential_reftype_vs_naive_parse() {
             assert_clean(&prove_derives(&env, breftype, w).unwrap().unwrap());
         }
     }
+}
+
+// ----------------------------------------------------------------------------
+// T4 — LEB128 (recognition mode): kernel-checked parses of real WASM varints
+// via the monomorphised `Bu32 = BuN(32)` grammar, lowered to a byte-count-
+// bounded LEB128 regex terminal. Recognition mode over-approximates the value
+// bound (`L(SpecTec) ⊆ L(Cfg)`); a `Derives_E` here witnesses the byte SHAPE.
+// ----------------------------------------------------------------------------
+
+#[test]
+fn t4_leb128_bu32_recognition() {
+    let (env, report) = spec_grammar_env_recognition(&["Bu32"]).unwrap();
+    let bu32 = env.nt("Bu32").expect("Bu32 present");
+
+    // Real unsigned LEB128 varints parse, hypothesis-free.
+    for w in [
+        &[0x00u8][..],                       // 0
+        &[0x80, 0x01][..],                   // 128
+        &[0xE5, 0x8E, 0x26][..],             // 624485
+        &[0xFF, 0xFF, 0xFF, 0xFF, 0x0F][..], // 0xFFFFFFFF, the 5-byte max for 32 bits
+    ] {
+        let thm = prove_derives(&env, bu32, w)
+            .unwrap()
+            .unwrap_or_else(|| panic!("{w:x?} should parse as Bu32"));
+        assert_clean(&thm);
+    }
+
+    // An incomplete varint (continuation bit set, no terminator) is rejected.
+    assert!(prove_derives(&env, bu32, &[0x80]).unwrap().is_none());
+    // An over-long encoding (6 bytes) exceeds the 32-bit byte-count bound.
+    assert!(
+        prove_derives(&env, bu32, &[0x80, 0x80, 0x80, 0x80, 0x80, 0x00])
+            .unwrap()
+            .is_none()
+    );
+
+    // Recognition mode is honestly reported.
+    assert!(report.mono_instances >= 1, "BuN@32 was monomorphised");
+}
+
+// ----------------------------------------------------------------------------
+// T4 differential — the kernel `Derives_E ⌜Bu32⌝` recognition agrees, byte for
+// byte, with the standalone `leb128_regex(32)` regex oracle proved via the
+// regex tactic (`prove_matches`). Two independent kernel paths must coincide.
+// ----------------------------------------------------------------------------
+
+#[test]
+fn t4_bu32_agrees_with_leb128_regex_oracle() {
+    let (env, _report) = spec_grammar_env_recognition(&["Bu32"]).unwrap();
+    let bu32 = env.nt("Bu32").unwrap();
+    // The exact regex Bu32's BuN@32 instance lowers to.
+    let oracle = covalence_spectec::cfg::leb128_regex(32);
+
+    // Enumerate byte strings over a set hitting both the continuation (>=0x80)
+    // and terminator (<0x80) ranges, lengths 0..=3.
+    let alphabet: &[u8] = &[0x00, 0x01, 0x7F, 0x80, 0x81, 0xFF];
+    let mut words: Vec<Vec<u8>> = vec![vec![]];
+    for &a in alphabet {
+        words.push(vec![a]);
+        for &b in alphabet {
+            words.push(vec![a, b]);
+            for &c in alphabet {
+                words.push(vec![a, b, c]);
+            }
+        }
+    }
+
+    for w in &words {
+        let derives = prove_derives(&env, bu32, w).unwrap().is_some();
+        let matches = prove_matches(&oracle, w).unwrap().is_some();
+        assert_eq!(
+            derives, matches,
+            "Bu32 Derives vs leb128_regex(32) Matches disagree on {w:x?}"
+        );
+    }
+}
+
+// ----------------------------------------------------------------------------
+// T4b — a WASM type index (`Btypeidx = Bu32`) parses a varint through the same
+// LEB128 instance, showing the whole `*idx` family unlocked.
+// ----------------------------------------------------------------------------
+
+#[test]
+fn t4b_typeidx_is_leb128() {
+    let (env, _report) = spec_grammar_env_recognition(&["Btypeidx"]).unwrap();
+    let typeidx = env.nt("Btypeidx").expect("Btypeidx present");
+    // Type index 3 (single byte) and 128 (two-byte varint).
+    assert_clean(&prove_derives(&env, typeidx, &[0x03]).unwrap().unwrap());
+    assert_clean(
+        &prove_derives(&env, typeidx, &[0x80, 0x01])
+            .unwrap()
+            .unwrap(),
+    );
+    assert!(prove_derives(&env, typeidx, &[0x80]).unwrap().is_none());
 }

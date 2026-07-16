@@ -1145,6 +1145,7 @@ dependencies = [
  "covalence-hol",
  "covalence-hol-eval",
  "covalence-inductive",
+ "covalence-k",
  "covalence-metamath",
  "covalence-sexp",
  "covalence-spectec",
@@ -1167,6 +1168,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-k"
+version = "0.0.0"
+dependencies = [
+ "covalence-grammar",
+ "covalence-parse",
+ "covalence-sexp",
+ "smol_str",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-kernel"
 version = "0.0.0"
 dependencies = [
@@ -1176,6 +1188,27 @@ dependencies = [
  "covalence-sexp",
  "covalence-store",
  "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-kernel-sat"
+version = "0.0.0"
+dependencies = [
+ "covalence-core",
+ "covalence-hol-eval",
+ "covalence-init",
+ "covalence-sat",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-kernel-smt"
+version = "0.0.0"
+dependencies = [
+ "covalence-core",
+ "covalence-hol-api",
+ "covalence-hol-eval",
  "thiserror 2.0.18",
 ]
 
@@ -1281,7 +1314,10 @@ dependencies = [
 name = "covalence-opentheory"
 version = "0.0.0"
 dependencies = [
+ "covalence-core",
  "covalence-hol",
+ "covalence-hol-api",
+ "covalence-hol-eval",
  "smol_str",
  "thiserror 2.0.18",
  "ureq",

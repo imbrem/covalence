@@ -38,10 +38,13 @@ Read `kernel-design.md` before touching the trusted base.
 | [`logics/logic-frontends.md`](./logics/logic-frontends.md) | Umbrella + difficulty matrix for external systems as object logics (MLTT/HoTT, ACL2/Lisp, LF/Dedukti). |
 | [`logics/theories-models-and-logics.md`](./logics/theories-models-and-logics.md) | signature → theory → model; within-logic model multiplicity; Metamath as shared substrate; PA→SOA→ZF. |
 | [`logics/metatheory.md`](./logics/metatheory.md) | Object theories + derivations as first-class HOL objects; theory morphisms/transport. |
+| [`logics/metamath-axiom-set-metatheory.md`](./logics/metamath-axiom-set-metatheory.md) | Axiom sets (ZFC/TG/IZF/reals) as first-class objects; checked implication/interpretation certificates; reals-over-ZFC; HOL-side composition facade. |
+| [`logics/structural-sigma-transport.md`](./logics/structural-sigma-transport.md) | Structural (non-identity) σ for `transport`: the variable-renaming slice landed on the reified-prop `Φ⟨bool⟩` carrier; the inductive-`MmExpr` `Φ=nat` path still open. |
 | [`logics/proof-format.md`](./logics/proof-format.md) | The Haskell dialect's theorem/proof split (equation statements + name-linked S-expr proofs). |
 | [`logics/wasm-spec.md`](./logics/wasm-spec.md) | The SpecTec WASM-spec front end; dual to the Metamath front end. |
 | [`logics/cfg-stratum-design.md`](./logics/cfg-stratum-design.md) | The CFG stratum: SpecTec grammars → per-env `Derives` judgement + family soundness; corpus facts; milestones. |
 | [`logics/init-in-dialect.md`](./logics/init-in-dialect.md) | Writing `init/` in the Haskell dialect over the typed HOL backend. |
+| [`logics/opentheory-import.md`](./logics/opentheory-import.md) | Verifying OpenTheory articles on the native HOL kernel (`NativeOt` backend, zero-TCB hyp-tracked axioms, defineTypeOp v6, `cov hol` + `bun run opentheory`). |
 
 ## `surface/` — the authoring layer (aspirational)
 
@@ -52,6 +55,15 @@ Read `kernel-design.md` before touching the trusted base.
 ## `lisp/` — the Lisp/ACL2 frontend
 
 [`lisp/minimal-spec/`](./lisp/minimal-spec/) — the buildable spec: a `/lisp` REPL where an S-expr is evaluated as a reduction theorem, on a generic `Repl` ≤ `SExprRepl` ≤ `Lisp` trait stack, ending at the metacircular interpreter in the browser. [`lisp/initial-ideas/`](./lisp/initial-ideas/) — the design corpus behind it (dialects/UB, parsing relations, content-addressing, proptest-as-theorem, ACL2-inside).
+
+## `k/` — the K-framework frontend
+
+[`k/README.md`](./k/README.md) — index. Sourced research surveys (`k/research/`:
+K today, KORE, backends+SMT, the semantics ecosystem, RV's proof-generation
+line, reachability/matching-logic theory; researched 2026-07-13, verified,
+certainty-tagged) behind [`../design/k-frontend.md`](../design/k-frontend.md)
+(KORE ingestion + the F0–F4 fragment ladder; first slice `crates/lang/k`).
+North star: [`vision/k-framework-vision.md`](./vision/k-framework-vision.md).
 
 ## `web/` · `observers/` · `plans/`
 

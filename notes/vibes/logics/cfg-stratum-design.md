@@ -7,6 +7,38 @@ Fills the "CFG stratum (headline next step)" entry of
 three-design judge panel; the losing designs' verified corpus probes are folded
 in below.
 
+## Wrap-up status (2026-07-14) — what's built vs. designed-not-built
+
+**Built + green** (M0–M6, this branch): the neutral CFG IR, the binary metalogic
+engine, `GrammarEnv`/`Derives_E` + family soundness + the two-phase parsing
+tactic, the SpecTec→`Cfg<u8>` lowering (under-approx `lower()` + recognition-mode
+`lower_recognition()`), and **LEB128 *recognition*** — `⊢ Derives_E ⌜Bu32⌝ w` on
+real WASM varints, `*idx` family unlocked, cross-checked vs the `leb128_regex`
+oracle (`tests/cfg_grammar.rs`).
+
+**Designed, not yet built** (was mid-flight at wrap-up):
+
+- **LEB128 *value* decode** — `leb128_decode : list u8 → nat` + a round-trip
+  theorem (atoms.md's "binary: LEB128"). ORTHOGONAL to the recognition work;
+  belongs on `init::nat_binary`/`nat_bits_iso` (LSB-group-first 7-bit fold),
+  ultimately in a `covalence-numerals` crate per
+  [`../kernel/literals/numeral-literals-api.md`](../kernel/literals/numeral-literals-api.md).
+- **The layered trait API** (maintainer directive): high-level SpecTec-shaped
+  APIs implemented by traits, delegating down to a reusable mid-level, bottoming
+  out at HOL-omega, so low-level rewrites don't disturb high-level callers. The
+  mid-level should align with the K work's shared **term-rewrite relation in
+  `metalogic::rewrite`** (see the K API-layering memory / K vision note) rather
+  than diverging. A design workflow (4-probe understand → 2 proposals → judge
+  synthesis) was in progress and was stopped for this wrap-up; re-run or resume
+  `wasm-layered-api-design` to produce the final layer stack + first slice.
+- **Full WASM parse**: value-coupled `ListN` vectors (need a value-producing
+  parser, not just a recognizer), grammar-valued params (`Blist`/`Bsection_`
+  `BX`), `Bname` utf8, sections, `Bmodule`.
+- **Spec ingestion + version lattice**: relations/typing/reduction (`wasm/relation`),
+  `Dec` metafunctions, the WASM 1.0/2.0 dumps (validated, staged in
+  `~/tmp/spectec-dumps`, not embedded) + `1.0 ⊆ 2.0 ⊆ 3.0` env-transport
+  metatheorems (see §"Version lattice" below).
+
 Zero TCB growth: everything here is init-layer / lib-crate untrusted driver
 code; the kernel re-checks every construction. Lowering bugs cost
 faithfulness/completeness, never soundness.
@@ -180,6 +212,89 @@ differential vs `naive_parse`) → M3 S1 + normal-form pin + toy S3 → M4 SpecT
 lowering + census/ratchet tests + stale-SKELETONS fixes → M5 north-star demo +
 wiring + docs. M6 stretch: monomorphisation (`BuN` chain), S2, `Bname`/
 `Bcustom` if reachable. Every milestone lands with green `cargo test`.
+
+## M6 — Missing grammars: LEB128 + recognition mode (added 2026-07-14, maintainer direction)
+
+M0–M5 landed (all committed, green). The lowering `lower()` UNDER-approximates
+and *skips* parametric (`BuN`/`BsN`/`BiN`/`BfN`, `Blist`, `Bsection_`),
+premise-carrying (11 grammars), and `ListN` productions. The user wants "all the
+missing grammars — in particular LEB128". This milestone adds a second,
+opt-in **recognition mode** (`lower_recognition` / `LowerMode::Recognition`;
+`lower()` stays `Under`) that unlocks them. Verified corpus facts from the probe:
+
+- **LEB128 = `BuN`/`BsN`.** `BuN(N)` has two productions, *both* starting with a
+  full-range `Bbyte`; the high-bit continuation/terminator split lives ONLY in
+  the premises (`n<2^7` terminator vs `n≥2^7` continuation), and it self-recurses
+  as `BuN(N−7)` guarded by `N>7` (terminates: 32→25→18→11→4). So the recognition
+  byte-language of `BuN(N)` is exactly the repo's existing regex
+  `covalence_spectec::grammar::simple::leb128_unsigned` = `[\x80-\xFF]*[\x00-\x7F]`,
+  bounded to `ceil(N/7)` bytes. `crate::grammar::regex::tactic::prove_matches`
+  already proves this hypothesis-free (tested: `[0x80,0x01]`→Some, `[0x80]`→None)
+  — it is the differential oracle.
+
+**Decisions.**
+
+1. **LEB128 lowers to a single regex terminal, not byte-by-byte.** The CFG
+   stratum embeds reified `regex u8` terms as terminal `Matches` side-antecedents
+   (§1), so `BuN@N`/`BsN@N` lower to one production `Seg::Term(r)` where `r` is
+   the **byte-count-bounded** LEB128 regex `[\x80-\xFF]{0,ceil(N/7)−1}[\x00-\x7F]`
+   (exact on byte count; the only over-approximation is the top bits of the final
+   byte — the irreducible "recognition vs value" gap). `prove_matches` supplies
+   the leaf premise with zero coercion. Cheaper and more precise than unrolling.
+
+2. **Monomorphiser** (general): thread a param-binding env
+   `BTreeMap<&str,i64>` through `segment_alts`/`segment_item`/`lower_prod`; a
+   `fold_exp(env,e) -> Option<i64>` const-folds the `Num`/`Bin(Add,Sub,Mul,Pow)`/
+   `Cvt`(identity)/`Var`(env) fragment. A param-dependent `Var{x,as1}` whose args
+   fold to ground values instantiates `x` at those values into a **deduped
+   per-instance NT** (`mono: BTreeMap<(String,Vec<i64>),NtId>`, name `"BuN@32"`),
+   lowering the target's productions under the pushed binding. Termination via the
+   cache + the param-guard premises (below). This subsumes the existing narrow
+   "param-independent ref" exception. `BfN(N)` → `N/8` literal `Bbyte` segments
+   (fixed count, exact). Wrapper chains (`Bu32`=`BuN(32)`, `*idx`) fall out.
+
+3. **Premise classification** (recognition mode; replaces blanket premise-drop):
+   - **param-only premises** (mention only grammar params, e.g. `N>7`): evaluate
+     with the instance binding; if false, DROP that production for this instance
+     — *exact* (the production genuinely can't fire), and this is what bounds the
+     `BuN` recursion.
+   - **input-value premises** (mention captured production-local values, e.g.
+     `n<2^N`): DROP — *over-approximate* (accept over-long/over-large encodings),
+     counted as `premises_dropped`. For the LEB128-as-regex path these are
+     subsumed by the regex, so the byte-range split need not be folded explicitly.
+4. **`ListN` widening** → `desugar_star` (star, since WASM vectors can be empty)
+   — over-approximate, counted `listns_widened`. `IterWithDom` likewise.
+5. **Grammar-valued params** (`Blist`/`Bsection_` `BX`) — substitute the arg
+   grammar; the first cut may defer these with honest reporting (they also carry
+   `ListN` + parameter-equality attrs). Not on the LEB128 critical path.
+
+**Honesty / invariant flip.** Recognition mode's per-production transformations
+over-approximate, flipping toward `L(SpecTec) ⊆ L(Cfg)` (a *recognizer*:
+soundness of rejection), the REVERSE of `lower()`'s `L(Cfg) ⊆ L(SpecTec)`
+(membership witness). **But it is per-grammar, gated on `Full` coverage:**
+recognition mode still *drops* productions it can't lower (unclassifiable
+premise, monomorphisation depth cap, grammar-valued param), and a dropped
+production under-approximates. So the clean `L(SpecTec) ⊆ L(Cfg)` holds only for
+`Full`-coverage grammars (`Bu32`, the `*idx` family, the LEB128 chain — the
+LEB128 targets are all `Full`); a `Partial` grammar mixes both directions and
+its report coverage must be consulted before reading a `Derives_E` as a
+recognizer. The kernel theorem is always exact regardless: `⊢ Derives_E ⌜nt⌝ w`
+means precisely `w ∈ L(lowered Cfg)`. This must be an explicit opt-in: new `CfgReport` counters (`premises_dropped`, `listns_widened`,
+`mono_instances`) mirror `attrs_constrained`; the module docstring + this note
+state the flip; a *separate* recognition-mode ratchet test pins the new coverage
+(don't mutate the under-approx ratchet). Kernel `Derives_E` theorems over a
+recognition-mode env mean "these bytes are a well-formed *recognition* of the
+grammar," not "these bytes encode an in-range value."
+
+**North star (M6).** `⊢ Derives_E ⌜Bu32⌝ w` for real LEB128 varints (e.g.
+`[0x80,0x01]`=128, `[0xE5,0x8E,0x26]`=624485), hypothesis-free, cross-checked
+byte-for-byte against the `prove_matches(leb128_unsigned,·)` oracle; plus the
+recognition-mode coverage jump (BuN/BsN/BiN/BfN, Bu32/Bu64, all `*idx` leave the
+skip buckets). The **value-decode** atom (`leb128_decode : list u8 → nat` + a
+round-trip theorem, atoms.md's "binary: LEB128") is a *separate, orthogonal*
+deliverable on `nat_binary`/`nat_bits_iso` under the future `covalence-numerals`
+crate — recognition and value-decode meet only at the regex oracle; do not
+conflate them.
 
 ## Version lattice + metatheorems (added 2026-07-13, maintainer direction)
 

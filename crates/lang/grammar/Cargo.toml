@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 thiserror = "2"
+# Numeral-literal value types (Nat/Int/Rat/Decimal/Digit) produced by the
+# compositional literal grammars. Kernel-independent, same `lib/` group.
+covalence-types = { path = "../../lib/types" }

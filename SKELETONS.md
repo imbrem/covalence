@@ -64,10 +64,13 @@ removed-pending-rewrite subsystems, `NotImplemented` / `todo!()` /
 - **[`covalence-lisp`](crates/lang/lisp/SKELETONS.md)** — `/lisp` demo: ch1 + `defun` recursion + metacircular ground fragment (kernel-Thm-backed; `defun`-as-hypothesis → `definitions ⊢ program = value`); full `metacircular.lisp` (truthy-data `cond`) deferred; `eq?` atoms-only.
 - **[`covalence-forsp`](crates/lang/forsp/SKELETONS.md)** — `/forsp` small-step reduction: `ForspSemantics` machine relation is an untrusted before/after-snapshot witness (no kernel `Thm` yet); web-export handler unbuilt.
 - **[`covalence-repl-core`](crates/lib/repl-core/SKELETONS.md)** — REPL trait stack: `ReductionStrategy` is equational-only (no relational/stateful shape); no `SExprRepl` events.
+- **[`covalence-grammar`](crates/lang/grammar/SKELETONS.md)** — numeral literal grammars: atom zoo (base32/58/64, LEB128) deferred; regexes are description-only (recursive-descent parsers); spec numeral-figure slips.
+- **[`covalence-numerals`](crates/lang/numerals/SKELETONS.md)** — generic-backend numerals: `Wasm` backend is a stub; `ground_f32` enclosure certificate unproven; `prove_to_rat`/`prove_lt` cover only the `Decimal`/`Nat` rungs.
 - **[`covalence-alethe`](crates/proof/alethe/SKELETONS.md)** — Alethe rule coverage.
 - **[`covalence-egglog`](crates/proof/egglog/SKELETONS.md)** — `EgglogBridge` Stage 0 (only `fiat` implemented, no kernel-backed impl); egglog `external` bridge disabled (released egglog lacks the proof module).
 - **[`covalence-metamath`](crates/proof/metamath/SKELETONS.md)** — substitution engine + `.mm` reader: `set.mm`-scale streaming, canonical serializer, structured-tree encoding, symbol interning.
 - **[`covalence-opentheory`](crates/proof/opentheory/SKELETONS.md)** — article verification on the native HOL backend: `defineConstList` unimplemented; offline corpus incomplete (missing deps block `list`/`natural`/`base`); `.int` interpretations unapplied; `cov hol` CLI + `bun run opentheory` bench unwired.
+- **[`covalence-types`](crates/lib/types/SKELETONS.md)** — numeral value ladder: `Decimal::from_parts` spec-figure reconciliation (`1.5e3`).
 - **[`covalence-multiformat`](crates/lib/data/multiformat/SKELETONS.md)** — derivation-fact interchange format: unregistered private-use codecs, no signed envelopes, blake3-only multihash, simulated Coln reader.
 - **[`covalence-acset`](crates/lib/data/acset/SKELETONS.md)** — generic ACSet library: only Δ migration (no Σ/Π), pullback skips attributes, string-only attribute values, `&'static str` schema names.
 - **[`covalence-python`](crates/ffi/python/SKELETONS.md)** — HOL kernel bindings (`pure` module) removed pending rewrite.

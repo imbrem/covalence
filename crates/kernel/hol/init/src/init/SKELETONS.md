@@ -173,6 +173,17 @@ Bridge built (S9a); the flip is maintainer-gated. See
     floatval → rat` (`m · 10ᵉ` into `init/rat.rs`) to state the value in `rat`;
     special float tokens are not read.
 
+- **`FloatCert32` round-to-nearest-even enclosure** (numeral W13, not built).
+  A `FloatCert32{ bits: u32, thm }` carrying `⊢ roundsToNearestEven dec bits`
+  for a finite decimal (`init/decimal.rs`, W12, built): decode `bits`→exact
+  `rat` value `v`, bound `|dec − v|` against the two `f32` neighbours with the
+  half-even tie rule, all via the `init::rat` order lemmas. Blocked on the same
+  IEEE rounding-error / `ball` enclosure work as the `float_parse` `f64`
+  rounding item above and `ball.add`. **Must not be admitted** — leave the top
+  enclosure theorem unproven until the enclosure lemmas land. The `decimal`
+  carrier + the proved `toRat(mkDec m k) = m / 10^k` injection (the exact-`rat`
+  value the certificate compares against) are done.
+
 - **List theory** (`init/list.rs` + `list_recursion.rs` + `list.cov`). Missing:
   - **`list_foldl`** — the left-fold recursor's defining equations not yet discharged.
   - **`filter` / `flatten` clauses** — `foldr`-factored; follow the `length`/`cat`

@@ -88,6 +88,7 @@ pub mod char;
 pub mod cond;
 pub mod coprod;
 pub mod cv_recursion;
+pub mod decimal;
 pub mod eq;
 pub mod ext;
 pub mod float_parse;

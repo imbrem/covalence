@@ -5,6 +5,9 @@
 //!   primitive value type.
 //! - [`Int`] and [`Nat`] (behind the default `int` feature) — arbitrary
 //!   precision signed and non-negative integers, wrapping `num-bigint`.
+//! - [`Rat`], [`Decimal`]/[`PosDecimal`] and [`Digit`] (behind `int`) — the
+//!   numeral-literal value ladder: base-generic digits, finite decimals
+//!   `m / 10^k`, and lowest-terms rationals.
 //! - [`Bytes`] — the byte-string primitive value type (re-exported from
 //!   the `bytes` crate), with operations in [`blob`] (`cat` / `cons` /
 //!   `at` / `slice`).
@@ -29,9 +32,23 @@ mod int;
 mod nat;
 
 #[cfg(feature = "int")]
+mod decimal;
+#[cfg(feature = "int")]
+mod digit;
+#[cfg(feature = "int")]
+mod rat;
+
+#[cfg(feature = "int")]
 pub use int::Int;
 #[cfg(feature = "int")]
 pub use nat::Nat;
+
+#[cfg(feature = "int")]
+pub use decimal::{Decimal, PosDecimal};
+#[cfg(feature = "int")]
+pub use digit::{DecDigit, Digit, HexDigit, OctDigit, nat_of_digits};
+#[cfg(feature = "int")]
+pub use rat::Rat;
 
 #[cfg(feature = "int")]
 use std::fmt;

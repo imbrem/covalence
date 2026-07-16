@@ -35,6 +35,7 @@ digraph deps {
   "lsp";
   "metamath";
   "multiformat";
+  "numerals";
   "object";
   "opentheory";
   "parquet";
@@ -102,6 +103,7 @@ digraph deps {
   "git" -> "object";
   "git" -> "sqlite";
   "git" -> "store";
+  "grammar" -> "types";
   "graph" -> "hash";
   "graph" -> "parse";
   "hash" -> "rand";
@@ -161,6 +163,10 @@ digraph deps {
   "multiformat" -> "acset";
   "multiformat" -> "hash";
   "multiformat" -> "parse";
+  "numerals" -> "grammar";
+  "numerals" -> "hol-eval";
+  "numerals" -> "init";
+  "numerals" -> "types";
   "object" -> "hash";
   "object" -> "parse";
   "opentheory" -> "core";

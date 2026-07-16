@@ -107,8 +107,8 @@ condition), and discharges via `prove_true`.
 (`Bool`/`Num`/`Var`/`Cmp`/`Bin`/`Un`): substitute concrete bindings, denote the
 closed condition, discharge by kernel computation. It *gates* (proves `n=0` for
 `n:=0`, **refuses** `n:=5` — cannot fabricate), matching the front end's
-faithfulness contract. Tested on `=`/`<`/`≤` + arithmetic; non-value-fragment
-(`Uncase`/`Proj`/`Call`) rejected up front.
+faithfulness contract. Tested on `=`/`≠`/`<`/`≤` + arithmetic (the `≠` family via a `¬F` fold);
+non-value-fragment (`Uncase`/`Proj`/`Call`) rejected up front.
 
 **What's still needed to unlock a *whole* real rule** (findings from the probe):
 - No value-fragment-condition rule lowers on `if`-support *alone* — **every** one
@@ -121,7 +121,6 @@ faithfulness contract. Tested on `=`/`<`/`≤` + arithmetic; non-value-fragment
 - The flagship branch rules (`select`/`if`/`br_if`, condition
   `Proj(Uncase c) ≠ 0`) additionally need the **datatype leg** (`Uncase`/`Proj`
   denote support) — gated on `wasm::syntax` variants + a `Dec`/metafunction leg.
-- A `bool.not F → T` fold unblocks the `Ne` (`≠`) family for `side_cond`.
 
 ## Next (roadmap)
 

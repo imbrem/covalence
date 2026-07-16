@@ -25,7 +25,7 @@ peer of `crate::grammar::cfg::GrammarEnv`). See
   rule lowers yet. Wiring needs: the condition as a *denoted* clause antecedent
   (mangled metavars, real-nat instantiation), `derive` discharging it with the
   `side_cond` Thm, plus `let` bindings + iteration (every value-fragment rule
-  also carries an `Iter`/`Let`). `Ne` needs a `not F → T` fold; branch rules
+  also carries an `Iter`/`Let`). branch rules
   (`Proj(Uncase c)≠0`) need the datatype leg. Design + analysis:
   `notes/vibes/logics/spectec-fragment-api.md`.
 - **No `state` in the `Fragment` trait.** Judgement *statement* differs per kind

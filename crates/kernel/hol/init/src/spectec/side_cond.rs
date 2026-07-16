@@ -26,11 +26,13 @@
 
 use std::collections::BTreeMap;
 
-use covalence_core::{Error, Result, Type};
+use covalence_core::{Error, Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
+use covalence_hol_eval::mk_bool;
 use covalence_spectec::ast::SpecTecExp;
 
-use crate::init::ext::TermExt;
+use crate::init::ext::{TermExt, ThmExt};
 use crate::wasm::denote::{DenoteCtx, TypeEnv, denote};
 
 /// Whether `e` is in the value fragment this module can denote-and-decide:
@@ -96,8 +98,34 @@ pub fn prove_side_condition(
     let ctx = DenoteCtx::values(TypeEnv::new());
     let term = denote(&closed, &ctx)?;
     debug_assert_eq!(term.type_of()?, Type::bool());
-    // Discharge by kernel computation: `⊢ term` iff `term` reduces to `⌜T⌝`.
-    term.prove_true()
+    // Discharge by kernel computation.
+    prove_bool_true(&term)
+}
+
+/// `⊢ term` for a closed `bool` term that computes to a tautology: either it
+/// reduces to `⌜T⌝` (via `eqt_elim`) — the `=`/`<`/`≤` conditions — or to `¬⌜F⌝`
+/// (via the `⊢ ¬F` fact) — the `≠` conditions, which denote to `¬(a = b)` and
+/// reduce to `¬F` (not literally `T`). Fails otherwise (the condition is false
+/// for these values, or does not compute).
+fn prove_bool_true(term: &Term) -> Result<Thm> {
+    let red = term.reduce()?; // ⊢ term = v
+    let v = red.concl().as_eq().ok_or(Error::NotAnEquation)?.1.clone();
+    if v.as_bool() == Some(true) {
+        red.eqt_elim()
+    } else if v == mk_bool(false).not()? {
+        // v = ¬F ; from `⊢ term = ¬F` and `⊢ ¬F`, conclude `⊢ term`.
+        red.sym()?.eq_mp(not_false()?)
+    } else {
+        Err(Error::ConnectiveRule(format!(
+            "side condition: reduced to `{v}`, not a tautology"
+        )))
+    }
+}
+
+/// `⊢ ¬F` — false is not true (`¬p := p ⟹ F`, so `¬F = F ⟹ F`).
+fn not_false() -> Result<Thm> {
+    let f = mk_bool(false);
+    Thm::assume(f.clone())?.imp_intro(&f)?.not_intro()
 }
 
 /// Convenience: bind a single metavariable and discharge (for one-variable
@@ -186,6 +214,17 @@ mod tests {
                 .is_empty()
         );
         assert!(prove_side_condition_1(&cond, "n", num(6)).is_err());
+    }
+
+    /// `n ≠ 0` (the branch-rule condition shape, denoted as `¬(n=0)`) discharges
+    /// for `n := 5` via the `¬F` fold, and REFUSES for `n := 0`.
+    #[test]
+    fn ne_zero_gates() {
+        let cond = cmp(SpecTecCmpOp::Ne, var("n"), num(0));
+        let ok = prove_side_condition_1(&cond, "n", num(5)).unwrap();
+        assert!(ok.hyps().is_empty(), "discharge is hypothesis-free");
+        // `0 ≠ 0` is false — refused.
+        assert!(prove_side_condition_1(&cond, "n", num(0)).is_err());
     }
 
     /// A condition needing the datatype leg is rejected up front (not silently

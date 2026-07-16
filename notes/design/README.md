@@ -47,5 +47,5 @@ maintainer step (see the repo authorship policy in
   and active threads (where everything is).
 - [`../vibes/kernel/tcb/what-is-the-tcb.md`](../vibes/kernel/tcb/what-is-the-tcb.md) — what the trusted
   base actually is, from the golden manifests + audit.
-- [`../vibes/k-framework-vision.md`](../vibes/k-framework-vision.md) — the
+- [`../vibes/vision/k-framework-vision.md`](../vibes/vision/k-framework-vision.md) — the
   K-framework north star (a north-star note, not yet a `design/` proposal).

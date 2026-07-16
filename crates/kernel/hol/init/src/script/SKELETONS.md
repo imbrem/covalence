@@ -91,7 +91,7 @@ the [root index](../../../../../../SKELETONS.md).
 - **Equational seams not yet registerable per-logic.** `Env::beta`/`congr`/`funext`/
   `comp_default` are methods (the `apply_unify`/`rw_unify` seam pattern) but still hold the
   single built-in HOL default. Swapping in a logic's own `HandlerSet`
-  (`notes/vibes/surface-compiler.md` §9) needs scoped `Context`/`HandlerSet` plumbing. Same gap as
+  (`notes/vibes/surface/surface-compiler.md` §9) needs scoped `Context`/`HandlerSet` plumbing. Same gap as
   the `rw_unify` registerable-handler TODO; wire together.
 - **`#inductive` realises only the `nat` shape.** `script/inductive.rs` dispatches through
   `LogicInductive` (PA/SOA/MLTT impls planned) but for fresh user types it can only consume

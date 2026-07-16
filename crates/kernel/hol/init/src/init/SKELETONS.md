@@ -9,7 +9,7 @@ S1 primitives / S2 semantics / S3 `Derivable_ACL2` all open; S0 carrier done).
 ## `defs/` re-home bridge (toHOL purge, `init/twins.rs`)
 
 Bridge built (S9a); the flip is maintainer-gated. See
-[`notes/vibes/defs-rehome-design.md`](../../../../../../notes/vibes/defs-rehome-design.md).
+[`notes/vibes/kernel/defs-rehome-design.md`](../../../../../../notes/vibes/kernel/defs-rehome-design.md).
 
 - **Polymorphic let-style specs are not yet twinned** — `twins::unfold_spec`
   falls back to `unfold_term_spec` for them. Instantiate the cached base

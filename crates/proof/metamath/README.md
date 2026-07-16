@@ -4,7 +4,7 @@ The **`.mm` format / IO reader** for the theory-agnostic Metamath proof checker
 whose expressions are [`covalence-sexp`] `SExpr`s.
 
 > **Crate split.** Because a Metamath database *is* the substrate for defining a
-> logic (`notes/vibes/theories-models-and-logics.md` §5.6), the substitution
+> logic (`notes/vibes/logics/theories-models-and-logics.md` §5.6), the substitution
 > **engine** — the expression model, substitution, the frame/database model, and
 > the RPN proof checker — lives first-class *here*, HOL-free (depending only on
 > `covalence-sexp`), together with the `.mm` reader: tokenising, scoping,
@@ -39,7 +39,7 @@ faithful to the logic — and (b) *accelerates upward*: the very same `≅` lets
 manual PA, the HOL kernel, and WASM decision procedures discharge hard
 Metamath-PA goals by running fast and transporting the result across the
 correspondence, certifying the giant derivation exists without building it. The
-bridge into the HOL kernel (`notes/vibes/theories-models-and-logics.md` §5.5,
+bridge into the HOL kernel (`notes/vibes/logics/theories-models-and-logics.md` §5.5,
 **pillar 2**) is the special case where `S` lands in HOL's `IsThm`; that bridge
 uses the same untrusted-frontend → kernel-recheck pattern as `covalence-alethe`.
 

@@ -31,10 +31,23 @@ full picture.
 ## Minor
 
 - **ACL2 slice (`src/acl2.rs`) — open ends** (design + roadmap in
-  [`notes/vibes/lisp/acl2-dialect.md`](../../../notes/vibes/lisp/acl2-dialect.md)):
-  - **No induction**: `defthm` accepts only ground decidable goals (kernel
-    reduction + `eqt_elim`); universally quantified goals are rejected. Next:
-    the carved `sexpr` induction theorem per goal.
+  [`notes/vibes/lisp/acl2-dialect.md`](../../../notes/vibes/lisp/acl2-dialect.md);
+  the reified-certificate `defthm` path in `acl2-s0-s3-design.md` §9.5):
+  - **No induction**: `defthm` accepts only ground decidable goals;
+    universally quantified goals are rejected. The kernel-side S6 path
+    now exists (`covalence-init` `init/acl2`: `s6_env` + `derive_ind` +
+    `hilbert::derive_under` + `transport_equal_open`, gate = app-assoc);
+    wiring this surface `defthm` onto it is the open work.
+  - **Certificate fragment is narrower than the 11 PrimRow rows.** Ground
+    `(equal L R)` defthms over quoted data / int literals /
+    `car cdr cons consp equal +` go via `Derivable_ACL2` + soundness +
+    `transport_equal`; `*`, unary `-`, `<`, `integerp`/`symbolp` (not surface
+    ops), `consp` at atoms, and `equal` disequality beyond distinct int
+    literals fall back to reduction — init's `Prims` exports no ground
+    folding law for them (only `plus_lit`). Needs public
+    `times_lit`/`neg_lit`/`lt_lit` + recognizer-at-payload laws in
+    `init/acl2/prims.rs`, then extend `CertEngine::comp_cert` +
+    `row_spelling`.
   - **Admissibility is syntactic, not a termination proof**: structural
     car/cdr-descent check only — no measures/ordinals, guard not verified
     (fuel bound catches divergence). Soundness rests on defun-as-hypothesis.

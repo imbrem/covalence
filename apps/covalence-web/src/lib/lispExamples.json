@@ -43,5 +43,11 @@
 		"lang": "acl2",
 		"title": "prove a ground defthm",
 		"src": "(defthm app-ab-c (equal (app (quote (a b)) (quote (c))) (quote (a b c))))"
-	}
+	},
+	{
+		"lang": "acl2",
+		"title": "defthm via the reified certificate",
+		"src": "(defthm four (equal (+ 2 2) 4))"
+	},
+	{ "lang": "acl2", "title": "#show the transported theorem", "src": "#show four" }
 ]

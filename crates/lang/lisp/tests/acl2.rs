@@ -159,22 +159,117 @@ fn integers_outside_arithmetic_are_cleanly_rejected() {
 
 // ---- defthm: ground success -----------------------------------------------
 
+/// **The transported `defthm four` gate** (the demo wiring of init's S3
+/// gate): a ground arithmetic `(equal LHS RHS)` goes THROUGH the reified
+/// ladder — the stored theorem is the transported base-HOL model equation
+/// `⊢ aplus (aint 2) (aint 2) = aint 4` (asserted exactly, hyps-free), and
+/// the recorded provenance carries the hypothesis-free certificate
+/// `⊢ Derivable_ACL2 ⌜(EQUAL (BINARY-+ '2 '2) '4)⌝` (asserted exactly).
 #[test]
-fn defthm_ground_arithmetic_succeeds() {
+fn defthm_ground_arithmetic_transports_via_certificate() {
+    use covalence_init::init::acl2::derivable::{derivable, ground_env};
+    use covalence_init::init::ext::TermExt;
+    use covalence_lisp::acl2::Acl2Proof;
+
     let mut s = session();
     assert_eq!(
         s.eval_cell("(defthm four (equal (+ 2 2) 4))").unwrap(),
         "four"
     );
-    let thm = s.theorem("four").expect("stored theorem");
-    // A genuine, hypothesis-free kernel theorem concluding the equation.
-    assert!(thm.hyps().is_empty(), "arithmetic defthm must be hyps-free");
-    let (lhs, rhs) = thm.concl().as_eq().expect("concl is `2+2 = 4`");
-    assert_eq!(
-        covalence_hol_eval::as_int(rhs).expect("rhs is an int literal"),
-        covalence_types::Int::from(4i128)
+    let entry = s.theorem_entry("four").expect("stored theorem");
+    assert!(
+        entry.thm.hyps().is_empty(),
+        "the transported model equation must be hyps-free"
     );
-    assert!(lhs.as_app().is_some(), "lhs is the `int.add 2 2` redex");
+
+    // The exact final statement: ⊢ aplus (aint 2) (aint 2) = aint 4.
+    let e = ground_env().expect("ground env");
+    let tm = &*e.tm;
+    let aint = |i: i128| tm.th.aint_at(&covalence_hol_eval::mk_int(i)).unwrap();
+    let expected = tm
+        .pr
+        .plus
+        .clone()
+        .apply(aint(2))
+        .unwrap()
+        .apply(aint(2))
+        .unwrap()
+        .equals(aint(4))
+        .unwrap();
+    assert_eq!(entry.thm.concl(), &expected, "the model equation, exactly");
+
+    // The path built a reified certificate, with the exact
+    // `Derivable_ACL2` statement, itself hypothesis-free.
+    let Acl2Proof::Certificate { derivation } = &entry.proof else {
+        panic!("defthm four must take the certificate path");
+    };
+    assert!(derivation.hyps().is_empty(), "certificate must be closed");
+    let q2 = tm.quote(&aint(2)).unwrap();
+    let q4 = tm.quote(&aint(4)).unwrap();
+    let phi = tm.mk_equal(&tm.mk_plus(&q2, &q2).unwrap(), &q4).unwrap();
+    assert_eq!(derivation.concl(), &derivable(&e, &phi).unwrap());
+}
+
+/// A structural (list) goal in the fragment also transports: the stored
+/// theorem is the base-HOL model equation
+/// `⊢ car (acons (asym "a") (acons (asym "b") anil)) = asym "a"`.
+#[test]
+fn defthm_structural_goal_transports_via_certificate() {
+    use covalence_init::init::acl2::derivable::ground_env;
+    use covalence_init::init::ext::TermExt;
+    use covalence_lisp::acl2::Acl2Proof;
+
+    let mut s = session();
+    assert_eq!(
+        s.eval_cell("(defthm car-ab (equal (car (quote (a b))) (quote a)))")
+            .unwrap(),
+        "car-ab"
+    );
+    let entry = s.theorem_entry("car-ab").expect("stored theorem");
+    assert!(matches!(entry.proof, Acl2Proof::Certificate { .. }));
+    assert!(entry.thm.hyps().is_empty());
+
+    let e = ground_env().expect("ground env");
+    let tm = &*e.tm;
+    let sym = |n: &str| tm.sym(n.as_bytes()).unwrap();
+    let acons = |h: covalence_init::Term, t: covalence_init::Term| {
+        tm.th.cons.clone().apply(h).unwrap().apply(t).unwrap()
+    };
+    let lst = acons(sym("a"), acons(sym("b"), tm.th.nil.clone()));
+    let expected = tm
+        .th
+        .car
+        .clone()
+        .apply(lst)
+        .unwrap()
+        .equals(sym("a"))
+        .unwrap();
+    assert_eq!(entry.thm.concl(), &expected, "the model equation, exactly");
+}
+
+/// Out-of-fragment ground goals keep the pre-ladder behaviour: proved by
+/// certified kernel reduction, recorded as [`Acl2Proof::Reduction`].
+#[test]
+fn defthm_out_of_fragment_falls_back_to_reduction() {
+    use covalence_lisp::acl2::Acl2Proof;
+
+    let mut s = session();
+    s.eval_cell(APP).unwrap();
+    // A user defun is not a PrimRow: reduction fallback, riding the defun
+    // hypothesis (never a certificate).
+    s.eval_cell("(defthm app-ab-c (equal (app (quote (a b)) (quote (c))) (quote (a b c))))")
+        .unwrap();
+    let entry = s.theorem_entry("app-ab-c").expect("stored theorem");
+    assert!(matches!(entry.proof, Acl2Proof::Reduction));
+    assert!(!entry.thm.hyps().is_empty(), "rides the defun hypothesis");
+
+    // `*` has no public ground model-folding law yet (only `plus_lit` is
+    // exported): outside the certificate fragment, but still honestly
+    // proved by reduction, hyps-free.
+    s.eval_cell("(defthm twelve (equal (* 3 4) 12))").unwrap();
+    let entry = s.theorem_entry("twelve").expect("stored theorem");
+    assert!(matches!(entry.proof, Acl2Proof::Reduction));
+    assert!(entry.thm.hyps().is_empty());
 }
 
 #[test]

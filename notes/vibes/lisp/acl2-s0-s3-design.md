@@ -755,6 +755,62 @@ discharged on the designed route. Details/deviations:
   then; transport is ground-`EQUAL`-only; per-call `soundness` cost → cfg
   `family_soundness` is the escape hatch when S4 grows the clause set.
 
+### Demo-wiring implementation report (2026-07-16, branch `lisp-demo`)
+
+The §6.5 "front-end note" landed (without the `crates/lang/acl2` crate split
+— everything stays in `covalence-lisp`): `lang/lisp/src/acl2.rs` now routes a
+ground `(defthm name (equal L R))` **through the reified ladder**.
+`Acl2Session::admit_defthm` tries `prove_certified` first: encode the two
+sides as S2 pseudo-terms, certificate-evaluate them bottom-up
+(`CertEngine::eval_cert`: leaves = `equal-refl` INSTed at `X ↦ 'v`;
+applications = `derive_cong` + `derive_comp_folded` spliced with
+`equal-trans`+MP; sides spliced at the shared quoted value with
+`equal-symm`/`equal-trans`), then `project_with(soundness)` +
+`transport_equal` — the **stored theorem is the transported base-HOL model
+equation** (e.g. `four` stores `⊢ aplus (aint 2) (aint 2) = aint 4`), and
+the stored `Acl2Proof::Certificate { derivation }` keeps the hypothesis-free
+`⊢ Derivable_ACL2 ⌜goal⌝` itself. `#show NAME` (session.rs) reveals the
+stored sequent + which path proved it. Deviations/limits (all recorded in
+`crates/lang/lisp/SKELETONS.md`):
+
+- **Certificate fragment ⊂ the 11 rows.** Surface heads mapped to PrimRow
+  spellings: `car/cdr/cons/consp/equal/=/+` (→ `CAR CDR CONS CONSP EQUAL
+  BINARY-+`). `BINARY-*`, `UNARY--` (hence surface binary `-`), and `<`
+  have **no public ground model-folding law** in `Prims` (only `plus_lit`
+  is exported; `times_eq`/`neg_eq`/`lt` defining equations are private), so
+  those goals take the honest reduction fallback; same for `consp` at
+  atoms (`consp_atom` is at `aatom b`, and the payload unfold chain wasn't
+  worth reimplementing lisp-side), `integerp`/`symbolp` (not surface ops),
+  and `equal` disequality beyond distinct int literals (`equal_ne` +
+  `int_ne`). Extending = export the missing lit laws in
+  `init/acl2/prims.rs`, then grow `comp_cert`/`row_spelling`.
+- **Canonical values** = constructor forms + the constant `t` (matching the
+  S1 laws' RHSs: `equal_refl`/`consp_cons` land on `t`, not `asym "T"`).
+  Surface/quoted `t`/`nil` (any case) encode to `t`/`anil` — never
+  `asym "NIL"` (the §4 representation contract); other quoted symbols keep
+  their bytes as written.
+- **Falseness is not decided on the certificate path**: if the two sides'
+  canonical values differ, `prove_certified` returns `None` and the
+  reduction fallback refutes (or rejects) — the cert path only ever *mints*.
+- The engine (env + `soundness`) is a process-global `LazyLock` behind a
+  syntactic `cert_fragment` pre-check, so the expensive metatheorem is only
+  proved once and only when a goal can actually take the path.
+- The certificate path accepts some **true ground goals the value semantics
+  cannot express** (ACL2 completion/mixed data, e.g. `(equal (car 5) nil)`,
+  `(equal (cons 1 nil) (cons 1 nil))`) — honest per the deep model; the
+  same expressions still error as *expression cells* (typed-int surface).
+- Tests (`crates/lang/lisp/tests/acl2.rs` + `dialects.rs`):
+  `defthm_ground_arithmetic_transports_via_certificate` (exact model
+  equation + exact `Derivable_ACL2` statement, both hyps-free — replaces
+  the old reduction-path assertion on `four`, whose stored statement
+  intentionally changed), `defthm_structural_goal_transports_via_certificate`
+  (`(equal (car '(a b)) 'a)` → `⊢ car (acons …) = asym "a"`),
+  `defthm_out_of_fragment_falls_back_to_reduction` (defun goal rides the
+  hypothesis; `(* 3 4)` proved by reduction),
+  `defthm_false_ground_goal_is_refuted_not_faked` (unchanged),
+  `acl2_show_defthm_reveals_transported_sequent`. Web `/lisp` help +
+  examples updated honestly (`(defthm four …)` + `#show four`).
+
 ## 10. Order of work (implementation agent, S0 slice first)
 
 1. carved.rs parameterization (`build_with`), `carved()` unchanged; full test suite
@@ -762,3 +818,15 @@ discharged on the designed route. Details/deviations:
 2. `init/acl2/carrier.rs` + `mod.rs` registration + S0 gate tests (§3).
 3. commit; then S1 (`prims.rs`), S2 (`term.rs` — `subst_sema` last), S3 (`ladder.rs`
    then `derivable.rs`), each stage test-gated and committed per the plan's discipline.
+
+## 11. Continuation: S4 + S6-structural
+
+The next-stage design — the definitional principle (`defun`, per-env
+evaluator, discharge hooks per user row) and the structural induction clause
+(IND, open-`EQUAL` transport, the `app-assoc` gate) — lives in the sibling
+note [`acl2-s4-s6-design.md`](./acl2-s4-s6-design.md). Its §0 records the
+corrections it makes to this note and to the plan (notably: the propositional
+Hilbert schemas + structural axiom pack land at S6, not S3; `eval_open`'s
+variable case must generalize past literals; the `Acl2Env.axioms` pair-vector
+becomes `AxiomRow` + `Discharge`, filling the "S4+ axiom-discharge gap"
+SKELETONS entry).

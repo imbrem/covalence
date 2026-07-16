@@ -78,11 +78,15 @@
 			<code>#lang acl2</code> — an ACL2 slice over the value semantics:
 			<code>defun</code> is admitted only if syntactically <em>structurally recursive</em>
 			(a check, not a termination proof), and <code>defthm</code> proves
-			<strong>ground goals only</strong> (the goal is driven to a bool literal by certified
-			reduction). Goals with free variables are honestly rejected — <em>induction is not
-			implemented</em>. ACL2 spellings: <code>equal</code>, ternary <code>if</code>
-			(no <code>cond</code>), <code>consp</code>/<code>atom</code>/<code>endp</code>,
-			<code>zp</code>/<code>natp</code>.
+			<strong>ground goals only</strong>. A ground <code>(equal L R)</code> over quoted data,
+			integer literals, and <code>car</code>/<code>cdr</code>/<code>cons</code>/<code>consp</code>/<code>equal</code>/<code>+</code>
+			is proved via a <em>reified <code>Derivable_ACL2</code> certificate</em> plus a
+			machine-checked <em>soundness metatheorem</em> — the stored theorem is the transported
+			base-HOL model equation (<code>#show NAME</code> reveals it); other ground goals are
+			driven to a bool literal by certified reduction. Goals with free variables are honestly
+			rejected — <em>induction is not implemented</em>. ACL2 spellings: <code>equal</code>,
+			ternary <code>if</code> (no <code>cond</code>),
+			<code>consp</code>/<code>atom</code>/<code>endp</code>, <code>zp</code>/<code>natp</code>.
 		</li>
 	</ul>
 	<p class="muted">

@@ -594,155 +594,143 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // The induction-instance gate: `aappend` associativity, the
-    // `init/lisp.rs::append_assoc` skeleton transplanted onto the ACL2
-    // carrier (S4 preview).
+    // The induction-instance gate: `append` associativity. The former
+    // test-local `Append` paramorphism was PROMOTED to the S4 defun
+    // engine (`super::defun`, per the S4+S6 design §3.3): this test now
+    // drives the promoted engine — `APP` is admitted as a user defun and
+    // the per-constructor equations feeding the induction are its
+    // `defun_law` outputs — with the same exact assertions as before.
     // ------------------------------------------------------------------
 
-    /// A test-local `aappend` theory over the ACL2 carrier (the lisp.rs
-    /// paramorphism, payload swapped).
-    struct Append {
-        cs: &'static CarvedSExpr,
-        append: Term,
-        append_eq: Thm,
-    }
-
-    impl Append {
-        fn build() -> Result<Append> {
-            let cs = acl2_carved()?;
-            let tau = &cs.tau;
-            let x = Term::free("__x", tau.clone());
-            let y = Term::free("__y", tau.clone());
-            let rec_x = cs.prec(&Self::steps(cs, &y)?, tau)?.apply(x)?;
-            let l_y = Term::abs(tau.clone(), subst::close(&rec_x, "__y"));
-            let body = Term::abs(tau.clone(), subst::close(&l_y, "__x"));
-            let (append, append_eq) = defined("acl2.test.append", body)?;
-            Ok(Append {
-                cs,
-                append,
-                append_eq,
-            })
-        }
-
-        /// `λb. w`, `w`, `λh t bh bt. acons h bt`.
-        fn steps(cs: &CarvedSExpr, w: &Term) -> Result<[Term; 3]> {
-            let tau = &cs.tau;
-            let sa = Term::abs(cs.payload.clone(), w.clone());
-            let sn = w.clone();
-            let h = Term::free("__h", tau.clone());
-            let bt = Term::free("__bt", tau.clone());
-            let scons_h_bt = cs.scons.clone().apply(h)?.apply(bt)?;
-            let l_bt = Term::abs(tau.clone(), subst::close(&scons_h_bt, "__bt"));
-            let l_bh = Term::abs(tau.clone(), l_bt);
-            let l_t = Term::abs(tau.clone(), l_bh);
-            let sc = Term::abs(tau.clone(), subst::close(&l_t, "__h"));
-            Ok([sa, sn, sc])
-        }
-
-        /// `⊢ aappend (aatom b) w = w` / `⊢ aappend anil w = w`.
-        fn leaf(&self, atom_arg: Option<&Term>, w: &Term) -> Result<Thm> {
-            let steps = Self::steps(self.cs, w)?;
-            let tau = &self.cs.tau;
-            match atom_arg {
-                Some(b) => {
-                    let atom_b = self.cs.atom.clone().apply(b.clone())?;
-                    let e = apply_def(&self.append_eq, &[atom_b, w.clone()])?;
-                    let comp = self.cs.prec_eq(&steps, 0, tau)?.all_elim(b.clone())?;
-                    e.trans(comp)?.reduce_rhs()
-                }
-                None => {
-                    let e = apply_def(&self.append_eq, &[self.cs.snil.clone(), w.clone()])?;
-                    let comp = self.cs.prec_eq(&steps, 1, tau)?;
-                    e.trans(comp)
-                }
-            }
-        }
-
-        /// `⊢ aappend (acons h t) w = acons h (aappend t w)` (fold the
-        /// recursor images back before reducing — the lisp.rs:301 trick).
-        fn scons(&self, h: &Term, t: &Term, w: &Term) -> Result<Thm> {
-            let steps = Self::steps(self.cs, w)?;
-            let tau = &self.cs.tau;
-            let scons_ht = self.cs.scons.clone().apply(h.clone())?.apply(t.clone())?;
-            let e = apply_def(&self.append_eq, &[scons_ht, w.clone()])?;
-            let comp = self
-                .cs
-                .prec_eq(&steps, 2, tau)?
-                .all_elim(h.clone())?
-                .all_elim(t.clone())?;
-            let ah = apply_def(&self.append_eq, &[h.clone(), w.clone()])?;
-            let at = apply_def(&self.append_eq, &[t.clone(), w.clone()])?;
-            let e = e.trans(comp)?;
-            let e = e.rhs_conv(|tm| tm.rw_all(&ah.sym()?))?;
-            let e = e.rhs_conv(|tm| tm.rw_all(&at.sym()?))?;
-            e.reduce_rhs()
-        }
-
-        /// `⊢ ∀y z x. aappend (aappend x y) z = aappend x (aappend y z)`
-        /// by structural induction on `x`.
-        fn assoc(&self) -> Result<Thm> {
-            let tau = self.cs.tau.clone();
-            let y = Term::free("y", tau.clone());
-            let z = Term::free("z", tau.clone());
-            let ap = |a: &Term, b: &Term| self.append.clone().apply(a.clone())?.apply(b.clone());
-            let yz = ap(&y, &z)?;
-
-            let motive = {
-                let x = Term::free("x", tau.clone());
-                let lhs = ap(&ap(&x, &y)?, &z)?;
-                let rhs = ap(&x, &yz)?;
-                Term::abs(tau.clone(), subst::close(&lhs.equals(rhs)?, "x"))
-            };
-
-            let leaf_case = |atom_arg: Option<&Term>, leaf_c: Term| -> Result<Thm> {
-                let inner = self.leaf(atom_arg, &y)?; // aappend leaf y = y
-                let lhs_eq = inner.cong_arg(self.append.clone())?.cong_fn(z.clone())?;
-                let rhs_eq = self.leaf(atom_arg, &yz)?;
-                let raw = lhs_eq.trans(rhs_eq.sym()?)?;
-                beta_expand(&motive, leaf_c, raw)
-            };
-            let b = Term::free("b", self.cs.payload.clone());
-            let case_atom = leaf_case(Some(&b), self.cs.atom.clone().apply(b.clone())?)?;
-            let case_nil = leaf_case(None, self.cs.snil.clone())?;
-
-            let case_cons = {
-                let h = Term::free("h", tau.clone());
-                let t = Term::free("t", tau.clone());
-                let ph = motive.clone().apply(h.clone())?;
-                let pt = motive.clone().apply(t.clone())?;
-                let ih = beta_reduce(Thm::assume(pt.clone())?)?;
-
-                let scons_ht = self.cs.scons.clone().apply(h.clone())?.apply(t.clone())?;
-                let s1 = self.scons(&h, &t, &y)?;
-                let lhs1 = s1.cong_arg(self.append.clone())?.cong_fn(z.clone())?;
-                let t_y = ap(&t, &y)?;
-                let s2 = self.scons(&h, &t_y, &z)?;
-                let lhs = lhs1.trans(s2)?;
-                let scons_h = self.cs.scons.clone().apply(h.clone())?;
-                let mid = ih.cong_arg(scons_h)?;
-                let s3 = self.scons(&h, &t, &yz)?;
-                let raw = lhs.trans(mid)?.trans(s3.sym()?)?;
-
-                beta_expand(&motive, scons_ht, raw)?
-                    .imp_intro(&pt)?
-                    .imp_intro(&ph)?
-            };
-
-            let by_x = self
-                .cs
-                .induct(&motive, vec![case_atom, case_nil, case_cons])?;
-            by_x.all_intro("z", tau.clone())?.all_intro("y", tau)
-        }
-    }
-
     /// **S0 gate (the induction instance):** a genuine structural-
-    /// induction theorem on the ACL2 carrier — `aappend` associativity,
-    /// closed, with the exact statement.
+    /// induction theorem on the ACL2 carrier — `app` associativity,
+    /// closed, with the exact statement, through the promoted S4
+    /// recursion engine.
     #[test]
     fn t_induct_instance() {
-        let ap_th = Append::build().unwrap();
-        let thm = ap_th.assoc().unwrap(); // ⊢ ∀y z x. …
-        assert!(thm.hyps().is_empty(), "aappend assoc must be closed");
+        use crate::init::acl2::defun::{DefunSpec, admit_defun, defun_law};
+        use crate::init::acl2::derivable::ground_env;
+        use smol_str::SmolStr;
+
+        let e0 = ground_env().unwrap();
+        // (defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))
+        let spec = {
+            let tm = &*e0.tm;
+            let x = tm.sym(b"X").unwrap();
+            let y = tm.sym(b"Y").unwrap();
+            let step = tm
+                .app(
+                    b"CONS",
+                    &[
+                        tm.app(b"CAR", &[x.clone()]).unwrap(),
+                        tm.app(b"APP", &[tm.app(b"CDR", &[x.clone()]).unwrap(), y.clone()])
+                            .unwrap(),
+                    ],
+                )
+                .unwrap();
+            let body = tm
+                .mk_if(&tm.app(b"CONSP", &[x.clone()]).unwrap(), &step, &y)
+                .unwrap();
+            DefunSpec {
+                name: SmolStr::new("APP"),
+                formals: vec![SmolStr::new("X"), SmolStr::new("Y")],
+                body,
+                rec_formal: Some(0),
+            }
+        };
+        let env = admit_defun(&e0, &spec).unwrap();
+        let (_, u) = env.user("APP").unwrap();
+        let th = a();
+        let tau = th.ty.clone();
+
+        // ⊢ ∀y z x. app (app x y) z = app x (app y z) by induction on x,
+        // the per-constructor laws supplied by the promoted engine.
+        let y = Term::free("y", tau.clone());
+        let z = Term::free("z", tau.clone());
+        let ap = |a: &Term, b: &Term| {
+            u.model
+                .clone()
+                .apply(a.clone())
+                .unwrap()
+                .apply(b.clone())
+                .unwrap()
+        };
+        let yz = ap(&y, &z);
+        let motive = {
+            let x = Term::free("x", tau.clone());
+            let goal = ap(&ap(&x, &y), &z).equals(ap(&x, &yz)).unwrap();
+            Term::abs(tau.clone(), subst::close(&goal, "x"))
+        };
+        let law = |v: &Term, w: &Term| defun_law(&env, u, &[v.clone(), w.clone()]).unwrap();
+
+        let leaf_case = |leaf_c: Term| -> Thm {
+            let inner = law(&leaf_c, &y); // app leaf y = y
+            let lhs_eq = inner
+                .cong_arg(u.model.clone())
+                .unwrap()
+                .cong_fn(z.clone())
+                .unwrap();
+            let rhs_eq = law(&leaf_c, &yz); // app leaf (app y z) = app y z
+            let raw = lhs_eq.trans(rhs_eq.sym().unwrap()).unwrap();
+            beta_expand(&motive, leaf_c, raw).unwrap()
+        };
+        let b = Term::free("b", acl2_payload());
+        let case_atom = leaf_case(th.atom.clone().apply(b).unwrap());
+        let case_nil = leaf_case(th.nil.clone());
+
+        let case_cons = {
+            let h = Term::free("h", tau.clone());
+            let t = Term::free("t", tau.clone());
+            let ph = motive.clone().apply(h.clone()).unwrap();
+            let pt = motive.clone().apply(t.clone()).unwrap();
+            let ih = beta_reduce(Thm::assume(pt.clone()).unwrap()).unwrap();
+
+            let acons_ht = th
+                .cons
+                .clone()
+                .apply(h.clone())
+                .unwrap()
+                .apply(t.clone())
+                .unwrap();
+            let s1 = law(&acons_ht, &y); // app (acons h t) y = acons h (app t y)
+            let lhs1 = s1
+                .cong_arg(u.model.clone())
+                .unwrap()
+                .cong_fn(z.clone())
+                .unwrap();
+            let t_y = ap(&t, &y);
+            // app (acons h (app t y)) z = acons h (app (app t y) z).
+            let s2 = law(
+                &th.cons
+                    .clone()
+                    .apply(h.clone())
+                    .unwrap()
+                    .apply(t_y.clone())
+                    .unwrap(),
+                &z,
+            );
+            let lhs = lhs1.trans(s2).unwrap();
+            let acons_h = th.cons.clone().apply(h.clone()).unwrap();
+            let mid = ih.cong_arg(acons_h).unwrap();
+            let s3 = law(&acons_ht, &yz);
+            let raw = lhs.trans(mid).unwrap().trans(s3.sym().unwrap()).unwrap();
+            beta_expand(&motive, acons_ht, raw)
+                .unwrap()
+                .imp_intro(&pt)
+                .unwrap()
+                .imp_intro(&ph)
+                .unwrap()
+        };
+
+        let thm = th
+            .induct(&motive, vec![case_atom, case_nil, case_cons])
+            .unwrap()
+            .all_intro("z", tau.clone())
+            .unwrap()
+            .all_intro("y", tau)
+            .unwrap();
+        assert!(thm.hyps().is_empty(), "app assoc must be closed");
+
         let (x, y, z) = (avar("x0"), avar("y0"), avar("z0"));
         let inst = thm
             .all_elim(y.clone())
@@ -753,8 +741,7 @@ mod tests {
             .unwrap();
         let inst = beta_reduce(inst).unwrap();
         let ap = |a: &Term, b: &Term| {
-            ap_th
-                .append
+            u.model
                 .clone()
                 .apply(a.clone())
                 .unwrap()

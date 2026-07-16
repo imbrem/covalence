@@ -19,11 +19,23 @@
 //!   only as the *assumption* `{f = λ…} ⊢ f = λ…`, so even a wrongly-admitted
 //!   non-terminating definition cannot mint a hypothesis-free falsehood.
 //! - **`defthm`** — only what is genuinely provable *today*: **ground,
-//!   decidable goals**, discharged by kernel reduction. `(defthm four (equal
-//!   (+ 2 2) 4))` mints a real kernel theorem (the certified step-relation
-//!   drive to `T`, then `eqt_elim`); a goal with free variables is
-//!   **rejected** with a message naming what is missing (induction — future
-//!   work). Nothing is ever faked.
+//!   decidable goals**. A ground `(equal LHS RHS)` over the reified fragment
+//!   (quoted data, integer literals, and the mapped
+//!   [`PrimRow`](covalence_init::init::acl2::prims::PrimRow) primitives —
+//!   see [`row_spelling`]) is proved **through the S0–S3 ladder**
+//!   ([`covalence_init::init::acl2`]): the dialect builds a
+//!   `⊢ Derivable_ACL2 ⌜goal⌝` *certificate* (a hypothesis-free theorem
+//!   about the reified derivability predicate), projects it through the
+//!   machine-checked soundness metatheorem
+//!   `⊢ ∀A. Derivable_ACL2 A ⟹ (∀σ. ¬(eval A σ = anil))`, and transports it
+//!   to the **base-HOL model equation** that is stored and shown (e.g.
+//!   `(defthm four (equal (+ 2 2) 4))` stores
+//!   `⊢ aplus (aint 2) (aint 2) = aint 4`). Everything else falls back to
+//!   the pre-ladder path: discharge by kernel reduction (drive to `T`, then
+//!   `eqt_elim`). A goal with free variables is **rejected** with a message
+//!   naming what is missing (induction — future work); a false ground goal
+//!   is refuted, never faked. [`Acl2Session::theorem_entry`] records which
+//!   path proved each stored theorem ([`Acl2Proof`]).
 //!
 //! # The honesty invariant
 //!
@@ -72,10 +84,14 @@
 //! `int`.
 
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::{as_bool, as_int, mk_bool, mk_int};
-use covalence_init::init::ext::ThmExt;
+use covalence_init::init::acl2::derivable::{self as ladder, Acl2Env};
+use covalence_init::init::acl2::term::Terms;
+use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::{Term, Type};
 use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
@@ -163,6 +179,38 @@ pub struct Acl2Outcome {
     pub kind: Acl2ValueKind,
 }
 
+/// How a stored `defthm` was proved (both paths mint genuine kernel
+/// theorems; this records *which machinery* produced the stored one).
+#[derive(Clone, Debug)]
+pub enum Acl2Proof {
+    /// Through the reified S0–S3 ladder: `derivation` is the
+    /// hypothesis-free certificate `⊢ Derivable_ACL2 ⌜goal⌝`, which was
+    /// projected through the machine-checked soundness metatheorem and
+    /// transported ([`covalence_init::init::acl2::derivable::transport_equal`])
+    /// to the stored base-HOL model equation.
+    Certificate {
+        /// `⊢ Derivable_ACL2 ⌜goal⌝` — the reified derivation itself.
+        derivation: Thm,
+    },
+    /// By certified kernel value reduction (drive the goal to `T`, then
+    /// `eqt_elim`) — the fallback for ground goals outside the reified
+    /// fragment (its hypotheses, if any, are the `defun` equations used).
+    Reduction,
+}
+
+/// A stored `defthm`: the kernel theorem plus how it was proved.
+#[derive(Clone, Debug)]
+pub struct Acl2Theorem {
+    /// The stored kernel theorem. On the [`Acl2Proof::Certificate`] path
+    /// this is the transported base-HOL **model equation** (e.g.
+    /// `⊢ aplus (aint 2) (aint 2) = aint 4`); on the
+    /// [`Acl2Proof::Reduction`] path it is `hyps ⊢ goal` over the value
+    /// semantics.
+    pub thm: Thm,
+    /// Which path proved it.
+    pub proof: Acl2Proof,
+}
+
 // ============================================================================
 // The session
 // ============================================================================
@@ -176,7 +224,7 @@ pub struct Acl2Outcome {
 /// theorems, retrievable via [`theorem`](Acl2Session::theorem)).
 pub struct Acl2Session {
     defs: Defs,
-    thms: BTreeMap<String, Thm>,
+    thms: BTreeMap<String, Acl2Theorem>,
     /// A definition-free semantics for structural helpers (`tau`, renderers).
     sem0: LispSemantics,
 }
@@ -199,8 +247,15 @@ impl Acl2Session {
 
     /// A proved `defthm` by name — the genuine kernel theorem (its hypotheses
     /// are the `defun` equations the proof used; empty for pure-arithmetic
-    /// goals).
+    /// goals and for everything on the certificate path).
     pub fn theorem(&self, name: &str) -> Option<&Thm> {
+        self.thms.get(name).map(|t| &t.thm)
+    }
+
+    /// A proved `defthm` by name, with its provenance: the theorem plus
+    /// *which path* proved it (the reified [`Acl2Proof::Certificate`], or
+    /// the [`Acl2Proof::Reduction`] fallback).
+    pub fn theorem_entry(&self, name: &str) -> Option<&Acl2Theorem> {
         self.thms.get(name)
     }
 
@@ -568,10 +623,14 @@ impl Acl2Session {
     // defthm — ground decidable goals only
     // ------------------------------------------------------------------
 
-    /// `(defthm name goal)`: prove `goal` by kernel reduction, or reject.
-    /// Only **ground** goals are accepted; a goal with free variables is a
-    /// universally quantified claim this slice cannot prove (induction is not
-    /// implemented) and is rejected saying so.
+    /// `(defthm name goal)`: prove `goal`, or reject. A ground
+    /// `(equal LHS RHS)` over the reified fragment goes **through the
+    /// S0–S3 ladder** ([`prove_certified`](Self::prove_certified)); every
+    /// other goal takes the reduction fallback
+    /// ([`prove_ground`](Self::prove_ground)). Only **ground** goals are
+    /// accepted; a goal with free variables is a universally quantified
+    /// claim this slice cannot prove (induction is not implemented) and is
+    /// rejected saying so.
     fn admit_defthm(&mut self, items: &[SExpr]) -> Result<String, Acl2Error> {
         if items.len() != 3 {
             return Err(Acl2Error::Malformed(
@@ -582,9 +641,67 @@ impl Acl2Session {
             .as_symbol()
             .ok_or_else(|| Acl2Error::Malformed("defthm: name is not a symbol".into()))?
             .to_string();
-        let thm = self.prove_ground(&name, &items[2])?;
-        self.thms.insert(name.clone(), thm);
+        let entry = match self.prove_certified(&items[2])? {
+            Some(entry) => entry,
+            None => Acl2Theorem {
+                thm: self.prove_ground(&name, &items[2])?,
+                proof: Acl2Proof::Reduction,
+            },
+        };
+        self.thms.insert(name.clone(), entry);
         Ok(name)
+    }
+
+    /// Try the **reified-certificate path** for a ground `(equal LHS RHS)`
+    /// goal over the supported fragment: build the hypothesis-free
+    /// `⊢ Derivable_ACL2 ⌜goal⌝` certificate bottom-up (the `derive_*`
+    /// constructors of [`covalence_init::init::acl2::derivable`]), project
+    /// it through the soundness metatheorem, and transport the result to
+    /// the base-HOL model equation. `Ok(None)` = out of fragment, or the
+    /// two sides compute to *different* model values — the caller falls
+    /// back to the reduction path, which proves, honestly refutes, or
+    /// rejects. Nothing is ever minted on a failed path.
+    fn prove_certified(&self, goal: &SExpr) -> Result<Option<Acl2Theorem>, Acl2Error> {
+        let SExpr::List(items) = goal else {
+            return Ok(None);
+        };
+        if items.len() != 3
+            || !matches!(items[0].as_symbol(), Some("equal") | Some("="))
+            || !cert_fragment(&items[1])
+            || !cert_fragment(&items[2])
+        {
+            return Ok(None);
+        }
+        // The engine (env + the soundness metatheorem) is only built once a
+        // goal actually lies in the fragment — `soundness` is not cheap.
+        let eng = cert_engine()?;
+        let Some(l) = eng.eval_cert(&items[1])? else {
+            return Ok(None);
+        };
+        let Some(r) = eng.eval_cert(&items[2])? else {
+            return Ok(None);
+        };
+        if l.value != r.value {
+            return Ok(None); // not certifiably equal — fall back (refutation)
+        }
+        let tm = eng.tm();
+        let qv = tm.quote(&l.value).map_err(kernel_err)?;
+        // Splice the per-side derivations at the shared quoted value:
+        //   l.der : ⊢ D ⌜(EQUAL encL 'v)⌝,  r.der : ⊢ D ⌜(EQUAL encR 'v)⌝
+        //   ⟹ (symm, trans)  ⊢ D ⌜(EQUAL encL encR)⌝.
+        let der = if r.enc == qv {
+            l.der.clone() // RHS is the quoted value itself: l.der IS the goal
+        } else {
+            let r_sym = eng.symm_cert(&r.enc, &qv, r.der)?; // D ⌜(EQUAL 'v encR)⌝
+            eng.trans_cert(&l.enc, &qv, &r.enc, l.der, r_sym)?
+        };
+        let phi = tm.mk_equal(&l.enc, &r.enc).map_err(kernel_err)?;
+        let projected = ladder::project_with(&eng.snd, &phi, der.clone()).map_err(kernel_err)?;
+        let thm = ladder::transport_equal(&eng.env, &projected).map_err(kernel_err)?;
+        Ok(Some(Acl2Theorem {
+            thm,
+            proof: Acl2Proof::Certificate { derivation: der },
+        }))
     }
 
     /// Prove a ground goal: reduce it to a boolean literal by the kernel and
@@ -771,6 +888,428 @@ impl Acl2Session {
             }
         }
     }
+}
+
+// ============================================================================
+// The reified-certificate engine (defthm through the S0–S3 ladder)
+// ============================================================================
+
+/// Map a **surface head to its PrimRow spelling** (per
+/// [`covalence_init::init::acl2::term::Terms`]'s encoders): the reified
+/// fragment. `-`, `*`, `<=`, `zp`, `natp`, `atom`, `endp`, and `if` are
+/// deliberately absent: `atom`/`endp`/`<=`/binary-`-` are defuns/macros
+/// (not table rows), `if` is a special form, and `BINARY-*`/`UNARY--`/`<`
+/// have no *public* ground model-folding law yet (only `Prims::plus_lit`
+/// is exported) — all of these take the honest reduction fallback.
+fn row_spelling(head: &str) -> Option<&'static str> {
+    match head {
+        "car" => Some("CAR"),
+        "cdr" => Some("CDR"),
+        "cons" => Some("CONS"),
+        "consp" => Some("CONSP"),
+        "equal" | "=" => Some("EQUAL"),
+        "+" => Some("BINARY-+"),
+        _ => None,
+    }
+}
+
+/// Cheap syntactic pre-check: is this form in the certificate fragment
+/// (quoted data, integer literals, `t`/`nil`, applications of the mapped
+/// heads)? Keeps the expensive engine build off goals that can never take
+/// the certificate path. (The engine can still return `None` later — e.g.
+/// arithmetic on non-literal values.)
+fn cert_fragment(e: &SExpr) -> bool {
+    match e {
+        SExpr::Atom(Atom::Symbol(s)) => {
+            let s = s.as_str();
+            s == "t" || s == "nil" || s.parse::<Int>().is_ok()
+        }
+        SExpr::Atom(_) => false,
+        SExpr::List(items) => match items.split_first() {
+            Some((h, args)) => match h.as_symbol() {
+                Some("quote") => args.len() == 1 && quotable(&args[0]),
+                Some(h) => row_spelling(h).is_some() && args.iter().all(cert_fragment),
+                None => false,
+            },
+            None => false,
+        },
+    }
+}
+
+/// Is this quoted datum encodable as a carrier value (symbols, numerals,
+/// proper lists — no string atoms)?
+fn quotable(d: &SExpr) -> bool {
+    match d {
+        SExpr::Atom(Atom::Symbol(_)) => true,
+        SExpr::Atom(_) => false,
+        SExpr::List(items) => items.iter().all(quotable),
+    }
+}
+
+/// A certificate-evaluated subterm: its pseudo-term encoding `enc`, its
+/// canonical model value, and the derivation
+/// `⊢ Derivable_ACL2 ⌜(EQUAL enc 'value)⌝`.
+struct CertVal {
+    enc: Term,
+    value: Term,
+    der: Thm,
+}
+
+/// The certificate engine: the ground S3 environment plus its (expensive,
+/// proved-once-per-process) soundness metatheorem
+/// `⊢ ∀A. Derivable_ACL2 A ⟹ (∀σ. ¬(eval A σ = anil))`.
+struct CertEngine {
+    env: Acl2Env,
+    snd: Thm,
+}
+
+/// The process-global certificate engine (kernel theories are
+/// process-global, so this is shared across sessions like the S3 tests'
+/// own `LazyLock` soundness).
+fn cert_engine() -> Result<&'static CertEngine, Acl2Error> {
+    static ENGINE: LazyLock<std::result::Result<CertEngine, String>> = LazyLock::new(|| {
+        let env = ladder::ground_env().map_err(|e| e.to_string())?;
+        let snd = ladder::soundness(&env).map_err(|e| e.to_string())?;
+        Ok(CertEngine { env, snd })
+    });
+    ENGINE
+        .as_ref()
+        .map_err(|e| kernel_err(format!("acl2 certificate engine failed to build: {e}")))
+}
+
+impl CertEngine {
+    fn tm(&self) -> &Terms {
+        &self.env.tm
+    }
+
+    /// INST an env axiom at a ground substitution and return the folded
+    /// derivation (axiom → `derive_inst_ground`).
+    fn inst_axiom(&self, name: &str, binds: &[(&[u8], Term)]) -> Result<Thm, Acl2Error> {
+        let (_, ax) = self.env.axiom(name).map_err(kernel_err)?;
+        let ax = ax.clone();
+        let d_ax = ladder::derive_axiom(&self.env, name).map_err(kernel_err)?;
+        let s = ladder::finite_sigma(self.tm(), binds).map_err(kernel_err)?;
+        ladder::derive_inst_ground(&self.env, &ax, &s, d_ax).map_err(kernel_err)
+    }
+
+    /// `⊢ D ⌜(EQUAL 'v 'v)⌝` — `equal-refl` INSTed at `X ↦ 'v`.
+    fn refl_cert(&self, qv: &Term) -> Result<Thm, Acl2Error> {
+        self.inst_axiom("equal-refl", &[(b"X", qv.clone())])
+    }
+
+    /// From `der_ab : ⊢ D ⌜(EQUAL a b)⌝` derive `⊢ D ⌜(EQUAL b a)⌝` —
+    /// `equal-symm` INSTed at `{X ↦ a, Y ↦ b}`, then MP.
+    fn symm_cert(&self, a: &Term, b: &Term, der_ab: Thm) -> Result<Thm, Acl2Error> {
+        let tm = self.tm();
+        let d_inst = self.inst_axiom("equal-symm", &[(b"X", a.clone()), (b"Y", b.clone())])?;
+        let eq_ab = tm.mk_equal(a, b).map_err(kernel_err)?;
+        let eq_ba = tm.mk_equal(b, a).map_err(kernel_err)?;
+        ladder::derive_mp(&self.env, &eq_ab, &eq_ba, d_inst, der_ab).map_err(kernel_err)
+    }
+
+    /// From `der_ab : ⊢ D ⌜(EQUAL a b)⌝` and `der_bc : ⊢ D ⌜(EQUAL b c)⌝`
+    /// derive `⊢ D ⌜(EQUAL a c)⌝` — `equal-trans` INSTed at
+    /// `{X ↦ a, Y ↦ b, Z ↦ c}`, then MP twice.
+    fn trans_cert(
+        &self,
+        a: &Term,
+        b: &Term,
+        c: &Term,
+        der_ab: Thm,
+        der_bc: Thm,
+    ) -> Result<Thm, Acl2Error> {
+        let tm = self.tm();
+        let d_inst = self.inst_axiom(
+            "equal-trans",
+            &[(b"X", a.clone()), (b"Y", b.clone()), (b"Z", c.clone())],
+        )?;
+        let eq_ab = tm.mk_equal(a, b).map_err(kernel_err)?;
+        let eq_bc = tm.mk_equal(b, c).map_err(kernel_err)?;
+        let eq_ac = tm.mk_equal(a, c).map_err(kernel_err)?;
+        let inner = tm.mk_implies(&eq_bc, &eq_ac).map_err(kernel_err)?;
+        let step =
+            ladder::derive_mp(&self.env, &eq_ab, &inner, d_inst, der_ab).map_err(kernel_err)?;
+        ladder::derive_mp(&self.env, &eq_bc, &eq_ac, step, der_bc).map_err(kernel_err)
+    }
+
+    /// A leaf value `v`: encoding `'v`, derivation
+    /// `⊢ D ⌜(EQUAL 'v 'v)⌝` (the reflexivity certificate).
+    fn leaf(&self, v: Term) -> Result<CertVal, Acl2Error> {
+        let qv = self.tm().quote(&v).map_err(kernel_err)?;
+        let der = self.refl_cert(&qv)?;
+        Ok(CertVal {
+            enc: qv,
+            value: v,
+            der,
+        })
+    }
+
+    /// A quoted datum → its carrier value: numerals → `aint`, `nil`/`t`
+    /// (any case) → the canonical booleans `anil` / `t` (never
+    /// `asym "NIL"` — the representation contract), other symbols →
+    /// `asym` of the bytes as written, proper lists → `acons` chains.
+    fn datum(&self, d: &SExpr) -> Result<Option<Term>, Acl2Error> {
+        let tm = self.tm();
+        match d {
+            SExpr::Atom(Atom::Symbol(s)) => {
+                let s = s.as_str();
+                let v = if let Ok(n) = s.parse::<Int>() {
+                    tm.th.aint_at(&mk_int(n)).map_err(kernel_err)?
+                } else if s.eq_ignore_ascii_case("nil") {
+                    tm.th.nil.clone()
+                } else if s.eq_ignore_ascii_case("t") {
+                    tm.pr.t.clone()
+                } else {
+                    tm.sym(s.as_bytes()).map_err(kernel_err)?
+                };
+                Ok(Some(v))
+            }
+            SExpr::Atom(_) => Ok(None),
+            SExpr::List(items) => {
+                let mut acc = tm.th.nil.clone();
+                for it in items.iter().rev() {
+                    let Some(v) = self.datum(it)? else {
+                        return Ok(None);
+                    };
+                    acc = tm
+                        .th
+                        .cons
+                        .clone()
+                        .apply(v)
+                        .map_err(kernel_err)?
+                        .apply(acc)
+                        .map_err(kernel_err)?;
+                }
+                Ok(Some(acc))
+            }
+        }
+    }
+
+    /// Certificate-evaluate a surface form bottom-up: encode it as an S2
+    /// pseudo-term, compute its canonical model value, and build the
+    /// derivation `⊢ D ⌜(EQUAL enc 'value)⌝` (leaves by `equal-refl`+INST;
+    /// applications by congruence + the computation clause folded by an S1
+    /// model law, spliced with `equal-trans`+MP). `Ok(None)` = out of
+    /// fragment (free variable, unmapped head, or no folding law at these
+    /// values).
+    fn eval_cert(&self, e: &SExpr) -> Result<Option<CertVal>, Acl2Error> {
+        let tm = self.tm();
+        match e {
+            SExpr::Atom(Atom::Symbol(s)) => {
+                let s = s.as_str();
+                let v = if let Ok(n) = s.parse::<Int>() {
+                    tm.th.aint_at(&mk_int(n)).map_err(kernel_err)?
+                } else if s == "t" {
+                    tm.pr.t.clone()
+                } else if s == "nil" {
+                    tm.th.nil.clone()
+                } else {
+                    return Ok(None); // free variable — not ground
+                };
+                self.leaf(v).map(Some)
+            }
+            SExpr::Atom(_) => Ok(None),
+            SExpr::List(items) => {
+                let Some((head, args)) = items.split_first() else {
+                    return Ok(None);
+                };
+                let Some(h) = head.as_symbol() else {
+                    return Ok(None);
+                };
+                if h == "quote" {
+                    if args.len() != 1 {
+                        return Ok(None);
+                    }
+                    let Some(v) = self.datum(&args[0])? else {
+                        return Ok(None);
+                    };
+                    return self.leaf(v).map(Some);
+                }
+                let Some(sym) = row_spelling(h) else {
+                    return Ok(None);
+                };
+                let k = self.env.row(sym).map_err(kernel_err)?;
+                if args.len() != self.env.rows[k].arity {
+                    return Ok(None);
+                }
+                let mut kids = Vec::with_capacity(args.len());
+                for a in args {
+                    match self.eval_cert(a)? {
+                        Some(cv) => kids.push(cv),
+                        None => return Ok(None),
+                    }
+                }
+                let vals: Vec<Term> = kids.iter().map(|c| c.value.clone()).collect();
+                // Computation first (cheap failure): ⊢ D ⌜(EQUAL (F 'v⃗) 'w)⌝
+                // with the model image folded to the canonical value w.
+                let Some((w, d_comp)) = self.comp_cert(k, sym, &vals)? else {
+                    return Ok(None);
+                };
+                // Congruence: ⊢ D ⌜(EQUAL (F enc⃗) (F 'v⃗))⌝.
+                let qvals: Vec<Term> = vals
+                    .iter()
+                    .map(|v| tm.quote(v))
+                    .collect::<Result<_, _>>()
+                    .map_err(kernel_err)?;
+                let pairs: Vec<(Term, Term)> = kids
+                    .iter()
+                    .zip(&qvals)
+                    .map(|(c, q)| (c.enc.clone(), q.clone()))
+                    .collect();
+                let ders: Vec<Thm> = kids.iter().map(|c| c.der.clone()).collect();
+                let d_cong = ladder::derive_cong(&self.env, k, &pairs, ders).map_err(kernel_err)?;
+                // Splice: (F enc⃗) = (F 'v⃗) = 'w.
+                let encs: Vec<Term> = kids.iter().map(|c| c.enc.clone()).collect();
+                let enc = tm.app(sym.as_bytes(), &encs).map_err(kernel_err)?;
+                let f_qv = tm.app(sym.as_bytes(), &qvals).map_err(kernel_err)?;
+                let qw = tm.quote(&w).map_err(kernel_err)?;
+                let der = self.trans_cert(&enc, &f_qv, &qw, d_cong, d_comp)?;
+                Ok(Some(CertVal { enc, value: w, der }))
+            }
+        }
+    }
+
+    /// The computation-clause certificate for row `k` at canonical values:
+    /// `(w, ⊢ D ⌜(EQUAL (F 'v⃗) 'w)⌝)` — [`ladder::derive_comp`] with the
+    /// model image folded by a **public S1 model-computation law**
+    /// ([`ladder::derive_comp_folded`]). `Ok(None)` when no law covers
+    /// these values (e.g. arithmetic on non-integer values) — the caller
+    /// falls back.
+    fn comp_cert(
+        &self,
+        k: usize,
+        sym: &str,
+        vals: &[Term],
+    ) -> Result<Option<(Term, Thm)>, Acl2Error> {
+        let tm = self.tm();
+        let pr = tm.pr;
+        // CONS needs no fold: `acons v₀ v₁` IS the canonical value.
+        if sym == "CONS" {
+            let w = tm
+                .th
+                .cons
+                .clone()
+                .apply(vals[0].clone())
+                .map_err(kernel_err)?
+                .apply(vals[1].clone())
+                .map_err(kernel_err)?;
+            let der = ladder::derive_comp(&self.env, k, vals).map_err(kernel_err)?;
+            return Ok(Some((w, der)));
+        }
+        let law: Option<Thm> = match sym {
+            "CAR" | "CDR" => {
+                let cdr = sym == "CDR";
+                let v = &vals[0];
+                if let Some((h, t)) = as_acons(tm, v) {
+                    let l = if cdr { pr.cdr_cons() } else { pr.car_cons() }.map_err(kernel_err)?;
+                    Some(
+                        l.all_elim(h)
+                            .map_err(kernel_err)?
+                            .all_elim(t)
+                            .map_err(kernel_err)?,
+                    )
+                } else if *v == tm.th.nil {
+                    Some(if cdr { pr.cdr_nil() } else { pr.car_nil() }.map_err(kernel_err)?)
+                } else if let Some(i) = as_aint_arg(tm, v) {
+                    let l = if cdr { pr.cdr_int() } else { pr.car_int() }.map_err(kernel_err)?;
+                    Some(l.all_elim(i).map_err(kernel_err)?)
+                } else if let Some(s) = as_asym_arg(tm, v) {
+                    let l = if cdr { pr.cdr_sym() } else { pr.car_sym() }.map_err(kernel_err)?;
+                    Some(l.all_elim(s).map_err(kernel_err)?)
+                } else {
+                    None // e.g. the defined constant `t` — no direct law
+                }
+            }
+            "CONSP" => {
+                let v = &vals[0];
+                if let Some((h, t)) = as_acons(tm, v) {
+                    Some(
+                        pr.consp_cons()
+                            .map_err(kernel_err)?
+                            .all_elim(h)
+                            .map_err(kernel_err)?
+                            .all_elim(t)
+                            .map_err(kernel_err)?,
+                    )
+                } else if *v == tm.th.nil {
+                    Some(pr.consp_nil().map_err(kernel_err)?)
+                } else {
+                    None // aint/asym: no public direct law — fall back
+                }
+            }
+            "EQUAL" => {
+                if vals[0] == vals[1] {
+                    Some(
+                        pr.equal_refl()
+                            .map_err(kernel_err)?
+                            .all_elim(vals[0].clone())
+                            .map_err(kernel_err)?,
+                    )
+                } else if let (Some(i), Some(j)) =
+                    (as_aint_lit(tm, &vals[0]), as_aint_lit(tm, &vals[1]))
+                {
+                    // Distinct integer literals: genuinely disequal.
+                    let ne = pr.int_ne(i, j).map_err(kernel_err)?;
+                    Some(
+                        pr.equal_ne()
+                            .map_err(kernel_err)?
+                            .all_elim(vals[0].clone())
+                            .map_err(kernel_err)?
+                            .all_elim(vals[1].clone())
+                            .map_err(kernel_err)?
+                            .imp_elim(ne)
+                            .map_err(kernel_err)?,
+                    )
+                } else {
+                    None // distinct non-int values: no discrimination law yet
+                }
+            }
+            "BINARY-+" => match (as_aint_lit(tm, &vals[0]), as_aint_lit(tm, &vals[1])) {
+                (Some(i), Some(j)) => Some(pr.plus_lit(i, j).map_err(kernel_err)?),
+                _ => None, // completion arithmetic (non-numbers read as 0): no public law
+            },
+            _ => None,
+        };
+        let Some(law) = law else {
+            return Ok(None);
+        };
+        let w = law
+            .concl()
+            .as_eq()
+            .ok_or_else(|| kernel_err("acl2 cert: model law is not an equation"))?
+            .1
+            .clone();
+        let der = ladder::derive_comp_folded(&self.env, k, vals, &law).map_err(kernel_err)?;
+        Ok(Some((w, der)))
+    }
+}
+
+/// Split `acons h t` into `(h, t)`.
+fn as_acons(tm: &Terms, v: &Term) -> Option<(Term, Term)> {
+    let (ch, t) = v.as_app()?;
+    let (c, h) = ch.as_app()?;
+    if *c != tm.th.cons {
+        return None;
+    }
+    Some((h.clone(), t.clone()))
+}
+
+/// The payload term of `aint i`.
+fn as_aint_arg(tm: &Terms, v: &Term) -> Option<Term> {
+    let (f, i) = v.as_app()?;
+    (*f == tm.th.aint).then(|| i.clone())
+}
+
+/// The payload term of `asym s`.
+fn as_asym_arg(tm: &Terms, v: &Term) -> Option<Term> {
+    let (f, s) = v.as_app()?;
+    (*f == tm.th.asym).then(|| s.clone())
+}
+
+/// The literal of `aint ⌜i⌝` as an `i128` (the S1 lit-law input type).
+fn as_aint_lit(tm: &Terms, v: &Term) -> Option<i128> {
+    let i = as_aint_arg(tm, v)?;
+    i128::try_from(&as_int(&i)?).ok()
 }
 
 // ============================================================================

@@ -41,7 +41,7 @@
 //! S3's INST rule. Everything here is a derived theorem over existing
 //! kernel rules; nothing is trusted, no axiom is postulated.
 
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use covalence_core::{Error, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
@@ -108,12 +108,24 @@ pub struct Terms {
     sev_pd: ParaDef,
 }
 
-/// The process-global S2 deep-term theory.
+static TERMS: LazyLock<std::result::Result<Arc<Terms>, String>> =
+    LazyLock::new(|| Terms::build().map(Arc::new).map_err(|e| e.to_string()));
+
+/// The process-global S2 deep-term theory (the *primitive-table* build —
+/// S4 envs with user rows carry their own [`Terms::build_with`] value).
 pub fn terms() -> Result<&'static Terms> {
-    static TERMS: LazyLock<std::result::Result<Terms, String>> =
-        LazyLock::new(|| Terms::build().map_err(|e| e.to_string()));
     TERMS
         .as_ref()
+        .map(|arc| &**arc)
+        .map_err(|e| Error::ConnectiveRule(format!("acl2 terms build failed: {e}")))
+}
+
+/// The process-global theory as a shareable handle (what `ground_env`
+/// stores — allocation-free, clones the static `Arc`).
+pub fn arc_terms() -> Result<Arc<Terms>> {
+    TERMS
+        .as_ref()
+        .cloned()
         .map_err(|e| Error::ConnectiveRule(format!("acl2 terms build failed: {e}")))
 }
 
@@ -149,7 +161,9 @@ fn build_dispatch(
     let a = th.ty.clone();
     let mut acc = th.nil.clone();
     for row in rows.iter().rev() {
-        let guard = h.clone().equals(th.asym_lit(row.sym.as_bytes())?)?;
+        let guard = h
+            .clone()
+            .equals(th.asym_lit(row.sym.as_str().as_bytes())?)?;
         let mut expr = row.model.clone();
         for i in 0..row.arity {
             expr = expr.apply(proj_arg(th, vs, i)?)?;
@@ -175,6 +189,17 @@ fn build_dispatch(
 
 impl Terms {
     fn build() -> Result<Terms> {
+        Self::build_with(prims()?.table())
+    }
+
+    /// Build the deep-term theory over an **extended row table** (the
+    /// prims ++ user-defun rows of an S4 env — S4+S6 design §1). The
+    /// evaluator/substituter constants are re-minted per build
+    /// (`Thm::define` allocates a fresh `Def` each call, so distinct
+    /// envs' `eval`s are distinct constants and their theorems never
+    /// mix); the dispatch spine, computation laws and `subst_sema` are
+    /// all data-driven from `rows`.
+    pub fn build_with(rows: Vec<PrimRow>) -> Result<Terms> {
         let pr = prims()?;
         let th = pr.th;
         let a = th.ty.clone();
@@ -184,7 +209,6 @@ impl Terms {
         let beta_ty = Type::fun(vt.clone(), pt.clone());
         let qsym = th.asym_lit(b"QUOTE")?;
         let ifsym = th.asym_lit(b"IF")?;
-        let rows = pr.table();
 
         // λi:int. aint i — the int arm shared by both atom steps.
         let ci = {
@@ -317,6 +341,12 @@ impl Terms {
 
     fn a(&self) -> Type {
         self.th.ty.clone()
+    }
+
+    /// The row table THIS theory was built over (prims ++ user rows for
+    /// an S4 env) — the single dispatch source for `eval`/S3 clauses.
+    pub fn rows(&self) -> &[PrimRow] {
+        &self.rows
     }
 
     fn acons_t(&self, h: &Term, t: &Term) -> Result<Term> {
@@ -586,7 +616,7 @@ impl Terms {
         let mut acc = acc;
         let names: Vec<&str> = ["QUOTE", "IF"]
             .into_iter()
-            .chain(self.rows.iter().map(|r| r.sym))
+            .chain(self.rows.iter().map(|r| r.sym.as_str()))
             .collect();
         for name in names {
             if name == target {
@@ -682,11 +712,11 @@ impl Terms {
             .rows
             .get(k)
             .ok_or_else(|| Error::ConnectiveRule(format!("acl2 eval_app: bad table row {k}")))?;
-        let hk = self.th.asym_lit(row.sym.as_bytes())?;
+        let hk = self.th.asym_lit(row.sym.as_str().as_bytes())?;
         let t = Term::free("t", self.a());
         let sg = Term::free("sg", self.val_ty.clone());
         let acc = self.eval_cons_at(&hk, &t, &sg)?;
-        self.fire_dispatch(acc, row.sym)?
+        self.fire_dispatch(acc, row.sym.as_str())?
             .all_intro("sg", self.val_ty.clone())?
             .all_intro("t", self.a())
     }

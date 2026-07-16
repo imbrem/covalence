@@ -40,7 +40,7 @@ use covalence_init::{Term, Type};
 use covalence_repl_core::{Fuel, Reduction, Repl, RunToValue, Status, Strategy};
 use covalence_sexp::SExpr;
 
-use crate::acl2::{Acl2Error, Acl2Outcome, Acl2Session, Acl2ValueKind};
+use crate::acl2::{Acl2Error, Acl2Outcome, Acl2Proof, Acl2Session, Acl2ValueKind};
 use crate::defs::{Defs, build_def, build_def_with_ret};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
@@ -538,6 +538,25 @@ impl Session {
                     return Err(DirectiveError::Usage("#show EXPR".into()));
                 }
                 let form = read_one(arg).map_err(DirectiveError::Read)?;
+                // In acl2, `#show NAME` reveals a stored defthm's full
+                // sequent — on the certificate path that is the transported
+                // base-HOL model equation — and says which machinery proved
+                // it. A non-theorem name falls through to expression
+                // evaluation below.
+                if self.lang == Lang::Acl2
+                    && let Some(name) = form.as_symbol()
+                    && let Some(entry) = self.acl2.theorem_entry(name)
+                {
+                    let via = match entry.proof {
+                        Acl2Proof::Certificate { .. } => {
+                            "proved via a reified Derivable_ACL2 certificate + the \
+                             machine-checked soundness metatheorem, transported to \
+                             the base-HOL model"
+                        }
+                        Acl2Proof::Reduction => "proved by certified kernel reduction",
+                    };
+                    return Ok(format!("{}\n  [{via}]", entry.thm));
+                }
                 let out = self.reduce(&form).map_err(DirectiveError::Eval)?;
                 // The full sequent `hyps ⊢ concl` via the kernel `Thm`
                 // Display. Printing the conclusion alone would misstate a
@@ -602,15 +621,22 @@ Dialects (select with `#lang`; switching RESETS the session):
   sector           relational, NO integers (pure McCarthy); `(+ 2 2)` is stuck.
   acl2             ACL2 slice over the value semantics: `defun` admits only
                    syntactically structural recursion; `defthm` proves GROUND
-                   goals only (driven to a bool literal by certified
-                   reduction; free-variable goals are rejected — induction is
-                   not implemented). Spellings: equal, ternary if,
-                   consp/atom/endp, zp/natp.
+                   goals only (free-variable goals are rejected — induction
+                   is not implemented). A ground (equal L R) over quoted
+                   data, integer literals, and car/cdr/cons/consp/equal/+ is
+                   proved via a reified Derivable_ACL2 certificate + a
+                   machine-checked soundness metatheorem, and the STORED
+                   theorem is the transported base-HOL model equation
+                   (`#show NAME` reveals it); other ground goals are driven
+                   to a bool literal by certified reduction. Spellings:
+                   equal, ternary if, consp/atom/endp, zp/natp.
 Directives:
   #help            this text
   #lang [NAME]     show / switch dialect (resets session state)
   #show EXPR       print the full sequent behind EXPR, hypotheses included
-                   (`defs |- lhs = rhs` in scheme; `|- Reduces …` relationally)";
+                   (`defs |- lhs = rhs` in scheme; `|- Reduces …` relationally;
+                   in acl2, `#show NAME` prints a stored defthm's sequent and
+                   how it was proved)";
 
 /// A `#`-directive error.
 #[derive(Debug, thiserror::Error)]

@@ -83,10 +83,13 @@ struct Cata {
 /// its arity, and the total model function over `A`. Drives S2's `eval`
 /// dispatch spine and S3's congruence + computation clauses. `IF` and
 /// `QUOTE` are special forms (handled before the table); `ATOM`/`ENDP`,
-/// `<=` and binary `-` are ACL2 *defuns/macros*, not table rows.
+/// `<=` and binary `-` are ACL2 *defuns/macros*, not table rows. Since
+/// S4, user `defun` rows are appended to the same table (S4+S6 design
+/// §1–§2): `sym` is a `SmolStr` so admitted names need not be static.
+#[derive(Clone)]
 pub struct PrimRow {
     /// The ACL2 surface symbol, e.g. `"BINARY-+"`.
-    pub sym: &'static str,
+    pub sym: smol_str::SmolStr,
     /// Number of arguments.
     pub arity: usize,
     /// The model function (an `A → … → A` constant).
@@ -435,7 +438,7 @@ impl Prims {
     /// forms; `ATOM`, `ENDP`, `<=`, binary `-` are defun/macro layers.
     pub fn table(&self) -> Vec<PrimRow> {
         let r = |sym: &'static str, arity: usize, model: &Term| PrimRow {
-            sym,
+            sym: smol_str::SmolStr::new_static(sym),
             arity,
             model: model.clone(),
         };
@@ -1096,7 +1099,7 @@ mod tests {
         assert_eq!(pr.intval.type_of().unwrap(), Type::fun(a(), Type::int()));
         let table = pr.table();
         assert_eq!(table.len(), 11);
-        let arities: Vec<(&str, usize)> = table.iter().map(|r| (r.sym, r.arity)).collect();
+        let arities: Vec<(&str, usize)> = table.iter().map(|r| (r.sym.as_str(), r.arity)).collect();
         assert_eq!(
             arities,
             [

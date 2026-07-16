@@ -31,11 +31,34 @@
 //!   projection and `transport_equal` landing ground equations in base
 //!   HOL (the plan's first transported theorem,
 //!   `⊢ aplus (aint 2) (aint 2) = aint 4`).
+//! - **S4** ([`defun`], design `notes/vibes/lisp/acl2-s4-s6-design.md`) —
+//!   the definitional principle (conservative tier): user `defun`s admit
+//!   into new env generations with genuinely *defined* model functions
+//!   (plain `Thm::define`, or the S0 paramorphic recursor for the
+//!   consp-guarded structural template), **proved** defining equations,
+//!   per-env evaluator rebuild ([`term::Terms::build_with`]), the
+//!   `Def(j)` clause + uniform soundness discharge, the per-axiom
+//!   [`derivable::Discharge`] hook API, and [`defun::Acl2Session`]
+//!   caching per-generation soundness (S4 gate:
+//!   `⊢ app ⌜(1)⌝ ⌜(2)⌝ = ⌜(1 2)⌝` transported through the ladder).
+//! - **S6-structural** ([`derivable::s6_env`] + [`hilbert`], design
+//!   §7–§13) — the **IND structural-induction clause** (tree induction
+//!   over the formula-as-data + designated variable, soundness by
+//!   carrier induction routed through S2's `subst_sema`), the
+//!   `prop-k`/`prop-s` Hilbert axioms, the structural axiom pack
+//!   (`car-cons`/`cdr-cons`/`consp-cons` as `ModelEq`/`ModelHolds`
+//!   rows), the implication-form `CongImpl` clause family, the
+//!   [`hilbert`] deduction compiler (K/S/MP), and open-`EQUAL` transport
+//!   ([`derivable::transport_equal_open`]). S6 gate: `(defthm app-assoc …)`
+//!   derived in the object logic and transported to the closed base-HOL
+//!   `⊢ ∀x y z. app (app x y) z = app x (app y z)`.
 //!
 //! Open work is tracked in this directory's `SKELETONS.md`.
 
 pub mod carrier;
+pub mod defun;
 pub mod derivable;
+pub mod hilbert;
 pub mod ladder;
 pub mod prims;
 pub mod term;

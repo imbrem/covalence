@@ -274,6 +274,36 @@ fn acl2_show_prints_the_theorem() {
 }
 
 #[test]
+fn acl2_show_defthm_reveals_transported_sequent() {
+    // `#show NAME` on a stored certificate-path defthm prints the
+    // transported base-HOL model equation (hyps-free, so it starts with
+    // `⊢`) and notes it went via the reified certificate.
+    let mut s = Session::new().unwrap();
+    s.eval_cell("#lang acl2").unwrap();
+    s.eval_cell("(defthm four (equal (+ 2 2) 4))").unwrap();
+    let out = s.eval_cell("#show four").unwrap();
+    assert!(
+        out.starts_with('⊢'),
+        "transported model equation is hyps-free, got: {out}"
+    );
+    assert!(out.contains('='), "an equation, got: {out}");
+    assert!(
+        out.contains("Derivable_ACL2 certificate"),
+        "must note the certificate path, got: {out}"
+    );
+
+    // A reduction-path defthm is annotated as such.
+    s.eval_cell(APP).unwrap();
+    s.eval_cell("(defthm app-ab-c (equal (app (quote (a b)) (quote (c))) (quote (a b c))))")
+        .unwrap();
+    let out = s.eval_cell("#show app-ab-c").unwrap();
+    assert!(
+        out.contains("certified kernel reduction"),
+        "must note the reduction path, got: {out}"
+    );
+}
+
+#[test]
 fn show_prints_hypotheses_of_defun_unfoldings() {
     // The honesty fix for the hover-proof surface: after a `defun`, a call's
     // theorem is `{f = λ…} ⊢ f args = value` — `f` is a FREE variable in the

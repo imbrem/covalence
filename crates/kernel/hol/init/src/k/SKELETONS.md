@@ -12,11 +12,18 @@ K tutorial Lesson 1.2, boolean simplification (`tests/k_demo.rs`, `cov k demo`).
 
 ## Severe
 
-- **Conditional rules skipped (F1).** Rules with a `requires` are dropped
-  (reported). Modelling boolean side conditions needs the hooked-`Bool` /
-  hooked-`Int` theories (KORE `\dv`/`\equals` → kernel catalogue types with
-  computation rules) — the biggest F1 unknown (hooked `MAP` after). Unlocks
-  Lesson 1.7 and arithmetic-bearing languages.
+- **No builtin hooks (F1).** `requires` conditions over the language's *own*
+  boolean constructors work (`metalogic::rewrite` stratified guards → Lesson 1.7
+  mechanism, `examples/k-demo/peano-max.k`), but genuine builtin hooks —
+  `+Int`/`<=Int`/`andBool`/`notBool`, `\dv`/`\equals` → kernel catalogue types
+  with computation rules — are unbuilt. This is what the tutorial's actual
+  `requires I >=Int 90` and all arithmetic need. (`MAP`/collection hooks after.)
+- **Guarded rewriting is stratified (sound, incomplete).** A `requires` condition
+  is evaluated in the *unconditional* sub-relation only (to break the
+  `Step`↔`Reduces` cycle); a guard that holds only by using another guarded rule
+  cannot be proven, so that rule silently doesn't fire. Faithful for tutorial
+  guards (pure computations); a fully-general condition semantics would need a
+  mutually-recursive `Step`/`Reduces` construction.
 - **No cells / `~>` KSequence / heating-cooling.** Only top-level + function-rule
   (anywhere) rewriting over constructor terms. K's `<k>`/`<state>` cell
   configurations, the `~>` computation sequence, and `strict`/`seqstrict`

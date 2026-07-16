@@ -87,6 +87,10 @@
     },
     {
       "from": "covalence",
+      "to": "covalence-init"
+    },
+    {
+      "from": "covalence",
       "to": "covalence-lsp"
     },
     {

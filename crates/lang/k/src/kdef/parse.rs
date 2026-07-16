@@ -29,8 +29,8 @@ use covalence_parse::winnow::{
 use smol_str::SmolStr;
 
 use crate::kdef::ast::{
-    Assoc, Attr, Import, KDefinition, KModule, ListDecl, PriorityBlock, ProdItem, Production, Sort,
-    SyntaxDecl,
+    Assoc, Attr, Import, KDefinition, KModule, KRule, ListDecl, PriorityBlock, ProdItem,
+    Production, RuleTerm, Sort, SyntaxDecl,
 };
 
 /// A parse error with a byte offset into the `.k` source.
@@ -273,6 +273,7 @@ fn module(input: &mut &str) -> ModalResult<KModule> {
 
     let mut imports = Vec::new();
     let mut syntax = Vec::new();
+    let mut rules = Vec::new();
     let mut skipped_sentences = 0usize;
 
     loop {
@@ -289,13 +290,42 @@ fn module(input: &mut &str) -> ModalResult<KModule> {
             }
             Some("imports" | "import") => imports.push(import(input)?),
             Some("syntax") => {
-                if let Some(decl) = syntax_sentence(input)? {
-                    syntax.push(decl);
-                } else {
-                    skipped_sentences += 1;
+                // Lenient: a production we can't parse (K's unquoted-terminal /
+                // mixfix forms beyond our grammar fragment) is skipped, not fatal,
+                // so a real `.k` still yields its rules. A parse that stops
+                // *mid-sentence* (partial success, e.g. `separated` giving up at a
+                // `|` before an unparseable alternative) is also treated as a skip.
+                let mut probe = *input;
+                match syntax_sentence(&mut probe) {
+                    Ok(decl) if at_sentence_boundary(probe) => {
+                        *input = probe;
+                        match decl {
+                            Some(d) => syntax.push(d),
+                            None => skipped_sentences += 1,
+                        }
+                    }
+                    _ => {
+                        skip_sentence(input)?;
+                        skipped_sentences += 1;
+                    }
                 }
             }
-            Some("rule" | "context" | "configuration" | "claim") => {
+            Some("rule") => {
+                // Lenient likewise: rules outside the prefix fragment (cells,
+                // `~>`, nested `=>`) are skipped rather than fatal.
+                let mut probe = *input;
+                match rule_sentence(&mut probe) {
+                    Ok(r) => {
+                        *input = probe;
+                        rules.push(r);
+                    }
+                    Err(_) => {
+                        skip_sentence(input)?;
+                        skipped_sentences += 1;
+                    }
+                }
+            }
+            Some("context" | "configuration" | "claim") => {
                 skip_sentence(input)?;
                 skipped_sentences += 1;
             }
@@ -308,8 +338,112 @@ fn module(input: &mut &str) -> ModalResult<KModule> {
         attrs,
         imports,
         syntax,
+        rules,
         skipped_sentences,
     })
+}
+
+/// Parse a standalone **program term** in the prefix fragment (a whole
+/// `sym(args…)` / variable term) — the reader for programs a `KSession` reduces.
+pub fn parse_term(src: &str) -> Result<RuleTerm, ParseError> {
+    let mut p = src;
+    let t = rule_term(&mut p)
+        .and_then(|t| {
+            trivia(&mut p)?;
+            if p.is_empty() {
+                Ok(t)
+            } else {
+                Err(fail("unexpected trailing input after term"))
+            }
+        })
+        .map_err(|e: covalence_parse::winnow::error::ErrMode<ContextError>| {
+            let offset = src.len() - p.len();
+            ParseError {
+                offset,
+                message: match e {
+                    covalence_parse::winnow::error::ErrMode::Backtrack(c)
+                    | covalence_parse::winnow::error::ErrMode::Cut(c) => describe(&c),
+                    _ => "incomplete input".to_string(),
+                },
+            }
+        })?;
+    Ok(t)
+}
+
+/// Parse a `rule` sentence in the prefix-term fragment:
+/// `rule LHS => RHS [requires REQ] [ATTRS]`. Errors (→ the caller skips it) on
+/// anything outside the fragment: cells `<k>`, `~>`, nested/local `=>`.
+fn rule_sentence(input: &mut &str) -> ModalResult<KRule> {
+    keyword("rule")(input)?;
+    // Optional `[label]:` prefix.
+    if strip_trivia(input).starts_with('[') {
+        let mut probe = *input;
+        if attr_list(&mut probe).is_ok() && strip_trivia(probe).starts_with(':') {
+            *input = probe;
+            sym(":")(input)?;
+        }
+    }
+    let lhs = rule_term(input)?;
+    sym("=>")(input)?;
+    let rhs = rule_term(input)?;
+    // Reject a second (nested/sequenced) `=>` — outside the fragment.
+    if strip_trivia(input).starts_with("=>") {
+        return Err(fail(
+            "nested/multiple `=>` not supported (prefix fragment only)",
+        ));
+    }
+    let requires = if peek_ident(input) == Some("requires") {
+        keyword("requires")(input)?;
+        Some(rule_term(input)?)
+    } else {
+        None
+    };
+    // Ignore `ensures` (post-condition) if present.
+    if peek_ident(input) == Some("ensures") {
+        keyword("ensures")(input)?;
+        let _ = rule_term(input)?;
+    }
+    let attrs = opt(attr_list).parse_next(input)?.unwrap_or_default();
+    // The rule must end at a sentence boundary; otherwise it used syntax we
+    // don't model — bail so the caller skips it.
+    if !at_sentence_boundary(input) {
+        return Err(fail(
+            "trailing rule syntax not supported (prefix fragment only)",
+        ));
+    }
+    Ok(KRule {
+        lhs,
+        rhs,
+        requires,
+        attrs,
+    })
+}
+
+/// A prefix rule/program term: `sym(args…)` (constructor application, nullary
+/// written `sym()`), or a bare `name[:Sort]` (variable). Cells, `~>`, operators,
+/// and `[…]`/`{…}` collection syntax are rejected (→ caller skips the rule).
+fn rule_term(input: &mut &str) -> ModalResult<RuleTerm> {
+    let name = SmolStr::new(ident(input)?);
+    trivia(input)?;
+    if strip_trivia(input).starts_with('(') {
+        sym("(")(input)?;
+        let args: Vec<RuleTerm> = if strip_trivia(input).starts_with(')') {
+            Vec::new()
+        } else {
+            separated(1.., rule_term, sym(",")).parse_next(input)?
+        };
+        sym(")")(input)?;
+        Ok(RuleTerm::App { sym: name, args })
+    } else if strip_trivia(input).starts_with(':') {
+        sym(":")(input)?;
+        let sort = parse_sort(input)?;
+        Ok(RuleTerm::Var {
+            name,
+            sort: Some(sort),
+        })
+    } else {
+        Ok(RuleTerm::Var { name, sort: None })
+    }
 }
 
 fn import(input: &mut &str) -> ModalResult<Import> {

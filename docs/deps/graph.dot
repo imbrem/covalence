@@ -68,6 +68,7 @@ digraph deps {
   "covalence" -> "git";
   "covalence" -> "hash";
   "covalence" -> "hol";
+  "covalence" -> "init";
   "covalence" -> "lsp";
   "covalence" -> "object";
   "covalence" -> "opentheory";

@@ -32,5 +32,6 @@
 
 pub mod ast;
 pub mod cfg;
+pub mod lower;
 pub mod parse;
 pub mod sexpr;

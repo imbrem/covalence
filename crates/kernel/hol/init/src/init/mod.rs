@@ -97,6 +97,7 @@ pub mod int_parse;
 pub mod json_parse;
 pub mod lambda_iter;
 pub mod lang;
+pub mod leb128;
 pub mod lisp;
 pub mod list;
 pub mod list_recursion;

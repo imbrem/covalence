@@ -64,3 +64,11 @@ pub use succ::{SuccDischarger, SuccHol};
 
 // ---- The reflected HOL-omega TYPE layer (type-operator variables + kinds) ----
 pub use omega::{HolOmega, InstError, NativeHolOmega, OmegaLang};
+
+// ---- The high-level SpecTec-fragment API (grammars + relations over the core) ----
+// Reusable, trait-based surface for the universally useful pieces of a SpecTec
+// spec: `GrammarEnv` (grammars → `Derives_E`) and `RelationEnv` (relations →
+// `Derivable_R`) both implement the `Fragment` trait. Defined in `covalence-init`
+// next to the engines; re-exported here so consumers name one crate.
+pub use covalence_init::grammar::cfg::GrammarEnv;
+pub use covalence_init::spectec::{FragPremise, Fragment, RelationEnv};

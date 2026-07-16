@@ -63,6 +63,11 @@ Derived kernel-checked, hypothesis-free, through `RelationEnv`
   `⊢ C ⊢ I32 : ok` inductive premise (cross-checked against the independently
   built `Derivable_Valtype_ok` judgement). Real cross-relation premise
   composition.
+- **Instruction typing** — `Instr_ok` (`C ⊢ instr : t₁* → t₂*`, the core of WASM
+  validation): `⊢ C ⊢ NOP : []→[]`, `⊢ C ⊢ (CONST I32 c) : []→[I32]`,
+  `⊢ C ⊢ (BINOP I32 op) : [I32 I32]→[I32]`, and compositionally
+  `⊢ C ⊢ DROP : [num I32]→[]` (a three-relation tree: `Instr_ok/drop` ←
+  `Valtype_ok/num` ← `Numtype_ok`).
 - **Value typing / reduction closure** — `Num_ok`: `⊢ S ⊢ CONST(I32, 0) : I32`;
   `Steps/refl`: `⊢ Z; [NOP] ↪* Z; [NOP]`.
 - Whole-spec `RelationEnv::spec(wasm_spec())` lowers 200+ rules with a report.

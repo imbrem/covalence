@@ -426,6 +426,94 @@ mod tests {
         );
     }
 
+    /// **Basic WASM semantics: instruction typing.** `Instr_ok` is the
+    /// instruction validation relation (`C ⊢ instr : t₁* → t₂*` — the core of
+    /// WASM's type system). Several rules are premise-free; we derive real
+    /// instruction typings through the combined spec env, kernel-checked and
+    /// hypothesis-free:
+    ///
+    /// - `nop`:   `C ⊢ NOP : [] → []`
+    /// - `const`: `C ⊢ (CONST I32 c) : [] → [I32]`   (value push)
+    /// - `binop`: `C ⊢ (BINOP I32 op) : [I32 I32] → [I32]`  (arithmetic)
+    #[test]
+    fn wasm_instr_ok_typing() {
+        let defs = wasm_spec();
+        let env = RelationEnv::spec(&defs);
+
+        // nop : [] → []  (metavars [C]).
+        let nop = env
+            .rule_index(Some("Instr_ok"), "nop")
+            .expect("Instr_ok/nop");
+        let thm = env.derive_exprs(nop, &[leaf("C")], vec![]).unwrap();
+        assert!(
+            thm.hyps().is_empty(),
+            "instruction typing is hypothesis-free"
+        );
+
+        // const : [] → [nt]  (metavars [C, nt, c_nt]).
+        let konst = env
+            .rule_index(Some("Instr_ok"), "const")
+            .expect("Instr_ok/const");
+        let thm = env
+            .derive_exprs(konst, &[leaf("C"), leaf("I32"), leaf("ZERO")], vec![])
+            .unwrap();
+        assert!(thm.hyps().is_empty());
+
+        // binop : [nt nt] → [nt]  (metavars [C, nt, binop_nt]).
+        let binop = env
+            .rule_index(Some("Instr_ok"), "binop")
+            .expect("Instr_ok/binop");
+        let thm = env
+            .derive_exprs(binop, &[leaf("C"), leaf("I32"), leaf("ADD")], vec![])
+            .unwrap();
+        assert!(thm.hyps().is_empty());
+    }
+
+    /// **Compositional instruction typing.** `Instr_ok/drop` (`C ⊢ DROP : [t] →
+    /// []`) has the inductive premise `Valtype_ok(C, t)`. We build the value-type
+    /// validity for `t := num I32` (itself `Valtype_ok/num` discharging
+    /// `Numtype_ok`) and feed it into `drop` — a three-relation typing
+    /// derivation, kernel-checked and hypothesis-free.
+    #[test]
+    fn wasm_instr_ok_drop_compositional() {
+        let defs = wasm_spec();
+        let env = RelationEnv::spec(&defs);
+        let ctx = leaf("C");
+        let i32 = leaf("I32");
+
+        // Numtype_ok(C, I32)  →  Valtype_ok/num(C, num I32).
+        let numtype_ok = env.rule_index(Some("Numtype_ok"), "").unwrap();
+        let valtype_num = env.rule_index(Some("Valtype_ok"), "num").unwrap();
+        let base = env
+            .derive_exprs(numtype_ok, &[ctx.clone(), i32.clone()], vec![])
+            .unwrap();
+        let vt = env
+            .derive_exprs(valtype_num, &[ctx.clone(), i32.clone()], vec![base])
+            .unwrap();
+
+        // drop (metavars [C, t]) discharging Valtype_ok(C, t) with t := num I32.
+        let drop = env
+            .rule_index(Some("Instr_ok"), "drop")
+            .expect("Instr_ok/drop");
+        // The valtype coercion `num I32` as `t`.
+        let t = SpecTecExp::Sub {
+            t1: covalence_spectec::ast::SpecTecTyp::Var {
+                x: "numtype".into(),
+                as1: vec![],
+            },
+            t2: covalence_spectec::ast::SpecTecTyp::Var {
+                x: "valtype".into(),
+                as1: vec![],
+            },
+            e1: Box::new(i32),
+        };
+        let thm = env.derive_exprs(drop, &[ctx, t], vec![vt]).unwrap();
+        assert!(
+            thm.hyps().is_empty(),
+            "compositional typing is hypothesis-free"
+        );
+    }
+
     /// The whole-spec entry point lowers many relations and reports the rest.
     #[test]
     fn wasm_spec_env_lowers_relations() {

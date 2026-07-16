@@ -68,6 +68,12 @@ Derived kernel-checked, hypothesis-free, through `RelationEnv`
   `⊢ C ⊢ (BINOP I32 op) : [I32 I32]→[I32]`, and compositionally
   `⊢ C ⊢ DROP : [num I32]→[]` (a three-relation tree: `Instr_ok/drop` ←
   `Valtype_ok/num` ← `Numtype_ok`).
+- **Subtyping** — the reference-type subtype lattice (`Numtype_sub`,
+  `Heaptype_sub`): `⊢ C ⊢ I32 ≤ I32`, `⊢ C ⊢ i31 ≤ eq`, `⊢ C ⊢ eq ≤ any`,
+  `⊢ C ⊢ bot ≤ any`. (Transitivity composition is blocked by a coercion-
+  representation mismatch — `Heaptype_ok` wraps abstract heap types in `sub()`
+  while `Heaptype_sub` uses them bare, so the middle type of `trans` has no
+  matching `Heaptype_ok` witness. A faithfulness artifact of the encoding.)
 - **Value typing / reduction closure** — `Num_ok`: `⊢ S ⊢ CONST(I32, 0) : I32`;
   `Steps/refl`: `⊢ Z; [NOP] ↪* Z; [NOP]`.
 - Whole-spec `RelationEnv::spec(wasm_spec())` lowers 200+ rules with a report.

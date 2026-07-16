@@ -514,6 +514,60 @@ mod tests {
         );
     }
 
+    /// **Basic WASM semantics: subtyping.** The reference-type subtype lattice
+    /// (`Numtype_sub`, `Heaptype_sub`) — a distinct part of WASM's type system.
+    /// Its base/lattice rules are premise-free; we derive real subtype judgements
+    /// through the combined spec env, kernel-checked and hypothesis-free:
+    ///
+    /// - `C ⊢ I32 ≤ I32`   (numeric reflexivity, `Numtype_sub`)
+    /// - `C ⊢ i31 ≤ eq`     (`Heaptype_sub/i31-eq`)
+    /// - `C ⊢ eq ≤ any`     (`Heaptype_sub/eq-any`)
+    /// - `C ⊢ bot ≤ any`    (`Heaptype_sub/bot` — `bot` is a subtype of every heap type)
+    #[test]
+    fn wasm_subtyping() {
+        let defs = wasm_spec();
+        let env = RelationEnv::spec(&defs);
+
+        // I32 ≤ I32  (Numtype_sub, metavars [C, numtype]).
+        let num_sub = env
+            .rule_index(Some("Numtype_sub"), "")
+            .expect("Numtype_sub");
+        let thm = env
+            .derive_exprs(num_sub, &[leaf("C"), leaf("I32")], vec![])
+            .unwrap();
+        assert!(thm.hyps().is_empty(), "subtyping is hypothesis-free");
+        // Cross-checked: `Numtype_sub(C, I32, I32)`.
+        let judgement = SpecTecExp::Tup {
+            es: vec![leaf("C"), leaf("I32"), leaf("I32")],
+        };
+        assert_eq!(
+            thm.concl(),
+            &env.derivable("Numtype_sub", &judgement).unwrap()
+        );
+
+        // The reference-type lattice: i31 ≤ eq ≤ any (each a premise-free rule).
+        for (rule, mv1) in [("i31-eq", None), ("eq-any", None)] {
+            let idx = env
+                .rule_index(Some("Heaptype_sub"), rule)
+                .unwrap_or_else(|| panic!("Heaptype_sub/{rule}"));
+            let args: Vec<SpecTecExp> = match mv1 {
+                Some(v) => vec![leaf("C"), leaf(v)],
+                None => vec![leaf("C")],
+            };
+            let thm = env.derive_exprs(idx, &args, vec![]).unwrap();
+            assert!(thm.hyps().is_empty());
+        }
+
+        // bot ≤ any  (Heaptype_sub/bot, metavars [C, heaptype]).
+        let bot = env
+            .rule_index(Some("Heaptype_sub"), "bot")
+            .expect("Heaptype_sub/bot");
+        let thm = env
+            .derive_exprs(bot, &[leaf("C"), leaf("ANY")], vec![])
+            .unwrap();
+        assert!(thm.hyps().is_empty());
+    }
+
     /// The whole-spec entry point lowers many relations and reports the rest.
     #[test]
     fn wasm_spec_env_lowers_relations() {

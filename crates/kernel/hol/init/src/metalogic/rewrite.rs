@@ -49,10 +49,28 @@ pub struct Rule {
 
 /// A term-rewrite relation over the `app`-combinator free term algebra with
 /// carrier `Φ` — the mid-level rewrite system (see the module docs).
+///
+/// **Conditional rules (`requires`)** are supported by *stratification*: rules
+/// are ordered unconditional-first, and a guarded rule `l => r requires c`
+/// becomes a `Step` clause `∀x. Reduces_uncond(c[x], truth) ⟹ Step l r` whose
+/// premise `Reduces_uncond` is the closure of the *unconditional* sub-relation.
+/// This breaks the would-be `Step`↔`Reduces` cycle and is faithful to K
+/// tutorial `requires` (guards are pure computations that don't invoke the
+/// guarded rules themselves). `truth` is the term a condition must reduce to.
 pub struct RewriteRelation {
     phi: Type,
     app: Term,
+    /// Rules, reordered **unconditional first** (`rules[..n_uncond]`), then
+    /// guarded (`rules[n_uncond..]`).
     rules: Vec<Rule>,
+    /// Per-rule guard condition (parallel to `rules`); `None` for the
+    /// unconditional prefix, `Some(cond)` for the guarded suffix.
+    guards: Vec<Option<Term>>,
+    /// The truth constant a guard's condition must reduce to (`None` when there
+    /// are no guarded rules).
+    truth: Option<Term>,
+    /// The number of unconditional rules (the length of the prefix).
+    n_uncond: usize,
 }
 
 /// At an `app(a, b)` node: descend into the head `a` or the argument `b`.
@@ -79,26 +97,91 @@ pub struct StepThm {
 }
 
 impl RewriteRelation {
-    /// Build a rewrite relation from the carrier `phi`, its binary `app`
-    /// combinator (`Φ→Φ→Φ`), and the encoded rules.
+    /// Build an **unconditional** rewrite relation from the carrier `phi`, its
+    /// binary `app` combinator (`Φ→Φ→Φ`), and the encoded rules.
     pub fn new(phi: Type, app: Term, rules: Vec<Rule>) -> Self {
-        RewriteRelation { phi, app, rules }
+        let n = rules.len();
+        RewriteRelation {
+            phi,
+            app,
+            guards: vec![None; n],
+            truth: None,
+            n_uncond: n,
+            rules,
+        }
     }
 
-    /// The number of *base* (rewrite-rule) clauses; the two congruence clauses
-    /// occupy indices `n_base()` (head) and `n_base()+1` (arg).
+    /// Build a relation with **conditional** rules: each `(rule, guard)` pair has
+    /// an optional guard condition; a guarded rule fires only when its condition
+    /// reduces to `truth` in the unconditional sub-relation. Rules are reordered
+    /// unconditional-first internally.
+    pub fn with_guards(
+        phi: Type,
+        app: Term,
+        rules: Vec<(Rule, Option<Term>)>,
+        truth: Term,
+    ) -> Self {
+        let mut uncond = Vec::new();
+        let mut guarded = Vec::new();
+        for (rule, guard) in rules {
+            match guard {
+                None => uncond.push(rule),
+                Some(g) => guarded.push((rule, g)),
+            }
+        }
+        let n_uncond = uncond.len();
+        let mut all_rules = uncond;
+        let mut all_guards = vec![None; n_uncond];
+        for (rule, g) in guarded {
+            all_rules.push(rule);
+            all_guards.push(Some(g));
+        }
+        RewriteRelation {
+            phi,
+            app,
+            rules: all_rules,
+            guards: all_guards,
+            truth: Some(truth),
+            n_uncond,
+        }
+    }
+
+    /// The unconditional sub-relation (the prefix `rules[..n_uncond]`), over
+    /// which guard conditions are evaluated.
+    fn uncond(&self) -> RewriteRelation {
+        RewriteRelation::new(
+            self.phi.clone(),
+            self.app.clone(),
+            self.rules[..self.n_uncond].to_vec(),
+        )
+    }
+
+    /// The number of unconditional base clauses; the two congruence clauses
+    /// occupy indices `n_base()` (head) and `n_base()+1` (arg), and guarded
+    /// clauses follow at `n_base()+2 ..`.
     pub fn n_base(&self) -> usize {
-        self.rules.len()
+        self.n_uncond
     }
 
     fn head_cong_idx(&self) -> usize {
-        self.rules.len()
+        self.n_uncond
     }
     fn arg_cong_idx(&self) -> usize {
-        self.rules.len() + 1
+        self.n_uncond + 1
     }
 
-    /// The total `Step` clause count (base rules + 2 congruence clauses).
+    /// The `Step` clause index of rule `rule_idx` (unconditional rules keep their
+    /// index; the two congruence clauses sit at `n_uncond`/`n_uncond+1`, so
+    /// guarded rules — all at index ≥ `n_uncond` — shift by 2).
+    fn clause_idx(&self, rule_idx: usize) -> usize {
+        if rule_idx < self.n_uncond {
+            rule_idx
+        } else {
+            rule_idx + 2
+        }
+    }
+
+    /// The total `Step` clause count (all rules + 2 congruence clauses).
     pub fn step_n_clauses(&self) -> usize {
         self.rules.len() + 2
     }
@@ -117,19 +200,23 @@ impl RewriteRelation {
 
     // -- the two rule sets --------------------------------------------------
 
-    /// `Step`: base clauses (one per rule) then the two congruence clauses.
+    /// `Step`: unconditional base clauses, the two congruence clauses, then the
+    /// guarded clauses (`∀x. Reduces_uncond(c[x], truth) ⟹ d LHS RHS`).
     pub fn step_rule_set(&self) -> RuleSet2<'_> {
+        // Precompute the unconditional closure the guarded premises reference
+        // (the stratum guards evaluate in). Built once, cloned into the closure.
+        let reduces_uncond = self.uncond();
         RuleSet2::new(self.phi.clone(), self.phi.clone(), move |d| {
             let mut clauses = Vec::with_capacity(self.rules.len() + 2);
-            // base clauses: ∀mv. d ⌜LHS⌝ ⌜RHS⌝
-            for r in &self.rules {
+            // (1) unconditional base clauses: ∀mv. d ⌜LHS⌝ ⌜RHS⌝
+            for r in &self.rules[..self.n_uncond] {
                 let mut body = d(&r.lhs, &r.rhs)?;
                 for mv in r.metavars.iter().rev() {
                     body = body.forall(mv, self.phi.clone())?;
                 }
                 clauses.push(body);
             }
-            // congruence: head, then arg (order fixes head_cong_idx/arg_cong_idx).
+            // (2) congruence: head, then arg (order fixes head_cong_idx/arg_cong_idx).
             let f = Term::free("cf", self.phi.clone());
             let x = Term::free("cx", self.phi.clone());
             let f2 = Term::free("cf2", self.phi.clone());
@@ -154,6 +241,28 @@ impl RewriteRelation {
                 .forall("cf", self.phi.clone())?;
             clauses.push(head);
             clauses.push(arg);
+            // (3) guarded clauses: ∀mv. Reduces_uncond(c, truth) ⟹ d ⌜LHS⌝ ⌜RHS⌝.
+            //     Only built when there ARE guarded rules (so a purely
+            //     unconditional relation needs no `truth` and no closure).
+            if self.n_uncond < self.rules.len() {
+                let reduces_uncond_rs = reduces_uncond.reduces_rule_set();
+                let truth = self
+                    .truth
+                    .as_ref()
+                    .ok_or_else(|| rw_err("guarded rules require a truth constant"))?;
+                for i in self.n_uncond..self.rules.len() {
+                    let r = &self.rules[i];
+                    let cond = self.guards[i]
+                        .as_ref()
+                        .ok_or_else(|| rw_err("guarded suffix rule has a guard"))?;
+                    let premise = derivable2(&reduces_uncond_rs, cond, truth)?;
+                    let mut body = premise.imp(d(&r.lhs, &r.rhs)?)?;
+                    for mv in r.metavars.iter().rev() {
+                        body = body.forall(mv, self.phi.clone())?;
+                    }
+                    clauses.push(body);
+                }
+            }
             Ok(clauses)
         })
     }
@@ -199,7 +308,11 @@ impl RewriteRelation {
     }
 
     /// Fire rule `rule_idx` at the ROOT with the given substitution:
-    /// `⊢ Step ⌜LHS[σ]⌝ ⌜RHS[σ]⌝`.
+    /// `⊢ Step ⌜LHS[σ]⌝ ⌜RHS[σ]⌝`. For a guarded rule this discharges the
+    /// clause's `Reduces_uncond(c[σ], truth)` antecedent with a genuine guard
+    /// derivation (built by reducing `c[σ]` in the unconditional sub-relation);
+    /// if the guard does not reduce to `truth`, this errors (the rule does not
+    /// fire).
     fn prove_root(&self, rule_idx: usize, subst: &[(String, Term)]) -> Result<StepThm> {
         let rule = self
             .rules
@@ -215,18 +328,61 @@ impl RewriteRelation {
                 .ok_or_else(|| rw_err(format!("substitution missing metavar `{mv}`")))?;
             args.push(val);
         }
+        let premises = if rule_idx < self.n_uncond {
+            vec![]
+        } else {
+            // Guarded: prove the condition holds in the unconditional stratum.
+            let cond = self.guards[rule_idx]
+                .as_ref()
+                .ok_or_else(|| rw_err("guarded rule missing its condition"))?;
+            let cond_sigma = self.instantiate(cond, subst);
+            vec![Premise::Side(self.prove_guard(&cond_sigma)?)]
+        };
         let thm = derive_mixed(
             &self.step_rule_set(),
-            rule_idx,
+            self.clause_idx(rule_idx),
             self.step_n_clauses(),
             &args,
-            vec![],
+            premises,
         )?;
         Ok(StepThm {
             from: self.instantiate(&rule.lhs, subst),
             to: self.instantiate(&rule.rhs, subst),
             thm,
         })
+    }
+
+    /// Fuel bound for evaluating a guard condition.
+    const GUARD_FUEL: usize = 100_000;
+
+    /// Prove `⊢ Reduces_uncond cond truth` by reducing `cond` in the
+    /// unconditional sub-relation; errors if it does not reach `truth`.
+    fn prove_guard(&self, cond: &Term) -> Result<Thm> {
+        let truth = self
+            .truth
+            .as_ref()
+            .ok_or_else(|| rw_err("no truth constant for guard evaluation"))?;
+        let (nf, thm) = self
+            .uncond()
+            .normalize(&Innermost, cond, Self::GUARD_FUEL)?;
+        if &nf == truth {
+            Ok(thm)
+        } else {
+            Err(rw_err("guard condition did not reduce to the truth value"))
+        }
+    }
+
+    /// Whether rule `rule_idx`'s guard (if any) holds under `subst` — used by a
+    /// matcher to only fire a guarded rule when its condition reduces to `truth`.
+    pub fn guard_holds(&self, rule_idx: usize, subst: &[(String, Term)]) -> bool {
+        if rule_idx < self.n_uncond {
+            return true;
+        }
+        let Some(Some(cond)) = self.guards.get(rule_idx) else {
+            return false;
+        };
+        let cond_sigma = self.instantiate(cond, subst);
+        self.prove_guard(&cond_sigma).is_ok()
     }
 
     /// Lift a step `inner : ⊢ Step a a'` through one congruence frame — the node
@@ -423,7 +579,8 @@ fn find_innermost(rel: &RewriteRelation, subject: &Term, path: &mut Vec<Dir>) ->
             .map(|s| s.as_str())
             .collect();
         let mut subst = Vec::new();
-        if match_term(rel, &mvs, lhs, subject, &mut subst) {
+        // Syntactic match AND (for guarded rules) the condition must hold.
+        if match_term(rel, &mvs, lhs, subject, &mut subst) && rel.guard_holds(rule_idx, &subst) {
             return Some(Redex {
                 rule_idx,
                 subst,
@@ -773,6 +930,130 @@ mod tests {
         // Whichever fired, the concl equals step/reduces to the REAL result.
         assert!(nf == con("a") || nf == con("b"));
         assert_eq!(thm.concl(), &rel.reduces_prop(&cfg, &nf).unwrap());
+    }
+
+    // ==================================================================
+    // CONDITIONAL REWRITING (requires) — stratified guards
+    // ==================================================================
+
+    /// A guarded system: `leq` (unconditional, tt/ff-valued) + `max` via two
+    /// `requires leq(...)` guarded rules. Truth constant = `tt`.
+    fn peano_max() -> RewriteRelation {
+        let z = || con("z");
+        let s = |t: Term| node("s", &[t]);
+        let leq = |a: Term, b: Term| node("leq", &[a, b]);
+        let max = |a: Term, b: Term| node("max", &[a, b]);
+        let m = || mv("M");
+        let n = || mv("N");
+        let rules = vec![
+            // unconditional leq
+            (
+                Rule {
+                    metavars: vec!["N".into()],
+                    lhs: leq(z(), n()),
+                    rhs: con("tt"),
+                },
+                None,
+            ),
+            (
+                Rule {
+                    metavars: vec!["M".into()],
+                    lhs: leq(s(m()), z()),
+                    rhs: con("ff"),
+                },
+                None,
+            ),
+            (
+                Rule {
+                    metavars: vec!["M".into(), "N".into()],
+                    lhs: leq(s(m()), s(n())),
+                    rhs: leq(m(), n()),
+                },
+                None,
+            ),
+            // guarded max: max(M,N) => N requires leq(M,N)
+            (
+                Rule {
+                    metavars: vec!["M".into(), "N".into()],
+                    lhs: max(m(), n()),
+                    rhs: n(),
+                },
+                Some(leq(m(), n())),
+            ),
+            // max(M,N) => M requires leq(N,M)
+            (
+                Rule {
+                    metavars: vec!["M".into(), "N".into()],
+                    lhs: max(m(), n()),
+                    rhs: m(),
+                },
+                Some(leq(n(), m())),
+            ),
+        ];
+        RewriteRelation::with_guards(phi(), app_fn(), rules, con("tt"))
+    }
+
+    #[test]
+    fn guarded_clause_layout() {
+        let rel = peano_max();
+        assert_eq!(rel.n_base(), 3); // 3 unconditional
+        // 3 uncond + 2 congruence + 2 guarded = 7
+        assert_eq!(rel.step_rule_set().n_clauses().unwrap(), 7);
+    }
+
+    #[test]
+    fn conditional_rule_fires_when_guard_holds() {
+        let rel = peano_max();
+        let s = |t: Term| node("s", &[t]);
+        // max(s(z), s(s(z))) →* s(s(z))  (since leq(s(z), s(s(z))) = tt)
+        let start = node("max", &[s(con("z")), s(s(con("z")))]);
+        let (nf, thm) = rel.normalize(&Innermost, &start, 1000).unwrap();
+        assert_genuine(&thm);
+        assert_eq!(nf, s(s(con("z"))));
+        assert_eq!(thm.concl(), &rel.reduces_prop(&start, &nf).unwrap());
+    }
+
+    #[test]
+    fn conditional_rule_picks_the_larger() {
+        let rel = peano_max();
+        let s = |t: Term| node("s", &[t]);
+        // max(s(s(z)), s(z)) →* s(s(z))  (leq(s(s(z)),s(z)) = ff, leq(s(z),s(s(z)))=tt)
+        let start = node("max", &[s(s(con("z"))), s(con("z"))]);
+        let (nf, thm) = rel.normalize(&Innermost, &start, 1000).unwrap();
+        assert_genuine(&thm);
+        assert_eq!(nf, s(s(con("z"))));
+    }
+
+    /// SOUNDNESS: a guarded rule must NOT fire when its condition does not hold.
+    /// Here we make a single guarded rule `bad(X) => wrong() requires ff()` whose
+    /// guard reduces to `ff`, never `tt` — so `bad(a)` is a normal form and no
+    /// `⊢ Reduces bad(a) wrong()` is ever produced.
+    #[test]
+    fn conditional_rule_does_not_fire_when_guard_false() {
+        let rules = vec![(
+            Rule {
+                metavars: vec!["X".into()],
+                lhs: node("bad", &[mv("X")]),
+                rhs: node("wrong", &[]),
+            },
+            Some(con("ff")), // guard is literally `ff` — never reduces to tt
+        )];
+        let rel = RewriteRelation::with_guards(phi(), app_fn(), rules, con("tt"));
+        let cfg = node("bad", &[con("a")]);
+        assert!(
+            Innermost.find(&rel, &cfg).is_none(),
+            "guard `ff` never holds, so bad(a) has no redex"
+        );
+        let (nf, thm) = rel.normalize(&Innermost, &cfg, 10).unwrap();
+        assert_genuine(&thm);
+        assert_eq!(nf, cfg, "bad(a) is a normal form");
+        assert_ne!(
+            thm.concl(),
+            &rel.reduces_prop(&cfg, &node("wrong", &[])).unwrap(),
+            "must NOT forge Reduces bad(a) wrong()"
+        );
+        // prove_root must also refuse (guard unprovable).
+        assert!(rel.prove_root(0, &[("X".to_string(), con("a"))]).is_err());
     }
 
     /// A metavar bound to a compound (non-leaf) subterm must substitute exactly:

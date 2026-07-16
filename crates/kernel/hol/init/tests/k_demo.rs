@@ -8,6 +8,7 @@ use covalence_init::k::session::KSession;
 const PEANO: &str = include_str!("../../../../lang/k/examples/k-demo/peano.k");
 const COLORS: &str = include_str!("../../../../lang/k/examples/k-demo/colors.k");
 const BOOLSIMP: &str = include_str!("../../../../lang/k/examples/k-demo/boolsimp.k");
+const PEANO_MAX: &str = include_str!("../../../../lang/k/examples/k-demo/peano-max.k");
 
 fn assert_genuine(thm: &Thm) {
     assert!(
@@ -54,6 +55,28 @@ fn k_tutorial_lesson_1_2_reduces() {
         "Grape"
     );
     assert_genuine(&k.reduce("colorOf(Banana())").unwrap().thm);
+}
+
+#[test]
+fn conditional_requires_rules_reduce() {
+    // K tutorial Lesson 1.7 mechanism (`requires`), hook-free: max via a leq guard.
+    let k = KSession::from_source(PEANO_MAX).unwrap();
+    assert_eq!(k.report().lowered, 5);
+    assert_eq!(k.report().conditional, 2);
+
+    // max(1, 2) = 2  (leq(1,2) = true, so the first guarded rule fires)
+    let r = k.reduce("max(s(z()), s(s(z())))").unwrap();
+    assert_eq!(r.rendered, "s(s(z))");
+    assert_genuine(&r.thm);
+
+    // max(2, 1) = 2  (leq(2,1) = false; leq(1,2) = true → second guarded rule)
+    let r = k.reduce("max(s(s(z())), s(z()))").unwrap();
+    assert_eq!(r.rendered, "s(s(z))");
+    assert_genuine(&r.thm);
+
+    // leq itself reduces to true()/false()
+    assert_eq!(k.reduce("leq(z(), s(z()))").unwrap().rendered, "true");
+    assert_eq!(k.reduce("leq(s(z()), z())").unwrap().rendered, "false");
 }
 
 #[test]

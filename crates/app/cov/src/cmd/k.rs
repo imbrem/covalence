@@ -80,6 +80,14 @@ module BOOLSIMP
   rule neg(tt()) => ff()
   rule neg(ff()) => tt()
 endmodule";
+    const PEANO_MAX: &str = "\
+module PEANO-MAX
+  rule leq(z(), N) => true()
+  rule leq(s(M), z()) => false()
+  rule leq(s(M), s(N)) => leq(M, N)
+  rule max(M, N) => N requires leq(M, N)
+  rule max(M, N) => M requires leq(N, M)
+endmodule";
 
     let cases: &[(&str, &str, &[&str])] = &[
         (
@@ -93,6 +101,11 @@ endmodule";
             &["colorOf(Banana())", "contentsOfJar(Jar(Kiwi()))"],
         ),
         ("BOOLSIMP", BOOL, &["and(or(tt(), ff()), neg(ff()))"]),
+        (
+            "PEANO-MAX (requires — Lesson 1.7)",
+            PEANO_MAX,
+            &["max(s(z()), s(s(z())))", "max(s(s(z())), s(z()))"],
+        ),
     ];
 
     for (name, src, programs) in cases {

@@ -147,6 +147,12 @@ pub struct Session {
     /// The ACL2 sub-session (`defun` dictionary + `defthm` table), active in
     /// [`Lang::Acl2`]; reset (like `defs`) on every `#lang` switch.
     acl2: Acl2Session,
+    /// The `#book` confinement root (default: the process working directory
+    /// at session start). Every `#book` / `include-book` path resolves
+    /// inside it — `..`, absolute paths, and symlink escapes are rejected
+    /// ([`crate::book`]), so the server's `/api/lisp` endpoint cannot
+    /// traverse outside the directory the server was started in.
+    book_root: Option<std::path::PathBuf>,
     /// A definition-free semantics used only for its **structural** render
     /// helpers (`is_snil` / `as_scons` / `atom_bytes`), which are independent
     /// of the `defun` dictionary.
@@ -168,8 +174,15 @@ impl Session {
             lang: Lang::default(),
             defs: Defs::new(),
             acl2: Acl2Session::new().map_err(acl2_hol_err)?,
+            book_root: std::env::current_dir().ok(),
             render_sem: LispSemantics::new()?,
         })
+    }
+
+    /// Override the `#book` confinement root (see the `book_root` field
+    /// docs). `None` disables `#book` entirely.
+    pub fn set_book_root(&mut self, root: Option<std::path::PathBuf>) {
+        self.book_root = root;
     }
 
     /// The current `defun` dictionary.
@@ -533,6 +546,7 @@ impl Session {
         match name {
             "help" => Ok(HELP.to_string()),
             "lang" => self.run_lang(arg),
+            "book" => self.run_book(arg),
             "show" => {
                 if arg.is_empty() {
                     return Err(DirectiveError::Usage("#show EXPR".into()));
@@ -567,6 +581,30 @@ impl Session {
             }
             other => Err(DirectiveError::Unknown(other.to_string())),
         }
+    }
+
+    /// `#book PATH` (acl2 only): run the honest book-import pipeline
+    /// ([`crate::book::run_book`]) on a root-relative `.lisp` book and print
+    /// the per-event tally. Paths are confined to the session's book root
+    /// (default: the process working directory) — `..`, absolute paths, and
+    /// symlink escapes are rejected before any file is touched.
+    fn run_book(&mut self, arg: &str) -> Result<String, DirectiveError> {
+        if self.lang != Lang::Acl2 {
+            return Err(DirectiveError::Usage(
+                "#book is an ACL2 event pipeline — switch with `#lang acl2` first".into(),
+            ));
+        }
+        if arg.is_empty() {
+            return Err(DirectiveError::Usage("#book PATH (root-relative)".into()));
+        }
+        let Some(root) = self.book_root.clone() else {
+            return Err(DirectiveError::Book(
+                "no book root is configured for this session".into(),
+            ));
+        };
+        let report = crate::book::run_book(&mut self.acl2, &root, arg)
+            .map_err(|e| DirectiveError::Book(e.to_string()))?;
+        Ok(report.to_string())
     }
 
     /// `#lang [name]`: with no argument, report the current + available
@@ -636,7 +674,15 @@ Directives:
   #show EXPR       print the full sequent behind EXPR, hypotheses included
                    (`defs |- lhs = rhs` in scheme; `|- Reduces …` relationally;
                    in acl2, `#show NAME` prints a stored defthm's sequent and
-                   how it was proved)";
+                   how it was proved)
+  #book PATH       (acl2 only) run a .lisp BOOK of ACL2 events through the
+                   session and print an honest per-event tally: transported
+                   (closed base-HOL theorem minted via the certificate path),
+                   admitted in dialect (defun installed / reduction defthm),
+                   skipped (in-package, include-book deps, local), rejected
+                   (with reasons — e.g. free-variable defthms need induction,
+                   which is not wired). Paths are root-relative and confined
+                   (no `..`, no absolute paths).";
 
 /// A `#`-directive error.
 #[derive(Debug, thiserror::Error)]
@@ -647,6 +693,10 @@ pub enum DirectiveError {
     /// Bad usage; the string is the expected form.
     #[error("usage: {0}")]
     Usage(String),
+    /// The `#book` pipeline failed at the top level (path / read / parse —
+    /// per-event failures are tallied, not raised).
+    #[error("book error: {0}")]
+    Book(String),
     /// The directive's argument failed to parse.
     #[error("read error: {0}")]
     Read(ReadError),

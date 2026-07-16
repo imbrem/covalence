@@ -34,10 +34,24 @@ full picture.
   [`notes/vibes/lisp/acl2-dialect.md`](../../../notes/vibes/lisp/acl2-dialect.md);
   the reified-certificate `defthm` path in `acl2-s0-s3-design.md` §9.5):
   - **No induction**: `defthm` accepts only ground decidable goals;
-    universally quantified goals are rejected. The kernel-side S6 path
-    now exists (`covalence-init` `init/acl2`: `s6_env` + `derive_ind` +
-    `hilbert::derive_under` + `transport_equal_open`, gate = app-assoc);
-    wiring this surface `defthm` onto it is the open work.
+    universally quantified goals are rejected (in the REPL AND the `#book`
+    pipeline — the fixture book's `app-assoc`/`len2-app` pin the rejection).
+    The kernel-side S6 path exists (`covalence-init` `init/acl2`: `s6_env` +
+    `derive_ind` + `hilbert::derive_under` + `transport_equal_open`, gate =
+    app-assoc), but its base/step premises are hand-built per theorem
+    (~150 bespoke `hilbert::Step`s for app-assoc). Wiring surface `defthm`s
+    onto it needs a generic premise builder (an object-level simplifier:
+    defun unfolding under `if-true`/`if-false`, `CongImpl` chains, IH
+    splicing, per candidate induction variable) — see
+    `notes/vibes/lisp/acl2-book-frontend.md` §5.
+  - **Book pipeline (`src/book.rs`) — deliberately-lite slice** (design +
+    tally semantics in `notes/vibes/lisp/acl2-book-frontend.md`): no `'x`
+    reader macro / `#|…|#` comments (fixtures write `(quote …)`); no
+    `encapsulate`/`defmacro`/`mutual-recursion` (rejected events); no
+    `include-book :dir` directories; `local` is pass-1 only (installed,
+    never undone at end-of-book); single package; `:rule-classes` recorded,
+    never interpreted; best-effort (continues past rejections, unlike
+    ACL2's fail-fast certification).
   - **Certificate fragment is narrower than the 11 PrimRow rows.** Ground
     `(equal L R)` defthms over quoted data / int literals /
     `car cdr cons consp equal +` go via `Derivable_ACL2` + soundness +

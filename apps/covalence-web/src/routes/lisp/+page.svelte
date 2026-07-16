@@ -87,13 +87,19 @@
 			rejected — <em>induction is not implemented</em>. ACL2 spellings: <code>equal</code>,
 			ternary <code>if</code> (no <code>cond</code>),
 			<code>consp</code>/<code>atom</code>/<code>endp</code>, <code>zp</code>/<code>natp</code>.
+			<code>#book PATH</code> runs a <code>.lisp</code> <em>book</em> of ACL2 events through
+			the session and prints an honest per-event tally (transported / admitted / skipped /
+			rejected, with reasons). Paths are resolved on the <em>server</em>, relative to its
+			working directory and confined to it (no <code>..</code>, no absolute paths) — e.g.
+			<code>#book crates/lang/lisp/tests/books/app-basics</code> when serving from the repo.
 		</li>
 	</ul>
 	<p class="muted">
 		<code>defun</code>s (and in <code>acl2</code>, <code>defthm</code>s) persist across cells
 		(a per-tab server session). The relational dialects (<code>lisp</code>/<code>sector</code>)
 		have no <code>defun</code> recursion yet — use <code>scheme</code> or <code>acl2</code> for
-		that. Other directives: <code>#show EXPR</code>, <code>#help</code>.
+		that. Other directives: <code>#show EXPR</code>, <code>#help</code>, <code>#book PATH</code>
+		(acl2).
 	</p>
 	<p>
 		<strong>Examples</strong> — the buttons above the prompt: dialect tabs first (each an

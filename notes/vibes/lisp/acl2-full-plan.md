@@ -54,6 +54,12 @@ SKELETONS entry for anything left open, and a commit. No new admitted kernel rul
 - **S5 — Ordinals below ε₀.** Ordinal notations (CNF) as a HOL datatype, `o<`,
   **well-foundedness proved** (the classic nested structural induction). Gate: wf
   theorem + ACL2's ordinal axioms as model theorems. (Parallel-safe with S4.)
+  Design: [`acl2-s5-design.md`](./acl2-s5-design.md) (ACL2-faithful `o-p`/`o<`
+  as carrier functions, full-ε₀ wf via Acc + graded tower-height induction,
+  IND-ORD clause, the S7 seam). **S5a/S5b LANDED** (design §15.1):
+  `init/acl2/ordinal.rs` — defining equations proved, gate
+  `⊢ ∀x. ¬(o-p x = anil) ⟹ Acc x` at full ε₀; S5c/S5d (env rows +
+  IND-ORD) open in `init/acl2/SKELETONS.md`.
 - **S6 — Induction rule.** Reify ACL2's induction schema; soundness via well-founded
   induction in the model. Start with cons-structural measures (unlocks most list
   books), then ordinal measures. Gate: associativity-of-`app` defthm imports into
@@ -91,3 +97,12 @@ SKELETONS entry for anything left open, and a commit. No new admitted kernel rul
 S0 → S1 → S2 → S3 (first transported theorem) → S4 + S6-structural (list books) →
 S5 → S7 → S8 ∥ S9 → S10 → S11 (real book) → S12. Ship the tally UI into the /lisp
 demo as soon as S3 lands.
+
+## Companion docs
+
+- [`acl2-s7-s12-plan.md`](./acl2-s7-s12-plan.md) — the remaining stages,
+  concretely (entry points, hard parts, gates), plus the consolidation track.
+- [`acl2-fidelity.md`](./acl2-fidelity.md) — the assumptions/deviations ledger:
+  what our embedding says ACL2 is vs. what ACL2 actually is.
+- [`acl2-agent-guide.md`](./acl2-agent-guide.md) — orientation for agents:
+  module map, load-bearing patterns, gotchas, the mandatory stage process.

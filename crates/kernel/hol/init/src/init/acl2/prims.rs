@@ -138,6 +138,7 @@ pub struct Prims {
     minus_eq: Thm,
     /// `alt : A → A → A` (ACL2 `<`).
     pub lt: Term,
+    lt_eq: Thm,
     /// `ale : A → A → A` — `aif (alt y x) anil t` (the `(<= x y)` macro shape).
     pub le: Term,
 
@@ -356,7 +357,7 @@ impl Prims {
             )?
         };
         // alt := λx y. cond A (intLt (intval x) (intval y)) t nil.
-        let (lt, _lt_eq) = {
+        let (lt, lt_eq) = {
             let x = Term::free("__x", a.clone());
             let y = Term::free("__y", a.clone());
             let body = cond(a.clone())
@@ -403,6 +404,7 @@ impl Prims {
             minus,
             minus_eq,
             lt,
+            lt_eq,
             le,
             consp_cata,
             atomp_cata,
@@ -1023,6 +1025,97 @@ impl Prims {
             .rhs_conv(|tm| tm.rw_all(&self.intval_int_at(&lj)?))? // = aint (intAdd ⌜i⌝ ⌜j⌝)
             .reduce_rhs() // = aint ⌜i+j⌝
     }
+
+    // ------------------------------------------------------------------
+    // `<` (alt) laws — the S5 ordinal seam (design acl2-s5-design.md §2.3)
+    // ------------------------------------------------------------------
+
+    /// `⊢ alt x y = cond A (intLt (intval x) (intval y)) t anil` — the
+    /// `<` unfolding at fixed terms (the definitional shape; internal seam
+    /// for [`Prims::lt_lit`] / [`Prims::alt_iff`] and the S5 ground
+    /// normaliser).
+    pub(crate) fn alt_unfold(&self, x: &Term, y: &Term) -> Result<Thm> {
+        apply_def(&self.lt_eq, &[x.clone(), y.clone()])
+    }
+
+    /// `⊢ alt (aint ⌜i⌝) (aint ⌜j⌝) = t` (resp. `= anil`) for integer
+    /// **literals** — ground `<` by literal folding (the `plus_lit`
+    /// one-seam pattern: `intval_int` + `reduce` on the `intLt` guard +
+    /// cond collapse).
+    pub fn lt_lit(&self, i: i128, j: i128) -> Result<Thm> {
+        let (li, lj) = (mk_int(i), mk_int(j));
+        let (ai, aj) = (self.th.aint_at(&li)?, self.th.aint_at(&lj)?);
+        let g = int::int_lt()
+            .apply(li.clone())?
+            .apply(lj.clone())?
+            .reduce()?; // ⊢ intLt ⌜i⌝ ⌜j⌝ = ⌜T/F⌝
+        self.alt_unfold(&ai, &aj)?
+            .rhs_conv(|tm| tm.rw_all(&self.intval_int_at(&li)?))?
+            .rhs_conv(|tm| tm.rw_all(&self.intval_int_at(&lj)?))?
+            .rhs_conv(|tm| tm.rw_all(&g))?
+            .rhs_conv(collapse_conds)
+    }
+
+    /// `⊢ ¬(alt x y = anil) = intLt (intval x) (intval y)` at fixed `x`,
+    /// `y` — the bridge between the object `<` and the proved
+    /// `init/int.rs` order theory (both directions, via a boolean split
+    /// on the `intLt` guard).
+    pub(crate) fn alt_iff_at(&self, x: &Term, y: &Term) -> Result<Thm> {
+        let g = int::int_lt().apply(self.iv(x)?)?.apply(self.iv(y)?)?; // intLt (intval x) (intval y) : bool
+        let unf = self.alt_unfold(x, y)?; // alt x y = cond A g t anil
+        let ne_nil = self
+            .lt
+            .clone()
+            .apply(x.clone())?
+            .apply(y.clone())?
+            .equals(self.th.nil.clone())?
+            .not()?; // ¬(alt x y = anil)
+
+        // {g} ⊢ ¬(alt x y = anil) = g   (both sides true).
+        let pos = {
+            let gt = Thm::assume(g.clone())?.eqt_intro()?; // {g} ⊢ g = ⌜T⌝
+            let v = unf
+                .clone()
+                .rhs_conv(|tm| tm.rw_all(&gt))?
+                .rhs_conv(collapse_conds)?; // {g} ⊢ alt x y = t
+            // {g} ⊢ ¬(alt x y = anil): an `= anil` assumption forces t = anil.
+            let eq_nil = self
+                .lt
+                .clone()
+                .apply(x.clone())?
+                .apply(y.clone())?
+                .equals(self.th.nil.clone())?;
+            let f = self
+                .t_ne_nil()?
+                .not_elim(v.clone().sym()?.trans(Thm::assume(eq_nil.clone())?)?)?;
+            let lhs_holds = f.imp_intro(&eq_nil)?.not_intro()?; // {g} ⊢ ¬(alt x y = anil)
+            lhs_holds
+                .eqt_intro()? // {g} ⊢ ¬(…) = ⌜T⌝
+                .trans(gt.sym()?)? // {g} ⊢ ¬(…) = g
+        };
+        // {¬g} ⊢ ¬(alt x y = anil) = g   (both sides false).
+        let neg = {
+            let ng = g.clone().not()?;
+            let gf = eqf_intro(Thm::assume(ng.clone())?)?; // {¬g} ⊢ g = ⌜F⌝
+            let v = unf
+                .rhs_conv(|tm| tm.rw_all(&gf))?
+                .rhs_conv(collapse_conds)?; // {¬g} ⊢ alt x y = anil
+            // {¬g} ⊢ ¬¬(alt x y = anil): assuming the negation contradicts v.
+            let f = Thm::assume(ne_nil.clone())?.not_elim(v)?; // {¬g, ne_nil} ⊢ F
+            let lhs_false = eqf_intro(f.imp_intro(&ne_nil)?.not_intro()?)?; // {¬g} ⊢ ¬(…) = ⌜F⌝
+            lhs_false.trans(gf.sym()?)? // {¬g} ⊢ ¬(…) = g
+        };
+        Thm::lem(g.clone())?.or_elim(pos.imp_intro(&g)?, neg.imp_intro(&g.clone().not()?)?)
+    }
+
+    /// `⊢ ∀x y. ¬(alt x y = anil) = intLt (intval x) (intval y)` — the
+    /// quantified [`Prims::alt_iff_at`].
+    pub fn alt_iff(&self) -> Result<Thm> {
+        let (x, y) = (self.avar("x"), self.avar("y"));
+        self.alt_iff_at(&x, &y)?
+            .all_intro("y", self.a())?
+            .all_intro("x", self.a())
+    }
 }
 
 #[cfg(test)]
@@ -1553,6 +1646,55 @@ mod tests {
                 .equals(ap2(&pr.plus, &x, &ap2(&pr.plus, &y, &z)))
                 .unwrap()
                 .forall("z", a())
+                .unwrap()
+                .forall("y", a())
+                .unwrap()
+                .forall("x", a())
+                .unwrap(),
+        );
+    }
+
+    /// **S5 G1 №4 (the `alt` seam):** ground `<` folding (`lt_lit`, both
+    /// answers) and the `alt_iff` bridge into the proved `init/int.rs`
+    /// order theory, closed with exact statements.
+    #[test]
+    fn t_lt_lit_alt_iff() {
+        let pr = p();
+        let nil = pr.th.nil.clone();
+        let aint = |i: i128| pr.th.aint_at(&mk_int(i)).unwrap();
+
+        // ⊢ alt (aint 1) (aint 2) = t;  ⊢ alt (aint 2) (aint 1) = anil;
+        // ⊢ alt (aint 3) (aint 3) = anil (irreflexive control).
+        check(
+            &pr.lt_lit(1, 2).unwrap(),
+            &ap2(&pr.lt, &aint(1), &aint(2))
+                .equals(pr.t.clone())
+                .unwrap(),
+        );
+        check(
+            &pr.lt_lit(2, 1).unwrap(),
+            &ap2(&pr.lt, &aint(2), &aint(1)).equals(nil.clone()).unwrap(),
+        );
+        check(
+            &pr.lt_lit(3, 3).unwrap(),
+            &ap2(&pr.lt, &aint(3), &aint(3)).equals(nil.clone()).unwrap(),
+        );
+
+        // ⊢ ∀x y. ¬(alt x y = anil) = intLt (intval x) (intval y).
+        let (x, y) = (avar("x"), avar("y"));
+        let rhs = int::int_lt()
+            .apply(ap1(&pr.intval, &x))
+            .unwrap()
+            .apply(ap1(&pr.intval, &y))
+            .unwrap();
+        check(
+            &pr.alt_iff().unwrap(),
+            &ap2(&pr.lt, &x, &y)
+                .equals(nil.clone())
+                .unwrap()
+                .not()
+                .unwrap()
+                .equals(rhs)
                 .unwrap()
                 .forall("y", a())
                 .unwrap()

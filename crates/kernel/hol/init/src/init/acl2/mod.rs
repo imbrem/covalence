@@ -41,6 +41,15 @@
 //!   [`derivable::Discharge`] hook API, and [`defun::Acl2Session`]
 //!   caching per-generation soundness (S4 gate:
 //!   `⊢ app ⌜(1)⌝ ⌜(2)⌝ = ⌜(1 2)⌝` transported through the ladder).
+//! - **S5a/S5b** ([`ordinal`], design `notes/vibes/lisp/acl2-s5-design.md`)
+//!   — ordinals below ε₀ over the model: `o-p`/`o<` as carrier functions
+//!   (pair-valued paramorphisms dissolving the depth-2 `caar` descent),
+//!   ACL2's ordinal defining equations *proved*, the `ord_fold` ground
+//!   normaliser, the accessibility predicate with the `nat ↪ int`
+//!   bridge (`init/int.rs`), and **THE well-foundedness theorem for all
+//!   CNF notations** — `⊢ ∀x. ¬(o-p x = anil) ⟹ Acc x` — with
+//!   `main_ord`/`graded_wf`/`wf_induct` (S5c/S5d — env rows + the
+//!   IND-ORD clause — are open, tracked in `SKELETONS.md`).
 //! - **S6-structural** ([`derivable::s6_env`] + [`hilbert`], design
 //!   §7–§13) — the **IND structural-induction clause** (tree induction
 //!   over the formula-as-data + designated variable, soundness by
@@ -60,5 +69,6 @@ pub mod defun;
 pub mod derivable;
 pub mod hilbert;
 pub mod ladder;
+pub mod ordinal;
 pub mod prims;
 pub mod term;

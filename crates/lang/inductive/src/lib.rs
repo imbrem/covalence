@@ -77,10 +77,10 @@ pub use aggregate::{
 pub use backend::InductiveBackend;
 pub use error::{IndResult, InductiveError, SpecError};
 pub use fixpoint::{
-    CoinductiveFixpointBackend, FixpointCore, FixpointIsoFacts, FixpointSpec, GreatestFixpoint,
-    GreatestFixpointFacts, InductiveFixpointBackend, LeastFixpoint, LeastFixpointFacts,
-    ProofBearingGreatestFixpointBackend, ProofBearingLeastFixpointBackend, RealizeError,
-    realize_coinductive, realize_inductive,
+    CoinductiveFixpointBackend, FixpointCore, FixpointIsoFacts, FixpointNoConfusionFacts,
+    FixpointSpec, GreatestFixpoint, GreatestFixpointFacts, InductiveFixpointBackend, LeastFixpoint,
+    LeastFixpointFacts, NoConfusionLeastFixpoint, ProofBearingGreatestFixpointBackend,
+    ProofBearingLeastFixpointBackend, RealizeError, realize_coinductive, realize_inductive,
 };
 pub use functor::{
     StructuralFunctorAction, StructuralFunctorLaws, StructuralPolynomial, StructuralPolynomialError,

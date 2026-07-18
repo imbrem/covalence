@@ -13,8 +13,8 @@
 #![forbid(unsafe_code)]
 
 use covalence_inductive::{
-    FieldSpec, FixpointIsoFacts, FixpointSpec, LeastFixpoint, LeastFixpointFacts, Logic,
-    PolynomialSpec, Position, VariantCase,
+    FieldSpec, FixpointIsoFacts, FixpointNoConfusionFacts, FixpointSpec, LeastFixpoint,
+    LeastFixpointFacts, Logic, NoConfusionLeastFixpoint, PolynomialSpec, Position, VariantCase,
 };
 
 /// Constructor positions in the canonical S-expression polynomial.
@@ -153,6 +153,133 @@ pub struct SExprFixpoint<L: Logic, P> {
     inner: LeastFixpoint<L, P>,
 }
 
+/// A canonical S-expression fixpoint with optional no-confusion evidence.
+///
+/// This wrapper is a strictly stronger capability than [`SExprFixpoint`].
+/// Consumers that need only folds or induction continue to accept the smaller
+/// type and impose no no-confusion requirement on their backend.
+pub struct SExprNoConfusion<L: Logic, P> {
+    inner: SExprFixpoint<L, P>,
+    facts: Box<dyn FixpointNoConfusionFacts<L>>,
+}
+
+impl<L: Logic, P> SExprNoConfusion<L, P> {
+    /// Attach separately proved no-confusion laws to a checked S-expression
+    /// fixpoint.
+    pub fn from_generic(bundle: NoConfusionLeastFixpoint<L, P>) -> Result<Self, LeastFixpoint<L, P>>
+    where
+        P: Clone + PartialEq,
+    {
+        let NoConfusionLeastFixpoint {
+            fixpoint,
+            no_confusion,
+        } = bundle;
+        let payload = fixpoint
+            .core
+            .spec
+            .functor
+            .variants
+            .get(constructor::ATOM)
+            .and_then(|case| case.fields.first())
+            .and_then(|field| match &field.position {
+                Position::Param(payload) => Some(payload.clone()),
+                Position::Var => None,
+            });
+        let Some(payload) = payload else {
+            return Err(fixpoint);
+        };
+        SExprFixpoint::try_new(fixpoint, payload).map(|inner| Self {
+            inner,
+            facts: no_confusion,
+        })
+    }
+
+    pub fn fixpoint(&self) -> &SExprFixpoint<L, P> {
+        &self.inner
+    }
+
+    /// `⊢ (atom left = atom right) ⟹ left = right`.
+    pub fn atom_injective(&self, left: &L::Term, right: &L::Term) -> Result<L::Thm, L::Error> {
+        self.facts.injective(
+            constructor::ATOM,
+            0,
+            core::slice::from_ref(left),
+            core::slice::from_ref(right),
+        )
+    }
+
+    /// `⊢ (cons lh lt = cons rh rt) ⟹ lh = rh`.
+    pub fn cons_head_injective(
+        &self,
+        left_head: &L::Term,
+        left_tail: &L::Term,
+        right_head: &L::Term,
+        right_tail: &L::Term,
+    ) -> Result<L::Thm, L::Error> {
+        self.facts.injective(
+            constructor::CONS,
+            0,
+            &[left_head.clone(), left_tail.clone()],
+            &[right_head.clone(), right_tail.clone()],
+        )
+    }
+
+    /// `⊢ (cons lh lt = cons rh rt) ⟹ lt = rt`.
+    pub fn cons_tail_injective(
+        &self,
+        left_head: &L::Term,
+        left_tail: &L::Term,
+        right_head: &L::Term,
+        right_tail: &L::Term,
+    ) -> Result<L::Thm, L::Error> {
+        self.facts.injective(
+            constructor::CONS,
+            1,
+            &[left_head.clone(), left_tail.clone()],
+            &[right_head.clone(), right_tail.clone()],
+        )
+    }
+
+    /// `⊢ (atom payload = nil) ⟹ F`.
+    pub fn atom_not_nil(&self, payload: &L::Term) -> Result<L::Thm, L::Error> {
+        self.facts.distinct(
+            constructor::ATOM,
+            constructor::NIL,
+            core::slice::from_ref(payload),
+            &[],
+        )
+    }
+
+    /// `⊢ (atom payload = cons head tail) ⟹ F`.
+    pub fn atom_not_cons(
+        &self,
+        payload: &L::Term,
+        head: &L::Term,
+        tail: &L::Term,
+    ) -> Result<L::Thm, L::Error> {
+        self.facts.distinct(
+            constructor::ATOM,
+            constructor::CONS,
+            core::slice::from_ref(payload),
+            &[head.clone(), tail.clone()],
+        )
+    }
+
+    /// `⊢ (nil = cons head tail) ⟹ F`.
+    pub fn nil_not_cons(&self, head: &L::Term, tail: &L::Term) -> Result<L::Thm, L::Error> {
+        self.facts.distinct(
+            constructor::NIL,
+            constructor::CONS,
+            &[],
+            &[head.clone(), tail.clone()],
+        )
+    }
+
+    pub fn into_fixpoint(self) -> SExprFixpoint<L, P> {
+        self.inner
+    }
+}
+
 impl<L: Logic, P: Clone + PartialEq> SExprFixpoint<L, P> {
     /// Accept a proof bundle only when it realizes the canonical
     /// `Atom + Nil + Cons` polynomial for `payload`.
@@ -253,13 +380,92 @@ impl<P: Clone> SExprView for Free<P> {
     }
 }
 
-// TODO(cov:sexpr.no-confusion-laws, major): Extend the generic proof-bearing fixpoint API with constructor distinctness/injectivity, then expose named S-expression no-confusion rules here.
 // TODO(cov:sexpr.proper-list-proof-capability, major): Define the logic-generic proper-list predicate and its nil/cons/induction theorem bundle above SExprFixpoint.
 // TODO(cov:sexpr.parser-interpretation, major): Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use covalence_inductive::{FixpointCore, Validated};
+    use std::convert::Infallible;
+
+    #[derive(Clone, Copy, Debug)]
+    struct TestLogic;
+
+    impl Logic for TestLogic {
+        type Type = String;
+        type Term = String;
+        type Thm = String;
+        type Error = Infallible;
+    }
+
+    struct IsoFacts;
+
+    impl FixpointIsoFacts<TestLogic> for IsoFacts {
+        fn roll_unroll(&self, x: &String) -> Result<String, Infallible> {
+            Ok(format!("roll-unroll({x})"))
+        }
+
+        fn unroll_roll(&self, layer: &String) -> Result<String, Infallible> {
+            Ok(format!("unroll-roll({layer})"))
+        }
+    }
+
+    struct LeastFacts;
+
+    impl LeastFixpointFacts<TestLogic> for LeastFacts {
+        fn fold(&self, algebra: &String) -> Result<String, Infallible> {
+            Ok(format!("fold({algebra})"))
+        }
+
+        fn fold_roll(&self, algebra: &String, layer: &String) -> Result<String, Infallible> {
+            Ok(format!("fold-roll({algebra},{layer})"))
+        }
+
+        fn induction(&self, predicate: &String, closed: String) -> Result<String, Infallible> {
+            Ok(format!("induction({predicate},{closed})"))
+        }
+    }
+
+    struct NoConfusionFacts;
+
+    impl FixpointNoConfusionFacts<TestLogic> for NoConfusionFacts {
+        fn injective(
+            &self,
+            case: usize,
+            field: usize,
+            left: &[String],
+            right: &[String],
+        ) -> Result<String, Infallible> {
+            Ok(format!("injective({case},{field},{left:?},{right:?})"))
+        }
+
+        fn distinct(
+            &self,
+            left_case: usize,
+            right_case: usize,
+            left: &[String],
+            right: &[String],
+        ) -> Result<String, Infallible> {
+            Ok(format!(
+                "distinct({left_case},{right_case},{left:?},{right:?})"
+            ))
+        }
+    }
+
+    fn test_fixpoint() -> LeastFixpoint<TestLogic, &'static str> {
+        LeastFixpoint {
+            core: FixpointCore {
+                spec: Validated::try_from(fixpoint("payload")).unwrap(),
+                carrier: "sexpr".into(),
+                layer: "sexpr-f".into(),
+                roll: "roll".into(),
+                unroll: "unroll".into(),
+                facts: Box::new(IsoFacts),
+            },
+            facts: Box::new(LeastFacts),
+        }
+    }
 
     #[test]
     fn spec_is_recursive_sum_of_products() {
@@ -297,5 +503,35 @@ mod tests {
         assert_eq!(spec.variants[constructor::ATOM].name, "atom");
         assert_eq!(spec.variants[constructor::NIL].name, "nil");
         assert_eq!(spec.variants[constructor::CONS].name, "cons");
+    }
+
+    #[test]
+    fn no_confusion_is_an_optional_named_capability() {
+        // The ordinary fixpoint still requires only iso/fold/induction facts.
+        let ordinary = SExprFixpoint::try_new(test_fixpoint(), "payload")
+            .ok()
+            .expect("canonical test fixpoint");
+        assert_eq!(ordinary.carrier(), "sexpr");
+
+        let api = SExprNoConfusion::from_generic(NoConfusionLeastFixpoint {
+            fixpoint: ordinary.into_inner(),
+            no_confusion: Box::new(NoConfusionFacts),
+        })
+        .ok()
+        .expect("canonical no-confusion fixpoint");
+
+        assert_eq!(
+            api.atom_injective(&"a".into(), &"b".into()).unwrap(),
+            r#"injective(0,0,["a"],["b"])"#
+        );
+        assert_eq!(
+            api.cons_tail_injective(&"lh".into(), &"lt".into(), &"rh".into(), &"rt".into())
+                .unwrap(),
+            r#"injective(2,1,["lh", "lt"],["rh", "rt"])"#
+        );
+        assert_eq!(
+            api.nil_not_cons(&"head".into(), &"tail".into()).unwrap(),
+            r#"distinct(1,2,[],["head", "tail"])"#
+        );
     }
 }

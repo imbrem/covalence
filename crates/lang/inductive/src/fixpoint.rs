@@ -59,6 +59,45 @@ pub struct LeastFixpoint<L: Logic, P> {
     pub facts: Box<dyn LeastFixpointFacts<L>>,
 }
 
+/// Optional constructor no-confusion evidence for a least fixpoint.
+///
+/// This is deliberately not a field of [`LeastFixpoint`]: Lambek's
+/// isomorphism and induction do not by themselves promise that a backend can
+/// expose constructor injectivity or distinctness in its object logic.
+/// Backends attach this stronger bundle only when they can prove it.
+pub struct NoConfusionLeastFixpoint<L: Logic, P> {
+    /// The underlying least-fixpoint realization.
+    pub fixpoint: LeastFixpoint<L, P>,
+    /// Constructor distinctness and injectivity laws.
+    pub no_confusion: Box<dyn FixpointNoConfusionFacts<L>>,
+}
+
+/// Constructor no-confusion laws indexed by the checked polynomial.
+///
+/// Case and field positions are declaration-order positions in
+/// [`FixpointCore::spec`]. Both methods return closed implications in the
+/// backend's logic; they do not accept an equality theorem as an unchecked
+/// Rust-level premise.
+pub trait FixpointNoConfusionFacts<L: Logic> {
+    /// `⊢ (Cᵢ left = Cᵢ right) ⟹ left[field] = right[field]`.
+    fn injective(
+        &self,
+        case: usize,
+        field: usize,
+        left: &[L::Term],
+        right: &[L::Term],
+    ) -> Result<L::Thm, L::Error>;
+
+    /// `⊢ (Cᵢ left = Cⱼ right) ⟹ F`, for distinct `i` and `j`.
+    fn distinct(
+        &self,
+        left_case: usize,
+        right_case: usize,
+        left: &[L::Term],
+        right: &[L::Term],
+    ) -> Result<L::Thm, L::Error>;
+}
+
 /// Catamorphism and induction capabilities of a least fixpoint.
 pub trait LeastFixpointFacts<L: Logic> {
     /// Build `fold algebra : μF → A`.

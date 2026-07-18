@@ -1139,6 +1139,7 @@ dependencies = [
 name = "covalence-inductive"
 version = "0.0.0"
 dependencies = [
+ "covalence-logic-api",
  "smol_str",
  "thiserror 2.0.18",
 ]

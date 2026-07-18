@@ -88,12 +88,31 @@ pub trait TermLanguage: Logic {
     fn type_of(&self, term: &Self::Term) -> Result<Self::Type, Self::Error>;
 }
 
+/// Read-only application syntax, separated from term construction so opaque
+/// term representations need not expose their internals.
+pub trait ApplicationView: Logic {
+    /// Destruct `function argument`.
+    fn as_application(&self, term: &Self::Term) -> Option<(Self::Term, Self::Term)>;
+}
+
 /// Equality propositions, kept separate from equality proof rules.
 pub trait EqualitySyntax: Logic {
     /// Construct `left = right`.
     fn equal(&self, left: Self::Term, right: Self::Term) -> Result<Self::Term, Self::Error>;
     /// Destruct an equality proposition.
     fn as_equal(&self, proposition: &Self::Term) -> Option<(Self::Term, Self::Term)>;
+}
+
+/// Implication and conjunction syntax.
+pub trait PropositionSyntax: Logic {
+    /// Construct `antecedent ⟹ consequent`.
+    fn implies(
+        &self,
+        antecedent: Self::Term,
+        consequent: Self::Term,
+    ) -> Result<Self::Term, Self::Error>;
+    /// Construct `left ∧ right`.
+    fn conjunction(&self, left: Self::Term, right: Self::Term) -> Result<Self::Term, Self::Error>;
 }
 
 /// Universal and existential object-language binders.
@@ -136,6 +155,65 @@ pub trait EqualityRules: EqualitySyntax + TheoremView {
         equality: Self::Thm,
         proof: Self::Thm,
     ) -> Result<Self::Thm, Self::Error>;
+}
+
+/// Introduce a theorem with one explicit hypothesis.
+pub trait AssumptionRules: TheoremView {
+    /// `{proposition} ⊢ proposition`.
+    fn assume(&self, proposition: Self::Term) -> Result<Self::Thm, Self::Error>;
+}
+
+/// Proof-producing β-conversion.
+pub trait BetaRules: TermLanguage + TheoremView {
+    /// Prove one top-level β reduction.
+    fn beta_conversion(&self, redex: Self::Term) -> Result<Self::Thm, Self::Error>;
+}
+
+/// Congruence for object-language application.
+pub trait ApplicationCongruence: TermLanguage + EqualityRules {
+    /// Lift proved equalities through application.
+    fn application_congruence(
+        &self,
+        functions: Self::Thm,
+        arguments: Self::Thm,
+    ) -> Result<Self::Thm, Self::Error>;
+}
+
+/// Instantiate a named free variable in a theorem.
+pub trait TheoremInstantiation: TheoremView {
+    fn instantiate(
+        &self,
+        theorem: Self::Thm,
+        name: &str,
+        replacement: Self::Term,
+    ) -> Result<Self::Thm, Self::Error>;
+}
+
+/// Natural-deduction rules for implication.
+pub trait ImplicationRules: PropositionSyntax + TheoremView {
+    /// Discharge `hypothesis` from a theorem.
+    fn implication_intro(
+        &self,
+        theorem: Self::Thm,
+        hypothesis: &Self::Term,
+    ) -> Result<Self::Thm, Self::Error>;
+    /// Modus ponens.
+    fn implication_elim(
+        &self,
+        implication: Self::Thm,
+        antecedent: Self::Thm,
+    ) -> Result<Self::Thm, Self::Error>;
+}
+
+/// Natural-deduction rules for conjunction.
+pub trait ConjunctionRules: PropositionSyntax + TheoremView {
+    fn conjunction_intro(
+        &self,
+        left: Self::Thm,
+        right: Self::Thm,
+    ) -> Result<Self::Thm, Self::Error>;
+    fn conjunction_elim_left(&self, theorem: Self::Thm) -> Result<Self::Thm, Self::Error>;
+    fn conjunction_elim_right(&self, theorem: Self::Thm) -> Result<Self::Thm, Self::Error>;
 }
 
 /// Proof rules for term-level binders.

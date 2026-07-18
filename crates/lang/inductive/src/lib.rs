@@ -62,6 +62,7 @@ pub mod error;
 pub mod fixpoint;
 pub mod functor;
 pub mod logic;
+pub mod logic_api;
 pub mod polynomial;
 pub mod spec;
 pub mod stream;
@@ -86,6 +87,7 @@ pub use functor::{
     StructuralFunctorAction, StructuralFunctorLaws, StructuralPolynomial, StructuralPolynomialError,
 };
 pub use logic::{Logic, LogicOps, beta_expand, beta_reduce};
+pub use logic_api::LogicApiAdapter;
 pub use polynomial::{
     EnumSpec, FieldSpec, FunctorExpr, PolynomialBuilder, PolynomialSpec, Position, RecordBuilder,
     RecordSpec, VariantCase, VariantSpec,

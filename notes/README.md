@@ -47,6 +47,7 @@ bun run dev:map
 ```
 
 This regenerates the knowledge-graph snapshot and opens the current `/map`
-prototype. The prototype lives in `covalence-web`; the intended application and
-shared-package boundary is recorded in
+application. The static shell fetches `/covalence-map.json`; set
+`VITE_COVALENCE_MAP_DATA_BASE` to load the same contract from another origin.
+The application and shared-package boundary is recorded in
 [`vibes/plans/knowledge-browser-apps.md`](./vibes/plans/knowledge-browser-apps.md).

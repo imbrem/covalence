@@ -1,0 +1,1 @@
+import{b as p,E as o,D as t,i as l}from"./CdpVNaFE.js";import{B as c}from"./cCDGra-5.js";function m(s,a,...i){var r=new c(s);p(()=>{const n=a()??null;t&&n==null&&l(),r.ensure(n,n&&(e=>n(e,...i)))},o)}export{m as s};

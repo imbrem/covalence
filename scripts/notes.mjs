@@ -28,6 +28,7 @@ const ROOT = resolve(import.meta.dir, "..");
 const DB = resolve(ROOT, "target/covalence-notes.sqlite");
 const GRAPH = resolve(ROOT, "target/covalence-map.mmd");
 const JSON_PATH = "docs/deps/covalence-map.json";
+const MAP_STATIC_PATH = "apps/covalence-map/static/covalence-map.json";
 const args = process.argv.slice(2);
 const valueAfter = (flag) => {
   const index = args.indexOf(flag);
@@ -159,18 +160,22 @@ const artifact =
     2,
   ) + "\n";
 if (args.includes("--check")) {
-  const current = existsSync(resolve(ROOT, JSON_PATH))
-    ? readFileSync(resolve(ROOT, JSON_PATH), "utf8")
-    : "";
-  if (current !== artifact) {
-    console.error(`notes: ${JSON_PATH} is stale; run \`bun run notes\``);
-    process.exit(1);
+  for (const path of [JSON_PATH, MAP_STATIC_PATH]) {
+    const current = existsSync(resolve(ROOT, path))
+      ? readFileSync(resolve(ROOT, path), "utf8")
+      : "";
+    if (current !== artifact) {
+      console.error(`notes: ${path} is stale; run \`bun run notes\``);
+      process.exit(1);
+    }
   }
   console.error(`notes: up to date (${nodes.length} nodes, ${edges.length} edges)`);
   process.exit(0);
 }
 mkdirSync(dirname(resolve(ROOT, JSON_PATH)), { recursive: true });
 writeFileSync(resolve(ROOT, JSON_PATH), artifact);
+mkdirSync(dirname(resolve(ROOT, MAP_STATIC_PATH)), { recursive: true });
+writeFileSync(resolve(ROOT, MAP_STATIC_PATH), artifact);
 
 mkdirSync(dirname(DB), { recursive: true });
 rmSync(DB, { force: true });

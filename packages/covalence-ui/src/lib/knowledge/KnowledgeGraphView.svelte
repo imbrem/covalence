@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import cytoscape from 'cytoscape';
 	import type { Core, ElementDefinition, LayoutOptions } from 'cytoscape';
 
 	type KnowledgeGraphNode = {
@@ -32,9 +32,9 @@
 		onselect = () => {},
 	}: Props = $props();
 
-	let container: HTMLDivElement;
 	let cy: Core | undefined;
 	let ready = $state(false);
+	let error = $state<string | null>(null);
 
 	const colours: Record<string, string> = {
 		task: '#8b5cf6',
@@ -82,11 +82,13 @@
 				};
 	}
 
-	onMount(async () => {
-		const { default: cytoscape } = await import('cytoscape');
-		cy = cytoscape({
-			container,
-			style: [
+	function mountGraph(container: HTMLDivElement) {
+		try {
+			cy = cytoscape({
+				container,
+				elements: elements(),
+				layout: layoutOptions(),
+				style: [
 				{
 					selector: 'node',
 					style: {
@@ -134,12 +136,29 @@
 						'text-background-padding': 2,
 					},
 				},
-			],
-		});
-		cy.on('tap', 'node', (event) => onselect(event.target.id()));
-		ready = true;
-		return () => cy?.destroy();
-	});
+				],
+			});
+			cy.on('tap', 'node', (event) => onselect(event.target.id()));
+			if (selectedId) cy.getElementById(selectedId).select();
+			cy.fit(undefined, 30);
+			ready = true;
+
+			const resize = new ResizeObserver(() => {
+				cy?.resize();
+				cy?.fit(undefined, 30);
+			});
+			resize.observe(container);
+			return {
+				destroy() {
+					resize.disconnect();
+					cy?.destroy();
+				},
+			};
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : String(cause);
+		}
+		return {};
+	}
 
 	$effect(() => {
 		if (!ready || !cy) return;
@@ -156,9 +175,21 @@
 	});
 </script>
 
-<div class="graph" bind:this={container} aria-label="Interactive Covalence map"></div>
+<div class="frame">
+	<div class="graph" use:mountGraph aria-label="Interactive knowledge graph"></div>
+	{#if error}
+		<p class="message" role="alert">Could not render the graph: {error}</p>
+	{:else if ready && nodes.length === 0}
+		<p class="message">No nodes match the current view.</p>
+	{:else if !ready}
+		<p class="message">Loading graph…</p>
+	{/if}
+</div>
 
 <style>
+	.frame {
+		position: relative;
+	}
 	.graph {
 		width: 100%;
 		height: min(68vh, 48rem);
@@ -166,5 +197,16 @@
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: #0f172a;
+	}
+	.message {
+		position: absolute;
+		inset: 1rem auto auto 1rem;
+		margin: 0;
+		padding: 0.5rem 0.7rem;
+		border: 1px solid #475569;
+		border-radius: 4px;
+		background: #111827;
+		color: #e2e8f0;
+		font: 0.8rem ui-monospace, monospace;
 	}
 </style>

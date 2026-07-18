@@ -68,16 +68,16 @@ filters, and other view state are disposable overlays.
 
 ## Migration from the prototype
 
-The first `/map` page in `covalence-web` validates the generated data and graph
-interaction. The next extraction should:
+The first standalone `covalence-map` app validates the generated data and graph
+interaction. Its static shell fetches a narrow JSON contract from local static
+files by default; another origin can provide the same contract later. Next:
 
 1. move the generic Cytoscape adapter and graph types into a shared package;
 2. move map loading, filtering, detail panels, and fallback views into a
    `covalence-knowledge` feature package;
-3. scaffold `apps/covalence-map` as the thin application shell;
-4. leave a link or embedded read-only view in `covalence-web`;
-5. add generated API/proof declarations without coupling them to notes/tasks;
-6. scaffold `apps/category-wiki` only when its publishing and collaboration
+3. add a link or embedded read-only view in `covalence-web` only if useful;
+4. add generated API/proof declarations without coupling them to notes/tasks;
+5. scaffold `apps/category-wiki` only when its publishing and collaboration
    model is concrete enough to test.
 
 This order avoids copying the prototype while also avoiding a premature

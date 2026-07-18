@@ -1,0 +1,21 @@
+:root {
+	--bg: #0e0e10;
+	--fg: #e0e0e0;
+	--muted: #9393a0;
+	--accent: #8b7cf8;
+	--surface: #1a1a1e;
+	--border: #303038;
+	--font-mono: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+*, *::before, *::after {
+	box-sizing: border-box;
+}
+
+html, body {
+	min-height: 100%;
+	margin: 0;
+	background: var(--bg);
+	color: var(--fg);
+	font-family: var(--font-mono);
+}

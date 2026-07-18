@@ -60,6 +60,28 @@ const languageFor = (path) =>
     ".wit": "wit",
   })[extname(path).toLowerCase()] ?? "text";
 
+function taggedJson(file, tag) {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `^\\s*\\/\\/[!\\/]\\s*@${escaped}\\s+(\\{.+\\})\\s*$`,
+    "gm",
+  );
+  return [...file.content.matchAll(pattern)].map((match) => {
+    try {
+      return JSON.parse(match[1]);
+    } catch (error) {
+      throw new Error(`${file.path}: invalid @${tag} JSON: ${error.message}`);
+    }
+  });
+}
+
+function requireTaggedStrings(file, tag, value, fields) {
+  for (const field of fields) {
+    if (typeof value[field] !== "string" || !value[field])
+      throw new Error(`${file.path}: @${tag} requires string ${field}`);
+  }
+}
+
 // Git's tracked plaintext is the authoring truth. The generated SQLite database
 // is the local query/index layer; JSON is only a replaceable browser transport.
 const trackedPaths = [
@@ -205,13 +227,10 @@ for (const file of sourceFiles) {
 // they describe. Strict JSON doc-comment tags remain legible to rustdoc while
 // giving later cargo-doc-style tooling a stable interchange format.
 for (const file of sourceFiles.filter((item) => item.language === "rust")) {
-  for (const match of file.content.matchAll(/^\s*\/\/[!\/]\s*@covalence-api\s+(\{.+\})\s*$/gm)) {
-    const metadata = JSON.parse(match[1]);
+  for (const metadata of taggedJson(file, "covalence-api")) {
+    requireTaggedStrings(file, "covalence-api", metadata, ["id", "title", "status"]);
     if (
-      typeof metadata.id !== "string" ||
       !/^A[0-9A-Z]{4,}$/.test(metadata.id) ||
-      typeof metadata.title !== "string" ||
-      typeof metadata.status !== "string" ||
       !Array.isArray(metadata.dependsOn)
     )
       throw new Error(`${file.path}: invalid @covalence-api metadata`);
@@ -223,16 +242,13 @@ for (const file of sourceFiles.filter((item) => item.language === "rust")) {
     for (const dependency of metadata.dependsOn)
       edge(`api:${metadata.id}`, "depends-on", `api:${dependency}`);
   }
-  for (const match of file.content.matchAll(
-    /^\s*\/\/[!\/]\s*@covalence-api-impl\s+(\{.+\})\s*$/gm,
-  )) {
-    const metadata = JSON.parse(match[1]);
-    if (
-      typeof metadata.api !== "string" ||
-      !/^A[0-9A-Z]{4,}$/.test(metadata.api) ||
-      typeof metadata.name !== "string" ||
-      typeof metadata.representation !== "string"
-    )
+  for (const metadata of taggedJson(file, "covalence-api-impl")) {
+    requireTaggedStrings(file, "covalence-api-impl", metadata, [
+      "api",
+      "name",
+      "representation",
+    ]);
+    if (!/^A[0-9A-Z]{4,}$/.test(metadata.api))
       throw new Error(`${file.path}: invalid @covalence-api-impl metadata`);
     const id = `impl:${metadata.api}:${metadata.name}`;
     if (apiImplementations.some((item) => item.id === id))

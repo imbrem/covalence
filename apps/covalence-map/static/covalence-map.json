@@ -43,7 +43,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 157,
+      "words": 159,
       "updated": 0
     },
     {
@@ -475,7 +475,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 31089,
+      "words": 31095,
       "updated": 0
     },
     {
@@ -8224,7 +8224,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 155,
+      "words": 157,
       "updated": 0
     },
     {
@@ -8242,7 +8242,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/relation.rs",
-      "words": 466,
+      "words": 1030,
       "updated": 0
     },
     {
@@ -9187,7 +9187,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/json-api/src/lib.rs",
-      "words": 804,
+      "words": 928,
       "updated": 0
     },
     {
@@ -10339,7 +10339,16 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lib/graph/src/lib.rs",
-      "words": 68,
+      "words": 67,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lib/graph/src/networkx.rs",
+      "kind": "file",
+      "title": "networkx.rs",
+      "status": "tracked",
+      "path": "crates/lib/graph/src/networkx.rs",
+      "words": 474,
       "updated": 0
     },
     {
@@ -13651,7 +13660,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 31089,
+      "words": 31095,
       "updated": 0
     },
     {
@@ -13759,7 +13768,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3089,
+      "words": 3059,
       "updated": 0
     },
     {
@@ -15685,7 +15694,7 @@
       "title": "notes.mjs",
       "status": "tracked",
       "path": "scripts/notes.mjs",
-      "words": 752,
+      "words": 768,
       "updated": 0
     },
     {
@@ -17140,9 +17149,9 @@
     {
       "id": "todo:graph.networkx-formats",
       "kind": "todo",
-      "title": "Add weighted/multiline adjacency formats and escaping policies above the adjacency- and edge-list seams.",
-      "status": "major",
-      "path": "crates/lib/graph/src/lib.rs",
+      "title": "graph.networkx-formats",
+      "status": null,
+      "path": "graph.networkx-formats",
       "words": 0,
       "updated": 0
     },
@@ -17170,15 +17179,6 @@
       "title": "Adapt this compatibility surface to covalence-logic-api once its carrier traits stabilize.",
       "status": "major",
       "path": "crates/lang/inductive/src/logic.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:json.parser-depth-limit",
-      "kind": "todo",
-      "title": "Replace recursive descent with an explicit stack or enforce a configurable nesting bound before accepting adversarial input.",
-      "status": "severe",
-      "path": "crates/lang/json-api/src/lib.rs",
       "words": 0,
       "updated": 0
     },
@@ -18994,9 +18994,9 @@
     {
       "id": "todo:kernel.logic.relation-allegory",
       "kind": "todo",
-      "title": "Add products, coproducts, tabulation, and closure as optional capabilities with law bundles.",
-      "status": "major",
-      "path": "crates/kernel/hol/logic/src/relation.rs",
+      "title": "kernel.logic.relation-allegory",
+      "status": null,
+      "path": "kernel.logic.relation-allegory",
       "words": 0,
       "updated": 0
     },
@@ -22405,6 +22405,12 @@
       "source": "file:crates/lib/graph/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lib/graph/src/interchange.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lib/graph/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lib/graph/src/networkx.rs",
       "detail": null
     },
     {

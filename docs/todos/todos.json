@@ -28,7 +28,7 @@
       "id": "graph.networkx-formats",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Add the remaining NetworkX text interchange formats and escaping policies above the adjacency-list seam.",
+      "summary": "Add weighted/multiline adjacency formats and escaping policies above the adjacency- and edge-list seams.",
       "structured": true,
       "path": "crates/lib/graph/src/lib.rs",
       "line": 45,

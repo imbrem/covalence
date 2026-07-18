@@ -410,6 +410,164 @@ fn insert_once<T: Eq>(values: &mut Vec<T>, value: T) {
     }
 }
 
+/// NetworkX-compatible directed edge-list syntax.
+///
+/// Each non-comment line contains exactly two whitespace-separated labels.
+/// This syntax cannot represent isolated vertices, so the codec's value is a
+/// syntax document rather than a graph.  [`interpret_networkx_edge_list`]
+/// performs the separate, checked interpretation into a [`FiniteDiGraph`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NetworkxEdgeListDocument {
+    pub arcs: Vec<(String, String)>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NetworkxEdgeList;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EdgeListError {
+    InvalidArity {
+        line: usize,
+        fields: usize,
+    },
+    InvalidLabel(String),
+    UnrepresentedVertex(String),
+    Graph(FiniteGraphError<String>),
+    SemanticDisagreement {
+        expected: FiniteDiGraph<String>,
+        interpreted: FiniteDiGraph<String>,
+    },
+}
+
+impl TextCodec for NetworkxEdgeList {
+    type Value = NetworkxEdgeListDocument;
+    type Error = EdgeListError;
+
+    fn parse(&self, source: &str) -> Result<Self::Value, Self::Error> {
+        let mut arcs = Vec::new();
+        for (line_index, line) in source.lines().enumerate() {
+            let content = line.split_once('#').map_or(line, |(before, _)| before);
+            let fields: Vec<_> = content.split_whitespace().collect();
+            if fields.is_empty() {
+                continue;
+            }
+            if fields.len() != 2 {
+                return Err(EdgeListError::InvalidArity {
+                    line: line_index + 1,
+                    fields: fields.len(),
+                });
+            }
+            arcs.push((fields[0].to_owned(), fields[1].to_owned()));
+        }
+        Ok(NetworkxEdgeListDocument { arcs })
+    }
+
+    fn print(&self, document: &Self::Value) -> Result<String, Self::Error> {
+        let mut output = String::new();
+        for (source, target) in &document.arcs {
+            if !valid_adjacency_label(source) {
+                return Err(EdgeListError::InvalidLabel(source.clone()));
+            }
+            if !valid_adjacency_label(target) {
+                return Err(EdgeListError::InvalidLabel(target.clone()));
+            }
+            output.push_str(source);
+            output.push(' ');
+            output.push_str(target);
+            output.push('\n');
+        }
+        Ok(output)
+    }
+}
+
+/// Checked result of interpreting an edge-list document as a directed graph.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EdgeListInterpretationWitness {
+    document: NetworkxEdgeListDocument,
+    graph: FiniteDiGraph<String>,
+}
+
+impl EdgeListInterpretationWitness {
+    pub fn document(&self) -> &NetworkxEdgeListDocument {
+        &self.document
+    }
+
+    pub fn graph(&self) -> &FiniteDiGraph<String> {
+        &self.graph
+    }
+}
+
+/// Interpret edge-list syntax, preserving first-appearance vertex and arc
+/// order and rejecting duplicate arcs.
+///
+/// The returned value witnesses only this computational interpretation. It
+/// does not mint a theorem or claim equality with any independently supplied
+/// graph.
+pub fn interpret_networkx_edge_list(
+    document: NetworkxEdgeListDocument,
+) -> Result<EdgeListInterpretationWitness, EdgeListError> {
+    let mut vertices = Vec::new();
+    for (source, target) in &document.arcs {
+        insert_once(&mut vertices, source.clone());
+        insert_once(&mut vertices, target.clone());
+    }
+    let graph =
+        FiniteDiGraph::new(vertices, document.arcs.clone()).map_err(EdgeListError::Graph)?;
+    Ok(EdgeListInterpretationWitness { document, graph })
+}
+
+/// Checked evidence that a finite digraph survives edge-list encoding and
+/// interpretation without changing its ordered representation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EdgeListSemanticRoundTripWitness {
+    graph: FiniteDiGraph<String>,
+    document: NetworkxEdgeListDocument,
+}
+
+impl EdgeListSemanticRoundTripWitness {
+    pub fn graph(&self) -> &FiniteDiGraph<String> {
+        &self.graph
+    }
+
+    pub fn document(&self) -> &NetworkxEdgeListDocument {
+        &self.document
+    }
+}
+
+/// Check the semantic round trip
+/// `graph -> edge-list document -> interpreted graph`.
+///
+/// Edge-list syntax has no standalone-node form, so isolated vertices are
+/// rejected explicitly. Ordered graph representations whose vertex order is
+/// not first-appearance order are likewise reported as a disagreement.
+pub fn check_networkx_edge_list_semantic_round_trip(
+    graph: FiniteDiGraph<String>,
+) -> Result<EdgeListSemanticRoundTripWitness, EdgeListError> {
+    for vertex in graph.vertices() {
+        if !graph
+            .arcs()
+            .iter()
+            .any(|(source, target)| source == &vertex || target == &vertex)
+        {
+            return Err(EdgeListError::UnrepresentedVertex(vertex));
+        }
+    }
+    let document = NetworkxEdgeListDocument {
+        arcs: graph.arcs().to_vec(),
+    };
+    NetworkxEdgeList.print(&document)?;
+    let interpreted = interpret_networkx_edge_list(document.clone())?
+        .graph()
+        .clone();
+    if interpreted != graph {
+        return Err(EdgeListError::SemanticDisagreement {
+            expected: graph,
+            interpreted,
+        });
+    }
+    Ok(EdgeListSemanticRoundTripWitness { graph, document })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -445,6 +603,83 @@ mod tests {
             NetworkxAdjacencyList.print(&graph),
             Err(AdjacencyListError::InvalidLabel(_))
         ));
+    }
+
+    #[test]
+    fn networkx_edge_list_has_checked_syntax_and_semantic_layers() {
+        let document = NetworkxEdgeListDocument {
+            arcs: vec![
+                ("source".into(), "middle".into()),
+                ("middle".into(), "target".into()),
+            ],
+        };
+        let syntax = check_syntax_round_trip(&NetworkxEdgeList, document.clone()).unwrap();
+        assert_eq!(syntax.value(), &document);
+
+        let interpretation = interpret_networkx_edge_list(document).unwrap();
+        assert_eq!(
+            interpretation.graph().vertices(),
+            vec!["source", "middle", "target"]
+        );
+        assert_eq!(
+            interpretation.graph().arcs(),
+            &[
+                ("source".into(), "middle".into()),
+                ("middle".into(), "target".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn networkx_edge_list_accepts_comments_but_prints_canonical_text() {
+        let parsed = NetworkxEdgeList
+            .parse("# path\na b # first arc\n\n b c\n")
+            .unwrap();
+        assert_eq!(NetworkxEdgeList.print(&parsed).unwrap(), "a b\nb c\n");
+    }
+
+    #[test]
+    fn networkx_edge_list_rejects_attributes_at_the_unweighted_layer() {
+        assert_eq!(
+            NetworkxEdgeList.parse("a b 3.5\n"),
+            Err(EdgeListError::InvalidArity { line: 1, fields: 3 })
+        );
+    }
+
+    #[test]
+    fn networkx_edge_list_interpretation_rejects_duplicate_arcs() {
+        let document = NetworkxEdgeListDocument {
+            arcs: vec![("a".into(), "b".into()), ("a".into(), "b".into())],
+        };
+        assert!(matches!(
+            interpret_networkx_edge_list(document),
+            Err(EdgeListError::Graph(FiniteGraphError::DuplicateEdge(_)))
+        ));
+    }
+
+    #[test]
+    fn networkx_edge_list_has_checked_semantic_round_trip() {
+        let graph = FiniteDiGraph::new(
+            vec!["a".into(), "b".into(), "c".into()],
+            vec![("a".into(), "b".into()), ("b".into(), "c".into())],
+        )
+        .unwrap();
+        let witness = check_networkx_edge_list_semantic_round_trip(graph.clone()).unwrap();
+        assert_eq!(witness.graph(), &graph);
+        assert_eq!(witness.document().arcs, graph.arcs());
+    }
+
+    #[test]
+    fn networkx_edge_list_reports_unrepresentable_isolated_vertex() {
+        let graph = FiniteDiGraph::new(
+            vec!["a".into(), "isolated".into()],
+            vec![("a".into(), "a".into())],
+        )
+        .unwrap();
+        assert_eq!(
+            check_networkx_edge_list_semantic_round_trip(graph),
+            Err(EdgeListError::UnrepresentedVertex("isolated".into()))
+        );
     }
 
     #[test]

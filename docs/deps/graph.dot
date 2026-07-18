@@ -10,6 +10,7 @@ digraph deps {
   "core" [style=filled, fillcolor="#ffd6d6"];
   "core-test-guest";
   "crypto-sig";
+  "decimal-api";
   "egglog";
   "forsp";
   "fuse";
@@ -24,6 +25,7 @@ digraph deps {
   "inductive";
   "init";
   "json";
+  "json-api";
   "k";
   "kernel";
   "kernel-sat";
@@ -92,6 +94,7 @@ digraph deps {
   "core" -> "pure";
   "core" -> "pure-eval";
   "core" -> "types";
+  "decimal-api" -> "types";
   "egglog" -> "sexp";
   "egglog" -> "types";
   "forsp" -> "hash";
@@ -137,6 +140,8 @@ digraph deps {
   "init" -> "sexp";
   "init" -> "spectec";
   "init" -> "types";
+  "json-api" -> "decimal-api";
+  "json-api" -> "inductive";
   "k" -> "grammar";
   "k" -> "parse";
   "k" -> "sexp";

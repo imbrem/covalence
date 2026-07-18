@@ -1,0 +1,9 @@
+[package]
+name = "covalence-json-api"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+covalence-decimal-api = { path = "../decimal" }
+covalence-inductive = { path = "../inductive" }
+

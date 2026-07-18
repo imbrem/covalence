@@ -27,6 +27,7 @@ graph LR
   core --> pure
   core --> pure-eval
   core --> types
+  decimal-api --> types
   egglog --> sexp
   egglog --> types
   forsp --> hash
@@ -72,6 +73,8 @@ graph LR
   init --> sexp
   init --> spectec
   init --> types
+  json-api --> decimal-api
+  json-api --> inductive
   k --> grammar
   k --> parse
   k --> sexp

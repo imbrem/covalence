@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 307,
-  "structured": 307,
+  "count": 308,
+  "structured": 308,
   "items": [
     {
       "id": "ffi.python.hol-kernel-bindings-removed-pending-rewrite",
@@ -73,6 +73,16 @@
       "path": "crates/lang/inductive/src/polynomial.rs",
       "line": 19,
       "crate": "covalence-inductive"
+    },
+    {
+      "id": "json.polynomial-composition",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace Array/Object parameters with composed list and member polynomial functors once covalence-inductive supports functor composition.",
+      "structured": true,
+      "path": "crates/lang/json-api/src/lib.rs",
+      "line": 129,
+      "crate": "covalence-json-api"
     },
     {
       "id": "kernel.base.canon-only-on-ground-args",

@@ -1000,6 +1000,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-decimal-api"
+version = "0.0.0"
+dependencies = [
+ "covalence-types",
+]
+
+[[package]]
 name = "covalence-egglog"
 version = "0.0.0"
 dependencies = [
@@ -1169,6 +1176,14 @@ name = "covalence-json"
 version = "0.0.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "covalence-json-api"
+version = "0.0.0"
+dependencies = [
+ "covalence-decimal-api",
+ "covalence-inductive",
 ]
 
 [[package]]

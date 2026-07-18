@@ -10,6 +10,7 @@
     "covalence-core",
     "covalence-core-test-guest",
     "covalence-crypto-sig",
+    "covalence-decimal-api",
     "covalence-egglog",
     "covalence-forsp",
     "covalence-fuse",
@@ -24,6 +25,7 @@
     "covalence-inductive",
     "covalence-init",
     "covalence-json",
+    "covalence-json-api",
     "covalence-k",
     "covalence-kernel",
     "covalence-kernel-sat",
@@ -173,6 +175,10 @@
     },
     {
       "from": "covalence-core",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-decimal-api",
       "to": "covalence-types"
     },
     {
@@ -354,6 +360,14 @@
     {
       "from": "covalence-init",
       "to": "covalence-types"
+    },
+    {
+      "from": "covalence-json-api",
+      "to": "covalence-decimal-api"
+    },
+    {
+      "from": "covalence-json-api",
+      "to": "covalence-inductive"
     },
     {
       "from": "covalence-k",

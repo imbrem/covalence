@@ -2,7 +2,7 @@
 //!
 //! Three layers:
 //!
-//! 1. [`Graph<P>`] — pure topology + ports + opaque payloads. This is
+//! 1. [`Graph<P>`] — ordered port topology + opaque payloads. This is
 //!    the only thing the WIT API and the WASM linker see. Identity is
 //!    the canonical byte encoding (see [`canonical`]), hashed under the
 //!    [`canonical::ORDERED_HASH_CTX`] or
@@ -41,13 +41,13 @@
 //! inserts explicit copy nodes; strict linear semantics is enforced at
 //! the consumer's layer with a single-outgoing-edge check.
 
-// TODO(cov:graph.abstract-trait-separation, major): Keep this ordered port graph as a first-class string-diagram backend while adding distinct Graph, DiGraph, MultiGraph, HyperGraph, and PortGraph traits per notes/design/graph-api.md.
 // TODO(cov:graph.verified-interchange, major): Implement DOT and common NetworkX-format interpreters with round-trip and graph-isomorphism properties as specified in notes/design/graph-api.md.
 
 pub mod canonical;
 pub mod overlay;
 pub mod render;
 pub mod string_diagram;
+pub mod theory;
 
 pub use canonical::{
     BuildError, BytesGraph, BytesGraphBuilder, CANONICAL_MAGIC, CANONICAL_VERSION, DecodeError,

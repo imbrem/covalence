@@ -5,6 +5,35 @@
 //! future allocation optimization; see the generated open-work index.
 
 use covalence_sexp::{ParseError, SExpr, parse};
+use covalence_sexpr_api::SExprSyntax;
+
+/// Fold the parser's proper-list surface tree into an abstract S-expression
+/// representation.
+///
+/// This adapter lives in the language layer so the low-level parser never
+/// depends on `covalence-sexpr-api`. `atom` selects the dialect's payload
+/// interpretation; list structure is lowered solely through the abstract
+/// `nil`/`cons` capabilities.
+pub fn lower_with<A>(
+    api: &A,
+    sexpr: &SExpr,
+    atom: &impl Fn(&covalence_sexp::Atom) -> Result<A::Payload, A::Error>,
+) -> Result<A::Value, A::Error>
+where
+    A: SExprSyntax + ?Sized,
+{
+    match sexpr {
+        SExpr::Atom(value) => api.atom(atom(value)?),
+        SExpr::List(items) => {
+            let mut result = api.nil();
+            for item in items.iter().rev() {
+                let head = lower_with(api, item, atom)?;
+                result = api.cons(head, result)?;
+            }
+            Ok(result)
+        }
+    }
+}
 
 /// Parse `src` into a sequence of top-level S-expressions.
 pub fn read(src: &str) -> Result<Vec<SExpr>, ParseError> {
@@ -38,4 +67,35 @@ pub enum ReadError {
     /// Expected exactly one top-level form, found `n`.
     #[error("expected exactly one top-level form, found {0}")]
     Arity(usize),
+}
+
+#[cfg(test)]
+mod tests {
+    use covalence_sexpr_api::{Free, FreeSExpr};
+
+    use super::*;
+
+    #[test]
+    fn parsed_proper_lists_lower_through_the_abstract_api() {
+        let parsed = read_one("(a (b))").unwrap();
+        let lowered = lower_with(&Free::<String>::new(), &parsed, &|atom| match atom {
+            covalence_sexp::Atom::Symbol(value) => Ok(value.to_string()),
+            covalence_sexp::Atom::Str { .. } => unreachable!(),
+        })
+        .unwrap();
+
+        assert_eq!(
+            lowered,
+            FreeSExpr::Cons(
+                Box::new(FreeSExpr::Atom("a".into())),
+                Box::new(FreeSExpr::Cons(
+                    Box::new(FreeSExpr::Cons(
+                        Box::new(FreeSExpr::Atom("b".into())),
+                        Box::new(FreeSExpr::Nil),
+                    )),
+                    Box::new(FreeSExpr::Nil),
+                )),
+            )
+        );
+    }
 }

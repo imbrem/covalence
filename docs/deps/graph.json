@@ -453,6 +453,10 @@
     },
     {
       "from": "covalence-lisp",
+      "to": "covalence-sexpr-api"
+    },
+    {
+      "from": "covalence-lisp",
       "to": "covalence-types"
     },
     {

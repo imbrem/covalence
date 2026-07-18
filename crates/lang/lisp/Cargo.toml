@@ -19,6 +19,7 @@ edition = "2024"
 [dependencies]
 # Reader / S-expression IR (kernel-independent).
 covalence-sexp = { path = "../../lib/sexp" }
+covalence-sexpr-api = { path = "../sexpr-api" }
 # The generic REPL + ReductionStrategy seam (kernel-independent).
 covalence-repl-core = { path = "../../lib/repl-core" }
 thiserror = "2"

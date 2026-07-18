@@ -12,7 +12,17 @@
 
 #![forbid(unsafe_code)]
 
-use covalence_inductive::{FieldSpec, FixpointSpec, PolynomialSpec, Position, VariantCase};
+use covalence_inductive::{
+    FieldSpec, FixpointIsoFacts, FixpointSpec, LeastFixpoint, LeastFixpointFacts, Logic,
+    PolynomialSpec, Position, VariantCase,
+};
+
+/// Constructor positions in the canonical S-expression polynomial.
+pub mod constructor {
+    pub const ATOM: usize = 0;
+    pub const NIL: usize = 1;
+    pub const CONS: usize = 2;
+}
 
 /// The polynomial specification for S-expressions over payload parameter `P`.
 pub fn polynomial<P: Clone>(payload: P) -> PolynomialSpec<P> {
@@ -93,12 +103,25 @@ pub trait ProperList: SExprView {
 
     /// Return elements exactly when the cons spine terminates in nil.
     fn as_list(&self, value: &Self::Value) -> Result<Option<Vec<Self::Value>>, Self::Error> {
+        Ok(match self.list_spine(value)? {
+            ListSpine::Proper(values) => Some(values),
+            ListSpine::Dotted { .. } => None,
+        })
+    }
+
+    /// Decompose a finite cons spine, retaining a non-nil dotted tail.
+    fn list_spine(&self, value: &Self::Value) -> Result<ListSpine<Self::Value>, Self::Error> {
         let mut values = Vec::new();
         let mut cursor = value.clone();
         loop {
             match self.view(&cursor)? {
-                SExprF::Nil => return Ok(Some(values)),
-                SExprF::Atom(_) => return Ok(None),
+                SExprF::Nil => return Ok(ListSpine::Proper(values)),
+                SExprF::Atom(_) => {
+                    return Ok(ListSpine::Dotted {
+                        prefix: values,
+                        tail: cursor,
+                    });
+                }
                 SExprF::Cons { head, tail } => {
                     values.push(head);
                     cursor = tail;
@@ -109,6 +132,78 @@ pub trait ProperList: SExprView {
 }
 
 impl<T: SExprView> ProperList for T {}
+
+/// The finite result of following an S-expression's cons spine.
+///
+/// This distinguishes proper lists from dotted pairs without losing the
+/// dotted tail. It is data, not a proof: proof-producing backends expose
+/// proper-list theorems as a capability above [`SExprFixpoint`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ListSpine<V> {
+    Proper(Vec<V>),
+    Dotted { prefix: Vec<V>, tail: V },
+}
+
+/// Constructor-named view of the generic proof-bearing least fixpoint.
+///
+/// This wrapper adds no axioms. Every theorem and term is delegated to the
+/// generic inductive bundle; the fixed constructor positions are checked when
+/// the wrapper is constructed.
+pub struct SExprFixpoint<L: Logic, P> {
+    inner: LeastFixpoint<L, P>,
+}
+
+impl<L: Logic, P: Clone + PartialEq> SExprFixpoint<L, P> {
+    /// Accept a proof bundle only when it realizes the canonical
+    /// `Atom + Nil + Cons` polynomial for `payload`.
+    pub fn try_new(inner: LeastFixpoint<L, P>, payload: P) -> Result<Self, LeastFixpoint<L, P>> {
+        if inner.core.spec.as_inner() == &fixpoint(payload) {
+            Ok(Self { inner })
+        } else {
+            Err(inner)
+        }
+    }
+
+    pub fn carrier(&self) -> &L::Type {
+        &self.inner.core.carrier
+    }
+
+    pub fn layer(&self) -> &L::Type {
+        &self.inner.core.layer
+    }
+
+    pub fn roll(&self) -> &L::Term {
+        &self.inner.core.roll
+    }
+
+    pub fn unroll(&self) -> &L::Term {
+        &self.inner.core.unroll
+    }
+
+    pub fn iso_facts(&self) -> &dyn FixpointIsoFacts<L> {
+        self.inner.core.facts.as_ref()
+    }
+
+    pub fn facts(&self) -> &dyn LeastFixpointFacts<L> {
+        self.inner.facts.as_ref()
+    }
+
+    pub fn fold(&self, algebra: &L::Term) -> Result<L::Term, L::Error> {
+        self.facts().fold(algebra)
+    }
+
+    pub fn fold_computation(&self, algebra: &L::Term, layer: &L::Term) -> Result<L::Thm, L::Error> {
+        self.facts().fold_roll(algebra, layer)
+    }
+
+    pub fn induction(&self, predicate: &L::Term, closed: L::Thm) -> Result<L::Thm, L::Error> {
+        self.facts().induction(predicate, closed)
+    }
+
+    pub fn into_inner(self) -> LeastFixpoint<L, P> {
+        self.inner
+    }
+}
 
 /// Free inductive representation used as a reference backend.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -158,8 +253,8 @@ impl<P: Clone> SExprView for Free<P> {
     }
 }
 
-// TODO(cov:sexpr.proof-law-bundle, major): Add logic-generic no-confusion, constructor injectivity, induction, proper-list, and fold law capabilities by adapting the proof-bearing inductive fixpoint API.
-// TODO(cov:sexpr.surface-adapter, major): Adapt covalence-sexp's proper-list surface tree and AbstractSExpr implementations to this inductive API without introducing a lib-to-lang dependency.
+// TODO(cov:sexpr.no-confusion-laws, major): Extend the generic proof-bearing fixpoint API with constructor distinctness/injectivity, then expose named S-expression no-confusion rules here.
+// TODO(cov:sexpr.proper-list-proof-capability, major): Define the logic-generic proper-list predicate and its nil/cons/induction theorem bundle above SExprFixpoint.
 // TODO(cov:sexpr.parser-interpretation, major): Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.
 
 #[cfg(test)]
@@ -187,5 +282,20 @@ mod tests {
 
         let dotted = api.cons(a, b).unwrap();
         assert_eq!(api.as_list(&dotted).unwrap(), None);
+        assert_eq!(
+            api.list_spine(&dotted).unwrap(),
+            ListSpine::Dotted {
+                prefix: vec![FreeSExpr::Atom("a")],
+                tail: FreeSExpr::Atom("b"),
+            }
+        );
+    }
+
+    #[test]
+    fn constructor_positions_match_the_polynomial() {
+        let spec = polynomial("payload");
+        assert_eq!(spec.variants[constructor::ATOM].name, "atom");
+        assert_eq!(spec.variants[constructor::NIL].name, "nil");
+        assert_eq!(spec.variants[constructor::CONS].name, "cons");
     }
 }

@@ -164,6 +164,7 @@ digraph deps {
   "lisp" -> "init";
   "lisp" -> "repl-core";
   "lisp" -> "sexp";
+  "lisp" -> "sexpr-api";
   "lisp" -> "types";
   "llm" -> "proto";
   "lsp" -> "sexp";

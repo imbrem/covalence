@@ -3045,33 +3045,33 @@
       "crate": "covalence-opentheory"
     },
     {
+      "id": "sexpr.no-confusion-laws",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Extend the generic proof-bearing fixpoint API with constructor distinctness/injectivity, then expose named S-expression no-confusion rules here.",
+      "structured": true,
+      "path": "crates/lang/sexpr-api/src/lib.rs",
+      "line": 256,
+      "crate": "covalence-sexpr-api"
+    },
+    {
       "id": "sexpr.parser-interpretation",
       "kind": "TODO",
       "severity": "major",
       "summary": "Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.",
       "structured": true,
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "line": 163,
+      "line": 258,
       "crate": "covalence-sexpr-api"
     },
     {
-      "id": "sexpr.proof-law-bundle",
+      "id": "sexpr.proper-list-proof-capability",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Add logic-generic no-confusion, constructor injectivity, induction, proper-list, and fold law capabilities by adapting the proof-bearing inductive fixpoint API.",
+      "summary": "Define the logic-generic proper-list predicate and its nil/cons/induction theorem bundle above SExprFixpoint.",
       "structured": true,
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "line": 161,
-      "crate": "covalence-sexpr-api"
-    },
-    {
-      "id": "sexpr.surface-adapter",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Adapt covalence-sexp's proper-list surface tree and AbstractSExpr implementations to this inductive API without introducing a lib-to-lang dependency.",
-      "structured": true,
-      "path": "crates/lang/sexpr-api/src/lib.rs",
-      "line": 162,
+      "line": 257,
       "crate": "covalence-sexpr-api"
     },
     {

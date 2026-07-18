@@ -1,3 +1,17 @@
++++
+id = "N0019"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Kernel soundness audit + assumption-tracking design
 
 Audit report + forward-looking design. §1–§3 inventory/critique the trusted base

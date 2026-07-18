@@ -1,3 +1,17 @@
++++
+id = "N000O"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T21:56:53+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # End-to-end K reduction demo — scope, architecture, roadmap
 
 > **STATUS: SCOPE + DESIGN (AI-drafted, web-sourced 2026-07-14).** The plan for

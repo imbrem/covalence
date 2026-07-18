@@ -1,3 +1,17 @@
++++
+id = "N0011"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # The inductive-types API — design (`covalence-inductive`)
 
 **Design locked** for the `inductive-api` track (2026-07). Backends built (§9/§10).

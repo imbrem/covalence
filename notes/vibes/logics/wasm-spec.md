@@ -1,3 +1,17 @@
++++
+id = "N002O"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # The WebAssembly-spec front end (`crates/kernel/hol/init/src/wasm`)
 
 Bring the **WebAssembly specification** into the kernel by lowering [SpecTec] —

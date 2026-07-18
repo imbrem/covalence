@@ -1,3 +1,17 @@
++++
+id = "N0017"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # SHA-256 round — the universality keystone
 
 **SKETCH (design probe).** The smallest demo that, if it lands, exercises *every*

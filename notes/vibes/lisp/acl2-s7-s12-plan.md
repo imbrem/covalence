@@ -1,3 +1,17 @@
++++
+id = "N001R"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T21:08:46+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACL2 S7–S12: the remaining stages, concretely
 
 Forward plan for finishing [`acl2-full-plan.md`](./acl2-full-plan.md). S0–S6 are

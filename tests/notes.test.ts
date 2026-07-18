@@ -20,7 +20,8 @@ test("note provenance is normalized through SQLite", () => {
   });
   const metadata = db
     .query(
-      `SELECT m.stable_id stableId,n.status,m.review,c.actor_id actor
+      `SELECT m.stable_id stableId,n.status,m.review,c.actor_id actor,
+              c.source,c.agent,c.harness
        FROM note_metadata m JOIN nodes n ON n.id=m.note_id
        JOIN contributions c ON c.note_id=m.note_id
        WHERE m.stable_id='N0001'`,
@@ -30,13 +31,16 @@ test("note provenance is normalized through SQLite", () => {
     stableId: "N0001",
     status: "draft",
     review: "unreviewed",
-    actor: "agent:forester-provenance-research",
+    actor: "agent:gpt-5.6-sol",
+    source: "codex-development-wave",
+    agent: "gpt-5.6-sol",
+    harness: "codex",
   });
   expect(
     db
       .query(`SELECT count(*) count FROM nodes WHERE kind='note' AND status='unparsed legacy'`)
       .get().count,
-  ).toBeGreaterThan(0);
+  ).toBe(0);
   expect(
     db
       .query(

@@ -1,3 +1,17 @@
++++
+id = "N0039"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Project map — where everything is, and what's in flight
 
 **Status:** navigation aid (AI-drafted), the consolidated map. Point-in-time

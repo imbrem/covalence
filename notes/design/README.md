@@ -1,3 +1,17 @@
++++
+id = "N0004"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-11T14:16:07+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # notes/design/ — design docs (index)
 
 Working area for **design docs**: focused, iterable decision records for changes

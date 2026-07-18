@@ -1,3 +1,17 @@
++++
+id = "N002U"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # From here to: a real build system + observer-free, literal-free HOL
 
 **Status:** AI-drafted detailed plan (2026-07), written to be checked against the

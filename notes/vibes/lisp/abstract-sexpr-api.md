@@ -1,3 +1,17 @@
++++
+id = "N001F"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-19T00:00:00+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Abstract S-expressions + abstract reductions — a reusable-API design (agent-authored)
 
 Status: **design only** (no code lands with this note). Campaign directive: the

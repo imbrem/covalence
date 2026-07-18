@@ -1,3 +1,17 @@
++++
+id = "N002R"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-18T22:05:39+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Consolidation and context roadmap
 
 **Status:** AI-drafted working plan (2026-07-18). This is a portfolio map and

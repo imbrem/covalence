@@ -1,3 +1,17 @@
++++
+id = "N0010"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # `defs/` re-home: the dual-representation bridge (toHOL purge S9/S10/S11)
 
 **Status:** design doc (2026-07). Companion to

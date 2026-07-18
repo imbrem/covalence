@@ -1,3 +1,17 @@
++++
+id = "N0009"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-18T22:51:29+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Human–agent mathematical development loop
 
 - **Status:** Draft

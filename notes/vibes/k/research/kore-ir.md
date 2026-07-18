@@ -1,3 +1,17 @@
++++
+id = "N000R"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T19:57:49+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # KORE: K's kompiled IR, as an ingestion surface
 
 > **STATUS: RESEARCH SURVEY (AI-drafted, web-sourced).** Researched 2026-07-13

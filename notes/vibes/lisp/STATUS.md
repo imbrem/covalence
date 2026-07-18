@@ -1,3 +1,17 @@
++++
+id = "N001E"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T21:35:45+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Lisp demo — STATUS
 
 *Branch `lisp-demo`. Agent-authored. Honest snapshot of what is actually built,

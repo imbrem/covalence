@@ -1,3 +1,17 @@
++++
+id = "N002T"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Next-stage breakdown (companion to the plan)
 
 **Status:** AI-drafted working breakdown (2026-07) of the maintainer-authored

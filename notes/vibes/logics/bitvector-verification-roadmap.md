@@ -1,3 +1,17 @@
++++
+id = "N0027"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T21:26:19+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Bitvector (QF_BV) verification — roadmap
 
 *Direction, 2026-07-14. Long-term vision: kernel-checked bitvector reasoning

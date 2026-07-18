@@ -120,6 +120,8 @@ function parseMetadata(path, text) {
     if (typeof value[field] !== "string" || !value[field])
       throw new Error(`${path}: note frontmatter requires string ${field}`);
   }
+  if (!/^N[0-9A-Z]{4,}$/.test(value.id))
+    throw new Error(`${path}: note id must be an opaque base-36 address such as N0001`);
   if (!REVIEW_STATES.has(value.review))
     throw new Error(`${path}: unknown review state ${JSON.stringify(value.review)}`);
   if (normalizeNoteStatus(value.status) === "unparsed legacy")
@@ -156,6 +158,8 @@ for (const path of notePaths) {
   const text = readFileSync(resolve(ROOT, path), "utf8");
   const id = `note:${path}`;
   const metadata = parseMetadata(path, text);
+  if (!metadata)
+    throw new Error(`${path}: every note requires TOML metadata; run the metadata migration`);
   const title = text.match(/^#\s+(.+)$/m)?.[1].trim() ?? path;
   const status = normalizeNoteStatus(metadata?.status);
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
@@ -173,7 +177,7 @@ for (const path of notePaths) {
       format: "covalence-toml-v1",
     });
     for (const [ordinal, contribution] of (metadata.contributions ?? []).entries()) {
-      for (const field of ["role", "actor", "at"]) {
+      for (const field of ["role", "actor", "at", "source", "agent", "harness"]) {
         if (typeof contribution[field] !== "string" || !contribution[field])
           throw new Error(`${path}: contribution ${ordinal + 1} requires string ${field}`);
       }
@@ -183,6 +187,9 @@ for (const path of notePaths) {
         actorId: contribution.actor,
         role: contribution.role,
         contributedAt: contribution.at,
+        source: contribution.source,
+        agent: contribution.agent,
+        harness: contribution.harness,
         ordinal,
       });
       edge(id, "contributed-by", `actor:${contribution.actor}`, contribution.role);
@@ -329,7 +336,9 @@ db.exec(`
   ) STRICT;
   CREATE TABLE contributions (
     note_id TEXT NOT NULL REFERENCES nodes(id), actor_id TEXT NOT NULL REFERENCES actors(id),
-    role TEXT NOT NULL, contributed_at TEXT NOT NULL, ordinal INTEGER NOT NULL,
+    role TEXT NOT NULL, contributed_at TEXT NOT NULL,
+    source TEXT NOT NULL, agent TEXT NOT NULL, harness TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
     PRIMARY KEY (note_id, ordinal)
   ) STRICT;
   CREATE TABLE sources (
@@ -355,7 +364,7 @@ const putNode = db.prepare(`INSERT OR REPLACE INTO nodes VALUES (?,?,?,?,?,?,?)`
 const putEdge = db.prepare(`INSERT OR REPLACE INTO edges VALUES (?,?,?,?)`);
 const putMetadata = db.prepare(`INSERT INTO note_metadata VALUES (?,?,?,?)`);
 const putActor = db.prepare(`INSERT INTO actors VALUES (?,?,?)`);
-const putContribution = db.prepare(`INSERT INTO contributions VALUES (?,?,?,?,?)`);
+const putContribution = db.prepare(`INSERT INTO contributions VALUES (?,?,?,?,?,?,?,?)`);
 const putSource = db.prepare(`INSERT INTO sources VALUES (?,?,?,?,?)`);
 const putCitation = db.prepare(`INSERT INTO citations VALUES (?,?,?,?,?)`);
 const putReview = db.prepare(`INSERT INTO reviews VALUES (?,?,?,?,?,?)`);
@@ -393,7 +402,8 @@ const artifact =
         .all(),
       contributions: db
         .query(
-          `SELECT note_id noteId,actor_id actorId,role,contributed_at contributedAt,ordinal
+          `SELECT note_id noteId,actor_id actorId,role,contributed_at contributedAt,
+                  source,agent,harness,ordinal
            FROM contributions ORDER BY note_id,ordinal`,
         )
         .all(),

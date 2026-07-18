@@ -1,3 +1,17 @@
++++
+id = "N000D"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 We have the following high-level goals:
 
 - Get a full implementation of the K framework inside covalence -- especially:

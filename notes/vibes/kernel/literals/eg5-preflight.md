@@ -1,3 +1,17 @@
++++
+id = "N0014"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # EG5 preflight — literal-leaf deletion plan
 
 Readiness analysis for the irreversible EG5 stage: deleting

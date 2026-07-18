@@ -5,16 +5,19 @@ review = "unreviewed"
 
 [[contributions]]
 role = "author"
-actor = "agent:note-provenance-index"
-at = "2026-07-19T00:30:00+01:00"
+actor = "agent:gpt-5.6-sol"
+at = "2026-07-18T23:57:36+01:00"
+source = "codex-development-wave"
+agent = "gpt-5.6-sol"
+harness = "codex"
 +++
 
 # Note metadata v1
 
 This is the first bounded plaintext provenance convention for Covalence notes.
 It is deliberately smaller than the eventual document and theorem knowledge
-model. Existing notes without this header remain valid and are indexed as
-`unparsed legacy`; they should be migrated only when otherwise touched.
+model. All current notes now carry this header; missing metadata, duplicate
+addresses, or malformed contribution provenance are indexing errors.
 
 ## Header
 
@@ -30,11 +33,17 @@ review = "unreviewed"
 role = "author"
 actor = "human:tekne"
 at = "2026-07-18T11:30:00+01:00"
+source = "human-authored"
+agent = "none"
+harness = "editor"
 
 [[contributions]]
 role = "research"
 actor = "agent:forester-provenance-research"
 at = "2026-07-18T12:00:00+01:00"
+source = "codex-development-wave"
+agent = "gpt-5.6-sol"
+harness = "codex"
 
 [[sources]]
 id = "S0042"
@@ -49,7 +58,10 @@ purpose = "API behavior"
 
 `id`, `status`, and `review` are required. Note and source IDs are stable and
 opaque. Actor IDs start with `human:` or `agent:`. Contributions are ordered
-and require `role`, `actor`, and `at`.
+and require `role`, `actor`, `at`, `source`, `agent`, and `harness`. `source`
+records the provenance class; `agent` records the model or author class; and
+`harness` records the tool through which the contribution was produced. These
+are authored facts, unlike the Git-derived revision fields.
 
 The initial lifecycle statuses are `draft`, `in-review`, `accepted`,
 `superseded`, and `parked`. Review is a separate dimension:

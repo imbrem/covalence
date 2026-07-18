@@ -1,3 +1,17 @@
++++
+id = "N001Z"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Parsing as relations, not gas functions (discussion draft, agent-authored)
 
 Response to: "why is the S-expr parser a gas function and not a relation (which we can

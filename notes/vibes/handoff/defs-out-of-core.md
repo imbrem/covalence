@@ -1,3 +1,17 @@
++++
+id = "N000M"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-05T16:50:03+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Plan: get `defs/` out of `kernel/hol/core` (the TCB)
 
 Move the `defs/` catalogue (nat/int/rat/real/bytes/list/unit/prod/coprod/option/

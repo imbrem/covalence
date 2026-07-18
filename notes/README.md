@@ -1,11 +1,29 @@
++++
+id = "N0003"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-06-24T00:26:22+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # notes/ — the map
 
-Three tiers, split by *trust and authorship* (see
-[`plans/next-stage.md`](./plans/next-stage.md) §Notes for the rationale):
+Directories are organizational hints, not provenance or trust boundaries.
+Every Markdown note carries a stable ID, lifecycle/review state, and explicit
+contribution metadata. SQLite is the normalized query index for those authored
+plaintext facts.
 
-- [`vibes/`](./vibes/README.md) — the AI-generated corpus (long-term plans,
-  design records, sketches). Cross-referenced but not consistent; mine for
-  ideas, verify before relying. Its own README is the index.
+The existing directories remain useful subject groupings:
+
+- [`vibes/`](./vibes/README.md) — a legacy grouping for long-term plans,
+  research, audits, and sketches. It no longer implies authorship; migrate or
+  rename it gradually rather than through a disruptive bulk move.
 - [`plans/`](./plans/) — active plans. **Maintainer-authored.**
   - [`plans/next-stage.md`](./plans/next-stage.md) — the current one (docs
     split, tooling, hierarchical crates, WASM roadmap). An AI-drafted execution
@@ -18,9 +36,10 @@ Three tiers, split by *trust and authorship* (see
   *Aspirational*: what we want, may drift from what exists. What actually
   exists belongs in [`../docs/`](../docs/README.md).
 
-**Authorship (current policy):** everything outside `vibes/` is
-maintainer-authored (not fully AI-generated) until the vision is fully written
-out by hand. Agents: contribute to `vibes/`; don't author the other tiers.
+Authorship and review claims come only from note metadata. Historical notes are
+currently marked `source = "legacy"`, `agent = "claude"`, and
+`harness = "claude"` as a corpus-level migration approximation; individual
+claims may have mixed provenance and remain unreviewed until audited.
 
 ## Querying notes and tasks
 

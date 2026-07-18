@@ -1,3 +1,17 @@
++++
+id = "N000Y"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Closed-world kernel: first-order theories in the type system
 
 **Status:** Stage 0 **built** (2026-07); stages 1–5 are still a forward-looking

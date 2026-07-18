@@ -1,3 +1,17 @@
++++
+id = "N002I"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T18:51:25+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # SMT / SAT proof import — architecture
 
 *Status 2026-07-14: keystone built (Int trait + pure Farkas checker + subset

@@ -1,3 +1,17 @@
++++
+id = "N002W"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Thoughts on the separation plan (discussion draft, agent-authored)
 
 Reactions to `notes/plans/sketch-separation.md`. Opinionated on purpose; for us to

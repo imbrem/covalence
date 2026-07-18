@@ -1,3 +1,17 @@
++++
+id = "N000J"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-15T23:08:56+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Buck2 experiment — evaluation & incremental path
 
 > Status: **evaluation / aspirational.** cargo is and stays the source of truth.

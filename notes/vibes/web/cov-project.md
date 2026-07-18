@@ -1,3 +1,17 @@
++++
+id = "N003B"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Compiling a multi-file `.cov` project
 
 > **DIRECTION + working prototype.** The dependency-resolving `.cov`→`.cov`

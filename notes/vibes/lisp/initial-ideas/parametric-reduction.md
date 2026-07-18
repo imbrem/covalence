@@ -1,3 +1,17 @@
++++
+id = "N001Y"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T21:25:20+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Parametric reduction: representation × semantics × strategy (discussion draft)
 
 Response to: we want a **reduction relation ASAP** (recursive functions may not

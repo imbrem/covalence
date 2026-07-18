@@ -3,11 +3,6 @@ id = "N0001"
 status = "draft"
 review = "unreviewed"
 
-[[contributions]]
-role = "author"
-actor = "agent:forester-provenance-research"
-at = "2026-07-18T23:50:59+01:00"
-
 [[sources]]
 id = "S0001"
 kind = "source-repository"
@@ -27,6 +22,14 @@ kind = "documentation"
 target = "https://opam.ocaml.org/packages/forester/"
 version = "5.0"
 accessed = "2026-07-18"
+
+[[contributions]]
+role = "author"
+actor = "agent:gpt-5.6-sol"
+at = "2026-07-18T23:51:56+01:00"
+source = "codex-development-wave"
+agent = "gpt-5.6-sol"
+harness = "codex"
 +++
 
 # Forester compatibility and note provenance

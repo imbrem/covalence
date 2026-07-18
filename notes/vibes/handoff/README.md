@@ -1,3 +1,17 @@
++++
+id = "N000L"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-05T16:50:03+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Handoff docs — per-task status
 
 Pick-up-here snapshots for active workstreams. Full plan:

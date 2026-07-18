@@ -1,3 +1,17 @@
++++
+id = "N002P"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Backend decoupling — the `covalence-hol-api` trait surface
 
 *Agent-authored design note (TRACK A). Status: first slice landed.*

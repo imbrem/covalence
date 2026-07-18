@@ -1,3 +1,17 @@
++++
+id = "N0006"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-18T22:51:29+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Logic, Nat, and inductive API extraction audit
 
 - **Status:** Draft audit

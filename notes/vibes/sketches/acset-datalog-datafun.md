@@ -1,3 +1,17 @@
++++
+id = "N002Z"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-03T21:05:38+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACSet Datalog → Datafun (sketch)
 
 Forward-looking note on where a Datafun-style language slots into the

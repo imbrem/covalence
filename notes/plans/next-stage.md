@@ -1,3 +1,17 @@
++++
+id = "N000E"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-03T21:05:38+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 There's a few refactors I want to do, with the primary goals of:
 
 - Making the codebase more approachable and auditable for agents and humans

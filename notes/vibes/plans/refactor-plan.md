@@ -1,3 +1,17 @@
++++
+id = "N002V"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Three-layer kernel refactor — plan
 
 > **STATUS: structural reorg LANDED; kept for its base-logic design (§2) and

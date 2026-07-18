@@ -1,3 +1,17 @@
++++
+id = "N000N"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T19:57:49+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # notes/vibes/k/ — the K-framework corpus
 
 Everything behind the K frontend: the sourced research surveys and their

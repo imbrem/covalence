@@ -1,3 +1,17 @@
++++
+id = "N001P"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T21:08:46+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACL2 S5: ordinals below ε₀ — concrete design (o-p, o<, wf, IND-ORD)
 
 *Design for stage S5 of [`acl2-full-plan.md`](./acl2-full-plan.md), continuing

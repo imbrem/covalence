@@ -2,18 +2,18 @@
   "generatedBy": "scripts/notes.mjs",
   "nodes": [
     {
-      "id": "actor:agent:forester-provenance-research",
+      "id": "actor:agent:claude",
       "kind": "actor",
-      "title": "forester-provenance-research",
+      "title": "claude",
       "status": "agent",
       "path": null,
       "words": 0,
       "updated": 0
     },
     {
-      "id": "actor:agent:note-provenance-index",
+      "id": "actor:agent:gpt-5.6-sol",
       "kind": "actor",
-      "title": "note-provenance-index",
+      "title": "gpt-5.6-sol",
       "status": "agent",
       "path": null,
       "words": 0,
@@ -1688,927 +1688,927 @@
       "id": "note:notes/README.md",
       "kind": "note",
       "title": "notes/ — the map",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/README.md",
-      "words": 367,
+      "words": 438,
       "updated": 1784414562
     },
     {
       "id": "note:notes/design/README.md",
       "kind": "note",
       "title": "notes/design/ — design docs (index)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/design/README.md",
-      "words": 458,
+      "words": 488,
       "updated": 1784411489
     },
     {
       "id": "note:notes/design/TEMPLATE.md",
       "kind": "note",
       "title": "<Title> — design doc",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/design/TEMPLATE.md",
-      "words": 332,
+      "words": 362,
       "updated": 1784408739
     },
     {
       "id": "note:notes/design/api-extraction-audit.md",
       "kind": "note",
       "title": "Logic, Nat, and inductive API extraction audit",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/design/api-extraction-audit.md",
-      "words": 1189,
+      "words": 1219,
       "updated": 1784411489
     },
     {
       "id": "note:notes/design/content-logic-and-wit-boundaries.md",
       "kind": "note",
       "title": "Content, logic, and WIT boundaries",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/design/content-logic-and-wit-boundaries.md",
-      "words": 1994,
+      "words": 2024,
       "updated": 1784411489
     },
     {
       "id": "note:notes/design/graph-api.md",
       "kind": "note",
       "title": "Verified graph API and interchange",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/design/graph-api.md",
-      "words": 849,
+      "words": 879,
       "updated": 1784413042
     },
     {
       "id": "note:notes/design/human-agent-development-loop.md",
       "kind": "note",
       "title": "Human–agent mathematical development loop",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/design/human-agent-development-loop.md",
-      "words": 857,
+      "words": 887,
       "updated": 1784411546
     },
     {
       "id": "note:notes/design/k-frontend.md",
       "kind": "note",
       "title": "K frontend — KORE ingestion + the fragment ladder — design doc",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/design/k-frontend.md",
-      "words": 2496,
+      "words": 2526,
       "updated": 1784408739
     },
     {
       "id": "note:notes/design/notes-governance.md",
       "kind": "note",
       "title": "Notes governance and cleanup",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/design/notes-governance.md",
-      "words": 703,
+      "words": 733,
       "updated": 1784412443
     },
     {
       "id": "note:notes/design/relational-base-rewrite.md",
       "kind": "note",
       "title": "Relational base rewrite — persist proven facts as signed SQLite",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/design/relational-base-rewrite.md",
-      "words": 810,
+      "words": 840,
       "updated": 1784411489
     },
     {
       "id": "note:notes/plans/atoms.md",
       "kind": "note",
       "title": "notes/plans/atoms.md",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/plans/atoms.md",
-      "words": 152,
+      "words": 182,
       "updated": 1784411489
     },
     {
       "id": "note:notes/plans/next-stage.md",
       "kind": "note",
       "title": "Notes, Documentation, and Skills",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/plans/next-stage.md",
-      "words": 1676,
+      "words": 1706,
       "updated": 1783109138
     },
     {
       "id": "note:notes/plans/sketch-separation.md",
       "kind": "note",
       "title": "notes/plans/sketch-separation.md",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/plans/sketch-separation.md",
-      "words": 960,
+      "words": 990,
       "updated": 1783971729
     },
     {
       "id": "note:notes/terms/T0001.md",
       "kind": "note",
       "title": "Relational residual",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/terms/T0001.md",
-      "words": 123,
+      "words": 153,
       "updated": 1784414562
     },
     {
       "id": "note:notes/vibes/README.md",
       "kind": "note",
       "title": "notes/vibes/ — the AI-generated design corpus",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/README.md",
-      "words": 748,
+      "words": 778,
       "updated": 1784408739
     },
     {
       "id": "note:notes/vibes/audits/inductive-api-audit.md",
       "kind": "note",
       "title": "Inductive API audit",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/audits/inductive-api-audit.md",
-      "words": 2152,
+      "words": 2182,
       "updated": 1784415178
     },
     {
       "id": "note:notes/vibes/build/buck2-experiment.md",
       "kind": "note",
       "title": "Buck2 experiment — evaluation & incremental path",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/build/buck2-experiment.md",
-      "words": 561,
+      "words": 591,
       "updated": 1784153336
     },
     {
       "id": "note:notes/vibes/build/known-issues.md",
       "kind": "note",
       "title": "Build & test — known issues",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/build/known-issues.md",
-      "words": 274,
+      "words": 304,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/handoff/README.md",
       "kind": "note",
       "title": "Handoff docs — per-task status",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/handoff/README.md",
-      "words": 74,
+      "words": 104,
       "updated": 1784412443
     },
     {
       "id": "note:notes/vibes/handoff/defs-out-of-core.md",
       "kind": "note",
       "title": "Plan: get `defs/` out of `kernel/hol/core` (the TCB)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/handoff/defs-out-of-core.md",
-      "words": 750,
+      "words": 780,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/k/README.md",
       "kind": "note",
       "title": "notes/vibes/k/ — the K-framework corpus",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/k/README.md",
-      "words": 285,
+      "words": 315,
       "updated": 1784062613
     },
     {
       "id": "note:notes/vibes/k/reduction-demo-scope.md",
       "kind": "note",
       "title": "End-to-end K reduction demo — scope, architecture, roadmap",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/k/reduction-demo-scope.md",
-      "words": 1997,
+      "words": 2027,
       "updated": 1784157836
     },
     {
       "id": "note:notes/vibes/k/research/backends-and-smt.md",
       "kind": "note",
       "title": "K backends, the KORE RPC protocol, and where SMT actually lives",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/k/research/backends-and-smt.md",
-      "words": 1633,
+      "words": 1663,
       "updated": 1784055469
     },
     {
       "id": "note:notes/vibes/k/research/k-framework-today.md",
       "kind": "note",
       "title": "The K framework today (2026)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/k/research/k-framework-today.md",
-      "words": 1400,
+      "words": 1430,
       "updated": 1784055469
     },
     {
       "id": "note:notes/vibes/k/research/kore-ir.md",
       "kind": "note",
       "title": "KORE: K's kompiled IR, as an ingestion surface",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/k/research/kore-ir.md",
-      "words": 1767,
+      "words": 1797,
       "updated": 1784055469
     },
     {
       "id": "note:notes/vibes/k/research/proof-generation.md",
       "kind": "note",
       "title": "K proof generation: the Metamath pipeline, its fate, and the opening",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/k/research/proof-generation.md",
-      "words": 1592,
+      "words": 1622,
       "updated": 1784055469
     },
     {
       "id": "note:notes/vibes/k/research/reachability-and-matching-logic.md",
       "kind": "note",
       "title": "Reachability logic and matching logic: what a Covalence embedding actually needs",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/k/research/reachability-and-matching-logic.md",
-      "words": 2068,
+      "words": 2098,
       "updated": 1784055469
     },
     {
       "id": "note:notes/vibes/k/research/semantics-ecosystem.md",
       "kind": "note",
       "title": "The K semantics ecosystem: what's alive, what's frozen, what imports",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/k/research/semantics-ecosystem.md",
-      "words": 1496,
+      "words": 1526,
       "updated": 1784055469
     },
     {
       "id": "note:notes/vibes/kernel/base-abstraction.md",
       "kind": "note",
       "title": "Abstracting the base implementation seam (Track C design note)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/base-abstraction.md",
-      "words": 1068,
+      "words": 1098,
       "updated": 1784153336
     },
     {
       "id": "note:notes/vibes/kernel/base-api-surface.md",
       "kind": "note",
       "title": "base API surface — what core/eval actually consume",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/base-api-surface.md",
-      "words": 722,
+      "words": 752,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/base-relcalc-holomega-design.md",
       "kind": "note",
       "title": "The relation-calculus base — authoritative redesign",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/base-relcalc-holomega-design.md",
-      "words": 4140,
+      "words": 4170,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/closed-world-kernel.md",
       "kind": "note",
       "title": "Closed-world kernel: first-order theories in the type system",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/closed-world-kernel.md",
-      "words": 4803,
+      "words": 4833,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/covalence-fol.md",
       "kind": "note",
       "title": "`covalence-fol` — typed representations over `covalence-pure`",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/covalence-fol.md",
-      "words": 644,
+      "words": 674,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/defs-rehome-design.md",
       "kind": "note",
       "title": "`defs/` re-home: the dual-representation bridge (toHOL purge S9/S10/S11)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/defs-rehome-design.md",
-      "words": 1364,
+      "words": 1394,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
       "kind": "note",
       "title": "The inductive-types API — design (`covalence-inductive`)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/inductive/inductive-api-design.md",
-      "words": 3375,
+      "words": 3405,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/inductive/inductive-support.md",
       "kind": "note",
       "title": "Inductive-types support — how it works now",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/inductive/inductive-support.md",
-      "words": 1892,
+      "words": 1922,
       "updated": 1783974320
     },
     {
       "id": "note:notes/vibes/kernel/kernel-design.md",
       "kind": "note",
       "title": "covalence-core: HOL kernel design",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/kernel-design.md",
-      "words": 2178,
+      "words": 2208,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/literals/eg5-preflight.md",
       "kind": "note",
       "title": "EG5 preflight — literal-leaf deletion plan",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/literals/eg5-preflight.md",
-      "words": 1461,
+      "words": 1491,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/literals/literal-endgame-design.md",
       "kind": "note",
       "title": "The literal-leaf endgame — symbolic-prop design",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/literals/literal-endgame-design.md",
-      "words": 1380,
+      "words": 1410,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/literals/numeral-literals-api.md",
       "kind": "note",
       "title": "Numeral-literal API: grammars, digit/decimal types, and a generic backend trait",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/literals/numeral-literals-api.md",
-      "words": 2882,
+      "words": 2912,
       "updated": 1783974320
     },
     {
       "id": "note:notes/vibes/kernel/literals/sha256-round-keystone.md",
       "kind": "note",
       "title": "SHA-256 round — the universality keystone",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/literals/sha256-round-keystone.md",
-      "words": 1685,
+      "words": 1715,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/pure-design.md",
       "kind": "note",
       "title": "`covalence-pure` — value-directed kernel design",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/pure-design.md",
-      "words": 1687,
+      "words": 1717,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/tcb/soundness-audit.md",
       "kind": "note",
       "title": "Kernel soundness audit + assumption-tracking design",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/tcb/soundness-audit.md",
-      "words": 1488,
+      "words": 1518,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/tcb/tcb-holomega-roadmap.md",
       "kind": "note",
       "title": "TCB → HOL-ω Roadmap",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/tcb/tcb-holomega-roadmap.md",
-      "words": 2256,
+      "words": 2286,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
       "kind": "note",
       "title": "What exactly is the TCB?",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/tcb/what-is-the-tcb.md",
-      "words": 859,
+      "words": 889,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/kernel/type-hierarchy.md",
       "kind": "note",
       "title": "Type hierarchy sketch",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/kernel/type-hierarchy.md",
-      "words": 1237,
+      "words": 1267,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/lisp/README.md",
       "kind": "note",
       "title": "Lisp — the `SExpr → Reduction → Lisp → ACL2` tower",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/README.md",
-      "words": 453,
+      "words": 483,
       "updated": 1784232526
     },
     {
       "id": "note:notes/vibes/lisp/STATUS.md",
       "kind": "note",
       "title": "Lisp demo — STATUS",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
-      "words": 893,
+      "words": 923,
       "updated": 1783974945
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
       "kind": "note",
       "title": "Abstract S-expressions + abstract reductions — a reusable-API design (agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/abstract-sexpr-api.md",
-      "words": 4488,
-      "updated": 1784386629
+      "words": 4518,
+      "updated": 1784415968
     },
     {
       "id": "note:notes/vibes/lisp/acl2-agent-guide.md",
       "kind": "note",
       "title": "ACL2 program — agent orientation guide",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-agent-guide.md",
-      "words": 829,
+      "words": 859,
       "updated": 1784232526
     },
     {
       "id": "note:notes/vibes/lisp/acl2-book-frontend.md",
       "kind": "note",
       "title": "ACL2 book front end — the first honest BOOK IMPORT pipeline (S11-lite)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-book-frontend.md",
-      "words": 1052,
+      "words": 1082,
       "updated": 1784232526
     },
     {
       "id": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
       "kind": "note",
       "title": "ACL2 campaign — handoff / context dump (2026-07-17)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-campaign-handoff.md",
-      "words": 561,
-      "updated": 1784386629
+      "words": 591,
+      "updated": 1784415968
     },
     {
       "id": "note:notes/vibes/lisp/acl2-dialect.md",
       "kind": "note",
       "title": "The ACL2 dialect — slice 1 (agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-dialect.md",
-      "words": 576,
+      "words": 606,
       "updated": 1784157736
     },
     {
       "id": "note:notes/vibes/lisp/acl2-fidelity.md",
       "kind": "note",
       "title": "ACL2 fidelity ledger — assumptions and deviations",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-fidelity.md",
-      "words": 782,
+      "words": 812,
       "updated": 1784232526
     },
     {
       "id": "note:notes/vibes/lisp/acl2-full-plan.md",
       "kind": "note",
       "title": "Full ACL2: soundness + import into base HOL — the plan",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-full-plan.md",
-      "words": 927,
+      "words": 957,
       "updated": 1784232526
     },
     {
       "id": "note:notes/vibes/lisp/acl2-premise-builder.md",
       "kind": "note",
       "title": "ACL2 generic premise builder — the object-level simplifier + IH splicer",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-premise-builder.md",
-      "words": 6767,
-      "updated": 1784386629
+      "words": 6797,
+      "updated": 1784415969
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
       "kind": "note",
       "title": "ACL2 S0–S3: concrete design (carrier, primitives, deep terms, Derivable_ACL2)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-s0-s3-design.md",
-      "words": 7175,
+      "words": 7205,
       "updated": 1784173907
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s4-s6-design.md",
       "kind": "note",
       "title": "ACL2 S4 + S6-structural: concrete design (defun, induction, open transport)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-s4-s6-design.md",
-      "words": 6571,
+      "words": 6601,
       "updated": 1784173907
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s5-design.md",
       "kind": "note",
       "title": "ACL2 S5: ordinals below ε₀ — concrete design (o-p, o<, wf, IND-ORD)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-s5-design.md",
-      "words": 8435,
+      "words": 8465,
       "updated": 1784232526
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s7-design.md",
       "kind": "note",
       "title": "ACL2 S7: the full definitional principle — concrete design (wf-recursion, measured defuns, merge-sort gate)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-s7-design.md",
-      "words": 5414,
-      "updated": 1784386629
+      "words": 5444,
+      "updated": 1784415969
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
       "kind": "note",
       "title": "ACL2 S7–S12: the remaining stages, concretely",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/acl2-s7-s12-plan.md",
-      "words": 976,
+      "words": 1006,
       "updated": 1784232526
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
       "kind": "note",
       "title": "ACL2 and Lisp as object logics",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/acl2-lisp.md",
-      "words": 664,
+      "words": 694,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
       "kind": "note",
       "title": "Content-addressing, bottom-up from S-expressions to HOL (discussion draft, agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
-      "words": 1646,
+      "words": 1676,
       "updated": 1783974320
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
       "kind": "note",
       "title": "A generic `Repl` trait + an event-driven S-expr extension (discussion draft, agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
-      "words": 1638,
+      "words": 1668,
       "updated": 1783974320
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/lisp-acl2-answers.md",
       "kind": "note",
       "title": "Lisp/ACL2 support — answers (discussion draft, agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/lisp-acl2-answers.md",
-      "words": 1973,
+      "words": 2003,
       "updated": 1783974320
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
       "kind": "note",
       "title": "Dialects, orderings, UB, and the concatenative axis (discussion draft, agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
-      "words": 2676,
+      "words": 2706,
       "updated": 1783974320
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
       "kind": "note",
       "title": "A bottom-to-top Lisp frontend + REPL (discussion sketch, agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
-      "words": 3586,
+      "words": 3616,
       "updated": 1783974320
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
       "kind": "note",
       "title": "Parametric reduction: representation × semantics × strategy (discussion draft)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/parametric-reduction.md",
-      "words": 1242,
+      "words": 1272,
       "updated": 1783974320
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/parsing-relations.md",
       "kind": "note",
       "title": "Parsing as relations, not gas functions (discussion draft, agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/parsing-relations.md",
-      "words": 1492,
+      "words": 1522,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/reduction-relation-on-binary-engine.md",
       "kind": "note",
       "title": "A proper Lisp `Reduces` relation on the binary `Derivable` engine (design)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/reduction-relation-on-binary-engine.md",
-      "words": 1064,
+      "words": 1094,
       "updated": 1784059576
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
       "kind": "note",
       "title": "The REPL returns *reduction* theorems, not equations — `(state, input) ~~> (state, output)`",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
-      "words": 1618,
+      "words": 1648,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
       "kind": "note",
       "title": "Relational parser combinators + a first-class S-expression parsing framework",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
-      "words": 2735,
+      "words": 2765,
       "updated": 1784050700
     },
     {
       "id": "note:notes/vibes/lisp/minimal-spec/README.md",
       "kind": "note",
       "title": "Minimal end-to-end `/lisp` REPL — a fully-defined spec (discussion draft, agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/minimal-spec/README.md",
-      "words": 2934,
+      "words": 2964,
       "updated": 1783974945
     },
     {
       "id": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
       "kind": "note",
       "title": "Minimal Lisp → metacircular interpreter in the browser: step-by-step plan",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/minimal-spec/implementation-plan.md",
-      "words": 1705,
+      "words": 1735,
       "updated": 1783974945
     },
     {
       "id": "note:notes/vibes/lisp/relational-recursion.md",
       "kind": "note",
       "title": "Relational recursion: β/λ and δ/`defun` in the `Step` relation",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/relational-recursion.md",
-      "words": 640,
+      "words": 670,
       "updated": 1784157736
     },
     {
       "id": "note:notes/vibes/lisp/verification-via-smt.md",
       "kind": "note",
       "title": "Verifying simple Lisp programs via SMT",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/lisp/verification-via-smt.md",
-      "words": 812,
+      "words": 842,
       "updated": 1784056173
     },
     {
       "id": "note:notes/vibes/logics/bitvector-verification-roadmap.md",
       "kind": "note",
       "title": "Bitvector (QF_BV) verification — roadmap",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/bitvector-verification-roadmap.md",
-      "words": 681,
+      "words": 711,
       "updated": 1784060779
     },
     {
       "id": "note:notes/vibes/logics/cfg-stratum-design.md",
       "kind": "note",
       "title": "CFG stratum — design (SpecTec grammars → Derives in HOL-omega)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/cfg-stratum-design.md",
-      "words": 3454,
+      "words": 3484,
       "updated": 1784063656
     },
     {
       "id": "note:notes/vibes/logics/computation-theory.md",
       "kind": "note",
       "title": "Computation theory — bytestring models, proven equivalent",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/computation-theory.md",
-      "words": 617,
+      "words": 647,
       "updated": 1784153654
     },
     {
       "id": "note:notes/vibes/logics/derivation-system-interp.md",
       "kind": "note",
       "title": "The derivation-system interpretation API — a layered trait tower bottoming at HOL-ω",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/derivation-system-interp.md",
-      "words": 889,
+      "words": 919,
       "updated": 1784063401
     },
     {
       "id": "note:notes/vibes/logics/init-in-dialect.md",
       "kind": "note",
       "title": "Writing `init/` in the Haskell dialect — the typed backend",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/init-in-dialect.md",
-      "words": 1069,
+      "words": 1099,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/logics/logic-frontends.md",
       "kind": "note",
       "title": "Logic frontends — external systems as Metamath-defined logics",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/logic-frontends.md",
-      "words": 1664,
+      "words": 1694,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/logics/metamath-axiom-set-metatheory.md",
       "kind": "note",
       "title": "Metamath axiom-set metatheory (2026-07-13)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/metamath-axiom-set-metatheory.md",
-      "words": 822,
+      "words": 852,
       "updated": 1784054514
     },
     {
       "id": "note:notes/vibes/logics/metatheory.md",
       "kind": "note",
       "title": "Covalence — Metatheory: Theories, Derivations, and Models",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/metatheory.md",
-      "words": 3602,
+      "words": 3632,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/logics/opentheory-import.md",
       "kind": "note",
       "title": "OpenTheory import — verifying articles on the native HOL kernel",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/opentheory-import.md",
-      "words": 1519,
+      "words": 1549,
       "updated": 1784061083
     },
     {
       "id": "note:notes/vibes/logics/proof-format.md",
       "kind": "note",
       "title": "A separate, name-linked proof format for the Haskell dialect",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/proof-format.md",
-      "words": 1336,
+      "words": 1366,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/logics/sat-replay-and-tree-context.md",
       "kind": "note",
       "title": "Fast SAT replay — the AND-tree context (handoff)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/sat-replay-and-tree-context.md",
-      "words": 851,
+      "words": 881,
       "updated": 1784063620
     },
     {
       "id": "note:notes/vibes/logics/smt-import-architecture.md",
       "kind": "note",
       "title": "SMT / SAT proof import — architecture",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/smt-import-architecture.md",
-      "words": 1087,
+      "words": 1117,
       "updated": 1784054512
     },
     {
       "id": "note:notes/vibes/logics/spectec-fragment-api.md",
       "kind": "note",
       "title": "The high-level SpecTec-fragment API (layered, reusable, trait-based)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/spectec-fragment-api.md",
-      "words": 1180,
+      "words": 1210,
       "updated": 1784166348
     },
     {
       "id": "note:notes/vibes/logics/spectec-total-load.md",
       "kind": "note",
       "title": "Total-load: the entire WASM 3.0 SpecTec spec as one kernel-checked rule set",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/spectec-total-load.md",
-      "words": 3439,
-      "updated": 1784386629
+      "words": 3469,
+      "updated": 1784415970
     },
     {
       "id": "note:notes/vibes/logics/structural-sigma-transport.md",
       "kind": "note",
       "title": "A structural (non-identity) `σ` for transport — and induction-on-derivations to foreign systems",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/structural-sigma-transport.md",
-      "words": 2848,
+      "words": 2878,
       "updated": 1784063401
     },
     {
       "id": "note:notes/vibes/logics/theories-models-and-logics.md",
       "kind": "note",
       "title": "Theories, models, and logics — the signature/theory/model architecture",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/theories-models-and-logics.md",
-      "words": 5713,
+      "words": 5743,
       "updated": 1784153336
     },
     {
       "id": "note:notes/vibes/logics/verified-io.md",
       "kind": "note",
       "title": "Verified I/O — parse/deparse as a certified pair over hashed dialects",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/verified-io.md",
-      "words": 555,
+      "words": 585,
       "updated": 1784153654
     },
     {
       "id": "note:notes/vibes/logics/wasm-spec.md",
       "kind": "note",
       "title": "The WebAssembly-spec front end (`crates/kernel/hol/init/src/wasm`)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/logics/wasm-spec.md",
-      "words": 1313,
+      "words": 1343,
       "updated": 1784053339
     },
     {
       "id": "note:notes/vibes/observers/backend-decoupling.md",
       "kind": "note",
       "title": "Backend decoupling — the `covalence-hol-api` trait surface",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/observers/backend-decoupling.md",
-      "words": 723,
+      "words": 753,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/observers/observers.md",
       "kind": "note",
       "title": "Covalence — Observers and Validators",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/observers/observers.md",
-      "words": 1355,
+      "words": 1385,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/plans/consolidation-and-context-roadmap.md",
       "kind": "note",
       "title": "Consolidation and context roadmap",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/plans/consolidation-and-context-roadmap.md",
-      "words": 2764,
+      "words": 2794,
       "updated": 1784408739
     },
     {
       "id": "note:notes/vibes/plans/knowledge-browser-apps.md",
       "kind": "note",
       "title": "Knowledge-browser applications",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/plans/knowledge-browser-apps.md",
-      "words": 428,
+      "words": 458,
       "updated": 1784413701
     },
     {
       "id": "note:notes/vibes/plans/next-stage-breakdown.md",
       "kind": "note",
       "title": "Next-stage breakdown (companion to the plan)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/plans/next-stage-breakdown.md",
-      "words": 1006,
+      "words": 1036,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "kind": "note",
       "title": "From here to: a real build system + observer-free, literal-free HOL",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/plans/pure-hol-and-build-plan.md",
-      "words": 2441,
+      "words": 2471,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/plans/refactor-plan.md",
       "kind": "note",
       "title": "Three-layer kernel refactor — plan",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/plans/refactor-plan.md",
-      "words": 2729,
+      "words": 2759,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/plans/sketch-separation-thoughts.md",
       "kind": "note",
       "title": "Thoughts on the separation plan (discussion draft, agent-authored)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/plans/sketch-separation-thoughts.md",
-      "words": 1372,
+      "words": 1402,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/plans/workstreams-and-state-report.md",
       "kind": "note",
       "title": "Workstreams and present-state report",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/plans/workstreams-and-state-report.md",
-      "words": 2704,
+      "words": 2734,
       "updated": 1784408739
     },
     {
@@ -2617,7 +2617,7 @@
       "title": "Forester compatibility and note provenance",
       "status": "draft",
       "path": "notes/vibes/research/forester-and-note-provenance.md",
-      "words": 1763,
+      "words": 1772,
       "updated": 1784415456
     },
     {
@@ -2626,151 +2626,151 @@
       "title": "Note metadata v1",
       "status": "draft",
       "path": "notes/vibes/research/note-metadata-v1.md",
-      "words": 389,
+      "words": 448,
       "updated": 1784415456
     },
     {
       "id": "note:notes/vibes/sketches/README.md",
       "kind": "note",
       "title": "Sketches",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/sketches/README.md",
-      "words": 130,
+      "words": 160,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/sketches/acset-datalog-datafun.md",
       "kind": "note",
       "title": "ACSet Datalog → Datafun (sketch)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/sketches/acset-datalog-datafun.md",
-      "words": 518,
+      "words": 548,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/sketches/covalence-ml-naive-compiler.md",
       "kind": "note",
       "title": "`covalence-ml` — naive ML→WASM compiler (design sketch)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/sketches/covalence-ml-naive-compiler.md",
-      "words": 1257,
+      "words": 1287,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/sketches/lf-dedukti.md",
       "kind": "note",
       "title": "LF, λΠ, and Dedukti — the encoding framework and a second universal substrate",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/sketches/lf-dedukti.md",
-      "words": 1111,
+      "words": 1141,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/sketches/type-theories.md",
       "kind": "note",
       "title": "Type theories as object logics — MLTT, book HoTT, NuPRL, and IZF→MLTT",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/sketches/type-theories.md",
-      "words": 1776,
+      "words": 1806,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/surface/frontend.md",
       "kind": "note",
       "title": "Covalence — Frontend & UX Vision",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/surface/frontend.md",
-      "words": 1620,
+      "words": 1650,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/surface/surface-compiler.md",
       "kind": "note",
       "title": "Covalence — Surface Language: theories, models, and the multi-stage compiler",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/surface/surface-compiler.md",
-      "words": 5864,
+      "words": 5894,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/surface/surface-syntax.md",
       "kind": "note",
       "title": "Covalence — Surface Syntax",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/surface/surface-syntax.md",
-      "words": 1985,
+      "words": 2015,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/vision/VISION.md",
       "kind": "note",
       "title": "Covalence — Vision",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/vision/VISION.md",
-      "words": 1995,
+      "words": 2025,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/vision/development-vision.md",
       "kind": "note",
       "title": "Development vision — consilience, computation-grounded foundations, verified I/O",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/vision/development-vision.md",
-      "words": 1685,
+      "words": 1715,
       "updated": 1784153654
     },
     {
       "id": "note:notes/vibes/vision/k-framework-vision.md",
       "kind": "note",
       "title": "The K-framework north star — full K + all its sublanguages",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/vision/k-framework-vision.md",
-      "words": 1178,
+      "words": 1208,
       "updated": 1784055469
     },
     {
       "id": "note:notes/vibes/vision/project-map.md",
       "kind": "note",
       "title": "Project map — where everything is, and what's in flight",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/vision/project-map.md",
-      "words": 899,
+      "words": 929,
       "updated": 1784408739
     },
     {
       "id": "note:notes/vibes/vision/roadmap.md",
       "kind": "note",
       "title": "Covalence — Roadmap (time-to-product for the Metamath vision)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/vision/roadmap.md",
-      "words": 1651,
+      "words": 1681,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/web/cov-project.md",
       "kind": "note",
       "title": "Compiling a multi-file `.cov` project",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/web/cov-project.md",
-      "words": 1996,
+      "words": 2026,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/web/wasm3-rust.md",
       "kind": "note",
       "title": "WebAssembly 3.0 in Rust — state of play (early 2026)",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/web/wasm3-rust.md",
-      "words": 916,
+      "words": 946,
       "updated": 1783971729
     },
     {
       "id": "note:notes/vibes/web/web-kernel.md",
       "kind": "note",
       "title": "Covalence in the browser — kernel, IDE, and articles",
-      "status": "unparsed legacy",
+      "status": "draft",
       "path": "notes/vibes/web/web-kernel.md",
-      "words": 2057,
+      "words": 2087,
       "updated": 1783971729
     },
     {
@@ -5720,6 +5720,12 @@
   "edges": [
     {
       "source": "note:notes/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/README.md",
       "predicate": "links-to",
       "target": "file:docs/README.md",
       "detail": null
@@ -5771,6 +5777,12 @@
       "predicate": "uses-term",
       "target": "term:T0001",
       "detail": null
+    },
+    {
+      "source": "note:notes/design/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/design/README.md",
@@ -5870,9 +5882,27 @@
     },
     {
       "source": "note:notes/design/TEMPLATE.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/design/TEMPLATE.md",
       "predicate": "documents",
       "target": "file:notes/vibes/kernel/tcb/what-is-the-tcb.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/design/api-extraction-audit.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/design/content-logic-and-wit-boundaries.md",
@@ -5912,6 +5942,12 @@
     },
     {
       "source": "note:notes/design/graph-api.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/design/graph-api.md",
       "predicate": "documents",
       "target": "file:crates/lib/graph",
       "detail": null
@@ -5927,6 +5963,18 @@
       "predicate": "links-to",
       "target": "note:notes/design/content-logic-and-wit-boundaries.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/design/human-agent-development-loop.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/design/k-frontend.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/design/k-frontend.md",
@@ -6020,6 +6068,12 @@
     },
     {
       "source": "note:notes/design/notes-governance.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/design/notes-governance.md",
       "predicate": "documents",
       "target": "file:notes/inbox",
       "detail": "missing"
@@ -6029,6 +6083,12 @@
       "predicate": "documents",
       "target": "file:scripts/notes.mjs",
       "detail": null
+    },
+    {
+      "source": "note:notes/design/relational-base-rewrite.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/design/relational-base-rewrite.md",
@@ -6107,6 +6167,36 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/plans/atoms.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/plans/next-stage.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/plans/sketch-separation.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/terms/T0001.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/README.md",
@@ -6452,6 +6542,12 @@
     },
     {
       "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
       "predicate": "links-to",
       "target": "file:crates/kernel/hol/init/src/init/inductive/carved.rs",
       "detail": null
@@ -6542,6 +6638,12 @@
     },
     {
       "source": "note:notes/vibes/build/buck2-experiment.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/build/buck2-experiment.md",
       "predicate": "documents",
       "target": "file:crates/lib/hash",
       "detail": null
@@ -6566,9 +6668,21 @@
     },
     {
       "source": "note:notes/vibes/build/known-issues.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/build/known-issues.md",
       "predicate": "documents",
       "target": "file:crates/lib/sqlite/Cargo.toml",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/handoff/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/handoff/README.md",
@@ -6602,6 +6716,12 @@
     },
     {
       "source": "note:notes/vibes/handoff/defs-out-of-core.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/handoff/defs-out-of-core.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/core",
       "detail": null
@@ -6617,6 +6737,12 @@
       "predicate": "documents",
       "target": "file:scripts/tcb-audit.mjs",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/k/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/k/README.md",
@@ -6680,6 +6806,12 @@
     },
     {
       "source": "note:notes/vibes/k/reduction-demo-scope.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/k/reduction-demo-scope.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/init/src/k",
       "detail": null
@@ -6727,10 +6859,28 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/k/research/backends-and-smt.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/k/research/k-framework-today.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/k/research/k-framework-today.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/k/research/kore-ir.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/k/research/kore-ir.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/k/research/kore-ir.md",
@@ -6739,10 +6889,34 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/k/research/proof-generation.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/k/research/reachability-and-matching-logic.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/k/research/semantics-ecosystem.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/k/research/semantics-ecosystem.md",
       "predicate": "documents",
       "target": "file:notes/vibes/logics/wasm-spec.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/base-abstraction.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/kernel/base-abstraction.md",
@@ -6824,6 +6998,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/base-api-surface.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/base-api-surface.md",
       "predicate": "documents",
       "target": "file:crates/kernel/base/",
       "detail": null
@@ -6878,6 +7058,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/base-relcalc-holomega-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/base-relcalc-holomega-design.md",
       "predicate": "documents",
       "target": "file:crates/kernel/base/trusted/src/",
       "detail": null
@@ -6920,6 +7106,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/closed-world-kernel.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/closed-world-kernel.md",
       "predicate": "documents",
       "target": "file:crates/covalence-pure/trusted/src/",
       "detail": "missing"
@@ -6938,6 +7130,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/covalence-fol.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/covalence-fol.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/kernel/base-relcalc-holomega-design.md",
       "detail": null
@@ -6950,6 +7148,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/defs-rehome-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/defs-rehome-design.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/kernel/closed-world-kernel.md",
       "detail": null
@@ -6959,6 +7163,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
@@ -6998,6 +7208,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/inductive/inductive-support.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/inductive/inductive-support.md",
       "predicate": "documents",
       "target": "file:crates/lang/inductive/",
       "detail": null
@@ -7013,6 +7229,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/kernel-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/kernel/kernel-design.md",
@@ -7046,6 +7268,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/literals/eg5-preflight.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/literals/eg5-preflight.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/core",
       "detail": null
@@ -7064,6 +7292,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/literals/literal-endgame-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/literals/literal-endgame-design.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/core/src/thm/mod.rs",
       "detail": null
@@ -7079,6 +7313,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/literals/numeral-literals-api.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/kernel/literals/numeral-literals-api.md",
@@ -7112,6 +7352,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/literals/sha256-round-keystone.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/literals/sha256-round-keystone.md",
       "predicate": "documents",
       "target": "file:crates/covalence-core/src/defs/bits.rs",
       "detail": "missing"
@@ -7142,6 +7388,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/pure-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/pure-design.md",
       "predicate": "documents",
       "target": "file:crates/kernel/base/",
       "detail": null
@@ -7163,6 +7415,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/plans/refactor-plan.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/tcb/soundness-audit.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -7202,6 +7460,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/tcb/tcb-holomega-roadmap.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/tcb/tcb-holomega-roadmap.md",
       "predicate": "documents",
       "target": "file:crates/kernel/base/trusted",
       "detail": null
@@ -7223,6 +7487,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/kernel/literals/literal-endgame-design.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
@@ -7298,6 +7568,12 @@
     },
     {
       "source": "note:notes/vibes/kernel/type-hierarchy.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/kernel/type-hierarchy.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/kernel/kernel-design.md",
       "detail": null
@@ -7313,6 +7589,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/surface/surface-syntax.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/README.md",
@@ -7424,6 +7706,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/STATUS.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/STATUS.md",
       "predicate": "documents",
       "target": "file:crates/kernel/web/src/lib.rs",
       "detail": null
@@ -7460,6 +7748,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/abstract-sexpr-api.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/abstract-sexpr-api.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/core",
       "detail": null
@@ -7487,6 +7781,12 @@
       "predicate": "documents",
       "target": "file:crates/lib/sexp",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-agent-guide.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/acl2-agent-guide.md",
@@ -7523,6 +7823,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-book-frontend.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/acl2-book-frontend.md",
@@ -7574,6 +7880,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
       "predicate": "documents",
       "target": "file:crates/lang/lisp/src/carrier.rs",
       "detail": null
@@ -7616,6 +7928,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/acl2-dialect.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-dialect.md",
       "predicate": "documents",
       "target": "file:crates/lang/lisp/SKELETONS.md",
       "detail": "missing"
@@ -7625,6 +7943,18 @@
       "predicate": "documents",
       "target": "file:crates/lang/lisp/src/acl2.rs",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-fidelity.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-full-plan.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/acl2-full-plan.md",
@@ -7655,6 +7985,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-premise-builder.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/acl2-premise-builder.md",
@@ -7712,6 +8048,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/init/src/metalogic/",
       "detail": null
@@ -7748,6 +8090,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/acl2-s4-s6-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-s4-s6-design.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/init/src/init/acl2/",
       "detail": null
@@ -7763,6 +8111,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-s5-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/acl2-s5-design.md",
@@ -7790,6 +8144,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/acl2-s7-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-s7-design.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/acl2-full-plan.md",
       "detail": null
@@ -7808,9 +8168,21 @@
     },
     {
       "source": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/acl2-full-plan.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
@@ -7819,10 +8191,28 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
       "predicate": "documents",
       "target": "file:crates/lib/sexp",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/lisp-acl2-answers.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/initial-ideas/lisp-acl2-answers.md",
@@ -7841,6 +8231,18 @@
       "predicate": "documents",
       "target": "file:notes/plans/sketch-separation.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
@@ -7868,6 +8270,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
       "detail": null
@@ -7880,9 +8288,21 @@
     },
     {
       "source": "note:notes/vibes/lisp/initial-ideas/parsing-relations.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/parsing-relations.md",
       "predicate": "documents",
       "target": "file:crates/lang/grammar",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/reduction-relation-on-binary-engine.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/initial-ideas/reduction-relation-on-binary-engine.md",
@@ -7892,9 +8312,21 @@
     },
     {
       "source": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
@@ -7931,6 +8363,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/minimal-spec/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/lisp/minimal-spec/README.md",
@@ -7976,6 +8414,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
       "predicate": "documents",
       "target": "file:crates/lang/lisp",
       "detail": null
@@ -8018,6 +8462,12 @@
     },
     {
       "source": "note:notes/vibes/lisp/relational-recursion.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/relational-recursion.md",
       "predicate": "documents",
       "target": "file:crates/lang/lisp/SKELETONS.md",
       "detail": "missing"
@@ -8029,10 +8479,28 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/lisp/verification-via-smt.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/bitvector-verification-roadmap.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/logics/bitvector-verification-roadmap.md",
       "predicate": "documents",
       "target": "file:crates/kernel/sat",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/logics/cfg-stratum-design.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/logics/cfg-stratum-design.md",
@@ -8066,6 +8534,12 @@
     },
     {
       "source": "note:notes/vibes/logics/computation-theory.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/computation-theory.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/init",
       "detail": null
@@ -8090,9 +8564,21 @@
     },
     {
       "source": "note:notes/vibes/logics/derivation-system-interp.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/derivation-system-interp.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/init/src/metalogic/mm_algebra.rs",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/logics/init-in-dialect.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/logics/init-in-dialect.md",
@@ -8123,6 +8609,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/observers/backend-decoupling.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/logics/logic-frontends.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/logics/logic-frontends.md",
@@ -8168,6 +8660,12 @@
     },
     {
       "source": "note:notes/vibes/logics/metamath-axiom-set-metatheory.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/metamath-axiom-set-metatheory.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/init/examples/mm_compose.rs",
       "detail": null
@@ -8201,6 +8699,12 @@
       "predicate": "documents",
       "target": "file:scripts/bench-setmm.mjs",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/logics/metatheory.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/logics/metatheory.md",
@@ -8258,6 +8762,12 @@
     },
     {
       "source": "note:notes/vibes/logics/opentheory-import.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/opentheory-import.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/traits",
       "detail": null
@@ -8273,6 +8783,12 @@
       "predicate": "documents",
       "target": "file:crates/proof/opentheory/src/native.rs",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/logics/proof-format.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/logics/proof-format.md",
@@ -8306,15 +8822,33 @@
     },
     {
       "source": "note:notes/vibes/logics/sat-replay-and-tree-context.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/sat-replay-and-tree-context.md",
       "predicate": "documents",
       "target": "file:crates/kernel/sat/src/sequent.rs",
       "detail": null
     },
     {
       "source": "note:notes/vibes/logics/smt-import-architecture.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/smt-import-architecture.md",
       "predicate": "documents",
       "target": "file:crates/kernel/{sat,smt}",
       "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/logics/spectec-fragment-api.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/logics/spectec-fragment-api.md",
@@ -8330,6 +8864,12 @@
     },
     {
       "source": "note:notes/vibes/logics/spectec-total-load.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/spectec-total-load.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/logics/cfg-stratum-design.md",
       "detail": null
@@ -8339,6 +8879,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/logics/spectec-fragment-api.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/logics/structural-sigma-transport.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/logics/structural-sigma-transport.md",
@@ -8357,6 +8903,12 @@
       "predicate": "documents",
       "target": "file:notes/vibes/logics/derivation-system-interp.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/logics/theories-models-and-logics.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/logics/theories-models-and-logics.md",
@@ -8408,6 +8960,12 @@
     },
     {
       "source": "note:notes/vibes/logics/verified-io.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/verified-io.md",
       "predicate": "links-to",
       "target": "note:notes/plans/sketch-separation.md",
       "detail": null
@@ -8444,6 +9002,12 @@
     },
     {
       "source": "note:notes/vibes/logics/wasm-spec.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/logics/wasm-spec.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/init/src/wasm",
       "detail": null
@@ -8474,6 +9038,12 @@
     },
     {
       "source": "note:notes/vibes/observers/backend-decoupling.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/observers/backend-decoupling.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/api",
       "detail": null
@@ -8483,6 +9053,12 @@
       "predicate": "documents",
       "target": "file:crates/kernel/hol/api/src/nat.rs",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/observers/observers.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/observers/observers.md",
@@ -8519,6 +9095,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/vision/VISION.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/plans/consolidation-and-context-roadmap.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/plans/consolidation-and-context-roadmap.md",
@@ -8570,9 +9152,21 @@
     },
     {
       "source": "note:notes/vibes/plans/knowledge-browser-apps.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/plans/knowledge-browser-apps.md",
       "predicate": "documents",
       "target": "file:apps/category-wiki",
       "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/plans/next-stage-breakdown.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/plans/next-stage-breakdown.md",
@@ -8615,6 +9209,12 @@
       "predicate": "links-to",
       "target": "note:notes/plans/next-stage.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
@@ -8690,6 +9290,12 @@
     },
     {
       "source": "note:notes/vibes/plans/refactor-plan.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/plans/refactor-plan.md",
       "predicate": "documents",
       "target": "file:crates/<group>/",
       "detail": "missing"
@@ -8744,6 +9350,12 @@
     },
     {
       "source": "note:notes/vibes/plans/sketch-separation-thoughts.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/plans/sketch-separation-thoughts.md",
       "predicate": "documents",
       "target": "file:notes/design/",
       "detail": null
@@ -8753,6 +9365,12 @@
       "predicate": "documents",
       "target": "file:notes/plans/sketch-separation.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/plans/workstreams-and-state-report.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/plans/workstreams-and-state-report.md",
@@ -8799,7 +9417,7 @@
     {
       "source": "note:notes/vibes/research/forester-and-note-provenance.md",
       "predicate": "contributed-by",
-      "target": "actor:agent:forester-provenance-research",
+      "target": "actor:agent:gpt-5.6-sol",
       "detail": "author"
     },
     {
@@ -8811,7 +9429,13 @@
     {
       "source": "note:notes/vibes/research/note-metadata-v1.md",
       "predicate": "contributed-by",
-      "target": "actor:agent:note-provenance-index",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/sketches/README.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
       "detail": "author"
     },
     {
@@ -8863,6 +9487,24 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/sketches/acset-datalog-datafun.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/sketches/covalence-ml-naive-compiler.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/sketches/lf-dedukti.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/sketches/lf-dedukti.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/logics/logic-frontends.md",
@@ -8876,6 +9518,12 @@
     },
     {
       "source": "note:notes/vibes/sketches/type-theories.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/sketches/type-theories.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/logics/logic-frontends.md",
       "detail": null
@@ -8885,6 +9533,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/logics/metatheory.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/surface/frontend.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/surface/frontend.md",
@@ -8921,6 +9575,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/vision/VISION.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/surface/surface-compiler.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/surface/surface-compiler.md",
@@ -8963,6 +9623,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/surface/surface-syntax.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/surface/surface-syntax.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/surface/surface-syntax.md",
@@ -9020,6 +9686,12 @@
     },
     {
       "source": "note:notes/vibes/vision/VISION.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/vision/VISION.md",
       "predicate": "documents",
       "target": "file:notes/vibes/README.md",
       "detail": null
@@ -9041,6 +9713,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/surface/frontend.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/vision/development-vision.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/vision/development-vision.md",
@@ -9206,6 +9884,12 @@
     },
     {
       "source": "note:notes/vibes/vision/k-framework-vision.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/vision/k-framework-vision.md",
       "predicate": "documents",
       "target": "file:crates/lang/k",
       "detail": null
@@ -9293,6 +9977,12 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/vision/roadmap.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/vision/project-map.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
@@ -9548,6 +10238,12 @@
     },
     {
       "source": "note:notes/vibes/vision/roadmap.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/vision/roadmap.md",
       "predicate": "documents",
       "target": "file:crates/<group>/",
       "detail": "missing"
@@ -9596,6 +10292,12 @@
     },
     {
       "source": "note:notes/vibes/web/cov-project.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/web/cov-project.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/init/src/SKELETONS.md",
       "detail": "missing"
@@ -9620,9 +10322,21 @@
     },
     {
       "source": "note:notes/vibes/web/wasm3-rust.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/web/wasm3-rust.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/web/web-kernel.md",
       "detail": null
+    },
+    {
+      "source": "note:notes/vibes/web/web-kernel.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:claude",
+      "detail": "author"
     },
     {
       "source": "note:notes/vibes/web/web-kernel.md",
@@ -10045,33 +10759,1943 @@
       "stableId": "N0002",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/README.md",
+      "stableId": "N0003",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/design/README.md",
+      "stableId": "N0004",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/design/TEMPLATE.md",
+      "stableId": "N0005",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/design/api-extraction-audit.md",
+      "stableId": "N0006",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "stableId": "N0007",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/design/graph-api.md",
+      "stableId": "N0008",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/design/human-agent-development-loop.md",
+      "stableId": "N0009",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/design/k-frontend.md",
+      "stableId": "N000A",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/design/notes-governance.md",
+      "stableId": "N000B",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/design/relational-base-rewrite.md",
+      "stableId": "N000C",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/plans/atoms.md",
+      "stableId": "N000D",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/plans/next-stage.md",
+      "stableId": "N000E",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/plans/sketch-separation.md",
+      "stableId": "N000F",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/terms/T0001.md",
+      "stableId": "N000G",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/README.md",
+      "stableId": "N000H",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/audits/inductive-api-audit.md",
+      "stableId": "N000I",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/build/buck2-experiment.md",
+      "stableId": "N000J",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/build/known-issues.md",
+      "stableId": "N000K",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/handoff/README.md",
+      "stableId": "N000L",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/handoff/defs-out-of-core.md",
+      "stableId": "N000M",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/k/README.md",
+      "stableId": "N000N",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/k/reduction-demo-scope.md",
+      "stableId": "N000O",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/backends-and-smt.md",
+      "stableId": "N000P",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/k-framework-today.md",
+      "stableId": "N000Q",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/kore-ir.md",
+      "stableId": "N000R",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/proof-generation.md",
+      "stableId": "N000S",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/reachability-and-matching-logic.md",
+      "stableId": "N000T",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/semantics-ecosystem.md",
+      "stableId": "N000U",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/base-abstraction.md",
+      "stableId": "N000V",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/base-api-surface.md",
+      "stableId": "N000W",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/base-relcalc-holomega-design.md",
+      "stableId": "N000X",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/closed-world-kernel.md",
+      "stableId": "N000Y",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/covalence-fol.md",
+      "stableId": "N000Z",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/defs-rehome-design.md",
+      "stableId": "N0010",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
+      "stableId": "N0011",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/inductive/inductive-support.md",
+      "stableId": "N0012",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/kernel-design.md",
+      "stableId": "N0013",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/literals/eg5-preflight.md",
+      "stableId": "N0014",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/literals/literal-endgame-design.md",
+      "stableId": "N0015",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/literals/numeral-literals-api.md",
+      "stableId": "N0016",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/literals/sha256-round-keystone.md",
+      "stableId": "N0017",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/pure-design.md",
+      "stableId": "N0018",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/tcb/soundness-audit.md",
+      "stableId": "N0019",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/tcb/tcb-holomega-roadmap.md",
+      "stableId": "N001A",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
+      "stableId": "N001B",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/type-hierarchy.md",
+      "stableId": "N001C",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/README.md",
+      "stableId": "N001D",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/STATUS.md",
+      "stableId": "N001E",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",
+      "stableId": "N001F",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-agent-guide.md",
+      "stableId": "N001G",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-book-frontend.md",
+      "stableId": "N001H",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
+      "stableId": "N001I",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-dialect.md",
+      "stableId": "N001J",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-fidelity.md",
+      "stableId": "N001K",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-full-plan.md",
+      "stableId": "N001L",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-premise-builder.md",
+      "stableId": "N001M",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
+      "stableId": "N001N",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s4-s6-design.md",
+      "stableId": "N001O",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s5-design.md",
+      "stableId": "N001P",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s7-design.md",
+      "stableId": "N001Q",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
+      "stableId": "N001R",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
+      "stableId": "N001S",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
+      "stableId": "N001T",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
+      "stableId": "N001U",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/lisp-acl2-answers.md",
+      "stableId": "N001V",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
+      "stableId": "N001W",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
+      "stableId": "N001X",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
+      "stableId": "N001Y",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/parsing-relations.md",
+      "stableId": "N001Z",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/reduction-relation-on-binary-engine.md",
+      "stableId": "N0020",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
+      "stableId": "N0021",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
+      "stableId": "N0022",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/minimal-spec/README.md",
+      "stableId": "N0023",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
+      "stableId": "N0024",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/relational-recursion.md",
+      "stableId": "N0025",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/verification-via-smt.md",
+      "stableId": "N0026",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/bitvector-verification-roadmap.md",
+      "stableId": "N0027",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/cfg-stratum-design.md",
+      "stableId": "N0028",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/computation-theory.md",
+      "stableId": "N0029",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/derivation-system-interp.md",
+      "stableId": "N002A",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/init-in-dialect.md",
+      "stableId": "N002B",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/logic-frontends.md",
+      "stableId": "N002C",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/metamath-axiom-set-metatheory.md",
+      "stableId": "N002D",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/metatheory.md",
+      "stableId": "N002E",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/opentheory-import.md",
+      "stableId": "N002F",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/proof-format.md",
+      "stableId": "N002G",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/sat-replay-and-tree-context.md",
+      "stableId": "N002H",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/smt-import-architecture.md",
+      "stableId": "N002I",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/spectec-fragment-api.md",
+      "stableId": "N002J",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/spectec-total-load.md",
+      "stableId": "N002K",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/structural-sigma-transport.md",
+      "stableId": "N002L",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/theories-models-and-logics.md",
+      "stableId": "N002M",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/verified-io.md",
+      "stableId": "N002N",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/wasm-spec.md",
+      "stableId": "N002O",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/observers/backend-decoupling.md",
+      "stableId": "N002P",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/observers/observers.md",
+      "stableId": "N002Q",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/plans/consolidation-and-context-roadmap.md",
+      "stableId": "N002R",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/plans/knowledge-browser-apps.md",
+      "stableId": "N002S",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/plans/next-stage-breakdown.md",
+      "stableId": "N002T",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
+      "stableId": "N002U",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/plans/refactor-plan.md",
+      "stableId": "N002V",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/plans/sketch-separation-thoughts.md",
+      "stableId": "N002W",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/plans/workstreams-and-state-report.md",
+      "stableId": "N002X",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/README.md",
+      "stableId": "N002Y",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/acset-datalog-datafun.md",
+      "stableId": "N002Z",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/covalence-ml-naive-compiler.md",
+      "stableId": "N0030",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/lf-dedukti.md",
+      "stableId": "N0031",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/type-theories.md",
+      "stableId": "N0032",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/surface/frontend.md",
+      "stableId": "N0033",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/surface/surface-compiler.md",
+      "stableId": "N0034",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/surface/surface-syntax.md",
+      "stableId": "N0035",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/vision/VISION.md",
+      "stableId": "N0036",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/vision/development-vision.md",
+      "stableId": "N0037",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/vision/k-framework-vision.md",
+      "stableId": "N0038",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/vision/project-map.md",
+      "stableId": "N0039",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/vision/roadmap.md",
+      "stableId": "N003A",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/web/cov-project.md",
+      "stableId": "N003B",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/web/wasm3-rust.md",
+      "stableId": "N003C",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/web/web-kernel.md",
+      "stableId": "N003D",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "actors": [
     {
-      "id": "agent:forester-provenance-research",
+      "id": "agent:claude",
       "kind": "agent",
-      "displayName": "forester-provenance-research"
+      "displayName": "claude"
     },
     {
-      "id": "agent:note-provenance-index",
+      "id": "agent:gpt-5.6-sol",
       "kind": "agent",
-      "displayName": "note-provenance-index"
+      "displayName": "gpt-5.6-sol"
     }
   ],
   "contributions": [
     {
-      "noteId": "note:notes/vibes/research/forester-and-note-provenance.md",
-      "actorId": "agent:forester-provenance-research",
+      "noteId": "note:notes/README.md",
+      "actorId": "agent:claude",
       "role": "author",
-      "contributedAt": "2026-07-18T23:50:59+01:00",
+      "contributedAt": "2026-06-24T00:26:22+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/design/README.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-11T14:16:07+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/design/TEMPLATE.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-11T14:16:07+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/design/api-extraction-audit.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-18T22:51:29+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-18T22:51:29+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/design/graph-api.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-18T22:51:29+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/design/human-agent-development-loop.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-18T22:51:29+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/design/k-frontend.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:57:49+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/design/notes-governance.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-18T22:51:29+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/design/relational-base-rewrite.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-11T14:16:07+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/plans/atoms.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/plans/next-stage.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-03T21:05:38+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/plans/sketch-separation.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/terms/T0001.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-18T23:42:42+01:00",
+      "source": "codex-development-wave",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/README.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-03T21:05:38+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/audits/inductive-api-audit.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-18T23:51:27+01:00",
+      "source": "codex-development-wave",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/build/buck2-experiment.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-15T23:08:56+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/build/known-issues.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-03T21:05:38+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/handoff/README.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-05T16:50:03+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/handoff/defs-out-of-core.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-05T16:50:03+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/k/README.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:57:49+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/k/reduction-demo-scope.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T21:56:53+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/backends-and-smt.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:57:49+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/k-framework-today.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:57:49+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/kore-ir.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:57:49+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/proof-generation.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:57:49+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/reachability-and-matching-logic.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:57:49+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/k/research/semantics-ecosystem.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:57:49+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/base-abstraction.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/base-api-surface.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/base-relcalc-holomega-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/closed-world-kernel.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/covalence-fol.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/defs-rehome-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/inductive/inductive-support.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/kernel-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/literals/eg5-preflight.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/literals/literal-endgame-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/literals/numeral-literals-api.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T21:25:20+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/literals/sha256-round-keystone.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/pure-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/tcb/soundness-audit.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/tcb/tcb-holomega-roadmap.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/kernel/type-hierarchy.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/README.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T21:25:20+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/STATUS.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T21:35:45+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-agent-guide.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T21:08:46+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-book-frontend.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T21:08:46+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-dialect.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T00:22:16+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-fidelity.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T21:08:46+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-full-plan.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T00:22:16+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-premise-builder.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T01:12:04+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s4-s6-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T04:51:47+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s5-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T21:08:46+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s7-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T21:08:46+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/lisp-acl2-answers.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T21:25:20+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/parsing-relations.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/reduction-relation-on-binary-engine.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T21:06:16+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T18:38:20+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/minimal-spec/README.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/relational-recursion.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T00:22:16+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/verification-via-smt.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T20:09:33+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/bitvector-verification-roadmap.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T21:26:19+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/cfg-stratum-design.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T21:40:18+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/computation-theory.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-15T23:14:14+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/derivation-system-interp.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T22:10:01+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/init-in-dialect.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/logic-frontends.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/metamath-axiom-set-metatheory.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:02:54+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/metatheory.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/opentheory-import.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T19:08:30+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/proof-format.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/sat-replay-and-tree-context.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T22:13:40+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/smt-import-architecture.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T18:51:25+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/spectec-fragment-api.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-16T00:27:05+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/spectec-total-load.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/structural-sigma-transport.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-14T20:52:29+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/theories-models-and-logics.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/verified-io.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-15T23:14:14+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/logics/wasm-spec.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/observers/backend-decoupling.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/observers/observers.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/plans/consolidation-and-context-roadmap.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-18T22:05:39+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/plans/knowledge-browser-apps.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-18T23:17:22+01:00",
+      "source": "codex-development-wave",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/plans/next-stage-breakdown.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/plans/refactor-plan.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/plans/sketch-separation-thoughts.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/plans/workstreams-and-state-report.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-18T22:05:39+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/research/forester-and-note-provenance.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-18T23:51:56+01:00",
+      "source": "codex-development-wave",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
       "ordinal": 0
     },
     {
       "noteId": "note:notes/vibes/research/note-metadata-v1.md",
-      "actorId": "agent:note-provenance-index",
+      "actorId": "agent:gpt-5.6-sol",
       "role": "author",
-      "contributedAt": "2026-07-19T00:30:00+01:00",
+      "contributedAt": "2026-07-18T23:57:36+01:00",
+      "source": "codex-development-wave",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/README.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-03T21:05:38+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/acset-datalog-datafun.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-03T21:05:38+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/covalence-ml-naive-compiler.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-03T21:05:38+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/lf-dedukti.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-03T21:05:38+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/sketches/type-theories.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-03T21:05:38+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/surface/frontend.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/surface/surface-compiler.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/surface/surface-syntax.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/vision/VISION.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/vision/development-vision.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-15T23:14:14+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/vision/k-framework-vision.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/vision/project-map.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/vision/roadmap.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/web/cov-project.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/web/wasm3-rust.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/web/web-kernel.md",
+      "actorId": "agent:claude",
+      "role": "author",
+      "contributedAt": "2026-07-13T20:42:09+01:00",
+      "source": "legacy",
+      "agent": "claude",
+      "harness": "claude",
       "ordinal": 0
     }
   ],

@@ -1,3 +1,17 @@
++++
+id = "N002S"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:gpt-5.6-sol"
+at = "2026-07-18T23:17:22+01:00"
+source = "codex-development-wave"
+agent = "gpt-5.6-sol"
+harness = "codex"
++++
+
 # Knowledge-browser applications
 
 Status: working architecture sketch

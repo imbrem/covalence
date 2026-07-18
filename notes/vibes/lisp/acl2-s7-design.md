@@ -1,3 +1,17 @@
++++
+id = "N001Q"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-19T00:00:00+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACL2 S7: the full definitional principle — concrete design (wf-recursion, measured defuns, merge-sort gate)
 
 *Design for stage S7 of [`acl2-full-plan.md`](./acl2-full-plan.md) /

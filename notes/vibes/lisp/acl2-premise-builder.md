@@ -1,3 +1,17 @@
++++
+id = "N001M"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-19T00:00:00+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACL2 generic premise builder — the object-level simplifier + IH splicer
 
 *(AI-generated design note, 2026-07-17. Fills the single highest-value

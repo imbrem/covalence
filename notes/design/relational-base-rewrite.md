@@ -1,3 +1,17 @@
++++
+id = "N000C"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-11T14:16:07+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Relational base rewrite — persist proven facts as signed SQLite
 
 - **Status:** Draft — **maintainer to flesh out**. This is a scaffold: the

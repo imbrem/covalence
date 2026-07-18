@@ -1,3 +1,17 @@
++++
+id = "N0031"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-03T21:05:38+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # LF, λΠ, and Dedukti — the encoding framework and a second universal substrate
 
 > **STATUS: DESIGN SKETCH.** The Edinburgh Logical Framework (λΠ), Twelf-style

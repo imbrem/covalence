@@ -1,3 +1,17 @@
++++
+id = "N0026"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T20:09:33+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Verifying simple Lisp programs via SMT
 
 *Direction, 2026-07-14. The goal: prove `∀`-properties of simple Lisp programs,

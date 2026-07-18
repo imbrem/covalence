@@ -1,3 +1,17 @@
++++
+id = "N002K"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-19T00:00:00+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Total-load: the entire WASM 3.0 SpecTec spec as one kernel-checked rule set
 
 Status: **landed** (2026-07-17, `wasm-spec-total-load`; design of record below

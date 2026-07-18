@@ -1,3 +1,17 @@
++++
+id = "N000F"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 So the main purpose of this repository has been to build up an experimental sketch of the `covalence` theorem prover 
 -- the problem is I find it's hard for people (and therefore probably agents) to get a handle on it, since there's lots of overlapping designs. At the same time -- I still want to push on all the various angles of the vision in one repository, since I don't think it's yet ready to distill out a starting product doing just one specific thing (once the core prover is done, that can be a start, but that needs content-addressing implemented).
 

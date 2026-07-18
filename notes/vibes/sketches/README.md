@@ -1,3 +1,17 @@
++++
+id = "N002Y"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-03T21:05:38+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Sketches
 
 Forward-looking design sketches — aspirational and informal. When one graduates

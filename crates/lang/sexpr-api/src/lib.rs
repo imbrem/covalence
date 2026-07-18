@@ -153,6 +153,114 @@ pub struct SExprFixpoint<L: Logic, P> {
     inner: LeastFixpoint<L, P>,
 }
 
+/// Proof rules for the proper-list predicate over an S-expression carrier.
+///
+/// This trait does not construct theorem values itself: a logic backend owns
+/// every returned [`Logic::Thm`]. The exact encoding of predicate application,
+/// implication, and quantification remains logic-specific.
+pub trait ProperListFacts<L: Logic> {
+    /// Form the proposition `proper value`.
+    fn holds(&self, proper: &L::Term, value: &L::Term) -> Result<L::Term, L::Error>;
+
+    /// Prove `proper nil`.
+    fn nil(&self, proper: &L::Term) -> Result<L::Thm, L::Error>;
+
+    /// From `proper tail`, prove `proper (cons head tail)`.
+    fn cons(
+        &self,
+        proper: &L::Term,
+        head: &L::Term,
+        tail: &L::Term,
+        tail_proper: L::Thm,
+    ) -> Result<L::Thm, L::Error>;
+
+    /// Proper-list induction.
+    ///
+    /// `nil_case` proves the motive for `nil`. `cons_case` proves that the
+    /// motive is preserved by adding an arbitrary S-expression head to a
+    /// proper tail satisfying the motive. The result proves the motive for
+    /// every value satisfying the proper-list predicate.
+    fn induction(
+        &self,
+        proper: &L::Term,
+        motive: &L::Term,
+        nil_case: L::Thm,
+        cons_case: L::Thm,
+    ) -> Result<L::Thm, L::Error>;
+}
+
+/// An S-expression fixpoint equipped with a proof-bearing proper-list
+/// predicate.
+///
+/// This is an optional capability above [`SExprFixpoint`]. In particular, it
+/// neither requires nor implies [`SExprNoConfusion`].
+pub struct SExprProperList<L: Logic, P> {
+    inner: SExprFixpoint<L, P>,
+    predicate: L::Term,
+    facts: Box<dyn ProperListFacts<L>>,
+}
+
+impl<L: Logic, P> SExprProperList<L, P> {
+    /// Attach backend-provided proper-list syntax and proofs.
+    pub fn new(
+        inner: SExprFixpoint<L, P>,
+        predicate: L::Term,
+        facts: Box<dyn ProperListFacts<L>>,
+    ) -> Self {
+        Self {
+            inner,
+            predicate,
+            facts,
+        }
+    }
+
+    /// The underlying canonical S-expression fixpoint.
+    pub fn fixpoint(&self) -> &SExprFixpoint<L, P> {
+        &self.inner
+    }
+
+    /// The backend term denoting the proper-list predicate.
+    pub fn predicate(&self) -> &L::Term {
+        &self.predicate
+    }
+
+    /// Form `proper value`.
+    pub fn holds(&self, value: &L::Term) -> Result<L::Term, L::Error> {
+        self.facts.holds(&self.predicate, value)
+    }
+
+    /// Prove `proper nil`.
+    pub fn nil(&self) -> Result<L::Thm, L::Error> {
+        self.facts.nil(&self.predicate)
+    }
+
+    /// From `proper tail`, prove `proper (cons head tail)`.
+    pub fn cons(
+        &self,
+        head: &L::Term,
+        tail: &L::Term,
+        tail_proper: L::Thm,
+    ) -> Result<L::Thm, L::Error> {
+        self.facts.cons(&self.predicate, head, tail, tail_proper)
+    }
+
+    /// Apply proper-list induction.
+    pub fn induction(
+        &self,
+        motive: &L::Term,
+        nil_case: L::Thm,
+        cons_case: L::Thm,
+    ) -> Result<L::Thm, L::Error> {
+        self.facts
+            .induction(&self.predicate, motive, nil_case, cons_case)
+    }
+
+    /// Discard the optional proper-list capability.
+    pub fn into_fixpoint(self) -> SExprFixpoint<L, P> {
+        self.inner
+    }
+}
+
 /// A canonical S-expression fixpoint with optional no-confusion evidence.
 ///
 /// This wrapper is a strictly stronger capability than [`SExprFixpoint`].
@@ -380,7 +488,6 @@ impl<P: Clone> SExprView for Free<P> {
     }
 }
 
-// TODO(cov:sexpr.proper-list-proof-capability, major): Define the logic-generic proper-list predicate and its nil/cons/induction theorem bundle above SExprFixpoint.
 // TODO(cov:sexpr.parser-interpretation, major): Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.
 
 #[cfg(test)]
@@ -449,6 +556,40 @@ mod tests {
         ) -> Result<String, Infallible> {
             Ok(format!(
                 "distinct({left_case},{right_case},{left:?},{right:?})"
+            ))
+        }
+    }
+
+    struct TestProperListFacts;
+
+    impl ProperListFacts<TestLogic> for TestProperListFacts {
+        fn holds(&self, proper: &String, value: &String) -> Result<String, Infallible> {
+            Ok(format!("{proper}({value})"))
+        }
+
+        fn nil(&self, proper: &String) -> Result<String, Infallible> {
+            Ok(format!("{proper}(nil)"))
+        }
+
+        fn cons(
+            &self,
+            proper: &String,
+            head: &String,
+            tail: &String,
+            tail_proper: String,
+        ) -> Result<String, Infallible> {
+            Ok(format!("{tail_proper} |- {proper}(cons({head},{tail}))"))
+        }
+
+        fn induction(
+            &self,
+            proper: &String,
+            motive: &String,
+            nil_case: String,
+            cons_case: String,
+        ) -> Result<String, Infallible> {
+            Ok(format!(
+                "proper-induction({proper},{motive},{nil_case},{cons_case})"
             ))
         }
     }
@@ -533,5 +674,31 @@ mod tests {
             api.nil_not_cons(&"head".into(), &"tail".into()).unwrap(),
             r#"distinct(1,2,[],["head", "tail"])"#
         );
+    }
+
+    #[test]
+    fn proper_list_proofs_are_optional_and_do_not_require_no_confusion() {
+        let ordinary = SExprFixpoint::try_new(test_fixpoint(), "payload")
+            .ok()
+            .expect("canonical test fixpoint");
+        let proper = SExprProperList::new(ordinary, "proper".into(), Box::new(TestProperListFacts));
+
+        assert_eq!(proper.predicate(), "proper");
+        assert_eq!(proper.holds(&"xs".into()).unwrap(), "proper(xs)");
+        let nil = proper.nil().unwrap();
+        assert_eq!(nil, "proper(nil)");
+        assert_eq!(
+            proper
+                .cons(&"x".into(), &"xs".into(), "proper(xs)".into())
+                .unwrap(),
+            "proper(xs) |- proper(cons(x,xs))"
+        );
+        assert_eq!(
+            proper
+                .induction(&"Q".into(), "Q(nil)".into(), "cons-case".into())
+                .unwrap(),
+            "proper-induction(proper,Q,Q(nil),cons-case)"
+        );
+        assert_eq!(proper.into_fixpoint().carrier(), "sexpr");
     }
 }

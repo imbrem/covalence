@@ -38,7 +38,7 @@
       "id": "inductive.coinductive-conformance",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Add a backend-neutral mock/bisimulation suite for GreatestFixpointFacts once a first real coinductive backend exists.",
+      "summary": "Add backend-neutral conformance for proof-bearing GreatestFixpointFacts; reference streams currently exercise only computational observation.",
       "structured": true,
       "path": "crates/lang/inductive/src/conformance.rs",
       "line": 36,

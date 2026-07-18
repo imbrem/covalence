@@ -33,7 +33,7 @@ use crate::spec::{ArgSort, InductiveSpec};
 use crate::theory::InductiveTheory;
 use crate::validated::Validated;
 
-// TODO(cov:inductive.coinductive-conformance, major): Add a backend-neutral mock/bisimulation suite for GreatestFixpointFacts once a first real coinductive backend exists.
+// TODO(cov:inductive.coinductive-conformance, major): Add backend-neutral conformance for proof-bearing GreatestFixpointFacts; reference streams currently exercise only computational observation.
 
 fn fail<E>(msg: String) -> InductiveError<E> {
     InductiveError::Internal(msg)

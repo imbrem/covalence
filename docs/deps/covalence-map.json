@@ -500,7 +500,7 @@
       "id": "file:apps/covalence-web/build/",
       "kind": "file",
       "title": "apps/covalence-web/build/",
-      "status": null,
+      "status": "missing",
       "path": "apps/covalence-web/build/",
       "words": 0,
       "updated": 0
@@ -617,7 +617,7 @@
       "id": "file:apps/covalence-web/src/lib/kernel/",
       "kind": "file",
       "title": "apps/covalence-web/src/lib/kernel/",
-      "status": null,
+      "status": "missing",
       "path": "apps/covalence-web/src/lib/kernel/",
       "words": 0,
       "updated": 0
@@ -3875,7 +3875,7 @@
       "id": "file:crates/ffi/python/.venv",
       "kind": "file",
       "title": "crates/ffi/python/.venv",
-      "status": null,
+      "status": "missing",
       "path": "crates/ffi/python/.venv",
       "words": 0,
       "updated": 0
@@ -17095,7 +17095,7 @@
     {
       "id": "todo:inductive.coinductive-conformance",
       "kind": "todo",
-      "title": "Add a backend-neutral mock/bisimulation suite for GreatestFixpointFacts once a first real coinductive backend exists.",
+      "title": "Add backend-neutral conformance for proof-bearing GreatestFixpointFacts; reference streams currently exercise only computational observation.",
       "status": "major",
       "path": "crates/lang/inductive/src/conformance.rs",
       "words": 0,
@@ -26815,19 +26815,19 @@
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:apps/covalence-web/build/",
-      "detail": null
+      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:apps/covalence-web/src/lib/kernel/",
-      "detail": null
+      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:crates/ffi/python/.venv",
-      "detail": null
+      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",

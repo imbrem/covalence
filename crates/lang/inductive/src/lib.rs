@@ -64,6 +64,7 @@ pub mod functor;
 pub mod logic;
 pub mod polynomial;
 pub mod spec;
+pub mod stream;
 pub mod theory;
 pub mod validated;
 
@@ -90,5 +91,9 @@ pub use polynomial::{
     RecordSpec, VariantCase, VariantSpec,
 };
 pub use spec::{ArgSort, CtorSpec, InductiveSpec};
+pub use stream::{
+    ReferenceStream, ReferenceStreamBackend, StreamBisimulation, StreamBisimulationStep,
+    StreamLayer, StreamObservation, check_bisimulation_prefix, stream_fixpoint, stream_functor,
+};
 pub use theory::{BackendCaps, InductiveFacts, InductiveTheory};
 pub use validated::Validated;

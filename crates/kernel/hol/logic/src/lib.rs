@@ -17,7 +17,9 @@ pub mod relation;
 use core::fmt::Debug;
 
 pub use relation::{
-    Arrow, Category, RelationAlgebra, RelationOrder, RelationProperties, RelationProperty,
+    Arrow, Category, Decision, RelationAlgebra, RelationEvidence, RelationJudgmentSyntax,
+    RelationOrderDecision, RelationOrderLaws, RelationProperty, RelationPropertyEvidence,
+    RelationPropertySyntax,
 };
 
 /// The carrier types shared by logic capabilities.

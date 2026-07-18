@@ -45,9 +45,10 @@ pub mod succ;
 /// Theory APIs should prefer these traits to concrete native HOL values.
 pub use covalence_logic_api as logic;
 pub use covalence_logic_api::{
-    Arrow, BinderRules, Category, EqualityRules, EqualitySyntax, Logic as LogicApi,
-    QuantifierSyntax, RelationAlgebra, RelationOrder, RelationProperties, RelationProperty,
-    TermLanguage, TheoremView, TypeSystem,
+    Arrow, BinderRules, Category, Decision, EqualityRules, EqualitySyntax, Logic as LogicApi,
+    QuantifierSyntax, RelationAlgebra, RelationEvidence, RelationJudgmentSyntax,
+    RelationOrderDecision, RelationOrderLaws, RelationProperty, RelationPropertyEvidence,
+    RelationPropertySyntax, TermLanguage, TheoremView, TypeSystem,
 };
 
 // ---- The HOL trait surface + native backend (promoted from the inductive

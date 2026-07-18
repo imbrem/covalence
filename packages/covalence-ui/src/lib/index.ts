@@ -3,6 +3,7 @@ export { registerViewer, getViewer } from './viewers/index.js';
 export type { ViewerDescriptor } from './viewers/index.js';
 
 export { default as GraphView } from './graph/GraphView.svelte';
+export { default as KnowledgeGraphView } from './knowledge/KnowledgeGraphView.svelte';
 export {
 	decodeGraph,
 	decodeStringDiagram,

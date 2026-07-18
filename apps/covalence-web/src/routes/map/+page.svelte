@@ -1,6 +1,6 @@
 <script lang="ts">
 	import map from '../../../../../docs/deps/covalence-map.json';
-	import MapGraphView from '$lib/MapGraphView.svelte';
+	import { KnowledgeGraphView } from 'covalence-ui';
 
 	type Kind = 'task' | 'todo' | 'note' | 'file';
 	type Mode = 'tasks' | 'neighborhood' | 'notes';
@@ -164,7 +164,7 @@
 	</section>
 
 	<div class="workspace">
-		<MapGraphView
+		<KnowledgeGraphView
 			nodes={visibleNodes.map((node) => ({
 				id: node.id,
 				label: node.title,

@@ -2,14 +2,14 @@
 	import { onMount } from 'svelte';
 	import type { Core, ElementDefinition, LayoutOptions } from 'cytoscape';
 
-	type MapNode = {
+	type KnowledgeGraphNode = {
 		id: string;
 		label: string;
 		kind: string;
 		status?: string | null;
 	};
 
-	type MapEdge = {
+	type KnowledgeGraphEdge = {
 		id: string;
 		source: string;
 		target: string;
@@ -17,8 +17,8 @@
 	};
 
 	interface Props {
-		nodes: MapNode[];
-		edges: MapEdge[];
+		nodes: KnowledgeGraphNode[];
+		edges: KnowledgeGraphEdge[];
 		layout?: 'breadthfirst' | 'cose';
 		selectedId?: string | null;
 		onselect?: (id: string) => void;

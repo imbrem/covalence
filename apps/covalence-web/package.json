@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "covalence-client": "workspace:*",
-    "covalence-ui": "workspace:*",
-    "cytoscape": "^3.34.0"
+    "covalence-ui": "workspace:*"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",
@@ -21,7 +20,6 @@
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/svelte": "^5.2.0",
-    "@types/cytoscape": "^3.31.0",
     "jsdom": "^25.0.0",
     "svelte": "^5.0.0",
     "typescript": "^5.0.0",

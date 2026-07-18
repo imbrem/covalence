@@ -16,6 +16,7 @@
 
 import { Database } from "bun:sqlite";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -32,12 +33,66 @@ const DB = resolve(ROOT, "target/covalence-notes.sqlite");
 const GRAPH = resolve(ROOT, "target/covalence-map.mmd");
 const JSON_PATH = "docs/deps/covalence-map.json";
 const MAP_STATIC_PATH = "apps/covalence-map/static/covalence-map.json";
+const SOURCES_PATH = "target/covalence-sources.json";
+const SOURCES_STATIC_PATH = "apps/covalence-map/static/covalence-sources.json";
+const SOURCE_SHARDS_PATH = "target/covalence-source";
+const SOURCE_SHARDS_STATIC_PATH = "apps/covalence-map/static/covalence-source";
 const args = process.argv.slice(2);
 const valueAfter = (flag) => {
   const index = args.indexOf(flag);
   return index < 0 ? undefined : args[index + 1];
 };
 const slash = (path) => path.split(sep).join("/");
+const languageFor = (path) =>
+  ({
+    ".rs": "rust",
+    ".ts": "typescript",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".svelte": "svelte",
+    ".md": "markdown",
+    ".toml": "toml",
+    ".json": "json",
+    ".yml": "yaml",
+    ".yaml": "yaml",
+    ".py": "python",
+    ".sh": "shell",
+    ".wit": "wit",
+  })[extname(path).toLowerCase()] ?? "text";
+
+// Git's tracked plaintext is the authoring truth. The generated SQLite database
+// is the local query/index layer; JSON is only a replaceable browser transport.
+const trackedPaths = [
+  ...new Set(
+    execFileSync("git", ["ls-files", "-z"], {
+      cwd: ROOT,
+      maxBuffer: 1 << 27,
+    })
+      .toString()
+      .split("\0")
+      .filter(Boolean),
+  ),
+].sort();
+const sourceFiles = [];
+for (const path of trackedPaths) {
+  const absolute = resolve(ROOT, path);
+  if (!existsSync(absolute) || statSync(absolute).isDirectory()) continue;
+  const bytes = readFileSync(absolute);
+  if (bytes.includes(0)) continue;
+  try {
+    const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    sourceFiles.push({
+      path: slash(path),
+      language: languageFor(path),
+      lines: content === "" ? 0 : content.split("\n").length,
+      content,
+      href: `/covalence-source/${createHash("sha256").update(slash(path)).digest("hex")}.json`,
+    });
+  } catch {
+    // Binary/non-UTF-8 tracked assets remain discoverable through Git, but are
+    // intentionally absent from this plaintext source transport.
+  }
+}
 
 function walk(dir) {
   if (!existsSync(dir)) return [];
@@ -138,6 +193,10 @@ function registerActor(actor, path) {
 
 for (const item of todoItems) {
   node(`todo:${item.id}`, "todo", item.summary, item.severity, item.path, 0, 0);
+}
+
+for (const file of sourceFiles) {
+  node(`file:${file.path}`, "file", file.path.split("/").at(-1), "tracked", file.path, file.lines, 0);
 }
 
 const termDefinitions = new Map();
@@ -295,6 +354,45 @@ for (const path of walk(resolve(ROOT, "notes/projects")).filter(
   for (const file of project.files ?? []) edge(id, "touches", `file:${file}`);
 }
 
+// A deliberately conservative first source-dependency projection. Only imports
+// whose repository target can be resolved exactly become edges; unresolved
+// package imports are dependencies of the package graph, not guessed file links.
+const sourceByPath = new Map(sourceFiles.map((file) => [file.path, file]));
+const resolveSource = (from, specifier) => {
+  const base = slash(normalize(join(dirname(from), specifier)));
+  for (const candidate of [
+    base,
+    `${base}.ts`,
+    `${base}.js`,
+    `${base}.svelte`,
+    `${base}/index.ts`,
+    `${base}/index.js`,
+  ]) {
+    if (sourceByPath.has(candidate)) return candidate;
+  }
+  return null;
+};
+for (const file of sourceFiles) {
+  if (["typescript", "javascript", "svelte"].includes(file.language)) {
+    for (const match of file.content.matchAll(
+      /(?:from\s*|import\s*\()\s*["'](\.[^"']+)["']/g,
+    )) {
+      const target = resolveSource(file.path, match[1]);
+      if (target) edge(`file:${file.path}`, "imports", `file:${target}`);
+    }
+  }
+  if (file.language === "rust") {
+    for (const match of file.content.matchAll(/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([a-zA-Z0-9_]+)\s*;/gm)) {
+      const directory = dirname(file.path);
+      const target =
+        [join(directory, `${match[1]}.rs`), join(directory, match[1], "mod.rs")]
+          .map(slash)
+          .find((candidate) => sourceByPath.has(candidate)) ?? null;
+      if (target) edge(`file:${file.path}`, "imports", `file:${target}`);
+    }
+  }
+}
+
 // References are nodes too, even when their current target is missing. This
 // keeps queries total and makes broken/stale references visible in the graph.
 const knownNodes = new Set(nodes.map((item) => item.id));
@@ -359,6 +457,10 @@ db.exec(`
     note_id TEXT NOT NULL REFERENCES nodes(id), commit_hash TEXT NOT NULL,
     committed_at INTEGER NOT NULL, PRIMARY KEY (note_id, commit_hash)
   ) STRICT;
+  CREATE TABLE source_files (
+    path TEXT PRIMARY KEY, language TEXT NOT NULL,
+    lines INTEGER NOT NULL, content TEXT NOT NULL
+  ) STRICT;
 `);
 const putNode = db.prepare(`INSERT OR REPLACE INTO nodes VALUES (?,?,?,?,?,?,?)`);
 const putEdge = db.prepare(`INSERT OR REPLACE INTO edges VALUES (?,?,?,?)`);
@@ -369,6 +471,7 @@ const putSource = db.prepare(`INSERT INTO sources VALUES (?,?,?,?,?)`);
 const putCitation = db.prepare(`INSERT INTO citations VALUES (?,?,?,?,?)`);
 const putReview = db.prepare(`INSERT INTO reviews VALUES (?,?,?,?,?,?)`);
 const putRevision = db.prepare(`INSERT INTO revisions VALUES (?,?,?)`);
+const putSourceFile = db.prepare(`INSERT INTO source_files VALUES (?,?,?,?)`);
 db.transaction(() => {
   for (const item of nodes) putNode.run(...Object.values(item));
   for (const item of edges) putEdge.run(...Object.values(item));
@@ -379,6 +482,8 @@ db.transaction(() => {
   for (const item of citations) putCitation.run(...Object.values(item));
   for (const item of reviews) putReview.run(...Object.values(item));
   for (const item of revisions) putRevision.run(...Object.values(item));
+  for (const file of sourceFiles)
+    putSourceFile.run(file.path, file.language, file.lines, file.content);
 })();
 
 // SQLite is the sole normalized projection. JSON consumers receive ordered
@@ -434,6 +539,16 @@ const artifact =
     null,
     2,
   ) + "\n";
+const sourcesArtifact =
+  JSON.stringify(
+    {
+      generatedBy: "scripts/notes.mjs",
+      provider: "plaintext-git",
+      files: sourceFiles.map(({ content: _, ...file }) => file),
+    },
+    null,
+    2,
+  ) + "\n";
 if (args.includes("--check")) {
   for (const path of [JSON_PATH, MAP_STATIC_PATH]) {
     const current = existsSync(resolve(ROOT, path))
@@ -451,6 +566,20 @@ mkdirSync(dirname(resolve(ROOT, JSON_PATH)), { recursive: true });
 writeFileSync(resolve(ROOT, JSON_PATH), artifact);
 mkdirSync(dirname(resolve(ROOT, MAP_STATIC_PATH)), { recursive: true });
 writeFileSync(resolve(ROOT, MAP_STATIC_PATH), artifact);
+mkdirSync(dirname(resolve(ROOT, SOURCES_PATH)), { recursive: true });
+writeFileSync(resolve(ROOT, SOURCES_PATH), sourcesArtifact);
+mkdirSync(dirname(resolve(ROOT, SOURCES_STATIC_PATH)), { recursive: true });
+writeFileSync(resolve(ROOT, SOURCES_STATIC_PATH), sourcesArtifact);
+for (const directory of [SOURCE_SHARDS_PATH, SOURCE_SHARDS_STATIC_PATH]) {
+  rmSync(resolve(ROOT, directory), { force: true, recursive: true });
+  mkdirSync(resolve(ROOT, directory), { recursive: true });
+}
+for (const file of sourceFiles) {
+  const shard = JSON.stringify({ ...file, content: file.content }, null, 2) + "\n";
+  const name = file.href.slice(file.href.lastIndexOf("/") + 1);
+  writeFileSync(resolve(ROOT, SOURCE_SHARDS_PATH, name), shard);
+  writeFileSync(resolve(ROOT, SOURCE_SHARDS_STATIC_PATH, name), shard);
+}
 
 const show = (rows) => (rows.length ? console.table(rows) : console.log("(none)"));
 const sql = valueAfter("--sql");
@@ -525,7 +654,8 @@ if (sql) {
   const missing = db.query(`SELECT count(*) n FROM edges WHERE detail='missing'`).get().n;
   console.log(
     `notes: notes=${counts.note ?? 0}, tasks=${counts.task ?? 0}, ` +
-      `todos=${counts.todo ?? 0}, edges=${edges.length}, missing-targets=${missing}`,
+      `todos=${counts.todo ?? 0}, sources=${sourceFiles.length}, ` +
+      `edges=${edges.length}, missing-targets=${missing}`,
   );
 }
 

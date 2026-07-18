@@ -2,7 +2,7 @@
 	import { KnowledgeGraphView } from 'covalence-ui';
 
 	type Kind = 'task' | 'todo' | 'term' | 'note' | 'file';
-	type Mode = 'tasks' | 'neighborhood' | 'notes' | 'terms';
+	type Mode = 'tasks' | 'neighborhood' | 'notes' | 'terms' | 'source';
 	type MapNode = {
 		id: string;
 		kind: Kind;
@@ -33,8 +33,10 @@
 							? node.kind === 'task'
 							: mode === 'notes'
 								? node.kind === 'note'
-								: mode === 'terms'
+							: mode === 'terms'
 									? node.kind === 'term'
+									: mode === 'source'
+										? node.kind === 'file'
 								: true,
 					)
 					.map((node) => node.status)
@@ -69,12 +71,14 @@
 			for (const node of allNodes) {
 				if (node.kind === 'note' || node.kind === 'file') ids.add(node.id);
 			}
-		} else {
+		} else if (mode === 'terms') {
 			for (const node of allNodes) if (node.kind === 'term') ids.add(node.id);
 			for (const edge of allEdges) {
 				if (ids.has(edge.source)) ids.add(edge.target);
 				if (ids.has(edge.target)) ids.add(edge.source);
 			}
+		} else {
+			for (const node of allNodes) if (node.kind === 'file') ids.add(node.id);
 		}
 		return ids;
 	});
@@ -108,6 +112,7 @@
 			: [],
 	);
 	let visibleNotes = $derived(visibleNodes.filter((node) => node.kind === 'note'));
+	let visibleFiles = $derived(visibleNodes.filter((node) => node.kind === 'file'));
 	let missingCount = $derived(visibleNodes.filter((node) => node.status === 'missing').length);
 
 	function setMode(next: Mode) {
@@ -120,6 +125,8 @@
 					? (allNodes.find((node) => node.kind === 'note')?.id ?? null)
 					: next === 'terms'
 						? (allNodes.find((node) => node.kind === 'term')?.id ?? null)
+						: next === 'source'
+							? (allNodes.find((node) => node.kind === 'file')?.id ?? null)
 					: (tasks[0]?.id ?? null);
 	}
 
@@ -156,6 +163,7 @@
 			</button>
 			<button type="button" class:on={mode === 'notes'} onclick={() => setMode('notes')}>notes</button>
 			<button type="button" class:on={mode === 'terms'} onclick={() => setMode('terms')}>terms</button>
+			<button type="button" class:on={mode === 'source'} onclick={() => setMode('source')}>source</button>
 		</div>
 
 		{#if mode === 'neighborhood'}
@@ -198,9 +206,9 @@
 	</section>
 
 	<div class="workspace">
-		{#if mode === 'notes'}
-			<section class="note-list" aria-label="Notes">
-				{#each visibleNotes as note}
+		{#if mode === 'notes' || mode === 'source'}
+			<section class="note-list" aria-label={mode === 'notes' ? 'Notes' : 'Source files'}>
+				{#each mode === 'notes' ? visibleNotes : visibleFiles as note}
 					<button
 						class:selected={selectedId === note.id}
 						title={note.title}
@@ -208,7 +216,7 @@
 					>
 						<strong>{note.title}</strong>
 						<span>{note.path}</span>
-						<em>{note.status ?? 'no status'} · {note.words} words</em>
+						<em>{note.status ?? 'no status'} · {note.words} {mode === 'notes' ? 'words' : 'lines'}</em>
 					</button>
 				{/each}
 			</section>
@@ -247,6 +255,11 @@
 				{#if selected.kind === 'note' && selected.path.startsWith('notes/')}
 					<a class="open-note" href={`/notes/${selected.path.slice('notes/'.length)}`}>
 						open generated note page →
+					</a>
+				{/if}
+				{#if selected.kind === 'file' && selected.status !== 'missing'}
+					<a class="open-note" href={`/source?path=${encodeURIComponent(selected.path)}`}>
+						open source file →
 					</a>
 				{/if}
 				<h3>relationships ({selectedEdges.length})</h3>

@@ -27,3 +27,21 @@ The frontend API base URL is configurable via `VITE_COV_API_BASE` (defaults to e
 ```sh
 VITE_COV_API_BASE=https://cov.example.com bun run build:web
 ```
+
+## Covalence map
+
+`apps/covalence-map/` is a separate semi-static knowledge and source browser.
+`bun run dev:map` regenerates its data before starting the development server.
+The data flow is:
+
+```
+tracked plaintext + source-local markers
+  → target/covalence-notes.sqlite
+  → fetched JSON indexes and per-file source shards
+  → covalence-map
+```
+
+The SQLite database is the generated query layer, not authored truth, and JSON
+is only interchange. `VITE_COVALENCE_MAP_DATA_BASE` can point the same frontend
+at a future server-side JSON provider. Source content is not bundled into the
+Svelte application; `/source?path=…#L…` provides stable line links.

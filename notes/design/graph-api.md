@@ -88,6 +88,32 @@ Each format gets a data model, byte/text interpreter, import/export relation,
 round-trip laws, and property-preservation theorems. “Same graph” should be an
 explicit isomorphism or labeled isomorphism, not Rust structural equality.
 
+## Visualization stack
+
+Keep graph meaning, layout, and rendering separate:
+
+```text
+Covalence graph value
+        ↓ adapter
+renderer-neutral node/edge view
+        ├── DOT → Graphviz → SVG/PDF
+        ├── Cytoscape.js interactive view
+        └── later Sigma.js large-graph view
+```
+
+- **Graphviz/DOT** is the canonical textual and static-rendering path,
+  especially for dependency DAGs and proof diagrams. Verified DOT parsing and
+  printing remain graph-theory work, not a frontend implementation detail.
+- **Cytoscape.js** is the default interactive web renderer. It supplies a graph
+  model, selectors, gestures, layouts, and standard graph algorithms.
+- **D3** is reserved for bespoke mathematical views such as animated
+  derivations, matrices, timelines, and unusual encodings. It is a lower-level
+  visualization toolkit, not the default graph application framework.
+- **Sigma.js/Graphology** is the escalation path for very large graphs.
+
+No renderer object model is authoritative. Layout coordinates and visual state
+are overlays; verified facts refer to Covalence graph values.
+
 ## Dependency DAG
 
 ```text

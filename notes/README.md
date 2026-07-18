@@ -31,7 +31,7 @@ dependencies, membership, and code references are labelled edges.
 ```sh
 bun run notes
 bun run notes -- --stale 30
-bun run notes -- --task api-foundations
+bun run notes -- --task inductive-datatypes
 bun run notes -- --sql "select * from edges where predicate='depends-on'"
 bun run notes -- --graph
 ```
@@ -39,3 +39,14 @@ bun run notes -- --graph
 Task manifests in [`projects/`](./projects/) group existing TODOs and relevant
 notes/files. Atomic work remains source-local; the manifest adds only project
 structure.
+
+For an interactive browser, run:
+
+```sh
+bun run dev:map
+```
+
+This regenerates the knowledge-graph snapshot and opens the current `/map`
+prototype. The prototype lives in `covalence-web`; the intended application and
+shared-package boundary is recorded in
+[`vibes/plans/knowledge-browser-apps.md`](./vibes/plans/knowledge-browser-apps.md).

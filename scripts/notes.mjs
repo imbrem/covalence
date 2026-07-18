@@ -90,17 +90,29 @@ for (const path of notePaths) {
 
   for (const match of text.matchAll(/\[[^\]]*]\(([^)#]+)(?:#[^)]+)?\)/g)) {
     if (/^[a-z]+:/i.test(match[1])) continue;
-    const target = slash(normalize(join(dirname(path), decodeURIComponent(match[1]))));
-    edge(id, "links-to", `note:${target}`, noteSet.has(target) ? null : "missing");
+    let target = slash(normalize(join(dirname(path), decodeURIComponent(match[1]))));
+    if (existsSync(resolve(ROOT, target)) && statSync(resolve(ROOT, target)).isDirectory()) {
+      target = `${target.replace(/\/$/, "")}/README.md`;
+    }
+    const kind = noteSet.has(target) ? "note" : "file";
+    edge(id, "links-to", `${kind}:${target}`, existsSync(resolve(ROOT, target)) ? null : "missing");
   }
-  for (const match of text.matchAll(/\bcov:([a-z0-9][a-z0-9.-]*)\b/g)) {
+  for (const match of text.matchAll(
+    /\b(?:TODO|FIXME|SKELETON|PERF)\(cov:([a-z0-9][a-z0-9.-]*)/g,
+  )) {
     edge(id, "mentions", `todo:${match[1]}`, todoSet.has(match[1]) ? null : "missing");
   }
   for (const match of text.matchAll(
     /`((?:crates|scripts|docs|notes|apps|packages|extensions)\/[^`\s:]+)(?::(\d+))?`/g,
   )) {
     const target = match[1];
-    edge(id, "documents", `file:${target}`, existsSync(resolve(ROOT, target)) ? match[2] : "missing");
+    const pattern = /[*?{}[\]]/.test(target);
+    edge(
+      id,
+      "documents",
+      `file:${target}`,
+      pattern ? "pattern" : existsSync(resolve(ROOT, target)) ? match[2] : "missing",
+    );
   }
 }
 

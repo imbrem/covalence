@@ -1,22 +1,17 @@
-id = "api-foundations"
-title = "Stable API foundations"
+id = "logic-relations"
+title = "Logic, relations, and numeric capabilities"
 status = "active"
 depends_on = []
 todos = [
   "kernel.logic.relation-allegory",
   "kernel.nat.logic-api-migration",
-  "inductive.functor-expressions",
-  "inductive.logic-api-adapter",
-  "graph.verified-interchange",
 ]
 notes = [
   "notes/design/api-extraction-audit.md",
   "notes/design/content-logic-and-wit-boundaries.md",
-  "notes/design/graph-api.md",
 ]
 files = [
   "crates/kernel/hol/logic",
-  "crates/lang/inductive",
-  "crates/lib/graph",
+  "crates/kernel/hol/api/src/nat.rs",
 ]
 

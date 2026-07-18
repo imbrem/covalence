@@ -2,6 +2,24 @@
   "generatedBy": "scripts/notes.mjs",
   "nodes": [
     {
+      "id": "file:apps/category-wiki",
+      "kind": "file",
+      "title": "apps/category-wiki",
+      "status": "missing",
+      "path": "apps/category-wiki",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-map",
+      "kind": "file",
+      "title": "apps/covalence-map",
+      "status": "missing",
+      "path": "apps/covalence-map",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:apps/covalence-web",
       "kind": "file",
       "title": "apps/covalence-web",
@@ -34,6 +52,15 @@
       "title": "apps/covalence-web/src/routes/tcb/+page.svelte",
       "status": null,
       "path": "apps/covalence-web/src/routes/tcb/+page.svelte",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:CLAUDE.md",
+      "kind": "file",
+      "title": "CLAUDE.md",
+      "status": null,
+      "path": "CLAUDE.md",
       "words": 0,
       "updated": 0
     },
@@ -77,7 +104,7 @@
       "id": "file:crates/covalence-*",
       "kind": "file",
       "title": "crates/covalence-*",
-      "status": "missing",
+      "status": null,
       "path": "crates/covalence-*",
       "words": 0,
       "updated": 0
@@ -149,7 +176,7 @@
       "id": "file:crates/kernel/{sat,smt}",
       "kind": "file",
       "title": "crates/kernel/{sat,smt}",
-      "status": "missing",
+      "status": null,
       "path": "crates/kernel/{sat,smt}",
       "words": 0,
       "updated": 0
@@ -158,7 +185,7 @@
       "id": "file:crates/kernel/**",
       "kind": "file",
       "title": "crates/kernel/**",
-      "status": "missing",
+      "status": null,
       "path": "crates/kernel/**",
       "words": 0,
       "updated": 0
@@ -293,7 +320,7 @@
       "id": "file:crates/kernel/hol/{core,traits,api,init,eval}",
       "kind": "file",
       "title": "crates/kernel/hol/{core,traits,api,init,eval}",
-      "status": "missing",
+      "status": null,
       "path": "crates/kernel/hol/{core,traits,api,init,eval}",
       "words": 0,
       "updated": 0
@@ -502,6 +529,15 @@
       "title": "crates/kernel/hol/init/src/script/",
       "status": null,
       "path": "crates/kernel/hol/init/src/script/",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/script/README.md",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/script/README.md",
+      "status": "missing",
+      "path": "crates/kernel/hol/init/src/script/README.md",
       "words": 0,
       "updated": 0
     },
@@ -959,7 +995,7 @@
       "id": "file:crates/proof/*",
       "kind": "file",
       "title": "crates/proof/*",
-      "status": "missing",
+      "status": null,
       "path": "crates/proof/*",
       "words": 0,
       "updated": 0
@@ -1067,7 +1103,7 @@
       "id": "file:docs/deps/{core,eval,builtins}-manifest.txt",
       "kind": "file",
       "title": "docs/deps/{core,eval,builtins}-manifest.txt",
-      "status": "missing",
+      "status": null,
       "path": "docs/deps/{core,eval,builtins}-manifest.txt",
       "words": 0,
       "updated": 0
@@ -1076,7 +1112,7 @@
       "id": "file:docs/deps/*",
       "kind": "file",
       "title": "docs/deps/*",
-      "status": "missing",
+      "status": null,
       "path": "docs/deps/*",
       "words": 0,
       "updated": 0
@@ -1105,6 +1141,15 @@
       "title": "docs/deps/purge-ratchet.json",
       "status": null,
       "path": "docs/deps/purge-ratchet.json",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:docs/deps/README.md",
+      "kind": "file",
+      "title": "docs/deps/README.md",
+      "status": "missing",
+      "path": "docs/deps/README.md",
       "words": 0,
       "updated": 0
     },
@@ -1163,6 +1208,15 @@
       "updated": 0
     },
     {
+      "id": "file:flake.nix",
+      "kind": "file",
+      "title": "flake.nix",
+      "status": null,
+      "path": "flake.nix",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:notes/design/",
       "kind": "file",
       "title": "notes/design/",
@@ -1208,6 +1262,15 @@
       "updated": 0
     },
     {
+      "id": "file:notes/plans/README.md",
+      "kind": "file",
+      "title": "notes/plans/README.md",
+      "status": "missing",
+      "path": "notes/plans/README.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:notes/plans/sketch-separation.md",
       "kind": "file",
       "title": "notes/plans/sketch-separation.md",
@@ -1220,8 +1283,17 @@
       "id": "file:notes/projects/*.toml",
       "kind": "file",
       "title": "notes/projects/*.toml",
-      "status": "missing",
+      "status": null,
       "path": "notes/projects/*.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/README.md",
+      "kind": "file",
+      "title": "notes/projects/README.md",
+      "status": "missing",
+      "path": "notes/projects/README.md",
       "words": 0,
       "updated": 0
     },
@@ -1247,7 +1319,7 @@
       "id": "file:notes/vibes/design/proposals/*",
       "kind": "file",
       "title": "notes/vibes/design/proposals/*",
-      "status": "missing",
+      "status": null,
       "path": "notes/vibes/design/proposals/*",
       "words": 0,
       "updated": 0
@@ -1267,6 +1339,15 @@
       "title": "notes/vibes/k/research/proof-generation.md",
       "status": null,
       "path": "notes/vibes/k/research/proof-generation.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/k/research/README.md",
+      "kind": "file",
+      "title": "notes/vibes/k/research/README.md",
+      "status": "missing",
+      "path": "notes/vibes/k/research/README.md",
       "words": 0,
       "updated": 0
     },
@@ -1294,6 +1375,33 @@
       "title": "notes/vibes/kernel/tcb/what-is-the-tcb.md",
       "status": null,
       "path": "notes/vibes/kernel/tcb/what-is-the-tcb.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/lisp/initial-ideas/README.md",
+      "kind": "file",
+      "title": "notes/vibes/lisp/initial-ideas/README.md",
+      "status": "missing",
+      "path": "notes/vibes/lisp/initial-ideas/README.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/lisp/minimal-spec/lisp.wit",
+      "kind": "file",
+      "title": "notes/vibes/lisp/minimal-spec/lisp.wit",
+      "status": null,
+      "path": "notes/vibes/lisp/minimal-spec/lisp.wit",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/logics/A",
+      "kind": "file",
+      "title": "notes/vibes/logics/A",
+      "status": "missing",
+      "path": "notes/vibes/logics/A",
       "words": 0,
       "updated": 0
     },
@@ -1424,65 +1532,11 @@
       "updated": 0
     },
     {
-      "id": "note:CLAUDE.md",
-      "kind": "note",
-      "title": "CLAUDE.md",
+      "id": "file:SKELETONS.md",
+      "kind": "file",
+      "title": "SKELETONS.md",
       "status": "missing",
-      "path": "CLAUDE.md",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "note:crates/kernel/hol/init/src/script/",
-      "kind": "note",
-      "title": "crates/kernel/hol/init/src/script/",
-      "status": "missing",
-      "path": "crates/kernel/hol/init/src/script/",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "note:crates/lang/haskell/src/sexpr.rs",
-      "kind": "note",
-      "title": "crates/lang/haskell/src/sexpr.rs",
-      "status": "missing",
-      "path": "crates/lang/haskell/src/sexpr.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "note:docs/deps/",
-      "kind": "note",
-      "title": "docs/deps/",
-      "status": "missing",
-      "path": "docs/deps/",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "note:docs/README.md",
-      "kind": "note",
-      "title": "docs/README.md",
-      "status": "missing",
-      "path": "docs/README.md",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "note:docs/todos/todos.json",
-      "kind": "note",
-      "title": "docs/todos/todos.json",
-      "status": "missing",
-      "path": "docs/todos/todos.json",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "note:flake.nix",
-      "kind": "note",
-      "title": "flake.nix",
-      "status": "missing",
-      "path": "flake.nix",
+      "path": "SKELETONS.md",
       "words": 0,
       "updated": 0
     },
@@ -1510,7 +1564,7 @@
       "title": "Verified graph API and interchange",
       "status": "Draft",
       "path": "notes/design/graph-api.md",
-      "words": 706,
+      "words": 849,
       "updated": 1784411489
     },
     {
@@ -1538,7 +1592,7 @@
       "status": "Draft",
       "path": "notes/design/notes-governance.md",
       "words": 703,
-      "updated": 1784411489
+      "updated": 1784412443
     },
     {
       "id": "note:notes/design/README.md",
@@ -1568,15 +1622,6 @@
       "updated": 1784408739
     },
     {
-      "id": "note:notes/plans/",
-      "kind": "note",
-      "title": "notes/plans/",
-      "status": "missing",
-      "path": "notes/plans/",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "note:notes/plans/atoms.md",
       "kind": "note",
       "title": "notes/plans/atoms.md",
@@ -1604,22 +1649,13 @@
       "updated": 1783971729
     },
     {
-      "id": "note:notes/projects/",
-      "kind": "note",
-      "title": "notes/projects/",
-      "status": "missing",
-      "path": "notes/projects/",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "note:notes/README.md",
       "kind": "note",
       "title": "notes/ — the map",
       "status": null,
       "path": "notes/README.md",
-      "words": 246,
-      "updated": 1784153336
+      "words": 282,
+      "updated": 1784412443
     },
     {
       "id": "note:notes/vibes/build/buck2-experiment.md",
@@ -1640,15 +1676,6 @@
       "updated": 1783971729
     },
     {
-      "id": "note:notes/vibes/handoff/",
-      "kind": "note",
-      "title": "notes/vibes/handoff/",
-      "status": "missing",
-      "path": "notes/vibes/handoff/",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "note:notes/vibes/handoff/defs-out-of-core.md",
       "kind": "note",
       "title": "Plan: get `defs/` out of `kernel/hol/core` (the TCB)",
@@ -1664,7 +1691,7 @@
       "status": null,
       "path": "notes/vibes/handoff/README.md",
       "words": 74,
-      "updated": 1783971729
+      "updated": 1784412443
     },
     {
       "id": "note:notes/vibes/k/README.md",
@@ -1683,15 +1710,6 @@
       "path": "notes/vibes/k/reduction-demo-scope.md",
       "words": 1997,
       "updated": 1784157836
-    },
-    {
-      "id": "note:notes/vibes/k/research/",
-      "kind": "note",
-      "title": "notes/vibes/k/research/",
-      "status": "missing",
-      "path": "notes/vibes/k/research/",
-      "words": 0,
-      "updated": 0
     },
     {
       "id": "note:notes/vibes/k/research/backends-and-smt.md",
@@ -1910,15 +1928,6 @@
       "updated": 1783971729
     },
     {
-      "id": "note:notes/vibes/lisp/",
-      "kind": "note",
-      "title": "notes/vibes/lisp/",
-      "status": "missing",
-      "path": "notes/vibes/lisp/",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
       "kind": "note",
       "title": "Abstract S-expressions + abstract reductions — a reusable-API design (agent-authored)",
@@ -2036,15 +2045,6 @@
       "updated": 1784232526
     },
     {
-      "id": "note:notes/vibes/lisp/initial-ideas/",
-      "kind": "note",
-      "title": "notes/vibes/lisp/initial-ideas/",
-      "status": "missing",
-      "path": "notes/vibes/lisp/initial-ideas/",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
       "kind": "note",
       "title": "ACL2 and Lisp as object logics",
@@ -2144,15 +2144,6 @@
       "updated": 1784050700
     },
     {
-      "id": "note:notes/vibes/lisp/minimal-spec/",
-      "kind": "note",
-      "title": "notes/vibes/lisp/minimal-spec/",
-      "status": "missing",
-      "path": "notes/vibes/lisp/minimal-spec/",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
       "kind": "note",
       "title": "Minimal Lisp → metacircular interpreter in the browser: step-by-step plan",
@@ -2160,15 +2151,6 @@
       "path": "notes/vibes/lisp/minimal-spec/implementation-plan.md",
       "words": 1705,
       "updated": 1783974945
-    },
-    {
-      "id": "note:notes/vibes/lisp/minimal-spec/lisp.wit",
-      "kind": "note",
-      "title": "notes/vibes/lisp/minimal-spec/lisp.wit",
-      "status": "missing",
-      "path": "notes/vibes/lisp/minimal-spec/lisp.wit",
-      "words": 0,
-      "updated": 0
     },
     {
       "id": "note:notes/vibes/lisp/minimal-spec/README.md",
@@ -2214,15 +2196,6 @@
       "path": "notes/vibes/lisp/verification-via-smt.md",
       "words": 812,
       "updated": 1784056173
-    },
-    {
-      "id": "note:notes/vibes/logics/A",
-      "kind": "note",
-      "title": "notes/vibes/logics/A",
-      "status": "missing",
-      "path": "notes/vibes/logics/A",
-      "words": 0,
-      "updated": 0
     },
     {
       "id": "note:notes/vibes/logics/bitvector-verification-roadmap.md",
@@ -2414,6 +2387,15 @@
       "updated": 1784408739
     },
     {
+      "id": "note:notes/vibes/plans/knowledge-browser-apps.md",
+      "kind": "note",
+      "title": "Knowledge-browser applications",
+      "status": null,
+      "path": "notes/vibes/plans/knowledge-browser-apps.md",
+      "words": 415,
+      "updated": 1784412913
+    },
+    {
       "id": "note:notes/vibes/plans/next-stage-breakdown.md",
       "kind": "note",
       "title": "Next-stage breakdown (companion to the plan)",
@@ -2466,15 +2448,6 @@
       "path": "notes/vibes/README.md",
       "words": 748,
       "updated": 1784408739
-    },
-    {
-      "id": "note:notes/vibes/sketches/",
-      "kind": "note",
-      "title": "notes/vibes/sketches/",
-      "status": "missing",
-      "path": "notes/vibes/sketches/",
-      "words": 0,
-      "updated": 0
     },
     {
       "id": "note:notes/vibes/sketches/acset-datalog-datafun.md",
@@ -2621,38 +2594,38 @@
       "updated": 1783971729
     },
     {
-      "id": "note:scripts/build.mjs",
-      "kind": "note",
-      "title": "scripts/build.mjs",
-      "status": "missing",
-      "path": "scripts/build.mjs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "note:SKELETONS.md",
-      "kind": "note",
-      "title": "SKELETONS.md",
-      "status": "missing",
-      "path": "SKELETONS.md",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "task:api-foundations",
-      "kind": "task",
-      "title": "Stable API foundations",
-      "status": "active",
-      "path": "notes/projects/api-foundations.toml",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "task:data-interpretation",
       "kind": "task",
       "title": "Verified data interpretation",
       "status": "active",
       "path": "notes/projects/data-interpretation.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:graph-theory",
+      "kind": "task",
+      "title": "Graph theory and verified interchange",
+      "status": "active",
+      "path": "notes/projects/graph-theory.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:inductive-datatypes",
+      "kind": "task",
+      "title": "Inductive and coinductive datatypes",
+      "status": "active",
+      "path": "notes/projects/inductive-datatypes.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:logic-relations",
+      "kind": "task",
+      "title": "Logic, relations, and numeric capabilities",
+      "status": "active",
+      "path": "notes/projects/logic-relations.toml",
       "words": 0,
       "updated": 0
     },
@@ -2716,15 +2689,6 @@
       "title": "Replace Array/Object parameters with composed list and member polynomial functors once covalence-inductive supports functor composition.",
       "status": "major",
       "path": "crates/lang/json-api/src/lib.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:kernel",
-      "kind": "todo",
-      "title": "kernel",
-      "status": "missing",
-      "path": "kernel",
       "words": 0,
       "updated": 0
     },
@@ -4646,15 +4610,6 @@
       "updated": 0
     },
     {
-      "id": "todo:kv",
-      "kind": "todo",
-      "title": "kv",
-      "status": "missing",
-      "path": "kv",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:lang.forsp.forsp-web-export-wiring-is-unbuilt",
       "kind": "todo",
       "title": "/forsp web-export wiring is unbuilt: forspreduce returns a",
@@ -5222,15 +5177,6 @@
       "updated": 0
     },
     {
-      "id": "todo:lisp",
-      "kind": "todo",
-      "title": "lisp",
-      "status": "missing",
-      "path": "lisp",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:proof.alethe.content-addressed-proof-cache",
       "kind": "todo",
       "title": "Content-addressed proof cache: discharge::ProofCache is an in-memory /",
@@ -5456,15 +5402,6 @@
       "updated": 0
     },
     {
-      "id": "todo:store",
-      "kind": "todo",
-      "title": "store",
-      "status": "missing",
-      "path": "store",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:vscode.macos-native-server",
       "kind": "todo",
       "title": "Enable the native macOS server path once tested.",
@@ -5510,18 +5447,6 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/observers/backend-decoupling.md",
       "detail": null
-    },
-    {
-      "source": "note:notes/design/content-logic-and-wit-boundaries.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/design/content-logic-and-wit-boundaries.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
     },
     {
       "source": "note:notes/design/graph-api.md",
@@ -5670,13 +5595,19 @@
     {
       "source": "note:notes/design/README.md",
       "predicate": "links-to",
-      "target": "note:CLAUDE.md",
-      "detail": "missing"
+      "target": "file:CLAUDE.md",
+      "detail": null
     },
     {
       "source": "note:notes/design/README.md",
       "predicate": "links-to",
-      "target": "note:docs/README.md",
+      "target": "file:docs/README.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/design/README.md",
+      "predicate": "links-to",
+      "target": "file:notes/plans/README.md",
       "detail": "missing"
     },
     {
@@ -5720,12 +5651,6 @@
       "predicate": "links-to",
       "target": "note:notes/design/TEMPLATE.md",
       "detail": null
-    },
-    {
-      "source": "note:notes/design/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/plans/",
-      "detail": "missing"
     },
     {
       "source": "note:notes/design/README.md",
@@ -5844,7 +5769,19 @@
     {
       "source": "note:notes/README.md",
       "predicate": "links-to",
-      "target": "note:docs/README.md",
+      "target": "file:docs/README.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/README.md",
+      "predicate": "links-to",
+      "target": "file:notes/plans/README.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/README.md",
+      "predicate": "links-to",
+      "target": "file:notes/projects/README.md",
       "detail": "missing"
     },
     {
@@ -5856,12 +5793,6 @@
     {
       "source": "note:notes/README.md",
       "predicate": "links-to",
-      "target": "note:notes/plans/",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/README.md",
-      "predicate": "links-to",
       "target": "note:notes/plans/next-stage.md",
       "detail": null
     },
@@ -5874,8 +5805,8 @@
     {
       "source": "note:notes/README.md",
       "predicate": "links-to",
-      "target": "note:notes/projects/",
-      "detail": "missing"
+      "target": "note:notes/vibes/plans/knowledge-browser-apps.md",
+      "detail": null
     },
     {
       "source": "note:notes/README.md",
@@ -5904,14 +5835,14 @@
     {
       "source": "note:notes/vibes/build/buck2-experiment.md",
       "predicate": "links-to",
-      "target": "note:flake.nix",
-      "detail": "missing"
+      "target": "file:flake.nix",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/build/buck2-experiment.md",
       "predicate": "links-to",
-      "target": "note:scripts/build.mjs",
-      "detail": "missing"
+      "target": "file:scripts/build.mjs",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/build/known-issues.md",
@@ -5959,7 +5890,7 @@
       "source": "note:notes/vibes/handoff/README.md",
       "predicate": "documents",
       "target": "file:notes/projects/*.toml",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/handoff/README.md",
@@ -6060,20 +5991,20 @@
     {
       "source": "note:notes/vibes/k/reduction-demo-scope.md",
       "predicate": "links-to",
+      "target": "file:notes/vibes/k/research/README.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/k/reduction-demo-scope.md",
+      "predicate": "links-to",
+      "target": "file:notes/vibes/k/research/README.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/k/reduction-demo-scope.md",
+      "predicate": "links-to",
       "target": "note:notes/design/k-frontend.md",
       "detail": null
-    },
-    {
-      "source": "note:notes/vibes/k/reduction-demo-scope.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/k/research/",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/k/reduction-demo-scope.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/k/research/",
-      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/k/reduction-demo-scope.md",
@@ -6151,7 +6082,7 @@
       "source": "note:notes/vibes/kernel/base-abstraction.md",
       "predicate": "documents",
       "target": "file:docs/deps/{core,eval,builtins}-manifest.txt",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/kernel/base-abstraction.md",
@@ -6235,7 +6166,7 @@
       "source": "note:notes/vibes/kernel/base-api-surface.md",
       "predicate": "documents",
       "target": "file:docs/deps/{core,eval,builtins}-manifest.txt",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/kernel/base-api-surface.md",
@@ -6685,7 +6616,7 @@
       "source": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
       "predicate": "documents",
       "target": "file:docs/deps/{core,eval,builtins}-manifest.txt",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
@@ -6889,7 +6820,7 @@
       "source": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
       "predicate": "documents",
       "target": "file:docs/deps/*",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
@@ -6931,7 +6862,7 @@
       "source": "note:notes/vibes/lisp/acl2-full-plan.md",
       "predicate": "documents",
       "target": "file:crates/kernel/**",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/lisp/acl2-full-plan.md",
@@ -7150,42 +7081,6 @@
       "detail": null
     },
     {
-      "source": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
-    },
-    {
       "source": "note:notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
       "predicate": "documents",
       "target": "file:crates/lib/sexp",
@@ -7208,12 +7103,6 @@
       "predicate": "documents",
       "target": "file:notes/plans/sketch-separation.md",
       "detail": null
-    },
-    {
-      "source": "note:notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
@@ -7276,12 +7165,6 @@
       "detail": null
     },
     {
-      "source": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
-      "predicate": "mentions",
-      "target": "todo:kv",
-      "detail": "missing"
-    },
-    {
       "source": "note:notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
       "predicate": "documents",
       "target": "file:crates/lang/grammar",
@@ -7332,7 +7215,7 @@
     {
       "source": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/initial-ideas/",
+      "target": "file:notes/vibes/lisp/initial-ideas/README.md",
       "detail": "missing"
     },
     {
@@ -7362,8 +7245,20 @@
     {
       "source": "note:notes/vibes/lisp/minimal-spec/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/initial-ideas/",
+      "target": "file:notes/vibes/lisp/initial-ideas/README.md",
       "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/lisp/minimal-spec/README.md",
+      "predicate": "links-to",
+      "target": "file:notes/vibes/lisp/minimal-spec/lisp.wit",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/minimal-spec/README.md",
+      "predicate": "links-to",
+      "target": "file:notes/vibes/lisp/minimal-spec/lisp.wit",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/lisp/minimal-spec/README.md",
@@ -7392,38 +7287,20 @@
     {
       "source": "note:notes/vibes/lisp/minimal-spec/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/minimal-spec/lisp.wit",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/minimal-spec/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/minimal-spec/lisp.wit",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/minimal-spec/README.md",
-      "predicate": "links-to",
       "target": "note:notes/vibes/lisp/STATUS.md",
       "detail": null
     },
     {
-      "source": "note:notes/vibes/lisp/minimal-spec/README.md",
-      "predicate": "mentions",
-      "target": "todo:lisp",
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:notes/vibes/lisp/initial-ideas/README.md",
       "detail": "missing"
     },
     {
-      "source": "note:notes/vibes/lisp/minimal-spec/README.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/minimal-spec/README.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
+      "target": "file:notes/vibes/lisp/minimal-spec/lisp.wit",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/lisp/README.md",
@@ -7494,12 +7371,6 @@
     {
       "source": "note:notes/vibes/lisp/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/initial-ideas/",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
       "target": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
       "detail": null
     },
@@ -7512,20 +7383,14 @@
     {
       "source": "note:notes/vibes/lisp/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/minimal-spec/",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/lisp/README.md",
-      "predicate": "links-to",
       "target": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
       "detail": null
     },
     {
       "source": "note:notes/vibes/lisp/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/minimal-spec/lisp.wit",
-      "detail": "missing"
+      "target": "note:notes/vibes/lisp/minimal-spec/README.md",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/lisp/README.md",
@@ -7818,6 +7683,24 @@
     {
       "source": "note:notes/vibes/logics/metatheory.md",
       "predicate": "links-to",
+      "target": "file:notes/vibes/logics/A",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/logics/metatheory.md",
+      "predicate": "links-to",
+      "target": "file:notes/vibes/logics/A",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/logics/metatheory.md",
+      "predicate": "links-to",
+      "target": "file:notes/vibes/logics/A",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/logics/metatheory.md",
+      "predicate": "links-to",
       "target": "note:notes/vibes/kernel/kernel-design.md",
       "detail": null
     },
@@ -7826,24 +7709,6 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/kernel/kernel-design.md",
       "detail": null
-    },
-    {
-      "source": "note:notes/vibes/logics/metatheory.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/logics/A",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/logics/metatheory.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/logics/A",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/logics/metatheory.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/logics/A",
-      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/logics/metatheory.md",
@@ -7963,13 +7828,13 @@
       "source": "note:notes/vibes/logics/proof-format.md",
       "predicate": "documents",
       "target": "file:crates/proof/*",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/logics/proof-format.md",
       "predicate": "links-to",
-      "target": "note:crates/lang/haskell/src/sexpr.rs",
-      "detail": "missing"
+      "target": "file:crates/lang/haskell/src/sexpr.rs",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/logics/proof-format.md",
@@ -7999,7 +7864,7 @@
       "source": "note:notes/vibes/logics/smt-import-architecture.md",
       "predicate": "documents",
       "target": "file:crates/kernel/{sat,smt}",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/logics/spectec-fragment-api.md",
@@ -8076,8 +7941,8 @@
     {
       "source": "note:notes/vibes/logics/theories-models-and-logics.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/sketches/",
-      "detail": "missing"
+      "target": "note:notes/vibes/sketches/README.md",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/logics/theories-models-and-logics.md",
@@ -8302,6 +8167,18 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/plans/knowledge-browser-apps.md",
+      "predicate": "documents",
+      "target": "file:apps/category-wiki",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/plans/knowledge-browser-apps.md",
+      "predicate": "documents",
+      "target": "file:apps/covalence-map",
+      "detail": "missing"
+    },
+    {
       "source": "note:notes/vibes/plans/next-stage-breakdown.md",
       "predicate": "documents",
       "target": "file:crates/<group>/",
@@ -8365,7 +8242,7 @@
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:docs/deps/*",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
@@ -8431,7 +8308,7 @@
       "source": "note:notes/vibes/plans/refactor-plan.md",
       "predicate": "documents",
       "target": "file:crates/covalence-*",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/plans/refactor-plan.md",
@@ -8449,12 +8326,12 @@
       "source": "note:notes/vibes/plans/refactor-plan.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/{core,traits,api,init,eval}",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/plans/refactor-plan.md",
       "predicate": "links-to",
-      "target": "note:docs/deps/",
+      "target": "file:docs/deps/README.md",
       "detail": "missing"
     },
     {
@@ -8526,6 +8403,12 @@
     {
       "source": "note:notes/vibes/README.md",
       "predicate": "links-to",
+      "target": "file:notes/vibes/lisp/initial-ideas/README.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/README.md",
+      "predicate": "links-to",
       "target": "note:notes/design/k-frontend.md",
       "detail": null
     },
@@ -8550,8 +8433,8 @@
     {
       "source": "note:notes/vibes/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/handoff/",
-      "detail": "missing"
+      "target": "note:notes/vibes/handoff/README.md",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/README.md",
@@ -8670,14 +8553,8 @@
     {
       "source": "note:notes/vibes/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/initial-ideas/",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/README.md",
-      "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/minimal-spec/",
-      "detail": "missing"
+      "target": "note:notes/vibes/lisp/minimal-spec/README.md",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/README.md",
@@ -8796,8 +8673,8 @@
     {
       "source": "note:notes/vibes/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/sketches/",
-      "detail": "missing"
+      "target": "note:notes/vibes/sketches/README.md",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/README.md",
@@ -8904,8 +8781,8 @@
     {
       "source": "note:notes/vibes/sketches/README.md",
       "predicate": "links-to",
-      "target": "note:notes/vibes/lisp/",
-      "detail": "missing"
+      "target": "note:notes/vibes/lisp/README.md",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/sketches/README.md",
@@ -9072,6 +8949,12 @@
     {
       "source": "note:notes/vibes/surface/surface-compiler.md",
       "predicate": "links-to",
+      "target": "file:SKELETONS.md",
+      "detail": "missing"
+    },
+    {
+      "source": "note:notes/vibes/surface/surface-compiler.md",
+      "predicate": "links-to",
       "target": "note:notes/vibes/kernel/kernel-design.md",
       "detail": null
     },
@@ -9172,12 +9055,6 @@
       "detail": null
     },
     {
-      "source": "note:notes/vibes/surface/surface-compiler.md",
-      "predicate": "links-to",
-      "target": "note:SKELETONS.md",
-      "detail": "missing"
-    },
-    {
       "source": "note:notes/vibes/surface/surface-syntax.md",
       "predicate": "documents",
       "target": "file:crates/kernel/hol/init/src/script/",
@@ -9186,7 +9063,7 @@
     {
       "source": "note:notes/vibes/surface/surface-syntax.md",
       "predicate": "links-to",
-      "target": "note:crates/kernel/hol/init/src/script/",
+      "target": "file:crates/kernel/hol/init/src/script/README.md",
       "detail": "missing"
     },
     {
@@ -9283,6 +9160,12 @@
       "source": "note:notes/vibes/vision/development-vision.md",
       "predicate": "documents",
       "target": "file:crates/lib/graph",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/vision/development-vision.md",
+      "predicate": "links-to",
+      "target": "file:scripts/build.mjs",
       "detail": null
     },
     {
@@ -9464,12 +9347,6 @@
       "predicate": "links-to",
       "target": "note:notes/vibes/web/web-kernel.md",
       "detail": null
-    },
-    {
-      "source": "note:notes/vibes/vision/development-vision.md",
-      "predicate": "links-to",
-      "target": "note:scripts/build.mjs",
-      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/vision/k-framework-vision.md",
@@ -9714,50 +9591,50 @@
     {
       "source": "note:notes/vibes/vision/project-map.md",
       "predicate": "links-to",
-      "target": "note:docs/todos/todos.json",
-      "detail": "missing"
+      "target": "file:docs/todos/todos.json",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
       "predicate": "links-to",
-      "target": "note:docs/todos/todos.json",
-      "detail": "missing"
+      "target": "file:docs/todos/todos.json",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
       "predicate": "links-to",
-      "target": "note:docs/todos/todos.json",
-      "detail": "missing"
+      "target": "file:docs/todos/todos.json",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
       "predicate": "links-to",
-      "target": "note:docs/todos/todos.json",
-      "detail": "missing"
+      "target": "file:docs/todos/todos.json",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
       "predicate": "links-to",
-      "target": "note:docs/todos/todos.json",
-      "detail": "missing"
+      "target": "file:docs/todos/todos.json",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
       "predicate": "links-to",
-      "target": "note:docs/todos/todos.json",
-      "detail": "missing"
+      "target": "file:docs/todos/todos.json",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
       "predicate": "links-to",
-      "target": "note:docs/todos/todos.json",
-      "detail": "missing"
+      "target": "file:docs/todos/todos.json",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
       "predicate": "links-to",
-      "target": "note:docs/todos/todos.json",
-      "detail": "missing"
+      "target": "file:docs/todos/todos.json",
+      "detail": null
     },
     {
       "source": "note:notes/vibes/vision/project-map.md",
@@ -9943,7 +9820,7 @@
       "source": "note:notes/vibes/vision/roadmap.md",
       "predicate": "documents",
       "target": "file:notes/vibes/design/proposals/*",
-      "detail": "missing"
+      "detail": "pattern"
     },
     {
       "source": "note:notes/vibes/vision/roadmap.md",
@@ -10054,18 +9931,6 @@
       "detail": null
     },
     {
-      "source": "note:notes/vibes/web/cov-project.md",
-      "predicate": "mentions",
-      "target": "todo:kernel",
-      "detail": "missing"
-    },
-    {
-      "source": "note:notes/vibes/web/cov-project.md",
-      "predicate": "mentions",
-      "target": "todo:store",
-      "detail": "missing"
-    },
-    {
       "source": "note:notes/vibes/web/wasm3-rust.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/web/web-kernel.md",
@@ -10108,72 +9973,6 @@
       "detail": null
     },
     {
-      "source": "task:api-foundations",
-      "predicate": "contains",
-      "target": "todo:graph.verified-interchange",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "contains",
-      "target": "todo:inductive.functor-expressions",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "contains",
-      "target": "todo:inductive.logic-api-adapter",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "contains",
-      "target": "todo:kernel.logic.relation-allegory",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "contains",
-      "target": "todo:kernel.nat.logic-api-migration",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "described-by",
-      "target": "note:notes/design/api-extraction-audit.md",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "described-by",
-      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "described-by",
-      "target": "note:notes/design/graph-api.md",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "touches",
-      "target": "file:crates/kernel/hol/logic",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "touches",
-      "target": "file:crates/lang/inductive",
-      "detail": null
-    },
-    {
-      "source": "task:api-foundations",
-      "predicate": "touches",
-      "target": "file:crates/lib/graph",
-      "detail": null
-    },
-    {
       "source": "task:data-interpretation",
       "predicate": "contains",
       "target": "todo:json.polynomial-composition",
@@ -10200,7 +9999,13 @@
     {
       "source": "task:data-interpretation",
       "predicate": "depends-on",
-      "target": "task:api-foundations",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:data-interpretation",
+      "predicate": "depends-on",
+      "target": "task:logic-relations",
       "detail": null
     },
     {
@@ -10231,6 +10036,108 @@
       "source": "task:data-interpretation",
       "predicate": "touches",
       "target": "file:crates/lang/sexpr-api",
+      "detail": null
+    },
+    {
+      "source": "task:graph-theory",
+      "predicate": "contains",
+      "target": "todo:graph.verified-interchange",
+      "detail": null
+    },
+    {
+      "source": "task:graph-theory",
+      "predicate": "depends-on",
+      "target": "task:logic-relations",
+      "detail": null
+    },
+    {
+      "source": "task:graph-theory",
+      "predicate": "described-by",
+      "target": "note:notes/design/graph-api.md",
+      "detail": null
+    },
+    {
+      "source": "task:graph-theory",
+      "predicate": "touches",
+      "target": "file:crates/lib/graph",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-datatypes",
+      "predicate": "contains",
+      "target": "todo:inductive.coinductive-conformance",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-datatypes",
+      "predicate": "contains",
+      "target": "todo:inductive.functor-expressions",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-datatypes",
+      "predicate": "contains",
+      "target": "todo:inductive.legacy-fixpoint-adapter",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-datatypes",
+      "predicate": "contains",
+      "target": "todo:inductive.logic-api-adapter",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-datatypes",
+      "predicate": "depends-on",
+      "target": "task:logic-relations",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-datatypes",
+      "predicate": "described-by",
+      "target": "note:notes/design/api-extraction-audit.md",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-datatypes",
+      "predicate": "touches",
+      "target": "file:crates/lang/inductive",
+      "detail": null
+    },
+    {
+      "source": "task:logic-relations",
+      "predicate": "contains",
+      "target": "todo:kernel.logic.relation-allegory",
+      "detail": null
+    },
+    {
+      "source": "task:logic-relations",
+      "predicate": "contains",
+      "target": "todo:kernel.nat.logic-api-migration",
+      "detail": null
+    },
+    {
+      "source": "task:logic-relations",
+      "predicate": "described-by",
+      "target": "note:notes/design/api-extraction-audit.md",
+      "detail": null
+    },
+    {
+      "source": "task:logic-relations",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:logic-relations",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/api/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "task:logic-relations",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/logic",
       "detail": null
     }
   ]

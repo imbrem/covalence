@@ -1,7 +1,7 @@
 id = "data-interpretation"
 title = "Verified data interpretation"
 status = "active"
-depends_on = ["api-foundations"]
+depends_on = ["inductive-datatypes", "logic-relations"]
 todos = [
   "sexpr.proof-law-bundle",
   "sexpr.surface-adapter",
@@ -15,4 +15,3 @@ files = [
   "crates/lang/parsing",
   "crates/lang/sexpr-api",
 ]
-

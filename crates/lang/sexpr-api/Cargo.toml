@@ -1,0 +1,11 @@
+[package]
+name = "covalence-sexpr-api"
+version = "0.0.0"
+edition = "2024"
+
+description = "Inductive, backend-neutral S-expression API"
+license.workspace = true
+
+[dependencies]
+covalence-inductive = { path = "../inductive" }
+

@@ -1,0 +1,10 @@
+[package]
+name = "covalence-parsing-api"
+version = "0.0.0"
+edition = "2024"
+
+description = "Backend-neutral interpretation and parsing relation vocabulary"
+license.workspace = true
+
+[dependencies]
+

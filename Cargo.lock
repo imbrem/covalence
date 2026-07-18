@@ -1360,6 +1360,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-parsing-api"
+version = "0.0.0"
+
+[[package]]
 name = "covalence-proptest"
 version = "0.0.0"
 dependencies = [
@@ -1517,6 +1521,13 @@ dependencies = [
  "pretty",
  "smol_str",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-sexpr-api"
+version = "0.0.0"
+dependencies = [
+ "covalence-inductive",
 ]
 
 [[package]]

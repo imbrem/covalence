@@ -2722,7 +2722,7 @@
     {
       "id": "todo:graph.networkx-formats",
       "kind": "todo",
-      "title": "Add the remaining NetworkX text interchange formats and escaping policies above the adjacency-list seam.",
+      "title": "Add weighted/multiline adjacency formats and escaping policies above the adjacency- and edge-list seams.",
       "status": "major",
       "path": "crates/lib/graph/src/lib.rs",
       "words": 0,

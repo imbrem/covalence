@@ -18,11 +18,25 @@
 		target: string;
 		detail: string | null;
 	};
+	type NoteMetadata = {
+		noteId: string;
+		stableId: string;
+		review: string;
+		format: string;
+	};
 
 	let { data } = $props();
 	let allNodes = $state<MapNode[]>(data.map.nodes);
 	let allEdges = $state<MapEdge[]>(data.map.edges);
 	let byId = $derived(new Map(allNodes.map((node) => [node.id, node])));
+	let noteStableIds = $derived(
+		new Map(
+			(data.map.noteMetadata as NoteMetadata[]).map((metadata) => [
+				metadata.noteId,
+				metadata.stableId,
+			]),
+		),
+	);
 	let tasks = $derived(allNodes.filter((node) => node.kind === 'task'));
 	let statuses = $derived(
 		[
@@ -46,12 +60,20 @@
 	);
 	const kinds: Kind[] = ['task', 'todo', 'term', 'note', 'file'];
 
-	let mode = $state<Mode>('tasks');
+	let mode = $state<Mode>(
+		data.view === 'notes'
+			? 'notes'
+			: data.view === 'source'
+				? 'source'
+				: data.view === 'terms'
+					? 'terms'
+					: 'tasks',
+	);
 	let taskId = $state(allNodes.find((node) => node.kind === 'task')?.id ?? '');
 	let query = $state('');
 	let enabledKinds = $state<Kind[]>([...kinds]);
 	let enabledStatuses = $state<string[]>([]);
-	let selectedId = $state<string | null>(taskId || null);
+	let selectedId = $state<string | null>(null);
 
 	function toggle<T>(values: T[], value: T): T[] {
 		return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
@@ -139,31 +161,18 @@
 <svelte:head><title>Covalence map</title></svelte:head>
 
 <main>
-	<header>
-		<div>
-			<h1>Covalence map</h1>
-			<p>
-				Tasks, open work, notes, and code references loaded from
-				<code>covalence-map.json</code>. Generate the local snapshot with
-				<code>bun run notes</code>, or configure another data origin.
-			</p>
-		</div>
-		<div class="totals">
-			<strong>{visibleNodes.length}</strong> nodes ·
-			<strong>{visibleEdges.length}</strong> edges ·
-			<strong class:warning={missingCount > 0}>{missingCount}</strong> missing targets
-		</div>
-	</header>
-
-	<section class="toolbar">
+	<details class="toolbar" open={mode === 'notes' || mode === 'source'}>
+		<summary>
+			<span>{mode === 'tasks' ? 'task DAG' : mode}</span>
+			<em>{visibleNodes.length} nodes · {visibleEdges.length} edges</em>
+		</summary>
+		<div class="controls">
 		<div class="tabs" aria-label="Map view">
 			<button type="button" class:on={mode === 'tasks'} onclick={() => setMode('tasks')}>task DAG</button>
 			<button type="button" class:on={mode === 'neighborhood'} onclick={() => setMode('neighborhood')}>
 				task neighborhood
 			</button>
-			<button type="button" class:on={mode === 'notes'} onclick={() => setMode('notes')}>notes</button>
 			<button type="button" class:on={mode === 'terms'} onclick={() => setMode('terms')}>terms</button>
-			<button type="button" class:on={mode === 'source'} onclick={() => setMode('source')}>source</button>
 		</div>
 
 		{#if mode === 'neighborhood'}
@@ -203,28 +212,36 @@
 				>{status}</button>
 			{/each}
 		</div>
-	</section>
+		<div class="totals">
+			<strong class:warning={missingCount > 0}>{missingCount}</strong> missing targets
+		</div>
+		</div>
+	</details>
 
 	<div class="workspace">
 		{#if mode === 'notes' || mode === 'source'}
 			<section class="note-list" aria-label={mode === 'notes' ? 'Notes' : 'Source files'}>
 				{#each mode === 'notes' ? visibleNotes : visibleFiles as note}
-					<button
-						class:selected={selectedId === note.id}
+					<a
 						title={note.title}
-						onclick={() => (selectedId = note.id)}
+						href={mode === 'notes'
+							? `/notes/${note.path.slice('notes/'.length)}`
+							: `/source?path=${encodeURIComponent(note.path)}`}
 					>
-						<strong>{note.title}</strong>
+						<strong>
+							{#if mode === 'notes'}<b>{noteStableIds.get(note.id)}</b>{/if}
+							{note.title}
+						</strong>
 						<span>{note.path}</span>
 						<em>{note.status ?? 'no status'} · {note.words} {mode === 'notes' ? 'words' : 'lines'}</em>
-					</button>
+					</a>
 				{/each}
 			</section>
 		{:else}
 			<KnowledgeGraphView
 			nodes={visibleNodes.map((node) => ({
 				id: node.id,
-				label: node.title,
+				label: node.kind === 'note' ? (noteStableIds.get(node.id) ?? node.title) : node.title,
 				kind: node.kind,
 				status: node.status,
 			}))}
@@ -240,8 +257,9 @@
 			/>
 		{/if}
 
+		{#if selected}
 		<aside>
-			{#if selected}
+				<button class="close" type="button" aria-label="Close inspector" onclick={() => (selectedId = null)}>×</button>
 				<span class="kind">{selected.kind}</span>
 				<h2>{selected.title}</h2>
 				<dl>
@@ -275,47 +293,52 @@
 						</li>
 					{/each}
 				</ul>
-			{:else}
-				<h2>Inspect the map</h2>
-				<p>Select a node to see its status, source path, and all relationships.</p>
-				<p><span class="missing-dot"></span> A red outline marks an unresolved note or code target.</p>
-			{/if}
 		</aside>
+		{/if}
 	</div>
 </main>
 
 <style>
 	main {
 		width: 100%;
-		height: calc(100vh - 2.35rem);
+		height: 100vh;
 		margin: 0;
-		padding: 0.85rem 1rem 1rem;
-		display: flex;
-		flex-direction: column;
+		padding: 0;
 		overflow: hidden;
 		font-family: var(--font-mono);
 		color: var(--fg);
 	}
-	header {
-		display: flex;
-		justify-content: space-between;
-		gap: 2rem;
-		align-items: end;
-		margin-bottom: 1rem;
-	}
-	h1 { margin: 0; font-size: 1.5rem; }
-	header p { max-width: 52rem; color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
 	.totals { white-space: nowrap; color: var(--muted); font-size: 0.8rem; }
 	.toolbar {
+		position: fixed;
+		z-index: 12;
+		top: 3.25rem;
+		left: 1rem;
+		width: min(42rem, calc(100vw - 2rem));
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--surface) 90%, transparent);
+		box-shadow: 0 12px 38px rgb(0 0 0 / 35%);
+		backdrop-filter: blur(14px);
+	}
+	summary {
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.65rem 0.8rem;
+		cursor: pointer;
+		list-style: none;
+		font-size: 0.75rem;
+	}
+	summary::-webkit-details-marker { display: none; }
+	summary span { color: var(--fg); }
+	summary em { color: var(--muted); font-style: normal; }
+	.controls {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.6rem 1rem;
-		padding: 0.75rem;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--surface);
-		margin-bottom: 0.75rem;
+		padding: 0 0.8rem 0.8rem;
 	}
 	button, input, select {
 		font: inherit;
@@ -350,36 +373,42 @@
 	.filters > span { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
 	.chip em { opacity: 0.65; font-style: normal; }
 	.workspace {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) 20rem;
-		gap: 0.75rem;
-		flex: 1;
-		min-height: 0;
+		position: absolute;
+		inset: 0;
 	}
 	.note-list {
 		height: 100%;
 		min-height: 0;
 		overflow: auto;
-		padding: 0.5rem;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: #0f172a;
+		padding: 7.5rem 1rem 2rem;
+		background: var(--bg);
 	}
-	.note-list button {
+	.note-list > a {
 		display: grid;
 		width: 100%;
+		max-width: 72rem;
 		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 0.25rem 1rem;
-		margin-bottom: 0.35rem;
-		padding: 0.65rem;
+		margin: 0 auto 0.35rem;
+		padding: 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		color: inherit;
+		background: var(--surface);
 		text-align: left;
+		text-decoration: none;
 	}
-	.note-list button.selected { border-color: var(--accent); }
+	.note-list > a:hover { border-color: var(--accent); }
 	.note-list strong {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		color: var(--fg);
+	}
+	.note-list b {
+		margin-right: 0.6rem;
+		color: var(--accent);
+		font-weight: 600;
 	}
 	.note-list span {
 		grid-row: 2;
@@ -397,13 +426,25 @@
 		font-size: 0.7rem;
 	}
 	aside {
-		height: 100%;
-		min-height: 0;
+		position: fixed;
+		z-index: 11;
+		top: 3.25rem;
+		right: 1rem;
+		bottom: 1rem;
+		width: min(23rem, calc(100vw - 2rem));
 		overflow: auto;
 		padding: 1rem;
 		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--surface);
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--surface) 92%, transparent);
+		box-shadow: 0 12px 38px rgb(0 0 0 / 35%);
+		backdrop-filter: blur(14px);
+	}
+	.close {
+		float: right;
+		border: 0;
+		font-size: 1.15rem;
+		line-height: 1;
 	}
 	aside h2 { margin: 0.25rem 0 1rem; font-size: 1rem; overflow-wrap: anywhere; }
 	aside h3 { margin-top: 1.25rem; font-size: 0.8rem; color: var(--muted); }
@@ -419,11 +460,8 @@
 	.warning { color: #ef4444; }
 	.missing-dot { display: inline-block; width: 0.7rem; height: 0.7rem; border: 2px solid #ef4444; border-radius: 50%; }
 	@media (max-width: 850px) {
-		main { height: auto; min-height: calc(100vh - 2.35rem); overflow: visible; }
-		header { display: block; }
-		.workspace { grid-template-columns: 1fr; }
-		.workspace > :global(.frame), .note-list { min-height: 65vh; }
-		aside { height: auto; max-height: none; }
+		.toolbar { top: 3rem; }
+		aside { top: auto; max-height: 55vh; }
 		input { min-width: 12rem; flex: 1; }
 	}
 </style>

@@ -4,22 +4,35 @@
 </script>
 
 <nav>
-	<strong>covalence map</strong>
-	<span>notes · tasks · open work · source</span>
+	<strong>covalence</strong>
+	<a href="/?view=map" data-sveltekit-reload>map</a>
+	<a href="/?view=notes" data-sveltekit-reload>notes</a>
+	<a href="/?view=source" data-sveltekit-reload>source</a>
+	<a href="/?view=terms" data-sveltekit-reload>terms</a>
 </nav>
 
 {@render children()}
 
 <style>
 	nav {
+		position: fixed;
+		z-index: 20;
+		top: 0;
+		left: 0;
+		right: 0;
 		display: flex;
 		align-items: baseline;
 		gap: 1rem;
 		padding: 0.65rem 1rem;
 		border-bottom: 1px solid var(--border);
-		background: var(--surface);
+		background: color-mix(in srgb, var(--surface) 88%, transparent);
+		backdrop-filter: blur(12px);
 		font-size: 0.8rem;
 	}
 	strong { color: var(--accent); }
-	span { color: var(--muted); }
+	a {
+		color: var(--muted);
+		text-decoration: none;
+	}
+	a:hover { color: var(--fg); }
 </style>

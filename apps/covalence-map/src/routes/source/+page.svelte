@@ -23,11 +23,11 @@
 </main>
 
 <style>
-	main { min-height: 100vh; padding: 1rem 0 4rem; }
+	main { min-height: 100vh; padding: 2.35rem 0 4rem; }
 	header {
 		position: sticky;
 		z-index: 2;
-		top: 0;
+		top: 2.35rem;
 		display: flex;
 		align-items: center;
 		gap: 1.25rem;

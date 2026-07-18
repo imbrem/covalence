@@ -12,10 +12,13 @@ export async function load({ fetch, params }) {
 	if (!metadata) error(404, `Unknown note: ${params.path}`);
 	const noteResponse = await fetch(`${base}${metadata.href}`);
 	if (!noteResponse.ok) error(noteResponse.status, `Could not load note: ${params.path}`);
-	const content = ((await noteResponse.json()) as { content: string }).content;
+	const source = ((await noteResponse.json()) as { content: string }).content;
+	const frontmatter = source.match(/^\+\+\+\r?\n([\s\S]*?)\r?\n\+\+\+\r?\n/);
+	const content = frontmatter ? source.slice(frontmatter[0].length) : source;
 	return {
 		content,
 		path,
+		id: frontmatter?.[1].match(/^id\s*=\s*"([^"]+)"/m)?.[1] ?? null,
 		title: content.match(/^#\s+(.+)$/m)?.[1] ?? params.path,
 	};
 }

@@ -358,7 +358,7 @@
       "title": "package.json",
       "status": "tracked",
       "path": "apps/covalence-map/package.json",
-      "words": 23,
+      "words": 25,
       "updated": 0
     },
     {
@@ -385,7 +385,7 @@
       "title": "+layout.svelte",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/+layout.svelte",
-      "words": 26,
+      "words": 39,
       "updated": 0
     },
     {
@@ -403,7 +403,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/+page.svelte",
-      "words": 430,
+      "words": 468,
       "updated": 0
     },
     {
@@ -412,7 +412,7 @@
       "title": "+page.ts",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/+page.ts",
-      "words": 9,
+      "words": 13,
       "updated": 0
     },
     {
@@ -421,7 +421,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/notes/[...path]/+page.svelte",
-      "words": 78,
+      "words": 109,
       "updated": 0
     },
     {
@@ -430,7 +430,7 @@
       "title": "+page.ts",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/notes/[...path]/+page.ts",
-      "words": 22,
+      "words": 25,
       "updated": 0
     },
     {
@@ -3562,7 +3562,7 @@
       "title": "bun.lock",
       "status": "tracked",
       "path": "bun.lock",
-      "words": 1301,
+      "words": 1321,
       "updated": 0
     },
     {

@@ -1,6 +1,6 @@
 <script lang="ts">
+	import MarkdownIt from 'markdown-it';
 	let { data } = $props();
-	type Segment = { text: string; href?: string };
 
 	function normalize(path: string): string {
 		const parts: string[] = [];
@@ -19,45 +19,59 @@
 				clean.startsWith('extensions/')
 			? clean
 			: normalize(`${data.path.slice(0, data.path.lastIndexOf('/'))}/${clean}`);
+		if (path.startsWith('notes/') && path.endsWith('.md') && !line) {
+			return `/notes/${path.slice('notes/'.length)}`;
+		}
 		return `/source?path=${encodeURIComponent(path)}${line ? `#L${line}` : ''}`;
 	}
 
-	function segments(line: string): Segment[] {
-		const result: Segment[] = [];
-		const pattern = /\[([^\]]+)\]\(([^)#]+)(?:#L?(\d+))?\)|`((?:crates|scripts|docs|notes|apps|packages|extensions)\/[^`\s:]+)(?::(\d+))?`/g;
-		let offset = 0;
-		for (const match of line.matchAll(pattern)) {
-			if (match.index > offset) result.push({ text: line.slice(offset, match.index) });
-			if (match[2] && !/^[a-z]+:/i.test(match[2])) {
-				result.push({ text: match[1], href: sourceHref(match[2], match[3]) });
-			} else if (match[4]) {
-				result.push({ text: match[4] + (match[5] ? `:${match[5]}` : ''), href: sourceHref(match[4], match[5]) });
-			} else {
-				result.push({ text: match[0] });
+	const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true });
+	const defaultLinkOpen =
+		markdown.renderer.rules.link_open ??
+		((tokens, index, options, _environment, self) =>
+			self.renderToken(tokens, index, options));
+	markdown.renderer.rules.link_open = (tokens, index, options, environment, self) => {
+		const hrefIndex = tokens[index].attrIndex('href');
+		if (hrefIndex >= 0) {
+			const href = tokens[index].attrs![hrefIndex][1];
+			if (!/^[a-z]+:/i.test(href) && !href.startsWith('#')) {
+				const [target, fragment] = href.split('#');
+				tokens[index].attrs![hrefIndex][1] = sourceHref(
+					target,
+					fragment?.match(/^L?(\d+)$/)?.[1],
+				);
 			}
-			offset = match.index + match[0].length;
 		}
-		result.push({ text: line.slice(offset) });
-		return result;
-	}
+		return defaultLinkOpen(tokens, index, options, environment, self);
+	};
+	const defaultCode =
+		markdown.renderer.rules.code_inline ??
+		((tokens, index) => `<code>${markdown.utils.escapeHtml(tokens[index].content)}</code>`);
+	markdown.renderer.rules.code_inline = (tokens, index, options, environment, self) => {
+		const match = tokens[index].content.match(
+			/^((?:crates|scripts|docs|notes|apps|packages|extensions)\/[^\s:]+)(?::(\d+))?$/,
+		);
+		if (!match) return defaultCode(tokens, index, options, environment, self);
+		const label = markdown.utils.escapeHtml(tokens[index].content);
+		return `<a href="${sourceHref(match[1], match[2])}"><code>${label}</code></a>`;
+	};
+	let rendered = $derived(markdown.render(data.content));
 </script>
 
 <svelte:head><title>{data.title} · Covalence map</title></svelte:head>
 
 <main>
-	<a href="/">← map</a>
-	<p class="path">{data.path}</p>
+	<a href="/?view=notes">← notes</a>
+	<p class="path">{data.id ? `${data.id} · ` : ''}{data.path}</p>
 	<article>
-		<pre>{#each data.content.split('\n') as line}{#each segments(line) as segment}{#if segment.href}<a
-							href={segment.href}>{segment.text}</a>{:else}{segment.text}{/if}{/each}
-{/each}</pre>
+		{@html rendered}
 	</article>
 </main>
 
 <style>
 	main {
 		max-width: 68rem;
-		margin: 2rem auto;
+		margin: 4.5rem auto 2rem;
 		padding: 0 1.25rem 5rem;
 	}
 	a { color: var(--accent); }
@@ -68,10 +82,27 @@
 		border-radius: 6px;
 		background: var(--surface);
 	}
-	pre {
-		margin: 0;
-		white-space: pre-wrap;
-		overflow-wrap: anywhere;
-		font: 0.9rem/1.6 var(--font-mono);
+	article :global(h1), article :global(h2), article :global(h3) {
+		margin: 1.7em 0 0.65em;
+		line-height: 1.25;
+	}
+	article :global(h1:first-child) { margin-top: 0; }
+	article :global(p), article :global(li) { line-height: 1.7; }
+	article :global(a) { color: var(--accent); }
+	article :global(pre) {
+		overflow: auto;
+		padding: 0.9rem;
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		background: var(--bg);
+	}
+	article :global(code) {
+		font-family: var(--font-mono);
+	}
+	article :global(blockquote) {
+		margin-left: 0;
+		padding-left: 1rem;
+		border-left: 3px solid var(--border);
+		color: var(--muted);
 	}
 </style>

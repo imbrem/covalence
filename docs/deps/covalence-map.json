@@ -2585,11 +2585,38 @@
       "updated": 1783971729
     },
     {
+      "id": "task:coinductive-conformance",
+      "kind": "task",
+      "title": "First coinductive backend and conformance suite",
+      "status": "planned",
+      "path": "notes/projects/coinductive-conformance.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "task:data-interpretation",
       "kind": "task",
       "title": "Verified data interpretation",
       "status": "active",
       "path": "notes/projects/data-interpretation.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:graph-dot",
+      "kind": "task",
+      "title": "Complete DOT syntax and semantic interchange",
+      "status": "active",
+      "path": "notes/projects/graph-dot.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:graph-networkx",
+      "kind": "task",
+      "title": "NetworkX graph-format interoperability",
+      "status": "active",
+      "path": "notes/projects/graph-networkx.toml",
       "words": 0,
       "updated": 0
     },
@@ -2612,11 +2639,65 @@
       "updated": 0
     },
     {
+      "id": "task:inductive-logic-adapters",
+      "kind": "task",
+      "title": "Connect inductive fixpoints to the logic API",
+      "status": "active",
+      "path": "notes/projects/inductive-logic-adapters.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:json-inductive-composition",
+      "kind": "task",
+      "title": "Express JSON through composed inductive functors",
+      "status": "planned",
+      "path": "notes/projects/json-inductive-composition.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "task:logic-relations",
       "kind": "task",
       "title": "Logic, relations, and numeric capabilities",
       "status": "active",
       "path": "notes/projects/logic-relations.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:nat-logic-migration",
+      "kind": "task",
+      "title": "Migrate Nat capabilities to logic carriers",
+      "status": "active",
+      "path": "notes/projects/nat-logic-migration.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:relation-algebra",
+      "kind": "task",
+      "title": "Optional relation-algebra capabilities",
+      "status": "active",
+      "path": "notes/projects/relation-algebra.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:sexpr-parser-per",
+      "kind": "task",
+      "title": "S-expression parser interpretation and same-value PER",
+      "status": "active",
+      "path": "notes/projects/sexpr-parser-per.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:sexpr-proof-capabilities",
+      "kind": "task",
+      "title": "S-expression no-confusion and proper-list proofs",
+      "status": "active",
+      "path": "notes/projects/sexpr-proof-capabilities.toml",
       "words": 0,
       "updated": 0
     },
@@ -2630,9 +2711,18 @@
       "updated": 0
     },
     {
-      "id": "todo:graph.verified-interchange",
+      "id": "todo:graph.dot-full",
       "kind": "todo",
-      "title": "Implement DOT and common NetworkX-format interpreters with round-trip and graph-isomorphism properties as specified in notes/design/graph-api.md.",
+      "title": "Extend the bounded DOT interchange subset to ports, subgraphs, HTML labels, chained edges, and the complete attribute grammar.",
+      "status": "major",
+      "path": "crates/lib/graph/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:graph.networkx-formats",
+      "kind": "todo",
+      "title": "Add the remaining NetworkX text interchange formats and escaping policies above the adjacency-list seam.",
       "status": "major",
       "path": "crates/lib/graph/src/lib.rs",
       "words": 0,
@@ -2644,15 +2734,6 @@
       "title": "Add a backend-neutral mock/bisimulation suite for GreatestFixpointFacts once a first real coinductive backend exists.",
       "status": "major",
       "path": "crates/lang/inductive/src/conformance.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:inductive.functor-expressions",
-      "kind": "todo",
-      "title": "Extend direct Param/Var positions with zero, one, sum, product, and composition expressions while retaining named sum-of-products as the ergonomic normal form.",
-      "status": "major",
-      "path": "crates/lang/inductive/src/polynomial.rs",
       "words": 0,
       "updated": 0
     },
@@ -5366,6 +5447,15 @@
       "updated": 0
     },
     {
+      "id": "todo:sexpr.no-confusion-laws",
+      "kind": "todo",
+      "title": "Extend the generic proof-bearing fixpoint API with constructor distinctness/injectivity, then expose named S-expression no-confusion rules here.",
+      "status": "major",
+      "path": "crates/lang/sexpr-api/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:sexpr.parser-interpretation",
       "kind": "todo",
       "title": "Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.",
@@ -5375,18 +5465,9 @@
       "updated": 0
     },
     {
-      "id": "todo:sexpr.proof-law-bundle",
+      "id": "todo:sexpr.proper-list-proof-capability",
       "kind": "todo",
-      "title": "Add logic-generic no-confusion, constructor injectivity, induction, proper-list, and fold law capabilities by adapting the proof-bearing inductive fixpoint API.",
-      "status": "major",
-      "path": "crates/lang/sexpr-api/src/lib.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:sexpr.surface-adapter",
-      "kind": "todo",
-      "title": "Adapt covalence-sexp's proper-list surface tree and AbstractSExpr implementations to this inductive API without introducing a lib-to-lang dependency.",
+      "title": "Define the logic-generic proper-list predicate and its nil/cons/induction theorem bundle above SExprFixpoint.",
       "status": "major",
       "path": "crates/lang/sexpr-api/src/lib.rs",
       "words": 0,
@@ -9958,27 +10039,33 @@
       "detail": null
     },
     {
-      "source": "task:data-interpretation",
+      "source": "task:coinductive-conformance",
       "predicate": "contains",
-      "target": "todo:json.polynomial-composition",
+      "target": "todo:inductive.coinductive-conformance",
       "detail": null
     },
     {
-      "source": "task:data-interpretation",
-      "predicate": "contains",
-      "target": "todo:sexpr.parser-interpretation",
+      "source": "task:coinductive-conformance",
+      "predicate": "depends-on",
+      "target": "task:inductive-logic-adapters",
       "detail": null
     },
     {
-      "source": "task:data-interpretation",
-      "predicate": "contains",
-      "target": "todo:sexpr.proof-law-bundle",
+      "source": "task:coinductive-conformance",
+      "predicate": "described-by",
+      "target": "note:notes/design/api-extraction-audit.md",
       "detail": null
     },
     {
-      "source": "task:data-interpretation",
-      "predicate": "contains",
-      "target": "todo:sexpr.surface-adapter",
+      "source": "task:coinductive-conformance",
+      "predicate": "part-of",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:coinductive-conformance",
+      "predicate": "touches",
+      "target": "file:crates/lang/inductive",
       "detail": null
     },
     {
@@ -10024,9 +10111,51 @@
       "detail": null
     },
     {
-      "source": "task:graph-theory",
+      "source": "task:graph-dot",
       "predicate": "contains",
-      "target": "todo:graph.verified-interchange",
+      "target": "todo:graph.dot-full",
+      "detail": null
+    },
+    {
+      "source": "task:graph-dot",
+      "predicate": "described-by",
+      "target": "note:notes/design/graph-api.md",
+      "detail": null
+    },
+    {
+      "source": "task:graph-dot",
+      "predicate": "part-of",
+      "target": "task:graph-theory",
+      "detail": null
+    },
+    {
+      "source": "task:graph-dot",
+      "predicate": "touches",
+      "target": "file:crates/lib/graph",
+      "detail": null
+    },
+    {
+      "source": "task:graph-networkx",
+      "predicate": "contains",
+      "target": "todo:graph.networkx-formats",
+      "detail": null
+    },
+    {
+      "source": "task:graph-networkx",
+      "predicate": "described-by",
+      "target": "note:notes/design/graph-api.md",
+      "detail": null
+    },
+    {
+      "source": "task:graph-networkx",
+      "predicate": "part-of",
+      "target": "task:graph-theory",
+      "detail": null
+    },
+    {
+      "source": "task:graph-networkx",
+      "predicate": "touches",
+      "target": "file:crates/lib/graph",
       "detail": null
     },
     {
@@ -10049,30 +10178,6 @@
     },
     {
       "source": "task:inductive-datatypes",
-      "predicate": "contains",
-      "target": "todo:inductive.coinductive-conformance",
-      "detail": null
-    },
-    {
-      "source": "task:inductive-datatypes",
-      "predicate": "contains",
-      "target": "todo:inductive.functor-expressions",
-      "detail": null
-    },
-    {
-      "source": "task:inductive-datatypes",
-      "predicate": "contains",
-      "target": "todo:inductive.legacy-fixpoint-adapter",
-      "detail": null
-    },
-    {
-      "source": "task:inductive-datatypes",
-      "predicate": "contains",
-      "target": "todo:inductive.logic-api-adapter",
-      "detail": null
-    },
-    {
-      "source": "task:inductive-datatypes",
       "predicate": "depends-on",
       "target": "task:logic-relations",
       "detail": null
@@ -10090,15 +10195,75 @@
       "detail": null
     },
     {
-      "source": "task:logic-relations",
+      "source": "task:inductive-logic-adapters",
       "predicate": "contains",
-      "target": "todo:kernel.logic.relation-allegory",
+      "target": "todo:inductive.legacy-fixpoint-adapter",
       "detail": null
     },
     {
-      "source": "task:logic-relations",
+      "source": "task:inductive-logic-adapters",
       "predicate": "contains",
-      "target": "todo:kernel.nat.logic-api-migration",
+      "target": "todo:inductive.logic-api-adapter",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-logic-adapters",
+      "predicate": "depends-on",
+      "target": "task:relation-algebra",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-logic-adapters",
+      "predicate": "described-by",
+      "target": "note:notes/design/api-extraction-audit.md",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-logic-adapters",
+      "predicate": "part-of",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:inductive-logic-adapters",
+      "predicate": "touches",
+      "target": "file:crates/lang/inductive",
+      "detail": null
+    },
+    {
+      "source": "task:json-inductive-composition",
+      "predicate": "contains",
+      "target": "todo:json.polynomial-composition",
+      "detail": null
+    },
+    {
+      "source": "task:json-inductive-composition",
+      "predicate": "depends-on",
+      "target": "task:inductive-logic-adapters",
+      "detail": null
+    },
+    {
+      "source": "task:json-inductive-composition",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:json-inductive-composition",
+      "predicate": "part-of",
+      "target": "task:data-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:json-inductive-composition",
+      "predicate": "touches",
+      "target": "file:crates/lang/inductive",
+      "detail": null
+    },
+    {
+      "source": "task:json-inductive-composition",
+      "predicate": "touches",
+      "target": "file:crates/lang/json-api",
       "detail": null
     },
     {
@@ -10123,6 +10288,126 @@
       "source": "task:logic-relations",
       "predicate": "touches",
       "target": "file:crates/kernel/hol/logic",
+      "detail": null
+    },
+    {
+      "source": "task:nat-logic-migration",
+      "predicate": "contains",
+      "target": "todo:kernel.nat.logic-api-migration",
+      "detail": null
+    },
+    {
+      "source": "task:nat-logic-migration",
+      "predicate": "described-by",
+      "target": "note:notes/design/api-extraction-audit.md",
+      "detail": null
+    },
+    {
+      "source": "task:nat-logic-migration",
+      "predicate": "part-of",
+      "target": "task:logic-relations",
+      "detail": null
+    },
+    {
+      "source": "task:nat-logic-migration",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/api/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "task:relation-algebra",
+      "predicate": "contains",
+      "target": "todo:kernel.logic.relation-allegory",
+      "detail": null
+    },
+    {
+      "source": "task:relation-algebra",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:relation-algebra",
+      "predicate": "part-of",
+      "target": "task:logic-relations",
+      "detail": null
+    },
+    {
+      "source": "task:relation-algebra",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/logic",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-parser-per",
+      "predicate": "contains",
+      "target": "todo:sexpr.parser-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-parser-per",
+      "predicate": "depends-on",
+      "target": "task:sexpr-proof-capabilities",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-parser-per",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-parser-per",
+      "predicate": "part-of",
+      "target": "task:data-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-parser-per",
+      "predicate": "touches",
+      "target": "file:crates/lang/parsing",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-parser-per",
+      "predicate": "touches",
+      "target": "file:crates/lang/sexpr-api",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-proof-capabilities",
+      "predicate": "contains",
+      "target": "todo:sexpr.no-confusion-laws",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-proof-capabilities",
+      "predicate": "contains",
+      "target": "todo:sexpr.proper-list-proof-capability",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-proof-capabilities",
+      "predicate": "depends-on",
+      "target": "task:inductive-logic-adapters",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-proof-capabilities",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-proof-capabilities",
+      "predicate": "part-of",
+      "target": "task:data-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:sexpr-proof-capabilities",
+      "predicate": "touches",
+      "target": "file:crates/lang/sexpr-api",
       "detail": null
     }
   ]

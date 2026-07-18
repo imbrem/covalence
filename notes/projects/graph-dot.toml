@@ -1,0 +1,8 @@
+id = "graph-dot"
+title = "Complete DOT syntax and semantic interchange"
+status = "active"
+parent = "graph-theory"
+depends_on = []
+todos = ["graph.dot-full"]
+notes = ["notes/design/graph-api.md"]
+files = ["crates/lib/graph"]

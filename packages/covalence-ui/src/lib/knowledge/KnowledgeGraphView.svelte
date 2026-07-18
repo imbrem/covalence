@@ -43,9 +43,12 @@
 		file: '#10b981',
 	};
 
-	function elements(): ElementDefinition[] {
+	function elements(
+		currentNodes = nodes,
+		currentEdges = edges,
+	): ElementDefinition[] {
 		return [
-			...nodes.map((node) => ({
+			...currentNodes.map((node) => ({
 				data: {
 					id: node.id,
 					label: node.label,
@@ -53,7 +56,7 @@
 					status: node.status ?? '',
 				},
 			})),
-			...edges.map((edge) => ({
+			...currentEdges.map((edge) => ({
 				data: {
 					id: edge.id,
 					source: edge.source,
@@ -99,8 +102,8 @@
 						'font-size': 9,
 						'text-valign': 'bottom',
 						'text-margin-y': 5,
-						'text-wrap': 'ellipsis',
-						'text-max-width': 130,
+						'text-wrap': 'wrap',
+						'text-max-width': 120,
 						width: 18,
 						height: 18,
 						'border-width': 2,
@@ -162,9 +165,28 @@
 
 	$effect(() => {
 		if (!ready || !cy) return;
+		const currentNodes = nodes;
+		const currentEdges = edges;
+		const currentLayout = layout;
 		cy.elements().remove();
-		cy.add(elements());
-		cy.layout(layoutOptions()).run();
+		cy.add(elements(currentNodes, currentEdges));
+		cy.layout(
+			currentLayout === 'breadthfirst'
+				? {
+						name: 'breadthfirst',
+						directed: true,
+						padding: 28,
+						spacingFactor: 1.25,
+						animate: false,
+					}
+				: {
+						name: 'cose',
+						padding: 28,
+						animate: false,
+						nodeRepulsion: () => 9000,
+						idealEdgeLength: () => 90,
+					},
+		).run();
 		cy.fit(undefined, 30);
 	});
 
@@ -189,11 +211,14 @@
 <style>
 	.frame {
 		position: relative;
+		width: 100%;
+		height: 100%;
+		min-height: 0;
 	}
 	.graph {
 		width: 100%;
-		height: min(68vh, 48rem);
-		min-height: 32rem;
+		height: 100%;
+		min-height: 0;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: #0f172a;

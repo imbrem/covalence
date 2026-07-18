@@ -2,7 +2,6 @@ id = "graph-theory"
 title = "Graph theory and verified interchange"
 status = "active"
 depends_on = ["logic-relations"]
-todos = ["graph.verified-interchange"]
+todos = []
 notes = ["notes/design/graph-api.md"]
 files = ["crates/lib/graph"]
-

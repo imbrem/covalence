@@ -1,0 +1,8 @@
+id = "nat-logic-migration"
+title = "Migrate Nat capabilities to logic carriers"
+status = "active"
+parent = "logic-relations"
+depends_on = []
+todos = ["kernel.nat.logic-api-migration"]
+notes = ["notes/design/api-extraction-audit.md"]
+files = ["crates/kernel/hol/api/src/nat.rs"]

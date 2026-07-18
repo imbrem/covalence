@@ -129,6 +129,7 @@ for (const path of walk(resolve(ROOT, "notes/projects")).filter(
   const project = Bun.TOML.parse(readFileSync(path, "utf8"));
   const id = `task:${project.id}`;
   node(id, "task", project.title, project.status, slash(relative(ROOT, path)), 0, 0);
+  if (project.parent) edge(id, "part-of", `task:${project.parent}`);
   for (const dependency of project.depends_on ?? [])
     edge(id, "depends-on", `task:${dependency}`);
   for (const todo of project.todos ?? []) edge(id, "contains", `todo:${todo}`);

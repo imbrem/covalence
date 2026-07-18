@@ -3,8 +3,6 @@ title = "Logic, relations, and numeric capabilities"
 status = "active"
 depends_on = []
 todos = [
-  "kernel.logic.relation-allegory",
-  "kernel.nat.logic-api-migration",
 ]
 notes = [
   "notes/design/api-extraction-audit.md",
@@ -14,4 +12,3 @@ files = [
   "crates/kernel/hol/logic",
   "crates/kernel/hol/api/src/nat.rs",
 ]
-

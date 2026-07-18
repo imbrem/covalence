@@ -3,11 +3,6 @@ title = "Inductive and coinductive datatypes"
 status = "active"
 depends_on = ["logic-relations"]
 todos = [
-  "inductive.functor-expressions",
-  "inductive.logic-api-adapter",
-  "inductive.legacy-fixpoint-adapter",
-  "inductive.coinductive-conformance",
 ]
 notes = ["notes/design/api-extraction-audit.md"]
 files = ["crates/lang/inductive"]
-

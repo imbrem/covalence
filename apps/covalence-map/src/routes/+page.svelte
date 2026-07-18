@@ -25,7 +25,20 @@
 	let byId = $derived(new Map(allNodes.map((node) => [node.id, node])));
 	let tasks = $derived(allNodes.filter((node) => node.kind === 'task'));
 	let statuses = $derived(
-		[...new Set(allNodes.map((node) => node.status).filter(Boolean))].sort() as string[],
+		[
+			...new Set(
+				allNodes
+					.filter((node) =>
+						mode === 'tasks'
+							? node.kind === 'task'
+							: mode === 'notes'
+								? node.kind === 'note'
+								: true,
+					)
+					.map((node) => node.status)
+					.filter(Boolean),
+			),
+		].sort() as string[],
 	);
 	const kinds: Kind[] = ['task', 'todo', 'note', 'file'];
 
@@ -71,7 +84,7 @@
 	let visibleEdges = $derived(
 		allEdges.filter((edge) => {
 			if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) return false;
-			if (mode === 'tasks') return edge.predicate === 'depends-on';
+			if (mode === 'tasks') return ['depends-on', 'part-of'].includes(edge.predicate);
 			if (mode === 'notes') {
 				return ['links-to', 'documents', 'mentions'].includes(edge.predicate);
 			}
@@ -90,7 +103,13 @@
 
 	function setMode(next: Mode) {
 		mode = next;
-		selectedId = next === 'neighborhood' ? taskId : null;
+		enabledStatuses = [];
+		selectedId =
+			next === 'neighborhood'
+				? taskId
+				: next === 'notes'
+					? (allNodes.find((node) => node.kind === 'note')?.id ?? null)
+					: (tasks[0]?.id ?? null);
 	}
 
 	function selectTask(next: string) {
@@ -120,11 +139,11 @@
 
 	<section class="toolbar">
 		<div class="tabs" aria-label="Map view">
-			<button class:on={mode === 'tasks'} onclick={() => setMode('tasks')}>task DAG</button>
-			<button class:on={mode === 'neighborhood'} onclick={() => setMode('neighborhood')}>
+			<button type="button" class:on={mode === 'tasks'} onclick={() => setMode('tasks')}>task DAG</button>
+			<button type="button" class:on={mode === 'neighborhood'} onclick={() => setMode('neighborhood')}>
 				task neighborhood
 			</button>
-			<button class:on={mode === 'notes'} onclick={() => setMode('notes')}>note graph</button>
+			<button type="button" class:on={mode === 'notes'} onclick={() => setMode('notes')}>notes</button>
 		</div>
 
 		{#if mode === 'neighborhood'}
@@ -170,7 +189,11 @@
 		{#if mode === 'notes'}
 			<section class="note-list" aria-label="Notes">
 				{#each visibleNotes as note}
-					<button class:selected={selectedId === note.id} onclick={() => (selectedId = note.id)}>
+					<button
+						class:selected={selectedId === note.id}
+						title={note.title}
+						onclick={() => (selectedId = note.id)}
+					>
 						<strong>{note.title}</strong>
 						<span>{note.path}</span>
 						<em>{note.status ?? 'no status'} · {note.words} words</em>
@@ -238,9 +261,13 @@
 
 <style>
 	main {
-		max-width: 96rem;
-		margin: 1.25rem auto;
-		padding: 0 1rem 3rem;
+		width: 100%;
+		height: calc(100vh - 2.35rem);
+		margin: 0;
+		padding: 0.85rem 1rem 1rem;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
 		font-family: var(--font-mono);
 		color: var(--fg);
 	}
@@ -297,10 +324,16 @@
 	.filters { display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; }
 	.filters > span { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
 	.chip em { opacity: 0.65; font-style: normal; }
-	.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 0.75rem; }
+	.workspace {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 20rem;
+		gap: 0.75rem;
+		flex: 1;
+		min-height: 0;
+	}
 	.note-list {
-		height: min(68vh, 48rem);
-		min-height: 32rem;
+		height: 100%;
+		min-height: 0;
 		overflow: auto;
 		padding: 0.5rem;
 		border: 1px solid var(--border);
@@ -339,7 +372,8 @@
 		font-size: 0.7rem;
 	}
 	aside {
-		max-height: min(68vh, 48rem);
+		height: 100%;
+		min-height: 0;
 		overflow: auto;
 		padding: 1rem;
 		border: 1px solid var(--border);
@@ -360,9 +394,11 @@
 	.warning { color: #ef4444; }
 	.missing-dot { display: inline-block; width: 0.7rem; height: 0.7rem; border: 2px solid #ef4444; border-radius: 50%; }
 	@media (max-width: 850px) {
+		main { height: auto; min-height: calc(100vh - 2.35rem); overflow: visible; }
 		header { display: block; }
 		.workspace { grid-template-columns: 1fr; }
-		aside { max-height: none; }
+		.workspace > :global(.frame), .note-list { min-height: 65vh; }
+		aside { height: auto; max-height: none; }
 		input { min-width: 12rem; flex: 1; }
 	}
 </style>

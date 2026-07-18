@@ -3,10 +3,6 @@ title = "Verified data interpretation"
 status = "active"
 depends_on = ["inductive-datatypes", "logic-relations"]
 todos = [
-  "sexpr.proof-law-bundle",
-  "sexpr.surface-adapter",
-  "sexpr.parser-interpretation",
-  "json.polynomial-composition",
 ]
 notes = ["notes/design/content-logic-and-wit-boundaries.md"]
 files = [

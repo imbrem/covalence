@@ -4567,7 +4567,7 @@
     {
       "id": "todo:kernel.logic.relation-allegory",
       "kind": "todo",
-      "title": "Add products, coproducts, residuals, tabulation, and closure capabilities with law bundles, without making them prerequisites for the core relation algebra.",
+      "title": "Add products, coproducts, tabulation, and closure as optional capabilities with law bundles.",
       "status": "major",
       "path": "crates/kernel/hol/logic/src/relation.rs",
       "words": 0,

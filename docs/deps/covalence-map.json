@@ -2618,7 +2618,7 @@
       "status": "draft",
       "path": "notes/vibes/research/forester-and-note-provenance.md",
       "words": 1763,
-      "updated": 1784415178
+      "updated": 1784415456
     },
     {
       "id": "note:notes/vibes/research/note-metadata-v1.md",
@@ -2627,7 +2627,7 @@
       "status": "draft",
       "path": "notes/vibes/research/note-metadata-v1.md",
       "words": 389,
-      "updated": 1784415354
+      "updated": 1784415456
     },
     {
       "id": "note:notes/vibes/sketches/README.md",
@@ -10615,8 +10615,13 @@
     },
     {
       "noteId": "note:notes/vibes/research/forester-and-note-provenance.md",
-      "commit": "0efba6a82057899248ab2f2e8a204e5ea6b36223",
-      "committedAt": 1784415178
+      "commit": "19625ecec12150974aa39fa7688628556893bb6b",
+      "committedAt": 1784415456
+    },
+    {
+      "noteId": "note:notes/vibes/research/note-metadata-v1.md",
+      "commit": "19625ecec12150974aa39fa7688628556893bb6b",
+      "committedAt": 1784415456
     },
     {
       "noteId": "note:notes/vibes/sketches/README.md",

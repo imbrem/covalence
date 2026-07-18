@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 308,
-  "structured": 308,
+  "count": 309,
+  "structured": 309,
   "items": [
     {
       "id": "ffi.python.hol-kernel-bindings-removed-pending-rewrite",
@@ -15,13 +15,23 @@
       "crate": "covalence-python"
     },
     {
-      "id": "graph.verified-interchange",
+      "id": "graph.dot-full",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Implement DOT and common NetworkX-format interpreters with round-trip and graph-isomorphism properties as specified in notes/design/graph-api.md.",
+      "summary": "Extend the bounded DOT interchange subset to ports, subgraphs, HTML labels, chained edges, and the complete attribute grammar.",
       "structured": true,
       "path": "crates/lib/graph/src/lib.rs",
       "line": 44,
+      "crate": "covalence-graph"
+    },
+    {
+      "id": "graph.networkx-formats",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add the remaining NetworkX text interchange formats and escaping policies above the adjacency-list seam.",
+      "structured": true,
+      "path": "crates/lib/graph/src/lib.rs",
+      "line": 45,
       "crate": "covalence-graph"
     },
     {

@@ -41,9 +41,11 @@
 //! inserts explicit copy nodes; strict linear semantics is enforced at
 //! the consumer's layer with a single-outgoing-edge check.
 
-// TODO(cov:graph.verified-interchange, major): Implement DOT and common NetworkX-format interpreters with round-trip and graph-isomorphism properties as specified in notes/design/graph-api.md.
+// TODO(cov:graph.dot-full, major): Extend the bounded DOT interchange subset to ports, subgraphs, HTML labels, chained edges, and the complete attribute grammar.
+// TODO(cov:graph.networkx-formats, major): Add the remaining NetworkX text interchange formats and escaping policies above the adjacency-list seam.
 
 pub mod canonical;
+pub mod interchange;
 pub mod overlay;
 pub mod render;
 pub mod string_diagram;

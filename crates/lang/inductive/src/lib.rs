@@ -26,6 +26,10 @@
 //!   same logic* (e.g. HOL's impredicative Church encoding vs. the
 //!   typedef + recursion-theorem engine) implement the same trait, so
 //!   consumers swap representations without changing a line.
+//! - [`RecordTheory`], [`VariantTheory`], [`EnumTheory`],
+//!   [`LeastFixpoint`], and [`GreatestFixpoint`] — shared proof-bearing
+//!   contracts. Backends may implement only the capabilities they can
+//!   actually prove; the older opaque seams remain as compatibility APIs.
 //!
 //! ## The membership-relativized contract
 //!
@@ -60,20 +64,27 @@ pub mod logic;
 pub mod polynomial;
 pub mod spec;
 pub mod theory;
+pub mod validated;
 
 pub use aggregate::{
-    AggregateRealizeError, EnumBackend, RecordBackend, VariantBackend, realize_enum,
-    realize_record, realize_variant,
+    AggregateRealizeError, EnumBackend, EnumFacts, EnumTheory, ProofBearingEnumBackend,
+    ProofBearingRecordBackend, ProofBearingVariantBackend, RecordBackend, RecordFacts,
+    RecordTheory, VariantBackend, VariantFacts, VariantTheory, realize_enum, realize_record,
+    realize_variant,
 };
 pub use backend::InductiveBackend;
 pub use error::{IndResult, InductiveError, SpecError};
 pub use fixpoint::{
-    CoinductiveFixpointBackend, FixpointSpec, InductiveFixpointBackend, RealizeError,
+    CoinductiveFixpointBackend, FixpointCore, FixpointIsoFacts, FixpointSpec, GreatestFixpoint,
+    GreatestFixpointFacts, InductiveFixpointBackend, LeastFixpoint, LeastFixpointFacts,
+    ProofBearingGreatestFixpointBackend, ProofBearingLeastFixpointBackend, RealizeError,
     realize_coinductive, realize_inductive,
 };
 pub use logic::{Logic, LogicOps, beta_expand, beta_reduce};
 pub use polynomial::{
-    EnumSpec, FieldSpec, PolynomialSpec, Position, RecordSpec, VariantCase, VariantSpec,
+    EnumSpec, FieldSpec, PolynomialBuilder, PolynomialSpec, Position, RecordBuilder, RecordSpec,
+    VariantCase, VariantSpec,
 };
 pub use spec::{ArgSort, CtorSpec, InductiveSpec};
 pub use theory::{BackendCaps, InductiveFacts, InductiveTheory};
+pub use validated::Validated;

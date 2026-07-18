@@ -9,9 +9,9 @@
 use smol_str::SmolStr;
 
 use crate::error::SpecError;
+use crate::logic::Logic;
 use crate::polynomial::PolynomialSpec;
-
-// TODO(cov:inductive.fixpoint-law-bundles, severe): Define shared proof-bearing in/out isomorphism, fold/unfold, induction, coinduction, and computation-law bundles instead of leaving realizations wholly opaque.
+use crate::validated::Validated;
 
 /// A polynomial endofunctor whose least or greatest fixpoint may be formed.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -20,6 +20,108 @@ pub struct FixpointSpec<P> {
     pub name: SmolStr,
     /// The functor body `F`.
     pub functor: PolynomialSpec<P>,
+}
+
+/// The Lambek isomorphism shared by least and greatest fixpoints.
+///
+/// `layer` is the backend's representation of `F carrier`. `roll` and
+/// `unroll` respectively represent `F carrier → carrier` and
+/// `carrier → F carrier`. The facts make the isomorphism proof-bearing
+/// rather than a convention hidden inside a backend-specific value.
+pub struct FixpointCore<L: Logic, P> {
+    /// The exact checked functor declaration.
+    pub spec: Validated<FixpointSpec<P>>,
+    /// The fixpoint carrier.
+    pub carrier: L::Type,
+    /// The instantiated layer type `F carrier`.
+    pub layer: L::Type,
+    /// `F carrier → carrier`.
+    pub roll: L::Term,
+    /// `carrier → F carrier`.
+    pub unroll: L::Term,
+    /// Inverse laws.
+    pub facts: Box<dyn FixpointIsoFacts<L>>,
+}
+
+/// Proof that `roll` and `unroll` are mutually inverse.
+pub trait FixpointIsoFacts<L: Logic> {
+    /// `⊢ roll (unroll x) = x`.
+    fn roll_unroll(&self, x: &L::Term) -> Result<L::Thm, L::Error>;
+    /// `⊢ unroll (roll layer) = layer`.
+    fn unroll_roll(&self, layer: &L::Term) -> Result<L::Thm, L::Error>;
+}
+
+/// Proof-bearing least-fixpoint realization.
+pub struct LeastFixpoint<L: Logic, P> {
+    /// Shared fixpoint carrier and Lambek isomorphism.
+    pub core: FixpointCore<L, P>,
+    /// Iteration and induction laws.
+    pub facts: Box<dyn LeastFixpointFacts<L>>,
+}
+
+/// Catamorphism and induction capabilities of a least fixpoint.
+pub trait LeastFixpointFacts<L: Logic> {
+    /// Build `fold algebra : μF → A`.
+    fn fold(&self, algebra: &L::Term) -> Result<L::Term, L::Error>;
+
+    /// Constructor/fusion computation law:
+    /// `⊢ fold algebra (roll layer) = algebra (map (fold algebra) layer)`.
+    fn fold_roll(&self, algebra: &L::Term, layer: &L::Term) -> Result<L::Thm, L::Error>;
+
+    /// Structural induction. `closed` proves that the predicate is preserved
+    /// by one functor layer; the result is the predicate for every carrier
+    /// value. The logic-specific bundle determines the exact encoding of the
+    /// predicate and layer premise.
+    fn induction(&self, predicate: &L::Term, closed: L::Thm) -> Result<L::Thm, L::Error>;
+}
+
+/// Proof-bearing greatest-fixpoint realization.
+pub struct GreatestFixpoint<L: Logic, P> {
+    /// Shared fixpoint carrier and Lambek isomorphism.
+    pub core: FixpointCore<L, P>,
+    /// Coiteration and coinduction laws.
+    pub facts: Box<dyn GreatestFixpointFacts<L>>,
+}
+
+/// Anamorphism and coinduction capabilities of a greatest fixpoint.
+pub trait GreatestFixpointFacts<L: Logic> {
+    /// Build `unfold coalgebra : A → νF`.
+    fn unfold(&self, coalgebra: &L::Term) -> Result<L::Term, L::Error>;
+
+    /// Destructor computation law:
+    /// `⊢ unroll (unfold coalgebra seed) =
+    ///     map (unfold coalgebra) (coalgebra seed)`.
+    fn unroll_unfold(&self, coalgebra: &L::Term, seed: &L::Term) -> Result<L::Thm, L::Error>;
+
+    /// Bisimulation/coinduction. `preserved` proves the relation is preserved
+    /// by one observation layer; the result identifies related carriers.
+    fn coinduction(&self, relation: &L::Term, preserved: L::Thm) -> Result<L::Thm, L::Error>;
+}
+
+/// Backend implementing the shared proof-bearing least-fixpoint contract.
+///
+/// Implementing this trait is stronger than the compatibility
+/// [`InductiveFixpointBackend`]: it requires the Lambek isomorphism, fold,
+/// induction, and their computation laws.
+pub trait ProofBearingLeastFixpointBackend<L: Logic, P> {
+    /// Backend error.
+    type Error;
+    /// Realize a checked `μF`.
+    fn realize_least(
+        &self,
+        spec: &Validated<FixpointSpec<P>>,
+    ) -> Result<LeastFixpoint<L, P>, Self::Error>;
+}
+
+/// Backend implementing the shared proof-bearing greatest-fixpoint contract.
+pub trait ProofBearingGreatestFixpointBackend<L: Logic, P> {
+    /// Backend error.
+    type Error;
+    /// Realize a checked `νF`.
+    fn realize_greatest(
+        &self,
+        spec: &Validated<FixpointSpec<P>>,
+    ) -> Result<GreatestFixpoint<L, P>, Self::Error>;
 }
 
 impl<P> FixpointSpec<P> {
@@ -63,7 +165,10 @@ pub trait InductiveFixpointBackend<P> {
     type Error;
 
     /// Realize the least fixpoint of `spec`.
-    fn realize_inductive(&self, spec: &FixpointSpec<P>) -> Result<Self::Inductive, Self::Error>;
+    fn realize_inductive(
+        &self,
+        spec: &Validated<FixpointSpec<P>>,
+    ) -> Result<Self::Inductive, Self::Error>;
 }
 
 /// Backend capability for greatest fixpoints `νF`.
@@ -77,29 +182,31 @@ pub trait CoinductiveFixpointBackend<P> {
     type Error;
 
     /// Realize the greatest fixpoint of `spec`.
-    fn realize_coinductive(&self, spec: &FixpointSpec<P>)
-    -> Result<Self::Coinductive, Self::Error>;
+    fn realize_coinductive(
+        &self,
+        spec: &Validated<FixpointSpec<P>>,
+    ) -> Result<Self::Coinductive, Self::Error>;
 }
 
 /// Validate before invoking an inductive backend.
-pub fn realize_inductive<P, B: InductiveFixpointBackend<P>>(
+pub fn realize_inductive<P: Clone, B: InductiveFixpointBackend<P>>(
     backend: &B,
     spec: &FixpointSpec<P>,
 ) -> Result<B::Inductive, RealizeError<B::Error>> {
-    spec.validate().map_err(RealizeError::Spec)?;
+    let spec = Validated::try_from(spec.clone()).map_err(RealizeError::Spec)?;
     backend
-        .realize_inductive(spec)
+        .realize_inductive(&spec)
         .map_err(RealizeError::Backend)
 }
 
 /// Validate before invoking a coinductive backend.
-pub fn realize_coinductive<P, B: CoinductiveFixpointBackend<P>>(
+pub fn realize_coinductive<P: Clone, B: CoinductiveFixpointBackend<P>>(
     backend: &B,
     spec: &FixpointSpec<P>,
 ) -> Result<B::Coinductive, RealizeError<B::Error>> {
-    spec.validate().map_err(RealizeError::Spec)?;
+    let spec = Validated::try_from(spec.clone()).map_err(RealizeError::Spec)?;
     backend
-        .realize_coinductive(spec)
+        .realize_coinductive(&spec)
         .map_err(RealizeError::Backend)
 }
 
@@ -114,10 +221,14 @@ pub enum RealizeError<E> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
     use crate::polynomial::{FieldSpec, Position, VariantCase};
 
-    struct Names;
+    struct Names {
+        calls: Cell<usize>,
+    }
 
     impl InductiveFixpointBackend<&'static str> for Names {
         type Inductive = String;
@@ -125,8 +236,9 @@ mod tests {
 
         fn realize_inductive(
             &self,
-            spec: &FixpointSpec<&'static str>,
+            spec: &Validated<FixpointSpec<&'static str>>,
         ) -> Result<Self::Inductive, Self::Error> {
+            self.calls.set(self.calls.get() + 1);
             Ok(format!("mu {}", spec.name))
         }
     }
@@ -149,6 +261,17 @@ mod tests {
                 ],
             ),
         );
-        assert_eq!(realize_inductive(&Names, &list).unwrap(), "mu list");
+        let backend = Names {
+            calls: Cell::new(0),
+        };
+        assert_eq!(realize_inductive(&backend, &list).unwrap(), "mu list");
+        assert_eq!(backend.calls.get(), 1);
+
+        let malformed = FixpointSpec::new("", PolynomialSpec::<&str>::new("f", vec![]));
+        assert!(matches!(
+            realize_inductive(&backend, &malformed),
+            Err(RealizeError::Spec(SpecError::EmptyTypeName))
+        ));
+        assert_eq!(backend.calls.get(), 1, "invalid input reached the backend");
     }
 }

@@ -15,8 +15,8 @@
 use smol_str::SmolStr;
 
 use crate::error::SpecError;
+use crate::validated::Validated;
 
-// TODO(cov:inductive.validated-specs, major): Add validated wrappers/builders so normal backend entry points cannot receive unchecked polynomial and aggregate specifications.
 // TODO(cov:inductive.functor-expressions, major): Extend direct Param/Var positions with zero, one, sum, product, and composition expressions while retaining named sum-of-products as the ergonomic normal form.
 
 /// A position in a polynomial functor.
@@ -103,6 +103,35 @@ impl<P> RecordSpec<P> {
                 .map(|field| field.map_param(&mut f))
                 .collect(),
         }
+    }
+}
+
+/// Incremental builder for a checked record declaration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecordBuilder<P> {
+    name: SmolStr,
+    fields: Vec<FieldSpec<P>>,
+}
+
+impl<P> RecordBuilder<P> {
+    /// Begin a record declaration.
+    pub fn new(name: impl Into<SmolStr>) -> Self {
+        Self {
+            name: name.into(),
+            fields: Vec::new(),
+        }
+    }
+
+    /// Append a non-recursive field.
+    pub fn field(mut self, name: impl Into<SmolStr>, parameter: P) -> Self {
+        self.fields
+            .push(FieldSpec::new(name, Position::Param(parameter)));
+        self
+    }
+
+    /// Validate and finish the declaration.
+    pub fn build(self) -> Result<Validated<RecordSpec<P>>, SpecError> {
+        Validated::try_from(RecordSpec::new(self.name, self.fields))
     }
 }
 
@@ -214,6 +243,34 @@ impl<P> PolynomialSpec<P> {
                 .map(|variant| variant.map_param(&mut f))
                 .collect(),
         }
+    }
+}
+
+/// Incremental builder for a checked named sum-of-products.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PolynomialBuilder<P> {
+    name: SmolStr,
+    variants: Vec<VariantCase<P>>,
+}
+
+impl<P> PolynomialBuilder<P> {
+    /// Begin a polynomial declaration.
+    pub fn new(name: impl Into<SmolStr>) -> Self {
+        Self {
+            name: name.into(),
+            variants: Vec::new(),
+        }
+    }
+
+    /// Append a complete constructor/product.
+    pub fn variant(mut self, case: VariantCase<P>) -> Self {
+        self.variants.push(case);
+        self
+    }
+
+    /// Validate and finish the declaration.
+    pub fn build(self) -> Result<Validated<PolynomialSpec<P>>, SpecError> {
+        Validated::try_from(PolynomialSpec::new(self.name, self.variants))
     }
 }
 
@@ -340,5 +397,20 @@ mod tests {
             recursive_record.validate(),
             Err(SpecError::UnexpectedVariable(_))
         ));
+    }
+
+    #[test]
+    fn builders_return_only_checked_specs() {
+        let pair = RecordBuilder::new("pair")
+            .field("left", "a")
+            .field("right", "b")
+            .build()
+            .unwrap();
+        assert_eq!(pair.fields.len(), 2);
+
+        let bad = PolynomialBuilder::<()>::new("bad")
+            .variant(VariantCase::nullary(""))
+            .build();
+        assert!(matches!(bad, Err(SpecError::EmptyName { .. })));
     }
 }

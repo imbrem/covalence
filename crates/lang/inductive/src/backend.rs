@@ -4,6 +4,9 @@ use crate::error::IndResult;
 use crate::logic::Logic;
 use crate::spec::InductiveSpec;
 use crate::theory::InductiveTheory;
+use crate::validated::Validated;
+
+// TODO(cov:inductive.legacy-fixpoint-adapter, major): Adapt InductiveTheory to LeastFixpoint when the logic API exposes polynomial functor action/map terms without representation-specific assumptions.
 
 /// A way of realizing inductive specs in logic `L`.
 ///
@@ -24,4 +27,18 @@ pub trait InductiveBackend<L: Logic> {
     /// Realize a spec as a theory bundle in logic `L`.
     fn realize(&self, logic: &L, spec: &InductiveSpec<L::Type>)
     -> IndResult<InductiveTheory<L>, L>;
+
+    /// Realize an already validated specification.
+    ///
+    /// This additive adapter lets existing backends retain their `realize`
+    /// implementation while new consumers keep validation at the API
+    /// boundary. A future backend API can make this the only entry point
+    /// after legacy consumers migrate.
+    fn realize_validated(
+        &self,
+        logic: &L,
+        spec: &Validated<InductiveSpec<L::Type>>,
+    ) -> IndResult<InductiveTheory<L>, L> {
+        self.realize(logic, spec.as_inner())
+    }
 }

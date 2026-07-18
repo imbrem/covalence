@@ -194,6 +194,45 @@ pub enum JsonParseErrorKind {
     UnescapedControl,
     DuplicateName,
     TrailingInput,
+    /// A container would exceed the parser's configured nesting limit.
+    NestingLimitExceeded {
+        limit: usize,
+    },
+}
+
+/// A checked upper bound on nested JSON arrays and objects.
+///
+/// The hard ceiling keeps the recursive syntax and semantic conversions in
+/// this reference implementation stack-safe even when configuration comes
+/// from untrusted input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JsonNestingLimit(usize);
+
+impl JsonNestingLimit {
+    /// Default limit used by [`JsonSyntaxParser`] and [`JsonParser`].
+    pub const DEFAULT: Self = Self(128);
+    /// Largest limit accepted by this recursive reference implementation.
+    pub const MAX_SUPPORTED: usize = 256;
+
+    /// Construct a checked nesting limit. Zero permits scalar roots only.
+    pub const fn new(limit: usize) -> Option<Self> {
+        if limit <= Self::MAX_SUPPORTED {
+            Some(Self(limit))
+        } else {
+            None
+        }
+    }
+
+    /// Return the maximum number of nested containers.
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
+impl Default for JsonNestingLimit {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
 }
 
 /// Positive, checkable parsing evidence retained by the reference parser.
@@ -228,9 +267,22 @@ impl JsonSyntaxParser {
         &self,
         source: &[u8],
     ) -> Result<(ParsedJsonValue, JsonParseWitness), JsonParseError> {
-        let mut parser = ByteParser { source, offset: 0 };
+        self.parse_diagnostic_with_limit(source, JsonNestingLimit::DEFAULT)
+    }
+
+    /// Parse with an explicit, checked container nesting limit.
+    pub fn parse_diagnostic_with_limit(
+        &self,
+        source: &[u8],
+        limit: JsonNestingLimit,
+    ) -> Result<(ParsedJsonValue, JsonParseWitness), JsonParseError> {
+        let mut parser = ByteParser {
+            source,
+            offset: 0,
+            nesting_limit: limit.get(),
+        };
         parser.whitespace();
-        let value = parser.value()?;
+        let value = parser.value(0)?;
         parser.whitespace();
         if parser.offset != source.len() {
             return Err(parser.error(JsonParseErrorKind::TrailingInput));
@@ -249,7 +301,16 @@ impl JsonParser {
         &self,
         source: &[u8],
     ) -> Result<(JsonValue, JsonParseWitness), JsonParseError> {
-        let (syntax, witness) = JsonSyntaxParser.parse_diagnostic(source)?;
+        self.parse_diagnostic_with_limit(source, JsonNestingLimit::DEFAULT)
+    }
+
+    /// Parse with an explicit, checked container nesting limit.
+    pub fn parse_diagnostic_with_limit(
+        &self,
+        source: &[u8],
+        limit: JsonNestingLimit,
+    ) -> Result<(JsonValue, JsonParseWitness), JsonParseError> {
+        let (syntax, witness) = JsonSyntaxParser.parse_diagnostic_with_limit(source, limit)?;
         let value = syntax.clone().into_semantic().map_err(|_| JsonParseError {
             offset: source.len(),
             kind: JsonParseErrorKind::DuplicateName,
@@ -309,6 +370,7 @@ impl InterpretationPer for JsonParser {
 struct ByteParser<'a> {
     source: &'a [u8],
     offset: usize,
+    nesting_limit: usize,
 }
 
 impl ByteParser<'_> {
@@ -347,8 +409,7 @@ impl ByteParser<'_> {
         }
     }
 
-    fn value(&mut self) -> Result<ParsedJsonValue, JsonParseError> {
-        // FIXME(cov:json.parser-depth-limit, severe): Replace recursive descent with an explicit stack or enforce a configurable nesting bound before accepting adversarial input.
+    fn value(&mut self, depth: usize) -> Result<ParsedJsonValue, JsonParseError> {
         match self.peek() {
             Some(b'n') => {
                 self.literal(b"null")?;
@@ -363,14 +424,30 @@ impl ByteParser<'_> {
                 Ok(ParsedJsonValue::Bool(false))
             }
             Some(b'"') => self.string().map(ParsedJsonValue::String),
-            Some(b'[') => self.array(),
-            Some(b'{') => self.object(),
+            Some(b'[') => {
+                self.check_container_depth(depth)?;
+                self.array(depth + 1)
+            }
+            Some(b'{') => {
+                self.check_container_depth(depth)?;
+                self.object(depth + 1)
+            }
             Some(b'-' | b'0'..=b'9') => self.number().map(ParsedJsonValue::Number),
             _ => Err(self.error(JsonParseErrorKind::ExpectedValue)),
         }
     }
 
-    fn array(&mut self) -> Result<ParsedJsonValue, JsonParseError> {
+    fn check_container_depth(&self, depth: usize) -> Result<(), JsonParseError> {
+        if depth < self.nesting_limit {
+            Ok(())
+        } else {
+            Err(self.error(JsonParseErrorKind::NestingLimitExceeded {
+                limit: self.nesting_limit,
+            }))
+        }
+    }
+
+    fn array(&mut self, depth: usize) -> Result<ParsedJsonValue, JsonParseError> {
         self.take(b'[')?;
         self.whitespace();
         let mut values = Vec::new();
@@ -379,7 +456,7 @@ impl ByteParser<'_> {
             return Ok(ParsedJsonValue::Array(values));
         }
         loop {
-            values.push(self.value()?);
+            values.push(self.value(depth)?);
             self.whitespace();
             match self.peek() {
                 Some(b',') => {
@@ -395,7 +472,7 @@ impl ByteParser<'_> {
         }
     }
 
-    fn object(&mut self) -> Result<ParsedJsonValue, JsonParseError> {
+    fn object(&mut self, depth: usize) -> Result<ParsedJsonValue, JsonParseError> {
         self.take(b'{')?;
         self.whitespace();
         let mut members = Vec::new();
@@ -408,7 +485,7 @@ impl ByteParser<'_> {
             self.whitespace();
             self.take(b':')?;
             self.whitespace();
-            let value = self.value()?;
+            let value = self.value(depth)?;
             members.push(ParsedJsonMember { name, value });
             self.whitespace();
             match self.peek() {
@@ -799,5 +876,52 @@ mod tests {
                 "accepted {invalid:?}"
             );
         }
+    }
+
+    #[test]
+    fn checked_nesting_limit_accepts_boundary_and_rejects_next_container() {
+        let four = JsonNestingLimit::new(4).unwrap();
+        assert!(
+            JsonSyntaxParser
+                .parse_diagnostic_with_limit(b"[[[[0]]]]", four)
+                .is_ok()
+        );
+
+        let error = JsonSyntaxParser
+            .parse_diagnostic_with_limit(b"[[[[[0]]]]]", four)
+            .unwrap_err();
+        assert_eq!(error.offset, 4);
+        assert_eq!(
+            error.kind,
+            JsonParseErrorKind::NestingLimitExceeded { limit: 4 }
+        );
+
+        let scalar_only = JsonNestingLimit::new(0).unwrap();
+        assert!(
+            JsonParser
+                .parse_diagnostic_with_limit(b"1.2300e2", scalar_only)
+                .is_ok()
+        );
+        assert_eq!(
+            JsonParser
+                .parse_diagnostic_with_limit(b"[]", scalar_only)
+                .unwrap_err()
+                .kind,
+            JsonParseErrorKind::NestingLimitExceeded { limit: 0 }
+        );
+    }
+
+    #[test]
+    fn adversarial_nesting_is_rejected_before_recursive_stack_growth() {
+        let source = vec![b'['; 100_000];
+        let error = JsonSyntaxParser.parse_diagnostic(&source).unwrap_err();
+        assert_eq!(error.offset, JsonNestingLimit::DEFAULT.get());
+        assert_eq!(
+            error.kind,
+            JsonParseErrorKind::NestingLimitExceeded {
+                limit: JsonNestingLimit::DEFAULT.get()
+            }
+        );
+        assert!(JsonNestingLimit::new(JsonNestingLimit::MAX_SUPPORTED + 1).is_none());
     }
 }

@@ -9,6 +9,8 @@
 //! The traits are deliberately capability-sized.  A backend may implement
 //! syntax without proof rules, equality without classical logic, or the
 //! relational fragment without claiming to decide a relation.
+//!
+//! @covalence-api {"id":"A0001","title":"Logic carriers and capabilities","status":"experimental","dependsOn":[]}
 
 #![forbid(unsafe_code)]
 

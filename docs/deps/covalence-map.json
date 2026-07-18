@@ -20,6 +20,24 @@
       "updated": 0
     },
     {
+      "id": "api:A0001",
+      "kind": "api",
+      "title": "Logic carriers and capabilities",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0002",
+      "kind": "api",
+      "title": "Natural numbers",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/nat.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -385,7 +403,7 @@
       "title": "+layout.svelte",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/+layout.svelte",
-      "words": 39,
+      "words": 40,
       "updated": 0
     },
     {
@@ -403,7 +421,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/+page.svelte",
-      "words": 468,
+      "words": 486,
       "updated": 0
     },
     {
@@ -457,7 +475,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 31009,
+      "words": 31089,
       "updated": 0
     },
     {
@@ -6649,7 +6667,7 @@
       "title": "nat_api.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/nat_api.rs",
-      "words": 113,
+      "words": 115,
       "updated": 0
     },
     {
@@ -8206,7 +8224,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 153,
+      "words": 155,
       "updated": 0
     },
     {
@@ -8215,7 +8233,7 @@
       "title": "nat.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/nat.rs",
-      "words": 157,
+      "words": 159,
       "updated": 0
     },
     {
@@ -13633,7 +13651,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 31009,
+      "words": 31089,
       "updated": 0
     },
     {
@@ -15667,7 +15685,7 @@
       "title": "notes.mjs",
       "status": "tracked",
       "path": "scripts/notes.mjs",
-      "words": 684,
+      "words": 752,
       "updated": 0
     },
     {
@@ -15848,6 +15866,15 @@
       "status": "tracked",
       "path": "tsconfig.json",
       "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0002:NativeHol",
+      "kind": "implementation",
+      "title": "NativeHol",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_api.rs",
+      "words": 0,
       "updated": 0
     },
     {
@@ -19885,6 +19912,24 @@
   ],
   "edges": [
     {
+      "source": "api:A0001",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/logic/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0002",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/logic/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0002",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
       "source": "file:apps/covalence-web/src/lib/Repl.test.ts",
       "predicate": "imports",
       "target": "file:apps/covalence-web/src/lib/Repl.svelte",
@@ -23351,6 +23396,18 @@
       "predicate": "imports",
       "target": "file:scripts/_setmm.mjs",
       "detail": null
+    },
+    {
+      "source": "impl:A0002:NativeHol",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0002:NativeHol",
+      "predicate": "implements",
+      "target": "api:A0002",
+      "detail": "HOL natural-number leaves and definitions"
     },
     {
       "source": "note:notes/README.md",
@@ -29125,6 +29182,29 @@
       "stableId": "N003D",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    }
+  ],
+  "apiMetadata": [
+    {
+      "id": "A0001",
+      "title": "Logic carriers and capabilities",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/lib.rs"
+    },
+    {
+      "id": "A0002",
+      "title": "Natural numbers",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/nat.rs"
+    }
+  ],
+  "apiImplementations": [
+    {
+      "id": "impl:A0002:NativeHol",
+      "apiId": "A0002",
+      "name": "NativeHol",
+      "representation": "HOL natural-number leaves and definitions",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_api.rs"
     }
   ],
   "actors": [

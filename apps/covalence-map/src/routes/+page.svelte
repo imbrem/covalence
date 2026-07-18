@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { KnowledgeGraphView } from 'covalence-ui';
 
-	type Kind = 'task' | 'todo' | 'term' | 'note' | 'file';
-	type Mode = 'tasks' | 'neighborhood' | 'notes' | 'terms' | 'source';
+	type Kind = 'task' | 'todo' | 'term' | 'note' | 'file' | 'api' | 'implementation';
+	type Mode = 'tasks' | 'neighborhood' | 'notes' | 'terms' | 'source' | 'apis';
 	type MapNode = {
 		id: string;
 		kind: Kind;
@@ -58,7 +58,7 @@
 			),
 		].sort() as string[],
 	);
-	const kinds: Kind[] = ['task', 'todo', 'term', 'note', 'file'];
+	const kinds: Kind[] = ['task', 'todo', 'term', 'api', 'implementation', 'note', 'file'];
 
 	let mode = $state<Mode>(
 		data.view === 'notes'
@@ -67,6 +67,8 @@
 				? 'source'
 				: data.view === 'terms'
 					? 'terms'
+					: data.view === 'apis'
+						? 'apis'
 					: 'tasks',
 	);
 	let taskId = $state(allNodes.find((node) => node.kind === 'task')?.id ?? '');
@@ -99,6 +101,14 @@
 				if (ids.has(edge.source)) ids.add(edge.target);
 				if (ids.has(edge.target)) ids.add(edge.source);
 			}
+		} else if (mode === 'apis') {
+			for (const node of allNodes) {
+				if (node.kind === 'api' || node.kind === 'implementation') ids.add(node.id);
+			}
+			for (const edge of allEdges) {
+				if (ids.has(edge.source)) ids.add(edge.target);
+				if (ids.has(edge.target)) ids.add(edge.source);
+			}
 		} else {
 			for (const node of allNodes) if (node.kind === 'file') ids.add(node.id);
 		}
@@ -123,6 +133,7 @@
 				return ['links-to', 'documents', 'mentions'].includes(edge.predicate);
 			}
 			if (mode === 'terms') return ['defined-by', 'uses-term'].includes(edge.predicate);
+			if (mode === 'apis') return ['depends-on', 'implements', 'defined-in'].includes(edge.predicate);
 			return true;
 		}),
 	);
@@ -147,6 +158,8 @@
 					? (allNodes.find((node) => node.kind === 'note')?.id ?? null)
 					: next === 'terms'
 						? (allNodes.find((node) => node.kind === 'term')?.id ?? null)
+						: next === 'apis'
+							? (allNodes.find((node) => node.kind === 'api')?.id ?? null)
 						: next === 'source'
 							? (allNodes.find((node) => node.kind === 'file')?.id ?? null)
 					: (tasks[0]?.id ?? null);
@@ -173,6 +186,7 @@
 				task neighborhood
 			</button>
 			<button type="button" class:on={mode === 'terms'} onclick={() => setMode('terms')}>terms</button>
+			<button type="button" class:on={mode === 'apis'} onclick={() => setMode('apis')}>core APIs</button>
 		</div>
 
 		{#if mode === 'neighborhood'}
@@ -241,7 +255,11 @@
 			<KnowledgeGraphView
 			nodes={visibleNodes.map((node) => ({
 				id: node.id,
-				label: node.kind === 'note' ? (noteStableIds.get(node.id) ?? node.title) : node.title,
+				label: node.kind === 'note'
+					? (noteStableIds.get(node.id) ?? node.title)
+					: node.kind === 'api'
+						? `${node.id.slice(4)} · ${node.title}`
+						: node.title,
 				kind: node.kind,
 				status: node.status,
 			}))}

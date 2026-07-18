@@ -7,6 +7,6 @@ export async function load({ fetch, url }) {
 	const view = url.searchParams.get('view');
 	return {
 		map: await response.json(),
-		view: ['notes', 'source', 'terms'].includes(view ?? '') ? view : 'map',
+		view: ['notes', 'source', 'terms', 'apis'].includes(view ?? '') ? view : 'map',
 	};
 }

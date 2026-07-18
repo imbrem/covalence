@@ -4,6 +4,8 @@
 //! carriers. They do not prescribe a representation, computation strategy, or
 //! trusted implementation. Consumers should require only the capabilities they
 //! use; decision and normalization procedures are optional extensions.
+//!
+//! @covalence-api {"id":"A0002","title":"Natural numbers","status":"experimental","dependsOn":["A0001"]}
 
 use crate::Logic;
 

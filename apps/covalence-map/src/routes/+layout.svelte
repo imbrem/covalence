@@ -9,6 +9,7 @@
 	<a href="/?view=notes" data-sveltekit-reload>notes</a>
 	<a href="/?view=source" data-sveltekit-reload>source</a>
 	<a href="/?view=terms" data-sveltekit-reload>terms</a>
+	<a href="/?view=apis" data-sveltekit-reload>APIs</a>
 </nav>
 
 {@render children()}

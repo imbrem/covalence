@@ -143,6 +143,8 @@ for (const line of execFileSync(
 const nodes = [];
 const edges = [];
 const noteMetadata = [];
+const apiMetadata = [];
+const apiImplementations = [];
 const actors = new Map();
 const contributions = [];
 const sources = new Map();
@@ -197,6 +199,49 @@ for (const item of todoItems) {
 
 for (const file of sourceFiles) {
   node(`file:${file.path}`, "file", file.path.split("/").at(-1), "tracked", file.path, file.lines, 0);
+}
+
+// Core APIs and their implementations are declared next to the Rust surface
+// they describe. Strict JSON doc-comment tags remain legible to rustdoc while
+// giving later cargo-doc-style tooling a stable interchange format.
+for (const file of sourceFiles.filter((item) => item.language === "rust")) {
+  for (const match of file.content.matchAll(/^\s*\/\/[!\/]\s*@covalence-api\s+(\{.+\})\s*$/gm)) {
+    const metadata = JSON.parse(match[1]);
+    if (
+      typeof metadata.id !== "string" ||
+      !/^A[0-9A-Z]{4,}$/.test(metadata.id) ||
+      typeof metadata.title !== "string" ||
+      typeof metadata.status !== "string" ||
+      !Array.isArray(metadata.dependsOn)
+    )
+      throw new Error(`${file.path}: invalid @covalence-api metadata`);
+    if (apiMetadata.some((item) => item.id === metadata.id))
+      throw new Error(`${file.path}: duplicate API ID ${metadata.id}`);
+    apiMetadata.push({ ...metadata, path: file.path });
+    node(`api:${metadata.id}`, "api", metadata.title, metadata.status, file.path, 0, 0);
+    edge(`api:${metadata.id}`, "defined-in", `file:${file.path}`);
+    for (const dependency of metadata.dependsOn)
+      edge(`api:${metadata.id}`, "depends-on", `api:${dependency}`);
+  }
+  for (const match of file.content.matchAll(
+    /^\s*\/\/[!\/]\s*@covalence-api-impl\s+(\{.+\})\s*$/gm,
+  )) {
+    const metadata = JSON.parse(match[1]);
+    if (
+      typeof metadata.api !== "string" ||
+      !/^A[0-9A-Z]{4,}$/.test(metadata.api) ||
+      typeof metadata.name !== "string" ||
+      typeof metadata.representation !== "string"
+    )
+      throw new Error(`${file.path}: invalid @covalence-api-impl metadata`);
+    const id = `impl:${metadata.api}:${metadata.name}`;
+    if (apiImplementations.some((item) => item.id === id))
+      throw new Error(`${file.path}: duplicate API implementation ${id}`);
+    apiImplementations.push({ id, ...metadata, path: file.path });
+    node(id, "implementation", metadata.name, "implemented", file.path, 0, 0);
+    edge(id, "implements", `api:${metadata.api}`, metadata.representation);
+    edge(id, "defined-in", `file:${file.path}`);
+  }
 }
 
 const termDefinitions = new Map();
@@ -429,6 +474,14 @@ db.exec(`
     note_id TEXT PRIMARY KEY REFERENCES nodes(id), stable_id TEXT NOT NULL UNIQUE,
     review TEXT NOT NULL, format TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE api_metadata (
+    id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
+    path TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE api_implementations (
+    id TEXT PRIMARY KEY, api_id TEXT NOT NULL, name TEXT NOT NULL,
+    representation TEXT NOT NULL, path TEXT NOT NULL
+  ) STRICT;
   CREATE TABLE actors (
     id TEXT PRIMARY KEY, kind TEXT NOT NULL, display_name TEXT NOT NULL
   ) STRICT;
@@ -465,6 +518,8 @@ db.exec(`
 const putNode = db.prepare(`INSERT OR REPLACE INTO nodes VALUES (?,?,?,?,?,?,?)`);
 const putEdge = db.prepare(`INSERT OR REPLACE INTO edges VALUES (?,?,?,?)`);
 const putMetadata = db.prepare(`INSERT INTO note_metadata VALUES (?,?,?,?)`);
+const putApiMetadata = db.prepare(`INSERT INTO api_metadata VALUES (?,?,?,?)`);
+const putApiImplementation = db.prepare(`INSERT INTO api_implementations VALUES (?,?,?,?,?)`);
 const putActor = db.prepare(`INSERT INTO actors VALUES (?,?,?)`);
 const putContribution = db.prepare(`INSERT INTO contributions VALUES (?,?,?,?,?,?,?,?)`);
 const putSource = db.prepare(`INSERT INTO sources VALUES (?,?,?,?,?)`);
@@ -476,6 +531,10 @@ db.transaction(() => {
   for (const item of nodes) putNode.run(...Object.values(item));
   for (const item of edges) putEdge.run(...Object.values(item));
   for (const item of noteMetadata) putMetadata.run(...Object.values(item));
+  for (const item of apiMetadata)
+    putApiMetadata.run(item.id, item.title, item.status, item.path);
+  for (const item of apiImplementations)
+    putApiImplementation.run(item.id, item.api, item.name, item.representation, item.path);
   for (const item of actors.values()) putActor.run(...Object.values(item));
   for (const item of contributions) putContribution.run(...Object.values(item));
   for (const item of sources.values()) putSource.run(...Object.values(item));
@@ -500,6 +559,15 @@ const artifact =
         .query(
           `SELECT note_id noteId,stable_id stableId,review,format
            FROM note_metadata ORDER BY stable_id`,
+        )
+        .all(),
+      apiMetadata: db
+        .query(`SELECT id,title,status,path FROM api_metadata ORDER BY id`)
+        .all(),
+      apiImplementations: db
+        .query(
+          `SELECT id,api_id apiId,name,representation,path
+           FROM api_implementations ORDER BY api_id,name`,
         )
         .all(),
       actors: db

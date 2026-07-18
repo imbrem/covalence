@@ -1,4 +1,6 @@
 //! Native HOL adapter for the logic-agnostic natural-number capabilities.
+//!
+//! @covalence-api-impl {"api":"A0002","name":"NativeHol","representation":"HOL natural-number leaves and definitions"}
 
 use covalence_core::{Result, Term, Type};
 use covalence_logic_api::nat::{

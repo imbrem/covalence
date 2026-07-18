@@ -25,7 +25,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 154,
+      "words": 157,
       "updated": 0
     },
     {
@@ -457,7 +457,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 30952,
+      "words": 30997,
       "updated": 0
     },
     {
@@ -500,7 +500,7 @@
       "id": "file:apps/covalence-web/build/",
       "kind": "file",
       "title": "apps/covalence-web/build/",
-      "status": "missing",
+      "status": null,
       "path": "apps/covalence-web/build/",
       "words": 0,
       "updated": 0
@@ -617,7 +617,7 @@
       "id": "file:apps/covalence-web/src/lib/kernel/",
       "kind": "file",
       "title": "apps/covalence-web/src/lib/kernel/",
-      "status": "missing",
+      "status": null,
       "path": "apps/covalence-web/src/lib/kernel/",
       "words": 0,
       "updated": 0
@@ -3875,7 +3875,7 @@
       "id": "file:crates/ffi/python/.venv",
       "kind": "file",
       "title": "crates/ffi/python/.venv",
-      "status": "missing",
+      "status": null,
       "path": "crates/ffi/python/.venv",
       "words": 0,
       "updated": 0
@@ -4957,7 +4957,7 @@
       "title": "nat.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/api/src/nat.rs",
-      "words": 314,
+      "words": 307,
       "updated": 0
     },
     {
@@ -5011,7 +5011,7 @@
       "title": "through_the_api.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/api/tests/through_the_api.rs",
-      "words": 133,
+      "words": 152,
       "updated": 0
     },
     {
@@ -6640,7 +6640,16 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/mod.rs",
-      "words": 83,
+      "words": 84,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/nat_api.rs",
+      "kind": "file",
+      "title": "nat_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_api.rs",
+      "words": 113,
       "updated": 0
     },
     {
@@ -8197,7 +8206,16 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 148,
+      "words": 153,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/logic/src/nat.rs",
+      "kind": "file",
+      "title": "nat.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/logic/src/nat.rs",
+      "words": 157,
       "updated": 0
     },
     {
@@ -9052,7 +9070,7 @@
       "title": "fixpoint.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/fixpoint.rs",
-      "words": 278,
+      "words": 317,
       "updated": 0
     },
     {
@@ -9070,7 +9088,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/lib.rs",
-      "words": 95,
+      "words": 100,
       "updated": 0
     },
     {
@@ -9098,6 +9116,15 @@
       "status": "tracked",
       "path": "crates/lang/inductive/src/spec.rs",
       "words": 316,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/inductive/src/stream.rs",
+      "kind": "file",
+      "title": "stream.rs",
+      "status": "tracked",
+      "path": "crates/lang/inductive/src/stream.rs",
+      "words": 276,
       "updated": 0
     },
     {
@@ -9790,7 +9817,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "words": 302,
+      "words": 538,
       "updated": 0
     },
     {
@@ -13606,7 +13633,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 30952,
+      "words": 30997,
       "updated": 0
     },
     {
@@ -13714,7 +13741,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3109,
+      "words": 3089,
       "updated": 0
     },
     {
@@ -18949,9 +18976,9 @@
     {
       "id": "todo:kernel.nat.logic-api-migration",
       "kind": "todo",
-      "title": "Move these capabilities onto covalence-logic-api's associated Error and carrier traits; keep this concrete-Hol surface as the compatibility adapter.",
-      "status": "major",
-      "path": "crates/kernel/hol/api/src/nat.rs",
+      "title": "kernel.nat.logic-api-migration",
+      "status": null,
+      "path": "kernel.nat.logic-api-migration",
       "words": 0,
       "updated": 0
     },
@@ -19822,9 +19849,9 @@
     {
       "id": "todo:sexpr.no-confusion-laws",
       "kind": "todo",
-      "title": "Extend the generic proof-bearing fixpoint API with constructor distinctness/injectivity, then expose named S-expression no-confusion rules here.",
-      "status": "major",
-      "path": "crates/lang/sexpr-api/src/lib.rs",
+      "title": "sexpr.no-confusion-laws",
+      "status": null,
+      "path": "sexpr.no-confusion-laws",
       "words": 0,
       "updated": 0
     },
@@ -20958,6 +20985,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/recursor.rs",
       "detail": null
     },
@@ -21756,6 +21789,12 @@
     {
       "source": "file:crates/kernel/hol/logic/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/logic/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/logic/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/logic/src/relation.rs",
       "detail": null
     },
@@ -21985,6 +22024,12 @@
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/inductive/src/spec.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/inductive/src/stream.rs",
       "detail": null
     },
     {
@@ -26815,19 +26860,19 @@
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:apps/covalence-web/build/",
-      "detail": "missing"
+      "detail": null
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:apps/covalence-web/src/lib/kernel/",
-      "detail": "missing"
+      "detail": null
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:crates/ffi/python/.venv",
-      "detail": "missing"
+      "detail": null
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",

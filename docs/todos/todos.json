@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 309,
-  "structured": 309,
+  "count": 308,
+  "structured": 308,
   "items": [
     {
       "id": "ffi.python.hol-kernel-bindings-removed-pending-rewrite",

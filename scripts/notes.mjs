@@ -8,6 +8,7 @@
  *   bun run notes -- --stale 30
  *   bun run notes -- --task api-foundations
  *   bun run notes -- --term T0001
+ *   bun run notes -- --api A0002
  *   bun run notes -- --note N0001
  *   bun run notes -- --actor agent:forester-provenance-research
  *   bun run notes -- --sql "select * from edges where predicate='depends-on'"
@@ -670,6 +671,7 @@ const sql = valueAfter("--sql");
 const stale = valueAfter("--stale");
 const task = valueAfter("--task");
 const term = valueAfter("--term");
+const apiId = valueAfter("--api");
 const noteId = valueAfter("--note");
 const actorId = valueAfter("--actor");
 if (sql) {
@@ -707,6 +709,19 @@ if (sql) {
          ORDER BY e.predicate,n.path`,
       )
       .all(`term:${term}`, `term:${term}`, `term:${term}`),
+  );
+} else if (apiId) {
+  show(
+    db
+      .query(
+        `SELECT CASE WHEN e.source=? THEN 'out' ELSE 'in' END direction,
+                e.predicate,n.kind,n.id,n.title,n.path,e.detail
+         FROM edges e
+         JOIN nodes n ON n.id=CASE WHEN e.source=? THEN e.target ELSE e.source END
+         WHERE e.source=? OR e.target=?
+         ORDER BY direction,e.predicate,n.id`,
+      )
+      .all(`api:${apiId}`, `api:${apiId}`, `api:${apiId}`, `api:${apiId}`),
   );
 } else if (noteId) {
   show(

@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 298,
-  "structured": 298,
+  "count": 307,
+  "structured": 307,
   "items": [
     {
       "id": "ffi.python.hol-kernel-bindings-removed-pending-rewrite",
@@ -13,6 +13,66 @@
       "path": "crates/ffi/python/open_work.rs",
       "line": 6,
       "crate": "covalence-python"
+    },
+    {
+      "id": "graph.abstract-trait-separation",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Keep this ordered port graph as a first-class string-diagram backend while adding distinct Graph, DiGraph, MultiGraph, HyperGraph, and PortGraph traits per notes/design/graph-api.md.",
+      "structured": true,
+      "path": "crates/lib/graph/src/lib.rs",
+      "line": 44,
+      "crate": "covalence-graph"
+    },
+    {
+      "id": "graph.verified-interchange",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Implement DOT and common NetworkX-format interpreters with round-trip and graph-isomorphism properties as specified in notes/design/graph-api.md.",
+      "structured": true,
+      "path": "crates/lib/graph/src/lib.rs",
+      "line": 45,
+      "crate": "covalence-graph"
+    },
+    {
+      "id": "inductive.fixpoint-law-bundles",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Define shared proof-bearing in/out isomorphism, fold/unfold, induction, coinduction, and computation-law bundles instead of leaving realizations wholly opaque.",
+      "structured": true,
+      "path": "crates/lang/inductive/src/fixpoint.rs",
+      "line": 14,
+      "crate": "covalence-inductive"
+    },
+    {
+      "id": "inductive.functor-expressions",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Extend direct Param/Var positions with zero, one, sum, product, and composition expressions while retaining named sum-of-products as the ergonomic normal form.",
+      "structured": true,
+      "path": "crates/lang/inductive/src/polynomial.rs",
+      "line": 20,
+      "crate": "covalence-inductive"
+    },
+    {
+      "id": "inductive.logic-api-adapter",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Adapt this compatibility surface to covalence-logic-api once its carrier traits stabilize.",
+      "structured": true,
+      "path": "crates/lang/inductive/src/logic.rs",
+      "line": 27,
+      "crate": "covalence-inductive"
+    },
+    {
+      "id": "inductive.validated-specs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add validated wrappers/builders so normal backend entry points cannot receive unchecked polynomial and aggregate specifications.",
+      "structured": true,
+      "path": "crates/lang/inductive/src/polynomial.rs",
+      "line": 19,
+      "crate": "covalence-inductive"
     },
     {
       "id": "kernel.base.canon-only-on-ground-args",
@@ -2013,6 +2073,36 @@
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
       "line": 20,
       "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.logic.relation-allegory",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add products, coproducts, residuals, tabulation, and closure capabilities with law bundles, without making them prerequisites for the core relation algebra.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/relation.rs",
+      "line": 85,
+      "crate": "covalence-logic-api"
+    },
+    {
+      "id": "kernel.logic.relation-judgment-separation",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Split proposition construction, derivation laws, supplied evidence, and optional decision procedures so this API does not suggest arbitrary inclusions can be proved on demand.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/relation.rs",
+      "line": 92,
+      "crate": "covalence-logic-api"
+    },
+    {
+      "id": "kernel.nat.logic-api-migration",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Move these capabilities onto covalence-logic-api's associated Error and carrier traits; keep this concrete-Hol surface as the compatibility adapter.",
+      "structured": true,
+      "path": "crates/kernel/hol/api/src/nat.rs",
+      "line": 22,
+      "crate": "covalence-hol-api"
     },
     {
       "id": "kernel.sat.drat-no-hints-not-handled",

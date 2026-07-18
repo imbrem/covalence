@@ -1,9 +1,16 @@
-//! **The inductive-types API** — a logic-agnostic vocabulary for *simple*
-//! inductive datatypes, abstracting over their **representation**.
+//! **Polynomial datatype APIs** — logic-agnostic vocabularies for aggregate
+//! types and least/greatest fixpoints, abstracting over their
+//! **representation**.
 //!
 //! ## The shape
 //!
-//! - [`InductiveSpec`] — a **plain-data** description of a datatype
+//! - [`RecordSpec`], [`VariantSpec`], and [`EnumSpec`] — non-recursive
+//!   aggregates, all represented by the same named sum-of-products model.
+//! - [`PolynomialSpec`] / [`FixpointSpec`] — the shared functor vocabulary
+//!   and separate least/greatest realization seams
+//!   ([`InductiveFixpointBackend`] / [`CoinductiveFixpointBackend`]).
+//! - [`InductiveSpec`] — the compatibility **plain-data** description
+//!   of a simple datatype
 //!   (constructors + argument sorts), generic over an external-sort token
 //!   `X` and free of any logic's term/type values. Serializable,
 //!   content-addressable, comparable.
@@ -44,15 +51,29 @@
 //!
 //! Design rationale: `notes/vibes/inductive-api-design.md`.
 
+pub mod aggregate;
 pub mod backend;
 pub mod conformance;
 pub mod error;
+pub mod fixpoint;
 pub mod logic;
+pub mod polynomial;
 pub mod spec;
 pub mod theory;
 
+pub use aggregate::{
+    AggregateRealizeError, EnumBackend, RecordBackend, VariantBackend, realize_enum,
+    realize_record, realize_variant,
+};
 pub use backend::InductiveBackend;
 pub use error::{IndResult, InductiveError, SpecError};
+pub use fixpoint::{
+    CoinductiveFixpointBackend, FixpointSpec, InductiveFixpointBackend, RealizeError,
+    realize_coinductive, realize_inductive,
+};
 pub use logic::{Logic, LogicOps, beta_expand, beta_reduce};
+pub use polynomial::{
+    EnumSpec, FieldSpec, PolynomialSpec, Position, RecordSpec, VariantCase, VariantSpec,
+};
 pub use spec::{ArgSort, CtorSpec, InductiveSpec};
 pub use theory::{BackendCaps, InductiveFacts, InductiveTheory};

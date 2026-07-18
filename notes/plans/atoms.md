@@ -18,3 +18,6 @@ We also want the following low-level atoms:
 - integer literals:
   - nat + sign
   - fixed width from nat/int
+
+In terms of semantics, we want to start building up subsets of WASM as we go towards the full thing
+-- as well as subsets of SpecTec, e.g. for WASM's grammar.

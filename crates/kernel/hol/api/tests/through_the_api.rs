@@ -85,3 +85,48 @@ fn generic_helper_over_hol_nat() {
     assert_eq!(rhs, k);
     assert!(hol.hyps(&thm).is_empty());
 }
+
+mod narrow_capabilities {
+    use covalence_hol_api::nat::{
+        NatAdditiveLaws, NatArithmetic, NatFreeness, NatMultiplicativeLaws, NatOrder,
+        NatRecursionLaws, NatSyntax,
+    };
+    use covalence_hol_api::{Hol, NativeHol};
+
+    /// Construction-only consumers do not need to require any Peano laws.
+    fn build_two<N: NatSyntax>(nat: &N) -> N::Term {
+        nat.succ(nat.succ(nat.zero()).expect("first successor"))
+            .expect("second successor")
+    }
+
+    /// Algebraic consumers can ask for just addition and its laws, without
+    /// requiring multiplication laws, freeness, recursion, or a decision oracle.
+    fn commute_two<N: NatAdditiveLaws>(nat: &N) -> N::Thm {
+        let comm = nat.add_comm().expect("add_comm");
+        let two = build_two(nat);
+        let step = nat.all_elim(comm, two.clone()).expect("spec a");
+        nat.all_elim(step, two).expect("spec b")
+    }
+
+    #[test]
+    fn independently_usable() {
+        let hol = NativeHol;
+        let two = build_two(&hol);
+        assert_eq!(hol.type_of(&two).unwrap(), NatSyntax::nat_ty(&hol));
+        let two_lt_three = NatOrder::lt(&hol, two.clone(), NatSyntax::lit(&hol, 3)).expect("2 < 3");
+        assert_eq!(hol.type_of(&two_lt_three).unwrap(), hol.bool_ty());
+        assert!(hol.hyps(&commute_two(&hol)).is_empty());
+
+        fn complete_native_capabilities<N>(_: &N)
+        where
+            N: NatArithmetic
+                + NatOrder
+                + NatFreeness
+                + NatRecursionLaws
+                + NatAdditiveLaws
+                + NatMultiplicativeLaws,
+        {
+        }
+        complete_native_capabilities(&hol);
+    }
+}

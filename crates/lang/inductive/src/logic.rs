@@ -24,6 +24,8 @@
 
 use std::fmt::Debug;
 
+// TODO(cov:inductive.logic-api-adapter, major): Adapt this compatibility surface to covalence-logic-api once its carrier traits stabilize.
+
 /// Tier 1 — the carrier: what an [`InductiveTheory`](crate::InductiveTheory)
 /// is stated over.
 pub trait Logic {

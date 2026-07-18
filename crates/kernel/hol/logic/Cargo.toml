@@ -1,0 +1,10 @@
+[package]
+name = "covalence-logic-api"
+version = "0.0.0"
+edition = "2024"
+
+description = "Dependency-free traits and vocabulary for Covalence logic backends"
+license.workspace = true
+
+[dependencies]
+

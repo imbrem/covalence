@@ -32,6 +32,7 @@ digraph deps {
   "lean";
   "lisp";
   "llm";
+  "logic-api";
   "lsp";
   "metamath";
   "multiformat";
@@ -116,6 +117,7 @@ digraph deps {
   "hol-api" -> "hol-eval";
   "hol-api" -> "inductive";
   "hol-api" -> "init";
+  "hol-api" -> "logic-api";
   "hol-api" -> "pure";
   "hol-api" -> "types";
   "hol-eval" -> "core";
@@ -130,6 +132,7 @@ digraph deps {
   "init" -> "hol-eval";
   "init" -> "inductive";
   "init" -> "k";
+  "init" -> "logic-api";
   "init" -> "metamath";
   "init" -> "sexp";
   "init" -> "spectec";

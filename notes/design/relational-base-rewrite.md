@@ -14,6 +14,10 @@
     (`execute`/`transpose`/`compose`/`meet`/`join` — the positive-only mint sites).
   - TCB-as-data PoC: `crates/app/tcb-db` (`covalence-tcb-db`) — dumps the golden
     manifests + audit into a STRICT-schema `.db` with round-trip tests.
+  - Content identity and interpretation boundary:
+    [`content-logic-and-wit-boundaries.md`](content-logic-and-wit-boundaries.md).
+    Blob lookup remains untrusted; higher-level addresses lower to a finite
+    collision-free byte relation plus a separate interpreter.
   - Design corpus: [`../vibes/kernel/base-abstraction.md`](../vibes/kernel/base-abstraction.md)
     (§4 relations impl, §5 TCB-to-SQLite, §6 what-must-be-preserved),
     [`../vibes/kernel/base-api-surface.md`](../vibes/kernel/base-api-surface.md) (what core/eval

@@ -1109,6 +1109,7 @@ dependencies = [
  "covalence-hol-eval",
  "covalence-inductive",
  "covalence-init",
+ "covalence-logic-api",
  "covalence-pure",
  "covalence-types",
 ]
@@ -1148,6 +1149,7 @@ dependencies = [
  "covalence-hol-eval",
  "covalence-inductive",
  "covalence-k",
+ "covalence-logic-api",
  "covalence-metamath",
  "covalence-sexp",
  "covalence-spectec",
@@ -1268,6 +1270,10 @@ dependencies = [
  "tokio",
  "ureq",
 ]
+
+[[package]]
+name = "covalence-logic-api"
+version = "0.0.0"
 
 [[package]]
 name = "covalence-lsp"

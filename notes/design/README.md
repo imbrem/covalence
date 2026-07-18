@@ -39,6 +39,11 @@ maintainer step (see the repo authorship policy in
 
 | Doc | Status | What it decides |
 |---|---|---|
+| [`api-extraction-audit.md`](./api-extraction-audit.md) | Draft audit | Strengths, risks, and next refinements for the logic, Nat, and inductive APIs. |
+| [`content-logic-and-wit-boundaries.md`](./content-logic-and-wit-boundaries.md) | Draft | Minimal blob relation and interpretation boundary; stable logic/theory APIs, numerics, and WIT modules. |
+| [`graph-api.md`](./graph-api.md) | Draft | Finite relational graph traits, verified properties, DOT/NetworkX interchange, and legacy port-graph migration. |
+| [`human-agent-development-loop.md`](./human-agent-development-loop.md) | Draft | Dogfood-first mathematical briefs, worktree isolation, review packets, and the evolving Covalence map. |
+| [`notes-governance.md`](./notes-governance.md) | Draft | Notes taxonomy, lifecycle, concise style rules, incremental cleanup, and future indexing automation. |
 | [`relational-base-rewrite.md`](./relational-base-rewrite.md) | Draft (maintainer to flesh out) | Persist proven facts as **signed SQLite**; the base rewrite to relations-as-untrusted-functions that makes the TCB dumpable as data. |
 
 ## See also

@@ -32,6 +32,7 @@
     "covalence-lean",
     "covalence-lisp",
     "covalence-llm",
+    "covalence-logic-api",
     "covalence-lsp",
     "covalence-metamath",
     "covalence-multiformat",
@@ -276,6 +277,10 @@
     },
     {
       "from": "covalence-hol-api",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-hol-api",
       "to": "covalence-pure"
     },
     {
@@ -329,6 +334,10 @@
     {
       "from": "covalence-init",
       "to": "covalence-k"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-logic-api"
     },
     {
       "from": "covalence-init",

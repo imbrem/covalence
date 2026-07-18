@@ -15,6 +15,14 @@ disable-model-invocation: true
   - Files: `arena.rs`, `egraph.rs`, `eprop.rs`, `hash.rs`, `id.rs`, `kernel.rs`, `primop.rs`, `prop.rs`, `reduce.rs`, `subst.rs`, `term.rs`, `ty.rs`, `uf.rs`
   - Deps are minimal (`bytes`, `smol_str`, `covalence-hash`, `covalence-types`); does NOT depend on `covalence-wasm` or `wasmtime` in this branch.
   - The Sync/Async backend traits (`SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`) now live in `crates/kernel/shell/` (`pub use traits::{...}` in `src/lib.rs`). Update this section when the kernel is re-integrated with the shell.
+- `crates/kernel/hol/logic/` — dependency-free logic API vocabulary
+  - `Logic` owns the associated kind/type/term/theorem/error carriers.
+  - Capability traits split type operators, term binders, equality, quantifiers,
+    and proof rules; `relation` provides typed `Arrow` values and basic
+    relational algebra.
+  - `covalence-init`'s `NativeHol` implements the extracted carrier and core
+    capabilities as a compatibility adapter; the legacy monolithic `Hol` trait
+    remains while consumers migrate.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

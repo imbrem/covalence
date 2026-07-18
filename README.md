@@ -35,10 +35,12 @@ bun run todos
 bun run todos -- --list --severity severe
 bun run todos -- --list --crate covalence-metamath
 bun run todos -- --list --search "source spans"
+bun run todos -- --diff HEAD
 bun run todos:check
 ```
 
-The deterministic index is [`docs/todos/todos.json`](./docs/todos/todos.json);
+`--diff <commit>` reports added, resolved, and changed stable IDs. The
+deterministic index is [`docs/todos/todos.json`](./docs/todos/todos.json);
 the queryable cache is `target/covalence-todos.sqlite`. See the
 [workstream plan](./notes/vibes/plans/workstreams-and-state-report.md) for the
 current-state report, biggest holes, dependency DAG, and parallel execution

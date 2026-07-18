@@ -40,6 +40,16 @@ pub mod omega;
 pub mod order;
 pub mod succ;
 
+/// Dependency-free logic carriers, capabilities, and relational algebra.
+///
+/// Theory APIs should prefer these traits to concrete native HOL values.
+pub use covalence_logic_api as logic;
+pub use covalence_logic_api::{
+    Arrow, BinderRules, Category, EqualityRules, EqualitySyntax, Logic as LogicApi,
+    QuantifierSyntax, RelationAlgebra, RelationOrder, RelationProperties, RelationProperty,
+    TermLanguage, TheoremView, TypeSystem,
+};
+
 // ---- The HOL trait surface + native backend (promoted from the inductive
 //      engine, where it was first grown) ----
 pub use covalence_init::init::inductive::hol::{
@@ -58,7 +68,10 @@ pub use covalence_core::{Error, Result, Term, Type};
 pub use covalence_hol_eval::EvalThm as Thm;
 
 pub use int::Int;
-pub use nat::Nat;
+pub use nat::{
+    Nat, NatAdditiveLaws, NatArithmetic, NatEqDecision, NatFreeness, NatLaws,
+    NatMultiplicativeLaws, NatNormalization, NatOrder, NatRecursionLaws, NatSyntax,
+};
 pub use order::{Discharger, EvalDischarger, LinOrder, Strict};
 pub use succ::{SuccDischarger, SuccHol};
 

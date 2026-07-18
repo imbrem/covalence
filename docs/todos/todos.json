@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 309,
-  "structured": 309,
+  "count": 308,
+  "structured": 308,
   "items": [
     {
       "id": "ffi.python.hol-kernel-bindings-removed-pending-rewrite",
@@ -32,16 +32,6 @@
       "structured": true,
       "path": "crates/lang/inductive/src/conformance.rs",
       "line": 36,
-      "crate": "covalence-inductive"
-    },
-    {
-      "id": "inductive.functor-expressions",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Extend direct Param/Var positions with zero, one, sum, product, and composition expressions while retaining named sum-of-products as the ergonomic normal form.",
-      "structured": true,
-      "path": "crates/lang/inductive/src/polynomial.rs",
-      "line": 20,
       "crate": "covalence-inductive"
     },
     {

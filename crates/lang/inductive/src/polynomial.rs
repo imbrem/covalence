@@ -1,23 +1,150 @@
 //! Plain-data descriptions of records, variants, enums, and polynomial
 //! functors.
 //!
-//! [`PolynomialSpec`] is a named sum of named products.  A field is either a
-//! parameter supplied by the surrounding theory or the functor variable.
-//! Thus a declaration denotes
+//! [`PolynomialSpec`] is the ergonomic named sum-of-products form. A field is
+//! either a parameter supplied by the surrounding theory or the functor
+//! variable. Thus a declaration denotes
 //!
 //! ```text
 //! F(X) = Σ variant. Π field. (parameter | X)
 //! ```
 //!
 //! Records, variants, and enums are the non-recursive aggregate views of the
-//! same data.  Fixpoint APIs consume the full polynomial form.
+//! same data. [`FunctorExpr`] is the smaller structural layer beneath that
+//! syntax: it makes zero, one, sums, products, and functor composition
+//! explicit. Fixpoint APIs continue to consume the named normal form, so
+//! callers which care about constructor and field names do not pay for a more
+//! general syntax.
 
 use smol_str::SmolStr;
 
 use crate::error::SpecError;
 use crate::validated::Validated;
 
-// TODO(cov:inductive.functor-expressions, major): Extend direct Param/Var positions with zero, one, sum, product, and composition expressions while retaining named sum-of-products as the ergonomic normal form.
+/// A structural polynomial-functor expression.
+///
+/// `Compose(outer, inner)` denotes substitution of `inner` for every
+/// occurrence of [`Var`](Self::Var) in `outer`. Parameters remain constants.
+/// Keeping this layer separate from [`PolynomialSpec`] makes the boundary
+/// explicit: expressions describe functor algebra, while specifications retain
+/// source-level constructor and field names.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum FunctorExpr<P> {
+    /// The empty functor.
+    Zero,
+    /// The unit functor.
+    One,
+    /// A constant parameter supplied by the surrounding theory.
+    Param(P),
+    /// The functor variable.
+    Var,
+    /// A finite coproduct.
+    Sum(Vec<Self>),
+    /// A finite product.
+    Product(Vec<Self>),
+    /// Functor composition: `outer ∘ inner`.
+    Compose {
+        /// The functor whose variable is substituted.
+        outer: Box<Self>,
+        /// The expression substituted for the outer variable.
+        inner: Box<Self>,
+    },
+}
+
+impl<P> FunctorExpr<P> {
+    /// Construct an explicit functor composition.
+    pub fn compose(outer: Self, inner: Self) -> Self {
+        Self::Compose {
+            outer: Box::new(outer),
+            inner: Box::new(inner),
+        }
+    }
+
+    /// Whether the expression depends on its functor variable.
+    pub fn is_recursive(&self) -> bool {
+        match self {
+            Self::Zero | Self::One | Self::Param(_) => false,
+            Self::Var => true,
+            Self::Sum(terms) | Self::Product(terms) => terms.iter().any(Self::is_recursive),
+            Self::Compose { outer, inner } => outer.is_recursive() && inner.is_recursive(),
+        }
+    }
+
+    /// Map constant parameters without changing the functor structure.
+    pub fn map_param<Q>(self, mut f: impl FnMut(P) -> Q) -> FunctorExpr<Q> {
+        self.map_param_with(&mut f)
+    }
+
+    fn map_param_with<Q>(self, f: &mut impl FnMut(P) -> Q) -> FunctorExpr<Q> {
+        match self {
+            Self::Zero => FunctorExpr::Zero,
+            Self::One => FunctorExpr::One,
+            Self::Param(parameter) => FunctorExpr::Param(f(parameter)),
+            Self::Var => FunctorExpr::Var,
+            Self::Sum(terms) => FunctorExpr::Sum(
+                terms
+                    .into_iter()
+                    .map(|term| term.map_param_with(f))
+                    .collect(),
+            ),
+            Self::Product(terms) => FunctorExpr::Product(
+                terms
+                    .into_iter()
+                    .map(|term| term.map_param_with(f))
+                    .collect(),
+            ),
+            Self::Compose { outer, inner } => FunctorExpr::Compose {
+                outer: Box::new(outer.map_param_with(f)),
+                inner: Box::new(inner.map_param_with(f)),
+            },
+        }
+    }
+
+    /// Evaluate explicit composition by substituting `inner` for the outer
+    /// variable. This preserves zero/one/sum/product structure and removes
+    /// every [`Compose`](Self::Compose) node.
+    pub fn expand_composition(self) -> Self
+    where
+        P: Clone,
+    {
+        match self {
+            Self::Zero | Self::One | Self::Param(_) | Self::Var => self,
+            Self::Sum(terms) => {
+                Self::Sum(terms.into_iter().map(Self::expand_composition).collect())
+            }
+            Self::Product(terms) => {
+                Self::Product(terms.into_iter().map(Self::expand_composition).collect())
+            }
+            Self::Compose { outer, inner } => {
+                let inner = inner.expand_composition();
+                outer.expand_composition().substitute(&inner)
+            }
+        }
+    }
+
+    fn substitute(self, replacement: &Self) -> Self
+    where
+        P: Clone,
+    {
+        match self {
+            Self::Zero | Self::One | Self::Param(_) => self,
+            Self::Var => replacement.clone(),
+            Self::Sum(terms) => Self::Sum(
+                terms
+                    .into_iter()
+                    .map(|term| term.substitute(replacement))
+                    .collect(),
+            ),
+            Self::Product(terms) => Self::Product(
+                terms
+                    .into_iter()
+                    .map(|term| term.substitute(replacement))
+                    .collect(),
+            ),
+            Self::Compose { .. } => unreachable!("composition expanded before substitution"),
+        }
+    }
+}
 
 /// A position in a polynomial functor.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -244,6 +371,37 @@ impl<P> PolynomialSpec<P> {
                 .collect(),
         }
     }
+
+    /// Erase source-level names into the structural functor expression.
+    ///
+    /// Empty sums and products become [`FunctorExpr::Zero`] and
+    /// [`FunctorExpr::One`] respectively.
+    pub fn into_expression(self) -> FunctorExpr<P> {
+        if self.variants.is_empty() {
+            return FunctorExpr::Zero;
+        }
+        FunctorExpr::Sum(
+            self.variants
+                .into_iter()
+                .map(|variant| {
+                    if variant.fields.is_empty() {
+                        FunctorExpr::One
+                    } else {
+                        FunctorExpr::Product(
+                            variant
+                                .fields
+                                .into_iter()
+                                .map(|field| match field.position {
+                                    Position::Param(parameter) => FunctorExpr::Param(parameter),
+                                    Position::Var => FunctorExpr::Var,
+                                })
+                                .collect(),
+                        )
+                    }
+                })
+                .collect(),
+        )
+    }
 }
 
 /// Incremental builder for a checked named sum-of-products.
@@ -412,5 +570,50 @@ mod tests {
             .variant(VariantCase::nullary(""))
             .build();
         assert!(matches!(bad, Err(SpecError::EmptyName { .. })));
+    }
+
+    #[test]
+    fn named_normal_form_erases_to_structural_expression() {
+        let list = PolynomialSpec::new(
+            "list",
+            vec![
+                VariantCase::nullary("nil"),
+                VariantCase::new(
+                    "cons",
+                    vec![
+                        FieldSpec::new("head", Position::Param("a")),
+                        FieldSpec::new("tail", Position::Var),
+                    ],
+                ),
+            ],
+        );
+
+        assert_eq!(
+            list.into_expression(),
+            FunctorExpr::Sum(vec![
+                FunctorExpr::One,
+                FunctorExpr::Product(vec![FunctorExpr::Param("a"), FunctorExpr::Var,]),
+            ])
+        );
+    }
+
+    #[test]
+    fn composition_expands_by_substituting_only_the_variable() {
+        let maybe = FunctorExpr::Sum(vec![FunctorExpr::One, FunctorExpr::Var]);
+        let pair = FunctorExpr::Product(vec![FunctorExpr::Param("label"), FunctorExpr::Var]);
+        let composed = FunctorExpr::compose(maybe, pair.clone());
+
+        assert!(composed.is_recursive());
+        assert_eq!(
+            composed.expand_composition(),
+            FunctorExpr::Sum(vec![FunctorExpr::One, pair])
+        );
+
+        let constant = FunctorExpr::compose(FunctorExpr::Param("constant"), FunctorExpr::Var);
+        assert!(!constant.is_recursive());
+        assert_eq!(
+            constant.expand_composition(),
+            FunctorExpr::Param("constant")
+        );
     }
 }

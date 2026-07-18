@@ -82,8 +82,8 @@ pub use fixpoint::{
 };
 pub use logic::{Logic, LogicOps, beta_expand, beta_reduce};
 pub use polynomial::{
-    EnumSpec, FieldSpec, PolynomialBuilder, PolynomialSpec, Position, RecordBuilder, RecordSpec,
-    VariantCase, VariantSpec,
+    EnumSpec, FieldSpec, FunctorExpr, PolynomialBuilder, PolynomialSpec, Position, RecordBuilder,
+    RecordSpec, VariantCase, VariantSpec,
 };
 pub use spec::{ArgSort, CtorSpec, InductiveSpec};
 pub use theory::{BackendCaps, InductiveFacts, InductiveTheory};

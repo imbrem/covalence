@@ -82,7 +82,39 @@ pub trait RelationAlgebra: Category {
     ) -> Result<Arrow<Self::Type, Self::Relation>, Self::Error>;
 }
 
-// TODO(cov:kernel.logic.relation-allegory, major): Add products, coproducts, residuals, tabulation, and closure capabilities with law bundles, without making them prerequisites for the core relation algebra.
+/// Residual operations on relations.
+///
+/// For `r : A ↔ B`, `s : B ↔ C`, and `t : A ↔ C`, the right residual
+/// `t / r : B ↔ C` is the greatest candidate `s` for which `s ∘ r ⊆ t`.
+/// Dually, the left residual `s \ t : A ↔ B` is the greatest candidate `r`
+/// for which `s ∘ r ⊆ t`.
+///
+/// This capability deliberately depends only on [`Category`]. A backend can
+/// construct residual syntax without implementing the lattice operations in
+/// [`RelationAlgebra`] or claiming that arbitrary inclusion is decidable.
+pub trait ResidualSyntax: Category {
+    /// Construct the right residual `dividend / divisor`.
+    ///
+    /// Given `dividend : A ↔ C` and `divisor : A ↔ B`, returns a relation
+    /// `B ↔ C`.
+    fn right_residual(
+        &self,
+        dividend: Arrow<Self::Type, Self::Relation>,
+        divisor: Arrow<Self::Type, Self::Relation>,
+    ) -> Result<Arrow<Self::Type, Self::Relation>, Self::Error>;
+
+    /// Construct the left residual `divisor \ dividend`.
+    ///
+    /// Given `divisor : B ↔ C` and `dividend : A ↔ C`, returns a relation
+    /// `A ↔ B`.
+    fn left_residual(
+        &self,
+        divisor: Arrow<Self::Type, Self::Relation>,
+        dividend: Arrow<Self::Type, Self::Relation>,
+    ) -> Result<Arrow<Self::Type, Self::Relation>, Self::Error>;
+}
+
+// TODO(cov:kernel.logic.relation-allegory, major): Add products, coproducts, tabulation, and closure as optional capabilities with law bundles.
 
 /// Proposition syntax for inclusion and extensional equality of relations.
 ///
@@ -120,6 +152,58 @@ pub trait RelationOrderLaws: RelationJudgmentSyntax {
         &self,
         left_in_right: Self::Thm,
         right_in_left: Self::Thm,
+    ) -> Result<Self::Thm, Self::Error>;
+}
+
+/// Proof rules for the defining residual adjunctions.
+///
+/// Each pair of methods gives both directions of one equivalence:
+///
+/// - `s ∘ r ⊆ t` iff `s ⊆ t / r`;
+/// - `s ∘ r ⊆ t` iff `r ⊆ s \ t`.
+///
+/// The explicit arrows let a backend check that the supplied theorem proves
+/// the expected premise. Methods transform positive evidence; they are not
+/// decision procedures and do not mint proofs without an input theorem.
+pub trait ResidualLaws: ResidualSyntax + RelationJudgmentSyntax {
+    /// Transform a proof of `candidate ∘ divisor ⊆ dividend` into a proof of
+    /// `candidate ⊆ dividend / divisor`.
+    fn right_residual_intro(
+        &self,
+        divisor: &Arrow<Self::Type, Self::Relation>,
+        candidate: &Arrow<Self::Type, Self::Relation>,
+        dividend: &Arrow<Self::Type, Self::Relation>,
+        composite_in_dividend: Self::Thm,
+    ) -> Result<Self::Thm, Self::Error>;
+
+    /// Transform a proof of `candidate ⊆ dividend / divisor` into a proof of
+    /// `candidate ∘ divisor ⊆ dividend`.
+    fn right_residual_elim(
+        &self,
+        divisor: &Arrow<Self::Type, Self::Relation>,
+        candidate: &Arrow<Self::Type, Self::Relation>,
+        dividend: &Arrow<Self::Type, Self::Relation>,
+        candidate_in_residual: Self::Thm,
+    ) -> Result<Self::Thm, Self::Error>;
+
+    /// Transform a proof of `candidate ∘ divisor ⊆ dividend` into a proof of
+    /// `divisor ⊆ candidate \ dividend`.
+    fn left_residual_intro(
+        &self,
+        divisor: &Arrow<Self::Type, Self::Relation>,
+        candidate: &Arrow<Self::Type, Self::Relation>,
+        dividend: &Arrow<Self::Type, Self::Relation>,
+        composite_in_dividend: Self::Thm,
+    ) -> Result<Self::Thm, Self::Error>;
+
+    /// Transform a proof of `divisor ⊆ candidate \ dividend` into a proof of
+    /// `candidate ∘ divisor ⊆ dividend`.
+    fn left_residual_elim(
+        &self,
+        divisor: &Arrow<Self::Type, Self::Relation>,
+        candidate: &Arrow<Self::Type, Self::Relation>,
+        dividend: &Arrow<Self::Type, Self::Relation>,
+        divisor_in_residual: Self::Thm,
     ) -> Result<Self::Thm, Self::Error>;
 }
 
@@ -245,6 +329,94 @@ mod tests {
         }
     }
 
+    impl RelationJudgmentSyntax for Relations {
+        fn inclusion_proposition(
+            &self,
+            _left: &Arrow<&'static str, String>,
+            _right: &Arrow<&'static str, String>,
+        ) -> Result<(), Infallible> {
+            Ok(())
+        }
+
+        fn relation_equality_proposition(
+            &self,
+            _left: &Arrow<&'static str, String>,
+            _right: &Arrow<&'static str, String>,
+        ) -> Result<(), Infallible> {
+            Ok(())
+        }
+    }
+
+    impl ResidualSyntax for Relations {
+        fn right_residual(
+            &self,
+            dividend: Arrow<&'static str, String>,
+            divisor: Arrow<&'static str, String>,
+        ) -> Result<Arrow<&'static str, String>, Infallible> {
+            assert_eq!(dividend.domain, divisor.domain);
+            Ok(Arrow::new(
+                divisor.codomain,
+                dividend.codomain,
+                format!("{}/{}", dividend.relation, divisor.relation),
+            ))
+        }
+
+        fn left_residual(
+            &self,
+            divisor: Arrow<&'static str, String>,
+            dividend: Arrow<&'static str, String>,
+        ) -> Result<Arrow<&'static str, String>, Infallible> {
+            assert_eq!(divisor.codomain, dividend.codomain);
+            Ok(Arrow::new(
+                dividend.domain,
+                divisor.domain,
+                format!("{}\\{}", divisor.relation, dividend.relation),
+            ))
+        }
+    }
+
+    impl ResidualLaws for Relations {
+        fn right_residual_intro(
+            &self,
+            _divisor: &Arrow<&'static str, String>,
+            _candidate: &Arrow<&'static str, String>,
+            _dividend: &Arrow<&'static str, String>,
+            composite_in_dividend: String,
+        ) -> Result<String, Infallible> {
+            Ok(format!("right-intro({composite_in_dividend})"))
+        }
+
+        fn right_residual_elim(
+            &self,
+            _divisor: &Arrow<&'static str, String>,
+            _candidate: &Arrow<&'static str, String>,
+            _dividend: &Arrow<&'static str, String>,
+            candidate_in_residual: String,
+        ) -> Result<String, Infallible> {
+            Ok(format!("right-elim({candidate_in_residual})"))
+        }
+
+        fn left_residual_intro(
+            &self,
+            _divisor: &Arrow<&'static str, String>,
+            _candidate: &Arrow<&'static str, String>,
+            _dividend: &Arrow<&'static str, String>,
+            composite_in_dividend: String,
+        ) -> Result<String, Infallible> {
+            Ok(format!("left-intro({composite_in_dividend})"))
+        }
+
+        fn left_residual_elim(
+            &self,
+            _divisor: &Arrow<&'static str, String>,
+            _candidate: &Arrow<&'static str, String>,
+            _dividend: &Arrow<&'static str, String>,
+            divisor_in_residual: String,
+        ) -> Result<String, Infallible> {
+            Ok(format!("left-elim({divisor_in_residual})"))
+        }
+    }
+
     #[test]
     fn arrows_retain_domains_across_composition() {
         let algebra = Relations;
@@ -254,5 +426,40 @@ mod tests {
         assert_eq!(gf.domain, "A");
         assert_eq!(gf.codomain, "C");
         assert_eq!(gf.relation, "f;g");
+    }
+
+    #[test]
+    fn residuals_have_the_adjunction_types() {
+        let algebra = Relations;
+        let r = Arrow::new("A", "B", "r".to_owned());
+        let s = Arrow::new("B", "C", "s".to_owned());
+        let t = Arrow::new("A", "C", "t".to_owned());
+
+        let right = algebra.right_residual(t.clone(), r.clone()).unwrap();
+        assert_eq!(right, Arrow::new("B", "C", "t/r".to_owned()));
+
+        let left = algebra.left_residual(s.clone(), t.clone()).unwrap();
+        assert_eq!(left, Arrow::new("A", "B", "s\\t".to_owned()));
+
+        let composite_in_t = "s∘r⊆t".to_owned();
+        let right_intro = algebra
+            .right_residual_intro(&r, &s, &t, composite_in_t.clone())
+            .unwrap();
+        assert_eq!(right_intro, "right-intro(s∘r⊆t)");
+        assert_eq!(
+            algebra
+                .right_residual_elim(&r, &s, &t, right_intro)
+                .unwrap(),
+            "right-elim(right-intro(s∘r⊆t))"
+        );
+
+        let left_intro = algebra
+            .left_residual_intro(&r, &s, &t, composite_in_t)
+            .unwrap();
+        assert_eq!(left_intro, "left-intro(s∘r⊆t)");
+        assert_eq!(
+            algebra.left_residual_elim(&r, &s, &t, left_intro).unwrap(),
+            "left-elim(left-intro(s∘r⊆t))"
+        );
     }
 }

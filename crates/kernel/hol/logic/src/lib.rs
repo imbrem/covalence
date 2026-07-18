@@ -19,7 +19,7 @@ use core::fmt::Debug;
 pub use relation::{
     Arrow, Category, Decision, RelationAlgebra, RelationEvidence, RelationJudgmentSyntax,
     RelationOrderDecision, RelationOrderLaws, RelationProperty, RelationPropertyEvidence,
-    RelationPropertySyntax,
+    RelationPropertySyntax, ResidualLaws, ResidualSyntax,
 };
 
 /// The carrier types shared by logic capabilities.

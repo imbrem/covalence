@@ -1535,7 +1535,7 @@
       "id": "note:notes/design/api-extraction-audit.md",
       "kind": "note",
       "title": "Logic, Nat, and inductive API extraction audit",
-      "status": "Draft audit",
+      "status": "unparsed legacy",
       "path": "notes/design/api-extraction-audit.md",
       "words": 1189,
       "updated": 1784411489
@@ -1544,7 +1544,7 @@
       "id": "note:notes/design/content-logic-and-wit-boundaries.md",
       "kind": "note",
       "title": "Content, logic, and WIT boundaries",
-      "status": "Draft for discussion",
+      "status": "unparsed legacy",
       "path": "notes/design/content-logic-and-wit-boundaries.md",
       "words": 1994,
       "updated": 1784411489
@@ -1553,7 +1553,7 @@
       "id": "note:notes/design/graph-api.md",
       "kind": "note",
       "title": "Verified graph API and interchange",
-      "status": "Draft",
+      "status": "draft",
       "path": "notes/design/graph-api.md",
       "words": 849,
       "updated": 1784413042
@@ -1562,7 +1562,7 @@
       "id": "note:notes/design/human-agent-development-loop.md",
       "kind": "note",
       "title": "Human–agent mathematical development loop",
-      "status": "Draft",
+      "status": "draft",
       "path": "notes/design/human-agent-development-loop.md",
       "words": 857,
       "updated": 1784411546
@@ -1571,7 +1571,7 @@
       "id": "note:notes/design/k-frontend.md",
       "kind": "note",
       "title": "K frontend — KORE ingestion + the fragment ladder — design doc",
-      "status": "Draft",
+      "status": "draft",
       "path": "notes/design/k-frontend.md",
       "words": 2496,
       "updated": 1784408739
@@ -1580,7 +1580,7 @@
       "id": "note:notes/design/notes-governance.md",
       "kind": "note",
       "title": "Notes governance and cleanup",
-      "status": "Draft",
+      "status": "draft",
       "path": "notes/design/notes-governance.md",
       "words": 703,
       "updated": 1784412443
@@ -1598,7 +1598,7 @@
       "id": "note:notes/design/relational-base-rewrite.md",
       "kind": "note",
       "title": "Relational base rewrite — persist proven facts as signed SQLite",
-      "status": "Draft — **maintainer to flesh out**. This is a scaffold: the",
+      "status": "unparsed legacy",
       "path": "notes/design/relational-base-rewrite.md",
       "words": 810,
       "updated": 1784411489
@@ -1607,7 +1607,7 @@
       "id": "note:notes/design/TEMPLATE.md",
       "kind": "note",
       "title": "<Title> — design doc",
-      "status": "Draft | In review | Accepted | Superseded | Parked",
+      "status": "unparsed legacy",
       "path": "notes/design/TEMPLATE.md",
       "words": 332,
       "updated": 1784408739
@@ -1646,7 +1646,7 @@
       "status": null,
       "path": "notes/README.md",
       "words": 291,
-      "updated": 1784413042
+      "updated": 1784413701
     },
     {
       "id": "note:notes/vibes/build/buck2-experiment.md",
@@ -2384,7 +2384,7 @@
       "status": null,
       "path": "notes/vibes/plans/knowledge-browser-apps.md",
       "words": 428,
-      "updated": 1784413042
+      "updated": 1784413701
     },
     {
       "id": "note:notes/vibes/plans/next-stage-breakdown.md",

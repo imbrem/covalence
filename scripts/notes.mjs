@@ -74,6 +74,11 @@ const node = (id, kind, title, status, path, words, updated) =>
   nodes.push({ id, kind, title, status, path, words, updated });
 const edge = (source, predicate, target, detail = null) =>
   edges.push({ source, predicate, target, detail });
+const normalizeNoteStatus = (status) => {
+  if (status === null) return null;
+  const known = ["draft", "in review", "accepted", "superseded", "parked"];
+  return known.includes(status.toLowerCase()) ? status.toLowerCase() : "unparsed legacy";
+};
 
 for (const item of todoItems) {
   node(`todo:${item.id}`, "todo", item.summary, item.severity, item.path, 0, 0);
@@ -83,7 +88,8 @@ for (const path of notePaths) {
   const text = readFileSync(resolve(ROOT, path), "utf8");
   const id = `note:${path}`;
   const title = text.match(/^#\s+(.+)$/m)?.[1].trim() ?? path;
-  const status = text.match(/^- \*\*Status:\*\*\s*(.+)$/im)?.[1].trim() ?? null;
+  const rawStatus = text.match(/^- \*\*Status:\*\*\s*(.+)$/im)?.[1].trim() ?? null;
+  const status = normalizeNoteStatus(rawStatus);
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   const updated =
     gitDates.get(path) ?? Math.floor(statSync(resolve(ROOT, path)).mtimeMs / 1000);

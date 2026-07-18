@@ -85,6 +85,7 @@
 			? allEdges.filter((edge) => edge.source === selectedId || edge.target === selectedId)
 			: [],
 	);
+	let visibleNotes = $derived(visibleNodes.filter((node) => node.kind === 'note'));
 	let missingCount = $derived(visibleNodes.filter((node) => node.status === 'missing').length);
 
 	function setMode(next: Mode) {
@@ -166,7 +167,18 @@
 	</section>
 
 	<div class="workspace">
-		<KnowledgeGraphView
+		{#if mode === 'notes'}
+			<section class="note-list" aria-label="Notes">
+				{#each visibleNotes as note}
+					<button class:selected={selectedId === note.id} onclick={() => (selectedId = note.id)}>
+						<strong>{note.title}</strong>
+						<span>{note.path}</span>
+						<em>{note.status ?? 'no status'} · {note.words} words</em>
+					</button>
+				{/each}
+			</section>
+		{:else}
+			<KnowledgeGraphView
 			nodes={visibleNodes.map((node) => ({
 				id: node.id,
 				label: node.title,
@@ -182,7 +194,8 @@
 			layout={mode === 'tasks' ? 'breadthfirst' : 'cose'}
 			{selectedId}
 			onselect={(id) => (selectedId = id)}
-		/>
+			/>
+		{/if}
 
 		<aside>
 			{#if selected}
@@ -285,6 +298,46 @@
 	.filters > span { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
 	.chip em { opacity: 0.65; font-style: normal; }
 	.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 0.75rem; }
+	.note-list {
+		height: min(68vh, 48rem);
+		min-height: 32rem;
+		overflow: auto;
+		padding: 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: #0f172a;
+	}
+	.note-list button {
+		display: grid;
+		width: 100%;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.25rem 1rem;
+		margin-bottom: 0.35rem;
+		padding: 0.65rem;
+		text-align: left;
+	}
+	.note-list button.selected { border-color: var(--accent); }
+	.note-list strong {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--fg);
+	}
+	.note-list span {
+		grid-row: 2;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--muted);
+	}
+	.note-list em {
+		grid-column: 2;
+		grid-row: 1 / span 2;
+		align-self: center;
+		color: var(--muted);
+		font-style: normal;
+		font-size: 0.7rem;
+	}
 	aside {
 		max-height: min(68vh, 48rem);
 		overflow: auto;

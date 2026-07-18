@@ -43,7 +43,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 159,
+      "words": 163,
       "updated": 0
     },
     {
@@ -295,7 +295,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7329,
+      "words": 7330,
       "updated": 0
     },
     {
@@ -398,6 +398,24 @@
       "updated": 0
     },
     {
+      "id": "file:apps/covalence-map/src/lib/SourceTree.svelte",
+      "kind": "file",
+      "title": "SourceTree.svelte",
+      "status": "tracked",
+      "path": "apps/covalence-map/src/lib/SourceTree.svelte",
+      "words": 77,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-map/src/lib/sourceHighlighter.ts",
+      "kind": "file",
+      "title": "sourceHighlighter.ts",
+      "status": "tracked",
+      "path": "apps/covalence-map/src/lib/sourceHighlighter.ts",
+      "words": 53,
+      "updated": 0
+    },
+    {
       "id": "file:apps/covalence-map/src/routes/+layout.svelte",
       "kind": "file",
       "title": "+layout.svelte",
@@ -475,7 +493,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 31152,
+      "words": 31243,
       "updated": 0
     },
     {
@@ -6658,7 +6676,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/mod.rs",
-      "words": 84,
+      "words": 86,
       "updated": 0
     },
     {
@@ -6668,6 +6686,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/nat_api.rs",
       "words": 115,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
+      "kind": "file",
+      "title": "nat_binary_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
+      "words": 209,
       "updated": 0
     },
     {
@@ -8224,7 +8251,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 157,
+      "words": 235,
       "updated": 0
     },
     {
@@ -9034,7 +9061,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/inductive/Cargo.toml",
-      "words": 19,
+      "words": 20,
       "updated": 0
     },
     {
@@ -9083,6 +9110,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/inductive/src/family.rs",
+      "kind": "file",
+      "title": "family.rs",
+      "status": "tracked",
+      "path": "crates/lang/inductive/src/family.rs",
+      "words": 203,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/inductive/src/fixpoint.rs",
       "kind": "file",
       "title": "fixpoint.rs",
@@ -9106,7 +9142,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/lib.rs",
-      "words": 100,
+      "words": 104,
       "updated": 0
     },
     {
@@ -9115,7 +9151,16 @@
       "title": "logic.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/logic.rs",
-      "words": 152,
+      "words": 150,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/inductive/src/logic_api.rs",
+      "kind": "file",
+      "title": "logic_api.rs",
+      "status": "tracked",
+      "path": "crates/lang/inductive/src/logic_api.rs",
+      "words": 423,
       "updated": 0
     },
     {
@@ -9187,7 +9232,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/json-api/src/lib.rs",
-      "words": 928,
+      "words": 973,
       "updated": 0
     },
     {
@@ -13660,7 +13705,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 31152,
+      "words": 31243,
       "updated": 0
     },
     {
@@ -13768,7 +13813,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3049,
+      "words": 3039,
       "updated": 0
     },
     {
@@ -15887,6 +15932,15 @@
       "updated": 0
     },
     {
+      "id": "impl:A0002:DoubleSuccNat",
+      "kind": "implementation",
+      "title": "DoubleSuccNat",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "impl:A0002:NativeHol",
       "kind": "implementation",
       "title": "NativeHol",
@@ -17194,16 +17248,16 @@
     {
       "id": "todo:inductive.logic-api-adapter",
       "kind": "todo",
-      "title": "Adapt this compatibility surface to covalence-logic-api once its carrier traits stabilize.",
-      "status": "major",
-      "path": "crates/lang/inductive/src/logic.rs",
+      "title": "inductive.logic-api-adapter",
+      "status": null,
+      "path": "inductive.logic-api-adapter",
       "words": 0,
       "updated": 0
     },
     {
       "id": "todo:json.polynomial-composition",
       "kind": "todo",
-      "title": "Replace Array/Object parameters with composed list and member polynomial functors once covalence-inductive supports functor composition.",
+      "title": "Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.",
       "status": "major",
       "path": "crates/lang/json-api/src/lib.rs",
       "words": 0,
@@ -21054,6 +21108,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/recursor.rs",
       "detail": null
     },
@@ -22062,6 +22122,12 @@
     {
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/lang/inductive/src/family.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/inductive/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/lang/inductive/src/fixpoint.rs",
       "detail": null
     },
@@ -22075,6 +22141,12 @@
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/inductive/src/logic.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/inductive/src/logic_api.rs",
       "detail": null
     },
     {
@@ -23420,6 +23492,18 @@
       "predicate": "imports",
       "target": "file:scripts/_setmm.mjs",
       "detail": null
+    },
+    {
+      "source": "impl:A0002:DoubleSuccNat",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0002:DoubleSuccNat",
+      "predicate": "implements",
+      "target": "api:A0002",
+      "detail": "logarithmic-depth double/successor terms over native HOL carriers"
     },
     {
       "source": "impl:A0002:NativeHol",
@@ -29247,6 +29331,13 @@
     }
   ],
   "apiImplementations": [
+    {
+      "id": "impl:A0002:DoubleSuccNat",
+      "apiId": "A0002",
+      "name": "DoubleSuccNat",
+      "representation": "logarithmic-depth double/successor terms over native HOL carriers",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs"
+    },
     {
       "id": "impl:A0002:NativeHol",
       "apiId": "A0002",

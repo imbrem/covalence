@@ -18,6 +18,8 @@
 //! order, constructor freeness, and the complete Nat law surface have not been
 //! transported to that carrier. This backend therefore uses the proved
 //! double/successor term representation and makes no stronger claim.
+//!
+//! @covalence-api-impl {"api":"A0002","name":"DoubleSuccNat","representation":"logarithmic-depth double/successor terms over native HOL carriers"}
 
 use covalence_core::{Error, Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;

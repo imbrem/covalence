@@ -1184,6 +1184,8 @@ version = "0.0.0"
 dependencies = [
  "covalence-decimal-api",
  "covalence-inductive",
+ "covalence-parsing-api",
+ "covalence-types",
 ]
 
 [[package]]

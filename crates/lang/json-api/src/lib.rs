@@ -8,6 +8,9 @@
 
 use covalence_decimal_api::CanonicalDecimal;
 use covalence_inductive::{FieldSpec, PolynomialSpec, Position, VariantCase};
+use covalence_parsing_api::{InterpretationPer, PartialParser, SameInterpretation};
+use covalence_types::Int;
+use std::convert::Infallible;
 
 /// A JSON string code point.
 ///
@@ -110,6 +113,497 @@ pub enum JsonValue<D = CanonicalDecimal> {
     Object(JsonObject<D>),
 }
 
+/// JSON syntax after decoding strings and numbers, but before choosing an
+/// object-member policy.
+///
+/// Unlike [`JsonValue`], object members remain ordered and may contain
+/// duplicate names. This makes the parse result lossless with respect to the
+/// object observations relevant to RFC 8259.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ParsedJsonValue<D = CanonicalDecimal> {
+    Null,
+    Bool(bool),
+    Number(D),
+    String(JsonString),
+    Array(Vec<ParsedJsonValue<D>>),
+    Object(Vec<ParsedJsonMember<D>>),
+}
+
+/// An object member in decoded JSON syntax.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedJsonMember<D = CanonicalDecimal> {
+    pub name: JsonString,
+    pub value: ParsedJsonValue<D>,
+}
+
+/// Failure to interpret decoded syntax as semantic JSON.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JsonInterpretationError {
+    DuplicateName(DuplicateName),
+}
+
+impl ParsedJsonValue {
+    /// Interpret syntax using the canonical semantic policy: duplicate object
+    /// names are rejected at every nesting depth.
+    pub fn into_semantic(self) -> Result<JsonValue, JsonInterpretationError> {
+        Ok(match self {
+            Self::Null => JsonValue::Null,
+            Self::Bool(value) => JsonValue::Bool(value),
+            Self::Number(value) => JsonValue::Number(value),
+            Self::String(value) => JsonValue::String(value),
+            Self::Array(values) => JsonValue::Array(
+                values
+                    .into_iter()
+                    .map(Self::into_semantic)
+                    .collect::<Result<_, _>>()?,
+            ),
+            Self::Object(members) => {
+                let members = members
+                    .into_iter()
+                    .map(|member| {
+                        Ok(JsonMember {
+                            name: member.name,
+                            value: member.value.into_semantic()?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, JsonInterpretationError>>()?;
+                JsonValue::Object(
+                    JsonObject::new(members).map_err(JsonInterpretationError::DuplicateName)?,
+                )
+            }
+        })
+    }
+}
+
+/// A diagnostic from the strict RFC 8259 byte parser.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JsonParseError {
+    pub offset: usize,
+    pub kind: JsonParseErrorKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JsonParseErrorKind {
+    ExpectedValue,
+    ExpectedByte(u8),
+    InvalidLiteral,
+    InvalidNumber,
+    InvalidUtf8,
+    InvalidEscape,
+    InvalidUnicodeEscape,
+    UnescapedControl,
+    DuplicateName,
+    TrailingInput,
+}
+
+/// Positive, checkable parsing evidence retained by the reference parser.
+///
+/// This is not a theorem: it records the decoded syntax and the exact number
+/// of source bytes consumed so a later logic backend can reflect or check it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JsonParseWitness {
+    pub syntax: ParsedJsonValue,
+    pub consumed: usize,
+}
+
+/// Evidence that the reference backend observed two semantic values as equal.
+///
+/// This is deliberately an observation token rather than a theorem. A logic
+/// backend must check or reflect the values before granting proof authority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObservedSemanticEquality;
+
+/// Strict RFC 8259 syntax parser.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct JsonSyntaxParser;
+
+/// Strict semantic parser: syntax parsing followed by recursive rejection of
+/// duplicate object names.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct JsonParser;
+
+impl JsonSyntaxParser {
+    /// Parse one complete JSON text and retain ordered object syntax.
+    pub fn parse_diagnostic(
+        &self,
+        source: &[u8],
+    ) -> Result<(ParsedJsonValue, JsonParseWitness), JsonParseError> {
+        let mut parser = ByteParser { source, offset: 0 };
+        parser.whitespace();
+        let value = parser.value()?;
+        parser.whitespace();
+        if parser.offset != source.len() {
+            return Err(parser.error(JsonParseErrorKind::TrailingInput));
+        }
+        let witness = JsonParseWitness {
+            syntax: value.clone(),
+            consumed: parser.offset,
+        };
+        Ok((value, witness))
+    }
+}
+
+impl JsonParser {
+    /// Parse one complete JSON text and apply canonical object semantics.
+    pub fn parse_diagnostic(
+        &self,
+        source: &[u8],
+    ) -> Result<(JsonValue, JsonParseWitness), JsonParseError> {
+        let (syntax, witness) = JsonSyntaxParser.parse_diagnostic(source)?;
+        let value = syntax.clone().into_semantic().map_err(|_| JsonParseError {
+            offset: source.len(),
+            kind: JsonParseErrorKind::DuplicateName,
+        })?;
+        Ok((value, witness))
+    }
+}
+
+impl PartialParser for JsonSyntaxParser {
+    type Source = [u8];
+    type Value = ParsedJsonValue;
+    type Witness = JsonParseWitness;
+    type Error = Infallible;
+
+    fn parse(&self, source: &[u8]) -> Result<Option<(Self::Value, Self::Witness)>, Self::Error> {
+        Ok(self.parse_diagnostic(source).ok())
+    }
+}
+
+impl PartialParser for JsonParser {
+    type Source = [u8];
+    type Value = JsonValue;
+    type Witness = JsonParseWitness;
+    type Error = Infallible;
+
+    fn parse(&self, source: &[u8]) -> Result<Option<(Self::Value, Self::Witness)>, Self::Error> {
+        Ok(self.parse_diagnostic(source).ok())
+    }
+}
+
+impl InterpretationPer for JsonParser {
+    type EquivalenceWitness = ObservedSemanticEquality;
+
+    fn same_interpretation(
+        &self,
+        left: &[u8],
+        right: &[u8],
+    ) -> Result<
+        Option<SameInterpretation<Self::Value, Self::Witness, Self::EquivalenceWitness>>,
+        Self::Error,
+    > {
+        let Some((left_value, left_witness)) = self.parse(left)? else {
+            return Ok(None);
+        };
+        let Some((right_value, right_witness)) = self.parse(right)? else {
+            return Ok(None);
+        };
+        Ok((left_value == right_value).then_some(SameInterpretation {
+            value: left_value,
+            left: left_witness,
+            right: right_witness,
+            equivalence: ObservedSemanticEquality,
+        }))
+    }
+}
+
+struct ByteParser<'a> {
+    source: &'a [u8],
+    offset: usize,
+}
+
+impl ByteParser<'_> {
+    fn error(&self, kind: JsonParseErrorKind) -> JsonParseError {
+        JsonParseError {
+            offset: self.offset,
+            kind,
+        }
+    }
+
+    fn whitespace(&mut self) {
+        while matches!(self.peek(), Some(b' ' | b'\t' | b'\n' | b'\r')) {
+            self.offset += 1;
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.source.get(self.offset).copied()
+    }
+
+    fn take(&mut self, byte: u8) -> Result<(), JsonParseError> {
+        if self.peek() == Some(byte) {
+            self.offset += 1;
+            Ok(())
+        } else {
+            Err(self.error(JsonParseErrorKind::ExpectedByte(byte)))
+        }
+    }
+
+    fn literal(&mut self, literal: &[u8]) -> Result<(), JsonParseError> {
+        if self.source[self.offset..].starts_with(literal) {
+            self.offset += literal.len();
+            Ok(())
+        } else {
+            Err(self.error(JsonParseErrorKind::InvalidLiteral))
+        }
+    }
+
+    fn value(&mut self) -> Result<ParsedJsonValue, JsonParseError> {
+        // FIXME(cov:json.parser-depth-limit, severe): Replace recursive descent with an explicit stack or enforce a configurable nesting bound before accepting adversarial input.
+        match self.peek() {
+            Some(b'n') => {
+                self.literal(b"null")?;
+                Ok(ParsedJsonValue::Null)
+            }
+            Some(b't') => {
+                self.literal(b"true")?;
+                Ok(ParsedJsonValue::Bool(true))
+            }
+            Some(b'f') => {
+                self.literal(b"false")?;
+                Ok(ParsedJsonValue::Bool(false))
+            }
+            Some(b'"') => self.string().map(ParsedJsonValue::String),
+            Some(b'[') => self.array(),
+            Some(b'{') => self.object(),
+            Some(b'-' | b'0'..=b'9') => self.number().map(ParsedJsonValue::Number),
+            _ => Err(self.error(JsonParseErrorKind::ExpectedValue)),
+        }
+    }
+
+    fn array(&mut self) -> Result<ParsedJsonValue, JsonParseError> {
+        self.take(b'[')?;
+        self.whitespace();
+        let mut values = Vec::new();
+        if self.peek() == Some(b']') {
+            self.offset += 1;
+            return Ok(ParsedJsonValue::Array(values));
+        }
+        loop {
+            values.push(self.value()?);
+            self.whitespace();
+            match self.peek() {
+                Some(b',') => {
+                    self.offset += 1;
+                    self.whitespace();
+                }
+                Some(b']') => {
+                    self.offset += 1;
+                    return Ok(ParsedJsonValue::Array(values));
+                }
+                _ => return Err(self.error(JsonParseErrorKind::ExpectedByte(b']'))),
+            }
+        }
+    }
+
+    fn object(&mut self) -> Result<ParsedJsonValue, JsonParseError> {
+        self.take(b'{')?;
+        self.whitespace();
+        let mut members = Vec::new();
+        if self.peek() == Some(b'}') {
+            self.offset += 1;
+            return Ok(ParsedJsonValue::Object(members));
+        }
+        loop {
+            let name = self.string()?;
+            self.whitespace();
+            self.take(b':')?;
+            self.whitespace();
+            let value = self.value()?;
+            members.push(ParsedJsonMember { name, value });
+            self.whitespace();
+            match self.peek() {
+                Some(b',') => {
+                    self.offset += 1;
+                    self.whitespace();
+                }
+                Some(b'}') => {
+                    self.offset += 1;
+                    return Ok(ParsedJsonValue::Object(members));
+                }
+                _ => return Err(self.error(JsonParseErrorKind::ExpectedByte(b'}'))),
+            }
+        }
+    }
+
+    fn string(&mut self) -> Result<JsonString, JsonParseError> {
+        self.take(b'"')?;
+        let mut result = Vec::new();
+        loop {
+            match self.peek() {
+                None => return Err(self.error(JsonParseErrorKind::ExpectedByte(b'"'))),
+                Some(b'"') => {
+                    self.offset += 1;
+                    return Ok(JsonString(result));
+                }
+                Some(0x00..=0x1f) => {
+                    return Err(self.error(JsonParseErrorKind::UnescapedControl));
+                }
+                Some(b'\\') => {
+                    self.offset += 1;
+                    self.escape(&mut result)?;
+                }
+                Some(byte) if byte.is_ascii() => {
+                    self.offset += 1;
+                    result.push(JsonCodePoint::Scalar(char::from(byte)));
+                }
+                Some(_) => {
+                    let remaining = std::str::from_utf8(&self.source[self.offset..])
+                        .map_err(|_| self.error(JsonParseErrorKind::InvalidUtf8))?;
+                    let character = remaining
+                        .chars()
+                        .next()
+                        .ok_or_else(|| self.error(JsonParseErrorKind::InvalidUtf8))?;
+                    self.offset += character.len_utf8();
+                    result.push(JsonCodePoint::Scalar(character));
+                }
+            }
+        }
+    }
+
+    fn escape(&mut self, result: &mut Vec<JsonCodePoint>) -> Result<(), JsonParseError> {
+        let escaped = self
+            .peek()
+            .ok_or_else(|| self.error(JsonParseErrorKind::InvalidEscape))?;
+        self.offset += 1;
+        let scalar = match escaped {
+            b'"' => Some('"'),
+            b'\\' => Some('\\'),
+            b'/' => Some('/'),
+            b'b' => Some('\u{0008}'),
+            b'f' => Some('\u{000c}'),
+            b'n' => Some('\n'),
+            b'r' => Some('\r'),
+            b't' => Some('\t'),
+            b'u' => {
+                let first = self.hex_quad()?;
+                if (0xd800..=0xdbff).contains(&first)
+                    && self.source[self.offset..].starts_with(b"\\u")
+                {
+                    let saved = self.offset;
+                    self.offset += 2;
+                    let second = self.hex_quad()?;
+                    if (0xdc00..=0xdfff).contains(&second) {
+                        let code = 0x10000
+                            + ((u32::from(first) - 0xd800) << 10)
+                            + (u32::from(second) - 0xdc00);
+                        Some(char::from_u32(code).expect("valid surrogate pair"))
+                    } else {
+                        self.offset = saved;
+                        result.push(JsonCodePoint::UnpairedSurrogate(
+                            JsonSurrogate::new(first).expect("high surrogate"),
+                        ));
+                        None
+                    }
+                } else if let Some(surrogate) = JsonSurrogate::new(first) {
+                    result.push(JsonCodePoint::UnpairedSurrogate(surrogate));
+                    None
+                } else {
+                    Some(
+                        char::from_u32(u32::from(first))
+                            .expect("non-surrogate UTF-16 code unit is scalar"),
+                    )
+                }
+            }
+            _ => return Err(self.error(JsonParseErrorKind::InvalidEscape)),
+        };
+        if let Some(character) = scalar {
+            result.push(JsonCodePoint::Scalar(character));
+        }
+        Ok(())
+    }
+
+    fn hex_quad(&mut self) -> Result<u16, JsonParseError> {
+        let end = self.offset.saturating_add(4);
+        let bytes = self
+            .source
+            .get(self.offset..end)
+            .ok_or_else(|| self.error(JsonParseErrorKind::InvalidUnicodeEscape))?;
+        let mut value = 0_u16;
+        for byte in bytes {
+            let digit = match byte {
+                b'0'..=b'9' => u16::from(byte - b'0'),
+                b'a'..=b'f' => u16::from(byte - b'a' + 10),
+                b'A'..=b'F' => u16::from(byte - b'A' + 10),
+                _ => return Err(self.error(JsonParseErrorKind::InvalidUnicodeEscape)),
+            };
+            value = value * 16 + digit;
+        }
+        self.offset = end;
+        Ok(value)
+    }
+
+    fn number(&mut self) -> Result<CanonicalDecimal, JsonParseError> {
+        let negative = if self.peek() == Some(b'-') {
+            self.offset += 1;
+            true
+        } else {
+            false
+        };
+        let mut digits = Vec::new();
+        match self.peek() {
+            Some(b'0') => {
+                digits.push(0);
+                self.offset += 1;
+                if matches!(self.peek(), Some(b'0'..=b'9')) {
+                    return Err(self.error(JsonParseErrorKind::InvalidNumber));
+                }
+            }
+            Some(b'1'..=b'9') => {
+                while let Some(byte @ b'0'..=b'9') = self.peek() {
+                    digits.push(byte - b'0');
+                    self.offset += 1;
+                }
+            }
+            _ => return Err(self.error(JsonParseErrorKind::InvalidNumber)),
+        }
+
+        let mut fractional_digits = 0_usize;
+        if self.peek() == Some(b'.') {
+            self.offset += 1;
+            let start = self.offset;
+            while let Some(byte @ b'0'..=b'9') = self.peek() {
+                digits.push(byte - b'0');
+                fractional_digits += 1;
+                self.offset += 1;
+            }
+            if self.offset == start {
+                return Err(self.error(JsonParseErrorKind::InvalidNumber));
+            }
+        }
+
+        let mut exponent = Int::zero();
+        if matches!(self.peek(), Some(b'e' | b'E')) {
+            self.offset += 1;
+            let sign = match self.peek() {
+                Some(b'+') => {
+                    self.offset += 1;
+                    ""
+                }
+                Some(b'-') => {
+                    self.offset += 1;
+                    "-"
+                }
+                _ => "",
+            };
+            let start = self.offset;
+            while matches!(self.peek(), Some(b'0'..=b'9')) {
+                self.offset += 1;
+            }
+            if self.offset == start {
+                return Err(self.error(JsonParseErrorKind::InvalidNumber));
+            }
+            let magnitude =
+                std::str::from_utf8(&self.source[start..self.offset]).expect("ASCII digits");
+            exponent = format!("{sign}{magnitude}")
+                .parse()
+                .map_err(|_| self.error(JsonParseErrorKind::InvalidNumber))?;
+        }
+        exponent -= Int::from(fractional_digits);
+        CanonicalDecimal::new(negative, digits, exponent)
+            .map_err(|_| self.error(JsonParseErrorKind::InvalidNumber))
+    }
+}
+
 /// Policy for interpreting a parsed member sequence as a semantic object.
 pub trait ObjectInterpretation<D> {
     type Error;
@@ -204,5 +698,106 @@ mod tests {
         let spec = json_value_polynomial();
         assert!(spec.validate().is_ok());
         assert!(!spec.is_recursive());
+    }
+
+    #[test]
+    fn syntax_parser_retains_nested_duplicate_members_in_order() {
+        let (value, witness) = JsonSyntaxParser
+            .parse_diagnostic(br#"{"x":1,"x":{"y":2,"y":3}}"#)
+            .unwrap();
+        let ParsedJsonValue::Object(members) = value else {
+            panic!("expected object");
+        };
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0].name, JsonString::from("x"));
+        assert_eq!(members[1].name, JsonString::from("x"));
+        let ParsedJsonValue::Object(nested) = &members[1].value else {
+            panic!("expected nested object");
+        };
+        assert_eq!(nested.len(), 2);
+        assert_eq!(witness.consumed, br#"{"x":1,"x":{"y":2,"y":3}}"#.len());
+        assert!(JsonParser.parse(br#"{"x":1,"x":2}"#).unwrap().is_none());
+    }
+
+    #[test]
+    fn numbers_are_exact_canonical_decimals() {
+        let Some((JsonValue::Array(values), _)) =
+            JsonParser.parse(br#"[1.2300e2,-0,4e-1000]"#).unwrap()
+        else {
+            panic!("expected semantic array");
+        };
+        let JsonValue::Number(first) = &values[0] else {
+            panic!("expected number");
+        };
+        assert_eq!(first.digits(), &[1, 2, 3]);
+        assert_eq!(first.exponent(), &Int::zero());
+        let JsonValue::Number(zero) = &values[1] else {
+            panic!("expected number");
+        };
+        assert!(!zero.is_negative());
+        assert_eq!(zero.digits(), &[0]);
+        let JsonValue::Number(tiny) = &values[2] else {
+            panic!("expected number");
+        };
+        assert_eq!(tiny.exponent(), &Int::from(-1000_i64));
+    }
+
+    #[test]
+    fn string_decoding_preserves_unpaired_surrogates() {
+        let Some((JsonValue::Array(values), _)) = JsonParser
+            .parse(b"[\"\\uD834\\uDD1E\",\"\\uD800\",\"\xc3\xa9\"]")
+            .unwrap()
+        else {
+            panic!("expected array");
+        };
+        assert_eq!(
+            values[0],
+            JsonValue::String(JsonString(vec![JsonCodePoint::Scalar('\u{1d11e}')]))
+        );
+        assert_eq!(
+            values[1],
+            JsonValue::String(JsonString(vec![JsonCodePoint::UnpairedSurrogate(
+                JsonSurrogate::new(0xd800).unwrap()
+            )]))
+        );
+        assert_eq!(values[2], JsonValue::String(JsonString::from("é")));
+    }
+
+    #[test]
+    fn semantic_per_relates_distinct_encodings_and_object_orders() {
+        let same = JsonParser
+            .same_interpretation(br#"{"a":"a","b":1.0}"#, br#"{ "b": 10e-1, "a": "\u0061" }"#)
+            .unwrap();
+        assert!(same.is_some());
+        assert!(
+            JsonParser
+                .same_interpretation(br#"{"a":1}"#, br#"{"a":2}"#)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            JsonParser
+                .same_interpretation(br#"{"a":1,"a":1}"#, br#"{"a":1}"#)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn parser_rejects_non_rfc_number_and_string_forms() {
+        for invalid in [
+            &b"01"[..],
+            &b"1."[..],
+            &b"+1"[..],
+            &b"NaN"[..],
+            &b"\"line\nbreak\""[..],
+            &b"true false"[..],
+            &[b'"', 0xff, b'"'][..],
+        ] {
+            assert!(
+                JsonSyntaxParser.parse(invalid).unwrap().is_none(),
+                "accepted {invalid:?}"
+            );
+        }
     }
 }

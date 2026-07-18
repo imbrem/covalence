@@ -372,6 +372,14 @@
       "to": "covalence-inductive"
     },
     {
+      "from": "covalence-json-api",
+      "to": "covalence-parsing-api"
+    },
+    {
+      "from": "covalence-json-api",
+      "to": "covalence-types"
+    },
+    {
       "from": "covalence-k",
       "to": "covalence-grammar"
     },

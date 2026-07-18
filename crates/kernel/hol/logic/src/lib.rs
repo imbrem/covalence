@@ -12,10 +12,15 @@
 
 #![forbid(unsafe_code)]
 
+pub mod nat;
 pub mod relation;
 
 use core::fmt::Debug;
 
+pub use nat::{
+    NatAdditiveLaws, NatArithmetic, NatEqDecision, NatFreeness, NatLaws, NatMultiplicativeLaws,
+    NatNormalization, NatOrder, NatRecursionLaws, NatSyntax,
+};
 pub use relation::{
     Arrow, Category, Decision, RelationAlgebra, RelationEvidence, RelationJudgmentSyntax,
     RelationOrderDecision, RelationOrderLaws, RelationProperty, RelationPropertyEvidence,

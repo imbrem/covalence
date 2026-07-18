@@ -20,9 +20,12 @@ disable-model-invocation: true
   - Capability traits split type operators, term binders, equality, quantifiers,
     and proof rules; `relation` provides typed `Arrow` values and basic
     relational algebra.
+  - `nat` provides representation-independent natural-number syntax,
+    arithmetic, order, supplied law bundles, and optional decision/normalization
+    capabilities over the `Logic` carriers.
   - `covalence-init`'s `NativeHol` implements the extracted carrier and core
-    capabilities as a compatibility adapter; the legacy monolithic `Hol` trait
-    remains while consumers migrate.
+    capabilities; `covalence-hol-api` keeps the legacy concrete-HOL Nat facade
+    as a forwarding compatibility adapter while consumers migrate.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

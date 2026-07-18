@@ -68,6 +68,7 @@ pub mod engine;
 pub mod existence;
 pub mod graph;
 pub mod hol;
+mod nat_api;
 pub mod recursor;
 pub mod sig;
 pub mod uniqueness;

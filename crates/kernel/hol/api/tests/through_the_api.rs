@@ -130,3 +130,22 @@ mod narrow_capabilities {
         complete_native_capabilities(&hol);
     }
 }
+
+#[test]
+fn native_nat_legacy_surface_forwards_to_logic_capabilities() {
+    use covalence_hol_api::{
+        NatArithmetic as LegacyArithmetic, NatSyntax as LegacySyntax, NativeHol,
+        logic::nat::{NatArithmetic as LogicArithmetic, NatSyntax as LogicSyntax},
+    };
+
+    let hol = NativeHol;
+    let legacy_two = LegacySyntax::lit(&hol, 2);
+    let logic_two = LogicSyntax::nat_literal(&hol, 2);
+    assert_eq!(legacy_two, logic_two);
+
+    let legacy_four =
+        LegacyArithmetic::add(&hol, legacy_two.clone(), legacy_two).expect("legacy addition");
+    let logic_four =
+        LogicArithmetic::nat_add(&hol, logic_two.clone(), logic_two).expect("logic addition");
+    assert_eq!(legacy_four, logic_four);
+}

@@ -16,12 +16,15 @@
 //! “not implemented” result.
 
 use covalence_core::Result;
+use covalence_logic_api::nat as logic_nat;
 
 use crate::Hol;
 
-// TODO(cov:kernel.nat.logic-api-migration, major): Move these capabilities onto covalence-logic-api's associated Error and carrier traits; keep this concrete-Hol surface as the compatibility adapter.
-
 /// The natural-number carrier and its primitive constructors.
+///
+/// Compatibility adapter for the dependency-free
+/// [`logic_nat::NatSyntax`] capability. New logic-generic consumers should use
+/// that trait directly.
 pub trait NatSyntax: Hol {
     /// The type of natural numbers.
     fn nat_ty(&self) -> Self::Type;
@@ -212,102 +215,92 @@ pub trait NatNormalization: NatSyntax {
     fn normalize_nat(&self, term: Self::Term) -> Result<Self::Thm>;
 }
 
-// ============================================================================
-// The native backend
-// ============================================================================
-
-use covalence_core::Term;
-use covalence_init::init::nat;
-
-/// `Nat` over the native `covalence-core` kernel — each method delegates to a
-/// `covalence_init::init::nat` accessor or a fast `covalence-core`/`-eval`
-/// constructor. The *only* place in this crate that names the concrete
-/// natural-number ops.
+// The concrete-HOL API remains source-compatible while forwarding every
+// operation to the dependency-free capability surface implemented by
+// `covalence-init`, which owns `NativeHol`.
 impl NatSyntax for crate::NativeHol {
     fn nat_ty(&self) -> Self::Type {
-        crate::Type::nat()
+        logic_nat::NatSyntax::nat_type(self)
     }
-
-    fn zero(&self) -> Term {
-        covalence_hol_eval::mk_nat(covalence_types::Nat::zero())
+    fn zero(&self) -> Self::Term {
+        logic_nat::NatSyntax::nat_zero(self)
     }
-    fn succ(&self, n: Term) -> Result<Term> {
-        Hol::app(self, nat::nat_succ(), n)
+    fn succ(&self, n: Self::Term) -> Result<Self::Term> {
+        logic_nat::NatSyntax::nat_succ(self, n)
     }
-    fn lit(&self, n: u64) -> Term {
-        covalence_hol_eval::mk_nat(covalence_types::Nat::from(n))
+    fn lit(&self, n: u64) -> Self::Term {
+        logic_nat::NatSyntax::nat_literal(self, n)
     }
 }
 
 impl NatArithmetic for crate::NativeHol {
-    fn add(&self, a: Term, b: Term) -> Result<Term> {
-        Hol::app(self, Hol::app(self, nat::nat_add(), a)?, b)
+    fn add(&self, a: Self::Term, b: Self::Term) -> Result<Self::Term> {
+        logic_nat::NatArithmetic::nat_add(self, a, b)
     }
-    fn mul(&self, a: Term, b: Term) -> Result<Term> {
-        Hol::app(self, Hol::app(self, nat::nat_mul(), a)?, b)
+    fn mul(&self, a: Self::Term, b: Self::Term) -> Result<Self::Term> {
+        logic_nat::NatArithmetic::nat_multiply(self, a, b)
     }
 }
 
 impl NatOrder for crate::NativeHol {
-    fn lt(&self, a: Term, b: Term) -> Result<Term> {
-        Hol::app(self, Hol::app(self, nat::nat_lt(), a)?, b)
+    fn lt(&self, a: Self::Term, b: Self::Term) -> Result<Self::Term> {
+        logic_nat::NatOrder::nat_less_than(self, a, b)
     }
-
-    fn le(&self, a: Term, b: Term) -> Result<Term> {
-        Hol::app(self, Hol::app(self, nat::nat_le(), a)?, b)
+    fn le(&self, a: Self::Term, b: Self::Term) -> Result<Self::Term> {
+        logic_nat::NatOrder::nat_less_equal(self, a, b)
     }
 }
 
 impl NatFreeness for crate::NativeHol {
     fn succ_inj(&self) -> Result<Self::Thm> {
-        Ok(nat::succ_inj())
+        logic_nat::NatFreeness::nat_successor_injective(self)
     }
     fn zero_ne_succ(&self) -> Result<Self::Thm> {
-        Ok(nat::zero_ne_succ())
+        logic_nat::NatFreeness::nat_zero_not_successor(self)
     }
 }
 
 impl NatRecursionLaws for crate::NativeHol {
     fn add_base(&self) -> Result<Self::Thm> {
-        Ok(nat::add_base())
+        logic_nat::NatRecursionLaws::nat_add_base(self)
     }
     fn add_step(&self) -> Result<Self::Thm> {
-        Ok(nat::add_step())
+        logic_nat::NatRecursionLaws::nat_add_step(self)
     }
     fn mul_base(&self) -> Result<Self::Thm> {
-        Ok(nat::mul_base())
+        logic_nat::NatRecursionLaws::nat_multiply_base(self)
     }
     fn mul_step(&self) -> Result<Self::Thm> {
-        Ok(nat::mul_step())
+        logic_nat::NatRecursionLaws::nat_multiply_step(self)
     }
 }
 
 impl NatAdditiveLaws for crate::NativeHol {
     fn add_zero(&self) -> Result<Self::Thm> {
-        Ok(nat::add_zero())
+        logic_nat::NatAdditiveLaws::nat_add_zero(self)
     }
     fn add_succ_r(&self) -> Result<Self::Thm> {
-        Ok(nat::add_succ_r())
+        logic_nat::NatAdditiveLaws::nat_add_successor_right(self)
     }
     fn add_comm(&self) -> Result<Self::Thm> {
-        Ok(nat::add_comm())
+        logic_nat::NatAdditiveLaws::nat_add_commutative(self)
     }
     fn add_assoc(&self) -> Result<Self::Thm> {
-        Ok(nat::add_assoc())
+        logic_nat::NatAdditiveLaws::nat_add_associative(self)
     }
     fn add_cancel(&self) -> Result<Self::Thm> {
-        Ok(nat::add_cancel())
+        logic_nat::NatAdditiveLaws::nat_add_cancel_right(self)
     }
 }
 
 impl NatMultiplicativeLaws for crate::NativeHol {
     fn mul_zero(&self) -> Result<Self::Thm> {
-        Ok(nat::mul_zero())
+        logic_nat::NatMultiplicativeLaws::nat_multiply_zero(self)
     }
     fn mul_succ_r(&self) -> Result<Self::Thm> {
-        Ok(nat::mul_succ_r())
+        logic_nat::NatMultiplicativeLaws::nat_multiply_successor_right(self)
     }
     fn mul_comm(&self) -> Result<Self::Thm> {
-        Ok(nat::mul_comm())
+        logic_nat::NatMultiplicativeLaws::nat_multiply_commutative(self)
     }
 }

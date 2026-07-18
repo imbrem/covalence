@@ -75,10 +75,15 @@ in the outer expression. Parameters are constants and are not substituted.
 treats `F ∘ G` as dependent on `X` only when both `F` depends on its argument
 and `G` depends on `X`.
 
-This is presently a structural calculation API, not a logic interpretation.
-There is no generic operation that maps a `FunctorExpr` to a logic type, no
-proof that expansion preserves interpretation, and no proof-bearing functor
-action `map F f`.
+[`StructuralPolynomial`](../../../crates/lang/inductive/src/functor.rs) now
+checks the bounded `0 | 1 | P | X | F + G | F × G` fragment and deliberately
+rejects explicit composition. [`StructuralFunctorAction`] gives backends a
+narrow seam for interpreting `F(X)` and lifting an arrow `f : X → Y` to
+`F(f)`. [`StructuralFunctorLaws`] separately requests backend-native evidence
+for identity, composition, and congruence. These traits do not mint evidence,
+and no HOL backend implements them yet. Composition-preserving interpretation,
+nested fixpoint realization, and a proof that `expand_composition` preserves
+interpretation therefore remain open.
 
 ### Named polynomial and aggregate specifications
 
@@ -237,9 +242,10 @@ it is not yet a complete semantic conformance proof.
 The missing bridge is accurately tracked by
 `cov:inductive.legacy-fixpoint-adapter`
 ([`backend.rs`](../../../crates/lang/inductive/src/backend.rs#L9)). Building it
-requires a representation-independent interpretation of `F carrier` and a
-proof-bearing functor action. A structural spec conversion alone cannot
-manufacture the `layer`, `roll`, `unroll`, or Lambek theorems.
+requires realizing the new structural functor capability in the target logic
+and deriving the layer, roll/unroll, and Lambek theorems. A structural spec
+conversion or an implementation of `map` alone cannot manufacture those
+facts.
 
 ### Logic abstraction and trust
 

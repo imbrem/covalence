@@ -48,7 +48,7 @@
       "id": "inductive.legacy-fixpoint-adapter",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Adapt InductiveTheory to LeastFixpoint when the logic API exposes polynomial functor action/map terms without representation-specific assumptions.",
+      "summary": "Adapt InductiveTheory to LeastFixpoint by realizing StructuralFunctorAction in the target logic and deriving the required layer/isomorphism facts.",
       "structured": true,
       "path": "crates/lang/inductive/src/backend.rs",
       "line": 9,

@@ -812,6 +812,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/inductive/src/functor.rs",
+      "kind": "file",
+      "title": "crates/lang/inductive/src/functor.rs",
+      "status": null,
+      "path": "crates/lang/inductive/src/functor.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/inductive/src/logic.rs",
       "kind": "file",
       "title": "crates/lang/inductive/src/logic.rs",
@@ -1691,7 +1700,7 @@
       "status": "draft",
       "path": "notes/README.md",
       "words": 438,
-      "updated": 1784414562
+      "updated": 1784416010
     },
     {
       "id": "note:notes/design/README.md",
@@ -1700,7 +1709,7 @@
       "status": "draft",
       "path": "notes/design/README.md",
       "words": 488,
-      "updated": 1784411489
+      "updated": 1784416010
     },
     {
       "id": "note:notes/design/TEMPLATE.md",
@@ -1709,7 +1718,7 @@
       "status": "draft",
       "path": "notes/design/TEMPLATE.md",
       "words": 362,
-      "updated": 1784408739
+      "updated": 1784416010
     },
     {
       "id": "note:notes/design/api-extraction-audit.md",
@@ -1718,7 +1727,7 @@
       "status": "draft",
       "path": "notes/design/api-extraction-audit.md",
       "words": 1219,
-      "updated": 1784411489
+      "updated": 1784416010
     },
     {
       "id": "note:notes/design/content-logic-and-wit-boundaries.md",
@@ -1727,7 +1736,7 @@
       "status": "draft",
       "path": "notes/design/content-logic-and-wit-boundaries.md",
       "words": 2024,
-      "updated": 1784411489
+      "updated": 1784416010
     },
     {
       "id": "note:notes/design/graph-api.md",
@@ -1736,7 +1745,7 @@
       "status": "draft",
       "path": "notes/design/graph-api.md",
       "words": 879,
-      "updated": 1784413042
+      "updated": 1784416010
     },
     {
       "id": "note:notes/design/human-agent-development-loop.md",
@@ -1745,7 +1754,7 @@
       "status": "draft",
       "path": "notes/design/human-agent-development-loop.md",
       "words": 887,
-      "updated": 1784411546
+      "updated": 1784416010
     },
     {
       "id": "note:notes/design/k-frontend.md",
@@ -1754,7 +1763,7 @@
       "status": "draft",
       "path": "notes/design/k-frontend.md",
       "words": 2526,
-      "updated": 1784408739
+      "updated": 1784416010
     },
     {
       "id": "note:notes/design/notes-governance.md",
@@ -1763,7 +1772,7 @@
       "status": "draft",
       "path": "notes/design/notes-governance.md",
       "words": 733,
-      "updated": 1784412443
+      "updated": 1784416010
     },
     {
       "id": "note:notes/design/relational-base-rewrite.md",
@@ -1772,7 +1781,7 @@
       "status": "draft",
       "path": "notes/design/relational-base-rewrite.md",
       "words": 840,
-      "updated": 1784411489
+      "updated": 1784416010
     },
     {
       "id": "note:notes/plans/atoms.md",
@@ -1781,7 +1790,7 @@
       "status": "draft",
       "path": "notes/plans/atoms.md",
       "words": 182,
-      "updated": 1784411489
+      "updated": 1784416010
     },
     {
       "id": "note:notes/plans/next-stage.md",
@@ -1790,7 +1799,7 @@
       "status": "draft",
       "path": "notes/plans/next-stage.md",
       "words": 1706,
-      "updated": 1783109138
+      "updated": 1784416010
     },
     {
       "id": "note:notes/plans/sketch-separation.md",
@@ -1799,7 +1808,7 @@
       "status": "draft",
       "path": "notes/plans/sketch-separation.md",
       "words": 990,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/terms/T0001.md",
@@ -1808,7 +1817,7 @@
       "status": "draft",
       "path": "notes/terms/T0001.md",
       "words": 153,
-      "updated": 1784414562
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/README.md",
@@ -1817,7 +1826,7 @@
       "status": "draft",
       "path": "notes/vibes/README.md",
       "words": 778,
-      "updated": 1784408739
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/audits/inductive-api-audit.md",
@@ -1825,8 +1834,8 @@
       "title": "Inductive API audit",
       "status": "draft",
       "path": "notes/vibes/audits/inductive-api-audit.md",
-      "words": 2182,
-      "updated": 1784415178
+      "words": 2235,
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/build/buck2-experiment.md",
@@ -1835,7 +1844,7 @@
       "status": "draft",
       "path": "notes/vibes/build/buck2-experiment.md",
       "words": 591,
-      "updated": 1784153336
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/build/known-issues.md",
@@ -1844,7 +1853,7 @@
       "status": "draft",
       "path": "notes/vibes/build/known-issues.md",
       "words": 304,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/handoff/README.md",
@@ -1853,7 +1862,7 @@
       "status": "draft",
       "path": "notes/vibes/handoff/README.md",
       "words": 104,
-      "updated": 1784412443
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/handoff/defs-out-of-core.md",
@@ -1862,7 +1871,7 @@
       "status": "draft",
       "path": "notes/vibes/handoff/defs-out-of-core.md",
       "words": 780,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/k/README.md",
@@ -1871,7 +1880,7 @@
       "status": "draft",
       "path": "notes/vibes/k/README.md",
       "words": 315,
-      "updated": 1784062613
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/k/reduction-demo-scope.md",
@@ -1880,7 +1889,7 @@
       "status": "draft",
       "path": "notes/vibes/k/reduction-demo-scope.md",
       "words": 2027,
-      "updated": 1784157836
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/k/research/backends-and-smt.md",
@@ -1889,7 +1898,7 @@
       "status": "draft",
       "path": "notes/vibes/k/research/backends-and-smt.md",
       "words": 1663,
-      "updated": 1784055469
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/k/research/k-framework-today.md",
@@ -1898,7 +1907,7 @@
       "status": "draft",
       "path": "notes/vibes/k/research/k-framework-today.md",
       "words": 1430,
-      "updated": 1784055469
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/k/research/kore-ir.md",
@@ -1907,7 +1916,7 @@
       "status": "draft",
       "path": "notes/vibes/k/research/kore-ir.md",
       "words": 1797,
-      "updated": 1784055469
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/k/research/proof-generation.md",
@@ -1916,7 +1925,7 @@
       "status": "draft",
       "path": "notes/vibes/k/research/proof-generation.md",
       "words": 1622,
-      "updated": 1784055469
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/k/research/reachability-and-matching-logic.md",
@@ -1925,7 +1934,7 @@
       "status": "draft",
       "path": "notes/vibes/k/research/reachability-and-matching-logic.md",
       "words": 2098,
-      "updated": 1784055469
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/k/research/semantics-ecosystem.md",
@@ -1934,7 +1943,7 @@
       "status": "draft",
       "path": "notes/vibes/k/research/semantics-ecosystem.md",
       "words": 1526,
-      "updated": 1784055469
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/base-abstraction.md",
@@ -1943,7 +1952,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/base-abstraction.md",
       "words": 1098,
-      "updated": 1784153336
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/base-api-surface.md",
@@ -1952,7 +1961,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/base-api-surface.md",
       "words": 752,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/base-relcalc-holomega-design.md",
@@ -1961,7 +1970,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/base-relcalc-holomega-design.md",
       "words": 4170,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/closed-world-kernel.md",
@@ -1970,7 +1979,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/closed-world-kernel.md",
       "words": 4833,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/covalence-fol.md",
@@ -1979,7 +1988,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/covalence-fol.md",
       "words": 674,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/defs-rehome-design.md",
@@ -1988,7 +1997,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/defs-rehome-design.md",
       "words": 1394,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
@@ -1997,7 +2006,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/inductive/inductive-api-design.md",
       "words": 3405,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/inductive/inductive-support.md",
@@ -2006,7 +2015,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/inductive/inductive-support.md",
       "words": 1922,
-      "updated": 1783974320
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/kernel-design.md",
@@ -2015,7 +2024,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/kernel-design.md",
       "words": 2208,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/literals/eg5-preflight.md",
@@ -2024,7 +2033,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/literals/eg5-preflight.md",
       "words": 1491,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/literals/literal-endgame-design.md",
@@ -2033,7 +2042,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/literals/literal-endgame-design.md",
       "words": 1410,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/literals/numeral-literals-api.md",
@@ -2042,7 +2051,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/literals/numeral-literals-api.md",
       "words": 2912,
-      "updated": 1783974320
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/literals/sha256-round-keystone.md",
@@ -2051,7 +2060,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/literals/sha256-round-keystone.md",
       "words": 1715,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/pure-design.md",
@@ -2060,7 +2069,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/pure-design.md",
       "words": 1717,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/tcb/soundness-audit.md",
@@ -2069,7 +2078,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/tcb/soundness-audit.md",
       "words": 1518,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/tcb/tcb-holomega-roadmap.md",
@@ -2078,7 +2087,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/tcb/tcb-holomega-roadmap.md",
       "words": 2286,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
@@ -2087,7 +2096,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/tcb/what-is-the-tcb.md",
       "words": 889,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/kernel/type-hierarchy.md",
@@ -2096,7 +2105,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/type-hierarchy.md",
       "words": 1267,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/README.md",
@@ -2105,7 +2114,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/README.md",
       "words": 483,
-      "updated": 1784232526
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/STATUS.md",
@@ -2114,7 +2123,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/STATUS.md",
       "words": 923,
-      "updated": 1783974945
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/abstract-sexpr-api.md",
@@ -2123,7 +2132,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/abstract-sexpr-api.md",
       "words": 4518,
-      "updated": 1784415968
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-agent-guide.md",
@@ -2132,7 +2141,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-agent-guide.md",
       "words": 859,
-      "updated": 1784232526
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-book-frontend.md",
@@ -2141,7 +2150,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-book-frontend.md",
       "words": 1082,
-      "updated": 1784232526
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
@@ -2150,7 +2159,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-campaign-handoff.md",
       "words": 591,
-      "updated": 1784415968
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-dialect.md",
@@ -2159,7 +2168,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-dialect.md",
       "words": 606,
-      "updated": 1784157736
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-fidelity.md",
@@ -2168,7 +2177,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-fidelity.md",
       "words": 812,
-      "updated": 1784232526
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-full-plan.md",
@@ -2177,7 +2186,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-full-plan.md",
       "words": 957,
-      "updated": 1784232526
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-premise-builder.md",
@@ -2186,7 +2195,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-premise-builder.md",
       "words": 6797,
-      "updated": 1784415969
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
@@ -2195,7 +2204,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-s0-s3-design.md",
       "words": 7205,
-      "updated": 1784173907
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s4-s6-design.md",
@@ -2204,7 +2213,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-s4-s6-design.md",
       "words": 6601,
-      "updated": 1784173907
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s5-design.md",
@@ -2213,7 +2222,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-s5-design.md",
       "words": 8465,
-      "updated": 1784232526
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s7-design.md",
@@ -2222,7 +2231,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-s7-design.md",
       "words": 5444,
-      "updated": 1784415969
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
@@ -2231,7 +2240,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-s7-s12-plan.md",
       "words": 1006,
-      "updated": 1784232526
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
@@ -2240,7 +2249,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/acl2-lisp.md",
       "words": 694,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
@@ -2249,7 +2258,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
       "words": 1676,
-      "updated": 1783974320
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
@@ -2258,7 +2267,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
       "words": 1668,
-      "updated": 1783974320
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/lisp-acl2-answers.md",
@@ -2267,7 +2276,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/lisp-acl2-answers.md",
       "words": 2003,
-      "updated": 1783974320
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
@@ -2276,7 +2285,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
       "words": 2706,
-      "updated": 1783974320
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
@@ -2285,7 +2294,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
       "words": 3616,
-      "updated": 1783974320
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
@@ -2294,7 +2303,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/parametric-reduction.md",
       "words": 1272,
-      "updated": 1783974320
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/parsing-relations.md",
@@ -2303,7 +2312,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/parsing-relations.md",
       "words": 1522,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/reduction-relation-on-binary-engine.md",
@@ -2312,7 +2321,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/reduction-relation-on-binary-engine.md",
       "words": 1094,
-      "updated": 1784059576
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
@@ -2321,7 +2330,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
       "words": 1648,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
@@ -2330,7 +2339,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
       "words": 2765,
-      "updated": 1784050700
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/minimal-spec/README.md",
@@ -2339,7 +2348,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/minimal-spec/README.md",
       "words": 2964,
-      "updated": 1783974945
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
@@ -2348,7 +2357,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/minimal-spec/implementation-plan.md",
       "words": 1735,
-      "updated": 1783974945
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/relational-recursion.md",
@@ -2357,7 +2366,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/relational-recursion.md",
       "words": 670,
-      "updated": 1784157736
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/lisp/verification-via-smt.md",
@@ -2366,7 +2375,7 @@
       "status": "draft",
       "path": "notes/vibes/lisp/verification-via-smt.md",
       "words": 842,
-      "updated": 1784056173
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/bitvector-verification-roadmap.md",
@@ -2375,7 +2384,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/bitvector-verification-roadmap.md",
       "words": 711,
-      "updated": 1784060779
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/cfg-stratum-design.md",
@@ -2384,7 +2393,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/cfg-stratum-design.md",
       "words": 3484,
-      "updated": 1784063656
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/computation-theory.md",
@@ -2393,7 +2402,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/computation-theory.md",
       "words": 647,
-      "updated": 1784153654
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/derivation-system-interp.md",
@@ -2402,7 +2411,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/derivation-system-interp.md",
       "words": 919,
-      "updated": 1784063401
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/init-in-dialect.md",
@@ -2411,7 +2420,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/init-in-dialect.md",
       "words": 1099,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/logic-frontends.md",
@@ -2420,7 +2429,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/logic-frontends.md",
       "words": 1694,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/metamath-axiom-set-metatheory.md",
@@ -2429,7 +2438,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/metamath-axiom-set-metatheory.md",
       "words": 852,
-      "updated": 1784054514
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/metatheory.md",
@@ -2438,7 +2447,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/metatheory.md",
       "words": 3632,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/opentheory-import.md",
@@ -2447,7 +2456,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/opentheory-import.md",
       "words": 1549,
-      "updated": 1784061083
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/proof-format.md",
@@ -2456,7 +2465,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/proof-format.md",
       "words": 1366,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/sat-replay-and-tree-context.md",
@@ -2465,7 +2474,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/sat-replay-and-tree-context.md",
       "words": 881,
-      "updated": 1784063620
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/smt-import-architecture.md",
@@ -2474,7 +2483,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/smt-import-architecture.md",
       "words": 1117,
-      "updated": 1784054512
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/spectec-fragment-api.md",
@@ -2483,7 +2492,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/spectec-fragment-api.md",
       "words": 1210,
-      "updated": 1784166348
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/spectec-total-load.md",
@@ -2492,7 +2501,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/spectec-total-load.md",
       "words": 3469,
-      "updated": 1784415970
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/structural-sigma-transport.md",
@@ -2501,7 +2510,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/structural-sigma-transport.md",
       "words": 2878,
-      "updated": 1784063401
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/theories-models-and-logics.md",
@@ -2510,7 +2519,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/theories-models-and-logics.md",
       "words": 5743,
-      "updated": 1784153336
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/verified-io.md",
@@ -2519,7 +2528,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/verified-io.md",
       "words": 585,
-      "updated": 1784153654
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/logics/wasm-spec.md",
@@ -2528,7 +2537,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/wasm-spec.md",
       "words": 1343,
-      "updated": 1784053339
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/observers/backend-decoupling.md",
@@ -2537,7 +2546,7 @@
       "status": "draft",
       "path": "notes/vibes/observers/backend-decoupling.md",
       "words": 753,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/observers/observers.md",
@@ -2546,7 +2555,7 @@
       "status": "draft",
       "path": "notes/vibes/observers/observers.md",
       "words": 1385,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/plans/consolidation-and-context-roadmap.md",
@@ -2555,7 +2564,7 @@
       "status": "draft",
       "path": "notes/vibes/plans/consolidation-and-context-roadmap.md",
       "words": 2794,
-      "updated": 1784408739
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/plans/knowledge-browser-apps.md",
@@ -2564,7 +2573,7 @@
       "status": "draft",
       "path": "notes/vibes/plans/knowledge-browser-apps.md",
       "words": 458,
-      "updated": 1784413701
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/plans/next-stage-breakdown.md",
@@ -2573,7 +2582,7 @@
       "status": "draft",
       "path": "notes/vibes/plans/next-stage-breakdown.md",
       "words": 1036,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
@@ -2582,7 +2591,7 @@
       "status": "draft",
       "path": "notes/vibes/plans/pure-hol-and-build-plan.md",
       "words": 2471,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/plans/refactor-plan.md",
@@ -2591,7 +2600,7 @@
       "status": "draft",
       "path": "notes/vibes/plans/refactor-plan.md",
       "words": 2759,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/plans/sketch-separation-thoughts.md",
@@ -2600,7 +2609,7 @@
       "status": "draft",
       "path": "notes/vibes/plans/sketch-separation-thoughts.md",
       "words": 1402,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/plans/workstreams-and-state-report.md",
@@ -2609,7 +2618,7 @@
       "status": "draft",
       "path": "notes/vibes/plans/workstreams-and-state-report.md",
       "words": 2734,
-      "updated": 1784408739
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/research/forester-and-note-provenance.md",
@@ -2618,7 +2627,7 @@
       "status": "draft",
       "path": "notes/vibes/research/forester-and-note-provenance.md",
       "words": 1772,
-      "updated": 1784415456
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/research/note-metadata-v1.md",
@@ -2627,7 +2636,7 @@
       "status": "draft",
       "path": "notes/vibes/research/note-metadata-v1.md",
       "words": 448,
-      "updated": 1784415456
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/sketches/README.md",
@@ -2636,7 +2645,7 @@
       "status": "draft",
       "path": "notes/vibes/sketches/README.md",
       "words": 160,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/sketches/acset-datalog-datafun.md",
@@ -2645,7 +2654,7 @@
       "status": "draft",
       "path": "notes/vibes/sketches/acset-datalog-datafun.md",
       "words": 548,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/sketches/covalence-ml-naive-compiler.md",
@@ -2654,7 +2663,7 @@
       "status": "draft",
       "path": "notes/vibes/sketches/covalence-ml-naive-compiler.md",
       "words": 1287,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/sketches/lf-dedukti.md",
@@ -2663,7 +2672,7 @@
       "status": "draft",
       "path": "notes/vibes/sketches/lf-dedukti.md",
       "words": 1141,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/sketches/type-theories.md",
@@ -2672,7 +2681,7 @@
       "status": "draft",
       "path": "notes/vibes/sketches/type-theories.md",
       "words": 1806,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/surface/frontend.md",
@@ -2681,7 +2690,7 @@
       "status": "draft",
       "path": "notes/vibes/surface/frontend.md",
       "words": 1650,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/surface/surface-compiler.md",
@@ -2690,7 +2699,7 @@
       "status": "draft",
       "path": "notes/vibes/surface/surface-compiler.md",
       "words": 5894,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/surface/surface-syntax.md",
@@ -2699,7 +2708,7 @@
       "status": "draft",
       "path": "notes/vibes/surface/surface-syntax.md",
       "words": 2015,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/vision/VISION.md",
@@ -2708,7 +2717,7 @@
       "status": "draft",
       "path": "notes/vibes/vision/VISION.md",
       "words": 2025,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/vision/development-vision.md",
@@ -2717,7 +2726,7 @@
       "status": "draft",
       "path": "notes/vibes/vision/development-vision.md",
       "words": 1715,
-      "updated": 1784153654
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/vision/k-framework-vision.md",
@@ -2726,7 +2735,7 @@
       "status": "draft",
       "path": "notes/vibes/vision/k-framework-vision.md",
       "words": 1208,
-      "updated": 1784055469
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/vision/project-map.md",
@@ -2735,7 +2744,7 @@
       "status": "draft",
       "path": "notes/vibes/vision/project-map.md",
       "words": 929,
-      "updated": 1784408739
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/vision/roadmap.md",
@@ -2744,7 +2753,7 @@
       "status": "draft",
       "path": "notes/vibes/vision/roadmap.md",
       "words": 1681,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/web/cov-project.md",
@@ -2753,7 +2762,7 @@
       "status": "draft",
       "path": "notes/vibes/web/cov-project.md",
       "words": 2026,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/web/wasm3-rust.md",
@@ -2762,7 +2771,7 @@
       "status": "draft",
       "path": "notes/vibes/web/wasm3-rust.md",
       "words": 946,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "note:notes/vibes/web/web-kernel.md",
@@ -2771,7 +2780,7 @@
       "status": "draft",
       "path": "notes/vibes/web/web-kernel.md",
       "words": 2087,
-      "updated": 1783971729
+      "updated": 1784416010
     },
     {
       "id": "source:S0001",
@@ -2965,7 +2974,7 @@
     {
       "id": "todo:inductive.legacy-fixpoint-adapter",
       "kind": "todo",
-      "title": "Adapt InductiveTheory to LeastFixpoint when the logic API exposes polynomial functor action/map terms without representation-specific assumptions.",
+      "title": "Adapt InductiveTheory to LeastFixpoint by realizing StructuralFunctorAction in the target logic and deriving the required layer/isomorphism facts.",
       "status": "major",
       "path": "crates/lang/inductive/src/backend.rs",
       "words": 0,
@@ -6592,6 +6601,12 @@
       "source": "note:notes/vibes/audits/inductive-api-audit.md",
       "predicate": "links-to",
       "target": "file:crates/lang/inductive/src/fixpoint.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/lang/inductive/src/functor.rs",
       "detail": null
     },
     {
@@ -12749,583 +12764,608 @@
   "revisions": [
     {
       "noteId": "note:notes/README.md",
-      "commit": "358dc8770c2f4091aac6fb58e5ec7e024d7686a4",
-      "committedAt": 1784414562
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/design/README.md",
-      "commit": "ff32cc61f1dca3ddfed333e75974d18bc182b83a",
-      "committedAt": 1784411489
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/design/TEMPLATE.md",
-      "commit": "f60c91ef9046de408eb69db2da02539752148ec5",
-      "committedAt": 1784408739
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/design/api-extraction-audit.md",
-      "commit": "ff32cc61f1dca3ddfed333e75974d18bc182b83a",
-      "committedAt": 1784411489
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/design/content-logic-and-wit-boundaries.md",
-      "commit": "ff32cc61f1dca3ddfed333e75974d18bc182b83a",
-      "committedAt": 1784411489
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/design/graph-api.md",
-      "commit": "c04603994984d0c7d6bbe690086f3477de079817",
-      "committedAt": 1784413042
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/design/human-agent-development-loop.md",
-      "commit": "a1b240786328aa19f0c866fa0ddd781ad8c41080",
-      "committedAt": 1784411546
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/design/k-frontend.md",
-      "commit": "f60c91ef9046de408eb69db2da02539752148ec5",
-      "committedAt": 1784408739
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/design/notes-governance.md",
-      "commit": "260daa7ba54dc4963d0a4fbf10f63d18eef38504",
-      "committedAt": 1784412443
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/design/relational-base-rewrite.md",
-      "commit": "ff32cc61f1dca3ddfed333e75974d18bc182b83a",
-      "committedAt": 1784411489
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/plans/atoms.md",
-      "commit": "ff32cc61f1dca3ddfed333e75974d18bc182b83a",
-      "committedAt": 1784411489
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/plans/next-stage.md",
-      "commit": "c4fa6ec6e3775b5d82a37cad217d5c449e5a537e",
-      "committedAt": 1783109138
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/plans/sketch-separation.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/terms/T0001.md",
-      "commit": "358dc8770c2f4091aac6fb58e5ec7e024d7686a4",
-      "committedAt": 1784414562
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/README.md",
-      "commit": "f60c91ef9046de408eb69db2da02539752148ec5",
-      "committedAt": 1784408739
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/audits/inductive-api-audit.md",
-      "commit": "322f5c0573e413bf4b2b5109d380ec167a52dcf0",
-      "committedAt": 1784415178
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/build/buck2-experiment.md",
-      "commit": "88c3b622a66646d9eb1359775138782266684e5b",
-      "committedAt": 1784153336
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/build/known-issues.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/handoff/README.md",
-      "commit": "260daa7ba54dc4963d0a4fbf10f63d18eef38504",
-      "committedAt": 1784412443
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/handoff/defs-out-of-core.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/k/README.md",
-      "commit": "5175f9d90efaa7a11817e53ef2a52286a41c5af1",
-      "committedAt": 1784062613
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/k/reduction-demo-scope.md",
-      "commit": "44716f55f639494dcac7bd10ce14e3f6e355985d",
-      "committedAt": 1784157836
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/k/research/backends-and-smt.md",
-      "commit": "6bb7208121f0caf73c76b1a413d42ef344a06f45",
-      "committedAt": 1784055469
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/k/research/k-framework-today.md",
-      "commit": "6bb7208121f0caf73c76b1a413d42ef344a06f45",
-      "committedAt": 1784055469
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/k/research/kore-ir.md",
-      "commit": "6bb7208121f0caf73c76b1a413d42ef344a06f45",
-      "committedAt": 1784055469
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/k/research/proof-generation.md",
-      "commit": "6bb7208121f0caf73c76b1a413d42ef344a06f45",
-      "committedAt": 1784055469
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/k/research/reachability-and-matching-logic.md",
-      "commit": "6bb7208121f0caf73c76b1a413d42ef344a06f45",
-      "committedAt": 1784055469
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/k/research/semantics-ecosystem.md",
-      "commit": "6bb7208121f0caf73c76b1a413d42ef344a06f45",
-      "committedAt": 1784055469
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/base-abstraction.md",
-      "commit": "88c3b622a66646d9eb1359775138782266684e5b",
-      "committedAt": 1784153336
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/base-api-surface.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/base-relcalc-holomega-design.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/closed-world-kernel.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/covalence-fol.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/defs-rehome-design.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/inductive/inductive-support.md",
-      "commit": "c4d6c22e9cf972751d30f6fd31572b87ecd59b07",
-      "committedAt": 1783974320
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/kernel-design.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/literals/eg5-preflight.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/literals/literal-endgame-design.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/literals/numeral-literals-api.md",
-      "commit": "c4d6c22e9cf972751d30f6fd31572b87ecd59b07",
-      "committedAt": 1783974320
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/literals/sha256-round-keystone.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/pure-design.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/tcb/soundness-audit.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/tcb/tcb-holomega-roadmap.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/tcb/what-is-the-tcb.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/kernel/type-hierarchy.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/README.md",
-      "commit": "5c16eb623cc733aaec2b96b09e2ed6e2eb71db7c",
-      "committedAt": 1784232526
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
-      "commit": "fa0eba13ea5f68660244eac7020a7dadccd7e203",
-      "committedAt": 1783974945
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/abstract-sexpr-api.md",
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-agent-guide.md",
-      "commit": "5c16eb623cc733aaec2b96b09e2ed6e2eb71db7c",
-      "committedAt": 1784232526
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-book-frontend.md",
-      "commit": "5c16eb623cc733aaec2b96b09e2ed6e2eb71db7c",
-      "committedAt": 1784232526
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-dialect.md",
-      "commit": "13f61d6f2228679444be9338ade74743ab521412",
-      "committedAt": 1784157736
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-fidelity.md",
-      "commit": "5c16eb623cc733aaec2b96b09e2ed6e2eb71db7c",
-      "committedAt": 1784232526
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-full-plan.md",
-      "commit": "5c16eb623cc733aaec2b96b09e2ed6e2eb71db7c",
-      "committedAt": 1784232526
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-premise-builder.md",
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
-      "commit": "48af667506dd5351022bf46fa80d30664ed96ea9",
-      "committedAt": 1784173907
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-s4-s6-design.md",
-      "commit": "48af667506dd5351022bf46fa80d30664ed96ea9",
-      "committedAt": 1784173907
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-s5-design.md",
-      "commit": "5c16eb623cc733aaec2b96b09e2ed6e2eb71db7c",
-      "committedAt": 1784232526
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-s7-design.md",
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
-      "commit": "5c16eb623cc733aaec2b96b09e2ed6e2eb71db7c",
-      "committedAt": 1784232526
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/content-addressing-sexpr.md",
-      "commit": "c4d6c22e9cf972751d30f6fd31572b87ecd59b07",
-      "committedAt": 1783974320
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/generic-repl-trait.md",
-      "commit": "c4d6c22e9cf972751d30f6fd31572b87ecd59b07",
-      "committedAt": 1783974320
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/lisp-acl2-answers.md",
-      "commit": "c4d6c22e9cf972751d30f6fd31572b87ecd59b07",
-      "committedAt": 1783974320
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/lisp-dialects-and-order.md",
-      "commit": "c4d6c22e9cf972751d30f6fd31572b87ecd59b07",
-      "committedAt": 1783974320
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/lisp-frontend-sketch.md",
-      "commit": "c4d6c22e9cf972751d30f6fd31572b87ecd59b07",
-      "committedAt": 1783974320
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
-      "commit": "c4d6c22e9cf972751d30f6fd31572b87ecd59b07",
-      "committedAt": 1783974320
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/parsing-relations.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/reduction-relation-on-binary-engine.md",
-      "commit": "ec2e8f62c7350b78a7578355bbcfdb7efb381bc7",
-      "committedAt": 1784059576
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/reduction-relations-and-state.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/relational-parsing-framework.md",
-      "commit": "2affdf4d4367e5d42e10fa42099227be81e32b70",
-      "committedAt": 1784050700
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/minimal-spec/README.md",
-      "commit": "fa0eba13ea5f68660244eac7020a7dadccd7e203",
-      "committedAt": 1783974945
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/minimal-spec/implementation-plan.md",
-      "commit": "fa0eba13ea5f68660244eac7020a7dadccd7e203",
-      "committedAt": 1783974945
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/relational-recursion.md",
-      "commit": "13f61d6f2228679444be9338ade74743ab521412",
-      "committedAt": 1784157736
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/lisp/verification-via-smt.md",
-      "commit": "cf0504f8e65a8b5dc76c1c29a737c4ce6bc66227",
-      "committedAt": 1784056173
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/bitvector-verification-roadmap.md",
-      "commit": "ec9a2cf7cb23a009b1c09117ae3ce8ddea4fe8f1",
-      "committedAt": 1784060779
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/cfg-stratum-design.md",
-      "commit": "a01641b9c556c10af79e54eff9952e16813860fc",
-      "committedAt": 1784063656
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/computation-theory.md",
-      "commit": "c32730d971e595fb388ea1d18c121da8a0e98cee",
-      "committedAt": 1784153654
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/derivation-system-interp.md",
-      "commit": "cea419be4d44e4f037aee702e06c1fbbab06c0c2",
-      "committedAt": 1784063401
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/init-in-dialect.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/logic-frontends.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/metamath-axiom-set-metatheory.md",
-      "commit": "3eccbdbc6ef23aaed92e641c98a64de2c6a9ae28",
-      "committedAt": 1784054514
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/metatheory.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/opentheory-import.md",
-      "commit": "40ce9c97dfcb003bfc9895778d4889af595ab327",
-      "committedAt": 1784061083
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/proof-format.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/sat-replay-and-tree-context.md",
-      "commit": "25bc96dcac752021e7b215cdbfab84fb8eee30a6",
-      "committedAt": 1784063620
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/smt-import-architecture.md",
-      "commit": "039424b25f9e72bf1fc96327b1f8cb072d970e9e",
-      "committedAt": 1784054512
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/spectec-fragment-api.md",
-      "commit": "b07c23eba067128eaee645d2e152ef23fbeb0659",
-      "committedAt": 1784166348
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/logics/spectec-total-load.md",
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/structural-sigma-transport.md",
-      "commit": "cea419be4d44e4f037aee702e06c1fbbab06c0c2",
-      "committedAt": 1784063401
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/theories-models-and-logics.md",
-      "commit": "88c3b622a66646d9eb1359775138782266684e5b",
-      "committedAt": 1784153336
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/verified-io.md",
-      "commit": "c32730d971e595fb388ea1d18c121da8a0e98cee",
-      "committedAt": 1784153654
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/logics/wasm-spec.md",
-      "commit": "dbbe3c11883ab1bce95987b6c6c851f767f48a77",
-      "committedAt": 1784053339
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/observers/backend-decoupling.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/observers/observers.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/plans/consolidation-and-context-roadmap.md",
-      "commit": "f60c91ef9046de408eb69db2da02539752148ec5",
-      "committedAt": 1784408739
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/plans/knowledge-browser-apps.md",
-      "commit": "7cf7e00eeda27402524619696ea12c9a6ad87b01",
-      "committedAt": 1784413701
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/plans/next-stage-breakdown.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/plans/refactor-plan.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/plans/sketch-separation-thoughts.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/plans/workstreams-and-state-report.md",
-      "commit": "f60c91ef9046de408eb69db2da02539752148ec5",
-      "committedAt": 1784408739
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/research/forester-and-note-provenance.md",
-      "commit": "19625ecec12150974aa39fa7688628556893bb6b",
-      "committedAt": 1784415456
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/research/note-metadata-v1.md",
-      "commit": "19625ecec12150974aa39fa7688628556893bb6b",
-      "committedAt": 1784415456
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/sketches/README.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/sketches/acset-datalog-datafun.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/sketches/covalence-ml-naive-compiler.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/sketches/lf-dedukti.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/sketches/type-theories.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/surface/frontend.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/surface/surface-compiler.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/surface/surface-syntax.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/vision/VISION.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/vision/development-vision.md",
-      "commit": "c32730d971e595fb388ea1d18c121da8a0e98cee",
-      "committedAt": 1784153654
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/vision/k-framework-vision.md",
-      "commit": "6bb7208121f0caf73c76b1a413d42ef344a06f45",
-      "committedAt": 1784055469
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/vision/project-map.md",
-      "commit": "f60c91ef9046de408eb69db2da02539752148ec5",
-      "committedAt": 1784408739
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/vision/roadmap.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/web/cov-project.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/web/wasm3-rust.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     },
     {
       "noteId": "note:notes/vibes/web/web-kernel.md",
-      "commit": "e332d5a5990c89833c52fc16a9cb6497fb1aff33",
-      "committedAt": 1783971729
+      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
+      "committedAt": 1784416010
     }
   ]
 }

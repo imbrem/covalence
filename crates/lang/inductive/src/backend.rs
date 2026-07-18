@@ -6,7 +6,7 @@ use crate::spec::InductiveSpec;
 use crate::theory::InductiveTheory;
 use crate::validated::Validated;
 
-// TODO(cov:inductive.legacy-fixpoint-adapter, major): Adapt InductiveTheory to LeastFixpoint when the logic API exposes polynomial functor action/map terms without representation-specific assumptions.
+// TODO(cov:inductive.legacy-fixpoint-adapter, major): Adapt InductiveTheory to LeastFixpoint by realizing StructuralFunctorAction in the target logic and deriving the required layer/isomorphism facts.
 
 /// A way of realizing inductive specs in logic `L`.
 ///

@@ -60,6 +60,7 @@ pub mod backend;
 pub mod conformance;
 pub mod error;
 pub mod fixpoint;
+pub mod functor;
 pub mod logic;
 pub mod polynomial;
 pub mod spec;
@@ -79,6 +80,9 @@ pub use fixpoint::{
     GreatestFixpointFacts, InductiveFixpointBackend, LeastFixpoint, LeastFixpointFacts,
     ProofBearingGreatestFixpointBackend, ProofBearingLeastFixpointBackend, RealizeError,
     realize_coinductive, realize_inductive,
+};
+pub use functor::{
+    StructuralFunctorAction, StructuralFunctorLaws, StructuralPolynomial, StructuralPolynomialError,
 };
 pub use logic::{Logic, LogicOps, beta_expand, beta_reduce};
 pub use polynomial::{

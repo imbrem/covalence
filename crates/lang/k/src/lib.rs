@@ -19,7 +19,7 @@
 //! **Trust posture:** this crate is pure untrusted data plumbing. It has *no*
 //! kernel dependencies; the lowering of the classified fragments into
 //! `covalence-init` (impredicative `Derivable_R` relations, as in the SpecTec
-//! frontend) is a later slice. See `SKELETONS.md` for what is deferred.
+//! frontend) is a later slice. See the generated open-work index for what is deferred.
 //!
 //! # The pieces
 //!

@@ -23,7 +23,7 @@
 //! The genuinely-async path — loading article dependencies over the network via
 //! [`ArticleSource`], driven through `covalence_init::script::run_async` so a
 //! `fetch` can be `await`ed instead of dead-locking a blocking executor — is the
-//! next step and is recorded in `SKELETONS.md`. The [`ArticleSource`] trait and
+//! next step and is recorded in the generated open-work index. The [`ArticleSource`] trait and
 //! [`TrustPolicy`] are defined now as the seams those front-ends target.
 
 use covalence_init::init::check_script;
@@ -43,7 +43,7 @@ pub enum Severity {
 /// A source span as byte offsets into the article source.
 ///
 /// Always `None` on diagnostics today: the `.cov` script layer does not yet
-/// carry source extents (see `crates/kernel/hol/init/src/script/SKELETONS.md`).
+/// carry source extents (see `source-local TODO markers`).
 /// Editor-grade, in-source error squiggles depend on that work landing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -98,7 +98,7 @@ pub enum TrustLevel {
     #[default]
     TrustStatements,
     /// Re-check every dependency from its source — nothing trusted. Not yet
-    /// enforced (see `SKELETONS.md`).
+    /// enforced (see the generated open-work index).
     DeepCheck,
 }
 
@@ -114,7 +114,7 @@ pub struct TrustPolicy {
 /// This is the seam each front-end fills: the browser with a `fetch`-backed
 /// loader, the native side with the store / filesystem. Wiring it through
 /// [`covalence_init::script::run_async`] (so an `#import` of an unresolved
-/// dependency `await`s a real fetch) is the next step — see `SKELETONS.md`.
+/// dependency `await`s a real fetch) is the next step — see the generated open-work index.
 #[allow(async_fn_in_trait)]
 pub trait ArticleSource {
     /// Fetch the `.cov` source of the dependency named `name`, or `None` if this

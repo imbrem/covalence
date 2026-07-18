@@ -21,7 +21,7 @@
 //! Constructs needing types the catalogue doesn't yet have — SpecTec **variant**
 //! types (`valtype`, `instr`, …) as real HOL datatypes, records, empty
 //! collections without an element-type annotation — return a typed error until
-//! the `Typ` → datatype layer (`wasm/syntax.rs`) lands. See `SKELETONS.md`.
+//! the `Typ` → datatype layer (`wasm/syntax.rs`) lands. See the generated open-work index.
 //!
 //! Unlike [`super::encode`], this is **not** total and **not** collision-free by
 //! construction; it is an ordinary (untrusted) term builder, and the kernel

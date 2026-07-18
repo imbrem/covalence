@@ -45,7 +45,7 @@
 //! - the per-character encoder reduction lemmas ([`encode_char_lit`]);
 //! - the encoder recursion clauses [`encode_nil`] / [`encode_cons`].
 //!
-//! ## Deferred (see `init/SKELETONS.md`)
+//! ## Deferred (see the generated open-work index)
 //!
 //! The validating decoder `utf16Decode : list u16 → option string` and the
 //! full string round-trip by `list-induct` — same prefix-consumption gap as

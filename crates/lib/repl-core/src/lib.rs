@@ -33,7 +33,7 @@
 //! case `⊢ from = to` that the note flags as the deterministic corollary — and
 //! the composite is the [`Thm::trans`]-chain `⊢ input = cur`. When the
 //! inductive `Reduces` HOL relation lands, the `StepCert`/`Composite`
-//! associated types change and nothing above them moves. See `SKELETONS.md`.
+//! associated types change and nothing above them moves. See the generated open-work index.
 
 #![forbid(unsafe_code)]
 

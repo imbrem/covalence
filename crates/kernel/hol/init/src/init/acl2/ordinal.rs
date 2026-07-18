@@ -32,7 +32,7 @@
 //!
 //! Everything is a derived theorem over existing kernel rules; nothing
 //! here is trusted, no axiom is postulated. Open work (IND-ORD, env
-//! rows, the S5 axiom pack) is tracked in this directory's `SKELETONS.md`.
+//! rows, the S5 axiom pack) is tracked in this directory's the generated open-work index.
 
 use std::sync::LazyLock;
 

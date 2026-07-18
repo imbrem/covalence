@@ -7,7 +7,7 @@
 //! other executors. It builds the kernel terms (delegating to [`Symbolic`]) so
 //! the *representation* is ready; the trace-certified proofs are not wired yet.
 //!
-//! Deferred: `crates/lang/numerals/SKELETONS.md`.
+//! Deferred: `source-local TODO markers`.
 
 use covalence_hol_eval::EvalThm;
 use covalence_types::{Decimal, Int, Nat, Rat};

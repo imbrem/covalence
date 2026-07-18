@@ -34,7 +34,7 @@
 ;; exercise the rules whose word is a `cat` split (the existential cases of the
 ;; `Matches` relation).
 ;;
-;; DEFERRED (see SKELETONS): a `.cov` statement of *soundness*
+;; DEFERRED (see source-local TODO markers): a `.cov` statement of *soundness*
 ;; (`Matches r w ⟹ mem w ⟦r⟧`) — it needs the full rule-induction `inst` of the
 ;; impredicative predicate + the slow `lang`-membership discharge, kept in Rust
 ;; (`init::regex::soundness`). And `list_cat` reduction `cat [0x61] nil = [0x61]`

@@ -89,7 +89,7 @@ pub struct FarkasCert<A: Ord + Clone> {
 /// integer; `>` with an integer bound tightens by `+1`. `≈` is unchanged.
 ///
 /// This is the simple per-spec strengthening. The stronger GCD variant Carcara
-/// uses (`d ↦ ⌊d⌋ + gcd(coeffs)`) is not yet applied — see `SKELETONS.md`.
+/// uses (`d ↦ ⌊d⌋ + gcd(coeffs)`) is not yet applied — see the generated open-work index.
 fn strengthen(lit: &NormLit<impl Ord + Clone>) -> (Rel, Rational) {
     match lit.rel {
         Rel::Eq => (Rel::Eq, lit.d),

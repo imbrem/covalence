@@ -24,7 +24,7 @@
 //!   pattern) or an FFI [`Tactic`] (`tauto`); these are registered as project
 //!   inputs and resolved the same way.
 //!
-//! What is **deferred** (see `SKELETONS.md`): the *reverse* edge — Rust code
+//! What is **deferred** (see the generated open-work index): the *reverse* edge — Rust code
 //! that depends on a `.cov`-defined constant/theorem — and therefore genuine
 //! mutual recursion between a Rust module and a `.cov` file (the two-phase /
 //! SCC fixpoint described in the design doc), plus the longer-term framing of a
@@ -116,7 +116,7 @@ pub enum ProjectError {
     UnknownImport { unit: String, missing: String },
     /// The import graph has a cycle: the listed units mutually depend with no
     /// dependency-free entry point. (Mutual recursion between units is the
-    /// deferred two-phase/SCC case — see `SKELETONS.md`.)
+    /// deferred two-phase/SCC case — see the generated open-work index.)
     #[error("import cycle among units: {0:?}")]
     Cycle(Vec<String>),
     /// Two source units share a name.
@@ -499,7 +499,7 @@ mod tests {
 
     /// A two-unit import cycle is detected and reported (the units involved),
     /// rather than looping or producing a partial build. Genuine mutual
-    /// recursion between units is the deferred two-phase case (SKELETONS).
+    /// recursion between units is the deferred two-phase case (source-local TODO markers).
     #[test]
     fn import_cycle_is_detected() {
         let err = match Project::new()

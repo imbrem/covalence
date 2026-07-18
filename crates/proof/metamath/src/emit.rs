@@ -46,7 +46,7 @@
 //! original — which it does (globals give the floats in database order, the
 //! block gives the essentials in order).
 //!
-//! ## Limitations (documented; see `SKELETONS.md`)
+//! ## Limitations (documented; see the generated open-work index)
 //!
 //! * **Global `$f` only.** A *scoped* `$f` that retypes the same variable
 //!   differently in two scopes is flattened to one global typing. Databases we

@@ -28,7 +28,7 @@
 //!   ([`bytes_head_empty`] / [`string_head_empty`]), built on
 //!   [`init::list::head_nil`](crate::init::list::head_nil).
 //!
-//! ## Not yet here (see `SKELETONS.md`)
+//! ## Not yet here (see the generated open-work index)
 //!
 //! The cons-side sequence ops (`length`, `cat`, `at`/`index`, `slice`,
 //! `consNat`) ride on the now-landed `list` recursion theorem but are not
@@ -37,7 +37,7 @@
 //! [`init::utf8`](crate::init::utf8) / [`init::utf16`](crate::init::utf16)
 //! — encoders + per-character round-trip + the encoder homomorphism are
 //! proved; the validating decoders + full string round-trip are deferred
-//! (see `init/SKELETONS.md`). The [`string_rep_abs`] / [`bytes_rep_abs`]
+//! (see the generated open-work index). The [`string_rep_abs`] / [`bytes_rep_abs`]
 //! newtype round-trips below are the seam those codecs cross.
 
 use covalence_core::{Error, Result, Term, Type};
@@ -246,7 +246,7 @@ mod tests {
             byte_elem()
         );
         // The empty `Blob` and our `bytes.empty` are both `bytes` (their
-        // equality is a `cons`-recursion fact, deferred — see SKELETONS).
+        // equality is a `cons`-recursion fact, deferred — see source-local TODO markers).
         assert_eq!(
             covalence_hol_eval::mk_blob(Vec::<u8>::new())
                 .type_of()

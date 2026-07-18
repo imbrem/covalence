@@ -9,6 +9,7 @@ Recommended reading path:
 [`notes/vibes/kernel/kernel-design.md`](./notes/vibes/kernel/kernel-design.md) (the kernel TCB) →
 [`notes/vibes/kernel/type-hierarchy.md`](./notes/vibes/kernel/type-hierarchy.md) (type catalogue) →
 [`notes/vibes/vision/roadmap.md`](./notes/vibes/vision/roadmap.md) (what's next) →
+[`notes/vibes/plans/workstreams-and-state-report.md`](./notes/vibes/plans/workstreams-and-state-report.md) (current state + parallel workstreams) →
 [`CLAUDE.md`](./CLAUDE.md) (build commands & crate map).
 
 ## Repository Layout
@@ -23,6 +24,26 @@ Recommended reading path:
   AI-generated corpus (see `notes/README.md` for the tiers + authorship policy)
 - `assets/`, `tests/`, `test-workbench/` — fixtures, samples, and test scaffolding
 
+## Finding Work
+
+Open work is recorded beside the code with stable `TODO(cov:...)`,
+`FIXME(cov:...)`, `SKELETON(cov:...)`, and `PERF(cov:...)` markers. The global
+index is generated rather than maintained by hand:
+
+```sh
+bun run todos
+bun run todos -- --list --severity severe
+bun run todos -- --list --crate covalence-metamath
+bun run todos -- --list --search "source spans"
+bun run todos:check
+```
+
+The deterministic index is [`docs/todos/todos.json`](./docs/todos/todos.json);
+the queryable cache is `target/covalence-todos.sqlite`. See the
+[workstream plan](./notes/vibes/plans/workstreams-and-state-report.md) for the
+current-state report, biggest holes, dependency DAG, and parallel execution
+lanes.
+
 ## Prerequisites
 
 - [Rust stable ≥1.94.1](https://rustup.rs/) with `wasm32-wasip1-threads` and `wasm32-unknown-unknown` targets
@@ -35,6 +56,7 @@ Recommended reading path:
 bun install            # install JS dependencies
 bun run build          # full build: native (debug) + WASM + esbuild
 cargo test             # run Rust tests
+bun run todos          # regenerate the open-work index and SQLite database
 cov repl               # interactive S-expression REPL
 cov serve --open       # start server, open browser
 ```

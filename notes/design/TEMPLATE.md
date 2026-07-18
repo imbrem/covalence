@@ -15,7 +15,7 @@ scaffolding area). The maintainer owns which docs graduate to docs/.
   <!-- see notes/design/README.md for what each status means -->
 - **Owner:** <who is driving this>
 - **Last touched:** <YYYY-MM-DD>
-- **Related:** <links to notes/vibes/*, SKELETONS.md, crates, other design docs>
+- **Related:** <links to notes/vibes/*, TODO IDs, crates, other design docs>
 
 ## Context / problem
 
@@ -50,6 +50,6 @@ If it touches the TCB, say so loudly and link `notes/vibes/kernel/tcb/what-is-th
 
 ## Status / next steps
 
-Where it stands and the immediate next action. When work is deferred, record the
-skeleton in the nearest `SKELETONS.md` and link it here rather than leaving prose
-TODOs.
+Where it stands and the immediate next action. When work is deferred, record a
+source-local `TODO(cov:...)` marker and link its stable ID here rather than
+leaving prose TODOs.

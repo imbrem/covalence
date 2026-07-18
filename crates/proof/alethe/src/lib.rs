@@ -15,7 +15,7 @@
 //! `covalence-core` HOL kernel: it replays an Alethe refutation as a
 //! kernel derivation and reports `Unsat` when it reaches the empty
 //! clause. It covers the QF_UF fragment today; the remaining rule
-//! families (rewrite `hole`s, subproofs) are tracked in `SKELETONS.md`.
+//! families (rewrite `hole`s, subproofs) are tracked in the generated open-work index.
 
 pub mod bridge;
 pub mod discharge;

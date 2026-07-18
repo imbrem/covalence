@@ -33,7 +33,7 @@
 //! `#help` prints the primitive list, `#show EXPR` prints the full
 //! `hyps ⊢ lhs = rhs` sequent behind `EXPR` (hypotheses — e.g. the assumed
 //! `defun` equations — included). The directive table is extensible; other
-//! directives are deferred (see `SKELETONS.md`).
+//! directives are deferred (see the generated open-work index).
 
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_init::{Term, Type};
@@ -765,7 +765,7 @@ fn dummy_of(ret: &Type) -> Result<Term, HolError> {
 }
 
 /// A parsed directive (currently only the two built-ins; the table is
-/// extensible — see `SKELETONS.md`).
+/// extensible — see the generated open-work index).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Directive {
     /// `#help`.

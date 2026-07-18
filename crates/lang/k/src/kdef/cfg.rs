@@ -58,7 +58,7 @@ impl SortResolver for NoDomains {
 /// The standard K `DOMAINS-SYNTAX` builtin token sorts. Injects the usual
 /// regexes so the lowered CFG can actually recognise programs over `Id`/`Int`/
 /// `Bool`. (Layout/whitespace between tokens is a separate scanner concern — see
-/// `SKELETONS.md` — so this recognises token-adjacent input only.)
+/// the generated open-work index — so this recognises token-adjacent input only.)
 #[derive(Debug, Clone, Copy, Default)]
 pub struct KDomains;
 

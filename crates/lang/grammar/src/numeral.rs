@@ -32,7 +32,7 @@
 //! language each family denotes.
 //!
 //! Deferred alphabets (base32/58/64, LEB128 — the "atom zoo") are recorded in
-//! the crate `SKELETONS.md`.
+//! the crate the generated open-work index.
 
 use covalence_types::{Decimal, Digit, Int, Nat, Rat, Sign, nat_of_digits};
 

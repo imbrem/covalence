@@ -37,7 +37,7 @@
 //! context, and — in the `sector+int` dialect — left/right congruence into the
 //! integer-op operands (so `(+ 1 (+ 2 3))` reduces). β/λ, δ/`defun`, `eq?` on
 //! distinct atoms, and congruence *into* `eq?` operands and `cond` tests are
-//! the next phase (see `SKELETONS.md` and
+//! the next phase (see the generated open-work index and
 //! `notes/vibes/lisp/relational-recursion.md`).
 
 use covalence_hol_eval::EvalThm as Thm;
@@ -328,7 +328,7 @@ impl LispRel {
     /// | 25 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
     /// | 26 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
     ///
-    /// (`eq?` on *distinct* atoms is future work — see the builder / SKELETONS.)
+    /// (`eq?` on *distinct* atoms is future work — see the builder / source-local TODO markers.)
     pub fn step_rule_set(&self) -> RuleSet2<'_> {
         let tau = self.cs.tau.clone();
         RuleSet2::new(tau.clone(), tau.clone(), move |d| {
@@ -846,7 +846,7 @@ impl LispRel {
     }
 
     /// `eq? a b`: reduce `a`, then `b` (no dedicated congruence clauses yet —
-    /// see SKELETONS), else fire the equal-atoms rule (clause 11). Distinct
+    /// see source-local TODO markers), else fire the equal-atoms rule (clause 11). Distinct
     /// atoms are currently stuck (the distinct-atom clause is future work).
     fn step_eq(&self, _term: &Term, a: &Term, b: &Term) -> Result<Option<(Term, Thm)>, HolError> {
         // Operands are not reduced through congruence yet (would need eq?-arg
@@ -865,7 +865,7 @@ impl LispRel {
     /// (clause 17); a leading clause `(nil . body)` → drop it (`cond rest`,
     /// clause 18); a leading clause `(t . body)` → select `body` (clause 19).
     /// A leading clause whose test is not yet a `t`/`nil` value is stuck here
-    /// (test-reduction congruence for cond is future work — see SKELETONS).
+    /// (test-reduction congruence for cond is future work — see source-local TODO markers).
     fn step_cond(&self, _term: &Term, cells: &Term) -> Result<Option<(Term, Thm)>, HolError> {
         if self.is_snil(cells) {
             return Ok(Some((self.nil(), self.step_base(17, &[])?)));

@@ -59,7 +59,9 @@ first, partial step: it already round-trips the *manifests* through a `.db`.
 ## Non-goals
 
 - Migrating `covalence-core`/`covalence-hol-eval` onto the trait *now* — deferred
-  until in-flight core work merges (recorded in `crates/kernel/base/SKELETONS.md`;
+  until in-flight core work merges (see
+  `kernel.base.facade-algebra-not-yet-consumed-by-core-eval` in the generated
+  open-work index;
   order in `base-abstraction.md` §8).
 - Changing the proposition vocabulary (`Expr`/`Op`/`App`/`Val`/`Eqn`) or the
   trust enumeration (`Language`/`Rule`/`CanonRule`) — the narrow waist stays
@@ -112,4 +114,4 @@ first, partial step: it already round-trips the *manifests* through a `.db`.
 ## Status / next steps
 
 Scaffold only. Next: maintainer fills *Proposal* and *Open questions*; work is
-gated behind the core-migration freeze noted in `crates/kernel/base/SKELETONS.md`.
+gated behind the base/core migration TODOs in `docs/todos/todos.json`.

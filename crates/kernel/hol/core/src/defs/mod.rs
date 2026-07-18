@@ -18,7 +18,7 @@
 //! type BODIES mention (`nat.{succ,pred,add,le,lt,rec}`, `iter`, `nil`,
 //! `cons`, `listFoldr`, `listLength`, `finite`, the stream accessors,
 //! `cond`) together with the `logic` connectives they quantify with.
-//! This residue is a recorded skeleton (`SKELETONS.md`): it dies with
+//! This residue is a recorded skeleton (the generated open-work index): it dies with
 //! the literal leaves when the lazy toHOL base expressions land.
 //!
 //! ## Trust status

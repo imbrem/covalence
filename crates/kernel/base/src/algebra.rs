@@ -181,7 +181,7 @@ pub trait CertificateAlgebra {
     /// Run the untrusted relation and mint the **observed** positive
     /// membership `⊢ (a, b) ∈ Rel(f)`, gated on `Rel<F>`'s `TypeId`. Sound for
     /// any `f`; can never mint `¬(a R b)` (the standing positive-only
-    /// invariant — see `rel.rs` and the base SKELETONS).
+    /// invariant — see `rel.rs` and the base source-local TODO markers).
     fn execute<L: Language, F: UntrustedFn>(
         rel: Rel<F>,
         a: F::In,

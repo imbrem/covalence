@@ -13,7 +13,7 @@
 //! Upstream (`wasm_spec_ast`) currently ships **only** the elaborated
 //! WebAssembly **3.0** spec, so [`wasm3`] is the only concrete entry point.
 //! `wasm1` / `wasm2` await separately-dumped ASTs — see this crate's
-//! `SKELETONS.md`. The shape of [`Grammar`] is version-independent, so adding
+//! the generated open-work index. The shape of [`Grammar`] is version-independent, so adding
 //! them later is purely a matter of supplying more embedded AST blobs.
 //!
 //! # Simple grammars

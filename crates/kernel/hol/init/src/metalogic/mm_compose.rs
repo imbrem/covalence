@@ -29,7 +29,7 @@
 //! the database's `|-` assertions); composing *those* results the same way
 //! needs a modus-ponens theorem at the generic [`super::RuleSet`] level (the
 //! `derivable_db_mp` construction is database-value-specific). Wiring the two
-//! encodings together is tracked in [`SKELETONS.md`](./SKELETONS.md).
+//! encodings together is tracked in the generated open-work index.
 
 use covalence_core::{Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;

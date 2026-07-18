@@ -15,7 +15,7 @@
 //! Val<Term>)>` is an `Expr<Ty = bool>` (the tuple sorts at `(Ctx, Term) =
 //! IsThm::In`), satisfying the [`Rule::Concl`] / `Thm<L, P>` bound. It is a
 //! STRUCTURED proposition (an [`Op`] over `Val` leaves), not an opaque blob — which
-//! keeps the future native-HOL / `NatToHol` embedding seam open (see `SKELETONS.md`).
+//! keeps the future native-HOL / `NatToHol` embedding seam open (see the generated open-work index).
 //!
 //! ## Soundness rests on `admits()` ALONE
 //!

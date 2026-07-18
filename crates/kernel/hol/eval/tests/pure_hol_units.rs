@@ -33,7 +33,7 @@
 //! `covalence-init` pins its theorems at `EvalThm` today, so the *Rust
 //! type* of (2) is the eval tier; making init's derivations tier-generic
 //! (so they land at `Thm<CoreLang>` verbatim) is recorded follow-up work
-//! (`SKELETONS.md`).
+//! (the generated open-work index).
 //!
 //! Family coverage: `nat.add` (NatArithCert), `int.add` (IntArithCert),
 //! `bytes.cat` (BytesCert), `u8.add` (FixedWidthCert), `f64.add` (the F2c
@@ -260,7 +260,7 @@ fn pure_hol_unit_int_add_neg2_0() {
 
 /// The bytes definitional *evaluation* is blocked: the `Blob` literal ↔
 /// `list u8` bridge and the list recursion theorem are pending (see
-/// `covalence-init`'s `init/SKELETONS.md` — cons-side list theory), so no
+/// `covalence-init`'s the generated open-work index — cons-side list theory), so no
 /// derivation reaches `⌜b"abcd"⌝` from `bytes.cat`'s body yet. What IS
 /// checkable today: the pure δ/β spine (the definition unfolds at
 /// `Thm<CoreLang>`) and the cert fact's semantics.

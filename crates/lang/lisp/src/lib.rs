@@ -24,7 +24,7 @@
 //! The REPL only ever prints a value read off a genuine kernel theorem: the
 //! reduction path returns `Result<Thm, _>` and the printed term is the
 //! theorem's right-hand side. See `notes/vibes/lisp/initial-ideas/` for the
-//! design, and `SKELETONS.md` for deferred work (notably the aspirational
+//! design, and the generated open-work index for deferred work (notably the aspirational
 //! `Reduces` *relation*, of which the shipped `⊢ input = output` is the
 //! deterministic special case).
 

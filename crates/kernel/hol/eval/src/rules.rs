@@ -141,7 +141,7 @@ eval_rules! {
     // `decide` below is deterministic and total on its input.
 
     raw {
-    /// TRANSITIONAL (dies with the kernel `Nat` literals — see `SKELETONS.md`):
+    /// TRANSITIONAL (dies with the kernel `Nat` literals — see the generated open-work index):
     /// `⊢ toHOL n = Val(⌜n⌝)` — reify a `toHOL`-denoted natural to today's
     /// literal-numeral `Term`.
     ///

@@ -12,7 +12,7 @@
 //!
 //! We run CaDiCaL with `--plain`, which emits **RUP-only** LRAT (no RAT steps),
 //! so the resolution replay applies directly. (General RAT proofs — non-`--plain`,
-//! other solvers — need the extension-variable reconstruction; see `SKELETONS.md`.)
+//! other solvers — need the extension-variable reconstruction; see the generated open-work index.)
 //!
 //! Run:  `cargo run --release --example unsat_certify -p covalence-kernel-sat --features cadical`
 
@@ -94,7 +94,7 @@ fn main() {
             continue;
         };
         let Ok(proof) = parse_lrat_text(&lrat) else {
-            println!("{h:>4} | solver used RAT — see SKELETONS.md");
+            println!("{h:>4} | solver used RAT — see source-local TODO markers");
             continue;
         };
         let steps = proof.steps().len();

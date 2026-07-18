@@ -29,7 +29,7 @@
 //! (`nat_to_bits` maps `nat` onto the canonical bit lists, `nat_of_bits`
 //! maps back, and they are mutually inverse on that domain). The remaining
 //! half — `nat_to_bits (nat_of_bits bs) = bs` for a *canonical* `bs` — needs
-//! a canonicality predicate and is recorded in `SKELETONS.md`.
+//! a canonicality predicate and is recorded in the generated open-work index.
 
 use covalence_core::{Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;

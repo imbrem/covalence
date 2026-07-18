@@ -1,0 +1,2988 @@
+{
+  "generatedBy": "scripts/todos.mjs",
+  "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
+  "count": 298,
+  "structured": 298,
+  "items": [
+    {
+      "id": "ffi.python.hol-kernel-bindings-removed-pending-rewrite",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "HOL kernel bindings removed pending rewrite: the pure module exposing",
+      "structured": true,
+      "path": "crates/ffi/python/open_work.rs",
+      "line": 6,
+      "crate": "covalence-python"
+    },
+    {
+      "id": "kernel.base.canon-only-on-ground-args",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "canon only on ground args: canon takes arg: F::In and forms",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 26,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.covalence-pure-derive-proc-macros",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "covalence-pure-derive (proc macros): not built (and no proc-macro crate /",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 21,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.dyn-expr-is-opaque",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "dyn Expr is opaque: Box<dyn Expr> is a genuine (sealed) expression but",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 25,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.evaluate-seam-decision-evaluation",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Evaluate seam (decision + evaluation): the kernel has no disequality /",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 6,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.facade-algebra-not-yet-consumed-by-core-eval",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Facade/algebra not yet consumed by core/eval: src/api.rs (curated",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 19,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.hol-middle-language",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "HOL-ω middle language: deferred entirely (design Appendix A); needs a real",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 15,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.kindcheck-recursion-has-no-depth-guard",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "kindcheck recursion has no depth guard: kindof/rankof are unbounded",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 16,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.middle-hol-rules-not-built",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Middle HOL-ω rules not built: TyInst (rank side-condition consuming",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 18,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.non-static-rules",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Non-'static rules: the Rule::Id tag seam was removed (it was",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 24,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.op-reference-forwarding-is-static-f-only",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Op reference forwarding is &'static F only: the Op: Any supertrait",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 22,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.op-val-collapse-not-attempted",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Op/Val collapse not attempted: the design's unification of ops and",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 13,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.positive-only-boundary-is-a-standing-soundness-invariant",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Positive-only boundary is a STANDING soundness invariant: execute's",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 11,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.rest-of-the-positive-calculus",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Rest of the positive calculus: only transpose shipped; compose/join/",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 12,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.rewrite-conclusion-is-shape-erased",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Rewrite conclusion is shape-erased: applyrewrite mints",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 20,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.stage-1-adts-set-t-interpset",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Stage 1 ADTs + Set<T>/InterpSet: the abstract-sort + interpretation",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 7,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.stage-2-hol",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Stage 2 HOL: HolTy/HolTm<V> ops, Fv/Bv/subst/β as",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 8,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.stage-3-text-builtins-stage-4-cov",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Stage 3 Text builtins + Stage 4 Cov: the Nat/Int/Bytes/fixed-width",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 9,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.stage-5",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Stage 5: Wasm/X86 languages. The WASM f32/f64 numeric op inventory",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 10,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.tyc-kindc-are-the-demo-rep",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "TyC/KindC are the DEMO rep: the real oracle is over core::Type (the",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 17,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.tyrep-uses-a-demo-rep",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "TyRep uses a demo rep: the constructors are generic; full core::Type",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 14,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.base.unsized-sorts",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Unsized sorts: Ref requires P::Target: Sized, so str/[T] can't be",
+      "structured": true,
+      "path": "crates/kernel/base/open_work.rs",
+      "line": 23,
+      "crate": "covalence-pure"
+    },
+    {
+      "id": "kernel.core.async-dependency-loading",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Async dependency loading: ArticleSource + TrustPolicy are defined as",
+      "structured": true,
+      "path": "crates/kernel/core/open_work.rs",
+      "line": 8,
+      "crate": "covalence-kernel"
+    },
+    {
+      "id": "kernel.core.legacy-prover",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Legacy prover: the arena + e-graph + union-find prover kernel was removed",
+      "structured": true,
+      "path": "crates/kernel/core/open_work.rs",
+      "line": 7,
+      "crate": "covalence-kernel"
+    },
+    {
+      "id": "kernel.core.no-diagnostic-spans",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "No diagnostic spans: Diagnostic::span always None until the .cov script",
+      "structured": true,
+      "path": "crates/kernel/core/open_work.rs",
+      "line": 10,
+      "crate": "covalence-kernel"
+    },
+    {
+      "id": "kernel.core.src-facts-rs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "src/facts.rs: empty module. The observer layer recording and",
+      "structured": true,
+      "path": "crates/kernel/core/open_work.rs",
+      "line": 6,
+      "crate": "covalence-kernel"
+    },
+    {
+      "id": "kernel.core.statement-rendering-is-canonical-s-expression",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Statement rendering is canonical S-expression: , not math notation; MathML",
+      "structured": true,
+      "path": "crates/kernel/core/open_work.rs",
+      "line": 11,
+      "crate": "covalence-kernel"
+    },
+    {
+      "id": "kernel.core.trustlevel-deepcheck-not-enforced",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "TrustLevel::DeepCheck not enforced: both levels behave identically (stdlib",
+      "structured": true,
+      "path": "crates/kernel/core/open_work.rs",
+      "line": 9,
+      "crate": "covalence-kernel"
+    },
+    {
+      "id": "kernel.hol.api.hol-error-type-not-associated",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Hol error type not associated: Fixed to covalencecore::Result",
+      "structured": true,
+      "path": "crates/kernel/hol/api/open_work.rs",
+      "line": 9,
+      "crate": "covalence-hol-api"
+    },
+    {
+      "id": "kernel.hol.api.holomega-is-type-only-on-the-reflected-rep",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "HolOmega is TYPE-only + on the REFLECTED rep: src/omega.rs exposes the",
+      "structured": true,
+      "path": "crates/kernel/hol/api/open_work.rs",
+      "line": 6,
+      "crate": "covalence-hol-api"
+    },
+    {
+      "id": "kernel.hol.api.succhol-succdischarger-are-nat-only",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "SuccHol/SuccDischarger are nat-only: src/succ.rs lands the",
+      "structured": true,
+      "path": "crates/kernel/hol/api/open_work.rs",
+      "line": 8,
+      "crate": "covalence-hol-api"
+    },
+    {
+      "id": "kernel.hol.api.trait-family-incomplete",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Trait family incomplete: Hol + Nat + Int + HolOmega exist. Planned",
+      "structured": true,
+      "path": "crates/kernel/hol/api/open_work.rs",
+      "line": 7,
+      "crate": "covalence-hol-api"
+    },
+    {
+      "id": "kernel.hol.core.construct-with-interner",
+      "kind": "PERF",
+      "severity": "major",
+      "summary": "Thread the interner through theorem construction instead of interning conclusions post-hoc.",
+      "structured": true,
+      "path": "crates/kernel/hol/core/open_work.rs",
+      "line": 11,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.default-hash-consing",
+      "kind": "PERF",
+      "severity": "severe",
+      "summary": "Thread one hash-consing context end-to-end through builders, rules, and replay.",
+      "structured": true,
+      "path": "crates/kernel/hol/core/open_work.rs",
+      "line": 7,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.move-name-close",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Move name-only subst::close out of the trusted core and migrate callers to typed closevar.",
+      "structured": true,
+      "path": "crates/kernel/hol/core/open_work.rs",
+      "line": 8,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.remove-defs-residue",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Remove the transitional defs catalogue after literal leaves no longer force its type chain.",
+      "structured": true,
+      "path": "crates/kernel/hol/core/open_work.rs",
+      "line": 6,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.rule-panic-coverage",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Exercise every theorem rule constructor in panic-envelope tests.",
+      "structured": true,
+      "path": "crates/kernel/hol/core/open_work.rs",
+      "line": 10,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.src.thm.frompuresym-trusts-the-mint-no-non-forcing-floor",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "frompuresym trusts the mint (no non-forcing floor): It cannot re-run",
+      "structured": true,
+      "path": "crates/kernel/hol/core/src/thm/open_work.rs",
+      "line": 9,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.src.thm.no-native-pure-hol-embedding",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No native pure-HOL embedding: IsThm carries (Ctx, Term) as opaque Val",
+      "structured": true,
+      "path": "crates/kernel/hol/core/src/thm/open_work.rs",
+      "line": 10,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.src.thm.no-sigma-a-p",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No Sigma<A, P>: A proof-carrying value (an Expr<A> bundled with a theorem",
+      "structured": true,
+      "path": "crates/kernel/hol/core/src/thm/open_work.rs",
+      "line": 13,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.src.thm.permanent-structural-tohol-unfolding-rules-not-yet-admitted",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Permanent structural toHOL unfolding rules not yet admitted",
+      "structured": true,
+      "path": "crates/kernel/hol/core/src/thm/open_work.rs",
+      "line": 6,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.src.thm.symbolic-conclusion-mechanism-thm-l-c-remaining-float-ops",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Symbolic-conclusion mechanism (Thm<L, C>): remaining float ops",
+      "structured": true,
+      "path": "crates/kernel/hol/core/src/thm/open_work.rs",
+      "line": 8,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.src.thm.the-val-rules-the-family-certs-lit-toterm-are-transitional",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "The Val rules + the family certs' Lit::toterm are TRANSITIONAL",
+      "structured": true,
+      "path": "crates/kernel/hol/core/src/thm/open_work.rs",
+      "line": 7,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.src.thm.unfoldtermspec-survives-to-the-defs-re-home",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "UnfoldTermSpec survives to the defs re-home: Sound definitional",
+      "structured": true,
+      "path": "crates/kernel/hol/core/src/thm/open_work.rs",
+      "line": 11,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.src.thm.with-interning-is-post-hoc",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "with interning is post-hoc: The cons-aware with methods mint via the",
+      "structured": true,
+      "path": "crates/kernel/hol/core/src/thm/open_work.rs",
+      "line": 12,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.core.subst-property-coverage",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Extend substitution generators and independent reference-model property tests.",
+      "structured": true,
+      "path": "crates/kernel/hol/core/open_work.rs",
+      "line": 9,
+      "crate": "covalence-core"
+    },
+    {
+      "id": "kernel.hol.eval.bytes-definitional-evaluation-missing",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "bytes definitional evaluation missing: blocked on the Blob ↔ list u8",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 7,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.bytes-ops-defs-blob-rs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "bytes ops, defs/blob.rs: bytesConsNat, bytesAt declaration-only",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 11,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.comparisons",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Comparisons: (eq/ne/lt/gt/le/ge): eq sort is bool, the result",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 14,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.connective-rule-perf-logic-out",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Connective-rule perf (logic-out): and/or/imp/not/all/lem are now multi-step",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 20,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.conversions",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Conversions: (promote/demote/truncSat/convert): mixed operand/result",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 15,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.downstream-out-of-this-stage-s-scope",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "downstream (out of this stage's scope): kernel/hol/traits",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 18,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.fixed-width-definitional-evaluation-stops-at-tonat-fromnat",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "fixed-width definitional evaluation stops at toNat/fromNat",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 8,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.init-script-infer-rs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "init script/infer.rs: 4 code sites (:283/:427 blob, :298 nat",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 16,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.init-sexp-rs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "init sexp.rs: 2 sites (:290 blob / :301 smallint deserialization",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 17,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.nat-definitional-bodies",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Land via natRec / Euclidean",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/src/defs/nat.rs",
+      "line": 133,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.nat-int-definitional-derivations-are-evalthm-typed",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "nat/int definitional derivations are EvalThm-typed: the chains use",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 6,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.nat-ops-defs-nat-rs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "nat ops, defs/nat.rs: natBitAnd/Or/Xor, natToBytesLe/Be,",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 10,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.other-binaries",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Other binaries: (sub/div/min/max/copysign): reuse",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 12,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.provetrue-is-single-step-only",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "provetrue is single-step only: It reduces one redex and bridges = T;",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 19,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.sn-shr-arithmetic-right-shift-defs-intops-rs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "sN.shr (arithmetic right shift), defs/intops.rs: needs floor-division",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 9,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.eval.unaries",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Unaries: (sqrt/abs/neg/ceil/floor/trunc/nearest): need a new",
+      "structured": true,
+      "path": "crates/kernel/hol/eval/open_work.rs",
+      "line": 13,
+      "crate": "covalence-hol-eval"
+    },
+    {
+      "id": "kernel.hol.init.src.algebra.ring.coefficient-collection",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "coefficient collection: like monomials are not combined: x + x stays",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/algebra/ring/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.algebra.ring.literal-folding-inside-monomials",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "literal folding inside monomials: (e.g. 2·3·x → 6·x)",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/algebra/ring/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.algebra.ring.negation-subtraction",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "negation / subtraction: neg / sub are treated as opaque atoms, not",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/algebra/ring/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.concurrent-unit-compilation",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Concurrent unit compilation: Units compile strictly sequentially",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.cfg.env-transport-for-version-inclusion-metatheorems",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Env transport for version-inclusion metatheorems: ⊢ DerivesE n w ⟹",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/cfg/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.cfg.first-class-grammar-values",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "First-class grammar values: Derives is per-env (grammar baked into the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/cfg/open_work.rs",
+      "line": 12,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.cfg.s2-comprehension-family-least-ness",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "S2 comprehension family least-ness: The full fixpoint characterisation",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/cfg/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.cfg.s3-at-scale-per-env-discharge-cost",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "S3 at scale / per-env discharge cost: derivesinfamilyregular discharges",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/cfg/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.cfg.tactic-recognizer-acceleration-tactic-rs",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Tactic recognizer acceleration (tactic.rs): The phase-1 recognizer is a",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/cfg/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.cfg.terminal-sub-span-plan-reuse-tactic-rs",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Terminal sub-span plan reuse (tactic.rs): Terminal segments are",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/cfg/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.cfg.word-flattening",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Word flattening: Conclusion words are rule-shaped cat/cons/nil",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/cfg/open_work.rs",
+      "line": 11,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.regex.no-subtree-interner",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No subtree interner: Core holds sub-regexes behind Arc for sharing, but",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/regex/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.regex.provemember-one-time-55s-warm-up",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "provemember one-time ~55s warm-up: First call per process builds the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/regex/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.regex.proveword-variable-matching-is-structural-not-unifying",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "proveword variable matching is structural, not unifying: A variable token is",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/regex/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.regex.recognizer-acceleration",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Recognizer acceleration: The pure-Rust tactic::Recognizer checks only simple",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/regex/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.regex.word-normalisation-deferred",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Word normalisation deferred: The word w in Matches ⌜r⌝ w is rule-shaped",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/regex/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.spectec.2-bridge-terminals",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "2 bridge terminals: Two T-side terminal fragments fall outside the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/spectec/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.spectec.exact-under-mode-bmodule",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Exact (Under-mode) Bmodule: Whole-module parsing is RECOGNITION-only",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/spectec/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.spectec.faithful-listn",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Faithful ListN: Under-approx skips parametric-length vectors;",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/spectec/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.spectec.rule-let-premises",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "rule/let premises: classifypremises drops ifs and",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/spectec/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.spectec.t-identifier-context-params",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "T identifier-context params: Recognition mode monomorphises integer",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/spectec/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.spectec.wasm-1-0-2-0",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "WASM 1.0 / 2.0: Only the 3.0 dump is bundled; validated 1.0/2.0 SpecTec AST",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/spectec/open_work.rs",
+      "line": 12,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.grammar.spectec.whole-module-tactic-cost",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Whole-module tactic cost: T5/T5b run on the 64 MiB",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/spectec/open_work.rs",
+      "line": 11,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.acl2.deduction-compiler-blowup-is-quadratic-ish",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Deduction-compiler blowup is quadratic-ish: per discharged",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.acl2.defun-foldground-covers-the-s4-gate-fragment-only",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "defun::foldground covers the S4 gate fragment only: values,",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
+      "line": 11,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.acl2.lang-lisp-is-not-on-the-s6-kernel-path",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "lang/lisp is not on the S6 kernel path: crates/lang/lisp's",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.acl2.premise-builder-p0-is-partial",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Premise-builder P0 is PARTIAL: (agent stopped mid-task; binding design",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.acl2.s4-formal-name-restriction",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "S4 formal-name restriction: formals may not be b/h/t/sg or",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.acl2.s7-recursion-tiers-not-started",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "S7 recursion tiers not started: measured/mutual defuns via",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.ball-add-containment-unproved",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "ball.add containment unproved: (init/ball.rs, F2c groundwork = data +",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.binary-normal-form",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Binary normal form: (init/natbinary.rs). double/bit0/bit1 +",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 15,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.bitstring-iso",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Bitstring iso: (init/natbitsiso.rs, stage NP3). bitsucc (increment,",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 16,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.bytes-parsers-string-bytes-agreement",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Bytes parsers + string/bytes agreement: (init/natparsebytes.rs +",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 17,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.carrier-generic-model",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Carrier-generic model: specs are stated over the self-model vocabulary (kernel",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 34,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.def-style-selector-and-declaration-only-specs-get-no-body-twin",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Def-style (ε-selector) and declaration-only specs get no body-twin",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.float-parsing",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Float parsing: (init/floatparse.rs, stage FP1). Built: parseFloat",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 19,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.floatcert32-round-to-nearest-even-enclosure",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "FloatCert32 round-to-nearest-even enclosure: (numeral W13, not built)",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 20,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.formal-languages-kleene-algebra-theory",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Formal-languages / Kleene-algebra theory: (init/lang.rs). Not yet proved",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 23,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.haskell-like-surface-extraction",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Haskell-like surface extraction: nat.sig/nat.thy are hand-written; they are the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 35,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.inductive-types-api-backends",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Inductive-types API backends: (init/inductive/{api,church,engine}.rs, over",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 29,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.iter-deep-embedding",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "λiter deep embedding: (init/lambdaiter.rs + .cov, init/cvrecursion.rs)",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 33,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.json-parsing",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "JSON parsing: (init/jsonparse.rs, stage JP). A fuel-bounded reader",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 31,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.lisp-acl2-layer",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Lisp / ACL2 layer: (init/lisp.rs, over the carved carrier). Built: car/cdr/",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 32,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.list-theory",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "List theory: (init/list.rs + listrecursion.rs + list.cov). Missing",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 21,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.monoid-categorical-rewriters",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Monoid / categorical rewriters: (init/monoid.rs + cat.rs). Not built",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 22,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.polymorphic-let-style-specs-are-not-yet-twinned",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Polymorphic let-style specs are not yet twinned: twins::unfoldspec",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.rat-cov-operators-stay-constdef-op-givens-no-inline-def",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "rat.cov operators stay ConstDef::Op givens (no inline #def): Inlining",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 12,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.rat-field-order-leaves",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "rat field/order leaves: (init/rat.rs, postulated via the axiom helper)",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.rationals-from-decimal-scientific-notation",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Rationals from decimal + scientific notation: (stretch, not built). A",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 18,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.real-cov-non-order-theorems",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "real.cov non-order theorems: ofratmono, zeroneone, iscut are",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 13,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.real-dedekind-cut-suprema",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "real Dedekind-cut suprema: (init/real.rs, postulated via axiom, NOT",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 11,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.regex-on-lists-matches",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Regex on lists / Matches: (init/regex/). Deferred",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 24,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.reified-object-logic-s-expr-prop-logic",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Reified object logic (S-expr → prop logic): (init/sexpr.rs + init/prop.rs,",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 27,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.s-expression-parsing",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "S-expression parsing: (init/sexprparse.rs, stage SP1). A fuel-bounded",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 30,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.stream-cov-wrapper-side-round-trips",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "stream.cov wrapper-side round-trips: headmk, tailconst, mkat",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 14,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.text-theory",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Text theory: (init/char.rs, string.rs). Surface the list ops",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 25,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.tree-sexp-theory",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "tree / sexp theory: (init/tree.rs, sexp.rs). Still deferred: branchinj",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 28,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.typespec-re-home-is-prototype-only",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "TypeSpec re-home is prototype-only: twins::unittypedef() re-homes",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.init.utf-8-utf-16-codecs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "UTF-8 / UTF-16 codecs: (init/utf8.rs + utf8.cov, init/utf16.rs). Deferred",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/open_work.rs",
+      "line": 26,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.k.encoding-covers-only-the-configuration-fragment",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Encoding covers only the configuration fragment: encodepattern handles",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/k/open_work.rs",
+      "line": 12,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.k.first-order-matching-only-leftmost-innermost-deterministic",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "First-order matching only; leftmost-innermost, deterministic: The",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/k/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.k.guarded-rewriting-is-stratified-sound-incomplete",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Guarded rewriting is stratified (sound, incomplete): A requires condition",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/k/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.k.no-builtin-hooks-f1",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "No builtin hooks (F1): requires conditions over the language's own",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/k/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.k.no-cells-ksequence-heating-cooling",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "No cells / ~> KSequence / heating-cooling: Only top-level + function-rule",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/k/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.k.no-cross-relation-k-claim-consumption",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No cross-relation / K-claim consumption: claim reachability sentences",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/k/open_work.rs",
+      "line": 13,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.k.no-k-repl-web-route",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No /k REPL / web route: cov k (CLI) exists; the repl-core",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/k/open_work.rs",
+      "line": 14,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.k.no-substitution-binders",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "No substitution / binders: LAMBDA's β (E[V/X]) needs a capture-avoiding",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/k/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.k.priority-owise-unmodelled",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Priority / owise unmodelled: Rule order is taken as-is (the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/k/open_work.rs",
+      "line": 11,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.conservative-extension-equivalence-a-b",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Conservative extension / equivalence A ≅ B: mutual interpretation; the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 16,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.declarations-only-load-prove-on-demand",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Declarations-only load + prove-on-demand: Parse keeping only declarations",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 12,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.full-logic-directive-wiring",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Full #logic directive wiring: into the .cov/surface compiler (§5.6)",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 18,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.hol-zfc-scale-transport",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "HOL→ZFC-scale transport: (DerivableHOL ⟹ DerivableZFC ∘ σ) — the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.lift-scoped-l-l-to-full-l",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Lift scoped L' ⊆ L to full L: derivetheorem yields DerivableL';",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.metamath-l-native-l",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Metamath-L ≅ native-L: (§5.6). The composition side is now built",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 17,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.p-validproof-p-s-db-derivabledb-db-s-grounding-bridge",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "∃P. ValidProof(P,S,db) ⟺ DerivableDB db S grounding bridge: DerivableDB",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.per-logic-denotation",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Per-logic denotation: for projecting a finished DerivableL to a concrete",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 11,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.s-transport",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "S-transport: DerivableL1(A) ⟹ DerivableL2(S(A)) (§5.6) — ⟹σ",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 15,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.set-mm-zfc-stdlib-program",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "set.mm/ZFC stdlib program: (design): use set.mm as ZFC stdlib from the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 14,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.structural-for-transport-mm-import-nat-carrier-still-open-tier-2",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Structural σ for transport — MM-import Φ=nat carrier still open (TIER 2)",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.structured-former-encoding",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Structured-former encoding: (shorter HOL repr): give each syntactic former a",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 13,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.metalogic.typecodes-d-over-approximated",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Typecodes & $d over-approximated: (sound for construct direction): clauses",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/metalogic/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.models.from-witness-is-transitional",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "(from WITNESS) is transitional: (#models nat/unary …) pulls specs from the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/models/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.models.in-model-only-accepts-thm",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "#in MODEL only accepts #thm: Nested #def/#have/#in, #transport",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/models/open_work.rs",
+      "line": 12,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.models.models-registers-no-thm-certificate",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "#models registers no .thm certificate: Verified axioms accumulate as",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/models/open_work.rs",
+      "line": 11,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.models.no-general-signature-admits",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "No general Signature/admits: Logic::natmodel() is specialized to the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/models/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.models.no-model-synthesis-3-0-4-north-star",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "No model synthesis (§3.0.4 north star): Models are hand-declared via",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/models/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.models.no-typed-sig-thy-mod-imports",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No typed .sig/.thy/.mod imports: (#import x.sig #sig) (§3.0/§3.0.1)",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/models/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.models.partial-handlerset",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Partial HandlerSet: Only the induction handler (m.induct) dispatches per",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/models/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.models.two-models-one-theory-no-iso",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Two models, one theory, no iso: Nat has nat/self + nat/unary with no",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/models/open_work.rs",
+      "line": 13,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.peano.cov-surface-phase-c",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "cov surface (Phase C): PA not exposed through the .cov script language",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/peano/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.peano.derivation-constructors-for-the-quantifier-equality-clauses",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Derivation constructors for the quantifier/equality clauses: (specialise /",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/peano/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.peano.headline-x-x-0-x-as-a-metamath-p-proof-script",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Headline ∀x. x+0=x as a Metamath $p proof script: The induction",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/peano/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.peano.lockstepderivation-constructors",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "LockstepDerivation constructors: Declared (a Fol + its ⊢ ⟦A⟧) but has",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/peano/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.peano.ruleset-from-database-logic-correspondence",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "RuleSet-from-Database / #logic correspondence: Connecting a",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/peano/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.rust-cov-mutual-recursion",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Rust↔.cov mutual recursion: Cycles through the Rust↔.cov boundary are",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.async-holes-channels-removed-pending-channel-based-rebuild",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Async holes/channels removed, pending channel-based rebuild: The",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.comp-calc-handles-only",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "#comp calc handles only =: The heterogeneous form (a = b ≤ c < d ⊢ a < d,",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 20,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.def-catalogue-resolution-path-not-audited",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "#def catalogue-resolution path not audited: A #def NAME whose body references",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 23,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.dep-name-is-a-sync-availability-guard-not-an-await",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "(#dep NAME) is a sync availability guard, not an await: Errors if NAME",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.equational-seams-not-yet-registerable-per-logic",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Equational seams not yet registerable per-logic: Env::beta/congr/funext/",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 21,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.inductive-realises-only-the-nat-shape",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "#inductive realises only the nat shape: script/inductive.rs dispatches through",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 22,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.inference-is-best-effort-untrusted",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Inference is best-effort (untrusted): infer.rs HM unification is incomplete and",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 13,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.lookupconst-lookuptactic-lookuprule-still-sync",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "lookupconst/lookuptactic/lookuprule still sync: (getready peeks)",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 11,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.no-proof-term-pretty-printer-serialization-out",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No proof/Term pretty-printer (serialization-out): script only parses + replays;",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 15,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.no-wasm-path-for-opt-in-parallelism",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No wasm path for opt-in parallelism: blockon is cfg-split (native tokio",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 18,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.no-wasm-wit-kernel-api",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No WASM/WIT kernel API: Authoring proofs in WASM guests and importing them through a",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 19,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.pluggable-unifier-not-built",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Pluggable unifier not built: apply/rw do first-order matching via",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 14,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.prelude-env-core-covers-only-logic-nat",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Prelude Env::core() covers only logic + nat: int/rat/real/list/option/prod/coprod/set",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 17,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.rw-does-not-descend-under-binders",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "rw does not descend under binders: rewriteconv (script/drv.rs) rewrites",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 16,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.scripterror-is-flat-strings-no-source-spans-or-traces",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "ScriptError is flat strings — no source spans or traces: Should carry source",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.sig-thy-model-models-scope",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "#sig/#thy/#model/#models scope: (script/theory.rs): single-sorted/first-order",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 24,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.slow-cov-files",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Slow .cov files: covtheory! is timed by COVPROFILE=1. Pathologically slow",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 12,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.term-futures-term-level-holes-not-represented",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Term futures (term-level holes) not represented: Terms are built eagerly",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.script.typed-pipeline-extents-missing",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Typed pipeline + extents missing: runasync parses directives into a typed",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/script/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.single-init-mod-rs-project",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Single init/mod.rs Project: libraryenv / librarytactic /",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.spectec.no-state-in-the-fragment-trait",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No state in the Fragment trait: Judgement statement differs per kind",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/spectec/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.spectec.only-rel-gram-fragment-kinds",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Only Rel + Gram fragment kinds: RelationEnv (relations) and",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/spectec/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.spectec.relation-coverage-engine-coverage",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Relation coverage = engine coverage: RelationEnv::spec lowers only rules",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/spectec/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm-project-units-cargo-features-distribution",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "WASM project units + Cargo-features distribution: Compiling a Rust unit to",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.builtin-frontier-after-the-integer-leg",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Builtin frontier after the integer leg: (lower/builtins.rs gives the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 13,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Case/field refinement premises (prs) erased: 56 across 29 spec types",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 9,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.church-types-are-polymorphic-term-free",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Church types are polymorphic + term-free: ChurchBackend gives Φ⟨'r⟩ with a",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 10,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.combined-set-kernel-ops-need-big-stacks",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Combined-set kernel ops need big stacks: ClosedL over 1787 clauses is",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 16,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.constructor-freeness-lemmas-not-threaded",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Constructor freeness lemmas not threaded: denote renders variant case",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 11,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.dec-functions-as-real-hol-defines",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Dec functions as real HOL defines: (the denotational mirror of the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 17,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.dec-graph-relation-residue",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Dec graph-relation residue: (combined-set census, spec::coveragereport;",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 12,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.encoding-coarseness-residue",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Encoding coarseness residue: (post R1-F1/F2 injectivity — iteration",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 15,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.int-literals-unaligned-across-legs",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "int literals unaligned across legs: encode carries int literals as a",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 21,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.mirror-principle-cross-check-not-started",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Mirror-principle cross-check not started: SpecTec ⟶ our-prover vs",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 25,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.mutually-recursive-variant-types",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Mutually-recursive variant types: wasm::syntax renders aliases /",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 7,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.no-end-to-end-parsedefs-test",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No end-to-end parsedefs test: Derivation tests build the rel AST",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 22,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.preset-slices-are-name-classified-approximations",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Preset slices are name-classified approximations: (lower/slice.rs",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 19,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.relations-hol-predicates-over-those-types-leg-b-not-started",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Relations → HOL predicates over those types (leg B) not started: Once",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 18,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.rule-condition-residue",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Rule condition residue: (combined-set census; exact per-tag counts in",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 14,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.slice-path-store-writes-stay-coarse",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Slice-path store writes stay coarse: Upd/Ext along Dot/Idx",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 8,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.sortless-metavariable-residue",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Sortless-metavariable residue: (the over-approximation itself is FIXED",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 6,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.trace-certification-wasm-acceleration-payoff-not-started",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Trace certification (WASM acceleration payoff) not started: Run a WASM engine",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 24,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.trace-driver-is-an-explicit-chain-api",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Trace driver is an explicit chain API: lower/trace.rs chains",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 23,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.hol.init.src.wasm.transport-is-per-theorem",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Transport is per-theorem: slice::transport lifts one",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
+      "line": 20,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "kernel.sat.drat-no-hints-not-handled",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "DRAT (no hints) not handled: Only LRAT (with per-step antecedents) is a",
+      "structured": true,
+      "path": "crates/kernel/sat/open_work.rs",
+      "line": 9,
+      "crate": "covalence-kernel-sat"
+    },
+    {
+      "id": "kernel.sat.interning-hash-consing",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Interning/hash-consing: on the sequent backend is a further constant-factor",
+      "structured": true,
+      "path": "crates/kernel/sat/open_work.rs",
+      "line": 7,
+      "crate": "covalence-kernel-sat"
+    },
+    {
+      "id": "kernel.sat.rat-steps-unhandled",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "RAT steps unhandled: (parser + replay). Non---plain CaDiCaL proofs, and",
+      "structured": true,
+      "path": "crates/kernel/sat/open_work.rs",
+      "line": 6,
+      "crate": "covalence-kernel-sat"
+    },
+    {
+      "id": "kernel.sat.sequentclausebackend-isemptyclause-is-best-effort",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "SequentClauseBackend::isemptyclause is best-effort: A unit input",
+      "structured": true,
+      "path": "crates/kernel/sat/open_work.rs",
+      "line": 8,
+      "crate": "covalence-kernel-sat"
+    },
+    {
+      "id": "kernel.shell.crate-is-a-re-export-shell",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Crate is a re-export shell: (src/lib.rs self-declares \"Status: skeleton\")",
+      "structured": true,
+      "path": "crates/kernel/shell/open_work.rs",
+      "line": 6,
+      "crate": "covalence-shell"
+    },
+    {
+      "id": "kernel.smt.alethe-step-dispatcher",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Alethe step dispatcher: No generic driver mapping AletheCommands to",
+      "structured": true,
+      "path": "crates/kernel/smt/open_work.rs",
+      "line": 8,
+      "crate": "covalence-kernel-smt"
+    },
+    {
+      "id": "kernel.smt.gcd-strengthening",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "GCD strengthening: farkas::strengthen does the simple per-spec tightening",
+      "structured": true,
+      "path": "crates/kernel/smt/open_work.rs",
+      "line": 9,
+      "crate": "covalence-kernel-smt"
+    },
+    {
+      "id": "kernel.smt.general-scale-and-sum-farkas-replay",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "General scale-and-sum Farkas replay: replay::refutecycle handles the",
+      "structured": true,
+      "path": "crates/kernel/smt/open_work.rs",
+      "line": 6,
+      "crate": "covalence-kernel-smt"
+    },
+    {
+      "id": "kernel.smt.i128-coefficient-ceiling",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "i128 coefficient ceiling: Rational is i128-based; astronomically large",
+      "structured": true,
+      "path": "crates/kernel/smt/open_work.rs",
+      "line": 11,
+      "crate": "covalence-kernel-smt"
+    },
+    {
+      "id": "kernel.smt.int-generic-term-normlit-parser",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Int-generic term → NormLit parser: No module yet reads a backend",
+      "structured": true,
+      "path": "crates/kernel/smt/open_work.rs",
+      "line": 7,
+      "crate": "covalence-kernel-smt"
+    },
+    {
+      "id": "kernel.smt.la-family-beyond-lageneric",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "la family beyond lageneric: lamultpos/lamultneg,",
+      "structured": true,
+      "path": "crates/kernel/smt/open_work.rs",
+      "line": 10,
+      "crate": "covalence-kernel-smt"
+    },
+    {
+      "id": "lang.forsp.forsp-web-export-wiring-is-unbuilt",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "/forsp web-export wiring is unbuilt: forspreduce returns a",
+      "structured": true,
+      "path": "crates/lang/forsp/open_work.rs",
+      "line": 7,
+      "crate": "covalence-forsp"
+    },
+    {
+      "id": "lang.forsp.snapshots-share-a-monotonically-growing-heap",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Snapshots share a monotonically-growing heap: A Snapshot clones only the",
+      "structured": true,
+      "path": "crates/lang/forsp/open_work.rs",
+      "line": 8,
+      "crate": "covalence-forsp"
+    },
+    {
+      "id": "lang.forsp.the-small-step-relation-is-an-untrusted-witness-not-a-kernel-pro",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "The small-step relation is an untrusted witness, not a kernel proof",
+      "structured": true,
+      "path": "crates/lang/forsp/open_work.rs",
+      "line": 6,
+      "crate": "covalence-forsp"
+    },
+    {
+      "id": "lang.grammar.numeral-atom-zoo-deferred",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Numeral atom zoo deferred: (src/numeral.rs) — only dec/oct/hex/bin",
+      "structured": true,
+      "path": "crates/lang/grammar/open_work.rs",
+      "line": 6,
+      "crate": "covalence-grammar"
+    },
+    {
+      "id": "lang.grammar.numeral-grammars-are-description-only",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Numeral grammars are description-only: (src/numeral.rs) — each family",
+      "structured": true,
+      "path": "crates/lang/grammar/open_work.rs",
+      "line": 7,
+      "crate": "covalence-grammar"
+    },
+    {
+      "id": "lang.grammar.spec-numeral-slips",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Spec numeral slips: (src/numeral.rs tests) — the numeral-literals-api",
+      "structured": true,
+      "path": "crates/lang/grammar/open_work.rs",
+      "line": 8,
+      "crate": "covalence-grammar"
+    },
+    {
+      "id": "lang.haskell.define-name-body-is-a-text-convention-not-a-checked-construct",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "(define name body) is a text convention, not a checked construct",
+      "structured": true,
+      "path": "crates/lang/haskell/open_work.rs",
+      "line": 13,
+      "crate": "covalence-haskell"
+    },
+    {
+      "id": "lang.haskell.hol-backend-collapses-string-atoms-into-raw-byte-atoms",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "HOL backend collapses string atoms into raw-byte atoms: (unquoted,",
+      "structured": true,
+      "path": "crates/lang/haskell/open_work.rs",
+      "line": 11,
+      "crate": "covalence-haskell"
+    },
+    {
+      "id": "lang.haskell.no-quoted-symbol-form-in-the-interchange-grammar",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No quoted-symbol form in the interchange grammar: (src/sexpr.rs)",
+      "structured": true,
+      "path": "crates/lang/haskell/open_work.rs",
+      "line": 12,
+      "crate": "covalence-haskell"
+    },
+    {
+      "id": "lang.haskell.no-reader-round-trip-test",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No reader round-trip test: The hol backend builds atoms as",
+      "structured": true,
+      "path": "crates/lang/haskell/open_work.rs",
+      "line": 10,
+      "crate": "covalence-haskell"
+    },
+    {
+      "id": "lang.haskell.no-typeclass-instance-elaboration",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "No typeclass / instance elaboration: The monad is written with the ops as",
+      "structured": true,
+      "path": "crates/lang/haskell/open_work.rs",
+      "line": 8,
+      "crate": "covalence-haskell"
+    },
+    {
+      "id": "lang.haskell.proof-format-workable-rule-subset-no-tactic-language",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Proof format: workable rule subset + no tactic language: src/proof.rs",
+      "structured": true,
+      "path": "crates/lang/haskell/open_work.rs",
+      "line": 7,
+      "crate": "covalence-haskell"
+    },
+    {
+      "id": "lang.haskell.typed-backend-no-per-theory-type-constructors",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Typed backend: no per-theory type constructors: The typed backend",
+      "structured": true,
+      "path": "crates/lang/haskell/open_work.rs",
+      "line": 6,
+      "crate": "covalence-haskell"
+    },
+    {
+      "id": "lang.haskell.untyped-hol-backend-no-lowering-to-init-definitions",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Untyped hol backend: no lowering to init/ definitions: The demos",
+      "structured": true,
+      "path": "crates/lang/haskell/open_work.rs",
+      "line": 9,
+      "crate": "covalence-haskell"
+    },
+    {
+      "id": "lang.k.alias-expansion-not-implemented",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Alias expansion not implemented: alias … where lhs := rhs is stored",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 8,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.attribute-semantics-only-partially-interpreted",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Attribute semantics only partially interpreted: assoc/comm/idem/",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 10,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.casts-and-out-of-line-syntax-priority-syntax-left-skipped",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Casts and out-of-line syntax priority/syntax left skipped: Not needed",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 17,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.cfg-lowering-flattens-disambiguation",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "CFG lowering flattens disambiguation: Priority (>) and associativity",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 14,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.claims-reachability-layer-unconsumed",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Claims/reachability layer unconsumed: claim sentences parse and",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 7,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.fromsexp-round-trip-missing",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "fromsexp / round-trip missing: sexpr is tosexp-only",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 9,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.grammar-only-no-semantics",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Grammar only — no semantics: rule/context/configuration/claim",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 12,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.imports-not-followed",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Imports not followed: Only the named module is lowered; imports are not",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 16,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.kore-json-kast-json-ingestion-missing",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "KORE-JSON + KAST-JSON ingestion missing: Only textual definition.kore",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 6,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.legacy-k-dialect-untested",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Legacy-K dialect untested: Real dumps (c-semantics, x86-64, older grammar",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 11,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.no-k-kore-bridge",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "No .k ↔ KORE bridge: The two frontends are independent; the .k",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 18,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.no-layout-whitespace-in-the-lowered-cfg",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "No layout/whitespace in the lowered CFG: kdef::cfg recognises",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 15,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.k.regex-token-production-items-unsupported",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Regex/token production items unsupported: r\"…\" items and syntax",
+      "structured": true,
+      "path": "crates/lang/k/open_work.rs",
+      "line": 13,
+      "crate": "covalence-k"
+    },
+    {
+      "id": "lang.lisp.abstract-s-expr-api-slice-1-landed-slices-2-5-open",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Abstract S-expr API — slice 1 landed, slices 2–5 open",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 8,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.acl2-slice-src-acl2-rs-open-ends",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "ACL2 slice (src/acl2.rs) — open ends: (design + roadmap in",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 9,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.carved-sexpr-rename-pending",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "carved → sexpr rename pending: The code still uses the carved jargon",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 15,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.defun-return-type-is-a-3-way-guess-parameters-are-always-sexpr",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "defun return type is a 3-way guess; parameters are always sexpr",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 12,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.eq-is-atoms-only",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "eq? is atoms-only: Both operands must reduce to atom b values; the",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 17,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.forward-references-default-to-sexpr-sexpr",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Forward references default to sexpr… → sexpr: A call to a not-yet-defined",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 14,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.null-is-the-consp-complement",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "null? is the consp complement: (⊢ ¬ consp v), correct on lists;",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 16,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.predicate-eq-values-are-bool-literals-data-values-are-sexpr",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Predicate/eq? values are bool literals, data values are sexpr: See",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 18,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.relation-rs-reduction-relation-next-phase-clauses",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "relation.rs reduction relation — next-phase clauses: The Step/Reduces",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 10,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.relational-recursion-more-langs",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Relational recursion / more #langs: The lisp/sector dialects are the",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 11,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.the-full-metacircular-interpreter-does-not-run-yet",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "The full metacircular interpreter does not run yet: The ground fragment",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 6,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.the-repl-bypasses-the-reductionstrategy-seam",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "The REPL bypasses the ReductionStrategy seam: (legacy hol.rs)",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 7,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.lisp.value-semantics-integers-are-typed-int-terms-not-sexpr-data",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Value-semantics integers are typed int terms, not sexpr data: Great",
+      "structured": true,
+      "path": "crates/lang/lisp/open_work.rs",
+      "line": 13,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lang.numerals.groundf32-enclosure-certificate-unproven",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "groundf32 enclosure certificate unproven: (src/backend/symbolic.rs,",
+      "structured": true,
+      "path": "crates/lang/numerals/open_work.rs",
+      "line": 7,
+      "crate": "covalence-numerals"
+    },
+    {
+      "id": "lang.numerals.provelt-only-covers-the-nat-rung",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "provelt only covers the Nat rung: (src/backend/{symbolic,builtin}.rs)",
+      "structured": true,
+      "path": "crates/lang/numerals/open_work.rs",
+      "line": 9,
+      "crate": "covalence-numerals"
+    },
+    {
+      "id": "lang.numerals.provetorat-only-covers-the-decimal-rung",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "provetorat only covers the Decimal rung: (src/backend/symbolic.rs)",
+      "structured": true,
+      "path": "crates/lang/numerals/open_work.rs",
+      "line": 8,
+      "crate": "covalence-numerals"
+    },
+    {
+      "id": "lang.numerals.wasm-backend-is-a-stub",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Wasm backend is a stub: (src/backend/wasm.rs) — builds kernel terms",
+      "structured": true,
+      "path": "crates/lang/numerals/open_work.rs",
+      "line": 6,
+      "crate": "covalence-numerals"
+    },
+    {
+      "id": "lib.data.acset.compile-time-names-only",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Compile-time names only: Objects/morphisms/attributes are &'static str,",
+      "structured": true,
+      "path": "crates/lib/data/acset/open_work.rs",
+      "line": 7,
+      "crate": "covalence-acset"
+    },
+    {
+      "id": "lib.data.acset.lattice-lfp-assumes-monotonicity-termination",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "lattice::lfp assumes monotonicity + termination: The step's monotonicity",
+      "structured": true,
+      "path": "crates/lib/data/acset/open_work.rs",
+      "line": 9,
+      "crate": "covalence-acset"
+    },
+    {
+      "id": "lib.data.acset.no-co-limits-or-schema-composition",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No (co)limits or schema composition: Acyclicity is an instance-level check",
+      "structured": true,
+      "path": "crates/lib/data/acset/open_work.rs",
+      "line": 10,
+      "crate": "covalence-acset"
+    },
+    {
+      "id": "lib.data.acset.only-pullback-migration",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Only Δ (pullback) migration: Instance::pullback implements the pullback",
+      "structured": true,
+      "path": "crates/lib/data/acset/open_work.rs",
+      "line": 6,
+      "crate": "covalence-acset"
+    },
+    {
+      "id": "lib.data.acset.query-datalog-evaluation-is-naive-positive-only",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Query/Datalog evaluation is naive; positive only: query (conjunctive)",
+      "structured": true,
+      "path": "crates/lib/data/acset/open_work.rs",
+      "line": 8,
+      "crate": "covalence-acset"
+    },
+    {
+      "id": "lib.data.multiformat.acset-validation-is-structural-by-design",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "ACSet validation is structural by design: acset::validatestore checks",
+      "structured": true,
+      "path": "crates/lib/data/multiformat/open_work.rs",
+      "line": 11,
+      "crate": "covalence-multiformat"
+    },
+    {
+      "id": "lib.data.multiformat.codecs-are-unregistered-private-use-codes",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Codecs are unregistered private-use codes: codec::{AXIOMSET, COVHOLTHM,",
+      "structured": true,
+      "path": "crates/lib/data/multiformat/open_work.rs",
+      "line": 6,
+      "crate": "covalence-multiformat"
+    },
+    {
+      "id": "lib.data.multiformat.hol-payload-limited-to-the-round-trippable-term-fragment",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "HOL payload limited to the round-trippable term fragment: covalence-init's",
+      "structured": true,
+      "path": "crates/lib/data/multiformat/open_work.rs",
+      "line": 10,
+      "crate": "covalence-multiformat"
+    },
+    {
+      "id": "lib.data.multiformat.ingest-does-not-re-derive-the-proof",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Ingest does not re-derive the proof: examples/kernelingest parses the",
+      "structured": true,
+      "path": "crates/lib/data/multiformat/open_work.rs",
+      "line": 9,
+      "crate": "covalence-multiformat"
+    },
+    {
+      "id": "lib.data.multiformat.multihash-is-blake3-only",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Multihash is blake3-only: Cid::parse rejects every other multihash code",
+      "structured": true,
+      "path": "crates/lib/data/multiformat/open_work.rs",
+      "line": 8,
+      "crate": "covalence-multiformat"
+    },
+    {
+      "id": "lib.data.multiformat.no-signed-envelopes",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No signed envelopes: Federation / authored Thm exchange needs ed25519",
+      "structured": true,
+      "path": "crates/lib/data/multiformat/open_work.rs",
+      "line": 7,
+      "crate": "covalence-multiformat"
+    },
+    {
+      "id": "lib.data.multiformat.payloads-are-opaque-bytes",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Payloads are opaque bytes: prop / witness payloads are not typed or",
+      "structured": true,
+      "path": "crates/lib/data/multiformat/open_work.rs",
+      "line": 12,
+      "crate": "covalence-multiformat"
+    },
+    {
+      "id": "lib.repl-core.the-reductionstrategy-seam-is-not-yet-load-bearing",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "The ReductionStrategy seam is not yet load-bearing: The only consumer",
+      "structured": true,
+      "path": "crates/lib/repl-core/open_work.rs",
+      "line": 6,
+      "crate": "covalence-repl-core"
+    },
+    {
+      "id": "lib.types.decimal-fromparts-spec-discrepancy",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Decimal::fromparts spec discrepancy: the numeral-literals-api spec",
+      "structured": true,
+      "path": "crates/lib/types/open_work.rs",
+      "line": 6,
+      "crate": "covalence-types"
+    },
+    {
+      "id": "lib.wasm.core.cov-pure-host-binding-removed-pending-rewrite",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "cov:pure host binding removed pending rewrite: src/pure.rs (wasmtime",
+      "structured": true,
+      "path": "crates/lib/wasm/core/open_work.rs",
+      "line": 6,
+      "crate": "covalence-wasm"
+    },
+    {
+      "id": "lib.wasm.spectec.byte-regex-bridge-scope",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Byte-regex bridge scope: (regex.rs). regex::symtoregexu8 bridges only",
+      "structured": true,
+      "path": "crates/lib/wasm/spectec/open_work.rs",
+      "line": 9,
+      "crate": "covalence-spectec"
+    },
+    {
+      "id": "lib.wasm.spectec.cfg-lowering-recognition-mode-residue",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "CFG lowering — recognition-mode residue: (src/cfg.rs). Two modes",
+      "structured": true,
+      "path": "crates/lib/wasm/spectec/open_work.rs",
+      "line": 8,
+      "crate": "covalence-spectec"
+    },
+    {
+      "id": "lib.wasm.spectec.native-watsup-frontend",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Native .watsup frontend: The hand-written lexer/parser/CST/elaborator/",
+      "structured": true,
+      "path": "crates/lib/wasm/spectec/open_work.rs",
+      "line": 6,
+      "crate": "covalence-spectec"
+    },
+    {
+      "id": "lib.wasm.spectec.wasm-grammar-versions",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "WASM grammar versions: (src/grammar.rs). Only grammar::wasm3 is wired",
+      "structured": true,
+      "path": "crates/lib/wasm/spectec/open_work.rs",
+      "line": 7,
+      "crate": "covalence-spectec"
+    },
+    {
+      "id": "proof.alethe.content-addressed-proof-cache",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Content-addressed proof cache: discharge::ProofCache is an in-memory /",
+      "structured": true,
+      "path": "crates/proof/alethe/open_work.rs",
+      "line": 6,
+      "crate": "covalence-alethe"
+    },
+    {
+      "id": "proof.alethe.cov-int-literal-goals",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "cov int-literal goals: The script infer has no int-literal syntax and",
+      "structured": true,
+      "path": "crates/proof/alethe/open_work.rs",
+      "line": 8,
+      "crate": "covalence-alethe"
+    },
+    {
+      "id": "proof.alethe.goaltoproblem-fragment",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "goaltoproblem fragment: Renders only the QFUF + linear-int shapes the",
+      "structured": true,
+      "path": "crates/proof/alethe/open_work.rs",
+      "line": 7,
+      "crate": "covalence-alethe"
+    },
+    {
+      "id": "proof.alethe.hole-beyond-closed-arithmetic-propositional",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "hole beyond closed arithmetic / propositional: A hole needing",
+      "structured": true,
+      "path": "crates/proof/alethe/open_work.rs",
+      "line": 9,
+      "crate": "covalence-alethe"
+    },
+    {
+      "id": "proof.alethe.linear-arithmetic-core",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Linear-arithmetic core: lageneric (Farkas), src/la.rs. Handles the",
+      "structured": true,
+      "path": "crates/proof/alethe/open_work.rs",
+      "line": 10,
+      "crate": "covalence-alethe"
+    },
+    {
+      "id": "proof.alethe.parametric-sorts",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Parametric sorts: (declare-sort arity > 0) — rejected ParametricSort",
+      "structured": true,
+      "path": "crates/proof/alethe/open_work.rs",
+      "line": 13,
+      "crate": "covalence-alethe"
+    },
+    {
+      "id": "proof.alethe.rest-of-propositional-family",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Rest of propositional family: equivpos1, equivneg1/2, andpos/",
+      "structured": true,
+      "path": "crates/proof/alethe/open_work.rs",
+      "line": 12,
+      "crate": "covalence-alethe"
+    },
+    {
+      "id": "proof.alethe.subproofs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Subproofs: anchor and any step with :discharge (subproof/bind/",
+      "structured": true,
+      "path": "crates/proof/alethe/open_work.rs",
+      "line": 11,
+      "crate": "covalence-alethe"
+    },
+    {
+      "id": "proof.egglog.egglog-external-bridge-disabled",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "egglog external bridge disabled: The real-solver bridge (src/external.rs",
+      "structured": true,
+      "path": "crates/proof/egglog/open_work.rs",
+      "line": 7,
+      "crate": "covalence-egglog"
+    },
+    {
+      "id": "proof.egglog.egglogbridge-is-stage-0-only-fiat-succeeds",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "EgglogBridge is Stage 0 — only fiat succeeds: The rule/mergefn/",
+      "structured": true,
+      "path": "crates/proof/egglog/open_work.rs",
+      "line": 6,
+      "crate": "covalence-egglog"
+    },
+    {
+      "id": "proof.metamath.d-reshaping-statement-matching",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "$d-reshaping statement matching: samestatementmodrenaming",
+      "structured": true,
+      "path": "crates/proof/metamath/open_work.rs",
+      "line": 8,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.metamath.definitional-extension-conservativity",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Definitional-extension conservativity: checkimplication / interpretation",
+      "structured": true,
+      "path": "crates/proof/metamath/open_work.rs",
+      "line": 6,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.metamath.derived-witness-bridges",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Derived-witness bridges: Implication/interpretation witnesses are existing",
+      "structured": true,
+      "path": "crates/proof/metamath/open_work.rs",
+      "line": 7,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.metamath.emitter-fidelity-emit-rs",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Emitter fidelity (emit.rs): Database::tommstring re-parses to a",
+      "structured": true,
+      "path": "crates/proof/metamath/open_work.rs",
+      "line": 14,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.metamath.hol-backed-databasesink-over-an-arbitrary-database",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "HOL-backed DatabaseSink over an arbitrary database: A HOL",
+      "structured": true,
+      "path": "crates/proof/metamath/open_work.rs",
+      "line": 10,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.metamath.kernel-level-transport",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Kernel-level transport: Implication/InterpretationCert are Rust-checked",
+      "structured": true,
+      "path": "crates/proof/metamath/open_work.rs",
+      "line": 9,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.metamath.set-mm-scale-streaming-incremental-parsing",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "set.mm-scale streaming/incremental parsing: The reader tokenises the whole",
+      "structured": true,
+      "path": "crates/proof/metamath/open_work.rs",
+      "line": 11,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.metamath.structured-tree-grammar-parsed-expression-encoding",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Structured-tree (grammar-parsed) expression encoding: Expr is a typecode +",
+      "structured": true,
+      "path": "crates/proof/metamath/open_work.rs",
+      "line": 12,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.metamath.symbol-interning-for-set-mm-scale",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Symbol interning for set.mm scale: Symbol is an owned SmolStr; tables",
+      "structured": true,
+      "path": "crates/proof/metamath/open_work.rs",
+      "line": 13,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.opentheory.deep-renaming",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Rename types and constants recursively within theorems.",
+      "structured": true,
+      "path": "crates/proof/opentheory/src/resolve.rs",
+      "line": 426,
+      "crate": "covalence-opentheory"
+    },
+    {
+      "id": "proof.opentheory.int-interpretation-files-parsed-but-not-applied",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "int interpretation files parsed but not applied",
+      "structured": true,
+      "path": "crates/proof/opentheory/open_work.rs",
+      "line": 6,
+      "crate": "covalence-opentheory"
+    },
+    {
+      "id": "proof.opentheory.offline-vendored-corpus-is-a-subset",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Offline vendored corpus is a subset: assets/opentheory/gilith/std/ is",
+      "structured": true,
+      "path": "crates/proof/opentheory/open_work.rs",
+      "line": 7,
+      "crate": "covalence-opentheory"
+    },
+    {
+      "id": "vscode.macos-native-server",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Enable the native macOS server path once tested.",
+      "structured": true,
+      "path": "extensions/covalence-vscode/src/server.ts",
+      "line": 99,
+      "crate": null
+    }
+  ]
+}

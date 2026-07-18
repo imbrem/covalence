@@ -102,6 +102,20 @@ Features (all default, all compile on WASM except native-only deps are target-ga
 - `serve` — `cov serve` subcommand (prints error on WASM; axum/tokio deps are `cfg(not(wasm))`)
 - `repl` — `cov repl` subcommand (interactive S-expression REPL with syntax highlighting)
 
+## Open work
+
+Open work is authored as stable source-local markers such as
+`TODO(cov:hol.script.source-spans, severe): ...`. Run `bun run todos` to
+regenerate `docs/todos/todos.json` and `target/covalence-todos.sqlite`, or query
+with `bun run todos -- --list`. The old `SKELETONS.md` registries have been
+removed; do not recreate them.
+
+Portfolio planning and current-state triage live in
+`notes/vibes/plans/workstreams-and-state-report.md`. It divides work into
+control-plane, TCB/base, HOL representation, abstract API, script/project,
+metatheory, ACL2/Lisp, SAT/SMT, parsing/data, WASM/SpecTec/K, and product
+workstreams. Use stable TODO IDs for ownership across those streams.
+
 ## REPL (`cov repl`)
 
 Interactive S-expression evaluator with a content-addressed blob store. Backend is selected at startup:

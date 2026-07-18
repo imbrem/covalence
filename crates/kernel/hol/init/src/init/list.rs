@@ -58,7 +58,7 @@
 //! `foldr`/`length`/`cat` nil/cons recursion clauses are in
 //! [`crate::init::list_recursion`] (the `list` [`Inductive`] adapter feeding
 //! the generic engine). `list_foldl` / the `map`/`filter`/`flatten` clauses
-//! remain — see `SKELETONS.md`.
+//! remain — see the generated open-work index.
 //!
 //! ## The `.cov` port
 //!

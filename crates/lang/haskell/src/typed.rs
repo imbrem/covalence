@@ -31,7 +31,7 @@
 //!   `nat` → [`Nat::nat_ty`] and `bool` → [`Hol::bool_ty`]; function types
 //!   `a -> b` → [`Hol::fun_ty`]. Other constructors (`option a`, `list a`, …)
 //!   need a per-theory trait (an `Option` / `List` surface) and are reported as
-//!   unsupported — see the crate `SKELETONS.md`.
+//!   unsupported — see the crate the generated open-work index.
 //! - **Expressions** ([`lower_expr`]): variables (typed from the environment),
 //!   annotated lambdas, application, the operators `==` (→ [`Hol::eq`]) and `+`
 //!   `*` (→ [`Nat::add`] / [`Nat::mul`]), and natural-number literals

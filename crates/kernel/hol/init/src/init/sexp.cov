@@ -22,7 +22,7 @@
 ;; Here we re-export each as a first-class `sexp.cov` theorem (the proof just
 ;; `all-elim`s the seam given). `cons` injectivity + full structural `sexp`
 ;; induction need the recursor's subtree-recovery identity (the `Wf` carve);
-;; they are deferred — see `init/SKELETONS.md`.
+;; they are deferred — see the generated open-work index.
 ;;
 ;; The cons facts are taken at the boolean observation type, so the subtrees
 ;; `x`/`y` live in `sexp 'a` at `'r := bool`, i.e.

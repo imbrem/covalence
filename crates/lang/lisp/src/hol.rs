@@ -17,7 +17,7 @@
 //! [`SymbolicStrategy`] operates on Lisp *operator applications* — the head
 //! `car`/`cdr` applied to `cons h t` — which is the `⊢ input = output`
 //! equational special case of the aspirational `Reduces` relation (see
-//! `SKELETONS.md`). Building the operator-application form from data (an
+//! the generated open-work index). Building the operator-application form from data (an
 //! `eval` that walks a `scons`-tree and applies the `car`/`cdr`/`cons`
 //! operators) is future work.
 
@@ -94,7 +94,7 @@ impl Lisp for LispHol {
         // token — matching `sexpr_parse`'s uninterpreted-byte-run atoms. We
         // only treat all-ASCII-digit tokens as numerals; everything else
         // falls through to `resolve_symbol` (same atom either way, so the
-        // distinction is cosmetic today — see SKELETONS.md).
+        // distinction is cosmetic today — see source-local TODO markers).
         if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) {
             Some(self.atom(text.as_bytes().to_vec()))
         } else {
@@ -104,7 +104,7 @@ impl Lisp for LispHol {
 
     fn resolve_string(&self, _format: &str, bytes: &[u8]) -> Result<Term, HolError> {
         // Raw bytes, unquoted/unescaped (the untyped landing collapses the
-        // string/symbol distinction; see SKELETONS.md).
+        // string/symbol distinction; see source-local TODO markers).
         self.atom(bytes.to_vec())
     }
 

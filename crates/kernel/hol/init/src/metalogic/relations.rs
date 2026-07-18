@@ -41,7 +41,7 @@
 //! this exhibits **monotonicity as interpretation under the identity renaming**
 //! — the `⊑` of [`super::database`] sitting inside the `⟹_σ` lattice. A
 //! non-trivial variable-renaming `σ` (with a genuinely structural `σ_hom`
-//! proof) is the next step; see [`SKELETONS.md`](./SKELETONS.md).
+//! proof) is the next step; see the generated open-work index.
 
 use covalence_core::{Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;

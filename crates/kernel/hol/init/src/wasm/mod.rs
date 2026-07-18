@@ -35,7 +35,7 @@
 //!
 //! See `notes/vibes/wasm-spec.md` for the phasing (syntax/functions, the CFG stratum,
 //! trace certification, and the mirror-principle commutative-diagram check) and
-//! `SKELETONS.md` for the open increments.
+//! the generated open-work index for the open increments.
 //!
 //! [SpecTec]: https://github.com/Wasm-DSL/spectec
 

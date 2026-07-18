@@ -9,7 +9,7 @@
 //!
 //! Chapter-2 recursion (`lat?`, `member?`, user `defun`s) is out of scope —
 //! it needs recursion / definitions the current evaluator lacks; recorded in
-//! `crates/lang/lisp/SKELETONS.md`.
+//! `source-local TODO markers`.
 #![cfg(feature = "hol")]
 
 use covalence_lisp::semantics::ValueKind;

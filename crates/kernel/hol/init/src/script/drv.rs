@@ -566,7 +566,7 @@ pub fn core_rules() -> Vec<(&'static str, Arc<dyn Tactic>)> {
 /// hypotheses.
 ///
 /// Does not descend under binders (`Abs`) — adequate for the
-/// quantifier-free rewriting the tactic targets today; see SKELETONS.md.
+/// quantifier-free rewriting the tactic targets today; see source-local TODO markers.
 pub(super) fn rewrite_conv(t: &Term, eq: &Thm) -> R<Thm> {
     let (lhs, _rhs) = dest_eq(eq.concl())
         .ok_or_else(|| ScriptError::Syntax("rw: equation theorem is not an `=`".into()))?;

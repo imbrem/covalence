@@ -47,7 +47,7 @@
 //! proof can `(rw assoc)` / `(rw left_id)` / `(rw right_id)` against any model
 //! the host installs. The Rust [`normalize`](Monoid::normalize) is the
 //! *batched* form of those same rewrites — the seed for a future
-//! `(monoid-normalize)` rewriter inference (see `SKELETONS.md`).
+//! `(monoid-normalize)` rewriter inference (see the generated open-work index).
 
 use covalence_core::{Result, Term};
 use covalence_hol_eval::EvalThm as Thm;

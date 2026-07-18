@@ -35,7 +35,7 @@
 //! the remaining work is threading it through the data model (`InductiveSig` →
 //! generic over `Hol::Term`/`Type`) and the `existence` / `uniqueness` /
 //! `determinacy` / `recursor` proofs (the `Inductive` trait → `Inductive<H>`).
-//! See `SKELETONS.md`.
+//! See the generated open-work index.
 
 use covalence_core::{Error, Result, Term, TermKind, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;

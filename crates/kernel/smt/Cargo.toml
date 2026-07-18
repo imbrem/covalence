@@ -18,7 +18,7 @@ edition = "2024"
 #
 # Current deps cover the pure Farkas-certificate core (rational/lincomb/farkas)
 # and the rule-acceptance policy. The `Int`-generic parse + kernel replay
-# modules (see SKELETONS.md) will add `covalence-hol-api` + the `covalence-smt`
+# modules (see source-local TODO markers) will add `covalence-hol-api` + the `covalence-smt`
 # format crate.
 
 [dependencies]

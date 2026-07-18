@@ -48,7 +48,7 @@ pub enum Sentence {
     },
     /// `alias NAME { sort_vars } ( arg_sorts ) : ret where lhs := rhs [attrs]`.
     /// `lhs` is the application pattern being defined; the alias is *not*
-    /// expanded anywhere in this crate (see `SKELETONS.md`).
+    /// expanded anywhere in this crate (see the generated open-work index).
     Alias {
         name: SmolStr,
         sort_vars: Vec<SmolStr>,

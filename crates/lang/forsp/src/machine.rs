@@ -18,7 +18,7 @@
 //! a lightweight [`before`/`after` snapshot](crate::semantics::ForspStep), not a
 //! kernel `Thm`. The trait wiring in [`crate::semantics`] is arranged so a
 //! kernel-backed forsp theory can later drop in as a `Semantics` swap without
-//! disturbing the driver. See `SKELETONS.md`.
+//! disturbing the driver. See the generated open-work index.
 
 use super::{Cell, FError, ForeignPrims, Forsp, Heap, Prim, Tag, ValRef};
 

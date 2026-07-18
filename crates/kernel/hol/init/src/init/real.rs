@@ -466,7 +466,7 @@ fn zero_ne_one_impl() -> Result<Thm> {
 // two postulated leaves assert that this intersection *is* an upper bound
 // and *is* the least one. Both unfold to set/order facts about the cuts,
 // blocked on the same `rat`/order theory the rest of the tower waits on
-// (`SKELETONS.md`); `complete` itself is a genuine derivation from them.
+// (the generated open-work index); `complete` itself is a genuine derivation from them.
 
 /// Postulate a `real` axiom: `{t} ⊢ t` (self-flagged audit trail, as in
 /// `init::int` / `init::rat`).
@@ -539,7 +539,7 @@ fn sup(a_set: &Term) -> Term {
 /// `⊢ ∀A. nonempty A ⟹ bounded A ⟹ is_ub A (realSup A)` — the supremum
 /// cut is an upper bound. **Postulated** (audit hyp); unfolds to "a
 /// rational in every member-cut is `≥` every member" — a set/order fact
-/// about the cuts (`SKELETONS.md`).
+/// about the cuts (the generated open-work index).
 pub fn sup_is_ub() -> Thm {
     let a_set = Term::free("A", real_set());
     let concl = is_ub(&a_set, &sup(&a_set));
@@ -552,7 +552,7 @@ pub fn sup_is_ub() -> Thm {
 /// `⊢ ∀A. nonempty A ⟹ bounded A ⟹ ∀u. is_ub A u ⟹ realSup A ≤ u` — the
 /// supremum cut is the *least* upper bound. **Postulated** (audit hyp);
 /// unfolds to "the intersection-cut contains every upper-bound cut" — the
-/// dual set/order fact (`SKELETONS.md`).
+/// dual set/order fact (the generated open-work index).
 pub fn sup_is_least() -> Thm {
     let a_set = Term::free("A", real_set());
     let u = Term::free("u", real());
@@ -678,7 +678,7 @@ crate::cov_theory! {
     /// + the `realprim` seam env. The seam env is re-exported through the
     /// `real` namespace (`#provide (#alias realprim real)`), so a downstream
     /// `.cov` imports just `real` to reach `real.*`. The `sup_is_ub` /
-    /// `sup_is_least` / `complete` postulates are NOT ported (see SKELETONS.md).
+    /// `sup_is_least` / `complete` postulates are NOT ported (see source-local TODO markers).
     pub mod cov from "real.cov" {
         import "core" = crate::script::Env::core();
         import "logic" = crate::init::logic::cov::env();

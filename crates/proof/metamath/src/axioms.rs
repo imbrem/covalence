@@ -39,7 +39,7 @@
 //! [`allow_definitions`]). So the checked reals result is precisely: *every
 //! reals axiom is provable in ZFC **plus definitions*** — the definitional
 //! extension itself being conservative is a separate (deferred) metatheorem;
-//! see `SKELETONS.md`.
+//! see the generated open-work index.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 

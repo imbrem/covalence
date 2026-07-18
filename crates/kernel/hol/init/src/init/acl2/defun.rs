@@ -18,7 +18,7 @@
 //! must match the consp-guarded single-formal depth-1 template
 //! `(IF (CONSP xr) STEP BASE)` of §4. Deeper `car`/`cdr` descent,
 //! multiple recursive formals, mutual recursion and measures are S5/S7
-//! (this directory's `SKELETONS.md`).
+//! (this directory's the generated open-work index).
 //!
 //! The **single source of truth** for what a body *means* is
 //! [`model_image`] (§3.1): it defines both the `def_eq_model` statement
@@ -905,7 +905,7 @@ fn is_value(tm: &Terms, t: &Term) -> bool {
 /// `⊢ t = v` for a ground *model expression* `t` (constructor-literal
 /// values, user-row applications, `aplus` of int literals), `v` a value.
 /// The covered head set is the S4 gate fragment; extend on demand
-/// (SKELETONS). Errors — mints nothing — outside the fragment.
+/// (source-local TODO markers). Errors — mints nothing — outside the fragment.
 pub fn fold_ground(env: &Acl2Env, t: &Term) -> Result<Thm> {
     let tm = &*env.tm;
     if is_value(tm, t) {

@@ -1173,7 +1173,7 @@ impl<'e> Planner<'e> {
         // Cases split on the leftmost stuck guard (Γ = ∅ variant: the
         // sub-scripts see only their own case hypothesis — cacheable,
         // hypothesis-free facts; the Γ-threading variant of §5.5.5 is
-        // deferred, SKELETONS).
+        // deferred, source-local TODO markers).
         let guard = self.stuck_guards.borrow().get(snap).cloned();
         if let (true, Some(q)) = (self.has_cases && depth > 0, guard.clone()) {
             let tm = self.tm();

@@ -259,7 +259,7 @@ fn t4b_typeidx_is_leb128() {
 // non-membership; and corruptions that fall inside a widening (wrong counts,
 // swallowed tails) are demonstrated to still derive. Exact `Bmodule` (Under
 // mode) remains blocked on value-coupled `ListN` + section-`len`/`Iter`
-// premises; see `crates/lib/wasm/spectec/SKELETONS.md`.
+// premises; see `source-local TODO markers`.
 // ----------------------------------------------------------------------------
 
 /// The real binary encoding of `(module (func (result i32) i32.const 42))`,
@@ -373,7 +373,7 @@ fn t5_whole_module_recognition_body() {
 
 /// Ignored by default: the whole-spec grammar env costs ~90 s (debug) on top
 /// of T5's already-representative 27-byte `Bmodule` proof — a perf lever, not
-/// extra coverage (see `crates/kernel/hol/init/SKELETONS.md`). Run explicitly:
+/// extra coverage (see `source-local TODO markers`). Run explicitly:
 /// `cargo test -p covalence-init --test cfg_grammar t5b -- --ignored`.
 #[test]
 #[ignore = "~90 s debug whole-spec grammar env; T5 covers the headline — run with --ignored"]

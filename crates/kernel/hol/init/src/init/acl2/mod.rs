@@ -77,7 +77,7 @@
 //!   derived in the object logic and transported to the closed base-HOL
 //!   `⊢ ∀x y z. app (app x y) z = app x (app y z)`.
 //!
-//! Open work is tracked in this directory's `SKELETONS.md`.
+//! Open work is tracked in this directory's the generated open-work index.
 
 pub mod carrier;
 pub mod defun;

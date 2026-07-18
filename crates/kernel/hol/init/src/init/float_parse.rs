@@ -22,7 +22,7 @@
 //! is deliberately an *exact* structured value, not an `f64` bit pattern: a
 //! parser-correctness proof wants the true mathematical value, and rounding a
 //! decimal to the nearest `f64` is a *separate* concern (recorded as a
-//! follow-up in `SKELETONS.md`). Every literal is representable exactly:
+//! follow-up in the generated open-work index). Every literal is representable exactly:
 //!
 //! | source     | mantissa `m` | exp `e` | `m · 10ᵉ` |
 //! |------------|--------------|---------|-----------|

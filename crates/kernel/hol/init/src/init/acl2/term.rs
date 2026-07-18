@@ -6,7 +6,7 @@
 //! applications are conses `(f a₁ … aₙ)` with `f` a primitive-table
 //! symbol ([`super::prims::PrimRow`]). The S2/S3 **fragment**: `lambda`
 //! is deferred to S4, and unknown heads evaluate to `anil` — honest
-//! fragment boundaries (this directory's `SKELETONS.md`).
+//! fragment boundaries (this directory's the generated open-work index).
 //!
 //! The evaluator is **one pair-valued paramorphic recursor** (term-eval ×
 //! list-eval, needed because a cons is a term *or* an argument list and

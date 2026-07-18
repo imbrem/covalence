@@ -53,7 +53,7 @@
 //!
 //! ## Status & north stars
 //!
-//! See `SKELETONS.md` (co-located) for deferrals: symbol interning for `set.mm`
+//! See the generated open-work index (co-located) for deferrals: symbol interning for `set.mm`
 //! scale/performance, the structured-tree encoding, the canonical `.mm`
 //! serializer, the HOL-backed [`DatabaseSink`], and the consumer-side `#logic` /
 //! `Derivable_L` correspondence layer (in `covalence-init`).

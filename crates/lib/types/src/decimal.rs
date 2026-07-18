@@ -59,7 +59,7 @@ impl Decimal {
     /// (NOTE: the numeral-literals-api spec writes this example as
     /// `Decimal(15000, 0)`, which denotes `15000 ≠ 1.5e3`; that figure is an
     /// arithmetic slip in the spec. We keep `to_rat` sound by producing the
-    /// mathematically-correct value. See the crate SKELETONS entry.)
+    /// mathematically-correct value. See the crate source-local TODO markers entry.)
     ///
     /// `frac` is given as the raw decimal digits following the point (each
     /// `0..=9`); its length is the number of fractional places.
@@ -217,7 +217,7 @@ mod tests {
     fn from_parts_sci() {
         // 1.5e3 = 1500. d = 15, places = 1, exp = 3 -> m = 15 * 10^(3-1),
         // k = 0. (The spec's `Decimal(15000, 0)` figure is an arithmetic slip;
-        // see the crate SKELETONS note — we keep to_rat sound at 1500.)
+        // see the crate source-local TODO markers note — we keep to_rat sound at 1500.)
         let d = Decimal::from_parts(Int::from(1i64), &[5], 3);
         assert_eq!(d.mantissa(), &Int::from(1500i64));
         assert_eq!(d.scale(), 0);

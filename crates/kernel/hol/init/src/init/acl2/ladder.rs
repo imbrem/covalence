@@ -23,7 +23,7 @@
 //! **PROMOTION FLAG:** this module is metalogic-shaped but ACL2-homed —
 //! `metalogic/` is outside the current edit area. When it is promoted to
 //! `metalogic/`, `peano/pa.rs` and `metalogic/toy.rs` should migrate onto
-//! it (tracked in this directory's `SKELETONS.md`).
+//! it (tracked in this directory's the generated open-work index).
 
 use covalence_core::{Result, Term};
 use covalence_hol_eval::EvalThm as Thm;

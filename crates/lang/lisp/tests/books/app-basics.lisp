@@ -45,7 +45,7 @@
 
 ; The universally quantified staples. These need induction, which the book
 ; pipeline does not wire yet (the kernel-side S6 route exists — see
-; crates/lang/lisp/SKELETONS.md): honestly rejected, never faked.
+; source-local TODO markers): honestly rejected, never faked.
 
 (defthm app-assoc
   (equal (app (app x y) z) (app x (app y z))))

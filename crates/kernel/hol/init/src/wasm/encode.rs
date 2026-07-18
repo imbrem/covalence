@@ -57,7 +57,7 @@
 //! One alignment gap remains for `int`: [`super::denote`] renders `Int` at HOL
 //! type `int` (`mk_int`), while the encoding carries a sign/magnitude `nat`
 //! pair — `int` side conditions can't yet share one witness (see
-//! `SKELETONS.md`).
+//! the generated open-work index).
 //!
 //! ## Why substitution = `all_elim` (the key idea)
 //!
@@ -95,7 +95,7 @@
 //! leg). The one remaining **coarse** position: non-expression `call` arguments
 //! (`Typ`/`Gram`) are dropped from tag and children (measured: every corpus
 //! `Typ` arg is a plain type variable; `Gram` args never occur) — recorded in
-//! `SKELETONS.md`.
+//! the generated open-work index.
 
 use std::sync::LazyLock;
 

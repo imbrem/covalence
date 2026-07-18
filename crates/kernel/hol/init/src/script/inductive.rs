@@ -30,7 +30,7 @@
 //! (a binary tree, a custom enum), those facts require carving the type out
 //! of a carrier (`new_type_definition`) and *deriving* freeness + a recursor
 //! spec — machinery the engine does not yet expose generically (see the
-//! report / `SKELETONS.md`). So the prototype wires the **one metalogic type
+//! report / the generated open-work index). So the prototype wires the **one metalogic type
 //! the engine supports end to end — `nat`** — through the directive: the
 //! `nat` shape `(#inductive nat (zero) (succ nat))` elaborates to the
 //! kernel-primitive freeness/induction adapter and emits a genuine recursion

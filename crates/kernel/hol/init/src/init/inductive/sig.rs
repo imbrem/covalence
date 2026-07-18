@@ -6,7 +6,7 @@
 //! has the inductive type `T` itself, never `F⟨T⟩` under some other
 //! functor `F`. That covers `nat` (`zero`, `succ`), `list` (`nil`,
 //! `cons`), binary trees, and the like; nested / mutual / infinitary
-//! types are deliberately out of scope (see `SKELETONS.md`).
+//! types are deliberately out of scope (see the generated open-work index).
 //!
 //! A signature is a *description*, not a proof: it names the type, the
 //! impredicative relation variable used in the graph construction, and

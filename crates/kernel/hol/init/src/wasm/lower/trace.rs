@@ -29,7 +29,7 @@
 //! folds them through `Steps/trans` onto a final `Steps/refl`. Automatic
 //! per-step rule *search* over ground configurations (the
 //! `k::relation::prove_reduces` matcher pattern) is a follow-on — see
-//! `wasm/SKELETONS.md`.
+//! the generated open-work index.
 
 use std::collections::BTreeMap;
 

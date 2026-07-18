@@ -15,7 +15,7 @@
 //! wall** when *constructing* an induction derivation: its induction clause
 //! quantifies a motive `Q : 't→'r` and `all_cons(Q)` β-closes the Church
 //! handlers around a *free* `Q`, so instantiating a concrete arithmetic motive
-//! leaves handlers un-captured (see `peano/SKELETONS.md`). That wall is an
+//! leaves handlers un-captured (see the generated open-work index). That wall is an
 //! **artifact of the impredicative encoding**. In Metamath, constructing a
 //! derivation means *exhibiting a concrete proof*, and an induction step is just
 //! a **substitution instance of the induction schema** — `metamath::subst`

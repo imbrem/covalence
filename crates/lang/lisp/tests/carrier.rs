@@ -20,7 +20,7 @@
 //!   differ* (carrier types, atom encodings) while the rendered value
 //!   agrees — the differences are displayed, not erased. (The full §3.1
 //!   metacircular two-dialect demonstration needs the slice-2/4 reduction
-//!   seams and stays deferred; see `SKELETONS.md`.)
+//!   seams and stays deferred; see the generated open-work index.)
 //! - **Negative controls**: dialect-honest refusals (no integer atoms in
 //!   `sector`, the ACL2 `asym "NIL"` contract, `NatVariant` negatives,
 //!   stuck `proj`) error cleanly, minting nothing.

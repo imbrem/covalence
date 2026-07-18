@@ -27,7 +27,7 @@
 //! `n = 2` instance. `>`/`>=` are normalised to `<`/`<=` upstream in
 //! [`crate::hol`], so we only see `int.lt` / `int.le` here.
 //!
-//! Still **`NotImplemented`** (see `SKELETONS.md`): non-unit / rational
+//! Still **`NotImplemented`** (see the generated open-work index): non-unit / rational
 //! coefficients (needs [`int::lt_mul_pos`] to scale a strict literal and
 //! `int::lt_add_mono` to add inequalities), non-strict (`≤`) literals and
 //! le/lt mixing (needs [`int::le_def`] + `lt_trichotomy`), and the general
@@ -80,7 +80,7 @@ pub fn la_generic(lits: &[Term], args: &[covalence_sexp::SExpr]) -> R<Thm> {
     }
 
     // Every literal must be a strict `int.lt`. (Non-strict `≤` mixing is
-    // deferred — see SKELETONS.md.)
+    // deferred — see source-local TODO markers.)
     let edges: Vec<(Term, Term)> = atoms
         .iter()
         .map(|a| {

@@ -23,7 +23,7 @@
 //! theorem in PA never builds the corresponding HOL theorem. The derivation
 //! constructors ([`derive_axiom`], [`derive_mp`]) are the way to obtain one
 //! (the LCF discipline one level up); the quantifier/induction/Leibniz
-//! constructors are deferred (see `peano/SKELETONS.md` — they need a
+//! constructors are deferred (see the generated open-work index — they need a
 //! handler-threading motive encoding), though their `Closed_PA` *clauses* are
 //! present and proved sound by [`soundness`].
 //!

@@ -175,7 +175,7 @@ grammar, parse it ourselves. Landed:
   empty (structural CFG only), `KDomains` injects the standard K token regexes so
   the CFG recognises real tokens; a future resolver could follow `imports`
   transitively. (Inter-token layout/whitespace is a separate scanner concern, not
-  yet modelled — see `SKELETONS.md`.)
+  yet modelled — see the generated open-work index.)
 
 It parses the real **LAMBDA** and **IMP** tutorial grammars (vendored BSD-3 in
 `crates/lang/k/examples/k-tutorial/`). This surface is independent of the KORE
@@ -245,7 +245,8 @@ mirror from `wasm-spec.md`, replayed for K.
   conditional rules skipped + reported) and `reduce::step` mints a concrete
   `⊢ Derivable_KStep ⌜Step(cfg, cfg')⌝` via `metalogic::apply` — hypothesis-free,
   kernel-checked, TCB unchanged. End-to-end test parses textual KORE →
-  `Step(count(0), done)`. Skeletons in `src/k/SKELETONS.md`.
+  `Step(count(0), done)`. Remaining work has stable IDs in
+  `docs/todos/todos.json`.
 - **Landed (`.k` grammar frontend):** `covalence-k::kdef` — a winnow-based
   parser for K's `.k` `syntax` declarations + S-expr IR + `covalence_grammar::Cfg`
   lowering with the swappable `SortResolver` strategy for imported builtin sorts.

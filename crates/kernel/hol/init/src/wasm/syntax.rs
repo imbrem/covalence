@@ -50,7 +50,7 @@
 //! Faithfulness caveat (not a rendering failure): case/field **refinement
 //! premises** (`prs`, 56 across 29 spec types) are erased — e.g. `byte` renders
 //! as an unconstrained `nat` without its `< 256` side condition. Rendered types
-//! over-approximate; nothing derives theorems from them. See `SKELETONS.md`.
+//! over-approximate; nothing derives theorems from them. See the generated open-work index.
 
 use std::collections::{BTreeMap, BTreeSet};
 

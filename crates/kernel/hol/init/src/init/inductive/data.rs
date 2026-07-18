@@ -23,7 +23,7 @@
 //!
 //! Keeping every engine entry point generic over `I: Inductive` (never
 //! over a concrete `nat`) is what keeps that door open; see
-//! `SKELETONS.md` for the planned `nat`-from-`ind` construction.
+//! the generated open-work index for the planned `nat`-from-`ind` construction.
 
 use covalence_core::Result;
 

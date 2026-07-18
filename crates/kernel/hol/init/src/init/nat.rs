@@ -2880,7 +2880,7 @@ cached_thm! {
 // `m≠0 ⟹ d·m ≤ n < (d+1)·m`); transferring those bounds to `nat.div` itself
 // needs a *witness* floor function — built by strong induction over the graph,
 // like the `natRec` construction. That witness is deferred (see
-// `init/SKELETONS.md`). What IS reachable now, hypothesis-free, is `nat.mod`'s
+// the generated open-work index). What IS reachable now, hypothesis-free, is `nat.mod`'s
 // *definition* (it is an ordinary `let`): `mod n m = n − (n/m)·m`.
 
 #[allow(dead_code)] // the `div`/`mod` term-builder pair (used in tests + future div facts)

@@ -49,7 +49,7 @@
 //!   defining membership; and [`star_contains_epsilon`] — `ε ⊆ L*` (one
 //!   half of the star unfolding's closure direction).
 //!
-//! # What is deferred (see `SKELETONS.md`)
+//! # What is deferred (see the generated open-work index)
 //!
 //! - **`concat_assoc`** and the **`epsilon` concat identities** (`ε·L = L`,
 //!   `L·ε = L`) at the term level. The *one-point* existential rule
@@ -341,7 +341,7 @@ fn false_eq_of(p: &Term, pf_p_to_false: Thm) -> Result<Thm> {
 //
 // giving the **closure direction** `ε ∪ L·L* ⊆ L*` of the unfolding. The
 // reverse `L* ⊆ ε ∪ L·L*` is the genuine least-fixpoint / induction half —
-// deferred (see `SKELETONS.md`).
+// deferred (see the generated open-work index).
 
 /// `subset[μ] s t : bool`.
 fn subset(mu: &Type, s: &Term, t: &Term) -> Term {
@@ -436,7 +436,7 @@ pub fn star_contains_epsilon(m: &Monoid, l: &Term) -> Result<Thm> {
 /// i.e. it is closed under one more `L`-step. Genuine (hypothesis- and
 /// oracle-free). This is the second half of the *closure direction* of the
 /// star unfolding (the first being [`star_contains_epsilon`]); the reverse
-/// least-fixpoint half stays deferred (see `SKELETONS.md`).
+/// least-fixpoint half stays deferred (see the generated open-work index).
 ///
 /// **Proof.** Pointwise: assume `w ∈ L·L*`. By [`mem_concat`] this is
 /// `∃x y. x∈L ∧ y∈L* ∧ w = op x y`. Fix an arbitrary closed `S`

@@ -17,7 +17,7 @@
 //! runs unchanged, proving that genuine `list` structural recursion is
 //! available.
 //!
-//! See `SKELETONS.md` for what rides on top (the `list_foldr` / `list_foldl`
+//! See the generated open-work index for what rides on top (the `list_foldr` / `list_foldl`
 //! catalogue equations — a *catamorphic* specialisation of the paramorphic
 //! recursor the engine produces).
 

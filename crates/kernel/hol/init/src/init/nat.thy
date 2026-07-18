@@ -15,7 +15,7 @@
 ;; re-elaborating each in the kernel env reproduces exactly the `nat.cov`
 ;; conclusion. A carrier-abstract presentation (over a `tfree` sort,
 ;; re-elaborated at any structure with a `natrec`) is deferred — see
-;; `init/SKELETONS.md`.
+;; the generated open-work index.
 (#thy nat
   (over nat)
   (#spec succ.ne_zero

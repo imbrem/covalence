@@ -20,7 +20,7 @@
 //! code. Nothing is trusted from the text — the kernel re-derives every
 //! theorem. See `drv.rs`'s docs.
 //!
-//! Two directions are deliberately **not** built yet (see SKELETONS.md):
+//! Two directions are deliberately **not** built yet (see source-local TODO markers):
 //! pretty-printing a proof / `Term` back to this syntax, and content-hashing
 //! proof terms for lemma-by-hash references. Authoring (parse +
 //! replay) is the immediate goal: porting the Rust `init/` theorems.
@@ -58,7 +58,7 @@ use futures::FutureExt;
 /// async-prover API shape — `run` → `LazyTheory`, force → `Theory`. The
 /// machinery that makes a theorem genuinely *open* (proof holes / obligations)
 /// awaits a clean channel-based design (`#hole` receives from an
-/// env channel that `#fill` pushes to); see SKELETONS.md. Resolving is
+/// env channel that `#fill` pushes to); see source-local TODO markers. Resolving is
 /// trivial today — nothing is ever pending.
 pub struct LazyTheory {
     /// The explicitly-exported public interface (`(#export …)`).
@@ -234,7 +234,7 @@ pub fn run(
 /// `resolver`-supplied [`Import`] future, so an imported theory can be produced
 /// lazily / remotely / while still in progress. Everything else runs
 /// synchronously and in order (the cooperative scheduler that lets a *blocked*
-/// statement yield to the next is future work — see SKELETONS.md).
+/// statement yield to the next is future work — see source-local TODO markers).
 pub async fn run_async(
     src: &str,
     resolver: impl Fn(&str) -> Option<Import>,
@@ -287,7 +287,7 @@ pub async fn run_async(
             }
             // `(#dep NAME)` — force a dependency: a synchronous availability
             // guard today; the real `await`-until-`NAME`-completes semantics
-            // depend on the cooperative scheduler (see SKELETONS.md).
+            // depend on the cooperative scheduler (see source-local TODO markers).
             Stmt::Dep(name) => {
                 let known = internal.has_lemma(&name)
                     || internal.lookup_const(&name).is_some()
@@ -357,7 +357,7 @@ pub async fn run_async(
             // proof's `(NAME)` (by name) (or the force) simply **awaits** it,
             // polling it on the shared runtime. No blocking thread, no nested
             // `block_on` — any genuinely blocking work is the FFI tactic's own
-            // responsibility (see SKELETONS.md / notes/vibes/surface-syntax.md).
+            // responsibility (see source-local TODO markers / notes/vibes/surface-syntax.md).
             Stmt::Spawn(sexpr) => {
                 let ch = syntax::list(&sexpr, "#spawn")?;
                 let name = syntax::sym(&ch[1], "spawn name")?.to_string();
@@ -394,7 +394,7 @@ pub async fn run_async(
             // The SAME nested proof text dispatches to whichever model is named
             // — the surface form of the model-replay (`notes/vibes/surface-compiler.md`
             // §2/§3). Only `#thm` is supported inside a block today (enough to
-            // replay `add_comm`); richer nesting is future work (SKELETONS).
+            // replay `add_comm`); richer nesting is future work (source-local TODO markers).
             Stmt::In { model, body } => {
                 let mut scoped = internal.clone();
                 scoped.open(&model)?;
@@ -532,7 +532,7 @@ pub fn run_str(src: &str) -> Result<Vec<NamedThm>, ScriptError> {
 /// A structured top-level script directive — the first stage of the eventual
 /// parse → untyped-elaborate → typecheck → typed-elaborate → execute pipeline.
 /// (`#thm` bodies stay as raw `SExpr` for now; their typed elaboration is a
-/// later stage. Source extents are not yet carried — see SKELETONS.md.)
+/// later stage. Source extents are not yet carried — see source-local TODO markers.)
 enum Stmt {
     /// `(#import NAME)` — resolve and register NAME (the async step).
     Import(String),

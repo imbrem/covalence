@@ -72,7 +72,7 @@
 //! statement of soundness is deferred (it needs the rule-induction `inst` +
 //! the slow `lang` discharge; stays Rust-proved in [`soundness`]).
 //!
-//! ## What is deferred (see `SKELETONS.md`)
+//! ## What is deferred (see the generated open-work index)
 //!
 //! - **`Matches`-completeness** (`mem w ⟦r⟧ ⟹ Matches r w`, the converse of
 //!   soundness): needs the least-fixpoint half of the star unfolding.
@@ -1035,7 +1035,7 @@ crate::cov_theory! {
     /// seven matching-rule givens (`all-elim`) and chaining sub-derivations into
     /// their premises (`imp-elim`); the `seq`/`star` theorems exercise the
     /// existential (`cat`-split) matching rules. A `.cov` statement of
-    /// *soundness* is deferred (see `SKELETONS.md`); it stays Rust-proved in
+    /// *soundness* is deferred (see the generated open-work index); it stays Rust-proved in
     /// [`soundness`].
     pub mod cov from "regex.cov" {
         import "core" = crate::script::Env::core();
@@ -1054,7 +1054,7 @@ crate::cov_theory! {
 // ============================================================================
 //
 // This module gives the *recognition* semantics (a word matches a regex iff it
-// is in the denoted language). Two follow-ons, deferred to `SKELETONS.md`:
+// is in the denoted language). Two follow-ons, deferred to the generated open-work index:
 //
 // ## Ambiguity (multiple derivations of one match)
 //

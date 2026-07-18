@@ -19,9 +19,9 @@ notes tiers:
    *Context / problem*, *Goals / non-goals*, and a first *Proposal*. Mark it
    **Draft** and add a row to the table below.
 2. Iterate on **Open questions** turn by turn — that section is the conversation.
-   Keep the doc grounded in the code (link crates/files/SKELETONS).
+   Keep the doc grounded in the code (link crates/files/stable TODO IDs).
 3. When the shape settles, mark it **Accepted** and start the work; record
-   deferred pieces as skeletons in the nearest `SKELETONS.md` and link them.
+   deferred pieces as source-local `TODO(cov:...)` markers and link their IDs.
 4. When it lands, fold durable content into [`../../docs/`](../../docs/README.md)
    (maintainer-authored) or mark the doc **Superseded** and link the successor.
    Don't leave accepted docs to rot.

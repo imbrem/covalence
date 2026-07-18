@@ -96,7 +96,7 @@ async function findNativeBinary(
   }
 
   // 2. PATH lookup (Linux only for now)
-  // TODO: enable macOS once tested
+  // TODO(cov:vscode.macos-native-server, minor): Enable the native macOS server path once tested.
   if (process.platform !== "linux") {
     channel.appendLine(
       `Native detection: skipped (platform: ${process.platform})`,

@@ -27,7 +27,7 @@
 //!
 //! The deeper, **carrier-generic** model (specs over a `tfree` sort,
 //! re-elaborated at any structure carrying a `natrec`, with `nat/self` only one
-//! instance) is deferred — see `SKELETONS.md`.
+//! instance) is deferred — see the generated open-work index.
 
 use crate::script::{Env, Scope, ScriptError, syntax};
 

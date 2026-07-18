@@ -6,7 +6,7 @@
 //! - [`Nat`] over HOL `nat` — every axiom a genuine, hypothesis-free
 //!   theorem proved by induction in [`crate::init::nat`].
 //! - [`Int`] over HOL `int` — the axioms forward to [`crate::init::int`]
-//!   (postulated for now; see `SKELETONS.md`). [`Int`] additionally
+//!   (postulated for now; see the generated open-work index). [`Int`] additionally
 //!   implements [`Ring`](crate::algebra::ring::Ring).
 //!
 //! Both reuse the same generic HOL equational core (the private `eqn`

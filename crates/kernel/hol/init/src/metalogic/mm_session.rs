@@ -37,7 +37,7 @@
 //! It is the caller's responsibility (as with `replay_db`) that the composed
 //! instance is a legitimate Metamath step; the HOL theorem is genuine either way,
 //! but a `$d`-violating composite would not be a valid Metamath proof. This is the
-//! *same* caveat the replay carries. See [`SKELETONS.md`](./SKELETONS.md).
+//! *same* caveat the replay carries. See the generated open-work index.
 
 use fnv::FnvHashMap as HashMap;
 

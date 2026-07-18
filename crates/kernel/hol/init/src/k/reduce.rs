@@ -24,7 +24,7 @@
 //! [`rule_set`] lowers only rules with no `requires` (a conditional rule needs
 //! the hooked-`Bool` theory — F1; see `notes/design/k-frontend.md`). Multi-step
 //! reduction `A →* B` is a *chain* of these single steps; the reflexive-transitive
-//! closure relation is a later slice (see `SKELETONS.md`).
+//! closure relation is a later slice (see the generated open-work index).
 //!
 //! ## Reachability, not equality
 //!

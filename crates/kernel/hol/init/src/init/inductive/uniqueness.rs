@@ -36,7 +36,7 @@
 //!
 //! Determinacy (`∀t a b. Graph t a ⟹ Graph t b ⟹ a = b`) builds on these
 //! in [`super::determinacy`]; only the ε-assembly remains in
-//! [`crate::init::recursion`] (see `SKELETONS.md`).
+//! [`crate::init::recursion`] (see the generated open-work index).
 
 use covalence_core::{Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;

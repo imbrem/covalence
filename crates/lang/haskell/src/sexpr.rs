@@ -46,7 +46,7 @@
 //! *bare* (see [`is_bare_symbol`]): non-empty, free of delimiter characters,
 //! and not all digits. Symbols produced by the Haskell front end are always
 //! bare; there is no quoted-symbol form (`|…|`) in this grammar — see the
-//! crate `SKELETONS.md`.
+//! crate the generated open-work index.
 //!
 //! # Relation to `covalence-sexp` and the kernel reader
 //!

@@ -130,7 +130,7 @@ let_term! {
 }
 
 // ============================================================================
-// Ops still without a definitional body (TODO: land via natRec / Euclidean
+// Ops still without a definitional body (TODO(cov:kernel.hol.eval.nat-definitional-bodies, major): Land via natRec / Euclidean
 // recursion / Hilbert ε on uniqueness):
 //
 //   natDiv, natMod (Euclidean — predicate-style ε needed),

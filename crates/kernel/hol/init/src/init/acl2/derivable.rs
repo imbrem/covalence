@@ -1534,7 +1534,7 @@ fn var_images(tm: &Terms, enc: &Term, sg: &Term) -> Result<Vec<Term>> {
 /// β-expand to `⊢ pred ⌜ax⌝`. Every arm fails safe: a wrong or
 /// unprovable supplied theorem/hook makes a kernel rule error — no
 /// theorem is ever minted (this is the API that filled the old
-/// "S4+ axiom-discharge gap" SKELETONS entry).
+/// "S4+ axiom-discharge gap" source-local TODO markers entry).
 fn discharge_axiom(env: &Acl2Env, pred: &Term, row: &AxiomRow) -> Result<Thm> {
     let tm = &*env.tm;
     match &row.discharge {
@@ -2870,7 +2870,7 @@ pub fn transport_equal(env: &Acl2Env, projected: &Thm) -> Result<Thm> {
 /// bound names must be distinct — otherwise an uncovered variable would
 /// be *silently specialized to `anil`* by the default arm. Errors — and
 /// mints nothing — on coverage failure or a non-`EQUAL` conclusion
-/// (`IMPLIES`-form open transport stays deferred; SKELETONS).
+/// (`IMPLIES`-form open transport stays deferred; source-local TODO markers).
 pub fn transport_equal_open(
     env: &Acl2Env,
     projected: &Thm,

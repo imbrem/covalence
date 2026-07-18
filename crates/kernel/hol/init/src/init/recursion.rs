@@ -24,7 +24,7 @@
 //!
 //! What remains is one direction of *lifting*, not construction: deriving
 //! a non-kernel `Inductive` impl (e.g. `nat`-from-`ind`, or `list`) to feed
-//! the same engine. See `SKELETONS.md`.
+//! the same engine. See the generated open-work index.
 //!
 use covalence_core::{Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;

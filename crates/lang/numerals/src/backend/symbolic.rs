@@ -157,7 +157,7 @@ impl NumeralBackend for Symbolic {
 
     fn ground_f32(&self, _value: &Decimal) -> FloatCert32<EvalThm> {
         // The rounding-enclosure certificate is not proved yet — see
-        // `crates/lang/numerals/SKELETONS.md`. We do not fabricate one.
+        // `source-local TODO markers`. We do not fabricate one.
         FloatCert32::Unproven
     }
 }

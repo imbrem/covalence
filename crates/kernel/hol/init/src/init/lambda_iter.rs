@@ -114,7 +114,7 @@
 //!   recursion — what the bounded approximation `B : nat → (nat → 'a)` runs on)
 //!   and [`nat_zero_or_succ`].
 //!
-//! **Deferred** (see this crate's `SKELETONS.md`):
+//! **Deferred** (see this crate's the generated open-work index):
 //!
 //! * **Encoding + metatheorems** — pairing/tags, `WfTyCode`/`El`/`Typed` (now
 //!   definable by the course-of-values recursion above), and subtyping

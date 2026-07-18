@@ -45,7 +45,7 @@
 //! at the `nat` signature end to end. What remains is *lifting* — supplying
 //! a non-kernel [`Inductive`] impl (`nat`-from-`ind`, or `list`'s derived
 //! induction + freeness) to drive the same engine — and the
-//! multi-recursive-argument cases. Both are tracked in `SKELETONS.md`.
+//! multi-recursive-argument cases. Both are tracked in the generated open-work index.
 //!
 //! ## The inductive-types API (`covalence-inductive`)
 //!

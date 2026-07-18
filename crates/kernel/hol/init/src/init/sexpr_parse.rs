@@ -45,7 +45,7 @@
 //!
 //! The `string` (list char) counterpart, the ASCII string⇄bytes agreement,
 //! the total parse-invariant (`fuel`-monotone success), and reader
-//! associativity are recorded as follow-ups in `SKELETONS.md`.
+//! associativity are recorded as follow-ups in the generated open-work index.
 
 use covalence_core::{IntTag, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;

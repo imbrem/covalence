@@ -16,7 +16,7 @@ edition = "2024"
 # arbitrary-precision `Nat` (covalence-types, kernel-independent), never a
 # machine integer; the parsers are hand-rolled.
 #
-# Deferred work: crates/lang/haskell/SKELETONS.md.
+# Deferred work: source-local TODO markers.
 
 [dependencies]
 # The covalence arbitrary-precision `Nat` (the type of Haskell nat literals

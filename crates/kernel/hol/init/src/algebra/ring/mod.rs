@@ -18,7 +18,7 @@
 //!
 //! [`crate::algebra::semiring::Int`] implements [`Ring`] over HOL `int` (the
 //! additive-inverse axioms forward to [`crate::init::int`], postulated for
-//! now; see `SKELETONS.md`). `nat` is deliberately *not* a `Ring` — it has
+//! now; see the generated open-work index). `nat` is deliberately *not* a `Ring` — it has
 //! no additive inverses — so it implements only [`Semiring`]. The future
 //! `rat` / `real` carriers will implement `Ring` (and, eventually, `Field`).
 

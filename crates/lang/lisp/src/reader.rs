@@ -2,7 +2,7 @@
 //!
 //! Materializes the [`SExpr`] tree (the simplest correct thing). The
 //! event-driven fold-to-`Term` path (`SExpBuilder` / `TreeBuilder`) is a
-//! future allocation optimization; see `SKELETONS.md`.
+//! future allocation optimization; see the generated open-work index.
 
 use covalence_sexp::{ParseError, SExpr, parse};
 

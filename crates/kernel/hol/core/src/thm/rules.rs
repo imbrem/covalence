@@ -866,7 +866,7 @@ mod manifest_tests {
             !(transitional && structural),
             "ToHolNatVal (literal denotation) and the structural succ-tower rules \
              must never be admitted together — they pin contradictory `toHOL` \
-             denotations (see thm/SKELETONS.md)"
+             denotations (see thm/source-local TODO markers)"
         );
     }
 

@@ -41,7 +41,7 @@
 //! — and, generally, evaluating an expression to a constant `⊢ e = Val(eval(e))` — is
 //! the planned `Evaluate` trait, kept out of the TCB for now because it must preserve
 //! the `admits` gate on op evaluation and needs the builtin arithmetic ops. See
-//! SKELETONS.)
+//! source-local TODO markers.)
 //!
 //! ## What leaf equality *means* here (the definitional framing)
 //!

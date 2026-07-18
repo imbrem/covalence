@@ -4,7 +4,7 @@
 # canonical S-expression rendering of that AST (the interchange IR), and a
 # fragment classifier sorting kompiled axioms into the rewrite/function/
 # constructor/… ladder. No kernel deps — the lowering into `covalence-init`
-# comes later. Deferred work: crates/lang/k/SKELETONS.md.
+# comes later. Deferred work: source-local TODO markers.
 
 [package]
 name = "covalence-k"

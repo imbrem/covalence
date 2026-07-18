@@ -294,7 +294,7 @@ fn wasm_preamble_matches() {
 // ============================================================================
 
 // `prove_member` chains `init::regex::soundness_at`, whose `lang`-discharge is
-// very slow (minutes for a single call — see the regex `SKELETONS.md`). The
+// very slow (minutes for a single call — see the regex the generated open-work index). The
 // no-match path is cheap, but the membership proof is opt-in via `--ignored` so
 // the default run stays fast.
 #[test]
@@ -303,7 +303,7 @@ fn member_no_match_is_none() {
 }
 
 #[test]
-#[ignore = "first prove_member call runs the slow soundness `lang`-discharge (~minutes); see regex SKELETONS"]
+#[ignore = "first prove_member call runs the slow soundness `lang`-discharge (~minutes); see regex source-local TODO markers"]
 fn member_chains_to_language_membership() {
     // `a|b` against "a" lands `⊢ mem [a] ⟦a|b⟧`. The first call warms the
     // cached byte-alphabet `Closed D` proof.

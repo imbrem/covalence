@@ -29,7 +29,7 @@
 //!   choice bites.
 //!
 //! The general **scale-and-sum** Farkas refutation (non-unit coefficients) still
-//! needs a linear ring normaliser — see `SKELETONS.md`. [`crate::farkas`]
+//! needs a linear ring normaliser — see the generated open-work index. [`crate::farkas`]
 //! already validates those certificates as data.
 
 use covalence_hol_api::{Discharger, Hol, LinOrder, Strict};

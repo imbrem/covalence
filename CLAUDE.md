@@ -2,43 +2,38 @@
 
 Experimental VCS and theorem prover. Monorepo with Rust crates, a VSCode browser extension, and a SvelteKit web app.
 
-## Skeletons (STRICT)
+## Open work database (STRICT)
 
-The **SKELETONS** registry records every intentional placeholder in the repo:
-empty/stub modules, removed-pending-rewrite subsystems, `NotImplemented` /
-`todo!()` / `unimplemented!()` stubs, and any test that is commented out,
-`#[ignore]`d, or deleted "for later".
+Every intentional placeholder—empty/stub modules, removed-pending-rewrite
+subsystems, `NotImplemented` / `todo!()` / `unimplemented!()` stubs, and tests
+disabled or deleted "for later"—must have a stable marker beside the responsible
+code:
 
-It is **split per crate** (the root [`SKELETONS.md`](./SKELETONS.md) is just an
-index of the per-crate files):
+```rust
+// TODO(cov:hol.script.source-spans, severe): Thread source spans through script errors.
+// FIXME(cov:kernel.deep-check, severe): Enforce DeepCheck separately from dependency trust.
+// PERF(cov:metamath.symbol-interning, major): Intern symbols for set.mm-scale imports.
+```
 
-- Each crate keeps its own **`crates/<group>/<crate>/SKELETONS.md`**.
-- A large crate may split *further by module*: its `crates/<group>/<crate>/SKELETONS.md`
-  becomes an index, and each module's skeletons live in a co-located
-  **`crates/<group>/<crate>/src/<module>/SKELETONS.md`** (e.g.
-  `crates/kernel/hol/init/src/init/SKELETONS.md`,
-  `crates/kernel/hol/init/src/script/SKELETONS.md`).
+Kinds are `TODO`, `FIXME`, `SKELETON`, and `PERF`; severity is `severe`, `major`,
+or `minor`. IDs are unique lowercase dotted/dashed names and remain stable when
+code moves. Use `FIXME` for incorrect, unsound, or adversarial-input-sensitive
+behavior; `PERF` for measured inefficiency; `SKELETON` for an intentionally empty
+implementation; otherwise use `TODO`.
 
-**Whenever you leave a skeleton — stub an operation, gut a module, disable or
-delete a test "for now", or drop in a placeholder — you MUST add a matching
-entry to the SKELETONS file *nearest the code* (the module's file if one exists,
-else the crate's) in the same change.** When you fill a skeleton in, delete its
-entry. If you add the first skeleton to a crate/module that has no file yet,
-create it and link it from the parent index. Never silently leave work
-unfinished; record it where it is discoverable next to the code.
+Run `bun run todos` to rebuild the deterministic
+`docs/todos/todos.json` index and cached `target/covalence-todos.sqlite`
+database. Query with `bun run todos -- --list` and optional `--crate`,
+`--severity`, `--kind`, or `--search` filters. CI runs `bun run todos:check`.
 
-**Format (keep it short — these files are loaded into context, so they cost
-tokens):**
+Only open work belongs in markers. Delete a marker when its acceptance condition
+is satisfied; never turn it into a changelog. Keep the marker terse, and put
+design rationale/status history in `notes/vibes/` with a link where useful.
 
-- **Only open work.** Never describe *completed* work in a SKELETONS file — when
-  a skeleton is filled, delete its entry (don't rewrite it to "done"). A
-  SKELETONS file is a TODO list, not a changelog.
-- **Severe at the top, minor at the bottom.** Order entries by impact: blocking
-  gaps / missing core functionality first; nice-to-haves and polish last. A
-  `## Severe` / `## Minor` split is fine when a file has many entries.
-- **One terse line or two per entry.** Name the stub and what's missing. Push
-  long rationale, design context, or status history into a separate Markdown doc
-  (under `notes/vibes/`) and link it; don't inline it here.
+The portfolio-level current-state report, workstream ownership boundaries, and
+dependency DAG live in
+[`notes/vibes/plans/workstreams-and-state-report.md`](./notes/vibes/plans/workstreams-and-state-report.md).
+The concise agent entry point is [`AGENTS.md`](./AGENTS.md).
 
 ## Build & Run
 
@@ -72,6 +67,8 @@ bun run fmt                # cargo fmt --all (also runs on commit via .githooks/
 bun run fmt:check          # cargo fmt --all --check (the CI fmt gate)
 bun run deps               # regenerate docs/deps/ dep graph + TCB closure (runs on commit)
 bun run deps:check         # fail if docs/deps/ is stale (the CI deps gate)
+bun run todos              # regenerate/query the source-local open-work database
+bun run todos:check        # fail if the checked-in TODO index is stale
 bun test                   # run all tests (Rust + Python)
 bun run test:python        # run Python tests only
 bun run build:python       # build Python extension (maturin develop)
@@ -140,7 +137,7 @@ loads for the task at hand: **crate-map** (the per-crate catalogue),
 
 **Maintain them.** When you learn something durable about a subsystem — a
 gotcha, a workflow, where a thing lives — update the relevant skill (or add one)
-in the same change, the way you keep `SKELETONS.md` current. Keep CLAUDE.md thin:
+in the same change, the way you keep source-local open-work markers current. Keep CLAUDE.md thin:
 push reusable domain knowledge into skills, not here. And actively look for ways
 to work more effectively — capture repeatable procedures as skills.
 

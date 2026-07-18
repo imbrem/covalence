@@ -7,7 +7,7 @@
 //! neutral wire digest (and from every other BLAKE3 use in the workspace).
 //!
 //! Coln's analogue (a Sedimentree address) is not modelled here — see this
-//! crate's `SKELETONS.md`.
+//! crate's the generated open-work index.
 
 use covalence_hash::{COV_ROOT, HashCtx, O256};
 

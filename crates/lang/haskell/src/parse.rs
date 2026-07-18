@@ -49,7 +49,7 @@
 //!
 //! Everything else (do-notation, guards, `where`, `case`, pattern matching,
 //! multi-clause definitions, full layout, `data`/`class`/`instance`) is out of
-//! scope — see the crate `SKELETONS.md`.
+//! scope — see the crate the generated open-work index.
 
 use covalence_types::Nat;
 

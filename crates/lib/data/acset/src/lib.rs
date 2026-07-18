@@ -18,7 +18,7 @@
 //!   (objects, morphisms, and mapped attributes).
 //!
 //! Object/morphism/attribute names are `&'static str` (compile-time schemas);
-//! attribute values are the typed [`AttrVal`]. See `SKELETONS.md` for what is
+//! attribute values are the typed [`AttrVal`]. See the generated open-work index for what is
 //! deferred (Σ/Π migration, dynamic names, a query layer).
 
 use std::collections::HashMap;

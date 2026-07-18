@@ -13,7 +13,7 @@
 ;; Here we re-export each as a first-class `tree.cov` theorem (the proof just
 ;; `all-elim`s the seam given). `branch` injectivity + full structural
 ;; `tree` induction need the recursor's subtree-recovery identity (the `Wf`
-;; carve); they are deferred — see `init/SKELETONS.md`.
+;; carve); they are deferred — see the generated open-work index.
 ;;
 ;; The encoding's result type is `'r`; the freeness facts are taken at their
 ;; natural observation type, so the bound subtrees `l`/`r` of `branch` live in

@@ -41,7 +41,7 @@
 //! any `n ≥ 2` literals (e.g. `x < y ∧ y < z ∧ z < x ⟹ ⊥`) via
 //! `int::lt_trans` + `int::lt_irrefl`; non-unit coefficients, non-strict
 //! literals, and non-cyclic combinations are reported `NotImplemented`
-//! (see `SKELETONS.md`).
+//! (see the generated open-work index).
 //!
 //! cvc5's `hole` ("untranslated rewrite") is **re-derived, not trusted**:
 //! every hole is a unit clause `(cl L)` and `hole` proves `⊢ L` in the
@@ -51,7 +51,7 @@
 //! normalisation (`x + 1 = 1 + x`) or the linear-arithmetic core
 //! (`la_generic`, `la_mult_*`) has no shared normal form yet and is
 //! reported `NotImplemented`. Subproofs (`anchor` / `:discharge`) and the
-//! remaining rule families are likewise reported; see `SKELETONS.md`.
+//! remaining rule families are likewise reported; see the generated open-work index.
 
 use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;

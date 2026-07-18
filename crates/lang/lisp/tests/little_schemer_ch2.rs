@@ -148,7 +148,7 @@ fn defun_hyp_is_the_assumed_equation() {
 /// dispatched by `eq?` on the operator symbol (a *bool* condition, so it types
 /// in HOL). This is the slice of `metacircular.lisp` that runs today (the
 /// `assoc`/env and truthy-data-`cond` machinery is deferred — see
-/// `crates/lang/lisp/SKELETONS.md`).
+/// `source-local TODO markers`).
 const META_EVAL: &str = "(define eval (lambda (e a) (cond \
     ((eq? (car e) (quote quote)) (car (cdr e))) \
     ((eq? (car e) (quote car)) (car (eval (car (cdr e)) a))) \

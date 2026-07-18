@@ -49,7 +49,7 @@
 //! `not` / `or` / `exists` / `and` / `forall`, and the D3 residue type
 //! catalogue quantifies with them — which is exactly why these
 //! definitions are still core residue rather than eval catalogue: they
-//! move out with the literal-leaf endgame (see `SKELETONS.md`).
+//! move out with the literal-leaf endgame (see the generated open-work index).
 
 use crate::hol;
 use crate::term::{Term, Type};

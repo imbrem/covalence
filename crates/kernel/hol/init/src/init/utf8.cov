@@ -17,7 +17,7 @@
 ;; names (`catC`/`catB`).
 ;;
 ;; The FULL UTF-8 round-trip `utf8Decode (utf8Encode s) = some s` is deferred
-;; (see `init/SKELETONS.md`): it needs a validating decoder + a "decode peels
+;; (see the generated open-work index): it needs a validating decoder + a "decode peels
 ;; exactly one char's bytes off the front" lemma. The per-character round-trip
 ;; (`decode_ascii1_round_trip`, ASCII fragment) and this homomorphism are the
 ;; tractable genuine core.

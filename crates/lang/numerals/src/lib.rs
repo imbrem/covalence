@@ -30,7 +30,7 @@
 //! - [`Builtin`] — the same trait, but relationships are decided by the
 //!   kernel's existing `reduce` / `prove_true` CanonRule procedures (fast; and
 //!   it agrees with [`Symbolic`]).
-//! - `Wasm` — a verified-trace backend (**skeleton**; see `SKELETONS.md`).
+//! - `Wasm` — a verified-trace backend (**skeleton**; see the generated open-work index).
 
 #![forbid(unsafe_code)]
 

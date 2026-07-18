@@ -78,7 +78,7 @@ static TWINS: LazyLock<Mutex<HashMap<usize, Twin>>> = LazyLock::new(|| Mutex::ne
 /// that is not a monomorphic let-style body: a def-style (ε-selector) spec, a
 /// declaration-only spec, or a polymorphic one (its unfolding depends on the
 /// type arguments; instantiating the cached equation is deferred, see
-/// `SKELETONS.md`).
+/// the generated open-work index).
 pub fn twin_for(spec: &TermSpec) -> Result<Option<Twin>> {
     let (Some(ty), Some(body)) = (spec.ty(), spec.tm()) else {
         return Ok(None); // declaration-only spec

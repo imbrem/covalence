@@ -36,12 +36,12 @@
 //!
 //! `branch` injectivity (`branch l r = branch l' r' ⟹ l = l' ∧ r = r'`)
 //! needs the recursor's subtree-recovery identity, hence the `Wf` carve —
-//! deferred with full induction; see [`induct_note`] + `SKELETONS.md`.
+//! deferred with full induction; see [`induct_note`] + the generated open-work index.
 //!
 //! Distinct constructor applications are distinct HOL terms, so this is
 //! genuine reified syntax (not a shallow embedding). Full structural
 //! induction needs a well-formedness side condition (junk inhabits the bare
-//! `T⟨α,'r⟩`); see [`induct_note`] + `SKELETONS.md`.
+//! `T⟨α,'r⟩`); see [`induct_note`] + the generated open-work index.
 
 use covalence_core::{Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
@@ -383,7 +383,7 @@ fn arbitrary_branch_handler(alpha: &Type) -> Term {
 /// for [`crate::init::sexpr::induct_note`]. The recursor equations +
 /// freeness above are what the `tree`/`sexp` `.cov` theory consumes; genuine
 /// induction (carving the well-formed encodings with a `Wf` predicate, the
-/// standard reducibility argument) is recorded in `SKELETONS.md`.
+/// standard reducibility argument) is recorded in the generated open-work index.
 pub fn induct_note() {}
 
 // ============================================================================

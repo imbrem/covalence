@@ -22,7 +22,7 @@
 //! `0`/`1` identities — i.e. any two expressions equal as *formal* sums of
 //! monomials over the atoms.
 //!
-//! **Deferred** (see `crate::algebra::ring`'s `SKELETONS.md` entry):
+//! **Deferred** (see `crate::algebra::ring`'s the generated open-work index entry):
 //! - *coefficient collection* — `x + x` is left as `x + x`, not folded to
 //!   `2 · x`; like monomials are **not** combined. So `x + x = x + x` is
 //!   decided, but `x + x = 2·x` is not.

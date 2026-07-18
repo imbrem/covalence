@@ -12,7 +12,7 @@
 //!   the operation symbols with their sort-var-typed templates
 //!   (`zero : α`, `succ : α → α`, `add : α → α → α`). Single-sorted,
 //!   first-order: a generic multi-sort / HOL-ω signature is deferred (see
-//!   `SKELETONS.md`).
+//!   the generated open-work index).
 //! - [`Theory`] — a signature ref plus named **abstract specs** (`(#spec …)`):
 //!   proof *obligations*, not postulates. Each spec is stored as its raw `SExpr`
 //!   (so a model can re-elaborate it at *its* carrier) alongside the abstract
@@ -60,7 +60,7 @@ pub struct SigOp {
 /// A **single-sorted, first-order signature**: a name, the sort variable name
 /// `α`, and the typed operation symbols. The `notes/vibes/surface-compiler.md` §3.0
 /// `(#sig …)` form. A generic multi-sort / kinded-family (HOL-ω) signature is
-/// deferred — see `SKELETONS.md`.
+/// deferred — see the generated open-work index.
 #[derive(Clone)]
 pub struct Signature {
     pub name: String,
@@ -457,7 +457,7 @@ fn inst_sort(template: &Type, sort: &str, carrier: &Type) -> Type {
 /// and the supplied proof must conclude exactly it. A transitional
 /// `(from WITNESS)` clause instead imports a host-supplied env carrying the
 /// axioms already proved (so a heavy Rust proof — `models::unary` — need not be
-/// ported to `.cov`); see `SKELETONS.md`.
+/// ported to `.cov`); see the generated open-work index.
 pub async fn run_models(
     model: &Model,
     theory: &Theory,

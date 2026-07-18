@@ -10,7 +10,7 @@
 ;; the reusable `prop_induction(P, axiom_cases, mp_case)` principle.
 ;;
 ;; THE SCRIPT LANGUAGE CANNOT EXPRESS THAT IMPREDICATIVE `inst` (see the SURFACE
-;; GAPS below + `init/SKELETONS.md`), so the principle and its instances are
+;; GAPS below + the generated open-work index), so the principle and its instances are
 ;; imported here as Rust-proved GIVENS from `propprim`:
 ;;
 ;;   prop.var / prop.neg / prop.and / prop.or / prop.imp  -- formula ctors
@@ -27,7 +27,7 @@
 ;; metatheorem whose statement the surface can express) as a first-class
 ;; `prop.cov` theorem.
 ;;
-;; SURFACE GAPS (the stress-test findings — see `init/SKELETONS.md` for detail):
+;; SURFACE GAPS (the stress-test findings — see the generated open-work index for detail):
 ;;  1. The impredicative `inst d := P` + `Closed P` discharge — i.e.
 ;;     `prop_induction` itself — has no script surface. Building the predicate
 ;;     `P : Φ⟨bool⟩→bool` and discharging `Closed P` (needs `prove_taut`) are

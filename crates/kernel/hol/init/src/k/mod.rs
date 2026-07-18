@@ -20,7 +20,7 @@
 //! hypothesis-free syntactic data — bugs cost faithfulness/completeness, never
 //! soundness. Fragment ladder + roadmap: `notes/design/k-frontend.md`. This is
 //! **F0** (unconditional single steps); multi-step closure, conditional rules
-//! (F1), and reachability claims (F2/F3) are recorded in `SKELETONS.md`.
+//! (F1), and reachability claims (F2/F3) are recorded in the generated open-work index.
 
 pub mod encode;
 pub mod reduce;

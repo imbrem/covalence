@@ -11,7 +11,7 @@ edition = "2024"
 # `Builtin`) are pulled in only under the optional `hol` feature — mirroring
 # `covalence-lisp` / `covalence-haskell`.
 #
-# Deferred work: crates/lang/numerals/SKELETONS.md.
+# Deferred work: source-local TODO markers.
 
 [dependencies]
 # The compositional literal parsers/deparsers + the value types they produce.

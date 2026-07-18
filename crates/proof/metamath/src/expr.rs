@@ -29,7 +29,7 @@ use covalence_sexp::{SExp, SExpr};
 ///
 /// We use [`smol_str::SmolStr`] (re-exported via [`covalence_sexp`]'s
 /// dependency) for inline small-string storage. Interning is deferred (see
-/// `SKELETONS.md`).
+/// the generated open-work index).
 pub type Symbol = smol_str::SmolStr;
 
 /// A Metamath expression: a typecode plus a flat body of math symbols.

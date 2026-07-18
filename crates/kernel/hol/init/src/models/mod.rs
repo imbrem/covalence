@@ -144,7 +144,7 @@ impl NatModel {
 /// arbitrary `Signature`; here the signature is fixed to `Nat`, so
 /// [`nat_model`](Logic::nat_model) *is* `interpret`+`handlers` specialized.
 /// Generalizing to an arbitrary signature is the obvious next cut — see
-/// `SKELETONS.md`.)
+/// the generated open-work index.)
 pub trait Logic {
     /// A short identifier for the model (`"nat/self"`, `"nat/unary"`).
     fn name(&self) -> &'static str;

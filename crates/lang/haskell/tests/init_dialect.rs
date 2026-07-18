@@ -11,7 +11,7 @@
 //!
 //! The `(define …)` output is still *inert* IR/kernel data: lowering to
 //! actual `covalence-init` definitions (typed `Term`s, `Def`/`Thm`) is the
-//! recorded follow-on (see `SKELETONS.md`).
+//! recorded follow-on (see the generated open-work index).
 
 use covalence_haskell::lower::{module_to_sexprs, module_to_text};
 use covalence_haskell::parse::parse_module;

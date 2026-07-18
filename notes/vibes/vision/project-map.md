@@ -4,7 +4,7 @@
 snapshot (2026-07-11) of *where things live* and *what threads are active*. For
 each crate's precise contract see the **crate-map** skill
 (`.claude/skills/crate-map/SKILL.md`); for open work see the per-crate
-`SKELETONS.md` linked below and the root [`../../SKELETONS.md`](../../../SKELETONS.md).
+open-work index linked below and the root [open-work index](../../../docs/todos/todos.json).
 This map **links, does not duplicate** those.
 
 **Read-first design docs:** [`VISION.md`](./VISION.md),
@@ -38,7 +38,7 @@ graph + TCB closure is `docs/deps/` (`bun run deps`).
 ## Part 2 — the active threads
 
 Each thread: what it is, status, and the key pointers (design notes +
-SKELETONS). "Status" is a coarse read; the SKELETONS files are the live TODO.
+open-work markers). "Status" is a coarse read; the open-work markers files are the live TODO.
 
 ### A. Backend / kernel (the TCB tower)
 
@@ -51,12 +51,12 @@ migration onto the trait is deferred behind an in-flight freeze.
   [`closed-world-kernel.md`](../kernel/closed-world-kernel.md),
   [`base-abstraction.md`](../kernel/base-abstraction.md),
   [`base-api-surface.md`](../kernel/base-api-surface.md).
-- Open work: [`crates/kernel/base/SKELETONS.md`](../../../crates/kernel/base/SKELETONS.md)
+- Open work: [open-work index](../../../docs/todos/todos.json)
   (Stage 0 only; ADTs/Set/HOL/macro unbuilt),
-  [`crates/kernel/hol/core/SKELETONS.md`](../../../crates/kernel/hol/core/SKELETONS.md)
+  [open-work index](../../../docs/todos/todos.json)
   (hash-consing default, `defs/` D3 residue),
-  [`crates/kernel/hol/eval/SKELETONS.md`](../../../crates/kernel/hol/eval/SKELETONS.md).
-- Root `SKELETONS.md` items: #1 (base Stage 0), #2 (hash-consing not adopted).
+  [open-work index](../../../docs/todos/todos.json).
+- Root open-work index items: #1 (base Stage 0), #2 (hash-consing not adopted).
 
 ### B. Haskell frontend
 
@@ -67,7 +67,7 @@ land real kernel data; no typed HOL realization, no lowering to real `init/`
 definitions yet.**
 
 - Crate: `crates/lang/haskell` (`covalence-haskell`).
-- Open work: [`crates/lang/haskell/SKELETONS.md`](../../../crates/lang/haskell/SKELETONS.md)
+- Open work: [open-work index](../../../docs/todos/todos.json)
   (typed HOL-term realization; lowering to `init/` defs; parser subset — no
   layout/patterns/types/do).
 - Vision context: [`frontend.md`](../surface/frontend.md),
@@ -83,8 +83,8 @@ existing SpecTec/WASM front end. Not yet a design-doc proposal.**
 - Composes with: [`wasm-spec.md`](../logics/wasm-spec.md), `covalence-spectec`
   (`crates/lib/wasm/spectec`), `covalence-wasm` (`crates/lib/wasm/core`),
   the metalogic engine (`crates/kernel/hol/init/src/metalogic`).
-- Shared blocker: the **CFG stratum** (root `SKELETONS.md` #8;
-  [`crates/lib/wasm/spectec/SKELETONS.md`](../../../crates/lib/wasm/spectec/SKELETONS.md)).
+- Shared blocker: the **CFG stratum** (root open-work index #8;
+  [open-work index](../../../docs/todos/todos.json)).
 
 ### D. Relational base rewrite
 
@@ -112,8 +112,8 @@ but NOT yet executed.**
 - Design: [`literal-endgame-design.md`](../kernel/literals/literal-endgame-design.md),
   [`eg5-preflight.md`](../kernel/literals/eg5-preflight.md),
   [`tcb-holomega-roadmap.md`](../kernel/tcb/tcb-holomega-roadmap.md) (Front A).
-- Open work: [`crates/kernel/hol/core/SKELETONS.md`](../../../crates/kernel/hol/core/SKELETONS.md)
-  (`defs/` D3 residue dies with the literal leaves); root `SKELETONS.md` #6.
+- Open work: [open-work index](../../../docs/todos/todos.json)
+  (`defs/` D3 residue dies with the literal leaves); root open-work index #6.
 
 ### F. HOL-ω (middle language retarget)
 
@@ -140,8 +140,8 @@ Kernel-in-browser + the SvelteKit web app: article view, graph, Metamath, and a
 
 ## Part 3 — the inventory, consolidated
 
-The per-crate `SKELETONS.md` files are the authoritative open-work registry
-(the root [`../../SKELETONS.md`](../../../SKELETONS.md) indexes them and ranks the
+The per-crate open-work index files are the authoritative open-work registry
+(the root [open-work index](../../../docs/todos/todos.json) indexes them and ranks the
 top 10 holes). This map's job is *navigation*: pick the thread above, follow its
 pointers. Don't restate skeleton contents here — they rot; the co-located files
 don't.

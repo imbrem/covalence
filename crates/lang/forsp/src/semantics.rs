@@ -25,7 +25,7 @@
 //! theory drops in as a `Semantics` *swap*: replace [`ForspSemantics`] with one
 //! whose `StepCert` carries `⊢ state → state'` and whose `Thm` is the composite
 //! reduction theorem — nothing above the `Semantics` boundary moves. See
-//! `SKELETONS.md` for the kernel-proof skeleton.
+//! the generated open-work index for the kernel-proof skeleton.
 
 use std::cell::RefCell;
 

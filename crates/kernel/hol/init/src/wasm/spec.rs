@@ -9,7 +9,7 @@
 //! number rather than a guess.
 //!
 //! There is no separately-bundled WASM 1.0/2.0 AST yet (see `covalence-spectec`'s
-//! `SKELETONS.md`); "start with WASM 1" means working the **feature subset** —
+//! the generated open-work index); "start with WASM 1" means working the **feature subset** —
 //! e.g. a handful of numeric `*_ok` relations — out of the 3.0 dump first.
 
 use covalence_spectec::ast::{SpecTecArg, SpecTecDef, SpecTecExp, SpecTecParam, SpecTecTyp};

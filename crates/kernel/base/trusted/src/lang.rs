@@ -100,12 +100,12 @@ pub struct RuleMeta;
 /// rule. The orphan rule then blocks `impl Rule<L> for SomeFrameworkRule`, so an
 /// admit-set entry cannot be "borrowed" by an unrelated conclusion. (A `'static`
 /// bound is required for the `TypeId`; non-`'static`/borrowing rules need a
-/// *sealed*, behaviour-tied identity mechanism — deferred, see SKELETONS.)
+/// *sealed*, behaviour-tied identity mechanism — deferred, see source-local TODO markers.)
 ///
 /// The language is passed by **shared reference** (`&L`): reading context is
 /// enough, and it keeps the value available to mint against afterwards. A future
 /// genuinely-linear/resource theory wants a by-value variant (making context
-/// enrichment visible in the type) — deferred, see SKELETONS.
+/// enrichment visible in the type) — deferred, see source-local TODO markers.
 pub trait Rule<L>: 'static {
     /// The candidate / input consumed. Freely constructible.
     type Input;

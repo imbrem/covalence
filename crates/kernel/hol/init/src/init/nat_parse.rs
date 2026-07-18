@@ -42,7 +42,7 @@
 //! induction. The value clauses [`go_nil`]/[`go_cons`] discharge the
 //! "`v` = the radix-`R` fold" obligation directly. The remaining
 //! obligations (prefix all-digits, suffix maximality) are recorded in
-//! `SKELETONS.md`.
+//! the generated open-work index.
 
 use covalence_core::{Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;

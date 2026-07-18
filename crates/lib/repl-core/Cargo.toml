@@ -11,6 +11,6 @@ edition = "2024"
 # strategy plug in at the same point. Kernel-agnostic: generic over the
 # theorem/term types, no kernel dependency here.
 #
-# Deferred work: crates/lib/repl/SKELETONS.md.
+# Deferred work: source-local TODO markers.
 
 [dependencies]

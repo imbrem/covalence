@@ -61,7 +61,7 @@
 //! `(defun bad (x) (bad x))` and `(defun grow (x) (grow (cons x x)))` with a
 //! clear message. It is deliberately weaker than ACL2's measure-based
 //! definitional principle (e.g. it does not verify the `endp`/`consp` guard);
-//! termination *proofs* are future work — see `SKELETONS.md` and
+//! termination *proofs* are future work — see the generated open-work index and
 //! `notes/vibes/lisp/acl2-dialect.md`.
 //!
 //! # Integers (on the value semantics' [`IntBackend`] integration)
@@ -349,7 +349,7 @@ impl Acl2Session {
     /// value terms are syntactically identical** — minting
     /// `hyps ⊢ (a = b) = T` by `trans`/`sym` + `eqt_intro`. Distinct
     /// composite values are a clean error (deciding their *dis*equality needs
-    /// the `scons` discrimination laws — future work, see `SKELETONS.md`).
+    /// the `scons` discrimination laws — future work, see the generated open-work index).
     fn reduce_equal(&self, a: &SExpr, b: &SExpr) -> Result<Acl2Outcome, Acl2Error> {
         let eq_form = SExpr::List(vec![
             SExpr::Atom(Atom::Symbol("eq?".into())),

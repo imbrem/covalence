@@ -45,7 +45,7 @@
       "defsCouplingLocations": []
     },
     "base+HOL": {
-      "files": 56,
+      "files": 57,
       "nonTestLoc": 6951,
       "unsafe": 0,
       "unsafeLocations": [],
@@ -118,7 +118,7 @@
       ]
     },
     "base+HOL (target)": {
-      "files": 36,
+      "files": 37,
       "nonTestLoc": 5142,
       "unsafe": 0,
       "unsafeLocations": [],
@@ -179,7 +179,7 @@
       ]
     },
     "base+HOL+eval": {
-      "files": 90,
+      "files": 91,
       "nonTestLoc": 13281,
       "unsafe": 0,
       "unsafeLocations": [],
@@ -224,7 +224,7 @@
       ]
     },
     "base+HOL+wasm": {
-      "files": 38,
+      "files": 39,
       "nonTestLoc": 5580,
       "unsafe": 0,
       "unsafeLocations": [],
@@ -288,7 +288,7 @@
       ]
     },
     "base+HOL+eval+wasm": {
-      "files": 90,
+      "files": 91,
       "nonTestLoc": 13281,
       "unsafe": 0,
       "unsafeLocations": [],

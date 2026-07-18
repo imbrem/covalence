@@ -31,7 +31,7 @@
 //! the `nat` bit ops, comparisons via `nat.<` / `int.<`. The lone
 //! exception still pending is the **arithmetic right shift** `sN >>`
 //! (needs a floor-division the catalogue does not yet expose — see
-//! `SKELETONS.md`), which remains declaration-only.
+//! the generated open-work index), which remains declaration-only.
 //!
 //! Because every body reduces to a literal on literal arguments, it is
 //! *derivably coupled* to the `FixedWidthCert` reduction and must denote

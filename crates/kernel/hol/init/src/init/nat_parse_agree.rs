@@ -21,7 +21,7 @@
 //! consume, so on corresponding ASCII-digit input the folds compute the same
 //! `nat`. The `∀`-quantified whole-string statement (a `map`-fusion induction
 //! over the shared fold, keyed on [`code_eq_byte_val`]) is recorded in
-//! `SKELETONS.md`.
+//! the generated open-work index.
 
 use covalence_core::{IntTag, Result, Term};
 use covalence_hol_eval::EvalThm as Thm;

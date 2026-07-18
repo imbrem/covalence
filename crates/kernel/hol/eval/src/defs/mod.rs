@@ -21,7 +21,7 @@
 //!   `list`/`stream`, the logic connectives their bodies quantify with,
 //!   and the residue-referenced term ops). That residue dies with the
 //!   literal leaves (`TermKind::Nat/Int/SmallInt/Blob`) — see
-//!   `crates/kernel/hol/core/SKELETONS.md`.
+//!   `source-local TODO markers`.
 //!
 //! Downstream code (`covalence-init`, `covalence-alethe`, …) should
 //! import the catalogue from **here** (`covalence_hol_eval::defs`), which

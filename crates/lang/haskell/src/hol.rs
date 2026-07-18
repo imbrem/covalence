@@ -54,7 +54,7 @@
 //! atoms) — a deliberate simplification for this untyped landing; a typed
 //! realization would distinguish them. Because the bytes are raw, a string
 //! containing whitespace or parentheses would *not* round-trip through the
-//! reader as a single atom; that is out of scope here (see `SKELETONS.md`).
+//! reader as a single atom; that is out of scope here (see the generated open-work index).
 
 use covalence_hol_eval::mk_blob;
 use covalence_init::Term;

@@ -32,7 +32,7 @@
 //!   [`rat_rel_refl`] / [`rat_rel_symm`] are **proved** (`int`-equation
 //!   `refl` / `sym`); [`rat_rel_trans`] is **postulated** — it is the one
 //!   piece that needs `int` *multiplicative cancellation by a positive*,
-//!   an `int` fact not yet discharged (see `SKELETONS.md`).
+//!   an `int` fact not yet discharged (see the generated open-work index).
 //! - **Maps in.** [`of_int`] (`a ↦ a/1`) and [`of_nat`] (`= of_int ∘
 //!   nat.toInt`, by composition) embed the integers and naturals.
 //! - **Ring / order.** The field operations ([`rat_zero`], [`rat_one`],
@@ -1674,7 +1674,7 @@ pub fn rat_env() -> crate::script::Env {
 // remaining axioms keep the audit-trail style of `init::int`: each is a
 // `Thm::assume` carrying its statement as a self-hyp. They are HOL theorems
 // of the quotient, derivable from the `int` ordered-ring theory; discharging
-// them does not change this public surface. See `SKELETONS.md`.
+// them does not change this public surface. See the generated open-work index.
 
 fn rvar(name: &str) -> Term {
     Term::free(name, rat())

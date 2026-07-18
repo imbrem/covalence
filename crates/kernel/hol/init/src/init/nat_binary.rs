@@ -31,7 +31,7 @@
 //!   (`∀bs. ∃bs'. nat_of_bits bs' = succ (nat_of_bits bs)`, by `list`
 //!   induction with a carry `bool.cases`).
 //!
-//! See `SKELETONS.md` for what is still open (the parity / canonical-form
+//! See the generated open-work index for what is still open (the parity / canonical-form
 //! uniqueness facts and the log-depth `bit_add` carry addition).
 
 use covalence_core::{Result, Term, Type, subst};

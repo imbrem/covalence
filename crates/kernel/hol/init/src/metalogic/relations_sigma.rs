@@ -7,7 +7,7 @@
 //! [`super::relations`] proves `transport` for any `⟹`-homomorphic `σ`, but
 //! carried an explicit `σ_hom` hypothesis whose *only* concrete discharge was
 //! the identity translation `σ := λx. x` (reflexivity through β). The
-//! [`SKELETONS`](./SKELETONS.md) blocker asks for a **real structural `σ`** — a
+//! the generated open-work index blocker asks for a **real structural `σ`** — a
 //! constant/variable renaming that actually moves formulas — proved to satisfy
 //! the same homomorphism law, so transport is demonstrated at a non-trivial
 //! translation.
@@ -78,7 +78,7 @@
 //! recursor — TIER 2. A genuine CROSS-SYSTEM `σ` (K→Metamath, then Dedukti/LF for
 //! Lean/Coq) is TIER 3. See the design note
 //! `notes/vibes/logics/structural-sigma-transport.md` and the metalogic
-//! `SKELETONS.md`.
+//! the generated open-work index.
 
 use covalence_core::{Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;

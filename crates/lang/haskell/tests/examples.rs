@@ -11,7 +11,7 @@
 //!    kernel data, one per top-level definition.
 //!
 //! The output is still *inert* IR/kernel data; realizing it into typed
-//! `covalence-init` `Def`/`Thm` is the recorded follow-on (`SKELETONS.md`).
+//! `covalence-init` `Def`/`Thm` is the recorded follow-on (the generated open-work index).
 
 use covalence_haskell::lower::{module_to_sexprs, module_to_text};
 use covalence_haskell::parse::parse_module;

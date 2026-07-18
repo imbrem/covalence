@@ -423,7 +423,7 @@ fn apply_interpretation<K: HolLightKernel>(
     _interp: &Interpretation,
     _theorems: &mut Vec<K::Thm>,
 ) {
-    // TODO: Deep renaming of types/constants within theorems.
+    // TODO(cov:proof.opentheory.deep-renaming, major): Rename types and constants recursively within theorems.
     // For now, interpretations are parsed but not applied. Sub-packages
     // define their own types/constants under their original names, and
     // the interpretation mapping is recorded for future use.

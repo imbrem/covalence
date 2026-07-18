@@ -42,7 +42,7 @@
 //! What LANDS: the trait + two impls + the `MmExpr` bundle + the structural σ +
 //! the app-homomorphism-by-`comp` + Wf-preservation-by-induction + the
 //! non-vacuity witness + the insulation acid-test. What DEFERS (see
-//! `SKELETONS.md`): firing [`super::transport_db::transport`] with a structural
+//! the generated open-work index): firing [`super::transport_db::transport`] with a structural
 //! `MmExpr` σ across two REAL rule sets — that needs re-encoding the live
 //! `mm_database`/K carrier from `Φ=nat` onto the Church `MmExpr` carrier
 //! (`check_same_carrier` rejects the mismatch), a carrier migration off the

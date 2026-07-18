@@ -5,7 +5,7 @@
 //! (and, through [`covalence_sexp::prettyprint`], one text form via
 //! [`to_text`]). Consumers downstream of this crate read this IR, never KORE
 //! syntax. `to_sexp` direction only — `from_sexp` / round-trip is a recorded
-//! skeleton (`SKELETONS.md`).
+//! skeleton (the generated open-work index).
 //!
 //! # Canonical shapes
 //!

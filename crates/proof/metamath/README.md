@@ -111,10 +111,10 @@ crate), the uncompressed `.mm` parser, and ≥3
 hand-encoded example theories (propositional calculus, the Metamath-book "demo0"
 arithmetic/logic theory, a small binary-operation theory, and a distinct-variable
 theory) with proofs that verify and bad proofs that are rejected. Deferred for
-this reader (see [`SKELETONS.md`](./SKELETONS.md)): the compressed proof format,
+this reader (see the generated open-work index): the compressed proof format,
 `$[ $]` file inclusion, and `set.mm`-scale streaming. Engine-side deferrals (the
 `#logic` correspondence layer, the import tactic + representation-equivalence
-metatheorem) are tracked in `crates/kernel/hol/init/src/metalogic/SKELETONS.md`.
+metatheorem) are tracked in `source-local TODO markers`.
 
 [Metamath]: https://us.metamath.org/
 [`covalence-sexp`]: ../covalence-sexp

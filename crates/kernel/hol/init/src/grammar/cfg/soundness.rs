@@ -33,7 +33,7 @@
 //!   `⊢ Derives_E ⌜0⌝ w ⟹ mem w ⟦⌜r⌝⟧`.
 //!
 //! Residuals (S2 comprehension least-ness, S3 at scale, env transport) are
-//! recorded in `grammar/cfg/SKELETONS.md`.
+//! recorded in `grammar/cfg/source-local TODO markers`.
 
 use covalence_core::{Result, Term, Type};
 use covalence_hol_eval::EvalThm as Thm;
@@ -397,7 +397,7 @@ fn derives_word(_env: &GrammarEnv, derivation: &Thm) -> Result<Term> {
 ///
 /// Discharge is **per-env** — it can't reuse regex's polymorphic `Closed-D`
 /// cache across different envs, so it scales linearly with env size and stays a
-/// tiny-env-only tool (see `grammar/cfg/SKELETONS.md`, "S3 at scale").
+/// tiny-env-only tool (see `grammar/cfg/source-local TODO markers`, "S3 at scale").
 pub fn derives_in_family_regular(
     env: &GrammarEnv,
     nt: super::NtId,

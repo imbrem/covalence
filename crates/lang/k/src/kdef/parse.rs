@@ -18,7 +18,7 @@
 //!
 //! We build on `winnow` (via its workspace wrapper `covalence_parse::winnow`)
 //! rather than a hand-rolled scanner so the parser can grow toward a larger
-//! subset of K — see `SKELETONS.md` for what is deferred.
+//! subset of K — see the generated open-work index for what is deferred.
 
 use covalence_parse::winnow::{
     ModalResult, Parser,

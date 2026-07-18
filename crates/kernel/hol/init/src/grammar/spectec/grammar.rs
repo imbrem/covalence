@@ -9,7 +9,7 @@
 //! notion of context-free grammar (reified non-terminals + a `Derives`
 //! judgement, the way [`crate::init::regex`] is our primitive notion of regular
 //! expression), at which point `Var` becomes a non-terminal symbol rather than
-//! an error. See this module's `SKELETONS.md`.
+//! an error. See this module's the generated open-work index.
 
 use std::sync::Arc;
 

@@ -28,7 +28,7 @@
 //! parsed-bytes or a file path. Full **content-addressed** caching through
 //! `covalence-store` (key = hash of the canonical problem, value = the
 //! Alethe blob, shared across a session and persisted) is a follow-up —
-//! see `SKELETONS.md`.
+//! see the generated open-work index.
 
 use covalence_hol_eval::derived::DerivedRules;
 use std::collections::HashMap;
@@ -74,7 +74,7 @@ impl CachedProof {
 ///
 /// The key is the goal's printed form (`Term`'s `Display`) — stable for a
 /// given kernel term. This is the *first-cut* cache; the content-addressed
-/// `covalence-store` version is deferred (see module docs / `SKELETONS.md`).
+/// `covalence-store` version is deferred (see module docs / the generated open-work index).
 #[derive(Debug, Default)]
 pub struct ProofCache {
     by_goal: HashMap<String, CachedProof>,

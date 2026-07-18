@@ -14,7 +14,7 @@ edition = "2024"
 # feature pulls the kernel (covalence-init / covalence-hol-eval /
 # covalence-hol-api) and enables the lowering + symbolic strategy.
 #
-# Deferred work: crates/lang/lisp/SKELETONS.md.
+# Deferred work: source-local TODO markers.
 
 [dependencies]
 # Reader / S-expression IR (kernel-independent).

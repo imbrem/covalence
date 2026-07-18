@@ -21,7 +21,7 @@
 //! interprets). A backend over an *arbitrary* database (one substitution-instance
 //! clause per assertion — the `RuleSet`-from-`Database` generalisation, landing
 //! `⊢ Derivable_DB ⌜db⌝ ⌜S⌝`) is the follow-on north star; see
-//! [`SKELETONS.md`](./SKELETONS.md).
+//! the generated open-work index.
 //!
 //! ## How the frame reaches the replay
 //!

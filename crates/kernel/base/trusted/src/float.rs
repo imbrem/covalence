@@ -9,7 +9,7 @@
 //! The `F32Add`/…/`F64Div` ops are [`CanonRule`]s — the **gated** computation seam
 //! (reduce `App<F32Add, Val(a, b)>` to `Val(a.add(b))` only where the language admits
 //! the op). This is the same seam the planned `Evaluate` trait will generalize to
-//! whole expression trees and to equality-decision; see SKELETONS.
+//! whole expression trees and to equality-decision; see source-local TODO markers.
 
 use std::cmp::Ordering;
 use std::fmt;

@@ -13,7 +13,7 @@
 //!
 //! The other uniqueness pieces are [`super::uniqueness`] (inversion) and
 //! [`super::determinacy`]; only the **ε-assembly** remains specialised to
-//! `nat` (see `SKELETONS.md`).
+//! `nat` (see the generated open-work index).
 
 use covalence_core::{Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;

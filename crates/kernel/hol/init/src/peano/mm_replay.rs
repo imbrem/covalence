@@ -29,7 +29,7 @@
 //! The impredicative `Derivable_PA` engine could not *construct* an induction
 //! derivation: its induction clause quantifies a motive `Q : 't→'r` and
 //! instantiating a concrete arithmetic motive leaves the Church handlers
-//! un-captured (`peano/SKELETONS.md`). Here the proof is a **concrete Metamath
+//! un-captured (the generated open-work index). Here the proof is a **concrete Metamath
 //! object**: at the `pa.ind` step the motive `P(x)` is a *specific* wff on the
 //! replay stack, so `denote_closed` turns it into a *specific* HOL predicate
 //! `λn. ⟦P(n)⟧` and we hand it straight to [`Thm::nat_induct`] — **no HOAS
@@ -899,7 +899,7 @@ mod tests {
     //
     // Authoring the base/step as *Metamath proof scripts* needs the proper
     // substitution apparatus `[ t / x ]` (base `[0/x]ph`, step `[Sx/x]ph`),
-    // which is SKELETONed in `peano/SKELETONS.md` (the long Hilbert script). The
+    // which is SKELETONed in the generated open-work index (the long Hilbert script). The
     // induction *mechanism* below is complete and genuine.
     // ========================================================================
 
@@ -919,7 +919,7 @@ mod tests {
     /// `P(x) := x + 0 = x` discharges through `induct_via_replay` to a genuine
     /// hypothesis-free kernel theorem `⊢ ∀x. x + 0 = x` that **equals**
     /// `init::nat::add_zero` — landing exactly what the impredicative engine
-    /// could not (`peano/SKELETONS.md`), through the `ValidProof` replay.
+    /// could not (the generated open-work index), through the `ValidProof` replay.
     #[test]
     fn induction_headline_add_zero() {
         let k = 0u64;

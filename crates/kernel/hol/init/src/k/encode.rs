@@ -34,7 +34,7 @@
 //! Only the fragment of KORE that appears in a *configuration term* — element
 //! variables, symbol applications, and domain values — is encoded here. Set
 //! variables, the logical connectives (`\and`/`\rewrites`/…), and the `\dv` sort
-//! are collapsed or unsupported; see `SKELETONS.md`. Sorts are dropped from the
+//! are collapsed or unsupported; see the generated open-work index. Sorts are dropped from the
 //! encoding (a symbol's identity, not its sort parameters, distinguishes it).
 //!
 //! ## Faithfulness, not soundness
@@ -182,7 +182,7 @@ fn spine(head: Term, children: &[&Pattern]) -> Result<Term> {
 /// [`Pattern::App`] (→ tagged node over encoded args; sorts dropped),
 /// [`Pattern::DV`] and [`Pattern::String`] (→ distinct literal constants). Other
 /// patterns — set variables and the logical connectives — are not part of a
-/// configuration term and are a clean error here (see `SKELETONS.md`).
+/// configuration term and are a clean error here (see the generated open-work index).
 pub fn encode_pattern(p: &Pattern) -> Result<Term> {
     match p {
         Pattern::EVar(id, _sort) => Ok(metavar(id)),

@@ -13,7 +13,7 @@
 ;; This file derives that principle from the `0`/`succ` primitive plus the `<`
 ;; order theory of `nat.cov`.  It is the single reusable lemma that every
 ;; code-level metatheorem (subtyping reflexivity/transitivity, weakening,
-;; substitution — see `SKELETONS.md`) bottoms out in.
+;; substitution — see the generated open-work index) bottoms out in.
 
 (#import core)
 (#open core)
@@ -130,7 +130,7 @@
 ;; definition. This says any two such fixpoints coincide, so a CV-recursive
 ;; definition is unambiguous (the determinacy a `WfTyCode`/`Typed`/`El`
 ;; definition needs). Existence — the construction of a fixpoint — is the
-;; recursion dual proper; see `SKELETONS.md`.
+;; recursion dual proper; see the generated open-work index.
 ;;
 ;;   ⊢ ∀F. (∀x p q. (∀m. m<x ⟹ p m = q m) ⟹ F x p = F x q)   -- Hext
 ;;          ⟹ ∀f g. (∀n. f n = F n f) ⟹ (∀n. g n = F n g)
@@ -210,7 +210,7 @@
 ;; rests on; the construction itself (`cv.key` stabilisation by `strong.induct`,
 ;; then the fixpoint + `∃`-intro) is deferred — the function-valued term algebra
 ;; is far less painful to drive from Rust than from raw `.cov`. See
-;; `SKELETONS.md`.
+;; the generated open-work index.
 
 ;; The function-valued natRec equations (`B 0`, `B (S k)`), specialised from the
 ;; `rec.holds.fn` given — the recursion the bounded iterator `B` runs on.

@@ -21,7 +21,7 @@
 //!   of the `int`/`nat` parsers
 //!   ([`crate::init::nat_parse_bytes::is_digit_byte_dec`]) as its character
 //!   class (via the shared conventions, not by editing that module). The
-//!   semantic `int` value remains a follow-up (see `SKELETONS.md`).
+//!   semantic `int` value remains a follow-up (see the generated open-work index).
 //! - **array** — `'[' e₁ … eₙ ']'` yielding the `scons`-chain
 //!   `scons e₁ (scons e₂ … snil)` (`snil` for `[]`).
 //!
@@ -30,7 +30,7 @@
 //! S-expression list reader — only the delimiter set changes (`[`/`]`/`,`
 //! instead of `(`/`)`/whitespace). Strict comma placement, objects, JSON
 //! strings, and the `true`/`false`/`null` literals are recorded as
-//! `SKELETONS.md` follow-ups; so are a dedicated 6-constructor `JsonValue`
+//! the generated open-work index follow-ups; so are a dedicated 6-constructor `JsonValue`
 //! datatype and float numbers.
 //!
 //! ## The fuel recursion (as in [`crate::init::sexpr_parse`])
@@ -71,7 +71,7 @@
 //!
 //! The full `JsonValue` datatype, objects/strings/bool/null, float numbers, and
 //! a *recursive* strict reader (with its array-structure subset) are
-//! `SKELETONS.md` follow-ups.
+//! the generated open-work index follow-ups.
 
 use covalence_core::{Error, IntTag, Result, Term, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
@@ -713,7 +713,7 @@ pub fn parsed_cons_struct(h: &Term, t: &Term) -> Result<(Thm, Thm, Thm)> {
 
 // ============================================================================
 // Strict RFC-8259 integer number token — the "integers-only subset, proved a
-// genuine subset" north-star (see module docs / `SKELETONS.md`).
+// genuine subset" north-star (see module docs / the generated open-work index).
 //
 // The lenient reader above tokenises a *number* as any maximal run of
 // non-separator, non-bracket bytes (`is_atom`): `true`, `1.5`, `1e3`, `abc`

@@ -28,7 +28,7 @@
 //! K→Metamath instance DEFERS on: an honest structural σ (needs `MmExpr` +
 //! `MmAlgebra` recursor), per-KORE-rule `clause_sims` (real Metamath simulation
 //! proofs), and the same `check_same_carrier` blocker as full reification (K's
-//! `Φ=nat` free algebra vs the Church `MmExpr` carrier). See `SKELETONS.md`.
+//! `Φ=nat` free algebra vs the Church `MmExpr` carrier). See the generated open-work index.
 
 use covalence_core::{Result, Term};
 use covalence_hol_eval::EvalThm as Thm;

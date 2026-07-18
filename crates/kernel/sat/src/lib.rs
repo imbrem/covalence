@@ -137,7 +137,7 @@ pub trait ReplayStrategy {
 /// complementary pairs, so the *pivot must be computed* (via propagation), not
 /// guessed by a first-complementary-pair search. Handles **RUP-only** proofs
 /// (run CaDiCaL with `--plain`); RAT steps are a separate strategy — see
-/// `SKELETONS.md`.
+/// the generated open-work index.
 pub struct RupReplay;
 
 impl ReplayStrategy for RupReplay {

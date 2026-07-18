@@ -5,7 +5,7 @@
 //! [`crate::algebra::semiring::shallow`]; here we add the additive-inverse layer that
 //! makes it a ring. Like the semiring axioms, [`add_neg`](Ring::add_neg) /
 //! [`sub_def`](Ring::sub_def) forward to [`crate::init::int`] (postulated for
-//! now; see `SKELETONS.md`), and `neg` / `sub` build the corresponding
+//! now; see the generated open-work index), and `neg` / `sub` build the corresponding
 //! `int` terms.
 
 use covalence_core::Term;

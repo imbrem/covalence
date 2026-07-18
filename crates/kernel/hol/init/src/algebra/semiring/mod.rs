@@ -52,7 +52,7 @@
 //! 2. **`int`** — [`shallow::Int`]: the axioms forward to
 //!    [`crate::init::int`]; `int` additionally extends to a
 //!    [`Ring`](crate::algebra::ring::Ring). They are *postulated* for now (the
-//!    Grothendieck quotient derivation is pending — see `SKELETONS.md`), but
+//!    Grothendieck quotient derivation is pending — see the generated open-work index), but
 //!    the public surface does not change when the proofs land.
 //!
 //! Both implement the *same* trait, so a generic routine written against

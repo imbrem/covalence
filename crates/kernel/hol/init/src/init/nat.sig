@@ -9,7 +9,7 @@
 ;; signature name; the self model interprets it as `nat.add`), so the witnessing
 ;; model is the IDENTITY on kernel nat. A generic, carrier-abstract presentation
 ;; (specs over a `tfree` sort, re-elaborated at any structure carrying a `natrec`)
-;; is deferred — see `init/SKELETONS.md`.
+;; is deferred — see the generated open-work index.
 (#sig nat
   (sort nat)
   ;; the recursor — `natRec z f n` (natrec-op specialized at the sort)

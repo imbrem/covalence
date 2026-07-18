@@ -4,7 +4,7 @@
 //! and to grow toward a real `init/` dialect, no more. It covers literals,
 //! variables, application, lambdas, `let`, infix operators, `if`/`then`/`else`,
 //! and list / tuple / unit literals. See the crate docs for the exact
-//! supported subset and [`crate`]'s `SKELETONS.md` for what is not yet modelled
+//! supported subset and [`crate`]'s the generated open-work index for what is not yet modelled
 //! (do-notation, guards, `where`, `case`, pattern matching, full layout).
 
 use covalence_types::Nat;

@@ -24,7 +24,7 @@
 //! wired into the base's App-spine syntax, and the trusted middle `TyInst` rule)
 //! is the **gated future step** — it needs the Homeier-aligned rank-stratification
 //! consistency proof before any higher-rank rule may enter `CORE_MANIFEST`. See
-//! `notes/vibes/tcb-holomega-roadmap.md` and this crate's `SKELETONS.md`.
+//! `notes/vibes/tcb-holomega-roadmap.md` and this crate's the generated open-work index.
 //!
 //! ## Trust — ZERO TCB delta
 //!

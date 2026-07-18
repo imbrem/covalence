@@ -31,7 +31,7 @@
 //!
 //! The `Int`-generic term→[`farkas::NormLit`] parser and the kernel *replay*
 //! (valid certificate → `⊢ ⊥`), plus the Alethe step dispatcher, are the next
-//! modules — see `SKELETONS.md`. Until then the working HOL Alethe bridge lives
+//! modules — see the generated open-work index. Until then the working HOL Alethe bridge lives
 //! in `crates/proof/alethe`; this crate is its generic successor.
 
 pub mod farkas;

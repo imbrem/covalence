@@ -159,7 +159,7 @@ fn izf_core_witnessed_in_setmm() {
     // classically DIFFERENT set axioms — collection (vs replacement), set
     // induction (vs foundation), and the IZF infinity form — which need a
     // derived-witness bridge, not an identical statement (interpret.rs
-    // SKELETONS). Update deliberately when bumping the pin (note it in
+    // source-local TODO markers). Update deliberately when bumping the pin (note it in
     // notes/vibes/logics/metamath-axiom-set-metatheory.md). Freezing this
     // fails the test on silent drift in either database.
     assert_eq!(

@@ -6,7 +6,7 @@
 //! its constructor/accessors, and the outward-rounded `ball.add`, plus an
 //! evaluation driver. **No enclosure theorems yet** — the containment
 //! contract (`x ∈ X ∧ y ∈ Y ⟹ x + y ∈ ball.add X Y`) is the F4 follow-up
-//! (see `SKELETONS.md`); until it is proved, the `ball.add` formula below is
+//! (see the generated open-work index); until it is proved, the `ball.add` formula below is
 //! *provisional* and may be revised to whatever the proof wants.
 //!
 //! ## The `ball.add` formula (recorded decision)

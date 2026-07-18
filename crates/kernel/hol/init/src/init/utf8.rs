@@ -48,7 +48,7 @@
 //!   ([`encode_char_lit`]);
 //! - the string-encoder recursion clauses [`encode_nil`] / [`encode_cons`].
 //!
-//! ## Deferred (see `init/SKELETONS.md`)
+//! ## Deferred (see the generated open-work index)
 //!
 //! The validating decoder `utf8Decode : bytes → option string` and the full
 //! string round-trip `⊢ utf8Decode (utf8Encode s) = some s` by `list-induct`
@@ -479,7 +479,7 @@ pub fn encode_cons(c: &Term, s: &Term) -> Result<Thm> {
 // Decoder (ASCII fragment) + the per-character round-trip.
 //
 // The full validating `utf8Decode : bytes → option string` and the inductive
-// string round-trip are deferred (see `init/SKELETONS.md`): the multi-byte
+// string round-trip are deferred (see the generated open-work index): the multi-byte
 // continuation-byte validation + codepoint reassembly is a large `nat`-range
 // case analysis, and the string round-trip needs a "decode peels exactly one
 // char's bytes off the front" lemma. What is genuine *now* is the **single

@@ -13,7 +13,7 @@
 //! principle for free — each a one-line HOL term build / proof — and stays
 //! rank-1 and TCB-free. (The `list`-carrier path in `defs/list.rs` is the
 //! heavyweight alternative; its `cons` recursor is not even built yet, so
-//! reusing it here would block on unfinished work — see `SKELETONS.md`.)
+//! reusing it here would block on unfinished work — see the generated open-work index.)
 //!
 //! The grammar is `atom bytes | snil | scons SExpr SExpr` (atoms carry a
 //! `bytes` payload — the parsed token; lists are nil/cons spines):
@@ -33,7 +33,7 @@
 //! - a note on structural induction ([`induct_note`]): the *recursor* and
 //!   its equations are what downstream impredicative soundness proofs use;
 //!   genuine `SExpr` induction needs a well-formedness side condition and
-//!   is deferred (see the function's docs + `SKELETONS.md`).
+//!   is deferred (see the function's docs + the generated open-work index).
 //!
 //! Distinct constructor applications are distinct HOL terms, so this is
 //! genuine reified syntax (not a shallow embedding).

@@ -28,7 +28,7 @@
 //!
 //! Untrusted, kernel-free, `#![forbid(unsafe_code)]` — like the rest of
 //! `covalence-k`. Design + roadmap: `notes/design/k-frontend.md`; deferred work:
-//! `SKELETONS.md`.
+//! the generated open-work index.
 
 pub mod ast;
 pub mod cfg;

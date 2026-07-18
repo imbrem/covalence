@@ -1,11 +1,35 @@
-# Forester compatibility and note provenance
++++
+id = "N0001"
+status = "draft"
+review = "unreviewed"
 
-- **Status:** draft
-- **Authorship:** agent `/root/forester_provenance_research`
-- **Authored at:** 2026-07-18T23:50:59+01:00
-- **Review:** unreviewed
-- **Sources:** Forester 5.0 source and package metadata; Jonathan Sterling's
-  public forest; OCaml/opam documentation
+[[contributions]]
+role = "author"
+actor = "agent:forester-provenance-research"
+at = "2026-07-18T23:50:59+01:00"
+
+[[sources]]
+id = "S0001"
+kind = "source-repository"
+target = "https://github.com/forester-notes/forester"
+version = "5.0"
+accessed = "2026-07-18"
+
+[[sources]]
+id = "S0002"
+kind = "website"
+target = "https://www.jonmsterling.com/jms-005P.xml"
+accessed = "2026-07-18"
+
+[[sources]]
+id = "S0003"
+kind = "documentation"
+target = "https://opam.ocaml.org/packages/forester/"
+version = "5.0"
+accessed = "2026-07-18"
++++
+
+# Forester compatibility and note provenance
 
 This is an agent-authored technical recommendation, not repository
 documentation. The source audit used Forester 5.0 and the current upstream

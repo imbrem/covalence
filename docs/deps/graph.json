@@ -43,6 +43,7 @@
     "covalence-opentheory",
     "covalence-parquet",
     "covalence-parse",
+    "covalence-parsing-api",
     "covalence-proptest",
     "covalence-proto",
     "covalence-pure",
@@ -55,6 +56,7 @@
     "covalence-sat",
     "covalence-serve",
     "covalence-sexp",
+    "covalence-sexpr-api",
     "covalence-shell",
     "covalence-smt",
     "covalence-spectec",
@@ -712,6 +714,10 @@
     {
       "from": "covalence-sexp",
       "to": "covalence-types"
+    },
+    {
+      "from": "covalence-sexpr-api",
+      "to": "covalence-inductive"
     },
     {
       "from": "covalence-shell",

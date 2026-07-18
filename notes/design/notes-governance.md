@@ -32,6 +32,34 @@ Tasks do not live in prose registries. Source-local TODO IDs are atomic open
 work; project manifests group IDs, benchmarks, dependencies, owners, and
 acceptance conditions.
 
+## Framework: linked facts, not a Zettelkasten clone
+
+Use three compatible ideas at different layers:
+
+- **Zettelkasten principles** for research/design thinking: focused notes with
+  stable identities, explicit connections, and structure/index notes.
+- **Diátaxis** for user documentation in `docs/`: tutorials, how-to guides,
+  reference, and explanation answer different reader needs and should not be
+  mixed accidentally.
+- **Docs as code** for maintenance: Git history, review, link checks, code
+  references, and generated staleness queries.
+
+Do not split every design into tiny files merely to be “atomic.” In this
+repository the useful atom is a decision, invariant, mathematical construction,
+experiment, or project brief that can be understood and linked independently.
+
+The first query model has deliberately bounded width:
+
+```text
+Node(id, kind, title, status, path, words, updated)
+Edge(source, predicate, target, detail)
+```
+
+Notes, tasks, TODOs, and files are nodes. `links-to`, `depends-on`, `contains`,
+`described-by`, `documents`, and `touches` are edges. New concepts normally add
+an edge predicate or a layered node kind rather than widening every record.
+`scripts/notes.mjs` materializes this graph into SQLite and Mermaid.
+
 ## Document contract
 
 Every non-scratch note begins with compact metadata:
@@ -102,4 +130,3 @@ automatically rewrite prose.
 - Review note/TODO/dependency deltas alongside code.
 - Keep human-authored mathematical statements visibly distinct from
   agent-generated implementation analysis.
-

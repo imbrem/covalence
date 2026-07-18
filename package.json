@@ -17,6 +17,8 @@
     "deps:check": "bun scripts/dep-graph.mjs --check && bun scripts/purge-ratchet.mjs --check && bun scripts/tcb-audit.mjs --check && bun scripts/todos.mjs --check",
     "todos": "bun scripts/todos.mjs",
     "todos:check": "bun scripts/todos.mjs --check",
+    "notes": "bun scripts/notes.mjs",
+    "notes:check": "bun scripts/notes.mjs --check",
     "build": "bun scripts/build.mjs all",
     "build:native": "bun scripts/build.mjs native",
     "build:wasm": "bun scripts/build.mjs vscode",

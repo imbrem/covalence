@@ -21,3 +21,21 @@ Three tiers, split by *trust and authorship* (see
 **Authorship (current policy):** everything outside `vibes/` is
 maintainer-authored (not fully AI-generated) until the vision is fully written
 out by hand. Agents: contribute to `vibes/`; don't author the other tiers.
+
+## Querying notes and tasks
+
+`bun run notes` builds a deliberately small knowledge graph in
+`target/covalence-notes.sqlite`: every note, task, and TODO is a node; links,
+dependencies, membership, and code references are labelled edges.
+
+```sh
+bun run notes
+bun run notes -- --stale 30
+bun run notes -- --task api-foundations
+bun run notes -- --sql "select * from edges where predicate='depends-on'"
+bun run notes -- --graph
+```
+
+Task manifests in [`projects/`](./projects/) group existing TODOs and relevant
+notes/files. Atomic work remains source-local; the manifest adds only project
+structure.

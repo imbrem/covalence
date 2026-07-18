@@ -43,6 +43,7 @@ digraph deps {
   "opentheory";
   "parquet";
   "parse";
+  "parsing-api";
   "proptest";
   "proto";
   "pure" [style=filled, fillcolor="#ffd6d6"];
@@ -55,6 +56,7 @@ digraph deps {
   "sat";
   "serve";
   "sexp";
+  "sexpr-api";
   "shell";
   "smt";
   "spectec";
@@ -228,6 +230,7 @@ digraph deps {
   "serve" -> "store";
   "sexp" -> "parse";
   "sexp" -> "types";
+  "sexpr-api" -> "inductive";
   "shell" -> "hol";
   "shell" -> "kernel";
   "smt" -> "sat";

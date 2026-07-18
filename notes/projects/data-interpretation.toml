@@ -1,0 +1,18 @@
+id = "data-interpretation"
+title = "Verified data interpretation"
+status = "active"
+depends_on = ["api-foundations"]
+todos = [
+  "sexpr.proof-law-bundle",
+  "sexpr.surface-adapter",
+  "sexpr.parser-interpretation",
+  "json.polynomial-composition",
+]
+notes = ["notes/design/content-logic-and-wit-boundaries.md"]
+files = [
+  "crates/lang/decimal",
+  "crates/lang/json-api",
+  "crates/lang/parsing",
+  "crates/lang/sexpr-api",
+]
+

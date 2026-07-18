@@ -15,15 +15,30 @@ This is not a “submit theorem, receive proof” queue. Humans and agents build
 theory, representations, tests, explanations, and proof vocabulary together.
 The project should progressively dogfood its own language and module system.
 
-## Unit of work
+## Two development modes
 
-Every API workstream should start with a **dogfood script**:
+### Exploration mode
+
+Current development is allowed to optimize for learning and API discovery.
+Agents may build additive traits, adapters, experiments, and benchmark spikes
+without first producing polished prover scripts. A short example or pseudocode
+fragment is encouraged when it exposes ergonomics, but is not a merge gate.
+
+Exploration branches must still preserve trust boundaries, record shortcuts as
+stable TODOs, and avoid presenting scaffolds as accepted APIs.
+
+### Graduation mode
+
+Once the foundation and high-level API shapes are solid, create a fresh audited
+main line and copy modules across one by one. Each graduating module gets:
 
 1. representative declarations and theorem statements;
 2. idealized high-level pseudocode, even when it does not compile yet;
 3. two or more intended backends/interpretations;
 4. observable laws and expected proof ergonomics;
-5. benchmark fixtures and success metrics.
+5. benchmark fixtures and success metrics;
+6. human review of its trust story, API, and mathematical intent;
+7. removal or explicit acceptance of exploratory compatibility code.
 
 For example, an inductive slice begins with something like:
 
@@ -36,17 +51,18 @@ map_compose :: Theorem (map (f . g) xs = map f (map g xs))
 listChurchIso :: Iso (List a) (ChurchList a)
 ```
 
-The human reviews this surface before agents build the Rust traits, backend
-adapters, theorem derivations, and conformance harness. During migration the
-script may be checked-in pseudocode with expected diagnostics; eventually it
-becomes executable Covalence module code.
+During exploration, agents can build the Rust traits, backend adapters, and
+conformance harness first. During graduation, the human reviews the dogfood
+surface and module audit before it enters the fresh main line. The script may
+begin as checked-in pseudocode with expected diagnostics and become executable
+Covalence module code as the surface matures.
 
 ## Workstream lifecycle
 
 ```text
-mathematical brief
+exploration result
       ↓
-dogfood script + theorem statements
+graduation brief + dogfood script
       ↓
 API proposal and dependency DAG
       ↓
@@ -61,10 +77,14 @@ merge and update the Covalence map
 
 Each workstream has one branch and worktree. Generated global artifacts are
 regenerated only in the integration branch, avoiding cross-agent races.
+Exploration integration and audited graduation are separate branch policies;
+the latter is intentionally stricter.
 
 ## Review packet
 
-A change is reviewable when it includes:
+An exploratory change is reviewable with focused tests, dependency/TODO/TCB
+deltas, and an honest list of gaps. A module proposed for audited graduation
+includes the full packet:
 
 - the mathematical intent and high-level example;
 - the public API diff, preferably with generated rustdoc;
@@ -132,4 +152,3 @@ then becomes one backend for reviews rather than the model itself.
   reachability path, and weighted shortest-path optimality certificate.
 - **Lisp:** syntax over the inductive API, evaluator relation, and two
   representations connected by an interpretation theorem.
-

@@ -457,7 +457,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 30997,
+      "words": 31009,
       "updated": 0
     },
     {
@@ -13633,7 +13633,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 30997,
+      "words": 31009,
       "updated": 0
     },
     {
@@ -14164,7 +14164,7 @@
       "title": "nat-logic-migration.toml",
       "status": "tracked",
       "path": "notes/projects/nat-logic-migration.toml",
-      "words": 9,
+      "words": 13,
       "updated": 0
     },
     {
@@ -17051,7 +17051,7 @@
       "id": "task:nat-logic-migration",
       "kind": "task",
       "title": "Migrate Nat capabilities to logic carriers",
-      "status": "active",
+      "status": "complete",
       "path": "notes/projects/nat-logic-migration.toml",
       "words": 0,
       "updated": 0
@@ -28282,6 +28282,18 @@
       "source": "task:nat-logic-migration",
       "predicate": "touches",
       "target": "file:crates/kernel/hol/api/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "task:nat-logic-migration",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_api.rs",
+      "detail": null
+    },
+    {
+      "source": "task:nat-logic-migration",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/logic/src/nat.rs",
       "detail": null
     },
     {

@@ -24,9 +24,11 @@ pub use nat::{
     NatNormalization, NatOrder, NatRecursionLaws, NatSyntax,
 };
 pub use relation::{
-    Arrow, Category, Decision, RelationAlgebra, RelationEvidence, RelationJudgmentSyntax,
+    Arrow, Category, ClosureLaws, ClosureSyntax, CoproductLaws, CoproductSyntax, Decision,
+    ProductLaws, ProductSyntax, RelationAlgebra, RelationEvidence, RelationJudgmentSyntax,
     RelationOrderDecision, RelationOrderLaws, RelationProperty, RelationPropertyEvidence,
-    RelationPropertySyntax, ResidualLaws, ResidualSyntax,
+    RelationPropertySyntax, ResidualLaws, ResidualSyntax, Tabulation, TabulationLaws,
+    TabulationSyntax,
 };
 
 /// The carrier types shared by logic capabilities.

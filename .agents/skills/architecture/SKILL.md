@@ -19,7 +19,9 @@ disable-model-invocation: true
   - `Logic` owns the associated kind/type/term/theorem/error carriers.
   - Capability traits split type operators, term binders, equality, quantifiers,
     and proof rules; `relation` provides typed `Arrow` values and basic
-    relational algebra.
+    relational algebra. Products, coproducts, tabulation, reflexive-transitive
+    closure, and residuals are optional syntax capabilities with separate
+    proof-law interfaces.
   - `nat` provides representation-independent natural-number syntax,
     arithmetic, order, supplied law bundles, and optional decision/normalization
     capabilities over the `Logic` carriers.

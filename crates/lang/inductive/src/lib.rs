@@ -59,6 +59,7 @@ pub mod aggregate;
 pub mod backend;
 pub mod conformance;
 pub mod error;
+pub mod family;
 pub mod fixpoint;
 pub mod functor;
 pub mod logic;
@@ -77,6 +78,7 @@ pub use aggregate::{
 };
 pub use backend::InductiveBackend;
 pub use error::{IndResult, InductiveError, SpecError};
+pub use family::{DatatypeFamilyError, DatatypeFamilyExpr};
 pub use fixpoint::{
     CoinductiveFixpointBackend, FixpointCore, FixpointIsoFacts, FixpointNoConfusionFacts,
     FixpointSpec, GreatestFixpoint, GreatestFixpointFacts, InductiveFixpointBackend, LeastFixpoint,

@@ -7,7 +7,7 @@
 //! semantics.
 
 use covalence_decimal_api::CanonicalDecimal;
-use covalence_inductive::{FieldSpec, PolynomialSpec, Position, VariantCase};
+use covalence_inductive::DatatypeFamilyExpr;
 use covalence_parsing_api::{InterpretationPer, PartialParser, SameInterpretation};
 use covalence_types::Int;
 use std::convert::Infallible;
@@ -699,40 +699,62 @@ impl<D> ObjectInterpretation<D> for RejectDuplicates {
     }
 }
 
-/// External parameters required by the current first-order polynomial adapter.
+/// External parameters of the JSON datatype family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum JsonParameter {
     Bool,
     Decimal,
     String,
-    Array,
-    Object,
 }
 
-/// JSON's top-level sum shape in the current inductive polynomial vocabulary.
-///
-/// Array and object are parameters because the current vocabulary supports
-/// only direct recursion, not composition with list/member functors.
-// TODO(cov:json.polynomial-composition, major): Replace Array/Object parameters with composed list and member polynomial functors once covalence-inductive supports functor composition.
-pub fn json_value_polynomial() -> PolynomialSpec<JsonParameter> {
-    let unary = |name, parameter| {
-        VariantCase::new(
-            name,
-            vec![FieldSpec::new("value", Position::Param(parameter))],
-        )
-    };
-    PolynomialSpec::new(
-        "JsonValue",
-        vec![
-            VariantCase::nullary("Null"),
-            unary("Bool", JsonParameter::Bool),
-            unary("Number", JsonParameter::Decimal),
-            unary("String", JsonParameter::String),
-            unary("Array", JsonParameter::Array),
-            unary("Object", JsonParameter::Object),
-        ],
-    )
+fn list_family<P>(element: DatatypeFamilyExpr<P>) -> DatatypeFamilyExpr<P> {
+    DatatypeFamilyExpr::least(DatatypeFamilyExpr::Sum(vec![
+        DatatypeFamilyExpr::One,
+        DatatypeFamilyExpr::Product(vec![element, DatatypeFamilyExpr::Bound(0)]),
+    ]))
 }
+
+/// The regular datatype family underlying JSON values.
+///
+/// Structurally:
+///
+/// ```text
+/// JsonF(X) =
+///   1 + Bool + Decimal + String
+///     + μY. (1 + X × Y)
+///     + μY. (1 + (String × X) × Y)
+/// ```
+///
+/// The two nested least fixpoints are respectively arrays and ordered object
+/// member sequences. Duplicate-name rejection remains a semantic policy above
+/// this syntax. This expression supplies no fixpoint realization or proof
+/// facts; those remain backend capabilities.
+pub fn json_value_family() -> DatatypeFamilyExpr<JsonParameter> {
+    let value = DatatypeFamilyExpr::FamilyVar;
+    let member = DatatypeFamilyExpr::Product(vec![
+        DatatypeFamilyExpr::Param(JsonParameter::String),
+        value.clone(),
+    ]);
+    DatatypeFamilyExpr::Sum(vec![
+        DatatypeFamilyExpr::One,
+        DatatypeFamilyExpr::Param(JsonParameter::Bool),
+        DatatypeFamilyExpr::Param(JsonParameter::Decimal),
+        DatatypeFamilyExpr::Param(JsonParameter::String),
+        list_family(value),
+        list_family(member),
+    ])
+}
+
+/// Compatibility name for [`json_value_family`].
+///
+/// The return type is now the more expressive scoped datatype-family syntax,
+/// rather than a first-order [`PolynomialSpec`](covalence_inductive::PolynomialSpec)
+/// with dishonest `Array` and `Object` constants.
+pub fn json_value_polynomial() -> DatatypeFamilyExpr<JsonParameter> {
+    json_value_family()
+}
+
+// TODO(cov:json.polynomial-composition, major): Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.
 
 #[cfg(test)]
 mod tests {
@@ -771,10 +793,33 @@ mod tests {
     }
 
     #[test]
-    fn polynomial_adapter_is_valid_and_nonrecursive() {
-        let spec = json_value_polynomial();
-        assert!(spec.validate().is_ok());
-        assert!(!spec.is_recursive());
+    fn datatype_family_exposes_composed_array_and_object_lists() {
+        use DatatypeFamilyExpr as D;
+
+        let family = json_value_family();
+        assert_eq!(family.validate(), Ok(()));
+        assert!(family.is_recursive());
+        assert_eq!(
+            family,
+            D::Sum(vec![
+                D::One,
+                D::Param(JsonParameter::Bool),
+                D::Param(JsonParameter::Decimal),
+                D::Param(JsonParameter::String),
+                D::least(D::Sum(vec![
+                    D::One,
+                    D::Product(vec![D::FamilyVar, D::Bound(0)])
+                ])),
+                D::least(D::Sum(vec![
+                    D::One,
+                    D::Product(vec![
+                        D::Product(vec![D::Param(JsonParameter::String), D::FamilyVar]),
+                        D::Bound(0)
+                    ])
+                ]))
+            ])
+        );
+        assert_eq!(json_value_polynomial(), family);
     }
 
     #[test]

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "covalence-ui": "workspace:*",
+    "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.0"
   },
   "devDependencies": {

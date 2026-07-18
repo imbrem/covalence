@@ -376,7 +376,7 @@
       "title": "package.json",
       "status": "tracked",
       "path": "apps/covalence-map/package.json",
-      "words": 25,
+      "words": 26,
       "updated": 0
     },
     {
@@ -457,7 +457,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-map/src/routes/source/+page.svelte",
-      "words": 65,
+      "words": 121,
       "updated": 0
     },
     {
@@ -3580,7 +3580,7 @@
       "title": "bun.lock",
       "status": "tracked",
       "path": "bun.lock",
-      "words": 1321,
+      "words": 1324,
       "updated": 0
     },
     {
@@ -15992,7 +15992,7 @@
       "status": "draft",
       "path": "notes/design/rust-api-metadata.md",
       "words": 493,
-      "updated": 1784418417
+      "updated": 1784418491
     },
     {
       "id": "note:notes/plans/atoms.md",
@@ -30589,8 +30589,8 @@
     },
     {
       "noteId": "note:notes/design/rust-api-metadata.md",
-      "commit": "34d6161688a4f1e5cd50b7e4656d964f8937d3a8",
-      "committedAt": 1784418417
+      "commit": "6b9cd9e16e45d6ecfe4180012db4debd4b1d8624",
+      "committedAt": 1784418491
     },
     {
       "noteId": "note:notes/plans/atoms.md",

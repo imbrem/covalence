@@ -14,6 +14,8 @@ harness = "codex"
 
 # Rust API metadata and discovery
 
+This note documents [[api:A0001]] and [[api:A0002]].
+
 ## Decision
 
 Use a small attribute proc-macro crate as the authoring interface for stable
@@ -100,4 +102,3 @@ API.
 5. Add rustdoc aliases for stable IDs where that improves ordinary cargo-doc
    search.
 6. Expand the index only from demonstrated retrieval needs.
-

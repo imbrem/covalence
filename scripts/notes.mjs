@@ -9,6 +9,7 @@
  *   bun run notes -- --task api-foundations
  *   bun run notes -- --term T0001
  *   bun run notes -- --api A0002
+ *   bun run notes -- --context api:A0002
  *   bun run notes -- --note N0001
  *   bun run notes -- --actor agent:forester-provenance-research
  *   bun run notes -- --sql "select * from edges where predicate='depends-on'"
@@ -395,6 +396,9 @@ for (const path of notePaths) {
       termDefinitions.has(match[1]) ? null : "missing",
     );
   }
+  for (const match of text.matchAll(/\[\[api:(A[0-9A-Z]{4,})\]\]/g)) {
+    edge(id, "documents-api", `api:${match[1]}`);
+  }
 }
 
 for (const actor of actors.values())
@@ -672,10 +676,27 @@ const stale = valueAfter("--stale");
 const task = valueAfter("--task");
 const term = valueAfter("--term");
 const apiId = valueAfter("--api");
+const contextId = valueAfter("--context");
 const noteId = valueAfter("--note");
 const actorId = valueAfter("--actor");
 if (sql) {
   show(db.query(sql).all());
+} else if (contextId) {
+  const root = db.query(`SELECT * FROM nodes WHERE id=?`).get(contextId);
+  if (!root) throw new Error(`unknown context root ${contextId}`);
+  console.log(root);
+  show(
+    db
+      .query(
+        `SELECT CASE WHEN e.source=? THEN 'out' ELSE 'in' END direction,
+                e.predicate,n.kind,n.id,n.title,n.status,n.path,e.detail
+         FROM edges e
+         JOIN nodes n ON n.id=CASE WHEN e.source=? THEN e.target ELSE e.source END
+         WHERE e.source=? OR e.target=?
+         ORDER BY n.kind,e.predicate,n.id`,
+      )
+      .all(contextId, contextId, contextId, contextId),
+  );
 } else if (stale) {
   show(
     db

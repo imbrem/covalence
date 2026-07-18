@@ -475,7 +475,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 31126,
+      "words": 31152,
       "updated": 0
     },
     {
@@ -9835,7 +9835,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "words": 538,
+      "words": 705,
       "updated": 0
     },
     {
@@ -13660,7 +13660,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 31126,
+      "words": 31152,
       "updated": 0
     },
     {
@@ -13768,7 +13768,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3059,
+      "words": 3049,
       "updated": 0
     },
     {
@@ -14030,6 +14030,15 @@
       "status": "tracked",
       "path": "notes/design/relational-base-rewrite.md",
       "words": 136,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/design/rust-api-metadata.md",
+      "kind": "file",
+      "title": "rust-api-metadata.md",
+      "status": "tracked",
+      "path": "notes/design/rust-api-metadata.md",
+      "words": 105,
       "updated": 0
     },
     {
@@ -15694,7 +15703,7 @@
       "title": "notes.mjs",
       "status": "tracked",
       "path": "scripts/notes.mjs",
-      "words": 783,
+      "words": 804,
       "updated": 0
     },
     {
@@ -15982,8 +15991,8 @@
       "title": "Rust API metadata and discovery",
       "status": "draft",
       "path": "notes/design/rust-api-metadata.md",
-      "words": 487,
-      "updated": 1784418362
+      "words": 493,
+      "updated": 1784418417
     },
     {
       "id": "note:notes/plans/atoms.md",
@@ -19903,9 +19912,9 @@
     {
       "id": "todo:sexpr.proper-list-proof-capability",
       "kind": "todo",
-      "title": "Define the logic-generic proper-list predicate and its nil/cons/induction theorem bundle above SExprFixpoint.",
-      "status": "major",
-      "path": "crates/lang/sexpr-api/src/lib.rs",
+      "title": "sexpr.proper-list-proof-capability",
+      "status": null,
+      "path": "sexpr.proper-list-proof-capability",
       "words": 0,
       "updated": 0
     },
@@ -23879,6 +23888,18 @@
       "predicate": "contributed-by",
       "target": "actor:agent:gpt-5.6-sol",
       "detail": "author"
+    },
+    {
+      "source": "note:notes/design/rust-api-metadata.md",
+      "predicate": "documents-api",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "note:notes/design/rust-api-metadata.md",
+      "predicate": "documents-api",
+      "target": "api:A0002",
+      "detail": null
     },
     {
       "source": "note:notes/plans/atoms.md",
@@ -30565,6 +30586,11 @@
       "noteId": "note:notes/design/relational-base-rewrite.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/design/rust-api-metadata.md",
+      "commit": "34d6161688a4f1e5cd50b7e4656d964f8937d3a8",
+      "committedAt": 1784418417
     },
     {
       "noteId": "note:notes/plans/atoms.md",

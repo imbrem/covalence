@@ -186,6 +186,11 @@ items.sort(
     a.line - b.line,
 );
 
+// Plaintext is authored; SQLite is the canonical derived index. Every
+// projection below, including checked-in JSON, is read back from SQLite.
+writeDatabase(items);
+items.splice(0, items.length, ...readDatabase());
+
 const artifact =
   JSON.stringify(
     {
@@ -299,7 +304,6 @@ function printDiff(beforeItems, afterItems, ref) {
 
 mkdirSync(resolve(ROOT, dirname(JSON_OUT)), { recursive: true });
 writeFileSync(resolve(ROOT, JSON_OUT), artifact);
-writeDatabase(items);
 
 const filtered = items.filter(
   (item) =>
@@ -364,4 +368,17 @@ function writeDatabase(rows) {
   });
   transaction(rows);
   db.close();
+}
+
+function readDatabase() {
+  const db = new Database(resolve(ROOT, DB_OUT), { readonly: true, strict: true });
+  const rows = db
+    .query(
+      `SELECT id,kind,severity,summary,structured,path,line,crate
+       FROM items ORDER BY id,path,line`,
+    )
+    .all()
+    .map((item) => ({ ...item, structured: item.structured === 1 }));
+  db.close();
+  return rows;
 }

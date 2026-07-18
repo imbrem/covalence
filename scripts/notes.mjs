@@ -50,9 +50,18 @@ const notePaths = walk(resolve(ROOT, "notes"))
   .map((path) => slash(relative(ROOT, path)))
   .sort();
 const noteSet = new Set(notePaths);
-const todoItems = JSON.parse(
-  readFileSync(resolve(ROOT, "docs/todos/todos.json"), "utf8"),
-).items;
+const TODO_DB = resolve(ROOT, "target/covalence-todos.sqlite");
+if (!existsSync(TODO_DB)) {
+  throw new Error("missing derived TODO index; run `bun run todos` before `bun run notes`");
+}
+const todoDb = new Database(TODO_DB, { readonly: true, strict: true });
+const todoItems = todoDb
+  .query(
+    `SELECT id,kind,severity,summary,structured,path,line,crate
+     FROM items ORDER BY id,path,line`,
+  )
+  .all();
+todoDb.close();
 const todoSet = new Set(todoItems.map((item) => item.id));
 
 // One git walk gives every note's latest committed timestamp.

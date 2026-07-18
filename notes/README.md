@@ -32,6 +32,8 @@ dependencies, membership, and code references are labelled edges.
 bun run notes
 bun run notes -- --stale 30
 bun run notes -- --task inductive-datatypes
+# every definition and use of stable terminology ID T0001
+bun run notes -- --term T0001
 bun run notes -- --sql "select * from edges where predicate='depends-on'"
 bun run notes -- --graph
 ```
@@ -39,6 +41,14 @@ bun run notes -- --graph
 Task manifests in [`projects/`](./projects/) group existing TODOs and relevant
 notes/files. Atomic work remains source-local; the manifest adds only project
 structure.
+
+## Stable terminology
+
+A terminology note declares `- **Term ID:** T0001`; prose refers to it with
+`[[term:T0001]]`. The index creates a `term` node, a `defined-by` edge, and a
+`uses-term` edge for every reference. IDs are permanent and deliberately
+meaningless: changing a name or moving its definition does not break references.
+Undefined and duplicate IDs fail visibly rather than being guessed.
 
 For an interactive browser, run:
 

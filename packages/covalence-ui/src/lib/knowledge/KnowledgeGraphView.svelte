@@ -39,6 +39,7 @@
 	const colours: Record<string, string> = {
 		task: '#8b5cf6',
 		todo: '#f59e0b',
+		term: '#ec4899',
 		note: '#3b82f6',
 		file: '#10b981',
 	};

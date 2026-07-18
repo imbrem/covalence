@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { KnowledgeGraphView } from 'covalence-ui';
 
-	type Kind = 'task' | 'todo' | 'note' | 'file';
-	type Mode = 'tasks' | 'neighborhood' | 'notes';
+	type Kind = 'task' | 'todo' | 'term' | 'note' | 'file';
+	type Mode = 'tasks' | 'neighborhood' | 'notes' | 'terms';
 	type MapNode = {
 		id: string;
 		kind: Kind;
@@ -33,6 +33,8 @@
 							? node.kind === 'task'
 							: mode === 'notes'
 								? node.kind === 'note'
+								: mode === 'terms'
+									? node.kind === 'term'
 								: true,
 					)
 					.map((node) => node.status)
@@ -40,7 +42,7 @@
 			),
 		].sort() as string[],
 	);
-	const kinds: Kind[] = ['task', 'todo', 'note', 'file'];
+	const kinds: Kind[] = ['task', 'todo', 'term', 'note', 'file'];
 
 	let mode = $state<Mode>('tasks');
 	let taskId = $state(allNodes.find((node) => node.kind === 'task')?.id ?? '');
@@ -63,9 +65,15 @@
 				if (edge.source === taskId) ids.add(edge.target);
 				if (edge.target === taskId) ids.add(edge.source);
 			}
-		} else {
+		} else if (mode === 'notes') {
 			for (const node of allNodes) {
 				if (node.kind === 'note' || node.kind === 'file') ids.add(node.id);
+			}
+		} else {
+			for (const node of allNodes) if (node.kind === 'term') ids.add(node.id);
+			for (const edge of allEdges) {
+				if (ids.has(edge.source)) ids.add(edge.target);
+				if (ids.has(edge.target)) ids.add(edge.source);
 			}
 		}
 		return ids;
@@ -88,6 +96,7 @@
 			if (mode === 'notes') {
 				return ['links-to', 'documents', 'mentions'].includes(edge.predicate);
 			}
+			if (mode === 'terms') return ['defined-by', 'uses-term'].includes(edge.predicate);
 			return true;
 		}),
 	);
@@ -109,6 +118,8 @@
 				? taskId
 				: next === 'notes'
 					? (allNodes.find((node) => node.kind === 'note')?.id ?? null)
+					: next === 'terms'
+						? (allNodes.find((node) => node.kind === 'term')?.id ?? null)
 					: (tasks[0]?.id ?? null);
 	}
 
@@ -144,6 +155,7 @@
 				task neighborhood
 			</button>
 			<button type="button" class:on={mode === 'notes'} onclick={() => setMode('notes')}>notes</button>
+			<button type="button" class:on={mode === 'terms'} onclick={() => setMode('terms')}>terms</button>
 		</div>
 
 		{#if mode === 'neighborhood'}

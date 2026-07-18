@@ -7,6 +7,7 @@
  *   bun run notes
  *   bun run notes -- --stale 30
  *   bun run notes -- --task api-foundations
+ *   bun run notes -- --term T0001
  *   bun run notes -- --sql "select * from edges where predicate='depends-on'"
  *   bun run notes -- --graph
  */
@@ -84,6 +85,20 @@ for (const item of todoItems) {
   node(`todo:${item.id}`, "todo", item.summary, item.severity, item.path, 0, 0);
 }
 
+const termDefinitions = new Map();
+for (const path of notePaths) {
+  const text = readFileSync(resolve(ROOT, path), "utf8");
+  const termId = text.match(/^- \*\*Term ID:\*\*\s*(T\d{4,})\s*$/im)?.[1];
+  if (!termId) continue;
+  if (termDefinitions.has(termId)) {
+    throw new Error(`duplicate term definition ${termId}: ${termDefinitions.get(termId)} and ${path}`);
+  }
+  const title = text.match(/^#\s+(.+)$/m)?.[1].trim() ?? termId;
+  termDefinitions.set(termId, path);
+  node(`term:${termId}`, "term", title, "defined", path, 0, 0);
+  edge(`term:${termId}`, "defined-by", `note:${path}`);
+}
+
 for (const path of notePaths) {
   const text = readFileSync(resolve(ROOT, path), "utf8");
   const id = `note:${path}`;
@@ -119,6 +134,14 @@ for (const path of notePaths) {
       "documents",
       `file:${target}`,
       pattern ? "pattern" : existsSync(resolve(ROOT, target)) ? match[2] : "missing",
+    );
+  }
+  for (const match of text.matchAll(/\[\[term:(T\d{4,})\]\]/g)) {
+    edge(
+      id,
+      "uses-term",
+      `term:${match[1]}`,
+      termDefinitions.has(match[1]) ? null : "missing",
     );
   }
 }
@@ -209,6 +232,7 @@ const show = (rows) => (rows.length ? console.table(rows) : console.log("(none)"
 const sql = valueAfter("--sql");
 const stale = valueAfter("--stale");
 const task = valueAfter("--task");
+const term = valueAfter("--term");
 if (sql) {
   show(db.query(sql).all());
 } else if (stale) {
@@ -231,6 +255,19 @@ if (sql) {
          WHERE e.source=? ORDER BY e.predicate,n.id`,
       )
       .all(`task:${task}`),
+  );
+} else if (term) {
+  show(
+    db
+      .query(
+        `SELECT e.predicate,n.kind,n.id,n.title,n.path,e.detail
+         FROM edges e
+         JOIN nodes n ON n.id=CASE WHEN e.source=? THEN e.target ELSE e.source END
+         WHERE (e.source=? AND e.predicate='defined-by')
+            OR (e.target=? AND e.predicate='uses-term')
+         ORDER BY e.predicate,n.path`,
+      )
+      .all(`term:${term}`, `term:${term}`, `term:${term}`),
   );
 } else {
   const counts = Object.fromEntries(

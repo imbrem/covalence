@@ -1645,8 +1645,17 @@
       "title": "notes/ — the map",
       "status": null,
       "path": "notes/README.md",
-      "words": 291,
+      "words": 367,
       "updated": 1784413701
+    },
+    {
+      "id": "note:notes/terms/T0001.md",
+      "kind": "note",
+      "title": "Relational residual",
+      "status": "draft",
+      "path": "notes/terms/T0001.md",
+      "words": 123,
+      "updated": 1784414494
     },
     {
       "id": "note:notes/vibes/build/buck2-experiment.md",
@@ -2702,6 +2711,15 @@
       "updated": 0
     },
     {
+      "id": "term:T0001",
+      "kind": "term",
+      "title": "Relational residual",
+      "status": "defined",
+      "path": "notes/terms/T0001.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:ffi.python.hol-kernel-bindings-removed-pending-rewrite",
       "kind": "todo",
       "title": "HOL kernel bindings removed pending rewrite: the pure module exposing",
@@ -2752,6 +2770,15 @@
       "title": "Adapt this compatibility surface to covalence-logic-api once its carrier traits stabilize.",
       "status": "major",
       "path": "crates/lang/inductive/src/logic.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:json.parser-depth-limit",
+      "kind": "todo",
+      "title": "Replace recursive descent with an explicit stack or enforce a configurable nesting bound before accepting adversarial input.",
+      "status": "severe",
+      "path": "crates/lang/json-api/src/lib.rs",
       "words": 0,
       "updated": 0
     },
@@ -5890,6 +5917,12 @@
       "source": "note:notes/README.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/README.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/README.md",
+      "predicate": "uses-term",
+      "target": "term:T0001",
       "detail": null
     },
     {
@@ -10408,6 +10441,12 @@
       "source": "task:sexpr-proof-capabilities",
       "predicate": "touches",
       "target": "file:crates/lang/sexpr-api",
+      "detail": null
+    },
+    {
+      "source": "term:T0001",
+      "predicate": "defined-by",
+      "target": "note:notes/terms/T0001.md",
       "detail": null
     }
   ]

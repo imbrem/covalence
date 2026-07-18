@@ -42,10 +42,9 @@
 //! the consumer's layer with a single-outgoing-edge check.
 
 // TODO(cov:graph.dot-full, major): Extend the bounded DOT interchange subset to ports, subgraphs, HTML labels, chained edges, and the complete attribute grammar.
-// TODO(cov:graph.networkx-formats, major): Add weighted/multiline adjacency formats and escaping policies above the adjacency- and edge-list seams.
-
 pub mod canonical;
 pub mod interchange;
+pub mod networkx;
 pub mod overlay;
 pub mod render;
 pub mod string_diagram;

@@ -28,6 +28,10 @@ disable-model-invocation: true
   - `covalence-init`'s `NativeHol` implements the extracted carrier and core
     capabilities; `covalence-hol-api` keeps the legacy concrete-HOL Nat facade
     as a forwarding compatibility adapter while consumers migrate.
+  - `covalence-init::init::inductive::DoubleSuccNat` is a distinct Nat API
+    backend whose nonzero literals use the derived binary double/successor
+    encoding. It still shares native carriers and theory operations; it is a
+    representation stress test, not yet complete leaf elimination.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

@@ -544,13 +544,13 @@ mod tests {
         let ex = hol.exists_intro(pred, p.clone(), at_p).unwrap();
 
         assert!(hol.hyps(&ex).is_empty());
-        let expected = hol
-            .exists(
-                "x",
-                bool_ty.clone(),
-                hol.eq(hol.var("x", bool_ty), p).unwrap(),
-            )
-            .unwrap();
+        let expected = Hol::exists(
+            &hol,
+            "x",
+            bool_ty.clone(),
+            hol.eq(hol.var("x", bool_ty), p).unwrap(),
+        )
+        .unwrap();
         assert_eq!(&hol.concl(&ex), &expected);
     }
 }

@@ -7,6 +7,7 @@
 	const links = [
 		{ href: '/', label: 'repl' },
 		{ href: '/deps', label: 'dep tree' },
+		{ href: '/map', label: 'covalence map' },
 		{ href: '/tcb', label: 'tcb audit' },
 		{ href: '/haskell', label: 'haskell' },
 		{ href: '/lisp', label: 'lisp' },

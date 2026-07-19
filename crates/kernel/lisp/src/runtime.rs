@@ -134,6 +134,49 @@ impl<A, P, V> RuntimeValueView<A, P, V> {
     }
 }
 
+/// One complete layer of the canonical runtime-value functor.
+///
+/// Unlike [`RuntimeValueView`], this machine-facing layer includes the opaque
+/// closure payload. It is therefore suitable for implementing `roll` and
+/// `unroll`, but should not be handed to ordinary language clients.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RuntimeValueLayer<A, C, P, V> {
+    Atom(A),
+    Nil,
+    Cons { head: V, tail: V },
+    Closure(C),
+    Primitive(P),
+    ApplyListProcedure,
+}
+
+impl<A, C, P, V> RuntimeValueLayer<A, C, P, V> {
+    pub const fn case(&self) -> RuntimeValueCase {
+        match self {
+            Self::Atom(_) => RuntimeValueCase::Atom,
+            Self::Nil => RuntimeValueCase::Nil,
+            Self::Cons { .. } => RuntimeValueCase::Cons,
+            Self::Closure(_) => RuntimeValueCase::Closure,
+            Self::Primitive(_) => RuntimeValueCase::Primitive,
+            Self::ApplyListProcedure => RuntimeValueCase::ApplyListProcedure,
+        }
+    }
+
+    /// The functorial action on recursive positions.
+    pub fn map_recursive<W>(self, mut map: impl FnMut(V) -> W) -> RuntimeValueLayer<A, C, P, W> {
+        match self {
+            Self::Atom(atom) => RuntimeValueLayer::Atom(atom),
+            Self::Nil => RuntimeValueLayer::Nil,
+            Self::Cons { head, tail } => RuntimeValueLayer::Cons {
+                head: map(head),
+                tail: map(tail),
+            },
+            Self::Closure(closure) => RuntimeValueLayer::Closure(closure),
+            Self::Primitive(primitive) => RuntimeValueLayer::Primitive(primitive),
+            Self::ApplyListProcedure => RuntimeValueLayer::ApplyListProcedure,
+        }
+    }
+}
+
 /// Construction and one-layer observation of runtime values.
 pub trait LispValue {
     type Atom: Clone;
@@ -182,6 +225,65 @@ pub trait LispValue {
             }
         }
     }
+}
+
+/// Privileged roll/unroll access used by an evaluator implementation.
+///
+/// Implementations must satisfy the fixpoint laws:
+///
+/// - `unroll(roll(layer)) = layer`;
+/// - `roll(unroll(value)) = value`.
+///
+/// Keeping this capability separate from [`LispValue`] prevents ordinary
+/// clients from observing or forging captured closure state.
+pub trait LispMachineValue: LispValue {
+    type Closure: Clone;
+
+    fn roll(
+        &self,
+        layer: RuntimeValueLayer<Self::Atom, Self::Closure, Self::Primitive, Self::Value>,
+    ) -> Result<Self::Value, Self::Error>;
+
+    fn unroll(
+        &self,
+        value: &Self::Value,
+    ) -> Result<
+        RuntimeValueLayer<Self::Atom, Self::Closure, Self::Primitive, Self::Value>,
+        Self::Error,
+    >;
+}
+
+/// Backend-neutral contents of a lexical closure.
+///
+/// The record is visible only to implementations holding a [`LispClosure`]
+/// capability. Ordinary value clients continue to observe merely
+/// [`RuntimeValueView::Closure`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClosureRecord<S, E, N> {
+    pub name: Option<S>,
+    pub parameters: Vec<S>,
+    pub rest: Option<S>,
+    pub body: E,
+    pub environment: N,
+}
+
+/// Construction and observation of opaque lexical-closure resources.
+pub trait LispClosure {
+    type Symbol: Clone;
+    type Expr: Clone;
+    type Environment: Clone;
+    type Closure: Clone;
+    type Error;
+
+    fn close(
+        &self,
+        record: ClosureRecord<Self::Symbol, Self::Expr, Self::Environment>,
+    ) -> Result<Self::Closure, Self::Error>;
+
+    fn open(
+        &self,
+        closure: &Self::Closure,
+    ) -> Result<ClosureRecord<Self::Symbol, Self::Expr, Self::Environment>, Self::Error>;
 }
 
 /// Meaning of a primitive vocabulary over an abstract runtime-value backend.

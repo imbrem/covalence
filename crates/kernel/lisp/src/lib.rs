@@ -42,8 +42,8 @@ pub use effect::{
 };
 pub use host::{
     ArityExpectation, CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum,
-    HostConfiguration, HostControl, HostEnvironment, HostEnvironments, HostFrame, HostValue,
-    HostValues,
+    HostClosures, HostConfiguration, HostControl, HostEnvironment, HostEnvironments, HostFrame,
+    HostValue, HostValues,
 };
 pub use relation::{
     CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError,
@@ -51,9 +51,9 @@ pub use relation::{
     TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
 pub use runtime::{
-    LispEnvironment, LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeDatumError,
-    RuntimeValueCase, RuntimeValueParameter, RuntimeValueView, inject_datum, project_datum,
-    runtime_value_fixpoint,
+    ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispValue, PrimitiveSemantics,
+    RuntimeBinding, RuntimeDatumError, RuntimeValueCase, RuntimeValueLayer, RuntimeValueParameter,
+    RuntimeValueView, inject_datum, project_datum, runtime_value_fixpoint,
 };
 pub use stack::{
     StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,

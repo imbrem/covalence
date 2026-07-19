@@ -73,6 +73,7 @@ graph LR
   init --> hol-eval
   init --> inductive
   init --> k
+  init --> lexer-parsing
   init --> logic-api
   init --> metamath
   init --> parsing-api
@@ -98,6 +99,11 @@ graph LR
   kernel-sat --> sat
   kernel-smt --> core
   kernel-smt --> hol-api
+  lexer-cfg-parsing --> cfg-parsing
+  lexer-cfg-parsing --> grammar
+  lexer-cfg-parsing --> lexer-parsing
+  lexer-cfg-parsing --> logic-api
+  lexer-cfg-parsing --> parsing-api
   lexer-parsing --> grammar
   lexer-parsing --> logic-api
   lexer-parsing --> parsing-api

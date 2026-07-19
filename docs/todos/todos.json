@@ -2975,23 +2975,23 @@
       "crate": "covalence-spectec"
     },
     {
-      "id": "parsing.bytes.cfg-integration",
+      "id": "parsing.bytes.peg-integration",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Interpret CFG and PEG derivations as bounded A0013 relational witnesses with ambiguity and completeness tracked explicitly.",
+      "summary": "Add a bounded PEG evaluator with explicit ordered-choice witnesses, exact/prefix modes, and resource-exhaustion errors.",
       "structured": true,
       "path": "crates/lang/parsing/src/bytes.rs",
       "line": 364,
       "crate": "covalence-parsing-api"
     },
     {
-      "id": "parsing.json.native-hol-a0015-replay",
+      "id": "parsing.lexer.native-hol-whole-judgment",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Add the corresponding checked A0015 interpretation/PER replay adapter for jsonparse without changing its existing theorem statements.",
+      "summary": "Reify the functional",
       "structured": true,
-      "path": "crates/kernel/hol/init/src/init/sexpr_parse.rs",
-      "line": 604,
+      "path": "crates/kernel/hol/init/src/grammar/lexer.rs",
+      "line": 166,
       "crate": "covalence-init"
     },
     {

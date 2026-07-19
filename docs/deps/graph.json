@@ -34,6 +34,7 @@
     "covalence-kernel-smt",
     "covalence-kv",
     "covalence-lean",
+    "covalence-lexer-cfg-parsing",
     "covalence-lexer-parsing",
     "covalence-lisp",
     "covalence-llm",
@@ -370,6 +371,10 @@
     },
     {
       "from": "covalence-init",
+      "to": "covalence-lexer-parsing"
+    },
+    {
+      "from": "covalence-init",
       "to": "covalence-logic-api"
     },
     {
@@ -467,6 +472,26 @@
     {
       "from": "covalence-kernel-smt",
       "to": "covalence-hol-api"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-cfg-parsing"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-lexer-parsing"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-parsing-api"
     },
     {
       "from": "covalence-lexer-parsing",

@@ -401,17 +401,18 @@ fn view_kind<N, S, A, O>(view: &JsonView<N, S, A, O>) -> JsonKind {
 mod tests {
     use super::*;
     use covalence_json_api::{
-        InductiveJsonLayer, InductiveJsonScalar, JsonMember, JsonObject, JsonString, JsonValue,
-        ReferenceJson,
+        InductiveJsonLayer, JsonMember, JsonObject, JsonString, JsonValue, ReferenceJson,
     };
 
     #[test]
     fn unchanged_structural_filter_runs_on_reference_and_inductive_stack() {
-        fn identity<J>(json: J, value: J::Value)
+        fn identity<J>(json: J)
         where
-            J: JsonRepresentation,
+            J: JsonScalarConstructors,
             J::Value: Clone + PartialEq + core::fmt::Debug,
+            J::Error: core::fmt::Debug,
         {
+            let value = json.boolean(true).unwrap();
             let filter = FilterOf::Identity;
             let result = GenericJsonQuery::new(json)
                 .evaluate_structural(&filter, &value, EvalBudget::default())
@@ -419,10 +420,38 @@ mod tests {
             assert_eq!(result.values, vec![value]);
         }
 
-        identity(ReferenceJson::<()>::new(), JsonValue::Bool(true));
-        identity(
+        identity(ReferenceJson::<()>::new());
+        identity(InductiveJsonLayer::<(), JsonString>::new());
+    }
+
+    #[test]
+    fn unchanged_field_filter_runs_on_both_complete_backends() {
+        fn field<J>(json: J, name: J::String)
+        where
+            J: JsonScalarConstructors
+                + JsonAggregateConstructors
+                + JsonArrays
+                + JsonSemanticObjects,
+            J::Value: Clone + PartialEq + core::fmt::Debug,
+            J::String: Clone + PartialEq,
+            J::Error: core::fmt::Debug,
+        {
+            let expected = json.boolean(true).unwrap();
+            let members = json
+                .object_from_members([(name.clone(), expected.clone())])
+                .unwrap();
+            let input = json.object(members).unwrap();
+            let filter = FilterOf::Field(name);
+            let result = GenericJsonQuery::new(json)
+                .evaluate(&filter, &input, EvalBudget::default())
+                .unwrap();
+            assert_eq!(result.values, vec![expected]);
+        }
+
+        field(ReferenceJson::<()>::new(), JsonString::from("answer"));
+        field(
             InductiveJsonLayer::<(), JsonString>::new(),
-            InductiveJsonScalar::Bool(true),
+            JsonString::from("answer"),
         );
     }
 

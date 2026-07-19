@@ -8,7 +8,7 @@
 
 use covalence_core::{Result, Term, Type, defs as core_defs};
 use covalence_hol_eval::{defs, mk_bool};
-use covalence_logic_api::{BitSyntax, BitsConstruction, BitsObservation, BitsSyntax};
+use covalence_kernel_data::{BitSyntax, BitsConstruction, BitsObservation, BitsSyntax};
 
 use super::hol::{Hol, NativeHol};
 

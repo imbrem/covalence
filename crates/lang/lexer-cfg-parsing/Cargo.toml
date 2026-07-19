@@ -9,5 +9,6 @@ license.workspace = true
 covalence-cfg-parsing = { path = "../cfg-parsing" }
 covalence-grammar = { path = "../grammar" }
 covalence-lexer-parsing = { path = "../lexer-parsing" }
-covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-logic-api = { path = "../../kernel/logic" }
+covalence-kernel-data = { path = "../../kernel/data" }
 covalence-parsing-api = { path = "../parsing" }

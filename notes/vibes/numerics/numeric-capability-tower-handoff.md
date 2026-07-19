@@ -44,7 +44,7 @@ laws merely because its host representation computes successfully.
 ## Existing foundation
 
 - Abstract Nat capabilities:
-  `crates/kernel/hol/logic/src/nat.rs`.
+  `crates/kernel/data/numeric/src/nat.rs`.
 - Legacy concrete Int facade:
   `crates/kernel/hol/api/src/int.rs`.
 - Exact decimal traits and canonical interchange:
@@ -77,8 +77,9 @@ problem to solve.
 
 ## Required boundaries
 
-- Put dependency-free numeric vocabulary beside the existing logic/Nat
-  vocabulary, or in an equally low and neutral API crate.
+- Put dependency-free numeric vocabulary in `crates/kernel/data/numeric`;
+  logic carriers and relations remain in the lower, neutral
+  `crates/kernel/logic` crate.
 - Keep host values, NativeHol terms, IEEE evaluation, and future WASM/WIT
   realizations as backends.
 - Treat BigInt, BigRational, host float operations, normalization, parsing, and
@@ -140,4 +141,3 @@ complete; otherwise narrow it into precise source-local follow-ups.
 - Report commits, stable TODO changes, tests, dependency/TCB deltas, ergonomic
   problems found in the traits, and a proposed `certified-decimal-f32-ball`
   follow-up.
-

@@ -1,0 +1,11 @@
+[package]
+name = "covalence-kernel-data"
+version = "0.0.0"
+edition = "2024"
+
+description = "Representation-independent scalar, numeric, encoding, and datatype capabilities"
+license.workspace = true
+
+[dependencies]
+covalence-logic-api = { path = "../logic" }
+covalence-kernel-numeric = { path = "numeric" }

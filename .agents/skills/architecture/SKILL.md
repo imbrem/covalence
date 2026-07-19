@@ -15,16 +15,30 @@ disable-model-invocation: true
   - Files: `arena.rs`, `egraph.rs`, `eprop.rs`, `hash.rs`, `id.rs`, `kernel.rs`, `primop.rs`, `prop.rs`, `reduce.rs`, `subst.rs`, `term.rs`, `ty.rs`, `uf.rs`
   - Deps are minimal (`bytes`, `smol_str`, `covalence-hash`, `covalence-types`); does NOT depend on `covalence-wasm` or `wasmtime` in this branch.
   - The Sync/Async backend traits (`SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`) now live in `crates/kernel/shell/` (`pub use traits::{...}` in `src/lib.rs`). Update this section when the kernel is re-integrated with the shell.
-- `crates/kernel/hol/logic/` — dependency-free logic API vocabulary
+- `crates/kernel/logic/` — dependency-free logic API vocabulary
   - `Logic` owns the associated kind/type/term/theorem/error carriers.
   - Capability traits split type operators, term binders, equality, quantifiers,
     and proof rules; `relation` provides typed `Arrow` values and basic
     relational algebra. Products, coproducts, tabulation, reflexive-transitive
     closure, and residuals are optional syntax capabilities with separate
     proof-law interfaces.
+- `crates/kernel/data/numeric/` — numeric theories over the logic carriers
   - `nat` provides representation-independent natural-number syntax,
     arithmetic, order, supplied law bundles, and optional decision/normalization
-    capabilities over the `Logic` carriers.
+    capabilities.
+  - `int` gives mathematical integers the same capability-sized syntax,
+    arithmetic, order, law, decision, and normalization structure. Concrete
+    NativeHol ordered-ring compatibility remains in `covalence-hol-api` while
+    consumers migrate.
+- `crates/kernel/data/` — representation-independent scalar data and morphisms
+  - `scalar` owns Bit/Bits, Byte/Bytes, Unicode scalar/String, and UTF-8/UTF-16
+    capabilities.
+  - `morphism` owns explicit cross-representation adapters such as Nat-backed
+    radix-256 bytes. It must not contain S-expression, Lisp, JSON, K, or WASM
+    domain concepts.
+  - The abstract crate depends on `kernel/logic` and `data/numeric`; NativeHol
+    datatype realization remains temporarily in `covalence-init` pending the
+    separate `kernel/data/hol` extraction.
   - `covalence-init`'s `NativeHol` implements the extracted carrier and core
     capabilities; `covalence-hol-api` keeps the legacy concrete-HOL Nat facade
     as a forwarding compatibility adapter while consumers migrate.

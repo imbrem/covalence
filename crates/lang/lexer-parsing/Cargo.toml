@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 covalence-grammar = { path = "../grammar" }
-covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-logic-api = { path = "../../kernel/logic" }
+covalence-kernel-data = { path = "../../kernel/data" }
 covalence-parsing-api = { path = "../parsing" }
 covalence-regex-parsing = { path = "../regex-parsing" }

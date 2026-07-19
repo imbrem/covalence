@@ -1,0 +1,11 @@
+[package]
+name = "covalence-kernel-numeric"
+version = "0.0.0"
+edition = "2024"
+
+description = "Representation-independent exact and approximate numeric capabilities"
+license.workspace = true
+
+[dependencies]
+covalence-logic-api = { path = "../../logic" }
+

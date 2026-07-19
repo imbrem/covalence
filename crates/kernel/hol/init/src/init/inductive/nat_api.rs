@@ -3,7 +3,7 @@
 //! @covalence-api-impl {"api":"A0002","name":"NativeHol","representation":"HOL natural-number leaves and definitions"}
 
 use covalence_core::{Result, Term, Type};
-use covalence_logic_api::nat::{
+use covalence_kernel_data::numeric::nat::{
     NatAdditiveLaws, NatArithmetic, NatFreeness, NatMultiplicativeLaws, NatOrder, NatRecursionLaws,
     NatSyntax,
 };

@@ -6,5 +6,6 @@ description = "Bounded, backend-neutral PEG evaluation for Covalence"
 license.workspace = true
 
 [dependencies]
-covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-logic-api = { path = "../../kernel/logic" }
+covalence-kernel-data = { path = "../../kernel/data" }
 covalence-parsing-api = { path = "../parsing" }

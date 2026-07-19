@@ -20,9 +20,9 @@
       "severity": "major",
       "summary": "Replace the initial List<Bool> representation seam with abstract Bool and List capabilities once those carrier APIs stabilize.",
       "structured": true,
-      "path": "crates/kernel/hol/logic/src/bits.rs",
-      "line": 127,
-      "crate": "covalence-logic-api"
+      "path": "crates/kernel/data/src/scalar/bits.rs",
+      "line": 128,
+      "crate": "covalence-kernel-data"
     },
     {
       "id": "bits.bytes-packing-backend",
@@ -30,9 +30,9 @@
       "severity": "major",
       "summary": "Implement A0010↔A0003 packing behind BytePacking and prove aligned and padded round-trip laws.",
       "structured": true,
-      "path": "crates/kernel/hol/logic/src/bits.rs",
-      "line": 128,
-      "crate": "covalence-logic-api"
+      "path": "crates/kernel/data/src/scalar/bits.rs",
+      "line": 129,
+      "crate": "covalence-kernel-data"
     },
     {
       "id": "bytes.abstract-list-adapter",
@@ -40,9 +40,9 @@
       "severity": "major",
       "summary": "Replace the temporary meta-level NatByteSequence vectors with the abstract proof-bearing list API once its carrier and elementwise-predicate interfaces stabilize.",
       "structured": true,
-      "path": "crates/kernel/hol/logic/src/bytes.rs",
-      "line": 243,
-      "crate": "covalence-logic-api"
+      "path": "crates/kernel/data/src/scalar/bytes.rs",
+      "line": 244,
+      "crate": "covalence-kernel-data"
     },
     {
       "id": "bytes.leb128-encoding",
@@ -50,9 +50,9 @@
       "severity": "major",
       "summary": "Add unsigned/signed LEB128 as variable-length byte relations with canonicality, termination, and bounded-width overflow evidence.",
       "structured": true,
-      "path": "crates/kernel/hol/logic/src/bytes.rs",
-      "line": 244,
-      "crate": "covalence-logic-api"
+      "path": "crates/kernel/data/src/scalar/bytes.rs",
+      "line": 245,
+      "crate": "covalence-kernel-data"
     },
     {
       "id": "computability.compiler-transport",
@@ -3330,9 +3330,9 @@
       "severity": "major",
       "summary": "Replace the temporary character-sequence seam with the shared abstract finite-list API once it lands.",
       "structured": true,
-      "path": "crates/kernel/hol/logic/src/text.rs",
-      "line": 274,
-      "crate": "covalence-logic-api"
+      "path": "crates/kernel/data/src/scalar/text.rs",
+      "line": 275,
+      "crate": "covalence-kernel-data"
     },
     {
       "id": "text.unicode-tables",
@@ -3340,9 +3340,9 @@
       "severity": "major",
       "summary": "Add versioned Unicode normalization, case, category, and grapheme tables with checked provenance.",
       "structured": true,
-      "path": "crates/kernel/hol/logic/src/text.rs",
-      "line": 275,
-      "crate": "covalence-logic-api"
+      "path": "crates/kernel/data/src/scalar/text.rs",
+      "line": 276,
+      "crate": "covalence-kernel-data"
     },
     {
       "id": "vscode.macos-native-server",

@@ -33,7 +33,7 @@
       "kind": "api",
       "title": "Logic carriers and capabilities",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/lib.rs",
+      "path": "crates/kernel/logic/src/lib.rs",
       "words": 0,
       "updated": 0
     },
@@ -42,7 +42,7 @@
       "kind": "api",
       "title": "Natural numbers",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/nat.rs",
+      "path": "crates/kernel/data/numeric/src/nat.rs",
       "words": 0,
       "updated": 0
     },
@@ -51,7 +51,7 @@
       "kind": "api",
       "title": "Bytes and byte strings",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "path": "crates/kernel/data/src/scalar/bytes.rs",
       "words": 0,
       "updated": 0
     },
@@ -114,7 +114,7 @@
       "kind": "api",
       "title": "Bits and finite bit strings",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "path": "crates/kernel/data/src/scalar/bits.rs",
       "words": 0,
       "updated": 0
     },
@@ -150,7 +150,7 @@
       "kind": "api",
       "title": "Characters and strings",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/text.rs",
+      "path": "crates/kernel/data/src/scalar/text.rs",
       "words": 0,
       "updated": 0
     },
@@ -209,12 +209,21 @@
       "updated": 0
     },
     {
+      "id": "api:A0021",
+      "kind": "api",
+      "title": "Mathematical integers",
+      "status": "experimental",
+      "path": "crates/kernel/data/numeric/src/int.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 203,
+      "words": 217,
       "updated": 0
     },
     {
@@ -466,7 +475,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7422,
+      "words": 7446,
       "updated": 0
     },
     {
@@ -475,7 +484,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "Cargo.toml",
-      "words": 56,
+      "words": 59,
       "updated": 0
     },
     {
@@ -664,7 +673,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35207,
+      "words": 35348,
       "updated": 0
     },
     {
@@ -5258,6 +5267,123 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/data/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/kernel/data/Cargo.toml",
+      "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/numeric",
+      "kind": "file",
+      "title": "crates/kernel/data/numeric",
+      "status": null,
+      "path": "crates/kernel/data/numeric",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/numeric/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/kernel/data/numeric/Cargo.toml",
+      "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/numeric/src/int.rs",
+      "kind": "file",
+      "title": "int.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/numeric/src/int.rs",
+      "words": 131,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/numeric/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/numeric/src/lib.rs",
+      "words": 18,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/numeric/src/nat.rs",
+      "kind": "file",
+      "title": "nat.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/numeric/src/nat.rs",
+      "words": 159,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/src/lib.rs",
+      "words": 48,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/src/morphism/mod.rs",
+      "kind": "file",
+      "title": "mod.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/src/morphism/mod.rs",
+      "words": 4,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/src/morphism/nat_bytes.rs",
+      "kind": "file",
+      "title": "nat_bytes.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/src/morphism/nat_bytes.rs",
+      "words": 285,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/src/scalar/bits.rs",
+      "kind": "file",
+      "title": "bits.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/src/scalar/bits.rs",
+      "words": 274,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/src/scalar/bytes.rs",
+      "kind": "file",
+      "title": "bytes.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/src/scalar/bytes.rs",
+      "words": 412,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/src/scalar/mod.rs",
+      "kind": "file",
+      "title": "mod.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/src/scalar/mod.rs",
+      "words": 6,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/src/scalar/text.rs",
+      "kind": "file",
+      "title": "text.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/src/scalar/text.rs",
+      "words": 327,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol",
       "kind": "file",
       "title": "crates/kernel/hol",
@@ -5290,7 +5416,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/kernel/hol/api/Cargo.toml",
-      "words": 25,
+      "words": 26,
       "updated": 0
     },
     {
@@ -5317,7 +5443,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/api/src/lib.rs",
-      "words": 142,
+      "words": 144,
       "updated": 0
     },
     {
@@ -6370,7 +6496,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/kernel/hol/init/Cargo.toml",
-      "words": 54,
+      "words": 55,
       "updated": 0
     },
     {
@@ -8840,87 +8966,6 @@
       "updated": 0
     },
     {
-      "id": "file:crates/kernel/hol/logic",
-      "kind": "file",
-      "title": "crates/kernel/hol/logic",
-      "status": null,
-      "path": "crates/kernel/hol/logic",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/kernel/hol/logic/Cargo.toml",
-      "kind": "file",
-      "title": "Cargo.toml",
-      "status": "tracked",
-      "path": "crates/kernel/hol/logic/Cargo.toml",
-      "words": 11,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/kernel/hol/logic/src/bits.rs",
-      "kind": "file",
-      "title": "bits.rs",
-      "status": "tracked",
-      "path": "crates/kernel/hol/logic/src/bits.rs",
-      "words": 273,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/kernel/hol/logic/src/bytes.rs",
-      "kind": "file",
-      "title": "bytes.rs",
-      "status": "tracked",
-      "path": "crates/kernel/hol/logic/src/bytes.rs",
-      "words": 411,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/kernel/hol/logic/src/bytes_nat.rs",
-      "kind": "file",
-      "title": "bytes_nat.rs",
-      "status": "tracked",
-      "path": "crates/kernel/hol/logic/src/bytes_nat.rs",
-      "words": 285,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/kernel/hol/logic/src/lib.rs",
-      "kind": "file",
-      "title": "lib.rs",
-      "status": "tracked",
-      "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 261,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/kernel/hol/logic/src/nat.rs",
-      "kind": "file",
-      "title": "nat.rs",
-      "status": "tracked",
-      "path": "crates/kernel/hol/logic/src/nat.rs",
-      "words": 159,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/kernel/hol/logic/src/relation.rs",
-      "kind": "file",
-      "title": "relation.rs",
-      "status": "tracked",
-      "path": "crates/kernel/hol/logic/src/relation.rs",
-      "words": 1030,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/kernel/hol/logic/src/text.rs",
-      "kind": "file",
-      "title": "text.rs",
-      "status": "tracked",
-      "path": "crates/kernel/hol/logic/src/text.rs",
-      "words": 326,
-      "updated": 0
-    },
-    {
       "id": "file:crates/kernel/hol/test-guest/Cargo.toml",
       "kind": "file",
       "title": "Cargo.toml",
@@ -8999,6 +9044,42 @@
       "status": null,
       "path": "crates/kernel/hol/{core,traits,api,init,eval}",
       "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/logic",
+      "kind": "file",
+      "title": "crates/kernel/logic",
+      "status": null,
+      "path": "crates/kernel/logic",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/logic/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/kernel/logic/Cargo.toml",
+      "words": 10,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/logic/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/kernel/logic/src/lib.rs",
+      "words": 230,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/logic/src/relation.rs",
+      "kind": "file",
+      "title": "relation.rs",
+      "status": "tracked",
+      "path": "crates/kernel/logic/src/relation.rs",
+      "words": 1030,
       "updated": 0
     },
     {
@@ -9286,7 +9367,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/computation/Cargo.toml",
-      "words": 11,
+      "words": 12,
       "updated": 0
     },
     {
@@ -9313,7 +9394,7 @@
       "title": "blc.rs",
       "status": "tracked",
       "path": "crates/lang/computation/src/blc.rs",
-      "words": 484,
+      "words": 485,
       "updated": 0
     },
     {
@@ -10402,7 +10483,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/lexer-cfg-parsing/Cargo.toml",
-      "words": 14,
+      "words": 15,
       "updated": 0
     },
     {
@@ -10420,7 +10501,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/lexer-parsing/Cargo.toml",
-      "words": 13,
+      "words": 14,
       "updated": 0
     },
     {
@@ -11113,7 +11194,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/parsing/Cargo.toml",
-      "words": 11,
+      "words": 12,
       "updated": 0
     },
     {
@@ -11140,7 +11221,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/parsing/src/lib.rs",
-      "words": 389,
+      "words": 390,
       "updated": 0
     },
     {
@@ -11149,7 +11230,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/peg-parsing/Cargo.toml",
-      "words": 11,
+      "words": 12,
       "updated": 0
     },
     {
@@ -11167,7 +11248,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/regex-parsing/Cargo.toml",
-      "words": 13,
+      "words": 14,
       "updated": 0
     },
     {
@@ -11239,7 +11320,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/sexpr-parsing/Cargo.toml",
-      "words": 14,
+      "words": 15,
       "updated": 0
     },
     {
@@ -15100,7 +15181,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35207,
+      "words": 35348,
       "updated": 0
     },
     {
@@ -15118,7 +15199,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 301,
+      "words": 315,
       "updated": 0
     },
     {
@@ -15127,7 +15208,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 999,
+      "words": 1049,
       "updated": 0
     },
     {
@@ -15136,7 +15217,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 224,
+      "words": 236,
       "updated": 0
     },
     {
@@ -15145,7 +15226,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1784,
+      "words": 1868,
       "updated": 0
     },
     {
@@ -15784,7 +15865,7 @@
       "title": "logic-relations.toml",
       "status": "tracked",
       "path": "notes/projects/logic-relations.toml",
-      "words": 15,
+      "words": 16,
       "updated": 0
     },
     {
@@ -17610,7 +17691,7 @@
       "kind": "implementation",
       "title": "NatBackedBytes<B>",
       "status": "implemented",
-      "path": "crates/kernel/hol/logic/src/bytes_nat.rs",
+      "path": "crates/kernel/data/src/morphism/nat_bytes.rs",
       "words": 0,
       "updated": 0
     },
@@ -18619,8 +18700,8 @@
       "title": "Numeric capability tower: workmux handoff",
       "status": "draft",
       "path": "notes/vibes/numerics/numeric-capability-tower-handoff.md",
-      "words": 670,
-      "updated": 1784475624
+      "words": 669,
+      "updated": 1784477555
     },
     {
       "id": "note:notes/vibes/observers/backend-decoupling.md",
@@ -19104,7 +19185,7 @@
       "kind": "todo",
       "title": "Replace the initial List<Bool> representation seam with abstract Bool and List capabilities once those carrier APIs stabilize.",
       "status": "major",
-      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "path": "crates/kernel/data/src/scalar/bits.rs",
       "words": 0,
       "updated": 0
     },
@@ -19113,7 +19194,7 @@
       "kind": "todo",
       "title": "Implement A0010↔A0003 packing behind BytePacking and prove aligned and padded round-trip laws.",
       "status": "major",
-      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "path": "crates/kernel/data/src/scalar/bits.rs",
       "words": 0,
       "updated": 0
     },
@@ -19122,7 +19203,7 @@
       "kind": "todo",
       "title": "Replace the temporary meta-level NatByteSequence vectors with the abstract proof-bearing list API once its carrier and elementwise-predicate interfaces stabilize.",
       "status": "major",
-      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "path": "crates/kernel/data/src/scalar/bytes.rs",
       "words": 0,
       "updated": 0
     },
@@ -19131,7 +19212,7 @@
       "kind": "todo",
       "title": "Add unsigned/signed LEB128 as variable-length byte relations with canonicality, termination, and bounded-width overflow evidence.",
       "status": "major",
-      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "path": "crates/kernel/data/src/scalar/bytes.rs",
       "words": 0,
       "updated": 0
     },
@@ -22137,7 +22218,7 @@
       "kind": "todo",
       "title": "Replace the temporary character-sequence seam with the shared abstract finite-list API once it lands.",
       "status": "major",
-      "path": "crates/kernel/hol/logic/src/text.rs",
+      "path": "crates/kernel/data/src/scalar/text.rs",
       "words": 0,
       "updated": 0
     },
@@ -22146,7 +22227,7 @@
       "kind": "todo",
       "title": "Add versioned Unicode normalization, case, category, and grapheme tables with checked provenance.",
       "status": "major",
-      "path": "crates/kernel/hol/logic/src/text.rs",
+      "path": "crates/kernel/data/src/scalar/text.rs",
       "words": 0,
       "updated": 0
     },
@@ -22272,13 +22353,13 @@
     {
       "source": "api:A0001",
       "predicate": "defined-in",
-      "target": "file:crates/kernel/hol/logic/src/lib.rs",
+      "target": "file:crates/kernel/logic/src/lib.rs",
       "detail": null
     },
     {
       "source": "api:A0002",
       "predicate": "defined-in",
-      "target": "file:crates/kernel/hol/logic/src/nat.rs",
+      "target": "file:crates/kernel/data/numeric/src/nat.rs",
       "detail": null
     },
     {
@@ -22290,7 +22371,7 @@
     {
       "source": "api:A0003",
       "predicate": "defined-in",
-      "target": "file:crates/kernel/hol/logic/src/bytes.rs",
+      "target": "file:crates/kernel/data/src/scalar/bytes.rs",
       "detail": null
     },
     {
@@ -22374,7 +22455,7 @@
     {
       "source": "api:A0010",
       "predicate": "defined-in",
-      "target": "file:crates/kernel/hol/logic/src/bits.rs",
+      "target": "file:crates/kernel/data/src/scalar/bits.rs",
       "detail": null
     },
     {
@@ -22452,7 +22533,7 @@
     {
       "source": "api:A0014",
       "predicate": "defined-in",
-      "target": "file:crates/kernel/hol/logic/src/text.rs",
+      "target": "file:crates/kernel/data/src/scalar/text.rs",
       "detail": null
     },
     {
@@ -22573,6 +22654,24 @@
       "source": "api:A0020",
       "predicate": "depends-on",
       "target": "api:A0007",
+      "detail": null
+    },
+    {
+      "source": "api:A0021",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/data/numeric/src/int.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0021",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0021",
+      "predicate": "depends-on",
+      "target": "api:A0002",
       "detail": null
     },
     {
@@ -23077,6 +23176,54 @@
       "source": "file:crates/kernel/core/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/core/src/store.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/numeric/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/numeric/src/int.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/numeric/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/numeric/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/src/morphism/mod.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/src/scalar/mod.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/src/morphism/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/src/morphism/nat_bytes.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/src/scalar/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/src/scalar/bits.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/src/scalar/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/src/scalar/bytes.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/src/scalar/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/src/scalar/text.rs",
       "detail": null
     },
     {
@@ -24730,42 +24877,6 @@
       "detail": null
     },
     {
-      "source": "file:crates/kernel/hol/logic/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/kernel/hol/logic/src/bits.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/kernel/hol/logic/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/kernel/hol/logic/src/bytes.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/kernel/hol/logic/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/kernel/hol/logic/src/bytes_nat.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/kernel/hol/logic/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/kernel/hol/logic/src/nat.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/kernel/hol/logic/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/kernel/hol/logic/src/relation.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/kernel/hol/logic/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/kernel/hol/logic/src/text.rs",
-      "detail": null
-    },
-    {
       "source": "file:crates/kernel/hol/traits/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/traits/src/hol_light_ctx.rs",
@@ -24781,6 +24892,12 @@
       "source": "file:crates/kernel/hol/traits/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/traits/src/types.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/logic/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/logic/src/relation.rs",
       "detail": null
     },
     {
@@ -26568,7 +26685,7 @@
     {
       "source": "impl:A0003:NatBackedBytes<B>",
       "predicate": "defined-in",
-      "target": "file:crates/kernel/hol/logic/src/bytes_nat.rs",
+      "target": "file:crates/kernel/data/src/morphism/nat_bytes.rs",
       "detail": null
     },
     {
@@ -30162,6 +30279,18 @@
     {
       "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
       "predicate": "documents",
+      "target": "file:crates/kernel/data/numeric",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/data/numeric/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
       "target": "file:crates/kernel/hol/api/src/int.rs",
       "detail": null
     },
@@ -30192,7 +30321,7 @@
     {
       "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
       "predicate": "documents",
-      "target": "file:crates/kernel/hol/logic/src/nat.rs",
+      "target": "file:crates/kernel/logic",
       "detail": null
     },
     {
@@ -31626,13 +31755,13 @@
     {
       "source": "task:bits-api",
       "predicate": "touches",
-      "target": "file:crates/kernel/hol/init/src/init/inductive",
+      "target": "file:crates/kernel/data/src/scalar/bits.rs",
       "detail": null
     },
     {
       "source": "task:bits-api",
       "predicate": "touches",
-      "target": "file:crates/kernel/hol/logic",
+      "target": "file:crates/kernel/hol/init/src/init/inductive",
       "detail": null
     },
     {
@@ -31998,13 +32127,19 @@
     {
       "source": "task:logic-relations",
       "predicate": "touches",
+      "target": "file:crates/kernel/data/numeric",
+      "detail": null
+    },
+    {
+      "source": "task:logic-relations",
+      "predicate": "touches",
       "target": "file:crates/kernel/hol/api/src/nat.rs",
       "detail": null
     },
     {
       "source": "task:logic-relations",
       "predicate": "touches",
-      "target": "file:crates/kernel/hol/logic",
+      "target": "file:crates/kernel/logic",
       "detail": null
     },
     {
@@ -32028,6 +32163,12 @@
     {
       "source": "task:nat-logic-migration",
       "predicate": "touches",
+      "target": "file:crates/kernel/data/numeric/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "task:nat-logic-migration",
+      "predicate": "touches",
       "target": "file:crates/kernel/hol/api/src/nat.rs",
       "detail": null
     },
@@ -32035,12 +32176,6 @@
       "source": "task:nat-logic-migration",
       "predicate": "touches",
       "target": "file:crates/kernel/hol/init/src/init/inductive/nat_api.rs",
-      "detail": null
-    },
-    {
-      "source": "task:nat-logic-migration",
-      "predicate": "touches",
-      "target": "file:crates/kernel/hol/logic/src/nat.rs",
       "detail": null
     },
     {
@@ -32064,7 +32199,7 @@
     {
       "source": "task:relation-algebra",
       "predicate": "touches",
-      "target": "file:crates/kernel/hol/logic",
+      "target": "file:crates/kernel/logic",
       "detail": null
     },
     {
@@ -32160,6 +32295,12 @@
     {
       "source": "task:text-api",
       "predicate": "touches",
+      "target": "file:crates/kernel/data/src/scalar/text.rs",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "touches",
       "target": "file:crates/kernel/hol/init/src/init/char.rs",
       "detail": null
     },
@@ -32167,12 +32308,6 @@
       "source": "task:text-api",
       "predicate": "touches",
       "target": "file:crates/kernel/hol/init/src/init/string.rs",
-      "detail": null
-    },
-    {
-      "source": "task:text-api",
-      "predicate": "touches",
-      "target": "file:crates/kernel/hol/logic",
       "detail": null
     },
     {
@@ -32999,19 +33134,19 @@
       "id": "A0001",
       "title": "Logic carriers and capabilities",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/lib.rs"
+      "path": "crates/kernel/logic/src/lib.rs"
     },
     {
       "id": "A0002",
       "title": "Natural numbers",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/nat.rs"
+      "path": "crates/kernel/data/numeric/src/nat.rs"
     },
     {
       "id": "A0003",
       "title": "Bytes and byte strings",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/bytes.rs"
+      "path": "crates/kernel/data/src/scalar/bytes.rs"
     },
     {
       "id": "A0004",
@@ -33053,7 +33188,7 @@
       "id": "A0010",
       "title": "Bits and finite bit strings",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/bits.rs"
+      "path": "crates/kernel/data/src/scalar/bits.rs"
     },
     {
       "id": "A0011",
@@ -33077,7 +33212,7 @@
       "id": "A0014",
       "title": "Characters and strings",
       "status": "experimental",
-      "path": "crates/kernel/hol/logic/src/text.rs"
+      "path": "crates/kernel/data/src/scalar/text.rs"
     },
     {
       "id": "A0015",
@@ -33114,6 +33249,12 @@
       "title": "Relational JSON queries",
       "status": "experimental",
       "path": "crates/lang/jq/src/lib.rs"
+    },
+    {
+      "id": "A0021",
+      "title": "Mathematical integers",
+      "status": "experimental",
+      "path": "crates/kernel/data/numeric/src/int.rs"
     }
   ],
   "apiImplementations": [
@@ -33143,7 +33284,7 @@
       "apiId": "A0003",
       "name": "NatBackedBytes<B>",
       "representation": "validated lists of backend Nat values and radix-256 codecs",
-      "path": "crates/kernel/hol/logic/src/bytes_nat.rs"
+      "path": "crates/kernel/data/src/morphism/nat_bytes.rs"
     },
     {
       "id": "impl:A0003:NativeHol",
@@ -35064,8 +35205,8 @@
     },
     {
       "noteId": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
-      "commit": "465141892621c427eeee0bb8dc8a21ee93582528",
-      "committedAt": 1784475624
+      "commit": "39363f62efd02d9c1c5e9ef736ed3c853801f61f",
+      "committedAt": 1784477555
     },
     {
       "noteId": "note:notes/vibes/observers/backend-decoupling.md",

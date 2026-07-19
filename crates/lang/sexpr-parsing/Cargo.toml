@@ -7,7 +7,8 @@ description = "A0015 parsing adapter for Covalence S-expressions"
 license.workspace = true
 
 [dependencies]
-covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-logic-api = { path = "../../kernel/logic" }
+covalence-kernel-data = { path = "../../kernel/data" }
 covalence-parsing-api = { path = "../parsing" }
 covalence-sexp = { path = "../../lib/sexp" }
 covalence-sexpr-api = { path = "../sexpr-api" }

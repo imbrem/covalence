@@ -11,7 +11,8 @@ edition = "2024"
 # delta, zero admitted rules. See `notes/vibes/backend-decoupling.md`.
 
 [dependencies]
-covalence-logic-api = { path = "../logic" }
+covalence-logic-api = { path = "../../logic" }
+covalence-kernel-data = { path = "../../data" }
 covalence-core = { path = "../core" }
 # The reflected HOL-omega TYPE layer (kinds + de-Bruijn tyrep + the kind/rank
 # CanonRule oracle) lives in the base TCB; the `HolOmega` extension trait is a

@@ -16,7 +16,7 @@
 //! “not implemented” result.
 
 use covalence_core::Result;
-use covalence_logic_api::nat as logic_nat;
+use covalence_kernel_data::numeric::nat as logic_nat;
 
 use crate::Hol;
 

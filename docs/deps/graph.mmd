@@ -26,6 +26,7 @@ graph LR
   client --> hash
   client --> shell
   client --> store
+  computation --> kernel-data
   computation --> logic-api
   core --> pure
   core --> pure-eval
@@ -56,6 +57,7 @@ graph LR
   hol-api --> hol-eval
   hol-api --> inductive
   hol-api --> init
+  hol-api --> kernel-data
   hol-api --> logic-api
   hol-api --> pure
   hol-api --> types
@@ -74,6 +76,7 @@ graph LR
   init --> inductive
   init --> json-api
   init --> k
+  init --> kernel-data
   init --> lexer-parsing
   init --> logic-api
   init --> metamath
@@ -95,6 +98,9 @@ graph LR
   kernel --> object
   kernel --> sexp
   kernel --> store
+  kernel-data --> kernel-numeric
+  kernel-data --> logic-api
+  kernel-numeric --> logic-api
   kernel-sat --> core
   kernel-sat --> hol-eval
   kernel-sat --> init
@@ -103,10 +109,12 @@ graph LR
   kernel-smt --> hol-api
   lexer-cfg-parsing --> cfg-parsing
   lexer-cfg-parsing --> grammar
+  lexer-cfg-parsing --> kernel-data
   lexer-cfg-parsing --> lexer-parsing
   lexer-cfg-parsing --> logic-api
   lexer-cfg-parsing --> parsing-api
   lexer-parsing --> grammar
+  lexer-parsing --> kernel-data
   lexer-parsing --> logic-api
   lexer-parsing --> parsing-api
   lexer-parsing --> regex-parsing
@@ -140,7 +148,9 @@ graph LR
   parser-generator --> grammar
   parser-generator --> lexer-cfg-parsing
   parser-generator --> lexer-parsing
+  parsing-api --> kernel-data
   parsing-api --> logic-api
+  peg-parsing --> kernel-data
   peg-parsing --> logic-api
   peg-parsing --> parsing-api
   pure --> pure-trusted
@@ -163,6 +173,7 @@ graph LR
   python --> wasm
   python --> wasm-store
   regex-parsing --> grammar
+  regex-parsing --> kernel-data
   regex-parsing --> logic-api
   regex-parsing --> parsing-api
   repl --> arrow
@@ -193,6 +204,7 @@ graph LR
   sexp --> parse
   sexp --> types
   sexpr-api --> inductive
+  sexpr-parsing --> kernel-data
   sexpr-parsing --> logic-api
   sexpr-parsing --> parsing-api
   sexpr-parsing --> sexp

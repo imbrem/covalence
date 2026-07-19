@@ -40,6 +40,8 @@ pub mod omega;
 pub mod order;
 pub mod succ;
 
+pub use covalence_kernel_data as data;
+pub use covalence_kernel_data::numeric;
 /// Dependency-free logic carriers, capabilities, and relational algebra.
 ///
 /// Theory APIs should prefer these traits to concrete native HOL values.

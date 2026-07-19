@@ -8,7 +8,7 @@
 
 use covalence_core::{IntTag, Result, Term, Type};
 use covalence_hol_eval::{defs, mk_blob, mk_u8};
-use covalence_logic_api::{
+use covalence_kernel_data::{
     ByteNatBridge, ByteSyntax, BytesConstruction, BytesObservation, BytesSyntax, Endianness,
     MinimalNatBytesEncoding, NatBytesEquivalenceSyntax,
 };
@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn native_minimal_encodings_select_endianness_explicitly() {
         let api = NativeHol;
-        let nat = covalence_logic_api::NatSyntax::nat_literal(&api, 256);
+        let nat = covalence_kernel_data::NatSyntax::nat_literal(&api, 256);
         let little = api
             .nat_to_minimal_bytes(Endianness::Little, nat.clone())
             .unwrap();

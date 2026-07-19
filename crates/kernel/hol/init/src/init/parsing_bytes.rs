@@ -7,7 +7,7 @@
 //! @covalence-api-impl {"api":"A0013","name":"NativeHol closed-byte witness reflection","representation":"A0003 native byte-string leaves"}
 
 use covalence_core::Term;
-use covalence_logic_api::BytesSyntax;
+use covalence_kernel_data::BytesSyntax;
 use covalence_parsing_api::{
     ByteParseError, ByteParseOutcome, ByteParser, LiteralBytes, ParseBudget,
 };

@@ -9,7 +9,7 @@
 #![forbid(unsafe_code)]
 
 use covalence_grammar::{Class, Regex};
-use covalence_logic_api::UnicodeScalar;
+use covalence_kernel_data::UnicodeScalar;
 use covalence_parsing_api::{
     ByteParseDiagnostic, ByteParseError, ByteParseOutcome, ByteParseWitness, ByteParser,
     ByteParserRelation, ByteSpan, InterpretationPer, ParseAttempt, ParseBudget, ParseFailure,

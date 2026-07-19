@@ -8,7 +8,7 @@ use crate::{
     DecodedText, ParseAttempt, PartialParser, PartialPrefixParser, PrefixInterpretation,
     SameInterpretation, SameInterpretationResult, Span, TextEncodingBoundary,
 };
-use covalence_logic_api::UnicodeScalar;
+use covalence_kernel_data::UnicodeScalar;
 
 /// Derive whole-source parsing from prefix parsing.
 ///
@@ -158,7 +158,7 @@ mod tests {
     use super::*;
     use crate::{ParseAttempt, PartialPrefixParser, Utf8};
     use core::convert::Infallible;
-    use covalence_logic_api::RawByte;
+    use covalence_kernel_data::RawByte;
 
     struct FirstScalar;
 

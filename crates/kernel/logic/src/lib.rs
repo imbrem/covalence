@@ -3,8 +3,8 @@
 //! This crate owns vocabulary, not a logic or a trusted implementation.  In
 //! particular, implementing one of these traits cannot mint a theorem unless
 //! the associated [`Logic::Theorem`] type already provides that authority.
-//! APIs for theories such as naturals and inductive datatypes should depend on
-//! this crate rather than on a concrete HOL representation.
+//! APIs for data, numeric, and inductive theories depend on this crate rather
+//! than on a concrete HOL representation.
 //!
 //! The traits are deliberately capability-sized.  A backend may implement
 //! syntax without proof rules, equality without classical logic, or the
@@ -14,40 +14,16 @@
 
 #![forbid(unsafe_code)]
 
-pub mod bits;
-pub mod bytes;
-pub mod bytes_nat;
-pub mod nat;
 pub mod relation;
-pub mod text;
 
 use core::fmt::Debug;
 
-pub use bits::{
-    BitSyntax, BitsBytesPacking, BitsBytesPackingLaws, BitsConcatLaws, BitsConstruction,
-    BitsNormalization, BitsObservation, BitsSyntax, BytePacking, FixedWidthBits,
-    FixedWidthBitsLaws, IntraByteOrder, PartialByte,
-};
-pub use bytes_nat::{
-    CanonicalNatBytes, FixedWidthError, NatBackedBytes, NatByteList, NatByteListError, Radix256Nat,
-};
-pub use nat::{
-    NatAdditiveLaws, NatArithmetic, NatEqDecision, NatFreeness, NatLaws, NatMultiplicativeLaws,
-    NatNormalization, NatOrder, NatRecursionLaws, NatSyntax,
-};
 pub use relation::{
     Arrow, Category, ClosureLaws, ClosureSyntax, CoproductLaws, CoproductSyntax, Decision,
     ProductLaws, ProductSyntax, RelationAlgebra, RelationEvidence, RelationJudgmentSyntax,
     RelationOrderDecision, RelationOrderLaws, RelationProperty, RelationPropertyEvidence,
     RelationPropertySyntax, ResidualLaws, ResidualSyntax, Tabulation, TabulationLaws,
     TabulationSyntax,
-};
-pub use text::{
-    CharacterSequenceSyntax, CharacterSyntax, MalformedUtf8, MalformedUtf16, MalformedUtf16Kind,
-    RawByte, StringConcatLaws, StringConstruction, StringObservation, StringSyntax,
-    UnicodeNormalization, UnicodeNormalizationLaws, UnicodeNormalizationSyntax, UnicodeScalar,
-    Utf8DecodingSyntax, Utf8EncoderSyntax, Utf8EncodingLaws, Utf16CodeUnit, Utf16DecodingSyntax,
-    Utf16EncoderSyntax, Utf16EncodingLaws, decode_utf8, decode_utf16, encode_utf8, encode_utf16,
 };
 
 /// The carrier types shared by logic capabilities.
@@ -251,10 +227,3 @@ pub trait BinderRules: QuantifierSyntax + TheoremView {
         argument: Self::Term,
     ) -> Result<Self::Thm, Self::Error>;
 }
-pub use bytes::{
-    ByteNatBridge, ByteNatBridgeLaws, ByteSyntax, BytesConcatLaws, BytesConstruction,
-    BytesNormalization, BytesObservation, BytesObservationLaws, BytesSyntax, Endianness,
-    FixedWidthNatBytesConditions, FixedWidthNatBytesEncoding, FixedWidthNatBytesEncodingLaws,
-    MinimalNatBytesEncoding, MinimalNatBytesEncodingLaws, NatByteSequence, NatByteSequenceBridge,
-    NatByteSequenceBridgeLaws, NatBytesEquivalenceLaws, NatBytesEquivalenceSyntax,
-};

@@ -1,7 +1,7 @@
 use covalence_computation::theory::{Realization, Theory};
 use covalence_core::{Result, Term, Type};
 use covalence_hol_eval::{EvalThm as Thm, defs::list, mk_bool};
-use covalence_logic_api::BitsSyntax;
+use covalence_kernel_data::BitsSyntax;
 
 use super::{
     NativeTheoryError, NativeTransitionBundle, SuppliedLaw, ValidatedTransitionFacts,

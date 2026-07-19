@@ -5,4 +5,4 @@ parent = "computation-foundations"
 depends_on = []
 todos = []
 notes = ["notes/vibes/logics/computation-theory.md"]
-files = ["crates/kernel/hol/logic", "crates/kernel/hol/init/src/init/inductive"]
+files = ["crates/kernel/data/src/scalar/bits.rs", "crates/kernel/hol/init/src/init/inductive"]

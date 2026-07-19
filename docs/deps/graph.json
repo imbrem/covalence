@@ -31,6 +31,8 @@
     "covalence-json-api",
     "covalence-k",
     "covalence-kernel",
+    "covalence-kernel-data",
+    "covalence-kernel-numeric",
     "covalence-kernel-sat",
     "covalence-kernel-smt",
     "covalence-kv",
@@ -186,6 +188,10 @@
     },
     {
       "from": "covalence-computation",
+      "to": "covalence-kernel-data"
+    },
+    {
+      "from": "covalence-computation",
       "to": "covalence-logic-api"
     },
     {
@@ -306,6 +312,10 @@
     },
     {
       "from": "covalence-hol-api",
+      "to": "covalence-kernel-data"
+    },
+    {
+      "from": "covalence-hol-api",
       "to": "covalence-logic-api"
     },
     {
@@ -375,6 +385,10 @@
     {
       "from": "covalence-init",
       "to": "covalence-k"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-kernel-data"
     },
     {
       "from": "covalence-init",
@@ -461,6 +475,18 @@
       "to": "covalence-store"
     },
     {
+      "from": "covalence-kernel-data",
+      "to": "covalence-kernel-numeric"
+    },
+    {
+      "from": "covalence-kernel-data",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-kernel-numeric",
+      "to": "covalence-logic-api"
+    },
+    {
       "from": "covalence-kernel-sat",
       "to": "covalence-core"
     },
@@ -494,6 +520,10 @@
     },
     {
       "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-kernel-data"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
       "to": "covalence-lexer-parsing"
     },
     {
@@ -507,6 +537,10 @@
     {
       "from": "covalence-lexer-parsing",
       "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-lexer-parsing",
+      "to": "covalence-kernel-data"
     },
     {
       "from": "covalence-lexer-parsing",
@@ -642,7 +676,15 @@
     },
     {
       "from": "covalence-parsing-api",
+      "to": "covalence-kernel-data"
+    },
+    {
+      "from": "covalence-parsing-api",
       "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-peg-parsing",
+      "to": "covalence-kernel-data"
     },
     {
       "from": "covalence-peg-parsing",
@@ -731,6 +773,10 @@
     {
       "from": "covalence-regex-parsing",
       "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-regex-parsing",
+      "to": "covalence-kernel-data"
     },
     {
       "from": "covalence-regex-parsing",
@@ -851,6 +897,10 @@
     {
       "from": "covalence-sexpr-api",
       "to": "covalence-inductive"
+    },
+    {
+      "from": "covalence-sexpr-parsing",
+      "to": "covalence-kernel-data"
     },
     {
       "from": "covalence-sexpr-parsing",

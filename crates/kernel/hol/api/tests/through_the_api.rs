@@ -135,7 +135,7 @@ mod narrow_capabilities {
 fn native_nat_legacy_surface_forwards_to_logic_capabilities() {
     use covalence_hol_api::{
         NatArithmetic as LegacyArithmetic, NatSyntax as LegacySyntax, NativeHol,
-        logic::nat::{NatArithmetic as LogicArithmetic, NatSyntax as LogicSyntax},
+        numeric::nat::{NatArithmetic as LogicArithmetic, NatSyntax as LogicSyntax},
     };
 
     let hol = NativeHol;

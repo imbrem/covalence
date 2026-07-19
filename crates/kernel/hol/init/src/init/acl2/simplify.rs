@@ -613,6 +613,14 @@ enum Just {
         binds: Vec<(Vec<u8>, Term)>,
         conds: Vec<Holds>,
     },
+    /// A caller-supplied checked equality fact, instantiated and discharged
+    /// exactly like [`HJust::Lemma`].  This is the theorem-producing half of
+    /// untrusted lemma matching; emission replays INST + MP.
+    Lemma {
+        fact: Fact,
+        binds: Vec<(Vec<u8>, Term)>,
+        conds: Vec<Holds>,
+    },
 }
 
 impl Rw {
@@ -1040,6 +1048,57 @@ impl<'e> Planner<'e> {
             }
             // R6 — oriented axiom rewrite.
             let mut fired = false;
+            for fact in &self.lemmas {
+                let mut conds = Vec::new();
+                let mut conclusion = fact.phi.clone();
+                while let Some((p, q)) = strip_implies(tm, &conclusion) {
+                    conds.push(p);
+                    conclusion = q;
+                }
+                let Some((lhs, rhs)) = parse_equal(tm, &conclusion) else {
+                    continue;
+                };
+                let mut sigma = Vec::new();
+                if !match_enc(tm, &lhs, &cur, &mut sigma) {
+                    continue;
+                }
+                let mut conds_h = Vec::new();
+                let mut ok = true;
+                for cond_pat in &conds {
+                    let cond = subst_pat(tm, cond_pat, &sigma)?;
+                    match self.holds(&cond, self.limits.holds_depth) {
+                        Ok(h) => conds_h.push(h),
+                        Err(_) => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if !ok {
+                    continue;
+                }
+                let to = subst_pat(tm, &rhs, &sigma)?;
+                if to == cur {
+                    continue;
+                }
+                chain.push(Rw {
+                    from: cur.clone(),
+                    to: to.clone(),
+                    just: Just::Lemma {
+                        fact: fact.clone(),
+                        binds: sigma,
+                        conds: conds_h,
+                    },
+                });
+                let rest = self.norm(&to)?;
+                cur = rest.to.clone();
+                chain.push(rest);
+                fired = true;
+                break;
+            }
+            if fired {
+                continue;
+            }
             for rule in &self.rw {
                 let mut sigma = Vec::new();
                 if !match_enc(tm, &rule.lhs, &cur, &mut sigma) {
@@ -1142,6 +1201,9 @@ impl<'e> Planner<'e> {
         if let Some(h) = self.holds_primitive(c)? {
             return Ok(Some(h));
         }
+        if let Some(h) = self.holds_lemma(c, self.limits.holds_depth)? {
+            return Ok(Some(h));
+        }
         if !c_rw.is_refl() && self.has_equal_mp {
             let c_star = &c_rw.to;
             let inner = if let Some(i) = self.find_hyp(c_star) {
@@ -1149,8 +1211,10 @@ impl<'e> Planner<'e> {
                     phi: c_star.clone(),
                     just: HJust::Hyp(i),
                 })
+            } else if let Some(h) = self.holds_primitive(c_star)? {
+                Some(h)
             } else {
-                self.holds_primitive(c_star)?
+                self.holds_lemma(c_star, self.limits.holds_depth)?
             };
             if let Some(inner) = inner {
                 return Ok(Some(Holds {
@@ -1508,6 +1572,14 @@ fn emit_rw(env: &Acl2Env, cache: &FactCache, sc: &mut Script, rw: &Rw) -> Result
         Just::Ax { name, binds, conds } => {
             let f = cache.axiom_inst(env, name, binds)?;
             let mut acc = L::F(f);
+            for cnd in conds {
+                let hc = emit_holds(env, cache, sc, cnd)?;
+                acc = l_mp(env, sc, acc, hc)?;
+            }
+            acc
+        }
+        Just::Lemma { fact, binds, conds } => {
+            let mut acc = L::F(inst_fact(env, fact, binds)?);
             for cnd in conds {
                 let hc = emit_holds(env, cache, sc, cnd)?;
                 acc = l_mp(env, sc, acc, hc)?;
@@ -2447,6 +2519,85 @@ mod tests {
             Limits::default(),
         );
         assert!(p0.holds_lemma(&q, 1).unwrap().is_none());
+    }
+
+    /// Registered checked facts participate in the IF guards introduced by
+    /// ACL2 macro expansion (`and`, `not`, and weak inequalities), and
+    /// checked conditional equalities can rewrite a guard to `NIL`.
+    #[test]
+    fn t_checked_lemmas_drive_if_guards_and_conditional_rewrites() {
+        let sess = s6_app_session();
+        let env = sess.env();
+        let tm = &*env.tm;
+        let base = FactCache::default();
+        let x = tm.sym(b"X").unwrap();
+        let pair = tm.app(b"CONS", &[x.clone(), x.clone()]).unwrap();
+        let q = tm.app(b"CONSP", &[pair.clone()]).unwrap();
+        let q_fact = Fact {
+            phi: q.clone(),
+            thm: prove_under(env, &base, &[], &q, &Limits::default()).unwrap(),
+        };
+
+        // Force guard resolution to use only the registered fact, not the
+        // environment's ordinary CONSP-CONS primitive.
+        let cache = FactCache::default();
+        cache.add_lemma(q_fact.clone());
+        let mut planner = Planner::new(env, &cache, &[], &[], Limits::default());
+        planner.holds_ax.clear();
+        let qt = tm.quote(&tm.pr.t).unwrap();
+        let qnil = tm.quote(&tm.th.nil).unwrap();
+        let and_qq = tm
+            .mk_if(&q, &tm.mk_if(&q, &qt, &qnil).unwrap(), &qnil)
+            .unwrap();
+        let rw = planner.norm(&and_qq).unwrap();
+        assert_eq!(rw.to, qt);
+        let mut sc = Script::new(env, &[]);
+        let want = tm.mk_equal(&and_qq, &qt).unwrap();
+        let emitted = emit_rw(env, &cache, &mut sc, &rw).unwrap();
+        let theorem = match emitted {
+            L::F(f) => f.thm,
+            L::Ln(_) => sc.close(&want, &cache.kc).unwrap(),
+        };
+        check(&theorem, &derivable(env, &want).unwrap());
+
+        // A conditional checked equality is also a rewrite hint.  Remove the
+        // built-in CAR-CONS rewrite table so this path cannot pass by accident.
+        let car_pair = tm.app(b"CAR", std::slice::from_ref(&pair)).unwrap();
+        let car_cons = base.axiom_raw(env, "car-cons").unwrap();
+        let mut weaken = Script::new(env, std::slice::from_ref(&q));
+        weaken.fact(car_cons.clone());
+        let conditional = Fact {
+            phi: tm.mk_implies(&q, &car_cons.phi).unwrap(),
+            thm: weaken.close(&car_cons.phi, &base.kc).unwrap(),
+        };
+        let rewrite_cache = FactCache::default();
+        rewrite_cache.add_lemma(q_fact);
+        rewrite_cache.add_lemma(conditional);
+        let mut planner = Planner::new(env, &rewrite_cache, &[], &[], Limits::default());
+        planner.rw.clear();
+        let rw = planner.norm(&car_pair).unwrap();
+        assert_eq!(rw.to, x);
+        let mut sc = Script::new(env, &[]);
+        let want = tm.mk_equal(&car_pair, &x).unwrap();
+        let emitted = emit_rw(env, &rewrite_cache, &mut sc, &rw).unwrap();
+        let theorem = match emitted {
+            L::F(f) => f.thm,
+            L::Ln(_) => sc.close(&want, &rewrite_cache.kc).unwrap(),
+        };
+        check(&theorem, &derivable(env, &want).unwrap());
+
+        // Matching remains untrusted for equality lemmas too: a forged
+        // formula/theorem pair may be planned, but checked INST rejects it.
+        let forged_cache = FactCache::default();
+        forged_cache.add_lemma(Fact {
+            phi: car_cons.phi,
+            thm: base.axiom_raw(env, "equal-refl").unwrap().thm,
+        });
+        let mut planner = Planner::new(env, &forged_cache, &[], &[], Limits::default());
+        planner.rw.clear();
+        let rw = planner.norm(&car_pair).unwrap();
+        let mut sc = Script::new(env, &[]);
+        assert!(emit_rw(env, &forged_cache, &mut sc, &rw).is_err());
     }
 
     /// **P0 gate №2:** `build_ind_premises` returns exactly the

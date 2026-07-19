@@ -75,6 +75,26 @@ pub trait LispValue {
     }
 }
 
+/// Meaning of a primitive vocabulary over an abstract runtime-value backend.
+///
+/// Primitive semantics receives the value capability explicitly. It therefore
+/// cannot rely on a concrete Rust enum and can be reused by handle-based HOL
+/// or WIT realizations.
+pub trait PrimitiveSemantics<V: LispValue> {
+    type Error;
+
+    fn apply(
+        &self,
+        values: &V,
+        primitive: &V::Primitive,
+        arguments: &[V::Value],
+    ) -> Result<V::Value, Self::Error>;
+
+    fn truth(&self, values: &V, value: bool) -> Result<V::Value, Self::Error>;
+
+    fn is_false(&self, values: &V, value: &V::Value) -> Result<bool, Self::Error>;
+}
+
 /// One lexical binding used by [`LispEnvironment::extend`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuntimeBinding<S, V> {

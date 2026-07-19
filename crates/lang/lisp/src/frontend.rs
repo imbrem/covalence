@@ -13,7 +13,7 @@ use std::str::FromStr;
 use covalence_kernel_lisp::{
     CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum, ExecutionError,
     HostConfiguration, HostEnvironment, HostEnvironments, HostValue, HostValues, LispEnvironment,
-    LispValue, RuntimeBinding, execute,
+    LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -600,18 +600,21 @@ impl CorePrimitive for StandardPrimitives {
     type Symbol = String;
     type Atom = CoreAtom;
     type Primitive = Primitive;
+}
+
+impl PrimitiveSemantics<HostValues<String, CoreAtom, Primitive>> for StandardPrimitives {
     type Error = PrimitiveError;
 
     fn apply(
         &self,
+        runtime: &HostValues<String, CoreAtom, Primitive>,
         primitive: &Primitive,
         arguments: &[FrontendValue],
     ) -> Result<FrontendValue, PrimitiveError> {
         match primitive {
             Primitive::Cons => {
                 let [head, tail] = self.values::<2>(arguments)?;
-                Ok(self
-                    .runtime()
+                Ok(runtime
                     .cons(head, tail)
                     .expect("the direct host value backend is infallible"))
             }
@@ -639,30 +642,33 @@ impl CorePrimitive for StandardPrimitives {
             }
             Primitive::Atom => {
                 let [value] = self.values::<1>(arguments)?;
-                Ok(self.truth(!matches!(value, HostValue::Cons(_, _))))
+                self.truth(runtime, !matches!(value, HostValue::Cons(_, _)))
             }
             Primitive::Consp => {
                 let [value] = self.values::<1>(arguments)?;
-                Ok(self.truth(matches!(value, HostValue::Cons(_, _))))
+                self.truth(runtime, matches!(value, HostValue::Cons(_, _)))
             }
             Primitive::Null => {
                 let [value] = self.values::<1>(arguments)?;
-                Ok(self.truth(matches!(value, HostValue::Nil)))
+                self.truth(runtime, matches!(value, HostValue::Nil))
             }
             Primitive::Integer => {
                 let [value] = self.values::<1>(arguments)?;
-                Ok(self.truth(matches!(value, HostValue::Atom(CoreAtom::Integer(_)))))
+                self.truth(
+                    runtime,
+                    matches!(value, HostValue::Atom(CoreAtom::Integer(_))),
+                )
             }
             Primitive::Equal => {
                 let [left, right] = self.values::<2>(arguments)?;
-                Ok(self.truth(left == right))
+                self.truth(runtime, left == right)
             }
             Primitive::Add => self.integer_binary(arguments, |left, right| left + right),
             Primitive::Subtract => self.integer_binary(arguments, |left, right| left - right),
             Primitive::Multiply => self.integer_binary(arguments, |left, right| left * right),
             Primitive::LessEqual => {
                 let [left, right] = self.integers(arguments)?;
-                Ok(self.truth(left <= right))
+                self.truth(runtime, left <= right)
             }
             Primitive::Append => {
                 let [left, right] = self.values::<2>(arguments)?;
@@ -671,8 +677,31 @@ impl CorePrimitive for StandardPrimitives {
         }
     }
 
-    fn truth(&self, value: bool) -> FrontendValue {
-        StandardPrimitives::truth(self, value)
+    fn truth(
+        &self,
+        runtime: &HostValues<String, CoreAtom, Primitive>,
+        value: bool,
+    ) -> Result<FrontendValue, PrimitiveError> {
+        Ok(if value {
+            runtime
+                .atom(CoreAtom::symbol("t"))
+                .expect("the direct host value backend is infallible")
+        } else {
+            runtime.nil()
+        })
+    }
+
+    fn is_false(
+        &self,
+        runtime: &HostValues<String, CoreAtom, Primitive>,
+        value: &FrontendValue,
+    ) -> Result<bool, PrimitiveError> {
+        Ok(matches!(
+            runtime
+                .view(value)
+                .expect("the direct host value backend is infallible"),
+            RuntimeValueView::Nil
+        ))
     }
 }
 
@@ -689,20 +718,6 @@ impl StandardPrimitives {
             | HostValue::Primitive(_)
             | HostValue::ApplyListProcedure => right,
         }
-    }
-
-    fn truth(&self, value: bool) -> FrontendValue {
-        if value {
-            self.runtime()
-                .atom(CoreAtom::symbol("t"))
-                .expect("the direct host value backend is infallible")
-        } else {
-            self.runtime().nil()
-        }
-    }
-
-    fn runtime(&self) -> HostValues<String, CoreAtom, Primitive> {
-        HostValues::default()
     }
 
     fn values<const N: usize>(

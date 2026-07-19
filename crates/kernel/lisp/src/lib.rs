@@ -50,7 +50,9 @@ pub use relation::{
     Exploration, ExplorationBounds, MayEval, MayEvalReplay, StepRelation, TerminalValue,
     TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
-pub use runtime::{LispEnvironment, LispValue, RuntimeBinding, RuntimeValueView};
+pub use runtime::{
+    LispEnvironment, LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeValueView,
+};
 pub use stack::{
     StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,
 };

@@ -510,19 +510,29 @@ impl WasmTyping for NativeWasmSemantics {
         let instruction_type = instruction_type.clone();
         self.replay(move |env, full| {
             if context != ValidationContext::Empty
-                || program.instructions() != [Instruction::Nop]
                 || instruction_type != InstructionType::new([], [])
             {
                 return Err(facade_error(
                     "no exact checked Instrs_ok driver for this program typing",
                 ));
             }
+            let witness_id = match program.instructions() {
+                [Instruction::Nop] => "mvp.nop",
+                [Instruction::ConstI32(5), Instruction::Drop] => "mvp.const-drop",
+                _ => {
+                    return Err(facade_error(
+                        "no exact checked Instrs_ok driver for this program typing",
+                    ));
+                }
+            };
             let state = encode_state(MachineState::Empty)?;
             let theorem = normative_witnesses(env, full, &state)?
                 .into_iter()
-                .find(|witness| witness.id == "mvp.nop")
+                .find(|witness| witness.id == witness_id)
                 .and_then(|witness| witness.program_typing)
-                .ok_or_else(|| facade_error("mvp.nop has no checked Instrs_ok theorem"))?;
+                .ok_or_else(|| {
+                    facade_error(format!("{witness_id} has no checked Instrs_ok theorem"))
+                })?;
             CheckedTypingFact::new(
                 RelationIdentity::ProgramValid,
                 TypingStatement::Program {
@@ -926,10 +936,23 @@ mod tests {
                     .all(|typing| typing.fact.theorem().hyps().is_empty())
         }));
         assert!(examples[0].program_typing.is_some());
-        assert!(
-            examples[1..]
-                .iter()
-                .all(|example| example.program_typing.is_none())
+        assert!(examples[1].program_typing.is_some());
+        assert!(examples[2].program_typing.is_none());
+        let const_drop = Program::new([Instruction::ConstI32(5), Instruction::Drop]);
+        let const_drop_typing = semantics
+            .prove_program(
+                &ValidationContext::Empty,
+                &const_drop,
+                &InstructionType::new([], []),
+            )
+            .unwrap();
+        assert_eq!(
+            const_drop_typing.statement(),
+            &TypingStatement::Program {
+                context: ValidationContext::Empty,
+                program: const_drop,
+                instruction_type: InstructionType::new([], []),
+            }
         );
 
         let from = Configuration {
@@ -952,6 +975,18 @@ mod tests {
                 },
                 steps: 2,
             }
+        );
+        assert!(
+            semantics
+                .prove_program(
+                    &ValidationContext::Empty,
+                    match fact.statement() {
+                        ExecutionStatement::MultiStep { from, .. } => &from.program,
+                    },
+                    &InstructionType::new([], []),
+                )
+                .is_err(),
+            "do not claim whole-program typing until exact stack framing is replayable"
         );
 
         let unsupported = Configuration {

@@ -655,6 +655,29 @@ genuinely sequence-valued inverses `inv_concat_`/`inv_concatn_`; repeated
 source declarations account for the difference between names and declaration
 count.
 
+### Audited, not approximated: inverse sequence concatenation
+
+The two remaining sequence builtins are deterministic in SpecTec's reference
+interpreter, but cannot yet be expressed *for unbounded inputs* by the current
+clause representation:
+
+- `inv_concat_` consumes adjacent pairs, returning `[[x0,x1], [x2,x3], …]`,
+  and is undefined for odd-length inputs;
+- `inv_concatn_(n, xs)` consumes adjacent blocks of exactly `n` elements and
+  is defined only for positive `n` dividing `|xs|`.
+
+This is not nondeterministic relational inversion: the reference interpreter
+chooses those canonical chunks.  However, encoded SpecTec lists are
+arbitrary-arity spines under the uninterpreted `st$app : nat -> nat -> nat`.
+Unlike native HOL lists, they expose neither a tail nor a length operation to
+the list/Nat evaluators.  Consequently one finite clause can describe only one
+fixed spine arity.  Enumerating a convenient maximum would be a sound
+under-approximation at those points, but would introduce an invented
+WebAssembly sequence bound and would not honestly complete either builtin.
+`cov:wasm.spectec.inverse-sequence-builtins` therefore tracks the required
+structural bridge (or an equivalent exact recursive graph); both tags remain
+in the explicit zero-clause frontier until that bridge exists.
+
 - The result is the WebAssembly unsigned rounded average
   `(a + b + 1) div 2`, computed in the unbounded HOL-natural carrier before
   returning to the lane carrier, so the intermediate sum does not wrap.

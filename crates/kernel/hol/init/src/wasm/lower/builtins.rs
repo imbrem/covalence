@@ -177,6 +177,17 @@ pub const OPS: [&str; 46] = [
 /// eleven [`OPS`] supplement blocked spec lowerings.
 pub const ZERO_CLAUSE_OPS_COVERED: usize = 35;
 
+// TODO(cov:wasm.spectec.inverse-sequence-builtins, major): Give the reified
+// SpecTec `list` spine an exact structural view and use it to define the
+// unbounded `inv_concat_`/`inv_concatn_` graphs.  The upstream interpreter is
+// deterministic here: `inv_concat_` groups adjacent pairs and rejects odd
+// lengths; `inv_concatn_` groups adjacent blocks of the supplied positive
+// length and rejects nonmultiples.  The current `Φ = nat` encoding represents
+// a list as an arbitrary-arity spine under the *uninterpreted* `st$app`, so a
+// finite first-order clause cannot quantify over its tail.  Do not add a
+// convenient fixed-length census: that would make the coverage number greener
+// while silently imposing an artificial WebAssembly sequence bound.
+
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
 // ===========================================================================

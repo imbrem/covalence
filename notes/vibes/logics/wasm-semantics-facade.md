@@ -91,10 +91,15 @@ This milestone does not yet claim:
 Those gaps should be closed by extending the neutral objects and capability
 traits only when a checked backend path exists.
 
-The immediate blocker to a composed `Instrs_ok` fact is narrower than the
-facade: lowering currently leaves the non-call `(SET t)*` map in
-`Instrs_ok/seq` as a raw iteration spine.  At zero locals the premise asks for
-`with_locals(C, [], iter.list[t](SET t, []), C)`, while the exact base graph
-proves `with_locals(C, [], [], C)`.  Exact relational evaluation of that map is
-required before even the non-empty `nop` program can be typed as a sequence;
-stack framing and subtyping for the addition example come after it.
+Direct mapped iterations in function arguments now evaluate through exact
+`ev.map` relations.  This unlocks hypothesis-free whole-sequence `Instrs_ok`
+facts for `nop` and `i32.const 5; drop`, replaying all seven `Instrs_ok/seq`
+premises at every link.
+
+The addition witness remains deliberately execution-only at whole-program
+level.  Its consecutive pushes require framing an individual instruction over
+the existing operand stack.  The normative relation exposes
+`Instrs_ok/frame` only for an already-derived whole sequence; `Instr_ok` has no
+frame rule and there is no sequence-concatenation rule.  Exact result/instruction
+subtyping preserves stack-list arity, so it cannot manufacture that missing
+composition.  The facade refuses a `ProgramValid` claim for this example.

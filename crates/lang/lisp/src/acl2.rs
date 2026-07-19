@@ -88,7 +88,8 @@ use std::sync::{LazyLock, Mutex};
 
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
-use covalence_hol_eval::{as_bool, as_int, mk_bool, mk_int};
+use covalence_hol_eval::{as_bool, as_int, mk_int};
+use covalence_init::Term;
 use covalence_init::init::acl2::append::{
     append_assoc_fact, append_count_strict_fact, append_definition_fact, append_nonempty_fact,
     append_of_cons_fact, append_when_consp_nil_fact, car_of_append_fact,
@@ -113,7 +114,6 @@ use covalence_init::init::acl2::simplify::{
 };
 use covalence_init::init::acl2::term::Terms;
 use covalence_init::init::ext::{TermExt, ThmExt};
-use covalence_init::{Term, Type};
 use covalence_kernel_lisp::{
     AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, SourcedDefinition,
 };
@@ -121,7 +121,7 @@ use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
-use crate::defs::{Defs, build_def, build_def_with_ret};
+use crate::defs::{Defs, install_core_definition};
 use crate::frontend::{Frontend, FrontendExpr, SurfaceDialect};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
@@ -746,7 +746,7 @@ impl Acl2Session {
             body.clone(),
         );
         let admission = AdmissionPolicy::inspect(self, &definition).map_err(&inadmissible)?;
-        self.install(&name, &params, &translated)?;
+        self.install(&definition.core)?;
         self.try_admit_deep_defun(&definition, &admission);
         self.definitions.insert(name.clone(), definition);
         self.admissions.insert(name.clone(), admission);
@@ -890,49 +890,16 @@ impl Acl2Session {
     /// `session::Session::install`'s trick: try `bool` (predicates), then
     /// `sexpr` (data functions), then `int` (integer-valued functions, e.g.
     /// `len`); the wrong choices fail to type-check.
-    fn install(&mut self, name: &str, params: &[String], body: &SExpr) -> Result<(), Acl2Error> {
-        let tau = self.sem0.tau();
-        let mut last: Option<HolError> = None;
-        for ret in [Type::bool(), tau, Type::int()] {
-            let dummy = if ret == Type::bool() {
-                mk_bool(false)
-            } else if ret == Type::int() {
-                mk_int(0i128)
-            } else {
-                self.sem0.tau_nil()
-            };
-            match self.try_install(name, params, body, &ret, dummy) {
-                Ok(()) => return Ok(()),
-                Err(e) => last = Some(e),
-            }
-        }
-        Err(Acl2Error::Inadmissible {
-            name: name.to_string(),
-            reason: match last {
-                Some(e) => format!("body does not type-check: {e}"),
-                None => "cannot type the definition".into(),
-            },
-        })
-    }
-
-    /// One return-type attempt; `self.defs` is only mutated on success.
-    fn try_install(
+    fn install(
         &mut self,
-        name: &str,
-        params: &[String],
-        body: &SExpr,
-        ret: &Type,
-        dummy: Term,
-    ) -> Result<(), HolError> {
-        let placeholder = build_def_with_ret(name, params, dummy, ret)?;
-        let staged = self.defs.with(placeholder);
-        let sem = LispSemantics::with_defs(staged)?;
-        let core = Frontend::new(SurfaceDialect::Acl2Core)
-            .lower(body)
-            .map_err(|error| HolError::Stuck(error.to_string()))?;
-        let body_term = sem.compile_core(&core)?;
-        let def = build_def(name, params, body_term)?;
-        self.defs = self.defs.with(def);
+        definition: &LispDefinition<String, FrontendExpr>,
+    ) -> Result<(), Acl2Error> {
+        self.defs = install_core_definition(&self.defs, definition).map_err(|error| {
+            Acl2Error::Inadmissible {
+                name: definition.name.clone(),
+                reason: error.to_string(),
+            }
+        })?;
         Ok(())
     }
 

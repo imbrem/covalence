@@ -36,12 +36,13 @@
 //! directives are deferred (see the generated open-work index).
 
 use covalence_hol_eval::EvalThm as Thm;
-use covalence_init::{Term, Type};
+use covalence_init::Term;
+use covalence_kernel_lisp::Definition as LispDefinition;
 use covalence_repl_core::{Fuel, Reduction, Repl, RunToValue, Status, Strategy};
 use covalence_sexp::SExpr;
 
 use crate::acl2::{Acl2Error, Acl2Outcome, Acl2Proof, Acl2Session, Acl2ValueKind};
-use crate::defs::{Defs, build_def, build_def_with_ret};
+use crate::defs::{Defs, install_core_definition};
 use crate::frontend::{Frontend, SurfaceDialect};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
@@ -346,41 +347,11 @@ impl Session {
     /// its recursive calls actually inhabit, so the attempts are disambiguated
     /// by which one succeeds.
     fn install(&mut self, name: &str, params: &[String], body: &SExpr) -> Result<(), HolError> {
-        let tau = LispSemantics::new()?.tau();
-        let candidates = [Type::bool(), tau.clone(), Type::int()];
-        let mut last_err = None;
-        for ret in candidates {
-            match self.try_install_with_ret(name, params, body, &ret) {
-                Ok(()) => return Ok(()),
-                Err(e) => last_err = Some(e),
-            }
-        }
-        Err(last_err.unwrap_or_else(|| HolError::Stuck(format!("cannot type `defun {name}`"))))
-    }
-
-    /// Attempt to install `name` with a chosen recursive return type `ret`.
-    /// The whole attempt is transactional: `self.defs` is only mutated on
-    /// success.
-    fn try_install_with_ret(
-        &mut self,
-        name: &str,
-        params: &[String],
-        body: &SExpr,
-        ret: &Type,
-    ) -> Result<(), HolError> {
-        // Pre-register a placeholder head (typed `sexpr… → ret`) so the body
-        // compiles its recursive calls against `name`.
-        let placeholder = build_def_with_ret(name, params, dummy_of(ret)?, ret)?;
-        let staged = self.defs.with(placeholder);
-        let sem = LispSemantics::with_defs(staged)?;
         let core = Frontend::new(SurfaceDialect::Scheme)
             .lower(body)
             .map_err(|error| HolError::Stuck(error.to_string()))?;
-        let body_term = sem.compile_core(&core)?;
-        // The real def, whose head type is inferred from the compiled body — it
-        // must match `ret`, or `assume` (which type-checks `f = λ…`) rejects it.
-        let def = build_def(name, params, body_term)?;
-        self.defs = self.defs.with(def);
+        let definition = LispDefinition::fixed(name.to_owned(), params.to_vec(), core);
+        self.defs = install_core_definition(&self.defs, &definition)?;
         Ok(())
     }
 
@@ -767,21 +738,6 @@ fn acl2_outcome(out: Acl2Outcome) -> Outcome {
         },
         status: Status::Value,
         steps: 0,
-    }
-}
-
-/// A trivial term of type `ret`, used as a placeholder body while compiling a
-/// recursive definition: `nil` for `sexpr`, `F` for `bool`, `0` for `int`.
-fn dummy_of(ret: &Type) -> Result<Term, HolError> {
-    let sem = LispSemantics::new()?;
-    if *ret == Type::bool() {
-        Ok(covalence_hol_eval::mk_bool(false))
-    } else if *ret == Type::int() {
-        Ok(covalence_hol_eval::mk_int(covalence_types::Int::from(
-            0i128,
-        )))
-    } else {
-        Ok(sem.tau_nil())
     }
 }
 

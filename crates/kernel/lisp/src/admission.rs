@@ -7,6 +7,8 @@
 //!
 //! @covalence-api {"id":"A0024","title":"Lisp admission and totalization","status":"experimental","dependsOn":["A0022"]}
 
+use crate::{CoreExpr, Parameter};
+
 /// A frontend-neutral named definition.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Definition<S, E> {
@@ -32,6 +34,22 @@ impl<S, E> Definition<S, E> {
             parameters,
             rest: Some(rest),
             body,
+        }
+    }
+}
+
+impl<S, D, P> Definition<S, CoreExpr<S, D, P>> {
+    /// Turn a named definition into the recursive closure expression executed
+    /// by the common partial semantics.
+    ///
+    /// This is a structural operation only. It neither checks termination nor
+    /// grants the resulting closure a total logical interpretation.
+    pub fn into_recursive_lambda(self) -> CoreExpr<S, D, P> {
+        CoreExpr::Lambda {
+            name: Some(self.name),
+            parameters: self.parameters.into_iter().map(Parameter::new).collect(),
+            rest: self.rest.map(Parameter::new),
+            body: Box::new(self.body),
         }
     }
 }
@@ -119,4 +137,45 @@ pub trait Totalization<D, T> {
         definition: &D,
         evidence: ExistenceUniqueness<T>,
     ) -> Result<(Self::Constant, Self::Theorem), Self::Error>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixed_and_variadic_definitions_become_named_recursive_lambdas() {
+        let fixed = Definition::fixed(
+            "identity",
+            vec!["value"],
+            CoreExpr::<&str, (), ()>::Variable("value"),
+        )
+        .into_recursive_lambda();
+        assert!(matches!(
+            fixed,
+            CoreExpr::Lambda {
+                name: Some("identity"),
+                parameters,
+                rest: None,
+                ..
+            } if parameters[0].name == "value"
+        ));
+
+        let variadic = Definition::variadic(
+            "list",
+            Vec::<&str>::new(),
+            "values",
+            CoreExpr::<&str, (), ()>::Variable("values"),
+        )
+        .into_recursive_lambda();
+        assert!(matches!(
+            variadic,
+            CoreExpr::Lambda {
+                name: Some("list"),
+                parameters,
+                rest: Some(Parameter { name: "values" }),
+                ..
+            } if parameters.is_empty()
+        ));
+    }
 }

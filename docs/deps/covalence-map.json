@@ -9340,7 +9340,7 @@
       "title": "admission.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/admission.rs",
-      "words": 123,
+      "words": 182,
       "updated": 0
     },
     {
@@ -9367,7 +9367,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 63,
+      "words": 64,
       "updated": 0
     },
     {
@@ -9385,7 +9385,7 @@
       "title": "runtime.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/runtime.rs",
-      "words": 273,
+      "words": 416,
       "updated": 0
     },
     {
@@ -10744,7 +10744,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 1870,
+      "words": 1834,
       "updated": 0
     },
     {
@@ -10771,7 +10771,7 @@
       "title": "defs.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/defs.rs",
-      "words": 180,
+      "words": 227,
       "updated": 0
     },
     {
@@ -10789,7 +10789,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1208,
+      "words": 1199,
       "updated": 0
     },
     {
@@ -10843,7 +10843,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1616,
+      "words": 1628,
       "updated": 0
     },
     {
@@ -10852,7 +10852,7 @@
       "title": "session.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/session.rs",
-      "words": 850,
+      "words": 806,
       "updated": 0
     },
     {
@@ -11167,7 +11167,7 @@
       "title": "dialects.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/dialects.rs",
-      "words": 381,
+      "words": 390,
       "updated": 0
     },
     {

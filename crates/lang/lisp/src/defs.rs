@@ -32,10 +32,14 @@ use std::sync::Arc;
 
 use covalence_core::subst;
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::{mk_bool, mk_int};
 use covalence_init::init::inductive::carved::carved;
 use covalence_init::{Term, Type};
+use covalence_kernel_lisp::Definition;
 
+use crate::frontend::FrontendExpr;
 use crate::hol::HolError;
+use crate::semantics::LispSemantics;
 
 fn theory_err(e: impl core::fmt::Display) -> HolError {
     HolError::Theory(e.to_string())
@@ -158,6 +162,49 @@ pub fn build_def_with_ret(
         lambda,
         assumption,
     })
+}
+
+/// Compile and transactionally install one shared core definition into the
+/// legacy equational HOL definition environment.
+///
+/// The generic Lisp core is untyped, while this compatibility backend has
+/// distinct `bool`, `sexpr`, and `int` carriers. Until that backend grows a
+/// first-class sum carrier, the result carrier is inferred by trying those
+/// three cases. Every attempt stages its recursive head in an immutable
+/// [`Defs`] snapshot; the caller receives a new environment only on success.
+pub fn install_core_definition(
+    definitions: &Defs,
+    definition: &Definition<String, FrontendExpr>,
+) -> Result<Defs, HolError> {
+    let base = LispSemantics::new()?;
+    let attempts = [
+        ("bool", Type::bool(), mk_bool(false)),
+        ("sexpr", base.tau(), base.tau_nil()),
+        ("int", Type::int(), mk_int(0i128)),
+    ];
+    let mut failures = Vec::with_capacity(attempts.len());
+    for (label, result_type, placeholder_body) in attempts {
+        let placeholder = build_def_with_ret(
+            &definition.name,
+            &definition.parameters,
+            placeholder_body,
+            &result_type,
+        )?;
+        let staged = definitions.with(placeholder);
+        let semantics = LispSemantics::with_defs(staged)?;
+        match semantics
+            .compile_core(&definition.body)
+            .and_then(|body| build_def(&definition.name, &definition.parameters, body))
+        {
+            Ok(compiled) => return Ok(definitions.with(compiled)),
+            Err(error) => failures.push(format!("{label}: {error}")),
+        }
+    }
+    Err(HolError::Stuck(format!(
+        "definition `{}` does not type-check for any supported result carrier ({})",
+        definition.name,
+        failures.join("; ")
+    )))
 }
 
 /// `sexpr → … → ret` with `n` `sexpr` arrows (n = 0 ⇒ just `ret`).

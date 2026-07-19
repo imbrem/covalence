@@ -170,6 +170,15 @@ fn scheme_recursion_works() {
 }
 
 #[test]
+fn scheme_definition_shadows_a_direct_compatibility_primitive() {
+    let mut s = Session::new().unwrap();
+    s.eval_cell("#lang scheme").unwrap();
+    s.eval_cell("(define car (lambda (value) (quote shadowed)))")
+        .unwrap();
+    assert_eq!(s.eval_cell("(car (quote (a b)))").unwrap(), "shadowed");
+}
+
+#[test]
 fn scheme_integer_arithmetic() {
     // `scheme` = recursion AND integers: the equational value semantics
     // reduces `(+ 2 2)` to the kernel `int` literal `4`, off a hyps-free

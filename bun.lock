@@ -72,6 +72,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@xyflow/svelte": "^1.0.0",
+        "covalence-client": "workspace:*",
         "cytoscape": "^3.34.0",
       },
       "devDependencies": {

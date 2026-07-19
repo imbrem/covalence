@@ -28,7 +28,7 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **3771 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
+- **3783 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
@@ -36,8 +36,8 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 309 integer-builtin
-  clauses over 35 operations + 1462
+  expanded Dec-star sites / 12 defining clauses) + 321 exact builtin
+  clauses over 38 operations + 1462
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
   families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
@@ -53,6 +53,19 @@ API. `wasm::spec::coverage_report` pins:
   existential partial computations, and `NotImmutReachable` is the source
   specification's explicit emulation of relation negation. None is silently
   approximated.
+
+  The five rule-level obligations are narrower than “unsupported Else”.
+  `br_on_cast-fail`, `br_on_cast_fail-fail`, `ref.test-false`, and
+  `ref.cast-fail` each require the exact complement
+  `not (Ref_ok(...) and Reftype_sub(...))`; neither judgement alone is the
+  predecessor's applicability. `array.init_data-zero`, under its own `n = 0`
+  guard, requires both the complement of the `oob1` arithmetic guard and the
+  complement of `Expand(...) and oob2_guard`. The bundled-AST regression
+  `remaining_real_else_sites_are_exact_composite_decision_obligations` pins
+  these premise shapes and their fail-closed census reasons. The next sound
+  implementation boundary is therefore a certified composite-decision family
+  (totality plus yes/no adequacy replayed in NativeHol), not another syntactic
+  `Else` rewrite or a single-relation negation.
 - **Wave G — encoded integer ordering.** `ev.int.lt`/`ev.int.le` compare the
   canonical sign/magnitude integer encoding and reduce same-sign magnitudes to
   real HOL-natural side conditions; exact Nat→Int conversion in condition
@@ -605,6 +618,20 @@ The remaining frontier is not honestly “all floats”. Its 61 distinct names
   `nbytes_`/`vbytes_`/`zbytes_`/`cbytes_` families and inverses plus
   `inv_concat_`/`inv_concatn_`;
 - **2 exact-rational host primitives**, `truncz` and `ceilz`.
+
+## Landed (Wave AC — exact structural-rational rounding)
+
+`lower/builtins.rs` now gives `truncz` and `ceilz` twelve exact clauses over the
+structural nonnegative-rational fragment produced by SpecTec's `nat -> rat`
+conversion and division nodes, including unary-negative inputs and both direct
+natural operands and the exact carrier-projection shape used by the corpus'
+unsigned `idiv_`/`irem_` clauses. Denominators are explicitly positive;
+negative results split around zero so the integer encoding never admits
+negative zero. Opaque rational literals and unrelated rational expression
+shapes remain fail-closed rather than being identified with this
+representation. The builtin leg is therefore **321 clauses over 38
+ops**, filling **27 of 91** zero-clause declarations and leaving **64
+declarations**.
 
 The relaxed declarations deliberately remain clause-less: replacing their
 specified result sets by one deterministic answer would be a coverage score

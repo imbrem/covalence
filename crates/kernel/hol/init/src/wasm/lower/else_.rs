@@ -1570,6 +1570,116 @@ mod tests {
         ));
     }
 
+    /// Pin the exact proof obligations behind every remaining rule-level
+    /// `Else` refusal in the bundled corpus.  Four reference-instruction
+    /// fallbacks need the complement of a *conjunction* of two relation
+    /// judgements (`Ref_ok` and `Reftype_sub`).  The array-data zero case
+    /// needs both the arithmetic complement of `oob1` and the complement of
+    /// `Expand ∧ oob2-condition`.  Neither shape is a single negative
+    /// relation request, so rewriting either as one would be an
+    /// over-approximation; they belong at the certified composite-decision
+    /// boundary.
+    #[test]
+    fn remaining_real_else_sites_are_exact_composite_decision_obligations() {
+        use covalence_spectec::ast::SpecTecDef;
+
+        fn step_read(defs: &[SpecTecDef]) -> Option<&[SpecTecRule]> {
+            for def in defs {
+                match def {
+                    SpecTecDef::Rel { x, rules, .. } if x == "Step_read" => {
+                        return Some(rules);
+                    }
+                    SpecTecDef::Rec { ds } => {
+                        if let Some(rules) = step_read(ds) {
+                            return Some(rules);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let defs = get_wasm_spectec_ast();
+        let rules = step_read(&defs).expect("bundled Step_read");
+        let pre = preprocess_else_with_catalogue(rules, &CaseCatalogue::new(&defs));
+        let status = |name: &str| {
+            pre.iter()
+                .find_map(|p| {
+                    let SpecTecRule::Rule { x, .. } = &p.rule;
+                    (x == name).then_some(p.status.clone())
+                })
+                .unwrap_or_else(|| panic!("missing Step_read/{name}"))
+        };
+
+        for (fallback, success) in [
+            ("br_on_cast-fail", "br_on_cast-succeed"),
+            ("br_on_cast_fail-fail", "br_on_cast_fail-succeed"),
+            ("ref.test-false", "ref.test-true"),
+            ("ref.cast-fail", "ref.cast-succeed"),
+        ] {
+            assert_eq!(
+                status(fallback),
+                ElseStatus::Failed(format!(
+                    "sibling-rule-premise:{success}:multiple:Ref_ok/0,Reftype_sub/0:conds0"
+                ))
+            );
+            let SpecTecRule::Rule { prs, .. } = rules
+                .iter()
+                .find(|r| matches!(r, SpecTecRule::Rule { x, .. } if x == success))
+                .expect("success sibling");
+            let relation_names: Vec<_> = prs
+                .iter()
+                .filter_map(|p| match p {
+                    SpecTecPrem::Rule { x, .. } => Some(x.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(relation_names, ["Ref_ok", "Reftype_sub"]);
+            assert!(
+                prs.iter().all(|p| matches!(p, SpecTecPrem::Rule { .. })),
+                "{success} applicability is exactly the two judgements"
+            );
+        }
+
+        assert_eq!(
+            status("array.init_data-zero"),
+            ElseStatus::Failed("sibling-rule-premise:Expand:args0:conds1".into())
+        );
+        let prior = |name: &str| {
+            rules
+                .iter()
+                .find(|r| matches!(r, SpecTecRule::Rule { x, .. } if x == name))
+                .unwrap_or_else(|| panic!("missing Step_read/{name}"))
+        };
+        let SpecTecRule::Rule { prs: oob1, .. } = prior("array.init_data-oob1");
+        assert_eq!(
+            (
+                oob1.iter()
+                    .filter(|p| matches!(p, SpecTecPrem::Rule { .. }))
+                    .count(),
+                oob1.iter()
+                    .filter(|p| matches!(p, SpecTecPrem::If { .. }))
+                    .count(),
+            ),
+            (0, 1),
+            "oob1 applicability is its arithmetic guard"
+        );
+        let SpecTecRule::Rule { prs: oob2, .. } = prior("array.init_data-oob2");
+        assert_eq!(
+            (
+                oob2.iter()
+                    .filter(|p| matches!(p, SpecTecPrem::Rule { x, .. } if x == "Expand"))
+                    .count(),
+                oob2.iter()
+                    .filter(|p| matches!(p, SpecTecPrem::If { .. }))
+                    .count(),
+            ),
+            (1, 1),
+            "oob2 applicability is exactly Expand and its arithmetic guard"
+        );
+    }
+
     /// Cross-kind numeric literals are never a rigid clash (`Nat 2` and
     /// `Int 2` can denote the same value); same-kind unequal values are.
     #[test]

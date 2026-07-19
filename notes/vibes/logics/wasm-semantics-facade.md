@@ -1,3 +1,17 @@
++++
+id = "N0047"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:codex"
+at = "2026-07-19T00:00:00+01:00"
+source = "native"
+agent = "codex"
+harness = "codex"
++++
+
 # First-class WebAssembly semantics facade
 
 This note records the backend-neutral boundary introduced by the first
@@ -76,3 +90,11 @@ This milestone does not yet claim:
 
 Those gaps should be closed by extending the neutral objects and capability
 traits only when a checked backend path exists.
+
+The immediate blocker to a composed `Instrs_ok` fact is narrower than the
+facade: lowering currently leaves the non-call `(SET t)*` map in
+`Instrs_ok/seq` as a raw iteration spine.  At zero locals the premise asks for
+`with_locals(C, [], iter.list[t](SET t, []), C)`, while the exact base graph
+proves `with_locals(C, [], [], C)`.  Exact relational evaluation of that map is
+required before even the non-empty `nop` program can be typed as a sequence;
+stack framing and subtyping for the addition example come after it.

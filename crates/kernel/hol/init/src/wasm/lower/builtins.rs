@@ -66,6 +66,12 @@
 //!   solution `r` per real `a` and refuse every other `r` (including junk
 //!   `r ≥ N`, which contradicts the bounds). `ipopcnt_` has no similarly
 //!   clean single-antecedent shape — it stays frontier (censused).
+//! - `truncz`/`ceilz`: exact on the structural rational fragment produced by
+//!   natural-to-rational conversion and division.  For `n/d`, `d > 0`,
+//!   truncation is `n div d` and ceiling is `(n + d - 1) div d`; unary-minus
+//!   inputs split at `n < d` so zero remains canonically non-negative and
+//!   nonzero results carry the encoded negative sign.  Opaque rational
+//!   literals and other expression shapes deliberately receive no clause.
 //! - `idiv_`/`irem_` (**partial**, option results like the Dec leg's eps
 //!   legs: `opt.none` / `opt.some(%(r))`): division-by-zero keeps the spec's
 //!   own ground `i_2 = %(0) ↦ eps` clauses (they already fire); every clause
@@ -100,7 +106,7 @@ use covalence_core::{Result, Term};
 use covalence_hol_eval::mk_nat;
 
 use super::super::encode::{app, con, metavar};
-use super::evalrel::wrap_nat;
+use super::evalrel::{wrap_int, wrap_nat};
 use super::{Clause, LowerPrem, fn_graph};
 use crate::init::ext::TermExt;
 use crate::init::nat;
@@ -115,7 +121,9 @@ pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
 /// Integer ops given defining clauses by this leg.
-pub const OPS: [&str; 36] = [
+pub const OPS: [&str; 38] = [
+    "truncz",
+    "ceilz",
     "isub_",
     "ieq_",
     "ine_",
@@ -159,7 +167,7 @@ pub const OPS: [&str; 36] = [
 /// operations, four integer serialization/inverse operations, the exact
 /// integer SIMD lane isomorphism, and three integer conversions. The other
 /// eleven [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 25;
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 27;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -256,6 +264,67 @@ fn width_pairs() -> impl Iterator<Item = (u64, u64)> {
 // ===========================================================================
 // Per-op emitters
 // ===========================================================================
+
+/// The canonical encoded nonnegative rational `nat(n) / nat(d)` produced by
+/// SpecTec's structural `nat -> rat` conversions.  Keeping the exact AST shape
+/// here is what makes these clauses an under-approximation rather than a
+/// representation-erasing rational oracle.
+fn nat_ratio(n: Term, d: Term) -> Result<Term> {
+    let cvt = |x| app(con("cvt.Nat.Rat"), wrap_nat(x)?);
+    app(app(con("bin.Div"), cvt(n)?)?, cvt(d)?)
+}
+
+/// The same rational after extracting an integer carrier payload. This is the
+/// exact shape of the real unsigned `idiv_`/`irem_` calls in the corpus.
+fn carrier_ratio(n: Term, d: Term) -> Result<Term> {
+    let payload = |x| app(con("proj.0"), app(con("uncase.%"), ival(x)?)?);
+    let cvt = |x| app(con("cvt.Nat.Rat"), payload(x)?);
+    app(app(con("bin.Div"), cvt(n)?)?, cvt(d)?)
+}
+
+fn rational_concl(op: &str, arg: Term, sign: u64, magnitude: Term) -> Result<Term> {
+    fn_graph(op, &[arg], &wrap_int(sign, magnitude)?)
+}
+
+/// Exact structural-rational host primitives.  Clause order is positive,
+/// negative-zero, negative-nonzero for each source declaration.
+fn rational_rounding(op: &str, ceiling: bool, carrier: bool) -> Result<Vec<Clause>> {
+    let ratio = |n, d| {
+        if carrier {
+            carrier_ratio(n, d)
+        } else {
+            nat_ratio(n, d)
+        }
+    };
+    let negative_ratio = |n, d| app(con("un.Minus"), ratio(n, d)?);
+    let positive_mag = if ceiling {
+        div(sub(add(mv("n"), mv("d"))?, mk_nat(1u64))?, mv("d"))?
+    } else {
+        div(mv("n"), mv("d"))?
+    };
+    let floor_mag = div(mv("n"), mv("d"))?;
+    Ok(vec![
+        clause(
+            &["n", "d", "r"],
+            vec![lt(mk_nat(0u64), mv("d"))?, mv("r").equals(positive_mag)?],
+            rational_concl(op, ratio(mv("n"), mv("d"))?, 0, mv("r"))?,
+        ),
+        clause(
+            &["n", "d"],
+            vec![lt(mk_nat(0u64), mv("d"))?, lt(mv("n"), mv("d"))?],
+            rational_concl(op, negative_ratio(mv("n"), mv("d"))?, 0, mk_nat(0u64))?,
+        ),
+        clause(
+            &["n", "d", "r"],
+            vec![
+                lt(mk_nat(0u64), mv("d"))?,
+                le(mv("d"), mv("n"))?,
+                mv("r").equals(floor_mag)?,
+            ],
+            rational_concl(op, negative_ratio(mv("n"), mv("d"))?, 1, mv("r"))?,
+        ),
+    ])
+}
 
 /// `fn.<op>(⌜w⌝, %(a), %(b), %(r))` — binary op conclusion (no `sx`).
 fn bin_concl(op: &str, w: u64, a: &str, b: &str, r: &str) -> Result<Term> {
@@ -1144,6 +1213,10 @@ pub struct BuiltinReport {
 /// antecedents; no judgement premises, no opaques, zero axioms.
 pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
     let mut out = Vec::new();
+    for carrier in [false, true] {
+        out.extend(rational_rounding("truncz", false, carrier)?);
+        out.extend(rational_rounding("ceilz", true, carrier)?);
+    }
     for w in WIDTHS {
         out.push(isub(w)?);
     }
@@ -1410,6 +1483,32 @@ mod tests {
         )
         .unwrap()
     }
+    fn rational_fact(
+        op: &str,
+        carrier: bool,
+        negative: bool,
+        n: u64,
+        d: u64,
+        result_sign: u64,
+        result_magnitude: u64,
+    ) -> Term {
+        let ratio = if carrier {
+            carrier_ratio(nat(n), nat(d)).unwrap()
+        } else {
+            nat_ratio(nat(n), nat(d)).unwrap()
+        };
+        let arg = if negative {
+            app(con("un.Minus"), ratio).unwrap()
+        } else {
+            ratio
+        };
+        fn_graph(
+            op,
+            &[arg],
+            &wrap_int(result_sign, nat(result_magnitude)).unwrap(),
+        )
+        .unwrap()
+    }
     fn extend_fact(op: &str, m: u64, n: u64, sx: &str, a: u64, r: u64) -> Term {
         let widths = if op == "iextend_" { (n, m) } else { (m, n) };
         fn_graph(
@@ -1556,8 +1655,8 @@ mod tests {
     #[test]
     fn integer_conversion_matrix_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 36);
-        assert_eq!(report.zero_clause_ops, 25);
+        assert_eq!(report.ops, 38);
+        assert_eq!(report.zero_clause_ops, 27);
 
         // Complete reachable wrap matrix, checked against an independent
         // bit-mask oracle. Use inputs with both kept and discarded high bits.
@@ -1831,9 +1930,9 @@ mod tests {
     #[test]
     fn integer_serialization_round_trips_and_refuses_wrong_results() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 309);
-        assert_eq!(report.ops, 36);
-        assert_eq!(report.zero_clause_ops, 25);
+        assert_eq!(report.clauses, 321);
+        assert_eq!(report.ops, 38);
+        assert_eq!(report.zero_clause_ops, 27);
 
         for (w, a) in [
             (8, 0xa5),
@@ -2122,10 +2221,70 @@ mod tests {
     }
 
     #[test]
+    fn structural_rational_rounding_is_exact_and_fail_closed() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 321);
+        assert_eq!(report.ops, 38);
+        assert_eq!(report.zero_clause_ops, 27);
+
+        // Independent integer-arithmetic oracle, including integral,
+        // fractional, sub-unit, and zero points in both sign classes.
+        for (n, d) in [(0, 1), (1, 3), (2, 2), (7, 3), (10, 5), (17, 8)] {
+            let floor = n / d;
+            let ceil = (n + d - 1) / d;
+            for (op, carrier, negative, sign, magnitude) in
+                [false, true].into_iter().flat_map(|carrier| {
+                    [
+                        ("truncz", carrier, false, 0, floor),
+                        ("ceilz", carrier, false, 0, ceil),
+                        ("truncz", carrier, true, u64::from(floor != 0), floor),
+                        ("ceilz", carrier, true, u64::from(floor != 0), floor),
+                    ]
+                })
+            {
+                assert!(
+                    derivable_at(
+                        &clauses,
+                        &rational_fact(op, carrier, negative, n, d, sign, magnitude)
+                    ),
+                    "{op} negative={negative} {n}/{d} -> ({sign},{magnitude})"
+                );
+                assert!(!derivable_at(
+                    &clauses,
+                    &rational_fact(op, carrier, negative, n, d, sign, magnitude + 1)
+                ));
+                // Negative zero is never a canonical integer result.
+                if magnitude == 0 {
+                    assert!(!derivable_at(
+                        &clauses,
+                        &rational_fact(op, carrier, negative, n, d, 1, 0)
+                    ));
+                }
+            }
+        }
+
+        // Division by zero, invented result signs, and representation-erased
+        // opaque rationals receive no fact.
+        for op in ["truncz", "ceilz"] {
+            assert!(!derivable_at(
+                &clauses,
+                &rational_fact(op, false, false, 7, 0, 0, 0)
+            ));
+            assert!(!derivable_at(
+                &clauses,
+                &rational_fact(op, false, false, 7, 3, 1, 2)
+            ));
+            let opaque =
+                fn_graph(op, &[con("num.rat.7/3")], &wrap_int(0, nat(2)).unwrap()).unwrap();
+            assert!(!derivable_at(&clauses, &opaque));
+        }
+    }
+
+    #[test]
     fn unsigned_rounded_average_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 36);
-        assert_eq!(report.zero_clause_ops, 25);
+        assert_eq!(report.ops, 38);
+        assert_eq!(report.zero_clause_ops, 27);
 
         for (w, points) in [
             (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),

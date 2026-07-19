@@ -121,7 +121,7 @@ pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
 /// Integer ops given defining clauses by this leg.
-pub const OPS: [&str; 38] = [
+pub const OPS: [&str; 46] = [
     "truncz",
     "ceilz",
     "isub_",
@@ -160,6 +160,14 @@ pub const OPS: [&str; 38] = [
     "narrow__",
     "iavgr_",
     "iq15mulr_sat_",
+    "nbytes_",
+    "inv_nbytes_",
+    "vbytes_",
+    "inv_vbytes_",
+    "zbytes_",
+    "inv_zbytes_",
+    "cbytes_",
+    "inv_cbytes_",
 ];
 
 /// How many of the 91 zero-clause builtin tags gain their **first** clauses
@@ -167,7 +175,7 @@ pub const OPS: [&str; 38] = [
 /// operations, four integer serialization/inverse operations, the exact
 /// integer SIMD lane isomorphism, and three integer conversions. The other
 /// eleven [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 27;
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 35;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -1038,6 +1046,106 @@ fn integer_serialization(w: u64) -> Result<Vec<Clause>> {
     ])
 }
 
+/// Exact byte serialization for the composite numeric, vector, storage, and
+/// constant-type front doors.
+///
+/// These builtins are type-directed wrappers around the primitive fixed-width
+/// byte representation.  We spell out only the integer/vector cases whose
+/// carrier is the exact unsigned `%` representation already used by
+/// [`integer_serialization`]. This is pinned by the corpus itself:
+/// `1.1-syntax.values.spectec` defines both `iN(N)` and `vN(N)` as `uN(N)`,
+/// while `1.3-syntax.instructions.spectec` routes `num_(Inn)`, `vec_(Vnn)`,
+/// and the integer/vector `lit_` branches to those carriers. The `case.I*` /
+/// `case.V128` tags are the ordinary coproduct encoding used by the lowered
+/// type arguments at the real load/store and array-data call sites.
+/// Float cases deliberately receive no clause:
+/// matching their distinct structural carrier as an integer would erase the
+/// representation and silently invent float semantics.
+fn composite_byte_serialization(
+    op: &str,
+    inverse: bool,
+    type_case: &str,
+    w: u64,
+) -> Result<Clause> {
+    debug_assert_eq!(w % 8, 0);
+    let ids: Vec<String> = (0..w / 8).map(|i| format!("e{i}")).collect();
+    let mut metavars = vec!["a".to_owned()];
+    metavars.extend(ids.iter().cloned());
+    let mut sides = vec![in_carrier(mv("a"), w)?];
+    let base = p2(8)?;
+    for (i, id) in ids.iter().enumerate() {
+        sides.push(lt(mv(id), base.clone())?);
+        if !inverse {
+            sides.push(mv(id).equals(md(div(mv("a"), p2(8 * i as u64)?)?, base.clone())?)?);
+        }
+    }
+    if inverse {
+        let rebuilt = sum(ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| Ok(mul(mv(id), p2(8 * i as u64)?)?)))?;
+        sides.push(mv("a").equals(rebuilt)?);
+    }
+    let bytes = encoded_nat_list(&ids)?;
+    let ty = app(con(format!("case.{type_case}")), con("tup"))?;
+    let (args, result) = if inverse {
+        (vec![ty, bytes], ival(mv("a"))?)
+    } else {
+        (vec![ty, ival(mv("a"))?], bytes)
+    };
+    let names: Vec<&str> = metavars.iter().map(String::as_str).collect();
+    Ok(clause(&names, sides, fn_graph(op, &args, &result)?))
+}
+
+/// Every deterministic integer/vector branch of the four composite byte
+/// families. Their float branches remain explicitly absent.
+fn composite_byte_serializations() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for (op, inverse, shapes) in [
+        ("nbytes_", false, &[("I32", 32), ("I64", 64)][..]),
+        ("inv_nbytes_", true, &[("I32", 32), ("I64", 64)][..]),
+        ("vbytes_", false, &[("V128", 128)][..]),
+        ("inv_vbytes_", true, &[("V128", 128)][..]),
+        (
+            "zbytes_",
+            false,
+            &[
+                ("I8", 8),
+                ("I16", 16),
+                ("I32", 32),
+                ("I64", 64),
+                ("V128", 128),
+            ][..],
+        ),
+        (
+            "inv_zbytes_",
+            true,
+            &[
+                ("I8", 8),
+                ("I16", 16),
+                ("I32", 32),
+                ("I64", 64),
+                ("V128", 128),
+            ][..],
+        ),
+        (
+            "cbytes_",
+            false,
+            &[("I32", 32), ("I64", 64), ("V128", 128)][..],
+        ),
+        (
+            "inv_cbytes_",
+            true,
+            &[("I32", 32), ("I64", 64), ("V128", 128)][..],
+        ),
+    ] {
+        for &(shape, w) in shapes {
+            out.push(composite_byte_serialization(op, inverse, shape, w)?);
+        }
+    }
+    Ok(out)
+}
+
 /// `mag(x)` for the negative sign class: `2^w − x`.
 fn neg_mag(x: Term, w: u64) -> Result<Term> {
     sub(p2(w)?, x)
@@ -1271,6 +1379,7 @@ pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
     for w in SERIALIZATION_WIDTHS {
         out.extend(integer_serialization(w)?);
     }
+    out.extend(composite_byte_serializations()?);
     for (lane, w, dim) in INTEGER_LANE_SHAPES {
         out.extend(integer_lanes(lane, w, dim)?);
     }
@@ -1451,6 +1560,14 @@ mod tests {
     }
     fn inverse_serialize_term_fact(op: &str, w: u64, xs: &[u64], a: Term) -> Term {
         fn_graph(op, &[w_lit(w).unwrap(), nat_list(xs)], &ival(a).unwrap()).unwrap()
+    }
+    fn composite_serialize_fact(op: &str, type_case: &str, a: Term, xs: &[u64]) -> Term {
+        let ty = app(con(format!("case.{type_case}")), con("tup")).unwrap();
+        fn_graph(op, &[ty, ival(a).unwrap()], &nat_list(xs)).unwrap()
+    }
+    fn inverse_composite_serialize_fact(op: &str, type_case: &str, xs: &[u64], a: Term) -> Term {
+        let ty = app(con(format!("case.{type_case}")), con("tup")).unwrap();
+        fn_graph(op, &[ty, nat_list(xs)], &ival(a).unwrap()).unwrap()
     }
     fn lane_list(xs: &[u64]) -> Term {
         let mut out = con("list");
@@ -1655,8 +1772,8 @@ mod tests {
     #[test]
     fn integer_conversion_matrix_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 38);
-        assert_eq!(report.zero_clause_ops, 27);
+        assert_eq!(report.ops, 46);
+        assert_eq!(report.zero_clause_ops, 35);
 
         // Complete reachable wrap matrix, checked against an independent
         // bit-mask oracle. Use inputs with both kept and discarded high bits.
@@ -1930,9 +2047,9 @@ mod tests {
     #[test]
     fn integer_serialization_round_trips_and_refuses_wrong_results() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 321);
-        assert_eq!(report.ops, 38);
-        assert_eq!(report.zero_clause_ops, 27);
+        assert_eq!(report.clauses, 343);
+        assert_eq!(report.ops, 46);
+        assert_eq!(report.zero_clause_ops, 35);
 
         for (w, a) in [
             (8, 0xa5),
@@ -2001,6 +2118,102 @@ mod tests {
         assert!(!derivable_at(
             &clauses,
             &inverse_serialize_term_fact("inv_ibytes_", 128, &wrong_place, p2(120).unwrap())
+        ));
+    }
+
+    /// The composite byte front doors agree with Rust little-endian bytes on
+    /// every integer/vector branch and reject wrong bytes, malformed lengths,
+    /// carrier overflow, unsupported type/op combinations, and all float
+    /// carriers.
+    #[test]
+    fn composite_byte_serialization_is_exact_and_fail_closed() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 343);
+        assert_eq!(report.ops, 46);
+        assert_eq!(report.zero_clause_ops, 35);
+
+        let families: [(&str, &str, &[(&str, u64)]); 4] = [
+            ("nbytes_", "inv_nbytes_", &[("I32", 32), ("I64", 64)]),
+            ("vbytes_", "inv_vbytes_", &[("V128", 128)]),
+            (
+                "zbytes_",
+                "inv_zbytes_",
+                &[
+                    ("I8", 8),
+                    ("I16", 16),
+                    ("I32", 32),
+                    ("I64", 64),
+                    ("V128", 128),
+                ],
+            ),
+            (
+                "cbytes_",
+                "inv_cbytes_",
+                &[("I32", 32), ("I64", 64), ("V128", 128)],
+            ),
+        ];
+        for (fwd, inv, shapes) in families {
+            for &(shape, w) in shapes {
+                // A byte in every position catches endianness, truncation, and
+                // accidental host-u64 assumptions at V128.
+                let xs: Vec<u64> = (0..w / 8).map(|i| (17 * i + 3) & 0xff).collect();
+                let value = sum(xs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, x)| Ok(mul(nat(*x), p2(8 * i as u64)?)?)))
+                .unwrap();
+                assert!(derivable_at(
+                    &clauses,
+                    &composite_serialize_fact(fwd, shape, value.clone(), &xs)
+                ));
+                assert!(derivable_at(
+                    &clauses,
+                    &inverse_composite_serialize_fact(inv, shape, &xs, value.clone())
+                ));
+
+                let mut wrong = xs.clone();
+                wrong[0] ^= 1;
+                assert!(!derivable_at(
+                    &clauses,
+                    &composite_serialize_fact(fwd, shape, value.clone(), &wrong)
+                ));
+                assert!(!derivable_at(
+                    &clauses,
+                    &inverse_composite_serialize_fact(inv, shape, &xs, add(value, nat(1)).unwrap())
+                ));
+                assert!(!derivable_at(
+                    &clauses,
+                    &inverse_composite_serialize_fact(inv, shape, &xs[..xs.len() - 1], nat(0))
+                ));
+            }
+        }
+
+        let bytes32 = [0u64; 4];
+        for op in ["nbytes_", "vbytes_", "zbytes_", "cbytes_"] {
+            assert!(!derivable_at(
+                &clauses,
+                &composite_serialize_fact(op, "F32", nat(0), &bytes32)
+            ));
+        }
+        // Each wrapper accepts only its real type family.
+        assert!(!derivable_at(
+            &clauses,
+            &composite_serialize_fact("nbytes_", "V128", nat(0), &[0; 16])
+        ));
+        assert!(!derivable_at(
+            &clauses,
+            &composite_serialize_fact("vbytes_", "I32", nat(0), &bytes32)
+        ));
+        // Erased carriers and byte elements still fail closed.
+        assert!(!derivable_at(
+            &clauses,
+            &composite_serialize_fact("nbytes_", "I32", p2(32).unwrap(), &bytes32)
+        ));
+        let mut bad_byte = bytes32;
+        bad_byte[0] = 256;
+        assert!(!derivable_at(
+            &clauses,
+            &inverse_composite_serialize_fact("inv_nbytes_", "I32", &bad_byte, nat(0))
         ));
     }
 
@@ -2223,9 +2436,9 @@ mod tests {
     #[test]
     fn structural_rational_rounding_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 321);
-        assert_eq!(report.ops, 38);
-        assert_eq!(report.zero_clause_ops, 27);
+        assert_eq!(report.clauses, 343);
+        assert_eq!(report.ops, 46);
+        assert_eq!(report.zero_clause_ops, 35);
 
         // Independent integer-arithmetic oracle, including integral,
         // fractional, sub-unit, and zero points in both sign classes.
@@ -2283,8 +2496,8 @@ mod tests {
     #[test]
     fn unsigned_rounded_average_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 38);
-        assert_eq!(report.zero_clause_ops, 27);
+        assert_eq!(report.ops, 46);
+        assert_eq!(report.zero_clause_ops, 35);
 
         for (w, points) in [
             (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),

@@ -13,10 +13,11 @@
 //! Transport is kernel-checked clause-set inclusion; neither this module nor
 //! the untrusted lowering mints a theorem.
 
-use covalence_core::{Result, Term};
+use covalence_core::subst::subst_free;
+use covalence_core::{Result, Term, Var};
 use covalence_hol_eval::EvalThm as Thm;
 
-use super::super::encode::{app, con};
+use super::super::encode::{app, con, metavar_name, phi, tag};
 use super::slice::SliceEnv;
 use super::trace::{Config, TraceEnv, const_fold_drop_trace};
 use crate::metalogic::{Premise, RuleSet};
@@ -55,6 +56,9 @@ pub struct NormativeWitness {
     pub program: &'static [&'static str],
     /// Checked typing facts for every instruction schema used by the program.
     pub typing: Vec<CheckedInstructionTyping>,
+    /// Hypothesis-free `Instrs_ok` theorem for the complete instruction
+    /// sequence, when the exact sequence driver is available.
+    pub program_typing: Option<Thm>,
     /// Normative rules used by the execution path, in program-step order.
     pub execution_sources: &'static [NormativeSource],
     /// Hypothesis-free `Steps` theorem in the full combined rule set.
@@ -160,6 +164,175 @@ fn list(es: impl IntoIterator<Item = Term>) -> Result<Term> {
     es.into_iter().try_fold(con("list"), a)
 }
 
+fn instr_type(inputs: Term, locals: Term, outputs: Term) -> Result<Term> {
+    a(
+        con("case.%->_%%"),
+        a(
+            a(
+                a(con("tup"), a(con("case.%"), a(con("tup"), inputs)?)?)?,
+                locals,
+            )?,
+            a(con("case.%"), a(con("tup"), outputs)?)?,
+        )?,
+    )
+}
+
+fn relation_tag(term: &Term) -> Option<String> {
+    let mut cur = term;
+    loop {
+        let (f, _) = cur.as_app()?;
+        match f.as_app() {
+            Some((head, constant)) => {
+                if head.as_free().map(|v| v.name()) == Some("st$app")
+                    && let Some(tag) = constant
+                        .as_free()
+                        .and_then(|v| v.name().strip_prefix("st$c$rel."))
+                {
+                    return Some(tag.to_owned());
+                }
+                cur = f;
+            }
+            None => return None,
+        }
+    }
+}
+
+/// Derive the complete `Instrs_ok` judgement for `[NOP]`.
+///
+/// This deliberately exercises every premise of `Instrs_ok/seq`: both
+/// concatenations, the instruction rule, the empty locals-condition star,
+/// the exact `(SET t)*` map, `$with_locals` at empty lists, and the recursive
+/// empty sequence. Nothing is skipped or assumed.
+fn nop_program_typing(env: &SliceEnv, full: &RuleSet<'static>, ctx: &Term) -> Result<Thm> {
+    let tr = TraceEnv::for_slice(env)?;
+    let nil = con("list");
+    let nop = a(con("case.NOP"), con("tup"))?;
+
+    let empty_idx = env
+        .rule_index(Some("Instrs_ok"), "empty")
+        .ok_or_else(|| err("wasm1 slice has no Instrs_ok/empty"))?;
+    let empty = env.derive(empty_idx, std::slice::from_ref(ctx), vec![])?;
+
+    let nop_idx = env
+        .rule_index(Some("Instr_ok"), "nop")
+        .ok_or_else(|| err("wasm1 slice has no Instr_ok/nop"))?;
+    let nop_ok = env.derive(nop_idx, std::slice::from_ref(ctx), vec![])?;
+
+    let star_idx = env
+        .rules()
+        .iter()
+        .position(|meta| meta.relation == "star.Instrs_ok.seq.1" && meta.metavars.len() == 1)
+        .ok_or_else(|| err("wasm1 slice has no empty Instrs_ok/seq locals star"))?;
+    let star = env.derive(star_idx, std::slice::from_ref(ctx), vec![])?;
+
+    let seq_idx = env
+        .rule_index(Some("Instrs_ok"), "seq")
+        .ok_or_else(|| err("wasm1 slice has no Instrs_ok/seq"))?;
+    let seq_clause = &env.slice().clauses()[seq_idx];
+    let map_relation = seq_clause
+        .prems
+        .iter()
+        .filter_map(|premise| match premise {
+            crate::wasm::lower::LowerPrem::Judgement(judgement) => relation_tag(judgement),
+            crate::wasm::lower::LowerPrem::Side(_) => None,
+        })
+        .find(|relation| relation.starts_with("ev.map."))
+        .ok_or_else(|| err("Instrs_ok/seq has no exact localtype map premise"))?;
+    let map_idx = env
+        .rules()
+        .iter()
+        .position(|meta| meta.relation == map_relation && meta.metavars.is_empty())
+        .ok_or_else(|| err(format!("{map_relation} has no empty-map clause")))?;
+    let map = env.derive(map_idx, &[], vec![])?;
+
+    let with_locals_idx = env
+        .rules()
+        .iter()
+        .position(|meta| meta.relation == "fn.with_locals" && meta.metavars.len() == 1)
+        .ok_or_else(|| err("wasm1 slice has no empty with_locals clause"))?;
+    let with_locals = env.derive(with_locals_idx, std::slice::from_ref(ctx), vec![])?;
+
+    let singleton = list([nop.clone()])?;
+    let (whole, cat_instrs) = tr.prove_cat(&singleton, &nil)?;
+    if whole != singleton {
+        return Err(err("singleton instruction concatenation endpoint mismatch"));
+    }
+    let (locals, cat_locals) = tr.prove_cat(&nil, &nil)?;
+    if locals != nil {
+        return Err(err("empty locals concatenation endpoint mismatch"));
+    }
+
+    // Metavariable order is pinned by ClauseMeta and asserted by derive.
+    let args = [
+        ctx.clone(), // C
+        nop,         // instr_1
+        nil.clone(), // instr_2*
+        nil.clone(), // t_1*
+        nil.clone(), // x_1*
+        nil.clone(), // x_2*
+        nil.clone(), // t_3*
+        singleton,   // concatenated instruction sequence
+        nil.clone(), // concatenated initialized-local indices
+        nil.clone(), // t_2*
+        nil.clone(), // init*
+        nil.clone(), // t*
+        i32t()?,     // unused empty-star element witness
+        nil.clone(), // exact (SET t)* map result
+        ctx.clone(), // with_locals result
+    ];
+    if args.len() != env.rules()[seq_idx].metavars.len() {
+        return Err(err(format!(
+            "Instrs_ok/seq metavar layout changed: expected {}, got {}",
+            args.len(),
+            env.rules()[seq_idx].metavars.len()
+        )));
+    }
+    let small = env.derive(
+        seq_idx,
+        &args,
+        vec![
+            Premise::Derivation(cat_instrs),
+            Premise::Derivation(cat_locals),
+            Premise::Derivation(nop_ok),
+            Premise::Derivation(star),
+            Premise::Derivation(map),
+            Premise::Derivation(with_locals),
+            Premise::Derivation(empty),
+        ],
+    )?;
+    let judgement = tag(
+        "Instrs_ok",
+        a(
+            a(a(con("tup"), ctx.clone())?, whole)?,
+            instr_type(nil.clone(), nil.clone(), nil)?,
+        )?,
+    )?;
+    let mut instantiated = seq_clause.concl.clone();
+    for (metavar, argument) in seq_clause.metavars.iter().zip(&args) {
+        instantiated = subst_free(
+            &instantiated,
+            &Var::new(metavar_name(metavar), phi()),
+            argument,
+        );
+    }
+    if instantiated != judgement {
+        return Err(err(format!(
+            "neutral NOP judgement encoding mismatch:\nclause={instantiated:#?}\nneutral={judgement:#?}"
+        )));
+    }
+    let expected_small = crate::metalogic::derivable(env.rule_set(), &judgement)?;
+    if small.concl() != &expected_small {
+        return Err(err(
+            "Instrs_ok theorem does not state exact NOP program typing",
+        ));
+    }
+    let theorem = env.transport(full, &small)?;
+    if !theorem.hyps().is_empty() {
+        return Err(err("transported Instrs_ok theorem has hypotheses"));
+    }
+    Ok(theorem)
+}
+
 fn typing(
     env: &SliceEnv,
     full: &RuleSet<'static>,
@@ -244,10 +417,12 @@ pub fn normative_witnesses(
     let nop_prog = list([a(con("case.NOP"), con("tup"))?])?;
     let nop_step = tr.lift_pure(z, &nop_prog, &con("list"), nop_pure)?;
     let nop_small = tr.chain(std::slice::from_ref(&nop_step))?;
+    let nop_program_typing = nop_program_typing(env, full, &ctx)?;
     let nop = NormativeWitness {
         id: "mvp.nop",
         program: &["nop"],
         typing: vec![nop_typing],
+        program_typing: Some(nop_program_typing),
         execution_sources: &[E_NOP, E_PURE, E_TRANS],
         execution: transport_trace(env, full, nop_small)?,
         from: nop_step.from,
@@ -295,6 +470,7 @@ pub fn normative_witnesses(
         id: "mvp.const-drop",
         program: &["i32.const 5", "drop"],
         typing: vec![const5_typing, drop_typing.clone()],
+        program_typing: None,
         execution_sources: &[E_DROP, E_PURE, E_TRANS],
         execution: transport_trace(env, full, drop_small)?,
         from: drop_step.from,
@@ -337,6 +513,7 @@ pub fn normative_witnesses(
         id: "mvp.i32-add-drop",
         program: &["i32.const 2", "i32.const 3", "i32.add", "drop"],
         typing: vec![const2, const3, add, drop_typing],
+        program_typing: None,
         execution_sources: &[E_BINOP, E_PURE, E_FRAME, E_DROP, E_PURE, E_TRANS],
         execution: transport_trace(env, full, small)?,
         from,
@@ -381,6 +558,12 @@ mod tests {
                 witnesses.iter().map(|w| w.n_steps).collect::<Vec<_>>(),
                 [1, 1, 2]
             );
+            assert!(witnesses[0].program_typing.is_some());
+            assert!(
+                witnesses[1..]
+                    .iter()
+                    .all(|witness| witness.program_typing.is_none())
+            );
             for witness in &witnesses {
                 assert!(
                     witness.execution.hyps().is_empty(),
@@ -401,6 +584,9 @@ mod tests {
                     witness.id
                 );
                 assert!(!witness.typing.is_empty());
+                if let Some(program_typing) = &witness.program_typing {
+                    assert!(program_typing.hyps().is_empty());
+                }
                 for typing in &witness.typing {
                     assert!(
                         typing.theorem.hyps().is_empty(),

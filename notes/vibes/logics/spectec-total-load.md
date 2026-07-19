@@ -28,7 +28,7 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **3783 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
+- **3819 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
@@ -36,8 +36,8 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 321 exact builtin
-  clauses over 38 operations + 1462
+  expanded Dec-star sites / 12 defining clauses) + 343 exact builtin
+  clauses over 46 operations + 1476
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
   families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
@@ -637,6 +637,23 @@ The relaxed declarations deliberately remain clause-less: replacing their
 specified result sets by one deterministic answer would be a coverage score
 improvement but a semantic regression. The generic representation and rational
 families are separately actionable; they are no longer mislabeled as floats.
+
+## Landed (Wave AD — typed composite byte representation)
+
+The integer/vector branches of `nbytes_`/`vbytes_`/`zbytes_`/`cbytes_` and
+their inverses now have **22 exact clauses**. They preserve each source type
+tag and use the same fixed-length, little-endian natural arithmetic as the
+primitive `ibytes_` isomorphism: I32/I64 for numeric bytes, V128 for vector
+bytes, I8/I16/I32/I64/V128 for storage bytes, and I32/I64/V128 for constant
+bytes. Float tags, cross-family tags, malformed lengths, byte overflow, and
+out-of-carrier values remain underivable rather than being reinterpreted.
+
+The builtin leg is now **343 clauses over 46 operations**, filling **35 of
+91** formerly empty declarations and leaving **56 declarations**. They cover
+42 float-dependent names, seven relaxed/nondeterministic names, and the two
+genuinely sequence-valued inverses `inv_concat_`/`inv_concatn_`; repeated
+source declarations account for the difference between names and declaration
+count.
 
 - The result is the WebAssembly unsigned rounded average
   `(a + b + 1) div 2`, computed in the unbounded HOL-natural carrier before

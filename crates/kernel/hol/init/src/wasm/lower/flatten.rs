@@ -336,7 +336,8 @@ impl<'a> Flattener<'a> {
             E::Iter { e1, it, xes }
                 if contains_call(e1)
                     || matches!(it, SpecTecIter::ListN { xo, .. }
-                        if xes.is_empty() && !xo.is_empty()) =>
+                        if xes.is_empty() && !xo.is_empty())
+                    || (mode == Mode::CallArg && !xes.is_empty()) =>
             {
                 self.flatten_iter_map(e1, it, xes, fl)
             }
@@ -889,7 +890,26 @@ impl<'a> Flattener<'a> {
         let mut args = Vec::new();
         for a in as1 {
             if let SpecTecArg::Exp { e } = a {
-                args.push(self.enc(e, mode, fl)?);
+                // A mapped iteration supplied as a function argument denotes
+                // its value list, not the raw iterator syntax.  Evaluate that
+                // argument through the exact per-site zipped-map relation
+                // even when the surrounding call occurs in a Rule premise
+                // (`Mode::Judgement`).  This is notably required by
+                // `Instrs_ok/seq`:
+                //
+                //     $with_locals(C, x_1*, (SET t)*)
+                //
+                // where the function graph consumes the concrete list of
+                // `SET t` local types.  Restricting the mode promotion to the
+                // iteration argument preserves ordinary judgement-spine
+                // encoding while using the already exact List/Opt/ListN map
+                // evaluator for the value-producing boundary.
+                let arg_mode = if matches!(e, SpecTecExp::Iter { .. }) {
+                    Mode::CallArg
+                } else {
+                    mode
+                };
+                args.push(self.enc(e, arg_mode, fl)?);
             }
         }
         let r = self.fresh_var(fl);
@@ -1702,6 +1722,10 @@ enum Mode {
     Judgement,
     Cond,
     Concl,
+    /// A direct function-argument iteration: retain judgement encoding for
+    /// ordinary nodes, but relationally evaluate a mapped iteration to the
+    /// value list consumed by the function graph.
+    CallArg,
 }
 
 // ===========================================================================

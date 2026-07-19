@@ -10,7 +10,7 @@
 // TODO(cov:kernel.hol.init.src.wasm.church-types-are-polymorphic-term-free, severe): Church types are polymorphic + term-free: ChurchBackend gives Φ⟨'r⟩ with a
 // TODO(cov:kernel.hol.init.src.wasm.constructor-freeness-lemmas-not-threaded, severe): Constructor freeness lemmas not threaded: denote renders variant case
 // TODO(cov:kernel.hol.init.src.wasm.dec-graph-relation-residue, severe): Dec graph-relation residue: (combined-set census, spec::coveragereport;
-// TODO(cov:kernel.hol.init.src.wasm.builtin-frontier-after-the-integer-leg, severe): Give exact clauses to the remaining 64 float, relaxed/nondeterministic, and representation builtin declarations.
+// TODO(cov:kernel.hol.init.src.wasm.builtin-frontier-after-the-integer-leg, severe): Give exact clauses to the remaining 56 float, relaxed/nondeterministic, and inverse-sequence builtin declarations.
 // TODO(cov:kernel.hol.init.src.wasm.rule-condition-residue, severe): Rule condition residue: (combined-set census; exact per-tag counts in
 // TODO(cov:kernel.hol.init.src.wasm.encoding-coarseness-residue, severe): Encoding coarseness residue: (post R1-F1/F2 injectivity — iteration
 // TODO(cov:kernel.hol.init.src.wasm.combined-set-kernel-ops-need-big-stacks, severe): Combined-set kernel ops need big stacks: ClosedL over 1787 clauses is

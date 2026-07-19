@@ -117,6 +117,7 @@ pub struct Configuration {
 pub enum RelationIdentity {
     NumericTypeValid,
     InstructionValid,
+    ProgramValid,
     OneStep,
     MultiStep,
 }
@@ -126,6 +127,7 @@ impl RelationIdentity {
         match self {
             Self::NumericTypeValid => "Numtype_ok",
             Self::InstructionValid => "Instr_ok",
+            Self::ProgramValid => "Instrs_ok",
             Self::OneStep => "Step",
             Self::MultiStep => "Steps",
         }
@@ -142,6 +144,11 @@ pub enum TypingStatement {
     Instruction {
         context: ValidationContext,
         instruction: Instruction,
+        instruction_type: InstructionType,
+    },
+    Program {
+        context: ValidationContext,
+        program: Program,
         instruction_type: InstructionType,
     },
 }
@@ -221,6 +228,9 @@ pub struct NormativeTypingFact {
 pub struct NormativeExample {
     pub id: &'static str,
     pub typing: Vec<NormativeTypingFact>,
+    /// Complete-sequence typing, where the exact `Instrs_ok` driver has been
+    /// replayed. Absence means no sequence theorem is claimed.
+    pub program_typing: Option<CheckedTypingFact>,
     pub execution: CheckedExecutionFact,
     pub execution_sources: Vec<NormativeSource>,
 }
@@ -275,6 +285,13 @@ pub trait WasmTyping {
         instruction: &Instruction,
         instruction_type: &InstructionType,
     ) -> std::result::Result<Self::Fact, Self::Error>;
+
+    fn prove_program(
+        &self,
+        context: &ValidationContext,
+        program: &Program,
+        instruction_type: &InstructionType,
+    ) -> std::result::Result<Self::Fact, Self::Error>;
 }
 
 /// Backend-independent WebAssembly execution capability.
@@ -302,7 +319,7 @@ impl NativeWasmSemantics {
         let (clauses, metas) = with_total_stack(|| {
             let definitions = wasm_spec();
             let (clauses, report) = total_spec_clauses(&definitions)?;
-            if clauses.len() < 3_783 || clauses.len() != report.total_clauses {
+            if clauses.len() < 3_819 || clauses.len() != report.total_clauses {
                 return Err(facade_error(format!(
                     "combined-set coverage regressed: {} clauses",
                     clauses.len()
@@ -481,6 +498,42 @@ impl WasmTyping for NativeWasmSemantics {
             )
         })
     }
+
+    fn prove_program(
+        &self,
+        context: &ValidationContext,
+        program: &Program,
+        instruction_type: &InstructionType,
+    ) -> Result<Self::Fact> {
+        let context = context.clone();
+        let program = program.clone();
+        let instruction_type = instruction_type.clone();
+        self.replay(move |env, full| {
+            if context != ValidationContext::Empty
+                || program.instructions() != [Instruction::Nop]
+                || instruction_type != InstructionType::new([], [])
+            {
+                return Err(facade_error(
+                    "no exact checked Instrs_ok driver for this program typing",
+                ));
+            }
+            let state = encode_state(MachineState::Empty)?;
+            let theorem = normative_witnesses(env, full, &state)?
+                .into_iter()
+                .find(|witness| witness.id == "mvp.nop")
+                .and_then(|witness| witness.program_typing)
+                .ok_or_else(|| facade_error("mvp.nop has no checked Instrs_ok theorem"))?;
+            CheckedTypingFact::new(
+                RelationIdentity::ProgramValid,
+                TypingStatement::Program {
+                    context,
+                    program,
+                    instruction_type,
+                },
+                theorem,
+            )
+        })
+    }
 }
 
 impl WasmExecution for NativeWasmSemantics {
@@ -616,6 +669,20 @@ fn wrap_normative_witness(
         })
         .collect::<Result<Vec<_>>>()?;
 
+    let program_typing = witness
+        .program_typing
+        .map(|theorem| {
+            CheckedTypingFact::new(
+                RelationIdentity::ProgramValid,
+                TypingStatement::Program {
+                    context: ValidationContext::Empty,
+                    program: from.program.clone(),
+                    instruction_type: InstructionType::new([], []),
+                },
+                theorem,
+            )
+        })
+        .transpose()?;
     let execution = CheckedExecutionFact::new(
         RelationIdentity::MultiStep,
         ExecutionStatement::MultiStep {
@@ -628,6 +695,7 @@ fn wrap_normative_witness(
     Ok(NormativeExample {
         id: witness.id,
         typing,
+        program_typing,
         execution,
         execution_sources: witness
             .execution_sources
@@ -812,7 +880,7 @@ mod tests {
         assert_eq!(
             fact.statement(),
             &ExecutionStatement::MultiStep {
-                from,
+                from: from.clone(),
                 to: Configuration {
                     state: MachineState::Empty,
                     program: Program::empty(),
@@ -820,12 +888,28 @@ mod tests {
                 steps: 1,
             }
         );
+        let program_typing = semantics
+            .prove_program(
+                &ValidationContext::Empty,
+                &from.program,
+                &InstructionType::new([], []),
+            )
+            .unwrap();
+        assert_eq!(
+            program_typing.statement(),
+            &TypingStatement::Program {
+                context: ValidationContext::Empty,
+                program: from.program,
+                instruction_type: InstructionType::new([], []),
+            }
+        );
+        assert_eq!(program_typing.relation(), RelationIdentity::ProgramValid);
     }
 
     #[test]
     fn facade_executes_exact_integer_example_and_refuses_unknown_search() {
         let semantics = NativeWasmSemantics::execution().unwrap();
-        assert_eq!(semantics.total_clause_count(), 3_783);
+        assert_eq!(semantics.total_clause_count(), 3_819);
         let examples = semantics.normative_examples().unwrap();
         assert_eq!(
             examples
@@ -841,6 +925,12 @@ mod tests {
                     .iter()
                     .all(|typing| typing.fact.theorem().hyps().is_empty())
         }));
+        assert!(examples[0].program_typing.is_some());
+        assert!(
+            examples[1..]
+                .iter()
+                .all(|example| example.program_typing.is_none())
+        );
 
         let from = Configuration {
             state: MachineState::Empty,

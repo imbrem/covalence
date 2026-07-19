@@ -34,7 +34,7 @@
 //! derive the positive relation is not a negative certificate.
 
 use covalence_core::{Error, Result, Term};
-use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::{EvalThm as Thm, derived::DerivedRules};
 
 use super::super::encode::{app, con, tag};
 use super::{Clause, LowerPrem, opaque, rule_set_of};
@@ -141,13 +141,17 @@ impl DecisionRequest {
     }
 
     fn consequence(&self, source: &RuleSet<'_>) -> Result<Term> {
-        let positive = match &self.subject {
-            DecisionSubject::RelationJudgement => derivable(source, self.query())?,
-            DecisionSubject::CompositeApplicability(applicability) => applicability.clone(),
-        };
+        let positive = self.positive(source)?;
         match self.expected {
             DecisionAnswer::Yes => Ok(positive),
             DecisionAnswer::No => positive.not(),
+        }
+    }
+
+    fn positive(&self, source: &RuleSet<'_>) -> Result<Term> {
+        match &self.subject {
+            DecisionSubject::RelationJudgement => derivable(source, self.query()),
+            DecisionSubject::CompositeApplicability(applicability) => Ok(applicability.clone()),
         }
     }
 }
@@ -292,6 +296,91 @@ impl CertifiedDecisionFamily {
     /// The exact query certificates carried by this family.
     pub fn cases(&self) -> &[CertifiedDecisionCase] {
         &self.cases
+    }
+
+    /// Certify one exact conjunction decision from already-certified cases.
+    ///
+    /// This is the reusable composition step needed by ordered SpecTec rules
+    /// whose earlier sibling is applicable exactly when two judgements (or
+    /// other certified propositions) both hold. A `Yes` result requires
+    /// positive certificates for both conjuncts. A `No` result needs a
+    /// negative certificate for either conjunct; the other case is retained
+    /// solely to identify the exact conjunction.
+    ///
+    /// The returned graph has one query-specific positive clause. Its
+    /// authority does not come from that clause: the adequacy theorem is
+    /// derived from the supplied component certificates and then checked by
+    /// [`Self::certify`] against `Derivable(source)` (or the exact composite
+    /// propositions) reconstructed from `source`. No host predicate, failed
+    /// search, assumption, or theorem mint site participates.
+    pub fn certify_conjunction(
+        relation: impl Into<String>,
+        query: Term,
+        source: &RuleSet<'_>,
+        left: &CertifiedDecisionCase,
+        right: &CertifiedDecisionCase,
+        expected: DecisionAnswer,
+    ) -> Result<Self> {
+        let relation = relation.into();
+        let left_positive = left.request.positive(source)?;
+        let right_positive = right.request.positive(source)?;
+        let applicability = left_positive.clone().and(right_positive.clone())?;
+        let request =
+            DecisionRequest::composite(&relation, query, applicability.clone(), expected)?;
+
+        let graph_judgement = request.judgement()?;
+        let clauses = vec![Clause {
+            metavars: Vec::new(),
+            prems: Vec::new(),
+            concl: graph_judgement,
+        }];
+        let decision = rule_set_of(clauses.clone());
+        let totality = crate::metalogic::derive_mixed(&decision, 0, 1, &[], Vec::new())?;
+        let graph = totality.concl().clone();
+
+        let fact =
+            |case: &CertifiedDecisionCase| case.adequacy.clone().imp_elim(case.totality.clone());
+        let consequence = match expected {
+            DecisionAnswer::Yes => {
+                if left.request.expected != DecisionAnswer::Yes
+                    || right.request.expected != DecisionAnswer::Yes
+                {
+                    return Err(certification_error(
+                        "conjunction Yes requires two Yes component cases",
+                    ));
+                }
+                fact(left)?.and_intro(fact(right)?)?
+            }
+            DecisionAnswer::No => {
+                let (negative, conjunction_side) = if left.request.expected == DecisionAnswer::No {
+                    (fact(left)?, true)
+                } else if right.request.expected == DecisionAnswer::No {
+                    (fact(right)?, false)
+                } else {
+                    return Err(certification_error(
+                        "conjunction No requires a No component case",
+                    ));
+                };
+                let assumed = Thm::assume(applicability.clone())?;
+                let positive = if conjunction_side {
+                    assumed.and_elim_l()?
+                } else {
+                    assumed.and_elim_r()?
+                };
+                negative
+                    .not_elim(positive)?
+                    .imp_intro(&applicability)?
+                    .not_intro()?
+            }
+        };
+        let adequacy = consequence.imp_intro(&graph)?;
+
+        Self::certify(
+            relation,
+            clauses,
+            source,
+            vec![(request, totality, adequacy)],
+        )
     }
 }
 
@@ -445,6 +534,38 @@ mod tests {
         (family, request, source)
     }
 
+    fn certified_false_composite(source: &RuleSet<'_>) -> CertifiedDecisionFamily {
+        let false_prop = covalence_hol_eval::defs::fal();
+        let request = DecisionRequest::composite(
+            "FalseComponent",
+            con("false.component.key"),
+            false_prop.clone(),
+            DecisionAnswer::No,
+        )
+        .unwrap();
+        let clauses = vec![Clause {
+            metavars: vec![],
+            prems: vec![],
+            concl: request.judgement().unwrap(),
+        }];
+        let decision = rule_set_of(clauses.clone());
+        let totality = metalogic::derive_mixed(&decision, 0, 1, &[], vec![]).unwrap();
+        let not_false = Thm::assume(false_prop.clone())
+            .unwrap()
+            .imp_intro(&false_prop)
+            .unwrap()
+            .not_intro()
+            .unwrap();
+        let adequacy = not_false.imp_intro(totality.concl()).unwrap();
+        CertifiedDecisionFamily::certify(
+            "FalseComponent",
+            clauses,
+            source,
+            vec![(request, totality, adequacy)],
+        )
+        .unwrap()
+    }
+
     #[test]
     fn certified_toy_family_exposes_only_the_proved_positive_graph() {
         let (mut family, request, _) = certified_yes_toy();
@@ -576,6 +697,62 @@ mod tests {
         assert!(
             wrong.is_err(),
             "adequacy for one conjunction cannot certify another"
+        );
+    }
+
+    #[test]
+    fn certified_conjunction_composes_yes_and_short_circuits_no_exactly() {
+        let (left, _, source) = certified_yes_toy();
+
+        let yes = CertifiedDecisionFamily::certify_conjunction(
+            "ToyAndToy",
+            con("toy.and.toy"),
+            &source,
+            &left.cases()[0],
+            &left.cases()[0],
+            DecisionAnswer::Yes,
+        )
+        .unwrap();
+        assert_eq!(yes.cases().len(), 1);
+        assert!(yes.cases()[0].totality().hyps().is_empty());
+        assert!(yes.cases()[0].adequacy().hyps().is_empty());
+
+        let false_component = certified_false_composite(&source);
+        let no = CertifiedDecisionFamily::certify_conjunction(
+            "FalseAndToy",
+            con("false.and.toy"),
+            &source,
+            &false_component.cases()[0],
+            &left.cases()[0],
+            DecisionAnswer::No,
+        )
+        .unwrap();
+        assert!(no.cases()[0].totality().hyps().is_empty());
+        assert!(no.cases()[0].adequacy().hyps().is_empty());
+
+        assert!(
+            CertifiedDecisionFamily::certify_conjunction(
+                "BadNo",
+                con("bad.no"),
+                &source,
+                &left.cases()[0],
+                &left.cases()[0],
+                DecisionAnswer::No,
+            )
+            .is_err(),
+            "two positive cases cannot authorize a negative conjunction answer"
+        );
+        assert!(
+            CertifiedDecisionFamily::certify_conjunction(
+                "BadYes",
+                con("bad.yes"),
+                &source,
+                &false_component.cases()[0],
+                &left.cases()[0],
+                DecisionAnswer::Yes,
+            )
+            .is_err(),
+            "a negative case cannot authorize a positive conjunction answer"
         );
     }
 }

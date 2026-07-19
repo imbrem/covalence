@@ -8,7 +8,7 @@ use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::relation::{DeterministicStep, StepRelation};
+use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
 use crate::syntax::{Binding, CoreExpr, LispSyntax, Parameter};
 
 // TODO(cov:lisp.core.letrec, major): Add mutually recursive lexical bindings with explicit initialized/uninitialized cells and conformance tests.
@@ -481,6 +481,14 @@ impl<P: CorePrimitive> StepRelation for CoreMachine<P> {
     }
 }
 
+impl<P: CorePrimitive> TerminalValue for CoreMachine<P> {
+    type Value = Value<P::Symbol, P::Atom, P::Primitive>;
+
+    fn terminal_value(&self, configuration: &Self::Configuration) -> Option<Self::Value> {
+        configuration.terminal_value().cloned()
+    }
+}
+
 /// Constructor-only implementation of [`LispSyntax`] for [`CoreExpr`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CoreSyntax<S, A, P>(PhantomData<(S, A, P)>);
@@ -578,7 +586,7 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::relation::execute;
+    use crate::relation::{Evaluation, evaluate, execute};
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     enum Primitive {
@@ -634,6 +642,22 @@ mod tests {
             trace.end().terminal_value(),
             Some(&HostValue::Datum(Datum::Atom("head")))
         );
+    }
+
+    #[test]
+    fn host_evaluation_constructs_may_eval_evidence() {
+        let expression = CoreExpr::Quote(Datum::Atom("answer"));
+        let initial = HostConfiguration::initial(expression);
+        let Evaluation::Value(result) = evaluate(&CoreMachine::new(Sector), initial, 1).unwrap()
+        else {
+            panic!("quotation must evaluate to a value")
+        };
+        assert_eq!(
+            result.value,
+            HostValue::Datum(Datum::Atom("answer")),
+            "the observed value comes from the terminal machine configuration"
+        );
+        assert_eq!(result.trace.steps(), 1);
     }
 
     #[test]

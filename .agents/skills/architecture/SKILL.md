@@ -67,6 +67,11 @@ disable-model-invocation: true
   regex parsing. Maximal munch, rule priority, ambiguity, skipped tokens, and
   byte/scalar source spans are explicit policy or witness data. Nullable token
   rules are rejected so tokenization cannot loop without consuming input.
+- `crates/lang/peg-parsing/` — A0018 capture/action-free PEG syntax and
+  bounded deterministic evaluation over bytes or Unicode scalars. Ordered
+  choice, lookahead, recursion, exact/prefix policy, and limits are explicit;
+  nullable repetition and left recursion fail rather than looping. Host
+  witnesses carry no theorem authority.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

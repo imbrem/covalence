@@ -361,8 +361,6 @@ impl ByteParserRelation for LiteralBytes {
     }
 }
 
-// TODO(cov:parsing.bytes.peg-integration, major): Add a bounded PEG evaluator with explicit ordered-choice witnesses, exact/prefix modes, and resource-exhaustion errors.
-
 #[cfg(test)]
 mod tests {
     use core::convert::Infallible;

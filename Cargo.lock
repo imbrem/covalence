@@ -1438,6 +1438,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-peg-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
+ "covalence-parsing-api",
+]
+
+[[package]]
 name = "covalence-proptest"
 version = "0.0.0"
 dependencies = [

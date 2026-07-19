@@ -1,3 +1,17 @@
++++
+id = "N002A"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T22:10:01+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # The derivation-system interpretation API — a layered trait tower bottoming at HOL-ω
 
 *AI-authored design corpus.* This note records the **layered-API + reification

@@ -1,3 +1,17 @@
++++
+id = "N0015"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # The literal-leaf endgame — symbolic-prop design
 
 Authoritative design for the literal-leaf endgame's *additive mechanism* wave.

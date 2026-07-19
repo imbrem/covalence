@@ -1,3 +1,17 @@
++++
+id = "N0032"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-03T21:05:38+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Type theories as object logics — MLTT, book HoTT, NuPRL, and IZF→MLTT
 
 > **STATUS: DESIGN SKETCH.** How dependent type theories enter Covalence as

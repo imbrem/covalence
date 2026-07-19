@@ -1,0 +1,8 @@
+id = "coinductive-conformance"
+title = "First coinductive backend and conformance suite"
+status = "planned"
+parent = "inductive-datatypes"
+depends_on = ["inductive-logic-adapters"]
+todos = ["inductive.coinductive-conformance"]
+notes = ["notes/design/api-extraction-audit.md"]
+files = ["crates/lang/inductive"]

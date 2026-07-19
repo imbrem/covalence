@@ -1,3 +1,17 @@
++++
+id = "N003C"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # WebAssembly 3.0 in Rust — state of play (early 2026)
 
 Research note backing the async decision in [`web-kernel.md`](./web-kernel.md).

@@ -1,3 +1,17 @@
++++
+id = "N0028"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T21:40:18+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # CFG stratum — design (SpecTec grammars → Derives in HOL-omega)
 
 Status: accepted design, implementation in progress on branch `spectec-grammar-cfg`.

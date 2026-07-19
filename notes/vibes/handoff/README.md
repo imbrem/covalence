@@ -1,3 +1,17 @@
++++
+id = "N000L"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-05T16:50:03+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Handoff docs — per-task status
 
 Pick-up-here snapshots for active workstreams. Full plan:
@@ -6,7 +20,8 @@ Pick-up-here snapshots for active workstreams. Full plan:
 | Task | Doc | Open work |
 |---|---|---|
 | **defs/ out of core** | [`defs-out-of-core.md`](./defs-out-of-core.md) | Tower is real; D3 residue (literal leaves + type chain) remains, maintainer-gated (EG5). |
-| toHOL purge | [`tohol-purge.md`](./tohol-purge.md) | S0–S9 + logic-out done; EG5 (literal-leaf deletion) open. |
-| f32/f64 + ball | [`float-ball.md`](./float-ball.md) | Bit ops + certs + typed ops + ball data landed; F4 enclosure theorems open. |
-
 TCB = `crates/kernel/base/trusted` + `crates/kernel/hol/core`.
+
+Completed point-in-time handoffs are deleted rather than retained as agent
+context; Git history preserves them. Remaining work belongs in stable
+source-local TODOs and `notes/projects/*.toml`.

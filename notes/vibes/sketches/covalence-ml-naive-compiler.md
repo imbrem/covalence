@@ -1,3 +1,17 @@
++++
+id = "N0030"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-03T21:05:38+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # `covalence-ml` — naive ML→WASM compiler (design sketch)
 
 > Status: **sketch, not plan.** Captured during SpecTec scoping (2026-06-05). Not on the

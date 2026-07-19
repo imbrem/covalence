@@ -1,0 +1,14 @@
+id = "logic-relations"
+title = "Logic, relations, and numeric capabilities"
+status = "active"
+depends_on = []
+todos = [
+]
+notes = [
+  "notes/design/api-extraction-audit.md",
+  "notes/design/content-logic-and-wit-boundaries.md",
+]
+files = [
+  "crates/kernel/hol/logic",
+  "crates/kernel/hol/api/src/nat.rs",
+]

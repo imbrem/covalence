@@ -1,3 +1,17 @@
++++
+id = "N0034"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Covalence — Surface Language: theories, models, and the multi-stage compiler
 
 > **DESIGN SKETCH — the canonical surface-language doc.** Unifies the

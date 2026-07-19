@@ -10,6 +10,7 @@
     "covalence-core",
     "covalence-core-test-guest",
     "covalence-crypto-sig",
+    "covalence-decimal-api",
     "covalence-egglog",
     "covalence-forsp",
     "covalence-fuse",
@@ -24,6 +25,7 @@
     "covalence-inductive",
     "covalence-init",
     "covalence-json",
+    "covalence-json-api",
     "covalence-k",
     "covalence-kernel",
     "covalence-kernel-sat",
@@ -32,6 +34,7 @@
     "covalence-lean",
     "covalence-lisp",
     "covalence-llm",
+    "covalence-logic-api",
     "covalence-lsp",
     "covalence-metamath",
     "covalence-multiformat",
@@ -40,6 +43,7 @@
     "covalence-opentheory",
     "covalence-parquet",
     "covalence-parse",
+    "covalence-parsing-api",
     "covalence-proptest",
     "covalence-proto",
     "covalence-pure",
@@ -52,6 +56,7 @@
     "covalence-sat",
     "covalence-serve",
     "covalence-sexp",
+    "covalence-sexpr-api",
     "covalence-shell",
     "covalence-smt",
     "covalence-spectec",
@@ -175,6 +180,10 @@
       "to": "covalence-types"
     },
     {
+      "from": "covalence-decimal-api",
+      "to": "covalence-types"
+    },
+    {
       "from": "covalence-egglog",
       "to": "covalence-sexp"
     },
@@ -276,6 +285,10 @@
     },
     {
       "from": "covalence-hol-api",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-hol-api",
       "to": "covalence-pure"
     },
     {
@@ -301,6 +314,10 @@
     {
       "from": "covalence-hol-eval",
       "to": "covalence-types"
+    },
+    {
+      "from": "covalence-inductive",
+      "to": "covalence-logic-api"
     },
     {
       "from": "covalence-init",
@@ -332,6 +349,10 @@
     },
     {
       "from": "covalence-init",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-init",
       "to": "covalence-metamath"
     },
     {
@@ -344,6 +365,22 @@
     },
     {
       "from": "covalence-init",
+      "to": "covalence-types"
+    },
+    {
+      "from": "covalence-json-api",
+      "to": "covalence-decimal-api"
+    },
+    {
+      "from": "covalence-json-api",
+      "to": "covalence-inductive"
+    },
+    {
+      "from": "covalence-json-api",
+      "to": "covalence-parsing-api"
+    },
+    {
+      "from": "covalence-json-api",
       "to": "covalence-types"
     },
     {
@@ -425,6 +462,10 @@
     {
       "from": "covalence-lisp",
       "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-lisp",
+      "to": "covalence-sexpr-api"
     },
     {
       "from": "covalence-lisp",
@@ -689,6 +730,10 @@
     {
       "from": "covalence-sexp",
       "to": "covalence-types"
+    },
+    {
+      "from": "covalence-sexpr-api",
+      "to": "covalence-inductive"
     },
     {
       "from": "covalence-shell",

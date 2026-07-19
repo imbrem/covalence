@@ -1,3 +1,17 @@
++++
+id = "N000X"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # The relation-calculus base — authoritative redesign
 
 **Status:** authoritative plan for the **base redesign** (2026-07). The base

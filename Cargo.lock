@@ -1000,6 +1000,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-decimal-api"
+version = "0.0.0"
+dependencies = [
+ "covalence-types",
+]
+
+[[package]]
 name = "covalence-egglog"
 version = "0.0.0"
 dependencies = [
@@ -1109,6 +1116,7 @@ dependencies = [
  "covalence-hol-eval",
  "covalence-inductive",
  "covalence-init",
+ "covalence-logic-api",
  "covalence-pure",
  "covalence-types",
 ]
@@ -1131,6 +1139,7 @@ dependencies = [
 name = "covalence-inductive"
 version = "0.0.0"
 dependencies = [
+ "covalence-logic-api",
  "smol_str",
  "thiserror 2.0.18",
 ]
@@ -1148,6 +1157,7 @@ dependencies = [
  "covalence-hol-eval",
  "covalence-inductive",
  "covalence-k",
+ "covalence-logic-api",
  "covalence-metamath",
  "covalence-sexp",
  "covalence-spectec",
@@ -1167,6 +1177,16 @@ name = "covalence-json"
 version = "0.0.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "covalence-json-api"
+version = "0.0.0"
+dependencies = [
+ "covalence-decimal-api",
+ "covalence-inductive",
+ "covalence-parsing-api",
+ "covalence-types",
 ]
 
 [[package]]
@@ -1251,6 +1271,7 @@ dependencies = [
  "covalence-init",
  "covalence-repl-core",
  "covalence-sexp",
+ "covalence-sexpr-api",
  "covalence-types",
  "thiserror 2.0.18",
 ]
@@ -1268,6 +1289,10 @@ dependencies = [
  "tokio",
  "ureq",
 ]
+
+[[package]]
+name = "covalence-logic-api"
+version = "0.0.0"
 
 [[package]]
 name = "covalence-lsp"
@@ -1352,6 +1377,10 @@ dependencies = [
  "thiserror 2.0.18",
  "winnow 1.0.3",
 ]
+
+[[package]]
+name = "covalence-parsing-api"
+version = "0.0.0"
 
 [[package]]
 name = "covalence-proptest"
@@ -1511,6 +1540,13 @@ dependencies = [
  "pretty",
  "smol_str",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-sexpr-api"
+version = "0.0.0"
+dependencies = [
+ "covalence-inductive",
 ]
 
 [[package]]

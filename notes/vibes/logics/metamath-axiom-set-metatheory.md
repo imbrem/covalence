@@ -1,3 +1,17 @@
++++
+id = "N002D"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T19:02:54+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Metamath axiom-set metatheory (2026-07-13)
 
 Design record for the `covalence-metamath` metatheory layer built this session:

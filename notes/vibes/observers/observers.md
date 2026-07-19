@@ -1,3 +1,17 @@
++++
+id = "N002Q"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Covalence — Observers and Validators
 
 > **DESIGN SKETCH (not yet code).** How *untrusted* code (a WASM executor, a

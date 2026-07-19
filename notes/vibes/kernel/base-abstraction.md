@@ -1,3 +1,17 @@
++++
+id = "N000V"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Abstracting the base implementation seam (Track C design note)
 
 **Status:** landed on branch `base-abstract` (2026-07-10). Companion inventory:

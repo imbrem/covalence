@@ -1,3 +1,17 @@
++++
+id = "N001T"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Content-addressing, bottom-up from S-expressions to HOL (discussion draft, agent-authored)
 
 Response to: "Lisp is a good place to *start* content-addressing — content-addressed

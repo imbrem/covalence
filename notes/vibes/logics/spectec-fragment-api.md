@@ -1,3 +1,17 @@
++++
+id = "N002J"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T00:27:05+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # The high-level SpecTec-fragment API (layered, reusable, trait-based)
 
 Status: first slice landed on branch `wasm-semantics`. Companion to

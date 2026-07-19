@@ -1,3 +1,17 @@
++++
+id = "N001N"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T01:12:04+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACL2 S0–S3: concrete design (carrier, primitives, deep terms, Derivable_ACL2)
 
 *Design for stages S0–S3 of [`acl2-full-plan.md`](./acl2-full-plan.md). Agent-authored

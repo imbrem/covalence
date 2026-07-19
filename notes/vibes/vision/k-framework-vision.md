@@ -1,3 +1,17 @@
++++
+id = "N0038"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # The K-framework north star — full K + all its sublanguages
 
 **Status:** north-star vision note (AI-drafted). Aspirational; the concrete

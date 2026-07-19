@@ -1,3 +1,17 @@
++++
+id = "N002H"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T22:13:40+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Fast SAT replay — the AND-tree context (handoff)
 
 *Design handoff, 2026-07-14. The next speed step for `covalence-kernel-sat`'s

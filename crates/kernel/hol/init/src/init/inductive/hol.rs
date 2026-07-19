@@ -40,6 +40,9 @@
 use covalence_core::{Error, Result, Term, TermKind, Type, subst};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
+use covalence_logic_api::{
+    BinderRules, EqualityRules, EqualitySyntax, Logic, QuantifierSyntax, TermLanguage, TheoremView,
+};
 
 use crate::init::ext::TermExt;
 
@@ -174,6 +177,90 @@ pub trait Hol {
 /// the `init::eq` / `init::logic` derivation).
 #[derive(Clone, Copy, Default, Debug)]
 pub struct NativeHol;
+
+impl Logic for NativeHol {
+    type Kind = ();
+    type Type = Type;
+    type Term = Term;
+    type Thm = Thm;
+    type Error = Error;
+}
+
+impl TermLanguage for NativeHol {
+    fn variable(&self, name: &str, ty: Type) -> Term {
+        Hol::var(self, name, ty)
+    }
+
+    fn apply(&self, function: Term, argument: Term) -> Result<Term> {
+        Hol::app(self, function, argument)
+    }
+
+    fn abstract_term(&self, name: &str, ty: Type, body: Term) -> Term {
+        Hol::lam(self, name, ty, body)
+    }
+
+    fn type_of(&self, term: &Term) -> Result<Type> {
+        Hol::type_of(self, term)
+    }
+}
+
+impl EqualitySyntax for NativeHol {
+    fn equal(&self, left: Term, right: Term) -> Result<Term> {
+        Hol::eq(self, left, right)
+    }
+
+    fn as_equal(&self, proposition: &Term) -> Option<(Term, Term)> {
+        Hol::dest_eq(self, proposition)
+    }
+}
+
+impl QuantifierSyntax for NativeHol {
+    fn forall(&self, name: &str, ty: Type, body: Term) -> Result<Term> {
+        Hol::forall(self, name, ty, body)
+    }
+
+    fn exists(&self, name: &str, ty: Type, body: Term) -> Result<Term> {
+        Hol::exists(self, name, ty, body)
+    }
+}
+
+impl TheoremView for NativeHol {
+    fn conclusion(&self, theorem: &Thm) -> Term {
+        Hol::concl(self, theorem)
+    }
+
+    fn hypotheses(&self, theorem: &Thm) -> Vec<Term> {
+        Hol::hyps(self, theorem)
+    }
+}
+
+impl EqualityRules for NativeHol {
+    fn reflexivity(&self, term: Term) -> Result<Thm> {
+        Hol::refl(self, term)
+    }
+
+    fn symmetry(&self, theorem: Thm) -> Result<Thm> {
+        Hol::sym(self, theorem)
+    }
+
+    fn transitivity(&self, left: Thm, right: Thm) -> Result<Thm> {
+        Hol::trans(self, left, right)
+    }
+
+    fn equality_elim(&self, equality: Thm, proof: Thm) -> Result<Thm> {
+        Hol::eq_mp(self, equality, proof)
+    }
+}
+
+impl BinderRules for NativeHol {
+    fn forall_intro(&self, theorem: Thm, name: &str, ty: Type) -> Result<Thm> {
+        Hol::all_intro(self, theorem, name, ty)
+    }
+
+    fn forall_elim(&self, theorem: Thm, argument: Term) -> Result<Thm> {
+        Hol::all_elim(self, theorem, argument)
+    }
+}
 
 impl Hol for NativeHol {
     type Type = Type;
@@ -457,13 +544,13 @@ mod tests {
         let ex = hol.exists_intro(pred, p.clone(), at_p).unwrap();
 
         assert!(hol.hyps(&ex).is_empty());
-        let expected = hol
-            .exists(
-                "x",
-                bool_ty.clone(),
-                hol.eq(hol.var("x", bool_ty), p).unwrap(),
-            )
-            .unwrap();
+        let expected = Hol::exists(
+            &hol,
+            "x",
+            bool_ty.clone(),
+            hol.eq(hol.var("x", bool_ty), p).unwrap(),
+        )
+        .unwrap();
         assert_eq!(&hol.concl(&ex), &expected);
     }
 }

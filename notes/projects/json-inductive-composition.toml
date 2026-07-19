@@ -1,0 +1,8 @@
+id = "json-inductive-composition"
+title = "Express JSON through composed inductive functors"
+status = "planned"
+parent = "data-interpretation"
+depends_on = ["inductive-logic-adapters"]
+todos = ["json.polynomial-composition"]
+notes = ["notes/design/content-logic-and-wit-boundaries.md"]
+files = ["crates/lang/json-api", "crates/lang/inductive"]

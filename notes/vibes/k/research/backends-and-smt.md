@@ -1,3 +1,17 @@
++++
+id = "N000P"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T19:57:49+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # K backends, the KORE RPC protocol, and where SMT actually lives
 
 > **STATUS: RESEARCH SURVEY (AI-drafted, web-sourced).** Researched 2026-07-13

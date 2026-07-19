@@ -60,6 +60,36 @@ pub mod acl2;
 pub mod book;
 
 use covalence_sexp::SExpr;
+use covalence_sexpr_api::SExprSyntax;
+
+/// Next-generation Lisp syntax capability, stacked directly on the abstract
+/// S-expression constructors.
+///
+/// Evaluation and proof production are intentionally separate capabilities:
+/// a parser/lowerer needs only this trait. Existing [`Lisp`] implementations
+/// remain source-compatible while adapters migrate them to this narrower
+/// vocabulary.
+pub trait LispSyntax: SExprSyntax {
+    fn symbol_payload(&self, name: &str) -> Result<Self::Payload, Self::Error>;
+
+    fn number_payload(&self, text: &str) -> Option<Result<Self::Payload, Self::Error>>;
+
+    fn string_payload(&self, format: &str, bytes: &[u8]) -> Result<Self::Payload, Self::Error>;
+
+    fn resolve_payload(&self, atom: &covalence_sexp::Atom) -> Result<Self::Payload, Self::Error> {
+        match atom {
+            covalence_sexp::Atom::Symbol(text) => match self.number_payload(text) {
+                Some(result) => result,
+                None => self.symbol_payload(text),
+            },
+            covalence_sexp::Atom::Str { format, bytes } => self.string_payload(format, bytes),
+        }
+    }
+
+    fn lower_syntax(&self, sexpr: &SExpr) -> Result<Self::Value, Self::Error> {
+        reader::lower_with(self, sexpr, &|atom| self.resolve_payload(atom))
+    }
+}
 
 /// The clear-Lisp surface: Forth-style atom resolution + an eval entry.
 ///

@@ -10,6 +10,7 @@ digraph deps {
   "core" [style=filled, fillcolor="#ffd6d6"];
   "core-test-guest";
   "crypto-sig";
+  "decimal-api";
   "egglog";
   "forsp";
   "fuse";
@@ -24,6 +25,7 @@ digraph deps {
   "inductive";
   "init";
   "json";
+  "json-api";
   "k";
   "kernel";
   "kernel-sat";
@@ -32,6 +34,7 @@ digraph deps {
   "lean";
   "lisp";
   "llm";
+  "logic-api";
   "lsp";
   "metamath";
   "multiformat";
@@ -40,6 +43,7 @@ digraph deps {
   "opentheory";
   "parquet";
   "parse";
+  "parsing-api";
   "proptest";
   "proto";
   "pure" [style=filled, fillcolor="#ffd6d6"];
@@ -52,6 +56,7 @@ digraph deps {
   "sat";
   "serve";
   "sexp";
+  "sexpr-api";
   "shell";
   "smt";
   "spectec";
@@ -91,6 +96,7 @@ digraph deps {
   "core" -> "pure";
   "core" -> "pure-eval";
   "core" -> "types";
+  "decimal-api" -> "types";
   "egglog" -> "sexp";
   "egglog" -> "types";
   "forsp" -> "hash";
@@ -116,6 +122,7 @@ digraph deps {
   "hol-api" -> "hol-eval";
   "hol-api" -> "inductive";
   "hol-api" -> "init";
+  "hol-api" -> "logic-api";
   "hol-api" -> "pure";
   "hol-api" -> "types";
   "hol-eval" -> "core";
@@ -123,6 +130,7 @@ digraph deps {
   "hol-eval" -> "pure-eval";
   "hol-eval" -> "sexp";
   "hol-eval" -> "types";
+  "inductive" -> "logic-api";
   "init" -> "core";
   "init" -> "grammar";
   "init" -> "hash";
@@ -130,10 +138,15 @@ digraph deps {
   "init" -> "hol-eval";
   "init" -> "inductive";
   "init" -> "k";
+  "init" -> "logic-api";
   "init" -> "metamath";
   "init" -> "sexp";
   "init" -> "spectec";
   "init" -> "types";
+  "json-api" -> "decimal-api";
+  "json-api" -> "inductive";
+  "json-api" -> "parsing-api";
+  "json-api" -> "types";
   "k" -> "grammar";
   "k" -> "parse";
   "k" -> "sexp";
@@ -154,6 +167,7 @@ digraph deps {
   "lisp" -> "init";
   "lisp" -> "repl-core";
   "lisp" -> "sexp";
+  "lisp" -> "sexpr-api";
   "lisp" -> "types";
   "llm" -> "proto";
   "lsp" -> "sexp";
@@ -220,6 +234,7 @@ digraph deps {
   "serve" -> "store";
   "sexp" -> "parse";
   "sexp" -> "types";
+  "sexpr-api" -> "inductive";
   "shell" -> "hol";
   "shell" -> "kernel";
   "smt" -> "sat";

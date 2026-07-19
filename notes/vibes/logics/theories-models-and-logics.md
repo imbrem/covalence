@@ -1,3 +1,17 @@
++++
+id = "N002M"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Theories, models, and logics — the signature/theory/model architecture
 
 > **DESIGN RECORD.** Refines [`surface-compiler.md`](../surface/surface-compiler.md)'s

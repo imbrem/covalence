@@ -14,5 +14,6 @@ edition = "2024"
 # Design: notes/vibes/inductive-api-design.md.
 
 [dependencies]
+covalence-logic-api = { path = "../../kernel/hol/logic" }
 smol_str = "0.3"
 thiserror = "2"

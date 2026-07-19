@@ -31,6 +31,9 @@ use crate::error::{IndResult, InductiveError};
 use crate::logic::{LogicOps, beta_expand};
 use crate::spec::{ArgSort, InductiveSpec};
 use crate::theory::InductiveTheory;
+use crate::validated::Validated;
+
+// TODO(cov:inductive.coinductive-conformance, major): Add backend-neutral conformance for proof-bearing GreatestFixpointFacts; reference streams currently exercise only computational observation.
 
 fn fail<E>(msg: String) -> InductiveError<E> {
     InductiveError::Internal(msg)
@@ -281,7 +284,8 @@ pub fn check_backend<L: LogicOps, B: InductiveBackend<L> + ?Sized>(
     spec: &InductiveSpec<L::Type>,
     beta: &L::Type,
 ) -> IndResult<InductiveTheory<L>, L> {
-    let theory = backend.realize(logic, spec)?;
+    let spec = Validated::try_from(spec.clone()).map_err(InductiveError::spec)?;
+    let theory = backend.realize_validated(logic, &spec)?;
     check_theory(logic, &theory, beta)?;
     Ok(theory)
 }

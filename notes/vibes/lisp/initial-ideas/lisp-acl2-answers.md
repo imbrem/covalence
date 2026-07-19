@@ -1,3 +1,17 @@
++++
+id = "N001V"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Lisp/ACL2 support — answers (discussion draft, agent-authored)
 
 Draft answers to the Lisp/ACL2 questions in `notes/plans/sketch-separation.md`

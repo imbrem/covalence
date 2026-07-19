@@ -1,3 +1,17 @@
++++
+id = "N001J"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T00:22:16+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # The ACL2 dialect — slice 1 (agent-authored)
 
 `crates/lang/lisp/src/acl2.rs` — the first slice of the tower's ACL2 layer: an

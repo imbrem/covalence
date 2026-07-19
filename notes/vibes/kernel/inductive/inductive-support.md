@@ -1,3 +1,17 @@
++++
+id = "N0012"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Inductive-types support — how it works now
 
 Walk-through of the current inductive-type machinery, with citations, plus a

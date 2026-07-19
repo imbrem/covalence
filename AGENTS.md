@@ -19,9 +19,11 @@ bun run todos -- --list
 bun run todos -- --list --severity severe
 bun run todos -- --list --crate covalence-init
 bun run todos -- --list --search "structural sigma"
+bun run todos -- --diff HEAD
 ```
 
 After adding, moving, changing, or completing a marker, run `bun run todos`.
+Use `--diff <commit>` to measure the open-work delta of a migration.
 Never recreate `SKELETONS.md`. The generated truth is
 `docs/todos/todos.json`; the query cache is
 `target/covalence-todos.sqlite`.

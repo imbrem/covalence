@@ -1,3 +1,17 @@
++++
+id = "N001L"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T00:22:16+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Full ACL2: soundness + import into base HOL — the plan
 
 **Goal.** Prove soundness of (a staged, eventually full) ACL2 logic inside Covalence and

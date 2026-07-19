@@ -1,3 +1,17 @@
++++
+id = "N0023"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Minimal end-to-end `/lisp` REPL — a fully-defined spec (discussion draft, agent-authored)
 
 > **STATUS (branch `lisp-demo`):** the first build has landed — see

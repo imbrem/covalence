@@ -1,3 +1,17 @@
++++
+id = "N000T"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T19:57:49+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Reachability logic and matching logic: what a Covalence embedding actually needs
 
 > **STATUS: RESEARCH SURVEY (AI-drafted, web-sourced).** Researched 2026-07-13

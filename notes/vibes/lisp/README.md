@@ -1,3 +1,17 @@
++++
+id = "N001D"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T21:25:20+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Lisp — the `SExpr → Reduction → Lisp → ACL2` tower
 
 The Lisp frontend is built as a **tower**, each layer a clean, tested API the next sits on:

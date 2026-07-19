@@ -1,3 +1,17 @@
++++
+id = "N001K"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T21:08:46+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACL2 fidelity ledger — assumptions and deviations
 
 What our embedding says ACL2 is, versus what ACL2 actually is. Every entry is a

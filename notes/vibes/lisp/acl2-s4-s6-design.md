@@ -1,3 +1,17 @@
++++
+id = "N001O"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T04:51:47+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACL2 S4 + S6-structural: concrete design (defun, induction, open transport)
 
 *Design for stages S4 (definitional principle, conservative tier) and

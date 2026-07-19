@@ -27,6 +27,7 @@ graph LR
   core --> pure
   core --> pure-eval
   core --> types
+  decimal-api --> types
   egglog --> sexp
   egglog --> types
   forsp --> hash
@@ -52,6 +53,7 @@ graph LR
   hol-api --> hol-eval
   hol-api --> inductive
   hol-api --> init
+  hol-api --> logic-api
   hol-api --> pure
   hol-api --> types
   hol-eval --> core
@@ -59,6 +61,7 @@ graph LR
   hol-eval --> pure-eval
   hol-eval --> sexp
   hol-eval --> types
+  inductive --> logic-api
   init --> core
   init --> grammar
   init --> hash
@@ -66,10 +69,15 @@ graph LR
   init --> hol-eval
   init --> inductive
   init --> k
+  init --> logic-api
   init --> metamath
   init --> sexp
   init --> spectec
   init --> types
+  json-api --> decimal-api
+  json-api --> inductive
+  json-api --> parsing-api
+  json-api --> types
   k --> grammar
   k --> parse
   k --> sexp
@@ -90,6 +98,7 @@ graph LR
   lisp --> init
   lisp --> repl-core
   lisp --> sexp
+  lisp --> sexpr-api
   lisp --> types
   llm --> proto
   lsp --> sexp
@@ -156,6 +165,7 @@ graph LR
   serve --> store
   sexp --> parse
   sexp --> types
+  sexpr-api --> inductive
   shell --> hol
   shell --> kernel
   smt --> sat

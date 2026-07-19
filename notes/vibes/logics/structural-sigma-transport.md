@@ -1,3 +1,17 @@
++++
+id = "N002L"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T20:52:29+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # A structural (non-identity) `σ` for transport — and induction-on-derivations to foreign systems
 
 *AI-authored design corpus. Status as of the `mm-metatheory` work: landed the

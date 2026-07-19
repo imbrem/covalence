@@ -24,7 +24,9 @@ implementation; otherwise use `TODO`.
 Run `bun run todos` to rebuild the deterministic
 `docs/todos/todos.json` index and cached `target/covalence-todos.sqlite`
 database. Query with `bun run todos -- --list` and optional `--crate`,
-`--severity`, `--kind`, or `--search` filters. CI runs `bun run todos:check`.
+`--severity`, `--kind`, or `--search` filters. Compare the worktree with a
+commit using `bun run todos -- --diff <commit>`. CI runs
+`bun run todos:check`.
 
 Only open work belongs in markers. Delete a marker when its acceptance condition
 is satisfied; never turn it into a changelog. Keep the marker terse, and put

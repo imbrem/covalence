@@ -1,9 +1,16 @@
-//! **The inductive-types API** — a logic-agnostic vocabulary for *simple*
-//! inductive datatypes, abstracting over their **representation**.
+//! **Polynomial datatype APIs** — logic-agnostic vocabularies for aggregate
+//! types and least/greatest fixpoints, abstracting over their
+//! **representation**.
 //!
 //! ## The shape
 //!
-//! - [`InductiveSpec`] — a **plain-data** description of a datatype
+//! - [`RecordSpec`], [`VariantSpec`], and [`EnumSpec`] — non-recursive
+//!   aggregates, all represented by the same named sum-of-products model.
+//! - [`PolynomialSpec`] / [`FixpointSpec`] — the shared functor vocabulary
+//!   and separate least/greatest realization seams
+//!   ([`InductiveFixpointBackend`] / [`CoinductiveFixpointBackend`]).
+//! - [`InductiveSpec`] — the compatibility **plain-data** description
+//!   of a simple datatype
 //!   (constructors + argument sorts), generic over an external-sort token
 //!   `X` and free of any logic's term/type values. Serializable,
 //!   content-addressable, comparable.
@@ -19,6 +26,10 @@
 //!   same logic* (e.g. HOL's impredicative Church encoding vs. the
 //!   typedef + recursion-theorem engine) implement the same trait, so
 //!   consumers swap representations without changing a line.
+//! - [`RecordTheory`], [`VariantTheory`], [`EnumTheory`],
+//!   [`LeastFixpoint`], and [`GreatestFixpoint`] — shared proof-bearing
+//!   contracts. Backends may implement only the capabilities they can
+//!   actually prove; the older opaque seams remain as compatibility APIs.
 //!
 //! ## The membership-relativized contract
 //!
@@ -44,15 +55,49 @@
 //!
 //! Design rationale: `notes/vibes/inductive-api-design.md`.
 
+pub mod aggregate;
 pub mod backend;
 pub mod conformance;
 pub mod error;
+pub mod family;
+pub mod fixpoint;
+pub mod functor;
 pub mod logic;
+pub mod logic_api;
+pub mod polynomial;
 pub mod spec;
+pub mod stream;
 pub mod theory;
+pub mod validated;
 
+pub use aggregate::{
+    AggregateRealizeError, EnumBackend, EnumFacts, EnumTheory, ProofBearingEnumBackend,
+    ProofBearingRecordBackend, ProofBearingVariantBackend, RecordBackend, RecordFacts,
+    RecordTheory, VariantBackend, VariantFacts, VariantTheory, realize_enum, realize_record,
+    realize_variant,
+};
 pub use backend::InductiveBackend;
 pub use error::{IndResult, InductiveError, SpecError};
+pub use family::{DatatypeFamilyError, DatatypeFamilyExpr};
+pub use fixpoint::{
+    CoinductiveFixpointBackend, FixpointCore, FixpointIsoFacts, FixpointNoConfusionFacts,
+    FixpointSpec, GreatestFixpoint, GreatestFixpointFacts, InductiveFixpointBackend, LeastFixpoint,
+    LeastFixpointFacts, NoConfusionLeastFixpoint, ProofBearingGreatestFixpointBackend,
+    ProofBearingLeastFixpointBackend, RealizeError, realize_coinductive, realize_inductive,
+};
+pub use functor::{
+    StructuralFunctorAction, StructuralFunctorLaws, StructuralPolynomial, StructuralPolynomialError,
+};
 pub use logic::{Logic, LogicOps, beta_expand, beta_reduce};
+pub use logic_api::LogicApiAdapter;
+pub use polynomial::{
+    EnumSpec, FieldSpec, FunctorExpr, PolynomialBuilder, PolynomialSpec, Position, RecordBuilder,
+    RecordSpec, VariantCase, VariantSpec,
+};
 pub use spec::{ArgSort, CtorSpec, InductiveSpec};
+pub use stream::{
+    ReferenceStream, ReferenceStreamBackend, StreamBisimulation, StreamBisimulationStep,
+    StreamLayer, StreamObservation, check_bisimulation_prefix, stream_fixpoint, stream_functor,
+};
 pub use theory::{BackendCaps, InductiveFacts, InductiveTheory};
+pub use validated::Validated;

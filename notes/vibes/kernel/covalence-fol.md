@@ -1,3 +1,17 @@
++++
+id = "N000Z"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # `covalence-fol` — typed representations over `covalence-pure`
 
 > **Design sketch, not built.** A crate one level above `covalence-pure` providing

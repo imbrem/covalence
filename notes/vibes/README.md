@@ -1,3 +1,17 @@
++++
+id = "N000H"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-03T21:05:38+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # notes/vibes/ — the AI-generated design corpus
 
 Design notes and plans, organized by area. Deleted material is recoverable from

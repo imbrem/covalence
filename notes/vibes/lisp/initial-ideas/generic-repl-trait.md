@@ -1,3 +1,17 @@
++++
+id = "N001U"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # A generic `Repl` trait + an event-driven S-expr extension (discussion draft, agent-authored)
 
 Response to: make the REPL a **generic trait** with associated `State`/`Term`/`Eval`/

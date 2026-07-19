@@ -1,3 +1,17 @@
++++
+id = "N002N"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-15T23:14:14+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Verified I/O — parse/deparse as a certified pair over hashed dialects
 
 > Status: **aspirational design note.** Frontier detail for §8 of

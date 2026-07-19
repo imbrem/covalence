@@ -1,3 +1,17 @@
++++
+id = "N0022"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T18:38:20+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Relational parser combinators + a first-class S-expression parsing framework
 
 Status: design note (vibes), agent-authored, **not committed / no code**. Sits on top of

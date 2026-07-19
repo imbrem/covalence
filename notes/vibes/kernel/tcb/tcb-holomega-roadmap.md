@@ -1,3 +1,17 @@
++++
+id = "N001A"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # TCB → HOL-ω Roadmap
 
 Agent-authored synthesis reconciling five architect fronts (A–E) into one staged

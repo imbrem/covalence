@@ -10,6 +10,8 @@
 use smol_str::SmolStr;
 
 use crate::error::SpecError;
+use crate::fixpoint::FixpointSpec;
+use crate::polynomial::{FieldSpec, PolynomialSpec, Position, VariantCase};
 
 /// One argument position of a constructor.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -183,6 +185,62 @@ impl<X> InductiveSpec<X> {
             ctors: self.ctors.into_iter().map(|c| c.map_ext(&mut f)).collect(),
         }
     }
+
+    /// View this legacy simple-inductive declaration as the general
+    /// polynomial-functor fixpoint API.
+    ///
+    /// This is a structural conversion only: it does not choose a backend or
+    /// change the membership-relativized theorem contract.
+    pub fn into_fixpoint(self) -> FixpointSpec<X> {
+        let name = self.name;
+        let variants = self
+            .ctors
+            .into_iter()
+            .map(|ctor| {
+                VariantCase::new(
+                    ctor.name,
+                    ctor.args
+                        .into_iter()
+                        .map(|(name, sort)| {
+                            let position = match sort {
+                                ArgSort::Rec => Position::Var,
+                                ArgSort::Ext(external) => Position::Param(external),
+                            };
+                            FieldSpec::new(name, position)
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+        FixpointSpec::new(name.clone(), PolynomialSpec::new(name, variants))
+    }
+
+    /// Build the compatibility simple-inductive form from a polynomial
+    /// fixpoint declaration.
+    pub fn from_fixpoint(spec: FixpointSpec<X>) -> Self {
+        InductiveSpec {
+            name: spec.name,
+            ctors: spec
+                .functor
+                .variants
+                .into_iter()
+                .map(|variant| CtorSpec {
+                    name: variant.name,
+                    args: variant
+                        .fields
+                        .into_iter()
+                        .map(|field| {
+                            let sort = match field.position {
+                                Position::Var => ArgSort::Rec,
+                                Position::Param(external) => ArgSort::Ext(external),
+                            };
+                            (field.name, sort)
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -244,5 +302,14 @@ mod tests {
         let mut set = HashSet::new();
         set.insert(sexpr_like());
         assert!(set.contains(&s));
+    }
+
+    #[test]
+    fn polynomial_fixpoint_round_trip_preserves_legacy_spec() {
+        let spec = sexpr_like();
+        assert_eq!(
+            InductiveSpec::from_fixpoint(spec.clone().into_fixpoint()),
+            spec
+        );
     }
 }

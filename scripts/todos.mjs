@@ -16,6 +16,7 @@
  *   bun run todos -- --list              print matching items
  *   bun run todos -- --list --crate covalence-init --severity severe
  *   bun run todos -- --list --search "source spans" --format json
+ *   bun run todos -- --diff HEAD          compare the worktree with a commit
  *   bun run todos:check                   verify the checked-in JSON is current
  */
 
@@ -36,6 +37,7 @@ const DB_OUT = "target/covalence-todos.sqlite";
 const args = process.argv.slice(2);
 const CHECK = args.includes("--check");
 const LIST = args.includes("--list");
+const DIFF_REF = valueAfter("--diff");
 const FORMAT = valueAfter("--format") ?? "table";
 const FILTER_CRATE = valueAfter("--crate");
 const FILTER_SEVERITY = valueAfter("--severity");
@@ -184,6 +186,11 @@ items.sort(
     a.line - b.line,
 );
 
+// Plaintext is authored; SQLite is the canonical derived index. Every
+// projection below, including checked-in JSON, is read back from SQLite.
+writeDatabase(items);
+items.splice(0, items.length, ...readDatabase());
+
 const artifact =
   JSON.stringify(
     {
@@ -196,6 +203,11 @@ const artifact =
     null,
     2,
   ) + "\n";
+
+if (DIFF_REF) {
+  printDiff(loadArtifactAt(DIFF_REF).items, items, DIFF_REF);
+  process.exit(0);
+}
 
 if (CHECK) {
   if (!existsSync(resolve(ROOT, JSON_OUT))) {
@@ -210,9 +222,88 @@ if (CHECK) {
   process.exit(0);
 }
 
+function loadArtifactAt(ref) {
+  let raw;
+  try {
+    raw = execFileSync("git", ["show", `${ref}:${JSON_OUT}`], {
+      cwd: ROOT,
+      maxBuffer: 1 << 28,
+      stdio: ["ignore", "pipe", "pipe"],
+    }).toString();
+  } catch {
+    console.error(
+      `todos: cannot read ${JSON_OUT} at ${ref}; choose a commit containing the generated TODO index`,
+    );
+    process.exit(2);
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    console.error(`todos: ${JSON_OUT} at ${ref} is not valid JSON`);
+    process.exit(2);
+  }
+}
+
+function printDiff(beforeItems, afterItems, ref) {
+  const before = new Map(beforeItems.map((item) => [item.id, item]));
+  const after = new Map(afterItems.map((item) => [item.id, item]));
+  const added = [];
+  const resolved = [];
+  const changed = [];
+
+  for (const item of afterItems) {
+    const old = before.get(item.id);
+    if (!old) {
+      added.push(item);
+      continue;
+    }
+    const fields = ["kind", "severity", "summary", "path", "crate"];
+    const changes = Object.fromEntries(
+      fields
+        .filter((field) => old[field] !== item[field])
+        .map((field) => [field, { before: old[field], after: item[field] }]),
+    );
+    if (Object.keys(changes).length) changed.push({ id: item.id, changes });
+  }
+  for (const item of beforeItems) {
+    if (!after.has(item.id)) resolved.push(item);
+  }
+
+  const result = {
+    base: ref,
+    before: beforeItems.length,
+    after: afterItems.length,
+    net: afterItems.length - beforeItems.length,
+    added,
+    resolved,
+    changed,
+  };
+  if (FORMAT === "json") {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(
+    `TODO delta ${ref} → worktree: ${beforeItems.length} → ${afterItems.length} ` +
+      `(net ${result.net >= 0 ? "+" : ""}${result.net}; ` +
+      `added ${added.length}, resolved ${resolved.length}, changed ${changed.length})`,
+  );
+  for (const item of added) {
+    console.log(`+ ${item.id} [${item.kind.toLowerCase()}/${item.severity}] ${item.summary}`);
+  }
+  for (const item of resolved) {
+    console.log(`- ${item.id} [${item.kind.toLowerCase()}/${item.severity}] ${item.summary}`);
+  }
+  for (const item of changed) {
+    console.log(`~ ${item.id}`);
+    for (const [field, values] of Object.entries(item.changes)) {
+      console.log(`    ${field}: ${String(values.before)} → ${String(values.after)}`);
+    }
+  }
+}
+
 mkdirSync(resolve(ROOT, dirname(JSON_OUT)), { recursive: true });
 writeFileSync(resolve(ROOT, JSON_OUT), artifact);
-writeDatabase(items);
 
 const filtered = items.filter(
   (item) =>
@@ -277,4 +368,17 @@ function writeDatabase(rows) {
   });
   transaction(rows);
   db.close();
+}
+
+function readDatabase() {
+  const db = new Database(resolve(ROOT, DB_OUT), { readonly: true, strict: true });
+  const rows = db
+    .query(
+      `SELECT id,kind,severity,summary,structured,path,line,crate
+       FROM items ORDER BY id,path,line`,
+    )
+    .all()
+    .map((item) => ({ ...item, structured: item.structured === 1 }));
+  db.close();
+  return rows;
 }

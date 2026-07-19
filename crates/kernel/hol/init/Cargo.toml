@@ -13,6 +13,7 @@ default = []
 
 [dependencies]
 covalence-hol = { path = "../traits" }
+covalence-logic-api = { path = "../logic" }
 covalence-core = { path = "../core" }
 covalence-hol-eval = { path = "../eval" }
 covalence-types = { path = "../../../lib/types" }

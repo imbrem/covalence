@@ -1,3 +1,17 @@
++++
+id = "N0025"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T00:22:16+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Relational recursion: β/λ and δ/`defun` in the `Step` relation
 
 *Agent design note, 2026-07-15. Status: DESIGN ONLY — not implemented. The

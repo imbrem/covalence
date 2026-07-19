@@ -3,9 +3,12 @@
 use smol_str::SmolStr;
 use thiserror::Error;
 
-/// Structural spec validation errors ([`crate::InductiveSpec::validate`]).
+/// Structural validation errors for portable datatype specifications.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum SpecError {
+    /// A datatype/functor name must be non-empty.
+    #[error("datatype name is empty")]
+    EmptyTypeName,
     /// A spec must have at least one constructor.
     #[error("inductive spec `{0}` has no constructors")]
     EmptySpec(SmolStr),
@@ -18,6 +21,15 @@ pub enum SpecError {
     /// Constructor / argument names must be non-empty.
     #[error("empty name in constructor #{ctor}")]
     EmptyName { ctor: usize },
+    /// Aggregate field names must be non-empty.
+    #[error("empty field name at position {field} in `{aggregate}`")]
+    EmptyFieldName { aggregate: SmolStr, field: usize },
+    /// Field names must be distinct within one product.
+    #[error("duplicate field name `{field}` in `{aggregate}`")]
+    DuplicateField { aggregate: SmolStr, field: SmolStr },
+    /// Records and ordinary variants cannot contain the functor variable.
+    #[error("aggregate `{0}` contains a recursive position")]
+    UnexpectedVariable(SmolStr),
 }
 
 /// An API-level error, generic over the logic's own error type `E`

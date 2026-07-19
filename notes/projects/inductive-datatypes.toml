@@ -1,0 +1,8 @@
+id = "inductive-datatypes"
+title = "Inductive and coinductive datatypes"
+status = "active"
+depends_on = ["logic-relations"]
+todos = [
+]
+notes = ["notes/design/api-extraction-audit.md"]
+files = ["crates/lang/inductive"]

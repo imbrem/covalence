@@ -1,3 +1,17 @@
++++
+id = "N002X"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-18T22:05:39+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Workstreams and present-state report
 
 **Status:** AI-drafted portfolio plan, 2026-07-18. Counts and trust metrics are

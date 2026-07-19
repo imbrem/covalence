@@ -1,0 +1,11 @@
+id = "sexpr-proof-capabilities"
+title = "S-expression no-confusion and proper-list proofs"
+status = "active"
+parent = "data-interpretation"
+depends_on = ["inductive-logic-adapters"]
+todos = [
+  "sexpr.no-confusion-laws",
+  "sexpr.proper-list-proof-capability",
+]
+notes = ["notes/design/content-logic-and-wit-boundaries.md"]
+files = ["crates/lang/sexpr-api"]

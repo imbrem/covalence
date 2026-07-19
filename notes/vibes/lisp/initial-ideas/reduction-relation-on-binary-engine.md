@@ -1,3 +1,17 @@
++++
+id = "N0020"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T21:06:16+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # A proper Lisp `Reduces` relation on the binary `Derivable` engine (design)
 
 Goal (from the ask): give Lisp a **proper reduction relation — the transitive closure of a

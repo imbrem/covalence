@@ -1,3 +1,17 @@
++++
+id = "N002F"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-14T19:08:30+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # OpenTheory import — verifying articles on the native HOL kernel
 
 *Status: working. The **entire OpenTheory standard library verifies** — `cov hol

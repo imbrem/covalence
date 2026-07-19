@@ -1,0 +1,11 @@
+id = "inductive-logic-adapters"
+title = "Connect inductive fixpoints to the logic API"
+status = "active"
+parent = "inductive-datatypes"
+depends_on = ["relation-algebra"]
+todos = [
+  "inductive.logic-api-adapter",
+  "inductive.legacy-fixpoint-adapter",
+]
+notes = ["notes/design/api-extraction-audit.md"]
+files = ["crates/lang/inductive"]

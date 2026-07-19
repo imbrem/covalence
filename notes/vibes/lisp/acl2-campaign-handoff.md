@@ -1,3 +1,17 @@
++++
+id = "N001I"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-19T00:00:00+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACL2 campaign — handoff / context dump (2026-07-17)
 
 State dump at a token-budget wind-down, mid-campaign. Read together with

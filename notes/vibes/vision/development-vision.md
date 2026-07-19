@@ -1,3 +1,17 @@
++++
+id = "N0037"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-15T23:14:14+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Development vision — consilience, computation-grounded foundations, verified I/O
 
 > Status: **north-star / aspirational.** A map of the parallel projects we want

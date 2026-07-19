@@ -1,3 +1,17 @@
++++
+id = "N003D"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Covalence in the browser — kernel, IDE, and articles
 
 **Status: in progress.** This is the working design for running the Covalence

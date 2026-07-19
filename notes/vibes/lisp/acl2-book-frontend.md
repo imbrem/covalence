@@ -1,3 +1,17 @@
++++
+id = "N001H"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-16T21:08:46+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # ACL2 book front end — the first honest BOOK IMPORT pipeline (S11-lite)
 
 *(AI-generated design note, 2026-07-16. Companion to

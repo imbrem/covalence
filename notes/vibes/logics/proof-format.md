@@ -1,3 +1,17 @@
++++
+id = "N002G"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # A separate, name-linked proof format for the Haskell dialect
 
 *Status: design + working prototype landed on branch `proof-format`

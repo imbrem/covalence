@@ -5,6 +5,7 @@ export { detectImageMime, isLikelyText, detectBlobMode } from './viewers/index.j
 export type { HighlightFn, HighlightResult, LanguageOption } from './viewers/index.js';
 
 export { default as GraphView } from './graph/GraphView.svelte';
+export { default as KnowledgeGraphView } from './knowledge/KnowledgeGraphView.svelte';
 export {
 	decodeGraph,
 	decodeStringDiagram,

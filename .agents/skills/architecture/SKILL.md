@@ -15,6 +15,23 @@ disable-model-invocation: true
   - Files: `arena.rs`, `egraph.rs`, `eprop.rs`, `hash.rs`, `id.rs`, `kernel.rs`, `primop.rs`, `prop.rs`, `reduce.rs`, `subst.rs`, `term.rs`, `ty.rs`, `uf.rs`
   - Deps are minimal (`bytes`, `smol_str`, `covalence-hash`, `covalence-types`); does NOT depend on `covalence-wasm` or `wasmtime` in this branch.
   - The Sync/Async backend traits (`SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`) now live in `crates/kernel/shell/` (`pub use traits::{...}` in `src/lib.rs`). Update this section when the kernel is re-integrated with the shell.
+- `crates/kernel/hol/logic/` — dependency-free logic API vocabulary
+  - `Logic` owns the associated kind/type/term/theorem/error carriers.
+  - Capability traits split type operators, term binders, equality, quantifiers,
+    and proof rules; `relation` provides typed `Arrow` values and basic
+    relational algebra. Products, coproducts, tabulation, reflexive-transitive
+    closure, and residuals are optional syntax capabilities with separate
+    proof-law interfaces.
+  - `nat` provides representation-independent natural-number syntax,
+    arithmetic, order, supplied law bundles, and optional decision/normalization
+    capabilities over the `Logic` carriers.
+  - `covalence-init`'s `NativeHol` implements the extracted carrier and core
+    capabilities; `covalence-hol-api` keeps the legacy concrete-HOL Nat facade
+    as a forwarding compatibility adapter while consumers migrate.
+  - `covalence-init::init::inductive::DoubleSuccNat` is a distinct Nat API
+    backend whose nonzero literals use the derived binary double/successor
+    encoding. It still shares native carriers and theory operations; it is a
+    representation stress test, not yet complete leaf elimination.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

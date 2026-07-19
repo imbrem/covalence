@@ -1,0 +1,4 @@
+/.svelte-kit/
+/build/
+/static/covalence-sources.json
+/static/covalence-source/

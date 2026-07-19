@@ -1,3 +1,17 @@
++++
+id = "N001C"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # Type hierarchy sketch
 
 > Design sketch for the `defs/` catalogue and equality levels. See

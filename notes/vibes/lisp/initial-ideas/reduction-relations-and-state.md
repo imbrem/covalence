@@ -1,3 +1,17 @@
++++
+id = "N0021"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:claude"
+at = "2026-07-13T20:42:09+01:00"
+source = "legacy"
+agent = "claude"
+harness = "claude"
++++
+
 # The REPL returns *reduction* theorems, not equations — `(state, input) ~~> (state, output)`
 
 Response to: the HOL kernel proves `⊢ P` for arbitrary `P`; for Lisp the REPL should

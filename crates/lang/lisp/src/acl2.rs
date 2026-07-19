@@ -84,12 +84,20 @@
 //! `int`.
 
 use std::collections::BTreeMap;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::{as_bool, as_int, mk_bool, mk_int};
+use covalence_init::init::acl2::defun::{
+    Acl2Session as KernelAcl2Session, DefunSpec, admit_defun as admit_kernel_defun,
+};
+use covalence_init::init::acl2::derivable::s6_env;
 use covalence_init::init::acl2::derivable::{self as ladder, Acl2Env};
+use covalence_init::init::acl2::ordinal::with_ordinals;
+use covalence_init::init::acl2::simplify::{
+    FactCache, IndConfig, prove_by_induction, with_arith_rules,
+};
 use covalence_init::init::acl2::term::Terms;
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::{Term, Type};
@@ -106,6 +114,16 @@ use crate::semantics::{LispRepr, LispSemantics, ValueKind};
 /// check, not a proof, so the driver must stay fuel-bounded (divergence is a
 /// clean error, never a hang).
 const FUEL: u64 = 100_000;
+
+/// The surface theorem shadow: structural induction plus the proved ordinal
+/// pack and the premise-builder's oriented arithmetic rows. Building this
+/// composition changes no trusted surface; each row carries and re-checks its
+/// model theorem while the per-generation soundness proof consumes it.
+fn shadow_env() -> covalence_core::Result<Acl2Env> {
+    let structural = s6_env()?;
+    let ordinal = with_ordinals(&structural)?;
+    with_arith_rules(&ordinal)
+}
 
 // ============================================================================
 // Errors
@@ -192,6 +210,14 @@ pub enum Acl2Proof {
         /// `⊢ Derivable_ACL2 ⌜goal⌝` — the reified derivation itself.
         derivation: Thm,
     },
+    /// By the generic S6 premise builder and structural induction, followed
+    /// by the same soundness projection and open-goal transport.
+    Induction {
+        /// `⊢ Derivable_ACL2 ⌜goal⌝`.
+        derivation: Thm,
+        /// The object variable selected by the recursion-vote heuristic.
+        variable: Option<Vec<u8>>,
+    },
     /// By certified kernel value reduction (drive the goal to `T`, then
     /// `eqt_elim`) — the fallback for ground goals outside the reified
     /// fragment (its hypotheses, if any, are the `defun` equations used).
@@ -227,6 +253,12 @@ pub struct Acl2Session {
     thms: BTreeMap<String, Acl2Theorem>,
     /// A definition-free semantics for structural helpers (`tau`, renderers).
     sem0: LispSemantics,
+    /// Shadow S6 environment for the sound generic premise builder. Defuns
+    /// outside its conservative template remain available to the value
+    /// semantics but are simply absent here; a theorem mentioning one then
+    /// fails the deep translation honestly.
+    deep: KernelAcl2Session,
+    deep_cache: Mutex<FactCache>,
 }
 
 impl Acl2Session {
@@ -237,6 +269,8 @@ impl Acl2Session {
             defs: Defs::new(),
             thms: BTreeMap::new(),
             sem0: LispSemantics::new()?,
+            deep: KernelAcl2Session::new(shadow_env().map_err(kernel_err)?),
+            deep_cache: Mutex::new(FactCache::default()),
         })
     }
 
@@ -272,16 +306,18 @@ impl Acl2Session {
         Ok(self.render(&out))
     }
 
-    /// Is this form an ACL2 **event** (`defun` / `defthm`)? If so, admit it
-    /// and return its name (the ACL2 convention), else `Ok(None)` — the
-    /// caller evaluates the form as an expression. This is the seam the
-    /// `#lang acl2` [`session::Session`](crate::session::Session) dispatch
-    /// uses.
+    /// Is this form an ACL2 **event** (`defun` / `defthm`, including the
+    /// `defund` / `defthmd` rule-disable variants)? If so, admit it and
+    /// return its name (the ACL2 convention), else `Ok(None)` — the caller
+    /// evaluates the form as an expression. Rule enablement has no meaning
+    /// in this slice, so the `d` variants share the same honest admission
+    /// paths. This is the seam the `#lang acl2`
+    /// [`session::Session`](crate::session::Session) dispatch uses.
     pub fn try_event(&mut self, form: &SExpr) -> Result<Option<String>, Acl2Error> {
         if let SExpr::List(items) = form {
             match items.first().and_then(SExpr::as_symbol) {
-                Some("defun") => return self.admit_defun(items).map(Some),
-                Some("defthm") => return self.admit_defthm(items).map(Some),
+                Some("defun" | "defund") => return self.admit_defun(items).map(Some),
+                Some("defthm" | "defthmd") => return self.admit_defthm(items).map(Some),
                 _ => {}
             }
         }
@@ -293,6 +329,10 @@ impl Acl2Session {
     pub fn reset(&mut self) {
         self.defs = Defs::new();
         self.thms = BTreeMap::new();
+        if let Ok(env) = shadow_env() {
+            self.deep = KernelAcl2Session::new(env);
+            self.deep_cache = Mutex::new(FactCache::default());
+        }
     }
 
     // ------------------------------------------------------------------
@@ -450,12 +490,19 @@ impl Acl2Session {
     // defun — admissibility + install
     // ------------------------------------------------------------------
 
-    /// `(defun name (params) body)`: run the admissibility check, then
-    /// install the definition as an assumed equation (never an axiom).
+    /// `(defun name (params) [doc-string] [declare …]* body)`: run the
+    /// admissibility check, then install the definition as an assumed
+    /// equation (never an axiom).
+    ///
+    /// ACL2 declarations (most commonly `(declare (xargs …))`) guide ACL2's
+    /// admission machinery but are not executable body forms.  This dialect
+    /// records no claim that it checked those hints: it ignores them and
+    /// applies its own, explicitly weaker structural-recursion check to the
+    /// sole body form.
     fn admit_defun(&mut self, items: &[SExpr]) -> Result<String, Acl2Error> {
-        if items.len() != 4 {
+        if items.len() < 4 {
             return Err(Acl2Error::Malformed(
-                "defun: expected (defun name (params) body)".into(),
+                "defun: expected (defun name (params) [doc-string] [declare ...]* body)".into(),
             ));
         }
         let name = items[1]
@@ -470,11 +517,50 @@ impl Acl2Session {
             return Err(inadmissible("the name is a reserved primitive".into()));
         }
         let params = param_names(&items[2]).map_err(&inadmissible)?;
-        self.check_admissible(&name, &params, &items[3])
+        let body = defun_body(items).map_err(Acl2Error::Malformed)?;
+        let source_body = body.clone();
+        self.check_admissible(&name, &params, body)
             .map_err(&inadmissible)?;
-        let body = self.translate(&items[3], &params, Some(&name))?;
+        let body = self.translate(body, &params, Some(&name))?;
         self.install(&name, &params, &body)?;
+        self.try_admit_deep_defun(&name, &params, &source_body);
         Ok(name)
+    }
+
+    /// Mirror a surface definition into the conservative kernel ACL2
+    /// generation when it lies in that generation's exact S4 template.
+    /// Failure is intentionally non-fatal: the value semantics supports a
+    /// wider language, while any later deep theorem mentioning the omitted
+    /// function will be rejected during translation.
+    fn try_admit_deep_defun(&mut self, name: &str, params: &[String], body: &SExpr) {
+        let tm = &*self.deep.env().tm;
+        let Ok(enc) = deep_encode(tm, body, params) else {
+            return;
+        };
+        let mut calls = Vec::new();
+        collect_calls(body, name, &mut calls);
+        let rec_formal = if calls.is_empty() {
+            None
+        } else {
+            (0..params.len()).find(|&i| {
+                calls
+                    .iter()
+                    .all(|args| is_proper_projection(&args[i], &params[i]))
+            })
+        };
+        let spec = DefunSpec {
+            name: name.to_ascii_uppercase().into(),
+            formals: params
+                .iter()
+                .map(|p| p.to_ascii_uppercase().into())
+                .collect(),
+            body: enc,
+            rec_formal,
+        };
+        if let Ok(env) = admit_kernel_defun(self.deep.env(), &spec) {
+            self.deep = KernelAcl2Session::new(env);
+            self.deep_cache = Mutex::new(FactCache::default());
+        }
     }
 
     /// The syntactic admissibility check (see the module docs for the exact
@@ -540,6 +626,16 @@ impl Acl2Session {
                     } else {
                         Err("quote takes exactly one argument".into())
                     };
+                }
+                if let Some(ops) = composed_accessor(h) {
+                    if args.len() != 1 {
+                        return Err(format!("`{h}` expects 1 argument, got {}", args.len()));
+                    }
+                    self.check_body(name, params, &args[0], calls)?;
+                    // The expansion is a car/cdr chain, so no additional
+                    // callable heads need validation.
+                    debug_assert!(!ops.is_empty());
+                    return Ok(());
                 }
                 let expected = if let Some(arity) = int_op_arity(h) {
                     arity
@@ -641,15 +737,50 @@ impl Acl2Session {
             .as_symbol()
             .ok_or_else(|| Acl2Error::Malformed("defthm: name is not a symbol".into()))?
             .to_string();
-        let entry = match self.prove_certified(&items[2])? {
-            Some(entry) => entry,
-            None => Acl2Theorem {
-                thm: self.prove_ground(&name, &items[2])?,
-                proof: Acl2Proof::Reduction,
-            },
+        let mut vars = Vec::new();
+        self.scan_free(&items[2], &mut vars);
+        let entry = if !vars.is_empty() {
+            self.prove_inductive(&name, &items[2])?
+        } else {
+            match self.prove_certified(&items[2])? {
+                Some(entry) => entry,
+                None => Acl2Theorem {
+                    thm: self.prove_ground(&name, &items[2])?,
+                    proof: Acl2Proof::Reduction,
+                },
+            }
         };
         self.thms.insert(name.clone(), entry);
         Ok(name)
+    }
+
+    /// Prove an open surface theorem through the generic, derivation-emitting
+    /// S6 premise builder. The returned theorem is the transported deep-model
+    /// statement, with no assumptions.
+    fn prove_inductive(&self, name: &str, goal: &SExpr) -> Result<Acl2Theorem, Acl2Error> {
+        let tm = &*self.deep.env().tm;
+        let phi = deep_encode(tm, goal, &[]).map_err(|reason| Acl2Error::Unprovable {
+            name: name.to_string(),
+            reason: format!("kernel induction path cannot encode goal: {reason}"),
+        })?;
+        let cache = self.deep_cache.lock().map_err(|_| Acl2Error::Unprovable {
+            name: name.to_string(),
+            reason: "kernel induction cache lock was poisoned".into(),
+        })?;
+        let proof =
+            prove_by_induction(&self.deep, &cache, &phi, &IndConfig::default()).map_err(|e| {
+                Acl2Error::Unprovable {
+                    name: name.to_string(),
+                    reason: format!("kernel induction failed: {e}"),
+                }
+            })?;
+        Ok(Acl2Theorem {
+            thm: proof.transported,
+            proof: Acl2Proof::Induction {
+                derivation: proof.derivation,
+                variable: proof.var,
+            },
+        })
     }
 
     /// Try the **reified-certificate path** for a ground `(equal LHS RHS)`
@@ -817,6 +948,26 @@ impl Acl2Session {
                     return Err(Acl2Error::Malformed(
                         "the ACL2 slice uses ternary `if`, not `cond`".into(),
                     ));
+                }
+                if let Some(ops) = composed_accessor(h) {
+                    if args.len() != 1 {
+                        return Err(Acl2Error::Malformed(format!(
+                            "`{h}` expects 1 argument, got {}",
+                            args.len()
+                        )));
+                    }
+                    let mut out = self.translate(&args[0], vars, self_name)?;
+                    // ACL2 names operations from the inside out: CDDR is
+                    // (cdr (cdr x)), CADR is (car (cdr x)).
+                    for op in ops.iter().rev() {
+                        out = SExpr::List(vec![
+                            SExpr::Atom(Atom::Symbol(
+                                if *op == b'a' { "car" } else { "cdr" }.into(),
+                            )),
+                            out,
+                        ]);
+                    }
+                    return Ok(out);
                 }
                 // `zp n` / `natp n` — integer sugar for `n ≤ 0` / `0 ≤ n`
                 // (on `int`-typed terms `integerp` is `t` by typing).
@@ -1327,6 +1478,23 @@ fn reserved_head(name: &str) -> Option<usize> {
     }
 }
 
+/// ACL2/Common Lisp's composed list accessors (`caar` through `cddddr`).
+fn composed_accessor(name: &str) -> Option<&[u8]> {
+    let bytes = name.as_bytes();
+    if bytes.len() >= 3
+        && bytes.len() <= 6
+        && bytes.first() == Some(&b'c')
+        && bytes.last() == Some(&b'r')
+        && bytes[1..bytes.len() - 1]
+            .iter()
+            .all(|b| matches!(b, b'a' | b'd'))
+    {
+        Some(&bytes[1..bytes.len() - 1])
+    } else {
+        None
+    }
+}
+
 /// The ground-arithmetic operator heads.
 const INT_OPS: [&str; 7] = ["+", "-", "*", "<=", "=", "zp", "natp"];
 
@@ -1401,6 +1569,163 @@ fn param_names(params: &SExpr) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// Select the executable body from ACL2's common extended `defun` syntax.
+///
+/// A doc string may occur first, followed by any number of `declare` forms.
+/// There must then be exactly one body.  Keeping this syntax handling here
+/// ensures declarations are never accidentally treated as executable calls.
+fn defun_body(items: &[SExpr]) -> Result<&SExpr, String> {
+    let mut rest = &items[3..];
+    if matches!(rest.first(), Some(SExpr::Atom(Atom::Str { .. }))) {
+        rest = &rest[1..];
+    }
+    while rest
+        .first()
+        .is_some_and(|e| matches!(e, SExpr::List(xs) if xs.first().and_then(SExpr::as_symbol) == Some("declare")))
+    {
+        rest = &rest[1..];
+    }
+    match rest {
+        [body] => Ok(body),
+        [] => Err("defun: missing body after doc string/declarations".into()),
+        _ => Err("defun: expected exactly one body after optional doc string/declarations".into()),
+    }
+}
+
+fn collect_calls<'a>(e: &'a SExpr, name: &str, out: &mut Vec<&'a [SExpr]>) {
+    if let SExpr::List(items) = e {
+        if let Some((head, args)) = items.split_first()
+            && head.as_symbol() == Some(name)
+        {
+            out.push(args);
+        }
+        for item in items {
+            collect_calls(item, name, out);
+        }
+    }
+}
+
+/// Encode the conservative surface subset as an ACL2 pseudo-term. This is
+/// syntax translation only; every use is subsequently checked by the
+/// definitional principle or the derivation kernel.
+fn deep_encode(tm: &Terms, e: &SExpr, formals: &[String]) -> Result<Term, String> {
+    fn datum(tm: &Terms, d: &SExpr) -> Result<Term, String> {
+        match d {
+            SExpr::Atom(Atom::Symbol(s)) => {
+                if let Ok(n) = s.parse::<Int>() {
+                    tm.th.aint_at(&mk_int(n)).map_err(|e| e.to_string())
+                } else if s.eq_ignore_ascii_case("nil") {
+                    Ok(tm.th.nil.clone())
+                } else if s.eq_ignore_ascii_case("t") {
+                    Ok(tm.pr.t.clone())
+                } else {
+                    tm.sym(s.to_ascii_uppercase().as_bytes())
+                        .map_err(|e| e.to_string())
+                }
+            }
+            SExpr::List(xs) => {
+                let mut out = tm.th.nil.clone();
+                for x in xs.iter().rev() {
+                    out = tm
+                        .th
+                        .cons
+                        .clone()
+                        .apply(datum(tm, x)?)
+                        .and_then(|f| f.apply(out))
+                        .map_err(|e| e.to_string())?;
+                }
+                Ok(out)
+            }
+            SExpr::Atom(_) => Err("strings are outside the ACL2 carrier fragment".into()),
+        }
+    }
+    match e {
+        SExpr::Atom(Atom::Symbol(s)) => {
+            if formals.iter().any(|p| p == s) {
+                tm.sym(s.to_ascii_uppercase().as_bytes())
+                    .map_err(|e| e.to_string())
+            } else if let Ok(n) = s.parse::<Int>() {
+                tm.quote(&tm.th.aint_at(&mk_int(n)).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())
+            } else if s.eq_ignore_ascii_case("nil") {
+                tm.quote(&tm.th.nil).map_err(|e| e.to_string())
+            } else if s.eq_ignore_ascii_case("t") {
+                tm.quote(&tm.pr.t).map_err(|e| e.to_string())
+            } else {
+                // A non-constant atom is an object variable in theorem
+                // position; defun admission has already rejected non-formals.
+                tm.sym(s.to_ascii_uppercase().as_bytes())
+                    .map_err(|e| e.to_string())
+            }
+        }
+        SExpr::Atom(_) => Err("strings are outside the ACL2 pseudo-term fragment".into()),
+        SExpr::List(items) => {
+            let (head, args) = items
+                .split_first()
+                .ok_or_else(|| "empty application".to_string())?;
+            let head = head
+                .as_symbol()
+                .ok_or_else(|| "computed function position".to_string())?;
+            if head == "quote" {
+                if args.len() != 1 {
+                    return Err("quote expects one argument".into());
+                }
+                return tm.quote(&datum(tm, &args[0])?).map_err(|e| e.to_string());
+            }
+            // ACL2's ENDP is `(not (consp x))`. The conservative kernel
+            // defun template is deliberately phrased with a positive CONSP
+            // guard, so normalize `(if (endp x) base step)` to
+            // `(if (consp x) step base)` before encoding. This is a macro
+            // expansion, and the admitted defining equation is checked
+            // against the resulting body by the kernel.
+            if head == "if"
+                && args.len() == 3
+                && let SExpr::List(g) = &args[0]
+                && g.len() == 2
+                && g[0].as_symbol() == Some("endp")
+            {
+                let c = deep_encode(tm, &g[1], formals)?;
+                let guard = tm.app(b"CONSP", &[c]).map_err(|e| e.to_string())?;
+                let step = deep_encode(tm, &args[2], formals)?;
+                let base = deep_encode(tm, &args[1], formals)?;
+                return tm.mk_if(&guard, &step, &base).map_err(|e| e.to_string());
+            }
+            let enc_args: Vec<Term> = args
+                .iter()
+                .map(|a| deep_encode(tm, a, formals))
+                .collect::<Result<_, _>>()?;
+            match head {
+                "if" if enc_args.len() == 3 => tm
+                    .mk_if(&enc_args[0], &enc_args[1], &enc_args[2])
+                    .map_err(|e| e.to_string()),
+                "equal" | "=" if enc_args.len() == 2 => tm
+                    .mk_equal(&enc_args[0], &enc_args[1])
+                    .map_err(|e| e.to_string()),
+                _ => {
+                    let spelling = match head {
+                        "car" => "CAR",
+                        "cdr" => "CDR",
+                        "cons" => "CONS",
+                        "consp" => "CONSP",
+                        "integerp" => "INTEGERP",
+                        "symbolp" => "SYMBOLP",
+                        "+" => "BINARY-+",
+                        "*" => "BINARY-*",
+                        "<" => "<",
+                        _ => {
+                            return tm
+                                .app(head.to_ascii_uppercase().as_bytes(), &enc_args)
+                                .map_err(|e| e.to_string());
+                        }
+                    };
+                    tm.app(spelling.as_bytes(), &enc_args)
+                        .map_err(|e| e.to_string())
+                }
+            }
+        }
+    }
+}
+
 /// Is `e` a **non-empty** `car`/`cdr` chain applied to exactly the formal
 /// `formal`? (`(cdr x)`, `(car (cdr x))`, … — the structural-descent shape.)
 fn is_proper_projection(e: &SExpr, formal: &str) -> bool {
@@ -1409,6 +1734,9 @@ fn is_proper_projection(e: &SExpr, formal: &str) -> bool {
             SExpr::Atom(Atom::Symbol(s)) if s.as_str() == formal => Some(0),
             SExpr::List(items) if items.len() == 2 => match items[0].as_symbol() {
                 Some("car") | Some("cdr") => depth(&items[1], formal).map(|d| d + 1),
+                Some(h) if composed_accessor(h).is_some() => {
+                    depth(&items[1], formal).map(|d| d + composed_accessor(h).unwrap().len())
+                }
                 _ => None,
             },
             _ => None,

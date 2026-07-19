@@ -81,6 +81,75 @@ fn defun_persists_across_cells() {
     );
 }
 
+#[test]
+fn defun_accepts_acl2_doc_string_and_declarations() {
+    let mut s = session();
+    assert_eq!(
+        s.eval_cell(
+            r#"(defun app-declared (x y)
+                   "Append X to Y."
+                   (declare (xargs :measure (acl2-count x)
+                                    :guard (true-listp x)))
+                   (if (consp x)
+                       (cons (car x) (app-declared (cdr x) y))
+                     y))"#
+        )
+        .unwrap(),
+        "app-declared"
+    );
+    let out = eval_checked(&s, "(app-declared (quote (a b)) (quote (c)))");
+    assert_eq!(s.render(&out), "(a b c)");
+    assert!(!out.thm.hyps().is_empty());
+}
+
+#[test]
+fn defun_rejects_missing_or_multiple_bodies_after_declarations() {
+    let mut s = session();
+    for src in [
+        "(defun no-body (x) (declare (xargs :guard t)))",
+        "(defun two-bodies (x) (declare (xargs :guard t)) x x)",
+    ] {
+        let err = s.eval_cell(src).unwrap_err();
+        assert!(err.to_string().contains("body"), "got: {err}");
+    }
+    assert!(!s.defs().contains("no-body"));
+    assert!(!s.defs().contains("two-bodies"));
+}
+
+#[test]
+fn disabled_rule_event_aliases_use_the_same_honest_paths() {
+    let mut s = session();
+    assert_eq!(s.eval_cell("(defund identity (x) x)").unwrap(), "identity");
+    assert!(s.defs().contains("identity"));
+
+    assert_eq!(
+        s.eval_cell("(defthmd four-disabled (equal (+ 2 2) 4))")
+            .unwrap(),
+        "four-disabled"
+    );
+    assert!(s.theorem("four-disabled").is_some());
+}
+
+#[test]
+fn composed_car_cdr_accessors_expand_and_count_as_structural_descent() {
+    let mut s = session();
+    eval_closed(&s, "(cadr (quote (a b c)))", "b");
+    eval_closed(&s, "(cddr (quote (a b c)))", "(c)");
+
+    assert_eq!(
+        s.eval_cell(
+            "(defun every-other (x) \
+               (if (consp x) (cons (car x) (every-other (cddr x))) x))"
+        )
+        .unwrap(),
+        "every-other"
+    );
+    assert_eq!(
+        s.eval_cell("(every-other (quote (a b c d)))").unwrap(),
+        "(a c)"
+    );
+}
+
 // ---- ACL2 primitive spellings ---------------------------------------------
 
 #[test]

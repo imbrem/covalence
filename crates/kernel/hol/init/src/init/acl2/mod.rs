@@ -90,3 +90,4 @@ pub mod ordinal;
 pub mod prims;
 pub mod simplify;
 pub mod term;
+pub mod wfrec;

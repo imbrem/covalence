@@ -134,8 +134,9 @@ The report renders a per-event table plus a summary line
 session's ACL2 sub-session and prints the tally. Paths are **session-relative
 and confined**: a `Session` carries a book root (default: the process working
 directory, canonicalized; `Session::set_book_root` to override). Resolution
-rejects absolute paths and any `..` component lexically, then canonicalizes
-and requires the result to stay under the canonical root (symlink-safe) — so
+rejects absolute paths, then canonicalizes and requires the result to stay
+under the canonical root (symlink-safe). Relative `..` is accepted only when
+it remains inside that boundary, as required by official x86 books — so
 the server's `/api/lisp` endpoint (which forwards cells to `eval_cell`)
 cannot be used to read or traverse outside the directory the server was
 started in. `include-book` resolution inside a book applies the same

@@ -10,7 +10,7 @@ use covalence_core::{IntTag, Result, Term, Type};
 use covalence_hol_eval::{defs, mk_blob, mk_u8};
 use covalence_logic_api::{
     ByteNatBridge, ByteSyntax, BytesConstruction, BytesObservation, BytesSyntax, Endianness,
-    MinimalNatBytesEncoding,
+    MinimalNatBytesEncoding, NatBytesEquivalenceSyntax,
 };
 
 use super::hol::{Hol, NativeHol};
@@ -93,6 +93,14 @@ impl MinimalNatBytesEncoding for NativeHol {
             Endianness::Big => defs::nat_from_bytes_be(),
         };
         Hol::app(self, decoder, bytes)
+    }
+}
+
+impl NatBytesEquivalenceSyntax for NativeHol {
+    fn same_decoded_nat(&self, endian: Endianness, left: Term, right: Term) -> Result<Term> {
+        let left = self.nat_from_bytes(endian, left)?;
+        let right = self.nat_from_bytes(endian, right)?;
+        Hol::eq(self, left, right)
     }
 }
 

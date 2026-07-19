@@ -121,6 +121,38 @@ pub trait MinimalNatBytesEncodingLaws: MinimalNatBytesEncoding {
     /// `encode endian (decode endian bs) = canonicalize endian bs`.
     fn minimal_encode_decode_canonical(&self, endian: Endianness)
     -> Result<Self::Thm, Self::Error>;
+    /// Decoding is constant on the byte-string equivalence relation.
+    fn minimal_decode_respects_equivalence(
+        &self,
+        endian: Endianness,
+    ) -> Result<Self::Thm, Self::Error>;
+    /// Canonicalization is idempotent.
+    fn minimal_canonicalization_idempotent(
+        &self,
+        endian: Endianness,
+    ) -> Result<Self::Thm, Self::Error>;
+}
+
+/// Equality of byte strings by decoded natural-number value.
+///
+/// This identifies redundant zero padding: trailing zeros for little endian,
+/// and leading zeros for big endian.
+pub trait NatBytesEquivalenceSyntax: MinimalNatBytesEncoding {
+    fn same_decoded_nat(
+        &self,
+        endian: Endianness,
+        left: Self::Term,
+        right: Self::Term,
+    ) -> Result<Self::Term, Self::Error>;
+}
+
+/// Supplied equivalence/PER and canonical-representative laws.
+pub trait NatBytesEquivalenceLaws: NatBytesEquivalenceSyntax {
+    fn same_decoded_nat_reflexive(&self, endian: Endianness) -> Result<Self::Thm, Self::Error>;
+    fn same_decoded_nat_symmetric(&self, endian: Endianness) -> Result<Self::Thm, Self::Error>;
+    fn same_decoded_nat_transitive(&self, endian: Endianness) -> Result<Self::Thm, Self::Error>;
+    /// Every byte string is related to its canonical representative.
+    fn same_decoded_nat_canonical(&self, endian: Endianness) -> Result<Self::Thm, Self::Error>;
 }
 
 /// Fixed-width natural-number encodings.
@@ -138,8 +170,26 @@ pub trait FixedWidthNatBytesEncoding: BytesSyntax + NatSyntax {
     ) -> Result<Self::Term, Self::Error>;
 }
 
+/// Explicit propositions used by fixed-width encoding laws.
+pub trait FixedWidthNatBytesConditions: FixedWidthNatBytesEncoding {
+    /// `nat < 256^width`.
+    fn nat_fits_byte_width(
+        &self,
+        width: Self::Term,
+        nat: Self::Term,
+    ) -> Result<Self::Term, Self::Error>;
+    /// `length bytes = width`.
+    fn bytes_have_width(
+        &self,
+        width: Self::Term,
+        bytes: Self::Term,
+    ) -> Result<Self::Term, Self::Error>;
+}
+
 /// Width-sensitive encoding laws with their conditions explicit.
-pub trait FixedWidthNatBytesEncodingLaws: FixedWidthNatBytesEncoding {
+pub trait FixedWidthNatBytesEncodingLaws:
+    FixedWidthNatBytesEncoding + FixedWidthNatBytesConditions
+{
     /// Conditional theorem: when `n < 256^width`, decoding the width-byte
     /// encoding returns `n`.
     fn fixed_width_decode_encode_if_fits(
@@ -154,13 +204,43 @@ pub trait FixedWidthNatBytesEncodingLaws: FixedWidthNatBytesEncoding {
     ) -> Result<Self::Thm, Self::Error>;
 }
 
+/// Evidence-bearing temporary seam for `List<Nat>` byte representations.
+///
+/// Each proof must establish that the corresponding natural term is `<256`.
+/// Implementations must check proof conclusions rather than trusting the
+/// vectors' equal lengths.
+pub struct NatByteSequence<L: Logic> {
+    pub elements: Vec<L::Term>,
+    pub in_range: Vec<L::Thm>,
+}
+
+pub trait NatByteSequenceBridge: BytesSyntax + NatSyntax {
+    fn bytes_from_nat_sequence(
+        &self,
+        sequence: NatByteSequence<Self>,
+    ) -> Result<Self::Term, Self::Error>
+    where
+        Self: Sized;
+    fn bytes_to_nat_sequence(
+        &self,
+        bytes: Self::Term,
+    ) -> Result<NatByteSequence<Self>, Self::Error>
+    where
+        Self: Sized;
+}
+
+pub trait NatByteSequenceBridgeLaws: NatByteSequenceBridge {
+    fn nat_sequence_bytes_round_trip(&self) -> Result<Self::Thm, Self::Error>;
+    fn bytes_nat_sequence_round_trip(&self) -> Result<Self::Thm, Self::Error>;
+}
+
 /// Optional normalization of closed byte and byte-string expressions.
 pub trait BytesNormalization: BytesSyntax {
     fn normalize_byte(&self, byte: Self::Term) -> Result<Self::Thm, Self::Error>;
     fn normalize_bytes(&self, bytes: Self::Term) -> Result<Self::Thm, Self::Error>;
 }
 
-// TODO(cov:bytes.list-nat-sequence-bridge, major): Once the abstract list API stabilizes, relate bytes to lists of in-range naturals with explicit element-range and round-trip laws.
+// TODO(cov:bytes.abstract-list-adapter, major): Replace the temporary meta-level NatByteSequence vectors with the abstract proof-bearing list API once its carrier and elementwise-predicate interfaces stabilize.
 // TODO(cov:bytes.leb128-encoding, major): Add unsigned/signed LEB128 as variable-length byte relations with canonicality, termination, and bounded-width overflow evidence.
 
 #[cfg(test)]

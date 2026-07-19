@@ -15,11 +15,15 @@
 #![forbid(unsafe_code)]
 
 pub mod bytes;
+pub mod bytes_nat;
 pub mod nat;
 pub mod relation;
 
 use core::fmt::Debug;
 
+pub use bytes_nat::{
+    CanonicalNatBytes, FixedWidthError, NatBackedBytes, NatByteList, NatByteListError, Radix256Nat,
+};
 pub use nat::{
     NatAdditiveLaws, NatArithmetic, NatEqDecision, NatFreeness, NatLaws, NatMultiplicativeLaws,
     NatNormalization, NatOrder, NatRecursionLaws, NatSyntax,
@@ -236,6 +240,7 @@ pub trait BinderRules: QuantifierSyntax + TheoremView {
 pub use bytes::{
     ByteNatBridge, ByteNatBridgeLaws, ByteSyntax, BytesConcatLaws, BytesConstruction,
     BytesNormalization, BytesObservation, BytesObservationLaws, BytesSyntax, Endianness,
-    FixedWidthNatBytesEncoding, FixedWidthNatBytesEncodingLaws, MinimalNatBytesEncoding,
-    MinimalNatBytesEncodingLaws,
+    FixedWidthNatBytesConditions, FixedWidthNatBytesEncoding, FixedWidthNatBytesEncodingLaws,
+    MinimalNatBytesEncoding, MinimalNatBytesEncodingLaws, NatByteSequence, NatByteSequenceBridge,
+    NatByteSequenceBridgeLaws, NatBytesEquivalenceLaws, NatBytesEquivalenceSyntax,
 };

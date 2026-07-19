@@ -700,7 +700,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35621,
+      "words": 35630,
       "updated": 0
     },
     {
@@ -10708,7 +10708,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 1785,
+      "words": 1850,
       "updated": 0
     },
     {
@@ -10834,7 +10834,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 486,
+      "words": 525,
       "updated": 0
     },
     {
@@ -15289,7 +15289,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35621,
+      "words": 35630,
       "updated": 0
     },
     {
@@ -15397,7 +15397,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3529,
+      "words": 3539,
       "updated": 0
     },
     {
@@ -22036,9 +22036,18 @@
     {
       "id": "todo:lisp.acl2.admission-layer",
       "kind": "todo",
-      "title": "Rebase ACL2 worlds, admission, derivations, and HOL transport above common partial Lisp execution.",
+      "title": "Prove existence and uniqueness from common partial Lisp execution, replay them into conservative ACL2 HOL definitions, and retire shallow assumed equations.",
       "status": "severe",
       "path": "crates/kernel/lisp/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.acl2.induction-test-performance",
+      "kind": "todo",
+      "title": "Bring the append admission/execution/induction integration gate below ten seconds and enable it in the default ACL2 test suite.",
+      "status": "major",
+      "path": "crates/lang/lisp/tests/acl2.rs",
       "words": 0,
       "updated": 0
     },

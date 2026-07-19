@@ -17,7 +17,7 @@
 //!
 //! @covalence-api {"id":"A0022","title":"Lisp operational semantics","status":"experimental","dependsOn":["A0001","A0004","A0005","A0014","A0021"]}
 // TODO(cov:lisp.frontends.scheme-forsp, major): Add a proof-producing Forsp backend and cross-check it against the host stack machine.
-// TODO(cov:lisp.acl2.admission-layer, severe): Rebase ACL2 worlds, admission, derivations, and HOL transport above common partial Lisp execution.
+// TODO(cov:lisp.acl2.admission-layer, severe): Prove existence and uniqueness from common partial Lisp execution, replay them into conservative ACL2 HOL definitions, and retire shallow assumed equations.
 
 #![forbid(unsafe_code)]
 

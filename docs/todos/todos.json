@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 352,
-  "structured": 352,
+  "count": 353,
+  "structured": 353,
   "items": [
     {
       "id": "acl2.reader.dispatch-macros",
@@ -3028,11 +3028,21 @@
       "id": "lisp.acl2.admission-layer",
       "kind": "TODO",
       "severity": "severe",
-      "summary": "Rebase ACL2 worlds, admission, derivations, and HOL transport above common partial Lisp execution.",
+      "summary": "Prove existence and uniqueness from common partial Lisp execution, replay them into conservative ACL2 HOL definitions, and retire shallow assumed equations.",
       "structured": true,
       "path": "crates/kernel/lisp/src/lib.rs",
       "line": 20,
       "crate": "covalence-kernel-lisp"
+    },
+    {
+      "id": "lisp.acl2.induction-test-performance",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Bring the append admission/execution/induction integration gate below ten seconds and enable it in the default ACL2 test suite.",
+      "structured": true,
+      "path": "crates/lang/lisp/tests/acl2.rs",
+      "line": 462,
+      "crate": "covalence-lisp"
     },
     {
       "id": "lisp.core.letrec",

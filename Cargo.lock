@@ -1174,6 +1174,7 @@ dependencies = [
  "covalence-hol-eval",
  "covalence-inductive",
  "covalence-k",
+ "covalence-lexer-parsing",
  "covalence-logic-api",
  "covalence-metamath",
  "covalence-parsing-api",

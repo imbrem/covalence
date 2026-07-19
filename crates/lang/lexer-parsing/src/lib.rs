@@ -12,6 +12,8 @@ use covalence_logic_api::UnicodeScalar;
 use covalence_parsing_api::{ByteParserRelation, DecodedText, ParseBudget, RelationalParser, Span};
 use covalence_regex_parsing::{ByteRegexParser, RegexBudget, RegexEvalError, TextRegexParser};
 
+pub mod replay;
+
 /// A token rule. Smaller `priority` values win after longest-match selection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenRule<K, A> {

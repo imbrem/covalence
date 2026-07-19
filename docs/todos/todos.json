@@ -3051,7 +3051,7 @@
       "summary": "Give the partial HOL Lisp semantics higher-order closures and inductive proper-list argument splicing, then share apply conformance with the host backend.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 319,
+      "line": 325,
       "crate": "covalence-lisp"
     },
     {
@@ -3061,7 +3061,7 @@
       "summary": "Represent primitive and apply procedures as first-class values in the partial higher-order HOL semantics, while retaining the direct equational fast path.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 355,
+      "line": 361,
       "crate": "covalence-lisp"
     },
     {
@@ -3071,7 +3071,7 @@
       "summary": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 523,
+      "line": 529,
       "crate": "covalence-lisp"
     },
     {
@@ -3101,7 +3101,7 @@
       "summary": "Give the equational HOL backend a conservative mutually recursive binding construction and share letrec conformance tests with the partial host semantics.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 343,
+      "line": 349,
       "crate": "covalence-lisp"
     },
     {

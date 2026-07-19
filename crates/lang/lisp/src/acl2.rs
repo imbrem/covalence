@@ -88,7 +88,8 @@ use std::sync::{LazyLock, Mutex};
 
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
-use covalence_hol_eval::{as_bool, as_int, mk_bool, mk_int};
+use covalence_hol_eval::{as_bool, as_int, mk_int};
+use covalence_init::Term;
 use covalence_init::init::acl2::defun::{
     Acl2Session as KernelAcl2Session, DefunSpec, admit_defun as admit_kernel_defun,
 };
@@ -100,7 +101,6 @@ use covalence_init::init::acl2::simplify::{
 };
 use covalence_init::init::acl2::term::Terms;
 use covalence_init::init::ext::{TermExt, ThmExt};
-use covalence_init::{Term, Type};
 use covalence_kernel_lisp::{
     AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, SourcedDefinition,
 };
@@ -108,7 +108,7 @@ use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
-use crate::defs::{Defs, build_def, build_def_with_ret};
+use crate::defs::{Defs, install_core_definition};
 use crate::frontend::{Frontend, FrontendExpr, SurfaceDialect};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
@@ -793,45 +793,12 @@ impl Acl2Session {
         &mut self,
         definition: &LispDefinition<String, FrontendExpr>,
     ) -> Result<(), Acl2Error> {
-        let name = &definition.name;
-        let tau = self.sem0.tau();
-        let attempts = [("bool", Type::bool()), ("sexpr", tau), ("int", Type::int())];
-        let mut failures = Vec::with_capacity(attempts.len());
-        for (label, ret) in attempts {
-            let dummy = if ret == Type::bool() {
-                mk_bool(false)
-            } else if ret == Type::int() {
-                mk_int(0i128)
-            } else {
-                self.sem0.tau_nil()
-            };
-            match self.try_install(definition, &ret, dummy) {
-                Ok(()) => return Ok(()),
-                Err(error) => failures.push(format!("{label}: {error}")),
+        self.defs = install_core_definition(&self.defs, definition).map_err(|error| {
+            Acl2Error::Inadmissible {
+                name: definition.name.clone(),
+                reason: error.to_string(),
             }
-        }
-        Err(Acl2Error::Inadmissible {
-            name: name.to_string(),
-            reason: format!(
-                "body does not type-check for any supported result carrier ({})",
-                failures.join("; ")
-            ),
-        })
-    }
-
-    /// One return-type attempt; `self.defs` is only mutated on success.
-    fn try_install(
-        &mut self,
-        definition: &LispDefinition<String, FrontendExpr>,
-        ret: &Type,
-        dummy: Term,
-    ) -> Result<(), HolError> {
-        let placeholder = build_def_with_ret(&definition.name, &definition.parameters, dummy, ret)?;
-        let staged = self.defs.with(placeholder);
-        let sem = LispSemantics::with_defs(staged)?;
-        let body_term = sem.compile_core(&definition.body)?;
-        let def = build_def(&definition.name, &definition.parameters, body_term)?;
-        self.defs = self.defs.with(def);
+        })?;
         Ok(())
     }
 

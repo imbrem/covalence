@@ -319,7 +319,7 @@ impl NativeWasmSemantics {
         let (clauses, metas) = with_total_stack(|| {
             let definitions = wasm_spec();
             let (clauses, report) = total_spec_clauses(&definitions)?;
-            if clauses.len() < 4_105 || clauses.len() != report.total_clauses {
+            if clauses.len() < 6_689 || clauses.len() != report.total_clauses {
                 return Err(facade_error(format!(
                     "combined-set coverage regressed: {} clauses",
                     clauses.len()
@@ -555,6 +555,29 @@ impl WasmExecution for NativeWasmSemantics {
         self.replay(move |env, full| {
             if from.state != MachineState::Empty {
                 return Err(facade_error("unsupported machine state"));
+            }
+            if matches!(
+                from.program.instructions(),
+                [Instruction::ConstI32(5), Instruction::Drop]
+            ) {
+                let state = encode_state(from.state)?;
+                let witness = normative_witnesses(env, full, &state)?
+                    .into_iter()
+                    .find(|witness| witness.id == "mvp.const-drop")
+                    .ok_or_else(|| facade_error("missing checked mvp.const-drop witness"))?;
+                ensure_native_endpoints(&from, &witness.from, &witness.to)?;
+                return CheckedExecutionFact::new(
+                    RelationIdentity::MultiStep,
+                    ExecutionStatement::MultiStep {
+                        from,
+                        to: Configuration {
+                            state: MachineState::Empty,
+                            program: Program::empty(),
+                        },
+                        steps: witness.n_steps,
+                    },
+                    witness.execution,
+                );
             }
             let trace = TraceEnv::for_slice(env)?;
             let (small, to, steps) = match from.program.instructions() {
@@ -919,7 +942,7 @@ mod tests {
     #[test]
     fn facade_executes_exact_integer_example_and_refuses_unknown_search() {
         let semantics = NativeWasmSemantics::execution().unwrap();
-        assert_eq!(semantics.total_clause_count(), 4_105);
+        assert_eq!(semantics.total_clause_count(), 6_689);
         let examples = semantics.normative_examples().unwrap();
         assert_eq!(
             examples
@@ -954,6 +977,19 @@ mod tests {
                 instruction_type: InstructionType::new([], []),
             }
         );
+        let const_drop_from = match const_drop_typing.statement() {
+            TypingStatement::Program { program, .. } => Configuration {
+                state: MachineState::Empty,
+                program: program.clone(),
+            },
+            _ => unreachable!(),
+        };
+        let const_drop_execution = semantics.execute(&const_drop_from).unwrap();
+        assert!(matches!(
+            const_drop_execution.statement(),
+            ExecutionStatement::MultiStep { steps: 1, .. }
+        ));
+        assert!(const_drop_execution.theorem().hyps().is_empty());
 
         let from = Configuration {
             state: MachineState::Empty,

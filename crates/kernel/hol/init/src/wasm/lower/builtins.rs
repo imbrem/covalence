@@ -132,7 +132,7 @@ pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
 /// Operations given defining clauses by this leg.
-pub const OPS: [&str; 55] = [
+pub const OPS: [&str; 62] = [
     "truncz",
     "ceilz",
     "isub_",
@@ -188,6 +188,13 @@ pub const OPS: [&str; 55] = [
     "reinterpret__",
     "fabs_",
     "fneg_",
+    "fcopysign_",
+    "feq_",
+    "fne_",
+    "flt_",
+    "fgt_",
+    "fle_",
+    "fge_",
 ];
 
 /// How many of the 91 zero-clause builtin tags gain their **first** clauses
@@ -195,7 +202,7 @@ pub const OPS: [&str; 55] = [
 /// operations, four integer serialization/inverse operations, the exact
 /// integer SIMD lane isomorphism, and three integer conversions. The other
 /// eleven [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 44;
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 51;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -1189,12 +1196,16 @@ fn integer_serialization(w: u64) -> Result<Vec<Clause>> {
 
 /// One exact IEEE representation case of SpecTec's structural
 /// `fN(N)` carrier. `raw` is the corresponding unsigned `N`-bit payload.
-fn float_case(
+fn float_case_named(
     w: u64,
     sign: u64,
     kind: &str,
     exp_sign: Option<u64>,
-) -> Result<(Vec<String>, Vec<Term>, u64, Term, Term, Term)> {
+    prefix: &str,
+) -> Result<FloatCase> {
+    let name = |id: &str| format!("{prefix}{id}");
+    let vm = || mv(&name("m"));
+    let ve = || mv(&name("e"));
     let (m_bits, e_bits) = match w {
         32 => (23, 8),
         64 => (52, 11),
@@ -1204,31 +1215,31 @@ fn float_case(
     let mut sides = Vec::new();
     let magnitude = match kind {
         "subnormal" => {
-            names.push("m".to_owned());
-            sides.push(lt(mv("m"), p2(m_bits)?)?);
-            app(con("case.SUBNORM"), app(con("tup"), wrap_nat(mv("m"))?)?)?
+            names.push(name("m"));
+            sides.push(lt(vm(), p2(m_bits)?)?);
+            app(con("case.SUBNORM"), app(con("tup"), wrap_nat(vm())?)?)?
         }
         "normal" => {
-            names.extend(["m".to_owned(), "e".to_owned()]);
-            sides.push(lt(mv("m"), p2(m_bits)?)?);
+            names.extend([name("m"), name("e")]);
+            sides.push(lt(vm(), p2(m_bits)?)?);
             let es = exp_sign.expect("normal exponent sign");
             if es == 0 {
-                sides.push(le(mv("e"), mk_nat(p2_u64(e_bits - 1) - 1))?);
+                sides.push(le(ve(), mk_nat(p2_u64(e_bits - 1) - 1))?);
             } else {
                 // Canonical negative integers exclude negative zero. The
                 // minimum normal exponent is 2 - 2^(E-1).
-                sides.push(lt(mk_nat(0u64), mv("e"))?);
-                sides.push(le(mv("e"), mk_nat(p2_u64(e_bits - 1) - 2))?);
+                sides.push(lt(mk_nat(0u64), ve())?);
+                sides.push(le(ve(), mk_nat(p2_u64(e_bits - 1) - 2))?);
             }
-            let payload = app(app(con("tup"), wrap_nat(mv("m"))?)?, wrap_int(es, mv("e"))?)?;
+            let payload = app(app(con("tup"), wrap_nat(vm())?)?, wrap_int(es, ve())?)?;
             app(con("case.NORM"), payload)?
         }
         "infinity" => app(con("case.INF"), con("tup"))?,
         "nan" => {
-            names.push("m".to_owned());
-            sides.push(lt(mk_nat(0u64), mv("m"))?);
-            sides.push(lt(mv("m"), p2(m_bits)?)?);
-            app(con("case.NAN"), app(con("tup"), wrap_nat(mv("m"))?)?)?
+            names.push(name("m"));
+            sides.push(lt(mk_nat(0u64), vm())?);
+            sides.push(lt(vm(), p2(m_bits)?)?);
+            app(con("case.NAN"), app(con("tup"), wrap_nat(vm())?)?)?
         }
         _ => unreachable!(),
     };
@@ -1238,7 +1249,7 @@ fn float_case(
     )?;
     let sign_part = mul(mk_nat(sign), p2(w - 1)?)?;
     let raw = match kind {
-        "subnormal" => add(sign_part, mv("m"))?,
+        "subnormal" => add(sign_part, vm())?,
         "infinity" => add(
             sign_part,
             mul(sub(p2(e_bits)?, mk_nat(1u64))?, p2(m_bits)?)?,
@@ -1248,16 +1259,16 @@ fn float_case(
                 sign_part,
                 mul(sub(p2(e_bits)?, mk_nat(1u64))?, p2(m_bits)?)?,
             )?,
-            mv("m"),
+            vm(),
         )?,
         "normal" => {
             let bias = p2_u64(e_bits - 1) - 1;
             let biased = if exp_sign == Some(0) {
-                add(mk_nat(bias), mv("e"))?
+                add(mk_nat(bias), ve())?
             } else {
-                sub(mk_nat(bias), mv("e"))?
+                sub(mk_nat(bias), ve())?
             };
-            add(add(sign_part, mul(biased, p2(m_bits)?)?)?, mv("m"))?
+            add(add(sign_part, mul(biased, p2(m_bits)?)?)?, vm())?
         }
         _ => unreachable!(),
     };
@@ -1271,13 +1282,17 @@ const fn p2_u64(n: u64) -> u64 {
 type FloatCase = (Vec<String>, Vec<Term>, u64, Term, Term, Term);
 
 fn float_cases(w: u64) -> Result<Vec<FloatCase>> {
+    float_cases_named(w, "")
+}
+
+fn float_cases_named(w: u64, prefix: &str) -> Result<Vec<FloatCase>> {
     let mut out = Vec::new();
     for sign in [0, 1] {
-        out.push(float_case(w, sign, "subnormal", None)?);
-        out.push(float_case(w, sign, "normal", Some(0))?);
-        out.push(float_case(w, sign, "normal", Some(1))?);
-        out.push(float_case(w, sign, "infinity", None)?);
-        out.push(float_case(w, sign, "nan", None)?);
+        out.push(float_case_named(w, sign, "subnormal", None, prefix)?);
+        out.push(float_case_named(w, sign, "normal", Some(0), prefix)?);
+        out.push(float_case_named(w, sign, "normal", Some(1), prefix)?);
+        out.push(float_case_named(w, sign, "infinity", None, prefix)?);
+        out.push(float_case_named(w, sign, "nan", None, prefix)?);
     }
     Ok(out)
 }
@@ -1428,6 +1443,189 @@ fn float_sign_ops() -> Result<Vec<Clause>> {
                 sides,
                 fn_graph("fneg_", &[w_lit(w)?, value], &singleton(flipped)?)?,
             ));
+        }
+    }
+    Ok(out)
+}
+
+const FLOAT_SHAPES: [(&str, Option<u64>); 5] = [
+    ("subnormal", None),
+    ("normal", Some(0)),
+    ("normal", Some(1)),
+    ("infinity", None),
+    ("nan", None),
+];
+
+fn float_order_key(w: u64, sign: u64, raw: Term) -> Result<Term> {
+    if sign == 0 {
+        add(p2(w - 1)?, raw)
+    } else {
+        sub(sub(p2(w)?, mk_nat(1u64))?, raw)
+    }
+}
+
+fn float_comparison_concl(op: &str, w: u64, left: Term, right: Term, result: u64) -> Result<Term> {
+    fn_graph(op, &[w_lit(w)?, left, right], &ival(mk_nat(result))?)
+}
+
+fn push_float_comparison(
+    out: &mut Vec<Clause>,
+    names: &[String],
+    base: &[Term],
+    op: &str,
+    w: u64,
+    left: &Term,
+    right: &Term,
+    result: u64,
+    guard: Term,
+) -> Result<()> {
+    let mut sides = base.to_vec();
+    sides.push(guard);
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    out.push(clause(
+        &refs,
+        sides,
+        float_comparison_concl(op, w, left.clone(), right.clone(), result)?,
+    ));
+    Ok(())
+}
+
+/// Exact IEEE comparisons and `copysign` over the complete structural
+/// carrier. The monotone integer key reverses negative raw payloads and
+/// shifts positive payloads above them; signed zeros are handled separately,
+/// and every comparison with a NaN has the specified unordered result.
+fn float_comparisons_and_copysign() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for w in [32, 64] {
+        for left_sign in [0, 1] {
+            for (left_kind, left_exp) in FLOAT_SHAPES {
+                let (left_names, left_sides, _, left_mag, left, left_raw) =
+                    float_case_named(w, left_sign, left_kind, left_exp, "a_")?;
+                for right_sign in [0, 1] {
+                    for (right_kind, right_exp) in FLOAT_SHAPES {
+                        let (right_names, right_sides, _, _right_mag, right, right_raw) =
+                            float_case_named(w, right_sign, right_kind, right_exp, "b_")?;
+                        let mut names = left_names.clone();
+                        names.extend(right_names);
+                        let mut base = left_sides.clone();
+                        base.extend(right_sides);
+                        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+
+                        // Copying the sign never performs arithmetic and
+                        // preserves every payload, including NaNs.
+                        let copied = app(
+                            con(if right_sign == 0 {
+                                "case.POS"
+                            } else {
+                                "case.NEG"
+                            }),
+                            left_mag.clone(),
+                        )?;
+                        out.push(clause(
+                            &refs,
+                            base.clone(),
+                            fn_graph(
+                                "fcopysign_",
+                                &[w_lit(w)?, left.clone(), right.clone()],
+                                &singleton(copied)?,
+                            )?,
+                        ));
+
+                        if left_kind == "nan" || right_kind == "nan" {
+                            for (op, result) in [
+                                ("feq_", 0),
+                                ("fne_", 1),
+                                ("flt_", 0),
+                                ("fgt_", 0),
+                                ("fle_", 0),
+                                ("fge_", 0),
+                            ] {
+                                out.push(clause(
+                                    &refs,
+                                    base.clone(),
+                                    float_comparison_concl(
+                                        op,
+                                        w,
+                                        left.clone(),
+                                        right.clone(),
+                                        result,
+                                    )?,
+                                ));
+                            }
+                            continue;
+                        }
+
+                        // IEEE identifies the two structural zero encodings.
+                        if left_kind == "subnormal" && right_kind == "subnormal" {
+                            let mut zero_sides = base.clone();
+                            zero_sides.push(mv("a_m").equals(mk_nat(0u64))?);
+                            zero_sides.push(mv("b_m").equals(mk_nat(0u64))?);
+                            for (op, result) in [
+                                ("feq_", 1),
+                                ("fne_", 0),
+                                ("flt_", 0),
+                                ("fgt_", 0),
+                                ("fle_", 1),
+                                ("fge_", 1),
+                            ] {
+                                out.push(clause(
+                                    &refs,
+                                    zero_sides.clone(),
+                                    float_comparison_concl(
+                                        op,
+                                        w,
+                                        left.clone(),
+                                        right.clone(),
+                                        result,
+                                    )?,
+                                ));
+                            }
+                        }
+
+                        let left_key = float_order_key(w, left_sign, left_raw.clone())?;
+                        let right_key = float_order_key(w, right_sign, right_raw.clone())?;
+                        // Exclude the double-zero point from key comparison:
+                        // its adjacent keys reflect bit order, not IEEE value
+                        // equality. Two branches express `(a != 0 || b != 0)`
+                        // without adding a disjunctive or opaque premise.
+                        let nonzero_branches =
+                            if left_kind == "subnormal" && right_kind == "subnormal" {
+                                vec![lt(mk_nat(0u64), mv("a_m"))?, lt(mk_nat(0u64), mv("b_m"))?]
+                            } else {
+                                vec![mk_nat(0u64).equals(mk_nat(0u64))?]
+                            };
+                        for nz in nonzero_branches {
+                            let mut branch = base.clone();
+                            branch.push(nz);
+                            let eq = left_key.clone().equals(right_key.clone())?;
+                            let lt_lr = lt(left_key.clone(), right_key.clone())?;
+                            let lt_rl = lt(right_key.clone(), left_key.clone())?;
+                            let le_lr = le(left_key.clone(), right_key.clone())?;
+                            let le_rl = le(right_key.clone(), left_key.clone())?;
+                            for (op, result, guard) in [
+                                ("feq_", 1, eq.clone()),
+                                ("feq_", 0, lt_lr.clone()),
+                                ("feq_", 0, lt_rl.clone()),
+                                ("fne_", 0, eq),
+                                ("fne_", 1, lt_lr.clone()),
+                                ("fne_", 1, lt_rl.clone()),
+                                ("flt_", 1, lt_lr.clone()),
+                                ("flt_", 0, le_rl.clone()),
+                                ("fgt_", 1, lt_rl.clone()),
+                                ("fgt_", 0, le_lr.clone()),
+                                ("fle_", 1, le_lr),
+                                ("fle_", 0, lt_rl.clone()),
+                                ("fge_", 1, le_rl),
+                                ("fge_", 0, lt_lr),
+                            ] {
+                                push_float_comparison(
+                                    &mut out, &names, &branch, op, w, &left, &right, result, guard,
+                                )?;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(out)
@@ -1792,6 +1990,7 @@ pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
     out.extend(composite_float_byte_serialization()?);
     out.extend(float_reinterpretation()?);
     out.extend(float_sign_ops()?);
+    out.extend(float_comparisons_and_copysign()?);
     let report = BuiltinReport {
         clauses: out.len(),
         ops: OPS.len(),
@@ -2479,8 +2678,8 @@ mod tests {
     #[test]
     fn integer_conversion_matrix_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 55);
-        assert_eq!(report.zero_clause_ops, 44);
+        assert_eq!(report.ops, 62);
+        assert_eq!(report.zero_clause_ops, 51);
 
         // Complete reachable wrap matrix, checked against an independent
         // bit-mask oracle. Use inputs with both kept and discarded high bits.
@@ -2754,9 +2953,9 @@ mod tests {
     #[test]
     fn integer_serialization_round_trips_and_refuses_wrong_results() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 629);
-        assert_eq!(report.ops, 55);
-        assert_eq!(report.zero_clause_ops, 44);
+        assert_eq!(report.clauses, 3213);
+        assert_eq!(report.ops, 62);
+        assert_eq!(report.zero_clause_ops, 51);
 
         for (w, a) in [
             (8, 0xa5),
@@ -2835,9 +3034,9 @@ mod tests {
     #[test]
     fn composite_byte_serialization_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 629);
-        assert_eq!(report.ops, 55);
-        assert_eq!(report.zero_clause_ops, 44);
+        assert_eq!(report.clauses, 3213);
+        assert_eq!(report.ops, 62);
+        assert_eq!(report.zero_clause_ops, 51);
 
         let families: [(&str, &str, &[(&str, u64)]); 4] = [
             ("nbytes_", "inv_nbytes_", &[("I32", 32), ("I64", 64)]),
@@ -3143,9 +3342,9 @@ mod tests {
     #[test]
     fn structural_rational_rounding_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 629);
-        assert_eq!(report.ops, 55);
-        assert_eq!(report.zero_clause_ops, 44);
+        assert_eq!(report.clauses, 3213);
+        assert_eq!(report.ops, 62);
+        assert_eq!(report.zero_clause_ops, 51);
 
         // Independent integer-arithmetic oracle, including integral,
         // fractional, sub-unit, and zero points in both sign classes.
@@ -3203,8 +3402,8 @@ mod tests {
     #[test]
     fn unsigned_rounded_average_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 55);
-        assert_eq!(report.zero_clause_ops, 44);
+        assert_eq!(report.ops, 62);
+        assert_eq!(report.zero_clause_ops, 51);
 
         for (w, points) in [
             (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),
@@ -3344,12 +3543,16 @@ mod tests {
         (0..width).map(|i| (raw >> i) & 1).collect()
     }
 
+    fn float_cmp_fact(op: &str, w: u64, left: Term, right: Term, result: u64) -> Term {
+        float_comparison_concl(op, w, left, right, result).unwrap()
+    }
+
     #[test]
     fn structural_float_representation_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 629);
-        assert_eq!(report.ops, 55);
-        assert_eq!(report.zero_clause_ops, 44);
+        assert_eq!(report.clauses, 3213);
+        assert_eq!(report.ops, 62);
+        assert_eq!(report.zero_clause_ops, 51);
 
         let cases = [
             (32, fval(0, fmag_subnormal(0)), 0),
@@ -3497,5 +3700,116 @@ mod tests {
                 &float_serialize_fact("fbytes_", 32, junk, &[0; 4])
             ));
         }
+    }
+
+    #[test]
+    fn structural_float_comparisons_and_copysign_are_exact() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 3213);
+        assert_eq!(report.ops, 62);
+        assert_eq!(report.zero_clause_ops, 51);
+
+        let pz = fval(0, fmag_subnormal(0));
+        let nz = fval(1, fmag_subnormal(0));
+        let pone = fval(0, fmag_normal(0, 0, 0));
+        let none = fval(1, fmag_normal(0, 0, 0));
+        let pinf = fval(0, fmag_inf());
+        let ninf = fval(1, fmag_inf());
+        let nan = fval(
+            0,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(7)).unwrap())).unwrap(),
+        );
+
+        let ordered = [
+            ninf.clone(),
+            none.clone(),
+            nz.clone(),
+            pz.clone(),
+            pone.clone(),
+            pinf.clone(),
+        ];
+        for (i, left) in ordered.iter().enumerate() {
+            for (j, right) in ordered.iter().enumerate() {
+                let equal = (i == j) || ((i == 2 || i == 3) && (j == 2 || j == 3));
+                let less = !equal && i < j;
+                for (op, expected) in [
+                    ("feq_", equal),
+                    ("fne_", !equal),
+                    ("flt_", less),
+                    ("fgt_", !equal && i > j),
+                    ("fle_", equal || less),
+                    ("fge_", equal || i > j),
+                ] {
+                    let result = u64::from(expected);
+                    assert!(
+                        derivable_at(
+                            &clauses,
+                            &float_cmp_fact(op, 32, left.clone(), right.clone(), result)
+                        ),
+                        "{op} at ordered positions {i},{j}"
+                    );
+                    assert!(!derivable_at(
+                        &clauses,
+                        &float_cmp_fact(op, 32, left.clone(), right.clone(), 1 - result)
+                    ));
+                }
+            }
+        }
+
+        for ordinary in [pz.clone(), nz.clone(), pone.clone(), ninf] {
+            for (op, expected) in [
+                ("feq_", 0),
+                ("fne_", 1),
+                ("flt_", 0),
+                ("fgt_", 0),
+                ("fle_", 0),
+                ("fge_", 0),
+            ] {
+                for (left, right) in [
+                    (nan.clone(), ordinary.clone()),
+                    (ordinary.clone(), nan.clone()),
+                    (nan.clone(), nan.clone()),
+                ] {
+                    assert!(derivable_at(
+                        &clauses,
+                        &float_cmp_fact(op, 32, left, right, expected)
+                    ));
+                }
+            }
+        }
+
+        let copied = fval(1, fmag_normal(0, 0, 0));
+        assert!(derivable_at(
+            &clauses,
+            &fn_graph(
+                "fcopysign_",
+                &[w_lit(32).unwrap(), pone.clone(), nz.clone()],
+                &singleton(copied.clone()).unwrap(),
+            )
+            .unwrap()
+        ));
+        assert!(!derivable_at(
+            &clauses,
+            &fn_graph(
+                "fcopysign_",
+                &[w_lit(32).unwrap(), pone, nz],
+                &singleton(pz).unwrap(),
+            )
+            .unwrap()
+        ));
+        // Copying a sign onto a NaN preserves its exact payload.
+        let neg_nan = fval(
+            1,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(7)).unwrap())).unwrap(),
+        );
+        assert!(derivable_at(
+            &clauses,
+            &fn_graph(
+                "fcopysign_",
+                &[w_lit(32).unwrap(), nan, copied],
+                &singleton(neg_nan).unwrap(),
+            )
+            .unwrap()
+        ));
     }
 }

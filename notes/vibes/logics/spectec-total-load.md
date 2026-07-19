@@ -28,7 +28,7 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **4105 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
+- **6689 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
@@ -36,8 +36,8 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 629 exact builtin
-  clauses over 55 operations + 1476
+  expanded Dec-star sites / 12 defining clauses) + 3213 exact builtin
+  clauses over 62 operations + 1476
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
   families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
@@ -689,6 +689,24 @@ integer relaxed operations, four float relaxed operations, and
 `relaxed_trunc__`. No bit, byte, typed-byte, or reinterpretation primitive
 remains in the frontier.
 
+## Landed (Wave AF — exact IEEE comparisons and sign copy)
+
+All six scalar comparison builtins and `fcopysign_` now cover the complete
+F32/F64 structural carrier. A natural-valued monotone key reverses negative
+IEEE payload order and shifts positive payloads above it. Explicit branches
+identify positive and negative zero, while NaN branches implement unordered
+comparison exactly: equality and all four ordered predicates are false, and
+inequality is true. `fcopysign_` replaces only the outer sign constructor and
+therefore preserves every finite, infinity, and NaN payload.
+
+The construction is entirely structural and uses only kernel-computable
+natural equality/order; it has no host float operation, opaque premise, or
+choice refinement. Cross-products of the ten validated sign/magnitude shapes
+make malformed values fail closed. The builtin leg is now **3213 clauses over
+62 operations**, filling **51 of 91** declarations and leaving **40**. The
+residual deterministic set no longer contains representation, comparison, or
+sign-copy operations.
+
 ### Exact unbounded inverse sequence concatenation
 
 The two sequence builtins are deterministic in SpecTec's reference interpreter:
@@ -893,10 +911,15 @@ over left-nested snoc spines (`⌜[e₀…eₙ]⌝ = app(⌜[e₀…eₙ₋₁]�
   cross-member payload edge remains visible. Strict coverage is **144/207**
   and use-site renderability is **170/207**. `MutualChurchSignature` now also
   exposes all **41** source-ordered handler-injection constructor terms and
-  hypothesis-free, kernel-checked β computation laws. It separately enumerates
-  **41** same-constructor injectivity and **183** same-owner
-  pairwise-distinctness obligations; no source-datatype freeness is claimed
-  until an exact recursive carrier backend discharges those obligations.
+  hypothesis-free, kernel-checked β computation laws. Boolean tag observations
+  prove all **183** same-owner constructor pairs distinct, and projection
+  observations prove **31** non-recursive payload constructors injective. These
+  are explicitly observation-instance theorems: the signature separately
+  retains **41** exact-carrier injectivity and **183** exact-carrier
+  distinctness obligations. The remaining ten payloads contain recursive
+  result carriers and hit the rank-1 reconstruction wall. No source-datatype
+  freeness is claimed until a closed recursive carrier backend discharges the
+  obligations.
 - **Grammars:** whole-corpus `GrammarEnv` (all 231, both modes) + left-recursion
   guard (T* has a `Thexnum` cycle) + honest per-NT coverage class. Residuals:
   grammar-valued param monomorphisation, non-`If` premises, 2 bridge

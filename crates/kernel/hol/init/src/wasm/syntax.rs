@@ -57,6 +57,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use covalence_core::{Error, Result, Type};
 use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 use covalence_spectec::ast::{
     SpecTecArg, SpecTecDef, SpecTecDefTyp, SpecTecExp, SpecTecInst, SpecTecIter, SpecTecNumTyp,
     SpecTecParam, SpecTecTyp, SpecTecTypBind, SpecTecTypCase, SpecTecTypField,
@@ -714,8 +715,8 @@ pub enum MutualFreenessObligation {
 /// carriers. Their computation laws are pure β and kernel checked. This does
 /// not claim source-datatype freeness: every injectivity/distinctness law is
 /// retained explicitly in [`Self::freeness_obligations`].
-// TODO(cov:kernel.hol.init.src.wasm.church-types-are-polymorphic-term-free, severe): Seal simultaneous Church signatures as exact recursive carriers; handler-injection constructors and β laws are now checked.
-// TODO(cov:kernel.hol.init.src.wasm.constructor-freeness-lemmas-not-threaded, severe): Discharge the explicit mutual injectivity/distinctness obligations in an exact-type backend and thread them into denotation.
+// TODO(cov:kernel.hol.init.src.wasm.church-types-are-polymorphic-term-free, severe): Seal simultaneous Church signatures as closed recursive carriers; open rank-1 signatures now have constructors, β laws, and checked observations only.
+// TODO(cov:kernel.hol.init.src.wasm.constructor-freeness-lemmas-not-threaded, severe): On a closed carrier, discharge 41 injectivity/183 distinctness laws (10 recursive payloads hit rank-1 reconstruction) and thread them into denotation.
 #[derive(Debug, Clone)]
 pub struct MutualChurchSignature {
     members: Vec<String>,
@@ -725,6 +726,33 @@ pub struct MutualChurchSignature {
 }
 
 impl MutualChurchSignature {
+    fn payload_mentions_result_carrier(&self, constructor: usize) -> Result<bool> {
+        let payload = &self
+            .constructors
+            .get(constructor)
+            .ok_or_else(|| syntax_err("mutual constructor index out of range"))?
+            .payload;
+        let variables = payload.free_tvars();
+        Ok(self
+            .members
+            .iter()
+            .any(|member| variables.contains(&format!("cov$mutual${member}").into())))
+    }
+
+    fn at_observation(
+        &self,
+        term: &covalence_core::Term,
+        observation: &Type,
+    ) -> covalence_core::Term {
+        self.members.iter().fold(term.clone(), |term, member| {
+            covalence_core::subst::subst_tfree_in_term(
+                &term,
+                &format!("cov$mutual${member}"),
+                observation,
+            )
+        })
+    }
+
     pub fn members(&self) -> &[String] {
         &self.members
     }
@@ -756,6 +784,197 @@ impl MutualChurchSignature {
             }
         }
         out
+    }
+
+    /// Payload type of `constructor` at the common boolean observation
+    /// instance used by [`Self::observational_distinct`].
+    pub fn boolean_observation_payload_type(&self, constructor: usize) -> Result<Type> {
+        let ctor = self
+            .constructors
+            .get(constructor)
+            .ok_or_else(|| syntax_err("mutual constructor index out of range"))?;
+        Ok(self
+            .at_observation(
+                &covalence_core::Term::free("__payload_ty", ctor.payload.clone()),
+                &Type::bool(),
+            )
+            .type_of()?)
+    }
+
+    /// Whether the constructor payload is external to the recursive result
+    /// carriers and can therefore be recovered by a projection observation.
+    pub fn supports_observational_injectivity(&self, constructor: usize) -> Result<bool> {
+        Ok(!self.payload_mentions_result_carrier(constructor)?)
+    }
+
+    /// Prove projection-observation injectivity for a non-recursive payload.
+    ///
+    /// The conclusion is
+    /// `Cᵢ[payload] x = Cᵢ[payload] y ⟹ x = y`, with every simultaneous
+    /// result carrier instantiated to the payload type. Recursive payloads are
+    /// refused: recovering them is exactly the rank-1 reconstruction wall.
+    pub fn observational_injective(
+        &self,
+        constructor: usize,
+        left: covalence_core::Term,
+        right: covalence_core::Term,
+    ) -> Result<Thm> {
+        let ctor = self
+            .constructors
+            .get(constructor)
+            .ok_or_else(|| syntax_err("mutual constructor index out of range"))?;
+        if self.payload_mentions_result_carrier(constructor)? {
+            return Err(syntax_err(
+                "recursive payload cannot be recovered by a rank-1 observation",
+            ));
+        }
+        if left.type_of()? != ctor.payload || right.type_of()? != ctor.payload {
+            return Err(syntax_err("wrong constructor payload type"));
+        }
+        let observation = ctor.payload.clone();
+        let mut lhs = self
+            .at_observation(&ctor.term, &observation)
+            .apply(left.clone())?;
+        let mut rhs = self
+            .at_observation(&ctor.term, &observation)
+            .apply(right.clone())?;
+        let arbitrary = covalence_core::Term::app(
+            covalence_core::Term::select_op(observation.clone()),
+            covalence_core::Term::abs(observation.clone(), covalence_hol_eval::mk_bool(true)),
+        );
+        for (i, handler) in self.handler_types.iter().enumerate() {
+            let observed = self.members.iter().fold(handler.clone(), |ty, member| {
+                covalence_core::subst::subst_tfree_in_type(
+                    &ty,
+                    &format!("cov$mutual${member}"),
+                    &observation,
+                )
+            });
+            let covalence_core::TypeKind::Fun(payload, result) = observed.kind().clone() else {
+                return Err(syntax_err("mutual handler is not a function"));
+            };
+            if result != observation {
+                return Err(syntax_err("projection handler has wrong result"));
+            }
+            let handler = if i == ctor.handler_index {
+                if payload != observation {
+                    return Err(syntax_err(
+                        "selected projection payload changed under observation",
+                    ));
+                }
+                let value = covalence_core::Term::free("__projection", payload.clone());
+                covalence_core::Term::abs(
+                    payload,
+                    covalence_core::subst::close(&value, "__projection"),
+                )
+            } else {
+                covalence_core::Term::abs(payload, arbitrary.clone())
+            };
+            lhs = lhs.apply(handler.clone())?;
+            rhs = rhs.apply(handler)?;
+        }
+        let equation = lhs.equals(rhs)?;
+        let assumed = Thm::assume(equation.clone())?;
+        let Some((l, r)) = assumed.concl().as_eq() else {
+            return Err(syntax_err("projection assumption is not equality"));
+        };
+        let l_beta = beta_nf(l.clone());
+        let r_beta = beta_nf(r.clone());
+        let recovered = l_beta.sym()?.trans(assumed)?.trans(r_beta)?;
+        let left_beta = beta_nf(left);
+        let right_beta = beta_nf(right);
+        left_beta
+            .trans(recovered)?
+            .trans(right_beta.sym()?)?
+            .imp_intro(&equation)
+    }
+
+    /// Prove distinctness at the boolean observation instance.
+    ///
+    /// This is the exact rank-1 Church observation law:
+    /// `¬(Cᵢ[bool] x = Cⱼ[bool] y)`. It is checked and useful for folds, but
+    /// deliberately does not discharge the source-carrier distinctness
+    /// obligation: the open simultaneous signature is not a closed recursive
+    /// datatype.
+    pub fn observational_distinct(
+        &self,
+        left: usize,
+        right: usize,
+        left_payload: covalence_core::Term,
+        right_payload: covalence_core::Term,
+    ) -> Result<Thm> {
+        let left_ctor = self
+            .constructors
+            .get(left)
+            .ok_or_else(|| syntax_err("mutual constructor index out of range"))?;
+        let right_ctor = self
+            .constructors
+            .get(right)
+            .ok_or_else(|| syntax_err("mutual constructor index out of range"))?;
+        if left == right || left_ctor.owner != right_ctor.owner {
+            return Err(syntax_err(
+                "observational distinctness requires different constructors of one owner",
+            ));
+        }
+        if left_payload.type_of()? != self.boolean_observation_payload_type(left)?
+            || right_payload.type_of()? != self.boolean_observation_payload_type(right)?
+        {
+            return Err(syntax_err("wrong boolean-observation payload type"));
+        }
+
+        let bool_ty = Type::bool();
+        let mut lhs = self
+            .at_observation(&left_ctor.term, &bool_ty)
+            .apply(left_payload)?;
+        let mut rhs = self
+            .at_observation(&right_ctor.term, &bool_ty)
+            .apply(right_payload)?;
+        let mut handlers = Vec::with_capacity(self.handler_types.len());
+        for (i, handler) in self.handler_types.iter().enumerate() {
+            let observed = self.members.iter().fold(handler.clone(), |ty, member| {
+                covalence_core::subst::subst_tfree_in_type(
+                    &ty,
+                    &format!("cov$mutual${member}"),
+                    &bool_ty,
+                )
+            });
+            let covalence_core::TypeKind::Fun(payload, result) = observed.kind().clone() else {
+                return Err(syntax_err("mutual handler is not a function"));
+            };
+            if result != bool_ty {
+                return Err(syntax_err(
+                    "boolean observation handler has non-bool result",
+                ));
+            }
+            handlers.push(covalence_core::Term::abs(
+                payload,
+                covalence_hol_eval::mk_bool(i == left),
+            ));
+        }
+        for handler in &handlers {
+            lhs = lhs.apply(handler.clone())?;
+            rhs = rhs.apply(handler.clone())?;
+        }
+        let equation = lhs.equals(rhs)?;
+        let mut observed = Thm::assume(equation.clone())?;
+        // The handlers were already applied above; normalisation exposes their
+        // distinct boolean tags directly.
+        let Some((l, r)) = observed.concl().as_eq() else {
+            return Err(syntax_err("observation assumption is not equality"));
+        };
+        let l_beta = beta_nf(l.clone());
+        let r_beta = beta_nf(r.clone());
+        observed = l_beta.sym()?.trans(observed)?.trans(r_beta)?;
+        let Some((l, r)) = observed.concl().as_eq() else {
+            return Err(syntax_err("observation did not yield equality"));
+        };
+        if *l != covalence_hol_eval::mk_bool(true) || *r != covalence_hol_eval::mk_bool(false) {
+            return Err(syntax_err("constructor tags did not separate"));
+        }
+        observed
+            .eq_mp(crate::init::logic::truth())?
+            .imp_intro(&equation)?
+            .not_intro()
     }
 
     /// Prove the handler-injection computation equation
@@ -1585,6 +1804,23 @@ mod tests {
                 MutualFreenessObligation::Distinct { left: 0, right: 1 },
             ]
         );
+        let left = Term::free(
+            "left_payload",
+            signature.boolean_observation_payload_type(0).unwrap(),
+        );
+        let right = Term::free(
+            "right_payload",
+            signature.boolean_observation_payload_type(1).unwrap(),
+        );
+        let distinct = signature.observational_distinct(0, 1, left, right).unwrap();
+        assert!(distinct.hyps().is_empty());
+        assert!(signature.supports_observational_injectivity(0).unwrap());
+        assert!(!signature.supports_observational_injectivity(1).unwrap());
+        assert!(!signature.supports_observational_injectivity(2).unwrap());
+        let x = Term::free("zero_x", signature.constructors()[0].payload_type().clone());
+        let y = Term::free("zero_y", signature.constructors()[0].payload_type().clone());
+        let injective = signature.observational_injective(0, x, y).unwrap();
+        assert!(injective.hyps().is_empty());
     }
 
     #[test]
@@ -1619,6 +1855,44 @@ mod tests {
                 .count(),
             183
         );
+        let mut checked_distinct = 0;
+        for obligation in obligations {
+            let MutualFreenessObligation::Distinct { left, right } = obligation else {
+                continue;
+            };
+            let left_payload = Term::free(
+                format!("obs_left_{left}_{right}"),
+                signature.boolean_observation_payload_type(left).unwrap(),
+            );
+            let right_payload = Term::free(
+                format!("obs_right_{left}_{right}"),
+                signature.boolean_observation_payload_type(right).unwrap(),
+            );
+            let theorem = signature
+                .observational_distinct(left, right, left_payload, right_payload)
+                .unwrap();
+            assert!(theorem.hyps().is_empty());
+            checked_distinct += 1;
+        }
+        assert_eq!(checked_distinct, 183);
+        let mut checked_injective = 0;
+        for constructor in 0..signature.constructors().len() {
+            if !signature
+                .supports_observational_injectivity(constructor)
+                .unwrap()
+            {
+                continue;
+            }
+            let payload = signature.constructors()[constructor].payload_type().clone();
+            let left = Term::free(format!("inj_left_{constructor}"), payload.clone());
+            let right = Term::free(format!("inj_right_{constructor}"), payload);
+            let theorem = signature
+                .observational_injective(constructor, left, right)
+                .unwrap();
+            assert!(theorem.hyps().is_empty());
+            checked_injective += 1;
+        }
+        assert_eq!(checked_injective, 31);
     }
 
     #[test]

@@ -141,7 +141,7 @@ pub trait RefinementLowerer {
 /// `|X*| < 2^32` premise becomes a predicate over the resolved `list X`
 /// carrier. Multi-case, field, existentially bound, and non-`If` refinements
 /// are refused.
-// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Lower the dependent remainder of 56 retained refinements across 29 types; singleton primitive predicates and the parametric bounded-list predicate are exact.
+// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Lower 48 refinements in 21 unsupported families plus symbolic uN/sN indices; five primitives, list(X), ground uN, and positive-width sN are exact.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SingletonValueRefinementLowerer;
 
@@ -180,6 +180,14 @@ impl RefinementLowerer for SingletonValueRefinementLowerer {
         }
         if let Some((predicate, source_premises)) =
             lower_bounded_unsigned(family, arguments, carrier)?
+        {
+            return Ok(RefinementLowering::Predicate {
+                predicate,
+                source_premises,
+            });
+        }
+        if let Some((predicate, source_premises)) =
+            lower_bounded_signed(family, arguments, carrier)?
         {
             return Ok(RefinementLowering::Predicate {
                 predicate,
@@ -405,6 +413,230 @@ fn is_exact_unsigned_bound(e: &SpecTecExp, value_name: &str, width_name: &str) -
                 e1,
             } if matches!(e1.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(1) })
         )
+}
+
+/// Compile `sN(N)` for a ground positive natural width.
+///
+/// The source partitions the interval into negative, zero, and positive
+/// branches. For `N > 0` that disjunction is exactly the closed interval
+/// `[-2^(N-1), 2^(N-1)-1]`. We only perform this normalization after matching
+/// the complete retained disjunction and all of its conversion nodes.
+fn lower_bounded_signed<'a>(
+    family: &TypeFamily<'a>,
+    arguments: &[SpecTecArg],
+    carrier: &Type,
+) -> Result<Option<(Term, &'a [SpecTecPrem])>> {
+    if family.name != "sN" || carrier != &Type::int() {
+        return Ok(None);
+    }
+    let (
+        [SpecTecParam::Exp { x: width_name, .. }],
+        [
+            SpecTecArg::Exp {
+                e:
+                    SpecTecExp::Num {
+                        n: SpecTecNum::Nat(width),
+                    },
+            },
+        ],
+        [instance],
+    ) = (family.params, arguments, family.instances.as_slice())
+    else {
+        return Ok(None);
+    };
+    if *width == 0
+        || !matches!(
+            (instance.params, instance.args),
+            (
+                [SpecTecParam::Exp { x: instance_width, .. }],
+                [SpecTecArg::Exp {
+                    e: SpecTecExp::Var { id: instance_arg },
+                }],
+            ) if instance_width == width_name && instance_arg == width_name
+        )
+    {
+        return Ok(None);
+    }
+    let TypeShape::Variant(cases) = &instance.shape else {
+        return Ok(None);
+    };
+    let [case] = cases.as_slice() else {
+        return Ok(None);
+    };
+    let SpecTecTyp::Tup { ets } = case.payload else {
+        return Ok(None);
+    };
+    let [
+        SpecTecTypBind::Bind {
+            id: value_name,
+            typ: SpecTecTyp::Num(SpecTecNumTyp::Int),
+        },
+    ] = ets.as_slice()
+    else {
+        return Ok(None);
+    };
+    let [SpecTecPrem::If { e }] = case.refinements else {
+        return Ok(None);
+    };
+    if !case.params.is_empty() || !is_exact_signed_bound(e, value_name, width_name) {
+        return Ok(None);
+    }
+
+    let half = covalence_hol_eval::defs::nat_to_int().apply(
+        crate::init::nat::nat_pow()
+            .apply(covalence_hol_eval::mk_nat(2u64))?
+            .apply(covalence_hol_eval::mk_nat(width - 1))?,
+    )?;
+    let lower = crate::init::int::int_neg().apply(half.clone())?;
+    let upper = crate::init::int::int_sub()
+        .apply(half)?
+        .apply(covalence_hol_eval::mk_int(1i128))?;
+    let value = Term::free(value_name.clone(), Type::int());
+    let body = crate::init::int::int_le()
+        .apply(lower)?
+        .apply(value.clone())?
+        .and(crate::init::int::int_le().apply(value)?.apply(upper)?)?;
+    let predicate = Term::abs(Type::int(), subst::close(&body, value_name));
+    Ok(Some((predicate, case.refinements)))
+}
+
+fn is_exact_signed_bound(e: &SpecTecExp, value_name: &str, width_name: &str) -> bool {
+    let Some((left, positive)) = bool_bin(e, SpecTecBinOp::Or) else {
+        return false;
+    };
+    let Some((negative, zero)) = bool_bin(left, SpecTecBinOp::Or) else {
+        return false;
+    };
+    let Some((neg_lower, neg_upper)) = bool_bin(negative, SpecTecBinOp::And) else {
+        return false;
+    };
+    let Some((pos_lower, pos_upper)) = bool_bin(positive, SpecTecBinOp::And) else {
+        return false;
+    };
+    int_cmp(neg_lower, SpecTecCmpOp::Ge, value_name, |bound| {
+        matches!(bound, SpecTecExp::Un { op: covalence_spectec::ast::SpecTecUnOp::Minus, e2, .. }
+            if is_signed_half_power(e2, width_name))
+    }) && int_cmp(neg_upper, SpecTecCmpOp::Le, value_name, |bound| {
+        matches!(bound, SpecTecExp::Un { op: covalence_spectec::ast::SpecTecUnOp::Minus, e2, .. }
+            if is_nat_to_int_literal(e2, 1))
+    }) && matches!(
+        zero,
+        SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Eq,
+            e1,
+            e2,
+            ..
+        } if matches!(e1.as_ref(), SpecTecExp::Var { id } if id == value_name)
+            && is_nat_to_int_literal(e2, 0)
+    ) && int_cmp(pos_lower, SpecTecCmpOp::Ge, value_name, |bound| {
+        matches!(bound, SpecTecExp::Un { op: covalence_spectec::ast::SpecTecUnOp::Plus, e2, .. }
+            if is_nat_to_int_literal(e2, 1))
+    }) && int_cmp(pos_upper, SpecTecCmpOp::Le, value_name, |bound| {
+        matches!(
+            bound,
+            SpecTecExp::Bin {
+                op: SpecTecBinOp::Sub,
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Int),
+                e1,
+                e2,
+            } if matches!(e1.as_ref(), SpecTecExp::Un {
+                op: covalence_spectec::ast::SpecTecUnOp::Plus,
+                e2,
+                ..
+            } if is_signed_half_power(e2, width_name))
+                && is_nat_to_int_literal(e2, 1)
+        )
+    })
+}
+
+fn bool_bin(e: &SpecTecExp, expected: SpecTecBinOp) -> Option<(&SpecTecExp, &SpecTecExp)> {
+    match e {
+        SpecTecExp::Bin {
+            op,
+            t: SpecTecOpTyp::Bool(_),
+            e1,
+            e2,
+        } if *op == expected => Some((e1, e2)),
+        _ => None,
+    }
+}
+
+fn int_cmp(
+    e: &SpecTecExp,
+    expected: SpecTecCmpOp,
+    value_name: &str,
+    bound: impl FnOnce(&SpecTecExp) -> bool,
+) -> bool {
+    matches!(
+        e,
+        SpecTecExp::Cmp {
+            op,
+            t: SpecTecOpTyp::Num(SpecTecNumTyp::Int),
+            e1,
+            e2,
+        } if *op == expected
+            && matches!(e1.as_ref(), SpecTecExp::Var { id } if id == value_name)
+            && bound(e2)
+    )
+}
+
+fn is_nat_to_int_literal(e: &SpecTecExp, literal: u64) -> bool {
+    matches!(
+        e,
+        SpecTecExp::Cvt {
+            nt1: SpecTecNumTyp::Nat,
+            nt2: SpecTecNumTyp::Int,
+            e1,
+        } if matches!(e1.as_ref(), SpecTecExp::Num { n: SpecTecNum::Nat(n) } if *n == literal)
+    )
+}
+
+fn is_signed_half_power(e: &SpecTecExp, width_name: &str) -> bool {
+    let SpecTecExp::Cvt {
+        nt1: SpecTecNumTyp::Nat,
+        nt2: SpecTecNumTyp::Int,
+        e1: power,
+    } = e
+    else {
+        return false;
+    };
+    let SpecTecExp::Bin {
+        op: SpecTecBinOp::Pow,
+        t: SpecTecOpTyp::Num(SpecTecNumTyp::Nat),
+        e1: two,
+        e2: exponent,
+    } = power.as_ref()
+    else {
+        return false;
+    };
+    matches!(
+        two.as_ref(),
+        SpecTecExp::Num {
+            n: SpecTecNum::Nat(2)
+        }
+    ) && matches!(
+        exponent.as_ref(),
+        SpecTecExp::Cvt {
+            nt1: SpecTecNumTyp::Int,
+            nt2: SpecTecNumTyp::Nat,
+            e1: difference,
+        } if matches!(
+            difference.as_ref(),
+            SpecTecExp::Bin {
+                op: SpecTecBinOp::Sub,
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Int),
+                e1,
+                e2,
+            } if matches!(
+                e1.as_ref(),
+                SpecTecExp::Cvt {
+                    nt1: SpecTecNumTyp::Nat,
+                    nt2: SpecTecNumTyp::Int,
+                    e1,
+                } if matches!(e1.as_ref(), SpecTecExp::Var { id } if id == width_name)
+            ) && is_nat_to_int_literal(e2, 1)
+        )
+    )
 }
 
 /// Compile the exact source refinement on `list(X)`.
@@ -844,6 +1076,67 @@ mod tests {
     }
 
     #[test]
+    fn ground_positive_signed_width_becomes_an_exact_checked_predicate() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = syntax::TypeCtx::new(&defs);
+        let families = TypeFamilies::new(&defs);
+        let resolver = RefinementAwareTypeResolver::new(&ctx, &families);
+        let s64_ty = SpecTecTyp::Var {
+            x: "sN".into(),
+            as1: vec![SpecTecArg::Exp {
+                e: SpecTecExp::Num {
+                    n: SpecTecNum::Nat(64),
+                },
+            }],
+        };
+        let resolved = resolver.resolve_type(&s64_ty).unwrap();
+        assert_eq!(resolved.sort.carrier(), &Type::int());
+        let SortInvariant::Predicate(predicate) = resolved.sort.invariant() else {
+            panic!("sN(64) must retain its source signed bound");
+        };
+        assert_eq!(
+            predicate.type_of().unwrap(),
+            Type::fun(Type::int(), Type::bool())
+        );
+        assert_eq!(resolved.provenance, TypeProvenance::SourceRefinement);
+
+        let family = families.family("sN").unwrap();
+        let arguments = match &s64_ty {
+            SpecTecTyp::Var { as1, .. } => as1,
+            _ => unreachable!(),
+        };
+        let RefinementLowering::Predicate {
+            source_premises, ..
+        } = SingletonValueRefinementLowerer
+            .lower(family, arguments, &Type::int(), &ctx)
+            .unwrap()
+        else {
+            panic!("sN(64) source refinement must lower");
+        };
+        assert_eq!(source_premises.len(), 1);
+        assert!(std::ptr::eq(
+            &source_premises[0],
+            family.refinements().next().unwrap()
+        ));
+
+        // Width zero would force the source's `N - 1` conversion outside the
+        // positive-width fragment, so it remains explicitly unresolved.
+        let s0_ty = SpecTecTyp::Var {
+            x: "sN".into(),
+            as1: vec![SpecTecArg::Exp {
+                e: SpecTecExp::Num {
+                    n: SpecTecNum::Nat(0),
+                },
+            }],
+        };
+        let unresolved = resolver.resolve_type(&s0_ty).unwrap();
+        assert!(matches!(
+            unresolved.sort.invariant(),
+            SortInvariant::Unresolved
+        ));
+    }
+
+    #[test]
     fn exact_value_and_list_fragments_are_live_but_other_dependent_refinements_refuse() {
         let defs = crate::wasm::spec::wasm_spec();
         let ctx = syntax::TypeCtx::new(&defs);
@@ -874,5 +1167,34 @@ mod tests {
             unresolved.sort.invariant(),
             SortInvariant::Unresolved
         ));
+    }
+
+    #[test]
+    fn exact_refinement_family_census_is_pinned() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let families = TypeFamilies::new(&defs);
+        let refined: Vec<_> = families
+            .families()
+            .filter(|family| family.refinements().next().is_some())
+            .collect();
+        assert_eq!(refined.len(), 29);
+        assert_eq!(
+            refined
+                .iter()
+                .map(|family| family.refinements().count())
+                .sum::<usize>(),
+            56
+        );
+
+        let exact = ["bit", "byte", "char", "dim", "sz", "list", "uN", "sN"];
+        assert_eq!(
+            exact
+                .iter()
+                .map(|name| families.family(name).unwrap().refinements().count())
+                .sum::<usize>(),
+            8
+        );
+        assert_eq!(refined.len() - exact.len(), 21);
+        assert_eq!(56 - 8, 48);
     }
 }

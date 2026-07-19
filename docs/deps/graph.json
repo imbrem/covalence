@@ -58,6 +58,7 @@
     "covalence-serve",
     "covalence-sexp",
     "covalence-sexpr-api",
+    "covalence-sexpr-parsing",
     "covalence-shell",
     "covalence-smt",
     "covalence-spectec",
@@ -363,6 +364,10 @@
     {
       "from": "covalence-init",
       "to": "covalence-metamath"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-parsing-api"
     },
     {
       "from": "covalence-init",
@@ -747,6 +752,22 @@
     {
       "from": "covalence-sexpr-api",
       "to": "covalence-inductive"
+    },
+    {
+      "from": "covalence-sexpr-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-sexpr-parsing",
+      "to": "covalence-parsing-api"
+    },
+    {
+      "from": "covalence-sexpr-parsing",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-sexpr-parsing",
+      "to": "covalence-sexpr-api"
     },
     {
       "from": "covalence-shell",

@@ -231,7 +231,7 @@
       "summary": "Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.",
       "structured": true,
       "path": "crates/lang/json-api/src/lib.rs",
-      "line": 759,
+      "line": 935,
       "crate": "covalence-json-api"
     },
     {
@@ -3278,7 +3278,7 @@
       "id": "sexpr.parser-interpretation",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.",
+      "summary": "Add A0015 adapters and induced same-value PERs for the SMT-LIB, WAT, and egglog S-expression dialects.",
       "structured": true,
       "path": "crates/lang/sexpr-api/src/lib.rs",
       "line": 506,

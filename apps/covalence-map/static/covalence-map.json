@@ -412,7 +412,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7342,
+      "words": 7352,
       "updated": 0
     },
     {
@@ -610,7 +610,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 33462,
+      "words": 33746,
       "updated": 0
     },
     {
@@ -9871,7 +9871,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/json-api/src/lib.rs",
-      "words": 975,
+      "words": 1213,
       "updated": 0
     },
     {
@@ -10487,6 +10487,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/parsing/src/adapters.rs",
+      "kind": "file",
+      "title": "adapters.rs",
+      "status": "tracked",
+      "path": "crates/lang/parsing/src/adapters.rs",
+      "words": 262,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/parsing/src/bytes.rs",
       "kind": "file",
       "title": "bytes.rs",
@@ -10501,7 +10510,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/parsing/src/lib.rs",
-      "words": 382,
+      "words": 387,
       "updated": 0
     },
     {
@@ -10556,6 +10565,24 @@
       "status": "missing",
       "path": "crates/lang/sexpr-kernel",
       "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/sexpr-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/sexpr-parsing/Cargo.toml",
+      "words": 14,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/sexpr-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/sexpr-parsing/src/lib.rs",
+      "words": 311,
       "updated": 0
     },
     {
@@ -11734,7 +11761,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lib/sexp/src/lib.rs",
-      "words": 364,
+      "words": 387,
       "updated": 0
     },
     {
@@ -11743,7 +11770,7 @@
       "title": "parser.rs",
       "status": "tracked",
       "path": "crates/lib/sexp/src/parser.rs",
-      "words": 343,
+      "words": 380,
       "updated": 0
     },
     {
@@ -14389,7 +14416,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 33462,
+      "words": 33746,
       "updated": 0
     },
     {
@@ -14407,7 +14434,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 265,
+      "words": 271,
       "updated": 0
     },
     {
@@ -14416,7 +14443,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 879,
+      "words": 900,
       "updated": 0
     },
     {
@@ -14425,7 +14452,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 196,
+      "words": 201,
       "updated": 0
     },
     {
@@ -14434,7 +14461,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1568,
+      "words": 1604,
       "updated": 0
     },
     {
@@ -21217,7 +21244,7 @@
     {
       "id": "todo:sexpr.parser-interpretation",
       "kind": "todo",
-      "title": "Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.",
+      "title": "Add A0015 adapters and induced same-value PERs for the SMT-LIB, WAT, and egglog S-expression dialects.",
       "status": "major",
       "path": "crates/lang/sexpr-api/src/lib.rs",
       "words": 0,
@@ -24205,6 +24232,12 @@
       "source": "file:crates/lang/numerals/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/numerals/src/rat_backend.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/parsing/src/adapters.rs",
       "detail": null
     },
     {

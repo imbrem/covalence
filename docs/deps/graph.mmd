@@ -73,6 +73,7 @@ graph LR
   init --> k
   init --> logic-api
   init --> metamath
+  init --> parsing-api
   init --> sexp
   init --> spectec
   init --> types
@@ -169,6 +170,10 @@ graph LR
   sexp --> parse
   sexp --> types
   sexpr-api --> inductive
+  sexpr-parsing --> logic-api
+  sexpr-parsing --> parsing-api
+  sexpr-parsing --> sexp
+  sexpr-parsing --> sexpr-api
   shell --> hol
   shell --> kernel
   smt --> sat

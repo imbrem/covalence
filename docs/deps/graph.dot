@@ -58,6 +58,7 @@ digraph deps {
   "serve";
   "sexp";
   "sexpr-api";
+  "sexpr-parsing";
   "shell";
   "smt";
   "spectec";
@@ -143,6 +144,7 @@ digraph deps {
   "init" -> "k";
   "init" -> "logic-api";
   "init" -> "metamath";
+  "init" -> "parsing-api";
   "init" -> "sexp";
   "init" -> "spectec";
   "init" -> "types";
@@ -239,6 +241,10 @@ digraph deps {
   "sexp" -> "parse";
   "sexp" -> "types";
   "sexpr-api" -> "inductive";
+  "sexpr-parsing" -> "logic-api";
+  "sexpr-parsing" -> "parsing-api";
+  "sexpr-parsing" -> "sexp";
+  "sexpr-parsing" -> "sexpr-api";
   "shell" -> "hol";
   "shell" -> "kernel";
   "smt" -> "sat";

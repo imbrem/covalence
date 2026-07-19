@@ -113,11 +113,13 @@ score.
 - `std/lists/acl2-count.lisp` is the first strict source-green candidate:
   revision `2dbf2b63`, SHA-256
   `952499bebe748a4411377644ea6b47208a38f496fd908812099e49af35df8ab1`,
-  six source events, no includes, and five theorem exports. Its checked
-  recursive definition is now in the production ACL2 environment. The
-  measured theorem baseline is 0/5; after surface expansion of `and`, `not`,
-  `>`, `<=`, and `>=`, the remaining blockers are checked inequality/measure
-  reasoning rather than reader or linker compatibility.
+  six source events, no includes, and five theorem exports. It is now the
+  first strict source-green upstream island: all five theorem exports replay
+  to exact hypothesis-free NativeHol theorems. The reusable checked law pack
+  proves ACL2-COUNT totality, strict and weak CAR/CDR/sum bounds, positivity,
+  and explicit-cons growth from one shared carrier invariant. The complete
+  pack constructs in about 1.2 seconds warm; the pinned end-to-end source gate
+  passes 5/5 in about 61 seconds in a debug test build.
 
 ## First island design: IFIX/NFIX
 

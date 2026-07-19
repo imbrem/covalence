@@ -975,6 +975,15 @@ impl<'e> Planner<'e> {
                 why: format!("unknown head `{sym}`"),
             });
         }
+        // Caller lemmas get a head-first opportunity before R1.  This is
+        // essential for abstract facts such as a weak ACL2-COUNT bound:
+        // descending into ACL2-COUNT first exposes its CONSP guard and
+        // deliberately rolls back, even though the checked fact rewrites the
+        // complete outer `<` application without inspecting those arguments.
+        if let Some(head) = self.lemma_rewrite(t)? {
+            let rest = self.norm(&head.to)?;
+            return seq(t, vec![head, rest]);
+        }
         // R1 — congruence descent into the arguments.
         let stuck_before_args = self.stuck_guards.borrow().len();
         let arg_rws: Vec<Rw> = args.iter().map(|a| self.norm(a)).collect::<SResult<_>>()?;
@@ -1048,53 +1057,13 @@ impl<'e> Planner<'e> {
             }
             // R6 — oriented axiom rewrite.
             let mut fired = false;
-            for fact in &self.lemmas {
-                let mut conds = Vec::new();
-                let mut conclusion = fact.phi.clone();
-                while let Some((p, q)) = strip_implies(tm, &conclusion) {
-                    conds.push(p);
-                    conclusion = q;
-                }
-                let Some((lhs, rhs)) = parse_equal(tm, &conclusion) else {
-                    continue;
-                };
-                let mut sigma = Vec::new();
-                if !match_enc(tm, &lhs, &cur, &mut sigma) {
-                    continue;
-                }
-                let mut conds_h = Vec::new();
-                let mut ok = true;
-                for cond_pat in &conds {
-                    let cond = subst_pat(tm, cond_pat, &sigma)?;
-                    match self.holds(&cond, self.limits.holds_depth) {
-                        Ok(h) => conds_h.push(h),
-                        Err(_) => {
-                            ok = false;
-                            break;
-                        }
-                    }
-                }
-                if !ok {
-                    continue;
-                }
-                let to = subst_pat(tm, &rhs, &sigma)?;
-                if to == cur {
-                    continue;
-                }
-                chain.push(Rw {
-                    from: cur.clone(),
-                    to: to.clone(),
-                    just: Just::Lemma {
-                        fact: fact.clone(),
-                        binds: sigma,
-                        conds: conds_h,
-                    },
-                });
+            if let Some(lemma) = self.lemma_rewrite(&cur)? {
+                let to = lemma.to.clone();
+                chain.push(lemma);
                 let rest = self.norm(&to)?;
                 cur = rest.to.clone();
                 chain.push(rest);
                 fired = true;
-                break;
             }
             if fired {
                 continue;
@@ -1186,6 +1155,65 @@ impl<'e> Planner<'e> {
             break;
         }
         seq(t, chain)
+    }
+
+    /// Match a registered checked equality fact at one exact head.
+    ///
+    /// This is planning only. [`emit_rw`] reconstructs the selected instance
+    /// with checked INST/MP, and the shared node budget bounds cyclic or
+    /// otherwise badly oriented caller lemma sets.
+    fn lemma_rewrite(&self, cur: &Term) -> SResult<Option<Rw>> {
+        let tm = self.tm();
+        for fact in &self.lemmas {
+            let mut conds = Vec::new();
+            let mut conclusion = fact.phi.clone();
+            while let Some((p, q)) = strip_implies(tm, &conclusion) {
+                conds.push(p);
+                conclusion = q;
+            }
+            let Some((lhs, rhs)) = parse_equal(tm, &conclusion) else {
+                continue;
+            };
+            // As in ACL2 rewrite rules, a bare pattern variable is not a
+            // useful left-hand side: it would match every term and can invent
+            // unconstrained variables from the right-hand side.
+            if app_parts(tm, &lhs).is_none() {
+                continue;
+            }
+            let mut sigma = Vec::new();
+            if !match_enc(tm, &lhs, cur, &mut sigma) {
+                continue;
+            }
+            let mut conds_h = Vec::new();
+            let mut ok = true;
+            for cond_pat in &conds {
+                let cond = subst_pat(tm, cond_pat, &sigma)?;
+                match self.holds(&cond, self.limits.holds_depth) {
+                    Ok(h) => conds_h.push(h),
+                    Err(_) => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if !ok {
+                continue;
+            }
+            let to = subst_pat(tm, &rhs, &sigma)?;
+            if to == *cur {
+                continue;
+            }
+            return Ok(Some(Rw {
+                from: cur.clone(),
+                to,
+                just: Just::Lemma {
+                    fact: fact.clone(),
+                    binds: sigma,
+                    conds: conds_h,
+                },
+            }));
+        }
+        Ok(None)
     }
 
     /// R3-true guard evidence: the guard *as written* by a hypothesis or

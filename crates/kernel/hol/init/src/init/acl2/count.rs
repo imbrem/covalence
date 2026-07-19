@@ -272,8 +272,6 @@ pub fn acl2_count_cons_greater_fact(env: &Acl2Env) -> Result<Fact> {
     count_fact(env, "acl2-count-cons-greater")
 }
 
-// TODO(cov:acl2.count.upstream-five-theorem-gate, major): Transport all five exports of pinned std/lists/acl2-count.lisp and make its six-event, include-free report source-green.
-
 #[cfg(test)]
 mod tests {
     use super::*;

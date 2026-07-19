@@ -22,6 +22,7 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod arena;
 pub mod effect;
 pub mod host;
 pub mod relation;
@@ -35,6 +36,10 @@ pub use covalence_sexpr_api as sexpr;
 pub use admission::{
     AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition, ExistenceUniqueness,
     RecursiveCall, SourcedDefinition, TerminationCertificate, Totalization,
+};
+pub use arena::{
+    ArenaClosure, ArenaClosures, ArenaEnvironment, ArenaEnvironments, ArenaRecursiveCell,
+    ArenaRuntime, ArenaRuntimeError, ArenaValue, ArenaValues,
 };
 pub use effect::{
     EffectHandler, EffectReplay, EffectRequest, EffectResume, EffectRunError, EffectState,

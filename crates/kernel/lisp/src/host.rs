@@ -269,7 +269,9 @@ impl<S, A, P> Default for HostValues<S, A, P> {
     }
 }
 
-impl<S: Clone, A: Clone, P: Clone> LispValue for HostValues<S, A, P> {
+impl<S: Clone + PartialEq, A: Clone + PartialEq, P: Clone + PartialEq> LispValue
+    for HostValues<S, A, P>
+{
     type Atom = A;
     type Primitive = P;
     type Value = HostValue<S, A, P>;
@@ -311,9 +313,15 @@ impl<S: Clone, A: Clone, P: Clone> LispValue for HostValues<S, A, P> {
             HostValue::ApplyListProcedure => RuntimeValueView::ApplyListProcedure,
         })
     }
+
+    fn equivalent(&self, left: &Self::Value, right: &Self::Value) -> Result<bool, Self::Error> {
+        Ok(left == right)
+    }
 }
 
-impl<S: Clone, A: Clone, P: Clone> LispMachineValue for HostValues<S, A, P> {
+impl<S: Clone + PartialEq, A: Clone + PartialEq, P: Clone + PartialEq> LispMachineValue
+    for HostValues<S, A, P>
+{
     type Closure = Arc<HostClosure<S, A, P>>;
 
     fn roll(
@@ -446,8 +454,8 @@ impl<S, A, P> Default for HostRuntime<S, A, P> {
 impl<S, A, P> LispRuntime for HostRuntime<S, A, P>
 where
     S: Clone + PartialEq,
-    A: Clone,
-    P: Clone,
+    A: Clone + PartialEq,
+    P: Clone + PartialEq,
 {
     type Symbol = S;
     type Atom = A;
@@ -482,6 +490,30 @@ where
 
     fn environments(&self) -> &Self::Environments {
         &self.environments
+    }
+
+    fn data_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn value_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn expression_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn syntax_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn closure_error(&self, error: Infallible) -> Self::Error {
+        match error {}
+    }
+
+    fn environment_error(&self, error: Infallible) -> Self::Error {
+        match error {}
     }
 }
 
@@ -742,7 +774,9 @@ where
                 self.runtime
                     .expressions()
                     .view(expression)
-                    .map_err(CoreMachineError::Runtime)?,
+                    .map_err(|error| {
+                        CoreMachineError::Runtime(self.runtime.expression_error(error))
+                    })?,
                 CoreExprLayer::Lambda { .. }
             ) {
                 return Err(CoreMachineError::InvalidRecursiveInitializer(name.clone()));
@@ -754,7 +788,7 @@ where
                 parent,
                 bindings.iter().map(|(name, _)| name.clone()).collect(),
             )
-            .map_err(CoreMachineError::Runtime)?;
+            .map_err(|error| CoreMachineError::Runtime(self.runtime.environment_error(error)))?;
         let environment = allocation.environment;
         for ((_, expression), cell) in bindings.into_iter().zip(allocation.cells) {
             let CoreExprLayer::Lambda {
@@ -766,7 +800,7 @@ where
                 .runtime
                 .expressions()
                 .view(&expression)
-                .map_err(CoreMachineError::Runtime)?
+                .map_err(|error| CoreMachineError::Runtime(self.runtime.expression_error(error)))?
             else {
                 unreachable!("recursive initializers validated above")
             };
@@ -782,14 +816,16 @@ where
                     body,
                     environment: environment.clone(),
                 })
-                .map_err(CoreMachineError::Runtime)?;
+                .map_err(|error| CoreMachineError::Runtime(self.runtime.closure_error(error)))?;
             let closure = self
                 .values()
                 .roll(RuntimeValueLayer::Closure(closure))
-                .map_err(CoreMachineError::Runtime)?;
+                .map_err(|error| CoreMachineError::Runtime(self.runtime.value_error(error)))?;
             environments
                 .initialize_recursive(cell, closure)
-                .map_err(CoreMachineError::Runtime)?;
+                .map_err(|error| {
+                    CoreMachineError::Runtime(self.runtime.environment_error(error))
+                })?;
         }
         Ok(environment)
     }
@@ -990,7 +1026,7 @@ where
         let closure = match self
             .values()
             .unroll(&function)
-            .map_err(CoreMachineError::Runtime)?
+            .map_err(|error| CoreMachineError::Runtime(self.runtime.value_error(error)))?
         {
             RuntimeValueLayer::Closure(closure) => closure,
             RuntimeValueLayer::Primitive(primitive) => {
@@ -1021,7 +1057,7 @@ where
         let closure = self
             .closures()
             .open(&closure)
-            .map_err(CoreMachineError::Runtime)?;
+            .map_err(|error| CoreMachineError::Runtime(self.runtime.closure_error(error)))?;
         if closure.rest.is_none() && closure.parameters.len() != arguments.len() {
             return Err(CoreMachineError::Arity {
                 expected: ArityExpectation::Exactly(closure.parameters.len()),
@@ -1051,7 +1087,7 @@ where
                 rest.clone(),
                 self.values()
                     .list(arguments.into_iter().skip(closure.parameters.len()))
-                    .map_err(CoreMachineError::Runtime)?,
+                    .map_err(|error| CoreMachineError::Runtime(self.runtime.value_error(error)))?,
             ));
         }
         let parent = if self.strategy.lexical_scope {
@@ -1068,7 +1104,7 @@ where
                     .map(|(symbol, value)| RuntimeBinding::new(symbol, value))
                     .collect(),
             )
-            .map_err(CoreMachineError::Runtime)?;
+            .map_err(|error| CoreMachineError::Runtime(self.runtime.environment_error(error)))?;
         configuration.control = MachineControl::Expression(closure.body);
         Ok(Some(configuration))
     }
@@ -1076,7 +1112,7 @@ where
     fn proper_list(&self, value: R::Value) -> Result<Vec<R::Value>, RuntimeMachineError<R, P>> {
         self.values()
             .as_list(&value)
-            .map_err(CoreMachineError::Runtime)?
+            .map_err(|error| CoreMachineError::Runtime(self.runtime.value_error(error)))?
             .ok_or(CoreMachineError::ImproperArgumentList)
     }
 }
@@ -1100,14 +1136,17 @@ where
                     .runtime
                     .expressions()
                     .view(&expression)
-                    .map_err(CoreMachineError::Runtime)?
-                {
+                    .map_err(|error| {
+                        CoreMachineError::Runtime(self.runtime.expression_error(error))
+                    })? {
                     CoreExprLayer::Literal(datum) | CoreExprLayer::Quote(datum) => {
                         let value = inject_datum(self.runtime.data(), self.values(), &datum)
                             .map_err(|error| match error {
-                                RuntimeDatumError::Datum(error)
-                                | RuntimeDatumError::Value(error) => {
-                                    CoreMachineError::Runtime(error)
+                                RuntimeDatumError::Datum(error) => {
+                                    CoreMachineError::Runtime(self.runtime.data_error(error))
+                                }
+                                RuntimeDatumError::Value(error) => {
+                                    CoreMachineError::Runtime(self.runtime.value_error(error))
                                 }
                             });
                         next.control = MachineControl::Value(value?);
@@ -1123,7 +1162,9 @@ where
                         let value = self
                             .environments()
                             .lookup(&next.environment, &symbol)
-                            .map_err(CoreMachineError::Runtime)?
+                            .map_err(|error| {
+                                CoreMachineError::Runtime(self.runtime.environment_error(error))
+                            })?
                             .ok_or(CoreMachineError::UnboundVariable(symbol))?;
                         next.control = MachineControl::Value(value);
                     }
@@ -1141,12 +1182,15 @@ where
                     }
                     CoreExprLayer::Cond { clauses } => {
                         let syntax = self.runtime.expressions();
-                        let mut expression =
-                            syntax.truth(false).map_err(CoreMachineError::Runtime)?;
+                        let mut expression = syntax.truth(false).map_err(|error| {
+                            CoreMachineError::Runtime(self.runtime.syntax_error(error))
+                        })?;
                         for (condition, consequent) in clauses.into_iter().rev() {
                             expression = syntax
                                 .if_then_else(condition, consequent, expression)
-                                .map_err(CoreMachineError::Runtime)?;
+                                .map_err(|error| {
+                                    CoreMachineError::Runtime(self.runtime.syntax_error(error))
+                                })?;
                         }
                         next.control = MachineControl::Expression(expression);
                     }
@@ -1179,11 +1223,15 @@ where
                                 body,
                                 environment: next.environment.clone(),
                             })
-                            .map_err(CoreMachineError::Runtime)?;
+                            .map_err(|error| {
+                                CoreMachineError::Runtime(self.runtime.closure_error(error))
+                            })?;
                         next.control = MachineControl::Value(
                             self.values()
                                 .roll(RuntimeValueLayer::Closure(closure))
-                                .map_err(CoreMachineError::Runtime)?,
+                                .map_err(|error| {
+                                    CoreMachineError::Runtime(self.runtime.value_error(error))
+                                })?,
                         );
                     }
                     CoreExprLayer::Apply {
@@ -1239,14 +1287,16 @@ where
                             .collect();
                         let arguments = bindings.into_iter().map(|binding| binding.value).collect();
                         let syntax = self.runtime.expressions();
-                        let operator = syntax
-                            .lambda(None, parameters, None, body)
-                            .map_err(CoreMachineError::Runtime)?;
-                        next.control = MachineControl::Expression(
+                        let operator =
                             syntax
-                                .apply(operator, arguments)
-                                .map_err(CoreMachineError::Runtime)?,
-                        );
+                                .lambda(None, parameters, None, body)
+                                .map_err(|error| {
+                                    CoreMachineError::Runtime(self.runtime.syntax_error(error))
+                                })?;
+                        next.control =
+                            MachineControl::Expression(syntax.apply(operator, arguments).map_err(
+                                |error| CoreMachineError::Runtime(self.runtime.syntax_error(error)),
+                            )?);
                     }
                     CoreExprLayer::LetRec { bindings, body } => {
                         let environment = self.bind_recursive(
@@ -1284,14 +1334,18 @@ where
                         next.control = MachineControl::Value(
                             self.values()
                                 .roll(RuntimeValueLayer::Primitive(primitive))
-                                .map_err(CoreMachineError::Runtime)?,
+                                .map_err(|error| {
+                                    CoreMachineError::Runtime(self.runtime.value_error(error))
+                                })?,
                         );
                     }
                     CoreExprLayer::ApplyListProcedure => {
                         next.control = MachineControl::Value(
                             self.values()
                                 .roll(RuntimeValueLayer::ApplyListProcedure)
-                                .map_err(CoreMachineError::Runtime)?,
+                                .map_err(|error| {
+                                    CoreMachineError::Runtime(self.runtime.value_error(error))
+                                })?,
                         );
                     }
                 }
@@ -1634,6 +1688,30 @@ mod tests {
 
         fn environments(&self) -> &Self::Environments {
             self.0.environments()
+        }
+
+        fn data_error(&self, error: Infallible) -> Self::Error {
+            match error {}
+        }
+
+        fn value_error(&self, error: Infallible) -> Self::Error {
+            match error {}
+        }
+
+        fn expression_error(&self, error: Infallible) -> Self::Error {
+            match error {}
+        }
+
+        fn syntax_error(&self, error: Infallible) -> Self::Error {
+            match error {}
+        }
+
+        fn closure_error(&self, error: Infallible) -> Self::Error {
+            match error {}
+        }
+
+        fn environment_error(&self, error: Infallible) -> Self::Error {
+            match error {}
         }
     }
 

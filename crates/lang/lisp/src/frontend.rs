@@ -7,13 +7,15 @@
 //! the same core syntax without sharing ACL2 admission or Scheme-specific
 //! surface extensions.
 
+use core::convert::Infallible;
 use core::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 use covalence_kernel_lisp::{
-    CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum, Definition as LispDefinition,
-    ExecutionError, HostConfiguration, HostEnvironment, HostEnvironments, HostValue, HostValues,
-    LispEnvironment, LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute,
+    ArenaRuntime, CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum,
+    Definition as LispDefinition, ExecutionError, HostConfiguration, HostEnvironment, HostValue,
+    LispEnvironment, LispMachine, LispRuntime, LispValue, PrimitiveSemantics, RuntimeBinding,
+    RuntimeValueView, execute,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -596,134 +598,180 @@ pub enum PrimitiveError {
     ExpectedInteger,
 }
 
+/// Primitive-language failure separated from representation failure.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PrimitiveExecutionError<E> {
+    Language(PrimitiveError),
+    Runtime(E),
+}
+
+impl<E> From<PrimitiveError> for PrimitiveExecutionError<E> {
+    fn from(error: PrimitiveError) -> Self {
+        Self::Language(error)
+    }
+}
+
+pub type HostPrimitiveError = PrimitiveExecutionError<Infallible>;
+
 impl CorePrimitive for StandardPrimitives {
     type Symbol = String;
     type Atom = CoreAtom;
     type Primitive = Primitive;
 }
 
-impl PrimitiveSemantics<HostValues<String, CoreAtom, Primitive>> for StandardPrimitives {
-    type Error = PrimitiveError;
+impl<V> PrimitiveSemantics<V> for StandardPrimitives
+where
+    V: LispValue<Atom = CoreAtom, Primitive = Primitive>,
+{
+    type Error = PrimitiveExecutionError<V::Error>;
 
     fn apply(
         &self,
-        runtime: &HostValues<String, CoreAtom, Primitive>,
+        runtime: &V,
         primitive: &Primitive,
-        arguments: &[FrontendValue],
-    ) -> Result<FrontendValue, PrimitiveError> {
+        arguments: &[V::Value],
+    ) -> Result<V::Value, Self::Error> {
         match primitive {
             Primitive::Cons => {
-                let [head, tail] = self.values::<2>(arguments)?;
-                Ok(runtime
+                let [head, tail] = self.values::<_, 2>(arguments)?;
+                runtime
                     .cons(head, tail)
-                    .expect("the direct host value backend is infallible"))
+                    .map_err(PrimitiveExecutionError::Runtime)
             }
             Primitive::Car => {
-                let [value] = self.values::<1>(arguments)?;
-                match value {
-                    HostValue::Cons(head, _) => Ok(*head),
-                    HostValue::Atom(_)
-                    | HostValue::Nil
-                    | HostValue::Closure(_)
-                    | HostValue::Primitive(_)
-                    | HostValue::ApplyListProcedure => Ok(HostValue::Nil),
+                let [value] = self.values::<_, 1>(arguments)?;
+                match runtime
+                    .view(&value)
+                    .map_err(PrimitiveExecutionError::Runtime)?
+                {
+                    RuntimeValueView::Cons { head, .. } => Ok(head),
+                    _ => Ok(runtime.nil()),
                 }
             }
             Primitive::Cdr => {
-                let [value] = self.values::<1>(arguments)?;
-                match value {
-                    HostValue::Cons(_, tail) => Ok(*tail),
-                    HostValue::Atom(_)
-                    | HostValue::Nil
-                    | HostValue::Closure(_)
-                    | HostValue::Primitive(_)
-                    | HostValue::ApplyListProcedure => Ok(HostValue::Nil),
+                let [value] = self.values::<_, 1>(arguments)?;
+                match runtime
+                    .view(&value)
+                    .map_err(PrimitiveExecutionError::Runtime)?
+                {
+                    RuntimeValueView::Cons { tail, .. } => Ok(tail),
+                    _ => Ok(runtime.nil()),
                 }
             }
             Primitive::Atom => {
-                let [value] = self.values::<1>(arguments)?;
-                self.truth(runtime, !matches!(value, HostValue::Cons(_, _)))
+                let [value] = self.values::<_, 1>(arguments)?;
+                let is_atom = !matches!(
+                    runtime
+                        .view(&value)
+                        .map_err(PrimitiveExecutionError::Runtime)?,
+                    RuntimeValueView::Cons { .. }
+                );
+                self.truth(runtime, is_atom)
             }
             Primitive::Consp => {
-                let [value] = self.values::<1>(arguments)?;
-                self.truth(runtime, matches!(value, HostValue::Cons(_, _)))
+                let [value] = self.values::<_, 1>(arguments)?;
+                let is_cons = matches!(
+                    runtime
+                        .view(&value)
+                        .map_err(PrimitiveExecutionError::Runtime)?,
+                    RuntimeValueView::Cons { .. }
+                );
+                self.truth(runtime, is_cons)
             }
             Primitive::Null => {
-                let [value] = self.values::<1>(arguments)?;
-                self.truth(runtime, matches!(value, HostValue::Nil))
+                let [value] = self.values::<_, 1>(arguments)?;
+                let is_nil = matches!(
+                    runtime
+                        .view(&value)
+                        .map_err(PrimitiveExecutionError::Runtime)?,
+                    RuntimeValueView::Nil
+                );
+                self.truth(runtime, is_nil)
             }
             Primitive::Integer => {
-                let [value] = self.values::<1>(arguments)?;
-                self.truth(
-                    runtime,
-                    matches!(value, HostValue::Atom(CoreAtom::Integer(_))),
-                )
+                let [value] = self.values::<_, 1>(arguments)?;
+                let is_integer = matches!(
+                    runtime
+                        .view(&value)
+                        .map_err(PrimitiveExecutionError::Runtime)?,
+                    RuntimeValueView::Atom(CoreAtom::Integer(_))
+                );
+                self.truth(runtime, is_integer)
             }
             Primitive::Equal => {
-                let [left, right] = self.values::<2>(arguments)?;
-                self.truth(runtime, left == right)
+                let [left, right] = self.values::<_, 2>(arguments)?;
+                let equal = runtime
+                    .equivalent(&left, &right)
+                    .map_err(PrimitiveExecutionError::Runtime)?;
+                self.truth(runtime, equal)
             }
-            Primitive::Add => self.integer_binary(arguments, |left, right| left + right),
-            Primitive::Subtract => self.integer_binary(arguments, |left, right| left - right),
-            Primitive::Multiply => self.integer_binary(arguments, |left, right| left * right),
+            Primitive::Add => self.integer_binary(runtime, arguments, |left, right| left + right),
+            Primitive::Subtract => {
+                self.integer_binary(runtime, arguments, |left, right| left - right)
+            }
+            Primitive::Multiply => {
+                self.integer_binary(runtime, arguments, |left, right| left * right)
+            }
             Primitive::LessEqual => {
-                let [left, right] = self.integers(arguments)?;
+                let [left, right] = self.integers(runtime, arguments)?;
                 self.truth(runtime, left <= right)
             }
             Primitive::Append => {
-                let [left, right] = self.values::<2>(arguments)?;
-                Ok(Self::append(left, right))
+                let [left, right] = self.values::<_, 2>(arguments)?;
+                self.append(runtime, left, right)
             }
         }
     }
 
-    fn truth(
-        &self,
-        runtime: &HostValues<String, CoreAtom, Primitive>,
-        value: bool,
-    ) -> Result<FrontendValue, PrimitiveError> {
-        Ok(if value {
+    fn truth(&self, runtime: &V, value: bool) -> Result<V::Value, Self::Error> {
+        if value {
             runtime
                 .atom(CoreAtom::symbol("t"))
-                .expect("the direct host value backend is infallible")
+                .map_err(PrimitiveExecutionError::Runtime)
         } else {
-            runtime.nil()
-        })
+            Ok(runtime.nil())
+        }
     }
 
-    fn is_false(
-        &self,
-        runtime: &HostValues<String, CoreAtom, Primitive>,
-        value: &FrontendValue,
-    ) -> Result<bool, PrimitiveError> {
+    fn is_false(&self, runtime: &V, value: &V::Value) -> Result<bool, Self::Error> {
         Ok(matches!(
             runtime
                 .view(value)
-                .expect("the direct host value backend is infallible"),
+                .map_err(PrimitiveExecutionError::Runtime)?,
             RuntimeValueView::Nil
         ))
     }
 }
 
 impl StandardPrimitives {
-    fn append(left: FrontendValue, right: FrontendValue) -> FrontendValue {
-        match left {
-            HostValue::Nil => right,
-            HostValue::Cons(head, tail) => HostValue::cons(*head, Self::append(*tail, right)),
+    fn append<V: LispValue<Atom = CoreAtom, Primitive = Primitive>>(
+        &self,
+        runtime: &V,
+        left: V::Value,
+        right: V::Value,
+    ) -> Result<V::Value, PrimitiveExecutionError<V::Error>> {
+        match runtime
+            .view(&left)
+            .map_err(PrimitiveExecutionError::Runtime)?
+        {
+            RuntimeValueView::Nil => Ok(right),
+            RuntimeValueView::Cons { head, tail } => {
+                let tail = self.append(runtime, tail, right)?;
+                runtime
+                    .cons(head, tail)
+                    .map_err(PrimitiveExecutionError::Runtime)
+            }
             // ACL2's `binary-append` and the existing kernel Lisp theory use
             // this total extension. Scheme programs should still pass proper
             // lists; the shared primitive remains defined on every datum.
-            HostValue::Atom(_)
-            | HostValue::Closure(_)
-            | HostValue::Primitive(_)
-            | HostValue::ApplyListProcedure => right,
+            RuntimeValueView::Atom(_)
+            | RuntimeValueView::Closure
+            | RuntimeValueView::Primitive(_)
+            | RuntimeValueView::ApplyListProcedure => Ok(right),
         }
     }
 
-    fn values<const N: usize>(
-        &self,
-        arguments: &[FrontendValue],
-    ) -> Result<[FrontendValue; N], PrimitiveError> {
+    fn values<V: Clone, const N: usize>(&self, arguments: &[V]) -> Result<[V; N], PrimitiveError> {
         if arguments.len() != N {
             return Err(PrimitiveError::Arity {
                 expected: N,
@@ -736,12 +784,23 @@ impl StandardPrimitives {
             .map_err(|_| unreachable!("length checked"))
     }
 
-    fn integers(&self, arguments: &[FrontendValue]) -> Result<[Int; 2], PrimitiveError> {
-        let values = self.values::<2>(arguments)?;
+    fn integers<V: LispValue<Atom = CoreAtom, Primitive = Primitive>>(
+        &self,
+        runtime: &V,
+        arguments: &[V::Value],
+    ) -> Result<[Int; 2], PrimitiveExecutionError<V::Error>> {
+        let values = self.values::<_, 2>(arguments)?;
         values
-            .map(|value| match value {
-                HostValue::Atom(CoreAtom::Integer(value)) => Ok(value),
-                _ => Err(PrimitiveError::ExpectedInteger),
+            .map(|value| {
+                match runtime
+                    .view(&value)
+                    .map_err(PrimitiveExecutionError::Runtime)?
+                {
+                    RuntimeValueView::Atom(CoreAtom::Integer(value)) => {
+                        Ok::<Int, PrimitiveExecutionError<V::Error>>(value)
+                    }
+                    _ => Err(PrimitiveError::ExpectedInteger.into()),
+                }
             })
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?
@@ -749,18 +808,32 @@ impl StandardPrimitives {
             .map_err(|_| unreachable!("array length preserved"))
     }
 
-    fn integer_binary(
+    fn integer_binary<V: LispValue<Atom = CoreAtom, Primitive = Primitive>>(
         &self,
-        arguments: &[FrontendValue],
+        runtime: &V,
+        arguments: &[V::Value],
         operation: impl FnOnce(Int, Int) -> Int,
-    ) -> Result<FrontendValue, PrimitiveError> {
-        let [left, right] = self.integers(arguments)?;
-        Ok(HostValue::Atom(CoreAtom::Integer(operation(left, right))))
+    ) -> Result<V::Value, PrimitiveExecutionError<V::Error>> {
+        let [left, right] = self.integers(runtime, arguments)?;
+        runtime
+            .atom(CoreAtom::Integer(operation(left, right)))
+            .map_err(PrimitiveExecutionError::Runtime)
     }
 }
 
 pub fn host_machine() -> CoreMachine<StandardPrimitives> {
     CoreMachine::new(StandardPrimitives)
+}
+
+pub type ArenaFrontendRuntime = ArenaRuntime<String, CoreAtom, Primitive>;
+pub type ArenaFrontendMachine = LispMachine<ArenaFrontendRuntime, StandardPrimitives>;
+
+pub fn arena_machine() -> ArenaFrontendMachine {
+    LispMachine::with_runtime(
+        ArenaFrontendRuntime::default(),
+        StandardPrimitives,
+        covalence_kernel_lisp::Strategy::STRICT_LEXICAL,
+    )
 }
 
 const SCHEME_PRIMITIVES: &[(&str, Primitive)] = &[
@@ -785,16 +858,29 @@ const SCHEME_PRIMITIVES: &[(&str, Primitive)] = &[
     ("append", Primitive::Append),
 ];
 
-/// Initial lexical bindings supplied by a concrete host frontend.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InitialEnvironmentError<V, E> {
+    Value(V),
+    Environment(E),
+}
+
+/// Initial lexical bindings supplied by a concrete frontend runtime.
 ///
 /// Kernel evaluation itself has no distinguished names: Scheme chooses these
 /// bindings as language policy, making primitives ordinary shadowable values
 /// rather than syntax.
-pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
-    let environments = HostEnvironments::<String, FrontendValue>::default();
+pub fn initial_environment_for<V, E>(
+    values: &V,
+    environments: &E,
+    dialect: SurfaceDialect,
+) -> Result<E::Environment, InitialEnvironmentError<V::Error, E::Error>>
+where
+    V: LispValue<Atom = CoreAtom, Primitive = Primitive, Value = E::Value>,
+    E: LispEnvironment<Symbol = String>,
+{
     let environment = environments.empty();
     if dialect != SurfaceDialect::Scheme {
-        return environment;
+        return Ok(environment);
     }
     environments
         .extend(
@@ -802,15 +888,29 @@ pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
             SCHEME_PRIMITIVES
                 .iter()
                 .map(|(name, primitive)| {
-                    RuntimeBinding::new((*name).to_owned(), HostValue::Primitive(*primitive))
+                    values
+                        .primitive(*primitive)
+                        .map(|value| RuntimeBinding::new((*name).to_owned(), value))
+                        .map_err(InitialEnvironmentError::Value)
                 })
-                .chain([RuntimeBinding::new(
+                .chain([Ok(RuntimeBinding::new(
                     "apply".to_owned(),
-                    HostValue::ApplyListProcedure,
-                )])
-                .collect(),
+                    values.apply_list_procedure(),
+                ))])
+                .collect::<Result<Vec<_>, _>>()?,
         )
-        .expect("the direct host environment is infallible")
+        .map_err(InitialEnvironmentError::Environment)
+}
+
+pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
+    let runtime = covalence_kernel_lisp::HostRuntime::<String, CoreAtom, Primitive>::default();
+    initial_environment_for(runtime.values(), runtime.environments(), dialect).unwrap_or_else(
+        |error| match error {
+            InitialEnvironmentError::Value(never) | InitialEnvironmentError::Environment(never) => {
+                match never {}
+            }
+        },
+    )
 }
 
 /// Stateful proof-free frontend execution.
@@ -827,8 +927,8 @@ pub struct HostSession {
 #[derive(Debug)]
 pub enum HostSessionError {
     Lower(LowerError),
-    Execute(ExecutionError<CoreMachineError<String, PrimitiveError>>),
-    Machine(CoreMachineError<String, PrimitiveError>),
+    Execute(ExecutionError<CoreMachineError<String, HostPrimitiveError>>),
+    Machine(CoreMachineError<String, HostPrimitiveError>),
     ExpectedDefinition { index: usize },
     DefinitionDidNotProduceClosure,
 }
@@ -962,6 +1062,30 @@ mod tests {
             .unwrap()
     }
 
+    fn run_arena(source: &str) -> CoreAtom {
+        let expression = Frontend::new(SurfaceDialect::Scheme)
+            .lower(&one(source))
+            .unwrap();
+        let machine = arena_machine();
+        let environment = initial_environment_for(
+            machine.runtime().values(),
+            machine.runtime().environments(),
+            SurfaceDialect::Scheme,
+        )
+        .unwrap();
+        let trace = execute(
+            &machine,
+            covalence_kernel_lisp::MachineConfiguration::with_environment(expression, environment),
+            256,
+        )
+        .unwrap();
+        let value = trace.end().terminal_value().expect("terminal value");
+        match machine.runtime().values().view(value).unwrap() {
+            RuntimeValueView::Atom(atom) => atom,
+            other => panic!("expected atom, got {other:?}"),
+        }
+    }
+
     #[test]
     fn sector_pairs_lower_to_the_common_core() {
         assert_eq!(
@@ -978,6 +1102,21 @@ mod tests {
                 "(let ((twice (lambda (x) (+ x x)))) (twice 21))"
             ),
             HostValue::datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
+        );
+    }
+
+    #[test]
+    fn scheme_programs_run_unchanged_on_the_handle_runtime() {
+        assert_eq!(
+            run_arena(
+                "(letrec ((length
+                            (lambda (xs)
+                              (if (null? xs)
+                                  0
+                                  (+ 1 (length (cdr xs)))))))
+                   (length (quote (a b c))))"
+            ),
+            CoreAtom::Integer(Int::from(3))
         );
     }
 

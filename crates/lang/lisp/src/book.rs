@@ -40,6 +40,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
+use covalence_hash::sha256;
 use covalence_sexp::SExpr;
 
 use crate::acl2::{Acl2Proof, Acl2Session};
@@ -100,6 +101,12 @@ pub enum EventOutcome {
         /// The outstanding logical work.
         reason: String,
     },
+    /// A resolved include represented by a content-verified theorem-neutral
+    /// interface instead of recursive source replay.
+    DependencyInterface {
+        /// SHA-256 of the exact dependency source accepted by the interface.
+        sha256: String,
+    },
     /// Rejected (reason says why); processing continued.
     Rejected {
         /// Why the event was rejected.
@@ -138,6 +145,27 @@ pub struct BookReport {
     pub path: String,
     /// Every processed event, in processing order (included books inline).
     pub events: Vec<EventRecord>,
+    /// Successfully applied content-verified theorem-neutral include
+    /// interfaces. These are import evidence, never theorem authority.
+    pub dependency_interfaces: Vec<DependencyInterfaceRecord>,
+}
+
+/// Evidence that one exact dependency source was replaced by a closed
+/// theorem-neutral importer capability.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DependencyInterfaceRecord {
+    /// Book containing the include event.
+    pub requested_by: String,
+    /// Named include root, or `None` for the main book root.
+    pub root: Option<String>,
+    /// Canonical root-relative source path including extension.
+    pub source: String,
+    /// Verified exact source SHA-256.
+    pub sha256: String,
+    /// Closed importer behavior used for the interface.
+    pub capability: TheoremNeutralCapability,
+    /// Audit-facing reason this dependency is theorem-neutral here.
+    pub rationale: String,
 }
 
 /// Stable high-level classes used by large-corpus import gates.
@@ -218,6 +246,19 @@ pub enum CompletenessLevel {
     TheoremsComplete,
 }
 
+/// How the dependency source boundary was represented for this report.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SourceClosureStatus {
+    /// Some observed event or dependency failed, so closure is incomplete.
+    #[default]
+    Incomplete,
+    /// Every included source was recursively traversed.
+    Recursive,
+    /// Logical closure used verified theorem-neutral interfaces; the number
+    /// is the exact count applied during this run.
+    Interfaced { verified: usize },
+}
+
 /// Structured stage counts for either the requested book or its full closure.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CompletenessScope {
@@ -229,14 +270,21 @@ pub struct CompletenessScope {
     pub theorems: CompletenessCount,
     /// Required include dependencies that did not resolve.
     pub unresolved_dependencies: usize,
+    /// Content-verified theorem-neutral interfaces used instead of recursive
+    /// source replay.
+    pub dependency_interfaces: usize,
 }
 
 impl CompletenessScope {
-    const fn is_complete(self) -> bool {
+    const fn is_logically_complete(self) -> bool {
         self.events.is_complete()
             && self.definitions.is_complete()
             && self.theorems.is_complete()
             && self.unresolved_dependencies == 0
+    }
+
+    const fn is_source_complete(self) -> bool {
+        self.is_logically_complete() && self.dependency_interfaces == 0
     }
 }
 
@@ -255,9 +303,19 @@ pub struct CompletenessReport {
     pub closure: CompletenessScope,
     /// Strongest level reached by this observed stream.
     pub level: CompletenessLevel,
+    /// Whether dependency sources were recursive, interfaced, or incomplete.
+    pub source_closure: SourceClosureStatus,
 }
 
 impl CompletenessReport {
+    /// Whether the logical import boundary is complete. Content-verified,
+    /// theorem-neutral dependency interfaces are allowed at this boundary.
+    pub const fn is_logical_green_island(self) -> bool {
+        matches!(self.level, CompletenessLevel::TheoremsComplete)
+            && self.target.is_logically_complete()
+            && self.closure.is_logically_complete()
+    }
+
     /// Strict green-island predicate for an observed, closed book stream.
     ///
     /// A green island has no rejected event or unresolved dependency, every
@@ -265,8 +323,8 @@ impl CompletenessReport {
     /// intentionally stricter than a successful parser/linker inventory.
     pub const fn is_green_island(self) -> bool {
         matches!(self.level, CompletenessLevel::TheoremsComplete)
-            && self.target.is_complete()
-            && self.closure.is_complete()
+            && self.target.is_source_complete()
+            && self.closure.is_source_complete()
     }
 }
 
@@ -325,6 +383,7 @@ impl BookReport {
                 EventOutcome::Admitted { .. } => t.admitted += 1,
                 EventOutcome::Skipped { .. }
                 | EventOutcome::DeferredLogical { .. }
+                | EventOutcome::DependencyInterface { .. }
                 | EventOutcome::UnresolvedDependency { .. } => t.skipped += 1,
                 EventOutcome::Rejected { .. } => t.rejected += 1,
             }
@@ -382,6 +441,17 @@ impl BookReport {
         } else {
             CompletenessLevel::TheoremsComplete
         };
+        report.source_closure = if !report.closure.events.is_complete()
+            || report.closure.unresolved_dependencies != 0
+        {
+            SourceClosureStatus::Incomplete
+        } else if report.closure.dependency_interfaces != 0 {
+            SourceClosureStatus::Interfaced {
+                verified: report.closure.dependency_interfaces,
+            }
+        } else {
+            SourceClosureStatus::Recursive
+        };
         report
     }
 }
@@ -398,6 +468,9 @@ fn count_completeness_event(scope: &mut CompletenessScope, event: &EventRecord) 
     }
     if matches!(event.outcome, EventOutcome::UnresolvedDependency { .. }) {
         scope.unresolved_dependencies += 1;
+    }
+    if matches!(event.outcome, EventOutcome::DependencyInterface { .. }) {
+        scope.dependency_interfaces += 1;
     }
     // Count logical obligations from their source event kind, independently
     // of outcome.  A rejected theorem is still part of the denominator.
@@ -523,6 +596,10 @@ impl fmt::Display for BookReport {
                 ),
                 EventOutcome::Skipped { reason } => ("skipped", reason.clone()),
                 EventOutcome::DeferredLogical { reason } => ("DEFERRED", reason.clone()),
+                EventOutcome::DependencyInterface { sha256 } => (
+                    "INTERFACE",
+                    format!("content-verified theorem-neutral dependency ({sha256})"),
+                ),
                 EventOutcome::Rejected { reason } => ("REJECTED", reason.clone()),
                 EventOutcome::UnresolvedDependency { reason } => ("UNRESOLVED", reason.clone()),
             };
@@ -573,6 +650,47 @@ pub struct BookConfig {
     dir_roots: BTreeMap<String, PathBuf>,
     extensions: Vec<String>,
     inventory_only: bool,
+    theorem_neutral_interfaces: BTreeMap<(Option<String>, String), TheoremNeutralInterface>,
+    configuration_errors: Vec<String>,
+}
+
+/// Content-identified contract for an included book that contributes no
+/// logical definitions or theorems to the importing book.
+///
+/// This is an untrusted host-import boundary: it can omit source processing,
+/// but it cannot create a kernel definition or theorem. Any later reference
+/// to an omitted logical symbol therefore still fails closed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TheoremNeutralInterface {
+    sha256: [u8; 32],
+    capability: TheoremNeutralCapability,
+    rationale: String,
+}
+
+/// Closed set of importer behaviors that an include interface may rely on.
+///
+/// Configurations cannot invent macro semantics: every variant corresponds
+/// to frontend behavior implemented and tested in this crate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TheoremNeutralCapability {
+    /// The target uses only the importer's built-in transparent `defsection`
+    /// event-container semantics from this dependency.
+    TransparentDefsection,
+}
+
+impl TheoremNeutralInterface {
+    /// Declare the exact source digest and an audit-facing explanation.
+    pub fn new(
+        sha256: [u8; 32],
+        capability: TheoremNeutralCapability,
+        rationale: impl Into<String>,
+    ) -> Self {
+        Self {
+            sha256,
+            capability,
+            rationale: rationale.into(),
+        }
+    }
 }
 
 impl BookConfig {
@@ -584,6 +702,8 @@ impl BookConfig {
             dir_roots: BTreeMap::new(),
             extensions: vec!["lisp".into(), "lsp".into(), "acl2".into()],
             inventory_only: false,
+            theorem_neutral_interfaces: BTreeMap::new(),
+            configuration_errors: Vec::new(),
         }
     }
 
@@ -604,6 +724,57 @@ impl BookConfig {
         self
     }
 
+    /// Represent an ordinary root-relative include through an exact,
+    /// theorem-neutral source interface.
+    #[must_use]
+    pub fn with_theorem_neutral_interface(
+        mut self,
+        source: impl Into<String>,
+        interface: TheoremNeutralInterface,
+    ) -> Self {
+        self.insert_theorem_neutral_interface(
+            (None, normalize_interface_source(source.into())),
+            interface,
+        );
+        self
+    }
+
+    /// Represent an include reached through `:dir DIR` using an exact,
+    /// theorem-neutral source interface.
+    #[must_use]
+    pub fn with_dir_theorem_neutral_interface(
+        mut self,
+        dir: impl AsRef<str>,
+        source: impl Into<String>,
+        interface: TheoremNeutralInterface,
+    ) -> Self {
+        self.insert_theorem_neutral_interface(
+            (
+                Some(normalize_dir_name(dir.as_ref())),
+                normalize_interface_source(source.into()),
+            ),
+            interface,
+        );
+        self
+    }
+
+    fn insert_theorem_neutral_interface(
+        &mut self,
+        key: (Option<String>, String),
+        interface: TheoremNeutralInterface,
+    ) {
+        if let Some(previous) = self.theorem_neutral_interfaces.get(&key) {
+            if previous != &interface {
+                self.configuration_errors.push(format!(
+                    "conflicting theorem-neutral interfaces for {:?}/{}",
+                    key.0, key.1
+                ));
+            }
+            return;
+        }
+        self.theorem_neutral_interfaces.insert(key, interface);
+    }
+
     /// Replace the ordered extension search list. Leading dots are optional.
     /// An explicitly extension-bearing include is always tried as written.
     #[must_use]
@@ -619,6 +790,41 @@ impl BookConfig {
             .collect();
         self
     }
+}
+
+fn normalize_interface_source(mut source: String) -> String {
+    while let Some(rest) = source.strip_prefix("./") {
+        source = rest.to_string();
+    }
+    source
+}
+
+fn hex_digest(digest: &[u8; 32]) -> String {
+    let mut out = String::with_capacity(64);
+    for byte in digest {
+        use std::fmt::Write as _;
+        write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    out
+}
+
+fn verify_interface_source(file: &Path, expected: &[u8; 32]) -> Result<String, String> {
+    let bytes = std::fs::read(file)
+        .map_err(|error| format!("could not read {}: {error}", file.display()))?;
+    let actual = sha256(&bytes);
+    if &actual != expected {
+        return Err(format!(
+            "SHA-256 mismatch for {}: expected {}, got {}",
+            file.display(),
+            hex_digest(expected),
+            hex_digest(&actual)
+        ));
+    }
+    let source = std::str::from_utf8(&bytes)
+        .map_err(|error| format!("{} is not UTF-8 ACL2 source: {error}", file.display()))?;
+    read_book(source)
+        .map_err(|error| format!("{} is not readable ACL2 source: {error}", file.display()))?;
+    Ok(hex_digest(&actual))
 }
 
 fn normalize_dir_name(name: &str) -> String {
@@ -701,6 +907,8 @@ struct Pipeline<'s> {
     dir_roots: BTreeMap<String, LookupRoot>,
     extensions: Vec<String>,
     inventory_only: bool,
+    theorem_neutral_interfaces: BTreeMap<(Option<String>, String), TheoremNeutralInterface>,
+    applied_dependency_interfaces: Vec<DependencyInterfaceRecord>,
     /// Current ACL2 default definition mode, changed by ordered `(program)`
     /// and `(logic)` events.
     program_mode: bool,
@@ -775,6 +983,12 @@ fn run_book_with_config_inner(
     config: &BookConfig,
     path: &str,
 ) -> Result<BookReport, BookError> {
+    if let Some(error) = config.configuration_errors.first() {
+        return Err(BookError::Path(
+            path.into(),
+            format!("invalid book configuration: {error}"),
+        ));
+    }
     let root = config
         .root
         .canonicalize()
@@ -812,6 +1026,8 @@ fn run_book_with_config_inner(
         dir_roots,
         extensions: config.extensions.clone(),
         inventory_only: config.inventory_only,
+        theorem_neutral_interfaces: config.theorem_neutral_interfaces.clone(),
+        applied_dependency_interfaces: Vec::new(),
         program_mode: false,
         macro_depth: 0,
         seen: BTreeSet::new(),
@@ -865,6 +1081,7 @@ fn run_book_with_config_inner(
     Ok(BookReport {
         path: display,
         events: pipe.events,
+        dependency_interfaces: pipe.applied_dependency_interfaces,
     })
 }
 
@@ -3449,7 +3666,34 @@ impl Pipeline<'_> {
                 reason: format!("dependency not found ({}) — skipped", p.display()),
             },
             Ok(Resolved::Found(f)) => {
-                if !self.seen.insert(f.clone()) {
+                let interface_root = selected_root.label.as_deref().map(normalize_dir_name);
+                let interface_source = display_rel(&selected_root.path, &f);
+                let interface_key = (interface_root.clone(), interface_source.clone());
+                if let Some(interface) =
+                    self.theorem_neutral_interfaces.get(&interface_key).cloned()
+                {
+                    match verify_interface_source(&f, &interface.sha256) {
+                        Err(reason) => EventOutcome::UnresolvedDependency {
+                            reason: format!("dependency interface {reason}"),
+                        },
+                        Ok(_) if !self.seen.insert(f.clone()) => EventOutcome::Skipped {
+                            reason: "already included — idempotent".into(),
+                        },
+                        Ok(digest) => {
+                            self.applied_dependency_interfaces
+                                .push(DependencyInterfaceRecord {
+                                    requested_by: book.into(),
+                                    root: interface_root,
+                                    source: interface_source,
+                                    sha256: digest.clone(),
+                                    capability: interface.capability,
+                                    rationale: interface.rationale.clone(),
+                                });
+                            rec.notes.push(interface.rationale.clone());
+                            EventOutcome::DependencyInterface { sha256: digest }
+                        }
+                    }
+                } else if !self.seen.insert(f.clone()) {
                     EventOutcome::Skipped {
                         reason: "already included — idempotent".into(),
                     }
@@ -3511,6 +3755,9 @@ impl Pipeline<'_> {
             EventOutcome::DeferredLogical { reason } => EventOutcome::DeferredLogical {
                 reason: format!("local: {reason}"),
             },
+            EventOutcome::DependencyInterface { sha256 } => {
+                EventOutcome::DependencyInterface { sha256 }
+            }
             EventOutcome::UnresolvedDependency { reason } => EventOutcome::UnresolvedDependency {
                 reason: format!("local: {reason}"),
             },

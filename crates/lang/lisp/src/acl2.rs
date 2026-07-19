@@ -89,6 +89,7 @@ use std::sync::{LazyLock, Mutex};
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::{as_bool, as_int, mk_bool, mk_int};
+use covalence_init::init::acl2::count::with_acl2_count;
 use covalence_init::init::acl2::defun::{
     Acl2Session as KernelAcl2Session, DefunSpec, admit_defun as admit_kernel_defun,
 };
@@ -124,7 +125,8 @@ fn shadow_env() -> covalence_core::Result<Acl2Env> {
     let structural = s6_env()?;
     let ordinal = with_ordinals(&structural)?;
     let fixers = with_fixers(&ordinal)?;
-    with_arith_rules(&fixers)
+    let count = with_acl2_count(&fixers)?;
+    with_arith_rules(&count)
 }
 
 // ============================================================================
@@ -1697,6 +1699,28 @@ fn deep_encode(tm: &Terms, e: &SExpr, formals: &[String]) -> Result<Term, String
                 .map(|a| deep_encode(tm, a, formals))
                 .collect::<Result<_, _>>()?;
             match head {
+                "and" => {
+                    let mut out = tm.quote(&tm.pr.t).map_err(|e| e.to_string())?;
+                    let nil = tm.quote(&tm.th.nil).map_err(|e| e.to_string())?;
+                    for arg in enc_args.iter().rev() {
+                        out = tm.mk_if(arg, &out, &nil).map_err(|e| e.to_string())?;
+                    }
+                    Ok(out)
+                }
+                "or" => {
+                    let mut out = tm.quote(&tm.th.nil).map_err(|e| e.to_string())?;
+                    for arg in enc_args.iter().rev() {
+                        out = tm.mk_if(arg, arg, &out).map_err(|e| e.to_string())?;
+                    }
+                    Ok(out)
+                }
+                "not" if enc_args.len() == 1 => tm
+                    .mk_if(
+                        &enc_args[0],
+                        &tm.quote(&tm.th.nil).map_err(|e| e.to_string())?,
+                        &tm.quote(&tm.pr.t).map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string()),
                 "if" if enc_args.len() == 3 => tm
                     .mk_if(&enc_args[0], &enc_args[1], &enc_args[2])
                     .map_err(|e| e.to_string()),
@@ -1706,6 +1730,31 @@ fn deep_encode(tm: &Terms, e: &SExpr, formals: &[String]) -> Result<Term, String
                 "implies" if enc_args.len() == 2 => tm
                     .mk_implies(&enc_args[0], &enc_args[1])
                     .map_err(|e| e.to_string()),
+                ">" if enc_args.len() == 2 => tm
+                    .app(b"<", &[enc_args[1].clone(), enc_args[0].clone()])
+                    .map_err(|e| e.to_string()),
+                "<=" if enc_args.len() == 2 => {
+                    let lt = tm
+                        .app(b"<", &[enc_args[1].clone(), enc_args[0].clone()])
+                        .map_err(|e| e.to_string())?;
+                    tm.mk_if(
+                        &lt,
+                        &tm.quote(&tm.th.nil).map_err(|e| e.to_string())?,
+                        &tm.quote(&tm.pr.t).map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string())
+                }
+                ">=" if enc_args.len() == 2 => {
+                    let lt = tm
+                        .app(b"<", &[enc_args[0].clone(), enc_args[1].clone()])
+                        .map_err(|e| e.to_string())?;
+                    tm.mk_if(
+                        &lt,
+                        &tm.quote(&tm.th.nil).map_err(|e| e.to_string())?,
+                        &tm.quote(&tm.pr.t).map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string())
+                }
                 _ => {
                     let spelling = match head {
                         "car" => "CAR",

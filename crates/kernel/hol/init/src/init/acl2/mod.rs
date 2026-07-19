@@ -80,6 +80,7 @@
 //! Open work is tracked in this directory's the generated open-work index.
 
 pub mod carrier;
+pub mod count;
 pub mod defun;
 pub mod derivable;
 pub mod fixers;

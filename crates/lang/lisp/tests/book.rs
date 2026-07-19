@@ -18,10 +18,12 @@
 
 use std::path::{Path, PathBuf};
 
+use covalence_hash::sha256;
 use covalence_lisp::acl2::{Acl2Proof, Acl2Session};
 use covalence_lisp::book::{
     BookConfig, BookReport, CompletenessCount, CompletenessLevel, EventOutcome, EventRecord,
-    ImportClass, Tally, run_book, run_book_with_config,
+    ImportClass, SourceClosureStatus, Tally, TheoremNeutralCapability, TheoremNeutralInterface,
+    run_book, run_book_with_config,
 };
 use covalence_lisp::reader::read_book;
 use covalence_lisp::session::Session;
@@ -30,6 +32,15 @@ use covalence_lisp::world::Acl2World;
 /// The fixture root: `crates/lang/lisp/tests`.
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests")
+}
+
+fn sha256_bytes(hex: &str) -> [u8; 32] {
+    assert_eq!(hex.len(), 64);
+    let mut out = [0; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).expect("SHA-256 hex");
+    }
+    out
 }
 
 #[test]
@@ -772,6 +783,7 @@ fn structured_completeness_fails_closed_on_an_unresolved_dependency() {
 fn structured_completeness_keeps_rejected_logic_in_the_denominator() {
     let report = BookReport {
         path: "target.lisp".into(),
+        dependency_interfaces: vec![],
         events: vec![
             EventRecord {
                 book: "target.lisp".into(),
@@ -815,6 +827,7 @@ fn structured_completeness_keeps_rejected_logic_in_the_denominator() {
 fn structured_completeness_never_greens_deferred_generated_logic() {
     let report = BookReport {
         path: "target.lisp".into(),
+        dependency_interfaces: vec![],
         events: vec![EventRecord {
             book: "target.lisp".into(),
             kind: "fty::bitstruct-obligations".into(),
@@ -829,6 +842,80 @@ fn structured_completeness_never_greens_deferred_generated_logic() {
     assert_eq!(progress.level, CompletenessLevel::Observed);
     assert!(!progress.target.events.is_complete());
     assert!(!progress.is_green_island());
+}
+
+#[test]
+fn theorem_neutral_include_interface_is_hash_bound_and_logical_only() {
+    let dependency = root().join("books/interface-dep.lisp");
+    let digest = sha256(&std::fs::read(&dependency).unwrap());
+    let interface = TheoremNeutralInterface::new(
+        digest,
+        TheoremNeutralCapability::TransparentDefsection,
+        "fixture target uses only transparent defsection",
+    );
+    let config = BookConfig::new(root())
+        .with_theorem_neutral_interface("books/interface-dep.lisp", interface);
+    let mut s = session();
+    let report = run_book_with_config(&mut s, &config, "books/interface-target").unwrap();
+    let progress = report.completeness();
+
+    assert!(progress.is_logical_green_island(), "{report}");
+    assert!(!progress.is_green_island(), "{report}");
+    assert_eq!(progress.closure.dependency_interfaces, 1);
+    assert_eq!(
+        progress.source_closure,
+        SourceClosureStatus::Interfaced { verified: 1 }
+    );
+    assert_eq!(report.dependency_interfaces.len(), 1);
+    assert!(matches!(
+        report.event("interface-dep").map(|event| &event.outcome),
+        Some(EventOutcome::DependencyInterface { .. })
+    ));
+    assert!(s.theorem("interface-target-theorem").is_some());
+}
+
+#[test]
+fn theorem_neutral_include_interface_hash_mismatch_fails_closed() {
+    let interface = TheoremNeutralInterface::new(
+        [0; 32],
+        TheoremNeutralCapability::TransparentDefsection,
+        "deliberately forged fixture digest",
+    );
+    let config = BookConfig::new(root())
+        .with_theorem_neutral_interface("books/interface-dep.lisp", interface);
+    let mut s = session();
+    let report = run_book_with_config(&mut s, &config, "books/interface-target").unwrap();
+    let progress = report.completeness();
+
+    assert!(!progress.is_logical_green_island());
+    assert!(!progress.is_green_island());
+    assert_eq!(progress.closure.unresolved_dependencies, 1);
+    assert!(report.dependency_interfaces.is_empty());
+    assert!(matches!(
+        report.event("interface-dep").map(|event| &event.outcome),
+        Some(EventOutcome::UnresolvedDependency { reason })
+            if reason.contains("SHA-256 mismatch")
+    ));
+}
+
+#[test]
+fn conflicting_theorem_neutral_interfaces_are_rejected_before_loading() {
+    let first = TheoremNeutralInterface::new(
+        [1; 32],
+        TheoremNeutralCapability::TransparentDefsection,
+        "first",
+    );
+    let second = TheoremNeutralInterface::new(
+        [2; 32],
+        TheoremNeutralCapability::TransparentDefsection,
+        "second",
+    );
+    let config = BookConfig::new(root())
+        .with_theorem_neutral_interface("books/interface-dep.lisp", first)
+        .with_theorem_neutral_interface("books/interface-dep.lisp", second);
+    let error = run_book_with_config(&mut session(), &config, "books/interface-target")
+        .expect_err("conflicting interface must fail before loading");
+    assert!(error.to_string().contains("conflicting theorem-neutral"));
 }
 
 #[test]
@@ -1615,12 +1702,42 @@ fn official_std_basic_fixers_transport_all_logical_exports() {
     let books = std::env::var_os("ACL2_CORPUS_DIR")
         .map(PathBuf::from)
         .expect("set ACL2_CORPUS_DIR to the ACL2 checkout's books directory");
-    let config = BookConfig::new(&books).with_dir_root("system", &books);
+    let constructors_sha =
+        sha256_bytes("c58a403e94ab4c86c0dfa0da2477b29189cfc49bb3b1a0ca2a6949a89a38b793");
+    assert_eq!(
+        sha256(&std::fs::read(books.join("xdoc/constructors.lisp")).unwrap()),
+        constructors_sha,
+        "pinned XDOC interface source changed"
+    );
+    let config = BookConfig::new(&books)
+        .with_dir_root("system", &books)
+        .with_dir_theorem_neutral_interface(
+            "system",
+            "xdoc/constructors.lisp",
+            TheoremNeutralInterface::new(
+                constructors_sha,
+                TheoremNeutralCapability::TransparentDefsection,
+                "target uses only built-in transparent defsection event semantics",
+            ),
+        );
 
-    for (book, theorem_names) in [
-        ("std/basic/nfix", ["nfix-when-natp", "natp-of-nfix"]),
-        ("std/basic/ifix", ["ifix-when-integerp", "integerp-of-ifix"]),
+    for (book, source_sha, theorem_names) in [
+        (
+            "std/basic/nfix",
+            "79e853d1e85aa8539a57b50a50586bca53d094c73f40cfae3450d11427524310",
+            ["nfix-when-natp", "natp-of-nfix"],
+        ),
+        (
+            "std/basic/ifix",
+            "f9614f59dfd1857b45f1d5739bd81df56f5bd0f1b2ce03937379daed2a69fb49",
+            ["ifix-when-integerp", "integerp-of-ifix"],
+        ),
     ] {
+        assert_eq!(
+            sha256(&std::fs::read(books.join(format!("{book}.lisp"))).unwrap()),
+            sha256_bytes(source_sha),
+            "pinned target source changed"
+        );
         let mut s = session();
         let report =
             run_book_with_config(&mut s, &config, book).expect("official fixer book imports");
@@ -1650,9 +1767,71 @@ fn official_std_basic_fixers_transport_all_logical_exports() {
         }
 
         assert!(
+            progress.is_logical_green_island(),
+            "content-verified logical boundary must be green:\n{report}"
+        );
+        assert_eq!(progress.closure.dependency_interfaces, 1);
+        assert_eq!(
+            progress.source_closure,
+            SourceClosureStatus::Interfaced { verified: 1 }
+        );
+        assert_eq!(report.dependency_interfaces.len(), 1);
+        assert_eq!(
+            report.dependency_interfaces[0].capability,
+            TheoremNeutralCapability::TransparentDefsection
+        );
+        assert!(
             !progress.is_green_island(),
             "the recursive XDOC source closure is not complete yet"
         );
+    }
+}
+
+/// First strict upstream source-green candidate: this official book has no
+/// includes, so success requires all five exported theorems and every source
+/// event without any dependency interface.
+#[test]
+#[ignore = "requires ACL2 community-books revision 2dbf2b63"]
+fn official_std_lists_acl2_count_is_source_green() {
+    let books = std::env::var_os("ACL2_CORPUS_DIR")
+        .map(PathBuf::from)
+        .expect("set ACL2_CORPUS_DIR to the ACL2 checkout's books directory");
+    let source = books.join("std/lists/acl2-count.lisp");
+    assert_eq!(
+        sha256(&std::fs::read(&source).unwrap()),
+        sha256_bytes("952499bebe748a4411377644ea6b47208a38f496fd908812099e49af35df8ab1"),
+        "pinned ACL2-COUNT book changed"
+    );
+    let mut s = session();
+    let report = run_book_with_config(
+        &mut s,
+        &BookConfig::new(&books).with_dir_root("system", &books),
+        "std/lists/acl2-count",
+    )
+    .expect("official ACL2-COUNT book imports");
+    let progress = report.completeness();
+
+    assert_eq!(
+        progress.target.theorems,
+        CompletenessCount {
+            complete: 5,
+            total: 5
+        },
+        "five-theorem source-green gate failed:\n{report}"
+    );
+    assert_eq!(progress.source_closure, SourceClosureStatus::Recursive);
+    assert!(progress.is_green_island(), "{report}");
+    for name in [
+        "acl2-count-of-car",
+        "acl2-count-of-cdr",
+        "acl2-count-of-sum",
+        "acl2-count-of-consp-positive",
+        "acl2-count-of-cons-greater",
+    ] {
+        let theorem = s
+            .theorem(name)
+            .unwrap_or_else(|| panic!("missing stored theorem `{name}`"));
+        assert!(theorem.hyps().is_empty(), "`{name}` must be closed");
     }
 }
 

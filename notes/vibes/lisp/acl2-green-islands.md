@@ -78,6 +78,11 @@ Progress is reported monotonically for each pinned closure:
 The dashboard reports exact numerators and denominators at every level. A book
 does not inherit a higher level merely because a dependency reached it.
 
+The implementation additionally distinguishes `SourceClosureStatus::Recursive`
+from `Interfaced { verified }`. `is_logical_green_island` permits only verified
+theorem-neutral interfaces; `is_green_island` remains the stronger recursively
+processed source-closure claim.
+
 ## Island sequence
 
 1. `std/basic/nfix` and `std/basic/ifix`: four fixing theorems. This forces
@@ -96,6 +101,23 @@ does not inherit a higher level merely because a dependency reached it.
 The full x86 top manifest remains a broad compatibility and performance
 benchmark in parallel; its inventory count is never substituted for an L3
 score.
+
+### Current measured frontier
+
+- `std/basic/nfix` and `std/basic/ifix` are 4/4 logical-green against exact
+  target hashes and the exact
+  `xdoc/constructors.lisp` SHA-256
+  `c58a403e94ab4c86c0dfa0da2477b29189cfc49bb3b1a0ca2a6949a89a38b793`.
+  Their report records the closed `TransparentDefsection` capability and
+  remains non-source-green.
+- `std/lists/acl2-count.lisp` is the first strict source-green candidate:
+  revision `2dbf2b63`, SHA-256
+  `952499bebe748a4411377644ea6b47208a38f496fd908812099e49af35df8ab1`,
+  six source events, no includes, and five theorem exports. Its checked
+  recursive definition is now in the production ACL2 environment. The
+  measured theorem baseline is 0/5; after surface expansion of `and`, `not`,
+  `>`, `<=`, and `>=`, the remaining blockers are checked inequality/measure
+  reasoning rather than reader or linker compatibility.
 
 ## First island design: IFIX/NFIX
 

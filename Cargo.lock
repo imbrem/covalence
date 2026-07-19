@@ -971,6 +971,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-computation"
+version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
+]
+
+[[package]]
 name = "covalence-core"
 version = "0.0.0"
 dependencies = [
@@ -1150,6 +1157,7 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "covalence-computation",
  "covalence-core",
  "covalence-grammar",
  "covalence-hash",

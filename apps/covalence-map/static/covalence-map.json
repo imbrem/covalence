@@ -43,7 +43,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 163,
+      "words": 167,
       "updated": 0
     },
     {
@@ -223,7 +223,7 @@
       "title": ".gitignore",
       "status": "tracked",
       "path": ".gitignore",
-      "words": 20,
+      "words": 25,
       "updated": 0
     },
     {
@@ -295,7 +295,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7330,
+      "words": 7338,
       "updated": 0
     },
     {
@@ -493,7 +493,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 31243,
+      "words": 32276,
       "updated": 0
     },
     {
@@ -536,7 +536,7 @@
       "id": "file:apps/covalence-web/build/",
       "kind": "file",
       "title": "apps/covalence-web/build/",
-      "status": null,
+      "status": "missing",
       "path": "apps/covalence-web/build/",
       "words": 0,
       "updated": 0
@@ -574,7 +574,7 @@
       "title": "Repl.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/lib/Repl.svelte",
-      "words": 466,
+      "words": 434,
       "updated": 0
     },
     {
@@ -583,7 +583,25 @@
       "title": "Repl.test.ts",
       "status": "tracked",
       "path": "apps/covalence-web/src/lib/Repl.test.ts",
-      "words": 141,
+      "words": 226,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/acl2.ts",
+      "kind": "file",
+      "title": "acl2.ts",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/acl2.ts",
+      "words": 107,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/acl2Examples.json",
+      "kind": "file",
+      "title": "acl2Examples.json",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/acl2Examples.json",
+      "words": 131,
       "updated": 0
     },
     {
@@ -646,16 +664,43 @@
       "title": "kernel.worker.ts",
       "status": "tracked",
       "path": "apps/covalence-web/src/lib/kernel.worker.ts",
-      "words": 58,
+      "words": 59,
       "updated": 0
     },
     {
       "id": "file:apps/covalence-web/src/lib/kernel/",
       "kind": "file",
       "title": "apps/covalence-web/src/lib/kernel/",
-      "status": null,
+      "status": "missing",
       "path": "apps/covalence-web/src/lib/kernel/",
       "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/kernelApi.ts",
+      "kind": "file",
+      "title": "kernelApi.ts",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/kernelApi.ts",
+      "words": 85,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/kernelPages.css",
+      "kind": "file",
+      "title": "kernelPages.css",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/kernelPages.css",
+      "words": 170,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/kernelState.svelte.ts",
+      "kind": "file",
+      "title": "kernelState.svelte.ts",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/kernelState.svelte.ts",
+      "words": 147,
       "updated": 0
     },
     {
@@ -686,6 +731,60 @@
       "updated": 0
     },
     {
+      "id": "file:apps/covalence-web/src/lib/mm/AssertionSearch.svelte",
+      "kind": "file",
+      "title": "AssertionSearch.svelte",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/mm/AssertionSearch.svelte",
+      "words": 191,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/mm/ProofBuilder.svelte",
+      "kind": "file",
+      "title": "ProofBuilder.svelte",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/mm/ProofBuilder.svelte",
+      "words": 776,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/mm/ProofSteps.svelte",
+      "kind": "file",
+      "title": "ProofSteps.svelte",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/mm/ProofSteps.svelte",
+      "words": 273,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/mm/SubstPanel.svelte",
+      "kind": "file",
+      "title": "SubstPanel.svelte",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/mm/SubstPanel.svelte",
+      "words": 152,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/mm/proofTree.test.ts",
+      "kind": "file",
+      "title": "proofTree.test.ts",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/mm/proofTree.test.ts",
+      "words": 97,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/mm/proofTree.ts",
+      "kind": "file",
+      "title": "proofTree.ts",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/mm/proofTree.ts",
+      "words": 184,
+      "updated": 0
+    },
+    {
       "id": "file:apps/covalence-web/src/lib/mmUnicode.ts",
       "kind": "file",
       "title": "mmUnicode.ts",
@@ -709,7 +808,61 @@
       "title": "repl.svelte.ts",
       "status": "tracked",
       "path": "apps/covalence-web/src/lib/repl.svelte.ts",
-      "words": 159,
+      "words": 161,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/repl/ReplFixture.svelte",
+      "kind": "file",
+      "title": "ReplFixture.svelte",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/repl/ReplFixture.svelte",
+      "words": 25,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/repl/ReplShell.svelte",
+      "kind": "file",
+      "title": "ReplShell.svelte",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/repl/ReplShell.svelte",
+      "words": 343,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/repl/health.svelte.ts",
+      "kind": "file",
+      "title": "health.svelte.ts",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/repl/health.svelte.ts",
+      "words": 37,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/repl/sexpr.test.ts",
+      "kind": "file",
+      "title": "sexpr.test.ts",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/repl/sexpr.test.ts",
+      "words": 108,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/repl/sexpr.ts",
+      "kind": "file",
+      "title": "sexpr.ts",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/repl/sexpr.ts",
+      "words": 262,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/lib/repl/transcripts.svelte.ts",
+      "kind": "file",
+      "title": "transcripts.svelte.ts",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/lib/repl/transcripts.svelte.ts",
+      "words": 62,
       "updated": 0
     },
     {
@@ -718,7 +871,7 @@
       "title": "serverRepl.ts",
       "status": "tracked",
       "path": "apps/covalence-web/src/lib/serverRepl.ts",
-      "words": 58,
+      "words": 82,
       "updated": 0
     },
     {
@@ -727,7 +880,7 @@
       "title": "+layout.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/routes/+layout.svelte",
-      "words": 74,
+      "words": 75,
       "updated": 0
     },
     {
@@ -745,7 +898,16 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/routes/+page.svelte",
-      "words": 669,
+      "words": 265,
+      "updated": 0
+    },
+    {
+      "id": "file:apps/covalence-web/src/routes/acl2/+page.svelte",
+      "kind": "file",
+      "title": "+page.svelte",
+      "status": "tracked",
+      "path": "apps/covalence-web/src/routes/acl2/+page.svelte",
+      "words": 301,
       "updated": 0
     },
     {
@@ -754,7 +916,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/routes/article/+page.svelte",
-      "words": 750,
+      "words": 784,
       "updated": 0
     },
     {
@@ -772,7 +934,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/routes/forsp/+page.svelte",
-      "words": 59,
+      "words": 112,
       "updated": 0
     },
     {
@@ -781,7 +943,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/routes/forth/+page.svelte",
-      "words": 63,
+      "words": 93,
       "updated": 0
     },
     {
@@ -790,7 +952,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/routes/graph/+page.svelte",
-      "words": 221,
+      "words": 326,
       "updated": 0
     },
     {
@@ -799,7 +961,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/routes/haskell/+page.svelte",
-      "words": 356,
+      "words": 225,
       "updated": 0
     },
     {
@@ -808,7 +970,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/routes/lisp/+page.svelte",
-      "words": 172,
+      "words": 210,
       "updated": 0
     },
     {
@@ -817,16 +979,7 @@
       "title": "+page.svelte",
       "status": "tracked",
       "path": "apps/covalence-web/src/routes/metamath/+page.svelte",
-      "words": 2115,
-      "updated": 0
-    },
-    {
-      "id": "file:apps/covalence-web/src/routes/proofs/+page.svelte",
-      "kind": "file",
-      "title": "+page.svelte",
-      "status": "tracked",
-      "path": "apps/covalence-web/src/routes/proofs/+page.svelte",
-      "words": 378,
+      "words": 2317,
       "updated": 0
     },
     {
@@ -880,7 +1033,7 @@
       "title": "vite.config.ts",
       "status": "tracked",
       "path": "apps/covalence-web/vite.config.ts",
-      "words": 157,
+      "words": 169,
       "updated": 0
     },
     {
@@ -3598,7 +3751,7 @@
       "title": "bun.lock",
       "status": "tracked",
       "path": "bun.lock",
-      "words": 1324,
+      "words": 1336,
       "updated": 0
     },
     {
@@ -3607,7 +3760,7 @@
       "title": "bunfig.toml",
       "status": "tracked",
       "path": "bunfig.toml",
-      "words": 17,
+      "words": 21,
       "updated": 0
     },
     {
@@ -3911,7 +4064,7 @@
       "id": "file:crates/ffi/python/.venv",
       "kind": "file",
       "title": "crates/ffi/python/.venv",
-      "status": null,
+      "status": "missing",
       "path": "crates/ffi/python/.venv",
       "words": 0,
       "updated": 0
@@ -6028,7 +6181,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/kernel/hol/init/Cargo.toml",
-      "words": 49,
+      "words": 50,
       "updated": 0
     },
     {
@@ -6509,6 +6662,78 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/computation/automata.rs",
+      "kind": "file",
+      "title": "automata.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "words": 749,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/blc.rs",
+      "kind": "file",
+      "title": "blc.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/blc.rs",
+      "words": 47,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/concrete.rs",
+      "kind": "file",
+      "title": "concrete.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/concrete.rs",
+      "words": 107,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
+      "kind": "file",
+      "title": "lambda_to_ski.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
+      "words": 255,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "kind": "file",
+      "title": "minsky.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "words": 225,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "kind": "file",
+      "title": "mod.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/mod.rs",
+      "words": 391,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/ski.rs",
+      "kind": "file",
+      "title": "ski.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/ski.rs",
+      "words": 41,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/turing.rs",
+      "kind": "file",
+      "title": "turing.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/turing.rs",
+      "words": 242,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/cond.cov",
       "kind": "file",
       "title": "cond.cov",
@@ -6676,7 +6901,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/mod.rs",
-      "words": 86,
+      "words": 91,
       "updated": 0
     },
     {
@@ -6689,12 +6914,39 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/nat_backend_common.rs",
+      "kind": "file",
+      "title": "nat_backend_common.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_backend_common.rs",
+      "words": 138,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/nat_backend_tests.rs",
+      "kind": "file",
+      "title": "nat_backend_tests.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_backend_tests.rs",
+      "words": 71,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
       "kind": "file",
       "title": "nat_binary_api.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
-      "words": 209,
+      "words": 65,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
+      "kind": "file",
+      "title": "nat_unary_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
+      "words": 46,
       "updated": 0
     },
     {
@@ -6892,7 +7144,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/mod.rs",
-      "words": 253,
+      "words": 254,
       "updated": 0
     },
     {
@@ -7540,7 +7792,7 @@
       "title": "mm_database.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/metalogic/mm_database.rs",
-      "words": 1756,
+      "words": 1955,
       "updated": 0
     },
     {
@@ -8603,6 +8855,132 @@
       "status": "missing",
       "path": "crates/lang/acl2",
       "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/computation/Cargo.toml",
+      "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/automata_theory.rs",
+      "kind": "file",
+      "title": "automata_theory.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/automata_theory.rs",
+      "words": 125,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/blc.rs",
+      "kind": "file",
+      "title": "blc.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/blc.rs",
+      "words": 332,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/compiler.rs",
+      "kind": "file",
+      "title": "compiler.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/compiler.rs",
+      "words": 379,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/encoding.rs",
+      "kind": "file",
+      "title": "encoding.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/encoding.rs",
+      "words": 214,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/execution.rs",
+      "kind": "file",
+      "title": "execution.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/execution.rs",
+      "words": 220,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/finite.rs",
+      "kind": "file",
+      "title": "finite.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/finite.rs",
+      "words": 735,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/lib.rs",
+      "words": 49,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/minsky.rs",
+      "kind": "file",
+      "title": "minsky.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/minsky.rs",
+      "words": 349,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/pushdown.rs",
+      "kind": "file",
+      "title": "pushdown.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/pushdown.rs",
+      "words": 388,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/simulation.rs",
+      "kind": "file",
+      "title": "simulation.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/simulation.rs",
+      "words": 98,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/ski.rs",
+      "kind": "file",
+      "title": "ski.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/ski.rs",
+      "words": 283,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/theory.rs",
+      "kind": "file",
+      "title": "theory.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/theory.rs",
+      "words": 450,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/turing.rs",
+      "kind": "file",
+      "title": "turing.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/turing.rs",
+      "words": 406,
       "updated": 0
     },
     {
@@ -9880,7 +10258,16 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "words": 705,
+      "words": 712,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/sexpr-api/src/nat.rs",
+      "kind": "file",
+      "title": "nat.rs",
+      "status": "tracked",
+      "path": "crates/lang/sexpr-api/src/nat.rs",
+      "words": 393,
       "updated": 0
     },
     {
@@ -12931,7 +13318,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/proof/metamath/src/lib.rs",
-      "words": 97,
+      "words": 105,
       "updated": 0
     },
     {
@@ -12953,6 +13340,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/proof/metamath/src/trace.rs",
+      "kind": "file",
+      "title": "trace.rs",
+      "status": "tracked",
+      "path": "crates/proof/metamath/src/trace.rs",
+      "words": 754,
+      "updated": 0
+    },
+    {
       "id": "file:crates/proof/metamath/src/typesetting.rs",
       "kind": "file",
       "title": "typesetting.rs",
@@ -12967,7 +13363,7 @@
       "title": "verify.rs",
       "status": "tracked",
       "path": "crates/proof/metamath/src/verify.rs",
-      "words": 592,
+      "words": 657,
       "updated": 0
     },
     {
@@ -13327,7 +13723,7 @@
       "title": "mm.rs",
       "status": "tracked",
       "path": "crates/server/core/src/mm.rs",
-      "words": 1076,
+      "words": 1972,
       "updated": 0
     },
     {
@@ -13705,7 +14101,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 31243,
+      "words": 32276,
       "updated": 0
     },
     {
@@ -13723,7 +14119,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 260,
+      "words": 264,
       "updated": 0
     },
     {
@@ -13732,7 +14128,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 862,
+      "words": 875,
       "updated": 0
     },
     {
@@ -13741,7 +14137,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 192,
+      "words": 195,
       "updated": 0
     },
     {
@@ -13750,7 +14146,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1538,
+      "words": 1562,
       "updated": 0
     },
     {
@@ -13813,7 +14209,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3039,
+      "words": 3309,
       "updated": 0
     },
     {
@@ -13832,6 +14228,105 @@
       "status": "missing",
       "path": "docs/work/",
       "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/README.md",
+      "kind": "file",
+      "title": "README.md",
+      "status": "tracked",
+      "path": "e2e/README.md",
+      "words": 56,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/bench.spec.ts",
+      "kind": "file",
+      "title": "bench.spec.ts",
+      "status": "tracked",
+      "path": "e2e/bench.spec.ts",
+      "words": 72,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/global-setup.ts",
+      "kind": "file",
+      "title": "global-setup.ts",
+      "status": "tracked",
+      "path": "e2e/global-setup.ts",
+      "words": 130,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/global-teardown.ts",
+      "kind": "file",
+      "title": "global-teardown.ts",
+      "status": "tracked",
+      "path": "e2e/global-teardown.ts",
+      "words": 39,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/helpers.ts",
+      "kind": "file",
+      "title": "helpers.ts",
+      "status": "tracked",
+      "path": "e2e/helpers.ts",
+      "words": 47,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/playwright.config.ts",
+      "kind": "file",
+      "title": "playwright.config.ts",
+      "status": "tracked",
+      "path": "e2e/playwright.config.ts",
+      "words": 83,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/specs/acl2.spec.ts",
+      "kind": "file",
+      "title": "acl2.spec.ts",
+      "status": "tracked",
+      "path": "e2e/specs/acl2.spec.ts",
+      "words": 134,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/specs/api.spec.ts",
+      "kind": "file",
+      "title": "api.spec.ts",
+      "status": "tracked",
+      "path": "e2e/specs/api.spec.ts",
+      "words": 72,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/specs/lisp.spec.ts",
+      "kind": "file",
+      "title": "lisp.spec.ts",
+      "status": "tracked",
+      "path": "e2e/specs/lisp.spec.ts",
+      "words": 47,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/specs/metamath.spec.ts",
+      "kind": "file",
+      "title": "metamath.spec.ts",
+      "status": "tracked",
+      "path": "e2e/specs/metamath.spec.ts",
+      "words": 193,
+      "updated": 0
+    },
+    {
+      "id": "file:e2e/specs/repl.spec.ts",
+      "kind": "file",
+      "title": "repl.spec.ts",
+      "status": "tracked",
+      "path": "e2e/specs/repl.spec.ts",
+      "words": 36,
       "updated": 0
     },
     {
@@ -14929,7 +15424,7 @@
       "title": "computation-theory.md",
       "status": "tracked",
       "path": "notes/vibes/logics/computation-theory.md",
-      "words": 91,
+      "words": 124,
       "updated": 0
     },
     {
@@ -15325,7 +15820,7 @@
       "title": "package.json",
       "status": "tracked",
       "path": "package.json",
-      "words": 60,
+      "words": 63,
       "updated": 0
     },
     {
@@ -15334,7 +15829,7 @@
       "title": "package.json",
       "status": "tracked",
       "path": "packages/covalence-client/package.json",
-      "words": 12,
+      "words": 15,
       "updated": 0
     },
     {
@@ -15343,7 +15838,7 @@
       "title": "client.ts",
       "status": "tracked",
       "path": "packages/covalence-client/src/client.ts",
-      "words": 294,
+      "words": 422,
       "updated": 0
     },
     {
@@ -15361,7 +15856,7 @@
       "title": "index.ts",
       "status": "tracked",
       "path": "packages/covalence-client/src/index.ts",
-      "words": 26,
+      "words": 44,
       "updated": 0
     },
     {
@@ -15370,7 +15865,7 @@
       "title": "types.ts",
       "status": "tracked",
       "path": "packages/covalence-client/src/types.ts",
-      "words": 268,
+      "words": 480,
       "updated": 0
     },
     {
@@ -15388,7 +15883,7 @@
       "title": "package.json",
       "status": "tracked",
       "path": "packages/covalence-ui/package.json",
-      "words": 34,
+      "words": 36,
       "updated": 0
     },
     {
@@ -15397,7 +15892,7 @@
       "title": "CurvyEdge.svelte",
       "status": "tracked",
       "path": "packages/covalence-ui/src/lib/graph/CurvyEdge.svelte",
-      "words": 56,
+      "words": 57,
       "updated": 0
     },
     {
@@ -15424,7 +15919,7 @@
       "title": "GraphView.svelte",
       "status": "tracked",
       "path": "packages/covalence-ui/src/lib/graph/GraphView.svelte",
-      "words": 186,
+      "words": 188,
       "updated": 0
     },
     {
@@ -15487,7 +15982,7 @@
       "title": "types.ts",
       "status": "tracked",
       "path": "packages/covalence-ui/src/lib/graph/types.ts",
-      "words": 79,
+      "words": 88,
       "updated": 0
     },
     {
@@ -15496,7 +15991,7 @@
       "title": "index.ts",
       "status": "tracked",
       "path": "packages/covalence-ui/src/lib/index.ts",
-      "words": 33,
+      "words": 37,
       "updated": 0
     },
     {
@@ -15532,7 +16027,7 @@
       "title": "TreeViewer.svelte",
       "status": "tracked",
       "path": "packages/covalence-ui/src/lib/viewers/TreeViewer.svelte",
-      "words": 125,
+      "words": 134,
       "updated": 0
     },
     {
@@ -15568,7 +16063,7 @@
       "title": "index.ts",
       "status": "tracked",
       "path": "packages/covalence-ui/src/lib/viewers/index.ts",
-      "words": 23,
+      "words": 24,
       "updated": 0
     },
     {
@@ -15587,6 +16082,15 @@
       "status": "tracked",
       "path": "packages/covalence-ui/src/lib/viewers/registry.ts",
       "words": 27,
+      "updated": 0
+    },
+    {
+      "id": "file:packages/covalence-ui/tsconfig.json",
+      "kind": "file",
+      "title": "tsconfig.json",
+      "status": "tracked",
+      "path": "packages/covalence-ui/tsconfig.json",
+      "words": 14,
       "updated": 0
     },
     {
@@ -15946,6 +16450,15 @@
       "title": "NativeHol",
       "status": "implemented",
       "path": "crates/kernel/hol/init/src/init/inductive/nat_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0002:UnaryNat",
+      "kind": "implementation",
+      "title": "UnaryNat",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
       "words": 0,
       "updated": 0
     },
@@ -16666,8 +17179,8 @@
       "title": "Computation theory — bytestring models, proven equivalent",
       "status": "draft",
       "path": "notes/vibes/logics/computation-theory.md",
-      "words": 647,
-      "updated": 1784416010
+      "words": 874,
+      "updated": 1784419827
     },
     {
       "id": "note:notes/vibes/logics/derivation-system-interp.md",
@@ -17197,6 +17710,96 @@
       "title": "Relational residual",
       "status": "defined",
       "path": "notes/terms/T0001.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.automata-accepts-iff-run",
+      "kind": "todo",
+      "title": "Prove the universal",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.automata-native-definitions",
+      "kind": "todo",
+      "title": "Define the",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.automata-partial-compilers",
+      "kind": "todo",
+      "title": "Implement",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.lambda-ski-preservation",
+      "kind": "todo",
+      "title": "Define general BLC/SKI",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.minsky-hol-step-definition",
+      "kind": "todo",
+      "title": "Define minsky.step",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.minsky-universal-equivalence",
+      "kind": "todo",
+      "title": "Prove the native",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.native-definitions",
+      "kind": "todo",
+      "title": "Define native HOL",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.pda-acceptance-replay",
+      "kind": "todo",
+      "title": "Extract and replay one",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.turing-hol-step-definition",
+      "kind": "todo",
+      "title": "Define turing.step",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/turing.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.turing-universal-equivalence",
+      "kind": "todo",
+      "title": "Prove the native",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/turing.rs",
       "words": 0,
       "updated": 0
     },
@@ -19892,6 +20495,24 @@
       "updated": 0
     },
     {
+      "id": "todo:proof.metamath.match-conclusion-backtracking",
+      "kind": "todo",
+      "title": "matchbody is",
+      "status": "minor",
+      "path": "crates/proof/metamath/src/trace.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:proof.metamath.proof-search",
+      "kind": "todo",
+      "title": "No bottom-up or iterative-deepening",
+      "status": "major",
+      "path": "crates/proof/metamath/src/trace.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:proof.metamath.set-mm-scale-streaming-incremental-parsing",
       "kind": "todo",
       "title": "set.mm-scale streaming/incremental parsing: The reader tokenises the whole",
@@ -19946,6 +20567,51 @@
       "updated": 0
     },
     {
+      "id": "todo:server.mm.proof-session-state",
+      "kind": "todo",
+      "title": "/apply and /verify are",
+      "status": "major",
+      "path": "crates/server/core/src/mm.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:server.mm.search-linear-scan",
+      "kind": "todo",
+      "title": "/search re-renders every",
+      "status": "minor",
+      "path": "crates/server/core/src/mm.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:server.mm.verify-hol-cache",
+      "kind": "todo",
+      "title": "every /verify rebuilds the",
+      "status": "minor",
+      "path": "crates/server/core/src/mm.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:server.mm.verify-hol-transport",
+      "kind": "todo",
+      "title": "/verify's hol theorem is",
+      "status": "major",
+      "path": "crates/server/core/src/mm.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:sexpr.generic-refined-inductive-encoding",
+      "kind": "todo",
+      "title": "Generalize the bounded Nat experiment to arbitrary first-order InductiveSpec constructor tags and arguments.",
+      "status": "major",
+      "path": "crates/lang/sexpr-api/src/nat.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:sexpr.no-confusion-laws",
       "kind": "todo",
       "title": "sexpr.no-confusion-laws",
@@ -19980,6 +20646,96 @@
       "path": "extensions/covalence-vscode/src/server.ts",
       "words": 0,
       "updated": 0
+    },
+    {
+      "id": "todo:web.acl2-session-sharing",
+      "kind": "todo",
+      "title": "serverRepl memoizes one session per ENDPOINT, so /acl2 and /lisp share a server session — opening this page resets the one /lisp's transcript describes. Key sessions by store instead.",
+      "status": "minor",
+      "path": "apps/covalence-web/src/routes/acl2/+page.svelte",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:web.article-block-comments",
+      "kind": "todo",
+      "title": "the shared highlighter has no",
+      "status": "minor",
+      "path": "apps/covalence-web/src/routes/article/+page.svelte",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:web.forth-evaluator",
+      "kind": "todo",
+      "title": "forthevalcell is a stub that",
+      "status": "major",
+      "path": "apps/covalence-web/src/routes/forth/+page.svelte",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:web.graph-overlay-store",
+      "kind": "todo",
+      "title": "no content store or hasher",
+      "status": "minor",
+      "path": "apps/covalence-web/src/routes/graph/+page.svelte",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:web.mm-hyp-label-picker",
+      "kind": "todo",
+      "title": "Offer the in-scope $f/$e",
+      "status": "minor",
+      "path": "apps/covalence-web/src/lib/mm/ProofBuilder.svelte",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:web.repl-autorun-prop",
+      "kind": "todo",
+      "title": "Give <Repl> an autoRun prop so a page can open its dialect through the component's own evaluator instead of the transcript store.",
+      "status": "minor",
+      "path": "apps/covalence-web/src/lib/acl2.ts",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:web.site-light-theme",
+      "kind": "todo",
+      "title": "no site-wide light theme exists;",
+      "status": "minor",
+      "path": "apps/covalence-web/src/routes/article/+page.svelte",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:web.ui-svelte-check",
+      "kind": "todo",
+      "title": "Add svelte-check as a devDependency and point check at it.",
+      "status": "minor",
+      "path": "packages/covalence-ui/tsconfig.json",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:web.ui-treeviewer-hash-prop",
+      "kind": "todo",
+      "title": "Use hash for breadcrumbs, or drop it from the viewer contract.",
+      "status": "minor",
+      "path": "packages/covalence-ui/src/lib/viewers/TreeViewer.svelte",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:web.ui-viewer-routes",
+      "kind": "todo",
+      "title": "Take a link builder prop so covalence-ui does not hardcode app routes.",
+      "status": "minor",
+      "path": "packages/covalence-ui/src/lib/viewers/TreeViewer.svelte",
+      "words": 0,
+      "updated": 0
     }
   ],
   "edges": [
@@ -20002,9 +20758,45 @@
       "detail": null
     },
     {
+      "source": "file:apps/covalence-web/src/lib/Repl.svelte",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/repl/ReplShell.svelte",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/Repl.svelte",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/repl/sexpr.ts",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/Repl.svelte",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/repl/transcripts.svelte.ts",
+      "detail": null
+    },
+    {
       "source": "file:apps/covalence-web/src/lib/Repl.test.ts",
       "predicate": "imports",
       "target": "file:apps/covalence-web/src/lib/Repl.svelte",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/Repl.test.ts",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/repl/ReplFixture.svelte",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/Repl.test.ts",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/repl/sexpr.ts",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/kernelState.svelte.ts",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/kernelApi.ts",
       "detail": null
     },
     {
@@ -20017,6 +20809,54 @@
       "source": "file:apps/covalence-web/src/lib/lispDialect.test.ts",
       "predicate": "imports",
       "target": "file:apps/covalence-web/src/lib/lispExamples.json",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/mm/ProofBuilder.svelte",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/mm/AssertionSearch.svelte",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/mm/ProofBuilder.svelte",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/mm/ProofSteps.svelte",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/mm/ProofBuilder.svelte",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/mm/proofTree.ts",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/mm/ProofSteps.svelte",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/mm/SubstPanel.svelte",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/mm/proofTree.test.ts",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/mm/proofTree.ts",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/repl/ReplFixture.svelte",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/Repl.svelte",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/repl/ReplShell.svelte",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/repl/sexpr.ts",
+      "detail": null
+    },
+    {
+      "source": "file:apps/covalence-web/src/lib/repl/sexpr.test.ts",
+      "predicate": "imports",
+      "target": "file:apps/covalence-web/src/lib/repl/sexpr.ts",
       "detail": null
     },
     {
@@ -21046,6 +21886,48 @@
       "detail": null
     },
     {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/automata.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/blc.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/concrete.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/ski.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/turing.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/api.rs",
@@ -21108,7 +21990,25 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_backend_common.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_backend_tests.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
       "detail": null
     },
     {
@@ -21163,6 +22063,12 @@
       "source": "file:crates/kernel/hol/init/src/init/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/char.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
       "detail": null
     },
     {
@@ -21982,6 +22888,78 @@
       "detail": null
     },
     {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/automata_theory.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/blc.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/compiler.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/encoding.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/execution.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/finite.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/minsky.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/pushdown.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/simulation.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/ski.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/theory.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/turing.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/lang/forsp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/forsp/src/eval.rs",
@@ -22339,6 +23317,12 @@
       "source": "file:crates/lang/numerals/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/numerals/src/rat_backend.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/sexpr-api/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/sexpr-api/src/nat.rs",
       "detail": null
     },
     {
@@ -23148,6 +24132,12 @@
     {
       "source": "file:crates/proof/metamath/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/proof/metamath/src/trace.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/proof/metamath/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/proof/metamath/src/typesetting.rs",
       "detail": null
     },
@@ -23398,6 +24388,30 @@
       "detail": null
     },
     {
+      "source": "file:e2e/bench.spec.ts",
+      "predicate": "imports",
+      "target": "file:e2e/helpers.ts",
+      "detail": null
+    },
+    {
+      "source": "file:e2e/global-teardown.ts",
+      "predicate": "imports",
+      "target": "file:e2e/global-setup.ts",
+      "detail": null
+    },
+    {
+      "source": "file:e2e/specs/api.spec.ts",
+      "predicate": "imports",
+      "target": "file:e2e/helpers.ts",
+      "detail": null
+    },
+    {
+      "source": "file:e2e/specs/metamath.spec.ts",
+      "predicate": "imports",
+      "target": "file:e2e/helpers.ts",
+      "detail": null
+    },
+    {
       "source": "file:extensions/covalence-vscode/src/extension.ts",
       "predicate": "imports",
       "target": "file:extensions/covalence-vscode/src/server.ts",
@@ -23516,6 +24530,18 @@
       "predicate": "implements",
       "target": "api:A0002",
       "detail": "HOL natural-number leaves and definitions"
+    },
+    {
+      "source": "impl:A0002:UnaryNat",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0002:UnaryNat",
+      "predicate": "implements",
+      "target": "api:A0002",
+      "detail": "linear-depth successor towers over a shared native zero leaf"
     },
     {
       "source": "note:notes/README.md",
@@ -27043,19 +28069,19 @@
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:apps/covalence-web/build/",
-      "detail": null
+      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:apps/covalence-web/src/lib/kernel/",
-      "detail": null
+      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:crates/ffi/python/.venv",
-      "detail": null
+      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
@@ -29344,6 +30370,13 @@
       "name": "NativeHol",
       "representation": "HOL natural-number leaves and definitions",
       "path": "crates/kernel/hol/init/src/init/inductive/nat_api.rs"
+    },
+    {
+      "id": "impl:A0002:UnaryNat",
+      "apiId": "A0002",
+      "name": "UnaryNat",
+      "representation": "linear-depth successor towers over a shared native zero leaf",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs"
     }
   ],
   "actors": [
@@ -31025,8 +32058,8 @@
     },
     {
       "noteId": "note:notes/vibes/logics/computation-theory.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "d37cc364a60456828ba5ef486fddb322a4ba37b4",
+      "committedAt": 1784419827
     },
     {
       "noteId": "note:notes/vibes/logics/derivation-system-interp.md",

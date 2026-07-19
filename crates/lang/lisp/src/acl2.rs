@@ -559,7 +559,7 @@ impl Acl2Session {
     /// form, fuel-bounded, packaging the composite theorem.
     fn reduce_value(&self, form: &SExpr) -> Result<Acl2Outcome, Acl2Error> {
         let sem = LispSemantics::with_defs(self.defs.clone())?;
-        let core = Frontend::new(SurfaceDialect::Scheme)
+        let core = Frontend::new(SurfaceDialect::Acl2Core)
             .lower(form)
             .map_err(|error| Acl2Error::Malformed(error.to_string()))?;
         let term = sem.compile_core(&core)?;
@@ -911,7 +911,7 @@ impl Acl2Session {
         let placeholder = build_def_with_ret(name, params, dummy, ret)?;
         let staged = self.defs.with(placeholder);
         let sem = LispSemantics::with_defs(staged)?;
-        let core = Frontend::new(SurfaceDialect::Scheme)
+        let core = Frontend::new(SurfaceDialect::Acl2Core)
             .lower(body)
             .map_err(|error| HolError::Stuck(error.to_string()))?;
         let body_term = sem.compile_core(&core)?;

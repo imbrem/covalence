@@ -61,7 +61,12 @@ disable-model-invocation: true
   - `crates/lang/lisp` is the current compatibility/demo frontend. Its
     NativeHol `LispRel` implements the neutral step and replay capabilities,
     while ACL2-specific worlds and derivations are incrementally separated
-    above the common Lisp semantics.
+    above the common Lisp semantics. Production Scheme and Sector sessions,
+    plus translated ACL2 expression execution, lower through the shared
+    `CoreExpr`; Scheme compiles it to equational HOL and Sector to relational
+    HOL. The proof-free Forsp frontend instead targets the sibling stack
+    capability because its call-by-push-value semantics is genuinely
+    concatenative.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

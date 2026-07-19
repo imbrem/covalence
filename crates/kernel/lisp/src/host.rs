@@ -85,6 +85,8 @@ pub trait CorePrimitive {
         arguments: &[HostValue<Self::Symbol, Self::Atom, Self::Primitive>],
     ) -> Result<HostValue<Self::Symbol, Self::Atom, Self::Primitive>, Self::Error>;
 
+    fn truth(&self, value: bool) -> HostValue<Self::Symbol, Self::Atom, Self::Primitive>;
+
     /// Dialect-specific truth observation. The default is McCarthy/ACL2
     /// truthiness: only the empty list is false.
     fn is_false(&self, value: &HostValue<Self::Symbol, Self::Atom, Self::Primitive>) -> bool {
@@ -368,6 +370,9 @@ impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
                     CoreExpr::Literal(datum) | CoreExpr::Quote(datum) => {
                         next.control = HostControl::Value(HostValue::Datum(datum));
                     }
+                    CoreExpr::Truth(value) => {
+                        next.control = HostControl::Value(self.primitives.truth(value));
+                    }
                     CoreExpr::Variable(symbol) => {
                         let value = next
                             .environment
@@ -386,6 +391,17 @@ impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
                             environment: next.environment.clone(),
                         });
                         next.control = HostControl::Expression(*condition);
+                    }
+                    CoreExpr::Cond { clauses } => {
+                        let expression = clauses.into_iter().rev().fold(
+                            CoreExpr::Literal(Datum::Nil),
+                            |alternative, (condition, consequent)| CoreExpr::If {
+                                condition: Box::new(condition),
+                                consequent: Box::new(consequent),
+                                alternative: Box::new(alternative),
+                            },
+                        );
+                        next.control = HostControl::Expression(expression);
                     }
                     CoreExpr::Lambda {
                         name,
@@ -480,6 +496,10 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
         Ok(CoreExpr::Literal(datum))
     }
 
+    fn truth(&self, value: bool) -> Result<Self::Expr, Self::Error> {
+        Ok(CoreExpr::Truth(value))
+    }
+
     fn variable(&self, symbol: Self::Symbol) -> Result<Self::Expr, Self::Error> {
         Ok(CoreExpr::Variable(symbol))
     }
@@ -499,6 +519,10 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
             consequent: Box::new(consequent),
             alternative: Box::new(alternative),
         })
+    }
+
+    fn cond(&self, clauses: Vec<(Self::Expr, Self::Expr)>) -> Result<Self::Expr, Self::Error> {
+        Ok(CoreExpr::Cond { clauses })
     }
 
     fn lambda(
@@ -585,6 +609,10 @@ mod tests {
                 }
                 _ => Err("bad primitive application"),
             }
+        }
+
+        fn truth(&self, value: bool) -> HostValue<&'static str, &'static str, Primitive> {
+            HostValue::Datum(if value { Datum::Atom("t") } else { Datum::Nil })
         }
     }
 

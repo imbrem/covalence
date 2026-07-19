@@ -3068,7 +3068,7 @@
       "id": "lisp.frontends.scheme-forsp",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Route production Scheme/Sector sessions through the common frontend and add a proof-producing Forsp backend.",
+      "summary": "Add a proof-producing Forsp backend and cross-check it against the host stack machine.",
       "structured": true,
       "path": "crates/kernel/lisp/src/lib.rs",
       "line": 19,

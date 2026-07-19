@@ -106,6 +106,7 @@ use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
 use crate::defs::{Defs, build_def, build_def_with_ret};
+use crate::frontend::{Frontend, SurfaceDialect};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
 use crate::semantics::{LispRepr, LispSemantics, ValueKind};
@@ -360,7 +361,10 @@ impl Acl2Session {
     /// form, fuel-bounded, packaging the composite theorem.
     fn reduce_value(&self, form: &SExpr) -> Result<Acl2Outcome, Acl2Error> {
         let sem = LispSemantics::with_defs(self.defs.clone())?;
-        let term = sem.compile(form)?;
+        let core = Frontend::new(SurfaceDialect::Scheme)
+            .lower(form)
+            .map_err(|error| Acl2Error::Malformed(error.to_string()))?;
+        let term = sem.compile_core(&core)?;
         let mut red: Reduction<LispRepr, LispSemantics> = Reduction::start(term);
         RunToValue.drive(&sem, &mut red, Fuel::steps(FUEL))?;
         let status = red.status();
@@ -709,7 +713,10 @@ impl Acl2Session {
         let placeholder = build_def_with_ret(name, params, dummy, ret)?;
         let staged = self.defs.with(placeholder);
         let sem = LispSemantics::with_defs(staged)?;
-        let body_term = sem.compile(body)?;
+        let core = Frontend::new(SurfaceDialect::Scheme)
+            .lower(body)
+            .map_err(|error| HolError::Stuck(error.to_string()))?;
+        let body_term = sem.compile_core(&core)?;
         let def = build_def(name, params, body_term)?;
         self.defs = self.defs.with(def);
         Ok(())

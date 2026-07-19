@@ -53,6 +53,8 @@ pub enum SurfaceDialect {
     /// Pure Sector: pair operations and predicates, with numerals remaining
     /// symbols.
     Sector,
+    /// Sector plus exact integer literals and arithmetic.
+    SectorInt,
     /// Scheme-like lexical lambdas plus exact integer primitives.
     Scheme,
     /// The expression fragment used beneath ACL2 admission and worlds.
@@ -61,7 +63,7 @@ pub enum SurfaceDialect {
 
 impl SurfaceDialect {
     fn parses_integers(self) -> bool {
-        matches!(self, Self::Scheme | Self::Acl2Core)
+        matches!(self, Self::SectorInt | Self::Scheme | Self::Acl2Core)
     }
 
     fn primitive(self, name: &str) -> Option<Primitive> {
@@ -73,10 +75,11 @@ impl SurfaceDialect {
             "consp" | "pair?" => Primitive::Consp,
             "null?" | "null" => Primitive::Null,
             "eq?" | "equal" => Primitive::Equal,
-            "+" if self.parses_integers() => Primitive::Add,
-            "-" if self.parses_integers() => Primitive::Subtract,
-            "*" if self.parses_integers() => Primitive::Multiply,
-            "<=" if self.parses_integers() => Primitive::LessEqual,
+            "=" if self.parses_integers() => Primitive::Equal,
+            "+" => Primitive::Add,
+            "-" => Primitive::Subtract,
+            "*" => Primitive::Multiply,
+            "<=" => Primitive::LessEqual,
             _ => return None,
         })
     }
@@ -196,7 +199,7 @@ impl Frontend {
 
     fn datum_atom(&self, atom: &Atom) -> CoreAtom {
         match atom {
-            Atom::Symbol(text) if self.dialect.parses_integers() => Int::from_str(text)
+            Atom::Symbol(text) if self.dialect == SurfaceDialect::Acl2Core => Int::from_str(text)
                 .map_or_else(|_| CoreAtom::symbol(text.as_bytes()), CoreAtom::Integer),
             Atom::Symbol(text) => CoreAtom::symbol(text.as_bytes()),
             Atom::Str { format, bytes } => CoreAtom::String {
@@ -208,11 +211,20 @@ impl Frontend {
 
     fn lower_atom(&self, atom: &Atom) -> Result<FrontendExpr, LowerError> {
         Ok(match atom {
-            Atom::Symbol(text) if text.eq_ignore_ascii_case("nil") => CoreExpr::Literal(Datum::Nil),
+            Atom::Symbol(text) if text.eq_ignore_ascii_case("nil") => CoreExpr::Truth(false),
+            Atom::Symbol(text) if text.eq_ignore_ascii_case("t") => CoreExpr::Truth(true),
             Atom::Symbol(text) if self.dialect.parses_integers() && Int::from_str(text).is_ok() => {
                 CoreExpr::Literal(Datum::Atom(CoreAtom::Integer(
                     Int::from_str(text).expect("checked integer"),
                 )))
+            }
+            Atom::Symbol(text)
+                if matches!(
+                    self.dialect,
+                    SurfaceDialect::Sector | SurfaceDialect::SectorInt
+                ) =>
+            {
+                CoreExpr::Literal(Datum::Atom(CoreAtom::symbol(text.as_bytes())))
             }
             Atom::Symbol(text) => CoreExpr::Variable(text.to_string()),
             Atom::Str { .. } => CoreExpr::Literal(Datum::Atom(self.datum_atom(atom))),
@@ -236,7 +248,9 @@ impl Frontend {
             }
             Some("lambda") => self.lower_lambda(items),
             Some("let") => self.lower_let(items),
-            Some("cond") => self.lower_cond(&items[1..]),
+            Some("cond") => Ok(CoreExpr::Cond {
+                clauses: self.lower_cond(&items[1..])?,
+            }),
             Some(name) if self.dialect.primitive(name).is_some() => Ok(CoreExpr::Primitive {
                 operator: self.dialect.primitive(name).expect("matched"),
                 arguments: items[1..]
@@ -244,7 +258,14 @@ impl Frontend {
                     .map(|argument| self.lower(argument))
                     .collect::<Result<_, _>>()?,
             }),
-            _ => Ok(CoreExpr::Apply {
+            Some(name) => Ok(CoreExpr::Apply {
+                operator: Box::new(CoreExpr::Variable(name.to_owned())),
+                arguments: items[1..]
+                    .iter()
+                    .map(|argument| self.lower(argument))
+                    .collect::<Result<_, _>>()?,
+            }),
+            None => Ok(CoreExpr::Apply {
                 operator: Box::new(self.lower(&items[0])?),
                 arguments: items[1..]
                     .iter()
@@ -333,34 +354,38 @@ impl Frontend {
         })
     }
 
-    fn lower_cond(&self, clauses: &[SExpr]) -> Result<FrontendExpr, LowerError> {
-        let Some((first, rest)) = clauses.split_first() else {
-            return Ok(CoreExpr::Literal(Datum::Nil));
-        };
-        let pair = first.as_list().ok_or_else(|| LowerError::Malformed {
-            form: "cond",
-            detail: "clause is not a list".to_owned(),
-        })?;
-        if pair.len() != 2 {
-            return Err(LowerError::Malformed {
-                form: "cond",
-                detail: "clause must contain a condition and result".to_owned(),
-            });
-        }
-        if pair[0].as_symbol() == Some("else") {
-            if !rest.is_empty() {
-                return Err(LowerError::Malformed {
+    fn lower_cond(
+        &self,
+        clauses: &[SExpr],
+    ) -> Result<Vec<(FrontendExpr, FrontendExpr)>, LowerError> {
+        clauses
+            .iter()
+            .enumerate()
+            .map(|(index, clause)| {
+                let pair = clause.as_list().ok_or_else(|| LowerError::Malformed {
                     form: "cond",
-                    detail: "else must be the final clause".to_owned(),
-                });
-            }
-            return self.lower(&pair[1]);
-        }
-        Ok(CoreExpr::If {
-            condition: Box::new(self.lower(&pair[0])?),
-            consequent: Box::new(self.lower(&pair[1])?),
-            alternative: Box::new(self.lower_cond(rest)?),
-        })
+                    detail: "clause is not a list".to_owned(),
+                })?;
+                if pair.len() != 2 {
+                    return Err(LowerError::Malformed {
+                        form: "cond",
+                        detail: "clause must contain a condition and result".to_owned(),
+                    });
+                }
+                let condition = if pair[0].as_symbol() == Some("else") {
+                    if index + 1 != clauses.len() {
+                        return Err(LowerError::Malformed {
+                            form: "cond",
+                            detail: "else must be the final clause".to_owned(),
+                        });
+                    }
+                    CoreExpr::Truth(true)
+                } else {
+                    self.lower(&pair[0])?
+                };
+                Ok((condition, self.lower(&pair[1])?))
+            })
+            .collect()
     }
 
     fn exact_arity(
@@ -451,6 +476,10 @@ impl CorePrimitive for StandardPrimitives {
                 Ok(self.truth(left <= right))
             }
         }
+    }
+
+    fn truth(&self, value: bool) -> FrontendValue {
+        StandardPrimitives::truth(self, value)
     }
 }
 

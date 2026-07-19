@@ -71,6 +71,7 @@ use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit};
 
 use crate::carrier::CarvedCarrier;
 use crate::defs::Defs;
+use crate::frontend::{CoreAtom, FrontendExpr, Primitive};
 use crate::hol::HolError;
 use crate::int_backend::{self, IntBackend, IntOp, IntVariant, NatVariant};
 
@@ -231,6 +232,275 @@ impl LispSemantics {
     /// A bare `t` / `nil` compiles as *data* by default (top level).
     pub fn compile(&self, e: &SExpr) -> Result<Term, HolError> {
         self.compile_h(e, Hint::Data)
+    }
+
+    /// Compile the stable backend-neutral Lisp core directly to HOL.
+    ///
+    /// Surface parsing and special-form validation happen in
+    /// [`crate::frontend::Frontend`]. This is a proof-producing backend for
+    /// that shared syntax; it does not execute through the host realization
+    /// or round-trip through S-expression text.
+    pub fn compile_core(&self, expression: &FrontendExpr) -> Result<Term, HolError> {
+        self.compile_core_h(expression, Hint::Data)
+    }
+
+    fn compile_core_h(&self, expression: &FrontendExpr, hint: Hint) -> Result<Term, HolError> {
+        use covalence_kernel_lisp::CoreExpr;
+        match expression {
+            CoreExpr::Literal(datum) | CoreExpr::Quote(datum) => {
+                self.compile_core_datum(datum, hint)
+            }
+            CoreExpr::Truth(value) => Ok(match hint {
+                Hint::Bool => covalence_hol_eval::mk_bool(*value),
+                Hint::Data if *value => self.symbol_atom("t"),
+                Hint::Data => self.cs.snil.clone(),
+            }),
+            CoreExpr::Variable(name) => Ok(Term::free(name, self.cs.tau.clone())),
+            CoreExpr::If {
+                condition,
+                consequent,
+                alternative,
+            } => {
+                let condition = self.compile_core_h(condition, Hint::Bool)?;
+                self.compile_core_branches(condition, consequent, alternative)
+            }
+            CoreExpr::Cond { clauses } => self.compile_core_cond(clauses),
+            CoreExpr::Lambda {
+                parameters, body, ..
+            } => {
+                let mut lambda = self.compile_core(body)?;
+                for parameter in parameters.iter().rev() {
+                    let closed = covalence_core::subst::close(&lambda, &parameter.name);
+                    lambda = Term::abs(self.cs.tau.clone(), closed);
+                }
+                Ok(lambda)
+            }
+            CoreExpr::Apply {
+                operator,
+                arguments,
+            } => {
+                let mut term = match operator.as_ref() {
+                    CoreExpr::Variable(name) => match self.defs.get(name) {
+                        Some(definition) => definition.head.clone(),
+                        None => Term::free(name, self.forward_head_ty(arguments.len())),
+                    },
+                    operator => self.compile_core(operator)?,
+                };
+                for argument in arguments {
+                    term = Term::app(term, self.compile_core(argument)?);
+                }
+                Ok(term)
+            }
+            CoreExpr::Let { bindings, body } => {
+                let lambda = CoreExpr::Lambda {
+                    name: None,
+                    parameters: bindings
+                        .iter()
+                        .map(|binding| covalence_kernel_lisp::Parameter::new(binding.name.clone()))
+                        .collect(),
+                    body: body.clone(),
+                };
+                self.compile_core(&CoreExpr::Apply {
+                    operator: Box::new(lambda),
+                    arguments: bindings
+                        .iter()
+                        .map(|binding| binding.value.clone())
+                        .collect(),
+                })
+            }
+            CoreExpr::Primitive {
+                operator,
+                arguments,
+            } => self.compile_core_primitive(*operator, arguments),
+        }
+    }
+
+    fn compile_core_datum(
+        &self,
+        datum: &covalence_kernel_lisp::Datum<CoreAtom>,
+        hint: Hint,
+    ) -> Result<Term, HolError> {
+        use covalence_kernel_lisp::Datum;
+        match datum {
+            Datum::Nil => Ok(match hint {
+                Hint::Bool => covalence_hol_eval::mk_bool(false),
+                Hint::Data => self.cs.snil.clone(),
+            }),
+            Datum::Atom(CoreAtom::Symbol(symbol)) if symbol == b"t" && hint == Hint::Bool => {
+                Ok(covalence_hol_eval::mk_bool(true))
+            }
+            Datum::Atom(CoreAtom::Symbol(symbol)) => self.carrier.atom(PayloadLit::Sym(symbol)),
+            Datum::Atom(CoreAtom::String { bytes, .. }) => {
+                self.carrier.atom(PayloadLit::Sym(bytes))
+            }
+            Datum::Atom(CoreAtom::Integer(integer)) => {
+                if hint == Hint::Bool {
+                    return Err(HolError::Stuck(
+                        "integer used where a boolean condition is required".into(),
+                    ));
+                }
+                Ok(covalence_hol_eval::mk_int(integer.clone()))
+            }
+            Datum::Cons(head, tail) => {
+                let head = self.compile_core_datum(head, Hint::Data)?;
+                let tail = self.compile_core_datum(tail, Hint::Data)?;
+                Ok(Term::app(Term::app(self.cs.scons.clone(), head), tail))
+            }
+        }
+    }
+
+    fn compile_core_branches(
+        &self,
+        condition: Term,
+        consequent: &FrontendExpr,
+        alternative: &FrontendExpr,
+    ) -> Result<Term, HolError> {
+        let consequent_data = self.compile_core_h(consequent, Hint::Data)?;
+        let alternative_data = self.compile_core_h(alternative, Hint::Data)?;
+        let consequent_ty = consequent_data.type_of().map_err(kernel_err)?;
+        let alternative_ty = alternative_data.type_of().map_err(kernel_err)?;
+        let (consequent, alternative, alpha) = if consequent_ty == alternative_ty {
+            (consequent_data, alternative_data, consequent_ty)
+        } else {
+            let consequent_bool = self.compile_core_h(consequent, Hint::Bool)?;
+            let alternative_bool = self.compile_core_h(alternative, Hint::Bool)?;
+            if consequent_bool.type_of().map_err(kernel_err)? != Type::bool()
+                || alternative_bool.type_of().map_err(kernel_err)? != Type::bool()
+            {
+                return Err(HolError::Stuck(
+                    "conditional branches have incompatible types".into(),
+                ));
+            }
+            (consequent_bool, alternative_bool, Type::bool())
+        };
+        let default = if alpha == Type::bool() {
+            covalence_hol_eval::mk_bool(false)
+        } else if alpha == Type::int() {
+            covalence_hol_eval::mk_int(Int::zero())
+        } else {
+            self.cs.snil.clone()
+        };
+        let fallback = self.mk_cond(
+            &alpha,
+            covalence_hol_eval::mk_bool(true),
+            alternative,
+            default,
+        )?;
+        self.mk_cond(&alpha, condition, consequent, fallback)
+    }
+
+    fn compile_core_cond(
+        &self,
+        clauses: &[(FrontendExpr, FrontendExpr)],
+    ) -> Result<Term, HolError> {
+        let alpha = clauses
+            .iter()
+            .filter(|(_, branch)| !matches!(branch, covalence_kernel_lisp::CoreExpr::Truth(_)))
+            .map(|(_, branch)| {
+                self.compile_core_h(branch, Hint::Data)
+                    .and_then(|term| term.type_of().map_err(kernel_err))
+            })
+            .next()
+            .transpose()?
+            .unwrap_or_else(|| self.cs.tau.clone());
+        let hint = if alpha == Type::bool() {
+            Hint::Bool
+        } else {
+            Hint::Data
+        };
+        let mut result = if alpha == Type::bool() {
+            covalence_hol_eval::mk_bool(false)
+        } else if alpha == Type::int() {
+            covalence_hol_eval::mk_int(Int::zero())
+        } else {
+            self.cs.snil.clone()
+        };
+        for (condition, branch) in clauses.iter().rev() {
+            let condition = self.compile_core_h(condition, Hint::Bool)?;
+            let branch = self.compile_core_h(branch, hint)?;
+            if branch.type_of().map_err(kernel_err)? != alpha {
+                return Err(HolError::Stuck(
+                    "cond branches have incompatible types".into(),
+                ));
+            }
+            result = self.mk_cond(&alpha, condition, branch, result)?;
+        }
+        Ok(result)
+    }
+
+    fn compile_core_primitive(
+        &self,
+        primitive: Primitive,
+        arguments: &[FrontendExpr],
+    ) -> Result<Term, HolError> {
+        let require_arity = |expected: usize| {
+            if arguments.len() == expected {
+                Ok(())
+            } else {
+                Err(HolError::Stuck(format!(
+                    "{primitive:?} expects {expected} arguments (got {})",
+                    arguments.len()
+                )))
+            }
+        };
+        match primitive {
+            Primitive::Cons => {
+                require_arity(2)?;
+                Ok(Term::app(
+                    Term::app(self.cs.scons.clone(), self.compile_core(&arguments[0])?),
+                    self.compile_core(&arguments[1])?,
+                ))
+            }
+            Primitive::Car | Primitive::Cdr => {
+                require_arity(1)?;
+                let operator = if primitive == Primitive::Car {
+                    self.cs.car.clone()
+                } else {
+                    self.cs.cdr.clone()
+                };
+                Ok(Term::app(operator, self.compile_core(&arguments[0])?))
+            }
+            Primitive::Atom | Primitive::Consp | Primitive::Null => {
+                require_arity(1)?;
+                let argument = self.compile_core(&arguments[0])?;
+                if primitive == Primitive::Null {
+                    Ok(hol_not(Term::app(self.l.consp.clone(), argument)))
+                } else {
+                    let operator = if primitive == Primitive::Atom {
+                        self.l.atom_p.clone()
+                    } else {
+                        self.l.consp.clone()
+                    };
+                    Ok(Term::app(operator, argument))
+                }
+            }
+            Primitive::Equal => {
+                require_arity(2)?;
+                let left = self.compile_core(&arguments[0])?;
+                let right = self.compile_core(&arguments[1])?;
+                let ty = left.type_of().map_err(kernel_err)?;
+                if right.type_of().map_err(kernel_err)? != ty {
+                    return Err(HolError::Stuck(
+                        "equality operands have incompatible types".into(),
+                    ));
+                }
+                Ok(Term::app(Term::app(Term::eq_op(ty), left), right))
+            }
+            Primitive::Add | Primitive::Subtract | Primitive::Multiply | Primitive::LessEqual => {
+                require_arity(2)?;
+                let operation = match primitive {
+                    Primitive::Add => IntOp::Add,
+                    Primitive::Subtract => IntOp::Sub,
+                    Primitive::Multiply => IntOp::Mul,
+                    Primitive::LessEqual => IntOp::Le,
+                    _ => unreachable!(),
+                };
+                let left = self.compile_core(&arguments[0])?;
+                let right = self.compile_core(&arguments[1])?;
+                int_backend::kernel_redex(operation, &left, &right)
+                    .map_err(|_| HolError::Stuck(format!("{primitive:?} expects integer operands")))
+            }
+        }
     }
 
     fn compile_h(&self, e: &SExpr, hint: Hint) -> Result<Term, HolError> {
@@ -1141,4 +1411,47 @@ fn is_reserved(name: &str) -> bool {
             | "define"
             | "label"
     )
+}
+
+#[cfg(test)]
+mod core_backend_tests {
+    use super::*;
+    use crate::frontend::{Frontend, SurfaceDialect};
+
+    fn one(source: &str) -> SExpr {
+        crate::reader::read(source).unwrap().pop().unwrap()
+    }
+
+    #[test]
+    fn shared_core_and_legacy_surface_compile_to_identical_hol_terms() {
+        let semantics = LispSemantics::new().unwrap();
+        let frontend = Frontend::new(SurfaceDialect::Scheme);
+        for source in [
+            "(car (cons (quote a) (quote ())))",
+            "(+ 2 (* 3 4))",
+            "((lambda (x) (cons x (quote ()))) (quote a))",
+            "(if (null? (quote ())) (quote yes) (quote no))",
+        ] {
+            let surface = one(source);
+            let core = frontend.lower(&surface).unwrap();
+            assert_eq!(
+                semantics.compile_core(&core).unwrap(),
+                semantics.compile(&surface).unwrap(),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn scheme_quote_keeps_numerals_as_symbol_data() {
+        let semantics = LispSemantics::new().unwrap();
+        let surface = one("(quote 42)");
+        let core = Frontend::new(SurfaceDialect::Scheme)
+            .lower(&surface)
+            .unwrap();
+        assert_eq!(
+            semantics.compile_core(&core).unwrap(),
+            semantics.compile(&surface).unwrap()
+        );
+    }
 }

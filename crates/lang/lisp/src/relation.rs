@@ -47,7 +47,7 @@ use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::metalogic::binary::{Premise, RuleSet2, derivable2, derive_mixed};
 use covalence_init::{Term, Type};
 use covalence_kernel_lisp::{
-    CheckedTrace, DeterministicStep, StepRelation, TraceReplay, TraceSoundness,
+    CheckedTrace, CoreExpr, Datum, DeterministicStep, StepRelation, TraceReplay, TraceSoundness,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -55,6 +55,7 @@ use covalence_types::Int;
 use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit};
 
 use crate::carrier::CarvedCarrier;
+use crate::frontend::{CoreAtom, FrontendExpr, Primitive};
 use crate::hol::HolError;
 use crate::int_backend::{IntBackend, IntOp, IntVariant, NatVariant};
 
@@ -972,6 +973,167 @@ impl LispRel {
         }
     }
 
+    /// Compile the backend-neutral core to the relational HOL representation.
+    pub fn compile_core(&self, expression: &FrontendExpr) -> Result<Term, HolError> {
+        match expression {
+            CoreExpr::Literal(datum) | CoreExpr::Quote(datum) => self.compile_core_datum(datum),
+            CoreExpr::Truth(true) => Ok(self.t()),
+            CoreExpr::Truth(false) => Ok(self.nil()),
+            CoreExpr::Primitive {
+                operator,
+                arguments,
+            } => self.compile_core_primitive(*operator, arguments),
+            CoreExpr::If {
+                condition,
+                consequent,
+                alternative,
+            } => {
+                let condition = self.compile_core(condition)?;
+                let consequent = self.compile_core(consequent)?;
+                let alternative = self.compile_core(alternative)?;
+                let else_cell = self.scons(self.t(), alternative)?;
+                let then_cell = self.scons(condition, consequent)?;
+                let rest = self.scons(else_cell, self.cs.snil.clone())?;
+                let cells = self.scons(then_cell, rest)?;
+                self.cond_of(cells)
+            }
+            CoreExpr::Cond { clauses } => {
+                let mut cells = self.cs.snil.clone();
+                for (condition, body) in clauses.iter().rev() {
+                    let condition = self.compile_core(condition)?;
+                    let body = self.compile_core(body)?;
+                    let cell = self.scons(condition, body)?;
+                    cells = self.scons(cell, cells)?;
+                }
+                self.cond_of(cells)
+            }
+            CoreExpr::Apply {
+                operator,
+                arguments,
+            } => {
+                if let CoreExpr::Variable(name) = operator.as_ref() {
+                    if matches!(name.as_str(), "defun" | "define" | "label") {
+                        return Err(HolError::Stuck(format!(
+                            "`{name}` needs recursion, which this relational dialect does not \
+                             support yet — switch dialects with `#lang scheme`"
+                        )));
+                    }
+                    let ints = if self.int_be.is_some() {
+                        " + - * <= ="
+                    } else {
+                        ""
+                    };
+                    Err(HolError::Stuck(format!(
+                        "unknown or misapplied operator `{name}` (applied to {} arguments) — \
+                         this dialect supports: quote car cdr cons atom? consp null? eq? cond \
+                         if{ints}; `defun`/`lambda` need `#lang scheme`",
+                        arguments.len()
+                    )))
+                } else {
+                    Err(HolError::Stuck(
+                        "higher-order application needs `#lang scheme`".into(),
+                    ))
+                }
+            }
+            CoreExpr::Lambda { .. } | CoreExpr::Let { .. } => Err(HolError::Stuck(
+                "lambda and lexical bindings need recursion; switch with `#lang scheme`".into(),
+            )),
+            CoreExpr::Variable(name) => Err(HolError::Stuck(format!(
+                "unbound relational Lisp variable `{name}`"
+            ))),
+        }
+    }
+
+    fn compile_core_datum(&self, datum: &Datum<CoreAtom>) -> Result<Term, HolError> {
+        match datum {
+            Datum::Nil => Ok(self.cs.snil.clone()),
+            Datum::Atom(CoreAtom::Symbol(symbol)) => self.carrier.atom(PayloadLit::Sym(symbol)),
+            Datum::Atom(CoreAtom::String { bytes, .. }) => {
+                self.carrier.atom(PayloadLit::Sym(bytes))
+            }
+            Datum::Atom(CoreAtom::Integer(integer)) => self.int_lit(integer),
+            Datum::Cons(head, tail) => {
+                let head = self.compile_core_datum(head)?;
+                let tail = self.compile_core_datum(tail)?;
+                self.scons(head, tail)
+            }
+        }
+    }
+
+    fn compile_core_primitive(
+        &self,
+        primitive: Primitive,
+        arguments: &[FrontendExpr],
+    ) -> Result<Term, HolError> {
+        let require_arity = |expected: usize| {
+            if arguments.len() == expected {
+                Ok(())
+            } else {
+                Err(HolError::Stuck(format!(
+                    "{primitive:?} expects {expected} arguments (got {})",
+                    arguments.len()
+                )))
+            }
+        };
+        match primitive {
+            Primitive::Cons => {
+                require_arity(2)?;
+                self.scons(
+                    self.compile_core(&arguments[0])?,
+                    self.compile_core(&arguments[1])?,
+                )
+            }
+            Primitive::Car | Primitive::Cdr => {
+                require_arity(1)?;
+                let argument = self.compile_core(&arguments[0])?;
+                if primitive == Primitive::Car {
+                    self.car(argument)
+                } else {
+                    self.cdr(argument)
+                }
+            }
+            Primitive::Atom | Primitive::Consp | Primitive::Null => {
+                require_arity(1)?;
+                let argument = self.compile_core(&arguments[0])?;
+                match primitive {
+                    Primitive::Atom => self.atom_p_of(argument),
+                    Primitive::Consp => self.consp_of(argument),
+                    Primitive::Null => self.null_p_of(argument),
+                    _ => unreachable!(),
+                }
+            }
+            Primitive::Equal => {
+                require_arity(2)?;
+                let left = self.compile_core(&arguments[0])?;
+                let right = self.compile_core(&arguments[1])?;
+                if self
+                    .int_be
+                    .as_deref()
+                    .is_some_and(|backend| backend.as_lit(&left).is_some())
+                {
+                    self.int_op_term(IntOp::Eq, left, right)
+                } else {
+                    self.eq_of(left, right)
+                }
+            }
+            Primitive::Add | Primitive::Subtract | Primitive::Multiply | Primitive::LessEqual => {
+                require_arity(2)?;
+                let operation = match primitive {
+                    Primitive::Add => IntOp::Add,
+                    Primitive::Subtract => IntOp::Sub,
+                    Primitive::Multiply => IntOp::Mul,
+                    Primitive::LessEqual => IntOp::Le,
+                    _ => unreachable!(),
+                };
+                self.int_op_term(
+                    operation,
+                    self.compile_core(&arguments[0])?,
+                    self.compile_core(&arguments[1])?,
+                )
+            }
+        }
+    }
+
     /// An atom in operand position: a numeral (int dialect only), else a
     /// symbol atom.
     fn surface_atom(&self, a: &Atom) -> Result<Term, HolError> {
@@ -1133,6 +1295,26 @@ impl LispRel {
             "`{}` does not reduce to a value: a subterm has no reduction rule in this dialect{hint}",
             surface_text(e)
         )))
+    }
+
+    pub fn reduce_core(
+        &self,
+        expression: &FrontendExpr,
+        fuel: usize,
+    ) -> Result<(Term, Thm), HolError> {
+        let input = self.compile_core(expression)?;
+        let (value, theorem) = self.prove_reduces(&input, fuel)?;
+        if self.is_value(&value) {
+            Ok((value, theorem))
+        } else {
+            let hint = match self.dialect {
+                Dialect::Sector => " (integer arithmetic needs `#lang lisp`)",
+                Dialect::SectorInt(_) => "",
+            };
+            Err(HolError::Stuck(format!(
+                "expression does not reduce to a value: a subterm has no reduction rule in this dialect{hint}"
+            )))
+        }
     }
 
     /// Render a relational value term to Lisp text: `(int n)` → decimal `n`,

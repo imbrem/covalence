@@ -60,12 +60,16 @@ impl<S, E> Binding<S, E> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum CoreExpr<S, D, P> {
     Literal(D),
+    Truth(bool),
     Variable(S),
     Quote(D),
     If {
         condition: Box<Self>,
         consequent: Box<Self>,
         alternative: Box<Self>,
+    },
+    Cond {
+        clauses: Vec<(Self, Self)>,
     },
     Lambda {
         /// A name enables direct recursive calls without requiring a global
@@ -101,6 +105,7 @@ pub trait LispSyntax {
     type Error;
 
     fn literal(&self, datum: Self::Datum) -> Result<Self::Expr, Self::Error>;
+    fn truth(&self, value: bool) -> Result<Self::Expr, Self::Error>;
     fn variable(&self, symbol: Self::Symbol) -> Result<Self::Expr, Self::Error>;
     fn quote(&self, datum: Self::Datum) -> Result<Self::Expr, Self::Error>;
     fn if_then_else(
@@ -109,6 +114,7 @@ pub trait LispSyntax {
         consequent: Self::Expr,
         alternative: Self::Expr,
     ) -> Result<Self::Expr, Self::Error>;
+    fn cond(&self, clauses: Vec<(Self::Expr, Self::Expr)>) -> Result<Self::Expr, Self::Error>;
     fn lambda(
         &self,
         name: Option<Self::Symbol>,

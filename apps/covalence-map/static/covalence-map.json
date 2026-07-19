@@ -241,7 +241,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 229,
+      "words": 234,
       "updated": 0
     },
     {
@@ -9313,7 +9313,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 630,
+      "words": 658,
       "updated": 0
     },
     {
@@ -9349,7 +9349,7 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/syntax.rs",
-      "words": 144,
+      "words": 150,
       "updated": 0
     },
     {
@@ -10690,7 +10690,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 1747,
+      "words": 1754,
       "updated": 0
     },
     {
@@ -10735,7 +10735,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 677,
+      "words": 706,
       "updated": 0
     },
     {
@@ -10780,7 +10780,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 1710,
+      "words": 1892,
       "updated": 0
     },
     {
@@ -10789,7 +10789,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1145,
+      "words": 1458,
       "updated": 0
     },
     {
@@ -10798,7 +10798,7 @@
       "title": "session.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/session.rs",
-      "words": 833,
+      "words": 850,
       "updated": 0
     },
     {
@@ -22054,7 +22054,7 @@
     {
       "id": "todo:lisp.frontends.scheme-forsp",
       "kind": "todo",
-      "title": "Route production Scheme/Sector sessions through the common frontend and add a proof-producing Forsp backend.",
+      "title": "Add a proof-producing Forsp backend and cross-check it against the host stack machine.",
       "status": "major",
       "path": "crates/kernel/lisp/src/lib.rs",
       "words": 0,

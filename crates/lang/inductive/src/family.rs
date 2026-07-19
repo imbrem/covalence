@@ -4,7 +4,7 @@
 //! endofunctors and their composition. This module adds the distinct operation
 //! needed for nested datatypes such as `List(X) = μY. 1 + X × Y`.
 
-/// A regular datatype family with capture-safe nested least fixpoints.
+/// A regular datatype family with capture-safe nested fixpoints.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DatatypeFamilyExpr<P> {
     /// The empty type.
@@ -25,6 +25,8 @@ pub enum DatatypeFamilyExpr<P> {
     Product(Vec<Self>),
     /// A nested least fixpoint. Its body binds [`Bound(0)`](Self::Bound).
     Least(Box<Self>),
+    /// A nested greatest fixpoint. Its body binds [`Bound(0)`](Self::Bound).
+    Greatest(Box<Self>),
 }
 
 /// Why a datatype-family expression is not well scoped.
@@ -53,6 +55,11 @@ impl<P> DatatypeFamilyExpr<P> {
         Self::Least(Box::new(body))
     }
 
+    /// Form a nested greatest fixpoint.
+    pub fn greatest(body: Self) -> Self {
+        Self::Greatest(Box::new(body))
+    }
+
     /// Check every bound-variable reference against its lexical binder depth.
     pub fn validate(&self) -> Result<(), DatatypeFamilyError> {
         self.validate_at(0)
@@ -69,7 +76,7 @@ impl<P> DatatypeFamilyExpr<P> {
             Self::Sum(terms) | Self::Product(terms) => {
                 terms.iter().try_for_each(|term| term.validate_at(depth))
             }
-            Self::Least(body) => body.validate_at(depth + 1),
+            Self::Least(body) | Self::Greatest(body) => body.validate_at(depth + 1),
         }
     }
 
@@ -79,7 +86,7 @@ impl<P> DatatypeFamilyExpr<P> {
             Self::FamilyVar => true,
             Self::Zero | Self::One | Self::Param(_) | Self::Bound(_) => false,
             Self::Sum(terms) | Self::Product(terms) => terms.iter().any(Self::is_recursive),
-            Self::Least(body) => body.is_recursive(),
+            Self::Least(body) | Self::Greatest(body) => body.is_recursive(),
         }
     }
 
@@ -108,6 +115,9 @@ impl<P> DatatypeFamilyExpr<P> {
                     .collect(),
             ),
             Self::Least(body) => DatatypeFamilyExpr::Least(Box::new(body.map_param_with(map))),
+            Self::Greatest(body) => {
+                DatatypeFamilyExpr::Greatest(Box::new(body.map_param_with(map)))
+            }
         }
     }
 
@@ -147,6 +157,9 @@ impl<P> DatatypeFamilyExpr<P> {
             ),
             Self::Least(body) => {
                 Self::Least(Box::new(body.substitute_family_unchecked(replacement)))
+            }
+            Self::Greatest(body) => {
+                Self::Greatest(Box::new(body.substitute_family_unchecked(replacement)))
             }
         }
     }

@@ -227,6 +227,15 @@
       "updated": 0
     },
     {
+      "id": "api:A0023",
+      "kind": "api",
+      "title": "Concatenative Lisp stack machines",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/stack.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -682,7 +691,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35516,
+      "words": 35579,
       "updated": 0
     },
     {
@@ -9326,6 +9335,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp/src/stack.rs",
+      "kind": "file",
+      "title": "stack.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/stack.rs",
+      "words": 67,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/lisp/src/syntax.rs",
       "kind": "file",
       "title": "syntax.rs",
@@ -10700,6 +10718,24 @@
       "status": "tracked",
       "path": "crates/lang/lisp/src/defs.rs",
       "words": 180,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/src/forsp.rs",
+      "kind": "file",
+      "title": "forsp.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/src/forsp.rs",
+      "words": 598,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/src/frontend.rs",
+      "kind": "file",
+      "title": "frontend.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/src/frontend.rs",
+      "words": 677,
       "updated": 0
     },
     {
@@ -15235,7 +15271,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35516,
+      "words": 35579,
       "updated": 0
     },
     {
@@ -15343,7 +15379,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3539,
+      "words": 3529,
       "updated": 0
     },
     {
@@ -22016,15 +22052,6 @@
       "updated": 0
     },
     {
-      "id": "todo:lisp.forsp.reader-sugar",
-      "kind": "todo",
-      "title": "Add a Forsp reader dialect for apostrophe quote syntax and semicolon comments.",
-      "status": "major",
-      "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:lisp.frontends.scheme-forsp",
       "kind": "todo",
       "title": "Route production Scheme/Sector sessions through the common frontend and add a proof-producing Forsp backend.",
@@ -22816,6 +22843,18 @@
       "source": "api:A0022",
       "predicate": "depends-on",
       "target": "api:A0021",
+      "detail": null
+    },
+    {
+      "source": "api:A0023",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/lisp/src/stack.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0023",
+      "predicate": "depends-on",
+      "target": "api:A0022",
       "detail": null
     },
     {
@@ -25161,6 +25200,12 @@
     {
       "source": "file:crates/kernel/lisp/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/stack.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/lisp/src/syntax.rs",
       "detail": null
     },
@@ -25516,6 +25561,18 @@
       "source": "file:crates/lang/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/lisp/src/defs.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/lisp/src/forsp.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/lisp/src/frontend.rs",
       "detail": null
     },
     {
@@ -33423,6 +33480,12 @@
       "title": "Lisp operational semantics",
       "status": "experimental",
       "path": "crates/kernel/lisp/src/lib.rs"
+    },
+    {
+      "id": "A0023",
+      "title": "Concatenative Lisp stack machines",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/stack.rs"
     }
   ],
   "apiImplementations": [

@@ -178,6 +178,9 @@ impl ForspFrontend {
 
     fn lower_item(&self, form: &SExpr) -> Result<ForspInstruction, ForspError> {
         Ok(match form {
+            SExpr::List(items) if items.len() == 2 && items[0].as_symbol() == Some("quote") => {
+                ForspInstruction::Quote(self.quote(&items[1]))
+            }
             SExpr::List(items) => ForspInstruction::Closure(self.lower_sequence(items)?),
             SExpr::Atom(Atom::Str { .. }) => ForspInstruction::Literal(self.quote(form)),
             SExpr::Atom(Atom::Symbol(text)) => {
@@ -194,6 +197,142 @@ impl ForspFrontend {
                 }
             }
         })
+    }
+}
+
+/// Read Forsp source, expanding apostrophe quote sugar and accepting its
+/// single-semicolon line comments.
+pub fn read(source: &str) -> Result<Vec<SExpr>, covalence_sexp::ParseError> {
+    let normalized = ForspSurface::new(source).normalize()?;
+    covalence_sexp::parse_smt(&normalized)
+}
+
+struct ForspSurface<'a> {
+    source: &'a str,
+    cursor: usize,
+    output: String,
+}
+
+impl<'a> ForspSurface<'a> {
+    fn new(source: &'a str) -> Self {
+        Self {
+            source,
+            cursor: 0,
+            output: String::with_capacity(source.len()),
+        }
+    }
+
+    fn normalize(mut self) -> Result<String, covalence_sexp::ParseError> {
+        self.trivia();
+        while self.cursor < self.source.len() {
+            self.form()?;
+            self.trivia();
+        }
+        Ok(self.output)
+    }
+
+    fn form(&mut self) -> Result<(), covalence_sexp::ParseError> {
+        match self
+            .peek()
+            .ok_or_else(|| self.error("expected Forsp form"))?
+        {
+            b'\'' => {
+                self.cursor += 1;
+                self.output.push_str("(quote ");
+                self.trivia();
+                self.form()?;
+                self.output.push(')');
+            }
+            b'(' => {
+                self.cursor += 1;
+                self.output.push('(');
+                self.trivia();
+                while self.peek() != Some(b')') {
+                    if self.cursor == self.source.len() {
+                        return Err(self.error("unclosed Forsp list"));
+                    }
+                    self.form()?;
+                    self.trivia();
+                }
+                self.cursor += 1;
+                self.output.push(')');
+            }
+            b')' => return Err(self.error("unexpected ')'")),
+            b'"' => self.string()?,
+            _ => self.atom(),
+        }
+        Ok(())
+    }
+
+    fn trivia(&mut self) {
+        loop {
+            while self.peek().is_some_and(|byte| byte.is_ascii_whitespace()) {
+                self.output
+                    .push(self.source.as_bytes()[self.cursor] as char);
+                self.cursor += 1;
+            }
+            if self.peek() != Some(b';') {
+                return;
+            }
+            while let Some(byte) = self.peek() {
+                self.cursor += 1;
+                if byte == b'\n' {
+                    self.output.push('\n');
+                    break;
+                }
+            }
+        }
+    }
+
+    fn string(&mut self) -> Result<(), covalence_sexp::ParseError> {
+        let start = self.cursor;
+        self.output.push('"');
+        self.cursor += 1;
+        while let Some(byte) = self.peek() {
+            self.output.push(byte as char);
+            self.cursor += 1;
+            match byte {
+                b'\\' => {
+                    let escaped = self
+                        .peek()
+                        .ok_or_else(|| self.error_at(start, "unterminated Forsp string escape"))?;
+                    self.output.push(escaped as char);
+                    self.cursor += 1;
+                }
+                b'"' => return Ok(()),
+                _ => {}
+            }
+        }
+        Err(self.error_at(start, "unterminated Forsp string"))
+    }
+
+    fn atom(&mut self) {
+        while let Some(byte) = self.peek() {
+            if byte.is_ascii_whitespace() || matches!(byte, b'(' | b')' | b';' | b'\'') {
+                break;
+            }
+            let ch = self.source[self.cursor..]
+                .chars()
+                .next()
+                .expect("not at eof");
+            self.output.push(ch);
+            self.cursor += ch.len_utf8();
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.source.as_bytes().get(self.cursor).copied()
+    }
+
+    fn error(&self, message: impl Into<String>) -> covalence_sexp::ParseError {
+        self.error_at(self.cursor, message)
+    }
+
+    fn error_at(&self, offset: usize, message: impl Into<String>) -> covalence_sexp::ParseError {
+        covalence_sexp::ParseError {
+            offset,
+            message: message.into(),
+        }
     }
 }
 
@@ -392,7 +531,6 @@ impl StepRelation for ForspMachine {
     }
 }
 
-// TODO(cov:lisp.forsp.reader-sugar, major): Add a Forsp reader dialect for apostrophe quote syntax and semicolon comments.
 // TODO(cov:lisp.forsp.effects, major): Model read/print and unsafe pointer primitives as explicit effect capabilities outside the pure machine.
 
 #[cfg(test)]
@@ -401,7 +539,7 @@ mod tests {
     use covalence_kernel_lisp::execute;
 
     fn program(source: &str) -> ForspCode {
-        let form = crate::reader::read(source).unwrap().pop().unwrap();
+        let form = read(source).unwrap().pop().unwrap();
         ForspFrontend.lower(&form).unwrap()
     }
 
@@ -435,6 +573,20 @@ mod tests {
     #[test]
     fn verbose_quote_reuses_inductive_lisp_data() {
         let result = run("(quote (1 2 3) car)");
+        assert_eq!(
+            result.operands,
+            vec![ForspValue::Datum(Datum::Atom(CoreAtom::Integer(
+                Int::from(1)
+            )))]
+        );
+    }
+
+    #[test]
+    fn reference_quote_sugar_and_comments_are_accepted() {
+        let result = run("(
+               ; reference Forsp syntax
+               '(1 2 3) car
+             )");
         assert_eq!(
             result.operands,
             vec![ForspValue::Datum(Datum::Atom(CoreAtom::Integer(

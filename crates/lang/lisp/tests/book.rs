@@ -25,6 +25,9 @@ use covalence_lisp::book::{
     ImportClass, SourceClosureStatus, Tally, TheoremNeutralCapability, TheoremNeutralInterface,
     run_book, run_book_with_config,
 };
+use covalence_lisp::progress::{
+    NormalizedEventIdentity, NormalizedEventScope, PinnedNormalizedDenominator, ProgressMode,
+};
 use covalence_lisp::reader::read_book;
 use covalence_lisp::session::Session;
 use covalence_lisp::world::Acl2World;
@@ -1921,15 +1924,16 @@ fn official_std_basic_fixers_transport_all_logical_exports() {
 #[test]
 #[ignore = "requires ACL2 community-books revision 2dbf2b63"]
 fn official_std_lists_acl2_count_is_source_green() {
+    const REVISION: &str = "2dbf2b63bb9a27070c8573d72c16c04a4809c8d1";
+    const BOOK: &str = "std/lists/acl2-count.lisp";
     let books = std::env::var_os("ACL2_CORPUS_DIR")
         .map(PathBuf::from)
         .expect("set ACL2_CORPUS_DIR to the ACL2 checkout's books directory");
-    let source = books.join("std/lists/acl2-count.lisp");
-    assert_eq!(
-        sha256(&std::fs::read(&source).unwrap()),
-        sha256_bytes("952499bebe748a4411377644ea6b47208a38f496fd908812099e49af35df8ab1"),
-        "pinned ACL2-COUNT book changed"
-    );
+    let source = books.join(BOOK);
+    let source_sha = sha256(&std::fs::read(&source).unwrap());
+    let pinned_sha =
+        sha256_bytes("952499bebe748a4411377644ea6b47208a38f496fd908812099e49af35df8ab1");
+    assert_eq!(source_sha, pinned_sha, "pinned ACL2-COUNT book changed");
     let mut s = session();
     let report = run_book_with_config(
         &mut s,
@@ -1949,6 +1953,35 @@ fn official_std_lists_acl2_count_is_source_green() {
     );
     assert_eq!(progress.source_closure, SourceClosureStatus::Recursive);
     assert!(progress.is_green_island(), "{report}");
+
+    // This exact source contains no macros or generated events, so its six
+    // top-level forms are also the independently inspected normalized ACL2
+    // denominator. Observed source-green status alone is not enough: require
+    // exact revision, bytes, ordering, heads, labels, and public scope.
+    let event = |kind: &str, label: &str| NormalizedEventIdentity {
+        book: BOOK.into(),
+        kind: kind.into(),
+        label: label.into(),
+        scope: NormalizedEventScope::Public,
+    };
+    let denominator = PinnedNormalizedDenominator::new(
+        REVISION,
+        BOOK,
+        pinned_sha,
+        vec![
+            event("in-package", "\"ACL2\""),
+            event("defthmd", "acl2-count-of-car"),
+            event("defthmd", "acl2-count-of-cdr"),
+            event("defthm", "acl2-count-of-sum"),
+            event("defthm", "acl2-count-of-consp-positive"),
+            event("defthm", "acl2-count-of-cons-greater"),
+        ],
+    );
+    let upstream = denominator
+        .compare(&report, REVISION, source_sha, ProgressMode::Replay)
+        .expect("ACL2-COUNT must match its authoritative normalized denominator");
+    assert!(upstream.is_upstream_complete());
+
     for name in [
         "acl2-count-of-car",
         "acl2-count-of-cdr",

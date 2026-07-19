@@ -115,11 +115,18 @@ score.
   `952499bebe748a4411377644ea6b47208a38f496fd908812099e49af35df8ab1`,
   six source events, no includes, and five theorem exports. It is now the
   first strict source-green upstream island: all five theorem exports replay
-  to exact hypothesis-free NativeHol theorems. The reusable checked law pack
-  proves ACL2-COUNT totality, strict and weak CAR/CDR/sum bounds, positivity,
-  and explicit-cons growth from one shared carrier invariant. The complete
-  pack constructs in about 1.2 seconds warm; the pinned end-to-end source gate
-  passes 5/5 in about 61 seconds in a debug test build.
+  to exact hypothesis-free NativeHol theorems. Its upstream-completeness gate
+  also compares the replay report against an independently enumerated,
+  revision- and source-hash-pinned ordered denominator for all six normalized
+  events, including their exact heads, labels, and public scope. Inventory
+  runs, non-green replay, and revision/hash/count/order/identity/scope drift
+  fail with structured mismatch codes. The resulting completeness report is
+  explicitly untrusted audit evidence; theorem authority still comes only
+  from checked replay. The reusable checked law pack proves ACL2-COUNT
+  totality, strict and weak CAR/CDR/sum bounds, positivity, and explicit-cons
+  growth from one shared carrier invariant. The complete pack constructs in
+  about 1.2 seconds warm; the pinned end-to-end source and denominator gate
+  passes 5/5 in about 75 seconds in a debug test build.
 - `std/lists/append.lisp` is the next bounded library frontier at the same
   revision, pinned by SHA-256
   `240dde02cc141e1d55e3dd6845d1995777a3d6b782e0cf9d6f24abfdcef377da`.

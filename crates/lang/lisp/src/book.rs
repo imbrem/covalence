@@ -339,7 +339,6 @@ impl CompletenessReport {
     }
 }
 
-// TODO(cov:acl2.progress.pinned-normalized-denominator, major): Compare completeness numerators with a hash-pinned authoritative ACL2 normalized-event denominator before claiming upstream book completeness.
 // TODO(cov:acl2.progress.canonical-corpus-manifest, major): Emit a versioned canonical corpus manifest with revision, book/include/event identities, source hashes, and structured blocker codes.
 // TODO(cov:acl2.progress.cli-completeness-gate, major): Expose the same structured report through a `cov acl2` progress/import completeness gate without duplicating classification logic.
 

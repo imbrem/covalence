@@ -253,6 +253,39 @@ pub trait LispMachineValue: LispValue {
     >;
 }
 
+/// Backend-neutral contents of a lexical closure.
+///
+/// The record is visible only to implementations holding a [`LispClosure`]
+/// capability. Ordinary value clients continue to observe merely
+/// [`RuntimeValueView::Closure`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClosureRecord<S, E, N> {
+    pub name: Option<S>,
+    pub parameters: Vec<S>,
+    pub rest: Option<S>,
+    pub body: E,
+    pub environment: N,
+}
+
+/// Construction and observation of opaque lexical-closure resources.
+pub trait LispClosure {
+    type Symbol: Clone;
+    type Expr: Clone;
+    type Environment: Clone;
+    type Closure: Clone;
+    type Error;
+
+    fn close(
+        &self,
+        record: ClosureRecord<Self::Symbol, Self::Expr, Self::Environment>,
+    ) -> Result<Self::Closure, Self::Error>;
+
+    fn open(
+        &self,
+        closure: &Self::Closure,
+    ) -> Result<ClosureRecord<Self::Symbol, Self::Expr, Self::Environment>, Self::Error>;
+}
+
 /// Meaning of a primitive vocabulary over an abstract runtime-value backend.
 ///
 /// Primitive semantics receives the value capability explicitly. It therefore

@@ -11,8 +11,8 @@ use std::sync::{Arc, OnceLock};
 
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
 use crate::runtime::{
-    LispEnvironment, LispMachineValue, LispValue, PrimitiveSemantics, RuntimeBinding,
-    RuntimeValueLayer, RuntimeValueView,
+    ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispValue, PrimitiveSemantics,
+    RuntimeBinding, RuntimeValueLayer, RuntimeValueView,
 };
 use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
 
@@ -153,6 +153,57 @@ pub struct HostClosure<S, A, P> {
     pub rest: Option<Parameter<S>>,
     pub body: Expr<S, A, P>,
     pub environment: Environment<S, A, P>,
+}
+
+/// Closure-resource capability backed by [`HostClosure`].
+#[derive(Clone, Copy, Debug)]
+pub struct HostClosures<S, A, P>(PhantomData<(S, A, P)>);
+
+impl<S, A, P> Default for HostClosures<S, A, P> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<S: Clone, A: Clone, P: Clone> LispClosure for HostClosures<S, A, P> {
+    type Symbol = S;
+    type Expr = Expr<S, A, P>;
+    type Environment = Environment<S, A, P>;
+    type Closure = Arc<HostClosure<S, A, P>>;
+    type Error = Infallible;
+
+    fn close(
+        &self,
+        record: ClosureRecord<Self::Symbol, Self::Expr, Self::Environment>,
+    ) -> Result<Self::Closure, Self::Error> {
+        Ok(Arc::new(HostClosure {
+            name: record.name,
+            parameters: record.parameters.into_iter().map(Parameter::new).collect(),
+            rest: record.rest.map(Parameter::new),
+            body: record.body,
+            environment: record.environment,
+        }))
+    }
+
+    fn open(
+        &self,
+        closure: &Self::Closure,
+    ) -> Result<ClosureRecord<Self::Symbol, Self::Expr, Self::Environment>, Self::Error> {
+        Ok(ClosureRecord {
+            name: closure.name.clone(),
+            parameters: closure
+                .parameters
+                .iter()
+                .map(|parameter| parameter.name.clone())
+                .collect(),
+            rest: closure
+                .rest
+                .as_ref()
+                .map(|parameter| parameter.name.clone()),
+            body: closure.body.clone(),
+            environment: closure.environment.clone(),
+        })
+    }
 }
 
 /// Direct Rust realization of [`crate::runtime_value_fixpoint`].
@@ -519,6 +570,10 @@ impl<P: CorePrimitive> CoreMachine<P> {
         HostValues::default()
     }
 
+    fn closures(&self) -> HostClosures<P::Symbol, P::Atom, P::Primitive> {
+        HostClosures::default()
+    }
+
     /// Extend an environment with an atomic mutually recursive lambda group.
     ///
     /// All names and cells are allocated before any closure is built, so
@@ -555,14 +610,21 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 unreachable!("recursive initializers validated above")
             };
             let closure = self
-                .values()
-                .roll(RuntimeValueLayer::Closure(Arc::new(HostClosure {
+                .closures()
+                .close(ClosureRecord {
                     name,
-                    parameters,
-                    rest,
+                    parameters: parameters
+                        .into_iter()
+                        .map(|parameter| parameter.name)
+                        .collect(),
+                    rest: rest.map(|parameter| parameter.name),
                     body: *body,
                     environment: environment.clone(),
-                })))
+                })
+                .unwrap_or_else(|never| match never {});
+            let closure = self
+                .values()
+                .roll(RuntimeValueLayer::Closure(closure))
                 .unwrap_or_else(|never| match never {});
             cell.initialize(closure)
                 .expect("fresh recursive binding cell");
@@ -796,6 +858,10 @@ impl<P: CorePrimitive> CoreMachine<P> {
             | RuntimeValueLayer::Nil
             | RuntimeValueLayer::Cons { .. } => return Err(CoreMachineError::NotCallable),
         };
+        let closure = self
+            .closures()
+            .open(&closure)
+            .unwrap_or_else(|never| match never {});
         if closure.rest.is_none() && closure.parameters.len() != arguments.len() {
             return Err(CoreMachineError::Arity {
                 expected: ArityExpectation::Exactly(closure.parameters.len()),
@@ -817,12 +883,12 @@ impl<P: CorePrimitive> CoreMachine<P> {
             closure
                 .parameters
                 .iter()
-                .map(|parameter| parameter.name.clone())
+                .cloned()
                 .zip(arguments.iter().cloned()),
         );
         if let Some(rest) = &closure.rest {
             bindings.push((
-                rest.name.clone(),
+                rest.clone(),
                 self.values()
                     .list(arguments.into_iter().skip(closure.parameters.len()))
                     .unwrap_or_else(|never| match never {}),
@@ -834,7 +900,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
             &configuration.environment
         };
         configuration.environment = parent.extend(bindings);
-        configuration.control = HostControl::Expression(closure.body.clone());
+        configuration.control = HostControl::Expression(closure.body);
         Ok(Some(configuration))
     }
 
@@ -920,15 +986,22 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         rest,
                         body,
                     } => {
+                        let closure = self
+                            .closures()
+                            .close(ClosureRecord {
+                                name,
+                                parameters: parameters
+                                    .into_iter()
+                                    .map(|parameter| parameter.name)
+                                    .collect(),
+                                rest: rest.map(|parameter| parameter.name),
+                                body: *body,
+                                environment: next.environment.clone(),
+                            })
+                            .unwrap_or_else(|never| match never {});
                         next.control = HostControl::Value(
                             self.values()
-                                .roll(RuntimeValueLayer::Closure(Arc::new(HostClosure {
-                                    name,
-                                    parameters,
-                                    rest,
-                                    body: *body,
-                                    environment: next.environment.clone(),
-                                })))
+                                .roll(RuntimeValueLayer::Closure(closure))
                                 .unwrap_or_else(|never| match never {}),
                         );
                     }
@@ -1285,13 +1358,23 @@ mod tests {
         type TestValue = HostValue<&'static str, &'static str, Primitive>;
 
         let values = HostValues::<&str, &str, Primitive>::default();
-        let closure = Arc::new(HostClosure {
+        let closures = HostClosures::<&str, &str, Primitive>::default();
+        let closure_record = ClosureRecord {
             name: Some("identity"),
-            parameters: vec![Parameter::new("value")],
+            parameters: vec!["value"],
             rest: None,
             body: CoreExpr::Variable("value"),
             environment: HostEnvironment::<&str, TestValue>::default(),
-        });
+        };
+        let closure = closures
+            .close(closure_record.clone())
+            .unwrap_or_else(|never| match never {});
+        assert_eq!(
+            closures
+                .open(&closure)
+                .unwrap_or_else(|never| match never {}),
+            closure_record
+        );
         let layers = [
             RuntimeValueLayer::Atom("atom"),
             RuntimeValueLayer::Nil,

@@ -435,9 +435,12 @@ pub trait LispRecursiveEnvironment: LispEnvironment {
 
     /// Initialize a freshly reserved cell.
     ///
-    /// This operation is total because `Cell` is a single-use capability
-    /// produced only by [`reserve_recursive`](Self::reserve_recursive).
-    fn initialize_recursive(&self, cell: Self::Cell, value: Self::Value);
+    /// Consuming `Cell` makes double initialization unrepresentable to an
+    /// ordinary client. The operation remains fallible because a remote or
+    /// component-backed resource table may reject a stale handle or fail its
+    /// transport while performing the update.
+    fn initialize_recursive(&self, cell: Self::Cell, value: Self::Value)
+    -> Result<(), Self::Error>;
 }
 
 /// A coherent bundle of runtime representation capabilities.
@@ -573,14 +576,18 @@ mod tests {
         );
 
         let mut cells = allocation.cells.into_iter();
-        environments.initialize_recursive(
-            cells.next().expect("left cell"),
-            HostValue::Atom("left-value"),
-        );
-        environments.initialize_recursive(
-            cells.next().expect("right cell"),
-            HostValue::Atom("right-value"),
-        );
+        environments
+            .initialize_recursive(
+                cells.next().expect("left cell"),
+                HostValue::Atom("left-value"),
+            )
+            .unwrap();
+        environments
+            .initialize_recursive(
+                cells.next().expect("right cell"),
+                HostValue::Atom("right-value"),
+            )
+            .unwrap();
         assert_eq!(
             environments
                 .lookup(&allocation.environment, &"left")

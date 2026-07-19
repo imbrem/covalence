@@ -709,7 +709,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35687,
+      "words": 35678,
       "updated": 0
     },
     {
@@ -10717,7 +10717,7 @@
       "title": "open_work.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/open_work.rs",
-      "words": 19,
+      "words": 18,
       "updated": 0
     },
     {
@@ -10771,7 +10771,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 817,
+      "words": 826,
       "updated": 0
     },
     {
@@ -10816,7 +10816,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 1907,
+      "words": 2135,
       "updated": 0
     },
     {
@@ -11159,6 +11159,15 @@
       "status": "tracked",
       "path": "crates/lang/lisp/tests/little_schemer_ch2.rs",
       "words": 194,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/metacircular_host.rs",
+      "kind": "file",
+      "title": "metacircular_host.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/metacircular_host.rs",
+      "words": 87,
       "updated": 0
     },
     {
@@ -15307,7 +15316,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35687,
+      "words": 35678,
       "updated": 0
     },
     {
@@ -15415,7 +15424,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3549,
+      "words": 3529,
       "updated": 0
     },
     {
@@ -21818,15 +21827,6 @@
       "updated": 0
     },
     {
-      "id": "todo:lang.lisp.the-full-metacircular-interpreter-does-not-run-yet",
-      "kind": "todo",
-      "title": "The full metacircular interpreter does not run yet: The ground fragment",
-      "status": "severe",
-      "path": "crates/lang/lisp/open_work.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:lang.lisp.the-repl-bypasses-the-reductionstrategy-seam",
       "kind": "todo",
       "title": "The REPL bypasses the ReductionStrategy seam: (legacy hol.rs)",
@@ -22084,15 +22084,6 @@
       "title": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
       "status": "major",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:lisp.relational.append",
-      "kind": "todo",
-      "title": "Add append redex and congruence clauses to the proof-producing relational backend, sharing the kernel Lisp append laws used by the equational backend.",
-      "status": "major",
-      "path": "crates/lang/lisp/src/relation.rs",
       "words": 0,
       "updated": 0
     },

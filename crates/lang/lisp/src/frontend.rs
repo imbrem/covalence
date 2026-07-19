@@ -428,7 +428,6 @@ pub enum PrimitiveError {
     ExpectedDatum,
     ExpectedCons,
     ExpectedInteger,
-    ExpectedList,
 }
 
 impl CorePrimitive for StandardPrimitives {
@@ -508,7 +507,10 @@ impl StandardPrimitives {
         match left {
             Datum::Nil => Ok(right),
             Datum::Cons(head, tail) => Ok(Datum::cons(*head, Self::append(*tail, right)?)),
-            Datum::Atom(_) => Err(PrimitiveError::ExpectedList),
+            // ACL2's `binary-append` and the existing kernel Lisp theory use
+            // this total extension. Scheme programs should still pass proper
+            // lists; the shared primitive remains defined on every datum.
+            Datum::Atom(_) => Ok(right),
         }
     }
 
@@ -748,6 +750,13 @@ mod tests {
                 Datum::Atom(CoreAtom::symbol("c")),
                 Datum::Atom(CoreAtom::symbol("d")),
             ]))
+        );
+        assert_eq!(
+            run(
+                SurfaceDialect::Acl2Core,
+                "(append (quote ignored) (quote (tail)))"
+            ),
+            HostValue::Datum(Datum::list([Datum::Atom(CoreAtom::symbol("tail"))]))
         );
     }
 

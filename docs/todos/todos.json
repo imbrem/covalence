@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 354,
-  "structured": 354,
+  "count": 352,
+  "structured": 352,
   "items": [
     {
       "id": "acl2.reader.dispatch-macros",
@@ -2671,7 +2671,7 @@
       "summary": "Abstract S-expr API — slice 1 landed, slices 2–5 open",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 8,
+      "line": 7,
       "crate": "covalence-lisp"
     },
     {
@@ -2681,7 +2681,7 @@
       "summary": "ACL2 slice (src/acl2.rs) — open ends: (design + roadmap in",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 9,
+      "line": 8,
       "crate": "covalence-lisp"
     },
     {
@@ -2691,7 +2691,7 @@
       "summary": "carved → sexpr rename pending: The code still uses the carved jargon",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 15,
+      "line": 14,
       "crate": "covalence-lisp"
     },
     {
@@ -2701,7 +2701,7 @@
       "summary": "defun return type is a 3-way guess; parameters are always sexpr",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 12,
+      "line": 11,
       "crate": "covalence-lisp"
     },
     {
@@ -2711,7 +2711,7 @@
       "summary": "eq? is atoms-only: Both operands must reduce to atom b values; the",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 17,
+      "line": 16,
       "crate": "covalence-lisp"
     },
     {
@@ -2721,7 +2721,7 @@
       "summary": "Forward references default to sexpr… → sexpr: A call to a not-yet-defined",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 14,
+      "line": 13,
       "crate": "covalence-lisp"
     },
     {
@@ -2731,7 +2731,7 @@
       "summary": "null? is the consp complement: (⊢ ¬ consp v), correct on lists;",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 16,
+      "line": 15,
       "crate": "covalence-lisp"
     },
     {
@@ -2741,7 +2741,7 @@
       "summary": "Predicate/eq? values are bool literals, data values are sexpr: See",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 18,
+      "line": 17,
       "crate": "covalence-lisp"
     },
     {
@@ -2751,7 +2751,7 @@
       "summary": "relation.rs reduction relation — next-phase clauses: The Step/Reduces",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 10,
+      "line": 9,
       "crate": "covalence-lisp"
     },
     {
@@ -2761,17 +2761,7 @@
       "summary": "Relational recursion / more #langs: The lisp/sector dialects are the",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 11,
-      "crate": "covalence-lisp"
-    },
-    {
-      "id": "lang.lisp.the-full-metacircular-interpreter-does-not-run-yet",
-      "kind": "TODO",
-      "severity": "severe",
-      "summary": "The full metacircular interpreter does not run yet: The ground fragment",
-      "structured": true,
-      "path": "crates/lang/lisp/open_work.rs",
-      "line": 6,
+      "line": 10,
       "crate": "covalence-lisp"
     },
     {
@@ -2781,7 +2771,7 @@
       "summary": "The REPL bypasses the ReductionStrategy seam: (legacy hol.rs)",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 7,
+      "line": 6,
       "crate": "covalence-lisp"
     },
     {
@@ -2791,7 +2781,7 @@
       "summary": "Value-semantics integers are typed int terms, not sexpr data: Great",
       "structured": true,
       "path": "crates/lang/lisp/open_work.rs",
-      "line": 13,
+      "line": 12,
       "crate": "covalence-lisp"
     },
     {
@@ -3065,23 +3055,13 @@
       "crate": "covalence-lisp"
     },
     {
-      "id": "lisp.relational.append",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Add append redex and congruence clauses to the proof-producing relational backend, sharing the kernel Lisp append laws used by the equational backend.",
-      "structured": true,
-      "path": "crates/lang/lisp/src/relation.rs",
-      "line": 1129,
-      "crate": "covalence-lisp"
-    },
-    {
       "id": "lisp.relational.numeric-datum-sum",
       "kind": "TODO",
       "severity": "major",
       "summary": "Add an exact-integer branch to the relational S-expression carrier and derive integer? clauses for both closed and open terms.",
       "structured": true,
       "path": "crates/lang/lisp/src/relation.rs",
-      "line": 1108,
+      "line": 1315,
       "crate": "covalence-lisp"
     },
     {

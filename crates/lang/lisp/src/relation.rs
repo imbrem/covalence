@@ -14,7 +14,7 @@
 //! ## The two relations
 //!
 //! - [`step_rule_set`] — `Step : sexpr → sexpr → bool`, one clause per reduction
-//!   rule. Redex clauses (car/cdr/predicates/eq?/cond) are base clauses; each
+//!   rule. Redex clauses (car/cdr/predicates/eq?/cond/append) are base clauses; each
 //!   elimination-context **congruence** clause carries one [`Premise::Derivation`]
 //!   (a `Step` sub-derivation).
 //! - [`reduces_rule_set`] — `Reduces = Step*`, two clauses: `refl : ∀t. Reduces t t`
@@ -124,6 +124,8 @@ pub struct LispRel {
     eq_p: Term,
     /// `cond : sexpr → sexpr` (over a cond-cell-list argument).
     cond: Term,
+    /// `append : sexpr → sexpr → sexpr`.
+    append: Term,
     /// The active dialect (which integer clauses, if any, are installed).
     dialect: Dialect,
     /// The integer backend for the `sector+int` dialect (`None` for `sector`).
@@ -181,6 +183,7 @@ impl LispRel {
             null_p: op_head("lisp.rel.null?", 1, tau),
             eq_p: op_head("lisp.rel.eq?", 2, tau),
             cond: op_head("lisp.rel.cond", 1, tau),
+            append: op_head("lisp.rel.append", 2, tau),
             dialect,
             int_be,
         })
@@ -284,6 +287,16 @@ impl LispRel {
         self.cond.clone().apply(cells).map_err(kernel_err)
     }
 
+    /// `append left right`.
+    pub fn append_of(&self, left: Term, right: Term) -> Result<Term, HolError> {
+        self.append
+            .clone()
+            .apply(left)
+            .map_err(kernel_err)?
+            .apply(right)
+            .map_err(kernel_err)
+    }
+
     // ------------------------------------------------------------------
     // Step : sexpr → sexpr → bool
     // ------------------------------------------------------------------
@@ -312,25 +325,32 @@ impl LispRel {
     /// | 17 | `Step (cond snil) nil` |
     /// | 18 | `∀body rest. Step (cond ((nil . body) . rest)) (cond rest)` |
     /// | 19 | `∀body rest. Step (cond ((t . body) . rest)) body` |
+    /// | 20 | `∀y. Step (append snil y) y` |
+    /// | 21 | `∀b y. Step (append (atom b) y) y` |
+    /// | 22 | `∀h t y. Step (append (scons h t) y) (scons h (append t y))` |
+    /// | 23 | congruence into append's left operand |
+    /// | 24 | congruence into append's right operand |
+    /// | 25 | congruence into `scons`'s head |
+    /// | 26 | congruence into `scons`'s tail |
     ///
     /// In the [`SectorInt`](Dialect::SectorInt) dialect, five more integer
-    /// redex clauses follow (indices 20–24, in [`IntOp::ALL`] order):
+    /// redex clauses follow (indices 27–31, in [`IntOp::ALL`] order):
     ///
     /// | idx | clause |
     /// |----:|--------|
-    /// | 20 | `∀a b:int. Step (+ (int a)(int b)) (int (int.add a b))` |
-    /// | 21 | `∀a b:int. Step (- (int a)(int b)) (int (int.sub a b))` |
-    /// | 22 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
-    /// | 23 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
-    /// | 24 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
+    /// | 27 | `∀a b:int. Step (+ (int a)(int b)) (int (int.add a b))` |
+    /// | 28 | `∀a b:int. Step (- (int a)(int b)) (int (int.sub a b))` |
+    /// | 29 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
+    /// | 30 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
+    /// | 31 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
     ///
-    /// then ten integer **congruence** clauses (indices 25–34), a left/right
+    /// then ten integer **congruence** clauses (indices 32–41), a left/right
     /// pair per op in [`IntOp::ALL`] order, so operands reduce in place:
     ///
     /// | idx | clause |
     /// |----:|--------|
-    /// | 25 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
-    /// | 26 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
+    /// | 32 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
+    /// | 33 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
     ///
     /// (`eq?` on *distinct* atoms is future work — see the builder / source-local TODO markers.)
     pub fn step_rule_set(&self) -> RuleSet2<'_> {
@@ -479,6 +499,106 @@ impl LispRel {
                 );
             }
 
+            // --- append clauses ------------------------------------------
+            let y = Term::free("y", tau.clone());
+            cs.push(
+                d(
+                    &self.append_of(snil.clone(), y.clone()).map_err(to_core)?,
+                    &y,
+                )?
+                .forall("y", tau.clone())?,
+            );
+            cs.push(
+                d(
+                    &self.append_of(atom_b.clone(), y.clone()).map_err(to_core)?,
+                    &y,
+                )?
+                .forall("y", tau.clone())?
+                .forall("b", Type::bytes())?,
+            );
+            {
+                let tail_append = self.append_of(t.clone(), y.clone()).map_err(to_core)?;
+                let target = self.scons(h.clone(), tail_append).map_err(to_core)?;
+                cs.push(
+                    d(
+                        &self
+                            .append_of(scons_ht.clone(), y.clone())
+                            .map_err(to_core)?,
+                        &target,
+                    )?
+                    .forall("y", tau.clone())?
+                    .forall("t", tau.clone())?
+                    .forall("h", tau.clone())?,
+                );
+            }
+            {
+                let a = Term::free("a", tau.clone());
+                let a2 = Term::free("a2", tau.clone());
+                let right = Term::free("right", tau.clone());
+                let concl = d(
+                    &self.append_of(a.clone(), right.clone()).map_err(to_core)?,
+                    &self.append_of(a2.clone(), right.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&a, &a2)?
+                        .imp(concl)?
+                        .forall("right", tau.clone())?
+                        .forall("a2", tau.clone())?
+                        .forall("a", tau.clone())?,
+                );
+            }
+            {
+                let left = Term::free("left", tau.clone());
+                let b = Term::free("b", tau.clone());
+                let b2 = Term::free("b2", tau.clone());
+                let concl = d(
+                    &self.append_of(left.clone(), b.clone()).map_err(to_core)?,
+                    &self.append_of(left.clone(), b2.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&b, &b2)?
+                        .imp(concl)?
+                        .forall("b2", tau.clone())?
+                        .forall("b", tau.clone())?
+                        .forall("left", tau.clone())?,
+                );
+            }
+
+            // Congruence through constructed data is needed whenever a
+            // primitive (notably recursive append) leaves work under scons.
+            {
+                let head = Term::free("head", tau.clone());
+                let head2 = Term::free("head2", tau.clone());
+                let tail = Term::free("tail", tau.clone());
+                let concl = d(
+                    &self.scons(head.clone(), tail.clone()).map_err(to_core)?,
+                    &self.scons(head2.clone(), tail.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&head, &head2)?
+                        .imp(concl)?
+                        .forall("tail", tau.clone())?
+                        .forall("head2", tau.clone())?
+                        .forall("head", tau.clone())?,
+                );
+            }
+            {
+                let head = Term::free("head", tau.clone());
+                let tail = Term::free("tail", tau.clone());
+                let tail2 = Term::free("tail2", tau.clone());
+                let concl = d(
+                    &self.scons(head.clone(), tail.clone()).map_err(to_core)?,
+                    &self.scons(head.clone(), tail2.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&tail, &tail2)?
+                        .imp(concl)?
+                        .forall("tail2", tau.clone())?
+                        .forall("tail", tau.clone())?
+                        .forall("head", tau.clone())?,
+                );
+            }
+
             // --- integer clauses (the `sector+int` dialect only) -----------
             // One ∀-quantified clause per op:
             //   ∀a b:int. Step (op (int a)(int b)) (TARGET a b)
@@ -502,7 +622,7 @@ impl LispRel {
                     );
                 }
 
-                // 25–34: congruence into the int-op operands (a left/right
+                // 32–41: congruence into the int-op operands (a left/right
                 // pair per op, in IntOp::ALL order), so nested expressions
                 // like `(+ 1 (+ 2 3))` reduce their operands in place:
                 //   left:  ∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)
@@ -544,10 +664,10 @@ impl LispRel {
     }
 
     /// The clause index of int op `op` in the `sector+int` `Step` rule set
-    /// (the integer clauses follow the 20 primitive-fragment clauses, in
+    /// (the integer clauses follow the 27 primitive-fragment clauses, in
     /// [`IntOp::ALL`] order). Only meaningful when a backend is installed.
     fn int_clause_idx(op: IntOp) -> usize {
-        20 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
+        27 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
     }
 
     /// The clause index of int op `op`'s **congruence** clause (left = reduce
@@ -555,7 +675,7 @@ impl LispRel {
     /// set: the pairs follow the five redex clauses, in [`IntOp::ALL`] order.
     fn int_cong_idx(op: IntOp, right: bool) -> usize {
         let p = IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL");
-        25 + 2 * p + usize::from(right)
+        32 + 2 * p + usize::from(right)
     }
 
     /// The number of `Step` clauses.
@@ -681,6 +801,12 @@ impl LispRel {
         if let Some(cells) = self.match_cond(term) {
             return self.step_cond(term, &cells);
         }
+        if let Some((head, tail)) = self.as_scons(term) {
+            return self.step_scons(&head, &tail);
+        }
+        if let Some((left, right)) = self.match_append(term) {
+            return self.step_append(&left, &right);
+        }
         // Integer op `(op a b)` — the `sector+int` dialect only. In `sector`
         // (no backend) this match never fires, so `(+ 2 2)` is stuck (as an
         // sexpr free-variable application, no step).
@@ -701,6 +827,87 @@ impl LispRel {
             .copied()
             .find(|&op| *head == be.op_head(op))?;
         Some((op, a_arg.clone(), b_arg.clone()))
+    }
+
+    fn match_append(&self, term: &Term) -> Option<(Term, Term)> {
+        let (inner, right) = term.as_app()?;
+        let (head, left) = inner.as_app()?;
+        (*head == self.append).then(|| (left.clone(), right.clone()))
+    }
+
+    fn step_scons(&self, head: &Term, tail: &Term) -> Result<Option<(Term, Thm)>, HolError> {
+        let n = self.step_n_clauses()?;
+        if let Some((next, sub)) = self.prove_step(head)? {
+            let to = self.scons(next.clone(), tail.clone())?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                25,
+                n,
+                &[head.clone(), next, tail.clone()],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
+        if let Some((next, sub)) = self.prove_step(tail)? {
+            let to = self.scons(head.clone(), next.clone())?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                26,
+                n,
+                &[head.clone(), tail.clone(), next],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
+        Ok(None)
+    }
+
+    fn step_append(&self, left: &Term, right: &Term) -> Result<Option<(Term, Thm)>, HolError> {
+        let n = self.step_n_clauses()?;
+        if let Some((next, sub)) = self.prove_step(left)? {
+            let to = self.append_of(next.clone(), right.clone())?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                23,
+                n,
+                &[left.clone(), next, right.clone()],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
+        if let Some((next, sub)) = self.prove_step(right)? {
+            let to = self.append_of(left.clone(), next.clone())?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                24,
+                n,
+                &[left.clone(), right.clone(), next],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
+        if self.is_snil(left) {
+            return Ok(Some((right.clone(), self.step_base(20, &[right.clone()])?)));
+        }
+        if let Some(atom) = self.as_atom(left) {
+            return Ok(Some((
+                right.clone(),
+                self.step_base(21, &[atom, right.clone()])?,
+            )));
+        }
+        if let Some((head, tail)) = self.as_scons(left) {
+            let recursive = self.append_of(tail.clone(), right.clone())?;
+            let to = self.scons(head.clone(), recursive)?;
+            return Ok(Some((
+                to,
+                self.step_base(22, &[head, tail, right.clone()])?,
+            )));
+        }
+        Ok(None)
     }
 
     /// Step an integer-op application `(op a b)`: reduce the left operand
@@ -1126,10 +1333,11 @@ impl LispRel {
                 }
             }
             Primitive::Append => {
-                // TODO(cov:lisp.relational.append, major): Add append redex and congruence clauses to the proof-producing relational backend, sharing the kernel Lisp append laws used by the equational backend.
-                Err(HolError::Stuck(
-                    "append is not yet available in the proof-producing relational backend".into(),
-                ))
+                require_arity(2)?;
+                self.append_of(
+                    self.compile_core(&arguments[0])?,
+                    self.compile_core(&arguments[1])?,
+                )
             }
             Primitive::Add | Primitive::Subtract | Primitive::Multiply | Primitive::LessEqual => {
                 require_arity(2)?;
@@ -1207,6 +1415,10 @@ impl LispRel {
             ("atom?" | "atom", 1) => self.atom_p_of(self.compile_surface(&args[0])?),
             ("consp" | "pair?", 1) => self.consp_of(self.compile_surface(&args[0])?),
             ("null?" | "null", 1) => self.null_p_of(self.compile_surface(&args[0])?),
+            ("append", 2) => self.append_of(
+                self.compile_surface(&args[0])?,
+                self.compile_surface(&args[1])?,
+            ),
             ("eq?" | "eq", 2) => {
                 let a = self.compile_surface(&args[0])?;
                 let b = self.compile_surface(&args[1])?;
@@ -1255,7 +1467,7 @@ impl LispRel {
                 };
                 Err(HolError::Stuck(format!(
                     "unknown or misapplied operator `{other}` (applied to {n} argument{}) — \
-                     this dialect supports: quote car cdr cons atom? consp null? eq? cond \
+                     this dialect supports: quote car cdr cons atom? consp null? eq? append cond \
                      if{ints}; `defun`/`lambda` need `#lang scheme`",
                     if n == 1 { "" } else { "s" }
                 )))
@@ -1612,6 +1824,22 @@ mod tests {
         assert_eq!(v, r.nil());
     }
 
+    #[test]
+    fn append_reduces_through_both_operands_and_recurses() {
+        let r = rel();
+        let frontend = crate::frontend::Frontend::new(crate::frontend::SurfaceDialect::Scheme);
+        let expression =
+            crate::reader::read_one("(append (cdr (quote (skip a b))) (cdr (quote (skip c d))))")
+                .unwrap();
+        let core = frontend.lower(&expression).unwrap();
+        let input = r.compile_core(&core).unwrap();
+        let (value, theorem) = r.reduce_core(&core, 32).unwrap();
+
+        assert_eq!(r.render_value(&value), "(a b c d)");
+        assert!(theorem.hyps().is_empty());
+        assert_eq!(theorem.concl(), &r.reduces_prop(&input, &value).unwrap());
+    }
+
     /// A value / stuck term yields no step.
     #[test]
     fn value_has_no_step() {
@@ -1623,17 +1851,17 @@ mod tests {
         assert!(r.prove_step(&r.car(a).unwrap()).unwrap().is_none());
     }
 
-    /// The rule sets have the expected clause counts. `sector` has 20 `Step`
+    /// The rule sets have the expected clause counts. `sector` has 27 `Step`
     /// clauses; `sector+int` adds the 5 integer redex clauses and the 10
-    /// integer congruence clauses (35 total).
+    /// integer congruence clauses (42 total).
     #[test]
     fn clause_counts() {
         let r = rel();
-        assert_eq!(r.step_n_clauses().unwrap(), 20);
+        assert_eq!(r.step_n_clauses().unwrap(), 27);
         assert_eq!(r.reduces_rule_set().n_clauses().unwrap(), 2);
 
         let ri = LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Int)).unwrap();
-        assert_eq!(ri.step_n_clauses().unwrap(), 35);
+        assert_eq!(ri.step_n_clauses().unwrap(), 42);
     }
 
     // ---- integer dialect (sector+int) ------------------------------------

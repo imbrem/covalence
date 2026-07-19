@@ -3,7 +3,6 @@
 //! Migrated from the former Markdown registry. Move markers beside the relevant
 //! implementation as the area is touched; `bun run todos` provides the index.
 
-// TODO(cov:lang.lisp.the-full-metacircular-interpreter-does-not-run-yet, severe): The full metacircular interpreter does not run yet: The ground fragment
 // TODO(cov:lang.lisp.the-repl-bypasses-the-reductionstrategy-seam, severe): The REPL bypasses the ReductionStrategy seam: (legacy hol.rs)
 // TODO(cov:lang.lisp.abstract-s-expr-api-slice-1-landed-slices-2-5-open, minor): Abstract S-expr API — slice 1 landed, slices 2–5 open
 // TODO(cov:lang.lisp.acl2-slice-src-acl2-rs-open-ends, minor): ACL2 slice (src/acl2.rs) — open ends: (design + roadmap in

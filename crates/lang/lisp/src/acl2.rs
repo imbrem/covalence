@@ -101,13 +101,15 @@ use covalence_init::init::acl2::simplify::{
 use covalence_init::init::acl2::term::Terms;
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::{Term, Type};
-use covalence_kernel_lisp::{AdmissionPolicy, AdmissionReplay, Definition as LispDefinition};
+use covalence_kernel_lisp::{
+    AdmissionPolicy, AdmissionReplay, Definition as LispDefinition, SourcedDefinition,
+};
 use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
 use crate::defs::{Defs, build_def, build_def_with_ret};
-use crate::frontend::{Frontend, SurfaceDialect};
+use crate::frontend::{Frontend, FrontendExpr, SurfaceDialect};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
 use crate::semantics::{LispRepr, LispSemantics, ValueKind};
@@ -250,6 +252,9 @@ pub struct Acl2Admission {
     pub decreasing_parameter: Option<usize>,
 }
 
+/// One ACL2 definition with source provenance and shared operational core.
+pub type Acl2Definition = SourcedDefinition<String, SExpr, FrontendExpr>;
+
 /// A conservative HOL definition produced by replaying an ACL2 admission.
 ///
 /// Unlike [`Acl2Admission`], both fields are kernel objects: `model` is the
@@ -281,20 +286,24 @@ pub struct Acl2HolReplayEvidence {
     pub definition: Acl2HolDefinition,
 }
 
-impl AdmissionReplay<LispDefinition<String, SExpr>, Acl2Admission> for Acl2HolReplay<'_> {
+impl AdmissionReplay<Acl2Definition, Acl2Admission> for Acl2HolReplay<'_> {
     type Evidence = Acl2HolReplayEvidence;
     type Error = String;
 
     fn replay_termination(
         &self,
-        definition: &LispDefinition<String, SExpr>,
+        definition: &Acl2Definition,
         certificate: &Acl2Admission,
     ) -> Result<Self::Evidence, Self::Error> {
         let tm = &*self.env.tm;
-        let body = deep_encode(tm, &definition.body, &definition.parameters)?;
+        if definition.core.rest.is_some() {
+            return Err("ACL2 logical definitions must have fixed arity".into());
+        }
+        let body = deep_encode(tm, &definition.source_body, &definition.core.parameters)?;
         let spec = DefunSpec {
-            name: definition.name.to_ascii_uppercase().into(),
+            name: definition.core.name.to_ascii_uppercase().into(),
             formals: definition
+                .core
                 .parameters
                 .iter()
                 .map(|parameter| parameter.to_ascii_uppercase().into())
@@ -334,6 +343,7 @@ impl AdmissionReplay<LispDefinition<String, SExpr>, Acl2Admission> for Acl2HolRe
 pub struct Acl2Session {
     defs: Defs,
     admissions: BTreeMap<String, Acl2Admission>,
+    definitions: BTreeMap<String, Acl2Definition>,
     hol_definitions: BTreeMap<String, Acl2HolDefinition>,
     thms: BTreeMap<String, Acl2Theorem>,
     /// A definition-free semantics for structural helpers (`tau`, renderers).
@@ -353,6 +363,7 @@ impl Acl2Session {
         Ok(Acl2Session {
             defs: Defs::new(),
             admissions: BTreeMap::new(),
+            definitions: BTreeMap::new(),
             hol_definitions: BTreeMap::new(),
             thms: BTreeMap::new(),
             sem0: LispSemantics::new()?,
@@ -368,6 +379,11 @@ impl Acl2Session {
 
     pub fn admission(&self, name: &str) -> Option<&Acl2Admission> {
         self.admissions.get(name)
+    }
+
+    /// Source provenance and shared lowered operational definition.
+    pub fn definition(&self, name: &str) -> Option<&Acl2Definition> {
+        self.definitions.get(name)
     }
 
     /// The conservatively defined deep-HOL model, when this definition lies
@@ -426,6 +442,7 @@ impl Acl2Session {
     pub fn reset(&mut self) {
         self.defs = Defs::new();
         self.admissions = BTreeMap::new();
+        self.definitions = BTreeMap::new();
         self.hol_definitions = BTreeMap::new();
         self.thms = BTreeMap::new();
         if let Ok(env) = shadow_env() {
@@ -620,15 +637,18 @@ impl Acl2Session {
         }
         let params = param_names(&items[2]).map_err(&inadmissible)?;
         let body = defun_body(items).map_err(Acl2Error::Malformed)?;
-        let definition = LispDefinition {
-            name: name.clone(),
-            parameters: params.clone(),
-            body: body.clone(),
-        };
+        let core_body = Frontend::new(SurfaceDialect::Acl2Core)
+            .lower(body)
+            .map_err(|error| inadmissible(error.to_string()))?;
+        let definition = Acl2Definition::new(
+            LispDefinition::fixed(name.clone(), params.clone(), core_body),
+            body.clone(),
+        );
         let admission = AdmissionPolicy::inspect(self, &definition).map_err(&inadmissible)?;
-        let body = self.translate(body, &params, Some(&name))?;
-        self.install(&name, &params, &body)?;
+        let translated = self.translate(body, &params, Some(&name))?;
+        self.install(&name, &params, &translated)?;
         self.try_admit_deep_defun(&definition, &admission);
+        self.definitions.insert(name.clone(), definition);
         self.admissions.insert(name.clone(), admission);
         Ok(name)
     }
@@ -638,16 +658,12 @@ impl Acl2Session {
     /// Failure is intentionally non-fatal: the value semantics supports a
     /// wider language, while any later deep theorem mentioning the omitted
     /// function will be rejected during translation.
-    fn try_admit_deep_defun(
-        &mut self,
-        definition: &LispDefinition<String, SExpr>,
-        admission: &Acl2Admission,
-    ) {
+    fn try_admit_deep_defun(&mut self, definition: &Acl2Definition, admission: &Acl2Admission) {
         if let Ok(evidence) =
             Acl2HolReplay::new(self.deep.env()).replay_termination(definition, admission)
         {
             self.hol_definitions
-                .insert(definition.name.clone(), evidence.definition);
+                .insert(definition.core.name.clone(), evidence.definition);
             self.deep = KernelAcl2Session::new(evidence.environment);
             self.deep_cache = Mutex::new(FactCache::default());
         }
@@ -1145,15 +1161,16 @@ impl Acl2Session {
     }
 }
 
-impl AdmissionPolicy<LispDefinition<String, SExpr>> for Acl2Session {
+impl AdmissionPolicy<Acl2Definition> for Acl2Session {
     type Certificate = Acl2Admission;
     type Error = String;
 
-    fn inspect(
-        &self,
-        definition: &LispDefinition<String, SExpr>,
-    ) -> Result<Self::Certificate, Self::Error> {
-        self.check_admissible(&definition.name, &definition.parameters, &definition.body)
+    fn inspect(&self, definition: &Acl2Definition) -> Result<Self::Certificate, Self::Error> {
+        self.check_admissible(
+            &definition.core.name,
+            &definition.core.parameters,
+            &definition.source_body,
+        )
     }
 }
 

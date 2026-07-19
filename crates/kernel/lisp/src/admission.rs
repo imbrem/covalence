@@ -12,7 +12,45 @@
 pub struct Definition<S, E> {
     pub name: S,
     pub parameters: Vec<S>,
+    pub rest: Option<S>,
     pub body: E,
+}
+
+impl<S, E> Definition<S, E> {
+    pub fn fixed(name: S, parameters: Vec<S>, body: E) -> Self {
+        Self {
+            name,
+            parameters,
+            rest: None,
+            body,
+        }
+    }
+
+    pub fn variadic(name: S, parameters: Vec<S>, rest: S, body: E) -> Self {
+        Self {
+            name,
+            parameters,
+            rest: Some(rest),
+            body,
+        }
+    }
+}
+
+/// A canonical lowered definition paired with its source-body provenance.
+///
+/// Names and formals occur only in `core`, preventing source and lowered
+/// metadata from drifting apart. Source-oriented policies may inspect
+/// `source_body`; execution and semantic backends consume `core.body`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcedDefinition<S, Source, Core> {
+    pub core: Definition<S, Core>,
+    pub source_body: Source,
+}
+
+impl<S, Source, Core> SourcedDefinition<S, Source, Core> {
+    pub fn new(core: Definition<S, Core>, source_body: Source) -> Self {
+        Self { core, source_body }
+    }
 }
 
 /// One recursive call discovered in a candidate definition.

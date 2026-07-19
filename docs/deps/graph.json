@@ -6,6 +6,7 @@
     "covalence-acset",
     "covalence-alethe",
     "covalence-arrow",
+    "covalence-cfg-parsing",
     "covalence-client",
     "covalence-computation",
     "covalence-core",
@@ -156,6 +157,14 @@
     {
       "from": "covalence-alethe",
       "to": "covalence-types"
+    },
+    {
+      "from": "covalence-cfg-parsing",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-cfg-parsing",
+      "to": "covalence-parsing-api"
     },
     {
       "from": "covalence-client",

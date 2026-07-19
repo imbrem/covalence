@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 341,
-  "structured": 341,
+  "count": 342,
+  "structured": 342,
   "items": [
     {
       "id": "bits.abstract-bool-list-adapter",
@@ -2343,6 +2343,16 @@
       "path": "crates/kernel/smt/open_work.rs",
       "line": 10,
       "crate": "covalence-kernel-smt"
+    },
+    {
+      "id": "lang.cfg-parsing.left-recursion",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add a bounded Earley or GLR backend that retains left-recursive derivations and implements this relational interface.",
+      "structured": true,
+      "path": "crates/lang/cfg-parsing/src/lib.rs",
+      "line": 12,
+      "crate": "covalence-cfg-parsing"
     },
     {
       "id": "lang.forsp.forsp-web-export-wiring-is-unbuilt",

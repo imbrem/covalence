@@ -47,6 +47,13 @@ disable-model-invocation: true
   - Search witnesses are plain data and non-authoritative. Replay must
     reconstruct a kernel theorem and reject forged candidates; bounded replay
     milestones must not be described as universal semantic preservation.
+- `crates/lang/grammar/` — neutral grammar IR; it must not depend on parser
+  evaluation APIs.
+- `crates/lang/cfg-parsing/` — bounded A0015 relational evaluator layered over
+  both `covalence-grammar` and `covalence-parsing-api`. Derivation trees are
+  untrusted data, ambiguity is retained, and exact versus prefix parsing is
+  explicit. The reference evaluator rejects left recursion; future Earley/GLR
+  backends belong here rather than in the grammar IR.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

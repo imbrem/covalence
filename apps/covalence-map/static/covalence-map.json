@@ -160,7 +160,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 178,
+      "words": 185,
       "updated": 0
     },
     {
@@ -412,7 +412,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7352,
+      "words": 7361,
       "updated": 0
     },
     {
@@ -610,7 +610,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 33746,
+      "words": 33783,
       "updated": 0
     },
     {
@@ -9092,6 +9092,24 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/cfg-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/cfg-parsing/Cargo.toml",
+      "words": 13,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/cfg-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/cfg-parsing/src/lib.rs",
+      "words": 528,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/computation",
       "kind": "file",
       "title": "crates/lang/computation",
@@ -10582,7 +10600,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-parsing/src/lib.rs",
-      "words": 311,
+      "words": 319,
       "updated": 0
     },
     {
@@ -14416,7 +14434,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 33746,
+      "words": 33783,
       "updated": 0
     },
     {
@@ -14434,7 +14452,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 271,
+      "words": 274,
       "updated": 0
     },
     {
@@ -14443,7 +14461,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 900,
+      "words": 909,
       "updated": 0
     },
     {
@@ -14452,7 +14470,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 201,
+      "words": 203,
       "updated": 0
     },
     {
@@ -14461,7 +14479,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1604,
+      "words": 1622,
       "updated": 0
     },
     {
@@ -14524,7 +14542,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3419,
+      "words": 3429,
       "updated": 0
     },
     {
@@ -20392,6 +20410,15 @@
       "title": "la family beyond lageneric: lamultpos/lamultneg,",
       "status": "minor",
       "path": "crates/kernel/smt/open_work.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.cfg-parsing.left-recursion",
+      "kind": "todo",
+      "title": "Add a bounded Earley or GLR backend that retains left-recursive derivations and implements this relational interface.",
+      "status": "major",
+      "path": "crates/lang/cfg-parsing/src/lib.rs",
       "words": 0,
       "updated": 0
     },

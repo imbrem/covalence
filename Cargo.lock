@@ -950,6 +950,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-cfg-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-grammar",
+ "covalence-parsing-api",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-client"
 version = "0.0.0"
 dependencies = [

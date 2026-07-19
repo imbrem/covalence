@@ -6,6 +6,7 @@ digraph deps {
   "acset";
   "alethe";
   "arrow";
+  "cfg-parsing";
   "client";
   "computation";
   "core" [style=filled, fillcolor="#ffd6d6"];
@@ -92,6 +93,8 @@ digraph deps {
   "alethe" -> "sexp";
   "alethe" -> "smt";
   "alethe" -> "types";
+  "cfg-parsing" -> "grammar";
+  "cfg-parsing" -> "parsing-api";
   "client" -> "hash";
   "client" -> "shell";
   "client" -> "store";

@@ -30,7 +30,7 @@
 //!   any case → the canonical `anil` / `t` — never `asym "NIL"`, the
 //!   representation contract).
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use covalence_hol_eval::EvalThm as Thm;
 use covalence_hol_eval::{as_blob, as_int, defs, mk_blob, mk_int};
@@ -82,6 +82,26 @@ pub trait KernelSExpr: AbstractSExpr<Value = Term> {
     fn induct(&self, motive: &Term, cases: Vec<Thm>) -> Result<Thm, Self::Error>;
 }
 
+/// The exact shared Lisp datum payload: integers on the left, symbol/string
+/// bytes on the right.
+pub fn int_symbol_payload() -> Type {
+    defs::coprod(Type::int(), Type::bytes())
+}
+
+/// A carved inductive S-expression instance with exact integer-or-symbol
+/// atoms. It is intentionally independent of ACL2's object universe: both
+/// instantiate the same generic datatype API and can later be related by an
+/// explicit morphism.
+pub fn exact_datum_carved() -> Result<&'static CarvedSExpr, HolError> {
+    static DATUM: LazyLock<std::result::Result<CarvedSExpr, String>> = LazyLock::new(|| {
+        CarvedSExpr::build_with(int_symbol_payload(), "lisp.datum")
+            .map_err(|error| error.to_string())
+    });
+    DATUM
+        .as_ref()
+        .map_err(|error| HolError::Theory(format!("exact Lisp datum build failed: {error}")))
+}
+
 // ============================================================================
 // CarvedCarrier — any carved instance (+ optional int-injection backend)
 // ============================================================================
@@ -103,6 +123,13 @@ pub struct CarvedCarrier {
     cs: &'static CarvedSExpr,
     int: Option<Arc<dyn IntBackend + Send + Sync>>,
     quote_policy: NumeralPolicy,
+    payload_layout: PayloadLayout,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PayloadLayout {
+    Direct,
+    IntOrSymbol,
 }
 
 impl CarvedCarrier {
@@ -132,7 +159,29 @@ impl CarvedCarrier {
             cs,
             int: None,
             quote_policy: NumeralPolicy::Sym,
+            payload_layout: PayloadLayout::Direct,
         }
+    }
+
+    /// Exact `int ⊕ bytes` atoms over `cs`, with arithmetic supplied by the
+    /// matching exact-payload integer backend.
+    pub fn int_or_symbol(
+        cs: &'static CarvedSExpr,
+        int: Arc<dyn IntBackend + Send + Sync>,
+    ) -> Result<Self, HolError> {
+        if cs.payload != int_symbol_payload() {
+            return Err(HolError::Theory(format!(
+                "exact Lisp datum carrier expected payload `{}`, got `{}`",
+                int_symbol_payload(),
+                cs.payload
+            )));
+        }
+        Ok(Self {
+            cs,
+            int: Some(int),
+            quote_policy: NumeralPolicy::Int,
+            payload_layout: PayloadLayout::IntOrSymbol,
+        })
     }
 
     /// Override the [`quote`](AbstractSExpr::quote) numeral policy.
@@ -156,7 +205,11 @@ impl CarvedCarrier {
 
     /// The decoded bytes of a `bytes`-payload atom value.
     pub fn atom_bytes(&self, v: &Term) -> Option<Vec<u8>> {
-        as_blob(&self.as_atom_term(v)?).map(|b| b.to_vec())
+        match self.as_atom(v)? {
+            PayloadOwned::Sym(bytes) => Some(bytes),
+            PayloadOwned::Int(_) => None,
+            _ => None,
+        }
     }
 
     /// The integer of an `(int n)` backend-injected value (`None` when no
@@ -187,6 +240,12 @@ impl AbstractSExpr for CarvedCarrier {
     fn atom(&self, p: PayloadLit<'_>) -> Result<Term, HolError> {
         match p {
             PayloadLit::Sym(b) => {
+                if self.payload_layout == PayloadLayout::IntOrSymbol {
+                    let payload = defs::inr(Type::int(), Type::bytes())
+                        .apply(mk_blob(b.to_vec()))
+                        .map_err(kernel_err)?;
+                    return self.cs.atom.clone().apply(payload).map_err(kernel_err);
+                }
                 if self.cs.payload != Type::bytes() {
                     return Err(HolError::Stuck(format!(
                         "this carrier's atom payload is `{}`, not `bytes` — no symbol atoms",
@@ -234,6 +293,12 @@ impl AbstractSExpr for CarvedCarrier {
             return Some(PayloadOwned::Int(n));
         }
         let p = self.as_atom_term(v)?;
+        if self.payload_layout == PayloadLayout::IntOrSymbol
+            && let Some((injection, bytes)) = p.as_app()
+            && *injection == defs::inr(Type::int(), Type::bytes())
+        {
+            return as_blob(bytes).map(|bytes| PayloadOwned::Sym(bytes.to_vec()));
+        }
         if self.cs.payload == Type::bytes() {
             return as_blob(&p).map(|b| PayloadOwned::Sym(b.to_vec()));
         }

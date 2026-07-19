@@ -7,7 +7,7 @@
 //! `(+ 2 2)` is a stuck sexpr; `sector+int` installs a backend and adds the
 //! integer [`Step`](crate::relation) clauses.
 //!
-//! ## Two impls, one trait
+//! ## Multiple representations, one trait
 //!
 //! - [`IntVariant`] — the honest signed-integer dialect. `(int n)` carries a
 //!   kernel `int` literal for any `n : Int`; `-` may go negative.
@@ -16,6 +16,9 @@
 //!   results**: building a literal for `n < 0`, or evaluating a subtraction
 //!   whose difference is negative, is an error. This is where the two dialects
 //!   genuinely diverge in behaviour.
+//! - [`IntSymbolPayloadVariant`] — exact integers in the left arm of an
+//!   `int ⊕ bytes` atom payload. Unlike the auxiliary `(int n)` head, these
+//!   values can be nested directly inside quoted inductive data.
 //!
 //! ## Soundness: results are PROVED, never asserted
 //!
@@ -253,6 +256,7 @@ fn clause_target_of(
     op: IntOp,
     a: &Term,
     b: &Term,
+    inject: &dyn Fn(&Term) -> Result<Term, HolError>,
     t: &Term,
     nil: &Term,
 ) -> Result<Term, HolError> {
@@ -267,8 +271,8 @@ fn clause_target_of(
             .apply(nil.clone())
             .map_err(kernel_err)
     } else {
-        // (int (int.<op> a b)).
-        int_head(tau).apply(redex).map_err(kernel_err)
+        // The backend's exact injection of `int.<op> a b`.
+        inject(&redex)
     }
 }
 
@@ -382,7 +386,15 @@ impl IntBackend for IntVariant {
     }
 
     fn clause_target(&self, op: IntOp, a_lit: &Term, b_lit: &Term) -> Result<Term, HolError> {
-        clause_target_of(&self.tau, op, a_lit, b_lit, &self.t, &self.nil)
+        clause_target_of(
+            &self.tau,
+            op,
+            a_lit,
+            b_lit,
+            &|term| int_head(&self.tau).apply(term.clone()).map_err(kernel_err),
+            &self.t,
+            &self.nil,
+        )
     }
 
     fn eval_op(&self, op: IntOp, a: &Int, b: &Int) -> Result<OpResult, HolError> {
@@ -392,6 +404,100 @@ impl IntBackend for IntVariant {
     fn prove_reduce(&self, op: IntOp, a: &Int, b: &Int) -> Result<ReduceProof, HolError> {
         let inj = |n: &Int| self.inj(n);
         prove_reduce_shared(&self.tau, op, a, b, &inj, &self.t, &self.nil)
+    }
+}
+
+// ============================================================================
+// Exact `int ⊕ bytes` payload variant
+// ============================================================================
+
+/// Exact integer atoms inside a carved S-expression whose payload is
+/// `int ⊕ bytes`.
+///
+/// Unlike [`IntVariant`], this is not an unconstrained auxiliary injection:
+/// `n` is represented by the datatype constructor `atom (inl n)`. Integers
+/// can therefore occur anywhere ordinary data can, including nested quoted
+/// lists, while arithmetic still reuses the same kernel `int` theorems.
+#[derive(Clone)]
+pub struct IntSymbolPayloadVariant {
+    tau: Type,
+    atom: Term,
+    t: Term,
+    nil: Term,
+}
+
+impl IntSymbolPayloadVariant {
+    pub fn new(tau: Type, atom: Term, t: Term, nil: Term) -> Self {
+        Self { tau, atom, t, nil }
+    }
+
+    fn inj_term(&self, integer: &Term) -> Result<Term, HolError> {
+        let payload = covalence_hol_eval::defs::inl(Type::int(), Type::bytes())
+            .apply(integer.clone())
+            .map_err(kernel_err)?;
+        self.atom.clone().apply(payload).map_err(kernel_err)
+    }
+
+    fn inj(&self, integer: &Int) -> Result<Term, HolError> {
+        self.inj_term(&covalence_hol_eval::mk_int(integer.clone()))
+    }
+}
+
+impl IntBackend for IntSymbolPayloadVariant {
+    fn lit(&self, n: &Int) -> Result<Term, HolError> {
+        self.inj(n)
+    }
+
+    fn lit_var(&self, e: &Term) -> Result<Term, HolError> {
+        self.inj_term(e)
+    }
+
+    fn as_lit(&self, term: &Term) -> Option<Int> {
+        let (atom, payload) = term.as_app()?;
+        if *atom != self.atom {
+            return None;
+        }
+        let (injection, integer) = payload.as_app()?;
+        if *injection != covalence_hol_eval::defs::inl(Type::int(), Type::bytes()) {
+            return None;
+        }
+        covalence_hol_eval::as_int(integer)
+    }
+
+    fn op_term(&self, op: IntOp, a: Term, b: Term) -> Result<Term, HolError> {
+        apply_op(&self.tau, op, a, b)
+    }
+
+    fn op_head(&self, op: IntOp) -> Term {
+        op_head(op, &self.tau)
+    }
+
+    fn clause_target(&self, op: IntOp, a_lit: &Term, b_lit: &Term) -> Result<Term, HolError> {
+        clause_target_of(
+            &self.tau,
+            op,
+            a_lit,
+            b_lit,
+            &|integer| self.inj_term(integer),
+            &self.t,
+            &self.nil,
+        )
+    }
+
+    fn eval_op(&self, op: IntOp, a: &Int, b: &Int) -> Result<OpResult, HolError> {
+        Ok(eval_op_int(op, a, b))
+    }
+
+    fn prove_reduce(&self, op: IntOp, a: &Int, b: &Int) -> Result<ReduceProof, HolError> {
+        prove_reduce_shared(
+            &self.tau,
+            op,
+            a,
+            b,
+            &|integer| self.inj(integer),
+            &self.t,
+            &self.nil,
+        )
     }
 }
 
@@ -458,7 +564,15 @@ impl IntBackend for NatVariant {
     }
 
     fn clause_target(&self, op: IntOp, a_lit: &Term, b_lit: &Term) -> Result<Term, HolError> {
-        clause_target_of(&self.tau, op, a_lit, b_lit, &self.t, &self.nil)
+        clause_target_of(
+            &self.tau,
+            op,
+            a_lit,
+            b_lit,
+            &|term| int_head(&self.tau).apply(term.clone()).map_err(kernel_err),
+            &self.t,
+            &self.nil,
+        )
     }
 
     fn eval_op(&self, op: IntOp, a: &Int, b: &Int) -> Result<OpResult, HolError> {

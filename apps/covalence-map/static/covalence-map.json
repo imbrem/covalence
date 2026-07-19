@@ -709,7 +709,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35678,
+      "words": 35669,
       "updated": 0
     },
     {
@@ -10744,7 +10744,7 @@
       "title": "carrier.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/carrier.rs",
-      "words": 551,
+      "words": 616,
       "updated": 0
     },
     {
@@ -10789,7 +10789,7 @@
       "title": "int_backend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/int_backend.rs",
-      "words": 521,
+      "words": 635,
       "updated": 0
     },
     {
@@ -10816,7 +10816,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 2135,
+      "words": 2312,
       "updated": 0
     },
     {
@@ -15316,7 +15316,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35678,
+      "words": 35669,
       "updated": 0
     },
     {
@@ -15424,7 +15424,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3529,
+      "words": 3519,
       "updated": 0
     },
     {
@@ -22084,15 +22084,6 @@
       "title": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
       "status": "major",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:lisp.relational.numeric-datum-sum",
-      "kind": "todo",
-      "title": "Add an exact-integer branch to the relational S-expression carrier and derive integer? clauses for both closed and open terms.",
-      "status": "major",
-      "path": "crates/lang/lisp/src/relation.rs",
       "words": 0,
       "updated": 0
     },

@@ -51,13 +51,14 @@ use covalence_kernel_lisp::{
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
+use std::sync::Arc;
 
-use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit};
+use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit, PayloadOwned};
 
-use crate::carrier::CarvedCarrier;
+use crate::carrier::{CarvedCarrier, exact_datum_carved};
 use crate::frontend::{CoreAtom, FrontendExpr, Primitive};
 use crate::hol::HolError;
-use crate::int_backend::{IntBackend, IntOp, IntVariant, NatVariant};
+use crate::int_backend::{IntBackend, IntOp, IntSymbolPayloadVariant, IntVariant, NatVariant};
 
 fn theory_err(e: impl core::fmt::Display) -> HolError {
     HolError::Theory(e.to_string())
@@ -80,6 +81,8 @@ fn kernel_err(e: impl core::fmt::Display) -> HolError {
 /// Which Lisp **dialect** a [`LispRel`] realises. The two form the refinement
 /// order `sector ⊑ sector+int`: every `sector` program reduces identically in
 /// `sector+int`, which additionally reduces integer literals + arithmetic.
+/// [`ExactIntSymbol`](Dialect::ExactIntSymbol) realizes the same numeric
+/// vocabulary with a distinct exact inductive payload backend.
 ///
 /// The dialect is exactly a *clause subset* of the `Step` `RuleSet2`:
 /// [`Sector`](Dialect::Sector) omits the integer clauses (so `(+ 2 2)` is
@@ -91,6 +94,9 @@ pub enum Dialect {
     /// `sector` plus integer literals + arithmetic, over the chosen
     /// [`IntFlavour`] (signed `int` or non-negative `nat`).
     SectorInt(IntFlavour),
+    /// Exact integer and symbol atoms in one inductive carrier
+    /// (`int ⊕ bytes`), rather than an auxiliary integer injection.
+    ExactIntSymbol,
 }
 
 /// The integer flavour of the `sector+int` dialect: honest signed integers, or
@@ -120,6 +126,8 @@ pub struct LispRel {
     consp: Term,
     /// `null? : sexpr → sexpr`.
     null_p: Term,
+    /// `integer? : sexpr → sexpr`.
+    integer_p: Term,
     /// `eq? : sexpr → sexpr → sexpr`.
     eq_p: Term,
     /// `cond : sexpr → sexpr` (over a cond-cell-list argument).
@@ -155,32 +163,65 @@ impl LispRel {
     /// the extra integer `Step` clauses; [`Sector`](Dialect::Sector) has
     /// neither (so `(+ 2 2)` is stuck).
     pub fn with_dialect(dialect: Dialect) -> Result<Self, HolError> {
-        let cs = carved().map_err(theory_err)?;
+        let cs = match dialect {
+            Dialect::ExactIntSymbol => exact_datum_carved()?,
+            Dialect::Sector | Dialect::SectorInt(_) => carved().map_err(theory_err)?,
+        };
         let tau = &cs.tau;
-        let atom_c = |s: &str| Term::app(cs.atom.clone(), mk_blob(s.as_bytes().to_vec()));
-        let t = atom_c("t");
-        let nil = atom_c("nil");
-        let int_be: Option<Box<dyn IntBackend>> = match dialect {
-            Dialect::Sector => None,
-            Dialect::SectorInt(IntFlavour::Int) => Some(Box::new(IntVariant::new(
-                tau.clone(),
-                t.clone(),
-                nil.clone(),
-            ))),
-            Dialect::SectorInt(IntFlavour::Nat) => Some(Box::new(NatVariant::new(
-                tau.clone(),
-                t.clone(),
-                nil.clone(),
-            ))),
+        let atom_c = |s: &str| match dialect {
+            Dialect::ExactIntSymbol => cs
+                .atom
+                .clone()
+                .apply(
+                    covalence_hol_eval::defs::inr(Type::int(), Type::bytes())
+                        .apply(mk_blob(s.as_bytes().to_vec()))
+                        .map_err(kernel_err)?,
+                )
+                .map_err(kernel_err),
+            Dialect::Sector | Dialect::SectorInt(_) => {
+                Ok(Term::app(cs.atom.clone(), mk_blob(s.as_bytes().to_vec())))
+            }
+        };
+        let t = atom_c("t")?;
+        let nil = atom_c("nil")?;
+        let (carrier, int_be): (CarvedCarrier, Option<Box<dyn IntBackend>>) = match dialect {
+            Dialect::Sector => (CarvedCarrier::over(cs), None),
+            Dialect::SectorInt(IntFlavour::Int) => (
+                CarvedCarrier::over(cs),
+                Some(
+                    Box::new(IntVariant::new(tau.clone(), t.clone(), nil.clone()))
+                        as Box<dyn IntBackend>,
+                ),
+            ),
+            Dialect::SectorInt(IntFlavour::Nat) => (
+                CarvedCarrier::over(cs),
+                Some(
+                    Box::new(NatVariant::new(tau.clone(), t.clone(), nil.clone()))
+                        as Box<dyn IntBackend>,
+                ),
+            ),
+            Dialect::ExactIntSymbol => {
+                let backend = IntSymbolPayloadVariant::new(
+                    tau.clone(),
+                    cs.atom.clone(),
+                    t.clone(),
+                    nil.clone(),
+                );
+                (
+                    CarvedCarrier::int_or_symbol(cs, Arc::new(backend.clone()))?,
+                    Some(Box::new(backend) as Box<dyn IntBackend>),
+                )
+            }
         };
         Ok(LispRel {
             cs,
-            carrier: CarvedCarrier::over(cs),
+            carrier,
             t,
             nil,
             atom_p: op_head("lisp.rel.atom?", 1, tau),
             consp: op_head("lisp.rel.consp", 1, tau),
             null_p: op_head("lisp.rel.null?", 1, tau),
+            integer_p: op_head("lisp.rel.integer?", 1, tau),
             eq_p: op_head("lisp.rel.eq?", 2, tau),
             cond: op_head("lisp.rel.cond", 1, tau),
             append: op_head("lisp.rel.append", 2, tau),
@@ -257,7 +298,9 @@ impl LispRel {
     }
     /// `atom "s"` — a symbol atom.
     pub fn sym(&self, s: &str) -> Term {
-        Term::app(self.cs.atom.clone(), mk_blob(s.as_bytes().to_vec()))
+        self.carrier
+            .atom(PayloadLit::Sym(s.as_bytes()))
+            .expect("configured relational carrier accepts symbols")
     }
     /// `atom? x`.
     pub fn atom_p_of(&self, x: Term) -> Result<Term, HolError> {
@@ -270,6 +313,10 @@ impl LispRel {
     /// `null? x`.
     pub fn null_p_of(&self, x: Term) -> Result<Term, HolError> {
         self.null_p.clone().apply(x).map_err(kernel_err)
+    }
+    /// `integer? x`.
+    pub fn integer_p_of(&self, x: Term) -> Result<Term, HolError> {
+        self.integer_p.clone().apply(x).map_err(kernel_err)
     }
     /// `eq? a b`.
     pub fn eq_of(&self, a: Term, b: Term) -> Result<Term, HolError> {
@@ -332,25 +379,31 @@ impl LispRel {
     /// | 24 | congruence into append's right operand |
     /// | 25 | congruence into `scons`'s head |
     /// | 26 | congruence into `scons`'s tail |
+    /// | 27 | `Step (integer? snil) nil` |
+    /// | 28 | `∀h t. Step (integer? (scons h t)) nil` |
+    /// | 29 | `integer?` on a non-integer atom is `nil` |
+    /// | 30 | congruence into `integer?`'s argument |
     ///
     /// In the [`SectorInt`](Dialect::SectorInt) dialect, five more integer
-    /// redex clauses follow (indices 27–31, in [`IntOp::ALL`] order):
+    /// redex clauses follow (indices 31–35, in [`IntOp::ALL`] order):
     ///
     /// | idx | clause |
     /// |----:|--------|
-    /// | 27 | `∀a b:int. Step (+ (int a)(int b)) (int (int.add a b))` |
-    /// | 28 | `∀a b:int. Step (- (int a)(int b)) (int (int.sub a b))` |
-    /// | 29 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
-    /// | 30 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
-    /// | 31 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
+    /// | 31 | `∀a b:int. Step (+ (int a)(int b)) (int (int.add a b))` |
+    /// | 32 | `∀a b:int. Step (- (int a)(int b)) (int (int.sub a b))` |
+    /// | 33 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
+    /// | 34 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
+    /// | 35 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
     ///
-    /// then ten integer **congruence** clauses (indices 32–41), a left/right
+    /// then ten integer **congruence** clauses (indices 36–45), a left/right
     /// pair per op in [`IntOp::ALL`] order, so operands reduce in place:
     ///
     /// | idx | clause |
     /// |----:|--------|
-    /// | 32 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
-    /// | 33 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
+    /// | 36 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
+    /// | 37 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
+    ///
+    /// Clause 46 is `∀i:int. Step (integer? (int i)) t`.
     ///
     /// (`eq?` on *distinct* atoms is future work — see the builder / source-local TODO markers.)
     pub fn step_rule_set(&self) -> RuleSet2<'_> {
@@ -359,7 +412,7 @@ impl LispRel {
             let tau = &self.cs.tau;
             let h = Term::free("h", tau.clone());
             let t = Term::free("t", tau.clone());
-            let b = Term::free("b", Type::bytes());
+            let b = Term::free("b", self.cs.payload.clone());
             let scons_ht = self.scons(h.clone(), t.clone()).map_err(to_core)?;
             let atom_b = Term::app(self.cs.atom.clone(), b.clone());
             let snil = self.cs.snil.clone();
@@ -390,7 +443,7 @@ impl LispRel {
             // 3: atom? (atom b) = t.
             cs.push(
                 d(&self.atom_p_of(atom_b.clone()).map_err(to_core)?, &self.t)?
-                    .forall("b", Type::bytes())?,
+                    .forall("b", self.cs.payload.clone())?,
             );
             // 4: atom? snil = t.
             cs.push(d(&self.atom_p_of(snil.clone()).map_err(to_core)?, &self.t)?);
@@ -403,7 +456,7 @@ impl LispRel {
             // 6: consp (atom b) = nil.
             cs.push(
                 d(&self.consp_of(atom_b.clone()).map_err(to_core)?, &self.nil)?
-                    .forall("b", Type::bytes())?,
+                    .forall("b", self.cs.payload.clone())?,
             );
             // 7: consp snil = nil.
             cs.push(d(
@@ -424,11 +477,11 @@ impl LispRel {
             // 10: null? (atom b) = nil.
             cs.push(
                 d(&self.null_p_of(atom_b.clone()).map_err(to_core)?, &self.nil)?
-                    .forall("b", Type::bytes())?,
+                    .forall("b", self.cs.payload.clone())?,
             );
             // 11: eq? (atom a) (atom a) = t  (equal atoms).
             {
-                let ab = Term::free("a", Type::bytes());
+                let ab = Term::free("a", self.cs.payload.clone());
                 let atom_a = Term::app(self.cs.atom.clone(), ab.clone());
                 cs.push(
                     d(
@@ -437,7 +490,7 @@ impl LispRel {
                             .map_err(to_core)?,
                         &self.t,
                     )?
-                    .forall("a", Type::bytes())?,
+                    .forall("a", self.cs.payload.clone())?,
                 );
             }
 
@@ -514,7 +567,7 @@ impl LispRel {
                     &y,
                 )?
                 .forall("y", tau.clone())?
-                .forall("b", Type::bytes())?,
+                .forall("b", self.cs.payload.clone())?,
             );
             {
                 let tail_append = self.append_of(t.clone(), y.clone()).map_err(to_core)?;
@@ -599,6 +652,54 @@ impl LispRel {
                 );
             }
 
+            cs.push(d(
+                &self.integer_p_of(snil.clone()).map_err(to_core)?,
+                &self.nil,
+            )?);
+            cs.push(
+                d(
+                    &self.integer_p_of(scons_ht.clone()).map_err(to_core)?,
+                    &self.nil,
+                )?
+                .forall("t", tau.clone())?
+                .forall("h", tau.clone())?,
+            );
+            match self.dialect {
+                Dialect::ExactIntSymbol => {
+                    let symbol = Term::free("symbol", Type::bytes());
+                    let payload = covalence_hol_eval::defs::inr(Type::int(), Type::bytes())
+                        .apply(symbol.clone())?;
+                    let atom = self.cs.atom.clone().apply(payload)?;
+                    cs.push(
+                        d(&self.integer_p_of(atom).map_err(to_core)?, &self.nil)?
+                            .forall("symbol", Type::bytes())?,
+                    );
+                }
+                Dialect::Sector | Dialect::SectorInt(_) => {
+                    cs.push(
+                        d(
+                            &self.integer_p_of(atom_b.clone()).map_err(to_core)?,
+                            &self.nil,
+                        )?
+                        .forall("b", self.cs.payload.clone())?,
+                    );
+                }
+            }
+            {
+                let value = Term::free("value", tau.clone());
+                let value2 = Term::free("value2", tau.clone());
+                let conclusion = d(
+                    &self.integer_p_of(value.clone()).map_err(to_core)?,
+                    &self.integer_p_of(value2.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&value, &value2)?
+                        .imp(conclusion)?
+                        .forall("value2", tau.clone())?
+                        .forall("value", tau.clone())?,
+                );
+            }
+
             // --- integer clauses (the `sector+int` dialect only) -----------
             // One ∀-quantified clause per op:
             //   ∀a b:int. Step (op (int a)(int b)) (TARGET a b)
@@ -622,7 +723,7 @@ impl LispRel {
                     );
                 }
 
-                // 32–41: congruence into the int-op operands (a left/right
+                // 36–45: congruence into the int-op operands (a left/right
                 // pair per op, in IntOp::ALL order), so nested expressions
                 // like `(+ 1 (+ 2 3))` reduce their operands in place:
                 //   left:  ∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)
@@ -657,6 +758,16 @@ impl LispRel {
                             .forall("a", tau.clone())?,
                     );
                 }
+                let integer = Term::free("integer", Type::int());
+                cs.push(
+                    d(
+                        &self
+                            .integer_p_of(be.lit_var(&integer).map_err(to_core)?)
+                            .map_err(to_core)?,
+                        &self.t,
+                    )?
+                    .forall("integer", Type::int())?,
+                );
             }
 
             Ok(cs)
@@ -664,10 +775,10 @@ impl LispRel {
     }
 
     /// The clause index of int op `op` in the `sector+int` `Step` rule set
-    /// (the integer clauses follow the 27 primitive-fragment clauses, in
+    /// (the integer clauses follow the 31 primitive-fragment clauses, in
     /// [`IntOp::ALL`] order). Only meaningful when a backend is installed.
     fn int_clause_idx(op: IntOp) -> usize {
-        27 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
+        31 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
     }
 
     /// The clause index of int op `op`'s **congruence** clause (left = reduce
@@ -675,7 +786,7 @@ impl LispRel {
     /// set: the pairs follow the five redex clauses, in [`IntOp::ALL`] order.
     fn int_cong_idx(op: IntOp, right: bool) -> usize {
         let p = IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL");
-        32 + 2 * p + usize::from(right)
+        36 + 2 * p + usize::from(right)
     }
 
     /// The number of `Step` clauses.
@@ -792,6 +903,9 @@ impl LispRel {
         }
         if let Some(arg) = self.match_unary(term, &self.null_p) {
             return self.step_unary(term, &arg, |x| self.null_p_of(x), 16, RedHead::NullP);
+        }
+        if let Some(arg) = self.match_unary(term, &self.integer_p) {
+            return self.step_unary(term, &arg, |x| self.integer_p_of(x), 30, RedHead::IntegerP);
         }
         // eq? a b — reduce a, then b, then fire (equal-atoms clause 11).
         if let Some((a, b)) = self.match_eq(term) {
@@ -1053,6 +1167,36 @@ impl LispRel {
                     Ok(None)
                 }
             }
+            RedHead::IntegerP => {
+                if let Some(integer) = self.int_be.as_deref().and_then(|be| be.as_lit(v)) {
+                    return Ok(Some((
+                        self.t(),
+                        self.step_base(46, &[covalence_hol_eval::mk_int(integer)])?,
+                    )));
+                }
+                if self.is_snil(v) {
+                    return Ok(Some((self.nil(), self.step_base(27, &[])?)));
+                }
+                if let Some((head, tail)) = self.as_scons(v) {
+                    return Ok(Some((self.nil(), self.step_base(28, &[head, tail])?)));
+                }
+                let Some(payload) = self.as_atom(v) else {
+                    return Ok(None);
+                };
+                let argument = match self.dialect {
+                    Dialect::ExactIntSymbol => {
+                        let Some((injection, bytes)) = payload.as_app() else {
+                            return Ok(None);
+                        };
+                        if *injection != covalence_hol_eval::defs::inr(Type::int(), Type::bytes()) {
+                            return Ok(None);
+                        }
+                        bytes.clone()
+                    }
+                    Dialect::Sector | Dialect::SectorInt(_) => payload,
+                };
+                Ok(Some((self.nil(), self.step_base(29, &[argument])?)))
+            }
         }
     }
 
@@ -1312,11 +1456,8 @@ impl LispRel {
                 }
             }
             Primitive::Integer => {
-                // TODO(cov:lisp.relational.numeric-datum-sum, major): Add an exact-integer branch to the relational S-expression carrier and derive `integer?` clauses for both closed and open terms.
-                Err(HolError::Stuck(
-                    "`integer?` requires the relational numeric S-expression payload sum backend"
-                        .into(),
-                ))
+                require_arity(1)?;
+                self.integer_p_of(self.compile_core(&arguments[0])?)
             }
             Primitive::Equal => {
                 require_arity(2)?;
@@ -1415,6 +1556,7 @@ impl LispRel {
             ("atom?" | "atom", 1) => self.atom_p_of(self.compile_surface(&args[0])?),
             ("consp" | "pair?", 1) => self.consp_of(self.compile_surface(&args[0])?),
             ("null?" | "null", 1) => self.null_p_of(self.compile_surface(&args[0])?),
+            ("integer?" | "integerp", 1) => self.integer_p_of(self.compile_surface(&args[0])?),
             ("append", 2) => self.append_of(
                 self.compile_surface(&args[0])?,
                 self.compile_surface(&args[1])?,
@@ -1467,7 +1609,7 @@ impl LispRel {
                 };
                 Err(HolError::Stuck(format!(
                     "unknown or misapplied operator `{other}` (applied to {n} argument{}) — \
-                     this dialect supports: quote car cdr cons atom? consp null? eq? append cond \
+                     this dialect supports: quote car cdr cons atom? consp null? integer? eq? append cond \
                      if{ints}; `defun`/`lambda` need `#lang scheme`",
                     if n == 1 { "" } else { "s" }
                 )))
@@ -1516,7 +1658,7 @@ impl LispRel {
         }
         let hint = match self.dialect {
             Dialect::Sector => " (integer arithmetic needs `#lang lisp`)",
-            Dialect::SectorInt(_) => "",
+            Dialect::SectorInt(_) | Dialect::ExactIntSymbol => "",
         };
         Err(HolError::Stuck(format!(
             "`{}` does not reduce to a value: a subterm has no reduction rule in this dialect{hint}",
@@ -1536,7 +1678,7 @@ impl LispRel {
         } else {
             let hint = match self.dialect {
                 Dialect::Sector => " (integer arithmetic needs `#lang lisp`)",
-                Dialect::SectorInt(_) => "",
+                Dialect::SectorInt(_) | Dialect::ExactIntSymbol => "",
             };
             Err(HolError::Stuck(format!(
                 "expression does not reduce to a value: a subterm has no reduction rule in this dialect{hint}"
@@ -1555,10 +1697,12 @@ impl LispRel {
         if self.is_snil(v) {
             return "()".to_string();
         }
-        if let Some(b) = self.as_atom(v)
-            && let Some(bytes) = blob_bytes(&b)
-        {
-            return String::from_utf8_lossy(&bytes).into_owned();
+        if let Some(payload) = self.carrier.as_atom(v) {
+            return match payload {
+                PayloadOwned::Sym(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                PayloadOwned::Int(integer) => integer.to_string(),
+                _ => format!("{v}"),
+            };
         }
         if self.as_scons(v).is_some() {
             let mut out = String::from("(");
@@ -1651,15 +1795,6 @@ fn surface_text(e: &SExpr) -> String {
     }
 }
 
-/// Extract the bytes of a blob literal term, via the designated `Lit` facade.
-fn blob_bytes(t: &Term) -> Option<Vec<u8>> {
-    use covalence_core::seam::Lit;
-    match Lit::from_term(t)? {
-        Lit::Bytes(b) => Some(b.to_vec()),
-        _ => None,
-    }
-}
-
 /// The head redex family a unary elimination fires.
 #[derive(Clone, Copy)]
 enum RedHead {
@@ -1668,6 +1803,7 @@ enum RedHead {
     AtomP,
     Consp,
     NullP,
+    IntegerP,
 }
 
 /// Map a [`HolError`] back into a `covalence_core::Error` inside a clause
@@ -1851,17 +1987,19 @@ mod tests {
         assert!(r.prove_step(&r.car(a).unwrap()).unwrap().is_none());
     }
 
-    /// The rule sets have the expected clause counts. `sector` has 27 `Step`
-    /// clauses; `sector+int` adds the 5 integer redex clauses and the 10
-    /// integer congruence clauses (42 total).
+    /// The rule sets have the expected clause counts. `sector` has 31 `Step`
+    /// clauses; integer dialects add five arithmetic redex clauses, ten
+    /// arithmetic congruence clauses, and the positive `integer?` clause.
     #[test]
     fn clause_counts() {
         let r = rel();
-        assert_eq!(r.step_n_clauses().unwrap(), 27);
+        assert_eq!(r.step_n_clauses().unwrap(), 31);
         assert_eq!(r.reduces_rule_set().n_clauses().unwrap(), 2);
 
         let ri = LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Int)).unwrap();
-        assert_eq!(ri.step_n_clauses().unwrap(), 42);
+        assert_eq!(ri.step_n_clauses().unwrap(), 47);
+        let exact = LispRel::with_dialect(Dialect::ExactIntSymbol).unwrap();
+        assert_eq!(exact.step_n_clauses().unwrap(), 47);
     }
 
     // ---- integer dialect (sector+int) ------------------------------------
@@ -1872,8 +2010,47 @@ mod tests {
     fn nat_rel() -> LispRel {
         LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Nat)).unwrap()
     }
+    fn exact_rel() -> LispRel {
+        LispRel::with_dialect(Dialect::ExactIntSymbol).unwrap()
+    }
     fn i(n: i128) -> Int {
         Int::from(n)
+    }
+
+    #[test]
+    fn exact_payload_nests_integers_in_data_and_reuses_arithmetic() {
+        let r = exact_rel();
+        let frontend = crate::frontend::Frontend::new(crate::frontend::SurfaceDialect::Scheme);
+
+        let quoted = frontend
+            .lower(&crate::reader::read_one("(quote (1 two 3))").unwrap())
+            .unwrap();
+        let (value, theorem) = r.reduce_core(&quoted, 8).unwrap();
+        assert_eq!(r.render_value(&value), "(1 two 3)");
+        assert!(theorem.hyps().is_empty());
+
+        let arithmetic = frontend
+            .lower(&crate::reader::read_one("(+ (car (quote (1 99))) 2)").unwrap())
+            .unwrap();
+        let input = r.compile_core(&arithmetic).unwrap();
+        let (value, theorem) = r.reduce_core(&arithmetic, 16).unwrap();
+        assert_eq!(r.render_value(&value), "3");
+        assert!(theorem.hyps().is_empty());
+        assert_eq!(theorem.concl(), &r.reduces_prop(&input, &value).unwrap());
+
+        for (source, expected) in [
+            ("(integer? (car (quote (1 two))))", "t"),
+            ("(integer? (car (cdr (quote (1 two)))))", "nil"),
+        ] {
+            let expression = frontend
+                .lower(&crate::reader::read_one(source).unwrap())
+                .unwrap();
+            let (value, theorem) = r.reduce_core(&expression, 16).unwrap();
+            assert_eq!(r.render_value(&value), expected, "{source}");
+            assert!(theorem.hyps().is_empty());
+        }
+
+        assert_ne!(r.tau(), int_rel().tau(), "backends must be distinct types");
     }
 
     /// `sector+int`: `⊢ Reduces (+ (int 2)(int 2)) (int 4)`, hyps-free, equal

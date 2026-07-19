@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 352,
-  "structured": 352,
+  "count": 351,
+  "structured": 351,
   "items": [
     {
       "id": "acl2.reader.dispatch-macros",
@@ -3052,16 +3052,6 @@
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
       "line": 489,
-      "crate": "covalence-lisp"
-    },
-    {
-      "id": "lisp.relational.numeric-datum-sum",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Add an exact-integer branch to the relational S-expression carrier and derive integer? clauses for both closed and open terms.",
-      "structured": true,
-      "path": "crates/lang/lisp/src/relation.rs",
-      "line": 1315,
       "crate": "covalence-lisp"
     },
     {

@@ -24,8 +24,10 @@ pub use adapters::{
 };
 pub use bytes::{
     ByteParseDiagnostic, ByteParseError, ByteParseJudgment, ByteParseLaws, ByteParseOutcome,
-    ByteParseWitness, ByteParser, ByteParserRelation, ByteParserTheory, ByteSpan, LiteralBytes,
-    ParseBudget, ParseFailure,
+    ByteParseWitness, ByteParser, ByteParserRelation, ByteParserTheory, ByteRegexLanguageBackend,
+    ByteRegexLanguageLaws, ByteRegexLanguageTheory, ByteRegexMembershipCertificate,
+    ByteRegexMembershipReplay, ByteSpan, LiteralBytes, ParseBudget, ParseFailure,
+    TheoremByteRegexMembershipReplay,
 };
 
 use covalence_logic_api::{Logic, MalformedUtf8, RawByte, UnicodeScalar, decode_utf8};

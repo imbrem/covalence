@@ -165,6 +165,113 @@ pub trait ByteParseLaws<L: Logic>: ByteParserTheory<L> {
     fn same_value_transitive(&self, logic: &L) -> Result<L::Thm, L::Error>;
 }
 
+/// Backend-selected object-language carriers for a byte-regex language.
+///
+/// This is syntax, not evidence: the terms may be inspected or substituted by
+/// untrusted callers, and a replay backend must validate them before returning
+/// any proof-bearing certificate.
+#[derive(Clone, Debug)]
+pub struct ByteRegexLanguageTheory<L: Logic> {
+    pub regex_type: L::Type,
+    pub word_type: L::Type,
+    pub regex: L::Term,
+}
+
+impl<L: Logic> PartialEq for ByteRegexLanguageTheory<L> {
+    fn eq(&self, other: &Self) -> bool {
+        self.regex_type == other.regex_type
+            && self.word_type == other.word_type
+            && self.regex == other.regex
+    }
+}
+
+impl<L: Logic> Eq for ByteRegexLanguageTheory<L> {}
+
+/// Interpret a host regex specification into one logic backend.
+///
+/// Keeping `Specification` generic lets the neutral parsing layer avoid
+/// depending on a particular grammar AST. Implementations may use
+/// `covalence_grammar::Regex<u8>`, a content-addressed syntax object, or a
+/// different equivalent representation.
+pub trait ByteRegexLanguageBackend<L: Logic, Specification: ?Sized> {
+    type Error;
+
+    fn realize_regex_language(
+        &self,
+        logic: &L,
+        specification: &Specification,
+    ) -> Result<ByteRegexLanguageTheory<L>, Self::Error>;
+}
+
+/// Replay one untrusted positive match candidate.
+///
+/// This capability deliberately says nothing about failed search and does not
+/// imply either universal soundness or completeness. A proof backend should
+/// recompute/check the witness and the supplied theory before constructing its
+/// certificate.
+pub trait ByteRegexMembershipReplay<L: Logic, Specification: ?Sized, Witness: ?Sized>:
+    ByteRegexLanguageBackend<L, Specification>
+{
+    type Certificate;
+    type ReplayError;
+
+    fn replay_regex_membership(
+        &self,
+        logic: &L,
+        specification: &Specification,
+        input: &[u8],
+        theory: &ByteRegexLanguageTheory<L>,
+        witness: &Witness,
+    ) -> Result<Self::Certificate, Self::ReplayError>;
+}
+
+/// Optional projection for replay certificates that actually contain a
+/// backend theorem.
+///
+/// Proof-free checkers intentionally need not implement this trait.
+pub trait ByteRegexMembershipCertificate<L: Logic> {
+    fn membership_theorem(&self) -> &L::Thm;
+}
+
+/// Convenience marker for theorem-producing replay backends.
+pub trait TheoremByteRegexMembershipReplay<L: Logic, Specification: ?Sized, Witness: ?Sized>:
+    ByteRegexMembershipReplay<L, Specification, Witness>
+where
+    Self::Certificate: ByteRegexMembershipCertificate<L>,
+{
+}
+
+impl<L, Specification, Witness, Replay> TheoremByteRegexMembershipReplay<L, Specification, Witness>
+    for Replay
+where
+    L: Logic,
+    Specification: ?Sized,
+    Witness: ?Sized,
+    Replay: ByteRegexMembershipReplay<L, Specification, Witness>,
+    Replay::Certificate: ByteRegexMembershipCertificate<L>,
+{
+}
+
+/// Optional universal laws for a realized regex language.
+///
+/// These are separate from [`ByteRegexMembershipReplay`]: supporting checked
+/// concrete instances does not grant a theorem quantifying over all words.
+/// Soundness and completeness remain separate methods so a backend can expose
+/// either result without claiming the other.
+pub trait ByteRegexLanguageLaws<L: Logic> {
+    fn derivation_soundness(
+        &self,
+        logic: &L,
+        theory: &ByteRegexLanguageTheory<L>,
+    ) -> Result<L::Thm, L::Error>;
+
+    fn derivation_completeness(
+        &self,
+        logic: &L,
+        theory: &ByteRegexLanguageTheory<L>,
+    ) -> Result<L::Thm, L::Error>;
+}
+
 /// Dependency-light reference parser for one fixed byte prefix.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LiteralBytes {
@@ -254,14 +361,74 @@ impl ByteParserRelation for LiteralBytes {
     }
 }
 
-// TODO(cov:parsing.bytes.regex-replay, major): Replay A0013 regex language-membership witnesses through a logic backend without conflating bounded host evaluation with soundness or completeness.
 // TODO(cov:parsing.bytes.cfg-integration, major): Interpret CFG and PEG derivations as bounded A0013 relational witnesses with ambiguity and completeness tracked explicitly.
 
 #[cfg(test)]
 mod tests {
+    use core::convert::Infallible;
+
     use super::*;
 
     const BUDGET: ParseBudget = ParseBudget::new(64, 64, 4);
+
+    #[derive(Clone, Copy, Debug)]
+    struct SymbolicLogic;
+
+    impl Logic for SymbolicLogic {
+        type Kind = ();
+        type Type = &'static str;
+        type Term = Vec<u8>;
+        type Thm = Infallible;
+        type Error = Infallible;
+    }
+
+    /// Proof-free reference adapter: a byte slice specifies its singleton
+    /// literal language. This demonstrates that replay capability shape does
+    /// not itself mint or require theorem values.
+    struct LiteralLanguageReplay;
+
+    impl ByteRegexLanguageBackend<SymbolicLogic, [u8]> for LiteralLanguageReplay {
+        type Error = Infallible;
+
+        fn realize_regex_language(
+            &self,
+            _logic: &SymbolicLogic,
+            specification: &[u8],
+        ) -> Result<ByteRegexLanguageTheory<SymbolicLogic>, Self::Error> {
+            Ok(ByteRegexLanguageTheory {
+                regex_type: "literal-byte-regex",
+                word_type: "bytes",
+                regex: specification.to_vec(),
+            })
+        }
+    }
+
+    impl ByteRegexMembershipReplay<SymbolicLogic, [u8], ByteParseWitness<()>>
+        for LiteralLanguageReplay
+    {
+        type Certificate = ByteSpan;
+        type ReplayError = &'static str;
+
+        fn replay_regex_membership(
+            &self,
+            _logic: &SymbolicLogic,
+            specification: &[u8],
+            input: &[u8],
+            theory: &ByteRegexLanguageTheory<SymbolicLogic>,
+            witness: &ByteParseWitness<()>,
+        ) -> Result<Self::Certificate, Self::ReplayError> {
+            let expected = self
+                .realize_regex_language(&SymbolicLogic, specification)
+                .expect("infallible reference realization");
+            if theory != &expected || !witness.is_valid_for(input.len()) {
+                return Err("substituted theory or invalid span");
+            }
+            if witness.consumed.end != specification.len() || !input.starts_with(specification) {
+                return Err("not a member of the literal language");
+            }
+            Ok(witness.consumed)
+        }
+    }
 
     #[test]
     fn literal_reports_consumed_prefix_and_remainder() {
@@ -315,6 +482,22 @@ mod tests {
         assert_eq!(
             LiteralBytes::new(b"a".to_vec()).parse_relational(b"a", ParseBudget::new(1, 1, 0)),
             Err(ByteParseError::ResultLimitExceeded { limit: 0 })
+        );
+    }
+
+    #[test]
+    fn replay_capability_does_not_require_a_proof_bearing_backend() {
+        let specification = b"let";
+        let input = b"let x";
+        let theory = LiteralLanguageReplay
+            .realize_regex_language(&SymbolicLogic, specification)
+            .unwrap();
+        let witness = ByteParseWitness::prefix(input.len(), specification.len(), ()).unwrap();
+        assert_eq!(
+            LiteralLanguageReplay
+                .replay_regex_membership(&SymbolicLogic, specification, input, &theory, &witness,)
+                .unwrap(),
+            ByteSpan { start: 0, end: 3 }
         );
     }
 }

@@ -20,10 +20,14 @@
 
 use core::fmt;
 
-use covalence_core::{Error, Term};
+use covalence_core::Error;
 use covalence_grammar::Regex;
 use covalence_hol_eval::EvalThm;
-use covalence_parsing_api::{ByteParseError, ByteParseWitness, ByteParserRelation, ParseBudget};
+use covalence_parsing_api::{
+    ByteParseError, ByteParseWitness, ByteParserRelation, ByteRegexLanguageBackend,
+    ByteRegexLanguageTheory, ByteRegexMembershipCertificate, ByteRegexMembershipReplay,
+    ParseBudget,
+};
 use covalence_regex_parsing::{ByteRegexParser, RegexMatchWitness};
 
 use super::{compile, tactic};
@@ -33,10 +37,7 @@ use crate::init::inductive::hol::{Hol, NativeHol};
 ///
 /// This value carries no authority. Replay compares it with a fresh
 /// compilation of the canonical regex before constructing a theorem.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BoundedByteRegexTheory {
-    pub regex: Term,
-}
+pub type BoundedByteRegexTheory = ByteRegexLanguageTheory<NativeHol>;
 
 /// Plain-data candidate selected by bounded host evaluation.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,6 +60,12 @@ pub struct ByteRegexReplayCertificate {
     pub metadata: ByteRegexReplayMetadata,
 }
 
+impl ByteRegexMembershipCertificate<NativeHol> for ByteRegexReplayCertificate {
+    fn membership_theorem(&self) -> &EvalThm {
+        &self.theorem
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ByteRegexReplayError {
     RegexMismatch,
@@ -79,9 +86,17 @@ impl fmt::Display for ByteRegexReplayError {
 
 impl std::error::Error for ByteRegexReplayError {}
 
+/// Native HOL adapter for the backend-neutral A0013 replay capability.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BoundedByteRegexReplay {
+    pub budget: ParseBudget,
+}
+
 /// Compile the canonical regex into the only theory accepted by replay.
 pub fn bounded_byte_regex_theory(regex: &Regex<u8>) -> BoundedByteRegexTheory {
     BoundedByteRegexTheory {
+        regex_type: crate::init::regex::regex(super::u8ty()),
+        word_type: crate::init::list::list(super::u8ty()),
         regex: compile(regex),
     }
 }
@@ -124,49 +139,85 @@ pub fn replay_byte_regex_prefix(
     theory: &BoundedByteRegexTheory,
     witness: &ByteRegexReplayWitness,
 ) -> Result<ByteRegexReplayCertificate, ByteRegexReplayError> {
-    if &witness.regex != canonical_regex {
-        return Err(ByteRegexReplayError::RegexMismatch);
-    }
-    if witness.input != canonical_input {
-        return Err(ByteRegexReplayError::InputMismatch);
-    }
-    if !witness.parse.is_valid_for(canonical_input.len()) {
-        return Err(ByteRegexReplayError::InvalidSpan);
-    }
-    if witness.parse.evidence.accepting_end != witness.parse.consumed.end {
-        return Err(ByteRegexReplayError::EndpointMismatch);
-    }
+    BoundedByteRegexReplay { budget }.replay_regex_membership(
+        &NativeHol,
+        canonical_regex,
+        canonical_input,
+        theory,
+        witness,
+    )
+}
 
-    let expected_theory = bounded_byte_regex_theory(canonical_regex);
-    if theory != &expected_theory {
-        return Err(ByteRegexReplayError::TheoryMismatch);
-    }
+impl ByteRegexLanguageBackend<NativeHol, Regex<u8>> for BoundedByteRegexReplay {
+    type Error = ByteRegexReplayError;
 
-    let parser = ByteRegexParser::new(canonical_regex.clone());
-    let candidates = parser
-        .parse_relational(canonical_input, budget)
-        .map_err(ByteRegexReplayError::EvaluatorRejected)?;
-    if !candidates
-        .iter()
-        .any(|(_, candidate)| candidate == &witness.parse)
-    {
-        return Err(ByteRegexReplayError::ForgedMatch);
+    fn realize_regex_language(
+        &self,
+        _logic: &NativeHol,
+        specification: &Regex<u8>,
+    ) -> Result<ByteRegexLanguageTheory<NativeHol>, Self::Error> {
+        Ok(bounded_byte_regex_theory(specification))
     }
+}
 
-    let consumed = &canonical_input[..witness.parse.consumed.end];
-    let theorem = tactic::prove_matches(canonical_regex, consumed)
-        .map_err(map_kernel_error)?
-        .ok_or(ByteRegexReplayError::ProofConstruction)?;
-    if NativeHol.hyps(&theorem).is_empty() {
-        Ok(ByteRegexReplayCertificate {
-            theorem,
-            metadata: ByteRegexReplayMetadata {
-                input_bytes: canonical_input.len(),
-                consumed_bytes: consumed.len(),
-            },
-        })
-    } else {
-        Err(ByteRegexReplayError::ProofConstruction)
+impl ByteRegexMembershipReplay<NativeHol, Regex<u8>, ByteRegexReplayWitness>
+    for BoundedByteRegexReplay
+{
+    type Certificate = ByteRegexReplayCertificate;
+    type ReplayError = ByteRegexReplayError;
+
+    fn replay_regex_membership(
+        &self,
+        _logic: &NativeHol,
+        canonical_regex: &Regex<u8>,
+        canonical_input: &[u8],
+        theory: &ByteRegexLanguageTheory<NativeHol>,
+        witness: &ByteRegexReplayWitness,
+    ) -> Result<Self::Certificate, Self::ReplayError> {
+        if &witness.regex != canonical_regex {
+            return Err(ByteRegexReplayError::RegexMismatch);
+        }
+        if witness.input != canonical_input {
+            return Err(ByteRegexReplayError::InputMismatch);
+        }
+        if !witness.parse.is_valid_for(canonical_input.len()) {
+            return Err(ByteRegexReplayError::InvalidSpan);
+        }
+        if witness.parse.evidence.accepting_end != witness.parse.consumed.end {
+            return Err(ByteRegexReplayError::EndpointMismatch);
+        }
+
+        let expected_theory = bounded_byte_regex_theory(canonical_regex);
+        if theory != &expected_theory {
+            return Err(ByteRegexReplayError::TheoryMismatch);
+        }
+
+        let parser = ByteRegexParser::new(canonical_regex.clone());
+        let candidates = parser
+            .parse_relational(canonical_input, self.budget)
+            .map_err(ByteRegexReplayError::EvaluatorRejected)?;
+        if !candidates
+            .iter()
+            .any(|(_, candidate)| candidate == &witness.parse)
+        {
+            return Err(ByteRegexReplayError::ForgedMatch);
+        }
+
+        let consumed = &canonical_input[..witness.parse.consumed.end];
+        let theorem = tactic::prove_matches(canonical_regex, consumed)
+            .map_err(map_kernel_error)?
+            .ok_or(ByteRegexReplayError::ProofConstruction)?;
+        if NativeHol.hyps(&theorem).is_empty() {
+            Ok(ByteRegexReplayCertificate {
+                theorem,
+                metadata: ByteRegexReplayMetadata {
+                    input_bytes: canonical_input.len(),
+                    consumed_bytes: consumed.len(),
+                },
+            })
+        } else {
+            Err(ByteRegexReplayError::ProofConstruction)
+        }
     }
 }
 
@@ -250,10 +301,20 @@ mod tests {
         );
 
         let forged_theory = BoundedByteRegexTheory {
+            regex_type: theory.regex_type.clone(),
+            word_type: theory.word_type.clone(),
             regex: compile(&parse_regex_u8("abc").unwrap()),
         };
         assert_eq!(
             replay_byte_regex_prefix(&regex, &input, BUDGET, &forged_theory, &witness).unwrap_err(),
+            ByteRegexReplayError::TheoryMismatch
+        );
+
+        let mut forged_carrier = theory.clone();
+        forged_carrier.word_type = covalence_core::Type::bool();
+        assert_eq!(
+            replay_byte_regex_prefix(&regex, &input, BUDGET, &forged_carrier, &witness)
+                .unwrap_err(),
             ByteRegexReplayError::TheoryMismatch
         );
     }

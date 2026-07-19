@@ -322,16 +322,15 @@ pub fn total_rule_set(defs: &[SpecTecDef]) -> Result<(RuleSet<'static>, TotalRep
 /// Run `f` on a thread with a 64 MiB stack and propagate its result (and
 /// panics).
 ///
-/// The combined set's `Closed_L` is a right-nested conjunction of ~2500
-/// clauses and kernel term operations recurse structurally, so laying it out
-/// or deriving against it needs ~16 MiB of stack in debug builds — more than
-/// default test-thread stacks. Drive whole-spec work through this until the
-/// kernel walks go iterative (the known term-arena / verified-WASM
-/// construction direction; see the design note's scale risk).
+/// The combined set's `Closed_L` is a right-nested conjunction of more than
+/// 9,000 clauses and kernel term operations recurse structurally. Laying it
+/// out or deriving against it therefore exceeds default test-thread stacks.
+/// Drive whole-spec work through this until the kernel walks become iterative
+/// (the known term-arena / verified-WASM construction direction).
 pub fn with_total_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     let handle = std::thread::Builder::new()
         .name("wasm-total-load".into())
-        .stack_size(64 * 1024 * 1024)
+        .stack_size(512 * 1024 * 1024)
         .spawn(f)
         .expect("spawn total-load thread");
     match handle.join() {

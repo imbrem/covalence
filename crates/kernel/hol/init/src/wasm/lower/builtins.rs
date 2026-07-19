@@ -132,7 +132,7 @@ pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
 /// Operations given defining clauses by this leg.
-pub const OPS: [&str; 64] = [
+pub const OPS: [&str; 85] = [
     "truncz",
     "ceilz",
     "isub_",
@@ -197,6 +197,27 @@ pub const OPS: [&str; 64] = [
     "fge_",
     "fpmin_",
     "fpmax_",
+    "fmin_",
+    "fmax_",
+    "fceil_",
+    "ffloor_",
+    "ftrunc_",
+    "fnearest_",
+    "ND",
+    "R_fmadd",
+    "R_fmin",
+    "R_fmax",
+    "R_idot",
+    "R_iq15mulr",
+    "R_trunc_u",
+    "R_trunc_s",
+    "R_swizzle",
+    "R_laneselect",
+    "trunc__",
+    "trunc_sat__",
+    "convert__",
+    "promote__",
+    "demote__",
 ];
 
 /// How many of the 91 zero-clause builtin tags gain their **first** clauses
@@ -204,7 +225,7 @@ pub const OPS: [&str; 64] = [
 /// operations, four integer serialization/inverse operations, the exact
 /// integer SIMD lane isomorphism, and three integer conversions. The other
 /// eleven [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 53;
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 74;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -317,6 +338,260 @@ fn carrier_ratio(n: Term, d: Term) -> Result<Term> {
     let payload = |x| app(con("proj.0"), app(con("uncase.%"), ival(x)?)?);
     let cvt = |x| app(con("cvt.Nat.Rat"), payload(x)?);
     app(app(con("bin.Div"), cvt(n)?)?, cvt(d)?)
+}
+
+// Exact finite-arithmetic frontier contract
+// -----------------------------------------
+//
+// The remaining strict float arithmetic must not use a host float oracle. Its
+// reusable intermediate should be:
+//
+//   ExactRatio {
+//     sign: 0 | 1,
+//     numerator: nat, denominator: nat, // both > 0
+//     exp2: SignedNat,                  // value = (-1)^sign * n/d * 2^exp2
+//   }
+//
+// It need not be gcd-reduced: cross multiplication, quotient, and remainder
+// do not depend on canonical reduction. A witnessed `NormalizedRatio` adds the
+// unique binary bin exponent `e` satisfying `2^e <= |x| < 2^(e+1)`. Emitters
+// split signed exponents before forming powers, keeping every Side in natural
+// arithmetic.
+//
+// The target quantum must be selected *before* rounding:
+//
+// - normal bin `e`: quantum `2^(e-p)`;
+// - subnormal corridor: fixed quantum `2^(emin-p)`.
+//
+// Scale the original exact ratio once to `A/B = |x| / quantum`, define
+// `q = A div B` and `r = A mod B`, and compare `2*r` with `B`. The strict
+// inequalities plus equality and `q mod 2` are the complete nearest/ties-even
+// partition even when `B` is odd. In particular, an implementation must not
+// first round a normalized significand and then round that result into the
+// subnormal corridor: that would introduce double-rounding. Existing carry,
+// signed-zero, overflow, and quantified-NaN emitters consume the one rounded
+// candidate.
+//
+// Proposed untrusted construction boundary:
+//
+//   trait ExactFloatOp {
+//     fn exceptional_clauses(&self, width: u64) -> Result<Vec<Clause>>;
+//     fn finite_ratio_cases(&self, width: u64) -> Result<Vec<RatioCase>>;
+//   }
+//   fn emit_normalized_ratio(case: RatioCase) -> Result<Vec<NormalizedCase>>;
+//   fn select_target_quantum(case: NormalizedCase, width: u64)
+//       -> Result<Vec<QuantumCase>>;
+//   fn emit_round_ratio(case: QuantumCase, width: u64) -> Result<Vec<Clause>>;
+//
+// `RatioCase` owns metavariable names, Side premises, the input spine, and the
+// ratio terms. `NormalizedCase` additionally owns the witnessed bin;
+// `QuantumCase` records a normal/subnormal/overflow partition and the scaling
+// direction needed to form `A/B` from the original ratio. Neither stores a
+// theorem or mints a trusted rule; only NativeHol replay of emitted clauses
+// establishes authority.
+//
+// The smallest end-to-end milestone is `fmul_`: its finite ratio has a wide
+// significand product, denominator one, and an exponent sum. It exercises
+// normalization and every output boundary without addition's cancellation or
+// division's odd denominator. `fdiv_` follows to validate general `2*r` vs
+// `B`; add/sub then add alignment and cancellation. `fsqrt_` is not rational
+// and requires a separate integer-square-bound witness.
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct SignedNatTerm {
+    negative: bool,
+    magnitude: Term,
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct SignedTermCase {
+    sides: Vec<Term>,
+    value: SignedNatTerm,
+}
+
+/// Exact signed-magnitude addition with a small nonnegative carry.
+///
+/// Inputs marked negative are guarded away from negative zero. The returned
+/// cases are disjoint except at ordinary positive zero, and cover every
+/// ordering of the two magnitudes. This is the exponent arithmetic needed for
+/// multiplying normalized float bins and adding normalization/rounding carry.
+#[cfg_attr(not(test), allow(dead_code))]
+fn signed_bin_add_cases(
+    base: &[Term],
+    left: SignedNatTerm,
+    right: SignedNatTerm,
+    carry: u64,
+) -> Result<Vec<SignedTermCase>> {
+    let mut base = base.to_vec();
+    if left.negative {
+        base.push(lt(mk_nat(0u64), left.magnitude.clone())?);
+    }
+    if right.negative {
+        base.push(lt(mk_nat(0u64), right.magnitude.clone())?);
+    }
+    let carry = mk_nat(carry);
+    let mut out = Vec::new();
+    match (left.negative, right.negative) {
+        (false, false) => out.push(SignedTermCase {
+            sides: base,
+            value: SignedNatTerm {
+                negative: false,
+                magnitude: add(add(left.magnitude, right.magnitude)?, carry)?,
+            },
+        }),
+        (false, true) | (true, false) => {
+            let (positive, negative) = if left.negative {
+                (right.magnitude, left.magnitude)
+            } else {
+                (left.magnitude, right.magnitude)
+            };
+            let positive = add(positive, carry)?;
+            let mut nonnegative = base.clone();
+            nonnegative.push(le(negative.clone(), positive.clone())?);
+            out.push(SignedTermCase {
+                sides: nonnegative,
+                value: SignedNatTerm {
+                    negative: false,
+                    magnitude: sub(positive.clone(), negative.clone())?,
+                },
+            });
+            let mut negative_case = base;
+            negative_case.push(lt(positive.clone(), negative.clone())?);
+            out.push(SignedTermCase {
+                sides: negative_case,
+                value: SignedNatTerm {
+                    negative: true,
+                    magnitude: sub(negative, positive)?,
+                },
+            });
+        }
+        (true, true) => {
+            let negative = add(left.magnitude, right.magnitude)?;
+            let mut nonnegative = base.clone();
+            nonnegative.push(le(negative.clone(), carry.clone())?);
+            out.push(SignedTermCase {
+                sides: nonnegative,
+                value: SignedNatTerm {
+                    negative: false,
+                    magnitude: sub(carry.clone(), negative.clone())?,
+                },
+            });
+            let mut negative_case = base;
+            negative_case.push(lt(carry.clone(), negative.clone())?);
+            out.push(SignedTermCase {
+                sides: negative_case,
+                value: SignedNatTerm {
+                    negative: true,
+                    magnitude: sub(negative, carry)?,
+                },
+            });
+        }
+    }
+    Ok(out)
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct ExactRatioTerms {
+    sign: u64,
+    numerator: Term,
+    denominator: Term,
+    exp2: SignedNatTerm,
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum QuantumClass {
+    Normal,
+    Subnormal,
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct QuantumCase {
+    sides: Vec<Term>,
+    sign: u64,
+    numerator: Term,
+    denominator: Term,
+    class: QuantumClass,
+}
+
+/// Scale an exact ratio by the reciprocal of a target quantum.
+///
+/// For `x = n/d * 2^e` and quantum `2^q`, this emits cases for the signed
+/// difference `e-q`. A nonnegative difference multiplies the numerator by its
+/// power of two; a negative difference multiplies the denominator. No rounding
+/// occurs here, so the later quotient/remainder step observes the original
+/// exact value exactly once.
+#[cfg_attr(not(test), allow(dead_code))]
+fn scale_ratio_to_quantum(
+    base: &[Term],
+    ratio: ExactRatioTerms,
+    quantum_exp: SignedNatTerm,
+    class: QuantumClass,
+) -> Result<Vec<QuantumCase>> {
+    let negated_quantums = if quantum_exp.negative {
+        vec![(
+            base.to_vec(),
+            SignedNatTerm {
+                negative: false,
+                magnitude: quantum_exp.magnitude,
+            },
+        )]
+    } else {
+        let mut zero = base.to_vec();
+        zero.push(quantum_exp.magnitude.clone().equals(mk_nat(0u64))?);
+        let mut nonzero = base.to_vec();
+        nonzero.push(lt(mk_nat(0u64), quantum_exp.magnitude.clone())?);
+        vec![
+            (
+                zero,
+                SignedNatTerm {
+                    negative: false,
+                    magnitude: mk_nat(0u64),
+                },
+            ),
+            (
+                nonzero,
+                SignedNatTerm {
+                    negative: true,
+                    magnitude: quantum_exp.magnitude,
+                },
+            ),
+        ]
+    };
+    let mut out = Vec::new();
+    for (negation_sides, negated_quantum) in negated_quantums {
+        for difference in
+            signed_bin_add_cases(&negation_sides, ratio.exp2.clone(), negated_quantum, 0)?
+        {
+            let scale = pow2(difference.value.magnitude)?;
+            let (numerator, denominator) = if difference.value.negative {
+                (
+                    ratio.numerator.clone(),
+                    mul(ratio.denominator.clone(), scale)?,
+                )
+            } else {
+                (
+                    mul(ratio.numerator.clone(), scale)?,
+                    ratio.denominator.clone(),
+                )
+            };
+            let mut sides = difference.sides;
+            sides.push(lt(mk_nat(0u64), ratio.numerator.clone())?);
+            sides.push(lt(mk_nat(0u64), ratio.denominator.clone())?);
+            out.push(QuantumCase {
+                sides,
+                sign: ratio.sign,
+                numerator,
+                denominator,
+                class: class.clone(),
+            });
+        }
+    }
+    Ok(out)
 }
 
 fn rational_concl(op: &str, arg: Term, sign: u64, magnitude: Term) -> Result<Term> {
@@ -1518,6 +1793,89 @@ fn push_float_selection(
     Ok(())
 }
 
+fn push_binary_nan_result_set(
+    out: &mut Vec<Clause>,
+    names: &[String],
+    base: &[Term],
+    w: u64,
+    left: &Term,
+    right: &Term,
+    left_nan: bool,
+    right_nan: bool,
+) -> Result<()> {
+    debug_assert!(left_nan || right_nan);
+    let p = if w == 32 { 23 } else { 52 };
+    let canon = p2(p - 1)?;
+
+    let mut canonical = base.to_vec();
+    if left_nan {
+        canonical.push(mv("a_m").equals(canon.clone())?);
+    }
+    if right_nan {
+        canonical.push(mv("b_m").equals(canon.clone())?);
+    }
+
+    // Partition "at least one noncanonical NaN" without disjunction or
+    // overlap: the left arithmetic branch has precedence, and the right
+    // branch requires a canonical left NaN when both operands are NaNs.
+    let mut arithmetic_inputs = Vec::new();
+    if left_nan {
+        for noncanonical in [lt(mv("a_m"), canon.clone())?, lt(canon.clone(), mv("a_m"))?] {
+            let mut branch = base.to_vec();
+            branch.push(noncanonical);
+            arithmetic_inputs.push(branch);
+        }
+    }
+    if right_nan {
+        for noncanonical in [lt(mv("b_m"), canon.clone())?, lt(canon.clone(), mv("b_m"))?] {
+            let mut branch = base.to_vec();
+            if left_nan {
+                branch.push(mv("a_m").equals(canon.clone())?);
+            }
+            branch.push(noncanonical);
+            arithmetic_inputs.push(branch);
+        }
+    }
+
+    for op in ["fmin_", "fmax_"] {
+        for output_sign in [0, 1] {
+            let mut sides = canonical.clone();
+            sides.push(mv("dst_m").equals(canon.clone())?);
+            let mut clause_names = names.to_vec();
+            clause_names.push("dst_m".to_owned());
+            let refs: Vec<&str> = clause_names.iter().map(String::as_str).collect();
+            out.push(clause(
+                &refs,
+                sides,
+                float_selection_concl(
+                    op,
+                    w,
+                    left.clone(),
+                    right.clone(),
+                    structural_nan(output_sign, mv("dst_m"))?,
+                )?,
+            ));
+
+            for mut sides in arithmetic_inputs.clone() {
+                sides.push(le(canon.clone(), mv("dst_m"))?);
+                sides.push(lt(mv("dst_m"), p2(p)?)?);
+                out.push(clause(
+                    &refs,
+                    sides,
+                    float_selection_concl(
+                        op,
+                        w,
+                        left.clone(),
+                        right.clone(),
+                        structural_nan(output_sign, mv("dst_m"))?,
+                    )?,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Exact IEEE comparisons and `copysign` over the complete structural
 /// carrier. The monotone integer key reverses negative raw payloads and
 /// shifts positive payloads above them; signed zeros are handled separately,
@@ -1593,6 +1951,16 @@ fn float_comparisons_and_copysign() -> Result<Vec<Clause>> {
                                     )?,
                                 ));
                             }
+                            push_binary_nan_result_set(
+                                &mut out,
+                                &names,
+                                &base,
+                                w,
+                                &left,
+                                &right,
+                                left_kind == "nan",
+                                right_kind == "nan",
+                            )?;
                             continue;
                         }
 
@@ -1631,6 +1999,33 @@ fn float_comparisons_and_copysign() -> Result<Vec<Clause>> {
                                         left.clone(),
                                         right.clone(),
                                         left.clone(),
+                                    )?,
+                                ));
+                            }
+                            let min_zero = structural_float(
+                                u64::from(left_sign == 1 || right_sign == 1),
+                                app(
+                                    con("case.SUBNORM"),
+                                    app(con("tup"), wrap_nat(mk_nat(0u64))?)?,
+                                )?,
+                            )?;
+                            let max_zero = structural_float(
+                                u64::from(left_sign == 1 && right_sign == 1),
+                                app(
+                                    con("case.SUBNORM"),
+                                    app(con("tup"), wrap_nat(mk_nat(0u64))?)?,
+                                )?,
+                            )?;
+                            for (op, result) in [("fmin_", min_zero), ("fmax_", max_zero)] {
+                                out.push(clause(
+                                    &refs,
+                                    zero_sides.clone(),
+                                    float_selection_concl(
+                                        op,
+                                        w,
+                                        left.clone(),
+                                        right.clone(),
+                                        result,
                                     )?,
                                 ));
                             }
@@ -1681,6 +2076,10 @@ fn float_comparisons_and_copysign() -> Result<Vec<Clause>> {
                                 ("fpmin_", &left, le_lr.clone()),
                                 ("fpmax_", &right, lt_lr.clone()),
                                 ("fpmax_", &left, le_rl.clone()),
+                                ("fmin_", &right, lt_rl.clone()),
+                                ("fmin_", &left, le_lr.clone()),
+                                ("fmax_", &right, lt_lr.clone()),
+                                ("fmax_", &left, le_rl.clone()),
                             ] {
                                 push_float_selection(
                                     &mut out, &names, &branch, op, w, &left, &right, result, guard,
@@ -1691,6 +2090,1337 @@ fn float_comparisons_and_copysign() -> Result<Vec<Clause>> {
                 }
             }
         }
+    }
+    Ok(out)
+}
+
+fn float_unary_concl(op: &str, w: u64, input: Term, output: Term) -> Result<Term> {
+    fn_graph(op, &[w_lit(w)?, input], &singleton(output)?)
+}
+
+fn push_unary_nan_result_set(
+    out: &mut Vec<Clause>,
+    op: &str,
+    w: u64,
+    input_sign: u64,
+) -> Result<()> {
+    let p = if w == 32 { 23 } else { 52 };
+    let (_, input_sides, _, _, input, _) = float_case_named(w, input_sign, "nan", None, "src_")?;
+    let canon = p2(p - 1)?;
+    for output_sign in [0, 1] {
+        let mut canonical = input_sides.clone();
+        canonical.push(mv("src_m").equals(canon.clone())?);
+        canonical.push(mv("dst_m").equals(canon.clone())?);
+        out.push(clause(
+            &["src_m", "dst_m"],
+            canonical,
+            float_unary_concl(
+                op,
+                w,
+                input.clone(),
+                structural_nan(output_sign, mv("dst_m"))?,
+            )?,
+        ));
+        for noncanonical in [
+            lt(mv("src_m"), canon.clone())?,
+            lt(canon.clone(), mv("src_m"))?,
+        ] {
+            let mut arithmetic = input_sides.clone();
+            arithmetic.push(noncanonical);
+            arithmetic.push(le(canon.clone(), mv("dst_m"))?);
+            arithmetic.push(lt(mv("dst_m"), p2(p)?)?);
+            out.push(clause(
+                &["src_m", "dst_m"],
+                arithmetic,
+                float_unary_concl(
+                    op,
+                    w,
+                    input.clone(),
+                    structural_nan(output_sign, mv("dst_m"))?,
+                )?,
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn signed_zero(sign: u64) -> Result<Term> {
+    structural_float(
+        sign,
+        app(
+            con("case.SUBNORM"),
+            app(con("tup"), wrap_nat(mk_nat(0u64))?)?,
+        )?,
+    )
+}
+
+fn signed_one(sign: u64) -> Result<Term> {
+    structural_normal(sign, mk_nat(0u64), 0, mk_nat(0u64))
+}
+
+fn push_integral_float_result(
+    out: &mut Vec<Clause>,
+    op: &str,
+    w: u64,
+    sign: u64,
+    exponent: u64,
+    input: Term,
+    sides: Vec<Term>,
+    rounded_significand: Term,
+) -> Result<()> {
+    let p = if w == 32 { 23 } else { 52 };
+    let limit = p2(p + 1)?;
+
+    let mut no_carry = sides.clone();
+    no_carry.push(lt(rounded_significand.clone(), limit.clone())?);
+    no_carry.push(mv("dst_m").equals(sub(rounded_significand.clone(), p2(p)?)?)?);
+    out.push(clause(
+        &["src_m", "src_e", "dst_m"],
+        no_carry,
+        float_unary_concl(
+            op,
+            w,
+            input.clone(),
+            structural_normal(sign, mv("dst_m"), 0, mk_nat(exponent))?,
+        )?,
+    ));
+
+    let mut carry = sides;
+    carry.push(rounded_significand.equals(limit)?);
+    out.push(clause(
+        &["src_m", "src_e"],
+        carry,
+        float_unary_concl(
+            op,
+            w,
+            input,
+            structural_normal(sign, mk_nat(0u64), 0, mk_nat(exponent + 1))?,
+        )?,
+    ));
+    Ok(())
+}
+
+/// Exact ceil/floor/trunc/nearest over the complete structural float carrier.
+fn float_integral_rounding() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    let ops = ["fceil_", "ffloor_", "ftrunc_", "fnearest_"];
+    for w in [32, 64] {
+        let p = if w == 32 { 23 } else { 52 };
+        for sign in [0, 1] {
+            for op in ops {
+                push_unary_nan_result_set(&mut out, op, w, sign)?;
+            }
+
+            let (names, sides, _, _, infinity, _) =
+                float_case_named(w, sign, "infinity", None, "src_")?;
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            for op in ops {
+                out.push(clause(
+                    &refs,
+                    sides.clone(),
+                    float_unary_concl(op, w, infinity.clone(), infinity.clone())?,
+                ));
+            }
+
+            let (names, sides, _, _, subnormal, _) =
+                float_case_named(w, sign, "subnormal", None, "src_")?;
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            let mut zero = sides.clone();
+            zero.push(mv("src_m").equals(mk_nat(0u64))?);
+            for op in ops {
+                out.push(clause(
+                    &refs,
+                    zero.clone(),
+                    float_unary_concl(op, w, subnormal.clone(), subnormal.clone())?,
+                ));
+            }
+            let mut nonzero = sides;
+            nonzero.push(lt(mk_nat(0u64), mv("src_m"))?);
+            for (op, result) in [
+                (
+                    "fceil_",
+                    if sign == 0 {
+                        signed_one(sign)?
+                    } else {
+                        signed_zero(sign)?
+                    },
+                ),
+                (
+                    "ffloor_",
+                    if sign == 0 {
+                        signed_zero(sign)?
+                    } else {
+                        signed_one(sign)?
+                    },
+                ),
+                ("ftrunc_", signed_zero(sign)?),
+                ("fnearest_", signed_zero(sign)?),
+            ] {
+                out.push(clause(
+                    &refs,
+                    nonzero.clone(),
+                    float_unary_concl(op, w, subnormal.clone(), result)?,
+                ));
+            }
+
+            let (_, neg_sides, _, _, negative_exp, _) =
+                float_case_named(w, sign, "normal", Some(1), "src_")?;
+            for (mantissa_guard, nearest) in [
+                (mv("src_m").equals(mk_nat(0u64))?, signed_zero(sign)?),
+                (lt(mk_nat(0u64), mv("src_m"))?, signed_one(sign)?),
+            ] {
+                let mut half = neg_sides.clone();
+                half.push(mv("src_e").equals(mk_nat(1u64))?);
+                half.push(mantissa_guard);
+                for (op, result) in [
+                    (
+                        "fceil_",
+                        if sign == 0 {
+                            signed_one(sign)?
+                        } else {
+                            signed_zero(sign)?
+                        },
+                    ),
+                    (
+                        "ffloor_",
+                        if sign == 0 {
+                            signed_zero(sign)?
+                        } else {
+                            signed_one(sign)?
+                        },
+                    ),
+                    ("ftrunc_", signed_zero(sign)?),
+                    ("fnearest_", nearest),
+                ] {
+                    out.push(clause(
+                        &["src_m", "src_e"],
+                        half.clone(),
+                        float_unary_concl(op, w, negative_exp.clone(), result)?,
+                    ));
+                }
+            }
+            let mut below_half = neg_sides;
+            below_half.push(lt(mk_nat(1u64), mv("src_e"))?);
+            for (op, result) in [
+                (
+                    "fceil_",
+                    if sign == 0 {
+                        signed_one(sign)?
+                    } else {
+                        signed_zero(sign)?
+                    },
+                ),
+                (
+                    "ffloor_",
+                    if sign == 0 {
+                        signed_zero(sign)?
+                    } else {
+                        signed_one(sign)?
+                    },
+                ),
+                ("ftrunc_", signed_zero(sign)?),
+                ("fnearest_", signed_zero(sign)?),
+            ] {
+                out.push(clause(
+                    &["src_m", "src_e"],
+                    below_half.clone(),
+                    float_unary_concl(op, w, negative_exp.clone(), result)?,
+                ));
+            }
+
+            let (_, pos_sides, _, _, positive_exp, _) =
+                float_case_named(w, sign, "normal", Some(0), "src_")?;
+            let mut already_integral = pos_sides.clone();
+            already_integral.push(le(mk_nat(p), mv("src_e"))?);
+            for op in ops {
+                out.push(clause(
+                    &["src_m", "src_e"],
+                    already_integral.clone(),
+                    float_unary_concl(op, w, positive_exp.clone(), positive_exp.clone())?,
+                ));
+            }
+
+            for exponent in 0..p {
+                let shift = p - exponent;
+                let unit = p2(shift)?;
+                let significand = add(p2(p)?, mv("src_m"))?;
+                let q = div(significand.clone(), unit.clone())?;
+                let rem = md(significand, unit.clone())?;
+                let down = mul(q.clone(), unit.clone())?;
+                let up = mul(add(q.clone(), mk_nat(1u64))?, unit)?;
+                let mut base = pos_sides.clone();
+                base.push(mv("src_e").equals(mk_nat(exponent))?);
+
+                let mut exact = base.clone();
+                exact.push(rem.clone().equals(mk_nat(0u64))?);
+                for op in ["fceil_", "ffloor_", "ftrunc_"] {
+                    push_integral_float_result(
+                        &mut out,
+                        op,
+                        w,
+                        sign,
+                        exponent,
+                        positive_exp.clone(),
+                        exact.clone(),
+                        down.clone(),
+                    )?;
+                }
+                let mut fractional = base.clone();
+                fractional.push(lt(mk_nat(0u64), rem.clone())?);
+                for (op, rounded) in [
+                    ("ftrunc_", down.clone()),
+                    ("fceil_", if sign == 0 { up.clone() } else { down.clone() }),
+                    ("ffloor_", if sign == 0 { down.clone() } else { up.clone() }),
+                ] {
+                    push_integral_float_result(
+                        &mut out,
+                        op,
+                        w,
+                        sign,
+                        exponent,
+                        positive_exp.clone(),
+                        fractional.clone(),
+                        rounded,
+                    )?;
+                }
+
+                for (nearest_sides, rounded_q) in
+                    round_ties_even_candidates(&base, q.clone(), rem, p2(shift - 1)?)?
+                {
+                    push_integral_float_result(
+                        &mut out,
+                        "fnearest_",
+                        w,
+                        sign,
+                        exponent,
+                        positive_exp.clone(),
+                        nearest_sides,
+                        mul(rounded_q, p2(shift)?)?,
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Exact relational graphs for implementation/profile choice parameters.
+///
+/// These are deliberately relations, not deterministic defaults: every
+/// value admitted by the source syntax is derivable, and no other value is.
+/// A proof selects a concrete profile parameter by supplying the corresponding
+/// graph fact; no host-global flag or hidden oracle enters the theorem.
+fn choice_parameter_clauses() -> Result<Vec<Clause>> {
+    let mut out = vec![
+        clause(&[], vec![], fn_graph("ND", &[], &con("bool.false"))?),
+        clause(&[], vec![], fn_graph("ND", &[], &con("bool.true"))?),
+    ];
+    for (op, cardinality) in [
+        ("R_fmadd", 2u64),
+        ("R_fmin", 4),
+        ("R_fmax", 4),
+        ("R_idot", 2),
+        ("R_iq15mulr", 2),
+        ("R_trunc_u", 4),
+        ("R_trunc_s", 2),
+        ("R_swizzle", 2),
+        ("R_laneselect", 2),
+    ] {
+        for i in 0..cardinality {
+            out.push(clause(
+                &[],
+                vec![],
+                fn_graph(op, &[], &wrap_nat(mk_nat(i))?)?,
+            ));
+        }
+    }
+    Ok(out)
+}
+
+fn float_to_int_concl(
+    op: &str,
+    source_w: u64,
+    target_w: u64,
+    sx: &str,
+    value: Term,
+    result: Term,
+) -> Result<Term> {
+    fn_graph(
+        op,
+        &[w_lit(source_w)?, w_lit(target_w)?, sx_case(sx)?, value],
+        &result,
+    )
+}
+
+fn push_float_to_int_some(
+    out: &mut Vec<Clause>,
+    mut names: Vec<String>,
+    mut sides: Vec<Term>,
+    op: &str,
+    source_w: u64,
+    target_w: u64,
+    sx: &str,
+    value: Term,
+    result: Term,
+) -> Result<()> {
+    names.push("r".to_owned());
+    sides.push(mv("r").equals(result)?);
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    out.push(clause(
+        &refs,
+        sides,
+        float_to_int_concl(op, source_w, target_w, sx, value, some(ival(mv("r"))?)?)?,
+    ));
+    Ok(())
+}
+
+fn push_float_to_int_none(
+    out: &mut Vec<Clause>,
+    names: Vec<String>,
+    sides: Vec<Term>,
+    source_w: u64,
+    target_w: u64,
+    sx: &str,
+    value: Term,
+) -> Result<()> {
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    out.push(clause(
+        &refs,
+        sides,
+        float_to_int_concl("trunc__", source_w, target_w, sx, value, con("opt.none"))?,
+    ));
+    Ok(())
+}
+
+/// Exact trapping and saturating float-to-integer conversions.
+///
+/// A normal finite magnitude is `(2^M + m) * 2^(e-M)`. Splitting at `e=M`
+/// keeps that expression in natural arithmetic. NaNs/infinities and every
+/// target-range boundary are explicit; no host float or rational oracle is
+/// involved.
+fn float_to_integer_conversions() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for source_w in [32, 64] {
+        let m_bits = if source_w == 32 { 23 } else { 52 };
+        for target_w in [32, 64] {
+            for sx in ["U", "S"] {
+                for sign in [0, 1] {
+                    for (kind, exp_sign) in FLOAT_SHAPES {
+                        let (names, sides, _, _magnitude, value, _raw) =
+                            float_case_named(source_w, sign, kind, exp_sign, "")?;
+                        let unsigned_limit = p2(target_w)?;
+                        let signed_limit = p2(target_w - 1)?;
+                        match kind {
+                            "nan" => {
+                                push_float_to_int_none(
+                                    &mut out,
+                                    names.clone(),
+                                    sides.clone(),
+                                    source_w,
+                                    target_w,
+                                    sx,
+                                    value.clone(),
+                                )?;
+                                push_float_to_int_some(
+                                    &mut out,
+                                    names,
+                                    sides,
+                                    "trunc_sat__",
+                                    source_w,
+                                    target_w,
+                                    sx,
+                                    value,
+                                    mk_nat(0u64),
+                                )?;
+                            }
+                            "infinity" => {
+                                push_float_to_int_none(
+                                    &mut out,
+                                    names.clone(),
+                                    sides.clone(),
+                                    source_w,
+                                    target_w,
+                                    sx,
+                                    value.clone(),
+                                )?;
+                                let saturated = match (sx, sign) {
+                                    ("U", 0) => sub(unsigned_limit, mk_nat(1u64))?,
+                                    ("U", 1) => mk_nat(0u64),
+                                    ("S", 0) => sub(signed_limit, mk_nat(1u64))?,
+                                    ("S", 1) => signed_limit,
+                                    _ => unreachable!(),
+                                };
+                                push_float_to_int_some(
+                                    &mut out,
+                                    names,
+                                    sides,
+                                    "trunc_sat__",
+                                    source_w,
+                                    target_w,
+                                    sx,
+                                    value,
+                                    saturated,
+                                )?;
+                            }
+                            "subnormal" => {
+                                // Every subnormal and every normal with a
+                                // negative exponent truncates to signed zero.
+                                push_float_to_int_some(
+                                    &mut out,
+                                    names.clone(),
+                                    sides.clone(),
+                                    "trunc__",
+                                    source_w,
+                                    target_w,
+                                    sx,
+                                    value.clone(),
+                                    mk_nat(0u64),
+                                )?;
+                                push_float_to_int_some(
+                                    &mut out,
+                                    names,
+                                    sides,
+                                    "trunc_sat__",
+                                    source_w,
+                                    target_w,
+                                    sx,
+                                    value,
+                                    mk_nat(0u64),
+                                )?;
+                            }
+                            "normal" if exp_sign == Some(1) => {
+                                push_float_to_int_some(
+                                    &mut out,
+                                    names.clone(),
+                                    sides.clone(),
+                                    "trunc__",
+                                    source_w,
+                                    target_w,
+                                    sx,
+                                    value.clone(),
+                                    mk_nat(0u64),
+                                )?;
+                                push_float_to_int_some(
+                                    &mut out,
+                                    names,
+                                    sides,
+                                    "trunc_sat__",
+                                    source_w,
+                                    target_w,
+                                    sx,
+                                    value,
+                                    mk_nat(0u64),
+                                )?;
+                            }
+                            "normal" => {
+                                for (mut mag_sides, mag) in [
+                                    (
+                                        vec![le(mv("e"), mk_nat(m_bits))?],
+                                        div(
+                                            add(p2(m_bits)?, mv("m"))?,
+                                            pow2(sub(mk_nat(m_bits), mv("e"))?)?,
+                                        )?,
+                                    ),
+                                    (
+                                        vec![lt(mk_nat(m_bits), mv("e"))?],
+                                        mul(
+                                            add(p2(m_bits)?, mv("m"))?,
+                                            pow2(sub(mv("e"), mk_nat(m_bits))?)?,
+                                        )?,
+                                    ),
+                                ] {
+                                    mag_sides.extend(sides.clone());
+                                    let limit = if sx == "U" {
+                                        unsigned_limit.clone()
+                                    } else {
+                                        signed_limit.clone()
+                                    };
+                                    if sign == 0 {
+                                        let mut fits = mag_sides.clone();
+                                        fits.push(lt(mag.clone(), limit.clone())?);
+                                        for op in ["trunc__", "trunc_sat__"] {
+                                            push_float_to_int_some(
+                                                &mut out,
+                                                names.clone(),
+                                                fits.clone(),
+                                                op,
+                                                source_w,
+                                                target_w,
+                                                sx,
+                                                value.clone(),
+                                                mag.clone(),
+                                            )?;
+                                        }
+                                        let mut overflow = mag_sides.clone();
+                                        overflow.push(le(limit.clone(), mag.clone())?);
+                                        push_float_to_int_none(
+                                            &mut out,
+                                            names.clone(),
+                                            overflow.clone(),
+                                            source_w,
+                                            target_w,
+                                            sx,
+                                            value.clone(),
+                                        )?;
+                                        push_float_to_int_some(
+                                            &mut out,
+                                            names.clone(),
+                                            overflow,
+                                            "trunc_sat__",
+                                            source_w,
+                                            target_w,
+                                            sx,
+                                            value.clone(),
+                                            sub(limit, mk_nat(1u64))?,
+                                        )?;
+                                    } else if sx == "U" {
+                                        push_float_to_int_none(
+                                            &mut out,
+                                            names.clone(),
+                                            mag_sides.clone(),
+                                            source_w,
+                                            target_w,
+                                            sx,
+                                            value.clone(),
+                                        )?;
+                                        push_float_to_int_some(
+                                            &mut out,
+                                            names.clone(),
+                                            mag_sides,
+                                            "trunc_sat__",
+                                            source_w,
+                                            target_w,
+                                            sx,
+                                            value.clone(),
+                                            mk_nat(0u64),
+                                        )?;
+                                    } else {
+                                        let mut fits = mag_sides.clone();
+                                        fits.push(le(mag.clone(), signed_limit.clone())?);
+                                        let encoded =
+                                            md(sub(p2(target_w)?, mag.clone())?, p2(target_w)?)?;
+                                        for op in ["trunc__", "trunc_sat__"] {
+                                            push_float_to_int_some(
+                                                &mut out,
+                                                names.clone(),
+                                                fits.clone(),
+                                                op,
+                                                source_w,
+                                                target_w,
+                                                sx,
+                                                value.clone(),
+                                                encoded.clone(),
+                                            )?;
+                                        }
+                                        let mut overflow = mag_sides.clone();
+                                        overflow.push(lt(signed_limit.clone(), mag)?);
+                                        push_float_to_int_none(
+                                            &mut out,
+                                            names.clone(),
+                                            overflow.clone(),
+                                            source_w,
+                                            target_w,
+                                            sx,
+                                            value.clone(),
+                                        )?;
+                                        push_float_to_int_some(
+                                            &mut out,
+                                            names.clone(),
+                                            overflow,
+                                            "trunc_sat__",
+                                            source_w,
+                                            target_w,
+                                            sx,
+                                            value.clone(),
+                                            signed_limit.clone(),
+                                        )?;
+                                    }
+                                }
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn int_to_float_concl(
+    source_w: u64,
+    target_w: u64,
+    sx: &str,
+    input: Term,
+    output: Term,
+) -> Result<Term> {
+    fn_graph(
+        "convert__",
+        &[
+            w_lit(source_w)?,
+            w_lit(target_w)?,
+            sx_case(sx)?,
+            ival(input)?,
+        ],
+        &output,
+    )
+}
+
+fn normal_float(sign: u64, exponent: u64, mantissa: Term) -> Result<Term> {
+    let payload = app(
+        app(con("tup"), wrap_nat(mantissa)?)?,
+        wrap_int(0, mk_nat(exponent))?,
+    )?;
+    app(
+        con(if sign == 0 { "case.POS" } else { "case.NEG" }),
+        app(con("case.NORM"), payload)?,
+    )
+}
+
+fn push_int_to_float(
+    out: &mut Vec<Clause>,
+    mut sides: Vec<Term>,
+    source_w: u64,
+    target_w: u64,
+    sx: &str,
+    sign: u64,
+    exponent: u64,
+    mantissa: Term,
+) -> Result<()> {
+    sides.push(mv("out_m").equals(mantissa)?);
+    out.push(clause(
+        &["a", "out_m"],
+        sides,
+        int_to_float_concl(
+            source_w,
+            target_w,
+            sx,
+            mv("a"),
+            normal_float(sign, exponent, mv("out_m"))?,
+        )?,
+    ));
+    Ok(())
+}
+
+/// Exact integer-to-float conversion with IEEE round-to-nearest,
+/// ties-to-even. Source magnitudes are partitioned by their unique top bit.
+/// When precision is insufficient, quotient/remainder and quotient parity
+/// select the lower/upper candidate; a rounded significand carry increments
+/// the exponent.
+fn integer_to_float_conversions() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for source_w in [32, 64] {
+        for target_w in [32, 64] {
+            let p = if target_w == 32 { 23 } else { 52 };
+            for sx in ["U", "S"] {
+                let sign_classes: &[u64] = if sx == "U" { &[0] } else { &[0, 1] };
+                for &sign in sign_classes {
+                    let mut zero_sides = vec![mv("a").equals(mk_nat(0u64))?];
+                    if sx == "S" && sign == 1 {
+                        // There is no negative integer zero.
+                        continue;
+                    }
+                    zero_sides.push(in_carrier(mv("a"), source_w)?);
+                    out.push(clause(
+                        &["a"],
+                        zero_sides,
+                        int_to_float_concl(
+                            source_w,
+                            target_w,
+                            sx,
+                            mv("a"),
+                            app(
+                                con("case.POS"),
+                                app(
+                                    con("case.SUBNORM"),
+                                    app(con("tup"), wrap_nat(mk_nat(0u64))?)?,
+                                )?,
+                            )?,
+                        )?,
+                    ));
+                }
+
+                for sign in sign_classes.iter().copied() {
+                    let mag = if sign == 0 {
+                        mv("a")
+                    } else {
+                        sub(p2(source_w)?, mv("a"))?
+                    };
+                    let mut class = vec![in_carrier(mv("a"), source_w)?];
+                    if sx == "S" {
+                        if sign == 0 {
+                            class.push(lt(mv("a"), p2(source_w - 1)?)?);
+                        } else {
+                            class.push(le(p2(source_w - 1)?, mv("a"))?);
+                        }
+                    }
+                    for k in 0..source_w {
+                        let mut top_bit = class.clone();
+                        top_bit.push(le(p2(k)?, mag.clone())?);
+                        top_bit.push(lt(mag.clone(), p2(k + 1)?)?);
+                        if k <= p {
+                            let mantissa = mul(sub(mag.clone(), p2(k)?)?, p2(p - k)?)?;
+                            push_int_to_float(
+                                &mut out, top_bit, source_w, target_w, sx, sign, k, mantissa,
+                            )?;
+                            continue;
+                        }
+
+                        let shift = k - p;
+                        let unit = p2(shift)?;
+                        let half = p2(shift - 1)?;
+                        let q = div(mag.clone(), unit.clone())?;
+                        let rem = md(mag.clone(), unit)?;
+                        let limit = p2(p + 1)?;
+
+                        // Below half, and an even exact tie, round down.
+                        for mut round_down in [
+                            {
+                                let mut s = top_bit.clone();
+                                s.push(lt(rem.clone(), half.clone())?);
+                                s
+                            },
+                            {
+                                let mut s = top_bit.clone();
+                                s.push(rem.clone().equals(half.clone())?);
+                                s.push(md(q.clone(), mk_nat(2u64))?.equals(mk_nat(0u64))?);
+                                s
+                            },
+                        ] {
+                            round_down.push(lt(q.clone(), limit.clone())?);
+                            push_int_to_float(
+                                &mut out,
+                                round_down,
+                                source_w,
+                                target_w,
+                                sx,
+                                sign,
+                                k,
+                                sub(q.clone(), p2(p)?)?,
+                            )?;
+                        }
+
+                        // Above half, and an odd exact tie, round up. Split
+                        // the significand carry because it increments `e`.
+                        for round_up in [
+                            {
+                                let mut s = top_bit.clone();
+                                s.push(lt(half.clone(), rem.clone())?);
+                                s
+                            },
+                            {
+                                let mut s = top_bit.clone();
+                                s.push(rem.clone().equals(half.clone())?);
+                                s.push(md(q.clone(), mk_nat(2u64))?.equals(mk_nat(1u64))?);
+                                s
+                            },
+                        ] {
+                            let rounded = add(q.clone(), mk_nat(1u64))?;
+                            let mut no_carry = round_up.clone();
+                            no_carry.push(lt(rounded.clone(), limit.clone())?);
+                            push_int_to_float(
+                                &mut out,
+                                no_carry,
+                                source_w,
+                                target_w,
+                                sx,
+                                sign,
+                                k,
+                                sub(rounded.clone(), p2(p)?)?,
+                            )?;
+                            let mut carry = round_up;
+                            carry.push(rounded.equals(limit.clone())?);
+                            push_int_to_float(
+                                &mut out,
+                                carry,
+                                source_w,
+                                target_w,
+                                sx,
+                                sign,
+                                k + 1,
+                                mk_nat(0u64),
+                            )?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn float_width_conversion_concl(
+    op: &str,
+    source_w: u64,
+    target_w: u64,
+    input: Term,
+    output: Term,
+) -> Result<Term> {
+    fn_graph(
+        op,
+        &[w_lit(source_w)?, w_lit(target_w)?, input],
+        &singleton(output)?,
+    )
+}
+
+fn structural_float(sign: u64, magnitude: Term) -> Result<Term> {
+    app(
+        con(if sign == 0 { "case.POS" } else { "case.NEG" }),
+        magnitude,
+    )
+}
+
+fn structural_normal(sign: u64, mantissa: Term, exp_sign: u64, exponent: Term) -> Result<Term> {
+    structural_float(
+        sign,
+        app(
+            con("case.NORM"),
+            app(
+                app(con("tup"), wrap_nat(mantissa)?)?,
+                wrap_int(exp_sign, exponent)?,
+            )?,
+        )?,
+    )
+}
+
+fn structural_nan(sign: u64, payload: Term) -> Result<Term> {
+    structural_float(
+        sign,
+        app(con("case.NAN"), app(con("tup"), wrap_nat(payload)?)?)?,
+    )
+}
+
+/// Add the complete `nans_N` result relation for one NaN input.
+///
+/// Clause precedence in the numeric specification distinguishes canonical
+/// payloads from all other arithmetic payloads. A canonical input admits both
+/// signs of exactly `canon_N`; a noncanonical arithmetic input admits both
+/// signs and every target payload in `[canon_N, 2^signif(N))`. The quantified
+/// output payload is constrained by kernel natural order, so this represents
+/// the full family without enumeration or representative selection.
+fn push_nan_result_set(
+    out: &mut Vec<Clause>,
+    op: &str,
+    source_w: u64,
+    target_w: u64,
+    input_sign: u64,
+) -> Result<()> {
+    let source_p = if source_w == 32 { 23 } else { 52 };
+    let target_p = if target_w == 32 { 23 } else { 52 };
+    let (_, input_sides, _, _, input, _) =
+        float_case_named(source_w, input_sign, "nan", None, "src_")?;
+    let source_canon = p2(source_p - 1)?;
+    let target_canon = p2(target_p - 1)?;
+
+    for output_sign in [0, 1] {
+        let mut canonical = input_sides.clone();
+        canonical.push(mv("src_m").equals(source_canon.clone())?);
+        canonical.push(mv("dst_m").equals(target_canon.clone())?);
+        out.push(clause(
+            &["src_m", "dst_m"],
+            canonical,
+            float_width_conversion_concl(
+                op,
+                source_w,
+                target_w,
+                input.clone(),
+                structural_nan(output_sign, mv("dst_m"))?,
+            )?,
+        ));
+
+        for source_noncanonical in [
+            lt(mv("src_m"), source_canon.clone())?,
+            lt(source_canon.clone(), mv("src_m"))?,
+        ] {
+            let mut arithmetic = input_sides.clone();
+            arithmetic.push(source_noncanonical);
+            arithmetic.push(le(target_canon.clone(), mv("dst_m"))?);
+            arithmetic.push(lt(mv("dst_m"), p2(target_p)?)?);
+            out.push(clause(
+                &["src_m", "dst_m"],
+                arithmetic,
+                float_width_conversion_concl(
+                    op,
+                    source_w,
+                    target_w,
+                    input.clone(),
+                    structural_nan(output_sign, mv("dst_m"))?,
+                )?,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Exact F32-to-F64 promotion over the complete structural carrier.
+///
+/// Every finite F32 value is exactly representable at F64. Normal values keep
+/// their unbiased exponent and shift the significand payload by 29 bits.
+/// Nonzero subnormals are normalized by their unique top bit; signed zero and
+/// infinities preserve their constructors. NaNs use the quantified result-set
+/// relation above and therefore retain all source-permitted nondeterminism.
+fn float_promotion() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for sign in [0, 1] {
+        let (names, sides, _, _, input, _) = float_case_named(32, sign, "subnormal", None, "src_")?;
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let mut zero = sides.clone();
+        zero.push(mv("src_m").equals(mk_nat(0u64))?);
+        out.push(clause(
+            &refs,
+            zero,
+            float_width_conversion_concl(
+                "promote__",
+                32,
+                64,
+                input.clone(),
+                structural_float(
+                    sign,
+                    app(
+                        con("case.SUBNORM"),
+                        app(con("tup"), wrap_nat(mk_nat(0u64))?)?,
+                    )?,
+                )?,
+            )?,
+        ));
+        for k in 0..23 {
+            let mut branch = sides.clone();
+            branch.push(le(p2(k)?, mv("src_m"))?);
+            branch.push(lt(mv("src_m"), p2(k + 1)?)?);
+            branch.push(mv("dst_m").equals(mul(sub(mv("src_m"), p2(k)?)?, p2(52 - k)?)?)?);
+            out.push(clause(
+                &["src_m", "dst_m"],
+                branch,
+                float_width_conversion_concl(
+                    "promote__",
+                    32,
+                    64,
+                    input.clone(),
+                    structural_normal(sign, mv("dst_m"), 1, mk_nat(149 - k))?,
+                )?,
+            ));
+        }
+
+        for exp_sign in [0, 1] {
+            let (names, sides, _, _, input, _) =
+                float_case_named(32, sign, "normal", Some(exp_sign), "src_")?;
+            let mut names = names;
+            names.push("dst_m".to_owned());
+            let mut sides = sides;
+            sides.push(mv("dst_m").equals(mul(mv("src_m"), p2(29)?)?)?);
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            out.push(clause(
+                &refs,
+                sides,
+                float_width_conversion_concl(
+                    "promote__",
+                    32,
+                    64,
+                    input,
+                    structural_normal(sign, mv("dst_m"), exp_sign, mv("src_e"))?,
+                )?,
+            ));
+        }
+
+        let (names, sides, _, _, input, _) = float_case_named(32, sign, "infinity", None, "src_")?;
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        out.push(clause(
+            &refs,
+            sides,
+            float_width_conversion_concl(
+                "promote__",
+                32,
+                64,
+                input,
+                structural_float(sign, app(con("case.INF"), con("tup"))?)?,
+            )?,
+        ));
+
+        push_nan_result_set(&mut out, "promote__", 32, 64, sign)?;
+    }
+    Ok(out)
+}
+
+fn round_ties_even_candidates(
+    base: &[Term],
+    quotient: Term,
+    remainder: Term,
+    half: Term,
+) -> Result<Vec<(Vec<Term>, Term)>> {
+    let mut below = base.to_vec();
+    below.push(lt(remainder.clone(), half.clone())?);
+    let mut even_tie = base.to_vec();
+    even_tie.push(remainder.clone().equals(half.clone())?);
+    even_tie.push(md(quotient.clone(), mk_nat(2u64))?.equals(mk_nat(0u64))?);
+    let mut above = base.to_vec();
+    above.push(lt(half.clone(), remainder.clone())?);
+    let mut odd_tie = base.to_vec();
+    odd_tie.push(remainder.equals(half)?);
+    odd_tie.push(md(quotient.clone(), mk_nat(2u64))?.equals(mk_nat(1u64))?);
+    let upper = add(quotient.clone(), mk_nat(1u64))?;
+    Ok(vec![
+        (below, quotient.clone()),
+        (even_tie, quotient),
+        (above, upper.clone()),
+        (odd_tie, upper),
+    ])
+}
+
+fn push_demote_normal(
+    out: &mut Vec<Clause>,
+    mut sides: Vec<Term>,
+    input: Term,
+    sign: u64,
+    exp_sign: u64,
+    exponent: Term,
+    rounded: Term,
+) -> Result<()> {
+    sides.push(lt(rounded.clone(), p2(24)?)?);
+    sides.push(mv("dst_m").equals(sub(rounded, p2(23)?)?)?);
+    out.push(clause(
+        &["src_m", "src_e", "dst_m"],
+        sides,
+        float_width_conversion_concl(
+            "demote__",
+            64,
+            32,
+            input,
+            structural_normal(sign, mv("dst_m"), exp_sign, exponent)?,
+        )?,
+    ));
+    Ok(())
+}
+
+/// Exact F64-to-F32 demotion with round-to-nearest, ties-to-even.
+///
+/// The normal-target corridor discards 29 significand bits. The subnormal
+/// corridor scales by the exact F32 quantum `2^-149`, using the source
+/// exponent to form a kernel-reducible quotient/remainder unit. Explicit
+/// carry branches reach the adjacent exponent, minimum normal, or infinity.
+/// Values below half the minimum subnormal become signed zero; all F64
+/// subnormals are in that region. NaNs preserve the complete `nans_N` family.
+fn float_demotion() -> Result<Vec<Clause>> {
+    let mut out = Vec::new();
+    for sign in [0, 1] {
+        let (names, sides, _, _, input, _) = float_case_named(64, sign, "subnormal", None, "src_")?;
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        out.push(clause(
+            &refs,
+            sides,
+            float_width_conversion_concl(
+                "demote__",
+                64,
+                32,
+                input,
+                structural_float(
+                    sign,
+                    app(
+                        con("case.SUBNORM"),
+                        app(con("tup"), wrap_nat(mk_nat(0u64))?)?,
+                    )?,
+                )?,
+            )?,
+        ));
+
+        // Nonnegative source exponents: normal F32 through e=127, then
+        // overflow. Rounding carry at e=127 is exactly the infinity boundary.
+        let (_, pos_sides, _, _, pos_input, _) =
+            float_case_named(64, sign, "normal", Some(0), "src_")?;
+        let significand = add(p2(52)?, mv("src_m"))?;
+        let unit = p2(29)?;
+        let q = div(significand.clone(), unit.clone())?;
+        let rem = md(significand, unit)?;
+        for (mut rounded_sides, rounded) in round_ties_even_candidates(&pos_sides, q, rem, p2(28)?)?
+        {
+            rounded_sides.push(le(mv("src_e"), mk_nat(127u64))?);
+            push_demote_normal(
+                &mut out,
+                rounded_sides.clone(),
+                pos_input.clone(),
+                sign,
+                0,
+                mv("src_e"),
+                rounded.clone(),
+            )?;
+
+            let mut carry_normal = rounded_sides.clone();
+            carry_normal.push(lt(mv("src_e"), mk_nat(127u64))?);
+            carry_normal.push(rounded.clone().equals(p2(24)?)?);
+            carry_normal.push(mv("dst_e").equals(add(mv("src_e"), mk_nat(1u64))?)?);
+            out.push(clause(
+                &["src_m", "src_e", "dst_e"],
+                carry_normal,
+                float_width_conversion_concl(
+                    "demote__",
+                    64,
+                    32,
+                    pos_input.clone(),
+                    structural_normal(sign, mk_nat(0u64), 0, mv("dst_e"))?,
+                )?,
+            ));
+
+            let mut carry_inf = rounded_sides;
+            carry_inf.push(mv("src_e").equals(mk_nat(127u64))?);
+            carry_inf.push(rounded.equals(p2(24)?)?);
+            out.push(clause(
+                &["src_m", "src_e"],
+                carry_inf,
+                float_width_conversion_concl(
+                    "demote__",
+                    64,
+                    32,
+                    pos_input.clone(),
+                    structural_float(sign, app(con("case.INF"), con("tup"))?)?,
+                )?,
+            ));
+        }
+        let mut overflow = pos_sides;
+        overflow.push(lt(mk_nat(127u64), mv("src_e"))?);
+        out.push(clause(
+            &["src_m", "src_e"],
+            overflow,
+            float_width_conversion_concl(
+                "demote__",
+                64,
+                32,
+                pos_input,
+                structural_float(sign, app(con("case.INF"), con("tup"))?)?,
+            )?,
+        ));
+
+        let (_, neg_sides, _, _, neg_input, _) =
+            float_case_named(64, sign, "normal", Some(1), "src_")?;
+
+        // Exponents -1 through -126 still produce normal F32 values.
+        let significand = add(p2(52)?, mv("src_m"))?;
+        let unit = p2(29)?;
+        let q = div(significand.clone(), unit.clone())?;
+        let rem = md(significand, unit)?;
+        for (mut rounded_sides, rounded) in round_ties_even_candidates(&neg_sides, q, rem, p2(28)?)?
+        {
+            rounded_sides.push(le(mv("src_e"), mk_nat(126u64))?);
+            push_demote_normal(
+                &mut out,
+                rounded_sides.clone(),
+                neg_input.clone(),
+                sign,
+                1,
+                mv("src_e"),
+                rounded.clone(),
+            )?;
+
+            let mut carry_to_zero = rounded_sides.clone();
+            carry_to_zero.push(mv("src_e").equals(mk_nat(1u64))?);
+            carry_to_zero.push(rounded.clone().equals(p2(24)?)?);
+            out.push(clause(
+                &["src_m", "src_e"],
+                carry_to_zero,
+                float_width_conversion_concl(
+                    "demote__",
+                    64,
+                    32,
+                    neg_input.clone(),
+                    structural_normal(sign, mk_nat(0u64), 0, mk_nat(0u64))?,
+                )?,
+            ));
+
+            let mut carry_negative = rounded_sides;
+            carry_negative.push(lt(mk_nat(1u64), mv("src_e"))?);
+            carry_negative.push(rounded.equals(p2(24)?)?);
+            carry_negative.push(mv("dst_e").equals(sub(mv("src_e"), mk_nat(1u64))?)?);
+            out.push(clause(
+                &["src_m", "src_e", "dst_e"],
+                carry_negative,
+                float_width_conversion_concl(
+                    "demote__",
+                    64,
+                    32,
+                    neg_input.clone(),
+                    structural_normal(sign, mk_nat(0u64), 1, mv("dst_e"))?,
+                )?,
+            ));
+        }
+
+        // Exponents -127 through -150 round in units of the F32 minimum
+        // subnormal. A carry at the top of this corridor is minimum normal.
+        let mut corridor = neg_sides.clone();
+        corridor.push(le(mk_nat(127u64), mv("src_e"))?);
+        corridor.push(le(mv("src_e"), mk_nat(150u64))?);
+        let shift = sub(mv("src_e"), mk_nat(97u64))?;
+        let unit = pow2(shift.clone())?;
+        let q = div(add(p2(52)?, mv("src_m"))?, unit.clone())?;
+        let rem = md(add(p2(52)?, mv("src_m"))?, unit)?;
+        let half = pow2(sub(shift, mk_nat(1u64))?)?;
+        for (mut rounded_sides, rounded) in round_ties_even_candidates(&corridor, q, rem, half)? {
+            let mut subnormal = rounded_sides.clone();
+            subnormal.push(lt(rounded.clone(), p2(23)?)?);
+            subnormal.push(mv("dst_m").equals(rounded.clone())?);
+            out.push(clause(
+                &["src_m", "src_e", "dst_m"],
+                subnormal,
+                float_width_conversion_concl(
+                    "demote__",
+                    64,
+                    32,
+                    neg_input.clone(),
+                    structural_float(
+                        sign,
+                        app(
+                            con("case.SUBNORM"),
+                            app(con("tup"), wrap_nat(mv("dst_m"))?)?,
+                        )?,
+                    )?,
+                )?,
+            ));
+
+            rounded_sides.push(rounded.equals(p2(23)?)?);
+            out.push(clause(
+                &["src_m", "src_e"],
+                rounded_sides,
+                float_width_conversion_concl(
+                    "demote__",
+                    64,
+                    32,
+                    neg_input.clone(),
+                    structural_normal(sign, mk_nat(0u64), 1, mk_nat(126u64))?,
+                )?,
+            ));
+        }
+
+        let mut underflow = neg_sides;
+        underflow.push(lt(mk_nat(150u64), mv("src_e"))?);
+        out.push(clause(
+            &["src_m", "src_e"],
+            underflow,
+            float_width_conversion_concl(
+                "demote__",
+                64,
+                32,
+                neg_input,
+                structural_float(
+                    sign,
+                    app(
+                        con("case.SUBNORM"),
+                        app(con("tup"), wrap_nat(mk_nat(0u64))?)?,
+                    )?,
+                )?,
+            )?,
+        ));
+
+        let (names, sides, _, _, input, _) = float_case_named(64, sign, "infinity", None, "src_")?;
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        out.push(clause(
+            &refs,
+            sides,
+            float_width_conversion_concl(
+                "demote__",
+                64,
+                32,
+                input,
+                structural_float(sign, app(con("case.INF"), con("tup"))?)?,
+            )?,
+        ));
+        push_nan_result_set(&mut out, "demote__", 64, 32, sign)?;
     }
     Ok(out)
 }
@@ -2055,6 +3785,12 @@ pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
     out.extend(float_reinterpretation()?);
     out.extend(float_sign_ops()?);
     out.extend(float_comparisons_and_copysign()?);
+    out.extend(float_integral_rounding()?);
+    out.extend(choice_parameter_clauses()?);
+    out.extend(float_to_integer_conversions()?);
+    out.extend(integer_to_float_conversions()?);
+    out.extend(float_promotion()?);
+    out.extend(float_demotion()?);
     let report = BuiltinReport {
         clauses: out.len(),
         ops: OPS.len(),
@@ -2132,6 +3868,90 @@ mod tests {
 
     fn nat(n: u64) -> Term {
         mk_nat(n)
+    }
+
+    #[test]
+    fn signed_bin_addition_and_quantum_scaling_are_exact() {
+        for (ln, a, rn, b, carry, outn, expected) in [
+            (false, 3, false, 4, 1, false, 8),
+            (false, 3, true, 5, 1, true, 1),
+            (true, 3, false, 5, 1, false, 3),
+            (true, 1, true, 1, 2, false, 0),
+            (true, 4, true, 7, 1, true, 10),
+        ] {
+            let cases = signed_bin_add_cases(
+                &[],
+                SignedNatTerm {
+                    negative: ln,
+                    magnitude: nat(a),
+                },
+                SignedNatTerm {
+                    negative: rn,
+                    magnitude: nat(b),
+                },
+                carry,
+            )
+            .unwrap();
+            assert!(cases.iter().any(|case| {
+                case.value.negative == outn
+                    && prove_side(&case.value.magnitude.clone().equals(nat(expected)).unwrap())
+                        .is_ok()
+                    && case.sides.iter().all(|side| prove_side(side).is_ok())
+            }));
+        }
+
+        let normal = scale_ratio_to_quantum(
+            &[],
+            ExactRatioTerms {
+                sign: 0,
+                numerator: nat(3),
+                denominator: nat(5),
+                exp2: SignedNatTerm {
+                    negative: false,
+                    magnitude: nat(4),
+                },
+            },
+            SignedNatTerm {
+                negative: false,
+                magnitude: nat(2),
+            },
+            QuantumClass::Normal,
+        )
+        .unwrap();
+        assert!(normal.iter().any(|case| {
+            case.sign == 0
+                && matches!(case.class, QuantumClass::Normal)
+                && prove_side(&case.numerator.clone().equals(nat(12)).unwrap()).is_ok()
+                && prove_side(&case.denominator.clone().equals(nat(5)).unwrap()).is_ok()
+                && case.sides.iter().all(|side| prove_side(side).is_ok())
+        }));
+
+        // Positive exponent zero must remain canonical when negated.
+        let subnormal = scale_ratio_to_quantum(
+            &[],
+            ExactRatioTerms {
+                sign: 1,
+                numerator: nat(3),
+                denominator: nat(5),
+                exp2: SignedNatTerm {
+                    negative: true,
+                    magnitude: nat(3),
+                },
+            },
+            SignedNatTerm {
+                negative: false,
+                magnitude: nat(0),
+            },
+            QuantumClass::Subnormal,
+        )
+        .unwrap();
+        assert!(subnormal.iter().any(|case| {
+            case.sign == 1
+                && matches!(case.class, QuantumClass::Subnormal)
+                && prove_side(&case.numerator.clone().equals(nat(3)).unwrap()).is_ok()
+                && prove_side(&case.denominator.clone().equals(nat(40)).unwrap()).is_ok()
+                && case.sides.iter().all(|side| prove_side(side).is_ok())
+        }));
     }
 
     fn spine(xs: &[Term]) -> Term {
@@ -2742,8 +4562,8 @@ mod tests {
     #[test]
     fn integer_conversion_matrix_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 64);
-        assert_eq!(report.zero_clause_ops, 53);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
 
         // Complete reachable wrap matrix, checked against an independent
         // bit-mask oracle. Use inputs with both kept and discarded high bits.
@@ -3017,9 +4837,9 @@ mod tests {
     #[test]
     fn integer_serialization_round_trips_and_refuses_wrong_results() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3917);
-        assert_eq!(report.ops, 64);
-        assert_eq!(report.zero_clause_ops, 53);
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
 
         for (w, a) in [
             (8, 0xa5),
@@ -3098,9 +4918,9 @@ mod tests {
     #[test]
     fn composite_byte_serialization_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3917);
-        assert_eq!(report.ops, 64);
-        assert_eq!(report.zero_clause_ops, 53);
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
 
         let families: [(&str, &str, &[(&str, u64)]); 4] = [
             ("nbytes_", "inv_nbytes_", &[("I32", 32), ("I64", 64)]),
@@ -3406,9 +5226,9 @@ mod tests {
     #[test]
     fn structural_rational_rounding_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3917);
-        assert_eq!(report.ops, 64);
-        assert_eq!(report.zero_clause_ops, 53);
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
 
         // Independent integer-arithmetic oracle, including integral,
         // fractional, sub-unit, and zero points in both sign classes.
@@ -3466,8 +5286,8 @@ mod tests {
     #[test]
     fn unsigned_rounded_average_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 64);
-        assert_eq!(report.zero_clause_ops, 53);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
 
         for (w, points) in [
             (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),
@@ -3614,9 +5434,9 @@ mod tests {
     #[test]
     fn structural_float_representation_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3917);
-        assert_eq!(report.ops, 64);
-        assert_eq!(report.zero_clause_ops, 53);
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
 
         let cases = [
             (32, fval(0, fmag_subnormal(0)), 0),
@@ -3769,9 +5589,9 @@ mod tests {
     #[test]
     fn structural_float_comparisons_and_copysign_are_exact() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3917);
-        assert_eq!(report.ops, 64);
-        assert_eq!(report.zero_clause_ops, 53);
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
 
         let pz = fval(0, fmag_subnormal(0));
         let nz = fval(1, fmag_subnormal(0));
@@ -3831,7 +5651,27 @@ mod tests {
                                 result.clone(),
                             )
                             .unwrap()
-                        )
+                        ),
+                        "{op} at ordered positions {i},{j}"
+                    );
+                }
+                let opposite_zero = (i == 2 && j == 3) || (i == 3 && j == 2);
+                let regular_min = if opposite_zero { &nz } else { min_result };
+                let regular_max = if opposite_zero { &pz } else { max_result };
+                for (op, result) in [("fmin_", regular_min), ("fmax_", regular_max)] {
+                    assert!(
+                        derivable_at(
+                            &clauses,
+                            &float_selection_concl(
+                                op,
+                                32,
+                                left.clone(),
+                                right.clone(),
+                                result.clone(),
+                            )
+                            .unwrap()
+                        ),
+                        "regular {op} at ordered positions {i},{j}"
                     );
                 }
             }
@@ -3872,6 +5712,64 @@ mod tests {
             }
         }
 
+        let canonical_nan = fval(
+            0,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(1 << 22)).unwrap())).unwrap(),
+        );
+        let signaling_nan = fval(
+            1,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(7)).unwrap())).unwrap(),
+        );
+        let arithmetic_result = fval(
+            0,
+            app(
+                con("case.NAN"),
+                tuple1(wrap_nat(nat((1 << 22) + 9)).unwrap()),
+            )
+            .unwrap(),
+        );
+        for op in ["fmin_", "fmax_"] {
+            for sign in [0, 1] {
+                let canonical_result = fval(
+                    sign,
+                    app(con("case.NAN"), tuple1(wrap_nat(nat(1 << 22)).unwrap())).unwrap(),
+                );
+                assert!(derivable_at(
+                    &clauses,
+                    &float_selection_concl(
+                        op,
+                        32,
+                        canonical_nan.clone(),
+                        pone.clone(),
+                        canonical_result,
+                    )
+                    .unwrap()
+                ));
+            }
+            assert!(derivable_at(
+                &clauses,
+                &float_selection_concl(
+                    op,
+                    32,
+                    signaling_nan.clone(),
+                    canonical_nan.clone(),
+                    arithmetic_result.clone(),
+                )
+                .unwrap()
+            ));
+            assert!(!derivable_at(
+                &clauses,
+                &float_selection_concl(
+                    op,
+                    32,
+                    canonical_nan.clone(),
+                    canonical_nan.clone(),
+                    arithmetic_result.clone(),
+                )
+                .unwrap()
+            ));
+        }
+
         let copied = fval(1, fmag_normal(0, 0, 0));
         assert!(derivable_at(
             &clauses,
@@ -3905,5 +5803,553 @@ mod tests {
             )
             .unwrap()
         ));
+    }
+
+    #[test]
+    fn profile_choice_parameters_are_exact_relations() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
+
+        for value in [con("bool.false"), con("bool.true")] {
+            assert!(derivable_at(
+                &clauses,
+                &fn_graph("ND", &[], &value).unwrap()
+            ));
+        }
+        assert!(!derivable_at(
+            &clauses,
+            &fn_graph("ND", &[], &wrap_nat(nat(0)).unwrap()).unwrap()
+        ));
+
+        for (op, cardinality) in [
+            ("R_fmadd", 2u64),
+            ("R_fmin", 4),
+            ("R_fmax", 4),
+            ("R_idot", 2),
+            ("R_iq15mulr", 2),
+            ("R_trunc_u", 4),
+            ("R_trunc_s", 2),
+            ("R_swizzle", 2),
+            ("R_laneselect", 2),
+        ] {
+            for i in 0..cardinality {
+                assert!(derivable_at(
+                    &clauses,
+                    &fn_graph(op, &[], &wrap_nat(nat(i)).unwrap()).unwrap()
+                ));
+            }
+            assert!(!derivable_at(
+                &clauses,
+                &fn_graph(op, &[], &wrap_nat(nat(cardinality)).unwrap()).unwrap()
+            ));
+            assert!(!derivable_at(
+                &clauses,
+                &fn_graph(op, &[], &con("bool.false")).unwrap()
+            ));
+        }
+    }
+
+    fn float_to_int_fact(
+        op: &str,
+        source_w: u64,
+        target_w: u64,
+        sx: &str,
+        value: Term,
+        result: Option<u64>,
+    ) -> Term {
+        let result = match result {
+            Some(r) => some(ival(nat(r)).unwrap()).unwrap(),
+            None => con("opt.none"),
+        };
+        float_to_int_concl(op, source_w, target_w, sx, value, result).unwrap()
+    }
+
+    fn int_to_float_fact(source_w: u64, target_w: u64, sx: &str, input: u64, output: Term) -> Term {
+        int_to_float_concl(source_w, target_w, sx, nat(input), output).unwrap()
+    }
+
+    fn float_width_conversion_fact(
+        op: &str,
+        source_w: u64,
+        target_w: u64,
+        input: Term,
+        output: Term,
+    ) -> Term {
+        float_width_conversion_concl(op, source_w, target_w, input, output).unwrap()
+    }
+
+    fn float_unary_fact(op: &str, w: u64, input: Term, output: Term) -> Term {
+        float_unary_concl(op, w, input, output).unwrap()
+    }
+
+    #[test]
+    fn structural_float_integral_rounding_is_exact() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
+
+        let pz = fval(0, fmag_subnormal(0));
+        let nz = fval(1, fmag_subnormal(0));
+        let pone = fval(0, fmag_normal(0, 0, 0));
+        let none = fval(1, fmag_normal(0, 0, 0));
+        let ptwo = fval(0, fmag_normal(0, 0, 1));
+        let ntwo = fval(1, fmag_normal(0, 0, 1));
+
+        for (op, input, expected) in [
+            ("fceil_", fval(0, fmag_subnormal(1)), pone.clone()),
+            ("ffloor_", fval(0, fmag_subnormal(1)), pz.clone()),
+            ("fceil_", fval(1, fmag_subnormal(1)), nz.clone()),
+            ("ffloor_", fval(1, fmag_subnormal(1)), none.clone()),
+            ("ftrunc_", fval(1, fmag_subnormal(1)), nz.clone()),
+            ("fnearest_", fval(1, fmag_subnormal(1)), nz.clone()),
+            ("fnearest_", fval(0, fmag_normal(0, 1, 1)), pz.clone()),
+            ("fnearest_", fval(0, fmag_normal(1, 1, 1)), pone.clone()),
+            ("fnearest_", fval(1, fmag_normal(0, 1, 1)), nz.clone()),
+            ("fnearest_", fval(1, fmag_normal(1, 1, 1)), none.clone()),
+            // 1.5 ties upward to even 2; directed operations split by sign.
+            (
+                "fnearest_",
+                fval(0, fmag_normal(1 << 22, 0, 0)),
+                ptwo.clone(),
+            ),
+            ("ftrunc_", fval(0, fmag_normal(1 << 22, 0, 0)), pone.clone()),
+            ("fceil_", fval(1, fmag_normal(1 << 22, 0, 0)), none.clone()),
+            ("ffloor_", fval(1, fmag_normal(1 << 22, 0, 0)), ntwo.clone()),
+            // 2.5 ties down to even 2; 3.5 ties up to even 4.
+            (
+                "fnearest_",
+                fval(0, fmag_normal(1 << 21, 0, 1)),
+                ptwo.clone(),
+            ),
+            (
+                "fnearest_",
+                fval(0, fmag_normal(3 << 21, 0, 1)),
+                fval(0, fmag_normal(0, 0, 2)),
+            ),
+            (
+                "fceil_",
+                fval(1, fmag_normal(7, 0, 23)),
+                fval(1, fmag_normal(7, 0, 23)),
+            ),
+        ] {
+            assert!(
+                derivable_at(
+                    &clauses,
+                    &float_unary_fact(op, 32, input.clone(), expected.clone())
+                ),
+                "{op} structural rounding"
+            );
+        }
+        assert!(!derivable_at(
+            &clauses,
+            &float_unary_fact("fnearest_", 32, fval(0, fmag_normal(1 << 22, 0, 0)), pone,)
+        ));
+
+        let canonical = fval(
+            0,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(1 << 22)).unwrap())).unwrap(),
+        );
+        let signaling = fval(
+            1,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(7)).unwrap())).unwrap(),
+        );
+        for op in ["fceil_", "ffloor_", "ftrunc_", "fnearest_"] {
+            assert!(derivable_at(
+                &clauses,
+                &float_unary_fact(
+                    op,
+                    32,
+                    canonical.clone(),
+                    fval(
+                        1,
+                        app(con("case.NAN"), tuple1(wrap_nat(nat(1 << 22)).unwrap())).unwrap()
+                    )
+                )
+            ));
+            assert!(derivable_at(
+                &clauses,
+                &float_unary_fact(
+                    op,
+                    32,
+                    signaling.clone(),
+                    fval(
+                        0,
+                        app(
+                            con("case.NAN"),
+                            tuple1(wrap_nat(nat((1 << 22) + 5)).unwrap())
+                        )
+                        .unwrap()
+                    )
+                )
+            ));
+        }
+    }
+
+    #[test]
+    fn structural_promotion_preserves_values_and_complete_nan_sets() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
+
+        let cases = [
+            (fval(0, fmag_subnormal(0)), fval(0, fmag_subnormal(0))),
+            (fval(1, fmag_subnormal(0)), fval(1, fmag_subnormal(0))),
+            // Smallest F32 subnormal = 2^-149, normalized exactly at F64.
+            (fval(0, fmag_subnormal(1)), fval(0, fmag_normal(0, 1, 149))),
+            (
+                fval(0, fmag_normal(1 << 22, 0, 0)),
+                fval(0, fmag_normal(1 << 51, 0, 0)),
+            ),
+            (
+                fval(1, fmag_normal(7, 1, 12)),
+                fval(1, fmag_normal(7 << 29, 1, 12)),
+            ),
+            (fval(1, fmag_inf()), fval(1, fmag_inf())),
+        ];
+        for (index, (input, expected)) in cases.into_iter().enumerate() {
+            assert!(
+                derivable_at(
+                    &clauses,
+                    &float_width_conversion_fact(
+                        "promote__",
+                        32,
+                        64,
+                        input.clone(),
+                        expected.clone()
+                    )
+                ),
+                "promotion derivation case {index}"
+            );
+            assert!(
+                !derivable_at(
+                    &clauses,
+                    &float_width_conversion_fact(
+                        "promote__",
+                        32,
+                        64,
+                        input,
+                        fval(1, fmag_normal(0, 0, 0))
+                    )
+                ),
+                "promotion case {index}"
+            );
+        }
+
+        let src_canon = fval(
+            0,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(1 << 22)).unwrap())).unwrap(),
+        );
+        let src_arithmetic = fval(
+            1,
+            app(
+                con("case.NAN"),
+                tuple1(wrap_nat(nat((1 << 22) + 7)).unwrap()),
+            )
+            .unwrap(),
+        );
+        let src_signaling = fval(
+            0,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(7)).unwrap())).unwrap(),
+        );
+        let nan = |sign, payload| {
+            fval(
+                sign,
+                app(con("case.NAN"), tuple1(wrap_nat(nat(payload)).unwrap())).unwrap(),
+            )
+        };
+
+        // Canonical input permits both signs, but only the target canonical
+        // payload. A noncanonical arithmetic input permits both signs and
+        // every arithmetic target payload.
+        for sign in [0, 1] {
+            assert!(derivable_at(
+                &clauses,
+                &float_width_conversion_fact(
+                    "promote__",
+                    32,
+                    64,
+                    src_canon.clone(),
+                    nan(sign, 1 << 51)
+                )
+            ));
+            assert!(!derivable_at(
+                &clauses,
+                &float_width_conversion_fact(
+                    "promote__",
+                    32,
+                    64,
+                    src_canon.clone(),
+                    nan(sign, (1 << 51) + 1)
+                )
+            ));
+            for payload in [1 << 51, (1 << 51) + 1, (1u64 << 52) - 1] {
+                assert!(derivable_at(
+                    &clauses,
+                    &float_width_conversion_fact(
+                        "promote__",
+                        32,
+                        64,
+                        src_arithmetic.clone(),
+                        nan(sign, payload)
+                    )
+                ));
+            }
+            assert!(!derivable_at(
+                &clauses,
+                &float_width_conversion_fact(
+                    "promote__",
+                    32,
+                    64,
+                    src_arithmetic.clone(),
+                    nan(sign, (1 << 51) - 1)
+                )
+            ));
+            assert!(derivable_at(
+                &clauses,
+                &float_width_conversion_fact(
+                    "promote__",
+                    32,
+                    64,
+                    src_signaling.clone(),
+                    nan(sign, (1 << 51) + 3)
+                )
+            ));
+        }
+    }
+
+    #[test]
+    fn structural_demotion_rounds_every_region_and_preserves_nan_sets() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
+
+        let cases = [
+            (fval(1, fmag_subnormal(1)), fval(1, fmag_subnormal(0))),
+            (
+                fval(0, fmag_normal(1 << 51, 0, 0)),
+                fval(0, fmag_normal(1 << 22, 0, 0)),
+            ),
+            // Halfway above 1.0 rounds down to the even significand.
+            (
+                fval(0, fmag_normal(1 << 28, 0, 0)),
+                fval(0, fmag_normal(0, 0, 0)),
+            ),
+            // The next halfway point has an odd lower significand and rounds
+            // upward by two F32 mantissa units.
+            (
+                fval(0, fmag_normal(3 << 28, 0, 0)),
+                fval(0, fmag_normal(2, 0, 0)),
+            ),
+            // Exact half-minimum-subnormal ties to signed zero; the next F64
+            // value rounds to the minimum F32 subnormal.
+            (fval(0, fmag_normal(0, 1, 150)), fval(0, fmag_subnormal(0))),
+            (fval(0, fmag_normal(1, 1, 150)), fval(0, fmag_subnormal(1))),
+            (fval(1, fmag_normal(0, 1, 149)), fval(1, fmag_subnormal(1))),
+            // Carry from the subnormal corridor reaches minimum normal.
+            (
+                fval(0, fmag_normal((1u64 << 52) - (1 << 29), 1, 127)),
+                fval(0, fmag_normal(0, 1, 126)),
+            ),
+            // The overflow midpoint rounds to infinity; its predecessor
+            // remains the maximum finite F32 value.
+            (
+                fval(0, fmag_normal((1u64 << 52) - (1 << 28), 0, 127)),
+                fval(0, fmag_inf()),
+            ),
+            (
+                fval(0, fmag_normal((1u64 << 52) - (1 << 28) - 1, 0, 127)),
+                fval(0, fmag_normal((1 << 23) - 1, 0, 127)),
+            ),
+            (fval(1, fmag_inf()), fval(1, fmag_inf())),
+        ];
+        for (index, (input, expected)) in cases.into_iter().enumerate() {
+            assert!(
+                derivable_at(
+                    &clauses,
+                    &float_width_conversion_fact("demote__", 64, 32, input.clone(), expected)
+                ),
+                "demotion case {index}"
+            );
+        }
+
+        let nan = |sign, payload| {
+            fval(
+                sign,
+                app(con("case.NAN"), tuple1(wrap_nat(nat(payload)).unwrap())).unwrap(),
+            )
+        };
+        let canonical = nan(0, 1 << 51);
+        let arithmetic = nan(1, (1 << 51) + 1);
+        for sign in [0, 1] {
+            assert!(derivable_at(
+                &clauses,
+                &float_width_conversion_fact(
+                    "demote__",
+                    64,
+                    32,
+                    canonical.clone(),
+                    nan(sign, 1 << 22)
+                )
+            ));
+            assert!(!derivable_at(
+                &clauses,
+                &float_width_conversion_fact(
+                    "demote__",
+                    64,
+                    32,
+                    canonical.clone(),
+                    nan(sign, (1 << 22) + 1)
+                )
+            ));
+            for payload in [1 << 22, (1 << 22) + 1, (1 << 23) - 1] {
+                assert!(derivable_at(
+                    &clauses,
+                    &float_width_conversion_fact(
+                        "demote__",
+                        64,
+                        32,
+                        arithmetic.clone(),
+                        nan(sign, payload)
+                    )
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn structural_integer_to_float_conversions_round_ties_to_even() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
+
+        let cases = [
+            (32, 32, "U", 0, fval(0, fmag_subnormal(0))),
+            (32, 32, "U", 1, fval(0, fmag_normal(0, 0, 0))),
+            (32, 32, "S", u32::MAX as u64, fval(1, fmag_normal(0, 0, 0))),
+            // At 2^24 the F32 spacing is two. These exercise an even
+            // downward tie, an exactly representable value, and an odd
+            // upward tie respectively.
+            (32, 32, "U", (1 << 24) + 1, fval(0, fmag_normal(0, 0, 24))),
+            (32, 32, "U", (1 << 24) + 2, fval(0, fmag_normal(1, 0, 24))),
+            (32, 32, "U", (1 << 24) + 3, fval(0, fmag_normal(2, 0, 24))),
+            // Sign is applied after exact magnitude rounding.
+            (
+                32,
+                32,
+                "S",
+                (u32::MAX as u64 + 1) - ((1 << 24) + 3),
+                fval(1, fmag_normal(2, 0, 24)),
+            ),
+            // Rounding can carry into the next exponent at each 64-bit
+            // endpoint; F64 still represents the resulting powers exactly.
+            (64, 64, "S", i64::MAX as u64, fval(0, fmag_normal(0, 0, 63))),
+            (64, 64, "U", u64::MAX, fval(0, fmag_normal(0, 0, 64))),
+            (64, 64, "U", (1 << 52) + 1, fval(0, fmag_normal(1, 0, 52))),
+        ];
+
+        for (source_w, target_w, sx, input, expected) in cases {
+            let fact = int_to_float_fact(source_w, target_w, sx, input, expected.clone());
+            assert!(
+                derivable_at(&clauses, &fact),
+                "convert {source_w}->{target_w} {sx} {input}"
+            );
+            let wrong_sign = if expected == fval(0, fmag_subnormal(0)) {
+                fval(1, fmag_subnormal(0))
+            } else {
+                // Every nonzero expected case above is finite and has a
+                // uniquely determined sign; flipping it must fail closed.
+                let expected_negative = sx == "S" && input >= (1u64 << (source_w - 1));
+                if expected_negative {
+                    fval(0, fmag_normal(0, 0, 0))
+                } else {
+                    fval(1, fmag_normal(0, 0, 0))
+                }
+            };
+            assert!(!derivable_at(
+                &clauses,
+                &int_to_float_fact(source_w, target_w, sx, input, wrong_sign)
+            ));
+        }
+
+        // Erased numeric encodings retain their exact source carrier.
+        assert!(!derivable_at(
+            &clauses,
+            &int_to_float_fact(32, 32, "U", 1u64 << 32, fval(0, fmag_normal(0, 0, 32)))
+        ));
+    }
+
+    #[test]
+    fn structural_float_to_integer_conversions_are_exact() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 10498);
+        assert_eq!(report.ops, 85);
+        assert_eq!(report.zero_clause_ops, 74);
+
+        let nan = fval(
+            0,
+            app(con("case.NAN"), tuple1(wrap_nat(nat(7)).unwrap())).unwrap(),
+        );
+        let pinf = fval(0, fmag_inf());
+        let ninf = fval(1, fmag_inf());
+        let plus_one_half = fval(0, fmag_normal(1 << 22, 0, 0));
+        let minus_one_half = fval(1, fmag_normal(1 << 22, 0, 0));
+        let plus_i32_limit = fval(0, fmag_normal(0, 0, 31));
+        let minus_i32_limit = fval(1, fmag_normal(0, 0, 31));
+        let plus_u32_limit = fval(0, fmag_normal(0, 0, 32));
+        let negative_subnormal = fval(1, fmag_subnormal(1));
+
+        for (op, value, sx, expected) in [
+            ("trunc__", nan.clone(), "U", None),
+            ("trunc__", pinf.clone(), "S", None),
+            ("trunc__", plus_one_half.clone(), "U", Some(1)),
+            (
+                "trunc__",
+                minus_one_half.clone(),
+                "S",
+                Some(u32::MAX as u64),
+            ),
+            ("trunc__", minus_one_half.clone(), "U", None),
+            ("trunc__", plus_i32_limit.clone(), "U", Some(1u64 << 31)),
+            ("trunc__", plus_i32_limit.clone(), "S", None),
+            ("trunc__", minus_i32_limit.clone(), "S", Some(1u64 << 31)),
+            ("trunc__", plus_u32_limit.clone(), "U", None),
+            ("trunc__", negative_subnormal.clone(), "S", Some(0)),
+            ("trunc_sat__", nan, "U", Some(0)),
+            ("trunc_sat__", pinf, "U", Some(u32::MAX as u64)),
+            ("trunc_sat__", ninf, "S", Some(1u64 << 31)),
+            ("trunc_sat__", plus_one_half, "U", Some(1)),
+            ("trunc_sat__", minus_one_half, "U", Some(0)),
+            ("trunc_sat__", plus_i32_limit, "S", Some(i32::MAX as u64)),
+            ("trunc_sat__", minus_i32_limit, "S", Some(1u64 << 31)),
+            ("trunc_sat__", plus_u32_limit, "U", Some(u32::MAX as u64)),
+            ("trunc_sat__", negative_subnormal, "S", Some(0)),
+        ] {
+            assert!(
+                derivable_at(
+                    &clauses,
+                    &float_to_int_fact(op, 32, 32, sx, value.clone(), expected)
+                ),
+                "{op} {sx} expected {expected:?}"
+            );
+            if let Some(expected) = expected {
+                assert!(!derivable_at(
+                    &clauses,
+                    &float_to_int_fact(
+                        op,
+                        32,
+                        32,
+                        sx,
+                        value,
+                        Some(expected.wrapping_add(1) & 0xffff_ffff),
+                    )
+                ));
+            }
+        }
     }
 }

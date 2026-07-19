@@ -171,9 +171,34 @@ fn typed_rule(
                 premises.push(TypedPremise::Side(side));
             }
             SpecTecPrem::Rule { .. } => {
-                return Err(semantic_err(
-                    "cross-relation premise needs a simultaneous typed relation family",
-                ));
+                let SpecTecPrem::Rule { x, as1, e, .. } = premise else {
+                    unreachable!()
+                };
+                if !as1.is_empty() {
+                    return Err(semantic_err(
+                        "parameterized cross-relation premise needs a typed instance family",
+                    ));
+                }
+                let target = find_relation(defs, x)
+                    .ok_or_else(|| semantic_err(format!("unknown relation `{x}`")))?;
+                let SpecTecDef::Rel {
+                    rules: target_rules,
+                    ..
+                } = target
+                else {
+                    unreachable!()
+                };
+                if !target_rules.is_empty() {
+                    return Err(semantic_err(
+                        "nonempty cross-relation premise needs simultaneous typed closure",
+                    ));
+                }
+                // An empty external relation has a closed, independent
+                // impredicative predicate. Using that predicate as a side
+                // antecedent is exact and does not pretend mutual closure.
+                let external = semantic_relation(target, defs)?;
+                let term = denote::denote(e, &ctx)?;
+                premises.push(TypedPremise::Side(external.holds(term)?));
             }
             SpecTecPrem::Let { .. } | SpecTecPrem::Else | SpecTecPrem::Iter { .. } => {
                 return Err(semantic_err(
@@ -192,6 +217,21 @@ fn typed_rule(
         premises,
         conclusion,
     })
+}
+
+fn find_relation<'a>(defs: &'a [SpecTecDef], name: &str) -> Option<&'a SpecTecDef> {
+    for def in defs {
+        match def {
+            SpecTecDef::Rel { x, .. } if x == name => return Some(def),
+            SpecTecDef::Rec { ds } => {
+                if let Some(found) = find_relation(ds, name) {
+                    return Some(found);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn clause(rule: &TypedRule, d_apply: &dyn Fn(&Term) -> Result<Term>) -> Result<Term> {
@@ -214,7 +254,7 @@ fn clause(rule: &TypedRule, d_apply: &dyn Fn(&Term) -> Result<Term>) -> Result<T
 /// Refusal is fail-closed. Relation parameters, refined/unresolved carriers,
 /// non-expression binders, cross-relation recursion, and premise forms needing
 /// dependent lowering are rejected rather than erased.
-// TODO(cov:kernel.hol.init.src.wasm.relations-hol-predicates-over-those-types-leg-b-not-started, severe): Make bundled WASM relations live: 0/125 currently close exactly (65 unresolved carriers, 57 parametric cases, 1 cross-relation, 2 empty); the existing-carrier fragment is checked.
+// TODO(cov:kernel.hol.init.src.wasm.relations-hol-predicates-over-those-types-leg-b-not-started, severe): Extend beyond the exact 3/125 bundled notation relations: all 122 remaining carriers need recursive structural lifting of exact nested invariants (the smallest are Defaultable/Nondefaultable over valtype); 57 still reach ground fNmag(32/64) through the legacy whole-carrier renderer before its exact CasePredicate can be applied; nonempty cross-relation SCCs still need simultaneous closure.
 pub fn semantic_relation(def: &SpecTecDef, defs: &[SpecTecDef]) -> Result<SemanticRelation> {
     let SpecTecDef::Rel {
         x,
@@ -245,9 +285,6 @@ pub fn semantic_relation(def: &SpecTecDef, defs: &[SpecTecDef]) -> Result<Semant
         .iter()
         .map(|rule| typed_rule(x, rule, defs, &carrier, relation_invariant, &resolver))
         .collect::<Result<Vec<_>>>()?;
-    if rules.is_empty() {
-        return Err(semantic_err("empty relation has no introduction rule"));
-    }
     let clause_rules = rules.clone();
     let rule_set = RuleSet::new(carrier.clone(), move |d_apply| {
         clause_rules
@@ -419,16 +456,94 @@ mod tests {
         }
         let mut relations = Vec::new();
         visit(&defs, &mut relations);
+        let audit_families = TypeFamilies::new(&defs);
         let mut accepted = Vec::new();
         let mut refused = std::collections::BTreeMap::new();
+        let mut structural_indexed_cases = std::collections::BTreeMap::new();
         for def in relations {
             match semantic_relation(def, &defs) {
                 Ok(theory) => accepted.push(theory.name().to_owned()),
-                Err(error) => *refused.entry(error.to_string()).or_insert(0usize) += 1,
+                Err(error) => {
+                    let reason = error.to_string();
+                    if reason.ends_with("parametric field/case not modelled yet") {
+                        let SpecTecDef::Rel { t, .. } = def else {
+                            unreachable!()
+                        };
+                        let mut blockers = Vec::new();
+                        fn typ_names<'a>(
+                            ty: &'a covalence_spectec::ast::SpecTecTyp,
+                            out: &mut Vec<&'a str>,
+                        ) {
+                            match ty {
+                                covalence_spectec::ast::SpecTecTyp::Var { x, as1 } => {
+                                    out.push(x);
+                                    for arg in as1 {
+                                        if let covalence_spectec::ast::SpecTecArg::Typ { t } = arg {
+                                            typ_names(t, out);
+                                        }
+                                    }
+                                }
+                                covalence_spectec::ast::SpecTecTyp::Tup { ets } => {
+                                    for bind in ets {
+                                        let covalence_spectec::ast::SpecTecTypBind::Bind {
+                                            typ,
+                                            ..
+                                        } = bind;
+                                        typ_names(typ, out);
+                                    }
+                                }
+                                covalence_spectec::ast::SpecTecTyp::Iter { t1, .. } => {
+                                    typ_names(t1, out)
+                                }
+                                _ => {}
+                            }
+                        }
+                        let mut pending = Vec::new();
+                        typ_names(t, &mut pending);
+                        let mut seen = std::collections::BTreeSet::new();
+                        while let Some(name) = pending.pop() {
+                            if !seen.insert(name.to_owned()) {
+                                continue;
+                            }
+                            if let Some(family) = crate::wasm::type_family::TypeFamilySource::family(
+                                &audit_families,
+                                name,
+                            ) {
+                                if family
+                                    .instances
+                                    .iter()
+                                    .any(|instance| match &instance.shape {
+                                        crate::wasm::type_family::TypeShape::Variant(cases) => {
+                                            cases.iter().any(|case| !case.params.is_empty())
+                                        }
+                                        crate::wasm::type_family::TypeShape::Struct(fields) => {
+                                            fields.iter().any(|field| !field.params.is_empty())
+                                        }
+                                        _ => false,
+                                    })
+                                {
+                                    blockers.push(name.to_owned());
+                                }
+                                pending.extend(family.dependencies());
+                            }
+                        }
+                        blockers.sort();
+                        blockers.dedup();
+                        *structural_indexed_cases.entry(blockers).or_insert(0usize) += 1;
+                    }
+                    *refused.entry(reason).or_insert(0usize) += 1
+                }
             }
         }
-        assert!(accepted.is_empty());
-        assert_eq!(refused.values().sum::<usize>(), 125);
+        assert_eq!(
+            accepted,
+            [
+                "NotationTypingPremise",
+                "NotationTypingPremisedots",
+                "NotationTypingScheme",
+            ]
+        );
+        assert_eq!(refused.values().sum::<usize>(), 122);
         let count = |suffix: &str| {
             refused
                 .iter()
@@ -438,9 +553,57 @@ mod tests {
         assert_eq!(count("relation carrier is unresolved"), Some(65));
         assert_eq!(count("parametric field/case not modelled yet"), Some(57));
         assert_eq!(
-            count("cross-relation premise needs a simultaneous typed relation family"),
-            Some(1)
+            structural_indexed_cases,
+            std::collections::BTreeMap::from([
+                (vec!["fNmag".to_owned()], 4),
+                (vec!["fNmag".to_owned(), "ishape".to_owned()], 53),
+            ])
         );
-        assert_eq!(count("empty relation has no introduction rule"), Some(2));
+    }
+
+    #[test]
+    fn bundled_notation_scheme_rule_replays_against_exact_external_predicates() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let scheme_def = find_relation(&defs, "NotationTypingScheme").unwrap();
+        let theory = semantic_relation(scheme_def, &defs).unwrap();
+        assert_eq!(theory.rule_count(), 1);
+        let rule = &theory.rules[0];
+        assert_eq!(rule.premises.len(), 4);
+
+        let arguments: Vec<_> = rule
+            .binders
+            .iter()
+            .enumerate()
+            .map(|(i, (_, ty))| Term::free(format!("notation_arg_{i}"), ty.clone()))
+            .collect();
+        let instantiate = |term: &Term| {
+            rule.binders.iter().zip(&arguments).fold(
+                term.clone(),
+                |term, ((name, ty), replacement)| {
+                    let variable = Term::free(name, ty.clone());
+                    covalence_core::subst::subst_free(
+                        &term,
+                        variable.as_free().unwrap(),
+                        replacement,
+                    )
+                },
+            )
+        };
+        let premises = rule
+            .premises
+            .iter()
+            .map(|premise| {
+                let TypedPremise::Side(statement) = premise else {
+                    panic!("notation dependencies must be closed external predicates");
+                };
+                Premise::Side(Thm::assume(instantiate(statement)).unwrap())
+            })
+            .collect();
+        let theorem = theory.derive(0, &arguments, premises).unwrap();
+        assert_eq!(theorem.hyps().len(), 4);
+        assert_eq!(
+            theorem.concl(),
+            &theory.holds(instantiate(&rule.conclusion)).unwrap()
+        );
     }
 }

@@ -73,14 +73,25 @@ only replay in the checked metalogic establishes theorem authority.
 
 ## Current milestone and deliberate gaps
 
-The first slice covers `nop`, `i32.const`, `i32.add`, and `drop`, including
-exact stack effects and concrete finite executions.  The official-rule witness
-layer records pinned SpecTec source identities and official WebAssembly
-specification sections for the rules used by the examples.
+The facade now represents all four scalar numeric values without host
+floating-point interpretation and checks the complete scalar numeric
+instruction-typing vocabulary: constants, tests, comparisons, unary and
+binary operators, conversions, explicit numeric `select`, `nop`, and `drop`.
+Operator/type mismatches are rejected before replay. Floating constants retain
+their raw IEEE payload, including signed zero and NaN payloads. Concrete
+execution remains the narrower checked `nop`, `i32.const; drop`, and
+`i32.const; i32.const; i32.add; drop` family.
+
+The official-rule witness layer records pinned SpecTec source identities and
+official WebAssembly specification sections for every rule used by those
+examples. Exact theorem and clause-forest destruction also runs on the
+combined-set stack boundary; once the combined semantics exceeded nine
+thousand deeply nested clauses, dropping these values on a default host thread
+became as stack-sensitive as constructing them.
 
 This milestone does not yet claim:
 
-- complete WebAssembly syntax;
+- non-scalar WebAssembly syntax;
 - composed whole-program validation judgments;
 - stores, frames, calls, control flow, memory, references, SIMD, or GC in the
   neutral configuration vocabulary;

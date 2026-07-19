@@ -28,21 +28,207 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **2216 combined clauses** (2026-07-17, post Wave-D fixes + Wave-E review
+- **3766 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
-  `RuleSet` = 558 rule clauses (**558/558 loaded**, 502 fully flattened;
-  27/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
-  opaque) + 1117 `fn.*` Dec clauses (**804/804 source clauses loaded**,
-  668 clean; 53 mono instances; 276 per-case sort-expansion copies) + 357
-  `ev.*` evaluator clauses (139 `ev.neq` pairs; incl. the `ev.sort.*`
-  families and 54 `ev.upd.*`/`ev.ext.*` write clauses over 27 path
+  `RuleSet` = 558 rule clauses (**558/558 loaded**, 553 fully flattened;
+  30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
+  opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
+  802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
+  expanded Dec-star sites / 12 defining clauses) + 304 integer-builtin
+  clauses over 35 operations + 1462
+  `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
+  disequality clause; incl. the `ev.sort.*`
+  families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
   families), deduplicated across legs via one flattener pool.
-- **321 opaque premises** total, censused by tag (biggest: `cond.iter-map`,
-  `dec.order` — the clause-order complements, `dec.coarse-spine`,
-  `cond.cmp-nonnat`, `cond.slice`/`cond.coarse-eq` — the value-dead-side
-  buckets). Exact per-tag counts pinned in `coverage_report`.
+- **7 opaque premises** total, censused by tag (`dec.order` 1,
+  rule-`else` 5, and one
+  `dec.else-nonif-guard`). Exact per-tag counts are pinned in
+  `coverage_report`.
+- **Wave G — encoded integer ordering.** `ev.int.lt`/`ev.int.le` compare the
+  canonical sign/magnitude integer encoding and reduce same-sign magnitudes to
+  real HOL-natural side conditions; exact Nat→Int conversion in condition
+  position supplies the common `$cvt` bounds. This removes 23 opaque premises,
+  raises fully-flattened rules 502 → 505 and clean Dec clauses 668 → 684
+  (including monomorphised copies), and proves the bundled-spec graph fact
+  `$sat_u_(32, -1) = 0` through the full combined set.
+- **Wave H — mapped-call evaluator relations.** Call-bearing `List`
+  iterations lower to per-site `ev.map.*` relations: a nil clause and an exact
+  zipped-snoc step whose element body uses the same `fn.*`/`ev.*` graph
+  flattener. They work recursively inside call arguments, not only as a
+  top-level equality. `Opt` and `ListN` maps share the same evaluator shape;
+  `ListN` carries a real-nat index/bound and supports zipped domains. This
+  eliminates `cond.iter-map` entirely (79 → 0), shrinks total opaque premises
+  295 → 229, raises clean Dec clauses 684 → 698, and makes both the real
+  `$free_block` empty map and `Step_pure/vsplat`'s zero-length SIMD map
+  kernel-derivable.
+- **Wave I — structural boolean guards.** `Or`/`Impl`/`Equiv` conditions lower
+  to per-site `ev.guard.*` relations, one clause per true branch (`Equiv` uses
+  the both/neither decomposition). This preserves genuine disjunction in the
+  Horn engine, eliminates `cond.or-structural` and `cond.bin`, lowers total
+  opaque premises 229 → 219, and makes an `Instr_ok/select-impl` numeric/vector
+  branch kernel-derivable.
+- **Wave J — exact constructor/option complements.** Ordered Dec patterns of
+  the form `[CASE payload] ++ tail` followed by `[head] ++ tail` now acquire
+  an ordinary structural `head =/= CASE payload` premise. The on-demand
+  `ev.neq` family witnesses every other constructor of the owner type, so the
+  complement is exact without inspecting the wildcard payload. Option
+  presence similarly has the two exact `none`/`some(_)` clauses. This raises
+  fully flattened rules 519 → 522 and clean Dec clauses 698 → 720, reduces
+  `dec.else-pattern` 28 → 12, and shrinks combined opaque premises 219 → 183.
+- **Wave K — Dec iterated premises share the star API.** The remaining
+  optional guards (`growtable`/`growmem`) and zipped judgement lists
+  (`instantiate`/`invoke`) now lower through the same `StarSite` and
+  `LoweredIter` abstractions as relation rules. Five expanded sites contribute
+  ten collision-checked defining clauses; empty optional and zipped-list
+  instances are kernel-derived in real-spec tests. This eliminates
+  `dec.iter-premise`, raises clean Dec clauses 720 → 722, and reduces combined
+  opaque premises 183 → 180 (one newly exposed ordered overlap remains
+  honestly censused).
+- **Wave L — preserve mapped iteration across the Dec seam.** `ClauseCx`
+  previously lifted calls inside an iterator before handing the result to the
+  shared flattener, erasing the map dependency and forcing a raw `iter.*`
+  conclusion. Iterators now cross that boundary intact (with Def callees
+  monomorphised), so the existing per-site map evaluator owns their calls and
+  zipped domains. Clean Dec clauses rise 722 → 739, fully clean functions
+  302 → 318, canonical `dec.coarse-spine` halves 33 → 16, and combined opaque
+  premises fall 180 → 147. A real `$subst_moduletype` theorem derives both
+  empty mapped substitutions end-to-end.
+- **Wave M — exact ListN identities/tabulation and slice writes.** An identity
+  `x^n` now denotes its domain plus an exact `ev.len(domain,n)` premise;
+  index-only `ListN` generators use the recursive map/tabulation evaluator in
+  every judgement position. Store paths now include `Slice`: the evaluator
+  witnesses `subject = prefix ++ old ++ suffix`, checks the start/count by
+  literal-natural lengths, evaluates the selected segment, and rebuilds the
+  result. Its focused theorem replaces a middle slice and refuses a mismatched
+  count. Literal-successor `ev.len` results compose with encoded bounds.
+  Canonical `dec.coarse-spine` reaches **zero**, clean Dec clauses rise
+  739 → 755, fully clean functions 318 → 331, and combined opacity falls
+  147 → 131.
+- **Wave N — ordinary slice expressions.** `ev.slice` reuses the exact
+  prefix/segment/suffix decomposition for reads in conditions, call
+  arguments, and results. The dedicated `cond.slice` bucket reaches zero;
+  nested unsupported conversions remain separately visible as
+  `cond.coarse-eq`. Fully flattened rules rise 522 → 523, clean Dec clauses
+  755 → 756, and combined opacity falls 131 → 123.
+- **Wave O — encoded-natural ordering.** Iteration element variables arrive
+  as full `num.nat` encodings rather than bare HOL naturals. `ev.nat.lt/le`
+  now projects those payloads and discharges the real HOL order side, instead
+  of misclassifying their typed comparisons as nonnumeric. Fully flattened
+  rules rise 523 → 525 and combined opacity falls 123 → 120.
+- **Wave P — ordered numeric-literal complements.** The reusable ordered
+  pattern API now recognizes a rigid numeric literal followed by a wildcard
+  and emits the exact typed disequality (for example `n ≠ 8`) instead of an
+  opaque order premise. Constructor/literal complements are restricted to
+  premise-pure predecessors: a non-`If` premise cannot be silently treated
+  as unconditional. Clean Dec clauses rise 756 → 757, fully clean functions
+  332 → 333, and combined opacity falls 120 → 118 (the literal clause's
+  expanded copies remove two `dec.order` premises). The remaining wildcard
+  overlaps are kept visible because most depend on erased SpecTec sorts or
+  existential guard negation, not mere structural disequality.
+- **Wave Q — sort-aware ordered applicability.** Earlier Dec clauses now
+  retain the exact `ev.sort.*` guards attached by the sort-fix plan.
+  Ordered-overlap analysis uses the shared case catalogue to prove that a
+  guarded wildcard cannot overlap either a constructor outside its source
+  sort or a wildcard guarded by a disjoint constructor set. Plain values only
+  are eligible: list and option memberships overlap at `[]` and `none`.
+  Clean Dec clauses rise 757 → 773, fully clean functions 333 → 346,
+  canonical `dec.order` falls 27 → 11, and combined opacity falls 118 → 94.
+- **Wave R — equality-witness projection and open numeric disequality.**
+  Ordered guards now eliminate fresh equality-defined witnesses using the
+  exact `∃x. x = t ∧ G(x) ⇔ G(t)` rewrite before negating the predecessor.
+  The newly exposed open disequalities lower through a compact shared basis:
+  option presence plus one encoded-natural clause whose payload inequality is
+  a kernel-computable HOL side condition. Constructor pairs remain
+  demand-driven; an eager all-variant cross-product was measured at over
+  14,000 clauses and rejected. Fully flattened rules rise 525 → 526, clean
+  Dec clauses 773 → 777, fully clean functions 346 → 349, canonical
+  `dec.order` falls 11 → 10, and combined opacity falls 94 → 76.
+- **Wave S — nonnegative-rational order and exact numeric conversions.**
+  Rational comparisons built from `Nat → Rat` casts and division now use a
+  shared numerator/denominator view, cross-multiplying into real HOL-natural
+  order while emitting denominator-positivity premises. `Rat → Nat`
+  truncation of such positive quotients becomes HOL `nat.div`; `Int → Nat`
+  subtraction becomes `nat.sub` guarded by source nonnegativity. This
+  eliminates `cond.cmp-nonnat` (18 → 0), raises fully flattened rules
+  526 → 541 and clean Dec clauses 777 → 779, and lowers combined opacity
+  76 → 58.
+- **Wave T — conversion-bearing structural equality.** Supported
+  `Rat → Nat`/`Int → Nat` conversions now evaluate in arbitrary condition
+  operands, including exact `ev.slice` reads. A small `ev.unnat` identity
+  projector bridges Dec-lifted full-encoding call results back into the
+  numeric evaluator without changing their already-emitted graph currency.
+  Equality evaluation is gated on the actual per-clause numeric discipline;
+  iterated element variables remain conservatively opaque rather than causing
+  lowering errors. Fully flattened rules rise 541 → 547,
+  `cond.coarse-eq` falls 17 → 4, and combined opacity falls 58 → 46. One
+  newly fireable Dec expands, exposing its sixth star site (12 clauses) and
+  one additional ordered overlap.
+- **Wave U — exact common-premise factoring for ordered rules.** `Else`
+  preprocessing now factors relation judgements shared by the earlier and
+  current sibling, extending their variable correspondence through the
+  judgement's result. It also factors shared `And` conjuncts before negation:
+  under current premise `P`, `P ∧ ¬(P ∧ G)` becomes exactly `P ∧ ¬G`.
+  This makes `array.init_data-num` and `array.copy-gt` fully fireable; the
+  latter retains its shared `Expand` and storage-shape equality and receives
+  only the exact `i_1 > i_2` complement. Fully flattened rules rise
+  547 → 549, rewritten Else sites 27 → 29, and combined opacity falls
+  46 → 44. The remaining four `Ref_ok` complements cannot be encoded as
+  negative `d J` antecedents in the impredicative positive-closure RuleSet:
+  they require a positive, adequacy-certified decision relation. The
+  `array.init_data-zero` Rule-and-If complement and the catch-handler
+  constructor complement remain explicit branch-splitting work.
+- **Wave V — numeric conversions below structural reads.** Supported
+  `Rat → Nat` conversion shapes now participate in the numeric pre-scan even
+  when nested below an exact structural evaluator such as `Slice`. Iterated
+  premises scan rule-level arithmetic ride-throughs before conclusion
+  encoding, then remove domain-local variables so iteration elements retain
+  their full encoded currency; named `ListN` indices are marked only at their
+  star site. This makes the real `Step_read/load-pack-val`,
+  `vload-pack-val`, and `vload-zero-val` byte-slice equations fully fireable.
+  Fully flattened rules rise 549 → 552, relation-level `cond.coarse-eq`
+  reaches zero, and combined opacity falls 44 → 41 (one separate Dec-side
+  coarse equality remains).
+- **Wave W — finite source-sort complements for ordered Dec clauses.**
+  Ordered wildcard analysis now aligns source variables structurally, uses
+  the total case catalogue to enumerate and exclude the earlier source sort's
+  constructor heads, and transports guards through directional pattern
+  correspondence before negation. This eliminates `dec.else-pattern`
+  completely (13 combined premises), discharges two further order conflicts
+  including `$ordered`, raises clean source Dec clauses 779 → 793 and fully
+  clean functions 350 → 364. The exact `ev.neq` coverage grows to 375 pairs;
+  combined opacity falls 41 → 26.
+- **Wave X — exhaustive handler-catch complement.** Exact-list/Cat language
+  intersection first proves the unrelated `return_call_ref-handler` pattern
+  disjoint from the throw fallback. The catalogue-aware preprocessor then
+  checks that `catch` has exactly `CATCH`, `CATCH_REF`, `CATCH_ALL`, and
+  `CATCH_ALL_REF`, compiling the fallback to one DNF guard: the first two
+  constructors survive only when their exception tags mismatch, while the
+  unconditional catch-all predecessors contribute no branch. The existing
+  `ev.guard` relation gives the constructor payloads existential-witness
+  semantics without splitting the source rule. Fully flattened rules rise
+  552 → 553, Else rewrites 29 → 30, and combined opacity falls 26 → 25.
+- **Final coarse-equality closure.** The signed rational `idiv_` quotient
+  guard now lowers through an exact sign/magnitude evaluator instead of
+  `cond.coarse-eq`. Clean source Dec clauses rise 793 → 794 and combined
+  opacity falls 25 → 24; no `cond.coarse-eq` premises remain in the combined
+  set.
+- **UTF-8 ordered-clause closure.** Bounded DNF guard analysis, exact
+  separated-Nat-interval contradictions, and recognition of the recursive
+  map/concatenate singleton self-implication make all five `utf8` clauses
+  clean. Clean source Dec clauses rise 794 → 798; source `dec.order` falls
+  9 → 5, combined `dec.order` falls 18 → 11, and total opacity falls 24 → 17.
+- **Ordered alias-expansion closure.** Equality guards now detect incompatible
+  rigid record values (the I32/I64 `growtable` and `growmem` expansions);
+  `jsizenn` is treated as the injective size projection on rigid integer-lane
+  constructors; and call-result guards compare modulo variable equalities
+  forced by nonlinear overlapping patterns. This cleans `vextternop__` and
+  two of three `vcvtop__` clauses. Clean source Dec clauses rise 798 → 802,
+  source `dec.order` falls 5 → 1, combined `dec.order` falls 11 → 1, and total
+  opacity falls 17 → 7. The remaining `vcvtop__` predecessor has an honestly
+  existential complement over a half selector and downstream partial calls,
+  so it remains fail-closed.
 - **Wave F — store-write evaluators (`ev.upd.*`/`ev.ext.*`).** `Upd`/`Ext`
   along `Dot`/`Idx` access paths evaluate through on-demand per-path-suffix
   clause families (`lower/evalrel.rs::upd_ext_families`): `Dot` levels
@@ -163,11 +349,11 @@ API. `wasm::spec::coverage_report` pins:
   **approximations by rule-name classification** — exactness awaits feature
   annotations): `lime` = the maximally-fireable core (premise-free `Step_pure`
   + `Steps/refl` + the `Numtype_ok`/`Valtype_ok/num`/`Instr_ok`
-  nop/const/binop typing chain + the `ref.is_null-false` Else demo) — **168
+  nop/const/binop typing chain + the `ref.is_null-false` Else demo) — **407
   clauses, ZERO opaque premises** (asserted); `wasm1` ≈ 1.0 MVP (hardcoded
-  instruction-key list, handler rules excluded) — **651 clauses, 52 opaque in
-  42 clauses**; `wasm2` ≈ 2.0 (+reference types, bulk/table ops;
-  **v128 excluded** by choice, exceptions excluded) — **724 clauses, 58
+  instruction-key list, handler rules excluded) — **1174 clauses, zero
+  opaque**; `wasm2` ≈ 2.0 (+reference types, bulk/table ops;
+  **v128 excluded** by choice, exceptions excluded) — **1272 clauses, zero
   opaque**. Tests: index-map integrity vs `ClauseMeta`, closure-closedness
   (every non-opaque premise tag has slice clauses or is a zero-clause
   builtin), lime fires on a default stack, transport end-to-end (conclusion
@@ -298,6 +484,105 @@ emits no opaques, no judgement premises, `Side`-only arithmetic).
   `lift(r)` result spines that blocked `binop-val` DIV/REM consumption are
   resolved by Wave G's `ev.lift` flattening (above).
 
+## Landed (Wave Y — exact integer bit structure)
+
+`lower/builtins.rs` (2026-07-19) now gives first defining clauses to eight
+more zero-clause integer builtins: `inot_`, `irev_`, `iand_`, `iandnot_`,
+`ior_`, `ixor_`, `ipopcnt_`, and `ibitselect_`. The builtin leg is now
+**186 clauses over 24 ops**, filling **14 of 91** zero-clause tags and leaving
+a frontier of **77**; the combined set is **3646 clauses** at this wave.
+
+- Definitions are exact at every reachable width (8/16/32/64), use only
+  kernel-supported natural arithmetic, and carry explicit input and result
+  carrier bounds. A bit is `(x div 2^i) mod 2`; values are reassembled as
+  fixed finite sums. Boolean bit identities define AND/ANDNOT/OR/XOR,
+  popcount sums bits, reverse changes their weights, and bitselect is
+  `(a & mask) | (b & ~mask)`.
+- No trusted bitwise oracle or evaluator family was added: all emitted clauses
+  are `Side`-only and the kernel normalizes their `div`/`mod`/`pow`/
+  `add`/`sub`/`mul` obligations. This adds no evaluator clauses and no opaque
+  premises.
+- Tests exhaust the independent 8-bit arithmetic truth tables, replay exact
+  graph derivations and wrong-result refusals at 8/16/32/64, and retain an
+  explicit ignored all-points HOL replay for deep audits. The combined-set
+  payoff derives
+  `[CONST I32 0x0ff0, CONST I32 0x00ff, BINOP I32 AND] ~>
+  [CONST I32 0x00f0]` through `fn.iand_ ∘ fn.binop_ ∘ Step_pure/binop-val`;
+  its wrong defining result is kernel-refuted.
+
+## Landed (Wave Z — integer bit/byte serialization)
+
+`lower/builtins.rs` (2026-07-19) now defines the integer-only serialization
+quartet `ibits_`/`inv_ibits_` and `ibytes_`/`inv_ibytes_`. The builtin leg is
+now **206 clauses over 28 ops**, filling **18 of 91** zero-clause tags and
+leaving a frontier of **73**; this batch adds 20 clauses. With the concurrent
+evaluator exactness batch, the measured combined set is **3668 clauses**.
+
+- At each reachable integer width (8/16/32/64), plus the 128-bit width used
+  by the real `v128.const` binary/text paths, forward clauses expose the exact
+  fixed-length little-endian list of bits or bytes. Inverse clauses require
+  that exact length, guard every element (`< 2` or `< 256`), and reconstruct
+  the unsigned integer as a finite radix-weighted sum.
+- All obligations use existing kernel natural arithmetic and the ordinary
+  encoded list spine. There is no float interpretation, trusted byte oracle,
+  evaluator extension, or opaque premise.
+- Kernel replay tests establish both directions at every width and reject a
+  changed element, changed reconstructed integer, malformed length, and
+  out-of-range bit/byte. Thus the inverse helpers are partial exactly where
+  their typed SpecTec domains are malformed rather than accepting a
+  convenient modulo interpretation.
+
+## Landed (Wave AA — exact integer SIMD lanes)
+
+`lower/builtins.rs` now defines `lanes_` and `inv_lanes_` for the four valid
+integer 128-bit shapes: I8×16, I16×8, I32×4, and I64×2. The builtin leg is
+**214 clauses over 30 ops**, filling **20 of 91** zero-clause tags and leaving
+a frontier of **71**.
+
+- Lane zero is the least-significant lane. Forward clauses expose each lane by
+  fixed-radix division/modulo; inverse clauses reconstruct the vector carrier
+  by the matching finite sum.
+- Shape, exact list length, the 128-bit vector bound, and every per-lane bound
+  are structural or kernel-computed guards. Malformed lists, overflowing lanes,
+  and wrong vectors derive nothing.
+- Float shapes intentionally remain clause-less until HOL has an exact float
+  carrier. Tests cover both directions for every integer shape, negative
+  cases, float refusal, and a live `2^120` vector bit.
+
+## Landed (Wave AB — exact integer conversion matrix)
+
+`lower/builtins.rs` now defines the integer-only conversion primitives
+`wrap__`, `extend__`, and `narrow__`, and supplements the value-dead source
+equations for `iextend_`. Across every reachable 8/16/32/64-bit width pair,
+the builtin leg is **302 clauses over 34 ops**, filling **23 of 91**
+zero-clause tags and leaving a frontier of **68**.
+
+- `wrap__` is exact reduction modulo the destination width, with the source
+  carrier checked explicitly.
+- `extend__` and `iextend_` use a shared low-bit interpretation and split
+  signed extension at the source sign bit. `narrow__` saturates unsigned and
+  signed values at the exact destination bounds.
+- An independent bit-mask/two's-complement oracle checks every width pair and
+  both sign classes, while perturbed results, ill-typed carriers, unsupported
+  width directions, and float-shaped payloads are rejected. Float
+  conversions and reinterpretation remain clause-less rather than inheriting
+  an integer approximation.
+
+## Landed (Wave AC — exact unsigned SIMD rounded average)
+
+`lower/builtins.rs` now defines `iavgr_` at exactly the two instruction-reachable
+integer lane widths, I8 and I16. The builtin leg is **304 clauses over 35 ops**,
+filling **24 of 91** zero-clause tags and leaving a frontier of **67**.
+
+- The result is the WebAssembly unsigned rounded average
+  `(a + b + 1) div 2`, computed in the unbounded HOL-natural carrier before
+  returning to the lane carrier, so the intermediate sum does not wrap.
+- Explicit operand/result bounds make erased or overflowing encodings
+  underivable. Signed selectors and invented 32/64-bit AVGR calls receive no
+  clause.
+- Tests cover even and odd sums, maximum lanes, wrong-result refusal, signed
+  refusal, unsupported-width refusal, and out-of-carrier refusal.
+
 ## Goal and soundness frame
 
 **Goal:** every definition of the spec *loads* — becomes clauses of inductive
@@ -311,6 +596,55 @@ SpecTec premises. `Derivable_R` may *under*-approximate the true relation
 instance's antecedents can be proven), and dischargeability grows monotonically
 afterwards. This keeps the fragment-api note's constraint — conditions are
 never dropped — while making full-coverage loading achievable now.
+
+## Layered source and semantic APIs
+
+The high-level surface now separates claims that used to be easy to conflate:
+
+- `SpecTecSpec` owns and recursively indexes the complete elaborated AST;
+  `HolSpec` owns the common-clause lowering and honest census; `lime()` carves
+  the current zero-opaque dependency closure.
+- `TypeFamilies` / `TypeFamilySource` losslessly reify all **207** type
+  families, retain every instance/case/field parameter and all **56**
+  refinement premises across **29** owners, and expose deterministic
+  dependency/SCC analysis. The real mutual SCC is pinned to its nine exact
+  members.
+- `HolSort`, `ResolvedType`, and `SemanticTypeResolver` distinguish a carrier
+  from its semantic invariant. The compatibility `CarrierTypeResolver`
+  deliberately reports `SortInvariant::Unresolved`; carrier renderability is
+  not mislabeled as faithful type semantics. The
+  `RefinementAwareTypeResolver` now certifies the exact refinement-free
+  dependency closure as `Unconstrained`, while every closure reaching one of
+  the 56 retained refinements stays unresolved pending predicate lowering.
+- `VariantTheory` / `VariantTheoryBackend` expose theorem-bearing constructors
+  for currently nonrecursive coproduct variants: carrier, source-name lookup,
+  constructor terms, injectivity, and pairwise distinctness derived through
+  existing kernel laws. Recursive self placeholders still refuse.
+- `DecisionLowerer` represents negative rule applicability only through a
+  positive decision graph with an adequacy/totality certification contract.
+  `CertifiedDecisionFamily` checks exact closed ground totality and adequacy
+  theorems before exposing a request; all other requests use
+  `OpaqueDecisions`. A direct negative `d J` premise is forbidden because it
+  would make the impredicative positive-closure `RuleSet` operator
+  non-monotone.
+- Grammar roots are explicit: `GrammarRoot::Instance` and
+  `RootedGrammarEnv` preserve canonical ground parameter identity and reject
+  generic/symbolic roots rather than erasing their context.
+- `ParameterizedGrammarIr` retains symbolic instance arguments, every
+  production/premise, and stable source indices. It now follows the exact
+  nullary-reference dependency closure. `IndexedGrammarEnv` assigns
+  structurally distinct instances distinct `Derives_E` tags, lowers
+  premise-free byte-regex productions and direct nullary references to real
+  CFG/HOL clauses, and keeps parameter substitution and semantic premises as
+  indexed refusal records rather than erasing them.
+
+Grammar coverage remains separately honest. Of 1431 WASM 3.0 productions,
+under mode lowers 1129 (97 full / 22 partial / 112 empty grammars) and
+recognition mode lowers 1221 (153 full / 10 partial / 68 empty). Recognition
+residue is 204 parameter references, four premise forms, and two Unicode
+bridge terminals; 199 parameter references are text-format identifier-context
+threading and require a parameter-indexed grammar relation, not wildcard
+erasure.
 
 ## Corpus facts that shape the design
 

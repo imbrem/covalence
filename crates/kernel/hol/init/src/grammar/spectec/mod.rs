@@ -50,6 +50,19 @@
 
 pub mod cfg;
 pub mod grammar;
+pub mod indexed;
 
-pub use cfg::{spec_grammar_env, spec_grammar_env_recognition};
+pub use cfg::{
+    RootedGrammarEnv, spec_grammar_env, spec_grammar_env_recognition,
+    spec_grammar_env_recognition_roots,
+};
+pub use covalence_spectec::cfg::{GrammarRoot, GrammarRootError};
+pub use covalence_spectec::indexed::{
+    GrammarInstance, GrammarInstanceKey, IndexedGrammarError, IndexedProduction,
+    ParameterizedGrammarIr,
+};
 pub use grammar::{BridgeError, SpecTecSym, compile_sym, sym_to_core};
+pub use indexed::{
+    IndexedGrammarEnv, IndexedLoweringRefusal, IndexedLoweringReport, IndexedLoweringResidual,
+    IndexedProductionLowerer, PremiseFreeRegexLowerer, wasm3_indexed_grammar_env,
+};

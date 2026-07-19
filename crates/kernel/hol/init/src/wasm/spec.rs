@@ -322,40 +322,43 @@ mod tests {
             //   `$with_mem`'s slice-path write plus the zip/map iteration
             //   RHSs stay coarse.
             assert!(
-                report.rules.fully_flattened >= 500,
+                report.rules.fully_flattened >= 553,
                 "fully flattened = {}",
                 report.rules.fully_flattened
             );
             assert!(
-                report.decs.spec_clean >= 660,
+                report.decs.spec_clean >= 802,
                 "dec clean = {}",
                 report.decs.spec_clean
             );
             assert!(
-                report.total_clauses >= 2300,
+                report.total_clauses >= 3766,
                 "combined clauses = {}",
                 report.total_clauses
             );
-            // The integer-builtin leg is live (Wave F2): defining clauses
-            // for the 16-op integer family, incl. first clauses for 6 of the
-            // 91 zero-clause builtin tags (ishl_/ishr_/irotl_/irotr_/
-            // iclz_/ictz_ — a collapse means arithmetic execution is dead).
+            // The integer-builtin leg is live (Waves F2/Y/Z/AA/AB): defining
+            // clauses for 35 integer ops, incl. first clauses for 24 of the
+            // 91 zero-clause tags (shift/count, exact bit structure,
+            // serialization, integer SIMD lanes, and integer conversions).
             assert!(
-                report.n_builtin_clauses >= 150,
+                report.n_builtin_clauses >= 304,
                 "builtin clauses = {}",
                 report.n_builtin_clauses
             );
-            assert_eq!(report.builtins.ops, 16, "builtin ops covered");
+            assert_eq!(report.builtins.ops, 35, "builtin ops covered");
+            assert_eq!(
+                report.builtins.zero_clause_ops, 24,
+                "zero-clause builtin tags filled"
+            );
             assert!(
-                report.opaque_total() <= 330,
+                report.opaque_total() <= 7,
                 "opaque premises regressed: {}",
                 report.opaque_total()
             );
             // The write families are live (measured: 54 clauses / 27 path
-            // families incl. `ev.upd.root.dot.LOCALS.idx` — the
-            // `Step/local.set` chain) and the coarse-spine bucket shrank
-            // accordingly; a climb back above 52 means store-write RHSs
-            // went coarse again.
+            // families incl. `ev.upd.root.dot.LOCALS.idx` and the
+            // `with_mem` slice path. No Dec conclusion may retain a coarse
+            // iteration/write spine.
             assert!(
                 write_clauses >= 50,
                 "ev.upd/ev.ext clauses = {write_clauses}"
@@ -370,16 +373,13 @@ mod tests {
                 .get("dec.coarse-spine")
                 .copied()
                 .unwrap_or(0);
-            assert!(
-                (1..=52).contains(&coarse),
-                "dec.coarse-spine premises = {coarse}"
-            );
+            assert_eq!(coarse, 0, "dec.coarse-spine premises");
             // The clause-order complements are present (a collapse to 0
             // would mean divergent-RHS Dec overlaps fire unguarded again),
             // and no premise mentions an unresolved Def-param tag (R4-F2:
             // `fn.f_` premises were silently underivable and uncensused).
             let order = report.opaque_tags.get("dec.order").copied().unwrap_or(0);
-            assert!((40..=100).contains(&order), "dec.order premises = {order}");
+            assert_eq!(order, 1, "dec.order premises");
             assert!(
                 !report.opaque_tags.keys().any(|k| k == "dec.def-param"),
                 "unresolved Def-param callees on the bundled corpus: {:?}",
@@ -387,7 +387,10 @@ mod tests {
             );
 
             // The sort fix is live (measured 2026-07-17: 197 guarded rules /
-            // 265 guard premises; dec 276 expanded copies + 163 guards).
+            // 265 guard premises; after preserving mapped iterations through
+            // the Dec/flattener boundary the Dec leg uses 395 expanded copies
+            // + 110 guards (more sites can take the exact finite expansion
+            // path instead of a guarded opaque map).
             // Floors just under measured; a collapse to 0 would mean the
             // sortless-metavariable over-approximation is back.
             assert!(
@@ -401,12 +404,12 @@ mod tests {
                 report.rules.sort_guard_premises
             );
             assert!(
-                report.decs.expanded_clauses >= 270,
+                report.decs.expanded_clauses >= 360,
                 "dec expanded copies = {}",
                 report.decs.expanded_clauses
             );
             assert!(
-                report.decs.sort_guards >= 160,
+                report.decs.sort_guards >= 100,
                 "dec sort guards = {}",
                 report.decs.sort_guards
             );

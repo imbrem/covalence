@@ -108,19 +108,57 @@ use crate::init::nat;
 /// Widths reachable by the whole integer family (scalar `sizenn`: 32/64;
 /// SIMD `lsizenn`: 8/16 as well).
 pub const WIDTHS: [u64; 4] = [8, 16, 32, 64];
+/// Widths used by integer bit/byte serialization. `128` is required by the
+/// real `v128.const` binary/text paths, which call `inv_ibytes_(128, …)`.
+pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 /// Widths for the scalar-only partial ops `idiv_` / `irem_`.
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
 /// Integer ops given defining clauses by this leg.
-pub const OPS: [&str; 16] = [
-    "isub_", "ieq_", "ine_", "ilt_", "igt_", "ile_", "ige_", "ieqz_", "ishl_", "ishr_", "irotl_",
-    "irotr_", "iclz_", "ictz_", "idiv_", "irem_",
+pub const OPS: [&str; 35] = [
+    "isub_",
+    "ieq_",
+    "ine_",
+    "ilt_",
+    "igt_",
+    "ile_",
+    "ige_",
+    "ieqz_",
+    "ishl_",
+    "ishr_",
+    "irotl_",
+    "irotr_",
+    "iclz_",
+    "ictz_",
+    "idiv_",
+    "irem_",
+    "inot_",
+    "irev_",
+    "iand_",
+    "iandnot_",
+    "ior_",
+    "ixor_",
+    "ipopcnt_",
+    "ibitselect_",
+    "ibits_",
+    "inv_ibits_",
+    "ibytes_",
+    "inv_ibytes_",
+    "lanes_",
+    "inv_lanes_",
+    "wrap__",
+    "extend__",
+    "iextend_",
+    "narrow__",
+    "iavgr_",
 ];
 
 /// How many of the 91 zero-clause builtin tags gain their **first** clauses
-/// here (`ishl_`, `ishr_`, `irotl_`, `irotr_`, `iclz_`, `ictz_`); the other
-/// ten [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 6;
+/// here: the six shift/rotate/count-zero operations, eight exact bit-structure
+/// operations, four integer serialization/inverse operations, the exact
+/// integer SIMD lane isomorphism, and three integer conversions. The other
+/// eleven [`OPS`] supplement blocked spec lowerings.
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 24;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -204,6 +242,16 @@ fn shift_amount(k: Term, w: u64) -> Result<Term> {
     md(k, mk_nat(w))
 }
 
+/// Reachable ordered width pairs. SpecTec uses these both for scalar
+/// conversions and for packed integer fields. Keeping the family structural
+/// (rather than enumerating instruction spellings) also covers every future
+/// call site whose widths elaborate to the existing integer carriers.
+fn width_pairs() -> impl Iterator<Item = (u64, u64)> {
+    WIDTHS
+        .into_iter()
+        .flat_map(|m| WIDTHS.into_iter().map(move |n| (m, n)))
+}
+
 // ===========================================================================
 // Per-op emitters
 // ===========================================================================
@@ -230,6 +278,181 @@ fn isub(w: u64) -> Result<Clause> {
         vec![in_carrier(mv("a"), w)?, in_carrier(mv("b"), w)?, r_def],
         bin_concl("isub_", w, "a", "b", "r")?,
     ))
+}
+
+/// `wrap__(M,N,%(a)) = %(a mod 2^N)`.
+///
+/// Although the core scalar instruction only uses 64→32, packed integer
+/// paths use the same primitive at 8/16/32-bit field widths. We therefore
+/// define the complete reachable width matrix. The input carrier guard keeps
+/// the graph a faithful under-approximation outside the typed SpecTec domain.
+fn wrap_conversion(m: u64, n: u64) -> Result<Clause> {
+    Ok(clause(
+        &["a", "r"],
+        vec![
+            in_carrier(mv("a"), m)?,
+            in_carrier(mv("r"), n)?,
+            mv("r").equals(md(mv("a"), p2(n)?)?)?,
+        ],
+        fn_graph(
+            "wrap__",
+            &[w_lit(m)?, w_lit(n)?, ival(mv("a"))?],
+            &ival(mv("r"))?,
+        )?,
+    ))
+}
+
+/// Unsigned rounded average used by `i8x16.avgr_u` and `i16x8.avgr_u`.
+///
+/// WebAssembly defines this as `(a + b + 1) / 2`; evaluating in the unbounded
+/// natural carrier before division is important because `a + b + 1` may need
+/// one bit more than the lane. Only the two instruction-reachable widths and
+/// the `U` sign selector receive clauses, so signed or invented-width calls
+/// remain fail closed.
+fn unsigned_average(w: u64) -> Result<Clause> {
+    let rounded = div(add(add(mv("a"), mv("b"))?, mk_nat(1u64))?, mk_nat(2u64))?;
+    Ok(clause(
+        &["a", "b", "r"],
+        vec![
+            in_carrier(mv("a"), w)?,
+            in_carrier(mv("b"), w)?,
+            in_carrier(mv("r"), w)?,
+            mv("r").equals(rounded)?,
+        ],
+        sx_concl("iavgr_", w, "U", "a", "b", ival(mv("r"))?)?,
+    ))
+}
+
+/// Exact unsigned/sign extension of the low `m` bits into an `n`-bit
+/// carrier. `m < n` is enforced by construction.
+fn extended_value(a: Term, m: u64, n: u64, signed: bool) -> Result<Term> {
+    let low = md(a, p2(m)?)?;
+    if !signed {
+        return Ok(low);
+    }
+    // If the source sign bit is clear, extension is the low value. If it is
+    // set, prepend `n-m` one bits: low + 2^n - 2^m. The branch is selected in
+    // the clauses below, avoiding an untrusted conditional operator.
+    add(low, sub(p2(n)?, p2(m)?)?)
+}
+
+/// `extend__(M,N,sx,%(a))`: conversion between distinct integer carriers.
+fn extend_conversion(m: u64, n: u64, sx: &str) -> Result<Vec<Clause>> {
+    debug_assert!(m < n);
+    let conclusion = |r: &str| {
+        fn_graph(
+            "extend__",
+            &[w_lit(m)?, w_lit(n)?, sx_case(sx)?, ival(mv("a"))?],
+            &ival(mv(r))?,
+        )
+    };
+    let common =
+        || -> Result<Vec<Term>> { Ok(vec![in_carrier(mv("a"), m)?, in_carrier(mv("r"), n)?]) };
+    if sx == "U" {
+        let mut sides = common()?;
+        sides.push(mv("r").equals(extended_value(mv("a"), m, n, false)?)?);
+        return Ok(vec![clause(&["a", "r"], sides, conclusion("r")?)]);
+    }
+    let low = md(mv("a"), p2(m)?)?;
+    let mut nonnegative = common()?;
+    nonnegative.push(lt(low.clone(), p2(m - 1)?)?);
+    nonnegative.push(mv("r").equals(low.clone())?);
+    let mut negative = common()?;
+    negative.push(le(p2(m - 1)?, low)?);
+    negative.push(mv("r").equals(extended_value(mv("a"), m, n, true)?)?);
+    Ok(vec![
+        clause(&["a", "r"], nonnegative, conclusion("r")?),
+        clause(&["a", "r"], negative, conclusion("r")?),
+    ])
+}
+
+/// `iextend_(N,M,sx,%(a))`: sign/zero-extend the low `M` bits while staying
+/// in the original `N` carrier (the `i32.extend8_s` family).
+fn integer_extend(n: u64, m: u64, sx: &str) -> Result<Vec<Clause>> {
+    debug_assert!(m < n);
+    let conclusion = |r: &str| {
+        fn_graph(
+            "iextend_",
+            &[w_lit(n)?, w_lit(m)?, sx_case(sx)?, ival(mv("a"))?],
+            &ival(mv(r))?,
+        )
+    };
+    let common =
+        || -> Result<Vec<Term>> { Ok(vec![in_carrier(mv("a"), n)?, in_carrier(mv("r"), n)?]) };
+    if sx == "U" {
+        let mut sides = common()?;
+        sides.push(mv("r").equals(extended_value(mv("a"), m, n, false)?)?);
+        return Ok(vec![clause(&["a", "r"], sides, conclusion("r")?)]);
+    }
+    let low = md(mv("a"), p2(m)?)?;
+    let mut nonnegative = common()?;
+    nonnegative.push(lt(low.clone(), p2(m - 1)?)?);
+    nonnegative.push(mv("r").equals(low.clone())?);
+    let mut negative = common()?;
+    negative.push(le(p2(m - 1)?, low)?);
+    negative.push(mv("r").equals(extended_value(mv("a"), m, n, true)?)?);
+    Ok(vec![
+        clause(&["a", "r"], nonnegative, conclusion("r")?),
+        clause(&["a", "r"], negative, conclusion("r")?),
+    ])
+}
+
+/// Saturating integer narrowing from an `m`-bit carrier to an `n`-bit
+/// carrier. This is the scalar primitive used lane-wise by SIMD `NARROW`.
+fn narrow_conversion(m: u64, n: u64, sx: &str) -> Result<Vec<Clause>> {
+    debug_assert!(n < m);
+    let conclusion = || {
+        fn_graph(
+            "narrow__",
+            &[w_lit(m)?, w_lit(n)?, sx_case(sx)?, ival(mv("a"))?],
+            &ival(mv("r"))?,
+        )
+    };
+    let common =
+        || -> Result<Vec<Term>> { Ok(vec![in_carrier(mv("a"), m)?, in_carrier(mv("r"), n)?]) };
+    if sx == "U" {
+        let max = sub(p2(n)?, mk_nat(1u64))?;
+        let mut fits = common()?;
+        fits.push(le(mv("a"), max.clone())?);
+        fits.push(mv("r").equals(mv("a"))?);
+        let mut high = common()?;
+        high.push(lt(max.clone(), mv("a"))?);
+        high.push(mv("r").equals(max)?);
+        return Ok(vec![
+            clause(&["a", "r"], fits, conclusion()?),
+            clause(&["a", "r"], high, conclusion()?),
+        ]);
+    }
+
+    let max = sub(p2(n - 1)?, mk_nat(1u64))?;
+    let min_mag = p2(n - 1)?;
+    let source_half = p2(m - 1)?;
+    // Nonnegative source values either fit or saturate to +max.
+    let mut pos_fits = common()?;
+    pos_fits.push(lt(mv("a"), source_half.clone())?);
+    pos_fits.push(le(mv("a"), max.clone())?);
+    pos_fits.push(mv("r").equals(mv("a"))?);
+    let mut pos_high = common()?;
+    pos_high.push(lt(mv("a"), source_half.clone())?);
+    pos_high.push(lt(max.clone(), mv("a"))?);
+    pos_high.push(mv("r").equals(max)?);
+    // Negative source values are compared by magnitude. Values down to the
+    // destination minimum fit; more-negative values saturate at that minimum.
+    let mag = neg_mag(mv("a"), m)?;
+    let mut neg_fits = common()?;
+    neg_fits.push(le(source_half.clone(), mv("a"))?);
+    neg_fits.push(le(mag.clone(), min_mag.clone())?);
+    neg_fits.push(mv("r").equals(sub(p2(n)?, mag.clone())?)?);
+    let mut neg_low = common()?;
+    neg_low.push(le(source_half, mv("a"))?);
+    neg_low.push(lt(min_mag.clone(), mag)?);
+    neg_low.push(mv("r").equals(min_mag)?);
+    Ok(vec![
+        clause(&["a", "r"], pos_fits, conclusion()?),
+        clause(&["a", "r"], pos_high, conclusion()?),
+        clause(&["a", "r"], neg_fits, conclusion()?),
+        clause(&["a", "r"], neg_low, conclusion()?),
+    ])
 }
 
 /// The sign-bias order embedding `biased(x) = (x + 2^(w−1)) mod 2^w`
@@ -427,6 +650,240 @@ fn count_zeros(op: &str, w: u64, leading: bool) -> Result<Vec<Clause>> {
         fn_graph(op, &[w_lit(w)?, ival(mv("a"))?], &ival(mv("r"))?)?,
     );
     Ok(vec![zero, nonzero])
+}
+
+/// Bit `i` of a natural carrier value, as a kernel-computable natural in
+/// `{0,1}`. Fixed-width bit operations are deliberately expanded into this
+/// arithmetic basis instead of adding trusted bitwise primitives.
+fn bit(x: Term, i: u64) -> Result<Term> {
+    md(div(x, p2(i)?)?, mk_nat(2u64))
+}
+
+/// A left-associated natural sum (the widths are at most 64, so this stays
+/// comfortably below the evaluator's stack limits and adds no evaluator
+/// clauses).
+fn sum(ts: impl IntoIterator<Item = Result<Term>>) -> Result<Term> {
+    let mut acc = mk_nat(0u64);
+    for t in ts {
+        acc = add(acc, t?)?;
+    }
+    Ok(acc)
+}
+
+/// Reassemble a fixed-width result from a per-bit arithmetic expression.
+fn bits_value(w: u64, f: impl Fn(u64) -> Result<Term>) -> Result<Term> {
+    sum((0..w).map(|i| Ok(mul(f(i)?, p2(i)?)?)))
+}
+
+/// One exact unary bit-operation graph clause.
+fn bit_unary(op: &str, w: u64, result: Term) -> Result<Clause> {
+    Ok(clause(
+        &["a", "r"],
+        vec![
+            in_carrier(mv("a"), w)?,
+            in_carrier(mv("r"), w)?,
+            mv("r").equals(result)?,
+        ],
+        fn_graph(op, &[w_lit(w)?, ival(mv("a"))?], &ival(mv("r"))?)?,
+    ))
+}
+
+/// One exact binary bit-operation graph clause.
+fn bit_binary(op: &str, w: u64, result: Term) -> Result<Clause> {
+    Ok(clause(
+        &["a", "b", "r"],
+        vec![
+            in_carrier(mv("a"), w)?,
+            in_carrier(mv("b"), w)?,
+            in_carrier(mv("r"), w)?,
+            mv("r").equals(result)?,
+        ],
+        bin_concl(op, w, "a", "b", "r")?,
+    ))
+}
+
+/// Exact fixed-width bit-structure clauses, expressed solely through natural
+/// `div`/`mod`/`pow`/`add`/`sub`/`mul`:
+///
+/// - boolean bits use `and = ab`, `or = a+b-ab`, `xor = a+b-2ab`;
+/// - popcount sums the bits and reverse reweights bit `i` at `w-1-i`;
+/// - bitselect is `(a & mask) | (b & ~mask)` (the summands are disjoint).
+fn bit_structure(w: u64) -> Result<Vec<Clause>> {
+    let abit = |i| bit(mv("a"), i);
+    let bbit = |i| bit(mv("b"), i);
+    let and_bit = |i| mul(abit(i)?, bbit(i)?);
+    let or_bit = |i| sub(add(abit(i)?, bbit(i)?)?, and_bit(i)?);
+    let xor_bit = |i| sub(add(abit(i)?, bbit(i)?)?, mul(mk_nat(2u64), and_bit(i)?)?);
+    let andnot_bit = |i| mul(abit(i)?, sub(mk_nat(1u64), bbit(i)?)?);
+
+    let mut out = vec![
+        bit_unary("inot_", w, sub(sub(p2(w)?, mk_nat(1u64))?, mv("a"))?)?,
+        bit_unary(
+            "irev_",
+            w,
+            sum((0..w).map(|i| Ok(mul(abit(i)?, p2(w - 1 - i)?)?)))?,
+        )?,
+        bit_unary("ipopcnt_", w, sum((0..w).map(abit))?)?,
+        bit_binary("iand_", w, bits_value(w, and_bit)?)?,
+        bit_binary("iandnot_", w, bits_value(w, andnot_bit)?)?,
+        bit_binary("ior_", w, bits_value(w, or_bit)?)?,
+        bit_binary("ixor_", w, bits_value(w, xor_bit)?)?,
+    ];
+
+    let cbit = |i| bit(mv("c"), i);
+    // Selected bits are disjoint, so ordinary addition is exactly OR.
+    let selected = bits_value(w, |i| {
+        add(
+            mul(abit(i)?, cbit(i)?)?,
+            mul(bbit(i)?, sub(mk_nat(1u64), cbit(i)?)?)?,
+        )
+    })?;
+    out.push(clause(
+        &["a", "b", "c", "r"],
+        vec![
+            in_carrier(mv("a"), w)?,
+            in_carrier(mv("b"), w)?,
+            in_carrier(mv("c"), w)?,
+            in_carrier(mv("r"), w)?,
+            mv("r").equals(selected)?,
+        ],
+        fn_graph(
+            "ibitselect_",
+            &[w_lit(w)?, ival(mv("a"))?, ival(mv("b"))?, ival(mv("c"))?],
+            &ival(mv("r"))?,
+        )?,
+    ));
+    Ok(out)
+}
+
+/// The encoded list spine used by SpecTec list literals: `list` followed by
+/// its elements in source order. Serialization is little-endian, so element
+/// zero is the least-significant bit/byte.
+fn encoded_nat_list(ids: &[String]) -> Result<Term> {
+    let mut out = con("list");
+    for id in ids {
+        out = app(out, wrap_nat(mv(id))?)?;
+    }
+    Ok(out)
+}
+
+/// The four integer SIMD shapes admitted by the WebAssembly 128-bit vector
+/// carrier. Float shapes stay deliberately absent until HOL has an exact float
+/// carrier; emitting no clause is the fail-closed interpretation.
+const INTEGER_LANE_SHAPES: [(&str, u64, u64); 4] = [
+    ("I8", 8, 16),
+    ("I16", 16, 8),
+    ("I32", 32, 4),
+    ("I64", 64, 2),
+];
+
+/// Encoded `Lnn X M`: `case.X(tup(case.Lnn(tup), num.nat(M)))`.
+fn lane_shape(lane: &str, dim: u64) -> Result<Term> {
+    let lane = app(con(format!("case.{lane}")), con("tup"))?;
+    let payload = app(app(con("tup"), lane)?, wrap_nat(mk_nat(dim))?)?;
+    app(con("case.X"), payload)
+}
+
+/// Exact integer `lanes_` / `inv_lanes_` clauses for one 128-bit shape.
+///
+/// Lane zero is the least-significant lane, matching the spec's little-endian
+/// `ibytes_` convention and WebAssembly's lane numbering. Both directions use
+/// the same exposed lane metavariables and arithmetic reconstruction, making
+/// malformed lengths, out-of-carrier lanes, and wrong vectors underivable.
+fn integer_lanes(lane: &str, w: u64, dim: u64) -> Result<Vec<Clause>> {
+    debug_assert_eq!(w * dim, 128);
+    let ids: Vec<String> = (0..dim).map(|i| format!("lane{i}")).collect();
+    let mut metavars = vec!["v".to_owned()];
+    metavars.extend(ids.iter().cloned());
+    let mut common = vec![in_carrier(mv("v"), 128)?];
+    let base = p2(w)?;
+    for id in &ids {
+        common.push(lt(mv(id), base.clone())?);
+    }
+    let lanes = {
+        let mut out = con("list");
+        for id in &ids {
+            out = app(out, ival(mv(id))?)?;
+        }
+        out
+    };
+    let shape = lane_shape(lane, dim)?;
+    let names: Vec<&str> = metavars.iter().map(String::as_str).collect();
+
+    let mut split_sides = common.clone();
+    for (i, id) in ids.iter().enumerate() {
+        split_sides.push(mv(id).equals(md(div(mv("v"), p2(w * i as u64)?)?, base.clone())?)?);
+    }
+    let split = clause(
+        &names,
+        split_sides,
+        fn_graph("lanes_", &[shape.clone(), ival(mv("v"))?], &lanes)?,
+    );
+
+    let rebuilt = sum(ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| Ok(mul(mv(id), p2(w * i as u64)?)?)))?;
+    common.push(mv("v").equals(rebuilt)?);
+    let join = clause(
+        &names,
+        common,
+        fn_graph("inv_lanes_", &[shape, lanes], &ival(mv("v"))?)?,
+    );
+    Ok(vec![split, join])
+}
+
+/// Exact integer bit/byte serialization and its inverse at a fixed reachable
+/// width. Each element is exposed as a conclusion metavariable and pinned by
+/// kernel-computable arithmetic:
+///
+/// - `ibits_(N, i)` = `[bit(i, 0), …, bit(i, N-1)]`;
+/// - `ibytes_(N, i)` = `[i mod 2^8, …]`, least-significant byte first;
+/// - the inverse clauses accept exactly those fixed-length lists whose
+///   elements are in the bit/byte carrier, and reassemble the integer.
+///
+/// This intentionally emits no clause for malformed lengths or unsupported
+/// symbolic widths. It is a sound bounded family over all widths reachable
+/// from scalar and SIMD integer call sites.
+fn integer_serialization(w: u64) -> Result<Vec<Clause>> {
+    fn one(op: &str, inverse: bool, w: u64, radix_bits: u64) -> Result<Clause> {
+        let n = w / radix_bits;
+        let ids: Vec<String> = (0..n).map(|i| format!("e{i}")).collect();
+        let mut metavars = vec!["a".to_owned()];
+        metavars.extend(ids.iter().cloned());
+        let mut sides = vec![in_carrier(mv("a"), w)?];
+        let base = p2(radix_bits)?;
+        for (i, id) in ids.iter().enumerate() {
+            sides.push(lt(mv(id), base.clone())?);
+            if !inverse {
+                sides.push(
+                    mv(id).equals(md(div(mv("a"), p2(radix_bits * i as u64)?)?, base.clone())?)?,
+                );
+            }
+        }
+        if inverse {
+            let rebuilt = sum(ids
+                .iter()
+                .enumerate()
+                .map(|(i, id)| Ok(mul(mv(id), p2(radix_bits * i as u64)?)?)))?;
+            sides.push(mv("a").equals(rebuilt)?);
+        }
+        let list = encoded_nat_list(&ids)?;
+        let (args, result) = if inverse {
+            (vec![w_lit(w)?, list], ival(mv("a"))?)
+        } else {
+            (vec![w_lit(w)?, ival(mv("a"))?], list)
+        };
+        let names: Vec<&str> = metavars.iter().map(String::as_str).collect();
+        Ok(clause(&names, sides, fn_graph(op, &args, &result)?))
+    }
+
+    Ok(vec![
+        one("ibits_", false, w, 1)?,
+        one("inv_ibits_", true, w, 1)?,
+        one("ibytes_", false, w, 8)?,
+        one("inv_ibytes_", true, w, 8)?,
+    ])
 }
 
 /// `mag(x)` for the negative sign class: `2^w − x`.
@@ -652,6 +1109,31 @@ pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
     for w in DIV_WIDTHS {
         out.extend(irem(w)?);
     }
+    for w in WIDTHS {
+        out.extend(bit_structure(w)?);
+    }
+    for w in SERIALIZATION_WIDTHS {
+        out.extend(integer_serialization(w)?);
+    }
+    for (lane, w, dim) in INTEGER_LANE_SHAPES {
+        out.extend(integer_lanes(lane, w, dim)?);
+    }
+    for (m, n) in width_pairs() {
+        out.push(wrap_conversion(m, n)?);
+        if m < n {
+            for sx in ["U", "S"] {
+                out.extend(extend_conversion(m, n, sx)?);
+                out.extend(integer_extend(n, m, sx)?);
+            }
+        } else if n < m {
+            for sx in ["U", "S"] {
+                out.extend(narrow_conversion(m, n, sx)?);
+            }
+        }
+    }
+    for w in [8, 16] {
+        out.push(unsigned_average(w)?);
+    }
     let report = BuiltinReport {
         clauses: out.len(),
         ops: OPS.len(),
@@ -777,6 +1259,83 @@ mod tests {
         fn_graph(
             op,
             &[w_lit(w).unwrap(), ival(nat(a)).unwrap()],
+            &ival(nat(r)).unwrap(),
+        )
+        .unwrap()
+    }
+    fn tern_fact(op: &str, w: u64, a: u64, b: u64, c: u64, r: u64) -> Term {
+        fn_graph(
+            op,
+            &[
+                w_lit(w).unwrap(),
+                ival(nat(a)).unwrap(),
+                ival(nat(b)).unwrap(),
+                ival(nat(c)).unwrap(),
+            ],
+            &ival(nat(r)).unwrap(),
+        )
+        .unwrap()
+    }
+    fn nat_list(xs: &[u64]) -> Term {
+        let mut out = con("list");
+        for &x in xs {
+            out = app(out, wrap_nat(nat(x)).unwrap()).unwrap();
+        }
+        out
+    }
+    fn serialize_fact(op: &str, w: u64, a: u64, xs: &[u64]) -> Term {
+        serialize_term_fact(op, w, nat(a), xs)
+    }
+    fn serialize_term_fact(op: &str, w: u64, a: Term, xs: &[u64]) -> Term {
+        fn_graph(op, &[w_lit(w).unwrap(), ival(a).unwrap()], &nat_list(xs)).unwrap()
+    }
+    fn inverse_serialize_fact(op: &str, w: u64, xs: &[u64], a: u64) -> Term {
+        inverse_serialize_term_fact(op, w, xs, nat(a))
+    }
+    fn inverse_serialize_term_fact(op: &str, w: u64, xs: &[u64], a: Term) -> Term {
+        fn_graph(op, &[w_lit(w).unwrap(), nat_list(xs)], &ival(a).unwrap()).unwrap()
+    }
+    fn lane_list(xs: &[u64]) -> Term {
+        let mut out = con("list");
+        for &x in xs {
+            out = app(out, ival(nat(x)).unwrap()).unwrap();
+        }
+        out
+    }
+    fn lanes_fact(lane: &str, dim: u64, v: Term, xs: &[u64]) -> Term {
+        fn_graph(
+            "lanes_",
+            &[lane_shape(lane, dim).unwrap(), ival(v).unwrap()],
+            &lane_list(xs),
+        )
+        .unwrap()
+    }
+    fn inv_lanes_fact(lane: &str, dim: u64, xs: &[u64], v: Term) -> Term {
+        fn_graph(
+            "inv_lanes_",
+            &[lane_shape(lane, dim).unwrap(), lane_list(xs)],
+            &ival(v).unwrap(),
+        )
+        .unwrap()
+    }
+    fn wrap_fact(m: u64, n: u64, a: u64, r: u64) -> Term {
+        fn_graph(
+            "wrap__",
+            &[w_lit(m).unwrap(), w_lit(n).unwrap(), ival(nat(a)).unwrap()],
+            &ival(nat(r)).unwrap(),
+        )
+        .unwrap()
+    }
+    fn extend_fact(op: &str, m: u64, n: u64, sx: &str, a: u64, r: u64) -> Term {
+        let widths = if op == "iextend_" { (n, m) } else { (m, n) };
+        fn_graph(
+            op,
+            &[
+                w_lit(widths.0).unwrap(),
+                w_lit(widths.1).unwrap(),
+                sx_case(sx).unwrap(),
+                ival(nat(a)).unwrap(),
+            ],
             &ival(nat(r)).unwrap(),
         )
         .unwrap()
@@ -908,6 +1467,430 @@ mod tests {
                 w,
             );
         }
+    }
+
+    #[test]
+    fn integer_conversion_matrix_is_exact_and_fail_closed() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.ops, 35);
+        assert_eq!(report.zero_clause_ops, 24);
+
+        // Complete reachable wrap matrix, checked against an independent
+        // bit-mask oracle. Use inputs with both kept and discarded high bits.
+        for m in WIDTHS {
+            for n in WIDTHS {
+                let mask_m = if m == 64 { u64::MAX } else { (1u64 << m) - 1 };
+                let mask_n = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
+                let a = 0xa5a5_f00f_dead_beefu64 & mask_m;
+                let expected = a & mask_n;
+                assert!(derivable_at(&clauses, &wrap_fact(m, n, a, expected)));
+                let wrong = expected.wrapping_add(1) & mask_n;
+                if wrong != expected {
+                    assert!(!derivable_at(&clauses, &wrap_fact(m, n, a, wrong)));
+                }
+            }
+        }
+
+        // Saturating narrowing, including values around both signed bounds.
+        for m in WIDTHS {
+            for n in WIDTHS {
+                if m <= n {
+                    continue;
+                }
+                let source_mask = if m == 64 { u64::MAX } else { (1u64 << m) - 1 };
+                let target_mask = (1u64 << n) - 1;
+                let umax = target_mask;
+                let smin = -(1i128 << (n - 1));
+                let smax = (1i128 << (n - 1)) - 1;
+                let samples = [
+                    0,
+                    1,
+                    umax,
+                    umax.saturating_add(1) & source_mask,
+                    (1u64 << (m - 1)) - 1,
+                    1u64 << (m - 1),
+                    source_mask,
+                ];
+                for a in samples {
+                    let u_expected = a.min(umax);
+                    let signed_source = if a & (1u64 << (m - 1)) == 0 {
+                        a as i128
+                    } else {
+                        a as i128 - (1i128 << m)
+                    };
+                    let signed_clamped = signed_source.clamp(smin, smax);
+                    let s_expected = if signed_clamped < 0 {
+                        ((1i128 << n) + signed_clamped) as u64
+                    } else {
+                        signed_clamped as u64
+                    };
+                    for (sx, expected) in [("U", u_expected), ("S", s_expected)] {
+                        assert!(
+                            derivable_at(&clauses, &extend_fact("narrow__", m, n, sx, a, expected)),
+                            "narrow__ {m}->{n} {sx} at {a:#x}"
+                        );
+                        let wrong = expected.wrapping_add(1) & target_mask;
+                        assert!(
+                            !derivable_at(&clauses, &extend_fact("narrow__", m, n, sx, a, wrong)),
+                            "narrow__ accepted wrong {m}->{n} {sx} result"
+                        );
+                    }
+                }
+            }
+        }
+
+        // Cross-carrier extension and in-place low-bit extension share the
+        // same oracle. Exercise both source sign classes at every m<n pair.
+        for m in WIDTHS {
+            for n in WIDTHS {
+                if m >= n {
+                    continue;
+                }
+                let source_mask = (1u64 << m) - 1;
+                let target_mask = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
+                for a in [0u64, 1, (1u64 << (m - 1)) - 1, 1u64 << (m - 1), source_mask] {
+                    let unsigned = a;
+                    let signed = if a & (1u64 << (m - 1)) == 0 {
+                        a
+                    } else {
+                        a | (target_mask ^ source_mask)
+                    };
+                    for (sx, expected) in [("U", unsigned), ("S", signed)] {
+                        for op in ["extend__", "iextend_"] {
+                            assert!(
+                                derivable_at(&clauses, &extend_fact(op, m, n, sx, a, expected)),
+                                "{op} {m}->{n} {sx} at {a:#x}"
+                            );
+                            let wrong = expected.wrapping_add(1) & target_mask;
+                            assert!(
+                                !derivable_at(&clauses, &extend_fact(op, m, n, sx, a, wrong)),
+                                "{op} accepted wrong {m}->{n} {sx} result"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // No convenient totalisation: ill-typed source carriers and
+        // unsupported same-width `extend__` calls derive nothing.
+        assert!(!derivable_at(&clauses, &wrap_fact(8, 32, 256, 256)));
+        assert!(!derivable_at(
+            &clauses,
+            &extend_fact("extend__", 32, 32, "U", 7, 7)
+        ));
+        assert!(!derivable_at(
+            &clauses,
+            &extend_fact("narrow__", 16, 32, "U", 7, 7)
+        ));
+        // A float-shaped payload cannot match the integer `%` carrier.
+        let float_payload = app(con("case.F32"), con("tup")).unwrap();
+        let float_attempt = fn_graph(
+            "wrap__",
+            &[w_lit(32).unwrap(), w_lit(32).unwrap(), float_payload],
+            &ival(nat(0)).unwrap(),
+        )
+        .unwrap();
+        assert!(!derivable_at(&clauses, &float_attempt));
+    }
+
+    /// Exhaustive 8-bit oracle for the fixed-width bit-structure clauses.
+    ///
+    /// Every unary input and binary input pair is checked at the unique Rust
+    /// result. `ibitselect_` additionally exhausts all 256 masks over an
+    /// edge-complete operand grid; its clause uses the same independently
+    /// checked per-bit selector expression. Wrong-result refusal is exercised
+    /// for every operation by the full-width edge test below (doing three
+    /// kernel reductions at all 278k exhaustive points would make this narrow
+    /// test needlessly slow).
+    #[test]
+    #[ignore = "explicit exhaustive HOL replay (~minutes); fast width/edge oracle runs by default"]
+    fn bit_structure_matches_rust_oracle_exhaustive_w8() {
+        let clauses = bit_structure(8).unwrap();
+        for a in 0u64..=u8::MAX as u64 {
+            let au = a as u8;
+            for (op, expected) in [
+                ("inot_", (!au) as u64),
+                ("irev_", au.reverse_bits() as u64),
+                ("ipopcnt_", au.count_ones() as u64),
+            ] {
+                assert!(
+                    derivable_at(&clauses, &un_fact(op, 8, a, expected)),
+                    "{op}({a}) = {expected}"
+                );
+            }
+            for b in 0u64..=u8::MAX as u64 {
+                let bu = b as u8;
+                for (op, expected) in [
+                    ("iand_", (au & bu) as u64),
+                    ("iandnot_", (au & !bu) as u64),
+                    ("ior_", (au | bu) as u64),
+                    ("ixor_", (au ^ bu) as u64),
+                ] {
+                    assert!(
+                        derivable_at(&clauses, &bin_fact(op, 8, a, b, expected)),
+                        "{op}({a}, {b}) = {expected}"
+                    );
+                }
+            }
+        }
+
+        let edge = [0u64, 1, 0x55, 0xaa, 0x7f, 0x80, 0xfe, 0xff];
+        for a in edge {
+            for b in edge {
+                for c in 0u64..=u8::MAX as u64 {
+                    let expected = ((a & c) | (b & !c)) & 0xff;
+                    assert!(
+                        derivable_at(&clauses, &tern_fact("ibitselect_", 8, a, b, c, expected)),
+                        "ibitselect_({a}, {b}, {c}) = {expected}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Fast exhaustive arithmetic-oracle check for all 8-bit inputs. This is
+    /// independent Rust arithmetic over the same per-bit identities used by
+    /// the HOL clauses; the tests around it replay those clause terms through
+    /// the kernel at every width.
+    #[test]
+    fn bit_structure_formulas_exhaustive_w8() {
+        let bit = |x: u8, i: u32| (x >> i) & 1;
+        let assemble = |f: &dyn Fn(u32) -> u8| -> u8 { (0..8).fold(0, |r, i| r | (f(i) << i)) };
+        for a in u8::MIN..=u8::MAX {
+            let reverse = (0..8).fold(0u8, |r, i| r | (bit(a, i) << (7 - i)));
+            let popcount = (0..8).map(|i| bit(a, i) as u32).sum::<u32>();
+            assert_eq!(!a, 255 - a);
+            assert_eq!(a.reverse_bits(), reverse);
+            assert_eq!(a.count_ones(), popcount);
+            for b in u8::MIN..=u8::MAX {
+                let and = assemble(&|i| bit(a, i) * bit(b, i));
+                let andnot = assemble(&|i| bit(a, i) * (1 - bit(b, i)));
+                let or = assemble(&|i| bit(a, i) + bit(b, i) - bit(a, i) * bit(b, i));
+                let xor = assemble(&|i| bit(a, i) + bit(b, i) - 2 * bit(a, i) * bit(b, i));
+                assert_eq!(a & b, and);
+                assert_eq!(a & !b, andnot);
+                assert_eq!(a | b, or);
+                assert_eq!(a ^ b, xor);
+            }
+        }
+        // Exhaust every mask over an edge-complete pair grid for ternary
+        // bitselect; the all-a/all-b endpoints and alternating masks expose
+        // operand-order and complement mistakes immediately.
+        let edge = [0u8, 1, 0x55, 0xaa, 0x7f, 0x80, 0xfe, 0xff];
+        for a in edge {
+            for b in edge {
+                for c in u8::MIN..=u8::MAX {
+                    let selected =
+                        assemble(&|i| bit(a, i) * bit(c, i) + bit(b, i) * (1 - bit(c, i)));
+                    assert_eq!((a & c) | (b & !c), selected);
+                }
+            }
+        }
+    }
+
+    /// Representative full-width edge vectors ensure the emitted 16/32/64
+    /// clauses use the requested carrier width (rather than accidentally
+    /// inheriting the compact w=8 oracle's arithmetic).
+    #[test]
+    fn bit_structure_full_width_edges() {
+        let (clauses, _) = builtin_clauses().unwrap();
+        let cases = [
+            (16, 0xa55a, 0x0ff0, 0x3333),
+            (32, 0x8000_0001, 0xffff_0000, 0xaaaa_5555),
+            (
+                64,
+                0x8000_0000_0000_0001,
+                0xffff_0000_ffff_0000,
+                0xaaaa_5555_aaaa_5555,
+            ),
+        ];
+        for (w, a, b, c) in cases {
+            let mask = if w == 64 { u64::MAX } else { (1u64 << w) - 1 };
+            let checks = [
+                ("iand_", a & b),
+                ("iandnot_", a & !b & mask),
+                ("ior_", a | b),
+                ("ixor_", a ^ b),
+            ];
+            for (op, expected) in checks {
+                assert!(derivable_at(&clauses, &bin_fact(op, w, a, b, expected)));
+                assert!(!derivable_at(
+                    &clauses,
+                    &bin_fact(op, w, a, b, expected ^ 1)
+                ));
+            }
+            for (op, expected) in [
+                ("inot_", !a & mask),
+                ("irev_", a.reverse_bits() >> (64 - w)),
+                ("ipopcnt_", a.count_ones() as u64),
+            ] {
+                assert!(derivable_at(&clauses, &un_fact(op, w, a, expected)));
+                assert!(!derivable_at(&clauses, &un_fact(op, w, a, expected ^ 1)));
+            }
+            let selected = (a & c) | (b & !c);
+            assert!(derivable_at(
+                &clauses,
+                &tern_fact("ibitselect_", w, a, b, c, selected)
+            ));
+            assert!(!derivable_at(
+                &clauses,
+                &tern_fact("ibitselect_", w, a, b, c, selected ^ 1)
+            ));
+        }
+    }
+
+    /// Integer serialization is exact in both directions: little-endian
+    /// bit/byte lists round-trip at every reachable width, while a changed
+    /// element, result, length, or out-of-range element is rejected by the
+    /// same kernel-side arithmetic that defines the graph.
+    #[test]
+    fn integer_serialization_round_trips_and_refuses_wrong_results() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.clauses, 304);
+        assert_eq!(report.ops, 35);
+        assert_eq!(report.zero_clause_ops, 24);
+
+        for (w, a) in [
+            (8, 0xa5),
+            (16, 0xa55a),
+            (32, 0x8000_00a5),
+            (64, 0x8000_0000_0000_00a5),
+        ] {
+            let bits: Vec<u64> = (0..w).map(|i| (a >> i) & 1).collect();
+            let bytes: Vec<u64> = (0..w / 8).map(|i| (a >> (8 * i)) & 0xff).collect();
+            for (fwd, inv, xs) in [
+                ("ibits_", "inv_ibits_", bits.as_slice()),
+                ("ibytes_", "inv_ibytes_", bytes.as_slice()),
+            ] {
+                assert!(derivable_at(&clauses, &serialize_fact(fwd, w, a, xs)));
+                assert!(derivable_at(
+                    &clauses,
+                    &inverse_serialize_fact(inv, w, xs, a)
+                ));
+
+                let mut changed = xs.to_vec();
+                changed[0] ^= 1;
+                assert!(!derivable_at(
+                    &clauses,
+                    &serialize_fact(fwd, w, a, &changed)
+                ));
+                assert!(!derivable_at(
+                    &clauses,
+                    &inverse_serialize_fact(inv, w, xs, a ^ 1)
+                ));
+                assert!(!derivable_at(
+                    &clauses,
+                    &inverse_serialize_fact(inv, w, &xs[..xs.len() - 1], a)
+                ));
+            }
+
+            let mut bad_bit = bits.clone();
+            bad_bit[0] = 2;
+            assert!(!derivable_at(
+                &clauses,
+                &inverse_serialize_fact("inv_ibits_", w, &bad_bit, a)
+            ));
+            let mut bad_byte = bytes.clone();
+            bad_byte[0] = 256;
+            assert!(!derivable_at(
+                &clauses,
+                &inverse_serialize_fact("inv_ibytes_", w, &bad_byte, a)
+            ));
+        }
+
+        // Real corpus width: `v128.const` calls `inv_ibytes_(128, ...)`.
+        // Put a byte beyond the u64 range (byte 15 = 2^120) to prove the
+        // clause genuinely reconstructs all 128 bits rather than truncating.
+        let mut high = vec![0u64; 16];
+        high[15] = 1;
+        assert!(derivable_at(
+            &clauses,
+            &serialize_term_fact("ibytes_", 128, p2(120).unwrap(), &high)
+        ));
+        assert!(derivable_at(
+            &clauses,
+            &inverse_serialize_term_fact("inv_ibytes_", 128, &high, p2(120).unwrap())
+        ));
+        let mut wrong_place = high.clone();
+        wrong_place[15] = 0;
+        wrong_place[7] = 1;
+        assert!(!derivable_at(
+            &clauses,
+            &inverse_serialize_term_fact("inv_ibytes_", 128, &wrong_place, p2(120).unwrap())
+        ));
+    }
+
+    /// Integer SIMD lane decomposition is an exact shape-indexed isomorphism:
+    /// all four integer shapes round-trip; changed lanes/vectors, malformed
+    /// lengths, lane overflow, and unsupported float shapes are rejected.
+    #[test]
+    fn integer_lanes_round_trip_and_fail_closed() {
+        let (clauses, _) = builtin_clauses().unwrap();
+        for (lane, w, dim) in INTEGER_LANE_SHAPES {
+            let xs: Vec<u64> = (0..dim).map(|i| i + 1).collect();
+            let v = sum(xs
+                .iter()
+                .enumerate()
+                .map(|(i, x)| Ok(mul(nat(*x), p2(w * i as u64)?)?)))
+            .unwrap();
+            assert!(derivable_at(
+                &clauses,
+                &lanes_fact(lane, dim, v.clone(), &xs)
+            ));
+            assert!(derivable_at(
+                &clauses,
+                &inv_lanes_fact(lane, dim, &xs, v.clone())
+            ));
+
+            let mut changed = xs.clone();
+            changed[0] += 1;
+            assert!(!derivable_at(
+                &clauses,
+                &lanes_fact(lane, dim, v.clone(), &changed)
+            ));
+            assert!(!derivable_at(
+                &clauses,
+                &inv_lanes_fact(lane, dim, &xs, add(v.clone(), nat(1)).unwrap())
+            ));
+            assert!(!derivable_at(
+                &clauses,
+                &inv_lanes_fact(lane, dim, &xs[..xs.len() - 1], v.clone())
+            ));
+
+            let mut overflow = xs.clone();
+            overflow[0] = 1u64 << w.min(63);
+            if w == 64 {
+                // `u64` cannot spell 2^64; malformed lengths and wrong vectors
+                // already exercise fail-closed I64. Other widths hit the live
+                // lane carrier guard directly.
+                continue;
+            }
+            assert!(!derivable_at(
+                &clauses,
+                &inv_lanes_fact(lane, dim, &overflow, v)
+            ));
+        }
+
+        let xs = [1, 2, 3, 4];
+        let v = nat(0x0000_0004_0000_0003);
+        assert!(!derivable_at(
+            &clauses,
+            &fn_graph(
+                "lanes_",
+                &[lane_shape("F32", 4).unwrap(), ival(v).unwrap()],
+                &lane_list(&xs),
+            )
+            .unwrap()
+        ));
+
+        // A live bit above u64 proves the 128-bit carrier is not truncated.
+        let mut high = vec![0u64; 16];
+        high[15] = 1;
+        assert!(derivable_at(
+            &clauses,
+            &inv_lanes_fact("I8", 16, &high, p2(120).unwrap())
+        ));
     }
 
     /// `idiv_`/`irem_` vs Rust: truncating division, dividend-sign
@@ -1052,5 +2035,48 @@ mod tests {
         for r in [0u64, 1] {
             assert!(!derivable_at(&clauses, &sx_fact("ilt_", w, "U", 300, 5, r)));
         }
+    }
+
+    #[test]
+    fn unsigned_rounded_average_is_exact_and_fail_closed() {
+        let (clauses, report) = builtin_clauses().unwrap();
+        assert_eq!(report.ops, 35);
+        assert_eq!(report.zero_clause_ops, 24);
+
+        for (w, points) in [
+            (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),
+            (
+                16,
+                vec![(0, 0), (0, 1), (1, 1), (1234, 5678), (65535, 65535)],
+            ),
+        ] {
+            let modulus = 1u64 << w;
+            for (a, b) in points {
+                let expected = (a + b + 1) / 2;
+                assert!(derivable_at(
+                    &clauses,
+                    &sx_fact("iavgr_", w, "U", a, b, expected)
+                ));
+                assert!(!derivable_at(
+                    &clauses,
+                    &sx_fact("iavgr_", w, "U", a, b, (expected + 1) % modulus)
+                ));
+                assert!(!derivable_at(
+                    &clauses,
+                    &sx_fact("iavgr_", w, "S", a, b, expected)
+                ));
+            }
+        }
+
+        // AVGR exists only for the I8x16 and I16x8 instruction shapes.
+        assert!(!derivable_at(
+            &clauses,
+            &sx_fact("iavgr_", 32, "U", 1, 2, 2)
+        ));
+        // Erased HOL encodings still get explicit carrier checks.
+        assert!(!derivable_at(
+            &clauses,
+            &sx_fact("iavgr_", 8, "U", 256, 0, 128)
+        ));
     }
 }

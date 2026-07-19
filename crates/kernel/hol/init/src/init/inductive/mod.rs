@@ -88,4 +88,7 @@ pub use engine::{NatEngineBackend, nat_backend, nat_spec};
 pub use nat_binary_api::DoubleSuccNat;
 pub use nat_unary_api::UnaryNat;
 pub use sig::{Arg, Constructor, GenArg, GenConstructor, GenSig, InductiveSig};
-pub use variant::{ChurchBackend, CoprodBackend, VCtor, Variant, VariantBackend, self_ty_var};
+pub use variant::{
+    ChurchBackend, CoprodBackend, CoprodVariantTheory, VCtor, Variant, VariantBackend,
+    VariantTheory, VariantTheoryBackend, self_ty_var,
+};

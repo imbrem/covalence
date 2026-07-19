@@ -46,5 +46,6 @@ pub use wasm_spec_ast as wasm;
 
 pub mod cfg;
 pub mod grammar;
+pub mod indexed;
 pub mod parse;
 pub mod regex;

@@ -1,18 +1,20 @@
 //! **`Else` (`-- otherwise`) preprocessing** — rewrite each `SpecTecPrem::Else`
-//! into ordinary `If` premises: the conjunction of **negations** of each
-//! textually-earlier *sibling* rule's own `If` conditions (design note leg 5,
-//! `notes/vibes/logics/spectec-total-load.md`).
+//! into ordinary premises representing the conjunction of **negations** of
+//! each textually-earlier sibling's applicability (design note leg 5,
+//! `notes/vibes/logics/spectec-total-load.md`). Shared relation judgements and
+//! condition conjuncts are factored against the current rule before negation.
 //!
 //! ## Semantics
 //!
 //! `-- otherwise` means "no textually-preceding rule of the same conclusion
-//! group applies". Writing `A_j` for rule `j`'s own `If`-conjunction, rule
-//! `j`'s *effective* guard is `otherwise_j ∧ A_j`, and an easy induction shows
-//! `⋀_{j<k} ¬(effective_j) = ⋀_{j<k} ¬A_j` — so it suffices to negate each
-//! earlier sibling's **own** `If` premises, ignoring their `Else` markers.
-//! Each sibling contributes one `If` premise `¬A_j` (`¬(c₁ ∧ … ∧ cₘ)` pushed to
-//! `¬c₁ ∨ … ∨ ¬cₘ`; a condition-free sibling contributes `false` — it always
-//! applies, so the `otherwise` rule can never fire).
+//! group applies". Writing `A_j` for rule `j`'s own-premise conjunction, rule
+//! `j`'s effective guard is `otherwise_j ∧ A_j`; induction gives
+//! `⋀_{j<k} ¬(effective_j) = ⋀_{j<k} ¬A_j`, so earlier `Else` markers are
+//! ignored. Under premises `P` already required by the current rule,
+//! `P ∧ ¬(P ∧ G)` is simplified exactly to `P ∧ ¬G`. Remaining ordinary
+//! conditions become one `If` premise per sibling, with De Morgan pushed to
+//! the leaves. A remaining positive relation judgement cannot be negated in
+//! the positive Horn encoding and therefore makes the rewrite fail closed.
 //!
 //! ## Sibling matching (safety-critical)
 //!
@@ -33,8 +35,19 @@ use std::collections::BTreeMap;
 
 use covalence_spectec::ast::{
     SpecTecBinOp, SpecTecBoolTyp, SpecTecCmpOp, SpecTecExp, SpecTecExpField, SpecTecIterExp,
-    SpecTecOpTyp, SpecTecPath, SpecTecPrem, SpecTecRule, SpecTecUnOp,
+    SpecTecOpTyp, SpecTecParam, SpecTecPath, SpecTecPrem, SpecTecRule, SpecTecTyp, SpecTecUnOp,
 };
+
+use super::super::syntax::CaseCatalogue;
+
+/// Internal relation-name prefix used to carry an exact negative
+/// single-judgement applicability test from Else preprocessing to the HOL
+/// decision-family boundary.
+///
+/// NUL cannot occur in a SpecTec identifier, so this cannot collide with a
+/// source relation.  The marker is consumed by `flatten`; it is never emitted
+/// as a HOL source judgement.
+pub(super) const NEGATED_RULE_PREFIX: &str = "\0decision-no:";
 
 /// What happened to a rule under [`preprocess_else`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +72,23 @@ pub struct PreprocessedRule {
 /// into the negations of its earlier siblings' `If` conditions. Total: refusals
 /// keep the original rule (with its `Else`) and report why.
 pub fn preprocess_else(rules: &[SpecTecRule]) -> Vec<PreprocessedRule> {
+    preprocess_else_impl(rules, None)
+}
+
+/// Catalogue-aware [`preprocess_else`]. Besides the general correspondence
+/// rewrite, this can simplify a finite constructor-pattern complement when the
+/// catalogue proves the scrutinized variant exhaustive.
+pub fn preprocess_else_with_catalogue(
+    rules: &[SpecTecRule],
+    cat: &CaseCatalogue,
+) -> Vec<PreprocessedRule> {
+    preprocess_else_impl(rules, Some(cat))
+}
+
+fn preprocess_else_impl(
+    rules: &[SpecTecRule],
+    cat: Option<&CaseCatalogue>,
+) -> Vec<PreprocessedRule> {
     rules
         .iter()
         .enumerate()
@@ -70,7 +100,11 @@ pub fn preprocess_else(rules: &[SpecTecRule]) -> Vec<PreprocessedRule> {
                     status: ElseStatus::NoElse,
                 };
             }
-            match rewrite_else(rule, &rules[..k]) {
+            let rewritten = cat
+                .and_then(|cat| handler_catch_complement(rule, &rules[..k], cat))
+                .map(Ok)
+                .unwrap_or_else(|| rewrite_else(rule, &rules[..k]));
+            match rewritten {
                 Ok((rule, negated)) => PreprocessedRule {
                     rule,
                     status: ElseStatus::Rewritten { negated },
@@ -84,18 +118,205 @@ pub fn preprocess_else(rules: &[SpecTecRule]) -> Vec<PreprocessedRule> {
         .collect()
 }
 
+/// The finite complement of the exception-handler catch dispatch.
+///
+/// The source fallback scrutinizes one `catch`, whose declared variant has
+/// exactly `CATCH`, `CATCH_REF`, `CATCH_ALL`, and `CATCH_ALL_REF`. The first
+/// two earlier clauses are conditional on the exception tag; the latter two
+/// are unconditional. Hence the complement is the disjunction
+///
+/// ```text
+/// catch = CATCH(x,l)     ∧ tag mismatch
+/// catch = CATCH_REF(x,l) ∧ tag mismatch
+/// ```
+///
+/// Constructor equalities expose `x,l` as clause-instantiation witnesses.
+/// The two unconditional constructors contribute no branch. Every source and
+/// catalogue shape is checked; any drift returns `None` and the ordinary
+/// fail-closed path remains in force.
+fn handler_catch_complement(
+    rule: &SpecTecRule,
+    prior: &[SpecTecRule],
+    cat: &CaseCatalogue,
+) -> Option<(SpecTecRule, usize)> {
+    let SpecTecRule::Rule { x, ps, op, e, prs } = rule;
+    if x != "throw_ref-handler-next"
+        || !prs.iter().any(|p| matches!(p, SpecTecPrem::Else))
+        || !ps.iter().any(|p| {
+            matches!(
+                p,
+                SpecTecParam::Exp {
+                    x,
+                    t: SpecTecTyp::Var { x: ty, as1 }
+                } if x == "catch" && ty == "catch" && as1.is_empty()
+            )
+        })
+    {
+        return None;
+    }
+    let declared = cat.cases_of("catch")?;
+    if declared.len() != 4 {
+        return None;
+    }
+    let (our_catches, our_body) = handler_parts(redex(e))?;
+    let (our_head, our_tail) = cons_parts(our_catches)?;
+    if !matches!(our_head, SpecTecExp::Var { id } if id == "catch") {
+        return None;
+    }
+    let expected = [
+        ("throw_ref-handler-catch", true),
+        ("throw_ref-handler-catch_ref", true),
+        ("throw_ref-handler-catch_all", false),
+        ("throw_ref-handler-catch_all_ref", false),
+    ];
+    let mut seen_keys = std::collections::BTreeSet::new();
+    let mut branches = Vec::new();
+    for (name, conditional) in expected {
+        let sibling = prior.iter().find(|r| {
+            let SpecTecRule::Rule { x, .. } = r;
+            x == name
+        })?;
+        let SpecTecRule::Rule {
+            e: sibling_e,
+            prs: sibling_prs,
+            ..
+        } = sibling;
+        let (sibling_catches, sibling_body) = handler_parts(redex(sibling_e))?;
+        let (sibling_head, sibling_tail) = cons_parts(sibling_catches)?;
+        let SpecTecExp::Case { op: ctor_op, .. } = sibling_head else {
+            return None;
+        };
+        seen_keys.insert(crate::wasm::encode::mixop_key(ctor_op));
+        // The tail and thrown exception body are shared. This also rejects a
+        // coincidentally named rule with a different handler shape.
+        let mut common = BTreeMap::new();
+        if sibling_tail != our_tail || sibling_body != our_body {
+            return None;
+        }
+
+        if !conditional {
+            if !sibling_prs.is_empty() {
+                return None;
+            }
+            continue;
+        }
+        if sibling_prs
+            .iter()
+            .any(|p| !matches!(p, SpecTecPrem::If { .. }))
+        {
+            return None;
+        }
+
+        // Preserve sibling-local constructor payload variables as fresh
+        // witnesses, while translating all shared variables through the
+        // correspondence established above.
+        let mut all_vars = Vec::new();
+        free_vars(redex(sibling_e), &mut all_vars);
+        for prem in sibling_prs {
+            if let SpecTecPrem::If { e } = prem {
+                free_vars(e, &mut all_vars);
+            }
+        }
+        for id in all_vars {
+            common.entry(id.clone()).or_insert(SpecTecExp::Var { id });
+        }
+        let constructor = subst_vars(sibling_head, &common).ok()?;
+        let mut guards = Vec::new();
+        for prem in sibling_prs {
+            let SpecTecPrem::If { e } = prem else {
+                unreachable!()
+            };
+            guards.push(subst_vars(e, &common).ok()?);
+        }
+        let mut pattern_vars = Vec::new();
+        free_vars(redex(e), &mut pattern_vars);
+        free_vars(&constructor, &mut pattern_vars);
+        let projected = super::decs::project_guard_witnesses(&guards, &pattern_vars)?;
+        let mismatch = negate_conj(&projected).ok()?;
+        let selects_constructor = SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Eq,
+            t: bool_ty(),
+            e1: Box::new(our_head.clone()),
+            e2: Box::new(constructor),
+        };
+        branches.push(SpecTecExp::Bin {
+            op: SpecTecBinOp::And,
+            t: bool_ty(),
+            e1: Box::new(selects_constructor),
+            e2: Box::new(mismatch),
+        });
+    }
+
+    let declared: std::collections::BTreeSet<_> = declared.iter().cloned().collect();
+    if seen_keys != declared || branches.len() != 2 {
+        return None;
+    }
+    let guard = SpecTecExp::Bin {
+        op: SpecTecBinOp::Or,
+        t: bool_ty(),
+        e1: Box::new(branches.remove(0)),
+        e2: Box::new(branches.remove(0)),
+    };
+    let mut new_prs = Vec::with_capacity(prs.len());
+    for prem in prs {
+        if matches!(prem, SpecTecPrem::Else) {
+            new_prs.push(SpecTecPrem::If { e: guard.clone() });
+        } else {
+            new_prs.push(prem.clone());
+        }
+    }
+    Some((
+        SpecTecRule::Rule {
+            x: x.clone(),
+            ps: ps.clone(),
+            op: op.clone(),
+            e: e.clone(),
+            prs: new_prs,
+        },
+        4,
+    ))
+}
+
+/// `(catch-list, handler-body)` of the first `HANDLER_` node in `e`.
+fn handler_parts(e: &SpecTecExp) -> Option<(&SpecTecExp, &SpecTecExp)> {
+    if let SpecTecExp::Case { op, e1 } = strip_sub(e)
+        && crate::wasm::encode::mixop_key(op).starts_with("HANDLER_")
+        && let SpecTecExp::Tup { es } = strip_sub(e1)
+        && es.len() == 3
+    {
+        return Some((&es[1], &es[2]));
+    }
+    let mut kids = Vec::new();
+    children(e, &mut kids);
+    kids.into_iter().find_map(handler_parts)
+}
+
+/// The head and tail of a syntactic nonempty list `List[head] ++ tail`.
+fn cons_parts(e: &SpecTecExp) -> Option<(&SpecTecExp, &SpecTecExp)> {
+    let SpecTecExp::Cat { e1, e2 } = strip_sub(e) else {
+        return None;
+    };
+    let SpecTecExp::List { es } = strip_sub(e1) else {
+        return None;
+    };
+    (es.len() == 1).then(|| (&es[0], &**e2))
+}
+
 /// Rewrite the `Else` premise of `rule` against the textually-earlier `prior`
 /// rules. Returns the rewritten rule and the number of negated-guard premises.
 fn rewrite_else(rule: &SpecTecRule, prior: &[SpecTecRule]) -> Result<(SpecTecRule, usize), String> {
     let SpecTecRule::Rule { x, ps, op, e, prs } = rule;
     let our_lhs = redex(e);
 
-    // Collect one negated-guard condition per sibling.
+    // Collect one negated applicability premise per sibling.
     let our_tag = instr_tag(our_lhs);
     let mut negations = Vec::new();
     for p in prior {
         let SpecTecRule::Rule {
-            e: pe, prs: pprs, ..
+            x: prior_name,
+            e: pe,
+            prs: pprs,
+            ..
         } = p;
         // Group discriminator: upstream's `otherwise` desugaring is scoped to
         // the rule group of one instruction, and step-rule redexes end in
@@ -111,7 +332,7 @@ fn rewrite_else(rule: &SpecTecRule, prior: &[SpecTecRule]) -> Result<(SpecTecRul
         if instr_tag(redex(pe)).as_deref() != Some(our_tag.as_str()) {
             continue;
         }
-        let map = match correspond(redex(pe), our_lhs) {
+        let mut map = match correspond(redex(pe), our_lhs) {
             Corr::Disjoint => continue, // provably never overlaps: not a sibling
             Corr::Overlap(map) => map,
             Corr::Unknown => {
@@ -119,26 +340,163 @@ fn rewrite_else(rule: &SpecTecRule, prior: &[SpecTecRule]) -> Result<(SpecTecRul
                 return Err(format!("sibling-undecided:{px}"));
             }
         };
-        // A sibling's applicability must be a pure condition: `If`s only
-        // (its own `Else` markers are ignored — see the module docs algebra).
-        let mut conds = Vec::new();
+        // Factor relation judgements shared by the sibling and current rule.
+        // This may extend the variable correspondence with outputs bound by
+        // the shared judgement.
+        let mut unmatched_rules = Vec::new();
         for pp in pprs {
             match pp {
-                SpecTecPrem::If { e } => conds.push(subst_vars(e, &map)?),
-                SpecTecPrem::Else => {}
-                SpecTecPrem::Rule { .. } => return Err("sibling-rule-premise".into()),
+                SpecTecPrem::If { .. } | SpecTecPrem::Else => {}
+                SpecTecPrem::Rule {
+                    x: rx,
+                    as1,
+                    op: rop,
+                    e: re,
+                } => {
+                    // Under a Rule premise shared by the current clause,
+                    // `shared ∧ ¬(shared ∧ guards)` is exactly
+                    // `shared ∧ ¬guards`. Factor it rather than trying to
+                    // negate a relation judgement. Non-expression rule
+                    // arguments are rare here and remain conservative.
+                    if !as1.is_empty() {
+                        return Err("sibling-rule-premise".into());
+                    }
+                    let mut shared_map = None;
+                    for ours in prs {
+                        let SpecTecPrem::Rule {
+                            x,
+                            as1,
+                            op,
+                            e: ours_e,
+                        } = ours
+                        else {
+                            continue;
+                        };
+                        if x != rx || !as1.is_empty() || op != rop {
+                            continue;
+                        }
+                        // A textually identical shared judgement can bind
+                        // variables not mentioned by the outer conclusion.
+                        // Extend the correspondence with those identity
+                        // bindings before translating the sibling's guards.
+                        let mut exact_candidate = map.clone();
+                        let mut vars = Vec::new();
+                        free_vars(re, &mut vars);
+                        for id in vars {
+                            exact_candidate
+                                .entry(id.clone())
+                                .or_insert(SpecTecExp::Var { id });
+                        }
+                        if subst_vars(re, &exact_candidate).as_ref().ok() == Some(ours_e) {
+                            shared_map = Some(exact_candidate);
+                            break;
+                        }
+                        let mut candidate = map.clone();
+                        if matches!(unify(re, ours_e, &mut candidate), U::Ok) {
+                            shared_map = Some(candidate);
+                            break;
+                        }
+                    }
+                    if let Some(candidate) = shared_map {
+                        map = candidate;
+                    } else {
+                        // Outputs introduced by an unmatched judgement are
+                        // existential witnesses for that sibling's
+                        // applicability.  Give them identity mappings so
+                        // subsequent conditions can be translated as part of
+                        // the same conjunction.  They are never leaked into a
+                        // rewritten rule unless the whole conjunction can be
+                        // represented; the unsupported Rule-and-If case below
+                        // still fails closed.
+                        let mut vars = Vec::new();
+                        free_vars(re, &mut vars);
+                        for id in vars {
+                            map.entry(id.clone()).or_insert(SpecTecExp::Var { id });
+                        }
+                        unmatched_rules.push((rx, as1, rop, re));
+                    }
+                }
                 SpecTecPrem::Iter { .. } => return Err("sibling-iter-premise".into()),
                 SpecTecPrem::Let { .. } => return Err("sibling-let-premise".into()),
             }
         }
-        negations.push(negate_conj(&conds)?);
+
+        // Under a condition conjunct shared by the current rule,
+        // `shared ∧ ¬(shared ∧ guards)` is exactly
+        // `shared ∧ ¬guards`. Match at conjunction granularity so a sibling
+        // `A ∧ B` and current `B` leave only `¬A`.
+        let mut our_conds = Vec::new();
+        for pp in prs {
+            if let SpecTecPrem::If { e } = pp {
+                conjuncts(e, &mut our_conds);
+            }
+        }
+        let mut conds = Vec::new();
+        for pp in pprs {
+            let SpecTecPrem::If { e } = pp else {
+                continue;
+            };
+            let mut sibling_conds = Vec::new();
+            conjuncts(e, &mut sibling_conds);
+            for sibling_cond in sibling_conds {
+                let mut shared_map = None;
+                for our_cond in &our_conds {
+                    if let Some(candidate) = shared_expression(sibling_cond, our_cond, &map) {
+                        shared_map = Some(candidate);
+                        break;
+                    }
+                }
+                if let Some(candidate) = shared_map {
+                    map = candidate;
+                } else {
+                    conds.push(subst_vars(sibling_cond, &map)?);
+                }
+            }
+        }
+        match unmatched_rules.as_slice() {
+            [] => negations.push(SpecTecPrem::If {
+                e: negate_conj(&conds)?,
+            }),
+            // `¬R(args)` is routed to the positive, theorem-certified
+            // `decision.R(args,false)` interface.  Until that family is
+            // installed, lowering remains honestly opaque under the precise
+            // `decision.R` reason.  A conjunction `R ∧ condition` would need
+            // `¬R ∨ ¬condition`; positive Horn premises cannot express that
+            // disjunction, so it remains fail-closed below.
+            [(rx, as1, rop, re)] if conds.is_empty() && as1.is_empty() => {
+                negations.push(SpecTecPrem::Rule {
+                    x: format!("{NEGATED_RULE_PREFIX}{rx}"),
+                    as1: Vec::new(),
+                    op: (*rop).clone(),
+                    e: subst_vars(re, &map)?,
+                });
+            }
+            [(rx, as1, _, _)] => {
+                return Err(format!(
+                    "sibling-rule-premise:{rx}:args{}:conds{}",
+                    as1.len(),
+                    conds.len()
+                ));
+            }
+            _ => {
+                let names = unmatched_rules
+                    .iter()
+                    .map(|(x, as1, _, _)| format!("{x}/{}", as1.len()))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                return Err(format!(
+                    "sibling-rule-premise:{prior_name}:multiple:{names}:conds{}",
+                    conds.len()
+                ));
+            }
+        }
     }
 
     // Splice the negations in place of the `Else` premise(s).
     let mut new_prs = Vec::with_capacity(prs.len() + negations.len());
     for p in prs {
         if matches!(p, SpecTecPrem::Else) {
-            new_prs.extend(negations.iter().cloned().map(|e| SpecTecPrem::If { e }));
+            new_prs.extend(negations.iter().cloned());
         } else {
             new_prs.push(p.clone());
         }
@@ -178,19 +536,14 @@ fn redex(e: &SpecTecExp) -> &SpecTecExp {
 /// members always agree; `None` when no key is extractable.
 ///
 /// **Known coarseness (reviewed, deliberately kept):** wrapper rules tag by
-/// the wrapper's key, so e.g. every `HANDLER_`-wrapped rule shares one tag —
-/// `Step_read/throw_ref-handler-next`'s refusal blames the same-tagged
-/// `return_call_ref-handler` rather than its genuine `throw_ref-handler-*`
-/// siblings. Refining the tag by diving into the wrapper payload's
-/// instruction list is **unsound as a group discriminator**: a payload list
-/// ending in a *variable* segment (`… ++ [BR l] ++ instr*`, the
-/// `br-handler` shape) has no reliable last-literal, so two genuine group
-/// members could tag differently and a sibling's negated guard would be
-/// silently dropped — an over-approximation. And it would not unlock
-/// `handler-next` anyway: its genuine catch siblings overlap `Cat`-vs-`Cat`
-/// (`[CATCH x l] ++ catch'*` vs `[catch] ++ catch'*`), whose complement is a
-/// pattern disequality [`unify`] correctly refuses. Coarse tags only ever
-/// *add* sibling candidates, which is the conservative direction.
+/// the wrapper's key, so e.g. every `HANDLER_`-wrapped rule initially shares
+/// one tag. Refining the tag by diving into the wrapper payload's instruction
+/// list is **unsound as a group discriminator**: a payload ending in a
+/// variable segment has no reliable last literal. Instead, [`unify`] proves
+/// rigidly incompatible wrapper bodies disjoint (the return-call/throw case),
+/// while [`handler_catch_complement`] handles the genuine finite catch-pattern
+/// overlap under an exhaustive catalogue check. Coarse tags therefore only
+/// add candidates, the conservative direction.
 fn instr_tag(e: &SpecTecExp) -> Option<String> {
     use SpecTecExp as E;
     match strip_sub(e) {
@@ -334,10 +687,16 @@ fn unify(sib: &SpecTecExp, ours: &SpecTecExp, map: &mut BTreeMap<String, SpecTec
         (E::Opt { eo: None }, E::Opt { eo: None }) => U::Ok,
         (E::Opt { eo: Some(a) }, E::Opt { eo: Some(b) }) => unify(a, b, map),
         (E::Opt { .. }, E::Opt { .. }) => U::Clash,
-        // An exact-length literal list vs a concatenation with a longer
-        // guaranteed (literal-segment) length cannot match the same value.
+        // An exact-length literal list vs a concatenation can be compared
+        // exactly enough to prove disjointness.  Non-literal Cat segments are
+        // conservatively treated as arbitrary (possibly-empty) list
+        // languages; if no allocation of those segments places every fixed
+        // literal on a non-clashing exact element, the two list languages are
+        // disjoint.  A surviving allocation remains Unknown: choosing its
+        // split, and binding variables inside flexible segments, belongs to a
+        // fuller pattern compiler rather than this safety check.
         (E::List { es }, cat @ E::Cat { .. }) | (cat @ E::Cat { .. }, E::List { es }) => {
-            if min_cat_len(cat) > es.len() {
+            if min_cat_len(cat) > es.len() || cat_exact_disjoint(cat, es, map) {
                 U::Clash
             } else {
                 U::Unknown
@@ -368,6 +727,77 @@ fn min_cat_len(e: &SpecTecExp) -> usize {
     }
 }
 
+/// One piece of a flattened concatenation language. Literal `List` nodes
+/// contribute fixed elements; every other expression is widened to an
+/// arbitrary, possibly-empty list segment. Widening is deliberate: failure to
+/// find an overlap in the wider language is a sound disjointness proof, while
+/// a possible overlap merely leaves [`unify`] indeterminate.
+enum CatPiece<'a> {
+    Fixed(&'a [SpecTecExp]),
+    Flex,
+}
+
+fn cat_pieces<'a>(e: &'a SpecTecExp, out: &mut Vec<CatPiece<'a>>) {
+    match strip_sub(e) {
+        SpecTecExp::Cat { e1, e2 } => {
+            cat_pieces(e1, out);
+            cat_pieces(e2, out);
+        }
+        SpecTecExp::List { es } => out.push(CatPiece::Fixed(es)),
+        _ => out.push(CatPiece::Flex),
+    }
+}
+
+/// Whether the widened language of `cat` has empty intersection with the exact
+/// list `es`. This is a bounded search: each flexible segment receives
+/// `0..=es.len()` elements, and fixed pieces are checked by the ordinary
+/// structural unifier. `Unknown` is overlap-compatible; only a rigid `Clash`
+/// rejects a placement.
+fn cat_exact_disjoint(
+    cat: &SpecTecExp,
+    es: &[SpecTecExp],
+    initial: &BTreeMap<String, SpecTecExp>,
+) -> bool {
+    let mut pieces = Vec::new();
+    cat_pieces(cat, &mut pieces);
+
+    fn overlaps(
+        pieces: &[CatPiece<'_>],
+        es: &[SpecTecExp],
+        pos: usize,
+        map: &BTreeMap<String, SpecTecExp>,
+    ) -> bool {
+        let Some((piece, rest)) = pieces.split_first() else {
+            return pos == es.len();
+        };
+        match piece {
+            CatPiece::Fixed(fixed) => {
+                let Some(slice) = es.get(pos..pos.saturating_add(fixed.len())) else {
+                    return false;
+                };
+                if slice.len() != fixed.len() {
+                    return false;
+                }
+                let mut candidate = map.clone();
+                for (pattern, exact) in fixed.iter().zip(slice) {
+                    if matches!(unify(pattern, exact, &mut candidate), U::Clash) {
+                        return false;
+                    }
+                }
+                overlaps(rest, es, pos + fixed.len(), &candidate)
+            }
+            CatPiece::Flex => {
+                // The segment may consume any remaining prefix. Try every
+                // bounded allocation; a single possible placement prevents a
+                // disjointness claim.
+                (pos..=es.len()).any(|next| overlaps(rest, es, next, map))
+            }
+        }
+    }
+
+    !overlaps(&pieces, es, 0, initial)
+}
+
 /// The rigid discriminator of a pattern node, if it has one.
 fn rigid_kind(e: &SpecTecExp) -> Option<u8> {
     use SpecTecExp as E;
@@ -385,6 +815,53 @@ fn rigid_kind(e: &SpecTecExp) -> Option<u8> {
 
 fn bool_ty() -> SpecTecOpTyp {
     SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool)
+}
+
+fn conjuncts<'a>(e: &'a SpecTecExp, out: &mut Vec<&'a SpecTecExp>) {
+    if let SpecTecExp::Bin {
+        op: SpecTecBinOp::And,
+        e1,
+        e2,
+        ..
+    } = e
+    {
+        conjuncts(e1, out);
+        conjuncts(e2, out);
+    } else {
+        out.push(e);
+    }
+}
+
+/// Prove that two premise expressions are the same under `map`, extending
+/// the map with variables exposed only by that shared premise.
+fn shared_expression(
+    sibling: &SpecTecExp,
+    ours: &SpecTecExp,
+    map: &BTreeMap<String, SpecTecExp>,
+) -> Option<BTreeMap<String, SpecTecExp>> {
+    if subst_vars(sibling, map).as_ref().ok() == Some(ours) {
+        return Some(map.clone());
+    }
+
+    // SpecTec uses the same metavariable spelling across sibling clauses.
+    // Syntactic identity is useful evidence, but only after adding identity
+    // bindings for its free variables and rechecking by substitution.
+    if sibling == ours {
+        let mut candidate = map.clone();
+        let mut vars = Vec::new();
+        free_vars(sibling, &mut vars);
+        for id in vars {
+            candidate
+                .entry(id.clone())
+                .or_insert(SpecTecExp::Var { id });
+        }
+        if subst_vars(sibling, &candidate).as_ref().ok() == Some(ours) {
+            return Some(candidate);
+        }
+    }
+
+    let mut candidate = map.clone();
+    matches!(unify(sibling, ours, &mut candidate), U::Ok).then_some(candidate)
 }
 
 /// `¬(c₁ ∧ … ∧ cₘ)` as a SpecTec expression: `¬c₁ ∨ … ∨ ¬cₘ` (`m = 0` ⇒
@@ -766,6 +1243,7 @@ fn subst_path(p: &SpecTecPath, map: &BTreeMap<String, SpecTecExp>) -> Result<Spe
 mod tests {
     use super::*;
     use covalence_spectec::ast::{MixOp, SpecTecIter, SpecTecNum};
+    use covalence_spectec::wasm::get_wasm_spectec_ast;
 
     fn var(id: &str) -> SpecTecExp {
         SpecTecExp::Var { id: id.into() }
@@ -844,6 +1322,251 @@ mod tests {
                 &mut m
             ),
             U::Unknown
+        ));
+    }
+
+    /// A Cat pattern with a required rigid token is disjoint from an exact
+    /// list that contains no placement for that token, even when arbitrary
+    /// list segments surround it. This is the shape that separates
+    /// `return_call_ref-handler` from `throw_ref-handler-next`.
+    #[test]
+    fn unify_exact_list_vs_cat_required_token_clash() {
+        let return_call_body = SpecTecExp::Cat {
+            e1: Box::new(var("vals")),
+            e2: Box::new(SpecTecExp::Cat {
+                e1: Box::new(list(vec![case("RETURN_CALL_REF", var("yy"))])),
+                e2: Box::new(var("instrs")),
+            }),
+        };
+        let throw_body = list(vec![
+            case("REF.EXN_ADDR", var("a")),
+            case("THROW_REF", unit()),
+        ]);
+
+        let mut m = BTreeMap::new();
+        assert!(matches!(
+            unify(&return_call_body, &throw_body, &mut m),
+            U::Clash
+        ));
+        // Disjointness is structural and therefore also detected when the
+        // exact list occurs on the sibling side of the directional matcher.
+        let mut m = BTreeMap::new();
+        assert!(matches!(
+            unify(&throw_body, &return_call_body, &mut m),
+            U::Clash
+        ));
+
+        // A genuine placement must remain conservative: the leading and
+        // trailing flexible segments may consume the surrounding elements.
+        let with_return_call = list(vec![
+            case("REF.FUNC_ADDR", var("a")),
+            case("RETURN_CALL_REF", var("t")),
+            case("NOP", unit()),
+        ]);
+        let mut m = BTreeMap::new();
+        assert!(matches!(
+            unify(&return_call_body, &with_return_call, &mut m),
+            U::Unknown
+        ));
+    }
+
+    /// Corpus regression for the exact false-sibling attribution: the actual
+    /// elaborated return-call handler redex is rigidly disjoint from the
+    /// throw-handler fallback redex.
+    #[test]
+    fn real_return_call_handler_is_disjoint_from_throw_handler_next() {
+        fn find<'a>(
+            defs: &'a [covalence_spectec::ast::SpecTecDef],
+            name: &str,
+        ) -> Option<&'a SpecTecRule> {
+            use covalence_spectec::ast::SpecTecDef;
+            for def in defs {
+                match def {
+                    SpecTecDef::Rel { rules, .. } => {
+                        if let Some(rule) = rules.iter().find(|rule| {
+                            let SpecTecRule::Rule { x, .. } = rule;
+                            x == name
+                        }) {
+                            return Some(rule);
+                        }
+                    }
+                    SpecTecDef::Rec { ds } => {
+                        if let Some(rule) = find(ds, name) {
+                            return Some(rule);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let defs = get_wasm_spectec_ast();
+        let return_call = find(&defs, "return_call_ref-handler").expect("return-call handler");
+        let handler_next = find(&defs, "throw_ref-handler-next").expect("handler-next");
+        let SpecTecRule::Rule { e: return_e, .. } = return_call;
+        let SpecTecRule::Rule { e: next_e, .. } = handler_next;
+        assert!(matches!(
+            correspond(redex(return_e), redex(next_e)),
+            Corr::Disjoint
+        ));
+    }
+
+    /// The catalogue-aware finite complement rewrites the real handler
+    /// fallback into one DNF guard: the two conditional catch constructors
+    /// survive with tag-mismatch guards; the two unconditional catch-all
+    /// constructors contribute no branch.
+    #[test]
+    fn real_throw_handler_next_has_exact_finite_complement() {
+        use covalence_spectec::ast::SpecTecDef;
+
+        fn step_read(defs: &[SpecTecDef]) -> Option<&[SpecTecRule]> {
+            for def in defs {
+                match def {
+                    SpecTecDef::Rel { x, rules, .. } if x == "Step_read" => {
+                        return Some(rules);
+                    }
+                    SpecTecDef::Rec { ds } => {
+                        if let Some(rules) = step_read(ds) {
+                            return Some(rules);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let defs = get_wasm_spectec_ast();
+        let rules = step_read(&defs).expect("Step_read");
+        let cat = CaseCatalogue::new(&defs);
+        let pre = preprocess_else_with_catalogue(rules, &cat);
+        let next = pre
+            .iter()
+            .find(|p| {
+                let SpecTecRule::Rule { x, .. } = &p.rule;
+                x == "throw_ref-handler-next"
+            })
+            .expect("handler-next");
+        assert_eq!(next.status, ElseStatus::Rewritten { negated: 4 });
+        let SpecTecRule::Rule { prs, .. } = &next.rule;
+        let [
+            SpecTecPrem::If {
+                e:
+                    SpecTecExp::Bin {
+                        op: SpecTecBinOp::Or,
+                        e1,
+                        e2,
+                        ..
+                    },
+            },
+        ] = prs.as_slice()
+        else {
+            panic!("expected one DNF guard, got {prs:#?}");
+        };
+
+        let branch_key = |e: &SpecTecExp| {
+            let SpecTecExp::Bin {
+                op: SpecTecBinOp::And,
+                e1,
+                e2,
+                ..
+            } = e
+            else {
+                panic!("branch is not a conjunction: {e:#?}");
+            };
+            let SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Eq,
+                e2: constructor,
+                ..
+            } = &**e1
+            else {
+                panic!("branch lacks constructor equality: {e1:#?}");
+            };
+            let SpecTecExp::Case { op, .. } = &**constructor else {
+                panic!("constructor equality RHS: {constructor:#?}");
+            };
+            assert!(
+                matches!(
+                    &**e2,
+                    SpecTecExp::Cmp {
+                        op: SpecTecCmpOp::Ne,
+                        ..
+                    }
+                ),
+                "branch must negate the tag match: {e2:#?}"
+            );
+            crate::wasm::encode::mixop_key(op)
+        };
+        let keys = [branch_key(e1), branch_key(e2)];
+        assert_eq!(keys, ["CATCH", "CATCH_REF"]);
+
+        // Without an exhaustive constructor catalogue the optimization must
+        // fail closed and retain the opaque Else.
+        let uncatalogued = preprocess_else_with_catalogue(rules, &CaseCatalogue::default());
+        let next = uncatalogued
+            .iter()
+            .find(|p| {
+                let SpecTecRule::Rule { x, .. } = &p.rule;
+                x == "throw_ref-handler-next"
+            })
+            .unwrap();
+        assert_eq!(
+            next.status,
+            ElseStatus::Failed("sibling-undecided:throw_ref-handler-catch".into())
+        );
+    }
+
+    /// A single unmatched relation judgement has an exact negative
+    /// applicability meaning, but cannot be negated inside the positive
+    /// source relation.  Preserve that meaning as an internal decision
+    /// request; the HOL lowering then keeps it opaque until a certified
+    /// decision family is installed.
+    #[test]
+    fn single_rule_applicability_routes_to_negative_decision() {
+        use covalence_spectec::ast::SpecTecDef;
+
+        fn find(defs: &[SpecTecDef], name: &str) -> Option<SpecTecRule> {
+            for def in defs {
+                match def {
+                    SpecTecDef::Rel { rules, .. } => {
+                        if let Some(rule) = rules.iter().find(|rule| {
+                            let SpecTecRule::Rule { x, .. } = rule;
+                            x == name
+                        }) {
+                            return Some(rule.clone());
+                        }
+                    }
+                    SpecTecDef::Rec { ds } => {
+                        if let Some(rule) = find(ds, name) {
+                            return Some(rule);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let defs = get_wasm_spectec_ast();
+        let mut succeed = find(&defs, "ref.test-true").expect("ref.test success");
+        let fail = find(&defs, "ref.test-false").expect("ref.test fallback");
+        let SpecTecRule::Rule { prs, .. } = &mut succeed;
+        prs.retain(|prem| {
+            matches!(
+                prem,
+                SpecTecPrem::Rule { x, .. } if x == "Ref_ok"
+            )
+        });
+        assert_eq!(prs.len(), 1, "fixture has one Ref_ok applicability premise");
+
+        let pre = preprocess_else(&[succeed, fail]);
+        assert_eq!(pre[1].status, ElseStatus::Rewritten { negated: 1 });
+        let SpecTecRule::Rule { prs, .. } = &pre[1].rule;
+        assert!(matches!(
+            prs.as_slice(),
+            [SpecTecPrem::Rule { x, .. }]
+                if x == &format!("{NEGATED_RULE_PREFIX}Ref_ok")
         ));
     }
 

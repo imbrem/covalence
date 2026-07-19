@@ -5,7 +5,7 @@
 //!
 //! A SpecTec premise `(P(x…))*` (a [`SpecTecPrem::Iter`]) lowers to
 //!
-//! 1. a **judgement premise** for the enclosing rule's clause — a
+//! 1. a **judgement premise** for the enclosing relation-rule or Dec clause — a
 //!    `star.<rel>.<rule>.<idx>`-tagged judgement over the iteration-domain
 //!    metavariables (built by [`star_judgement`], arity-marked like
 //!    [`super::fn_graph`]); plus
@@ -25,7 +25,7 @@
 //! ## Design decisions (load-bearing, kept in sync with the tests)
 //!
 //! - **Ride-through metavariables become star-relation *arguments*** (the `c…`
-//!   above): a rule metavar the inner premise mentions but the site does not
+//!   above): an enclosing-clause metavar the inner premise mentions but the site does not
 //!   iterate is passed through the star judgement, *not* re-quantified per
 //!   element. The alternative (aux-clause-only metavars) would let each list
 //!   element pick a *different* instantiation of the context — strictly weaker
@@ -92,13 +92,13 @@ use crate::init::ext::TermExt;
 // The site currency
 // ============================================================================
 
-/// One `Iter` premise site of a spec rule — everything [`lower_iter_premise`]
-/// needs to synthesize its star relation.
+/// One `Iter` premise site of a spec relation rule or Dec clause — everything
+/// [`lower_iter_premise`] needs to synthesize its star relation.
 #[derive(Debug)]
 pub struct StarSite<'a> {
-    /// The enclosing relation's name (tag component).
+    /// The enclosing relation/function's name (tag component).
     pub rel_name: &'a str,
-    /// The enclosing rule's name (tag component; may be empty in the corpus).
+    /// The enclosing rule or Dec-clause site name (tag component).
     pub rule_name: &'a str,
     /// The premise's index within the rule (tag component — disambiguates
     /// multiple `Iter` premises of one rule).

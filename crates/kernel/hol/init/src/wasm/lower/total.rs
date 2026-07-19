@@ -621,6 +621,7 @@ mod tests {
             let i32t = a(con("case.I32"), con("tup"));
             let addop = a(con("case.ADD"), con("tup"));
             let subop = a(con("case.SUB"), con("tup"));
+            let andop = a(con("case.AND"), con("tup"));
             let w32 = a(con("num.nat"), nat(32));
             let payload = |k: u64| a(con("tup"), a(con("num.nat"), nat(k)));
             let iv = |k: u64| a(con("case.%"), payload(k));
@@ -765,12 +766,22 @@ mod tests {
             let d_bsub = derive(
                 binop_sub,
                 &sub_args,
-                vec![Premise::Derivation(d_sizenn), Premise::Derivation(d_isub)],
+                vec![
+                    Premise::Derivation(d_sizenn.clone()),
+                    Premise::Derivation(d_isub),
+                ],
             );
             check(&d_bsub, binop_sub, &sub_args);
 
             let d_mem2 = derive(mem_idx, &[iv(2), con("list")], vec![]);
-            let rule_args = [i32t, iv(5), iv(3), subop, iv(2), a(con("list"), iv(2))];
+            let rule_args = [
+                i32t.clone(),
+                iv(5),
+                iv(3),
+                subop,
+                iv(2),
+                a(con("list"), iv(2)),
+            ];
             let d_sub = derive(
                 rule_idx,
                 &rule_args,
@@ -779,8 +790,71 @@ mod tests {
             check(&d_sub, rule_idx, &rule_args);
             println!(
                 "(b) [CONST I32 5, CONST I32 3, BINOP I32 SUB] ~> [CONST I32 2] \
-                 (builtin isub_): {:?}",
+                (builtin isub_): {:?}",
                 t_b.elapsed()
+            );
+
+            // ============================================================
+            // (c) AND through the exact bit-structure builtin clause.
+            //     This is a genuine full combined-set execution, not just a
+            //     standalone graph check: fn.iand_ feeds fn.binop_, whose
+            //     result discharges Step_pure/binop-val.
+            // ============================================================
+            let t_c = std::time::Instant::now();
+            let expected = 0x00f0u64;
+            let iand_target = fng(
+                "iand_",
+                &[w32.clone(), iv(0x0ff0), iv(0x00ff)],
+                &iv(expected),
+            );
+            let iand_args = [nat(0x0ff0), nat(0x00ff), nat(expected)];
+            let iand_idx = find_at("fn.iand_", &iand_args, &iand_target);
+            let sides: Vec<Premise> = (0..clauses[iand_idx].prems.len())
+                .map(|k| Premise::Side(prove_side(&side_at(iand_idx, &iand_args, k)).unwrap()))
+                .collect();
+            let d_iand = derive(iand_idx, &iand_args, sides);
+            check(&d_iand, iand_idx, &iand_args);
+            let wrong = [nat(0x0ff0), nat(0x00ff), nat(expected + 1)];
+            assert!(
+                prove_side(&side_at(iand_idx, &wrong, 3)).is_err(),
+                "iand_ defining equality must refuse the wrong result"
+            );
+
+            let binop_and = find_at(
+                "fn.binop_",
+                &[iv(0x0ff0), iv(0x00ff), w32.clone(), iv(expected)],
+                &fng(
+                    "binop_",
+                    &[i32t.clone(), andop.clone(), iv(0x0ff0), iv(0x00ff)],
+                    &a(con("list"), iv(expected)),
+                ),
+            );
+            let and_args = [iv(0x0ff0), iv(0x00ff), w32, iv(expected)];
+            let d_band = derive(
+                binop_and,
+                &and_args,
+                vec![Premise::Derivation(d_sizenn), Premise::Derivation(d_iand)],
+            );
+            check(&d_band, binop_and, &and_args);
+            let d_mem = derive(mem_idx, &[iv(expected), con("list")], vec![]);
+            let rule_args = [
+                i32t,
+                iv(0x0ff0),
+                iv(0x00ff),
+                andop,
+                iv(expected),
+                a(con("list"), iv(expected)),
+            ];
+            let d_and = derive(
+                rule_idx,
+                &rule_args,
+                vec![Premise::Derivation(d_band), Premise::Derivation(d_mem)],
+            );
+            check(&d_and, rule_idx, &rule_args);
+            println!(
+                "(c) [CONST I32 0x0ff0, CONST I32 0x00ff, BINOP I32 AND] \
+                 ~> [CONST I32 0x00f0] (builtin iand_): {:?}",
+                t_c.elapsed()
             );
         })
     }
@@ -1397,6 +1471,201 @@ mod tests {
             );
             check(&d_step, rule_idx, &rule_args);
             println!("Step/local.set WRITES the store end-to-end, hypothesis-free");
+        })
+    }
+
+    /// A real WASM-spec integer helper now fires through the shared integer
+    /// ordering evaluator: `$sat_u_(32, -1) = 0` takes the first saturation
+    /// clause because `-1 < int(0)`.
+    #[test]
+    fn sat_u_negative_fires_through_integer_order() {
+        with_total_stack(|| {
+            let defs = wasm_spec();
+            let (clauses, report) = total_spec_clauses(&defs).unwrap();
+            let rs = rule_set_of(clauses.clone());
+            let n = rs.n_clauses().unwrap();
+            let derive = |idx: usize, args: &[Term], prems: Vec<Premise>| {
+                metalogic::derive_mixed(&rs, idx, n, args, prems)
+            };
+
+            let mag0 = covalence_hol_eval::mk_nat(0u64);
+            let mag1 = covalence_hol_eval::mk_nat(1u64);
+            let n32 =
+                crate::wasm::lower::evalrel::wrap_nat(covalence_hol_eval::mk_nat(32u64)).unwrap();
+            let neg1 = crate::wasm::lower::evalrel::wrap_int(1, mag1.clone()).unwrap();
+            let int0 = crate::wasm::lower::evalrel::wrap_int(0, mag0.clone()).unwrap();
+            let nat0 = crate::wasm::lower::evalrel::wrap_nat(mag0.clone()).unwrap();
+
+            let ev_goal = crate::wasm::lower::evalrel::ev_graph(
+                "int.lt",
+                &[neg1.clone(), int0],
+                &con("bool.true"),
+            )
+            .unwrap();
+            let ev_idx = (0..n)
+                .filter(|&i| report.metas[i].relation == "ev.int.lt")
+                .find(|&i| {
+                    clauses[i].metavars.len() == 2
+                        && instantiate(&clauses[i], &[mag1.clone(), mag0.clone()]) == ev_goal
+                })
+                .expect("negative < non-negative evaluator clause");
+            let d_lt = derive(ev_idx, &[mag1, mag0], vec![]).unwrap();
+            assert_genuine(&d_lt);
+
+            let sat_goal =
+                super::super::fn_graph("sat_u_", &[n32.clone(), neg1.clone()], &nat0).unwrap();
+            let sat_idx = (0..n)
+                .filter(|&i| report.metas[i].relation == "fn.sat_u_")
+                .find(|&i| {
+                    clauses[i].metavars.len() == 2
+                        && instantiate(&clauses[i], &[n32.clone(), neg1.clone()]) == sat_goal
+                })
+                .expect("sat_u negative clause");
+            assert_eq!(clauses[sat_idx].prems.len(), 1);
+            let d_sat = derive(sat_idx, &[n32, neg1], vec![Premise::Derivation(d_lt)]).unwrap();
+            assert_genuine(&d_sat);
+            assert_eq!(
+                d_sat.concl(),
+                &metalogic::derivable(&rs, &sat_goal).unwrap()
+            );
+        })
+    }
+
+    /// The bundled `$free_block` definition maps `$free_instr` over its
+    /// instruction list before folding with `$free_list`. Its empty-list map
+    /// case is now an ordinary derivable evaluator judgement, not an
+    /// `opaque.cond.iter-map` blocker.
+    #[test]
+    fn free_block_empty_map_is_derivable() {
+        with_total_stack(|| {
+            let defs = wasm_spec();
+            let (clauses, report) = total_spec_clauses(&defs).unwrap();
+            let rs = rule_set_of(clauses.clone());
+            let n = rs.n_clauses().unwrap();
+
+            let map_tag = (0..n)
+                .filter(|&i| report.metas[i].relation == "fn.free_block")
+                .flat_map(|i| clauses[i].prems.iter())
+                .find_map(|p| {
+                    let LowerPrem::Judgement(j) = p else {
+                        return None;
+                    };
+                    concl_tag(j).filter(|tag| tag.starts_with("ev.map."))
+                })
+                .expect("free_block carries a mapped free_instr premise");
+            let base = (0..n)
+                .find(|&i| {
+                    report.metas[i].relation == map_tag
+                        && clauses[i].prems.is_empty()
+                        && clauses[i].metavars.is_empty()
+                })
+                .expect("free_block map nil clause");
+            let d_map = metalogic::derive_mixed(&rs, base, n, &[], vec![]).unwrap();
+            assert_genuine(&d_map);
+
+            let op = map_tag.strip_prefix("ev.").unwrap();
+            let expected =
+                crate::wasm::lower::evalrel::ev_graph(op, &[con("list")], &con("list")).unwrap();
+            assert_eq!(
+                d_map.concl(),
+                &metalogic::derivable(&rs, &expected).unwrap()
+            );
+        })
+    }
+
+    /// `Step_pure/vsplat` uses a `ListN(M)` map of `$lpacknum_`. At `M = 0`
+    /// its generated list is kernel-derived as empty, exercising the indexed
+    /// map base case from a real SIMD reduction rule.
+    #[test]
+    fn vsplat_zero_length_map_is_derivable() {
+        with_total_stack(|| {
+            let defs = wasm_spec();
+            let (clauses, report) = total_spec_clauses(&defs).unwrap();
+            let rs = rule_set_of(clauses.clone());
+            let n = rs.n_clauses().unwrap();
+
+            let map_tag = (0..n)
+                .filter(|&i| {
+                    report.metas[i].relation == "Step_pure" && report.metas[i].name == "vsplat"
+                })
+                .flat_map(|i| clauses[i].prems.iter())
+                .find_map(|p| {
+                    let LowerPrem::Judgement(j) = p else {
+                        return None;
+                    };
+                    concl_tag(j).filter(|tag| tag.starts_with("ev.map."))
+                })
+                .expect("vsplat carries an indexed lpacknum_ map");
+            let base = (0..n)
+                .find(|&i| {
+                    report.metas[i].relation == map_tag
+                        && clauses[i].prems.is_empty()
+                        && clauses[i].metavars.len() == 2
+                })
+                .expect("vsplat ListN map zero clause");
+            let args = [con("case.I8"), con("zero-lane")];
+            let d_map = metalogic::derive_mixed(&rs, base, n, &args, vec![]).unwrap();
+            assert_genuine(&d_map);
+            assert_eq!(
+                d_map.concl(),
+                &metalogic::derivable(&rs, &instantiate(&clauses[base], &args)).unwrap()
+            );
+        })
+    }
+
+    /// `Instr_ok/select-impl` accepts either a numeric or vector value type.
+    /// Its structural `or` is represented by a two-clause guard relation;
+    /// this exercises the numeric branch with a reflexive encoded equality.
+    #[test]
+    fn select_impl_structural_or_branch_is_derivable() {
+        with_total_stack(|| {
+            let defs = wasm_spec();
+            let (clauses, report) = total_spec_clauses(&defs).unwrap();
+            let rs = rule_set_of(clauses.clone());
+            let n = rs.n_clauses().unwrap();
+
+            let main = (0..n)
+                .find(|&i| {
+                    report.metas[i].relation == "Instr_ok" && report.metas[i].name == "select-impl"
+                })
+                .expect("Instr_ok/select-impl");
+            let guard_tag = clauses[main]
+                .prems
+                .iter()
+                .find_map(|p| {
+                    let LowerPrem::Judgement(j) = p else {
+                        return None;
+                    };
+                    concl_tag(j).filter(|tag| tag.starts_with("ev.guard."))
+                })
+                .expect("select-impl structural-or guard");
+            let branch = (0..n)
+                .find(|&i| {
+                    report.metas[i].relation == guard_tag
+                        && matches!(clauses[i].prems.as_slice(), [LowerPrem::Side(_)])
+                })
+                .expect("one select-impl guard branch");
+            let args = vec![con("same-type"); clauses[branch].metavars.len()];
+            let LowerPrem::Side(side) = &clauses[branch].prems[0] else {
+                unreachable!()
+            };
+            let mut side = side.clone();
+            for (mv, arg) in clauses[branch].metavars.iter().zip(&args) {
+                side = subst_free(&side, &Var::new(metavar_name(mv), phi()), arg);
+            }
+            let d_guard = metalogic::derive_mixed(
+                &rs,
+                branch,
+                n,
+                &args,
+                vec![Premise::Side(prove_side(&side).unwrap())],
+            )
+            .unwrap();
+            assert_genuine(&d_guard);
+            assert_eq!(
+                d_guard.concl(),
+                &metalogic::derivable(&rs, &instantiate(&clauses[branch], &args)).unwrap()
+            );
         })
     }
 }

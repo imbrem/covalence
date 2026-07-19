@@ -34,8 +34,10 @@ use covalence_hol_eval::EvalThm as Thm;
 
 pub mod relation;
 pub mod side_cond;
+pub mod spec;
 
 pub use relation::RelationEnv;
+pub use spec::{DefinitionKind, DefinitionRef, HolSpec, SpecTecSpec};
 
 /// A premise fed to [`Fragment::derive`] — the union of the unary relation
 /// engine's [`Premise`](crate::metalogic::Premise) and the binary grammar

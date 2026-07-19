@@ -28,7 +28,7 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **3819 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
+- **3825 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
@@ -36,8 +36,8 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 343 exact builtin
-  clauses over 46 operations + 1476
+  expanded Dec-star sites / 12 defining clauses) + 349 exact builtin
+  clauses over 48 operations + 1476
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
   families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
@@ -648,35 +648,32 @@ bytes, I8/I16/I32/I64/V128 for storage bytes, and I32/I64/V128 for constant
 bytes. Float tags, cross-family tags, malformed lengths, byte overflow, and
 out-of-carrier values remain underivable rather than being reinterpreted.
 
-The builtin leg is now **343 clauses over 46 operations**, filling **35 of
-91** formerly empty declarations and leaving **56 declarations**. They cover
-42 float-dependent names, seven relaxed/nondeterministic names, and the two
-genuinely sequence-valued inverses `inv_concat_`/`inv_concatn_`; repeated
-source declarations account for the difference between names and declaration
-count.
+The builtin leg is now **349 clauses over 48 operations**, filling **37 of
+91** formerly empty declarations and leaving **54 declarations**. This wave
+closes the two genuinely sequence-valued inverses
+`inv_concat_`/`inv_concatn_`; the remaining frontier is float-dependent or
+relaxed/nondeterministic.
+Repeated source declarations account for the difference between names and
+declaration count.
 
-### Audited, not approximated: inverse sequence concatenation
+### Exact unbounded inverse sequence concatenation
 
-The two remaining sequence builtins are deterministic in SpecTec's reference
-interpreter, but cannot yet be expressed *for unbounded inputs* by the current
-clause representation:
+The two sequence builtins are deterministic in SpecTec's reference interpreter:
 
 - `inv_concat_` consumes adjacent pairs, returning `[[x0,x1], [x2,x3], …]`,
   and is undefined for odd-length inputs;
 - `inv_concatn_(n, xs)` consumes adjacent blocks of exactly `n` elements and
   is defined only for positive `n` dividing `|xs|`.
 
-This is not nondeterministic relational inversion: the reference interpreter
-chooses those canonical chunks.  However, encoded SpecTec lists are
-arbitrary-arity spines under the uninterpreted `st$app : nat -> nat -> nat`.
-Unlike native HOL lists, they expose neither a tail nor a length operation to
-the list/Nat evaluators.  Consequently one finite clause can describe only one
-fixed spine arity.  Enumerating a convenient maximum would be a sound
-under-approximation at those points, but would introduce an invented
-WebAssembly sequence bound and would not honestly complete either builtin.
-`cov:wasm.spectec.inverse-sequence-builtins` therefore tracks the required
-structural bridge (or an equivalent exact recursive graph); both tags remain
-in the explicit zero-clause frontier until that bridge exists.
+They now use six ordinary rule-set clauses over the arbitrary-arity reified
+`st$app : nat -> nat -> nat` snoc spine. `inv_concat_` has an empty base and a
+two-cell recursive step. `inv_concatn_.split` is a zero/successor-indexed exact
+suffix view returning `(prefix, block)`; the positive-width chunk graph applies
+that view recursively. Appending each peeled element while the split proof
+unwinds preserves source order. Zero widths, odd pair lists, short final
+blocks, and nonmultiples have no derivation. The regression replays two blocks
+through NativeHol and exhaustively checks those ground refusal boundaries; no
+arity census, assumption, or theorem mint site is involved.
 
 - The result is the WebAssembly unsigned rounded average
   `(a + b + 1) div 2`, computed in the unbounded HOL-natural carrier before
@@ -718,8 +715,13 @@ The high-level surface now separates claims that used to be easy to conflate:
   deliberately reports `SortInvariant::Unresolved`; carrier renderability is
   not mislabeled as faithful type semantics. The
   `RefinementAwareTypeResolver` now certifies the exact refinement-free
-  dependency closure as `Unconstrained`, while every closure reaching one of
-  the 56 retained refinements stays unresolved pending predicate lowering.
+  dependency closure as `Unconstrained`. Its
+  `SingletonValueRefinementLowerer` additionally turns the retained, ordered
+  `If` premises for `bit`, `byte`, `char`, and `dim` into kernel-typechecked
+  carrier predicates. It accepts only a nullary, one-instance,
+  one-constructor, one-value-payload shape; dependent, parametric, multi-case,
+  field, and non-`If` refinements remain explicitly unresolved rather than
+  being replaced by truth.
 - `VariantTheory` / `VariantTheoryBackend` expose theorem-bearing constructors
   for currently nonrecursive coproduct variants: carrier, source-name lookup,
   constructor terms, injectivity, and pairwise distinctness derived through
@@ -851,11 +853,14 @@ over left-nested snoc spines (`⌜[e₀…eₙ]⌝ = app(⌜[e₀…eₙ₋₁]�
 
 - **Types:** a *total* reified case catalogue (case tags + payload shapes,
   keyed `(type, case)`, no HOL rendering) feeds the evaluator clauses and
-  ground gating; multi-instance dispatch in `resolve_parametric` (+19 HOL
-  renders); single-inst parametric counted honestly (+17 metric). The 9-type
-  mutual SCC (blocks 53 HOL renders incl. `instr`/`module`) stays open — the
-  mutual→single tagged-carrier reduction over the carved/impredicative
-  backends is the plan, off the critical path.
+  ground gating; multi-instance dispatch and single-instance parametric
+  application are counted separately. The nine-type mutual SCC now renders
+  through a simultaneous Church signature: structural aliases are normalized,
+  the eight generative members retain distinct result carriers, and every
+  cross-member payload edge remains visible. Strict coverage is **144/207**
+  and use-site renderability is **170/207**. These signatures remain
+  representation-only; constructor theories and closed term-level fixpoints
+  are still tracked separately.
 - **Grammars:** whole-corpus `GrammarEnv` (all 231, both modes) + left-recursion
   guard (T* has a `Thexnum` cycle) + honest per-NT coverage class. Residuals:
   grammar-valued param monomorphisation, non-`If` premises, 2 bridge

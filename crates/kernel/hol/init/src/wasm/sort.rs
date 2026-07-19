@@ -6,11 +6,13 @@
 //! existing carrier renderer, but marks the invariant [`Unresolved`]; it does
 //! not silently replace erased case/field premises with truth.
 
-use covalence_core::{Error, Result, Term, Type};
-use covalence_spectec::ast::SpecTecTyp;
+use covalence_core::{Error, Result, Term, Type, subst};
+use covalence_spectec::ast::{SpecTecPrem, SpecTecTyp, SpecTecTypBind};
 
+use super::denote::{self, DenoteCtx, TypeEnv};
 use super::syntax;
-use super::type_family::{TypeFamilies, TypeFamilySource};
+use super::type_family::{TypeFamilies, TypeFamily, TypeFamilySource, TypeShape};
+use crate::init::ext::TermExt;
 
 /// Whether and how membership in a semantic sort is represented.
 #[derive(Debug, Clone)]
@@ -82,6 +84,8 @@ pub enum TypeProvenance {
     CarrierRenderer,
     /// A future backend supplied carrier and invariant together.
     SemanticBackend,
+    /// Retained source premises were rendered as a checked HOL predicate.
+    SourceRefinement,
 }
 
 /// The result exposed to consumers that need semantic type information.
@@ -94,6 +98,106 @@ pub struct ResolvedType {
 /// Backend-neutral type resolution interface.
 pub trait SemanticTypeResolver {
     fn resolve_type(&self, ty: &SpecTecTyp) -> Result<ResolvedType>;
+}
+
+/// Exact result of attempting to lower one retained type-family refinement.
+///
+/// `NotApplicable` means the family has no direct source refinements.
+/// `Unsupported` preserves the distinction between a genuinely unconstrained
+/// family and a refined shape that this backend cannot yet interpret.
+#[derive(Debug, Clone)]
+pub enum RefinementLowering<'a> {
+    NotApplicable,
+    Predicate {
+        predicate: Term,
+        /// Exact retained premises, in source order.
+        source_premises: &'a [SpecTecPrem],
+    },
+    Unsupported,
+}
+
+/// Backend seam for interpreting retained case/field premises as membership.
+///
+/// Implementations are ordinary, untrusted term builders. [`HolSort`] checks
+/// the resulting predicate's type before a resolver exposes it.
+pub trait RefinementLowerer {
+    fn lower<'a>(&self, family: &TypeFamily<'a>, carrier: &Type) -> Result<RefinementLowering<'a>>;
+}
+
+/// Exact value-refinement fragment used by the bundled WASM syntax.
+///
+/// It accepts precisely a nullary family with one instance and one
+/// single-constructor variant whose payload is one named value. Every retained
+/// premise must be an `If`; those expressions are denoted in HOL under that
+/// payload binder, conjoined in source order, and lambda-abstracted. Parametric,
+/// dependent, multi-case, field, and non-`If` refinements are refused.
+// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Lower the dependent/parametric remainder of 56 retained refinements across 29 types; four singleton value predicates are exact.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SingletonValueRefinementLowerer;
+
+impl RefinementLowerer for SingletonValueRefinementLowerer {
+    fn lower<'a>(&self, family: &TypeFamily<'a>, carrier: &Type) -> Result<RefinementLowering<'a>> {
+        if family.refinements().next().is_none() {
+            return Ok(RefinementLowering::NotApplicable);
+        }
+        if !family.params.is_empty() || family.instances.len() != 1 {
+            return Ok(RefinementLowering::Unsupported);
+        }
+        let instance = &family.instances[0];
+        if !instance.params.is_empty() || !instance.args.is_empty() {
+            return Ok(RefinementLowering::Unsupported);
+        }
+        let TypeShape::Variant(cases) = &instance.shape else {
+            return Ok(RefinementLowering::Unsupported);
+        };
+        let [case] = cases.as_slice() else {
+            return Ok(RefinementLowering::Unsupported);
+        };
+        if !case.params.is_empty() || case.refinements.is_empty() {
+            return Ok(RefinementLowering::Unsupported);
+        }
+        let SpecTecTyp::Tup { ets } = case.payload else {
+            return Ok(RefinementLowering::Unsupported);
+        };
+        let [SpecTecTypBind::Bind { id, typ }] = ets.as_slice() else {
+            return Ok(RefinementLowering::Unsupported);
+        };
+        // The one-constructor representation is carrier-transparent only when
+        // the payload itself renders to the exposed carrier.
+        let payload = match typ {
+            SpecTecTyp::Bool => Type::bool(),
+            SpecTecTyp::Num(covalence_spectec::ast::SpecTecNumTyp::Nat) => Type::nat(),
+            SpecTecTyp::Num(covalence_spectec::ast::SpecTecNumTyp::Int) => Type::int(),
+            _ => return Ok(RefinementLowering::Unsupported),
+        };
+        if &payload != carrier {
+            return Ok(RefinementLowering::Unsupported);
+        }
+
+        let mut types = TypeEnv::new();
+        types.insert(id.clone(), payload.clone());
+        let ctx = DenoteCtx::values(types);
+        let mut bodies = Vec::with_capacity(case.refinements.len());
+        for premise in case.refinements {
+            let SpecTecPrem::If { e } = premise else {
+                return Ok(RefinementLowering::Unsupported);
+            };
+            let Ok(body) = denote::denote(e, &ctx) else {
+                return Ok(RefinementLowering::Unsupported);
+            };
+            bodies.push(body);
+        }
+        let mut bodies = bodies.into_iter();
+        let Some(first) = bodies.next() else {
+            return Ok(RefinementLowering::Unsupported);
+        };
+        let body = bodies.try_fold(first, |left, right| left.and(right))?;
+        let predicate = Term::abs(payload, subst::close(&body, id));
+        Ok(RefinementLowering::Predicate {
+            predicate,
+            source_premises: case.refinements,
+        })
+    }
 }
 
 /// Behavior-preserving adapter around [`syntax::resolve_typ`].
@@ -128,6 +232,7 @@ impl SemanticTypeResolver for CarrierTypeResolver<'_, '_> {
 pub struct RefinementAwareTypeResolver<'ctx, 'defs, 'families> {
     ctx: &'ctx syntax::TypeCtx<'defs>,
     families: &'families TypeFamilies<'defs>,
+    refinements: SingletonValueRefinementLowerer,
 }
 
 impl<'ctx, 'defs, 'families> RefinementAwareTypeResolver<'ctx, 'defs, 'families> {
@@ -135,7 +240,11 @@ impl<'ctx, 'defs, 'families> RefinementAwareTypeResolver<'ctx, 'defs, 'families>
         ctx: &'ctx syntax::TypeCtx<'defs>,
         families: &'families TypeFamilies<'defs>,
     ) -> Self {
-        Self { ctx, families }
+        Self {
+            ctx,
+            families,
+            refinements: SingletonValueRefinementLowerer,
+        }
     }
 
     fn refinement_free(&self, ty: &SpecTecTyp) -> bool {
@@ -164,6 +273,16 @@ impl SemanticTypeResolver for RefinementAwareTypeResolver<'_, '_, '_> {
             Ok(ResolvedType {
                 sort: HolSort::unconstrained(carrier),
                 provenance: TypeProvenance::SemanticBackend,
+            })
+        } else if let SpecTecTyp::Var { x, as1 } = ty
+            && as1.is_empty()
+            && let Some(family) = self.families.family(x)
+            && let RefinementLowering::Predicate { predicate, .. } =
+                self.refinements.lower(family, &carrier)?
+        {
+            Ok(ResolvedType {
+                sort: HolSort::with_invariant(carrier, predicate)?,
+                provenance: TypeProvenance::SourceRefinement,
             })
         } else {
             Ok(ResolvedType {
@@ -223,5 +342,76 @@ mod tests {
             SortInvariant::Unconstrained
         ));
         assert_eq!(resolved.provenance, TypeProvenance::SemanticBackend);
+    }
+
+    #[test]
+    fn retained_byte_refinement_becomes_an_exact_checked_predicate() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = syntax::TypeCtx::new(&defs);
+        let families = TypeFamilies::new(&defs);
+        let resolved = RefinementAwareTypeResolver::new(&ctx, &families)
+            .resolve_type(&SpecTecTyp::Var {
+                x: "byte".into(),
+                as1: vec![],
+            })
+            .unwrap();
+
+        assert_eq!(resolved.sort.carrier(), &Type::nat());
+        let SortInvariant::Predicate(predicate) = resolved.sort.invariant() else {
+            panic!("byte must retain its source membership predicate");
+        };
+        assert_eq!(
+            predicate.type_of().unwrap(),
+            Type::fun(Type::nat(), Type::bool())
+        );
+        assert_eq!(resolved.provenance, TypeProvenance::SourceRefinement);
+
+        let family = families.family("byte").unwrap();
+        let RefinementLowering::Predicate {
+            source_premises, ..
+        } = SingletonValueRefinementLowerer
+            .lower(family, &Type::nat())
+            .unwrap()
+        else {
+            panic!("byte source refinement must lower");
+        };
+        assert_eq!(source_premises.len(), 1);
+        assert!(std::ptr::eq(
+            &source_premises[0],
+            family.refinements().next().unwrap()
+        ));
+    }
+
+    #[test]
+    fn exact_value_fragment_is_live_but_dependent_refinements_still_refuse() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = syntax::TypeCtx::new(&defs);
+        let families = TypeFamilies::new(&defs);
+        let resolver = RefinementAwareTypeResolver::new(&ctx, &families);
+
+        for name in ["bit", "byte", "char", "dim"] {
+            let resolved = resolver
+                .resolve_type(&SpecTecTyp::Var {
+                    x: name.into(),
+                    as1: vec![],
+                })
+                .unwrap();
+            assert!(
+                matches!(resolved.sort.invariant(), SortInvariant::Predicate(_)),
+                "{name}"
+            );
+            assert_eq!(resolved.provenance, TypeProvenance::SourceRefinement);
+        }
+
+        let unresolved = resolver
+            .resolve_type(&SpecTecTyp::Var {
+                x: "bshape".into(),
+                as1: vec![],
+            })
+            .unwrap();
+        assert!(matches!(
+            unresolved.sort.invariant(),
+            SortInvariant::Unresolved
+        ));
     }
 }

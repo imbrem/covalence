@@ -26,7 +26,11 @@
 //! corpus call sites: `sizenn` yields 32/64 for scalars, `lsizenn` adds 8/16
 //! for SIMD lanes; `idiv_`/`irem_` are scalar-only, 32/64). Zero axioms: every
 //! antecedent is kernel-computed at each ground instance, so the kernel
-//! re-checks the arithmetic itself each time a clause fires.
+//! re-checks the arithmetic itself each time a clause fires. It also defines
+//! the two inverse sequence builtins through ordinary recursive `Judgement`
+//! premises over the exact reified `st$app` list spine. Those clauses introduce
+//! no axiom either: every recursive step is replayed through the same combined
+//! `RuleSet`.
 //!
 //! ## Faithfulness (definitional, not axiomatic)
 //!
@@ -120,8 +124,8 @@ pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 /// Widths for the scalar-only partial ops `idiv_` / `irem_`.
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
-/// Integer ops given defining clauses by this leg.
-pub const OPS: [&str; 46] = [
+/// Operations given defining clauses by this leg.
+pub const OPS: [&str; 48] = [
     "truncz",
     "ceilz",
     "isub_",
@@ -168,6 +172,8 @@ pub const OPS: [&str; 46] = [
     "inv_zbytes_",
     "cbytes_",
     "inv_cbytes_",
+    "inv_concat_",
+    "inv_concatn_",
 ];
 
 /// How many of the 91 zero-clause builtin tags gain their **first** clauses
@@ -175,18 +181,7 @@ pub const OPS: [&str; 46] = [
 /// operations, four integer serialization/inverse operations, the exact
 /// integer SIMD lane isomorphism, and three integer conversions. The other
 /// eleven [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 35;
-
-// TODO(cov:wasm.spectec.inverse-sequence-builtins, major): Give the reified
-// SpecTec `list` spine an exact structural view and use it to define the
-// unbounded `inv_concat_`/`inv_concatn_` graphs.  The upstream interpreter is
-// deterministic here: `inv_concat_` groups adjacent pairs and rejects odd
-// lengths; `inv_concatn_` groups adjacent blocks of the supplied positive
-// length and rejects nonmultiples.  The current `Φ = nat` encoding represents
-// a list as an arbitrary-arity spine under the *uninterpreted* `st$app`, so a
-// finite first-order clause cannot quantify over its tail.  Do not add a
-// convenient fixed-length census: that would make the coverage number greener
-// while silently imposing an artificial WebAssembly sequence bound.
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 37;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -938,6 +933,127 @@ fn encoded_nat_list(ids: &[String]) -> Result<Term> {
     Ok(out)
 }
 
+/// Exact recursive graphs over the reified SpecTec list spine.
+///
+/// A list literal is the free `st$app` snoc spine
+/// `list`, `app(list,x0)`, `app(app(list,x0),x1)`, ... .  These clauses inspect
+/// that structure relationally, rather than assigning `st$app` any trusted
+/// interpretation or enumerating a maximum arity.
+///
+/// `inv_concat_` consumes two spine cells at a time.  Its base and step
+/// therefore derive exactly even-length inputs and preserve adjacent,
+/// source-order pairs.
+///
+/// `inv_concatn_.split` is the reusable structural view for an exact suffix of
+/// length `n`: `split(n, input, prefix, block)`.  The zero clause exposes an
+/// empty block; the successor clause peels one input cell and reconstructs the
+/// block in source order.  `inv_concatn_` repeatedly uses that view, requiring
+/// `n > 0`; it consequently refuses zero, short final blocks, and
+/// nonmultiples without a fixed bound.
+fn inverse_sequence_clauses() -> Result<Vec<Clause>> {
+    let pair = app(app(con("list"), mv("a"))?, mv("b"))?;
+    let pair_base = Clause {
+        metavars: Vec::new(),
+        prems: Vec::new(),
+        concl: fn_graph("inv_concat_", &[con("list")], &con("list"))?,
+    };
+    let pair_step = Clause {
+        metavars: ["xs", "ys", "a", "b"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        prems: vec![LowerPrem::Judgement(fn_graph(
+            "inv_concat_",
+            &[mv("xs")],
+            &mv("ys"),
+        )?)],
+        concl: fn_graph(
+            "inv_concat_",
+            &[app(app(mv("xs"), mv("a"))?, mv("b"))?],
+            &app(mv("ys"), pair)?,
+        )?,
+    };
+
+    // split(0, prefix, prefix, []).
+    // split(n, xs, prefix, block) =>
+    // split(S n, xs·x, prefix, block·x).
+    //
+    // The graph's result is the pair `prefix, block`, represented by the same
+    // ordinary `tup` spine used throughout the SpecTec encoding.
+    let split_result = |prefix: Term, block: Term| app(app(con("tup"), prefix)?, block);
+    let split_base = Clause {
+        metavars: vec!["prefix".to_owned()],
+        prems: Vec::new(),
+        concl: fn_graph(
+            "inv_concatn_.split",
+            &[wrap_nat(mk_nat(0u64))?, mv("prefix")],
+            &split_result(mv("prefix"), con("list"))?,
+        )?,
+    };
+    let split_step = Clause {
+        metavars: ["n", "n1", "xs", "prefix", "block", "x"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        prems: vec![
+            LowerPrem::Side(mv("n1").equals(nat::succ(mv("n")))?),
+            LowerPrem::Judgement(fn_graph(
+                "inv_concatn_.split",
+                &[wrap_nat(mv("n"))?, mv("xs")],
+                &split_result(mv("prefix"), mv("block"))?,
+            )?),
+        ],
+        concl: fn_graph(
+            "inv_concatn_.split",
+            &[wrap_nat(mv("n1"))?, app(mv("xs"), mv("x"))?],
+            &split_result(mv("prefix"), app(mv("block"), mv("x"))?)?,
+        )?,
+    };
+
+    let chunks_base = Clause {
+        metavars: vec!["n".to_owned()],
+        prems: vec![LowerPrem::Side(lt(mk_nat(0u64), mv("n"))?)],
+        concl: fn_graph(
+            "inv_concatn_",
+            &[wrap_nat(mv("n"))?, con("list")],
+            &con("list"),
+        )?,
+    };
+    let chunks_step = Clause {
+        metavars: ["n", "input", "prefix", "block", "blocks"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        prems: vec![
+            LowerPrem::Side(lt(mk_nat(0u64), mv("n"))?),
+            LowerPrem::Judgement(fn_graph(
+                "inv_concatn_.split",
+                &[wrap_nat(mv("n"))?, mv("input")],
+                &split_result(mv("prefix"), mv("block"))?,
+            )?),
+            LowerPrem::Judgement(fn_graph(
+                "inv_concatn_",
+                &[wrap_nat(mv("n"))?, mv("prefix")],
+                &mv("blocks"),
+            )?),
+        ],
+        concl: fn_graph(
+            "inv_concatn_",
+            &[wrap_nat(mv("n"))?, mv("input")],
+            &app(mv("blocks"), mv("block"))?,
+        )?,
+    };
+
+    Ok(vec![
+        pair_base,
+        pair_step,
+        split_base,
+        split_step,
+        chunks_base,
+        chunks_step,
+    ])
+}
+
 /// The four integer SIMD shapes admitted by the WebAssembly 128-bit vector
 /// carrier. Float shapes stay deliberately absent until HOL has an exact float
 /// carrier; emitting no clause is the fail-closed interpretation.
@@ -1411,6 +1527,7 @@ pub fn builtin_clauses() -> Result<(Vec<Clause>, BuiltinReport)> {
         out.push(unsigned_average(w)?);
     }
     out.extend(q15mulr_sat()?);
+    out.extend(inverse_sequence_clauses()?);
     let report = BuiltinReport {
         clauses: out.len(),
         ops: OPS.len(),
@@ -1426,9 +1543,11 @@ mod tests {
     use super::*;
     use covalence_core::Var;
     use covalence_core::subst::subst_free;
+    use covalence_hol_eval::EvalThm as Thm;
 
     use crate::wasm::encode::{metavar_name, phi};
     use crate::wasm::lower::flatten::prove_side;
+    use crate::{metalogic, metalogic::Premise};
 
     /// First-order match of a clause conclusion (metavars are
     /// consistently-bound wildcards) against a ground target.
@@ -1486,6 +1605,319 @@ mod tests {
 
     fn nat(n: u64) -> Term {
         mk_nat(n)
+    }
+
+    fn spine(xs: &[Term]) -> Term {
+        xs.iter().cloned().try_fold(con("list"), app).unwrap()
+    }
+
+    /// Exhaustive driver for the two `inv_concat_` clauses. `None` means
+    /// neither base nor step can conclude at this ground spine length.
+    fn derive_pairs(rs: &metalogic::RuleSet<'_>, n_clauses: usize, xs: &[Term]) -> Option<Thm> {
+        if xs.is_empty() {
+            return metalogic::derive_mixed(rs, 0, n_clauses, &[], vec![]).ok();
+        }
+        let (prefix, pair) = xs.split_at(xs.len().checked_sub(2)?);
+        let prior = derive_pairs(rs, n_clauses, prefix)?;
+        let prior_result = prefix.chunks_exact(2).map(spine).collect::<Vec<_>>();
+        metalogic::derive_mixed(
+            rs,
+            1,
+            n_clauses,
+            &[
+                spine(prefix),
+                spine(&prior_result),
+                pair[0].clone(),
+                pair[1].clone(),
+            ],
+            vec![Premise::Derivation(prior)],
+        )
+        .ok()
+    }
+
+    fn derive_split(
+        rs: &metalogic::RuleSet<'_>,
+        n_clauses: usize,
+        prefix: &[Term],
+        block: &[Term],
+    ) -> Option<Thm> {
+        let prefix_term = spine(prefix);
+        let mut proof =
+            metalogic::derive_mixed(rs, 2, n_clauses, &[prefix_term.clone()], vec![]).ok()?;
+        let mut input = prefix_term.clone();
+        let mut block_term = con("list");
+        for (i, x) in block.iter().enumerate() {
+            let succ = mk_nat(i as u64 + 1)
+                .equals(nat::succ(mk_nat(i as u64)))
+                .ok()
+                .and_then(|p| prove_side(&p).ok())?;
+            proof = metalogic::derive_mixed(
+                rs,
+                3,
+                n_clauses,
+                &[
+                    mk_nat(i as u64),
+                    mk_nat(i as u64 + 1),
+                    input.clone(),
+                    prefix_term.clone(),
+                    block_term.clone(),
+                    x.clone(),
+                ],
+                vec![Premise::Side(succ), Premise::Derivation(proof)],
+            )
+            .ok()?;
+            input = app(input, x.clone()).ok()?;
+            block_term = app(block_term, x.clone()).ok()?;
+        }
+        Some(proof)
+    }
+
+    /// Exhaustive ground driver for the `inv_concatn_` base/step choice.
+    /// The step's exact suffix view makes zero and nonmultiples fail before
+    /// any theorem can be assembled.
+    fn derive_chunks(
+        rs: &metalogic::RuleSet<'_>,
+        n_clauses: usize,
+        width: usize,
+        xs: &[Term],
+    ) -> Option<Thm> {
+        if width == 0 || xs.len() % width != 0 {
+            return None;
+        }
+        let positive = prove_side(&lt(mk_nat(0u64), mk_nat(width as u64)).ok()?).ok()?;
+        if xs.is_empty() {
+            return metalogic::derive_mixed(
+                rs,
+                4,
+                n_clauses,
+                &[mk_nat(width as u64)],
+                vec![Premise::Side(positive)],
+            )
+            .ok();
+        }
+        let split_at = xs.len() - width;
+        let (prefix, block) = xs.split_at(split_at);
+        let split = derive_split(rs, n_clauses, prefix, block)?;
+        let prior = derive_chunks(rs, n_clauses, width, prefix)?;
+        let prior_blocks = prefix.chunks_exact(width).map(spine).collect::<Vec<_>>();
+        metalogic::derive_mixed(
+            rs,
+            5,
+            n_clauses,
+            &[
+                mk_nat(width as u64),
+                spine(xs),
+                spine(prefix),
+                spine(block),
+                spine(&prior_blocks),
+            ],
+            vec![
+                Premise::Side(positive),
+                Premise::Derivation(split),
+                Premise::Derivation(prior),
+            ],
+        )
+        .ok()
+    }
+
+    /// The sequence inverses replay through the ordinary RuleSet engine at
+    /// arbitrary recursive depth.  This is a kernel-checked exercise of both
+    /// the two-cell graph and the indexed suffix structural view, not merely a
+    /// host matcher over a finite list census.
+    #[test]
+    fn inverse_sequences_replay_unbounded_recursive_graphs() {
+        let clauses = inverse_sequence_clauses().unwrap();
+        let rs = super::super::rule_set_of(clauses);
+        let n_clauses = rs.n_clauses().unwrap();
+        assert_eq!(n_clauses, 6);
+        let derive = |idx, args: &[Term], prems| {
+            metalogic::derive_mixed(&rs, idx, n_clauses, args, prems).unwrap()
+        };
+        let side = |p: Term| Premise::Side(prove_side(&p).unwrap());
+        let succ_side = |n: u64| side(mk_nat(n + 1).equals(nat::succ(mk_nat(n))).unwrap());
+        let pos_side = |n: u64| side(lt(mk_nat(0u64), mk_nat(n)).unwrap());
+
+        let [a, b, c, d, e, f] = [11, 12, 13, 14, 15, 16].map(|i| con(format!("elem.{i}")));
+
+        // inv_concat_([a,b,c,d]) = [[a,b],[c,d]].
+        let pair_nil = derive(0, &[], vec![]);
+        let ab = spine(&[a.clone(), b.clone()]);
+        let cd = spine(&[c.clone(), d.clone()]);
+        let pair_ab = derive(
+            1,
+            &[con("list"), con("list"), a.clone(), b.clone()],
+            vec![Premise::Derivation(pair_nil)],
+        );
+        let pair_abcd = derive(
+            1,
+            &[
+                spine(&[a.clone(), b.clone()]),
+                spine(std::slice::from_ref(&ab)),
+                c.clone(),
+                d.clone(),
+            ],
+            vec![Premise::Derivation(pair_ab)],
+        );
+        assert_eq!(
+            pair_abcd.concl(),
+            &metalogic::derivable(
+                &rs,
+                &fn_graph(
+                    "inv_concat_",
+                    &[spine(&[a.clone(), b.clone(), c.clone(), d.clone()])],
+                    &spine(&[ab.clone(), cd]),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        );
+
+        // split(3, [a,b,c], [], [a,b,c]), then chunk it.
+        let split0 = derive(2, &[con("list")], vec![]);
+        let split1 = derive(
+            3,
+            &[
+                mk_nat(0u64),
+                mk_nat(1u64),
+                con("list"),
+                con("list"),
+                con("list"),
+                a.clone(),
+            ],
+            vec![succ_side(0), Premise::Derivation(split0)],
+        );
+        let split2 = derive(
+            3,
+            &[
+                mk_nat(1u64),
+                mk_nat(2u64),
+                spine(std::slice::from_ref(&a)),
+                con("list"),
+                spine(std::slice::from_ref(&a)),
+                b.clone(),
+            ],
+            vec![succ_side(1), Premise::Derivation(split1)],
+        );
+        let split3 = derive(
+            3,
+            &[
+                mk_nat(2u64),
+                mk_nat(3u64),
+                spine(&[a.clone(), b.clone()]),
+                con("list"),
+                spine(&[a.clone(), b.clone()]),
+                c.clone(),
+            ],
+            vec![succ_side(2), Premise::Derivation(split2)],
+        );
+        let chunks0 = derive(4, &[mk_nat(3u64)], vec![pos_side(3)]);
+        let chunks1 = derive(
+            5,
+            &[
+                mk_nat(3u64),
+                spine(&[a.clone(), b.clone(), c.clone()]),
+                con("list"),
+                spine(&[a.clone(), b.clone(), c.clone()]),
+                con("list"),
+            ],
+            vec![
+                pos_side(3),
+                Premise::Derivation(split3),
+                Premise::Derivation(chunks0),
+            ],
+        );
+
+        // A second suffix split demonstrates that recursion is not tied to a
+        // single block or fixed total length.
+        let prefix = spine(&[a.clone(), b.clone(), c.clone()]);
+        let split0b = derive(2, std::slice::from_ref(&prefix), vec![]);
+        let mut split = split0b;
+        let mut xs = prefix.clone();
+        let mut block = con("list");
+        for (i, x) in [d.clone(), e.clone(), f.clone()].into_iter().enumerate() {
+            let next_xs = app(xs.clone(), x.clone()).unwrap();
+            split = derive(
+                3,
+                &[
+                    mk_nat(i as u64),
+                    mk_nat(i as u64 + 1),
+                    xs,
+                    prefix.clone(),
+                    block.clone(),
+                    x.clone(),
+                ],
+                vec![succ_side(i as u64), Premise::Derivation(split)],
+            );
+            xs = next_xs;
+            block = app(block, x).unwrap();
+        }
+        let chunks2 = derive(
+            5,
+            &[
+                mk_nat(3u64),
+                spine(&[a, b, c, d, e, f]),
+                prefix,
+                block.clone(),
+                spine(&[spine(&[con("elem.11"), con("elem.12"), con("elem.13")])]),
+            ],
+            vec![
+                pos_side(3),
+                Premise::Derivation(split),
+                Premise::Derivation(chunks1),
+            ],
+        );
+        assert_eq!(
+            chunks2.concl(),
+            &metalogic::derivable(
+                &rs,
+                &fn_graph(
+                    "inv_concatn_",
+                    &[
+                        wrap_nat(mk_nat(3u64)).unwrap(),
+                        spine(&[
+                            con("elem.11"),
+                            con("elem.12"),
+                            con("elem.13"),
+                            con("elem.14"),
+                            con("elem.15"),
+                            con("elem.16"),
+                        ])
+                    ],
+                    &spine(&[
+                        spine(&[con("elem.11"), con("elem.12"), con("elem.13")]),
+                        block,
+                    ]),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        );
+
+        // Exhaustive ground drivers over the graph's only base/step choices
+        // establish the important refusal boundary. No clause can finish an
+        // odd pair spine, a zero-width request, or a final short block.
+        assert!(derive_pairs(&rs, n_clauses, &[con("odd")]).is_none());
+        assert!(derive_chunks(&rs, n_clauses, 0, &[]).is_none());
+        assert!(
+            derive_chunks(
+                &rs,
+                n_clauses,
+                3,
+                &[con("x0"), con("x1"), con("x2"), con("short")]
+            )
+            .is_none()
+        );
+        // Positive drivers also cross more than one recursive block and keep
+        // each block in source order.
+        assert!(
+            derive_chunks(
+                &rs,
+                n_clauses,
+                2,
+                &[con("x0"), con("x1"), con("x2"), con("x3")]
+            )
+            .is_some()
+        );
     }
 
     /// Ground graph fact builders (w = 8 keeps kernel arithmetic fast; the
@@ -1783,8 +2215,8 @@ mod tests {
     #[test]
     fn integer_conversion_matrix_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 46);
-        assert_eq!(report.zero_clause_ops, 35);
+        assert_eq!(report.ops, 48);
+        assert_eq!(report.zero_clause_ops, 37);
 
         // Complete reachable wrap matrix, checked against an independent
         // bit-mask oracle. Use inputs with both kept and discarded high bits.
@@ -2058,9 +2490,9 @@ mod tests {
     #[test]
     fn integer_serialization_round_trips_and_refuses_wrong_results() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 343);
-        assert_eq!(report.ops, 46);
-        assert_eq!(report.zero_clause_ops, 35);
+        assert_eq!(report.clauses, 349);
+        assert_eq!(report.ops, 48);
+        assert_eq!(report.zero_clause_ops, 37);
 
         for (w, a) in [
             (8, 0xa5),
@@ -2139,9 +2571,9 @@ mod tests {
     #[test]
     fn composite_byte_serialization_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 343);
-        assert_eq!(report.ops, 46);
-        assert_eq!(report.zero_clause_ops, 35);
+        assert_eq!(report.clauses, 349);
+        assert_eq!(report.ops, 48);
+        assert_eq!(report.zero_clause_ops, 37);
 
         let families: [(&str, &str, &[(&str, u64)]); 4] = [
             ("nbytes_", "inv_nbytes_", &[("I32", 32), ("I64", 64)]),
@@ -2447,9 +2879,9 @@ mod tests {
     #[test]
     fn structural_rational_rounding_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 343);
-        assert_eq!(report.ops, 46);
-        assert_eq!(report.zero_clause_ops, 35);
+        assert_eq!(report.clauses, 349);
+        assert_eq!(report.ops, 48);
+        assert_eq!(report.zero_clause_ops, 37);
 
         // Independent integer-arithmetic oracle, including integral,
         // fractional, sub-unit, and zero points in both sign classes.
@@ -2507,8 +2939,8 @@ mod tests {
     #[test]
     fn unsigned_rounded_average_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 46);
-        assert_eq!(report.zero_clause_ops, 35);
+        assert_eq!(report.ops, 48);
+        assert_eq!(report.zero_clause_ops, 37);
 
         for (w, points) in [
             (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),

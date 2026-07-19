@@ -169,7 +169,8 @@ pub fn total_spec_clauses(defs: &[SpecTecDef]) -> Result<(Vec<Clause>, TotalRepo
     // Leg 2: Dec graph relations, same flattener (shared ev pool → `ev.cat`
     // etc. are emitted at most once across both legs).
     let (dec_clauses, dec_census) = spec_fn_clauses(defs, &mut fl)?;
-    // Leg 3: the integer-builtin defining clauses (Side-only, no ev deps).
+    // Leg 3: builtin defining clauses (exact arithmetic Sides plus the
+    // recursive inverse-sequence Judgement graphs; no ev deps).
     let (builtin, builtin_report) = builtin_clauses()?;
     // Leg 4: the evaluator pool, drained once.
     let ev_clauses = fl.drain_ev_clauses();

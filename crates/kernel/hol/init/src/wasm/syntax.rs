@@ -10,10 +10,13 @@
 //! toward typing SpecTec functions and relations.
 //!
 //! Recursive variants render via the impredicative [`ChurchBackend`] `Φ⟨'r⟩`
-//! (self-references → a result type variable), and **parametric** types `T(A…)`
-//! instantiate by resolving `T`'s body with its type parameters bound (value/`exp`
-//! parameters don't affect the HOL type). A `Scope` threads the self-reference
-//! name and the type-parameter bindings.
+//! (self-references → a result type variable). Mutually-recursive components
+//! use the corresponding simultaneous Church signature: one distinct result
+//! carrier per generative variant and all component handlers in stable order;
+//! structural aliases are normalized first rather than turned into fictitious
+//! constructors. **Parametric** types `T(A…)` instantiate by resolving `T`'s
+//! body with its type parameters bound (value/`exp` parameters don't affect the
+//! HOL type). A `Scope` threads these recursive carriers and type bindings.
 //!
 //! **Type families by case analysis** (multiple [`SpecTecInst`]s — `num_`,
 //! `unop_`, `vcvtop__`, …) dispatch on their arguments: each instance carries
@@ -39,18 +42,16 @@
 //! total-where-possible renderer. Still deferred (typed error), on the bundled
 //! WASM 3.0 spec:
 //!
-//! - the 9-type **mutually-recursive** SCC (`typeuse`/`heaptype`/`valtype`/
-//!   `storagetype`/`resulttype`/`fieldtype`/`comptype`/`subtype`/`rectype`) — a
-//!   sibling reference cycles (the self-mapping only covers a type's own name);
-//!   blocks 53 types incl. `instr`/`module`/`store`;
 //! - **parametric cases** (non-empty `qs`): `fN`/`fNmag`/`ishape` (+ inherited
 //!   `f32`/`f64`) — the float representations;
 //! - `text`/`rat`/`real` and non-numeric value-indexed subtleties.
 //!
-//! Faithfulness caveat (not a rendering failure): case/field **refinement
-//! premises** (`prs`, 56 across 29 spec types) are erased — e.g. `byte` renders
-//! as an unconstrained `nat` without its `< 256` side condition. Rendered types
-//! over-approximate; nothing derives theorems from them. See the generated open-work index.
+//! Faithfulness caveat (not a rendering failure): this carrier-only module does
+//! not interpret case/field **refinement premises** (`prs`, 56 across 29 spec
+//! types). Consumers needing semantic membership must use
+//! [`super::sort::RefinementAwareTypeResolver`], which currently lowers the
+//! exact singleton-value fragment (`bit`, `byte`, `char`, and `dim`) and marks
+//! every other refined closure unresolved. See the generated open-work index.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -60,6 +61,7 @@ use covalence_spectec::ast::{
     SpecTecParam, SpecTecTyp, SpecTecTypBind, SpecTecTypCase, SpecTecTypField,
 };
 
+use super::type_family::{TypeFamilies, TypeFamilySource};
 use crate::init::inductive::{
     ChurchBackend, CoprodBackend, VCtor, Variant, VariantBackend, self_ty_var,
 };
@@ -73,6 +75,10 @@ fn syntax_err(msg: impl Into<String>) -> Error {
 /// definition list (the whole spec), flattening `rec` groups.
 pub struct TypeCtx<'a> {
     by_name: BTreeMap<&'a str, &'a SpecTecDef>,
+    /// Non-trivial mutually-recursive components, indexed by every member.
+    /// Components are sorted by [`TypeFamilies`] and therefore give the
+    /// simultaneous Church renderer a source-independent, stable handler order.
+    mutual_by_name: BTreeMap<&'a str, Vec<&'a str>>,
 }
 
 impl<'a> TypeCtx<'a> {
@@ -89,7 +95,21 @@ impl<'a> TypeCtx<'a> {
             }
         }
         defs.iter().for_each(|d| go(d, &mut by_name));
-        TypeCtx { by_name }
+        let families = TypeFamilies::new(defs);
+        let mut mutual_by_name = BTreeMap::new();
+        for component in families
+            .strongly_connected_components()
+            .into_iter()
+            .filter(|component| component.len() > 1)
+        {
+            for &member in &component {
+                mutual_by_name.insert(member, component.clone());
+            }
+        }
+        TypeCtx {
+            by_name,
+            mutual_by_name,
+        }
     }
 
     fn lookup(&self, name: &str) -> Option<&'a SpecTecDef> {
@@ -107,6 +127,15 @@ struct Scope {
     self_name: Option<String>,
     /// Type-parameter name → resolved HOL type.
     tenv: BTreeMap<String, Type>,
+    /// Result carriers and normalized structural aliases of a simultaneous
+    /// Church encoding. Unlike the single recursive `cov$self`, one distinct
+    /// variable per generative SCC member preserves every sibling edge; aliases
+    /// retain their exact structural definitions.
+    mutual: BTreeMap<String, Type>,
+    /// All members of the component. A member absent from `mutual` is a
+    /// structural synonym still being normalized, not a name to recursively
+    /// re-enter through `resolve_named`.
+    mutual_members: BTreeSet<String>,
 }
 
 impl Scope {
@@ -115,6 +144,8 @@ impl Scope {
         Scope {
             self_name: Some(name.to_owned()),
             tenv: self.tenv.clone(),
+            mutual: self.mutual.clone(),
+            mutual_members: self.mutual_members.clone(),
         }
     }
     /// Same parameter bindings, no self-mapping (alias/struct bodies).
@@ -122,6 +153,8 @@ impl Scope {
         Scope {
             self_name: None,
             tenv: self.tenv.clone(),
+            mutual: self.mutual.clone(),
+            mutual_members: self.mutual_members.clone(),
         }
     }
 }
@@ -205,6 +238,14 @@ fn resolve_var<'a>(
         if let Some(ty) = scope.tenv.get(x) {
             return Ok(ty.clone());
         }
+        if let Some(ty) = scope.mutual.get(x) {
+            return Ok(ty.clone());
+        }
+        if scope.mutual_members.contains(x) {
+            return Err(syntax_err(format!(
+                "mutual structural synonym `{x}` is not normalized yet"
+            )));
+        }
         return resolve_named(x, ctx, visited);
     }
     resolve_parametric(x, as1, ctx, visited, scope)
@@ -259,6 +300,8 @@ fn resolve_parametric<'a>(
     let base = Scope {
         self_name: None,
         tenv,
+        mutual: scope.mutual.clone(),
+        mutual_members: scope.mutual_members.clone(),
     };
     match insts.as_slice() {
         [] => Err(syntax_err(format!("`{name}` has zero instances"))),
@@ -594,6 +637,9 @@ fn var_type_name(id: &str, ctx: &TypeCtx) -> Option<String> {
 
 /// Resolve a nullary named type reference (chasing its definition).
 fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str>) -> Result<Type> {
+    if let Some(component) = ctx.mutual_by_name.get(name) {
+        return resolve_mutual_named(name, component, ctx);
+    }
     let def = ctx
         .lookup(name)
         .ok_or_else(|| syntax_err(format!("unknown type `{name}`")))?;
@@ -609,6 +655,190 @@ fn resolve_named<'a>(name: &'a str, ctx: &TypeCtx<'a>, visited: &mut Vec<&'a str
         return Err(syntax_err(format!("`{name}` has multiple/zero instances")));
     };
     enter(name, dt, ctx, visited, &Scope::default())
+}
+
+/// Simultaneous Church signature for one member of a mutually-recursive SCC.
+///
+/// For generative equations `Tᵢ = Fᵢ(T₀, …, Tₙ)`, assign a distinct result
+/// carrier `rᵢ` to every variant member and render
+///
+/// `Tᵢ := handlers(F₀(r) → r₀, …, Fₙ(r) → rₙ) → rᵢ`.
+///
+/// A variant contributes one handler per constructor. Alias and struct members
+/// are normalized to their exact structural bodies first: they do **not**
+/// acquire a fictitious constructor merely because Tarjan includes them in the
+/// same dependency SCC. This is the standard simultaneous generalisation of
+/// the existing unary [`ChurchBackend`] type. It is representation-only (no
+/// constructors or theorems are minted), but it is exact about source
+/// constructor order, payload shape and every recursive edge. Unsupported
+/// binders/refinements are refused rather than erased.
+fn resolve_mutual_named<'a>(
+    target: &str,
+    component: &[&'a str],
+    ctx: &TypeCtx<'a>,
+) -> Result<Type> {
+    let mutual_members: BTreeSet<String> =
+        component.iter().map(|name| (*name).to_owned()).collect();
+    let mut mutual = BTreeMap::new();
+    let mut structural = BTreeSet::new();
+    for &member in component {
+        let SpecTecDef::Typ { insts, .. } = ctx
+            .lookup(member)
+            .ok_or_else(|| syntax_err(format!("unknown mutual type `{member}`")))?
+        else {
+            return Err(syntax_err(format!("`{member}` is not a type")));
+        };
+        if insts
+            .iter()
+            .all(|SpecTecInst::Inst { dt, .. }| matches!(dt, SpecTecDefTyp::Variant { .. }))
+        {
+            mutual.insert(
+                member.to_owned(),
+                Type::tfree(format!("cov$mutual${member}")),
+            );
+        } else {
+            structural.insert(member);
+        }
+    }
+    if mutual.is_empty() {
+        return Err(syntax_err(
+            "mutual component has no variant constructor (pure structural cycle)",
+        ));
+    }
+
+    // Normalize aliases/records after replacing every genuinely generative
+    // variant by its distinct result carrier. Repeated passes are a small,
+    // deterministic topological evaluator; no-progress means the structural
+    // subgraph itself cycles and must be refused.
+    while !structural.is_empty() {
+        let mut progress = Vec::new();
+        for &member in &structural {
+            let SpecTecDef::Typ { ps, insts, .. } = ctx.lookup(member).unwrap() else {
+                unreachable!()
+            };
+            if !ps.is_empty() {
+                return Err(syntax_err(format!(
+                    "mutual type `{member}` has unsupported family parameters"
+                )));
+            }
+            let [
+                SpecTecInst::Inst {
+                    ps: instance_params,
+                    dt,
+                    ..
+                },
+            ] = insts.as_slice()
+            else {
+                return Err(syntax_err(format!(
+                    "structural mutual type `{member}` has multiple/zero instances"
+                )));
+            };
+            if !instance_params.is_empty() {
+                return Err(syntax_err(format!(
+                    "mutual type `{member}` has unsupported instance parameters"
+                )));
+            }
+            let scope = Scope {
+                self_name: None,
+                tenv: BTreeMap::new(),
+                mutual: mutual.clone(),
+                mutual_members: mutual_members.clone(),
+            };
+            let mut visited = Vec::new();
+            let rendered = match dt {
+                SpecTecDefTyp::Alias { typ } => resolve_typ_d(typ, ctx, &mut visited, &scope),
+                SpecTecDefTyp::Struct { tfs } => {
+                    if tfs.iter().any(|field| {
+                        let SpecTecTypField::Field { qs, prs, .. } = field;
+                        !qs.is_empty() || !prs.is_empty()
+                    }) {
+                        return Err(syntax_err(format!(
+                            "mutual struct `{member}` has field binders/refinements"
+                        )));
+                    }
+                    resolve_struct(tfs, ctx, &mut visited, &scope)
+                }
+                SpecTecDefTyp::Variant { .. } => unreachable!(),
+            };
+            if let Ok(ty) = rendered {
+                mutual.insert(member.to_owned(), ty);
+                progress.push(member);
+            }
+        }
+        if progress.is_empty() {
+            return Err(syntax_err(
+                "mutual component contains a cyclic structural synonym",
+            ));
+        }
+        for member in progress {
+            structural.remove(member);
+        }
+    }
+
+    let scope = Scope {
+        self_name: None,
+        tenv: BTreeMap::new(),
+        mutual,
+        mutual_members,
+    };
+    let mut handlers = Vec::new();
+
+    for &member in component {
+        let def = ctx
+            .lookup(member)
+            .ok_or_else(|| syntax_err(format!("unknown mutual type `{member}`")))?;
+        let SpecTecDef::Typ { ps, insts, .. } = def else {
+            return Err(syntax_err(format!("`{member}` is not a type")));
+        };
+        if !ps.is_empty() {
+            return Err(syntax_err(format!(
+                "mutual type `{member}` has unsupported family parameters"
+            )));
+        }
+        let result = scope.mutual[member].clone();
+        for SpecTecInst::Inst {
+            ps: instance_params,
+            dt,
+            ..
+        } in insts
+        {
+            if !instance_params.is_empty() {
+                return Err(syntax_err(format!(
+                    "mutual type `{member}` has unsupported instance parameters"
+                )));
+            }
+            let mut visited = Vec::new();
+            match dt {
+                SpecTecDefTyp::Alias { .. } | SpecTecDefTyp::Struct { .. } => {}
+                SpecTecDefTyp::Variant { tcs } => {
+                    for SpecTecTypCase::Field { t, qs, prs, .. } in tcs {
+                        if !qs.is_empty() || !prs.is_empty() {
+                            return Err(syntax_err(format!(
+                                "mutual variant `{member}` has case binders/refinements"
+                            )));
+                        }
+                        handlers.push(Type::fun(
+                            resolve_typ_d(t, ctx, &mut visited, &scope)?,
+                            result.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if handlers.is_empty() {
+        return Err(syntax_err("mutual component has no data constructor"));
+    }
+    let mut encoded = scope
+        .mutual
+        .get(target)
+        .cloned()
+        .ok_or_else(|| syntax_err(format!("`{target}` is not in its mutual component")))?;
+    for handler in handlers.into_iter().rev() {
+        encoded = Type::fun(handler, encoded);
+    }
+    Ok(encoded)
 }
 
 /// Resolve a definition body under `base` (its parameter bindings), guarding the
@@ -1068,6 +1298,84 @@ mod tests {
         let defs = vec![alias("a", var("b")), alias("b", var("a"))];
         let ctx = TypeCtx::new(&defs);
         assert!(resolve_def(&defs[0], &ctx).is_err());
+    }
+
+    #[test]
+    fn mutually_recursive_variants_keep_distinct_result_carriers_and_edges() {
+        let defs = vec![
+            variant_def(
+                "even",
+                vec![
+                    variant_case("ZERO", unit_ty()),
+                    variant_case("ES", var("odd")),
+                ],
+            ),
+            variant_def("odd", vec![variant_case("OS", var("even"))]),
+        ];
+        let ctx = TypeCtx::new(&defs);
+        let even = resolve_def(&defs[0], &ctx).unwrap();
+        let odd = resolve_def(&defs[1], &ctx).unwrap();
+        assert_ne!(even, odd);
+        let expected_vars = ["cov$mutual$even", "cov$mutual$odd"];
+        assert_eq!(
+            even.free_tvars()
+                .iter()
+                .map(|x| x.as_str())
+                .collect::<Vec<_>>(),
+            expected_vars
+        );
+        assert_eq!(
+            odd.free_tvars()
+                .iter()
+                .map(|x| x.as_str())
+                .collect::<Vec<_>>(),
+            expected_vars
+        );
+    }
+
+    #[test]
+    fn real_wasm_mutual_scc_renders_all_nine_members_without_identifying_them() {
+        let defs = crate::wasm::spec::wasm_spec();
+        let ctx = TypeCtx::new(&defs);
+        let names = [
+            "comptype",
+            "fieldtype",
+            "heaptype",
+            "rectype",
+            "resulttype",
+            "storagetype",
+            "subtype",
+            "typeuse",
+            "valtype",
+        ];
+        let rendered: Vec<_> = names
+            .iter()
+            .map(|name| resolve_named(name, &ctx, &mut Vec::new()).unwrap())
+            .collect();
+        let unique: BTreeSet<_> = rendered.iter().collect();
+        assert_eq!(unique.len(), names.len());
+        let generative = [
+            "comptype",
+            "fieldtype",
+            "heaptype",
+            "rectype",
+            "storagetype",
+            "subtype",
+            "typeuse",
+            "valtype",
+        ];
+        for ty in rendered {
+            let vars: BTreeSet<_> = ty.free_tvars().into_iter().collect();
+            assert_eq!(
+                vars,
+                generative
+                    .iter()
+                    .map(|name| format!("cov$mutual${name}").into())
+                    .collect()
+            );
+        }
+        assert_eq!(crate::wasm::spec::rendered_types(&defs), (144, 207));
+        assert_eq!(crate::wasm::spec::renderable_types(&defs), (170, 207));
     }
 
     fn variant_case(name: &str, t: SpecTecTyp) -> SpecTecTypCase {

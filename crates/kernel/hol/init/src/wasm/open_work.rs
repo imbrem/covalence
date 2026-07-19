@@ -4,9 +4,7 @@
 //! implementation as the area is touched; `bun run todos` provides the index.
 
 // TODO(cov:kernel.hol.init.src.wasm.sortless-metavariable-residue, severe): Sortless-metavariable residue: (the over-approximation itself is FIXED
-// TODO(cov:kernel.hol.init.src.wasm.mutually-recursive-variant-types, severe): Mutually-recursive variant types: wasm::syntax renders aliases /
 // TODO(cov:kernel.hol.init.src.wasm.slice-path-store-writes-stay-coarse, severe): Slice-path store writes stay coarse: Upd/Ext along Dot/Idx
-// TODO(cov:kernel.hol.init.src.wasm.case-field-refinement-premises-prs-erased, severe): Case/field refinement premises (prs) erased: 56 across 29 spec types
 // TODO(cov:kernel.hol.init.src.wasm.church-types-are-polymorphic-term-free, severe): Church types are polymorphic + term-free: ChurchBackend gives Φ⟨'r⟩ with a
 // TODO(cov:kernel.hol.init.src.wasm.constructor-freeness-lemmas-not-threaded, severe): Constructor freeness lemmas not threaded: denote renders variant case
 // TODO(cov:kernel.hol.init.src.wasm.dec-graph-relation-residue, severe): Dec graph-relation residue: (combined-set census, spec::coveragereport;

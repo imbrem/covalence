@@ -248,7 +248,7 @@ mod tests {
                 report.neq_pairs
             );
             println!(
-                "integer builtins:   {} defining clauses over {} ops ({} of {} zero-clause tags filled; frontier {})",
+                "exact builtins:     {} defining clauses over {} ops ({} of {} zero-clause tags filled; frontier {})",
                 report.builtins.clauses,
                 report.builtins.ops,
                 report.builtins.zero_clause_ops,
@@ -347,17 +347,18 @@ mod tests {
                 report.total_clauses
             );
             // The exact-host-builtin leg is live (Waves F2/Y/Z/AA/AB/AC):
-            // defining clauses for 46 operations, incl. first clauses for 35
-            // of the 91 zero-clause tags (integer operations plus structural
-            // rational rounding and typed integer/vector byte front doors).
+            // defining clauses for 48 operations, incl. first clauses for 37
+            // of the 91 zero-clause tags (integer operations, structural
+            // rational rounding, typed byte front doors, and the unbounded
+            // inverse sequence graphs).
             assert!(
-                report.n_builtin_clauses >= 343,
+                report.n_builtin_clauses >= 349,
                 "builtin clauses = {}",
                 report.n_builtin_clauses
             );
-            assert_eq!(report.builtins.ops, 46, "builtin ops covered");
+            assert_eq!(report.builtins.ops, 48, "builtin ops covered");
             assert_eq!(
-                report.builtins.zero_clause_ops, 35,
+                report.builtins.zero_clause_ops, 37,
                 "zero-clause builtin tags filled"
             );
             assert!(

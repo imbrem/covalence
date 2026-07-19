@@ -7,6 +7,6 @@ todos = ["sexpr.parser-interpretation"]
 notes = ["notes/design/content-logic-and-wit-boundaries.md"]
 files = [
   "crates/lang/parsing",
-  "crates/lang/sexpr-api",
+  "crates/kernel/lisp/sexpr",
   "crates/lang/json-api",
 ]

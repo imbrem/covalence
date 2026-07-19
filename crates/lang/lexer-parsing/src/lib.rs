@@ -8,7 +8,7 @@
 #![forbid(unsafe_code)]
 
 use covalence_grammar::Regex;
-use covalence_logic_api::UnicodeScalar;
+use covalence_kernel_data::UnicodeScalar;
 use covalence_parsing_api::{ByteParserRelation, DecodedText, ParseBudget, RelationalParser, Span};
 use covalence_regex_parsing::{ByteRegexParser, RegexBudget, RegexEvalError, TextRegexParser};
 
@@ -550,7 +550,7 @@ fn map_text_regex_error(error: RegexEvalError) -> LexerError {
 mod tests {
     use super::*;
     use covalence_grammar::{parse_regex, parse_regex_u8};
-    use covalence_logic_api::RawByte;
+    use covalence_kernel_data::RawByte;
     use covalence_parsing_api::{TextEncodingBoundary, Utf8};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]

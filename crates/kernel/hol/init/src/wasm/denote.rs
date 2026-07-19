@@ -38,7 +38,9 @@ use covalence_spectec::ast::{
 
 use super::syntax;
 use crate::init::ext::TermExt;
-use crate::init::inductive::{CoprodBackend, Variant, VariantBackend};
+use crate::init::inductive::{
+    CoprodBackend, CoprodVariantTheory, VariantTheory, VariantTheoryBackend,
+};
 use crate::init::{int, list, nat};
 
 /// A metavariable → HOL type environment (SpecTec variables carry no HOL type at
@@ -56,10 +58,14 @@ pub type TypeEnv = BTreeMap<String, Type>;
 #[derive(Default, Clone)]
 pub struct DenoteCtx {
     pub types: TypeEnv,
-    /// `(type name, case key)` → `Some(variant, index)`, or `None` when the key
+    /// `(type name, case key)` → `Some(index)`, or `None` when the key
     /// occurs more than once *within* the type (e.g. `binop_`'s `ADD`, once per
     /// family instance — genuinely ambiguous, refuse).
-    ctors: BTreeMap<(String, String), Option<(Variant, usize)>>,
+    ctors: BTreeMap<(String, String), Option<usize>>,
+    /// The theorem-bearing realization of each rendered, non-recursive variant.
+    /// Constructor denotation and freeness proofs thereby share one authoritative
+    /// carrier/constructor interface rather than rebuilding coproduct injections.
+    theories: BTreeMap<String, CoprodVariantTheory>,
     /// Bare case key → `Some(owning type)` if unique across rendered variants,
     /// `None` if ambiguous.
     bare: BTreeMap<String, Option<String>>,
@@ -91,13 +97,21 @@ impl DenoteCtx {
             let Ok(v) = syntax::variant_of(def, &tctx) else {
                 continue;
             };
-            for (i, c) in v.ctors.iter().enumerate() {
+            let Ok(theory) = CoprodBackend.theory(&v) else {
+                // Recursive descriptions belong to the recursive backend; do
+                // not present their open self-type encoding as a datatype.
+                continue;
+            };
+            for i in 0..theory.constructor_count() {
+                let c = theory
+                    .constructor_name(i)
+                    .expect("constructor index comes from this theory");
                 ctx.ctors
-                    .entry((name.clone(), c.name.clone()))
+                    .entry((name.clone(), c.to_owned()))
                     .and_modify(|e| *e = None) // twice in one type → ambiguous
-                    .or_insert_with(|| Some((v.clone(), i)));
+                    .or_insert(Some(i));
                 ctx.bare
-                    .entry(c.name.clone())
+                    .entry(c.to_owned())
                     .and_modify(|e| {
                         if e.as_deref() != Some(name.as_str()) {
                             *e = None; // a second type defines it → ambiguous
@@ -105,6 +119,7 @@ impl DenoteCtx {
                     })
                     .or_insert_with(|| Some(name.clone()));
             }
+            ctx.theories.insert(name.clone(), theory);
         }
         ctx
     }
@@ -112,9 +127,14 @@ impl DenoteCtx {
     /// The constructor for case `key` of the named variant type — the keyed
     /// lookup for callers that *know* the expected type (e.g. ground
     /// `Uncase`/`Case` evaluation).
-    pub fn constructor_in(&self, ty: &str, key: &str) -> Result<(&Variant, usize)> {
+    pub fn constructor_in(&self, ty: &str, key: &str) -> Result<(&CoprodVariantTheory, usize)> {
         match self.ctors.get(&(ty.to_owned(), key.to_owned())) {
-            Some(Some((v, i))) => Ok((v, *i)),
+            Some(Some(i)) => {
+                let theory = self.theories.get(ty).ok_or_else(|| {
+                    denote_err(format!("variant theory for `{ty}` is not rendered"))
+                })?;
+                Ok((theory, *i))
+            }
             Some(None) => Err(denote_err(format!(
                 "ambiguous constructor `{key}` within `{ty}`"
             ))),
@@ -126,7 +146,7 @@ impl DenoteCtx {
 
     /// Bare-key fallback: resolve `key` when it is unique across all rendered
     /// variants (used by [`denote`], which has no expected-type information).
-    fn constructor(&self, key: &str) -> Result<(&Variant, usize)> {
+    fn constructor(&self, key: &str) -> Result<(&CoprodVariantTheory, usize)> {
         match self.bare.get(key) {
             Some(Some(ty)) => self.constructor_in(ty, key),
             Some(None) => Err(denote_err(format!("ambiguous constructor `{key}`"))),
@@ -192,8 +212,8 @@ pub fn denote(e: &SpecTecExp, ctx: &DenoteCtx) -> Result<Term> {
         // apply the backend's constructor term to the (denoted) payload.
         E::Case { op, e1 } => {
             let key = super::encode::mixop_key(op);
-            let (v, i) = ctx.constructor(&key)?;
-            CoprodBackend.ctor(v, i)?.apply(denote(e1, ctx)?)
+            let (theory, i) = ctx.constructor(&key)?;
+            theory.constructor(i)?.clone().apply(denote(e1, ctx)?)
         }
         _ => Err(denote_err(
             "constructor not in the value fragment yet (needs the datatype/function leg)",
@@ -471,6 +491,21 @@ mod tests {
         let t = denote(&e, &ctx).unwrap();
         let want_ty = syntax::resolve_def(&defs[0], &syntax::TypeCtx::new(&defs)).unwrap();
         assert_eq!(t.type_of().unwrap(), want_ty);
+
+        // Denotation consumes the cached theorem interface's constructor and
+        // carrier, so the term used by expression lowering is definitionally
+        // the one whose injectivity/distinctness laws the theory exposes.
+        let (theory, i) = ctx.constructor_in("numtype", "I32").unwrap();
+        assert_eq!(theory.carrier(), &want_ty);
+        assert_eq!(theory.constructor_name(i).unwrap(), "I32");
+        let payload = covalence_hol_eval::defs::unit_nil();
+        let via_theory = theory
+            .constructor(i)
+            .unwrap()
+            .clone()
+            .apply(payload)
+            .unwrap();
+        assert_eq!(t, via_theory);
     }
 
     /// A case key shared by two rendered variants is ambiguous *bare* (the
@@ -511,11 +546,35 @@ mod tests {
         assert!(denote(&e, &ctx).is_err());
 
         // …but the keyed lookup lands in the right variant.
-        let (v_inn, i) = ctx.constructor_in("Inn", "I32").unwrap();
-        assert_eq!((v_inn.ctors.len(), i), (2, 0));
-        let (v_nt, j) = ctx.constructor_in("numtype", "F32").unwrap();
-        assert_eq!((v_nt.ctors.len(), j), (3, 2));
+        let (inn, i) = ctx.constructor_in("Inn", "I32").unwrap();
+        assert_eq!((inn.constructor_count(), i), (2, 0));
+        let (numtype, j) = ctx.constructor_in("numtype", "F32").unwrap();
+        assert_eq!((numtype.constructor_count(), j), (3, 2));
         // Unknown pairs refuse.
         assert!(ctx.constructor_in("Inn", "F32").is_err());
+    }
+
+    /// Moving the denotational leg behind `VariantTheoryBackend` preserves the
+    /// existing non-recursive coproduct representation exactly.
+    #[test]
+    fn theory_constructor_preserves_legacy_coprod_denotation() {
+        use crate::init::inductive::{VCtor, Variant, VariantBackend};
+
+        let variant = Variant::new(vec![
+            VCtor::new("N", Type::nat()),
+            VCtor::new("B", Type::bool()),
+            VCtor::new("U", Type::unit()),
+        ]);
+        let theory = CoprodBackend.theory(&variant).unwrap();
+
+        assert_eq!(theory.carrier(), &CoprodBackend.ty(&variant).unwrap());
+        for i in 0..variant.ctors.len() {
+            assert_eq!(
+                theory.constructor(i).unwrap(),
+                &CoprodBackend.ctor(&variant, i).unwrap(),
+                "constructor {i} changed representation"
+            );
+            assert_eq!(theory.constructor_name(i).unwrap(), variant.ctors[i].name);
+        }
     }
 }

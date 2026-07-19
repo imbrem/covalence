@@ -5,4 +5,4 @@ parent = "inductive-datatypes"
 depends_on = ["inductive-logic-adapters"]
 todos = ["inductive.coinductive-conformance"]
 notes = ["notes/design/api-extraction-audit.md"]
-files = ["crates/lang/inductive"]
+files = ["crates/kernel/data/inductive"]

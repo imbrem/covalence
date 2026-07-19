@@ -64,18 +64,18 @@ legacy path
 
 ### Structural functor expressions
 
-[`FunctorExpr`](../../../crates/lang/inductive/src/polynomial.rs#L32) is the
+[`FunctorExpr`](../../../crates/kernel/data/inductive/src/polynomial.rs#L32) is the
 small structural algebra
 `0 | 1 | P | X | F + G | F × G | F ∘ G`. Composition is represented explicitly
-by [`Compose`](../../../crates/lang/inductive/src/polynomial.rs#L45), and
-[`expand_composition`](../../../crates/lang/inductive/src/polynomial.rs#L103)
+by [`Compose`](../../../crates/kernel/data/inductive/src/polynomial.rs#L45), and
+[`expand_composition`](../../../crates/kernel/data/inductive/src/polynomial.rs#L103)
 implements capture-free substitution of the inner expression for every `Var`
 in the outer expression. Parameters are constants and are not substituted.
-[`is_recursive`](../../../crates/lang/inductive/src/polynomial.rs#L63) correctly
+[`is_recursive`](../../../crates/kernel/data/inductive/src/polynomial.rs#L63) correctly
 treats `F ∘ G` as dependent on `X` only when both `F` depends on its argument
 and `G` depends on `X`.
 
-[`StructuralPolynomial`](../../../crates/lang/inductive/src/functor.rs) now
+[`StructuralPolynomial`](../../../crates/kernel/data/inductive/src/functor.rs) now
 checks the bounded `0 | 1 | P | X | F + G | F × G` fragment and deliberately
 rejects explicit composition. [`StructuralFunctorAction`] gives backends a
 narrow seam for interpreting `F(X)` and lifting an arrow `f : X → Y` to
@@ -87,7 +87,7 @@ interpretation therefore remain open.
 
 ### Named polynomial and aggregate specifications
 
-[`PolynomialSpec`](../../../crates/lang/inductive/src/polynomial.rs#L301) is the
+[`PolynomialSpec`](../../../crates/kernel/data/inductive/src/polynomial.rs#L301) is the
 ergonomic source form
 
 ```text
@@ -95,40 +95,40 @@ F(X) = Σ constructor. Π field. (parameter | X)
 ```
 
 It preserves constructor and field names and declaration order.
-[`Position`](../../../crates/lang/inductive/src/polynomial.rs#L149) restricts
+[`Position`](../../../crates/kernel/data/inductive/src/polynomial.rs#L149) restricts
 each field to either one external parameter token or a direct recursive
-occurrence. [`into_expression`](../../../crates/lang/inductive/src/polynomial.rs#L375)
+occurrence. [`into_expression`](../../../crates/kernel/data/inductive/src/polynomial.rs#L375)
 forgets names and translates the normal form to `FunctorExpr`.
 
 The aggregate views deliberately narrow this common representation:
 
-- [`RecordSpec`](../../../crates/lang/inductive/src/polynomial.rs#L200) is one
+- [`RecordSpec`](../../../crates/kernel/data/inductive/src/polynomial.rs#L200) is one
   non-recursive product. The empty record is the unit product.
-- [`VariantSpec`](../../../crates/lang/inductive/src/polynomial.rs#L435) is a
+- [`VariantSpec`](../../../crates/kernel/data/inductive/src/polynomial.rs#L435) is a
   non-recursive sum of products.
-- [`EnumSpec`](../../../crates/lang/inductive/src/polynomial.rs#L455) is a
+- [`EnumSpec`](../../../crates/kernel/data/inductive/src/polynomial.rs#L455) is a
   non-empty sum of units.
 
 Their proof-bearing realization bundles are:
 
-- [`RecordTheory` and `RecordFacts`](../../../crates/lang/inductive/src/aggregate.rs#L12):
+- [`RecordTheory` and `RecordFacts`](../../../crates/kernel/data/inductive/src/aggregate.rs#L12):
   constructor, ordered projections, projection β, and extensionality.
-- [`VariantTheory` and `VariantFacts`](../../../crates/lang/inductive/src/aggregate.rs#L44):
+- [`VariantTheory` and `VariantFacts`](../../../crates/kernel/data/inductive/src/aggregate.rs#L44):
   injections, case application/β, injectivity, and constructor distinctness.
-- [`EnumTheory` and `EnumFacts`](../../../crates/lang/inductive/src/aggregate.rs#L88):
+- [`EnumTheory` and `EnumFacts`](../../../crates/kernel/data/inductive/src/aggregate.rs#L88):
   case terms, exhaustiveness, and distinctness.
 
 Each proof-bearing backend trait receives a checked spec and must return the
 operations together with theorem-producing rule methods
-([`aggregate.rs`](../../../crates/lang/inductive/src/aggregate.rs#L108)).
+([`aggregate.rs`](../../../crates/kernel/data/inductive/src/aggregate.rs#L108)).
 The older `RecordBackend`/`VariantBackend`/`EnumBackend` traits return opaque
 backend-defined values and promise no common proof surface
-([`aggregate.rs`](../../../crates/lang/inductive/src/aggregate.rs#L139)).
+([`aggregate.rs`](../../../crates/kernel/data/inductive/src/aggregate.rs#L139)).
 
 ### Validation boundary
 
 The plain specifications are intentionally permissive Rust data so parsers can
-construct invalid values and report useful errors. [`Validated<S>`](../../../crates/lang/inductive/src/validated.rs#L15)
+construct invalid values and report useful errors. [`Validated<S>`](../../../crates/kernel/data/inductive/src/validated.rs#L15)
 has a private field and is constructed through `TryFrom`; the backend-facing
 APIs accept this wrapper.
 
@@ -142,7 +142,7 @@ Validation currently checks:
 
 The conversion methods on validated values preserve only transformations that
 cannot invalidate those properties, such as mapping parameter tokens
-([`validated.rs`](../../../crates/lang/inductive/src/validated.rs#L42)).
+([`validated.rs`](../../../crates/kernel/data/inductive/src/validated.rs#L42)).
 
 This boundary is useful but modest. It does not prove semantic positivity,
 functoriality, inhabitation, or backend support. Positivity is obtained by the
@@ -153,7 +153,7 @@ path.
 
 ### Least and greatest fixpoints
 
-[`FixpointCore`](../../../crates/lang/inductive/src/fixpoint.rs#L25) packages:
+[`FixpointCore`](../../../crates/kernel/data/inductive/src/fixpoint.rs#L25) packages:
 
 - the exact validated specification;
 - the carrier `μF` or `νF`;
@@ -163,24 +163,24 @@ path.
 - theorem methods proving both inverse equations.
 
 The inverse methods in
-[`FixpointIsoFacts`](../../../crates/lang/inductive/src/fixpoint.rs#L46) make the
+[`FixpointIsoFacts`](../../../crates/kernel/data/inductive/src/fixpoint.rs#L46) make the
 Lambek isomorphism explicit rather than leaving it as a backend convention.
 
-[`LeastFixpoint`](../../../crates/lang/inductive/src/fixpoint.rs#L54) adds
-[`LeastFixpointFacts`](../../../crates/lang/inductive/src/fixpoint.rs#L62):
+[`LeastFixpoint`](../../../crates/kernel/data/inductive/src/fixpoint.rs#L54) adds
+[`LeastFixpointFacts`](../../../crates/kernel/data/inductive/src/fixpoint.rs#L62):
 construction of `fold`, the `fold/roll` computation law, and structural
-induction. [`GreatestFixpoint`](../../../crates/lang/inductive/src/fixpoint.rs#L78)
+induction. [`GreatestFixpoint`](../../../crates/kernel/data/inductive/src/fixpoint.rs#L78)
 dually adds `unfold`, the `unroll/unfold` computation law, and coinduction
-through [`GreatestFixpointFacts`](../../../crates/lang/inductive/src/fixpoint.rs#L86).
+through [`GreatestFixpointFacts`](../../../crates/kernel/data/inductive/src/fixpoint.rs#L86).
 The capability split is good: a backend can implement least fixpoints without
 pretending to support coinduction.
 
 There are also opaque compatibility seams,
-[`InductiveFixpointBackend`](../../../crates/lang/inductive/src/fixpoint.rs#L156)
-and [`CoinductiveFixpointBackend`](../../../crates/lang/inductive/src/fixpoint.rs#L174),
+[`InductiveFixpointBackend`](../../../crates/kernel/data/inductive/src/fixpoint.rs#L156)
+and [`CoinductiveFixpointBackend`](../../../crates/kernel/data/inductive/src/fixpoint.rs#L174),
 whose associated result types have no shared theorem contract. The
 proof-bearing traits are strictly stronger
-([`fixpoint.rs`](../../../crates/lang/inductive/src/fixpoint.rs#L101)).
+([`fixpoint.rs`](../../../crates/kernel/data/inductive/src/fixpoint.rs#L101)).
 
 At this revision these types and traits have unit tests of structural
 validation, but repository search finds no implementation of
@@ -190,19 +190,19 @@ validation, but repository search finds no implementation of
 particular, greatest fixpoints are an API seam only; the missing backend-neutral
 conformance suite is tracked by
 `cov:inductive.coinductive-conformance`
-([`conformance.rs`](../../../crates/lang/inductive/src/conformance.rs#L36)).
+([`conformance.rs`](../../../crates/kernel/data/inductive/src/conformance.rs#L36)).
 
 ### The implemented legacy bundle
 
-[`InductiveSpec`](../../../crates/lang/inductive/src/spec.rs#L108) describes a
+[`InductiveSpec`](../../../crates/kernel/data/inductive/src/spec.rs#L108) describes a
 single, directly recursive, first-order datatype using constructor arguments
-[`Rec` or `Ext(X)`](../../../crates/lang/inductive/src/spec.rs#L16). It converts
+[`Rec` or `Ext(X)`](../../../crates/kernel/data/inductive/src/spec.rs#L16). It converts
 structurally to and from `FixpointSpec`
-([`spec.rs`](../../../crates/lang/inductive/src/spec.rs#L189)).
+([`spec.rs`](../../../crates/kernel/data/inductive/src/spec.rs#L189)).
 
-[`InductiveBackend`](../../../crates/lang/inductive/src/backend.rs#L11)
+[`InductiveBackend`](../../../crates/kernel/data/inductive/src/backend.rs#L11)
 realizes that declaration as
-[`InductiveTheory`](../../../crates/lang/inductive/src/theory.rs#L167):
+[`InductiveTheory`](../../../crates/kernel/data/inductive/src/theory.rs#L167):
 an opaque carrier, membership predicate, ordered constructors, and an
 `InductiveFacts` rule object.
 
@@ -216,12 +216,12 @@ least-fixpoint bundle. It includes:
 - optional primitive recursion;
 - explicit capability flags for exact membership, recursive-position
   injectivity, and primitive recursion
-  ([`BackendCaps`](../../../crates/lang/inductive/src/theory.rs#L75)).
+  ([`BackendCaps`](../../../crates/kernel/data/inductive/src/theory.rs#L75)).
 
 Membership relativization is essential for sharing the API between exact
 carved types and encodings whose carrier contains junk. The full contract and
 the rank-1 Church “subtree recovery” limitation are documented at
-[`theory.rs`](../../../crates/lang/inductive/src/theory.rs#L1).
+[`theory.rs`](../../../crates/kernel/data/inductive/src/theory.rs#L1).
 
 This path has production implementations:
 
@@ -235,13 +235,13 @@ This path has production implementations:
 The generic conformance checker actually consumes the bundle, constructs a
 recursor and induction obligations through `LogicOps`, and checks theorem
 shapes, membership plumbing, and distinctness
-([`check_theory`](../../../crates/lang/inductive/src/conformance.rs#L101)).
+([`check_theory`](../../../crates/kernel/data/inductive/src/conformance.rs#L101)).
 This is stronger evidence than type-checking a trait implementation, although
 it is not yet a complete semantic conformance proof.
 
 The missing bridge is accurately tracked by
 `cov:inductive.legacy-fixpoint-adapter`
-([`backend.rs`](../../../crates/lang/inductive/src/backend.rs#L9)). Building it
+([`backend.rs`](../../../crates/kernel/data/inductive/src/backend.rs#L9)). Building it
 requires realizing the new structural functor capability in the target logic
 and deriving the layer, roll/unroll, and Lambek theorems. A structural spec
 conversion or an implementation of `map` alone cannot manufacture those
@@ -251,12 +251,12 @@ facts.
 
 The inductive crate is logic-independent and has only `smol_str` and
 `thiserror` dependencies
-([`Cargo.toml`](../../../crates/lang/inductive/Cargo.toml#L1)).
-Its local [`Logic`](../../../crates/lang/inductive/src/logic.rs#L29) trait names
+([`Cargo.toml`](../../../crates/kernel/data/inductive/Cargo.toml#L1)).
+Its local [`Logic`](../../../crates/kernel/data/inductive/src/logic.rs#L29) trait names
 the logic's `Type`, `Term`, `Thm`, and `Error` carriers. `LogicOps` adds enough
 HOL-flavoured construction and primitive rules for generic consumers and
 conformance checks
-([`logic.rs`](../../../crates/lang/inductive/src/logic.rs#L42)).
+([`logic.rs`](../../../crates/kernel/data/inductive/src/logic.rs#L42)).
 
 This crate does not mint theorems and does not enlarge the TCB. A dishonest
 backend can return the wrong theorem handle only if it can already forge
@@ -277,28 +277,28 @@ The trust story therefore depends on:
 The local logic abstraction also duplicates the extracted
 `covalence-logic-api`; integration is explicitly open as
 `cov:inductive.logic-api-adapter`
-([`logic.rs`](../../../crates/lang/inductive/src/logic.rs#L27)).
+([`logic.rs`](../../../crates/kernel/data/inductive/src/logic.rs#L27)).
 
 ### S-expressions as a client
 
 The S-expression crate chooses the canonical polynomial
 `P + 1 + X × X`: atom, nil, and cons
-([`polynomial`](../../../crates/lang/sexpr-api/src/lib.rs#L27)). It provides
+([`polynomial`](../../../crates/kernel/lisp/sexpr/src/lib.rs#L27)). It provides
 three distinct levels:
 
-1. [`SExprF`](../../../crates/lang/sexpr-api/src/lib.rs#L53), a concrete
+1. [`SExprF`](../../../crates/kernel/lisp/sexpr/src/lib.rs#L53), a concrete
    one-layer functor with an executable `map`.
-2. [`SExprSyntax`, `SExprView`, and `ProperList`](../../../crates/lang/sexpr-api/src/lib.rs#L74),
+2. [`SExprSyntax`, `SExprView`, and `ProperList`](../../../crates/kernel/lisp/sexpr/src/lib.rs#L74),
    representation-independent construction/observation and derived finite
    list operations. `ListSpine` preserves dotted tails rather than pretending
    every S-expression is a proper list.
-3. [`SExprFixpoint`](../../../crates/lang/sexpr-api/src/lib.rs#L147), a checked
+3. [`SExprFixpoint`](../../../crates/kernel/lisp/sexpr/src/lib.rs#L147), a checked
    constructor-named wrapper around a generic `LeastFixpoint`. `try_new`
    compares the full spec with the canonical S-expression spec and then
    delegates the carrier, roll/unroll, fold, computation, and induction
    methods. It adds no theorem or axiom.
 
-[`FreeSExpr`](../../../crates/lang/sexpr-api/src/lib.rs#L208) is a working Rust
+[`FreeSExpr`](../../../crates/kernel/lisp/sexpr/src/lib.rs#L208) is a working Rust
 reference representation for the syntax/view layer. It is not a prover backend
 and does not construct `SExprFixpoint`. No production code currently constructs
 an `SExprFixpoint`, because no production least-fixpoint backend supplies the
@@ -307,7 +307,7 @@ required bundle.
 Constructor injectivity/distinctness and proof-bearing proper-list predicates
 are still open as `cov:sexpr.no-confusion-laws` and
 `cov:sexpr.proper-list-proof-capability`
-([`sexpr-api/src/lib.rs`](../../../crates/lang/sexpr-api/src/lib.rs#L256)).
+([`sexpr-api/src/lib.rs`](../../../crates/kernel/lisp/sexpr/src/lib.rs#L256)).
 
 ## Design assessment
 

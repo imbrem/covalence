@@ -7,4 +7,3 @@ description = "Dependency-free traits and vocabulary for Covalence logic backend
 license.workspace = true
 
 [dependencies]
-

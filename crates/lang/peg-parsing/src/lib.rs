@@ -14,7 +14,7 @@
 
 #![forbid(unsafe_code)]
 
-use covalence_logic_api::UnicodeScalar;
+use covalence_kernel_data::UnicodeScalar;
 use covalence_parsing_api::{
     ParseAttempt, PartialExactParser, PartialPrefixParser, PrefixInterpretation, Span,
 };

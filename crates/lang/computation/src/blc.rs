@@ -10,7 +10,7 @@ use core::fmt;
 
 use crate::encoding::{BitDecode, BitEncode, DecodeError as CodecError, Decoder};
 use crate::execution::TransitionSystem;
-use covalence_hol_logic::BitsSyntax;
+use covalence_kernel_data::BitsSyntax;
 
 /// Representation-independent BLC operations.
 ///
@@ -363,7 +363,8 @@ fn substitute_top(argument: &Term, body: &Term) -> Term {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_hol_logic::{BitSyntax, Logic};
+    use covalence_hol_logic::Logic;
+    use covalence_kernel_data::BitSyntax;
 
     fn bits(text: &str) -> Vec<bool> {
         text.bytes().map(|byte| byte == b'1').collect()

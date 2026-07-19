@@ -114,11 +114,13 @@ use covalence_init::init::acl2::simplify::{
 use covalence_init::init::acl2::term::Terms;
 use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::{Term, Type};
+use covalence_kernel_lisp::{AdmissionPolicy, AdmissionReplay, Definition as LispDefinition};
 use covalence_repl_core::{Fuel, Reduction, RunToValue, Strategy};
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
 use crate::defs::{Defs, build_def, build_def_with_ret};
+use crate::frontend::{Frontend, SurfaceDialect};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
 use crate::semantics::{LispRepr, LispSemantics, ValueKind};
@@ -287,6 +289,87 @@ pub struct Acl2Theorem {
     pub proof: Acl2Proof,
 }
 
+/// Plain structural-admission witness retained for an ACL2 `defun`.
+///
+/// This records what the surface checker established. It is not a theorem and
+/// cannot totalize the function; the deep ACL2/HOL layer must replay suitable
+/// evidence before gaining theorem authority.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Acl2Admission {
+    pub recursive_calls: usize,
+    pub decreasing_parameter: Option<usize>,
+}
+
+/// A conservative HOL definition produced by replaying an ACL2 admission.
+///
+/// Unlike [`Acl2Admission`], both fields are kernel objects: `model` is the
+/// newly defined total function and `defining_equation` is its proved
+/// equation. This still does not, by itself, identify the total model with
+/// the generic partial Lisp execution relation; that bridge is a separate
+/// existence/uniqueness obligation.
+#[derive(Clone)]
+pub struct Acl2HolDefinition {
+    pub model: Term,
+    pub defining_equation: Thm,
+}
+
+/// Proof-producing replay against one deep ACL2/HOL environment generation.
+pub struct Acl2HolReplay<'a> {
+    env: &'a Acl2Env,
+}
+
+impl<'a> Acl2HolReplay<'a> {
+    pub fn new(env: &'a Acl2Env) -> Self {
+        Self { env }
+    }
+}
+
+/// The result of conservative definition replay. The returned environment is
+/// a fresh generation containing the definition.
+pub struct Acl2HolReplayEvidence {
+    pub environment: Acl2Env,
+    pub definition: Acl2HolDefinition,
+}
+
+impl AdmissionReplay<LispDefinition<String, SExpr>, Acl2Admission> for Acl2HolReplay<'_> {
+    type Evidence = Acl2HolReplayEvidence;
+    type Error = String;
+
+    fn replay_termination(
+        &self,
+        definition: &LispDefinition<String, SExpr>,
+        certificate: &Acl2Admission,
+    ) -> Result<Self::Evidence, Self::Error> {
+        let tm = &*self.env.tm;
+        let body = deep_encode(tm, &definition.body, &definition.parameters)?;
+        let spec = DefunSpec {
+            name: definition.name.to_ascii_uppercase().into(),
+            formals: definition
+                .parameters
+                .iter()
+                .map(|parameter| parameter.to_ascii_uppercase().into())
+                .collect(),
+            body,
+            rec_formal: certificate.decreasing_parameter,
+        };
+        let environment = admit_kernel_defun(self.env, &spec).map_err(|error| error.to_string())?;
+        let row = environment
+            .users
+            .last()
+            .ok_or_else(|| "deep ACL2 replay returned no admitted definition".to_string())?;
+        if row.name != spec.name {
+            return Err("deep ACL2 replay returned the wrong definition".into());
+        }
+        Ok(Acl2HolReplayEvidence {
+            definition: Acl2HolDefinition {
+                model: row.model.clone(),
+                defining_equation: row.def_eq_model.clone(),
+            },
+            environment,
+        })
+    }
+}
+
 // ============================================================================
 // The session
 // ============================================================================
@@ -300,6 +383,8 @@ pub struct Acl2Theorem {
 /// theorems, retrievable via [`theorem`](Acl2Session::theorem)).
 pub struct Acl2Session {
     defs: Defs,
+    admissions: BTreeMap<String, Acl2Admission>,
+    hol_definitions: BTreeMap<String, Acl2HolDefinition>,
     thms: BTreeMap<String, Acl2Theorem>,
     /// A definition-free semantics for structural helpers (`tau`, renderers).
     sem0: LispSemantics,
@@ -319,6 +404,8 @@ impl Acl2Session {
         let cache = shadow_cache(&env).map_err(kernel_err)?;
         Ok(Acl2Session {
             defs: Defs::new(),
+            admissions: BTreeMap::new(),
+            hol_definitions: BTreeMap::new(),
             thms: BTreeMap::new(),
             sem0: LispSemantics::new()?,
             deep: KernelAcl2Session::new(env),
@@ -329,6 +416,16 @@ impl Acl2Session {
     /// The admitted `defun` dictionary.
     pub fn defs(&self) -> &Defs {
         &self.defs
+    }
+
+    pub fn admission(&self, name: &str) -> Option<&Acl2Admission> {
+        self.admissions.get(name)
+    }
+
+    /// The conservatively defined deep-HOL model, when this definition lies
+    /// in the deep replay layer's currently supported template.
+    pub fn hol_definition(&self, name: &str) -> Option<&Acl2HolDefinition> {
+        self.hol_definitions.get(name)
     }
 
     /// A proved `defthm` by name — the genuine kernel theorem (its hypotheses
@@ -427,6 +524,8 @@ impl Acl2Session {
     /// table) — infallible, used by the `#lang` switch reset.
     pub fn reset(&mut self) {
         self.defs = Defs::new();
+        self.admissions = BTreeMap::new();
+        self.hol_definitions = BTreeMap::new();
         self.thms = BTreeMap::new();
         if let Ok(env) = shadow_env() {
             let cache = shadow_cache(&env).unwrap_or_default();
@@ -460,7 +559,10 @@ impl Acl2Session {
     /// form, fuel-bounded, packaging the composite theorem.
     fn reduce_value(&self, form: &SExpr) -> Result<Acl2Outcome, Acl2Error> {
         let sem = LispSemantics::with_defs(self.defs.clone())?;
-        let term = sem.compile(form)?;
+        let core = Frontend::new(SurfaceDialect::Scheme)
+            .lower(form)
+            .map_err(|error| Acl2Error::Malformed(error.to_string()))?;
+        let term = sem.compile_core(&core)?;
         let mut red: Reduction<LispRepr, LispSemantics> = Reduction::start(term);
         RunToValue.drive(&sem, &mut red, Fuel::steps(FUEL))?;
         let status = red.status();
@@ -618,12 +720,16 @@ impl Acl2Session {
         }
         let params = param_names(&items[2]).map_err(&inadmissible)?;
         let body = defun_body(items).map_err(Acl2Error::Malformed)?;
-        let source_body = body.clone();
-        self.check_admissible(&name, &params, body)
-            .map_err(&inadmissible)?;
+        let definition = LispDefinition {
+            name: name.clone(),
+            parameters: params.clone(),
+            body: body.clone(),
+        };
+        let admission = AdmissionPolicy::inspect(self, &definition).map_err(&inadmissible)?;
         let body = self.translate(body, &params, Some(&name))?;
         self.install(&name, &params, &body)?;
-        self.try_admit_deep_defun(&name, &params, &source_body);
+        self.try_admit_deep_defun(&definition, &admission);
+        self.admissions.insert(name.clone(), admission);
         Ok(name)
     }
 
@@ -632,53 +738,48 @@ impl Acl2Session {
     /// Failure is intentionally non-fatal: the value semantics supports a
     /// wider language, while any later deep theorem mentioning the omitted
     /// function will be rejected during translation.
-    fn try_admit_deep_defun(&mut self, name: &str, params: &[String], body: &SExpr) {
-        let tm = &*self.deep.env().tm;
-        let Ok(enc) = deep_encode(tm, body, params) else {
-            return;
-        };
-        let mut calls = Vec::new();
-        collect_calls(body, name, &mut calls);
-        let rec_formal = if calls.is_empty() {
-            None
-        } else {
-            (0..params.len()).find(|&i| {
-                calls
-                    .iter()
-                    .all(|args| is_proper_projection(&args[i], &params[i]))
-            })
-        };
-        let spec = DefunSpec {
-            name: name.to_ascii_uppercase().into(),
-            formals: params
-                .iter()
-                .map(|p| p.to_ascii_uppercase().into())
-                .collect(),
-            body: enc,
-            rec_formal,
-        };
-        if let Ok(env) = admit_kernel_defun(self.deep.env(), &spec) {
-            let cache = shadow_cache(&env).unwrap_or_default();
-            self.deep = KernelAcl2Session::new(env);
+    fn try_admit_deep_defun(
+        &mut self,
+        definition: &LispDefinition<String, SExpr>,
+        admission: &Acl2Admission,
+    ) {
+        if let Ok(evidence) =
+            Acl2HolReplay::new(self.deep.env()).replay_termination(definition, admission)
+        {
+            self.hol_definitions
+                .insert(definition.name.clone(), evidence.definition);
+            let cache = shadow_cache(&evidence.environment).unwrap_or_default();
+            self.deep = KernelAcl2Session::new(evidence.environment);
             self.deep_cache = Mutex::new(cache);
         }
     }
 
     /// The syntactic admissibility check (see the module docs for the exact
     /// criterion). Errors carry a human-readable reason.
-    fn check_admissible(&self, name: &str, params: &[String], body: &SExpr) -> Result<(), String> {
+    fn check_admissible(
+        &self,
+        name: &str,
+        params: &[String],
+        body: &SExpr,
+    ) -> Result<Acl2Admission, String> {
         let mut calls: Vec<&[SExpr]> = Vec::new();
         self.check_body(name, params, body, &mut calls)?;
         if calls.is_empty() {
-            return Ok(()); // non-recursive: nothing to justify
+            return Ok(Acl2Admission {
+                recursive_calls: 0,
+                decreasing_parameter: None,
+            });
         }
-        let decreasing = (0..params.len()).any(|i| {
+        let decreasing_parameter = (0..params.len()).find(|&i| {
             calls
                 .iter()
                 .all(|args| is_proper_projection(&args[i], &params[i]))
         });
-        if decreasing {
-            Ok(())
+        if let Some(decreasing_parameter) = decreasing_parameter {
+            Ok(Acl2Admission {
+                recursive_calls: calls.len(),
+                decreasing_parameter: Some(decreasing_parameter),
+            })
         } else {
             Err(format!(
                 "not structurally recursive: no formal position decreases — every \
@@ -810,7 +911,10 @@ impl Acl2Session {
         let placeholder = build_def_with_ret(name, params, dummy, ret)?;
         let staged = self.defs.with(placeholder);
         let sem = LispSemantics::with_defs(staged)?;
-        let body_term = sem.compile(body)?;
+        let core = Frontend::new(SurfaceDialect::Scheme)
+            .lower(body)
+            .map_err(|error| HolError::Stuck(error.to_string()))?;
+        let body_term = sem.compile_core(&core)?;
         let def = build_def(name, params, body_term)?;
         self.defs = self.defs.with(def);
         Ok(())
@@ -1139,6 +1243,18 @@ impl Acl2Session {
                 Ok(SExpr::List(out))
             }
         }
+    }
+}
+
+impl AdmissionPolicy<LispDefinition<String, SExpr>> for Acl2Session {
+    type Certificate = Acl2Admission;
+    type Error = String;
+
+    fn inspect(
+        &self,
+        definition: &LispDefinition<String, SExpr>,
+    ) -> Result<Self::Certificate, Self::Error> {
+        self.check_admissible(&definition.name, &definition.parameters, &definition.body)
     }
 }
 
@@ -1690,19 +1806,6 @@ fn defun_body(items: &[SExpr]) -> Result<&SExpr, String> {
         [body] => Ok(body),
         [] => Err("defun: missing body after doc string/declarations".into()),
         _ => Err("defun: expected exactly one body after optional doc string/declarations".into()),
-    }
-}
-
-fn collect_calls<'a>(e: &'a SExpr, name: &str, out: &mut Vec<&'a [SExpr]>) {
-    if let SExpr::List(items) = e {
-        if let Some((head, args)) = items.split_first()
-            && head.as_symbol() == Some(name)
-        {
-            out.push(args);
-        }
-        for item in items {
-            collect_calls(item, name, out);
-        }
     }
 }
 

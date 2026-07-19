@@ -11,7 +11,7 @@
 
 use core::{convert::Infallible, marker::PhantomData};
 
-use covalence_logic_api::{MalformedUtf8, RawByte, UnicodeScalar};
+use covalence_kernel_data::{MalformedUtf8, RawByte, UnicodeScalar};
 use covalence_parsing_api::{
     EncodedTextError, InterpretationPer, ParseAttempt, PartialExactParser, PartialParser,
     PartialPrefixParser, PrefixAdapterError, PrefixInterpretation, SameInterpretation, Span,

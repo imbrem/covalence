@@ -6,6 +6,16 @@ disable-model-invocation: true
 
 ## Repo Layout
 
+- `crates/kernel/` — low-level, stable capability APIs and trusted
+  implementations. APIs here should be shaped so they can become WIT-facing
+  component boundaries; being under `kernel/` does not by itself mean being
+  trusted.
+- `crates/lang/` — high-level concrete language frontends and language-specific
+  policy (for example Scheme). `kernel/` and `lang/` are responsibility
+  boundaries, not a blanket dependency ordering: dependencies may point either
+  way across them so long as the Cargo package graph stays acyclic. Extract a
+  shared interface/IR package when an actual package cycle would otherwise
+  arise.
 - `crates/app/cov/` — Main binary crate (`cov` CLI)
   - `src/main.rs` — Entry point with clap derive; dispatches to `cov lsp`, `cov cog`, `cov serve`, `cov repl`
   - `src/highlight.rs` — S-expression syntax highlighting for the REPL
@@ -15,16 +25,30 @@ disable-model-invocation: true
   - Files: `arena.rs`, `egraph.rs`, `eprop.rs`, `hash.rs`, `id.rs`, `kernel.rs`, `primop.rs`, `prop.rs`, `reduce.rs`, `subst.rs`, `term.rs`, `ty.rs`, `uf.rs`
   - Deps are minimal (`bytes`, `smol_str`, `covalence-hash`, `covalence-types`); does NOT depend on `covalence-wasm` or `wasmtime` in this branch.
   - The Sync/Async backend traits (`SyncBackend`, `AsyncBackend`, `BackendInfo`, `KernelError`) now live in `crates/kernel/shell/` (`pub use traits::{...}` in `src/lib.rs`). Update this section when the kernel is re-integrated with the shell.
-- `crates/kernel/hol/logic/` — dependency-free logic API vocabulary
+- `crates/kernel/logic/` — dependency-free logic API vocabulary
   - `Logic` owns the associated kind/type/term/theorem/error carriers.
   - Capability traits split type operators, term binders, equality, quantifiers,
     and proof rules; `relation` provides typed `Arrow` values and basic
     relational algebra. Products, coproducts, tabulation, reflexive-transitive
     closure, and residuals are optional syntax capabilities with separate
     proof-law interfaces.
+- `crates/kernel/data/numeric/` — numeric theories over the logic carriers
   - `nat` provides representation-independent natural-number syntax,
     arithmetic, order, supplied law bundles, and optional decision/normalization
-    capabilities over the `Logic` carriers.
+    capabilities.
+  - `int` gives mathematical integers the same capability-sized syntax,
+    arithmetic, order, law, decision, and normalization structure. Concrete
+    NativeHol ordered-ring compatibility remains in `covalence-hol-api` while
+    consumers migrate.
+- `crates/kernel/data/` — representation-independent scalar data and morphisms
+  - `scalar` owns Bit/Bits, Byte/Bytes, Unicode scalar/String, and UTF-8/UTF-16
+    capabilities.
+  - `morphism` owns explicit cross-representation adapters such as Nat-backed
+    radix-256 bytes. It must not contain S-expression, Lisp, JSON, K, or WASM
+    domain concepts.
+  - The abstract crate depends on `kernel/logic` and `data/numeric`; NativeHol
+    datatype realization remains temporarily in `covalence-init` pending the
+    separate `kernel/data/hol` extraction.
   - `covalence-init`'s `NativeHol` implements the extracted carrier and core
     capabilities; `covalence-hol-api` keeps the legacy concrete-HOL Nat facade
     as a forwarding compatibility adapter while consumers migrate.
@@ -36,6 +60,32 @@ disable-model-invocation: true
     linear-depth successor-tower backend. The representation adapters share
     their native-theory capability delegation in `nat_backend_common.rs`;
     neither advertises decision or normalization capabilities.
+- `crates/kernel/lisp/` — stable, backend-neutral Lisp capability tower
+  - `sexpr/` owns the abstract inductive S-expression API. Parsing remains in
+    `crates/lang/sexpr-parsing`; concrete Lisp languages remain under
+    `crates/lang/`.
+  - The root package separates common syntax, explicit evaluation strategies,
+    one-step relations, finite checked traces, and proof-producing replay
+    capabilities. Its host CEK-style realization is proof-free and exists for
+    trace discovery and differential/conformance testing. The host strategy is
+    operational: it supports lexical or dynamic scope, deterministic
+    left-to-right or right-to-left evaluation of operator and operands, and a
+    relational mode whose bounded breadth-first explorer retains every
+    discovered trace and an explicit truncated frontier. Effects use the A0025
+    suspend/request/resume API: pure machines never perform host actions;
+    proof-free handlers return responses and retain auditable transcripts,
+    while theorem authority requires a separate replay capability.
+  - `crates/lang/lisp` is the current compatibility/demo frontend. Its
+    NativeHol `LispRel` implements the neutral step and replay capabilities,
+    while ACL2-specific worlds and derivations are incrementally separated
+    above the common Lisp semantics. Production Scheme and Sector sessions,
+    plus translated ACL2 expression execution, lower through the shared
+    `CoreExpr`; Scheme compiles it to equational HOL and Sector to relational
+    HOL. The proof-free Forsp frontend instead targets the sibling stack
+    capability because its call-by-push-value semantics is genuinely
+    concatenative. Forsp `read`/`print` and optional low-level pointer
+    primitives suspend through A0025; the bundled safe host adapter handles
+    only I/O and rejects pointer requests.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

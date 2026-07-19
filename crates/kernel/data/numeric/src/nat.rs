@@ -7,7 +7,7 @@
 //!
 //! @covalence-api {"id":"A0002","title":"Natural numbers","status":"experimental","dependsOn":["A0001"]}
 
-use crate::Logic;
+use covalence_logic_api::Logic;
 
 /// The natural-number type and its primitive constructors.
 pub trait NatSyntax: Logic {

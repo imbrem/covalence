@@ -62,7 +62,7 @@ realise this shape:
   (`k/reduce.rs`), and WASM all live — a rule morphism between two DIFFERENT
   `RuleSet`s with honest per-rule `clause_sims`. A SUBTERM-rewriting `σ` there
   needs the encoding reified as an inductive `MmExpr := sym(nat) | app(Rec, Rec)`
-  with a catamorphic recursor (the `church.rs` backend of `crates/lang/inductive`)
+  with a catamorphic recursor (the `church.rs` backend of `crates/kernel/data/inductive`)
   — the named prerequisite and hard blocker. An OPAQUE whole-judgement `σ`
   (prefix-tag / retag / inject) could land on `Φ=nat` *now* without `MmExpr`, and
   is the right SECOND slice.
@@ -340,7 +340,7 @@ across rule sets. See also `notes/vibes/logics/derivation-system-interp.md`.
   the `T2` β-equation — makes "the transport actually fires" tangible.
 - **TIER 2 — MM-import `Φ = nat` cross-rule-set `σ`.** Reify the `mm_database`
   encoding as an inductive `MmExpr := sym(code: nat) | app(MmExpr, MmExpr)` via the
-  `church.rs` backend of `crates/lang/inductive`, define a catamorphic
+  `church.rs` backend of `crates/kernel/data/inductive`, define a catamorphic
   constant/var/subterm rewrite through `rec_app`, prove its concat-homomorphism
   from the `comp` laws + induction, and feed `transport_db` honest non-identity
   `clause_sims`. (An OPAQUE whole-judgement `σ` — prefix-tag/retag/inject — could

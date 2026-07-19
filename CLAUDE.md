@@ -162,6 +162,14 @@ vcs/` — but package names keep their `covalence-*` prefixes (e.g.
 **proof-format frontends** (`crates/proof/`) → **app/systems** (`crates/app/`,
 `crates/server/`, `crates/ffi/`).
 
+The directory names describe responsibility, not a universal dependency
+direction: `kernel/` contains low-level, stable capability APIs suitable for a
+WIT boundary, while `lang/` contains high-level concrete language frontends
+such as Scheme. Dependencies may cross between those trees in either direction
+when the abstraction calls for it, but the Cargo package graph must remain
+acyclic. If two packages need each other, extract the shared interface or IR
+into a smaller package rather than coupling frontend policy into a kernel API.
+
 **Dependency discipline:** all use of an external library goes through its wrapper
 crate — never import the underlying dep directly.
 

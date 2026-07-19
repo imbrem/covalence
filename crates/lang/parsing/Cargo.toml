@@ -7,4 +7,5 @@ description = "Backend-neutral interpretation and parsing relation vocabulary"
 license.workspace = true
 
 [dependencies]
-covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-logic-api = { path = "../../kernel/logic" }
+covalence-kernel-data = { path = "../../kernel/data" }

@@ -42,6 +42,7 @@ use covalence_sexp::SExpr;
 
 use crate::acl2::{Acl2Error, Acl2Outcome, Acl2Proof, Acl2Session, Acl2ValueKind};
 use crate::defs::{Defs, build_def, build_def_with_ret};
+use crate::frontend::{Frontend, SurfaceDialect};
 use crate::hol::HolError;
 use crate::reader::{ReadError, read_one};
 use crate::relation::{Dialect, IntFlavour, LispRel};
@@ -251,7 +252,17 @@ impl Session {
     /// ([`ValueKind::Data`]).
     fn reduce_relational(&self, form: &SExpr) -> Result<Outcome, HolError> {
         let rel = self.rel()?;
-        let (value, thm) = rel.reduce_surface(form, REL_FUEL)?;
+        let dialect = match self.lang {
+            Lang::Sector => SurfaceDialect::Sector,
+            Lang::Lisp => SurfaceDialect::SectorInt,
+            Lang::Scheme | Lang::Acl2 => {
+                return Err(HolError::Theory("not a relational dialect".into()));
+            }
+        };
+        let core = Frontend::new(dialect)
+            .lower(form)
+            .map_err(|error| HolError::Stuck(error.to_string()))?;
+        let (value, thm) = rel.reduce_core(&core, REL_FUEL)?;
         Ok(Outcome {
             value,
             thm,
@@ -280,7 +291,10 @@ impl Session {
         form: &SExpr,
         fuel: Fuel,
     ) -> Result<Reduction<LispRepr, LispSemantics>, HolError> {
-        let term = sem.compile(form)?;
+        let core = Frontend::new(SurfaceDialect::Scheme)
+            .lower(form)
+            .map_err(|error| HolError::Stuck(error.to_string()))?;
+        let term = sem.compile_core(&core)?;
         let mut red = Reduction::start(term);
         RunToValue.drive(sem, &mut red, fuel)?;
         Ok(red)
@@ -359,7 +373,10 @@ impl Session {
         let placeholder = build_def_with_ret(name, params, dummy_of(ret)?, ret)?;
         let staged = self.defs.with(placeholder);
         let sem = LispSemantics::with_defs(staged)?;
-        let body_term = sem.compile(body)?;
+        let core = Frontend::new(SurfaceDialect::Scheme)
+            .lower(body)
+            .map_err(|error| HolError::Stuck(error.to_string()))?;
+        let body_term = sem.compile_core(&core)?;
         // The real def, whose head type is inferred from the compiled body — it
         // must match `ret`, or `assume` (which type-checks `f = λ…`) rejects it.
         let def = build_def(name, params, body_term)?;

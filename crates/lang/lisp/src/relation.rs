@@ -14,7 +14,7 @@
 //! ## The two relations
 //!
 //! - [`step_rule_set`] — `Step : sexpr → sexpr → bool`, one clause per reduction
-//!   rule. Redex clauses (car/cdr/predicates/eq?/cond) are base clauses; each
+//!   rule. Redex clauses (car/cdr/predicates/eq?/cond/append) are base clauses; each
 //!   elimination-context **congruence** clause carries one [`Premise::Derivation`]
 //!   (a `Step` sub-derivation).
 //! - [`reduces_rule_set`] — `Reduces = Step*`, two clauses: `refl : ∀t. Reduces t t`
@@ -24,8 +24,9 @@
 //!
 //! ## Unifying the value kinds
 //!
-//! The predicate / `eq?` results are **sexpr atoms** `t` / `nil` (not HOL `bool`),
-//! and `cond` tests sexpr *truthiness* (`nil` = false, any other value = true).
+//! The predicate / `eq?` results are S-expression values `t` / `()` (not HOL
+//! `bool`), and `cond` tests Lisp truthiness (`()` = false, any other value =
+//! true).
 //! This dissolves the `Bool`-vs-`Data` split (and the "truthy-data `cond`" wall)
 //! the equational value semantics hit: every value is an sexpr datum.
 //!
@@ -46,14 +47,19 @@ use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::metalogic::binary::{Premise, RuleSet2, derivable2, derive_mixed};
 use covalence_init::{Term, Type};
+use covalence_kernel_lisp::{
+    CheckedTrace, CoreExpr, Datum, DeterministicStep, StepRelation, TraceReplay, TraceSoundness,
+};
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
+use std::sync::Arc;
 
-use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit};
+use covalence_sexp::abstract_sexpr::{AbstractSExpr, PayloadLit, PayloadOwned};
 
-use crate::carrier::CarvedCarrier;
+use crate::carrier::{CarvedCarrier, exact_datum_carved};
+use crate::frontend::{CoreAtom, FrontendExpr, Primitive};
 use crate::hol::HolError;
-use crate::int_backend::{IntBackend, IntOp, IntVariant, NatVariant};
+use crate::int_backend::{IntBackend, IntOp, IntSymbolPayloadVariant, IntVariant, NatVariant};
 
 fn theory_err(e: impl core::fmt::Display) -> HolError {
     HolError::Theory(e.to_string())
@@ -76,6 +82,8 @@ fn kernel_err(e: impl core::fmt::Display) -> HolError {
 /// Which Lisp **dialect** a [`LispRel`] realises. The two form the refinement
 /// order `sector ⊑ sector+int`: every `sector` program reduces identically in
 /// `sector+int`, which additionally reduces integer literals + arithmetic.
+/// [`ExactIntSymbol`](Dialect::ExactIntSymbol) realizes the same numeric
+/// vocabulary with a distinct exact inductive payload backend.
 ///
 /// The dialect is exactly a *clause subset* of the `Step` `RuleSet2`:
 /// [`Sector`](Dialect::Sector) omits the integer clauses (so `(+ 2 2)` is
@@ -87,6 +95,9 @@ pub enum Dialect {
     /// `sector` plus integer literals + arithmetic, over the chosen
     /// [`IntFlavour`] (signed `int` or non-negative `nat`).
     SectorInt(IntFlavour),
+    /// Exact integer and symbol atoms in one inductive carrier
+    /// (`int ⊕ bytes`), rather than an auxiliary integer injection.
+    ExactIntSymbol,
 }
 
 /// The integer flavour of the `sector+int` dialect: honest signed integers, or
@@ -107,8 +118,7 @@ pub struct LispRel {
     carrier: CarvedCarrier,
     /// The sexpr `t` atom (`atom "t"`) — the truthy value predicates return.
     t: Term,
-    /// The sexpr `nil` atom (`atom "nil"`) — the falsy value; distinct from
-    /// `snil` so `null?`/truthiness are decidable on either representation.
+    /// The empty-list constructor — Lisp's canonical false / `nil` value.
     nil: Term,
     /// `atom? : sexpr → sexpr`.
     atom_p: Term,
@@ -116,10 +126,14 @@ pub struct LispRel {
     consp: Term,
     /// `null? : sexpr → sexpr`.
     null_p: Term,
+    /// `integer? : sexpr → sexpr`.
+    integer_p: Term,
     /// `eq? : sexpr → sexpr → sexpr`.
     eq_p: Term,
     /// `cond : sexpr → sexpr` (over a cond-cell-list argument).
     cond: Term,
+    /// `append : sexpr → sexpr → sexpr`.
+    append: Term,
     /// The active dialect (which integer clauses, if any, are installed).
     dialect: Dialect,
     /// The integer backend for the `sector+int` dialect (`None` for `sector`).
@@ -149,34 +163,68 @@ impl LispRel {
     /// the extra integer `Step` clauses; [`Sector`](Dialect::Sector) has
     /// neither (so `(+ 2 2)` is stuck).
     pub fn with_dialect(dialect: Dialect) -> Result<Self, HolError> {
-        let cs = carved().map_err(theory_err)?;
+        let cs = match dialect {
+            Dialect::ExactIntSymbol => exact_datum_carved()?,
+            Dialect::Sector | Dialect::SectorInt(_) => carved().map_err(theory_err)?,
+        };
         let tau = &cs.tau;
-        let atom_c = |s: &str| Term::app(cs.atom.clone(), mk_blob(s.as_bytes().to_vec()));
-        let t = atom_c("t");
-        let nil = atom_c("nil");
-        let int_be: Option<Box<dyn IntBackend>> = match dialect {
-            Dialect::Sector => None,
-            Dialect::SectorInt(IntFlavour::Int) => Some(Box::new(IntVariant::new(
-                tau.clone(),
-                t.clone(),
-                nil.clone(),
-            ))),
-            Dialect::SectorInt(IntFlavour::Nat) => Some(Box::new(NatVariant::new(
-                tau.clone(),
-                t.clone(),
-                nil.clone(),
-            ))),
+        let atom_c = |s: &str| match dialect {
+            Dialect::ExactIntSymbol => cs
+                .atom
+                .clone()
+                .apply(
+                    covalence_hol_eval::defs::inr(Type::int(), Type::bytes())
+                        .apply(mk_blob(s.as_bytes().to_vec()))
+                        .map_err(kernel_err)?,
+                )
+                .map_err(kernel_err),
+            Dialect::Sector | Dialect::SectorInt(_) => {
+                Ok(Term::app(cs.atom.clone(), mk_blob(s.as_bytes().to_vec())))
+            }
+        };
+        let t = atom_c("t")?;
+        let nil = cs.snil.clone();
+        let (carrier, int_be): (CarvedCarrier, Option<Box<dyn IntBackend>>) = match dialect {
+            Dialect::Sector => (CarvedCarrier::over(cs), None),
+            Dialect::SectorInt(IntFlavour::Int) => (
+                CarvedCarrier::over(cs),
+                Some(
+                    Box::new(IntVariant::new(tau.clone(), t.clone(), nil.clone()))
+                        as Box<dyn IntBackend>,
+                ),
+            ),
+            Dialect::SectorInt(IntFlavour::Nat) => (
+                CarvedCarrier::over(cs),
+                Some(
+                    Box::new(NatVariant::new(tau.clone(), t.clone(), nil.clone()))
+                        as Box<dyn IntBackend>,
+                ),
+            ),
+            Dialect::ExactIntSymbol => {
+                let backend = IntSymbolPayloadVariant::new(
+                    tau.clone(),
+                    cs.atom.clone(),
+                    t.clone(),
+                    nil.clone(),
+                );
+                (
+                    CarvedCarrier::int_or_symbol(cs, Arc::new(backend.clone()))?,
+                    Some(Box::new(backend) as Box<dyn IntBackend>),
+                )
+            }
         };
         Ok(LispRel {
             cs,
-            carrier: CarvedCarrier::over(cs),
+            carrier,
             t,
             nil,
             atom_p: op_head("lisp.rel.atom?", 1, tau),
             consp: op_head("lisp.rel.consp", 1, tau),
             null_p: op_head("lisp.rel.null?", 1, tau),
+            integer_p: op_head("lisp.rel.integer?", 1, tau),
             eq_p: op_head("lisp.rel.eq?", 2, tau),
             cond: op_head("lisp.rel.cond", 1, tau),
+            append: op_head("lisp.rel.append", 2, tau),
             dialect,
             int_be,
         })
@@ -225,7 +273,7 @@ impl LispRel {
         self.t.clone()
     }
 
-    /// The sexpr `nil` atom.
+    /// The canonical empty-list / false value.
     pub fn nil(&self) -> Term {
         self.nil.clone()
     }
@@ -250,7 +298,9 @@ impl LispRel {
     }
     /// `atom "s"` — a symbol atom.
     pub fn sym(&self, s: &str) -> Term {
-        Term::app(self.cs.atom.clone(), mk_blob(s.as_bytes().to_vec()))
+        self.carrier
+            .atom(PayloadLit::Sym(s.as_bytes()))
+            .expect("configured relational carrier accepts symbols")
     }
     /// `atom? x`.
     pub fn atom_p_of(&self, x: Term) -> Result<Term, HolError> {
@@ -263,6 +313,10 @@ impl LispRel {
     /// `null? x`.
     pub fn null_p_of(&self, x: Term) -> Result<Term, HolError> {
         self.null_p.clone().apply(x).map_err(kernel_err)
+    }
+    /// `integer? x`.
+    pub fn integer_p_of(&self, x: Term) -> Result<Term, HolError> {
+        self.integer_p.clone().apply(x).map_err(kernel_err)
     }
     /// `eq? a b`.
     pub fn eq_of(&self, a: Term, b: Term) -> Result<Term, HolError> {
@@ -278,6 +332,16 @@ impl LispRel {
     /// is a `scons`-chain terminated by `snil`.
     pub fn cond_of(&self, cells: Term) -> Result<Term, HolError> {
         self.cond.clone().apply(cells).map_err(kernel_err)
+    }
+
+    /// `append left right`.
+    pub fn append_of(&self, left: Term, right: Term) -> Result<Term, HolError> {
+        self.append
+            .clone()
+            .apply(left)
+            .map_err(kernel_err)?
+            .apply(right)
+            .map_err(kernel_err)
     }
 
     // ------------------------------------------------------------------
@@ -308,25 +372,39 @@ impl LispRel {
     /// | 17 | `Step (cond snil) nil` |
     /// | 18 | `∀body rest. Step (cond ((nil . body) . rest)) (cond rest)` |
     /// | 19 | `∀body rest. Step (cond ((t . body) . rest)) body` |
+    /// | 20 | `∀y. Step (append snil y) y` |
+    /// | 21 | `∀b y. Step (append (atom b) y) y` |
+    /// | 22 | `∀h t y. Step (append (scons h t) y) (scons h (append t y))` |
+    /// | 23 | congruence into append's left operand |
+    /// | 24 | congruence into append's right operand |
+    /// | 25 | congruence into `scons`'s head |
+    /// | 26 | congruence into `scons`'s tail |
+    /// | 27 | `Step (integer? snil) nil` |
+    /// | 28 | `∀h t. Step (integer? (scons h t)) nil` |
+    /// | 29 | `integer?` on a non-integer atom is `nil` |
+    /// | 30 | congruence into `integer?`'s argument |
+    /// | 31 | congruence into the leading `cond` test |
     ///
     /// In the [`SectorInt`](Dialect::SectorInt) dialect, five more integer
-    /// redex clauses follow (indices 20–24, in [`IntOp::ALL`] order):
+    /// redex clauses follow (indices 32–36, in [`IntOp::ALL`] order):
     ///
     /// | idx | clause |
     /// |----:|--------|
-    /// | 20 | `∀a b:int. Step (+ (int a)(int b)) (int (int.add a b))` |
-    /// | 21 | `∀a b:int. Step (- (int a)(int b)) (int (int.sub a b))` |
-    /// | 22 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
-    /// | 23 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
-    /// | 24 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
+    /// | 32 | `∀a b:int. Step (+ (int a)(int b)) (int (int.add a b))` |
+    /// | 33 | `∀a b:int. Step (- (int a)(int b)) (int (int.sub a b))` |
+    /// | 34 | `∀a b:int. Step (* (int a)(int b)) (int (int.mul a b))` |
+    /// | 35 | `∀a b:int. Step (<= (int a)(int b)) (cond (int.le a b) t nil)` |
+    /// | 36 | `∀a b:int. Step (= (int a)(int b)) (cond ((=:int) a b) t nil)` |
     ///
-    /// then ten integer **congruence** clauses (indices 25–34), a left/right
+    /// then ten integer **congruence** clauses (indices 37–46), a left/right
     /// pair per op in [`IntOp::ALL`] order, so operands reduce in place:
     ///
     /// | idx | clause |
     /// |----:|--------|
-    /// | 25 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
-    /// | 26 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
+    /// | 37 + 2·op | `∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)` |
+    /// | 38 + 2·op | `∀a b b2. Step b b2 ⟹ Step (op a b) (op a b2)` |
+    ///
+    /// Clause 47 is `∀i:int. Step (integer? (int i)) t`.
     ///
     /// (`eq?` on *distinct* atoms is future work — see the builder / source-local TODO markers.)
     pub fn step_rule_set(&self) -> RuleSet2<'_> {
@@ -335,7 +413,7 @@ impl LispRel {
             let tau = &self.cs.tau;
             let h = Term::free("h", tau.clone());
             let t = Term::free("t", tau.clone());
-            let b = Term::free("b", Type::bytes());
+            let b = Term::free("b", self.cs.payload.clone());
             let scons_ht = self.scons(h.clone(), t.clone()).map_err(to_core)?;
             let atom_b = Term::app(self.cs.atom.clone(), b.clone());
             let snil = self.cs.snil.clone();
@@ -366,7 +444,7 @@ impl LispRel {
             // 3: atom? (atom b) = t.
             cs.push(
                 d(&self.atom_p_of(atom_b.clone()).map_err(to_core)?, &self.t)?
-                    .forall("b", Type::bytes())?,
+                    .forall("b", self.cs.payload.clone())?,
             );
             // 4: atom? snil = t.
             cs.push(d(&self.atom_p_of(snil.clone()).map_err(to_core)?, &self.t)?);
@@ -379,7 +457,7 @@ impl LispRel {
             // 6: consp (atom b) = nil.
             cs.push(
                 d(&self.consp_of(atom_b.clone()).map_err(to_core)?, &self.nil)?
-                    .forall("b", Type::bytes())?,
+                    .forall("b", self.cs.payload.clone())?,
             );
             // 7: consp snil = nil.
             cs.push(d(
@@ -400,11 +478,11 @@ impl LispRel {
             // 10: null? (atom b) = nil.
             cs.push(
                 d(&self.null_p_of(atom_b.clone()).map_err(to_core)?, &self.nil)?
-                    .forall("b", Type::bytes())?,
+                    .forall("b", self.cs.payload.clone())?,
             );
             // 11: eq? (atom a) (atom a) = t  (equal atoms).
             {
-                let ab = Term::free("a", Type::bytes());
+                let ab = Term::free("a", self.cs.payload.clone());
                 let atom_a = Term::app(self.cs.atom.clone(), ab.clone());
                 cs.push(
                     d(
@@ -413,7 +491,7 @@ impl LispRel {
                             .map_err(to_core)?,
                         &self.t,
                     )?
-                    .forall("a", Type::bytes())?,
+                    .forall("a", self.cs.payload.clone())?,
                 );
             }
 
@@ -475,6 +553,176 @@ impl LispRel {
                 );
             }
 
+            // --- append clauses ------------------------------------------
+            let y = Term::free("y", tau.clone());
+            cs.push(
+                d(
+                    &self.append_of(snil.clone(), y.clone()).map_err(to_core)?,
+                    &y,
+                )?
+                .forall("y", tau.clone())?,
+            );
+            cs.push(
+                d(
+                    &self.append_of(atom_b.clone(), y.clone()).map_err(to_core)?,
+                    &y,
+                )?
+                .forall("y", tau.clone())?
+                .forall("b", self.cs.payload.clone())?,
+            );
+            {
+                let tail_append = self.append_of(t.clone(), y.clone()).map_err(to_core)?;
+                let target = self.scons(h.clone(), tail_append).map_err(to_core)?;
+                cs.push(
+                    d(
+                        &self
+                            .append_of(scons_ht.clone(), y.clone())
+                            .map_err(to_core)?,
+                        &target,
+                    )?
+                    .forall("y", tau.clone())?
+                    .forall("t", tau.clone())?
+                    .forall("h", tau.clone())?,
+                );
+            }
+            {
+                let a = Term::free("a", tau.clone());
+                let a2 = Term::free("a2", tau.clone());
+                let right = Term::free("right", tau.clone());
+                let concl = d(
+                    &self.append_of(a.clone(), right.clone()).map_err(to_core)?,
+                    &self.append_of(a2.clone(), right.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&a, &a2)?
+                        .imp(concl)?
+                        .forall("right", tau.clone())?
+                        .forall("a2", tau.clone())?
+                        .forall("a", tau.clone())?,
+                );
+            }
+            {
+                let left = Term::free("left", tau.clone());
+                let b = Term::free("b", tau.clone());
+                let b2 = Term::free("b2", tau.clone());
+                let concl = d(
+                    &self.append_of(left.clone(), b.clone()).map_err(to_core)?,
+                    &self.append_of(left.clone(), b2.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&b, &b2)?
+                        .imp(concl)?
+                        .forall("b2", tau.clone())?
+                        .forall("b", tau.clone())?
+                        .forall("left", tau.clone())?,
+                );
+            }
+
+            // Congruence through constructed data is needed whenever a
+            // primitive (notably recursive append) leaves work under scons.
+            {
+                let head = Term::free("head", tau.clone());
+                let head2 = Term::free("head2", tau.clone());
+                let tail = Term::free("tail", tau.clone());
+                let concl = d(
+                    &self.scons(head.clone(), tail.clone()).map_err(to_core)?,
+                    &self.scons(head2.clone(), tail.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&head, &head2)?
+                        .imp(concl)?
+                        .forall("tail", tau.clone())?
+                        .forall("head2", tau.clone())?
+                        .forall("head", tau.clone())?,
+                );
+            }
+            {
+                let head = Term::free("head", tau.clone());
+                let tail = Term::free("tail", tau.clone());
+                let tail2 = Term::free("tail2", tau.clone());
+                let concl = d(
+                    &self.scons(head.clone(), tail.clone()).map_err(to_core)?,
+                    &self.scons(head.clone(), tail2.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&tail, &tail2)?
+                        .imp(concl)?
+                        .forall("tail2", tau.clone())?
+                        .forall("tail", tau.clone())?
+                        .forall("head", tau.clone())?,
+                );
+            }
+
+            cs.push(d(
+                &self.integer_p_of(snil.clone()).map_err(to_core)?,
+                &self.nil,
+            )?);
+            cs.push(
+                d(
+                    &self.integer_p_of(scons_ht.clone()).map_err(to_core)?,
+                    &self.nil,
+                )?
+                .forall("t", tau.clone())?
+                .forall("h", tau.clone())?,
+            );
+            match self.dialect {
+                Dialect::ExactIntSymbol => {
+                    let symbol = Term::free("symbol", Type::bytes());
+                    let payload = covalence_hol_eval::defs::inr(Type::int(), Type::bytes())
+                        .apply(symbol.clone())?;
+                    let atom = self.cs.atom.clone().apply(payload)?;
+                    cs.push(
+                        d(&self.integer_p_of(atom).map_err(to_core)?, &self.nil)?
+                            .forall("symbol", Type::bytes())?,
+                    );
+                }
+                Dialect::Sector | Dialect::SectorInt(_) => {
+                    cs.push(
+                        d(
+                            &self.integer_p_of(atom_b.clone()).map_err(to_core)?,
+                            &self.nil,
+                        )?
+                        .forall("b", self.cs.payload.clone())?,
+                    );
+                }
+            }
+            {
+                let value = Term::free("value", tau.clone());
+                let value2 = Term::free("value2", tau.clone());
+                let conclusion = d(
+                    &self.integer_p_of(value.clone()).map_err(to_core)?,
+                    &self.integer_p_of(value2.clone()).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&value, &value2)?
+                        .imp(conclusion)?
+                        .forall("value2", tau.clone())?
+                        .forall("value", tau.clone())?,
+                );
+            }
+            {
+                let test = Term::free("test", tau.clone());
+                let test2 = Term::free("test2", tau.clone());
+                let body = Term::free("body", tau.clone());
+                let rest = Term::free("rest", tau.clone());
+                let before_clause = self.scons(test.clone(), body.clone()).map_err(to_core)?;
+                let before_cells = self.scons(before_clause, rest.clone()).map_err(to_core)?;
+                let after_clause = self.scons(test2.clone(), body.clone()).map_err(to_core)?;
+                let after_cells = self.scons(after_clause, rest.clone()).map_err(to_core)?;
+                let conclusion = d(
+                    &self.cond_of(before_cells).map_err(to_core)?,
+                    &self.cond_of(after_cells).map_err(to_core)?,
+                )?;
+                cs.push(
+                    d(&test, &test2)?
+                        .imp(conclusion)?
+                        .forall("rest", tau.clone())?
+                        .forall("body", tau.clone())?
+                        .forall("test2", tau.clone())?
+                        .forall("test", tau.clone())?,
+                );
+            }
+
             // --- integer clauses (the `sector+int` dialect only) -----------
             // One ∀-quantified clause per op:
             //   ∀a b:int. Step (op (int a)(int b)) (TARGET a b)
@@ -498,7 +746,7 @@ impl LispRel {
                     );
                 }
 
-                // 25–34: congruence into the int-op operands (a left/right
+                // 37–46: congruence into the int-op operands (a left/right
                 // pair per op, in IntOp::ALL order), so nested expressions
                 // like `(+ 1 (+ 2 3))` reduce their operands in place:
                 //   left:  ∀a a2 b. Step a a2 ⟹ Step (op a b) (op a2 b)
@@ -533,6 +781,16 @@ impl LispRel {
                             .forall("a", tau.clone())?,
                     );
                 }
+                let integer = Term::free("integer", Type::int());
+                cs.push(
+                    d(
+                        &self
+                            .integer_p_of(be.lit_var(&integer).map_err(to_core)?)
+                            .map_err(to_core)?,
+                        &self.t,
+                    )?
+                    .forall("integer", Type::int())?,
+                );
             }
 
             Ok(cs)
@@ -540,10 +798,10 @@ impl LispRel {
     }
 
     /// The clause index of int op `op` in the `sector+int` `Step` rule set
-    /// (the integer clauses follow the 20 primitive-fragment clauses, in
+    /// (the integer clauses follow the 32 primitive-fragment clauses, in
     /// [`IntOp::ALL`] order). Only meaningful when a backend is installed.
     fn int_clause_idx(op: IntOp) -> usize {
-        20 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
+        32 + IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL")
     }
 
     /// The clause index of int op `op`'s **congruence** clause (left = reduce
@@ -551,7 +809,7 @@ impl LispRel {
     /// set: the pairs follow the five redex clauses, in [`IntOp::ALL`] order.
     fn int_cong_idx(op: IntOp, right: bool) -> usize {
         let p = IntOp::ALL.iter().position(|&o| o == op).expect("op in ALL");
-        25 + 2 * p + usize::from(right)
+        37 + 2 * p + usize::from(right)
     }
 
     /// The number of `Step` clauses.
@@ -669,6 +927,9 @@ impl LispRel {
         if let Some(arg) = self.match_unary(term, &self.null_p) {
             return self.step_unary(term, &arg, |x| self.null_p_of(x), 16, RedHead::NullP);
         }
+        if let Some(arg) = self.match_unary(term, &self.integer_p) {
+            return self.step_unary(term, &arg, |x| self.integer_p_of(x), 30, RedHead::IntegerP);
+        }
         // eq? a b — reduce a, then b, then fire (equal-atoms clause 11).
         if let Some((a, b)) = self.match_eq(term) {
             return self.step_eq(term, &a, &b);
@@ -676,6 +937,12 @@ impl LispRel {
         // cond cells — the cond driver (below) handles scrutiny + selection.
         if let Some(cells) = self.match_cond(term) {
             return self.step_cond(term, &cells);
+        }
+        if let Some((head, tail)) = self.as_scons(term) {
+            return self.step_scons(&head, &tail);
+        }
+        if let Some((left, right)) = self.match_append(term) {
+            return self.step_append(&left, &right);
         }
         // Integer op `(op a b)` — the `sector+int` dialect only. In `sector`
         // (no backend) this match never fires, so `(+ 2 2)` is stuck (as an
@@ -697,6 +964,87 @@ impl LispRel {
             .copied()
             .find(|&op| *head == be.op_head(op))?;
         Some((op, a_arg.clone(), b_arg.clone()))
+    }
+
+    fn match_append(&self, term: &Term) -> Option<(Term, Term)> {
+        let (inner, right) = term.as_app()?;
+        let (head, left) = inner.as_app()?;
+        (*head == self.append).then(|| (left.clone(), right.clone()))
+    }
+
+    fn step_scons(&self, head: &Term, tail: &Term) -> Result<Option<(Term, Thm)>, HolError> {
+        let n = self.step_n_clauses()?;
+        if let Some((next, sub)) = self.prove_step(head)? {
+            let to = self.scons(next.clone(), tail.clone())?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                25,
+                n,
+                &[head.clone(), next, tail.clone()],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
+        if let Some((next, sub)) = self.prove_step(tail)? {
+            let to = self.scons(head.clone(), next.clone())?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                26,
+                n,
+                &[head.clone(), tail.clone(), next],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
+        Ok(None)
+    }
+
+    fn step_append(&self, left: &Term, right: &Term) -> Result<Option<(Term, Thm)>, HolError> {
+        let n = self.step_n_clauses()?;
+        if let Some((next, sub)) = self.prove_step(left)? {
+            let to = self.append_of(next.clone(), right.clone())?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                23,
+                n,
+                &[left.clone(), next, right.clone()],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
+        if let Some((next, sub)) = self.prove_step(right)? {
+            let to = self.append_of(left.clone(), next.clone())?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                24,
+                n,
+                &[left.clone(), right.clone(), next],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
+        if self.is_snil(left) {
+            return Ok(Some((right.clone(), self.step_base(20, &[right.clone()])?)));
+        }
+        if let Some(atom) = self.as_atom(left) {
+            return Ok(Some((
+                right.clone(),
+                self.step_base(21, &[atom, right.clone()])?,
+            )));
+        }
+        if let Some((head, tail)) = self.as_scons(left) {
+            let recursive = self.append_of(tail.clone(), right.clone())?;
+            let to = self.scons(head.clone(), recursive)?;
+            return Ok(Some((
+                to,
+                self.step_base(22, &[head, tail, right.clone()])?,
+            )));
+        }
+        Ok(None)
     }
 
     /// Step an integer-op application `(op a b)`: reduce the left operand
@@ -842,6 +1190,36 @@ impl LispRel {
                     Ok(None)
                 }
             }
+            RedHead::IntegerP => {
+                if let Some(integer) = self.int_be.as_deref().and_then(|be| be.as_lit(v)) {
+                    return Ok(Some((
+                        self.t(),
+                        self.step_base(47, &[covalence_hol_eval::mk_int(integer)])?,
+                    )));
+                }
+                if self.is_snil(v) {
+                    return Ok(Some((self.nil(), self.step_base(27, &[])?)));
+                }
+                if let Some((head, tail)) = self.as_scons(v) {
+                    return Ok(Some((self.nil(), self.step_base(28, &[head, tail])?)));
+                }
+                let Some(payload) = self.as_atom(v) else {
+                    return Ok(None);
+                };
+                let argument = match self.dialect {
+                    Dialect::ExactIntSymbol => {
+                        let Some((injection, bytes)) = payload.as_app() else {
+                            return Ok(None);
+                        };
+                        if *injection != covalence_hol_eval::defs::inr(Type::int(), Type::bytes()) {
+                            return Ok(None);
+                        }
+                        bytes.clone()
+                    }
+                    Dialect::Sector | Dialect::SectorInt(_) => payload,
+                };
+                Ok(Some((self.nil(), self.step_base(29, &[argument])?)))
+            }
         }
     }
 
@@ -884,7 +1262,20 @@ impl LispRel {
         if test == self.t {
             return Ok(Some((body.clone(), self.step_base(19, &[body, rest])?)));
         }
-        // Test is not yet a canonical value — no rule (would need congruence).
+        if let Some((test2, sub)) = self.prove_step(&test)? {
+            let after_clause = self.scons(test2.clone(), body.clone())?;
+            let after_cells = self.scons(after_clause, rest.clone())?;
+            let to = self.cond_of(after_cells)?;
+            let theorem = derive_mixed(
+                &self.step_rule_set(),
+                31,
+                self.step_n_clauses()?,
+                &[test, test2, body, rest],
+                vec![Premise::Derivation(sub)],
+            )
+            .map_err(kernel_err)?;
+            return Ok(Some((to, theorem)));
+        }
         Ok(None)
     }
 
@@ -969,6 +1360,185 @@ impl LispRel {
         }
     }
 
+    /// Compile the backend-neutral core to the relational HOL representation.
+    pub fn compile_core(&self, expression: &FrontendExpr) -> Result<Term, HolError> {
+        match expression {
+            CoreExpr::Literal(datum) | CoreExpr::Quote(datum) => self.compile_core_datum(datum),
+            CoreExpr::Truth(true) => Ok(self.t()),
+            CoreExpr::Truth(false) => Ok(self.nil()),
+            CoreExpr::Primitive {
+                operator,
+                arguments,
+            } => self.compile_core_primitive(*operator, arguments),
+            CoreExpr::If {
+                condition,
+                consequent,
+                alternative,
+            } => {
+                let condition = self.compile_core(condition)?;
+                let consequent = self.compile_core(consequent)?;
+                let alternative = self.compile_core(alternative)?;
+                let else_cell = self.scons(self.t(), alternative)?;
+                let then_cell = self.scons(condition, consequent)?;
+                let rest = self.scons(else_cell, self.cs.snil.clone())?;
+                let cells = self.scons(then_cell, rest)?;
+                self.cond_of(cells)
+            }
+            CoreExpr::Cond { clauses } => {
+                let mut cells = self.cs.snil.clone();
+                for (condition, body) in clauses.iter().rev() {
+                    let condition = self.compile_core(condition)?;
+                    let body = self.compile_core(body)?;
+                    let cell = self.scons(condition, body)?;
+                    cells = self.scons(cell, cells)?;
+                }
+                self.cond_of(cells)
+            }
+            CoreExpr::Sequence { .. } => Err(HolError::Stuck(
+                "strict sequencing is not yet represented by the first-order relational \
+                 reduction vocabulary"
+                    .into(),
+            )),
+            CoreExpr::Apply {
+                operator,
+                arguments,
+            } => {
+                if let CoreExpr::Variable(name) = operator.as_ref() {
+                    if matches!(name.as_str(), "defun" | "define" | "label") {
+                        return Err(HolError::Stuck(format!(
+                            "`{name}` needs recursion, which this relational dialect does not \
+                             support yet — switch dialects with `#lang scheme`"
+                        )));
+                    }
+                    let ints = if self.int_be.is_some() {
+                        " + - * <= ="
+                    } else {
+                        ""
+                    };
+                    Err(HolError::Stuck(format!(
+                        "unknown or misapplied operator `{name}` (applied to {} arguments) — \
+                         this dialect supports: quote car cdr cons atom? consp null? eq? cond \
+                         if{ints}; `defun`/`lambda` need `#lang scheme`",
+                        arguments.len()
+                    )))
+                } else {
+                    Err(HolError::Stuck(
+                        "higher-order application needs `#lang scheme`".into(),
+                    ))
+                }
+            }
+            CoreExpr::Lambda { .. } | CoreExpr::Let { .. } | CoreExpr::LetRec { .. } => {
+                Err(HolError::Stuck(
+                    "lambda and lexical bindings need recursion; switch with `#lang scheme`".into(),
+                ))
+            }
+            CoreExpr::Variable(name) => Err(HolError::Stuck(format!(
+                "unbound relational Lisp variable `{name}`"
+            ))),
+        }
+    }
+
+    fn compile_core_datum(&self, datum: &Datum<CoreAtom>) -> Result<Term, HolError> {
+        match datum {
+            Datum::Nil => Ok(self.cs.snil.clone()),
+            Datum::Atom(CoreAtom::Symbol(symbol)) => self.carrier.atom(PayloadLit::Sym(symbol)),
+            Datum::Atom(CoreAtom::String { bytes, .. }) => {
+                self.carrier.atom(PayloadLit::Sym(bytes))
+            }
+            Datum::Atom(CoreAtom::Integer(integer)) => self.int_lit(integer),
+            Datum::Cons(head, tail) => {
+                let head = self.compile_core_datum(head)?;
+                let tail = self.compile_core_datum(tail)?;
+                self.scons(head, tail)
+            }
+        }
+    }
+
+    fn compile_core_primitive(
+        &self,
+        primitive: Primitive,
+        arguments: &[FrontendExpr],
+    ) -> Result<Term, HolError> {
+        let require_arity = |expected: usize| {
+            if arguments.len() == expected {
+                Ok(())
+            } else {
+                Err(HolError::Stuck(format!(
+                    "{primitive:?} expects {expected} arguments (got {})",
+                    arguments.len()
+                )))
+            }
+        };
+        match primitive {
+            Primitive::Cons => {
+                require_arity(2)?;
+                self.scons(
+                    self.compile_core(&arguments[0])?,
+                    self.compile_core(&arguments[1])?,
+                )
+            }
+            Primitive::Car | Primitive::Cdr => {
+                require_arity(1)?;
+                let argument = self.compile_core(&arguments[0])?;
+                if primitive == Primitive::Car {
+                    self.car(argument)
+                } else {
+                    self.cdr(argument)
+                }
+            }
+            Primitive::Atom | Primitive::Consp | Primitive::Null => {
+                require_arity(1)?;
+                let argument = self.compile_core(&arguments[0])?;
+                match primitive {
+                    Primitive::Atom => self.atom_p_of(argument),
+                    Primitive::Consp => self.consp_of(argument),
+                    Primitive::Null => self.null_p_of(argument),
+                    _ => unreachable!(),
+                }
+            }
+            Primitive::Integer => {
+                require_arity(1)?;
+                self.integer_p_of(self.compile_core(&arguments[0])?)
+            }
+            Primitive::Equal => {
+                require_arity(2)?;
+                let left = self.compile_core(&arguments[0])?;
+                let right = self.compile_core(&arguments[1])?;
+                if self
+                    .int_be
+                    .as_deref()
+                    .is_some_and(|backend| backend.as_lit(&left).is_some())
+                {
+                    self.int_op_term(IntOp::Eq, left, right)
+                } else {
+                    self.eq_of(left, right)
+                }
+            }
+            Primitive::Append => {
+                require_arity(2)?;
+                self.append_of(
+                    self.compile_core(&arguments[0])?,
+                    self.compile_core(&arguments[1])?,
+                )
+            }
+            Primitive::Add | Primitive::Subtract | Primitive::Multiply | Primitive::LessEqual => {
+                require_arity(2)?;
+                let operation = match primitive {
+                    Primitive::Add => IntOp::Add,
+                    Primitive::Subtract => IntOp::Sub,
+                    Primitive::Multiply => IntOp::Mul,
+                    Primitive::LessEqual => IntOp::Le,
+                    _ => unreachable!(),
+                };
+                self.int_op_term(
+                    operation,
+                    self.compile_core(&arguments[0])?,
+                    self.compile_core(&arguments[1])?,
+                )
+            }
+        }
+    }
+
     /// An atom in operand position: a numeral (int dialect only), else a
     /// symbol atom.
     fn surface_atom(&self, a: &Atom) -> Result<Term, HolError> {
@@ -1027,6 +1597,11 @@ impl LispRel {
             ("atom?" | "atom", 1) => self.atom_p_of(self.compile_surface(&args[0])?),
             ("consp" | "pair?", 1) => self.consp_of(self.compile_surface(&args[0])?),
             ("null?" | "null", 1) => self.null_p_of(self.compile_surface(&args[0])?),
+            ("integer?" | "integerp", 1) => self.integer_p_of(self.compile_surface(&args[0])?),
+            ("append", 2) => self.append_of(
+                self.compile_surface(&args[0])?,
+                self.compile_surface(&args[1])?,
+            ),
             ("eq?" | "eq", 2) => {
                 let a = self.compile_surface(&args[0])?;
                 let b = self.compile_surface(&args[1])?;
@@ -1075,7 +1650,7 @@ impl LispRel {
                 };
                 Err(HolError::Stuck(format!(
                     "unknown or misapplied operator `{other}` (applied to {n} argument{}) — \
-                     this dialect supports: quote car cdr cons atom? consp null? eq? cond \
+                     this dialect supports: quote car cdr cons atom? consp null? integer? eq? append cond \
                      if{ints}; `defun`/`lambda` need `#lang scheme`",
                     if n == 1 { "" } else { "s" }
                 )))
@@ -1084,7 +1659,7 @@ impl LispRel {
     }
 
     /// Is `t` a **value** of the relation: an `(int n)` literal (int dialect),
-    /// an atom, `snil`/`nil`, or a cons of values?
+    /// an atom, `snil`, or a cons of values?
     pub fn is_value(&self, t: &Term) -> bool {
         if let Some(be) = self.int_be.as_deref()
             && be.as_lit(t).is_some()
@@ -1124,12 +1699,32 @@ impl LispRel {
         }
         let hint = match self.dialect {
             Dialect::Sector => " (integer arithmetic needs `#lang lisp`)",
-            Dialect::SectorInt(_) => "",
+            Dialect::SectorInt(_) | Dialect::ExactIntSymbol => "",
         };
         Err(HolError::Stuck(format!(
             "`{}` does not reduce to a value: a subterm has no reduction rule in this dialect{hint}",
             surface_text(e)
         )))
+    }
+
+    pub fn reduce_core(
+        &self,
+        expression: &FrontendExpr,
+        fuel: usize,
+    ) -> Result<(Term, Thm), HolError> {
+        let input = self.compile_core(expression)?;
+        let (value, theorem) = self.prove_reduces(&input, fuel)?;
+        if self.is_value(&value) {
+            Ok((value, theorem))
+        } else {
+            let hint = match self.dialect {
+                Dialect::Sector => " (integer arithmetic needs `#lang lisp`)",
+                Dialect::SectorInt(_) | Dialect::ExactIntSymbol => "",
+            };
+            Err(HolError::Stuck(format!(
+                "expression does not reduce to a value: a subterm has no reduction rule in this dialect{hint}"
+            )))
+        }
     }
 
     /// Render a relational value term to Lisp text: `(int n)` → decimal `n`,
@@ -1143,10 +1738,12 @@ impl LispRel {
         if self.is_snil(v) {
             return "()".to_string();
         }
-        if let Some(b) = self.as_atom(v)
-            && let Some(bytes) = blob_bytes(&b)
-        {
-            return String::from_utf8_lossy(&bytes).into_owned();
+        if let Some(payload) = self.carrier.as_atom(v) {
+            return match payload {
+                PayloadOwned::Sym(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                PayloadOwned::Int(integer) => integer.to_string(),
+                _ => format!("{v}"),
+            };
         }
         if self.as_scons(v).is_some() {
             let mut out = String::from("(");
@@ -1175,6 +1772,55 @@ impl LispRel {
     }
 }
 
+impl StepRelation for LispRel {
+    type Configuration = Term;
+    type Error = HolError;
+
+    fn successors(&self, configuration: &Term) -> Result<Vec<Term>, HolError> {
+        Ok(self
+            .prove_step(configuration)?
+            .map(|(next, _)| vec![next])
+            .unwrap_or_default())
+    }
+}
+
+impl DeterministicStep for LispRel {
+    fn next(&self, configuration: &Term) -> Result<Option<Term>, HolError> {
+        Ok(self.prove_step(configuration)?.map(|(next, _)| next))
+    }
+}
+
+impl TraceReplay<LispRel> for LispRel {
+    type Evidence = Thm;
+    type Error = HolError;
+
+    fn replay(&self, _relation: &LispRel, trace: &CheckedTrace<Term>) -> Result<Thm, HolError> {
+        let states = trace.states();
+        let value = trace.end().clone();
+        let mut evidence = self.reduces_refl(&value)?;
+        for pair in states.windows(2).rev() {
+            let (actual, step) = self.prove_step(&pair[0])?.ok_or_else(|| {
+                HolError::Stuck("checked Lisp trace ended at a non-step".to_owned())
+            })?;
+            if actual != pair[1] {
+                return Err(HolError::Stuck(
+                    "checked Lisp trace does not match proof-producing replay".to_owned(),
+                ));
+            }
+            evidence = self.reduces_step(&pair[0], &pair[1], &value, step, evidence)?;
+        }
+        Ok(evidence)
+    }
+}
+
+impl TraceSoundness<LispRel> for LispRel {
+    type Theorem = Thm;
+
+    fn trace_implies_execution(&self, evidence: &Thm) -> Result<Thm, HolError> {
+        Ok(evidence.clone())
+    }
+}
+
 /// Render a surface [`SExpr`] back to Lisp text — for **error messages** only
 /// (never as a value; values print via [`LispRel::render_value`] off a theorem).
 fn surface_text(e: &SExpr) -> String {
@@ -1190,15 +1836,6 @@ fn surface_text(e: &SExpr) -> String {
     }
 }
 
-/// Extract the bytes of a blob literal term, via the designated `Lit` facade.
-fn blob_bytes(t: &Term) -> Option<Vec<u8>> {
-    use covalence_core::seam::Lit;
-    match Lit::from_term(t)? {
-        Lit::Bytes(b) => Some(b.to_vec()),
-        _ => None,
-    }
-}
-
 /// The head redex family a unary elimination fires.
 #[derive(Clone, Copy)]
 enum RedHead {
@@ -1207,6 +1844,7 @@ enum RedHead {
     AtomP,
     Consp,
     NullP,
+    IntegerP,
 }
 
 /// Map a [`HolError`] back into a `covalence_core::Error` inside a clause
@@ -1218,6 +1856,7 @@ fn to_core(e: HolError) -> covalence_core::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use covalence_kernel_lisp::{TraceReplay, execute};
 
     fn rel() -> LispRel {
         LispRel::new().unwrap()
@@ -1236,6 +1875,21 @@ mod tests {
         assert_eq!(value, a);
         assert!(thm.hyps().is_empty(), "closed reduction must be hyps-free");
         assert_eq!(thm.concl(), &r.reduces_prop(&input, &a).unwrap());
+    }
+
+    #[test]
+    fn generic_trace_api_replays_to_hol_reduces_theorem() {
+        let r = rel();
+        let head = r.sym("head");
+        let input = r
+            .car(r.scons(head.clone(), r.nil()).expect("cons"))
+            .expect("car");
+        let trace = execute(&r, input.clone(), 4).expect("generic execution");
+        assert_eq!(trace.end(), &head);
+
+        let theorem = r.replay(&r, &trace).expect("checked HOL replay");
+        assert!(theorem.hyps().is_empty());
+        assert_eq!(theorem.concl(), &r.reduces_prop(&input, &head).unwrap());
     }
 
     /// A multi-step nested reduction:
@@ -1347,6 +2001,22 @@ mod tests {
         assert_eq!(v, r.nil());
     }
 
+    #[test]
+    fn append_reduces_through_both_operands_and_recurses() {
+        let r = rel();
+        let frontend = crate::frontend::Frontend::new(crate::frontend::SurfaceDialect::Scheme);
+        let expression =
+            crate::reader::read_one("(append (cdr (quote (skip a b))) (cdr (quote (skip c d))))")
+                .unwrap();
+        let core = frontend.lower(&expression).unwrap();
+        let input = r.compile_core(&core).unwrap();
+        let (value, theorem) = r.reduce_core(&core, 32).unwrap();
+
+        assert_eq!(r.render_value(&value), "(a b c d)");
+        assert!(theorem.hyps().is_empty());
+        assert_eq!(theorem.concl(), &r.reduces_prop(&input, &value).unwrap());
+    }
+
     /// A value / stuck term yields no step.
     #[test]
     fn value_has_no_step() {
@@ -1358,17 +2028,19 @@ mod tests {
         assert!(r.prove_step(&r.car(a).unwrap()).unwrap().is_none());
     }
 
-    /// The rule sets have the expected clause counts. `sector` has 20 `Step`
-    /// clauses; `sector+int` adds the 5 integer redex clauses and the 10
-    /// integer congruence clauses (35 total).
+    /// The rule sets have the expected clause counts. `sector` has 32 `Step`
+    /// clauses; integer dialects add five arithmetic redex clauses, ten
+    /// arithmetic congruence clauses, and the positive `integer?` clause.
     #[test]
     fn clause_counts() {
         let r = rel();
-        assert_eq!(r.step_n_clauses().unwrap(), 20);
+        assert_eq!(r.step_n_clauses().unwrap(), 32);
         assert_eq!(r.reduces_rule_set().n_clauses().unwrap(), 2);
 
         let ri = LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Int)).unwrap();
-        assert_eq!(ri.step_n_clauses().unwrap(), 35);
+        assert_eq!(ri.step_n_clauses().unwrap(), 48);
+        let exact = LispRel::with_dialect(Dialect::ExactIntSymbol).unwrap();
+        assert_eq!(exact.step_n_clauses().unwrap(), 48);
     }
 
     // ---- integer dialect (sector+int) ------------------------------------
@@ -1379,8 +2051,47 @@ mod tests {
     fn nat_rel() -> LispRel {
         LispRel::with_dialect(Dialect::SectorInt(IntFlavour::Nat)).unwrap()
     }
+    fn exact_rel() -> LispRel {
+        LispRel::with_dialect(Dialect::ExactIntSymbol).unwrap()
+    }
     fn i(n: i128) -> Int {
         Int::from(n)
+    }
+
+    #[test]
+    fn exact_payload_nests_integers_in_data_and_reuses_arithmetic() {
+        let r = exact_rel();
+        let frontend = crate::frontend::Frontend::new(crate::frontend::SurfaceDialect::Scheme);
+
+        let quoted = frontend
+            .lower(&crate::reader::read_one("(quote (1 two 3))").unwrap())
+            .unwrap();
+        let (value, theorem) = r.reduce_core(&quoted, 8).unwrap();
+        assert_eq!(r.render_value(&value), "(1 two 3)");
+        assert!(theorem.hyps().is_empty());
+
+        let arithmetic = frontend
+            .lower(&crate::reader::read_one("(+ (car (quote (1 99))) 2)").unwrap())
+            .unwrap();
+        let input = r.compile_core(&arithmetic).unwrap();
+        let (value, theorem) = r.reduce_core(&arithmetic, 16).unwrap();
+        assert_eq!(r.render_value(&value), "3");
+        assert!(theorem.hyps().is_empty());
+        assert_eq!(theorem.concl(), &r.reduces_prop(&input, &value).unwrap());
+
+        for (source, expected) in [
+            ("(integer? (car (quote (1 two))))", "t"),
+            ("(integer? (car (cdr (quote (1 two)))))", "()"),
+        ] {
+            let expression = frontend
+                .lower(&crate::reader::read_one(source).unwrap())
+                .unwrap();
+            let (value, theorem) = r.reduce_core(&expression, 16).unwrap();
+            assert_eq!(r.render_value(&value), expected, "{source}");
+            assert!(theorem.hyps().is_empty());
+        }
+
+        assert_ne!(r.tau(), int_rel().tau(), "backends must be distinct types");
     }
 
     /// `sector+int`: `⊢ Reduces (+ (int 2)(int 2)) (int 4)`, hyps-free, equal

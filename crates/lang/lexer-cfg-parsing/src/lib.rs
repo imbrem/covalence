@@ -12,10 +12,10 @@ use covalence_cfg_parsing::{
     CfgParseError, ChartCfgParser, ChartParseLimits, ForestNodeId, PackedParseForest,
 };
 use covalence_grammar::{Cfg, NtId};
+use covalence_kernel_data::UnicodeScalar;
 use covalence_lexer_parsing::{
     ByteLexer, LexerBudget, LexerDiagnostic, LexerError, Lexing, SourceSpan, TextLexer,
 };
-use covalence_logic_api::UnicodeScalar;
 use covalence_parsing_api::{DecodedText, Span};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -333,8 +333,8 @@ fn decoded_extent(source: &DecodedText) -> SourceSpan {
 mod tests {
     use super::*;
     use covalence_grammar::{Regex, Seg, parse_regex, parse_regex_u8};
+    use covalence_kernel_data::RawByte;
     use covalence_lexer_parsing::{LexerPolicy, TiePolicy, TokenRule};
-    use covalence_logic_api::RawByte;
     use covalence_parsing_api::{TextEncodingBoundary, Utf8};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

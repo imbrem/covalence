@@ -13,7 +13,8 @@ default = []
 
 [dependencies]
 covalence-hol = { path = "../traits" }
-covalence-logic-api = { path = "../logic" }
+covalence-logic-api = { path = "../../logic" }
+covalence-kernel-data = { path = "../../data" }
 covalence-core = { path = "../core" }
 covalence-hol-eval = { path = "../eval" }
 covalence-types = { path = "../../../lib/types" }
@@ -22,7 +23,7 @@ covalence-sexp = { path = "../../../lib/sexp" }
 covalence-metamath = { path = "../../../proof/metamath" }
 covalence-grammar = { path = "../../../lang/grammar" }
 covalence-lexer-parsing = { path = "../../../lang/lexer-parsing" }
-covalence-inductive = { path = "../../../lang/inductive" }
+covalence-inductive = { path = "../../data/inductive" }
 covalence-json-api = { path = "../../../lang/json-api" }
 covalence-spectec = { path = "../../../lib/wasm/spectec" }
 covalence-k = { path = "../../../lang/k" }

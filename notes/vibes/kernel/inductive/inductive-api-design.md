@@ -28,7 +28,7 @@ induction).
 
 ## 0. Placement + crate identity
 
-**Package `covalence-inductive`, at `crates/lang/inductive`** (not
+**Package `covalence-inductive`, at `crates/kernel/data/inductive`** (not
 `crates/kernel/hol/inductive`):
 
 - Logic-agnostic **by constraint**: no `covalence-init`/`covalence-core` dependency.
@@ -376,7 +376,7 @@ literals **denote, never construct** — per-carrier uninterpreted `toHOL` base 
 ## 8. Staging
 
 - **I1:** worktree + this design doc.
-- **I2:** `crates/lang/inductive` skeleton — spec, `Logic`/`LogicOps`, bundle, backend,
+- **I2:** `crates/kernel/data/inductive` skeleton — spec, `Logic`/`LogicOps`, bundle, backend,
   errors, unit tests; SKELETONS for unbuilt backends.
 - **I3:** the HOL `ImpredicativeBackend` in `covalence-init`; SExpr flagship end-to-end;
   `Hol`→`LogicOps` glue.
@@ -385,7 +385,7 @@ literals **denote, never construct** — per-carrier uninterpreted `toHOL` base 
 
 ## 9. I2 outcome (built; contract deltas from §2)
 
-Landed `crates/lang/inductive` (spec model, `Logic`/`LogicOps`, bundle, error, a
+Landed `crates/kernel/data/inductive` (spec model, `Logic`/`LogicOps`, bundle, error, a
 generic `conformance` suite = the backend-swap test) + both HOL backends in
 `covalence-init::init::inductive`:
 

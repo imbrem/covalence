@@ -11,7 +11,8 @@
 //!
 //! @covalence-api {"id":"A0003","title":"Bytes and byte strings","status":"experimental","dependsOn":["A0001","A0002"]}
 
-use crate::{Logic, NatSyntax};
+use crate::NatSyntax;
+use covalence_logic_api::Logic;
 
 /// Byte order for multi-byte integer encodings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

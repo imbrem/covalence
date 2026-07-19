@@ -40,6 +40,8 @@ pub mod omega;
 pub mod order;
 pub mod succ;
 
+pub use covalence_kernel_data as data;
+pub use covalence_kernel_data::numeric;
 /// Dependency-free logic carriers, capabilities, and relational algebra.
 ///
 /// Theory APIs should prefer these traits to concrete native HOL values.
@@ -63,6 +65,9 @@ pub use covalence_inductive::{
     ArgSort, BackendCaps, CtorSpec, InductiveBackend, InductiveFacts, InductiveSpec,
     InductiveTheory, Logic, LogicOps,
 };
+pub use covalence_init::init::inductive::{
+    CoprodVariantTheory, VariantTheory, VariantTheoryBackend,
+};
 
 // ---- The certificate + core vocabulary the traits are stated over ----
 pub use covalence_core::{Error, Result, Term, Type};
@@ -85,7 +90,15 @@ pub use omega::{HolOmega, InstError, NativeHolOmega, OmegaLang};
 // `Derivable_R`) both implement the `Fragment` trait. Defined in `covalence-init`
 // next to the engines; re-exported here so consumers name one crate.
 pub use covalence_init::grammar::cfg::GrammarEnv;
-pub use covalence_init::spectec::{FragPremise, Fragment, RelationEnv};
+pub use covalence_init::grammar::spectec::{
+    GrammarInstance, GrammarInstanceKey, GrammarRoot, GrammarRootError, IndexedGrammarEnv,
+    IndexedGrammarError, IndexedLoweringRefusal, IndexedLoweringReport, IndexedLoweringResidual,
+    IndexedProduction, IndexedProductionLowerer, ParameterizedGrammarIr, PremiseFreeRegexLowerer,
+    RootedGrammarEnv, spec_grammar_env_recognition_roots, wasm3_indexed_grammar_env,
+};
+pub use covalence_init::spectec::{
+    DefinitionKind, DefinitionRef, FragPremise, Fragment, HolSpec, RelationEnv, SpecTecSpec,
+};
 
 // ---- The whole-spec total load + spec slices (the WASM-semantics surface) ----
 // The bundled WASM 3.0 spec loads as ONE kernel-checked rule set
@@ -101,8 +114,25 @@ pub use covalence_init::wasm::lower::slice::{
     SliceEnv, SliceReport, SliceSeed, SpecSlice, exec_slice, lime_slice, transport, wasm1_slice,
     wasm2_slice,
 };
+// Positive, adequacy-gated decision seam for SpecTec `otherwise` guards that
+// depend on non-derivability of an earlier relation judgement. Implementors
+// supply certified graph relations; the default remains honestly opaque.
+pub use covalence_init::wasm::lower::decision::{
+    CertifiedDecisionCase, CertifiedDecisionFamily, DecisionAnswer, DecisionLowerer,
+    DecisionRequest, OpaqueDecisions,
+};
 pub use covalence_init::wasm::lower::total::{
     ClauseMeta, TotalReport, total_rule_set, total_spec_clauses, with_total_stack,
+};
+// Lossless source-type layer: refinement-preserving shapes plus deterministic
+// dependency/SCC analysis, ready for semantic HOL-sort backends.
+pub use covalence_init::wasm::sort::{
+    CarrierTypeResolver, HolSort, RefinementAwareTypeResolver, ResolvedType, SemanticTypeResolver,
+    SortInvariant, TypeProvenance,
+};
+pub use covalence_init::wasm::type_family::{
+    CaseShape, FamilyInstance, FieldShape, TypeFamilies, TypeFamily, TypeFamilySource, TypeShape,
+    coprod_variant_theory,
 };
 // Execution traces (Wave G): chain single-`Step` theorems through the spec's
 // own `Steps/refl`+`Steps/trans` into multi-step runs; `TraceEnv` also

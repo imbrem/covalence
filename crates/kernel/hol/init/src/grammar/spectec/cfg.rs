@@ -22,7 +22,9 @@
 
 use covalence_core::Result;
 use covalence_grammar::cfg::NtId;
-use covalence_spectec::cfg::{CfgReport, Coverage, LowerMode, lower, lower_recognition};
+use covalence_spectec::cfg::{
+    CfgReport, Coverage, GrammarRoot, LowerMode, lower, lower_recognition, lower_recognition_roots,
+};
 use covalence_spectec::grammar::{wasm3, wasm3_binary};
 
 use crate::grammar::cfg::GrammarEnv;
@@ -57,6 +59,48 @@ pub fn spec_grammar_env_recognition(roots: &[&str]) -> Result<(GrammarEnv, CfgRe
     let (cfg, report) = lower_recognition(&grammars, roots);
     let env = GrammarEnv::new(cfg)?;
     Ok((env, report))
+}
+
+/// A kernel grammar environment together with the explicit, identity-bearing
+/// roots used to construct it.
+pub struct RootedGrammarEnv {
+    env: GrammarEnv,
+    report: CfgReport,
+    roots: Vec<NtId>,
+}
+
+impl RootedGrammarEnv {
+    /// The kernel-checked CFG environment.
+    pub fn env(&self) -> &GrammarEnv {
+        &self.env
+    }
+
+    /// The lowering coverage/refusal report.
+    pub fn report(&self) -> &CfgReport {
+        &self.report
+    }
+
+    /// Root non-terminals, in the same order as the requested roots.
+    pub fn roots(&self) -> &[NtId] {
+        &self.roots
+    }
+}
+
+/// Build a recognition environment for explicit plain or ground-instance
+/// roots.
+///
+/// Unlike [`spec_grammar_env_recognition`], this entry point refuses a generic
+/// parameterised root. Each ground instance gets a distinct root judgement,
+/// so `BuN(32)` and `BuN(64)`, for example, cannot alias in HOL.
+pub fn spec_grammar_env_recognition_roots(roots: &[GrammarRoot]) -> Result<RootedGrammarEnv> {
+    let grammars = wasm3();
+    let (cfg, report, roots) = lower_recognition_roots(&grammars, roots)
+        .map_err(|e| covalence_core::Error::ConnectiveRule(format!("spectec grammar root: {e}")))?;
+    Ok(RootedGrammarEnv {
+        env: GrammarEnv::new(cfg)?,
+        report,
+        roots,
+    })
 }
 
 /// Build the **whole-spec** [`GrammarEnv`]: the universe is *all* bundled
@@ -395,6 +439,7 @@ mod whole_spec_tests {
 #[cfg(test)]
 mod recog_tests {
     use super::*;
+    use covalence_spectec::ast::{SpecTecArg, SpecTecExp, SpecTecNum};
 
     #[test]
     fn bu32_recognition_env_builds_with_leb128_instance() {
@@ -409,5 +454,28 @@ mod recog_tests {
         );
         // The recognition-mode approximation is recorded honestly.
         assert!(report.mono_instances >= 1);
+    }
+
+    #[test]
+    fn explicit_ground_instances_have_distinct_hol_roots() {
+        let arg = |n| SpecTecArg::Exp {
+            e: SpecTecExp::Num {
+                n: SpecTecNum::Nat(n),
+            },
+        };
+        let rooted = spec_grammar_env_recognition_roots(&[
+            GrammarRoot::Instance {
+                name: "BuN".into(),
+                args: vec![arg(32)],
+            },
+            GrammarRoot::Instance {
+                name: "BuN".into(),
+                args: vec![arg(64)],
+            },
+        ])
+        .unwrap();
+        assert_ne!(rooted.roots()[0], rooted.roots()[1]);
+        assert!(rooted.env().nt("BuN@32").is_some());
+        assert!(rooted.env().nt("BuN@64").is_some());
     }
 }

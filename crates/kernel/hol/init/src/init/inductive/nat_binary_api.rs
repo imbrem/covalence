@@ -22,7 +22,7 @@
 //! @covalence-api-impl {"api":"A0002","name":"DoubleSuccNat","representation":"logarithmic-depth double/successor terms over native HOL carriers"}
 
 use covalence_core::{Result, Term, Type};
-use covalence_logic_api::nat::NatSyntax;
+use covalence_kernel_data::numeric::nat::NatSyntax;
 
 use super::nat_backend_common::impl_native_nat_theory;
 use crate::init::{nat, nat_binary};

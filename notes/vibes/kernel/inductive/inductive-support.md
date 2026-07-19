@@ -167,7 +167,7 @@ The engine runs on the `Hol` trait (`init/inductive/hol.rs`, re-exported as
 beta_nf/exists_*/rw_all`). `NativeHol` implements it over the kernel. Intent: "same
 engine, any HOL backend" (native today; an object-level HOL tomorrow).
 
-## 5. The logic-neutral API (`crates/lang/inductive/`)
+## 5. The logic-neutral API (`crates/kernel/data/inductive/`)
 
 A logic-agnostic wrapper so consumers name one crate and swap representations:
 
@@ -207,7 +207,7 @@ full-capability but type-specific backends (kernel S-expression, nat).**
 
 ## 7. Skeletons + improvements
 
-Sourced from `init/src/init/SKELETONS.md`, `crates/lang/inductive/SKELETONS.md`, and
+Sourced from `init/src/init/SKELETONS.md`, `crates/kernel/data/inductive/SKELETONS.md`, and
 the code above.
 
 ### Representation / backend gaps

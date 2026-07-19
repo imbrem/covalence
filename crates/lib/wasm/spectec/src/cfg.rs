@@ -151,6 +151,17 @@ pub enum SkipReason {
     Bridge,
 }
 
+/// One skipped source production and its exact lowering refusal.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SkippedProduction {
+    /// Source grammar containing the production.
+    pub grammar: String,
+    /// Zero-based production index within that grammar.
+    pub production: usize,
+    /// Typed reason the production could not be lowered.
+    pub error: CfgLowerError,
+}
+
 impl SkipReason {
     fn of(err: &CfgLowerError) -> Self {
         match err {
@@ -191,6 +202,38 @@ pub enum LowerMode {
     Recognition,
 }
 
+/// An explicitly selected grammar root.
+///
+/// Parameterised grammars must use [`Instance`](Self::Instance): treating a
+/// generic grammar name as an ordinary CFG non-terminal would erase the
+/// parameters from the derivability judgement.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GrammarRoot {
+    /// A non-parameterised grammar.
+    Plain(String),
+    /// A grammar specialised at canonical, ground SpecTec arguments.
+    Instance { name: String, args: Vec<SpecTecArg> },
+}
+
+/// Why an explicit grammar root could not be represented faithfully.
+#[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
+pub enum GrammarRootError {
+    #[error("unknown grammar root `{name}`")]
+    Unknown { name: String },
+    #[error("parameterised grammar root `{name}` requires an explicit instance")]
+    ParametersRequired { name: String },
+    #[error("grammar root `{name}` is not parameterised")]
+    UnexpectedInstance { name: String },
+    #[error("grammar root `{name}` expects {expected} argument(s), got {actual}")]
+    Arity {
+        name: String,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("argument {index} of grammar root `{name}` is not ground or has the wrong kind")]
+    UngroundArgument { name: String, index: usize },
+}
+
 impl LowerMode {
     fn is_recognition(self) -> bool {
         matches!(self, LowerMode::Recognition)
@@ -229,6 +272,12 @@ pub struct CfgReport {
     pub lowered_prods: usize,
     /// Number of SpecTec productions skipped, bucketed by reason.
     pub skipped: BTreeMap<SkipReason, usize>,
+    /// Per-production lowering errors, in source traversal order.
+    ///
+    /// This is the lossless companion to [`Self::skipped`]: consumers can
+    /// audit exactly which grammar/form remains outside a lowering mode
+    /// without scraping display strings or reimplementing the lowering walk.
+    pub skipped_details: Vec<SkippedProduction>,
     /// Attr captures stripped silently (fresh-variable / value captures —
     /// language-preserving).
     pub attrs_captured: usize,
@@ -265,8 +314,13 @@ pub struct CfgReport {
 }
 
 impl CfgReport {
-    fn note_skip(&mut self, err: &CfgLowerError) {
+    fn note_skip(&mut self, grammar: &str, production: usize, err: &CfgLowerError) {
         *self.skipped.entry(SkipReason::of(err)).or_default() += 1;
+        self.skipped_details.push(SkippedProduction {
+            grammar: grammar.to_string(),
+            production,
+            error: err.clone(),
+        });
     }
 
     /// Total productions skipped across all reasons.
@@ -841,6 +895,129 @@ pub fn lower_recognition(grammars: &[Grammar], roots: &[&str]) -> (Cfg<u8>, CfgR
     lower_with(grammars, roots, LowerMode::Recognition)
 }
 
+/// Lower explicitly selected recognition roots without erasing grammar
+/// parameters.
+///
+/// Each instance is introduced through a fresh, non-parameterised wrapper
+/// non-terminal whose sole production references the fully ground instance.
+/// Existing monomorphisation then bakes the canonical argument vector into the
+/// target non-terminal's identity. The returned IDs are the wrappers, in input
+/// order. Distinct ground instances therefore cannot alias even when they
+/// share a source grammar.
+///
+/// Generic parameterised roots and non-ground arguments are rejected before
+/// lowering. In particular this API deliberately does not pretend that the
+/// text grammar's symbolic identifier context `I` is a ground CFG parameter.
+pub fn lower_recognition_roots(
+    grammars: &[Grammar],
+    roots: &[GrammarRoot],
+) -> Result<(Cfg<u8>, CfgReport, Vec<NtId>), GrammarRootError> {
+    let by_name: BTreeMap<&str, &Grammar> = grammars.iter().map(|g| (g.name.as_str(), g)).collect();
+    let mut universe = grammars.to_vec();
+    let mut wrapper_names = Vec::with_capacity(roots.len());
+
+    for (root_index, root) in roots.iter().enumerate() {
+        let (name, args) = match root {
+            GrammarRoot::Plain(name) => {
+                let target = by_name
+                    .get(name.as_str())
+                    .ok_or_else(|| GrammarRootError::Unknown { name: name.clone() })?;
+                if !target.params.is_empty() {
+                    return Err(GrammarRootError::ParametersRequired { name: name.clone() });
+                }
+                (name, Vec::new())
+            }
+            GrammarRoot::Instance { name, args } => {
+                let target = by_name
+                    .get(name.as_str())
+                    .ok_or_else(|| GrammarRootError::Unknown { name: name.clone() })?;
+                if target.params.is_empty() {
+                    return Err(GrammarRootError::UnexpectedInstance { name: name.clone() });
+                }
+                if target.params.len() != args.len() {
+                    return Err(GrammarRootError::Arity {
+                        name: name.clone(),
+                        expected: target.params.len(),
+                        actual: args.len(),
+                    });
+                }
+                for (index, (param, arg)) in target.params.iter().zip(args).enumerate() {
+                    if !ground_arg_matches(param, arg, &by_name) {
+                        return Err(GrammarRootError::UngroundArgument {
+                            name: name.clone(),
+                            index,
+                        });
+                    }
+                }
+                (name, args.clone())
+            }
+        };
+
+        let mut wrapper = format!("$root{root_index}");
+        while by_name.contains_key(wrapper.as_str())
+            || wrapper_names.iter().any(|existing| existing == &wrapper)
+        {
+            wrapper.insert(0, '$');
+        }
+        wrapper_names.push(wrapper.clone());
+        universe.push(Grammar {
+            name: wrapper,
+            params: Vec::new(),
+            typ: spectec_ast::SpecTecTyp::Tup { ets: Vec::new() },
+            prods: vec![SpecTecProd::Prod {
+                ps: Vec::new(),
+                g: SpecTecSym::Var {
+                    x: name.clone(),
+                    as1: args,
+                },
+                e: SpecTecExp::Bool { b: true },
+                prs: Vec::new(),
+            }],
+        });
+    }
+
+    let root_refs: Vec<&str> = wrapper_names.iter().map(String::as_str).collect();
+    let (cfg, report) = lower_recognition(&universe, &root_refs);
+    let root_ids = wrapper_names
+        .iter()
+        .map(|name| cfg.lookup(name).expect("fresh root belongs to closure"))
+        .collect();
+    Ok((cfg, report, root_ids))
+}
+
+fn ground_arg_matches(
+    param: &SpecTecParam,
+    arg: &SpecTecArg,
+    grammars: &BTreeMap<&str, &Grammar>,
+) -> bool {
+    match (param, arg) {
+        (SpecTecParam::Exp { .. }, SpecTecArg::Exp { e }) => {
+            fold_exp(&ParamEnv::new(), e).is_some()
+        }
+        (SpecTecParam::Typ { .. }, SpecTecArg::Typ { .. }) => true,
+        (SpecTecParam::Gram { .. }, SpecTecArg::Gram { g }) => ground_grammar_arg(g, grammars),
+        // Definition-valued grammar arguments do not yet have a canonical
+        // instance-key representation.
+        (SpecTecParam::Def { .. }, SpecTecArg::Def { .. }) => false,
+        _ => false,
+    }
+}
+
+fn ground_grammar_arg(sym: &SpecTecSym, grammars: &BTreeMap<&str, &Grammar>) -> bool {
+    let SpecTecSym::Var { x, as1 } = sym else {
+        return false;
+    };
+    let Some(target) = grammars.get(x.as_str()) else {
+        return false;
+    };
+    target.params.len() == as1.len()
+        && target
+            .params
+            .iter()
+            .zip(as1)
+            .all(|(param, arg)| ground_arg_matches(param, arg, grammars))
+}
+
 /// The shared lowering driver, parameterised by [`LowerMode`].
 fn lower_with(grammars: &[Grammar], roots: &[&str], mode: LowerMode) -> (Cfg<u8>, CfgReport) {
     let mut ctx = Ctx::new(grammars, mode);
@@ -903,14 +1080,14 @@ fn lower_with(grammars: &[Grammar], roots: &[&str], mode: LowerMode) -> (Cfg<u8>
         let lhs = ids[name];
         let mut lowered_here = 0usize;
         let mut skipped_here = 0usize;
-        for p in &g.prods {
+        for (production, p) in g.prods.iter().enumerate() {
             match lower_prod(&mut ctx, &ids, &root_env, g, lhs, p) {
                 Ok(n) => {
                     lowered_here += n;
                     ctx.report.lowered_prods += 1;
                 }
                 Err(err) => {
-                    ctx.report.note_skip(&err);
+                    ctx.report.note_skip(&g.name, production, &err);
                     skipped_here += 1;
                 }
             }
@@ -1800,6 +1977,81 @@ mod tests {
         let m = cfg.lookup("M").unwrap();
         assert!(cfg.naive_parse(m, &[0x00, 0x61, 0x73, 0x6D]));
         assert!(!cfg.naive_parse(m, &[0x00, 0x61, 0x73]));
+    }
+
+    #[test]
+    fn skipped_details_are_lossless() {
+        let grammars = crate::grammar::wasm3();
+        let roots: Vec<&str> = grammars.iter().map(|g| g.name.as_str()).collect();
+        for (_, report) in [
+            lower(&grammars, &roots),
+            lower_recognition(&grammars, &roots),
+        ] {
+            assert_eq!(report.skipped_details.len(), report.skipped_total());
+            let mut buckets = BTreeMap::new();
+            for skipped in &report.skipped_details {
+                let grammar = grammars
+                    .iter()
+                    .find(|g| g.name == skipped.grammar)
+                    .expect("skip names a source grammar");
+                assert!(
+                    skipped.production < grammar.prods.len(),
+                    "skip names a source production"
+                );
+                *buckets.entry(SkipReason::of(&skipped.error)).or_insert(0) += 1;
+            }
+            assert_eq!(buckets, report.skipped);
+        }
+    }
+
+    #[test]
+    fn explicit_ground_roots_keep_instance_identity_distinct() {
+        let grammars = crate::grammar::wasm3_binary();
+        let int_arg = |n| SpecTecArg::Exp {
+            e: SpecTecExp::Num {
+                n: SpecTecNum::Nat(n),
+            },
+        };
+        let (cfg, _, roots) = lower_recognition_roots(
+            &grammars,
+            &[
+                GrammarRoot::Instance {
+                    name: "BuN".into(),
+                    args: vec![int_arg(32)],
+                },
+                GrammarRoot::Instance {
+                    name: "BuN".into(),
+                    args: vec![int_arg(64)],
+                },
+            ],
+        )
+        .unwrap();
+        assert_ne!(roots[0], roots[1], "root judgements remain distinct");
+        let n32 = cfg.lookup("BuN@32").expect("32-bit instance");
+        let n64 = cfg.lookup("BuN@64").expect("64-bit instance");
+        assert_ne!(n32, n64, "ground instance keys cannot alias");
+    }
+
+    #[test]
+    fn explicit_roots_refuse_generic_and_symbolic_parameters() {
+        let grammars = crate::grammar::wasm3_binary();
+        assert_eq!(
+            lower_recognition_roots(&grammars, &[GrammarRoot::Plain("BuN".into())]).unwrap_err(),
+            GrammarRootError::ParametersRequired { name: "BuN".into() }
+        );
+        let symbolic = GrammarRoot::Instance {
+            name: "BuN".into(),
+            args: vec![SpecTecArg::Exp {
+                e: SpecTecExp::Var { id: "N".into() },
+            }],
+        };
+        assert_eq!(
+            lower_recognition_roots(&grammars, &[symbolic]).unwrap_err(),
+            GrammarRootError::UngroundArgument {
+                name: "BuN".into(),
+                index: 0,
+            }
+        );
     }
 
     #[test]

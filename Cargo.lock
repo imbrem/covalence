@@ -983,6 +983,7 @@ dependencies = [
 name = "covalence-computation"
 version = "0.0.0"
 dependencies = [
+ "covalence-kernel-data",
  "covalence-logic-api",
 ]
 
@@ -1132,6 +1133,7 @@ dependencies = [
  "covalence-hol-eval",
  "covalence-inductive",
  "covalence-init",
+ "covalence-kernel-data",
  "covalence-logic-api",
  "covalence-pure",
  "covalence-types",
@@ -1175,6 +1177,7 @@ dependencies = [
  "covalence-inductive",
  "covalence-json-api",
  "covalence-k",
+ "covalence-kernel-data",
  "covalence-lexer-parsing",
  "covalence-logic-api",
  "covalence-metamath",
@@ -1244,6 +1247,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-kernel-data"
+version = "0.0.0"
+dependencies = [
+ "covalence-inductive",
+ "covalence-kernel-numeric",
+ "covalence-logic-api",
+]
+
+[[package]]
+name = "covalence-kernel-lisp"
+version = "0.0.0"
+dependencies = [
+ "covalence-kernel-data",
+ "covalence-sexpr-api",
+]
+
+[[package]]
+name = "covalence-kernel-numeric"
+version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
+]
+
+[[package]]
 name = "covalence-kernel-sat"
 version = "0.0.0"
 dependencies = [
@@ -1297,6 +1324,7 @@ version = "0.0.0"
 dependencies = [
  "covalence-cfg-parsing",
  "covalence-grammar",
+ "covalence-kernel-data",
  "covalence-lexer-parsing",
  "covalence-logic-api",
  "covalence-parsing-api",
@@ -1307,6 +1335,7 @@ name = "covalence-lexer-parsing"
 version = "0.0.0"
 dependencies = [
  "covalence-grammar",
+ "covalence-kernel-data",
  "covalence-logic-api",
  "covalence-parsing-api",
  "covalence-regex-parsing",
@@ -1321,6 +1350,7 @@ dependencies = [
  "covalence-hol-api",
  "covalence-hol-eval",
  "covalence-init",
+ "covalence-kernel-lisp",
  "covalence-repl-core",
  "covalence-sexp",
  "covalence-sexpr-api",
@@ -1445,6 +1475,7 @@ dependencies = [
 name = "covalence-parsing-api"
 version = "0.0.0"
 dependencies = [
+ "covalence-kernel-data",
  "covalence-logic-api",
 ]
 
@@ -1452,6 +1483,7 @@ dependencies = [
 name = "covalence-peg-parsing"
 version = "0.0.0"
 dependencies = [
+ "covalence-kernel-data",
  "covalence-logic-api",
  "covalence-parsing-api",
 ]
@@ -1545,6 +1577,7 @@ name = "covalence-regex-parsing"
 version = "0.0.0"
 dependencies = [
  "covalence-grammar",
+ "covalence-kernel-data",
  "covalence-logic-api",
  "covalence-parsing-api",
 ]
@@ -1636,6 +1669,7 @@ dependencies = [
 name = "covalence-sexpr-parsing"
 version = "0.0.0"
 dependencies = [
+ "covalence-kernel-data",
  "covalence-logic-api",
  "covalence-parsing-api",
  "covalence-sexp",

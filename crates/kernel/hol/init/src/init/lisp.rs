@@ -1,4 +1,5 @@
-//! **A basic Lisp over the carved `sexpr`** — the ACL2 groundwork.
+//! **A basic Lisp over any carved S-expression instance** — the ACL2
+//! groundwork.
 //!
 //! This module is a *consumer* of the carved (exact-type) `sexpr` carrier
 //! ([`mod@crate::init::inductive::carved`]): it defines the classic Lisp
@@ -40,10 +41,6 @@ use crate::init::ext::{TermExt, ThmExt};
 use crate::init::inductive::carved::{CarvedSExpr, apply_def, carved};
 use crate::init::nat::{add, add_base, add_step, nat_add, nat_succ, succ, zero};
 
-fn bytes_ty() -> Type {
-    Type::bytes()
-}
-
 // ============================================================================
 // The Lisp theory (built once)
 // ============================================================================
@@ -84,14 +81,24 @@ fn defined(name: &str, body: Term) -> Result<(Term, Thm)> {
 
 impl Lisp {
     fn build() -> Result<Lisp> {
-        let cs = carved()?;
+        Self::build_with(carved()?, "lisp")
+    }
+
+    /// Build the same Lisp operations and proofs over another carved
+    /// S-expression instance.
+    ///
+    /// `namespace` only names the conservatively defined constants. The
+    /// implementation is parametric in `cs.payload`: bytes, integers,
+    /// coproducts, and future payload types share the same recursion and
+    /// induction proofs.
+    pub fn build_with(cs: &'static CarvedSExpr, namespace: &str) -> Result<Lisp> {
         let tau = &cs.tau;
 
         // A `bool`-valued catamorphism: leaves answer `leaf`, `scons`
         // answers `node` (raw arguments + subtree images all dropped).
         let bool_cata = |leaf: bool, node: bool| -> Result<Term> {
             let bt = Type::bool();
-            let sa = Term::abs(bytes_ty(), covalence_hol_eval::mk_bool(leaf)); // λb. leaf
+            let sa = Term::abs(cs.payload.clone(), covalence_hol_eval::mk_bool(leaf)); // λb. leaf
             let sn = covalence_hol_eval::mk_bool(leaf);
             let sc = {
                 // λh t bh bt. node
@@ -102,11 +109,14 @@ impl Lisp {
             };
             cs.prec(&[sa, sn, sc], &Type::bool())
         };
-        let (consp, consp_eq) = defined("lisp.consp", bool_cata(false, true)?)?;
-        let (atom_p, atom_p_eq) = defined("lisp.atom", bool_cata(true, false)?)?;
+        let (consp, consp_eq) = defined(&format!("{namespace}.consp"), bool_cata(false, true)?)?;
+        let (atom_p, atom_p_eq) = defined(&format!("{namespace}.atom"), bool_cata(true, false)?)?;
 
         // len := prec [λb. 0, 0, λh t bh bt. succ bt] — a nat catamorphism.
-        let (len, len_eq) = defined("lisp.len", cs.prec(&Self::len_steps(cs), &Type::nat())?)?;
+        let (len, len_eq) = defined(
+            &format!("{namespace}.len"),
+            cs.prec(&Self::len_steps(cs), &Type::nat())?,
+        )?;
 
         // append := λx y. prec [λb. y, y, λh t bh bt. scons h bt] x — a
         // paramorphism (the `scons` step re-uses the raw head `h`), with the
@@ -117,7 +127,7 @@ impl Lisp {
             let rec_x = cs.prec(&Self::append_steps(cs, &y)?, tau)?.apply(x)?;
             let l_y = Term::abs(tau.clone(), subst::close(&rec_x, "__y"));
             let body = Term::abs(tau.clone(), subst::close(&l_y, "__x"));
-            defined("lisp.append", body)?
+            defined(&format!("{namespace}.append"), body)?
         };
 
         Ok(Lisp {
@@ -157,7 +167,7 @@ impl Lisp {
     /// The `len` step terms (`λb. 0`, `0`, `λh t bh bt. succ bt`).
     fn len_steps(cs: &CarvedSExpr) -> [Term; 3] {
         let nat = Type::nat();
-        let sa = Term::abs(bytes_ty(), zero());
+        let sa = Term::abs(cs.payload.clone(), zero());
         let sn = zero();
         let sc = {
             let bt = Term::free("__bt", nat.clone());
@@ -172,7 +182,7 @@ impl Lisp {
     /// The `append` step terms at base `w` (`λb. w`, `w`, `λh t bh bt. scons h bt`).
     fn append_steps(cs: &CarvedSExpr, w: &Term) -> Result<[Term; 3]> {
         let tau = &cs.tau;
-        let sa = Term::abs(bytes_ty(), w.clone());
+        let sa = Term::abs(cs.payload.clone(), w.clone());
         let sn = w.clone();
         // λh t bh bt. scons h bt  (raw head `h` re-used; `t`, `bh` dropped).
         let h = Term::free("__h", tau.clone());
@@ -235,7 +245,7 @@ impl Lisp {
     }
     fn bool_cata_steps(cs: &CarvedSExpr, leaf: bool, node: bool) -> [Term; 3] {
         let bt = Type::bool();
-        let sa = Term::abs(bytes_ty(), covalence_hol_eval::mk_bool(leaf));
+        let sa = Term::abs(cs.payload.clone(), covalence_hol_eval::mk_bool(leaf));
         let sn = covalence_hol_eval::mk_bool(leaf);
         let l_bt = Term::abs(bt.clone(), covalence_hol_eval::mk_bool(node));
         let l_bh = Term::abs(bt.clone(), l_bt);
@@ -391,7 +401,7 @@ impl Lisp {
             let raw = lhs_eq.trans(rhs_eq.sym()?)?;
             crate::init::eq::beta_expand(&motive, leaf_c, raw)
         };
-        let b = Term::free("b", bytes_ty());
+        let b = Term::free("b", self.cs.payload.clone());
         let case_atom = leaf_case(LeafArg::Atom(&b), self.cs.atom.clone().apply(b.clone())?)?;
         let case_nil = leaf_case(LeafArg::Nil, self.cs.snil.clone())?;
 
@@ -462,7 +472,7 @@ impl Lisp {
             let raw = lhs.trans(rhs.sym()?)?;
             crate::init::eq::beta_expand(&motive, leaf_c, raw)
         };
-        let b = Term::free("b", bytes_ty());
+        let b = Term::free("b", self.cs.payload.clone());
         let case_atom = leaf_case(LeafArg::Atom(&b), self.cs.atom.clone().apply(b.clone())?)?;
         let case_nil = leaf_case(LeafArg::Nil, self.cs.snil.clone())?;
 
@@ -547,7 +557,7 @@ mod tests {
     #[test]
     fn boolean_tests_compute() {
         let l = lisp().unwrap();
-        let b = Term::free("b", bytes_ty());
+        let b = Term::free("b", Type::bytes());
         let (h, t) = (svar("h"), svar("t"));
 
         for (thm, want) in [
@@ -571,7 +581,7 @@ mod tests {
     #[test]
     fn len_computes() {
         let l = lisp().unwrap();
-        let b = Term::free("b", bytes_ty());
+        let b = Term::free("b", Type::bytes());
         let (h, t) = (svar("h"), svar("t"));
 
         let la = l.len_leaf(LeafArg::Atom(&b)).unwrap();
@@ -592,7 +602,7 @@ mod tests {
     #[test]
     fn append_computes() {
         let l = lisp().unwrap();
-        let b = Term::free("b", bytes_ty());
+        let b = Term::free("b", Type::bytes());
         let (h, t, w) = (svar("h"), svar("t"), svar("w"));
 
         let aa = l.append_leaf(LeafArg::Atom(&b), &w).unwrap();
@@ -619,6 +629,67 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ac.concl().as_eq().unwrap().1, &want);
+    }
+
+    #[test]
+    fn operations_are_parametric_in_an_integer_or_symbol_payload() {
+        use crate::init::acl2::carrier::{acl2_carved, acl2_payload};
+        use covalence_hol_eval::defs::{inl, inr};
+
+        let cs = acl2_carved().unwrap();
+        let l = Lisp::build_with(cs, "test.lisp.int-or-symbol").unwrap();
+        let integer_payload = inl(Type::int(), Type::bytes())
+            .apply(covalence_hol_eval::mk_int(7))
+            .unwrap();
+        let symbol_payload = inr(Type::int(), Type::bytes())
+            .apply(covalence_hol_eval::mk_blob(b"x".to_vec()))
+            .unwrap();
+        let integer = cs.atom.clone().apply(integer_payload.clone()).unwrap();
+        let symbol = cs.atom.clone().apply(symbol_payload.clone()).unwrap();
+        let list = cs
+            .scons
+            .clone()
+            .apply(integer.clone())
+            .unwrap()
+            .apply(cs.snil.clone())
+            .unwrap();
+
+        assert_eq!(cs.payload, acl2_payload());
+        assert_eq!(
+            l.append.type_of().unwrap(),
+            Type::fun(cs.tau.clone(), Type::fun(cs.tau.clone(), cs.tau.clone()))
+        );
+        let atom_law = l
+            .append_leaf(LeafArg::Atom(&integer_payload), &symbol)
+            .unwrap();
+        assert!(atom_law.hyps().is_empty());
+        assert_eq!(atom_law.concl().as_eq().unwrap().1, &symbol);
+
+        let cons_law = l.append_scons(&integer, &cs.snil, &symbol).unwrap();
+        assert!(cons_law.hyps().is_empty());
+        assert_eq!(
+            cons_law.concl().as_eq().unwrap().1,
+            &cs.scons
+                .clone()
+                .apply(integer)
+                .unwrap()
+                .apply(
+                    l.append
+                        .clone()
+                        .apply(cs.snil.clone())
+                        .unwrap()
+                        .apply(symbol)
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        assert_eq!(list.type_of().unwrap(), cs.tau);
+        for theorem in [l.append_assoc().unwrap(), l.len_append().unwrap()] {
+            assert!(
+                theorem.hyps().is_empty(),
+                "payload-parametric induction theorem must be closed"
+            );
+        }
     }
 
     /// **The ACL2 archetype**: append associativity by structural induction.

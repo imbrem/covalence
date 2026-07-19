@@ -6,7 +6,7 @@ depends_on = []
 todos = ["kernel.nat.logic-api-migration"]
 notes = ["notes/design/api-extraction-audit.md"]
 files = [
-  "crates/kernel/hol/logic/src/nat.rs",
+  "crates/kernel/data/numeric/src/nat.rs",
   "crates/kernel/hol/api/src/nat.rs",
   "crates/kernel/hol/init/src/init/inductive/nat_api.rs",
 ]

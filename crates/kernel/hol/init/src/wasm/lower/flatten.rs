@@ -53,14 +53,18 @@ use covalence_hol_eval::derived::DerivedRules;
 use covalence_hol_eval::{EvalThm as Thm, mk_bool, mk_nat};
 use covalence_spectec::ast::{
     SpecTecArg, SpecTecBinOp, SpecTecCmpOp, SpecTecDef, SpecTecExp, SpecTecExpField, SpecTecIter,
-    SpecTecNum, SpecTecNumTyp, SpecTecOpTyp, SpecTecPath, SpecTecPrem, SpecTecRule, SpecTecUnOp,
+    SpecTecIterExp, SpecTecNum, SpecTecNumTyp, SpecTecOpTyp, SpecTecPath, SpecTecPrem, SpecTecRule,
+    SpecTecUnOp,
 };
 
 use super::super::encode::{
     self, app, con, encode_exp, metavar, metavar_name, mixop_key, phi, tag,
 };
 use super::super::syntax::CaseCatalogue;
-use super::else_::{ElseStatus, negate, preprocess_else};
+use super::decision::{DecisionAnswer, DecisionLowerer, DecisionRequest, OpaqueDecisions};
+#[cfg(test)]
+use super::else_::preprocess_else;
+use super::else_::{ElseStatus, negate, preprocess_else_with_catalogue};
 use super::evalrel::{self, ev_graph, wrap_nat};
 use super::sortguard;
 use super::star::{self, IterNote, StarSite};
@@ -159,6 +163,12 @@ impl<'a> Flattener<'a> {
     fn scan_numeric(&mut self, e: &SpecTecExp) {
         use SpecTecExp as E;
         match e {
+            // A supported partial conversion denotes a natural even when it
+            // is nested below a structural value operation (notably the
+            // byte-count operand of `Slice`).  Discover its payload
+            // variables here; waiting for an arithmetic comparison misses
+            // the `ibytes_(...) = mem.BYTES[start : count]` conditions.
+            E::Cvt { .. } if shape_nat_cvt(e) => self.mark_arith(e),
             E::Iter { .. } => {}
             E::Bin { op, t, e1, e2 } if is_nat_arith(op, t) => {
                 self.mark_arith(e1);
@@ -166,6 +176,16 @@ impl<'a> Flattener<'a> {
             }
             E::Cmp { op, t, e1, e2 } => {
                 if cmp_is_nat_arith(op, t, e1, e2) {
+                    self.mark_arith(e1);
+                    self.mark_arith(e2);
+                } else if (matches!(
+                    op,
+                    SpecTecCmpOp::Lt | SpecTecCmpOp::Gt | SpecTecCmpOp::Le | SpecTecCmpOp::Ge
+                ) && matches!(t, SpecTecOpTyp::Num(SpecTecNumTyp::Rat)))
+                    || (matches!(op, SpecTecCmpOp::Eq | SpecTecCmpOp::Ne)
+                        && shape_rat_nat(e1)
+                        && shape_rat_nat(e2))
+                {
                     self.mark_arith(e1);
                     self.mark_arith(e2);
                 } else {
@@ -194,6 +214,19 @@ impl<'a> Flattener<'a> {
                 self.mark_arith(e1);
                 self.mark_arith(e2);
             }
+            // Inside an explicit numeric conversion, Int/Rat arithmetic is
+            // still ultimately carried by bare natural witnesses for the
+            // supported conversion normal forms.
+            E::Bin {
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Int | SpecTecNumTyp::Rat),
+                e1,
+                e2,
+                ..
+            } => {
+                self.mark_arith(e1);
+                self.mark_arith(e2);
+            }
+            E::Cvt { e1, .. } => self.mark_arith(e1),
             // Evaluated-to-nat nodes: their innards are structural.
             E::Len { e1 } => self.scan_numeric(e1),
             E::Call { .. } | E::Uncase { .. } | E::Proj { .. } | E::Dot { .. } | E::Idx { .. } => {
@@ -239,18 +272,74 @@ impl<'a> Flattener<'a> {
                 wrap_nat(metavar(&r))
             }
             E::Call { x, as1 } => self.flatten_call(x, as1, mode, fl),
-            // Iteration spines are self-contained **syntactic keys**: encoded
-            // wholesale (never cond-flattened — hoisting an `ev.*`/`fn.*`
-            // premise out of the binder would evaluate a per-element
-            // expression once at rule level), identical in judgement and
-            // condition positions, and injective since the
+            // Exact natural→integer conversion in condition position. The
+            // integer encoding is sign/magnitude, so a natural is simply the
+            // non-negative case with its real-nat denotation as magnitude.
+            E::Cvt {
+                nt1: SpecTecNumTyp::Nat,
+                nt2: SpecTecNumTyp::Int,
+                e1,
+            } if mode == Mode::Cond && self.can_ndenote(e1) => {
+                evalrel::wrap_int(0, self.ndenote(e1, fl)?)
+            }
+            // Exact supported partial conversions back to Nat, using the
+            // same wrapped-numeric currency as other evaluated results.
+            E::Cvt { .. } if mode == Mode::Cond && shape_nat_cvt(e) => {
+                wrap_nat(self.ndenote(e, fl)?)
+            }
+            // Exact identity ListN: `(x)^(n) with x <- xs` is `xs`, together
+            // with the elaboration constraint `|xs| = n`. Unlike the plain
+            // List/Opt identity collapse, dropping this bound would
+            // over-approximate; expressing it through `ev.len` makes the
+            // representation exact in patterns, call arguments, and results.
+            E::Iter {
+                e1,
+                it: SpecTecIter::ListN { e: bounds, .. },
+                xes,
+            } if matches!(&**e1, E::Var { id } if xes.len() == 1
+                    && matches!(&xes[0], SpecTecIterExp::Dom { x, .. } if x == id))
+                && bounds.len() == 1 =>
+            {
+                // A plain ListN bound variable is intrinsically natural even
+                // if it has no separate arithmetic occurrence for the
+                // clause-level pre-scan to discover.
+                if let E::Var { id } = &bounds[0] {
+                    self.numeric.insert(id.clone());
+                }
+                if !self.can_ndenote(&bounds[0]) {
+                    return self.wrap_numeric_in(encode_exp(e)?);
+                }
+                let SpecTecIterExp::Dom { e: domain, .. } = &xes[0];
+                let domain = self.enc(domain, mode, fl)?;
+                let bound = self.ndenote(&bounds[0], fl)?;
+                self.emit_ev("len", evalrel::len_clauses)?;
+                fl.prems.push(LowerPrem::Judgement(ev_graph(
+                    "len",
+                    &[domain.clone()],
+                    &wrap_nat(bound)?,
+                )?));
+                Ok(domain)
+            }
+            // Iteration spines without an evaluator interpretation remain
+            // self-contained **syntactic keys**. Call-bearing maps and
+            // indexed ListN generators are instead lowered relationally in
+            // every position: their per-element premises live inside the
+            // evaluator step clause, never hoisted once at rule level.
+            // Residual raw spines are identical in judgement and condition
+            // positions, and injective since the
             // binder/domain/bound restoration (`encode::shape`, R1-F1).
             // Numeric metavariables still get their spine wrap — applied by
             // substitution over the raw encoding, so a metavar used
             // arithmetically outside the spine carries ONE currency
             // everywhere (the mixed-currency iter-spine fix, R3-F3/R1-F3 —
-            // `Step_read/vload-pack-val`'s `M`). Calls trapped under
-            // iteration stay coarse and are counted, not silently lost.
+            // `Step_read/vload-pack-val`'s `M`).
+            E::Iter { e1, it, xes }
+                if contains_call(e1)
+                    || matches!(it, SpecTecIter::ListN { xo, .. }
+                        if xes.is_empty() && !xo.is_empty()) =>
+            {
+                self.flatten_iter_map(e1, it, xes, fl)
+            }
             E::Iter { .. } => {
                 if contains_call(e) {
                     self.iter_embedded_calls += 1;
@@ -327,6 +416,21 @@ impl<'a> Flattener<'a> {
                 )?));
                 Ok(metavar(&r))
             }
+            E::Slice { e1, e2, e3 } if mode == Mode::Cond => {
+                let list = self.enc(e1, mode, fl)?;
+                let start = self.enc(e2, mode, fl)?;
+                let count = self.enc(e3, mode, fl)?;
+                let r = self.fresh_var(fl);
+                self.emit_ev("len", evalrel::len_clauses)?;
+                self.emit_ev("cat", evalrel::cat_clauses)?;
+                self.emit_ev("slice", evalrel::slice_clause)?;
+                fl.prems.push(LowerPrem::Judgement(ev_graph(
+                    "slice",
+                    &[list, start, count],
+                    &metavar(&r),
+                )?));
+                Ok(metavar(&r))
+            }
             E::Unopt { e1 } if mode == Mode::Cond => {
                 let inner = self.enc(e1, mode, fl)?;
                 let r = self.fresh_var(fl);
@@ -387,11 +491,9 @@ impl<'a> Flattener<'a> {
             // or `Rule` premises, so judgement-position keys are untouched).
             // Children always flatten in `Cond` mode: they feed the `ev.*`
             // premise, not the outer spine, and index/subject reads must
-            // evaluate for the write clauses to fire. A `Slice` path segment
-            // refuses (falls through to the coarse encoded spine — a
-            // conclusion carrying it is censused `dec.coarse-spine`): an
-            // exact slice-write evaluator doesn't exist yet, and a write is
-            // never approximated.
+            // evaluate for the write clauses to fire. `Slice` paths decompose
+            // the list through exact `ev.cat`/`ev.len` witnesses and rebuild
+            // it around the replacement.
             E::Upd { e1, path, e2 } | E::Ext { e1, path, e2 }
                 if evalrel::path_segs(path).is_some() =>
             {
@@ -453,6 +555,290 @@ impl<'a> Flattener<'a> {
                 _ => encode_exp(other),
             },
         }
+    }
+
+    /// Evaluate a call-bearing SpecTec list iteration through a per-site
+    /// zipped-map relation.
+    ///
+    /// For `body(x₁,…,xₖ)` over domains `xs₁,…,xsₖ`, emit:
+    ///
+    /// ```text
+    /// map(rides…, [], …, [], [])
+    /// eval(body(x₁,…,xₖ), y) ∧ map(rides…, xs₁,…,xsₖ, ys)
+    ///   ⇒ map(rides…, xs₁·x₁,…,xsₖ·xₖ, ys·y)
+    /// ```
+    ///
+    /// The body goes through [`Self::enc`] in condition mode, so nested calls,
+    /// projections, conversions, and nested supported maps become ordinary
+    /// graph premises. Zipping is exact: unequal domain lengths cannot derive
+    /// a result. Unsupported iterator kinds remain explicitly opaque.
+    fn flatten_iter_map(
+        &mut self,
+        body: &SpecTecExp,
+        it: &SpecTecIter,
+        xes: &[SpecTecIterExp],
+        outer: &mut Flattened,
+    ) -> Result<Term> {
+        let listn = matches!(it, SpecTecIter::ListN { .. });
+        if !listn && (!matches!(it, SpecTecIter::List | SpecTecIter::Opt) || xes.is_empty()) {
+            let raw = SpecTecExp::Iter {
+                e1: Box::new(body.clone()),
+                it: it.clone(),
+                xes: xes.to_vec(),
+            };
+            let p = self.opaque_prem("cond.iter-map", encode_exp(&raw)?)?;
+            outer.prems.push(p);
+            return Ok(metavar(&self.fresh_var(outer)));
+        }
+
+        let elems: Vec<String> = xes
+            .iter()
+            .map(|SpecTecIterExp::Dom { x, .. }| x.clone())
+            .collect();
+        let index = match it {
+            SpecTecIter::ListN { xo, .. } => xo.first().cloned(),
+            _ => None,
+        };
+        if let SpecTecIter::ListN { e: bounds, .. } = it {
+            // A ListN bound is a natural by construction. Give every bound
+            // metavariable bare-nat currency before lowering either the
+            // element body or the bound expression itself.
+            for bound in bounds {
+                let mut vars = Vec::new();
+                encode::collect_metavars(bound, &mut vars);
+                self.numeric.extend(vars);
+            }
+        }
+        if let Some(index) = &index {
+            // The index has bare-nat currency in arithmetic/evaluator
+            // premises and a single `num.nat` wrap in encoded spines.
+            self.numeric.insert(index.clone());
+        }
+        let mut body_vars = Vec::new();
+        encode::collect_metavars(body, &mut body_vars);
+        let rides: Vec<String> = body_vars
+            .into_iter()
+            .filter(|v| !elems.contains(v) && index.as_ref() != Some(v))
+            .collect();
+
+        // Lower the element computation once; its variables are bound in the
+        // snoc clause, not leaked into the enclosing rule.
+        let mut inner = Flattened::default();
+        let value = self.enc(body, Mode::Cond, &mut inner)?;
+
+        let site = self.fresh;
+        self.fresh += 1;
+        let op = format!("map.{site}");
+        let k = elems.len();
+
+        let ride_terms: Vec<Term> = rides.iter().map(|r| metavar(r)).collect();
+        if let SpecTecIter::ListN { e: bounds, .. } = it {
+            let Some(bound) = bounds.first() else {
+                let p = self.opaque_prem("cond.iter-map", encode_exp(body)?)?;
+                outer.prems.push(p);
+                return Ok(metavar(&self.fresh_var(outer)));
+            };
+            if !self.can_ndenote(bound) {
+                let p = self.opaque_prem("cond.iter-map", encode_exp(bound)?)?;
+                outer.prems.push(p);
+                return Ok(metavar(&self.fresh_var(outer)));
+            }
+
+            let i = index.unwrap_or_else(|| format!("map#{site}.i"));
+            let j = format!("map#{site}.j");
+            let ys = format!("map#{site}.ys");
+            let xs: Vec<String> = (0..k).map(|n| format!("map#{site}.xs{n}")).collect();
+            let mut base_args = ride_terms.clone();
+            base_args.extend(std::iter::repeat_n(con("list"), k));
+            base_args.push(wrap_nat(mk_nat(0u64))?);
+            let base = Clause {
+                metavars: rides.clone(),
+                prems: vec![],
+                concl: ev_graph(&op, &base_args, &con("list"))?,
+            };
+
+            let mut prev_args = ride_terms.clone();
+            prev_args.extend(xs.iter().map(|x| metavar(x)));
+            prev_args.push(wrap_nat(metavar(&i))?);
+            let mut next_args = ride_terms;
+            for (xs, x) in xs.iter().zip(&elems) {
+                next_args.push(app(metavar(xs), metavar(x))?);
+            }
+            next_args.push(wrap_nat(metavar(&j))?);
+            let mut step_prems = vec![LowerPrem::Side(
+                metavar(&j).equals(Term::app(Term::succ(), metavar(&i)))?,
+            )];
+            step_prems.extend(inner.prems);
+            step_prems.push(LowerPrem::Judgement(ev_graph(
+                &op,
+                &prev_args,
+                &metavar(&ys),
+            )?));
+            let mut step_metavars = rides.clone();
+            step_metavars.extend(xs);
+            step_metavars.extend(elems);
+            step_metavars.extend([i, j, ys.clone()]);
+            for m in inner.new_metavars {
+                if !step_metavars.contains(&m) {
+                    step_metavars.push(m);
+                }
+            }
+            let step = Clause {
+                metavars: step_metavars,
+                prems: step_prems,
+                concl: ev_graph(&op, &next_args, &app(metavar(&ys), value)?)?,
+            };
+            self.emit_ev(&op, || Ok(vec![base, step]))?;
+
+            let mut main_args: Vec<Term> = rides.iter().map(|r| metavar(r)).collect();
+            for SpecTecIterExp::Dom { e, .. } in xes {
+                main_args.push(self.enc(e, Mode::Cond, outer)?);
+            }
+            main_args.push(wrap_nat(self.ndenote(bound, outer)?)?);
+            let result = self.fresh_var(outer);
+            outer.prems.push(LowerPrem::Judgement(ev_graph(
+                &op,
+                &main_args,
+                &metavar(&result),
+            )?));
+            return Ok(metavar(&result));
+        }
+
+        if matches!(it, SpecTecIter::Opt) {
+            let mut none_args = ride_terms.clone();
+            none_args.extend(std::iter::repeat_n(con("opt.none"), k));
+            let none = Clause {
+                metavars: rides.clone(),
+                prems: vec![],
+                concl: ev_graph(&op, &none_args, &con("opt.none"))?,
+            };
+
+            let mut some_args = ride_terms;
+            for x in &elems {
+                some_args.push(app(con("opt.some"), metavar(x))?);
+            }
+            let mut some_metavars = rides.clone();
+            some_metavars.extend(elems);
+            for m in inner.new_metavars {
+                if !some_metavars.contains(&m) {
+                    some_metavars.push(m);
+                }
+            }
+            let some = Clause {
+                metavars: some_metavars,
+                prems: inner.prems,
+                concl: ev_graph(&op, &some_args, &app(con("opt.some"), value)?)?,
+            };
+            self.emit_ev(&op, || Ok(vec![none, some]))?;
+
+            let mut main_args: Vec<Term> = rides.iter().map(|r| metavar(r)).collect();
+            for SpecTecIterExp::Dom { e, .. } in xes {
+                main_args.push(self.enc(e, Mode::Cond, outer)?);
+            }
+            let result = self.fresh_var(outer);
+            outer.prems.push(LowerPrem::Judgement(ev_graph(
+                &op,
+                &main_args,
+                &metavar(&result),
+            )?));
+            return Ok(metavar(&result));
+        }
+
+        let mut nil_args = ride_terms.clone();
+        nil_args.extend(std::iter::repeat_n(con("list"), k));
+        let nil = Clause {
+            metavars: rides.clone(),
+            prems: vec![],
+            concl: ev_graph(&op, &nil_args, &con("list"))?,
+        };
+
+        let xs: Vec<String> = (0..k).map(|i| format!("map#{site}.xs{i}")).collect();
+        let ys = format!("map#{site}.ys");
+        let mut prev_args = ride_terms.clone();
+        prev_args.extend(xs.iter().map(|x| metavar(x)));
+        let mut next_args = ride_terms;
+        for (xs, x) in xs.iter().zip(&elems) {
+            next_args.push(app(metavar(xs), metavar(x))?);
+        }
+        let mut step_prems = inner.prems;
+        step_prems.push(LowerPrem::Judgement(ev_graph(
+            &op,
+            &prev_args,
+            &metavar(&ys),
+        )?));
+        let mut step_metavars = rides.clone();
+        step_metavars.extend(xs);
+        step_metavars.push(ys.clone());
+        step_metavars.extend(elems);
+        for m in inner.new_metavars {
+            if !step_metavars.contains(&m) {
+                step_metavars.push(m);
+            }
+        }
+        let step = Clause {
+            metavars: step_metavars,
+            prems: step_prems,
+            concl: ev_graph(&op, &next_args, &app(metavar(&ys), value)?)?,
+        };
+        self.emit_ev(&op, || Ok(vec![nil, step]))?;
+
+        let mut main_args: Vec<Term> = rides.iter().map(|r| metavar(r)).collect();
+        for SpecTecIterExp::Dom { e, .. } in xes {
+            main_args.push(self.enc(e, Mode::Cond, outer)?);
+        }
+        let result = self.fresh_var(outer);
+        outer.prems.push(LowerPrem::Judgement(ev_graph(
+            &op,
+            &main_args,
+            &metavar(&result),
+        )?));
+        Ok(metavar(&result))
+    }
+
+    /// Lower `left ∨ right` into a tiny per-site guard relation with one
+    /// clause per branch. This is the Horn-clause representation of a
+    /// disjunction: the enclosing rule requires `ev.guard.N(vars…, true)`,
+    /// and either branch's premises can derive that judgement.
+    fn flatten_disjunction(
+        &mut self,
+        left: &SpecTecExp,
+        right: &SpecTecExp,
+        outer: &mut Flattened,
+    ) -> Result<()> {
+        let mut vars = Vec::new();
+        encode::collect_metavars(left, &mut vars);
+        encode::collect_metavars(right, &mut vars);
+
+        let mut l = Flattened::default();
+        self.cond_into(left, &mut l)?;
+        let mut r = Flattened::default();
+        self.cond_into(right, &mut r)?;
+
+        let site = self.fresh;
+        self.fresh += 1;
+        let op = format!("guard.{site}");
+        let args: Vec<Term> = vars.iter().map(|v| metavar(v)).collect();
+        let mk_branch = |branch: Flattened| {
+            let mut metavars = vars.clone();
+            for m in branch.new_metavars {
+                if !metavars.contains(&m) {
+                    metavars.push(m);
+                }
+            }
+            Ok(Clause {
+                metavars,
+                prems: branch.prems,
+                concl: ev_graph(&op, &args, &con("bool.true"))?,
+            })
+        };
+        let clauses = vec![mk_branch(l)?, mk_branch(r)?];
+        self.emit_ev(&op, || Ok(clauses))?;
+        outer.prems.push(LowerPrem::Judgement(ev_graph(
+            &op,
+            &args,
+            &con("bool.true"),
+        )?));
+        Ok(())
     }
 
     /// Wrap every occurrence of each numeric-discipline metavariable in a raw
@@ -554,7 +940,38 @@ impl<'a> Flattener<'a> {
             E::Uncase { op, .. } => self.uncase_key_ok(&mixop_key(op)),
             E::Proj { e1, i } => *i >= 0 && self.can_ndenote_projectee(e1),
             E::Dot { .. } | E::Idx { .. } => true,
+            E::Cvt { .. } if shape_nat_cvt(e) => self.cvt_tree_evaluable(e),
             _ => false,
+        }
+    }
+
+    fn cvt_tree_evaluable(&self, e: &SpecTecExp) -> bool {
+        use SpecTecExp as E;
+        match e {
+            E::Var { id } => self.is_numeric(id) || id.starts_with("call%"),
+            E::Num {
+                n: SpecTecNum::Nat(_),
+            } => true,
+            E::Bin { e1, e2, .. } => self.cvt_tree_evaluable(e1) && self.cvt_tree_evaluable(e2),
+            E::Cvt { e1, .. } => self.cvt_tree_evaluable(e1),
+            E::Len { .. }
+            | E::Call { .. }
+            | E::Uncase { .. }
+            | E::Proj { .. }
+            | E::Dot { .. }
+            | E::Idx { .. } => true,
+            _ => false,
+        }
+    }
+
+    fn equality_tree_evaluable(&self, e: &SpecTecExp) -> bool {
+        use SpecTecExp as E;
+        match encode::canon(e) {
+            E::Iter { .. } => true,
+            cvt @ E::Cvt { .. } => shape_nat_cvt(cvt) && self.cvt_tree_evaluable(cvt),
+            other => children(other)
+                .into_iter()
+                .all(|c| self.equality_tree_evaluable(c)),
         }
     }
 
@@ -576,11 +993,96 @@ impl<'a> Flattener<'a> {
                 n: SpecTecNum::Nat(u),
             } => Ok(mk_nat(*u)),
             E::Var { id } if self.is_numeric(id) => Ok(metavar(id)),
+            // Dec lifting may have replaced a Nat-valued call by a fresh
+            // full-encoding witness after the numeric pre-scan. Project its
+            // `num.nat` payload relationally instead of changing the already
+            // emitted call-result currency.
+            E::Var { id } if id.starts_with("call%") => {
+                self.emit_ev("unnat", evalrel::unnat_clause)?;
+                self.numeric_result("unnat", vec![metavar(id)], fl)
+            }
             E::Bin { op, t, e1, e2 } if is_nat_arith(op, t) => {
                 let f = nat_arith_fn(op)?;
                 let a = self.ndenote(e1, fl)?;
                 let b = self.ndenote(e2, fl)?;
                 f.apply(a)?.apply(b)
+            }
+            // Exact positive-rational truncation:
+            // nat((nat a / nat b) : rat) = a div b, guarded by b > 0.
+            E::Cvt {
+                nt1: SpecTecNumTyp::Rat,
+                nt2: SpecTecNumTyp::Nat,
+                e1,
+            } => {
+                let E::Bin {
+                    op: SpecTecBinOp::Div,
+                    t: SpecTecOpTyp::Num(SpecTecNumTyp::Rat),
+                    e1: num,
+                    e2: den,
+                } = &**e1
+                else {
+                    return Err(flatten_err("unsupported Rat->Nat conversion"));
+                };
+                let (
+                    E::Cvt {
+                        nt1: SpecTecNumTyp::Nat,
+                        nt2: SpecTecNumTyp::Rat,
+                        e1: num,
+                    },
+                    E::Cvt {
+                        nt1: SpecTecNumTyp::Nat,
+                        nt2: SpecTecNumTyp::Rat,
+                        e1: den,
+                    },
+                ) = (&**num, &**den)
+                else {
+                    return Err(flatten_err("Rat->Nat operands are not natural casts"));
+                };
+                let a = self.ndenote(num, fl)?;
+                let b = self.ndenote(den, fl)?;
+                fl.prems.push(LowerPrem::Side(
+                    nat::nat_lt().apply(mk_nat(0u64))?.apply(b.clone())?,
+                ));
+                nat::nat_div().apply(a)?.apply(b)
+            }
+            // Exact partial Int->Nat subtraction. HOL nat subtraction agrees
+            // when the source integer result is nonnegative; attach that
+            // definedness condition explicitly.
+            E::Cvt {
+                nt1: SpecTecNumTyp::Int,
+                nt2: SpecTecNumTyp::Nat,
+                e1,
+            } => {
+                let E::Bin {
+                    op: SpecTecBinOp::Sub,
+                    t: SpecTecOpTyp::Num(SpecTecNumTyp::Int),
+                    e1: lhs,
+                    e2: rhs,
+                } = &**e1
+                else {
+                    return Err(flatten_err("unsupported Int->Nat conversion"));
+                };
+                let (
+                    E::Cvt {
+                        nt1: SpecTecNumTyp::Nat,
+                        nt2: SpecTecNumTyp::Int,
+                        e1: lhs,
+                    },
+                    E::Cvt {
+                        nt1: SpecTecNumTyp::Nat,
+                        nt2: SpecTecNumTyp::Int,
+                        e1: rhs,
+                    },
+                ) = (&**lhs, &**rhs)
+                else {
+                    return Err(flatten_err("Int->Nat subtraction is not over Nat casts"));
+                };
+                let a = self.ndenote(lhs, fl)?;
+                let b = self.ndenote(rhs, fl)?;
+                fl.prems.push(LowerPrem::Side(
+                    nat::nat_le().apply(b.clone())?.apply(a.clone())?,
+                ));
+                nat::nat_sub().apply(a)?.apply(b)
             }
             // Evaluated-to-nat nodes: flatten with the result slot in
             // **wrapped** form over a fresh numeric metavar, return it bare.
@@ -631,6 +1133,66 @@ impl<'a> Flattener<'a> {
         }
     }
 
+    /// A nonnegative rational expression as a natural numerator/denominator.
+    /// Denominator nonzeroness is emitted as an ordinary side condition.
+    fn rat_nat(&mut self, e: &SpecTecExp, fl: &mut Flattened) -> Result<(Term, Term)> {
+        use SpecTecExp as E;
+        match e {
+            E::Cvt {
+                nt1: SpecTecNumTyp::Nat,
+                nt2: SpecTecNumTyp::Rat,
+                e1,
+            } => Ok((self.ndenote(e1, fl)?, mk_nat(1u64))),
+            E::Bin {
+                op: SpecTecBinOp::Div,
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Rat),
+                e1,
+                e2,
+            } => {
+                let (an, ad) = self.rat_nat(e1, fl)?;
+                let (bn, bd) = self.rat_nat(e2, fl)?;
+                fl.prems.push(LowerPrem::Side(
+                    nat::nat_lt().apply(mk_nat(0u64))?.apply(bn.clone())?,
+                ));
+                Ok((
+                    nat::nat_mul().apply(an)?.apply(bd)?,
+                    nat::nat_mul().apply(ad)?.apply(bn)?,
+                ))
+            }
+            E::Bin {
+                op: SpecTecBinOp::Mul,
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Rat),
+                e1,
+                e2,
+            } => {
+                let (an, ad) = self.rat_nat(e1, fl)?;
+                let (bn, bd) = self.rat_nat(e2, fl)?;
+                Ok((
+                    nat::nat_mul().apply(an)?.apply(bn)?,
+                    nat::nat_mul().apply(ad)?.apply(bd)?,
+                ))
+            }
+            E::Bin {
+                op: SpecTecBinOp::Add,
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Rat),
+                e1,
+                e2,
+            } => {
+                let (an, ad) = self.rat_nat(e1, fl)?;
+                let (bn, bd) = self.rat_nat(e2, fl)?;
+                let left = nat::nat_mul().apply(an)?.apply(bd.clone())?;
+                let right = nat::nat_mul().apply(bn)?.apply(ad.clone())?;
+                Ok((
+                    nat::nat_add().apply(left)?.apply(right)?,
+                    nat::nat_mul().apply(ad)?.apply(bd)?,
+                ))
+            }
+            other => Err(flatten_err(format!(
+                "not a nonnegative rational expression: {other:?}"
+            ))),
+        }
+    }
+
     /// Emit an `ev.<op>` premise whose result slot is a **wrapped** fresh
     /// numeric metavar, returning the bare var (the `ndenote` currency).
     fn numeric_result(&mut self, op: &str, args: Vec<Term>, fl: &mut Flattened) -> Result<Term> {
@@ -673,8 +1235,43 @@ impl<'a> Flattener<'a> {
             }
             E::Cmp { op, t, e1, e2 } => {
                 use SpecTecCmpOp as C;
+                if matches!(op, C::Eq)
+                    && let Some((num, den, rhs)) = signed_div_eq_pos_nat_shape(e1, e2)
+                        .or_else(|| signed_div_eq_pos_nat_shape(e2, e1))
+                {
+                    let a = self.enc(num, Mode::Cond, fl)?;
+                    let b = self.enc(den, Mode::Cond, fl)?;
+                    let n = self.ndenote(rhs, fl)?;
+                    self.emit_ev("signed-div-eq-pos-nat", || {
+                        evalrel::signed_div_eq_pos_nat_clauses()
+                    })?;
+                    fl.prems.push(LowerPrem::Judgement(ev_graph(
+                        "signed-div-eq-pos-nat",
+                        &[a, b, wrap_nat(n)?],
+                        &con("bool.true"),
+                    )?));
+                    return Ok(mk_bool(true));
+                }
                 let ordering_nat = matches!(op, C::Lt | C::Gt | C::Le | C::Ge) && is_nat_ty(t);
+                let ordering_rat = matches!(op, C::Lt | C::Gt | C::Le | C::Ge)
+                    && matches!(t, SpecTecOpTyp::Num(SpecTecNumTyp::Rat));
                 let eq_arith = matches!(op, C::Eq | C::Ne) && cmp_is_nat_arith(op, t, e1, e2);
+                let equality_rat =
+                    matches!(op, C::Eq | C::Ne) && shape_rat_nat(e1) && shape_rat_nat(e2);
+                if ordering_rat || equality_rat {
+                    let (an, ad) = self.rat_nat(e1, fl)?;
+                    let (bn, bd) = self.rat_nat(e2, fl)?;
+                    let left = nat::nat_mul().apply(an)?.apply(bd)?;
+                    let right = nat::nat_mul().apply(bn)?.apply(ad)?;
+                    return match op {
+                        C::Lt => nat::nat_lt().apply(left)?.apply(right),
+                        C::Le => nat::nat_le().apply(left)?.apply(right),
+                        C::Gt => nat::nat_lt().apply(right)?.apply(left),
+                        C::Ge => nat::nat_le().apply(right)?.apply(left),
+                        C::Eq => left.equals(right),
+                        C::Ne => left.equals(right)?.not(),
+                    };
+                }
                 if !(ordering_nat || eq_arith) {
                     return Err(flatten_err("bool_side: non-arithmetic comparison"));
                 }
@@ -765,11 +1362,51 @@ impl<'a> Flattener<'a> {
                     .push(LowerPrem::Judgement(ev_graph("mem", &[x], &xs)?));
                 Ok(())
             }
-            E::Cmp { op, t: _, e1, e2 } => match op {
+            E::Cmp { op, t, e1, e2 } => match op {
                 SpecTecCmpOp::Eq => self.cond_eq(e, e1, e2, fl),
                 SpecTecCmpOp::Ne => self.cond_ne(e, e1, e2, fl),
+                op if is_nat_ty(t)
+                    && coarse_eq_reason(e1).is_none()
+                    && coarse_eq_reason(e2).is_none() =>
+                {
+                    let (lhs, rhs) = match op {
+                        SpecTecCmpOp::Lt | SpecTecCmpOp::Le => (e1, e2),
+                        SpecTecCmpOp::Gt | SpecTecCmpOp::Ge => (e2, e1),
+                        SpecTecCmpOp::Eq | SpecTecCmpOp::Ne => unreachable!(),
+                    };
+                    let strict = matches!(op, SpecTecCmpOp::Lt | SpecTecCmpOp::Gt);
+                    let key = if strict { "nat.lt" } else { "nat.le" };
+                    let a = self.enc(lhs, Mode::Cond, fl)?;
+                    let b = self.enc(rhs, Mode::Cond, fl)?;
+                    self.emit_ev(key, || evalrel::nat_order_clauses(strict))?;
+                    fl.prems.push(LowerPrem::Judgement(ev_graph(
+                        key,
+                        &[a, b],
+                        &con("bool.true"),
+                    )?));
+                    Ok(())
+                }
+                op if is_int_ty(t) => {
+                    let (lhs, rhs) = match op {
+                        SpecTecCmpOp::Lt | SpecTecCmpOp::Le => (e1, e2),
+                        SpecTecCmpOp::Gt | SpecTecCmpOp::Ge => (e2, e1),
+                        SpecTecCmpOp::Eq | SpecTecCmpOp::Ne => unreachable!(),
+                    };
+                    let strict = matches!(op, SpecTecCmpOp::Lt | SpecTecCmpOp::Gt);
+                    let key = if strict { "int.lt" } else { "int.le" };
+                    let a = self.enc(lhs, Mode::Cond, fl)?;
+                    let b = self.enc(rhs, Mode::Cond, fl)?;
+                    self.emit_ev(key, || evalrel::int_order_clauses(strict))?;
+                    fl.prems.push(LowerPrem::Judgement(ev_graph(
+                        key,
+                        &[a, b],
+                        &con("bool.true"),
+                    )?));
+                    Ok(())
+                }
                 _ => {
-                    // Non-nat orderings (int, …): not expressible yet.
+                    // Rat/real/float and other non-natural orderings are not
+                    // expressible yet.
                     let body = encode_exp(e)?;
                     let p = self.opaque_prem("cond.cmp-nonnat", body)?;
                     fl.prems.push(p);
@@ -805,13 +1442,36 @@ impl<'a> Flattener<'a> {
                 Ok(())
             }
             E::Bin {
-                op: SpecTecBinOp::Or | SpecTecBinOp::Impl,
+                op: SpecTecBinOp::Or,
+                e1,
+                e2,
                 ..
+            } => self.flatten_disjunction(e1, e2, fl),
+            E::Bin {
+                op: SpecTecBinOp::Impl,
+                e1,
+                e2,
+                ..
+            } => self.flatten_disjunction(&negate(e1).map_err(flatten_err)?, e2, fl),
+            E::Bin {
+                op: SpecTecBinOp::Equiv,
+                t,
+                e1,
+                e2,
             } => {
-                let body = encode_exp(e)?;
-                let p = self.opaque_prem("cond.or-structural", body)?;
-                fl.prems.push(p);
-                Ok(())
+                let both = SpecTecExp::Bin {
+                    op: SpecTecBinOp::And,
+                    t: t.clone(),
+                    e1: e1.clone(),
+                    e2: e2.clone(),
+                };
+                let neither = SpecTecExp::Bin {
+                    op: SpecTecBinOp::And,
+                    t: t.clone(),
+                    e1: Box::new(negate(e1).map_err(flatten_err)?),
+                    e2: Box::new(negate(e2).map_err(flatten_err)?),
+                };
+                self.flatten_disjunction(&both, &neither, fl)
             }
             other => {
                 let body = encode_exp(other)?;
@@ -839,15 +1499,13 @@ impl<'a> Flattener<'a> {
         e2: &SpecTecExp,
         fl: &mut Flattened,
     ) -> Result<()> {
-        if has_iter_call(e1) || has_iter_call(e2) {
-            let body = encode_exp(whole)?;
-            let p = self.opaque_prem("cond.iter-map", body)?;
-            fl.prems.push(p);
-            return Ok(());
-        }
         // R3-F1: a side containing a value-dead spine cannot be discharged at
         // any genuine ground point — census, don't load a dead equation.
-        if let Some(reason) = coarse_eq_reason(e1).or_else(|| coarse_eq_reason(e2)) {
+        if let Some(reason) = coarse_eq_reason(e1).or_else(|| coarse_eq_reason(e2))
+            && !(reason == "cond.coarse-eq"
+                && self.equality_tree_evaluable(e1)
+                && self.equality_tree_evaluable(e2))
+        {
             let body = encode_exp(whole)?;
             let p = self.opaque_prem(reason, body)?;
             fl.prems.push(p);
@@ -856,6 +1514,16 @@ impl<'a> Flattener<'a> {
         let a = self.enc(e1, Mode::Cond, fl)?;
         let b = self.enc(e2, Mode::Cond, fl)?;
         fl.prems.push(LowerPrem::Side(a.equals(b)?));
+        Ok(())
+    }
+
+    /// Request the compact reusable open-value disequality basis: option
+    /// presence and encoded-natural payload inequality. Constructor pairs
+    /// stay demand-driven by literal evidence; eagerly crossing every large
+    /// variant would add >14k clauses to this corpus.
+    fn emit_open_neq_basis(&mut self) -> Result<()> {
+        self.emit_ev("neq.option", evalrel::neq_option_clauses)?;
+        self.emit_ev("neq.nat", evalrel::neq_nat_clauses)?;
         Ok(())
     }
 
@@ -884,6 +1552,18 @@ impl<'a> Flattener<'a> {
         };
         let (s1, s2) = (strip_sub(e1), strip_sub(e2));
         match (s1, s2) {
+            // Option presence. At genuine option points `none`'s complement
+            // is exactly `some(_)`, including when the open side is the
+            // result of a call or an optional mapped iteration.
+            (E::Opt { eo: None }, E::Opt { eo: None }) => opq(self, "cond.neq-same-option", fl),
+            (E::Opt { eo: None }, _other) | (_other, E::Opt { eo: None }) => {
+                self.emit_ev("neq.option", evalrel::neq_option_clauses)?;
+                let a = self.enc(e1, Mode::Cond, fl)?;
+                let b = self.enc(e2, Mode::Cond, fl)?;
+                fl.prems
+                    .push(LowerPrem::Judgement(ev_graph("neq", &[a], &b)?));
+                Ok(())
+            }
             // Two literal constructors.
             (E::Case { op: o1, .. }, E::Case { op: o2, .. }) => {
                 let (k1, k2) = (mixop_key(o1), mixop_key(o2));
@@ -936,7 +1616,14 @@ impl<'a> Flattener<'a> {
                     .push(LowerPrem::Judgement(ev_graph("neq", &[a], &b)?));
                 Ok(())
             }
-            _ => opq(self, "cond.neq-open", fl),
+            _ => {
+                self.emit_open_neq_basis()?;
+                let a = self.enc(e1, Mode::Cond, fl)?;
+                let b = self.enc(e2, Mode::Cond, fl)?;
+                fl.prems
+                    .push(LowerPrem::Judgement(ev_graph("neq", &[a], &b)?));
+                Ok(())
+            }
         }
     }
 }
@@ -1069,6 +1756,43 @@ pub fn lower_rule_v2(
 
     // Pre-scan for the numeric discipline (Iter inner exprs excluded).
     fl.begin_rule(&rule_exprs_non_iter(rule));
+    // Iteration inner expressions may also mention rule-level arithmetic
+    // parameters ("ride-throughs").  Scan those before encoding the
+    // conclusion, but remove iteration-local names again: domain elements
+    // carry complete encoded values, while a named ListN index is put under
+    // the bare-natural discipline only when its star site is lowered below.
+    for pr in prs {
+        let SpecTecPrem::Iter { pr1, it, xes } = pr else {
+            continue;
+        };
+        let inner = match &**pr1 {
+            SpecTecPrem::Rule { e, .. } | SpecTecPrem::If { e } => Some(e),
+            SpecTecPrem::Let { e1, e2 } => {
+                fl.scan_numeric(e1);
+                Some(e2)
+            }
+            SpecTecPrem::Else | SpecTecPrem::Iter { .. } => None,
+        };
+        let mut locals: Vec<&str> = xes
+            .iter()
+            .map(|SpecTecIterExp::Dom { x, .. }| x.as_str())
+            .collect();
+        if let SpecTecIter::ListN { xo, .. } = it {
+            locals.extend(xo.iter().map(String::as_str));
+        }
+        let already_numeric: Vec<(&str, bool)> = locals
+            .iter()
+            .map(|id| (*id, fl.numeric.contains(*id)))
+            .collect();
+        if let Some(inner) = inner {
+            fl.scan_numeric(inner);
+        }
+        for (id, was_numeric) in already_numeric {
+            if !was_numeric {
+                fl.numeric.remove(id);
+            }
+        }
+    }
     // A `ListN` bound that is a plain `Var` has bare-numeral currency (the
     // star leg wraps it in the istar bound position) — mark it numeric BEFORE
     // encoding the conclusion so every spine occurrence agrees.
@@ -1114,7 +1838,15 @@ pub fn lower_rule_v2(
             } => {
                 encode::collect_metavars(pr_e, &mut metavars);
                 let t = fl.enc(pr_e, Mode::Judgement, &mut acc)?;
-                acc.prems.push(LowerPrem::Judgement(tag(pr_rel, t)?));
+                if let Some(source_rel) = pr_rel.strip_prefix(super::else_::NEGATED_RULE_PREFIX) {
+                    let query = tag(source_rel, t)?;
+                    let request = DecisionRequest::new(source_rel, query, DecisionAnswer::No);
+                    let mut decisions = OpaqueDecisions;
+                    acc.prems.push(decisions.premise(&request)?);
+                    fl.opaque_reasons.push(format!("decision.{source_rel}"));
+                } else {
+                    acc.prems.push(LowerPrem::Judgement(tag(pr_rel, t)?));
+                }
             }
             SpecTecPrem::If { e } => {
                 encode::collect_metavars(e, &mut metavars);
@@ -1132,6 +1864,21 @@ pub fn lower_rule_v2(
                 acc.prems.push(p);
             }
             SpecTecPrem::Iter { .. } => {
+                // A named ListN index is a bare natural inside its auxiliary
+                // clause.  Mark it immediately before inner-condition
+                // lowering; the star leg then observes it as pre-wrapped and
+                // does not apply its fallback syntactic wrapping a second
+                // time.  Domain element binders are deliberately untouched:
+                // they range over complete encoded values.
+                if let SpecTecPrem::Iter {
+                    it: SpecTecIter::ListN { xo, .. },
+                    ..
+                } = pr
+                {
+                    for id in xo {
+                        fl.mark_numeric(id);
+                    }
+                }
                 // The star leg: per-site aux relation + enclosing premises.
                 let snapshot = metavars.clone();
                 let site = StarSite::of_premise(rel_name, rule_name, idx, pr, &snapshot)
@@ -1316,7 +2063,7 @@ pub fn spec_rule_clauses(
         let SpecTecDef::Rel { x, rules, .. } = def else {
             unreachable!()
         };
-        for pre in preprocess_else(rules) {
+        for pre in preprocess_else_with_catalogue(rules, fl.cat) {
             census.total_rules += 1;
             if v1_lowers(&pre.rule) {
                 census.v1_lowerable += 1;
@@ -1496,6 +2243,10 @@ fn is_nat_ty(t: &SpecTecOpTyp) -> bool {
     matches!(t, SpecTecOpTyp::Num(SpecTecNumTyp::Nat))
 }
 
+fn is_int_ty(t: &SpecTecOpTyp) -> bool {
+    matches!(t, SpecTecOpTyp::Num(SpecTecNumTyp::Int))
+}
+
 fn nat_arith_fn(op: &SpecTecBinOp) -> Result<Term> {
     Ok(match op {
         SpecTecBinOp::Add => nat::nat_add(),
@@ -1549,8 +2300,117 @@ fn shape_ndenotes(e: &SpecTecExp) -> bool {
         | E::Dot { .. }
         | E::Idx { .. } => true,
         E::Bin { op, t, e1, e2 } => is_nat_arith(op, t) && shape_ndenotes(e1) && shape_ndenotes(e2),
+        E::Cvt { .. } => shape_nat_cvt(e),
         _ => false,
     }
+}
+
+fn shape_nat_cvt(e: &SpecTecExp) -> bool {
+    use SpecTecExp as E;
+    match e {
+        E::Cvt {
+            nt1: SpecTecNumTyp::Rat,
+            nt2: SpecTecNumTyp::Nat,
+            e1,
+        } => matches!(
+            &**e1,
+            E::Bin {
+                op: SpecTecBinOp::Div,
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Rat),
+                e1,
+                e2,
+            } if matches!(&**e1, E::Cvt {
+                nt1: SpecTecNumTyp::Nat,
+                nt2: SpecTecNumTyp::Rat,
+                e1,
+            } if shape_ndenotes(e1))
+                && matches!(&**e2, E::Cvt {
+                    nt1: SpecTecNumTyp::Nat,
+                    nt2: SpecTecNumTyp::Rat,
+                    e1,
+                } if shape_ndenotes(e1))
+        ),
+        E::Cvt {
+            nt1: SpecTecNumTyp::Int,
+            nt2: SpecTecNumTyp::Nat,
+            e1,
+        } => matches!(
+            &**e1,
+            E::Bin {
+                op: SpecTecBinOp::Sub,
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Int),
+                e1,
+                e2,
+            } if matches!(&**e1, E::Cvt {
+                nt1: SpecTecNumTyp::Nat,
+                nt2: SpecTecNumTyp::Int,
+                e1,
+            } if shape_ndenotes(e1))
+                && matches!(&**e2, E::Cvt {
+                    nt1: SpecTecNumTyp::Nat,
+                    nt2: SpecTecNumTyp::Int,
+                    e1,
+                } if shape_ndenotes(e1))
+        ),
+        _ => false,
+    }
+}
+
+fn shape_rat_nat(e: &SpecTecExp) -> bool {
+    use SpecTecExp as E;
+    match e {
+        E::Cvt {
+            nt1: SpecTecNumTyp::Nat,
+            nt2: SpecTecNumTyp::Rat,
+            e1,
+        } => shape_ndenotes(e1),
+        E::Bin {
+            op: SpecTecBinOp::Div | SpecTecBinOp::Mul | SpecTecBinOp::Add,
+            t: SpecTecOpTyp::Num(SpecTecNumTyp::Rat),
+            e1,
+            e2,
+        } => shape_rat_nat(e1) && shape_rat_nat(e2),
+        _ => false,
+    }
+}
+
+/// Recognise the exact positive-natural equality fragment
+/// `(int a : rat) / (int b : rat) = (nat n : rat)`.
+fn signed_div_eq_pos_nat_shape<'a>(
+    quotient: &'a SpecTecExp,
+    positive_nat: &'a SpecTecExp,
+) -> Option<(&'a SpecTecExp, &'a SpecTecExp, &'a SpecTecExp)> {
+    use SpecTecExp as E;
+    let E::Bin {
+        op: SpecTecBinOp::Div,
+        t: SpecTecOpTyp::Num(SpecTecNumTyp::Rat),
+        e1,
+        e2,
+    } = quotient
+    else {
+        return None;
+    };
+    let (
+        E::Cvt {
+            nt1: SpecTecNumTyp::Int,
+            nt2: SpecTecNumTyp::Rat,
+            e1: numerator,
+        },
+        E::Cvt {
+            nt1: SpecTecNumTyp::Int,
+            nt2: SpecTecNumTyp::Rat,
+            e1: denominator,
+        },
+        E::Cvt {
+            nt1: SpecTecNumTyp::Nat,
+            nt2: SpecTecNumTyp::Rat,
+            e1: target,
+        },
+    ) = (&**e1, &**e2, positive_nat)
+    else {
+        return None;
+    };
+    shape_ndenotes(target).then_some((&**numerator, &**denominator, &**target))
 }
 
 fn strip_sub(e: &SpecTecExp) -> &SpecTecExp {
@@ -1583,22 +2443,14 @@ fn contains_call(e: &SpecTecExp) -> bool {
     children(e).into_iter().any(contains_call)
 }
 
-/// Whether a `Call` occurs under an `Iter` inside `e` (map-shaped — the star
-/// leg's territory; conditions refuse it explicitly).
-fn has_iter_call(e: &SpecTecExp) -> bool {
-    match e {
-        SpecTecExp::Iter { e1, .. } => contains_call(e1),
-        other => children(other).into_iter().any(has_iter_call),
-    }
-}
-
 /// A residual **value-dead** operator node in an equation side (R3-F1): one
 /// the cond-mode encoder leaves as a coarse spine while ground SpecTec values
 /// of the same expression encode as plain values — so a `Side` equation
 /// containing it could never be discharged at a genuine ground point (and
 /// cond-mode flattening of its *children* may inject fresh metavars no
-/// judgement-position key carries). Censused (`cond.slice` /
-/// `cond.coarse-eq`) instead of silently loading a dead equation.
+/// judgement-position key carries). Censused (`cond.coarse-eq`) instead of
+/// silently loading a dead equation. Slices are no longer in this set: they
+/// lower through exact `ev.slice` decomposition.
 ///
 /// Iteration nodes are deliberately **not** flagged: they are encoded
 /// wholesale as self-contained syntactic keys, identical in judgement and
@@ -1609,7 +2461,6 @@ fn coarse_eq_reason(e: &SpecTecExp) -> Option<&'static str> {
     use SpecTecExp as E;
     match encode::canon(e) {
         E::Iter { .. } => None,
-        E::Slice { .. } => Some("cond.slice"),
         E::Cvt { .. } => Some("cond.coarse-eq"),
         other => children(other).into_iter().find_map(coarse_eq_reason),
     }
@@ -1739,6 +2590,7 @@ fn call_fn_name(f: &str, as1: &[SpecTecArg]) -> String {
 mod tests {
     use super::super::rule_set_of;
     use super::*;
+
     use crate::metalogic::{self, Premise};
     use crate::wasm::spec::wasm_spec;
     use covalence_spectec::ast::{MixOp, SpecTecDefTyp, SpecTecInst, SpecTecTyp, SpecTecTypCase};
@@ -1751,6 +2603,11 @@ mod tests {
     fn num(u: u64) -> SpecTecExp {
         SpecTecExp::Num {
             n: SpecTecNum::Nat(u),
+        }
+    }
+    fn int_num(i: i64) -> SpecTecExp {
+        SpecTecExp::Num {
+            n: SpecTecNum::Int(i),
         }
     }
     fn bool_ty() -> SpecTecOpTyp {
@@ -1868,6 +2725,113 @@ mod tests {
             metalogic::derive_mixed(&rs, 0, n_cl, &[mk_nat(5u64)], vec![Premise::Side(wrong)])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn rational_order_and_partial_conversions_are_exact_side_conditions() {
+        let defs = tiny_defs();
+        let cat = CaseCatalogue::new(&defs);
+        let nat_to_rat = |e: SpecTecExp| SpecTecExp::Cvt {
+            nt1: SpecTecNumTyp::Nat,
+            nt2: SpecTecNumTyp::Rat,
+            e1: Box::new(e),
+        };
+        let div = |a: SpecTecExp, b: SpecTecExp| SpecTecExp::Bin {
+            op: SpecTecBinOp::Div,
+            t: SpecTecOpTyp::Num(SpecTecNumTyp::Rat),
+            e1: Box::new(nat_to_rat(a)),
+            e2: Box::new(nat_to_rat(b)),
+        };
+        let cond = |numerator: u64, denominator: u64, bound: u64| SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Le,
+            t: SpecTecOpTyp::Num(SpecTecNumTyp::Rat),
+            e1: Box::new(div(num(numerator), num(denominator))),
+            e2: Box::new(nat_to_rat(num(bound))),
+        };
+
+        // 32/8 ≤ 5, with the explicit 8>0 definedness premise.
+        let mut fl = Flattener::new(&cat);
+        let r = rule("rat-ok", case("D", tup(vec![])), vec![if_p(cond(32, 8, 5))]);
+        let lr = lower_rule_v2("R", &r, &mut fl).unwrap();
+        assert!(fl.take_opaque_reasons().is_empty());
+        let side_thms = lr
+            .clause
+            .prems
+            .iter()
+            .map(|p| match p {
+                LowerPrem::Side(s) => prove_side(s).map(Premise::Side),
+                LowerPrem::Judgement(_) => panic!("literal rational comparison needs no graph"),
+            })
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        let rs = rule_set_of(vec![lr.clause]);
+        let d = metalogic::derive_mixed(&rs, 0, 1, &[], side_thms).unwrap();
+        assert_genuine(&d);
+
+        // Division by zero is refused by the generated positivity premise.
+        let mut fl = Flattener::new(&cat);
+        let bad = rule(
+            "rat-zero",
+            case("D", tup(vec![])),
+            vec![if_p(cond(32, 0, 5))],
+        );
+        let lr = lower_rule_v2("R", &bad, &mut fl).unwrap();
+        assert!(
+            lr.clause
+                .prems
+                .iter()
+                .any(|p| matches!(p, LowerPrem::Side(s) if prove_side(s).is_err())),
+            "zero denominator must make the clause underivable"
+        );
+    }
+
+    /// Integer ordering is evaluated over the canonical sign/magnitude
+    /// encoding instead of being parked behind `opaque.cond.cmp-nonnat`.
+    #[test]
+    fn integer_order_condition_fires_through_ev() {
+        let defs = tiny_defs();
+        let cat = CaseCatalogue::new(&defs);
+        let mut fl = Flattener::new(&cat);
+        let cond = SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Lt,
+            t: SpecTecOpTyp::Num(SpecTecNumTyp::Int),
+            e1: Box::new(var("a")),
+            e2: Box::new(var("b")),
+        };
+        let r = rule("int-lt", tup(vec![var("a"), var("b")]), vec![if_p(cond)]);
+        let mut clauses = vec![lower_rule_v2("R", &r, &mut fl).unwrap().clause];
+        assert!(fl.take_opaque_reasons().is_empty(), "fully flattened");
+        clauses.extend(fl.drain_ev_clauses());
+        assert_eq!(clauses.len(), 4, "rule + three int.lt clauses");
+        let rs = rule_set_of(clauses);
+        let n_cl = rs.n_clauses().unwrap();
+
+        // The negative→positive clause is premise-free: -2 < 3.
+        let d_lt =
+            metalogic::derive_mixed(&rs, 3, n_cl, &[mk_nat(2u64), mk_nat(3u64)], vec![]).unwrap();
+        let a = encode_exp(&int_num(-2)).unwrap();
+        let b = encode_exp(&int_num(3)).unwrap();
+        let d_rule =
+            metalogic::derive_mixed(&rs, 0, n_cl, &[a, b], vec![Premise::Derivation(d_lt)])
+                .unwrap();
+        assert_genuine(&d_rule);
+
+        // Positive magnitudes use the real HOL-natural ordering side.
+        let side = nat::nat_lt()
+            .apply(mk_nat(2u64))
+            .unwrap()
+            .apply(mk_nat(3u64))
+            .unwrap();
+        let side = prove_side(&side).unwrap();
+        let d_pos = metalogic::derive_mixed(
+            &rs,
+            1,
+            n_cl,
+            &[mk_nat(2u64), mk_nat(3u64)],
+            vec![Premise::Side(side)],
+        )
+        .unwrap();
+        assert_genuine(&d_pos);
     }
 
     /// An `Uncase`/`Proj` condition fires through on-demand `ev.*` clauses.
@@ -2058,10 +3022,10 @@ mod tests {
         assert!(prove_side(&side).is_err(), "no instance can discharge it");
     }
 
-    /// R3-F1: an equation side containing a value-dead `Slice` spine is
-    /// censused (`cond.slice`) instead of loading as a silently-dead side.
+    /// A slice equation lowers through the exact `ev.slice` relation rather
+    /// than retaining a value-dead structural spine.
     #[test]
-    fn slice_equation_is_censused_opaque() {
+    fn slice_equation_uses_exact_evaluator() {
         let defs = tiny_defs();
         let cat = CaseCatalogue::new(&defs);
         let mut fl = Flattener::new(&cat);
@@ -2071,8 +3035,18 @@ mod tests {
             e3: Box::new(num(2)),
         };
         let r = rule("sl", var("s"), vec![if_p(eq(slice, var("l")))]);
-        let _ = lower_rule_v2("R", &r, &mut fl).unwrap();
-        assert_eq!(fl.take_opaque_reasons(), vec!["cond.slice".to_string()]);
+        let lr = lower_rule_v2("R", &r, &mut fl).unwrap();
+        assert!(fl.take_opaque_reasons().is_empty());
+        fn contains(t: &Term, name: &str) -> bool {
+            t.as_free().is_some_and(|v| v.name() == name)
+                || t.as_app()
+                    .is_some_and(|(f, a)| contains(f, name) || contains(a, name))
+                || t.as_abs().is_some_and(|(_, b)| contains(b, name))
+        }
+        assert!(lr.clause.prems.iter().any(|p| match p {
+            LowerPrem::Judgement(j) => contains(j, "st$c$rel.ev.slice"),
+            LowerPrem::Side(_) => false,
+        }));
     }
 
     /// A structural disequality `x =/= D()` fires through an on-demand
@@ -2165,39 +3139,48 @@ mod tests {
         let l1 = app(l0.clone(), e7.clone()).unwrap();
         let l2 = app(l1.clone(), e8.clone()).unwrap();
 
-        // Chain: len([],0); len([7], 0+1); len([7,8], (0+1)+1).
+        // Chain with literal successor witnesses:
+        // len([],0); len([7],1); len([7,8],2).
         let zero = mk_nat(0u64);
         let one = mk_nat(1u64);
-        let s1 = nat::nat_add()
-            .apply(zero.clone())
-            .unwrap()
-            .apply(one.clone())
-            .unwrap();
-        let s2 = nat::nat_add()
-            .apply(s1.clone())
-            .unwrap()
-            .apply(one.clone())
-            .unwrap();
+        let two = mk_nat(2u64);
         let der0 = metalogic::derive_mixed(&rs, 1, n_cl, &[], vec![]).unwrap();
+        let side1 = prove_side(
+            &one.clone()
+                .equals(Term::succ().apply(zero.clone()).unwrap())
+                .unwrap(),
+        )
+        .unwrap();
         let der1 = metalogic::derive_mixed(
             &rs,
             2,
             n_cl,
-            &[l0, e7, zero],
-            vec![Premise::Derivation(der0)],
+            &[l0, e7, zero, one.clone()],
+            vec![Premise::Side(side1), Premise::Derivation(der0)],
         )
         .unwrap();
-        let der2 =
-            metalogic::derive_mixed(&rs, 2, n_cl, &[l1, e8, s1], vec![Premise::Derivation(der1)])
-                .unwrap();
+        let side2 = prove_side(
+            &two.clone()
+                .equals(Term::succ().apply(one.clone()).unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        let der2 = metalogic::derive_mixed(
+            &rs,
+            2,
+            n_cl,
+            &[l1, e8, one, two.clone()],
+            vec![Premise::Side(side2), Premise::Derivation(der1)],
+        )
+        .unwrap();
 
-        // The rule at l := [7,8], %f0 := (0+1)+1; side `(0+1)+1 = 2` by reduce.
-        let side = prove_side(&s2.clone().equals(mk_nat(2u64)).unwrap()).unwrap();
+        // The rule at l := [7,8], %f0 := 2.
+        let side = prove_side(&two.clone().equals(mk_nat(2u64)).unwrap()).unwrap();
         let der = metalogic::derive_mixed(
             &rs,
             0,
             n_cl,
-            &[l2.clone(), s2],
+            &[l2.clone(), two],
             vec![Premise::Derivation(der2), Premise::Side(side)],
         )
         .unwrap();
@@ -2335,6 +3318,132 @@ mod tests {
         }
     }
 
+    /// The real exception-handler fallback uses the catalogue-backed finite
+    /// catch complement and lowers without any opaque Else/pattern residue.
+    #[test]
+    fn else_real_throw_handler_finite_complement_lowers_cleanly() {
+        let defs = wasm_spec();
+        let cat = CaseCatalogue::new(&defs);
+        let mut rels = Vec::new();
+        collect_rels(&defs, &mut rels);
+        let step_read = rels
+            .iter()
+            .find_map(|d| match d {
+                SpecTecDef::Rel { x, rules, .. } if x == "Step_read" => Some(rules),
+                _ => None,
+            })
+            .expect("Step_read relation");
+        let pre = preprocess_else_with_catalogue(step_read, &cat);
+        let next = pre
+            .iter()
+            .find(|p| {
+                matches!(
+                    &p.rule,
+                    SpecTecRule::Rule { x, .. } if x == "throw_ref-handler-next"
+                )
+            })
+            .expect("throw_ref-handler-next");
+        assert_eq!(next.status, ElseStatus::Rewritten { negated: 4 });
+
+        let mut fl = Flattener::new(&cat);
+        let lowered = lower_rule_v2("Step_read", &next.rule, &mut fl).expect("lower handler-next");
+        let reasons = fl.take_opaque_reasons();
+        assert!(reasons.is_empty(), "handler-next residue: {reasons:?}");
+        assert!(
+            !lowered.clause.prems.is_empty(),
+            "the rewritten rule retains its executable guard"
+        );
+        assert!(
+            fl.drain_ev_clauses().len() >= 2,
+            "the DNF guard owns its two constructor branches"
+        );
+    }
+
+    /// A sibling judgement and one condition conjunct may be shared by the
+    /// current rule.  For `array.copy-gt`, the preceding `array.copy-le`
+    /// clause has `Expand ∧ (i_1 <= i_2) ∧ storage-shape`, while the current
+    /// clause already assumes the same `Expand ∧ storage-shape`.  Else
+    /// preprocessing must therefore retain those shared premises and add
+    /// only the exact complement `i_1 > i_2`.
+    #[test]
+    fn else_real_array_copy_factors_shared_judgement_and_conjunct() {
+        let defs = wasm_spec();
+        let mut rels = Vec::new();
+        collect_rels(&defs, &mut rels);
+        let step_read = rels
+            .iter()
+            .find_map(|d| match d {
+                SpecTecDef::Rel { x, rules, .. } if x == "Step_read" => Some(rules),
+                _ => None,
+            })
+            .expect("Step_read relation");
+        let pre = preprocess_else(step_read);
+        let gt = pre
+            .iter()
+            .find(|p| matches!(&p.rule, SpecTecRule::Rule { x, .. } if x == "array.copy-gt"))
+            .expect("array.copy-gt");
+        assert_eq!(gt.status, ElseStatus::Rewritten { negated: 4 });
+
+        let SpecTecRule::Rule { prs, .. } = &gt.rule;
+        assert_eq!(prs.len(), 6, "4 complements + shared Expand + own guard");
+        assert_eq!(
+            prs.iter()
+                .filter(|p| matches!(p, SpecTecPrem::Rule { x, .. } if x == "Expand"))
+                .count(),
+            1
+        );
+        assert!(
+            prs.iter().any(|p| matches!(
+                p,
+                SpecTecPrem::If {
+                    e: SpecTecExp::Cmp {
+                        op: SpecTecCmpOp::Gt,
+                        ..
+                    }
+                }
+            )),
+            "the le sibling contributes its exact > complement"
+        );
+
+        let cat = CaseCatalogue::new(&defs);
+        let mut fl = Flattener::new(&cat);
+        lower_rule_v2("Step_read", &gt.rule, &mut fl).unwrap();
+        assert!(
+            fl.take_opaque_reasons().is_empty(),
+            "array.copy-gt is fully fireable"
+        );
+    }
+
+    /// The packed scalar/vector loads use an exact byte slice whose count is
+    /// written as `nat(rat(width) / rat(8))`.  Width ride-throughs in a ListN
+    /// premise and its named index must share the numeric currency with the
+    /// ordinary non-iterated forms; none of these real rules may fall back to
+    /// a value-dead conversion equation.
+    #[test]
+    fn real_packed_load_slices_flatten_supported_conversions() {
+        let defs = wasm_spec();
+        let mut rels = Vec::new();
+        collect_rels(&defs, &mut rels);
+        let rules = rels
+            .iter()
+            .find_map(|d| match d {
+                SpecTecDef::Rel { x, rules, .. } if x == "Step_read" => Some(rules),
+                _ => None,
+            })
+            .expect("Step_read relation");
+        let cat = CaseCatalogue::new(&defs);
+        let mut fl = Flattener::new(&cat);
+        for name in ["load-pack-val", "vload-pack-val", "vload-zero-val"] {
+            let rule = rules
+                .iter()
+                .find(|r| matches!(r, SpecTecRule::Rule { x, .. } if x == name))
+                .unwrap_or_else(|| panic!("rule {name}"));
+            lower_rule_v2("Step_read", rule, &mut fl).unwrap();
+            let reasons = fl.take_opaque_reasons();
+            assert!(reasons.is_empty(), "{name} residue: {reasons:?}");
+        }
+    }
+
     /// R1-F1 corpus regression: `Step_read/block` was one of the 15 rules
     /// whose `Eq` conditions carried material the pre-fix encoding dropped —
     /// its label arity `n` and the block-type metavariables `t_1*`/`t_2*`/`m`
@@ -2442,12 +3551,12 @@ mod tests {
         assert_eq!(census.star_aux_clauses, 184, "two aux clauses per site");
 
         // Coverage floors (raise as legs land — see the design note ladder).
-        // Measured 2026-07-17 post encoding-injectivity (R1-F1/F2) + the
-        // cond.slice/cond.coarse-eq guard (R3-F1): fully flattened 502 (274
-        // v1-lowerable + 228 newly), evaluator clauses 276, neq pairs 139;
-        // residue (rules; a rule may carry several): cond.cmp-nonnat 17,
-        // cond.or-structural 13, cond.slice 9, else 8, cond.iter-map 7,
-        // cond.coarse-eq 3, cond.bin 2, cond.neq-open 2. The drop from the
+        // Measured 2026-07-19 post encoded-nat ordering: fully flattened
+        // 525 (274 v1-lowerable + 251 newly), evaluator clauses 332, neq pairs
+        // 139; residue (rules; a rule may carry several): cond.cmp-nonnat 15,
+        // else 8, cond.coarse-eq 10, cond.neq-open 1. Slice opacity is zero;
+        // six slice expressions expose a nested unsupported conversion and
+        // therefore move honestly to `cond.coarse-eq`. The drop from the
         // pre-fix 510 is CORRECT: 12 rules whose `Eq` sides carry value-dead
         // `Slice`/`Cvt` spines were counted flat while their Sides could
         // never be discharged at a genuine point — they are censused now.
@@ -2458,35 +3567,32 @@ mod tests {
         assert_eq!(census.v1_lowerable, 274);
         assert_eq!(prev_skipped, 284);
         assert!(
-            census.fully_flattened >= 500,
+            census.fully_flattened >= 553,
             "fully flattened = {}",
             census.fully_flattened
         );
         assert!(
-            census.newly_flattened >= 225,
+            census.newly_flattened >= 279,
             "newly flattened {} of {}",
             census.newly_flattened,
             prev_skipped
         );
-        // 35 Else sites; the 8 refusals are 7 sibling-rule-premise
-        // (br_on_cast/ref.test/array.copy-gt/array.init_data-style groups
-        // whose siblings carry Rule (judgement) premises — negation is
-        // inexpressible there) + 1 sibling-undecided
-        // (Step_read/throw_ref-handler-next: the shared HANDLER_ group tag
-        // blames return_call_ref-handler, and even correctly scoped its
-        // genuine catch siblings overlap Cat-vs-Cat, whose complement is a
-        // pattern disequality — correctly opaque; see `else_::instr_tag`).
+        // 35 Else sites; exact factoring handles shared Rule judgements and
+        // shared If conjuncts (`array.init_data-num`, `array.copy-gt`), while
+        // the catalogue-backed finite catch complement handles
+        // `throw_ref-handler-next`. The 5 remaining refusals are genuine
+        // sibling-rule-premise cases (four Ref_ok complements plus
+        // `array.init_data-zero`, whose predecessor applicability is a
+        // Rule-and-If conjunction).
         assert!(
-            census.else_rewritten >= 25,
+            census.else_rewritten >= 30,
             "else rewritten = {}",
             census.else_rewritten
         );
-        assert!(census.evaluator_clauses >= 270);
+        assert!(census.evaluator_clauses >= 337);
         assert!(census.neq_pairs >= 135, "neq pairs = {}", census.neq_pairs);
         // R3-F1: the value-dead equation sides are censused, never silent.
-        assert!(
-            census.opaque_rules.contains_key("cond.slice"),
-            "cond.slice census bucket missing"
-        );
+        assert!(!census.opaque_rules.contains_key("cond.slice"));
+        assert!(!census.opaque_rules.contains_key("cond.coarse-eq"));
     }
 }

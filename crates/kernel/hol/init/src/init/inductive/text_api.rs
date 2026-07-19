@@ -8,7 +8,7 @@
 
 use covalence_core::{IntTag, Result, Term, Type};
 use covalence_hol_eval::{defs, mk_u16};
-use covalence_logic_api::{
+use covalence_kernel_data::{
     CharacterSequenceSyntax, CharacterSyntax, StringConstruction, StringSyntax, UnicodeScalar,
     Utf8EncoderSyntax, Utf16CodeUnit, Utf16EncoderSyntax,
 };
@@ -151,7 +151,7 @@ impl Utf16EncoderSyntax for NativeHol {
 
 #[cfg(test)]
 mod tests {
-    use covalence_logic_api::{
+    use covalence_kernel_data::{
         BytesSyntax, CharacterSyntax, StringConstruction, StringSyntax, UnicodeScalar,
         Utf8EncoderSyntax, Utf16EncoderSyntax,
     };

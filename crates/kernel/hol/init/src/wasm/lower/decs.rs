@@ -143,8 +143,8 @@ use covalence_core::subst::subst_free;
 use covalence_core::{Result, Term, Var};
 use covalence_spectec::ast::{
     SpecTecArg, SpecTecBinOp, SpecTecBoolTyp, SpecTecClause, SpecTecCmpOp, SpecTecDef, SpecTecExp,
-    SpecTecExpField, SpecTecIter, SpecTecIterExp, SpecTecNumTyp, SpecTecOpTyp, SpecTecParam,
-    SpecTecPrem, SpecTecRule, SpecTecUnOp,
+    SpecTecExpField, SpecTecIter, SpecTecIterExp, SpecTecNum, SpecTecNumTyp, SpecTecOpTyp,
+    SpecTecParam, SpecTecPrem, SpecTecRule, SpecTecTyp, SpecTecUnOp,
 };
 
 use super::super::encode::{self, collect_metavars, con, metavar, metavar_name, mixop_key, phi};
@@ -182,6 +182,10 @@ pub struct DecReport {
     pub expanded: usize,
     /// `ev.sort.*` guard premises attached.
     pub sort_guards: usize,
+    /// Expanded iterated-premise sites owned by this lowering.
+    pub iter_sites: usize,
+    /// Star clauses defining those sites (two per site).
+    pub iter_aux_clauses: usize,
 }
 
 /// Whole-corpus census for [`spec_fn_clauses`].
@@ -209,7 +213,8 @@ pub struct FnCensus {
     pub spec_cond_only: usize,
     /// Source clauses with structural opaque residue.
     pub spec_opaque: usize,
-    /// Clauses emitted in total (source + extra mono copies; excludes aux).
+    /// Clauses emitted in total (source/expanded/mono clauses plus Dec-owned
+    /// star clauses; excludes evaluator families drained separately).
     pub clauses_emitted: usize,
     /// Auxiliary clauses appended (the `ev.cat` pair).
     pub aux_clauses: usize,
@@ -224,6 +229,10 @@ pub struct FnCensus {
     pub expanded_clauses: usize,
     /// `ev.sort.*` guard premises attached, over all lowerings.
     pub sort_guards: usize,
+    /// Expanded iterated-premise sites, over all lowerings.
+    pub iter_sites: usize,
+    /// Star clauses defining those sites.
+    pub iter_aux_clauses: usize,
     /// Per-function/instance reports, in emission order.
     pub reports: Vec<DecReport>,
 }
@@ -626,6 +635,25 @@ fn exp_disjoint(a: &SpecTecExp, b: &SpecTecExp) -> bool {
         (E::Tup { es: a1 }, E::Tup { es: a2 }) => {
             a1.len() == a2.len() && a1.iter().zip(a2).any(|(x, y)| exp_disjoint(x, y))
         }
+        (E::Str { efs: a1 }, E::Str { efs: a2 }) if a1.len() == a2.len() => {
+            a1.iter().zip(a2).any(|(x, y)| match (x, y) {
+                (
+                    SpecTecExpField::Field { at: at1, e: e1 },
+                    SpecTecExpField::Field { at: at2, e: e2 },
+                ) => at1 == at2 && exp_disjoint(e1, e2),
+            })
+        }
+        // `jsizenn` is the size projection on the four rigid integer-lane
+        // constructors, hence injective there.
+        (E::Call { x: x1, as1: a1 }, E::Call { x: x2, as1: a2 })
+            if x1 == "jsizenn" && x2 == "jsizenn" && a1.len() == 1 && a2.len() == 1 =>
+        {
+            matches!(
+                (&a1[0], &a2[0]),
+                (SpecTecArg::Exp { e: e1 }, SpecTecArg::Exp { e: e2 })
+                    if exp_disjoint(e1, e2)
+            )
+        }
         _ => false,
     }
 }
@@ -714,18 +742,403 @@ fn cond_equiv(a: &SpecTecExp, b: &SpecTecExp) -> bool {
 /// `signed_`/`imin_`/`imax_` strict-dual shape. Sound only for
 /// identical-pattern siblings (variables correspond by name).
 fn guards_complementary(a: &[SpecTecExp], b: &[SpecTecExp]) -> bool {
+    fn dnf(e: &SpecTecExp) -> Option<Vec<Vec<&SpecTecExp>>> {
+        match e {
+            SpecTecExp::Bin {
+                op: SpecTecBinOp::And,
+                e1,
+                e2,
+                ..
+            } => {
+                let (left, right) = (dnf(e1)?, dnf(e2)?);
+                if left.len().saturating_mul(right.len()) > 64 {
+                    return None;
+                }
+                Some(
+                    left.into_iter()
+                        .flat_map(|a| {
+                            right.iter().map(move |b| {
+                                let mut branch = a.clone();
+                                branch.extend(b.iter().copied());
+                                branch
+                            })
+                        })
+                        .collect(),
+                )
+            }
+            SpecTecExp::Bin {
+                op: SpecTecBinOp::Or,
+                e1,
+                e2,
+                ..
+            } => {
+                let (mut left, right) = (dnf(e1)?, dnf(e2)?);
+                if left.len() + right.len() > 64 {
+                    return None;
+                }
+                left.extend(right);
+                Some(left)
+            }
+            atom => Some(vec![vec![atom]]),
+        }
+    }
+    fn guards_dnf(gs: &[SpecTecExp]) -> Option<Vec<Vec<&SpecTecExp>>> {
+        let mut out = vec![Vec::new()];
+        for guard in gs {
+            let branches = dnf(guard)?;
+            if out.len().saturating_mul(branches.len()) > 64 {
+                return None;
+            }
+            out = out
+                .into_iter()
+                .flat_map(|a| {
+                    branches.iter().map(move |b| {
+                        let mut branch = a.clone();
+                        branch.extend(b.iter().copied());
+                        branch
+                    })
+                })
+                .collect();
+        }
+        Some(out)
+    }
+
+    let (Some(ca), Some(cb)) = (guards_dnf(a), guards_dnf(b)) else {
+        return false;
+    };
+    let atoms_disjoint = |ga: &SpecTecExp, gb: &SpecTecExp| {
+        if cond_equiv(&negate(ga), gb) || cond_equiv(ga, &negate(gb)) {
+            return true;
+        }
+        // Equalities with a common side and structurally disjoint rigid
+        // values cannot both hold. Alias expansion exposes this exact shape
+        // for I32/I64-indexed table and memory records.
+        let equality_values_disjoint = |a: &SpecTecExp, b: &SpecTecExp| {
+            let (
+                SpecTecExp::Cmp {
+                    op: SpecTecCmpOp::Eq,
+                    e1: a1,
+                    e2: a2,
+                    ..
+                },
+                SpecTecExp::Cmp {
+                    op: SpecTecCmpOp::Eq,
+                    e1: b1,
+                    e2: b2,
+                    ..
+                },
+            ) = (a, b)
+            else {
+                return false;
+            };
+            (a1 == b1 && exp_disjoint(a2, b2))
+                || (a1 == b2 && exp_disjoint(a2, b1))
+                || (a2 == b1 && exp_disjoint(a1, b2))
+                || (a2 == b2 && exp_disjoint(a1, b1))
+        };
+        if equality_values_disjoint(ga, gb) {
+            return true;
+        }
+        let (ga, gb) = (canon_cmp(ga), canon_cmp(gb));
+        let (
+            SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Lt,
+                t: ta,
+                e1: xa,
+                e2: ua,
+            },
+            SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Le,
+                t: tb,
+                e1: lb,
+                e2: xb,
+            },
+        ) = (&ga, &gb)
+        else {
+            // Try the symmetric ordering of the two atoms.
+            let (
+                SpecTecExp::Cmp {
+                    op: SpecTecCmpOp::Le,
+                    t: ta,
+                    e1: la,
+                    e2: xa,
+                },
+                SpecTecExp::Cmp {
+                    op: SpecTecCmpOp::Lt,
+                    t: tb,
+                    e1: xb,
+                    e2: ub,
+                },
+            ) = (&ga, &gb)
+            else {
+                return false;
+            };
+            return ta == tb
+                && xa == xb
+                && matches!(
+                    (&**la, &**ub),
+                    (
+                        SpecTecExp::Num {
+                            n: SpecTecNum::Nat(lower)
+                        },
+                        SpecTecExp::Num {
+                            n: SpecTecNum::Nat(upper)
+                        }
+                    ) if upper <= lower
+                );
+        };
+        ta == tb
+            && xa == xb
+            && matches!(
+                (&**lb, &**ua),
+                (
+                    SpecTecExp::Num {
+                        n: SpecTecNum::Nat(lower)
+                    },
+                    SpecTecExp::Num {
+                        n: SpecTecNum::Nat(upper)
+                    }
+                ) if upper <= lower
+            )
+    };
+    ca.iter().all(|ba| {
+        cb.iter().all(|bb| {
+            ba.iter()
+                .any(|ga| bb.iter().any(|gb| atoms_disjoint(ga, gb)))
+        })
+    })
+}
+
+/// Contradictory call-result guards under variable equalities forced by two
+/// overlapping rigid patterns.
+///
+/// A nonlinear earlier pattern can align one variable with two current
+/// variables. On their overlap, `halfop(...)=none` and
+/// `halfop(...)=some half` are contradictory even when their raw argument
+/// syntax uses those different names. Only variable-to-variable alignments
+/// through identical rigid structure are admitted.
+fn result_guards_disjoint_under_patterns(
+    prior: &[SpecTecArg],
+    current: &[SpecTecArg],
+    prior_guards: &[SpecTecExp],
+    current_guards: &[SpecTecExp],
+) -> bool {
+    use super::else_::subst_vars;
+    use SpecTecExp as E;
+
+    fn align(a: &E, b: &E, pairs: &mut Vec<(String, String)>) -> bool {
+        match (a, b) {
+            (E::Var { id: a }, E::Var { id: b }) => {
+                pairs.push((a.clone(), b.clone()));
+                true
+            }
+            (E::Case { op: ao, e1: ae }, E::Case { op: bo, e1: be }) if ao == bo => {
+                align(ae, be, pairs)
+            }
+            (E::Tup { es: a }, E::Tup { es: b }) | (E::List { es: a }, E::List { es: b })
+                if a.len() == b.len() =>
+            {
+                a.iter().zip(b).all(|(a, b)| align(a, b, pairs))
+            }
+            _ => a == b,
+        }
+    }
+
+    if prior.len() != current.len() {
+        return false;
+    }
+    let mut pairs = Vec::new();
+    for (a, b) in prior.iter().zip(current) {
+        match (a, b) {
+            (SpecTecArg::Exp { e: a }, SpecTecArg::Exp { e: b }) => {
+                if !align(a, b, &mut pairs) {
+                    return false;
+                }
+            }
+            (a, b) if a == b => {}
+            _ => return false,
+        }
+    }
+
+    // Tiny deterministic union-find by class merging.
+    let mut classes: Vec<BTreeSet<String>> = Vec::new();
+    for (a, b) in pairs {
+        let hits: Vec<usize> = classes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| (c.contains(&a) || c.contains(&b)).then_some(i))
+            .collect();
+        let mut merged = BTreeSet::from([a, b]);
+        for i in hits.into_iter().rev() {
+            merged.extend(classes.remove(i));
+        }
+        classes.push(merged);
+    }
+    let mut subst = BTreeMap::new();
+    for class in classes {
+        let Some(rep) = class.first().cloned() else {
+            continue;
+        };
+        for name in class {
+            subst.insert(name, E::Var { id: rep.clone() });
+        }
+    }
+
+    let mut pa = Vec::new();
     let mut ca = Vec::new();
-    for g in a {
+    for g in prior_guards {
+        split_conj(g, &mut pa);
+    }
+    for g in current_guards {
         split_conj(g, &mut ca);
     }
-    let mut cb = Vec::new();
-    for g in b {
-        split_conj(g, &mut cb);
+    fn call_result(e: &E) -> Option<(&E, &E)> {
+        let E::Cmp {
+            op: SpecTecCmpOp::Eq,
+            e1,
+            e2,
+            ..
+        } = e
+        else {
+            return None;
+        };
+        if matches!(&**e1, E::Call { .. }) {
+            Some((e1, e2))
+        } else if matches!(&**e2, E::Call { .. }) {
+            Some((e2, e1))
+        } else {
+            None
+        }
     }
-    ca.iter().any(|ga| {
-        cb.iter()
-            .any(|gb| cond_equiv(&negate(ga), gb) || cond_equiv(ga, &negate(gb)))
+    pa.into_iter().any(|p| {
+        ca.iter().any(|c| {
+            let (Some((pc, pr)), Some((cc, cr))) = (call_result(p), call_result(c)) else {
+                return false;
+            };
+            let (Ok(pc), Ok(cc)) = (subst_vars(pc, &subst), subst_vars(cc, &subst)) else {
+                return false;
+            };
+            pc == cc && exp_disjoint(pr, cr)
+        })
     })
+}
+
+/// Project equality-defined existential witnesses out of a guard conjunction.
+///
+/// `∃x. x = t ∧ G(x)` is exactly `G(t)` when `x ∉ FV(t)`. SpecTec uses this
+/// shape heavily for intermediate bytes/lanes. Repeating the rewrite turns
+/// many apparently existential predecessor guards into ordinary conditions
+/// over the current clause's pattern variables. Capture-sensitive
+/// substitution refuses iterated/bound shapes rather than guessing.
+pub(super) fn project_guard_witnesses(
+    guards: &[SpecTecExp],
+    pattern_vars: &[String],
+) -> Option<Vec<SpecTecExp>> {
+    use super::else_::subst_vars;
+    use SpecTecExp as E;
+
+    let mut atoms = Vec::new();
+    for g in guards {
+        split_conj(g, &mut atoms);
+    }
+    let mut atoms: Vec<SpecTecExp> = atoms.into_iter().cloned().collect();
+    loop {
+        let mut witness = None;
+        'find: for (i, atom) in atoms.iter().enumerate() {
+            let E::Cmp {
+                op: SpecTecCmpOp::Eq,
+                e1,
+                e2,
+                ..
+            } = atom
+            else {
+                continue;
+            };
+            for (var, value) in [(&**e1, &**e2), (&**e2, &**e1)] {
+                // A list metavariable in expression position is printed by
+                // the middle-end as the identity iterator
+                // `v*{v <- vs}`. It denotes `vs` itself and is therefore an
+                // equality-defined witness on exactly the same footing as a
+                // bare variable.
+                let id = match var {
+                    E::Var { id } => id,
+                    E::Iter {
+                        e1,
+                        it: covalence_spectec::ast::SpecTecIter::List,
+                        xes,
+                    } if xes.len() == 1 => {
+                        let E::Var { id: body } = &**e1 else {
+                            continue;
+                        };
+                        let covalence_spectec::ast::SpecTecIterExp::Dom { x, e } = &xes[0];
+                        let E::Var { id } = e else {
+                            continue;
+                        };
+                        if body != x {
+                            continue;
+                        }
+                        id
+                    }
+                    _ => continue,
+                };
+                if pattern_vars.contains(id) {
+                    continue;
+                }
+                let mut value_vars = Vec::new();
+                collect_metavars(value, &mut value_vars);
+                if !value_vars.contains(id) {
+                    witness = Some((i, id.clone(), value.clone()));
+                    break 'find;
+                }
+            }
+        }
+        let Some((i, var, value)) = witness else {
+            break;
+        };
+        atoms.remove(i);
+        let mut all_vars = Vec::new();
+        for atom in &atoms {
+            collect_metavars(atom, &mut all_vars);
+        }
+        collect_metavars(&value, &mut all_vars);
+        let mut map: BTreeMap<String, SpecTecExp> = all_vars
+            .into_iter()
+            .map(|id| (id.clone(), E::Var { id }))
+            .collect();
+        map.insert(var, value);
+        atoms = atoms
+            .iter()
+            .map(|a| subst_vars(a, &map).ok())
+            .collect::<Option<_>>()?;
+    }
+
+    let mut remaining = Vec::new();
+    for atom in &atoms {
+        collect_metavars(atom, &mut remaining);
+    }
+    remaining
+        .iter()
+        .all(|v| pattern_vars.contains(v))
+        .then_some(atoms)
+}
+
+/// Negate a projected guard conjunction.
+fn negate_projected_guards(guards: &[SpecTecExp], pattern_vars: &[String]) -> Option<SpecTecExp> {
+    let projected = project_guard_witnesses(guards, pattern_vars)?;
+    let mut it = projected.iter();
+    let Some(first) = it.next() else {
+        return Some(SpecTecExp::Bool { b: false });
+    };
+    let mut out = negate(first);
+    for g in it {
+        out = SpecTecExp::Bin {
+            op: SpecTecBinOp::Or,
+            t: SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool),
+            e1: Box::new(out),
+            e2: Box::new(negate(g)),
+        };
+    }
+    Some(out)
 }
 
 /// Whether firing this clause anywhere on its overlap with `prior` can only
@@ -770,6 +1183,88 @@ fn confluent_overlap(prior: &Earlier, cargs: &[SpecTecArg], crhs: &SpecTecExp) -
     false
 }
 
+/// Recognise the exact singleton instance of a recursive map/concatenate
+/// equation.
+///
+/// SpecTec's `utf8` starts with
+///
+/// ```text
+/// utf8(ch*) = concat((utf8([ch]))*{ch <- ch*})
+/// ```
+///
+/// before its four singleton equations.  On a singleton input the first
+/// equation lowers to `utf8([ch], out) ==> utf8([ch], out)`: the star family
+/// produces the singleton list `[out]`, and `ev.cat([], [out], out)` is the
+/// identity case.  It therefore contributes no fact to the least graph
+/// relation and cannot shadow a later singleton equation.  Refuse every
+/// variation of this shape rather than treating general recursive overlaps
+/// as confluent.
+fn recursive_map_singleton_noop(dec_name: &str, prior: &Earlier, current: &[SpecTecArg]) -> bool {
+    use SpecTecExp as E;
+
+    let (
+        [
+            SpecTecArg::Exp {
+                e: E::Var { id: domain },
+            },
+        ],
+        [
+            SpecTecArg::Exp {
+                e: E::List { es: singleton },
+            },
+        ],
+    ) = (&prior.args[..], current)
+    else {
+        return false;
+    };
+    if singleton.len() != 1 {
+        return false;
+    }
+
+    let E::Call { x, as1 } = &prior.rhs else {
+        return false;
+    };
+    if x != "concat_" || as1.len() != 2 || !matches!(as1[0], SpecTecArg::Typ { .. }) {
+        return false;
+    }
+    let SpecTecArg::Exp {
+        e: E::Iter {
+            e1,
+            it: SpecTecIter::List,
+            xes,
+        },
+    } = &as1[1]
+    else {
+        return false;
+    };
+    let [
+        SpecTecIterExp::Dom {
+            x: binder,
+            e: E::Var { id: iter_domain },
+        },
+    ] = &xes[..]
+    else {
+        return false;
+    };
+    if iter_domain != domain {
+        return false;
+    }
+    let E::Call {
+        x: recursive,
+        as1: recursive_args,
+    } = &**e1
+    else {
+        return false;
+    };
+    matches!(
+        &recursive_args[..],
+        [SpecTecArg::Exp {
+            e: E::List { es }
+        }] if recursive == dec_name
+            && matches!(&es[..], [E::Var { id }] if id == binder)
+    )
+}
+
 /// What the clause-order semantics require of this clause w.r.t. ONE earlier
 /// sibling (see the module docs' *Clause order* bullet).
 enum OrderAction {
@@ -780,31 +1275,412 @@ enum OrderAction {
     Opaque(&'static str),
 }
 
+/// Exact complement of common ordered-pattern shapes:
+///
+/// - a rigid numeric literal followed by a numeric wildcard; and
+/// `[CASE payload] ++ tail` followed by `[head] ++ tail` (and its direct
+/// `CASE payload`/`head` counterpart).  The earlier pattern excludes exactly
+/// one constructor tag; its payload is otherwise unconstrained, so
+/// `head =/= CASE payload` lowers to the head-level `ev.neq` relation and is
+/// independent of the fresh payload metavariable.
+///
+/// This deliberately refuses arbitrary pattern differences.  In particular,
+/// two differently named variables are both wildcards, not a disequality.
+fn tag_pattern_complement(prior: &SpecTecExp, current: &SpecTecExp) -> Option<SpecTecExp> {
+    use SpecTecExp as E;
+    if let (E::Num { n }, head @ E::Var { .. }) = (prior, current) {
+        let nt = match n {
+            SpecTecNum::Nat(_) => SpecTecNumTyp::Nat,
+            SpecTecNum::Int(_) => SpecTecNumTyp::Int,
+            SpecTecNum::Rat(_) => SpecTecNumTyp::Rat,
+            SpecTecNum::Real(_) => SpecTecNumTyp::Real,
+        };
+        return Some(E::Cmp {
+            op: SpecTecCmpOp::Ne,
+            t: SpecTecOpTyp::Num(nt),
+            e1: Box::new(head.clone()),
+            e2: Box::new(prior.clone()),
+        });
+    }
+    let (case, head) = match (prior, current) {
+        (case @ E::Case { .. }, head @ E::Var { .. }) => (case, head),
+        (
+            E::Cat {
+                e1: prior_prefix,
+                e2: prior_tail,
+            },
+            E::Cat {
+                e1: current_prefix,
+                e2: current_tail,
+            },
+        ) if prior_tail == current_tail => match (&**prior_prefix, &**current_prefix) {
+            (E::List { es: ps }, E::List { es: cs })
+                if ps.len() == 1
+                    && cs.len() == 1
+                    && matches!(ps[0], E::Case { .. })
+                    && matches!(cs[0], E::Var { .. }) =>
+            {
+                (&ps[0], &cs[0])
+            }
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(E::Cmp {
+        op: SpecTecCmpOp::Ne,
+        // `cond_ne` is structural and does not inspect the annotation.  Bool
+        // is the neutral non-numeric choice and avoids the arithmetic path.
+        t: SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool),
+        e1: Box::new(head.clone()),
+        e2: Box::new(case.clone()),
+    })
+}
+
+/// Exact ordered-pattern complement when all argument positions are either
+/// syntactically equal, wildcard-renamings, or one supported tag
+/// discrimination.  Multiple tag discriminations are joined by `∨`, since a
+/// prior tuple-pattern fails when any component fails.
+fn args_tag_pattern_complement(prior: &[SpecTecArg], current: &[SpecTecArg]) -> Option<SpecTecExp> {
+    if prior.len() != current.len() {
+        return None;
+    }
+    let mut discriminants = Vec::new();
+    for (p, c) in prior.iter().zip(current) {
+        match (p, c) {
+            (SpecTecArg::Exp { e: pe }, SpecTecArg::Exp { e: ce }) if pe == ce => {}
+            (
+                SpecTecArg::Exp {
+                    e: SpecTecExp::Var { .. },
+                },
+                SpecTecArg::Exp {
+                    e: SpecTecExp::Var { .. },
+                },
+            ) => {}
+            (SpecTecArg::Exp { e: pe }, SpecTecArg::Exp { e: ce }) => {
+                discriminants.push(tag_pattern_complement(pe, ce)?);
+            }
+            (x, y) if x == y => {}
+            _ => return None,
+        }
+    }
+    let mut ds = discriminants.into_iter();
+    let mut out = ds.next()?;
+    for d in ds {
+        out = SpecTecExp::Bin {
+            op: SpecTecBinOp::Or,
+            t: SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool),
+            e1: Box::new(out),
+            e2: Box::new(d),
+        };
+    }
+    Some(out)
+}
+
+/// Align variables in two otherwise-identical pattern trees.
+///
+/// This is deliberately narrower than general unification: both sides must
+/// have the same rigid/list structure and every difference must be a
+/// variable rename.  The resulting prior-variable → current-variable map is
+/// enough to transport an exact source-sort membership constraint.
+fn align_pattern_vars(
+    prior: &SpecTecExp,
+    current: &SpecTecExp,
+    out: &mut BTreeMap<String, String>,
+) -> bool {
+    use SpecTecExp as E;
+    match (prior, current) {
+        (E::Var { id: p }, E::Var { id: c }) => match out.get(p) {
+            Some(old) => old == c,
+            None => {
+                out.insert(p.clone(), c.clone());
+                true
+            }
+        },
+        (E::Case { op: po, e1: pe }, E::Case { op: co, e1: ce }) if po == co => {
+            align_pattern_vars(pe, ce, out)
+        }
+        (E::Tup { es: ps }, E::Tup { es: cs }) | (E::List { es: ps }, E::List { es: cs })
+            if ps.len() == cs.len() =>
+        {
+            ps.iter()
+                .zip(cs)
+                .all(|(p, c)| align_pattern_vars(p, c, out))
+        }
+        (E::Cat { e1: p1, e2: p2 }, E::Cat { e1: c1, e2: c2 }) => {
+            align_pattern_vars(p1, c1, out) && align_pattern_vars(p2, c2, out)
+        }
+        (E::Opt { eo: Some(p) }, E::Opt { eo: Some(c) }) => align_pattern_vars(p, c, out),
+        (E::Opt { eo: None }, E::Opt { eo: None }) => true,
+        _ => prior == current,
+    }
+}
+
+/// Exact complement contributed by source-sort-constrained wildcard
+/// patterns.
+///
+/// A source pattern variable of catalogued variant sort `S` matches exactly
+/// the finite set of constructor heads in `S`.  When a later pattern has the
+/// same structure modulo variable renaming, failure of the earlier pattern
+/// is therefore the disjunction, over aligned variables, of “the current
+/// head is not in `S`”.  Membership failure for one variable is a conjunction
+/// of head-level `Ne` tests against every constructor in `S`.
+///
+/// The representative case payload is intentionally empty: `cond_ne` lowers
+/// case disequality through `ev.neq`, whose case clauses compare constructor
+/// heads only.  Payloads are irrelevant to sort membership.
+fn args_sort_pattern_complement(
+    prior: &Earlier,
+    current: &[SpecTecArg],
+    cat: &super::super::syntax::CaseCatalogue,
+) -> Option<SpecTecExp> {
+    use SpecTecExp as E;
+
+    if prior.args.len() != current.len() {
+        return None;
+    }
+    let mut aligned = BTreeMap::new();
+    for (p, c) in prior.args.iter().zip(current) {
+        match (p, c) {
+            (SpecTecArg::Exp { e: pe }, SpecTecArg::Exp { e: ce }) => {
+                if !align_pattern_vars(pe, ce, &mut aligned) {
+                    return None;
+                }
+            }
+            (p, c) if p == c => {}
+            _ => return None,
+        }
+    }
+
+    let ne = |var: &str, key: &str| E::Cmp {
+        op: SpecTecCmpOp::Ne,
+        t: SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool),
+        e1: Box::new(E::Var { id: var.into() }),
+        e2: Box::new(super::sortguard::nullary_case(key)),
+    };
+    let and = |left, right| E::Bin {
+        op: SpecTecBinOp::And,
+        t: SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool),
+        e1: Box::new(left),
+        e2: Box::new(right),
+    };
+    let or = |left, right| E::Bin {
+        op: SpecTecBinOp::Or,
+        t: SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool),
+        e1: Box::new(left),
+        e2: Box::new(right),
+    };
+
+    let mut failures = Vec::new();
+    for guard in &prior.sort_guards {
+        if guard.kind != super::sortguard::GuardKind::Plain {
+            continue;
+        }
+        let Some(current_var) = aligned.get(&guard.var) else {
+            continue;
+        };
+        let cases = super::sortguard::sort_case_list(cat, &guard.sort)?;
+        let mut keys = cases.into_iter().map(|(key, _)| key);
+        let Some(first) = keys.next() else {
+            continue;
+        };
+        let mut outside = ne(current_var, &first);
+        for key in keys {
+            outside = and(outside, ne(current_var, &key));
+        }
+        failures.push(outside);
+    }
+
+    let mut failures = failures.into_iter();
+    let mut out = failures.next()?;
+    for failure in failures {
+        out = or(out, failure);
+    }
+    Some(out)
+}
+
+/// Negate an earlier guarded clause after transporting a purely-more-general
+/// pattern onto the current one.
+///
+/// If `prior(p)` unifies directionally with `current(q)`, every current match
+/// is a prior-pattern match under the returned substitution.  Its remaining
+/// applicability condition is therefore exactly the substituted guard
+/// conjunction.  This covers the real `$ordered` split-list clause without
+/// pretending that arbitrary partially-overlapping patterns are comparable.
+fn mapped_guard_complement(
+    prior: &Earlier,
+    current: &[SpecTecArg],
+    pattern_vars: &[String],
+) -> Option<SpecTecExp> {
+    use super::else_::{Corr, correspond, subst_vars};
+
+    if prior.args.len() != current.len() {
+        return None;
+    }
+    let prior_exps: Vec<SpecTecExp> = prior
+        .args
+        .iter()
+        .map(|a| match a {
+            SpecTecArg::Exp { e } => Some(e.clone()),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    let current_exps: Vec<SpecTecExp> = current
+        .iter()
+        .map(|a| match a {
+            SpecTecArg::Exp { e } => Some(e.clone()),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    let Corr::Overlap(map) = correspond(
+        &SpecTecExp::Tup { es: prior_exps },
+        &SpecTecExp::Tup { es: current_exps },
+    ) else {
+        return None;
+    };
+    let guards: Vec<SpecTecExp> = prior
+        .guards
+        .iter()
+        .map(|guard| subst_vars(guard, &map).ok())
+        .collect::<Option<_>>()?;
+    negate_projected_guards(&guards, pattern_vars)
+}
+
+/// Whether exact `ev.sort.*` memberships make two otherwise-overlapping
+/// patterns disjoint. This is deliberately limited to plain values:
+/// `sort.list.*` and `sort.opt.*` always overlap at `[]` / `none`.
+fn sort_patterns_disjoint(
+    prior: &Earlier,
+    current: &[SpecTecArg],
+    current_guards: &[super::sortguard::Guard],
+    cat: &super::super::syntax::CaseCatalogue,
+) -> bool {
+    use super::else_::{Corr, correspond};
+    use super::sortguard::GuardKind;
+
+    let exps = |args: &[SpecTecArg]| -> Option<Vec<SpecTecExp>> {
+        args.iter()
+            .map(|a| match a {
+                SpecTecArg::Exp { e } => Some(e.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let (Some(ps), Some(cs)) = (exps(&prior.args), exps(current)) else {
+        return false;
+    };
+    let Corr::Overlap(map) = correspond(&SpecTecExp::Tup { es: ps }, &SpecTecExp::Tup { es: cs })
+    else {
+        return false;
+    };
+
+    let keys = |sort: &str| {
+        super::sortguard::sort_case_list(cat, sort)
+            .map(|xs| xs.into_iter().map(|(key, _)| key).collect::<BTreeSet<_>>())
+    };
+    for pg in &prior.sort_guards {
+        if pg.kind != GuardKind::Plain {
+            continue;
+        }
+        let Some(mapped) = map.get(&pg.var) else {
+            continue;
+        };
+        match mapped {
+            SpecTecExp::Case { op, .. } => {
+                let Some(pkeys) = keys(&pg.sort) else {
+                    continue;
+                };
+                if !pkeys.contains(&mixop_key(op)) {
+                    return true;
+                }
+            }
+            SpecTecExp::Var { id } => {
+                for cg in current_guards {
+                    if cg.kind != GuardKind::Plain || cg.var != *id {
+                        continue;
+                    }
+                    let (Some(pkeys), Some(ckeys)) = (keys(&pg.sort), keys(&cg.sort)) else {
+                        continue;
+                    };
+                    if pkeys.is_disjoint(&ckeys) {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Source parameter declarations are a second exact sort channel alongside
+/// `Sub`-restoration guards. They need no emitted premise when the variable
+/// remains in a pinning pattern, but ordered applicability must still see
+/// them: two source-typed wildcards with disjoint variant sets do not overlap
+/// at any well-sorted SpecTec point.
+fn declared_pattern_sorts(ps: &[SpecTecParam]) -> Vec<super::sortguard::Guard> {
+    use super::sortguard::{Guard, GuardKind};
+    ps.iter()
+        .filter_map(|p| match p {
+            SpecTecParam::Exp {
+                x,
+                t: SpecTecTyp::Var { x: sort, .. },
+            } => Some(Guard {
+                var: x.clone(),
+                sort: sort.clone(),
+                kind: GuardKind::Plain,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Compute the order action against one earlier sibling. `None` = provably
 /// nothing needed (disjoint / complementary / confluent). `explicit_else`
 /// only selects the finer census labels for source-`Else` clauses.
 fn order_action(
+    dec_name: &str,
     prior: &Earlier,
     cargs: &[SpecTecArg],
     crhs: &SpecTecExp,
     own_guards: &[SpecTecExp],
     pattern_vars: &[String],
+    sort_guards: &[super::sortguard::Guard],
+    cat: &super::super::syntax::CaseCatalogue,
     explicit_else: bool,
 ) -> Option<OrderAction> {
-    if args_disjoint(&prior.args, cargs) {
+    if args_disjoint(&prior.args, cargs) || sort_patterns_disjoint(prior, cargs, sort_guards, cat) {
         return None;
     }
     let identical = prior.args == cargs;
     if identical && guards_complementary(&prior.guards, own_guards) {
         return None;
     }
+    if result_guards_disjoint_under_patterns(&prior.args, cargs, &prior.guards, own_guards) {
+        return None;
+    }
     if confluent_overlap(prior, cargs, crhs) {
+        return None;
+    }
+    if recursive_map_singleton_noop(dec_name, prior, cargs) {
         return None;
     }
     let label = |else_label: &'static str| -> &'static str {
         if explicit_else { else_label } else { "order" }
     };
     if !identical {
+        if prior.only_if
+            && !prior.guards.is_empty()
+            && let Some(complement) = mapped_guard_complement(prior, cargs, pattern_vars)
+        {
+            return Some(OrderAction::Negate(complement));
+        }
+        if prior.only_if
+            && prior.guards.is_empty()
+            && let Some(complement) = args_tag_pattern_complement(&prior.args, cargs)
+                .or_else(|| args_sort_pattern_complement(prior, cargs, cat))
+        {
+            return Some(OrderAction::Negate(complement));
+        }
         // Discrimination by pattern; the complement is a pattern disequality
         // we cannot state yet.
         return Some(OrderAction::Opaque(label("else-pattern")));
@@ -815,25 +1691,11 @@ fn order_action(
     if prior.guards.is_empty() {
         return Some(OrderAction::Opaque(label("else-unguarded")));
     }
-    for g in &prior.guards {
-        let mut gv = Vec::new();
-        collect_metavars(g, &mut gv);
-        if !gv.iter().all(|v| pattern_vars.contains(v)) {
-            // ¬∃-negation is not expressible as a ∀-clause premise.
-            return Some(OrderAction::Opaque(label("else-existential")));
-        }
+    match negate_projected_guards(&prior.guards, pattern_vars) {
+        Some(neg) => Some(OrderAction::Negate(neg)),
+        // General ¬∃ is not expressible as a ∀-clause premise.
+        None => Some(OrderAction::Opaque(label("else-existential"))),
     }
-    // ¬(g₁ ∧ … ∧ gₖ) = ¬g₁ ∨ … ∨ ¬gₖ.
-    let mut neg = negate(&prior.guards[0]);
-    for g in &prior.guards[1..] {
-        neg = SpecTecExp::Bin {
-            op: SpecTecBinOp::Or,
-            t: SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool),
-            e1: Box::new(neg),
-            e2: Box::new(negate(g)),
-        };
-    }
-    Some(OrderAction::Negate(neg))
 }
 
 /// Rewrite every `Call`'s callee / `Def`-argument name through the
@@ -1327,11 +2189,19 @@ impl<'a> ClauseCx<'a> {
             E::Tup { es } => Ok(E::Tup {
                 es: es.iter().map(|x| self.lift(x)).collect::<Result<_>>()?,
             }),
-            E::Iter { e1, it, xes } => Ok(E::Iter {
-                e1: Box::new(self.lift(e1)?),
-                it: it.clone(),
-                xes: xes.clone(),
-            }),
+            E::Iter { .. } => {
+                // Keep the iterator and any calls in its body intact: the
+                // shared flattener owns mapped iteration as one evaluator
+                // relation. Lifting the body call first would erase the map
+                // dependency and leave a collision-prone raw `iter.*` node
+                // in the graph conclusion.
+                let mut unresolved = BTreeSet::new();
+                let mapped = subst_def_calls(e, self.env, self.def_params, &mut unresolved);
+                for x in unresolved {
+                    self.opaque_prem("def-param", con(format!("defcallee.{x}")))?;
+                }
+                Ok(mapped)
+            }
             E::Proj { e1, i } => Ok(E::Proj {
                 e1: Box::new(self.lift(e1)?),
                 i: *i,
@@ -1397,10 +2267,15 @@ struct Earlier {
     /// Whether every premise of the clause was an `If` (negating only the
     /// guards is exact only in that case).
     only_if: bool,
+    /// Exact source-sort membership premises attached after lowering.
+    sort_guards: Vec<super::sortguard::Guard>,
 }
 
 struct LoweredClause {
     clause: Clause,
+    /// Per-site star clauses defining any iterated premises of this Dec
+    /// clause. Appended after the ordinary/expanded clauses of the Dec.
+    aux: Vec<Clause>,
     reasons: BTreeSet<String>,
     coarse_premise: bool,
 }
@@ -1418,25 +2293,26 @@ impl LoweredClause {
     }
 }
 
-fn iter_prem_body_exp(pr: &SpecTecPrem) -> SpecTecExp {
-    match pr {
-        SpecTecPrem::Rule { e, .. } | SpecTecPrem::If { e } => e.clone(),
-        SpecTecPrem::Let { e1, .. } => e1.clone(),
-        SpecTecPrem::Iter { pr1, .. } => iter_prem_body_exp(pr1),
-        SpecTecPrem::Else => SpecTecExp::Text { t: "else".into() },
-    }
-}
-
 fn lower_clause(
     tag_name: &str,
+    star_site_name: &str,
     clause: &SpecTecClause,
     earlier: &[Earlier],
+    dec_params: &[SpecTecParam],
     env: &BTreeMap<String, String>,
     def_params: &BTreeSet<String>,
+    sort_guards: &[super::sortguard::Guard],
+    cat: &super::super::syntax::CaseCatalogue,
     flattener: &mut dyn CondFlattener,
     probe: bool,
 ) -> Result<(LoweredClause, Earlier)> {
-    let SpecTecClause::Clause { as_, e, prs, .. } = clause;
+    let SpecTecClause::Clause { ps, as_, e, prs } = clause;
+    let mut order_sorts = declared_pattern_sorts(dec_params);
+    order_sorts.extend(declared_pattern_sorts(ps));
+    order_sorts.extend_from_slice(sort_guards);
+    order_sorts
+        .sort_by(|a, b| (&a.var, &a.sort, a.kind.tag("")).cmp(&(&b.var, &b.sort, b.kind.tag(""))));
+    order_sorts.dedup_by(|a, b| a.var == b.var && a.sort == b.sort && a.kind == b.kind);
 
     // Pass 1: collapse.
     let cargs: Vec<SpecTecArg> = as_.iter().map(collapse_arg).collect();
@@ -1468,7 +2344,19 @@ fn lower_clause(
     } else {
         earlier
             .iter()
-            .filter_map(|p| order_action(p, &cargs, &crhs, &own_guards, &pattern_vars, has_else))
+            .filter_map(|p| {
+                order_action(
+                    tag_name,
+                    p,
+                    &cargs,
+                    &crhs,
+                    &own_guards,
+                    &pattern_vars,
+                    &order_sorts,
+                    cat,
+                    has_else,
+                )
+            })
             .collect()
     };
 
@@ -1515,6 +2403,7 @@ fn lower_clause(
         needs_cat: false,
         my_reasons: BTreeSet::new(),
     };
+    let mut star_aux = Vec::new();
 
     // Numeric-scan inputs accumulate as we produce residues.
     let mut num_scan: Vec<SpecTecExp> = Vec::new();
@@ -1543,7 +2432,7 @@ fn lower_clause(
     }
 
     // Premises.
-    for pr in prs {
+    for (premise_idx, pr) in prs.iter().enumerate() {
         match pr {
             SpecTecPrem::If { e } => {
                 let c = collapse(e);
@@ -1559,15 +2448,21 @@ fn lower_clause(
                 cx.my_prem(j);
             }
             SpecTecPrem::Iter { .. } => {
-                // Deferred to the star-relation leg: load as opaque.
-                let inner = collapse(&iter_prem_body_exp(pr));
-                let mut vars = Vec::new();
-                collect_metavars(&inner, &mut vars);
-                for v in vars {
-                    cx.add_mv(&v);
+                let site = super::star::StarSite::of_premise(
+                    tag_name,
+                    star_site_name,
+                    premise_idx,
+                    pr,
+                    &cx.mv,
+                )
+                .expect("matched Iter premise");
+                let lowered = super::star::lower_iter_premise(&site, cx.fl)?;
+                for mv in lowered.new_metavars {
+                    cx.add_mv(&mv);
                 }
-                let body = encode::encode_exp(&inner)?;
-                cx.opaque_prem("iter-premise", body)?;
+                cx.prems
+                    .extend(lowered.prems.into_iter().map(|prem| (prem, false)));
+                star_aux.extend(lowered.aux);
             }
             SpecTecPrem::Let { e1, e2 } => {
                 // 0 occurrences in the corpus; load as opaque.
@@ -1671,6 +2566,7 @@ fn lower_clause(
             prems: cx.prems.into_iter().map(|(p, _)| p).collect(),
             concl,
         },
+        aux: star_aux,
         reasons,
         coarse_premise,
     };
@@ -1684,6 +2580,7 @@ fn lower_clause(
         guards: own_guards,
         rhs: crhs,
         only_if,
+        sort_guards: order_sorts,
     };
     Ok((lowered, earlier_entry))
 }
@@ -1762,7 +2659,8 @@ fn lower_dec_inner(
     // the flattener is a stateless one whose `request_ev` just builds).
     let mut sort_aux: Vec<Clause> = Vec::new();
     let mut sort_keys: BTreeSet<String> = BTreeSet::new();
-    for c in clauses {
+    let mut star_aux: Vec<Clause> = Vec::new();
+    for (source_idx, c) in clauses.iter().enumerate() {
         // --- Sort fix (module docs): sub-only metavariables of this source
         // clause, from the *original* (pre-collapse) expressions.
         let SpecTecClause::Clause { as_, e, prs, .. } = c;
@@ -1787,8 +2685,20 @@ fn lower_dec_inner(
             // anyway, and expanding it would only duplicate that residue in
             // the census. Probe the canonical lowering: any residue => take
             // the (equally exact) guards instead.
-            let (probe, _) =
-                lower_clause(tag_name, c, &earlier, env, &def_params, flattener, true)?;
+            let probe_site = format!("dec.probe{source_idx}");
+            let (probe, _) = lower_clause(
+                tag_name,
+                &probe_site,
+                c,
+                &earlier,
+                ps,
+                env,
+                &def_params,
+                &plan.guards,
+                cat,
+                flattener,
+                true,
+            )?;
             if !probe.reasons.is_empty() {
                 plan = sortguard::plan(&patterns, &rest, cat, false);
             }
@@ -1813,10 +2723,22 @@ fn lower_dec_inner(
         let mut any_structural = false;
         let mut src_reasons: BTreeSet<String> = BTreeSet::new();
         let mut src_coarse = false;
-        for vc in &variants {
+        for (variant_idx, vc) in variants.iter().enumerate() {
             // Track needs_cat via the result (lower_clause hides its cx).
-            let (mut lc, e) =
-                lower_clause(tag_name, vc, &earlier, env, &def_params, flattener, false)?;
+            let star_site = format!("dec.clause{source_idx}.variant{variant_idx}");
+            let (mut lc, e) = lower_clause(
+                tag_name,
+                &star_site,
+                vc,
+                &earlier,
+                ps,
+                env,
+                &def_params,
+                &plan.guards,
+                cat,
+                flattener,
+                false,
+            )?;
             // Attach the guard premises (a var that collapsed away entirely
             // is not a clause metavariable and constrains nothing).
             for g in &plan.guards {
@@ -1860,6 +2782,7 @@ fn lower_dec_inner(
             }) {
                 needs_cat = true;
             }
+            star_aux.extend(lc.aux);
             out.push(lc.clause);
             earlier.push(e);
         }
@@ -1879,6 +2802,10 @@ fn lower_dec_inner(
         }
     }
     out.extend(sort_aux);
+    report.iter_aux_clauses = star_aux.len();
+    report.iter_sites = star_aux.len() / 2;
+    super::star::assert_unique_star_tags(&star_aux);
+    out.extend(star_aux);
     Ok((out, report, needs_cat, coarse_prems))
 }
 
@@ -2077,6 +3004,8 @@ pub fn spec_fn_clauses(
             census.clauses_emitted += cs.len();
             census.expanded_clauses += rep.expanded;
             census.sort_guards += rep.sort_guards;
+            census.iter_sites += rep.iter_sites;
+            census.iter_aux_clauses += rep.iter_aux_clauses;
             clauses.extend(cs);
             canonical = rep;
         } else {
@@ -2091,6 +3020,8 @@ pub fn spec_fn_clauses(
                 census.clauses_emitted += cs.len();
                 census.expanded_clauses += rep.expanded;
                 census.sort_guards += rep.sort_guards;
+                census.iter_sites += rep.iter_sites;
+                census.iter_aux_clauses += rep.iter_aux_clauses;
                 clauses.extend(cs);
                 first = Some(rep);
             } else {
@@ -2117,6 +3048,8 @@ pub fn spec_fn_clauses(
                     census.clauses_emitted += cs.len();
                     census.expanded_clauses += rep.expanded;
                     census.sort_guards += rep.sort_guards;
+                    census.iter_sites += rep.iter_sites;
+                    census.iter_aux_clauses += rep.iter_aux_clauses;
                     clauses.extend(cs);
                     if first.is_none() {
                         first = Some(rep);
@@ -2541,6 +3474,127 @@ mod tests {
         );
     }
 
+    #[test]
+    fn real_dec_iterated_premises_have_live_empty_stars() {
+        use super::super::flatten::Flattener;
+        use super::super::star::star_judgement;
+
+        let defs = crate::wasm::spec::wasm_spec();
+        let cat = CaseCatalogue::new(&defs);
+        let ride = encode::app(con("case.I32"), con("tuple")).unwrap();
+
+        // growmem's optional `j?` guard: absence is the vacuous star case.
+        let mut fl = Flattener::new(&cat);
+        let (mut growmem, report) = lower_dec(find_dec(&defs, "growmem"), &cat, &mut fl).unwrap();
+        growmem.extend(fl.drain_ev_clauses());
+        assert!(
+            !report.reasons.contains_key("dec.iter-premise"),
+            "{report:?}"
+        );
+        let grow_tag = "star.growmem.dec.clause0.variant0.3";
+        let grow_idx = growmem
+            .iter()
+            .position(|c| {
+                c.prems.is_empty() && judgement_tag_is(&c.concl, &format!("rel.{grow_tag}"))
+            })
+            .expect("growmem optional-star base clause");
+        assert_eq!(growmem[grow_idx].metavars.len(), 1);
+        let rs = rule_set_of(growmem.clone());
+        let n = rs.n_clauses().unwrap();
+        let d = derive_mixed(&rs, grow_idx, n, &[ride.clone()], vec![]).unwrap();
+        assert_genuine(&d);
+        assert_eq!(
+            d.concl(),
+            &metalogic::derivable(
+                &rs,
+                &star_judgement(grow_tag, &[ride.clone(), con("opt.none")]).unwrap()
+            )
+            .unwrap()
+        );
+
+        // instantiate's zipped Externaddr_ok iteration: two empty domains
+        // satisfy the premise without manufacturing an element judgement.
+        let mut fl = Flattener::new(&cat);
+        let (mut instantiate, report) =
+            lower_dec(find_dec(&defs, "instantiate"), &cat, &mut fl).unwrap();
+        instantiate.extend(fl.drain_ev_clauses());
+        assert!(
+            !report.reasons.contains_key("dec.iter-premise"),
+            "{report:?}"
+        );
+        let inst_tag = "star.instantiate.dec.clause0.variant0.1";
+        let inst_idx = instantiate
+            .iter()
+            .position(|c| {
+                c.prems.is_empty() && judgement_tag_is(&c.concl, &format!("rel.{inst_tag}"))
+            })
+            .expect("instantiate zipped-star base clause");
+        assert_eq!(instantiate[inst_idx].metavars.len(), 1);
+        let rs = rule_set_of(instantiate.clone());
+        let n = rs.n_clauses().unwrap();
+        let d = derive_mixed(&rs, inst_idx, n, &[ride.clone()], vec![]).unwrap();
+        assert_genuine(&d);
+        assert_eq!(
+            d.concl(),
+            &metalogic::derivable(
+                &rs,
+                &star_judgement(inst_tag, &[ride, con("list"), con("list")]).unwrap()
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn real_subst_moduletype_empty_maps_derive() {
+        use super::super::flatten::Flattener;
+        let defs = crate::wasm::spec::wasm_spec();
+        let cat = CaseCatalogue::new(&defs);
+        let mut fl = Flattener::new(&cat);
+        let (mut cls, report) =
+            lower_dec(find_dec(&defs, "subst_moduletype"), &cat, &mut fl).unwrap();
+        assert_eq!(report.clean, 1, "{report:?}");
+        assert!(!report.reasons.contains_key("dec.coarse-spine"));
+        cls.extend(fl.drain_ev_clauses());
+        assert_eq!(cls.len(), 5, "one graph clause + two 2-clause maps");
+
+        let rs = rule_set_of(cls);
+        let n = rs.n_clauses().unwrap();
+        let nil = con("list");
+        let map_left = derive_mixed(&rs, 1, n, &[nil.clone(), nil.clone()], vec![]).unwrap();
+        let map_right = derive_mixed(&rs, 3, n, &[nil.clone(), nil.clone()], vec![]).unwrap();
+        let d = derive_mixed(
+            &rs,
+            0,
+            n,
+            &[
+                nil.clone(),
+                nil.clone(),
+                nil.clone(),
+                nil.clone(),
+                nil.clone(),
+                nil.clone(),
+            ],
+            vec![
+                Premise::Derivation(map_left),
+                Premise::Derivation(map_right),
+            ],
+        )
+        .unwrap();
+        assert_genuine(&d);
+        let pair = encode::app(
+            con("case.%->%"),
+            encode::app(encode::app(con("tup"), nil.clone()).unwrap(), nil.clone()).unwrap(),
+        )
+        .unwrap();
+        let expected =
+            fn_graph("subst_moduletype", &[pair.clone(), nil.clone(), nil], &pair).unwrap();
+        assert_eq!(
+            d.concl(),
+            &metalogic::derivable(&rs, &expected).unwrap(),
+            "both empty mapped substitutions preserve the empty module type"
+        );
+    }
+
     // ------------------------------------------------------------------
     // R4-F1 regression: Dec clauses match IN ORDER. The truncating `idiv_`
     // legs overlap the earlier `eps` legs at real instances (U: i_2 = 0)
@@ -2556,24 +3610,22 @@ mod tests {
         let mut fl = PureFlattener;
         let (cls, report) = lower_dec(idiv, &CaseCatalogue::new(&defs), &mut fl).unwrap();
         assert_eq!(report.clauses, 5);
-        // The census records exactly the two divergent-overlap complements.
-        assert_eq!(report.reasons.get("dec.order"), Some(&2), "{report:?}");
+        // Both divergent overlaps are now expressible as ordinary pattern
+        // conditions. PureFlattener labels all conditions `cond`; the third
+        // is the source guard already present in this definition.
+        assert_eq!(report.reasons.get("dec.order"), None, "{report:?}");
+        assert_eq!(report.reasons.get("cond"), Some(&3), "{report:?}");
 
         let has_order = |c: &Clause| {
             c.prems.iter().any(|p| match p {
-                LowerPrem::Judgement(j) => opaque_reason(j).as_deref() == Some("dec.order"),
+                LowerPrem::Judgement(j) => opaque_reason(j).as_deref() == Some("cond"),
                 LowerPrem::Side(_) => false,
             })
         };
         // Clause 1 (U-trunc) overlaps clause 0 (U eps at i_2 = 0) with a
         // divergent RHS; clause 4 (S-trunc) overlaps clause 2 the same way.
-        assert!(has_order(&cls[1]), "U-trunc leg carries dec.order");
-        assert!(has_order(&cls[4]), "S-trunc leg carries dec.order");
-        // Clause 3 (S overflow ⇒ eps) is CONFLUENT with clause 2 (equal RHS
-        // on the overlap): no order premise — and the eps legs themselves
-        // have no earlier overlap.
-        assert!(!has_order(&cls[0]) && !has_order(&cls[2]) && !has_order(&cls[3]));
-
+        assert!(has_order(&cls[1]), "U-trunc leg carries its complement");
+        assert!(has_order(&cls[4]), "S-trunc leg carries its complement");
         // Eps legs stay live: idiv_(32, U, 7, (0)) = eps derives
         // premise-free through clause 0.
         assert_eq!(cls[0].metavars.len(), 2); // [N, i_1]
@@ -2592,6 +3644,32 @@ mod tests {
         let expected =
             fn_graph("idiv_", &[ground_nat(32), u, ground_nat(7), zero_enc], &eps).unwrap();
         assert_eq!(d.concl(), &metalogic::derivable(&rs, &expected).unwrap());
+    }
+
+    #[test]
+    fn real_idiv_signed_quotient_guard_is_fully_exact() {
+        use super::super::flatten::Flattener;
+
+        let defs = crate::wasm::spec::wasm_spec();
+        let cat = CaseCatalogue::new(&defs);
+        let mut fl = Flattener::new(&cat);
+        let (cls, report) = lower_dec(find_dec(&defs, "idiv_"), &cat, &mut fl).unwrap();
+
+        assert_eq!(report.clauses, 5);
+        assert_eq!(report.clean, 5, "{report:?}");
+        assert_eq!(report.cond_only, 0, "{report:?}");
+        assert_eq!(report.reasons.get("cond.coarse-eq"), None, "{report:?}");
+
+        let ev = fl.drain_ev_clauses();
+        assert!(
+            ev.iter()
+                .filter(|c| judgement_tag_is(&c.concl, "rel.ev.signed-div-eq-pos-nat"))
+                .count()
+                == 2,
+            "the real signed idiv guard requests both exact same-sign clauses"
+        );
+        let rs = rule_set_of(cls.into_iter().chain(ev).collect());
+        assert!(rs.n_clauses().unwrap() > 5);
     }
 
     // ------------------------------------------------------------------
@@ -2886,6 +3964,51 @@ mod tests {
     // Whole-spec census: total loading + floors + exact buckets.
     // ------------------------------------------------------------------
     #[test]
+    fn utf8_recursive_map_predecessor_is_an_exact_singleton_noop() {
+        use super::super::flatten::Flattener;
+        let defs = crate::wasm::spec::wasm_spec();
+        let cat = CaseCatalogue::new(&defs);
+        let mut fl = Flattener::new(&cat);
+        let (_, census) = spec_fn_clauses(&defs, &mut fl).unwrap();
+        let utf8 = census
+            .reports
+            .iter()
+            .find(|report| report.name == "utf8" && report.tag == "utf8")
+            .expect("bundled utf8 Dec");
+
+        assert_eq!(utf8.clauses, 5);
+        assert_eq!(utf8.clean, 5, "{utf8:?}");
+        assert_eq!(utf8.opaque, 0, "{utf8:?}");
+        assert_eq!(utf8.reasons.get("dec.order"), None, "{utf8:?}");
+    }
+
+    #[test]
+    fn ordered_alias_expansions_leave_only_the_existential_vcvtop_frontier() {
+        use super::super::flatten::Flattener;
+        let defs = crate::wasm::spec::wasm_spec();
+        let cat = CaseCatalogue::new(&defs);
+        let mut fl = Flattener::new(&cat);
+        let (_, census) = spec_fn_clauses(&defs, &mut fl).unwrap();
+        let report = |name: &str| {
+            census
+                .reports
+                .iter()
+                .find(|report| report.name == name && report.tag == name)
+                .unwrap_or_else(|| panic!("bundled {name} Dec"))
+        };
+
+        for name in ["growtable", "growmem", "vextternop__"] {
+            let report = report(name);
+            assert_eq!(report.opaque, 0, "{report:?}");
+            assert_eq!(report.reasons.get("dec.order"), None, "{report:?}");
+        }
+        let vcvtop = report("vcvtop__");
+        assert_eq!(vcvtop.clean, 2, "{vcvtop:?}");
+        assert_eq!(vcvtop.opaque, 1, "{vcvtop:?}");
+        assert_eq!(vcvtop.reasons.get("dec.order"), Some(&1), "{vcvtop:?}");
+    }
+
+    #[test]
     fn whole_spec_census() {
         use super::super::flatten::Flattener;
         let defs = crate::wasm::spec::wasm_spec();
@@ -2916,9 +4039,11 @@ mod tests {
             census.spec_opaque
         );
         println!(
-            "emitted clauses: {} (+{} aux); fns fully clean: {}; coarse premises: {}",
+            "emitted clauses: {} (+{} evaluator aux; {} Dec-star sites / {} clauses); fns fully clean: {}; coarse premises: {}",
             census.clauses_emitted,
             census.aux_clauses,
+            census.iter_sites,
+            census.iter_aux_clauses,
             census.fns_fully_clean,
             census.coarse_premises
         );
@@ -2926,7 +4051,13 @@ mod tests {
         for (r, c) in &census.reasons {
             println!("  {c:>4}  {r}");
         }
-
+        println!("--- opaque functions (canonical lowerings) ---");
+        for report in census.reports.iter().filter(|report| report.opaque != 0) {
+            println!(
+                "  {} [{}]: {}/{} opaque {:?}",
+                report.name, report.tag, report.opaque, report.clauses, report.reasons
+            );
+        }
         // Corpus shape (from the taxonomy; a dep bump that changes these
         // should fail loudly).
         assert_eq!(census.functions, 462);
@@ -2934,6 +4065,8 @@ mod tests {
         assert_eq!(census.builtins, 91);
         assert_eq!(census.combinators, 16);
         assert_eq!(census.unresolved_instantiations, 0);
+        assert_eq!(census.iter_sites, 6);
+        assert_eq!(census.iter_aux_clauses, 12);
 
         // LOADING IS TOTAL: every source equation clause is represented.
         assert_eq!(census.spec_loaded, census.spec_clauses);
@@ -2943,28 +4076,41 @@ mod tests {
         let n = rs.n_clauses().unwrap();
         assert_eq!(n, census.clauses_emitted + census.aux_clauses + n_ev);
 
-        // Floors (raise as coverage grows; measured 2026-07-17 post
-        // clause-order fix (R4-F1) under the REAL condition flattener:
-        // clean 660 — DOWN from 691, correctly: 23 functions' later clauses
-        // (idiv_/irem_ truncating legs, the subst_*/free_* catch-alls,
-        // utf8, unpack/cunpack, …) overlapped an earlier sibling with a
-        // divergent RHS and were over-approximating; they now carry order
-        // complements (33 censused `dec.order` premises + injected guard
-        // negations). Cond-only residue: cond.iter-map 26, cond.cmp-nonnat
-        // 20, cond.neq-open 3; structural: coarse-spine 42 (zip/map RHS:
-        // subst_* family + SIMD lane combinators), else-pattern 28
-        // (head-case complement needs Neq clauses), iter-premise 4,
-        // else-nonif-guard 1; fns fully clean 253.)
-        assert!(census.spec_clean >= 655, "clean = {}", census.spec_clean);
+        // Floors (raise as coverage grows; measured 2026-07-19 post exact
+        // source-sort, mapped-guard, rigid-record and call-result
+        // complements under the real condition flattener: clean 802. The
+        // one remaining `dec.order` clause is vcvtop__'s genuinely
+        // existential predecessor complement. Current cond-only residue:
+        // condition-only residue is zero: `idiv_`'s signed rational quotient
+        // equality is an exact evaluator relation. Structural: coarse-spine
+        // 0, else-pattern 0, else-nonif-guard 1; fns fully clean 369. All Dec
+        // Iter premises use shared star relations (6 expanded
+        // sites / 12 defining clauses), with no iter-premise opacity.
+        assert!(census.spec_clean >= 802, "clean = {}", census.spec_clean);
+        assert_eq!(
+            census.spec_cond_only, 0,
+            "cond-only = {}",
+            census.spec_cond_only
+        );
+        assert_eq!(
+            census.reasons.get("cond.coarse-eq"),
+            None,
+            "all bundled Dec equality conversions are exact"
+        );
         assert!(
             census.spec_clean + census.spec_cond_only >= 690,
             "clean+cond-only = {}",
             census.spec_clean + census.spec_cond_only
         );
         assert!(
-            census.fns_fully_clean >= 250,
+            census.fns_fully_clean >= 369,
             "fns fully clean = {}",
             census.fns_fully_clean
+        );
+        assert_eq!(
+            census.reasons.get("dec.else-pattern"),
+            None,
+            "all bundled Else pattern complements are exact"
         );
         assert!(
             census.mono_instances >= 50,
@@ -2975,7 +4121,7 @@ mod tests {
         // censused, never silent (a collapse to 0 would mean divergent-RHS
         // overlaps — idiv_'s truncating legs — fire unguarded again).
         let order = census.reasons.get("dec.order").copied().unwrap_or(0);
-        assert!((25..=60).contains(&order), "dec.order clauses = {order}");
+        assert_eq!(order, 1, "dec.order clauses = {order}");
 
         // R4-F2: no premise may mention a `Def`-param name as (part of) a
         // graph tag — a `fn.f_` premise would be silently underivable and
@@ -3128,6 +4274,262 @@ mod tests {
             e2: Box::new(cmp(C::Eq)),
         };
         assert_eq!(negate(&not), cmp(C::Eq));
+    }
+
+    #[test]
+    fn ordered_guard_projects_equality_witnesses_before_negation() {
+        let eq = |a: SpecTecExp, b: SpecTecExp| SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Eq,
+            t: SpecTecOpTyp::Num(SpecTecNumTyp::Nat),
+            e1: Box::new(a),
+            e2: Box::new(b),
+        };
+        // ∃y. y = 3 ∧ x = y  iff  x = 3.
+        let neg = negate_projected_guards(
+            &[eq(var("y"), num(3)), eq(var("x"), var("y"))],
+            &["x".into()],
+        )
+        .expect("equality witness is projectable");
+        assert_eq!(
+            neg,
+            SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Ne,
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Nat),
+                e1: Box::new(var("x")),
+                e2: Box::new(num(3)),
+            }
+        );
+
+        // ∃y. y = x is always true, so its ordered complement is false.
+        assert_eq!(
+            negate_projected_guards(&[eq(var("y"), var("x"))], &["x".into()]),
+            Some(SpecTecExp::Bool { b: false })
+        );
+
+        // The middle-end's identity-list rendering is an equally valid
+        // existential witness: ∃ys. y*{y <- ys} = xs is always true.
+        let identity_list = SpecTecExp::Iter {
+            e1: Box::new(var("y")),
+            it: SpecTecIter::List,
+            xes: vec![SpecTecIterExp::Dom {
+                x: "y".into(),
+                e: var("ys"),
+            }],
+        };
+        assert_eq!(
+            negate_projected_guards(&[eq(identity_list, var("xs"))], &["xs".into()]),
+            Some(SpecTecExp::Bool { b: false })
+        );
+
+        // A genuinely unconstrained existential relation remains explicit.
+        let opaque = SpecTecExp::Call {
+            x: "p".into(),
+            as1: vec![exp_arg(var("y"))],
+        };
+        assert!(negate_projected_guards(&[opaque], &["x".into()]).is_none());
+    }
+
+    #[test]
+    fn ordered_tag_pattern_has_an_exact_structural_complement() {
+        let prior = SpecTecExp::Cat {
+            e1: Box::new(SpecTecExp::List {
+                es: vec![case("FUNC", var("payload"))],
+            }),
+            e2: Box::new(var("tail")),
+        };
+        let current = SpecTecExp::Cat {
+            e1: Box::new(SpecTecExp::List {
+                es: vec![var("head")],
+            }),
+            e2: Box::new(var("tail")),
+        };
+        let complement =
+            tag_pattern_complement(&prior, &current).expect("head tag is discriminable");
+        assert!(matches!(
+            complement,
+            SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Ne,
+                e1,
+                e2,
+                ..
+            } if *e1 == var("head") && *e2 == case("FUNC", var("payload"))
+        ));
+        assert!(
+            tag_pattern_complement(&var("earlier_wildcard"), &var("current_wildcard")).is_none(),
+            "renamed wildcards overlap everywhere and have no complement"
+        );
+    }
+
+    #[test]
+    fn ordered_numeric_literal_has_an_exact_complement() {
+        let prior = SpecTecExp::Num {
+            n: SpecTecNum::Nat(8),
+        };
+        let current = var("n");
+        assert!(matches!(
+            tag_pattern_complement(&prior, &current),
+            Some(SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Ne,
+                t: SpecTecOpTyp::Num(SpecTecNumTyp::Nat),
+                e1,
+                e2,
+            }) if *e1 == current && *e2 == prior
+        ));
+    }
+
+    #[test]
+    fn ordered_patterns_use_exact_source_sort_disjointness() {
+        use super::super::sortguard::GuardKind;
+
+        let defs = crate::wasm::spec::wasm_spec();
+        let cat = CaseCatalogue::new(&defs);
+        let declared = declared_pattern_sorts(&[SpecTecParam::Exp {
+            x: "valtype".into(),
+            t: SpecTecTyp::Var {
+                x: "valtype".into(),
+                as1: vec![],
+            },
+        }]);
+        assert_eq!(declared.len(), 1);
+        assert_eq!(declared[0].kind, GuardKind::Plain);
+        let prior = Earlier {
+            args: vec![exp_arg(var("valtype"))],
+            guards: vec![],
+            rhs: var("r"),
+            only_if: true,
+            sort_guards: declared,
+        };
+        assert!(
+            sort_patterns_disjoint(&prior, &[exp_arg(case("I8", unit()))], &[], &cat,),
+            "I8 is outside valtype, so the guarded wildcard cannot overlap it"
+        );
+        assert!(
+            !sort_patterns_disjoint(&prior, &[exp_arg(case("I32", unit()))], &[], &cat,),
+            "I32 is a valtype and must remain overlapping"
+        );
+    }
+
+    #[test]
+    fn ordered_source_sort_wildcards_have_an_exact_finite_complement() {
+        use super::super::sortguard::{Guard, GuardKind};
+
+        let defs = crate::wasm::spec::wasm_spec();
+        let cat = CaseCatalogue::new(&defs);
+        let prior = Earlier {
+            args: vec![exp_arg(SpecTecExp::Cat {
+                e1: Box::new(SpecTecExp::List {
+                    es: vec![var("type")],
+                }),
+                e2: Box::new(var("tail")),
+            })],
+            guards: vec![],
+            rhs: var("r"),
+            only_if: true,
+            sort_guards: vec![Guard {
+                var: "type".into(),
+                sort: "type".into(),
+                kind: GuardKind::Plain,
+            }],
+        };
+        let current = vec![exp_arg(SpecTecExp::Cat {
+            e1: Box::new(SpecTecExp::List {
+                es: vec![var("decl")],
+            }),
+            e2: Box::new(var("tail")),
+        })];
+        let complement = args_sort_pattern_complement(&prior, &current, &cat)
+            .expect("catalogued source sort has an exact head complement");
+
+        fn ne_heads(e: &SpecTecExp, out: &mut Vec<String>) {
+            match e {
+                SpecTecExp::Bin {
+                    op: SpecTecBinOp::And,
+                    e1,
+                    e2,
+                    ..
+                } => {
+                    ne_heads(e1, out);
+                    ne_heads(e2, out);
+                }
+                SpecTecExp::Cmp {
+                    op: SpecTecCmpOp::Ne,
+                    e1,
+                    e2,
+                    ..
+                } => {
+                    assert_eq!(**e1, var("decl"));
+                    let SpecTecExp::Case { op, .. } = &**e2 else {
+                        panic!("sort complement compares against a case head")
+                    };
+                    out.push(mixop_key(op));
+                }
+                other => panic!("unexpected sort complement node: {other:?}"),
+            }
+        }
+        let mut actual = Vec::new();
+        ne_heads(&complement, &mut actual);
+        let expected: Vec<String> = super::super::sortguard::sort_case_list(&cat, "type")
+            .unwrap()
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        assert_eq!(actual, expected);
+
+        let structurally_different = vec![exp_arg(SpecTecExp::List {
+            es: vec![var("decl")],
+        })];
+        assert!(
+            args_sort_pattern_complement(&prior, &structurally_different, &cat).is_none(),
+            "sort evidence must not bridge a different list pattern"
+        );
+    }
+
+    #[test]
+    fn ordered_more_general_pattern_transports_its_guard_before_negation() {
+        let prior_arg = var("all");
+        let current_arg = SpecTecExp::Cat {
+            e1: Box::new(var("prefix")),
+            e2: Box::new(SpecTecExp::List {
+                es: vec![var("import")],
+            }),
+        };
+        let prior_call = SpecTecExp::Call {
+            x: "importsd".into(),
+            as1: vec![exp_arg(prior_arg.clone())],
+        };
+        let prior = Earlier {
+            args: vec![exp_arg(prior_arg)],
+            guards: vec![SpecTecExp::Cmp {
+                op: SpecTecCmpOp::Eq,
+                t: SpecTecOpTyp::Bool(SpecTecBoolTyp::Bool),
+                e1: Box::new(prior_call),
+                e2: Box::new(SpecTecExp::List { es: vec![] }),
+            }],
+            rhs: var("r"),
+            only_if: true,
+            sort_guards: vec![],
+        };
+        let complement = mapped_guard_complement(
+            &prior,
+            &[exp_arg(current_arg.clone())],
+            &["prefix".into(), "import".into()],
+        )
+        .expect("a purely-more-general pattern guard transports exactly");
+        let SpecTecExp::Cmp {
+            op: SpecTecCmpOp::Ne,
+            e1,
+            e2,
+            ..
+        } = complement
+        else {
+            panic!("guard equality negates to disequality")
+        };
+        assert_eq!(*e2, (SpecTecExp::List { es: vec![] }));
+        assert!(matches!(
+            &*e1,
+            SpecTecExp::Call { x, as1 }
+                if x == "importsd" && as1 == &vec![exp_arg(current_arg)]
+        ));
     }
 
     // ------------------------------------------------------------------

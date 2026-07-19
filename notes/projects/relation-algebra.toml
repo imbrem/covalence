@@ -5,4 +5,4 @@ parent = "logic-relations"
 depends_on = []
 todos = ["kernel.logic.relation-allegory"]
 notes = ["notes/design/content-logic-and-wit-boundaries.md"]
-files = ["crates/kernel/hol/logic"]
+files = ["crates/kernel/logic"]

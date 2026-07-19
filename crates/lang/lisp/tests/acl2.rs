@@ -451,6 +451,63 @@ fn structural_predicate_defun_is_admitted() {
 }
 
 #[test]
+fn defun_retains_plain_structural_admission_witnesses() {
+    let mut s = Acl2Session::new().unwrap();
+
+    s.eval_cell("(defun identity (x) x)").unwrap();
+    let identity = s.admission("identity").unwrap();
+    assert_eq!(identity.recursive_calls, 0);
+    assert_eq!(identity.decreasing_parameter, None);
+    let identity_hol = s.hol_definition("identity").unwrap();
+    assert!(identity_hol.defining_equation.hyps().is_empty());
+
+    s.eval_cell(APP).unwrap();
+    let app = s.admission("app").unwrap();
+    assert_eq!(app.recursive_calls, 1);
+    assert_eq!(app.decreasing_parameter, Some(0));
+    let app_hol = s.hol_definition("app").unwrap();
+    assert!(
+        app_hol.defining_equation.hyps().is_empty(),
+        "deep admission must produce a conservative theorem, not an assumed equation"
+    );
+
+    assert!(s.eval_cell("(defun bad (x) (bad x))").is_err());
+    assert!(s.admission("bad").is_none());
+    assert!(s.hol_definition("bad").is_none());
+}
+
+#[test]
+#[ignore = "full open-theorem replay currently takes about 100 seconds"]
+// TODO(cov:lisp.acl2.induction-test-performance, major): Bring the append admission/execution/induction integration gate below ten seconds and enable it in the default ACL2 test suite.
+fn recursive_definition_runs_and_transports_an_open_theorem() {
+    use covalence_lisp::acl2::Acl2Proof;
+
+    let mut s = session();
+    s.eval_cell(APP).unwrap();
+
+    let admission = s.admission("app").expect("surface admission witness");
+    assert_eq!(admission.decreasing_parameter, Some(0));
+    assert!(
+        s.hol_definition("app")
+            .expect("deep conservative definition")
+            .defining_equation
+            .hyps()
+            .is_empty()
+    );
+
+    let out = eval_checked(&s, "(app (quote (a b)) (quote (c)))");
+    assert_eq!(s.render(&out), "(a b c)");
+
+    s.eval_cell("(defthm app-assoc (equal (app (app x y) z) (app x (app y z))))")
+        .unwrap();
+    let theorem = s
+        .theorem_entry("app-assoc")
+        .expect("transported open theorem");
+    assert!(theorem.thm.hyps().is_empty());
+    assert!(matches!(theorem.proof, Acl2Proof::Induction { .. }));
+}
+
+#[test]
 fn undefined_callee_is_rejected() {
     let mut s = session();
     // ACL2 requires definition before use — no forward references.

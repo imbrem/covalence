@@ -18,7 +18,7 @@ use core::fmt;
 
 use covalence_computation::blc;
 use covalence_core::{Error, Term};
-use covalence_logic_api::BitsSyntax;
+use covalence_kernel_data::BitsSyntax;
 
 use crate::init::inductive::hol::{Hol, NativeHol};
 

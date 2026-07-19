@@ -30,7 +30,8 @@ pub use bytes::{
     TheoremByteRegexMembershipReplay,
 };
 
-use covalence_logic_api::{Logic, MalformedUtf8, RawByte, UnicodeScalar, decode_utf8};
+use covalence_kernel_data::{MalformedUtf8, RawByte, UnicodeScalar, decode_utf8};
+use covalence_logic_api::Logic;
 
 /// A half-open source interval, measured in units of the parser's source
 /// carrier. Byte and Unicode-scalar offsets must not be silently mixed.

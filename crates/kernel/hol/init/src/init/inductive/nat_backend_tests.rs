@@ -1,5 +1,5 @@
 use covalence_core::{Term, Type};
-use covalence_logic_api::nat::{NatAdditiveLaws, NatArithmetic, NatOrder, NatSyntax};
+use covalence_kernel_data::numeric::nat::{NatAdditiveLaws, NatArithmetic, NatOrder, NatSyntax};
 
 use super::{DoubleSuccNat, UnaryNat, hol::NativeHol};
 use crate::init::{nat, nat_binary};

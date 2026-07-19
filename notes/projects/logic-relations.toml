@@ -9,6 +9,7 @@ notes = [
   "notes/design/content-logic-and-wit-boundaries.md",
 ]
 files = [
-  "crates/kernel/hol/logic",
+  "crates/kernel/logic",
+  "crates/kernel/data/numeric",
   "crates/kernel/hol/api/src/nat.rs",
 ]

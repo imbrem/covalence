@@ -6,7 +6,8 @@
 //!
 //! @covalence-api {"id":"A0010","title":"Bits and finite bit strings","status":"experimental","dependsOn":["A0001","A0002","A0003"]}
 
-use crate::{BytesSyntax, Logic, NatSyntax};
+use crate::{BytesSyntax, NatSyntax};
+use covalence_logic_api::Logic;
 
 /// Significance order of successive bits within each packed byte.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

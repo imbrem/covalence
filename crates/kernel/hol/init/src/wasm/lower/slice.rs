@@ -902,8 +902,8 @@ mod tests {
             r.opaque_tags
         );
         assert_eq!(r.n_clauses_clean, r.n_clauses);
-        // Floor just under measured (2026-07-17: 168).
-        assert!((100..=400).contains(&r.n_clauses), "lime = {}", r.n_clauses);
+        // Measured after the exact Dec source-sort complements: 407.
+        assert!((400..=450).contains(&r.n_clauses), "lime = {}", r.n_clauses);
 
         // -- Everything below runs on the DEFAULT test-thread stack. --
         let env = SliceEnv::new(lime);
@@ -969,33 +969,33 @@ mod tests {
                     r.opaque_tags
                 );
             }
-            // Floors just under measured (2026-07-17, post the integer-builtin
-            // + ev.upd/ext legs which grew the closures: wasm1 817 clauses /
-            // 49 opaque / 778 clean; wasm2 910 / 51 / 870).
+            // Floors around measured (2026-07-19, post exact integer
+            // conversion families and ordered-Dec closure: wasm1 1174
+            // clauses / 0 opaque; wasm2 1272 / 0).
             let (r1, r2) = (w1.report(), w2.report());
             assert!(
-                (750..=950).contains(&r1.n_clauses),
+                (1170..=1200).contains(&r1.n_clauses),
                 "wasm1 = {}",
                 r1.n_clauses
             );
             assert!(
-                r1.n_clauses_clean >= 770,
+                r1.n_clauses_clean >= 1170,
                 "wasm1 clean = {}",
                 r1.n_clauses_clean
             );
             assert!(
-                r1.opaque_total() <= 60,
+                r1.opaque_total() == 0,
                 "wasm1 opaque = {}",
                 r1.opaque_total()
             );
             assert!(r2.n_clauses > r1.n_clauses, "wasm2 strictly bigger");
             assert!(
-                (850..=1050).contains(&r2.n_clauses),
+                (1270..=1300).contains(&r2.n_clauses),
                 "wasm2 = {}",
                 r2.n_clauses
             );
             assert!(
-                r2.opaque_total() <= 70,
+                r2.opaque_total() == 0,
                 "wasm2 opaque = {}",
                 r2.opaque_total()
             );

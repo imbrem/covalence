@@ -10,7 +10,7 @@ macro_rules! impl_native_nat_theory {
             type Error = covalence_core::Error;
         }
 
-        impl covalence_logic_api::nat::NatArithmetic for $backend {
+        impl covalence_kernel_data::numeric::nat::NatArithmetic for $backend {
             fn nat_add(
                 &self,
                 a: covalence_core::Term,
@@ -34,7 +34,7 @@ macro_rules! impl_native_nat_theory {
             }
         }
 
-        impl covalence_logic_api::nat::NatOrder for $backend {
+        impl covalence_kernel_data::numeric::nat::NatOrder for $backend {
             fn nat_less_than(
                 &self,
                 a: covalence_core::Term,
@@ -58,7 +58,7 @@ macro_rules! impl_native_nat_theory {
             }
         }
 
-        impl covalence_logic_api::nat::NatFreeness for $backend {
+        impl covalence_kernel_data::numeric::nat::NatFreeness for $backend {
             fn nat_successor_injective(
                 &self,
             ) -> covalence_core::Result<covalence_hol_eval::EvalThm> {
@@ -72,7 +72,7 @@ macro_rules! impl_native_nat_theory {
             }
         }
 
-        impl covalence_logic_api::nat::NatRecursionLaws for $backend {
+        impl covalence_kernel_data::numeric::nat::NatRecursionLaws for $backend {
             fn nat_add_base(&self) -> covalence_core::Result<covalence_hol_eval::EvalThm> {
                 Ok(crate::init::nat::add_base())
             }
@@ -90,7 +90,7 @@ macro_rules! impl_native_nat_theory {
             }
         }
 
-        impl covalence_logic_api::nat::NatAdditiveLaws for $backend {
+        impl covalence_kernel_data::numeric::nat::NatAdditiveLaws for $backend {
             fn nat_add_zero(&self) -> covalence_core::Result<covalence_hol_eval::EvalThm> {
                 Ok(crate::init::nat::add_zero())
             }
@@ -114,7 +114,7 @@ macro_rules! impl_native_nat_theory {
             }
         }
 
-        impl covalence_logic_api::nat::NatMultiplicativeLaws for $backend {
+        impl covalence_kernel_data::numeric::nat::NatMultiplicativeLaws for $backend {
             fn nat_multiply_zero(&self) -> covalence_core::Result<covalence_hol_eval::EvalThm> {
                 Ok(crate::init::nat::mul_zero())
             }

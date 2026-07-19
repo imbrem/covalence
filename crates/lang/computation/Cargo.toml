@@ -7,4 +7,5 @@ description = "Proof-oriented HOL APIs and auditable search models of computatio
 license.workspace = true
 
 [dependencies]
-covalence-hol-logic = { package = "covalence-logic-api", path = "../../kernel/hol/logic" }
+covalence-hol-logic = { package = "covalence-logic-api", path = "../../kernel/logic" }
+covalence-kernel-data = { path = "../../kernel/data" }

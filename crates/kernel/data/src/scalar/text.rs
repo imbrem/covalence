@@ -6,7 +6,8 @@
 //! byte. Abstract character sequences and strings are likewise distinct from
 //! their UTF-8 and UTF-16 serializations.
 
-use crate::{BytesSyntax, Logic, NatSyntax};
+use crate::{BytesSyntax, NatSyntax};
+use covalence_logic_api::Logic;
 
 /// A Unicode scalar value: `0..=0x10ffff`, excluding surrogates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -15,8 +15,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod adapters;
 pub mod bytes;
 
+pub use adapters::{
+    EncodedTextError, PrefixAdapterError, exact_from_prefix, parse_encoded_text_prefix,
+    same_interpretation_by,
+};
 pub use bytes::{
     ByteParseDiagnostic, ByteParseError, ByteParseJudgment, ByteParseLaws, ByteParseOutcome,
     ByteParseWitness, ByteParser, ByteParserRelation, ByteParserTheory, ByteSpan, LiteralBytes,

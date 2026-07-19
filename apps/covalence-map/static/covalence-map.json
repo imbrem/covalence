@@ -106,7 +106,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 167,
+      "words": 174,
       "updated": 0
     },
     {
@@ -6752,6 +6752,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/computation/identity_replay.rs",
+      "kind": "file",
+      "title": "identity_replay.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/identity_replay.rs",
+      "words": 273,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
       "kind": "file",
       "title": "lambda_to_ski.rs",
@@ -6775,7 +6784,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/computation/mod.rs",
-      "words": 391,
+      "words": 392,
       "updated": 0
     },
     {
@@ -6892,7 +6901,7 @@
       "title": "bytes_api.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
-      "words": 127,
+      "words": 135,
       "updated": 0
     },
     {
@@ -8575,7 +8584,16 @@
       "title": "bytes.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/bytes.rs",
-      "words": 331,
+      "words": 411,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/logic/src/bytes_nat.rs",
+      "kind": "file",
+      "title": "bytes_nat.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/logic/src/bytes_nat.rs",
+      "words": 285,
       "updated": 0
     },
     {
@@ -8584,7 +8602,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 242,
+      "words": 247,
       "updated": 0
     },
     {
@@ -10334,12 +10352,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/sexpr-api/src/inductive.rs",
+      "kind": "file",
+      "title": "inductive.rs",
+      "status": "tracked",
+      "path": "crates/lang/sexpr-api/src/inductive.rs",
+      "words": 642,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/sexpr-api/src/lib.rs",
       "kind": "file",
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "words": 714,
+      "words": 720,
       "updated": 0
     },
     {
@@ -10348,7 +10375,7 @@
       "title": "nat.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-api/src/nat.rs",
-      "words": 393,
+      "words": 391,
       "updated": 0
     },
     {
@@ -14290,7 +14317,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3329,
+      "words": 3319,
       "updated": 0
     },
     {
@@ -16544,11 +16571,29 @@
       "updated": 0
     },
     {
+      "id": "impl:A0003:NatBackedBytes<B>",
+      "kind": "implementation",
+      "title": "NatBackedBytes<B>",
+      "status": "implemented",
+      "path": "crates/kernel/hol/logic/src/bytes_nat.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "impl:A0003:NativeHol",
       "kind": "implementation",
       "title": "NativeHol",
       "status": "implemented",
       "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0009:IdentityTranslationReplay",
+      "kind": "implementation",
+      "title": "IdentityTranslationReplay",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/computation/identity_replay.rs",
       "words": 0,
       "updated": 0
     },
@@ -17804,18 +17849,18 @@
       "updated": 0
     },
     {
-      "id": "todo:bytes.leb128-encoding",
+      "id": "todo:bytes.abstract-list-adapter",
       "kind": "todo",
-      "title": "Add unsigned/signed LEB128 as variable-length byte relations with canonicality, termination, and bounded-width overflow evidence.",
+      "title": "Replace the temporary meta-level NatByteSequence vectors with the abstract proof-bearing list API once its carrier and elementwise-predicate interfaces stabilize.",
       "status": "major",
       "path": "crates/kernel/hol/logic/src/bytes.rs",
       "words": 0,
       "updated": 0
     },
     {
-      "id": "todo:bytes.list-nat-sequence-bridge",
+      "id": "todo:bytes.leb128-encoding",
       "kind": "todo",
-      "title": "Once the abstract list API stabilizes, relate bytes to lists of in-range naturals with explicit element-range and round-trip laws.",
+      "title": "Add unsigned/signed LEB128 as variable-length byte relations with canonicality, termination, and bounded-width overflow evidence.",
       "status": "major",
       "path": "crates/kernel/hol/logic/src/bytes.rs",
       "words": 0,
@@ -20711,15 +20756,6 @@
       "updated": 0
     },
     {
-      "id": "todo:sexpr.generic-refined-inductive-encoding",
-      "kind": "todo",
-      "title": "Generalize the bounded Nat experiment to arbitrary first-order InductiveSpec constructor tags and arguments.",
-      "status": "major",
-      "path": "crates/lang/sexpr-api/src/nat.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:sexpr.no-confusion-laws",
       "kind": "todo",
       "title": "sexpr.no-confusion-laws",
@@ -22098,6 +22134,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/identity_replay.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
       "detail": null
     },
@@ -23022,6 +23064,12 @@
     {
       "source": "file:crates/kernel/hol/logic/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/logic/src/bytes_nat.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/logic/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/logic/src/nat.rs",
       "detail": null
     },
@@ -23521,6 +23569,12 @@
       "source": "file:crates/lang/numerals/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/numerals/src/rat_backend.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/sexpr-api/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/sexpr-api/src/inductive.rs",
       "detail": null
     },
     {
@@ -24748,6 +24802,18 @@
       "detail": "linear-depth successor towers over a shared native zero leaf"
     },
     {
+      "source": "impl:A0003:NatBackedBytes<B>",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/logic/src/bytes_nat.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0003:NatBackedBytes<B>",
+      "predicate": "implements",
+      "target": "api:A0003",
+      "detail": "validated lists of backend Nat values and radix-256 codecs"
+    },
+    {
       "source": "impl:A0003:NativeHol",
       "predicate": "defined-in",
       "target": "file:crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
@@ -24758,6 +24824,18 @@
       "predicate": "implements",
       "target": "api:A0003",
       "detail": "HOL u8 and native byte-string leaves"
+    },
+    {
+      "source": "impl:A0009:IdentityTranslationReplay",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/computation/identity_replay.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0009:IdentityTranslationReplay",
+      "predicate": "implements",
+      "target": "api:A0009",
+      "detail": "native HOL replay of the closed BLC identity to SKI I translation"
     },
     {
       "source": "note:notes/README.md",
@@ -30637,11 +30715,25 @@
       "path": "crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs"
     },
     {
+      "id": "impl:A0003:NatBackedBytes<B>",
+      "apiId": "A0003",
+      "name": "NatBackedBytes<B>",
+      "representation": "validated lists of backend Nat values and radix-256 codecs",
+      "path": "crates/kernel/hol/logic/src/bytes_nat.rs"
+    },
+    {
       "id": "impl:A0003:NativeHol",
       "apiId": "A0003",
       "name": "NativeHol",
       "representation": "HOL u8 and native byte-string leaves",
       "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs"
+    },
+    {
+      "id": "impl:A0009:IdentityTranslationReplay",
+      "apiId": "A0009",
+      "name": "IdentityTranslationReplay",
+      "representation": "native HOL replay of the closed BLC identity to SKI I translation",
+      "path": "crates/kernel/hol/init/src/init/computation/identity_replay.rs"
     }
   ],
   "actors": [

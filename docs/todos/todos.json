@@ -1,9 +1,19 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 332,
-  "structured": 332,
+  "count": 331,
+  "structured": 331,
   "items": [
+    {
+      "id": "bytes.abstract-list-adapter",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace the temporary meta-level NatByteSequence vectors with the abstract proof-bearing list API once its carrier and elementwise-predicate interfaces stabilize.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "line": 243,
+      "crate": "covalence-logic-api"
+    },
     {
       "id": "bytes.leb128-encoding",
       "kind": "TODO",
@@ -11,17 +21,7 @@
       "summary": "Add unsigned/signed LEB128 as variable-length byte relations with canonicality, termination, and bounded-width overflow evidence.",
       "structured": true,
       "path": "crates/kernel/hol/logic/src/bytes.rs",
-      "line": 164,
-      "crate": "covalence-logic-api"
-    },
-    {
-      "id": "bytes.list-nat-sequence-bridge",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Once the abstract list API stabilizes, relate bytes to lists of in-range naturals with explicit element-range and round-trip laws.",
-      "structured": true,
-      "path": "crates/kernel/hol/logic/src/bytes.rs",
-      "line": 163,
+      "line": 244,
       "crate": "covalence-logic-api"
     },
     {
@@ -91,7 +91,7 @@
       "summary": "Define native HOL",
       "structured": true,
       "path": "crates/kernel/hol/init/src/init/computation/mod.rs",
-      "line": 271,
+      "line": 272,
       "crate": "covalence-init"
     },
     {
@@ -141,7 +141,7 @@
       "summary": "Extend the bounded DOT interchange subset to ports, subgraphs, HTML labels, chained edges, and the complete attribute grammar.",
       "structured": true,
       "path": "crates/lib/graph/src/lib.rs",
-      "line": 44,
+      "line": 46,
       "crate": "covalence-graph"
     },
     {
@@ -171,7 +171,7 @@
       "summary": "Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.",
       "structured": true,
       "path": "crates/lang/json-api/src/lib.rs",
-      "line": 757,
+      "line": 759,
       "crate": "covalence-json-api"
     },
     {
@@ -3195,23 +3195,13 @@
       "crate": "covalence-serve"
     },
     {
-      "id": "sexpr.generic-refined-inductive-encoding",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Generalize the bounded Nat experiment to arbitrary first-order InductiveSpec constructor tags and arguments.",
-      "structured": true,
-      "path": "crates/lang/sexpr-api/src/nat.rs",
-      "line": 22,
-      "crate": "covalence-sexpr-api"
-    },
-    {
       "id": "sexpr.parser-interpretation",
       "kind": "TODO",
       "severity": "major",
       "summary": "Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.",
       "structured": true,
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "line": 498,
+      "line": 506,
       "crate": "covalence-sexpr-api"
     },
     {

@@ -67,7 +67,7 @@ disable-model-invocation: true
   regex parsing. Maximal munch, rule priority, ambiguity, skipped tokens, and
   byte/scalar source spans are explicit policy or witness data. Nullable token
   rules are rejected so tokenization cannot loop without consuming input.
-- `crates/lang/peg-parsing/` — A0018 capture/action-free PEG syntax and
+- `crates/lang/peg-parsing/` — A0019 capture/action-free PEG syntax and
   bounded deterministic evaluation over bytes or Unicode scalars. Ordered
   choice, lookahead, recursion, exact/prefix policy, and limits are explicit;
   nullable repetition and left recursion fail rather than looping. Host

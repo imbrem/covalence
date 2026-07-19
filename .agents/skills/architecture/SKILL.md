@@ -36,6 +36,13 @@ disable-model-invocation: true
     linear-depth successor-tower backend. The representation adapters share
     their native-theory capability delegation in `nat_backend_common.rs`;
     neither advertises decision or normalization capabilities.
+- `crates/lang/computation/` — dependency-free computation theory, execution,
+  compiler, simulation, and machine-model APIs.
+  - Native HOL realizations and replay seams live in
+    `crates/kernel/hol/init/src/init/computation/`.
+  - Search witnesses are plain data and non-authoritative. Replay must
+    reconstruct a kernel theorem and reject forged candidates; bounded replay
+    milestones must not be described as universal semantic preservation.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

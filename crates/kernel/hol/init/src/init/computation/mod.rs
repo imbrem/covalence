@@ -18,6 +18,7 @@ use super::inductive::hol::{Hol, NativeHol};
 
 pub mod blc;
 mod concrete;
+pub mod identity_replay;
 pub mod lambda_to_ski;
 pub mod ski;
 

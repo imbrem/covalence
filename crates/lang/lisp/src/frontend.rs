@@ -247,7 +247,8 @@ impl Frontend {
                 })
             }
             Some("lambda") => self.lower_lambda(items),
-            Some("let") => self.lower_let(items),
+            Some("let") => self.lower_let(items, false),
+            Some("letrec") if self.dialect == SurfaceDialect::Scheme => self.lower_let(items, true),
             Some("cond") => Ok(CoreExpr::Cond {
                 clauses: self.lower_cond(&items[1..])?,
             }),
@@ -316,29 +317,30 @@ impl Frontend {
             })
     }
 
-    fn lower_let(&self, items: &[SExpr]) -> Result<FrontendExpr, LowerError> {
-        self.exact_arity("let", items, 3)?;
+    fn lower_let(&self, items: &[SExpr], recursive: bool) -> Result<FrontendExpr, LowerError> {
+        let form = if recursive { "letrec" } else { "let" };
+        self.exact_arity(form, items, 3)?;
         let bindings = items[1].as_list().ok_or_else(|| LowerError::Malformed {
-            form: "let",
+            form,
             detail: "bindings are not a list".to_owned(),
         })?;
         let bindings = bindings
             .iter()
             .map(|binding| {
                 let pair = binding.as_list().ok_or_else(|| LowerError::Malformed {
-                    form: "let",
+                    form,
                     detail: "binding is not a list".to_owned(),
                 })?;
                 if pair.len() != 2 {
                     return Err(LowerError::Malformed {
-                        form: "let",
+                        form,
                         detail: "binding must contain a name and expression".to_owned(),
                     });
                 }
                 let name = pair[0]
                     .as_symbol()
                     .ok_or_else(|| LowerError::Malformed {
-                        form: "let",
+                        form,
                         detail: "binding name is not a symbol".to_owned(),
                     })?
                     .to_owned();
@@ -348,9 +350,11 @@ impl Frontend {
                 ))
             })
             .collect::<Result<_, _>>()?;
-        Ok(CoreExpr::Let {
-            bindings,
-            body: Box::new(self.lower(&items[2])?),
+        let body = Box::new(self.lower(&items[2])?);
+        Ok(if recursive {
+            CoreExpr::LetRec { bindings, body }
+        } else {
+            CoreExpr::Let { bindings, body }
         })
     }
 
@@ -655,6 +659,24 @@ mod tests {
                 "(let ((twice (lambda (x) (+ x x)))) (twice 21))"
             ),
             HostValue::Datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
+        );
+    }
+
+    #[test]
+    fn scheme_letrec_lowers_to_mutually_recursive_core_bindings() {
+        assert_eq!(
+            run(
+                SurfaceDialect::Scheme,
+                "(letrec
+                    ((even-list?
+                       (lambda (xs)
+                         (if (null? xs) t (odd-list? (cdr xs)))))
+                     (odd-list?
+                       (lambda (xs)
+                         (if (null? xs) nil (even-list? (cdr xs))))))
+                    (even-list? (quote (a b))))"
+            ),
+            HostValue::Datum(Datum::Atom(CoreAtom::symbol("t")))
         );
     }
 

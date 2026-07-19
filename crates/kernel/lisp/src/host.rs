@@ -6,12 +6,11 @@
 
 use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
 use crate::syntax::{Binding, CoreExpr, LispSyntax, Parameter};
 
-// TODO(cov:lisp.core.letrec, major): Add mutually recursive lexical bindings with explicit initialized/uninitialized cells and conformance tests.
 // TODO(cov:lisp.core.relational-strategies, major): Add nondeterministic evaluation-context backends for relational operand order and unspecified choices.
 
 /// The direct inductive S-expression representation
@@ -38,10 +37,58 @@ impl<P> Datum<P> {
 }
 
 /// Persistent lexical environment, represented directly for the host backend.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct HostEnvironment<S, V> {
-    bindings: Arc<Vec<(S, V)>>,
+    bindings: Arc<Vec<(S, HostBindingCell<V>)>>,
 }
+
+/// One persistent environment cell.
+///
+/// Ordinary bindings are initialized before insertion. Recursive binding
+/// groups allocate all cells first, build closures over the resulting
+/// environment, and initialize each cell exactly once.
+#[derive(Clone, Debug)]
+pub struct HostBindingCell<V> {
+    value: Arc<OnceLock<V>>,
+}
+
+impl<V> HostBindingCell<V> {
+    fn uninitialized() -> Self {
+        Self {
+            value: Arc::new(OnceLock::new()),
+        }
+    }
+
+    fn initialized(value: V) -> Self {
+        let cell = Self::uninitialized();
+        let _ = cell.value.set(value);
+        cell
+    }
+
+    pub fn get(&self) -> Option<&V> {
+        self.value.get()
+    }
+
+    fn initialize(&self, value: V) -> Result<(), V> {
+        self.value.set(value)
+    }
+}
+
+impl<V> PartialEq for HostBindingCell<V> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.value, &other.value)
+    }
+}
+
+impl<V> Eq for HostBindingCell<V> {}
+
+impl<S: PartialEq, V> PartialEq for HostEnvironment<S, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.bindings == other.bindings
+    }
+}
+
+impl<S: Eq, V> Eq for HostEnvironment<S, V> {}
 
 impl<S, V> Default for HostEnvironment<S, V> {
     fn default() -> Self {
@@ -56,10 +103,23 @@ impl<S: Clone + PartialEq, V: Clone> HostEnvironment<S, V> {
         self.bindings
             .iter()
             .rev()
-            .find_map(|(name, value)| (name == symbol).then(|| value.clone()))
+            .find(|(name, _)| name == symbol)
+            .and_then(|(_, cell)| cell.get().cloned())
     }
 
     pub fn extend(&self, bindings: impl IntoIterator<Item = (S, V)>) -> Self {
+        let mut extended = self.bindings.as_ref().clone();
+        extended.extend(
+            bindings
+                .into_iter()
+                .map(|(name, value)| (name, HostBindingCell::initialized(value))),
+        );
+        Self {
+            bindings: Arc::new(extended),
+        }
+    }
+
+    fn extend_cells(&self, bindings: Vec<(S, HostBindingCell<V>)>) -> Self {
         let mut extended = self.bindings.as_ref().clone();
         extended.extend(bindings);
         Self {
@@ -67,8 +127,10 @@ impl<S: Clone + PartialEq, V: Clone> HostEnvironment<S, V> {
         }
     }
 
-    pub fn bindings(&self) -> &[(S, V)] {
-        &self.bindings
+    pub fn bindings(&self) -> impl DoubleEndedIterator<Item = (&S, &V)> {
+        self.bindings
+            .iter()
+            .filter_map(|(name, cell)| cell.get().map(|value| (name, value)))
     }
 }
 
@@ -193,6 +255,8 @@ impl<S, A, P> HostConfiguration<S, A, P> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CoreMachineError<S, E> {
     UnboundVariable(S),
+    DuplicateRecursiveBinding(S),
+    InvalidRecursiveInitializer(S),
     NotCallable,
     Arity { expected: usize, actual: usize },
     Primitive(E),
@@ -202,6 +266,12 @@ impl<S: Debug, E: Debug> Display for CoreMachineError<S, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::UnboundVariable(symbol) => write!(f, "unbound variable: {symbol:?}"),
+            Self::DuplicateRecursiveBinding(symbol) => {
+                write!(f, "duplicate recursive binding: {symbol:?}")
+            }
+            Self::InvalidRecursiveInitializer(symbol) => {
+                write!(f, "recursive binding must initialize a lambda: {symbol:?}")
+            }
             Self::NotCallable => f.write_str("attempted to apply a non-closure value"),
             Self::Arity { expected, actual } => {
                 write!(f, "arity mismatch: expected {expected}, got {actual}")
@@ -441,6 +511,48 @@ impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
                             arguments,
                         });
                     }
+                    CoreExpr::LetRec { bindings, body } => {
+                        for (index, binding) in bindings.iter().enumerate() {
+                            if bindings[..index]
+                                .iter()
+                                .any(|earlier| earlier.name == binding.name)
+                            {
+                                return Err(CoreMachineError::DuplicateRecursiveBinding(
+                                    binding.name.clone(),
+                                ));
+                            }
+                            if !matches!(binding.value, CoreExpr::Lambda { .. }) {
+                                return Err(CoreMachineError::InvalidRecursiveInitializer(
+                                    binding.name.clone(),
+                                ));
+                            }
+                        }
+                        let cells: Vec<_> = bindings
+                            .iter()
+                            .map(|binding| (binding.name.clone(), HostBindingCell::uninitialized()))
+                            .collect();
+                        let environment = next.environment.extend_cells(cells.clone());
+                        for (binding, (_, cell)) in bindings.into_iter().zip(cells) {
+                            let CoreExpr::Lambda {
+                                name,
+                                parameters,
+                                body,
+                            } = binding.value
+                            else {
+                                unreachable!("recursive initializers validated above")
+                            };
+                            let closure = HostValue::Closure(Arc::new(HostClosure {
+                                name,
+                                parameters,
+                                body: *body,
+                                environment: environment.clone(),
+                            }));
+                            cell.initialize(closure)
+                                .expect("fresh recursive binding cell");
+                        }
+                        next.environment = environment;
+                        next.control = HostControl::Expression(*body);
+                    }
                     CoreExpr::Primitive {
                         operator,
                         mut arguments,
@@ -571,6 +683,20 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
         })
     }
 
+    fn let_rec(
+        &self,
+        bindings: Vec<(Self::Symbol, Self::Expr)>,
+        body: Self::Expr,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(CoreExpr::LetRec {
+            bindings: bindings
+                .into_iter()
+                .map(|(name, value)| Binding::new(name, value))
+                .collect(),
+            body: Box::new(body),
+        })
+    }
+
     fn primitive(
         &self,
         operator: Self::Primitive,
@@ -592,6 +718,8 @@ mod tests {
     enum Primitive {
         Cons,
         Car,
+        Cdr,
+        Null,
     }
 
     #[derive(Clone, Debug)]
@@ -614,6 +742,12 @@ mod tests {
                 }
                 (Primitive::Car, [HostValue::Datum(Datum::Cons(head, _))]) => {
                     Ok(HostValue::Datum((**head).clone()))
+                }
+                (Primitive::Cdr, [HostValue::Datum(Datum::Cons(_, tail))]) => {
+                    Ok(HostValue::Datum((**tail).clone()))
+                }
+                (Primitive::Null, [HostValue::Datum(datum)]) => {
+                    Ok(self.truth(matches!(datum, Datum::Nil)))
                 }
                 _ => Err("bad primitive application"),
             }
@@ -677,5 +811,74 @@ mod tests {
             trace.end().terminal_value(),
             Some(&HostValue::Datum(Datum::Atom("value")))
         );
+    }
+
+    #[test]
+    fn letrec_supports_lexical_mutual_recursion() {
+        let call = |name, argument| CoreExpr::Apply {
+            operator: Box::new(CoreExpr::Variable(name)),
+            arguments: vec![argument],
+        };
+        let null = |argument| CoreExpr::Primitive {
+            operator: Primitive::Null,
+            arguments: vec![argument],
+        };
+        let cdr = |argument| CoreExpr::Primitive {
+            operator: Primitive::Cdr,
+            arguments: vec![argument],
+        };
+        let even = CoreExpr::Lambda {
+            name: None,
+            parameters: vec![Parameter::new("xs")],
+            body: Box::new(CoreExpr::If {
+                condition: Box::new(null(CoreExpr::Variable("xs"))),
+                consequent: Box::new(CoreExpr::Truth(true)),
+                alternative: Box::new(call("odd", cdr(CoreExpr::Variable("xs")))),
+            }),
+        };
+        let odd = CoreExpr::Lambda {
+            name: None,
+            parameters: vec![Parameter::new("xs")],
+            body: Box::new(CoreExpr::If {
+                condition: Box::new(null(CoreExpr::Variable("xs"))),
+                consequent: Box::new(CoreExpr::Truth(false)),
+                alternative: Box::new(call("even", cdr(CoreExpr::Variable("xs")))),
+            }),
+        };
+        let input = Datum::list([Datum::Atom("a"), Datum::Atom("b")]);
+        let expression = CoreExpr::LetRec {
+            bindings: vec![Binding::new("even", even), Binding::new("odd", odd)],
+            body: Box::new(call("even", CoreExpr::Literal(input))),
+        };
+
+        let Evaluation::Value(result) = evaluate(
+            &CoreMachine::new(Sector),
+            HostConfiguration::initial(expression),
+            128,
+        )
+        .unwrap() else {
+            panic!("mutually recursive parity program must return")
+        };
+        assert_eq!(result.value, HostValue::Datum(Datum::Atom("t")));
+    }
+
+    #[test]
+    fn letrec_rejects_non_lambda_initializers_before_execution() {
+        let expression = CoreExpr::LetRec {
+            bindings: vec![Binding::new("x", CoreExpr::Truth(true))],
+            body: Box::new(CoreExpr::Variable("x")),
+        };
+        let error = execute(
+            &CoreMachine::new(Sector),
+            HostConfiguration::initial(expression),
+            8,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            crate::relation::ExecutionError::Relation(
+                CoreMachineError::InvalidRecursiveInitializer("x")
+            )
+        ));
     }
 }

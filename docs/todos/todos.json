@@ -3045,23 +3045,13 @@
       "crate": "covalence-lisp"
     },
     {
-      "id": "lisp.core.letrec",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Add mutually recursive lexical bindings with explicit initialized/uninitialized cells and conformance tests.",
-      "structured": true,
-      "path": "crates/kernel/lisp/src/host.rs",
-      "line": 14,
-      "crate": "covalence-kernel-lisp"
-    },
-    {
       "id": "lisp.core.relational-strategies",
       "kind": "TODO",
       "severity": "major",
       "summary": "Add nondeterministic evaluation-context backends for relational operand order and unspecified choices.",
       "structured": true,
       "path": "crates/kernel/lisp/src/host.rs",
-      "line": 15,
+      "line": 14,
       "crate": "covalence-kernel-lisp"
     },
     {
@@ -3083,6 +3073,16 @@
       "path": "crates/kernel/lisp/src/lib.rs",
       "line": 19,
       "crate": "covalence-kernel-lisp"
+    },
+    {
+      "id": "lisp.scheme.letrec-hol",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Give the equational HOL backend a conservative mutually recursive binding construction and share letrec conformance tests with the partial host semantics.",
+      "structured": true,
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "line": 312,
+      "crate": "covalence-lisp"
     },
     {
       "id": "parsing.lexer.native-hol-universal-semantics",

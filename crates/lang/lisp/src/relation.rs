@@ -1035,9 +1035,11 @@ impl LispRel {
                     ))
                 }
             }
-            CoreExpr::Lambda { .. } | CoreExpr::Let { .. } => Err(HolError::Stuck(
-                "lambda and lexical bindings need recursion; switch with `#lang scheme`".into(),
-            )),
+            CoreExpr::Lambda { .. } | CoreExpr::Let { .. } | CoreExpr::LetRec { .. } => {
+                Err(HolError::Stuck(
+                    "lambda and lexical bindings need recursion; switch with `#lang scheme`".into(),
+                ))
+            }
             CoreExpr::Variable(name) => Err(HolError::Stuck(format!(
                 "unbound relational Lisp variable `{name}`"
             ))),

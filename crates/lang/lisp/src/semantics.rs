@@ -308,6 +308,14 @@ impl LispSemantics {
                         .collect(),
                 })
             }
+            CoreExpr::LetRec { .. } => {
+                // TODO(cov:lisp.scheme.letrec-hol, major): Give the equational HOL backend a conservative mutually recursive binding construction and share letrec conformance tests with the partial host semantics.
+                Err(HolError::Stuck(
+                    "mutually recursive lexical bindings are implemented by the common partial \
+                     semantics but not yet by the equational HOL compiler"
+                        .into(),
+                ))
+            }
             CoreExpr::Primitive {
                 operator,
                 arguments,

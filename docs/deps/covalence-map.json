@@ -9331,7 +9331,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 682,
+      "words": 885,
       "updated": 0
     },
     {
@@ -9367,7 +9367,7 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/syntax.rs",
-      "words": 150,
+      "words": 163,
       "updated": 0
     },
     {
@@ -10753,7 +10753,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 706,
+      "words": 728,
       "updated": 0
     },
     {
@@ -10798,7 +10798,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 1892,
+      "words": 1894,
       "updated": 0
     },
     {
@@ -10807,7 +10807,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1458,
+      "words": 1466,
       "updated": 0
     },
     {
@@ -22052,15 +22052,6 @@
       "updated": 0
     },
     {
-      "id": "todo:lisp.core.letrec",
-      "kind": "todo",
-      "title": "Add mutually recursive lexical bindings with explicit initialized/uninitialized cells and conformance tests.",
-      "status": "major",
-      "path": "crates/kernel/lisp/src/host.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:lisp.core.relational-strategies",
       "kind": "todo",
       "title": "Add nondeterministic evaluation-context backends for relational operand order and unspecified choices.",
@@ -22084,6 +22075,15 @@
       "title": "Add a proof-producing Forsp backend and cross-check it against the host stack machine.",
       "status": "major",
       "path": "crates/kernel/lisp/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.scheme.letrec-hol",
+      "kind": "todo",
+      "title": "Give the equational HOL backend a conservative mutually recursive binding construction and share letrec conformance tests with the partial host semantics.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/semantics.rs",
       "words": 0,
       "updated": 0
     },

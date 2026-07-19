@@ -86,6 +86,14 @@ pub enum CoreExpr<S, D, P> {
         bindings: Vec<Binding<S, Self>>,
         body: Box<Self>,
     },
+    /// A mutually recursive lexical group.
+    ///
+    /// Concrete semantics may restrict initializers. The host backend accepts
+    /// lambdas only, avoiding unspecified reads of uninitialized cells.
+    LetRec {
+        bindings: Vec<Binding<S, Self>>,
+        body: Box<Self>,
+    },
     Primitive {
         operator: P,
         arguments: Vec<Self>,
@@ -127,6 +135,11 @@ pub trait LispSyntax {
         arguments: Vec<Self::Expr>,
     ) -> Result<Self::Expr, Self::Error>;
     fn let_bind(
+        &self,
+        bindings: Vec<(Self::Symbol, Self::Expr)>,
+        body: Self::Expr,
+    ) -> Result<Self::Expr, Self::Error>;
+    fn let_rec(
         &self,
         bindings: Vec<(Self::Symbol, Self::Expr)>,
         body: Self::Expr,

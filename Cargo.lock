@@ -1420,6 +1420,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-parser-generator"
+version = "0.1.0"
+dependencies = [
+ "covalence-cfg-parsing",
+ "covalence-grammar",
+ "covalence-lexer-cfg-parsing",
+ "covalence-lexer-parsing",
+ "covalence-parsing-api",
+]
+
+[[package]]
 name = "covalence-parsing-api"
 version = "0.0.0"
 dependencies = [

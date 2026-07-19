@@ -132,7 +132,7 @@ pub const SERIALIZATION_WIDTHS: [u64; 5] = [8, 16, 32, 64, 128];
 pub const DIV_WIDTHS: [u64; 2] = [32, 64];
 
 /// Operations given defining clauses by this leg.
-pub const OPS: [&str; 62] = [
+pub const OPS: [&str; 64] = [
     "truncz",
     "ceilz",
     "isub_",
@@ -195,6 +195,8 @@ pub const OPS: [&str; 62] = [
     "fgt_",
     "fle_",
     "fge_",
+    "fpmin_",
+    "fpmax_",
 ];
 
 /// How many of the 91 zero-clause builtin tags gain their **first** clauses
@@ -202,7 +204,7 @@ pub const OPS: [&str; 62] = [
 /// operations, four integer serialization/inverse operations, the exact
 /// integer SIMD lane isomorphism, and three integer conversions. The other
 /// eleven [`OPS`] supplement blocked spec lowerings.
-pub const ZERO_CLAUSE_OPS_COVERED: usize = 51;
+pub const ZERO_CLAUSE_OPS_COVERED: usize = 53;
 
 // ===========================================================================
 // Term helpers (Side currency: bare nat metavars; spine currency: encodings)
@@ -1490,6 +1492,32 @@ fn push_float_comparison(
     Ok(())
 }
 
+fn float_selection_concl(op: &str, w: u64, left: Term, right: Term, result: Term) -> Result<Term> {
+    fn_graph(op, &[w_lit(w)?, left, right], &singleton(result)?)
+}
+
+fn push_float_selection(
+    out: &mut Vec<Clause>,
+    names: &[String],
+    base: &[Term],
+    op: &str,
+    w: u64,
+    left: &Term,
+    right: &Term,
+    result: &Term,
+    guard: Term,
+) -> Result<()> {
+    let mut sides = base.to_vec();
+    sides.push(guard);
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    out.push(clause(
+        &refs,
+        sides,
+        float_selection_concl(op, w, left.clone(), right.clone(), result.clone())?,
+    ));
+    Ok(())
+}
+
 /// Exact IEEE comparisons and `copysign` over the complete structural
 /// carrier. The monotone integer key reverses negative raw payloads and
 /// shifts positive payloads above them; signed zeros are handled separately,
@@ -1552,6 +1580,19 @@ fn float_comparisons_and_copysign() -> Result<Vec<Clause>> {
                                     )?,
                                 ));
                             }
+                            for op in ["fpmin_", "fpmax_"] {
+                                out.push(clause(
+                                    &refs,
+                                    base.clone(),
+                                    float_selection_concl(
+                                        op,
+                                        w,
+                                        left.clone(),
+                                        right.clone(),
+                                        left.clone(),
+                                    )?,
+                                ));
+                            }
                             continue;
                         }
 
@@ -1577,6 +1618,19 @@ fn float_comparisons_and_copysign() -> Result<Vec<Clause>> {
                                         left.clone(),
                                         right.clone(),
                                         result,
+                                    )?,
+                                ));
+                            }
+                            for op in ["fpmin_", "fpmax_"] {
+                                out.push(clause(
+                                    &refs,
+                                    zero_sides.clone(),
+                                    float_selection_concl(
+                                        op,
+                                        w,
+                                        left.clone(),
+                                        right.clone(),
+                                        left.clone(),
                                     )?,
                                 ));
                             }
@@ -1613,12 +1667,22 @@ fn float_comparisons_and_copysign() -> Result<Vec<Clause>> {
                                 ("flt_", 0, le_rl.clone()),
                                 ("fgt_", 1, lt_rl.clone()),
                                 ("fgt_", 0, le_lr.clone()),
-                                ("fle_", 1, le_lr),
+                                ("fle_", 1, le_lr.clone()),
                                 ("fle_", 0, lt_rl.clone()),
-                                ("fge_", 1, le_rl),
-                                ("fge_", 0, lt_lr),
+                                ("fge_", 1, le_rl.clone()),
+                                ("fge_", 0, lt_lr.clone()),
                             ] {
                                 push_float_comparison(
+                                    &mut out, &names, &branch, op, w, &left, &right, result, guard,
+                                )?;
+                            }
+                            for (op, result, guard) in [
+                                ("fpmin_", &right, lt_rl.clone()),
+                                ("fpmin_", &left, le_lr.clone()),
+                                ("fpmax_", &right, lt_lr.clone()),
+                                ("fpmax_", &left, le_rl.clone()),
+                            ] {
+                                push_float_selection(
                                     &mut out, &names, &branch, op, w, &left, &right, result, guard,
                                 )?;
                             }
@@ -2678,8 +2742,8 @@ mod tests {
     #[test]
     fn integer_conversion_matrix_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 62);
-        assert_eq!(report.zero_clause_ops, 51);
+        assert_eq!(report.ops, 64);
+        assert_eq!(report.zero_clause_ops, 53);
 
         // Complete reachable wrap matrix, checked against an independent
         // bit-mask oracle. Use inputs with both kept and discarded high bits.
@@ -2953,9 +3017,9 @@ mod tests {
     #[test]
     fn integer_serialization_round_trips_and_refuses_wrong_results() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3213);
-        assert_eq!(report.ops, 62);
-        assert_eq!(report.zero_clause_ops, 51);
+        assert_eq!(report.clauses, 3917);
+        assert_eq!(report.ops, 64);
+        assert_eq!(report.zero_clause_ops, 53);
 
         for (w, a) in [
             (8, 0xa5),
@@ -3034,9 +3098,9 @@ mod tests {
     #[test]
     fn composite_byte_serialization_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3213);
-        assert_eq!(report.ops, 62);
-        assert_eq!(report.zero_clause_ops, 51);
+        assert_eq!(report.clauses, 3917);
+        assert_eq!(report.ops, 64);
+        assert_eq!(report.zero_clause_ops, 53);
 
         let families: [(&str, &str, &[(&str, u64)]); 4] = [
             ("nbytes_", "inv_nbytes_", &[("I32", 32), ("I64", 64)]),
@@ -3342,9 +3406,9 @@ mod tests {
     #[test]
     fn structural_rational_rounding_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3213);
-        assert_eq!(report.ops, 62);
-        assert_eq!(report.zero_clause_ops, 51);
+        assert_eq!(report.clauses, 3917);
+        assert_eq!(report.ops, 64);
+        assert_eq!(report.zero_clause_ops, 53);
 
         // Independent integer-arithmetic oracle, including integral,
         // fractional, sub-unit, and zero points in both sign classes.
@@ -3402,8 +3466,8 @@ mod tests {
     #[test]
     fn unsigned_rounded_average_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.ops, 62);
-        assert_eq!(report.zero_clause_ops, 51);
+        assert_eq!(report.ops, 64);
+        assert_eq!(report.zero_clause_ops, 53);
 
         for (w, points) in [
             (8, vec![(0, 0), (0, 1), (1, 1), (17, 42), (255, 255)]),
@@ -3550,9 +3614,9 @@ mod tests {
     #[test]
     fn structural_float_representation_is_exact_and_fail_closed() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3213);
-        assert_eq!(report.ops, 62);
-        assert_eq!(report.zero_clause_ops, 51);
+        assert_eq!(report.clauses, 3917);
+        assert_eq!(report.ops, 64);
+        assert_eq!(report.zero_clause_ops, 53);
 
         let cases = [
             (32, fval(0, fmag_subnormal(0)), 0),
@@ -3705,9 +3769,9 @@ mod tests {
     #[test]
     fn structural_float_comparisons_and_copysign_are_exact() {
         let (clauses, report) = builtin_clauses().unwrap();
-        assert_eq!(report.clauses, 3213);
-        assert_eq!(report.ops, 62);
-        assert_eq!(report.zero_clause_ops, 51);
+        assert_eq!(report.clauses, 3917);
+        assert_eq!(report.ops, 64);
+        assert_eq!(report.zero_clause_ops, 53);
 
         let pz = fval(0, fmag_subnormal(0));
         let nz = fval(1, fmag_subnormal(0));
@@ -3753,6 +3817,23 @@ mod tests {
                         &float_cmp_fact(op, 32, left.clone(), right.clone(), 1 - result)
                     ));
                 }
+                let min_result = if !equal && j < i { right } else { left };
+                let max_result = if !equal && i < j { right } else { left };
+                for (op, result) in [("fpmin_", min_result), ("fpmax_", max_result)] {
+                    assert!(
+                        derivable_at(
+                            &clauses,
+                            &float_selection_concl(
+                                op,
+                                32,
+                                left.clone(),
+                                right.clone(),
+                                result.clone(),
+                            )
+                            .unwrap()
+                        )
+                    );
+                }
             }
         }
 
@@ -3773,6 +3854,19 @@ mod tests {
                     assert!(derivable_at(
                         &clauses,
                         &float_cmp_fact(op, 32, left, right, expected)
+                    ));
+                }
+            }
+            for (left, right) in [
+                (nan.clone(), ordinary.clone()),
+                (ordinary.clone(), nan.clone()),
+                (nan.clone(), nan.clone()),
+            ] {
+                for op in ["fpmin_", "fpmax_"] {
+                    assert!(derivable_at(
+                        &clauses,
+                        &float_selection_concl(op, 32, left.clone(), right.clone(), left.clone(),)
+                            .unwrap()
                     ));
                 }
             }

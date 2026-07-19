@@ -36,6 +36,100 @@ pub enum ValueType {
     Num(NumType),
 }
 
+/// A scalar WebAssembly numeric value.
+///
+/// Floating-point values retain their exact IEEE payload. This preserves
+/// signed zero and NaN payloads without asking the host floating-point runtime
+/// to interpret them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NumericValue {
+    I32(u32),
+    I64(u64),
+    F32(u32),
+    F64(u64),
+}
+
+impl NumericValue {
+    pub const fn value_type(self) -> ValueType {
+        ValueType::Num(match self {
+            Self::I32(_) => NumType::I32,
+            Self::I64(_) => NumType::I64,
+            Self::F32(_) => NumType::F32,
+            Self::F64(_) => NumType::F64,
+        })
+    }
+}
+
+/// Scalar WebAssembly binary operators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    DivSigned,
+    DivUnsigned,
+    RemSigned,
+    RemUnsigned,
+    And,
+    Or,
+    Xor,
+    ShiftLeft,
+    ShiftRightSigned,
+    ShiftRightUnsigned,
+    RotateLeft,
+    RotateRight,
+    FloatDiv,
+    Min,
+    Max,
+    CopySign,
+}
+
+impl BinaryOp {
+    const fn supports(self, ty: NumType) -> bool {
+        let integer = matches!(ty, NumType::I32 | NumType::I64);
+        match self {
+            Self::Add | Self::Sub | Self::Mul => true,
+            Self::DivSigned
+            | Self::DivUnsigned
+            | Self::RemSigned
+            | Self::RemUnsigned
+            | Self::And
+            | Self::Or
+            | Self::Xor
+            | Self::ShiftLeft
+            | Self::ShiftRightSigned
+            | Self::ShiftRightUnsigned
+            | Self::RotateLeft
+            | Self::RotateRight => integer,
+            Self::FloatDiv | Self::Min | Self::Max | Self::CopySign => !integer,
+        }
+    }
+
+    const fn constructor(self) -> &'static str {
+        match self {
+            Self::Add => "ADD",
+            Self::Sub => "SUB",
+            Self::Mul => "MUL",
+            Self::DivSigned => "DIV_S",
+            Self::DivUnsigned => "DIV_U",
+            Self::RemSigned => "REM_S",
+            Self::RemUnsigned => "REM_U",
+            Self::And => "AND",
+            Self::Or => "OR",
+            Self::Xor => "XOR",
+            Self::ShiftLeft => "SHL",
+            Self::ShiftRightSigned => "SHR_S",
+            Self::ShiftRightUnsigned => "SHR_U",
+            Self::RotateLeft => "ROTL",
+            Self::RotateRight => "ROTR",
+            Self::FloatDiv => "DIV",
+            Self::Min => "MIN",
+            Self::Max => "MAX",
+            Self::CopySign => "COPYSIGN",
+        }
+    }
+}
+
 /// The exact input/output stack effect of an instruction typing.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InstructionType {
@@ -62,8 +156,8 @@ impl InstructionType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Instruction {
     Nop,
-    ConstI32(u32),
-    I32Add,
+    Const(NumericValue),
+    Binary { ty: NumType, op: BinaryOp },
     Drop,
 }
 
@@ -319,7 +413,7 @@ impl NativeWasmSemantics {
         let (clauses, metas) = with_total_stack(|| {
             let definitions = wasm_spec();
             let (clauses, report) = total_spec_clauses(&definitions)?;
-            if clauses.len() < 6_689 || clauses.len() != report.total_clauses {
+            if clauses.len() < 7_393 || clauses.len() != report.total_clauses {
                 return Err(facade_error(format!(
                     "combined-set coverage regressed: {} clauses",
                     clauses.len()
@@ -438,21 +532,24 @@ impl WasmTyping for NativeWasmSemantics {
             let context_term = encode_context(&context);
             let (rule_name, args, premises) = match &instruction {
                 Instruction::Nop => ("nop", vec![context_term], vec![]),
-                Instruction::ConstI32(value) => (
-                    "const",
-                    vec![
-                        context_term,
-                        encode_num_type(NumType::I32)?,
-                        encode_i32_value(*value)?,
-                    ],
-                    vec![],
-                ),
-                Instruction::I32Add => (
+                Instruction::Const(value) => {
+                    let ValueType::Num(ty) = value.value_type();
+                    (
+                        "const",
+                        vec![
+                            context_term,
+                            encode_num_type(ty)?,
+                            encode_numeric_value(*value)?,
+                        ],
+                        vec![],
+                    )
+                }
+                Instruction::Binary { ty, op } => (
                     "binop",
                     vec![
                         context_term,
-                        encode_num_type(NumType::I32)?,
-                        nullary_case("ADD")?,
+                        encode_num_type(*ty)?,
+                        nullary_case(op.constructor())?,
                     ],
                     vec![],
                 ),
@@ -518,7 +615,7 @@ impl WasmTyping for NativeWasmSemantics {
             }
             let witness_id = match program.instructions() {
                 [Instruction::Nop] => "mvp.nop",
-                [Instruction::ConstI32(5), Instruction::Drop] => "mvp.const-drop",
+                [Instruction::Const(NumericValue::I32(5)), Instruction::Drop] => "mvp.const-drop",
                 _ => {
                     return Err(facade_error(
                         "no exact checked Instrs_ok driver for this program typing",
@@ -558,7 +655,7 @@ impl WasmExecution for NativeWasmSemantics {
             }
             if matches!(
                 from.program.instructions(),
-                [Instruction::ConstI32(5), Instruction::Drop]
+                [Instruction::Const(NumericValue::I32(5)), Instruction::Drop,]
             ) {
                 let state = encode_state(from.state)?;
                 let witness = normative_witnesses(env, full, &state)?
@@ -597,9 +694,12 @@ impl WasmExecution for NativeWasmSemantics {
                     )
                 }
                 [
-                    Instruction::ConstI32(a),
-                    Instruction::ConstI32(b),
-                    Instruction::I32Add,
+                    Instruction::Const(NumericValue::I32(a)),
+                    Instruction::Const(NumericValue::I32(b)),
+                    Instruction::Binary {
+                        ty: NumType::I32,
+                        op: BinaryOp::Add,
+                    },
                     Instruction::Drop,
                 ] if (*a, *b) == (2, 3) => {
                     let state = encode_state(from.state)?;
@@ -631,11 +731,13 @@ impl WasmExecution for NativeWasmSemantics {
 }
 
 fn instruction_type_matches(instruction: &Instruction, actual: &InstructionType) -> bool {
-    let i32 = ValueType::Num(NumType::I32);
     match instruction {
         Instruction::Nop => *actual == InstructionType::new([], []),
-        Instruction::ConstI32(_) => *actual == InstructionType::new([], [i32]),
-        Instruction::I32Add => *actual == InstructionType::new([i32, i32], [i32]),
+        Instruction::Const(value) => *actual == InstructionType::new([], [value.value_type()]),
+        Instruction::Binary { ty, op } => {
+            let value = ValueType::Num(*ty);
+            op.supports(*ty) && *actual == InstructionType::new([value, value], [value])
+        }
         Instruction::Drop => {
             matches!(actual.inputs.as_slice(), [ValueType::Num(_)]) && actual.outputs.is_empty()
         }
@@ -744,10 +846,13 @@ fn wrap_normative_witness(
 fn parse_normative_instruction(instruction: &str) -> Result<Instruction> {
     match instruction {
         "nop" => Ok(Instruction::Nop),
-        "i32.const 2" => Ok(Instruction::ConstI32(2)),
-        "i32.const 3" => Ok(Instruction::ConstI32(3)),
-        "i32.const 5" => Ok(Instruction::ConstI32(5)),
-        "i32.add" => Ok(Instruction::I32Add),
+        "i32.const 2" => Ok(Instruction::Const(NumericValue::I32(2))),
+        "i32.const 3" => Ok(Instruction::Const(NumericValue::I32(3))),
+        "i32.const 5" => Ok(Instruction::Const(NumericValue::I32(5))),
+        "i32.add" => Ok(Instruction::Binary {
+            ty: NumType::I32,
+            op: BinaryOp::Add,
+        }),
         "drop" => Ok(Instruction::Drop),
         other => Err(facade_error(format!(
             "unknown normative instruction `{other}`"
@@ -756,11 +861,13 @@ fn parse_normative_instruction(instruction: &str) -> Result<Instruction> {
 }
 
 fn canonical_closed_instruction_type(instruction: &Instruction) -> InstructionType {
-    let i32 = ValueType::Num(NumType::I32);
     match instruction {
         Instruction::Nop => InstructionType::new([], []),
-        Instruction::ConstI32(_) => InstructionType::new([], [i32]),
-        Instruction::I32Add => InstructionType::new([i32, i32], [i32]),
+        Instruction::Const(value) => InstructionType::new([], [value.value_type()]),
+        Instruction::Binary { ty, .. } => {
+            let value = ValueType::Num(*ty);
+            InstructionType::new([value, value], [value])
+        }
         Instruction::Drop => unreachable!("DROP is polymorphic"),
     }
 }
@@ -792,29 +899,99 @@ fn encode_context(context: &ValidationContext) -> Term {
     }
 }
 
-fn encode_i32_value(value: u32) -> Result<Term> {
+fn encode_unsigned_integer_value(value: u64) -> Result<Term> {
     let payload = app(
         con("tup"),
-        app(con("num.nat"), covalence_hol_eval::mk_nat(value as u64))?,
+        app(con("num.nat"), covalence_hol_eval::mk_nat(value))?,
     )?;
     app(con("case.%"), payload)
+}
+
+fn encode_float_value(width: u32, bits: u64) -> Result<Term> {
+    let (exponent_bits, significand_bits) = match width {
+        32 => (8, 23),
+        64 => (11, 52),
+        _ => unreachable!("WebAssembly has only f32 and f64"),
+    };
+    let sign = bits >> (width - 1);
+    let significand_mask = (1u64 << significand_bits) - 1;
+    let exponent_mask = (1u64 << exponent_bits) - 1;
+    let significand = bits & significand_mask;
+    let encoded_exponent = (bits >> significand_bits) & exponent_mask;
+    let magnitude = if encoded_exponent == 0 {
+        app(
+            con("case.SUBNORM"),
+            app(
+                con("tup"),
+                app(con("num.nat"), covalence_hol_eval::mk_nat(significand))?,
+            )?,
+        )?
+    } else if encoded_exponent == exponent_mask {
+        if significand == 0 {
+            nullary_case("INF")?
+        } else {
+            app(
+                con("case.NAN"),
+                app(
+                    con("tup"),
+                    app(con("num.nat"), covalence_hol_eval::mk_nat(significand))?,
+                )?,
+            )?
+        }
+    } else {
+        let bias = (1u64 << (exponent_bits - 1)) - 1;
+        let exponent = encoded_exponent as i64 - bias as i64;
+        let encoded_integer = app(
+            app(
+                con("num.int"),
+                covalence_hol_eval::mk_nat(u64::from(exponent < 0)),
+            )?,
+            covalence_hol_eval::mk_nat(exponent.unsigned_abs()),
+        )?;
+        app(
+            con("case.NORM"),
+            app(
+                app(
+                    con("tup"),
+                    app(con("num.nat"), covalence_hol_eval::mk_nat(significand))?,
+                )?,
+                encoded_integer,
+            )?,
+        )?
+    };
+    app(
+        con(if sign == 0 { "case.POS" } else { "case.NEG" }),
+        magnitude,
+    )
+}
+
+fn encode_numeric_value(value: NumericValue) -> Result<Term> {
+    match value {
+        NumericValue::I32(value) => encode_unsigned_integer_value(value as u64),
+        NumericValue::I64(value) => encode_unsigned_integer_value(value),
+        NumericValue::F32(bits) => encode_float_value(32, bits as u64),
+        NumericValue::F64(bits) => encode_float_value(64, bits),
+    }
 }
 
 fn encode_instruction(instruction: &Instruction) -> Result<Term> {
     match instruction {
         Instruction::Nop => nullary_case("NOP"),
-        Instruction::ConstI32(value) => app(
-            con("case.CONST"),
+        Instruction::Const(value) => {
+            let ValueType::Num(ty) = value.value_type();
             app(
-                app(con("tup"), encode_num_type(NumType::I32)?)?,
-                encode_i32_value(*value)?,
-            )?,
-        ),
-        Instruction::I32Add => app(
+                con("case.CONST"),
+                app(
+                    app(con("tup"), encode_num_type(ty)?)?,
+                    encode_numeric_value(*value)?,
+                )?,
+            )
+        }
+        Instruction::Binary { ty, op } => app(
             con("case.BINOP"),
             app(
-                app(con("tup"), encode_num_type(NumType::I32)?)?,
-                nullary_case("ADD")?,
+                app(con("tup"), encode_num_type(*ty)?)?,
+                nullary_case(op.constructor())?,
             )?,
         ),
         Instruction::Drop => nullary_case("DROP"),
@@ -869,14 +1046,49 @@ mod tests {
         for (instruction, instruction_type) in [
             (Instruction::Nop, InstructionType::new([], [])),
             (
-                Instruction::ConstI32(7),
+                Instruction::Const(NumericValue::I32(7)),
                 InstructionType::new([], [ValueType::Num(NumType::I32)]),
             ),
             (
-                Instruction::I32Add,
+                Instruction::Const(NumericValue::I64(u64::MAX)),
+                InstructionType::new([], [ValueType::Num(NumType::I64)]),
+            ),
+            (
+                Instruction::Const(NumericValue::F32(0x8000_0000)),
+                InstructionType::new([], [ValueType::Num(NumType::F32)]),
+            ),
+            (
+                Instruction::Const(NumericValue::F64(0x7ff8_0000_0000_0042)),
+                InstructionType::new([], [ValueType::Num(NumType::F64)]),
+            ),
+            (
+                Instruction::Binary {
+                    ty: NumType::I32,
+                    op: BinaryOp::Add,
+                },
                 InstructionType::new(
                     [ValueType::Num(NumType::I32), ValueType::Num(NumType::I32)],
                     [ValueType::Num(NumType::I32)],
+                ),
+            ),
+            (
+                Instruction::Binary {
+                    ty: NumType::I64,
+                    op: BinaryOp::Xor,
+                },
+                InstructionType::new(
+                    [ValueType::Num(NumType::I64), ValueType::Num(NumType::I64)],
+                    [ValueType::Num(NumType::I64)],
+                ),
+            ),
+            (
+                Instruction::Binary {
+                    ty: NumType::F64,
+                    op: BinaryOp::CopySign,
+                },
+                InstructionType::new(
+                    [ValueType::Num(NumType::F64), ValueType::Num(NumType::F64)],
+                    [ValueType::Num(NumType::F64)],
                 ),
             ),
             (
@@ -898,6 +1110,21 @@ mod tests {
                 }
             );
         }
+        assert!(
+            semantics
+                .prove_instruction(
+                    &ValidationContext::Empty,
+                    &Instruction::Binary {
+                        ty: NumType::F32,
+                        op: BinaryOp::And,
+                    },
+                    &InstructionType::new(
+                        [ValueType::Num(NumType::F32), ValueType::Num(NumType::F32)],
+                        [ValueType::Num(NumType::F32)],
+                    ),
+                )
+                .is_err()
+        );
 
         let numeric = semantics
             .prove_numeric_type(&ValidationContext::Empty, NumType::I32)
@@ -942,7 +1169,7 @@ mod tests {
     #[test]
     fn facade_executes_exact_integer_example_and_refuses_unknown_search() {
         let semantics = NativeWasmSemantics::execution().unwrap();
-        assert_eq!(semantics.total_clause_count(), 6_689);
+        assert_eq!(semantics.total_clause_count(), 7_393);
         let examples = semantics.normative_examples().unwrap();
         assert_eq!(
             examples
@@ -961,7 +1188,8 @@ mod tests {
         assert!(examples[0].program_typing.is_some());
         assert!(examples[1].program_typing.is_some());
         assert!(examples[2].program_typing.is_none());
-        let const_drop = Program::new([Instruction::ConstI32(5), Instruction::Drop]);
+        let const_drop =
+            Program::new([Instruction::Const(NumericValue::I32(5)), Instruction::Drop]);
         let const_drop_typing = semantics
             .prove_program(
                 &ValidationContext::Empty,
@@ -994,9 +1222,12 @@ mod tests {
         let from = Configuration {
             state: MachineState::Empty,
             program: Program::new([
-                Instruction::ConstI32(2),
-                Instruction::ConstI32(3),
-                Instruction::I32Add,
+                Instruction::Const(NumericValue::I32(2)),
+                Instruction::Const(NumericValue::I32(3)),
+                Instruction::Binary {
+                    ty: NumType::I32,
+                    op: BinaryOp::Add,
+                },
                 Instruction::Drop,
             ]),
         };
@@ -1027,7 +1258,7 @@ mod tests {
 
         let unsupported = Configuration {
             state: MachineState::Empty,
-            program: Program::new([Instruction::ConstI32(9)]),
+            program: Program::new([Instruction::Const(NumericValue::I32(9))]),
         };
         assert!(semantics.execute(&unsupported).is_err());
     }

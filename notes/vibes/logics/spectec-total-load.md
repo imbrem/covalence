@@ -28,7 +28,7 @@ combined entry point (order contract in its module docs: rules → star aux →
 Dec graphs → evaluators); `RelationEnv::spec` serves it through the Fragment
 API. `wasm::spec::coverage_report` pins:
 
-- **6689 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
+- **7393 combined clauses** (2026-07-19, post Wave-D fixes + Wave-E review
   fixes: encoding injectivity R1-F1/F2, value-dead-side census R3-F1, Dec
   clause-order R4-F1, mono-env-in-conditions R4-F2 + the Wave-F write
   families below), kernel-checked as one
@@ -36,8 +36,8 @@ API. `wasm::spec::coverage_report` pins:
   30/35 Else rewritten) + 184 star aux (**92/92 Iter sites**, 0 whole-site
   opaque) + 1258 `fn.*` Dec clauses (**804/804 source clauses loaded**,
   802 clean; 53 mono instances; 405 per-case sort-expansion copies; 6
-  expanded Dec-star sites / 12 defining clauses) + 3213 exact builtin
-  clauses over 62 operations + 1476
+  expanded Dec-star sites / 12 defining clauses) + 3917 exact builtin
+  clauses over 64 operations + 1476
   `ev.*` evaluator clauses (375 `ev.neq` pairs plus the encoded-natural
   disequality clause; incl. the `ev.sort.*`
   families and 61 `ev.upd.*`/`ev.ext.*` write clauses over 31 path
@@ -702,10 +702,26 @@ therefore preserves every finite, infinity, and NaN payload.
 The construction is entirely structural and uses only kernel-computable
 natural equality/order; it has no host float operation, opaque premise, or
 choice refinement. Cross-products of the ten validated sign/magnitude shapes
-make malformed values fail closed. The builtin leg is now **3213 clauses over
-62 operations**, filling **51 of 91** declarations and leaving **40**. The
+make malformed values fail closed. The builtin leg is now **3917 clauses over
+64 operations**, filling **53 of 91** declarations and leaving **38**. The
 residual deterministic set no longer contains representation, comparison, or
 sign-copy operations.
+
+## Landed (Wave AG — deterministic pseudo-min/max)
+
+`fpmin_` and `fpmax_` are now exact over the complete F32/F64 carrier. Unlike
+regular `fmin_`/`fmax_`, these operations are deterministic even at NaNs: each
+selects the second operand only when the corresponding strict comparison is
+true, and otherwise preserves the first operand. Consequently NaNs and equal
+or opposite-signed zeroes preserve the left operand exactly. The same natural
+IEEE order key and explicit double-zero cases used by the comparison leg prove
+the selection without host floating point or opacity.
+
+The requested regular min/max and four rounding operations remain explicit:
+their result type is a sequence because every NaN input maps through the
+specification's `nans_N` choice set. Adding only their ordinary-number cases
+would improve fireability but would not close those declarations, while
+choosing one NaN would be a semantic regression.
 
 ### Exact unbounded inverse sequence concatenation
 
@@ -777,6 +793,14 @@ The high-level surface now separates claims that used to be easy to conflate:
   for currently nonrecursive coproduct variants: carrier, source-name lookup,
   constructor terms, injectivity, and pairwise distinctness derived through
   existing kernel laws. Recursive self placeholders still refuse.
+- `SemanticRelation` / `HolRelationPredicate` turn the exact existing-carrier
+  SpecTec fragment into ordinary typed HOL predicates and replay introduction
+  rules through the generic NativeHol-checked closure engine. Refined carriers
+  and binders contribute real membership antecedents. The bundled-spec census
+  is honestly still **0/125**: 65 relation carriers are unresolved, 57 hit
+  parametric cases, one needs simultaneous cross-relation closure, and two are
+  empty. A typed natural relation pins predicate construction, β-normalized
+  application, side-condition preservation, and hypothesis-free rule replay.
 - `DecisionLowerer` represents negative rule applicability only through a
   positive decision graph with an adequacy/totality certification contract.
   `CertifiedDecisionFamily` checks exact closed ground totality and adequacy

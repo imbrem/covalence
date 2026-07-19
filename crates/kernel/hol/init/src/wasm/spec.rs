@@ -342,23 +342,23 @@ mod tests {
                 report.decs.spec_clean
             );
             assert!(
-                report.total_clauses >= 6689,
+                report.total_clauses >= 7393,
                 "combined clauses = {}",
                 report.total_clauses
             );
             // The exact-host-builtin leg is live (Waves F2/Y/Z/AA/AB/AC/AE):
-            // defining clauses for 62 operations, incl. first clauses for 51
+            // defining clauses for 64 operations, incl. first clauses for 53
             // of the 91 zero-clause tags (integer operations, structural
             // rational rounding, typed byte front doors, structural IEEE
             // representation/sign operations, and inverse sequence graphs).
             assert!(
-                report.n_builtin_clauses >= 3213,
+                report.n_builtin_clauses >= 3917,
                 "builtin clauses = {}",
                 report.n_builtin_clauses
             );
-            assert_eq!(report.builtins.ops, 62, "builtin ops covered");
+            assert_eq!(report.builtins.ops, 64, "builtin ops covered");
             assert_eq!(
-                report.builtins.zero_clause_ops, 51,
+                report.builtins.zero_clause_ops, 53,
                 "zero-clause builtin tags filled"
             );
             assert!(
@@ -396,6 +396,24 @@ mod tests {
                     (1996, 0, "fn.NotImmutReachable", "", "dec.else-nonif-guard",),
                 ],
                 "opaque source addresses or clause order changed"
+            );
+            use crate::wasm::lower::total::OpaqueCapability as C;
+            assert_eq!(
+                report
+                    .opaque_sites
+                    .iter()
+                    .map(|site| site.required_capability.clone())
+                    .collect::<Vec<_>>(),
+                [
+                    C::ReferenceCastApplicability,
+                    C::ReferenceCastApplicability,
+                    C::ReferenceCastApplicability,
+                    C::ReferenceCastApplicability,
+                    C::ArrayDataOutOfBoundsApplicability,
+                    C::VcvtopExistentialPredecessors,
+                    C::ImmutReachableNegation,
+                ],
+                "opaque proof-capability classification changed"
             );
             // The write families are live (measured: 54 clauses / 27 path
             // families incl. `ev.upd.root.dot.LOCALS.idx` and the

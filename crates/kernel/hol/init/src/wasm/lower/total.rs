@@ -78,6 +78,54 @@ pub struct OpaquePremiseSite {
     pub rule_name: String,
     /// Opaque reason tag, without the `opaque.` relation prefix.
     pub reason: String,
+    /// Exact positive proof capability required to remove this opacity.
+    pub required_capability: OpaqueCapability,
+}
+
+/// Proof boundary behind one intentionally opaque source premise.
+///
+/// These classes are not guesses about failed search. They identify the exact
+/// closed certificate shape that must be installed before the premise may be
+/// replaced. The coverage tests separately re-read the source AST and pin the
+/// corresponding applicability structure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpaqueCapability {
+    /// A certified `No` answer for `Ref_ok(args) ∧ Reftype_sub(args)`.
+    ReferenceCastApplicability,
+    /// A certified `No` answer for the disjunction of the two preceding
+    /// array-data out-of-bounds branches.
+    ArrayDataOutOfBoundsApplicability,
+    /// A universally adequate positive graph deciding the existential
+    /// applicability of earlier `vcvtop__` clauses.
+    VcvtopExistentialPredecessors,
+    /// A universally adequate positive graph deciding `ImmutReachable`, whose
+    /// `false` result entails the explicit source relation negation.
+    ImmutReachableNegation,
+}
+
+// TODO(cov:kernel.hol.init.src.wasm.opaque-composite-decision-schemas, severe): Install closed totality/adequacy schemas for reference-cast and array-data composite applicability, then remove their five opaque premises.
+// TODO(cov:kernel.hol.init.src.wasm.opaque-vcvtop-existential-decision, severe): Decide the existential applicability of preceding vcvtop__ clauses with a closed positive graph schema.
+// TODO(cov:kernel.hol.init.src.wasm.opaque-immut-reachable-decision, severe): Decide ImmutReachable universally and use its certified false graph for NotImmutReachable.
+
+fn opaque_capability(meta: &ClauseMeta, reason: &str) -> Result<OpaqueCapability> {
+    match (meta.relation.as_str(), meta.name.as_str(), reason) {
+        (
+            "Step_read",
+            "br_on_cast-fail" | "br_on_cast_fail-fail" | "ref.test-false" | "ref.cast-fail",
+            "else",
+        ) => Ok(OpaqueCapability::ReferenceCastApplicability),
+        ("Step_read", "array.init_data-zero", "else") => {
+            Ok(OpaqueCapability::ArrayDataOutOfBoundsApplicability)
+        }
+        ("fn.vcvtop__", "", "dec.order") => Ok(OpaqueCapability::VcvtopExistentialPredecessors),
+        ("fn.NotImmutReachable", "", "dec.else-nonif-guard") => {
+            Ok(OpaqueCapability::ImmutReachableNegation)
+        }
+        _ => Err(covalence_core::Error::ConnectiveRule(format!(
+            "unclassified SpecTec opaque premise: {}/{}/{}",
+            meta.relation, meta.name, reason
+        ))),
+    }
 }
 
 /// The one report for the combined set (headline numbers first; the per-leg
@@ -239,6 +287,7 @@ pub fn total_spec_clauses(defs: &[SpecTecDef]) -> Result<(Vec<Clause>, TotalRepo
                     premise_index,
                     relation: meta.relation.clone(),
                     rule_name: meta.name.clone(),
+                    required_capability: opaque_capability(meta, &reason)?,
                     reason,
                 });
             }

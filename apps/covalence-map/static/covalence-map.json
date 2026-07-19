@@ -38,6 +38,15 @@
       "updated": 0
     },
     {
+      "id": "api:A0003",
+      "kind": "api",
+      "title": "Bytes and byte strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -493,7 +502,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 32276,
+      "words": 32385,
       "updated": 0
     },
     {
@@ -536,7 +545,7 @@
       "id": "file:apps/covalence-web/build/",
       "kind": "file",
       "title": "apps/covalence-web/build/",
-      "status": "missing",
+      "status": null,
       "path": "apps/covalence-web/build/",
       "words": 0,
       "updated": 0
@@ -671,7 +680,7 @@
       "id": "file:apps/covalence-web/src/lib/kernel/",
       "kind": "file",
       "title": "apps/covalence-web/src/lib/kernel/",
-      "status": "missing",
+      "status": null,
       "path": "apps/covalence-web/src/lib/kernel/",
       "words": 0,
       "updated": 0
@@ -4064,7 +4073,7 @@
       "id": "file:crates/ffi/python/.venv",
       "kind": "file",
       "title": "crates/ffi/python/.venv",
-      "status": "missing",
+      "status": null,
       "path": "crates/ffi/python/.venv",
       "words": 0,
       "updated": 0
@@ -6824,6 +6833,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
+      "kind": "file",
+      "title": "bytes_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
+      "words": 127,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/inductive/carved.rs",
       "kind": "file",
       "title": "carved.rs",
@@ -6901,7 +6919,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/mod.rs",
-      "words": 91,
+      "words": 92,
       "updated": 0
     },
     {
@@ -8498,12 +8516,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/logic/src/bytes.rs",
+      "kind": "file",
+      "title": "bytes.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "words": 331,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/logic/src/lib.rs",
       "kind": "file",
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 235,
+      "words": 242,
       "updated": 0
     },
     {
@@ -14101,7 +14128,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 32276,
+      "words": 32385,
       "updated": 0
     },
     {
@@ -14209,7 +14236,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3309,
+      "words": 3329,
       "updated": 0
     },
     {
@@ -16463,6 +16490,15 @@
       "updated": 0
     },
     {
+      "id": "impl:A0003:NativeHol",
+      "kind": "implementation",
+      "title": "NativeHol",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "note:notes/README.md",
       "kind": "note",
       "title": "notes/ — the map",
@@ -17710,6 +17746,24 @@
       "title": "Relational residual",
       "status": "defined",
       "path": "notes/terms/T0001.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:bytes.leb128-encoding",
+      "kind": "todo",
+      "title": "Add unsigned/signed LEB128 as variable-length byte relations with canonicality, termination, and bounded-width overflow evidence.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:bytes.list-nat-sequence-bridge",
+      "kind": "todo",
+      "title": "Once the abstract list API stabilizes, relate bytes to lists of in-range naturals with explicit element-range and round-trip laws.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/bytes.rs",
       "words": 0,
       "updated": 0
     },
@@ -20758,6 +20812,24 @@
       "detail": null
     },
     {
+      "source": "api:A0003",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/logic/src/bytes.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0003",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0003",
+      "predicate": "depends-on",
+      "target": "api:A0002",
+      "detail": null
+    },
+    {
       "source": "file:apps/covalence-web/src/lib/Repl.svelte",
       "predicate": "imports",
       "target": "file:apps/covalence-web/src/lib/repl/ReplShell.svelte",
@@ -21936,6 +22008,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/carved.rs",
       "detail": null
     },
@@ -22813,6 +22891,12 @@
       "source": "file:crates/kernel/hol/init/src/wasm/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/wasm/syntax.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/logic/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/logic/src/bytes.rs",
       "detail": null
     },
     {
@@ -24542,6 +24626,18 @@
       "predicate": "implements",
       "target": "api:A0002",
       "detail": "linear-depth successor towers over a shared native zero leaf"
+    },
+    {
+      "source": "impl:A0003:NativeHol",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0003:NativeHol",
+      "predicate": "implements",
+      "target": "api:A0003",
+      "detail": "HOL u8 and native byte-string leaves"
     },
     {
       "source": "note:notes/README.md",
@@ -28069,19 +28165,19 @@
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:apps/covalence-web/build/",
-      "detail": "missing"
+      "detail": null
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:apps/covalence-web/src/lib/kernel/",
-      "detail": "missing"
+      "detail": null
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:crates/ffi/python/.venv",
-      "detail": "missing"
+      "detail": null
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
@@ -30354,6 +30450,12 @@
       "title": "Natural numbers",
       "status": "experimental",
       "path": "crates/kernel/hol/logic/src/nat.rs"
+    },
+    {
+      "id": "A0003",
+      "title": "Bytes and byte strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/bytes.rs"
     }
   ],
   "apiImplementations": [
@@ -30377,6 +30479,13 @@
       "name": "UnaryNat",
       "representation": "linear-depth successor towers over a shared native zero leaf",
       "path": "crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs"
+    },
+    {
+      "id": "impl:A0003:NativeHol",
+      "apiId": "A0003",
+      "name": "NativeHol",
+      "representation": "HOL u8 and native byte-string leaves",
+      "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs"
     }
   ],
   "actors": [

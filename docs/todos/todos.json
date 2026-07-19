@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 329,
-  "structured": 329,
+  "count": 330,
+  "structured": 330,
   "items": [
     {
       "id": "computation.automata-accepts-iff-run",
@@ -3175,13 +3175,23 @@
       "crate": "covalence-serve"
     },
     {
+      "id": "sexpr.generic-refined-inductive-encoding",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Generalize the bounded Nat experiment to arbitrary first-order InductiveSpec constructor tags and arguments.",
+      "structured": true,
+      "path": "crates/lang/sexpr-api/src/nat.rs",
+      "line": 22,
+      "crate": "covalence-sexpr-api"
+    },
+    {
       "id": "sexpr.parser-interpretation",
       "kind": "TODO",
       "severity": "major",
       "summary": "Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.",
       "structured": true,
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "line": 491,
+      "line": 498,
       "crate": "covalence-sexpr-api"
     },
     {

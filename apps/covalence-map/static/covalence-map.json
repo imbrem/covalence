@@ -43,7 +43,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 163,
+      "words": 167,
       "updated": 0
     },
     {
@@ -493,7 +493,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 31861,
+      "words": 32276,
       "updated": 0
     },
     {
@@ -6662,6 +6662,78 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/computation/automata.rs",
+      "kind": "file",
+      "title": "automata.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "words": 749,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/blc.rs",
+      "kind": "file",
+      "title": "blc.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/blc.rs",
+      "words": 47,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/concrete.rs",
+      "kind": "file",
+      "title": "concrete.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/concrete.rs",
+      "words": 107,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
+      "kind": "file",
+      "title": "lambda_to_ski.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
+      "words": 255,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "kind": "file",
+      "title": "minsky.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "words": 225,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "kind": "file",
+      "title": "mod.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/mod.rs",
+      "words": 391,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/ski.rs",
+      "kind": "file",
+      "title": "ski.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/ski.rs",
+      "words": 41,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/turing.rs",
+      "kind": "file",
+      "title": "turing.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/turing.rs",
+      "words": 242,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/cond.cov",
       "kind": "file",
       "title": "cond.cov",
@@ -6829,7 +6901,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/mod.rs",
-      "words": 86,
+      "words": 91,
       "updated": 0
     },
     {
@@ -6842,12 +6914,39 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/nat_backend_common.rs",
+      "kind": "file",
+      "title": "nat_backend_common.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_backend_common.rs",
+      "words": 138,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/nat_backend_tests.rs",
+      "kind": "file",
+      "title": "nat_backend_tests.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_backend_tests.rs",
+      "words": 71,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
       "kind": "file",
       "title": "nat_binary_api.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
-      "words": 209,
+      "words": 65,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
+      "kind": "file",
+      "title": "nat_unary_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
+      "words": 46,
       "updated": 0
     },
     {
@@ -8759,6 +8858,132 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/computation/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/computation/Cargo.toml",
+      "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/automata_theory.rs",
+      "kind": "file",
+      "title": "automata_theory.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/automata_theory.rs",
+      "words": 125,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/blc.rs",
+      "kind": "file",
+      "title": "blc.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/blc.rs",
+      "words": 332,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/compiler.rs",
+      "kind": "file",
+      "title": "compiler.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/compiler.rs",
+      "words": 379,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/encoding.rs",
+      "kind": "file",
+      "title": "encoding.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/encoding.rs",
+      "words": 214,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/execution.rs",
+      "kind": "file",
+      "title": "execution.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/execution.rs",
+      "words": 220,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/finite.rs",
+      "kind": "file",
+      "title": "finite.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/finite.rs",
+      "words": 735,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/lib.rs",
+      "words": 49,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/minsky.rs",
+      "kind": "file",
+      "title": "minsky.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/minsky.rs",
+      "words": 349,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/pushdown.rs",
+      "kind": "file",
+      "title": "pushdown.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/pushdown.rs",
+      "words": 388,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/simulation.rs",
+      "kind": "file",
+      "title": "simulation.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/simulation.rs",
+      "words": 98,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/ski.rs",
+      "kind": "file",
+      "title": "ski.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/ski.rs",
+      "words": 283,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/theory.rs",
+      "kind": "file",
+      "title": "theory.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/theory.rs",
+      "words": 450,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/turing.rs",
+      "kind": "file",
+      "title": "turing.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/turing.rs",
+      "words": 406,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/decimal",
       "kind": "file",
       "title": "crates/lang/decimal",
@@ -10033,7 +10258,16 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "words": 705,
+      "words": 712,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/sexpr-api/src/nat.rs",
+      "kind": "file",
+      "title": "nat.rs",
+      "status": "tracked",
+      "path": "crates/lang/sexpr-api/src/nat.rs",
+      "words": 393,
       "updated": 0
     },
     {
@@ -13867,7 +14101,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 31861,
+      "words": 32276,
       "updated": 0
     },
     {
@@ -13975,7 +14209,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3299,
+      "words": 3309,
       "updated": 0
     },
     {
@@ -16220,6 +16454,15 @@
       "updated": 0
     },
     {
+      "id": "impl:A0002:UnaryNat",
+      "kind": "implementation",
+      "title": "UnaryNat",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "note:notes/README.md",
       "kind": "note",
       "title": "notes/ — the map",
@@ -16937,7 +17180,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/computation-theory.md",
       "words": 874,
-      "updated": 1784416010
+      "updated": 1784419827
     },
     {
       "id": "note:notes/vibes/logics/derivation-system-interp.md",
@@ -20360,6 +20603,15 @@
       "updated": 0
     },
     {
+      "id": "todo:sexpr.generic-refined-inductive-encoding",
+      "kind": "todo",
+      "title": "Generalize the bounded Nat experiment to arbitrary first-order InductiveSpec constructor tags and arguments.",
+      "status": "major",
+      "path": "crates/lang/sexpr-api/src/nat.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:sexpr.no-confusion-laws",
       "kind": "todo",
       "title": "sexpr.no-confusion-laws",
@@ -21634,6 +21886,48 @@
       "detail": null
     },
     {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/automata.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/blc.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/concrete.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/ski.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/turing.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/api.rs",
@@ -21696,7 +21990,25 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_backend_common.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_backend_tests.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/nat_binary_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
       "detail": null
     },
     {
@@ -21751,6 +22063,12 @@
       "source": "file:crates/kernel/hol/init/src/init/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/char.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
       "detail": null
     },
     {
@@ -22570,6 +22888,78 @@
       "detail": null
     },
     {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/automata_theory.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/blc.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/compiler.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/encoding.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/execution.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/finite.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/minsky.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/pushdown.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/simulation.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/ski.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/theory.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/turing.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/lang/forsp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/forsp/src/eval.rs",
@@ -22927,6 +23317,12 @@
       "source": "file:crates/lang/numerals/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/numerals/src/rat_backend.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/sexpr-api/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/sexpr-api/src/nat.rs",
       "detail": null
     },
     {
@@ -24134,6 +24530,18 @@
       "predicate": "implements",
       "target": "api:A0002",
       "detail": "HOL natural-number leaves and definitions"
+    },
+    {
+      "source": "impl:A0002:UnaryNat",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0002:UnaryNat",
+      "predicate": "implements",
+      "target": "api:A0002",
+      "detail": "linear-depth successor towers over a shared native zero leaf"
     },
     {
       "source": "note:notes/README.md",
@@ -29962,6 +30370,13 @@
       "name": "NativeHol",
       "representation": "HOL natural-number leaves and definitions",
       "path": "crates/kernel/hol/init/src/init/inductive/nat_api.rs"
+    },
+    {
+      "id": "impl:A0002:UnaryNat",
+      "apiId": "A0002",
+      "name": "UnaryNat",
+      "representation": "linear-depth successor towers over a shared native zero leaf",
+      "path": "crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs"
     }
   ],
   "actors": [
@@ -31643,8 +32058,8 @@
     },
     {
       "noteId": "note:notes/vibes/logics/computation-theory.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "d37cc364a60456828ba5ef486fddb322a4ba37b4",
+      "committedAt": 1784419827
     },
     {
       "noteId": "note:notes/vibes/logics/derivation-system-interp.md",

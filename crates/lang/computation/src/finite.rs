@@ -599,7 +599,7 @@ mod tests {
         assert_eq!(trace.states, vec![0, 1, 1, 0]);
         assert!(trace.accepted);
         assert_eq!(dfa.reachable_states(), vec![0, 1]);
-        assert_eq!(dfa.run(&[true, true, false, false]).unwrap().accepted, true);
+        assert!(dfa.run(&[true, true, false, false]).unwrap().accepted);
     }
 
     #[test]

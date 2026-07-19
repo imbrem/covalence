@@ -186,6 +186,10 @@ pub trait PartialCompilerLaws<Source: Logic, Target: Logic>:
 
     fn simulation_vocabulary(&self) -> &SimulationVocabulary<Target>;
 
+    // The explicit source/target theories, domain proof, and artifact are all
+    // semantically distinct inputs. Collapsing them into an opaque tuple would
+    // make the proof boundary harder to review.
+    #[allow(clippy::too_many_arguments)]
     fn certify_preservation(
         &self,
         source_logic: &Source,
@@ -197,6 +201,7 @@ pub trait PartialCompilerLaws<Source: Logic, Target: Logic>:
         artifact: &Self::Artifact,
     ) -> Result<Self::PreservationCertificate, Self::Error>;
 
+    #[allow(clippy::too_many_arguments)]
     fn certify_reflection(
         &self,
         source_logic: &Source,

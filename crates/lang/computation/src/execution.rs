@@ -55,6 +55,9 @@ pub struct ExecutionError<E> {
     pub steps: u64,
 }
 
+/// Result of a fuel-bounded transition-system execution.
+pub type ExecutionResult<S, O, E> = Result<RunResult<S, O>, ExecutionError<E>>;
+
 /// Run a state for at most `fuel` transitions.
 ///
 /// Halting is checked before fuel exhaustion, so an initially halted state
@@ -64,7 +67,7 @@ pub fn run<M: TransitionSystem>(
     machine: &M,
     state: M::State,
     fuel: u64,
-) -> Result<RunResult<M::State, M::Outcome>, ExecutionError<M::Error>> {
+) -> ExecutionResult<M::State, M::Outcome, M::Error> {
     let mut state = state;
     let mut steps = 0;
     loop {

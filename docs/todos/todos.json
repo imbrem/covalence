@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 345,
-  "structured": 345,
+  "count": 373,
+  "structured": 373,
   "items": [
     {
       "id": "bits.abstract-bool-list-adapter",
@@ -215,13 +215,13 @@
       "crate": "covalence-inductive"
     },
     {
-      "id": "inductive.family-proof-laws",
+      "id": "inductive.family-native-hol-laws",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Add a proof-bearing companion which derives identity/composition evidence structurally and requires μ/ν law evidence only at the fixpoint capability boundary.",
+      "summary": "Implement DatatypeFamilyLaws for a NativeHol family backend once its μ/ν capability returns proof-bearing fixpoint packages; the structural derivation above must consume existing kernel theorems and must not mint law evidence.",
       "structured": true,
       "path": "crates/lang/inductive/src/family_action.rs",
-      "line": 382,
+      "line": 865,
       "crate": "covalence-inductive"
     },
     {
@@ -245,13 +245,13 @@
       "crate": "covalence-init"
     },
     {
-      "id": "json.inductive-nested-fixpoint-backend",
+      "id": "json.inductive-proof-fixpoint-backend",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Implement JsonArrays, JsonSemanticObjects, and JsonAggregateConstructors by realizing the nested least fixpoints in jsonvaluefamily through A0004.",
+      "summary": "Realize the closed proof-bearing Json ≅ JsonF(Json), nested list induction, and the semantic unique-name subset in a logic backend; the host backend here proves no theorems.",
       "structured": true,
       "path": "crates/lang/json-api/src/api.rs",
-      "line": 423,
+      "line": 685,
       "crate": "covalence-json-api"
     },
     {
@@ -261,7 +261,7 @@
       "summary": "Replace the recursive hard ceiling with a stack-safe parser whose resource policy can accept arbitrary RFC 8259 nesting.",
       "structured": true,
       "path": "crates/lang/json-api/src/lib.rs",
-      "line": 230,
+      "line": 231,
       "crate": "covalence-json-api"
     },
     {
@@ -271,7 +271,7 @@
       "summary": "Close the native JSON family fixpoint once DatatypeFamilyExpr has a proof-bearing nested-fixpoint backend; the NativeHol constructor-layer adapter already realizes the exact six-way F(X), including recursive array/member-list payload shapes.",
       "structured": true,
       "path": "crates/lang/json-api/src/lib.rs",
-      "line": 980,
+      "line": 981,
       "crate": "covalence-json-api"
     },
     {
@@ -2393,6 +2393,286 @@
       "path": "crates/kernel/smt/open_work.rs",
       "line": 10,
       "crate": "covalence-kernel-smt"
+    },
+    {
+      "id": "lang.combinator-parsing.bind-associativity-only-up-to-observation",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "§e.14",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "line": 145,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.choice-union-refinement-theorem",
+      "kind": "SKELETON",
+      "severity": "minor",
+      "summary": "\"Ordered",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "line": 16,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.collapse-agreeing-ignores-order",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Under",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "line": 138,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.compilation-agreement-unproved",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "N1 — that a",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "line": 70,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.compile-rebuilds-rule-bodies",
+      "kind": "PERF",
+      "severity": "minor",
+      "summary": "Core::Rule and",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "line": 78,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.compiled-relational-not-erasable",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "A compiled",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "line": 1047,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.continuation-allocation",
+      "kind": "PERF",
+      "severity": "minor",
+      "summary": "Environment resolve",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/env.rs",
+      "line": 87,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.env-coherence-unchecked",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "deterministicinto",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "line": 20,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.fragment-agreement-theorem",
+      "kind": "SKELETON",
+      "severity": "minor",
+      "summary": "\"A deterministic",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "line": 21,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.host-applicative-laws",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "The host law fixture fixes",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "line": 218,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.host-recursion-unbounded",
+      "kind": "FIXME",
+      "severity": "major",
+      "summary": "A knot tied through",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/partial.rs",
+      "line": 42,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.host-relational-limit-threading",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "RelationalLimits",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/relational.rs",
+      "line": 46,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.host-relational-sharing",
+      "kind": "PERF",
+      "severity": "major",
+      "summary": "No derivation sharing in",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/relational.rs",
+      "line": 52,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.lazy-rebuilds-subtree",
+      "kind": "PERF",
+      "severity": "minor",
+      "summary": "host::Lazy rebuilds its",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/partial.rs",
+      "line": 197,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.mode-generic-encoding",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "A Mode-GAT encoding",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "line": 161,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.morphism-theory",
+      "kind": "SKELETON",
+      "severity": "minor",
+      "summary": "CombinatorTheory<L: Logic>",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "line": 10,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.negation-fragment",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "A Not combinator would make",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "line": 16,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.no-take-first",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Do not add a first(),",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/widen.rs",
+      "line": 31,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.prefix-traits-to-a0015",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Promote",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "line": 157,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.reference-ordered-rules",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "The ordered",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/conformance/reference.rs",
+      "line": 227,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.refinement-inequation-unproved",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "M3⁺ is a",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "line": 153,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.relational-sharing",
+      "kind": "PERF",
+      "severity": "major",
+      "summary": "No derivation sharing. A",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "line": 39,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.repetition-combinators",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "No many/some in either",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "line": 167,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.sentinel-values-undetected",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "The",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/check.rs",
+      "line": 99,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.stackless-eval",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Syntax evaluators are recursive",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "line": 61,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.static-well-formedness",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Check map/ap arity and",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/term.rs",
+      "line": 46,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.total-start-precondition",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "TotalPrefixParser",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/syntax/total.rs",
+      "line": 26,
+      "crate": "covalence-combinator-parsing"
+    },
+    {
+      "id": "lang.combinator-parsing.widening-laws-unproved",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "M1, M2 and M5 are",
+      "structured": true,
+      "path": "crates/lang/combinator-parsing/src/morphism/widen.rs",
+      "line": 40,
+      "crate": "covalence-combinator-parsing"
     },
     {
       "id": "lang.forsp.forsp-web-export-wiring-is-unbuilt",

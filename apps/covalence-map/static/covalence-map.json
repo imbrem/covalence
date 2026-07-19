@@ -205,7 +205,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 203,
+      "words": 228,
       "updated": 0
     },
     {
@@ -457,7 +457,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7422,
+      "words": 7430,
       "updated": 0
     },
     {
@@ -655,7 +655,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 34323,
+      "words": 34590,
       "updated": 0
     },
     {
@@ -833,7 +833,7 @@
       "id": "file:apps/covalence-web/src/lib/kernel/",
       "kind": "file",
       "title": "apps/covalence-web/src/lib/kernel/",
-      "status": null,
+      "status": "missing",
       "path": "apps/covalence-web/src/lib/kernel/",
       "words": 0,
       "updated": 0
@@ -4226,7 +4226,7 @@
       "id": "file:crates/ffi/python/.venv",
       "kind": "file",
       "title": "crates/ffi/python/.venv",
-      "status": null,
+      "status": "missing",
       "path": "crates/ffi/python/.venv",
       "words": 0,
       "updated": 0
@@ -9853,7 +9853,7 @@
       "title": "family_action.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/family_action.rs",
-      "words": 493,
+      "words": 1051,
       "updated": 0
     },
     {
@@ -9889,7 +9889,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/lib.rs",
-      "words": 117,
+      "words": 119,
       "updated": 0
     },
     {
@@ -9965,12 +9965,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/jq/src/generic.rs",
+      "kind": "file",
+      "title": "generic.rs",
+      "status": "tracked",
+      "path": "crates/lang/jq/src/generic.rs",
+      "words": 476,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/jq/src/lib.rs",
       "kind": "file",
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/jq/src/lib.rs",
-      "words": 545,
+      "words": 334,
       "updated": 0
     },
     {
@@ -9997,7 +10006,7 @@
       "title": "api.rs",
       "status": "tracked",
       "path": "crates/lang/json-api/src/api.rs",
-      "words": 471,
+      "words": 808,
       "updated": 0
     },
     {
@@ -10024,7 +10033,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/json-api/src/lib.rs",
-      "words": 1288,
+      "words": 1289,
       "updated": 0
     },
     {
@@ -14677,7 +14686,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 34323,
+      "words": 34590,
       "updated": 0
     },
     {
@@ -14695,7 +14704,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 301,
+      "words": 304,
       "updated": 0
     },
     {
@@ -14704,7 +14713,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 999,
+      "words": 1008,
       "updated": 0
     },
     {
@@ -14713,7 +14722,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 224,
+      "words": 226,
       "updated": 0
     },
     {
@@ -14722,7 +14731,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1784,
+      "words": 1802,
       "updated": 0
     },
     {
@@ -14785,7 +14794,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3459,
+      "words": 3739,
       "updated": 0
     },
     {
@@ -18749,9 +18758,9 @@
       "updated": 0
     },
     {
-      "id": "todo:inductive.family-proof-laws",
+      "id": "todo:inductive.family-native-hol-laws",
       "kind": "todo",
-      "title": "Add a proof-bearing companion which derives identity/composition evidence structurally and requires μ/ν law evidence only at the fixpoint capability boundary.",
+      "title": "Implement DatatypeFamilyLaws for a NativeHol family backend once its μ/ν capability returns proof-bearing fixpoint packages; the structural derivation above must consume existing kernel theorems and must not mint law evidence.",
       "status": "major",
       "path": "crates/lang/inductive/src/family_action.rs",
       "words": 0,
@@ -18785,9 +18794,9 @@
       "updated": 0
     },
     {
-      "id": "todo:json.inductive-nested-fixpoint-backend",
+      "id": "todo:json.inductive-proof-fixpoint-backend",
       "kind": "todo",
-      "title": "Implement JsonArrays, JsonSemanticObjects, and JsonAggregateConstructors by realizing the nested least fixpoints in jsonvaluefamily through A0004.",
+      "title": "Realize the closed proof-bearing Json ≅ JsonF(Json), nested list induction, and the semantic unique-name subset in a logic backend; the host backend here proves no theorems.",
       "status": "major",
       "path": "crates/lang/json-api/src/api.rs",
       "words": 0,
@@ -20734,6 +20743,258 @@
       "title": "la family beyond lageneric: lamultpos/lamultneg,",
       "status": "minor",
       "path": "crates/kernel/smt/open_work.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.bind-associativity-only-up-to-observation",
+      "kind": "todo",
+      "title": "§e.14",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.choice-union-refinement-theorem",
+      "kind": "todo",
+      "title": "\"Ordered",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.collapse-agreeing-ignores-order",
+      "kind": "todo",
+      "title": "Under",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.compilation-agreement-unproved",
+      "kind": "todo",
+      "title": "N1 — that a",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.compile-rebuilds-rule-bodies",
+      "kind": "todo",
+      "title": "Core::Rule and",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.compiled-relational-not-erasable",
+      "kind": "todo",
+      "title": "A compiled",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.continuation-allocation",
+      "kind": "todo",
+      "title": "Environment resolve",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/syntax/env.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.env-coherence-unchecked",
+      "kind": "todo",
+      "title": "deterministicinto",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.fragment-agreement-theorem",
+      "kind": "todo",
+      "title": "\"A deterministic",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.host-applicative-laws",
+      "kind": "todo",
+      "title": "The host law fixture fixes",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/conformance/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.host-recursion-unbounded",
+      "kind": "todo",
+      "title": "A knot tied through",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/host/partial.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.host-relational-limit-threading",
+      "kind": "todo",
+      "title": "RelationalLimits",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/host/relational.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.host-relational-sharing",
+      "kind": "todo",
+      "title": "No derivation sharing in",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/host/relational.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.lazy-rebuilds-subtree",
+      "kind": "todo",
+      "title": "host::Lazy rebuilds its",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/host/partial.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.mode-generic-encoding",
+      "kind": "todo",
+      "title": "A Mode-GAT encoding",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.morphism-theory",
+      "kind": "todo",
+      "title": "CombinatorTheory<L: Logic>",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/theory.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.negation-fragment",
+      "kind": "todo",
+      "title": "A Not combinator would make",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/syntax/embed.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.no-take-first",
+      "kind": "todo",
+      "title": "Do not add a first(),",
+      "status": "severe",
+      "path": "crates/lang/combinator-parsing/src/morphism/widen.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.prefix-traits-to-a0015",
+      "kind": "todo",
+      "title": "Promote",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.reference-ordered-rules",
+      "kind": "todo",
+      "title": "The ordered",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/conformance/reference.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.refinement-inequation-unproved",
+      "kind": "todo",
+      "title": "M3⁺ is a",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.relational-sharing",
+      "kind": "todo",
+      "title": "No derivation sharing. A",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.repetition-combinators",
+      "kind": "todo",
+      "title": "No many/some in either",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/host/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.sentinel-values-undetected",
+      "kind": "todo",
+      "title": "The",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/check.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.stackless-eval",
+      "kind": "todo",
+      "title": "Syntax evaluators are recursive",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/syntax/mod.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.static-well-formedness",
+      "kind": "todo",
+      "title": "Check map/ap arity and",
+      "status": "major",
+      "path": "crates/lang/combinator-parsing/src/syntax/term.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.total-start-precondition",
+      "kind": "todo",
+      "title": "TotalPrefixParser",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/syntax/total.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lang.combinator-parsing.widening-laws-unproved",
+      "kind": "todo",
+      "title": "M1, M2 and M5 are",
+      "status": "minor",
+      "path": "crates/lang/combinator-parsing/src/morphism/widen.rs",
       "words": 0,
       "updated": 0
     },
@@ -24523,6 +24784,12 @@
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/inductive/src/validated.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/jq/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/jq/src/generic.rs",
       "detail": null
     },
     {
@@ -29635,13 +29902,13 @@
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:apps/covalence-web/src/lib/kernel/",
-      "detail": null
+      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",
       "predicate": "documents",
       "target": "file:crates/ffi/python/.venv",
-      "detail": null
+      "detail": "missing"
     },
     {
       "source": "note:notes/vibes/plans/pure-hol-and-build-plan.md",

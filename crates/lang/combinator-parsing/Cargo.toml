@@ -1,0 +1,10 @@
+[package]
+name = "covalence-combinator-parsing"
+version = "0.0.0"
+edition = "2024"
+description = "General parser-combinator algebra with distinct total, partial, and relational interpretations"
+license.workspace = true
+
+[dependencies]
+covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-parsing-api = { path = "../parsing" }

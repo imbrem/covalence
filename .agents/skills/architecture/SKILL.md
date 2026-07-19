@@ -72,6 +72,31 @@ disable-model-invocation: true
   choice, lookahead, recursion, exact/prefix policy, and limits are explicit;
   nullable repetition and left recursion fail rather than looping. Host
   witnesses carry no theorem authority.
+- `crates/lang/combinator-parsing/` — A0021 general parser-combinator algebra
+  over A0015, along two axes. The *capability* axis keeps total, partial, and
+  relational interpretation distinct: ordered choice and relational union are
+  different operators with different law tables, the trait graph between the
+  three is deliberately empty, and the refinement chain lives only in
+  `morphism`'s named adapters. `compile_fail` doctests pin the absence of any
+  blanket impl — do not "tidy up" the missing supertraits. The *encoding* axis
+  carries two coexisting presentations: `syntax/` (first-order programs as
+  data, the reference spine, the only one that is property-generatable) and
+  `host/` (combinator values holding closures, diagnostic-polymorphic, able to
+  take existing PEG/CFG evaluators as leaves). `syntax` compiles to `host` with
+  no inverse.
+  - Widening a partial parser to a relational one discards the diagnostic and
+    **has no retraction**; ordered choice agrees with the first union result
+    only on the image of that widening, and diverges under any `bind` above the
+    choice. Hence no `take_first`, no `normalize`, no `to_relational` — the
+    severe `no-take-first` marker guards this.
+  - `conformance/` checks laws by falsification over finite corpora. Passing is
+    *failure to falsify*, never a theorem. Several textbook laws are false here
+    (union is neither idempotent nor commutative on the nose; ordered-choice
+    associativity holds only in the diagnostic-forgetting quotient;
+    bind-associativity is not statable on the nose); the module docs enumerate
+    them. Corpus obligations are load-bearing and asserted as tests in their own
+    right — a corpus without overlapping alternatives makes the whole
+    non-collapse suite green and vacuous.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

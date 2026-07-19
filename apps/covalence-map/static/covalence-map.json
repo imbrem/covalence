@@ -155,6 +155,15 @@
       "updated": 0
     },
     {
+      "id": "api:A0016",
+      "kind": "api",
+      "title": "Bounded lexical analysis",
+      "status": "experimental",
+      "path": "crates/lang/lexer-parsing/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -412,7 +421,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7371,
+      "words": 7381,
       "updated": 0
     },
     {
@@ -610,7 +619,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 33834,
+      "words": 33904,
       "updated": 0
     },
     {
@@ -6559,7 +6568,7 @@
       "title": "replay.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/grammar/regex/replay.rs",
-      "words": 273,
+      "words": 334,
       "updated": 0
     },
     {
@@ -7729,7 +7738,7 @@
       "title": "sexpr_parse.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/sexpr_parse.rs",
-      "words": 1037,
+      "words": 1323,
       "updated": 0
     },
     {
@@ -9115,7 +9124,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/cfg-parsing/src/lib.rs",
-      "words": 965,
+      "words": 1316,
       "updated": 0
     },
     {
@@ -10172,6 +10181,24 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/lexer-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/lexer-parsing/Cargo.toml",
+      "words": 13,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lexer-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/lexer-parsing/src/lib.rs",
+      "words": 714,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/lisp",
       "kind": "file",
       "title": "crates/lang/lisp",
@@ -10528,7 +10555,7 @@
       "title": "bytes.rs",
       "status": "tracked",
       "path": "crates/lang/parsing/src/bytes.rs",
-      "words": 321,
+      "words": 504,
       "updated": 0
     },
     {
@@ -10537,7 +10564,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/parsing/src/lib.rs",
-      "words": 387,
+      "words": 389,
       "updated": 0
     },
     {
@@ -14461,7 +14488,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 33834,
+      "words": 33904,
       "updated": 0
     },
     {
@@ -14479,7 +14506,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 279,
+      "words": 284,
       "updated": 0
     },
     {
@@ -14488,7 +14515,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 926,
+      "words": 943,
       "updated": 0
     },
     {
@@ -14497,7 +14524,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 207,
+      "words": 211,
       "updated": 0
     },
     {
@@ -14506,7 +14533,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1652,
+      "words": 1682,
       "updated": 0
     },
     {
@@ -14569,7 +14596,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3429,
+      "words": 3419,
       "updated": 0
     },
     {
@@ -16981,6 +17008,15 @@
       "title": "NativeHol",
       "status": "implemented",
       "path": "crates/kernel/hol/init/src/init/inductive/text_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0015:NativeHol carved S-expression checked prefix interpretation",
+      "kind": "implementation",
+      "title": "NativeHol carved S-expression checked prefix interpretation",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/sexpr_parse.rs",
       "words": 0,
       "updated": 0
     },
@@ -20450,15 +20486,6 @@
       "updated": 0
     },
     {
-      "id": "todo:lang.cfg-parsing.packed-forest",
-      "kind": "todo",
-      "title": "Represent cyclic/ambiguous derivations as a bounded shared packed parse forest instead of expanding every tree.",
-      "status": "major",
-      "path": "crates/lang/cfg-parsing/src/lib.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:lang.forsp.forsp-web-export-wiring-is-unbuilt",
       "kind": "todo",
       "title": "/forsp web-export wiring is unbuilt: forspreduce returns a",
@@ -21035,11 +21062,11 @@
       "updated": 0
     },
     {
-      "id": "todo:parsing.bytes.regex-replay",
+      "id": "todo:parsing.json.native-hol-a0015-replay",
       "kind": "todo",
-      "title": "Replay A0013 regex language-membership witnesses through a logic backend without conflating bounded host evaluation with soundness or completeness.",
+      "title": "Add the corresponding checked A0015 interpretation/PER replay adapter for jsonparse without changing its existing theorem statements.",
       "status": "major",
-      "path": "crates/lang/parsing/src/bytes.rs",
+      "path": "crates/kernel/hol/init/src/init/sexpr_parse.rs",
       "words": 0,
       "updated": 0
     },
@@ -21655,6 +21682,24 @@
       "source": "api:A0015",
       "predicate": "depends-on",
       "target": "api:A0014",
+      "detail": null
+    },
+    {
+      "source": "api:A0016",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/lexer-parsing/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0016",
+      "predicate": "depends-on",
+      "target": "api:A0013",
+      "detail": null
+    },
+    {
+      "source": "api:A0016",
+      "predicate": "depends-on",
+      "target": "api:A0015",
       "detail": null
     },
     {
@@ -25664,6 +25709,18 @@
       "predicate": "implements",
       "target": "api:A0014",
       "detail": "Unicode-scalar subtype and list-backed abstract strings"
+    },
+    {
+      "source": "impl:A0015:NativeHol carved S-expression checked prefix interpretation",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/sexpr_parse.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0015:NativeHol carved S-expression checked prefix interpretation",
+      "predicate": "implements",
+      "target": "api:A0015",
+      "detail": "fuel-bounded list-u8 reader theorem replay"
     },
     {
       "source": "note:notes/README.md",
@@ -31842,6 +31899,12 @@
       "title": "Text parsing and interpretation",
       "status": "experimental",
       "path": "crates/lang/parsing/src/lib.rs"
+    },
+    {
+      "id": "A0016",
+      "title": "Bounded lexical analysis",
+      "status": "experimental",
+      "path": "crates/lang/lexer-parsing/src/lib.rs"
     }
   ],
   "apiImplementations": [
@@ -31935,6 +31998,13 @@
       "name": "NativeHol",
       "representation": "Unicode-scalar subtype and list-backed abstract strings",
       "path": "crates/kernel/hol/init/src/init/inductive/text_api.rs"
+    },
+    {
+      "id": "impl:A0015:NativeHol carved S-expression checked prefix interpretation",
+      "apiId": "A0015",
+      "name": "NativeHol carved S-expression checked prefix interpretation",
+      "representation": "fuel-bounded list-u8 reader theorem replay",
+      "path": "crates/kernel/hol/init/src/init/sexpr_parse.rs"
     }
   ],
   "actors": [

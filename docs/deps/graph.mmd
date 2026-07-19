@@ -98,6 +98,10 @@ graph LR
   kernel-sat --> sat
   kernel-smt --> core
   kernel-smt --> hol-api
+  lexer-parsing --> grammar
+  lexer-parsing --> logic-api
+  lexer-parsing --> parsing-api
+  lexer-parsing --> regex-parsing
   lisp --> core
   lisp --> hol-api
   lisp --> hol-eval

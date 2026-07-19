@@ -34,6 +34,7 @@
     "covalence-kernel-smt",
     "covalence-kv",
     "covalence-lean",
+    "covalence-lexer-parsing",
     "covalence-lisp",
     "covalence-llm",
     "covalence-logic-api",
@@ -466,6 +467,22 @@
     {
       "from": "covalence-kernel-smt",
       "to": "covalence-hol-api"
+    },
+    {
+      "from": "covalence-lexer-parsing",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-lexer-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-lexer-parsing",
+      "to": "covalence-parsing-api"
+    },
+    {
+      "from": "covalence-lexer-parsing",
+      "to": "covalence-regex-parsing"
     },
     {
       "from": "covalence-lisp",

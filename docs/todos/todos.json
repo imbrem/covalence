@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 342,
-  "structured": 342,
+  "count": 341,
+  "structured": 341,
   "items": [
     {
       "id": "bits.abstract-bool-list-adapter",
@@ -2345,16 +2345,6 @@
       "crate": "covalence-kernel-smt"
     },
     {
-      "id": "lang.cfg-parsing.packed-forest",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Represent cyclic/ambiguous derivations as a bounded shared packed parse forest instead of expanding every tree.",
-      "structured": true,
-      "path": "crates/lang/cfg-parsing/src/lib.rs",
-      "line": 243,
-      "crate": "covalence-cfg-parsing"
-    },
-    {
       "id": "lang.forsp.forsp-web-export-wiring-is-unbuilt",
       "kind": "TODO",
       "severity": "minor",
@@ -2991,18 +2981,18 @@
       "summary": "Interpret CFG and PEG derivations as bounded A0013 relational witnesses with ambiguity and completeness tracked explicitly.",
       "structured": true,
       "path": "crates/lang/parsing/src/bytes.rs",
-      "line": 258,
+      "line": 364,
       "crate": "covalence-parsing-api"
     },
     {
-      "id": "parsing.bytes.regex-replay",
+      "id": "parsing.json.native-hol-a0015-replay",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Replay A0013 regex language-membership witnesses through a logic backend without conflating bounded host evaluation with soundness or completeness.",
+      "summary": "Add the corresponding checked A0015 interpretation/PER replay adapter for jsonparse without changing its existing theorem statements.",
       "structured": true,
-      "path": "crates/lang/parsing/src/bytes.rs",
-      "line": 257,
-      "crate": "covalence-parsing-api"
+      "path": "crates/kernel/hol/init/src/init/sexpr_parse.rs",
+      "line": 604,
+      "crate": "covalence-init"
     },
     {
       "id": "proof.alethe.content-addressed-proof-cache",

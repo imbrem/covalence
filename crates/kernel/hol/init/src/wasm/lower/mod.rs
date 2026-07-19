@@ -77,6 +77,7 @@ use crate::init::ext::TermExt;
 use crate::metalogic::RuleSet;
 
 pub mod builtins;
+pub mod decision;
 pub mod decs;
 pub mod else_;
 pub mod evalrel;

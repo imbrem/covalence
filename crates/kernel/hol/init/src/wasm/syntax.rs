@@ -688,10 +688,7 @@ fn resolve_variant<'a>(
 
 /// Whether any constructor payload mentions the self type variable.
 fn is_recursive(v: &Variant) -> bool {
-    let self_tv = self_ty_var().free_tvars();
-    v.ctors
-        .iter()
-        .any(|c| c.payload.free_tvars().iter().any(|t| self_tv.contains(t)))
+    v.is_recursive()
 }
 
 /// The generic [`Variant`] description a variant's cases denote (constructor name

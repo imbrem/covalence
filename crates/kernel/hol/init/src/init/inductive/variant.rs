@@ -27,8 +27,10 @@
 
 use covalence_core::subst::close;
 use covalence_core::{Error, Result, Term, Type};
+use covalence_hol_eval::EvalThm as Thm;
+use covalence_hol_eval::derived::DerivedRules;
 
-use crate::init::coprod::{coprod, inl, inr};
+use crate::init::coprod::{coprod, inl, inl_inj, inl_ne_inr, inr, inr_inj};
 use crate::init::ext::TermExt;
 
 /// One constructor: a name and the HOL type of its payload.
@@ -61,6 +63,20 @@ impl Variant {
     fn payloads(&self) -> Vec<Type> {
         self.ctors.iter().map(|c| c.payload.clone()).collect()
     }
+
+    /// Whether a payload mentions the reserved recursive self type.
+    ///
+    /// Such a description belongs to [`ChurchBackend`], not to the exact
+    /// non-recursive [`CoprodVariantTheory`].
+    pub fn is_recursive(&self) -> bool {
+        let self_vars = self_ty_var().free_tvars();
+        self.ctors.iter().any(|ctor| {
+            ctor.payload
+                .free_tvars()
+                .iter()
+                .any(|v| self_vars.contains(v))
+        })
+    }
 }
 
 fn variant_err(msg: impl Into<String>) -> Error {
@@ -77,10 +93,61 @@ pub trait VariantBackend {
     fn ctor(&self, v: &Variant, i: usize) -> Result<Term>;
 }
 
+/// The theorem-bearing interface to a realized, non-recursive variant.
+///
+/// Constructor names remain part of this interface even when the concrete
+/// representation has no runtime tag to retain.  In particular, the
+/// behavior-preserving coproduct backend realizes a one-constructor variant as
+/// its payload and its sole constructor as the identity; callers must not
+/// mistake that representation choice for nominal separation between two
+/// separately declared one-constructor variants.
+pub trait VariantTheory {
+    /// The concrete HOL carrier.
+    fn carrier(&self) -> &Type;
+
+    /// Number of constructors, in source order.
+    fn constructor_count(&self) -> usize;
+
+    /// Source-level constructor name at `i`.
+    fn constructor_name(&self, i: usize) -> Result<&str>;
+
+    /// Payload type at `i`.
+    fn payload_type(&self, i: usize) -> Result<&Type>;
+
+    /// Constructor `i`, as `payloadᵢ → carrier`.
+    fn constructor(&self, i: usize) -> Result<&Term>;
+
+    /// Look up a source-level constructor name.  Duplicate names are rejected
+    /// as ambiguous instead of silently selecting one.
+    fn constructor_named(&self, name: &str) -> Result<(usize, &Term)>;
+
+    /// `⊢ Cᵢ x = Cᵢ y ⟹ x = y`.
+    fn injective(&self, i: usize, x: &Term, y: &Term) -> Result<Thm>;
+
+    /// `⊢ ¬(Cᵢ x = Cⱼ y)` for distinct `i` and `j`.
+    fn distinct(&self, i: usize, j: usize, x: &Term, y: &Term) -> Result<Thm>;
+}
+
+/// A backend that can supply the theorem-bearing variant interface.
+pub trait VariantTheoryBackend {
+    type Theory: VariantTheory;
+
+    fn theory(&self, variant: &Variant) -> Result<Self::Theory>;
+}
+
 /// The coproduct-of-payloads backend: `ty = P₀ ⊕ (P₁ ⊕ (… ⊕ Pₙ))`, constructors
 /// are the corresponding injection composites. Constructor injectivity /
 /// disjointness are inherited from [`coprod`](mod@crate::init::coprod)'s lemmas.
 pub struct CoprodBackend;
+
+/// A cached coproduct realization with freeness proofs derived from the
+/// existing kernel-checked coproduct injection laws.
+#[derive(Debug, Clone)]
+pub struct CoprodVariantTheory {
+    variant: Variant,
+    carrier: Type,
+    constructors: Vec<Term>,
+}
 
 /// `P₀ ⊕ (P₁ ⊕ (… ⊕ Pₙ))` — right-nested coproduct (`[P]` = `P`).
 fn fold_coprod(payloads: &[Type]) -> Result<Type> {
@@ -122,6 +189,162 @@ impl VariantBackend for CoprodBackend {
         let x = Term::free("x", payload_i.clone());
         let body = inject(&payloads, i, x)?;
         Ok(Term::abs(payload_i, close(&body, "x")))
+    }
+}
+
+impl VariantTheoryBackend for CoprodBackend {
+    type Theory = CoprodVariantTheory;
+
+    fn theory(&self, variant: &Variant) -> Result<Self::Theory> {
+        if variant.is_recursive() {
+            return Err(variant_err(
+                "coproduct theory is only faithful for non-recursive variants",
+            ));
+        }
+        let carrier = self.ty(variant)?;
+        let constructors = (0..variant.ctors.len())
+            .map(|i| self.ctor(variant, i))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(CoprodVariantTheory {
+            variant: variant.clone(),
+            carrier,
+            constructors,
+        })
+    }
+}
+
+impl CoprodVariantTheory {
+    fn checked_payload(&self, i: usize, value: &Term) -> Result<()> {
+        let expected = self.payload_type(i)?;
+        let actual = value.type_of()?;
+        if &actual != expected {
+            return Err(variant_err(format!(
+                "constructor {i} payload has type {actual:?}, expected {expected:?}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Convert an equality between the public constructor applications to the
+    /// β-reduced nested-injection equality used by the coproduct laws.
+    fn reduced_constructor_eq(
+        &self,
+        i: usize,
+        x: &Term,
+        j: usize,
+        y: &Term,
+    ) -> Result<(Term, Thm)> {
+        self.checked_payload(i, x)?;
+        self.checked_payload(j, y)?;
+        let lhs = self.constructor(i)?.clone().apply(x.clone())?;
+        let rhs = self.constructor(j)?.clone().apply(y.clone())?;
+        let public_eq = lhs.clone().equals(rhs.clone())?;
+        let assumed = Thm::assume(public_eq.clone())?;
+        let reduced = lhs.reduce()?.sym()?.trans(assumed)?.trans(rhs.reduce()?)?;
+        Ok((public_eq, reduced))
+    }
+}
+
+impl VariantTheory for CoprodVariantTheory {
+    fn carrier(&self) -> &Type {
+        &self.carrier
+    }
+
+    fn constructor_count(&self) -> usize {
+        self.constructors.len()
+    }
+
+    fn constructor_name(&self, i: usize) -> Result<&str> {
+        self.variant
+            .ctors
+            .get(i)
+            .map(|ctor| ctor.name.as_str())
+            .ok_or_else(|| variant_err("constructor index out of range"))
+    }
+
+    fn payload_type(&self, i: usize) -> Result<&Type> {
+        self.variant
+            .ctors
+            .get(i)
+            .map(|ctor| &ctor.payload)
+            .ok_or_else(|| variant_err("constructor index out of range"))
+    }
+
+    fn constructor(&self, i: usize) -> Result<&Term> {
+        self.constructors
+            .get(i)
+            .ok_or_else(|| variant_err("constructor index out of range"))
+    }
+
+    fn constructor_named(&self, name: &str) -> Result<(usize, &Term)> {
+        let mut found = self
+            .variant
+            .ctors
+            .iter()
+            .enumerate()
+            .filter(|(_, ctor)| ctor.name == name);
+        let Some((i, _)) = found.next() else {
+            return Err(variant_err(format!("unknown constructor `{name}`")));
+        };
+        if found.next().is_some() {
+            return Err(variant_err(format!("ambiguous constructor `{name}`")));
+        }
+        Ok((i, &self.constructors[i]))
+    }
+
+    fn injective(&self, i: usize, x: &Term, y: &Term) -> Result<Thm> {
+        let (public_eq, mut reduced) = self.reduced_constructor_eq(i, x, i, y)?;
+        let payloads = self.variant.payloads();
+        if i >= payloads.len() {
+            return Err(variant_err("constructor index out of range"));
+        }
+
+        // Strip the common right-injection prefix.
+        for depth in 0..i {
+            let rest = fold_coprod(&payloads[depth + 1..])?;
+            let left = inject(&payloads[depth + 1..], i - depth - 1, x.clone())?;
+            let right = inject(&payloads[depth + 1..], i - depth - 1, y.clone())?;
+            reduced = inr_inj(&payloads[depth], &rest, &left, &right)?.imp_elim(reduced)?;
+        }
+
+        // The final arm is an `inl`, except that the last/single arm is the
+        // behavior-preserving identity representation.
+        if i + 1 < payloads.len() {
+            let rest = fold_coprod(&payloads[i + 1..])?;
+            reduced = inl_inj(&payloads[i], &rest, x, y)?.imp_elim(reduced)?;
+        }
+        reduced.imp_intro(&public_eq)
+    }
+
+    fn distinct(&self, i: usize, j: usize, x: &Term, y: &Term) -> Result<Thm> {
+        if i == j {
+            return Err(variant_err(
+                "distinctness requires two different constructors",
+            ));
+        }
+        let (public_eq, mut reduced) = self.reduced_constructor_eq(i, x, j, y)?;
+        let payloads = self.variant.payloads();
+        if i >= payloads.len() || j >= payloads.len() {
+            return Err(variant_err("constructor index out of range"));
+        }
+
+        let common = i.min(j);
+        for depth in 0..common {
+            let rest = fold_coprod(&payloads[depth + 1..])?;
+            let left = inject(&payloads[depth + 1..], i - depth - 1, x.clone())?;
+            let right = inject(&payloads[depth + 1..], j - depth - 1, y.clone())?;
+            reduced = inr_inj(&payloads[depth], &rest, &left, &right)?.imp_elim(reduced)?;
+        }
+
+        let rest = fold_coprod(&payloads[common + 1..])?;
+        let false_thm = if i < j {
+            let right = inject(&payloads[common + 1..], j - common - 1, y.clone())?;
+            inl_ne_inr(&payloads[common], &rest, x, &right)?.not_elim(reduced)?
+        } else {
+            let left = inject(&payloads[common + 1..], i - common - 1, x.clone())?;
+            inl_ne_inr(&payloads[common], &rest, y, &left)?.not_elim(reduced.sym()?)?
+        };
+        false_thm.imp_intro(&public_eq)?.not_intro()
     }
 }
 
@@ -229,6 +452,88 @@ mod tests {
     #[test]
     fn out_of_range_constructor_errors() {
         assert!(CoprodBackend.ctor(&enum3(), 3).is_err());
+    }
+
+    #[test]
+    fn theory_proves_every_constructor_injective() {
+        let theory = CoprodBackend.theory(&enum3()).unwrap();
+        for i in 0..theory.constructor_count() {
+            let x = Term::free(format!("x{i}"), Type::unit());
+            let y = Term::free(format!("y{i}"), Type::unit());
+            let theorem = theory.injective(i, &x, &y).unwrap();
+            let expected = theory
+                .constructor(i)
+                .unwrap()
+                .clone()
+                .apply(x.clone())
+                .unwrap()
+                .equals(
+                    theory
+                        .constructor(i)
+                        .unwrap()
+                        .clone()
+                        .apply(y.clone())
+                        .unwrap(),
+                )
+                .unwrap()
+                .imp(x.equals(y).unwrap())
+                .unwrap();
+            assert_eq!(theorem.concl(), &expected, "ctor {i}");
+            assert!(theorem.hyps().is_empty(), "ctor {i}");
+        }
+    }
+
+    #[test]
+    fn theory_proves_all_ordered_constructor_pairs_distinct() {
+        let theory = CoprodBackend.theory(&enum3()).unwrap();
+        for i in 0..theory.constructor_count() {
+            for j in 0..theory.constructor_count() {
+                if i == j {
+                    continue;
+                }
+                let x = Term::free(format!("x{i}{j}"), Type::unit());
+                let y = Term::free(format!("y{i}{j}"), Type::unit());
+                let theorem = theory.distinct(i, j, &x, &y).unwrap();
+                let expected = theory
+                    .constructor(i)
+                    .unwrap()
+                    .clone()
+                    .apply(x)
+                    .unwrap()
+                    .equals(theory.constructor(j).unwrap().clone().apply(y).unwrap())
+                    .unwrap()
+                    .not()
+                    .unwrap();
+                assert_eq!(theorem.concl(), &expected, "ctors {i}, {j}");
+                assert!(theorem.hyps().is_empty(), "ctors {i}, {j}");
+            }
+        }
+    }
+
+    #[test]
+    fn single_constructor_keeps_its_nominal_api_tag_and_identity_behavior() {
+        let variant = Variant::new(vec![VCtor::new("ONLY", Type::nat())]);
+        let theory = CoprodBackend.theory(&variant).unwrap();
+        assert_eq!(theory.carrier(), &Type::nat());
+        assert_eq!(theory.constructor_count(), 1);
+        assert_eq!(theory.constructor_name(0).unwrap(), "ONLY");
+        assert_eq!(theory.constructor_named("ONLY").unwrap().0, 0);
+        assert!(theory.constructor_named("OTHER").is_err());
+
+        let x = Term::free("x", Type::nat());
+        let y = Term::free("y", Type::nat());
+        let theorem = theory.injective(0, &x, &y).unwrap();
+        assert!(theorem.hyps().is_empty());
+        assert!(theory.distinct(0, 0, &x, &y).is_err());
+    }
+
+    #[test]
+    fn theory_refuses_recursive_self_placeholder() {
+        let recursive = Variant::new(vec![
+            VCtor::new("NIL", Type::unit()),
+            VCtor::new("CONS", self_ty_var()),
+        ]);
+        assert!(CoprodBackend.theory(&recursive).is_err());
     }
 
     #[test]

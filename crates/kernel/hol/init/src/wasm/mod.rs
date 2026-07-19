@@ -43,5 +43,7 @@ pub mod denote;
 pub mod encode;
 pub mod lower;
 pub mod relation;
+pub mod sort;
 pub mod spec;
 pub mod syntax;
+pub mod type_family;

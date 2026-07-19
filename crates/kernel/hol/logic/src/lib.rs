@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bytes;
 pub mod nat;
 pub mod relation;
 
@@ -232,3 +233,9 @@ pub trait BinderRules: QuantifierSyntax + TheoremView {
         argument: Self::Term,
     ) -> Result<Self::Thm, Self::Error>;
 }
+pub use bytes::{
+    ByteNatBridge, ByteNatBridgeLaws, ByteSyntax, BytesConcatLaws, BytesConstruction,
+    BytesNormalization, BytesObservation, BytesObservationLaws, BytesSyntax, Endianness,
+    FixedWidthNatBytesEncoding, FixedWidthNatBytesEncodingLaws, MinimalNatBytesEncoding,
+    MinimalNatBytesEncodingLaws,
+};

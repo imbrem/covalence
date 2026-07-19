@@ -13,6 +13,14 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bytes;
+
+pub use bytes::{
+    ByteParseDiagnostic, ByteParseError, ByteParseJudgment, ByteParseLaws, ByteParseOutcome,
+    ByteParseWitness, ByteParser, ByteParserRelation, ByteParserTheory, ByteSpan, LiteralBytes,
+    ParseBudget, ParseFailure,
+};
+
 /// A positive interpretation judgment: `source` denotes `value`, witnessed by
 /// backend-specific evidence.
 #[derive(Clone, Debug, PartialEq, Eq)]

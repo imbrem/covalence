@@ -115,6 +115,7 @@ pub mod nat_parse_agree;
 pub mod nat_parse_bytes;
 pub mod nat_thy;
 pub mod option;
+pub mod parsing_bytes;
 pub mod preorder;
 pub mod prod;
 pub mod prop;

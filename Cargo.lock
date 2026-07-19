@@ -1167,6 +1167,7 @@ dependencies = [
  "covalence-k",
  "covalence-logic-api",
  "covalence-metamath",
+ "covalence-parsing-api",
  "covalence-sexp",
  "covalence-spectec",
  "covalence-types",
@@ -1389,6 +1390,9 @@ dependencies = [
 [[package]]
 name = "covalence-parsing-api"
 version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
+]
 
 [[package]]
 name = "covalence-proptest"

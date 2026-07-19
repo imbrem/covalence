@@ -71,7 +71,10 @@ disable-model-invocation: true
     operational: it supports lexical or dynamic scope, deterministic
     left-to-right or right-to-left evaluation of operator and operands, and a
     relational mode whose bounded breadth-first explorer retains every
-    discovered trace and an explicit truncated frontier.
+    discovered trace and an explicit truncated frontier. Effects use the A0025
+    suspend/request/resume API: pure machines never perform host actions;
+    proof-free handlers return responses and retain auditable transcripts,
+    while theorem authority requires a separate replay capability.
   - `crates/lang/lisp` is the current compatibility/demo frontend. Its
     NativeHol `LispRel` implements the neutral step and replay capabilities,
     while ACL2-specific worlds and derivations are incrementally separated
@@ -80,7 +83,9 @@ disable-model-invocation: true
     `CoreExpr`; Scheme compiles it to equational HOL and Sector to relational
     HOL. The proof-free Forsp frontend instead targets the sibling stack
     capability because its call-by-push-value semantics is genuinely
-    concatenative.
+    concatenative. Forsp `read`/`print` and optional low-level pointer
+    primitives suspend through A0025; the bundled safe host adapter handles
+    only I/O and rejects pointer requests.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

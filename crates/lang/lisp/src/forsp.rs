@@ -11,8 +11,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use covalence_kernel_lisp::{
-    Datum, DeterministicStep, HostEnvironment, StackConfiguration, StackContinuation,
-    StackInstructionSyntax, StackProgramSyntax, StepRelation,
+    Datum, DeterministicStep, EffectHandler, EffectResume, EffectState, EffectSuspension,
+    HostEnvironment, StackConfiguration, StackContinuation, StackInstructionSyntax,
+    StackProgramSyntax, StepRelation, TerminalValue,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -32,6 +33,18 @@ pub enum ForspPrimitive {
     Stack,
 }
 
+/// Effects in the reference Forsp implementation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ForspEffect {
+    Read,
+    Print,
+    PointerState,
+    PointerRead,
+    PointerWrite,
+    PointerToObject,
+    PointerFromObject,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ForspInstruction {
     Literal(Datum<CoreAtom>),
@@ -41,6 +54,7 @@ pub enum ForspInstruction {
     PushBinding(String),
     Resolve(String),
     Primitive(ForspPrimitive),
+    Effect(ForspEffect),
 }
 
 pub type ForspCode = Arc<[ForspInstruction]>;
@@ -61,6 +75,71 @@ pub type ForspEnvironment = HostEnvironment<String, ForspValue>;
 pub type ForspConfiguration = StackConfiguration<ForspCode, ForspValue, ForspEnvironment>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ForspRequest {
+    Read,
+    Print(ForspValue),
+    PointerState,
+    PointerRead(ForspValue),
+    PointerWrite {
+        address: ForspValue,
+        value: ForspValue,
+    },
+    PointerToObject(ForspValue),
+    PointerFromObject(ForspValue),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ForspResponse {
+    Value(ForspValue),
+    Unit,
+}
+
+pub type ForspEffectState = EffectState<ForspConfiguration, ForspRequest>;
+
+/// Host I/O capability for the safe reference effects.
+pub trait ForspIo {
+    type Error;
+
+    fn read(&mut self) -> Result<ForspValue, Self::Error>;
+    fn print(&mut self, value: &ForspValue) -> Result<(), Self::Error>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ForspIoHandlerError<E> {
+    Io(E),
+    UnsafeRequest,
+}
+
+/// Proof-free adapter from safe Forsp requests to a host I/O capability.
+pub struct ForspIoHandler<H> {
+    pub host: H,
+}
+
+impl<H: ForspIo> EffectHandler<ForspRequest, ForspResponse> for ForspIoHandler<H> {
+    type Error = ForspIoHandlerError<H::Error>;
+
+    fn handle(&mut self, request: &ForspRequest) -> Result<ForspResponse, Self::Error> {
+        match request {
+            ForspRequest::Read => self
+                .host
+                .read()
+                .map(ForspResponse::Value)
+                .map_err(ForspIoHandlerError::Io),
+            ForspRequest::Print(value) => self
+                .host
+                .print(value)
+                .map(|()| ForspResponse::Unit)
+                .map_err(ForspIoHandlerError::Io),
+            ForspRequest::PointerState
+            | ForspRequest::PointerRead(_)
+            | ForspRequest::PointerWrite { .. }
+            | ForspRequest::PointerToObject(_)
+            | ForspRequest::PointerFromObject(_) => Err(ForspIoHandlerError::UnsafeRequest),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ForspError {
     EmptyStack,
     Unbound(String),
@@ -68,6 +147,8 @@ pub enum ForspError {
     ExpectedCons,
     ExpectedInteger,
     MalformedQuote,
+    UnhandledEffect(ForspEffect),
+    InvalidEffectResponse,
 }
 
 impl Display for ForspError {
@@ -79,6 +160,12 @@ impl Display for ForspError {
             Self::ExpectedCons => f.write_str("Forsp projection expected a cons cell"),
             Self::ExpectedInteger => f.write_str("Forsp arithmetic expected exact integers"),
             Self::MalformedQuote => f.write_str("Forsp `quote` has no following datum"),
+            Self::UnhandledEffect(effect) => {
+                write!(f, "Forsp effect `{effect:?}` requires an explicit handler")
+            }
+            Self::InvalidEffectResponse => {
+                f.write_str("Forsp handler returned a response of the wrong shape")
+            }
         }
     }
 }
@@ -192,6 +279,8 @@ impl ForspFrontend {
                     ForspInstruction::Literal(self.quote(form))
                 } else if let Some(primitive) = primitive(text) {
                     ForspInstruction::Primitive(primitive)
+                } else if let Some(effect) = effect(text) {
+                    ForspInstruction::Effect(effect)
                 } else {
                     ForspInstruction::Resolve(text.to_string())
                 }
@@ -347,6 +436,19 @@ fn primitive(name: &str) -> Option<ForspPrimitive> {
         "-" => ForspPrimitive::Subtract,
         "*" => ForspPrimitive::Multiply,
         "stack" => ForspPrimitive::Stack,
+        _ => return None,
+    })
+}
+
+fn effect(name: &str) -> Option<ForspEffect> {
+    Some(match name {
+        "read" => ForspEffect::Read,
+        "print" => ForspEffect::Print,
+        "ptr-state" => ForspEffect::PointerState,
+        "ptr-read" => ForspEffect::PointerRead,
+        "ptr-write" => ForspEffect::PointerWrite,
+        "ptr-to-obj" => ForspEffect::PointerToObject,
+        "ptr-from-obj" => ForspEffect::PointerFromObject,
         _ => return None,
     })
 }
@@ -514,6 +616,7 @@ impl DeterministicStep for ForspMachine {
                 }
             }
             ForspInstruction::Primitive(primitive) => self.apply(primitive, &mut next)?,
+            ForspInstruction::Effect(effect) => return Err(ForspError::UnhandledEffect(effect)),
         }
         Ok(Some(next))
     }
@@ -531,12 +634,116 @@ impl StepRelation for ForspMachine {
     }
 }
 
-// TODO(cov:lisp.forsp.effects, major): Model read/print and unsafe pointer primitives as explicit effect capabilities outside the pure machine.
+/// Forsp reduction with explicit effect suspension.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ForspEffectMachine;
+
+impl ForspEffectMachine {
+    pub fn initial(code: ForspCode) -> ForspEffectState {
+        EffectState::Running(ForspMachine::initial(code))
+    }
+
+    fn request(
+        effect: ForspEffect,
+        continuation: &mut ForspConfiguration,
+    ) -> Result<ForspRequest, ForspError> {
+        Ok(match effect {
+            ForspEffect::Read => ForspRequest::Read,
+            ForspEffect::Print => ForspRequest::Print(ForspMachine::pop(continuation)?),
+            ForspEffect::PointerState => ForspRequest::PointerState,
+            ForspEffect::PointerRead => ForspRequest::PointerRead(ForspMachine::pop(continuation)?),
+            ForspEffect::PointerWrite => {
+                let value = ForspMachine::pop(continuation)?;
+                let address = ForspMachine::pop(continuation)?;
+                ForspRequest::PointerWrite { address, value }
+            }
+            ForspEffect::PointerToObject => {
+                ForspRequest::PointerToObject(ForspMachine::pop(continuation)?)
+            }
+            ForspEffect::PointerFromObject => {
+                ForspRequest::PointerFromObject(ForspMachine::pop(continuation)?)
+            }
+        })
+    }
+}
+
+impl DeterministicStep for ForspEffectMachine {
+    fn next(&self, state: &ForspEffectState) -> Result<Option<ForspEffectState>, ForspError> {
+        match state {
+            EffectState::Suspended(_) | EffectState::Returned(_) => Ok(None),
+            EffectState::Running(configuration) => {
+                if let Some(ForspInstruction::Effect(effect)) =
+                    configuration.code.get(configuration.cursor)
+                {
+                    let mut continuation = configuration.clone();
+                    continuation.cursor += 1;
+                    let request = Self::request(*effect, &mut continuation)?;
+                    return Ok(Some(EffectState::Suspended(EffectSuspension {
+                        continuation,
+                        request,
+                    })));
+                }
+                Ok(Some(match ForspMachine.next(configuration)? {
+                    Some(next) => EffectState::Running(next),
+                    None => EffectState::Returned(configuration.clone()),
+                }))
+            }
+        }
+    }
+}
+
+impl StepRelation for ForspEffectMachine {
+    type Configuration = ForspEffectState;
+    type Error = ForspError;
+
+    fn successors(&self, state: &ForspEffectState) -> Result<Vec<ForspEffectState>, ForspError> {
+        Ok(self.next(state)?.into_iter().collect())
+    }
+}
+
+impl TerminalValue for ForspEffectMachine {
+    type Value = ForspConfiguration;
+
+    fn terminal_value(&self, state: &ForspEffectState) -> Option<Self::Value> {
+        match state {
+            EffectState::Returned(configuration) => Some(configuration.clone()),
+            EffectState::Running(_) | EffectState::Suspended(_) => None,
+        }
+    }
+}
+
+impl EffectResume for ForspEffectMachine {
+    type Configuration = ForspConfiguration;
+    type Request = ForspRequest;
+    type Response = ForspResponse;
+    type Error = ForspError;
+
+    fn resume(
+        &self,
+        suspension: EffectSuspension<ForspConfiguration, ForspRequest>,
+        response: ForspResponse,
+    ) -> Result<ForspConfiguration, ForspError> {
+        let mut continuation = suspension.continuation;
+        match (suspension.request, response) {
+            (ForspRequest::Read, ForspResponse::Value(value))
+            | (ForspRequest::PointerState, ForspResponse::Value(value))
+            | (ForspRequest::PointerRead(_), ForspResponse::Value(value))
+            | (ForspRequest::PointerToObject(_), ForspResponse::Value(value))
+            | (ForspRequest::PointerFromObject(_), ForspResponse::Value(value)) => {
+                continuation.operands.push(value);
+            }
+            (ForspRequest::Print(_), ForspResponse::Unit)
+            | (ForspRequest::PointerWrite { .. }, ForspResponse::Unit) => {}
+            _ => return Err(ForspError::InvalidEffectResponse),
+        }
+        Ok(continuation)
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covalence_kernel_lisp::execute;
+    use covalence_kernel_lisp::{HandledEffect, execute};
 
     fn program(source: &str) -> ForspCode {
         let form = read(source).unwrap().pop().unwrap();
@@ -593,5 +800,96 @@ mod tests {
                 Int::from(1)
             )))]
         );
+    }
+
+    #[derive(Default)]
+    struct RecordingIo {
+        input: Vec<ForspValue>,
+        printed: Vec<ForspValue>,
+    }
+
+    impl ForspIo for RecordingIo {
+        type Error = &'static str;
+
+        fn read(&mut self) -> Result<ForspValue, Self::Error> {
+            if self.input.is_empty() {
+                Err("end of input")
+            } else {
+                Ok(self.input.remove(0))
+            }
+        }
+
+        fn print(&mut self, value: &ForspValue) -> Result<(), Self::Error> {
+            self.printed.push(value.clone());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn pure_machine_rejects_effects_instead_of_performing_host_io() {
+        let error =
+            execute(&ForspMachine, ForspMachine::initial(program("(read)")), 4).unwrap_err();
+        assert!(matches!(
+            error,
+            covalence_kernel_lisp::ExecutionError::Relation(ForspError::UnhandledEffect(
+                ForspEffect::Read
+            ))
+        ));
+    }
+
+    #[test]
+    fn safe_io_suspends_resumes_and_retains_a_transcript() {
+        let machine = ForspEffectMachine;
+        let mut state = ForspEffectMachine::initial(program("(read 1 + print)"));
+        let mut handler = ForspIoHandler {
+            host: RecordingIo {
+                input: vec![ForspValue::Datum(Datum::Atom(CoreAtom::Integer(
+                    Int::from(41),
+                )))],
+                printed: Vec::new(),
+            },
+        };
+        let mut transcript = Vec::new();
+
+        for _ in 0..32 {
+            state = match state {
+                EffectState::Running(_) => machine.next(&state).unwrap().unwrap(),
+                EffectState::Suspended(suspension) => {
+                    let request = suspension.request.clone();
+                    let response = handler.handle(&request).unwrap();
+                    transcript.push(HandledEffect {
+                        request,
+                        response: response.clone(),
+                    });
+                    EffectState::Running(machine.resume(suspension, response).unwrap())
+                }
+                EffectState::Returned(_) => break,
+            };
+        }
+
+        let EffectState::Returned(configuration) = state else {
+            panic!("effectful Forsp program must return")
+        };
+        assert!(configuration.operands.is_empty());
+        assert_eq!(transcript.len(), 2);
+        assert!(matches!(transcript[0].request, ForspRequest::Read));
+        assert!(matches!(transcript[1].request, ForspRequest::Print(_)));
+        assert_eq!(
+            handler.host.printed,
+            vec![ForspValue::Datum(Datum::Atom(CoreAtom::Integer(
+                Int::from(42)
+            )))]
+        );
+    }
+
+    #[test]
+    fn safe_handler_refuses_low_level_pointer_requests() {
+        let mut handler = ForspIoHandler {
+            host: RecordingIo::default(),
+        };
+        assert!(matches!(
+            handler.handle(&ForspRequest::PointerState),
+            Err(ForspIoHandlerError::UnsafeRequest)
+        ));
     }
 }

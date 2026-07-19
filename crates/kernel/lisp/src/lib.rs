@@ -22,6 +22,7 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod effect;
 pub mod host;
 pub mod relation;
 pub mod stack;
@@ -33,6 +34,10 @@ pub use covalence_sexpr_api as sexpr;
 pub use admission::{
     AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition, ExistenceUniqueness,
     RecursiveCall, TerminationCertificate, Totalization,
+};
+pub use effect::{
+    EffectHandler, EffectReplay, EffectRequest, EffectResume, EffectState, EffectSuspension,
+    EffectSyntax, HandledEffect,
 };
 pub use host::{
     CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum, HostConfiguration,

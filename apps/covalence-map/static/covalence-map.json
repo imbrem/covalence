@@ -250,7 +250,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 248,
+      "words": 253,
       "updated": 0
     },
     {
@@ -700,7 +700,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35621,
+      "words": 35612,
       "updated": 0
     },
     {
@@ -9340,7 +9340,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 52,
+      "words": 57,
       "updated": 0
     },
     {
@@ -10744,7 +10744,7 @@
       "title": "forsp.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/forsp.rs",
-      "words": 598,
+      "words": 896,
       "updated": 0
     },
     {
@@ -15289,7 +15289,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35621,
+      "words": 35612,
       "updated": 0
     },
     {
@@ -15397,7 +15397,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3529,
+      "words": 3519,
       "updated": 0
     },
     {
@@ -22048,15 +22048,6 @@
       "title": "Bring the append admission/execution/induction integration gate below ten seconds and enable it in the default ACL2 test suite.",
       "status": "major",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:lisp.forsp.effects",
-      "kind": "todo",
-      "title": "Model read/print and unsafe pointer primitives as explicit effect capabilities outside the pure machine.",
-      "status": "major",
-      "path": "crates/lang/lisp/src/forsp.rs",
       "words": 0,
       "updated": 0
     },

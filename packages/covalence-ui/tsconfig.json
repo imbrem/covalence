@@ -1,0 +1,13 @@
+{
+  // `check` runs plain `tsc --noEmit` over the `.ts` sources only. The `.svelte`
+  // components are NOT typechecked: svelte ships an ambient `declare module
+  // '*.svelte'`, so tsc resolves component imports to an opaque type and never
+  // looks inside them. svelte-check is the right tool but is not installed in
+  // this workspace and `bunx svelte-check` needs a network fetch.
+  // TODO(cov:web.ui-svelte-check, minor): Add svelte-check as a devDependency and point `check` at it.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["vitest/globals"]
+  },
+  "include": ["src/**/*.ts"]
+}

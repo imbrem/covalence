@@ -316,6 +316,10 @@
       "to": "covalence-types"
     },
     {
+      "from": "covalence-inductive",
+      "to": "covalence-logic-api"
+    },
+    {
       "from": "covalence-init",
       "to": "covalence-core"
     },

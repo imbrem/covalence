@@ -13,7 +13,7 @@ import {
 	STRING_DIAGRAM_MAGIC,
 	magicOf,
 } from './decode.js';
-import type { Hash } from './types.js';
+import type { HashBytes } from './types.js';
 
 describe('magic sniffing', () => {
 	it('recognises every graph-family magic', () => {
@@ -195,8 +195,8 @@ describe('resolveDiagram', () => {
 		const labels = new Uint8Array([...LABEL_LIST_MAGIC, 1, 3,
 			1, 1, 0x61, 1, 1, 0x62, 1, 1, 0x63]);
 		const kinds = new Uint8Array([...KIND_FLAGS_MAGIC, 1, 3, 0b001]);
-		const labelHash: Hash = new Uint8Array(32).fill(0x10);
-		const kindsHash: Hash = new Uint8Array(32).fill(0x20);
+		const labelHash: HashBytes = new Uint8Array(32).fill(0x10);
+		const kindsHash: HashBytes = new Uint8Array(32).fill(0x20);
 		const store = new Map<string, Uint8Array>([
 			[hexOf(labelHash), labels],
 			[hexOf(kindsHash), kinds],

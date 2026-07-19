@@ -36,9 +36,59 @@ pub fn verify_all(db: &Database) -> Result<usize, MmError> {
     Ok(count)
 }
 
+/// An observer notified of every event of a proof replay, in order.
+///
+/// This is the **only** extension point on the checker: [`replay`] is the single
+/// replay implementation, and [`verify_assertion`] is `replay` with a no-op
+/// observer. Anything that needs to *watch* a verifying replay (the proof-trace
+/// builder in [`crate::trace`], say) implements this rather than forking a
+/// second, divergeable verifier. Observers are passive — they cannot influence
+/// the stack, the substitution, or any check.
+pub trait ReplayObserver {
+    /// A `$f` floating hypothesis pushed `pushed`; `depth` is the resulting
+    /// stack depth.
+    fn float_hyp(&mut self, _label: &str, _pushed: &Expr, _depth: usize) {}
+    /// A `$e` essential hypothesis pushed `pushed`.
+    fn essential_hyp(&mut self, _label: &str, _pushed: &Expr, _depth: usize) {}
+    /// `target` was applied: `args` are the popped mandatory arguments (floats
+    /// first, then essentials), `subst` the substitution derived from the
+    /// floats and checked against the essentials, `pushed` the substituted
+    /// conclusion. Called only *after* every check has passed.
+    fn assertion(
+        &mut self,
+        _label: &str,
+        _target: &Assertion,
+        _args: &[Expr],
+        _subst: &Subst,
+        _pushed: &Expr,
+        _depth: usize,
+    ) {
+    }
+    /// A `Z` marker saved the top of stack (`saved`) to the heap.
+    fn save(&mut self, _saved: &Expr, _depth: usize) {}
+    /// A heap backreference re-pushed the entry at `idx`.
+    fn heap(&mut self, _idx: usize, _pushed: &Expr, _depth: usize) {}
+}
+
+/// The no-op observer: plain verification.
+impl ReplayObserver for () {}
+
 /// Verify a single `$p` assertion's proof against the database. `$a` axioms
 /// (no proof) verify trivially.
 pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmError> {
+    replay(db, assertion, &mut ())
+}
+
+/// Replay `assertion`'s proof, reporting each event to `obs`.
+///
+/// **This is the verifier.** [`verify_assertion`] is exactly this function with
+/// a no-op observer, so an observed replay performs bit-for-bit the same checks
+/// — no separate code path exists to drift out of sync.
+pub fn replay(
+    db: &Database,
+    assertion: &Assertion,
+    obs: &mut dyn ReplayObserver,
+) -> Result<(), MmError> {
     let Some(proof) = &assertion.proof else {
         return Ok(());
     };
@@ -49,7 +99,7 @@ pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmEr
     match proof {
         Proof::Normal(labels) => {
             for label in labels {
-                step_label(db, assertion, label, &mut stack)?;
+                step_label(db, assertion, label, &mut stack, obs)?;
             }
         }
         Proof::Compressed { labels, letters } => {
@@ -58,7 +108,7 @@ pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmEr
             for step in &steps {
                 match step {
                     ProofStep::Label(label) => {
-                        step_label(db, assertion, label, &mut stack)?;
+                        step_label(db, assertion, label, &mut stack, obs)?;
                     }
                     ProofStep::Save => {
                         let top = stack
@@ -68,6 +118,7 @@ pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmEr
                                 message: "`Z` save with an empty stack".into(),
                             })?
                             .clone();
+                        obs.save(&top, stack.len());
                         heap.push(top);
                     }
                     ProofStep::Heap(idx) => {
@@ -76,8 +127,10 @@ pub fn verify_assertion(db: &Database, assertion: &Assertion) -> Result<(), MmEr
                             .ok_or_else(|| MmError::CompressedProofError {
                                 theorem: theorem.clone(),
                                 message: format!("heap backreference {idx} out of range"),
-                            })?;
-                        stack.push(e.clone());
+                            })?
+                            .clone();
+                        stack.push(e);
+                        obs.heap(*idx, stack.last().unwrap(), stack.len());
                     }
                 }
             }
@@ -108,6 +161,7 @@ fn step_label(
     current: &Assertion,
     label: &str,
     stack: &mut Vec<Expr>,
+    obs: &mut dyn ReplayObserver,
 ) -> Result<(), MmError> {
     let theorem = &current.label;
     let stmt = db
@@ -120,12 +174,14 @@ fn step_label(
     match stmt {
         Statement::Float(f) => {
             stack.push(crate::expr::make_expr(&f.typecode, [f.var.as_str()]));
+            obs.float_hyp(label, stack.last().unwrap(), stack.len());
         }
         Statement::Essential(h) => {
             stack.push(h.expr.clone());
+            obs.essential_hyp(label, stack.last().unwrap(), stack.len());
         }
         Statement::Assert(target) => {
-            apply_assertion(db, current, target, label, stack)?;
+            apply_assertion(db, current, target, label, stack, obs)?;
         }
         _ => {
             return Err(MmError::UnknownLabel {
@@ -301,6 +357,7 @@ fn apply_assertion(
     target: &Assertion,
     step: &str,
     stack: &mut Vec<Expr>,
+    obs: &mut dyn ReplayObserver,
 ) -> Result<(), MmError> {
     let theorem = &current.label;
     let frame = &target.frame;
@@ -357,6 +414,14 @@ fn apply_assertion(
 
     // --- push the substituted conclusion ---
     stack.push(apply_subst(&target.conclusion, &subst));
+    obs.assertion(
+        step,
+        target,
+        &args,
+        &subst,
+        stack.last().unwrap(),
+        stack.len(),
+    );
     Ok(())
 }
 

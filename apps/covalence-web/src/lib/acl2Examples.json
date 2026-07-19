@@ -1,0 +1,130 @@
+[
+	{
+		"id": "admit",
+		"title": "1 · admissibility",
+		"lead": "A defun is admitted only if it is syntactically structurally recursive: every recursive call must pass a car/cdr projection of the same formal, in that formal's position. That is a CHECK on the source text, not a termination proof — no measure, no well-founded relation.",
+		"examples": [
+			{
+				"title": "app — admitted",
+				"cells": ["(defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))"],
+				"note": "recurses on (cdr x) in x's position"
+			},
+			{
+				"title": "len2 — admitted",
+				"cells": ["(defun len2 (x) (if (endp x) 0 (+ 1 (len2 (cdr x)))))"],
+				"note": "endp / integer result"
+			},
+			{
+				"title": "bad — REJECTED",
+				"cells": ["(defun bad (x) (bad x))"],
+				"note": "no formal position decreases"
+			}
+		]
+	},
+	{
+		"id": "eval",
+		"title": "2 · evaluation",
+		"lead": "An admitted function runs on quoted data, and the printed value is read off a kernel theorem. ACL2 data here is pure S-expression data: an integer inside a list is rejected rather than silently coerced.",
+		"examples": [
+			{
+				"title": "(app '(a b) '(c))",
+				"cells": [
+					"(defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))",
+					"(app (quote (a b)) (quote (c)))"
+				]
+			},
+			{
+				"title": "(len2 '(a b c))",
+				"cells": [
+					"(defun len2 (x) (if (endp x) 0 (+ 1 (len2 (cdr x)))))",
+					"(len2 (quote (a b c)))"
+				]
+			},
+			{ "title": "(consp '(a))", "cells": ["(consp (quote (a)))"] },
+			{ "title": "(natp 3)", "cells": ["(natp 3)"] },
+			{
+				"title": "mixed data — REJECTED",
+				"cells": ["(cons 1 nil)"],
+				"note": "integers are typed int terms, not sexpr data"
+			}
+		]
+	},
+	{
+		"id": "defthm",
+		"title": "3 · ground defthm, and what gets stored",
+		"lead": "A ground (equal L R) over quoted data, integer literals and car/cdr/cons/consp/equal/+ goes through a reified Derivable_ACL2 certificate plus a machine-checked soundness metatheorem; what is STORED is the transported base-HOL model equation. #show NAME prints it, and says which route proved it. Goals outside that fragment are driven to a bool literal by certified reduction instead — those ride the defun equations as HYPOTHESES, visible to the left of the turnstile.",
+		"examples": [
+			{
+				"title": "prove (+ 2 2) = 4, then #show it",
+				"cells": ["(defthm four (equal (+ 2 2) 4))", "#show four"],
+				"note": "certificate path → closed ⊢ equation"
+			},
+			{
+				"title": "prove car-app, then #show it",
+				"cells": [
+					"(defthm car-app (equal (car (cons (quote a) (quote (b)))) (quote a)))",
+					"#show car-app"
+				],
+				"note": "certificate path → closed ⊢ equation"
+			},
+			{
+				"title": "a defun-backed goal, then #show it",
+				"cells": [
+					"(defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))",
+					"(defthm app-ab-c (equal (app (quote (a b)) (quote (c))) (quote (a b c))))",
+					"#show app-ab-c"
+				],
+				"note": "reduction route: the defun equation rides as a hypothesis"
+			},
+			{
+				"title": "a FALSE goal — REJECTED",
+				"cells": ["(defthm bogus (equal (+ 2 2) 5))"],
+				"note": "refuted by computation, never admitted"
+			}
+		]
+	},
+	{
+		"id": "limits",
+		"title": "4 · the hard limit: no induction",
+		"lead": "Every ACL2 staple you actually want — associativity of app, length of an append — is universally quantified, and needs induction. Induction is NOT implemented in this slice. Such goals are rejected outright; nothing is admitted on faith.",
+		"examples": [
+			{
+				"title": "app associativity — REJECTED",
+				"cells": [
+					"(defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))",
+					"(defthm app-assoc (equal (app (app x y) z) (app x (app y z))))"
+				],
+				"note": "free variables x, y, z"
+			},
+			{
+				"title": "an implies goal — REJECTED",
+				"cells": [
+					"(defthm consp-implies (implies (consp x) (equal (car (cons (car x) (quote ()))) (car x))))"
+				],
+				"note": "free variable x; implies is not a dialect head"
+			}
+		]
+	},
+	{
+		"id": "books",
+		"title": "5 · books",
+		"lead": "#book PATH runs a .lisp book of ACL2 events through this session and prints a per-event tally: transported / admitted / skipped / rejected, each with a reason. Nothing is glossed — a book with unprovable events still loads and still reports them as REJECTED. Paths resolve on the SERVER, relative to its working directory and confined to it (no .., no absolute paths).",
+		"examples": [
+			{
+				"title": "#book app-basics",
+				"cells": ["#book crates/lang/lisp/tests/books/app-basics"],
+				"note": "append/reverse/length; 2 transported, 6 admitted, 1 skipped, 2 rejected"
+			},
+			{
+				"title": "#book mixed",
+				"cells": ["#book crates/lang/lisp/tests/books/mixed"],
+				"note": "one event per tally category, include-book deps included"
+			},
+			{
+				"title": "escape the book root — REJECTED",
+				"cells": ["#book ../etc/passwd"],
+				"note": "path confinement"
+			}
+		]
+	}
+]

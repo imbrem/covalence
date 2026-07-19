@@ -12,13 +12,15 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check": "tsc --noEmit"
   },
   "peerDependencies": {
     "svelte": "^5.0.0"
   },
   "dependencies": {
     "@xyflow/svelte": "^1.0.0",
+    "covalence-client": "workspace:*",
     "cytoscape": "^3.34.0"
   },
   "devDependencies": {

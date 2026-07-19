@@ -15,7 +15,7 @@ import type {
 	GraphEdge,
 	GraphNode,
 	GraphPort,
-	Hash,
+	HashBytes,
 	KindFlags,
 	LabelList,
 	NodeKind,
@@ -203,7 +203,7 @@ export function decodeStringDiagram(data: Uint8Array): StringDiagram {
 	const c = new Cursor(data);
 	const version = expectMagic(c, STRING_DIAGRAM_MAGIC, 'string-diagram');
 	if (version !== 1) throw new Error(`unsupported string-diagram version: ${version}`);
-	const graph: Hash = new Uint8Array(c.take(32));
+	const graph: HashBytes = new Uint8Array(c.take(32));
 	const slotCount = c.readU32();
 	if (slotCount < 2) throw new Error(`string-diagram needs ≥2 slots, got ${slotCount}`);
 	const labels = decodeSlot(c.take(32));
@@ -228,7 +228,7 @@ export function magicOf(data: Uint8Array): 'graph' | 'label-list' | 'kind-flags'
 // ---------- Resolution ----------
 
 /** Look up an overlay blob by its 32-byte hash. */
-export type OverlayResolver = (hash: Hash) => Uint8Array | null;
+export type OverlayResolver = (hash: HashBytes) => Uint8Array | null;
 
 function kindsFromSlot(slot: SlotRef, n: number, resolver: OverlayResolver): KindFlags {
 	if (slot.kind === 'absent') {
@@ -278,7 +278,7 @@ export function resolveDiagram(
 
 /** A convenience resolver from a `Map<hex, bytes>`. */
 export function mapResolver(map: Map<string, Uint8Array>): OverlayResolver {
-	return (h: Hash) => map.get(hexOf(h)) ?? null;
+	return (h: HashBytes) => map.get(hexOf(h)) ?? null;
 }
 
 /** Wrap a topology-only graph as a default-rendered diagram. */

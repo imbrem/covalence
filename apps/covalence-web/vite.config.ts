@@ -135,6 +135,18 @@ const apiTarget = resolveApiTarget();
 export default defineConfig({
 	customLogger: logger,
 	plugins: [sveltekit(), covDiscovery()],
+	// Svelte's exports map lists `worker` (→ src/index-server.js) BEFORE
+	// `browser` (→ src/index-client.js). This app bundles a worker (the kernel
+	// worker behind /article), so the `worker` condition ends up in the resolve
+	// set and every `import { onMount } from 'svelte'` silently resolves to the
+	// SERVER entry — where `onMount` is `noop` and `onDestroy` dereferences a
+	// null SSR context and throws. That broke /haskell and /proofs outright
+	// (stuck forever on "loading the kernel…") and stopped @xyflow/svelte from
+	// mounting on /graph. Pinning `browser` first is what makes lifecycle hooks
+	// real in the client graph; it is not a preference.
+	resolve: {
+		conditions: ['browser', 'module', 'development|production'],
+	},
 	// Web Workers (e.g. the kernel worker behind the `article` page) must be
 	// bundled as ES modules — the production build is code-split, and Rollup
 	// rejects the default `iife`/`umd` worker format for code-splitting builds.

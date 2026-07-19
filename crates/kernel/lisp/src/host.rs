@@ -15,7 +15,10 @@ use crate::runtime::{
     LispRuntime, LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding,
     RuntimeValueLayer, RuntimeValueView,
 };
-use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
+use crate::syntax::{
+    Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispExpression, LispSyntax, Parameter,
+    Strategy,
+};
 
 /// The direct inductive S-expression reference backend.
 ///
@@ -422,6 +425,7 @@ impl<S: Clone + PartialEq, V: Clone> LispRecursiveEnvironment for HostEnvironmen
 #[derive(Clone, Debug)]
 pub struct HostRuntime<S, A, P> {
     values: HostValues<S, A, P>,
+    expressions: CoreSyntax<S, A, P>,
     closures: HostClosures<S, A, P>,
     environments: HostEnvironments<S, HostValue<S, A, P>>,
 }
@@ -430,6 +434,7 @@ impl<S, A, P> Default for HostRuntime<S, A, P> {
     fn default() -> Self {
         Self {
             values: HostValues::default(),
+            expressions: CoreSyntax::default(),
             closures: HostClosures::default(),
             environments: HostEnvironments::default(),
         }
@@ -444,17 +449,23 @@ where
 {
     type Symbol = S;
     type Atom = A;
+    type Datum = Datum<A>;
     type Primitive = P;
     type Expr = Expr<S, A, P>;
     type Value = Value<S, A, P>;
     type Closure = Arc<HostClosure<S, A, P>>;
     type Environment = Environment<S, A, P>;
     type Values = HostValues<S, A, P>;
+    type Expressions = CoreSyntax<S, A, P>;
     type Closures = HostClosures<S, A, P>;
     type Environments = HostEnvironments<S, HostValue<S, A, P>>;
 
     fn values(&self) -> &Self::Values {
         &self.values
+    }
+
+    fn expressions(&self) -> &Self::Expressions {
+        &self.expressions
     }
 
     fn closures(&self) -> &Self::Closures {
@@ -1249,9 +1260,30 @@ impl<P: CorePrimitive> TerminalValue for CoreMachine<P> {
     }
 }
 
-/// Constructor-only implementation of [`LispSyntax`] for [`CoreExpr`].
-#[derive(Clone, Copy, Debug, Default)]
+/// Direct construction and observation of [`CoreExpr`].
+#[derive(Clone, Copy, Debug)]
 pub struct CoreSyntax<S, A, P>(PhantomData<(S, A, P)>);
+
+impl<S, A, P> Default for CoreSyntax<S, A, P> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<S: Clone, A: Clone, P: Clone> LispExpression for CoreSyntax<S, A, P> {
+    type Symbol = S;
+    type Datum = Datum<A>;
+    type Primitive = P;
+    type Expr = CoreExpr<S, Datum<A>, P>;
+    type Error = Infallible;
+
+    fn view(
+        &self,
+        expression: &Self::Expr,
+    ) -> Result<CoreExprLayer<S, Self::Datum, P, Self::Expr>, Self::Error> {
+        Ok(expression.clone().into_layer())
+    }
+}
 
 impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
     type Symbol = S;
@@ -1479,6 +1511,16 @@ mod tests {
         let runtime = HostRuntime::<&str, &str, Primitive>::default();
         let values = runtime.values();
         let closures = runtime.closures();
+        let expression = CoreExpr::Variable("value");
+        assert_eq!(
+            CoreExpr::from_layer(
+                runtime
+                    .expressions()
+                    .view(&expression)
+                    .unwrap_or_else(|never| match never {})
+            ),
+            expression
+        );
         let closure_record = ClosureRecord {
             name: Some("identity"),
             parameters: vec!["value"],

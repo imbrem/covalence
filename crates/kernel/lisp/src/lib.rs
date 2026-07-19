@@ -61,5 +61,6 @@ pub use stack::{
     StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,
 };
 pub use syntax::{
-    Binding, CoreExpr, EvaluationOrder, LispDialect, LispSyntax, Parameter, Strategy,
+    Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispDialect, LispExpression, LispSyntax,
+    Parameter, Strategy,
 };

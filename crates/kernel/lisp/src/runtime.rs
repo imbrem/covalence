@@ -15,6 +15,8 @@ use covalence_kernel_data::inductive::{
 };
 use covalence_sexpr_api::{SExprF, SExprSyntax, SExprView};
 
+use crate::syntax::LispExpression;
+
 /// External parameter sorts of the canonical Lisp runtime-value functor.
 ///
 /// A backend supplies representations for these three leaves, while recursive
@@ -448,6 +450,7 @@ pub trait LispRecursiveEnvironment: LispEnvironment {
 pub trait LispRuntime {
     type Symbol: Clone;
     type Atom: Clone;
+    type Datum: Clone;
     type Primitive: Clone;
     type Expr: Clone;
     type Value: Clone;
@@ -459,6 +462,12 @@ pub trait LispRuntime {
             Primitive = Self::Primitive,
             Value = Self::Value,
             Closure = Self::Closure,
+        >;
+    type Expressions: LispExpression<
+            Symbol = Self::Symbol,
+            Datum = Self::Datum,
+            Primitive = Self::Primitive,
+            Expr = Self::Expr,
         >;
     type Closures: LispClosure<
             Symbol = Self::Symbol,
@@ -473,6 +482,7 @@ pub trait LispRuntime {
         >;
 
     fn values(&self) -> &Self::Values;
+    fn expressions(&self) -> &Self::Expressions;
     fn closures(&self) -> &Self::Closures;
     fn environments(&self) -> &Self::Environments;
 }

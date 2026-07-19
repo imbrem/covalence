@@ -655,7 +655,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 34260,
+      "words": 34323,
       "updated": 0
     },
     {
@@ -9844,7 +9844,16 @@
       "title": "family.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/family.rs",
-      "words": 203,
+      "words": 216,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/inductive/src/family_action.rs",
+      "kind": "file",
+      "title": "family_action.rs",
+      "status": "tracked",
+      "path": "crates/lang/inductive/src/family_action.rs",
+      "words": 493,
       "updated": 0
     },
     {
@@ -9862,7 +9871,16 @@
       "title": "functor.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/functor.rs",
-      "words": 318,
+      "words": 470,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/inductive/src/higher_kinded.rs",
+      "kind": "file",
+      "title": "higher_kinded.rs",
+      "status": "tracked",
+      "path": "crates/lang/inductive/src/higher_kinded.rs",
+      "words": 406,
       "updated": 0
     },
     {
@@ -9871,7 +9889,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/lib.rs",
-      "words": 106,
+      "words": 117,
       "updated": 0
     },
     {
@@ -9974,6 +9992,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/json-api/src/api.rs",
+      "kind": "file",
+      "title": "api.rs",
+      "status": "tracked",
+      "path": "crates/lang/json-api/src/api.rs",
+      "words": 471,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/json-api/src/bin/json-corpus.rs",
       "kind": "file",
       "title": "json-corpus.rs",
@@ -9997,7 +10024,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/json-api/src/lib.rs",
-      "words": 1250,
+      "words": 1288,
       "updated": 0
     },
     {
@@ -14650,7 +14677,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 34260,
+      "words": 34323,
       "updated": 0
     },
     {
@@ -14758,7 +14785,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3439,
+      "words": 3459,
       "updated": 0
     },
     {
@@ -18722,6 +18749,15 @@
       "updated": 0
     },
     {
+      "id": "todo:inductive.family-proof-laws",
+      "kind": "todo",
+      "title": "Add a proof-bearing companion which derives identity/composition evidence structurally and requires μ/ν law evidence only at the fixpoint capability boundary.",
+      "status": "major",
+      "path": "crates/lang/inductive/src/family_action.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:inductive.legacy-fixpoint-adapter",
       "kind": "todo",
       "title": "Adapt InductiveTheory to LeastFixpoint by realizing StructuralFunctorAction in the target logic and deriving the required layer/isomorphism facts.",
@@ -18745,6 +18781,15 @@
       "title": "Prove the boundary between A0006 CanonicalDecimal and init's exact (int,nat) decimal representation, including normalization and signed exponents.",
       "status": "major",
       "path": "crates/kernel/hol/init/src/init/json_family.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:json.inductive-nested-fixpoint-backend",
+      "kind": "todo",
+      "title": "Implement JsonArrays, JsonSemanticObjects, and JsonAggregateConstructors by realizing the nested least fixpoints in jsonvaluefamily through A0004.",
+      "status": "major",
+      "path": "crates/lang/json-api/src/api.rs",
       "words": 0,
       "updated": 0
     },
@@ -24417,6 +24462,12 @@
     {
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/lang/inductive/src/family_action.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/inductive/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/lang/inductive/src/fixpoint.rs",
       "detail": null
     },
@@ -24424,6 +24475,12 @@
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/inductive/src/functor.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/inductive/src/higher_kinded.rs",
       "detail": null
     },
     {
@@ -24466,6 +24523,12 @@
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/inductive/src/validated.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/json-api/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/json-api/src/api.rs",
       "detail": null
     },
     {

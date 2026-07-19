@@ -23,7 +23,7 @@ use covalence_combinator_parsing::conformance::reference::{
 };
 use covalence_combinator_parsing::conformance::syntax as f_laws;
 use covalence_combinator_parsing::host::cursor::CombinatorError;
-use covalence_combinator_parsing::host::{RelationalPrefixParser, TotalPrefixParser};
+use covalence_combinator_parsing::host::{RelationalPrefixParser, TotalPrefixParser, partial};
 use covalence_combinator_parsing::morphism::{
     self, AgreeBy, CollectionPolicy, PartialObserved, RelationalObserved, TotalObserved,
     WidenPartialToRelational, WidenTotalToPartial, WidenTotalToRelational, compile_deterministic,
@@ -664,6 +664,18 @@ impl PartialLawFixture for Fixture {
         Leaf::Consume(1)
     }
 
+    /// **Matches where the other two decline**, which is the only way the third
+    /// operand of the associativity instance is reached at all: `ConsumeAtom` and
+    /// `Consume(1)` both need an atom, so at a start past the end of a source
+    /// neither produces and the choice falls through to here.
+    ///
+    /// [`choice_associativity_needs_a_general_third_operand`] is the test that
+    /// makes this concrete, by exhibiting a defective choice that the previous
+    /// `r = Fail` instance could not see.
+    fn third(&self) -> Leaf {
+        Leaf::Yield(7)
+    }
+
     fn sources(&self) -> Vec<Vec<u8>> {
         vec![b"abc".to_vec(), b"ab".to_vec(), b"z".to_vec()]
     }
@@ -752,6 +764,154 @@ fn host_ordered_choice_laws_hold_in_the_diagnostic_forgetting_quotient() {
     let mut fixture = Fixture;
     let report = host_choice_laws(&mut fixture);
     assert!(report.is_holding_nonvacuously(), "{:?}", report.failures());
+}
+
+/// **The associativity instance is blind at `r = Fail`, and this exhibits it.**
+///
+/// `oc(oc(p, q), fail)` and `oc(p, oc(q, fail))` both reduce to `oc(p, q)` on
+/// positive content, so an associativity checked with the unit in the third
+/// position measures the right-unit law over again. The bundle's docstring
+/// nevertheless said "choice is associative".
+///
+/// The gap is not hypothetical, and this test is the demonstration. `SkewedChoice`
+/// is a *defective* ordered choice that consults its second alternative one atom
+/// past the offset it was asked about. The two associations place the third
+/// operand at different nesting depths — outer-second on the left, inner-second on
+/// the right — so under the defect the left side reaches it one atom late and the
+/// right side two. That difference is observable only when the third operand can
+/// *match*:
+///
+/// - with `fail` there, both sides decline identically and the defect is invisible;
+/// - with [`Fixture::third`] there, the two sides report different remainders.
+///
+/// So the first half of this test is the audited weakness, executed, and the
+/// second half is the coverage that closes it. Revert
+/// [`PartialLawFixture::third`] to `partial::fail` in the associativity instance
+/// and the bundle goes back to certifying the defect.
+///
+/// Nothing here weakens the side condition of §e.3: associativity still holds only
+/// in the diagnostic-forgetting quotient (or for an associative `merge`), and this
+/// test compares observations, which carry no diagnostic.
+#[test]
+fn choice_associativity_needs_a_general_third_operand() {
+    /// Consults its second alternative at `start + 1`. Correct choice would use
+    /// `start`.
+    struct SkewedChoice<P, Q> {
+        first: P,
+        second: Q,
+    }
+
+    type Pinned = CombinatorError<()>;
+
+    impl<P, Q> PartialPrefixParser for SkewedChoice<P, Q>
+    where
+        P: PartialPrefixParser<
+                Source = [u8],
+                Value = u8,
+                Witness = (),
+                Diagnostic = Missing,
+                Error = Pinned,
+            >,
+        Q: PartialPrefixParser<
+                Source = [u8],
+                Value = u8,
+                Witness = (),
+                Diagnostic = Missing,
+                Error = Pinned,
+            >,
+    {
+        type Source = [u8];
+        type Value = u8;
+        type Witness = ();
+        type Diagnostic = Missing;
+        type Error = Pinned;
+
+        fn parse_prefix(
+            &self,
+            source: &[u8],
+            start: usize,
+        ) -> PrefixParseResult<u8, (), Missing, Pinned> {
+            match self.first.parse_prefix(source, start)? {
+                ParseAttempt::Match(matched) => Ok(ParseAttempt::Match(matched)),
+                ParseAttempt::NoMatch(_) => self.second.parse_prefix(source, start + 1),
+            }
+        }
+    }
+
+    let owned = Fixture.sources();
+    let borrowed: Vec<&[u8]> = owned.iter().map(Vec::as_slice).collect();
+    let starts = Fixture.starts();
+    let corpus = fixture_corpus::<Fixture>(&borrowed, &starts);
+
+    let p = Fixture.parser();
+    let q = Fixture.alternative();
+    let unit = || partial::fail::<[u8], u8, (), Missing, Pinned>(Missing(255));
+
+    let left = SkewedChoice {
+        first: SkewedChoice {
+            first: p,
+            second: q,
+        },
+        second: unit(),
+    };
+    let right = SkewedChoice {
+        first: p,
+        second: SkewedChoice {
+            first: q,
+            second: unit(),
+        },
+    };
+    let blind = {
+        let mut left =
+            |source: &[u8], start: usize| observe_partial(left.parse_prefix(source, start));
+        let mut right =
+            |source: &[u8], start: usize| observe_partial(right.parse_prefix(source, start));
+        morphism::check_encodings_agree_partial(
+            &mut left,
+            &mut right,
+            &corpus,
+            &mut AgreeBy(|left: &u8, right: &u8| left == right),
+        )
+    };
+    assert!(
+        blind.is_agreeing() && !blind.is_vacuous(),
+        "the unit third operand was expected to hide the defect; if this is now red the \
+         demonstration has changed shape and the coverage claim below needs restating: {blind:?}"
+    );
+
+    let r = Fixture.third();
+    let left = SkewedChoice {
+        first: SkewedChoice {
+            first: p,
+            second: q,
+        },
+        second: r,
+    };
+    let right = SkewedChoice {
+        first: p,
+        second: SkewedChoice {
+            first: q,
+            second: r,
+        },
+    };
+    let caught = {
+        let mut left =
+            |source: &[u8], start: usize| observe_partial(left.parse_prefix(source, start));
+        let mut right =
+            |source: &[u8], start: usize| observe_partial(right.parse_prefix(source, start));
+        morphism::check_encodings_agree_partial(
+            &mut left,
+            &mut right,
+            &corpus,
+            &mut AgreeBy(|left: &u8, right: &u8| left == right),
+        )
+    };
+    assert!(
+        !caught.is_agreeing(),
+        "a general third operand did not reach the third position: the fixture's `third` \
+         never matches where `parser` and `alternative` both decline, so the associativity \
+         instance is still degenerate: {caught:?}"
+    );
 }
 
 #[test]

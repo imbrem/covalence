@@ -2,6 +2,7 @@
 
 use crate::budget::{
     CombinatorBudget, CombinatorEvalError, CombinatorLimit, CombinatorResource, RelationalLimits,
+    check_primitive_extent,
 };
 use crate::host::RelationalPrefixParser;
 use crate::syntax::{Core, CoreWitness, Relational, RelationalEnv, RelationalWitness, Signature};
@@ -86,7 +87,16 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
         }))
     }
 
-    /// Charge and append one result.
+    /// Charge and append one **newly created** result: the global bound and the per-node
+    /// bound both apply.
+    ///
+    /// The global counter is charged exactly once per result, by the node that creates it —
+    /// `Pure` and `Prim`, and the cross-product operators `Ap` and `Bind`, each of whose
+    /// outputs is a new combination rather than one of its inputs. A node that merely relays
+    /// what it was handed uses [`Self::relay_result`] instead, which is what keeps the global
+    /// bound independent of how a union is associated: re-charging on pass-through costs
+    /// `3a + 3b + 2c` for branches of `a`, `b`, `c` results left-associated against
+    /// `2a + 3b + 3c` right-associated, equal only when `a == c`.
     ///
     /// Both bounds are checked **before** the push, never after. Draining both arms of a
     /// union and checking afterwards is not a bound, it is a post-hoc assertion that an
@@ -97,6 +107,8 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
         st: &mut EvalState,
         result: Result3<S>,
     ) -> Result<(), CombinatorEvalError<E::Error>> {
+        // Per-node before global, so a node at both limits reports the same resource it did
+        // before results were split into created and relayed.
         if out.len() >= self.limits.max_results_per_node {
             return Self::exhausted(
                 CombinatorResource::ResultsPerNode,
@@ -107,6 +119,26 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
             return Self::exhausted(CombinatorResource::Results, self.limits.max_results);
         }
         st.results += 1;
+        out.push(result);
+        Ok(())
+    }
+
+    /// Append one **already charged** result, checking only the per-node bound.
+    ///
+    /// The per-node bound is deliberately per node and so applies to relays too: bounding a
+    /// single node's fan-out is exactly what it is for. The global bound does not, because
+    /// the result was charged where it was created.
+    fn relay_result(
+        &self,
+        out: &mut Vec<Result3<S>>,
+        result: Result3<S>,
+    ) -> Result<(), CombinatorEvalError<E::Error>> {
+        if out.len() >= self.limits.max_results_per_node {
+            return Self::exhausted(
+                CombinatorResource::ResultsPerNode,
+                self.limits.max_results_per_node,
+            );
+        }
         out.push(result);
         Ok(())
     }
@@ -162,9 +194,10 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
                     for (value, inner, end) in self.eval(branch, source, at, st)? {
                         self.charge_witness(st)?;
                         let span = Span::new(at, end).expect("forward step");
-                        self.push_result(
+                        // Union relays: its outputs are in bijection with its branches',
+                        // which were charged where they were created.
+                        self.relay_result(
                             &mut out,
-                            st,
                             (
                                 value,
                                 RelationalWitness::Union {
@@ -205,9 +238,10 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
                         .step(primitive, source, at)
                         .map_err(CombinatorEvalError::Environment)?
                     {
+                        // The environment is caller-supplied, so its forward-step
+                        // precondition is validated, never assumed.
+                        let span = check_primitive_extent(at, matched.end, source.len())?;
                         self.charge_witness(st)?;
-                        let span =
-                            Span::new(at, matched.end).expect("primitive must be a forward step");
                         self.push_result(
                             &mut out,
                             st,
@@ -233,9 +267,9 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
                             .map_err(CombinatorEvalError::Environment)?;
                         self.charge_witness(st)?;
                         let span = Span::new(at, end).expect("forward step");
-                        self.push_result(
+                        // Mapping creates no results: it rewrites the values it was handed.
+                        self.relay_result(
                             &mut out,
-                            st,
                             (
                                 value,
                                 RelationalWitness::Core(CoreWitness::Map {
@@ -337,9 +371,9 @@ impl<'p, 'e, S: Signature, E: RelationalEnv<S> + ?Sized> RelationalEvaluator<'p,
                     for (value, witness, end) in inner? {
                         self.charge_witness(st)?;
                         let span = Span::new(at, end).expect("forward step");
-                        self.push_result(
+                        // A rule reference relays its body's results unchanged.
+                        self.relay_result(
                             &mut out,
-                            st,
                             (
                                 value,
                                 RelationalWitness::Core(CoreWitness::Rule {
@@ -445,5 +479,101 @@ impl<S: Signature, E: ?Sized> ParserSyntax for RelationalEvaluator<'_, '_, S, E>
 
     fn syntax(&self) -> &Relational<S> {
         self.program
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::syntax::env::fixtures::{Bytes, Extent, HostileEnv, Never, PureEnv};
+
+    const BUDGET: CombinatorBudget = CombinatorBudget::new(64, 512, 32, 512, 64);
+
+    fn evaluate_hostile(
+        extent: Extent,
+        source: &[u8],
+        start: usize,
+    ) -> Result<Vec<PrefixInterpretation<u8, RelationalWitness<Bytes>>>, CombinatorEvalError<Never>>
+    {
+        let program = Relational::Core(Core::Prim(0));
+        let env = HostileEnv(extent);
+        RelationalEvaluator::new(&program, &env, BUDGET, RelationalLimits::new(64, 64))
+            .parse_prefixes(source, start)
+    }
+
+    #[test]
+    fn a_backwards_primitive_step_is_an_evaluator_failure_not_a_panic() {
+        assert_eq!(
+            evaluate_hostile(Extent::Backwards, b"abc", 2),
+            Err(CombinatorEvalError::PrimitiveExtent {
+                at: 2,
+                end: 1,
+                source_len: 3
+            })
+        );
+    }
+
+    #[test]
+    fn a_primitive_extent_past_the_end_of_the_source_is_an_evaluator_failure() {
+        assert_eq!(
+            evaluate_hostile(Extent::PastEnd, b"abc", 0),
+            Err(CombinatorEvalError::PrimitiveExtent {
+                at: 0,
+                end: 103,
+                source_len: 3
+            })
+        );
+    }
+
+    /// A subtree enumerating `n` zero-width results, built without any node that itself
+    /// creates results beyond the `Pure`s at the leaves.
+    fn fan(n: usize) -> Relational<Bytes> {
+        Relational::Union((0..n).map(|_| Relational::Core(Core::Pure(0))).collect())
+    }
+
+    /// The global result bound counts results, not the nodes they pass through, so it must
+    /// not depend on how a union is associated.
+    ///
+    /// The branch result counts are deliberately **unequal** (2, 2, 1). With equal counts
+    /// the two associations charge the same total by arithmetic accident — the old
+    /// pass-through charging gave `3a + 3b + 2c` against `2a + 3b + 3c`, which differ only
+    /// by `a - c` — so an equal-count fixture is structurally incapable of falsifying this.
+    #[test]
+    fn the_global_bound_does_not_depend_on_association() {
+        let left_nested = Relational::Union(vec![
+            Relational::Union(vec![fan(2), fan(2)]),
+            Relational::Core(Core::Pure(0)),
+        ]);
+        let right_nested = Relational::Union(vec![
+            fan(2),
+            Relational::Union(vec![fan(2), Relational::Core(Core::Pure(0))]),
+        ]);
+
+        let outcome = |program: &Relational<Bytes>, max_results: usize| {
+            RelationalEvaluator::new(
+                program,
+                &PureEnv,
+                BUDGET,
+                RelationalLimits::new(max_results, 1024),
+            )
+            .parse_prefixes(b"", 0)
+            .map(|results| results.len())
+        };
+
+        for max_results in 0..=24 {
+            assert_eq!(
+                outcome(&left_nested, max_results),
+                outcome(&right_nested, max_results),
+                "associations disagree at max_results = {max_results}"
+            );
+        }
+        // And the bound genuinely counts the five results, not the nodes they cross.
+        assert_eq!(outcome(&left_nested, 5), Ok(5));
+        assert_eq!(
+            outcome(&left_nested, 4),
+            Err(CombinatorEvalError::ResourceExhausted(
+                CombinatorLimit::new(CombinatorResource::Results, 4)
+            ))
+        );
     }
 }

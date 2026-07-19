@@ -2,7 +2,7 @@
 
 use crate::budget::{
     CombinatorBudget, CombinatorDiagnostic, CombinatorDiagnosticKind, CombinatorEvalError,
-    CombinatorLimit, CombinatorResource,
+    CombinatorLimit, CombinatorResource, check_primitive_extent,
 };
 use crate::syntax::{Core, CoreWitness, Ordered, OrderedEnv, OrderedWitness, Signature};
 use covalence_parsing_api::{
@@ -145,9 +145,10 @@ impl<'p, 'e, S: Signature, E: OrderedEnv<S> + ?Sized> PartialEvaluator<'p, 'e, S
                             Ok(None)
                         }
                         Some(matched) => {
+                            // The environment is caller-supplied, so its forward-step
+                            // precondition is validated, never assumed.
+                            let span = check_primitive_extent(at, matched.end, source.len())?;
                             self.charge_witness(st)?;
-                            let span = Span::new(at, matched.end)
-                                .expect("primitive must be a forward step");
                             st.farthest = st.farthest.max(matched.end);
                             Ok(Some((
                                 matched.value,
@@ -359,5 +360,91 @@ impl<S: Signature, E: ?Sized> ParserSyntax for PartialEvaluator<'_, '_, S, E> {
 
     fn syntax(&self) -> &Ordered<S> {
         self.program
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::syntax::env::fixtures::{Bytes, Extent, HostileEnv};
+
+    const BUDGET: CombinatorBudget = CombinatorBudget::new(64, 512, 32, 512, 64);
+
+    fn evaluate(
+        extent: Extent,
+        source: &[u8],
+        start: usize,
+    ) -> PrefixParseResult<
+        u8,
+        OrderedWitness<Bytes>,
+        CombinatorDiagnostic,
+        CombinatorEvalError<crate::syntax::env::fixtures::Never>,
+    > {
+        run(Ordered::Core(Core::Prim(0)), extent, source, start)
+    }
+
+    fn run(
+        program: Ordered<Bytes>,
+        extent: Extent,
+        source: &[u8],
+        start: usize,
+    ) -> PrefixParseResult<
+        u8,
+        OrderedWitness<Bytes>,
+        CombinatorDiagnostic,
+        CombinatorEvalError<crate::syntax::env::fixtures::Never>,
+    > {
+        let env = HostileEnv(extent);
+        PartialEvaluator::new(&program, &env, BUDGET).parse_prefix(source, start)
+    }
+
+    /// A backwards primitive step used to abort the process through `Span::new(..).expect`.
+    /// It is a caller-supplied environment, so it must be evaluator failure.
+    #[test]
+    fn a_backwards_primitive_step_is_an_evaluator_failure_not_a_panic() {
+        assert_eq!(
+            evaluate(Extent::Backwards, b"abc", 2),
+            Err(CombinatorEvalError::PrimitiveExtent {
+                at: 2,
+                end: 1,
+                source_len: 3
+            })
+        );
+    }
+
+    /// An extent past the end of the source used to be silently accepted, yielding a match
+    /// whose `consumed` and `remainder` escaped the source.
+    #[test]
+    fn a_primitive_extent_past_the_end_of_the_source_is_an_evaluator_failure() {
+        assert_eq!(
+            evaluate(Extent::PastEnd, b"abc", 0),
+            Err(CombinatorEvalError::PrimitiveExtent {
+                at: 0,
+                end: 103,
+                source_len: 3
+            })
+        );
+    }
+
+    /// Every composite node still builds its span with `Span::new(..).expect("forward step")`.
+    /// Those are sound only because a leaf can no longer report a backwards extent: the leaf
+    /// fails first, so the enclosing node never reaches its own construction. Pin that
+    /// reachability argument rather than leaving it as commentary — a future leaf that skips
+    /// `check_primitive_extent` would turn each of these back into a process abort.
+    #[test]
+    fn a_hostile_leaf_under_a_composite_node_fails_before_the_composite_builds_a_span() {
+        let prim = || Ordered::Core(Core::Prim(0));
+        let expected = Err(CombinatorEvalError::PrimitiveExtent {
+            at: 1,
+            end: 0,
+            source_len: 3,
+        });
+        for program in [
+            Ordered::Core(Core::Map((), Box::new(prim()))),
+            Ordered::Core(Core::Ap(Box::new(prim()), Box::new(prim()))),
+            Ordered::Core(Core::Bind(Box::new(prim()), ())),
+        ] {
+            assert_eq!(run(program, Extent::Backwards, b"abc", 1), expected);
+        }
     }
 }

@@ -54,7 +54,7 @@
 
 use crate::budget::{
     CombinatorBudget, CombinatorDiagnostic, CombinatorDiagnosticKind, CombinatorEvalError,
-    CombinatorLimit, CombinatorResource, RelationalLimits,
+    CombinatorLimit, CombinatorResource, RelationalLimits, check_primitive_extent,
 };
 use crate::host::partial::DynPartial;
 use crate::host::total::DynTotal;
@@ -136,19 +136,28 @@ impl State {
         Ok(())
     }
 
-    /// Charge one relational result about to be pushed into a node holding `node_results`.
-    /// Both bounds are checked before the push, never after.
+    /// Charge one **newly created** relational result about to be pushed into a node holding
+    /// `node_results`. Both bounds are checked before the push, never after.
+    ///
+    /// Mirrors the evaluator's `push_result`: the global bound is charged once per result, by
+    /// the node that creates it, so it does not depend on how a union is associated.
     fn charge_result<X>(&mut self, node_results: usize) -> Result<(), CombinatorEvalError<X>> {
+        self.relay_result(node_results)?;
+        if self.results >= self.limits.max_results {
+            return exhausted(CombinatorResource::Results, self.limits.max_results);
+        }
+        self.results += 1;
+        Ok(())
+    }
+
+    /// Check the per-node bound for one **already charged** result being relayed.
+    fn relay_result<X>(&mut self, node_results: usize) -> Result<(), CombinatorEvalError<X>> {
         if node_results >= self.limits.max_results_per_node {
             return exhausted(
                 CombinatorResource::ResultsPerNode,
                 self.limits.max_results_per_node,
             );
         }
-        if self.results >= self.limits.max_results {
-            return exhausted(CombinatorResource::Results, self.limits.max_results);
-        }
-        self.results += 1;
         Ok(())
     }
 }
@@ -237,8 +246,8 @@ where
                 let matched = env
                     .total_step(&primitive, source, at)
                     .map_err(CombinatorEvalError::Environment)?;
+                let span = check_primitive_extent(at, matched.end, source.len())?;
                 st.charge_witness()?;
-                let span = Span::new(at, matched.end).expect("primitive must be a forward step");
                 Ok((
                     matched.value,
                     DeterministicWitness(CoreWitness::Prim {
@@ -509,9 +518,8 @@ where
                             Ok(None)
                         }
                         Some(matched) => {
+                            let span = check_primitive_extent(at, matched.end, source.len())?;
                             st.charge_witness()?;
-                            let span = Span::new(at, matched.end)
-                                .expect("primitive must be a forward step");
                             st.farthest = st.farthest.max(matched.end);
                             Ok(Some((
                                 matched.value,
@@ -731,12 +739,24 @@ type RelationalStep<'e, S, X> = Step<
 /// One enumerated result: value, evidence, and the offset after it.
 type Enumerated<S> = (<S as Signature>::Value, RelationalWitness<S>, usize);
 
+/// Push a newly created result, charging the global and per-node bounds.
 fn push<S: Signature, X>(
     out: &mut Vec<Enumerated<S>>,
     st: &mut State,
     result: Enumerated<S>,
 ) -> Result<(), CombinatorEvalError<X>> {
     st.charge_result(out.len())?;
+    out.push(result);
+    Ok(())
+}
+
+/// Push a result the node was handed rather than created, checking only the per-node bound.
+fn relay<S: Signature, X>(
+    out: &mut Vec<Enumerated<S>>,
+    st: &mut State,
+    result: Enumerated<S>,
+) -> Result<(), CombinatorEvalError<X>> {
+    st.relay_result(out.len())?;
     out.push(result);
     Ok(())
 }
@@ -763,7 +783,8 @@ where
                     for (value, inner, end) in branch(source, at, st)? {
                         st.charge_witness()?;
                         let span = Span::new(at, end).expect("forward step");
-                        push(
+                        // Union relays: its outputs are in bijection with its branches'.
+                        relay(
                             &mut out,
                             st,
                             (
@@ -811,9 +832,8 @@ where
                         .step(&primitive, source, at)
                         .map_err(CombinatorEvalError::Environment)?
                     {
+                        let span = check_primitive_extent(at, matched.end, source.len())?;
                         st.charge_witness()?;
-                        let span =
-                            Span::new(at, matched.end).expect("primitive must be a forward step");
                         push(
                             &mut out,
                             st,
@@ -842,7 +862,8 @@ where
                             .map_err(CombinatorEvalError::Environment)?;
                         st.charge_witness()?;
                         let span = Span::new(at, end).expect("forward step");
-                        push(
+                        // Mapping creates no results: it rewrites the values it was handed.
+                        relay(
                             &mut out,
                             st,
                             (
@@ -944,7 +965,8 @@ where
                     for (value, witness, end) in inner? {
                         st.charge_witness()?;
                         let span = Span::new(at, end).expect("forward step");
-                        push(
+                        // A rule reference relays its body's results unchanged.
+                        relay(
                             &mut out,
                             st,
                             (
@@ -1187,6 +1209,123 @@ mod tests {
             compiled.parse_prefixes(b"a", 0).expect("no failure").len(),
             2
         );
+    }
+
+    /// An environment that reports an extent outside the source, exactly as
+    /// `syntax::env`'s own fixture does. Repeated here because that fixture is private to
+    /// the `syntax` module tree.
+    struct HostileEnv;
+
+    impl SignatureEnv<Bytes> for HostileEnv {
+        type Error = Never;
+
+        fn apply_function(&self, _function: &(), argument: u8) -> Result<u8, Never> {
+            Ok(argument)
+        }
+
+        fn apply_value(&self, _function: u8, argument: u8) -> Result<u8, Never> {
+            Ok(argument)
+        }
+
+        fn step(
+            &self,
+            _primitive: &u8,
+            source: &[u8],
+            _at: usize,
+        ) -> Result<Option<PrimitiveMatch<Bytes>>, Never> {
+            Ok(Some(PrimitiveMatch {
+                value: 0,
+                witness: (),
+                end: source.len() + 100,
+            }))
+        }
+    }
+
+    impl OrderedEnv<Bytes> for HostileEnv {
+        fn ordered_rule(&self, _rule: usize) -> Option<&Ordered<Bytes>> {
+            None
+        }
+
+        fn ordered_resolve(&self, _continuation: &(), value: &u8) -> Result<Ordered<Bytes>, Never> {
+            Ok(Ordered::Core(Core::Pure(*value)))
+        }
+    }
+
+    /// **The two encodings agree on the trichotomy for an over-running leaf.**
+    ///
+    /// This used to be a genuine N1 disagreement rather than a payload difference: the
+    /// syntax encoding returned `Ok(Match)` carrying a span outside the source, while the
+    /// host encoding's [`check_step`] rejected the identical extent as a cursor violation.
+    /// Both now report evaluator failure.
+    #[test]
+    fn both_encodings_reject_a_leaf_that_over_runs_the_source() {
+        use crate::host::cursor::check_step;
+
+        let program = Ordered::Core(Core::Prim(0));
+        let evaluator = PartialEvaluator::new(&program, &HostileEnv, BUDGET);
+        let compiled = compile_ordered(&program, &HostileEnv, BUDGET);
+        let expected = Err(CombinatorEvalError::PrimitiveExtent {
+            at: 0,
+            end: 103,
+            source_len: 3,
+        });
+
+        // The syntax encoding and its compilation: same trichotomy branch, same payload.
+        assert_eq!(evaluator.parse_prefix(b"abc", 0), expected);
+        assert_eq!(compiled.parse_prefix(b"abc", 0), expected);
+
+        // The host encoding, on the identical extent, through its own check.
+        assert!(
+            check_step(
+                0,
+                3,
+                PrefixInterpretation {
+                    value: 0u8,
+                    witness: (),
+                    consumed: Span { start: 0, end: 103 },
+                    remainder: 103,
+                },
+            )
+            .is_err()
+        );
+    }
+
+    /// The compiled relational program charges results where they are created, so its
+    /// global bound — like the evaluator's — does not depend on how a union is associated.
+    /// Branch result counts are deliberately unequal (2, 2, 1); see the evaluator's twin
+    /// test for why an equal-count fixture cannot falsify this.
+    #[test]
+    fn compiled_relational_global_bound_does_not_depend_on_association() {
+        let fan =
+            |n: usize| Relational::Union((0..n).map(|_| Relational::Core(Core::Pure(0))).collect());
+        let left_nested = Relational::Union(vec![
+            Relational::Union(vec![fan(2), fan(2)]),
+            Relational::Core(Core::Pure(0)),
+        ]);
+        let right_nested = Relational::Union(vec![
+            fan(2),
+            Relational::Union(vec![fan(2), Relational::Core(Core::Pure(0))]),
+        ]);
+
+        let outcome = |program: &Relational<Bytes>, max_results: usize| {
+            compile_relational(
+                program,
+                &Env,
+                BUDGET,
+                RelationalLimits::new(max_results, 1024),
+            )
+            .parse_prefixes(b"", 0)
+            .map(|results| results.len())
+        };
+
+        for max_results in 0..=24 {
+            assert_eq!(
+                outcome(&left_nested, max_results),
+                outcome(&right_nested, max_results),
+                "associations disagree at max_results = {max_results}"
+            );
+        }
+        assert_eq!(outcome(&left_nested, 5), Ok(5));
     }
 
     /// The compiled parser is charged the same way the evaluator is, so exhaustion is a

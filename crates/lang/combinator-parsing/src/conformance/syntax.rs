@@ -769,7 +769,12 @@ where
 /// the relational capability exists to provide.
 ///
 /// Success is [`ScopeReport::exhibited`]: a corpus on which `p` never produces a
-/// result cannot exhibit the doubling, and reports so rather than passing.
+/// result cannot exhibit the doubling, and reports so rather than passing. Such a
+/// sample is recorded **inconclusive**, never as an agreement: an empty
+/// enumeration doubles to an empty enumeration, so `0 == 2 * 0` and `0 == 0` hold
+/// at once and the sample witnesses neither the doubling nor a deduplication.
+/// Counting it as agreement would let a corpus of never-producing programs report
+/// dedup evidence it does not have.
 pub fn check_union_is_not_idempotent<S, E>(
     env: &E,
     p: &Relational<S>,
@@ -788,10 +793,18 @@ where
         let twice = observe_relational_program(&doubled, env, budget, limits, source, start);
         match (single, twice) {
             (RelationalObserved::Enumerated(single), RelationalObserved::Enumerated(twice)) => {
-                if !single.is_empty() && twice.len() == 2 * single.len() {
+                if single.is_empty() {
+                    // Evidence of nothing. `0 == 2 * 0` and `0 == 0` both hold,
+                    // so an empty sample is silent about doubling *and* about
+                    // deduplication — reading it as the latter would credit a
+                    // caller's dedup policy with a collapse that never happened,
+                    // on exactly the corpus this claim reports as too weak.
+                    report.record_inconclusive();
+                } else if twice.len() == 2 * single.len() {
                     report.record_divergence(index, start);
                 } else if twice.len() == single.len() {
-                    // Cardinality unchanged: something deduplicated.
+                    // Cardinality unchanged on a *non-empty* sample: something
+                    // deduplicated.
                     report.record_agreement();
                 } else {
                     report.record_inconclusive();
@@ -901,4 +914,59 @@ where
         }
     }
     report
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::conformance::reference::{self, BUDGET, Env, LIMITS, Reference};
+
+    /// **An empty sample is evidence of nothing**, and in particular is not
+    /// evidence of deduplication.
+    ///
+    /// [`check_union_is_not_idempotent`] compares cardinalities, and `0 == 2 * 0`
+    /// and `0 == 0` hold at once. Reading the second of those as "cardinality
+    /// unchanged, so something deduplicated" credits the caller's dedup policy
+    /// with a collapse that never happened, on exactly the corpus that function's
+    /// own docstring says should report weakness instead.
+    ///
+    /// `Relational::Void` enumerates nothing anywhere, so every sample here is
+    /// empty. The claim must come back unexhibited **and unsupported**: no
+    /// agreements, nothing checked, every sample inconclusive.
+    #[test]
+    fn an_all_empty_corpus_is_inconclusive_rather_than_dedup_evidence() {
+        let report = check_union_is_not_idempotent::<Reference, _>(
+            &Env,
+            &Relational::Void,
+            &reference::corpus(),
+            BUDGET,
+            LIMITS,
+        );
+        assert!(
+            !report.exhibited(),
+            "an empty corpus cannot exhibit the doubling: {report:?}"
+        );
+        assert_eq!(
+            report.agreements, 0,
+            "empty samples were counted as deduplication evidence: {report:?}"
+        );
+        assert_eq!(report.checked, 0, "{report:?}");
+        assert!(report.inconclusive > 0, "{report:?}");
+    }
+
+    /// The other half of the same distinction: on a corpus where the subject
+    /// *does* produce, the doubling is still exhibited. Without this, the test
+    /// above would be satisfied by a function that reported everything
+    /// inconclusive.
+    #[test]
+    fn a_producing_corpus_still_exhibits_the_doubling() {
+        let report = check_union_is_not_idempotent::<Reference, _>(
+            &Env,
+            &reference::relational_atom(1),
+            &reference::corpus(),
+            BUDGET,
+            LIMITS,
+        );
+        assert!(report.exhibited(), "union(p, p) did not double: {report:?}");
+    }
 }

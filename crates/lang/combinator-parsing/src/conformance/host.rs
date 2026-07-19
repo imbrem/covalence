@@ -99,6 +99,30 @@ pub trait PartialLawFixture {
     /// A second, *behaviourally different* parser. Choice associativity with
     /// three copies of one parser survives argument-ordering bugs.
     fn alternative(&self) -> Self::Parser;
+    /// A third parser, **behaviourally different from both of the above**, used
+    /// as the third operand of the associativity instance in
+    /// [`check_ordered_choice_laws`].
+    ///
+    /// The unit will not do here, and this method exists because it was being
+    /// used. `oc(oc(p, q), fail)` and `oc(p, oc(q, fail))` both reduce to
+    /// `oc(p, q)` on positive content, so an associativity checked at `r = fail`
+    /// degenerates into the right-unit law already checked beside it — the bundle
+    /// then claims "choice is associative" while measuring an instance of a law
+    /// it has already measured. It is blind, in particular, to any defect that
+    /// only moves the *third* operand: the two associations put `r` at different
+    /// nesting depths, so a choice that consulted its second alternative at the
+    /// wrong offset reaches a different offset on the two sides only when `r` is
+    /// a parser that can match.
+    ///
+    /// **Give it a behaviour the other two do not have** — one that matches where
+    /// they both decline is the strongest choice, since it is the only way the
+    /// third position is reached at all.
+    ///
+    /// The law this feeds holds only in the diagnostic-forgetting quotient, or
+    /// when [`merge`](Self::merge) is itself associative; that side condition is
+    /// unchanged by the third operand and is stated on
+    /// [`check_ordered_choice_laws`].
+    fn third(&self) -> Self::Parser;
     fn sources(&self) -> Vec<Self::Owned>;
     fn starts(&self) -> Vec<usize>;
 
@@ -371,6 +395,13 @@ pub fn check_monad_laws<F: PartialLawFixture>(fixture: &mut F) -> ConformanceRep
 ///
 /// > `Fail` is a two-sided unit; choice is associative and idempotent.
 ///
+/// Associativity is checked over three *general* operands —
+/// [`parser`](PartialLawFixture::parser),
+/// [`alternative`](PartialLawFixture::alternative) and
+/// [`third`](PartialLawFixture::third) — and never with the unit in the third
+/// position, which would reduce the instance to the right-unit law checked beside
+/// it. What the bundle measures is therefore what its wording claims.
+///
 /// # Associativity is checked *inside* a quotient this harness cannot see out of
 ///
 /// The two associations fold diagnostics as `merge(merge(dp, dq), dr)` against
@@ -378,7 +409,8 @@ pub fn check_monad_laws<F: PartialLawFixture>(fixture: &mut F) -> ConformanceRep
 /// itself associative. Observations carry no diagnostic, so a green result here
 /// says nothing about the unquotiented law. This is a limitation of the check,
 /// not a vindication — and `host::partial`'s own tests demonstrate the difference
-/// with a deliberately non-associative merge.
+/// with a deliberately non-associative merge. The law's name in the report keeps
+/// the side condition attached rather than relying on this doc being read.
 ///
 /// Commutativity is not among them; see [`check_ordered_choice_is_not_commutative`].
 pub fn check_ordered_choice_laws<F: PartialLawFixture>(fixture: &mut F) -> ConformanceReport {
@@ -431,7 +463,11 @@ pub fn check_ordered_choice_laws<F: PartialLawFixture>(fixture: &mut F) -> Confo
     let samples = {
         let subject = fixture.parser();
         let alternative = fixture.alternative();
-        let diagnostic = fixture.failure_diagnostic();
+        // The third operand is a *general* parser, never the unit: with `fail`
+        // here both associations collapse onto `oc(subject, alternative)` and the
+        // instance says no more than the right-unit law above it. See
+        // [`PartialLawFixture::third`].
+        let third = fixture.third();
         collect::<F, _, _>(
             fixture,
             &partial::OrderedChoice {
@@ -440,16 +476,14 @@ pub fn check_ordered_choice_laws<F: PartialLawFixture>(fixture: &mut F) -> Confo
                     second: partial::Ref(&alternative),
                     merge: |left, right| fixture.merge(left, right),
                 },
-                second: partial::fail::<F::Source, F::Value, F::Witness, _, _>(diagnostic),
+                second: partial::Ref(&third),
                 merge: |left, right| fixture.merge(left, right),
             },
             &partial::OrderedChoice {
                 first: partial::Ref(&subject),
                 second: partial::OrderedChoice {
                     first: partial::Ref(&alternative),
-                    second: partial::fail::<F::Source, F::Value, F::Witness, _, _>(
-                        fixture.failure_diagnostic(),
-                    ),
+                    second: partial::Ref(&third),
                     merge: |left, right| fixture.merge(left, right),
                 },
                 merge: |left, right| fixture.merge(left, right),

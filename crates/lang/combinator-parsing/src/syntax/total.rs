@@ -1,6 +1,9 @@
 //! Bounded evaluation of the deterministic fragment as a **total** prefix function.
 
-use crate::budget::{CombinatorBudget, CombinatorEvalError, CombinatorLimit, CombinatorResource};
+use crate::budget::{
+    CombinatorBudget, CombinatorEvalError, CombinatorLimit, CombinatorResource,
+    check_primitive_extent,
+};
 use crate::host::TotalPrefixParser;
 use crate::syntax::{Core, CoreWitness, Deterministic, DeterministicWitness, Signature, TotalEnv};
 use covalence_parsing_api::{ParserSyntax, PrefixInterpretation, Span};
@@ -114,8 +117,11 @@ impl<'p, 'e, S: Signature, E: TotalEnv<S> + ?Sized> TotalEvaluator<'p, 'e, S, E>
                     .env
                     .total_step(primitive, source, at)
                     .map_err(CombinatorEvalError::Environment)?;
+                // The environment is caller-supplied, so its forward-step precondition is
+                // validated, never assumed. Totality is modulo resources and well-formed
+                // environments; it was never a licence to abort the process.
+                let span = check_primitive_extent(at, matched.end, source.len())?;
                 self.charge_witness(st)?;
-                let span = Span::new(at, matched.end).expect("primitive must be a forward step");
                 Ok((
                     matched.value,
                     DeterministicWitness(CoreWitness::Prim {
@@ -263,5 +269,50 @@ impl<S: Signature, E: ?Sized> ParserSyntax for TotalEvaluator<'_, '_, S, E> {
 
     fn syntax(&self) -> &Deterministic<S> {
         self.program
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::syntax::env::fixtures::{Bytes, Extent, HostileEnv, Never};
+
+    const BUDGET: CombinatorBudget = CombinatorBudget::new(64, 512, 32, 512, 64);
+
+    fn evaluate(
+        extent: Extent,
+        source: &[u8],
+        start: usize,
+    ) -> Result<PrefixInterpretation<u8, DeterministicWitness<Bytes>>, CombinatorEvalError<Never>>
+    {
+        let program = Deterministic(Core::Prim(0));
+        let env = HostileEnv(extent);
+        TotalEvaluator::new(&program, &env, BUDGET).parse_prefix_total(source, start)
+    }
+
+    /// Totality is modulo resources and well-formed environments, not modulo panics: a
+    /// backwards `total_step` used to abort the process through `Span::new(..).expect`.
+    #[test]
+    fn a_backwards_primitive_step_is_an_evaluator_failure_not_a_panic() {
+        assert_eq!(
+            evaluate(Extent::Backwards, b"abc", 2),
+            Err(CombinatorEvalError::PrimitiveExtent {
+                at: 2,
+                end: 1,
+                source_len: 3
+            })
+        );
+    }
+
+    #[test]
+    fn a_primitive_extent_past_the_end_of_the_source_is_an_evaluator_failure() {
+        assert_eq!(
+            evaluate(Extent::PastEnd, b"abc", 0),
+            Err(CombinatorEvalError::PrimitiveExtent {
+                at: 0,
+                end: 103,
+                source_len: 3
+            })
+        );
     }
 }

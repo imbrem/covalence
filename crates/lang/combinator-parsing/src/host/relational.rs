@@ -57,9 +57,21 @@ use crate::host::{Marker, PrefixEnumeration, RelationalPrefixParser};
 
 /// Per-evaluation relational state.
 ///
-/// `produced` is a **per-evaluation** counter charged on every result pushed anywhere in the
-/// tree, not a per-node one. That is what keeps the global bound independent of how a union
-/// is associated.
+/// `produced` is a **per-evaluation** counter, and it is charged exactly once per result, by
+/// the node that *creates* it — a leaf, a [`Pure`], or one of the cross-product operators
+/// [`Ap`] and [`Bind`], each of whose outputs is a new combination rather than one of its
+/// inputs. A node that merely relays results it was handed, like [`Union`] or [`Map`],
+/// charges nothing against it.
+///
+/// That is what keeps the global bound independent of how a union is associated. Charging on
+/// pass-through instead would make every enclosing node re-charge each result crossing it, so
+/// branches producing `a`, `b`, `c` results would cost `3a + 3b + 2c` left-associated against
+/// `2a + 3b + 3c` right-associated — equal only when `a == c`. Depth is charged the same way
+/// in [`recursion`](crate::host::recursion), where only `Recurse` charges it.
+///
+/// The per-node bound is a different thing and is deliberately per node: *every* node that
+/// builds a result vector checks it, relays included, because bounding one node's fan-out is
+/// exactly what it is for.
 #[derive(Clone, Copy, Debug)]
 pub struct RelationalCtx {
     limits: RelationalLimits,
@@ -85,19 +97,15 @@ impl RelationalCtx {
         self.produced
     }
 
-    /// Charge one result about to be pushed into a node whose vector currently holds
-    /// `node_results` entries.
+    /// Admit one **newly created** result about to be pushed into a node whose vector
+    /// currently holds `node_results` entries: charges the global bound and checks the
+    /// per-node one.
     ///
-    /// Checked **before** the push, never after: draining both arms of a union and then
-    /// asserting a bound is not a bound, it is a post-hoc assertion an adversarial grammar
-    /// has already defeated.
+    /// Both are checked **before** the push, never after: draining both arms of a union and
+    /// then asserting a bound is not a bound, it is a post-hoc assertion an adversarial
+    /// grammar has already defeated.
     pub fn admit(&mut self, node_results: usize) -> Result<(), CombinatorLimit> {
-        if node_results >= self.limits.max_results_per_node {
-            return Err(CombinatorLimit::new(
-                CombinatorResource::ResultsPerNode,
-                self.limits.max_results_per_node,
-            ));
-        }
+        self.relay(node_results)?;
         if self.produced >= self.limits.max_results {
             return Err(CombinatorLimit::new(
                 CombinatorResource::Results,
@@ -105,6 +113,21 @@ impl RelationalCtx {
             ));
         }
         self.produced += 1;
+        Ok(())
+    }
+
+    /// Relay one **already charged** result into a node whose vector currently holds
+    /// `node_results` entries: checks the per-node bound only.
+    ///
+    /// This is what a pass-through node such as [`Union`] uses. Charging the global bound
+    /// again here is what made it association-dependent.
+    pub fn relay(&mut self, node_results: usize) -> Result<(), CombinatorLimit> {
+        if node_results >= self.limits.max_results_per_node {
+            return Err(CombinatorLimit::new(
+                CombinatorResource::ResultsPerNode,
+                self.limits.max_results_per_node,
+            ));
+        }
         Ok(())
     }
 }
@@ -391,6 +414,8 @@ where
                 let argument =
                     check_step(split, source_len, argument).map_err(CombinatorError::Cursor)?;
                 let consumed = join_steps(start, source_len, function.consumed, &argument)?;
+                // Each pair is a *new* result rather than one of the inputs relayed, so the
+                // cross product is charged: this is where an ambiguity blow-up is bounded.
                 ctx.admit(results.len()).map_err(CombinatorError::Limit)?;
                 results.push(PrefixInterpretation {
                     value: (function.value.clone())(argument.value),
@@ -448,6 +473,7 @@ where
             for tail in next.parse_prefixes_within(source, split, ctx)? {
                 let tail = check_step(split, source_len, tail).map_err(CombinatorError::Cursor)?;
                 let consumed = join_steps(start, source_len, head.consumed, &tail)?;
+                // As in `Ap`: each (head, tail) pair is a new result, so it is charged.
                 ctx.admit(results.len()).map_err(CombinatorError::Limit)?;
                 results.push(PrefixInterpretation {
                     value: tail.value,
@@ -503,8 +529,13 @@ where
         let mut results = Vec::new();
         // Both arms are evaluated. There is no early return: that is the whole difference
         // from ordered choice.
+        //
+        // Union creates no results — its outputs are in bijection with its arms' outputs,
+        // which were already charged where they were created — so it relays rather than
+        // admits. Re-charging here is precisely what made the global bound depend on how
+        // the union was associated.
         for matched in self.left.parse_prefixes_within(source, start, ctx)? {
-            ctx.admit(results.len()).map_err(CombinatorError::Limit)?;
+            ctx.relay(results.len()).map_err(CombinatorError::Limit)?;
             results.push(PrefixInterpretation {
                 value: matched.value,
                 witness: UnionWitness::Left(matched.witness),
@@ -513,7 +544,7 @@ where
             });
         }
         for matched in self.right.parse_prefixes_within(source, start, ctx)? {
-            ctx.admit(results.len()).map_err(CombinatorError::Limit)?;
+            ctx.relay(results.len()).map_err(CombinatorError::Limit)?;
             results.push(PrefixInterpretation {
                 value: matched.value,
                 witness: UnionWitness::Right(matched.witness),
@@ -736,34 +767,71 @@ mod tests {
         );
     }
 
-    /// The global counter is per-evaluation, not per-node, so it does not care how the union
-    /// was associated. This is the structural fix for association-dependent budgets.
+    /// The global counter charges a result where it is *created*, so it does not care how
+    /// the union was associated. This is the structural fix for association-dependent
+    /// budgets.
+    ///
+    /// The three branches deliberately produce **different** numbers of results — `a`
+    /// matches `b"ab"` and so yields two, `z` does not and yields one. With three equal
+    /// branches the two associations charge the same total by arithmetic accident: charging
+    /// on pass-through costs `3a + 3b + 2c` left-associated against `2a + 3b + 3c` right-
+    /// associated, which differ only by `a - c`. An equal-count fixture is therefore
+    /// structurally incapable of falsifying this property, whatever the implementation does.
     #[test]
     fn the_global_bound_does_not_depend_on_association() {
-        let left_nested = evaluate(
-            Union {
-                left: Union {
-                    left: AmbiguousByte(b'a'),
-                    right: AmbiguousByte(b'a'),
+        for max_results in 0..=16 {
+            let limits = RelationalLimits::new(max_results, 1024);
+            let left_nested = evaluate(
+                Union {
+                    left: Union {
+                        left: AmbiguousByte(b'a'),
+                        right: AmbiguousByte(b'a'),
+                    },
+                    right: AmbiguousByte(b'z'),
                 },
+                b"ab".as_slice(),
+                limits,
+            )
+            .map(|results| results.len());
+            let right_nested = evaluate(
+                Union {
+                    left: AmbiguousByte(b'a'),
+                    right: Union {
+                        left: AmbiguousByte(b'a'),
+                        right: AmbiguousByte(b'z'),
+                    },
+                },
+                b"ab".as_slice(),
+                limits,
+            )
+            .map(|results| results.len());
+            assert_eq!(
+                left_nested, right_nested,
+                "associations disagree at max_results = {max_results}"
+            );
+        }
+    }
+
+    /// The global bound counts the results that were created, not the nodes they cross.
+    #[test]
+    fn the_global_bound_counts_created_results_not_pass_throughs() {
+        let program = || Union {
+            left: Union {
+                left: AmbiguousByte(b'a'),
                 right: AmbiguousByte(b'a'),
             },
-            b"ab".as_slice(),
-            RelationalLimits::new(5, 1024),
+            right: AmbiguousByte(b'z'),
+        };
+        assert_eq!(
+            evaluate(program(), b"ab".as_slice(), RelationalLimits::new(5, 1024))
+                .expect("five results fit in a bound of five")
+                .len(),
+            5
         );
-        let right_nested = evaluate(
-            Union {
-                left: AmbiguousByte(b'a'),
-                right: Union {
-                    left: AmbiguousByte(b'a'),
-                    right: AmbiguousByte(b'a'),
-                },
-            },
-            b"ab".as_slice(),
-            RelationalLimits::new(5, 1024),
+        assert_eq!(
+            evaluate(program(), b"ab".as_slice(), RelationalLimits::new(4, 1024))
+                .expect_err("five results do not fit in a bound of four"),
+            CombinatorError::Limit(CombinatorLimit::new(CombinatorResource::Results, 4))
         );
-        assert!(left_nested.is_err());
-        assert!(right_nested.is_err());
-        assert_eq!(left_nested.unwrap_err(), right_nested.unwrap_err());
     }
 }

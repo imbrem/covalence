@@ -7,6 +7,8 @@
 
 use core::fmt;
 
+use covalence_parsing_api::Span;
+
 /// Bounds that make evaluation predictable under hostile inputs and grammars.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CombinatorBudget {
@@ -101,6 +103,21 @@ pub enum CombinatorEvalError<E> {
     },
     /// The environment failed. Ill-typed application (`Ap` of a non-function) arrives here.
     Environment(E),
+    /// The environment reported a primitive match at an impossible extent: a step that moves
+    /// backwards (`end < at`), or one that runs past the end of the source
+    /// (`end > source_len`).
+    ///
+    /// Evaluator failure, never ordinary non-match: an environment that declines reports
+    /// `Ok(None)`, and a `TotalEnv` cannot decline at all. This is the syntax encoding's
+    /// counterpart to the host encoding's
+    /// [`CursorViolation`](crate::host::cursor::CursorViolation), and the two reject exactly
+    /// the same extents, so N1's trichotomy survives a hostile environment instead of one
+    /// encoding aborting the process where the other returns `Err`.
+    PrimitiveExtent {
+        at: usize,
+        end: usize,
+        source_len: usize,
+    },
 }
 
 // `thiserror` is the house idiom for library error types, but this crate has no
@@ -119,6 +136,14 @@ impl<E: fmt::Display> fmt::Display for CombinatorEvalError<E> {
                 write!(f, "left recursion through rule {rule} at offset {offset}")
             }
             Self::Environment(error) => write!(f, "environment error: {error}"),
+            Self::PrimitiveExtent {
+                at,
+                end,
+                source_len,
+            } => write!(
+                f,
+                "primitive invoked at {at} reported an extent ending at {end} over a source of length {source_len}"
+            ),
         }
     }
 }
@@ -130,6 +155,31 @@ impl<E: std::error::Error + 'static> std::error::Error for CombinatorEvalError<E
             _ => None,
         }
     }
+}
+
+/// Validate an environment-supplied primitive extent and turn it into a [`Span`].
+///
+/// This is the syntax encoding's counterpart to the host encoding's
+/// [`check_step`](crate::host::cursor::check_step), and it deliberately rejects the same two
+/// conditions that function does: a step that moves backwards, and one that runs past the
+/// end of the source. `SignatureEnv::step` documents `end >= at` as a precondition, but the
+/// environment is caller-supplied, so nothing enforces it — treating the precondition as an
+/// assumption is how a caller ends up aborting the process through `Span::new(..).expect`.
+///
+/// Both failures are evaluator failure, never ordinary non-match: an environment that
+/// declines returns `Ok(None)` instead.
+pub fn check_primitive_extent<E>(
+    at: usize,
+    end: usize,
+    source_len: usize,
+) -> Result<Span, CombinatorEvalError<E>> {
+    Span::new(at, end)
+        .filter(|_| end <= source_len)
+        .ok_or(CombinatorEvalError::PrimitiveExtent {
+            at,
+            end,
+            source_len,
+        })
 }
 
 /// Why the reference spine declined. Ordinary non-match, never evaluator failure.

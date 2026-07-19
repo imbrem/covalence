@@ -2451,7 +2451,7 @@
       "summary": "A compiled",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/morphism/compile.rs",
-      "line": 1047,
+      "line": 1061,
       "crate": "covalence-combinator-parsing"
     },
     {
@@ -2461,7 +2461,7 @@
       "summary": "Environment resolve",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/syntax/env.rs",
-      "line": 87,
+      "line": 94,
       "crate": "covalence-combinator-parsing"
     },
     {
@@ -2611,7 +2611,7 @@
       "summary": "No derivation sharing. A",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/syntax/relational.rs",
-      "line": 39,
+      "line": 40,
       "crate": "covalence-combinator-parsing"
     },
     {
@@ -2661,7 +2661,7 @@
       "summary": "TotalPrefixParser",
       "structured": true,
       "path": "crates/lang/combinator-parsing/src/syntax/total.rs",
-      "line": 26,
+      "line": 29,
       "crate": "covalence-combinator-parsing"
     },
     {

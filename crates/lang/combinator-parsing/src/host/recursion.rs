@@ -105,8 +105,25 @@ impl RecursionCtx {
     }
 
     /// Release a recursion point entered by [`enter`](Self::enter).
+    ///
+    /// **Saturating**, and deliberately so. This is a public method on a public type whose
+    /// entire purpose is to be threaded through caller-written [`BoundedPartial`] impls, so an
+    /// unpaired `leave` is a caller mistake this crate cannot prevent — only contain. An
+    /// unguarded `-= 1` panics in debug and wraps to `usize::MAX` in release, after which every
+    /// subsequent [`enter`](Self::enter) reports the evaluation exhausted and a perfectly
+    /// productive grammar is diagnosed as unbounded recursion. Saturating turns a local caller
+    /// error into a local no-op instead of a wrong diagnosis of an unrelated grammar.
+    ///
+    /// An RAII guard would enforce the pairing rather than absorb its violation, and was
+    /// rejected: a guard holding `&mut RecursionCtx` owns the borrow the guarded region needs
+    /// to *thread onward* into the sub-parser, so it would have to hand it back through an
+    /// accessor — changing the seam every caller-written `BoundedPartial` impl is written
+    /// against, in exchange for an invariant that is already enforced where it matters. The
+    /// bound itself is enforced on the [`enter`](Self::enter) side, which is checked and
+    /// fallible; `leave` only gives depth back, and giving back depth that was never taken can
+    /// at worst make a bound *more* permissive within one evaluation, never unsound.
     pub fn leave(&mut self) {
-        self.depth -= 1;
+        self.depth = self.depth.saturating_sub(1);
     }
 }
 
@@ -752,6 +769,61 @@ mod tests {
             panic!("expected a match");
         };
         assert_eq!(matched.remainder, 6);
+    }
+
+    /// [`RecursionCtx::leave`] is public on a public type whose whole purpose is to be threaded
+    /// through caller-written [`BoundedPartial`] impls, so an unpaired `leave` is a caller
+    /// mistake this crate cannot prevent — only contain. It must not wrap the counter: a
+    /// wrapped `depth` is `usize::MAX`, after which every subsequent `enter` reports the
+    /// evaluation exhausted and a correct grammar is diagnosed as unbounded recursion.
+    #[test]
+    fn an_unpaired_leave_neither_panics_nor_wraps_the_depth_counter() {
+        let mut ctx = RecursionCtx::new(2);
+        ctx.leave();
+        assert_eq!(
+            ctx.depth(),
+            0,
+            "depth is a count of entries, never negative"
+        );
+        ctx.enter()
+            .expect("the bound must survive an unpaired leave");
+        assert_eq!(ctx.depth(), 1);
+    }
+
+    /// The containment reaches a whole evaluation, not only the counter: a caller-written
+    /// combinator that releases a recursion point it never charged must not poison the
+    /// recursion points that follow it.
+    #[test]
+    fn an_unpaired_leave_does_not_poison_the_rest_of_the_evaluation() {
+        /// Releases a recursion point it never entered, then delegates.
+        struct Unbalanced<P>(P);
+
+        impl<P: BoundedPartial> BoundedPartial for Unbalanced<P> {
+            type Source = P::Source;
+            type Value = P::Value;
+            type Witness = P::Witness;
+            type Diagnostic = P::Diagnostic;
+            type Error = P::Error;
+
+            fn parse_prefix_within(
+                &self,
+                source: &P::Source,
+                start: usize,
+                ctx: &mut RecursionCtx,
+            ) -> PrefixParseResult<P::Value, P::Witness, P::Diagnostic, P::Error> {
+                ctx.leave();
+                self.0.parse_prefix_within(source, start, ctx)
+            }
+        }
+
+        let parser = PartialEvaluation::new(Unbalanced(right_recursive()), 64);
+        let ParseAttempt::Match(matched) = parser
+            .parse_prefix(b"aaaab", 0)
+            .expect("an unpaired leave must not turn productive recursion into a depth limit")
+        else {
+            panic!("expected a match");
+        };
+        assert_eq!(matched.remainder, 5);
     }
 
     /// Charging only at recursion points is what makes the bound association-independent: the

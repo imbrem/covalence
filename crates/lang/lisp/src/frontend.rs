@@ -11,9 +11,9 @@ use core::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 use covalence_kernel_lisp::{
-    CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum, ExecutionError,
-    HostConfiguration, HostEnvironment, HostEnvironments, HostValue, HostValues, LispEnvironment,
-    LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute,
+    CoreExpr, CoreMachine, CoreMachineError, CorePrimitive, Datum, Definition as LispDefinition,
+    ExecutionError, HostConfiguration, HostEnvironment, HostEnvironments, HostValue, HostValues,
+    LispEnvironment, LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeValueView, execute,
 };
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
@@ -880,6 +880,33 @@ impl HostSession {
         let value = self.evaluate_core(&expression)?;
         self.environment = self.environment.extend([(name.clone(), value)]);
         Ok(Some(name))
+    }
+
+    /// Install an already-lowered recursive definition into the partial
+    /// operational environment.
+    ///
+    /// This establishes only executable recursive binding. In particular it
+    /// does not inspect or replay ACL2 admission evidence and makes no
+    /// termination or totality claim.
+    pub fn define_core(
+        &mut self,
+        definition: LispDefinition<String, FrontendExpr>,
+    ) -> Result<String, HostSessionError> {
+        let name = definition.name.clone();
+        let expression = CoreExpr::Lambda {
+            name: Some(name.clone()),
+            parameters: definition
+                .parameters
+                .into_iter()
+                .map(covalence_kernel_lisp::Parameter::new)
+                .collect(),
+            rest: definition.rest.map(covalence_kernel_lisp::Parameter::new),
+            body: Box::new(definition.body),
+        };
+        self.environment = host_machine()
+            .bind_recursive(&self.environment, vec![(name.clone(), expression)])
+            .map_err(HostSessionError::Machine)?;
+        Ok(name)
     }
 
     /// Atomically install a mutually recursive group of `define`, `label`, or

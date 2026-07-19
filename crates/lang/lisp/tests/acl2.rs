@@ -17,7 +17,9 @@
 #![cfg(feature = "hol")]
 
 use covalence_init::init::acl2::count::acl2_count_natp_fact;
+use covalence_kernel_lisp::{CoreExpr, Datum};
 use covalence_lisp::acl2::{Acl2Outcome, Acl2Session, Acl2ValueKind};
+use covalence_lisp::frontend::{CoreAtom, HostSession, SurfaceDialect};
 use covalence_lisp::reader::read_one;
 
 fn session() -> Acl2Session {
@@ -86,6 +88,56 @@ fn defun_app_and_apply() {
         "a recursive call must ride on the defun hypothesis"
     );
     assert_eq!(out.kind, Acl2ValueKind::Data);
+}
+
+#[test]
+fn admitted_definition_reuses_the_shared_partial_core() {
+    let mut s = session();
+    s.eval_cell("(defun identity (x) x)").unwrap();
+    let definition = s
+        .definition("identity")
+        .expect("admitted definition retains its shared core");
+    assert_eq!(definition.core.name, "identity");
+    assert_eq!(definition.core.parameters, ["x"]);
+    assert!(definition.core.rest.is_none());
+    assert!(matches!(&definition.core.body, CoreExpr::Variable(name) if name == "x"));
+
+    let mut partial = HostSession::new(SurfaceDialect::Acl2Core, 256);
+    partial.define_core(definition.core.clone()).unwrap();
+    let value = partial
+        .evaluate(&read_one("(identity (quote (a b c)))").unwrap())
+        .unwrap();
+    assert_eq!(
+        value.as_datum(),
+        Some(Datum::list([
+            Datum::Atom(CoreAtom::symbol("a")),
+            Datum::Atom(CoreAtom::symbol("b")),
+            Datum::Atom(CoreAtom::symbol("c")),
+        ])),
+        "ACL2 admission and generic partial execution must share the lowered program"
+    );
+
+    s.eval_cell(
+        "(defun app-core (x y)
+           (if (endp x) y (cons (car x) (app-core (cdr x) y))))",
+    )
+    .unwrap();
+    let app = s
+        .definition("app-core")
+        .expect("recursive ACL2 definition retains its normalized shared core");
+    partial.define_core(app.core.clone()).unwrap();
+    let value = partial
+        .evaluate(&read_one("(app-core (quote (a b)) (quote (c)))").unwrap())
+        .unwrap();
+    assert_eq!(
+        value.as_datum(),
+        Some(Datum::list([
+            Datum::Atom(CoreAtom::symbol("a")),
+            Datum::Atom(CoreAtom::symbol("b")),
+            Datum::Atom(CoreAtom::symbol("c")),
+        ])),
+        "ACL2 ENDP normalization must survive into generic partial execution"
+    );
 }
 
 #[test]

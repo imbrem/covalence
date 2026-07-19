@@ -34,7 +34,7 @@ pub use covalence_sexpr_api as sexpr;
 
 pub use admission::{
     AdmissionPolicy, AdmissionReplay, AdmittedDefinition, Definition, ExistenceUniqueness,
-    RecursiveCall, TerminationCertificate, Totalization,
+    RecursiveCall, SourcedDefinition, TerminationCertificate, Totalization,
 };
 pub use effect::{
     EffectHandler, EffectReplay, EffectRequest, EffectResume, EffectRunError, EffectState,

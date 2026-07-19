@@ -9340,7 +9340,7 @@
       "title": "admission.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/admission.rs",
-      "words": 85,
+      "words": 123,
       "updated": 0
     },
     {
@@ -10744,7 +10744,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 1850,
+      "words": 1870,
       "updated": 0
     },
     {
@@ -10789,7 +10789,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 1181,
+      "words": 1208,
       "updated": 0
     },
     {
@@ -10870,7 +10870,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 525,
+      "words": 555,
       "updated": 0
     },
     {

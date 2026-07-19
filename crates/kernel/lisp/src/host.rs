@@ -11,8 +11,9 @@ use std::sync::{Arc, OnceLock};
 
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
 use crate::runtime::{
-    ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispValue, PrimitiveSemantics,
-    RuntimeBinding, RuntimeValueLayer, RuntimeValueView,
+    ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
+    LispRuntime, LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding,
+    RuntimeValueLayer, RuntimeValueView,
 };
 use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
 
@@ -38,6 +39,10 @@ pub struct HostEnvironment<S, V> {
 pub struct HostBindingCell<V> {
     value: Arc<OnceLock<V>>,
 }
+
+/// Single-use initialization capability for one reserved recursive binding.
+#[derive(Debug)]
+pub struct HostRecursiveCell<V>(HostBindingCell<V>);
 
 impl<V> HostBindingCell<V> {
     fn uninitialized() -> Self {
@@ -386,83 +391,157 @@ impl<S: Clone + PartialEq, V: Clone> LispEnvironment for HostEnvironments<S, V> 
     }
 }
 
+impl<S: Clone + PartialEq, V: Clone> LispRecursiveEnvironment for HostEnvironments<S, V> {
+    type Cell = HostRecursiveCell<V>;
+
+    fn reserve_recursive(
+        &self,
+        environment: &Self::Environment,
+        symbols: Vec<Self::Symbol>,
+    ) -> Result<RecursiveAllocation<Self::Environment, Self::Cell>, Self::Error> {
+        let cells: Vec<_> = symbols
+            .iter()
+            .map(|_| HostBindingCell::uninitialized())
+            .collect();
+        let environment =
+            environment.extend_cells(symbols.into_iter().zip(cells.iter().cloned()).collect());
+        Ok(RecursiveAllocation {
+            environment,
+            cells: cells.into_iter().map(HostRecursiveCell).collect(),
+        })
+    }
+
+    fn initialize_recursive(&self, cell: Self::Cell, value: Self::Value) {
+        cell.0
+            .initialize(value)
+            .unwrap_or_else(|_| unreachable!("single-use recursive cell was already initialized"));
+    }
+}
+
+/// Coherent direct-Rust runtime bundle for the common Lisp machine.
+#[derive(Clone, Debug)]
+pub struct HostRuntime<S, A, P> {
+    values: HostValues<S, A, P>,
+    closures: HostClosures<S, A, P>,
+    environments: HostEnvironments<S, HostValue<S, A, P>>,
+}
+
+impl<S, A, P> Default for HostRuntime<S, A, P> {
+    fn default() -> Self {
+        Self {
+            values: HostValues::default(),
+            closures: HostClosures::default(),
+            environments: HostEnvironments::default(),
+        }
+    }
+}
+
+impl<S, A, P> LispRuntime for HostRuntime<S, A, P>
+where
+    S: Clone + PartialEq,
+    A: Clone,
+    P: Clone,
+{
+    type Symbol = S;
+    type Atom = A;
+    type Primitive = P;
+    type Expr = Expr<S, A, P>;
+    type Value = Value<S, A, P>;
+    type Closure = Arc<HostClosure<S, A, P>>;
+    type Environment = Environment<S, A, P>;
+    type Values = HostValues<S, A, P>;
+    type Closures = HostClosures<S, A, P>;
+    type Environments = HostEnvironments<S, HostValue<S, A, P>>;
+
+    fn values(&self) -> &Self::Values {
+        &self.values
+    }
+
+    fn closures(&self) -> &Self::Closures {
+        &self.closures
+    }
+
+    fn environments(&self) -> &Self::Environments {
+        &self.environments
+    }
+}
+
 /// The active expression or computed value.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HostControl<S, A, P> {
-    Expression(Expr<S, A, P>),
-    Value(Value<S, A, P>),
+pub enum MachineControl<E, V> {
+    Expression(E),
+    Value(V),
 }
 
 /// Evaluation-context frames for a strict lexical CEK-style machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HostFrame<S, A, P> {
+pub enum MachineFrame<E, V, N, P> {
     If {
-        consequent: Expr<S, A, P>,
-        alternative: Expr<S, A, P>,
-        environment: Environment<S, A, P>,
+        consequent: E,
+        alternative: E,
+        environment: N,
     },
     Sequence {
-        remaining: Vec<Expr<S, A, P>>,
-        environment: Environment<S, A, P>,
+        remaining: Vec<E>,
+        environment: N,
     },
     ApplyParts {
-        function: Option<Value<S, A, P>>,
-        evaluated: Vec<Option<Value<S, A, P>>>,
+        function: Option<V>,
+        evaluated: Vec<Option<V>>,
         splice_tail: bool,
-        current: HostApplicationPosition,
-        remaining: Vec<HostApplicationPart<S, A, P>>,
-        environment: Environment<S, A, P>,
+        current: MachineApplicationPosition,
+        remaining: Vec<MachineApplicationPart<E>>,
+        environment: N,
     },
     PrimitiveArguments {
         primitive: P,
-        evaluated: Vec<Option<Value<S, A, P>>>,
+        evaluated: Vec<Option<V>>,
         current: usize,
-        remaining: Vec<(usize, Expr<S, A, P>)>,
-        environment: Environment<S, A, P>,
+        remaining: Vec<(usize, E)>,
+        environment: N,
     },
 }
 
 /// Position currently being evaluated in an application.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HostApplicationPosition {
+pub enum MachineApplicationPosition {
     Operator,
     Argument(usize),
 }
 
 /// One unevaluated part of an application.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HostApplicationPart<S, A, P> {
-    Operator(Expr<S, A, P>),
-    Argument {
-        index: usize,
-        expression: Expr<S, A, P>,
-    },
+pub enum MachineApplicationPart<E> {
+    Operator(E),
+    Argument { index: usize, expression: E },
 }
 
 /// A complete machine configuration.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HostConfiguration<S, A, P> {
-    pub control: HostControl<S, A, P>,
-    pub environment: Environment<S, A, P>,
-    pub continuation: Vec<HostFrame<S, A, P>>,
+pub struct MachineConfiguration<E, V, N, P> {
+    pub control: MachineControl<E, V>,
+    pub environment: N,
+    pub continuation: Vec<MachineFrame<E, V, N, P>>,
 }
 
-impl<S, A, P> HostConfiguration<S, A, P> {
-    pub fn initial(expression: Expr<S, A, P>) -> Self {
-        Self::with_environment(expression, HostEnvironment::default())
+impl<E, V, N: Default, P> MachineConfiguration<E, V, N, P> {
+    pub fn initial(expression: E) -> Self {
+        Self::with_environment(expression, N::default())
     }
+}
 
-    pub fn with_environment(expression: Expr<S, A, P>, environment: Environment<S, A, P>) -> Self {
+impl<E, V, N, P> MachineConfiguration<E, V, N, P> {
+    pub fn with_environment(expression: E, environment: N) -> Self {
         Self {
-            control: HostControl::Expression(expression),
+            control: MachineControl::Expression(expression),
             environment,
             continuation: Vec::new(),
         }
     }
 
-    pub fn terminal_value(&self) -> Option<&Value<S, A, P>> {
+    pub fn terminal_value(&self) -> Option<&V> {
         if self.continuation.is_empty()
-            && let HostControl::Value(value) = &self.control
+            && let MachineControl::Value(value) = &self.control
         {
             Some(value)
         } else {
@@ -470,6 +549,13 @@ impl<S, A, P> HostConfiguration<S, A, P> {
         }
     }
 }
+
+pub type HostControl<S, A, P> = MachineControl<Expr<S, A, P>, Value<S, A, P>>;
+pub type HostFrame<S, A, P> = MachineFrame<Expr<S, A, P>, Value<S, A, P>, Environment<S, A, P>, P>;
+pub type HostApplicationPosition = MachineApplicationPosition;
+pub type HostApplicationPart<S, A, P> = MachineApplicationPart<Expr<S, A, P>>;
+pub type HostConfiguration<S, A, P> =
+    MachineConfiguration<Expr<S, A, P>, Value<S, A, P>, Environment<S, A, P>, P>;
 
 /// Errors from the executable host machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -533,12 +619,13 @@ impl<S: Debug, E: Debug> core::error::Error for CoreMachineError<S, E> {}
 
 /// Strategy-parameterized host realization of the common Lisp core.
 #[derive(Clone, Debug)]
-pub struct CoreMachine<P> {
+pub struct CoreMachine<P: CorePrimitive> {
     primitives: P,
     strategy: Strategy,
+    runtime: HostRuntime<P::Symbol, P::Atom, P::Primitive>,
 }
 
-impl<P> CoreMachine<P> {
+impl<P: CorePrimitive> CoreMachine<P> {
     pub fn new(primitives: P) -> Self {
         Self::with_strategy(primitives, Strategy::STRICT_LEXICAL)
     }
@@ -547,6 +634,7 @@ impl<P> CoreMachine<P> {
         Self {
             primitives,
             strategy,
+            runtime: HostRuntime::default(),
         }
     }
 
@@ -566,12 +654,18 @@ type ConfigOf<P> = HostConfiguration<
 >;
 
 impl<P: CorePrimitive> CoreMachine<P> {
-    fn values(&self) -> HostValues<P::Symbol, P::Atom, P::Primitive> {
-        HostValues::default()
+    fn values(&self) -> &HostValues<P::Symbol, P::Atom, P::Primitive> {
+        self.runtime.values()
     }
 
-    fn closures(&self) -> HostClosures<P::Symbol, P::Atom, P::Primitive> {
-        HostClosures::default()
+    fn closures(&self) -> &HostClosures<P::Symbol, P::Atom, P::Primitive> {
+        self.runtime.closures()
+    }
+
+    fn environments(
+        &self,
+    ) -> &HostEnvironments<P::Symbol, Value<P::Symbol, P::Atom, P::Primitive>> {
+        self.runtime.environments()
     }
 
     /// Extend an environment with an atomic mutually recursive lambda group.
@@ -594,12 +688,15 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 return Err(CoreMachineError::InvalidRecursiveInitializer(name.clone()));
             }
         }
-        let cells: Vec<_> = bindings
-            .iter()
-            .map(|(name, _)| (name.clone(), HostBindingCell::uninitialized()))
-            .collect();
-        let environment = parent.extend_cells(cells.clone());
-        for ((_, expression), (_, cell)) in bindings.into_iter().zip(cells) {
+        let environments = self.environments();
+        let allocation = environments
+            .reserve_recursive(
+                parent,
+                bindings.iter().map(|(name, _)| name.clone()).collect(),
+            )
+            .unwrap_or_else(|never| match never {});
+        let environment = allocation.environment;
+        for ((_, expression), cell) in bindings.into_iter().zip(allocation.cells) {
             let CoreExpr::Lambda {
                 name,
                 parameters,
@@ -626,8 +723,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 .values()
                 .roll(RuntimeValueLayer::Closure(closure))
                 .unwrap_or_else(|never| match never {});
-            cell.initialize(closure)
-                .expect("fresh recursive binding cell");
+            environments.initialize_recursive(cell, closure);
         }
         Ok(environment)
     }
@@ -731,7 +827,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 configuration.control = HostControl::Expression(
                     if self
                         .primitives
-                        .is_false(&self.values(), &value)
+                        .is_false(self.values(), &value)
                         .map_err(CoreMachineError::Primitive)?
                     {
                         alternative
@@ -804,7 +900,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     let arguments = Self::completed_arguments(evaluated);
                     let value = self
                         .primitives
-                        .apply(&self.values(), &primitive, &arguments)
+                        .apply(self.values(), &primitive, &arguments)
                         .map_err(CoreMachineError::Primitive)?;
                     configuration.control = HostControl::Value(value);
                 } else {
@@ -836,7 +932,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
             RuntimeValueLayer::Primitive(primitive) => {
                 let value = self
                     .primitives
-                    .apply(&self.values(), &primitive, &arguments)
+                    .apply(self.values(), &primitive, &arguments)
                     .map_err(CoreMachineError::Primitive)?;
                 configuration.control = HostControl::Value(value);
                 return Ok(Some(configuration));
@@ -899,7 +995,16 @@ impl<P: CorePrimitive> CoreMachine<P> {
         } else {
             &configuration.environment
         };
-        configuration.environment = parent.extend(bindings);
+        configuration.environment = self
+            .environments()
+            .extend(
+                parent,
+                bindings
+                    .into_iter()
+                    .map(|(symbol, value)| RuntimeBinding::new(symbol, value))
+                    .collect(),
+            )
+            .unwrap_or_else(|never| match never {});
         configuration.control = HostControl::Expression(closure.body);
         Ok(Some(configuration))
     }
@@ -935,14 +1040,15 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     CoreExpr::Truth(value) => {
                         next.control = HostControl::Value(
                             self.primitives
-                                .truth(&self.values(), value)
+                                .truth(self.values(), value)
                                 .map_err(CoreMachineError::Primitive)?,
                         );
                     }
                     CoreExpr::Variable(symbol) => {
-                        let value = next
-                            .environment
-                            .lookup(&symbol)
+                        let value = self
+                            .environments()
+                            .lookup(&next.environment, &symbol)
+                            .unwrap_or_else(|never| match never {})
                             .ok_or(CoreMachineError::UnboundVariable(symbol))?;
                         next.control = HostControl::Value(value);
                     }
@@ -1085,7 +1191,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         if arguments.is_empty() {
                             let value = self
                                 .primitives
-                                .apply(&self.values(), &operator, &[])
+                                .apply(self.values(), &operator, &[])
                                 .map_err(CoreMachineError::Primitive)?;
                             next.control = HostControl::Value(value);
                         } else {
@@ -1354,11 +1460,25 @@ mod tests {
     }
 
     #[test]
+    fn machine_state_is_independent_of_host_runtime_representations() {
+        type Alternate = MachineConfiguration<&'static str, u8, Vec<(&'static str, u8)>, ()>;
+
+        let mut configuration = Alternate::initial("expression");
+        assert!(matches!(
+            configuration.control,
+            MachineControl::Expression("expression")
+        ));
+        configuration.control = MachineControl::Value(42);
+        assert_eq!(configuration.terminal_value(), Some(&42));
+    }
+
+    #[test]
     fn host_machine_values_satisfy_runtime_fixpoint_round_trips() {
         type TestValue = HostValue<&'static str, &'static str, Primitive>;
 
-        let values = HostValues::<&str, &str, Primitive>::default();
-        let closures = HostClosures::<&str, &str, Primitive>::default();
+        let runtime = HostRuntime::<&str, &str, Primitive>::default();
+        let values = runtime.values();
+        let closures = runtime.closures();
         let closure_record = ClosureRecord {
             name: Some("identity"),
             parameters: vec!["value"],

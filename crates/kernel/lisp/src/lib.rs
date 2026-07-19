@@ -39,8 +39,9 @@ pub use host::{
     HostControl, HostEnvironment, HostFrame, HostValue,
 };
 pub use relation::{
-    CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError, MayEval,
-    MayEvalReplay, StepRelation, TerminalValue, TraceReplay, TraceSoundness, evaluate, execute,
+    CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError,
+    Exploration, ExplorationBounds, MayEval, MayEvalReplay, StepRelation, TerminalValue,
+    TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
 pub use stack::{
     StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,

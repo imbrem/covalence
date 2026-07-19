@@ -67,7 +67,11 @@ disable-model-invocation: true
   - The root package separates common syntax, explicit evaluation strategies,
     one-step relations, finite checked traces, and proof-producing replay
     capabilities. Its host CEK-style realization is proof-free and exists for
-    trace discovery and differential/conformance testing.
+    trace discovery and differential/conformance testing. The host strategy is
+    operational: it supports lexical or dynamic scope, deterministic
+    left-to-right or right-to-left evaluation of operator and operands, and a
+    relational mode whose bounded breadth-first explorer retains every
+    discovered trace and an explicit truncated frontier.
   - `crates/lang/lisp` is the current compatibility/demo frontend. Its
     NativeHol `LispRel` implements the neutral step and replay capabilities,
     while ACL2-specific worlds and derivations are incrementally separated

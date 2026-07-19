@@ -9,9 +9,7 @@ use core::marker::PhantomData;
 use std::sync::{Arc, OnceLock};
 
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
-use crate::syntax::{Binding, CoreExpr, LispSyntax, Parameter};
-
-// TODO(cov:lisp.core.relational-strategies, major): Add nondeterministic evaluation-context backends for relational operand order and unspecified choices.
+use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
 
 /// The direct inductive S-expression representation
 /// `μX. Atom(P) + 1 + X×X`.
@@ -201,21 +199,36 @@ pub enum HostFrame<S, A, P> {
         alternative: Expr<S, A, P>,
         environment: Environment<S, A, P>,
     },
-    ApplyOperator {
-        arguments: Vec<Expr<S, A, P>>,
-        environment: Environment<S, A, P>,
-    },
-    ApplyArguments {
-        function: Value<S, A, P>,
-        evaluated: Vec<Value<S, A, P>>,
-        remaining: Vec<Expr<S, A, P>>,
+    ApplyParts {
+        function: Option<Value<S, A, P>>,
+        evaluated: Vec<Option<Value<S, A, P>>>,
+        current: HostApplicationPosition,
+        remaining: Vec<HostApplicationPart<S, A, P>>,
         environment: Environment<S, A, P>,
     },
     PrimitiveArguments {
         primitive: P,
-        evaluated: Vec<Value<S, A, P>>,
-        remaining: Vec<Expr<S, A, P>>,
+        evaluated: Vec<Option<Value<S, A, P>>>,
+        current: usize,
+        remaining: Vec<(usize, Expr<S, A, P>)>,
         environment: Environment<S, A, P>,
+    },
+}
+
+/// Position currently being evaluated in an application.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostApplicationPosition {
+    Operator,
+    Argument(usize),
+}
+
+/// One unevaluated part of an application.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HostApplicationPart<S, A, P> {
+    Operator(Expr<S, A, P>),
+    Argument {
+        index: usize,
+        expression: Expr<S, A, P>,
     },
 }
 
@@ -257,6 +270,7 @@ pub enum CoreMachineError<S, E> {
     UnboundVariable(S),
     DuplicateRecursiveBinding(S),
     InvalidRecursiveInitializer(S),
+    NondeterministicSuccessors { count: usize },
     NotCallable,
     Arity { expected: usize, actual: usize },
     Primitive(E),
@@ -272,6 +286,10 @@ impl<S: Debug, E: Debug> Display for CoreMachineError<S, E> {
             Self::InvalidRecursiveInitializer(symbol) => {
                 write!(f, "recursive binding must initialize a lambda: {symbol:?}")
             }
+            Self::NondeterministicSuccessors { count } => write!(
+                f,
+                "deterministic execution requested for a state with {count} legal successors"
+            ),
             Self::NotCallable => f.write_str("attempted to apply a non-closure value"),
             Self::Arity { expected, actual } => {
                 write!(f, "arity mismatch: expected {expected}, got {actual}")
@@ -283,19 +301,31 @@ impl<S: Debug, E: Debug> Display for CoreMachineError<S, E> {
 
 impl<S: Debug, E: Debug> core::error::Error for CoreMachineError<S, E> {}
 
-/// Strict, left-to-right host realization of the common Lisp core.
+/// Strategy-parameterized host realization of the common Lisp core.
 #[derive(Clone, Debug)]
 pub struct CoreMachine<P> {
     primitives: P,
+    strategy: Strategy,
 }
 
 impl<P> CoreMachine<P> {
     pub fn new(primitives: P) -> Self {
-        Self { primitives }
+        Self::with_strategy(primitives, Strategy::STRICT_LEXICAL)
+    }
+
+    pub fn with_strategy(primitives: P, strategy: Strategy) -> Self {
+        Self {
+            primitives,
+            strategy,
+        }
     }
 
     pub fn primitives(&self) -> &P {
         &self.primitives
+    }
+
+    pub fn strategy(&self) -> Strategy {
+        self.strategy
     }
 }
 
@@ -306,13 +336,93 @@ type ConfigOf<P> = HostConfiguration<
 >;
 
 impl<P: CorePrimitive> CoreMachine<P> {
+    fn argument_choices(&self, count: usize) -> Vec<usize> {
+        match self.strategy.order {
+            EvaluationOrder::ApplicativeLeftToRight => vec![0],
+            EvaluationOrder::ApplicativeRightToLeft => vec![count - 1],
+            EvaluationOrder::Relational => (0..count).collect(),
+        }
+    }
+
+    fn schedule_application_part(
+        &self,
+        configuration: ConfigOf<P>,
+        function: Option<Value<P::Symbol, P::Atom, P::Primitive>>,
+        evaluated: Vec<Option<Value<P::Symbol, P::Atom, P::Primitive>>>,
+        remaining: Vec<HostApplicationPart<P::Symbol, P::Atom, P::Primitive>>,
+        environment: Environment<P::Symbol, P::Atom, P::Primitive>,
+    ) -> Vec<ConfigOf<P>> {
+        self.argument_choices(remaining.len())
+            .into_iter()
+            .map(|choice| {
+                let mut next = configuration.clone();
+                let mut pending = remaining.clone();
+                let (current, expression) = match pending.remove(choice) {
+                    HostApplicationPart::Operator(expression) => {
+                        (HostApplicationPosition::Operator, expression)
+                    }
+                    HostApplicationPart::Argument { index, expression } => {
+                        (HostApplicationPosition::Argument(index), expression)
+                    }
+                };
+                next.continuation.push(HostFrame::ApplyParts {
+                    function: function.clone(),
+                    evaluated: evaluated.clone(),
+                    current,
+                    remaining: pending,
+                    environment: environment.clone(),
+                });
+                next.control = HostControl::Expression(expression);
+                next.environment = environment.clone();
+                next
+            })
+            .collect()
+    }
+
+    fn schedule_primitive_argument(
+        &self,
+        configuration: ConfigOf<P>,
+        primitive: P::Primitive,
+        evaluated: Vec<Option<Value<P::Symbol, P::Atom, P::Primitive>>>,
+        remaining: Vec<(usize, Expr<P::Symbol, P::Atom, P::Primitive>)>,
+        environment: Environment<P::Symbol, P::Atom, P::Primitive>,
+    ) -> Vec<ConfigOf<P>> {
+        self.argument_choices(remaining.len())
+            .into_iter()
+            .map(|choice| {
+                let mut next = configuration.clone();
+                let mut pending = remaining.clone();
+                let (current, expression) = pending.remove(choice);
+                next.continuation.push(HostFrame::PrimitiveArguments {
+                    primitive: primitive.clone(),
+                    evaluated: evaluated.clone(),
+                    current,
+                    remaining: pending,
+                    environment: environment.clone(),
+                });
+                next.control = HostControl::Expression(expression);
+                next.environment = environment.clone();
+                next
+            })
+            .collect()
+    }
+
+    fn completed_arguments(
+        evaluated: Vec<Option<Value<P::Symbol, P::Atom, P::Primitive>>>,
+    ) -> Vec<Value<P::Symbol, P::Atom, P::Primitive>> {
+        evaluated
+            .into_iter()
+            .map(|value| value.expect("every argument position was evaluated"))
+            .collect()
+    }
+
     fn continue_with(
         &self,
         mut configuration: ConfigOf<P>,
         value: Value<P::Symbol, P::Atom, P::Primitive>,
-    ) -> Result<Option<ConfigOf<P>>, CoreMachineError<P::Symbol, P::Error>> {
+    ) -> Result<Vec<ConfigOf<P>>, CoreMachineError<P::Symbol, P::Error>> {
         let Some(frame) = configuration.continuation.pop() else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
         match frame {
             HostFrame::If {
@@ -328,72 +438,63 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     });
                 configuration.environment = environment;
             }
-            HostFrame::ApplyOperator {
-                mut arguments,
-                environment,
-            } => {
-                if arguments.is_empty() {
-                    return self.apply(configuration, value, Vec::new());
-                }
-                let first = arguments.remove(0);
-                configuration.continuation.push(HostFrame::ApplyArguments {
-                    function: value,
-                    evaluated: Vec::new(),
-                    remaining: arguments,
-                    environment: environment.clone(),
-                });
-                configuration.control = HostControl::Expression(first);
-                configuration.environment = environment;
-            }
-            HostFrame::ApplyArguments {
-                function,
+            HostFrame::ApplyParts {
+                mut function,
                 mut evaluated,
-                mut remaining,
+                current,
+                remaining,
                 environment,
             } => {
-                evaluated.push(value);
-                if remaining.is_empty() {
-                    return self.apply(configuration, function, evaluated);
+                match current {
+                    HostApplicationPosition::Operator => function = Some(value),
+                    HostApplicationPosition::Argument(index) => evaluated[index] = Some(value),
                 }
-                let first = remaining.remove(0);
-                configuration.continuation.push(HostFrame::ApplyArguments {
+                if remaining.is_empty() {
+                    let function = function.expect("the application operator was evaluated");
+                    return Ok(self
+                        .apply(
+                            configuration,
+                            function,
+                            Self::completed_arguments(evaluated),
+                        )?
+                        .into_iter()
+                        .collect());
+                }
+                return Ok(self.schedule_application_part(
+                    configuration,
                     function,
                     evaluated,
                     remaining,
-                    environment: environment.clone(),
-                });
-                configuration.control = HostControl::Expression(first);
-                configuration.environment = environment;
+                    environment,
+                ));
             }
             HostFrame::PrimitiveArguments {
                 primitive,
                 mut evaluated,
-                mut remaining,
+                current,
+                remaining,
                 environment,
             } => {
-                evaluated.push(value);
+                evaluated[current] = Some(value);
                 if remaining.is_empty() {
+                    let arguments = Self::completed_arguments(evaluated);
                     let value = self
                         .primitives
-                        .apply(&primitive, &evaluated)
+                        .apply(&primitive, &arguments)
                         .map_err(CoreMachineError::Primitive)?;
                     configuration.control = HostControl::Value(value);
                 } else {
-                    let first = remaining.remove(0);
-                    configuration
-                        .continuation
-                        .push(HostFrame::PrimitiveArguments {
-                            primitive,
-                            evaluated,
-                            remaining,
-                            environment: environment.clone(),
-                        });
-                    configuration.control = HostControl::Expression(first);
-                    configuration.environment = environment;
+                    return Ok(self.schedule_primitive_argument(
+                        configuration,
+                        primitive,
+                        evaluated,
+                        remaining,
+                        environment,
+                    ));
                 }
             }
         }
-        Ok(Some(configuration))
+        Ok(vec![configuration])
     }
 
     fn apply(
@@ -423,14 +524,22 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 .map(|parameter| parameter.name.clone())
                 .zip(arguments),
         );
-        configuration.environment = closure.environment.extend(bindings);
+        let parent = if self.strategy.lexical_scope {
+            &closure.environment
+        } else {
+            &configuration.environment
+        };
+        configuration.environment = parent.extend(bindings);
         configuration.control = HostControl::Expression(closure.body.clone());
         Ok(Some(configuration))
     }
 }
 
-impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
-    fn next(&self, configuration: &ConfigOf<P>) -> Result<Option<ConfigOf<P>>, Self::Error> {
+impl<P: CorePrimitive> CoreMachine<P> {
+    fn step_successors(
+        &self,
+        configuration: &ConfigOf<P>,
+    ) -> Result<Vec<ConfigOf<P>>, CoreMachineError<P::Symbol, P::Error>> {
         let mut next = configuration.clone();
         let control = next.control.clone();
         match control {
@@ -490,11 +599,22 @@ impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
                         operator,
                         arguments,
                     } => {
-                        next.continuation.push(HostFrame::ApplyOperator {
-                            arguments,
-                            environment: next.environment.clone(),
-                        });
-                        next.control = HostControl::Expression(*operator);
+                        let argument_count = arguments.len();
+                        let mut parts = Vec::with_capacity(argument_count + 1);
+                        parts.push(HostApplicationPart::Operator(*operator));
+                        parts.extend(arguments.into_iter().enumerate().map(
+                            |(index, expression)| HostApplicationPart::Argument {
+                                index,
+                                expression,
+                            },
+                        ));
+                        return Ok(self.schedule_application_part(
+                            next.clone(),
+                            None,
+                            vec![None; argument_count],
+                            parts,
+                            next.environment,
+                        ));
                     }
                     CoreExpr::Let { bindings, body } => {
                         let parameters = bindings
@@ -555,7 +675,7 @@ impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
                     }
                     CoreExpr::Primitive {
                         operator,
-                        mut arguments,
+                        arguments,
                     } => {
                         if arguments.is_empty() {
                             let value = self
@@ -564,19 +684,30 @@ impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
                                 .map_err(CoreMachineError::Primitive)?;
                             next.control = HostControl::Value(value);
                         } else {
-                            let first = arguments.remove(0);
-                            next.continuation.push(HostFrame::PrimitiveArguments {
-                                primitive: operator,
-                                evaluated: Vec::new(),
-                                remaining: arguments,
-                                environment: next.environment.clone(),
-                            });
-                            next.control = HostControl::Expression(first);
+                            let count = arguments.len();
+                            return Ok(self.schedule_primitive_argument(
+                                next.clone(),
+                                operator,
+                                vec![None; count],
+                                arguments.into_iter().enumerate().collect(),
+                                next.environment,
+                            ));
                         }
                     }
                 }
-                Ok(Some(next))
+                Ok(vec![next])
             }
+        }
+    }
+}
+
+impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
+    fn next(&self, configuration: &ConfigOf<P>) -> Result<Option<ConfigOf<P>>, Self::Error> {
+        let mut successors = self.step_successors(configuration)?;
+        match successors.len() {
+            0 => Ok(None),
+            1 => Ok(successors.pop()),
+            count => Err(CoreMachineError::NondeterministicSuccessors { count }),
         }
     }
 }
@@ -589,7 +720,7 @@ impl<P: CorePrimitive> StepRelation for CoreMachine<P> {
         &self,
         configuration: &Self::Configuration,
     ) -> Result<Vec<Self::Configuration>, Self::Error> {
-        Ok(self.next(configuration)?.into_iter().collect())
+        self.step_successors(configuration)
     }
 }
 
@@ -712,7 +843,7 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::relation::{Evaluation, evaluate, execute};
+    use crate::relation::{Evaluation, ExplorationBounds, evaluate, execute, explore};
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     enum Primitive {
@@ -776,6 +907,213 @@ mod tests {
             trace.end().terminal_value(),
             Some(&HostValue::Datum(Datum::Atom("head")))
         );
+    }
+
+    fn pair_expression() -> Expr<&'static str, &'static str, Primitive> {
+        CoreExpr::Primitive {
+            operator: Primitive::Cons,
+            arguments: vec![
+                CoreExpr::Literal(Datum::Atom("left")),
+                CoreExpr::Literal(Datum::Atom("right")),
+            ],
+        }
+    }
+
+    fn application_expression() -> Expr<&'static str, &'static str, Primitive> {
+        CoreExpr::Apply {
+            operator: Box::new(CoreExpr::Lambda {
+                name: None,
+                parameters: vec![Parameter::new("x"), Parameter::new("y")],
+                body: Box::new(CoreExpr::Variable("x")),
+            }),
+            arguments: vec![
+                CoreExpr::Literal(Datum::Atom("left")),
+                CoreExpr::Literal(Datum::Atom("right")),
+            ],
+        }
+    }
+
+    #[test]
+    fn deterministic_strategies_choose_opposite_operand_orders() {
+        let initial = HostConfiguration::initial(pair_expression());
+        let left = CoreMachine::new(Sector)
+            .next(&initial)
+            .unwrap()
+            .expect("left successor");
+        let right = CoreMachine::with_strategy(
+            Sector,
+            Strategy {
+                order: EvaluationOrder::ApplicativeRightToLeft,
+                lexical_scope: true,
+            },
+        )
+        .next(&initial)
+        .unwrap()
+        .expect("right successor");
+        assert!(matches!(
+            left.control,
+            HostControl::Expression(CoreExpr::Literal(Datum::Atom("left")))
+        ));
+        assert!(matches!(
+            right.control,
+            HostControl::Expression(CoreExpr::Literal(Datum::Atom("right")))
+        ));
+
+        let trace = execute(
+            &CoreMachine::with_strategy(
+                Sector,
+                Strategy {
+                    order: EvaluationOrder::ApplicativeRightToLeft,
+                    lexical_scope: true,
+                },
+            ),
+            initial,
+            16,
+        )
+        .unwrap();
+        assert_eq!(
+            trace.end().terminal_value(),
+            Some(&HostValue::Datum(Datum::cons(
+                Datum::Atom("left"),
+                Datum::Atom("right")
+            ))),
+            "evaluation order must not permute argument positions"
+        );
+    }
+
+    #[test]
+    fn relational_strategy_exposes_each_pending_operand_choice() {
+        let machine = CoreMachine::with_strategy(
+            Sector,
+            Strategy {
+                order: EvaluationOrder::Relational,
+                lexical_scope: true,
+            },
+        );
+        let initial = HostConfiguration::initial(pair_expression());
+        let successors = machine.successors(&initial).unwrap();
+        assert_eq!(successors.len(), 2);
+        assert!(successors.iter().any(|state| matches!(
+            state.control,
+            HostControl::Expression(CoreExpr::Literal(Datum::Atom("left")))
+        )));
+        assert!(successors.iter().any(|state| matches!(
+            state.control,
+            HostControl::Expression(CoreExpr::Literal(Datum::Atom("right")))
+        )));
+        assert!(matches!(
+            machine.next(&initial),
+            Err(CoreMachineError::NondeterministicSuccessors { count: 2 })
+        ));
+
+        let exploration = explore(
+            &machine,
+            initial,
+            ExplorationBounds {
+                max_steps: 16,
+                max_traces: 64,
+            },
+        )
+        .unwrap();
+        assert!(!exploration.truncated);
+        assert!(exploration.stuck.is_empty());
+        assert_eq!(
+            exploration.values.len(),
+            2,
+            "both legal operand orders retain distinct trace provenance"
+        );
+        assert!(exploration.values.iter().all(|result| {
+            result.value == HostValue::Datum(Datum::cons(Datum::Atom("left"), Datum::Atom("right")))
+        }));
+    }
+
+    #[test]
+    fn application_order_includes_the_operator() {
+        let initial = HostConfiguration::initial(application_expression());
+        let left_machine = CoreMachine::new(Sector);
+        let left = left_machine.next(&initial).unwrap().unwrap();
+        assert!(matches!(
+            left.control,
+            HostControl::Expression(CoreExpr::Lambda { .. })
+        ));
+
+        let right_machine = CoreMachine::with_strategy(
+            Sector,
+            Strategy {
+                order: EvaluationOrder::ApplicativeRightToLeft,
+                lexical_scope: true,
+            },
+        );
+        let right = right_machine.next(&initial).unwrap().unwrap();
+        assert!(matches!(
+            right.control,
+            HostControl::Expression(CoreExpr::Literal(Datum::Atom("right")))
+        ));
+        let result = evaluate(&right_machine, initial.clone(), 32).unwrap();
+        let Evaluation::Value(result) = result else {
+            panic!("right-to-left application must return")
+        };
+        assert_eq!(result.value, HostValue::Datum(Datum::Atom("left")));
+
+        let relational = CoreMachine::with_strategy(
+            Sector,
+            Strategy {
+                order: EvaluationOrder::Relational,
+                lexical_scope: true,
+            },
+        );
+        assert_eq!(relational.successors(&initial).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn scope_strategy_distinguishes_lexical_and_dynamic_lisp() {
+        let call_f = CoreExpr::Apply {
+            operator: Box::new(CoreExpr::Variable("f")),
+            arguments: Vec::new(),
+        };
+        let expression = CoreExpr::Let {
+            bindings: vec![Binding::new("x", CoreExpr::Literal(Datum::Atom("lexical")))],
+            body: Box::new(CoreExpr::Let {
+                bindings: vec![Binding::new(
+                    "f",
+                    CoreExpr::Lambda {
+                        name: None,
+                        parameters: Vec::new(),
+                        body: Box::new(CoreExpr::Variable("x")),
+                    },
+                )],
+                body: Box::new(CoreExpr::Let {
+                    bindings: vec![Binding::new("x", CoreExpr::Literal(Datum::Atom("dynamic")))],
+                    body: Box::new(call_f),
+                }),
+            }),
+        };
+        let lexical = evaluate(
+            &CoreMachine::new(Sector),
+            HostConfiguration::initial(expression.clone()),
+            64,
+        )
+        .unwrap();
+        let dynamic = evaluate(
+            &CoreMachine::with_strategy(
+                Sector,
+                Strategy {
+                    order: EvaluationOrder::ApplicativeLeftToRight,
+                    lexical_scope: false,
+                },
+            ),
+            HostConfiguration::initial(expression),
+            64,
+        )
+        .unwrap();
+        let Evaluation::Value(lexical) = lexical else {
+            panic!("lexical program must return")
+        };
+        let Evaluation::Value(dynamic) = dynamic else {
+            panic!("dynamic program must return")
+        };
+        assert_eq!(lexical.value, HostValue::Datum(Datum::Atom("lexical")));
+        assert_eq!(dynamic.value, HostValue::Datum(Datum::Atom("dynamic")));
     }
 
     #[test]

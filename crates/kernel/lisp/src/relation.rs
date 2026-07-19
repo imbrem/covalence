@@ -1,6 +1,7 @@
 //! One-step relations, finite executions, and proof-producing replay seams.
 
 use core::fmt::{Debug, Display, Formatter};
+use std::collections::VecDeque;
 
 /// A possibly nondeterministic one-step operational relation.
 pub trait StepRelation {
@@ -200,6 +201,85 @@ pub enum Evaluation<C, V> {
     Stuck(CheckedTrace<C>),
 }
 
+/// Explicit limits for relational execution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExplorationBounds {
+    /// Maximum number of transitions in one explored trace.
+    pub max_steps: usize,
+    /// Maximum number of trace prefixes removed from the work queue.
+    pub max_traces: usize,
+}
+
+/// Result of bounded relational execution.
+///
+/// Equal values reached by different traces remain distinct entries. This
+/// preserves proof/search provenance and makes nondeterministic ambiguity
+/// visible to callers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Exploration<C, V> {
+    pub values: Vec<MayEval<C, V>>,
+    pub stuck: Vec<CheckedTrace<C>>,
+    /// Valid prefixes that were not expanded because a bound was reached.
+    pub frontier: Vec<CheckedTrace<C>>,
+    pub truncated: bool,
+}
+
+/// Explore a possibly nondeterministic relation breadth-first.
+pub fn explore<R>(
+    relation: &R,
+    initial: R::Configuration,
+    bounds: ExplorationBounds,
+) -> Result<Exploration<R::Configuration, R::Value>, ExecutionError<R::Error>>
+where
+    R: TerminalValue,
+{
+    let mut queue = VecDeque::from([CheckedTrace::reflexive(initial)]);
+    let mut values = Vec::new();
+    let mut stuck = Vec::new();
+    let mut frontier = Vec::new();
+    let mut processed = 0;
+    let mut truncated = false;
+
+    while let Some(trace) = queue.pop_front() {
+        if processed == bounds.max_traces {
+            frontier.push(trace);
+            frontier.extend(queue);
+            truncated = true;
+            break;
+        }
+        processed += 1;
+
+        if let Some(value) = relation.terminal_value(trace.end()) {
+            values.push(MayEval::check(relation, trace, value)?);
+            continue;
+        }
+        let successors = relation
+            .successors(trace.end())
+            .map_err(ExecutionError::Relation)?;
+        if successors.is_empty() {
+            stuck.push(trace);
+            continue;
+        }
+        if trace.steps() == bounds.max_steps {
+            frontier.push(trace);
+            truncated = true;
+            continue;
+        }
+        for successor in successors {
+            let mut states = trace.states.clone();
+            states.push(successor);
+            queue.push_back(CheckedTrace { states });
+        }
+    }
+
+    Ok(Exploration {
+        values,
+        stuck,
+        frontier,
+        truncated,
+    })
+}
+
 /// Drive a deterministic semantics and classify its terminal configuration.
 pub fn evaluate<R>(
     relation: &R,
@@ -372,5 +452,22 @@ mod tests {
             MayEval::check(&Countdown, trace, 9),
             Err(ExecutionError::ValueMismatch)
         ));
+    }
+
+    #[test]
+    fn bounded_exploration_reports_its_frontier() {
+        let result = explore(
+            &Countdown,
+            3,
+            ExplorationBounds {
+                max_steps: 1,
+                max_traces: 8,
+            },
+        )
+        .unwrap();
+        assert!(result.values.is_empty());
+        assert_eq!(result.frontier.len(), 1);
+        assert_eq!(result.frontier[0].end(), &2);
+        assert!(result.truncated);
     }
 }

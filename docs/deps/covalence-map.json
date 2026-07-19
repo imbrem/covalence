@@ -250,7 +250,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 244,
+      "words": 248,
       "updated": 0
     },
     {
@@ -700,7 +700,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35630,
+      "words": 35621,
       "updated": 0
     },
     {
@@ -9331,7 +9331,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 885,
+      "words": 1223,
       "updated": 0
     },
     {
@@ -9340,7 +9340,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 51,
+      "words": 52,
       "updated": 0
     },
     {
@@ -9349,7 +9349,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/relation.rs",
-      "words": 377,
+      "words": 474,
       "updated": 0
     },
     {
@@ -15289,7 +15289,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35630,
+      "words": 35621,
       "updated": 0
     },
     {
@@ -15397,7 +15397,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3539,
+      "words": 3529,
       "updated": 0
     },
     {
@@ -22048,15 +22048,6 @@
       "title": "Bring the append admission/execution/induction integration gate below ten seconds and enable it in the default ACL2 test suite.",
       "status": "major",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:lisp.core.relational-strategies",
-      "kind": "todo",
-      "title": "Add nondeterministic evaluation-context backends for relational operand order and unspecified choices.",
-      "status": "major",
-      "path": "crates/kernel/lisp/src/host.rs",
       "words": 0,
       "updated": 0
     },

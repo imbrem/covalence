@@ -59,6 +59,9 @@ pub mod acl2;
 #[cfg(feature = "hol")]
 pub mod book;
 
+#[cfg(feature = "hol")]
+pub mod world;
+
 use covalence_sexp::SExpr;
 use covalence_sexpr_api::SExprSyntax;
 

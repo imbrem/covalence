@@ -44,7 +44,7 @@ use crate::init::acl2::derivable::{
     Acl2Env, AxiomRow, Discharge, derivable, derive_axiom, derive_comp, derive_comp_folded,
     derive_def, derive_ind, derive_ind_ord, derive_inst, finite_sigma, model_eq_target,
     model_implies_target, object_vars, parse_equal, strip_implies, subst_ground, sym_lit_of,
-    transport_equal, transport_equal_open, uncons,
+    transport_equal, transport_equal_open, transport_implies_open, uncons,
 };
 use crate::init::acl2::hilbert::{Fact, KCache, Script, cong_impl, equal_parts, mp};
 use crate::init::acl2::ordinal::ordinals;
@@ -1855,21 +1855,30 @@ pub fn prove_by_induction(
             }));
         }
     };
-    if strip_implies(tm, phi).is_some() {
+    if parse_equal(tm, phi).is_none() && strip_implies(tm, phi).is_none() {
         return Err(fail1(Stuck::OutOfFragment {
             term: phi.clone(),
-            why: "IMPLIES-form goals are deferred (design §6.1, P1)".into(),
-        }));
-    }
-    if parse_equal(tm, phi).is_none() {
-        return Err(fail1(Stuck::OutOfFragment {
-            term: phi.clone(),
-            why: "driver goals must be (EQUAL l r)-shaped (holds-form goals deferred)".into(),
+            why: "driver goals must be EQUAL- or IMPLIES-shaped".into(),
         }));
     }
     // Simplifier-only pass (closes goals needing only unfolding /
     // computation / R6 rules).
-    match prove_under(env, cache, &[], phi, &cfg.limits) {
+    // For a conditional theorem, expose its antecedent spine to the
+    // premise builder. `derive_under` then reconstructs precisely the
+    // original encoded IMPLIES formula; this is the object-level analogue
+    // of implication introduction, not a host-side assertion.
+    let direct = if strip_implies(tm, phi).is_some() {
+        let mut hyps = Vec::new();
+        let mut concl = phi.clone();
+        while let Some((p, q)) = strip_implies(tm, &concl) {
+            hyps.push(p);
+            concl = q;
+        }
+        prove_under(env, cache, &hyps, &concl, &cfg.limits)
+    } else {
+        prove_under(env, cache, &[], phi, &cfg.limits)
+    };
+    match direct {
         Ok(der) => match finish(sess, phi, None, der, &vars) {
             Ok(p) => return Ok(p),
             Err(s) => attempts.push(Attempt {
@@ -1947,31 +1956,33 @@ fn finish(
 ) -> SResult<IndProof> {
     let env = sess.env();
     let projected = sess.project(phi, der.clone()).map_err(Stuck::from)?;
-    let transported = if vars.is_empty() {
+    let mut names: Vec<(Vec<u8>, String)> = Vec::with_capacity(vars.len());
+    for v in vars {
+        let lower =
+            String::from_utf8(v.to_ascii_lowercase()).map_err(|_| Stuck::OutOfFragment {
+                term: phi.clone(),
+                why: format!(
+                    "object variable `{}` is not UTF-8",
+                    String::from_utf8_lossy(v)
+                ),
+            })?;
+        if names.iter().any(|(_, n)| *n == lower) {
+            return Err(Stuck::OutOfFragment {
+                term: phi.clone(),
+                why: format!("object variables collide at lowercase name `{lower}`"),
+            });
+        }
+        names.push((v.clone(), lower));
+    }
+    let binds: Vec<(&[u8], &str)> = names
+        .iter()
+        .map(|(v, n)| (v.as_slice(), n.as_str()))
+        .collect();
+    let transported = if strip_implies(&env.tm, phi).is_some() {
+        transport_implies_open(env, &projected, &binds).map_err(Stuck::from)?
+    } else if vars.is_empty() {
         transport_equal(env, &projected).map_err(Stuck::from)?
     } else {
-        let mut names: Vec<(Vec<u8>, String)> = Vec::with_capacity(vars.len());
-        for v in vars {
-            let lower =
-                String::from_utf8(v.to_ascii_lowercase()).map_err(|_| Stuck::OutOfFragment {
-                    term: phi.clone(),
-                    why: format!(
-                        "object variable `{}` is not UTF-8",
-                        String::from_utf8_lossy(v)
-                    ),
-                })?;
-            if names.iter().any(|(_, n)| *n == lower) {
-                return Err(Stuck::OutOfFragment {
-                    term: phi.clone(),
-                    why: format!("object variables collide at lowercase name `{lower}`"),
-                });
-            }
-            names.push((v.clone(), lower));
-        }
-        let binds: Vec<(&[u8], &str)> = names
-            .iter()
-            .map(|(v, n)| (v.as_slice(), n.as_str()))
-            .collect();
         transport_equal_open(env, &projected, &binds).map_err(Stuck::from)?
     };
     if !transported.hyps().is_empty() {
@@ -2361,6 +2372,48 @@ mod tests {
                 .all(|a| matches!(a.stuck, Stuck::OutOfFragment { .. })),
             "{err}"
         );
+    }
+
+    /// Conditional theorems use the same plan/emission path and land
+    /// through the committed open-IMPLIES transporter.  This tautology is
+    /// deliberately open: it checks both the object-level cases proof and
+    /// the exact guarded base-HOL statement, rather than merely inspecting
+    /// a `Derivable` certificate.
+    #[test]
+    fn t_auto_open_implies_gate() {
+        let sess = s6_app_session();
+        let env = sess.env();
+        let tm = &*env.tm;
+        let cache = FactCache::default();
+        let x = tm.sym(b"X").unwrap();
+        let consp_x = tm.app(b"CONSP", &[x]).unwrap();
+        let phi = tm.mk_implies(&consp_x, &consp_x).unwrap();
+
+        let proof = prove_by_induction(sess, &cache, &phi, &IndConfig::default()).unwrap();
+        assert_eq!(
+            proof.var, None,
+            "a propositional tautology needs no induction"
+        );
+        check(&proof.derivation, &derivable(env, &phi).unwrap());
+
+        let x = Term::free("x", tm.th.ty.clone());
+        let holds = tm
+            .pr
+            .consp
+            .clone()
+            .apply(x)
+            .unwrap()
+            .equals(tm.th.nil.clone())
+            .unwrap()
+            .not()
+            .unwrap();
+        let expected = holds
+            .clone()
+            .imp(holds)
+            .unwrap()
+            .forall("x", tm.th.ty.clone())
+            .unwrap();
+        check(&proof.transported, &expected);
     }
 
     // ------------------------------------------------------------------

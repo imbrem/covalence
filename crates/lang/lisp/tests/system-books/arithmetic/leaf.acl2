@@ -1,0 +1,1 @@
+(defthm linked-system-leaf (equal (+ 50 5) 55))

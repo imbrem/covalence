@@ -13,7 +13,7 @@ use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
 use crate::runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
     LispRuntime, LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding,
-    RuntimeValueLayer, RuntimeValueView,
+    RuntimeDatumError, RuntimeValueLayer, RuntimeValueView, inject_datum,
 };
 use crate::syntax::{
     Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispExpression, LispSyntax, Parameter,
@@ -424,6 +424,7 @@ impl<S: Clone + PartialEq, V: Clone> LispRecursiveEnvironment for HostEnvironmen
 /// Coherent direct-Rust runtime bundle for the common Lisp machine.
 #[derive(Clone, Debug)]
 pub struct HostRuntime<S, A, P> {
+    data: covalence_sexpr_api::Free<A>,
     values: HostValues<S, A, P>,
     expressions: CoreSyntax<S, A, P>,
     closures: HostClosures<S, A, P>,
@@ -433,6 +434,7 @@ pub struct HostRuntime<S, A, P> {
 impl<S, A, P> Default for HostRuntime<S, A, P> {
     fn default() -> Self {
         Self {
+            data: covalence_sexpr_api::Free::new(),
             values: HostValues::default(),
             expressions: CoreSyntax::default(),
             closures: HostClosures::default(),
@@ -455,6 +457,7 @@ where
     type Value = Value<S, A, P>;
     type Closure = Arc<HostClosure<S, A, P>>;
     type Environment = Environment<S, A, P>;
+    type Data = covalence_sexpr_api::Free<A>;
     type Values = HostValues<S, A, P>;
     type Expressions = CoreSyntax<S, A, P>;
     type Closures = HostClosures<S, A, P>;
@@ -462,6 +465,10 @@ where
 
     fn values(&self) -> &Self::Values {
         &self.values
+    }
+
+    fn data(&self) -> &Self::Data {
+        &self.data
     }
 
     fn expressions(&self) -> &Self::Expressions {
@@ -695,7 +702,13 @@ impl<P: CorePrimitive> CoreMachine<P> {
             if bindings[..index].iter().any(|(earlier, _)| earlier == name) {
                 return Err(CoreMachineError::DuplicateRecursiveBinding(name.clone()));
             }
-            if !matches!(expression, CoreExpr::Lambda { .. }) {
+            if !matches!(
+                self.runtime
+                    .expressions()
+                    .view(expression)
+                    .unwrap_or_else(|never| match never {}),
+                CoreExprLayer::Lambda { .. }
+            ) {
                 return Err(CoreMachineError::InvalidRecursiveInitializer(name.clone()));
             }
         }
@@ -708,12 +721,16 @@ impl<P: CorePrimitive> CoreMachine<P> {
             .unwrap_or_else(|never| match never {});
         let environment = allocation.environment;
         for ((_, expression), cell) in bindings.into_iter().zip(allocation.cells) {
-            let CoreExpr::Lambda {
+            let CoreExprLayer::Lambda {
                 name,
                 parameters,
                 rest,
                 body,
-            } = expression
+            } = self
+                .runtime
+                .expressions()
+                .view(&expression)
+                .unwrap_or_else(|never| match never {})
             else {
                 unreachable!("recursive initializers validated above")
             };
@@ -726,7 +743,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         .map(|parameter| parameter.name)
                         .collect(),
                     rest: rest.map(|parameter| parameter.name),
-                    body: *body,
+                    body,
                     environment: environment.clone(),
                 })
                 .unwrap_or_else(|never| match never {});
@@ -1044,18 +1061,28 @@ impl<P: CorePrimitive> CoreMachine<P> {
         match control {
             HostControl::Value(value) => self.continue_with(next, value),
             HostControl::Expression(expression) => {
-                match expression {
-                    CoreExpr::Literal(datum) | CoreExpr::Quote(datum) => {
-                        next.control = HostControl::Value(HostValue::datum(datum));
+                match self
+                    .runtime
+                    .expressions()
+                    .view(&expression)
+                    .unwrap_or_else(|never| match never {})
+                {
+                    CoreExprLayer::Literal(datum) | CoreExprLayer::Quote(datum) => {
+                        let value = inject_datum(self.runtime.data(), self.values(), &datum)
+                            .unwrap_or_else(|error| match error {
+                                RuntimeDatumError::Datum(never)
+                                | RuntimeDatumError::Value(never) => match never {},
+                            });
+                        next.control = HostControl::Value(value);
                     }
-                    CoreExpr::Truth(value) => {
+                    CoreExprLayer::Truth(value) => {
                         next.control = HostControl::Value(
                             self.primitives
                                 .truth(self.values(), value)
                                 .map_err(CoreMachineError::Primitive)?,
                         );
                     }
-                    CoreExpr::Variable(symbol) => {
+                    CoreExprLayer::Variable(symbol) => {
                         let value = self
                             .environments()
                             .lookup(&next.environment, &symbol)
@@ -1063,30 +1090,30 @@ impl<P: CorePrimitive> CoreMachine<P> {
                             .ok_or(CoreMachineError::UnboundVariable(symbol))?;
                         next.control = HostControl::Value(value);
                     }
-                    CoreExpr::If {
+                    CoreExprLayer::If {
                         condition,
                         consequent,
                         alternative,
                     } => {
                         next.continuation.push(HostFrame::If {
-                            consequent: *consequent,
-                            alternative: *alternative,
+                            consequent,
+                            alternative,
                             environment: next.environment.clone(),
                         });
-                        next.control = HostControl::Expression(*condition);
+                        next.control = HostControl::Expression(condition);
                     }
-                    CoreExpr::Cond { clauses } => {
-                        let expression = clauses.into_iter().rev().fold(
-                            CoreExpr::Literal(Datum::Nil),
-                            |alternative, (condition, consequent)| CoreExpr::If {
-                                condition: Box::new(condition),
-                                consequent: Box::new(consequent),
-                                alternative: Box::new(alternative),
-                            },
-                        );
+                    CoreExprLayer::Cond { clauses } => {
+                        let syntax = self.runtime.expressions();
+                        let mut expression =
+                            syntax.truth(false).unwrap_or_else(|never| match never {});
+                        for (condition, consequent) in clauses.into_iter().rev() {
+                            expression = syntax
+                                .if_then_else(condition, consequent, expression)
+                                .unwrap_or_else(|never| match never {});
+                        }
                         next.control = HostControl::Expression(expression);
                     }
-                    CoreExpr::Sequence { first, rest } => {
+                    CoreExprLayer::Sequence { first, rest } => {
                         if !rest.is_empty() {
                             let mut remaining = rest;
                             remaining.reverse();
@@ -1095,9 +1122,9 @@ impl<P: CorePrimitive> CoreMachine<P> {
                                 environment: next.environment.clone(),
                             });
                         }
-                        next.control = HostControl::Expression(*first);
+                        next.control = HostControl::Expression(first);
                     }
-                    CoreExpr::Lambda {
+                    CoreExprLayer::Lambda {
                         name,
                         parameters,
                         rest,
@@ -1112,7 +1139,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                                     .map(|parameter| parameter.name)
                                     .collect(),
                                 rest: rest.map(|parameter| parameter.name),
-                                body: *body,
+                                body,
                                 environment: next.environment.clone(),
                             })
                             .unwrap_or_else(|never| match never {});
@@ -1122,13 +1149,13 @@ impl<P: CorePrimitive> CoreMachine<P> {
                                 .unwrap_or_else(|never| match never {}),
                         );
                     }
-                    CoreExpr::Apply {
+                    CoreExprLayer::Apply {
                         operator,
                         arguments,
                     } => {
                         let argument_count = arguments.len();
                         let mut parts = Vec::with_capacity(argument_count + 1);
-                        parts.push(HostApplicationPart::Operator(*operator));
+                        parts.push(HostApplicationPart::Operator(operator));
                         parts.extend(arguments.into_iter().enumerate().map(
                             |(index, expression)| HostApplicationPart::Argument {
                                 index,
@@ -1144,15 +1171,15 @@ impl<P: CorePrimitive> CoreMachine<P> {
                             next.environment,
                         ));
                     }
-                    CoreExpr::ApplyList {
+                    CoreExprLayer::ApplyList {
                         operator,
                         mut arguments,
                         tail,
                     } => {
-                        arguments.push(*tail);
+                        arguments.push(tail);
                         let argument_count = arguments.len();
                         let mut parts = Vec::with_capacity(argument_count + 1);
-                        parts.push(HostApplicationPart::Operator(*operator));
+                        parts.push(HostApplicationPart::Operator(operator));
                         parts.extend(arguments.into_iter().enumerate().map(
                             |(index, expression)| HostApplicationPart::Argument {
                                 index,
@@ -1168,23 +1195,23 @@ impl<P: CorePrimitive> CoreMachine<P> {
                             next.environment,
                         ));
                     }
-                    CoreExpr::Let { bindings, body } => {
+                    CoreExprLayer::Let { bindings, body } => {
                         let parameters = bindings
                             .iter()
-                            .map(|binding| Parameter::new(binding.name.clone()))
+                            .map(|binding| binding.name.clone())
                             .collect();
                         let arguments = bindings.into_iter().map(|binding| binding.value).collect();
-                        next.control = HostControl::Expression(CoreExpr::Apply {
-                            operator: Box::new(CoreExpr::Lambda {
-                                name: None,
-                                parameters,
-                                rest: None,
-                                body,
-                            }),
-                            arguments,
-                        });
+                        let syntax = self.runtime.expressions();
+                        let operator = syntax
+                            .lambda(None, parameters, None, body)
+                            .unwrap_or_else(|never| match never {});
+                        next.control = HostControl::Expression(
+                            syntax
+                                .apply(operator, arguments)
+                                .unwrap_or_else(|never| match never {}),
+                        );
                     }
-                    CoreExpr::LetRec { bindings, body } => {
+                    CoreExprLayer::LetRec { bindings, body } => {
                         let environment = self.bind_recursive(
                             &next.environment,
                             bindings
@@ -1193,9 +1220,9 @@ impl<P: CorePrimitive> CoreMachine<P> {
                                 .collect(),
                         )?;
                         next.environment = environment;
-                        next.control = HostControl::Expression(*body);
+                        next.control = HostControl::Expression(body);
                     }
-                    CoreExpr::Primitive {
+                    CoreExprLayer::Primitive {
                         operator,
                         arguments,
                     } => {
@@ -1216,11 +1243,19 @@ impl<P: CorePrimitive> CoreMachine<P> {
                             ));
                         }
                     }
-                    CoreExpr::PrimitiveValue(primitive) => {
-                        next.control = HostControl::Value(HostValue::Primitive(primitive));
+                    CoreExprLayer::PrimitiveValue(primitive) => {
+                        next.control = HostControl::Value(
+                            self.values()
+                                .roll(RuntimeValueLayer::Primitive(primitive))
+                                .unwrap_or_else(|never| match never {}),
+                        );
                     }
-                    CoreExpr::ApplyListProcedure => {
-                        next.control = HostControl::Value(HostValue::ApplyListProcedure);
+                    CoreExprLayer::ApplyListProcedure => {
+                        next.control = HostControl::Value(
+                            self.values()
+                                .roll(RuntimeValueLayer::ApplyListProcedure)
+                                .unwrap_or_else(|never| match never {}),
+                        );
                     }
                 }
                 Ok(vec![next])

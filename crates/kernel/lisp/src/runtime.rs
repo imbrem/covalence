@@ -15,7 +15,7 @@ use covalence_kernel_data::inductive::{
 };
 use covalence_sexpr_api::{SExprF, SExprSyntax, SExprView};
 
-use crate::syntax::LispExpression;
+use crate::syntax::{LispExpression, LispSyntax};
 
 /// External parameter sorts of the canonical Lisp runtime-value functor.
 ///
@@ -457,6 +457,7 @@ pub trait LispRuntime {
     type Closure: Clone;
     type Environment: Clone;
 
+    type Data: SExprView<Payload = Self::Atom, Value = Self::Datum>;
     type Values: LispMachineValue<
             Atom = Self::Atom,
             Primitive = Self::Primitive,
@@ -464,6 +465,11 @@ pub trait LispRuntime {
             Closure = Self::Closure,
         >;
     type Expressions: LispExpression<
+            Symbol = Self::Symbol,
+            Datum = Self::Datum,
+            Primitive = Self::Primitive,
+            Expr = Self::Expr,
+        > + LispSyntax<
             Symbol = Self::Symbol,
             Datum = Self::Datum,
             Primitive = Self::Primitive,
@@ -482,6 +488,7 @@ pub trait LispRuntime {
         >;
 
     fn values(&self) -> &Self::Values;
+    fn data(&self) -> &Self::Data;
     fn expressions(&self) -> &Self::Expressions;
     fn closures(&self) -> &Self::Closures;
     fn environments(&self) -> &Self::Environments;

@@ -9358,7 +9358,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 1983,
+      "words": 2018,
       "updated": 0
     },
     {
@@ -9385,7 +9385,7 @@
       "title": "runtime.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/runtime.rs",
-      "words": 637,
+      "words": 644,
       "updated": 0
     },
     {

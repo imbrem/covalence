@@ -1562,6 +1562,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-sexpr-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
+ "covalence-parsing-api",
+ "covalence-sexp",
+ "covalence-sexpr-api",
+]
+
+[[package]]
 name = "covalence-shell"
 version = "0.0.0"
 dependencies = [

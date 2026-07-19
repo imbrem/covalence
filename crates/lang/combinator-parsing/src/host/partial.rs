@@ -36,7 +36,7 @@ use covalence_parsing_api::{
 };
 
 use crate::host::Marker;
-use crate::host::cursor::{CombinatorError, CursorViolation, SourceExtent, check_step, join};
+use crate::host::cursor::{CombinatorError, SourceExtent, check_step, join_steps};
 use crate::host::witness::{ChoiceWitness, SeqWitness};
 
 // FIXME(cov:lang.combinator-parsing.host-recursion-unbounded, major): A knot tied through
@@ -303,14 +303,7 @@ where
                 check_step(split, source_len, matched).map_err(CombinatorError::Cursor)?
             }
         };
-        let consumed = join(function.consumed, argument.consumed).ok_or_else(|| {
-            CombinatorError::Cursor(CursorViolation {
-                invoked_at: start,
-                consumed: argument.consumed,
-                remainder: argument.remainder,
-                source_len,
-            })
-        })?;
+        let consumed = join_steps(start, source_len, function.consumed, &argument)?;
         Ok(ParseAttempt::Match(PrefixInterpretation {
             value: (function.value)(argument.value),
             witness: SeqWitness {
@@ -383,14 +376,7 @@ where
                 check_step(split, source_len, matched).map_err(CombinatorError::Cursor)?
             }
         };
-        let consumed = join(head.consumed, tail.consumed).ok_or_else(|| {
-            CombinatorError::Cursor(CursorViolation {
-                invoked_at: start,
-                consumed: tail.consumed,
-                remainder: tail.remainder,
-                source_len,
-            })
-        })?;
+        let consumed = join_steps(start, source_len, head.consumed, &tail)?;
         Ok(ParseAttempt::Match(PrefixInterpretation {
             value: tail.value,
             witness: SeqWitness {

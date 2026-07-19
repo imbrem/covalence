@@ -26,7 +26,7 @@ use core::marker::PhantomData;
 
 use covalence_parsing_api::{PrefixInterpretation, Span};
 
-use crate::host::cursor::{CombinatorError, CursorViolation, SourceExtent, check_step, join};
+use crate::host::cursor::{CombinatorError, SourceExtent, check_step, join_steps};
 use crate::host::witness::SeqWitness;
 use crate::host::{Marker, TotalPrefixParser};
 
@@ -187,14 +187,7 @@ where
             self.arguments.parse_prefix_total(source, split)?,
         )
         .map_err(CombinatorError::Cursor)?;
-        let consumed = join(function.consumed, argument.consumed).ok_or_else(|| {
-            CombinatorError::Cursor(CursorViolation {
-                invoked_at: start,
-                consumed: argument.consumed,
-                remainder: argument.remainder,
-                source_len,
-            })
-        })?;
+        let consumed = join_steps(start, source_len, function.consumed, &argument)?;
         Ok(PrefixInterpretation {
             value: (function.value)(argument.value),
             witness: SeqWitness {
@@ -249,14 +242,7 @@ where
             (self.continuation)(head.value).parse_prefix_total(source, split)?,
         )
         .map_err(CombinatorError::Cursor)?;
-        let consumed = join(head.consumed, tail.consumed).ok_or_else(|| {
-            CombinatorError::Cursor(CursorViolation {
-                invoked_at: start,
-                consumed: tail.consumed,
-                remainder: tail.remainder,
-                source_len,
-            })
-        })?;
+        let consumed = join_steps(start, source_len, head.consumed, &tail)?;
         Ok(PrefixInterpretation {
             value: tail.value,
             witness: SeqWitness {

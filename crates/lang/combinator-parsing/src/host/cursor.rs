@@ -142,6 +142,28 @@ pub fn join(first: Span, second: Span) -> Option<Span> {
     Span::new(first.start, second.end)
 }
 
+/// Concatenate the extent of a completed first step with the step that followed it,
+/// reporting non-adjacency as a cursor violation attributed to `invoked_at`.
+///
+/// Every sequencing combinator in every capability needs exactly this: the two extents were
+/// each validated by [`check_step`] against their own invocation offset, but adjacency
+/// between them is a separate condition that only the combinator joining them can check.
+/// It is extent bookkeeping, not semantics, which is why one helper serves all three
+/// capabilities without relating them.
+pub fn join_steps<V, W, E>(
+    invoked_at: usize,
+    source_len: usize,
+    first: Span,
+    second: &PrefixInterpretation<V, W>,
+) -> Result<Span, CombinatorError<E>> {
+    join(first, second.consumed).ok_or(CombinatorError::Cursor(CursorViolation {
+        invoked_at,
+        consumed: second.consumed,
+        remainder: second.remainder,
+        source_len,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

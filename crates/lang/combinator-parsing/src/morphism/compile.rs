@@ -186,17 +186,32 @@ fn source_units_ok<X>(len: usize, budget: CombinatorBudget) -> Result<(), Combin
 // Deterministic fragment -> total host parser
 // ---------------------------------------------------------------------------
 
+/// A compiled step: a closure over the source, an offset, and the evaluation state.
+///
+/// The three capabilities differ only in `T` — the shape of what a step yields — which is
+/// exactly where their semantics live. Sharing the closure shape relates nothing: the
+/// aliases below stay distinct types, and no value inhabits two of them.
+/// Parameterised by the atom type rather than by `S`, because `<S as Signature>::Atom` is a
+/// projection and inference cannot solve back through it to recover `S`.
+type Step<'e, A, T, X> =
+    Box<dyn Fn(&[A], usize, &mut State) -> Result<T, CombinatorEvalError<X>> + 'e>;
+
+/// Wrap a compiled step so entering it charges depth and leaving it releases depth.
+///
+/// Depth is charged in one place for all three capabilities, so the bound cannot drift
+/// between them.
+fn bounded<'e, A: 'e, T: 'e, X: 'e>(body: Step<'e, A, T, X>) -> Step<'e, A, T, X> {
+    Box::new(move |source, at, st| {
+        enter(st)?;
+        let out = body(source, at, st);
+        st.depth -= 1;
+        out
+    })
+}
+
 /// A compiled deterministic step. No `Option`: the total environment cannot decline.
-type TotalStep<'e, S, X> = Box<
-    dyn Fn(
-            &[<S as Signature>::Atom],
-            usize,
-            &mut State,
-        ) -> Result<
-            (<S as Signature>::Value, DeterministicWitness<S>, usize),
-            CombinatorEvalError<X>,
-        > + 'e,
->;
+type TotalStep<'e, S, X> =
+    Step<'e, <S as Signature>::Atom, (<S as Signature>::Value, DeterministicWitness<S>, usize), X>;
 
 fn total_step<'e, S, E>(node: &Deterministic<S>, env: &'e E) -> TotalStep<'e, S, E::Error>
 where
@@ -338,12 +353,7 @@ where
         }
     };
 
-    Box::new(move |source, at, st| {
-        enter(st)?;
-        let out = body(source, at, st);
-        st.depth -= 1;
-        out
-    })
+    bounded(body)
 }
 
 /// A compiled deterministic program, evaluated as a total prefix parser.
@@ -427,15 +437,11 @@ where
 // ---------------------------------------------------------------------------
 
 /// A compiled ordered step. `Ok(None)` is ordinary non-match; `Err` is evaluator failure.
-type OrderedStep<'e, S, X> = Box<
-    dyn Fn(
-            &[<S as Signature>::Atom],
-            usize,
-            &mut State,
-        ) -> Result<
-            Option<(<S as Signature>::Value, OrderedWitness<S>, usize)>,
-            CombinatorEvalError<X>,
-        > + 'e,
+type OrderedStep<'e, S, X> = Step<
+    'e,
+    <S as Signature>::Atom,
+    Option<(<S as Signature>::Value, OrderedWitness<S>, usize)>,
+    X,
 >;
 
 fn ordered_step<'e, S, E>(node: &Ordered<S>, env: &'e E) -> OrderedStep<'e, S, E::Error>
@@ -636,12 +642,7 @@ where
         },
     };
 
-    Box::new(move |source, at, st| {
-        enter(st)?;
-        let out = body(source, at, st);
-        st.depth -= 1;
-        out
-    })
+    bounded(body)
 }
 
 /// A compiled ordered program, evaluated as a partial prefix parser.
@@ -720,15 +721,11 @@ where
 // ---------------------------------------------------------------------------
 
 /// A compiled relational step: an enumeration, with no early return anywhere.
-type RelationalStep<'e, S, X> = Box<
-    dyn Fn(
-            &[<S as Signature>::Atom],
-            usize,
-            &mut State,
-        ) -> Result<
-            Vec<(<S as Signature>::Value, RelationalWitness<S>, usize)>,
-            CombinatorEvalError<X>,
-        > + 'e,
+type RelationalStep<'e, S, X> = Step<
+    'e,
+    <S as Signature>::Atom,
+    Vec<(<S as Signature>::Value, RelationalWitness<S>, usize)>,
+    X,
 >;
 
 /// One enumerated result: value, evidence, and the offset after it.
@@ -967,12 +964,7 @@ where
         },
     };
 
-    Box::new(move |source, at, st| {
-        enter(st)?;
-        let out = body(source, at, st);
-        st.depth -= 1;
-        out
-    })
+    bounded(body)
 }
 
 /// A compiled relational program, evaluated as a relational prefix parser.

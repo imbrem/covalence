@@ -39,7 +39,7 @@ use core::marker::PhantomData;
 use covalence_parsing_api::{PrefixInterpretation, Span};
 
 use crate::budget::{CombinatorLimit, CombinatorResource, RelationalLimits};
-use crate::host::cursor::{CombinatorError, CursorViolation, SourceExtent, check_step, join};
+use crate::host::cursor::{CombinatorError, SourceExtent, check_step, join_steps};
 use crate::host::witness::{SeqWitness, UnionWitness};
 use crate::host::{Marker, PrefixEnumeration, RelationalPrefixParser};
 
@@ -390,14 +390,7 @@ where
             for argument in arguments {
                 let argument =
                     check_step(split, source_len, argument).map_err(CombinatorError::Cursor)?;
-                let consumed = join(function.consumed, argument.consumed).ok_or_else(|| {
-                    CombinatorError::Cursor(CursorViolation {
-                        invoked_at: start,
-                        consumed: argument.consumed,
-                        remainder: argument.remainder,
-                        source_len,
-                    })
-                })?;
+                let consumed = join_steps(start, source_len, function.consumed, &argument)?;
                 ctx.admit(results.len()).map_err(CombinatorError::Limit)?;
                 results.push(PrefixInterpretation {
                     value: (function.value.clone())(argument.value),
@@ -454,14 +447,7 @@ where
             let next = (self.continuation)(head.value);
             for tail in next.parse_prefixes_within(source, split, ctx)? {
                 let tail = check_step(split, source_len, tail).map_err(CombinatorError::Cursor)?;
-                let consumed = join(head.consumed, tail.consumed).ok_or_else(|| {
-                    CombinatorError::Cursor(CursorViolation {
-                        invoked_at: start,
-                        consumed: tail.consumed,
-                        remainder: tail.remainder,
-                        source_len,
-                    })
-                })?;
+                let consumed = join_steps(start, source_len, head.consumed, &tail)?;
                 ctx.admit(results.len()).map_err(CombinatorError::Limit)?;
                 results.push(PrefixInterpretation {
                     value: tail.value,

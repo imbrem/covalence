@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 340,
-  "structured": 340,
+  "count": 343,
+  "structured": 343,
   "items": [
     {
       "id": "bits.abstract-bool-list-adapter",
@@ -225,14 +225,44 @@
       "crate": "covalence-inductive"
     },
     {
+      "id": "json.decimal-a0006-native-hol-morphism",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Prove the boundary between A0006 CanonicalDecimal and init's exact (int,nat) decimal representation, including normalization and signed exponents.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
+      "line": 166,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "json.parser-stackless-depth",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace the recursive hard ceiling with a stack-safe parser whose resource policy can accept arbitrary RFC 8259 nesting.",
+      "structured": true,
+      "path": "crates/lang/json-api/src/lib.rs",
+      "line": 222,
+      "crate": "covalence-json-api"
+    },
+    {
       "id": "json.polynomial-composition",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.",
+      "summary": "Close the native JSON family fixpoint once DatatypeFamilyExpr has a proof-bearing nested-fixpoint backend; the NativeHol constructor-layer adapter already realizes the exact six-way F(X), including recursive array/member-list payload shapes.",
       "structured": true,
       "path": "crates/lang/json-api/src/lib.rs",
-      "line": 935,
+      "line": 972,
       "crate": "covalence-json-api"
+    },
+    {
+      "id": "json.semantic-object-native-hol",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Define the canonical unique-name predicate over list (string × json), prove duplicate rejection/lookup laws, and expose semantic objects as that subset; ordered syntax objects intentionally remain the raw list above.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
+      "line": 165,
+      "crate": "covalence-init"
     },
     {
       "id": "kernel.base.canon-only-on-ground-args",

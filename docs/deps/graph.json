@@ -26,6 +26,7 @@
     "covalence-hol-eval",
     "covalence-inductive",
     "covalence-init",
+    "covalence-jq",
     "covalence-json",
     "covalence-json-api",
     "covalence-k",
@@ -369,6 +370,10 @@
     },
     {
       "from": "covalence-init",
+      "to": "covalence-json-api"
+    },
+    {
+      "from": "covalence-init",
       "to": "covalence-k"
     },
     {
@@ -402,6 +407,10 @@
     {
       "from": "covalence-init",
       "to": "covalence-types"
+    },
+    {
+      "from": "covalence-jq",
+      "to": "covalence-json-api"
     },
     {
       "from": "covalence-json-api",

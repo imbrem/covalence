@@ -134,16 +134,22 @@ pub struct CaseReport {
 
 impl CaseReport {
     pub fn throughput_mib_s(&self, repetitions: usize) -> f64 {
-        self.bytes as f64 * repetitions as f64
-            / (1024.0 * 1024.0)
-            / self.elapsed.as_secs_f64().max(f64::MIN_POSITIVE)
+        if self.elapsed.is_zero() {
+            0.0
+        } else {
+            self.bytes as f64 * repetitions as f64 / (1024.0 * 1024.0) / self.elapsed.as_secs_f64()
+        }
     }
 }
 
 impl CorpusReport {
     pub fn throughput_mib_s(&self) -> f64 {
         let measured_bytes = self.bytes as f64 * self.repetitions as f64;
-        measured_bytes / (1024.0 * 1024.0) / self.elapsed.as_secs_f64().max(f64::MIN_POSITIVE)
+        if self.elapsed.is_zero() {
+            0.0
+        } else {
+            measured_bytes / (1024.0 * 1024.0) / self.elapsed.as_secs_f64()
+        }
     }
 
     /// Stable machine-readable output without adding a serialization dependency.

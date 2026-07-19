@@ -191,6 +191,15 @@
       "updated": 0
     },
     {
+      "id": "api:A0020",
+      "kind": "api",
+      "title": "Relational JSON queries",
+      "status": "experimental",
+      "path": "crates/lang/jq/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
@@ -448,7 +457,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7412,
+      "words": 7422,
       "updated": 0
     },
     {
@@ -646,7 +655,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 34149,
+      "words": 34260,
       "updated": 0
     },
     {
@@ -6334,7 +6343,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/kernel/hol/init/Cargo.toml",
-      "words": 53,
+      "words": 54,
       "updated": 0
     },
     {
@@ -7274,6 +7283,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/json_family.rs",
+      "kind": "file",
+      "title": "json_family.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
+      "words": 266,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/json_parse.rs",
       "kind": "file",
       "title": "json_parse.rs",
@@ -7387,7 +7405,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/mod.rs",
-      "words": 255,
+      "words": 256,
       "updated": 0
     },
     {
@@ -9920,6 +9938,24 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/jq/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/jq/Cargo.toml",
+      "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/jq/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/jq/src/lib.rs",
+      "words": 545,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/json-api",
       "kind": "file",
       "title": "crates/lang/json-api",
@@ -9938,12 +9974,30 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/json-api/src/bin/json-corpus.rs",
+      "kind": "file",
+      "title": "json-corpus.rs",
+      "status": "tracked",
+      "path": "crates/lang/json-api/src/bin/json-corpus.rs",
+      "words": 191,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/json-api/src/corpus.rs",
+      "kind": "file",
+      "title": "corpus.rs",
+      "status": "tracked",
+      "path": "crates/lang/json-api/src/corpus.rs",
+      "words": 634,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/json-api/src/lib.rs",
       "kind": "file",
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/json-api/src/lib.rs",
-      "words": 1213,
+      "words": 1250,
       "updated": 0
     },
     {
@@ -14596,7 +14650,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 34149,
+      "words": 34260,
       "updated": 0
     },
     {
@@ -14614,7 +14668,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 298,
+      "words": 301,
       "updated": 0
     },
     {
@@ -14623,7 +14677,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 990,
+      "words": 999,
       "updated": 0
     },
     {
@@ -14632,7 +14686,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 222,
+      "words": 224,
       "updated": 0
     },
     {
@@ -14641,7 +14695,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1766,
+      "words": 1784,
       "updated": 0
     },
     {
@@ -14704,7 +14758,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3409,
+      "words": 3439,
       "updated": 0
     },
     {
@@ -18686,11 +18740,38 @@
       "updated": 0
     },
     {
-      "id": "todo:json.polynomial-composition",
+      "id": "todo:json.decimal-a0006-native-hol-morphism",
       "kind": "todo",
-      "title": "Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.",
+      "title": "Prove the boundary between A0006 CanonicalDecimal and init's exact (int,nat) decimal representation, including normalization and signed exponents.",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:json.parser-stackless-depth",
+      "kind": "todo",
+      "title": "Replace the recursive hard ceiling with a stack-safe parser whose resource policy can accept arbitrary RFC 8259 nesting.",
       "status": "major",
       "path": "crates/lang/json-api/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:json.polynomial-composition",
+      "kind": "todo",
+      "title": "Close the native JSON family fixpoint once DatatypeFamilyExpr has a proof-bearing nested-fixpoint backend; the NativeHol constructor-layer adapter already realizes the exact six-way F(X), including recursive array/member-list payload shapes.",
+      "status": "major",
+      "path": "crates/lang/json-api/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:json.semantic-object-native-hol",
+      "kind": "todo",
+      "title": "Define the canonical unique-name predicate over list (string × json), prove duplicate rejection/lookup laws, and expose semantic objects as that subset; ordered syntax objects intentionally remain the raw list above.",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
       "words": 0,
       "updated": 0
     },
@@ -21880,6 +21961,18 @@
       "detail": null
     },
     {
+      "source": "api:A0020",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/jq/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0020",
+      "predicate": "depends-on",
+      "target": "api:A0007",
+      "detail": null
+    },
+    {
       "source": "file:apps/covalence-web/src/lib/Repl.svelte",
       "predicate": "imports",
       "target": "file:apps/covalence-web/src/lib/repl/ReplShell.svelte",
@@ -23304,6 +23397,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/json_family.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/json_parse.rs",
       "detail": null
     },
@@ -24367,6 +24466,12 @@
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/inductive/src/validated.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/json-api/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/json-api/src/corpus.rs",
       "detail": null
     },
     {
@@ -32136,6 +32241,12 @@
       "title": "Parsing expression grammars",
       "status": "experimental",
       "path": "crates/lang/peg-parsing/src/lib.rs"
+    },
+    {
+      "id": "A0020",
+      "title": "Relational JSON queries",
+      "status": "experimental",
+      "path": "crates/lang/jq/src/lib.rs"
     }
   ],
   "apiImplementations": [

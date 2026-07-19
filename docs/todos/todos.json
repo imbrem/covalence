@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 336,
-  "structured": 336,
+  "count": 337,
+  "structured": 337,
   "items": [
     {
       "id": "bits.abstract-bool-list-adapter",
@@ -105,6 +105,16 @@
       "crate": "covalence-init"
     },
     {
+      "id": "computation.blc-symbolic-reduction",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace bounded replay with proved symbolic decoding, substitution, and reduction over inductive/Nat/Bits APIs.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
+      "line": 15,
+      "crate": "covalence-init"
+    },
+    {
       "id": "computation.lambda-ski-preservation",
       "kind": "TODO",
       "severity": "major",
@@ -141,7 +151,7 @@
       "summary": "Define native HOL",
       "structured": true,
       "path": "crates/kernel/hol/init/src/init/computation/mod.rs",
-      "line": 272,
+      "line": 274,
       "crate": "covalence-init"
     },
     {

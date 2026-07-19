@@ -12,9 +12,16 @@
 
 #![forbid(unsafe_code)]
 
+pub mod nat;
+
 use covalence_inductive::{
     FieldSpec, FixpointIsoFacts, FixpointNoConfusionFacts, FixpointSpec, LeastFixpoint,
     LeastFixpointFacts, Logic, NoConfusionLeastFixpoint, PolynomialSpec, Position, VariantCase,
+};
+
+pub use nat::{
+    NatInduction, NatLayer, NatMembership, NatRepresentation, NatSymbol, RawNat, RawSExprNat,
+    RefinedNat, RefinedSExprNat, TheoryNatInduction, nat_spec,
 };
 
 /// Constructor positions in the canonical S-expression polynomial.

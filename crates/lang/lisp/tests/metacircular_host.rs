@@ -1,6 +1,6 @@
 //! Kernel-independent integration gate for the classic metacircular evaluator.
 
-use covalence_kernel_lisp::{Datum, HostValue};
+use covalence_kernel_lisp::Datum;
 use covalence_lisp::frontend::{CoreAtom, HostSession, SurfaceDialect};
 use covalence_lisp::reader::{read, read_one};
 
@@ -48,10 +48,9 @@ fn symbol(name: &str) -> Datum<CoreAtom> {
 
 fn evaluate(session: &HostSession, source: &str) -> Datum<CoreAtom> {
     let value = session.evaluate(&read_one(source).unwrap()).unwrap();
-    let HostValue::Datum(value) = value else {
-        panic!("metacircular evaluator returned a closure")
-    };
     value
+        .as_datum()
+        .expect("metacircular evaluator returned a closure-containing value")
 }
 
 #[test]

@@ -709,7 +709,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35687,
+      "words": 35705,
       "updated": 0
     },
     {
@@ -9349,7 +9349,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 1299,
+      "words": 1498,
       "updated": 0
     },
     {
@@ -9385,7 +9385,7 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/syntax.rs",
-      "words": 174,
+      "words": 191,
       "updated": 0
     },
     {
@@ -10771,7 +10771,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 912,
+      "words": 1040,
       "updated": 0
     },
     {
@@ -10816,7 +10816,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 2353,
+      "words": 2356,
       "updated": 0
     },
     {
@@ -10825,7 +10825,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1594,
+      "words": 1610,
       "updated": 0
     },
     {
@@ -11176,7 +11176,7 @@
       "title": "metacircular_host.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/metacircular_host.rs",
-      "words": 87,
+      "words": 86,
       "updated": 0
     },
     {
@@ -15325,7 +15325,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35687,
+      "words": 35705,
       "updated": 0
     },
     {
@@ -15433,7 +15433,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3529,
+      "words": 3549,
       "updated": 0
     },
     {
@@ -22088,6 +22088,15 @@
       "updated": 0
     },
     {
+      "id": "todo:lisp.hol.apply-list",
+      "kind": "todo",
+      "title": "Give the partial HOL Lisp semantics higher-order closures and inductive proper-list argument splicing, then share apply conformance with the host backend.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:lisp.hol.numeric-datum-sum",
       "kind": "todo",
       "title": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
@@ -22100,6 +22109,15 @@
       "id": "todo:lisp.hol.strict-sequence",
       "kind": "todo",
       "title": "Model strict sequencing in a partial/effectful HOL semantics so divergence or failure in a discarded expression cannot be erased by pure equational compilation.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.hol.variadic-closures",
+      "kind": "todo",
+      "title": "Represent variadic closures in the equational HOL backend using the shared inductive proper-list carrier, without assuming total application.",
       "status": "major",
       "path": "crates/lang/lisp/src/semantics.rs",
       "words": 0,

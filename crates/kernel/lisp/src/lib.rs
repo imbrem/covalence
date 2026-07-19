@@ -40,8 +40,8 @@ pub use effect::{
     EffectSuspension, EffectSyntax, HandledEffect, HandledRun, handle_to_completion,
 };
 pub use host::{
-    CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum, HostConfiguration,
-    HostControl, HostEnvironment, HostFrame, HostValue,
+    ArityExpectation, CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum,
+    HostConfiguration, HostControl, HostEnvironment, HostFrame, HostValue,
 };
 pub use relation::{
     CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError,

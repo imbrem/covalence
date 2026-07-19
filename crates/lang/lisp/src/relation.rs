@@ -1427,6 +1427,9 @@ impl LispRel {
                     ))
                 }
             }
+            CoreExpr::ApplyList { .. } => Err(HolError::Stuck(
+                "runtime-list application needs higher-order relational closures".into(),
+            )),
             CoreExpr::Lambda { .. } | CoreExpr::Let { .. } | CoreExpr::LetRec { .. } => {
                 Err(HolError::Stuck(
                     "lambda and lexical bindings need recursion; switch with `#lang scheme`".into(),

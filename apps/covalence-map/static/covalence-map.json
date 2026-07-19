@@ -664,7 +664,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35026,
+      "words": 35207,
       "updated": 0
     },
     {
@@ -5317,7 +5317,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/api/src/lib.rs",
-      "words": 114,
+      "words": 142,
       "updated": 0
     },
     {
@@ -6667,7 +6667,7 @@
       "title": "cfg.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/grammar/spectec/cfg.rs",
-      "words": 414,
+      "words": 482,
       "updated": 0
     },
     {
@@ -6680,12 +6680,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/grammar/spectec/indexed.rs",
+      "kind": "file",
+      "title": "indexed.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/grammar/spectec/indexed.rs",
+      "words": 438,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/grammar/spectec/mod.rs",
       "kind": "file",
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/grammar/spectec/mod.rs",
-      "words": 56,
+      "words": 69,
       "updated": 0
     },
     {
@@ -7180,7 +7189,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/mod.rs",
-      "words": 94,
+      "words": 97,
       "updated": 0
     },
     {
@@ -7279,7 +7288,7 @@
       "title": "variant.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/variant.rs",
-      "words": 252,
+      "words": 557,
       "updated": 0
     },
     {
@@ -8557,7 +8566,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/spectec/mod.rs",
-      "words": 102,
+      "words": 104,
       "updated": 0
     },
     {
@@ -8588,6 +8597,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/spectec/spec.rs",
+      "kind": "file",
+      "title": "spec.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/spectec/spec.rs",
+      "words": 332,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/wasm",
       "kind": "file",
       "title": "crates/kernel/hol/init/src/wasm",
@@ -8611,7 +8629,7 @@
       "title": "denote.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/denote.rs",
-      "words": 522,
+      "words": 581,
       "updated": 0
     },
     {
@@ -8629,7 +8647,16 @@
       "title": "builtins.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/builtins.rs",
-      "words": 1057,
+      "words": 2083,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/wasm/lower/decision.rs",
+      "kind": "file",
+      "title": "decision.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/wasm/lower/decision.rs",
+      "words": 582,
       "updated": 0
     },
     {
@@ -8638,7 +8665,7 @@
       "title": "decs.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/decs.rs",
-      "words": 3166,
+      "words": 4568,
       "updated": 0
     },
     {
@@ -8647,7 +8674,7 @@
       "title": "else_.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/else_.rs",
-      "words": 878,
+      "words": 1601,
       "updated": 0
     },
     {
@@ -8656,7 +8683,7 @@
       "title": "evalrel.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/evalrel.rs",
-      "words": 728,
+      "words": 1243,
       "updated": 0
     },
     {
@@ -8665,7 +8692,7 @@
       "title": "flatten.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/flatten.rs",
-      "words": 2493,
+      "words": 3599,
       "updated": 0
     },
     {
@@ -8674,7 +8701,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/mod.rs",
-      "words": 248,
+      "words": 249,
       "updated": 0
     },
     {
@@ -8710,7 +8737,7 @@
       "title": "total.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/lower/total.rs",
-      "words": 1403,
+      "words": 1672,
       "updated": 0
     },
     {
@@ -8728,7 +8755,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/mod.rs",
-      "words": 48,
+      "words": 50,
       "updated": 0
     },
     {
@@ -8750,12 +8777,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/wasm/sort.rs",
+      "kind": "file",
+      "title": "sort.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/wasm/sort.rs",
+      "words": 228,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/wasm/spec.rs",
       "kind": "file",
       "title": "spec.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/spec.rs",
-      "words": 479,
+      "words": 482,
       "updated": 0
     },
     {
@@ -8764,7 +8800,16 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/wasm/syntax.rs",
-      "words": 1487,
+      "words": 1484,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/wasm/type_family.rs",
+      "kind": "file",
+      "title": "type_family.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/wasm/type_family.rs",
+      "words": 524,
       "updated": 0
     },
     {
@@ -13705,7 +13750,7 @@
       "title": "cfg.rs",
       "status": "tracked",
       "path": "crates/lib/wasm/spectec/src/cfg.rs",
-      "words": 2970,
+      "words": 3222,
       "updated": 0
     },
     {
@@ -13718,12 +13763,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lib/wasm/spectec/src/indexed.rs",
+      "kind": "file",
+      "title": "indexed.rs",
+      "status": "tracked",
+      "path": "crates/lib/wasm/spectec/src/indexed.rs",
+      "words": 613,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lib/wasm/spectec/src/lib.rs",
       "kind": "file",
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lib/wasm/spectec/src/lib.rs",
-      "words": 51,
+      "words": 52,
       "updated": 0
     },
     {
@@ -15046,7 +15100,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35026,
+      "words": 35207,
       "updated": 0
     },
     {
@@ -15154,7 +15208,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3459,
+      "words": 3479,
       "updated": 0
     },
     {
@@ -15848,6 +15902,15 @@
       "status": null,
       "path": "notes/vibes/design/proposals/*",
       "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "kind": "file",
+      "title": "verified-weighted-graph-demo-handoff.md",
+      "status": "tracked",
+      "path": "notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "words": 128,
       "updated": 0
     },
     {
@@ -16553,12 +16616,21 @@
       "updated": 0
     },
     {
+      "id": "file:notes/vibes/logics/spectec-resync-handoff.md",
+      "kind": "file",
+      "title": "spectec-resync-handoff.md",
+      "status": "tracked",
+      "path": "notes/vibes/logics/spectec-resync-handoff.md",
+      "words": 109,
+      "updated": 0
+    },
+    {
       "id": "file:notes/vibes/logics/spectec-total-load.md",
       "kind": "file",
       "title": "spectec-total-load.md",
       "status": "tracked",
       "path": "notes/vibes/logics/spectec-total-load.md",
-      "words": 448,
+      "words": 782,
       "updated": 0
     },
     {
@@ -16595,6 +16667,15 @@
       "status": "tracked",
       "path": "notes/vibes/logics/wasm-spec.md",
       "words": 188,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "kind": "file",
+      "title": "numeric-capability-tower-handoff.md",
+      "status": "tracked",
+      "path": "notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "words": 144,
       "updated": 0
     },
     {
@@ -17819,7 +17900,7 @@
       "status": "draft",
       "path": "notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
       "words": 603,
-      "updated": 1784475102
+      "updated": 1784475624
     },
     {
       "id": "note:notes/vibes/handoff/README.md",
@@ -18479,13 +18560,22 @@
       "updated": 1784416010
     },
     {
+      "id": "note:notes/vibes/logics/spectec-resync-handoff.md",
+      "kind": "note",
+      "title": "SpecTec/WASM resync handoff",
+      "status": "draft",
+      "path": "notes/vibes/logics/spectec-resync-handoff.md",
+      "words": 585,
+      "updated": 1784475603
+    },
+    {
       "id": "note:notes/vibes/logics/spectec-total-load.md",
       "kind": "note",
       "title": "Total-load: the entire WASM 3.0 SpecTec spec as one kernel-checked rule set",
       "status": "draft",
       "path": "notes/vibes/logics/spectec-total-load.md",
-      "words": 3469,
-      "updated": 1784416010
+      "words": 6419,
+      "updated": 1784475603
     },
     {
       "id": "note:notes/vibes/logics/structural-sigma-transport.md",
@@ -18530,7 +18620,7 @@
       "status": "draft",
       "path": "notes/vibes/numerics/numeric-capability-tower-handoff.md",
       "words": 670,
-      "updated": 1784475102
+      "updated": 1784475624
     },
     {
       "id": "note:notes/vibes/observers/backend-decoupling.md",
@@ -20893,7 +20983,7 @@
     {
       "id": "todo:kernel.hol.init.src.wasm.builtin-frontier-after-the-integer-leg",
       "kind": "todo",
-      "title": "Builtin frontier after the integer leg: (lower/builtins.rs gives the",
+      "title": "Give exact clauses to the remaining 67 float and related builtin declarations.",
       "status": "severe",
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
       "words": 0,
@@ -22066,6 +22156,24 @@
       "title": "Enable the native macOS server path once tested.",
       "status": "minor",
       "path": "extensions/covalence-vscode/src/server.ts",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:wasm.spectec.decision-family-universal",
+      "kind": "todo",
+      "title": "Specialize closed quantified adequacy, totality, and determinacy theorems into ground cases.",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/wasm/lower/decision.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:wasm.spectec.indexed-grammar-lowering",
+      "kind": "todo",
+      "title": "Lower capture-sensitive reference arguments and semantic premises into the HOL relation.",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/grammar/spectec/indexed.rs",
       "words": 0,
       "updated": 0
     },
@@ -23548,6 +23656,12 @@
       "detail": null
     },
     {
+      "source": "file:crates/kernel/hol/init/src/grammar/spectec/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/grammar/spectec/indexed.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/kernel/hol/init/src/init/acl2/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/acl2/carrier.rs",
@@ -24496,9 +24610,21 @@
       "detail": null
     },
     {
+      "source": "file:crates/kernel/hol/init/src/spectec/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/spectec/spec.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/kernel/hol/init/src/wasm/lower/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/wasm/lower/builtins.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/wasm/lower/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/wasm/lower/decision.rs",
       "detail": null
     },
     {
@@ -24582,6 +24708,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/wasm/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/wasm/sort.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/wasm/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/wasm/spec.rs",
       "detail": null
     },
@@ -24589,6 +24721,12 @@
       "source": "file:crates/kernel/hol/init/src/wasm/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/wasm/syntax.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/wasm/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/wasm/type_family.rs",
       "detail": null
     },
     {
@@ -25783,6 +25921,12 @@
       "source": "file:crates/lib/wasm/spectec/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lib/wasm/spectec/src/grammar.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lib/wasm/spectec/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lib/wasm/spectec/src/indexed.rs",
       "detail": null
     },
     {
@@ -29824,6 +29968,12 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/logics/spectec-resync-handoff.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/logics/spectec-total-load.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -32836,6 +32986,12 @@
       "stableId": "N0045",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/logics/spectec-resync-handoff.md",
+      "stableId": "N0046",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -34023,6 +34179,16 @@
       "ordinal": 0
     },
     {
+      "noteId": "note:notes/vibes/logics/spectec-resync-handoff.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "resync-handoff",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
       "noteId": "note:notes/vibes/logics/spectec-total-load.md",
       "actorId": "agent:claude",
       "role": "author",
@@ -34497,6 +34663,11 @@
       "committedAt": 1784416010
     },
     {
+      "noteId": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "commit": "465141892621c427eeee0bb8dc8a21ee93582528",
+      "committedAt": 1784475624
+    },
+    {
       "noteId": "note:notes/vibes/handoff/README.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
@@ -34862,9 +35033,14 @@
       "committedAt": 1784416010
     },
     {
+      "noteId": "note:notes/vibes/logics/spectec-resync-handoff.md",
+      "commit": "2bc8cd03f4de3aa39898aadf4bf6dcd8d86bfefa",
+      "committedAt": 1784475603
+    },
+    {
       "noteId": "note:notes/vibes/logics/spectec-total-load.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "2bc8cd03f4de3aa39898aadf4bf6dcd8d86bfefa",
+      "committedAt": 1784475603
     },
     {
       "noteId": "note:notes/vibes/logics/structural-sigma-transport.md",
@@ -34885,6 +35061,11 @@
       "noteId": "note:notes/vibes/logics/wasm-spec.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "commit": "465141892621c427eeee0bb8dc8a21ee93582528",
+      "committedAt": 1784475624
     },
     {
       "noteId": "note:notes/vibes/observers/backend-decoupling.md",

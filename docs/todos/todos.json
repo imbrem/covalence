@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 345,
-  "structured": 345,
+  "count": 347,
+  "structured": 347,
   "items": [
     {
       "id": "acl2.reader.dispatch-macros",
@@ -2088,7 +2088,7 @@
       "id": "kernel.hol.init.src.wasm.builtin-frontier-after-the-integer-leg",
       "kind": "TODO",
       "severity": "severe",
-      "summary": "Builtin frontier after the integer leg: (lower/builtins.rs gives the",
+      "summary": "Give exact clauses to the remaining 67 float and related builtin declarations.",
       "structured": true,
       "path": "crates/kernel/hol/init/src/wasm/open_work.rs",
       "line": 13,
@@ -3353,6 +3353,26 @@
       "path": "extensions/covalence-vscode/src/server.ts",
       "line": 99,
       "crate": null
+    },
+    {
+      "id": "wasm.spectec.decision-family-universal",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Specialize closed quantified adequacy, totality, and determinacy theorems into ground cases.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/wasm/lower/decision.rs",
+      "line": 171,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "wasm.spectec.indexed-grammar-lowering",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Lower capture-sensitive reference arguments and semantic premises into the HOL relation.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/spectec/indexed.rs",
+      "line": 115,
+      "crate": "covalence-init"
     },
     {
       "id": "web.acl2-session-sharing",

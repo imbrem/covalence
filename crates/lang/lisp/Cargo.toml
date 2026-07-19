@@ -50,3 +50,7 @@ hol = [
     "dep:covalence-core",
     "dep:covalence-types",
 ]
+
+[[example]]
+name = "acl2_perf_bench"
+required-features = ["hol"]

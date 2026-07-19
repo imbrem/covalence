@@ -5,9 +5,29 @@ use crate::visitor::SExpVisitor;
 
 /// Parse S-expressions from `input`, dispatching events to `visitor`.
 pub fn parse_with<V: SExpVisitor>(input: &str, visitor: &mut V) -> Result<(), ParseError> {
+    parse_with_mode(input, visitor, false).map(|_| ())
+}
+
+/// Parse the first S-expression and return the byte offset immediately after it.
+///
+/// Leading trivia is included in the consumed prefix; trailing trivia is not.
+/// The returned offset is always a UTF-8 boundary.
+pub fn parse_prefix_with<V: SExpVisitor>(
+    input: &str,
+    visitor: &mut V,
+) -> Result<usize, ParseError> {
+    parse_with_mode(input, visitor, true)
+}
+
+fn parse_with_mode<V: SExpVisitor>(
+    input: &str,
+    visitor: &mut V,
+    stop_after_one: bool,
+) -> Result<usize, ParseError> {
     let original = input;
     let mut stream: &str = input;
     let mut depth = 0u32;
+    let mut started = false;
 
     loop {
         visitor.parse_trivia(&mut stream);
@@ -18,16 +38,25 @@ pub fn parse_with<V: SExpVisitor>(input: &str, visitor: &mut V) -> Result<(), Pa
                     message: "unclosed '('".into(),
                 });
             }
-            break;
+            return if started || !stop_after_one {
+                Ok(original.len())
+            } else {
+                Err(ParseError {
+                    offset: original.len(),
+                    message: "expected S-expression".into(),
+                })
+            };
         }
 
         let b = stream.as_bytes()[0];
+        let mut completed = false;
 
         match b {
             b'(' => {
                 stream = &stream[1..];
                 visitor.open_list();
                 depth += 1;
+                started = true;
             }
             b')' => {
                 if depth == 0 {
@@ -39,6 +68,7 @@ pub fn parse_with<V: SExpVisitor>(input: &str, visitor: &mut V) -> Result<(), Pa
                 stream = &stream[1..];
                 visitor.close_list();
                 depth -= 1;
+                completed = depth == 0;
             }
             b'"' => {
                 // Bare string: format=""
@@ -46,9 +76,13 @@ pub fn parse_with<V: SExpVisitor>(input: &str, visitor: &mut V) -> Result<(), Pa
                 stream = &stream[1..]; // skip opening '"'
                 let bytes = parse_string_body(&mut stream, start)?;
                 visitor.string("", &bytes);
+                started = true;
+                completed = depth == 0;
             }
             _ if Some(b) == visitor.quoted_symbol_delim() => {
                 parse_quoted_symbol_token(&mut stream, visitor, original)?;
+                started = true;
+                completed = depth == 0;
             }
             _ => {
                 // Parse atom text, then check for format"..." prefix
@@ -62,11 +96,14 @@ pub fn parse_with<V: SExpVisitor>(input: &str, visitor: &mut V) -> Result<(), Pa
                 } else {
                     visitor.atom(atom_text);
                 }
+                started = true;
+                completed = depth == 0;
             }
         }
+        if stop_after_one && completed {
+            return Ok(original.len() - stream.len());
+        }
     }
-
-    Ok(())
 }
 
 /// Scan atom text without emitting an event. Returns a reference to the text.

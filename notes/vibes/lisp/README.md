@@ -57,6 +57,8 @@ move together and `cargo test` stays green throughout.
   migration plan.
 - Status report: [`STATUS.md`](./STATUS.md) once the first build lands.
 - ACL2: [`acl2-full-plan.md`](./acl2-full-plan.md) (the governing S0–S12 plan),
+  [`acl2-x86isa-roadmap.md`](./acl2-x86isa-roadmap.md) (corpus-derived gates
+  from book loading to full x86 development),
   [`acl2-s7-s12-plan.md`](./acl2-s7-s12-plan.md) (remaining stages, concretely),
   [`acl2-fidelity.md`](./acl2-fidelity.md) (assumptions/deviations ledger),
   [`acl2-agent-guide.md`](./acl2-agent-guide.md) (agent orientation: module map, patterns, gotchas, process),

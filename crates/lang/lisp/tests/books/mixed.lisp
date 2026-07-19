@@ -46,7 +46,7 @@
 (defmacro appq (x y)
   (app x y))
 
-(encapsulate ()
+(encapsulate ((opaque (x) t))
   (defthm hidden (equal 1 1)))
 
 (mutual-recursion

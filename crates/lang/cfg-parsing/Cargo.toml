@@ -1,0 +1,12 @@
+[package]
+name = "covalence-cfg-parsing"
+version = "0.0.0"
+edition = "2024"
+
+description = "A0015 relational parsing adapter for context-free grammars"
+license.workspace = true
+
+[dependencies]
+covalence-grammar = { path = "../grammar" }
+covalence-parsing-api = { path = "../parsing" }
+thiserror = "2"

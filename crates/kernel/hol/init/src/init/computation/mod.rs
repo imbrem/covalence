@@ -5,6 +5,7 @@
 //! the already kernel-checked theorems through `covalence-computation`.
 
 pub mod automata;
+pub mod automata_hol_api;
 pub mod minsky;
 pub mod turing;
 
@@ -17,6 +18,7 @@ use covalence_hol_eval::EvalThm as Thm;
 use super::inductive::hol::{Hol, NativeHol};
 
 pub mod blc;
+pub mod blc_step_replay;
 mod concrete;
 pub mod identity_replay;
 pub mod lambda_to_ski;

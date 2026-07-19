@@ -1,6 +1,7 @@
 use covalence_computation::theory::{Realization, Theory};
 use covalence_core::{Result, Term, Type};
 use covalence_hol_eval::{EvalThm as Thm, defs::list, mk_bool};
+use covalence_logic_api::BitsSyntax;
 
 use super::{
     NativeTheoryError, NativeTransitionBundle, SuppliedLaw, ValidatedTransitionFacts,
@@ -9,10 +10,7 @@ use super::{
 use crate::init::inductive::hol::{Hol, NativeHol};
 
 pub(crate) fn bit_list(bits: impl IntoIterator<Item = bool>) -> Result<Term> {
-    crate::init::list::list_of(
-        &Type::bool(),
-        bits.into_iter().map(mk_bool).collect::<Vec<_>>(),
-    )
+    NativeHol.bits_literal(&bits.into_iter().collect::<Vec<_>>())
 }
 
 /// Realize one concrete, serialized configuration and its next transition.

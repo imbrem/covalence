@@ -1,0 +1,11 @@
+id = "blc-hol"
+title = "Binary lambda calculus in HOL"
+status = "planned"
+parent = "computation-foundations"
+depends_on = ["bits-api", "inductive-datatypes"]
+todos = ["computation.native-definitions", "computation.lambda-ski-preservation"]
+notes = ["notes/vibes/logics/computation-theory.md"]
+files = [
+  "crates/lang/computation/src/blc.rs",
+  "crates/kernel/hol/init/src/init/computation/blc.rs",
+]

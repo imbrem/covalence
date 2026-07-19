@@ -10,9 +10,24 @@
 
 use covalence_decimal_api::CanonicalDecimal;
 use covalence_inductive::DatatypeFamilyExpr;
-use covalence_parsing_api::{InterpretationPer, PartialParser, SameInterpretation};
+use covalence_parsing_api::{
+    InterpretationPer, ParseAttempt, PartialExactParser, PartialParser, PartialPrefixParser,
+    PrefixAdapterError, PrefixInterpretation, SameInterpretation, Span, exact_from_prefix,
+    same_interpretation_by,
+};
 use covalence_types::Int;
-use std::convert::Infallible;
+use std::{collections::HashMap, collections::HashSet, convert::Infallible};
+
+pub mod api;
+pub mod corpus;
+
+pub use api::{
+    InductiveJsonDuplicateName, InductiveJsonLayer, InductiveJsonList, InductiveJsonObject,
+    InductiveJsonValue, InductiveParsedJsonValue, JsonAggregateConstructors, JsonArrays,
+    JsonConstructorLaws, JsonDecidableEquality, JsonPer, JsonRepresentation,
+    JsonScalarConstructors, JsonSemanticObjects, JsonSyntaxAggregates, JsonSyntaxRepresentation,
+    JsonSyntaxView, JsonView, ReferenceJson,
+};
 
 /// A JSON string code point.
 ///
@@ -73,11 +88,9 @@ pub struct DuplicateName(pub JsonString);
 
 impl<D> JsonObject<D> {
     pub fn new(members: Vec<JsonMember<D>>) -> Result<Self, DuplicateName> {
-        for (index, member) in members.iter().enumerate() {
-            if members[..index]
-                .iter()
-                .any(|prior| prior.name == member.name)
-            {
+        let mut names = HashSet::with_capacity(members.len());
+        for member in &members {
+            if !names.insert(&member.name) {
                 return Err(DuplicateName(member.name.clone()));
             }
         }
@@ -91,14 +104,19 @@ impl<D> JsonObject<D> {
 
 impl<D: PartialEq> PartialEq for JsonObject<D> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.len() == other.0.len()
-            && self.0.iter().all(|member| {
-                other
-                    .0
-                    .iter()
-                    .find(|candidate| candidate.name == member.name)
-                    .is_some_and(|candidate| candidate.value == member.value)
-            })
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+        let by_name = other
+            .0
+            .iter()
+            .map(|member| (&member.name, &member.value))
+            .collect::<HashMap<_, _>>();
+        self.0.iter().all(|member| {
+            by_name
+                .get(&member.name)
+                .is_some_and(|value| **value == member.value)
+        })
     }
 }
 
@@ -210,6 +228,8 @@ pub enum JsonParseErrorKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct JsonNestingLimit(usize);
 
+// TODO(cov:json.parser-stackless-depth, major): Replace the recursive hard ceiling with a stack-safe parser whose resource policy can accept arbitrary RFC 8259 nesting.
+
 impl JsonNestingLimit {
     /// Default limit used by [`JsonSyntaxParser`] and [`JsonParser`].
     pub const DEFAULT: Self = Self(128);
@@ -239,11 +259,11 @@ impl Default for JsonNestingLimit {
 
 /// Positive, checkable parsing evidence retained by the reference parser.
 ///
-/// This is not a theorem: it records the decoded syntax and the exact number
-/// of source bytes consumed so a later logic backend can reflect or check it.
+/// This is not a theorem. It records the exact number of source bytes consumed
+/// so a later logic backend can replay the parse against the returned value.
+/// The decoded tree is deliberately not duplicated inside this witness.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JsonParseWitness {
-    pub syntax: ParsedJsonValue,
     pub consumed: usize,
 }
 
@@ -264,6 +284,55 @@ pub struct JsonSyntaxParser;
 pub struct JsonParser;
 
 impl JsonSyntaxParser {
+    /// Parse one RFC 8259 JSON text prefix beginning at `start`.
+    ///
+    /// Offsets are byte offsets in the original source. The accepted prefix
+    /// includes the grammar's leading and trailing JSON whitespace; bytes
+    /// after that prefix are returned as the remainder rather than rejected.
+    pub fn parse_prefix_diagnostic(
+        &self,
+        source: &[u8],
+        start: usize,
+    ) -> Result<PrefixInterpretation<ParsedJsonValue, JsonParseWitness>, JsonParseError> {
+        self.parse_prefix_diagnostic_with_limit(source, start, JsonNestingLimit::DEFAULT)
+    }
+
+    /// Parse one JSON text prefix with an explicit container nesting limit.
+    pub fn parse_prefix_diagnostic_with_limit(
+        &self,
+        source: &[u8],
+        start: usize,
+        limit: JsonNestingLimit,
+    ) -> Result<PrefixInterpretation<ParsedJsonValue, JsonParseWitness>, JsonParseError> {
+        if start > source.len() {
+            return Err(JsonParseError {
+                offset: source.len(),
+                kind: JsonParseErrorKind::ExpectedValue,
+            });
+        }
+        let mut parser = ByteParser {
+            source,
+            offset: start,
+            nesting_limit: limit.get(),
+        };
+        parser.whitespace();
+        let value = parser.value(0)?;
+        parser.whitespace();
+        let witness = JsonParseWitness {
+            consumed: parser.offset - start,
+        };
+        Ok(PrefixInterpretation::new(
+            value,
+            witness,
+            Span {
+                start,
+                end: parser.offset,
+            },
+            parser.offset,
+        )
+        .expect("parser offset is the prefix remainder"))
+    }
+
     /// Parse one complete JSON text and retain ordered object syntax.
     pub fn parse_diagnostic(
         &self,
@@ -278,26 +347,47 @@ impl JsonSyntaxParser {
         source: &[u8],
         limit: JsonNestingLimit,
     ) -> Result<(ParsedJsonValue, JsonParseWitness), JsonParseError> {
-        let mut parser = ByteParser {
-            source,
-            offset: 0,
-            nesting_limit: limit.get(),
-        };
-        parser.whitespace();
-        let value = parser.value(0)?;
-        parser.whitespace();
-        if parser.offset != source.len() {
-            return Err(parser.error(JsonParseErrorKind::TrailingInput));
+        let parsed = self.parse_prefix_diagnostic_with_limit(source, 0, limit)?;
+        if parsed.remainder != source.len() {
+            return Err(JsonParseError {
+                offset: parsed.remainder,
+                kind: JsonParseErrorKind::TrailingInput,
+            });
         }
-        let witness = JsonParseWitness {
-            syntax: value.clone(),
-            consumed: parser.offset,
-        };
-        Ok((value, witness))
+        Ok((parsed.value, parsed.witness))
     }
 }
 
 impl JsonParser {
+    /// Parse one semantic JSON value prefix, rejecting duplicate object names.
+    pub fn parse_prefix_diagnostic(
+        &self,
+        source: &[u8],
+        start: usize,
+    ) -> Result<PrefixInterpretation<JsonValue, JsonParseWitness>, JsonParseError> {
+        self.parse_prefix_diagnostic_with_limit(source, start, JsonNestingLimit::DEFAULT)
+    }
+
+    /// Parse one semantic JSON value prefix with an explicit nesting limit.
+    pub fn parse_prefix_diagnostic_with_limit(
+        &self,
+        source: &[u8],
+        start: usize,
+        limit: JsonNestingLimit,
+    ) -> Result<PrefixInterpretation<JsonValue, JsonParseWitness>, JsonParseError> {
+        let parsed = JsonSyntaxParser.parse_prefix_diagnostic_with_limit(source, start, limit)?;
+        let value = parsed.value.into_semantic().map_err(|_| JsonParseError {
+            offset: parsed.consumed.end,
+            kind: JsonParseErrorKind::DuplicateName,
+        })?;
+        Ok(PrefixInterpretation {
+            value,
+            witness: parsed.witness,
+            consumed: parsed.consumed,
+            remainder: parsed.remainder,
+        })
+    }
+
     /// Parse one complete JSON text and apply canonical object semantics.
     pub fn parse_diagnostic(
         &self,
@@ -318,6 +408,99 @@ impl JsonParser {
             kind: JsonParseErrorKind::DuplicateName,
         })?;
         Ok((value, witness))
+    }
+}
+
+impl PartialPrefixParser for JsonSyntaxParser {
+    type Source = [u8];
+    type Value = ParsedJsonValue;
+    type Witness = JsonParseWitness;
+    type Diagnostic = JsonParseError;
+    type Error = Infallible;
+
+    fn parse_prefix(
+        &self,
+        source: &[u8],
+        start: usize,
+    ) -> Result<
+        ParseAttempt<PrefixInterpretation<Self::Value, Self::Witness>, Self::Diagnostic>,
+        Self::Error,
+    > {
+        Ok(match self.parse_prefix_diagnostic(source, start) {
+            Ok(parsed) => ParseAttempt::Match(parsed),
+            Err(diagnostic) => ParseAttempt::NoMatch(diagnostic),
+        })
+    }
+}
+
+impl PartialExactParser for JsonSyntaxParser {
+    type Source = [u8];
+    type Value = ParsedJsonValue;
+    type Witness = JsonParseWitness;
+    type Diagnostic = JsonParseError;
+    type Error = Infallible;
+
+    fn parse_exact(
+        &self,
+        source: &[u8],
+    ) -> Result<ParseAttempt<(Self::Value, Self::Witness), Self::Diagnostic>, Self::Error> {
+        json_exact_from_prefix(self, source)
+    }
+}
+
+impl PartialPrefixParser for JsonParser {
+    type Source = [u8];
+    type Value = JsonValue;
+    type Witness = JsonParseWitness;
+    type Diagnostic = JsonParseError;
+    type Error = Infallible;
+
+    fn parse_prefix(
+        &self,
+        source: &[u8],
+        start: usize,
+    ) -> Result<
+        ParseAttempt<PrefixInterpretation<Self::Value, Self::Witness>, Self::Diagnostic>,
+        Self::Error,
+    > {
+        Ok(match self.parse_prefix_diagnostic(source, start) {
+            Ok(parsed) => ParseAttempt::Match(parsed),
+            Err(diagnostic) => ParseAttempt::NoMatch(diagnostic),
+        })
+    }
+}
+
+impl PartialExactParser for JsonParser {
+    type Source = [u8];
+    type Value = JsonValue;
+    type Witness = JsonParseWitness;
+    type Diagnostic = JsonParseError;
+    type Error = Infallible;
+
+    fn parse_exact(
+        &self,
+        source: &[u8],
+    ) -> Result<ParseAttempt<(Self::Value, Self::Witness), Self::Diagnostic>, Self::Error> {
+        json_exact_from_prefix(self, source)
+    }
+}
+
+fn json_exact_from_prefix<P>(
+    parser: &P,
+    source: &[u8],
+) -> Result<ParseAttempt<(P::Value, P::Witness), JsonParseError>, Infallible>
+where
+    P: PartialPrefixParser<Source = [u8], Diagnostic = JsonParseError, Error = Infallible>,
+{
+    match exact_from_prefix(parser, source, source.len(), |trailing| JsonParseError {
+        offset: trailing.start,
+        kind: JsonParseErrorKind::TrailingInput,
+    }) {
+        Ok(attempt) => Ok(attempt),
+        Err(PrefixAdapterError::Parse(error)) => match error {},
+        Err(PrefixAdapterError::InvalidExtent { .. }) => {
+            unreachable!("JSON prefix parser constructs internally validated extents")
+        }
     }
 }
 
@@ -354,18 +537,9 @@ impl InterpretationPer for JsonParser {
         Option<SameInterpretation<Self::Value, Self::Witness, Self::EquivalenceWitness>>,
         Self::Error,
     > {
-        let Some((left_value, left_witness)) = self.parse(left)? else {
-            return Ok(None);
-        };
-        let Some((right_value, right_witness)) = self.parse(right)? else {
-            return Ok(None);
-        };
-        Ok((left_value == right_value).then_some(SameInterpretation {
-            value: left_value,
-            left: left_witness,
-            right: right_witness,
-            equivalence: ObservedSemanticEquality,
-        }))
+        same_interpretation_by(self, left, right, |left_value, right_value| {
+            (left_value == right_value).then_some(ObservedSemanticEquality)
+        })
     }
 }
 
@@ -526,12 +700,25 @@ impl ByteParser<'_> {
                     result.push(JsonCodePoint::Scalar(char::from(byte)));
                 }
                 Some(_) => {
-                    let remaining = std::str::from_utf8(&self.source[self.offset..])
-                        .map_err(|_| self.error(JsonParseErrorKind::InvalidUtf8))?;
-                    let character = remaining
+                    // Decode exactly one scalar. Valid text before a later
+                    // malformed byte must advance normally so the diagnostic
+                    // identifies the malformed byte rather than the start of
+                    // the whole remaining string.
+                    let width = match self.source[self.offset] {
+                        0xc2..=0xdf => 2,
+                        0xe0..=0xef => 3,
+                        0xf0..=0xf4 => 4,
+                        _ => return Err(self.error(JsonParseErrorKind::InvalidUtf8)),
+                    };
+                    let encoded = self
+                        .source
+                        .get(self.offset..self.offset + width)
+                        .ok_or_else(|| self.error(JsonParseErrorKind::InvalidUtf8))?;
+                    let character = std::str::from_utf8(encoded)
+                        .map_err(|_| self.error(JsonParseErrorKind::InvalidUtf8))?
                         .chars()
                         .next()
-                        .ok_or_else(|| self.error(JsonParseErrorKind::InvalidUtf8))?;
+                        .expect("a nonempty UTF-8 scalar");
                     self.offset += character.len_utf8();
                     result.push(JsonCodePoint::Scalar(character));
                 }
@@ -709,6 +896,41 @@ pub enum JsonParameter {
     String,
 }
 
+/// Stable declaration-order indices of the six JSON value constructors.
+///
+/// Backends use these indices when exposing constructor, view, and
+/// no-confusion laws for [`json_value_family`]. Arrays and objects are single
+/// constructors here: their payloads are respectively a recursive list and an
+/// ordered recursive member list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(usize)]
+pub enum JsonConstructor {
+    Null = 0,
+    Bool = 1,
+    Number = 2,
+    String = 3,
+    Array = 4,
+    Object = 5,
+}
+
+impl JsonConstructor {
+    /// All constructors in the declaration order used by
+    /// [`json_value_family`].
+    pub const ALL: [Self; 6] = [
+        Self::Null,
+        Self::Bool,
+        Self::Number,
+        Self::String,
+        Self::Array,
+        Self::Object,
+    ];
+
+    /// The declaration-order index consumed by proof-bearing backends.
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+}
+
 fn list_family<P>(element: DatatypeFamilyExpr<P>) -> DatatypeFamilyExpr<P> {
     DatatypeFamilyExpr::least(DatatypeFamilyExpr::Sum(vec![
         DatatypeFamilyExpr::One,
@@ -756,7 +978,7 @@ pub fn json_value_polynomial() -> DatatypeFamilyExpr<JsonParameter> {
     json_value_family()
 }
 
-// TODO(cov:json.polynomial-composition, major): Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.
+// TODO(cov:json.polynomial-composition, major): Close the native JSON family fixpoint once DatatypeFamilyExpr has a proof-bearing nested-fixpoint backend; the NativeHol constructor-layer adapter already realizes the exact six-way F(X), including recursive array/member-list payload shapes.
 
 #[cfg(test)]
 mod tests {
@@ -822,6 +1044,36 @@ mod tests {
             ])
         );
         assert_eq!(json_value_polynomial(), family);
+    }
+
+    #[test]
+    fn datatype_family_derives_nested_list_interpretation_and_map() {
+        use covalence_inductive::{
+            SymbolicFamilyArrow as A, SymbolicFamilyBackend, SymbolicFamilyObject as O,
+            ValidatedDatatypeFamily, interpret_family, map_family, symbolic_arrow,
+        };
+
+        let family = ValidatedDatatypeFamily::try_from(json_value_family()).unwrap();
+        let source = O::Parameter(JsonParameter::Bool);
+        let target = O::Parameter(JsonParameter::Decimal);
+        let arrow = symbolic_arrow(source.clone(), target.clone(), "value-map");
+
+        let O::Sum(layer) = interpret_family(&SymbolicFamilyBackend, &family, &source).unwrap()
+        else {
+            panic!("JSON is a six-way sum");
+        };
+        assert_eq!(layer.len(), JsonConstructor::ALL.len());
+        assert!(matches!(layer[4], O::Fixpoint { .. }));
+        assert!(matches!(layer[5], O::Fixpoint { .. }));
+
+        let A::Sum(mapped) =
+            map_family(&SymbolicFamilyBackend, &family, &source, &target, &arrow).unwrap()
+        else {
+            panic!("JSON map follows the six-way sum");
+        };
+        assert_eq!(mapped.len(), JsonConstructor::ALL.len());
+        assert!(matches!(mapped[4], A::Fixpoint { .. }));
+        assert!(matches!(mapped[5], A::Fixpoint { .. }));
     }
 
     #[test]
@@ -923,6 +1175,68 @@ mod tests {
                 "accepted {invalid:?}"
             );
         }
+    }
+
+    #[test]
+    fn prefix_and_exact_parsing_have_distinct_consumption_contracts() {
+        let source = b"skip [1.0] \n next";
+        let ParseAttempt::Match(prefix) =
+            PartialPrefixParser::parse_prefix(&JsonParser, source, 5).unwrap()
+        else {
+            panic!("expected prefix match");
+        };
+        assert_eq!(prefix.consumed, Span { start: 5, end: 13 });
+        assert_eq!(prefix.remainder, 13);
+        assert_eq!(prefix.witness.consumed, 8);
+        assert!(!prefix.is_complete(source.len()));
+
+        let ParseAttempt::NoMatch(diagnostic) =
+            PartialExactParser::parse_exact(&JsonParser, b"[1.0] next").unwrap()
+        else {
+            panic!("exact parsing must reject a remainder");
+        };
+        assert_eq!(diagnostic.offset, 6);
+        assert_eq!(diagnostic.kind, JsonParseErrorKind::TrailingInput);
+    }
+
+    #[test]
+    fn malformed_utf8_diagnostic_points_at_the_invalid_lead_byte() {
+        let source = [b'"', 0xc3, 0xa9, 0xff, b'"'];
+        let ParseAttempt::NoMatch(diagnostic) =
+            PartialExactParser::parse_exact(&JsonSyntaxParser, &source).unwrap()
+        else {
+            panic!("malformed UTF-8 must not parse");
+        };
+        assert_eq!(diagnostic.offset, 3);
+        assert_eq!(diagnostic.kind, JsonParseErrorKind::InvalidUtf8);
+    }
+
+    #[test]
+    fn prefix_syntax_retains_duplicates_while_semantics_and_per_reject_them() {
+        let source = br#"{"x":1,"x":2} suffix"#;
+        let ParseAttempt::Match(parsed) =
+            PartialPrefixParser::parse_prefix(&JsonSyntaxParser, source, 0).unwrap()
+        else {
+            panic!("syntax parser must retain duplicate members");
+        };
+        let ParsedJsonValue::Object(members) = parsed.value else {
+            panic!("expected object");
+        };
+        assert_eq!(members.len(), 2);
+        assert_eq!(&source[parsed.remainder..], b"suffix");
+
+        let ParseAttempt::NoMatch(diagnostic) =
+            PartialPrefixParser::parse_prefix(&JsonParser, source, 0).unwrap()
+        else {
+            panic!("semantic parser must reject duplicate names");
+        };
+        assert_eq!(diagnostic.kind, JsonParseErrorKind::DuplicateName);
+        assert!(
+            JsonParser
+                .same_interpretation(br#"{"x":1,"x":2}"#, br#"{"x":2}"#)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

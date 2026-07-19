@@ -50,6 +50,7 @@ distribution after every win.
 | `bun run profile:theorem [label] [reps]` (`CACHE=1`) | **in-depth single-theorem** profile under callgrind; `CACHE=1` adds cachegrind D1/LL cache-miss simulation (callgrind = cachegrind + call graph) | drill into one slow proof's hot spots / cache behaviour |
 | `bun run profile:import [limit]` | import timing, throughput, **per-theorem distribution** (median/p99/slowest), `perf stat` counters (IPC, cache), peak RSS | check the distribution; spot the slowest theorems |
 | `bun run profile:init` | the `init/` kernel-bootstrap profile | kernel/defs bootstrap perf |
+| `bun run bench:acl2` | deterministic ACL2 admission/proof families; stable JSON, correctness-first score, scaling exponents | baseline or gate ACL2 optimization/autoresearch |
 
 Shared helper `scripts/_setmm.mjs` resolves set.mm: explicit arg → `$COV_SET_MM`
 → download to `${TMPDIR}/covalence-set.mm` (cached). `buildBench()` builds the
@@ -59,6 +60,31 @@ The bench binary (`crates/kernel/hol/traits/examples/mm_import_bench.rs`) modes:
 `<mm> [limit] [workers]` (full parallel import) and `--only <label> [reps]`
 (single theorem on one thread, persistent `ClauseCache` like the real import;
 `--only-cons` routes through a `HashCons` to test interning).
+
+## ACL2 autoresearch gate
+
+`bun run bench:acl2` builds a release-only measurement driver, excludes build
+and fixed session-bootstrap time, and measures increasing admission and
+certificate-proof workloads. It emits `covalence.acl2-performance.v1` JSON with
+raw nanosecond samples, median/p95/max, cost per work unit, log-log scaling
+exponents, correctness counts, and a lexicographic score. The score orders
+correct samples first, scaling second, and speed third; use the explicit
+components rather than comparing the packed number across workload revisions.
+
+Save a baseline and gate a candidate on the same quiet machine:
+
+```sh
+bun run bench:acl2 -- --out /tmp/acl2-main.json --reps 9
+bun run autoresearch:acl2 -- --baseline /tmp/acl2-main.json \
+  --max-slowdown 1.10 --max-exponent-regression 0.10 --timeout-ms 120000
+```
+
+Exit zero means all cases remained correct and neither regression threshold was
+crossed. `--system-counters` adds peak RSS and perf counters when available,
+falling back to an ordinary timed run when host permissions reject them.
+Machine identity is recorded because wall time is not portable. An autoresearch
+loop should retain a mutation only after this gate passes and the score improves;
+profile the retained candidate before optimizing a flat hotspot.
 
 ## perf / valgrind notes for this codebase
 

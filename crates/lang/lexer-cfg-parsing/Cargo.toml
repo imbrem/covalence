@@ -1,0 +1,13 @@
+[package]
+name = "covalence-lexer-cfg-parsing"
+version = "0.0.0"
+edition = "2024"
+description = "Bounded lexer-to-CFG pipeline with source provenance"
+license.workspace = true
+
+[dependencies]
+covalence-cfg-parsing = { path = "../cfg-parsing" }
+covalence-grammar = { path = "../grammar" }
+covalence-lexer-parsing = { path = "../lexer-parsing" }
+covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-parsing-api = { path = "../parsing" }

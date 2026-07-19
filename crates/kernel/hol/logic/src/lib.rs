@@ -14,13 +14,20 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bits;
 pub mod bytes;
 pub mod bytes_nat;
 pub mod nat;
 pub mod relation;
+pub mod text;
 
 use core::fmt::Debug;
 
+pub use bits::{
+    BitSyntax, BitsBytesPacking, BitsBytesPackingLaws, BitsConcatLaws, BitsConstruction,
+    BitsNormalization, BitsObservation, BitsSyntax, BytePacking, FixedWidthBits,
+    FixedWidthBitsLaws, IntraByteOrder, PartialByte,
+};
 pub use bytes_nat::{
     CanonicalNatBytes, FixedWidthError, NatBackedBytes, NatByteList, NatByteListError, Radix256Nat,
 };
@@ -34,6 +41,13 @@ pub use relation::{
     RelationOrderDecision, RelationOrderLaws, RelationProperty, RelationPropertyEvidence,
     RelationPropertySyntax, ResidualLaws, ResidualSyntax, Tabulation, TabulationLaws,
     TabulationSyntax,
+};
+pub use text::{
+    CharacterSequenceSyntax, CharacterSyntax, MalformedUtf8, MalformedUtf16, MalformedUtf16Kind,
+    RawByte, StringConcatLaws, StringConstruction, StringObservation, StringSyntax,
+    UnicodeNormalization, UnicodeNormalizationLaws, UnicodeNormalizationSyntax, UnicodeScalar,
+    Utf8DecodingSyntax, Utf8EncoderSyntax, Utf8EncodingLaws, Utf16CodeUnit, Utf16DecodingSyntax,
+    Utf16EncoderSyntax, Utf16EncodingLaws, decode_utf8, decode_utf16, encode_utf8, encode_utf16,
 };
 
 /// The carrier types shared by logic capabilities.

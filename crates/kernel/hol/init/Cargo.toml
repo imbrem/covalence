@@ -21,10 +21,14 @@ covalence-hash = { path = "../../../lib/hash", default-features = false }
 covalence-sexp = { path = "../../../lib/sexp" }
 covalence-metamath = { path = "../../../proof/metamath" }
 covalence-grammar = { path = "../../../lang/grammar" }
+covalence-lexer-parsing = { path = "../../../lang/lexer-parsing" }
 covalence-inductive = { path = "../../../lang/inductive" }
+covalence-json-api = { path = "../../../lang/json-api" }
 covalence-spectec = { path = "../../../lib/wasm/spectec" }
 covalence-k = { path = "../../../lang/k" }
 covalence-computation = { path = "../../../lang/computation" }
+covalence-parsing-api = { path = "../../../lang/parsing" }
+covalence-regex-parsing = { path = "../../../lang/regex-parsing" }
 async-trait = "0.1"
 bytes = "1"
 fnv = "1"

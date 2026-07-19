@@ -3,11 +3,97 @@
 //! Terms use zero-based de Bruijn indices. Their wire representation is the
 //! prefix-free code `00 M` for abstraction, `01 M N` for application, and
 //! `1^(n+1) 0` for variable `n`.
+//!
+//! @covalence-api {"id":"A0012","title":"Binary lambda calculus","status":"experimental","dependsOn":["A0009","A0010"]}
 
 use core::fmt;
 
 use crate::encoding::{BitDecode, BitEncode, DecodeError as CodecError, Decoder};
 use crate::execution::TransitionSystem;
+use covalence_hol_logic::BitsSyntax;
+
+/// Representation-independent BLC operations.
+///
+/// The v1 backend is [`DeBruijn`]. This trait keeps consumers independent of
+/// that choice while preserving the distinction between host reference
+/// computation and proof-bearing laws (none are supplied here).
+pub trait BlcModel {
+    type Term: Clone + PartialEq + Eq;
+    type DecodeError;
+
+    fn variable(&self, index: usize) -> Self::Term;
+    fn abstraction(&self, body: Self::Term) -> Self::Term;
+    fn application(&self, function: Self::Term, argument: Self::Term) -> Self::Term;
+    fn decode(&self, code: &[bool]) -> Result<Self::Term, Self::DecodeError>;
+    fn encode(&self, term: &Self::Term) -> Vec<bool>;
+    fn is_closed(&self, term: &Self::Term) -> bool;
+    fn shift(&self, term: &Self::Term, amount: isize, cutoff: usize) -> Self::Term;
+    fn substitute(
+        &self,
+        term: &Self::Term,
+        variable: usize,
+        replacement: &Self::Term,
+    ) -> Self::Term;
+    fn normal_order_step(&self, term: &Self::Term) -> Option<Self::Term>;
+
+    fn is_well_formed_code(&self, code: &[bool]) -> bool {
+        self.decode(code).is_ok()
+    }
+}
+
+/// Capability for lowering a BLC model's canonical code through A0010.
+pub trait BlcBitsEncoding<L: BitsSyntax>: BlcModel {
+    fn encode_in(&self, logic: &L, term: &Self::Term) -> Result<L::Term, L::Error> {
+        logic.bits_literal(&self.encode(term))
+    }
+}
+
+impl<L: BitsSyntax, M: BlcModel> BlcBitsEncoding<L> for M {}
+
+/// Zero-based de Bruijn reference backend with Tromp's canonical encoding.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DeBruijn;
+
+impl BlcModel for DeBruijn {
+    type Term = Term;
+    type DecodeError = DecodeError;
+
+    fn variable(&self, index: usize) -> Term {
+        Term::var(index)
+    }
+
+    fn abstraction(&self, body: Term) -> Term {
+        Term::abs(body)
+    }
+
+    fn application(&self, function: Term, argument: Term) -> Term {
+        Term::app(function, argument)
+    }
+
+    fn decode(&self, code: &[bool]) -> Result<Term, DecodeError> {
+        Term::decode(code)
+    }
+
+    fn encode(&self, term: &Term) -> Vec<bool> {
+        term.encode()
+    }
+
+    fn is_closed(&self, term: &Term) -> bool {
+        term.is_closed()
+    }
+
+    fn shift(&self, term: &Term, amount: isize, cutoff: usize) -> Term {
+        term.shift(amount, cutoff)
+    }
+
+    fn substitute(&self, term: &Term, variable: usize, replacement: &Term) -> Term {
+        term.substitute(variable, replacement)
+    }
+
+    fn normal_order_step(&self, term: &Term) -> Option<Term> {
+        term.beta_step()
+    }
+}
 
 /// An untyped lambda term using zero-based de Bruijn indices.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -141,6 +227,24 @@ impl Term {
         }
     }
 
+    /// Shifts free de Bruijn indices at or above `cutoff`.
+    ///
+    /// A negative amount is accepted only when every affected index remains
+    /// nonnegative. This precondition is maintained by [`Self::substitute_top`].
+    pub fn shift(&self, amount: isize, cutoff: usize) -> Self {
+        shift(self, amount, cutoff)
+    }
+
+    /// Capture-avoiding substitution for a free de Bruijn variable.
+    pub fn substitute(&self, variable: usize, replacement: &Self) -> Self {
+        substitute(self, variable, replacement, 0)
+    }
+
+    /// Substitutes an argument for index zero in an abstraction body.
+    pub fn substitute_top(argument: &Self, body: &Self) -> Self {
+        substitute_top(argument, body)
+    }
+
     /// Tests whether every variable is bound by an enclosing abstraction.
     pub fn is_closed(&self) -> bool {
         fn go(term: &Term, depth: usize) -> bool {
@@ -259,9 +363,57 @@ fn substitute_top(argument: &Term, body: &Term) -> Term {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use covalence_hol_logic::{BitSyntax, Logic};
 
     fn bits(text: &str) -> Vec<bool> {
         text.bytes().map(|byte| byte == b'1').collect()
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct TestLogic;
+
+    impl Logic for TestLogic {
+        type Kind = ();
+        type Type = &'static str;
+        type Term = Vec<bool>;
+        type Thm = ();
+        type Error = core::convert::Infallible;
+    }
+
+    impl BitSyntax for TestLogic {
+        fn bit_type(&self) -> &'static str {
+            "bit"
+        }
+        fn bit_false(&self) -> Vec<bool> {
+            vec![false]
+        }
+        fn bit_true(&self) -> Vec<bool> {
+            vec![true]
+        }
+    }
+
+    impl BitsSyntax for TestLogic {
+        fn bits_type(&self) -> &'static str {
+            "bits"
+        }
+        fn bits_empty(&self) -> Vec<bool> {
+            vec![]
+        }
+        fn bits_literal(&self, bits: &[bool]) -> Result<Vec<bool>, Self::Error> {
+            Ok(bits.to_vec())
+        }
+    }
+
+    #[test]
+    fn model_api_stacks_encoding_over_a0010() {
+        let model = DeBruijn;
+        let identity = model.abstraction(model.variable(0));
+        assert!(model.is_closed(&identity));
+        assert_eq!(
+            model.encode_in(&TestLogic, &identity).unwrap(),
+            bits("0010")
+        );
+        assert_eq!(model.decode(&model.encode(&identity)).unwrap(), identity);
     }
 
     #[test]

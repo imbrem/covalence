@@ -567,6 +567,10 @@ impl Session {
                              machine-checked soundness metatheorem, transported to \
                              the base-HOL model"
                         }
+                        Acl2Proof::Induction { .. } => {
+                            "proved via the kernel ACL2 premise builder + induction, \
+                             transported to the base-HOL model"
+                        }
                         Acl2Proof::Reduction => "proved by certified kernel reduction",
                     };
                     return Ok(format!("{}\n  [{via}]", entry.thm));

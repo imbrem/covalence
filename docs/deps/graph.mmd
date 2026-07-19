@@ -21,6 +21,8 @@ graph LR
   alethe --> sexp
   alethe --> smt
   alethe --> types
+  cfg-parsing --> grammar
+  cfg-parsing --> parsing-api
   client --> hash
   client --> shell
   client --> store
@@ -70,12 +72,17 @@ graph LR
   init --> hol
   init --> hol-eval
   init --> inductive
+  init --> json-api
   init --> k
+  init --> lexer-parsing
   init --> logic-api
   init --> metamath
+  init --> parsing-api
+  init --> regex-parsing
   init --> sexp
   init --> spectec
   init --> types
+  jq --> json-api
   json-api --> decimal-api
   json-api --> inductive
   json-api --> parsing-api
@@ -94,6 +101,15 @@ graph LR
   kernel-sat --> sat
   kernel-smt --> core
   kernel-smt --> hol-api
+  lexer-cfg-parsing --> cfg-parsing
+  lexer-cfg-parsing --> grammar
+  lexer-cfg-parsing --> lexer-parsing
+  lexer-cfg-parsing --> logic-api
+  lexer-cfg-parsing --> parsing-api
+  lexer-parsing --> grammar
+  lexer-parsing --> logic-api
+  lexer-parsing --> parsing-api
+  lexer-parsing --> regex-parsing
   lisp --> core
   lisp --> hol-api
   lisp --> hol-eval
@@ -121,6 +137,12 @@ graph LR
   opentheory --> hol-api
   opentheory --> hol-eval
   parquet --> arrow
+  parser-generator --> grammar
+  parser-generator --> lexer-cfg-parsing
+  parser-generator --> lexer-parsing
+  parsing-api --> logic-api
+  peg-parsing --> logic-api
+  peg-parsing --> parsing-api
   pure --> pure-trusted
   pure-eval --> pure
   pure-eval --> types
@@ -140,6 +162,9 @@ graph LR
   python --> store
   python --> wasm
   python --> wasm-store
+  regex-parsing --> grammar
+  regex-parsing --> logic-api
+  regex-parsing --> parsing-api
   repl --> arrow
   repl --> forsp
   repl --> git
@@ -168,6 +193,10 @@ graph LR
   sexp --> parse
   sexp --> types
   sexpr-api --> inductive
+  sexpr-parsing --> logic-api
+  sexpr-parsing --> parsing-api
+  sexpr-parsing --> sexp
+  sexpr-parsing --> sexpr-api
   shell --> hol
   shell --> kernel
   smt --> sat

@@ -21,9 +21,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod automata_api;
 pub mod automata_theory;
 pub mod blc;
 pub mod compiler;
+pub mod computability;
 pub mod encoding;
 pub mod execution;
 pub mod finite;
@@ -38,6 +40,15 @@ pub use compiler::{
     CompilationArtifact, CompiledTerm, Compiler, CompilerLaws, CompilerReplayBackend,
     CompilerSearchWitness, ComposedArtifact, ComputationalEquivalence, DomainDecision,
     PartialCompilation, PartialCompiler, PartialCompilerLaws, SimulationVocabulary, StepMapping,
+};
+pub use computability::{
+    ComputableEquivalence, ComputablePredicate, ComputablePredicateFacts, ComputableRelation,
+    ComputableSet, DecidableSet, DecidableSetFacts, EnumerableSet, EnumerableSetFacts,
+    HostComputationWitness, HostPartialFunction, ManyOneReduction, ManyOneReductionFacts,
+    PartialCompilerComputabilityFacts, PartialCompilerTransport, PartialComposition,
+    PartialCompositionFacts, PartialComputable, PartialComputableFacts, PartialFunction,
+    RecognizableSet, RecognizableSetFacts, SymbolicComputability, SymbolicError, SymbolicLogic,
+    TotalComposition, TotalCompositionFacts, TotalComputable, TotalComputableFacts,
 };
 pub use encoding::{
     BitCodec, BitDecode, BitEncode, ByteCodec, ByteDecode, ByteEncode, DecodeError, Decoder,

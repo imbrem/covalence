@@ -43,9 +43,9 @@
 (defthm len2-abc
   (equal (len2 (quote (a b c))) 3))
 
-; The universally quantified staples. These need induction, which the book
-; pipeline does not wire yet (the kernel-side S6 route exists — see
-; source-local TODO markers): honestly rejected, never faked.
+; The universally quantified staples take the kernel premise-builder and
+; induction path: structural rewriting for APP plus proved arithmetic rows
+; for LEN2.
 
 (defthm app-assoc
   (equal (app (app x y) z) (app x (app y z))))

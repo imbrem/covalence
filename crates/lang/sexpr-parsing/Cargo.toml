@@ -1,0 +1,13 @@
+[package]
+name = "covalence-sexpr-parsing"
+version = "0.0.0"
+edition = "2024"
+
+description = "A0015 parsing adapter for Covalence S-expressions"
+license.workspace = true
+
+[dependencies]
+covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-parsing-api = { path = "../parsing" }
+covalence-sexp = { path = "../../lib/sexp" }
+covalence-sexpr-api = { path = "../sexpr-api" }

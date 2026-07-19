@@ -11,6 +11,15 @@
       "updated": 0
     },
     {
+      "id": "actor:agent:codex",
+      "kind": "actor",
+      "title": "codex",
+      "status": "agent",
+      "path": null,
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "actor:agent:gpt-5.6-sol",
       "kind": "actor",
       "title": "gpt-5.6-sol",
@@ -101,12 +110,111 @@
       "updated": 0
     },
     {
+      "id": "api:A0010",
+      "kind": "api",
+      "title": "Bits and finite bit strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0011",
+      "kind": "api",
+      "title": "Finite automata theories",
+      "status": "experimental",
+      "path": "crates/lang/computation/src/automata_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0012",
+      "kind": "api",
+      "title": "Binary lambda calculus",
+      "status": "experimental",
+      "path": "crates/lang/computation/src/blc.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0013",
+      "kind": "api",
+      "title": "Parsing over raw bytes",
+      "status": "experimental",
+      "path": "crates/lang/parsing/src/bytes.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0014",
+      "kind": "api",
+      "title": "Characters and strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0015",
+      "kind": "api",
+      "title": "Text parsing and interpretation",
+      "status": "experimental",
+      "path": "crates/lang/parsing/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0016",
+      "kind": "api",
+      "title": "Bounded lexical analysis",
+      "status": "experimental",
+      "path": "crates/lang/lexer-parsing/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0017",
+      "kind": "api",
+      "title": "Lexer to CFG parsing",
+      "status": "experimental",
+      "path": "crates/lang/lexer-cfg-parsing/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0018",
+      "kind": "api",
+      "title": "Declarative parser generation",
+      "status": "experimental",
+      "path": "crates/lang/parser-generator/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0019",
+      "kind": "api",
+      "title": "Parsing expression grammars",
+      "status": "experimental",
+      "path": "crates/lang/peg-parsing/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0020",
+      "kind": "api",
+      "title": "Relational JSON queries",
+      "status": "experimental",
+      "path": "crates/lang/jq/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 167,
+      "words": 203,
       "updated": 0
     },
     {
@@ -124,7 +232,7 @@
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/performance/SKILL.md",
-      "words": 87,
+      "words": 113,
       "updated": 0
     },
     {
@@ -286,7 +394,7 @@
       "title": ".gitignore",
       "status": "tracked",
       "path": ".gitignore",
-      "words": 25,
+      "words": 26,
       "updated": 0
     },
     {
@@ -358,7 +466,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7338,
+      "words": 7422,
       "updated": 0
     },
     {
@@ -556,7 +664,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 32541,
+      "words": 35026,
       "updated": 0
     },
     {
@@ -5078,6 +5186,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/base/{trusted,eval}/src/float.rs",
+      "kind": "file",
+      "title": "crates/kernel/base/{trusted,eval}/src/float.rs",
+      "status": null,
+      "path": "crates/kernel/base/{trusted,eval}/src/float.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/core/Cargo.toml",
       "kind": "file",
       "title": "Cargo.toml",
@@ -6068,6 +6185,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/eval/src/{defs/floats,typed_float}.rs",
+      "kind": "file",
+      "title": "crates/kernel/hol/eval/src/{defs/floats,typed_float}.rs",
+      "status": null,
+      "path": "crates/kernel/hol/eval/src/{defs/floats,typed_float}.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/eval/tests/audit_connectives.rs",
       "kind": "file",
       "title": "audit_connectives.rs",
@@ -6244,7 +6370,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/kernel/hol/init/Cargo.toml",
-      "words": 50,
+      "words": 54,
       "updated": 0
     },
     {
@@ -6473,12 +6599,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/grammar/lexer.rs",
+      "kind": "file",
+      "title": "lexer.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/grammar/lexer.rs",
+      "words": 548,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/grammar/mod.rs",
       "kind": "file",
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/grammar/mod.rs",
-      "words": 10,
+      "words": 11,
       "updated": 0
     },
     {
@@ -6487,7 +6622,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/grammar/regex/mod.rs",
-      "words": 412,
+      "words": 413,
       "updated": 0
     },
     {
@@ -6497,6 +6632,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/grammar/regex/open_work.rs",
       "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/grammar/regex/replay.rs",
+      "kind": "file",
+      "title": "replay.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/grammar/regex/replay.rs",
+      "words": 334,
       "updated": 0
     },
     {
@@ -6640,7 +6784,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/acl2/mod.rs",
-      "words": 93,
+      "words": 94,
       "updated": 0
     },
     {
@@ -6649,7 +6793,7 @@
       "title": "open_work.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
-      "words": 12,
+      "words": 11,
       "updated": 0
     },
     {
@@ -6676,7 +6820,7 @@
       "title": "simplify.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/acl2/simplify.rs",
-      "words": 2594,
+      "words": 2647,
       "updated": 0
     },
     {
@@ -6686,6 +6830,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/acl2/term.rs",
       "words": 1689,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/acl2/wfrec.rs",
+      "kind": "file",
+      "title": "wfrec.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/acl2/wfrec.rs",
+      "words": 1378,
       "updated": 0
     },
     {
@@ -6725,12 +6878,30 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/computation",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/init/computation",
+      "status": null,
+      "path": "crates/kernel/hol/init/src/init/computation",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/computation/automata.rs",
       "kind": "file",
       "title": "automata.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
       "words": 749,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/automata_hol_api.rs",
+      "kind": "file",
+      "title": "automata_hol_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/automata_hol_api.rs",
+      "words": 634,
       "updated": 0
     },
     {
@@ -6743,12 +6914,30 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
+      "kind": "file",
+      "title": "blc_step_replay.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
+      "words": 179,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/computation/concrete.rs",
       "kind": "file",
       "title": "concrete.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/computation/concrete.rs",
-      "words": 107,
+      "words": 105,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/computation/identity_replay.rs",
+      "kind": "file",
+      "title": "identity_replay.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/computation/identity_replay.rs",
+      "words": 273,
       "updated": 0
     },
     {
@@ -6775,7 +6964,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/computation/mod.rs",
-      "words": 391,
+      "words": 394,
       "updated": 0
     },
     {
@@ -6878,6 +7067,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/inductive",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/init/inductive",
+      "status": null,
+      "path": "crates/kernel/hol/init/src/init/inductive",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/inductive/api.rs",
       "kind": "file",
       "title": "api.rs",
@@ -6887,12 +7085,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/bits_api.rs",
+      "kind": "file",
+      "title": "bits_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/bits_api.rs",
+      "words": 107,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
       "kind": "file",
       "title": "bytes_api.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
-      "words": 127,
+      "words": 135,
       "updated": 0
     },
     {
@@ -6973,7 +7180,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/inductive/mod.rs",
-      "words": 92,
+      "words": 94,
       "updated": 0
     },
     {
@@ -7040,6 +7247,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/inductive/text_api.rs",
+      "kind": "file",
+      "title": "text_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/inductive/text_api.rs",
+      "words": 186,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/inductive/uniqueness.rs",
       "kind": "file",
       "title": "uniqueness.rs",
@@ -7103,12 +7319,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/init/src/init/json_family.rs",
+      "kind": "file",
+      "title": "json_family.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
+      "words": 266,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/init/src/init/json_parse.rs",
       "kind": "file",
       "title": "json_parse.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/json_parse.rs",
-      "words": 2093,
+      "words": 2461,
       "updated": 0
     },
     {
@@ -7216,7 +7441,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/mod.rs",
-      "words": 254,
+      "words": 256,
       "updated": 0
     },
     {
@@ -7388,6 +7613,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/option.rs",
       "words": 692,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/parsing_bytes.rs",
+      "kind": "file",
+      "title": "parsing_bytes.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/init/parsing_bytes.rs",
+      "words": 80,
       "updated": 0
     },
     {
@@ -7594,7 +7828,7 @@
       "title": "sexpr_parse.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/sexpr_parse.rs",
-      "words": 1037,
+      "words": 1321,
       "updated": 0
     },
     {
@@ -7694,6 +7928,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/init/utf8.rs",
       "words": 877,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/init/{rat,real}.rs",
+      "kind": "file",
+      "title": "crates/kernel/hol/init/src/init/{rat,real}.rs",
+      "status": null,
+      "path": "crates/kernel/hol/init/src/init/{rat,real}.rs",
+      "words": 0,
       "updated": 0
     },
     {
@@ -8570,12 +8813,30 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/hol/logic/src/bits.rs",
+      "kind": "file",
+      "title": "bits.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "words": 273,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/hol/logic/src/bytes.rs",
       "kind": "file",
       "title": "bytes.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/bytes.rs",
-      "words": 331,
+      "words": 411,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/logic/src/bytes_nat.rs",
+      "kind": "file",
+      "title": "bytes_nat.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/logic/src/bytes_nat.rs",
+      "words": 285,
       "updated": 0
     },
     {
@@ -8584,7 +8845,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/lib.rs",
-      "words": 242,
+      "words": 261,
       "updated": 0
     },
     {
@@ -8603,6 +8864,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/logic/src/relation.rs",
       "words": 1030,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/logic/src/text.rs",
+      "kind": "file",
+      "title": "text.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "words": 326,
       "updated": 0
     },
     {
@@ -8939,12 +9209,48 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/cfg-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/cfg-parsing/Cargo.toml",
+      "words": 13,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/cfg-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/cfg-parsing/src/lib.rs",
+      "words": 1316,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation",
+      "kind": "file",
+      "title": "crates/lang/computation",
+      "status": null,
+      "path": "crates/lang/computation",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/computation/Cargo.toml",
       "kind": "file",
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/computation/Cargo.toml",
       "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/automata_api.rs",
+      "kind": "file",
+      "title": "automata_api.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/automata_api.rs",
+      "words": 122,
       "updated": 0
     },
     {
@@ -8962,7 +9268,7 @@
       "title": "blc.rs",
       "status": "tracked",
       "path": "crates/lang/computation/src/blc.rs",
-      "words": 332,
+      "words": 484,
       "updated": 0
     },
     {
@@ -8972,6 +9278,15 @@
       "status": "tracked",
       "path": "crates/lang/computation/src/compiler.rs",
       "words": 379,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/computation/src/computability.rs",
+      "kind": "file",
+      "title": "computability.rs",
+      "status": "tracked",
+      "path": "crates/lang/computation/src/computability.rs",
+      "words": 393,
       "updated": 0
     },
     {
@@ -9007,7 +9322,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/computation/src/lib.rs",
-      "words": 51,
+      "words": 62,
       "updated": 0
     },
     {
@@ -9574,7 +9889,16 @@
       "title": "family.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/family.rs",
-      "words": 203,
+      "words": 216,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/inductive/src/family_action.rs",
+      "kind": "file",
+      "title": "family_action.rs",
+      "status": "tracked",
+      "path": "crates/lang/inductive/src/family_action.rs",
+      "words": 1051,
       "updated": 0
     },
     {
@@ -9592,7 +9916,16 @@
       "title": "functor.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/functor.rs",
-      "words": 318,
+      "words": 470,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/inductive/src/higher_kinded.rs",
+      "kind": "file",
+      "title": "higher_kinded.rs",
+      "status": "tracked",
+      "path": "crates/lang/inductive/src/higher_kinded.rs",
+      "words": 406,
       "updated": 0
     },
     {
@@ -9601,7 +9934,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/inductive/src/lib.rs",
-      "words": 106,
+      "words": 119,
       "updated": 0
     },
     {
@@ -9668,6 +10001,33 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/jq/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/jq/Cargo.toml",
+      "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/jq/src/generic.rs",
+      "kind": "file",
+      "title": "generic.rs",
+      "status": "tracked",
+      "path": "crates/lang/jq/src/generic.rs",
+      "words": 476,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/jq/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/jq/src/lib.rs",
+      "words": 334,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/json-api",
       "kind": "file",
       "title": "crates/lang/json-api",
@@ -9686,12 +10046,39 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/json-api/src/api.rs",
+      "kind": "file",
+      "title": "api.rs",
+      "status": "tracked",
+      "path": "crates/lang/json-api/src/api.rs",
+      "words": 808,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/json-api/src/bin/json-corpus.rs",
+      "kind": "file",
+      "title": "json-corpus.rs",
+      "status": "tracked",
+      "path": "crates/lang/json-api/src/bin/json-corpus.rs",
+      "words": 191,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/json-api/src/corpus.rs",
+      "kind": "file",
+      "title": "corpus.rs",
+      "status": "tracked",
+      "path": "crates/lang/json-api/src/corpus.rs",
+      "words": 634,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/json-api/src/lib.rs",
       "kind": "file",
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/json-api/src/lib.rs",
-      "words": 975,
+      "words": 1289,
       "updated": 0
     },
     {
@@ -9965,6 +10352,51 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/lexer-cfg-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/lexer-cfg-parsing/Cargo.toml",
+      "words": 14,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lexer-cfg-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/lexer-cfg-parsing/src/lib.rs",
+      "words": 573,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lexer-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/lexer-parsing/Cargo.toml",
+      "words": 13,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lexer-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/lexer-parsing/src/lib.rs",
+      "words": 716,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lexer-parsing/src/replay.rs",
+      "kind": "file",
+      "title": "replay.rs",
+      "status": "tracked",
+      "path": "crates/lang/lexer-parsing/src/replay.rs",
+      "words": 372,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/lisp",
       "kind": "file",
       "title": "crates/lang/lisp",
@@ -9979,7 +10411,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/lisp/Cargo.toml",
-      "words": 53,
+      "words": 57,
       "updated": 0
     },
     {
@@ -9989,6 +10421,15 @@
       "status": "missing",
       "path": "crates/lang/lisp/SKELETONS.md",
       "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/examples/acl2_perf_bench.rs",
+      "kind": "file",
+      "title": "acl2_perf_bench.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/examples/acl2_perf_bench.rs",
+      "words": 105,
       "updated": 0
     },
     {
@@ -10006,7 +10447,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/acl2.rs",
-      "words": 1419,
+      "words": 1747,
       "updated": 0
     },
     {
@@ -10015,7 +10456,7 @@
       "title": "book.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/book.rs",
-      "words": 608,
+      "words": 3590,
       "updated": 0
     },
     {
@@ -10060,7 +10501,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/lib.rs",
-      "words": 161,
+      "words": 164,
       "updated": 0
     },
     {
@@ -10069,7 +10510,7 @@
       "title": "reader.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/reader.rs",
-      "words": 102,
+      "words": 556,
       "updated": 0
     },
     {
@@ -10096,7 +10537,16 @@
       "title": "session.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/session.rs",
-      "words": 829,
+      "words": 833,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/src/world.rs",
+      "kind": "file",
+      "title": "world.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/src/world.rs",
+      "words": 4776,
       "updated": 0
     },
     {
@@ -10105,7 +10555,7 @@
       "title": "acl2.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
-      "words": 399,
+      "words": 468,
       "updated": 0
     },
     {
@@ -10114,7 +10564,7 @@
       "title": "book.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/book.rs",
-      "words": 323,
+      "words": 1902,
       "updated": 0
     },
     {
@@ -10136,12 +10586,246 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/lisp/tests/books/cert-prelude.acl2",
+      "kind": "file",
+      "title": "cert-prelude.acl2",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/cert-prelude.acl2",
+      "words": 4,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/cert-prelude.lisp",
+      "kind": "file",
+      "title": "cert-prelude.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/cert-prelude.lisp",
+      "words": 4,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/containers.lisp",
+      "kind": "file",
+      "title": "containers.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/containers.lisp",
+      "words": 10,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/deffixtype.lisp",
+      "kind": "file",
+      "title": "deffixtype.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/deffixtype.lisp",
+      "words": 16,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/define-type-prescription.lisp",
+      "kind": "file",
+      "title": "define-type-prescription.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/define-type-prescription.lisp",
+      "words": 6,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/event-aliases.lisp",
+      "kind": "file",
+      "title": "event-aliases.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/event-aliases.lisp",
+      "words": 40,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/event-compat.lisp",
+      "kind": "file",
+      "title": "event-compat.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/event-compat.lisp",
+      "words": 16,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/event-wrappers.lisp",
+      "kind": "file",
+      "title": "event-wrappers.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/event-wrappers.lisp",
+      "words": 19,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/fty-containers.lisp",
+      "kind": "file",
+      "title": "fty-containers.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/fty-containers.lisp",
+      "words": 16,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/generic-rules.lisp",
+      "kind": "file",
+      "title": "generic-rules.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/generic-rules.lisp",
+      "words": 15,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/gl-theorems.lisp",
+      "kind": "file",
+      "title": "gl-theorems.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/gl-theorems.lisp",
+      "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/linked/explicit.acl2",
+      "kind": "file",
+      "title": "explicit.acl2",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/linked/explicit.acl2",
+      "words": 2,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/linked/relative.lsp",
+      "kind": "file",
+      "title": "relative.lsp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/linked/relative.lsp",
+      "words": 2,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/linking.lisp",
+      "kind": "file",
+      "title": "linking.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/linking.lisp",
+      "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/macro-aliases.lisp",
+      "kind": "file",
+      "title": "macro-aliases.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/macro-aliases.lisp",
+      "words": 12,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/lisp/tests/books/mixed.lisp",
       "kind": "file",
       "title": "mixed.lisp",
       "status": "tracked",
       "path": "crates/lang/lisp/tests/books/mixed.lisp",
       "words": 55,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/nested-explicit-system.lisp",
+      "kind": "file",
+      "title": "nested-explicit-system.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/nested-explicit-system.lisp",
+      "words": 2,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/program-child.lisp",
+      "kind": "file",
+      "title": "program-child.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/program-child.lisp",
+      "words": 5,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/program-mode.lisp",
+      "kind": "file",
+      "title": "program-mode.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/program-mode.lisp",
+      "words": 7,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/program-parent.lisp",
+      "kind": "file",
+      "title": "program-parent.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/program-parent.lisp",
+      "words": 5,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/proof-world.lisp",
+      "kind": "file",
+      "title": "proof-world.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/proof-world.lisp",
+      "words": 19,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/refinement.lisp",
+      "kind": "file",
+      "title": "refinement.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/refinement.lisp",
+      "words": 5,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/scalar-bitstruct.lisp",
+      "kind": "file",
+      "title": "scalar-bitstruct.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/scalar-bitstruct.lisp",
+      "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/system-escape.lisp",
+      "kind": "file",
+      "title": "system-escape.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/system-escape.lisp",
+      "words": 2,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/system-sibling-link.lisp",
+      "kind": "file",
+      "title": "system-sibling-link.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/system-sibling-link.lisp",
+      "words": 2,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/world-events.lisp",
+      "kind": "file",
+      "title": "world-events.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/world-events.lisp",
+      "words": 22,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/books/wrapper-world.lisp",
+      "kind": "file",
+      "title": "wrapper-world.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/books/wrapper-world.lisp",
+      "words": 22,
       "updated": 0
     },
     {
@@ -10187,6 +10871,60 @@
       "status": "tracked",
       "path": "crates/lang/lisp/tests/scheme_ints.rs",
       "words": 220,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/system-books/arithmetic/explicit-system.lisp",
+      "kind": "file",
+      "title": "explicit-system.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/system-books/arithmetic/explicit-system.lisp",
+      "words": 2,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/system-books/arithmetic/leaf.acl2",
+      "kind": "file",
+      "title": "leaf.acl2",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/system-books/arithmetic/leaf.acl2",
+      "words": 2,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/system-books/arithmetic/top.lisp",
+      "kind": "file",
+      "title": "top.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/system-books/arithmetic/top.lisp",
+      "words": 3,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/system-books/project/nested/child.lisp",
+      "kind": "file",
+      "title": "child.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/system-books/project/nested/child.lisp",
+      "words": 3,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/system-books/shared/leaf.lisp",
+      "kind": "file",
+      "title": "leaf.lisp",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/system-books/shared/leaf.lisp",
+      "words": 2,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/numerals/",
+      "kind": "file",
+      "title": "crates/lang/numerals/",
+      "status": null,
+      "path": "crates/lang/numerals/",
+      "words": 0,
       "updated": 0
     },
     {
@@ -10289,6 +11027,33 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/parser-generator/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/parser-generator/Cargo.toml",
+      "words": 16,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/parser-generator/examples/yacc_arithmetic.rs",
+      "kind": "file",
+      "title": "yacc_arithmetic.rs",
+      "status": "tracked",
+      "path": "crates/lang/parser-generator/examples/yacc_arithmetic.rs",
+      "words": 58,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/parser-generator/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/parser-generator/src/lib.rs",
+      "words": 621,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/parsing",
       "kind": "file",
       "title": "crates/lang/parsing",
@@ -10307,12 +11072,66 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/parsing/src/adapters.rs",
+      "kind": "file",
+      "title": "adapters.rs",
+      "status": "tracked",
+      "path": "crates/lang/parsing/src/adapters.rs",
+      "words": 262,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/parsing/src/bytes.rs",
+      "kind": "file",
+      "title": "bytes.rs",
+      "status": "tracked",
+      "path": "crates/lang/parsing/src/bytes.rs",
+      "words": 502,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/parsing/src/lib.rs",
       "kind": "file",
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/parsing/src/lib.rs",
-      "words": 148,
+      "words": 389,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/peg-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/peg-parsing/Cargo.toml",
+      "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/peg-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/peg-parsing/src/lib.rs",
+      "words": 589,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/regex-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/regex-parsing/Cargo.toml",
+      "words": 13,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/regex-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/regex-parsing/src/lib.rs",
+      "words": 626,
       "updated": 0
     },
     {
@@ -10334,12 +11153,21 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/sexpr-api/src/inductive.rs",
+      "kind": "file",
+      "title": "inductive.rs",
+      "status": "tracked",
+      "path": "crates/lang/sexpr-api/src/inductive.rs",
+      "words": 642,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/sexpr-api/src/lib.rs",
       "kind": "file",
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "words": 714,
+      "words": 720,
       "updated": 0
     },
     {
@@ -10348,7 +11176,7 @@
       "title": "nat.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-api/src/nat.rs",
-      "words": 393,
+      "words": 391,
       "updated": 0
     },
     {
@@ -10358,6 +11186,24 @@
       "status": "missing",
       "path": "crates/lang/sexpr-kernel",
       "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/sexpr-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/sexpr-parsing/Cargo.toml",
+      "words": 14,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/sexpr-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/sexpr-parsing/src/lib.rs",
+      "words": 677,
       "updated": 0
     },
     {
@@ -11072,6 +11918,15 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lib/parse",
+      "kind": "file",
+      "title": "crates/lib/parse",
+      "status": null,
+      "path": "crates/lib/parse",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lib/parse/Cargo.toml",
       "kind": "file",
       "title": "Cargo.toml",
@@ -11527,7 +12382,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lib/sexp/src/lib.rs",
-      "words": 364,
+      "words": 387,
       "updated": 0
     },
     {
@@ -11536,7 +12391,7 @@
       "title": "parser.rs",
       "status": "tracked",
       "path": "crates/lib/sexp/src/parser.rs",
-      "words": 343,
+      "words": 380,
       "updated": 0
     },
     {
@@ -11834,6 +12689,15 @@
       "status": "tracked",
       "path": "crates/lib/types/src/rat.rs",
       "words": 131,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lib/types/src/{nat,int,rat,decimal}.rs",
+      "kind": "file",
+      "title": "crates/lib/types/src/{nat,int,rat,decimal}.rs",
+      "status": null,
+      "path": "crates/lib/types/src/{nat,int,rat,decimal}.rs",
+      "words": 0,
       "updated": 0
     },
     {
@@ -14182,7 +15046,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 32541,
+      "words": 35026,
       "updated": 0
     },
     {
@@ -14200,7 +15064,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 264,
+      "words": 301,
       "updated": 0
     },
     {
@@ -14209,7 +15073,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 875,
+      "words": 999,
       "updated": 0
     },
     {
@@ -14218,7 +15082,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 195,
+      "words": 224,
       "updated": 0
     },
     {
@@ -14227,7 +15091,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1562,
+      "words": 1784,
       "updated": 0
     },
     {
@@ -14290,7 +15154,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3329,
+      "words": 3459,
       "updated": 0
     },
     {
@@ -14735,12 +15599,66 @@
       "updated": 0
     },
     {
+      "id": "file:notes/projects/automata-hol.toml",
+      "kind": "file",
+      "title": "automata-hol.toml",
+      "status": "tracked",
+      "path": "notes/projects/automata-hol.toml",
+      "words": 18,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/bits-api.toml",
+      "kind": "file",
+      "title": "bits-api.toml",
+      "status": "tracked",
+      "path": "notes/projects/bits-api.toml",
+      "words": 9,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/blc-hol.toml",
+      "kind": "file",
+      "title": "blc-hol.toml",
+      "status": "tracked",
+      "path": "notes/projects/blc-hol.toml",
+      "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/byte-parsing-api.toml",
+      "kind": "file",
+      "title": "byte-parsing-api.toml",
+      "status": "tracked",
+      "path": "notes/projects/byte-parsing-api.toml",
+      "words": 9,
+      "updated": 0
+    },
+    {
       "id": "file:notes/projects/coinductive-conformance.toml",
       "kind": "file",
       "title": "coinductive-conformance.toml",
       "status": "tracked",
       "path": "notes/projects/coinductive-conformance.toml",
       "words": 9,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/computability-api.toml",
+      "kind": "file",
+      "title": "computability-api.toml",
+      "status": "tracked",
+      "path": "notes/projects/computability-api.toml",
+      "words": 9,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/computation-foundations.toml",
+      "kind": "file",
+      "title": "computation-foundations.toml",
+      "status": "tracked",
+      "path": "notes/projects/computation-foundations.toml",
+      "words": 7,
       "updated": 0
     },
     {
@@ -14849,6 +15767,24 @@
       "status": "tracked",
       "path": "notes/projects/sexpr-proof-capabilities.toml",
       "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/text-api.toml",
+      "kind": "file",
+      "title": "text-api.toml",
+      "status": "tracked",
+      "path": "notes/projects/text-api.toml",
+      "words": 13,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/projects/text-parsing-api.toml",
+      "kind": "file",
+      "title": "text-parsing-api.toml",
+      "status": "tracked",
+      "path": "notes/projects/text-parsing-api.toml",
+      "words": 13,
       "updated": 0
     },
     {
@@ -15190,7 +16126,7 @@
       "title": "README.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/README.md",
-      "words": 71,
+      "words": 73,
       "updated": 0
     },
     {
@@ -15226,7 +16162,7 @@
       "title": "acl2-book-frontend.md",
       "status": "tracked",
       "path": "notes/vibes/lisp/acl2-book-frontend.md",
-      "words": 143,
+      "words": 144,
       "updated": 0
     },
     {
@@ -15275,6 +16211,15 @@
       "updated": 0
     },
     {
+      "id": "file:notes/vibes/lisp/acl2-resync-handoff.md",
+      "kind": "file",
+      "title": "acl2-resync-handoff.md",
+      "status": "tracked",
+      "path": "notes/vibes/lisp/acl2-resync-handoff.md",
+      "words": 81,
+      "updated": 0
+    },
+    {
       "id": "file:notes/vibes/lisp/acl2-s0-s3-design.md",
       "kind": "file",
       "title": "acl2-s0-s3-design.md",
@@ -15317,6 +16262,15 @@
       "status": "tracked",
       "path": "notes/vibes/lisp/acl2-s7-s12-plan.md",
       "words": 135,
+      "updated": 0
+    },
+    {
+      "id": "file:notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "kind": "file",
+      "title": "acl2-x86isa-roadmap.md",
+      "status": "tracked",
+      "path": "notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "words": 467,
       "updated": 0
     },
     {
@@ -15901,7 +16855,7 @@
       "title": "package.json",
       "status": "tracked",
       "path": "package.json",
-      "words": 63,
+      "words": 66,
       "updated": 0
     },
     {
@@ -15965,6 +16919,15 @@
       "status": "tracked",
       "path": "packages/covalence-ui/package.json",
       "words": 36,
+      "updated": 0
+    },
+    {
+      "id": "file:packages/covalence-ui/src/lib/graph/",
+      "kind": "file",
+      "title": "packages/covalence-ui/src/lib/graph/",
+      "status": null,
+      "path": "packages/covalence-ui/src/lib/graph/",
+      "words": 0,
       "updated": 0
     },
     {
@@ -16238,12 +17201,30 @@
       "updated": 0
     },
     {
+      "id": "file:scripts/analyze-acl2-books.pl",
+      "kind": "file",
+      "title": "analyze-acl2-books.pl",
+      "status": "tracked",
+      "path": "scripts/analyze-acl2-books.pl",
+      "words": 124,
+      "updated": 0
+    },
+    {
       "id": "file:scripts/backend-coupling.mjs",
       "kind": "file",
       "title": "backend-coupling.mjs",
       "status": "tracked",
       "path": "scripts/backend-coupling.mjs",
       "words": 101,
+      "updated": 0
+    },
+    {
+      "id": "file:scripts/bench-acl2.mjs",
+      "kind": "file",
+      "title": "bench-acl2.mjs",
+      "status": "tracked",
+      "path": "scripts/bench-acl2.mjs",
+      "words": 263,
       "updated": 0
     },
     {
@@ -16544,11 +17525,119 @@
       "updated": 0
     },
     {
+      "id": "impl:A0003:NatBackedBytes<B>",
+      "kind": "implementation",
+      "title": "NatBackedBytes<B>",
+      "status": "implemented",
+      "path": "crates/kernel/hol/logic/src/bytes_nat.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "impl:A0003:NativeHol",
       "kind": "implementation",
       "title": "NativeHol",
       "status": "implemented",
       "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0009:Computability vocabulary",
+      "kind": "implementation",
+      "title": "Computability vocabulary",
+      "status": "implemented",
+      "path": "crates/lang/computation/src/computability.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0009:IdentityTranslationReplay",
+      "kind": "implementation",
+      "title": "IdentityTranslationReplay",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/computation/identity_replay.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0010:NativeHol",
+      "kind": "implementation",
+      "title": "NativeHol",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/inductive/bits_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0011:BoundedDfaReplay",
+      "kind": "implementation",
+      "title": "BoundedDfaReplay",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/computation/automata_hol_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0012:NativeHolBoundedStepReplay",
+      "kind": "implementation",
+      "title": "NativeHolBoundedStepReplay",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0013:BoundedByteRegexReplay",
+      "kind": "implementation",
+      "title": "BoundedByteRegexReplay",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/grammar/regex/replay.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0013:NativeHol closed-byte witness reflection",
+      "kind": "implementation",
+      "title": "NativeHol closed-byte witness reflection",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/parsing_bytes.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0014:NativeHol",
+      "kind": "implementation",
+      "title": "NativeHol",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/inductive/text_api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0015:NativeHol JSON integer/array fragment checked prefix interpretation",
+      "kind": "implementation",
+      "title": "NativeHol JSON integer/array fragment checked prefix interpretation",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/json_parse.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0015:NativeHol carved S-expression checked prefix interpretation",
+      "kind": "implementation",
+      "title": "NativeHol carved S-expression checked prefix interpretation",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/init/sexpr_parse.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0016:BoundedByteLexerReplay",
+      "kind": "implementation",
+      "title": "BoundedByteLexerReplay",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/grammar/lexer.rs",
       "words": 0,
       "updated": 0
     },
@@ -16722,6 +17811,15 @@
       "path": "notes/vibes/build/known-issues.md",
       "words": 304,
       "updated": 1784416010
+    },
+    {
+      "id": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "kind": "note",
+      "title": "Verified weighted graph demo: workmux handoff",
+      "status": "draft",
+      "path": "notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "words": 603,
+      "updated": 1784475102
     },
     {
       "id": "note:notes/vibes/handoff/README.md",
@@ -16981,8 +18079,8 @@
       "title": "Lisp — the `SExpr → Reduction → Lisp → ACL2` tower",
       "status": "draft",
       "path": "notes/vibes/lisp/README.md",
-      "words": 483,
-      "updated": 1784416010
+      "words": 493,
+      "updated": 1784473467
     },
     {
       "id": "note:notes/vibes/lisp/STATUS.md",
@@ -17017,8 +18115,8 @@
       "title": "ACL2 book front end — the first honest BOOK IMPORT pipeline (S11-lite)",
       "status": "draft",
       "path": "notes/vibes/lisp/acl2-book-frontend.md",
-      "words": 1082,
-      "updated": 1784416010
+      "words": 1094,
+      "updated": 1784473467
     },
     {
       "id": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
@@ -17066,6 +18164,15 @@
       "updated": 1784416010
     },
     {
+      "id": "note:notes/vibes/lisp/acl2-resync-handoff.md",
+      "kind": "note",
+      "title": "ACL2 resync handoff",
+      "status": "draft",
+      "path": "notes/vibes/lisp/acl2-resync-handoff.md",
+      "words": 444,
+      "updated": 1784473969
+    },
+    {
       "id": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
       "kind": "note",
       "title": "ACL2 S0–S3: concrete design (carrier, primitives, deep terms, Derivable_ACL2)",
@@ -17109,6 +18216,15 @@
       "path": "notes/vibes/lisp/acl2-s7-s12-plan.md",
       "words": 1006,
       "updated": 1784416010
+    },
+    {
+      "id": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "kind": "note",
+      "title": "ACL2 x86isa: corpus-derived import roadmap",
+      "status": "draft",
+      "path": "notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "words": 3179,
+      "updated": 1784473467
     },
     {
       "id": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",
@@ -17408,6 +18524,15 @@
       "updated": 1784416010
     },
     {
+      "id": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "kind": "note",
+      "title": "Numeric capability tower: workmux handoff",
+      "status": "draft",
+      "path": "notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "words": 670,
+      "updated": 1784475102
+    },
+    {
       "id": "note:notes/vibes/observers/backend-decoupling.md",
       "kind": "note",
       "title": "Backend decoupling — the `covalence-hol-api` trait surface",
@@ -17678,11 +18803,65 @@
       "updated": 0
     },
     {
+      "id": "task:automata-hol",
+      "kind": "task",
+      "title": "Automata theory in HOL",
+      "status": "active",
+      "path": "notes/projects/automata-hol.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:bits-api",
+      "kind": "task",
+      "title": "Bits API and List Bool realization",
+      "status": "active",
+      "path": "notes/projects/bits-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:blc-hol",
+      "kind": "task",
+      "title": "Binary lambda calculus in HOL",
+      "status": "planned",
+      "path": "notes/projects/blc-hol.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:byte-parsing-api",
+      "kind": "task",
+      "title": "Relational and functional parsing over bytes",
+      "status": "planned",
+      "path": "notes/projects/byte-parsing-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "task:coinductive-conformance",
       "kind": "task",
       "title": "First coinductive backend and conformance suite",
       "status": "planned",
       "path": "notes/projects/coinductive-conformance.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:computability-api",
+      "kind": "task",
+      "title": "Computability, recognizability, and reductions API",
+      "status": "active",
+      "path": "notes/projects/computability-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:computation-foundations",
+      "kind": "task",
+      "title": "Computation, encodings, and computability foundations",
+      "status": "active",
+      "path": "notes/projects/computation-foundations.toml",
       "words": 0,
       "updated": 0
     },
@@ -17795,11 +18974,65 @@
       "updated": 0
     },
     {
+      "id": "task:text-api",
+      "kind": "task",
+      "title": "Characters, strings, and Unicode encodings API",
+      "status": "planned",
+      "path": "notes/projects/text-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "task:text-parsing-api",
+      "kind": "task",
+      "title": "Character and string parsing over decoded text",
+      "status": "planned",
+      "path": "notes/projects/text-parsing-api.toml",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "term:T0001",
       "kind": "term",
       "title": "Relational residual",
       "status": "defined",
       "path": "notes/terms/T0001.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:acl2.reader.dispatch-macros",
+      "kind": "todo",
+      "title": "Support remaining ACL2 sharp",
+      "status": "major",
+      "path": "crates/lang/lisp/src/reader.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:bits.abstract-bool-list-adapter",
+      "kind": "todo",
+      "title": "Replace the initial List<Bool> representation seam with abstract Bool and List capabilities once those carrier APIs stabilize.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:bits.bytes-packing-backend",
+      "kind": "todo",
+      "title": "Implement A0010↔A0003 packing behind BytePacking and prove aligned and padded round-trip laws.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:bytes.abstract-list-adapter",
+      "kind": "todo",
+      "title": "Replace the temporary meta-level NatByteSequence vectors with the abstract proof-bearing list API once its carrier and elementwise-predicate interfaces stabilize.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/bytes.rs",
       "words": 0,
       "updated": 0
     },
@@ -17813,11 +19046,29 @@
       "updated": 0
     },
     {
-      "id": "todo:bytes.list-nat-sequence-bridge",
+      "id": "todo:computability.compiler-transport",
       "kind": "todo",
-      "title": "Once the abstract list API stabilizes, relate bytes to lists of in-range naturals with explicit element-range and round-trip laws.",
+      "title": "Realize PartialCompilerComputabilityFacts from concrete compiler preservation/reflection bundles.",
       "status": "major",
-      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "path": "crates/lang/computation/src/computability.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computability.machine-realizations",
+      "kind": "todo",
+      "title": "Realize partial/total computability facts for concrete Machine theories without treating finite host runs as proofs.",
+      "status": "major",
+      "path": "crates/lang/computation/src/computability.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computability.model-equivalences",
+      "kind": "todo",
+      "title": "Supply checked equivalences among concrete computation models; do not assume a Church-Turing thesis.",
+      "status": "major",
+      "path": "crates/lang/computation/src/computability.rs",
       "words": 0,
       "updated": 0
     },
@@ -17845,6 +19096,15 @@
       "title": "Implement",
       "status": "major",
       "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:computation.blc-symbolic-reduction",
+      "kind": "todo",
+      "title": "Replace bounded replay with proved symbolic decoding, substitution, and reduction over inductive/Nat/Bits APIs.",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
       "words": 0,
       "updated": 0
     },
@@ -17948,6 +19208,15 @@
       "updated": 0
     },
     {
+      "id": "todo:inductive.family-native-hol-laws",
+      "kind": "todo",
+      "title": "Implement DatatypeFamilyLaws for a NativeHol family backend once its μ/ν capability returns proof-bearing fixpoint packages; the structural derivation above must consume existing kernel theorems and must not mint law evidence.",
+      "status": "major",
+      "path": "crates/lang/inductive/src/family_action.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:inductive.legacy-fixpoint-adapter",
       "kind": "todo",
       "title": "Adapt InductiveTheory to LeastFixpoint by realizing StructuralFunctorAction in the target logic and deriving the required layer/isomorphism facts.",
@@ -17966,11 +19235,47 @@
       "updated": 0
     },
     {
-      "id": "todo:json.polynomial-composition",
+      "id": "todo:json.decimal-a0006-native-hol-morphism",
       "kind": "todo",
-      "title": "Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.",
+      "title": "Prove the boundary between A0006 CanonicalDecimal and init's exact (int,nat) decimal representation, including normalization and signed exponents.",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:json.inductive-proof-fixpoint-backend",
+      "kind": "todo",
+      "title": "Realize the closed proof-bearing Json ≅ JsonF(Json), nested list induction, and the semantic unique-name subset in a logic backend; the host backend here proves no theorems.",
+      "status": "major",
+      "path": "crates/lang/json-api/src/api.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:json.parser-stackless-depth",
+      "kind": "todo",
+      "title": "Replace the recursive hard ceiling with a stack-safe parser whose resource policy can accept arbitrary RFC 8259 nesting.",
       "status": "major",
       "path": "crates/lang/json-api/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:json.polynomial-composition",
+      "kind": "todo",
+      "title": "Close the native JSON family fixpoint once DatatypeFamilyExpr has a proof-bearing nested-fixpoint backend; the NativeHol constructor-layer adapter already realizes the exact six-way F(X), including recursive array/member-list payload shapes.",
+      "status": "major",
+      "path": "crates/lang/json-api/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:json.semantic-object-native-hol",
+      "kind": "todo",
+      "title": "Define the canonical unique-name predicate over list (string × json), prove duplicate rejection/lookup laws, and expose semantic objects as that subset; ordered syntax objects intentionally remain the raw list above.",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
       "words": 0,
       "updated": 0
     },
@@ -18749,19 +20054,10 @@
       "updated": 0
     },
     {
-      "id": "todo:kernel.hol.init.src.init.acl2.lang-lisp-is-not-on-the-s6-kernel-path",
+      "id": "todo:kernel.hol.init.src.init.acl2.proof-suite-runtime",
       "kind": "todo",
-      "title": "lang/lisp is not on the S6 kernel path: crates/lang/lisp's",
-      "status": "severe",
-      "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:kernel.hol.init.src.init.acl2.premise-builder-p0-is-partial",
-      "kind": "todo",
-      "title": "Premise-builder P0 is PARTIAL: (agent stopped mid-task; binding design",
-      "status": "severe",
+      "title": "Reduce and partition the ACL2 proof suite's multi-minute cold runtime while preserving coverage; track construction, replay, and scaling separately with bun run bench:acl2.",
+      "status": "major",
       "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
       "words": 0,
       "updated": 0
@@ -18778,7 +20074,7 @@
     {
       "id": "todo:kernel.hol.init.src.init.acl2.s7-recursion-tiers-not-started",
       "kind": "todo",
-      "title": "S7 recursion tiers not started: measured/mutual defuns via",
+      "title": "Complete S7 body compilation and W4–W6 selection/equation proofs before enabling measured or mutual defun admission.",
       "status": "severe",
       "path": "crates/kernel/hol/init/src/init/acl2/open_work.rs",
       "words": 0,
@@ -20459,6 +21755,15 @@
       "updated": 0
     },
     {
+      "id": "todo:parsing.lexer.native-hol-universal-semantics",
+      "kind": "todo",
+      "title": "Define and",
+      "status": "major",
+      "path": "crates/kernel/hol/init/src/grammar/lexer.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:proof.alethe.content-addressed-proof-cache",
       "kind": "todo",
       "title": "Content-addressed proof cache: discharge::ProofCache is an in-memory /",
@@ -20711,15 +22016,6 @@
       "updated": 0
     },
     {
-      "id": "todo:sexpr.generic-refined-inductive-encoding",
-      "kind": "todo",
-      "title": "Generalize the bounded Nat experiment to arbitrary first-order InductiveSpec constructor tags and arguments.",
-      "status": "major",
-      "path": "crates/lang/sexpr-api/src/nat.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
       "id": "todo:sexpr.no-confusion-laws",
       "kind": "todo",
       "title": "sexpr.no-confusion-laws",
@@ -20731,7 +22027,7 @@
     {
       "id": "todo:sexpr.parser-interpretation",
       "kind": "todo",
-      "title": "Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.",
+      "title": "Add A0015 adapters and induced same-value PERs for the SMT-LIB, WAT, and egglog S-expression dialects.",
       "status": "major",
       "path": "crates/lang/sexpr-api/src/lib.rs",
       "words": 0,
@@ -20743,6 +22039,24 @@
       "title": "sexpr.proper-list-proof-capability",
       "status": null,
       "path": "sexpr.proper-list-proof-capability",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:text.abstract-list-integration",
+      "kind": "todo",
+      "title": "Replace the temporary character-sequence seam with the shared abstract finite-list API once it lands.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:text.unicode-tables",
+      "kind": "todo",
+      "title": "Add versioned Unicode normalization, case, category, and grapheme tables with checked provenance.",
+      "status": "major",
+      "path": "crates/kernel/hol/logic/src/text.rs",
       "words": 0,
       "updated": 0
     },
@@ -20947,6 +22261,210 @@
       "source": "api:A0009",
       "predicate": "depends-on",
       "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0010",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/logic/src/bits.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0010",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0010",
+      "predicate": "depends-on",
+      "target": "api:A0002",
+      "detail": null
+    },
+    {
+      "source": "api:A0010",
+      "predicate": "depends-on",
+      "target": "api:A0003",
+      "detail": null
+    },
+    {
+      "source": "api:A0011",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/computation/src/automata_api.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0011",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0011",
+      "predicate": "depends-on",
+      "target": "api:A0009",
+      "detail": null
+    },
+    {
+      "source": "api:A0012",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/computation/src/blc.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0012",
+      "predicate": "depends-on",
+      "target": "api:A0009",
+      "detail": null
+    },
+    {
+      "source": "api:A0012",
+      "predicate": "depends-on",
+      "target": "api:A0010",
+      "detail": null
+    },
+    {
+      "source": "api:A0013",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/parsing/src/bytes.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0013",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0013",
+      "predicate": "depends-on",
+      "target": "api:A0003",
+      "detail": null
+    },
+    {
+      "source": "api:A0014",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/logic/src/text.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0014",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0014",
+      "predicate": "depends-on",
+      "target": "api:A0002",
+      "detail": null
+    },
+    {
+      "source": "api:A0014",
+      "predicate": "depends-on",
+      "target": "api:A0003",
+      "detail": null
+    },
+    {
+      "source": "api:A0015",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/parsing/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0015",
+      "predicate": "depends-on",
+      "target": "api:A0014",
+      "detail": null
+    },
+    {
+      "source": "api:A0016",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/lexer-parsing/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0016",
+      "predicate": "depends-on",
+      "target": "api:A0013",
+      "detail": null
+    },
+    {
+      "source": "api:A0016",
+      "predicate": "depends-on",
+      "target": "api:A0015",
+      "detail": null
+    },
+    {
+      "source": "api:A0017",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/lexer-cfg-parsing/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0017",
+      "predicate": "depends-on",
+      "target": "api:A0015",
+      "detail": null
+    },
+    {
+      "source": "api:A0017",
+      "predicate": "depends-on",
+      "target": "api:A0016",
+      "detail": null
+    },
+    {
+      "source": "api:A0018",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/parser-generator/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0018",
+      "predicate": "depends-on",
+      "target": "api:A0016",
+      "detail": null
+    },
+    {
+      "source": "api:A0018",
+      "predicate": "depends-on",
+      "target": "api:A0017",
+      "detail": null
+    },
+    {
+      "source": "api:A0019",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/peg-parsing/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0019",
+      "predicate": "depends-on",
+      "target": "api:A0013",
+      "detail": null
+    },
+    {
+      "source": "api:A0019",
+      "predicate": "depends-on",
+      "target": "api:A0014",
+      "detail": null
+    },
+    {
+      "source": "api:A0019",
+      "predicate": "depends-on",
+      "target": "api:A0015",
+      "detail": null
+    },
+    {
+      "source": "api:A0020",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/jq/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0020",
+      "predicate": "depends-on",
+      "target": "api:A0007",
       "detail": null
     },
     {
@@ -21990,6 +23508,12 @@
     {
       "source": "file:crates/kernel/hol/init/src/grammar/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/grammar/lexer.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/grammar/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/grammar/regex/mod.rs",
       "detail": null
     },
@@ -21997,6 +23521,12 @@
       "source": "file:crates/kernel/hol/init/src/grammar/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/grammar/spectec/mod.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/grammar/regex/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/grammar/regex/replay.rs",
       "detail": null
     },
     {
@@ -22078,9 +23608,21 @@
       "detail": null
     },
     {
+      "source": "file:crates/kernel/hol/init/src/init/acl2/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/acl2/wfrec.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/computation/automata.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/automata_hol_api.rs",
       "detail": null
     },
     {
@@ -22092,7 +23634,19 @@
     {
       "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/computation/concrete.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/computation/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/computation/identity_replay.rs",
       "detail": null
     },
     {
@@ -22123,6 +23677,12 @@
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/bits_api.rs",
       "detail": null
     },
     {
@@ -22219,6 +23779,12 @@
       "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/inductive/sig.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/inductive/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/text_api.rs",
       "detail": null
     },
     {
@@ -22327,6 +23893,12 @@
       "source": "file:crates/kernel/hol/init/src/init/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/int_parse.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/json_family.rs",
       "detail": null
     },
     {
@@ -22441,6 +24013,12 @@
       "source": "file:crates/kernel/hol/init/src/init/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/init/option.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/init/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/init/parsing_bytes.rs",
       "detail": null
     },
     {
@@ -23016,7 +24594,19 @@
     {
       "source": "file:crates/kernel/hol/logic/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/kernel/hol/logic/src/bits.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/logic/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/kernel/hol/logic/src/bytes.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/logic/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/logic/src/bytes_nat.rs",
       "detail": null
     },
     {
@@ -23029,6 +24619,12 @@
       "source": "file:crates/kernel/hol/logic/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/logic/src/relation.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/logic/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/logic/src/text.rs",
       "detail": null
     },
     {
@@ -23094,6 +24690,12 @@
     {
       "source": "file:crates/lang/computation/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/lang/computation/src/automata_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/lang/computation/src/automata_theory.rs",
       "detail": null
     },
@@ -23107,6 +24709,12 @@
       "source": "file:crates/lang/computation/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/computation/src/compiler.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/computation/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/computation/src/computability.rs",
       "detail": null
     },
     {
@@ -23310,6 +24918,12 @@
     {
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
+      "target": "file:crates/lang/inductive/src/family_action.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/inductive/src/lib.rs",
+      "predicate": "imports",
       "target": "file:crates/lang/inductive/src/fixpoint.rs",
       "detail": null
     },
@@ -23317,6 +24931,12 @@
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/inductive/src/functor.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/inductive/src/higher_kinded.rs",
       "detail": null
     },
     {
@@ -23359,6 +24979,24 @@
       "source": "file:crates/lang/inductive/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/inductive/src/validated.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/jq/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/jq/src/generic.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/json-api/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/json-api/src/api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/json-api/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/json-api/src/corpus.rs",
       "detail": null
     },
     {
@@ -23422,6 +25060,12 @@
       "detail": null
     },
     {
+      "source": "file:crates/lang/lexer-parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/lexer-parsing/src/replay.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/lang/lisp/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/lisp/src/acl2.rs",
@@ -23482,6 +25126,12 @@
       "detail": null
     },
     {
+      "source": "file:crates/lang/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/lisp/src/world.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/lang/numerals/src/backend/mod.rs",
       "predicate": "imports",
       "target": "file:crates/lang/numerals/src/backend/builtin.rs",
@@ -23521,6 +25171,24 @@
       "source": "file:crates/lang/numerals/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/numerals/src/rat_backend.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/parsing/src/adapters.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/parsing/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/parsing/src/bytes.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/lang/sexpr-api/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/lang/sexpr-api/src/inductive.rs",
       "detail": null
     },
     {
@@ -24688,6 +26356,12 @@
       "detail": null
     },
     {
+      "source": "file:scripts/bench-acl2.mjs",
+      "predicate": "imports",
+      "target": "file:scripts/_setmm.mjs",
+      "detail": null
+    },
+    {
       "source": "file:scripts/bench-setmm.mjs",
       "predicate": "imports",
       "target": "file:scripts/_setmm.mjs",
@@ -24748,6 +26422,18 @@
       "detail": "linear-depth successor towers over a shared native zero leaf"
     },
     {
+      "source": "impl:A0003:NatBackedBytes<B>",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/logic/src/bytes_nat.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0003:NatBackedBytes<B>",
+      "predicate": "implements",
+      "target": "api:A0003",
+      "detail": "validated lists of backend Nat values and radix-256 codecs"
+    },
+    {
       "source": "impl:A0003:NativeHol",
       "predicate": "defined-in",
       "target": "file:crates/kernel/hol/init/src/init/inductive/bytes_api.rs",
@@ -24758,6 +26444,138 @@
       "predicate": "implements",
       "target": "api:A0003",
       "detail": "HOL u8 and native byte-string leaves"
+    },
+    {
+      "source": "impl:A0009:Computability vocabulary",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/computation/src/computability.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0009:Computability vocabulary",
+      "predicate": "implements",
+      "target": "api:A0009",
+      "detail": "logic-generic partial/total functions, sets, reductions, and supplied law bundles"
+    },
+    {
+      "source": "impl:A0009:IdentityTranslationReplay",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/computation/identity_replay.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0009:IdentityTranslationReplay",
+      "predicate": "implements",
+      "target": "api:A0009",
+      "detail": "native HOL replay of the closed BLC identity to SKI I translation"
+    },
+    {
+      "source": "impl:A0010:NativeHol",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/bits_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0010:NativeHol",
+      "predicate": "implements",
+      "target": "api:A0010",
+      "detail": "HOL List<Bool>"
+    },
+    {
+      "source": "impl:A0011:BoundedDfaReplay",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/computation/automata_hol_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0011:BoundedDfaReplay",
+      "predicate": "implements",
+      "target": "api:A0011",
+      "detail": "closed native HOL predicates for one DFA and one accepted word"
+    },
+    {
+      "source": "impl:A0012:NativeHolBoundedStepReplay",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0012:NativeHolBoundedStepReplay",
+      "predicate": "implements",
+      "target": "api:A0012",
+      "detail": "A0010 HOL List<Bool> endpoint relation"
+    },
+    {
+      "source": "impl:A0013:BoundedByteRegexReplay",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/grammar/regex/replay.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0013:BoundedByteRegexReplay",
+      "predicate": "implements",
+      "target": "api:A0013",
+      "detail": "checked native HOL Matches derivation for one bounded host prefix witness"
+    },
+    {
+      "source": "impl:A0013:NativeHol closed-byte witness reflection",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/parsing_bytes.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0013:NativeHol closed-byte witness reflection",
+      "predicate": "implements",
+      "target": "api:A0013",
+      "detail": "A0003 native byte-string leaves"
+    },
+    {
+      "source": "impl:A0014:NativeHol",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/inductive/text_api.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0014:NativeHol",
+      "predicate": "implements",
+      "target": "api:A0014",
+      "detail": "Unicode-scalar subtype and list-backed abstract strings"
+    },
+    {
+      "source": "impl:A0015:NativeHol JSON integer/array fragment checked prefix interpretation",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/json_parse.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0015:NativeHol JSON integer/array fragment checked prefix interpretation",
+      "predicate": "implements",
+      "target": "api:A0015",
+      "detail": "fuel-bounded lenient integer/array reader theorem replay"
+    },
+    {
+      "source": "impl:A0015:NativeHol carved S-expression checked prefix interpretation",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/init/sexpr_parse.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0015:NativeHol carved S-expression checked prefix interpretation",
+      "predicate": "implements",
+      "target": "api:A0015",
+      "detail": "fuel-bounded list-u8 reader theorem replay"
+    },
+    {
+      "source": "impl:A0016:BoundedByteLexerReplay",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/grammar/lexer.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0016:BoundedByteLexerReplay",
+      "predicate": "implements",
+      "target": "api:A0016",
+      "detail": "checked functional trace, closed native HOL Matches theorems, and an exact closed whole-instance record"
     },
     {
       "source": "note:notes/README.md",
@@ -25741,6 +27559,60 @@
       "source": "note:notes/vibes/build/known-issues.md",
       "predicate": "documents",
       "target": "file:crates/lib/sqlite/Cargo.toml",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:apps/covalence-web/src/routes/graph/+page.svelte",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lang/decimal/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/graph/src/interchange.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/graph/src/networkx.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/graph/src/render.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/graph/src/theory.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "documents",
+      "target": "file:packages/covalence-ui/src/lib/graph/",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "predicate": "mentions",
+      "target": "todo:graph.dot-full",
       "detail": null
     },
     {
@@ -26748,6 +28620,12 @@
     {
       "source": "note:notes/vibes/lisp/README.md",
       "predicate": "links-to",
+      "target": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/README.md",
+      "predicate": "links-to",
       "target": "note:notes/vibes/lisp/initial-ideas/parametric-reduction.md",
       "detail": null
     },
@@ -27112,6 +28990,12 @@
       "detail": null
     },
     {
+      "source": "note:notes/vibes/lisp/acl2-resync-handoff.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
       "source": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
       "predicate": "contributed-by",
       "target": "actor:agent:claude",
@@ -27241,6 +29125,18 @@
       "source": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/lisp/acl2-full-plan.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:codex",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "predicate": "documents",
+      "target": "file:scripts/analyze-acl2-books.pl",
       "detail": null
     },
     {
@@ -28099,6 +29995,78 @@
       "source": "note:notes/vibes/logics/wasm-spec.md",
       "predicate": "links-to",
       "target": "note:notes/vibes/vision/roadmap.md",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "contributed-by",
+      "target": "actor:agent:gpt-5.6-sol",
+      "detail": "author"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/base/{trusted,eval}/src/float.rs",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/api/src/int.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/eval/src/{defs/floats,typed_float}.rs",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/init/src/init/ball.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/init/src/init/decimal.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/init/src/init/{rat,real}.rs",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/kernel/hol/logic/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lang/decimal/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lang/numerals/",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "documents",
+      "target": "file:crates/lib/types/src/{nat,int,rat,decimal}.rs",
+      "detail": "pattern"
+    },
+    {
+      "source": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "predicate": "mentions",
+      "target": "todo:json.decimal-a0006-native-hol-morphism",
       "detail": null
     },
     {
@@ -29434,6 +31402,168 @@
       "detail": null
     },
     {
+      "source": "task:automata-hol",
+      "predicate": "contains",
+      "target": "todo:computation.automata-accepts-iff-run",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "contains",
+      "target": "todo:computation.automata-native-definitions",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "contains",
+      "target": "todo:computation.automata-partial-compilers",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "contains",
+      "target": "todo:computation.pda-acceptance-replay",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "depends-on",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "part-of",
+      "target": "task:computation-foundations",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/computation/automata.rs",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation/src/finite.rs",
+      "detail": null
+    },
+    {
+      "source": "task:automata-hol",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation/src/pushdown.rs",
+      "detail": null
+    },
+    {
+      "source": "task:bits-api",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:bits-api",
+      "predicate": "part-of",
+      "target": "task:computation-foundations",
+      "detail": null
+    },
+    {
+      "source": "task:bits-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/inductive",
+      "detail": null
+    },
+    {
+      "source": "task:bits-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/logic",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "contains",
+      "target": "todo:computation.lambda-ski-preservation",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "contains",
+      "target": "todo:computation.native-definitions",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "depends-on",
+      "target": "task:bits-api",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "depends-on",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "part-of",
+      "target": "task:computation-foundations",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/computation/blc.rs",
+      "detail": null
+    },
+    {
+      "source": "task:blc-hol",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation/src/blc.rs",
+      "detail": null
+    },
+    {
+      "source": "task:byte-parsing-api",
+      "predicate": "depends-on",
+      "target": "task:bits-api",
+      "detail": null
+    },
+    {
+      "source": "task:byte-parsing-api",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:byte-parsing-api",
+      "predicate": "part-of",
+      "target": "task:data-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:byte-parsing-api",
+      "predicate": "touches",
+      "target": "file:crates/lang/parsing",
+      "detail": null
+    },
+    {
+      "source": "task:byte-parsing-api",
+      "predicate": "touches",
+      "target": "file:crates/lib/parse",
+      "detail": null
+    },
+    {
       "source": "task:coinductive-conformance",
       "predicate": "contains",
       "target": "todo:inductive.coinductive-conformance",
@@ -29461,6 +31591,48 @@
       "source": "task:coinductive-conformance",
       "predicate": "touches",
       "target": "file:crates/lang/inductive",
+      "detail": null
+    },
+    {
+      "source": "task:computability-api",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:computability-api",
+      "predicate": "part-of",
+      "target": "task:computation-foundations",
+      "detail": null
+    },
+    {
+      "source": "task:computability-api",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation",
+      "detail": null
+    },
+    {
+      "source": "task:computation-foundations",
+      "predicate": "depends-on",
+      "target": "task:inductive-datatypes",
+      "detail": null
+    },
+    {
+      "source": "task:computation-foundations",
+      "predicate": "described-by",
+      "target": "note:notes/vibes/logics/computation-theory.md",
+      "detail": null
+    },
+    {
+      "source": "task:computation-foundations",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/computation",
+      "detail": null
+    },
+    {
+      "source": "task:computation-foundations",
+      "predicate": "touches",
+      "target": "file:crates/lang/computation",
       "detail": null
     },
     {
@@ -29813,6 +31985,90 @@
     },
     {
       "source": "task:sexpr-proof-capabilities",
+      "predicate": "touches",
+      "target": "file:crates/lang/sexpr-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "depends-on",
+      "target": "task:bits-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "part-of",
+      "target": "task:data-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/char.rs",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/init/src/init/string.rs",
+      "detail": null
+    },
+    {
+      "source": "task:text-api",
+      "predicate": "touches",
+      "target": "file:crates/kernel/hol/logic",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "contains",
+      "target": "todo:sexpr.parser-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "depends-on",
+      "target": "task:byte-parsing-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "depends-on",
+      "target": "task:text-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "described-by",
+      "target": "note:notes/design/content-logic-and-wit-boundaries.md",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "part-of",
+      "target": "task:data-interpretation",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "touches",
+      "target": "file:crates/lang/json-api",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "touches",
+      "target": "file:crates/lang/parsing",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
       "predicate": "touches",
       "target": "file:crates/lang/sexpr-api",
       "detail": null
@@ -30556,6 +32812,30 @@
       "stableId": "N003E",
       "review": "unreviewed",
       "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "stableId": "N003X",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-resync-handoff.md",
+      "stableId": "N0043",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "stableId": "N0044",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
+    },
+    {
+      "noteId": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "stableId": "N0045",
+      "review": "unreviewed",
+      "format": "covalence-toml-v1"
     }
   ],
   "apiMetadata": [
@@ -30612,6 +32892,72 @@
       "title": "Models of computation",
       "status": "experimental",
       "path": "crates/lang/computation/src/lib.rs"
+    },
+    {
+      "id": "A0010",
+      "title": "Bits and finite bit strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/bits.rs"
+    },
+    {
+      "id": "A0011",
+      "title": "Finite automata theories",
+      "status": "experimental",
+      "path": "crates/lang/computation/src/automata_api.rs"
+    },
+    {
+      "id": "A0012",
+      "title": "Binary lambda calculus",
+      "status": "experimental",
+      "path": "crates/lang/computation/src/blc.rs"
+    },
+    {
+      "id": "A0013",
+      "title": "Parsing over raw bytes",
+      "status": "experimental",
+      "path": "crates/lang/parsing/src/bytes.rs"
+    },
+    {
+      "id": "A0014",
+      "title": "Characters and strings",
+      "status": "experimental",
+      "path": "crates/kernel/hol/logic/src/text.rs"
+    },
+    {
+      "id": "A0015",
+      "title": "Text parsing and interpretation",
+      "status": "experimental",
+      "path": "crates/lang/parsing/src/lib.rs"
+    },
+    {
+      "id": "A0016",
+      "title": "Bounded lexical analysis",
+      "status": "experimental",
+      "path": "crates/lang/lexer-parsing/src/lib.rs"
+    },
+    {
+      "id": "A0017",
+      "title": "Lexer to CFG parsing",
+      "status": "experimental",
+      "path": "crates/lang/lexer-cfg-parsing/src/lib.rs"
+    },
+    {
+      "id": "A0018",
+      "title": "Declarative parser generation",
+      "status": "experimental",
+      "path": "crates/lang/parser-generator/src/lib.rs"
+    },
+    {
+      "id": "A0019",
+      "title": "Parsing expression grammars",
+      "status": "experimental",
+      "path": "crates/lang/peg-parsing/src/lib.rs"
+    },
+    {
+      "id": "A0020",
+      "title": "Relational JSON queries",
+      "status": "experimental",
+      "path": "crates/lang/jq/src/lib.rs"
     }
   ],
   "apiImplementations": [
@@ -30637,11 +32983,95 @@
       "path": "crates/kernel/hol/init/src/init/inductive/nat_unary_api.rs"
     },
     {
+      "id": "impl:A0003:NatBackedBytes<B>",
+      "apiId": "A0003",
+      "name": "NatBackedBytes<B>",
+      "representation": "validated lists of backend Nat values and radix-256 codecs",
+      "path": "crates/kernel/hol/logic/src/bytes_nat.rs"
+    },
+    {
       "id": "impl:A0003:NativeHol",
       "apiId": "A0003",
       "name": "NativeHol",
       "representation": "HOL u8 and native byte-string leaves",
       "path": "crates/kernel/hol/init/src/init/inductive/bytes_api.rs"
+    },
+    {
+      "id": "impl:A0009:Computability vocabulary",
+      "apiId": "A0009",
+      "name": "Computability vocabulary",
+      "representation": "logic-generic partial/total functions, sets, reductions, and supplied law bundles",
+      "path": "crates/lang/computation/src/computability.rs"
+    },
+    {
+      "id": "impl:A0009:IdentityTranslationReplay",
+      "apiId": "A0009",
+      "name": "IdentityTranslationReplay",
+      "representation": "native HOL replay of the closed BLC identity to SKI I translation",
+      "path": "crates/kernel/hol/init/src/init/computation/identity_replay.rs"
+    },
+    {
+      "id": "impl:A0010:NativeHol",
+      "apiId": "A0010",
+      "name": "NativeHol",
+      "representation": "HOL List<Bool>",
+      "path": "crates/kernel/hol/init/src/init/inductive/bits_api.rs"
+    },
+    {
+      "id": "impl:A0011:BoundedDfaReplay",
+      "apiId": "A0011",
+      "name": "BoundedDfaReplay",
+      "representation": "closed native HOL predicates for one DFA and one accepted word",
+      "path": "crates/kernel/hol/init/src/init/computation/automata_hol_api.rs"
+    },
+    {
+      "id": "impl:A0012:NativeHolBoundedStepReplay",
+      "apiId": "A0012",
+      "name": "NativeHolBoundedStepReplay",
+      "representation": "A0010 HOL List<Bool> endpoint relation",
+      "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs"
+    },
+    {
+      "id": "impl:A0013:BoundedByteRegexReplay",
+      "apiId": "A0013",
+      "name": "BoundedByteRegexReplay",
+      "representation": "checked native HOL Matches derivation for one bounded host prefix witness",
+      "path": "crates/kernel/hol/init/src/grammar/regex/replay.rs"
+    },
+    {
+      "id": "impl:A0013:NativeHol closed-byte witness reflection",
+      "apiId": "A0013",
+      "name": "NativeHol closed-byte witness reflection",
+      "representation": "A0003 native byte-string leaves",
+      "path": "crates/kernel/hol/init/src/init/parsing_bytes.rs"
+    },
+    {
+      "id": "impl:A0014:NativeHol",
+      "apiId": "A0014",
+      "name": "NativeHol",
+      "representation": "Unicode-scalar subtype and list-backed abstract strings",
+      "path": "crates/kernel/hol/init/src/init/inductive/text_api.rs"
+    },
+    {
+      "id": "impl:A0015:NativeHol JSON integer/array fragment checked prefix interpretation",
+      "apiId": "A0015",
+      "name": "NativeHol JSON integer/array fragment checked prefix interpretation",
+      "representation": "fuel-bounded lenient integer/array reader theorem replay",
+      "path": "crates/kernel/hol/init/src/init/json_parse.rs"
+    },
+    {
+      "id": "impl:A0015:NativeHol carved S-expression checked prefix interpretation",
+      "apiId": "A0015",
+      "name": "NativeHol carved S-expression checked prefix interpretation",
+      "representation": "fuel-bounded list-u8 reader theorem replay",
+      "path": "crates/kernel/hol/init/src/init/sexpr_parse.rs"
+    },
+    {
+      "id": "impl:A0016:BoundedByteLexerReplay",
+      "apiId": "A0016",
+      "name": "BoundedByteLexerReplay",
+      "representation": "checked functional trace, closed native HOL Matches theorems, and an exact closed whole-instance record",
+      "path": "crates/kernel/hol/init/src/grammar/lexer.rs"
     }
   ],
   "actors": [
@@ -30649,6 +33079,11 @@
       "id": "agent:claude",
       "kind": "agent",
       "displayName": "claude"
+    },
+    {
+      "id": "agent:codex",
+      "kind": "agent",
+      "displayName": "codex"
     },
     {
       "id": "agent:gpt-5.6-sol",
@@ -30845,6 +33280,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/graphs/verified-weighted-graph-demo-handoff.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "workmux-handoff",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
       "ordinal": 0
     },
     {
@@ -31228,6 +33673,16 @@
       "ordinal": 0
     },
     {
+      "noteId": "note:notes/vibes/lisp/acl2-resync-handoff.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "resync-handoff",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
+      "ordinal": 0
+    },
+    {
       "noteId": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
       "actorId": "agent:claude",
       "role": "author",
@@ -31275,6 +33730,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "actorId": "agent:codex",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "corpus-analysis",
+      "agent": "codex",
+      "harness": "codex",
       "ordinal": 0
     },
     {
@@ -31605,6 +34070,16 @@
       "source": "legacy",
       "agent": "claude",
       "harness": "claude",
+      "ordinal": 0
+    },
+    {
+      "noteId": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
+      "actorId": "agent:gpt-5.6-sol",
+      "role": "author",
+      "contributedAt": "2026-07-19T00:00:00+01:00",
+      "source": "workmux-handoff",
+      "agent": "gpt-5.6-sol",
+      "harness": "codex",
       "ordinal": 0
     },
     {
@@ -32163,8 +34638,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/README.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "e5794bdc3763c51543d13c6ba1051b338a6c1443",
+      "committedAt": 1784473467
     },
     {
       "noteId": "note:notes/vibes/lisp/STATUS.md",
@@ -32183,8 +34658,8 @@
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-book-frontend.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "e5794bdc3763c51543d13c6ba1051b338a6c1443",
+      "committedAt": 1784473467
     },
     {
       "noteId": "note:notes/vibes/lisp/acl2-campaign-handoff.md",
@@ -32212,6 +34687,11 @@
       "committedAt": 1784416010
     },
     {
+      "noteId": "note:notes/vibes/lisp/acl2-resync-handoff.md",
+      "commit": "0eb6b936ee024d0a72ce08e19623a696097898c3",
+      "committedAt": 1784473969
+    },
+    {
       "noteId": "note:notes/vibes/lisp/acl2-s0-s3-design.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
@@ -32235,6 +34715,11 @@
       "noteId": "note:notes/vibes/lisp/acl2-s7-s12-plan.md",
       "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
       "committedAt": 1784416010
+    },
+    {
+      "noteId": "note:notes/vibes/lisp/acl2-x86isa-roadmap.md",
+      "commit": "e5794bdc3763c51543d13c6ba1051b338a6c1443",
+      "committedAt": 1784473467
     },
     {
       "noteId": "note:notes/vibes/lisp/initial-ideas/acl2-lisp.md",

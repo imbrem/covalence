@@ -1,0 +1,15 @@
+[package]
+name = "covalence-parser-generator"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+description = "Declarative parser specifications compiled to bounded Covalence lexer/CFG pipelines"
+
+[dependencies]
+covalence-grammar = { path = "../grammar" }
+covalence-lexer-cfg-parsing = { path = "../lexer-cfg-parsing" }
+covalence-lexer-parsing = { path = "../lexer-parsing" }
+
+[dev-dependencies]
+covalence-cfg-parsing = { path = "../cfg-parsing" }
+covalence-parsing-api = { path = "../parsing" }

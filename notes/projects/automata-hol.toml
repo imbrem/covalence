@@ -1,0 +1,17 @@
+id = "automata-hol"
+title = "Automata theory in HOL"
+status = "active"
+parent = "computation-foundations"
+depends_on = ["inductive-datatypes"]
+todos = [
+  "computation.automata-native-definitions",
+  "computation.automata-accepts-iff-run",
+  "computation.automata-partial-compilers",
+  "computation.pda-acceptance-replay",
+]
+notes = ["notes/vibes/logics/computation-theory.md"]
+files = [
+  "crates/lang/computation/src/finite.rs",
+  "crates/lang/computation/src/pushdown.rs",
+  "crates/kernel/hol/init/src/init/computation/automata.rs",
+]

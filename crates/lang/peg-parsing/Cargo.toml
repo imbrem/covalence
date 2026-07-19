@@ -1,0 +1,10 @@
+[package]
+name = "covalence-peg-parsing"
+version = "0.0.0"
+edition = "2024"
+description = "Bounded, backend-neutral PEG evaluation for Covalence"
+license.workspace = true
+
+[dependencies]
+covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-parsing-api = { path = "../parsing" }

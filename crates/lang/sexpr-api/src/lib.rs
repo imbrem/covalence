@@ -503,7 +503,7 @@ impl<P: Clone> SExprView for Free<P> {
     }
 }
 
-// TODO(cov:sexpr.parser-interpretation, major): Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.
+// TODO(cov:sexpr.parser-interpretation, major): Add A0015 adapters and induced same-value PERs for the SMT-LIB, WAT, and egglog S-expression dialects.
 
 #[cfg(test)]
 mod tests {

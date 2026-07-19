@@ -1,5 +1,5 @@
 <script lang="ts">
-	// A reusable terminal-style REPL: a scrolling transcript + a prompt line.
+	// A cell-oriented REPL over the shared terminal chrome (`ReplShell`).
 	// `evalCell` is async (a `fetch` to the running server's native kernel —
 	// e.g. POST /api/lisp). `showCell`, if given, lazily fetches HOL info for a
 	// cell on hover: the FULL `hyps ⊢ lhs = rhs` sequent (turnstile included),
@@ -9,63 +9,70 @@
 	// theorem as `⊢ concl`).
 	//
 	// `help` is an optional snippet rendered *inline in the transcript* when the
-	// user types `#help` — a first, minimal "widget result" (rich HTML in the
-	// REPL), the groundwork for IPython-style widget outputs.
-	import type { Snippet } from 'svelte';
+	// user types `#help` — a "widget result" (rich HTML in the REPL), the
+	// groundwork for IPython-style widget outputs. It receives a `run` callback,
+	// so the docs can carry clickable examples that go through the transcript
+	// like anything the user typed: there is no second, privileged way to
+	// evaluate a cell.
+	import { untrack, type Snippet } from 'svelte';
+	import ReplShell from './repl/ReplShell.svelte';
+	import { escHtml } from './repl/sexpr';
+	import { clearTranscript, transcriptFor, type Entry } from './repl/transcripts.svelte';
 
 	type EvalResult = { ok: boolean; result: string; error: string };
-	// `active` marks a button as the currently-selected one (e.g. the current
-	// dialect's `#lang` tab on /lisp) — purely presentational, so the component
-	// stays agnostic about what "active" means.
-	type Example = { title: string; src: string; active?: boolean };
 
 	let {
 		evalCell,
 		showCell = null,
 		onReset = null,
 		help = null,
-		examples = [],
+		status = null,
 		prompt = 'λ>',
+		highlight = escHtml,
+		specialForms = new Set<string>(),
+		storeKey = null,
 		placeholder = 'type a form, press Enter — Shift+Enter for a newline'
 	}: {
 		evalCell: (src: string) => Promise<EvalResult>;
 		showCell?: ((src: string) => Promise<string>) | null;
 		onReset?: (() => void) | null;
-		help?: Snippet | null;
-		examples?: Example[];
+		// `run` is awaitable so docs can sequence cells (e.g. `#lang X` then an
+		// example) without a second, privileged evaluation path.
+		help?: Snippet<[(src: string) => Promise<void>]> | null;
+		status?: Snippet | null;
 		prompt?: string;
+		highlight?: (text: string) => string;
+		specialForms?: ReadonlySet<string>;
+		/** Endpoint key under which the transcript survives SPA navigation. */
+		storeKey?: string | null;
 		placeholder?: string;
 	} = $props();
 
-	type Entry = {
-		input: string;
-		output: string;
-		ok: boolean;
-		directive: boolean;
-		pending: boolean;
-		widget: boolean;
-		hol: string | null;
-		holTried: boolean;
-		// `#show` failed (or returned nothing) for this cell — e.g. a
-		// defun/defthm ack, which is not a reducible expression. No popover:
-		// a turnstile with no theorem behind it would be a false claim.
-		holFailed: boolean;
-	};
+	// With a `storeKey` the transcript lives in the module store (survives SPA
+	// navigation); without one it is component-local (tests, one-offs). Bound
+	// once — `storeKey` identifies the endpoint and never changes for a mount.
+	const localEntries = $state<Entry[]>([]);
+	const localHistory = $state<string[]>([]);
+	const store = untrack(() =>
+		storeKey ? transcriptFor(storeKey) : { entries: localEntries, history: localHistory }
+	);
+	const entries = store.entries;
+	const history = store.history;
 
-	let entries = $state<Entry[]>([]);
 	let input = $state('');
 	let busy = $state(false);
-	let scroller = $state<HTMLDivElement | null>(null);
+	let outputEl = $state<HTMLElement | null>(null);
 
 	function scrollSoon() {
 		requestAnimationFrame(() => {
-			if (scroller) scroller.scrollTop = scroller.scrollHeight;
+			if (outputEl) outputEl.scrollTop = outputEl.scrollHeight;
 		});
 	}
 
 	function blankEntry(src: string, over: Partial<Entry> = {}): Entry {
 		return {
 			input: src,
+			prompt,
 			output: '',
 			ok: true,
 			directive: src.startsWith('#'),
@@ -78,11 +85,25 @@
 		};
 	}
 
-	async function submit() {
-		const src = input.trim();
+	function reset() {
+		clearTranscript(store);
+		input = '';
+		hover = null;
+		onReset?.();
+	}
+
+	/** Evaluate `src` as if the user had typed it. The only path to a new cell. */
+	async function run(src: string) {
+		src = src.trim();
 		if (!src || busy) return;
 		input = '';
-		// `#help` renders the help snippet inline as a widget — no server round-trip.
+		history.push(src);
+		// `#reset` and `#help` are client-side directives: they leave no cell to
+		// evaluate, so they never reach the server.
+		if (src === '#reset') {
+			reset();
+			return;
+		}
 		if (src === '#help' && help) {
 			entries.push(blankEntry(src, { pending: false, widget: true }));
 			scrollSoon();
@@ -106,24 +127,6 @@
 		e.pending = false;
 		busy = false;
 		scrollSoon();
-	}
-
-	function onKey(e: KeyboardEvent) {
-		if (e.key === 'Enter' && !e.shiftKey) {
-			e.preventDefault();
-			submit();
-		}
-	}
-
-	function runExample(src: string) {
-		input = src;
-		submit();
-	}
-
-	function reset() {
-		entries = [];
-		input = '';
-		onReset?.();
 	}
 
 	// Split an error message into plain / `#lang …` segments so a dialect hint
@@ -200,144 +203,98 @@
 	});
 </script>
 
-{#if examples.length}
-	<div class="examples">
-		{#each examples as c}
-			<button class:active={c.active} onclick={() => runExample(c.src)} title={c.src}>
-				{c.title}
-			</button>
-		{/each}
-		{#if onReset || entries.length}
-			<button class="reset" onclick={reset} title="clear the transcript and reset the session">⟲ reset</button>
+{#snippet transcript()}
+	{#if entries.length === 0}
+		<div class="hint">
+			{#if help}
+				Type a form below and press Enter — or type <code>#help</code> for docs and examples.
+			{:else}
+				Type a form below and press Enter.
+			{/if}
+		</div>
+	{/if}
+	{#each entries as entry}
+		{@const hasHol =
+			!!showCell && !entry.directive && entry.ok && !entry.pending && !entry.widget && !entry.holFailed}
+		<div
+			class="cell"
+			data-testid="repl-cell"
+			class:has-hol={hasHol}
+			onmouseenter={(e) => hasHol && showHover(entry, e.currentTarget as HTMLElement)}
+			onmouseleave={scheduleHide}
+			role="group"
+		>
+			<div class="in"><span class="p">{entry.prompt}</span> {entry.input}</div>
+			{#if entry.widget && help}
+				<!-- A "widget result": rich HTML rendered inline in the transcript
+				     (groundwork for IPython-style widget outputs). `run` lets the
+				     docs offer clickable examples that go through the transcript. -->
+				<div class="widget" data-testid="help-widget">{@render help(run)}</div>
+			{:else if entry.pending}
+				<div class="out muted">proving…</div>
+			{:else if entry.ok}
+				<div class="out">{entry.output}</div>
+			{:else}
+				<!-- Errors get the same care as values: a gutter mark, the message
+				     verbatim (only *marked up*, never rewritten), and any `#lang …`
+				     dialect hint highlighted as a chip. -->
+				<div class="out err">
+					<span class="err-mark" aria-hidden="true">✗</span
+					>{#each errSegments(entry.output) as seg}{#if seg.hint}<span class="lang-hint"
+								>{seg.text}</span
+							>{:else}{seg.text}{/if}{/each}
+				</div>
+			{/if}
+		</div>
+	{/each}
+{/snippet}
+
+{#snippet statusBar()}
+	{@render status?.()}
+	<button class="reset" onclick={reset} title="clear the transcript and reset the session">
+		⟲ reset
+	</button>
+{/snippet}
+
+<ReplShell
+	{prompt}
+	{highlight}
+	{specialForms}
+	{history}
+	{placeholder}
+	{busy}
+	{transcript}
+	value={input}
+	onValueChange={(v) => (input = v)}
+	onSubmit={() => run(input)}
+	status={statusBar}
+	bind:outputEl
+	onOutputScroll={() => (hover = null)}
+/>
+
+{#if hover}
+	<!-- Transient floating popover (single instance, position: fixed — never
+	     clipped by the transcript's scroll box, never affects its scroll
+	     height). Shown while the cursor is on the cell or the popover
+	     itself; gone on leave or scroll. The sequent string (`hyps ⊢ concl`,
+	     from `#show`) is rendered VERBATIM — no client-side turnstile. While
+	     the fetch is in flight a plain "fetching proof…" shows, asserting
+	     nothing. -->
+	<div class="hol" role="tooltip" style={holStyle} onmouseenter={cancelHide} onmouseleave={scheduleHide}>
+		{#if hover.entry.hol}
+			<span class="hol-body">{hover.entry.hol}</span>
+		{:else}
+			<span class="hol-body hol-pending">fetching proof…</span>
 		{/if}
 	</div>
 {/if}
 
-<div class="term">
-	<!-- Scrolling makes the popover's anchor rect stale — just dismiss it. -->
-	<div class="transcript" bind:this={scroller} onscroll={() => (hover = null)}>
-		{#if entries.length === 0}
-			<div class="hint">
-				Type a form below and press Enter — or pick an example.{#if help}
-					Type <code>#help</code> for docs.{/if}
-			</div>
-		{/if}
-		{#each entries as entry}
-			{@const hasHol =
-				!!showCell && !entry.directive && entry.ok && !entry.pending && !entry.widget && !entry.holFailed}
-			<div
-				class="cell"
-				class:has-hol={hasHol}
-				onmouseenter={(e) => hasHol && showHover(entry, e.currentTarget as HTMLElement)}
-				onmouseleave={scheduleHide}
-				role="group"
-			>
-				<div class="in"><span class="p">{prompt}</span> {entry.input}</div>
-				{#if entry.widget && help}
-					<!-- A "widget result": rich HTML rendered inline in the transcript
-					     (groundwork for IPython-style widget outputs). -->
-					<div class="widget">{@render help()}</div>
-				{:else if entry.pending}
-					<div class="out muted">proving…</div>
-				{:else if entry.ok}
-					<div class="out">{entry.output}</div>
-				{:else}
-					<!-- Errors get the same care as values: a gutter mark, the message
-					     verbatim (only *marked up*, never rewritten), and any `#lang …`
-					     dialect hint highlighted as a chip. -->
-					<div class="out err">
-						<span class="err-mark" aria-hidden="true">✗</span
-						>{#each errSegments(entry.output) as seg}{#if seg.hint}<span class="lang-hint"
-									>{seg.text}</span
-								>{:else}{seg.text}{/if}{/each}
-					</div>
-				{/if}
-			</div>
-		{/each}
-	</div>
-
-	{#if hover}
-		<!-- Transient floating popover (single instance, position: fixed — never
-		     clipped by the transcript's scroll box, never affects its scroll
-		     height). Shown while the cursor is on the cell or the popover
-		     itself; gone on leave or scroll. The sequent string (`hyps ⊢ concl`,
-		     from `#show`) is rendered VERBATIM — no client-side turnstile. While
-		     the fetch is in flight a plain "fetching proof…" shows, asserting
-		     nothing. -->
-		<div
-			class="hol"
-			role="tooltip"
-			style={holStyle}
-			onmouseenter={cancelHide}
-			onmouseleave={scheduleHide}
-		>
-			{#if hover.entry.hol}
-				<span class="hol-body">{hover.entry.hol}</span>
-			{:else}
-				<span class="hol-body hol-pending">fetching proof…</span>
-			{/if}
-		</div>
-	{/if}
-
-	<div class="prompt-line">
-		<span class="p">{prompt}</span>
-		<textarea
-			class="input"
-			bind:value={input}
-			onkeydown={onKey}
-			{placeholder}
-			spellcheck="false"
-			rows="1"
-			disabled={busy}
-		></textarea>
-	</div>
-</div>
-
 <style>
-	.examples {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.35rem;
-		margin: 1rem 0 0.5rem;
-	}
-	.examples button {
-		font: inherit;
-		font-size: 0.78rem;
-		color: var(--fg);
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: 5px;
-		padding: 0.25rem 0.55rem;
-		cursor: pointer;
-	}
-	.examples button:hover {
-		border-color: var(--accent);
-	}
-	.examples button.active {
-		border-color: var(--accent);
-		color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 10%, transparent);
-	}
-	.examples .reset {
-		margin-left: auto;
-		color: var(--muted);
-	}
-
-	/* A terminal, not a box: flush background, hairline separators, no card. */
-	.term {
-		font-family: var(--font-mono);
-		border-top: 1px solid var(--border);
-	}
-	.transcript {
-		max-height: 30rem;
-		overflow-y: auto;
-		overflow-x: hidden;
-		padding: 0.6rem 0.1rem;
-	}
 	.hint {
 		color: var(--muted);
 		font-size: 0.85rem;
 		padding: 0.3rem 0.2rem;
+		line-height: 1.6;
 	}
 	.cell {
 		position: relative;
@@ -352,7 +309,6 @@
 		background: color-mix(in srgb, var(--accent) 7%, transparent);
 	}
 	.in {
-		font-size: 0.9rem;
 		line-height: 1.5;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
@@ -363,7 +319,6 @@
 		user-select: none;
 	}
 	.out {
-		font-size: 0.9rem;
 		line-height: 1.5;
 		padding-left: 1.5rem;
 		white-space: pre-wrap;
@@ -410,6 +365,30 @@
 		padding: 0 3px;
 		font-size: 0.9em;
 	}
+	/* Clickable examples inside the help widget. Authored by the page (so the
+	   selector is global), but styled here — they are REPL affordances, and
+	   every page should get the same chip. */
+	.widget :global(button) {
+		font: inherit;
+		font-family: var(--font-mono);
+		font-size: 0.78rem;
+		color: var(--fg);
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		padding: 0.2rem 0.5rem;
+		cursor: pointer;
+		text-align: left;
+	}
+	.widget :global(button:hover) {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.widget :global(button.active) {
+		border-color: var(--accent);
+		color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+	}
 	/* Transient hover popover — a single fixed-position floating layer (left/
 	   width/max-height/anchor set inline from the hovered cell's rect, above
 	   the cell or flipped below near the viewport top). Fixed positioning means
@@ -435,31 +414,20 @@
 		color: var(--muted);
 		font-style: italic;
 	}
-	.prompt-line {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.5rem;
-		border-top: 1px solid var(--border);
-		padding: 0.55rem 0.2rem;
-	}
-	.prompt-line .p {
-		font-size: 0.95rem;
-		padding-top: 0.1rem;
-	}
-	.input {
-		flex: 1;
+	.reset {
+		margin-left: auto;
 		font: inherit;
-		font-size: 0.95rem;
 		font-family: var(--font-mono);
-		color: var(--fg);
-		background: transparent;
-		border: 0;
-		outline: none;
-		resize: none;
-		line-height: 1.5;
-		min-height: 1.5rem;
-	}
-	.input::placeholder {
+		font-size: 0.7rem;
 		color: var(--muted);
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 0.05rem 0.4rem;
+		cursor: pointer;
+	}
+	.reset:hover {
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 </style>

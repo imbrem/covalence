@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "covalence-client": "workspace:*"
   },
   "scripts": {
@@ -46,6 +47,8 @@
     "build:python": "cd crates/ffi/python && source activate.sh && maturin develop",
     "test:python": "cd crates/ffi/python && source activate.sh && pytest tests/ -v",
     "e2e:lisp": "bun scripts/e2e-lisp.mjs",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts --project chromium",
+    "bench:web": "playwright test --config e2e/playwright.config.ts --project bench",
     "test:ui": "bun run --filter covalence-ui test",
     "test:web": "bun run --filter covalence-web test",
     "test:wasm-js": "bun run --filter covalence-wasm-js test",

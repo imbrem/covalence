@@ -16,18 +16,19 @@
 //                                            (always set, even on error, so the
 //                                            UI never hangs)
 
+import { loadKernel, type KernelExports } from '$lib/kernelApi';
+
 type CheckMsg = { type: 'check'; id: number; src: string; model: string };
 type InMsg = CheckMsg;
 
-type CheckModelFn = (src: string, model: string) => string;
-let checkModel: CheckModelFn | null = null;
+// The worker shares the main thread's typed view of the wasm exports and its
+// loader; it differs only in WHERE the module is instantiated, not in how.
+let checkModel: KernelExports['check_model'] | null = null;
 
 async function init() {
 	try {
-		const mod = await import('$lib/kernel/covalence_web_kernel.js');
-		const wasmUrl = (await import('$lib/kernel/covalence_web_kernel_bg.wasm?url')).default;
-		await mod.default({ module_or_path: wasmUrl });
-		checkModel = mod.check_model;
+		const kernel = await loadKernel();
+		checkModel = kernel.check_model;
 		(self as DedicatedWorkerGlobalScope).postMessage({ type: 'ready' });
 	} catch (e) {
 		const message = e instanceof Error ? e.message : String(e);

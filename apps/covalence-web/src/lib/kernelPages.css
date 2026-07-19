@@ -1,0 +1,169 @@
+/* Presentational shell shared by the editor-style demo pages (`/haskell`,
+ * `/proofs`, `/graph`, `/forth`). Each of these had its own byte-identical
+ * copy of the page shell, the pipeline strip and the pane chrome.
+ *
+ * INVARIANT: every rule is namespaced under `.demo-page`. This file is a plain
+ * CSS import, so it is GLOBAL — unlike a Svelte `<style>` block it is not
+ * scoped to a component. Other routes (`/lisp`, `/article`, `/`) use class
+ * names like `.pane` too; the namespace is what keeps this file from reaching
+ * them. Pages opt in by putting `class="demo-page"` on their root element.
+ *
+ * Colors come from the site variables in `app.css` (`--fg`, `--muted`,
+ * `--surface`, `--border`, `--accent`). The two status hues below were
+ * hand-repeated as raw literals in three files; they live here now. */
+
+:root {
+	--ok: #30a46c;
+	--err: #e5484d;
+}
+
+/* --- page shell --- */
+
+.demo-page {
+	max-width: 60rem;
+	margin: 1.5rem auto;
+	padding: 0 1rem 3rem;
+	font-family: var(--font-mono);
+	color: var(--fg);
+}
+.demo-page h1 {
+	font-size: 1.4rem;
+}
+.demo-page .sub,
+.demo-page .note,
+.demo-page .status {
+	color: var(--muted);
+	font-size: 0.85rem;
+	line-height: 1.5;
+	margin: 0.4rem 0 1rem;
+}
+.demo-page .status {
+	margin: 1.25rem 0 0;
+	font-size: 0.8rem;
+}
+.demo-page a {
+	color: var(--accent);
+}
+.demo-page code {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 3px;
+	padding: 0 3px;
+	font-size: 0.85em;
+}
+
+/* --- pipeline strip: `stage → stage → stage` --- */
+
+.demo-page .pipeline {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 1rem 0;
+}
+.demo-page .pipeline .stage {
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 0.4rem 0.7rem;
+	background: var(--surface);
+	font-size: 0.8rem;
+	text-align: center;
+}
+.demo-page .pipeline .stage.muted {
+	color: var(--muted);
+}
+.demo-page .pipeline .stage em {
+	font-size: 0.72rem;
+	opacity: 0.75;
+}
+.demo-page .pipeline .stage code {
+	border: 0;
+	background: transparent;
+	padding: 0;
+}
+.demo-page .pipeline .arrow {
+	color: var(--accent);
+}
+
+/* --- example picker --- */
+
+.demo-page .examples {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem;
+	margin: 1rem 0;
+}
+.demo-page button {
+	font: inherit;
+	font-size: 0.78rem;
+	color: var(--muted);
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	padding: 0.25rem 0.55rem;
+	cursor: pointer;
+}
+.demo-page button:hover {
+	color: var(--fg);
+}
+.demo-page button.on {
+	color: var(--fg);
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* --- panes: a titled, bordered box holding a textarea or a <pre> --- */
+
+.demo-page .pane {
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	overflow: hidden;
+	background: var(--surface);
+	display: flex;
+	flex-direction: column;
+}
+.demo-page .pane header {
+	font-size: 0.72rem;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--muted);
+	padding: 0.4rem 0.7rem;
+	border-bottom: 1px solid var(--border);
+	display: flex;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+.demo-page .pane header .tag {
+	color: var(--accent);
+}
+.demo-page .pane header .tag.quiet {
+	text-transform: none;
+	letter-spacing: 0;
+	font-size: 0.68rem;
+}
+.demo-page .pane pre,
+.demo-page .pane textarea {
+	padding: 0.7rem;
+	font-size: 0.85rem;
+	line-height: 1.5;
+	flex: 1;
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+.demo-page .pane textarea {
+	resize: vertical;
+	min-height: 8rem;
+	font-family: var(--font-mono);
+	color: var(--fg);
+	background: transparent;
+	border: 0;
+	outline: none;
+}
+.demo-page .pane .muted {
+	color: var(--muted);
+}
+.demo-page .pane .err,
+.demo-page .err {
+	color: color-mix(in srgb, var(--err) 70%, var(--fg));
+}

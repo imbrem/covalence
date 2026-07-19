@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { BaseEdge, type EdgeProps } from '@xyflow/svelte';
+	import { DEFAULT_LAYOUT } from './layout.js';
 
 	/**
 	 * String-diagram edge: bezier with a horizontal bulge so wires
@@ -25,19 +26,19 @@
 		data,
 	}: EdgeProps & { data?: CurvyData } = $props();
 
-	// Layout constants must match LayoutOpts so we can identify how many
-	// intermediate boxes the edge passes over. Kept here as constants
-	// rather than threaded through props since they're already implicit
-	// in the diagram's geometry.
-	const ROW_H = 130;
-	const BOX_H = 50;
+	// Row/box geometry is read off DEFAULT_LAYOUT rather than restated here:
+	// GraphView lays every diagram out with the default opts, so these are the
+	// same numbers the boxes were placed with. Edges get only endpoint coords
+	// from svelte-flow, so the geometry has to be recovered, not threaded.
+	const { rowH: ROW_H, boxH: BOX_H } = DEFAULT_LAYOUT;
 
 	function curvyPath(): string {
 		const dy = Math.abs(targetY - sourceY);
 		const rowsSpan = Math.round((dy + BOX_H) / ROW_H);
 		const intermediates = Math.max(0, rowsSpan - 1);
-		// Big enough to clear a 180-wide box plus margin; scales with
-		// how many boxes we need to skip.
+		// Big enough to clear a default-width (DEFAULT_LAYOUT.boxW) box plus
+		// margin; scales with how many boxes we need to skip. Tuned, not
+		// derived — a wider boxW would want a matching retune.
 		const bulge =
 			intermediates > 0 ? 110 + (intermediates - 1) * 50 : Math.max(20, dy * 0.25);
 		const sign = data?.side === 'left' ? -1 : 1;

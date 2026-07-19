@@ -844,6 +844,47 @@ pub fn replay_db(db: &Database, assertion: &Assertion) -> Result<Thm> {
     replay_with(db, &parser, assertion, &steps, &rs, &clause_index, &mut ())
 }
 
+/// **Replay an arbitrary (possibly *synthetic*, label-less) assertion against a
+/// proof-scoped rule set** — the fast sibling of [`replay_db`] for assertions
+/// that are not stored in the database.
+///
+/// This is what an interactive proof builder needs: the user assembles a step
+/// list for a goal that has no `$p` in `db`, so [`derive_theorem`] (which looks
+/// the assertion up by label) does not apply, and [`replay_db`] (whose rule set
+/// is the *whole* database) is quadratically expensive on a large database.
+/// Here the rule set is scoped to exactly the `|-` assertions the submitted
+/// proof cites, as in [`derive_theorem`].
+///
+/// The resulting logic `L'` is a sub-rule-set of the database's `L`, so
+/// `Derivable_L' ⟹ Derivable_L` by monotonicity
+/// ([`crate::metalogic::transport_db`]) — the theorem is *weaker in name only*.
+/// The returned `Thm` is otherwise identical in kind to [`replay_db`]'s: a
+/// genuine kernel theorem `E ⊢ Derivable_L' ⌜S⌝`, with the assertion's cited
+/// essential hypotheses surfacing in `E`. Nothing about the Metamath verifier's
+/// verdict is trusted — every step is re-derived through the kernel.
+///
+/// `assertion.frame` supplies the citable `$f`/`$e` hypotheses; `$e` labels are
+/// resolved against `db`, so a caller that lets users pick step labels **must**
+/// enforce its own `$e` scoping before calling (this function will happily
+/// assume any `$e` the step list cites — it surfaces as a hypothesis, which is
+/// sound, but a proof-assistant frontend wants to reject it outright).
+pub fn replay_assertion_scoped(db: &Database, assertion: &Assertion) -> Result<Thm> {
+    let parser = Parser::new(db);
+    replay_assertion_scoped_with(db, &parser, assertion, &mut ClauseCache::new())
+}
+
+/// [`replay_assertion_scoped`] over a pre-built [`Parser`] and a reusable
+/// [`ClauseCache`] — the path for replaying many synthetic assertions against
+/// one database ([`Parser::new`] is O(database size)).
+pub fn replay_assertion_scoped_with(
+    db: &Database,
+    parser: &Parser,
+    assertion: &Assertion,
+    cache: &mut ClauseCache,
+) -> Result<Thm> {
+    replay_scoped(db, parser, assertion, &mut (), cache)
+}
+
 /// **Derive that a single named theorem is derivable — the fast, on-demand
 /// path.** Get `⊢ Derivable_L' ⌜T⌝` where `L'` is the sub-rule-set of exactly the
 /// `|-` assertions `T`'s proof references (so `Closed_L'` is small and replay is
@@ -930,6 +971,20 @@ fn derive_inner(
             )));
         }
     };
+    replay_scoped(db, parser, assertion, cons, cache)
+}
+
+/// The proof-scoped replay body, shared by [`derive_inner`] (label lookup) and
+/// [`replay_assertion_scoped_with`] (caller-supplied, possibly synthetic
+/// assertion): decode the proof, scope the rule set to the clauses it cites,
+/// and hand off to the **one** [`replay_with`] replay loop.
+fn replay_scoped(
+    db: &Database,
+    parser: &Parser,
+    assertion: &Assertion,
+    cons: &mut dyn TrustedCons,
+    cache: &mut ClauseCache,
+) -> Result<Thm> {
     let steps = crate::metamath::proof_steps(db, assertion)
         .map_err(|e| replay_err(format!("decoding proof: {e}")))?;
     let (clauses, clause_index) = scoped_clauses(db, parser, &steps, cache)?;
@@ -1714,6 +1769,150 @@ mod tests {
         let rs = rule_set(&db);
         let expected = derivable(&rs, &encode_conclusion(&db, a).unwrap()).unwrap();
         assert_eq!(thm.concl(), &expected);
+    }
+
+    /// Build a **synthetic** (label-less) assertion the way an interactive proof
+    /// builder does: a goal expression plus a normal step list, in a chosen frame.
+    fn synthetic(
+        db: &Database,
+        goal: &str,
+        steps: &str,
+        frame_of: Option<&str>,
+    ) -> crate::metamath::database::Assertion {
+        use crate::metamath::database::{Assertion, Frame, Proof};
+        let toks: Vec<&str> = goal.split_whitespace().collect();
+        let (tc, body) = toks.split_first().expect("non-empty goal");
+        let (frame, scope_disjoints) = match frame_of {
+            Some(l) => match db.statement_by_label(l) {
+                Some(Statement::Assert(a)) => (a.frame.clone(), a.scope_disjoints.clone()),
+                _ => panic!("`{l}` is not an assertion"),
+            },
+            None => (Frame::default(), Vec::new()),
+        };
+        Assertion {
+            label: "<goal>".to_string(),
+            conclusion: crate::metamath::Expr::new(*tc, body.iter().map(|s| (*s).into()).collect()),
+            frame,
+            proof: Some(Proof::Normal(
+                steps.split_whitespace().map(str::to_string).collect(),
+            )),
+            scope_disjoints,
+        }
+    }
+
+    /// A **synthetic** (label-less) assertion — what a user builds in a proof
+    /// assistant — replays into a genuine kernel theorem through the
+    /// proof-scoped path. `|- ( t + 0 ) = t` via the single axiom `a2`.
+    #[test]
+    fn replay_synthetic_assertion_scoped() {
+        let db = crate::metamath::parse(DEMO0).unwrap();
+        let a = synthetic(&db, "|- ( t + 0 ) = t", "tt a2", None);
+        // The Metamath checker accepts it…
+        crate::metamath::proof_trace(&db, &a).expect("metamath accepts");
+        // …and, independently, the kernel re-derives it.
+        let thm = replay_assertion_scoped(&db, &a).unwrap();
+        assert!(thm.hyps().is_empty());
+
+        // The scoped rule set is *exactly* the cited `|-` clause (`a2`), not the
+        // whole database — that is the performance point.
+        let parser = Parser::new(&db);
+        let steps = crate::metamath::proof_steps(&db, &a).unwrap();
+        let (clauses, _) = scoped_clauses(&db, &parser, &steps, &mut ClauseCache::new()).unwrap();
+        assert_eq!(clauses.len(), 1, "only `a2` is a cited `|-` clause");
+        let full = collect_clauses(&db).0;
+        assert!(full.len() > clauses.len(), "database has more `|-` clauses");
+    }
+
+    /// The scoped path and [`replay_db`] **agree** on the same synthetic input:
+    /// both derive derivability of the same encoded statement, only over
+    /// different (nested) rule sets. Checked by rebuilding each expected
+    /// conclusion from its own rule set.
+    #[test]
+    fn scoped_agrees_with_replay_db_on_same_assertion() {
+        let db = crate::metamath::parse(DEMO0).unwrap();
+        let a = synthetic(&db, "|- ( t + 0 ) = t", "tt a2", None);
+
+        let full = replay_db(&db, &a).unwrap();
+        let scoped = replay_assertion_scoped(&db, &a).unwrap();
+        assert!(full.hyps().is_empty() && scoped.hyps().is_empty());
+
+        let enc = Parser::new(&db).encode_expr(&a.conclusion).unwrap();
+        assert_eq!(full.concl(), &derivable(&rule_set(&db), &enc).unwrap());
+
+        let parser = Parser::new(&db);
+        let steps = crate::metamath::proof_steps(&db, &a).unwrap();
+        let (clauses, _) = scoped_clauses(&db, &parser, &steps, &mut ClauseCache::new()).unwrap();
+        let scoped_rs = clauses_to_ruleset(clauses);
+        assert_eq!(scoped.concl(), &derivable(&scoped_rs, &enc).unwrap());
+    }
+
+    /// A synthetic assertion written **in another theorem's frame** and citing
+    /// that theorem's `$e` hypotheses: the hypotheses surface on the kernel
+    /// theorem (they are *not* silently discharged). Displaying such a result as
+    /// a closed `⊢ concl` would be a false claim.
+    #[test]
+    fn replay_synthetic_surfaces_essential_hypotheses() {
+        let db = crate::metamath::parse(DEMO0).unwrap();
+        // In `mp`'s frame, `min |- P` and `maj |- ( P -> Q )` are citable, and
+        // `mp` concludes `|- Q`.
+        let a = synthetic(&db, "|- Q", "wp wq min maj mp", Some("mp"));
+        crate::metamath::proof_trace(&db, &a).expect("metamath accepts");
+        let thm = replay_assertion_scoped(&db, &a).unwrap();
+        assert_eq!(thm.hyps().len(), 2, "both `$e` hypotheses must surface");
+    }
+
+    /// A bogus step list fails **both** the Metamath check and the kernel replay
+    /// — there is no path on which the kernel "confirms" an unproved goal.
+    #[test]
+    fn replay_synthetic_rejects_bogus_proof() {
+        let db = crate::metamath::parse(DEMO0).unwrap();
+        let a = synthetic(&db, "|- t = t", "tt tze tpl tt weq", None);
+        assert!(crate::metamath::proof_trace(&db, &a).is_err());
+        assert!(replay_assertion_scoped(&db, &a).is_err());
+
+        // A step list that replays to a *different* statement than the claimed
+        // goal is caught by the replay's final conclusion check.
+        let b = synthetic(&db, "|- t = t", "tt a2", None);
+        assert!(replay_assertion_scoped(&db, &b).is_err());
+    }
+
+    /// **Full-database vs proof-scoped rule set, on a real database.** Times
+    /// [`replay_db`] against [`replay_assertion_scoped`] over the same
+    /// assertions of the vendored `hol.mm`. Both take `&Assertion`, so this is a
+    /// like-for-like measurement of the *only* difference between them: the size
+    /// of the rule set `Closed_L` is built over. `#[ignore]`d (timing).
+    /// Run: `cargo test -p covalence-init --lib --release \
+    ///   metalogic::mm_database::tests::bench_scoped_vs_full -- --ignored --nocapture`
+    #[test]
+    #[ignore = "performance benchmark; run with --ignored --nocapture"]
+    fn bench_scoped_vs_full() {
+        let db = crate::metamath::parse(HOL_MM).expect("hol.mm parses");
+        let sample: Vec<&Assertion> = db
+            .assertions()
+            .filter(|a| a.proof.is_some() && a.conclusion.typecode() == "|-")
+            .take(20)
+            .collect();
+        eprintln!(
+            "\n=== hol.mm: {} assertions, sample {} ===",
+            db.assertions().count(),
+            sample.len()
+        );
+
+        let t = std::time::Instant::now();
+        for a in &sample {
+            replay_db(&db, a).unwrap_or_else(|e| panic!("replay_db `{}`: {e}", a.label));
+        }
+        let full = t.elapsed();
+
+        let t = std::time::Instant::now();
+        for a in &sample {
+            replay_assertion_scoped(&db, a).unwrap_or_else(|e| panic!("scoped `{}`: {e}", a.label));
+        }
+        let scoped = t.elapsed();
+
+        eprintln!("replay_db (whole-database rule set): {full:?}");
+        eprintln!("replay_assertion_scoped (proof-cited): {scoped:?}");
+        eprintln!("speedup: {:.1}×", full.as_secs_f64() / scoped.as_secs_f64());
     }
 
     // --- Theory 3: a tiny binary-operation ("group-ish") theory -------------

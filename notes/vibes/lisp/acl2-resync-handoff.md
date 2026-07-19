@@ -1,10 +1,16 @@
----
-title: ACL2 resync handoff
-status: active
-source: agent
-agent: gpt-5.6-sol
-harness: codex
----
++++
+id = "N0043"
+status = "draft"
+review = "unreviewed"
+
+[[contributions]]
+role = "author"
+actor = "agent:gpt-5.6-sol"
+at = "2026-07-19T00:00:00+01:00"
+source = "resync-handoff"
+agent = "gpt-5.6-sol"
+harness = "codex"
++++
 
 # ACL2 resync handoff
 
@@ -72,4 +78,3 @@ the resync with a wholesale rewrite.
 4. Put NativeHol theorem replay behind a distinct backend capability.
 5. Make the x86 books corpus a downstream compatibility and performance
    benchmark rather than part of the generic API contract.
-

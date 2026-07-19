@@ -12,8 +12,8 @@ use std::sync::{Arc, OnceLock};
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
 use crate::runtime::{
     ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
-    LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding, RuntimeValueLayer,
-    RuntimeValueView,
+    LispRuntime, LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding,
+    RuntimeValueLayer, RuntimeValueView,
 };
 use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
 
@@ -418,6 +418,54 @@ impl<S: Clone + PartialEq, V: Clone> LispRecursiveEnvironment for HostEnvironmen
     }
 }
 
+/// Coherent direct-Rust runtime bundle for the common Lisp machine.
+#[derive(Clone, Debug)]
+pub struct HostRuntime<S, A, P> {
+    values: HostValues<S, A, P>,
+    closures: HostClosures<S, A, P>,
+    environments: HostEnvironments<S, HostValue<S, A, P>>,
+}
+
+impl<S, A, P> Default for HostRuntime<S, A, P> {
+    fn default() -> Self {
+        Self {
+            values: HostValues::default(),
+            closures: HostClosures::default(),
+            environments: HostEnvironments::default(),
+        }
+    }
+}
+
+impl<S, A, P> LispRuntime for HostRuntime<S, A, P>
+where
+    S: Clone + PartialEq,
+    A: Clone,
+    P: Clone,
+{
+    type Symbol = S;
+    type Atom = A;
+    type Primitive = P;
+    type Expr = Expr<S, A, P>;
+    type Value = Value<S, A, P>;
+    type Closure = Arc<HostClosure<S, A, P>>;
+    type Environment = Environment<S, A, P>;
+    type Values = HostValues<S, A, P>;
+    type Closures = HostClosures<S, A, P>;
+    type Environments = HostEnvironments<S, HostValue<S, A, P>>;
+
+    fn values(&self) -> &Self::Values {
+        &self.values
+    }
+
+    fn closures(&self) -> &Self::Closures {
+        &self.closures
+    }
+
+    fn environments(&self) -> &Self::Environments {
+        &self.environments
+    }
+}
+
 /// The active expression or computed value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostControl<S, A, P> {
@@ -565,12 +613,13 @@ impl<S: Debug, E: Debug> core::error::Error for CoreMachineError<S, E> {}
 
 /// Strategy-parameterized host realization of the common Lisp core.
 #[derive(Clone, Debug)]
-pub struct CoreMachine<P> {
+pub struct CoreMachine<P: CorePrimitive> {
     primitives: P,
     strategy: Strategy,
+    runtime: HostRuntime<P::Symbol, P::Atom, P::Primitive>,
 }
 
-impl<P> CoreMachine<P> {
+impl<P: CorePrimitive> CoreMachine<P> {
     pub fn new(primitives: P) -> Self {
         Self::with_strategy(primitives, Strategy::STRICT_LEXICAL)
     }
@@ -579,6 +628,7 @@ impl<P> CoreMachine<P> {
         Self {
             primitives,
             strategy,
+            runtime: HostRuntime::default(),
         }
     }
 
@@ -598,16 +648,18 @@ type ConfigOf<P> = HostConfiguration<
 >;
 
 impl<P: CorePrimitive> CoreMachine<P> {
-    fn values(&self) -> HostValues<P::Symbol, P::Atom, P::Primitive> {
-        HostValues::default()
+    fn values(&self) -> &HostValues<P::Symbol, P::Atom, P::Primitive> {
+        self.runtime.values()
     }
 
-    fn closures(&self) -> HostClosures<P::Symbol, P::Atom, P::Primitive> {
-        HostClosures::default()
+    fn closures(&self) -> &HostClosures<P::Symbol, P::Atom, P::Primitive> {
+        self.runtime.closures()
     }
 
-    fn environments(&self) -> HostEnvironments<P::Symbol, Value<P::Symbol, P::Atom, P::Primitive>> {
-        HostEnvironments::default()
+    fn environments(
+        &self,
+    ) -> &HostEnvironments<P::Symbol, Value<P::Symbol, P::Atom, P::Primitive>> {
+        self.runtime.environments()
     }
 
     /// Extend an environment with an atomic mutually recursive lambda group.
@@ -769,7 +821,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 configuration.control = HostControl::Expression(
                     if self
                         .primitives
-                        .is_false(&self.values(), &value)
+                        .is_false(self.values(), &value)
                         .map_err(CoreMachineError::Primitive)?
                     {
                         alternative
@@ -842,7 +894,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     let arguments = Self::completed_arguments(evaluated);
                     let value = self
                         .primitives
-                        .apply(&self.values(), &primitive, &arguments)
+                        .apply(self.values(), &primitive, &arguments)
                         .map_err(CoreMachineError::Primitive)?;
                     configuration.control = HostControl::Value(value);
                 } else {
@@ -874,7 +926,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
             RuntimeValueLayer::Primitive(primitive) => {
                 let value = self
                     .primitives
-                    .apply(&self.values(), &primitive, &arguments)
+                    .apply(self.values(), &primitive, &arguments)
                     .map_err(CoreMachineError::Primitive)?;
                 configuration.control = HostControl::Value(value);
                 return Ok(Some(configuration));
@@ -982,7 +1034,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     CoreExpr::Truth(value) => {
                         next.control = HostControl::Value(
                             self.primitives
-                                .truth(&self.values(), value)
+                                .truth(self.values(), value)
                                 .map_err(CoreMachineError::Primitive)?,
                         );
                     }
@@ -1133,7 +1185,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         if arguments.is_empty() {
                             let value = self
                                 .primitives
-                                .apply(&self.values(), &operator, &[])
+                                .apply(self.values(), &operator, &[])
                                 .map_err(CoreMachineError::Primitive)?;
                             next.control = HostControl::Value(value);
                         } else {
@@ -1405,8 +1457,9 @@ mod tests {
     fn host_machine_values_satisfy_runtime_fixpoint_round_trips() {
         type TestValue = HostValue<&'static str, &'static str, Primitive>;
 
-        let values = HostValues::<&str, &str, Primitive>::default();
-        let closures = HostClosures::<&str, &str, Primitive>::default();
+        let runtime = HostRuntime::<&str, &str, Primitive>::default();
+        let values = runtime.values();
+        let closures = runtime.closures();
         let closure_record = ClosureRecord {
             name: Some("identity"),
             parameters: vec!["value"],

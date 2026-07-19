@@ -438,6 +438,45 @@ pub trait LispRecursiveEnvironment: LispEnvironment {
     fn initialize_recursive(&self, cell: Self::Cell, value: Self::Value);
 }
 
+/// A coherent bundle of runtime representation capabilities.
+///
+/// The associated-type equalities prevent accidentally combining, for
+/// example, a value backend whose closure payload is incompatible with the
+/// closure backend, or an environment backend storing a different value
+/// carrier. A CEK or abstract-machine implementation can therefore select one
+/// `Runtime` parameter instead of repeating this compatibility matrix.
+pub trait LispRuntime {
+    type Symbol: Clone;
+    type Atom: Clone;
+    type Primitive: Clone;
+    type Expr: Clone;
+    type Value: Clone;
+    type Closure: Clone;
+    type Environment: Clone;
+
+    type Values: LispMachineValue<
+            Atom = Self::Atom,
+            Primitive = Self::Primitive,
+            Value = Self::Value,
+            Closure = Self::Closure,
+        >;
+    type Closures: LispClosure<
+            Symbol = Self::Symbol,
+            Expr = Self::Expr,
+            Environment = Self::Environment,
+            Closure = Self::Closure,
+        >;
+    type Environments: LispRecursiveEnvironment<
+            Symbol = Self::Symbol,
+            Value = Self::Value,
+            Environment = Self::Environment,
+        >;
+
+    fn values(&self) -> &Self::Values;
+    fn closures(&self) -> &Self::Closures;
+    fn environments(&self) -> &Self::Environments;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

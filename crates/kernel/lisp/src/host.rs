@@ -199,6 +199,10 @@ pub enum HostFrame<S, A, P> {
         alternative: Expr<S, A, P>,
         environment: Environment<S, A, P>,
     },
+    Sequence {
+        remaining: Vec<Expr<S, A, P>>,
+        environment: Environment<S, A, P>,
+    },
     ApplyParts {
         function: Option<Value<S, A, P>>,
         evaluated: Vec<Option<Value<S, A, P>>>,
@@ -482,6 +486,22 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     });
                 configuration.environment = environment;
             }
+            HostFrame::Sequence {
+                mut remaining,
+                environment,
+            } => {
+                let expression = remaining
+                    .pop()
+                    .expect("sequence frames always contain a next expression");
+                if !remaining.is_empty() {
+                    configuration.continuation.push(HostFrame::Sequence {
+                        remaining,
+                        environment: environment.clone(),
+                    });
+                }
+                configuration.control = HostControl::Expression(expression);
+                configuration.environment = environment;
+            }
             HostFrame::ApplyParts {
                 mut function,
                 mut evaluated,
@@ -625,6 +645,17 @@ impl<P: CorePrimitive> CoreMachine<P> {
                             },
                         );
                         next.control = HostControl::Expression(expression);
+                    }
+                    CoreExpr::Sequence { first, rest } => {
+                        if !rest.is_empty() {
+                            let mut remaining = rest;
+                            remaining.reverse();
+                            next.continuation.push(HostFrame::Sequence {
+                                remaining,
+                                environment: next.environment.clone(),
+                            });
+                        }
+                        next.control = HostControl::Expression(*first);
                     }
                     CoreExpr::Lambda {
                         name,
@@ -787,6 +818,17 @@ impl<S: Clone, A: Clone, P: Clone> LispSyntax for CoreSyntax<S, A, P> {
 
     fn cond(&self, clauses: Vec<(Self::Expr, Self::Expr)>) -> Result<Self::Expr, Self::Error> {
         Ok(CoreExpr::Cond { clauses })
+    }
+
+    fn sequence(
+        &self,
+        first: Self::Expr,
+        rest: Vec<Self::Expr>,
+    ) -> Result<Self::Expr, Self::Error> {
+        Ok(CoreExpr::Sequence {
+            first: Box::new(first),
+            rest,
+        })
     }
 
     fn lambda(
@@ -1143,6 +1185,27 @@ mod tests {
             "the observed value comes from the terminal machine configuration"
         );
         assert_eq!(result.trace.steps(), 1);
+    }
+
+    #[test]
+    fn sequence_evaluates_every_expression_in_order_and_returns_the_last() {
+        let expression = CoreExpr::Sequence {
+            first: Box::new(CoreExpr::Literal(Datum::Atom("discarded"))),
+            rest: vec![
+                CoreExpr::Literal(Datum::Atom("also-discarded")),
+                CoreExpr::Literal(Datum::Atom("answer")),
+            ],
+        };
+        let Evaluation::Value(result) = evaluate(
+            &CoreMachine::new(Sector),
+            HostConfiguration::initial(expression),
+            8,
+        )
+        .unwrap() else {
+            panic!("finite sequence must return")
+        };
+        assert_eq!(result.value, HostValue::Datum(Datum::Atom("answer")));
+        assert_eq!(result.trace.steps(), 6);
     }
 
     #[test]

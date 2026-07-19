@@ -169,19 +169,26 @@ impl Frontend {
                     form: "definition",
                     detail: "value is not a lambda".to_owned(),
                 })?;
-                if lambda.len() != 3 || lambda[0].as_symbol() != Some("lambda") {
+                if lambda.len() < 3 || lambda[0].as_symbol() != Some("lambda") {
                     return Err(LowerError::Malformed {
                         form: "definition",
                         detail: "value is not a lambda".to_owned(),
                     });
                 }
-                (name, &lambda[1], &lambda[2])
+                (
+                    name,
+                    self.parameters(&lambda[1], "definition")?,
+                    self.lower_body("definition", &lambda[2..])?,
+                )
             }
-            "defun" if items.len() == 4 => (
-                self.symbol(&items[1], "defun", "name")?,
-                &items[2],
-                &items[3],
-            ),
+            "defun" if items.len() == 4 => {
+                let name = self.symbol(&items[1], "defun", "name")?;
+                (
+                    name,
+                    self.parameters(&items[2], "definition")?,
+                    self.lower(&items[3])?,
+                )
+            }
             "define" | "label" | "defun" => {
                 return Err(LowerError::Malformed {
                     form: "definition",
@@ -190,13 +197,12 @@ impl Frontend {
             }
             _ => return Ok(None),
         };
-        let parameters = self.parameters(parameters, "definition")?;
         Ok(Some((
             name.clone(),
             CoreExpr::Lambda {
                 name: Some(name),
                 parameters,
-                body: Box::new(self.lower(body)?),
+                body: Box::new(body),
             },
         )))
     }
@@ -253,6 +259,9 @@ impl Frontend {
             Some("lambda") => self.lower_lambda(items),
             Some("let") => self.lower_let(items, false),
             Some("letrec") if self.dialect == SurfaceDialect::Scheme => self.lower_let(items, true),
+            Some("begin") if self.dialect == SurfaceDialect::Scheme => {
+                self.lower_sequence("begin", &items[1..])
+            }
             Some("cond") => Ok(CoreExpr::Cond {
                 clauses: self.lower_cond(&items[1..])?,
             }),
@@ -281,12 +290,54 @@ impl Frontend {
     }
 
     fn lower_lambda(&self, items: &[SExpr]) -> Result<FrontendExpr, LowerError> {
-        self.exact_arity("lambda", items, 3)?;
+        if items.len() < 3 {
+            return Err(LowerError::Malformed {
+                form: "lambda",
+                detail: "expected parameters and at least one body expression".to_owned(),
+            });
+        }
         Ok(CoreExpr::Lambda {
             name: None,
             parameters: self.parameters(&items[1], "lambda")?,
-            body: Box::new(self.lower(&items[2])?),
+            body: Box::new(self.lower_body("lambda", &items[2..])?),
         })
+    }
+
+    fn lower_sequence(
+        &self,
+        form: &'static str,
+        expressions: &[SExpr],
+    ) -> Result<FrontendExpr, LowerError> {
+        let (first, rest) = expressions
+            .split_first()
+            .ok_or_else(|| LowerError::Malformed {
+                form,
+                detail: "expected at least one expression".to_owned(),
+            })?;
+        Ok(CoreExpr::Sequence {
+            first: Box::new(self.lower(first)?),
+            rest: rest
+                .iter()
+                .map(|expression| self.lower(expression))
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    fn lower_body(
+        &self,
+        form: &'static str,
+        expressions: &[SExpr],
+    ) -> Result<FrontendExpr, LowerError> {
+        if expressions.len() == 1 {
+            self.lower(&expressions[0])
+        } else if self.dialect != SurfaceDialect::Scheme {
+            Err(LowerError::Malformed {
+                form,
+                detail: "this dialect requires exactly one body expression".to_owned(),
+            })
+        } else {
+            self.lower_sequence(form, expressions)
+        }
     }
 
     fn parameters(
@@ -323,7 +374,12 @@ impl Frontend {
 
     fn lower_let(&self, items: &[SExpr], recursive: bool) -> Result<FrontendExpr, LowerError> {
         let form = if recursive { "letrec" } else { "let" };
-        self.exact_arity(form, items, 3)?;
+        if items.len() < 3 {
+            return Err(LowerError::Malformed {
+                form,
+                detail: "expected bindings and at least one body expression".to_owned(),
+            });
+        }
         let bindings = items[1].as_list().ok_or_else(|| LowerError::Malformed {
             form,
             detail: "bindings are not a list".to_owned(),
@@ -354,7 +410,7 @@ impl Frontend {
                 ))
             })
             .collect::<Result<_, _>>()?;
-        let body = Box::new(self.lower(&items[2])?);
+        let body = Box::new(self.lower_body(form, &items[2..])?);
         Ok(if recursive {
             CoreExpr::LetRec { bindings, body }
         } else {
@@ -725,6 +781,28 @@ mod tests {
             ),
             HostValue::Datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
         );
+    }
+
+    #[test]
+    fn scheme_begin_and_multi_expression_bodies_share_strict_sequence() {
+        assert_eq!(
+            run(
+                SurfaceDialect::Scheme,
+                "(begin (+ 100 200) (let ((x 40)) (+ x 1) (+ x 2)))"
+            ),
+            HostValue::Datum(Datum::Atom(CoreAtom::Integer(Int::from(42))))
+        );
+
+        let lowered = Frontend::new(SurfaceDialect::Scheme)
+            .lower(&one("(lambda (x) (+ x 1) (+ x 2))"))
+            .unwrap();
+        assert!(matches!(
+            lowered,
+            CoreExpr::Lambda {
+                body,
+                ..
+            } if matches!(body.as_ref(), CoreExpr::Sequence { rest, .. } if rest.len() == 1)
+        ));
     }
 
     #[test]

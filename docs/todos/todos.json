@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 351,
-  "structured": 351,
+  "count": 352,
+  "structured": 352,
   "items": [
     {
       "id": "acl2.reader.dispatch-macros",
@@ -3051,7 +3051,17 @@
       "summary": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 489,
+      "line": 495,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lisp.hol.strict-sequence",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Model strict sequencing in a partial/effectful HOL semantics so divergence or failure in a discarded expression cannot be erased by pure equational compilation.",
+      "structured": true,
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "line": 272,
       "crate": "covalence-lisp"
     },
     {
@@ -3061,7 +3071,7 @@
       "summary": "Give the equational HOL backend a conservative mutually recursive binding construction and share letrec conformance tests with the partial host semantics.",
       "structured": true,
       "path": "crates/lang/lisp/src/semantics.rs",
-      "line": 315,
+      "line": 321,
       "crate": "covalence-lisp"
     },
     {

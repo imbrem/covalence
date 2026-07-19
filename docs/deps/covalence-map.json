@@ -709,7 +709,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35669,
+      "words": 35687,
       "updated": 0
     },
     {
@@ -9349,7 +9349,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 1236,
+      "words": 1299,
       "updated": 0
     },
     {
@@ -9385,7 +9385,7 @@
       "title": "syntax.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/syntax.rs",
-      "words": 163,
+      "words": 174,
       "updated": 0
     },
     {
@@ -10771,7 +10771,7 @@
       "title": "frontend.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/frontend.rs",
-      "words": 834,
+      "words": 912,
       "updated": 0
     },
     {
@@ -10816,7 +10816,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 2348,
+      "words": 2353,
       "updated": 0
     },
     {
@@ -10825,7 +10825,7 @@
       "title": "semantics.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/semantics.rs",
-      "words": 1588,
+      "words": 1594,
       "updated": 0
     },
     {
@@ -10853,6 +10853,15 @@
       "status": "tracked",
       "path": "crates/lang/lisp/tests/acl2.rs",
       "words": 525,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/lisp/tests/backend_conformance.rs",
+      "kind": "file",
+      "title": "backend_conformance.rs",
+      "status": "tracked",
+      "path": "crates/lang/lisp/tests/backend_conformance.rs",
+      "words": 90,
       "updated": 0
     },
     {
@@ -15316,7 +15325,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35669,
+      "words": 35687,
       "updated": 0
     },
     {
@@ -15424,7 +15433,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3519,
+      "words": 3529,
       "updated": 0
     },
     {
@@ -22082,6 +22091,15 @@
       "id": "todo:lisp.hol.numeric-datum-sum",
       "kind": "todo",
       "title": "Give the proof-producing S-expression carrier a payload sum containing exact integers, then implement integer? uniformly for open terms and nested quoted data.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/semantics.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.hol.strict-sequence",
+      "kind": "todo",
+      "title": "Model strict sequencing in a partial/effectful HOL semantics so divergence or failure in a discarded expression cannot be erased by pure equational compilation.",
       "status": "major",
       "path": "crates/lang/lisp/src/semantics.rs",
       "words": 0,

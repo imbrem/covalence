@@ -1394,6 +1394,11 @@ impl LispRel {
                 }
                 self.cond_of(cells)
             }
+            CoreExpr::Sequence { .. } => Err(HolError::Stuck(
+                "strict sequencing is not yet represented by the first-order relational \
+                 reduction vocabulary"
+                    .into(),
+            )),
             CoreExpr::Apply {
                 operator,
                 arguments,

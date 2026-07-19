@@ -71,6 +71,15 @@ pub enum CoreExpr<S, D, P> {
     Cond {
         clauses: Vec<(Self, Self)>,
     },
+    /// Evaluate expressions from left to right and return the final value.
+    ///
+    /// The non-empty shape avoids assigning a dialect-independent value to an
+    /// empty sequence. Frontends remain responsible for deciding whether an
+    /// empty surface form is valid.
+    Sequence {
+        first: Box<Self>,
+        rest: Vec<Self>,
+    },
     Lambda {
         /// A name enables direct recursive calls without requiring a global
         /// world or making recursion total.
@@ -123,6 +132,8 @@ pub trait LispSyntax {
         alternative: Self::Expr,
     ) -> Result<Self::Expr, Self::Error>;
     fn cond(&self, clauses: Vec<(Self::Expr, Self::Expr)>) -> Result<Self::Expr, Self::Error>;
+    fn sequence(&self, first: Self::Expr, rest: Vec<Self::Expr>)
+    -> Result<Self::Expr, Self::Error>;
     fn lambda(
         &self,
         name: Option<Self::Symbol>,

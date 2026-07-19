@@ -268,6 +268,12 @@ impl LispSemantics {
                 self.compile_core_branches(condition, consequent, alternative)
             }
             CoreExpr::Cond { clauses } => self.compile_core_cond(clauses),
+            CoreExpr::Sequence { .. } => {
+                // TODO(cov:lisp.hol.strict-sequence, major): Model strict sequencing in a partial/effectful HOL semantics so divergence or failure in a discarded expression cannot be erased by pure equational compilation.
+                Err(HolError::Stuck(
+                    "strict sequencing needs the partial/effectful HOL semantics".into(),
+                ))
+            }
             CoreExpr::Lambda {
                 parameters, body, ..
             } => {

@@ -8,21 +8,13 @@
 
 #![forbid(unsafe_code)]
 
-use covalence_json_api::{JsonString, JsonValue};
+use covalence_json_api::{DuplicateName, JsonString, JsonValue, ReferenceJson};
 
-/// The initial jq-like filter language.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Filter<D> {
-    Identity,
-    Literal(JsonValue<D>),
-    Field(JsonString),
-    Index(isize),
-    Iterate,
-    Pipe(Box<Self>, Box<Self>),
-    Union(Vec<Self>),
-    Optional(Box<Self>),
-    Array(Box<Self>),
-}
+pub mod generic;
+pub use generic::{EvaluationOf, FilterOf, GenericJsonQuery, StructuralEvalError};
+
+/// Source-compatible reference-backend filter spelling.
+pub type Filter<D> = FilterOf<JsonValue<D>, JsonString>;
 
 /// Explicit bounds for the reference evaluator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,12 +80,7 @@ pub struct EvalUsage {
 }
 
 /// A bounded relation result. Diagnostics coexist with successful branches.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Evaluation<D> {
-    pub values: Vec<JsonValue<D>>,
-    pub diagnostics: Vec<Diagnostic>,
-    pub usage: EvalUsage,
-}
+pub type Evaluation<D> = EvaluationOf<JsonValue<D>>;
 
 /// Backend-neutral capability seam for jq-like relations.
 pub trait JsonQueryEvaluator<D> {
@@ -136,7 +123,7 @@ pub trait JsonQueryLaws<D>: JsonQueryEvaluator<D> {
 pub struct BoundedJsonQuery;
 
 impl<D: Clone + PartialEq> JsonQueryEvaluator<D> for BoundedJsonQuery {
-    type Error = core::convert::Infallible;
+    type Error = DuplicateName;
 
     fn evaluate(
         &self,
@@ -144,16 +131,7 @@ impl<D: Clone + PartialEq> JsonQueryEvaluator<D> for BoundedJsonQuery {
         input: &JsonValue<D>,
         budget: EvalBudget,
     ) -> Result<Evaluation<D>, Self::Error> {
-        let mut state = State {
-            budget,
-            usage: EvalUsage::default(),
-        };
-        let batch = state.eval(filter, input, 0, &[]);
-        Ok(Evaluation {
-            values: batch.values,
-            diagnostics: batch.diagnostics,
-            usage: state.usage,
-        })
+        GenericJsonQuery::new(ReferenceJson::<D>::new()).evaluate(filter, input, budget)
     }
 }
 
@@ -179,195 +157,6 @@ impl<D: Clone + PartialEq> SameJsonQueryInterpretation<D> for BoundedJsonQuery {
             }
         }
         Ok(Some(ObservedSameInterpretation))
-    }
-}
-
-struct State {
-    budget: EvalBudget,
-    usage: EvalUsage,
-}
-
-struct Batch<D> {
-    values: Vec<JsonValue<D>>,
-    diagnostics: Vec<Diagnostic>,
-}
-
-impl<D> Default for Batch<D> {
-    fn default() -> Self {
-        Self {
-            values: Vec::new(),
-            diagnostics: Vec::new(),
-        }
-    }
-}
-
-impl<D> Batch<D> {
-    fn diagnostic(path: &[usize], kind: DiagnosticKind) -> Self {
-        Self {
-            values: Vec::new(),
-            diagnostics: vec![Diagnostic {
-                path: path.to_vec(),
-                kind,
-            }],
-        }
-    }
-
-    fn append(&mut self, mut other: Self) {
-        self.values.append(&mut other.values);
-        self.diagnostics.append(&mut other.diagnostics);
-    }
-}
-
-impl State {
-    fn eval<D: Clone + PartialEq>(
-        &mut self,
-        filter: &Filter<D>,
-        input: &JsonValue<D>,
-        depth: usize,
-        path: &[usize],
-    ) -> Batch<D> {
-        self.usage.maximum_depth = self.usage.maximum_depth.max(depth);
-        if depth > self.budget.depth {
-            return Batch::diagnostic(path, DiagnosticKind::DepthLimitExceeded);
-        }
-        if self.usage.steps >= self.budget.steps {
-            return Batch::diagnostic(path, DiagnosticKind::StepLimitExceeded);
-        }
-        self.usage.steps += 1;
-
-        match filter {
-            Filter::Identity => self.one(input.clone(), path),
-            Filter::Literal(value) => self.one(value.clone(), path),
-            Filter::Field(name) => match input {
-                JsonValue::Object(object) => {
-                    let value = object
-                        .members()
-                        .iter()
-                        .find(|member| member.name == *name)
-                        .map_or(JsonValue::Null, |member| member.value.clone());
-                    self.one(value, path)
-                }
-                other => Batch::diagnostic(
-                    path,
-                    DiagnosticKind::CannotLookupField {
-                        actual: kind(other),
-                    },
-                ),
-            },
-            Filter::Index(index) => match input {
-                JsonValue::Array(values) => {
-                    let resolved = if *index < 0 {
-                        values.len().checked_sub(index.unsigned_abs())
-                    } else {
-                        usize::try_from(*index)
-                            .ok()
-                            .filter(|resolved| *resolved < values.len())
-                    };
-                    match resolved.and_then(|resolved| values.get(resolved)) {
-                        Some(value) => self.one(value.clone(), path),
-                        None => Batch::diagnostic(
-                            path,
-                            DiagnosticKind::IndexOutOfRange {
-                                index: *index,
-                                len: values.len(),
-                            },
-                        ),
-                    }
-                }
-                other => Batch::diagnostic(
-                    path,
-                    DiagnosticKind::CannotIndex {
-                        actual: kind(other),
-                    },
-                ),
-            },
-            Filter::Iterate => match input {
-                JsonValue::Array(values) => self.many(values.iter().cloned(), path),
-                JsonValue::Object(object) => self.many(
-                    object.members().iter().map(|member| member.value.clone()),
-                    path,
-                ),
-                other => Batch::diagnostic(
-                    path,
-                    DiagnosticKind::CannotIterate {
-                        actual: kind(other),
-                    },
-                ),
-            },
-            Filter::Pipe(left, right) => {
-                let left = self.eval(left, input, depth + 1, path);
-                let mut result = Batch {
-                    values: Vec::new(),
-                    diagnostics: left.diagnostics,
-                };
-                for (index, value) in left.values.iter().enumerate() {
-                    let mut child_path = path.to_vec();
-                    child_path.push(index);
-                    result.append(self.eval(right, value, depth + 1, &child_path));
-                }
-                result
-            }
-            Filter::Union(filters) => {
-                let mut result = Batch::default();
-                for (index, filter) in filters.iter().enumerate() {
-                    let mut child_path = path.to_vec();
-                    child_path.push(index);
-                    result.append(self.eval(filter, input, depth + 1, &child_path));
-                }
-                result
-            }
-            Filter::Optional(filter) => {
-                let mut result = self.eval(filter, input, depth + 1, path);
-                result
-                    .diagnostics
-                    .retain(|diagnostic| diagnostic.kind.is_resource_limit());
-                result
-            }
-            Filter::Array(filter) => {
-                let mut result = self.eval(filter, input, depth + 1, path);
-                if result.diagnostics.is_empty() {
-                    self.one(JsonValue::Array(result.values), path)
-                } else {
-                    result.values.clear();
-                    result
-                }
-            }
-        }
-    }
-
-    fn one<D>(&mut self, value: JsonValue<D>, path: &[usize]) -> Batch<D> {
-        self.many(core::iter::once(value), path)
-    }
-
-    fn many<D>(
-        &mut self,
-        values: impl IntoIterator<Item = JsonValue<D>>,
-        path: &[usize],
-    ) -> Batch<D> {
-        let mut batch = Batch::default();
-        for value in values {
-            if self.usage.values >= self.budget.values {
-                batch.diagnostics.push(Diagnostic {
-                    path: path.to_vec(),
-                    kind: DiagnosticKind::ValueLimitExceeded,
-                });
-                break;
-            }
-            self.usage.values += 1;
-            batch.values.push(value);
-        }
-        batch
-    }
-}
-
-fn kind<D>(value: &JsonValue<D>) -> JsonKind {
-    match value {
-        JsonValue::Null => JsonKind::Null,
-        JsonValue::Bool(_) => JsonKind::Bool,
-        JsonValue::Number(_) => JsonKind::Number,
-        JsonValue::String(_) => JsonKind::String,
-        JsonValue::Array(_) => JsonKind::Array,
-        JsonValue::Object(_) => JsonKind::Object,
     }
 }
 

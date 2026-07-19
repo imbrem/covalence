@@ -24,6 +24,7 @@ covalence-grammar = { path = "../../../lang/grammar" }
 covalence-inductive = { path = "../../../lang/inductive" }
 covalence-spectec = { path = "../../../lib/wasm/spectec" }
 covalence-k = { path = "../../../lang/k" }
+covalence-computation = { path = "../../../lang/computation" }
 async-trait = "0.1"
 bytes = "1"
 fnv = "1"

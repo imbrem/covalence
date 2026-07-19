@@ -7,6 +7,7 @@
     "covalence-alethe",
     "covalence-arrow",
     "covalence-client",
+    "covalence-computation",
     "covalence-core",
     "covalence-core-test-guest",
     "covalence-crypto-sig",
@@ -168,6 +169,10 @@
       "to": "covalence-store"
     },
     {
+      "from": "covalence-computation",
+      "to": "covalence-logic-api"
+    },
+    {
       "from": "covalence-core",
       "to": "covalence-pure"
     },
@@ -318,6 +323,10 @@
     {
       "from": "covalence-inductive",
       "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-computation"
     },
     {
       "from": "covalence-init",

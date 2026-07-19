@@ -24,6 +24,7 @@ graph LR
   client --> hash
   client --> shell
   client --> store
+  computation --> logic-api
   core --> pure
   core --> pure-eval
   core --> types
@@ -62,6 +63,7 @@ graph LR
   hol-eval --> sexp
   hol-eval --> types
   inductive --> logic-api
+  init --> computation
   init --> core
   init --> grammar
   init --> hash

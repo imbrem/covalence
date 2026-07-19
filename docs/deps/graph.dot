@@ -7,6 +7,7 @@ digraph deps {
   "alethe";
   "arrow";
   "client";
+  "computation";
   "core" [style=filled, fillcolor="#ffd6d6"];
   "core-test-guest";
   "crypto-sig";
@@ -93,6 +94,7 @@ digraph deps {
   "client" -> "hash";
   "client" -> "shell";
   "client" -> "store";
+  "computation" -> "logic-api";
   "core" -> "pure";
   "core" -> "pure-eval";
   "core" -> "types";
@@ -131,6 +133,7 @@ digraph deps {
   "hol-eval" -> "sexp";
   "hol-eval" -> "types";
   "inductive" -> "logic-api";
+  "init" -> "computation";
   "init" -> "core";
   "init" -> "grammar";
   "init" -> "hash";

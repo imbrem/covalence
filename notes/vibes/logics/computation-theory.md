@@ -88,3 +88,36 @@ encodings, in the study of WASM and Lisp.
   substrate), so "program = bytestring" is native, not an encoding hack.
 - The datatype API ([vision §1](../vision/development-vision.md)) supplies the
   (co)inductive machine-configuration types and their recursors.
+
+## Implemented API boundary (2026-07-19)
+
+The first implementation slice lives in `covalence-computation`. Its primary
+surface is proof-oriented:
+
+- a `TheoryBackend<L, Spec>` realizes plain model data as a vocabulary whose
+  machine, input, state, output, step, and halting objects are `L::Type` and
+  `L::Term`;
+- proof laws and replay operations return an associated `Certificate`, not a
+  fixed theorem representation;
+- `TheoremCertificate<L>` is an optional projection for artifacts which do
+  expose `L::Thm`, while `TheoremArtifact<L, M>` carries interpretation
+  metadata beside it;
+- host-language evaluators produce only `SearchWitness` candidates. A replay
+  backend must validate a candidate against the realized HOL theory before it
+  can return a certificate.
+
+This division is intentional. The Rust BLC, SKI, Turing, Minsky, finite
+automata, and pushdown-automata code is an independently auditable codec and
+proof-search layer, not the semantics and never a proof authority. Multiple
+HOL representations of the same serialized specification meet at the theory
+and certificate traits.
+
+The compiler layer follows the same rule. `Compiler<Source, Target>` and
+`PartialCompiler<Source, Target>` produce representation-rich target artifacts;
+their law capabilities separately provide preservation and reflection
+certificates. Partial compilation distinguishes a certified failure of the
+source-domain predicate from an operational error. A computational equivalence
+is paired forward/backward compilers plus explicit round-trip and observational
+certificates—not merely the existence of two host functions. This is intended
+to support both the classical equivalence web and restricted translations such
+as finite-state fragments of otherwise unbounded machines.

@@ -85,6 +85,7 @@ pub mod acl2;
 pub mod ball;
 pub mod cat;
 pub mod char;
+pub mod computation;
 pub mod cond;
 pub mod coprod;
 pub mod cv_recursion;

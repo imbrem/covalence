@@ -185,6 +185,24 @@ Corpus completion is tracked as a matrix, not a single percentage:
 - negative/corruption coverage; and
 - TCB/dependency deltas.
 
+The executable tracker makes this matrix repeatable against any pinned
+checkout:
+
+```sh
+cargo run -p covalence-lisp --features hol --example acl2_progress -- \
+  /path/to/community-books REVISION BOOK...
+
+# Fast event/world compatibility census, without attempting proofs:
+cargo run -p covalence-lisp --features hol --example acl2_progress -- \
+  --inventory /path/to/community-books REVISION BOOK...
+```
+
+Its deterministic `acl2-progress-v1` TSV distinguishes target from recursive
+closure counts, replay from inventory mode, logical-green from strict
+source-green, theorem-neutral interfaces, load failures, and sorted blockers.
+The output is untrusted progress evidence: theorem numerators originate only
+from `BookReport` events that already crossed checked replay.
+
 The authoritative final gate is: every selected ACL2 distribution and
 community book has deterministic normalized-event parity, every logical
 definition is conservative, every exported theorem has a closed checked

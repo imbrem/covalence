@@ -96,6 +96,7 @@ use covalence_init::init::acl2::defun::{
 use covalence_init::init::acl2::derivable::s6_env;
 use covalence_init::init::acl2::derivable::{self as ladder, Acl2Env};
 use covalence_init::init::acl2::fixers::with_fixers;
+use covalence_init::init::acl2::hilbert::Fact;
 use covalence_init::init::acl2::ordinal::with_ordinals;
 use covalence_init::init::acl2::simplify::{
     FactCache, IndConfig, prove_by_induction, with_arith_rules,
@@ -295,6 +296,39 @@ impl Acl2Session {
     /// the [`Acl2Proof::Reduction`] fallback).
     pub fn theorem_entry(&self, name: &str) -> Option<&Acl2Theorem> {
         self.thms.get(name)
+    }
+
+    /// The checked deep ACL2 environment against which induction lemmas can
+    /// be constructed.
+    ///
+    /// This is a deliberately ACL2-facing seam: reusable law packs such as
+    /// ACL2-COUNT build genuine [`Fact`]s here, then register them with
+    /// [`add_induction_lemma`](Self::add_induction_lemma). Merely constructing
+    /// or registering a fact does not make a theorem authoritative.
+    pub fn induction_env(&self) -> &Acl2Env {
+        self.deep.env()
+    }
+
+    /// Add a caller-supplied derived fact as an induction/simplification hint
+    /// for the current deep-environment generation.
+    ///
+    /// Registration is untrusted. The simplifier's `add_lemma` path
+    /// replays every selected instance with checked `INST`/`MP`; a forged
+    /// or mismatched [`Fact`] therefore causes proof failure, never theorem
+    /// production.
+    ///
+    /// Admitting another deep `defun` intentionally discards the hint along
+    /// with the rest of the per-generation cache. Facts contain derivations
+    /// for one exact `Acl2Env`; a reusable law pack must rebuild them against
+    /// [`induction_env`](Self::induction_env) after the definition world is
+    /// established.
+    pub fn add_induction_lemma(&self, lemma: Fact) -> Result<(), Acl2Error> {
+        let cache = self.deep_cache.lock().map_err(|_| Acl2Error::Unprovable {
+            name: "<lemma-registration>".into(),
+            reason: "kernel induction cache lock was poisoned".into(),
+        })?;
+        cache.add_lemma(lemma);
+        Ok(())
     }
 
     /// Parse → dispatch (event or expression) → render, for one cell of

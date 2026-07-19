@@ -63,6 +63,9 @@ pub mod acl2_api;
 pub mod book;
 
 #[cfg(feature = "hol")]
+pub mod progress;
+
+#[cfg(feature = "hol")]
 pub mod world;
 
 use covalence_sexp::SExpr;

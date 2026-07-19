@@ -56,3 +56,7 @@ hol = [
 [[example]]
 name = "acl2_perf_bench"
 required-features = ["hol"]
+
+[[example]]
+name = "acl2_progress"
+required-features = ["hol"]

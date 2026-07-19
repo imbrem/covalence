@@ -78,6 +78,7 @@ mod nat_binary_api;
 mod nat_unary_api;
 pub mod recursor;
 pub mod sig;
+mod text_api;
 pub mod uniqueness;
 mod util;
 pub mod variant;

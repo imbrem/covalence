@@ -1284,7 +1284,7 @@ pub fn sound_pred(tm: &Terms) -> Result<Term> {
 }
 
 /// From `Γ ⊢ v = w` and `Δ ⊢ ¬(w = anil)`, conclude `Γ∪Δ ⊢ ¬(v = anil)`.
-fn ne_from_eq(tm: &Terms, eq: Thm, ne_w: Thm) -> Result<Thm> {
+pub(super) fn ne_from_eq(tm: &Terms, eq: Thm, ne_w: Thm) -> Result<Thm> {
     let (v, _) = eq.concl().as_eq().ok_or(Error::NotAnEquation)?;
     let hyp = v.clone().equals(tm.th.nil.clone())?;
     let w_nil = eq.clone().sym()?.trans(Thm::assume(hyp.clone())?)?; // {v=anil} ⊢ w = anil
@@ -2908,6 +2908,12 @@ pub fn transport_equal_open(
                 String::from_utf8_lossy(name)
             )));
         }
+        if binds[..i].iter().any(|(_, h)| *h == binds[i].1) {
+            return Err(Error::ConnectiveRule(format!(
+                "acl2 transport_holds_open: duplicate HOL bind name `{}`",
+                binds[i].1
+            )));
+        }
     }
     for var in &vars {
         if !binds.iter().any(|(name, _)| *name == var.as_slice()) {
@@ -2917,6 +2923,11 @@ pub fn transport_equal_open(
                 String::from_utf8_lossy(var)
             )));
         }
+    }
+    if binds.len() != vars.len() {
+        return Err(Error::ConnectiveRule(
+            "acl2 transport_holds_open: binds include an extra object variable".into(),
+        ));
     }
     // σ* := λn. cond (n = ⌜V₁⌝) x₁ (… anil) at fresh HOL frees.
     let a = tm.th.ty.clone();
@@ -2958,6 +2969,90 @@ pub fn transport_equal_open(
         .all_elim(vl.clone())?
         .all_elim(vr.clone())?
         .imp_elim(ne)?; // ⊢ L(x⃗) = R(x⃗)
+    for (_, hol) in binds.iter().rev() {
+        out = out.all_intro(hol, a.clone())?;
+    }
+    Ok(out)
+}
+
+/// **Open predicate transport**: from
+/// `projected : ⊢ ∀σ. ¬(eval ⌜p⌝ σ = anil)`, where `p` has free ACL2
+/// object variables and is neither `EQUAL`- nor `IMPLIES`-headed, conclude
+/// `⊢ ∀x⃗:A. ¬(⟦p⟧(x⃗) = anil)`.
+///
+/// This is the predicate counterpart of [`transport_equal_open`].  The
+/// projected formula is parsed only to choose the checked instantiation;
+/// the kernel then replays `eval_open`, checks complete/distinct bindings,
+/// and transports non-nilness through the resulting equality.  Rejecting
+/// `EQUAL` and `IMPLIES` here keeps the three transport entry points
+/// disjoint and prevents an accidental weakening of their result shapes.
+pub fn transport_holds_open(
+    env: &Acl2Env,
+    projected: &Thm,
+    binds: &[(&[u8], &str)],
+) -> Result<Thm> {
+    let tm = &*env.tm;
+    let bad = || {
+        Error::ConnectiveRule(format!(
+            "acl2 transport_holds_open: not a projected open predicate: {projected}"
+        ))
+    };
+    let phi = {
+        let probe = Term::free("__probe", tm.val_ty.clone());
+        let inst = projected.clone().all_elim(probe.clone())?;
+        let (_, p) = inst.concl().as_app().ok_or_else(bad)?;
+        let (lhs, _) = p.as_eq().ok_or_else(bad)?;
+        let (ef, s) = lhs.as_app().ok_or_else(bad)?;
+        if *s != probe {
+            return Err(bad());
+        }
+        let (e, phi) = ef.as_app().ok_or_else(bad)?;
+        if *e != tm.eval || parse_equal(tm, phi).is_some() || strip_implies(tm, phi).is_some() {
+            return Err(bad());
+        }
+        phi.clone()
+    };
+    let vars = object_vars(tm, &phi)?;
+    for (i, (name, _)) in binds.iter().enumerate() {
+        if binds[..i].iter().any(|(m, _)| m == name) {
+            return Err(Error::ConnectiveRule(format!(
+                "acl2 transport_holds_open: duplicate bind for object variable `{}`",
+                String::from_utf8_lossy(name)
+            )));
+        }
+    }
+    for var in &vars {
+        if !binds.iter().any(|(name, _)| *name == var.as_slice()) {
+            return Err(Error::ConnectiveRule(format!(
+                "acl2 transport_holds_open: object variable `{}` is not covered by \
+                 the binds (it would be silently specialized to anil)",
+                String::from_utf8_lossy(var)
+            )));
+        }
+    }
+    let a = tm.th.ty.clone();
+    let s_star = {
+        let n = Term::free("__n", Type::bytes());
+        let mut body = tm.th.nil.clone();
+        for (name, hol) in binds.iter().rev() {
+            let lit = mk_blob(covalence_types::Bytes::from(name.to_vec()));
+            body = cond(a.clone())
+                .apply(n.clone().equals(lit)?)?
+                .apply(Term::free(*hol, a.clone()))?
+                .apply(body)?;
+        }
+        Term::abs(Type::bytes(), subst::close(&body, "__n"))
+    };
+    let inst = projected.clone().all_elim(s_star.clone())?;
+    let mut chain = eval_open(tm, &phi, &s_star)?;
+    for (name, _) in binds {
+        let lit = mk_blob(covalence_types::Bytes::from(name.to_vec()));
+        let red = Thm::beta_conv(s_star.clone().apply(lit)?)?
+            .rhs_conv(|u| u.reduce())?
+            .rhs_conv(collapse_conds)?;
+        chain = chain.rhs_conv(|u| u.rw_all(&red))?;
+    }
+    let mut out = ne_transport(tm, &chain, inst)?;
     for (_, hol) in binds.iter().rev() {
         out = out.all_intro(hol, a.clone())?;
     }

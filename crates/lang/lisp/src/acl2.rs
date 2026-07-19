@@ -94,6 +94,7 @@ use covalence_init::init::acl2::defun::{
 };
 use covalence_init::init::acl2::derivable::s6_env;
 use covalence_init::init::acl2::derivable::{self as ladder, Acl2Env};
+use covalence_init::init::acl2::fixers::with_fixers;
 use covalence_init::init::acl2::ordinal::with_ordinals;
 use covalence_init::init::acl2::simplify::{
     FactCache, IndConfig, prove_by_induction, with_arith_rules,
@@ -122,7 +123,8 @@ const FUEL: u64 = 100_000;
 fn shadow_env() -> covalence_core::Result<Acl2Env> {
     let structural = s6_env()?;
     let ordinal = with_ordinals(&structural)?;
-    with_arith_rules(&ordinal)
+    let fixers = with_fixers(&ordinal)?;
+    with_arith_rules(&fixers)
 }
 
 // ============================================================================
@@ -1700,6 +1702,9 @@ fn deep_encode(tm: &Terms, e: &SExpr, formals: &[String]) -> Result<Term, String
                     .map_err(|e| e.to_string()),
                 "equal" | "=" if enc_args.len() == 2 => tm
                     .mk_equal(&enc_args[0], &enc_args[1])
+                    .map_err(|e| e.to_string()),
+                "implies" if enc_args.len() == 2 => tm
+                    .mk_implies(&enc_args[0], &enc_args[1])
                     .map_err(|e| e.to_string()),
                 _ => {
                     let spelling = match head {

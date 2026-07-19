@@ -82,6 +82,7 @@
 pub mod carrier;
 pub mod defun;
 pub mod derivable;
+pub mod fixers;
 #[cfg(test)]
 mod gate_s5d;
 pub mod hilbert;

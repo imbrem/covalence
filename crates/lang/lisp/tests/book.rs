@@ -20,7 +20,8 @@ use std::path::{Path, PathBuf};
 
 use covalence_lisp::acl2::{Acl2Proof, Acl2Session};
 use covalence_lisp::book::{
-    BookConfig, BookReport, EventOutcome, ImportClass, Tally, run_book, run_book_with_config,
+    BookConfig, BookReport, CompletenessCount, CompletenessLevel, EventOutcome, EventRecord,
+    ImportClass, Tally, run_book, run_book_with_config,
 };
 use covalence_lisp::reader::read_book;
 use covalence_lisp::session::Session;
@@ -544,7 +545,9 @@ fn mixed_book_exact_tally() {
     let reasons: Vec<_> = includes
         .iter()
         .map(|e| match &e.outcome {
-            EventOutcome::Skipped { reason } => reason.as_str(),
+            EventOutcome::Skipped { reason } | EventOutcome::UnresolvedDependency { reason } => {
+                reason.as_str()
+            }
             other => panic!("include-book must be skipped, got {other:?}"),
         })
         .collect();
@@ -702,6 +705,130 @@ fn inventory_manifest_is_deterministic_and_does_not_execute_logic() {
     assert_eq!(manifest.rejections.get("define"), None);
     assert!(manifest.unresolved.is_empty());
     assert_eq!(manifest, report.manifest(), "manifest must be stable");
+}
+
+#[test]
+fn structured_completeness_distinguishes_inventory_from_a_green_island() {
+    let mut inventory_session = session();
+    let inventory = run_book_with_config(
+        &mut inventory_session,
+        &BookConfig::new(root()).inventory_only(),
+        "books/generic-rules",
+    )
+    .expect("inventory");
+    let inventory_progress = inventory.completeness();
+    assert_eq!(
+        inventory_progress.level,
+        CompletenessLevel::DefinitionsComplete
+    );
+    assert_eq!(
+        inventory_progress.closure.theorems,
+        CompletenessCount {
+            complete: 0,
+            total: 3
+        }
+    );
+    assert!(!inventory_progress.is_green_island());
+
+    let mut proving_session = session();
+    let proved = run_book(&mut proving_session, &root(), "books/generic-rules")
+        .expect("checked book import");
+    let progress = proved.completeness();
+    assert_eq!(progress.level, CompletenessLevel::TheoremsComplete);
+    assert_eq!(
+        progress.closure.theorems,
+        CompletenessCount {
+            complete: 3,
+            total: 3
+        }
+    );
+    assert!(progress.closure.events.is_complete());
+    assert!(progress.closure.definitions.is_complete());
+    assert_eq!(progress.target.theorems, progress.closure.theorems);
+    assert!(progress.is_green_island());
+}
+
+#[test]
+fn structured_completeness_fails_closed_on_an_unresolved_dependency() {
+    let mut s = session();
+    let report = run_book(&mut s, &root(), "books/linking").expect("book import");
+    let progress = report.completeness();
+
+    assert_eq!(progress.level, CompletenessLevel::Observed);
+    assert_eq!(progress.closure.unresolved_dependencies, 2);
+    assert!(!progress.closure.events.is_complete());
+    assert!(!progress.is_green_island());
+    assert_eq!(
+        report
+            .events
+            .iter()
+            .filter(|event| matches!(event.outcome, EventOutcome::UnresolvedDependency { .. }))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn structured_completeness_keeps_rejected_logic_in_the_denominator() {
+    let report = BookReport {
+        path: "target.lisp".into(),
+        events: vec![
+            EventRecord {
+                book: "target.lisp".into(),
+                kind: "defun".into(),
+                label: "bad-fn".into(),
+                outcome: EventOutcome::Rejected {
+                    reason: "unsupported".into(),
+                },
+                notes: vec![],
+            },
+            EventRecord {
+                book: "target.lisp".into(),
+                kind: "defthm".into(),
+                label: "bad-thm".into(),
+                outcome: EventOutcome::Rejected {
+                    reason: "unproved".into(),
+                },
+                notes: vec![],
+            },
+        ],
+    };
+    let progress = report.completeness();
+    assert_eq!(
+        progress.target.definitions,
+        CompletenessCount {
+            complete: 0,
+            total: 1
+        }
+    );
+    assert_eq!(
+        progress.target.theorems,
+        CompletenessCount {
+            complete: 0,
+            total: 1
+        }
+    );
+    assert!(!progress.is_green_island());
+}
+
+#[test]
+fn structured_completeness_never_greens_deferred_generated_logic() {
+    let report = BookReport {
+        path: "target.lisp".into(),
+        events: vec![EventRecord {
+            book: "target.lisp".into(),
+            kind: "fty::bitstruct-obligations".into(),
+            label: "flags".into(),
+            outcome: EventOutcome::DeferredLogical {
+                reason: "generated theorem family awaits replay".into(),
+            },
+            notes: vec![],
+        }],
+    };
+    let progress = report.completeness();
+    assert_eq!(progress.level, CompletenessLevel::Observed);
+    assert!(!progress.target.events.is_complete());
+    assert!(!progress.is_green_island());
 }
 
 #[test]
@@ -1476,6 +1603,57 @@ fn official_std_lists_append_imports_with_system_linking() {
             .any(|event| event.book.starts_with(":system/")),
         "expected at least one :dir :system dependency:\n{report}"
     );
+}
+
+/// First checked upstream logical-export gate.  The target exports are kept
+/// separate from the recursively included XDOC source closure: this test
+/// requires all four official fixer theorems to become closed NativeHol
+/// theorems, while the structured report continues to expose XDOC blockers.
+#[test]
+#[ignore = "requires ACL2 community-books revision 2dbf2b63"]
+fn official_std_basic_fixers_transport_all_logical_exports() {
+    let books = std::env::var_os("ACL2_CORPUS_DIR")
+        .map(PathBuf::from)
+        .expect("set ACL2_CORPUS_DIR to the ACL2 checkout's books directory");
+    let config = BookConfig::new(&books).with_dir_root("system", &books);
+
+    for (book, theorem_names) in [
+        ("std/basic/nfix", ["nfix-when-natp", "natp-of-nfix"]),
+        ("std/basic/ifix", ["ifix-when-integerp", "integerp-of-ifix"]),
+    ] {
+        let mut s = session();
+        let report =
+            run_book_with_config(&mut s, &config, book).expect("official fixer book imports");
+        let progress = report.completeness();
+
+        assert_eq!(
+            progress.target.theorems,
+            CompletenessCount {
+                complete: 2,
+                total: 2
+            },
+            "target export gate failed:\n{report}"
+        );
+        for name in theorem_names {
+            assert_eq!(
+                report.event(name).map(|event| &event.outcome),
+                Some(&EventOutcome::Transported),
+                "`{name}` was not transported:\n{report}"
+            );
+            let theorem = s
+                .theorem(name)
+                .unwrap_or_else(|| panic!("missing stored theorem `{name}`"));
+            assert!(
+                theorem.hyps().is_empty(),
+                "`{name}` must be a closed NativeHol theorem"
+            );
+        }
+
+        assert!(
+            !progress.is_green_island(),
+            "the recursive XDOC source closure is not complete yet"
+        );
+    }
 }
 
 #[test]

@@ -93,9 +93,23 @@ pub enum EventOutcome {
         /// Why the event was skipped.
         reason: String,
     },
+    /// A source/generated event is represented for inventory, but still
+    /// carries logical definitions or theorems that have not been replayed.
+    /// This is never event-complete and therefore cannot satisfy a green gate.
+    DeferredLogical {
+        /// The outstanding logical work.
+        reason: String,
+    },
     /// Rejected (reason says why); processing continued.
     Rejected {
         /// Why the event was rejected.
+        reason: String,
+    },
+    /// A required book dependency could not be resolved.  This is distinct
+    /// from an ordinary skipped include (successfully loaded or idempotent),
+    /// so completeness gates never need to inspect diagnostic prose.
+    UnresolvedDependency {
+        /// Why the dependency could not be resolved.
         reason: String,
     },
 }
@@ -169,6 +183,97 @@ pub struct ImportManifest {
     pub unresolved: Vec<UnresolvedImport>,
 }
 
+/// A numerator/denominator pair for one ACL2 import stage.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CompletenessCount {
+    /// Items that completed the stage.
+    pub complete: usize,
+    /// Items that are required to complete the stage.
+    pub total: usize,
+}
+
+impl CompletenessCount {
+    /// Whether every observed requirement completed this stage.
+    pub const fn is_complete(self) -> bool {
+        self.complete == self.total
+    }
+}
+
+/// The strongest fail-closed compatibility level reached by a book report.
+///
+/// These levels describe Covalence's processing of the observed event stream.
+/// They deliberately do not claim parity with upstream ACL2 until a pinned
+/// authoritative normalized-event denominator is supplied.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CompletenessLevel {
+    /// Some event failed or a required dependency was unresolved.
+    #[default]
+    Observed,
+    /// Every observed event was handled and the include closure resolved.
+    EventCompatible,
+    /// Every observed logical definition was represented by the dialect.
+    DefinitionsComplete,
+    /// Every observed logical theorem became a checked, hypothesis-free
+    /// NativeHol theorem.
+    TheoremsComplete,
+}
+
+/// Structured stage counts for either the requested book or its full closure.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CompletenessScope {
+    /// All events in this scope that were handled without rejection.
+    pub events: CompletenessCount,
+    /// Logical definitions represented by successful admissions.
+    pub definitions: CompletenessCount,
+    /// Logical theorem obligations transported to closed NativeHol theorems.
+    pub theorems: CompletenessCount,
+    /// Required include dependencies that did not resolve.
+    pub unresolved_dependencies: usize,
+}
+
+impl CompletenessScope {
+    const fn is_complete(self) -> bool {
+        self.events.is_complete()
+            && self.definitions.is_complete()
+            && self.theorems.is_complete()
+            && self.unresolved_dependencies == 0
+    }
+}
+
+/// Structured ACL2-facing completeness summary for one [`BookReport`].
+///
+/// This is untrusted import analysis.  In particular, it cannot create or
+/// upgrade theorem authority; theorem completion is counted only from the
+/// already checked [`EventOutcome::Transported`] boundary.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CompletenessReport {
+    /// Events authored by the requested book itself.  This exposes its exports
+    /// independently from the often much larger dependency closure.
+    pub target: CompletenessScope,
+    /// All events observed while loading the requested book and its transitive
+    /// include closure.
+    pub closure: CompletenessScope,
+    /// Strongest level reached by this observed stream.
+    pub level: CompletenessLevel,
+}
+
+impl CompletenessReport {
+    /// Strict green-island predicate for an observed, closed book stream.
+    ///
+    /// A green island has no rejected event or unresolved dependency, every
+    /// definition is represented, and every theorem is transported.  This is
+    /// intentionally stricter than a successful parser/linker inventory.
+    pub const fn is_green_island(self) -> bool {
+        matches!(self.level, CompletenessLevel::TheoremsComplete)
+            && self.target.is_complete()
+            && self.closure.is_complete()
+    }
+}
+
+// TODO(cov:acl2.progress.pinned-normalized-denominator, major): Compare completeness numerators with a hash-pinned authoritative ACL2 normalized-event denominator before claiming upstream book completeness.
+// TODO(cov:acl2.progress.canonical-corpus-manifest, major): Emit a versioned canonical corpus manifest with revision, book/include/event identities, source hashes, and structured blocker codes.
+// TODO(cov:acl2.progress.cli-completeness-gate, major): Expose the same structured report through a `cov acl2` progress/import completeness gate without duplicating classification logic.
+
 impl fmt::Display for ImportManifest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "import classes: {:?}", self.classes)?;
@@ -218,7 +323,9 @@ impl BookReport {
             match e.outcome {
                 EventOutcome::Transported => t.transported += 1,
                 EventOutcome::Admitted { .. } => t.admitted += 1,
-                EventOutcome::Skipped { .. } => t.skipped += 1,
+                EventOutcome::Skipped { .. }
+                | EventOutcome::DeferredLogical { .. }
+                | EventOutcome::UnresolvedDependency { .. } => t.skipped += 1,
                 EventOutcome::Rejected { .. } => t.rejected += 1,
             }
         }
@@ -253,17 +360,92 @@ impl BookReport {
         out.unresolved.sort();
         out
     }
+
+    /// Summarize the observed event stream as explicit compatibility,
+    /// definition, and theorem stages.
+    pub fn completeness(&self) -> CompletenessReport {
+        let mut report = CompletenessReport::default();
+        for event in &self.events {
+            count_completeness_event(&mut report.closure, event);
+            if event.book == self.path {
+                count_completeness_event(&mut report.target, event);
+            }
+        }
+        report.level = if !report.closure.events.is_complete()
+            || report.closure.unresolved_dependencies != 0
+        {
+            CompletenessLevel::Observed
+        } else if !report.closure.definitions.is_complete() {
+            CompletenessLevel::EventCompatible
+        } else if !report.closure.theorems.is_complete() {
+            CompletenessLevel::DefinitionsComplete
+        } else {
+            CompletenessLevel::TheoremsComplete
+        };
+        report
+    }
+}
+
+fn count_completeness_event(scope: &mut CompletenessScope, event: &EventRecord) {
+    scope.events.total += 1;
+    if !matches!(
+        event.outcome,
+        EventOutcome::Rejected { .. }
+            | EventOutcome::DeferredLogical { .. }
+            | EventOutcome::UnresolvedDependency { .. }
+    ) {
+        scope.events.complete += 1;
+    }
+    if matches!(event.outcome, EventOutcome::UnresolvedDependency { .. }) {
+        scope.unresolved_dependencies += 1;
+    }
+    // Count logical obligations from their source event kind, independently
+    // of outcome.  A rejected theorem is still part of the denominator.
+    match logical_event_class(event) {
+        Some(ImportClass::LogicalDefinition) => {
+            scope.definitions.total += 1;
+            if matches!(event.outcome, EventOutcome::Admitted { .. }) {
+                scope.definitions.complete += 1;
+            }
+        }
+        Some(ImportClass::LogicalTheorem) => {
+            scope.theorems.total += 1;
+            if matches!(event.outcome, EventOutcome::Transported) {
+                scope.theorems.complete += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn logical_event_class(event: &EventRecord) -> Option<ImportClass> {
+    match event.kind.as_str() {
+        "defun" | "defund" | "defun-inline" | "defund-inline" | "defun-nx" | "defn" | "define" => {
+            Some(ImportClass::LogicalDefinition)
+        }
+        "defthm"
+        | "defthmd"
+        | "defrule"
+        | "defruled"
+        | "defrulel"
+        | "defruledl"
+        | "defthm-unsigned-byte-p"
+        | "defthm-signed-byte-p"
+        | "defthm-using-gl"
+        | "def-gl-thm"
+        | "local def-gl-thm"
+        | "defcong"
+        | "defequiv"
+        | "defrefinement" => Some(ImportClass::LogicalTheorem),
+        _ => None,
+    }
 }
 
 fn classify_import(event: &EventRecord) -> (ImportClass, Option<String>) {
     let unresolved = match &event.outcome {
         EventOutcome::Rejected { reason } => Some(reason.clone()),
-        EventOutcome::Skipped { reason }
-            if event.kind == "include-book"
-                && (reason.contains("not found") || reason.contains("not configured")) =>
-        {
-            Some(reason.clone())
-        }
+        EventOutcome::DeferredLogical { reason } => Some(reason.clone()),
+        EventOutcome::UnresolvedDependency { reason } => Some(reason.clone()),
         _ => None,
     };
     if unresolved.is_some() {
@@ -340,7 +522,9 @@ impl fmt::Display for BookReport {
                     format!("in dialect, rides {hyps} defun hypothesis(es)"),
                 ),
                 EventOutcome::Skipped { reason } => ("skipped", reason.clone()),
+                EventOutcome::DeferredLogical { reason } => ("DEFERRED", reason.clone()),
                 EventOutcome::Rejected { reason } => ("REJECTED", reason.clone()),
+                EventOutcome::UnresolvedDependency { reason } => ("UNRESOLVED", reason.clone()),
             };
             write!(f, "  [{tag:^11}] ({} {}) — {detail}", e.kind, e.label)?;
             if e.book != self.path {
@@ -1631,7 +1815,7 @@ impl Pipeline<'_> {
             book: book.into(),
             kind: "fty::deffixtype".into(),
             label: name.into(),
-            outcome: EventOutcome::Skipped {
+            outcome: EventOutcome::DeferredLogical {
                 reason: "fixtype definition expanded into logical obligations".into(),
             },
             notes: vec![format!(
@@ -1764,7 +1948,7 @@ impl Pipeline<'_> {
             book: book.into(),
             kind: "defbitstruct".into(),
             label: name.into(),
-            outcome: EventOutcome::Skipped {
+            outcome: EventOutcome::DeferredLogical {
                 reason: "scalar bitstruct expanded into fixtype logical obligations".into(),
             },
             notes: vec![
@@ -2026,7 +2210,7 @@ impl Pipeline<'_> {
             book: book.into(),
             kind: "fty::bitstruct-obligations".into(),
             label: name.into(),
-            outcome: EventOutcome::Skipped {
+            outcome: EventOutcome::DeferredLogical {
                 reason: "official generated theorem family retained for future proof replay".into(),
             },
             notes: vec![
@@ -2054,7 +2238,7 @@ impl Pipeline<'_> {
             book: book.into(),
             kind: "defbitstruct".into(),
             label: name.into(),
-            outcome: EventOutcome::Skipped {
+            outcome: EventOutcome::DeferredLogical {
                 reason: "full unsigned aggregate expanded into exact logical definition core"
                     .into(),
             },
@@ -2179,7 +2363,7 @@ impl Pipeline<'_> {
             book: book.into(),
             kind: "fty::container-obligations".into(),
             label: name.into(),
-            outcome: EventOutcome::Skipped {
+            outcome: EventOutcome::DeferredLogical {
                 reason: "official generated equation/theorem family retained for proof replay"
                     .into(),
             },
@@ -2197,7 +2381,7 @@ impl Pipeline<'_> {
             book: book.into(),
             kind: kind.into(),
             label: name.into(),
-            outcome: EventOutcome::Skipped {
+            outcome: EventOutcome::DeferredLogical {
                 reason: "FTY public definition surface inventoried; proof family retained".into(),
             },
             notes: vec![
@@ -3223,7 +3407,7 @@ impl Pipeline<'_> {
             };
             let key = normalize_dir_name(dir);
             let Some(root) = self.dir_roots.get(&key) else {
-                rec.outcome = EventOutcome::Skipped {
+                rec.outcome = EventOutcome::UnresolvedDependency {
                     reason: format!(
                         "include-book :dir {dir} is not configured — dependency skipped"
                     ),
@@ -3261,7 +3445,7 @@ impl Pipeline<'_> {
             Err(reason) => EventOutcome::Rejected {
                 reason: format!("include-book \"{name}\": {reason}"),
             },
-            Ok(Resolved::Missing(p)) => EventOutcome::Skipped {
+            Ok(Resolved::Missing(p)) => EventOutcome::UnresolvedDependency {
                 reason: format!("dependency not found ({}) — skipped", p.display()),
             },
             Ok(Resolved::Found(f)) => {
@@ -3322,6 +3506,12 @@ impl Pipeline<'_> {
                 reason: format!("local: {reason}"),
             },
             EventOutcome::Skipped { reason } => EventOutcome::Skipped {
+                reason: format!("local: {reason}"),
+            },
+            EventOutcome::DeferredLogical { reason } => EventOutcome::DeferredLogical {
+                reason: format!("local: {reason}"),
+            },
+            EventOutcome::UnresolvedDependency { reason } => EventOutcome::UnresolvedDependency {
                 reason: format!("local: {reason}"),
             },
             // Genuinely processed — but a local event is not exported, so

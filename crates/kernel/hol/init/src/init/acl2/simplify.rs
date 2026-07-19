@@ -44,7 +44,7 @@ use crate::init::acl2::derivable::{
     Acl2Env, AxiomRow, Discharge, derivable, derive_axiom, derive_comp, derive_comp_folded,
     derive_def, derive_ind, derive_ind_ord, derive_inst, finite_sigma, model_eq_target,
     model_implies_target, object_vars, parse_equal, strip_implies, subst_ground, sym_lit_of,
-    transport_equal, transport_equal_open, transport_implies_open, uncons,
+    transport_equal, transport_equal_open, transport_holds_open, transport_implies_open, uncons,
 };
 use crate::init::acl2::hilbert::{Fact, KCache, Script, cong_impl, equal_parts, mp};
 use crate::init::acl2::ordinal::ordinals;
@@ -852,9 +852,35 @@ impl<'e> Planner<'e> {
                 });
             }
             let (c, y, z) = (args[0].clone(), args[1].clone(), args[2].clone());
+            let qnil = tm.quote(&tm.th.nil).map_err(Stuck::from)?;
+            let direct_nil = tm.mk_equal(&c, &qnil).map_err(Stuck::from)?;
+            if let Some(i) = self.find_hyp(&direct_nil) {
+                let fire = Rw {
+                    from: t.clone(),
+                    to: z.clone(),
+                    just: Just::IfFalse {
+                        gnil: Box::new(Rw {
+                            from: c.clone(),
+                            to: qnil.clone(),
+                            just: Just::Hyp(i),
+                        }),
+                    },
+                };
+                let rest = self.norm(&z)?;
+                return seq(t, vec![fire, rest]);
+            }
+            if let Some(guard) = self.guard_holds(&c, &Rw::refl(&c))? {
+                let fire = Rw {
+                    from: t.clone(),
+                    to: y.clone(),
+                    just: Just::IfTrue { guard },
+                };
+                let rest = self.norm(&y)?;
+                return seq(t, vec![fire, rest]);
+            }
+            let guard_snap = self.stuck_guards.borrow().len();
             let c_rw = self.norm(&c)?;
             let c_star = c_rw.to.clone();
-            let qnil = tm.quote(&tm.th.nil).map_err(Stuck::from)?;
             // False?
             let gnil: Option<Rw> = if c_star == qnil {
                 Some(c_rw.clone())
@@ -896,6 +922,7 @@ impl<'e> Planner<'e> {
                 return seq(t, vec![fire, rest]);
             }
             // Stuck: record the guard, no descent into branches.
+            self.stuck_guards.borrow_mut().truncate(guard_snap);
             self.stuck_guards.borrow_mut().push(c_star);
             return Ok(Rw::refl(t));
         }
@@ -908,6 +935,7 @@ impl<'e> Planner<'e> {
             });
         }
         // R1 — congruence descent into the arguments.
+        let stuck_before_args = self.stuck_guards.borrow().len();
         let arg_rws: Vec<Rw> = args.iter().map(|a| self.norm(a)).collect::<SResult<_>>()?;
         let mut chain: Vec<Rw> = Vec::new();
         let mut cur = t.clone();
@@ -923,6 +951,15 @@ impl<'e> Planner<'e> {
                 },
             });
             cur = new_t;
+        }
+        // An innermost user definition may have exposed an unresolved IF
+        // guard and deliberately rolled its unfold back.  Preserve that
+        // guard as the next case-split candidate instead of unfolding the
+        // enclosing recognizer and replacing it with a less useful guard
+        // from inside that recognizer (e.g. INTEGERP X while proving
+        // NATP(NFIX X), where the semantic split is NATP X).
+        if chain.is_empty() && self.stuck_guards.borrow().len() > stuck_before_args {
+            return Ok(Rw::refl(t));
         }
         // The head loop: R4 / R5 / R6 / R2, bounded.
         let mut unfolds_left = self.limits.unfolds_per_position;
@@ -1855,12 +1892,6 @@ pub fn prove_by_induction(
             }));
         }
     };
-    if parse_equal(tm, phi).is_none() && strip_implies(tm, phi).is_none() {
-        return Err(fail1(Stuck::OutOfFragment {
-            term: phi.clone(),
-            why: "driver goals must be EQUAL- or IMPLIES-shaped".into(),
-        }));
-    }
     // Simplifier-only pass (closes goals needing only unfolding /
     // computation / R6 rules).
     // For a conditional theorem, expose its antecedent spine to the
@@ -1980,10 +2011,12 @@ fn finish(
         .collect();
     let transported = if strip_implies(&env.tm, phi).is_some() {
         transport_implies_open(env, &projected, &binds).map_err(Stuck::from)?
-    } else if vars.is_empty() {
+    } else if parse_equal(&env.tm, phi).is_some() && vars.is_empty() {
         transport_equal(env, &projected).map_err(Stuck::from)?
-    } else {
+    } else if parse_equal(&env.tm, phi).is_some() {
         transport_equal_open(env, &projected, &binds).map_err(Stuck::from)?
+    } else {
+        transport_holds_open(env, &projected, &binds).map_err(Stuck::from)?
     };
     if !transported.hyps().is_empty() {
         return Err(Stuck::Kernel {

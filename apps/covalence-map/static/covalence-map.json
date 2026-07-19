@@ -173,12 +173,30 @@
       "updated": 0
     },
     {
+      "id": "api:A0018",
+      "kind": "api",
+      "title": "Declarative parser generation",
+      "status": "experimental",
+      "path": "crates/lang/parser-generator/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "api:A0019",
+      "kind": "api",
+      "title": "Parsing expression grammars",
+      "status": "experimental",
+      "path": "crates/lang/peg-parsing/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 198,
+      "words": 203,
       "updated": 0
     },
     {
@@ -430,7 +448,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7393,
+      "words": 7412,
       "updated": 0
     },
     {
@@ -628,7 +646,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 34041,
+      "words": 34149,
       "updated": 0
     },
     {
@@ -6550,7 +6568,7 @@
       "title": "lexer.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/grammar/lexer.rs",
-      "words": 330,
+      "words": 548,
       "updated": 0
     },
     {
@@ -10568,6 +10586,33 @@
       "updated": 0
     },
     {
+      "id": "file:crates/lang/parser-generator/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/parser-generator/Cargo.toml",
+      "words": 16,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/parser-generator/examples/yacc_arithmetic.rs",
+      "kind": "file",
+      "title": "yacc_arithmetic.rs",
+      "status": "tracked",
+      "path": "crates/lang/parser-generator/examples/yacc_arithmetic.rs",
+      "words": 58,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/parser-generator/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/parser-generator/src/lib.rs",
+      "words": 621,
+      "updated": 0
+    },
+    {
       "id": "file:crates/lang/parsing",
       "kind": "file",
       "title": "crates/lang/parsing",
@@ -10600,7 +10645,7 @@
       "title": "bytes.rs",
       "status": "tracked",
       "path": "crates/lang/parsing/src/bytes.rs",
-      "words": 504,
+      "words": 502,
       "updated": 0
     },
     {
@@ -10610,6 +10655,24 @@
       "status": "tracked",
       "path": "crates/lang/parsing/src/lib.rs",
       "words": 389,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/peg-parsing/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/lang/peg-parsing/Cargo.toml",
+      "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/lang/peg-parsing/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/lang/peg-parsing/src/lib.rs",
+      "words": 589,
       "updated": 0
     },
     {
@@ -14533,7 +14596,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 34041,
+      "words": 34149,
       "updated": 0
     },
     {
@@ -14551,7 +14614,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 291,
+      "words": 298,
       "updated": 0
     },
     {
@@ -14560,7 +14623,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 968,
+      "words": 990,
       "updated": 0
     },
     {
@@ -14569,7 +14632,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 217,
+      "words": 222,
       "updated": 0
     },
     {
@@ -14578,7 +14641,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1724,
+      "words": 1766,
       "updated": 0
     },
     {
@@ -14641,7 +14704,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3419,
+      "words": 3409,
       "updated": 0
     },
     {
@@ -21116,18 +21179,9 @@
       "updated": 0
     },
     {
-      "id": "todo:parsing.bytes.peg-integration",
+      "id": "todo:parsing.lexer.native-hol-universal-semantics",
       "kind": "todo",
-      "title": "Add a bounded PEG evaluator with explicit ordered-choice witnesses, exact/prefix modes, and resource-exhaustion errors.",
-      "status": "major",
-      "path": "crates/lang/parsing/src/bytes.rs",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "todo:parsing.lexer.native-hol-whole-judgment",
-      "kind": "todo",
-      "title": "Reify the functional",
+      "title": "Define and",
       "status": "major",
       "path": "crates/kernel/hol/init/src/grammar/lexer.rs",
       "words": 0,
@@ -21781,6 +21835,48 @@
       "source": "api:A0017",
       "predicate": "depends-on",
       "target": "api:A0016",
+      "detail": null
+    },
+    {
+      "source": "api:A0018",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/parser-generator/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0018",
+      "predicate": "depends-on",
+      "target": "api:A0016",
+      "detail": null
+    },
+    {
+      "source": "api:A0018",
+      "predicate": "depends-on",
+      "target": "api:A0017",
+      "detail": null
+    },
+    {
+      "source": "api:A0019",
+      "predicate": "defined-in",
+      "target": "file:crates/lang/peg-parsing/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0019",
+      "predicate": "depends-on",
+      "target": "api:A0013",
+      "detail": null
+    },
+    {
+      "source": "api:A0019",
+      "predicate": "depends-on",
+      "target": "api:A0014",
+      "detail": null
+    },
+    {
+      "source": "api:A0019",
+      "predicate": "depends-on",
+      "target": "api:A0015",
       "detail": null
     },
     {
@@ -25837,7 +25933,7 @@
       "source": "impl:A0016:BoundedByteLexerReplay",
       "predicate": "implements",
       "target": "api:A0016",
-      "detail": "checked functional trace plus one closed native HOL Matches theorem per selected segment"
+      "detail": "checked functional trace, closed native HOL Matches theorems, and an exact closed whole-instance record"
     },
     {
       "source": "note:notes/README.md",
@@ -32028,6 +32124,18 @@
       "title": "Lexer to CFG parsing",
       "status": "experimental",
       "path": "crates/lang/lexer-cfg-parsing/src/lib.rs"
+    },
+    {
+      "id": "A0018",
+      "title": "Declarative parser generation",
+      "status": "experimental",
+      "path": "crates/lang/parser-generator/src/lib.rs"
+    },
+    {
+      "id": "A0019",
+      "title": "Parsing expression grammars",
+      "status": "experimental",
+      "path": "crates/lang/peg-parsing/src/lib.rs"
     }
   ],
   "apiImplementations": [
@@ -32140,7 +32248,7 @@
       "id": "impl:A0016:BoundedByteLexerReplay",
       "apiId": "A0016",
       "name": "BoundedByteLexerReplay",
-      "representation": "checked functional trace plus one closed native HOL Matches theorem per selected segment",
+      "representation": "checked functional trace, closed native HOL Matches theorems, and an exact closed whole-instance record",
       "path": "crates/kernel/hol/init/src/grammar/lexer.rs"
     }
   ],

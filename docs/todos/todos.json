@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 341,
-  "structured": 341,
+  "count": 340,
+  "structured": 340,
   "items": [
     {
       "id": "bits.abstract-bool-list-adapter",
@@ -2975,23 +2975,13 @@
       "crate": "covalence-spectec"
     },
     {
-      "id": "parsing.bytes.peg-integration",
+      "id": "parsing.lexer.native-hol-universal-semantics",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Add a bounded PEG evaluator with explicit ordered-choice witnesses, exact/prefix modes, and resource-exhaustion errors.",
-      "structured": true,
-      "path": "crates/lang/parsing/src/bytes.rs",
-      "line": 364,
-      "crate": "covalence-parsing-api"
-    },
-    {
-      "id": "parsing.lexer.native-hol-whole-judgment",
-      "kind": "TODO",
-      "severity": "major",
-      "summary": "Reify the functional",
+      "summary": "Define and",
       "structured": true,
       "path": "crates/kernel/hol/init/src/grammar/lexer.rs",
-      "line": 166,
+      "line": 345,
       "crate": "covalence-init"
     },
     {

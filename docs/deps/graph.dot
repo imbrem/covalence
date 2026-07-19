@@ -47,7 +47,9 @@ digraph deps {
   "opentheory";
   "parquet";
   "parse";
+  "parser-generator";
   "parsing-api";
+  "peg-parsing";
   "proptest";
   "proto";
   "pure" [style=filled, fillcolor="#ffd6d6"];
@@ -210,7 +212,12 @@ digraph deps {
   "opentheory" -> "hol-api";
   "opentheory" -> "hol-eval";
   "parquet" -> "arrow";
+  "parser-generator" -> "grammar";
+  "parser-generator" -> "lexer-cfg-parsing";
+  "parser-generator" -> "lexer-parsing";
   "parsing-api" -> "logic-api";
+  "peg-parsing" -> "logic-api";
+  "peg-parsing" -> "parsing-api";
   "pure" -> "pure-trusted";
   "pure-eval" -> "pure";
   "pure-eval" -> "types";

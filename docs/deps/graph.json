@@ -47,7 +47,9 @@
     "covalence-opentheory",
     "covalence-parquet",
     "covalence-parse",
+    "covalence-parser-generator",
     "covalence-parsing-api",
+    "covalence-peg-parsing",
     "covalence-proptest",
     "covalence-proto",
     "covalence-pure",
@@ -618,8 +620,28 @@
       "to": "covalence-arrow"
     },
     {
+      "from": "covalence-parser-generator",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-parser-generator",
+      "to": "covalence-lexer-cfg-parsing"
+    },
+    {
+      "from": "covalence-parser-generator",
+      "to": "covalence-lexer-parsing"
+    },
+    {
       "from": "covalence-parsing-api",
       "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-peg-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-peg-parsing",
+      "to": "covalence-parsing-api"
     },
     {
       "from": "covalence-pure",

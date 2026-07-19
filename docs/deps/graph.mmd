@@ -135,7 +135,12 @@ graph LR
   opentheory --> hol-api
   opentheory --> hol-eval
   parquet --> arrow
+  parser-generator --> grammar
+  parser-generator --> lexer-cfg-parsing
+  parser-generator --> lexer-parsing
   parsing-api --> logic-api
+  peg-parsing --> logic-api
+  peg-parsing --> parsing-api
   pure --> pure-trusted
   pure-eval --> pure
   pure-eval --> types

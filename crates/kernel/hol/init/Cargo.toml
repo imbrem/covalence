@@ -23,7 +23,7 @@ covalence-sexp = { path = "../../../lib/sexp" }
 covalence-metamath = { path = "../../../proof/metamath" }
 covalence-grammar = { path = "../../../lang/grammar" }
 covalence-lexer-parsing = { path = "../../../lang/lexer-parsing" }
-covalence-inductive = { path = "../../../lang/inductive" }
+covalence-inductive = { path = "../../data/inductive" }
 covalence-json-api = { path = "../../../lang/json-api" }
 covalence-spectec = { path = "../../../lib/wasm/spectec" }
 covalence-k = { path = "../../../lang/k" }

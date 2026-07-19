@@ -14,6 +14,7 @@
 pub mod morphism;
 pub mod scalar;
 
+pub use covalence_inductive as inductive;
 pub use covalence_kernel_numeric as numeric;
 pub use covalence_logic_api::Logic;
 

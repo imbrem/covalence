@@ -1,0 +1,11 @@
+[package]
+name = "covalence-kernel-lisp"
+version = "0.0.0"
+edition = "2024"
+
+description = "Backend-neutral Lisp syntax, operational semantics, and trace APIs"
+license.workspace = true
+
+[dependencies]
+covalence-kernel-data = { path = "../data" }
+covalence-sexpr-api = { path = "sexpr" }

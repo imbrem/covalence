@@ -5,4 +5,4 @@ parent = "data-interpretation"
 depends_on = ["inductive-logic-adapters"]
 todos = ["json.polynomial-composition"]
 notes = ["notes/design/content-logic-and-wit-boundaries.md"]
-files = ["crates/lang/json-api", "crates/lang/inductive"]
+files = ["crates/lang/json-api", "crates/kernel/data/inductive"]

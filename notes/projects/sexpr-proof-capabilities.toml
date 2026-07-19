@@ -8,4 +8,4 @@ todos = [
   "sexpr.proper-list-proof-capability",
 ]
 notes = ["notes/design/content-logic-and-wit-boundaries.md"]
-files = ["crates/lang/sexpr-api"]
+files = ["crates/kernel/lisp/sexpr"]

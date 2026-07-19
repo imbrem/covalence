@@ -46,6 +46,9 @@ use covalence_init::init::ext::{TermExt, ThmExt};
 use covalence_init::init::inductive::carved::{CarvedSExpr, carved};
 use covalence_init::metalogic::binary::{Premise, RuleSet2, derivable2, derive_mixed};
 use covalence_init::{Term, Type};
+use covalence_kernel_lisp::{
+    CheckedTrace, DeterministicStep, StepRelation, TraceReplay, TraceSoundness,
+};
 use covalence_sexp::{Atom, SExpr};
 use covalence_types::Int;
 
@@ -1175,6 +1178,55 @@ impl LispRel {
     }
 }
 
+impl StepRelation for LispRel {
+    type Configuration = Term;
+    type Error = HolError;
+
+    fn successors(&self, configuration: &Term) -> Result<Vec<Term>, HolError> {
+        Ok(self
+            .prove_step(configuration)?
+            .map(|(next, _)| vec![next])
+            .unwrap_or_default())
+    }
+}
+
+impl DeterministicStep for LispRel {
+    fn next(&self, configuration: &Term) -> Result<Option<Term>, HolError> {
+        Ok(self.prove_step(configuration)?.map(|(next, _)| next))
+    }
+}
+
+impl TraceReplay<LispRel> for LispRel {
+    type Evidence = Thm;
+    type Error = HolError;
+
+    fn replay(&self, _relation: &LispRel, trace: &CheckedTrace<Term>) -> Result<Thm, HolError> {
+        let states = trace.states();
+        let value = trace.end().clone();
+        let mut evidence = self.reduces_refl(&value)?;
+        for pair in states.windows(2).rev() {
+            let (actual, step) = self.prove_step(&pair[0])?.ok_or_else(|| {
+                HolError::Stuck("checked Lisp trace ended at a non-step".to_owned())
+            })?;
+            if actual != pair[1] {
+                return Err(HolError::Stuck(
+                    "checked Lisp trace does not match proof-producing replay".to_owned(),
+                ));
+            }
+            evidence = self.reduces_step(&pair[0], &pair[1], &value, step, evidence)?;
+        }
+        Ok(evidence)
+    }
+}
+
+impl TraceSoundness<LispRel> for LispRel {
+    type Theorem = Thm;
+
+    fn trace_implies_execution(&self, evidence: &Thm) -> Result<Thm, HolError> {
+        Ok(evidence.clone())
+    }
+}
+
 /// Render a surface [`SExpr`] back to Lisp text — for **error messages** only
 /// (never as a value; values print via [`LispRel::render_value`] off a theorem).
 fn surface_text(e: &SExpr) -> String {
@@ -1218,6 +1270,7 @@ fn to_core(e: HolError) -> covalence_core::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use covalence_kernel_lisp::{TraceReplay, execute};
 
     fn rel() -> LispRel {
         LispRel::new().unwrap()
@@ -1236,6 +1289,21 @@ mod tests {
         assert_eq!(value, a);
         assert!(thm.hyps().is_empty(), "closed reduction must be hyps-free");
         assert_eq!(thm.concl(), &r.reduces_prop(&input, &a).unwrap());
+    }
+
+    #[test]
+    fn generic_trace_api_replays_to_hol_reduces_theorem() {
+        let r = rel();
+        let head = r.sym("head");
+        let input = r
+            .car(r.scons(head.clone(), r.nil()).expect("cons"))
+            .expect("car");
+        let trace = execute(&r, input.clone(), 4).expect("generic execution");
+        assert_eq!(trace.end(), &head);
+
+        let theorem = r.replay(&r, &trace).expect("checked HOL replay");
+        assert!(theorem.hyps().is_empty());
+        assert_eq!(theorem.concl(), &r.reduces_prop(&input, &head).unwrap());
     }
 
     /// A multi-step nested reduction:

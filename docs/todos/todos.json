@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 347,
-  "structured": 347,
+  "count": 351,
+  "structured": 351,
   "items": [
     {
       "id": "acl2.reader.dispatch-macros",
@@ -220,7 +220,7 @@
       "severity": "major",
       "summary": "Add backend-neutral conformance for proof-bearing GreatestFixpointFacts; reference streams currently exercise only computational observation.",
       "structured": true,
-      "path": "crates/lang/inductive/src/conformance.rs",
+      "path": "crates/kernel/data/inductive/src/conformance.rs",
       "line": 36,
       "crate": "covalence-inductive"
     },
@@ -230,7 +230,7 @@
       "severity": "major",
       "summary": "Implement DatatypeFamilyLaws for a NativeHol family backend once its μ/ν capability returns proof-bearing fixpoint packages; the structural derivation above must consume existing kernel theorems and must not mint law evidence.",
       "structured": true,
-      "path": "crates/lang/inductive/src/family_action.rs",
+      "path": "crates/kernel/data/inductive/src/family_action.rs",
       "line": 865,
       "crate": "covalence-inductive"
     },
@@ -240,7 +240,7 @@
       "severity": "major",
       "summary": "Adapt InductiveTheory to LeastFixpoint by realizing StructuralFunctorAction in the target logic and deriving the required layer/isomorphism facts.",
       "structured": true,
-      "path": "crates/lang/inductive/src/backend.rs",
+      "path": "crates/kernel/data/inductive/src/backend.rs",
       "line": 9,
       "crate": "covalence-inductive"
     },
@@ -3025,6 +3025,46 @@
       "crate": "covalence-spectec"
     },
     {
+      "id": "lisp.acl2.admission-layer",
+      "kind": "TODO",
+      "severity": "severe",
+      "summary": "Rebase ACL2 worlds, admission, derivations, and HOL transport above common partial Lisp execution.",
+      "structured": true,
+      "path": "crates/kernel/lisp/src/lib.rs",
+      "line": 20,
+      "crate": "covalence-kernel-lisp"
+    },
+    {
+      "id": "lisp.core.letrec",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add mutually recursive lexical bindings with explicit initialized/uninitialized cells and conformance tests.",
+      "structured": true,
+      "path": "crates/kernel/lisp/src/host.rs",
+      "line": 14,
+      "crate": "covalence-kernel-lisp"
+    },
+    {
+      "id": "lisp.core.relational-strategies",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add nondeterministic evaluation-context backends for relational operand order and unspecified choices.",
+      "structured": true,
+      "path": "crates/kernel/lisp/src/host.rs",
+      "line": 15,
+      "crate": "covalence-kernel-lisp"
+    },
+    {
+      "id": "lisp.frontends.scheme-forsp",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Lower Scheme, Sector, and Forsp surface forms through the common syntax and execution capabilities.",
+      "structured": true,
+      "path": "crates/kernel/lisp/src/lib.rs",
+      "line": 19,
+      "crate": "covalence-kernel-lisp"
+    },
+    {
       "id": "parsing.lexer.native-hol-universal-semantics",
       "kind": "TODO",
       "severity": "major",
@@ -3320,7 +3360,7 @@
       "severity": "major",
       "summary": "Add A0015 adapters and induced same-value PERs for the SMT-LIB, WAT, and egglog S-expression dialects.",
       "structured": true,
-      "path": "crates/lang/sexpr-api/src/lib.rs",
+      "path": "crates/kernel/lisp/sexpr/src/lib.rs",
       "line": 506,
       "crate": "covalence-sexpr-api"
     },

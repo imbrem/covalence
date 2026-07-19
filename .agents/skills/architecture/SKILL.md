@@ -50,6 +50,18 @@ disable-model-invocation: true
     linear-depth successor-tower backend. The representation adapters share
     their native-theory capability delegation in `nat_backend_common.rs`;
     neither advertises decision or normalization capabilities.
+- `crates/kernel/lisp/` — stable, backend-neutral Lisp capability tower
+  - `sexpr/` owns the abstract inductive S-expression API. Parsing remains in
+    `crates/lang/sexpr-parsing`; concrete Lisp languages remain under
+    `crates/lang/`.
+  - The root package separates common syntax, explicit evaluation strategies,
+    one-step relations, finite checked traces, and proof-producing replay
+    capabilities. Its host CEK-style realization is proof-free and exists for
+    trace discovery and differential/conformance testing.
+  - `crates/lang/lisp` is the current compatibility/demo frontend. Its
+    NativeHol `LispRel` implements the neutral step and replay capabilities,
+    while ACL2-specific worlds and derivations are incrementally separated
+    above the common Lisp semantics.
 - `crates/lang/computation/` — dependency-free computation theory, execution,
   compiler, simulation, and machine-model APIs.
   - `automata_api` (A0011) separates relational finite-automata syntax,

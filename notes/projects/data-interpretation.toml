@@ -9,5 +9,5 @@ files = [
   "crates/lang/decimal",
   "crates/lang/json-api",
   "crates/lang/parsing",
-  "crates/lang/sexpr-api",
+  "crates/kernel/lisp/sexpr",
 ]

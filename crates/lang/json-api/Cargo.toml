@@ -5,6 +5,6 @@ edition = "2024"
 
 [dependencies]
 covalence-decimal-api = { path = "../decimal" }
-covalence-inductive = { path = "../inductive" }
+covalence-inductive = { path = "../../kernel/data/inductive" }
 covalence-parsing-api = { path = "../parsing" }
 covalence-types = { path = "../../lib/types" }

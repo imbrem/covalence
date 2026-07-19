@@ -98,8 +98,11 @@ graph LR
   kernel --> object
   kernel --> sexp
   kernel --> store
+  kernel-data --> inductive
   kernel-data --> kernel-numeric
   kernel-data --> logic-api
+  kernel-lisp --> kernel-data
+  kernel-lisp --> sexpr-api
   kernel-numeric --> logic-api
   kernel-sat --> core
   kernel-sat --> hol-eval
@@ -122,6 +125,7 @@ graph LR
   lisp --> hol-api
   lisp --> hol-eval
   lisp --> init
+  lisp --> kernel-lisp
   lisp --> repl-core
   lisp --> sexp
   lisp --> sexpr-api

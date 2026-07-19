@@ -20,7 +20,7 @@ harness = "claude"
 - **Related:** [`relational-base-rewrite.md`](relational-base-rewrite.md),
   [`../vibes/observers/backend-decoupling.md`](../vibes/observers/backend-decoupling.md),
   `crates/kernel/base/src/algebra.rs`, `crates/kernel/hol/api`,
-  `crates/lang/inductive`, and `crates/lib/wasm/core/wit/store.wit`.
+  `crates/kernel/data/inductive`, and `crates/lib/wasm/core/wit/store.wit`.
 
 ## Decision summary
 

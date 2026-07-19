@@ -60,7 +60,7 @@
       "kind": "api",
       "title": "Polynomial and inductive datatypes",
       "status": "experimental",
-      "path": "crates/lang/inductive/src/lib.rs",
+      "path": "crates/kernel/data/inductive/src/lib.rs",
       "words": 0,
       "updated": 0
     },
@@ -69,7 +69,7 @@
       "kind": "api",
       "title": "S-expressions",
       "status": "experimental",
-      "path": "crates/lang/sexpr-api/src/lib.rs",
+      "path": "crates/kernel/lisp/sexpr/src/lib.rs",
       "words": 0,
       "updated": 0
     },
@@ -218,12 +218,21 @@
       "updated": 0
     },
     {
+      "id": "api:A0022",
+      "kind": "api",
+      "title": "Lisp operational semantics",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "file:.agents/skills/architecture/SKILL.md",
       "kind": "file",
       "title": "SKILL.md",
       "status": "tracked",
       "path": ".agents/skills/architecture/SKILL.md",
-      "words": 217,
+      "words": 229,
       "updated": 0
     },
     {
@@ -475,7 +484,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7446,
+      "words": 7456,
       "updated": 0
     },
     {
@@ -484,7 +493,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "Cargo.toml",
-      "words": 59,
+      "words": 62,
       "updated": 0
     },
     {
@@ -673,7 +682,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35348,
+      "words": 35498,
       "updated": 0
     },
     {
@@ -5272,7 +5281,196 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/kernel/data/Cargo.toml",
-      "words": 12,
+      "words": 13,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive",
+      "kind": "file",
+      "title": "crates/kernel/data/inductive",
+      "status": null,
+      "path": "crates/kernel/data/inductive",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/",
+      "kind": "file",
+      "title": "crates/kernel/data/inductive/",
+      "status": null,
+      "path": "crates/kernel/data/inductive/",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/Cargo.toml",
+      "words": 20,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/SKELETONS.md",
+      "kind": "file",
+      "title": "crates/kernel/data/inductive/SKELETONS.md",
+      "status": "missing",
+      "path": "crates/kernel/data/inductive/SKELETONS.md",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/aggregate.rs",
+      "kind": "file",
+      "title": "aggregate.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/aggregate.rs",
+      "words": 216,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/backend.rs",
+      "kind": "file",
+      "title": "backend.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/backend.rs",
+      "words": 45,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/conformance.rs",
+      "kind": "file",
+      "title": "conformance.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/conformance.rs",
+      "words": 292,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/error.rs",
+      "kind": "file",
+      "title": "error.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/error.rs",
+      "words": 96,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/family.rs",
+      "kind": "file",
+      "title": "family.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/family.rs",
+      "words": 216,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/family_action.rs",
+      "kind": "file",
+      "title": "family_action.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/family_action.rs",
+      "words": 1051,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/fixpoint.rs",
+      "kind": "file",
+      "title": "fixpoint.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/fixpoint.rs",
+      "words": 317,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/functor.rs",
+      "kind": "file",
+      "title": "functor.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/functor.rs",
+      "words": 470,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/higher_kinded.rs",
+      "kind": "file",
+      "title": "higher_kinded.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/higher_kinded.rs",
+      "words": 406,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/lib.rs",
+      "words": 119,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/logic.rs",
+      "kind": "file",
+      "title": "logic.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/logic.rs",
+      "words": 150,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/logic_api.rs",
+      "kind": "file",
+      "title": "logic_api.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/logic_api.rs",
+      "words": 423,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/polynomial.rs",
+      "kind": "file",
+      "title": "polynomial.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/polynomial.rs",
+      "words": 620,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/spec.rs",
+      "kind": "file",
+      "title": "spec.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/spec.rs",
+      "words": 316,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/stream.rs",
+      "kind": "file",
+      "title": "stream.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/stream.rs",
+      "words": 276,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/theory.rs",
+      "kind": "file",
+      "title": "theory.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/theory.rs",
+      "words": 296,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/data/inductive/src/validated.rs",
+      "kind": "file",
+      "title": "validated.rs",
+      "status": "tracked",
+      "path": "crates/kernel/data/inductive/src/validated.rs",
+      "words": 122,
       "updated": 0
     },
     {
@@ -5326,7 +5524,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/data/src/lib.rs",
-      "words": 48,
+      "words": 49,
       "updated": 0
     },
     {
@@ -9047,6 +9245,96 @@
       "updated": 0
     },
     {
+      "id": "file:crates/kernel/lisp/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/Cargo.toml",
+      "words": 12,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/sexpr",
+      "kind": "file",
+      "title": "crates/kernel/lisp/sexpr",
+      "status": null,
+      "path": "crates/kernel/lisp/sexpr",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/sexpr/Cargo.toml",
+      "kind": "file",
+      "title": "Cargo.toml",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/sexpr/Cargo.toml",
+      "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/sexpr/src/inductive.rs",
+      "kind": "file",
+      "title": "inductive.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/sexpr/src/inductive.rs",
+      "words": 642,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/sexpr/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/sexpr/src/lib.rs",
+      "words": 720,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/sexpr/src/nat.rs",
+      "kind": "file",
+      "title": "nat.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/sexpr/src/nat.rs",
+      "words": 391,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/src/host.rs",
+      "kind": "file",
+      "title": "host.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/host.rs",
+      "words": 619,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/src/lib.rs",
+      "kind": "file",
+      "title": "lib.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/lib.rs",
+      "words": 42,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/src/relation.rs",
+      "kind": "file",
+      "title": "relation.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/relation.rs",
+      "words": 224,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/lisp/src/syntax.rs",
+      "kind": "file",
+      "title": "syntax.rs",
+      "status": "tracked",
+      "path": "crates/kernel/lisp/src/syntax.rs",
+      "words": 144,
+      "updated": 0
+    },
+    {
       "id": "file:crates/kernel/logic",
       "kind": "file",
       "title": "crates/kernel/logic",
@@ -9938,195 +10226,6 @@
       "updated": 0
     },
     {
-      "id": "file:crates/lang/inductive",
-      "kind": "file",
-      "title": "crates/lang/inductive",
-      "status": null,
-      "path": "crates/lang/inductive",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/",
-      "kind": "file",
-      "title": "crates/lang/inductive/",
-      "status": null,
-      "path": "crates/lang/inductive/",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/Cargo.toml",
-      "kind": "file",
-      "title": "Cargo.toml",
-      "status": "tracked",
-      "path": "crates/lang/inductive/Cargo.toml",
-      "words": 20,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/SKELETONS.md",
-      "kind": "file",
-      "title": "crates/lang/inductive/SKELETONS.md",
-      "status": "missing",
-      "path": "crates/lang/inductive/SKELETONS.md",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/aggregate.rs",
-      "kind": "file",
-      "title": "aggregate.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/aggregate.rs",
-      "words": 216,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/backend.rs",
-      "kind": "file",
-      "title": "backend.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/backend.rs",
-      "words": 45,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/conformance.rs",
-      "kind": "file",
-      "title": "conformance.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/conformance.rs",
-      "words": 292,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/error.rs",
-      "kind": "file",
-      "title": "error.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/error.rs",
-      "words": 96,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/family.rs",
-      "kind": "file",
-      "title": "family.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/family.rs",
-      "words": 216,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/family_action.rs",
-      "kind": "file",
-      "title": "family_action.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/family_action.rs",
-      "words": 1051,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/fixpoint.rs",
-      "kind": "file",
-      "title": "fixpoint.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/fixpoint.rs",
-      "words": 317,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/functor.rs",
-      "kind": "file",
-      "title": "functor.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/functor.rs",
-      "words": 470,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/higher_kinded.rs",
-      "kind": "file",
-      "title": "higher_kinded.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/higher_kinded.rs",
-      "words": 406,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/lib.rs",
-      "kind": "file",
-      "title": "lib.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/lib.rs",
-      "words": 119,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/logic.rs",
-      "kind": "file",
-      "title": "logic.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/logic.rs",
-      "words": 150,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/logic_api.rs",
-      "kind": "file",
-      "title": "logic_api.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/logic_api.rs",
-      "words": 423,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/polynomial.rs",
-      "kind": "file",
-      "title": "polynomial.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/polynomial.rs",
-      "words": 620,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/spec.rs",
-      "kind": "file",
-      "title": "spec.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/spec.rs",
-      "words": 316,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/stream.rs",
-      "kind": "file",
-      "title": "stream.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/stream.rs",
-      "words": 276,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/theory.rs",
-      "kind": "file",
-      "title": "theory.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/theory.rs",
-      "words": 296,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/inductive/src/validated.rs",
-      "kind": "file",
-      "title": "validated.rs",
-      "status": "tracked",
-      "path": "crates/lang/inductive/src/validated.rs",
-      "words": 122,
-      "updated": 0
-    },
-    {
       "id": "file:crates/lang/jq/Cargo.toml",
       "kind": "file",
       "title": "Cargo.toml",
@@ -10537,7 +10636,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/lisp/Cargo.toml",
-      "words": 57,
+      "words": 58,
       "updated": 0
     },
     {
@@ -10627,7 +10726,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/lib.rs",
-      "words": 164,
+      "words": 168,
       "updated": 0
     },
     {
@@ -10645,7 +10744,7 @@
       "title": "relation.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/relation.rs",
-      "words": 1642,
+      "words": 1710,
       "updated": 0
     },
     {
@@ -11258,51 +11357,6 @@
       "status": "tracked",
       "path": "crates/lang/regex-parsing/src/lib.rs",
       "words": 626,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/sexpr-api",
-      "kind": "file",
-      "title": "crates/lang/sexpr-api",
-      "status": null,
-      "path": "crates/lang/sexpr-api",
-      "words": 0,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/sexpr-api/Cargo.toml",
-      "kind": "file",
-      "title": "Cargo.toml",
-      "status": "tracked",
-      "path": "crates/lang/sexpr-api/Cargo.toml",
-      "words": 12,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/sexpr-api/src/inductive.rs",
-      "kind": "file",
-      "title": "inductive.rs",
-      "status": "tracked",
-      "path": "crates/lang/sexpr-api/src/inductive.rs",
-      "words": 642,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/sexpr-api/src/lib.rs",
-      "kind": "file",
-      "title": "lib.rs",
-      "status": "tracked",
-      "path": "crates/lang/sexpr-api/src/lib.rs",
-      "words": 720,
-      "updated": 0
-    },
-    {
-      "id": "file:crates/lang/sexpr-api/src/nat.rs",
-      "kind": "file",
-      "title": "nat.rs",
-      "status": "tracked",
-      "path": "crates/lang/sexpr-api/src/nat.rs",
-      "words": 391,
       "updated": 0
     },
     {
@@ -15181,7 +15235,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35348,
+      "words": 35498,
       "updated": 0
     },
     {
@@ -15199,7 +15253,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 315,
+      "words": 320,
       "updated": 0
     },
     {
@@ -15208,7 +15262,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 1049,
+      "words": 1066,
       "updated": 0
     },
     {
@@ -15217,7 +15271,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 236,
+      "words": 240,
       "updated": 0
     },
     {
@@ -15226,7 +15280,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1868,
+      "words": 1898,
       "updated": 0
     },
     {
@@ -15289,7 +15343,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3479,
+      "words": 3519,
       "updated": 0
     },
     {
@@ -17846,7 +17900,7 @@
       "status": "draft",
       "path": "notes/design/content-logic-and-wit-boundaries.md",
       "words": 2024,
-      "updated": 1784416010
+      "updated": 1784479432
     },
     {
       "id": "note:notes/design/graph-api.md",
@@ -17954,7 +18008,7 @@
       "status": "draft",
       "path": "notes/vibes/audits/inductive-api-audit.md",
       "words": 2235,
-      "updated": 1784416045
+      "updated": 1784479432
     },
     {
       "id": "note:notes/vibes/build/buck2-experiment.md",
@@ -18134,7 +18188,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/inductive/inductive-api-design.md",
       "words": 3405,
-      "updated": 1784416010
+      "updated": 1784479432
     },
     {
       "id": "note:notes/vibes/kernel/inductive/inductive-support.md",
@@ -18143,7 +18197,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/inductive/inductive-support.md",
       "words": 1922,
-      "updated": 1784416010
+      "updated": 1784479432
     },
     {
       "id": "note:notes/vibes/kernel/kernel-design.md",
@@ -18665,7 +18719,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/structural-sigma-transport.md",
       "words": 2878,
-      "updated": 1784416010
+      "updated": 1784479432
     },
     {
       "id": "note:notes/vibes/logics/theories-models-and-logics.md",
@@ -18701,7 +18755,7 @@
       "status": "draft",
       "path": "notes/vibes/numerics/numeric-capability-tower-handoff.md",
       "words": 669,
-      "updated": 1784477555
+      "updated": 1784477601
     },
     {
       "id": "note:notes/vibes/observers/backend-decoupling.md",
@@ -19374,7 +19428,7 @@
       "kind": "todo",
       "title": "Add backend-neutral conformance for proof-bearing GreatestFixpointFacts; reference streams currently exercise only computational observation.",
       "status": "major",
-      "path": "crates/lang/inductive/src/conformance.rs",
+      "path": "crates/kernel/data/inductive/src/conformance.rs",
       "words": 0,
       "updated": 0
     },
@@ -19383,7 +19437,7 @@
       "kind": "todo",
       "title": "Implement DatatypeFamilyLaws for a NativeHol family backend once its μ/ν capability returns proof-bearing fixpoint packages; the structural derivation above must consume existing kernel theorems and must not mint law evidence.",
       "status": "major",
-      "path": "crates/lang/inductive/src/family_action.rs",
+      "path": "crates/kernel/data/inductive/src/family_action.rs",
       "words": 0,
       "updated": 0
     },
@@ -19392,7 +19446,7 @@
       "kind": "todo",
       "title": "Adapt InductiveTheory to LeastFixpoint by realizing StructuralFunctorAction in the target logic and deriving the required layer/isomorphism facts.",
       "status": "major",
-      "path": "crates/lang/inductive/src/backend.rs",
+      "path": "crates/kernel/data/inductive/src/backend.rs",
       "words": 0,
       "updated": 0
     },
@@ -21926,6 +21980,42 @@
       "updated": 0
     },
     {
+      "id": "todo:lisp.acl2.admission-layer",
+      "kind": "todo",
+      "title": "Rebase ACL2 worlds, admission, derivations, and HOL transport above common partial Lisp execution.",
+      "status": "severe",
+      "path": "crates/kernel/lisp/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.core.letrec",
+      "kind": "todo",
+      "title": "Add mutually recursive lexical bindings with explicit initialized/uninitialized cells and conformance tests.",
+      "status": "major",
+      "path": "crates/kernel/lisp/src/host.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.core.relational-strategies",
+      "kind": "todo",
+      "title": "Add nondeterministic evaluation-context backends for relational operand order and unspecified choices.",
+      "status": "major",
+      "path": "crates/kernel/lisp/src/host.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.frontends.scheme-forsp",
+      "kind": "todo",
+      "title": "Lower Scheme, Sector, and Forsp surface forms through the common syntax and execution capabilities.",
+      "status": "major",
+      "path": "crates/kernel/lisp/src/lib.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:parsing.lexer.native-hol-universal-semantics",
       "kind": "todo",
       "title": "Define and",
@@ -22200,7 +22290,7 @@
       "kind": "todo",
       "title": "Add A0015 adapters and induced same-value PERs for the SMT-LIB, WAT, and egglog S-expression dialects.",
       "status": "major",
-      "path": "crates/lang/sexpr-api/src/lib.rs",
+      "path": "crates/kernel/lisp/sexpr/src/lib.rs",
       "words": 0,
       "updated": 0
     },
@@ -22389,7 +22479,7 @@
     {
       "source": "api:A0004",
       "predicate": "defined-in",
-      "target": "file:crates/lang/inductive/src/lib.rs",
+      "target": "file:crates/kernel/data/inductive/src/lib.rs",
       "detail": null
     },
     {
@@ -22401,7 +22491,7 @@
     {
       "source": "api:A0005",
       "predicate": "defined-in",
-      "target": "file:crates/lang/sexpr-api/src/lib.rs",
+      "target": "file:crates/kernel/lisp/sexpr/src/lib.rs",
       "detail": null
     },
     {
@@ -22672,6 +22762,42 @@
       "source": "api:A0021",
       "predicate": "depends-on",
       "target": "api:A0002",
+      "detail": null
+    },
+    {
+      "source": "api:A0022",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/lisp/src/lib.rs",
+      "detail": null
+    },
+    {
+      "source": "api:A0022",
+      "predicate": "depends-on",
+      "target": "api:A0001",
+      "detail": null
+    },
+    {
+      "source": "api:A0022",
+      "predicate": "depends-on",
+      "target": "api:A0004",
+      "detail": null
+    },
+    {
+      "source": "api:A0022",
+      "predicate": "depends-on",
+      "target": "api:A0005",
+      "detail": null
+    },
+    {
+      "source": "api:A0022",
+      "predicate": "depends-on",
+      "target": "api:A0014",
+      "detail": null
+    },
+    {
+      "source": "api:A0022",
+      "predicate": "depends-on",
+      "target": "api:A0021",
       "detail": null
     },
     {
@@ -23176,6 +23302,102 @@
       "source": "file:crates/kernel/core/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/core/src/store.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/aggregate.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/backend.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/conformance.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/error.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/family.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/family_action.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/fixpoint.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/functor.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/higher_kinded.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/logic.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/logic_api.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/polynomial.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/spec.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/stream.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/theory.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/data/inductive/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/data/inductive/src/validated.rs",
       "detail": null
     },
     {
@@ -24895,6 +25117,36 @@
       "detail": null
     },
     {
+      "source": "file:crates/kernel/lisp/sexpr/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/sexpr/src/inductive.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/sexpr/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/sexpr/src/nat.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/host.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/relation.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/lisp/src/lib.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/lisp/src/syntax.rs",
+      "detail": null
+    },
+    {
       "source": "file:crates/kernel/logic/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/logic/src/relation.rs",
@@ -25141,102 +25393,6 @@
       "detail": null
     },
     {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/aggregate.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/backend.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/conformance.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/error.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/family.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/family_action.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/fixpoint.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/functor.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/higher_kinded.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/logic.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/logic_api.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/polynomial.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/spec.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/stream.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/theory.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/inductive/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/inductive/src/validated.rs",
-      "detail": null
-    },
-    {
       "source": "file:crates/lang/jq/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/jq/src/generic.rs",
@@ -25438,18 +25594,6 @@
       "source": "file:crates/lang/parsing/src/lib.rs",
       "predicate": "imports",
       "target": "file:crates/lang/parsing/src/bytes.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/sexpr-api/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/sexpr-api/src/inductive.rs",
-      "detail": null
-    },
-    {
-      "source": "file:crates/lang/sexpr-api/src/lib.rs",
-      "predicate": "imports",
-      "target": "file:crates/lang/sexpr-api/src/nat.rs",
       "detail": null
     },
     {
@@ -27033,13 +27177,13 @@
     {
       "source": "note:notes/design/content-logic-and-wit-boundaries.md",
       "predicate": "documents",
-      "target": "file:crates/kernel/hol/api",
+      "target": "file:crates/kernel/data/inductive",
       "detail": null
     },
     {
       "source": "note:notes/design/content-logic-and-wit-boundaries.md",
       "predicate": "documents",
-      "target": "file:crates/lang/inductive",
+      "target": "file:crates/kernel/hol/api",
       "detail": null
     },
     {
@@ -27687,6 +27831,72 @@
     {
       "source": "note:notes/vibes/audits/inductive-api-audit.md",
       "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/Cargo.toml",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/aggregate.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/backend.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/conformance.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/fixpoint.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/functor.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/logic.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/polynomial.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/spec.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/theory.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
+      "target": "file:crates/kernel/data/inductive/src/validated.rs",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/audits/inductive-api-audit.md",
+      "predicate": "links-to",
       "target": "file:crates/kernel/hol/init/src/init/inductive/carved.rs",
       "detail": null
     },
@@ -27705,79 +27915,13 @@
     {
       "source": "note:notes/vibes/audits/inductive-api-audit.md",
       "predicate": "links-to",
-      "target": "file:crates/lang/inductive/Cargo.toml",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/aggregate.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/backend.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/conformance.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/fixpoint.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/functor.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/logic.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/polynomial.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/spec.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/theory.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/inductive/src/validated.rs",
+      "target": "file:crates/kernel/lisp/sexpr/src/lib.rs",
       "detail": null
     },
     {
       "source": "note:notes/vibes/audits/inductive-api-audit.md",
       "predicate": "links-to",
       "target": "file:crates/lang/json-api/src/lib.rs",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/audits/inductive-api-audit.md",
-      "predicate": "links-to",
-      "target": "file:crates/lang/sexpr-api/src/lib.rs",
       "detail": null
     },
     {
@@ -28371,6 +28515,12 @@
     {
       "source": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
       "predicate": "documents",
+      "target": "file:crates/kernel/data/inductive",
+      "detail": null
+    },
+    {
+      "source": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
+      "predicate": "documents",
       "target": "file:crates/kernel/hol/inductive",
       "detail": "missing"
     },
@@ -28378,12 +28528,6 @@
       "source": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
       "predicate": "documents",
       "target": "file:crates/lang/",
-      "detail": null
-    },
-    {
-      "source": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
-      "predicate": "documents",
-      "target": "file:crates/lang/inductive",
       "detail": null
     },
     {
@@ -28413,13 +28557,13 @@
     {
       "source": "note:notes/vibes/kernel/inductive/inductive-support.md",
       "predicate": "documents",
-      "target": "file:crates/lang/inductive/",
+      "target": "file:crates/kernel/data/inductive/",
       "detail": null
     },
     {
       "source": "note:notes/vibes/kernel/inductive/inductive-support.md",
       "predicate": "documents",
-      "target": "file:crates/lang/inductive/SKELETONS.md",
+      "target": "file:crates/kernel/data/inductive/SKELETONS.md",
       "detail": "missing"
     },
     {
@@ -30117,13 +30261,13 @@
     {
       "source": "note:notes/vibes/logics/structural-sigma-transport.md",
       "predicate": "documents",
-      "target": "file:crates/kernel/hol/init/src/metalogic/mm_algebra.rs",
+      "target": "file:crates/kernel/data/inductive",
       "detail": null
     },
     {
       "source": "note:notes/vibes/logics/structural-sigma-transport.md",
       "predicate": "documents",
-      "target": "file:crates/lang/inductive",
+      "target": "file:crates/kernel/hol/init/src/metalogic/mm_algebra.rs",
       "detail": null
     },
     {
@@ -31869,7 +32013,7 @@
     {
       "source": "task:coinductive-conformance",
       "predicate": "touches",
-      "target": "file:crates/lang/inductive",
+      "target": "file:crates/kernel/data/inductive",
       "detail": null
     },
     {
@@ -31935,6 +32079,12 @@
     {
       "source": "task:data-interpretation",
       "predicate": "touches",
+      "target": "file:crates/kernel/lisp/sexpr",
+      "detail": null
+    },
+    {
+      "source": "task:data-interpretation",
+      "predicate": "touches",
       "target": "file:crates/lang/decimal",
       "detail": null
     },
@@ -31948,12 +32098,6 @@
       "source": "task:data-interpretation",
       "predicate": "touches",
       "target": "file:crates/lang/parsing",
-      "detail": null
-    },
-    {
-      "source": "task:data-interpretation",
-      "predicate": "touches",
-      "target": "file:crates/lang/sexpr-api",
       "detail": null
     },
     {
@@ -32037,7 +32181,7 @@
     {
       "source": "task:inductive-datatypes",
       "predicate": "touches",
-      "target": "file:crates/lang/inductive",
+      "target": "file:crates/kernel/data/inductive",
       "detail": null
     },
     {
@@ -32073,7 +32217,7 @@
     {
       "source": "task:inductive-logic-adapters",
       "predicate": "touches",
-      "target": "file:crates/lang/inductive",
+      "target": "file:crates/kernel/data/inductive",
       "detail": null
     },
     {
@@ -32103,7 +32247,7 @@
     {
       "source": "task:json-inductive-composition",
       "predicate": "touches",
-      "target": "file:crates/lang/inductive",
+      "target": "file:crates/kernel/data/inductive",
       "detail": null
     },
     {
@@ -32229,13 +32373,13 @@
     {
       "source": "task:sexpr-parser-per",
       "predicate": "touches",
-      "target": "file:crates/lang/parsing",
+      "target": "file:crates/kernel/lisp/sexpr",
       "detail": null
     },
     {
       "source": "task:sexpr-parser-per",
       "predicate": "touches",
-      "target": "file:crates/lang/sexpr-api",
+      "target": "file:crates/lang/parsing",
       "detail": null
     },
     {
@@ -32271,7 +32415,7 @@
     {
       "source": "task:sexpr-proof-capabilities",
       "predicate": "touches",
-      "target": "file:crates/lang/sexpr-api",
+      "target": "file:crates/kernel/lisp/sexpr",
       "detail": null
     },
     {
@@ -32343,6 +32487,12 @@
     {
       "source": "task:text-parsing-api",
       "predicate": "touches",
+      "target": "file:crates/kernel/lisp/sexpr",
+      "detail": null
+    },
+    {
+      "source": "task:text-parsing-api",
+      "predicate": "touches",
       "target": "file:crates/lang/json-api",
       "detail": null
     },
@@ -32350,12 +32500,6 @@
       "source": "task:text-parsing-api",
       "predicate": "touches",
       "target": "file:crates/lang/parsing",
-      "detail": null
-    },
-    {
-      "source": "task:text-parsing-api",
-      "predicate": "touches",
-      "target": "file:crates/lang/sexpr-api",
       "detail": null
     },
     {
@@ -33152,13 +33296,13 @@
       "id": "A0004",
       "title": "Polynomial and inductive datatypes",
       "status": "experimental",
-      "path": "crates/lang/inductive/src/lib.rs"
+      "path": "crates/kernel/data/inductive/src/lib.rs"
     },
     {
       "id": "A0005",
       "title": "S-expressions",
       "status": "experimental",
-      "path": "crates/lang/sexpr-api/src/lib.rs"
+      "path": "crates/kernel/lisp/sexpr/src/lib.rs"
     },
     {
       "id": "A0006",
@@ -33255,6 +33399,12 @@
       "title": "Mathematical integers",
       "status": "experimental",
       "path": "crates/kernel/data/numeric/src/int.rs"
+    },
+    {
+      "id": "A0022",
+      "title": "Lisp operational semantics",
+      "status": "experimental",
+      "path": "crates/kernel/lisp/src/lib.rs"
     }
   ],
   "apiImplementations": [
@@ -34730,8 +34880,8 @@
     },
     {
       "noteId": "note:notes/design/content-logic-and-wit-boundaries.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
+      "committedAt": 1784479432
     },
     {
       "noteId": "note:notes/design/graph-api.md",
@@ -34790,8 +34940,8 @@
     },
     {
       "noteId": "note:notes/vibes/audits/inductive-api-audit.md",
-      "commit": "b69dc25874ff67aeda320e8c5f6de6a3f13c0862",
-      "committedAt": 1784416045
+      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
+      "committedAt": 1784479432
     },
     {
       "noteId": "note:notes/vibes/build/buck2-experiment.md",
@@ -34890,13 +35040,13 @@
     },
     {
       "noteId": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
+      "committedAt": 1784479432
     },
     {
       "noteId": "note:notes/vibes/kernel/inductive/inductive-support.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
+      "committedAt": 1784479432
     },
     {
       "noteId": "note:notes/vibes/kernel/kernel-design.md",
@@ -35185,8 +35335,8 @@
     },
     {
       "noteId": "note:notes/vibes/logics/structural-sigma-transport.md",
-      "commit": "1122f27118244f07099c5c7e3ce67dad1133ff69",
-      "committedAt": 1784416010
+      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
+      "committedAt": 1784479432
     },
     {
       "noteId": "note:notes/vibes/logics/theories-models-and-logics.md",
@@ -35205,8 +35355,8 @@
     },
     {
       "noteId": "note:notes/vibes/numerics/numeric-capability-tower-handoff.md",
-      "commit": "39363f62efd02d9c1c5e9ef736ed3c853801f61f",
-      "committedAt": 1784477555
+      "commit": "8ffd9eb0de2c48791b2681f43663c3ca630bc188",
+      "committedAt": 1784477601
     },
     {
       "noteId": "note:notes/vibes/observers/backend-decoupling.md",

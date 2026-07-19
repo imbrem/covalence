@@ -5,4 +5,4 @@ parent = "data-interpretation"
 depends_on = ["sexpr-proof-capabilities"]
 todos = ["sexpr.parser-interpretation"]
 notes = ["notes/design/content-logic-and-wit-boundaries.md"]
-files = ["crates/lang/parsing", "crates/lang/sexpr-api"]
+files = ["crates/lang/parsing", "crates/kernel/lisp/sexpr"]

@@ -7,5 +7,4 @@ description = "Inductive, backend-neutral S-expression API"
 license.workspace = true
 
 [dependencies]
-covalence-inductive = { path = "../inductive" }
-
+covalence-inductive = { path = "../../data/inductive" }

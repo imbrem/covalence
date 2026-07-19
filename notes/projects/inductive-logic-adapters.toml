@@ -8,4 +8,4 @@ todos = [
   "inductive.legacy-fixpoint-adapter",
 ]
 notes = ["notes/design/api-extraction-audit.md"]
-files = ["crates/lang/inductive"]
+files = ["crates/kernel/data/inductive"]

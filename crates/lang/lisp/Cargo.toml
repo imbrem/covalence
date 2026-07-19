@@ -19,7 +19,8 @@ edition = "2024"
 [dependencies]
 # Reader / S-expression IR (kernel-independent).
 covalence-sexp = { path = "../../lib/sexp" }
-covalence-sexpr-api = { path = "../sexpr-api" }
+covalence-sexpr-api = { path = "../../kernel/lisp/sexpr" }
+covalence-kernel-lisp = { path = "../../kernel/lisp" }
 # The generic REPL + ReductionStrategy seam (kernel-independent).
 covalence-repl-core = { path = "../../lib/repl-core" }
 thiserror = "2"

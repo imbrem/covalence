@@ -65,6 +65,10 @@ pub mod world;
 use covalence_sexp::SExpr;
 use covalence_sexpr_api::SExprSyntax;
 
+/// Stable backend-neutral Lisp capabilities used by the concrete dialects in
+/// this crate.
+pub use covalence_kernel_lisp as kernel_api;
+
 /// Next-generation Lisp syntax capability, stacked directly on the abstract
 /// S-expression constructors.
 ///

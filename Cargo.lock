@@ -1250,8 +1250,17 @@ dependencies = [
 name = "covalence-kernel-data"
 version = "0.0.0"
 dependencies = [
+ "covalence-inductive",
  "covalence-kernel-numeric",
  "covalence-logic-api",
+]
+
+[[package]]
+name = "covalence-kernel-lisp"
+version = "0.0.0"
+dependencies = [
+ "covalence-kernel-data",
+ "covalence-sexpr-api",
 ]
 
 [[package]]
@@ -1340,6 +1349,7 @@ dependencies = [
  "covalence-hol-api",
  "covalence-hol-eval",
  "covalence-init",
+ "covalence-kernel-lisp",
  "covalence-repl-core",
  "covalence-sexp",
  "covalence-sexpr-api",

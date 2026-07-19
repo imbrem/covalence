@@ -32,6 +32,7 @@
     "covalence-k",
     "covalence-kernel",
     "covalence-kernel-data",
+    "covalence-kernel-lisp",
     "covalence-kernel-numeric",
     "covalence-kernel-sat",
     "covalence-kernel-smt",
@@ -476,11 +477,23 @@
     },
     {
       "from": "covalence-kernel-data",
+      "to": "covalence-inductive"
+    },
+    {
+      "from": "covalence-kernel-data",
       "to": "covalence-kernel-numeric"
     },
     {
       "from": "covalence-kernel-data",
       "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-kernel-lisp",
+      "to": "covalence-kernel-data"
+    },
+    {
+      "from": "covalence-kernel-lisp",
+      "to": "covalence-sexpr-api"
     },
     {
       "from": "covalence-kernel-numeric",
@@ -569,6 +582,10 @@
     {
       "from": "covalence-lisp",
       "to": "covalence-init"
+    },
+    {
+      "from": "covalence-lisp",
+      "to": "covalence-kernel-lisp"
     },
     {
       "from": "covalence-lisp",

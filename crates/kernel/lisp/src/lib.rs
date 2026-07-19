@@ -43,8 +43,8 @@ pub use effect::{
 pub use host::{
     ArityExpectation, CoreMachine, CoreMachineError, CorePrimitive, CoreSyntax, Datum,
     HostClosures, HostConfiguration, HostControl, HostEnvironment, HostEnvironments, HostFrame,
-    HostRuntime, HostValue, HostValues, MachineApplicationPart, MachineApplicationPosition,
-    MachineConfiguration, MachineControl, MachineFrame,
+    HostRuntime, HostValue, HostValues, LispMachine, MachineApplicationPart,
+    MachineApplicationPosition, MachineConfiguration, MachineControl, MachineFrame,
 };
 pub use relation::{
     CheckedTrace, DeterministicStep, Evaluation, EvaluationDeterminacy, ExecutionError,
@@ -61,5 +61,6 @@ pub use stack::{
     StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,
 };
 pub use syntax::{
-    Binding, CoreExpr, EvaluationOrder, LispDialect, LispSyntax, Parameter, Strategy,
+    Binding, CoreExpr, CoreExprLayer, EvaluationOrder, LispDialect, LispExpression, LispSyntax,
+    Parameter, Strategy,
 };

@@ -123,6 +123,287 @@ pub enum CoreExpr<S, D, P> {
     ApplyListProcedure,
 }
 
+/// One complete layer of the common Lisp-expression functor.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CoreExprLayer<S, D, P, E> {
+    Literal(D),
+    Truth(bool),
+    Variable(S),
+    Quote(D),
+    If {
+        condition: E,
+        consequent: E,
+        alternative: E,
+    },
+    Cond {
+        clauses: Vec<(E, E)>,
+    },
+    Sequence {
+        first: E,
+        rest: Vec<E>,
+    },
+    Lambda {
+        name: Option<S>,
+        parameters: Vec<Parameter<S>>,
+        rest: Option<Parameter<S>>,
+        body: E,
+    },
+    Apply {
+        operator: E,
+        arguments: Vec<E>,
+    },
+    ApplyList {
+        operator: E,
+        arguments: Vec<E>,
+        tail: E,
+    },
+    Let {
+        bindings: Vec<Binding<S, E>>,
+        body: E,
+    },
+    LetRec {
+        bindings: Vec<Binding<S, E>>,
+        body: E,
+    },
+    Primitive {
+        operator: P,
+        arguments: Vec<E>,
+    },
+    PrimitiveValue(P),
+    ApplyListProcedure,
+}
+
+impl<S, D, P, E> CoreExprLayer<S, D, P, E> {
+    /// The functorial action on recursive expression positions.
+    pub fn map_recursive<F>(self, mut map: impl FnMut(E) -> F) -> CoreExprLayer<S, D, P, F> {
+        match self {
+            Self::Literal(datum) => CoreExprLayer::Literal(datum),
+            Self::Truth(value) => CoreExprLayer::Truth(value),
+            Self::Variable(symbol) => CoreExprLayer::Variable(symbol),
+            Self::Quote(datum) => CoreExprLayer::Quote(datum),
+            Self::If {
+                condition,
+                consequent,
+                alternative,
+            } => CoreExprLayer::If {
+                condition: map(condition),
+                consequent: map(consequent),
+                alternative: map(alternative),
+            },
+            Self::Cond { clauses } => CoreExprLayer::Cond {
+                clauses: clauses
+                    .into_iter()
+                    .map(|(condition, body)| (map(condition), map(body)))
+                    .collect(),
+            },
+            Self::Sequence { first, rest } => CoreExprLayer::Sequence {
+                first: map(first),
+                rest: rest.into_iter().map(&mut map).collect(),
+            },
+            Self::Lambda {
+                name,
+                parameters,
+                rest,
+                body,
+            } => CoreExprLayer::Lambda {
+                name,
+                parameters,
+                rest,
+                body: map(body),
+            },
+            Self::Apply {
+                operator,
+                arguments,
+            } => CoreExprLayer::Apply {
+                operator: map(operator),
+                arguments: arguments.into_iter().map(&mut map).collect(),
+            },
+            Self::ApplyList {
+                operator,
+                arguments,
+                tail,
+            } => CoreExprLayer::ApplyList {
+                operator: map(operator),
+                arguments: arguments.into_iter().map(&mut map).collect(),
+                tail: map(tail),
+            },
+            Self::Let { bindings, body } => CoreExprLayer::Let {
+                bindings: bindings
+                    .into_iter()
+                    .map(|binding| Binding::new(binding.name, map(binding.value)))
+                    .collect(),
+                body: map(body),
+            },
+            Self::LetRec { bindings, body } => CoreExprLayer::LetRec {
+                bindings: bindings
+                    .into_iter()
+                    .map(|binding| Binding::new(binding.name, map(binding.value)))
+                    .collect(),
+                body: map(body),
+            },
+            Self::Primitive {
+                operator,
+                arguments,
+            } => CoreExprLayer::Primitive {
+                operator,
+                arguments: arguments.into_iter().map(&mut map).collect(),
+            },
+            Self::PrimitiveValue(primitive) => CoreExprLayer::PrimitiveValue(primitive),
+            Self::ApplyListProcedure => CoreExprLayer::ApplyListProcedure,
+        }
+    }
+}
+
+impl<S, D, P> CoreExpr<S, D, P> {
+    pub fn into_layer(self) -> CoreExprLayer<S, D, P, Self> {
+        match self {
+            Self::Literal(datum) => CoreExprLayer::Literal(datum),
+            Self::Truth(value) => CoreExprLayer::Truth(value),
+            Self::Variable(symbol) => CoreExprLayer::Variable(symbol),
+            Self::Quote(datum) => CoreExprLayer::Quote(datum),
+            Self::If {
+                condition,
+                consequent,
+                alternative,
+            } => CoreExprLayer::If {
+                condition: *condition,
+                consequent: *consequent,
+                alternative: *alternative,
+            },
+            Self::Cond { clauses } => CoreExprLayer::Cond { clauses },
+            Self::Sequence { first, rest } => CoreExprLayer::Sequence {
+                first: *first,
+                rest,
+            },
+            Self::Lambda {
+                name,
+                parameters,
+                rest,
+                body,
+            } => CoreExprLayer::Lambda {
+                name,
+                parameters,
+                rest,
+                body: *body,
+            },
+            Self::Apply {
+                operator,
+                arguments,
+            } => CoreExprLayer::Apply {
+                operator: *operator,
+                arguments,
+            },
+            Self::ApplyList {
+                operator,
+                arguments,
+                tail,
+            } => CoreExprLayer::ApplyList {
+                operator: *operator,
+                arguments,
+                tail: *tail,
+            },
+            Self::Let { bindings, body } => CoreExprLayer::Let {
+                bindings,
+                body: *body,
+            },
+            Self::LetRec { bindings, body } => CoreExprLayer::LetRec {
+                bindings,
+                body: *body,
+            },
+            Self::Primitive {
+                operator,
+                arguments,
+            } => CoreExprLayer::Primitive {
+                operator,
+                arguments,
+            },
+            Self::PrimitiveValue(primitive) => CoreExprLayer::PrimitiveValue(primitive),
+            Self::ApplyListProcedure => CoreExprLayer::ApplyListProcedure,
+        }
+    }
+
+    pub fn from_layer(layer: CoreExprLayer<S, D, P, Self>) -> Self {
+        match layer {
+            CoreExprLayer::Literal(datum) => Self::Literal(datum),
+            CoreExprLayer::Truth(value) => Self::Truth(value),
+            CoreExprLayer::Variable(symbol) => Self::Variable(symbol),
+            CoreExprLayer::Quote(datum) => Self::Quote(datum),
+            CoreExprLayer::If {
+                condition,
+                consequent,
+                alternative,
+            } => Self::If {
+                condition: Box::new(condition),
+                consequent: Box::new(consequent),
+                alternative: Box::new(alternative),
+            },
+            CoreExprLayer::Cond { clauses } => Self::Cond { clauses },
+            CoreExprLayer::Sequence { first, rest } => Self::Sequence {
+                first: Box::new(first),
+                rest,
+            },
+            CoreExprLayer::Lambda {
+                name,
+                parameters,
+                rest,
+                body,
+            } => Self::Lambda {
+                name,
+                parameters,
+                rest,
+                body: Box::new(body),
+            },
+            CoreExprLayer::Apply {
+                operator,
+                arguments,
+            } => Self::Apply {
+                operator: Box::new(operator),
+                arguments,
+            },
+            CoreExprLayer::ApplyList {
+                operator,
+                arguments,
+                tail,
+            } => Self::ApplyList {
+                operator: Box::new(operator),
+                arguments,
+                tail: Box::new(tail),
+            },
+            CoreExprLayer::Let { bindings, body } => Self::Let {
+                bindings,
+                body: Box::new(body),
+            },
+            CoreExprLayer::LetRec { bindings, body } => Self::LetRec {
+                bindings,
+                body: Box::new(body),
+            },
+            CoreExprLayer::Primitive {
+                operator,
+                arguments,
+            } => Self::Primitive {
+                operator,
+                arguments,
+            },
+            CoreExprLayer::PrimitiveValue(primitive) => Self::PrimitiveValue(primitive),
+            CoreExprLayer::ApplyListProcedure => Self::ApplyListProcedure,
+        }
+    }
+}
+
+/// One-layer observation of an opaque Lisp-expression representation.
+pub trait LispExpression {
+    type Symbol: Clone;
+    type Datum: Clone;
+    type Primitive: Clone;
+    type Expr: Clone;
+    type Error;
+
+    fn view(
+        &self,
+        expression: &Self::Expr,
+    ) -> Result<CoreExprLayer<Self::Symbol, Self::Datum, Self::Primitive, Self::Expr>, Self::Error>;
+}
+
 /// Construction capability for a backend-specific Lisp syntax carrier.
 ///
 /// This is intentionally suitable for a future WIT interface: it consists of
@@ -193,4 +474,73 @@ pub trait LispDialect {
     fn strategy(&self) -> Strategy;
     fn is_false_symbol(&self, symbol: &Self::Symbol) -> bool;
     fn primitive_arity(&self, primitive: &Self::Primitive) -> Option<usize>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type Expr = CoreExpr<&'static str, &'static str, &'static str>;
+
+    fn variable(name: &'static str) -> Expr {
+        CoreExpr::Variable(name)
+    }
+
+    #[test]
+    fn every_core_expression_round_trips_through_one_functor_layer() {
+        let expressions = vec![
+            CoreExpr::Literal("literal"),
+            CoreExpr::Truth(true),
+            variable("variable"),
+            CoreExpr::Quote("quoted"),
+            CoreExpr::If {
+                condition: Box::new(variable("condition")),
+                consequent: Box::new(variable("consequent")),
+                alternative: Box::new(variable("alternative")),
+            },
+            CoreExpr::Cond {
+                clauses: vec![(variable("condition"), variable("body"))],
+            },
+            CoreExpr::Sequence {
+                first: Box::new(variable("first")),
+                rest: vec![variable("rest")],
+            },
+            CoreExpr::Lambda {
+                name: Some("function"),
+                parameters: vec![Parameter::new("parameter")],
+                rest: Some(Parameter::new("rest")),
+                body: Box::new(variable("body")),
+            },
+            CoreExpr::Apply {
+                operator: Box::new(variable("operator")),
+                arguments: vec![variable("argument")],
+            },
+            CoreExpr::ApplyList {
+                operator: Box::new(variable("operator")),
+                arguments: vec![variable("argument")],
+                tail: Box::new(variable("tail")),
+            },
+            CoreExpr::Let {
+                bindings: vec![Binding::new("name", variable("value"))],
+                body: Box::new(variable("body")),
+            },
+            CoreExpr::LetRec {
+                bindings: vec![Binding::new("name", variable("value"))],
+                body: Box::new(variable("body")),
+            },
+            CoreExpr::Primitive {
+                operator: "primitive",
+                arguments: vec![variable("argument")],
+            },
+            CoreExpr::PrimitiveValue("primitive"),
+            CoreExpr::ApplyListProcedure,
+        ];
+
+        for expression in expressions {
+            assert_eq!(
+                CoreExpr::from_layer(expression.clone().into_layer()),
+                expression
+            );
+        }
+    }
 }

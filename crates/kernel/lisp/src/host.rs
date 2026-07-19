@@ -84,6 +84,12 @@ pub trait CorePrimitive {
         primitive: &Self::Primitive,
         arguments: &[HostValue<Self::Symbol, Self::Atom, Self::Primitive>],
     ) -> Result<HostValue<Self::Symbol, Self::Atom, Self::Primitive>, Self::Error>;
+
+    /// Dialect-specific truth observation. The default is McCarthy/ACL2
+    /// truthiness: only the empty list is false.
+    fn is_false(&self, value: &HostValue<Self::Symbol, Self::Atom, Self::Primitive>) -> bool {
+        value.is_false()
+    }
 }
 
 type Expr<S, A, P> = CoreExpr<S, Datum<A>, P>;
@@ -159,9 +165,13 @@ pub struct HostConfiguration<S, A, P> {
 
 impl<S, A, P> HostConfiguration<S, A, P> {
     pub fn initial(expression: Expr<S, A, P>) -> Self {
+        Self::with_environment(expression, HostEnvironment::default())
+    }
+
+    pub fn with_environment(expression: Expr<S, A, P>, environment: Environment<S, A, P>) -> Self {
         Self {
             control: HostControl::Expression(expression),
-            environment: HostEnvironment::default(),
+            environment,
             continuation: Vec::new(),
         }
     }
@@ -238,11 +248,12 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 alternative,
                 environment,
             } => {
-                configuration.control = HostControl::Expression(if value.is_false() {
-                    alternative
-                } else {
-                    consequent
-                });
+                configuration.control =
+                    HostControl::Expression(if self.primitives.is_false(&value) {
+                        alternative
+                    } else {
+                        consequent
+                    });
                 configuration.environment = environment;
             }
             HostFrame::ApplyOperator {

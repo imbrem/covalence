@@ -16,13 +16,14 @@
 //! 5. optional proof-producing soundness capabilities.
 //!
 //! @covalence-api {"id":"A0022","title":"Lisp operational semantics","status":"experimental","dependsOn":["A0001","A0004","A0005","A0014","A0021"]}
-// TODO(cov:lisp.frontends.scheme-forsp, major): Lower Scheme, Sector, and Forsp surface forms through the common syntax and execution capabilities.
+// TODO(cov:lisp.frontends.scheme-forsp, major): Route production Scheme/Sector sessions through the common frontend and add a proof-producing Forsp backend.
 // TODO(cov:lisp.acl2.admission-layer, severe): Rebase ACL2 worlds, admission, derivations, and HOL transport above common partial Lisp execution.
 
 #![forbid(unsafe_code)]
 
 pub mod host;
 pub mod relation;
+pub mod stack;
 pub mod syntax;
 
 pub use covalence_kernel_data as data;
@@ -35,6 +36,9 @@ pub use host::{
 pub use relation::{
     CheckedTrace, DeterministicStep, Evaluation, ExecutionError, MayEval, StepRelation,
     TraceReplay, TraceSoundness, execute,
+};
+pub use stack::{
+    StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,
 };
 pub use syntax::{
     Binding, CoreExpr, EvaluationOrder, LispDialect, LispSyntax, Parameter, Strategy,

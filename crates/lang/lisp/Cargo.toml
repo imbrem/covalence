@@ -21,6 +21,7 @@ edition = "2024"
 covalence-sexp = { path = "../../lib/sexp" }
 covalence-sexpr-api = { path = "../../kernel/lisp/sexpr" }
 covalence-kernel-lisp = { path = "../../kernel/lisp" }
+covalence-types = { path = "../../lib/types" }
 # The generic REPL + ReductionStrategy seam (kernel-independent).
 covalence-repl-core = { path = "../../lib/repl-core" }
 thiserror = "2"
@@ -38,7 +39,6 @@ covalence-hol-api = { path = "../../kernel/hol/api", optional = true }
 covalence-core = { path = "../../kernel/hol/core", optional = true }
 # The `Int` numeral type (the `sector+int` dialect's integer-literal backend
 # builds `mk_int`-shaped `int` literals from `covalence_types::Int`).
-covalence-types = { path = "../../lib/types", optional = true }
 
 [features]
 # The HOL backend: lowering (SExpr -> carved `sexpr` `Term`) + the symbolic
@@ -49,7 +49,6 @@ hol = [
     "dep:covalence-hol-eval",
     "dep:covalence-hol-api",
     "dep:covalence-core",
-    "dep:covalence-types",
 ]
 
 [[example]]

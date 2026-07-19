@@ -682,7 +682,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 35498,
+      "words": 35516,
       "updated": 0
     },
     {
@@ -9304,7 +9304,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 619,
+      "words": 630,
       "updated": 0
     },
     {
@@ -9313,7 +9313,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 42,
+      "words": 46,
       "updated": 0
     },
     {
@@ -10636,7 +10636,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/lang/lisp/Cargo.toml",
-      "words": 58,
+      "words": 57,
       "updated": 0
     },
     {
@@ -10726,7 +10726,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/lisp/src/lib.rs",
-      "words": 168,
+      "words": 170,
       "updated": 0
     },
     {
@@ -15235,7 +15235,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 35498,
+      "words": 35516,
       "updated": 0
     },
     {
@@ -15343,7 +15343,7 @@
       "title": "todos.json",
       "status": "tracked",
       "path": "docs/todos/todos.json",
-      "words": 3519,
+      "words": 3539,
       "updated": 0
     },
     {
@@ -17900,7 +17900,7 @@
       "status": "draft",
       "path": "notes/design/content-logic-and-wit-boundaries.md",
       "words": 2024,
-      "updated": 1784479432
+      "updated": 1784479471
     },
     {
       "id": "note:notes/design/graph-api.md",
@@ -18008,7 +18008,7 @@
       "status": "draft",
       "path": "notes/vibes/audits/inductive-api-audit.md",
       "words": 2235,
-      "updated": 1784479432
+      "updated": 1784479471
     },
     {
       "id": "note:notes/vibes/build/buck2-experiment.md",
@@ -18188,7 +18188,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/inductive/inductive-api-design.md",
       "words": 3405,
-      "updated": 1784479432
+      "updated": 1784479471
     },
     {
       "id": "note:notes/vibes/kernel/inductive/inductive-support.md",
@@ -18197,7 +18197,7 @@
       "status": "draft",
       "path": "notes/vibes/kernel/inductive/inductive-support.md",
       "words": 1922,
-      "updated": 1784479432
+      "updated": 1784479471
     },
     {
       "id": "note:notes/vibes/kernel/kernel-design.md",
@@ -18719,7 +18719,7 @@
       "status": "draft",
       "path": "notes/vibes/logics/structural-sigma-transport.md",
       "words": 2878,
-      "updated": 1784479432
+      "updated": 1784479471
     },
     {
       "id": "note:notes/vibes/logics/theories-models-and-logics.md",
@@ -22007,9 +22007,27 @@
       "updated": 0
     },
     {
+      "id": "todo:lisp.forsp.effects",
+      "kind": "todo",
+      "title": "Model read/print and unsafe pointer primitives as explicit effect capabilities outside the pure machine.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/forsp.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "todo:lisp.forsp.reader-sugar",
+      "kind": "todo",
+      "title": "Add a Forsp reader dialect for apostrophe quote syntax and semicolon comments.",
+      "status": "major",
+      "path": "crates/lang/lisp/src/forsp.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
       "id": "todo:lisp.frontends.scheme-forsp",
       "kind": "todo",
-      "title": "Lower Scheme, Sector, and Forsp surface forms through the common syntax and execution capabilities.",
+      "title": "Route production Scheme/Sector sessions through the common frontend and add a proof-producing Forsp backend.",
       "status": "major",
       "path": "crates/kernel/lisp/src/lib.rs",
       "words": 0,
@@ -34880,8 +34898,8 @@
     },
     {
       "noteId": "note:notes/design/content-logic-and-wit-boundaries.md",
-      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
-      "committedAt": 1784479432
+      "commit": "328108c7d1cce049d2c694bf5f4f5c53c1aa29a2",
+      "committedAt": 1784479471
     },
     {
       "noteId": "note:notes/design/graph-api.md",
@@ -34940,8 +34958,8 @@
     },
     {
       "noteId": "note:notes/vibes/audits/inductive-api-audit.md",
-      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
-      "committedAt": 1784479432
+      "commit": "328108c7d1cce049d2c694bf5f4f5c53c1aa29a2",
+      "committedAt": 1784479471
     },
     {
       "noteId": "note:notes/vibes/build/buck2-experiment.md",
@@ -35040,13 +35058,13 @@
     },
     {
       "noteId": "note:notes/vibes/kernel/inductive/inductive-api-design.md",
-      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
-      "committedAt": 1784479432
+      "commit": "328108c7d1cce049d2c694bf5f4f5c53c1aa29a2",
+      "committedAt": 1784479471
     },
     {
       "noteId": "note:notes/vibes/kernel/inductive/inductive-support.md",
-      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
-      "committedAt": 1784479432
+      "commit": "328108c7d1cce049d2c694bf5f4f5c53c1aa29a2",
+      "committedAt": 1784479471
     },
     {
       "noteId": "note:notes/vibes/kernel/kernel-design.md",
@@ -35335,8 +35353,8 @@
     },
     {
       "noteId": "note:notes/vibes/logics/structural-sigma-transport.md",
-      "commit": "8ffd122d678b460e942902017fc547c17664a94a",
-      "committedAt": 1784479432
+      "commit": "328108c7d1cce049d2c694bf5f4f5c53c1aa29a2",
+      "committedAt": 1784479471
     },
     {
       "noteId": "note:notes/vibes/logics/theories-models-and-logics.md",

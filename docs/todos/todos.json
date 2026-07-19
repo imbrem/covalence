@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 351,
-  "structured": 351,
+  "count": 353,
+  "structured": 353,
   "items": [
     {
       "id": "acl2.reader.dispatch-macros",
@@ -3055,10 +3055,30 @@
       "crate": "covalence-kernel-lisp"
     },
     {
+      "id": "lisp.forsp.effects",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Model read/print and unsafe pointer primitives as explicit effect capabilities outside the pure machine.",
+      "structured": true,
+      "path": "crates/lang/lisp/src/forsp.rs",
+      "line": 396,
+      "crate": "covalence-lisp"
+    },
+    {
+      "id": "lisp.forsp.reader-sugar",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add a Forsp reader dialect for apostrophe quote syntax and semicolon comments.",
+      "structured": true,
+      "path": "crates/lang/lisp/src/forsp.rs",
+      "line": 395,
+      "crate": "covalence-lisp"
+    },
+    {
       "id": "lisp.frontends.scheme-forsp",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Lower Scheme, Sector, and Forsp surface forms through the common syntax and execution capabilities.",
+      "summary": "Route production Scheme/Sector sessions through the common frontend and add a proof-producing Forsp backend.",
       "structured": true,
       "path": "crates/kernel/lisp/src/lib.rs",
       "line": 19,

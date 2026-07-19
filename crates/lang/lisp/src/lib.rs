@@ -30,6 +30,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod forsp;
+pub mod frontend;
 pub mod reader;
 
 #[cfg(feature = "hol")]

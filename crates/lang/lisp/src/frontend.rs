@@ -8,7 +8,7 @@
 //! surface extensions.
 
 use core::convert::Infallible;
-use core::fmt::{Display, Formatter};
+use core::fmt::{Debug, Display, Formatter};
 use std::str::FromStr;
 
 use covalence_kernel_lisp::{
@@ -913,29 +913,25 @@ pub fn initial_environment(dialect: SurfaceDialect) -> FrontendEnvironment {
     )
 }
 
-/// Stateful proof-free frontend execution.
-///
-/// Definitions are lexical named closures. Recursive calls may diverge; fuel
-/// exhaustion is an ordinary result and carries no ACL2 admission claim.
-#[derive(Clone, Debug)]
-pub struct HostSession {
-    frontend: Frontend,
-    environment: FrontendEnvironment,
-    fuel: usize,
-}
+type ValueErrorOf<R> = <<R as LispRuntime>::Values as LispValue>::Error;
+type EnvironmentErrorOf<R> = <<R as LispRuntime>::Environments as LispEnvironment>::Error;
+pub type RuntimeSessionMachineError<R> =
+    CoreMachineError<String, PrimitiveExecutionError<ValueErrorOf<R>>, <R as LispRuntime>::Error>;
 
 #[derive(Debug)]
-pub enum HostSessionError {
+pub enum SessionError<M, V, E> {
+    Setup(InitialEnvironmentError<V, E>),
     Lower(LowerError),
-    Execute(ExecutionError<CoreMachineError<String, HostPrimitiveError>>),
-    Machine(CoreMachineError<String, HostPrimitiveError>),
+    Execute(ExecutionError<M>),
+    Machine(M),
     ExpectedDefinition { index: usize },
     DefinitionDidNotProduceClosure,
 }
 
-impl Display for HostSessionError {
+impl<M: Display, V: Debug, E: Debug> Display for SessionError<M, V, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::Setup(error) => write!(f, "failed to initialize frontend environment: {error:?}"),
             Self::Lower(error) => Display::fmt(error, f),
             Self::Execute(error) => Display::fmt(error, f),
             Self::Machine(error) => Display::fmt(error, f),
@@ -949,36 +945,99 @@ impl Display for HostSessionError {
     }
 }
 
-impl core::error::Error for HostSessionError {}
+impl<M, V, E> core::error::Error for SessionError<M, V, E>
+where
+    M: core::error::Error,
+    V: Debug,
+    E: Debug,
+{
+}
 
-impl HostSession {
-    pub fn new(dialect: SurfaceDialect, fuel: usize) -> Self {
-        Self {
+pub type RuntimeSessionError<R> =
+    SessionError<RuntimeSessionMachineError<R>, ValueErrorOf<R>, EnvironmentErrorOf<R>>;
+
+/// Stateful proof-free frontend execution over a selected runtime backend.
+///
+/// Definitions are lexical named closures. Recursive calls may diverge; fuel
+/// exhaustion is an ordinary result and carries no ACL2 admission claim.
+#[derive(Clone, Debug)]
+pub struct RuntimeSession<R>
+where
+    R: LispRuntime,
+{
+    frontend: Frontend,
+    machine: LispMachine<R, StandardPrimitives>,
+    environment: R::Environment,
+    fuel: usize,
+}
+
+impl<R> RuntimeSession<R>
+where
+    R: LispRuntime<
+            Symbol = String,
+            Atom = CoreAtom,
+            Datum = Datum<CoreAtom>,
+            Primitive = Primitive,
+            Expr = FrontendExpr,
+        >,
+    R::Value: Debug + PartialEq,
+    R::Environment: Debug + PartialEq,
+{
+    pub fn with_runtime(
+        dialect: SurfaceDialect,
+        fuel: usize,
+        runtime: R,
+    ) -> Result<Self, RuntimeSessionError<R>> {
+        let environment =
+            initial_environment_for(runtime.values(), runtime.environments(), dialect)
+                .map_err(SessionError::Setup)?;
+        Ok(Self {
             frontend: Frontend::new(dialect),
-            environment: initial_environment(dialect),
+            machine: LispMachine::with_runtime(
+                runtime,
+                StandardPrimitives,
+                covalence_kernel_lisp::Strategy::STRICT_LEXICAL,
+            ),
+            environment,
             fuel,
-        }
+        })
     }
 
-    pub fn environment(&self) -> &FrontendEnvironment {
+    pub fn runtime(&self) -> &R {
+        self.machine.runtime()
+    }
+
+    pub fn environment(&self) -> &R::Environment {
         &self.environment
     }
 
-    pub fn evaluate(&self, form: &SExpr) -> Result<FrontendValue, HostSessionError> {
-        let expression = self.frontend.lower(form).map_err(HostSessionError::Lower)?;
+    pub fn evaluate(&self, form: &SExpr) -> Result<R::Value, RuntimeSessionError<R>> {
+        let expression = self.frontend.lower(form).map_err(SessionError::Lower)?;
         self.evaluate_core(&expression)
     }
 
-    pub fn define(&mut self, form: &SExpr) -> Result<Option<String>, HostSessionError> {
+    pub fn define(&mut self, form: &SExpr) -> Result<Option<String>, RuntimeSessionError<R>> {
         let Some((name, expression)) = self
             .frontend
             .definition(form)
-            .map_err(HostSessionError::Lower)?
+            .map_err(SessionError::Lower)?
         else {
             return Ok(None);
         };
         let value = self.evaluate_core(&expression)?;
-        self.environment = self.environment.extend([(name.clone(), value)]);
+        self.environment = self
+            .machine
+            .runtime()
+            .environments()
+            .extend(
+                &self.environment,
+                vec![RuntimeBinding::new(name.clone(), value)],
+            )
+            .map_err(|error| {
+                SessionError::Machine(CoreMachineError::Runtime(
+                    self.machine.runtime().environment_error(error),
+                ))
+            })?;
         Ok(Some(name))
     }
 
@@ -991,12 +1050,13 @@ impl HostSession {
     pub fn define_core(
         &mut self,
         definition: LispDefinition<String, FrontendExpr>,
-    ) -> Result<String, HostSessionError> {
+    ) -> Result<String, RuntimeSessionError<R>> {
         let name = definition.name.clone();
         let expression = definition.into_recursive_lambda();
-        self.environment = host_machine()
+        self.environment = self
+            .machine
             .bind_recursive(&self.environment, vec![(name.clone(), expression)])
-            .map_err(HostSessionError::Machine)?;
+            .map_err(SessionError::Machine)?;
         Ok(name)
     }
 
@@ -1005,23 +1065,24 @@ impl HostSession {
     ///
     /// Every closure captures the same newly allocated lexical generation, so
     /// definitions may refer forward as well as backward within the group.
-    pub fn define_group(&mut self, forms: &[SExpr]) -> Result<Vec<String>, HostSessionError> {
+    pub fn define_group(&mut self, forms: &[SExpr]) -> Result<Vec<String>, RuntimeSessionError<R>> {
         let mut names = Vec::with_capacity(forms.len());
         let mut bindings = Vec::with_capacity(forms.len());
         for (index, form) in forms.iter().enumerate() {
             let Some((name, expression)) = self
                 .frontend
                 .definition(form)
-                .map_err(HostSessionError::Lower)?
+                .map_err(SessionError::Lower)?
             else {
-                return Err(HostSessionError::ExpectedDefinition { index });
+                return Err(SessionError::ExpectedDefinition { index });
             };
             names.push(name.clone());
             bindings.push((name, expression));
         }
-        self.environment = host_machine()
+        self.environment = self
+            .machine
             .bind_recursive(&self.environment, bindings)
-            .map_err(HostSessionError::Machine)?;
+            .map_err(SessionError::Machine)?;
         Ok(names)
     }
 
@@ -1033,18 +1094,48 @@ impl HostSession {
     pub fn evaluate_core(
         &self,
         expression: &FrontendExpr,
-    ) -> Result<FrontendValue, HostSessionError> {
+    ) -> Result<R::Value, RuntimeSessionError<R>> {
         let trace = execute(
-            &host_machine(),
-            HostConfiguration::with_environment(expression.clone(), self.environment.clone()),
+            &self.machine,
+            covalence_kernel_lisp::MachineConfiguration::with_environment(
+                expression.clone(),
+                self.environment.clone(),
+            ),
             self.fuel,
         )
-        .map_err(HostSessionError::Execute)?;
+        .map_err(SessionError::Execute)?;
         trace
             .end()
             .terminal_value()
             .cloned()
-            .ok_or(HostSessionError::DefinitionDidNotProduceClosure)
+            .ok_or(SessionError::DefinitionDidNotProduceClosure)
+    }
+}
+
+pub type HostFrontendRuntime = covalence_kernel_lisp::HostRuntime<String, CoreAtom, Primitive>;
+pub type HostSession = RuntimeSession<HostFrontendRuntime>;
+pub type HostSessionError = RuntimeSessionError<HostFrontendRuntime>;
+pub type ArenaSession = RuntimeSession<ArenaFrontendRuntime>;
+
+impl RuntimeSession<HostFrontendRuntime> {
+    pub fn new(dialect: SurfaceDialect, fuel: usize) -> Self {
+        Self::with_runtime(dialect, fuel, HostFrontendRuntime::default()).unwrap_or_else(|error| {
+            match error {
+                SessionError::Setup(InitialEnvironmentError::Value(never))
+                | SessionError::Setup(InitialEnvironmentError::Environment(never))
+                | SessionError::Machine(CoreMachineError::Runtime(never)) => match never {},
+                _ => unreachable!("constructing an empty host session does not execute code"),
+            }
+        })
+    }
+}
+
+impl RuntimeSession<ArenaFrontendRuntime> {
+    pub fn arena(
+        dialect: SurfaceDialect,
+        fuel: usize,
+    ) -> Result<Self, RuntimeSessionError<ArenaFrontendRuntime>> {
+        Self::with_runtime(dialect, fuel, ArenaFrontendRuntime::default())
     }
 }
 
@@ -1288,6 +1379,26 @@ mod tests {
             session.evaluate(&one("(first (quote value))")).unwrap(),
             HostValue::datum(Datum::list([Datum::Atom(CoreAtom::symbol("value"))]))
         );
+    }
+
+    #[test]
+    fn stateful_definition_groups_are_runtime_generic() {
+        let mut session = ArenaSession::arena(SurfaceDialect::Scheme, 256).unwrap();
+        let forms = crate::reader::read(
+            "(label first (lambda (x) (second x)))
+             (label second (lambda (x) (cons x (quote ()))))",
+        )
+        .unwrap();
+        session.define_group(&forms).unwrap();
+        let value = session.evaluate(&one("(first (quote value))")).unwrap();
+        let datum = covalence_kernel_lisp::project_datum(
+            session.runtime().data(),
+            session.runtime().values(),
+            &value,
+        )
+        .unwrap()
+        .expect("result contains only data");
+        assert_eq!(datum, Datum::list([Datum::Atom(CoreAtom::symbol("value"))]));
     }
 
     #[test]

@@ -10,31 +10,17 @@ use core::marker::PhantomData;
 use std::sync::{Arc, OnceLock};
 
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
-use crate::runtime::{LispEnvironment, LispValue, RuntimeBinding, RuntimeValueView};
+use crate::runtime::{
+    LispEnvironment, LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeValueView,
+};
 use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
 
-/// The direct inductive S-expression representation
-/// `μX. Atom(P) + 1 + X×X`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Datum<P> {
-    Atom(P),
-    Nil,
-    Cons(Box<Self>, Box<Self>),
-}
-
-impl<P> Datum<P> {
-    pub fn cons(head: Self, tail: Self) -> Self {
-        Self::Cons(Box::new(head), Box::new(tail))
-    }
-
-    pub fn list(values: impl IntoIterator<Item = Self>) -> Self {
-        let values: Vec<_> = values.into_iter().collect();
-        values
-            .into_iter()
-            .rev()
-            .fold(Self::Nil, |tail, head| Self::cons(head, tail))
-    }
-}
+/// The direct inductive S-expression reference backend.
+///
+/// This alias keeps the Lisp syntax vocabulary concise while ensuring quoted
+/// data is literally the shared A0005 representation rather than a duplicate
+/// host-only enum.
+pub use covalence_sexpr_api::FreeSExpr as Datum;
 
 /// Persistent lexical environment, represented directly for the host backend.
 #[derive(Clone, Debug)]
@@ -134,27 +120,25 @@ impl<S: Clone + PartialEq, V: Clone> HostEnvironment<S, V> {
     }
 }
 
-/// Semantics for a dialect's primitive operations.
-pub trait CorePrimitive {
+/// Host-machine vocabulary metadata.
+///
+/// The operation meanings themselves live in backend-parametric
+/// [`PrimitiveSemantics`]; this trait only selects the types used by the
+/// direct Rust CEK realization.
+pub trait CorePrimitive:
+    PrimitiveSemantics<HostValues<Self::Symbol, Self::Atom, Self::Primitive>>
+{
     type Symbol: Clone + PartialEq + Debug;
     type Atom: Clone + PartialEq + Debug;
     type Primitive: Clone + PartialEq + Debug;
-    type Error: Debug;
-
-    fn apply(
-        &self,
-        primitive: &Self::Primitive,
-        arguments: &[HostValue<Self::Symbol, Self::Atom, Self::Primitive>],
-    ) -> Result<HostValue<Self::Symbol, Self::Atom, Self::Primitive>, Self::Error>;
-
-    fn truth(&self, value: bool) -> HostValue<Self::Symbol, Self::Atom, Self::Primitive>;
-
-    /// Dialect-specific truth observation. The default is McCarthy/ACL2
-    /// truthiness: only the empty list is false.
-    fn is_false(&self, value: &HostValue<Self::Symbol, Self::Atom, Self::Primitive>) -> bool {
-        value.is_false()
-    }
 }
+
+type ValuesOf<P> = HostValues<
+    <P as CorePrimitive>::Symbol,
+    <P as CorePrimitive>::Atom,
+    <P as CorePrimitive>::Primitive,
+>;
+type PrimitiveErrorOf<P> = <P as PrimitiveSemantics<ValuesOf<P>>>::Error;
 
 type Expr<S, A, P> = CoreExpr<S, Datum<A>, P>;
 type Value<S, A, P> = HostValue<S, A, P>;
@@ -495,6 +479,10 @@ type ConfigOf<P> = HostConfiguration<
 >;
 
 impl<P: CorePrimitive> CoreMachine<P> {
+    fn values(&self) -> HostValues<P::Symbol, P::Atom, P::Primitive> {
+        HostValues::default()
+    }
+
     /// Extend an environment with an atomic mutually recursive lambda group.
     ///
     /// All names and cells are allocated before any closure is built, so
@@ -503,8 +491,10 @@ impl<P: CorePrimitive> CoreMachine<P> {
         &self,
         parent: &Environment<P::Symbol, P::Atom, P::Primitive>,
         bindings: Vec<(P::Symbol, Expr<P::Symbol, P::Atom, P::Primitive>)>,
-    ) -> Result<Environment<P::Symbol, P::Atom, P::Primitive>, CoreMachineError<P::Symbol, P::Error>>
-    {
+    ) -> Result<
+        Environment<P::Symbol, P::Atom, P::Primitive>,
+        CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>,
+    > {
         for (index, (name, expression)) in bindings.iter().enumerate() {
             if bindings[..index].iter().any(|(earlier, _)| earlier == name) {
                 return Err(CoreMachineError::DuplicateRecursiveBinding(name.clone()));
@@ -627,7 +617,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
         &self,
         mut configuration: ConfigOf<P>,
         value: Value<P::Symbol, P::Atom, P::Primitive>,
-    ) -> Result<Vec<ConfigOf<P>>, CoreMachineError<P::Symbol, P::Error>> {
+    ) -> Result<Vec<ConfigOf<P>>, CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>> {
         let Some(frame) = configuration.continuation.pop() else {
             return Ok(Vec::new());
         };
@@ -637,12 +627,17 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 alternative,
                 environment,
             } => {
-                configuration.control =
-                    HostControl::Expression(if self.primitives.is_false(&value) {
+                configuration.control = HostControl::Expression(
+                    if self
+                        .primitives
+                        .is_false(&self.values(), &value)
+                        .map_err(CoreMachineError::Primitive)?
+                    {
                         alternative
                     } else {
                         consequent
-                    });
+                    },
+                );
                 configuration.environment = environment;
             }
             HostFrame::Sequence {
@@ -708,7 +703,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                     let arguments = Self::completed_arguments(evaluated);
                     let value = self
                         .primitives
-                        .apply(&primitive, &arguments)
+                        .apply(&self.values(), &primitive, &arguments)
                         .map_err(CoreMachineError::Primitive)?;
                     configuration.control = HostControl::Value(value);
                 } else {
@@ -730,13 +725,13 @@ impl<P: CorePrimitive> CoreMachine<P> {
         mut configuration: ConfigOf<P>,
         function: Value<P::Symbol, P::Atom, P::Primitive>,
         arguments: Vec<Value<P::Symbol, P::Atom, P::Primitive>>,
-    ) -> Result<Option<ConfigOf<P>>, CoreMachineError<P::Symbol, P::Error>> {
+    ) -> Result<Option<ConfigOf<P>>, CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>> {
         let HostValue::Closure(closure) = function.clone() else {
             return match function {
                 HostValue::Primitive(primitive) => {
                     let value = self
                         .primitives
-                        .apply(&primitive, &arguments)
+                        .apply(&self.values(), &primitive, &arguments)
                         .map_err(CoreMachineError::Primitive)?;
                     configuration.control = HostControl::Value(value);
                     Ok(Some(configuration))
@@ -802,8 +797,10 @@ impl<P: CorePrimitive> CoreMachine<P> {
 
     fn proper_list(
         mut value: Value<P::Symbol, P::Atom, P::Primitive>,
-    ) -> Result<Vec<Value<P::Symbol, P::Atom, P::Primitive>>, CoreMachineError<P::Symbol, P::Error>>
-    {
+    ) -> Result<
+        Vec<Value<P::Symbol, P::Atom, P::Primitive>>,
+        CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>,
+    > {
         let mut values = Vec::new();
         loop {
             match value {
@@ -827,7 +824,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
     fn step_successors(
         &self,
         configuration: &ConfigOf<P>,
-    ) -> Result<Vec<ConfigOf<P>>, CoreMachineError<P::Symbol, P::Error>> {
+    ) -> Result<Vec<ConfigOf<P>>, CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>> {
         let mut next = configuration.clone();
         let control = next.control.clone();
         match control {
@@ -838,7 +835,11 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         next.control = HostControl::Value(HostValue::datum(datum));
                     }
                     CoreExpr::Truth(value) => {
-                        next.control = HostControl::Value(self.primitives.truth(value));
+                        next.control = HostControl::Value(
+                            self.primitives
+                                .truth(&self.values(), value)
+                                .map_err(CoreMachineError::Primitive)?,
+                        );
                     }
                     CoreExpr::Variable(symbol) => {
                         let value = next
@@ -976,7 +977,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         if arguments.is_empty() {
                             let value = self
                                 .primitives
-                                .apply(&operator, &[])
+                                .apply(&self.values(), &operator, &[])
                                 .map_err(CoreMachineError::Primitive)?;
                             next.control = HostControl::Value(value);
                         } else {
@@ -1016,7 +1017,7 @@ impl<P: CorePrimitive> DeterministicStep for CoreMachine<P> {
 
 impl<P: CorePrimitive> StepRelation for CoreMachine<P> {
     type Configuration = ConfigOf<P>;
-    type Error = CoreMachineError<P::Symbol, P::Error>;
+    type Error = CoreMachineError<P::Symbol, PrimitiveErrorOf<P>>;
 
     fn successors(
         &self,
@@ -1198,28 +1199,49 @@ mod tests {
         type Symbol = &'static str;
         type Atom = &'static str;
         type Primitive = Primitive;
+    }
+
+    impl PrimitiveSemantics<HostValues<&'static str, &'static str, Primitive>> for Sector {
         type Error = &'static str;
 
         fn apply(
             &self,
+            values: &HostValues<&'static str, &'static str, Primitive>,
             primitive: &Primitive,
             arguments: &[HostValue<&'static str, &'static str, Primitive>],
         ) -> Result<HostValue<&'static str, &'static str, Primitive>, Self::Error> {
             match (primitive, arguments) {
-                (Primitive::Cons, [head, tail]) => Ok(HostValue::cons(head.clone(), tail.clone())),
+                (Primitive::Cons, [head, tail]) => values
+                    .cons(head.clone(), tail.clone())
+                    .map_err(|never| match never {}),
                 (Primitive::Car, [HostValue::Cons(head, _)]) => Ok((**head).clone()),
                 (Primitive::Cdr, [HostValue::Cons(_, tail)]) => Ok((**tail).clone()),
-                (Primitive::Null, [value]) => Ok(self.truth(matches!(value, HostValue::Nil))),
+                (Primitive::Null, [value]) => self.truth(values, matches!(value, HostValue::Nil)),
                 _ => Err("bad primitive application"),
             }
         }
 
-        fn truth(&self, value: bool) -> HostValue<&'static str, &'static str, Primitive> {
-            if value {
-                HostValue::Atom("t")
+        fn truth(
+            &self,
+            values: &HostValues<&'static str, &'static str, Primitive>,
+            value: bool,
+        ) -> Result<HostValue<&'static str, &'static str, Primitive>, Self::Error> {
+            Ok(if value {
+                values.atom("t").map_err(|never| match never {})?
             } else {
-                HostValue::Nil
-            }
+                values.nil()
+            })
+        }
+
+        fn is_false(
+            &self,
+            values: &HostValues<&'static str, &'static str, Primitive>,
+            value: &HostValue<&'static str, &'static str, Primitive>,
+        ) -> Result<bool, Self::Error> {
+            Ok(matches!(
+                values.view(value).map_err(|never| match never {})?,
+                RuntimeValueView::Nil
+            ))
         }
     }
 

@@ -463,6 +463,20 @@ pub enum FreeSExpr<P> {
     Cons(Box<FreeSExpr<P>>, Box<FreeSExpr<P>>),
 }
 
+impl<P> FreeSExpr<P> {
+    pub fn cons(head: Self, tail: Self) -> Self {
+        Self::Cons(Box::new(head), Box::new(tail))
+    }
+
+    pub fn list(values: impl IntoIterator<Item = Self>) -> Self {
+        let values: Vec<_> = values.into_iter().collect();
+        values
+            .into_iter()
+            .rev()
+            .fold(Self::Nil, |tail, head| Self::cons(head, tail))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Free<P>(core::marker::PhantomData<fn() -> P>);
 

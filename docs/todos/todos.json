@@ -3401,7 +3401,7 @@
       "summary": "Add A0015 adapters and induced same-value PERs for the SMT-LIB, WAT, and egglog S-expression dialects.",
       "structured": true,
       "path": "crates/kernel/lisp/sexpr/src/lib.rs",
-      "line": 506,
+      "line": 520,
       "crate": "covalence-sexpr-api"
     },
     {

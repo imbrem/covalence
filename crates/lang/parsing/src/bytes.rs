@@ -361,7 +361,7 @@ impl ByteParserRelation for LiteralBytes {
     }
 }
 
-// TODO(cov:parsing.bytes.cfg-integration, major): Interpret CFG and PEG derivations as bounded A0013 relational witnesses with ambiguity and completeness tracked explicitly.
+// TODO(cov:parsing.bytes.peg-integration, major): Add a bounded PEG evaluator with explicit ordered-choice witnesses, exact/prefix modes, and resource-exhaustion errors.
 
 #[cfg(test)]
 mod tests {

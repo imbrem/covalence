@@ -893,16 +893,7 @@ impl HostSession {
         definition: LispDefinition<String, FrontendExpr>,
     ) -> Result<String, HostSessionError> {
         let name = definition.name.clone();
-        let expression = CoreExpr::Lambda {
-            name: Some(name.clone()),
-            parameters: definition
-                .parameters
-                .into_iter()
-                .map(covalence_kernel_lisp::Parameter::new)
-                .collect(),
-            rest: definition.rest.map(covalence_kernel_lisp::Parameter::new),
-            body: Box::new(definition.body),
-        };
+        let expression = definition.into_recursive_lambda();
         self.environment = host_machine()
             .bind_recursive(&self.environment, vec![(name.clone(), expression)])
             .map_err(HostSessionError::Machine)?;

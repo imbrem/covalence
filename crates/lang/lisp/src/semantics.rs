@@ -264,8 +264,14 @@ impl LispSemantics {
                 consequent,
                 alternative,
             } => {
-                let condition = self.compile_core_h(condition, Hint::Bool)?;
-                self.compile_core_branches(condition, consequent, alternative)
+                let compiled_condition = self.compile_core_h(condition, Hint::Bool)?;
+                let condition_ty = compiled_condition.type_of().map_err(kernel_err)?;
+                if condition_ty != Type::bool() {
+                    return Err(HolError::Stuck(format!(
+                        "conditional guard `{condition:?}` has type {condition_ty:?}, expected bool"
+                    )));
+                }
+                self.compile_core_branches(compiled_condition, consequent, alternative)
             }
             CoreExpr::Cond { clauses } => self.compile_core_cond(clauses),
             CoreExpr::Sequence { .. } => {

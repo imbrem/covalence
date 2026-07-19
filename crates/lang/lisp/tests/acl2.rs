@@ -74,19 +74,19 @@ fn defun_app_and_apply() {
 #[test]
 fn admitted_definition_reuses_the_shared_partial_core() {
     let mut s = session();
-    s.eval_cell("(defun identity (x) x)").unwrap();
+    s.eval_cell(APP).unwrap();
     let definition = s
-        .definition("identity")
+        .definition("app")
         .expect("admitted definition retains its shared core");
-    assert_eq!(definition.core.name, "identity");
-    assert_eq!(definition.core.parameters, ["x"]);
+    assert_eq!(definition.core.name, "app");
+    assert_eq!(definition.core.parameters, ["x", "y"]);
     assert!(definition.core.rest.is_none());
-    assert!(matches!(&definition.core.body, CoreExpr::Variable(name) if name == "x"));
+    assert!(matches!(&definition.core.body, CoreExpr::If { .. }));
 
     let mut partial = HostSession::new(SurfaceDialect::Acl2Core, 256);
     partial.define_core(definition.core.clone()).unwrap();
     let value = partial
-        .evaluate(&read_one("(identity (quote (a b c)))").unwrap())
+        .evaluate(&read_one("(app (quote (a b)) (quote (c)))").unwrap())
         .unwrap();
     assert_eq!(
         value.as_datum(),

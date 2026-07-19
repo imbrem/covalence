@@ -637,16 +637,16 @@ impl Acl2Session {
         }
         let params = param_names(&items[2]).map_err(&inadmissible)?;
         let body = defun_body(items).map_err(Acl2Error::Malformed)?;
+        let translated = self.translate(body, &params, Some(&name))?;
         let core_body = Frontend::new(SurfaceDialect::Acl2Core)
-            .lower(body)
+            .lower(&translated)
             .map_err(|error| inadmissible(error.to_string()))?;
         let definition = Acl2Definition::new(
             LispDefinition::fixed(name.clone(), params.clone(), core_body),
             body.clone(),
         );
         let admission = AdmissionPolicy::inspect(self, &definition).map_err(&inadmissible)?;
-        let translated = self.translate(body, &params, Some(&name))?;
-        self.install(&name, &params, &translated)?;
+        self.install(&definition.core)?;
         self.try_admit_deep_defun(&definition, &admission);
         self.definitions.insert(name.clone(), definition);
         self.admissions.insert(name.clone(), admission);
@@ -789,10 +789,15 @@ impl Acl2Session {
     /// `session::Session::install`'s trick: try `bool` (predicates), then
     /// `sexpr` (data functions), then `int` (integer-valued functions, e.g.
     /// `len`); the wrong choices fail to type-check.
-    fn install(&mut self, name: &str, params: &[String], body: &SExpr) -> Result<(), Acl2Error> {
+    fn install(
+        &mut self,
+        definition: &LispDefinition<String, FrontendExpr>,
+    ) -> Result<(), Acl2Error> {
+        let name = &definition.name;
         let tau = self.sem0.tau();
-        let mut last: Option<HolError> = None;
-        for ret in [Type::bool(), tau, Type::int()] {
+        let attempts = [("bool", Type::bool()), ("sexpr", tau), ("int", Type::int())];
+        let mut failures = Vec::with_capacity(attempts.len());
+        for (label, ret) in attempts {
             let dummy = if ret == Type::bool() {
                 mk_bool(false)
             } else if ret == Type::int() {
@@ -800,37 +805,32 @@ impl Acl2Session {
             } else {
                 self.sem0.tau_nil()
             };
-            match self.try_install(name, params, body, &ret, dummy) {
+            match self.try_install(definition, &ret, dummy) {
                 Ok(()) => return Ok(()),
-                Err(e) => last = Some(e),
+                Err(error) => failures.push(format!("{label}: {error}")),
             }
         }
         Err(Acl2Error::Inadmissible {
             name: name.to_string(),
-            reason: match last {
-                Some(e) => format!("body does not type-check: {e}"),
-                None => "cannot type the definition".into(),
-            },
+            reason: format!(
+                "body does not type-check for any supported result carrier ({})",
+                failures.join("; ")
+            ),
         })
     }
 
     /// One return-type attempt; `self.defs` is only mutated on success.
     fn try_install(
         &mut self,
-        name: &str,
-        params: &[String],
-        body: &SExpr,
+        definition: &LispDefinition<String, FrontendExpr>,
         ret: &Type,
         dummy: Term,
     ) -> Result<(), HolError> {
-        let placeholder = build_def_with_ret(name, params, dummy, ret)?;
+        let placeholder = build_def_with_ret(&definition.name, &definition.parameters, dummy, ret)?;
         let staged = self.defs.with(placeholder);
         let sem = LispSemantics::with_defs(staged)?;
-        let core = Frontend::new(SurfaceDialect::Scheme)
-            .lower(body)
-            .map_err(|error| HolError::Stuck(error.to_string()))?;
-        let body_term = sem.compile_core(&core)?;
-        let def = build_def(name, params, body_term)?;
+        let body_term = sem.compile_core(&definition.body)?;
+        let def = build_def(&definition.name, &definition.parameters, body_term)?;
         self.defs = self.defs.with(def);
         Ok(())
     }

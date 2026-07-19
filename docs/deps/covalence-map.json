@@ -9322,7 +9322,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/sexpr/src/lib.rs",
-      "words": 720,
+      "words": 734,
       "updated": 0
     },
     {
@@ -9358,7 +9358,7 @@
       "title": "host.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/host.rs",
-      "words": 1678,
+      "words": 1662,
       "updated": 0
     },
     {
@@ -9367,7 +9367,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/lib.rs",
-      "words": 62,
+      "words": 63,
       "updated": 0
     },
     {
@@ -9385,7 +9385,7 @@
       "title": "runtime.rs",
       "status": "tracked",
       "path": "crates/kernel/lisp/src/runtime.rs",
-      "words": 184,
+      "words": 273,
       "updated": 0
     },
     {

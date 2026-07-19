@@ -51,7 +51,8 @@ pub use relation::{
     TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
 pub use runtime::{
-    LispEnvironment, LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeValueView,
+    LispEnvironment, LispValue, PrimitiveSemantics, RuntimeBinding, RuntimeDatumError,
+    RuntimeValueView, inject_datum, project_datum,
 };
 pub use stack::{
     StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,

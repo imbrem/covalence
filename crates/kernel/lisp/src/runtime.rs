@@ -10,6 +10,8 @@
 //!
 //! @covalence-api {"id":"A0026","title":"Lisp runtime values and environments","status":"experimental","dependsOn":["A0005","A0022"]}
 
+use covalence_sexpr_api::{SExprF, SExprSyntax, SExprView};
+
 /// One observable layer of a Lisp runtime value.
 ///
 /// Closures are opaque: their captured environment and code are machine
@@ -95,6 +97,69 @@ pub trait PrimitiveSemantics<V: LispValue> {
     fn is_false(&self, values: &V, value: &V::Value) -> Result<bool, Self::Error>;
 }
 
+/// Error while transporting between inductive data and runtime values.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RuntimeDatumError<D, V> {
+    Datum(D),
+    Value(V),
+}
+
+/// Inject an abstract inductive S-expression into a runtime-value backend.
+pub fn inject_datum<D, V>(
+    data: &D,
+    values: &V,
+    datum: &D::Value,
+) -> Result<V::Value, RuntimeDatumError<D::Error, V::Error>>
+where
+    D: SExprView,
+    V: LispValue<Atom = D::Payload>,
+{
+    match data.view(datum).map_err(RuntimeDatumError::Datum)? {
+        SExprF::Atom(atom) => values.atom(atom).map_err(RuntimeDatumError::Value),
+        SExprF::Nil => Ok(values.nil()),
+        SExprF::Cons { head, tail } => {
+            let head = inject_datum(data, values, &head)?;
+            let tail = inject_datum(data, values, &tail)?;
+            values.cons(head, tail).map_err(RuntimeDatumError::Value)
+        }
+    }
+}
+
+/// Project a runtime value to an abstract inductive S-expression.
+///
+/// Returns `None` exactly when a closure or primitive procedure occurs
+/// anywhere in the value.
+pub fn project_datum<D, V>(
+    data: &D,
+    values: &V,
+    value: &V::Value,
+) -> Result<Option<D::Value>, RuntimeDatumError<D::Error, V::Error>>
+where
+    D: SExprSyntax<Payload = V::Atom>,
+    V: LispValue,
+{
+    Ok(
+        match values.view(value).map_err(RuntimeDatumError::Value)? {
+            RuntimeValueView::Atom(atom) => {
+                Some(data.atom(atom).map_err(RuntimeDatumError::Datum)?)
+            }
+            RuntimeValueView::Nil => Some(data.nil()),
+            RuntimeValueView::Cons { head, tail } => {
+                let Some(head) = project_datum(data, values, &head)? else {
+                    return Ok(None);
+                };
+                let Some(tail) = project_datum(data, values, &tail)? else {
+                    return Ok(None);
+                };
+                Some(data.cons(head, tail).map_err(RuntimeDatumError::Datum)?)
+            }
+            RuntimeValueView::Closure
+            | RuntimeValueView::Primitive(_)
+            | RuntimeValueView::ApplyListProcedure => None,
+        },
+    )
+}
+
 /// One lexical binding used by [`LispEnvironment::extend`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuntimeBinding<S, V> {
@@ -135,6 +200,7 @@ pub trait LispEnvironment {
 mod tests {
     use super::*;
     use crate::{HostEnvironments, HostValue, HostValues};
+    use covalence_sexpr_api::{Free, FreeSExpr};
 
     type Value = HostValue<&'static str, &'static str, &'static str>;
 
@@ -178,6 +244,29 @@ mod tests {
         assert_eq!(
             environments.lookup(&extended, &"x").unwrap(),
             Some(HostValue::Atom("value"))
+        );
+    }
+
+    #[test]
+    fn inductive_data_round_trips_through_runtime_values() {
+        let data = Free::<&str>::new();
+        let values = HostValues::<&str, &str, &str>::default();
+        let datum = FreeSExpr::Cons(
+            Box::new(FreeSExpr::Atom("head")),
+            Box::new(FreeSExpr::Atom("dotted-tail")),
+        );
+
+        let runtime = inject_datum(&data, &values, &datum).unwrap();
+        assert_eq!(
+            project_datum(&data, &values, &runtime).unwrap(),
+            Some(datum)
+        );
+
+        let procedure = values.primitive("cons").unwrap();
+        let contains_procedure = values.list([procedure]).unwrap();
+        assert_eq!(
+            project_datum(&data, &values, &contains_procedure).unwrap(),
+            None
         );
     }
 }

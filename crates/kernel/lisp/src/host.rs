@@ -15,28 +15,12 @@ use crate::runtime::{
 };
 use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
 
-/// The direct inductive S-expression representation
-/// `μX. Atom(P) + 1 + X×X`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Datum<P> {
-    Atom(P),
-    Nil,
-    Cons(Box<Self>, Box<Self>),
-}
-
-impl<P> Datum<P> {
-    pub fn cons(head: Self, tail: Self) -> Self {
-        Self::Cons(Box::new(head), Box::new(tail))
-    }
-
-    pub fn list(values: impl IntoIterator<Item = Self>) -> Self {
-        let values: Vec<_> = values.into_iter().collect();
-        values
-            .into_iter()
-            .rev()
-            .fold(Self::Nil, |tail, head| Self::cons(head, tail))
-    }
-}
+/// The direct inductive S-expression reference backend.
+///
+/// This alias keeps the Lisp syntax vocabulary concise while ensuring quoted
+/// data is literally the shared A0005 representation rather than a duplicate
+/// host-only enum.
+pub use covalence_sexpr_api::FreeSExpr as Datum;
 
 /// Persistent lexical environment, represented directly for the host backend.
 #[derive(Clone, Debug)]

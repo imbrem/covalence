@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod inductive;
 pub mod nat;
 
 use covalence_inductive::{
@@ -21,6 +22,11 @@ use covalence_inductive::{
     LeastFixpointFacts, Logic, NoConfusionLeastFixpoint, PolynomialSpec, Position, VariantCase,
 };
 
+pub use inductive::{
+    ConstructorLayer, EncodedAtom, EncodingError, EncodingRequest, InductiveRepresentation,
+    Membership, RawArgument, RawEncoding, RawInductive, RefinedArgument, RefinedEncoding,
+    RefinedInduction, RefinedInductive, TheoryInduction,
+};
 pub use nat::{
     NatInduction, NatLayer, NatMembership, NatRepresentation, NatSymbol, RawNat, RawSExprNat,
     RefinedNat, RefinedSExprNat, TheoryNatInduction, nat_spec,

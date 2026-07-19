@@ -19,8 +19,6 @@ use covalence_inductive::{
 
 use crate::FreeSExpr;
 
-// TODO(cov:sexpr.generic-refined-inductive-encoding, major): Generalize the bounded Nat experiment to arbitrary first-order InductiveSpec constructor tags and arguments.
-
 /// Constructor positions in [`nat_spec`].
 pub mod constructor {
     /// `zero`.

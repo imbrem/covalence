@@ -30,6 +30,7 @@ use covalence_hol_eval::EvalThm as Thm;
 use crate::init::regex as ir;
 use crate::init::regex::{r_alt, r_empty, r_eps, r_lit, r_seq, r_star};
 
+pub mod replay;
 pub mod tactic;
 
 // ============================================================================

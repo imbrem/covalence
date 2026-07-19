@@ -46,6 +46,10 @@
 //! * [`verify`] — schematic rule application + the RPN proof checker (both
 //!   normal and compressed proofs); a HOL-free "sanity-check" backend behind the
 //!   default-on `checker` feature.
+//! * [`trace`] — untrusted proof-assistant substrate over [`verify`]: recorded
+//!   per-step traces of a *verifying* replay (the substitution the checker
+//!   actually used) and one-way backward matching of a goal against an
+//!   assertion's conclusion.
 //! * [`error`] — the `MmError` type shared across the engine.
 //! * [`mod@parse`] — the `.mm` source reader (tokenise, scope `${ ... $}`, comments
 //!   `$( ... $)`, `$[ include $]` via [`SourceResolver`]) driving a
@@ -68,6 +72,8 @@ pub mod expr;
 pub mod interpret;
 pub mod parse;
 pub mod subst;
+#[cfg(feature = "checker")]
+pub mod trace;
 pub mod typesetting;
 #[cfg(feature = "checker")]
 pub mod verify;
@@ -91,6 +97,8 @@ pub use parse::{
     parse_with_resolver,
 };
 pub use subst::{Subst, apply_subst};
+#[cfg(feature = "checker")]
+pub use trace::{TraceHyp, TraceKind, TraceStep, match_conclusion, proof_trace};
 pub use typesetting::{Typedef, parse_typesetting};
 #[cfg(feature = "checker")]
-pub use verify::{ProofStep, proof_steps, verify_all, verify_assertion};
+pub use verify::{ProofStep, ReplayObserver, proof_steps, replay, verify_all, verify_assertion};

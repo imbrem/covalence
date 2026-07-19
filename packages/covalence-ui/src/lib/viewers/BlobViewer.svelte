@@ -10,14 +10,14 @@
 		resolveDiagram,
 		hexOf,
 	} from '../graph/decode.js';
-	import type { Graph, ResolvedDiagram, Hash } from '../graph/types.js';
+	import type { Graph, ResolvedDiagram, HashBytes } from '../graph/types.js';
 
 	/**
 	 * Resolve a keyed identity to its content bytes. The string-diagram
 	 * branch uses this to walk slot references — the resolver typically
 	 * does a two-step `lookup_tag → get_blob` against the kernel.
 	 */
-	export type BlobResolver = (hash: Hash) => Promise<Uint8Array | null>;
+	export type BlobResolver = (hash: HashBytes) => Promise<Uint8Array | null>;
 
 	// Tag strings — keep in sync with `*_HASH_CTX` constants in
 	// crates/lib/graph. These are BLAKE3 derivation contexts that
@@ -118,7 +118,7 @@
 
 		// Memoise the fetcher so repeated slot lookups don't refetch.
 		const cache = new Map<string, Uint8Array>();
-		async function fetchOnce(h: Hash): Promise<Uint8Array | null> {
+		async function fetchOnce(h: HashBytes): Promise<Uint8Array | null> {
 			const key = hexOf(h);
 			const cached = cache.get(key);
 			if (cached) return cached;

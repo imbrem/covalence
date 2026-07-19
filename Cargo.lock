@@ -950,6 +950,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-cfg-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-grammar",
+ "covalence-parsing-api",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "covalence-client"
 version = "0.0.0"
 dependencies = [
@@ -968,6 +977,13 @@ dependencies = [
  "tempfile",
  "tokio",
  "ureq",
+]
+
+[[package]]
+name = "covalence-computation"
+version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
 ]
 
 [[package]]
@@ -1150,15 +1166,20 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "covalence-computation",
  "covalence-core",
  "covalence-grammar",
  "covalence-hash",
  "covalence-hol",
  "covalence-hol-eval",
  "covalence-inductive",
+ "covalence-json-api",
  "covalence-k",
+ "covalence-lexer-parsing",
  "covalence-logic-api",
  "covalence-metamath",
+ "covalence-parsing-api",
+ "covalence-regex-parsing",
  "covalence-sexp",
  "covalence-spectec",
  "covalence-types",
@@ -1170,6 +1191,15 @@ dependencies = [
  "smol_str",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "covalence-jq"
+version = "0.0.0"
+dependencies = [
+ "covalence-decimal-api",
+ "covalence-json-api",
+ "covalence-types",
 ]
 
 [[package]]
@@ -1259,6 +1289,27 @@ dependencies = [
  "serde_json",
  "smol_str",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "covalence-lexer-cfg-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-cfg-parsing",
+ "covalence-grammar",
+ "covalence-lexer-parsing",
+ "covalence-logic-api",
+ "covalence-parsing-api",
+]
+
+[[package]]
+name = "covalence-lexer-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-grammar",
+ "covalence-logic-api",
+ "covalence-parsing-api",
+ "covalence-regex-parsing",
 ]
 
 [[package]]
@@ -1379,8 +1430,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-parser-generator"
+version = "0.1.0"
+dependencies = [
+ "covalence-cfg-parsing",
+ "covalence-grammar",
+ "covalence-lexer-cfg-parsing",
+ "covalence-lexer-parsing",
+ "covalence-parsing-api",
+]
+
+[[package]]
 name = "covalence-parsing-api"
 version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
+]
+
+[[package]]
+name = "covalence-peg-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
+ "covalence-parsing-api",
+]
 
 [[package]]
 name = "covalence-proptest"
@@ -1467,6 +1540,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "covalence-regex-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-grammar",
+ "covalence-logic-api",
+ "covalence-parsing-api",
+]
+
+[[package]]
 name = "covalence-repl"
 version = "0.0.0"
 dependencies = [
@@ -1547,6 +1629,16 @@ name = "covalence-sexpr-api"
 version = "0.0.0"
 dependencies = [
  "covalence-inductive",
+]
+
+[[package]]
+name = "covalence-sexpr-parsing"
+version = "0.0.0"
+dependencies = [
+ "covalence-logic-api",
+ "covalence-parsing-api",
+ "covalence-sexp",
+ "covalence-sexpr-api",
 ]
 
 [[package]]

@@ -11,7 +11,7 @@ pub use abstract_sexpr::{
 };
 pub use builder::{DefaultBuilder, SExpBuilder, TreeBuilder};
 pub use dialect::{CovalenceDialect, Dialect, EgglogDialect, SmtLibDialect, WatDialect};
-pub use parser::parse_with;
+pub use parser::{parse_prefix_with, parse_with};
 pub use pretty::prettyprint;
 pub use types::{Atom, Bytes, ParseError, SExp, SExpr};
 pub use visitor::SExpVisitor;
@@ -22,6 +22,16 @@ pub use visitor::SExpVisitor;
 /// `b"..."` → Str(format="b"), `|...|` quoted symbols.
 pub fn parse(input: &str) -> Result<Vec<SExpr>, ParseError> {
     parse_dialect(input, CovalenceDialect)
+}
+
+/// Parse one Covalence-dialect S-expression, returning it and the byte offset
+/// immediately after the value.
+pub fn parse_prefix(input: &str) -> Result<(SExpr, usize), ParseError> {
+    let mut visitor = TreeBuilder::new(DefaultBuilder, CovalenceDialect);
+    let consumed = parse_prefix_with(input, &mut visitor)?;
+    let mut results = visitor.into_results();
+    debug_assert_eq!(results.len(), 1);
+    Ok((results.remove(0), consumed))
 }
 
 /// Parse S-expressions using the SMT-LIB dialect.
@@ -170,6 +180,19 @@ mod tests {
     fn parse_multiple_top_level() {
         let result = parse("(set-logic QF_LIA)\n(check-sat)").unwrap();
         assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn parse_prefix_stops_before_trailing_source() {
+        let (value, consumed) = parse_prefix("  (a (b c)) tail").unwrap();
+        assert_eq!(
+            value,
+            SExp::List(vec![
+                SExp::symbol("a"),
+                SExp::List(vec![SExp::symbol("b"), SExp::symbol("c")])
+            ])
+        );
+        assert_eq!(&"  (a (b c)) tail"[consumed..], " tail");
     }
 
     #[test]

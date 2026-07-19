@@ -1,0 +1,12 @@
+id = "text-parsing-api"
+title = "Character and string parsing over decoded text"
+status = "planned"
+parent = "data-interpretation"
+depends_on = ["text-api", "byte-parsing-api"]
+todos = ["sexpr.parser-interpretation"]
+notes = ["notes/design/content-logic-and-wit-boundaries.md"]
+files = [
+  "crates/lang/parsing",
+  "crates/lang/sexpr-api",
+  "crates/lang/json-api",
+]

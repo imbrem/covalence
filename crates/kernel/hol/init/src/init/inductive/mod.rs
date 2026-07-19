@@ -60,6 +60,8 @@
 //! value (`engine::tests::backend_swap_same_consumer`).
 
 pub mod api;
+mod bits_api;
+mod bytes_api;
 pub mod carved;
 pub mod church;
 pub mod data;
@@ -69,9 +71,14 @@ pub mod existence;
 pub mod graph;
 pub mod hol;
 mod nat_api;
+mod nat_backend_common;
+#[cfg(test)]
+mod nat_backend_tests;
 mod nat_binary_api;
+mod nat_unary_api;
 pub mod recursor;
 pub mod sig;
+mod text_api;
 pub mod uniqueness;
 mod util;
 pub mod variant;
@@ -81,5 +88,6 @@ pub use church::ImpredicativeBackend;
 pub use data::Inductive;
 pub use engine::{NatEngineBackend, nat_backend, nat_spec};
 pub use nat_binary_api::DoubleSuccNat;
+pub use nat_unary_api::UnaryNat;
 pub use sig::{Arg, Constructor, GenArg, GenConstructor, GenSig, InductiveSig};
 pub use variant::{ChurchBackend, CoprodBackend, VCtor, Variant, VariantBackend, self_ty_var};

@@ -6,7 +6,9 @@
     "covalence-acset",
     "covalence-alethe",
     "covalence-arrow",
+    "covalence-cfg-parsing",
     "covalence-client",
+    "covalence-computation",
     "covalence-core",
     "covalence-core-test-guest",
     "covalence-crypto-sig",
@@ -24,6 +26,7 @@
     "covalence-hol-eval",
     "covalence-inductive",
     "covalence-init",
+    "covalence-jq",
     "covalence-json",
     "covalence-json-api",
     "covalence-k",
@@ -32,6 +35,8 @@
     "covalence-kernel-smt",
     "covalence-kv",
     "covalence-lean",
+    "covalence-lexer-cfg-parsing",
+    "covalence-lexer-parsing",
     "covalence-lisp",
     "covalence-llm",
     "covalence-logic-api",
@@ -43,7 +48,9 @@
     "covalence-opentheory",
     "covalence-parquet",
     "covalence-parse",
+    "covalence-parser-generator",
     "covalence-parsing-api",
+    "covalence-peg-parsing",
     "covalence-proptest",
     "covalence-proto",
     "covalence-pure",
@@ -51,12 +58,14 @@
     "covalence-pure-trusted",
     "covalence-python",
     "covalence-rand",
+    "covalence-regex-parsing",
     "covalence-repl",
     "covalence-repl-core",
     "covalence-sat",
     "covalence-serve",
     "covalence-sexp",
     "covalence-sexpr-api",
+    "covalence-sexpr-parsing",
     "covalence-shell",
     "covalence-smt",
     "covalence-spectec",
@@ -156,6 +165,14 @@
       "to": "covalence-types"
     },
     {
+      "from": "covalence-cfg-parsing",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-cfg-parsing",
+      "to": "covalence-parsing-api"
+    },
+    {
       "from": "covalence-client",
       "to": "covalence-hash"
     },
@@ -166,6 +183,10 @@
     {
       "from": "covalence-client",
       "to": "covalence-store"
+    },
+    {
+      "from": "covalence-computation",
+      "to": "covalence-logic-api"
     },
     {
       "from": "covalence-core",
@@ -316,6 +337,14 @@
       "to": "covalence-types"
     },
     {
+      "from": "covalence-inductive",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-computation"
+    },
+    {
       "from": "covalence-init",
       "to": "covalence-core"
     },
@@ -341,7 +370,15 @@
     },
     {
       "from": "covalence-init",
+      "to": "covalence-json-api"
+    },
+    {
+      "from": "covalence-init",
       "to": "covalence-k"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-lexer-parsing"
     },
     {
       "from": "covalence-init",
@@ -350,6 +387,14 @@
     {
       "from": "covalence-init",
       "to": "covalence-metamath"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-parsing-api"
+    },
+    {
+      "from": "covalence-init",
+      "to": "covalence-regex-parsing"
     },
     {
       "from": "covalence-init",
@@ -362,6 +407,10 @@
     {
       "from": "covalence-init",
       "to": "covalence-types"
+    },
+    {
+      "from": "covalence-jq",
+      "to": "covalence-json-api"
     },
     {
       "from": "covalence-json-api",
@@ -434,6 +483,42 @@
     {
       "from": "covalence-kernel-smt",
       "to": "covalence-hol-api"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-cfg-parsing"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-lexer-parsing"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-lexer-cfg-parsing",
+      "to": "covalence-parsing-api"
+    },
+    {
+      "from": "covalence-lexer-parsing",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-lexer-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-lexer-parsing",
+      "to": "covalence-parsing-api"
+    },
+    {
+      "from": "covalence-lexer-parsing",
+      "to": "covalence-regex-parsing"
     },
     {
       "from": "covalence-lisp",
@@ -544,6 +629,30 @@
       "to": "covalence-arrow"
     },
     {
+      "from": "covalence-parser-generator",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-parser-generator",
+      "to": "covalence-lexer-cfg-parsing"
+    },
+    {
+      "from": "covalence-parser-generator",
+      "to": "covalence-lexer-parsing"
+    },
+    {
+      "from": "covalence-parsing-api",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-peg-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-peg-parsing",
+      "to": "covalence-parsing-api"
+    },
+    {
       "from": "covalence-pure",
       "to": "covalence-pure-trusted"
     },
@@ -618,6 +727,18 @@
     {
       "from": "covalence-python",
       "to": "covalence-wasm-store"
+    },
+    {
+      "from": "covalence-regex-parsing",
+      "to": "covalence-grammar"
+    },
+    {
+      "from": "covalence-regex-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-regex-parsing",
+      "to": "covalence-parsing-api"
     },
     {
       "from": "covalence-repl",
@@ -730,6 +851,22 @@
     {
       "from": "covalence-sexpr-api",
       "to": "covalence-inductive"
+    },
+    {
+      "from": "covalence-sexpr-parsing",
+      "to": "covalence-logic-api"
+    },
+    {
+      "from": "covalence-sexpr-parsing",
+      "to": "covalence-parsing-api"
+    },
+    {
+      "from": "covalence-sexpr-parsing",
+      "to": "covalence-sexp"
+    },
+    {
+      "from": "covalence-sexpr-parsing",
+      "to": "covalence-sexpr-api"
     },
     {
       "from": "covalence-shell",

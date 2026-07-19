@@ -1,6 +1,8 @@
 // covalence-ui — Shared Svelte 5 component library
 export { registerViewer, getViewer } from './viewers/index.js';
 export type { ViewerDescriptor } from './viewers/index.js';
+export { detectImageMime, isLikelyText, detectBlobMode } from './viewers/index.js';
+export type { HighlightFn, HighlightResult, LanguageOption } from './viewers/index.js';
 
 export { default as GraphView } from './graph/GraphView.svelte';
 export { default as KnowledgeGraphView } from './knowledge/KnowledgeGraphView.svelte';
@@ -23,6 +25,8 @@ export type {
 	GraphEdge,
 	NodeKind,
 	PortKind,
+	HashBytes,
+	/** @deprecated Use `HashBytes` — see `graph/types.ts`. */
 	Hash,
 	LabelList,
 	KindFlags,

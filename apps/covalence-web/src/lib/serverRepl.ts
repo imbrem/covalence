@@ -25,16 +25,38 @@ function newSession(): string {
 		: `s${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * POST JSON and parse JSON back. Evaluation errors ride a 200 as
+ * `{ ok: false, error }`; anything else (a 500 page, an HTML error document
+ * from a proxy) is a TRANSPORT failure and is thrown with the status and a
+ * snippet of the body, so the cell shows something readable instead of
+ * `SyntaxError: Unexpected token '<'`.
+ */
 async function postJson(path: string, body: unknown): Promise<Record<string, unknown>> {
 	const res = await fetch(path, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(body)
 	});
+	const ctype = res.headers.get('content-type') ?? '';
+	if (!res.ok || !ctype.includes('json')) {
+		const text = await res.text().catch(() => '');
+		const detail = text.trim().slice(0, 200) || res.statusText || 'no response body';
+		throw new Error(`server error ${res.status}: ${detail}`);
+	}
 	return res.json();
 }
 
+/**
+ * Sessions are memoized per endpoint: an SPA navigation away and back must
+ * land in the SAME server session (the `defun`s are still there), which is
+ * also what makes the persisted transcript honest.
+ */
+const sessions = new Map<string, ServerRepl>();
+
 export function serverRepl(endpoint: string, opts: { show?: boolean } = {}): ServerRepl {
+	const cached = sessions.get(endpoint);
+	if (cached) return cached;
 	const session = newSession();
 
 	const evalCell = async (src: string): Promise<EvalResult> => {
@@ -53,5 +75,7 @@ export function serverRepl(endpoint: string, opts: { show?: boolean } = {}): Ser
 		void postJson(`${endpoint}/reset`, { session });
 	};
 
-	return { evalCell, showCell, onReset };
+	const repl: ServerRepl = { evalCell, showCell, onReset };
+	sessions.set(endpoint, repl);
+	return repl;
 }

@@ -11,7 +11,10 @@
 	import { page } from '$app/stores';
 	import { client } from '$lib/api';
 	import { renderMm, MM_UNICODE } from '$lib/mmUnicode';
+	import ProofSteps from '$lib/mm/ProofSteps.svelte';
+	import ProofBuilder from '$lib/mm/ProofBuilder.svelte';
 	import type {
+		MmStepsResponse,
 		MmStatusMessage,
 		ImportedTheorem,
 		ImportTheoremDetail,
@@ -56,6 +59,15 @@
 	// --- routing: the page is driven by the URL ---------------------------
 	const fileHash = $derived($page.url.searchParams.get('file'));
 	const user = $derived($page.url.searchParams.get('user') ?? undefined);
+	// Prove worker override. Read from the page store like every other param —
+	// `window.location` would be a second, drifting source of truth (and is not
+	// reactive, so it went stale on client-side navigation).
+	const workersParam = $derived.by(() => {
+		const raw = $page.url.searchParams.get('workers');
+		if (raw == null) return null;
+		const n = Number(raw);
+		return Number.isFinite(n) ? n : null;
+	});
 
 	// --- landing state -----------------------------------------------------
 	let preset = $state<string>('hol');
@@ -101,7 +113,6 @@
 	let done = $state(0);
 	let currentLabel = $state('');
 	let elapsedMs = $state(0);
-	let nOk = $state(0);
 	let theorems = $state<ImportedTheorem[]>([]);
 	// label → index into `theorems`, for O(1) status updates (47k theorems × ~2
 	// updates each — must not be O(n) per message). Not reactive; a plain Map.
@@ -127,6 +138,11 @@
 	let holInfo = $state<MmHolInfo | null>(null); // set only once pass 1 is ready
 	let internProg = $state<{ done: number; total: number; nodes: number } | null>(null);
 	let holTerms = $state<Record<string, string>>({});
+	// Per-fetch error slots for the three decoration fetches (see `loadAux`).
+	// Empty string = no error; any non-empty one raises the retry banner.
+	let auxErr = $state({ symbols: '', hol: '', terms: '' });
+	let auxLoading = $state(false);
+	const auxFailed = $derived(!!(auxErr.symbols || auxErr.hol || auxErr.terms));
 	let showDefs = $state(false); // list shows the definitions panel instead
 	// Named definitions, filtered by the search box when the defs panel is shown.
 	const filteredDefs = $derived.by(() => {
@@ -500,7 +516,6 @@
 		done = 0;
 		currentLabel = '';
 		elapsedMs = 0;
-		nOk = 0;
 		theorems = [];
 		labelIndex = new Map();
 		byLabel = new Map();
@@ -520,6 +535,36 @@
 			headerCopyMsg = 'clipboard blocked';
 		}
 		setTimeout(() => (headerCopyMsg = ''), 2000);
+	}
+
+	/** Fetch the decoration around the graph: the database's `$t` typeset table
+	 * and the pass-1 interned HOL surface (terms + named definitions).
+	 *
+	 * Each of the three is independent, so one failing must not hide the other
+	 * two — hence three separate catches into three error slots, all retryable.
+	 * `auxErr` drives a visible banner; before, these were `.catch(() => {})`. */
+	async function loadAux(hash: string) {
+		auxErr = { symbols: '', hol: '', terms: '' };
+		auxLoading = true;
+		const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+		await Promise.all([
+			client
+				.mmSymbols(hash, user)
+				.then((s) => (serverSymbols = s))
+				.catch((e) => (auxErr.symbols = msg(e))),
+			client
+				.mmHol(hash, user)
+				.then((h) => {
+					if (h.ready) holInfo = h;
+					else internProg = { done: h.done ?? 0, total: h.total ?? 0, nodes: h.nodes ?? 0 };
+				})
+				.catch((e) => (auxErr.hol = msg(e))),
+			client
+				.mmHolTerms(hash, user)
+				.then((t) => (holTerms = t))
+				.catch((e) => (auxErr.terms = msg(e))),
+		]);
+		auxLoading = false;
 	}
 
 	async function loadDb(hash: string) {
@@ -564,32 +609,16 @@
 		phase = 'graph';
 		statusMsg = `loaded ${total} theorems — starting import …`;
 
-		// Fetch the database's own typesetting (token → Unicode), non-blocking.
-		client
-			.mmSymbols(hash, user)
-			.then((s) => (serverSymbols = s))
-			.catch(() => {});
-
-		// Pass 1: fetch the interned HOL surface (terms + named definitions). This
-		// triggers the server-side single-thread interning; the HOL terms then
-		// show *before* (and during) the prove phase.
-		client
-			.mmHol(hash, user)
-			.then((h) => {
-				if (h.ready) holInfo = h;
-				else internProg = { done: h.done ?? 0, total: h.total ?? 0, nodes: h.nodes ?? 0 };
-			})
-			.catch(() => {});
-		client
-			.mmHolTerms(hash, user)
-			.then((t) => (holTerms = t))
-			.catch(() => {});
+		// Typesetting + the pass-1 HOL surface: decoration, fetched off the
+		// critical path. Failures used to be swallowed, which left the HOL pane
+		// stuck on "encoding…" forever with nothing to click; they now surface
+		// and can be retried.
+		void loadAux(hash);
 
 		// Connect the status WS first so we don't miss early frames, then start.
 		connectStatus(hash);
 		try {
-			const wq = new URLSearchParams(window.location.search).get('workers');
-			await client.startMmProve(hash, user, wq != null ? Number(wq) : undefined);
+			await client.startMmProve(hash, user, workersParam ?? undefined);
 			phase = 'importing';
 			statusMsg = `proving ${total} theorems …`;
 		} catch (e) {
@@ -676,10 +705,14 @@
 	// The live status model:
 	//   - `snapshot` (on connect) seeds statuses for already-proved theorems so a
 	//     late joiner / reconnect is current;
-	//   - `proving`/`proved` flip individual rows in place via the `labelIndex`
-	//     map (O(1) lookup), mutating the element so Svelte 5's deep `$state`
-	//     reactivity re-renders only that row — no array rebuild;
-	//   - `done` finalizes the run.
+	//   - `done` finalizes the run;
+	//   - `interning`/`interned` track the pass-1 HOL surface.
+	//
+	// INVARIANT: `proving`/`proved` never reach here. `connectStatus` routes
+	// every one of them into `statusBuf` and they are applied by `flushStatus`,
+	// which is the only place that mutates row status — that is what keeps the
+	// 60k-row reactive graph from recomputing per frame. Do not add cases for
+	// them here; add to `flushStatus` instead.
 	function handle(msg: MmStatusMessage) {
 		switch (msg.type) {
 			case 'snapshot': {
@@ -695,37 +728,12 @@
 				done = Math.max(done, n);
 				break;
 			}
-			case 'proving': {
-				const i = labelIndex.get(msg.label);
-				if (i != null) {
-					theorems[i].status = 'proving';
-					currentLabel = msg.label;
-				}
+			case 'proving':
+			case 'proved':
+				// Unreachable — see the invariant above.
 				break;
-			}
-			case 'proved': {
-				done = msg.done;
-				const i = labelIndex.get(msg.label);
-				if (i != null) {
-					const t = theorems[i];
-					t.status = msg.ok ? 'proved' : 'error';
-					t.ok = msg.ok;
-					t.hyps = msg.hyps;
-					t.genuine = msg.genuine;
-					t.holPreview = msg.holPreview;
-					t.error = msg.error;
-					t.importMs = msg.importMs;
-				}
-				// If this row is the selected one, refresh its detail in place.
-				if (selected && selected.label === msg.label) {
-					detailCache.delete(msg.label);
-					void selectTheorem(theorems[i]);
-				}
-				break;
-			}
 			case 'done':
 				phase = 'done';
-				nOk = msg.ok;
 				elapsedMs = msg.elapsedMs;
 				statusMsg = `done — ${msg.ok}/${msg.total} imported in ${(msg.elapsedMs / 1000).toFixed(1)}s`;
 				teardown();
@@ -740,20 +748,10 @@
 				break;
 			case 'interned':
 				internProg = null;
-				// Pass 1 done — pull the full surface (defs + final stats) and the
-				// folded bulk terms.
-				if (fileHash) {
-					client
-						.mmHol(fileHash, user)
-						.then((h) => {
-							if (h.ready) holInfo = h;
-						})
-						.catch(() => {});
-					client
-						.mmHolTerms(fileHash, user)
-						.then((t) => (holTerms = t))
-						.catch(() => {});
-				}
+				// Pass 1 done — re-pull the full surface (defs + final stats) and the
+				// folded bulk terms, through the same retryable path as the initial
+				// load so a failure here is visible too.
+				if (fileHash) void loadAux(fileHash);
 				break;
 		}
 	}
@@ -761,6 +759,7 @@
 	// --- detail: lazily fetch full per-theorem data (proof + ess + HOL) -----
 	async function selectTheorem(t: ImportedTheorem) {
 		selected = t;
+		void loadSteps(t.label);
 		const cached = detailCache.get(t.label);
 		if (cached) {
 			detail = cached;
@@ -776,6 +775,49 @@
 		} catch {
 			// leave detail null; the row's accumulated fields still render
 		}
+	}
+
+	// --- proof explorer: the verifying replay of the stored proof ----------
+	// `steps` is the checker's own trace (GET .../steps), not a re-parse of the
+	// raw proof string. Three outcomes, all rendered honestly: a trace, an
+	// axiom (no proof exists), or `ok:false` — the stored proof does not verify,
+	// in which case there is deliberately no partial trace to show.
+	let stepsRes = $state<MmStepsResponse | null>(null);
+	let stepsErr = $state('');
+	let stepsLoading = $state(false);
+	const stepsCache = new Map<string, MmStepsResponse>();
+	let stepsFor = ''; // label the current `stepsRes` belongs to
+
+	async function loadSteps(label: string) {
+		if (!fileHash) return;
+		stepsFor = label;
+		stepsErr = '';
+		const cached = stepsCache.get(label);
+		if (cached) {
+			stepsRes = cached;
+			stepsLoading = false;
+			return;
+		}
+		stepsRes = null;
+		stepsLoading = true;
+		try {
+			const r = await client.mmSteps(fileHash, label, { user });
+			stepsCache.set(label, r);
+			if (stepsFor === label) stepsRes = r;
+		} catch (e) {
+			if (stepsFor === label) stepsErr = e instanceof Error ? e.message : String(e);
+		} finally {
+			if (stepsFor === label) stepsLoading = false;
+		}
+	}
+
+	// --- page mode: browse the import, or build a proof --------------------
+	let mode = $state<'browse' | 'build'>('browse');
+	let showRawProof = $state(false);
+	function buildFrom(t: ImportedTheorem) {
+		selected = t;
+		void selectTheorem(t);
+		mode = 'build';
 	}
 
 	// Refresh the "loaded on server" list whenever we're on the landing view.
@@ -913,6 +955,40 @@
 		</div>
 	</section>
 
+	<!-- Two ways to use a loaded database: read the import, or write a proof. -->
+	<nav class="modes" aria-label="page mode">
+		<button class="mode" class:on={mode === 'browse'} data-testid="mode-browse"
+			onclick={() => (mode = 'browse')}>Browse & explore</button>
+		<button class="mode" class:on={mode === 'build'} data-testid="mode-build"
+			onclick={() => (mode = 'build')}>Proof builder</button>
+	</nav>
+
+	{#if auxFailed}
+		<p class="warn auxerr" data-testid="aux-error">
+			Could not load
+			{[auxErr.symbols && 'typesetting', auxErr.hol && 'HOL surface', auxErr.terms && 'HOL terms']
+				.filter(Boolean)
+				.join(', ')}:
+			<code>{auxErr.symbols || auxErr.hol || auxErr.terms}</code>
+			<button class="copy" data-testid="aux-retry" disabled={auxLoading}
+				onclick={() => fileHash && loadAux(fileHash)}>{auxLoading ? 'retrying…' : 'retry'}</button>
+		</p>
+	{/if}
+
+	{#if mode === 'build' && fileHash}
+		<section class="buildpane">
+			<ProofBuilder
+				hash={fileHash}
+				{user}
+				{unicode}
+				{symbolMap}
+				seedGoal={selected?.mm ?? ''}
+				seedTheorem={selected?.label ?? ''}
+			/>
+		</section>
+	{/if}
+
+	{#if mode === 'browse'}
 	<section class="status">
 		<div class="bar">
 			<progress value={done} max={Math.max(total, 1)}></progress>
@@ -1280,13 +1356,60 @@
 					</div>
 				{/if}
 				<div class="field">
-					<div class="flabel">Metamath proof</div>
-					{#if detail == null}
-						<p class="note">loading proof…</p>
-					{:else if detail.proof}
-						<pre class="mm proof">{detail.proof}</pre>
+					<div class="flabel">
+						Proof
+						<button class="copy tiny" onclick={() => (showRawProof = !showRawProof)}>
+							{showRawProof ? 'steps' : 'raw'}
+						</button>
+					</div>
+					{#if showRawProof}
+						<!-- The stored proof code, normal or compressed — kept as an escape
+						     hatch, but the step view below is the readable form. -->
+						{#if detail == null}
+							<p class="note">loading proof…</p>
+						{:else if detail.proof}
+							<pre class="mm proof" data-testid="raw-proof">{detail.proof}</pre>
+						{:else}
+							<p class="note">no proof code (axiom).</p>
+						{/if}
+					{:else if stepsErr}
+						<p class="note err-note" data-testid="steps-error">
+							could not load the proof trace: {stepsErr}
+							<button class="copy tiny" onclick={() => selected && loadSteps(selected.label)}
+								>retry</button
+							>
+						</p>
+					{:else if stepsLoading || stepsRes === null}
+						<p class="note">replaying proof…</p>
+					{:else if !stepsRes.ok}
+						<!-- The stored proof does not verify. The server sends no partial
+						     trace in this case and we invent none. -->
+						<p class="note">This proof does not verify. The checker says:</p>
+						<pre class="hol err" data-testid="steps-invalid">{stepsRes.error}</pre>
+					{:else if stepsRes.axiom}
+						<p class="note" data-testid="steps-axiom">
+							<b>{stepsRes.label}</b> is an axiom — there is no proof to trace.
+						</p>
 					{:else}
-						<p class="note">no proof code (axiom).</p>
+						{#if stepsRes.hyps.length > 0}
+							<div class="flabel sub">hypotheses in scope</div>
+							{#each stepsRes.hyps as h (h.label)}
+								<pre class="mm hyp"><b>{h.label}</b>  {renderMm(h.expr, unicode, symbolMap)}</pre>
+							{/each}
+						{/if}
+						<ProofSteps
+							steps={stepsRes.steps}
+							{unicode}
+							{symbolMap}
+							resetKey={stepsRes.label}
+						/>
+						<p class="note">
+							The verifying replay, step by step: every expression and substitution below is what
+							the checker computed while re-checking this proof.
+						</p>
+						<button class="copy" data-testid="reprove-button" onclick={() => selected && buildFrom(selected)}>
+							Re-prove this in the builder →
+						</button>
 					{/if}
 				</div>
 			{:else}
@@ -1294,6 +1417,7 @@
 			{/if}
 		</div>
 	</section>
+	{/if}
 	{/if}
 </main>
 
@@ -2110,5 +2234,83 @@
 	pre.proof {
 		max-height: 14rem;
 		overflow-y: auto;
+	}
+
+	/* Mode switch: browse the import vs. build a proof. */
+	.modes {
+		display: flex;
+		gap: 0.3rem;
+		margin: 0.9rem 0 0.2rem;
+		border-bottom: 1px solid var(--border);
+	}
+	.mode {
+		padding: 0.4rem 0.8rem;
+		border: 1px solid transparent;
+		border-bottom: none;
+		border-radius: 6px 6px 0 0;
+		background: transparent;
+		color: var(--muted);
+		cursor: pointer;
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+	}
+	.mode:hover {
+		color: var(--fg);
+	}
+	.mode.on {
+		background: var(--surface);
+		border-color: var(--border);
+		color: var(--accent);
+		font-weight: 600;
+		margin-bottom: -1px;
+	}
+	.buildpane {
+		border: 1px solid var(--border);
+		border-top: none;
+		border-radius: 0 0 8px 8px;
+		background: var(--surface);
+		padding: 0.9rem;
+		margin-bottom: 1rem;
+	}
+	.auxerr {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+	.copy.tiny {
+		padding: 0.05rem 0.35rem;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: var(--surface);
+		color: var(--fg);
+		cursor: pointer;
+		font-size: 0.66rem;
+		text-transform: none;
+		letter-spacing: 0;
+		margin-left: 0.4rem;
+	}
+	.copy.tiny:hover {
+		border-color: var(--accent);
+	}
+	.detail .copy {
+		padding: 0.28rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		background: var(--surface);
+		color: var(--fg);
+		cursor: pointer;
+		font-size: 0.75rem;
+		font-family: var(--font-mono);
+	}
+	.detail .copy:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.err-note {
+		color: var(--bad);
+	}
+	pre.hyp b {
+		color: var(--accent);
 	}
 </style>

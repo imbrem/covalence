@@ -10,6 +10,7 @@
 		{ href: '/tcb', label: 'tcb audit' },
 		{ href: '/haskell', label: 'haskell' },
 		{ href: '/lisp', label: 'lisp' },
+		{ href: '/acl2', label: 'acl2' },
 		{ href: '/forsp', label: 'forsp' },
 		{ href: '/forth', label: 'forth' },
 		{ href: '/proofs', label: 'proof checker' },

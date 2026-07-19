@@ -54,17 +54,26 @@ export interface KindFlags {
 
 // --------- StringDiagram ---------
 
-/** A 32-byte content hash. */
-export type Hash = Uint8Array;
+/** A 32-byte content hash, raw. Distinct from `covalence-client`'s `Hash`,
+ * which is the same value hex-encoded — the two packages are routinely
+ * imported side by side, so the wire-format type carries the `Bytes` suffix. */
+export type HashBytes = Uint8Array;
+
+/**
+ * @deprecated Collides with `covalence-client`'s `Hash` (a 64-char hex string).
+ * Use {@link HashBytes}. Kept so `apps/covalence-web` keeps compiling; drop
+ * once its `routes/graph` and `routes/view/[hash]` imports have migrated.
+ */
+export type Hash = HashBytes;
 
 export type SlotRef =
 	| { kind: 'absent' }
 	| { kind: 'uniform'; tag: 'all-pure' | 'all-ordered' }
-	| { kind: 'hash'; hash: Hash };
+	| { kind: 'hash'; hash: HashBytes };
 
 export interface StringDiagram {
 	/** Ordered-domain hash of the underlying topology. */
-	graph: Hash;
+	graph: HashBytes;
 	labels: SlotRef;
 	kinds: SlotRef;
 }

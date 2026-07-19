@@ -1,5 +1,7 @@
 //! Ordered, typed, payload-polymorphic graph + string-diagram overlays.
 //!
+//! @covalence-api {"id":"A0008","title":"Graphs and graph interchange","status":"experimental","dependsOn":[]}
+//!
 //! Three layers:
 //!
 //! 1. [`Graph<P>`] — ordered port topology + opaque payloads. This is

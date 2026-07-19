@@ -1,0 +1,6 @@
+id = "computation-foundations"
+title = "Computation, encodings, and computability foundations"
+status = "active"
+depends_on = ["inductive-datatypes"]
+notes = ["notes/vibes/logics/computation-theory.md"]
+files = ["crates/lang/computation", "crates/kernel/hol/init/src/init/computation"]

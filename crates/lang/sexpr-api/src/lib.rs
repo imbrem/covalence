@@ -1,5 +1,7 @@
 //! S-expressions as an inductive API.
 //!
+//! @covalence-api {"id":"A0005","title":"S-expressions","status":"experimental","dependsOn":["A0004"]}
+//!
 //! The fundamental datatype permits dotted pairs:
 //!
 //! ```text
@@ -12,9 +14,22 @@
 
 #![forbid(unsafe_code)]
 
+pub mod inductive;
+pub mod nat;
+
 use covalence_inductive::{
     FieldSpec, FixpointIsoFacts, FixpointNoConfusionFacts, FixpointSpec, LeastFixpoint,
     LeastFixpointFacts, Logic, NoConfusionLeastFixpoint, PolynomialSpec, Position, VariantCase,
+};
+
+pub use inductive::{
+    ConstructorLayer, EncodedAtom, EncodingError, EncodingRequest, InductiveRepresentation,
+    Membership, RawArgument, RawEncoding, RawInductive, RefinedArgument, RefinedEncoding,
+    RefinedInduction, RefinedInductive, TheoryInduction,
+};
+pub use nat::{
+    NatInduction, NatLayer, NatMembership, NatRepresentation, NatSymbol, RawNat, RawSExprNat,
+    RefinedNat, RefinedSExprNat, TheoryNatInduction, nat_spec,
 };
 
 /// Constructor positions in the canonical S-expression polynomial.
@@ -488,7 +503,7 @@ impl<P: Clone> SExprView for Free<P> {
     }
 }
 
-// TODO(cov:sexpr.parser-interpretation, major): Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.
+// TODO(cov:sexpr.parser-interpretation, major): Add A0015 adapters and induced same-value PERs for the SMT-LIB, WAT, and egglog S-expression dialects.
 
 #[cfg(test)]
 mod tests {

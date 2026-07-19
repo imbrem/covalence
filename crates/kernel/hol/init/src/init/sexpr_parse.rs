@@ -55,6 +55,7 @@ use covalence_hol_eval::defs::{
     tail,
 };
 use covalence_hol_eval::derived::DerivedRules;
+use covalence_parsing_api::{PrefixInterpretation, SameInterpretation, Span};
 
 use crate::init::ext::ThmExt;
 use crate::init::inductive::carved::carved;
@@ -451,6 +452,153 @@ pub fn parsed_cons_struct(h: &Term, t: &Term) -> Result<(Thm, Thm, Thm)> {
     let car = cs.proj_scons(false, h, t)?; // car (scons h t) = h
     let cdr = cs.proj_scons(true, h, t)?; // cdr (scons h t) = t
     Ok((consp, car, cdr))
+}
+
+// ============================================================================
+// A0015 checked interpretation adapter.
+// ============================================================================
+
+/// Identity of a Native HOL proof reader.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HolProofReader {
+    SExpr,
+    Json,
+}
+
+/// The theory selected for checked S-expression interpretation.
+#[derive(Clone, Debug)]
+pub struct HolSExprParseTheory {
+    pub parser: Term,
+}
+
+impl Default for HolSExprParseTheory {
+    fn default() -> Self {
+        Self {
+            parser: parse_sexpr(),
+        }
+    }
+}
+
+/// Untrusted positive evidence for a Native HOL prefix interpretation.
+///
+/// The theorem is authoritative only after [`replay_prefix_interpretation`]
+/// checks every redundant field and its exact conclusion.
+#[derive(Clone, Debug)]
+pub struct HolSExprParseWitness {
+    pub reader: HolProofReader,
+    pub fuel: Term,
+    pub source: Vec<u8>,
+    pub value: Term,
+    pub remainder: Vec<u8>,
+    pub theorem: Thm,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HolSExprReplayError {
+    WrongReader,
+    TheoryMismatch,
+    SourceMismatch,
+    ValueMismatch,
+    InvalidExtent,
+    RemainderMismatch,
+    HypothesesPresent,
+    TheoremMismatch,
+}
+
+/// Replay a positive A0015 prefix interpretation against the existing reader.
+///
+/// Successful replay returns the supplied theorem unchanged, so its statement
+/// remains exactly `parseFn fuel false source = some (value, remainder)`.
+/// This adapter mints no theorem and treats every host field as untrusted.
+///
+/// @covalence-api-impl {"api":"A0015","name":"NativeHol carved S-expression checked prefix interpretation","representation":"fuel-bounded list-u8 reader theorem replay"}
+pub fn replay_prefix_interpretation(
+    theory: &HolSExprParseTheory,
+    source: &[u8],
+    interpretation: &PrefixInterpretation<Term, HolSExprParseWitness>,
+) -> core::result::Result<Thm, HolSExprReplayError> {
+    let witness = &interpretation.witness;
+    if witness.reader != HolProofReader::SExpr {
+        return Err(HolSExprReplayError::WrongReader);
+    }
+    if theory.parser != parse_sexpr() {
+        return Err(HolSExprReplayError::TheoryMismatch);
+    }
+    if witness.source != source {
+        return Err(HolSExprReplayError::SourceMismatch);
+    }
+    if witness.value != interpretation.value {
+        return Err(HolSExprReplayError::ValueMismatch);
+    }
+    if interpretation.consumed != Span::new(0, interpretation.remainder).unwrap()
+        || interpretation.remainder > source.len()
+    {
+        return Err(HolSExprReplayError::InvalidExtent);
+    }
+    if witness.remainder != source[interpretation.remainder..] {
+        return Err(HolSExprReplayError::RemainderMismatch);
+    }
+    if !witness.theorem.hyps().is_empty() {
+        return Err(HolSExprReplayError::HypothesesPresent);
+    }
+
+    let source_term = byte_list_term(source);
+    let remainder_term = byte_list_term(&witness.remainder);
+    let expected_lhs = Term::app(
+        Term::app(
+            Term::app(parse_fn(), witness.fuel.clone()),
+            covalence_hol_eval::mk_bool(false),
+        ),
+        source_term,
+    );
+    let expected_rhs = some_r(pair_r(interpretation.value.clone(), remainder_term));
+    let Some((actual_lhs, actual_rhs)) = witness.theorem.concl().as_eq() else {
+        return Err(HolSExprReplayError::TheoremMismatch);
+    };
+    if actual_lhs != &expected_lhs || actual_rhs != &expected_rhs {
+        return Err(HolSExprReplayError::TheoremMismatch);
+    }
+    Ok(witness.theorem.clone())
+}
+
+/// Replay both legs of an A0015 same-interpretation witness.
+///
+/// The certificate is the pair of unchanged reader theorems. Equality of the
+/// shared [`SameInterpretation::value`] pins the two legs to the same HOL term;
+/// no host equality claim is promoted into a theorem.
+pub fn replay_same_interpretation(
+    theory: &HolSExprParseTheory,
+    left_source: &[u8],
+    right_source: &[u8],
+    same: &SameInterpretation<Term, HolSExprParseWitness, ()>,
+) -> core::result::Result<(Thm, Thm), HolSExprReplayError> {
+    let replay_leg = |source: &[u8], witness: &HolSExprParseWitness| {
+        let remainder = source
+            .len()
+            .checked_sub(witness.remainder.len())
+            .ok_or(HolSExprReplayError::InvalidExtent)?;
+        let interpretation = PrefixInterpretation::new(
+            same.value.clone(),
+            witness.clone(),
+            Span::new(0, remainder).unwrap(),
+            remainder,
+        )
+        .ok_or(HolSExprReplayError::InvalidExtent)?;
+        replay_prefix_interpretation(theory, source, &interpretation)
+    };
+    Ok((
+        replay_leg(left_source, &same.left)?,
+        replay_leg(right_source, &same.right)?,
+    ))
+}
+
+fn byte_list_term(bytes: &[u8]) -> Term {
+    bytes.iter().rev().fold(defs::nil(u8_t()), |tail, byte| {
+        Term::app(
+            Term::app(defs::cons(u8_t()), covalence_hol_eval::mk_u8(*byte)),
+            tail,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -1032,5 +1180,141 @@ mod tests {
         );
         assert_eq!(car.concl().as_eq().unwrap().1, &h);
         assert_eq!(cdr.concl().as_eq().unwrap().1, &t);
+    }
+
+    fn checked_prefix(source: &[u8]) -> PrefixInterpretation<Term, HolSExprParseWitness> {
+        let theorem = eval(30, false, source);
+        let (value, remainder) = ref_expr(source).expect("test source parses");
+        let remainder_offset = source.len() - remainder.len();
+        let value = to_term(&value);
+        PrefixInterpretation::new(
+            value.clone(),
+            HolSExprParseWitness {
+                reader: HolProofReader::SExpr,
+                fuel: fuel(30),
+                source: source.to_vec(),
+                value,
+                remainder: remainder.to_vec(),
+                theorem,
+            },
+            Span::new(0, remainder_offset).unwrap(),
+            remainder_offset,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a0015_adapter_preserves_the_existing_parse_theorem() {
+        let source = b" (a (b)) tail";
+        let interpretation = checked_prefix(source);
+        let replayed =
+            replay_prefix_interpretation(&HolSExprParseTheory::default(), source, &interpretation)
+                .unwrap();
+        assert_eq!(
+            replayed.concl(),
+            interpretation.witness.theorem.concl(),
+            "replay must not restate or remint the proof"
+        );
+        assert!(replayed.hyps().is_empty());
+    }
+
+    #[test]
+    fn a0015_per_adapter_checks_both_sources_against_one_value() {
+        let left_source = b"(a)";
+        let right_source = b" (a)";
+        let left = checked_prefix(left_source);
+        let right = checked_prefix(right_source);
+        assert_eq!(left.value, right.value);
+        let same = SameInterpretation {
+            value: left.value,
+            left: left.witness,
+            right: right.witness,
+            equivalence: (),
+        };
+        let (left_theorem, right_theorem) = replay_same_interpretation(
+            &HolSExprParseTheory::default(),
+            left_source,
+            right_source,
+            &same,
+        )
+        .unwrap();
+        assert_eq!(left_theorem.concl(), same.left.theorem.concl());
+        assert_eq!(right_theorem.concl(), same.right.theorem.concl());
+    }
+
+    #[test]
+    fn a0015_adapter_rejects_substituted_reader_source_value_and_remainder() {
+        let source = b"(a) tail";
+
+        let mut wrong_reader = checked_prefix(source);
+        wrong_reader.witness.reader = HolProofReader::Json;
+        assert_eq!(
+            replay_prefix_interpretation(&HolSExprParseTheory::default(), source, &wrong_reader)
+                .unwrap_err(),
+            HolSExprReplayError::WrongReader
+        );
+
+        let mut wrong_source = checked_prefix(source);
+        wrong_source.witness.source = b"(b) tail".to_vec();
+        assert_eq!(
+            replay_prefix_interpretation(&HolSExprParseTheory::default(), source, &wrong_source)
+                .unwrap_err(),
+            HolSExprReplayError::SourceMismatch
+        );
+
+        let mut wrong_value = checked_prefix(source);
+        wrong_value.witness.value = snil();
+        assert_eq!(
+            replay_prefix_interpretation(&HolSExprParseTheory::default(), source, &wrong_value)
+                .unwrap_err(),
+            HolSExprReplayError::ValueMismatch
+        );
+
+        let mut wrong_remainder = checked_prefix(source);
+        wrong_remainder.witness.remainder = b"tail".to_vec();
+        assert_eq!(
+            replay_prefix_interpretation(&HolSExprParseTheory::default(), source, &wrong_remainder)
+                .unwrap_err(),
+            HolSExprReplayError::RemainderMismatch
+        );
+    }
+
+    #[test]
+    fn a0015_adapter_rejects_substituted_extent_theory_and_theorem() {
+        let source = b"(a) tail";
+
+        let mut wrong_extent = checked_prefix(source);
+        wrong_extent.remainder += 1;
+        assert_eq!(
+            replay_prefix_interpretation(&HolSExprParseTheory::default(), source, &wrong_extent)
+                .unwrap_err(),
+            HolSExprReplayError::InvalidExtent
+        );
+
+        let wrong_theory = HolSExprParseTheory {
+            parser: crate::init::json_parse::parse_json(),
+        };
+        assert_eq!(
+            replay_prefix_interpretation(&wrong_theory, source, &checked_prefix(source))
+                .unwrap_err(),
+            HolSExprReplayError::TheoryMismatch
+        );
+
+        let mut wrong_theorem = checked_prefix(source);
+        wrong_theorem.witness.theorem = eval(30, false, b"(b) tail");
+        assert_eq!(
+            replay_prefix_interpretation(&HolSExprParseTheory::default(), source, &wrong_theorem)
+                .unwrap_err(),
+            HolSExprReplayError::TheoremMismatch
+        );
+
+        let mut hypothetical = checked_prefix(source);
+        hypothetical.witness.theorem =
+            Thm::assume(hypothetical.witness.theorem.concl().clone()).unwrap();
+        assert_eq!(
+            replay_prefix_interpretation(&HolSExprParseTheory::default(), source, &hypothetical)
+                .unwrap_err(),
+            HolSExprReplayError::HypothesesPresent
+        );
     }
 }

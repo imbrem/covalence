@@ -8,7 +8,7 @@
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import type { ResolvedDiagram } from './types.js';
-	import { layoutDiagram } from './layout.js';
+	import { DEFAULT_LAYOUT, layoutDiagram } from './layout.js';
 	import StringDiagramNode from './StringDiagramNode.svelte';
 	import StateAnchorNode from './StateAnchorNode.svelte';
 	import CurvyEdge from './CurvyEdge.svelte';
@@ -29,7 +29,9 @@
 	// box.y) and (box.x - 6, box.y + h). The anchor nodes are also 8×8;
 	// we position them so their bottom-center (head) or top-center
 	// (tail) lines up exactly with the box state-handle center.
-	const STUB_LEN = 36;
+	// Same stub length layoutDiagram used for the head/tail state segments —
+	// the anchors have to land on the ends of the stubs it drew.
+	const STUB_LEN = DEFAULT_LAYOUT.stateStubLen;
 	const ANCHOR_SIZE = 8;
 	// anchor.x = box.x - 6 (target handle center x) - ANCHOR_SIZE/2.
 	const ANCHOR_X_OFFSET = -6 - ANCHOR_SIZE / 2; // = -10

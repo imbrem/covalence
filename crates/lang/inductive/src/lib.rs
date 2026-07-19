@@ -2,6 +2,8 @@
 //! types and least/greatest fixpoints, abstracting over their
 //! **representation**.
 //!
+//! @covalence-api {"id":"A0004","title":"Polynomial and inductive datatypes","status":"experimental","dependsOn":["A0001"]}
+//!
 //! ## The shape
 //!
 //! - [`RecordSpec`], [`VariantSpec`], and [`EnumSpec`] — non-recursive
@@ -60,8 +62,10 @@ pub mod backend;
 pub mod conformance;
 pub mod error;
 pub mod family;
+pub mod family_action;
 pub mod fixpoint;
 pub mod functor;
+pub mod higher_kinded;
 pub mod logic;
 pub mod logic_api;
 pub mod polynomial;
@@ -79,6 +83,12 @@ pub use aggregate::{
 pub use backend::InductiveBackend;
 pub use error::{IndResult, InductiveError, SpecError};
 pub use family::{DatatypeFamilyError, DatatypeFamilyExpr};
+pub use family_action::{
+    DatatypeFamilyBackend, DatatypeFamilyLaws, FamilyFixpointKind, SymbolicFamilyArrow,
+    SymbolicFamilyBackend, SymbolicFamilyEvidence, SymbolicFamilyObject, ValidatedDatatypeFamily,
+    family_map_composition, family_map_congruence, family_map_identity, interpret_family,
+    map_family, symbolic_arrow,
+};
 pub use fixpoint::{
     CoinductiveFixpointBackend, FixpointCore, FixpointIsoFacts, FixpointNoConfusionFacts,
     FixpointSpec, GreatestFixpoint, GreatestFixpointFacts, InductiveFixpointBackend, LeastFixpoint,
@@ -86,7 +96,12 @@ pub use fixpoint::{
     ProofBearingLeastFixpointBackend, RealizeError, realize_coinductive, realize_inductive,
 };
 pub use functor::{
-    StructuralFunctorAction, StructuralFunctorLaws, StructuralPolynomial, StructuralPolynomialError,
+    StructuralFunctorAction, StructuralFunctorLaws, StructuralMapAlgebra, StructuralMapPlan,
+    StructuralPolynomial, StructuralPolynomialError, derive_composed_map_plan,
+};
+pub use higher_kinded::{
+    Applicative, ApplicativeLaws, Apply, Bind, Foldable, Functor, FunctorLaws, Monad, MonadLaws,
+    OptionK, ResultK, Traversable, TraverseEffect, TypeCtor, VecK,
 };
 pub use logic::{Logic, LogicOps, beta_expand, beta_reduce};
 pub use logic_api::LogicApiAdapter;

@@ -13,10 +13,13 @@ export interface ReplLine {
 let lines: ReplLine[] = $state([]);
 let input = $state('');
 let history: string[] = $state([]);
-let historyIndex = $state(-1);
 let ws: WebSocket | null = $state(null);
 let wsReconnectDelay = 1000;
 let wsConnected = $state(false);
+// Pending reconnect, so `destroy()` can cancel it. Without this a torn-down
+// REPL kept redialing forever (and a `close` from our own `destroy()` armed
+// yet another attempt).
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 let healthy = $state(false);
 let lastHealth: HealthResponse | null = $state(null);
@@ -26,11 +29,6 @@ let connectedDuration = $state(0);
 let timer: ReturnType<typeof setTimeout> | null = null;
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let initialized = false;
-
-function scrollToBottom() {
-	// Caller can override; this is a no-op placeholder.
-	// The page component sets the real scroll target via setOutputEl.
-}
 
 let outputEl: HTMLElement | null = null;
 
@@ -45,6 +43,7 @@ function doScroll() {
 }
 
 function initWs() {
+	if (!initialized) return;
 	const socket = client.connectRepl();
 	socket.onopen = () => {
 		ws = socket;
@@ -64,7 +63,7 @@ function initWs() {
 		wsConnected = false;
 		ws = null;
 		wsReconnectDelay = Math.min(wsReconnectDelay * 2, 30000);
-		setTimeout(initWs, wsReconnectDelay);
+		if (initialized) reconnectTimer = setTimeout(initWs, wsReconnectDelay);
 	};
 	socket.onerror = () => {
 		wsConnected = false;
@@ -76,7 +75,6 @@ export function send() {
 	if (!cmd || !ws) return;
 	lines.push({ kind: 'input', text: cmd });
 	history.push(cmd);
-	historyIndex = -1;
 	ws.send(cmd);
 	input = '';
 	doScroll();
@@ -114,7 +112,8 @@ async function poll() {
 			stopTick();
 		}
 	}
-	timer = setTimeout(poll, 1000);
+	// A poll in flight when `destroy()` lands must not re-arm the loop.
+	if (initialized) timer = setTimeout(poll, 1000);
 }
 
 /** Initialize WebSocket + health polling. Call once from root layout or first mount. */
@@ -125,12 +124,17 @@ export function init() {
 	poll();
 }
 
-/** Cleanup (call on app destroy). */
+/** Cleanup (call on app destroy). Cancels polling AND the reconnect loop. */
 export function destroy() {
+	// Clear the flag first: `ws.close()` fires `onclose`, which would otherwise
+	// arm a fresh reconnect on the way out.
+	initialized = false;
 	if (timer != null) clearTimeout(timer);
+	timer = null;
+	if (reconnectTimer != null) clearTimeout(reconnectTimer);
+	reconnectTimer = null;
 	stopTick();
 	if (ws) ws.close();
-	initialized = false;
 }
 
 export function formatDuration(secs: number): string {
@@ -149,8 +153,6 @@ export function getLines(): ReplLine[] { return lines; }
 export function getInput(): string { return input; }
 export function setInput(v: string) { input = v; }
 export function getHistory(): string[] { return history; }
-export function getHistoryIndex(): number { return historyIndex; }
-export function setHistoryIndex(v: number) { historyIndex = v; }
 export function isWsConnected(): boolean { return wsConnected; }
 export function isHealthy(): boolean { return healthy; }
 export function getLastHealth(): HealthResponse | null { return lastHealth; }

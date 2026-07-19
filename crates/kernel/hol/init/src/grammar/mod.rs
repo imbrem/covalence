@@ -5,5 +5,6 @@
 //! compilers/tactics, not the type definitions.
 
 pub mod cfg;
+pub mod lexer;
 pub mod regex;
 pub mod spectec;

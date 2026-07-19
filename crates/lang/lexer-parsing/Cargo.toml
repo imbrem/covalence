@@ -1,0 +1,12 @@
+[package]
+name = "covalence-lexer-parsing"
+version = "0.0.0"
+edition = "2024"
+description = "Dependency-light bounded lexer API over Covalence regex parsing"
+license.workspace = true
+
+[dependencies]
+covalence-grammar = { path = "../grammar" }
+covalence-logic-api = { path = "../../kernel/hol/logic" }
+covalence-parsing-api = { path = "../parsing" }
+covalence-regex-parsing = { path = "../regex-parsing" }

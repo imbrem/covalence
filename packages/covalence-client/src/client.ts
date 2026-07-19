@@ -15,6 +15,11 @@ import type {
   MmHolInfo,
   MmGraphResponse,
   ImportTheoremDetail,
+  MmStepsResponse,
+  MmSearchResponse,
+  MmApplyResponse,
+  MmVerifyRequest,
+  MmVerifyResponse,
 } from './types.js';
 
 /** Build a `?user=<value>` query string (empty when no user). */
@@ -148,6 +153,11 @@ export class CovalenceClient {
   }
 
   // --- TEMPORARY / THROWAWAY DEMO: Metamath sessions (the `/metamath` page) ---
+  //
+  // Name drift: the `*MmDb*` methods predate the server's rename of "db" to
+  // "session" (`/api/metamath/{upload,sessions,session/{hash}}`). The names are
+  // kept because callers reference them; each method's JSDoc names the real
+  // route it hits.
 
   /**
    * POST /api/metamath/upload — parse (or reuse) a `.mm` source into a cached
@@ -200,32 +210,49 @@ export class CovalenceClient {
     return this.fetchJson<MmServerStats>('/api/metamath/stats');
   }
 
-  /** GET /api/metamath/session/{hash}/symbols — the database's `token → Unicode`
-   * typeset map (parsed from its `$t` `althtmldef` section; empty if it has none). */
+  /**
+   * GET /api/metamath/session/{hash}/symbols — the database's `token → Unicode`
+   * typeset map (parsed from its `$t` `althtmldef` section; empty if it has none).
+   *
+   * 404 means "no such session" and yields `{}` rather than throwing: typesetting
+   * is decoration, so an unloaded session degrades to raw tokens. Every other
+   * failure throws {@link CovalenceError}.
+   */
   async mmSymbols(hash: Hash, user?: string): Promise<Record<string, string>> {
     const res = await this.fetch(
       `${this.baseUrl}/api/metamath/session/${hash}/symbols${userQuery(user)}`,
     );
-    if (!res.ok) return {};
+    if (res.status === 404) return {};
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
     return (await res.json()) as Record<string, string>;
   }
 
   /** GET /api/metamath/session/{hash}/hol — pass-1 HOL surface stats + the
-   * database's named definitions (formers + df-*). Triggers pass 1 server-side. */
+   * database's named definitions (formers + df-*). Triggers pass 1 server-side.
+   * Throws {@link CovalenceError} on any non-2xx, 404 ("no such session")
+   * included — there is no meaningful empty surface to fall back to. */
   async mmHol(hash: Hash, user?: string): Promise<MmHolInfo> {
     const res = await this.fetch(
       `${this.baseUrl}/api/metamath/session/${hash}/hol${userQuery(user)}`,
     );
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
     return (await res.json()) as MmHolInfo;
   }
 
-  /** GET /api/metamath/session/{hash}/hol/terms — the whole `label → HOL term`
-   * map (pass 1; available before proving). One fetch, cached by the page. */
+  /**
+   * GET /api/metamath/session/{hash}/hol/terms — the whole `label → HOL term`
+   * map (pass 1; available before proving). One fetch, cached by the page.
+   *
+   * As with {@link mmSymbols}, 404 ("no such session") yields `{}`; the server
+   * also returns `{}` with 200 while pass 1 is still running. Every other
+   * failure throws {@link CovalenceError}.
+   */
   async mmHolTerms(hash: Hash, user?: string): Promise<Record<string, string>> {
     const res = await this.fetch(
       `${this.baseUrl}/api/metamath/session/${hash}/hol/terms${userQuery(user)}`,
     );
-    if (!res.ok) return {};
+    if (res.status === 404) return {};
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
     return (await res.json()) as Record<string, string>;
   }
 
@@ -242,6 +269,107 @@ export class CovalenceClient {
   async mmTheorem(hash: Hash, name: string, user?: string): Promise<ImportTheoremDetail> {
     const res = await this.fetch(
       `${this.baseUrl}/api/metamath/session/${hash}/theorem/${encodeURIComponent(name)}${userQuery(user)}`,
+    );
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
+    return res.json();
+  }
+
+  // --- Proof surface (/steps, /search, /apply, /verify) ---
+  //
+  // These four share the `/api/lisp` convention: session/route problems are
+  // non-2xx and throw {@link CovalenceError}; *proof* problems are HTTP 200
+  // with `ok:false` and a checker message, and are returned as data so the UI
+  // can show the server's own words.
+
+  /**
+   * GET /api/metamath/session/{hash}/theorem/{name}/steps — replay the stored
+   * proof through the real checker and return every step.
+   *
+   * Unlike `mmTheorem`, this does not 404 on non-`|-` assertions: syntax
+   * formers trace fine. Throws on 404 ("no such session" / "no such theorem").
+   */
+  async mmSteps(hash: Hash, name: string, opts: { user?: string } = {}): Promise<MmStepsResponse> {
+    const res = await this.fetch(
+      `${this.baseUrl}/api/metamath/session/${hash}/theorem/${encodeURIComponent(name)}/steps${userQuery(opts.user)}`,
+    );
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
+    return res.json();
+  }
+
+  /**
+   * GET /api/metamath/session/{hash}/search — case-insensitive substring search
+   * over label OR rendered statement, in database order.
+   *
+   * `limit` is capped server-side at 200 (default 50), and `total` counts only
+   * the returned page — check `truncated` to know whether more exist. Worst
+   * case is a full scan (~25 ms on set.mm in release, ~4× that in debug), so
+   * callers should debounce a type-ahead.
+   */
+  async mmSearch(
+    hash: Hash,
+    q: string,
+    opts: { limit?: number; user?: string } = {},
+  ): Promise<MmSearchResponse> {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (opts.limit != null) params.set('limit', String(opts.limit));
+    if (opts.user) params.set('user', opts.user);
+    const qs = params.toString();
+    const res = await this.fetch(
+      `${this.baseUrl}/api/metamath/session/${hash}/search${qs ? `?${qs}` : ''}`,
+    );
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
+    return res.json();
+  }
+
+  /**
+   * POST /api/metamath/session/{hash}/apply — match `label`'s conclusion
+   * against `goal` backwards, yielding the substitution and the resulting
+   * subgoals.
+   *
+   * `goal` is a rendered, whitespace-separated statement whose first token is
+   * the typecode; every token must be a declared symbol of the database. A
+   * match is a suggestion only — see {@link MmApplyResponse}. `ok:false`
+   * (non-matching assertion, unknown label, unknown symbol) is returned as
+   * data.
+   */
+  async mmApply(
+    hash: Hash,
+    body: { goal: string; label: string },
+    opts: { user?: string } = {},
+  ): Promise<MmApplyResponse> {
+    const res = await this.fetch(
+      `${this.baseUrl}/api/metamath/session/${hash}/apply${userQuery(opts.user)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
+    return res.json();
+  }
+
+  /**
+   * POST /api/metamath/session/{hash}/verify — run an RPN label sequence
+   * through the real checker. **The only source of truth for "proved".**
+   *
+   * Pass `body.theorem` when the proof is written in an existing theorem's
+   * frame: without it the frame is empty, so that theorem's `$e` hypothesis
+   * labels are not citable and its `$d` declarations are unavailable.
+   */
+  async mmVerify(
+    hash: Hash,
+    body: MmVerifyRequest,
+    opts: { user?: string } = {},
+  ): Promise<MmVerifyResponse> {
+    const res = await this.fetch(
+      `${this.baseUrl}/api/metamath/session/${hash}/verify${userQuery(opts.user)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
     );
     if (!res.ok) throw new CovalenceError(res.status, `${res.status} ${res.statusText}`);
     return res.json();

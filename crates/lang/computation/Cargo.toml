@@ -1,0 +1,10 @@
+[package]
+name = "covalence-computation"
+version = "0.0.0"
+edition = "2024"
+
+description = "Proof-oriented HOL APIs and auditable search models of computation"
+license.workspace = true
+
+[dependencies]
+covalence-hol-logic = { package = "covalence-logic-api", path = "../../kernel/hol/logic" }

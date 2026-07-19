@@ -2,11 +2,20 @@
 	import type { TreeEntry } from 'covalence-client';
 
 	interface Props {
+		/** Hash of the tree being listed (64-char hex, `covalence-client`'s `Hash`). */
 		hash: string;
 		entries: TreeEntry[];
 	}
 
-	let { hash, entries }: Props = $props();
+	// `hash` is part of the viewer contract every ViewerDescriptor component is
+	// invoked with; this viewer renders entries by their own hashes and has no
+	// use for the parent's yet.
+	// TODO(cov:web.ui-treeviewer-hash-prop, minor): Use `hash` for breadcrumbs, or drop it from the viewer contract.
+	let { hash: _hash, entries }: Props = $props();
+
+	// The `/view/{hash}` hrefs below are covalence-web routes hardcoded into a
+	// library component; a link-builder prop would decouple them.
+	// TODO(cov:web.ui-viewer-routes, minor): Take a link builder prop so covalence-ui does not hardcode app routes.
 
 	// Sort: dirs first, then files, alphabetical within each group
 	let sorted = $derived(

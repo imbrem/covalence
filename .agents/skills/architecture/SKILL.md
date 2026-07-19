@@ -32,6 +32,46 @@ disable-model-invocation: true
     backend whose nonzero literals use the derived binary double/successor
     encoding. It still shares native carriers and theory operations; it is a
     representation stress test, not yet complete leaf elimination.
+  - `covalence-init::init::inductive::UnaryNat` is the corresponding
+    linear-depth successor-tower backend. The representation adapters share
+    their native-theory capability delegation in `nat_backend_common.rs`;
+    neither advertises decision or normalization capabilities.
+- `crates/lang/computation/` — dependency-free computation theory, execution,
+  compiler, simulation, and machine-model APIs.
+  - `automata_api` (A0011) separates relational finite-automata syntax,
+    universal closure/acceptance law bundles, untrusted search witnesses, and
+    replay. Its core covers DFA/NFA uniformly; determinism and epsilon closure
+    are optional capabilities.
+  - Native HOL realizations and replay seams live in
+    `crates/kernel/hol/init/src/init/computation/`.
+  - Search witnesses are plain data and non-authoritative. Replay must
+    reconstruct a kernel theorem and reject forged candidates; bounded replay
+    milestones must not be described as universal semantic preservation.
+- `crates/lang/grammar/` — neutral grammar IR; it must not depend on parser
+  evaluation APIs.
+- `crates/lang/cfg-parsing/` — bounded A0015 relational evaluator layered over
+  both `covalence-grammar` and `covalence-parsing-api`. Derivation trees are
+  untrusted data, ambiguity is retained, and exact versus prefix parsing is
+  explicit. `ChartCfgParser` handles left recursion and nullable productions
+  with explicit work/chart/result bounds. Its shared packed forest interns
+  `(nonterminal, span)` nodes and represents nullable cycles finitely; expanding
+  trees is a separately bounded operation that reports truncation.
+- `crates/lang/regex-parsing/` — optional bounded A0013/A0015 evaluators for
+  the syntax in `covalence-grammar`.
+  - Functional evaluation uses an explicit longest-prefix policy; relational
+    evaluation enumerates distinct accepted prefixes rather than derivation
+    trees.
+  - Host match witnesses carry no theorem authority. Logic-level replay and
+    soundness/completeness capabilities remain separate.
+- `crates/lang/lexer-parsing/` — A0016 bounded lexical analysis layered over
+  regex parsing. Maximal munch, rule priority, ambiguity, skipped tokens, and
+  byte/scalar source spans are explicit policy or witness data. Nullable token
+  rules are rejected so tokenization cannot loop without consuming input.
+- `crates/lang/peg-parsing/` — A0019 capture/action-free PEG syntax and
+  bounded deterministic evaluation over bytes or Unicode scalars. Ordered
+  choice, lookahead, recursion, exact/prefix policy, and limits are explicit;
+  nullable repetition and left recursion fail rather than looping. Host
+  witnesses carry no theorem authority.
 - `crates/server/client/` — Remote backend implementations
   - `src/sync_client.rs` — `SyncHttpBackend` (ureq for TCP, raw HTTP/1.1 for Unix domain sockets)
   - `src/async_client.rs` — `AsyncHttpBackend` (hyper for TCP + UDS)

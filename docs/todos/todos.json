@@ -1,9 +1,189 @@
 {
   "generatedBy": "scripts/todos.mjs",
   "note": "Generated from source-local TODO/FIXME/SKELETON/HACK/XXX markers. Edit the source marker, then run `bun run todos`.",
-  "count": 303,
-  "structured": 303,
+  "count": 345,
+  "structured": 345,
   "items": [
+    {
+      "id": "bits.abstract-bool-list-adapter",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace the initial List<Bool> representation seam with abstract Bool and List capabilities once those carrier APIs stabilize.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "line": 127,
+      "crate": "covalence-logic-api"
+    },
+    {
+      "id": "bits.bytes-packing-backend",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Implement A0010↔A0003 packing behind BytePacking and prove aligned and padded round-trip laws.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/bits.rs",
+      "line": 128,
+      "crate": "covalence-logic-api"
+    },
+    {
+      "id": "bytes.abstract-list-adapter",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace the temporary meta-level NatByteSequence vectors with the abstract proof-bearing list API once its carrier and elementwise-predicate interfaces stabilize.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "line": 243,
+      "crate": "covalence-logic-api"
+    },
+    {
+      "id": "bytes.leb128-encoding",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add unsigned/signed LEB128 as variable-length byte relations with canonicality, termination, and bounded-width overflow evidence.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/bytes.rs",
+      "line": 244,
+      "crate": "covalence-logic-api"
+    },
+    {
+      "id": "computability.compiler-transport",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Realize PartialCompilerComputabilityFacts from concrete compiler preservation/reflection bundles.",
+      "structured": true,
+      "path": "crates/lang/computation/src/computability.rs",
+      "line": 317,
+      "crate": "covalence-computation"
+    },
+    {
+      "id": "computability.machine-realizations",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Realize partial/total computability facts for concrete Machine theories without treating finite host runs as proofs.",
+      "structured": true,
+      "path": "crates/lang/computation/src/computability.rs",
+      "line": 316,
+      "crate": "covalence-computation"
+    },
+    {
+      "id": "computability.model-equivalences",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Supply checked equivalences among concrete computation models; do not assume a Church-Turing thesis.",
+      "structured": true,
+      "path": "crates/lang/computation/src/computability.rs",
+      "line": 318,
+      "crate": "covalence-computation"
+    },
+    {
+      "id": "computation.automata-accepts-iff-run",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Prove the universal",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "line": 585,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.automata-native-definitions",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Define the",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "line": 583,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.automata-partial-compilers",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Implement",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "line": 587,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.blc-symbolic-reduction",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace bounded replay with proved symbolic decoding, substitution, and reduction over inductive/Nat/Bits APIs.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
+      "line": 15,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.lambda-ski-preservation",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Define general BLC/SKI",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/lambda_to_ski.rs",
+      "line": 157,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.minsky-hol-step-definition",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Define minsky.step",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "line": 172,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.minsky-universal-equivalence",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Prove the native",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/minsky.rs",
+      "line": 175,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.native-definitions",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Define native HOL",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/mod.rs",
+      "line": 274,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.pda-acceptance-replay",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Extract and replay one",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/automata.rs",
+      "line": 590,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.turing-hol-step-definition",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Define turing.step",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/turing.rs",
+      "line": 184,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "computation.turing-universal-equivalence",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Prove the native",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/computation/turing.rs",
+      "line": 187,
+      "crate": "covalence-init"
+    },
     {
       "id": "ffi.python.hol-kernel-bindings-removed-pending-rewrite",
       "kind": "TODO",
@@ -21,7 +201,7 @@
       "summary": "Extend the bounded DOT interchange subset to ports, subgraphs, HTML labels, chained edges, and the complete attribute grammar.",
       "structured": true,
       "path": "crates/lib/graph/src/lib.rs",
-      "line": 44,
+      "line": 46,
       "crate": "covalence-graph"
     },
     {
@@ -35,6 +215,16 @@
       "crate": "covalence-inductive"
     },
     {
+      "id": "inductive.family-proof-laws",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add a proof-bearing companion which derives identity/composition evidence structurally and requires μ/ν law evidence only at the fixpoint capability boundary.",
+      "structured": true,
+      "path": "crates/lang/inductive/src/family_action.rs",
+      "line": 382,
+      "crate": "covalence-inductive"
+    },
+    {
       "id": "inductive.legacy-fixpoint-adapter",
       "kind": "TODO",
       "severity": "major",
@@ -45,14 +235,54 @@
       "crate": "covalence-inductive"
     },
     {
+      "id": "json.decimal-a0006-native-hol-morphism",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Prove the boundary between A0006 CanonicalDecimal and init's exact (int,nat) decimal representation, including normalization and signed exponents.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
+      "line": 166,
+      "crate": "covalence-init"
+    },
+    {
+      "id": "json.inductive-nested-fixpoint-backend",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Implement JsonArrays, JsonSemanticObjects, and JsonAggregateConstructors by realizing the nested least fixpoints in jsonvaluefamily through A0004.",
+      "structured": true,
+      "path": "crates/lang/json-api/src/api.rs",
+      "line": 423,
+      "crate": "covalence-json-api"
+    },
+    {
+      "id": "json.parser-stackless-depth",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace the recursive hard ceiling with a stack-safe parser whose resource policy can accept arbitrary RFC 8259 nesting.",
+      "structured": true,
+      "path": "crates/lang/json-api/src/lib.rs",
+      "line": 230,
+      "crate": "covalence-json-api"
+    },
+    {
       "id": "json.polynomial-composition",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.",
+      "summary": "Close the native JSON family fixpoint once DatatypeFamilyExpr has a proof-bearing nested-fixpoint backend; the NativeHol constructor-layer adapter already realizes the exact six-way F(X), including recursive array/member-list payload shapes.",
       "structured": true,
       "path": "crates/lang/json-api/src/lib.rs",
-      "line": 757,
+      "line": 980,
       "crate": "covalence-json-api"
+    },
+    {
+      "id": "json.semantic-object-native-hol",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Define the canonical unique-name predicate over list (string × json), prove duplicate rejection/lookup laws, and expose semantic objects as that subset; ordered syntax objects intentionally remain the raw list above.",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/init/json_family.rs",
+      "line": 165,
+      "crate": "covalence-init"
     },
     {
       "id": "kernel.base.canon-only-on-ground-args",
@@ -2795,6 +3025,16 @@
       "crate": "covalence-spectec"
     },
     {
+      "id": "parsing.lexer.native-hol-universal-semantics",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Define and",
+      "structured": true,
+      "path": "crates/kernel/hol/init/src/grammar/lexer.rs",
+      "line": 345,
+      "crate": "covalence-init"
+    },
+    {
       "id": "proof.alethe.content-addressed-proof-cache",
       "kind": "TODO",
       "severity": "major",
@@ -2955,6 +3195,26 @@
       "crate": "covalence-metamath"
     },
     {
+      "id": "proof.metamath.match-conclusion-backtracking",
+      "kind": "PERF",
+      "severity": "minor",
+      "summary": "matchbody is",
+      "structured": true,
+      "path": "crates/proof/metamath/src/trace.rs",
+      "line": 390,
+      "crate": "covalence-metamath"
+    },
+    {
+      "id": "proof.metamath.proof-search",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "No bottom-up or iterative-deepening",
+      "structured": true,
+      "path": "crates/proof/metamath/src/trace.rs",
+      "line": 385,
+      "crate": "covalence-metamath"
+    },
+    {
       "id": "proof.metamath.set-mm-scale-streaming-incremental-parsing",
       "kind": "TODO",
       "severity": "major",
@@ -3015,14 +3275,74 @@
       "crate": "covalence-opentheory"
     },
     {
+      "id": "server.mm.proof-session-state",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "/apply and /verify are",
+      "structured": true,
+      "path": "crates/server/core/src/mm.rs",
+      "line": 1531,
+      "crate": "covalence-serve"
+    },
+    {
+      "id": "server.mm.search-linear-scan",
+      "kind": "PERF",
+      "severity": "minor",
+      "summary": "/search re-renders every",
+      "structured": true,
+      "path": "crates/server/core/src/mm.rs",
+      "line": 1140,
+      "crate": "covalence-serve"
+    },
+    {
+      "id": "server.mm.verify-hol-cache",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "every /verify rebuilds the",
+      "structured": true,
+      "path": "crates/server/core/src/mm.rs",
+      "line": 1526,
+      "crate": "covalence-serve"
+    },
+    {
+      "id": "server.mm.verify-hol-transport",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "/verify's hol theorem is",
+      "structured": true,
+      "path": "crates/server/core/src/mm.rs",
+      "line": 1519,
+      "crate": "covalence-serve"
+    },
+    {
       "id": "sexpr.parser-interpretation",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Express each S-expression dialect parser as a covalence-parsing-api byte/text interpretation and expose its induced same-value PER.",
+      "summary": "Add A0015 adapters and induced same-value PERs for the SMT-LIB, WAT, and egglog S-expression dialects.",
       "structured": true,
       "path": "crates/lang/sexpr-api/src/lib.rs",
-      "line": 491,
+      "line": 506,
       "crate": "covalence-sexpr-api"
+    },
+    {
+      "id": "text.abstract-list-integration",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Replace the temporary character-sequence seam with the shared abstract finite-list API once it lands.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "line": 274,
+      "crate": "covalence-logic-api"
+    },
+    {
+      "id": "text.unicode-tables",
+      "kind": "TODO",
+      "severity": "major",
+      "summary": "Add versioned Unicode normalization, case, category, and grapheme tables with checked provenance.",
+      "structured": true,
+      "path": "crates/kernel/hol/logic/src/text.rs",
+      "line": 275,
+      "crate": "covalence-logic-api"
     },
     {
       "id": "vscode.macos-native-server",
@@ -3032,6 +3352,106 @@
       "structured": true,
       "path": "extensions/covalence-vscode/src/server.ts",
       "line": 99,
+      "crate": null
+    },
+    {
+      "id": "web.acl2-session-sharing",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "serverRepl memoizes one session per ENDPOINT, so /acl2 and /lisp share a server session — opening this page resets the one /lisp's transcript describes. Key sessions by store instead.",
+      "structured": true,
+      "path": "apps/covalence-web/src/routes/acl2/+page.svelte",
+      "line": 42,
+      "crate": null
+    },
+    {
+      "id": "web.article-block-comments",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "the shared highlighter has no",
+      "structured": true,
+      "path": "apps/covalence-web/src/routes/article/+page.svelte",
+      "line": 197,
+      "crate": null
+    },
+    {
+      "id": "web.forth-evaluator",
+      "kind": "SKELETON",
+      "severity": "major",
+      "summary": "forthevalcell is a stub that",
+      "structured": true,
+      "path": "apps/covalence-web/src/routes/forth/+page.svelte",
+      "line": 18,
+      "crate": null
+    },
+    {
+      "id": "web.graph-overlay-store",
+      "kind": "SKELETON",
+      "severity": "minor",
+      "summary": "no content store or hasher",
+      "structured": true,
+      "path": "apps/covalence-web/src/routes/graph/+page.svelte",
+      "line": 87,
+      "crate": null
+    },
+    {
+      "id": "web.mm-hyp-label-picker",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Offer the in-scope $f/$e",
+      "structured": true,
+      "path": "apps/covalence-web/src/lib/mm/ProofBuilder.svelte",
+      "line": 388,
+      "crate": null
+    },
+    {
+      "id": "web.repl-autorun-prop",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Give <Repl> an autoRun prop so a page can open its dialect through the component's own evaluator instead of the transcript store.",
+      "structured": true,
+      "path": "apps/covalence-web/src/lib/acl2.ts",
+      "line": 83,
+      "crate": null
+    },
+    {
+      "id": "web.site-light-theme",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "no site-wide light theme exists;",
+      "structured": true,
+      "path": "apps/covalence-web/src/routes/article/+page.svelte",
+      "line": 353,
+      "crate": null
+    },
+    {
+      "id": "web.ui-svelte-check",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Add svelte-check as a devDependency and point check at it.",
+      "structured": true,
+      "path": "packages/covalence-ui/tsconfig.json",
+      "line": 7,
+      "crate": null
+    },
+    {
+      "id": "web.ui-treeviewer-hash-prop",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Use hash for breadcrumbs, or drop it from the viewer contract.",
+      "structured": true,
+      "path": "packages/covalence-ui/src/lib/viewers/TreeViewer.svelte",
+      "line": 13,
+      "crate": null
+    },
+    {
+      "id": "web.ui-viewer-routes",
+      "kind": "TODO",
+      "severity": "minor",
+      "summary": "Take a link builder prop so covalence-ui does not hardcode app routes.",
+      "structured": true,
+      "path": "packages/covalence-ui/src/lib/viewers/TreeViewer.svelte",
+      "line": 18,
       "crate": null
     }
   ]

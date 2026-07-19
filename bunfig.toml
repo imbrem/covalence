@@ -8,9 +8,13 @@
 #
 # covalence-web is also vitest-style — its Svelte component tests need jsdom +
 # the Svelte compiler. Delegate to vitest via tests/web.test.ts.
+#
+# e2e/ holds Playwright specs, run by the Playwright runner via
+# `bun run test:e2e` — Bun's runner must not try to execute them.
 [test]
 pathIgnorePatterns = [
   "**/packages/covalence-ui/**",
   "**/packages/covalence-wasm-js/**",
   "**/apps/covalence-web/**",
+  "**/e2e/**",
 ]

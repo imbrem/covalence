@@ -405,6 +405,39 @@ pub trait LispEnvironment {
     ) -> Result<Self::Environment, Self::Error>;
 }
 
+/// One atomic recursive-environment reservation.
+///
+/// `cells` correspond positionally to the requested symbols. Their type is
+/// intentionally backend-opaque and need not be cloneable; consuming a cell
+/// during initialization makes double initialization unrepresentable for
+/// well-behaved clients.
+#[derive(Debug)]
+pub struct RecursiveAllocation<N, C> {
+    pub environment: N,
+    pub cells: Vec<C>,
+}
+
+/// Privileged allocation used to tie recursive lexical knots.
+///
+/// Reservation installs every name before any value is constructed. Closures
+/// can therefore capture `allocation.environment`, including forward and
+/// mutual references, and the evaluator then consumes each cell exactly once.
+pub trait LispRecursiveEnvironment: LispEnvironment {
+    type Cell;
+
+    fn reserve_recursive(
+        &self,
+        environment: &Self::Environment,
+        symbols: Vec<Self::Symbol>,
+    ) -> Result<RecursiveAllocation<Self::Environment, Self::Cell>, Self::Error>;
+
+    /// Initialize a freshly reserved cell.
+    ///
+    /// This operation is total because `Cell` is a single-use capability
+    /// produced only by [`reserve_recursive`](Self::reserve_recursive).
+    fn initialize_recursive(&self, cell: Self::Cell, value: Self::Value);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,6 +486,43 @@ mod tests {
         assert_eq!(
             environments.lookup(&extended, &"x").unwrap(),
             Some(HostValue::Atom("value"))
+        );
+    }
+
+    #[test]
+    fn recursive_environment_reservation_is_atomic_and_single_use() {
+        let environments = HostEnvironments::<&str, Value>::default();
+        let allocation = environments
+            .reserve_recursive(&environments.empty(), vec!["left", "right"])
+            .unwrap();
+        assert_eq!(
+            environments
+                .lookup(&allocation.environment, &"left")
+                .unwrap(),
+            None,
+            "reserved but uninitialized cells are not observable as values"
+        );
+
+        let mut cells = allocation.cells.into_iter();
+        environments.initialize_recursive(
+            cells.next().expect("left cell"),
+            HostValue::Atom("left-value"),
+        );
+        environments.initialize_recursive(
+            cells.next().expect("right cell"),
+            HostValue::Atom("right-value"),
+        );
+        assert_eq!(
+            environments
+                .lookup(&allocation.environment, &"left")
+                .unwrap(),
+            Some(HostValue::Atom("left-value"))
+        );
+        assert_eq!(
+            environments
+                .lookup(&allocation.environment, &"right")
+                .unwrap(),
+            Some(HostValue::Atom("right-value"))
         );
     }
 

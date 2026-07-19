@@ -11,8 +11,9 @@ use std::sync::{Arc, OnceLock};
 
 use crate::relation::{DeterministicStep, StepRelation, TerminalValue};
 use crate::runtime::{
-    ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispValue, PrimitiveSemantics,
-    RuntimeBinding, RuntimeValueLayer, RuntimeValueView,
+    ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
+    LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding, RuntimeValueLayer,
+    RuntimeValueView,
 };
 use crate::syntax::{Binding, CoreExpr, EvaluationOrder, LispSyntax, Parameter, Strategy};
 
@@ -38,6 +39,10 @@ pub struct HostEnvironment<S, V> {
 pub struct HostBindingCell<V> {
     value: Arc<OnceLock<V>>,
 }
+
+/// Single-use initialization capability for one reserved recursive binding.
+#[derive(Debug)]
+pub struct HostRecursiveCell<V>(HostBindingCell<V>);
 
 impl<V> HostBindingCell<V> {
     fn uninitialized() -> Self {
@@ -386,6 +391,33 @@ impl<S: Clone + PartialEq, V: Clone> LispEnvironment for HostEnvironments<S, V> 
     }
 }
 
+impl<S: Clone + PartialEq, V: Clone> LispRecursiveEnvironment for HostEnvironments<S, V> {
+    type Cell = HostRecursiveCell<V>;
+
+    fn reserve_recursive(
+        &self,
+        environment: &Self::Environment,
+        symbols: Vec<Self::Symbol>,
+    ) -> Result<RecursiveAllocation<Self::Environment, Self::Cell>, Self::Error> {
+        let cells: Vec<_> = symbols
+            .iter()
+            .map(|_| HostBindingCell::uninitialized())
+            .collect();
+        let environment =
+            environment.extend_cells(symbols.into_iter().zip(cells.iter().cloned()).collect());
+        Ok(RecursiveAllocation {
+            environment,
+            cells: cells.into_iter().map(HostRecursiveCell).collect(),
+        })
+    }
+
+    fn initialize_recursive(&self, cell: Self::Cell, value: Self::Value) {
+        cell.0
+            .initialize(value)
+            .unwrap_or_else(|_| unreachable!("single-use recursive cell was already initialized"));
+    }
+}
+
 /// The active expression or computed value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostControl<S, A, P> {
@@ -574,6 +606,10 @@ impl<P: CorePrimitive> CoreMachine<P> {
         HostClosures::default()
     }
 
+    fn environments(&self) -> HostEnvironments<P::Symbol, Value<P::Symbol, P::Atom, P::Primitive>> {
+        HostEnvironments::default()
+    }
+
     /// Extend an environment with an atomic mutually recursive lambda group.
     ///
     /// All names and cells are allocated before any closure is built, so
@@ -594,12 +630,15 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 return Err(CoreMachineError::InvalidRecursiveInitializer(name.clone()));
             }
         }
-        let cells: Vec<_> = bindings
-            .iter()
-            .map(|(name, _)| (name.clone(), HostBindingCell::uninitialized()))
-            .collect();
-        let environment = parent.extend_cells(cells.clone());
-        for ((_, expression), (_, cell)) in bindings.into_iter().zip(cells) {
+        let environments = self.environments();
+        let allocation = environments
+            .reserve_recursive(
+                parent,
+                bindings.iter().map(|(name, _)| name.clone()).collect(),
+            )
+            .unwrap_or_else(|never| match never {});
+        let environment = allocation.environment;
+        for ((_, expression), cell) in bindings.into_iter().zip(allocation.cells) {
             let CoreExpr::Lambda {
                 name,
                 parameters,
@@ -626,8 +665,7 @@ impl<P: CorePrimitive> CoreMachine<P> {
                 .values()
                 .roll(RuntimeValueLayer::Closure(closure))
                 .unwrap_or_else(|never| match never {});
-            cell.initialize(closure)
-                .expect("fresh recursive binding cell");
+            environments.initialize_recursive(cell, closure);
         }
         Ok(environment)
     }
@@ -899,7 +937,16 @@ impl<P: CorePrimitive> CoreMachine<P> {
         } else {
             &configuration.environment
         };
-        configuration.environment = parent.extend(bindings);
+        configuration.environment = self
+            .environments()
+            .extend(
+                parent,
+                bindings
+                    .into_iter()
+                    .map(|(symbol, value)| RuntimeBinding::new(symbol, value))
+                    .collect(),
+            )
+            .unwrap_or_else(|never| match never {});
         configuration.control = HostControl::Expression(closure.body);
         Ok(Some(configuration))
     }
@@ -940,9 +987,10 @@ impl<P: CorePrimitive> CoreMachine<P> {
                         );
                     }
                     CoreExpr::Variable(symbol) => {
-                        let value = next
-                            .environment
-                            .lookup(&symbol)
+                        let value = self
+                            .environments()
+                            .lookup(&next.environment, &symbol)
+                            .unwrap_or_else(|never| match never {})
                             .ok_or(CoreMachineError::UnboundVariable(symbol))?;
                         next.control = HostControl::Value(value);
                     }

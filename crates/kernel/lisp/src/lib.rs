@@ -51,9 +51,10 @@ pub use relation::{
     TraceReplay, TraceSoundness, evaluate, execute, explore,
 };
 pub use runtime::{
-    ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispValue, PrimitiveSemantics,
-    RuntimeBinding, RuntimeDatumError, RuntimeValueCase, RuntimeValueLayer, RuntimeValueParameter,
-    RuntimeValueView, inject_datum, project_datum, runtime_value_fixpoint,
+    ClosureRecord, LispClosure, LispEnvironment, LispMachineValue, LispRecursiveEnvironment,
+    LispValue, PrimitiveSemantics, RecursiveAllocation, RuntimeBinding, RuntimeDatumError,
+    RuntimeValueCase, RuntimeValueLayer, RuntimeValueParameter, RuntimeValueView, inject_datum,
+    project_datum, runtime_value_fixpoint,
 };
 pub use stack::{
     StackConfiguration, StackContinuation, StackInstructionSyntax, StackProgramSyntax,

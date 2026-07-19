@@ -67,11 +67,11 @@ export async function ensureSetMm(explicit) {
 }
 
 /** Build a release example binary in `pkg` and return its path. */
-export function buildExample(pkg, example) {
+export function buildExample(pkg, example, extraArgs = []) {
   const { spawnSync } = require("bun");
   log(`building ${example} (release)…`);
   const build = spawnSync(
-    ["cargo", "build", "-p", pkg, "--example", example, "--release"],
+    ["cargo", "build", "-p", pkg, "--example", example, "--release", ...extraArgs],
     { stdout: "inherit", stderr: "inherit" },
   );
   if (build.exitCode !== 0) process.exit(build.exitCode ?? 1);

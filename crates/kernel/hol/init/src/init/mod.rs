@@ -96,6 +96,7 @@ pub mod float_parse;
 pub mod inductive;
 pub mod int;
 pub mod int_parse;
+pub mod json_family;
 pub mod json_parse;
 pub mod lambda_iter;
 pub mod lang;

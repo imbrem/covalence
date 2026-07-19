@@ -887,6 +887,41 @@ pub enum JsonParameter {
     String,
 }
 
+/// Stable declaration-order indices of the six JSON value constructors.
+///
+/// Backends use these indices when exposing constructor, view, and
+/// no-confusion laws for [`json_value_family`]. Arrays and objects are single
+/// constructors here: their payloads are respectively a recursive list and an
+/// ordered recursive member list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(usize)]
+pub enum JsonConstructor {
+    Null = 0,
+    Bool = 1,
+    Number = 2,
+    String = 3,
+    Array = 4,
+    Object = 5,
+}
+
+impl JsonConstructor {
+    /// All constructors in the declaration order used by
+    /// [`json_value_family`].
+    pub const ALL: [Self; 6] = [
+        Self::Null,
+        Self::Bool,
+        Self::Number,
+        Self::String,
+        Self::Array,
+        Self::Object,
+    ];
+
+    /// The declaration-order index consumed by proof-bearing backends.
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+}
+
 fn list_family<P>(element: DatatypeFamilyExpr<P>) -> DatatypeFamilyExpr<P> {
     DatatypeFamilyExpr::least(DatatypeFamilyExpr::Sum(vec![
         DatatypeFamilyExpr::One,
@@ -934,7 +969,7 @@ pub fn json_value_polynomial() -> DatatypeFamilyExpr<JsonParameter> {
     json_value_family()
 }
 
-// TODO(cov:json.polynomial-composition, major): Realize the scoped JSON datatype family in a proof-bearing backend; the structural expression itself now models arrays and objects honestly.
+// TODO(cov:json.polynomial-composition, major): Close the native JSON family fixpoint once DatatypeFamilyExpr has a proof-bearing nested-fixpoint backend; the NativeHol constructor-layer adapter already realizes the exact six-way F(X), including recursive array/member-list payload shapes.
 
 #[cfg(test)]
 mod tests {

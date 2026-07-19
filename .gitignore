@@ -5,6 +5,7 @@ dist/
 .vscode-test-web/
 .worktrees/
 .claude/worktrees/
+.codex/worktrees/
 .direnv/
 .svelte-kit/
 /apps/covalence-web/build/

@@ -2345,13 +2345,13 @@
       "crate": "covalence-kernel-smt"
     },
     {
-      "id": "lang.cfg-parsing.left-recursion",
+      "id": "lang.cfg-parsing.packed-forest",
       "kind": "TODO",
       "severity": "major",
-      "summary": "Add a bounded Earley or GLR backend that retains left-recursive derivations and implements this relational interface.",
+      "summary": "Represent cyclic/ambiguous derivations as a bounded shared packed parse forest instead of expanding every tree.",
       "structured": true,
       "path": "crates/lang/cfg-parsing/src/lib.rs",
-      "line": 12,
+      "line": 243,
       "crate": "covalence-cfg-parsing"
     },
     {

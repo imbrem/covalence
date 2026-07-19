@@ -340,7 +340,7 @@
       "title": ".gitignore",
       "status": "tracked",
       "path": ".gitignore",
-      "words": 25,
+      "words": 26,
       "updated": 0
     },
     {
@@ -412,7 +412,7 @@
       "title": "Cargo.lock",
       "status": "tracked",
       "path": "Cargo.lock",
-      "words": 7370,
+      "words": 7371,
       "updated": 0
     },
     {
@@ -610,7 +610,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "apps/covalence-map/static/covalence-map.json",
-      "words": 33791,
+      "words": 33834,
       "updated": 0
     },
     {
@@ -6298,7 +6298,7 @@
       "title": "Cargo.toml",
       "status": "tracked",
       "path": "crates/kernel/hol/init/Cargo.toml",
-      "words": 51,
+      "words": 52,
       "updated": 0
     },
     {
@@ -6541,7 +6541,7 @@
       "title": "mod.rs",
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/grammar/regex/mod.rs",
-      "words": 412,
+      "words": 413,
       "updated": 0
     },
     {
@@ -6551,6 +6551,15 @@
       "status": "tracked",
       "path": "crates/kernel/hol/init/src/grammar/regex/open_work.rs",
       "words": 11,
+      "updated": 0
+    },
+    {
+      "id": "file:crates/kernel/hol/init/src/grammar/regex/replay.rs",
+      "kind": "file",
+      "title": "replay.rs",
+      "status": "tracked",
+      "path": "crates/kernel/hol/init/src/grammar/regex/replay.rs",
+      "words": 273,
       "updated": 0
     },
     {
@@ -9106,7 +9115,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/cfg-parsing/src/lib.rs",
-      "words": 528,
+      "words": 965,
       "updated": 0
     },
     {
@@ -10618,7 +10627,7 @@
       "title": "lib.rs",
       "status": "tracked",
       "path": "crates/lang/sexpr-parsing/src/lib.rs",
-      "words": 319,
+      "words": 677,
       "updated": 0
     },
     {
@@ -14452,7 +14461,7 @@
       "title": "covalence-map.json",
       "status": "tracked",
       "path": "docs/deps/covalence-map.json",
-      "words": 33791,
+      "words": 33834,
       "updated": 0
     },
     {
@@ -14470,7 +14479,7 @@
       "title": "graph.dot",
       "status": "tracked",
       "path": "docs/deps/graph.dot",
-      "words": 278,
+      "words": 279,
       "updated": 0
     },
     {
@@ -14479,7 +14488,7 @@
       "title": "graph.json",
       "status": "tracked",
       "path": "docs/deps/graph.json",
-      "words": 922,
+      "words": 926,
       "updated": 0
     },
     {
@@ -14488,7 +14497,7 @@
       "title": "graph.mmd",
       "status": "tracked",
       "path": "docs/deps/graph.mmd",
-      "words": 206,
+      "words": 207,
       "updated": 0
     },
     {
@@ -14497,7 +14506,7 @@
       "title": "graph.svg",
       "status": "tracked",
       "path": "docs/deps/graph.svg",
-      "words": 1646,
+      "words": 1652,
       "updated": 0
     },
     {
@@ -16945,6 +16954,15 @@
       "title": "NativeHolBoundedStepReplay",
       "status": "implemented",
       "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs",
+      "words": 0,
+      "updated": 0
+    },
+    {
+      "id": "impl:A0013:BoundedByteRegexReplay",
+      "kind": "implementation",
+      "title": "BoundedByteRegexReplay",
+      "status": "implemented",
+      "path": "crates/kernel/hol/init/src/grammar/regex/replay.rs",
       "words": 0,
       "updated": 0
     },
@@ -20432,9 +20450,9 @@
       "updated": 0
     },
     {
-      "id": "todo:lang.cfg-parsing.left-recursion",
+      "id": "todo:lang.cfg-parsing.packed-forest",
       "kind": "todo",
-      "title": "Add a bounded Earley or GLR backend that retains left-recursive derivations and implements this relational interface.",
+      "title": "Represent cyclic/ambiguous derivations as a bounded shared packed parse forest instead of expanding every tree.",
       "status": "major",
       "path": "crates/lang/cfg-parsing/src/lib.rs",
       "words": 0,
@@ -22687,6 +22705,12 @@
       "source": "file:crates/kernel/hol/init/src/grammar/mod.rs",
       "predicate": "imports",
       "target": "file:crates/kernel/hol/init/src/grammar/spectec/mod.rs",
+      "detail": null
+    },
+    {
+      "source": "file:crates/kernel/hol/init/src/grammar/regex/mod.rs",
+      "predicate": "imports",
+      "target": "file:crates/kernel/hol/init/src/grammar/regex/replay.rs",
       "detail": null
     },
     {
@@ -25604,6 +25628,18 @@
       "predicate": "implements",
       "target": "api:A0012",
       "detail": "A0010 HOL List<Bool> endpoint relation"
+    },
+    {
+      "source": "impl:A0013:BoundedByteRegexReplay",
+      "predicate": "defined-in",
+      "target": "file:crates/kernel/hol/init/src/grammar/regex/replay.rs",
+      "detail": null
+    },
+    {
+      "source": "impl:A0013:BoundedByteRegexReplay",
+      "predicate": "implements",
+      "target": "api:A0013",
+      "detail": "checked native HOL Matches derivation for one bounded host prefix witness"
     },
     {
       "source": "impl:A0013:NativeHol closed-byte witness reflection",
@@ -31878,6 +31914,13 @@
       "name": "NativeHolBoundedStepReplay",
       "representation": "A0010 HOL List<Bool> endpoint relation",
       "path": "crates/kernel/hol/init/src/init/computation/blc_step_replay.rs"
+    },
+    {
+      "id": "impl:A0013:BoundedByteRegexReplay",
+      "apiId": "A0013",
+      "name": "BoundedByteRegexReplay",
+      "representation": "checked native HOL Matches derivation for one bounded host prefix witness",
+      "path": "crates/kernel/hol/init/src/grammar/regex/replay.rs"
     },
     {
       "id": "impl:A0013:NativeHol closed-byte witness reflection",

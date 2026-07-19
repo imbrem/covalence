@@ -381,6 +381,10 @@
     },
     {
       "from": "covalence-init",
+      "to": "covalence-regex-parsing"
+    },
+    {
+      "from": "covalence-init",
       "to": "covalence-sexp"
     },
     {
